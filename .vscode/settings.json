@@ -1,0 +1,16 @@
+{
+  "clangd.enable": true,
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}",
+    "--background-index",
+    "--header-insertion=never"
+  ],
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "C_Cpp.errorSquiggles": "disabled",
+  "files.associations": {
+    "*.h": "cpp",
+    "*.hpp": "cpp",
+    "*.cpp": "cpp",
+    "*.glsl": "glsl"
+  }
+}

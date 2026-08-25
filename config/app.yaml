@@ -1,0 +1,18 @@
+window:
+  width: 1440
+  height: 960
+  title: RenderLab
+demo: shadow
+
+# 默认场景相机；scenes/*.yaml 里的 camera 可覆盖
+camera:
+  position: [4.0, 3.5, 5.0]
+  target: [0.0, 0.5, 0.0]
+  fov: 45
+
+editor:
+  camera:
+    pan_speed: 1.0      # 右键拖拽平移灵敏度
+    orbit_speed: 0.25   # 中键环绕（度/像素）
+    fly_speed: 2.5      # WASD/QE 飞行速度系数
+    zoom_speed: 0.1     # 滚轮缩放

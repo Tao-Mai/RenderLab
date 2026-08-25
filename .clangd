@@ -1,0 +1,8 @@
+CompileFlags:
+  Add:
+    - -std=c++23
+    - -Wno-unknown-argument
+    - -Wno-unknown-warning-option
+  Remove:
+    - /std:c++*
+    - -std:c++*
