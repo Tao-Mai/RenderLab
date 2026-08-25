@@ -5,6 +5,8 @@
 #include "base/platform/window.h"
 #include "base/editor/id_picker.h"
 
+#include <GLFW/glfw3.h>
+
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -47,6 +49,9 @@ private:
     void sync_fly_from_camera();
     bool switch_demo(int index);
 
+    void handle_key(int key, int scancode, int action, int mods);
+    static void GlfwKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+
     GlfwWindow&        window_;
     AssetCache&        assets_;
     DemoRegistry&      registry_;
@@ -76,6 +81,10 @@ private:
     double last_mouse_y_ = 0.0;
 
     std::unique_ptr<IdPicker> id_picker_;
+
+    // 链到 ImGui 的 GLFW key callback；ESC / demo on_key 走这里
+    GLFWkeyfun   prev_key_callback_ = nullptr;
+    static Editor* s_active_;
 
 #if defined(_WIN32)
     // 启动前的键盘布局 + IME 状态，退出时完整恢复搜狗等输入法

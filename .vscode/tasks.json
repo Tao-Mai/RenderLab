@@ -2,11 +2,14 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "run",
+      "label": "CMake: run",
       "type": "shell",
-      "command": ".\\scripts\\run.cmd",
+      "command": "cmake --build --preset default --target RenderLab && .\\build\\RenderLab.exe",
       "options": {
-        "cwd": "${workspaceFolder}"
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PATH": "D:\\tool\\mingw64\\bin;${env:VCPKG_ROOT}\\installed\\x64-mingw-dynamic\\bin;${env:PATH}"
+        }
       },
       "group": {
         "kind": "build",

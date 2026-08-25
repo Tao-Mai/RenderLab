@@ -145,6 +145,10 @@ Editor::Editor(GlfwWindow& window, AssetCache& assets, DemoRegistry& registry,
     ImGui_ImplGlfw_InitForOpenGL(window_.GetNativeWindow(), true);
     ImGui_ImplOpenGL3_Init("#version 450");
 
+    // ImGui 已安装 key callback；再包一层，保留 ImGui，同时处理 ESC / demo 热键
+    s_active_          = this;
+    prev_key_callback_ = glfwSetKeyCallback(window_.GetNativeWindow(), &Editor::GlfwKeyCallback);
+
 #if defined(_WIN32)
     {
         const SavedInputState saved = push_english_input(window_.GetNativeWindow());
@@ -168,8 +172,42 @@ Editor::Editor(GlfwWindow& window, AssetCache& assets, DemoRegistry& registry,
     switch_demo(start);
 }
 
+Editor* Editor::s_active_ = nullptr;
+
+void Editor::GlfwKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+    if (s_active_ && s_active_->prev_key_callback_)
+        s_active_->prev_key_callback_(window, key, scancode, action, mods);
+
+    if (s_active_)
+        s_active_->handle_key(key, scancode, action, mods);
+}
+
+void Editor::handle_key(int key, int /*scancode*/, int action, int mods)
+{
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+    {
+        window_.SetClose();
+        return;
+    }
+
+    // ImGui 正在吃键盘（输入框等）时不转给 demo
+    if (ImGui::GetIO().WantCaptureKeyboard)
+        return;
+
+    if (demo_)
+        demo_->on_key(key, action, mods);
+}
+
 Editor::~Editor()
 {
+    if (s_active_ == this)
+    {
+        glfwSetKeyCallback(window_.GetNativeWindow(), prev_key_callback_);
+        s_active_          = nullptr;
+        prev_key_callback_ = nullptr;
+    }
+
 #if defined(_WIN32)
     SavedInputState saved;
     saved.hkl        = static_cast<HKL>(saved_keyboard_layout_);
@@ -541,7 +579,9 @@ void Editor::draw_ui(float fps)
     ImGui::DragFloat("Fly", &camera_cfg_.fly_speed, 0.01f, 0.01f, 20.0f, "%.2f");
     ImGui::DragFloat("Zoom", &camera_cfg_.zoom_speed, 0.01f, 0.01f, 1.0f, "%.2f");
     ImGui::Separator();
-    ImGui::TextWrapped("Camera: RMB orbit (hold) + WASD/QE fly, MMB pan, Wheel zoom");
+    ImGui::TextWrapped(
+        "Camera: RMB hold + WASD/QE fly, MMB pan, Wheel zoom\n"
+        "Esc: quit");
 
     // ----- demo 专属 UI（右侧面板底部）-----
     if (demo_)

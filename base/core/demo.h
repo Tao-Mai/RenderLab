@@ -29,6 +29,11 @@ public:
 
     virtual void on_click(glm::vec2 /*world_xy*/) {}
     virtual void reset() {}
+
+    // 快捷键（GLFW_KEY_* / GLFW_PRESS|RELEASE|REPEAT / GLFW_MOD_*）。
+    // 返回 true 表示已消费，Editor 不再做默认处理。
+    // ESC 由 Editor 独占退出，不会转发到此处。
+    virtual bool on_key(int /*key*/, int /*action*/, int /*mods*/) { return false; }
 };
 
 using DemoFactory = std::function<std::unique_ptr<IDemo>(AssetCache&)>;

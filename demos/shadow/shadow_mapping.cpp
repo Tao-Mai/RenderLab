@@ -50,18 +50,20 @@ public:
         const auto dir = paths::project_root() / "demos" / "shadow";
         depth_shader_  = Shader(dir / "depth.vert.glsl", dir / "depth.frag.glsl");
         scene_shader_  = Shader(dir / "vert.glsl", dir / "frag.glsl");
-
         init_shadow_map();
     }
 
     ~ShadowMappingDemo() override { destroy_shadow_map(); }
 
-    const char* name() const override { return "shadow"; }
+    [[nodiscard]] const char* name() const override { return "shadow"; }
     Scene&      scene() override { return scene_; }
 
     [[nodiscard]] std::filesystem::path scene_config_path() const override { return scene_path_; }
 
-    void update(float) override {}
+    void update(float) override
+    {
+        
+    }
 
     void draw() override
     {
@@ -73,7 +75,6 @@ public:
         const glm::mat4 light_proj =
             glm::perspective(light_fov, 1.0f, light_near, light_far);
         const glm::mat4 light_vp = light_proj * light_view;
-
         GLint prev_vp[4] = {};
 
         glGetIntegerv(GL_VIEWPORT, prev_vp);
@@ -94,7 +95,6 @@ public:
             e.draw();
         }
         glCullFace(GL_BACK);
-
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(prev_vp[0], prev_vp[1], prev_vp[2], prev_vp[3]);
         glClearColor(scene_.clear_color_.r, scene_.clear_color_.g, scene_.clear_color_.b, 1.0f);
@@ -152,7 +152,7 @@ private:
         glTextureParameteri(depth_tex_, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTextureParameteri(depth_tex_, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
         glTextureParameteri(depth_tex_, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-        const float border[] = {1.0f, 1.0f, 1.0f, 1.0f};
+        constexpr float border[] = {1.0f, 1.0f, 1.0f, 1.0f};
         glTextureParameterfv(depth_tex_, GL_TEXTURE_BORDER_COLOR, border);
 
         glTextureParameteri(depth_tex_, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);

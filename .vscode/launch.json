@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "RenderLab",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${command:cmake.launchTargetPath}",
+      "cwd": "${workspaceFolder}",
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "D:\\tool\\mingw64\\bin;${env:VCPKG_ROOT}\\installed\\x64-mingw-dynamic\\bin;${env:PATH}"
+        }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "D:/tool/mingw64/bin/gdb.exe",
+      "externalConsole": false,
+      "stopAtEntry": false
+    }
+  ]
+}

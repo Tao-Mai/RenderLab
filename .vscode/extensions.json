@@ -1,9 +1,11 @@
 {
   "recommendations": [
-    "llvm-vs-code-extensions.vscode-clangd"
+    "llvm-vs-code-extensions.vscode-clangd",
+    "ms-vscode.cmake-tools"
   ],
   "unwantedRecommendations": [
     "ms-vscode.cpptools",
+    "ms-vscode.cpptools-extension-pack",
     "julialang.language-julia",
     "vadimcn.vscode-lldb"
   ]

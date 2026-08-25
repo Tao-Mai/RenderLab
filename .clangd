@@ -6,3 +6,10 @@ CompileFlags:
   Remove:
     - /std:c++*
     - -std:c++*
+
+CompilationDatabase: build
+
+Diagnostics:
+  # 像 CLion 一样用旁路 clang-tidy（读根目录 .clang-tidy）
+  ClangTidy:
+    FastCheckFilter: Strict

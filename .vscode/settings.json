@@ -1,16 +1,32 @@
 {
+  // 工具链在「用户 settings」里统一配；这里只留本项目差异。
+  "cmake.useCMakePresets": "always",
+  "cmake.configureOnOpen": true,
+  "cmake.buildBeforeRun": true,
+  "cmake.options.statusBarVisibility": "visible",
+  "cmake.debugConfig": {
+    "cwd": "${workspaceFolder}",
+    "environment": [
+      {
+        "name": "PATH",
+        "value": "D:\\tool\\mingw64\\bin;${env:VCPKG_ROOT}\\installed\\x64-mingw-dynamic\\bin;${env:PATH}"
+      }
+    ]
+  },
+
   "clangd.enable": true,
   "clangd.arguments": [
-    "--compile-commands-dir=${workspaceFolder}",
+    "--compile-commands-dir=${workspaceFolder}/build",
     "--background-index",
-    "--header-insertion=never"
+    "--header-insertion=never",
+    "--query-driver=D:/tool/mingw64/bin/*",
+    "--clang-tidy"
   ],
+
   "C_Cpp.intelliSenseEngine": "disabled",
   "C_Cpp.errorSquiggles": "disabled",
-  "files.associations": {
-    "*.h": "cpp",
-    "*.hpp": "cpp",
-    "*.cpp": "cpp",
-    "*.glsl": "glsl"
+
+  "[cpp]": {
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
   }
 }
