@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/asset/reflection/meta_register.h"
+#include "base/core/reflection/meta_register.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>

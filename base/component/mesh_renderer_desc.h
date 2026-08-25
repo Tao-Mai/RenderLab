@@ -14,6 +14,6 @@ struct MeshRendererDesc
     std::string albedo_texture;
 };
 
-#include "base/asset/reflection/meta_register.h"
+#include "base/core/reflection/meta_register.h"
 
 META_REGISTER(MeshRendererDesc, MeshRenderer, mesh, albedo, specular, shininess, albedo_texture);

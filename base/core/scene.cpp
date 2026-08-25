@@ -1,7 +1,7 @@
 #include "base/core/scene.h"
 
 #include "base/asset/asset_manager.h"
-#include "base/asset/reflection/component_registry.h"
+#include "base/core/reflection/component_registry.h"
 #include "base/asset/scene_asset.h"
 #include "base/component/camera.h"
 #include "base/component/dynamic_tag.h"

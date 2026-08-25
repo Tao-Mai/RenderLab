@@ -90,7 +90,7 @@ Demo 名由 **Scene 资产的 `name` 字段**决定，须与 `REGISTER_DEMO(Clas
 
 ## entt::meta + JSON
 
-`base/asset/reflection/meta_json.*`：
+`base/core/reflection/meta_json.*`：
 
 - `resolve_type(name)`：按类型名查找已注册 meta
 - `from_json(type_name, json)` → `entt::meta_any`：构造默认实例并按成员名填充

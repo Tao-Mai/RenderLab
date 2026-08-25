@@ -1,4 +1,4 @@
-#include "base/asset/reflection/component_registry.h"
+#include "base/core/reflection/component_registry.h"
 
 #include "base/component/dynamic_tag.h"
 #include "base/component/light.h"

@@ -1,7 +1,7 @@
 #include "base/core/demo.h"
 #include "base/asset/asset_id.h"
 #include "base/asset/asset_manager.h"
-#include "base/asset/reflection/register_reflection.h"
+#include "base/core/reflection/register_reflection.h"
 #include "base/io/app_config.h"
 #include "base/platform/paths.h"
 #include "base/platform/window.h"

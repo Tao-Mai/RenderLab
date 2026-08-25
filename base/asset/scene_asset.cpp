@@ -2,7 +2,7 @@
 #include "base/asset/scene_asset_json.h"
 
 #include "base/asset/json_util.h"
-#include "base/asset/reflection/meta_json.h"
+#include "base/core/reflection/meta_json.h"
 
 #include <glog/logging.h>
 #include <nlohmann/json.hpp>

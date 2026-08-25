@@ -109,7 +109,7 @@ scene_ops::tag_name(reg, e);
 
 - **Light 是挂在实体上的组件**，与 `Transform` 同级，不再使用顶层 `lights[]`
 - 组件类型名 = `entt::meta` 注册名（`meta_json::resolve_type` 按名称查找）
-- 序列化/反序列化：`base/asset/reflection/meta_json.*` 遍历 meta 成员自动读写 JSON
+- 序列化/反序列化：`base/core/reflection/meta_json.*` 遍历 meta 成员自动读写 JSON
 
 ## 反射与组件注册
 

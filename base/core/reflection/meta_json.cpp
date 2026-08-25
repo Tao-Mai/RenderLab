@@ -1,4 +1,4 @@
-#include "base/asset/reflection/meta_json.h"
+#include "base/core/reflection/meta_json.h"
 
 #include "base/asset/json_util.h"
 

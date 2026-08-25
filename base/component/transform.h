@@ -18,6 +18,6 @@ struct Transform
     }
 };
 
-#include "base/asset/reflection/meta_register.h"
+#include "base/core/reflection/meta_register.h"
 
 META_REGISTER(Transform, Transform, position, rotation, scale);

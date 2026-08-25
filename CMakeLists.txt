@@ -47,9 +47,9 @@ add_library(base STATIC
     base/asset/asset_manager.cpp
     base/asset/mesh_asset.cpp
     base/asset/scene_asset.cpp
-    base/asset/reflection/register_reflection.cpp
-    base/asset/reflection/meta_json.cpp
-    base/asset/reflection/component_registry.cpp
+    base/core/reflection/register_reflection.cpp
+    base/core/reflection/meta_json.cpp
+    base/core/reflection/component_registry.cpp
     base/core/scene.cpp
     base/core/scene_ops.cpp
     base/editor/editor.cpp
