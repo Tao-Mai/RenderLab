@@ -1,16 +1,15 @@
 #pragma once
 
+#include "base/asset/asset_id.h"
 #include "base/core/scene.h"
+#include "base/platform/paths.h"
 
-#include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include <glm/glm.hpp>
-
-class AssetCache;
 
 class IDemo
 {
@@ -20,23 +19,18 @@ public:
     [[nodiscard]] virtual const char* name() const = 0;
     [[nodiscard]] virtual Scene&      scene()      = 0;
 
-    // 关联的场景配置路径；空路径表示不可保存。
-    [[nodiscard]] virtual std::filesystem::path scene_config_path() const { return {}; }
-
     virtual void update(float dt) = 0;
     virtual void draw()           = 0;
     virtual void draw_ui()        = 0;
 
     virtual void on_click(glm::vec2 /*world_xy*/) {}
+    virtual void on_scene_loaded() {}
     virtual void reset() {}
 
-    // 快捷键（GLFW_KEY_* / GLFW_PRESS|RELEASE|REPEAT / GLFW_MOD_*）。
-    // 返回 true 表示已消费，Editor 不再做默认处理。
-    // ESC 由 Editor 独占退出，不会转发到此处。
     virtual bool on_key(int /*key*/, int /*action*/, int /*mods*/) { return false; }
 };
 
-using DemoFactory = std::function<std::unique_ptr<IDemo>(AssetCache&)>;
+using DemoFactory = std::function<std::unique_ptr<IDemo>()>;
 
 struct DemoEntry
 {
@@ -60,8 +54,8 @@ struct DemoRegistrar
 };
 
 #define REGISTER_DEMO(Class, Name)                                                                 \
-    static DemoRegistrar g_##Class##_registrar(Name, [](AssetCache& assets) -> std::unique_ptr<IDemo> { \
-        return std::make_unique<Class>(assets);                                                    \
+    static DemoRegistrar g_##Class##_registrar(Name, []() -> std::unique_ptr<IDemo> {              \
+        return std::make_unique<Class>();                                                            \
     })
 
 class DemoRegistry
@@ -82,11 +76,11 @@ public:
     [[nodiscard]] size_t             size() const { return entries_.size(); }
     [[nodiscard]] bool               empty() const { return entries_.empty(); }
 
-    std::unique_ptr<IDemo> create(const std::string& name, AssetCache& assets) const
+    std::unique_ptr<IDemo> create(const std::string& name) const
     {
         for (const auto& e : entries_)
             if (e.name == name)
-                return e.factory(assets);
+                return e.factory();
         return nullptr;
     }
 

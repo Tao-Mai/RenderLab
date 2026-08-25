@@ -1,11 +1,14 @@
 #pragma once
 
+#include "base/asset/asset_id.h"
+#include "base/asset/asset_manager.h"
 #include "base/core/demo.h"
 #include "base/io/app_config.h"
 #include "base/platform/window.h"
 #include "base/editor/id_picker.h"
 
 #include <GLFW/glfw3.h>
+#include <entt/entt.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -13,8 +16,6 @@
 #include <vector>
 
 #include <glm/glm.hpp>
-
-class AssetCache;
 
 enum class GizmoMode : uint8_t
 {
@@ -27,8 +28,7 @@ enum class GizmoMode : uint8_t
 class Editor
 {
 public:
-    Editor(GlfwWindow& window, AssetCache& assets, DemoRegistry& registry,
-           const EditorCameraConfig& camera_cfg, const std::string& initial_demo);
+    Editor(GlfwWindow& window, DemoRegistry& registry, AssetManager& assets, const AppConfig& app_cfg);
     ~Editor();
 
     Editor(const Editor&)            = delete;
@@ -48,14 +48,18 @@ private:
     void sync_camera_from_fly();
     void sync_fly_from_camera();
     bool switch_demo(int index);
+    bool load_scene_asset(AssetId scene_id);
+    void load_current_demo_scene();
 
     void handle_key(int key, int scancode, int action, int mods);
     static void GlfwKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 
     GlfwWindow&        window_;
-    AssetCache&        assets_;
     DemoRegistry&      registry_;
+    AssetManager&      assets_;
     EditorCameraConfig camera_cfg_;
+    SceneCameraConfig  scene_camera_;
+    AssetId            initial_scene_id_{kInvalidAssetId};
 
     std::unique_ptr<IDemo> demo_;
     int                    demo_index_ = 0;
@@ -63,7 +67,7 @@ private:
     std::string             demo_combo_items_;
 
     GizmoMode gizmo_mode_ = GizmoMode::Translate;
-    int       selected_index_ = -1;
+    entt::entity selected_entity_{entt::null};
 
     // free-fly camera state (first person)
     glm::vec3 camera_pos_{0.0f, 2.0f, 5.0f};

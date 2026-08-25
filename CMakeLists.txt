@@ -39,18 +39,26 @@ find_package(imguizmo CONFIG REQUIRED)
 find_package(glog CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
+find_package(EnTT CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 # ---- base/：渲染基础设施 + 编辑器壳（不含具体学习算法 / 着色模型）----
 add_library(base STATIC
-    base/core/entity.cpp
+    base/asset/asset_manager.cpp
+    base/asset/mesh_asset.cpp
+    base/asset/scene_asset.cpp
+    base/asset/reflection/register_reflection.cpp
+    base/asset/reflection/meta_json.cpp
+    base/asset/reflection/component_registry.cpp
     base/core/scene.cpp
+    base/core/scene_ops.cpp
     base/editor/editor.cpp
     base/editor/id_picker.cpp
-    base/gfx/asset_cache.cpp
     base/gfx/mesh_loader.cpp
+    base/gfx/texture.cpp
+    base/gfx/texture_loader.cpp
     base/gfx/shader.cpp
     base/io/app_config.cpp
-    base/io/scene_loader.cpp
     base/platform/paths.cpp
     base/platform/window.cpp
 )
@@ -80,6 +88,8 @@ target_link_libraries(base PUBLIC
     glog::glog
     imgui::imgui
     imguizmo::imguizmo
+    EnTT::EnTT
+    nlohmann_json::nlohmann_json
 )
 
 add_executable(RenderLab main.cpp)
@@ -109,4 +119,11 @@ endif()
 if(WIN32)
     set_target_properties(RenderLab PROPERTIES
         VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+endif()
+
+# clangd：每次 configure 后把编译数据库复制到项目根（Windows 上比符号链接可靠）
+if(CMAKE_EXPORT_COMPILE_COMMANDS)
+    file(COPY "${CMAKE_BINARY_DIR}/compile_commands.json"
+         DESTINATION "${CMAKE_SOURCE_DIR}"
+         FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 endif()

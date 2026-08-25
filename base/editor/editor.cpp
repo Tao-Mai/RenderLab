@@ -1,6 +1,7 @@
 #include "base/editor/editor.h"
 
-#include "base/io/scene_loader.h"
+#include "base/component/transform.h"
+#include "base/core/scene_ops.h"
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -130,9 +131,14 @@ void restore_input_layout(GLFWwindow* glfw_win, const SavedInputState& saved)
 #endif
 }  // namespace
 
-Editor::Editor(GlfwWindow& window, AssetCache& assets, DemoRegistry& registry,
-               const EditorCameraConfig& camera_cfg, const std::string& initial_demo) :
-    window_(window), assets_(assets), registry_(registry), camera_cfg_(camera_cfg)
+Editor::Editor(GlfwWindow& window, DemoRegistry& registry, AssetManager& assets,
+               const AppConfig& app_cfg) :
+    window_(window),
+    registry_(registry),
+    assets_(assets),
+    camera_cfg_(app_cfg.editor_camera),
+    scene_camera_(app_cfg.scene_camera),
+    initial_scene_id_(app_cfg.scene_asset_id)
 {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -166,10 +172,27 @@ Editor::Editor(GlfwWindow& window, AssetCache& assets, DemoRegistry& registry,
     for (size_t i = 0; i < registry_.size(); ++i)
         demo_names_.push_back(registry_.name_at(i));
 
-    int start = registry_.index_of(initial_demo);
-    if (start < 0)
-        start = 0;
+    int start = 0;
+    if (initial_scene_id_ != kInvalidAssetId)
+    {
+        if (const SceneAsset* scene = assets_.get_scene(initial_scene_id_))
+        {
+            const int idx = registry_.index_of(scene->name);
+            if (idx >= 0)
+                start = idx;
+            else
+                LOG(ERROR) << "No demo registered for scene '" << scene->name << "'";
+        }
+        else
+        {
+            LOG(ERROR) << "Scene asset not found: " << format_asset_id(initial_scene_id_);
+        }
+    }
     switch_demo(start);
+    if (initial_scene_id_ != kInvalidAssetId)
+        load_scene_asset(initial_scene_id_);
+    else
+        load_current_demo_scene();
 }
 
 Editor* Editor::s_active_ = nullptr;
@@ -229,19 +252,59 @@ bool Editor::switch_demo(int index)
     if (index < 0 || index >= static_cast<int>(registry_.size()))
         return false;
 
-    auto d = registry_.create(registry_.name_at(static_cast<size_t>(index)), assets_);
+    auto d = registry_.create(registry_.name_at(static_cast<size_t>(index)));
     if (!d)
     {
         LOG(ERROR) << "Failed to create demo: " << registry_.name_at(static_cast<size_t>(index));
         return false;
     }
 
-    demo_           = std::move(d);
-    demo_index_     = index;
-    selected_index_ = -1;
+    demo_            = std::move(d);
+    demo_index_      = index;
+    selected_entity_ = entt::null;
     sync_fly_from_camera();
     LOG(INFO) << "Switched to demo '" << demo_->name() << "'";
     return true;
+}
+
+bool Editor::load_scene_asset(AssetId scene_id)
+{
+    if (!demo_)
+        return false;
+
+    const SceneAsset* asset = assets_.get_scene(scene_id);
+    if (!asset)
+    {
+        LOG(ERROR) << "Scene asset not found: " << format_asset_id(scene_id);
+        return false;
+    }
+
+    if (registry_.index_of(asset->name) != demo_index_)
+    {
+        LOG(WARNING) << "Scene '" << asset->name << "' does not match current demo '"
+                     << demo_->name() << "'";
+    }
+
+    demo_->scene().instantiate(*asset, assets_, scene_camera_);
+    selected_entity_ = entt::null;
+    demo_->on_scene_loaded();
+    return true;
+}
+
+void Editor::load_current_demo_scene()
+{
+    if (!demo_)
+        return;
+
+    const SceneAsset* asset = assets_.find_scene_by_name(demo_->name());
+    if (!asset)
+    {
+        LOG(WARNING) << "No scene asset for demo '" << demo_->name() << "'";
+        demo_->on_scene_loaded();
+        return;
+    }
+
+    load_scene_asset(asset->id);
 }
 
 void Editor::sync_fly_from_camera()
@@ -397,19 +460,18 @@ void Editor::handle_click()
 
     Scene& scene = demo_->scene();
 
-    // 3D：拾取物体 + gizmo；2D：拾取物体，未命中交给 demo 的 on_click
-    if (id_picker_ && !scene.entities().empty())
+    if (id_picker_ && scene.mesh_count() > 0)
     {
-        const int hit = id_picker_->pick(scene, static_cast<int>(mx_fb),
-                                         static_cast<int>(my_fb), vp_w_fb, vp_h_fb);
-        if (hit >= 0)
+        const entt::entity hit =
+            id_picker_->pick(scene, static_cast<int>(mx_fb), static_cast<int>(my_fb), vp_w_fb, vp_h_fb);
+        if (hit != entt::null)
         {
-            selected_index_ = hit;
+            selected_entity_ = hit;
             return;
         }
     }
 
-    selected_index_ = -1;
+    selected_entity_ = entt::null;
     if (scene.is_2d())
         demo_->on_click(screen_to_world_2d(mx, my));
 }
@@ -442,10 +504,13 @@ void Editor::draw_viewport(float aspect)
     demo_->draw();
 
     Scene& scene = demo_->scene();
-    if (selected_index_ < 0 || selected_index_ >= static_cast<int>(scene.entities().size()))
+    if (selected_entity_ == entt::null || !scene.registry().valid(selected_entity_))
         return;
 
-    auto& entities = scene.entities();
+    auto& registry = scene.registry();
+    if (!registry.all_of<Transform>(selected_entity_))
+        return;
+
     const float win_w = static_cast<float>(window_.Width());
     const float win_h = static_cast<float>(window_.Height());
     const float vp_w  = win_w - panel_width_;
@@ -456,7 +521,7 @@ void Editor::draw_viewport(float aspect)
     ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
     ImGuizmo::SetRect(0.0f, 0.0f, vp_w, vp_h);
 
-    auto&       transform = entities[selected_index_].transform;
+    auto&       transform = registry.get<Transform>(selected_entity_);
     glm::mat4   model     = transform.to_model();
     const auto  view      = scene.camera().view();
     const auto  proj      = scene.camera().projection();
@@ -520,21 +585,33 @@ void Editor::draw_ui(float fps)
     if (ImGui::Combo("##demo_combo", &pending, demo_combo_items_.c_str()))
     {
         if (pending != demo_index_)
+        {
             switch_demo(pending);
+            load_current_demo_scene();
+        }
     }
 
     ImGui::Separator();
     if (demo_ && ImGui::Button("Reset Demo", ImVec2(-1, 0)))
-        demo_->reset();
-
-    if (demo_ && !demo_->scene_config_path().empty())
     {
-        if (ImGui::Button("Save Scene", ImVec2(-1, 0)))
+        load_current_demo_scene();
+        demo_->reset();
+    }
+
+    if (demo_ && ImGui::Button("Save Scene", ImVec2(-1, 0)))
+    {
+        const AssetId scene_id = demo_->scene().source_scene_id();
+        if (scene_id == kInvalidAssetId)
         {
-            if (SaveScene(demo_->scene_config_path(), demo_->scene()))
-                LOG(INFO) << "Scene saved: " << demo_->scene_config_path();
-            else
-                LOG(ERROR) << "Failed to save scene: " << demo_->scene_config_path();
+            LOG(ERROR) << "Cannot save scene: no source scene asset";
+        }
+        else if (assets_.save_scene_from_runtime(scene_id, demo_->scene()))
+        {
+            LOG(INFO) << "Scene saved: " << format_asset_id(scene_id);
+        }
+        else
+        {
+            LOG(ERROR) << "Failed to save scene: " << format_asset_id(scene_id);
         }
     }
 
@@ -551,12 +628,12 @@ void Editor::draw_ui(float fps)
 
     ImGui::Separator();
     ImGui::TextUnformatted("Inspector");
-    if (demo_ && selected_index_ >= 0 &&
-        selected_index_ < static_cast<int>(demo_->scene().entities().size()))
+    if (demo_ && selected_entity_ != entt::null &&
+        demo_->scene().registry().valid(selected_entity_))
     {
-        auto& entry = demo_->scene().entities()[selected_index_];
-        auto& t     = entry.transform;
-        ImGui::Text("Name: %s", entry.name.c_str());
+        auto& registry = demo_->scene().registry();
+        auto& t        = registry.get<Transform>(selected_entity_);
+        ImGui::Text("Name: %s", scene_ops::tag_name(registry, selected_entity_).c_str());
 
         if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
         {

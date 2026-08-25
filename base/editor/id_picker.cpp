@@ -1,7 +1,11 @@
 #include "base/editor/id_picker.h"
 
+#include "base/core/scene_ops.h"
+
 #include <glad/glad.h>
 #include <glog/logging.h>
+
+#include <entt/entt.hpp>
 
 IdPicker::IdPicker() : shader_("id_pick.vert.glsl", "id_pick.frag.glsl") {}
 
@@ -52,10 +56,10 @@ void IdPicker::ensure_size(int w, int h)
     CHECK(status == GL_FRAMEBUFFER_COMPLETE) << "IdPicker FBO incomplete: " << status;
 }
 
-int IdPicker::pick(const Scene& scene, int mx, int my, int vp_w, int vp_h)
+entt::entity IdPicker::pick(const Scene& scene, int mx, int my, int vp_w, int vp_h)
 {
     if (vp_w <= 0 || vp_h <= 0 || mx < 0 || my < 0 || mx >= vp_w || my >= vp_h)
-        return -1;
+        return entt::null;
 
     ensure_size(vp_w, vp_h);
 
@@ -80,15 +84,13 @@ int IdPicker::pick(const Scene& scene, int mx, int my, int vp_w, int vp_h)
     const glm::mat4 proj = scene.camera().projection();
 
     shader_.use();
-    const auto& entities = scene.entities();
-    for (int i = 0; i < static_cast<int>(entities.size()); ++i)
+    const auto& registry = scene.registry();
+    for (const entt::entity entity : scene_ops::mesh_entities(registry))
     {
-        if (!entities[i].has_mesh())
-            continue;
-        const glm::mat4 mvp = proj * view * entities[i].model();
+        const glm::mat4 mvp = proj * view * scene_ops::model(registry, entity);
         shader_.set("uMVP", mvp);
-        shader_.set("uEntityId", i + 1);
-        entities[i].draw();
+        shader_.set("uEntityId", static_cast<int>(entt::to_integral(entity)));
+        scene_ops::draw(registry, entity);
     }
 
     const int read_x = mx;
@@ -102,10 +104,11 @@ int IdPicker::pick(const Scene& scene, int mx, int my, int vp_w, int vp_h)
     glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prev_fbo));
     glViewport(prev_vp[0], prev_vp[1], prev_vp[2], prev_vp[3]);
 
-    if (id <= 0 || id > static_cast<int>(entities.size()))
-        return -1;
-    const int idx = id - 1;
-    if (!entities[idx].has_mesh())
-        return -1;
-    return idx;
+    if (id <= 0)
+        return entt::null;
+
+    const entt::entity entity{static_cast<entt::id_type>(id)};
+    if (!registry.valid(entity) || !scene_ops::has_mesh(registry, entity))
+        return entt::null;
+    return entity;
 }

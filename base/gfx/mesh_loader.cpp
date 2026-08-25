@@ -1,5 +1,7 @@
 #include "base/gfx/mesh_loader.h"
 
+#include "base/platform/paths.h"
+
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
@@ -7,6 +9,29 @@
 
 #include <algorithm>
 #include <limits>
+#include <string_view>
+
+Mesh LoadMesh(const std::string& key)
+{
+    constexpr std::string_view builtin_prefix = "builtin:";
+    if (key.starts_with(builtin_prefix))
+    {
+        const auto name = key.substr(builtin_prefix.size());
+        if (name == "plane")
+            return MeshFactory::createPlane(1.0f, 1.0f);
+        if (name == "cube" || name == "box")
+            return MeshFactory::createCuboid(1.0f, 1.0f, 1.0f);
+        if (name == "sphere")
+            return MeshFactory::createSphere(0.5f);
+        LOG(FATAL) << "Unknown builtin mesh: " << key;
+    }
+
+    const auto path = paths::assets_dir() / key;
+    CHECK(std::filesystem::exists(path)) << "Mesh not found: " << path;
+    auto meshes = LoadMeshes(path);
+    CHECK(!meshes.empty()) << "No meshes in: " << path;
+    return std::move(meshes.front());
+}
 
 std::vector<Mesh> LoadMeshes(const std::filesystem::path& path)
 {

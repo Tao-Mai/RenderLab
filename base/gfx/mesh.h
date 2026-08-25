@@ -1,5 +1,7 @@
 #pragma once
 
+#include "base/gfx/texture.h"
+
 #include <array>
 #include <cmath>
 #include <numbers>
@@ -26,6 +28,7 @@ struct Material
     glm::vec3 albedo{1.0f, 1.0f, 1.0f};
     glm::vec3 specular{0.5f, 0.5f, 0.5f};
     float     shininess = 32.0f;
+    TextureGPU albedo_tex;
 };
 
 class MeshFactory

@@ -3,6 +3,8 @@
 #include "base/core/scene.h"
 #include "base/gfx/shader.h"
 
+#include <entt/entt.hpp>
+
 // GPU object-id picking: render entity ids to an offscreen R32I buffer, then read back.
 class IdPicker
 {
@@ -13,7 +15,7 @@ public:
     IdPicker(const IdPicker&)            = delete;
     IdPicker& operator=(const IdPicker&) = delete;
 
-    int pick(const Scene& scene, int mx, int my, int vp_w, int vp_h);
+    entt::entity pick(const Scene& scene, int mx, int my, int vp_w, int vp_h);
 
 private:
     void ensure_size(int w, int h);

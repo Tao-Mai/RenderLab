@@ -2,19 +2,59 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "CMake: run",
+      "label": "CMake: configure",
       "type": "shell",
-      "command": "cmake --build --preset default --target RenderLab && .\\build\\RenderLab.exe",
+      "command": "cmake --preset default",
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
           "PATH": "D:\\tool\\mingw64\\bin;${env:VCPKG_ROOT}\\installed\\x64-mingw-dynamic\\bin;${env:PATH}"
         }
       },
+      "group": "build",
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared",
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "CMake: build",
+      "type": "shell",
+      "command": "cmake --build --preset default --target RenderLab",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PATH": "D:\\tool\\mingw64\\bin;${env:VCPKG_ROOT}\\installed\\x64-mingw-dynamic\\bin;${env:PATH}"
+        }
+      },
+      "dependsOn": ["CMake: configure"],
       "group": {
         "kind": "build",
         "isDefault": true
       },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true,
+        "clear": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "CMake: run",
+      "type": "shell",
+      "command": ".\\build\\RenderLab.exe",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PATH": "D:\\tool\\mingw64\\bin;${env:VCPKG_ROOT}\\installed\\x64-mingw-dynamic\\bin;${env:PATH}"
+        }
+      },
+      "dependsOn": ["CMake: build"],
+      "group": "test",
       "presentation": {
         "reveal": "always",
         "panel": "dedicated",

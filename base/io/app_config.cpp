@@ -1,5 +1,7 @@
 #include "base/io/app_config.h"
 
+#include "base/asset/asset_id.h"
+
 #include <glog/logging.h>
 #include <yaml-cpp/yaml.h>
 
@@ -30,8 +32,14 @@ AppConfig LoadAppConfig(const std::filesystem::path& path)
             cfg.window_title = window["title"].as<std::string>();
     }
 
-    if (root["demo"])
-        cfg.demo = root["demo"].as<std::string>();
+    if (root["scene"])
+    {
+        const std::string scene_text = root["scene"].as<std::string>();
+        if (const auto parsed = parse_asset_id(scene_text))
+            cfg.scene_asset_id = *parsed;
+        else
+            LOG(WARNING) << "Invalid scene asset id in app.yaml: " << scene_text;
+    }
 
     if (const auto cam = root["camera"])
     {

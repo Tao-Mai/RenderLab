@@ -9,14 +9,14 @@
 //   Pass 1 — 从光源视角把场景深度写入 Shadow Map（FBO + 深度纹理）
 //   Pass 2 — 主相机正常着色，把片元变换到光空间，与 Shadow Map 比较深浅
 //
-// 场景物体 / 灯 / 相机来自 config/scenes/shadow.yaml（不再硬编码）。
 // =============================================================================
 
 #include "base/core/demo.h"
-#include "base/gfx/asset_cache.h"
+#include "base/component/light.h"
+#include "base/component/mesh_renderer.h"
+#include "base/component/transform.h"
+#include "base/core/scene_ops.h"
 #include "base/gfx/shader.h"
-#include "base/io/app_config.h"
-#include "base/io/scene_loader.h"
 #include "base/platform/paths.h"
 
 #include <glad/glad.h>
@@ -24,29 +24,13 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
-#include <filesystem>
-
 namespace
 {
 class ShadowMappingDemo : public IDemo
 {
 public:
-    explicit ShadowMappingDemo(AssetCache& assets)
+    explicit ShadowMappingDemo()
     {
-        scene_path_ = paths::scene_config_dir() / "shadow.yaml";
-
-        const AppConfig app = LoadAppConfig(paths::config_dir() / "app.yaml");
-        LoadScene(scene_path_, scene_, assets, app.scene_camera);
-
-        for (const auto& e : scene_.entities())
-        {
-            if (e.light)
-            {
-                light_pos_ = e.light->position;
-                break;
-            }
-        }
-
         const auto dir = paths::project_root() / "demos" / "shadow";
         depth_shader_  = Shader(dir / "depth.vert.glsl", dir / "depth.frag.glsl");
         scene_shader_  = Shader(dir / "vert.glsl", dir / "frag.glsl");
@@ -58,98 +42,121 @@ public:
     [[nodiscard]] const char* name() const override { return "shadow"; }
     Scene&      scene() override { return scene_; }
 
-    [[nodiscard]] std::filesystem::path scene_config_path() const override { return scene_path_; }
+    void on_scene_loaded() override
+    {
+        for (auto entity : scene_.registry().view<Light>())
+        {
+            light_pos_ = scene_.registry().get<Light>(entity).position;
+            break;
+        }
+    }
 
     void update(float) override
     {
-        
+
     }
 
     void draw() override
     {
-        const glm::mat4 light_view =
-            glm::lookAt(light_pos_, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        constexpr float     light_fov  = glm::radians(90.0f);
-        constexpr float     light_near = 0.5f;
-        constexpr float     light_far  = 25.0f;
-        const glm::mat4 light_proj =
-            glm::perspective(light_fov, 1.0f, light_near, light_far);
-        const glm::mat4 light_vp = light_proj * light_view;
-        GLint prev_vp[4] = {};
+        // for (const auto& e : scene_.entities())
+        // {
+        //     if (e.light)
+        //     {
+        //         auto light_pos = e.light->position;
 
-        glGetIntegerv(GL_VIEWPORT, prev_vp);
+        //         const glm::mat4 light_view =
+        //         glm::lookAt(light_pos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        //         constexpr float     light_fov  = glm::radians(90.0f);
+        //         constexpr float     light_near = 0.5f;
+        //         constexpr float     light_far  = 25.0f;
+        //         const glm::mat4 light_proj =
+        //             glm::perspective(light_fov, 1.0f, light_near, light_far);
+        //         const glm::mat4 light_vp = light_proj * light_view;
+        //         GLint prev_vp[4] = {};
+        //         glGetIntegerv(GL_VIEWPORT, prev_vp);
 
-        glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
-        glViewport(0, 0, shadow_size_, shadow_size_);
-        glEnable(GL_DEPTH_TEST);
-        glClear(GL_DEPTH_BUFFER_BIT);
+        //         glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+        //         glViewport(0, 0, shadow_size_, shadow_size_);
+        //         glEnable(GL_DEPTH_TEST);
+        //         glClear(GL_DEPTH_BUFFER_BIT);
 
-        glCullFace(GL_FRONT);
+        //         glCullFace(GL_FRONT);
 
-        depth_shader_.use();
-        for (const auto& e : scene_.entities())
-        {
-            if (!e.has_mesh())
-                continue;
-            depth_shader_.set("uLightMVP", light_vp * e.model());
-            e.draw();
-        }
-        glCullFace(GL_BACK);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glViewport(prev_vp[0], prev_vp[1], prev_vp[2], prev_vp[3]);
-        glClearColor(scene_.clear_color_.r, scene_.clear_color_.g, scene_.clear_color_.b, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        //         depth_shader_.use();
+        //         for (const auto& e : scene_.entities())
+        //         {
+        //             if (!e.has_mesh())
+        //                 continue;
+        //             depth_shader_.set("uLightMVP", light_vp * e.model());
+        //             e.draw();
+        //         }
+        //     }
+        // }
+        
+        // glCullFace(GL_BACK);
+        // glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        // glViewport(prev_vp[0], prev_vp[1], prev_vp[2], prev_vp[3]);
+        // glClearColor(scene_.clear_color_.r, scene_.clear_color_.g, scene_.clear_color_.b, 1.0f);
+        // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        scene_shader_.use();
-        scene_shader_.set("view", scene_.camera().view());
-        scene_shader_.set("projection", scene_.camera().projection());
-        scene_shader_.set("uLightVP", light_vp);
-        scene_shader_.set("uAmbient", scene_.ambient_);
-        scene_shader_.set("uLightPos", light_pos_);
-        scene_shader_.set("uLightColor", glm::vec3(1.0f));
-        scene_shader_.set("uLightIntensity", 1.0f);
-        scene_shader_.set("uShadowBias", bias_);
-        scene_shader_.set("uShadowMap", 0);
+        // scene_shader_.use();
+        // scene_shader_.set("view", scene_.camera().view());
+        // scene_shader_.set("projection", scene_.camera().projection());
+        // scene_shader_.set("uLightVP", light_vp);
+        // scene_shader_.set("uAmbient", scene_.ambient_);
+        // scene_shader_.set("uLightPos", light_pos_);
+        // scene_shader_.set("uLightColor", glm::vec3(1.0f));
+        // scene_shader_.set("uLightIntensity", 1.0f);
+        // scene_shader_.set("uShadowBias", bias_);
+        // scene_shader_.set("uShadowMap", 0);
 
-        glBindTextureUnit(0, depth_tex_);
+        // glBindTextureUnit(0, depth_tex_);
 
-        for (const auto& e : scene_.entities())
-        {
-            if (!e.has_mesh())
-                continue;
-            scene_shader_.set("model", e.model());
-            scene_shader_.set("uAlbedo", e.mesh_renderer->material.albedo);
-            e.draw();
-        }
+        // for (const auto& e : scene_.entities())
+        // {
+        //     if (!e.has_mesh())
+        //         continue;
+        //     scene_shader_.set("model", e.model());
+        //     scene_shader_.set("uAlbedo", e.mesh_renderer->material.albedo);
+        //     e.draw();
+        // }
     }
 
     void draw_ui() override
     {
         ImGui::TextWrapped(
             "点光源阴影：透视投影 + 单张 2D Shadow Map（等价朝向场景的 spot）。\n"
-            "场景物体来自 config/scenes/shadow.yaml；Editor 中点「保存场景」写回位置。\n"
+            "场景物体来自 assets/scene/*.json；Editor 中点「保存场景」写回位置。\n"
             "Bias 过大阴影会漂，过小会有 acne。");
         ImGui::DragFloat("Bias", &bias_, 0.0001f, 0.0f, 0.02f, "%.4f");
-        if (ImGui::DragFloat3("Light", &light_pos_.x, 0.05f))
-        {
-            for (auto& e : scene_.entities())
-            {
-                if (!e.light)
-                    continue;
-                e.light->position    = light_pos_;
-                e.transform.position = light_pos_;
-                break;
-            }
-        }
+        // if (ImGui::DragFloat3("Light", &light_pos_.x, 0.05f))
+        // {
+        //     for (auto& e : scene_.entities())
+        //     {
+        //         if (!e.light)
+        //             continue;
+        //         e.light->position    = light_pos_;
+        //         e.transform.position = light_pos_;
+        //         break;
+        //     }
+        // }
     }
 
 private:
     void init_shadow_map()
     {
+        // 创建深度纹理
         glCreateTextures(GL_TEXTURE_2D, 1, &depth_tex_);
+
+        // 设置深度纹理的存储，GL_DEPTH_COMPONENT24 表示深度纹理的格式为 24 位深度值
+        // GL_DEPTH_COMPONENT24
         glTextureStorage2D(depth_tex_, 1, GL_DEPTH_COMPONENT24, shadow_size_, shadow_size_);
+
+        // 设置深度纹理的过滤方式，GL_LINEAR 表示线性过滤
         glTextureParameteri(depth_tex_, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTextureParameteri(depth_tex_, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+
         glTextureParameteri(depth_tex_, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
         glTextureParameteri(depth_tex_, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
         constexpr float border[] = {1.0f, 1.0f, 1.0f, 1.0f};
@@ -174,10 +181,9 @@ private:
 
     }
 
-    Scene                 scene_;
-    std::filesystem::path scene_path_;
-    Shader                depth_shader_;
-    Shader                scene_shader_;
+    Scene  scene_;
+    Shader depth_shader_;
+    Shader scene_shader_;
 
     GLuint depth_tex_   = 0;
     GLuint fbo_         = 0;

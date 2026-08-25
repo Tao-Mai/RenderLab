@@ -4,6 +4,7 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+
 struct Transform
 {
     glm::vec3 position = glm::vec3(0.0f);
@@ -16,3 +17,7 @@ struct Transform
                glm::scale(glm::mat4(1.0f), scale);
     }
 };
+
+#include "base/asset/reflection/meta_register.h"
+
+META_REGISTER(Transform, Transform, position, rotation, scale);

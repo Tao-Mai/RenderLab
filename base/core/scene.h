@@ -1,11 +1,17 @@
 #pragma once
 
-#include "base/core/entity.h"
+#include "base/asset/asset_id.h"
+#include "base/component/camera.h"
+#include "base/core/scene_ops.h"
+
+#include <entt/entt.hpp>
 
 #include <cstdint>
-#include <string>
-#include <utility>
-#include <vector>
+#include <glm/glm.hpp>
+
+class AssetManager;
+class SceneAsset;
+struct SceneCameraConfig;
 
 enum class SceneMode : uint8_t
 {
@@ -13,7 +19,6 @@ enum class SceneMode : uint8_t
     Mode2D = 1,
 };
 
-// 薄场景容器：Entity 列表。相机 / 灯 / 网格都是组件，由 Demo 自己渲染。
 class Scene
 {
 public:
@@ -25,40 +30,23 @@ public:
         sync_camera_projection();
     }
 
-    Entity& add(Entity entity)
-    {
-        if (entity.has_mesh())
-            entity.upload_gpu(entity.dynamic);
-        entities_.push_back(std::move(entity));
-        return entities_.back();
-    }
+    void clear();
 
-    Entity& add_mesh(const std::string& name, Mesh mesh, const glm::vec3& pos = {},
-                     bool dynamic = false)
-    {
-        Entity e = Entity::make_mesh(name, std::move(mesh));
-        e.transform.position = pos;
-        e.dynamic            = dynamic;
-        return add(std::move(e));
-    }
+    void instantiate(const SceneAsset& asset, AssetManager& assets,
+                     const SceneCameraConfig& app_camera);
 
-    Entity& add_light(const Light& light, const std::string& name = {})
-    {
-        Entity e;
-        e.name               = name.empty() ? ("light" + std::to_string(entities_.size())) : name;
-        e.transform.position = light.position;
-        e.light              = light;
-        return add(std::move(e));
-    }
+    bool sync_to_asset(SceneAsset& asset) const;
 
-    [[nodiscard]] const std::vector<Entity>& entities() const { return entities_; }
-    [[nodiscard]] std::vector<Entity>&       entities() { return entities_; }
+    [[nodiscard]] entt::registry&       registry() { return registry_; }
+    [[nodiscard]] const entt::registry& registry() const { return registry_; }
 
-    // 主相机：第一个带 Camera 组件的实体；没有则自动创建一个。
     [[nodiscard]] Camera&       camera();
     [[nodiscard]] const Camera& camera() const;
 
     [[nodiscard]] int mesh_count() const;
+
+    [[nodiscard]] AssetId source_scene_id() const { return source_scene_id_; }
+    void set_source_scene_id(AssetId id) { source_scene_id_ = id; }
 
     glm::vec3 clear_color_{0.0f, 0.0f, 0.0f};
     glm::vec3 ambient_{0.05f, 0.05f, 0.05f};
@@ -76,5 +64,8 @@ public:
     }
 
 private:
-    std::vector<Entity> entities_;
+    entt::entity ensure_camera_entity();
+
+    entt::registry registry_;
+    AssetId        source_scene_id_{kInvalidAssetId};
 };

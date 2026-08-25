@@ -1,15 +1,16 @@
 CompileFlags:
   Add:
-    - -std=c++23
-    - -Wno-unknown-argument
+    - -std=gnu++23
     - -Wno-unknown-warning-option
-  Remove:
-    - /std:c++*
-    - -std:c++*
+CompilationDatabase: .
 
-CompilationDatabase: build
+Index:
+  Background: Build
 
 Diagnostics:
-  # 像 CLion 一样用旁路 clang-tidy（读根目录 .clang-tidy）
-  ClangTidy:
-    FastCheckFilter: Strict
+  UnusedIncludes: Relaxed
+  MissingIncludes: Relaxed
+
+If:
+  PathMatch: .*
+  PathExclude: .*/(build|cmake-build-.*|\.git)/.*

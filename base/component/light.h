@@ -30,3 +30,9 @@ struct Light
         return l;
     }
 };
+
+#include "base/asset/reflection/meta_register.h"
+
+META_REGISTER(Light, Light, position, color, intensity, constant, linear, quadratic);
+
+                  
