@@ -1,12 +1,19 @@
 #pragma once
 
+#include "render/mesh.h"
 #include "window.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
+#include <glm/mat4x4.hpp>
 #include <vulkan/vulkan_raii.hpp>
+
+class AssetManager;
+class Scene;
 
 class Renderer
 {
@@ -18,6 +25,7 @@ class Renderer
     Renderer &operator=(const Renderer &) = delete;
 
     void initialize(Window &window);
+    void loadScene(const Scene &scene, AssetManager &assets);
     void render();
     void waitIdle();
     void shutdown() noexcept;
@@ -38,6 +46,10 @@ class Renderer
     vk::SurfaceFormatKHR             swapChainSurfaceFormat;
     vk::Extent2D                     swapChainExtent;
     std::vector<vk::raii::ImageView> swapChainImageViews;
+    vk::Format                       depthFormat = vk::Format::eUndefined;
+    vk::raii::DeviceMemory           depthImageMemory = nullptr;
+    vk::raii::Image                  depthImage = nullptr;
+    vk::raii::ImageView              depthImageView = nullptr;
     vk::raii::PipelineLayout         pipelineLayout   = nullptr;
     vk::raii::Pipeline               graphicsPipeline = nullptr;
     vk::raii::CommandPool            commandPool      = nullptr;
@@ -46,6 +58,15 @@ class Renderer
     vk::raii::Semaphore              renderFinishedSemaphore  = nullptr;
     vk::raii::Fence                  drawFence                = nullptr;
     std::vector<const char *>         requiredDeviceExtension{vk::KHRSwapchainExtensionName};
+
+    struct RenderItem
+    {
+        Mesh *mesh = nullptr;
+        glm::mat4 model{1.0f};
+    };
+    std::unordered_map<std::string, std::unique_ptr<Mesh>> meshAssets;
+    std::vector<RenderItem> renderItems;
+    glm::mat4 viewProjection{1.0f};
 
     void initVulkan();
     void createInstance();
@@ -56,8 +77,10 @@ class Renderer
     void createLogicalDevice();
     void createSwapChain();
     void createImageViews();
+    void createDepthResources();
     void createGraphicsPipeline();
     void createCommandPool();
+    void transitionDepthImageLayout();
     void createCommandBuffer();
     void recordCommandBuffer(uint32_t imageIndex);
     void transition_image_layout(
@@ -74,6 +97,8 @@ class Renderer
     static uint32_t chooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR &surfaceCapabilities);
     static vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR> &availableFormats);
     static vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR> &availablePresentModes);
+    vk::Format chooseDepthFormat() const;
+    uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
     vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR &capabilities);
     std::vector<const char *> getRequiredInstanceExtensions();
     static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(
@@ -82,4 +107,3 @@ class Renderer
         const vk::DebugUtilsMessengerCallbackDataEXT *callbackData,
         void *userData);
 };
-

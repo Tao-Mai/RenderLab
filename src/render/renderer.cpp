@@ -1,7 +1,11 @@
 #include "render/renderer.h"
+#include "asset/asset_manager.h"
 #include "render/shader.h"
+#include "render/vertex.h"
+#include "scene/scene.h"
 
 #include <algorithm>
+#include <array>
 #include <assert.h>
 #include <cstdlib>
 #include <cstring>
@@ -9,7 +13,10 @@
 #include <limits>
 #include <memory>
 #include <stdexcept>
+#include <utility>
 #include <vector>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #if defined(__INTELLISENSE__) || !defined(USE_CPP20_MODULES)
 #	include <vulkan/vulkan_raii.hpp>
@@ -25,6 +32,14 @@ constexpr bool enableValidationLayers = false;
 #else
 constexpr bool enableValidationLayers = true;
 #endif
+
+namespace
+{
+    struct PushConstants
+    {
+        glm::mat4 modelViewProjection{1.0f};
+    };
+}
 
 Renderer::~Renderer()
 {
@@ -60,6 +75,50 @@ void Renderer::render()
     drawFrame();
 }
 
+void Renderer::loadScene(const Scene &scene, AssetManager &assets)
+{
+    if (!initialized)
+    {
+        throw std::logic_error("Renderer must be initialized before loading a scene");
+    }
+
+    waitIdle();
+    renderItems.clear();
+    meshAssets.clear();
+
+    for (const SceneObject &object : scene.objects)
+    {
+        auto meshIt = meshAssets.find(object.mesh);
+        if (meshIt == meshAssets.end())
+        {
+            const MeshData &data = assets.loadMesh(object.mesh);
+            auto mesh = std::make_unique<Mesh>(
+                physicalDevice,
+                device,
+                commandPool,
+                queue,
+                data.vertices,
+                data.indices);
+            meshIt = meshAssets.emplace(object.mesh, std::move(mesh)).first;
+        }
+        renderItems.push_back({meshIt->second.get(), object.transform.matrix()});
+    }
+
+    const float aspect = static_cast<float>(swapChainExtent.width) /
+                         static_cast<float>(swapChainExtent.height);
+    glm::mat4 projection = glm::perspective(
+        glm::radians(scene.camera.fieldOfView),
+        aspect,
+        scene.camera.nearPlane,
+        scene.camera.farPlane);
+    projection[1][1] *= -1.0f;
+    const glm::mat4 view = glm::lookAt(
+        scene.camera.position,
+        scene.camera.target,
+        scene.camera.up);
+    viewProjection = projection * view;
+}
+
 void Renderer::waitIdle()
 {
     if (*device)
@@ -85,9 +144,15 @@ void Renderer::shutdown() noexcept
     renderFinishedSemaphore  = nullptr;
     presentCompleteSemaphore = nullptr;
     commandBuffer            = nullptr;
+    renderItems.clear();
+    meshAssets.clear();
     commandPool              = nullptr;
     graphicsPipeline         = nullptr;
     pipelineLayout           = nullptr;
+    depthImageView           = nullptr;
+    depthImage               = nullptr;
+    depthImageMemory         = nullptr;
+    depthFormat              = vk::Format::eUndefined;
     swapChainImageViews.clear();
     swapChainImages.clear();
     swapChain      = nullptr;
@@ -110,8 +175,10 @@ void Renderer::initVulkan()
     createLogicalDevice();
     createSwapChain();
     createImageViews();
-    createGraphicsPipeline();
     createCommandPool();
+    createDepthResources();
+    transitionDepthImageLayout();
+    createGraphicsPipeline();
     createCommandBuffer();
     createSyncObjects();
 }
@@ -395,6 +462,48 @@ void Renderer::createImageViews()
     }
 }
 
+void Renderer::createDepthResources()
+{
+    depthFormat = chooseDepthFormat();
+    const vk::ImageCreateInfo imageInfo{
+        .imageType = vk::ImageType::e2D,
+        .format = depthFormat,
+        .extent = {swapChainExtent.width, swapChainExtent.height, 1},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = vk::SampleCountFlagBits::e1,
+        .tiling = vk::ImageTiling::eOptimal,
+        .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
+        .sharingMode = vk::SharingMode::eExclusive,
+        .initialLayout = vk::ImageLayout::eUndefined,
+    };
+    depthImage = vk::raii::Image(device, imageInfo);
+
+    const vk::MemoryRequirements requirements = depthImage.getMemoryRequirements();
+    const vk::MemoryAllocateInfo allocationInfo{
+        .allocationSize = requirements.size,
+        .memoryTypeIndex = findMemoryType(
+            requirements.memoryTypeBits,
+            vk::MemoryPropertyFlagBits::eDeviceLocal),
+    };
+    depthImageMemory = vk::raii::DeviceMemory(device, allocationInfo);
+    depthImage.bindMemory(*depthImageMemory, 0);
+
+    const vk::ImageViewCreateInfo viewInfo{
+        .image = *depthImage,
+        .viewType = vk::ImageViewType::e2D,
+        .format = depthFormat,
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eDepth,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+    };
+    depthImageView = vk::raii::ImageView(device, viewInfo);
+}
+
 void Renderer::createGraphicsPipeline()
 {
     Shader shader(device, "shaders/slang.spv");
@@ -408,9 +517,18 @@ void Renderer::createGraphicsPipeline()
     vk::PipelineShaderStageCreateInfo shaderStages[] = {
         vertShaderStageInfo, fragShaderStageInfo};
 
-    vk::PipelineVertexInputStateCreateInfo   vertexInputInfo;
+    const vk::VertexInputBindingDescription binding =
+        Vertex::bindingDescription();
+    const auto attributes = Vertex::attributeDescriptions();
+    vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &binding,
+        .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes.size()),
+        .pVertexAttributeDescriptions = attributes.data(),
+    };
     vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
-        .topology = vk::PrimitiveTopology::eTriangleList};
+        .topology = vk::PrimitiveTopology::eTriangleList
+    };
     vk::PipelineViewportStateCreateInfo viewportState{.viewportCount = 1,
                                                       .scissorCount = 1};
 
@@ -420,7 +538,7 @@ void Renderer::createGraphicsPipeline()
                                                         .polygonMode =
                                                         vk::PolygonMode::eFill,
                                                         .cullMode =
-                                                        vk::CullModeFlagBits::eBack,
+                                                        vk::CullModeFlagBits::eNone,
                                                         .frontFace =
                                                         vk::FrontFace::eClockwise,
                                                         .depthBiasEnable = vk::False,
@@ -429,6 +547,14 @@ void Renderer::createGraphicsPipeline()
     vk::PipelineMultisampleStateCreateInfo multisampling{
         .rasterizationSamples = vk::SampleCountFlagBits::e1,
         .sampleShadingEnable = vk::False};
+
+    vk::PipelineDepthStencilStateCreateInfo depthStencil{
+        .depthTestEnable = vk::True,
+        .depthWriteEnable = vk::True,
+        .depthCompareOp = vk::CompareOp::eLess,
+        .depthBoundsTestEnable = vk::False,
+        .stencilTestEnable = vk::False,
+    };
 
     vk::PipelineColorBlendAttachmentState colorBlendAttachment{
         .blendEnable = vk::False,
@@ -445,8 +571,16 @@ void Renderer::createGraphicsPipeline()
         .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
         .pDynamicStates = dynamicStates.data()};
 
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{.setLayoutCount = 0,
-                                                    .pushConstantRangeCount = 0};
+    const vk::PushConstantRange pushConstantRange{
+        .stageFlags = vk::ShaderStageFlagBits::eVertex,
+        .offset = 0,
+        .size = sizeof(PushConstants),
+    };
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
+        .setLayoutCount = 0,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pushConstantRange,
+    };
     pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
 
     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo>
@@ -458,12 +592,14 @@ void Renderer::createGraphicsPipeline()
              .pViewportState = &viewportState,
              .pRasterizationState = &rasterizer,
              .pMultisampleState = &multisampling,
+             .pDepthStencilState = &depthStencil,
              .pColorBlendState = &colorBlending,
              .pDynamicState = &dynamicState,
              .layout = pipelineLayout,
              .renderPass = nullptr},
             {.colorAttachmentCount = 1,
-             .pColorAttachmentFormats = &swapChainSurfaceFormat.format}};
+             .pColorAttachmentFormats = &swapChainSurfaceFormat.format,
+             .depthAttachmentFormat = depthFormat}};
 
     graphicsPipeline = vk::raii::Pipeline(device,
                                           nullptr,
@@ -479,6 +615,52 @@ void Renderer::createCommandPool()
     commandPool = vk::raii::CommandPool(device, poolInfo);
 }
 
+void Renderer::transitionDepthImageLayout()
+{
+    const vk::CommandBufferAllocateInfo allocationInfo{
+        .commandPool = commandPool,
+        .level = vk::CommandBufferLevel::ePrimary,
+        .commandBufferCount = 1,
+    };
+    vk::raii::CommandBuffer transitionCommand =
+        std::move(vk::raii::CommandBuffers(device, allocationInfo).front());
+    transitionCommand.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+
+    const vk::ImageMemoryBarrier2 barrier{
+        .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+        .srcAccessMask = {},
+        .dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests,
+        .dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentRead |
+                         vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        .oldLayout = vk::ImageLayout::eUndefined,
+        .newLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = *depthImage,
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eDepth,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+    };
+    const vk::DependencyInfo dependencyInfo{
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers = &barrier,
+    };
+    transitionCommand.pipelineBarrier2(dependencyInfo);
+    transitionCommand.end();
+
+    const vk::CommandBuffer command = *transitionCommand;
+    const vk::SubmitInfo submitInfo{
+        .commandBufferCount = 1,
+        .pCommandBuffers = &command,
+    };
+    queue.submit(submitInfo, nullptr);
+    queue.waitIdle();
+}
+
 void Renderer::createCommandBuffer()
 {
     vk::CommandBufferAllocateInfo allocInfo{.commandPool = commandPool,
@@ -489,6 +671,7 @@ void Renderer::createCommandBuffer()
 
 void Renderer::recordCommandBuffer(uint32_t imageIndex)
 {
+    commandBuffer.reset();
     commandBuffer.begin({});
 
     // Before starting rendering, transition the swapchain image to vk::ImageLayout::eColorAttachmentOptimal
@@ -511,11 +694,20 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex)
         .loadOp = vk::AttachmentLoadOp::eClear,
         .storeOp = vk::AttachmentStoreOp::eStore,
         .clearValue = clearColor};
+    vk::ClearValue depthClear = vk::ClearDepthStencilValue(1.0f, 0);
+    vk::RenderingAttachmentInfo depthAttachmentInfo = {
+        .imageView = *depthImageView,
+        .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eDontCare,
+        .clearValue = depthClear,
+    };
     vk::RenderingInfo renderingInfo = {
         .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
         .layerCount = 1,
         .colorAttachmentCount = 1,
-        .pColorAttachments = &attachmentInfo};
+        .pColorAttachments = &attachmentInfo,
+        .pDepthAttachment = &depthAttachmentInfo};
 
     commandBuffer.beginRendering(renderingInfo);
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
@@ -527,7 +719,19 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex)
                                            0.0f,
                                            1.0f));
     commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
-    commandBuffer.draw(3, 1, 0, 0);
+    for (const RenderItem &item : renderItems)
+    {
+        const PushConstants pushConstants{
+            .modelViewProjection = viewProjection * item.model,
+        };
+        commandBuffer.pushConstants<PushConstants>(
+            *pipelineLayout,
+            vk::ShaderStageFlagBits::eVertex,
+            0,
+            pushConstants);
+        item.mesh->bind(commandBuffer);
+        commandBuffer.drawIndexed(item.mesh->indexCount(), 1, 0, 0, 0);
+    }
     commandBuffer.endRendering();
 
     // After rendering, transition the swapchain image to vk::ImageLayout::ePresentSrcKHR
@@ -677,6 +881,42 @@ vk::PresentModeKHR Renderer::chooseSwapPresentMode(
         : vk::PresentModeKHR::eFifo;
 }
 
+vk::Format Renderer::chooseDepthFormat() const
+{
+    constexpr std::array candidates = {
+        vk::Format::eD32Sfloat,
+        vk::Format::eD32SfloatS8Uint,
+        vk::Format::eD24UnormS8Uint,
+    };
+    for (const vk::Format format : candidates)
+    {
+        const vk::FormatProperties properties = physicalDevice.getFormatProperties(format);
+        if ((properties.optimalTilingFeatures &
+             vk::FormatFeatureFlagBits::eDepthStencilAttachment) != vk::FormatFeatureFlags{})
+        {
+            return format;
+        }
+    }
+    throw std::runtime_error("failed to find a supported depth format");
+}
+
+uint32_t Renderer::findMemoryType(
+    uint32_t typeFilter,
+    vk::MemoryPropertyFlags properties) const
+{
+    const vk::PhysicalDeviceMemoryProperties memoryProperties =
+        physicalDevice.getMemoryProperties();
+    for (uint32_t index = 0; index < memoryProperties.memoryTypeCount; ++index)
+    {
+        if ((typeFilter & (1u << index)) != 0 &&
+            (memoryProperties.memoryTypes[index].propertyFlags & properties) == properties)
+        {
+            return index;
+        }
+    }
+    throw std::runtime_error("failed to find a suitable Vulkan memory type");
+}
+
 vk::Extent2D Renderer::chooseSwapExtent(vk::SurfaceCapabilitiesKHR const& capabilities)
 {
     if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
@@ -719,4 +959,3 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL Renderer::debugCallback(
 
     return vk::False;
 }
-

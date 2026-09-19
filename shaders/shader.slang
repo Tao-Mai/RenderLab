@@ -1,27 +1,36 @@
+
+struct VertexInput{
+    [[vk::location(0)]]
+    float3 position : POSITION;
+
+    [[vk::location(1)]]
+    float3 normal : NORMAL;
+
+    [[vk::location(2)]]
+    float2 uv : TEXCOORD;
+};
+
 struct VertexOutput
 {
     float4 position : SV_Position;
     float3 color : COLOR0;
 };
 
-[shader("vertex")]
-VertexOutput vertMain(uint vertexIndex : SV_VertexID)
+struct PushConstants
 {
-    const float2 positions[3] = {
-        float2(0.0, -0.5),
-        float2(0.5, 0.5),
-        float2(-0.5, 0.5)
-    };
+    float4x4 modelViewProjection;
+};
 
-    const float3 colors[3] = {
-        float3(1.0, 0.0, 0.0),
-        float3(0.0, 1.0, 0.0),
-        float3(0.0, 0.0, 1.0)
-    };
+[[vk::push_constant]]
+ConstantBuffer<PushConstants> pushConstants;
 
+[shader("vertex")]
+VertexOutput vertMain(VertexInput input)
+{
     VertexOutput output;
-    output.position = float4(positions[vertexIndex], 0.0, 1.0);
-    output.color = colors[vertexIndex];
+    output.position = mul(pushConstants.modelViewProjection, float4(input.position, 1.0));
+    float3 normalColor = input.normal * 0.5 + 0.5;
+    output.color = lerp(normalColor, float3(input.uv, 1.0), 0.15);
     return output;
 }
 

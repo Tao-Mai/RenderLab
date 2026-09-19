@@ -17,7 +17,9 @@ void Engine::initialize()
     try
     {
         window.initialize(800, 600, "RenderLab");
+        scene = Scene::load(assets.path("scenes/default.scene.json"));
         renderer.initialize(window);
+        renderer.loadScene(scene, assets);
         initialized = true;
     }
     catch (...)
@@ -51,7 +53,7 @@ void Engine::mainLoop()
 void Engine::shutdown() noexcept
 {
     renderer.shutdown();
+    assets.clear();
     window.shutdown();
     initialized = false;
 }
-

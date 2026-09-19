@@ -1,6 +1,8 @@
 #pragma once
 
+#include "asset/asset_manager.h"
 #include "render/renderer.h"
+#include "scene/scene.h"
 #include "window.h"
 
 class Engine
@@ -18,9 +20,10 @@ class Engine
   private:
     bool     initialized = false;
     Window   window;
+    AssetManager assets;
+    Scene scene;
     Renderer renderer;
 
     void mainLoop();
     void shutdown() noexcept;
 };
-
