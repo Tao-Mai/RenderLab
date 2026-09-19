@@ -95,3 +95,4 @@ void Window::shutdown() noexcept
         glfwInitialized = false;
     }
 }
+

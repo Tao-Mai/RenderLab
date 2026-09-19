@@ -1,3 +1,7 @@
 
 build
 cmake-build-default
+.vscode
+scripts/
+.cache
+.idea

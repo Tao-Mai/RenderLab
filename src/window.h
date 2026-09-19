@@ -27,3 +27,4 @@ class Window
     bool        glfwInitialized = false;
     GLFWwindow *handle          = nullptr;
 };
+

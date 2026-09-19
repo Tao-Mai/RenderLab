@@ -71,7 +71,6 @@ class Renderer
     void createSyncObjects();
     void drawFrame();
 
-    [[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char> &code) const;
     static uint32_t chooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR &surfaceCapabilities);
     static vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR> &availableFormats);
     static vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR> &availablePresentModes);
@@ -82,5 +81,5 @@ class Renderer
         vk::DebugUtilsMessageTypeFlagsEXT type,
         const vk::DebugUtilsMessengerCallbackDataEXT *callbackData,
         void *userData);
-    static std::vector<char> readFile(const std::string &filename);
 };
+

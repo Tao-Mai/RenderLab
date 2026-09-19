@@ -43,15 +43,21 @@ add_custom_command(
 add_custom_target(RenderLabShaders DEPENDS "${SLANG_SHADER}")
 
 add_executable(RenderLab
-        main.cpp
-        engine.cpp
-        engine.h
-        renderer.cpp
-        renderer.h
-        window.cpp
-        window.h
+        src/main.cpp
+        src/engine.cpp
+        src/engine.h
+        src/window.cpp
+        src/window.h
+        src/render/renderer.cpp
+        src/render/renderer.h
+        src/render/shader.cpp
+        src/render/shader.h
 )
 add_dependencies(RenderLab RenderLabShaders)
+
+target_include_directories(RenderLab PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
 
 target_compile_definitions(RenderLab PRIVATE
         VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1

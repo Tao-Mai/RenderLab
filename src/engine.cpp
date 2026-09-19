@@ -54,3 +54,4 @@ void Engine::shutdown() noexcept
     window.shutdown();
     initialized = false;
 }
+

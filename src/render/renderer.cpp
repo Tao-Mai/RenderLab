@@ -1,10 +1,10 @@
-#include "renderer.h"
+#include "render/renderer.h"
+#include "render/shader.h"
 
 #include <algorithm>
 #include <assert.h>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -397,14 +397,13 @@ void Renderer::createImageViews()
 
 void Renderer::createGraphicsPipeline()
 {
-    vk::raii::ShaderModule shaderModule = createShaderModule(
-        readFile("shaders/slang.spv"));
+    Shader shader(device, "shaders/slang.spv");
 
     vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
-        .stage = vk::ShaderStageFlagBits::eVertex, .module = shaderModule,
+        .stage = vk::ShaderStageFlagBits::eVertex, .module = shader.handle(),
         .pName = "vertMain"};
     vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
-        .stage = vk::ShaderStageFlagBits::eFragment, .module = shaderModule,
+        .stage = vk::ShaderStageFlagBits::eFragment, .module = shader.handle(),
         .pName = "fragMain"};
     vk::PipelineShaderStageCreateInfo shaderStages[] = {
         vertShaderStageInfo, fragShaderStageInfo};
@@ -637,17 +636,6 @@ void Renderer::drawFrame()
     }
 }
 
-[[nodiscard]] vk::raii::ShaderModule Renderer::createShaderModule(
-    const std::vector<char>& code) const
-{
-    vk::ShaderModuleCreateInfo createInfo{.codeSize = code.size() * sizeof(char),
-                                          .pCode = reinterpret_cast<const uint32_t*>(code.
-                                              data())};
-    vk::raii::ShaderModule shaderModule{device, createInfo};
-
-    return shaderModule;
-}
-
 uint32_t Renderer::chooseSwapMinImageCount(
     vk::SurfaceCapabilitiesKHR const& surfaceCapabilities)
 {
@@ -732,16 +720,3 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL Renderer::debugCallback(
     return vk::False;
 }
 
-std::vector<char> Renderer::readFile(const std::string& filename)
-{
-    std::ifstream file(filename, std::ios::ate | std::ios::binary);
-    if (!file.is_open())
-    {
-        throw std::runtime_error("failed to open file!");
-    }
-    std::vector<char> buffer(file.tellg());
-    file.seekg(0, std::ios::beg);
-    file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-    file.close();
-    return buffer;
-}
