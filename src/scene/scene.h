@@ -1,5 +1,7 @@
 #pragma once
 
+#include "scene/point_light.h"
+
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -40,5 +42,6 @@ class Scene
     void save(const std::filesystem::path &path) const;
 
     SceneCamera camera;
+    std::vector<PointLight> pointLights;
     std::vector<SceneObject> objects;
 };

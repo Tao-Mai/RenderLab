@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="BackendCodeEditorMiscSettings">
-    <option name="/Default/Environment/Hierarchy/GeneratedFilesCacheKey/Timestamp/@EntryValue" value="5" type="long" />
+    <option name="/Default/Environment/Hierarchy/GeneratedFilesCacheKey/Timestamp/@EntryValue" value="6" type="long" />
     <option name="/Default/Housekeeping/FeatureSuggestion/FeatureSuggestionManager/DisabledSuggesters/=SwitchToGoToActionSuggester/@EntryIndexedValue" value="true" type="bool" />
     <option name="/Default/Housekeeping/GlobalSettingsUpgraded/IsUpgraded/@EntryValue" value="true" type="bool" />
     <option name="/Default/Housekeeping/OptionsDialog/SelectedPageId/@EntryValue" value="CppFormatterOtherPage" type="string" />
@@ -34,13 +34,25 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="shader">
+    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="asset">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/shaders/shader.slang" beforeDir="false" afterPath="$PROJECT_DIR$/shaders/shader.slang" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/asset/builtin_meshes.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/builtin_meshes.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/asset/gltf_loader.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/gltf_loader.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/asset/mesh_data.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/mesh_data.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/engine.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/engine.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/engine.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/mesh.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/mesh.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/mesh.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/mesh.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/renderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/renderer.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/renderer.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/renderer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/vertex.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/vertex.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/vertex.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/vertex.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/scene/scene.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/scene.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/scene/scene.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/scene.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/window.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/window.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/window.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/window.h" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -78,7 +90,8 @@
   }
 }</component>
   <component name="HighlightingSettingsPerFile">
-    <setting file="file://C:/VulkanSDK/1.4.350.0/Include/vulkan/vulkan_raii.hpp" root0="SKIP_HIGHLIGHTING" />
+    <setting file="file://C:/VulkanSDK/1.4.350.0/Include/vulkan/vulkan_enums.hpp" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://C:/VulkanSDK/1.4.350.0/Include/vulkan/vulkan_raii.hpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://C:/VulkanSDK/1.4.350.0/Include/vulkan/vulkan_structs.hpp" root0="SKIP_HIGHLIGHTING" />
   </component>
   <component name="MacroExpansionManager">
@@ -90,61 +103,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="6.162584286358428E-23" />
-      <entry key="MS500" value="4.9228076001391416E-5" />
-      <entry key="S2" value="0.13771245739805402" />
-      <entry key="S5" value="0.6845088284859656" />
-      <entry key="S10" value="1.1697156311863919" />
-      <entry key="S30" value="1.7208739005877676" />
-      <entry key="S60" value="2.291849884481652" />
-      <entry key="M2" value="4.056142954609016" />
-      <entry key="M5" value="11.86956401709569" />
-      <entry key="M10" value="27.871355759969326" />
-      <entry key="M15" value="41.771382859707565" />
-      <entry key="M30" value="67.15873266451845" />
-      <entry key="H1" value="89.39394419012804" />
-      <entry key="H2" value="117.96273647421458" />
-      <entry key="H4" value="187.52031608562226" />
-      <entry key="D1" value="551.7790592840774" />
-      <entry key="W1" value="722.2833582360497" />
+      <entry key="MS100" value="0.0" />
+      <entry key="MS500" value="0.0" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="0.0" />
+      <entry key="S10" value="6.958346069234148E-247" />
+      <entry key="S30" value="1.4036747547919623E-82" />
+      <entry key="S60" value="1.6750682587030082E-41" />
+      <entry key="M2" value="5.787650609004472E-21" />
+      <entry key="M5" value="1.2179338964366813E-8" />
+      <entry key="M10" value="1.6071317709254263E-4" />
+      <entry key="M15" value="0.004916877492286082" />
+      <entry key="M30" value="0.4549965637288142" />
+      <entry key="H1" value="7.044485595315939" />
+      <entry key="H2" value="33.03719049587527" />
+      <entry key="H4" value="99.21119181268628" />
+      <entry key="D1" value="496.9732776952246" />
+      <entry key="W1" value="713.1670758701996" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="1.0" />
-      <entry key="MS500" value="1.0000040433989845" />
-      <entry key="S2" value="1.0448421729564594" />
-      <entry key="S5" value="1.2888515216841976" />
-      <entry key="S10" value="1.5374490875275515" />
-      <entry key="S30" value="1.813046434556644" />
-      <entry key="S60" value="1.9071908710934597" />
-      <entry key="M2" value="2.148645310932985" />
-      <entry key="M5" value="4.251192354877339" />
-      <entry key="M10" value="9.03355555712481" />
-      <entry key="M15" value="13.170450122955435" />
-      <entry key="M30" value="20.794104534063777" />
-      <entry key="H1" value="27.742397343701633" />
-      <entry key="H2" value="36.69051545797609" />
-      <entry key="H4" value="49.81165221089036" />
-      <entry key="D1" value="81.91606353288573" />
-      <entry key="W1" value="92.88771326819979" />
+      <entry key="MS500" value="1.0" />
+      <entry key="S2" value="1.0" />
+      <entry key="S5" value="1.0" />
+      <entry key="S10" value="1.0" />
+      <entry key="S30" value="1.0" />
+      <entry key="S60" value="1.0" />
+      <entry key="M2" value="1.0" />
+      <entry key="M5" value="1.0000000058107947" />
+      <entry key="M10" value="1.0000777326773036" />
+      <entry key="M15" value="1.0021965497418588" />
+      <entry key="M30" value="1.1568168875142" />
+      <entry key="H1" value="3.2637839922210086" />
+      <entry key="H2" value="11.446660306124942" />
+      <entry key="H4" value="27.669205768456372" />
+      <entry key="D1" value="75.43793683038385" />
+      <entry key="W1" value="93.45116716428626" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="3.7687036255048163E-22" />
-      <entry key="MS500" value="7.185704606447327E-5" />
-      <entry key="S2" value="0.22548498581831244" />
-      <entry key="S5" value="1.247548694441737" />
-      <entry key="S10" value="2.2282106082656443" />
-      <entry key="S30" value="3.3268795183723556" />
-      <entry key="S60" value="4.026123290034356" />
-      <entry key="M2" value="5.999066528970289" />
-      <entry key="M5" value="15.926078834417204" />
-      <entry key="M10" value="36.75131603355461" />
-      <entry key="M15" value="54.814232081185494" />
-      <entry key="M30" value="87.86809337365773" />
-      <entry key="H1" value="117.0850383238875" />
-      <entry key="H2" value="154.62198282914312" />
-      <entry key="H4" value="237.31206703735097" />
-      <entry key="D1" value="633.689823047187" />
-      <entry key="W1" value="815.1702077942367" />
+      <entry key="MS100" value="0.014278616409834377" />
+      <entry key="MS500" value="0.4275010889459864" />
+      <entry key="S2" value="0.8086010600218005" />
+      <entry key="S5" value="0.9185307978124196" />
+      <entry key="S10" value="0.9584001240674063" />
+      <entry key="S30" value="0.9859365203957252" />
+      <entry key="S60" value="0.9929433621288403" />
+      <entry key="M2" value="0.9964654344877399" />
+      <entry key="M5" value="0.9985846897168682" />
+      <entry key="M10" value="0.9995301365634411" />
+      <entry key="M15" value="1.006631799522268" />
+      <entry key="M30" value="1.6110435708088033" />
+      <entry key="H1" value="10.30418246602196" />
+      <entry key="H2" value="44.47509554449047" />
+      <entry key="H4" value="126.86984861938825" />
+      <entry key="D1" value="572.4064233388176" />
+      <entry key="W1" value="806.6173872238649" />
     </decayedShown>
   </component>
   <component name="ProjectApplicationVersion">
@@ -308,7 +321,8 @@
     <MESSAGE value="Clear" />
     <MESSAGE value="window" />
     <MESSAGE value="shader" />
-    <option name="LAST_COMMIT_MESSAGE" value="shader" />
+    <MESSAGE value="asset" />
+    <option name="LAST_COMMIT_MESSAGE" value="asset" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

@@ -1,5 +1,6 @@
 #include "engine.h"
 
+#include <chrono>
 #include <stdexcept>
 
 Engine::~Engine()
@@ -17,7 +18,9 @@ void Engine::initialize()
     try
     {
         window.initialize(800, 600, "RenderLab");
+        inputMethod.activateEnglish();
         scene = Scene::load(assets.path("scenes/default.scene.json"));
+        camera.configure(scene.camera);
         renderer.initialize(window);
         renderer.loadScene(scene, assets);
         initialized = true;
@@ -41,10 +44,17 @@ void Engine::run()
 
 void Engine::mainLoop()
 {
+    auto previousTime = std::chrono::steady_clock::now();
     while (!window.shouldClose())
     {
         window.pollEvents();
-        renderer.render();
+        const auto currentTime = std::chrono::steady_clock::now();
+        const float deltaTime = std::chrono::duration<float>(
+            currentTime - previousTime).count();
+        previousTime = currentTime;
+
+        camera.update(window, deltaTime);
+        renderer.render(camera);
     }
 
     renderer.waitIdle();
@@ -54,6 +64,7 @@ void Engine::shutdown() noexcept
 {
     renderer.shutdown();
     assets.clear();
+    inputMethod.restore();
     window.shutdown();
     initialized = false;
 }

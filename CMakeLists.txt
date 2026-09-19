@@ -48,6 +48,8 @@ add_custom_target(RenderLabShaders DEPENDS "${SLANG_SHADER}")
 
 add_executable(RenderLab
         src/main.cpp
+        src/camera.cpp
+        src/camera.h
         src/engine.cpp
         src/engine.h
         src/window.cpp
@@ -59,18 +61,25 @@ add_executable(RenderLab
         src/asset/gltf_loader.cpp
         src/asset/gltf_loader.h
         src/asset/mesh_data.h
+        src/platform/input_method.cpp
+        src/platform/input_method.h
         src/render/renderer.cpp
         src/render/renderer.h
         src/render/buffer.cpp
         src/render/buffer.h
         src/render/mesh.cpp
         src/render/mesh.h
+        src/render/material.cpp
+        src/render/material.h
+        src/render/texture.cpp
+        src/render/texture.h
         src/render/shader.cpp
         src/render/shader.h
         src/render/vertex.cpp
         src/render/vertex.h
         src/scene/scene.cpp
         src/scene/scene.h
+        src/scene/point_light.h
 )
 add_dependencies(RenderLab RenderLabShaders)
 

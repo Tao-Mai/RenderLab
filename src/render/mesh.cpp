@@ -9,26 +9,45 @@ Mesh::Mesh(
     const vk::raii::Device &device,
     const vk::raii::CommandPool &commandPool,
     vk::raii::Queue &queue,
-    std::vector<Vertex> vertices,
-    std::vector<uint32_t> indices) :
-    vertices(std::move(vertices)),
-    indices(std::move(indices))
+    MeshData meshData) :
+    data(std::move(meshData))
 {
-    if (this->vertices.empty() || this->indices.empty())
+    if (data.vertices.empty() || data.indices.empty())
     {
         throw std::invalid_argument("mesh requires vertices and indices");
     }
 
-    for (const uint32_t index : this->indices)
+    for (const uint32_t index : data.indices)
     {
-        if (index >= this->vertices.size())
+        if (index >= data.vertices.size())
         {
             throw std::out_of_range("mesh index references a missing vertex");
         }
     }
 
+    if (data.materials.empty())
+    {
+        data.materials.emplace_back();
+    }
+    if (data.submeshes.empty())
+    {
+        data.submeshes.push_back({
+            .firstIndex = 0,
+            .indexCount = static_cast<uint32_t>(data.indices.size()),
+            .materialIndex = 0,
+        });
+    }
+    for (const SubmeshData &submesh : data.submeshes)
+    {
+        if (submesh.firstIndex + submesh.indexCount > data.indices.size() ||
+            submesh.materialIndex >= data.materials.size())
+        {
+            throw std::out_of_range("mesh submesh range or material is invalid");
+        }
+    }
+
     const vk::DeviceSize vertexBytes =
-        sizeof(Vertex) * this->vertices.size();
+        sizeof(Vertex) * data.vertices.size();
     Buffer vertexStaging(
         physicalDevice,
         device,
@@ -36,7 +55,7 @@ Mesh::Mesh(
         vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eHostVisible |
         vk::MemoryPropertyFlagBits::eHostCoherent);
-    vertexStaging.upload(this->vertices.data(), vertexBytes);
+    vertexStaging.upload(data.vertices.data(), vertexBytes);
 
     vertexBuffer = Buffer(
         physicalDevice,
@@ -48,7 +67,7 @@ Mesh::Mesh(
     copyBuffer(device, commandPool, queue, vertexStaging, vertexBuffer);
 
     const vk::DeviceSize indexBytes =
-        sizeof(uint32_t) * this->indices.size();
+        sizeof(uint32_t) * data.indices.size();
     Buffer indexStaging(
         physicalDevice,
         device,
@@ -56,7 +75,7 @@ Mesh::Mesh(
         vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eHostVisible |
         vk::MemoryPropertyFlagBits::eHostCoherent);
-    indexStaging.upload(this->indices.data(), indexBytes);
+    indexStaging.upload(data.indices.data(), indexBytes);
 
     indexBuffer = Buffer(
         physicalDevice,
@@ -78,7 +97,22 @@ void Mesh::bind(vk::raii::CommandBuffer &commandBuffer) const
 
 uint32_t Mesh::indexCount() const
 {
-    return static_cast<uint32_t>(indices.size());
+    return static_cast<uint32_t>(data.indices.size());
+}
+
+const std::vector<SubmeshData> &Mesh::submeshes() const
+{
+    return data.submeshes;
+}
+
+const Material &Mesh::material(uint32_t index) const
+{
+    return data.materials.at(index);
+}
+
+std::vector<Material> &Mesh::materials()
+{
+    return data.materials;
 }
 
 void Mesh::copyBuffer(

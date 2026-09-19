@@ -56,6 +56,33 @@ Scene Scene::load(const std::filesystem::path &path)
         scene.camera.farPlane = camera->value("farPlane", scene.camera.farPlane);
     }
 
+    if (const auto pointLights = json.find("pointLights");
+        pointLights != json.end() && pointLights->is_array())
+    {
+        for (const auto &lightJson : *pointLights)
+        {
+            PointLight light;
+            light.name = lightJson.value("name", light.name);
+            light.position = readVec3(
+                lightJson.value("position", nlohmann::json{}), light.position);
+            light.color = readVec3(
+                lightJson.value("color", nlohmann::json{}), light.color);
+            light.intensity = lightJson.value("intensity", light.intensity);
+            light.range = lightJson.value("range", light.range);
+            light.enabled = lightJson.value("enabled", light.enabled);
+
+            if (light.intensity < 0.0f)
+            {
+                throw std::runtime_error("point light intensity cannot be negative");
+            }
+            if (light.range <= 0.0f)
+            {
+                throw std::runtime_error("point light range must be greater than zero");
+            }
+            scene.pointLights.push_back(std::move(light));
+        }
+    }
+
     for (const auto &objectJson : json.at("objects"))
     {
         SceneObject object;
@@ -88,8 +115,21 @@ void Scene::save(const std::filesystem::path &path) const
             {"nearPlane", camera.nearPlane},
             {"farPlane", camera.farPlane},
         }},
+        {"pointLights", nlohmann::json::array()},
         {"objects", nlohmann::json::array()},
     };
+
+    for (const PointLight &light : pointLights)
+    {
+        json["pointLights"].push_back({
+            {"name", light.name},
+            {"position", writeVec3(light.position)},
+            {"color", writeVec3(light.color)},
+            {"intensity", light.intensity},
+            {"range", light.range},
+            {"enabled", light.enabled},
+        });
+    }
 
     for (const SceneObject &object : objects)
     {

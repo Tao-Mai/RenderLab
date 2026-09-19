@@ -1,6 +1,8 @@
 #include "render/renderer.h"
 #include "asset/asset_manager.h"
+#include "camera.h"
 #include "render/shader.h"
+#include "render/texture.h"
 #include "render/vertex.h"
 #include "scene/scene.h"
 
@@ -9,6 +11,7 @@
 #include <assert.h>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -37,8 +40,19 @@ namespace
 {
     struct PushConstants
     {
-        glm::mat4 modelViewProjection{1.0f};
+        glm::mat4 model{1.0f};
+        glm::vec4 albedo{1.0f};
     };
+
+    struct SceneUniforms
+    {
+        glm::mat4 viewProjection{1.0f};
+        glm::vec4 pointLightPositionRange{0.0f, 0.0f, 0.0f, 1.0f};
+        glm::vec4 pointLightColorIntensity{1.0f, 1.0f, 1.0f, 0.0f};
+        glm::uvec4 pointLightFlags{0u};
+    };
+
+    static_assert(sizeof(SceneUniforms) == 112);
 }
 
 Renderer::~Renderer()
@@ -65,13 +79,31 @@ void Renderer::initialize(Window& targetWindow)
     }
 }
 
-void Renderer::render()
+void Renderer::render(const Camera &camera)
 {
     if (!initialized)
     {
         throw std::logic_error("Renderer must be initialized before render()");
     }
 
+    const float aspect = static_cast<float>(swapChainExtent.width) /
+                         static_cast<float>(swapChainExtent.height);
+    viewProjection = camera.projectionMatrix(aspect) * camera.viewMatrix();
+
+    SceneUniforms sceneUniforms{.viewProjection = viewProjection};
+    if (pointLight.has_value())
+    {
+        sceneUniforms.pointLightPositionRange = {
+            pointLight->position,
+            pointLight->range,
+        };
+        sceneUniforms.pointLightColorIntensity = {
+            pointLight->color,
+            pointLight->intensity,
+        };
+        sceneUniforms.pointLightFlags.x = pointLight->enabled ? 1u : 0u;
+    }
+    sceneUniformBuffer.upload(&sceneUniforms, sizeof(sceneUniforms));
     drawFrame();
 }
 
@@ -85,6 +117,12 @@ void Renderer::loadScene(const Scene &scene, AssetManager &assets)
     waitIdle();
     renderItems.clear();
     meshAssets.clear();
+    pointLight.reset();
+
+    if (!scene.pointLights.empty())
+    {
+        pointLight = scene.pointLights.front();
+    }
 
     for (const SceneObject &object : scene.objects)
     {
@@ -97,26 +135,13 @@ void Renderer::loadScene(const Scene &scene, AssetManager &assets)
                 device,
                 commandPool,
                 queue,
-                data.vertices,
-                data.indices);
+                data);
+            initializeMaterials(*mesh);
             meshIt = meshAssets.emplace(object.mesh, std::move(mesh)).first;
         }
         renderItems.push_back({meshIt->second.get(), object.transform.matrix()});
     }
 
-    const float aspect = static_cast<float>(swapChainExtent.width) /
-                         static_cast<float>(swapChainExtent.height);
-    glm::mat4 projection = glm::perspective(
-        glm::radians(scene.camera.fieldOfView),
-        aspect,
-        scene.camera.nearPlane,
-        scene.camera.farPlane);
-    projection[1][1] *= -1.0f;
-    const glm::mat4 view = glm::lookAt(
-        scene.camera.position,
-        scene.camera.target,
-        scene.camera.up);
-    viewProjection = projection * view;
 }
 
 void Renderer::waitIdle()
@@ -146,9 +171,17 @@ void Renderer::shutdown() noexcept
     commandBuffer            = nullptr;
     renderItems.clear();
     meshAssets.clear();
-    commandPool              = nullptr;
+    pointLight.reset();
     graphicsPipeline         = nullptr;
     pipelineLayout           = nullptr;
+    sceneDescriptorSet       = nullptr;
+    descriptorPool           = nullptr;
+    sceneUniformBuffer.reset();
+    textureAssets.clear();
+    defaultAlbedoTexture.reset();
+    sceneSetLayout           = nullptr;
+    materialSetLayout        = nullptr;
+    commandPool              = nullptr;
     depthImageView           = nullptr;
     depthImage               = nullptr;
     depthImageMemory         = nullptr;
@@ -178,6 +211,7 @@ void Renderer::initVulkan()
     createCommandPool();
     createDepthResources();
     transitionDepthImageLayout();
+    createDescriptorResources();
     createGraphicsPipeline();
     createCommandBuffer();
     createSyncObjects();
@@ -504,6 +538,102 @@ void Renderer::createDepthResources()
     depthImageView = vk::raii::ImageView(device, viewInfo);
 }
 
+void Renderer::createDescriptorResources()
+{
+    const std::array bindings = {
+        vk::DescriptorSetLayoutBinding{
+            .binding = 0,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding = 1,
+            .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment,
+        },
+    };
+    const vk::DescriptorSetLayoutCreateInfo layoutInfo{
+        .bindingCount = static_cast<uint32_t>(bindings.size()),
+        .pBindings = bindings.data(),
+    };
+    materialSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
+
+    const vk::DescriptorSetLayoutBinding sceneBinding{
+        .binding = 0,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
+        .descriptorCount = 1,
+        .stageFlags = vk::ShaderStageFlagBits::eVertex |
+                      vk::ShaderStageFlagBits::eFragment,
+    };
+    const vk::DescriptorSetLayoutCreateInfo sceneLayoutInfo{
+        .bindingCount = 1,
+        .pBindings = &sceneBinding,
+    };
+    sceneSetLayout = vk::raii::DescriptorSetLayout(device, sceneLayoutInfo);
+
+    const std::array poolSizes = {
+        vk::DescriptorPoolSize{
+            .type = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1024,
+        },
+        vk::DescriptorPoolSize{
+            .type = vk::DescriptorType::eSampler,
+            .descriptorCount = 1024,
+        },
+        vk::DescriptorPoolSize{
+            .type = vk::DescriptorType::eUniformBuffer,
+            .descriptorCount = 1,
+        },
+    };
+    const vk::DescriptorPoolCreateInfo poolInfo{
+        .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+        .maxSets = 1025,
+        .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
+        .pPoolSizes = poolSizes.data(),
+    };
+    descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
+
+    sceneUniformBuffer = Buffer(
+        physicalDevice,
+        device,
+        sizeof(SceneUniforms),
+        vk::BufferUsageFlagBits::eUniformBuffer,
+        vk::MemoryPropertyFlagBits::eHostVisible |
+        vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    const vk::DescriptorSetLayout sceneLayout = *sceneSetLayout;
+    const vk::DescriptorSetAllocateInfo sceneAllocationInfo{
+        .descriptorPool = *descriptorPool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &sceneLayout,
+    };
+    sceneDescriptorSet = std::move(
+        vk::raii::DescriptorSets(device, sceneAllocationInfo).front());
+
+    const vk::DescriptorBufferInfo sceneBufferInfo{
+        .buffer = sceneUniformBuffer.handle(),
+        .offset = 0,
+        .range = sceneUniformBuffer.size(),
+    };
+    const vk::WriteDescriptorSet sceneWrite{
+        .dstSet = *sceneDescriptorSet,
+        .dstBinding = 0,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
+        .pBufferInfo = &sceneBufferInfo,
+    };
+    device.updateDescriptorSets(sceneWrite, {});
+
+    defaultAlbedoTexture = std::make_shared<Texture>(
+        physicalDevice,
+        device,
+        commandPool,
+        queue,
+        std::array<uint8_t, 4>{255, 255, 255, 255});
+}
+
 void Renderer::createGraphicsPipeline()
 {
     Shader shader(device, "shaders/slang.spv");
@@ -519,7 +649,7 @@ void Renderer::createGraphicsPipeline()
 
     const vk::VertexInputBindingDescription binding =
         Vertex::bindingDescription();
-    const auto attributes = Vertex::attributeDescriptions();
+    const auto attributes = Vertex::positionUvAttributeDescriptions();
     vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &binding,
@@ -572,12 +702,18 @@ void Renderer::createGraphicsPipeline()
         .pDynamicStates = dynamicStates.data()};
 
     const vk::PushConstantRange pushConstantRange{
-        .stageFlags = vk::ShaderStageFlagBits::eVertex,
+        .stageFlags = vk::ShaderStageFlagBits::eVertex |
+                      vk::ShaderStageFlagBits::eFragment,
         .offset = 0,
         .size = sizeof(PushConstants),
     };
+    const std::array descriptorSetLayouts = {
+        *materialSetLayout,
+        *sceneSetLayout,
+    };
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
-        .setLayoutCount = 0,
+        .setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size()),
+        .pSetLayouts = descriptorSetLayouts.data(),
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &pushConstantRange,
     };
@@ -711,6 +847,13 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex)
 
     commandBuffer.beginRendering(renderingInfo);
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
+    const std::array sceneDescriptorSets = {*sceneDescriptorSet};
+    commandBuffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        *pipelineLayout,
+        1,
+        sceneDescriptorSets,
+        {});
     commandBuffer.setViewport(0,
                               vk::Viewport(0.0f,
                                            0.0f,
@@ -721,16 +864,28 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex)
     commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
     for (const RenderItem &item : renderItems)
     {
-        const PushConstants pushConstants{
-            .modelViewProjection = viewProjection * item.model,
-        };
-        commandBuffer.pushConstants<PushConstants>(
-            *pipelineLayout,
-            vk::ShaderStageFlagBits::eVertex,
-            0,
-            pushConstants);
         item.mesh->bind(commandBuffer);
-        commandBuffer.drawIndexed(item.mesh->indexCount(), 1, 0, 0, 0);
+        for (const SubmeshData &submesh : item.mesh->submeshes())
+        {
+            const Material &material = item.mesh->material(submesh.materialIndex);
+            const PushConstants pushConstants{
+                .model = item.model,
+                .albedo = material.albedo,
+            };
+            commandBuffer.pushConstants<PushConstants>(
+                *pipelineLayout,
+                vk::ShaderStageFlagBits::eVertex |
+                vk::ShaderStageFlagBits::eFragment,
+                0,
+                pushConstants);
+            material.bind(commandBuffer, *pipelineLayout);
+            commandBuffer.drawIndexed(
+                submesh.indexCount,
+                1,
+                submesh.firstIndex,
+                0,
+                0);
+        }
     }
     commandBuffer.endRendering();
 
@@ -748,6 +903,42 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex)
         vk::PipelineStageFlagBits2::eBottomOfPipe // dstStage
         );
     commandBuffer.end();
+}
+
+void Renderer::initializeMaterials(Mesh &mesh)
+{
+    for (Material &material : mesh.materials())
+    {
+        std::shared_ptr<Texture> texture = material.hasAlbedoMap()
+            ? loadTexture(material.albedoMap)
+            : defaultAlbedoTexture;
+        material.createDescriptorSet(
+            device,
+            *descriptorPool,
+            *materialSetLayout,
+            std::move(texture));
+    }
+}
+
+std::shared_ptr<Texture> Renderer::loadTexture(const std::string &path)
+{
+    if (path.empty() || path.starts_with("data:") || path.starts_with("embedded:"))
+    {
+        return defaultAlbedoTexture;
+    }
+    if (const auto cached = textureAssets.find(path); cached != textureAssets.end())
+    {
+        return cached->second;
+    }
+
+    auto texture = std::make_shared<Texture>(
+        physicalDevice,
+        device,
+        commandPool,
+        queue,
+        std::filesystem::path(path));
+    textureAssets.emplace(path, texture);
+    return texture;
 }
 
 void Renderer::transition_image_layout(

@@ -20,6 +20,88 @@
 
 namespace
 {
+    std::string texturePath(
+        const tinygltf::Model &model,
+        int textureIndex,
+        const std::filesystem::path &modelDirectory)
+    {
+        if (textureIndex < 0 || textureIndex >= model.textures.size())
+        {
+            return {};
+        }
+        const int imageIndex = model.textures[textureIndex].source;
+        if (imageIndex < 0 || imageIndex >= model.images.size())
+        {
+            return {};
+        }
+
+        const tinygltf::Image &image = model.images[imageIndex];
+        if (image.uri.empty())
+        {
+            return "embedded://image/" + std::to_string(imageIndex);
+        }
+        if (image.uri.starts_with("data:"))
+        {
+            return image.uri;
+        }
+        return (modelDirectory / image.uri).lexically_normal().string();
+    }
+
+    void loadMaterials(
+        MeshData &result,
+        const tinygltf::Model &model,
+        const std::filesystem::path &modelDirectory)
+    {
+        result.materials.reserve(model.materials.size() + 1);
+        for (size_t index = 0; index < model.materials.size(); ++index)
+        {
+            const tinygltf::Material &source = model.materials[index];
+            Material material;
+            material.name = source.name.empty()
+                ? "Material " + std::to_string(index)
+                : source.name;
+
+            const auto &pbr = source.pbrMetallicRoughness;
+            if (pbr.baseColorFactor.size() == 4)
+            {
+                material.albedo = {
+                    static_cast<float>(pbr.baseColorFactor[0]),
+                    static_cast<float>(pbr.baseColorFactor[1]),
+                    static_cast<float>(pbr.baseColorFactor[2]),
+                    static_cast<float>(pbr.baseColorFactor[3]),
+                };
+            }
+            material.metallic = static_cast<float>(pbr.metallicFactor);
+            material.roughness = static_cast<float>(pbr.roughnessFactor);
+            if (source.emissiveFactor.size() == 3)
+            {
+                material.emissive = {
+                    static_cast<float>(source.emissiveFactor[0]),
+                    static_cast<float>(source.emissiveFactor[1]),
+                    static_cast<float>(source.emissiveFactor[2]),
+                };
+            }
+            material.ao = static_cast<float>(source.occlusionTexture.strength);
+            material.normalScale = static_cast<float>(source.normalTexture.scale);
+            material.albedoMap = texturePath(
+                model, pbr.baseColorTexture.index, modelDirectory);
+            material.normalMap = texturePath(
+                model, source.normalTexture.index, modelDirectory);
+            const std::string metallicRoughnessMap = texturePath(
+                model, pbr.metallicRoughnessTexture.index, modelDirectory);
+            material.metallicMap = metallicRoughnessMap;
+            material.roughnessMap = metallicRoughnessMap;
+            material.aoMap = texturePath(
+                model, source.occlusionTexture.index, modelDirectory);
+            material.emissiveMap = texturePath(
+                model, source.emissiveTexture.index, modelDirectory);
+            material.alphaMode = source.alphaMode;
+            material.alphaCutoff = static_cast<float>(source.alphaCutoff);
+            material.doubleSided = source.doubleSided;
+            result.materials.push_back(std::move(material));
+        }
+    }
+
     const unsigned char *accessorData(
         const tinygltf::Model &model,
         const tinygltf::Accessor &accessor,
@@ -193,6 +275,7 @@ namespace
         }
 
         const uint32_t firstVertex = static_cast<uint32_t>(result.vertices.size());
+        const uint32_t firstIndex = static_cast<uint32_t>(result.indices.size());
         const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
         result.vertices.reserve(result.vertices.size() + positions.count);
         for (size_t index = 0; index < positions.count; ++index)
@@ -229,6 +312,17 @@ namespace
                 result.indices.push_back(firstVertex + index);
             }
         }
+
+        uint32_t materialIndex = 0;
+        if (primitive.material >= 0 && primitive.material < model.materials.size())
+        {
+            materialIndex = static_cast<uint32_t>(primitive.material) + 1;
+        }
+        result.submeshes.push_back({
+            .firstIndex = firstIndex,
+            .indexCount = static_cast<uint32_t>(result.indices.size()) - firstIndex,
+            .materialIndex = materialIndex,
+        });
     }
 
     void appendMesh(
@@ -268,6 +362,7 @@ MeshData GLTFLoader::load(const std::filesystem::path &path)
     }
 
     MeshData result;
+    loadMaterials(result, model, path.parent_path());
     std::function<void(int, const glm::mat4 &)> visitNode;
     visitNode = [&](int nodeIndex, const glm::mat4 &parentTransform)
     {

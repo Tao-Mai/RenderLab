@@ -34,3 +34,10 @@ std::array<vk::VertexInputAttributeDescription, 3> Vertex::attributeDescriptions
         }
     };
 }
+
+std::array<vk::VertexInputAttributeDescription, 2>
+Vertex::positionUvAttributeDescriptions()
+{
+    const auto attributes = attributeDescriptions();
+    return {attributes[0], attributes[2]};
+}

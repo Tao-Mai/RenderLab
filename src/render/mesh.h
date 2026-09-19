@@ -1,7 +1,7 @@
 #pragma once
 
+#include "asset/mesh_data.h"
 #include "render/buffer.h"
-#include "render/vertex.h"
 
 #include <cstdint>
 #include <vector>
@@ -16,8 +16,7 @@ class Mesh
         const vk::raii::Device &device,
         const vk::raii::CommandPool &commandPool,
         vk::raii::Queue &queue,
-        std::vector<Vertex> vertices,
-        std::vector<uint32_t> indices);
+        MeshData meshData);
 
     Mesh(const Mesh &)            = delete;
     Mesh &operator=(const Mesh &) = delete;
@@ -26,10 +25,12 @@ class Mesh
 
     void bind(vk::raii::CommandBuffer &commandBuffer) const;
     [[nodiscard]] uint32_t indexCount() const;
+    [[nodiscard]] const std::vector<SubmeshData> &submeshes() const;
+    [[nodiscard]] const Material &material(uint32_t index) const;
+    [[nodiscard]] std::vector<Material> &materials();
 
   private:
-    std::vector<Vertex>   vertices;
-    std::vector<uint32_t> indices;
+    MeshData              data;
     Buffer                vertexBuffer;
     Buffer                indexBuffer;
 

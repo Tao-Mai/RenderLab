@@ -47,6 +47,15 @@ MeshData BuiltinMeshes::cube()
             {-h, h, h}, {h, h, h}, {h, h, -h}, {-h, h, -h});
     addFace(mesh, {0.0f, -1.0f, 0.0f},
             {-h, -h, -h}, {h, -h, -h}, {h, -h, h}, {-h, -h, h});
+    mesh.materials[0].name = "Builtin Cube";
+    mesh.materials[0].albedo = {0.85f, 0.45f, 0.2f, 1.0f};
+    mesh.materials[0].metallic = 0.0f;
+    mesh.materials[0].roughness = 0.65f;
+    mesh.submeshes.push_back({
+        .firstIndex = 0,
+        .indexCount = static_cast<uint32_t>(mesh.indices.size()),
+        .materialIndex = 0,
+    });
     return mesh;
 }
 
@@ -96,5 +105,14 @@ MeshData BuiltinMeshes::sphere(uint32_t segments, uint32_t rings)
             });
         }
     }
+    mesh.materials[0].name = "Builtin Sphere";
+    mesh.materials[0].albedo = {0.25f, 0.65f, 0.9f, 1.0f};
+    mesh.materials[0].metallic = 0.0f;
+    mesh.materials[0].roughness = 0.4f;
+    mesh.submeshes.push_back({
+        .firstIndex = 0,
+        .indexCount = static_cast<uint32_t>(mesh.indices.size()),
+        .materialIndex = 0,
+    });
     return mesh;
 }

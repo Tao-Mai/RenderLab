@@ -1,10 +1,12 @@
 #pragma once
 
 #include "render/mesh.h"
+#include "scene/point_light.h"
 #include "window.h"
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -13,7 +15,9 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class AssetManager;
+class Camera;
 class Scene;
+class Texture;
 
 class Renderer
 {
@@ -26,7 +30,7 @@ class Renderer
 
     void initialize(Window &window);
     void loadScene(const Scene &scene, AssetManager &assets);
-    void render();
+    void render(const Camera &camera);
     void waitIdle();
     void shutdown() noexcept;
 
@@ -50,6 +54,10 @@ class Renderer
     vk::raii::DeviceMemory           depthImageMemory = nullptr;
     vk::raii::Image                  depthImage = nullptr;
     vk::raii::ImageView              depthImageView = nullptr;
+    vk::raii::DescriptorSetLayout    materialSetLayout = nullptr;
+    vk::raii::DescriptorSetLayout    sceneSetLayout = nullptr;
+    vk::raii::DescriptorPool         descriptorPool = nullptr;
+    vk::raii::DescriptorSet          sceneDescriptorSet = nullptr;
     vk::raii::PipelineLayout         pipelineLayout   = nullptr;
     vk::raii::Pipeline               graphicsPipeline = nullptr;
     vk::raii::CommandPool            commandPool      = nullptr;
@@ -65,7 +73,11 @@ class Renderer
         glm::mat4 model{1.0f};
     };
     std::unordered_map<std::string, std::unique_ptr<Mesh>> meshAssets;
+    std::unordered_map<std::string, std::shared_ptr<Texture>> textureAssets;
+    std::shared_ptr<Texture> defaultAlbedoTexture;
     std::vector<RenderItem> renderItems;
+    Buffer sceneUniformBuffer;
+    std::optional<PointLight> pointLight;
     glm::mat4 viewProjection{1.0f};
 
     void initVulkan();
@@ -78,10 +90,13 @@ class Renderer
     void createSwapChain();
     void createImageViews();
     void createDepthResources();
+    void createDescriptorResources();
     void createGraphicsPipeline();
     void createCommandPool();
     void transitionDepthImageLayout();
     void createCommandBuffer();
+    void initializeMaterials(Mesh &mesh);
+    std::shared_ptr<Texture> loadTexture(const std::string &path);
     void recordCommandBuffer(uint32_t imageIndex);
     void transition_image_layout(
         uint32_t imageIndex,
