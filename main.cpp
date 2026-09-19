@@ -1,7 +1,8 @@
-#include <iostream>
+#include "engine.h"
 
 int main()
 {
-    std::cout << "Hello, RenderLab!\n";
-    return 0;
+	Engine engine;
+	engine.initialize();
+	engine.run();
 }

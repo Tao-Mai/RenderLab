@@ -1,23 +1,78 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 4.2)
 
-project(RenderLab
-    VERSION 0.1.0
-    DESCRIPTION "A minimal C++ rendering project"
-    LANGUAGES CXX
+if (NOT DEFINED CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+            CACHE FILEPATH "vcpkg toolchain file")
+endif ()
+
+project(RenderLab)
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+find_package(Vulkan 1.4 REQUIRED)
+find_package(glfw3 CONFIG REQUIRED)
+
+find_program(SLANGC_EXECUTABLE
+        NAMES slangc
+        HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin"
+        REQUIRED
 )
+
+set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
+set(SHADER_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/compiled_shaders")
+set(SLANG_SHADER "${SHADER_BINARY_DIR}/slang.spv")
+
+add_custom_command(
+        OUTPUT "${SLANG_SHADER}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
+        COMMAND ${SLANGC_EXECUTABLE}
+        "${SHADER_SOURCE_DIR}/shader.slang"
+        -target spirv
+        -profile spirv_1_4
+        -emit-spirv-directly
+        -fvk-use-entrypoint-name
+        -entry vertMain
+        -entry fragMain
+        -o "${SLANG_SHADER}"
+        DEPENDS "${SHADER_SOURCE_DIR}/shader.slang"
+        COMMENT "Compiling Slang shader"
+        VERBATIM
+)
+
+add_custom_target(RenderLabShaders DEPENDS "${SLANG_SHADER}")
 
 add_executable(RenderLab
-    main.cpp
+        main.cpp
+        engine.cpp
+        engine.h
+        renderer.cpp
+        renderer.h
+        window.cpp
+        window.h
+)
+add_dependencies(RenderLab RenderLabShaders)
+
+target_compile_definitions(RenderLab PRIVATE
+        VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
+        VULKAN_HPP_NO_STRUCT_CONSTRUCTORS=1
+        VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS
 )
 
-target_compile_features(RenderLab PRIVATE cxx_std_23)
-
-set_target_properties(RenderLab PROPERTIES
-    CXX_EXTENSIONS OFF
+target_link_libraries(RenderLab PRIVATE
+        Vulkan::Vulkan
+        glfw
 )
 
-if(MSVC)
-    target_compile_options(RenderLab PRIVATE /W4 /permissive- /utf-8)
-else()
-    target_compile_options(RenderLab PRIVATE -Wall -Wextra -Wpedantic)
-endif()
+add_custom_command(TARGET RenderLab POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:RenderLab>/shaders"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SLANG_SHADER}" "$<TARGET_FILE_DIR:RenderLab>/shaders/slang.spv"
+)
+
+if (MSVC)
+    set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT RenderLab)
+    set_target_properties(RenderLab PROPERTIES
+            VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:RenderLab>"
+    )
+endif ()
