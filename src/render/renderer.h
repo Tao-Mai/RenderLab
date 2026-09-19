@@ -1,5 +1,6 @@
 #pragma once
 
+#include "editor/editor_ui.h"
 #include "render/mesh.h"
 #include "scene/point_light.h"
 #include "window.h"
@@ -30,7 +31,7 @@ class Renderer
 
     void initialize(Window &window);
     void loadScene(const Scene &scene, AssetManager &assets);
-    void render(const Camera &camera);
+    void render(const Camera &camera, float deltaTime);
     void waitIdle();
     void shutdown() noexcept;
 
@@ -60,6 +61,7 @@ class Renderer
     vk::raii::DescriptorSet          sceneDescriptorSet = nullptr;
     vk::raii::PipelineLayout         pipelineLayout   = nullptr;
     vk::raii::Pipeline               graphicsPipeline = nullptr;
+    vk::raii::Pipeline               lightPipeline = nullptr;
     vk::raii::CommandPool            commandPool      = nullptr;
     vk::raii::CommandBuffer          commandBuffer    = nullptr;
     vk::raii::Semaphore              presentCompleteSemaphore = nullptr;
@@ -76,9 +78,12 @@ class Renderer
     std::unordered_map<std::string, std::shared_ptr<Texture>> textureAssets;
     std::shared_ptr<Texture> defaultAlbedoTexture;
     std::vector<RenderItem> renderItems;
+    std::unique_ptr<Mesh> lightMesh;
     Buffer sceneUniformBuffer;
     std::optional<PointLight> pointLight;
     glm::mat4 viewProjection{1.0f};
+    uint32_t swapChainMinImageCount = 0;
+    EditorUI editorUI;
 
     void initVulkan();
     void createInstance();
@@ -107,6 +112,7 @@ class Renderer
         vk::PipelineStageFlags2 srcStageMask,
         vk::PipelineStageFlags2 dstStageMask);
     void createSyncObjects();
+    void initializeEditorUI();
     void drawFrame();
 
     static uint32_t chooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR &surfaceCapabilities);

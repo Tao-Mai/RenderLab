@@ -13,6 +13,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Vulkan 1.4 REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
+find_package(imgui CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_path(TINYGLTF_INCLUDE_DIR NAMES tiny_gltf.h REQUIRED)
 
@@ -23,8 +24,9 @@ find_program(SLANGC_EXECUTABLE
 )
 
 set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
-set(SHADER_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/compiled_shaders")
+set(SHADER_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 set(SLANG_SHADER "${SHADER_BINARY_DIR}/slang.spv")
+set(SLANG_LIGHT_SHADER "${SHADER_BINARY_DIR}/light.spv")
 
 add_custom_command(
         OUTPUT "${SLANG_SHADER}"
@@ -44,7 +46,32 @@ add_custom_command(
         VERBATIM
 )
 
-add_custom_target(RenderLabShaders DEPENDS "${SLANG_SHADER}")
+add_custom_command(
+        OUTPUT "${SLANG_LIGHT_SHADER}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
+        COMMAND ${SLANGC_EXECUTABLE}
+        "${SHADER_SOURCE_DIR}/light.slang"
+        -target spirv
+        -profile spirv_1_4
+        -matrix-layout-column-major
+        -emit-spirv-directly
+        -fvk-use-entrypoint-name
+        -entry vertMain
+        -entry fragMain
+        -o "${SLANG_LIGHT_SHADER}"
+        DEPENDS "${SHADER_SOURCE_DIR}/light.slang"
+        COMMENT "Compiling light source Slang shader"
+        VERBATIM
+)
+
+add_custom_target(RenderLabShaders DEPENDS "${SLANG_SHADER}" "${SLANG_LIGHT_SHADER}")
+
+add_custom_target(RenderLabAssets
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets" "${CMAKE_CURRENT_BINARY_DIR}/assets"
+        COMMENT "Synchronizing runtime assets"
+        VERBATIM
+)
 
 add_executable(RenderLab
         src/main.cpp
@@ -52,6 +79,8 @@ add_executable(RenderLab
         src/camera.h
         src/engine.cpp
         src/engine.h
+        src/editor/editor_ui.cpp
+        src/editor/editor_ui.h
         src/window.cpp
         src/window.h
         src/asset/asset_manager.cpp
@@ -81,7 +110,7 @@ add_executable(RenderLab
         src/scene/scene.h
         src/scene/point_light.h
 )
-add_dependencies(RenderLab RenderLabShaders)
+add_dependencies(RenderLab RenderLabShaders RenderLabAssets)
 
 target_include_directories(RenderLab PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -99,15 +128,8 @@ target_link_libraries(RenderLab PRIVATE
         Vulkan::Vulkan
         glfw
         glm::glm
+        imgui::imgui
         nlohmann_json::nlohmann_json
-)
-
-add_custom_command(TARGET RenderLab POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:RenderLab>/shaders"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${SLANG_SHADER}" "$<TARGET_FILE_DIR:RenderLab>/shaders/slang.spv"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets" "$<TARGET_FILE_DIR:RenderLab>/assets"
 )
 
 if (MSVC)

@@ -38,21 +38,21 @@ constexpr bool enableValidationLayers = true;
 
 namespace
 {
-    struct PushConstants
-    {
-        glm::mat4 model{1.0f};
-        glm::vec4 albedo{1.0f};
-    };
+struct PushConstants
+{
+    glm::mat4 model{1.0f};
+    glm::vec4 albedo{1.0f};
+};
 
-    struct SceneUniforms
-    {
-        glm::mat4 viewProjection{1.0f};
-        glm::vec4 pointLightPositionRange{0.0f, 0.0f, 0.0f, 1.0f};
-        glm::vec4 pointLightColorIntensity{1.0f, 1.0f, 1.0f, 0.0f};
-        glm::uvec4 pointLightFlags{0u};
-    };
+struct SceneUniforms
+{
+    glm::mat4  viewProjection{1.0f};
+    glm::vec4  pointLightPositionRange{0.0f, 0.0f, 0.0f, 1.0f};
+    glm::vec4  pointLightColorIntensity{1.0f, 1.0f, 1.0f, 0.0f};
+    glm::uvec4 pointLightFlags{0u};
+};
 
-    static_assert(sizeof(SceneUniforms) == 112);
+static_assert(sizeof(SceneUniforms) == 112);
 }
 
 Renderer::~Renderer()
@@ -79,7 +79,7 @@ void Renderer::initialize(Window& targetWindow)
     }
 }
 
-void Renderer::render(const Camera &camera)
+void Renderer::render(const Camera& camera, float deltaTime)
 {
     if (!initialized)
     {
@@ -87,7 +87,7 @@ void Renderer::render(const Camera &camera)
     }
 
     const float aspect = static_cast<float>(swapChainExtent.width) /
-                         static_cast<float>(swapChainExtent.height);
+        static_cast<float>(swapChainExtent.height);
     viewProjection = camera.projectionMatrix(aspect) * camera.viewMatrix();
 
     SceneUniforms sceneUniforms{.viewProjection = viewProjection};
@@ -104,10 +104,11 @@ void Renderer::render(const Camera &camera)
         sceneUniforms.pointLightFlags.x = pointLight->enabled ? 1u : 0u;
     }
     sceneUniformBuffer.upload(&sceneUniforms, sizeof(sceneUniforms));
+    editorUI.beginFrame(deltaTime);
     drawFrame();
 }
 
-void Renderer::loadScene(const Scene &scene, AssetManager &assets)
+void Renderer::loadScene(const Scene& scene, AssetManager& assets)
 {
     if (!initialized)
     {
@@ -117,6 +118,7 @@ void Renderer::loadScene(const Scene &scene, AssetManager &assets)
     waitIdle();
     renderItems.clear();
     meshAssets.clear();
+    lightMesh.reset();
     pointLight.reset();
 
     if (!scene.pointLights.empty())
@@ -124,13 +126,20 @@ void Renderer::loadScene(const Scene &scene, AssetManager &assets)
         pointLight = scene.pointLights.front();
     }
 
-    for (const SceneObject &object : scene.objects)
+    lightMesh = std::make_unique<Mesh>(
+        physicalDevice,
+        device,
+        commandPool,
+        queue,
+        assets.loadMesh("builtin:sphere"));
+
+    for (const SceneObject& object : scene.objects)
     {
         auto meshIt = meshAssets.find(object.mesh);
         if (meshIt == meshAssets.end())
         {
-            const MeshData &data = assets.loadMesh(object.mesh);
-            auto mesh = std::make_unique<Mesh>(
+            const MeshData& data = assets.loadMesh(object.mesh);
+            auto            mesh = std::make_unique<Mesh>(
                 physicalDevice,
                 device,
                 commandPool,
@@ -169,23 +178,26 @@ void Renderer::shutdown() noexcept
     renderFinishedSemaphore  = nullptr;
     presentCompleteSemaphore = nullptr;
     commandBuffer            = nullptr;
+    editorUI.shutdown();
     renderItems.clear();
     meshAssets.clear();
+    lightMesh.reset();
     pointLight.reset();
-    graphicsPipeline         = nullptr;
-    pipelineLayout           = nullptr;
-    sceneDescriptorSet       = nullptr;
-    descriptorPool           = nullptr;
+    lightPipeline      = nullptr;
+    graphicsPipeline   = nullptr;
+    pipelineLayout     = nullptr;
+    sceneDescriptorSet = nullptr;
+    descriptorPool     = nullptr;
     sceneUniformBuffer.reset();
     textureAssets.clear();
     defaultAlbedoTexture.reset();
-    sceneSetLayout           = nullptr;
-    materialSetLayout        = nullptr;
-    commandPool              = nullptr;
-    depthImageView           = nullptr;
-    depthImage               = nullptr;
-    depthImageMemory         = nullptr;
-    depthFormat              = vk::Format::eUndefined;
+    sceneSetLayout    = nullptr;
+    materialSetLayout = nullptr;
+    commandPool       = nullptr;
+    depthImageView    = nullptr;
+    depthImage        = nullptr;
+    depthImageMemory  = nullptr;
+    depthFormat       = vk::Format::eUndefined;
     swapChainImageViews.clear();
     swapChainImages.clear();
     swapChain      = nullptr;
@@ -215,6 +227,7 @@ void Renderer::initVulkan()
     createGraphicsPipeline();
     createCommandBuffer();
     createSyncObjects();
+    initializeEditorUI();
 }
 
 void Renderer::createInstance()
@@ -446,8 +459,8 @@ void Renderer::createSwapChain()
 {
     vk::SurfaceCapabilitiesKHR surfaceCapabilities = physicalDevice.
         getSurfaceCapabilitiesKHR(*surface);
-    swapChainExtent        = chooseSwapExtent(surfaceCapabilities);
-    uint32_t minImageCount = chooseSwapMinImageCount(surfaceCapabilities);
+    swapChainExtent = chooseSwapExtent(surfaceCapabilities);
+    swapChainMinImageCount = chooseSwapMinImageCount(surfaceCapabilities);
 
     std::vector<vk::SurfaceFormatKHR> availableFormats = physicalDevice.
         getSurfaceFormatsKHR(*surface);
@@ -458,7 +471,7 @@ void Renderer::createSwapChain()
     vk::PresentModeKHR presentMode = chooseSwapPresentMode(availablePresentModes);
 
     vk::SwapchainCreateInfoKHR swapChainCreateInfo{.surface = *surface,
-                                                   .minImageCount = minImageCount,
+                                                   .minImageCount = swapChainMinImageCount,
                                                    .imageFormat = swapChainSurfaceFormat.
                                                    format,
                                                    .imageColorSpace =
@@ -565,7 +578,7 @@ void Renderer::createDescriptorResources()
         .descriptorType = vk::DescriptorType::eUniformBuffer,
         .descriptorCount = 1,
         .stageFlags = vk::ShaderStageFlagBits::eVertex |
-                      vk::ShaderStageFlagBits::eFragment,
+        vk::ShaderStageFlagBits::eFragment,
     };
     const vk::DescriptorSetLayoutCreateInfo sceneLayoutInfo{
         .bindingCount = 1,
@@ -603,7 +616,7 @@ void Renderer::createDescriptorResources()
         vk::MemoryPropertyFlagBits::eHostVisible |
         vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    const vk::DescriptorSetLayout sceneLayout = *sceneSetLayout;
+    const vk::DescriptorSetLayout       sceneLayout = *sceneSetLayout;
     const vk::DescriptorSetAllocateInfo sceneAllocationInfo{
         .descriptorPool = *descriptorPool,
         .descriptorSetCount = 1,
@@ -649,7 +662,7 @@ void Renderer::createGraphicsPipeline()
 
     const vk::VertexInputBindingDescription binding =
         Vertex::bindingDescription();
-    const auto attributes = Vertex::positionUvAttributeDescriptions();
+    const auto                             attributes = Vertex::attributeDescriptions();
     vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &binding,
@@ -703,7 +716,7 @@ void Renderer::createGraphicsPipeline()
 
     const vk::PushConstantRange pushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex |
-                      vk::ShaderStageFlagBits::eFragment,
+        vk::ShaderStageFlagBits::eFragment,
         .offset = 0,
         .size = sizeof(PushConstants),
     };
@@ -741,6 +754,48 @@ void Renderer::createGraphicsPipeline()
                                           nullptr,
                                           pipelineCreateInfoChain.get<
                                               vk::GraphicsPipelineCreateInfo>());
+
+    Shader lightShader(device, "shaders/light.spv");
+    const std::array lightShaderStages = {
+        vk::PipelineShaderStageCreateInfo{
+            .stage = vk::ShaderStageFlagBits::eVertex,
+            .module = lightShader.handle(),
+            .pName = "vertMain",
+        },
+        vk::PipelineShaderStageCreateInfo{
+            .stage = vk::ShaderStageFlagBits::eFragment,
+            .module = lightShader.handle(),
+            .pName = "fragMain",
+        },
+    };
+    const auto lightAttributes = Vertex::positionAttributeDescription();
+    const vk::PipelineVertexInputStateCreateInfo lightVertexInputInfo{
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &binding,
+        .vertexAttributeDescriptionCount = static_cast<uint32_t>(lightAttributes.size()),
+        .pVertexAttributeDescriptions = lightAttributes.data(),
+    };
+    vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo>
+        lightPipelineCreateInfoChain = {
+            {.stageCount = static_cast<uint32_t>(lightShaderStages.size()),
+             .pStages = lightShaderStages.data(),
+             .pVertexInputState = &lightVertexInputInfo,
+             .pInputAssemblyState = &inputAssembly,
+             .pViewportState = &viewportState,
+             .pRasterizationState = &rasterizer,
+             .pMultisampleState = &multisampling,
+             .pDepthStencilState = &depthStencil,
+             .pColorBlendState = &colorBlending,
+             .pDynamicState = &dynamicState,
+             .layout = pipelineLayout,
+             .renderPass = nullptr},
+            {.colorAttachmentCount = 1,
+             .pColorAttachmentFormats = &swapChainSurfaceFormat.format,
+             .depthAttachmentFormat = depthFormat}};
+    lightPipeline = vk::raii::Pipeline(
+        device,
+        nullptr,
+        lightPipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 }
 
 void Renderer::createCommandPool()
@@ -767,7 +822,7 @@ void Renderer::transitionDepthImageLayout()
         .srcAccessMask = {},
         .dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests,
         .dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentRead |
-                         vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
         .oldLayout = vk::ImageLayout::eUndefined,
         .newLayout = vk::ImageLayout::eDepthAttachmentOptimal,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -789,7 +844,7 @@ void Renderer::transitionDepthImageLayout()
     transitionCommand.end();
 
     const vk::CommandBuffer command = *transitionCommand;
-    const vk::SubmitInfo submitInfo{
+    const vk::SubmitInfo    submitInfo{
         .commandBufferCount = 1,
         .pCommandBuffers = &command,
     };
@@ -830,7 +885,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex)
         .loadOp = vk::AttachmentLoadOp::eClear,
         .storeOp = vk::AttachmentStoreOp::eStore,
         .clearValue = clearColor};
-    vk::ClearValue depthClear = vk::ClearDepthStencilValue(1.0f, 0);
+    vk::ClearValue              depthClear          = vk::ClearDepthStencilValue(1.0f, 0);
     vk::RenderingAttachmentInfo depthAttachmentInfo = {
         .imageView = *depthImageView,
         .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
@@ -862,12 +917,12 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex)
                                            0.0f,
                                            1.0f));
     commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
-    for (const RenderItem &item : renderItems)
+    for (const RenderItem& item : renderItems)
     {
         item.mesh->bind(commandBuffer);
-        for (const SubmeshData &submesh : item.mesh->submeshes())
+        for (const SubmeshData& submesh : item.mesh->submeshes())
         {
-            const Material &material = item.mesh->material(submesh.materialIndex);
+            const Material&     material = item.mesh->material(submesh.materialIndex);
             const PushConstants pushConstants{
                 .model = item.model,
                 .albedo = material.albedo,
@@ -887,6 +942,42 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex)
                 0);
         }
     }
+
+    if (pointLight.has_value() && lightMesh)
+    {
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *lightPipeline);
+        commandBuffer.bindDescriptorSets(
+            vk::PipelineBindPoint::eGraphics,
+            *pipelineLayout,
+            1,
+            sceneDescriptorSets,
+            {});
+
+        glm::mat4 lightModel = glm::translate(glm::mat4{1.0f}, pointLight->position);
+        lightModel = glm::scale(lightModel, glm::vec3{0.15f});
+        const glm::vec3 markerColor = pointLight->enabled
+            ? pointLight->color
+            : pointLight->color * 0.15f;
+        const PushConstants lightPushConstants{
+            .model = lightModel,
+            .albedo = glm::vec4{markerColor, 1.0f},
+        };
+        commandBuffer.pushConstants<PushConstants>(
+            *pipelineLayout,
+            vk::ShaderStageFlagBits::eVertex |
+            vk::ShaderStageFlagBits::eFragment,
+            0,
+            lightPushConstants);
+        lightMesh->bind(commandBuffer);
+        commandBuffer.drawIndexed(lightMesh->indexCount(), 1, 0, 0, 0);
+    }
+
+    commandBuffer.endRendering();
+
+    attachmentInfo.loadOp = vk::AttachmentLoadOp::eLoad;
+    renderingInfo.pDepthAttachment = nullptr;
+    commandBuffer.beginRendering(renderingInfo);
+    editorUI.render(*commandBuffer);
     commandBuffer.endRendering();
 
     // After rendering, transition the swapchain image to vk::ImageLayout::ePresentSrcKHR
@@ -905,9 +996,9 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex)
     commandBuffer.end();
 }
 
-void Renderer::initializeMaterials(Mesh &mesh)
+void Renderer::initializeMaterials(Mesh& mesh)
 {
-    for (Material &material : mesh.materials())
+    for (Material& material : mesh.materials())
     {
         std::shared_ptr<Texture> texture = material.hasAlbedoMap()
             ? loadTexture(material.albedoMap)
@@ -920,7 +1011,7 @@ void Renderer::initializeMaterials(Mesh &mesh)
     }
 }
 
-std::shared_ptr<Texture> Renderer::loadTexture(const std::string &path)
+std::shared_ptr<Texture> Renderer::loadTexture(const std::string& path)
 {
     if (path.empty() || path.starts_with("data:") || path.starts_with("embedded:"))
     {
@@ -978,6 +1069,20 @@ void Renderer::createSyncObjects()
     presentCompleteSemaphore = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo());
     renderFinishedSemaphore = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo());
     drawFence = vk::raii::Fence(device, {.flags = vk::FenceCreateFlagBits::eSignaled});
+}
+
+void Renderer::initializeEditorUI()
+{
+    editorUI.initialize(
+        window->nativeHandle(),
+        *instance,
+        *physicalDevice,
+        *device,
+        queueIndex,
+        *queue,
+        static_cast<VkFormat>(swapChainSurfaceFormat.format),
+        swapChainMinImageCount,
+        static_cast<uint32_t>(swapChainImages.size()));
 }
 
 void Renderer::drawFrame()
@@ -1081,9 +1186,12 @@ vk::Format Renderer::chooseDepthFormat() const
     };
     for (const vk::Format format : candidates)
     {
-        const vk::FormatProperties properties = physicalDevice.getFormatProperties(format);
+        const vk::FormatProperties properties = physicalDevice.
+            getFormatProperties(format);
         if ((properties.optimalTilingFeatures &
-             vk::FormatFeatureFlagBits::eDepthStencilAttachment) != vk::FormatFeatureFlags{})
+                vk::FormatFeatureFlagBits::eDepthStencilAttachment) !=
+            vk::FormatFeatureFlags
+            {})
         {
             return format;
         }
@@ -1092,7 +1200,7 @@ vk::Format Renderer::chooseDepthFormat() const
 }
 
 uint32_t Renderer::findMemoryType(
-    uint32_t typeFilter,
+    uint32_t                typeFilter,
     vk::MemoryPropertyFlags properties) const
 {
     const vk::PhysicalDeviceMemoryProperties memoryProperties =
@@ -1100,7 +1208,8 @@ uint32_t Renderer::findMemoryType(
     for (uint32_t index = 0; index < memoryProperties.memoryTypeCount; ++index)
     {
         if ((typeFilter & (1u << index)) != 0 &&
-            (memoryProperties.memoryTypes[index].propertyFlags & properties) == properties)
+            (memoryProperties.memoryTypes[index].propertyFlags & properties) ==
+            properties)
         {
             return index;
         }

@@ -17,7 +17,7 @@ void Engine::initialize()
 
     try
     {
-        window.initialize(800, 600, "RenderLab");
+        window.initialize(1440, 900, "RenderLab");
         inputMethod.activateEnglish();
         scene = Scene::load(assets.path("scenes/default.scene.json"));
         camera.configure(scene.camera);
@@ -54,7 +54,7 @@ void Engine::mainLoop()
         previousTime = currentTime;
 
         camera.update(window, deltaTime);
-        renderer.render(camera);
+        renderer.render(camera, deltaTime);
     }
 
     renderer.waitIdle();

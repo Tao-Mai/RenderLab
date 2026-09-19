@@ -3,6 +3,9 @@ struct VertexInput{
     [[vk::location(0)]]
     float3 position : POSITION;
 
+    [[vk::location(1)]]
+    float3 normal : NORMAL;
+
     [[vk::location(2)]]
     float2 uv : TEXCOORD;
 };
@@ -10,6 +13,7 @@ struct VertexInput{
 struct VertexOutput
 {
     float4 position : SV_Position;
+    float3 normal : NORMAL;
     float2 uv : TEXCOORD0;
     float3 worldPosition : POSITION0;
 };
@@ -53,6 +57,7 @@ VertexOutput vertMain(VertexInput input)
     VertexOutput output;
     float4 worldPosition = mul(pushConstants.model, float4(input.position, 1.0));
     output.position = mul(sceneUniforms.viewProjection, worldPosition);
+    output.normal = input.normal;
     output.uv = input.uv;
     output.worldPosition = worldPosition.xyz;
     return output;
@@ -61,7 +66,11 @@ VertexOutput vertMain(VertexInput input)
 [shader("fragment")]
 float4 fragMain(VertexOutput input) : SV_Target
 {
+    float3 normal = normalize(input.normal);
+
     float4 albedo = albedoMap.Sample(albedoSampler, input.uv) * pushConstants.albedo;
+
+    float3 lightDirection = normalize(sceneUniforms.pointLight.position - input.worldPosition);
     float distanceToLight = length(
         sceneUniforms.pointLight.position - input.worldPosition);
     float lightRange = max(sceneUniforms.pointLight.range, 0.001);
@@ -74,6 +83,6 @@ float4 fragMain(VertexOutput input) : SV_Target
         * distanceAttenuation
         * enabled;
 
-    float3 color = albedo.rgb * (0.04 + pointLight);
+    float3 color = albedo.rgb * (pointLight * saturate(dot(normal, lightDirection)));
     return float4(color, albedo.a);
 }

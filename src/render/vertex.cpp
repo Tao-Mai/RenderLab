@@ -35,9 +35,15 @@ std::array<vk::VertexInputAttributeDescription, 3> Vertex::attributeDescriptions
     };
 }
 
-std::array<vk::VertexInputAttributeDescription, 2>
-Vertex::positionUvAttributeDescriptions()
+std::array<vk::VertexInputAttributeDescription, 1>
+Vertex::positionAttributeDescription()
 {
-    const auto attributes = attributeDescriptions();
-    return {attributes[0], attributes[2]};
+    return {
+        vk::VertexInputAttributeDescription{
+            .location = 0,
+            .binding = 0,
+            .format = vk::Format::eR32G32B32Sfloat,
+            .offset = static_cast<uint32_t>(offsetof(Vertex, position))
+        }
+    };
 }

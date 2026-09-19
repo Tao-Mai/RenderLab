@@ -26,6 +26,7 @@ class Window
     [[nodiscard]] VkSurfaceKHR createVulkanSurface(VkInstance instance) const;
     [[nodiscard]] std::vector<const char *> requiredVulkanExtensions() const;
     [[nodiscard]] std::pair<int, int> framebufferSize() const;
+    [[nodiscard]] GLFWwindow *nativeHandle() const;
     void shutdown() noexcept;
 
   private:

@@ -15,6 +15,6 @@ struct Vertex
     [[nodiscard]] static vk::VertexInputBindingDescription bindingDescription();
     [[nodiscard]] static std::array<vk::VertexInputAttributeDescription, 3>
     attributeDescriptions();
-    [[nodiscard]] static std::array<vk::VertexInputAttributeDescription, 2>
-    positionUvAttributeDescriptions();
+    [[nodiscard]] static std::array<vk::VertexInputAttributeDescription, 1>
+    positionAttributeDescription();
 };

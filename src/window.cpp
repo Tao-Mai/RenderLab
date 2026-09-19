@@ -126,6 +126,11 @@ std::pair<int, int> Window::framebufferSize() const
     return {width, height};
 }
 
+GLFWwindow *Window::nativeHandle() const
+{
+    return handle;
+}
+
 void Window::shutdown() noexcept
 {
     if (handle != nullptr)

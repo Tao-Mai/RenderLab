@@ -24,6 +24,7 @@
   </component>
   <component name="CMakeRunConfigurationManager">
     <generated>
+      <config projectName="RenderLab" targetName="RenderLabAssets" />
       <config projectName="RenderLab" targetName="RenderLabShaders" />
       <config projectName="RenderLab" targetName="RenderLab" />
     </generated>
@@ -34,23 +35,15 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="asset">
+    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="light">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/shaders/shader.slang" beforeDir="false" afterPath="$PROJECT_DIR$/shaders/shader.slang" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/builtin_meshes.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/builtin_meshes.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/gltf_loader.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/gltf_loader.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/mesh_data.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/mesh_data.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/engine.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/engine.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/engine.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/mesh.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/mesh.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/mesh.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/mesh.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/renderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/renderer.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/renderer.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/renderer.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/vertex.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/vertex.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/vertex.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/vertex.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/scene/scene.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/scene.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/scene/scene.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/scene.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/window.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/window.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/window.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/window.h" afterDir="false" />
     </list>
@@ -103,61 +96,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="0.0" />
-      <entry key="MS500" value="0.0" />
-      <entry key="S2" value="0.0" />
-      <entry key="S5" value="0.0" />
-      <entry key="S10" value="6.958346069234148E-247" />
-      <entry key="S30" value="1.4036747547919623E-82" />
-      <entry key="S60" value="1.6750682587030082E-41" />
-      <entry key="M2" value="5.787650609004472E-21" />
-      <entry key="M5" value="1.2179338964366813E-8" />
-      <entry key="M10" value="1.6071317709254263E-4" />
-      <entry key="M15" value="0.004916877492286082" />
-      <entry key="M30" value="0.4549965637288142" />
-      <entry key="H1" value="7.044485595315939" />
-      <entry key="H2" value="33.03719049587527" />
-      <entry key="H4" value="99.21119181268628" />
-      <entry key="D1" value="496.9732776952246" />
-      <entry key="W1" value="713.1670758701996" />
-    </decayedCancelled>
-    <decayedSelected>
       <entry key="MS100" value="1.0" />
       <entry key="MS500" value="1.0" />
-      <entry key="S2" value="1.0" />
-      <entry key="S5" value="1.0" />
-      <entry key="S10" value="1.0" />
-      <entry key="S30" value="1.0" />
-      <entry key="S60" value="1.0" />
-      <entry key="M2" value="1.0" />
-      <entry key="M5" value="1.0000000058107947" />
-      <entry key="M10" value="1.0000777326773036" />
-      <entry key="M15" value="1.0021965497418588" />
-      <entry key="M30" value="1.1568168875142" />
-      <entry key="H1" value="3.2637839922210086" />
-      <entry key="H2" value="11.446660306124942" />
-      <entry key="H4" value="27.669205768456372" />
-      <entry key="D1" value="75.43793683038385" />
-      <entry key="W1" value="93.45116716428626" />
+      <entry key="S2" value="1.0000000219759382" />
+      <entry key="S5" value="1.0008645278139219" />
+      <entry key="S10" value="1.0294029336456982" />
+      <entry key="S30" value="1.3154970973848537" />
+      <entry key="S60" value="1.6900150480863154" />
+      <entry key="M2" value="2.8708397125909118" />
+      <entry key="M5" value="8.83089599886939" />
+      <entry key="M10" value="15.690657914354933" />
+      <entry key="M15" value="19.34060774311665" />
+      <entry key="M30" value="24.326682676213654" />
+      <entry key="H1" value="32.711208403693405" />
+      <entry key="H2" value="58.57871471637338" />
+      <entry key="H4" value="124.05358465283925" />
+      <entry key="D1" value="523.1551632688225" />
+      <entry key="W1" value="742.3906517108409" />
+    </decayedCancelled>
+    <decayedSelected>
+      <entry key="MS100" value="5.442045427602155E-137" />
+      <entry key="MS500" value="5.58666245987742E-28" />
+      <entry key="S2" value="1.5374043591688695E-7" />
+      <entry key="S5" value="0.0018824144296034691" />
+      <entry key="S10" value="0.04338680017705234" />
+      <entry key="S30" value="0.3513871491327216" />
+      <entry key="S60" value="0.592801833716523" />
+      <entry key="M2" value="0.774681804686092" />
+      <entry key="M5" value="1.0184715780824574" />
+      <entry key="M10" value="1.2922605118940749" />
+      <entry key="M15" value="1.4569898061857598" />
+      <entry key="M30" value="1.7926360522257294" />
+      <entry key="H1" value="3.7222432053526777" />
+      <entry key="H2" value="11.466277782879486" />
+      <entry key="H4" value="27.461100378728602" />
+      <entry key="D1" value="75.87937045149589" />
+      <entry key="W1" value="94.35201596853433" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="0.014278616409834377" />
-      <entry key="MS500" value="0.4275010889459864" />
-      <entry key="S2" value="0.8086010600218005" />
-      <entry key="S5" value="0.9185307978124196" />
-      <entry key="S10" value="0.9584001240674063" />
-      <entry key="S30" value="0.9859365203957252" />
-      <entry key="S60" value="0.9929433621288403" />
-      <entry key="M2" value="0.9964654344877399" />
-      <entry key="M5" value="0.9985846897168682" />
-      <entry key="M10" value="0.9995301365634411" />
-      <entry key="M15" value="1.006631799522268" />
-      <entry key="M30" value="1.6110435708088033" />
-      <entry key="H1" value="10.30418246602196" />
-      <entry key="H2" value="44.47509554449047" />
-      <entry key="H4" value="126.86984861938825" />
-      <entry key="D1" value="572.4064233388176" />
-      <entry key="W1" value="806.6173872238649" />
+      <entry key="MS100" value="0.9138314502294005" />
+      <entry key="MS500" value="0.9821395952633915" />
+      <entry key="S2" value="0.9955047395456802" />
+      <entry key="S5" value="1.0001609490928451" />
+      <entry key="S10" value="1.0616199598674358" />
+      <entry key="S30" value="1.6363229133908253" />
+      <entry key="S60" value="2.2565554896566535" />
+      <entry key="M2" value="3.628234613766512" />
+      <entry key="M5" value="9.84094308621083" />
+      <entry key="M10" value="16.97823939483733" />
+      <entry key="M15" value="20.794322826433053" />
+      <entry key="M30" value="26.117214979617163" />
+      <entry key="H1" value="36.42923696660301" />
+      <entry key="H2" value="70.0365831165616" />
+      <entry key="H4" value="151.50439466186592" />
+      <entry key="D1" value="599.0297443391785" />
+      <entry key="W1" value="836.7418079666924" />
     </decayedShown>
   </component>
   <component name="ProjectApplicationVersion">
@@ -248,6 +241,11 @@
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
+    <configuration name="RenderLabAssets" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="RenderLabAssets" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
     <configuration name="RenderLabShaders" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="RenderLabShaders" CONFIG_NAME="Default">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
@@ -261,6 +259,7 @@
     </configuration>
     <list>
       <item itemvalue="CMake 应用程序.RenderLab" />
+      <item itemvalue="CMake 应用程序.RenderLabAssets" />
       <item itemvalue="CMake 应用程序.RenderLabShaders" />
       <item itemvalue="CTest 应用程序.所有 CTest" />
       <item itemvalue="Google Test.SceneAsset.FileRoundTrip" />
@@ -322,7 +321,8 @@
     <MESSAGE value="window" />
     <MESSAGE value="shader" />
     <MESSAGE value="asset" />
-    <option name="LAST_COMMIT_MESSAGE" value="asset" />
+    <MESSAGE value="light" />
+    <option name="LAST_COMMIT_MESSAGE" value="light" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
