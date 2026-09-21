@@ -15,29 +15,40 @@ void Camera::configure(const SceneCamera &settings)
     fieldOfView = settings.fieldOfView;
     nearPlane = settings.nearPlane;
     farPlane = settings.farPlane;
+    movementSpeed = settings.movementSpeed;
+    sprintMultiplier = settings.sprintMultiplier;
 
     const glm::vec3 direction = glm::normalize(settings.target - settings.position);
     pitch = glm::degrees(std::asin(std::clamp(direction.y, -1.0f, 1.0f)));
     yaw = glm::degrees(std::atan2(direction.z, direction.x));
     looking = false;
+    freeMovement = false;
+    vWasPressed = false;
 }
 
-void Camera::update(Window &window, float deltaTime)
+void Camera::update(Window &window, float deltaTime, bool allowModeToggle)
 {
     deltaTime = std::clamp(deltaTime, 0.0f, 0.1f);
-    const bool wantsToLook = window.mouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);
-    if (wantsToLook && !looking)
+    const bool vPressed = window.keyPressed(GLFW_KEY_V);
+    if (allowModeToggle && vPressed && !vWasPressed)
     {
-        looking = true;
-        window.setCursorCaptured(true);
-        const auto [x, y] = window.cursorPosition();
-        previousMouseX = x;
-        previousMouseY = y;
+        freeMovement = !freeMovement;
     }
-    else if (!wantsToLook && looking)
+    vWasPressed = vPressed;
+
+    const bool rightMousePressed = window.mouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);
+    const bool navigationRequested = freeMovement ||
+        (rightMousePressed && (allowModeToggle || looking));
+    if (navigationRequested != looking)
     {
-        looking = false;
-        window.setCursorCaptured(false);
+        looking = navigationRequested;
+        window.setCursorCaptured(looking);
+        if (looking)
+        {
+            const auto [x, y] = window.cursorPosition();
+            previousMouseX = x;
+            previousMouseY = y;
+        }
     }
 
     if (looking)
@@ -48,6 +59,12 @@ void Camera::update(Window &window, float deltaTime)
         pitch = std::clamp(pitch, -89.0f, 89.0f);
         previousMouseX = x;
         previousMouseY = y;
+    }
+
+    if (!looking)
+    {
+        window.consumeScrollOffset();
+        return;
     }
 
     fieldOfView = std::clamp(
@@ -70,10 +87,25 @@ void Camera::update(Window &window, float deltaTime)
         float speed = movementSpeed;
         if (window.keyPressed(GLFW_KEY_LEFT_SHIFT))
         {
-            speed *= 3.0f;
+            speed *= sprintMultiplier;
         }
         position += glm::normalize(movement) * speed * deltaTime;
     }
+}
+
+bool Camera::isFreeMovementActive() const
+{
+    return freeMovement;
+}
+
+bool Camera::isNavigationActive() const
+{
+    return looking;
+}
+
+const glm::vec3 &Camera::worldPosition() const
+{
+    return position;
 }
 
 glm::mat4 Camera::viewMatrix() const

@@ -44,6 +44,14 @@ bool Window::shouldClose() const
     return handle == nullptr || glfwWindowShouldClose(handle);
 }
 
+void Window::requestClose() const
+{
+    if (handle != nullptr)
+    {
+        glfwSetWindowShouldClose(handle, GLFW_TRUE);
+    }
+}
+
 bool Window::keyPressed(int key) const
 {
     return handle != nullptr && glfwGetKey(handle, key) == GLFW_PRESS;

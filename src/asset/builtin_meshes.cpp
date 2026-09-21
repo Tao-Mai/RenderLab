@@ -4,6 +4,8 @@
 #include <numbers>
 #include <stdexcept>
 
+#include <glm/geometric.hpp>
+
 namespace
 {
     void addFace(
@@ -25,6 +27,22 @@ namespace
             first, first + 1, first + 2,
             first, first + 2, first + 3,
         });
+    }
+
+    void addTriangle(
+        MeshData &mesh,
+        const glm::vec3 &normal,
+        const glm::vec3 &a,
+        const glm::vec3 &b,
+        const glm::vec3 &c)
+    {
+        const uint32_t first = static_cast<uint32_t>(mesh.vertices.size());
+        mesh.vertices.insert(mesh.vertices.end(), {
+            {.position = a, .normal = normal, .texcoord = {0.0f, 0.0f}},
+            {.position = b, .normal = normal, .texcoord = {1.0f, 0.0f}},
+            {.position = c, .normal = normal, .texcoord = {0.5f, 1.0f}},
+        });
+        mesh.indices.insert(mesh.indices.end(), {first, first + 1, first + 2});
     }
 }
 
@@ -48,7 +66,7 @@ MeshData BuiltinMeshes::cube()
     addFace(mesh, {0.0f, -1.0f, 0.0f},
             {-h, -h, -h}, {h, -h, -h}, {h, -h, h}, {-h, -h, h});
     mesh.materials[0].name = "Builtin Cube";
-    mesh.materials[0].albedo = {0.85f, 0.45f, 0.2f, 1.0f};
+    mesh.materials[0].baseColorFactor = {0.85f, 0.45f, 0.2f, 1.0f};
     mesh.materials[0].metallic = 0.0f;
     mesh.materials[0].roughness = 0.65f;
     mesh.submeshes.push_back({
@@ -106,9 +124,72 @@ MeshData BuiltinMeshes::sphere(uint32_t segments, uint32_t rings)
         }
     }
     mesh.materials[0].name = "Builtin Sphere";
-    mesh.materials[0].albedo = {0.25f, 0.65f, 0.9f, 1.0f};
+    mesh.materials[0].baseColorFactor = {0.25f, 0.65f, 0.9f, 1.0f};
     mesh.materials[0].metallic = 0.0f;
     mesh.materials[0].roughness = 0.4f;
+    mesh.submeshes.push_back({
+        .firstIndex = 0,
+        .indexCount = static_cast<uint32_t>(mesh.indices.size()),
+        .materialIndex = 0,
+    });
+    return mesh;
+}
+
+MeshData BuiltinMeshes::arrow()
+{
+    constexpr float shaftHalfWidth = 0.045f;
+    constexpr float headHalfWidth = 0.14f;
+    constexpr float back = 0.5f;
+    constexpr float headBase = -0.16f;
+    constexpr float tip = -0.5f;
+
+    MeshData mesh;
+    mesh.vertices.reserve(36);
+    mesh.indices.reserve(48);
+
+    addFace(mesh, {0.0f, 1.0f, 0.0f},
+            {-shaftHalfWidth, shaftHalfWidth, back},
+            {shaftHalfWidth, shaftHalfWidth, back},
+            {shaftHalfWidth, shaftHalfWidth, headBase},
+            {-shaftHalfWidth, shaftHalfWidth, headBase});
+    addFace(mesh, {0.0f, -1.0f, 0.0f},
+            {-shaftHalfWidth, -shaftHalfWidth, headBase},
+            {shaftHalfWidth, -shaftHalfWidth, headBase},
+            {shaftHalfWidth, -shaftHalfWidth, back},
+            {-shaftHalfWidth, -shaftHalfWidth, back});
+    addFace(mesh, {1.0f, 0.0f, 0.0f},
+            {shaftHalfWidth, -shaftHalfWidth, back},
+            {shaftHalfWidth, -shaftHalfWidth, headBase},
+            {shaftHalfWidth, shaftHalfWidth, headBase},
+            {shaftHalfWidth, shaftHalfWidth, back});
+    addFace(mesh, {-1.0f, 0.0f, 0.0f},
+            {-shaftHalfWidth, -shaftHalfWidth, headBase},
+            {-shaftHalfWidth, -shaftHalfWidth, back},
+            {-shaftHalfWidth, shaftHalfWidth, back},
+            {-shaftHalfWidth, shaftHalfWidth, headBase});
+    addFace(mesh, {0.0f, 0.0f, 1.0f},
+            {-shaftHalfWidth, -shaftHalfWidth, back},
+            {shaftHalfWidth, -shaftHalfWidth, back},
+            {shaftHalfWidth, shaftHalfWidth, back},
+            {-shaftHalfWidth, shaftHalfWidth, back});
+
+    const glm::vec3 topLeft{-headHalfWidth, headHalfWidth, headBase};
+    const glm::vec3 topRight{headHalfWidth, headHalfWidth, headBase};
+    const glm::vec3 bottomRight{headHalfWidth, -headHalfWidth, headBase};
+    const glm::vec3 bottomLeft{-headHalfWidth, -headHalfWidth, headBase};
+    const glm::vec3 arrowTip{0.0f, 0.0f, tip};
+    addFace(mesh, {0.0f, 0.0f, 1.0f},
+            bottomLeft, bottomRight, topRight, topLeft);
+    addTriangle(mesh, glm::normalize(glm::vec3{0.0f, 1.0f, -0.4f}),
+                topLeft, topRight, arrowTip);
+    addTriangle(mesh, glm::normalize(glm::vec3{1.0f, 0.0f, -0.4f}),
+                topRight, bottomRight, arrowTip);
+    addTriangle(mesh, glm::normalize(glm::vec3{0.0f, -1.0f, -0.4f}),
+                bottomRight, bottomLeft, arrowTip);
+    addTriangle(mesh, glm::normalize(glm::vec3{-1.0f, 0.0f, -0.4f}),
+                bottomLeft, topLeft, arrowTip);
+
+    mesh.materials[0].name = "Builtin Arrow";
     mesh.submeshes.push_back({
         .firstIndex = 0,
         .indexCount = static_cast<uint32_t>(mesh.indices.size()),

@@ -8,12 +8,13 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class Texture;
+class Buffer;
 
 class Material
 {
   public:
     std::string name = "Default";
-    glm::vec4 albedo{1.0f};
+    glm::vec4 baseColorFactor{1.0f};
     float metallic = 1.0f;
     float roughness = 1.0f;
     float ao = 1.0f;
@@ -33,6 +34,7 @@ class Material
 
     [[nodiscard]] bool hasAlbedoMap() const;
     void createDescriptorSet(
+        const vk::raii::PhysicalDevice &physicalDevice,
         const vk::raii::Device &device,
         vk::DescriptorPool descriptorPool,
         vk::DescriptorSetLayout descriptorSetLayout,
@@ -43,5 +45,6 @@ class Material
 
   private:
     std::shared_ptr<Texture> albedoTexture;
+    std::shared_ptr<Buffer> materialBuffer;
     std::shared_ptr<vk::raii::DescriptorSet> descriptorSet;
 };

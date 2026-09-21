@@ -12,38 +12,28 @@ struct VertexOutput
 struct PushConstants
 {
     float4x4 model;
-    float4 color;
-};
-
-struct Light
-{
-    float3 color;
-    float intensity;
-    float3 position;
-    float range;
-    float3 direction;
-    float padding0;
-    float2 areaSize;
-    float cosInner;
-    float cosOuter;
-    uint type;
-    uint enabled;
-    uint castShadow;
+    uint selectionId;
+    uint padding0;
     uint padding1;
+    uint padding2;
 };
 
 struct SceneUniforms
 {
     float4x4 viewProjection;
-    Light light;
+    float4 lightColorIntensity;
+    float4 lightPositionRange;
+    float4 lightDirection;
+    float4 lightAreaSizeCone;
+    uint4 lightFlags;
     float3 cameraPosition;
-    float padding2;
+    float padding0;
 };
 
 [[vk::push_constant]]
 ConstantBuffer<PushConstants> pushConstants;
 
-[[vk::binding(0, 1)]]
+[[vk::binding(0, 0)]]
 ConstantBuffer<SceneUniforms> sceneUniforms;
 
 [shader("vertex")]
@@ -56,7 +46,7 @@ VertexOutput vertMain(VertexInput input)
 }
 
 [shader("fragment")]
-float4 fragMain(VertexOutput input) : SV_Target
+uint fragMain(VertexOutput input) : SV_Target
 {
-    return pushConstants.color;
+    return pushConstants.selectionId;
 }

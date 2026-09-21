@@ -14,6 +14,7 @@ find_package(Vulkan 1.4 REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
+find_package(imguizmo CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_path(TINYGLTF_INCLUDE_DIR NAMES tiny_gltf.h REQUIRED)
 
@@ -27,6 +28,7 @@ set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 set(SHADER_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 set(SLANG_SHADER "${SHADER_BINARY_DIR}/slang.spv")
 set(SLANG_LIGHT_SHADER "${SHADER_BINARY_DIR}/light.spv")
+set(SLANG_EDITOR_PICKING_SHADER "${SHADER_BINARY_DIR}/editor_picking.spv")
 
 add_custom_command(
         OUTPUT "${SLANG_SHADER}"
@@ -64,7 +66,29 @@ add_custom_command(
         VERBATIM
 )
 
-add_custom_target(RenderLabShaders DEPENDS "${SLANG_SHADER}" "${SLANG_LIGHT_SHADER}")
+add_custom_command(
+        OUTPUT "${SLANG_EDITOR_PICKING_SHADER}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
+        COMMAND ${SLANGC_EXECUTABLE}
+        "${SHADER_SOURCE_DIR}/editor/picking.slang"
+        -target spirv
+        -profile spirv_1_4
+        -matrix-layout-column-major
+        -emit-spirv-directly
+        -fvk-use-entrypoint-name
+        -entry vertMain
+        -entry fragMain
+        -o "${SLANG_EDITOR_PICKING_SHADER}"
+        DEPENDS "${SHADER_SOURCE_DIR}/editor/picking.slang"
+        COMMENT "Compiling editor picking Slang shader"
+        VERBATIM
+)
+
+add_custom_target(RenderLabShaders DEPENDS
+        "${SLANG_SHADER}"
+        "${SLANG_LIGHT_SHADER}"
+        "${SLANG_EDITOR_PICKING_SHADER}"
+)
 
 add_custom_target(RenderLabAssets
         COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -108,7 +132,9 @@ add_executable(RenderLab
         src/render/vertex.h
         src/scene/scene.cpp
         src/scene/scene.h
-        src/scene/point_light.h
+        src/scene/light.h
+        src/scene/transform.cpp
+        src/scene/transform.h
 )
 add_dependencies(RenderLab RenderLabShaders RenderLabAssets)
 
@@ -129,6 +155,7 @@ target_link_libraries(RenderLab PRIVATE
         glfw
         glm::glm
         imgui::imgui
+        imguizmo::imguizmo
         nlohmann_json::nlohmann_json
 )
 

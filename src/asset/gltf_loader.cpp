@@ -64,7 +64,7 @@ namespace
             const auto &pbr = source.pbrMetallicRoughness;
             if (pbr.baseColorFactor.size() == 4)
             {
-                material.albedo = {
+                material.baseColorFactor = {
                     static_cast<float>(pbr.baseColorFactor[0]),
                     static_cast<float>(pbr.baseColorFactor[1]),
                     static_cast<float>(pbr.baseColorFactor[2]),

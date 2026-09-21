@@ -29,6 +29,10 @@ const MeshData &AssetManager::loadMesh(const std::string &identifier)
     {
         data = BuiltinMeshes::sphere();
     }
+    else if (identifier == "builtin:arrow")
+    {
+        data = BuiltinMeshes::arrow();
+    }
     else
     {
         const std::filesystem::path assetPath = path(identifier);

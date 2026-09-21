@@ -2,12 +2,11 @@
 
 #include "editor/editor_ui.h"
 #include "render/mesh.h"
-#include "scene/point_light.h"
+#include "scene/light.h"
 #include "window.h"
 
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -19,6 +18,8 @@ class AssetManager;
 class Camera;
 class Scene;
 class Texture;
+struct SceneObject;
+struct Transform;
 
 class Renderer
 {
@@ -30,8 +31,9 @@ class Renderer
     Renderer &operator=(const Renderer &) = delete;
 
     void initialize(Window &window);
-    void loadScene(const Scene &scene, AssetManager &assets);
+    void loadScene(Scene &scene, AssetManager &assets);
     void render(const Camera &camera, float deltaTime);
+    [[nodiscard]] bool editorWantsInput() const;
     void waitIdle();
     void shutdown() noexcept;
 
@@ -55,6 +57,10 @@ class Renderer
     vk::raii::DeviceMemory           depthImageMemory = nullptr;
     vk::raii::Image                  depthImage = nullptr;
     vk::raii::ImageView              depthImageView = nullptr;
+    vk::Format                       selectionFormat = vk::Format::eR32Uint;
+    vk::raii::DeviceMemory           selectionImageMemory = nullptr;
+    vk::raii::Image                  selectionImage = nullptr;
+    vk::raii::ImageView              selectionImageView = nullptr;
     vk::raii::DescriptorSetLayout    materialSetLayout = nullptr;
     vk::raii::DescriptorSetLayout    sceneSetLayout = nullptr;
     vk::raii::DescriptorPool         descriptorPool = nullptr;
@@ -62,6 +68,8 @@ class Renderer
     vk::raii::PipelineLayout         pipelineLayout   = nullptr;
     vk::raii::Pipeline               graphicsPipeline = nullptr;
     vk::raii::Pipeline               lightPipeline = nullptr;
+    vk::raii::PipelineLayout         editorPickingPipelineLayout = nullptr;
+    vk::raii::Pipeline               editorPickingPipeline = nullptr;
     vk::raii::CommandPool            commandPool      = nullptr;
     vk::raii::CommandBuffer          commandBuffer    = nullptr;
     vk::raii::Semaphore              presentCompleteSemaphore = nullptr;
@@ -72,15 +80,30 @@ class Renderer
     struct RenderItem
     {
         Mesh *mesh = nullptr;
-        glm::mat4 model{1.0f};
+        SceneObject *object = nullptr;
+        uint32_t selectionId = 0;
+    };
+    struct LightRenderItem
+    {
+        Light *light = nullptr;
+        uint32_t selectionId = 0;
     };
     std::unordered_map<std::string, std::unique_ptr<Mesh>> meshAssets;
     std::unordered_map<std::string, std::shared_ptr<Texture>> textureAssets;
     std::shared_ptr<Texture> defaultAlbedoTexture;
     std::vector<RenderItem> renderItems;
-    std::unique_ptr<Mesh> lightMesh;
+    std::vector<LightRenderItem> lightRenderItems;
+    std::unique_ptr<Mesh> lightSphereMesh;
+    std::unique_ptr<Mesh> lightCubeMesh;
+    std::unique_ptr<Mesh> lightArrowMesh;
     Buffer sceneUniformBuffer;
-    std::optional<PointLight> pointLight;
+    Buffer selectionReadbackBuffer;
+    Light *primaryLight = nullptr;
+    SceneObject *selectedObject = nullptr;
+    Light *selectedLight = nullptr;
+    bool pickRequested = false;
+    uint32_t pickX = 0;
+    uint32_t pickY = 0;
     glm::mat4 viewProjection{1.0f};
     uint32_t swapChainMinImageCount = 0;
     EditorUI editorUI;
@@ -95,8 +118,10 @@ class Renderer
     void createSwapChain();
     void createImageViews();
     void createDepthResources();
+    void createSelectionResources();
     void createDescriptorResources();
     void createGraphicsPipeline();
+    void createEditorPickingPipeline();
     void createCommandPool();
     void transitionDepthImageLayout();
     void createCommandBuffer();
@@ -113,6 +138,10 @@ class Renderer
         vk::PipelineStageFlags2 dstStageMask);
     void createSyncObjects();
     void initializeEditorUI();
+    void requestSelection();
+    void resolveSelection(uint32_t selectionId);
+    void drawLightMarker(const Light &light);
+    void drawLightMarkerForPicking(const LightRenderItem &item);
     void drawFrame();
 
     static uint32_t chooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR &surfaceCapabilities);

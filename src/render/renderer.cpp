@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <assert.h>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -20,6 +21,7 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #if defined(__INTELLISENSE__) || !defined(USE_CPP20_MODULES)
 #	include <vulkan/vulkan_raii.hpp>
@@ -38,21 +40,57 @@ constexpr bool enableValidationLayers = true;
 
 namespace
 {
-struct PushConstants
+struct MeshPushConstants
 {
     glm::mat4 model{1.0f};
-    glm::vec4 albedo{1.0f};
+};
+
+struct LightPushConstants
+{
+    glm::mat4 model{1.0f};
+    glm::vec4 color{1.0f};
+};
+
+struct EditorPickingPushConstants
+{
+    glm::mat4 model{1.0f};
+    uint32_t selectionId = 0;
+    uint32_t padding0 = 0;
+    uint32_t padding1 = 0;
+    uint32_t padding2 = 0;
 };
 
 struct SceneUniforms
 {
-    glm::mat4  viewProjection{1.0f};
-    glm::vec4  pointLightPositionRange{0.0f, 0.0f, 0.0f, 1.0f};
-    glm::vec4  pointLightColorIntensity{1.0f, 1.0f, 1.0f, 0.0f};
-    glm::uvec4 pointLightFlags{0u};
+    glm::mat4 viewProjection{1.0f};
+    glm::vec4 lightColorIntensity{1.0f, 1.0f, 1.0f, 0.0f};
+    glm::vec4 lightPositionRange{0.0f, 0.0f, 0.0f, 1.0f};
+    glm::vec4 lightDirection{0.0f, -1.0f, 0.0f, 0.0f};
+    glm::vec4 lightAreaSizeCone{1.0f, 1.0f, 0.9396926f, 0.8660254f};
+    glm::uvec4 lightFlags{0u};
+    glm::vec4 cameraPosition{0.0f, 0.0f, 0.0f, 1.0f};
 };
 
-static_assert(sizeof(SceneUniforms) == 112);
+glm::quat lightRotation(const glm::vec3 &direction)
+{
+    const glm::vec3 forward = glm::normalize(direction);
+    const glm::vec3 up = std::abs(glm::dot(forward, glm::vec3{0.0f, 1.0f, 0.0f})) >
+            0.999f
+        ? glm::vec3{0.0f, 0.0f, 1.0f}
+        : glm::vec3{0.0f, 1.0f, 0.0f};
+    return glm::normalize(glm::quatLookAtRH(forward, up));
+}
+
+glm::mat4 lightTransform(const Light &light)
+{
+    return glm::translate(glm::mat4{1.0f}, light.position) *
+        glm::mat4_cast(lightRotation(light.direction));
+}
+
+static_assert(sizeof(SceneUniforms) == 160);
+static_assert(sizeof(MeshPushConstants) == 64);
+static_assert(sizeof(LightPushConstants) == 80);
+static_assert(sizeof(EditorPickingPushConstants) == 80);
 }
 
 Renderer::~Renderer()
@@ -86,29 +124,76 @@ void Renderer::render(const Camera& camera, float deltaTime)
         throw std::logic_error("Renderer must be initialized before render()");
     }
 
-    const float aspect = static_cast<float>(swapChainExtent.width) /
-        static_cast<float>(swapChainExtent.height);
-    viewProjection = camera.projectionMatrix(aspect) * camera.viewMatrix();
+    editorUI.beginFrame(deltaTime);
+    const glm::mat4 view = camera.viewMatrix();
+    const glm::mat4 projection = camera.projectionMatrix(editorUI.sceneAspectRatio());
 
-    SceneUniforms sceneUniforms{.viewProjection = viewProjection};
-    if (pointLight.has_value())
+    if (selectedObject != nullptr)
     {
-        sceneUniforms.pointLightPositionRange = {
-            pointLight->position,
-            pointLight->range,
+        glm::mat4 gizmoProjection = projection;
+        gizmoProjection[1][1] *= -1.0f;
+        editorUI.drawGizmo(
+            selectedObject->transform,
+            view,
+            gizmoProjection,
+            !camera.isNavigationActive());
+    }
+    else if (selectedLight != nullptr)
+    {
+        glm::mat4 gizmoProjection = projection;
+        gizmoProjection[1][1] *= -1.0f;
+        editorUI.drawLightGizmo(
+            *selectedLight,
+            view,
+            gizmoProjection,
+            !camera.isNavigationActive());
+    }
+    if (!camera.isNavigationActive())
+    {
+        requestSelection();
+    }
+    editorUI.drawInspector(selectedObject, selectedLight);
+    editorUI.endFrame();
+
+    viewProjection = projection * view;
+
+    SceneUniforms sceneUniforms{
+        .viewProjection = viewProjection,
+        .cameraPosition = glm::vec4{camera.worldPosition(), 1.0f},
+    };
+    if (primaryLight != nullptr)
+    {
+        sceneUniforms.lightColorIntensity = {
+            primaryLight->color,
+            primaryLight->intensity,
         };
-        sceneUniforms.pointLightColorIntensity = {
-            pointLight->color,
-            pointLight->intensity,
+        sceneUniforms.lightPositionRange = {
+            primaryLight->position,
+            primaryLight->range,
         };
-        sceneUniforms.pointLightFlags.x = pointLight->enabled ? 1u : 0u;
+        sceneUniforms.lightDirection = glm::vec4{primaryLight->direction, 0.0f};
+        sceneUniforms.lightAreaSizeCone = {
+            primaryLight->areaSize,
+            primaryLight->cosInner,
+            primaryLight->cosOuter,
+        };
+        sceneUniforms.lightFlags = {
+            static_cast<uint32_t>(primaryLight->type),
+            primaryLight->enabled ? 1u : 0u,
+            primaryLight->castShadow ? 1u : 0u,
+            0u,
+        };
     }
     sceneUniformBuffer.upload(&sceneUniforms, sizeof(sceneUniforms));
-    editorUI.beginFrame(deltaTime);
     drawFrame();
 }
 
-void Renderer::loadScene(const Scene& scene, AssetManager& assets)
+bool Renderer::editorWantsInput() const
+{
+    return editorUI.wantsInput();
+}
+
+void Renderer::loadScene(Scene& scene, AssetManager& assets)
 {
     if (!initialized)
     {
@@ -117,23 +202,41 @@ void Renderer::loadScene(const Scene& scene, AssetManager& assets)
 
     waitIdle();
     renderItems.clear();
+    lightRenderItems.clear();
     meshAssets.clear();
-    lightMesh.reset();
-    pointLight.reset();
+    lightSphereMesh.reset();
+    lightCubeMesh.reset();
+    lightArrowMesh.reset();
+    primaryLight = nullptr;
+    selectedObject = nullptr;
+    selectedLight = nullptr;
+    pickRequested = false;
 
-    if (!scene.pointLights.empty())
+    if (!scene.lights.empty())
     {
-        pointLight = scene.pointLights.front();
+        primaryLight = &scene.lights.front();
+        lightSphereMesh = std::make_unique<Mesh>(
+            physicalDevice,
+            device,
+            commandPool,
+            queue,
+            assets.loadMesh("builtin:sphere"));
+        lightCubeMesh = std::make_unique<Mesh>(
+            physicalDevice,
+            device,
+            commandPool,
+            queue,
+            assets.loadMesh("builtin:cube"));
+        lightArrowMesh = std::make_unique<Mesh>(
+            physicalDevice,
+            device,
+            commandPool,
+            queue,
+            assets.loadMesh("builtin:arrow"));
     }
 
-    lightMesh = std::make_unique<Mesh>(
-        physicalDevice,
-        device,
-        commandPool,
-        queue,
-        assets.loadMesh("builtin:sphere"));
-
-    for (const SceneObject& object : scene.objects)
+    uint32_t nextSelectionId = 1;
+    for (SceneObject& object : scene.objects)
     {
         auto meshIt = meshAssets.find(object.mesh);
         if (meshIt == meshAssets.end())
@@ -148,7 +251,12 @@ void Renderer::loadScene(const Scene& scene, AssetManager& assets)
             initializeMaterials(*mesh);
             meshIt = meshAssets.emplace(object.mesh, std::move(mesh)).first;
         }
-        renderItems.push_back({meshIt->second.get(), object.transform.matrix()});
+        renderItems.push_back({meshIt->second.get(), &object, nextSelectionId++});
+    }
+
+    for (Light &light : scene.lights)
+    {
+        lightRenderItems.push_back({&light, nextSelectionId++});
     }
 
 }
@@ -180,15 +288,24 @@ void Renderer::shutdown() noexcept
     commandBuffer            = nullptr;
     editorUI.shutdown();
     renderItems.clear();
+    lightRenderItems.clear();
     meshAssets.clear();
-    lightMesh.reset();
-    pointLight.reset();
+    lightSphereMesh.reset();
+    lightCubeMesh.reset();
+    lightArrowMesh.reset();
+    primaryLight = nullptr;
+    selectedObject = nullptr;
+    selectedLight = nullptr;
+    pickRequested = false;
+    editorPickingPipeline = nullptr;
+    editorPickingPipelineLayout = nullptr;
     lightPipeline      = nullptr;
     graphicsPipeline   = nullptr;
     pipelineLayout     = nullptr;
     sceneDescriptorSet = nullptr;
     descriptorPool     = nullptr;
     sceneUniformBuffer.reset();
+    selectionReadbackBuffer.reset();
     textureAssets.clear();
     defaultAlbedoTexture.reset();
     sceneSetLayout    = nullptr;
@@ -198,6 +315,9 @@ void Renderer::shutdown() noexcept
     depthImage        = nullptr;
     depthImageMemory  = nullptr;
     depthFormat       = vk::Format::eUndefined;
+    selectionImageView   = nullptr;
+    selectionImage       = nullptr;
+    selectionImageMemory = nullptr;
     swapChainImageViews.clear();
     swapChainImages.clear();
     swapChain      = nullptr;
@@ -222,9 +342,11 @@ void Renderer::initVulkan()
     createImageViews();
     createCommandPool();
     createDepthResources();
+    createSelectionResources();
     transitionDepthImageLayout();
     createDescriptorResources();
     createGraphicsPipeline();
+    createEditorPickingPipeline();
     createCommandBuffer();
     createSyncObjects();
     initializeEditorUI();
@@ -551,6 +673,56 @@ void Renderer::createDepthResources()
     depthImageView = vk::raii::ImageView(device, viewInfo);
 }
 
+void Renderer::createSelectionResources()
+{
+    const vk::ImageCreateInfo imageInfo{
+        .imageType = vk::ImageType::e2D,
+        .format = selectionFormat,
+        .extent = {swapChainExtent.width, swapChainExtent.height, 1},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = vk::SampleCountFlagBits::e1,
+        .tiling = vk::ImageTiling::eOptimal,
+        .usage = vk::ImageUsageFlagBits::eColorAttachment |
+                 vk::ImageUsageFlagBits::eTransferSrc,
+        .sharingMode = vk::SharingMode::eExclusive,
+        .initialLayout = vk::ImageLayout::eUndefined,
+    };
+    selectionImage = vk::raii::Image(device, imageInfo);
+
+    const vk::MemoryRequirements requirements = selectionImage.getMemoryRequirements();
+    const vk::MemoryAllocateInfo allocationInfo{
+        .allocationSize = requirements.size,
+        .memoryTypeIndex = findMemoryType(
+            requirements.memoryTypeBits,
+            vk::MemoryPropertyFlagBits::eDeviceLocal),
+    };
+    selectionImageMemory = vk::raii::DeviceMemory(device, allocationInfo);
+    selectionImage.bindMemory(*selectionImageMemory, 0);
+
+    const vk::ImageViewCreateInfo viewInfo{
+        .image = *selectionImage,
+        .viewType = vk::ImageViewType::e2D,
+        .format = selectionFormat,
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+    };
+    selectionImageView = vk::raii::ImageView(device, viewInfo);
+
+    selectionReadbackBuffer = Buffer(
+        physicalDevice,
+        device,
+        sizeof(uint32_t),
+        vk::BufferUsageFlagBits::eTransferDst,
+        vk::MemoryPropertyFlagBits::eHostVisible |
+        vk::MemoryPropertyFlagBits::eHostCoherent);
+}
+
 void Renderer::createDescriptorResources()
 {
     const std::array bindings = {
@@ -563,6 +735,12 @@ void Renderer::createDescriptorResources()
         vk::DescriptorSetLayoutBinding{
             .binding = 1,
             .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding = 2,
+            .descriptorType = vk::DescriptorType::eUniformBuffer,
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eFragment,
         },
@@ -597,7 +775,7 @@ void Renderer::createDescriptorResources()
         },
         vk::DescriptorPoolSize{
             .type = vk::DescriptorType::eUniformBuffer,
-            .descriptorCount = 1,
+            .descriptorCount = 1025,
         },
     };
     const vk::DescriptorPoolCreateInfo poolInfo{
@@ -699,14 +877,20 @@ void Renderer::createGraphicsPipeline()
         .stencilTestEnable = vk::False,
     };
 
-    vk::PipelineColorBlendAttachmentState colorBlendAttachment{
+    const vk::PipelineColorBlendAttachmentState colorBlendAttachment{
         .blendEnable = vk::False,
-        .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG
-        | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA};
+        .colorWriteMask = vk::ColorComponentFlagBits::eR |
+                          vk::ColorComponentFlagBits::eG |
+                          vk::ColorComponentFlagBits::eB |
+                          vk::ColorComponentFlagBits::eA,
+    };
 
     vk::PipelineColorBlendStateCreateInfo colorBlending{
-        .logicOpEnable = vk::False, .logicOp = vk::LogicOp::eCopy, .attachmentCount = 1,
-        .pAttachments = &colorBlendAttachment};
+        .logicOpEnable = vk::False,
+        .logicOp = vk::LogicOp::eCopy,
+        .attachmentCount = 1,
+        .pAttachments = &colorBlendAttachment,
+    };
 
     std::vector<vk::DynamicState> dynamicStates = {vk::DynamicState::eViewport,
                                                    vk::DynamicState::eScissor};
@@ -718,7 +902,7 @@ void Renderer::createGraphicsPipeline()
         .stageFlags = vk::ShaderStageFlagBits::eVertex |
         vk::ShaderStageFlagBits::eFragment,
         .offset = 0,
-        .size = sizeof(PushConstants),
+        .size = sizeof(LightPushConstants),
     };
     const std::array descriptorSetLayouts = {
         *materialSetLayout,
@@ -798,6 +982,116 @@ void Renderer::createGraphicsPipeline()
         lightPipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 }
 
+void Renderer::createEditorPickingPipeline()
+{
+    Shader shader(device, "shaders/editor_picking.spv");
+    const std::array shaderStages = {
+        vk::PipelineShaderStageCreateInfo{
+            .stage = vk::ShaderStageFlagBits::eVertex,
+            .module = shader.handle(),
+            .pName = "vertMain",
+        },
+        vk::PipelineShaderStageCreateInfo{
+            .stage = vk::ShaderStageFlagBits::eFragment,
+            .module = shader.handle(),
+            .pName = "fragMain",
+        },
+    };
+
+    const vk::VertexInputBindingDescription binding = Vertex::bindingDescription();
+    const auto attributes = Vertex::positionAttributeDescription();
+    const vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &binding,
+        .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes.size()),
+        .pVertexAttributeDescriptions = attributes.data(),
+    };
+    const vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
+        .topology = vk::PrimitiveTopology::eTriangleList,
+    };
+    const vk::PipelineViewportStateCreateInfo viewportState{
+        .viewportCount = 1,
+        .scissorCount = 1,
+    };
+    const vk::PipelineRasterizationStateCreateInfo rasterizer{
+        .depthClampEnable = vk::False,
+        .rasterizerDiscardEnable = vk::False,
+        .polygonMode = vk::PolygonMode::eFill,
+        .cullMode = vk::CullModeFlagBits::eNone,
+        .frontFace = vk::FrontFace::eClockwise,
+        .depthBiasEnable = vk::False,
+        .lineWidth = 1.0f,
+    };
+    const vk::PipelineMultisampleStateCreateInfo multisampling{
+        .rasterizationSamples = vk::SampleCountFlagBits::e1,
+    };
+    const vk::PipelineDepthStencilStateCreateInfo depthStencil{
+        .depthTestEnable = vk::True,
+        .depthWriteEnable = vk::False,
+        .depthCompareOp = vk::CompareOp::eLessOrEqual,
+        .depthBoundsTestEnable = vk::False,
+        .stencilTestEnable = vk::False,
+    };
+    const vk::PipelineColorBlendAttachmentState colorBlendAttachment{
+        .blendEnable = vk::False,
+        .colorWriteMask = vk::ColorComponentFlagBits::eR,
+    };
+    const vk::PipelineColorBlendStateCreateInfo colorBlending{
+        .logicOpEnable = vk::False,
+        .attachmentCount = 1,
+        .pAttachments = &colorBlendAttachment,
+    };
+    constexpr std::array dynamicStates = {
+        vk::DynamicState::eViewport,
+        vk::DynamicState::eScissor,
+    };
+    const vk::PipelineDynamicStateCreateInfo dynamicState{
+        .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+        .pDynamicStates = dynamicStates.data(),
+    };
+    const vk::PushConstantRange pushConstantRange{
+        .stageFlags = vk::ShaderStageFlagBits::eVertex |
+                      vk::ShaderStageFlagBits::eFragment,
+        .offset = 0,
+        .size = sizeof(EditorPickingPushConstants),
+    };
+    const vk::DescriptorSetLayout sceneLayout = *sceneSetLayout;
+    const vk::PipelineLayoutCreateInfo layoutInfo{
+        .setLayoutCount = 1,
+        .pSetLayouts = &sceneLayout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pushConstantRange,
+    };
+    editorPickingPipelineLayout = vk::raii::PipelineLayout(device, layoutInfo);
+
+    vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo>
+        pipelineCreateInfoChain = {
+            {
+                .stageCount = static_cast<uint32_t>(shaderStages.size()),
+                .pStages = shaderStages.data(),
+                .pVertexInputState = &vertexInputInfo,
+                .pInputAssemblyState = &inputAssembly,
+                .pViewportState = &viewportState,
+                .pRasterizationState = &rasterizer,
+                .pMultisampleState = &multisampling,
+                .pDepthStencilState = &depthStencil,
+                .pColorBlendState = &colorBlending,
+                .pDynamicState = &dynamicState,
+                .layout = *editorPickingPipelineLayout,
+                .renderPass = nullptr,
+            },
+            {
+                .colorAttachmentCount = 1,
+                .pColorAttachmentFormats = &selectionFormat,
+                .depthAttachmentFormat = depthFormat,
+            },
+        };
+    editorPickingPipeline = vk::raii::Pipeline(
+        device,
+        nullptr,
+        pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+}
+
 void Renderer::createCommandPool()
 {
     vk::CommandPoolCreateInfo poolInfo{
@@ -860,6 +1154,169 @@ void Renderer::createCommandBuffer()
     commandBuffer = std::move(vk::raii::CommandBuffers(device, allocInfo).front());
 }
 
+void Renderer::drawLightMarker(const Light &light)
+{
+    const glm::vec3 markerColor = light.enabled
+        ? light.color
+        : light.color * 0.15f;
+    const auto drawMesh = [this](
+                              Mesh &mesh,
+                              const glm::mat4 &model,
+                              const glm::vec3 &color,
+                              uint32_t firstIndex,
+                              uint32_t indexCount)
+    {
+        const LightPushConstants pushConstants{
+            .model = model,
+            .color = glm::vec4{color, 1.0f},
+        };
+        commandBuffer.pushConstants<LightPushConstants>(
+            *pipelineLayout,
+            vk::ShaderStageFlagBits::eVertex |
+            vk::ShaderStageFlagBits::eFragment,
+            0,
+            pushConstants);
+        mesh.bind(commandBuffer);
+        commandBuffer.drawIndexed(indexCount, 1, firstIndex, 0, 0);
+    };
+
+    switch (light.type)
+    {
+    case Light::Type::Point:
+    case Light::Type::Spot:
+        if (lightSphereMesh)
+        {
+            const glm::mat4 model = glm::translate(
+                glm::mat4{1.0f}, light.position) *
+                glm::scale(glm::mat4{1.0f}, glm::vec3{0.15f});
+            drawMesh(
+                *lightSphereMesh,
+                model,
+                markerColor,
+                0,
+                lightSphereMesh->indexCount());
+        }
+        break;
+
+    case Light::Type::RectArea:
+        if (lightCubeMesh)
+        {
+            constexpr float thickness = 0.08f;
+            constexpr uint32_t indicesPerFace = 6;
+            constexpr uint32_t emittingFace = 1;
+            const glm::mat4 model = lightTransform(light) *
+                glm::scale(
+                    glm::mat4{1.0f},
+                    glm::vec3{light.areaSize, thickness});
+            const glm::vec3 housingColor = light.enabled
+                ? glm::vec3{0.28f}
+                : glm::vec3{0.12f};
+            for (uint32_t face = 0; face < 6; ++face)
+            {
+                drawMesh(
+                    *lightCubeMesh,
+                    model,
+                    face == emittingFace ? markerColor : housingColor,
+                    face * indicesPerFace,
+                    indicesPerFace);
+            }
+        }
+        break;
+
+    case Light::Type::Directional:
+        if (lightArrowMesh)
+        {
+            const glm::mat4 base = lightTransform(light);
+            constexpr float spacing = 0.32f;
+            for (int y = -1; y <= 1; ++y)
+            {
+                for (int x = -1; x <= 1; ++x)
+                {
+                    const glm::mat4 model = base *
+                        glm::translate(
+                            glm::mat4{1.0f},
+                            glm::vec3{x * spacing, y * spacing, 0.0f}) *
+                        glm::scale(glm::mat4{1.0f}, glm::vec3{0.75f});
+                    drawMesh(
+                        *lightArrowMesh,
+                        model,
+                        markerColor,
+                        0,
+                        lightArrowMesh->indexCount());
+                }
+            }
+        }
+        break;
+    }
+}
+
+void Renderer::drawLightMarkerForPicking(const LightRenderItem &item)
+{
+    const auto drawMesh = [this, &item](Mesh &mesh, const glm::mat4 &model)
+    {
+        const EditorPickingPushConstants pushConstants{
+            .model = model,
+            .selectionId = item.selectionId,
+        };
+        commandBuffer.pushConstants<EditorPickingPushConstants>(
+            *editorPickingPipelineLayout,
+            vk::ShaderStageFlagBits::eVertex |
+            vk::ShaderStageFlagBits::eFragment,
+            0,
+            pushConstants);
+        mesh.bind(commandBuffer);
+        commandBuffer.drawIndexed(mesh.indexCount(), 1, 0, 0, 0);
+    };
+
+    const Light &light = *item.light;
+    switch (light.type)
+    {
+    case Light::Type::Point:
+    case Light::Type::Spot:
+        if (lightSphereMesh)
+        {
+            drawMesh(
+                *lightSphereMesh,
+                glm::translate(glm::mat4{1.0f}, light.position) *
+                    glm::scale(glm::mat4{1.0f}, glm::vec3{0.15f}));
+        }
+        break;
+
+    case Light::Type::RectArea:
+        if (lightCubeMesh)
+        {
+            drawMesh(
+                *lightCubeMesh,
+                lightTransform(light) *
+                    glm::scale(
+                        glm::mat4{1.0f},
+                        glm::vec3{light.areaSize, 0.08f}));
+        }
+        break;
+
+    case Light::Type::Directional:
+        if (lightArrowMesh)
+        {
+            const glm::mat4 base = lightTransform(light);
+            constexpr float spacing = 0.32f;
+            for (int y = -1; y <= 1; ++y)
+            {
+                for (int x = -1; x <= 1; ++x)
+                {
+                    drawMesh(
+                        *lightArrowMesh,
+                        base *
+                            glm::translate(
+                                glm::mat4{1.0f},
+                                glm::vec3{x * spacing, y * spacing, 0.0f}) *
+                            glm::scale(glm::mat4{1.0f}, glm::vec3{0.75f}));
+                }
+            }
+        }
+        break;
+    }
+}
+
 void Renderer::recordCommandBuffer(uint32_t imageIndex)
 {
     commandBuffer.reset();
@@ -878,6 +1335,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex)
         // srcStage
         vk::PipelineStageFlagBits2::eColorAttachmentOutput // dstStage
         );
+
     vk::ClearValue              clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
     vk::RenderingAttachmentInfo attachmentInfo = {
         .imageView = swapChainImageViews[imageIndex],
@@ -890,7 +1348,9 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex)
         .imageView = *depthImageView,
         .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
         .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eDontCare,
+        .storeOp = pickRequested
+            ? vk::AttachmentStoreOp::eStore
+            : vk::AttachmentStoreOp::eDontCare,
         .clearValue = depthClear,
     };
     vk::RenderingInfo renderingInfo = {
@@ -909,25 +1369,49 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex)
         1,
         sceneDescriptorSets,
         {});
-    commandBuffer.setViewport(0,
-                              vk::Viewport(0.0f,
-                                           0.0f,
-                                           static_cast<float>(swapChainExtent.width),
-                                           static_cast<float>(swapChainExtent.height),
-                                           0.0f,
-                                           1.0f));
-    commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
+    const EditorUI::ViewportRect editorViewport = editorUI.sceneViewportPixels();
+    const uint32_t viewportX = std::min(
+        static_cast<uint32_t>(std::max(editorViewport.x, 0.0f)),
+        swapChainExtent.width - 1);
+    const uint32_t viewportY = std::min(
+        static_cast<uint32_t>(std::max(editorViewport.y, 0.0f)),
+        swapChainExtent.height - 1);
+    const uint32_t viewportWidth = std::max(
+        1u,
+        std::min(
+            static_cast<uint32_t>(editorViewport.width),
+            swapChainExtent.width - viewportX));
+    const uint32_t viewportHeight = std::max(
+        1u,
+        std::min(
+            static_cast<uint32_t>(editorViewport.height),
+            swapChainExtent.height - viewportY));
+    commandBuffer.setViewport(
+        0,
+        vk::Viewport(
+            static_cast<float>(viewportX),
+            static_cast<float>(viewportY),
+            static_cast<float>(viewportWidth),
+            static_cast<float>(viewportHeight),
+            0.0f,
+            1.0f));
+    commandBuffer.setScissor(
+        0,
+        vk::Rect2D(
+            vk::Offset2D(
+                static_cast<int32_t>(viewportX),
+                static_cast<int32_t>(viewportY)),
+            vk::Extent2D(viewportWidth, viewportHeight)));
     for (const RenderItem& item : renderItems)
     {
         item.mesh->bind(commandBuffer);
         for (const SubmeshData& submesh : item.mesh->submeshes())
         {
-            const Material&     material = item.mesh->material(submesh.materialIndex);
-            const PushConstants pushConstants{
-                .model = item.model,
-                .albedo = material.albedo,
+            const Material& material = item.mesh->material(submesh.materialIndex);
+            const MeshPushConstants pushConstants{
+                .model = item.object->transform.matrix(),
             };
-            commandBuffer.pushConstants<PushConstants>(
+            commandBuffer.pushConstants<MeshPushConstants>(
                 *pipelineLayout,
                 vk::ShaderStageFlagBits::eVertex |
                 vk::ShaderStageFlagBits::eFragment,
@@ -943,7 +1427,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex)
         }
     }
 
-    if (pointLight.has_value() && lightMesh)
+    if (!lightRenderItems.empty())
     {
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *lightPipeline);
         commandBuffer.bindDescriptorSets(
@@ -953,26 +1437,184 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex)
             sceneDescriptorSets,
             {});
 
-        glm::mat4 lightModel = glm::translate(glm::mat4{1.0f}, pointLight->position);
-        lightModel = glm::scale(lightModel, glm::vec3{0.15f});
-        const glm::vec3 markerColor = pointLight->enabled
-            ? pointLight->color
-            : pointLight->color * 0.15f;
-        const PushConstants lightPushConstants{
-            .model = lightModel,
-            .albedo = glm::vec4{markerColor, 1.0f},
-        };
-        commandBuffer.pushConstants<PushConstants>(
-            *pipelineLayout,
-            vk::ShaderStageFlagBits::eVertex |
-            vk::ShaderStageFlagBits::eFragment,
-            0,
-            lightPushConstants);
-        lightMesh->bind(commandBuffer);
-        commandBuffer.drawIndexed(lightMesh->indexCount(), 1, 0, 0, 0);
+        for (const LightRenderItem &item : lightRenderItems)
+        {
+            drawLightMarker(*item.light);
+        }
     }
 
     commandBuffer.endRendering();
+
+    if (pickRequested)
+    {
+        const std::array pickingPassBarriers = {
+            vk::ImageMemoryBarrier2{
+                .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+                .srcAccessMask = {},
+                .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+                .oldLayout = vk::ImageLayout::eUndefined,
+                .newLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image = *selectionImage,
+                .subresourceRange = {
+                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+            },
+            vk::ImageMemoryBarrier2{
+                .srcStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+                                vk::PipelineStageFlagBits2::eLateFragmentTests,
+                .srcAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+                .dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests,
+                .dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentRead,
+                .oldLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+                .newLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image = *depthImage,
+                .subresourceRange = {
+                    .aspectMask = vk::ImageAspectFlagBits::eDepth,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+            },
+        };
+        const vk::DependencyInfo pickingPassDependency{
+            .imageMemoryBarrierCount = static_cast<uint32_t>(pickingPassBarriers.size()),
+            .pImageMemoryBarriers = pickingPassBarriers.data(),
+        };
+        commandBuffer.pipelineBarrier2(pickingPassDependency);
+
+        const vk::ClearValue selectionClear = vk::ClearColorValue(
+            std::array<uint32_t, 4>{0u, 0u, 0u, 0u});
+        const vk::RenderingAttachmentInfo selectionAttachment{
+            .imageView = *selectionImageView,
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = selectionClear,
+        };
+        const vk::RenderingAttachmentInfo pickingDepthAttachment{
+            .imageView = *depthImageView,
+            .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eLoad,
+            .storeOp = vk::AttachmentStoreOp::eDontCare,
+        };
+        const vk::RenderingInfo pickingRenderingInfo{
+            .renderArea = {
+                .offset = {
+                    static_cast<int32_t>(pickX),
+                    static_cast<int32_t>(pickY),
+                },
+                .extent = {1, 1},
+            },
+            .layerCount = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &selectionAttachment,
+            .pDepthAttachment = &pickingDepthAttachment,
+        };
+        commandBuffer.beginRendering(pickingRenderingInfo);
+        commandBuffer.bindPipeline(
+            vk::PipelineBindPoint::eGraphics,
+            *editorPickingPipeline);
+        commandBuffer.bindDescriptorSets(
+            vk::PipelineBindPoint::eGraphics,
+            *editorPickingPipelineLayout,
+            0,
+            sceneDescriptorSets,
+            {});
+        commandBuffer.setScissor(
+            0,
+            vk::Rect2D(
+                vk::Offset2D(
+                    static_cast<int32_t>(pickX),
+                    static_cast<int32_t>(pickY)),
+                vk::Extent2D(1, 1)));
+
+        for (const RenderItem &item : renderItems)
+        {
+            item.mesh->bind(commandBuffer);
+            const EditorPickingPushConstants pushConstants{
+                .model = item.object->transform.matrix(),
+                .selectionId = item.selectionId,
+            };
+            commandBuffer.pushConstants<EditorPickingPushConstants>(
+                *editorPickingPipelineLayout,
+                vk::ShaderStageFlagBits::eVertex |
+                vk::ShaderStageFlagBits::eFragment,
+                0,
+                pushConstants);
+            for (const SubmeshData &submesh : item.mesh->submeshes())
+            {
+                commandBuffer.drawIndexed(
+                    submesh.indexCount,
+                    1,
+                    submesh.firstIndex,
+                    0,
+                    0);
+            }
+        }
+
+        for (const LightRenderItem &item : lightRenderItems)
+        {
+            drawLightMarkerForPicking(item);
+        }
+        commandBuffer.endRendering();
+
+        const vk::ImageMemoryBarrier2 selectionReadBarrier{
+            .srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            .srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+            .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+            .oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .newLayout = vk::ImageLayout::eTransferSrcOptimal,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = *selectionImage,
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        };
+        const vk::DependencyInfo selectionReadDependency{
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers = &selectionReadBarrier,
+        };
+        commandBuffer.pipelineBarrier2(selectionReadDependency);
+
+        const vk::BufferImageCopy copyRegion{
+            .bufferOffset = 0,
+            .bufferRowLength = 0,
+            .bufferImageHeight = 0,
+            .imageSubresource = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .mipLevel = 0,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+            .imageOffset = {
+                static_cast<int32_t>(pickX),
+                static_cast<int32_t>(pickY),
+                0,
+            },
+            .imageExtent = {1, 1, 1},
+        };
+        commandBuffer.copyImageToBuffer(
+            *selectionImage,
+            vk::ImageLayout::eTransferSrcOptimal,
+            selectionReadbackBuffer.handle(),
+            copyRegion);
+    }
 
     attachmentInfo.loadOp = vk::AttachmentLoadOp::eLoad;
     renderingInfo.pDepthAttachment = nullptr;
@@ -1004,6 +1646,7 @@ void Renderer::initializeMaterials(Mesh& mesh)
             ? loadTexture(material.albedoMap)
             : defaultAlbedoTexture;
         material.createDescriptorSet(
+            physicalDevice,
             device,
             *descriptorPool,
             *materialSetLayout,
@@ -1085,6 +1728,53 @@ void Renderer::initializeEditorUI()
         static_cast<uint32_t>(swapChainImages.size()));
 }
 
+void Renderer::requestSelection()
+{
+    glm::vec2 clickNdc;
+    if (!editorUI.sceneClicked(clickNdc))
+    {
+        return;
+    }
+
+    const EditorUI::ViewportRect viewport = editorUI.sceneViewportPixels();
+    const float normalizedX = std::clamp(clickNdc.x * 0.5f + 0.5f, 0.0f, 1.0f);
+    const float normalizedY = std::clamp(clickNdc.y * 0.5f + 0.5f, 0.0f, 1.0f);
+    pickX = std::min(
+        static_cast<uint32_t>(std::max(viewport.x + normalizedX * viewport.width, 0.0f)),
+        swapChainExtent.width - 1);
+    pickY = std::min(
+        static_cast<uint32_t>(std::max(viewport.y + normalizedY * viewport.height, 0.0f)),
+        swapChainExtent.height - 1);
+    pickRequested = true;
+}
+
+void Renderer::resolveSelection(uint32_t selectionId)
+{
+    selectedObject = nullptr;
+    selectedLight = nullptr;
+
+    if (selectionId == 0)
+    {
+        return;
+    }
+    for (const RenderItem &item : renderItems)
+    {
+        if (item.selectionId == selectionId)
+        {
+            selectedObject = item.object;
+            return;
+        }
+    }
+    for (const LightRenderItem &item : lightRenderItems)
+    {
+        if (item.selectionId == selectionId)
+        {
+            selectedLight = item.light;
+            return;
+        }
+    }
+}
+
 void Renderer::drawFrame()
 {
     auto fenceResult = device.waitForFences(*drawFence, vk::True, UINT64_MAX);
@@ -1099,6 +1789,7 @@ void Renderer::drawFrame()
         *presentCompleteSemaphore,
         nullptr);
 
+    const bool resolvePickAfterSubmit = pickRequested;
     recordCommandBuffer(imageIndex);
 
     queue.waitIdle();
@@ -1133,6 +1824,23 @@ void Renderer::drawFrame()
             break;
         default:
             break; // an unexpected result is returned!
+    }
+
+    if (resolvePickAfterSubmit)
+    {
+        const vk::Result pickFenceResult = device.waitForFences(
+            *drawFence,
+            vk::True,
+            UINT64_MAX);
+        if (pickFenceResult != vk::Result::eSuccess)
+        {
+            throw std::runtime_error("failed to wait for object picking readback");
+        }
+
+        uint32_t selectionId = 0;
+        selectionReadbackBuffer.download(&selectionId, sizeof(selectionId));
+        resolveSelection(selectionId);
+        pickRequested = false;
     }
 }
 

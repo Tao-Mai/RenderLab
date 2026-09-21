@@ -48,12 +48,20 @@ void Engine::mainLoop()
     while (!window.shouldClose())
     {
         window.pollEvents();
+        if (window.keyPressed(GLFW_KEY_ESCAPE))
+        {
+            window.requestClose();
+            break;
+        }
         const auto currentTime = std::chrono::steady_clock::now();
         const float deltaTime = std::chrono::duration<float>(
             currentTime - previousTime).count();
         previousTime = currentTime;
 
-        camera.update(window, deltaTime);
+        camera.update(
+            window,
+            deltaTime,
+            camera.isNavigationActive() || !renderer.editorWantsInput());
         renderer.render(camera, deltaTime);
     }
 

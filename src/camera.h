@@ -11,8 +11,11 @@ class Camera
 {
   public:
     void configure(const SceneCamera &settings);
-    void update(Window &window, float deltaTime);
+    void update(Window &window, float deltaTime, bool allowModeToggle);
 
+    [[nodiscard]] bool isFreeMovementActive() const;
+    [[nodiscard]] bool isNavigationActive() const;
+    [[nodiscard]] const glm::vec3 &worldPosition() const;
     [[nodiscard]] glm::mat4 viewMatrix() const;
     [[nodiscard]] glm::mat4 projectionMatrix(float aspectRatio) const;
 
@@ -25,8 +28,11 @@ class Camera
     float nearPlane = 0.1f;
     float farPlane = 100.0f;
     float movementSpeed = 3.0f;
+    float sprintMultiplier = 3.0f;
     float mouseSensitivity = 0.12f;
     bool looking = false;
+    bool freeMovement = false;
+    bool vWasPressed = false;
     double previousMouseX = 0.0;
     double previousMouseY = 0.0;
 

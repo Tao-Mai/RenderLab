@@ -19,6 +19,7 @@ class Buffer
     Buffer &operator=(Buffer &&) noexcept = default;
 
     void upload(const void *data, vk::DeviceSize byteCount);
+    void download(void *data, vk::DeviceSize byteCount);
     void reset() noexcept;
 
     [[nodiscard]] vk::Buffer handle() const;

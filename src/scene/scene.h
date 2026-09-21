@@ -1,6 +1,7 @@
 #pragma once
 
-#include "scene/point_light.h"
+#include "scene/light.h"
+#include "scene/transform.h"
 
 #include <filesystem>
 #include <string>
@@ -8,15 +9,6 @@
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
-
-struct Transform
-{
-    glm::vec3 position{0.0f};
-    glm::vec3 rotation{0.0f};
-    glm::vec3 scale{1.0f};
-
-    [[nodiscard]] glm::mat4 matrix() const;
-};
 
 struct SceneObject
 {
@@ -33,6 +25,8 @@ struct SceneCamera
     float fieldOfView = 45.0f;
     float nearPlane = 0.1f;
     float farPlane = 100.0f;
+    float movementSpeed = 3.0f;
+    float sprintMultiplier = 3.0f;
 };
 
 class Scene
@@ -42,6 +36,6 @@ class Scene
     void save(const std::filesystem::path &path) const;
 
     SceneCamera camera;
-    std::vector<PointLight> pointLights;
+    std::vector<Light> lights;
     std::vector<SceneObject> objects;
 };

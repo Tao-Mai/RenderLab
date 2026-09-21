@@ -48,6 +48,18 @@ void Buffer::upload(const void *data, vk::DeviceSize byteCount)
     memory.unmapMemory();
 }
 
+void Buffer::download(void *data, vk::DeviceSize byteCount)
+{
+    if (data == nullptr || byteCount == 0 || byteCount > byteSize)
+    {
+        throw std::invalid_argument("invalid buffer download");
+    }
+
+    void *mappedMemory = memory.mapMemory(0, byteCount);
+    std::memcpy(data, mappedMemory, static_cast<std::size_t>(byteCount));
+    memory.unmapMemory();
+}
+
 void Buffer::reset() noexcept
 {
     buffer   = nullptr;

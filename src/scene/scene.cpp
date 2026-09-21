@@ -1,9 +1,10 @@
 #include "scene/scene.h"
 
+#include <algorithm>
 #include <fstream>
 #include <stdexcept>
 
-#include <glm/gtc/matrix_transform.hpp>
+#include <glm/geometric.hpp>
 #include <nlohmann/json.hpp>
 
 namespace
@@ -17,19 +18,159 @@ namespace
         return {value[0].get<float>(), value[1].get<float>(), value[2].get<float>()};
     }
 
+    glm::vec2 readVec2(const nlohmann::json &value, const glm::vec2 &fallback)
+    {
+        if (!value.is_array() || value.size() != 2)
+        {
+            return fallback;
+        }
+        return {value[0].get<float>(), value[1].get<float>()};
+    }
+
     nlohmann::json writeVec3(const glm::vec3 &value)
     {
         return nlohmann::json::array({value.x, value.y, value.z});
     }
-}
 
-glm::mat4 Transform::matrix() const
-{
-    glm::mat4 result = glm::translate(glm::mat4{1.0f}, position);
-    result = glm::rotate(result, glm::radians(rotation.z), {0.0f, 0.0f, 1.0f});
-    result = glm::rotate(result, glm::radians(rotation.y), {0.0f, 1.0f, 0.0f});
-    result = glm::rotate(result, glm::radians(rotation.x), {1.0f, 0.0f, 0.0f});
-    return glm::scale(result, scale);
+    nlohmann::json writeVec2(const glm::vec2 &value)
+    {
+        return nlohmann::json::array({value.x, value.y});
+    }
+
+    Light::Type readLightType(const std::string &type)
+    {
+        if (type == "point") return Light::Type::Point;
+        if (type == "directional") return Light::Type::Directional;
+        if (type == "rectArea") return Light::Type::RectArea;
+        if (type == "spot") return Light::Type::Spot;
+        throw std::runtime_error("unsupported light type: " + type);
+    }
+
+    const char *writeLightType(Light::Type type)
+    {
+        switch (type)
+        {
+        case Light::Type::Point: return "point";
+        case Light::Type::Directional: return "directional";
+        case Light::Type::RectArea: return "rectArea";
+        case Light::Type::Spot: return "spot";
+        }
+        throw std::runtime_error("unsupported light type");
+    }
+
+    void validateLight(Light &light)
+    {
+        if (light.intensity < 0.0f)
+        {
+            throw std::runtime_error("light intensity cannot be negative: " + light.name);
+        }
+        if ((light.type == Light::Type::Point || light.type == Light::Type::Spot) &&
+            light.range <= 0.0f)
+        {
+            throw std::runtime_error("light range must be greater than zero: " + light.name);
+        }
+        if (light.type != Light::Type::Point)
+        {
+            if (glm::dot(light.direction, light.direction) < 0.000001f)
+            {
+                throw std::runtime_error("light direction cannot be zero: " + light.name);
+            }
+            light.direction = glm::normalize(light.direction);
+        }
+        if (light.type == Light::Type::Spot)
+        {
+            light.cosInner = std::clamp(light.cosInner, -1.0f, 1.0f);
+            light.cosOuter = std::clamp(light.cosOuter, -1.0f, 1.0f);
+            if (light.cosInner < light.cosOuter)
+            {
+                throw std::runtime_error(
+                    "spot light inner angle must not exceed outer angle: " + light.name);
+            }
+        }
+        if (light.type == Light::Type::RectArea &&
+            (light.areaSize.x <= 0.0f || light.areaSize.y <= 0.0f))
+        {
+            throw std::runtime_error("area light size must be greater than zero: " + light.name);
+        }
+    }
+
+    Light readLight(const nlohmann::json &json)
+    {
+        Light light;
+        light.type = readLightType(json.at("type").get<std::string>());
+        light.name = json.value("name", light.name);
+        light.color = readVec3(json.value("color", nlohmann::json{}), light.color);
+        light.position = readVec3(
+            json.value("position", nlohmann::json{}), light.position);
+        light.direction = readVec3(
+            json.value("direction", nlohmann::json{}), light.direction);
+        light.intensity = json.value("intensity", light.intensity);
+        light.range = json.value("range", light.range);
+        light.cosInner = json.value("cosInner", light.cosInner);
+        light.cosOuter = json.value("cosOuter", light.cosOuter);
+        light.areaSize = readVec2(
+            json.value("areaSize", nlohmann::json{}), light.areaSize);
+        light.enabled = json.value("enabled", light.enabled);
+        light.castShadow = json.value("castShadow", light.castShadow);
+        validateLight(light);
+        return light;
+    }
+
+    nlohmann::json writeLight(const Light &light)
+    {
+        nlohmann::json json{
+            {"name", light.name},
+            {"type", writeLightType(light.type)},
+            {"color", writeVec3(light.color)},
+            {"intensity", light.intensity},
+            {"enabled", light.enabled},
+            {"castShadow", light.castShadow},
+        };
+
+        switch (light.type)
+        {
+        case Light::Type::Point:
+            json["position"] = writeVec3(light.position);
+            json["range"] = light.range;
+            break;
+        case Light::Type::Directional:
+            json["direction"] = writeVec3(light.direction);
+            break;
+        case Light::Type::RectArea:
+            json["position"] = writeVec3(light.position);
+            json["direction"] = writeVec3(light.direction);
+            json["areaSize"] = writeVec2(light.areaSize);
+            break;
+        case Light::Type::Spot:
+            json["position"] = writeVec3(light.position);
+            json["direction"] = writeVec3(light.direction);
+            json["range"] = light.range;
+            json["cosInner"] = light.cosInner;
+            json["cosOuter"] = light.cosOuter;
+            break;
+        }
+        return json;
+    }
+
+    void readTransform(const nlohmann::json &json, Transform &transform)
+    {
+        transform.position = readVec3(
+            json.value("position", nlohmann::json{}), transform.position);
+        transform.setRotationEulerDegrees(readVec3(
+            json.value("rotation", nlohmann::json{}),
+            transform.rotationEulerDegrees()));
+        transform.scale = readVec3(
+            json.value("scale", nlohmann::json{}), transform.scale);
+    }
+
+    nlohmann::json writeTransform(const Transform &transform)
+    {
+        return {
+            {"position", writeVec3(transform.position)},
+            {"rotation", writeVec3(transform.rotationEulerDegrees())},
+            {"scale", writeVec3(transform.scale)},
+        };
+    }
 }
 
 Scene Scene::load(const std::filesystem::path &path)
@@ -54,35 +195,31 @@ Scene Scene::load(const std::filesystem::path &path)
         scene.camera.fieldOfView = camera->value("fieldOfView", scene.camera.fieldOfView);
         scene.camera.nearPlane = camera->value("nearPlane", scene.camera.nearPlane);
         scene.camera.farPlane = camera->value("farPlane", scene.camera.farPlane);
-    }
+        scene.camera.movementSpeed = camera->value(
+            "movementSpeed",
+            scene.camera.movementSpeed);
+        scene.camera.sprintMultiplier = camera->value(
+            "sprintMultiplier",
+            scene.camera.sprintMultiplier);
 
-    if (const auto pointLights = json.find("pointLights");
-        pointLights != json.end() && pointLights->is_array())
-    {
-        for (const auto &lightJson : *pointLights)
+        if (scene.camera.movementSpeed <= 0.0f)
         {
-            PointLight light;
-            light.name = lightJson.value("name", light.name);
-            light.position = readVec3(
-                lightJson.value("position", nlohmann::json{}), light.position);
-            light.color = readVec3(
-                lightJson.value("color", nlohmann::json{}), light.color);
-            light.intensity = lightJson.value("intensity", light.intensity);
-            light.range = lightJson.value("range", light.range);
-            light.enabled = lightJson.value("enabled", light.enabled);
-
-            if (light.intensity < 0.0f)
-            {
-                throw std::runtime_error("point light intensity cannot be negative");
-            }
-            if (light.range <= 0.0f)
-            {
-                throw std::runtime_error("point light range must be greater than zero");
-            }
-            scene.pointLights.push_back(std::move(light));
+            throw std::runtime_error("camera movement speed must be greater than zero");
+        }
+        if (scene.camera.sprintMultiplier < 1.0f)
+        {
+            throw std::runtime_error("camera sprint multiplier must be at least one");
         }
     }
 
+    if (const auto lights = json.find("lights");
+        lights != json.end() && lights->is_array())
+    {
+        for (const auto &lightJson : *lights)
+        {
+            scene.lights.push_back(readLight(lightJson));
+        }
+    }
     for (const auto &objectJson : json.at("objects"))
     {
         SceneObject object;
@@ -91,12 +228,7 @@ Scene Scene::load(const std::filesystem::path &path)
         if (const auto transform = objectJson.find("transform");
             transform != objectJson.end())
         {
-            object.transform.position = readVec3(
-                transform->value("position", nlohmann::json{}), object.transform.position);
-            object.transform.rotation = readVec3(
-                transform->value("rotation", nlohmann::json{}), object.transform.rotation);
-            object.transform.scale = readVec3(
-                transform->value("scale", nlohmann::json{}), object.transform.scale);
+            readTransform(*transform, object.transform);
         }
         scene.objects.push_back(std::move(object));
     }
@@ -114,21 +246,16 @@ void Scene::save(const std::filesystem::path &path) const
             {"fieldOfView", camera.fieldOfView},
             {"nearPlane", camera.nearPlane},
             {"farPlane", camera.farPlane},
+            {"movementSpeed", camera.movementSpeed},
+            {"sprintMultiplier", camera.sprintMultiplier},
         }},
-        {"pointLights", nlohmann::json::array()},
+        {"lights", nlohmann::json::array()},
         {"objects", nlohmann::json::array()},
     };
 
-    for (const PointLight &light : pointLights)
+    for (const Light &light : lights)
     {
-        json["pointLights"].push_back({
-            {"name", light.name},
-            {"position", writeVec3(light.position)},
-            {"color", writeVec3(light.color)},
-            {"intensity", light.intensity},
-            {"range", light.range},
-            {"enabled", light.enabled},
-        });
+        json["lights"].push_back(writeLight(light));
     }
 
     for (const SceneObject &object : objects)
@@ -136,11 +263,7 @@ void Scene::save(const std::filesystem::path &path) const
         json["objects"].push_back({
             {"name", object.name},
             {"mesh", object.mesh},
-            {"transform", {
-                {"position", writeVec3(object.transform.position)},
-                {"rotation", writeVec3(object.transform.rotation)},
-                {"scale", writeVec3(object.transform.scale)},
-            }},
+            {"transform", writeTransform(object.transform)},
         });
     }
 

@@ -18,6 +18,7 @@ class Window
     void initialize(int width, int height, const char *title);
     void pollEvents() const;
     [[nodiscard]] bool shouldClose() const;
+    void requestClose() const;
     [[nodiscard]] bool keyPressed(int key) const;
     [[nodiscard]] bool mouseButtonPressed(int button) const;
     [[nodiscard]] std::pair<double, double> cursorPosition() const;
