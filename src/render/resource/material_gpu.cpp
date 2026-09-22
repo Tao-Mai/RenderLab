@@ -1,7 +1,4 @@
-#include "render/material.h"
-
-#include "render/buffer.h"
-#include "render/texture.h"
+#include "render/resource/material_gpu.h"
 
 #include <array>
 #include <cstddef>
@@ -9,45 +6,41 @@
 
 namespace
 {
-struct alignas(16) MaterialData
+struct alignas(16) MaterialUniforms
 {
     glm::vec4 baseColorFactor{1.0f};
-    float roughness = 1.0f;
-    float metallic = 1.0f;
-    float padding0 = 0.0f;
-    float padding1 = 0.0f;
+    float     roughness = 1.0f;
+    float     metallic  = 1.0f;
+    float     padding0  = 0.0f;
+    float     padding1  = 0.0f;
 };
 
-static_assert(offsetof(MaterialData, baseColorFactor) == 0);
-static_assert(offsetof(MaterialData, roughness) == 16);
-static_assert(offsetof(MaterialData, metallic) == 20);
-static_assert(sizeof(MaterialData) == 32);
+static_assert(offsetof(MaterialUniforms, baseColorFactor) == 0);
+static_assert(offsetof(MaterialUniforms, roughness) == 16);
+static_assert(offsetof(MaterialUniforms, metallic) == 20);
+static_assert(sizeof(MaterialUniforms) == 32);
 }
 
-bool Material::hasAlbedoMap() const
+void MaterialGpu::create(
+    const vk::raii::PhysicalDevice& physicalDevice,
+    const vk::raii::Device&         device,
+    vk::DescriptorPool              descriptorPool,
+    vk::DescriptorSetLayout         descriptorSetLayout,
+    const MaterialData&             material,
+    std::shared_ptr<Texture>        texture)
 {
-    return !albedoMap.empty();
-}
-
-void Material::createDescriptorSet(
-    const vk::raii::PhysicalDevice &physicalDevice,
-    const vk::raii::Device &device,
-    vk::DescriptorPool descriptorPool,
-    vk::DescriptorSetLayout descriptorSetLayout,
-    std::shared_ptr<Texture> texture)
-{
-    albedoTexture = std::move(texture);
+    albedoTexture  = std::move(texture);
     materialBuffer = std::make_shared<Buffer>(
         physicalDevice,
         device,
-        sizeof(MaterialData),
+        sizeof(MaterialUniforms),
         vk::BufferUsageFlagBits::eUniformBuffer,
         vk::MemoryPropertyFlagBits::eHostVisible |
-        vk::MemoryPropertyFlagBits::eHostCoherent);
-    const MaterialData materialData{
-        .baseColorFactor = baseColorFactor,
-        .roughness = roughness,
-        .metallic = metallic,
+            vk::MemoryPropertyFlagBits::eHostCoherent);
+    const MaterialUniforms materialData{
+        .baseColorFactor = material.baseColorFactor,
+        .roughness = material.roughness,
+        .metallic = material.metallic,
     };
     materialBuffer->upload(&materialData, sizeof(materialData));
 
@@ -70,7 +63,7 @@ void Material::createDescriptorSet(
     const vk::DescriptorBufferInfo materialBufferInfo{
         .buffer = materialBuffer->handle(),
         .offset = 0,
-        .range = sizeof(MaterialData),
+        .range = sizeof(MaterialUniforms),
     };
     const std::array writes = {
         vk::WriteDescriptorSet{
@@ -98,15 +91,7 @@ void Material::createDescriptorSet(
     device.updateDescriptorSets(writes, {});
 }
 
-void Material::bind(
-    vk::raii::CommandBuffer &commandBuffer,
-    vk::PipelineLayout pipelineLayout) const
+vk::DescriptorSet MaterialGpu::descriptorSetHandle() const
 {
-    const std::array descriptorSets = {**descriptorSet};
-    commandBuffer.bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics,
-        pipelineLayout,
-        0,
-        descriptorSets,
-        {});
+    return **descriptorSet;
 }

@@ -58,16 +58,16 @@ struct MaterialData {
     float metallic;
 };
 
-[[vk::binding(0, 0)]]
+[[vk::binding(0, 1)]]
 Texture2D<float4> albedoMap;
 
-[[vk::binding(1, 0)]]
+[[vk::binding(1, 1)]]
 SamplerState albedoSampler;
 
-[[vk::binding(2, 0)]]
+[[vk::binding(2, 1)]]
 ConstantBuffer<MaterialData> material;
 
-[[vk::binding(0, 1)]]
+[[vk::binding(0, 0)]]
 ConstantBuffer<SceneUniforms> sceneUniforms;
 
 [shader("vertex")]

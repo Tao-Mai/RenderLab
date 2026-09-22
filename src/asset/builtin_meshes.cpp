@@ -137,8 +137,8 @@ MeshData BuiltinMeshes::sphere(uint32_t segments, uint32_t rings)
 
 MeshData BuiltinMeshes::arrow()
 {
-    constexpr float shaftHalfWidth = 0.045f;
-    constexpr float headHalfWidth = 0.14f;
+    constexpr float shaftHalfWidth = 0.025f;
+    constexpr float headHalfWidth = 0.09f;
     constexpr float back = 0.5f;
     constexpr float headBase = -0.16f;
     constexpr float tip = -0.5f;

@@ -1,0 +1,34 @@
+---
+description: 重构时不做兼容层，直接删旧代码、改调用方
+alwaysApply: true
+---
+
+# 重构不留兼容代码
+
+重构时直接完成迁移，不要为了“少改调用方”而留下旧接口、旧路径、包装层或临时分支。
+
+## 要求
+
+- 删掉被替换的旧函数 / 旧类型 / 旧文件，同步改完所有调用点
+- 不要新增 `*Legacy`、`*Compat`、`*V1`、`deprecated` 包装，也不要 `using NewX = OldX` 这类别名过渡
+- 不要用 `#if` / 运行时开关 / 配置项同时保留新旧两套实现
+- 不要写 “暂时保留，以后再删” 的死代码或注释掉的旧实现
+- 公共 API 也一样：能改调用方就改，不在本仓库内堆兼容层
+
+## 示例
+
+```cpp
+// ❌ BAD：新旧并存
+void drawMesh(const Mesh& mesh);          // 新
+void drawMeshLegacy(const MeshData& data); // 旧，留着“兼容”
+
+// ✅ GOOD：只留新接口，调用方全部改完
+void drawMesh(const Mesh& mesh);
+```
+
+```cpp
+// ❌ BAD：包装转发
+void createBuffer(...) { createBufferV2(...); }
+
+// ✅ GOOD：调用方直接用新实现，旧符号删除
+```

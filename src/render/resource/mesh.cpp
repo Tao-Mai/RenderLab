@@ -1,17 +1,16 @@
-#include "render/mesh.h"
+#include "render/resource/mesh.h"
 
 #include <array>
 #include <stdexcept>
 #include <utility>
 
-Mesh::Mesh(
-    const vk::raii::PhysicalDevice &physicalDevice,
-    const vk::raii::Device &device,
-    const vk::raii::CommandPool &commandPool,
-    vk::raii::Queue &queue,
-    MeshData meshData) :
+Mesh::Mesh(GpuUploadContext upload, MeshData meshData) :
     data(std::move(meshData))
 {
+    const auto& physicalDevice = upload.physicalDevice;
+    const auto& device         = upload.device;
+    const auto& commandPool    = upload.commandPool;
+    auto&       queue          = upload.queue;
     if (data.vertices.empty() || data.indices.empty())
     {
         throw std::invalid_argument("mesh requires vertices and indices");
@@ -37,7 +36,7 @@ Mesh::Mesh(
             .materialIndex = 0,
         });
     }
-    for (const SubmeshData &submesh : data.submeshes)
+    for (const SubmeshData& submesh : data.submeshes)
     {
         if (submesh.firstIndex + submesh.indexCount > data.indices.size() ||
             submesh.materialIndex >= data.materials.size())
@@ -46,50 +45,48 @@ Mesh::Mesh(
         }
     }
 
-    const vk::DeviceSize vertexBytes =
-        sizeof(Vertex) * data.vertices.size();
-    Buffer vertexStaging(
+    gpus.resize(data.materials.size());
+
+    const vk::DeviceSize vertexBytes = sizeof(Vertex) * data.vertices.size();
+    Buffer               vertexStaging(
         physicalDevice,
         device,
         vertexBytes,
         vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eHostVisible |
-        vk::MemoryPropertyFlagBits::eHostCoherent);
+            vk::MemoryPropertyFlagBits::eHostCoherent);
     vertexStaging.upload(data.vertices.data(), vertexBytes);
 
     vertexBuffer = Buffer(
         physicalDevice,
         device,
         vertexBytes,
-        vk::BufferUsageFlagBits::eTransferDst |
-        vk::BufferUsageFlagBits::eVertexBuffer,
+        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
         vk::MemoryPropertyFlagBits::eDeviceLocal);
     copyBuffer(device, commandPool, queue, vertexStaging, vertexBuffer);
 
-    const vk::DeviceSize indexBytes =
-        sizeof(uint32_t) * data.indices.size();
-    Buffer indexStaging(
+    const vk::DeviceSize indexBytes = sizeof(uint32_t) * data.indices.size();
+    Buffer               indexStaging(
         physicalDevice,
         device,
         indexBytes,
         vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eHostVisible |
-        vk::MemoryPropertyFlagBits::eHostCoherent);
+            vk::MemoryPropertyFlagBits::eHostCoherent);
     indexStaging.upload(data.indices.data(), indexBytes);
 
     indexBuffer = Buffer(
         physicalDevice,
         device,
         indexBytes,
-        vk::BufferUsageFlagBits::eTransferDst |
-        vk::BufferUsageFlagBits::eIndexBuffer,
+        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
         vk::MemoryPropertyFlagBits::eDeviceLocal);
     copyBuffer(device, commandPool, queue, indexStaging, indexBuffer);
 }
 
-void Mesh::bind(vk::raii::CommandBuffer &commandBuffer) const
+void Mesh::bind(vk::raii::CommandBuffer& commandBuffer) const
 {
-    const std::array<vk::Buffer, 1> vertexBuffers = {vertexBuffer.handle()};
+    const std::array<vk::Buffer, 1>     vertexBuffers = {vertexBuffer.handle()};
     const std::array<vk::DeviceSize, 1> vertexOffsets = {0};
     commandBuffer.bindVertexBuffers(0, vertexBuffers, vertexOffsets);
     commandBuffer.bindIndexBuffer(indexBuffer.handle(), 0, vk::IndexType::eUint32);
@@ -100,32 +97,42 @@ uint32_t Mesh::indexCount() const
     return static_cast<uint32_t>(data.indices.size());
 }
 
-const std::vector<SubmeshData> &Mesh::submeshes() const
+const std::vector<SubmeshData>& Mesh::submeshes() const
 {
     return data.submeshes;
 }
 
-const Material &Mesh::material(uint32_t index) const
+const MaterialData& Mesh::materialData(uint32_t index) const
 {
     return data.materials.at(index);
 }
 
-std::vector<Material> &Mesh::materials()
+const MaterialGpu& Mesh::materialGpu(uint32_t index) const
+{
+    return gpus.at(index);
+}
+
+std::vector<MaterialGpu>& Mesh::materialGpus()
+{
+    return gpus;
+}
+
+const std::vector<MaterialData>& Mesh::materials() const
 {
     return data.materials;
 }
 
 void Mesh::copyBuffer(
-    const vk::raii::Device &device,
-    const vk::raii::CommandPool &commandPool,
-    vk::raii::Queue &queue,
-    const Buffer &source,
-    const Buffer &destination)
+    const vk::raii::Device&      device,
+    const vk::raii::CommandPool& commandPool,
+    vk::raii::Queue&             queue,
+    const Buffer&                source,
+    const Buffer&                destination)
 {
     const vk::CommandBufferAllocateInfo allocationInfo{
         .commandPool = commandPool,
         .level = vk::CommandBufferLevel::ePrimary,
-        .commandBufferCount = 1
+        .commandBufferCount = 1,
     };
     vk::raii::CommandBuffer copyCommand =
         std::move(vk::raii::CommandBuffers(device, allocationInfo).front());
@@ -138,9 +145,9 @@ void Mesh::copyBuffer(
     copyCommand.end();
 
     const vk::CommandBuffer command = *copyCommand;
-    const vk::SubmitInfo submitInfo{
+    const vk::SubmitInfo    submitInfo{
         .commandBufferCount = 1,
-        .pCommandBuffers = &command
+        .pCommandBuffers = &command,
     };
     queue.submit(submitInfo, nullptr);
     queue.waitIdle();

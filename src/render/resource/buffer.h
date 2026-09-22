@@ -29,9 +29,4 @@ class Buffer
     vk::DeviceSize         byteSize = 0;
     vk::raii::DeviceMemory memory   = nullptr;
     vk::raii::Buffer       buffer   = nullptr;
-
-    static uint32_t findMemoryType(
-        const vk::raii::PhysicalDevice &physicalDevice,
-        uint32_t typeFilter,
-        vk::MemoryPropertyFlags requiredProperties);
 };

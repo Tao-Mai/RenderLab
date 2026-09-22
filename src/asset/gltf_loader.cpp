@@ -56,7 +56,7 @@ namespace
         for (size_t index = 0; index < model.materials.size(); ++index)
         {
             const tinygltf::Material &source = model.materials[index];
-            Material material;
+            MaterialData material;
             material.name = source.name.empty()
                 ? "Material " + std::to_string(index)
                 : source.name;

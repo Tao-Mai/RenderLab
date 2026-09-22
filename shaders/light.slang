@@ -43,7 +43,7 @@ struct SceneUniforms
 [[vk::push_constant]]
 ConstantBuffer<PushConstants> pushConstants;
 
-[[vk::binding(0, 1)]]
+[[vk::binding(0, 0)]]
 ConstantBuffer<SceneUniforms> sceneUniforms;
 
 [shader("vertex")]

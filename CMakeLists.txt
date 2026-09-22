@@ -105,6 +105,7 @@ add_executable(RenderLab
         src/engine.h
         src/editor/editor_ui.cpp
         src/editor/editor_ui.h
+        src/editor/viewport_rect.h
         src/window.cpp
         src/window.h
         src/asset/asset_manager.cpp
@@ -113,23 +114,43 @@ add_executable(RenderLab
         src/asset/builtin_meshes.h
         src/asset/gltf_loader.cpp
         src/asset/gltf_loader.h
+        src/asset/material_data.h
         src/asset/mesh_data.h
+        src/asset/vertex.h
         src/platform/input_method.cpp
         src/platform/input_method.h
         src/render/renderer.cpp
         src/render/renderer.h
-        src/render/buffer.cpp
-        src/render/buffer.h
-        src/render/mesh.cpp
-        src/render/mesh.h
-        src/render/material.cpp
-        src/render/material.h
-        src/render/texture.cpp
-        src/render/texture.h
-        src/render/shader.cpp
-        src/render/shader.h
-        src/render/vertex.cpp
-        src/render/vertex.h
+        src/render/device/memory.h
+        src/render/device/vulkan_context.cpp
+        src/render/device/vulkan_context.h
+        src/render/device/frame_context.cpp
+        src/render/device/frame_context.h
+        src/render/device/gpu_upload_context.h
+        src/render/present/swapchain.cpp
+        src/render/present/swapchain.h
+        src/render/resource/buffer.cpp
+        src/render/resource/buffer.h
+        src/render/resource/texture.cpp
+        src/render/resource/texture.h
+        src/render/resource/shader.cpp
+        src/render/resource/shader.h
+        src/render/resource/mesh.cpp
+        src/render/resource/mesh.h
+        src/render/resource/material_gpu.cpp
+        src/render/resource/material_gpu.h
+        src/render/resource/vertex_layout.h
+        src/render/resource/shader_data.h
+        src/render/scene/gpu_scene.cpp
+        src/render/scene/gpu_scene.h
+        src/render/pass/scene_pass.cpp
+        src/render/pass/scene_pass.h
+        src/render/pass/scene_pipelines.cpp
+        src/render/pass/scene_pipelines.h
+        src/render/pass/light_markers.cpp
+        src/render/pass/light_markers.h
+        src/render/pass/editor_picking_pass.cpp
+        src/render/pass/editor_picking_pass.h
         src/scene/scene.cpp
         src/scene/scene.h
         src/scene/light.h

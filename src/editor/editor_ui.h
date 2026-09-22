@@ -1,5 +1,7 @@
 #pragma once
 
+#include "editor/viewport_rect.h"
+
 #include <cstdint>
 
 #include <glm/mat4x4.hpp>
@@ -13,65 +15,57 @@ struct Transform;
 
 class EditorUI
 {
-  public:
-    struct ViewportRect
-    {
-        float x = 0.0f;
-        float y = 0.0f;
-        float width = 1.0f;
-        float height = 1.0f;
-    };
-
+public:
     EditorUI() = default;
     ~EditorUI();
 
-    EditorUI(const EditorUI &)            = delete;
-    EditorUI &operator=(const EditorUI &) = delete;
+    EditorUI(const EditorUI&)            = delete;
+    EditorUI& operator=(const EditorUI&) = delete;
 
     void initialize(
-        GLFWwindow *window,
-        VkInstance instance,
+        GLFWwindow*      window,
+        VkInstance       instance,
         VkPhysicalDevice physicalDevice,
-        VkDevice device,
-        uint32_t queueFamily,
-        VkQueue queue,
-        VkFormat colorFormat,
-        uint32_t minImageCount,
-        uint32_t imageCount);
+        VkDevice         device,
+        uint32_t         queueFamily,
+        VkQueue          queue,
+        VkFormat         colorFormat,
+        uint32_t         minImageCount,
+        uint32_t         imageCount);
     void beginFrame(float deltaTime);
     void drawGizmo(
-        Transform &transform,
-        const glm::mat4 &view,
-        const glm::mat4 &projection,
-        bool enableShortcuts);
+        Transform&       transform,
+        const glm::mat4& view,
+        const glm::mat4& projection,
+        bool             enableShortcuts);
     void drawLightGizmo(
-        Light &light,
-        const glm::mat4 &view,
-        const glm::mat4 &projection,
-        bool enableShortcuts);
-    void drawInspector(SceneObject *object, Light *light);
+        Light&           light,
+        const glm::mat4& view,
+        const glm::mat4& projection,
+        bool             enableShortcuts);
+    void drawInspector(SceneObject* object, Light* light);
     void endFrame();
     void render(VkCommandBuffer commandBuffer) const;
     void shutdown() noexcept;
 
-    [[nodiscard]] bool sceneClicked(glm::vec2 &mousePosition) const;
-    [[nodiscard]] bool wantsInput() const;
-    [[nodiscard]] float sceneAspectRatio() const;
+    [[nodiscard]] bool         sceneClicked(glm::vec2& mousePosition) const;
+    [[nodiscard]] bool         wantsInput() const;
+    [[nodiscard]] float        sceneAspectRatio() const;
     [[nodiscard]] ViewportRect sceneViewportPixels() const;
 
-  private:
-    bool contextCreated = false;
-    bool glfwBackendInitialized = false;
-    bool vulkanBackendInitialized = false;
-    bool dockLayoutInitialized = false;
-    float fpsRefreshTime = 0.0f;
-    float displayedFps = 0.0f;
-    uint32_t framesSinceRefresh = 0;
-    uint32_t editorDockId = 0;
-    int gizmoOperation = 0;
-    glm::vec2 scenePosition{0.0f};
-    glm::vec2 sceneSize{1.0f};
-    ViewportRect scenePixels;
-    VkFormat colorFormat = VK_FORMAT_UNDEFINED;
-    VkPipelineRenderingCreateInfoKHR pipelineRenderingInfo{};
+private:
+    bool                              contextCreated            = false;
+    bool                              glfwBackendInitialized    = false;
+    bool                              vulkanBackendInitialized  = false;
+    bool                              dockLayoutInitialized     = false;
+    float                             fpsRefreshTime            = 0.0f;
+    float                             displayedFps              = 0.0f;
+    uint32_t                          framesSinceRefresh        = 0;
+    uint32_t                          editorDockId              = 0;
+    int                               gizmoOperation            = 0;
+    glm::vec2                         scenePosition{0.0f};
+    glm::vec2                         sceneSize{1.0f};
+    ViewportRect                      scenePixels;
+    VkFormat                          colorFormat = VK_FORMAT_UNDEFINED;
+    VkPipelineRenderingCreateInfoKHR  pipelineRenderingInfo{};
 };

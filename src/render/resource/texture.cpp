@@ -1,4 +1,7 @@
-#include "render/texture.h"
+#include "render/resource/texture.h"
+
+#include "render/device/memory.h"
+#include "render/resource/buffer.h"
 
 #include <memory>
 #include <stdexcept>
@@ -18,12 +21,7 @@ namespace
     };
 }
 
-Texture::Texture(
-    const vk::raii::PhysicalDevice &physicalDevice,
-    const vk::raii::Device &device,
-    const vk::raii::CommandPool &commandPool,
-    vk::raii::Queue &queue,
-    const std::filesystem::path &path)
+Texture::Texture(GpuUploadContext upload, const std::filesystem::path &path)
 {
     int width = 0;
     int height = 0;
@@ -37,23 +35,15 @@ Texture::Texture(
             "failed to load texture '" + filename + "': " + stbi_failure_reason());
     }
     create(
-        physicalDevice,
-        device,
-        commandPool,
-        queue,
+        upload,
         pixels.get(),
         static_cast<uint32_t>(width),
         static_cast<uint32_t>(height));
 }
 
-Texture::Texture(
-    const vk::raii::PhysicalDevice &physicalDevice,
-    const vk::raii::Device &device,
-    const vk::raii::CommandPool &commandPool,
-    vk::raii::Queue &queue,
-    const std::array<uint8_t, 4> &rgba)
+Texture::Texture(GpuUploadContext upload, const std::array<uint8_t, 4> &rgba)
 {
-    create(physicalDevice, device, commandPool, queue, rgba.data(), 1, 1);
+    create(upload, rgba.data(), 1, 1);
 }
 
 vk::ImageView Texture::imageView() const
@@ -66,15 +56,12 @@ vk::Sampler Texture::sampler() const
     return *imageSampler;
 }
 
-void Texture::create(
-    const vk::raii::PhysicalDevice &physicalDevice,
-    const vk::raii::Device &device,
-    const vk::raii::CommandPool &commandPool,
-    vk::raii::Queue &queue,
-    const uint8_t *pixels,
-    uint32_t width,
-    uint32_t height)
+void Texture::create(GpuUploadContext upload, const uint8_t *pixels, uint32_t width, uint32_t height)
 {
+    const auto& physicalDevice = upload.physicalDevice;
+    const auto& device = upload.device;
+    const auto& commandPool = upload.commandPool;
+    auto& queue = upload.queue;
     const vk::DeviceSize byteSize =
         static_cast<vk::DeviceSize>(width) * height * 4;
     Buffer staging(
@@ -104,7 +91,7 @@ void Texture::create(
     const vk::MemoryRequirements requirements = image.getMemoryRequirements();
     const vk::MemoryAllocateInfo allocationInfo{
         .allocationSize = requirements.size,
-        .memoryTypeIndex = findMemoryType(
+        .memoryTypeIndex = vulkan_memory::findType(
             physicalDevice,
             requirements.memoryTypeBits,
             vk::MemoryPropertyFlagBits::eDeviceLocal),
@@ -213,22 +200,4 @@ void Texture::create(
         .unnormalizedCoordinates = vk::False,
     };
     imageSampler = vk::raii::Sampler(device, samplerInfo);
-}
-
-uint32_t Texture::findMemoryType(
-    const vk::raii::PhysicalDevice &physicalDevice,
-    uint32_t typeFilter,
-    vk::MemoryPropertyFlags properties)
-{
-    const vk::PhysicalDeviceMemoryProperties memoryProperties =
-        physicalDevice.getMemoryProperties();
-    for (uint32_t index = 0; index < memoryProperties.memoryTypeCount; ++index)
-    {
-        if ((typeFilter & (1u << index)) != 0 &&
-            (memoryProperties.memoryTypes[index].propertyFlags & properties) == properties)
-        {
-            return index;
-        }
-    }
-    throw std::runtime_error("failed to find a suitable texture memory type");
 }

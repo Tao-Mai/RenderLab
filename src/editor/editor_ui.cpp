@@ -5,8 +5,10 @@
 #include "scene/transform.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
@@ -18,6 +20,12 @@
 #include <imgui_impl_vulkan.h>
 #include <imgui_internal.h>
 #include <ImGuizmo.h>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <Windows.h>
+#endif
 
 namespace
 {
@@ -123,6 +131,29 @@ void EditorUI::initialize(
         ImGuiIO &io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
         ImGui::StyleColorsDark();
+
+#ifdef _WIN32
+        std::array<char, MAX_PATH> windowsDirectory{};
+        const UINT directoryLength = GetWindowsDirectoryA(
+            windowsDirectory.data(),
+            static_cast<UINT>(windowsDirectory.size()));
+        if (directoryLength == 0 || directoryLength >= windowsDirectory.size())
+        {
+            throw std::runtime_error("failed to locate the Windows font directory");
+        }
+        const std::string fontPath =
+            std::string{windowsDirectory.data(), directoryLength} + "\\Fonts\\msyh.ttc";
+        if (io.Fonts->AddFontFromFileTTF(
+                fontPath.c_str(),
+                18.0f,
+                nullptr,
+                io.Fonts->GetGlyphRangesChineseFull()) == nullptr)
+        {
+            throw std::runtime_error("failed to load Microsoft YaHei: " + fontPath);
+        }
+#else
+#error RenderLab editor requires Windows to load Microsoft YaHei
+#endif
 
         if (!ImGui_ImplGlfw_InitForVulkan(window, true))
         {
@@ -494,7 +525,7 @@ float EditorUI::sceneAspectRatio() const
     return sceneSize.x / std::max(sceneSize.y, 1.0f);
 }
 
-EditorUI::ViewportRect EditorUI::sceneViewportPixels() const
+ViewportRect EditorUI::sceneViewportPixels() const
 {
     return scenePixels;
 }

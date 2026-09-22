@@ -1,0 +1,373 @@
+#include "render/pass/scene_pass.h"
+
+#include "render/device/frame_context.h"
+#include "render/pass/light_markers.h"
+#include "render/present/swapchain.h"
+#include "render/resource/mesh.h"
+#include "render/resource/shader_data.h"
+#include "render/resource/texture.h"
+#include "render/device/vulkan_context.h"
+#include "scene/light.h"
+#include "scene/scene.h"
+
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <filesystem>
+#include <utility>
+
+#include <glm/vec4.hpp>
+
+namespace
+{
+struct SceneUniforms
+{
+    glm::mat4  viewProjection{1.0f};
+    glm::vec4  lightColorIntensity{1.0f, 1.0f, 1.0f, 0.0f};
+    glm::vec4  lightPositionRange{0.0f, 0.0f, 0.0f, 1.0f};
+    glm::vec4  lightDirection{0.0f, -1.0f, 0.0f, 0.0f};
+    glm::vec4  lightAreaSizeCone{1.0f, 1.0f, 0.9396926f, 0.8660254f};
+    glm::uvec4 lightFlags{0u};
+    glm::vec4  cameraPosition{0.0f, 0.0f, 0.0f, 1.0f};
+};
+
+static_assert(sizeof(SceneUniforms) == 160);
+static_assert(offsetof(SceneUniforms, lightColorIntensity) == 64);
+static_assert(offsetof(SceneUniforms, lightPositionRange) == 80);
+static_assert(offsetof(SceneUniforms, lightDirection) == 96);
+static_assert(offsetof(SceneUniforms, lightAreaSizeCone) == 112);
+static_assert(offsetof(SceneUniforms, lightFlags) == 128);
+static_assert(offsetof(SceneUniforms, cameraPosition) == 144);
+}
+
+void ScenePass::initializeDescriptors()
+{
+    const auto& physicalDevice = vulkan->physicalDeviceHandle();
+    const auto& device         = vulkan->deviceHandle();
+    const std::array poolSizes = {
+        vk::DescriptorPoolSize{
+            .type = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1024,
+        },
+        vk::DescriptorPoolSize{
+            .type = vk::DescriptorType::eSampler,
+            .descriptorCount = 1024,
+        },
+        vk::DescriptorPoolSize{
+            .type = vk::DescriptorType::eUniformBuffer,
+            .descriptorCount = 1025,
+        },
+    };
+    const vk::DescriptorPoolCreateInfo poolInfo{
+        .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+        .maxSets = 1025,
+        .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
+        .pPoolSizes = poolSizes.data(),
+    };
+    descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
+
+    const std::array materialBindings = {
+        vk::DescriptorSetLayoutBinding{
+            .binding = 0,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding = 1,
+            .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding = 2,
+            .descriptorType = vk::DescriptorType::eUniformBuffer,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment,
+        },
+    };
+    const vk::DescriptorSetLayoutCreateInfo materialLayoutInfo{
+        .bindingCount = static_cast<uint32_t>(materialBindings.size()),
+        .pBindings = materialBindings.data(),
+    };
+    materialLayout = vk::raii::DescriptorSetLayout(device, materialLayoutInfo);
+
+    const vk::DescriptorSetLayoutBinding sceneBinding{
+        .binding = 0,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
+        .descriptorCount = 1,
+        .stageFlags = vk::ShaderStageFlagBits::eVertex |
+            vk::ShaderStageFlagBits::eFragment,
+    };
+    const vk::DescriptorSetLayoutCreateInfo sceneLayoutInfo{
+        .bindingCount = 1,
+        .pBindings = &sceneBinding,
+    };
+    sceneLayout = vk::raii::DescriptorSetLayout(device, sceneLayoutInfo);
+
+    sceneBuffer = Buffer(
+        physicalDevice,
+        device,
+        sizeof(SceneUniforms),
+        vk::BufferUsageFlagBits::eUniformBuffer,
+        vk::MemoryPropertyFlagBits::eHostVisible |
+            vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    const vk::DescriptorSetLayout       layout = *sceneLayout;
+    const vk::DescriptorSetAllocateInfo allocationInfo{
+        .descriptorPool = *descriptorPool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &layout,
+    };
+    sceneSet = std::move(vk::raii::DescriptorSets(device, allocationInfo).front());
+
+    const vk::DescriptorBufferInfo bufferInfo{
+        .buffer = sceneBuffer.handle(),
+        .range = sceneBuffer.size(),
+    };
+    const vk::WriteDescriptorSet write{
+        .dstSet = *sceneSet,
+        .dstBinding = 0,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
+        .pBufferInfo = &bufferInfo,
+    };
+    device.updateDescriptorSets(write, {});
+}
+
+void ScenePass::bindSceneDescriptor(vk::raii::CommandBuffer& commandBuffer) const
+{
+    const std::array sets = {*sceneSet};
+    commandBuffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        scenePipelines.layoutHandle(),
+        sceneSetIndex,
+        sets,
+        {});
+}
+
+void ScenePass::initialize(VulkanContext& context, Swapchain& targetSwapchain, FrameContext& targetFrame)
+{
+    vulkan    = &context;
+    swapchain = &targetSwapchain;
+    frame     = &targetFrame;
+    try
+    {
+        initializeDescriptors();
+        defaultAlbedoTexture = std::make_shared<Texture>(
+            frame->uploadContext(*vulkan),
+            std::array<uint8_t, 4>{255, 255, 255, 255});
+        scenePipelines.initialize(
+            vulkan->deviceHandle(),
+            swapchain->surfaceFormat().format,
+            swapchain->depthImageFormat(),
+            *sceneLayout,
+            *materialLayout);
+    }
+    catch (...)
+    {
+        reset();
+        throw;
+    }
+}
+
+void ScenePass::reset() noexcept
+{
+    scenePipelines.reset();
+    textureAssets.clear();
+    defaultAlbedoTexture.reset();
+    sceneSet         = nullptr;
+    sceneBuffer.reset();
+    sceneLayout      = nullptr;
+    materialLayout   = nullptr;
+    descriptorPool   = nullptr;
+    frame            = nullptr;
+    swapchain        = nullptr;
+    vulkan           = nullptr;
+}
+
+void ScenePass::updateScene(
+    const glm::mat4& viewProjection,
+    const glm::vec3& cameraPosition,
+    const Light*     light)
+{
+    SceneUniforms uniforms{
+        .viewProjection = viewProjection,
+        .cameraPosition = glm::vec4{cameraPosition, 1.0f},
+    };
+    if (light != nullptr)
+    {
+        uniforms.lightColorIntensity = {light->color, light->intensity};
+        uniforms.lightPositionRange  = {light->position, light->range};
+        uniforms.lightDirection      = glm::vec4{light->direction, 0.0f};
+        uniforms.lightAreaSizeCone   = {
+            light->areaSize, light->cosInner, light->cosOuter,
+        };
+        uniforms.lightFlags = {
+            static_cast<uint32_t>(light->type),
+            light->enabled ? 1u : 0u,
+            light->castShadow ? 1u : 0u,
+            0u,
+        };
+    }
+    sceneBuffer.upload(&uniforms, sizeof(uniforms));
+}
+
+vk::DescriptorSetLayout ScenePass::sceneLayoutHandle() const
+{
+    return *sceneLayout;
+}
+
+vk::DescriptorSet ScenePass::sceneSetHandle() const
+{
+    return *sceneSet;
+}
+
+void ScenePass::record(
+    vk::raii::CommandBuffer&            commandBuffer,
+    const std::vector<SceneRenderItem>& renderItems,
+    const std::vector<LightRenderItem>& lightRenderItems,
+    const LightMarkers&                 lightMarkers,
+    Target                              target) const
+{
+    vk::ClearValue              clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+    vk::RenderingAttachmentInfo attachmentInfo = {
+        .imageView = swapchain->imageView(target.imageIndex),
+        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eStore,
+        .clearValue = clearColor};
+    vk::ClearValue              depthClear = vk::ClearDepthStencilValue(1.0f, 0);
+    vk::RenderingAttachmentInfo depthAttachmentInfo = {
+        .imageView = swapchain->depthImageViewHandle(),
+        .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = target.storeDepthForPicking
+            ? vk::AttachmentStoreOp::eStore
+            : vk::AttachmentStoreOp::eDontCare,
+        .clearValue = depthClear,
+    };
+    vk::RenderingInfo renderingInfo = {
+        .renderArea = {.offset = {0, 0}, .extent = swapchain->extent()},
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &attachmentInfo,
+        .pDepthAttachment = &depthAttachmentInfo};
+
+    commandBuffer.beginRendering(renderingInfo);
+    scenePipelines.bindScene(commandBuffer);
+    bindSceneDescriptor(commandBuffer);
+    const ViewportRect editorViewport = target.viewport;
+    const uint32_t     viewportX      = std::min(
+        static_cast<uint32_t>(std::max(editorViewport.x, 0.0f)),
+        swapchain->extent().width - 1);
+    const uint32_t viewportY = std::min(
+        static_cast<uint32_t>(std::max(editorViewport.y, 0.0f)),
+        swapchain->extent().height - 1);
+    const uint32_t viewportWidth = std::max(
+        1u,
+        std::min(
+            static_cast<uint32_t>(editorViewport.width),
+            swapchain->extent().width - viewportX));
+    const uint32_t viewportHeight = std::max(
+        1u,
+        std::min(
+            static_cast<uint32_t>(editorViewport.height),
+            swapchain->extent().height - viewportY));
+    commandBuffer.setViewport(
+        0,
+        vk::Viewport(
+            static_cast<float>(viewportX),
+            static_cast<float>(viewportY),
+            static_cast<float>(viewportWidth),
+            static_cast<float>(viewportHeight),
+            0.0f,
+            1.0f));
+    commandBuffer.setScissor(
+        0,
+        vk::Rect2D(
+            vk::Offset2D(
+                static_cast<int32_t>(viewportX),
+                static_cast<int32_t>(viewportY)),
+            vk::Extent2D(viewportWidth, viewportHeight)));
+    for (const SceneRenderItem& item : renderItems)
+    {
+        item.mesh->bind(commandBuffer);
+        for (const SubmeshData& submesh : item.mesh->submeshes())
+        {
+            const MaterialGpu&      material = item.mesh->materialGpu(submesh.materialIndex);
+            const MeshPushConstants pushConstants{
+                .model = item.object->transform.matrix(),
+            };
+            commandBuffer.pushConstants<MeshPushConstants>(
+                scenePipelines.layoutHandle(),
+                vk::ShaderStageFlagBits::eVertex |
+                    vk::ShaderStageFlagBits::eFragment,
+                0,
+                pushConstants);
+            const std::array materialSets = {material.descriptorSetHandle()};
+            commandBuffer.bindDescriptorSets(
+                vk::PipelineBindPoint::eGraphics,
+                scenePipelines.layoutHandle(),
+                materialSetIndex,
+                materialSets,
+                {});
+            commandBuffer.drawIndexed(
+                submesh.indexCount,
+                1,
+                submesh.firstIndex,
+                0,
+                0);
+        }
+    }
+
+    if (!lightRenderItems.empty())
+    {
+        scenePipelines.bindLightMarkers(commandBuffer);
+        bindSceneDescriptor(commandBuffer);
+
+        for (const LightRenderItem& item : lightRenderItems)
+        {
+            lightMarkers.record(commandBuffer, scenePipelines.layoutHandle(), *item.light);
+        }
+    }
+
+    commandBuffer.endRendering();
+}
+
+void ScenePass::createMaterialGpus(Mesh& mesh)
+{
+    auto& gpus = mesh.materialGpus();
+    gpus.resize(mesh.materials().size());
+    for (size_t index = 0; index < mesh.materials().size(); ++index)
+    {
+        const MaterialData&      material = mesh.materialData(static_cast<uint32_t>(index));
+        std::shared_ptr<Texture> texture  = material.hasAlbedoMap()
+            ? loadTexture(material.albedoMap)
+            : defaultAlbedoTexture;
+        gpus[index].create(
+            vulkan->physicalDeviceHandle(),
+            vulkan->deviceHandle(),
+            *descriptorPool,
+            *materialLayout,
+            material,
+            std::move(texture));
+    }
+}
+
+std::shared_ptr<Texture> ScenePass::loadTexture(const std::string& path)
+{
+    if (path.empty() || path.starts_with("data:") || path.starts_with("embedded:"))
+    {
+        return defaultAlbedoTexture;
+    }
+    if (const auto cached = textureAssets.find(path); cached != textureAssets.end())
+    {
+        return cached->second;
+    }
+
+    auto texture = std::make_shared<Texture>(
+        frame->uploadContext(*vulkan), std::filesystem::path(path));
+    textureAssets.emplace(path, texture);
+    return texture;
+}
