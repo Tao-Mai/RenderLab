@@ -1,6 +1,7 @@
 #include "render/pass/scene_pass.h"
 
 #include "render/device/frame_context.h"
+#include "render/device/vk_check.h"
 #include "render/pass/light_markers.h"
 #include "render/present/swapchain.h"
 #include "render/resource/mesh.h"
@@ -63,7 +64,7 @@ void ScenePass::initDescriptors()
         .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
         .pPoolSizes = poolSizes.data(),
     };
-    descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
+    descriptorPool = vkCheck(device.createDescriptorPool(poolInfo), "vkCreateDescriptorPool");
 
     const std::array materialBindings = {
         vk::DescriptorSetLayoutBinding{
@@ -89,7 +90,9 @@ void ScenePass::initDescriptors()
         .bindingCount = static_cast<uint32_t>(materialBindings.size()),
         .pBindings = materialBindings.data(),
     };
-    materialLayout = vk::raii::DescriptorSetLayout(device, materialLayoutInfo);
+    materialLayout = vkCheck(
+        device.createDescriptorSetLayout(materialLayoutInfo),
+        "vkCreateDescriptorSetLayout");
 
     const vk::DescriptorSetLayoutBinding sceneBinding{
         .binding = 0,
@@ -102,7 +105,9 @@ void ScenePass::initDescriptors()
         .bindingCount = 1,
         .pBindings = &sceneBinding,
     };
-    sceneLayout = vk::raii::DescriptorSetLayout(device, sceneLayoutInfo);
+    sceneLayout = vkCheck(
+        device.createDescriptorSetLayout(sceneLayoutInfo),
+        "vkCreateDescriptorSetLayout");
 
     sceneBuffer = Buffer(
         physicalDevice,
@@ -118,7 +123,9 @@ void ScenePass::initDescriptors()
         .descriptorSetCount = 1,
         .pSetLayouts = &layout,
     };
-    sceneSet = std::move(vk::raii::DescriptorSets(device, allocationInfo).front());
+    sceneSet = std::move(vkCheck(
+        device.allocateDescriptorSets(allocationInfo),
+        "vkAllocateDescriptorSets").front());
 
     const vk::DescriptorBufferInfo bufferInfo{
         .buffer = sceneBuffer.handle(),
@@ -150,24 +157,16 @@ void ScenePass::init(VulkanContext& context, Swapchain& targetSwapchain, FrameCo
     vulkan    = &context;
     swapchain = &targetSwapchain;
     frame     = &targetFrame;
-    try
-    {
-        initDescriptors();
-        resources.configureMaterialDescriptors(*descriptorPool, *materialLayout);
-        scenePipelines.init(
-            vulkan->deviceHandle(),
-            swapchain->surfaceFormat().format,
-            swapchain->depthImageFormat(),
-            *sceneLayout,
-            *materialLayout,
-            resources.shader("shader:scene"),
-            resources.shader("shader:light"));
-    }
-    catch (...)
-    {
-        reset();
-        throw;
-    }
+    initDescriptors();
+    resources.configureMaterialDescriptors(*descriptorPool, *materialLayout);
+    scenePipelines.init(
+        vulkan->deviceHandle(),
+        swapchain->surfaceFormat().format,
+        swapchain->depthImageFormat(),
+        *sceneLayout,
+        *materialLayout,
+        resources.shader("shader:scene"),
+        resources.shader("shader:light"));
 }
 
 void ScenePass::reset() noexcept

@@ -1,40 +1,37 @@
 #include "render/device/frame_context.h"
 
+#include "render/device/vk_check.h"
 #include "render/device/vulkan_context.h"
 
 #include <utility>
 
 void FrameContext::init(const VulkanContext& vulkan)
 {
-    try
-    {
-        const vk::CommandPoolCreateInfo poolInfo{
-            .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-            .queueFamilyIndex = vulkan.queueFamilyIndex(),
-        };
-        commandPool = vk::raii::CommandPool(vulkan.deviceHandle(), poolInfo);
+    const vk::CommandPoolCreateInfo poolInfo{
+        .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+        .queueFamilyIndex = vulkan.queueFamilyIndex(),
+    };
+    commandPool = vkCheck(
+        vulkan.deviceHandle().createCommandPool(poolInfo), "vkCreateCommandPool");
 
-        const vk::CommandBufferAllocateInfo allocationInfo{
-            .commandPool = *commandPool,
-            .level = vk::CommandBufferLevel::ePrimary,
-            .commandBufferCount = 1,
-        };
-        commandBuffer = std::move(
-            vk::raii::CommandBuffers(vulkan.deviceHandle(), allocationInfo).front());
+    const vk::CommandBufferAllocateInfo allocationInfo{
+        .commandPool = *commandPool,
+        .level = vk::CommandBufferLevel::ePrimary,
+        .commandBufferCount = 1,
+    };
+    commandBuffer = std::move(vkCheck(
+        vulkan.deviceHandle().allocateCommandBuffers(allocationInfo),
+        "vkAllocateCommandBuffers").front());
 
-        presentComplete = vk::raii::Semaphore(
-            vulkan.deviceHandle(), vk::SemaphoreCreateInfo());
-        renderFinished = vk::raii::Semaphore(
-            vulkan.deviceHandle(), vk::SemaphoreCreateInfo());
-        drawFence = vk::raii::Fence(
-            vulkan.deviceHandle(),
-            {.flags = vk::FenceCreateFlagBits::eSignaled});
-    }
-    catch (...)
-    {
-        reset();
-        throw;
-    }
+    presentComplete = vkCheck(
+        vulkan.deviceHandle().createSemaphore(vk::SemaphoreCreateInfo()),
+        "vkCreateSemaphore");
+    renderFinished = vkCheck(
+        vulkan.deviceHandle().createSemaphore(vk::SemaphoreCreateInfo()),
+        "vkCreateSemaphore");
+    drawFence = vkCheck(
+        vulkan.deviceHandle().createFence({.flags = vk::FenceCreateFlagBits::eSignaled}),
+        "vkCreateFence");
 }
 
 void FrameContext::reset() noexcept

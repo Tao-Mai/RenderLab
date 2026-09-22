@@ -7,12 +7,16 @@ Window::~Window()
     shutdown();
 }
 
-void Window::init(int width, int height, const char *title)
+void Window::init()
 {
     if (handle != nullptr)
     {
         return;
     }
+
+    constexpr int width = 1440;
+    constexpr int height = 900;
+    constexpr const char* title = "RenderLab";
 
     CHECK(glfwInit() == GLFW_TRUE, "failed to init GLFW");
     glfwInitialized = true;

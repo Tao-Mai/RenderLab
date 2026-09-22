@@ -1,13 +1,13 @@
 #include "render/pass/editor_picking_pass.h"
 
 #include "render/device/memory.h"
+#include "render/device/vk_check.h"
 #include "render/resource/mesh.h"
 #include "render/resource/shader.h"
 #include "render/resource/shader_data.h"
 #include "render/resource/vertex_layout.h"
 
 #include <array>
-#include <stdexcept>
 
 void EditorPickingPass::init(
     const vk::raii::PhysicalDevice& physicalDevice,
@@ -32,7 +32,7 @@ void EditorPickingPass::init(
         .sharingMode = vk::SharingMode::eExclusive,
         .initialLayout = vk::ImageLayout::eUndefined,
     };
-    image = vk::raii::Image(device, imageInfo);
+    image = vkCheck(device.createImage(imageInfo), "vkCreateImage");
     const vk::MemoryRequirements requirements = image.getMemoryRequirements();
     const vk::MemoryAllocateInfo allocationInfo{
         .allocationSize = requirements.size,
@@ -41,8 +41,8 @@ void EditorPickingPass::init(
             requirements.memoryTypeBits,
             vk::MemoryPropertyFlagBits::eDeviceLocal),
     };
-    imageMemory = vk::raii::DeviceMemory(device, allocationInfo);
-    image.bindMemory(*imageMemory, 0);
+    imageMemory = vkCheck(device.allocateMemory(allocationInfo), "vkAllocateMemory");
+    vkCheck(image.bindMemory(*imageMemory, 0), "vkBindImageMemory");
 
     const vk::ImageViewCreateInfo viewInfo{
         .image = *image,
@@ -56,7 +56,7 @@ void EditorPickingPass::init(
             .layerCount = 1,
         },
     };
-    imageView = vk::raii::ImageView(device, viewInfo);
+    imageView = vkCheck(device.createImageView(viewInfo), "vkCreateImageView");
     readbackBuffer = Buffer(
         physicalDevice,
         device,
@@ -139,7 +139,8 @@ void EditorPickingPass::init(
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &pushConstantRange,
     };
-    pipelineLayout = vk::raii::PipelineLayout(device, layoutInfo);
+    pipelineLayout = vkCheck(
+        device.createPipelineLayout(layoutInfo), "vkCreatePipelineLayout");
 
     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo>
         pipelineCreateInfoChain = {
@@ -163,10 +164,11 @@ void EditorPickingPass::init(
                 .depthAttachmentFormat = depthFormat,
             },
         };
-    pipeline = vk::raii::Pipeline(
-        device,
-        nullptr,
-        pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+    pipeline = vkCheck(
+        device.createGraphicsPipeline(
+            nullptr,
+            pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
+        "vkCreateGraphicsPipelines");
 }
 
 void EditorPickingPass::reset() noexcept

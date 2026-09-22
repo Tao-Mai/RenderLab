@@ -1,5 +1,6 @@
 #include "render/pass/scene_pipelines.h"
 
+#include "render/device/vk_check.h"
 #include "render/resource/shader.h"
 #include "render/resource/shader_data.h"
 #include "render/resource/vertex_layout.h"
@@ -101,7 +102,7 @@ void ScenePipelines::init(
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &pushConstantRange,
     };
-    layout = vk::raii::PipelineLayout(device, layoutInfo);
+    layout = vkCheck(device.createPipelineLayout(layoutInfo), "vkCreatePipelineLayout");
 
     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo>
         pipelineCreateInfoChain = {
@@ -121,10 +122,11 @@ void ScenePipelines::init(
              .pColorAttachmentFormats = &colorFormat,
              .depthAttachmentFormat = depthFormat}};
 
-    scenePipeline = vk::raii::Pipeline(
-        device,
-        nullptr,
-        pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+    scenePipeline = vkCheck(
+        device.createGraphicsPipeline(
+            nullptr,
+            pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
+        "vkCreateGraphicsPipelines");
 
     const std::array lightShaderStages = {
         vk::PipelineShaderStageCreateInfo{
@@ -162,10 +164,11 @@ void ScenePipelines::init(
             {.colorAttachmentCount = 1,
              .pColorAttachmentFormats = &colorFormat,
              .depthAttachmentFormat = depthFormat}};
-    lightMarkerPipeline = vk::raii::Pipeline(
-        device,
-        nullptr,
-        lightMarkerPipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+    lightMarkerPipeline = vkCheck(
+        device.createGraphicsPipeline(
+            nullptr,
+            lightMarkerPipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
+        "vkCreateGraphicsPipelines");
 }
 
 void ScenePipelines::reset() noexcept

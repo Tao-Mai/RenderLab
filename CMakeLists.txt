@@ -100,6 +100,8 @@ add_executable(RenderLab
         src/core/app_config.h
         src/core/config_manager.cpp
         src/core/config_manager.h
+        src/core/context.cpp
+        src/core/context.h
         src/editor/editor.cpp
         src/editor/editor.h
         src/editor/editor_ui.cpp
@@ -124,6 +126,7 @@ add_executable(RenderLab
         src/render/renderer.cpp
         src/render/renderer.h
         src/render/device/memory.h
+        src/render/device/vk_check.h
         src/render/device/vulkan_context.cpp
         src/render/device/vulkan_context.h
         src/render/device/frame_context.cpp
@@ -156,8 +159,6 @@ add_executable(RenderLab
         src/render/pass/editor_picking_pass.cpp
         src/render/pass/editor_picking_pass.h
         src/scene/light.h
-        src/scene/scene_manager.cpp
-        src/scene/scene_manager.h
         src/scene/transform.cpp
         src/scene/transform.h
 )
@@ -172,6 +173,7 @@ target_compile_definitions(RenderLab PRIVATE
         RENDERLAB_CONFIG_FILE="${CMAKE_CURRENT_SOURCE_DIR}/assets/config.json"
         VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
         VULKAN_HPP_NO_STRUCT_CONSTRUCTORS=1
+        VULKAN_HPP_NO_EXCEPTIONS
         VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS
         GLM_FORCE_DEPTH_ZERO_TO_ONE
         GLOG_NO_ABBREVIATED_SEVERITIES

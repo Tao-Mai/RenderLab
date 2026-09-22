@@ -15,7 +15,7 @@ class Window
     Window(const Window &)            = delete;
     Window &operator=(const Window &) = delete;
 
-    void init(int width, int height, const char *title);
+    void init();
     void pollEvents() const;
     [[nodiscard]] bool shouldClose() const;
     void requestClose() const;

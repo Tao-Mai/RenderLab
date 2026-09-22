@@ -20,7 +20,7 @@ class RenderResourceManager
 public:
     ~RenderResourceManager();
 
-    void init(AssetManager& assets, VulkanContext& vulkan, FrameContext& frame);
+    void init(VulkanContext& vulkan, FrameContext& frame);
     void configureMaterialDescriptors(
         vk::DescriptorPool descriptorPool,
         vk::DescriptorSetLayout materialLayout);

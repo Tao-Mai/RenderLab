@@ -1,18 +1,26 @@
 #include "editor/editor.h"
 
 #include "camera.h"
+#include "core/context.h"
+#include "logger.h"
 #include "render/device/vulkan_context.h"
 #include "render/present/swapchain.h"
 #include "render/scene/gpu_scene.h"
+#include "window.h"
 
 #include <algorithm>
 
 #include <glm/glm.hpp>
 
-void Editor::init(GLFWwindow* window, VulkanContext& vulkan, Swapchain& swapchain)
+void Editor::init()
 {
+    CHECK(context().window != nullptr, "Window must exist before Editor");
+    CHECK(context().renderer != nullptr, "Renderer must exist before Editor");
+
+    VulkanContext& vulkan = context().renderer->vulkanContext();
+    Swapchain& swapchain = context().renderer->swapchainHandle();
     ui.init(
-        window,
+        context().window->nativeHandle(),
         *vulkan.instanceHandle(),
         *vulkan.physicalDeviceHandle(),
         *vulkan.deviceHandle(),

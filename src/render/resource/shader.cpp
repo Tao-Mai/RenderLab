@@ -1,5 +1,7 @@
 #include "render/resource/shader.h"
 
+#include "render/device/vk_check.h"
+
 #include <fstream>
 #include "logger.h"
 
@@ -10,7 +12,7 @@ Shader::Shader(const vk::raii::Device &device, const std::string &filename)
         .codeSize = code.size() * sizeof(uint32_t),
         .pCode = code.data()
     };
-    module = vk::raii::ShaderModule(device, createInfo);
+    module = vkCheck(device.createShaderModule(createInfo), "vkCreateShaderModule");
 }
 
 vk::ShaderModule Shader::handle() const

@@ -15,9 +15,7 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_raii.hpp>
 
-class AssetManager;
 class Camera;
-class Window;
 struct SceneDesc;
 struct Light;
 struct SceneObjectDesc;
@@ -49,7 +47,7 @@ public:
     Renderer(const Renderer&)            = delete;
     Renderer& operator=(const Renderer&) = delete;
 
-    void init(Window& window, AssetManager& assets);
+    void init();
     void loadScene(SceneDesc& scene);
     EditorFrameResult render(const Camera& camera, const EditorFrameInput& editor);
     void waitIdle();
@@ -61,7 +59,6 @@ public:
 
 private:
     bool              initialized = false;
-    Window*           window      = nullptr;
     VulkanContext     vulkan;
     Swapchain         swapchain;
     FrameContext      frame;
@@ -70,7 +67,7 @@ private:
     ScenePass         scenePass;
     EditorPickingPass pickingPass;
 
-    void initVulkan(AssetManager& assets);
+    void initVulkan();
     void recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& editor);
     void recordPickingPass(vk::raii::CommandBuffer& commandBuffer, const EditorFrameInput& editor);
     void recordUiPass(

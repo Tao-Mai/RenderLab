@@ -1,5 +1,7 @@
 #include "render/resource/material.h"
 
+#include "render/device/vk_check.h"
+
 #include <array>
 #include <cstddef>
 #include <utility>
@@ -49,7 +51,8 @@ void Material::create(
         .descriptorSetCount = 1,
         .pSetLayouts = &descriptorSetLayout,
     };
-    vk::raii::DescriptorSets descriptorSets(device, allocationInfo);
+    auto descriptorSets = vkCheck(
+        device.allocateDescriptorSets(allocationInfo), "vkAllocateDescriptorSets");
     descriptorSet = std::make_shared<vk::raii::DescriptorSet>(
         std::move(descriptorSets.front()));
 

@@ -1,5 +1,7 @@
 #include "render/resource/mesh.h"
 
+#include "render/device/vk_check.h"
+
 #include <array>
 #include <utility>
 #include "logger.h"
@@ -83,17 +85,20 @@ void Mesh::copyBuffer(
         .level = vk::CommandBufferLevel::ePrimary,
         .commandBufferCount = 1,
     };
-    vk::raii::CommandBuffer copyCommand =
-        std::move(vk::raii::CommandBuffers(device, allocationInfo).front());
-    copyCommand.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    vk::raii::CommandBuffer copyCommand = std::move(vkCheck(
+        device.allocateCommandBuffers(allocationInfo),
+        "vkAllocateCommandBuffers").front());
+    vkCheck(
+        copyCommand.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit}),
+        "vkBeginCommandBuffer");
     copyCommand.copyBuffer(
         source.handle(), destination.handle(), vk::BufferCopy{.size = source.size()});
-    copyCommand.end();
+    vkCheck(copyCommand.end(), "vkEndCommandBuffer");
     const vk::CommandBuffer command = *copyCommand;
     const vk::SubmitInfo submitInfo{
         .commandBufferCount = 1,
         .pCommandBuffers = &command,
     };
-    queue.submit(submitInfo, nullptr);
-    queue.waitIdle();
+    vkCheck(queue.submit(submitInfo, nullptr), "vkQueueSubmit");
+    vkCheck(queue.waitIdle(), "vkQueueWaitIdle");
 }

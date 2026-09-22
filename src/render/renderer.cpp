@@ -1,37 +1,30 @@
 #include "render/renderer.h"
 
+#include "asset/asset_desc.h"
 #include "asset/asset_manager.h"
 #include "camera.h"
-#include "asset/asset_desc.h"
+#include "core/context.h"
+#include "logger.h"
+#include "render/device/vk_check.h"
 #include "window.h"
 
 #include <iostream>
 
 #include <glm/glm.hpp>
-#include "logger.h"
 
 Renderer::~Renderer()
 {
     shutdown();
 }
 
-void Renderer::init(Window& targetWindow, AssetManager& assets)
+void Renderer::init()
 {
     if (initialized)
     {
         return;
     }
-    window = &targetWindow;
-    try
-    {
-        initVulkan(assets);
-        initialized = true;
-    }
-    catch (...)
-    {
-        shutdown();
-        throw;
-    }
+    initVulkan();
+    initialized = true;
 }
 
 EditorFrameResult Renderer::render(const Camera& camera, const EditorFrameInput& editor)
@@ -56,7 +49,7 @@ void Renderer::waitIdle()
 {
     if (*vulkan.deviceHandle())
     {
-        vulkan.deviceHandle().waitIdle();
+        vkCheck(vulkan.deviceHandle().waitIdle(), "vkDeviceWaitIdle");
     }
 }
 
@@ -64,13 +57,7 @@ void Renderer::shutdown() noexcept
 {
     if (*vulkan.deviceHandle())
     {
-        try
-        {
-            vulkan.deviceHandle().waitIdle();
-        }
-        catch (...)
-        {
-        }
+        (void)vulkan.deviceHandle().waitIdle();
     }
 
     scene.reset();
@@ -80,7 +67,6 @@ void Renderer::shutdown() noexcept
     frame.reset();
     swapchain.reset();
     vulkan.reset();
-    window      = nullptr;
     initialized = false;
 }
 
@@ -99,13 +85,17 @@ const GpuScene& Renderer::gpuScene() const
     return scene;
 }
 
-void Renderer::initVulkan(AssetManager& assets)
+void Renderer::initVulkan()
 {
-    vulkan.init(*window);
-    swapchain.init(vulkan, *window);
+    CHECK(context().window != nullptr, "Window must exist before Renderer");
+    CHECK(context().assets != nullptr, "AssetManager must exist before Renderer");
+
+    Window& window = *context().window;
+    vulkan.init(window);
+    swapchain.init(vulkan, window);
     frame.init(vulkan);
     swapchain.transitionDepthImageLayout(frame.commandPoolHandle());
-    resources.init(assets, vulkan, frame);
+    resources.init(vulkan, frame);
     scenePass.init(vulkan, swapchain, frame, resources);
     pickingPass.init(
         vulkan.physicalDeviceHandle(),
@@ -119,8 +109,8 @@ void Renderer::initVulkan(AssetManager& assets)
 void Renderer::recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& editor)
 {
     auto& commandBuffer = frame.commandBufferHandle();
-    commandBuffer.reset();
-    commandBuffer.begin({});
+    vkCheck(commandBuffer.reset(), "vkResetCommandBuffer");
+    vkCheck(commandBuffer.begin({}), "vkBeginCommandBuffer");
 
     transitionImageLayout(
         imageIndex,
@@ -150,7 +140,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& 
         {},
         vk::PipelineStageFlagBits2::eColorAttachmentOutput,
         vk::PipelineStageFlagBits2::eBottomOfPipe);
-    commandBuffer.end();
+    vkCheck(commandBuffer.end(), "vkEndCommandBuffer");
 }
 
 void Renderer::recordPickingPass(
@@ -259,7 +249,7 @@ EditorFrameResult Renderer::drawFrame(const EditorFrameInput& editor)
 
     auto fenceResult = vulkan.deviceHandle().waitForFences(drawFence, vk::True, UINT64_MAX);
     CHECK(fenceResult == vk::Result::eSuccess, "failed to wait for fence!");
-    vulkan.deviceHandle().resetFences(drawFence);
+    vkCheck(vulkan.deviceHandle().resetFences(drawFence), "vkResetFences");
 
     auto [result, imageIndex] = swapchain.handle().acquireNextImage(
         UINT64_MAX,
@@ -269,7 +259,7 @@ EditorFrameResult Renderer::drawFrame(const EditorFrameInput& editor)
     const bool resolvePickAfterSubmit = editor.requestPick;
     recordCommandBuffer(imageIndex, editor);
 
-    vulkan.queueHandle().waitIdle();
+    vkCheck(vulkan.queueHandle().waitIdle(), "vkQueueWaitIdle");
 
     vk::PipelineStageFlags waitDestinationStageMask(
         vk::PipelineStageFlagBits::eColorAttachmentOutput);
@@ -281,7 +271,7 @@ EditorFrameResult Renderer::drawFrame(const EditorFrameInput& editor)
         .pCommandBuffers = &commandBuffer,
         .signalSemaphoreCount = 1,
         .pSignalSemaphores = &renderFinishedSemaphore};
-    vulkan.queueHandle().submit(submitInfo, drawFence);
+    vkCheck(vulkan.queueHandle().submit(submitInfo, drawFence), "vkQueueSubmit");
 
     const vk::PresentInfoKHR presentInfoKHR{
         .waitSemaphoreCount = 1,

@@ -123,69 +123,61 @@ void EditorUI::init(
         return;
     }
 
-    try
-    {
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-        contextCreated = true;
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    contextCreated = true;
 
-        ImGuiIO &io = ImGui::GetIO();
-        io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-        ImGui::StyleColorsDark();
+    ImGuiIO &io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    ImGui::StyleColorsDark();
 
 #ifdef _WIN32
-        std::array<char, MAX_PATH> windowsDirectory{};
-        const UINT directoryLength = GetWindowsDirectoryA(
-            windowsDirectory.data(),
-            static_cast<UINT>(windowsDirectory.size()));
-        CHECK(directoryLength != 0 && directoryLength < windowsDirectory.size(),
-            "failed to locate the Windows font directory");
-        const std::string fontPath =
-            std::string{windowsDirectory.data(), directoryLength} + "\\Fonts\\msyh.ttc";
-        CHECK(io.Fonts->AddFontFromFileTTF(
-                fontPath.c_str(),
-                18.0f,
-                nullptr,
-                io.Fonts->GetGlyphRangesChineseFull()) != nullptr,
-            "failed to load Microsoft YaHei: {}", fontPath);
+    std::array<char, MAX_PATH> windowsDirectory{};
+    const UINT directoryLength = GetWindowsDirectoryA(
+        windowsDirectory.data(),
+        static_cast<UINT>(windowsDirectory.size()));
+    CHECK(directoryLength != 0 && directoryLength < windowsDirectory.size(),
+        "failed to locate the Windows font directory");
+    const std::string fontPath =
+        std::string{windowsDirectory.data(), directoryLength} + "\\Fonts\\msyh.ttc";
+    CHECK(io.Fonts->AddFontFromFileTTF(
+            fontPath.c_str(),
+            18.0f,
+            nullptr,
+            io.Fonts->GetGlyphRangesChineseFull()) != nullptr,
+        "failed to load Microsoft YaHei: {}", fontPath);
 #else
 #error RenderLab editor requires Windows to load Microsoft YaHei
 #endif
 
-        CHECK(ImGui_ImplGlfw_InitForVulkan(window, true),
-            "failed to init ImGui GLFW backend");
-        glfwBackendInitialized = true;
+    CHECK(ImGui_ImplGlfw_InitForVulkan(window, true),
+        "failed to init ImGui GLFW backend");
+    glfwBackendInitialized = true;
 
-        colorFormat = targetColorFormat;
-        pipelineRenderingInfo = {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR,
-            .colorAttachmentCount = 1,
-            .pColorAttachmentFormats = &colorFormat,
-        };
+    colorFormat = targetColorFormat;
+    pipelineRenderingInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR,
+        .colorAttachmentCount = 1,
+        .pColorAttachmentFormats = &colorFormat,
+    };
 
-        ImGui_ImplVulkan_InitInfo initInfo{};
-        initInfo.ApiVersion = VK_API_VERSION_1_4;
-        initInfo.Instance = instance;
-        initInfo.PhysicalDevice = physicalDevice;
-        initInfo.Device = device;
-        initInfo.QueueFamily = queueFamily;
-        initInfo.Queue = queue;
-        initInfo.DescriptorPoolSize = 64;
-        initInfo.MinImageCount = minImageCount;
-        initInfo.ImageCount = imageCount;
-        initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-        initInfo.UseDynamicRendering = true;
-        initInfo.PipelineRenderingCreateInfo = pipelineRenderingInfo;
+    ImGui_ImplVulkan_InitInfo initInfo{};
+    initInfo.ApiVersion = VK_API_VERSION_1_4;
+    initInfo.Instance = instance;
+    initInfo.PhysicalDevice = physicalDevice;
+    initInfo.Device = device;
+    initInfo.QueueFamily = queueFamily;
+    initInfo.Queue = queue;
+    initInfo.DescriptorPoolSize = 64;
+    initInfo.MinImageCount = minImageCount;
+    initInfo.ImageCount = imageCount;
+    initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    initInfo.UseDynamicRendering = true;
+    initInfo.PipelineRenderingCreateInfo = pipelineRenderingInfo;
 
-        CHECK(ImGui_ImplVulkan_Init(&initInfo),
-            "failed to init ImGui Vulkan backend");
-        vulkanBackendInitialized = true;
-    }
-    catch (...)
-    {
-        shutdown();
-        throw;
-    }
+    CHECK(ImGui_ImplVulkan_Init(&initInfo),
+        "failed to init ImGui Vulkan backend");
+    vulkanBackendInitialized = true;
 }
 
 void EditorUI::beginFrame(float deltaTime)

@@ -1,3 +1,4 @@
+#include "brdf.slang"
 
 struct VertexInput{
     [[vk::location(0)]]

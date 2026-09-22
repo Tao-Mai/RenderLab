@@ -1,15 +1,15 @@
 #include "engine.h"
 
-#include <chrono>
-
+#include "asset/asset_manager.h"
+#include "camera.h"
+#include "core/config_manager.h"
+#include "core/context.h"
+#include "editor/editor.h"
 #include "logger.h"
+#include "render/renderer.h"
+#include "window.h"
 
-Engine::Engine() :
-    config(RENDERLAB_CONFIG_FILE),
-    assets(config.assetRoot()),
-    scenes(config.assetRoot())
-{
-}
+#include <chrono>
 
 Engine::~Engine()
 {
@@ -23,25 +23,25 @@ void Engine::init()
         return;
     }
 
-    try
-    {
-        window.init(1440, 900, "RenderLab");
-        inputMethod.activateEnglish();
-        scene = scenes.load(config.initialScene());
-        camera.configure(scene.camera);
-        renderer.init(window, assets);
-        renderer.loadScene(scene);
-        editor.init(
-            window.nativeHandle(),
-            renderer.vulkanContext(),
-            renderer.swapchainHandle());
-        initialized = true;
-    }
-    catch (...)
-    {
-        shutdown();
-        throw;
-    }
+    Context& ctx = context();
+    ctx.config = new ConfigManager();
+    ctx.window = new Window();
+    ctx.assets = new AssetManager();
+    ctx.scene = new SceneDesc();
+    ctx.camera = new Camera();
+    ctx.renderer = new Renderer();
+    ctx.editor = new Editor();
+
+    ctx.config->init();
+    ctx.window->init();
+    ctx.assets->init();
+    inputMethod.activateEnglish();
+    *ctx.scene = ctx.assets->sceneDesc(ctx.config->initialScene());
+    ctx.camera->configure(ctx.scene->camera);
+    ctx.renderer->init();
+    ctx.renderer->loadScene(*ctx.scene);
+    ctx.editor->init();
+    initialized = true;
 }
 
 void Engine::run()
@@ -52,13 +52,14 @@ void Engine::run()
 
 void Engine::mainLoop()
 {
+    Context& ctx = context();
     auto previousTime = std::chrono::steady_clock::now();
-    while (!window.shouldClose())
+    while (!ctx.window->shouldClose())
     {
-        window.pollEvents();
-        if (window.keyPressed(GLFW_KEY_ESCAPE))
+        ctx.window->pollEvents();
+        if (ctx.window->keyPressed(GLFW_KEY_ESCAPE))
         {
-            window.requestClose();
+            ctx.window->requestClose();
             break;
         }
 
@@ -67,28 +68,67 @@ void Engine::mainLoop()
             std::chrono::duration<float>(currentTime - previousTime).count();
         previousTime = currentTime;
 
-        camera.update(
-            window,
+        ctx.camera->update(
+            *ctx.window,
             deltaTime,
-            camera.isNavigationActive() || !editor.wantsInput());
+            ctx.camera->isNavigationActive() || !ctx.editor->wantsInput());
 
-        const auto extent = renderer.swapchainHandle().extent();
-        const EditorFrameInput editorInput =
-            editor.buildFrame(camera, deltaTime, extent.width, extent.height);
-        const EditorFrameResult editorResult = renderer.render(camera, editorInput);
-        editor.applyPickResult(editorResult, renderer.gpuScene());
+        const auto extent = ctx.renderer->swapchainHandle().extent();
+        const EditorFrameInput editorInput = ctx.editor->buildFrame(
+            *ctx.camera, deltaTime, extent.width, extent.height);
+        const EditorFrameResult editorResult =
+            ctx.renderer->render(*ctx.camera, editorInput);
+        ctx.editor->applyPickResult(editorResult, ctx.renderer->gpuScene());
     }
 
-    renderer.waitIdle();
+    ctx.renderer->waitIdle();
 }
 
 void Engine::shutdown() noexcept
 {
-    editor.shutdown();
-    renderer.shutdown();
-    scenes.clear();
-    assets.clear();
+    Context& ctx = context();
+
+    if (ctx.editor != nullptr)
+    {
+        ctx.editor->shutdown();
+        delete ctx.editor;
+        ctx.editor = nullptr;
+    }
+    if (ctx.renderer != nullptr)
+    {
+        ctx.renderer->shutdown();
+        delete ctx.renderer;
+        ctx.renderer = nullptr;
+    }
+    if (ctx.camera != nullptr)
+    {
+        delete ctx.camera;
+        ctx.camera = nullptr;
+    }
+    if (ctx.scene != nullptr)
+    {
+        delete ctx.scene;
+        ctx.scene = nullptr;
+    }
+    if (ctx.assets != nullptr)
+    {
+        ctx.assets->shutdown();
+        delete ctx.assets;
+        ctx.assets = nullptr;
+    }
+    if (ctx.window != nullptr)
+    {
+        ctx.window->shutdown();
+        delete ctx.window;
+        ctx.window = nullptr;
+    }
+    if (ctx.config != nullptr)
+    {
+        ctx.config->shutdown();
+        delete ctx.config;
+        ctx.config = nullptr;
+    }
+
     inputMethod.restore();
-    window.shutdown();
     initialized = false;
 }

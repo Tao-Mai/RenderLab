@@ -1,6 +1,7 @@
 #include "render/resource/render_resource_manager.h"
 
 #include "asset/asset_manager.h"
+#include "core/context.h"
 #include "render/device/frame_context.h"
 #include "render/device/vulkan_context.h"
 #include "render/resource/material.h"
@@ -14,10 +15,10 @@
 
 RenderResourceManager::~RenderResourceManager() = default;
 
-void RenderResourceManager::init(
-    AssetManager& targetAssets, VulkanContext& targetVulkan, FrameContext& targetFrame)
+void RenderResourceManager::init(VulkanContext& targetVulkan, FrameContext& targetFrame)
 {
-    assets = &targetAssets;
+    CHECK(context().assets != nullptr, "AssetManager must exist before RenderResourceManager");
+    assets = context().assets;
     vulkan = &targetVulkan;
     frame = &targetFrame;
 }

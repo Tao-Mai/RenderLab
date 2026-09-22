@@ -5,9 +5,6 @@
 
 class Camera;
 class GpuScene;
-class Swapchain;
-class VulkanContext;
-struct GLFWwindow;
 
 class Editor
 {
@@ -18,7 +15,7 @@ public:
     Editor(const Editor&)            = delete;
     Editor& operator=(const Editor&) = delete;
 
-    void init(GLFWwindow* window, VulkanContext& vulkan, Swapchain& swapchain);
+    void init();
     void shutdown() noexcept;
 
     [[nodiscard]] EditorFrameInput buildFrame(

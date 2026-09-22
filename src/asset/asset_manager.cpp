@@ -3,17 +3,62 @@
 #include "asset/builtin_meshes.h"
 #include "asset/gltf_loader.h"
 #include "asset/json_io.h"
+#include "core/config_manager.h"
+#include "core/context.h"
 #include "logger.h"
+#include "scene/light.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <fstream>
 #include <utility>
 
+#include <glm/geometric.hpp>
+
 namespace
 {
 constexpr uint32_t geometryMagic = 0x4853454du;
 constexpr uint32_t geometryVersion = 1;
+
+void validateLight(Light& light)
+{
+    CHECK(light.intensity >= 0.0f, "light intensity cannot be negative: {}", light.name);
+    CHECK((light.type != Light::Type::Point && light.type != Light::Type::Spot) ||
+          light.range > 0.0f,
+        "light range must be greater than zero: {}", light.name);
+    if (light.type != Light::Type::Point)
+    {
+        CHECK(glm::dot(light.direction, light.direction) >= 0.000001f,
+            "light direction cannot be zero: {}", light.name);
+        light.direction = glm::normalize(light.direction);
+    }
+    if (light.type == Light::Type::Spot)
+    {
+        light.cosInner = std::clamp(light.cosInner, -1.0f, 1.0f);
+        light.cosOuter = std::clamp(light.cosOuter, -1.0f, 1.0f);
+        CHECK(light.cosInner >= light.cosOuter,
+            "spot light inner angle must not exceed outer angle: {}", light.name);
+    }
+    CHECK(light.type != Light::Type::RectArea ||
+          (light.areaSize.x > 0.0f && light.areaSize.y > 0.0f),
+        "area light size must be greater than zero: {}", light.name);
+}
+
+void validateScene(SceneDesc& scene)
+{
+    CHECK(scene.asset().type == AssetType::Scene,
+        "scene descriptor type mismatch: {}", scene.asset().id);
+    CHECK(scene.version == 2, "unsupported scene description version");
+    CHECK(scene.camera.movementSpeed > 0.0f,
+        "camera movement speed must be greater than zero");
+    CHECK(scene.camera.sprintMultiplier >= 1.0f,
+        "camera sprint multiplier must be at least one");
+    for (Light& light : scene.lights)
+    {
+        validateLight(light);
+    }
+}
 
 std::string idFileStem(const AssetId& id)
 {
@@ -89,10 +134,23 @@ void loadDescDirectory(
 }
 }
 
-AssetManager::AssetManager(std::filesystem::path assetRoot) :
-    root(std::filesystem::absolute(std::move(assetRoot)).lexically_normal())
+void AssetManager::init()
 {
+    if (ready)
+    {
+        return;
+    }
+    CHECK(context().config != nullptr, "ConfigManager must exist before AssetManager");
+    root = std::filesystem::absolute(context().config->assetRoot()).lexically_normal();
     loadAll();
+    ready = true;
+}
+
+void AssetManager::shutdown() noexcept
+{
+    clear();
+    root.clear();
+    ready = false;
 }
 
 void AssetManager::storeDescFile(const AssetId& id, const std::filesystem::path& file)
@@ -106,14 +164,15 @@ std::filesystem::path AssetManager::descFile(AssetType type, const AssetId& id) 
     {
         return found->second;
     }
-    return root / "descs" / std::string(assetTypeDir(type)) / (idFileStem(id) + ".json");
+    return context().config->descDir(type) / (idFileStem(id) + ".json");
 }
 
 void AssetManager::loadAll()
 {
     clear();
+    const AppPaths& paths = context().config->paths();
     loadDescDirectory(
-        root / "descs" / "mesh",
+        paths.meshDescs,
         AssetType::Mesh,
         meshes,
         descFiles,
@@ -123,7 +182,7 @@ void AssetManager::loadAll()
                 "mesh descriptor missing source.kind: {}", file.string());
         });
     loadDescDirectory(
-        root / "descs" / "material",
+        paths.materialDescs,
         AssetType::Material,
         materials,
         descFiles,
@@ -133,7 +192,7 @@ void AssetManager::loadAll()
                 "material requires baseColorTexture: {}", file.string());
         });
     loadDescDirectory(
-        root / "descs" / "texture",
+        paths.textureDescs,
         AssetType::Texture,
         textures,
         descFiles,
@@ -155,13 +214,22 @@ void AssetManager::loadAll()
             }
         });
     loadDescDirectory(
-        root / "descs" / "shader",
+        paths.shaderDescs,
         AssetType::Shader,
         shaders,
         descFiles,
         [](const ShaderDesc& desc, const std::filesystem::path& file)
         {
             CHECK(!desc.binary.empty(), "invalid shader descriptor: {}", file.string());
+        });
+    loadDescDirectory(
+        paths.sceneDescs,
+        AssetType::Scene,
+        scenes,
+        descFiles,
+        [](SceneDesc& desc, const std::filesystem::path&)
+        {
+            validateScene(desc);
         });
 }
 
@@ -196,6 +264,23 @@ const ShaderDesc& AssetManager::shaderDesc(const AssetId& id) const
     const auto found = shaders.find(id);
     CHECK(found != shaders.end(), "shader descriptor not loaded: {}", id);
     return found->second;
+}
+
+const SceneDesc& AssetManager::sceneDesc(const AssetId& id) const
+{
+    const auto found = scenes.find(id);
+    CHECK(found != scenes.end(), "scene descriptor not loaded: {}", id);
+    return found->second;
+}
+
+void AssetManager::saveSceneDesc(const SceneDesc& scene)
+{
+    SceneDesc validated = scene;
+    validateScene(validated);
+    const auto file = descFile(AssetType::Scene, validated.asset().id);
+    asset_json::save(file, validated);
+    storeDescFile(validated.asset().id, file);
+    scenes.insert_or_assign(validated.asset().id, std::move(validated));
 }
 
 MeshGeometry AssetManager::readGeometryFile(const std::filesystem::path& file) const
@@ -357,16 +442,18 @@ void AssetManager::importMesh(const AssetId& id, MeshSourceDesc source)
         materialIds.push_back(materialId);
     }
 
+    const auto geometryFile =
+        context().config->paths().geometry / (idFileStem(id) + ".bin");
+    writeGeometry(geometryFile, imported);
     const auto geometryRelative =
-        std::filesystem::path("geometry") / (idFileStem(id) + ".bin");
-    writeGeometry(path(geometryRelative), imported);
+        std::filesystem::relative(geometryFile, root).generic_string();
 
     MeshDesc meshDesc;
     meshDesc.asset().id = id;
     meshDesc.asset().name = meshName;
     meshDesc.asset().type = AssetType::Mesh;
     meshDesc.source = std::move(source);
-    meshDesc.geometry = geometryRelative.generic_string();
+    meshDesc.geometry = geometryRelative;
     meshDesc.submeshes.reserve(imported.submeshes.size());
     for (const ImportedSubmesh& submesh : imported.submeshes)
     {
@@ -386,6 +473,7 @@ void AssetManager::importMesh(const AssetId& id, MeshSourceDesc source)
 
 void AssetManager::clear()
 {
+    scenes.clear();
     shaders.clear();
     textures.clear();
     materials.clear();
