@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset/material_data.h"
+#include "asset/asset_desc.h"
 #include "render/resource/buffer.h"
 #include "render/resource/texture.h"
 
@@ -8,17 +8,17 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
-class MaterialGpu
+class Material
 {
 public:
-    MaterialGpu() = default;
+    Material() = default;
 
     void create(
         const vk::raii::PhysicalDevice& physicalDevice,
         const vk::raii::Device&         device,
         vk::DescriptorPool              descriptorPool,
         vk::DescriptorSetLayout         descriptorSetLayout,
-        const MaterialData&             material,
+        const MaterialDesc&             material,
         std::shared_ptr<Texture>        texture);
 
     [[nodiscard]] vk::DescriptorSet descriptorSetHandle() const;

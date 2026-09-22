@@ -10,7 +10,7 @@ class Window;
 class VulkanContext
 {
 public:
-    void initialize(Window& window);
+    void init(Window& window);
     void reset() noexcept;
 
     [[nodiscard]] const vk::raii::Instance& instanceHandle() const;

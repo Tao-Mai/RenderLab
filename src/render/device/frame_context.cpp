@@ -4,7 +4,7 @@
 
 #include <utility>
 
-void FrameContext::initialize(const VulkanContext& vulkan)
+void FrameContext::init(const VulkanContext& vulkan)
 {
     try
     {

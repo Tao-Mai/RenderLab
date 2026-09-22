@@ -25,7 +25,6 @@
   </component>
   <component name="CMakeRunConfigurationManager">
     <generated>
-      <config projectName="RenderLab" targetName="RenderLabAssets" />
       <config projectName="RenderLab" targetName="RenderLabShaders" />
       <config projectName="RenderLab" targetName="RenderLab" />
     </generated>
@@ -37,31 +36,49 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="1">
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/shaders/light.slang" beforeDir="false" afterPath="$PROJECT_DIR$/shaders/light.slang" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/shaders/shader.slang" beforeDir="false" afterPath="$PROJECT_DIR$/shaders/shader.slang" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/asset/asset_manager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/asset_manager.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/asset/asset_manager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/asset_manager.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/asset/builtin_meshes.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/builtin_meshes.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/asset/builtin_meshes.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/builtin_meshes.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/asset/gltf_loader.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/gltf_loader.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/mesh_data.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/mesh_data.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/asset/gltf_loader.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/gltf_loader.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/asset/material_data.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/asset/mesh_data.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/camera.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/camera.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/camera.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/camera.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/editor/editor_ui.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/editor_ui.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/editor/editor_ui.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/editor_ui.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/engine.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/engine.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/engine.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/buffer.cpp" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/buffer.h" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/material.cpp" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/material.h" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/mesh.cpp" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/mesh.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/device/memory.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/device/memory.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/device/vulkan_context.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/device/vulkan_context.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/editor_picking_pass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/editor_picking_pass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/editor_picking_pass.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/editor_picking_pass.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/light_markers.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/light_markers.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/light_markers.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/light_markers.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/scene_pass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/scene_pass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/scene_pass.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/scene_pass.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/scene_pipelines.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/scene_pipelines.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/scene_pipelines.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/scene_pipelines.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/present/swapchain.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/present/swapchain.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/renderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/renderer.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/renderer.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/renderer.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/shader.cpp" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/shader.h" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/texture.cpp" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/texture.h" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/vertex.cpp" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/vertex.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/buffer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/buffer.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/material_gpu.cpp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/material_gpu.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/mesh.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/mesh.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/mesh.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/mesh.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/shader.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/shader.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/texture.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/texture.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/scene/gpu_scene.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/scene/gpu_scene.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/scene/gpu_scene.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/scene/gpu_scene.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/scene/scene.cpp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/scene/scene.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/window.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/window.cpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -257,11 +274,6 @@
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
-    <configuration name="RenderLabAssets" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="RenderLabAssets" CONFIG_NAME="Default">
-      <method v="2">
-        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
-      </method>
-    </configuration>
     <configuration name="RenderLabShaders" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="RenderLabShaders" CONFIG_NAME="Default">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
@@ -279,7 +291,6 @@
       </method>
     </configuration>
     <list>
-      <item itemvalue="CMake 应用程序.RenderLabAssets" />
       <item itemvalue="CMake 应用程序.RenderLabShaders" />
       <item itemvalue="CMake 应用程序.RenderLab" />
       <item itemvalue="CTest 应用程序.所有 CTest" />

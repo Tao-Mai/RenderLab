@@ -8,16 +8,18 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class Mesh;
+class Shader;
 
 class EditorPickingPass
 {
 public:
-    void initialize(
+    void init(
         const vk::raii::PhysicalDevice& physicalDevice,
         const vk::raii::Device& device,
         vk::Extent2D extent,
         vk::Format depthFormat,
-        vk::DescriptorSetLayout sceneLayout);
+        vk::DescriptorSetLayout sceneLayout,
+        const Shader& shader);
     void reset() noexcept;
 
     void begin(

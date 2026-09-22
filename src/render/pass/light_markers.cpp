@@ -1,6 +1,6 @@
 #include "render/pass/light_markers.h"
 
-#include "asset/asset_manager.h"
+#include "render/resource/render_resource_manager.h"
 #include "render/resource/shader_data.h"
 
 #include <cmath>
@@ -24,22 +24,19 @@ glm::mat4 markerTransform(const Light& light)
 }
 }
 
-void LightMarkers::initialize(GpuUploadContext upload, AssetManager& assets)
+void LightMarkers::init(RenderResourceManager& resources)
 {
     reset();
-    sphere = std::make_unique<Mesh>(
-        upload, assets.loadMesh("builtin:sphere"));
-    cube = std::make_unique<Mesh>(
-        upload, assets.loadMesh("builtin:cube"));
-    arrow = std::make_unique<Mesh>(
-        upload, assets.loadMesh("builtin:arrow"));
+    sphere = &resources.mesh("mesh:sphere");
+    cube = &resources.mesh("mesh:cube");
+    arrow = &resources.mesh("mesh:arrow");
 }
 
 void LightMarkers::reset() noexcept
 {
-    sphere.reset();
-    cube.reset();
-    arrow.reset();
+    sphere = nullptr;
+    cube = nullptr;
+    arrow = nullptr;
 }
 
 std::vector<LightMarkers::Part> LightMarkers::parts(const Light& light) const
@@ -56,7 +53,7 @@ std::vector<LightMarkers::Part> LightMarkers::parts(const Light& light) const
         if (sphere)
         {
             result.push_back({
-                sphere.get(),
+                sphere,
                 glm::translate(glm::mat4{1.0f}, light.position) *
                     glm::scale(glm::mat4{1.0f}, glm::vec3{0.15f}),
                 markerColor,
@@ -81,7 +78,7 @@ std::vector<LightMarkers::Part> LightMarkers::parts(const Light& light) const
             for (uint32_t face = 0; face < 6; ++face)
             {
                 result.push_back({
-                    cube.get(),
+                    cube,
                     model,
                     face == emittingFace ? markerColor : housingColor,
                     face * indicesPerFace,
@@ -102,7 +99,7 @@ std::vector<LightMarkers::Part> LightMarkers::parts(const Light& light) const
                 for (int x = -1; x <= 1; ++x)
                 {
                     result.push_back({
-                        arrow.get(),
+                        arrow,
                         base *
                             glm::translate(
                                 glm::mat4{1.0f},

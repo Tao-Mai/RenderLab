@@ -1,23 +1,20 @@
 #include "window.h"
 
-#include <stdexcept>
+#include "logger.h"
 
 Window::~Window()
 {
     shutdown();
 }
 
-void Window::initialize(int width, int height, const char *title)
+void Window::init(int width, int height, const char *title)
 {
     if (handle != nullptr)
     {
         return;
     }
 
-    if (glfwInit() != GLFW_TRUE)
-    {
-        throw std::runtime_error("failed to initialize GLFW");
-    }
+    CHECK(glfwInit() == GLFW_TRUE, "failed to init GLFW");
     glfwInitialized = true;
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -27,8 +24,8 @@ void Window::initialize(int width, int height, const char *title)
     if (handle == nullptr)
     {
         shutdown();
-        throw std::runtime_error("failed to create GLFW window");
     }
+    CHECK(handle != nullptr, "failed to create GLFW window");
 
     glfwSetWindowUserPointer(handle, this);
     glfwSetScrollCallback(handle, &Window::scrollCallback);
@@ -64,10 +61,7 @@ bool Window::mouseButtonPressed(int button) const
 
 std::pair<double, double> Window::cursorPosition() const
 {
-    if (handle == nullptr)
-    {
-        throw std::logic_error("window is not initialized");
-    }
+    CHECK(handle != nullptr, "window is not initialized");
     double x = 0.0;
     double y = 0.0;
     glfwGetCursorPos(handle, &x, &y);
@@ -96,16 +90,11 @@ double Window::consumeScrollOffset()
 
 VkSurfaceKHR Window::createVulkanSurface(VkInstance instance) const
 {
-    if (handle == nullptr)
-    {
-        throw std::logic_error("window is not initialized");
-    }
+    CHECK(handle != nullptr, "window is not initialized");
 
     VkSurfaceKHR surface = VK_NULL_HANDLE;
-    if (glfwCreateWindowSurface(instance, handle, nullptr, &surface) != VK_SUCCESS)
-    {
-        throw std::runtime_error("failed to create Vulkan surface");
-    }
+    CHECK(glfwCreateWindowSurface(instance, handle, nullptr, &surface) == VK_SUCCESS,
+        "failed to create Vulkan surface");
     return surface;
 }
 
@@ -113,20 +102,14 @@ std::vector<const char *> Window::requiredVulkanExtensions() const
 {
     uint32_t extensionCount = 0;
     const char **extensions = glfwGetRequiredInstanceExtensions(&extensionCount);
-    if (extensions == nullptr)
-    {
-        throw std::runtime_error("GLFW did not provide Vulkan instance extensions");
-    }
+    CHECK(extensions != nullptr, "GLFW did not provide Vulkan instance extensions");
 
     return {extensions, extensions + extensionCount};
 }
 
 std::pair<int, int> Window::framebufferSize() const
 {
-    if (handle == nullptr)
-    {
-        throw std::logic_error("window is not initialized");
-    }
+    CHECK(handle != nullptr, "window is not initialized");
 
     int width  = 0;
     int height = 0;

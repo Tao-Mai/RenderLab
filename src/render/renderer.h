@@ -6,6 +6,7 @@
 #include "render/pass/editor_picking_pass.h"
 #include "render/pass/scene_pass.h"
 #include "render/present/swapchain.h"
+#include "render/resource/render_resource_manager.h"
 #include "render/scene/gpu_scene.h"
 
 #include <cstdint>
@@ -16,10 +17,10 @@
 
 class AssetManager;
 class Camera;
-class Scene;
 class Window;
+struct SceneDesc;
 struct Light;
-struct SceneObject;
+struct SceneObjectDesc;
 
 struct EditorFrameInput
 {
@@ -28,7 +29,7 @@ struct EditorFrameInput
     bool         requestPick      = false;
     uint32_t     pickX            = 0;
     uint32_t     pickY            = 0;
-    SceneObject* selectedObject   = nullptr;
+    SceneObjectDesc* selectedObject = nullptr;
     Light*       selectedLight    = nullptr;
     std::function<void(VkCommandBuffer)> recordUi;
 };
@@ -48,8 +49,8 @@ public:
     Renderer(const Renderer&)            = delete;
     Renderer& operator=(const Renderer&) = delete;
 
-    void initialize(Window& window);
-    void loadScene(Scene& scene, AssetManager& assets);
+    void init(Window& window, AssetManager& assets);
+    void loadScene(SceneDesc& scene);
     EditorFrameResult render(const Camera& camera, const EditorFrameInput& editor);
     void waitIdle();
     void shutdown() noexcept;
@@ -64,11 +65,12 @@ private:
     VulkanContext     vulkan;
     Swapchain         swapchain;
     FrameContext      frame;
+    RenderResourceManager resources;
     GpuScene          scene;
     ScenePass         scenePass;
     EditorPickingPass pickingPass;
 
-    void initVulkan();
+    void initVulkan(AssetManager& assets);
     void recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& editor);
     void recordPickingPass(vk::raii::CommandBuffer& commandBuffer, const EditorFrameInput& editor);
     void recordUiPass(

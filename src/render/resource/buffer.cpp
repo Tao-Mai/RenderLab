@@ -3,7 +3,7 @@
 #include "render/device/memory.h"
 
 #include <cstring>
-#include <stdexcept>
+#include "logger.h"
 
 Buffer::Buffer(
     const vk::raii::PhysicalDevice& physicalDevice,
@@ -13,10 +13,7 @@ Buffer::Buffer(
     vk::MemoryPropertyFlags         memoryProperties) :
     byteSize(size)
 {
-    if (size == 0)
-    {
-        throw std::invalid_argument("buffer size must be greater than zero");
-    }
+    CHECK(size != 0, "buffer size must be greater than zero");
 
     const vk::BufferCreateInfo bufferInfo{
         .size = size,
@@ -40,10 +37,8 @@ Buffer::Buffer(
 
 void Buffer::upload(const void* data, vk::DeviceSize byteCount)
 {
-    if (data == nullptr || byteCount == 0 || byteCount > byteSize)
-    {
-        throw std::invalid_argument("invalid buffer upload");
-    }
+    CHECK(data != nullptr && byteCount != 0 && byteCount <= byteSize,
+        "invalid buffer upload");
 
     void* mappedMemory = memory.mapMemory(0, byteCount);
     std::memcpy(mappedMemory, data, static_cast<std::size_t>(byteCount));
@@ -52,10 +47,8 @@ void Buffer::upload(const void* data, vk::DeviceSize byteCount)
 
 void Buffer::download(void* data, vk::DeviceSize byteCount)
 {
-    if (data == nullptr || byteCount == 0 || byteCount > byteSize)
-    {
-        throw std::invalid_argument("invalid buffer download");
-    }
+    CHECK(data != nullptr && byteCount != 0 && byteCount <= byteSize,
+        "invalid buffer download");
 
     void* mappedMemory = memory.mapMemory(0, byteCount);
     std::memcpy(data, mappedMemory, static_cast<std::size_t>(byteCount));

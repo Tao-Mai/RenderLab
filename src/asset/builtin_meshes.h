@@ -1,10 +1,10 @@
 #pragma once
 
-#include "asset/mesh_data.h"
+#include "asset/imported_mesh.h"
 
 namespace BuiltinMeshes
 {
-    [[nodiscard]] MeshData cube();
-    [[nodiscard]] MeshData sphere(uint32_t segments = 32, uint32_t rings = 16);
-    [[nodiscard]] MeshData arrow();
+    [[nodiscard]] ImportedMesh cube();
+    [[nodiscard]] ImportedMesh sphere(uint32_t segments = 32, uint32_t rings = 16);
+    [[nodiscard]] ImportedMesh arrow();
 }

@@ -2,14 +2,14 @@
 
 #include <cmath>
 #include <numbers>
-#include <stdexcept>
 
 #include <glm/geometric.hpp>
+#include "logger.h"
 
 namespace
 {
     void addFace(
-        MeshData &mesh,
+        ImportedMesh &mesh,
         const glm::vec3 &normal,
         const glm::vec3 &a,
         const glm::vec3 &b,
@@ -30,7 +30,7 @@ namespace
     }
 
     void addTriangle(
-        MeshData &mesh,
+        ImportedMesh &mesh,
         const glm::vec3 &normal,
         const glm::vec3 &a,
         const glm::vec3 &b,
@@ -46,10 +46,10 @@ namespace
     }
 }
 
-MeshData BuiltinMeshes::cube()
+ImportedMesh BuiltinMeshes::cube()
 {
     constexpr float h = 0.5f;
-    MeshData mesh;
+    ImportedMesh mesh;
     mesh.vertices.reserve(24);
     mesh.indices.reserve(36);
 
@@ -77,14 +77,12 @@ MeshData BuiltinMeshes::cube()
     return mesh;
 }
 
-MeshData BuiltinMeshes::sphere(uint32_t segments, uint32_t rings)
+ImportedMesh BuiltinMeshes::sphere(uint32_t segments, uint32_t rings)
 {
-    if (segments < 3 || rings < 2)
-    {
-        throw std::invalid_argument("sphere requires at least 3 segments and 2 rings");
-    }
+    CHECK(segments >= 3 && rings >= 2,
+        "sphere requires at least 3 segments and 2 rings");
 
-    MeshData mesh;
+    ImportedMesh mesh;
     mesh.vertices.reserve((segments + 1) * (rings + 1));
     mesh.indices.reserve(segments * rings * 6);
 
@@ -135,7 +133,7 @@ MeshData BuiltinMeshes::sphere(uint32_t segments, uint32_t rings)
     return mesh;
 }
 
-MeshData BuiltinMeshes::arrow()
+ImportedMesh BuiltinMeshes::arrow()
 {
     constexpr float shaftHalfWidth = 0.025f;
     constexpr float headHalfWidth = 0.09f;
@@ -143,7 +141,7 @@ MeshData BuiltinMeshes::arrow()
     constexpr float headBase = -0.16f;
     constexpr float tip = -0.5f;
 
-    MeshData mesh;
+    ImportedMesh mesh;
     mesh.vertices.reserve(36);
     mesh.indices.reserve(48);
 

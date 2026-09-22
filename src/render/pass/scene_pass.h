@@ -6,9 +6,6 @@
 #include "render/scene/gpu_scene.h"
 
 #include <cstdint>
-#include <memory>
-#include <string>
-#include <unordered_map>
 #include <vector>
 
 #include <glm/mat4x4.hpp>
@@ -18,8 +15,8 @@
 class FrameContext;
 class LightMarkers;
 class Mesh;
+class RenderResourceManager;
 class Swapchain;
-class Texture;
 class VulkanContext;
 struct Light;
 
@@ -33,9 +30,8 @@ public:
         bool         storeDepthForPicking;
     };
 
-    void initialize(VulkanContext& vulkan, Swapchain& swapchain, FrameContext& frame);
+    void init(VulkanContext& vulkan, Swapchain& swapchain, FrameContext& frame, RenderResourceManager& resources);
     void reset() noexcept;
-    void createMaterialGpus(Mesh& mesh);
     void updateScene(
         const glm::mat4& viewProjection,
         const glm::vec3& cameraPosition,
@@ -63,10 +59,7 @@ private:
     vk::raii::DescriptorSet                                sceneSet       = nullptr;
     Buffer                                                 sceneBuffer;
     ScenePipelines                                         scenePipelines;
-    std::unordered_map<std::string, std::shared_ptr<Texture>> textureAssets;
-    std::shared_ptr<Texture>                               defaultAlbedoTexture;
 
-    void                     initializeDescriptors();
+    void                     initDescriptors();
     void                     bindSceneDescriptor(vk::raii::CommandBuffer& commandBuffer) const;
-    std::shared_ptr<Texture> loadTexture(const std::string& path);
 };

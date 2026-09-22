@@ -15,7 +15,8 @@ find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(imguizmo CONFIG REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
+find_package(reflectcpp CONFIG REQUIRED)
+find_package(glog CONFIG REQUIRED)
 find_path(TINYGLTF_INCLUDE_DIR NAMES tiny_gltf.h REQUIRED)
 
 find_program(SLANGC_EXECUTABLE
@@ -90,19 +91,17 @@ add_custom_target(RenderLabShaders DEPENDS
         "${SLANG_EDITOR_PICKING_SHADER}"
 )
 
-add_custom_target(RenderLabAssets
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets" "${CMAKE_CURRENT_BINARY_DIR}/assets"
-        COMMENT "Synchronizing runtime assets"
-        VERBATIM
-)
-
 add_executable(RenderLab
         src/main.cpp
         src/camera.cpp
         src/camera.h
         src/engine.cpp
         src/engine.h
+        src/core/app_config.h
+        src/core/config_manager.cpp
+        src/core/config_manager.h
+        src/editor/editor.cpp
+        src/editor/editor.h
         src/editor/editor_ui.cpp
         src/editor/editor_ui.h
         src/editor/viewport_rect.h
@@ -110,12 +109,15 @@ add_executable(RenderLab
         src/window.h
         src/asset/asset_manager.cpp
         src/asset/asset_manager.h
+        src/asset/asset_id.h
+        src/asset/asset_desc.h
+        src/asset/json_io.h
+        src/asset/rfl_reflectors.h
+        src/asset/imported_mesh.h
         src/asset/builtin_meshes.cpp
         src/asset/builtin_meshes.h
         src/asset/gltf_loader.cpp
         src/asset/gltf_loader.h
-        src/asset/material_data.h
-        src/asset/mesh_data.h
         src/asset/vertex.h
         src/platform/input_method.cpp
         src/platform/input_method.h
@@ -137,8 +139,10 @@ add_executable(RenderLab
         src/render/resource/shader.h
         src/render/resource/mesh.cpp
         src/render/resource/mesh.h
-        src/render/resource/material_gpu.cpp
-        src/render/resource/material_gpu.h
+        src/render/resource/material.cpp
+        src/render/resource/material.h
+        src/render/resource/render_resource_manager.cpp
+        src/render/resource/render_resource_manager.h
         src/render/resource/vertex_layout.h
         src/render/resource/shader_data.h
         src/render/scene/gpu_scene.cpp
@@ -151,13 +155,13 @@ add_executable(RenderLab
         src/render/pass/light_markers.h
         src/render/pass/editor_picking_pass.cpp
         src/render/pass/editor_picking_pass.h
-        src/scene/scene.cpp
-        src/scene/scene.h
         src/scene/light.h
+        src/scene/scene_manager.cpp
+        src/scene/scene_manager.h
         src/scene/transform.cpp
         src/scene/transform.h
 )
-add_dependencies(RenderLab RenderLabShaders RenderLabAssets)
+add_dependencies(RenderLab RenderLabShaders)
 
 target_include_directories(RenderLab PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -165,10 +169,12 @@ target_include_directories(RenderLab PRIVATE
 )
 
 target_compile_definitions(RenderLab PRIVATE
+        RENDERLAB_CONFIG_FILE="${CMAKE_CURRENT_SOURCE_DIR}/assets/config.json"
         VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
         VULKAN_HPP_NO_STRUCT_CONSTRUCTORS=1
         VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS
         GLM_FORCE_DEPTH_ZERO_TO_ONE
+        GLOG_NO_ABBREVIATED_SEVERITIES
 )
 
 target_link_libraries(RenderLab PRIVATE
@@ -177,7 +183,8 @@ target_link_libraries(RenderLab PRIVATE
         glm::glm
         imgui::imgui
         imguizmo::imguizmo
-        nlohmann_json::nlohmann_json
+        reflectcpp::reflectcpp
+        glog::glog
 )
 
 if (MSVC)

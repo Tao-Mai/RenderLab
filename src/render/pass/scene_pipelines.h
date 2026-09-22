@@ -2,15 +2,19 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
+class Shader;
+
 class ScenePipelines
 {
 public:
-    void initialize(
+    void init(
         const vk::raii::Device& device,
         vk::Format colorFormat,
         vk::Format depthFormat,
         vk::DescriptorSetLayout sceneLayout,
-        vk::DescriptorSetLayout materialLayout);
+        vk::DescriptorSetLayout materialLayout,
+        const Shader& sceneShader,
+        const Shader& lightShader);
     void reset() noexcept;
 
     void bindScene(vk::raii::CommandBuffer& commandBuffer) const;

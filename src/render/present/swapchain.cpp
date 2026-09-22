@@ -8,10 +8,10 @@
 #include <array>
 #include <cassert>
 #include <limits>
-#include <stdexcept>
 #include <utility>
+#include "logger.h"
 
-void Swapchain::initialize(VulkanContext& context, Window& targetWindow)
+void Swapchain::init(VulkanContext& context, Window& targetWindow)
 {
     vulkan = &context;
     window = &targetWindow;
@@ -257,7 +257,7 @@ vk::Format Swapchain::chooseDepthFormat() const
             return format;
         }
     }
-    throw std::runtime_error("failed to find a supported depth format");
+    LOG_FATAL("failed to find a supported depth format");
 }
 
 vk::Extent2D Swapchain::chooseSwapExtent(vk::SurfaceCapabilitiesKHR const& capabilities)

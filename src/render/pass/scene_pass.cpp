@@ -4,16 +4,15 @@
 #include "render/pass/light_markers.h"
 #include "render/present/swapchain.h"
 #include "render/resource/mesh.h"
+#include "render/resource/material.h"
+#include "render/resource/render_resource_manager.h"
 #include "render/resource/shader_data.h"
-#include "render/resource/texture.h"
 #include "render/device/vulkan_context.h"
 #include "scene/light.h"
-#include "scene/scene.h"
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <filesystem>
 #include <utility>
 
 #include <glm/vec4.hpp>
@@ -40,7 +39,7 @@ static_assert(offsetof(SceneUniforms, lightFlags) == 128);
 static_assert(offsetof(SceneUniforms, cameraPosition) == 144);
 }
 
-void ScenePass::initializeDescriptors()
+void ScenePass::initDescriptors()
 {
     const auto& physicalDevice = vulkan->physicalDeviceHandle();
     const auto& device         = vulkan->deviceHandle();
@@ -146,23 +145,23 @@ void ScenePass::bindSceneDescriptor(vk::raii::CommandBuffer& commandBuffer) cons
         {});
 }
 
-void ScenePass::initialize(VulkanContext& context, Swapchain& targetSwapchain, FrameContext& targetFrame)
+void ScenePass::init(VulkanContext& context, Swapchain& targetSwapchain, FrameContext& targetFrame, RenderResourceManager& resources)
 {
     vulkan    = &context;
     swapchain = &targetSwapchain;
     frame     = &targetFrame;
     try
     {
-        initializeDescriptors();
-        defaultAlbedoTexture = std::make_shared<Texture>(
-            frame->uploadContext(*vulkan),
-            std::array<uint8_t, 4>{255, 255, 255, 255});
-        scenePipelines.initialize(
+        initDescriptors();
+        resources.configureMaterialDescriptors(*descriptorPool, *materialLayout);
+        scenePipelines.init(
             vulkan->deviceHandle(),
             swapchain->surfaceFormat().format,
             swapchain->depthImageFormat(),
             *sceneLayout,
-            *materialLayout);
+            *materialLayout,
+            resources.shader("shader:scene"),
+            resources.shader("shader:light"));
     }
     catch (...)
     {
@@ -174,8 +173,6 @@ void ScenePass::initialize(VulkanContext& context, Swapchain& targetSwapchain, F
 void ScenePass::reset() noexcept
 {
     scenePipelines.reset();
-    textureAssets.clear();
-    defaultAlbedoTexture.reset();
     sceneSet         = nullptr;
     sceneBuffer.reset();
     sceneLayout      = nullptr;
@@ -293,9 +290,9 @@ void ScenePass::record(
     for (const SceneRenderItem& item : renderItems)
     {
         item.mesh->bind(commandBuffer);
-        for (const SubmeshData& submesh : item.mesh->submeshes())
+        for (const Submesh& submesh : item.mesh->submeshes())
         {
-            const MaterialGpu&      material = item.mesh->materialGpu(submesh.materialIndex);
+            const Material& material = *submesh.material;
             const MeshPushConstants pushConstants{
                 .model = item.object->transform.matrix(),
             };
@@ -333,41 +330,4 @@ void ScenePass::record(
     }
 
     commandBuffer.endRendering();
-}
-
-void ScenePass::createMaterialGpus(Mesh& mesh)
-{
-    auto& gpus = mesh.materialGpus();
-    gpus.resize(mesh.materials().size());
-    for (size_t index = 0; index < mesh.materials().size(); ++index)
-    {
-        const MaterialData&      material = mesh.materialData(static_cast<uint32_t>(index));
-        std::shared_ptr<Texture> texture  = material.hasAlbedoMap()
-            ? loadTexture(material.albedoMap)
-            : defaultAlbedoTexture;
-        gpus[index].create(
-            vulkan->physicalDeviceHandle(),
-            vulkan->deviceHandle(),
-            *descriptorPool,
-            *materialLayout,
-            material,
-            std::move(texture));
-    }
-}
-
-std::shared_ptr<Texture> ScenePass::loadTexture(const std::string& path)
-{
-    if (path.empty() || path.starts_with("data:") || path.starts_with("embedded:"))
-    {
-        return defaultAlbedoTexture;
-    }
-    if (const auto cached = textureAssets.find(path); cached != textureAssets.end())
-    {
-        return cached->second;
-    }
-
-    auto texture = std::make_shared<Texture>(
-        frame->uploadContext(*vulkan), std::filesystem::path(path));
-    textureAssets.emplace(path, texture);
-    return texture;
 }

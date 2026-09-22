@@ -11,7 +11,7 @@ class Window;
 class Swapchain
 {
 public:
-    void initialize(VulkanContext& vulkan, Window& window);
+    void init(VulkanContext& vulkan, Window& window);
     void transitionDepthImageLayout(const vk::raii::CommandPool& commandPool);
     void reset() noexcept;
 

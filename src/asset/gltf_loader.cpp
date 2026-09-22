@@ -10,13 +10,13 @@
 #include <cstring>
 #include <functional>
 #include <iostream>
-#include <stdexcept>
 #include <string>
 
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/mat4x4.hpp>
+#include "logger.h"
 
 namespace
 {
@@ -48,7 +48,7 @@ namespace
     }
 
     void loadMaterials(
-        MeshData &result,
+        ImportedMesh &result,
         const tinygltf::Model &model,
         const std::filesystem::path &modelDirectory)
     {
@@ -56,7 +56,7 @@ namespace
         for (size_t index = 0; index < model.materials.size(); ++index)
         {
             const tinygltf::Material &source = model.materials[index];
-            MaterialData material;
+            ImportedMaterial material;
             material.name = source.name.empty()
                 ? "Material " + std::to_string(index)
                 : source.name;
@@ -107,25 +107,17 @@ namespace
         const tinygltf::Accessor &accessor,
         size_t &stride)
     {
-        if (accessor.bufferView < 0 || accessor.sparse.isSparse)
-        {
-            throw std::runtime_error("sparse or missing glTF accessor is not supported");
-        }
+        CHECK(accessor.bufferView >= 0 && !accessor.sparse.isSparse,
+            "sparse or missing glTF accessor is not supported");
 
         const auto &view = model.bufferViews.at(accessor.bufferView);
         const auto &buffer = model.buffers.at(view.buffer);
         const int byteStride = accessor.ByteStride(view);
-        if (byteStride <= 0)
-        {
-            throw std::runtime_error("invalid glTF accessor stride");
-        }
+        CHECK(byteStride > 0, "invalid glTF accessor stride");
         stride = static_cast<size_t>(byteStride);
 
         const size_t offset = view.byteOffset + accessor.byteOffset;
-        if (offset >= buffer.data.size())
-        {
-            throw std::runtime_error("glTF accessor points outside its buffer");
-        }
+        CHECK(offset < buffer.data.size(), "glTF accessor points outside its buffer");
         return buffer.data.data() + offset;
     }
 
@@ -141,11 +133,9 @@ namespace
         const tinygltf::Accessor &accessor,
         size_t index)
     {
-        if (accessor.componentType != TINYGLTF_COMPONENT_TYPE_FLOAT ||
-            accessor.type != TINYGLTF_TYPE_VEC3)
-        {
-            throw std::runtime_error("glTF VEC3 attribute must use float components");
-        }
+        CHECK(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT &&
+              accessor.type == TINYGLTF_TYPE_VEC3,
+            "glTF VEC3 attribute must use float components");
         size_t stride = 0;
         const unsigned char *data = accessorData(model, accessor, stride) + index * stride;
         return {readFloat(data), readFloat(data + 4), readFloat(data + 8)};
@@ -156,11 +146,9 @@ namespace
         const tinygltf::Accessor &accessor,
         size_t index)
     {
-        if (accessor.componentType != TINYGLTF_COMPONENT_TYPE_FLOAT ||
-            accessor.type != TINYGLTF_TYPE_VEC2)
-        {
-            throw std::runtime_error("glTF VEC2 attribute must use float components");
-        }
+        CHECK(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT &&
+              accessor.type == TINYGLTF_TYPE_VEC2,
+            "glTF VEC2 attribute must use float components");
         size_t stride = 0;
         const unsigned char *data = accessorData(model, accessor, stride) + index * stride;
         return {readFloat(data), readFloat(data + 4)};
@@ -171,10 +159,7 @@ namespace
         const tinygltf::Accessor &accessor,
         size_t index)
     {
-        if (accessor.type != TINYGLTF_TYPE_SCALAR)
-        {
-            throw std::runtime_error("glTF index accessor must be scalar");
-        }
+        CHECK(accessor.type == TINYGLTF_TYPE_SCALAR, "glTF index accessor must be scalar");
 
         size_t stride = 0;
         const unsigned char *data = accessorData(model, accessor, stride) + index * stride;
@@ -195,7 +180,7 @@ namespace
                 return value;
             }
             default:
-                throw std::runtime_error("unsupported glTF index component type");
+                LOG_FATAL("unsupported glTF index component type");
         }
     }
 
@@ -243,7 +228,7 @@ namespace
     }
 
     void appendPrimitive(
-        MeshData &result,
+        ImportedMesh &result,
         const tinygltf::Model &model,
         const tinygltf::Primitive &primitive,
         const glm::mat4 &transform)
@@ -254,10 +239,8 @@ namespace
         }
 
         const auto positionIt = primitive.attributes.find("POSITION");
-        if (positionIt == primitive.attributes.end())
-        {
-            throw std::runtime_error("glTF primitive has no POSITION attribute");
-        }
+        CHECK(positionIt != primitive.attributes.end(),
+            "glTF primitive has no POSITION attribute");
 
         const auto &positions = model.accessors.at(positionIt->second);
         const auto normalIt = primitive.attributes.find("NORMAL");
@@ -268,11 +251,9 @@ namespace
         const tinygltf::Accessor *uvs = uvIt == primitive.attributes.end()
             ? nullptr
             : &model.accessors.at(uvIt->second);
-        if ((normals && normals->count != positions.count) ||
-            (uvs && uvs->count != positions.count))
-        {
-            throw std::runtime_error("glTF vertex attribute counts do not match");
-        }
+        CHECK((!normals || normals->count == positions.count) &&
+              (!uvs || uvs->count == positions.count),
+            "glTF vertex attribute counts do not match");
 
         const uint32_t firstVertex = static_cast<uint32_t>(result.vertices.size());
         const uint32_t firstIndex = static_cast<uint32_t>(result.indices.size());
@@ -298,10 +279,8 @@ namespace
             for (size_t index = 0; index < indices.count; ++index)
             {
                 const uint32_t localIndex = readIndex(model, indices, index);
-                if (localIndex >= positions.count)
-                {
-                    throw std::runtime_error("glTF index is outside the vertex accessor");
-                }
+                CHECK(localIndex < positions.count,
+                    "glTF index is outside the vertex accessor");
                 result.indices.push_back(firstVertex + localIndex);
             }
         }
@@ -326,7 +305,7 @@ namespace
     }
 
     void appendMesh(
-        MeshData &result,
+        ImportedMesh &result,
         const tinygltf::Model &model,
         int meshIndex,
         const glm::mat4 &transform)
@@ -339,7 +318,7 @@ namespace
     }
 }
 
-MeshData GLTFLoader::load(const std::filesystem::path &path)
+ImportedMesh GLTFLoader::load(const std::filesystem::path &path)
 {
     tinygltf::TinyGLTF loader;
     tinygltf::Model model;
@@ -356,12 +335,9 @@ MeshData GLTFLoader::load(const std::filesystem::path &path)
     {
         std::cerr << "TinyGLTF warning: " << warning << '\n';
     }
-    if (!loaded)
-    {
-        throw std::runtime_error("failed to load glTF '" + path.string() + "': " + error);
-    }
+    CHECK(loaded, "failed to load glTF '{}': {}", path.string(), error);
 
-    MeshData result;
+    ImportedMesh result;
     loadMaterials(result, model, path.parent_path());
     std::function<void(int, const glm::mat4 &)> visitNode;
     visitNode = [&](int nodeIndex, const glm::mat4 &parentTransform)
@@ -394,9 +370,7 @@ MeshData GLTFLoader::load(const std::filesystem::path &path)
         }
     }
 
-    if (result.vertices.empty() || result.indices.empty())
-    {
-        throw std::runtime_error("glTF contains no triangle mesh data: " + path.string());
-    }
+    CHECK(!result.vertices.empty() && !result.indices.empty(),
+        "glTF contains no triangle mesh data: {}", path.string());
     return result;
 }

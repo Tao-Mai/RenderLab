@@ -1,8 +1,8 @@
 #pragma once
 
-#include <stdexcept>
 
 #include <vulkan/vulkan_raii.hpp>
+#include "logger.h"
 
 namespace vulkan_memory
 {
@@ -26,6 +26,6 @@ inline uint32_t findType(
         }
     }
 
-    throw std::runtime_error("failed to find a suitable Vulkan memory type");
+    LOG_FATAL("failed to find a suitable Vulkan memory type");
 }
 }

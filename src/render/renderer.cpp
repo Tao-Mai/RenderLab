@@ -2,20 +2,20 @@
 
 #include "asset/asset_manager.h"
 #include "camera.h"
-#include "scene/scene.h"
+#include "asset/asset_desc.h"
 #include "window.h"
 
 #include <iostream>
-#include <stdexcept>
 
 #include <glm/glm.hpp>
+#include "logger.h"
 
 Renderer::~Renderer()
 {
     shutdown();
 }
 
-void Renderer::initialize(Window& targetWindow)
+void Renderer::init(Window& targetWindow, AssetManager& assets)
 {
     if (initialized)
     {
@@ -24,7 +24,7 @@ void Renderer::initialize(Window& targetWindow)
     window = &targetWindow;
     try
     {
-        initVulkan();
+        initVulkan(assets);
         initialized = true;
     }
     catch (...)
@@ -36,10 +36,7 @@ void Renderer::initialize(Window& targetWindow)
 
 EditorFrameResult Renderer::render(const Camera& camera, const EditorFrameInput& editor)
 {
-    if (!initialized)
-    {
-        throw std::logic_error("Renderer must be initialized before render()");
-    }
+    CHECK(initialized, "Renderer must be initialized before render()");
 
     const glm::mat4 view       = camera.viewMatrix();
     const glm::mat4 projection = camera.projectionMatrix(editor.aspectRatio);
@@ -47,15 +44,12 @@ EditorFrameResult Renderer::render(const Camera& camera, const EditorFrameInput&
     return drawFrame(editor);
 }
 
-void Renderer::loadScene(Scene& targetScene, AssetManager& assets)
+void Renderer::loadScene(SceneDesc& targetScene)
 {
-    if (!initialized)
-    {
-        throw std::logic_error("Renderer must be initialized before loading a scene");
-    }
+    CHECK(initialized, "Renderer must be initialized before loading a scene");
 
     waitIdle();
-    scene.load(targetScene, assets, vulkan, frame, scenePass);
+    scene.load(targetScene, resources);
 }
 
 void Renderer::waitIdle()
@@ -79,10 +73,11 @@ void Renderer::shutdown() noexcept
         }
     }
 
-    frame.reset();
     scene.reset();
     pickingPass.reset();
+    resources.reset();
     scenePass.reset();
+    frame.reset();
     swapchain.reset();
     vulkan.reset();
     window      = nullptr;
@@ -104,19 +99,21 @@ const GpuScene& Renderer::gpuScene() const
     return scene;
 }
 
-void Renderer::initVulkan()
+void Renderer::initVulkan(AssetManager& assets)
 {
-    vulkan.initialize(*window);
-    swapchain.initialize(vulkan, *window);
-    frame.initialize(vulkan);
+    vulkan.init(*window);
+    swapchain.init(vulkan, *window);
+    frame.init(vulkan);
     swapchain.transitionDepthImageLayout(frame.commandPoolHandle());
-    scenePass.initialize(vulkan, swapchain, frame);
-    pickingPass.initialize(
+    resources.init(assets, vulkan, frame);
+    scenePass.init(vulkan, swapchain, frame, resources);
+    pickingPass.init(
         vulkan.physicalDeviceHandle(),
         vulkan.deviceHandle(),
         swapchain.extent(),
         swapchain.depthImageFormat(),
-        scenePass.sceneLayoutHandle());
+        scenePass.sceneLayoutHandle(),
+        resources.shader("shader:picking"));
 }
 
 void Renderer::recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& editor)
@@ -261,10 +258,7 @@ EditorFrameResult Renderer::drawFrame(const EditorFrameInput& editor)
     const vk::CommandBuffer commandBuffer        = *frame.commandBufferHandle();
 
     auto fenceResult = vulkan.deviceHandle().waitForFences(drawFence, vk::True, UINT64_MAX);
-    if (fenceResult != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("failed to wait for fence!");
-    }
+    CHECK(fenceResult == vk::Result::eSuccess, "failed to wait for fence!");
     vulkan.deviceHandle().resetFences(drawFence);
 
     auto [result, imageIndex] = swapchain.handle().acquireNextImage(
@@ -315,10 +309,8 @@ EditorFrameResult Renderer::drawFrame(const EditorFrameInput& editor)
             drawFence,
             vk::True,
             UINT64_MAX);
-        if (pickFenceResult != vk::Result::eSuccess)
-        {
-            throw std::runtime_error("failed to wait for object picking readback");
-        }
+        CHECK(pickFenceResult == vk::Result::eSuccess,
+            "failed to wait for object picking readback");
 
         frameResult.hasPickResult     = true;
         frameResult.pickedSelectionId = pickingPass.readSelectionId();

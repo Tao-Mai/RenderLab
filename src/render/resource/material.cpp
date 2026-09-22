@@ -1,4 +1,4 @@
-#include "render/resource/material_gpu.h"
+#include "render/resource/material.h"
 
 #include <array>
 #include <cstddef>
@@ -21,12 +21,12 @@ static_assert(offsetof(MaterialUniforms, metallic) == 20);
 static_assert(sizeof(MaterialUniforms) == 32);
 }
 
-void MaterialGpu::create(
+void Material::create(
     const vk::raii::PhysicalDevice& physicalDevice,
     const vk::raii::Device&         device,
     vk::DescriptorPool              descriptorPool,
     vk::DescriptorSetLayout         descriptorSetLayout,
-    const MaterialData&             material,
+    const MaterialDesc&             material,
     std::shared_ptr<Texture>        texture)
 {
     albedoTexture  = std::move(texture);
@@ -91,7 +91,7 @@ void MaterialGpu::create(
     device.updateDescriptorSets(writes, {});
 }
 
-vk::DescriptorSet MaterialGpu::descriptorSetHandle() const
+vk::DescriptorSet Material::descriptorSetHandle() const
 {
     return **descriptorSet;
 }

@@ -5,8 +5,8 @@
 #include <algorithm>
 #include <cstring>
 #include <iostream>
-#include <stdexcept>
 #include <string>
+#include "logger.h"
 
 namespace
 {
@@ -20,7 +20,7 @@ constexpr bool enableValidationLayers = true;
 #endif
 }
 
-void VulkanContext::initialize(Window& targetWindow)
+void VulkanContext::init(Window& targetWindow)
 {
     window = &targetWindow;
     try
@@ -89,11 +89,8 @@ void VulkanContext::createInstance()
                                                                    requiredLayer) == 0;
                                                            });
                                                    });
-    if (unsupportedLayerIt != requiredLayers.end())
-    {
-        throw std::runtime_error(
-            "Required layer not supported: " + std::string(*unsupportedLayerIt));
-    }
+    CHECK(unsupportedLayerIt == requiredLayers.end(),
+        "Required layer not supported: {}", *unsupportedLayerIt);
 
     // Get the required extensions.
     auto requiredExtensions = getRequiredInstanceExtensions();
@@ -112,11 +109,8 @@ void VulkanContext::createInstance()
                                              requiredExtension) == 0;
                                      });
                              });
-    if (unsupportedPropertyIt != requiredExtensions.end())
-    {
-        throw std::runtime_error(
-            "Required extension not supported: " + std::string(*unsupportedPropertyIt));
-    }
+    CHECK(unsupportedPropertyIt == requiredExtensions.end(),
+        "Required extension not supported: {}", *unsupportedPropertyIt);
 
     vk::InstanceCreateInfo createInfo{.pApplicationInfo = &appInfo,
                                       .enabledLayerCount = static_cast<uint32_t>(
@@ -223,10 +217,7 @@ void VulkanContext::pickPhysicalDevice()
                                               {
                                                   return isDeviceSuitable(physicalDevice);
                                               });
-    if (devIter == physicalDevices.end())
-    {
-        throw std::runtime_error("failed to find a suitable GPU!");
-    }
+    CHECK(devIter != physicalDevices.end(), "failed to find a suitable GPU!");
     physicalDevice = *devIter;
 }
 
@@ -246,11 +237,8 @@ void VulkanContext::createLogicalDevice()
             break;
         }
     }
-    if (queueIndex == ~0)
-    {
-        throw std::runtime_error(
-            "Could not find a queue for graphics and present -> terminating");
-    }
+    CHECK(queueIndex != ~0u,
+        "Could not find a queue for graphics and present -> terminating");
 
     // query for Vulkan 1.3 features
     vk::StructureChain<vk::PhysicalDeviceFeatures2,

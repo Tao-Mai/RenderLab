@@ -8,7 +8,7 @@
 #include <glm/geometric.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-void Camera::configure(const SceneCamera &settings)
+void Camera::configure(const SceneCameraDesc &settings)
 {
     position = settings.position;
     worldUp = settings.up;

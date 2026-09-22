@@ -9,7 +9,7 @@ class VulkanContext;
 class FrameContext
 {
 public:
-    void initialize(const VulkanContext& vulkan);
+    void init(const VulkanContext& vulkan);
     void reset() noexcept;
 
     [[nodiscard]] const vk::raii::CommandPool& commandPoolHandle() const;

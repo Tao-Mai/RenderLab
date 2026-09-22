@@ -10,7 +10,7 @@
 
 struct GLFWwindow;
 struct Light;
-struct SceneObject;
+struct SceneObjectDesc;
 struct Transform;
 
 class EditorUI
@@ -22,7 +22,7 @@ public:
     EditorUI(const EditorUI&)            = delete;
     EditorUI& operator=(const EditorUI&) = delete;
 
-    void initialize(
+    void init(
         GLFWwindow*      window,
         VkInstance       instance,
         VkPhysicalDevice physicalDevice,
@@ -43,7 +43,7 @@ public:
         const glm::mat4& view,
         const glm::mat4& projection,
         bool             enableShortcuts);
-    void drawInspector(SceneObject* object, Light* light);
+    void drawInspector(SceneObjectDesc* object, Light* light);
     void endFrame();
     void render(VkCommandBuffer commandBuffer) const;
     void shutdown() noexcept;

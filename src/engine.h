@@ -1,40 +1,40 @@
 #pragma once
 
+#include "asset/asset_desc.h"
 #include "asset/asset_manager.h"
 #include "camera.h"
-#include "editor/editor_ui.h"
+#include "core/config_manager.h"
+#include "editor/editor.h"
 #include "platform/input_method.h"
 #include "render/renderer.h"
-#include "scene/scene.h"
+#include "scene/scene_manager.h"
 #include "window.h"
 
 class Engine
 {
 public:
-    Engine() = default;
+    Engine();
     ~Engine();
 
     Engine(const Engine&)            = delete;
     Engine& operator=(const Engine&) = delete;
 
-    void initialize();
+    void init();
     void run();
 
 private:
-    bool         initialized = false;
-    InputMethod  inputMethod;
-    Window       window;
+    bool initialized = false;
+
+    ConfigManager config;
+    Window window;
+    InputMethod inputMethod;
     AssetManager assets;
-    Scene        scene;
-    Camera       camera;
-    Renderer     renderer;
-    EditorUI     editorUI;
-    SceneObject* selectedObject = nullptr;
-    Light*       selectedLight  = nullptr;
+    SceneManager scenes;
+    SceneDesc scene;
+    Camera camera;
+    Renderer renderer;
+    Editor editor;
 
     void mainLoop();
     void shutdown() noexcept;
-    void initializeEditor();
-    EditorFrameInput buildEditorFrame(const Camera& camera, float deltaTime);
-    void applyPickResult(const EditorFrameResult& result);
 };

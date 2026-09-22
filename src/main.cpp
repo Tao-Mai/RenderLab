@@ -1,9 +1,10 @@
 #include "engine.h"
+#include "logger.h"
 
-int main()
+int main(int argc, char** argv)
 {
-	Engine engine;
-	engine.initialize();
-	engine.run();
+    logger::init(argv[0]);
+    Engine engine;
+    engine.init();
+    engine.run();
 }
-

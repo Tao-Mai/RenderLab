@@ -1,13 +1,12 @@
 #include "editor/editor_ui.h"
 
 #include "scene/light.h"
-#include "scene/scene.h"
+#include "asset/asset_desc.h"
 #include "scene/transform.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <stdexcept>
 #include <string>
 
 #include <glm/common.hpp>
@@ -20,6 +19,8 @@
 #include <imgui_impl_vulkan.h>
 #include <imgui_internal.h>
 #include <ImGuizmo.h>
+
+#include "logger.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -106,7 +107,7 @@ EditorUI::~EditorUI()
     shutdown();
 }
 
-void EditorUI::initialize(
+void EditorUI::init(
     GLFWwindow *window,
     VkInstance instance,
     VkPhysicalDevice physicalDevice,
@@ -137,28 +138,22 @@ void EditorUI::initialize(
         const UINT directoryLength = GetWindowsDirectoryA(
             windowsDirectory.data(),
             static_cast<UINT>(windowsDirectory.size()));
-        if (directoryLength == 0 || directoryLength >= windowsDirectory.size())
-        {
-            throw std::runtime_error("failed to locate the Windows font directory");
-        }
+        CHECK(directoryLength != 0 && directoryLength < windowsDirectory.size(),
+            "failed to locate the Windows font directory");
         const std::string fontPath =
             std::string{windowsDirectory.data(), directoryLength} + "\\Fonts\\msyh.ttc";
-        if (io.Fonts->AddFontFromFileTTF(
+        CHECK(io.Fonts->AddFontFromFileTTF(
                 fontPath.c_str(),
                 18.0f,
                 nullptr,
-                io.Fonts->GetGlyphRangesChineseFull()) == nullptr)
-        {
-            throw std::runtime_error("failed to load Microsoft YaHei: " + fontPath);
-        }
+                io.Fonts->GetGlyphRangesChineseFull()) != nullptr,
+            "failed to load Microsoft YaHei: {}", fontPath);
 #else
 #error RenderLab editor requires Windows to load Microsoft YaHei
 #endif
 
-        if (!ImGui_ImplGlfw_InitForVulkan(window, true))
-        {
-            throw std::runtime_error("failed to initialize ImGui GLFW backend");
-        }
+        CHECK(ImGui_ImplGlfw_InitForVulkan(window, true),
+            "failed to init ImGui GLFW backend");
         glfwBackendInitialized = true;
 
         colorFormat = targetColorFormat;
@@ -182,10 +177,8 @@ void EditorUI::initialize(
         initInfo.UseDynamicRendering = true;
         initInfo.PipelineRenderingCreateInfo = pipelineRenderingInfo;
 
-        if (!ImGui_ImplVulkan_Init(&initInfo))
-        {
-            throw std::runtime_error("failed to initialize ImGui Vulkan backend");
-        }
+        CHECK(ImGui_ImplVulkan_Init(&initInfo),
+            "failed to init ImGui Vulkan backend");
         vulkanBackendInitialized = true;
     }
     catch (...)
@@ -365,7 +358,7 @@ void EditorUI::drawLightGizmo(
     }
 }
 
-void EditorUI::drawInspector(SceneObject *object, Light *light)
+void EditorUI::drawInspector(SceneObjectDesc *object, Light *light)
 {
     ImGui::SetNextWindowDockID(editorDockId, ImGuiCond_Always);
     constexpr ImGuiWindowFlags editorFlags = ImGuiWindowFlags_NoMove |

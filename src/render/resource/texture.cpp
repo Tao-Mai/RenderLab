@@ -4,11 +4,11 @@
 #include "render/resource/buffer.h"
 
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <utility>
 
 #include <stb_image.h>
+#include "logger.h"
 
 namespace
 {
@@ -29,11 +29,8 @@ Texture::Texture(GpuUploadContext upload, const std::filesystem::path &path)
     const std::string filename = path.string();
     std::unique_ptr<stbi_uc, StbiDeleter> pixels(
         stbi_load(filename.c_str(), &width, &height, &channels, STBI_rgb_alpha));
-    if (!pixels || width <= 0 || height <= 0)
-    {
-        throw std::runtime_error(
-            "failed to load texture '" + filename + "': " + stbi_failure_reason());
-    }
+    CHECK(pixels && width > 0 && height > 0,
+        "failed to load texture '{}': {}", filename, stbi_failure_reason());
     create(
         upload,
         pixels.get(),

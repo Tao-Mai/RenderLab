@@ -1,6 +1,6 @@
 #pragma once
 
-#include "scene/scene.h"
+#include "asset/asset_desc.h"
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
@@ -10,7 +10,7 @@ class Window;
 class Camera
 {
   public:
-    void configure(const SceneCamera &settings);
+    void configure(const SceneCameraDesc &settings);
     void update(Window &window, float deltaTime, bool allowModeToggle);
 
     [[nodiscard]] bool isFreeMovementActive() const;

@@ -9,12 +9,13 @@
 #include <array>
 #include <stdexcept>
 
-void EditorPickingPass::initialize(
+void EditorPickingPass::init(
     const vk::raii::PhysicalDevice& physicalDevice,
     const vk::raii::Device& device,
     vk::Extent2D extent,
     vk::Format depthFormat,
-    vk::DescriptorSetLayout sceneLayout)
+    vk::DescriptorSetLayout sceneLayout,
+    const Shader& shader)
 {
     reset();
 
@@ -64,7 +65,6 @@ void EditorPickingPass::initialize(
         vk::MemoryPropertyFlagBits::eHostVisible |
             vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    Shader shader(device, "shaders/editor_picking.spv");
     const std::array shaderStages = {
         vk::PipelineShaderStageCreateInfo{
             .stage = vk::ShaderStageFlagBits::eVertex,
@@ -284,7 +284,7 @@ void EditorPickingPass::draw(
         0,
         pushConstants);
     mesh.bind(commandBuffer);
-    for (const SubmeshData& submesh : mesh.submeshes())
+    for (const Submesh& submesh : mesh.submeshes())
     {
         commandBuffer.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);
     }

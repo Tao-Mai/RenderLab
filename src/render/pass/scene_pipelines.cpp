@@ -7,20 +7,20 @@
 #include <array>
 #include <vector>
 
-void ScenePipelines::initialize(
+void ScenePipelines::init(
     const vk::raii::Device& device,
     vk::Format colorFormat,
     vk::Format depthFormat,
     vk::DescriptorSetLayout sceneLayout,
-    vk::DescriptorSetLayout materialLayout)
+    vk::DescriptorSetLayout materialLayout,
+    const Shader& sceneShader,
+    const Shader& lightShader)
 {
-    Shader shader(device, "shaders/slang.spv");
-
     vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
-        .stage = vk::ShaderStageFlagBits::eVertex, .module = shader.handle(),
+        .stage = vk::ShaderStageFlagBits::eVertex, .module = sceneShader.handle(),
         .pName = "vertMain"};
     vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
-        .stage = vk::ShaderStageFlagBits::eFragment, .module = shader.handle(),
+        .stage = vk::ShaderStageFlagBits::eFragment, .module = sceneShader.handle(),
         .pName = "fragMain"};
     vk::PipelineShaderStageCreateInfo shaderStages[] = {
         vertShaderStageInfo, fragShaderStageInfo};
@@ -126,7 +126,6 @@ void ScenePipelines::initialize(
         nullptr,
         pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 
-    Shader           lightShader(device, "shaders/light.spv");
     const std::array lightShaderStages = {
         vk::PipelineShaderStageCreateInfo{
             .stage = vk::ShaderStageFlagBits::eVertex,

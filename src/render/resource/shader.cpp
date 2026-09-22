@@ -1,7 +1,7 @@
 #include "render/resource/shader.h"
 
 #include <fstream>
-#include <stdexcept>
+#include "logger.h"
 
 Shader::Shader(const vk::raii::Device &device, const std::string &filename)
 {
@@ -21,29 +21,18 @@ vk::ShaderModule Shader::handle() const
 std::vector<uint32_t> Shader::readSpirv(const std::string &filename)
 {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
-    if (!file.is_open())
-    {
-        throw std::runtime_error("failed to open shader: " + filename);
-    }
+    CHECK(file.is_open(), "failed to open shader: {}", filename);
 
     const std::streampos end = file.tellg();
-    if (end <= 0)
-    {
-        throw std::runtime_error("shader is empty: " + filename);
-    }
+    CHECK(end > 0, "shader is empty: {}", filename);
 
     const auto byteCount = static_cast<std::size_t>(end);
-    if (byteCount % sizeof(uint32_t) != 0)
-    {
-        throw std::runtime_error("invalid SPIR-V byte size: " + filename);
-    }
+    CHECK(byteCount % sizeof(uint32_t) == 0, "invalid SPIR-V byte size: {}", filename);
 
     std::vector<uint32_t> code(byteCount / sizeof(uint32_t));
     file.seekg(0, std::ios::beg);
-    if (!file.read(reinterpret_cast<char *>(code.data()), static_cast<std::streamsize>(byteCount)))
-    {
-        throw std::runtime_error("failed to read shader: " + filename);
-    }
+    CHECK(file.read(reinterpret_cast<char *>(code.data()), static_cast<std::streamsize>(byteCount)),
+        "failed to read shader: {}", filename);
 
     return code;
 }

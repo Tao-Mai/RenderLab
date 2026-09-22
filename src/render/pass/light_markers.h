@@ -4,19 +4,18 @@
 #include "scene/light.h"
 
 #include <cstdint>
-#include <memory>
 #include <vector>
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
-class AssetManager;
+class RenderResourceManager;
 
 class LightMarkers
 {
 public:
-    void initialize(GpuUploadContext upload, AssetManager& assets);
+    void init(RenderResourceManager& resources);
     void reset() noexcept;
 
     void record(
@@ -39,9 +38,9 @@ private:
         uint32_t indexCount;
     };
 
-    std::unique_ptr<Mesh> sphere;
-    std::unique_ptr<Mesh> cube;
-    std::unique_ptr<Mesh> arrow;
+    Mesh* sphere = nullptr;
+    Mesh* cube = nullptr;
+    Mesh* arrow = nullptr;
 
     [[nodiscard]] std::vector<Part> parts(const Light& light) const;
 };

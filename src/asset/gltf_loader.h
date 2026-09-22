@@ -1,11 +1,11 @@
 #pragma once
 
-#include "asset/mesh_data.h"
+#include "asset/imported_mesh.h"
 
 #include <filesystem>
 
 class GLTFLoader
 {
   public:
-    [[nodiscard]] static MeshData load(const std::filesystem::path &path);
+    [[nodiscard]] static ImportedMesh load(const std::filesystem::path &path);
 };
