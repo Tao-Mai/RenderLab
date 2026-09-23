@@ -219,6 +219,7 @@ bool EditorUI::drawGizmo(
     }
 
     ImGuizmo::SetOrthographic(false);
+    ImGuizmo::AllowAxisFlip(false);
     ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
     ImGuizmo::SetRect(scenePosition.x, scenePosition.y, sceneSize.x, sceneSize.y);
 

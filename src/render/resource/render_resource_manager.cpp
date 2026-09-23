@@ -31,6 +31,10 @@ namespace
     {
         return BuiltinMeshes::sphere();
     }
+    if (id == MeshDesc::plane)
+    {
+        return BuiltinMeshes::plane();
+    }
     CHECK(id == MeshDesc::arrow, "unknown builtin mesh: {}", id);
     return BuiltinMeshes::arrow();
 }

@@ -116,6 +116,15 @@ MeshGeometry BuiltinMeshes::sphere(uint32_t segments, uint32_t rings)
     return mesh;
 }
 
+MeshGeometry BuiltinMeshes::plane()
+{
+    constexpr float h = 0.5f;
+    MeshGeometry mesh;
+    addFace(mesh, {0.0f, 1.0f, 0.0f},
+        {-h, 0.0f, -h}, {-h, 0.0f, h}, {h, 0.0f, h}, {h, 0.0f, -h});
+    return mesh;
+}
+
 MeshGeometry BuiltinMeshes::arrow()
 {
     constexpr float shaftHalfWidth = 0.025f;

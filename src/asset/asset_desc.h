@@ -101,8 +101,9 @@ struct MeshDesc
 
     static inline const AssetId cube = "cube";
     static inline const AssetId sphere = "sphere";
+    static inline const AssetId plane = "plane";
     static inline const AssetId arrow = "arrow";
-    static inline const std::array builtins{&cube, &sphere, &arrow};
+    static inline const std::array builtins{&cube, &sphere, &plane, &arrow};
 };
 
 struct MaterialDesc

@@ -34,24 +34,6 @@ template <class T>
     return *typed;
 }
 
-[[nodiscard]] inline std::string metaKeyToString(const entt::meta_any& key)
-{
-    if (const auto* asString = key.try_cast<std::string>())
-    {
-        return *asString;
-    }
-    if (key.allow_cast<std::int64_t>())
-    {
-        return std::to_string(key.cast<std::int64_t>());
-    }
-    if (key.allow_cast<int>())
-    {
-        return std::to_string(key.cast<int>());
-    }
-    CHECK(false, "unsupported associative container key type");
-    return {};
-}
-
 [[nodiscard]] inline rfl::Generic metaAnyToGeneric(const entt::meta_any& value)
 {
     if (!value)
@@ -140,7 +122,17 @@ template <class T>
         rfl::Generic::Object object;
         for (auto&& [key, mapped] : assoc)
         {
-            object[metaKeyToString(key)] = metaAnyToGeneric(mapped);
+            const rfl::Generic reflectedKey = metaAnyToGeneric(key);
+            if (const auto asString = reflectedKey.to_string())
+            {
+                object[*asString] = metaAnyToGeneric(mapped);
+            }
+            else
+            {
+                const auto asInt = reflectedKey.to_int64();
+                CHECK(asInt, "unsupported associative container key type");
+                object[std::to_string(*asInt)] = metaAnyToGeneric(mapped);
+            }
         }
         return rfl::Generic{std::move(object)};
     }

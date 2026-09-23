@@ -1,0 +1,130 @@
+{
+    "id": "default",
+    "camera": {
+        "position": [
+            0.0,
+            1.5,
+            6.0
+        ],
+        "worldUp": [
+            0.0,
+            1.0,
+            0.0
+        ],
+        "yaw": -83.27983093261719,
+        "pitch": -14.359999656677246,
+        "fieldOfView": 45.0,
+        "nearPlane": 0.10000000149011612,
+        "farPlane": 100.0,
+        "movementSpeed": 3.0,
+        "sprintMultiplier": 3.0,
+        "mouseSensitivity": 0.11999999731779099
+    },
+    "objects": [
+        {
+            "name": "Point Light",
+            "components": {
+                "Transform": {
+                    "position": [
+                        2.0,
+                        3.0,
+                        2.0
+                    ],
+                    "rotation": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ],
+                    "scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                },
+                "Light": {
+                    "type": "Point",
+                    "color": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "intensity": 5.0,
+                    "range": 15.0,
+                    "cosInner": 0.9396926164627075,
+                    "cosOuter": 0.8660253882408142,
+                    "areaSize": [
+                        1.0,
+                        1.0
+                    ],
+                    "enabled": true,
+                    "castShadow": false
+                }
+            }
+        },
+        {
+            "name": "Sphere",
+            "components": {
+                "Transform": {
+                    "position": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "rotation": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ],
+                    "scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                },
+                "Render": {
+                    "meshId": "sphere",
+                    "materialOverrides": {}
+                }
+            }
+        },
+        {
+            "name": "Floor",
+            "components": {
+                "Transform": {
+                    "position": [
+                        0.0,
+                        -0.5,
+                        0.0
+                    ],
+                    "rotation": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ],
+                    "scale": [
+                        10.0,
+                        1.0,
+                        10.0
+                    ]
+                },
+                "Render": {
+                    "meshId": "plane",
+                    "materialOverrides": {
+                        "0": {
+                            "id": "",
+                            "baseColorFactor": [
+                                0.11969113349914551,
+                                0.08503153920173645,
+                                0.08503153920173645,
+                                1.0
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
