@@ -1,11 +1,17 @@
 #pragma once
 
-#include "asset/imported_mesh.h"
+#include "asset/asset_desc.h"
 
 #include <filesystem>
 
+class AssetManager;
+
 class GLTFLoader
 {
-  public:
-    [[nodiscard]] static ImportedMesh load(const std::filesystem::path &path);
+public:
+    static void import(
+        AssetManager& assets,
+        AssetId meshId,
+        const std::filesystem::path& path,
+        MeshSourceDesc source);
 };

@@ -43,6 +43,9 @@ enum class AssetType
     return {};
 }
 
+template <class T>
+inline constexpr AssetType assetTypeOf = AssetType{};
+
 struct AssetDesc
 {
     AssetId id;
@@ -71,6 +74,9 @@ struct MeshDesc
     std::vector<SubmeshDesc> submeshes;
 };
 
+template <>
+inline constexpr AssetType assetTypeOf<MeshDesc> = AssetType::Mesh;
+
 struct MaterialDesc
 {
     rfl::Flatten<AssetDesc> asset{};
@@ -91,6 +97,9 @@ struct MaterialDesc
     bool doubleSided = false;
 };
 
+template <>
+inline constexpr AssetType assetTypeOf<MaterialDesc> = AssetType::Material;
+
 struct TextureDesc
 {
     rfl::Flatten<AssetDesc> asset{};
@@ -99,11 +108,17 @@ struct TextureDesc
     std::optional<std::array<uint8_t, 4>> rgba;
 };
 
+template <>
+inline constexpr AssetType assetTypeOf<TextureDesc> = AssetType::Texture;
+
 struct ShaderDesc
 {
     rfl::Flatten<AssetDesc> asset{};
     std::filesystem::path binary;
 };
+
+template <>
+inline constexpr AssetType assetTypeOf<ShaderDesc> = AssetType::Shader;
 
 struct SceneObjectDesc
 {
@@ -132,3 +147,6 @@ struct SceneDesc
     std::vector<Light> lights;
     std::vector<SceneObjectDesc> objects;
 };
+
+template <>
+inline constexpr AssetType assetTypeOf<SceneDesc> = AssetType::Scene;

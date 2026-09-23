@@ -113,9 +113,11 @@ add_executable(RenderLab
         src/asset/asset_manager.h
         src/asset/asset_id.h
         src/asset/asset_desc.h
+        src/asset/geometry_io.cpp
+        src/asset/geometry_io.h
         src/asset/json_io.h
         src/asset/rfl_reflectors.h
-        src/asset/imported_mesh.h
+        src/asset/mesh_geometry.h
         src/asset/builtin_meshes.cpp
         src/asset/builtin_meshes.h
         src/asset/gltf_loader.cpp

@@ -165,8 +165,8 @@ void ScenePass::init(VulkanContext& context, Swapchain& targetSwapchain, FrameCo
         swapchain->depthImageFormat(),
         *sceneLayout,
         *materialLayout,
-        resources.shader("shader:scene"),
-        resources.shader("shader:light"));
+        resources.shader(BuiltinId::sceneShader),
+        resources.shader(BuiltinId::lightShader));
 }
 
 void ScenePass::reset() noexcept

@@ -36,7 +36,7 @@ void Engine::init()
     ctx.window->init();
     ctx.assets->init();
     inputMethod.activateEnglish();
-    *ctx.scene = ctx.assets->sceneDesc(ctx.config->initialScene());
+    *ctx.scene = ctx.assets->desc<SceneDesc>(ctx.config->initialScene());
     ctx.camera->configure(ctx.scene->camera);
     ctx.renderer->init();
     ctx.renderer->loadScene(*ctx.scene);

@@ -103,7 +103,7 @@ void Renderer::initVulkan()
         swapchain.extent(),
         swapchain.depthImageFormat(),
         scenePass.sceneLayoutHandle(),
-        resources.shader("shader:picking"));
+        resources.shader(BuiltinId::pickingShader));
 }
 
 void Renderer::recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& editor)

@@ -155,9 +155,9 @@ void ConfigManager::applyDefaults()
     {
         data.paths.geometry = "geometry";
     }
-    if (data.initialScene.empty())
+    if (data.initialScene == kInvalidAssetId)
     {
-        data.initialScene = "scene:default";
+        data.initialScene = BuiltinId::defaultScene;
     }
 }
 
@@ -173,7 +173,8 @@ void ConfigManager::load()
 
     data = asset_json::load<AppConfig>(file);
     applyDefaults();
-    CHECK(!data.initialScene.empty(), "config '{}' missing initialScene", file.string());
+    CHECK(data.initialScene != kInvalidAssetId,
+        "config '{}' missing initialScene", file.string());
     resolvePaths();
 }
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset/imported_mesh.h"
+#include "asset/mesh_geometry.h"
 #include "render/device/gpu_upload_context.h"
 #include "render/resource/buffer.h"
 

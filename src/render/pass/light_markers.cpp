@@ -27,9 +27,9 @@ glm::mat4 markerTransform(const Light& light)
 void LightMarkers::init(RenderResourceManager& resources)
 {
     reset();
-    sphere = &resources.mesh("mesh:sphere");
-    cube = &resources.mesh("mesh:cube");
-    arrow = &resources.mesh("mesh:arrow");
+    sphere = &resources.mesh(BuiltinId::sphereMesh);
+    cube = &resources.mesh(BuiltinId::cubeMesh);
+    arrow = &resources.mesh(BuiltinId::arrowMesh);
 }
 
 void LightMarkers::reset() noexcept

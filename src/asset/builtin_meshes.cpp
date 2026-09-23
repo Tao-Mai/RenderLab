@@ -1,88 +1,80 @@
 #include "asset/builtin_meshes.h"
 
+#include "logger.h"
+
 #include <cmath>
 #include <numbers>
 
 #include <glm/geometric.hpp>
-#include "logger.h"
 
 namespace
 {
-    void addFace(
-        ImportedMesh &mesh,
-        const glm::vec3 &normal,
-        const glm::vec3 &a,
-        const glm::vec3 &b,
-        const glm::vec3 &c,
-        const glm::vec3 &d)
-    {
-        const uint32_t first = static_cast<uint32_t>(mesh.vertices.size());
-        mesh.vertices.insert(mesh.vertices.end(), {
-            {.position = a, .normal = normal, .texcoord = {0.0f, 0.0f}},
-            {.position = b, .normal = normal, .texcoord = {1.0f, 0.0f}},
-            {.position = c, .normal = normal, .texcoord = {1.0f, 1.0f}},
-            {.position = d, .normal = normal, .texcoord = {0.0f, 1.0f}},
-        });
-        mesh.indices.insert(mesh.indices.end(), {
-            first, first + 1, first + 2,
-            first, first + 2, first + 3,
-        });
-    }
-
-    void addTriangle(
-        ImportedMesh &mesh,
-        const glm::vec3 &normal,
-        const glm::vec3 &a,
-        const glm::vec3 &b,
-        const glm::vec3 &c)
-    {
-        const uint32_t first = static_cast<uint32_t>(mesh.vertices.size());
-        mesh.vertices.insert(mesh.vertices.end(), {
-            {.position = a, .normal = normal, .texcoord = {0.0f, 0.0f}},
-            {.position = b, .normal = normal, .texcoord = {1.0f, 0.0f}},
-            {.position = c, .normal = normal, .texcoord = {0.5f, 1.0f}},
-        });
-        mesh.indices.insert(mesh.indices.end(), {first, first + 1, first + 2});
-    }
+void addFace(
+    MeshGeometry& mesh,
+    const glm::vec3& normal,
+    const glm::vec3& a,
+    const glm::vec3& b,
+    const glm::vec3& c,
+    const glm::vec3& d)
+{
+    const uint32_t first = static_cast<uint32_t>(mesh.vertices.size());
+    mesh.vertices.insert(mesh.vertices.end(), {
+        {.position = a, .normal = normal, .texcoord = {0.0f, 0.0f}},
+        {.position = b, .normal = normal, .texcoord = {1.0f, 0.0f}},
+        {.position = c, .normal = normal, .texcoord = {1.0f, 1.0f}},
+        {.position = d, .normal = normal, .texcoord = {0.0f, 1.0f}},
+    });
+    mesh.indices.insert(mesh.indices.end(), {
+        first, first + 1, first + 2,
+        first, first + 2, first + 3,
+    });
 }
 
-ImportedMesh BuiltinMeshes::cube()
+void addTriangle(
+    MeshGeometry& mesh,
+    const glm::vec3& normal,
+    const glm::vec3& a,
+    const glm::vec3& b,
+    const glm::vec3& c)
+{
+    const uint32_t first = static_cast<uint32_t>(mesh.vertices.size());
+    mesh.vertices.insert(mesh.vertices.end(), {
+        {.position = a, .normal = normal, .texcoord = {0.0f, 0.0f}},
+        {.position = b, .normal = normal, .texcoord = {1.0f, 0.0f}},
+        {.position = c, .normal = normal, .texcoord = {0.5f, 1.0f}},
+    });
+    mesh.indices.insert(mesh.indices.end(), {first, first + 1, first + 2});
+}
+}
+
+MeshGeometry BuiltinMeshes::cube()
 {
     constexpr float h = 0.5f;
-    ImportedMesh mesh;
+    MeshGeometry mesh;
     mesh.vertices.reserve(24);
     mesh.indices.reserve(36);
 
     addFace(mesh, {0.0f, 0.0f, 1.0f},
-            {-h, -h, h}, {h, -h, h}, {h, h, h}, {-h, h, h});
+        {-h, -h, h}, {h, -h, h}, {h, h, h}, {-h, h, h});
     addFace(mesh, {0.0f, 0.0f, -1.0f},
-            {h, -h, -h}, {-h, -h, -h}, {-h, h, -h}, {h, h, -h});
+        {h, -h, -h}, {-h, -h, -h}, {-h, h, -h}, {h, h, -h});
     addFace(mesh, {1.0f, 0.0f, 0.0f},
-            {h, -h, h}, {h, -h, -h}, {h, h, -h}, {h, h, h});
+        {h, -h, h}, {h, -h, -h}, {h, h, -h}, {h, h, h});
     addFace(mesh, {-1.0f, 0.0f, 0.0f},
-            {-h, -h, -h}, {-h, -h, h}, {-h, h, h}, {-h, h, -h});
+        {-h, -h, -h}, {-h, -h, h}, {-h, h, h}, {-h, h, -h});
     addFace(mesh, {0.0f, 1.0f, 0.0f},
-            {-h, h, h}, {h, h, h}, {h, h, -h}, {-h, h, -h});
+        {-h, h, h}, {h, h, h}, {h, h, -h}, {-h, h, -h});
     addFace(mesh, {0.0f, -1.0f, 0.0f},
-            {-h, -h, -h}, {h, -h, -h}, {h, -h, h}, {-h, -h, h});
-    mesh.materials[0].name = "Builtin Cube";
-    mesh.materials[0].baseColorFactor = {0.85f, 0.45f, 0.2f, 1.0f};
-    mesh.materials[0].metallic = 0.0f;
-    mesh.materials[0].roughness = 0.65f;
-    mesh.submeshes.push_back({
-        .firstIndex = 0,
-        .indexCount = static_cast<uint32_t>(mesh.indices.size()),
-        .materialIndex = 0,
-    });
+        {-h, -h, -h}, {h, -h, -h}, {h, -h, h}, {-h, -h, h});
     return mesh;
 }
 
-ImportedMesh BuiltinMeshes::sphere(uint32_t segments, uint32_t rings)
+MeshGeometry BuiltinMeshes::sphere(uint32_t segments, uint32_t rings)
 {
     CHECK(segments >= 3 && rings >= 2,
         "sphere requires at least 3 segments and 2 rings");
 
-    ImportedMesh mesh;
+    MeshGeometry mesh;
     mesh.vertices.reserve((segments + 1) * (rings + 1));
     mesh.indices.reserve(segments * rings * 6);
 
@@ -93,7 +85,7 @@ ImportedMesh BuiltinMeshes::sphere(uint32_t segments, uint32_t rings)
         for (uint32_t segment = 0; segment <= segments; ++segment)
         {
             const float u = static_cast<float>(segment) /
-                            static_cast<float>(segments);
+                static_cast<float>(segments);
             const float theta = u * 2.0f * std::numbers::pi_v<float>;
             const glm::vec3 normal{
                 std::sin(phi) * std::cos(theta),
@@ -121,19 +113,10 @@ ImportedMesh BuiltinMeshes::sphere(uint32_t segments, uint32_t rings)
             });
         }
     }
-    mesh.materials[0].name = "Builtin Sphere";
-    mesh.materials[0].baseColorFactor = {0.25f, 0.65f, 0.9f, 1.0f};
-    mesh.materials[0].metallic = 0.0f;
-    mesh.materials[0].roughness = 0.4f;
-    mesh.submeshes.push_back({
-        .firstIndex = 0,
-        .indexCount = static_cast<uint32_t>(mesh.indices.size()),
-        .materialIndex = 0,
-    });
     return mesh;
 }
 
-ImportedMesh BuiltinMeshes::arrow()
+MeshGeometry BuiltinMeshes::arrow()
 {
     constexpr float shaftHalfWidth = 0.025f;
     constexpr float headHalfWidth = 0.09f;
@@ -141,35 +124,35 @@ ImportedMesh BuiltinMeshes::arrow()
     constexpr float headBase = -0.16f;
     constexpr float tip = -0.5f;
 
-    ImportedMesh mesh;
+    MeshGeometry mesh;
     mesh.vertices.reserve(36);
     mesh.indices.reserve(48);
 
     addFace(mesh, {0.0f, 1.0f, 0.0f},
-            {-shaftHalfWidth, shaftHalfWidth, back},
-            {shaftHalfWidth, shaftHalfWidth, back},
-            {shaftHalfWidth, shaftHalfWidth, headBase},
-            {-shaftHalfWidth, shaftHalfWidth, headBase});
+        {-shaftHalfWidth, shaftHalfWidth, back},
+        {shaftHalfWidth, shaftHalfWidth, back},
+        {shaftHalfWidth, shaftHalfWidth, headBase},
+        {-shaftHalfWidth, shaftHalfWidth, headBase});
     addFace(mesh, {0.0f, -1.0f, 0.0f},
-            {-shaftHalfWidth, -shaftHalfWidth, headBase},
-            {shaftHalfWidth, -shaftHalfWidth, headBase},
-            {shaftHalfWidth, -shaftHalfWidth, back},
-            {-shaftHalfWidth, -shaftHalfWidth, back});
+        {-shaftHalfWidth, -shaftHalfWidth, headBase},
+        {shaftHalfWidth, -shaftHalfWidth, headBase},
+        {shaftHalfWidth, -shaftHalfWidth, back},
+        {-shaftHalfWidth, -shaftHalfWidth, back});
     addFace(mesh, {1.0f, 0.0f, 0.0f},
-            {shaftHalfWidth, -shaftHalfWidth, back},
-            {shaftHalfWidth, -shaftHalfWidth, headBase},
-            {shaftHalfWidth, shaftHalfWidth, headBase},
-            {shaftHalfWidth, shaftHalfWidth, back});
+        {shaftHalfWidth, -shaftHalfWidth, back},
+        {shaftHalfWidth, -shaftHalfWidth, headBase},
+        {shaftHalfWidth, shaftHalfWidth, headBase},
+        {shaftHalfWidth, shaftHalfWidth, back});
     addFace(mesh, {-1.0f, 0.0f, 0.0f},
-            {-shaftHalfWidth, -shaftHalfWidth, headBase},
-            {-shaftHalfWidth, -shaftHalfWidth, back},
-            {-shaftHalfWidth, shaftHalfWidth, back},
-            {-shaftHalfWidth, shaftHalfWidth, headBase});
+        {-shaftHalfWidth, -shaftHalfWidth, headBase},
+        {-shaftHalfWidth, -shaftHalfWidth, back},
+        {-shaftHalfWidth, shaftHalfWidth, back},
+        {-shaftHalfWidth, shaftHalfWidth, headBase});
     addFace(mesh, {0.0f, 0.0f, 1.0f},
-            {-shaftHalfWidth, -shaftHalfWidth, back},
-            {shaftHalfWidth, -shaftHalfWidth, back},
-            {shaftHalfWidth, shaftHalfWidth, back},
-            {-shaftHalfWidth, shaftHalfWidth, back});
+        {-shaftHalfWidth, -shaftHalfWidth, back},
+        {shaftHalfWidth, -shaftHalfWidth, back},
+        {shaftHalfWidth, shaftHalfWidth, back},
+        {-shaftHalfWidth, shaftHalfWidth, back});
 
     const glm::vec3 topLeft{-headHalfWidth, headHalfWidth, headBase};
     const glm::vec3 topRight{headHalfWidth, headHalfWidth, headBase};
@@ -177,21 +160,14 @@ ImportedMesh BuiltinMeshes::arrow()
     const glm::vec3 bottomLeft{-headHalfWidth, -headHalfWidth, headBase};
     const glm::vec3 arrowTip{0.0f, 0.0f, tip};
     addFace(mesh, {0.0f, 0.0f, 1.0f},
-            bottomLeft, bottomRight, topRight, topLeft);
+        bottomLeft, bottomRight, topRight, topLeft);
     addTriangle(mesh, glm::normalize(glm::vec3{0.0f, 1.0f, -0.4f}),
-                topLeft, topRight, arrowTip);
+        topLeft, topRight, arrowTip);
     addTriangle(mesh, glm::normalize(glm::vec3{1.0f, 0.0f, -0.4f}),
-                topRight, bottomRight, arrowTip);
+        topRight, bottomRight, arrowTip);
     addTriangle(mesh, glm::normalize(glm::vec3{0.0f, -1.0f, -0.4f}),
-                bottomRight, bottomLeft, arrowTip);
+        bottomRight, bottomLeft, arrowTip);
     addTriangle(mesh, glm::normalize(glm::vec3{-1.0f, 0.0f, -0.4f}),
-                bottomLeft, topLeft, arrowTip);
-
-    mesh.materials[0].name = "Builtin Arrow";
-    mesh.submeshes.push_back({
-        .firstIndex = 0,
-        .indexCount = static_cast<uint32_t>(mesh.indices.size()),
-        .materialIndex = 0,
-    });
+        bottomLeft, topLeft, arrowTip);
     return mesh;
 }
