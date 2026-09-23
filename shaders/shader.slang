@@ -114,10 +114,11 @@ float4 fragMain(VertexOutput input) : SV_Target
     float G = GeometrySmithGGX(roughness, NdotV, NdotL);
 
 
-    float3 diffuse = (1.0 - F) * (1.0 - metallic) * baseColor.rgb * INV_PI;
-    float3 specular = pointLight * F * D * G / (4.0 * NdotV * NdotL);
+    float3 diffuseBRDF = (1.0 - F) * (1.0 - metallic) * baseColor.rgb * INV_PI;
+    float3 specularBRDF = F * D * G / max(4.0 * NdotV * NdotL, 1e-5);
+    float3 direct = pointLight * (diffuseBRDF + specularBRDF) * NdotL;
     float3 ambient = 0.04 * baseColor.rgb;
-    float3 color = diffuse + specular + ambient;
+    float3 color = direct + ambient;
 
     return float4(color, baseColor.a);
 }

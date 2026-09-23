@@ -23,9 +23,9 @@
 
 namespace
 {
-void drawTransform(ecs::Transform& transform)
+[[nodiscard]] bool drawTransform(ecs::Transform& transform)
 {
-    ImGui::DragFloat3("Position", glm::value_ptr(transform.position), 0.05f);
+    bool edited = ImGui::DragFloat3("Position", glm::value_ptr(transform.position), 0.05f);
     glm::vec3 rotationEulerDegrees = transform.rotationEulerDegrees();
     if (ImGui::DragFloat3(
             "Rotation",
@@ -36,15 +36,19 @@ void drawTransform(ecs::Transform& transform)
             "%.1f deg"))
     {
         transform.setRotationEulerDegrees(rotationEulerDegrees);
+        edited = true;
     }
     if (ImGui::DragFloat3("Scale", glm::value_ptr(transform.scale), 0.01f))
     {
         transform.scale = glm::max(transform.scale, glm::vec3{0.001f});
+        edited = true;
     }
+    return edited;
 }
 
-void drawLight(ecs::Light& light)
+[[nodiscard]] bool drawLight(ecs::Light& light)
 {
+    bool edited = false;
     static constexpr const char* typeNames[] = {
         "Point",
         "Directional",
@@ -55,16 +59,23 @@ void drawLight(ecs::Light& light)
     if (ImGui::Combo("Type", &type, typeNames, IM_ARRAYSIZE(typeNames)))
     {
         light.type = static_cast<ecs::Light::Type>(type);
+        edited = true;
     }
 
-    ImGui::ColorEdit3("Color", glm::value_ptr(light.color));
-    ImGui::DragFloat("Intensity", &light.intensity, 0.05f, 0.0f, 100000.0f);
-    light.intensity = std::max(light.intensity, 0.0f);
+    edited = ImGui::ColorEdit3("Color", glm::value_ptr(light.color)) || edited;
+    if (ImGui::DragFloat("Intensity", &light.intensity, 0.05f, 0.0f, 100000.0f))
+    {
+        light.intensity = std::max(light.intensity, 0.0f);
+        edited = true;
+    }
 
     if (light.type == ecs::Light::Type::Point || light.type == ecs::Light::Type::Spot)
     {
-        ImGui::DragFloat("Range", &light.range, 0.1f, 0.01f, 100000.0f);
-        light.range = std::max(light.range, 0.01f);
+        if (ImGui::DragFloat("Range", &light.range, 0.1f, 0.01f, 100000.0f))
+        {
+            light.range = std::max(light.range, 0.01f);
+            edited = true;
+        }
     }
     if (light.type == ecs::Light::Type::Spot)
     {
@@ -74,11 +85,13 @@ void drawLight(ecs::Light& light)
         {
             innerAngle = std::clamp(innerAngle, 0.0f, outerAngle);
             light.cosInner = std::cos(glm::radians(innerAngle));
+            edited = true;
         }
         if (ImGui::DragFloat("Outer Angle", &outerAngle, 0.25f, 0.0f, 89.0f, "%.1f deg"))
         {
             outerAngle = std::clamp(outerAngle, innerAngle, 89.0f);
             light.cosOuter = std::cos(glm::radians(outerAngle));
+            edited = true;
         }
     }
     if (light.type == ecs::Light::Type::RectArea)
@@ -87,10 +100,12 @@ void drawLight(ecs::Light& light)
                 "Area Size", glm::value_ptr(light.areaSize), 0.05f, 0.01f, 100000.0f))
         {
             light.areaSize = glm::max(light.areaSize, glm::vec2{0.01f});
+            edited = true;
         }
     }
-    ImGui::Checkbox("Enabled", &light.enabled);
-    ImGui::Checkbox("Cast Shadow", &light.castShadow);
+    edited = ImGui::Checkbox("Enabled", &light.enabled) || edited;
+    edited = ImGui::Checkbox("Cast Shadow", &light.castShadow) || edited;
+    return edited;
 }
 
 bool editAssetId(const char* label, AssetId& id)
@@ -127,33 +142,39 @@ MaterialDesc materialPreview(const AssetId& materialId)
     return {};
 }
 
-void drawMaterialFields(MaterialDesc& material, bool editable)
+[[nodiscard]] bool drawMaterialFields(MaterialDesc& material, bool editable)
 {
+    bool edited = false;
     ImGui::BeginDisabled(!editable);
     glm::vec4 baseColor = material.baseColorFactor.value_or(glm::vec4{1.0f});
     if (ImGui::ColorEdit4("Base Color", glm::value_ptr(baseColor)))
     {
         material.baseColorFactor = baseColor;
+        edited = true;
     }
     float metallic = material.metallic.value_or(0.0f);
     if (ImGui::DragFloat("Metallic", &metallic, 0.01f, 0.0f, 1.0f))
     {
         material.metallic = metallic;
+        edited = true;
     }
     float roughness = material.roughness.value_or(1.0f);
     if (ImGui::DragFloat("Roughness", &roughness, 0.01f, 0.0f, 1.0f))
     {
         material.roughness = roughness;
+        edited = true;
     }
     float ao = material.ao.value_or(1.0f);
     if (ImGui::DragFloat("AO", &ao, 0.01f, 0.0f, 1.0f))
     {
         material.ao = ao;
+        edited = true;
     }
     ImGui::EndDisabled();
     ImGui::Text(
         "Albedo: %s",
         material.baseColorTexture.value_or(AssetId{}).c_str());
+    return edited;
 }
 
 [[nodiscard]] MaterialDesc materialPatchFromDiff(
@@ -207,12 +228,12 @@ void drawMaterial(const AssetId& materialId)
         ImGui::TextDisabled("builtin");
     }
 
-    drawMaterialFields(material, false);
+    (void)drawMaterialFields(material, false);
 }
 
-void drawRender(ecs::Render& render)
+[[nodiscard]] bool drawRender(ecs::Render& render)
 {
-    editAssetId("Mesh", render.meshId);
+    bool edited = editAssetId("Mesh", render.meshId);
 
     ImGui::Spacing();
     ImGui::TextUnformatted("Materials");
@@ -221,7 +242,7 @@ void drawRender(ecs::Render& render)
     if (render.meshId.empty())
     {
         ImGui::TextDisabled("no mesh");
-        return;
+        return edited;
     }
 
     auto drawSubmesh = [&](int index, const AssetId& materialId) {
@@ -237,7 +258,10 @@ void drawRender(ecs::Render& render)
                 applyMaterialFields(preview, it->second);
             }
 
-            drawMaterialFields(preview, true);
+            if (drawMaterialFields(preview, true))
+            {
+                edited = true;
+            }
             const MaterialDesc patch = materialPatchFromDiff(stock, preview);
             if (materialPatchEmpty(patch))
             {
@@ -255,37 +279,39 @@ void drawRender(ecs::Render& render)
     if (isBuiltin<MeshDesc>(render.meshId))
     {
         drawSubmesh(0, MaterialDesc::white);
-        return;
+        return edited;
     }
 
     if (context().assets == nullptr)
     {
         ImGui::TextDisabled("assets unavailable");
-        return;
+        return edited;
     }
 
     const MeshDesc* mesh = context().assets->findDesc<MeshDesc>(render.meshId);
     if (mesh == nullptr)
     {
         ImGui::TextDisabled("mesh desc not loaded");
-        return;
+        return edited;
     }
     if (mesh->submeshes.empty())
     {
         ImGui::TextDisabled("no submeshes");
-        return;
+        return edited;
     }
 
     for (size_t index = 0; index < mesh->submeshes.size(); ++index)
     {
         drawSubmesh(static_cast<int>(index), mesh->submeshes[index].materialId);
     }
+    return edited;
 }
 
 bool drawMetaValue(const char* label, entt::meta_any& value);
 
-void drawMetaFields(entt::meta_any& component)
+[[nodiscard]] bool drawMetaFields(entt::meta_any& component)
 {
+    bool edited = false;
     const entt::meta_type type = component.type();
     for (auto&& [id, data] : type.data())
     {
@@ -306,9 +332,11 @@ void drawMetaFields(entt::meta_any& component)
         if (drawMetaValue(name, field))
         {
             data.set(component, field);
+            edited = true;
         }
         ImGui::PopID();
     }
+    return edited;
 }
 
 bool drawMetaValue(const char* label, entt::meta_any& value)
@@ -411,8 +439,9 @@ bool drawMetaValue(const char* label, entt::meta_any& value)
     {
         if (ImGui::TreeNode(label))
         {
-            drawMetaFields(value);
+            const bool edited = drawMetaFields(value);
             ImGui::TreePop();
+            return edited;
         }
         return false;
     }
@@ -422,11 +451,11 @@ bool drawMetaValue(const char* label, entt::meta_any& value)
 }
 }
 
-void drawComponent(std::string_view typeName, entt::meta_any& component)
+bool drawComponent(std::string_view typeName, entt::meta_any& component)
 {
     if (!component)
     {
-        return;
+        return false;
     }
 
     ImGui::TextUnformatted(typeName.data(), typeName.data() + typeName.size());
@@ -436,23 +465,20 @@ void drawComponent(std::string_view typeName, entt::meta_any& component)
     {
         auto* transform = component.try_cast<ecs::Transform>();
         CHECK(transform != nullptr, "component '{}' is not Transform", typeName);
-        drawTransform(*transform);
-        return;
+        return drawTransform(*transform);
     }
     if (typeName == "Light")
     {
         auto* light = component.try_cast<ecs::Light>();
         CHECK(light != nullptr, "component '{}' is not Light", typeName);
-        drawLight(*light);
-        return;
+        return drawLight(*light);
     }
     if (typeName == "Render")
     {
         auto* render = component.try_cast<ecs::Render>();
         CHECK(render != nullptr, "component '{}' is not Render", typeName);
-        drawRender(*render);
-        return;
+        return drawRender(*render);
     }
 
-    drawMetaFields(component);
+    return drawMetaFields(component);
 }

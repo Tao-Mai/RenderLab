@@ -3,6 +3,7 @@
 #include "editor/viewport_rect.h"
 
 #include <cstdint>
+#include <string_view>
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>
@@ -32,18 +33,22 @@ public:
         uint32_t         minImageCount,
         uint32_t         imageCount);
     void beginFrame(float deltaTime);
-    void drawGizmo(
+    [[nodiscard]] bool drawGizmo(
         ecs::Transform&  transform,
         const glm::mat4& view,
         const glm::mat4& projection,
         bool             enableShortcuts);
-    void drawInspector(SceneObjectDesc* object);
+    [[nodiscard]] bool drawInspector(
+        SceneObjectDesc* object,
+        std::string_view sceneName,
+        bool             dirty);
     void endFrame();
     void render(VkCommandBuffer commandBuffer) const;
     void shutdown() noexcept;
 
     [[nodiscard]] bool         sceneClicked(glm::vec2& mousePosition) const;
     [[nodiscard]] bool         wantsInput() const;
+    [[nodiscard]] bool         saveRequested() const;
     [[nodiscard]] float        sceneAspectRatio() const;
     [[nodiscard]] ViewportRect sceneViewportPixels() const;
 

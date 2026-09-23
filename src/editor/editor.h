@@ -30,4 +30,7 @@ public:
 private:
     EditorUI ui;
     SceneObjectDesc* selectedObject = nullptr;
+    bool dirty = false;
+
+    void saveScene();
 };

@@ -195,7 +195,7 @@ void EditorUI::beginFrame(float deltaTime)
     }
 }
 
-void EditorUI::drawGizmo(
+bool EditorUI::drawGizmo(
     ecs::Transform&transform,
     const glm::mat4 &view,
     const glm::mat4 &projection,
@@ -240,10 +240,12 @@ void EditorUI::drawGizmo(
     if (ImGuizmo::IsUsing())
     {
         applyModelMatrix(transform, model);
+        return true;
     }
+    return false;
 }
 
-void EditorUI::drawInspector(SceneObjectDesc *object)
+bool EditorUI::drawInspector(SceneObjectDesc *object, std::string_view sceneName, bool dirty)
 {
     ImGui::SetNextWindowDockID(editorDockId, ImGuiCond_Always);
     constexpr ImGuiWindowFlags editorFlags = ImGuiWindowFlags_NoMove |
@@ -254,7 +256,16 @@ void EditorUI::drawInspector(SceneObjectDesc *object)
     ImGui::TextUnformatted("Performance");
     ImGui::Separator();
     ImGui::Text("FPS: %.1f", displayedFps);
+    if (dirty)
+    {
+        ImGui::Text("%.*s*", static_cast<int>(sceneName.size()), sceneName.data());
+    }
+    else
+    {
+        ImGui::TextUnformatted(sceneName.data(), sceneName.data() + sceneName.size());
+    }
 
+    bool edited = false;
     ImGui::Spacing();
     if (object != nullptr)
     {
@@ -263,7 +274,7 @@ void EditorUI::drawInspector(SceneObjectDesc *object)
         {
             ImGui::Spacing();
             ImGui::PushID(typeName.c_str());
-            drawComponent(typeName, component);
+            edited = drawComponent(typeName, component) || edited;
             ImGui::PopID();
         }
     }
@@ -273,6 +284,7 @@ void EditorUI::drawInspector(SceneObjectDesc *object)
     }
 
     ImGui::End();
+    return edited;
 }
 
 void EditorUI::endFrame()
@@ -311,6 +323,20 @@ bool EditorUI::wantsInput() const
     }
     const ImGuiIO &io = ImGui::GetIO();
     return io.WantCaptureMouse || io.WantCaptureKeyboard;
+}
+
+bool EditorUI::saveRequested() const
+{
+    if (!contextCreated)
+    {
+        return false;
+    }
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.WantTextInput)
+    {
+        return false;
+    }
+    return ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S);
 }
 
 float EditorUI::sceneAspectRatio() const

@@ -1,6 +1,7 @@
 #include "editor/editor.h"
 
 #include "asset/asset_desc.h"
+#include "asset/asset_manager.h"
 #include "camera.h"
 #include "core/context.h"
 #include "core/logger.h"
@@ -37,6 +38,19 @@ void Editor::shutdown() noexcept
 {
     ui.shutdown();
     selectedObject = nullptr;
+    dirty = false;
+}
+
+void Editor::saveScene()
+{
+    Context& ctx = context();
+    CHECK(ctx.scene != nullptr, "scene must exist before save");
+    CHECK(ctx.assets != nullptr, "assets must exist before save");
+    CHECK(ctx.camera != nullptr, "camera must exist before save");
+
+    ctx.scene->camera = ctx.camera->component();
+    ctx.assets->save(*ctx.scene);
+    dirty = false;
 }
 
 EditorFrameInput Editor::buildFrame(
@@ -46,6 +60,11 @@ EditorFrameInput Editor::buildFrame(
     uint32_t swapchainHeight)
 {
     ui.beginFrame(deltaTime);
+
+    if (ui.saveRequested())
+    {
+        saveScene();
+    }
 
     const glm::mat4 view = camera.viewMatrix();
     const glm::mat4 projection = camera.projectionMatrix(ui.sceneAspectRatio());
@@ -58,11 +77,14 @@ EditorFrameInput Editor::buildFrame(
         {
             glm::mat4 gizmoProjection = projection;
             gizmoProjection[1][1] *= -1.0f;
-            ui.drawGizmo(
-                *transformIt->second.try_cast<ecs::Transform>(),
-                view,
-                gizmoProjection,
-                enableGizmoShortcuts);
+            if (ui.drawGizmo(
+                    *transformIt->second.try_cast<ecs::Transform>(),
+                    view,
+                    gizmoProjection,
+                    enableGizmoShortcuts))
+            {
+                dirty = true;
+            }
         }
     }
 
@@ -93,7 +115,11 @@ EditorFrameInput Editor::buildFrame(
         }
     }
 
-    ui.drawInspector(selectedObject);
+    const AssetId& sceneId = context().scene != nullptr ? context().scene->id : AssetId{};
+    if (ui.drawInspector(selectedObject, sceneId, dirty))
+    {
+        dirty = true;
+    }
     ui.endFrame();
     return input;
 }
