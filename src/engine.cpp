@@ -18,7 +18,7 @@ Engine::~Engine()
 
 void Engine::init()
 {
-    if (initialized)
+    if (inited)
     {
         return;
     }
@@ -41,12 +41,12 @@ void Engine::init()
     ctx.renderer->init();
     ctx.renderer->loadScene(*ctx.scene);
     ctx.editor->init();
-    initialized = true;
+    inited = true;
 }
 
 void Engine::run()
 {
-    CHECK(initialized, "Engine must be initialized before run()");
+    CHECK(inited, "Engine must be initialized before run()");
     mainLoop();
 }
 
@@ -130,5 +130,5 @@ void Engine::shutdown() noexcept
     }
 
     inputMethod.restore();
-    initialized = false;
+    inited = false;
 }

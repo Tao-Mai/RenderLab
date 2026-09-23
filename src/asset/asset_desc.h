@@ -14,44 +14,19 @@
 
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
-#include <rfl/Flatten.hpp>
+
 
 enum class AssetType
 {
-    Mesh,
-    Material,
-    Texture,
-    Shader,
-    Scene,
+    mesh,
+    material,
+    texture,
+    shader,
+    scene,
 };
-
-[[nodiscard]] constexpr std::string_view assetTypeDir(AssetType type)
-{
-    switch (type)
-    {
-    case AssetType::Mesh:
-        return "mesh";
-    case AssetType::Material:
-        return "material";
-    case AssetType::Texture:
-        return "texture";
-    case AssetType::Shader:
-        return "shader";
-    case AssetType::Scene:
-        return "scene";
-    }
-    return {};
-}
 
 template <class T>
 inline constexpr AssetType assetTypeOf = AssetType{};
-
-struct AssetDesc
-{
-    AssetId id;
-    std::string name;
-    AssetType type{};
-};
 
 struct SubmeshDesc
 {
@@ -68,18 +43,18 @@ struct MeshSourceDesc
 
 struct MeshDesc
 {
-    rfl::Flatten<AssetDesc> asset{};
+    AssetId id;
     MeshSourceDesc source;
     std::filesystem::path geometry;
     std::vector<SubmeshDesc> submeshes;
 };
 
 template <>
-inline constexpr AssetType assetTypeOf<MeshDesc> = AssetType::Mesh;
+inline constexpr AssetType assetTypeOf<MeshDesc> = AssetType::mesh;
 
 struct MaterialDesc
 {
-    rfl::Flatten<AssetDesc> asset{};
+    AssetId id;
     glm::vec4 baseColorFactor{1.0f};
     float metallic = 1.0f;
     float roughness = 1.0f;
@@ -98,27 +73,27 @@ struct MaterialDesc
 };
 
 template <>
-inline constexpr AssetType assetTypeOf<MaterialDesc> = AssetType::Material;
+inline constexpr AssetType assetTypeOf<MaterialDesc> = AssetType::material;
 
 struct TextureDesc
 {
-    rfl::Flatten<AssetDesc> asset{};
+    AssetId id;
     std::string source;
     std::optional<std::filesystem::path> path;
     std::optional<std::array<uint8_t, 4>> rgba;
 };
 
 template <>
-inline constexpr AssetType assetTypeOf<TextureDesc> = AssetType::Texture;
+inline constexpr AssetType assetTypeOf<TextureDesc> = AssetType::texture;
 
 struct ShaderDesc
 {
-    rfl::Flatten<AssetDesc> asset{};
+    AssetId id;
     std::filesystem::path binary;
 };
 
 template <>
-inline constexpr AssetType assetTypeOf<ShaderDesc> = AssetType::Shader;
+inline constexpr AssetType assetTypeOf<ShaderDesc> = AssetType::shader;
 
 struct SceneObjectDesc
 {
@@ -141,12 +116,13 @@ struct SceneCameraDesc
 
 struct SceneDesc
 {
-    rfl::Flatten<AssetDesc> asset{};
-    int version = 2;
+    AssetId id;
+    int version = 3;
     SceneCameraDesc camera;
     std::vector<Light> lights;
     std::vector<SceneObjectDesc> objects;
 };
 
 template <>
-inline constexpr AssetType assetTypeOf<SceneDesc> = AssetType::Scene;
+inline constexpr AssetType assetTypeOf<SceneDesc> = AssetType::scene;
+

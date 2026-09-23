@@ -58,7 +58,7 @@ public:
     [[nodiscard]] const GpuScene& gpuScene() const;
 
 private:
-    bool              initialized = false;
+    bool              inited = false;
     VulkanContext     vulkan;
     Swapchain         swapchain;
     FrameContext      frame;

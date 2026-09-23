@@ -19,17 +19,17 @@ Renderer::~Renderer()
 
 void Renderer::init()
 {
-    if (initialized)
+    if (inited)
     {
         return;
     }
     initVulkan();
-    initialized = true;
+    inited = true;
 }
 
 EditorFrameResult Renderer::render(const Camera& camera, const EditorFrameInput& editor)
 {
-    CHECK(initialized, "Renderer must be initialized before render()");
+    CHECK(inited, "Renderer must be initialized before render()");
 
     const glm::mat4 view       = camera.viewMatrix();
     const glm::mat4 projection = camera.projectionMatrix(editor.aspectRatio);
@@ -39,7 +39,7 @@ EditorFrameResult Renderer::render(const Camera& camera, const EditorFrameInput&
 
 void Renderer::loadScene(SceneDesc& targetScene)
 {
-    CHECK(initialized, "Renderer must be initialized before loading a scene");
+    CHECK(inited, "Renderer must be initialized before loading a scene");
 
     waitIdle();
     scene.load(targetScene, resources);
@@ -67,7 +67,7 @@ void Renderer::shutdown() noexcept
     frame.reset();
     swapchain.reset();
     vulkan.reset();
-    initialized = false;
+    inited = false;
 }
 
 VulkanContext& Renderer::vulkanContext()

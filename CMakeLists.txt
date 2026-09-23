@@ -17,6 +17,7 @@ find_package(imgui CONFIG REQUIRED)
 find_package(imguizmo CONFIG REQUIRED)
 find_package(reflectcpp CONFIG REQUIRED)
 find_package(glog CONFIG REQUIRED)
+find_package(magic_enum CONFIG REQUIRED)
 find_path(TINYGLTF_INCLUDE_DIR NAMES tiny_gltf.h REQUIRED)
 
 find_program(SLANGC_EXECUTABLE
@@ -97,7 +98,6 @@ add_executable(RenderLab
         src/camera.h
         src/engine.cpp
         src/engine.h
-        src/core/app_config.h
         src/core/config_manager.cpp
         src/core/config_manager.h
         src/core/context.cpp
@@ -189,6 +189,7 @@ target_link_libraries(RenderLab PRIVATE
         imguizmo::imguizmo
         reflectcpp::reflectcpp
         glog::glog
+        magic_enum::magic_enum
 )
 
 if (MSVC)

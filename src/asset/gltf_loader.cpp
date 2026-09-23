@@ -81,7 +81,7 @@ struct GltfBuild
         "texture is outside asset root: {}", sourcePath);
 
     TextureDesc textureDesc;
-    textureDesc.asset().name = relative.filename().string();
+    textureDesc.id = relative.stem().string();
     textureDesc.source = "file";
     textureDesc.path = relative.generic_string();
     const AssetId id = build.assets->save(std::move(textureDesc));
@@ -96,7 +96,7 @@ void registerMaterials(
     std::string_view meshName)
 {
     MaterialDesc defaultMaterial;
-    defaultMaterial.asset().name = std::string(meshName) + "_default";
+    defaultMaterial.id = std::string(meshName) + "_default";
     defaultMaterial.baseColorTexture = BuiltinId::whiteTexture;
     build.materialIds.push_back(build.assets->save(std::move(defaultMaterial)));
 
@@ -104,9 +104,10 @@ void registerMaterials(
     {
         const tinygltf::Material& source = model.materials[index];
         MaterialDesc material;
-        material.asset().name = source.name.empty()
+        const std::string materialName = source.name.empty()
             ? std::string(meshName) + "_material_" + std::to_string(index)
             : source.name;
+        material.id = materialName;
 
         const auto& pbr = source.pbrMetallicRoughness;
         if (pbr.baseColorFactor.size() == 4)
@@ -432,8 +433,7 @@ void GLTFLoader::import(
     geometry_io::write(geometryFile, build.geometry);
 
     MeshDesc mesh;
-    mesh.asset().id = meshId;
-    mesh.asset().name = meshName;
+    mesh.id = std::move(meshId);
     mesh.source = std::move(source);
     mesh.geometry = std::filesystem::relative(
         geometryFile, context().config->assetRoot()).generic_string();

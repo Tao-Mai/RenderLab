@@ -19,39 +19,36 @@
 
 namespace
 {
-[[nodiscard]] bool isBuiltinTexture(AssetId id)
+[[nodiscard]] bool isBuiltinTexture(const AssetId& id)
 {
     return id == BuiltinId::whiteTexture;
 }
 
-[[nodiscard]] bool isBuiltinMaterial(AssetId id)
+[[nodiscard]] bool isBuiltinMaterial(const AssetId& id)
 {
     return id == BuiltinId::cubeMaterial || id == BuiltinId::sphereMaterial ||
         id == BuiltinId::arrowMaterial;
 }
 
-[[nodiscard]] bool isBuiltinMesh(AssetId id)
+[[nodiscard]] bool isBuiltinMesh(const AssetId& id)
 {
     return id == BuiltinId::cubeMesh || id == BuiltinId::sphereMesh ||
         id == BuiltinId::arrowMesh;
 }
 
-[[nodiscard]] MaterialDesc builtinMaterialDesc(AssetId id)
+[[nodiscard]] MaterialDesc builtinMaterialDesc(const AssetId& id)
 {
     MaterialDesc desc;
-    desc.asset().id = id;
-    desc.asset().type = AssetType::Material;
+    desc.id = id;
     desc.baseColorTexture = BuiltinId::whiteTexture;
     if (id == BuiltinId::cubeMaterial)
     {
-        desc.asset().name = "cube";
         desc.baseColorFactor = {0.85f, 0.45f, 0.2f, 1.0f};
         desc.metallic = 0.0f;
         desc.roughness = 0.65f;
     }
     else if (id == BuiltinId::sphereMaterial)
     {
-        desc.asset().name = "sphere";
         desc.baseColorFactor = {0.25f, 0.65f, 0.9f, 1.0f};
         desc.metallic = 0.0f;
         desc.roughness = 0.4f;
@@ -59,7 +56,6 @@ namespace
     else
     {
         CHECK(id == BuiltinId::arrowMaterial, "unknown builtin material: {}", id);
-        desc.asset().name = "arrow";
         desc.baseColorFactor = {1.0f, 1.0f, 1.0f, 1.0f};
         desc.metallic = 0.0f;
         desc.roughness = 0.5f;
@@ -67,7 +63,7 @@ namespace
     return desc;
 }
 
-[[nodiscard]] MeshGeometry builtinMeshGeometry(AssetId id)
+[[nodiscard]] MeshGeometry builtinMeshGeometry(const AssetId& id)
 {
     if (id == BuiltinId::cubeMesh)
     {
@@ -81,7 +77,7 @@ namespace
     return BuiltinMeshes::arrow();
 }
 
-[[nodiscard]] AssetId builtinMeshMaterial(AssetId id)
+[[nodiscard]] const AssetId& builtinMeshMaterial(const AssetId& id)
 {
     if (id == BuiltinId::cubeMesh)
     {

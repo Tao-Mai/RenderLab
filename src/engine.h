@@ -15,7 +15,7 @@ public:
     void run();
 
 private:
-    bool initialized = false;
+    bool inited = false;
     InputMethod inputMethod;
 
     void mainLoop();

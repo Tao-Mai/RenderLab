@@ -19,7 +19,7 @@ public:
     void reload();
 
     template <class T>
-    [[nodiscard]] const T& desc(AssetId id) const
+    [[nodiscard]] const T& desc(const AssetId& id) const
     {
         const auto& table = descMap<T>();
         const auto found = table.find(id);
@@ -30,7 +30,6 @@ public:
     template <class T>
     AssetId save(T desc);
 
-    [[nodiscard]] AssetId allocateId();
     [[nodiscard]] std::filesystem::path path(const std::filesystem::path& relative) const;
 
 private:
@@ -41,15 +40,12 @@ private:
         std::unordered_map<AssetId, ShaderDesc>,
         std::unordered_map<AssetId, SceneDesc>>;
 
-    bool ready = false;
+    bool inited = false;
     std::filesystem::path root;
     DescMaps descs;
-    std::unordered_map<AssetId, std::filesystem::path> descFiles;
 
     void loadAll();
     void clear();
-    void storeDescFile(AssetId id, const std::filesystem::path& file);
-    [[nodiscard]] std::filesystem::path descFile(AssetType type, std::string_view name) const;
 
     template <class T>
     [[nodiscard]] std::unordered_map<AssetId, T>& descMap()

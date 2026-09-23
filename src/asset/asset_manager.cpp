@@ -41,10 +41,15 @@ void validateDesc(MeshDesc& desc, const std::filesystem::path& file)
 {
     CHECK(!desc.source.kind.empty(),
         "mesh descriptor missing source.kind: {}", file.string());
+    CHECK(!desc.geometry.empty(), "mesh geometry path is required: {}", file.string());
 }
 
 void validateDesc(MaterialDesc& desc, const std::filesystem::path& file)
 {
+    if (desc.baseColorTexture == kInvalidAssetId)
+    {
+        desc.baseColorTexture = BuiltinId::whiteTexture;
+    }
     CHECK(desc.baseColorTexture != kInvalidAssetId,
         "material requires baseColorTexture: {}", file.string());
 }
@@ -74,9 +79,7 @@ void validateDesc(ShaderDesc& desc, const std::filesystem::path& file)
 
 void validateDesc(SceneDesc& scene, const std::filesystem::path&)
 {
-    CHECK(scene.asset().type == AssetType::Scene,
-        "scene descriptor type mismatch: {}", scene.asset().id);
-    CHECK(scene.version == 2, "unsupported scene description version");
+    CHECK(scene.version == 3, "unsupported scene description version");
     CHECK(scene.camera.movementSpeed > 0.0f,
         "camera movement speed must be greater than zero");
     CHECK(scene.camera.sprintMultiplier >= 1.0f,
@@ -87,69 +90,14 @@ void validateDesc(SceneDesc& scene, const std::filesystem::path&)
     }
 }
 
-void prepareDesc(MeshDesc& desc)
-{
-    CHECK(desc.asset().id != kInvalidAssetId, "mesh id is required");
-    CHECK(!desc.geometry.empty(), "mesh geometry path is required");
-    desc.asset().type = AssetType::Mesh;
-}
-
-void prepareDesc(MaterialDesc& desc)
-{
-    if (desc.asset().id == kInvalidAssetId)
-    {
-        // id filled by save()
-    }
-    desc.asset().type = AssetType::Material;
-    if (desc.baseColorTexture == kInvalidAssetId)
-    {
-        desc.baseColorTexture = BuiltinId::whiteTexture;
-    }
-}
-
-void prepareDesc(TextureDesc& desc)
-{
-    desc.asset().type = AssetType::Texture;
-}
-
-void prepareDesc(ShaderDesc& desc)
-{
-    desc.asset().type = AssetType::Shader;
-}
-
-void prepareDesc(SceneDesc& desc)
-{
-    desc.asset().type = AssetType::Scene;
-}
-
-[[nodiscard]] std::string nameFileStem(std::string_view name)
-{
-    CHECK(!name.empty(), "asset name cannot be empty");
-    std::string stem{name};
-    for (char& character : stem)
-    {
-        if (character == ':' || character == '/' || character == '\\' ||
-            character == '*' || character == '?' || character == '"' ||
-            character == '<' || character == '>' || character == '|')
-        {
-            character = '_';
-        }
-    }
-    return stem;
-}
-
 template <class T>
 void loadDescDirectory(
-    const ConfigManager& config,
-    std::unordered_map<AssetId, T>& out,
-    std::unordered_map<AssetId, std::filesystem::path>& descFiles)
+    const std::filesystem::path& directory, std::unordered_map<AssetId, T>& out)
 {
-    const std::filesystem::path& directory = config.descDir(assetTypeOf<T>);
     if (!std::filesystem::exists(directory))
     {
         return;
     }
-    constexpr AssetType expectedType = assetTypeOf<T>;
     for (const auto& entry : std::filesystem::directory_iterator(directory))
     {
         if (!entry.is_regular_file() || entry.path().extension() != ".json")
@@ -157,76 +105,42 @@ void loadDescDirectory(
             continue;
         }
         T desc = asset_json::load<T>(entry.path());
-        CHECK(desc.asset().id != kInvalidAssetId,
-            "descriptor has invalid id: {}", entry.path().string());
-        CHECK(!desc.asset().name.empty(),
-            "descriptor missing name: {}", entry.path().string());
-        CHECK(desc.asset().type == expectedType,
-            "descriptor type mismatch in {}: expected {}, got {}",
-            entry.path().string(),
-            assetTypeDir(expectedType),
-            assetTypeDir(desc.asset().type));
+        CHECK(!desc.id.empty(), "descriptor has empty id: {}", entry.path().string());
         validateDesc(desc, entry.path());
-        CHECK(out.emplace(desc.asset().id, desc).second,
-            "duplicate asset ID: {}", desc.asset().id);
-        descFiles.insert_or_assign(desc.asset().id, entry.path());
+        CHECK(out.emplace(desc.id, desc).second,
+            "duplicate asset ID: {}", desc.id);
     }
 }
 }
 
 void AssetManager::init()
 {
-    if (ready)
+    if (inited)
     {
         return;
     }
     CHECK(context().config != nullptr, "ConfigManager must exist before AssetManager");
     root = std::filesystem::absolute(context().config->assetRoot()).lexically_normal();
     loadAll();
-    ready = true;
+    inited = true;
 }
 
 void AssetManager::shutdown() noexcept
 {
     clear();
     root.clear();
-    ready = false;
-}
-
-void AssetManager::storeDescFile(AssetId id, const std::filesystem::path& file)
-{
-    descFiles.insert_or_assign(id, file);
-}
-
-std::filesystem::path AssetManager::descFile(AssetType type, std::string_view name) const
-{
-    return context().config->descDir(type) / (nameFileStem(name) + ".json");
-}
-
-AssetId AssetManager::allocateId()
-{
-    AssetId next = kFirstUserAssetId;
-    auto consider = [&](const auto& map)
-    {
-        for (const auto& [id, _] : map)
-        {
-            if (id >= kFirstUserAssetId)
-            {
-                next = std::max(next, static_cast<AssetId>(id + 1));
-            }
-        }
-    };
-    std::apply([&](const auto&... maps) { (consider(maps), ...); }, descs);
-    return next;
+    inited = false;
 }
 
 void AssetManager::loadAll()
 {
     clear();
     const ConfigManager& config = *context().config;
-    std::apply(
-        [&](auto&... maps) { (loadDescDirectory(config, maps, descFiles), ...); },
-        descs);
+    loadDescDirectory(config.descDir(AssetType::mesh), descMap<MeshDesc>());
+    loadDescDirectory(config.descDir(AssetType::material), descMap<MaterialDesc>());
+    loadDescDirectory(config.descDir(AssetType::texture), descMap<TextureDesc>());
+    loadDescDirectory(config.descDir(AssetType::shader), descMap<ShaderDesc>());
+    loadDescDirectory(config.descDir(AssetType::scene), descMap<SceneDesc>());
 }
 
 void AssetManager::reload()
@@ -243,21 +157,12 @@ std::filesystem::path AssetManager::path(const std::filesystem::path& relative) 
 template <class T>
 AssetId AssetManager::save(T desc)
 {
-    if (desc.asset().id == kInvalidAssetId)
-    {
-        desc.asset().id = allocateId();
-    }
-    if (desc.asset().name.empty())
-    {
-        desc.asset().name = std::string(assetTypeDir(assetTypeOf<T>)) + "_" +
-            std::to_string(desc.asset().id);
-    }
-    prepareDesc(desc);
+    CHECK(!desc.id.empty(), "descriptor has empty id");
     validateDesc(desc, {});
-    const auto file = descFile(assetTypeOf<T>, desc.asset().name);
+    const auto file =
+        context().config->descDir(assetTypeOf<T>) / (desc.id + ".json");
     asset_json::save(file, desc);
-    storeDescFile(desc.asset().id, file);
-    const AssetId id = desc.asset().id;
+    const AssetId id = desc.id;
     descMap<T>().insert_or_assign(id, std::move(desc));
     return id;
 }
@@ -271,5 +176,4 @@ template AssetId AssetManager::save(SceneDesc desc);
 void AssetManager::clear()
 {
     std::apply([](auto&... maps) { (maps.clear(), ...); }, descs);
-    descFiles.clear();
 }

@@ -1,9 +1,22 @@
 #pragma once
 
 #include "asset/asset_desc.h"
-#include "core/app_config.h"
+#include "asset/asset_id.h"
 
 #include <filesystem>
+
+struct AppPaths
+{
+    std::filesystem::path assets;
+    std::filesystem::path descs;
+    std::filesystem::path geometry;
+};
+
+struct AppConfig
+{
+    AppPaths paths;
+    AssetId initialScene;
+};
 
 class ConfigManager
 {
@@ -17,7 +30,7 @@ public:
     [[nodiscard]] const AppPaths& paths() const noexcept;
     [[nodiscard]] const std::filesystem::path& configFile() const noexcept;
     [[nodiscard]] const std::filesystem::path& assetRoot() const noexcept;
-    [[nodiscard]] const std::filesystem::path& descDir(AssetType type) const noexcept;
+    [[nodiscard]] std::filesystem::path descDir(AssetType type) const;
     [[nodiscard]] const AssetId& initialScene() const noexcept;
 
     void setInitialScene(AssetId id);
@@ -26,7 +39,7 @@ public:
     void reload();
 
 private:
-    bool ready = false;
+    bool inited = false;
     std::filesystem::path file;
     std::filesystem::path configDir;
     AppConfig data;

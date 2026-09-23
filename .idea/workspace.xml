@@ -42,17 +42,14 @@
       <change beforePath="$PROJECT_DIR$/src/asset/asset_id.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/asset_id.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/asset/asset_manager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/asset_manager.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/asset/asset_manager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/asset_manager.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/builtin_meshes.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/builtin_meshes.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/builtin_meshes.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/builtin_meshes.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/asset/gltf_loader.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/gltf_loader.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/gltf_loader.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/gltf_loader.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/imported_mesh.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/core/app_config.h" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/src/core/config_manager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/config_manager.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/core/config_manager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/config_manager.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/engine.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/pass/light_markers.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/light_markers.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/pass/scene_pass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/scene_pass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/engine.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/engine.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/renderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/renderer.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/mesh.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/mesh.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/renderer.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/renderer.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/resource/render_resource_manager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/render_resource_manager.cpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -197,47 +194,47 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
-    "CMake Application.RenderLab.executor": "Run",
-    "CMake 应用程序.RenderLab.executor": "Run",
-    "CidrDebugProfileConversion": "true",
-    "Google Test.SceneAsset.FileRoundTrip.executor": "Run",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.MCP Project settings loaded": "true",
-    "RunOnceActivity.RadMigrateCodeStyle": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.cidr.known.project.marker": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.readMode.enableVisualFormatting": "true",
-    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "RunOnceActivity.west.config.association.type.startup.service": "true",
-    "cf.first.check.clang-format": "false",
-    "cidr.known.project.marker": "true",
-    "codeWithMe.voiceChat.enabledByDefault": "false",
-    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
-    "copilot.chat.legacySessionMetadata.migrated": "true",
-    "ctest.advertisement.all.test.configuration.is.created": "true",
-    "full.screen.before.presentation.mode": "false",
-    "git-widget-placeholder": "main",
-    "junie.onboarding.icon.badge.shown": "true",
-    "last_opened_file_path": "D:/study/project/graphics/own/RenderLab",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.jshint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.jshint": "",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "org.rust.first.attach.projects": "true",
-    "settings.editor.selected.configurable": "CMakeSettings",
-    "settings.editor.splitter.proportion": "0.24561404",
-    "to.speed.mode.migration.done": "true",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ASKED_MARK_IGNORED_FILES_AS_EXCLUDED&quot;: &quot;true&quot;,
+    &quot;CMake Application.RenderLab.executor&quot;: &quot;Run&quot;,
+    &quot;CMake 应用程序.RenderLab.executor&quot;: &quot;Run&quot;,
+    &quot;CidrDebugProfileConversion&quot;: &quot;true&quot;,
+    &quot;Google Test.SceneAsset.FileRoundTrip.executor&quot;: &quot;Run&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.RadMigrateCodeStyle&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.west.config.association.type.startup.service&quot;: &quot;true&quot;,
+    &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
+    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
+    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
+    &quot;copilot.chat.legacySessionMetadata.migrated&quot;: &quot;true&quot;,
+    &quot;ctest.advertisement.all.test.configuration.is.created&quot;: &quot;true&quot;,
+    &quot;full.screen.before.presentation.mode&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;D:/study/project/graphics/own/RenderLab&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.jshint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.jshint&quot;: &quot;&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;org.rust.first.attach.projects&quot;: &quot;true&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;CMakeSettings&quot;,
+    &quot;settings.editor.splitter.proportion&quot;: &quot;0.24561404&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RunManager" selected="CMake 应用程序.RenderLab">
     <configuration name="SceneAsset.FileRoundTrip" type="CMakeGoogleTestRunConfigurationType" factoryName="Google Test" temporary="true" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="meta_json_test" CONFIG_NAME="Default" TEST_MODE="SUITE_TEST">
       <method v="2">
@@ -277,18 +274,18 @@
       </list>
     </recent_temporary>
   </component>
-  <component name="SelectedDebugProfileService"><![CDATA[{
-  "profileIdByStamp": [
+  <component name="SelectedDebugProfileService">{
+  &quot;profileIdByStamp&quot;: [
     {
-      "first": {
-        "##RUN_CONFIGURATION##": "CMake 应用程序.RenderLab",
-        "cmake": "CMakeBuildProfile:Default"
+      &quot;first&quot;: {
+        &quot;##RUN_CONFIGURATION##&quot;: &quot;CMake 应用程序.RenderLab&quot;,
+        &quot;cmake&quot;: &quot;CMakeBuildProfile:Default&quot;
       },
-      "second": "11a5b7fa-273f-4373-a5f5-a6b5f1d19303"
+      &quot;second&quot;: &quot;11a5b7fa-273f-4373-a5f5-a6b5f1d19303&quot;
     }
   ],
-  "modificationCount": 33
-}]]></component>
+  &quot;modificationCount&quot;: 33
+}</component>
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
       <changelist id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="" />

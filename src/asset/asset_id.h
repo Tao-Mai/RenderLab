@@ -1,33 +1,26 @@
 #pragma once
 
-#include <cstdint>
+#include <string>
 
-using AssetId = std::uint32_t;
+using AssetId = std::string;
 
-constexpr AssetId kInvalidAssetId = 0;
-// [1, kFirstUserAssetId) reserved for builtins / engine assets.
-constexpr AssetId kFirstUserAssetId = 10000;
+inline const AssetId kInvalidAssetId{};
 
 namespace BuiltinId
 {
-// textures: 1-99
-constexpr AssetId whiteTexture = 1;
+inline const AssetId whiteTexture = "white";
 
-// materials: 100-199
-constexpr AssetId cubeMaterial = 100;
-constexpr AssetId sphereMaterial = 101;
-constexpr AssetId arrowMaterial = 102;
+inline const AssetId cubeMaterial = "cube";
+inline const AssetId sphereMaterial = "sphere";
+inline const AssetId arrowMaterial = "arrow";
 
-// meshes: 200-299
-constexpr AssetId cubeMesh = 200;
-constexpr AssetId sphereMesh = 201;
-constexpr AssetId arrowMesh = 202;
+inline const AssetId cubeMesh = "cube";
+inline const AssetId sphereMesh = "sphere";
+inline const AssetId arrowMesh = "arrow";
 
-// shaders: 300-399
-constexpr AssetId sceneShader = 300;
-constexpr AssetId lightShader = 301;
-constexpr AssetId pickingShader = 302;
+inline const AssetId sceneShader = "scene";
+inline const AssetId lightShader = "light";
+inline const AssetId pickingShader = "picking";
 
-// scenes: 400-499
-constexpr AssetId defaultScene = 400;
+inline const AssetId defaultScene = "default";
 }
