@@ -44,14 +44,18 @@ void AssetManager::shutdown() noexcept
 void AssetManager::loadAll()
 {
     clear();
-    const ConfigManager& config = *context().config;
     AssetTypes::forEach(
         [&]<class Entry>
         {
             using T = typename Entry::type;
             loadDescDirectory(
-                config.paths().descs / Entry::dir, descMap<T>());
+                descriptorRoot() / Entry::dir, descMap<T>());
         });
+}
+
+std::filesystem::path AssetManager::descriptorRoot() const
+{
+    return context().config->paths().assets / "assets";
 }
 
 std::filesystem::path AssetManager::path(const std::filesystem::path& relative) const

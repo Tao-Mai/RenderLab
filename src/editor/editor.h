@@ -16,6 +16,7 @@ public:
     Editor& operator=(const Editor&) = delete;
 
     void init();
+    void refreshUi();
     void shutdown() noexcept;
 
     [[nodiscard]] EditorFrameInput buildFrame(

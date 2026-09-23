@@ -5,43 +5,36 @@
 #include "render/resource/buffer.h"
 
 #include <memory>
-#include <string>
 #include <utility>
+#include <vector>
 
-#include <stb_image.h>
 #include "core/logger.h"
 
 namespace
 {
-    struct StbiDeleter
+    [[nodiscard]] vk::Format vulkanFormat(TextureDesc::DataFormat format)
     {
-        void operator()(stbi_uc *pixels) const
+        switch (format)
         {
-            stbi_image_free(pixels);
+        case TextureDesc::DataFormat::Rgba8Srgb: return vk::Format::eR8G8B8A8Srgb;
+        case TextureDesc::DataFormat::Rgba16Float: return vk::Format::eR16G16B16A16Sfloat;
+        case TextureDesc::DataFormat::Rgba32Float: return vk::Format::eR32G32B32A32Sfloat;
         }
-    };
+        LOG_FATAL("invalid texture data format");
+    }
 }
 
-Texture::Texture(GpuUploadContext upload, const std::filesystem::path &path)
+Texture::Texture(GpuUploadContext upload, const TexturePixels& pixels)
 {
-    int width = 0;
-    int height = 0;
-    int channels = 0;
-    const std::string filename = path.string();
-    std::unique_ptr<stbi_uc, StbiDeleter> pixels(
-        stbi_load(filename.c_str(), &width, &height, &channels, STBI_rgb_alpha));
-    CHECK(pixels && width > 0 && height > 0,
-        "failed to load texture '{}': {}", filename, stbi_failure_reason());
-    create(
-        upload,
-        pixels.get(),
-        static_cast<uint32_t>(width),
-        static_cast<uint32_t>(height));
+    create(upload, pixels.bytes.data(), pixels.width, pixels.height,
+        vulkanFormat(pixels.format), texture_io::bytesPerPixel(pixels.format),
+        pixels.layout);
 }
 
 Texture::Texture(GpuUploadContext upload, const std::array<uint8_t, 4> &rgba)
 {
-    create(upload, rgba.data(), 1, 1);
+    create(upload, rgba.data(), 1, 1, vk::Format::eR8G8B8A8Srgb, 4,
+        TextureDesc::Layout::Image2D);
 }
 
 vk::ImageView Texture::imageView() const
@@ -54,14 +47,17 @@ vk::Sampler Texture::sampler() const
     return *imageSampler;
 }
 
-void Texture::create(GpuUploadContext upload, const uint8_t *pixels, uint32_t width, uint32_t height)
+void Texture::create(
+    GpuUploadContext upload, const void* pixels, uint32_t width, uint32_t height,
+    vk::Format format, uint32_t bytesPerPixel, TextureDesc::Layout layout)
 {
+    const uint32_t layers = layout == TextureDesc::Layout::Cubemap ? 6 : 1;
     const auto& physicalDevice = upload.physicalDevice;
     const auto& device = upload.device;
     const auto& commandPool = upload.commandPool;
     auto& queue = upload.queue;
     const vk::DeviceSize byteSize =
-        static_cast<vk::DeviceSize>(width) * height * 4;
+        static_cast<vk::DeviceSize>(width) * height * layers * bytesPerPixel;
     Buffer staging(
         physicalDevice,
         device,
@@ -72,11 +68,14 @@ void Texture::create(GpuUploadContext upload, const uint8_t *pixels, uint32_t wi
     staging.upload(pixels, byteSize);
 
     const vk::ImageCreateInfo imageInfo{
+        .flags = layout == TextureDesc::Layout::Cubemap
+            ? vk::ImageCreateFlags{vk::ImageCreateFlagBits::eCubeCompatible}
+            : vk::ImageCreateFlags{},
         .imageType = vk::ImageType::e2D,
-        .format = vk::Format::eR8G8B8A8Srgb,
+        .format = format,
         .extent = {width, height, 1},
         .mipLevels = 1,
-        .arrayLayers = 1,
+        .arrayLayers = layers,
         .samples = vk::SampleCountFlagBits::e1,
         .tiling = vk::ImageTiling::eOptimal,
         .usage = vk::ImageUsageFlagBits::eTransferDst |
@@ -113,7 +112,7 @@ void Texture::create(GpuUploadContext upload, const uint8_t *pixels, uint32_t wi
         .baseMipLevel = 0,
         .levelCount = 1,
         .baseArrayLayer = 0,
-        .layerCount = 1,
+        .layerCount = layers,
     };
     const vk::ImageMemoryBarrier2 toTransfer{
         .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
@@ -133,24 +132,29 @@ void Texture::create(GpuUploadContext upload, const uint8_t *pixels, uint32_t wi
     };
     copyCommand.pipelineBarrier2(dependency);
 
-    const vk::BufferImageCopy copyRegion{
-        .bufferOffset = 0,
-        .bufferRowLength = 0,
-        .bufferImageHeight = 0,
-        .imageSubresource = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .mipLevel = 0,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
-        .imageOffset = {0, 0, 0},
-        .imageExtent = {width, height, 1},
-    };
+    std::vector<vk::BufferImageCopy> copyRegions;
+    copyRegions.reserve(layers);
+    for (uint32_t layer = 0; layer < layers; ++layer)
+    {
+        copyRegions.push_back(vk::BufferImageCopy{
+            .bufferOffset = static_cast<vk::DeviceSize>(layer) * width * height * bytesPerPixel,
+            .bufferRowLength = 0,
+            .bufferImageHeight = 0,
+            .imageSubresource = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .mipLevel = 0,
+                .baseArrayLayer = layer,
+                .layerCount = 1,
+            },
+            .imageOffset = {0, 0, 0},
+            .imageExtent = {width, height, 1},
+        });
+    }
     copyCommand.copyBufferToImage(
         staging.handle(),
         *image,
         vk::ImageLayout::eTransferDstOptimal,
-        copyRegion);
+        copyRegions);
 
     const vk::ImageMemoryBarrier2 toShader{
         .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
@@ -178,8 +182,9 @@ void Texture::create(GpuUploadContext upload, const uint8_t *pixels, uint32_t wi
 
     const vk::ImageViewCreateInfo viewInfo{
         .image = *image,
-        .viewType = vk::ImageViewType::e2D,
-        .format = vk::Format::eR8G8B8A8Srgb,
+        .viewType = layout == TextureDesc::Layout::Cubemap
+            ? vk::ImageViewType::eCube : vk::ImageViewType::e2D,
+        .format = format,
         .subresourceRange = subresourceRange,
     };
     view = vkCheck(device.createImageView(viewInfo), "vkCreateImageView");
@@ -188,9 +193,12 @@ void Texture::create(GpuUploadContext upload, const uint8_t *pixels, uint32_t wi
         .magFilter = vk::Filter::eLinear,
         .minFilter = vk::Filter::eLinear,
         .mipmapMode = vk::SamplerMipmapMode::eLinear,
-        .addressModeU = vk::SamplerAddressMode::eRepeat,
-        .addressModeV = vk::SamplerAddressMode::eRepeat,
-        .addressModeW = vk::SamplerAddressMode::eRepeat,
+        .addressModeU = layout == TextureDesc::Layout::Cubemap
+            ? vk::SamplerAddressMode::eClampToEdge : vk::SamplerAddressMode::eRepeat,
+        .addressModeV = layout == TextureDesc::Layout::Cubemap
+            ? vk::SamplerAddressMode::eClampToEdge : vk::SamplerAddressMode::eRepeat,
+        .addressModeW = layout == TextureDesc::Layout::Cubemap
+            ? vk::SamplerAddressMode::eClampToEdge : vk::SamplerAddressMode::eRepeat,
         .mipLodBias = 0.0f,
         .anisotropyEnable = vk::False,
         .compareEnable = vk::False,

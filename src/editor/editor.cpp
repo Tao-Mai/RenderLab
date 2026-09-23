@@ -41,6 +41,12 @@ void Editor::shutdown() noexcept
     dirty = false;
 }
 
+void Editor::refreshUi()
+{
+    ui.shutdown();
+    init();
+}
+
 void Editor::saveScene()
 {
     Context& ctx = context();
@@ -60,6 +66,13 @@ EditorFrameInput Editor::buildFrame(
     uint32_t swapchainHeight)
 {
     ui.beginFrame(deltaTime);
+
+    const ecs::Camera& currentCamera = camera.component();
+    const ecs::Camera& savedCamera = context().scene->camera;
+    dirty |= glm::any(glm::notEqual(currentCamera.position, savedCamera.position)) ||
+        currentCamera.yaw != savedCamera.yaw ||
+        currentCamera.pitch != savedCamera.pitch ||
+        currentCamera.fieldOfView != savedCamera.fieldOfView;
 
     if (ui.saveRequested())
     {

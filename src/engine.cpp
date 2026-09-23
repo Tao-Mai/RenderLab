@@ -63,6 +63,14 @@ void Engine::mainLoop()
             break;
         }
 
+        const auto [framebufferWidth, framebufferHeight] = ctx.window->framebufferSize();
+        if (framebufferWidth == 0 || framebufferHeight == 0)
+        {
+            ctx.window->waitEvents();
+            previousTime = std::chrono::steady_clock::now();
+            continue;
+        }
+
         const auto currentTime = std::chrono::steady_clock::now();
         const float deltaTime =
             std::chrono::duration<float>(currentTime - previousTime).count();

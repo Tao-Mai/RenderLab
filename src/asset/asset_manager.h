@@ -41,7 +41,7 @@ public:
     {
         CHECK(!desc.id.empty(), "descriptor has empty id");
         const auto file =
-            context().config->paths().descs / AssetTypes::dir<T>() / (desc.id + ".json");
+            descriptorRoot() / AssetTypes::dir<T>() / (desc.id + ".json");
         asset_json::save(file, desc);
         const AssetId id = desc.id;
         descMap<T>().insert_or_assign(id, std::move(desc));
@@ -61,6 +61,7 @@ private:
 
     void loadAll();
     void clear();
+    [[nodiscard]] std::filesystem::path descriptorRoot() const;
 
     template <class T>
     [[nodiscard]] DescMap<T>& descMap()

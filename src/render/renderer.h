@@ -66,6 +66,7 @@ private:
     EditorPickingPass pickingPass;
 
     void initVulkan();
+    void recreateSwapchain();
     void recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& editor);
     void recordPickingPass(vk::raii::CommandBuffer& commandBuffer, const EditorFrameInput& editor);
     void recordUiPass(

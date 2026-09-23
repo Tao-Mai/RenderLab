@@ -5,6 +5,7 @@
 #include "camera.h"
 #include "core/context.h"
 #include "core/logger.h"
+#include "editor/editor.h"
 #include "ecs/light.h"
 #include "ecs/transform.h"
 #include "render/device/vk_check.h"
@@ -45,6 +46,7 @@ void Renderer::loadScene(SceneDesc& targetScene)
 
     waitIdle();
     scene.load(targetScene, resources);
+    scenePass.bindEnvironment(targetScene);
 }
 
 void Renderer::waitIdle()
@@ -106,6 +108,48 @@ void Renderer::initVulkan()
         swapchain.depthImageFormat(),
         scenePass.sceneLayoutHandle(),
         resources.shader("picking"));
+}
+
+void Renderer::recreateSwapchain()
+{
+    Window& window = *context().window;
+    while (!window.shouldClose())
+    {
+        const auto [width, height] = window.framebufferSize();
+        if (width > 0 && height > 0)
+        {
+            break;
+        }
+        window.waitEvents();
+    }
+    if (window.shouldClose())
+    {
+        return;
+    }
+
+    waitIdle();
+    scene.reset();
+    pickingPass.reset();
+    resources.reset();
+    scenePass.reset();
+    frame.reset();
+    swapchain.reset();
+
+    swapchain.init(vulkan, window);
+    frame.init(vulkan);
+    swapchain.transitionDepthImageLayout(frame.commandPoolHandle());
+    resources.init(vulkan, frame);
+    scenePass.init(vulkan, swapchain, frame, resources);
+    pickingPass.init(
+        vulkan.physicalDeviceHandle(),
+        vulkan.deviceHandle(),
+        swapchain.extent(),
+        swapchain.depthImageFormat(),
+        scenePass.sceneLayoutHandle(),
+        resources.shader("picking"));
+    scene.load(*context().scene, resources);
+    scenePass.bindEnvironment(*context().scene);
+    context().editor->refreshUi();
 }
 
 void Renderer::recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& editor)
@@ -253,14 +297,27 @@ EditorFrameResult Renderer::drawFrame(const EditorFrameInput& editor)
     const vk::Semaphore renderFinishedSemaphore  = frame.renderFinishedSemaphore();
     const vk::CommandBuffer commandBuffer        = *frame.commandBufferHandle();
 
-    auto fenceResult = vulkan.deviceHandle().waitForFences(drawFence, vk::True, UINT64_MAX);
+    const auto fenceResult = vulkan.deviceHandle().waitForFences(drawFence, vk::True, UINT64_MAX);
     CHECK(fenceResult == vk::Result::eSuccess, "failed to wait for fence!");
-    vkCheck(vulkan.deviceHandle().resetFences(drawFence), "vkResetFences");
 
-    auto [result, imageIndex] = swapchain.handle().acquireNextImage(
-        UINT64_MAX,
-        presentCompleteSemaphore,
-        nullptr);
+    uint32_t imageIndex = 0;
+    const vk::Result acquireResult = static_cast<vk::Result>(
+        swapchain.handle().getDispatcher()->vkAcquireNextImageKHR(
+            static_cast<VkDevice>(*vulkan.deviceHandle()),
+            static_cast<VkSwapchainKHR>(*swapchain.handle()),
+            UINT64_MAX,
+            static_cast<VkSemaphore>(presentCompleteSemaphore),
+            VK_NULL_HANDLE,
+            &imageIndex));
+    if (acquireResult == vk::Result::eErrorOutOfDateKHR)
+    {
+        recreateSwapchain();
+        return {};
+    }
+    CHECK(acquireResult == vk::Result::eSuccess ||
+            acquireResult == vk::Result::eSuboptimalKHR,
+        "vkAcquireNextImageKHR failed: {}", vk::to_string(acquireResult));
+    vkCheck(vulkan.deviceHandle().resetFences(drawFence), "vkResetFences");
 
     const bool resolvePickAfterSubmit = editor.requestPick;
     recordCommandBuffer(imageIndex, editor);
@@ -286,17 +343,14 @@ EditorFrameResult Renderer::drawFrame(const EditorFrameInput& editor)
         .pSwapchains = &*swapchain.handle(),
         .pImageIndices = &imageIndex,
     };
-    result = vulkan.queueHandle().presentKHR(presentInfoKHR);
-    switch (result)
-    {
-        case vk::Result::eSuccess:
-            break;
-        case vk::Result::eSuboptimalKHR:
-            std::cout << "vk::Queue::presentKHR returned vk::Result::eSuboptimalKHR !\n";
-            break;
-        default:
-            break;
-    }
+    const vk::Result presentResult = static_cast<vk::Result>(
+        vulkan.queueHandle().getDispatcher()->vkQueuePresentKHR(
+            static_cast<VkQueue>(*vulkan.queueHandle()),
+            reinterpret_cast<const VkPresentInfoKHR*>(&presentInfoKHR)));
+    CHECK(presentResult == vk::Result::eSuccess ||
+            presentResult == vk::Result::eSuboptimalKHR ||
+            presentResult == vk::Result::eErrorOutOfDateKHR,
+        "vkQueuePresentKHR failed: {}", vk::to_string(presentResult));
 
     EditorFrameResult frameResult;
     if (resolvePickAfterSubmit)
@@ -310,6 +364,12 @@ EditorFrameResult Renderer::drawFrame(const EditorFrameInput& editor)
 
         frameResult.hasPickResult     = true;
         frameResult.pickedSelectionId = pickingPass.readSelectionId();
+    }
+    if (acquireResult == vk::Result::eSuboptimalKHR ||
+        presentResult == vk::Result::eSuboptimalKHR ||
+        presentResult == vk::Result::eErrorOutOfDateKHR)
+    {
+        recreateSwapchain();
     }
     return frameResult;
 }

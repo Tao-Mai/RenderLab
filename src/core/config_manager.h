@@ -7,7 +7,6 @@
 struct AppPaths
 {
     std::filesystem::path assets;
-    std::filesystem::path descs;
     std::filesystem::path geometry;
 };
 

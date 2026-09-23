@@ -18,6 +18,7 @@ find_package(imguizmo CONFIG REQUIRED)
 find_package(reflectcpp CONFIG REQUIRED)
 find_package(glog CONFIG REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
+find_package(tinyexr CONFIG REQUIRED)
 find_path(TINYGLTF_INCLUDE_DIR NAMES tiny_gltf.h REQUIRED)
 
 find_program(SLANGC_EXECUTABLE
@@ -126,6 +127,10 @@ add_executable(RenderLab
         src/asset/material_desc.cpp
         src/asset/geometry_io.cpp
         src/asset/geometry_io.h
+        src/asset/texture_io.cpp
+        src/asset/texture_io.h
+        src/asset/texture_importer.cpp
+        src/asset/texture_importer.h
         src/asset/json_io.h
         src/asset/rfl_reflectors.h
         src/asset/mesh_geometry.h
@@ -180,7 +185,7 @@ target_include_directories(RenderLab PRIVATE
 )
 
 target_compile_definitions(RenderLab PRIVATE
-        RENDERLAB_CONFIG_FILE="${CMAKE_CURRENT_SOURCE_DIR}/assets/config.json"
+        RENDERLAB_CONFIG_FILE="${CMAKE_CURRENT_SOURCE_DIR}/config/config.json"
         VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
         VULKAN_HPP_NO_STRUCT_CONSTRUCTORS=1
         VULKAN_HPP_NO_EXCEPTIONS
@@ -198,6 +203,7 @@ target_link_libraries(RenderLab PRIVATE
         reflectcpp::reflectcpp
         glog::glog
         EnTT::EnTT
+        unofficial::tinyexr::tinyexr
 )
 
 if (MSVC)

@@ -14,7 +14,7 @@ struct VertexInput{
 struct VertexOutput
 {
     float4 position : SV_Position;
-    float3 normal : NORMAL;
+    float3 worldNormal : NORMAL;
     float2 uv : TEXCOORD0;
     float3 worldPosition : POSITION0;
 };
@@ -71,13 +71,21 @@ ConstantBuffer<MaterialData> material;
 [[vk::binding(0, 0)]]
 ConstantBuffer<SceneUniforms> sceneUniforms;
 
+[[vk::binding(1, 0)]]
+TextureCube<float4> environmentMap;
+
+[[vk::binding(2, 0)]]
+SamplerState environmentSampler;
+
+
+
 [shader("vertex")]
 VertexOutput vertMain(VertexInput input)
 {
     VertexOutput output;
     float4 worldPosition = mul(pushConstants.model, float4(input.position, 1.0));
     output.position = mul(sceneUniforms.viewProjection, worldPosition);
-    output.normal = input.normal;
+    output.worldNormal = mul(pushConstants.model, float4(input.normal, 0.0)).xyz; // 没有平移
     output.uv = input.uv;
     output.worldPosition = worldPosition.xyz;
     return output;
@@ -86,11 +94,11 @@ VertexOutput vertMain(VertexInput input)
 [shader("fragment")]
 float4 fragMain(VertexOutput input) : SV_Target
 {
-    float3 normal = normalize(input.normal);
+    float3 N = normalize(input.worldNormal);
 
     float4 baseColor = baseColorTexture.Sample(baseColorSampler, input.uv) * material.baseColorFactor;
 
-    float3 lightDirection = normalize(sceneUniforms.light.position - input.worldPosition);
+    float3 L = normalize(sceneUniforms.light.position - input.worldPosition);
     float distanceToLight = length(sceneUniforms.light.position - input.worldPosition);
     float lightRange = max(sceneUniforms.light.range, 0.001);
     float distanceAttenuation = saturate(1.0 - distanceToLight / lightRange);
@@ -100,12 +108,12 @@ float4 fragMain(VertexOutput input) : SV_Target
         * distanceAttenuation
         * sceneUniforms.light.enabled;
 
-    float3 viewDirection = normalize(sceneUniforms.cameraPosition - input.worldPosition);
-    float3 H = normalize(lightDirection + viewDirection);
-    float NdotH = saturate(dot(normal, H));
-    float NdotL = saturate(dot(normal, lightDirection));
-    float NdotV = saturate(dot(normal, viewDirection));
-    float VdotH = saturate(dot(viewDirection, H));
+    float3 V = normalize(sceneUniforms.cameraPosition - input.worldPosition);
+    float3 H = normalize(L + V);
+    float NdotH = saturate(dot(N, H));
+    float NdotL = saturate(dot(N, L));
+    float NdotV = saturate(dot(N, V));
+    float VdotH = saturate(dot(V, H));
     float roughness = material.roughness;
     float metallic = material.metallic;
 
@@ -120,5 +128,8 @@ float4 fragMain(VertexOutput input) : SV_Target
     float3 ambient = 0.04 * baseColor.rgb;
     float3 color = direct + ambient;
 
-    return float4(color, baseColor.a);
+    float3 R = reflect(-V, N);
+    float3 envColor = environmentMap.Sample(environmentSampler, R).rgb;
+
+    return float4(envColor, baseColor.a);
 }

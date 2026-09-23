@@ -67,7 +67,6 @@ void ConfigManager::save() const
 {
     AppConfig stored = data;
     stored.paths.assets = storeRelative(data.paths.assets, configDir);
-    stored.paths.descs = storeRelative(data.paths.descs, data.paths.assets);
     stored.paths.geometry = storeRelative(data.paths.geometry, data.paths.assets);
     asset_json::save(file, stored);
 }
@@ -76,15 +75,11 @@ void ConfigManager::applyDefaults()
 {
     if (data.paths.assets.empty())
     {
-        data.paths.assets = ".";
-    }
-    if (data.paths.descs.empty())
-    {
-        data.paths.descs = "descs";
+        data.paths.assets = "..";
     }
     if (data.paths.geometry.empty())
     {
-        data.paths.geometry = "geometry";
+        data.paths.geometry = "assets/geometry";
     }
     if (data.initialScene == kInvalidAssetId)
     {
@@ -115,6 +110,5 @@ void ConfigManager::resolvePaths()
     CHECK(std::filesystem::is_directory(data.paths.assets),
         "asset root is not a directory: {}", data.paths.assets.string());
 
-    data.paths.descs = resolveAgainst(data.paths.assets, std::move(data.paths.descs));
     data.paths.geometry = resolveAgainst(data.paths.assets, std::move(data.paths.geometry));
 }

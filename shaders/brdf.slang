@@ -9,7 +9,7 @@ float NormalDistributionGGX(float roughness, float NdotH) {
     float a = roughness * roughness;
     float a2 = a * a;
     float denom = NdotH * NdotH * (a2 - 1.0) + 1.0;
-    return a2 / (PI * denom * denom);
+    return a2 / max(PI * denom * denom, 1e-5);
 }
 
 float GeometrySmithGGX(float roughness, float NdotV, float NdotL)
@@ -20,6 +20,6 @@ float GeometrySmithGGX(float roughness, float NdotV, float NdotL)
     float lambdaV = sqrt(NdotV * NdotV + a2 * (1.0 - NdotV * NdotV));
     float lambdaL = sqrt(NdotL * NdotL + a2 * (1.0 - NdotL * NdotL));
 
-    return 2.0 * NdotV * NdotL / (NdotL * lambdaV + NdotV * lambdaL);
+    return 2.0 * NdotV * NdotL / max(NdotL * lambdaV + NdotV * lambdaL, 1e-5);
 }
 

@@ -4,6 +4,7 @@
 #include "asset/builtin_meshes.h"
 #include "asset/geometry_io.h"
 #include "asset/gltf_loader.h"
+#include "asset/texture_io.h"
 #include "core/context.h"
 #include "core/logger.h"
 #include "render/device/frame_context.h"
@@ -177,21 +178,55 @@ std::shared_ptr<Texture> RenderResourceManager::texture(const AssetId& id)
     std::shared_ptr<Texture> gpu;
     if (isBuiltin<TextureDesc>(id))
     {
-        CHECK(id == TextureDesc::white, "unknown builtin texture: {}", id);
-        constexpr std::array<uint8_t, 4> white{255, 255, 255, 255};
-        gpu = std::make_shared<Texture>(frame->uploadContext(*vulkan), white);
+        if (id == TextureDesc::white)
+        {
+            constexpr std::array<uint8_t, 4> white{255, 255, 255, 255};
+            gpu = std::make_shared<Texture>(frame->uploadContext(*vulkan), white);
+        }
+        else
+        {
+            CHECK(id == TextureDesc::whiteCube, "unknown builtin texture: {}", id);
+            TexturePixels whiteCube{
+                .format = TextureDesc::DataFormat::Rgba8Srgb,
+                .layout = TextureDesc::Layout::Cubemap,
+                .width = 1,
+                .height = 1,
+                .bytes = std::vector<uint8_t>(6 * 4, 255),
+            };
+            gpu = std::make_shared<Texture>(frame->uploadContext(*vulkan), whiteCube);
+        }
     }
     else
     {
         const TextureDesc& desc = assets->desc<TextureDesc>(id);
         if (desc.source == "solid")
         {
+            CHECK(desc.format == TextureDesc::DataFormat::Rgba8Srgb,
+                "solid texture '{}' must use Rgba8Srgb", id);
+            CHECK(desc.layout == TextureDesc::Layout::Image2D,
+                "solid texture '{}' must be 2D", id);
+            CHECK(desc.rgba.has_value(), "solid texture '{}' has no RGBA value", id);
             gpu = std::make_shared<Texture>(frame->uploadContext(*vulkan), *desc.rgba);
+        }
+        else if (desc.source == "file" || desc.source == "environment")
+        {
+            CHECK((desc.source == "file" &&
+                    desc.layout == TextureDesc::Layout::Image2D) ||
+                    (desc.source == "environment" &&
+                    desc.layout == TextureDesc::Layout::Cubemap &&
+                    (desc.format == TextureDesc::DataFormat::Rgba16Float ||
+                     desc.format == TextureDesc::DataFormat::Rgba32Float)),
+                "texture '{}' source, layout and data format disagree", id);
+            CHECK(desc.binary.has_value() && !desc.binary->empty(),
+                "texture '{}' has no binary path", id);
+            const TexturePixels pixels = texture_io::read(assets->path(*desc.binary));
+            CHECK(pixels.format == desc.format && pixels.layout == desc.layout,
+                "texture '{}' binary metadata disagrees with descriptor", id);
+            gpu = std::make_shared<Texture>(frame->uploadContext(*vulkan), pixels);
         }
         else
         {
-            gpu = std::make_shared<Texture>(
-                frame->uploadContext(*vulkan), assets->path(*desc.path));
+            CHECK(false, "unknown texture source '{}' for '{}'", desc.source, id);
         }
     }
     return textures.emplace(id, std::move(gpu)).first->second;

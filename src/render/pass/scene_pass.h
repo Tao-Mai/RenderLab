@@ -6,6 +6,7 @@
 #include "render/scene/gpu_scene.h"
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include <glm/mat4x4.hpp>
@@ -17,7 +18,9 @@ class LightMarkers;
 class Mesh;
 class RenderResourceManager;
 class Swapchain;
+class Texture;
 class VulkanContext;
+struct SceneDesc;
 struct SceneObjectDesc;
 
 class ScenePass
@@ -32,6 +35,7 @@ public:
 
     void init(VulkanContext& vulkan, Swapchain& swapchain, FrameContext& frame, RenderResourceManager& resources);
     void reset() noexcept;
+    void bindEnvironment(const SceneDesc& scene);
     void updateScene(
         const glm::mat4& viewProjection,
         const glm::vec3& cameraPosition,
@@ -59,6 +63,7 @@ private:
     vk::raii::DescriptorSetLayout                          materialLayout = nullptr;
     vk::raii::DescriptorSet                                sceneSet       = nullptr;
     Buffer                                                 sceneBuffer;
+    std::shared_ptr<Texture>                              environmentTexture;
     ScenePipelines                                         scenePipelines;
 
     void                     initDescriptors();

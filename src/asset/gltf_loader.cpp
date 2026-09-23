@@ -1,5 +1,4 @@
 #define TINYGLTF_IMPLEMENTATION
-#define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <tiny_gltf.h>
 
@@ -8,6 +7,7 @@
 #include "asset/asset_manager.h"
 #include "asset/geometry_io.h"
 #include "asset/mesh_geometry.h"
+#include "asset/texture_importer.h"
 #include "core/config_manager.h"
 #include "core/context.h"
 #include "core/logger.h"
@@ -80,11 +80,8 @@ struct GltfBuild
     CHECK(!relative.empty() && *relative.begin() != "..",
         "texture is outside asset root: {}", sourcePath);
 
-    TextureDesc textureDesc;
-    textureDesc.id = relative.stem().string();
-    textureDesc.source = "file";
-    textureDesc.path = relative.generic_string();
-    const AssetId id = build.assets->save(std::move(textureDesc));
+    const AssetId id = TextureImporter::importTexture(
+        *build.assets, relative.stem().string(), std::filesystem::absolute(sourcePath));
     build.textureCache.emplace(std::move(sourcePath), id);
     return id;
 }

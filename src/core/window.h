@@ -17,6 +17,7 @@ class Window
 
     void init();
     void pollEvents() const;
+    void waitEvents() const;
     [[nodiscard]] bool shouldClose() const;
     void requestClose() const;
     [[nodiscard]] bool keyPressed(int key) const;

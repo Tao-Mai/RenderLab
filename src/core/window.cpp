@@ -40,6 +40,11 @@ void Window::pollEvents() const
     glfwPollEvents();
 }
 
+void Window::waitEvents() const
+{
+    glfwWaitEvents();
+}
+
 bool Window::shouldClose() const
 {
     return handle == nullptr || glfwWindowShouldClose(handle);

@@ -41,7 +41,7 @@ struct FixedString
 template <class T, FixedString Dir>
 struct AssetEntry
 {
-    using type = T;
+    using type                            = T;
     static constexpr std::string_view dir = Dir.view();
 };
 
@@ -83,49 +83,49 @@ struct SubmeshDesc
 {
     uint32_t firstIndex = 0;
     uint32_t indexCount = 0;
-    AssetId materialId;
+    AssetId  materialId;
 };
 
 struct MeshSourceDesc
 {
-    std::string kind;
+    std::string                          kind;
     std::optional<std::filesystem::path> path;
 };
 
 struct MeshDesc
 {
-    AssetId id;
-    MeshSourceDesc source;
-    std::filesystem::path geometry;
+    AssetId                  id;
+    MeshSourceDesc           source;
+    std::filesystem::path    geometry;
     std::vector<SubmeshDesc> submeshes;
 
-    static inline const AssetId cube = "cube";
-    static inline const AssetId sphere = "sphere";
-    static inline const AssetId plane = "plane";
-    static inline const AssetId arrow = "arrow";
+    static inline const AssetId    cube   = "cube";
+    static inline const AssetId    sphere = "sphere";
+    static inline const AssetId    plane  = "plane";
+    static inline const AssetId    arrow  = "arrow";
     static inline const std::array builtins{&cube, &sphere, &plane, &arrow};
 };
 
 struct MaterialDesc
 {
-    AssetId id;
-    std::optional<glm::vec4> baseColorFactor;
-    std::optional<float> metallic;
-    std::optional<float> roughness;
-    std::optional<float> ao;
-    std::optional<glm::vec3> emissive;
-    std::optional<float> normalScale;
-    std::optional<AssetId> baseColorTexture;
-    std::optional<AssetId> normalTexture;
-    std::optional<AssetId> metallicTexture;
-    std::optional<AssetId> roughnessTexture;
-    std::optional<AssetId> aoTexture;
-    std::optional<AssetId> emissiveTexture;
+    AssetId                    id;
+    std::optional<glm::vec4>   baseColorFactor;
+    std::optional<float>       metallic;
+    std::optional<float>       roughness;
+    std::optional<float>       ao;
+    std::optional<glm::vec3>   emissive;
+    std::optional<float>       normalScale;
+    std::optional<AssetId>     baseColorTexture;
+    std::optional<AssetId>     normalTexture;
+    std::optional<AssetId>     metallicTexture;
+    std::optional<AssetId>     roughnessTexture;
+    std::optional<AssetId>     aoTexture;
+    std::optional<AssetId>     emissiveTexture;
     std::optional<std::string> alphaMode;
-    std::optional<float> alphaCutoff;
-    std::optional<bool> doubleSided;
+    std::optional<float>       alphaCutoff;
+    std::optional<bool>        doubleSided;
 
-    static inline const AssetId white = "white";
+    static inline const AssetId    white = "white";
     static inline const std::array builtins{&white};
 };
 
@@ -133,18 +133,35 @@ void applyMaterialFields(MaterialDesc& dst, const MaterialDesc& src);
 
 struct TextureDesc
 {
-    AssetId id;
-    std::string source;
-    std::optional<std::filesystem::path> path;
+    enum class DataFormat
+    {
+        Rgba8Srgb,
+        Rgba16Float,
+        Rgba32Float,
+    };
+
+    enum class Layout
+    {
+        Image2D,
+        Cubemap,
+    };
+
+    AssetId                               id;
+    std::string                           source;
+    DataFormat                            format;
+    Layout                                layout;
+    std::optional<std::filesystem::path>  path;
+    std::optional<std::filesystem::path>  binary;
     std::optional<std::array<uint8_t, 4>> rgba;
 
-    static inline const AssetId white = "white";
-    static inline const std::array builtins{&white};
+    static inline const AssetId    white = "white";
+    static inline const AssetId    whiteCube = "whiteCube";
+    static inline const std::array builtins{&white, &whiteCube};
 };
 
 struct ShaderDesc
 {
-    AssetId id;
+    AssetId               id;
     std::filesystem::path binary;
 };
 
@@ -152,15 +169,20 @@ using ComponentMap = std::unordered_map<std::string, entt::meta_any>;
 
 struct SceneObjectDesc
 {
-    std::string name;
+    std::string  name;
     ComponentMap components;
 };
 
 struct SceneDesc
 {
-    AssetId id;
-    ecs::Camera camera;
+    AssetId                      id;
+    ecs::Camera                  camera;
     std::vector<SceneObjectDesc> objects;
+
+    struct Environment
+    {
+        std::optional<AssetId> environmentMap;
+    } environment;
 };
 
 template <class T>
