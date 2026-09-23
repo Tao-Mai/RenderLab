@@ -17,7 +17,7 @@ find_package(imgui CONFIG REQUIRED)
 find_package(imguizmo CONFIG REQUIRED)
 find_package(reflectcpp CONFIG REQUIRED)
 find_package(glog CONFIG REQUIRED)
-find_package(magic_enum CONFIG REQUIRED)
+find_package(EnTT CONFIG REQUIRED)
 find_path(TINYGLTF_INCLUDE_DIR NAMES tiny_gltf.h REQUIRED)
 
 find_program(SLANGC_EXECUTABLE
@@ -102,13 +102,20 @@ add_executable(RenderLab
         src/core/config_manager.h
         src/core/context.cpp
         src/core/context.h
+        src/core/logger.h
+        src/core/reflect.h
+        src/core/window.cpp
+        src/core/window.h
+        src/ecs/component.h
+        src/ecs/camera.h
+        src/ecs/light.h
+        src/ecs/transform.cpp
+        src/ecs/transform.h
         src/editor/editor.cpp
         src/editor/editor.h
         src/editor/editor_ui.cpp
         src/editor/editor_ui.h
         src/editor/viewport_rect.h
-        src/window.cpp
-        src/window.h
         src/asset/asset_manager.cpp
         src/asset/asset_manager.h
         src/asset/asset_id.h
@@ -160,9 +167,6 @@ add_executable(RenderLab
         src/render/pass/light_markers.h
         src/render/pass/editor_picking_pass.cpp
         src/render/pass/editor_picking_pass.h
-        src/scene/light.h
-        src/scene/transform.cpp
-        src/scene/transform.h
 )
 add_dependencies(RenderLab RenderLabShaders)
 
@@ -189,7 +193,7 @@ target_link_libraries(RenderLab PRIVATE
         imguizmo::imguizmo
         reflectcpp::reflectcpp
         glog::glog
-        magic_enum::magic_enum
+        EnTT::EnTT
 )
 
 if (MSVC)

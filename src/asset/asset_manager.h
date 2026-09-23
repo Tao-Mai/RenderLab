@@ -1,13 +1,15 @@
 #pragma once
 
 #include "asset/asset_desc.h"
-#include "logger.h"
+#include "asset/json_io.h"
+#include "core/config_manager.h"
+#include "core/context.h"
+#include "core/logger.h"
 
 #include <filesystem>
-#include <string>
-#include <string_view>
 #include <tuple>
 #include <unordered_map>
+#include <utility>
 
 class AssetManager
 {
@@ -16,7 +18,6 @@ public:
 
     void init();
     void shutdown() noexcept;
-    void reload();
 
     template <class T>
     [[nodiscard]] const T& desc(const AssetId& id) const
@@ -28,34 +29,40 @@ public:
     }
 
     template <class T>
-    AssetId save(T desc);
+    AssetId save(T desc)
+    {
+        CHECK(!desc.id.empty(), "descriptor has empty id");
+        const auto file =
+            context().config->paths().descs / AssetTypes::dir<T>() / (desc.id + ".json");
+        asset_json::save(file, desc);
+        const AssetId id = desc.id;
+        descMap<T>().insert_or_assign(id, std::move(desc));
+        return id;
+    }
 
     [[nodiscard]] std::filesystem::path path(const std::filesystem::path& relative) const;
 
 private:
-    using DescMaps = std::tuple<
-        std::unordered_map<AssetId, MeshDesc>,
-        std::unordered_map<AssetId, MaterialDesc>,
-        std::unordered_map<AssetId, TextureDesc>,
-        std::unordered_map<AssetId, ShaderDesc>,
-        std::unordered_map<AssetId, SceneDesc>>;
+    template <class T>
+    using DescMap = std::unordered_map<AssetId, T>;
+
+    using DescMaps = AssetTypes::wrapTypes<DescMap>;
 
     bool inited = false;
-    std::filesystem::path root;
     DescMaps descs;
 
     void loadAll();
     void clear();
 
     template <class T>
-    [[nodiscard]] std::unordered_map<AssetId, T>& descMap()
+    [[nodiscard]] DescMap<T>& descMap()
     {
-        return std::get<std::unordered_map<AssetId, T>>(descs);
+        return std::get<DescMap<T>>(descs);
     }
 
     template <class T>
-    [[nodiscard]] const std::unordered_map<AssetId, T>& descMap() const
+    [[nodiscard]] const DescMap<T>& descMap() const
     {
-        return std::get<std::unordered_map<AssetId, T>>(descs);
+        return std::get<DescMap<T>>(descs);
     }
 };

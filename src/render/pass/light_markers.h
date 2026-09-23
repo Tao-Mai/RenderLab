@@ -1,7 +1,7 @@
 #pragma once
 
 #include "render/resource/mesh.h"
-#include "scene/light.h"
+#include "ecs/light.h"
 
 #include <cstdint>
 #include <vector>
@@ -21,11 +21,11 @@ public:
     void record(
         vk::raii::CommandBuffer& commandBuffer,
         vk::PipelineLayout pipelineLayout,
-        const Light& light) const;
+        const ecs::Light& light) const;
     void recordPicking(
         vk::raii::CommandBuffer& commandBuffer,
         vk::PipelineLayout pipelineLayout,
-        const Light& light,
+        const ecs::Light& light,
         uint32_t selectionId) const;
 
 private:
@@ -42,5 +42,5 @@ private:
     Mesh* cube = nullptr;
     Mesh* arrow = nullptr;
 
-    [[nodiscard]] std::vector<Part> parts(const Light& light) const;
+    [[nodiscard]] std::vector<Part> parts(const ecs::Light& light) const;
 };

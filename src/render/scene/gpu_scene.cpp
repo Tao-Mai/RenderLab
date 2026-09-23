@@ -2,7 +2,7 @@
 
 #include "asset/asset_desc.h"
 #include "render/resource/render_resource_manager.h"
-#include "scene/light.h"
+#include "ecs/light.h"
 
 void GpuScene::load(SceneDesc& scene, RenderResourceManager& resources)
 {
@@ -20,7 +20,7 @@ void GpuScene::load(SceneDesc& scene, RenderResourceManager& resources)
         items.push_back({&resources.mesh(object.meshId), &object, nextSelectionId++});
     }
 
-    for (Light& light : scene.lights)
+    for (ecs::Light& light : scene.lights)
     {
         lights.push_back({&light, nextSelectionId++});
     }
@@ -49,7 +49,7 @@ const LightMarkers& GpuScene::lightMarkers() const
     return markers;
 }
 
-Light* GpuScene::primaryLight() const
+ecs::Light* GpuScene::primaryLight() const
 {
     return primary;
 }
@@ -66,7 +66,7 @@ SceneObjectDesc* GpuScene::findObject(uint32_t selectionId) const
     return nullptr;
 }
 
-Light* GpuScene::findLight(uint32_t selectionId) const
+ecs::Light* GpuScene::findLight(uint32_t selectionId) const
 {
     for (const LightRenderItem& item : lights)
     {

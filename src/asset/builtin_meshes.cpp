@@ -1,6 +1,6 @@
 #include "asset/builtin_meshes.h"
 
-#include "logger.h"
+#include "core/logger.h"
 
 #include <cmath>
 #include <numbers>

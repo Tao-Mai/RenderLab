@@ -42,15 +42,43 @@
       <change beforePath="$PROJECT_DIR$/src/asset/asset_id.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/asset_id.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/asset/asset_manager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/asset_manager.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/asset/asset_manager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/asset_manager.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/asset/builtin_meshes.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/builtin_meshes.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/asset/geometry_io.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/geometry_io.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/asset/gltf_loader.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/gltf_loader.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/core/app_config.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/asset/json_io.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/json_io.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/camera.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/camera.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/camera.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/camera.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/core/config_manager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/config_manager.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/core/config_manager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/config_manager.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/editor/editor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/editor.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/editor/editor.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/editor.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/editor/editor_ui.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/editor_ui.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/editor/editor_ui.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/editor_ui.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/engine.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/engine.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/engine.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/logger.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/logger.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/device/memory.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/device/memory.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/device/vk_check.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/device/vk_check.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/device/vulkan_context.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/device/vulkan_context.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/light_markers.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/light_markers.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/light_markers.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/light_markers.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/scene_pass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/scene_pass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/scene_pass.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/scene_pass.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/present/swapchain.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/present/swapchain.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/renderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/renderer.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/renderer.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/renderer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/buffer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/buffer.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/mesh.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/mesh.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/resource/render_resource_manager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/render_resource_manager.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/shader.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/shader.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/texture.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/texture.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/scene/gpu_scene.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/scene/gpu_scene.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/scene/gpu_scene.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/scene/gpu_scene.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/scene/light.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/scene/transform.cpp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/scene/transform.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/window.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/window.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/window.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/window.h" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

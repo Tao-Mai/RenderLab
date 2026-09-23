@@ -1,32 +1,85 @@
 #pragma once
 
 #include "asset/asset_id.h"
-#include "scene/light.h"
-#include "scene/transform.h"
+#include "ecs/light.h"
+#include "ecs/transform.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
+#include <entt/meta/meta.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
-
-enum class AssetType
+template <std::size_t N>
+struct FixedString
 {
-    mesh,
-    material,
-    texture,
-    shader,
-    scene,
+    char data[N]{};
+
+    constexpr FixedString(const char (&text)[N])
+    {
+        for (std::size_t index = 0; index < N; ++index)
+        {
+            data[index] = text[index];
+        }
+    }
+
+    [[nodiscard]] constexpr std::string_view view() const
+    {
+        return std::string_view{data, N - 1};
+    }
 };
 
-template <class T>
-inline constexpr AssetType assetTypeOf = AssetType{};
+template <class T, FixedString Dir>
+struct AssetEntry
+{
+    using type = T;
+    static constexpr std::string_view dir = Dir.view();
+};
+
+template <class... Entries>
+struct TypeList
+{
+    template <class F>
+    static constexpr void forEach(F&& f)
+    {
+        (f.template operator()<Entries>(), ...);
+    }
+
+    template <template <class> class W>
+    using wrapTypes = std::tuple<W<typename Entries::type>...>;
+
+    template <class T>
+    static consteval std::string_view dir()
+    {
+        return dirOf<T, Entries...>();
+    }
+
+private:
+    template <class T, class Entry, class... Rest>
+    static consteval std::string_view dirOf()
+    {
+        if constexpr (std::is_same_v<T, typename Entry::type>)
+        {
+            return Entry::dir;
+        }
+        else
+        {
+            static_assert(sizeof...(Rest) > 0, "type is not registered in AssetTypes");
+            return dirOf<T, Rest...>();
+        }
+    }
+};
 
 struct SubmeshDesc
 {
@@ -47,10 +100,12 @@ struct MeshDesc
     MeshSourceDesc source;
     std::filesystem::path geometry;
     std::vector<SubmeshDesc> submeshes;
-};
 
-template <>
-inline constexpr AssetType assetTypeOf<MeshDesc> = AssetType::mesh;
+    static inline const AssetId cube = "cube";
+    static inline const AssetId sphere = "sphere";
+    static inline const AssetId arrow = "arrow";
+    static inline const std::array builtins{&cube, &sphere, &arrow};
+};
 
 struct MaterialDesc
 {
@@ -72,19 +127,16 @@ struct MaterialDesc
     bool doubleSided = false;
 };
 
-template <>
-inline constexpr AssetType assetTypeOf<MaterialDesc> = AssetType::material;
-
 struct TextureDesc
 {
     AssetId id;
     std::string source;
     std::optional<std::filesystem::path> path;
     std::optional<std::array<uint8_t, 4>> rgba;
-};
 
-template <>
-inline constexpr AssetType assetTypeOf<TextureDesc> = AssetType::texture;
+    static inline const AssetId white = "white";
+    static inline const std::array builtins{&white};
+};
 
 struct ShaderDesc
 {
@@ -92,14 +144,13 @@ struct ShaderDesc
     std::filesystem::path binary;
 };
 
-template <>
-inline constexpr AssetType assetTypeOf<ShaderDesc> = AssetType::shader;
+using ComponentMap = std::unordered_map<std::string, entt::meta_any>;
 
 struct SceneObjectDesc
 {
     std::string name;
     AssetId meshId;
-    Transform transform;
+    ComponentMap components;
 };
 
 struct SceneCameraDesc
@@ -117,12 +168,31 @@ struct SceneCameraDesc
 struct SceneDesc
 {
     AssetId id;
-    int version = 3;
     SceneCameraDesc camera;
-    std::vector<Light> lights;
+    std::vector<ecs::Light> lights;
     std::vector<SceneObjectDesc> objects;
 };
 
-template <>
-inline constexpr AssetType assetTypeOf<SceneDesc> = AssetType::scene;
+template <class T>
+[[nodiscard]] bool isBuiltin(const AssetId& id)
+{
+    if constexpr (requires { T::builtins; })
+    {
+        for (const AssetId* builtin : T::builtins)
+        {
+            if (id == *builtin)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
+// Register new asset types here only.
+using AssetTypes = TypeList<
+    AssetEntry<MeshDesc, "mesh">,
+    AssetEntry<MaterialDesc, "material">,
+    AssetEntry<TextureDesc, "texture">,
+    AssetEntry<ShaderDesc, "shader">,
+    AssetEntry<SceneDesc, "scene">>;

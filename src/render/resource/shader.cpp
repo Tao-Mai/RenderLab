@@ -3,7 +3,7 @@
 #include "render/device/vk_check.h"
 
 #include <fstream>
-#include "logger.h"
+#include "core/logger.h"
 
 Shader::Shader(const vk::raii::Device &device, const std::string &filename)
 {

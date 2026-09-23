@@ -5,7 +5,7 @@
 #include "asset/geometry_io.h"
 #include "asset/gltf_loader.h"
 #include "core/context.h"
-#include "logger.h"
+#include "core/logger.h"
 #include "render/device/frame_context.h"
 #include "render/device/vulkan_context.h"
 #include "render/resource/material.h"
@@ -19,76 +19,18 @@
 
 namespace
 {
-[[nodiscard]] bool isBuiltinTexture(const AssetId& id)
-{
-    return id == BuiltinId::whiteTexture;
-}
-
-[[nodiscard]] bool isBuiltinMaterial(const AssetId& id)
-{
-    return id == BuiltinId::cubeMaterial || id == BuiltinId::sphereMaterial ||
-        id == BuiltinId::arrowMaterial;
-}
-
-[[nodiscard]] bool isBuiltinMesh(const AssetId& id)
-{
-    return id == BuiltinId::cubeMesh || id == BuiltinId::sphereMesh ||
-        id == BuiltinId::arrowMesh;
-}
-
-[[nodiscard]] MaterialDesc builtinMaterialDesc(const AssetId& id)
-{
-    MaterialDesc desc;
-    desc.id = id;
-    desc.baseColorTexture = BuiltinId::whiteTexture;
-    if (id == BuiltinId::cubeMaterial)
-    {
-        desc.baseColorFactor = {0.85f, 0.45f, 0.2f, 1.0f};
-        desc.metallic = 0.0f;
-        desc.roughness = 0.65f;
-    }
-    else if (id == BuiltinId::sphereMaterial)
-    {
-        desc.baseColorFactor = {0.25f, 0.65f, 0.9f, 1.0f};
-        desc.metallic = 0.0f;
-        desc.roughness = 0.4f;
-    }
-    else
-    {
-        CHECK(id == BuiltinId::arrowMaterial, "unknown builtin material: {}", id);
-        desc.baseColorFactor = {1.0f, 1.0f, 1.0f, 1.0f};
-        desc.metallic = 0.0f;
-        desc.roughness = 0.5f;
-    }
-    return desc;
-}
-
 [[nodiscard]] MeshGeometry builtinMeshGeometry(const AssetId& id)
 {
-    if (id == BuiltinId::cubeMesh)
+    if (id == MeshDesc::cube)
     {
         return BuiltinMeshes::cube();
     }
-    if (id == BuiltinId::sphereMesh)
+    if (id == MeshDesc::sphere)
     {
         return BuiltinMeshes::sphere();
     }
-    CHECK(id == BuiltinId::arrowMesh, "unknown builtin mesh: {}", id);
+    CHECK(id == MeshDesc::arrow, "unknown builtin mesh: {}", id);
     return BuiltinMeshes::arrow();
-}
-
-[[nodiscard]] const AssetId& builtinMeshMaterial(const AssetId& id)
-{
-    if (id == BuiltinId::cubeMesh)
-    {
-        return BuiltinId::cubeMaterial;
-    }
-    if (id == BuiltinId::sphereMesh)
-    {
-        return BuiltinId::sphereMaterial;
-    }
-    CHECK(id == BuiltinId::arrowMesh, "unknown builtin mesh: {}", id);
-    return BuiltinId::arrowMaterial;
 }
 }
 
@@ -131,13 +73,13 @@ Mesh& RenderResourceManager::mesh(const AssetId& id)
 
     MeshGeometry geometry;
     std::vector<Submesh> parts;
-    if (isBuiltinMesh(id))
+    if (isBuiltin<MeshDesc>(id))
     {
         geometry = builtinMeshGeometry(id);
         parts.push_back({
             .firstIndex = 0,
             .indexCount = static_cast<uint32_t>(geometry.indices.size()),
-            .material = &material(builtinMeshMaterial(id)),
+            .material = nullptr,
         });
     }
     else
@@ -181,9 +123,7 @@ Material& RenderResourceManager::material(const AssetId& id)
     }
     CHECK(descriptorPool && materialLayout, "material descriptor layout is not configured");
 
-    const MaterialDesc desc = isBuiltinMaterial(id)
-        ? builtinMaterialDesc(id)
-        : assets->desc<MaterialDesc>(id);
+    const MaterialDesc& desc = assets->desc<MaterialDesc>(id);
     std::shared_ptr<Texture> baseColor = texture(desc.baseColorTexture);
     auto gpu = std::make_unique<Material>();
     gpu->create(
@@ -200,9 +140,9 @@ std::shared_ptr<Texture> RenderResourceManager::texture(const AssetId& id)
     }
 
     std::shared_ptr<Texture> gpu;
-    if (isBuiltinTexture(id))
+    if (isBuiltin<TextureDesc>(id))
     {
-        CHECK(id == BuiltinId::whiteTexture, "unknown builtin texture: {}", id);
+        CHECK(id == TextureDesc::white, "unknown builtin texture: {}", id);
         constexpr std::array<uint8_t, 4> white{255, 255, 255, 255};
         gpu = std::make_shared<Texture>(frame->uploadContext(*vulkan), white);
     }

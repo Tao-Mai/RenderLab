@@ -1,10 +1,14 @@
 #pragma once
 
+#include "ecs/component.h"
+
 #include <string>
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
+namespace ecs
+{
 struct Light
 {
     enum class Type
@@ -31,3 +35,6 @@ struct Light
     bool enabled = true;
     bool castShadow = false;
 };
+
+static_assert(Component<Light>);
+}

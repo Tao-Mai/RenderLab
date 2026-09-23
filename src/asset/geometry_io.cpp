@@ -1,6 +1,6 @@
 #include "asset/geometry_io.h"
 
-#include "logger.h"
+#include "core/logger.h"
 
 #include <array>
 #include <cstdint>

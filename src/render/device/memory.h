@@ -2,7 +2,7 @@
 
 
 #include <vulkan/vulkan_raii.hpp>
-#include "logger.h"
+#include "core/logger.h"
 
 namespace vulkan_memory
 {

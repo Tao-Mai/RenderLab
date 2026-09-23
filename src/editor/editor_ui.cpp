@@ -1,8 +1,8 @@
 #include "editor/editor_ui.h"
 
-#include "scene/light.h"
+#include "ecs/light.h"
 #include "asset/asset_desc.h"
-#include "scene/transform.h"
+#include "ecs/transform.h"
 
 #include <algorithm>
 #include <array>
@@ -20,7 +20,7 @@
 #include <imgui_internal.h>
 #include <ImGuizmo.h>
 
-#include "logger.h"
+#include "core/logger.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -30,7 +30,7 @@
 
 namespace
 {
-    void drawTransformEditor(Transform &transform)
+    void drawTransformEditor(ecs::Transform&transform)
     {
         ImGui::TextUnformatted("Transform");
         ImGui::Separator();
@@ -52,7 +52,7 @@ namespace
         }
     }
 
-    void applyModelMatrix(Transform &transform, const glm::mat4 &model)
+    void applyModelMatrix(ecs::Transform&transform, const glm::mat4 &model)
     {
         transform.position = glm::vec3{model[3]};
 
@@ -91,7 +91,7 @@ namespace
         return glm::normalize(glm::quatLookAtRH(forward, up));
     }
 
-    void drawDirectionEditor(Light &light)
+    void drawDirectionEditor(ecs::Light&light)
     {
         glm::vec3 direction = light.direction;
         if (ImGui::DragFloat3("Direction", glm::value_ptr(direction), 0.01f) &&
@@ -239,7 +239,7 @@ void EditorUI::beginFrame(float deltaTime)
 }
 
 void EditorUI::drawGizmo(
-    Transform &transform,
+    ecs::Transform&transform,
     const glm::mat4 &view,
     const glm::mat4 &projection,
     bool enableShortcuts)
@@ -287,13 +287,13 @@ void EditorUI::drawGizmo(
 }
 
 void EditorUI::drawLightGizmo(
-    Light &light,
+    ecs::Light&light,
     const glm::mat4 &view,
     const glm::mat4 &projection,
     bool enableShortcuts)
 {
-    const bool supportsPosition = light.type != Light::Type::Directional;
-    const bool supportsRotation = light.type != Light::Type::Point;
+    const bool supportsPosition = light.type != ecs::Light::Type::Directional;
+    const bool supportsRotation = light.type != ecs::Light::Type::Point;
     const ImGuiIO &io = ImGui::GetIO();
     if (enableShortcuts && !io.WantTextInput && !ImGui::IsAnyItemActive())
     {
@@ -313,7 +313,7 @@ void EditorUI::drawLightGizmo(
         gizmoOperation = supportsPosition ? 0 : 1;
     }
 
-    Transform transform;
+    ecs::Transform transform;
     transform.position = light.position;
     if (supportsRotation)
     {
@@ -350,7 +350,7 @@ void EditorUI::drawLightGizmo(
     }
 }
 
-void EditorUI::drawInspector(SceneObjectDesc *object, Light *light)
+void EditorUI::drawInspector(SceneObjectDesc *object, ecs::Light *light)
 {
     ImGui::SetNextWindowDockID(editorDockId, ImGuiCond_Always);
     constexpr ImGuiWindowFlags editorFlags = ImGuiWindowFlags_NoMove |
@@ -366,7 +366,7 @@ void EditorUI::drawInspector(SceneObjectDesc *object, Light *light)
     if (object != nullptr)
     {
         ImGui::Text("Selected: %s", object->name.c_str());
-        drawTransformEditor(object->transform);
+        drawTransformEditor(*object->components.at("Transform").try_cast<ecs::Transform>());
     }
     else if (light != nullptr)
     {
@@ -383,14 +383,14 @@ void EditorUI::drawInspector(SceneObjectDesc *object, Light *light)
         int type = static_cast<int>(light->type);
         if (ImGui::Combo("Type", &type, typeNames, IM_ARRAYSIZE(typeNames)))
         {
-            light->type = static_cast<Light::Type>(type);
+            light->type = static_cast<ecs::Light::Type>(type);
         }
 
-        if (light->type != Light::Type::Directional)
+        if (light->type != ecs::Light::Type::Directional)
         {
             ImGui::DragFloat3("Position", glm::value_ptr(light->position), 0.05f);
         }
-        if (light->type != Light::Type::Point)
+        if (light->type != ecs::Light::Type::Point)
         {
             drawDirectionEditor(*light);
         }
@@ -399,12 +399,12 @@ void EditorUI::drawInspector(SceneObjectDesc *object, Light *light)
         ImGui::DragFloat("Intensity", &light->intensity, 0.05f, 0.0f, 100000.0f);
         light->intensity = std::max(light->intensity, 0.0f);
 
-        if (light->type == Light::Type::Point || light->type == Light::Type::Spot)
+        if (light->type == ecs::Light::Type::Point || light->type == ecs::Light::Type::Spot)
         {
             ImGui::DragFloat("Range", &light->range, 0.1f, 0.01f, 100000.0f);
             light->range = std::max(light->range, 0.01f);
         }
-        if (light->type == Light::Type::Spot)
+        if (light->type == ecs::Light::Type::Spot)
         {
             float innerAngle = glm::degrees(std::acos(std::clamp(
                 light->cosInner, -1.0f, 1.0f)));
@@ -421,7 +421,7 @@ void EditorUI::drawInspector(SceneObjectDesc *object, Light *light)
                 light->cosOuter = std::cos(glm::radians(outerAngle));
             }
         }
-        if (light->type == Light::Type::RectArea)
+        if (light->type == ecs::Light::Type::RectArea)
         {
             if (ImGui::DragFloat2(
                     "Area Size",
@@ -445,13 +445,13 @@ void EditorUI::drawInspector(SceneObjectDesc *object, Light *light)
     {
         ImGui::Spacing();
         ImGui::TextUnformatted("Gizmo");
-        if (object != nullptr || light->type != Light::Type::Directional)
+        if (object != nullptr || light->type != ecs::Light::Type::Directional)
         {
             ImGui::RadioButton("Move (W)", &gizmoOperation, 0);
         }
-        if (object != nullptr || light->type != Light::Type::Point)
+        if (object != nullptr || light->type != ecs::Light::Type::Point)
         {
-            if (object != nullptr || light->type != Light::Type::Directional)
+            if (object != nullptr || light->type != ecs::Light::Type::Directional)
             {
                 ImGui::SameLine();
             }

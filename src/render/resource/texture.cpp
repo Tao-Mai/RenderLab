@@ -9,7 +9,7 @@
 #include <utility>
 
 #include <stb_image.h>
-#include "logger.h"
+#include "core/logger.h"
 
 namespace
 {

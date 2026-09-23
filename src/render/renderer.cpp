@@ -4,9 +4,9 @@
 #include "asset/asset_manager.h"
 #include "camera.h"
 #include "core/context.h"
-#include "logger.h"
+#include "core/logger.h"
 #include "render/device/vk_check.h"
-#include "window.h"
+#include "core/window.h"
 
 #include <iostream>
 
@@ -103,7 +103,7 @@ void Renderer::initVulkan()
         swapchain.extent(),
         swapchain.depthImageFormat(),
         scenePass.sceneLayoutHandle(),
-        resources.shader(BuiltinId::pickingShader));
+        resources.shader("picking"));
 }
 
 void Renderer::recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& editor)
@@ -165,7 +165,7 @@ void Renderer::recordPickingPass(
         pickingPass.draw(
             commandBuffer,
             *item.mesh,
-            item.object->transform.matrix(),
+            item.object->components.at("Transform").try_cast<ecs::Transform>()->matrix(),
             item.selectionId);
     }
 

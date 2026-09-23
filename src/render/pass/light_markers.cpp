@@ -1,5 +1,6 @@
 #include "render/pass/light_markers.h"
 
+#include "asset/asset_desc.h"
 #include "render/resource/render_resource_manager.h"
 #include "render/resource/shader_data.h"
 
@@ -11,7 +12,7 @@
 
 namespace
 {
-glm::mat4 markerTransform(const Light& light)
+glm::mat4 markerTransform(const ecs::Light& light)
 {
     const glm::vec3 forward = glm::normalize(light.direction);
     const glm::vec3 up = std::abs(glm::dot(forward, glm::vec3{0.0f, 1.0f, 0.0f})) >
@@ -27,9 +28,9 @@ glm::mat4 markerTransform(const Light& light)
 void LightMarkers::init(RenderResourceManager& resources)
 {
     reset();
-    sphere = &resources.mesh(BuiltinId::sphereMesh);
-    cube = &resources.mesh(BuiltinId::cubeMesh);
-    arrow = &resources.mesh(BuiltinId::arrowMesh);
+    sphere = &resources.mesh(MeshDesc::sphere);
+    cube = &resources.mesh(MeshDesc::cube);
+    arrow = &resources.mesh(MeshDesc::arrow);
 }
 
 void LightMarkers::reset() noexcept
@@ -39,7 +40,7 @@ void LightMarkers::reset() noexcept
     arrow = nullptr;
 }
 
-std::vector<LightMarkers::Part> LightMarkers::parts(const Light& light) const
+std::vector<LightMarkers::Part> LightMarkers::parts(const ecs::Light& light) const
 {
     std::vector<Part> result;
     const glm::vec3 markerColor = light.enabled
@@ -48,8 +49,8 @@ std::vector<LightMarkers::Part> LightMarkers::parts(const Light& light) const
 
     switch (light.type)
     {
-    case Light::Type::Point:
-    case Light::Type::Spot:
+    case ecs::Light::Type::Point:
+    case ecs::Light::Type::Spot:
         if (sphere)
         {
             result.push_back({
@@ -63,7 +64,7 @@ std::vector<LightMarkers::Part> LightMarkers::parts(const Light& light) const
         }
         break;
 
-    case Light::Type::RectArea:
+    case ecs::Light::Type::RectArea:
         if (cube)
         {
             constexpr float thickness = 0.08f;
@@ -88,7 +89,7 @@ std::vector<LightMarkers::Part> LightMarkers::parts(const Light& light) const
         }
         break;
 
-    case Light::Type::Directional:
+    case ecs::Light::Type::Directional:
         if (arrow)
         {
             constexpr float spacing = 0.32f;
@@ -120,7 +121,7 @@ std::vector<LightMarkers::Part> LightMarkers::parts(const Light& light) const
 void LightMarkers::record(
     vk::raii::CommandBuffer& commandBuffer,
     vk::PipelineLayout pipelineLayout,
-    const Light& light) const
+    const ecs::Light& light) const
 {
     for (const Part& part : parts(light))
     {
@@ -141,7 +142,7 @@ void LightMarkers::record(
 void LightMarkers::recordPicking(
     vk::raii::CommandBuffer& commandBuffer,
     vk::PipelineLayout pipelineLayout,
-    const Light& light,
+    const ecs::Light& light,
     uint32_t selectionId) const
 {
     for (const Part& part : parts(light))

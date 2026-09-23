@@ -9,9 +9,9 @@
 #include <vulkan/vulkan.h>
 
 struct GLFWwindow;
-struct Light;
+namespace ecs { struct Light; }
+namespace ecs { struct Transform; }
 struct SceneObjectDesc;
-struct Transform;
 
 class EditorUI
 {
@@ -34,16 +34,16 @@ public:
         uint32_t         imageCount);
     void beginFrame(float deltaTime);
     void drawGizmo(
-        Transform&       transform,
+        ecs::Transform&  transform,
         const glm::mat4& view,
         const glm::mat4& projection,
         bool             enableShortcuts);
     void drawLightGizmo(
-        Light&           light,
+        ecs::Light&           light,
         const glm::mat4& view,
         const glm::mat4& projection,
         bool             enableShortcuts);
-    void drawInspector(SceneObjectDesc* object, Light* light);
+    void drawInspector(SceneObjectDesc* object, ecs::Light* light);
     void endFrame();
     void render(VkCommandBuffer commandBuffer) const;
     void shutdown() noexcept;

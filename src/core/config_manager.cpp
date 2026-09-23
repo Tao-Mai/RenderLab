@@ -1,11 +1,9 @@
 #include "core/config_manager.h"
 
 #include "asset/json_io.h"
-#include "logger.h"
+#include "core/logger.h"
 
 #include <utility>
-
-#include <magic_enum/magic_enum.hpp>
 
 namespace
 {
@@ -55,44 +53,14 @@ void ConfigManager::shutdown() noexcept
     inited = false;
 }
 
-const AppConfig& ConfigManager::config() const noexcept
-{
-    return data;
-}
-
 const AppPaths& ConfigManager::paths() const noexcept
 {
     return data.paths;
 }
 
-const std::filesystem::path& ConfigManager::configFile() const noexcept
-{
-    return file;
-}
-
-const std::filesystem::path& ConfigManager::assetRoot() const noexcept
-{
-    return data.paths.assets;
-}
-
-std::filesystem::path ConfigManager::descDir(AssetType type) const
-{
-    return data.paths.descs / magic_enum::enum_name(type);
-}
-
 const AssetId& ConfigManager::initialScene() const noexcept
 {
     return data.initialScene;
-}
-
-void ConfigManager::setInitialScene(AssetId id)
-{
-    data.initialScene = std::move(id);
-}
-
-void ConfigManager::setAssetRoot(std::filesystem::path root)
-{
-    data.paths.assets = std::filesystem::absolute(std::move(root)).lexically_normal();
 }
 
 void ConfigManager::save() const
@@ -102,12 +70,6 @@ void ConfigManager::save() const
     stored.paths.descs = storeRelative(data.paths.descs, data.paths.assets);
     stored.paths.geometry = storeRelative(data.paths.geometry, data.paths.assets);
     asset_json::save(file, stored);
-}
-
-void ConfigManager::reload()
-{
-    CHECK(inited, "ConfigManager is not initialized");
-    load();
 }
 
 void ConfigManager::applyDefaults()
@@ -126,7 +88,7 @@ void ConfigManager::applyDefaults()
     }
     if (data.initialScene == kInvalidAssetId)
     {
-        data.initialScene = BuiltinId::defaultScene;
+        data.initialScene = "default";
     }
 }
 

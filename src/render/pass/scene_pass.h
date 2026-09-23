@@ -18,7 +18,7 @@ class Mesh;
 class RenderResourceManager;
 class Swapchain;
 class VulkanContext;
-struct Light;
+namespace ecs { struct Light; }
 
 class ScenePass
 {
@@ -35,7 +35,7 @@ public:
     void updateScene(
         const glm::mat4& viewProjection,
         const glm::vec3& cameraPosition,
-        const Light*     light);
+        const ecs::Light*     light);
     void record(
         vk::raii::CommandBuffer&            commandBuffer,
         const std::vector<SceneRenderItem>& renderItems,

@@ -4,7 +4,7 @@
 
 #include <array>
 #include <utility>
-#include "logger.h"
+#include "core/logger.h"
 
 Mesh::Mesh(GpuUploadContext upload, MeshGeometry geometry, std::vector<Submesh> submeshes) :
     indexTotal(static_cast<uint32_t>(geometry.indices.size())),
@@ -18,9 +18,9 @@ Mesh::Mesh(GpuUploadContext upload, MeshGeometry geometry, std::vector<Submesh> 
     }
     for (const Submesh& part : parts)
     {
-        CHECK(part.material != nullptr && part.firstIndex <= indexTotal &&
+        CHECK(part.firstIndex <= indexTotal &&
               part.indexCount <= indexTotal - part.firstIndex,
-            "mesh submesh range or material is invalid");
+            "mesh submesh range is invalid");
     }
 
     const auto& physicalDevice = upload.physicalDevice;

@@ -1,12 +1,14 @@
 #include "editor/editor.h"
 
+#include "asset/asset_desc.h"
 #include "camera.h"
 #include "core/context.h"
-#include "logger.h"
+#include "core/logger.h"
+#include "ecs/transform.h"
 #include "render/device/vulkan_context.h"
 #include "render/present/swapchain.h"
 #include "render/scene/gpu_scene.h"
-#include "window.h"
+#include "core/window.h"
 
 #include <algorithm>
 
@@ -54,7 +56,11 @@ EditorFrameInput Editor::buildFrame(
     {
         glm::mat4 gizmoProjection = projection;
         gizmoProjection[1][1] *= -1.0f;
-        ui.drawGizmo(selectedObject->transform, view, gizmoProjection, enableGizmoShortcuts);
+        ui.drawGizmo(
+            *selectedObject->components.at("Transform").try_cast<ecs::Transform>(),
+            view,
+            gizmoProjection,
+            enableGizmoShortcuts);
     }
     else if (selectedLight != nullptr)
     {

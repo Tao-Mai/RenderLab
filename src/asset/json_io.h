@@ -1,7 +1,7 @@
 #pragma once
 
 #include "asset/rfl_reflectors.h"
-#include "logger.h"
+#include "core/logger.h"
 
 #include <filesystem>
 #include <utility>

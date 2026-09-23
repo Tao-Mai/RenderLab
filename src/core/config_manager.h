@@ -1,6 +1,5 @@
 #pragma once
 
-#include "asset/asset_desc.h"
 #include "asset/asset_id.h"
 
 #include <filesystem>
@@ -26,17 +25,8 @@ public:
     void init();
     void shutdown() noexcept;
 
-    [[nodiscard]] const AppConfig& config() const noexcept;
     [[nodiscard]] const AppPaths& paths() const noexcept;
-    [[nodiscard]] const std::filesystem::path& configFile() const noexcept;
-    [[nodiscard]] const std::filesystem::path& assetRoot() const noexcept;
-    [[nodiscard]] std::filesystem::path descDir(AssetType type) const;
     [[nodiscard]] const AssetId& initialScene() const noexcept;
-
-    void setInitialScene(AssetId id);
-    void setAssetRoot(std::filesystem::path root);
-    void save() const;
-    void reload();
 
 private:
     bool inited = false;
@@ -45,6 +35,7 @@ private:
     AppConfig data;
 
     void load();
+    void save() const;
     void resolvePaths();
     void applyDefaults();
 };

@@ -10,7 +10,7 @@
 #include "asset/mesh_geometry.h"
 #include "core/config_manager.h"
 #include "core/context.h"
-#include "logger.h"
+#include "core/logger.h"
 
 #include <algorithm>
 #include <cctype>
@@ -76,7 +76,7 @@ struct GltfBuild
     CHECK(!sourcePath.starts_with("data:") && !sourcePath.starts_with("embedded:"),
         "embedded glTF textures require external files: {}", sourcePath);
     const auto relative = std::filesystem::relative(
-        std::filesystem::absolute(sourcePath), context().config->assetRoot());
+        std::filesystem::absolute(sourcePath), context().config->paths().assets);
     CHECK(!relative.empty() && *relative.begin() != "..",
         "texture is outside asset root: {}", sourcePath);
 
@@ -97,7 +97,7 @@ void registerMaterials(
 {
     MaterialDesc defaultMaterial;
     defaultMaterial.id = std::string(meshName) + "_default";
-    defaultMaterial.baseColorTexture = BuiltinId::whiteTexture;
+    defaultMaterial.baseColorTexture = TextureDesc::white;
     build.materialIds.push_back(build.assets->save(std::move(defaultMaterial)));
 
     for (size_t index = 0; index < model.materials.size(); ++index)
@@ -436,7 +436,7 @@ void GLTFLoader::import(
     mesh.id = std::move(meshId);
     mesh.source = std::move(source);
     mesh.geometry = std::filesystem::relative(
-        geometryFile, context().config->assetRoot()).generic_string();
+        geometryFile, context().config->paths().assets).generic_string();
     mesh.submeshes = std::move(build.submeshes);
     assets.save(std::move(mesh));
 }

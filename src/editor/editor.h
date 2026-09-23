@@ -30,5 +30,5 @@ public:
 private:
     EditorUI ui;
     SceneObjectDesc* selectedObject = nullptr;
-    Light* selectedLight = nullptr;
+    ecs::Light* selectedLight = nullptr;
 };

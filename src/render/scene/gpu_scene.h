@@ -8,7 +8,7 @@
 
 class RenderResourceManager;
 struct SceneDesc;
-struct Light;
+namespace ecs { struct Light; }
 struct SceneObjectDesc;
 
 struct SceneRenderItem
@@ -20,7 +20,7 @@ struct SceneRenderItem
 
 struct LightRenderItem
 {
-    Light*   light       = nullptr;
+    ecs::Light*   light       = nullptr;
     uint32_t selectionId = 0;
 };
 
@@ -33,14 +33,14 @@ public:
     [[nodiscard]] const std::vector<SceneRenderItem>& renderItems() const;
     [[nodiscard]] const std::vector<LightRenderItem>& lightRenderItems() const;
     [[nodiscard]] const LightMarkers&                 lightMarkers() const;
-    [[nodiscard]] Light*                              primaryLight() const;
+    [[nodiscard]] ecs::Light*                              primaryLight() const;
 
     [[nodiscard]] SceneObjectDesc* findObject(uint32_t selectionId) const;
-    [[nodiscard]] Light*       findLight(uint32_t selectionId) const;
+    [[nodiscard]] ecs::Light*       findLight(uint32_t selectionId) const;
 
 private:
     std::vector<SceneRenderItem> items;
     std::vector<LightRenderItem> lights;
     LightMarkers markers;
-    Light* primary = nullptr;
+    ecs::Light* primary = nullptr;
 };

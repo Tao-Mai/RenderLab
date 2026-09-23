@@ -1,5 +1,7 @@
 #include "render/pass/scene_pass.h"
 
+#include "asset/asset_desc.h"
+#include "ecs/transform.h"
 #include "render/device/frame_context.h"
 #include "render/device/vk_check.h"
 #include "render/pass/light_markers.h"
@@ -9,7 +11,7 @@
 #include "render/resource/render_resource_manager.h"
 #include "render/resource/shader_data.h"
 #include "render/device/vulkan_context.h"
-#include "scene/light.h"
+#include "ecs/light.h"
 
 #include <algorithm>
 #include <array>
@@ -165,8 +167,8 @@ void ScenePass::init(VulkanContext& context, Swapchain& targetSwapchain, FrameCo
         swapchain->depthImageFormat(),
         *sceneLayout,
         *materialLayout,
-        resources.shader(BuiltinId::sceneShader),
-        resources.shader(BuiltinId::lightShader));
+        resources.shader("scene"),
+        resources.shader("light"));
 }
 
 void ScenePass::reset() noexcept
@@ -185,7 +187,7 @@ void ScenePass::reset() noexcept
 void ScenePass::updateScene(
     const glm::mat4& viewProjection,
     const glm::vec3& cameraPosition,
-    const Light*     light)
+    const ecs::Light*     light)
 {
     SceneUniforms uniforms{
         .viewProjection = viewProjection,
@@ -293,7 +295,7 @@ void ScenePass::record(
         {
             const Material& material = *submesh.material;
             const MeshPushConstants pushConstants{
-                .model = item.object->transform.matrix(),
+                .model = item.object->components.at("Transform").try_cast<ecs::Transform>()->matrix(),
             };
             commandBuffer.pushConstants<MeshPushConstants>(
                 scenePipelines.layoutHandle(),

@@ -1,13 +1,13 @@
 #include "render/device/vulkan_context.h"
 
 #include "render/device/vk_check.h"
-#include "window.h"
+#include "core/window.h"
 
 #include <algorithm>
 #include <cstring>
 #include <iostream>
 #include <string>
-#include "logger.h"
+#include "core/logger.h"
 
 namespace
 {

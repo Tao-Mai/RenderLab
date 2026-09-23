@@ -1,10 +1,12 @@
-#include "scene/transform.h"
+#include "ecs/transform.h"
 
 #include <algorithm>
 #include <cmath>
 
 #include <glm/gtc/matrix_transform.hpp>
 
+namespace ecs
+{
 glm::vec3 Transform::rotationEulerDegrees() const
 {
     const glm::quat value = glm::normalize(rotation);
@@ -24,7 +26,7 @@ glm::vec3 Transform::rotationEulerDegrees() const
     });
 }
 
-void Transform::setRotationEulerDegrees(const glm::vec3 &eulerDegrees)
+void Transform::setRotationEulerDegrees(const glm::vec3& eulerDegrees)
 {
     const glm::vec3 radians = glm::radians(eulerDegrees);
     rotation = glm::normalize(
@@ -38,4 +40,5 @@ glm::mat4 Transform::matrix() const
     glm::mat4 result = glm::translate(glm::mat4{1.0f}, position);
     result *= glm::mat4_cast(glm::normalize(rotation));
     return glm::scale(result, scale);
+}
 }

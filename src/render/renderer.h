@@ -17,7 +17,7 @@
 
 class Camera;
 struct SceneDesc;
-struct Light;
+namespace ecs { struct Light; }
 struct SceneObjectDesc;
 
 struct EditorFrameInput
@@ -28,7 +28,7 @@ struct EditorFrameInput
     uint32_t     pickX            = 0;
     uint32_t     pickY            = 0;
     SceneObjectDesc* selectedObject = nullptr;
-    Light*       selectedLight    = nullptr;
+    ecs::Light*       selectedLight    = nullptr;
     std::function<void(VkCommandBuffer)> recordUi;
 };
 

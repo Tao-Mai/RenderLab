@@ -3,14 +3,14 @@
 #include "render/device/memory.h"
 #include "render/device/vk_check.h"
 #include "render/device/vulkan_context.h"
-#include "window.h"
+#include "core/window.h"
 
 #include <algorithm>
 #include <array>
 #include <cassert>
 #include <limits>
 #include <utility>
-#include "logger.h"
+#include "core/logger.h"
 
 void Swapchain::init(VulkanContext& context, Window& targetWindow)
 {

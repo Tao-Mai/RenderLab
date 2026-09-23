@@ -1,6 +1,6 @@
-#include "window.h"
+#include "core/window.h"
 
-#include "logger.h"
+#include "core/logger.h"
 
 Window::~Window()
 {

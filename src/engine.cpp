@@ -5,9 +5,9 @@
 #include "core/config_manager.h"
 #include "core/context.h"
 #include "editor/editor.h"
-#include "logger.h"
+#include "core/logger.h"
 #include "render/renderer.h"
-#include "window.h"
+#include "core/window.h"
 
 #include <chrono>
 
