@@ -109,10 +109,13 @@ add_executable(RenderLab
         src/ecs/component.h
         src/ecs/camera.h
         src/ecs/light.h
+        src/ecs/render.h
         src/ecs/transform.cpp
         src/ecs/transform.h
         src/editor/editor.cpp
         src/editor/editor.h
+        src/editor/component_draw.cpp
+        src/editor/component_draw.h
         src/editor/editor_ui.cpp
         src/editor/editor_ui.h
         src/editor/viewport_rect.h
@@ -120,6 +123,7 @@ add_executable(RenderLab
         src/asset/asset_manager.h
         src/asset/asset_id.h
         src/asset/asset_desc.h
+        src/asset/material_desc.cpp
         src/asset/geometry_io.cpp
         src/asset/geometry_io.h
         src/asset/json_io.h

@@ -5,6 +5,8 @@
 #include "camera.h"
 #include "core/context.h"
 #include "core/logger.h"
+#include "ecs/light.h"
+#include "ecs/transform.h"
 #include "render/device/vk_check.h"
 #include "core/window.h"
 
@@ -33,7 +35,7 @@ EditorFrameResult Renderer::render(const Camera& camera, const EditorFrameInput&
 
     const glm::mat4 view       = camera.viewMatrix();
     const glm::mat4 projection = camera.projectionMatrix(editor.aspectRatio);
-    scenePass.updateScene(projection * view, camera.worldPosition(), scene.primaryLight());
+    scenePass.updateScene(projection * view, camera.worldPosition(), scene.primaryLightObject());
     return drawFrame(editor);
 }
 
@@ -171,10 +173,14 @@ void Renderer::recordPickingPass(
 
     for (const LightRenderItem& item : scene.lightRenderItems())
     {
+        const auto* light = item.object->components.at("Light").try_cast<ecs::Light>();
+        const auto* transform =
+            item.object->components.at("Transform").try_cast<ecs::Transform>();
         scene.lightMarkers().recordPicking(
             commandBuffer,
             pickingPass.layout(),
-            *item.light,
+            *transform,
+            *light,
             item.selectionId);
     }
     pickingPass.end(commandBuffer, editor.pickX, editor.pickY);

@@ -40,9 +40,9 @@ void Material::create(
         vk::MemoryPropertyFlagBits::eHostVisible |
             vk::MemoryPropertyFlagBits::eHostCoherent);
     const MaterialUniforms materialData{
-        .baseColorFactor = material.baseColorFactor,
-        .roughness = material.roughness,
-        .metallic = material.metallic,
+        .baseColorFactor = material.baseColorFactor.value_or(glm::vec4{1.0f}),
+        .roughness = material.roughness.value_or(1.0f),
+        .metallic = material.metallic.value_or(1.0f),
     };
     materialBuffer->upload(&materialData, sizeof(materialData));
 

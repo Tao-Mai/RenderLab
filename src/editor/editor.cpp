@@ -37,7 +37,6 @@ void Editor::shutdown() noexcept
 {
     ui.shutdown();
     selectedObject = nullptr;
-    selectedLight = nullptr;
 }
 
 EditorFrameInput Editor::buildFrame(
@@ -54,26 +53,23 @@ EditorFrameInput Editor::buildFrame(
 
     if (selectedObject != nullptr)
     {
-        glm::mat4 gizmoProjection = projection;
-        gizmoProjection[1][1] *= -1.0f;
-        ui.drawGizmo(
-            *selectedObject->components.at("Transform").try_cast<ecs::Transform>(),
-            view,
-            gizmoProjection,
-            enableGizmoShortcuts);
-    }
-    else if (selectedLight != nullptr)
-    {
-        glm::mat4 gizmoProjection = projection;
-        gizmoProjection[1][1] *= -1.0f;
-        ui.drawLightGizmo(*selectedLight, view, gizmoProjection, enableGizmoShortcuts);
+        if (const auto transformIt = selectedObject->components.find("Transform");
+            transformIt != selectedObject->components.end())
+        {
+            glm::mat4 gizmoProjection = projection;
+            gizmoProjection[1][1] *= -1.0f;
+            ui.drawGizmo(
+                *transformIt->second.try_cast<ecs::Transform>(),
+                view,
+                gizmoProjection,
+                enableGizmoShortcuts);
+        }
     }
 
     EditorFrameInput input{
         .viewport = ui.sceneViewportPixels(),
         .aspectRatio = ui.sceneAspectRatio(),
         .selectedObject = selectedObject,
-        .selectedLight = selectedLight,
         .recordUi = [this](VkCommandBuffer commandBuffer) {
             ui.render(commandBuffer);
         },
@@ -97,7 +93,7 @@ EditorFrameInput Editor::buildFrame(
         }
     }
 
-    ui.drawInspector(selectedObject, selectedLight);
+    ui.drawInspector(selectedObject);
     ui.endFrame();
     return input;
 }
@@ -109,13 +105,9 @@ void Editor::applyPickResult(const EditorFrameResult& result, const GpuScene& sc
         return;
     }
 
-    selectedObject = scene.findObject(result.pickedSelectionId);
-    selectedLight = scene.findLight(result.pickedSelectionId);
-    if (result.pickedSelectionId == 0)
-    {
-        selectedObject = nullptr;
-        selectedLight = nullptr;
-    }
+    selectedObject = result.pickedSelectionId == 0
+        ? nullptr
+        : scene.findObject(result.pickedSelectionId);
 }
 
 bool Editor::wantsInput() const

@@ -60,10 +60,10 @@ struct MaterialData {
 };
 
 [[vk::binding(0, 1)]]
-Texture2D<float4> albedoMap;
+Texture2D<float4> baseColorTexture;
 
 [[vk::binding(1, 1)]]
-SamplerState albedoSampler;
+SamplerState baseColorSampler;
 
 [[vk::binding(2, 1)]]
 ConstantBuffer<MaterialData> material;
@@ -88,13 +88,17 @@ float4 fragMain(VertexOutput input) : SV_Target
 {
     float3 normal = normalize(input.normal);
 
-    float4 albedo = albedoMap.Sample(albedoSampler, input.uv) * material.baseColorFactor;
+    float4 baseColor = baseColorTexture.Sample(baseColorSampler, input.uv) * material.baseColorFactor;
 
     float3 lightDirection = normalize(sceneUniforms.light.position - input.worldPosition);
     float distanceToLight = length(sceneUniforms.light.position - input.worldPosition);
     float lightRange = max(sceneUniforms.light.range, 0.001);
     float distanceAttenuation = saturate(1.0 - distanceToLight / lightRange);
     distanceAttenuation *= distanceAttenuation;
+    float3 pointLight = sceneUniforms.light.color
+        * sceneUniforms.light.intensity
+        * distanceAttenuation
+        * sceneUniforms.light.enabled;
 
     float3 viewDirection = normalize(sceneUniforms.cameraPosition - input.worldPosition);
     float3 H = normalize(lightDirection + viewDirection);
@@ -104,22 +108,16 @@ float4 fragMain(VertexOutput input) : SV_Target
     float VdotH = saturate(dot(viewDirection, H));
     float roughness = material.roughness;
     float metallic = material.metallic;
-    float3 F0 = lerp(0.04, albedo.rgb, metallic);
-    float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
-    float3 kS = F;
-    float3 kD = 1.0 - kS;
-    kD *= 1.0 - metallic;
-    float3 diffuse = kD * albedo.rgb / 3.14159265358979323846;
-    float3 specular = kS * (F0 / (4.0 * (NdotL + roughness * roughness))) * NdotL;
-    float3 ambient = 0.04 * albedo.rgb;
+
+    float3 F = FresnelSchlick(metallic, baseColor.rgb, VdotH);
+    float D = NormalDistributionGGX(roughness, NdotH);
+    float G = GeometrySmithGGX(roughness, NdotV, NdotL);
+
+
+    float3 diffuse = (1.0 - F) * (1.0 - metallic) * baseColor.rgb * INV_PI;
+    float3 specular = pointLight * F * D * G / (4.0 * NdotV * NdotL);
+    float3 ambient = 0.04 * baseColor.rgb;
     float3 color = diffuse + specular + ambient;
 
-    // float enabled = sceneUniforms.light.enabled != 0 ? 1.0 : 0.0;
-    // float3 pointLight = sceneUniforms.light.color
-    //     * sceneUniforms.light.intensity
-    //     * distanceAttenuation
-    //     * enabled;
-
-    // float3 color = albedo.rgb * (pointLight * saturate(dot(normal, lightDirection)));
-    return float4(color, albedo.a);
+    return float4(color, baseColor.a);
 }

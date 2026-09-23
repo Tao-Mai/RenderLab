@@ -18,7 +18,7 @@ class Mesh;
 class RenderResourceManager;
 class Swapchain;
 class VulkanContext;
-namespace ecs { struct Light; }
+struct SceneObjectDesc;
 
 class ScenePass
 {
@@ -35,7 +35,7 @@ public:
     void updateScene(
         const glm::mat4& viewProjection,
         const glm::vec3& cameraPosition,
-        const ecs::Light*     light);
+        const SceneObjectDesc* lightObject);
     void record(
         vk::raii::CommandBuffer&            commandBuffer,
         const std::vector<SceneRenderItem>& renderItems,
@@ -50,9 +50,10 @@ private:
     static constexpr uint32_t sceneSetIndex    = 0;
     static constexpr uint32_t materialSetIndex = 1;
 
-    VulkanContext*                                         vulkan   = nullptr;
+    VulkanContext*                                         vulkan    = nullptr;
     Swapchain*                                             swapchain = nullptr;
     FrameContext*                                          frame     = nullptr;
+    RenderResourceManager*                                 resources = nullptr;
     vk::raii::DescriptorPool                               descriptorPool = nullptr;
     vk::raii::DescriptorSetLayout                          sceneLayout    = nullptr;
     vk::raii::DescriptorSetLayout                          materialLayout = nullptr;

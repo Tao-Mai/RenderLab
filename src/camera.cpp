@@ -8,60 +8,51 @@
 #include <glm/geometric.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-void Camera::configure(const SceneCameraDesc& settings)
+void Camera::configure(const ecs::Camera& settings)
 {
-    data.position = settings.position;
-    data.worldUp = settings.up;
-    data.fieldOfView = settings.fieldOfView;
-    data.nearPlane = settings.nearPlane;
-    data.farPlane = settings.farPlane;
-    data.movementSpeed = settings.movementSpeed;
-    data.sprintMultiplier = settings.sprintMultiplier;
-
-    const glm::vec3 direction = glm::normalize(settings.target - settings.position);
-    data.pitch = glm::degrees(std::asin(std::clamp(direction.y, -1.0f, 1.0f)));
-    data.yaw = glm::degrees(std::atan2(direction.z, direction.x));
-    data.looking = false;
-    data.freeMovement = false;
-    data.vWasPressed = false;
+    data = settings;
+    data.worldUp = glm::normalize(settings.worldUp);
+    looking = false;
+    freeMovement = false;
+    vWasPressed = false;
 }
 
 void Camera::update(Window& window, float deltaTime, bool allowModeToggle)
 {
     deltaTime = std::clamp(deltaTime, 0.0f, 0.1f);
     const bool vPressed = window.keyPressed(GLFW_KEY_V);
-    if (allowModeToggle && vPressed && !data.vWasPressed)
+    if (allowModeToggle && vPressed && !vWasPressed)
     {
-        data.freeMovement = !data.freeMovement;
+        freeMovement = !freeMovement;
     }
-    data.vWasPressed = vPressed;
+    vWasPressed = vPressed;
 
     const bool rightMousePressed = window.mouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);
-    const bool navigationRequested = data.freeMovement ||
-        (rightMousePressed && (allowModeToggle || data.looking));
-    if (navigationRequested != data.looking)
+    const bool navigationRequested = freeMovement ||
+        (rightMousePressed && (allowModeToggle || looking));
+    if (navigationRequested != looking)
     {
-        data.looking = navigationRequested;
-        window.setCursorCaptured(data.looking);
-        if (data.looking)
+        looking = navigationRequested;
+        window.setCursorCaptured(looking);
+        if (looking)
         {
             const auto [x, y] = window.cursorPosition();
-            data.previousMouseX = x;
-            data.previousMouseY = y;
+            previousMouseX = x;
+            previousMouseY = y;
         }
     }
 
-    if (data.looking)
+    if (looking)
     {
         const auto [x, y] = window.cursorPosition();
-        data.yaw += static_cast<float>(x - data.previousMouseX) * data.mouseSensitivity;
-        data.pitch -= static_cast<float>(y - data.previousMouseY) * data.mouseSensitivity;
+        data.yaw += static_cast<float>(x - previousMouseX) * data.mouseSensitivity;
+        data.pitch -= static_cast<float>(y - previousMouseY) * data.mouseSensitivity;
         data.pitch = std::clamp(data.pitch, -89.0f, 89.0f);
-        data.previousMouseX = x;
-        data.previousMouseY = y;
+        previousMouseX = x;
+        previousMouseY = y;
     }
 
-    if (!data.looking)
+    if (!looking)
     {
         window.consumeScrollOffset();
         return;
@@ -95,12 +86,12 @@ void Camera::update(Window& window, float deltaTime, bool allowModeToggle)
 
 bool Camera::isFreeMovementActive() const
 {
-    return data.freeMovement;
+    return freeMovement;
 }
 
 bool Camera::isNavigationActive() const
 {
-    return data.looking;
+    return looking;
 }
 
 const glm::vec3& Camera::worldPosition() const

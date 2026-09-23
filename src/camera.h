@@ -1,6 +1,5 @@
 #pragma once
 
-#include "asset/asset_desc.h"
 #include "ecs/camera.h"
 
 #include <glm/mat4x4.hpp>
@@ -11,7 +10,7 @@ class Window;
 class Camera
 {
   public:
-    void configure(const SceneCameraDesc& settings);
+    void configure(const ecs::Camera& settings);
     void update(Window& window, float deltaTime, bool allowModeToggle);
 
     [[nodiscard]] bool isFreeMovementActive() const;
@@ -24,6 +23,11 @@ class Camera
 
   private:
     ecs::Camera data;
+    bool looking = false;
+    bool freeMovement = false;
+    bool vWasPressed = false;
+    double previousMouseX = 0.0;
+    double previousMouseY = 0.0;
 
     [[nodiscard]] glm::vec3 forward() const;
 };

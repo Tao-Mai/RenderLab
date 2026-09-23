@@ -29,6 +29,14 @@ public:
     }
 
     template <class T>
+    [[nodiscard]] const T* findDesc(const AssetId& id) const
+    {
+        const auto& table = descMap<T>();
+        const auto found = table.find(id);
+        return found != table.end() ? &found->second : nullptr;
+    }
+
+    template <class T>
     AssetId save(T desc)
     {
         CHECK(!desc.id.empty(), "descriptor has empty id");

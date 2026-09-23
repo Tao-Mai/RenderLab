@@ -1,6 +1,10 @@
 #include "render/pass/scene_pass.h"
 
 #include "asset/asset_desc.h"
+#include "asset/asset_manager.h"
+#include "core/context.h"
+#include "ecs/light.h"
+#include "ecs/render.h"
 #include "ecs/transform.h"
 #include "render/device/frame_context.h"
 #include "render/device/vk_check.h"
@@ -154,21 +158,22 @@ void ScenePass::bindSceneDescriptor(vk::raii::CommandBuffer& commandBuffer) cons
         {});
 }
 
-void ScenePass::init(VulkanContext& context, Swapchain& targetSwapchain, FrameContext& targetFrame, RenderResourceManager& resources)
+void ScenePass::init(VulkanContext& context, Swapchain& targetSwapchain, FrameContext& targetFrame, RenderResourceManager& targetResources)
 {
     vulkan    = &context;
     swapchain = &targetSwapchain;
     frame     = &targetFrame;
+    resources = &targetResources;
     initDescriptors();
-    resources.configureMaterialDescriptors(*descriptorPool, *materialLayout);
+    resources->configureMaterialDescriptors(*descriptorPool, *materialLayout);
     scenePipelines.init(
         vulkan->deviceHandle(),
         swapchain->surfaceFormat().format,
         swapchain->depthImageFormat(),
         *sceneLayout,
         *materialLayout,
-        resources.shader("scene"),
-        resources.shader("light"));
+        resources->shader("scene"),
+        resources->shader("light"));
 }
 
 void ScenePass::reset() noexcept
@@ -179,6 +184,7 @@ void ScenePass::reset() noexcept
     sceneLayout      = nullptr;
     materialLayout   = nullptr;
     descriptorPool   = nullptr;
+    resources        = nullptr;
     frame            = nullptr;
     swapchain        = nullptr;
     vulkan           = nullptr;
@@ -187,17 +193,25 @@ void ScenePass::reset() noexcept
 void ScenePass::updateScene(
     const glm::mat4& viewProjection,
     const glm::vec3& cameraPosition,
-    const ecs::Light*     light)
+    const SceneObjectDesc* lightObject)
 {
     SceneUniforms uniforms{
         .viewProjection = viewProjection,
         .cameraPosition = glm::vec4{cameraPosition, 1.0f},
     };
-    if (light != nullptr)
+    if (lightObject != nullptr)
     {
+        const auto* light = lightObject->components.at("Light").try_cast<ecs::Light>();
+        const auto* transform =
+            lightObject->components.at("Transform").try_cast<ecs::Transform>();
+        CHECK(light != nullptr, "light object missing Light component");
+        CHECK(transform != nullptr, "light object missing Transform component");
+
+        const glm::vec3 direction =
+            glm::normalize(transform->rotation * glm::vec3{0.0f, 0.0f, -1.0f});
         uniforms.lightColorIntensity = {light->color, light->intensity};
-        uniforms.lightPositionRange  = {light->position, light->range};
-        uniforms.lightDirection      = glm::vec4{light->direction, 0.0f};
+        uniforms.lightPositionRange  = {transform->position, light->range};
+        uniforms.lightDirection      = glm::vec4{direction, 0.0f};
         uniforms.lightAreaSizeCone   = {
             light->areaSize, light->cosInner, light->cosOuter,
         };
@@ -291,9 +305,30 @@ void ScenePass::record(
     for (const SceneRenderItem& item : renderItems)
     {
         item.mesh->bind(commandBuffer);
-        for (const Submesh& submesh : item.mesh->submeshes())
+        const ecs::Render* render =
+            item.object->components.at("Render").try_cast<ecs::Render>();
+        CHECK(render != nullptr, "SceneRenderItem missing Render component");
+
+        const std::vector<Submesh>& submeshes = item.mesh->submeshes();
+        for (size_t index = 0; index < submeshes.size(); ++index)
         {
-            const Material& material = *submesh.material;
+            const Submesh& submesh = submeshes[index];
+            const Material* material = submesh.material;
+            if (const auto overrideIt = render->materialOverrides.find(static_cast<int>(index));
+                overrideIt != render->materialOverrides.end())
+            {
+                AssetId materialId = MaterialDesc::white;
+                if (!isBuiltin<MeshDesc>(render->meshId))
+                {
+                    const MeshDesc& mesh = context().assets->desc<MeshDesc>(render->meshId);
+                    CHECK(index < mesh.submeshes.size(), "material override index out of range");
+                    materialId = mesh.submeshes[index].materialId;
+                }
+                MaterialDesc desc = resources->materialDesc(materialId);
+                applyMaterialFields(desc, overrideIt->second);
+                material = &resources->material(desc);
+            }
+
             const MeshPushConstants pushConstants{
                 .model = item.object->components.at("Transform").try_cast<ecs::Transform>()->matrix(),
             };
@@ -303,7 +338,7 @@ void ScenePass::record(
                     vk::ShaderStageFlagBits::eFragment,
                 0,
                 pushConstants);
-            const std::array materialSets = {material.descriptorSetHandle()};
+            const std::array materialSets = {material->descriptorSetHandle()};
             commandBuffer.bindDescriptorSets(
                 vk::PipelineBindPoint::eGraphics,
                 scenePipelines.layoutHandle(),
@@ -326,7 +361,13 @@ void ScenePass::record(
 
         for (const LightRenderItem& item : lightRenderItems)
         {
-            lightMarkers.record(commandBuffer, scenePipelines.layoutHandle(), *item.light);
+            const auto* light = item.object->components.at("Light").try_cast<ecs::Light>();
+            const auto* transform =
+                item.object->components.at("Transform").try_cast<ecs::Transform>();
+            CHECK(light != nullptr, "light item missing Light component");
+            CHECK(transform != nullptr, "light item missing Transform component");
+            lightMarkers.record(
+                commandBuffer, scenePipelines.layoutHandle(), *transform, *light);
         }
     }
 

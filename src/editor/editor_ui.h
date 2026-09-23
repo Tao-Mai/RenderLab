@@ -9,7 +9,6 @@
 #include <vulkan/vulkan.h>
 
 struct GLFWwindow;
-namespace ecs { struct Light; }
 namespace ecs { struct Transform; }
 struct SceneObjectDesc;
 
@@ -38,12 +37,7 @@ public:
         const glm::mat4& view,
         const glm::mat4& projection,
         bool             enableShortcuts);
-    void drawLightGizmo(
-        ecs::Light&           light,
-        const glm::mat4& view,
-        const glm::mat4& projection,
-        bool             enableShortcuts);
-    void drawInspector(SceneObjectDesc* object, ecs::Light* light);
+    void drawInspector(SceneObjectDesc* object);
     void endFrame();
     void render(VkCommandBuffer commandBuffer) const;
     void shutdown() noexcept;

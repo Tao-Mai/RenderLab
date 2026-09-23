@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/reflect.h"
 #include "ecs/component.h"
 
 #include <glm/vec3.hpp>
@@ -18,12 +19,20 @@ struct Camera
     float movementSpeed = 3.0f;
     float sprintMultiplier = 3.0f;
     float mouseSensitivity = 0.12f;
-    bool looking = false;
-    bool freeMovement = false;
-    bool vWasPressed = false;
-    double previousMouseX = 0.0;
-    double previousMouseY = 0.0;
 };
 
 static_assert(Component<Camera>);
+
+REFLECT(
+    Camera,
+    position,
+    worldUp,
+    yaw,
+    pitch,
+    fieldOfView,
+    nearPlane,
+    farPlane,
+    movementSpeed,
+    sprintMultiplier,
+    mouseSensitivity);
 }

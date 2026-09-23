@@ -1,14 +1,17 @@
 #pragma once
 
+#include "asset/asset_desc.h"
 #include "core/logger.h"
 
 #include <array>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 
 #include <entt/core/hashed_string.hpp>
+#include <entt/core/type_info.hpp>
 #include <entt/meta/meta.hpp>
 #include <entt/meta/resolve.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -23,6 +26,32 @@
 
 namespace rfl_detail
 {
+template <class T>
+[[nodiscard]] inline const T& metaAnyAs(const entt::meta_any& value)
+{
+    const T* typed = value.try_cast<T>();
+    CHECK(typed != nullptr, "meta_any does not hold expected field type");
+    return *typed;
+}
+
+[[nodiscard]] inline std::string metaKeyToString(const entt::meta_any& key)
+{
+    if (const auto* asString = key.try_cast<std::string>())
+    {
+        return *asString;
+    }
+    if (key.allow_cast<std::int64_t>())
+    {
+        return std::to_string(key.cast<std::int64_t>());
+    }
+    if (key.allow_cast<int>())
+    {
+        return std::to_string(key.cast<int>());
+    }
+    CHECK(false, "unsupported associative container key type");
+    return {};
+}
+
 [[nodiscard]] inline rfl::Generic metaAnyToGeneric(const entt::meta_any& value)
 {
     if (!value)
@@ -30,52 +59,92 @@ namespace rfl_detail
         return {};
     }
 
-    if (const auto* v = value.try_cast<bool>())
+    const entt::meta_type type = value.type();
+    if (type == entt::resolve<bool>())
     {
-        return rfl::Generic{*v};
+        return rfl::Generic{metaAnyAs<bool>(value)};
     }
-    if (const auto* v = value.try_cast<std::int64_t>())
+    if (type == entt::resolve<std::int64_t>())
     {
-        return rfl::Generic{*v};
+        return rfl::Generic{metaAnyAs<std::int64_t>(value)};
     }
-    if (const auto* v = value.try_cast<int>())
+    if (type == entt::resolve<int>())
     {
-        return rfl::Generic{static_cast<std::int64_t>(*v)};
+        return rfl::Generic{static_cast<std::int64_t>(metaAnyAs<int>(value))};
     }
-    if (const auto* v = value.try_cast<std::uint32_t>())
+    if (type == entt::resolve<std::uint32_t>())
     {
-        return rfl::Generic{static_cast<std::int64_t>(*v)};
+        return rfl::Generic{static_cast<std::int64_t>(metaAnyAs<std::uint32_t>(value))};
     }
-    if (const auto* v = value.try_cast<float>())
+    if (type == entt::resolve<float>())
     {
-        return rfl::Generic{static_cast<double>(*v)};
+        return rfl::Generic{static_cast<double>(metaAnyAs<float>(value))};
     }
-    if (const auto* v = value.try_cast<double>())
+    if (type == entt::resolve<double>())
     {
-        return rfl::Generic{*v};
+        return rfl::Generic{metaAnyAs<double>(value)};
     }
-    if (const auto* v = value.try_cast<std::string>())
+    if (type == entt::resolve<std::string>())
     {
-        return rfl::Generic{*v};
+        return rfl::Generic{metaAnyAs<std::string>(value)};
     }
-    if (const auto* v = value.try_cast<glm::vec2>())
+    if (type == entt::resolve<glm::vec2>())
     {
-        return rfl::to_generic(*v);
+        return rfl::to_generic(metaAnyAs<glm::vec2>(value));
     }
-    if (const auto* v = value.try_cast<glm::vec3>())
+    if (type == entt::resolve<glm::vec3>())
     {
-        return rfl::to_generic(*v);
+        return rfl::to_generic(metaAnyAs<glm::vec3>(value));
     }
-    if (const auto* v = value.try_cast<glm::vec4>())
+    if (type == entt::resolve<glm::vec4>())
     {
-        return rfl::to_generic(*v);
+        return rfl::to_generic(metaAnyAs<glm::vec4>(value));
     }
-    if (const auto* v = value.try_cast<glm::quat>())
+    if (type == entt::resolve<glm::quat>())
     {
-        return rfl::to_generic(*v);
+        return rfl::to_generic(metaAnyAs<glm::quat>(value));
+    }
+    if (type.is_enum())
+    {
+        for (auto&& [id, data] : type.data())
+        {
+            (void)id;
+            if (data.get({}) == value)
+            {
+                const char* name = data.name();
+                CHECK(name != nullptr, "enum constant missing name");
+                return rfl::Generic{std::string{name}};
+            }
+        }
+        CHECK(false, "unknown enumerator for meta enum serialization");
     }
 
-    const entt::meta_type type = value.type();
+    if (const MaterialDesc* material = value.try_cast<MaterialDesc>())
+    {
+        return rfl::to_generic(*material);
+    }
+
+    if (auto seq = value.as_sequence_container(); seq)
+    {
+        rfl::Generic::Array array;
+        array.reserve(seq.size());
+        for (auto&& element : seq)
+        {
+            array.push_back(metaAnyToGeneric(element));
+        }
+        return rfl::Generic{std::move(array)};
+    }
+
+    if (auto assoc = value.as_associative_container(); assoc)
+    {
+        rfl::Generic::Object object;
+        for (auto&& [key, mapped] : assoc)
+        {
+            object[metaKeyToString(key)] = metaAnyToGeneric(mapped);
+        }
+        return rfl::Generic{std::move(object)};
+    }
+
     rfl::Generic::Object object;
     bool hasFields = false;
     for (auto&& [id, data] : type.data())
@@ -103,21 +172,33 @@ namespace rfl_detail
     }
     if (expected == entt::resolve<int>())
     {
-        const auto parsed = value.to_int();
-        CHECK(parsed, "{}", parsed.error().what());
-        return entt::meta_any{static_cast<int>(*parsed)};
+        if (const auto parsed = value.to_int())
+        {
+            return entt::meta_any{static_cast<int>(*parsed)};
+        }
+        const auto asString = value.to_string();
+        CHECK(asString, "{}", asString.error().what());
+        return entt::meta_any{std::stoi(*asString)};
     }
     if (expected == entt::resolve<std::int64_t>())
     {
-        const auto parsed = value.to_int64();
-        CHECK(parsed, "{}", parsed.error().what());
-        return entt::meta_any{*parsed};
+        if (const auto parsed = value.to_int64())
+        {
+            return entt::meta_any{*parsed};
+        }
+        const auto asString = value.to_string();
+        CHECK(asString, "{}", asString.error().what());
+        return entt::meta_any{static_cast<std::int64_t>(std::stoll(*asString))};
     }
     if (expected == entt::resolve<std::uint32_t>())
     {
-        const auto parsed = value.to_int();
-        CHECK(parsed, "{}", parsed.error().what());
-        return entt::meta_any{static_cast<std::uint32_t>(*parsed)};
+        if (const auto parsed = value.to_int())
+        {
+            return entt::meta_any{static_cast<std::uint32_t>(*parsed)};
+        }
+        const auto asString = value.to_string();
+        CHECK(asString, "{}", asString.error().what());
+        return entt::meta_any{static_cast<std::uint32_t>(std::stoul(*asString))};
     }
     if (expected == entt::resolve<float>())
     {
@@ -160,6 +241,58 @@ namespace rfl_detail
         const auto parsed = rfl::from_generic<glm::quat>(value);
         CHECK(parsed, "{}", parsed.error().what());
         return entt::meta_any{*parsed};
+    }
+    if (expected.is_enum())
+    {
+        const auto asString = value.to_string();
+        CHECK(asString, "{}", asString.error().what());
+        const entt::meta_data data =
+            expected.data(entt::hashed_string{asString->c_str()});
+        CHECK(data, "unknown enumerator '{}'", *asString);
+        return data.get({});
+    }
+
+    if (expected.info() == entt::type_id<MaterialDesc>())
+    {
+        const auto parsed = rfl::from_generic<MaterialDesc>(value);
+        CHECK(parsed, "{}", parsed.error().what());
+        return entt::meta_any{*parsed};
+    }
+
+    if (expected.is_sequence_container())
+    {
+        entt::meta_any instance = expected.construct();
+        CHECK(instance, "failed to construct sequence container");
+        auto seq = instance.as_sequence_container();
+        CHECK(seq, "sequence container view unavailable");
+
+        const auto array = value.to_array();
+        CHECK(array, "{}", array.error().what());
+        for (const auto& element : *array)
+        {
+            CHECK(
+                seq.insert(seq.end(), genericToMetaAny(element, seq.value_type())),
+                "failed to insert sequence element");
+        }
+        return instance;
+    }
+
+    if (expected.is_associative_container())
+    {
+        entt::meta_any instance = expected.construct();
+        CHECK(instance, "failed to construct associative container");
+        auto assoc = instance.as_associative_container();
+        CHECK(assoc, "associative container view unavailable");
+
+        const auto object = value.to_object();
+        CHECK(object, "{}", object.error().what());
+        for (const auto& [key, mapped] : *object)
+        {
+            const entt::meta_any keyAny = genericToMetaAny(rfl::Generic{key}, assoc.key_type());
+            const entt::meta_any mappedAny = genericToMetaAny(mapped, assoc.mapped_type());
+            CHECK(assoc.insert(keyAny, mappedAny), "failed to insert map entry");
+        }
+        return instance;
     }
 
     const auto object = value.to_object();

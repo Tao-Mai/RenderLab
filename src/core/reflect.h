@@ -14,6 +14,7 @@
     N
 
 #define REFLECT_FIELD(Type, field) .template data<&Type::field>(#field)
+#define REFLECT_ENUM_VALUE(EnumType, value) .data<EnumType::value>(#value)
 
 #define REFLECT_FOREACH_1(m, t, a1) m(t, a1)
 #define REFLECT_FOREACH_2(m, t, a1, a2) m(t, a1) m(t, a2)
@@ -64,5 +65,13 @@
     inline const bool reflect_##Type = []() noexcept {                                         \
         (void)(entt::meta_factory<Type>{}                                                      \
                    .type(#Type) REFLECT_FOREACH(REFLECT_FIELD, Type, __VA_ARGS__));            \
+        return true;                                                                           \
+    }()
+
+// Register EnTT meta enum constants (serialized by enumerator name).
+#define REFLECT_ENUM(EnumType, Name, ...)                                                      \
+    inline const bool reflect_enum_##Name = []() noexcept {                                    \
+        (void)(entt::meta_factory<EnumType>{}                                                  \
+                   .type(#Name) REFLECT_FOREACH(REFLECT_ENUM_VALUE, EnumType, __VA_ARGS__));   \
         return true;                                                                           \
     }()

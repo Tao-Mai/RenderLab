@@ -17,6 +17,8 @@
 #include <utility>
 #include <vector>
 
+#include <rfl/json.hpp>
+
 namespace
 {
 [[nodiscard]] MeshGeometry builtinMeshGeometry(const AssetId& id)
@@ -31,6 +33,17 @@ namespace
     }
     CHECK(id == MeshDesc::arrow, "unknown builtin mesh: {}", id);
     return BuiltinMeshes::arrow();
+}
+
+[[nodiscard]] MaterialDesc builtinMaterialDesc(const AssetId& id)
+{
+    CHECK(id == MaterialDesc::white, "unknown builtin material: {}", id);
+    MaterialDesc desc{};
+    desc.id = MaterialDesc::white;
+    desc.metallic = 0.0f;
+    desc.roughness = 0.4f;
+    desc.baseColorTexture = TextureDesc::white;
+    return desc;
 }
 }
 
@@ -79,7 +92,7 @@ Mesh& RenderResourceManager::mesh(const AssetId& id)
         parts.push_back({
             .firstIndex = 0,
             .indexCount = static_cast<uint32_t>(geometry.indices.size()),
-            .material = nullptr,
+            .material = &material(MaterialDesc::white),
         });
     }
     else
@@ -115,21 +128,39 @@ Mesh& RenderResourceManager::mesh(const AssetId& id)
     return *meshes.emplace(id, std::move(gpu)).first->second;
 }
 
+MaterialDesc RenderResourceManager::materialDesc(const AssetId& id) const
+{
+    if (isBuiltin<MaterialDesc>(id))
+    {
+        return builtinMaterialDesc(id);
+    }
+    CHECK(assets != nullptr, "RenderResourceManager is not initialized");
+    return assets->desc<MaterialDesc>(id);
+}
+
 Material& RenderResourceManager::material(const AssetId& id)
 {
-    if (const auto found = materials.find(id); found != materials.end())
+    return material(materialDesc(id));
+}
+
+Material& RenderResourceManager::material(const MaterialDesc& desc)
+{
+    CHECK(descriptorPool && materialLayout, "material descriptor layout is not configured");
+
+    const std::string key = rfl::json::write(desc);
+    if (const auto found = materials.find(key); found != materials.end())
     {
         return *found->second;
     }
-    CHECK(descriptorPool && materialLayout, "material descriptor layout is not configured");
 
-    const MaterialDesc& desc = assets->desc<MaterialDesc>(id);
-    std::shared_ptr<Texture> baseColor = texture(desc.baseColorTexture);
+    const AssetId albedoId = desc.baseColorTexture.value_or(TextureDesc::white);
+    std::shared_ptr<Texture> baseColor =
+        texture(albedoId.empty() ? TextureDesc::white : albedoId);
     auto gpu = std::make_unique<Material>();
     gpu->create(
         vulkan->physicalDeviceHandle(), vulkan->deviceHandle(),
         descriptorPool, materialLayout, desc, std::move(baseColor));
-    return *materials.emplace(id, std::move(gpu)).first->second;
+    return *materials.emplace(key, std::move(gpu)).first->second;
 }
 
 std::shared_ptr<Texture> RenderResourceManager::texture(const AssetId& id)

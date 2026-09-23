@@ -1,28 +1,31 @@
 #include "render/scene/gpu_scene.h"
 
 #include "asset/asset_desc.h"
-#include "render/resource/render_resource_manager.h"
 #include "ecs/light.h"
+#include "ecs/render.h"
+#include "render/resource/render_resource_manager.h"
 
 void GpuScene::load(SceneDesc& scene, RenderResourceManager& resources)
 {
     reset();
 
-    if (!scene.lights.empty())
-    {
-        primary = &scene.lights.front();
-        markers.init(resources);
-    }
-
     uint32_t nextSelectionId = 1;
     for (SceneObjectDesc& object : scene.objects)
     {
-        items.push_back({&resources.mesh(object.meshId), &object, nextSelectionId++});
-    }
-
-    for (ecs::Light& light : scene.lights)
-    {
-        lights.push_back({&light, nextSelectionId++});
+        if (object.components.contains("Render"))
+        {
+            const auto& render = *object.components.at("Render").try_cast<ecs::Render>();
+            items.push_back({&resources.mesh(render.meshId), &object, nextSelectionId++});
+        }
+        if (object.components.contains("Light"))
+        {
+            if (primaryLight == nullptr)
+            {
+                primaryLight = &object;
+                markers.init(resources);
+            }
+            lights.push_back({&object, nextSelectionId++});
+        }
     }
 }
 
@@ -31,7 +34,7 @@ void GpuScene::reset() noexcept
     items.clear();
     lights.clear();
     markers.reset();
-    primary = nullptr;
+    primaryLight = nullptr;
 }
 
 const std::vector<SceneRenderItem>& GpuScene::renderItems() const
@@ -49,9 +52,9 @@ const LightMarkers& GpuScene::lightMarkers() const
     return markers;
 }
 
-ecs::Light* GpuScene::primaryLight() const
+SceneObjectDesc* GpuScene::primaryLightObject() const
 {
-    return primary;
+    return primaryLight;
 }
 
 SceneObjectDesc* GpuScene::findObject(uint32_t selectionId) const
@@ -63,16 +66,11 @@ SceneObjectDesc* GpuScene::findObject(uint32_t selectionId) const
             return item.object;
         }
     }
-    return nullptr;
-}
-
-ecs::Light* GpuScene::findLight(uint32_t selectionId) const
-{
     for (const LightRenderItem& item : lights)
     {
         if (item.selectionId == selectionId)
         {
-            return item.light;
+            return item.object;
         }
     }
     return nullptr;

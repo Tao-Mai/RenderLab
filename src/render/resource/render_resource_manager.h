@@ -1,6 +1,7 @@
 #pragma once
 
 #include "asset/asset_id.h"
+#include "asset/asset_desc.h"
 #include "render/resource/material.h"
 #include "render/resource/mesh.h"
 #include "render/resource/shader.h"
@@ -27,7 +28,9 @@ public:
     void reset() noexcept;
 
     Mesh& mesh(const AssetId& id);
+    [[nodiscard]] MaterialDesc materialDesc(const AssetId& id) const;
     Material& material(const AssetId& id);
+    Material& material(const MaterialDesc& desc);
     std::shared_ptr<Texture> texture(const AssetId& id);
     Shader& shader(const AssetId& id);
 
@@ -38,7 +41,7 @@ private:
     vk::DescriptorPool descriptorPool;
     vk::DescriptorSetLayout materialLayout;
     std::unordered_map<AssetId, std::unique_ptr<Mesh>> meshes;
-    std::unordered_map<AssetId, std::unique_ptr<Material>> materials;
+    std::unordered_map<std::string, std::unique_ptr<Material>> materials;
     std::unordered_map<AssetId, std::shared_ptr<Texture>> textures;
     std::unordered_map<AssetId, std::unique_ptr<Shader>> shaders;
 };

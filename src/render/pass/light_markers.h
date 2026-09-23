@@ -11,6 +11,7 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class RenderResourceManager;
+namespace ecs { struct Transform; }
 
 class LightMarkers
 {
@@ -21,10 +22,12 @@ public:
     void record(
         vk::raii::CommandBuffer& commandBuffer,
         vk::PipelineLayout pipelineLayout,
+        const ecs::Transform& transform,
         const ecs::Light& light) const;
     void recordPicking(
         vk::raii::CommandBuffer& commandBuffer,
         vk::PipelineLayout pipelineLayout,
+        const ecs::Transform& transform,
         const ecs::Light& light,
         uint32_t selectionId) const;
 
@@ -42,5 +45,6 @@ private:
     Mesh* cube = nullptr;
     Mesh* arrow = nullptr;
 
-    [[nodiscard]] std::vector<Part> parts(const ecs::Light& light) const;
+    [[nodiscard]] std::vector<Part> parts(
+        const ecs::Transform& transform, const ecs::Light& light) const;
 };

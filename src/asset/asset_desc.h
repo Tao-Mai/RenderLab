@@ -1,8 +1,7 @@
 #pragma once
 
 #include "asset/asset_id.h"
-#include "ecs/light.h"
-#include "ecs/transform.h"
+#include "ecs/camera.h"
 
 #include <array>
 #include <cstddef>
@@ -14,7 +13,6 @@
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include <entt/meta/meta.hpp>
@@ -110,22 +108,27 @@ struct MeshDesc
 struct MaterialDesc
 {
     AssetId id;
-    glm::vec4 baseColorFactor{1.0f};
-    float metallic = 1.0f;
-    float roughness = 1.0f;
-    float ao = 1.0f;
-    glm::vec3 emissive{0.0f};
-    float normalScale = 1.0f;
-    AssetId baseColorTexture;
-    AssetId normalTexture;
-    AssetId metallicTexture;
-    AssetId roughnessTexture;
-    AssetId aoTexture;
-    AssetId emissiveTexture;
-    std::string alphaMode = "OPAQUE";
-    float alphaCutoff = 0.5f;
-    bool doubleSided = false;
+    std::optional<glm::vec4> baseColorFactor;
+    std::optional<float> metallic;
+    std::optional<float> roughness;
+    std::optional<float> ao;
+    std::optional<glm::vec3> emissive;
+    std::optional<float> normalScale;
+    std::optional<AssetId> baseColorTexture;
+    std::optional<AssetId> normalTexture;
+    std::optional<AssetId> metallicTexture;
+    std::optional<AssetId> roughnessTexture;
+    std::optional<AssetId> aoTexture;
+    std::optional<AssetId> emissiveTexture;
+    std::optional<std::string> alphaMode;
+    std::optional<float> alphaCutoff;
+    std::optional<bool> doubleSided;
+
+    static inline const AssetId white = "white";
+    static inline const std::array builtins{&white};
 };
+
+void applyMaterialFields(MaterialDesc& dst, const MaterialDesc& src);
 
 struct TextureDesc
 {
@@ -149,27 +152,13 @@ using ComponentMap = std::unordered_map<std::string, entt::meta_any>;
 struct SceneObjectDesc
 {
     std::string name;
-    AssetId meshId;
     ComponentMap components;
-};
-
-struct SceneCameraDesc
-{
-    glm::vec3 position{0.0f, 1.5f, 6.0f};
-    glm::vec3 target{0.0f};
-    glm::vec3 up{0.0f, 1.0f, 0.0f};
-    float fieldOfView = 45.0f;
-    float nearPlane = 0.1f;
-    float farPlane = 100.0f;
-    float movementSpeed = 3.0f;
-    float sprintMultiplier = 3.0f;
 };
 
 struct SceneDesc
 {
     AssetId id;
-    SceneCameraDesc camera;
-    std::vector<ecs::Light> lights;
+    ecs::Camera camera;
     std::vector<SceneObjectDesc> objects;
 };
 

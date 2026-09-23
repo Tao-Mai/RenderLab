@@ -116,6 +116,11 @@ void Engine::shutdown() noexcept
         delete ctx.assets;
         ctx.assets = nullptr;
     }
+
+    // Win8+: LoadKeyboardLayout+KLF_ACTIVATE only updates the system language while this
+    // process still owns the focused window. Restore before destroying it.
+    inputMethod.restore();
+
     if (ctx.window != nullptr)
     {
         ctx.window->shutdown();
@@ -129,6 +134,5 @@ void Engine::shutdown() noexcept
         ctx.config = nullptr;
     }
 
-    inputMethod.restore();
     inited = false;
 }

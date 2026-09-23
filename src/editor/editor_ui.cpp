@@ -1,8 +1,9 @@
 #include "editor/editor_ui.h"
 
-#include "ecs/light.h"
 #include "asset/asset_desc.h"
+#include "core/logger.h"
 #include "ecs/transform.h"
+#include "editor/component_draw.h"
 
 #include <algorithm>
 #include <array>
@@ -20,8 +21,6 @@
 #include <imgui_internal.h>
 #include <ImGuizmo.h>
 
-#include "core/logger.h"
-
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -30,29 +29,7 @@
 
 namespace
 {
-    void drawTransformEditor(ecs::Transform&transform)
-    {
-        ImGui::TextUnformatted("Transform");
-        ImGui::Separator();
-        ImGui::DragFloat3("Position", glm::value_ptr(transform.position), 0.05f);
-        glm::vec3 rotationEulerDegrees = transform.rotationEulerDegrees();
-        if (ImGui::DragFloat3(
-                "Rotation",
-                glm::value_ptr(rotationEulerDegrees),
-                0.25f,
-                0.0f,
-                0.0f,
-                "%.1f deg"))
-        {
-            transform.setRotationEulerDegrees(rotationEulerDegrees);
-        }
-        if (ImGui::DragFloat3("Scale", glm::value_ptr(transform.scale), 0.01f))
-        {
-            transform.scale = glm::max(transform.scale, glm::vec3{0.001f});
-        }
-    }
-
-    void applyModelMatrix(ecs::Transform&transform, const glm::mat4 &model)
+    void applyModelMatrix(ecs::Transform& transform, const glm::mat4& model)
     {
         transform.position = glm::vec3{model[3]};
 
@@ -79,26 +56,6 @@ namespace
 
         transform.rotation = rotation;
         transform.scale = scale;
-    }
-
-    glm::quat rotationFromDirection(const glm::vec3 &direction)
-    {
-        const glm::vec3 forward = glm::normalize(direction);
-        const glm::vec3 up = std::abs(glm::dot(forward, glm::vec3{0.0f, 1.0f, 0.0f})) >
-                0.999f
-            ? glm::vec3{0.0f, 0.0f, 1.0f}
-            : glm::vec3{0.0f, 1.0f, 0.0f};
-        return glm::normalize(glm::quatLookAtRH(forward, up));
-    }
-
-    void drawDirectionEditor(ecs::Light&light)
-    {
-        glm::vec3 direction = light.direction;
-        if (ImGui::DragFloat3("Direction", glm::value_ptr(direction), 0.01f) &&
-            glm::dot(direction, direction) > 0.000001f)
-        {
-            light.direction = glm::normalize(direction);
-        }
     }
 }
 
@@ -286,71 +243,7 @@ void EditorUI::drawGizmo(
     }
 }
 
-void EditorUI::drawLightGizmo(
-    ecs::Light&light,
-    const glm::mat4 &view,
-    const glm::mat4 &projection,
-    bool enableShortcuts)
-{
-    const bool supportsPosition = light.type != ecs::Light::Type::Directional;
-    const bool supportsRotation = light.type != ecs::Light::Type::Point;
-    const ImGuiIO &io = ImGui::GetIO();
-    if (enableShortcuts && !io.WantTextInput && !ImGui::IsAnyItemActive())
-    {
-        if (supportsPosition && ImGui::IsKeyPressed(ImGuiKey_W, false))
-        {
-            gizmoOperation = 0;
-        }
-        else if (supportsRotation && ImGui::IsKeyPressed(ImGuiKey_E, false))
-        {
-            gizmoOperation = 1;
-        }
-    }
-
-    if ((!supportsPosition && gizmoOperation == 0) ||
-        (!supportsRotation && gizmoOperation == 1) || gizmoOperation == 2)
-    {
-        gizmoOperation = supportsPosition ? 0 : 1;
-    }
-
-    ecs::Transform transform;
-    transform.position = light.position;
-    if (supportsRotation)
-    {
-        transform.rotation = rotationFromDirection(light.direction);
-    }
-
-    ImGuizmo::SetOrthographic(false);
-    ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
-    ImGuizmo::SetRect(scenePosition.x, scenePosition.y, sceneSize.x, sceneSize.y);
-
-    glm::mat4 model = transform.matrix();
-    const ImGuizmo::OPERATION operation = gizmoOperation == 0
-        ? ImGuizmo::TRANSLATE
-        : ImGuizmo::ROTATE;
-    ImGuizmo::Manipulate(
-        glm::value_ptr(view),
-        glm::value_ptr(projection),
-        operation,
-        ImGuizmo::LOCAL,
-        glm::value_ptr(model));
-
-    if (ImGuizmo::IsUsing())
-    {
-        applyModelMatrix(transform, model);
-        if (supportsPosition)
-        {
-            light.position = transform.position;
-        }
-        if (supportsRotation)
-        {
-            light.direction = glm::normalize(
-                transform.rotation * glm::vec3{0.0f, 0.0f, -1.0f});
-        }
-    }
-}
-
-void EditorUI::drawInspector(SceneObjectDesc *object, ecs::Light *light)
+void EditorUI::drawInspector(SceneObjectDesc *object)
 {
     ImGui::SetNextWindowDockID(editorDockId, ImGuiCond_Always);
     constexpr ImGuiWindowFlags editorFlags = ImGuiWindowFlags_NoMove |
@@ -366,102 +259,17 @@ void EditorUI::drawInspector(SceneObjectDesc *object, ecs::Light *light)
     if (object != nullptr)
     {
         ImGui::Text("Selected: %s", object->name.c_str());
-        drawTransformEditor(*object->components.at("Transform").try_cast<ecs::Transform>());
-    }
-    else if (light != nullptr)
-    {
-        ImGui::Text("Selected: %s", light->name.c_str());
-        ImGui::TextUnformatted("Light");
-        ImGui::Separator();
-
-        static constexpr const char *typeNames[] = {
-            "Point",
-            "Directional",
-            "Rect Area",
-            "Spot",
-        };
-        int type = static_cast<int>(light->type);
-        if (ImGui::Combo("Type", &type, typeNames, IM_ARRAYSIZE(typeNames)))
+        for (auto& [typeName, component] : object->components)
         {
-            light->type = static_cast<ecs::Light::Type>(type);
+            ImGui::Spacing();
+            ImGui::PushID(typeName.c_str());
+            drawComponent(typeName, component);
+            ImGui::PopID();
         }
-
-        if (light->type != ecs::Light::Type::Directional)
-        {
-            ImGui::DragFloat3("Position", glm::value_ptr(light->position), 0.05f);
-        }
-        if (light->type != ecs::Light::Type::Point)
-        {
-            drawDirectionEditor(*light);
-        }
-
-        ImGui::ColorEdit3("Color", glm::value_ptr(light->color));
-        ImGui::DragFloat("Intensity", &light->intensity, 0.05f, 0.0f, 100000.0f);
-        light->intensity = std::max(light->intensity, 0.0f);
-
-        if (light->type == ecs::Light::Type::Point || light->type == ecs::Light::Type::Spot)
-        {
-            ImGui::DragFloat("Range", &light->range, 0.1f, 0.01f, 100000.0f);
-            light->range = std::max(light->range, 0.01f);
-        }
-        if (light->type == ecs::Light::Type::Spot)
-        {
-            float innerAngle = glm::degrees(std::acos(std::clamp(
-                light->cosInner, -1.0f, 1.0f)));
-            float outerAngle = glm::degrees(std::acos(std::clamp(
-                light->cosOuter, -1.0f, 1.0f)));
-            if (ImGui::DragFloat("Inner Angle", &innerAngle, 0.25f, 0.0f, 89.0f, "%.1f deg"))
-            {
-                innerAngle = std::clamp(innerAngle, 0.0f, outerAngle);
-                light->cosInner = std::cos(glm::radians(innerAngle));
-            }
-            if (ImGui::DragFloat("Outer Angle", &outerAngle, 0.25f, 0.0f, 89.0f, "%.1f deg"))
-            {
-                outerAngle = std::clamp(outerAngle, innerAngle, 89.0f);
-                light->cosOuter = std::cos(glm::radians(outerAngle));
-            }
-        }
-        if (light->type == ecs::Light::Type::RectArea)
-        {
-            if (ImGui::DragFloat2(
-                    "Area Size",
-                    glm::value_ptr(light->areaSize),
-                    0.05f,
-                    0.01f,
-                    100000.0f))
-            {
-                light->areaSize = glm::max(light->areaSize, glm::vec2{0.01f});
-            }
-        }
-        ImGui::Checkbox("Enabled", &light->enabled);
-        ImGui::Checkbox("Cast Shadow", &light->castShadow);
     }
     else
     {
         ImGui::TextUnformatted("No selection");
-    }
-
-    if (object != nullptr || light != nullptr)
-    {
-        ImGui::Spacing();
-        ImGui::TextUnformatted("Gizmo");
-        if (object != nullptr || light->type != ecs::Light::Type::Directional)
-        {
-            ImGui::RadioButton("Move (W)", &gizmoOperation, 0);
-        }
-        if (object != nullptr || light->type != ecs::Light::Type::Point)
-        {
-            if (object != nullptr || light->type != ecs::Light::Type::Directional)
-            {
-                ImGui::SameLine();
-            }
-            ImGui::RadioButton("Rotate (E)", &gizmoOperation, 1);
-        }
-        if (object != nullptr)
-        {
-            ImGui::SameLine();
-            ImGui::RadioButton("Scale (R)", &gizmoOperation, 2);
-        }
     }
 
     ImGui::End();

@@ -1,6 +1,7 @@
 #include "render/pass/light_markers.h"
 
 #include "asset/asset_desc.h"
+#include "ecs/transform.h"
 #include "render/resource/render_resource_manager.h"
 #include "render/resource/shader_data.h"
 
@@ -12,16 +13,19 @@
 
 namespace
 {
-glm::mat4 markerTransform(const ecs::Light& light)
+[[nodiscard]] glm::vec3 lightDirection(const ecs::Transform& transform)
 {
-    const glm::vec3 forward = glm::normalize(light.direction);
-    const glm::vec3 up = std::abs(glm::dot(forward, glm::vec3{0.0f, 1.0f, 0.0f})) >
-            0.999f
+    return glm::normalize(transform.rotation * glm::vec3{0.0f, 0.0f, -1.0f});
+}
+
+[[nodiscard]] glm::mat4 markerTransform(const ecs::Transform& transform)
+{
+    const glm::vec3 forward = lightDirection(transform);
+    const glm::vec3 up = std::abs(glm::dot(forward, glm::vec3{0.0f, 1.0f, 0.0f})) > 0.999f
         ? glm::vec3{0.0f, 0.0f, 1.0f}
         : glm::vec3{0.0f, 1.0f, 0.0f};
     const glm::quat rotation = glm::normalize(glm::quatLookAtRH(forward, up));
-    return glm::translate(glm::mat4{1.0f}, light.position) *
-        glm::mat4_cast(rotation);
+    return glm::translate(glm::mat4{1.0f}, transform.position) * glm::mat4_cast(rotation);
 }
 }
 
@@ -40,12 +44,11 @@ void LightMarkers::reset() noexcept
     arrow = nullptr;
 }
 
-std::vector<LightMarkers::Part> LightMarkers::parts(const ecs::Light& light) const
+std::vector<LightMarkers::Part> LightMarkers::parts(
+    const ecs::Transform& transform, const ecs::Light& light) const
 {
     std::vector<Part> result;
-    const glm::vec3 markerColor = light.enabled
-        ? light.color
-        : light.color * 0.15f;
+    const glm::vec3 markerColor = light.enabled ? light.color : light.color * 0.15f;
 
     switch (light.type)
     {
@@ -55,7 +58,7 @@ std::vector<LightMarkers::Part> LightMarkers::parts(const ecs::Light& light) con
         {
             result.push_back({
                 sphere,
-                glm::translate(glm::mat4{1.0f}, light.position) *
+                glm::translate(glm::mat4{1.0f}, transform.position) *
                     glm::scale(glm::mat4{1.0f}, glm::vec3{0.15f}),
                 markerColor,
                 0,
@@ -70,11 +73,9 @@ std::vector<LightMarkers::Part> LightMarkers::parts(const ecs::Light& light) con
             constexpr float thickness = 0.08f;
             constexpr uint32_t indicesPerFace = 6;
             constexpr uint32_t emittingFace = 1;
-            const glm::mat4 model = markerTransform(light) *
+            const glm::mat4 model = markerTransform(transform) *
                 glm::scale(glm::mat4{1.0f}, glm::vec3{light.areaSize, thickness});
-            const glm::vec3 housingColor = light.enabled
-                ? glm::vec3{0.28f}
-                : glm::vec3{0.12f};
+            const glm::vec3 housingColor = light.enabled ? glm::vec3{0.28f} : glm::vec3{0.12f};
             result.reserve(6);
             for (uint32_t face = 0; face < 6; ++face)
             {
@@ -93,7 +94,7 @@ std::vector<LightMarkers::Part> LightMarkers::parts(const ecs::Light& light) con
         if (arrow)
         {
             constexpr float spacing = 0.32f;
-            const glm::mat4 base = markerTransform(light);
+            const glm::mat4 base = markerTransform(transform);
             result.reserve(9);
             for (int y = -1; y <= 1; ++y)
             {
@@ -121,9 +122,10 @@ std::vector<LightMarkers::Part> LightMarkers::parts(const ecs::Light& light) con
 void LightMarkers::record(
     vk::raii::CommandBuffer& commandBuffer,
     vk::PipelineLayout pipelineLayout,
+    const ecs::Transform& transform,
     const ecs::Light& light) const
 {
-    for (const Part& part : parts(light))
+    for (const Part& part : parts(transform, light))
     {
         const LightPushConstants pushConstants{
             .model = part.model,
@@ -142,10 +144,11 @@ void LightMarkers::record(
 void LightMarkers::recordPicking(
     vk::raii::CommandBuffer& commandBuffer,
     vk::PipelineLayout pipelineLayout,
+    const ecs::Transform& transform,
     const ecs::Light& light,
     uint32_t selectionId) const
 {
-    for (const Part& part : parts(light))
+    for (const Part& part : parts(transform, light))
     {
         const EditorPickingPushConstants pushConstants{
             .model = part.model,
