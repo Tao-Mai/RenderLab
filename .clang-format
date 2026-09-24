@@ -37,7 +37,7 @@ BraceWrapping:
   SplitEmptyNamespace: true
 BreakBeforeBraces: Custom
 
-ColumnLimit: 90
+ColumnLimit: 100
 ConstructorInitializerAllOnOneLineOrOnePerLine: false
 # 重排include指令
 IncludeCategories:

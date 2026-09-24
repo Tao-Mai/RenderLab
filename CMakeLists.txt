@@ -207,6 +207,7 @@ target_link_libraries(RenderLab PRIVATE
 )
 
 if (MSVC)
+    target_compile_options(RenderLab PRIVATE /utf-8)
     set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT RenderLab)
     set_target_properties(RenderLab PROPERTIES
             VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:RenderLab>"

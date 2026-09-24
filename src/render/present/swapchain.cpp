@@ -23,33 +23,43 @@ void Swapchain::init(VulkanContext& context, Window& targetWindow)
 
 void Swapchain::reset() noexcept
 {
-    depthImageView = nullptr;
-    depthImage = nullptr;
+    depthImageView   = nullptr;
+    depthImage       = nullptr;
     depthImageMemory = nullptr;
-    depthFormat = vk::Format::eUndefined;
+    depthFormat      = vk::Format::eUndefined;
     swapChainImageViews.clear();
     swapChainImages.clear();
-    swapChain = nullptr;
+    swapChain              = nullptr;
     swapChainMinImageCount = 0;
-    window = nullptr;
-    vulkan = nullptr;
+    window                 = nullptr;
+    vulkan                 = nullptr;
 }
 
 const vk::raii::SwapchainKHR& Swapchain::handle() const { return swapChain; }
 vk::Image Swapchain::image(uint32_t index) const { return swapChainImages[index]; }
-vk::ImageView Swapchain::imageView(uint32_t index) const { return *swapChainImageViews[index]; }
-vk::Image Swapchain::depthImageHandle() const { return *depthImage; }
-vk::ImageView Swapchain::depthImageViewHandle() const { return *depthImageView; }
+
+vk::ImageView Swapchain::imageView(uint32_t index) const
+{
+    return *swapChainImageViews[index];
+}
+
+vk::Image            Swapchain::depthImageHandle() const { return *depthImage; }
+vk::ImageView        Swapchain::depthImageViewHandle() const { return *depthImageView; }
 vk::SurfaceFormatKHR Swapchain::surfaceFormat() const { return swapChainSurfaceFormat; }
-vk::Extent2D Swapchain::extent() const { return swapChainExtent; }
-vk::Format Swapchain::depthImageFormat() const { return depthFormat; }
-uint32_t Swapchain::minImageCount() const { return swapChainMinImageCount; }
-uint32_t Swapchain::imageCount() const { return static_cast<uint32_t>(swapChainImages.size()); }
+vk::Extent2D         Swapchain::extent() const { return swapChainExtent; }
+vk::Format           Swapchain::depthImageFormat() const { return depthFormat; }
+uint32_t             Swapchain::minImageCount() const { return swapChainMinImageCount; }
+
+uint32_t Swapchain::imageCount() const
+{
+    return static_cast<uint32_t>(swapChainImages.size());
+}
 
 void Swapchain::createSwapChain()
 {
     vk::SurfaceCapabilitiesKHR surfaceCapabilities = vkCheck(
-        vulkan->physicalDeviceHandle().getSurfaceCapabilitiesKHR(vulkan->surfaceHandle()));
+        vulkan->physicalDeviceHandle().getSurfaceCapabilitiesKHR(vulkan->surfaceHandle()
+        ));
     swapChainExtent        = chooseSwapExtent(surfaceCapabilities);
     swapChainMinImageCount = chooseSwapMinImageCount(surfaceCapabilities);
 
@@ -58,7 +68,8 @@ void Swapchain::createSwapChain()
     swapChainSurfaceFormat = chooseSwapSurfaceFormat(availableFormats);
 
     std::vector<vk::PresentModeKHR> availablePresentModes = vkCheck(
-        vulkan->physicalDeviceHandle().getSurfacePresentModesKHR(vulkan->surfaceHandle()));
+        vulkan->physicalDeviceHandle().getSurfacePresentModesKHR(vulkan->surfaceHandle()
+        ));
     vk::PresentModeKHR presentMode = chooseSwapPresentMode(availablePresentModes);
 
     vk::SwapchainCreateInfoKHR swapChainCreateInfo{.surface = vulkan->surfaceHandle(),
@@ -111,9 +122,9 @@ void Swapchain::createDepthResources()
         .format = depthFormat,
         .extent = {swapChainExtent.width, swapChainExtent.height, 1},
         .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = vk::SampleCountFlagBits::e1,
-        .tiling = vk::ImageTiling::eOptimal,
+        .arrayLayers = 1, // 张数，cubemap有6张
+        .samples = vk::SampleCountFlagBits::e1, // 每个像素只有一个sample，没有MSAA
+        .tiling = vk::ImageTiling::eOptimal, // 选择最优的内部布局存储
         .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
         .sharingMode = vk::SharingMode::eExclusive,
         .initialLayout = vk::ImageLayout::eUndefined,
@@ -158,17 +169,19 @@ void Swapchain::transitionDepthImageLayout(const vk::raii::CommandPool& commandP
     vk::raii::CommandBuffer transitionCommand = std::move(vkCheck(
         vulkan->deviceHandle().allocateCommandBuffers(allocationInfo)).front());
     vkCheck(
-        transitionCommand.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit}));
+        transitionCommand.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit}
+        ));
 
+    // 一个对image状态进行转换的barrier
     const vk::ImageMemoryBarrier2 barrier{
-        .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+        .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe, // pipeline的最前端。也就是不需要等
         .srcAccessMask = {},
         .dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests,
         .dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentRead |
-        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        vk::AccessFlagBits2::eDepthStencilAttachmentWrite, // 对深度读或写之前要完成
         .oldLayout = vk::ImageLayout::eUndefined,
         .newLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, // queue family ownership 转换（不是queue）
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .image = *depthImage,
         .subresourceRange = {
@@ -246,7 +259,7 @@ vk::Format Swapchain::chooseDepthFormat() const
     for (const vk::Format format : candidates)
     {
         const vk::FormatProperties properties = vulkan->physicalDeviceHandle().
-            getFormatProperties(format);
+                                                        getFormatProperties(format);
         if ((properties.optimalTilingFeatures &
                 vk::FormatFeatureFlagBits::eDepthStencilAttachment) !=
             vk::FormatFeatureFlags
@@ -274,4 +287,3 @@ vk::Extent2D Swapchain::chooseSwapExtent(vk::SurfaceCapabilitiesKHR const& capab
                              capabilities.minImageExtent.height,
                              capabilities.maxImageExtent.height)};
 }
-

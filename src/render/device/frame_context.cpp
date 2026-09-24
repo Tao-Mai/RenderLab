@@ -22,21 +22,19 @@ void FrameContext::init(const VulkanContext& vulkan)
     commandBuffer = std::move(vkCheck(
         vulkan.deviceHandle().allocateCommandBuffers(allocationInfo)).front());
 
-    presentComplete = vkCheck(
-        vulkan.deviceHandle().createSemaphore(vk::SemaphoreCreateInfo()));
-    renderFinished = vkCheck(
-        vulkan.deviceHandle().createSemaphore(vk::SemaphoreCreateInfo()));
-    drawFence = vkCheck(
+    presentComplete = vkCheck(vulkan.deviceHandle().createSemaphore(vk::SemaphoreCreateInfo()));
+    renderFinished  = vkCheck(vulkan.deviceHandle().createSemaphore(vk::SemaphoreCreateInfo()));
+    drawFence       = vkCheck(
         vulkan.deviceHandle().createFence({.flags = vk::FenceCreateFlagBits::eSignaled}));
 }
 
 void FrameContext::reset() noexcept
 {
-    drawFence = nullptr;
-    renderFinished = nullptr;
+    drawFence       = nullptr;
+    renderFinished  = nullptr;
     presentComplete = nullptr;
-    commandBuffer = nullptr;
-    commandPool = nullptr;
+    commandBuffer   = nullptr;
+    commandPool     = nullptr;
 }
 
 const vk::raii::CommandPool& FrameContext::commandPoolHandle() const
