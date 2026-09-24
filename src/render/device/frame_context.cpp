@@ -12,7 +12,7 @@ void FrameContext::init(const VulkanContext& vulkan)
         .queueFamilyIndex = vulkan.queueFamilyIndex(),
     };
     commandPool = vkCheck(
-        vulkan.deviceHandle().createCommandPool(poolInfo), "vkCreateCommandPool");
+        vulkan.deviceHandle().createCommandPool(poolInfo));
 
     const vk::CommandBufferAllocateInfo allocationInfo{
         .commandPool = *commandPool,
@@ -20,18 +20,14 @@ void FrameContext::init(const VulkanContext& vulkan)
         .commandBufferCount = 1,
     };
     commandBuffer = std::move(vkCheck(
-        vulkan.deviceHandle().allocateCommandBuffers(allocationInfo),
-        "vkAllocateCommandBuffers").front());
+        vulkan.deviceHandle().allocateCommandBuffers(allocationInfo)).front());
 
     presentComplete = vkCheck(
-        vulkan.deviceHandle().createSemaphore(vk::SemaphoreCreateInfo()),
-        "vkCreateSemaphore");
+        vulkan.deviceHandle().createSemaphore(vk::SemaphoreCreateInfo()));
     renderFinished = vkCheck(
-        vulkan.deviceHandle().createSemaphore(vk::SemaphoreCreateInfo()),
-        "vkCreateSemaphore");
+        vulkan.deviceHandle().createSemaphore(vk::SemaphoreCreateInfo()));
     drawFence = vkCheck(
-        vulkan.deviceHandle().createFence({.flags = vk::FenceCreateFlagBits::eSignaled}),
-        "vkCreateFence");
+        vulkan.deviceHandle().createFence({.flags = vk::FenceCreateFlagBits::eSignaled}));
 }
 
 void FrameContext::reset() noexcept

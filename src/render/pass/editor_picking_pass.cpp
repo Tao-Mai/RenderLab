@@ -32,7 +32,7 @@ void EditorPickingPass::init(
         .sharingMode = vk::SharingMode::eExclusive,
         .initialLayout = vk::ImageLayout::eUndefined,
     };
-    image = vkCheck(device.createImage(imageInfo), "vkCreateImage");
+    image = vkCheck(device.createImage(imageInfo));
     const vk::MemoryRequirements requirements = image.getMemoryRequirements();
     const vk::MemoryAllocateInfo allocationInfo{
         .allocationSize = requirements.size,
@@ -41,8 +41,8 @@ void EditorPickingPass::init(
             requirements.memoryTypeBits,
             vk::MemoryPropertyFlagBits::eDeviceLocal),
     };
-    imageMemory = vkCheck(device.allocateMemory(allocationInfo), "vkAllocateMemory");
-    vkCheck(image.bindMemory(*imageMemory, 0), "vkBindImageMemory");
+    imageMemory = vkCheck(device.allocateMemory(allocationInfo));
+    vkCheck(image.bindMemory(*imageMemory, 0));
 
     const vk::ImageViewCreateInfo viewInfo{
         .image = *image,
@@ -56,7 +56,7 @@ void EditorPickingPass::init(
             .layerCount = 1,
         },
     };
-    imageView = vkCheck(device.createImageView(viewInfo), "vkCreateImageView");
+    imageView = vkCheck(device.createImageView(viewInfo));
     readbackBuffer = Buffer(
         physicalDevice,
         device,
@@ -140,7 +140,7 @@ void EditorPickingPass::init(
         .pPushConstantRanges = &pushConstantRange,
     };
     pipelineLayout = vkCheck(
-        device.createPipelineLayout(layoutInfo), "vkCreatePipelineLayout");
+        device.createPipelineLayout(layoutInfo));
 
     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo>
         pipelineCreateInfoChain = {
@@ -167,8 +167,7 @@ void EditorPickingPass::init(
     pipeline = vkCheck(
         device.createGraphicsPipeline(
             nullptr,
-            pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
-        "vkCreateGraphicsPipelines");
+            pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()));
 }
 
 void EditorPickingPass::reset() noexcept

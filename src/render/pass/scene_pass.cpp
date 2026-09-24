@@ -71,8 +71,7 @@ void ScenePass::initDescriptors()
         .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
         .pPoolSizes = poolSizes.data(),
     };
-    descriptorPool = vkCheck(device.createDescriptorPool(poolInfo),
-                             "vkCreateDescriptorPool");
+    descriptorPool = vkCheck(device.createDescriptorPool(poolInfo));
 
     const std::array materialBindings = {
         vk::DescriptorSetLayoutBinding{
@@ -99,8 +98,7 @@ void ScenePass::initDescriptors()
         .pBindings = materialBindings.data(),
     };
     materialLayout = vkCheck(
-        device.createDescriptorSetLayout(materialLayoutInfo),
-        "vkCreateDescriptorSetLayout");
+        device.createDescriptorSetLayout(materialLayoutInfo));
 
     const std::array sceneBindings = {
         vk::DescriptorSetLayoutBinding{
@@ -129,8 +127,7 @@ void ScenePass::initDescriptors()
         .pBindings = sceneBindings.data(),
     };
     sceneLayout = vkCheck(
-        device.createDescriptorSetLayout(sceneLayoutInfo),
-        "vkCreateDescriptorSetLayout");
+        device.createDescriptorSetLayout(sceneLayoutInfo));
 
     sceneBuffer = Buffer(
         physicalDevice,
@@ -147,8 +144,7 @@ void ScenePass::initDescriptors()
         .pSetLayouts = &layout,
     };
     sceneSet = std::move(vkCheck(
-        device.allocateDescriptorSets(allocationInfo),
-        "vkAllocateDescriptorSets").front());
+        device.allocateDescriptorSets(allocationInfo)).front());
 
     const vk::DescriptorBufferInfo bufferInfo{
         .buffer = sceneBuffer.handle(),
@@ -371,7 +367,7 @@ void ScenePass::record(
                 AssetId materialId = MaterialDesc::white;
                 if (!isBuiltin<MeshDesc>(render->meshId))
                 {
-                    const MeshDesc& mesh = context().assets->desc<MeshDesc>(
+                    const MeshDesc& mesh = context().assetManager->desc<MeshDesc>(
                         render->meshId);
                     CHECK(index < mesh.submeshes.size(),
                           "material override index out of range");

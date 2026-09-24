@@ -67,7 +67,7 @@ void VulkanContext::createInstance()
 
     // Check if the required layers are supported by the Vulkan implementation.
     auto layerProperties    = vkCheck(
-        context.enumerateInstanceLayerProperties(), "vkEnumerateInstanceLayerProperties");
+        context.enumerateInstanceLayerProperties());
     auto unsupportedLayerIt = std::ranges::find_if(requiredLayers,
                                                    [&layerProperties](
                                                    auto const& requiredLayer)
@@ -91,8 +91,7 @@ void VulkanContext::createInstance()
 
     // Check if the required extensions are supported by the Vulkan implementation.
     auto extensionProperties   = vkCheck(
-        context.enumerateInstanceExtensionProperties(),
-        "vkEnumerateInstanceExtensionProperties");
+        context.enumerateInstanceExtensionProperties());
     auto unsupportedPropertyIt =
         std::ranges::find_if(requiredExtensions,
                              [&extensionProperties](auto const& requiredExtension)
@@ -116,7 +115,7 @@ void VulkanContext::createInstance()
                                           requiredExtensions.size()),
                                       .ppEnabledExtensionNames = requiredExtensions.
                                       data()};
-    instance = vkCheck(context.createInstance(createInfo), "vkCreateInstance");
+    instance = vkCheck(context.createInstance(createInfo));
 }
 
 void VulkanContext::setupDebugMessenger()
@@ -136,8 +135,7 @@ void VulkanContext::setupDebugMessenger()
         .messageType = messageTypeFlags,
         .pfnUserCallback = &debugCallback};
     debugMessenger = vkCheck(
-        instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCreateInfoEXT),
-        "vkCreateDebugUtilsMessengerEXT");
+        instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCreateInfoEXT));
 }
 
 void VulkanContext::createSurface()
@@ -163,16 +161,14 @@ bool VulkanContext::isDeviceSuitable(vk::raii::PhysicalDevice const& physicalDev
                                         vk::QueueFlagBits::eGraphics) &&
                                     vkCheck(
                                         physicalDevice.getSurfaceSupportKHR(
-                                            qfpIndex, *surface),
-                                        "vkGetPhysicalDeviceSurfaceSupportKHR");
+                                            qfpIndex, *surface));
                                 qfpIndex++;
                                 return suitable;
                             });
 
     // Check if all required physicalDevice extensions are available
     auto availableDeviceExtensions = vkCheck(
-        physicalDevice.enumerateDeviceExtensionProperties(),
-        "vkEnumerateDeviceExtensionProperties");
+        physicalDevice.enumerateDeviceExtensionProperties());
     bool supportsAllRequiredExtensions =
         std::ranges::all_of(requiredDeviceExtension,
                             [&availableDeviceExtensions](
@@ -213,7 +209,7 @@ bool VulkanContext::isDeviceSuitable(vk::raii::PhysicalDevice const& physicalDev
 void VulkanContext::pickPhysicalDevice()
 {
     std::vector<vk::raii::PhysicalDevice> physicalDevices = vkCheck(
-        instance.enumeratePhysicalDevices(), "vkEnumeratePhysicalDevices");
+        instance.enumeratePhysicalDevices());
     auto const devIter = std::ranges::find_if(physicalDevices,
                                               [&](auto const& physicalDevice)
                                               {
@@ -233,8 +229,7 @@ void VulkanContext::createLogicalDevice()
     {
         if ((queueFamilyProperties[qfpIndex].queueFlags & vk::QueueFlagBits::eGraphics) &&
             vkCheck(
-                physicalDevice.getSurfaceSupportKHR(qfpIndex, *surface),
-                "vkGetPhysicalDeviceSurfaceSupportKHR"))
+                physicalDevice.getSurfaceSupportKHR(qfpIndex, *surface)))
         {
             // found a queue family that supports both graphics and present
             queueIndex = qfpIndex;
@@ -270,7 +265,7 @@ void VulkanContext::createLogicalDevice()
         .enabledExtensionCount = static_cast<uint32_t>(requiredDeviceExtension.size()),
         .ppEnabledExtensionNames = requiredDeviceExtension.data()};
 
-    device = vkCheck(physicalDevice.createDevice(deviceCreateInfo), "vkCreateDevice");
+    device = vkCheck(physicalDevice.createDevice(deviceCreateInfo));
     queue  = device.getQueue(queueIndex, 0);
 }
 

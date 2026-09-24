@@ -53,7 +53,7 @@ void Renderer::waitIdle()
 {
     if (*vulkan.deviceHandle())
     {
-        vkCheck(vulkan.deviceHandle().waitIdle(), "vkDeviceWaitIdle");
+        vkCheck(vulkan.deviceHandle().waitIdle());
     }
 }
 
@@ -92,7 +92,7 @@ const GpuScene& Renderer::gpuScene() const
 void Renderer::initVulkan()
 {
     CHECK(context().window != nullptr, "Window must exist before Renderer");
-    CHECK(context().assets != nullptr, "AssetManager must exist before Renderer");
+    CHECK(context().assetManager != nullptr, "AssetManager must exist before Renderer");
 
     Window& window = *context().window;
     vulkan.init(window);
@@ -155,8 +155,8 @@ void Renderer::recreateSwapchain()
 void Renderer::recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& editor)
 {
     auto& commandBuffer = frame.commandBufferHandle();
-    vkCheck(commandBuffer.reset(), "vkResetCommandBuffer");
-    vkCheck(commandBuffer.begin({}), "vkBeginCommandBuffer");
+    vkCheck(commandBuffer.reset());
+    vkCheck(commandBuffer.begin({}));
 
     transitionImageLayout(
         imageIndex,
@@ -186,7 +186,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& 
         {},
         vk::PipelineStageFlagBits2::eColorAttachmentOutput,
         vk::PipelineStageFlagBits2::eBottomOfPipe);
-    vkCheck(commandBuffer.end(), "vkEndCommandBuffer");
+    vkCheck(commandBuffer.end());
 }
 
 void Renderer::recordPickingPass(
@@ -317,12 +317,12 @@ EditorFrameResult Renderer::drawFrame(const EditorFrameInput& editor)
     CHECK(acquireResult == vk::Result::eSuccess ||
             acquireResult == vk::Result::eSuboptimalKHR,
         "vkAcquireNextImageKHR failed: {}", vk::to_string(acquireResult));
-    vkCheck(vulkan.deviceHandle().resetFences(drawFence), "vkResetFences");
+    vkCheck(vulkan.deviceHandle().resetFences(drawFence));
 
     const bool resolvePickAfterSubmit = editor.requestPick;
     recordCommandBuffer(imageIndex, editor);
 
-    vkCheck(vulkan.queueHandle().waitIdle(), "vkQueueWaitIdle");
+    vkCheck(vulkan.queueHandle().waitIdle());
 
     vk::PipelineStageFlags waitDestinationStageMask(
         vk::PipelineStageFlagBits::eColorAttachmentOutput);
@@ -334,7 +334,7 @@ EditorFrameResult Renderer::drawFrame(const EditorFrameInput& editor)
         .pCommandBuffers = &commandBuffer,
         .signalSemaphoreCount = 1,
         .pSignalSemaphores = &renderFinishedSemaphore};
-    vkCheck(vulkan.queueHandle().submit(submitInfo, drawFence), "vkQueueSubmit");
+    vkCheck(vulkan.queueHandle().submit(submitInfo, drawFence));
 
     const vk::PresentInfoKHR presentInfoKHR{
         .waitSemaphoreCount = 1,

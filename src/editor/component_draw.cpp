@@ -132,9 +132,9 @@ MaterialDesc materialPreview(const AssetId& materialId)
         material.baseColorTexture = TextureDesc::white;
         return material;
     }
-    if (context().assets != nullptr)
+    if (context().assetManager != nullptr)
     {
-        if (const MaterialDesc* material = context().assets->findDesc<MaterialDesc>(materialId))
+        if (const MaterialDesc* material = context().assetManager->findDesc<MaterialDesc>(materialId))
         {
             return *material;
         }
@@ -282,13 +282,13 @@ void drawMaterial(const AssetId& materialId)
         return edited;
     }
 
-    if (context().assets == nullptr)
+    if (context().assetManager == nullptr)
     {
         ImGui::TextDisabled("assets unavailable");
         return edited;
     }
 
-    const MeshDesc* mesh = context().assets->findDesc<MeshDesc>(render.meshId);
+    const MeshDesc* mesh = context().assetManager->findDesc<MeshDesc>(render.meshId);
     if (mesh == nullptr)
     {
         ImGui::TextDisabled("mesh desc not loaded");

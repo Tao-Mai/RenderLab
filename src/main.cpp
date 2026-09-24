@@ -17,7 +17,7 @@ int main(int argc, char** argv)
         ConfigManager config;
         AssetManager assets;
         context().config = &config;
-        context().assets = &assets;
+        context().assetManager = &assets;
         config.init();
         assets.init();
         std::filesystem::path source{argv[3]};
@@ -40,7 +40,7 @@ int main(int argc, char** argv)
         }
         assets.shutdown();
         config.shutdown();
-        context().assets = nullptr;
+        context().assetManager = nullptr;
         context().config = nullptr;
         return 0;
     }

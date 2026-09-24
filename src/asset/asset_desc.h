@@ -150,6 +150,8 @@ struct TextureDesc
     std::string                           source;
     DataFormat                            format;
     Layout                                layout;
+    uint32_t                              width;
+    uint32_t                              height;
     std::optional<std::filesystem::path>  path;
     std::optional<std::filesystem::path>  binary;
     std::optional<std::array<uint8_t, 4>> rgba;

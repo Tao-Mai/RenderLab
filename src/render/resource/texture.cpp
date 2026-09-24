@@ -3,6 +3,7 @@
 #include "render/device/memory.h"
 #include "render/device/vk_check.h"
 #include "render/resource/buffer.h"
+#include "asset/texture_io.h"
 
 #include <memory>
 #include <utility>
@@ -24,11 +25,13 @@ namespace
     }
 }
 
-Texture::Texture(GpuUploadContext upload, const TexturePixels& pixels)
+Texture::Texture(
+    GpuUploadContext upload, const TextureDesc& desc,
+    std::span<const uint8_t> bytes)
 {
-    create(upload, pixels.bytes.data(), pixels.width, pixels.height,
-        vulkanFormat(pixels.format), texture_io::bytesPerPixel(pixels.format),
-        pixels.layout);
+    create(upload, bytes.data(), desc.width, desc.height,
+        vulkanFormat(desc.format), texture_io::bytesPerPixel(desc.format),
+        desc.layout);
 }
 
 Texture::Texture(GpuUploadContext upload, const std::array<uint8_t, 4> &rgba)
@@ -83,7 +86,7 @@ void Texture::create(
         .sharingMode = vk::SharingMode::eExclusive,
         .initialLayout = vk::ImageLayout::eUndefined,
     };
-    image = vkCheck(device.createImage(imageInfo), "vkCreateImage");
+    image = vkCheck(device.createImage(imageInfo));
 
     const vk::MemoryRequirements requirements = image.getMemoryRequirements();
     const vk::MemoryAllocateInfo allocationInfo{
@@ -93,8 +96,8 @@ void Texture::create(
             requirements.memoryTypeBits,
             vk::MemoryPropertyFlagBits::eDeviceLocal),
     };
-    imageMemory = vkCheck(device.allocateMemory(allocationInfo), "vkAllocateMemory");
-    vkCheck(image.bindMemory(*imageMemory, 0), "vkBindImageMemory");
+    imageMemory = vkCheck(device.allocateMemory(allocationInfo));
+    vkCheck(image.bindMemory(*imageMemory, 0));
 
     const vk::CommandBufferAllocateInfo commandInfo{
         .commandPool = commandPool,
@@ -102,10 +105,9 @@ void Texture::create(
         .commandBufferCount = 1,
     };
     vk::raii::CommandBuffer copyCommand = std::move(vkCheck(
-        device.allocateCommandBuffers(commandInfo), "vkAllocateCommandBuffers").front());
+        device.allocateCommandBuffers(commandInfo)).front());
     vkCheck(
-        copyCommand.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit}),
-        "vkBeginCommandBuffer");
+        copyCommand.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit}));
 
     const vk::ImageSubresourceRange subresourceRange{
         .aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -170,15 +172,15 @@ void Texture::create(
     };
     dependency.pImageMemoryBarriers = &toShader;
     copyCommand.pipelineBarrier2(dependency);
-    vkCheck(copyCommand.end(), "vkEndCommandBuffer");
+    vkCheck(copyCommand.end());
 
     const vk::CommandBuffer command = *copyCommand;
     const vk::SubmitInfo submitInfo{
         .commandBufferCount = 1,
         .pCommandBuffers = &command,
     };
-    vkCheck(queue.submit(submitInfo, nullptr), "vkQueueSubmit");
-    vkCheck(queue.waitIdle(), "vkQueueWaitIdle");
+    vkCheck(queue.submit(submitInfo, nullptr));
+    vkCheck(queue.waitIdle());
 
     const vk::ImageViewCreateInfo viewInfo{
         .image = *image,
@@ -187,7 +189,7 @@ void Texture::create(
         .format = format,
         .subresourceRange = subresourceRange,
     };
-    view = vkCheck(device.createImageView(viewInfo), "vkCreateImageView");
+    view = vkCheck(device.createImageView(viewInfo));
 
     const vk::SamplerCreateInfo samplerInfo{
         .magFilter = vk::Filter::eLinear,
@@ -207,5 +209,5 @@ void Texture::create(
         .borderColor = vk::BorderColor::eIntOpaqueBlack,
         .unnormalizedCoordinates = vk::False,
     };
-    imageSampler = vkCheck(device.createSampler(samplerInfo), "vkCreateSampler");
+    imageSampler = vkCheck(device.createSampler(samplerInfo));
 }

@@ -51,11 +51,11 @@ void Editor::saveScene()
 {
     Context& ctx = context();
     CHECK(ctx.scene != nullptr, "scene must exist before save");
-    CHECK(ctx.assets != nullptr, "assets must exist before save");
+    CHECK(ctx.assetManager != nullptr, "assets must exist before save");
     CHECK(ctx.camera != nullptr, "camera must exist before save");
 
     ctx.scene->camera = ctx.camera->component();
-    ctx.assets->save(*ctx.scene);
+    ctx.assetManager->save(*ctx.scene);
     dirty = false;
 }
 

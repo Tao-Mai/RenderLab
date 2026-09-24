@@ -56,8 +56,8 @@ RenderResourceManager::~RenderResourceManager() = default;
 
 void RenderResourceManager::init(VulkanContext& targetVulkan, FrameContext& targetFrame)
 {
-    CHECK(context().assets != nullptr, "AssetManager must exist before RenderResourceManager");
-    assets = context().assets;
+    CHECK(context().assetManager != nullptr, "AssetManager must exist before RenderResourceManager");
+    assets = context().assetManager;
     vulkan = &targetVulkan;
     frame = &targetFrame;
 }
@@ -186,14 +186,14 @@ std::shared_ptr<Texture> RenderResourceManager::texture(const AssetId& id)
         else
         {
             CHECK(id == TextureDesc::whiteCube, "unknown builtin texture: {}", id);
-            TexturePixels whiteCube{
-                .format = TextureDesc::DataFormat::Rgba8Srgb,
-                .layout = TextureDesc::Layout::Cubemap,
-                .width = 1,
-                .height = 1,
-                .bytes = std::vector<uint8_t>(6 * 4, 255),
-            };
-            gpu = std::make_shared<Texture>(frame->uploadContext(*vulkan), whiteCube);
+            TextureDesc whiteCube{};
+            whiteCube.format = TextureDesc::DataFormat::Rgba8Srgb;
+            whiteCube.layout = TextureDesc::Layout::Cubemap;
+            whiteCube.width = 1;
+            whiteCube.height = 1;
+            const std::vector<uint8_t> bytes(6 * 4, 255);
+            gpu = std::make_shared<Texture>(
+                frame->uploadContext(*vulkan), whiteCube, bytes);
         }
     }
     else
@@ -219,10 +219,9 @@ std::shared_ptr<Texture> RenderResourceManager::texture(const AssetId& id)
                 "texture '{}' source, layout and data format disagree", id);
             CHECK(desc.binary.has_value() && !desc.binary->empty(),
                 "texture '{}' has no binary path", id);
-            const TexturePixels pixels = texture_io::read(assets->path(*desc.binary));
-            CHECK(pixels.format == desc.format && pixels.layout == desc.layout,
-                "texture '{}' binary metadata disagrees with descriptor", id);
-            gpu = std::make_shared<Texture>(frame->uploadContext(*vulkan), pixels);
+            const std::vector<uint8_t> bytes = texture_io::read(
+                assets->path(*desc.binary), desc);
+            gpu = std::make_shared<Texture>(frame->uploadContext(*vulkan), desc, bytes);
         }
         else
         {

@@ -1,17 +1,20 @@
 #pragma once
 
-#include "asset/texture_io.h"
+#include "asset/asset_desc.h"
 #include "render/device/gpu_upload_context.h"
 
 #include <array>
 #include <cstdint>
+#include <span>
 
 #include <vulkan/vulkan_raii.hpp>
 
 class Texture
 {
 public:
-    Texture(GpuUploadContext upload, const TexturePixels& pixels);
+    Texture(
+        GpuUploadContext upload, const TextureDesc& desc,
+        std::span<const uint8_t> bytes);
     Texture(GpuUploadContext upload, const std::array<uint8_t, 4>& rgba);
 
     Texture(const Texture&)            = delete;

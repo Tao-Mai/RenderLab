@@ -26,7 +26,7 @@ void Engine::init()
     Context& ctx = context();
     ctx.config = new ConfigManager();
     ctx.window = new Window();
-    ctx.assets = new AssetManager();
+    ctx.assetManager = new AssetManager();
     ctx.scene = new SceneDesc();
     ctx.camera = new Camera();
     ctx.renderer = new Renderer();
@@ -34,9 +34,9 @@ void Engine::init()
 
     ctx.config->init();
     ctx.window->init();
-    ctx.assets->init();
+    ctx.assetManager->init();
     inputMethod.activateEnglish();
-    *ctx.scene = ctx.assets->desc<SceneDesc>(ctx.config->initialScene());
+    *ctx.scene = ctx.assetManager->desc<SceneDesc>(ctx.config->initialScene());
     ctx.camera->configure(ctx.scene->camera);
     ctx.renderer->init();
     ctx.renderer->loadScene(*ctx.scene);
@@ -118,11 +118,11 @@ void Engine::shutdown() noexcept
         delete ctx.scene;
         ctx.scene = nullptr;
     }
-    if (ctx.assets != nullptr)
+    if (ctx.assetManager != nullptr)
     {
-        ctx.assets->shutdown();
-        delete ctx.assets;
-        ctx.assets = nullptr;
+        ctx.assetManager->shutdown();
+        delete ctx.assetManager;
+        ctx.assetManager = nullptr;
     }
 
     // Win8+: LoadKeyboardLayout+KLF_ACTIVATE only updates the system language while this

@@ -13,7 +13,7 @@ struct Context
 {
     ConfigManager* config = nullptr;
     Window* window = nullptr;
-    AssetManager* assets = nullptr;
+    AssetManager* assetManager = nullptr;
     SceneDesc* scene = nullptr;
     Camera* camera = nullptr;
     Renderer* renderer = nullptr;

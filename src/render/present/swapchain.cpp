@@ -49,19 +49,16 @@ uint32_t Swapchain::imageCount() const { return static_cast<uint32_t>(swapChainI
 void Swapchain::createSwapChain()
 {
     vk::SurfaceCapabilitiesKHR surfaceCapabilities = vkCheck(
-        vulkan->physicalDeviceHandle().getSurfaceCapabilitiesKHR(vulkan->surfaceHandle()),
-        "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
+        vulkan->physicalDeviceHandle().getSurfaceCapabilitiesKHR(vulkan->surfaceHandle()));
     swapChainExtent        = chooseSwapExtent(surfaceCapabilities);
     swapChainMinImageCount = chooseSwapMinImageCount(surfaceCapabilities);
 
     std::vector<vk::SurfaceFormatKHR> availableFormats = vkCheck(
-        vulkan->physicalDeviceHandle().getSurfaceFormatsKHR(vulkan->surfaceHandle()),
-        "vkGetPhysicalDeviceSurfaceFormatsKHR");
+        vulkan->physicalDeviceHandle().getSurfaceFormatsKHR(vulkan->surfaceHandle()));
     swapChainSurfaceFormat = chooseSwapSurfaceFormat(availableFormats);
 
     std::vector<vk::PresentModeKHR> availablePresentModes = vkCheck(
-        vulkan->physicalDeviceHandle().getSurfacePresentModesKHR(vulkan->surfaceHandle()),
-        "vkGetPhysicalDeviceSurfacePresentModesKHR");
+        vulkan->physicalDeviceHandle().getSurfacePresentModesKHR(vulkan->surfaceHandle()));
     vk::PresentModeKHR presentMode = chooseSwapPresentMode(availablePresentModes);
 
     vk::SwapchainCreateInfoKHR swapChainCreateInfo{.surface = vulkan->surfaceHandle(),
@@ -85,9 +82,8 @@ void Swapchain::createSwapChain()
                                                    .clipped = true};
 
     swapChain = vkCheck(
-        vulkan->deviceHandle().createSwapchainKHR(swapChainCreateInfo),
-        "vkCreateSwapchainKHR");
-    swapChainImages = vkCheck(swapChain.getImages(), "vkGetSwapchainImagesKHR");
+        vulkan->deviceHandle().createSwapchainKHR(swapChainCreateInfo));
+    swapChainImages = vkCheck(swapChain.getImages());
 }
 
 void Swapchain::createImageViews()
@@ -103,8 +99,7 @@ void Swapchain::createImageViews()
     {
         imageViewCreateInfo.image = image;
         swapChainImageViews.push_back(vkCheck(
-            vulkan->deviceHandle().createImageView(imageViewCreateInfo),
-            "vkCreateImageView"));
+            vulkan->deviceHandle().createImageView(imageViewCreateInfo)));
     }
 }
 
@@ -123,7 +118,7 @@ void Swapchain::createDepthResources()
         .sharingMode = vk::SharingMode::eExclusive,
         .initialLayout = vk::ImageLayout::eUndefined,
     };
-    depthImage = vkCheck(vulkan->deviceHandle().createImage(imageInfo), "vkCreateImage");
+    depthImage = vkCheck(vulkan->deviceHandle().createImage(imageInfo));
 
     const vk::MemoryRequirements requirements = depthImage.getMemoryRequirements();
     const vk::MemoryAllocateInfo allocationInfo{
@@ -134,8 +129,8 @@ void Swapchain::createDepthResources()
             vk::MemoryPropertyFlagBits::eDeviceLocal),
     };
     depthImageMemory = vkCheck(
-        vulkan->deviceHandle().allocateMemory(allocationInfo), "vkAllocateMemory");
-    vkCheck(depthImage.bindMemory(*depthImageMemory, 0), "vkBindImageMemory");
+        vulkan->deviceHandle().allocateMemory(allocationInfo));
+    vkCheck(depthImage.bindMemory(*depthImageMemory, 0));
 
     const vk::ImageViewCreateInfo viewInfo{
         .image = *depthImage,
@@ -150,7 +145,7 @@ void Swapchain::createDepthResources()
         },
     };
     depthImageView = vkCheck(
-        vulkan->deviceHandle().createImageView(viewInfo), "vkCreateImageView");
+        vulkan->deviceHandle().createImageView(viewInfo));
 }
 
 void Swapchain::transitionDepthImageLayout(const vk::raii::CommandPool& commandPool)
@@ -161,11 +156,9 @@ void Swapchain::transitionDepthImageLayout(const vk::raii::CommandPool& commandP
         .commandBufferCount = 1,
     };
     vk::raii::CommandBuffer transitionCommand = std::move(vkCheck(
-        vulkan->deviceHandle().allocateCommandBuffers(allocationInfo),
-        "vkAllocateCommandBuffers").front());
+        vulkan->deviceHandle().allocateCommandBuffers(allocationInfo)).front());
     vkCheck(
-        transitionCommand.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit}),
-        "vkBeginCommandBuffer");
+        transitionCommand.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit}));
 
     const vk::ImageMemoryBarrier2 barrier{
         .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
@@ -191,15 +184,15 @@ void Swapchain::transitionDepthImageLayout(const vk::raii::CommandPool& commandP
         .pImageMemoryBarriers = &barrier,
     };
     transitionCommand.pipelineBarrier2(dependencyInfo);
-    vkCheck(transitionCommand.end(), "vkEndCommandBuffer");
+    vkCheck(transitionCommand.end());
 
     const vk::CommandBuffer command = *transitionCommand;
     const vk::SubmitInfo    submitInfo{
         .commandBufferCount = 1,
         .pCommandBuffers = &command,
     };
-    vkCheck(vulkan->queueHandle().submit(submitInfo, nullptr), "vkQueueSubmit");
-    vkCheck(vulkan->queueHandle().waitIdle(), "vkQueueWaitIdle");
+    vkCheck(vulkan->queueHandle().submit(submitInfo, nullptr));
+    vkCheck(vulkan->queueHandle().waitIdle());
 }
 
 uint32_t Swapchain::chooseSwapMinImageCount(

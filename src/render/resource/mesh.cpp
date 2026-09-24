@@ -86,19 +86,17 @@ void Mesh::copyBuffer(
         .commandBufferCount = 1,
     };
     vk::raii::CommandBuffer copyCommand = std::move(vkCheck(
-        device.allocateCommandBuffers(allocationInfo),
-        "vkAllocateCommandBuffers").front());
+        device.allocateCommandBuffers(allocationInfo)).front());
     vkCheck(
-        copyCommand.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit}),
-        "vkBeginCommandBuffer");
+        copyCommand.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit}));
     copyCommand.copyBuffer(
         source.handle(), destination.handle(), vk::BufferCopy{.size = source.size()});
-    vkCheck(copyCommand.end(), "vkEndCommandBuffer");
+    vkCheck(copyCommand.end());
     const vk::CommandBuffer command = *copyCommand;
     const vk::SubmitInfo submitInfo{
         .commandBufferCount = 1,
         .pCommandBuffers = &command,
     };
-    vkCheck(queue.submit(submitInfo, nullptr), "vkQueueSubmit");
-    vkCheck(queue.waitIdle(), "vkQueueWaitIdle");
+    vkCheck(queue.submit(submitInfo, nullptr));
+    vkCheck(queue.waitIdle());
 }

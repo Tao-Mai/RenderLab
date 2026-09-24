@@ -21,7 +21,7 @@ Buffer::Buffer(
         .usage = usage,
         .sharingMode = vk::SharingMode::eExclusive
     };
-    buffer = vkCheck(device.createBuffer(bufferInfo), "vkCreateBuffer");
+    buffer = vkCheck(device.createBuffer(bufferInfo));
 
     const vk::MemoryRequirements requirements = buffer.getMemoryRequirements();
     const vk::MemoryAllocateInfo allocationInfo{
@@ -32,8 +32,8 @@ Buffer::Buffer(
             memoryProperties)
     };
 
-    memory = vkCheck(device.allocateMemory(allocationInfo), "vkAllocateMemory");
-    vkCheck(buffer.bindMemory(*memory, 0), "vkBindBufferMemory");
+    memory = vkCheck(device.allocateMemory(allocationInfo));
+    vkCheck(buffer.bindMemory(*memory, 0));
 }
 
 void Buffer::upload(const void* data, vk::DeviceSize byteCount)
@@ -41,7 +41,7 @@ void Buffer::upload(const void* data, vk::DeviceSize byteCount)
     CHECK(data != nullptr && byteCount != 0 && byteCount <= byteSize,
         "invalid buffer upload");
 
-    void* mappedMemory = vkCheck(memory.mapMemory(0, byteCount), "vkMapMemory");
+    void* mappedMemory = vkCheck(memory.mapMemory(0, byteCount));
     std::memcpy(mappedMemory, data, static_cast<std::size_t>(byteCount));
     memory.unmapMemory();
 }
@@ -51,7 +51,7 @@ void Buffer::download(void* data, vk::DeviceSize byteCount)
     CHECK(data != nullptr && byteCount != 0 && byteCount <= byteSize,
         "invalid buffer download");
 
-    void* mappedMemory = vkCheck(memory.mapMemory(0, byteCount), "vkMapMemory");
+    void* mappedMemory = vkCheck(memory.mapMemory(0, byteCount));
     std::memcpy(data, mappedMemory, static_cast<std::size_t>(byteCount));
     memory.unmapMemory();
 }

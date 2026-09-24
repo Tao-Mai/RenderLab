@@ -22,9 +22,11 @@
 #include <memory>
 #include <numbers>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <glm/gtc/packing.hpp>
 #include <glm/geometric.hpp>
@@ -72,7 +74,8 @@ struct ExrErrorDeleter
     return std::filesystem::path{"binary/texture"} / (id + ".bin");
 }
 
-[[nodiscard]] TexturePixels loadImage(const std::filesystem::path& source)
+[[nodiscard]] std::vector<uint8_t> loadImage(
+    const std::filesystem::path& source, TextureDesc& desc)
 {
     int width = 0;
     int height = 0;
@@ -85,14 +88,11 @@ struct ExrErrorDeleter
     const uint64_t count = static_cast<uint64_t>(width) * height * 4;
     CHECK(count <= std::numeric_limits<uint32_t>::max(),
         "texture is too large: {}", filename);
-    TexturePixels pixels{
-        .format = TextureDesc::DataFormat::Rgba8Srgb,
-        .layout = TextureDesc::Layout::Image2D,
-        .width = static_cast<uint32_t>(width),
-        .height = static_cast<uint32_t>(height),
-    };
-    pixels.bytes.assign(decoded.get(), decoded.get() + count);
-    return pixels;
+    desc.format = TextureDesc::DataFormat::Rgba8Srgb;
+    desc.layout = TextureDesc::Layout::Image2D;
+    desc.width = static_cast<uint32_t>(width);
+    desc.height = static_cast<uint32_t>(height);
+    return std::vector<uint8_t>(decoded.get(), decoded.get() + count);
 }
 
 [[nodiscard]] bool isColorChannel(const char* name)
@@ -286,31 +286,31 @@ void writeExrPixel(
     }
 }
 
-[[nodiscard]] TexturePixels loadExrImage2D(const DecodedExr& decoded)
+[[nodiscard]] std::vector<uint8_t> loadExrImage2D(
+    const DecodedExr& decoded, TextureDesc& desc)
 {
-    TexturePixels pixels{
-        .format = decoded.format,
-        .layout = TextureDesc::Layout::Image2D,
-        .width = decoded.width,
-        .height = decoded.height,
-    };
+    desc.format = decoded.format;
+    desc.layout = TextureDesc::Layout::Image2D;
+    desc.width = decoded.width;
+    desc.height = decoded.height;
     const uint64_t byteCount = static_cast<uint64_t>(decoded.width) *
         decoded.height * texture_io::bytesPerPixel(decoded.format);
     CHECK(byteCount <= std::numeric_limits<uint32_t>::max(),
         "imported EXR image is too large");
-    pixels.bytes.resize(static_cast<size_t>(byteCount));
+    std::vector<uint8_t> bytes(static_cast<size_t>(byteCount));
     const size_t bytesPerPixel = texture_io::bytesPerPixel(decoded.format);
     for (size_t pixel = 0; pixel < static_cast<size_t>(decoded.width) * decoded.height; ++pixel)
     {
         const float* source = decoded.image.get() + pixel * 4;
-        writeExrPixel(pixels.bytes.data() + pixel * bytesPerPixel,
+        writeExrPixel(bytes.data() + pixel * bytesPerPixel,
             {source[0], source[1], source[2], source[3]}, decoded.format);
     }
-    return pixels;
+    return bytes;
 }
 
-[[nodiscard]] TexturePixels loadEnvironment(
-    const DecodedExr& decoded, const std::filesystem::path& source)
+[[nodiscard]] std::vector<uint8_t> loadEnvironment(
+    const DecodedExr& decoded, const std::filesystem::path& source,
+    TextureDesc& desc)
 {
     const std::string filename = source.string();
     const bool isLatLongShape = static_cast<uint64_t>(decoded.width) ==
@@ -326,18 +326,16 @@ void writeExrPixel(
         "EXR '{}' dimensions disagree with its envmap layout", filename);
     const uint32_t side = projection == ExrProjection::Cube
         ? decoded.width : std::max(1u, decoded.height / 2);
-    TexturePixels pixels{
-        .format = decoded.format,
-        .layout = TextureDesc::Layout::Cubemap,
-        .width = side,
-        .height = side,
-    };
+    desc.format = decoded.format;
+    desc.layout = TextureDesc::Layout::Cubemap;
+    desc.width = side;
+    desc.height = side;
     const uint64_t byteCount = static_cast<uint64_t>(side) * side * 6 *
-        texture_io::bytesPerPixel(pixels.format);
+        texture_io::bytesPerPixel(desc.format);
     CHECK(byteCount <= std::numeric_limits<uint32_t>::max(),
         "imported cubemap is too large: {}", filename);
-    pixels.bytes.resize(static_cast<size_t>(byteCount));
-    const size_t bytesPerPixel = texture_io::bytesPerPixel(pixels.format);
+    std::vector<uint8_t> bytes(static_cast<size_t>(byteCount));
+    const size_t bytesPerPixel = texture_io::bytesPerPixel(desc.format);
     for (uint32_t face = 0; face < 6; ++face)
     {
         for (uint32_t y = 0; y < side; ++y)
@@ -351,9 +349,9 @@ void writeExrPixel(
                     : sampleEquirectangular(decoded.image.get(),
                         decoded.width, decoded.height,
                         faceDirection(face, u, v));
-                uint8_t* output = pixels.bytes.data() +
+                uint8_t* output = bytes.data() +
                     ((static_cast<size_t>(face) * side + y) * side + x) * bytesPerPixel;
-                writeExrPixel(output, rgba, pixels.format);
+                writeExrPixel(output, rgba, desc.format);
             }
         }
     }
@@ -362,23 +360,18 @@ void writeExrPixel(
         projection == ExrProjection::Cube ? "CUBE" : "LATLONG",
         decoded.format == TextureDesc::DataFormat::Rgba32Float
             ? "RGBA32F" : "RGBA16F");
-    return pixels;
+    return bytes;
 }
 
 [[nodiscard]] AssetId saveImported(
-    AssetManager& assets, AssetId id, const std::filesystem::path& source,
-    std::string kind, TexturePixels pixels)
+    AssetManager& assets, TextureDesc desc, const std::filesystem::path& source,
+    std::span<const uint8_t> bytes)
 {
-    const auto binary = binaryPath(id);
+    const auto binary = binaryPath(desc.id);
     const auto relativeSource = sourceRelativeToRoot(source);
-    texture_io::write(assets.path(binary), pixels);
-    TextureDesc desc{};
-    desc.id = std::move(id);
-    desc.source = std::move(kind);
-    desc.format = pixels.format;
-    desc.layout = pixels.layout;
     desc.path = relativeSource.generic_string();
     desc.binary = binary.generic_string();
+    texture_io::write(assets.path(binary), desc, bytes);
     return assets.save(std::move(desc));
 }
 }
@@ -386,18 +379,28 @@ void writeExrPixel(
 AssetId TextureImporter::importTexture(
     AssetManager& assets, AssetId id, const std::filesystem::path& source)
 {
+    TextureDesc desc{};
+    desc.id = std::move(id);
+    desc.source = "file";
+    std::vector<uint8_t> bytes;
     if (isExr(source))
     {
         const DecodedExr decoded = decodeExr(source);
         if (decoded.projection.has_value())
         {
-            return saveImported(assets, std::move(id), source, "environment",
-                loadEnvironment(decoded, source));
+            desc.source = "environment";
+            bytes = loadEnvironment(decoded, source, desc);
         }
-        return saveImported(assets, std::move(id), source, "file",
-            loadExrImage2D(decoded));
+        else
+        {
+            bytes = loadExrImage2D(decoded, desc);
+        }
     }
-    return saveImported(assets, std::move(id), source, "file", loadImage(source));
+    else
+    {
+        bytes = loadImage(source, desc);
+    }
+    return saveImported(assets, std::move(desc), source, bytes);
 }
 
 AssetId TextureImporter::importEnvironmentMap(
@@ -405,6 +408,9 @@ AssetId TextureImporter::importEnvironmentMap(
 {
     CHECK(isExr(source), "environment map must be EXR: {}", source.string());
     const DecodedExr decoded = decodeExr(source);
-    return saveImported(assets, std::move(id), source, "environment",
-        loadEnvironment(decoded, source));
+    TextureDesc desc{};
+    desc.id = std::move(id);
+    desc.source = "environment";
+    const std::vector<uint8_t> bytes = loadEnvironment(decoded, source, desc);
+    return saveImported(assets, std::move(desc), source, bytes);
 }

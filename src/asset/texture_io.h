@@ -4,20 +4,15 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <span>
 #include <vector>
-
-struct TexturePixels
-{
-    TextureDesc::DataFormat format;
-    TextureDesc::Layout layout;
-    uint32_t width = 0;
-    uint32_t height = 0;
-    std::vector<uint8_t> bytes;
-};
 
 namespace texture_io
 {
-void write(const std::filesystem::path& file, const TexturePixels& pixels);
-[[nodiscard]] TexturePixels read(const std::filesystem::path& file);
+void write(
+    const std::filesystem::path& file, const TextureDesc& desc,
+    std::span<const uint8_t> bytes);
+[[nodiscard]] std::vector<uint8_t> read(
+    const std::filesystem::path& file, const TextureDesc& desc);
 [[nodiscard]] uint32_t bytesPerPixel(TextureDesc::DataFormat format);
 }

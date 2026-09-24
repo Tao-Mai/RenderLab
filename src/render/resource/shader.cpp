@@ -12,7 +12,7 @@ Shader::Shader(const vk::raii::Device &device, const std::string &filename)
         .codeSize = code.size() * sizeof(uint32_t),
         .pCode = code.data()
     };
-    module = vkCheck(device.createShaderModule(createInfo), "vkCreateShaderModule");
+    module = vkCheck(device.createShaderModule(createInfo));
 }
 
 vk::ShaderModule Shader::handle() const

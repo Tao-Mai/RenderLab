@@ -102,7 +102,7 @@ void ScenePipelines::init(
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &pushConstantRange,
     };
-    layout = vkCheck(device.createPipelineLayout(layoutInfo), "vkCreatePipelineLayout");
+    layout = vkCheck(device.createPipelineLayout(layoutInfo));
 
     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo>
         pipelineCreateInfoChain = {
@@ -125,8 +125,7 @@ void ScenePipelines::init(
     scenePipeline = vkCheck(
         device.createGraphicsPipeline(
             nullptr,
-            pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
-        "vkCreateGraphicsPipelines");
+            pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()));
 
     const std::array lightShaderStages = {
         vk::PipelineShaderStageCreateInfo{
@@ -167,8 +166,7 @@ void ScenePipelines::init(
     lightMarkerPipeline = vkCheck(
         device.createGraphicsPipeline(
             nullptr,
-            lightMarkerPipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
-        "vkCreateGraphicsPipelines");
+            lightMarkerPipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()));
 }
 
 void ScenePipelines::reset() noexcept

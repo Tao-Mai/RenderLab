@@ -52,7 +52,7 @@ void Material::create(
         .pSetLayouts = &descriptorSetLayout,
     };
     auto descriptorSets = vkCheck(
-        device.allocateDescriptorSets(allocationInfo), "vkAllocateDescriptorSets");
+        device.allocateDescriptorSets(allocationInfo));
     descriptorSet = std::make_shared<vk::raii::DescriptorSet>(
         std::move(descriptorSets.front()));
 
