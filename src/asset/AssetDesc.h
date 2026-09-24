@@ -109,6 +109,7 @@ struct MeshDesc
 struct MaterialDesc
 {
     AssetId                    id;
+    std::optional<AssetId>     shaderId;
     std::optional<glm::vec4>   baseColorFactor;
     std::optional<float>       metallic;
     std::optional<float>       roughness;

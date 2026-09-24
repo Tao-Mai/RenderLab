@@ -1,183 +1,51 @@
 #include "render/pass/EditorPickingPass.h"
 
-#include "render/device/Memory.h"
-#include "render/device/VkCheck.h"
+#include "render/PipelineManager.h"
+#include "render/present/Swapchain.h"
 #include "render/resource/Mesh.h"
-#include "render/resource/Shader.h"
 #include "render/resource/ShaderData.h"
-#include "render/resource/VertexLayout.h"
 
 #include <array>
 
 void EditorPickingPass::init(
     const vk::raii::PhysicalDevice& physicalDevice,
     const vk::raii::Device& device,
-    vk::Extent2D extent,
-    vk::Format depthFormat,
-    vk::DescriptorSetLayout sceneLayout,
-    const Shader& shader)
+    Swapchain& targetSwapchain,
+    PipelineManager& targetPipelines,
+    ShaderHandle targetShader)
 {
-    reset();
-
-    const vk::ImageCreateInfo imageInfo{
-        .imageType = vk::ImageType::e2D,
-        .format = format,
-        .extent = {extent.width, extent.height, 1},
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = vk::SampleCountFlagBits::e1,
-        .tiling = vk::ImageTiling::eOptimal,
-        .usage = vk::ImageUsageFlagBits::eColorAttachment |
-            vk::ImageUsageFlagBits::eTransferSrc,
-        .sharingMode = vk::SharingMode::eExclusive,
-        .initialLayout = vk::ImageLayout::eUndefined,
-    };
-    image = vkCheck(device.createImage(imageInfo));
-    const vk::MemoryRequirements requirements = image.getMemoryRequirements();
-    const vk::MemoryAllocateInfo allocationInfo{
-        .allocationSize = requirements.size,
-        .memoryTypeIndex = vulkan_memory::findType(
-            physicalDevice,
-            requirements.memoryTypeBits,
-            vk::MemoryPropertyFlagBits::eDeviceLocal),
-    };
-    imageMemory = vkCheck(device.allocateMemory(allocationInfo));
-    vkCheck(image.bindMemory(*imageMemory, 0));
-
-    const vk::ImageViewCreateInfo viewInfo{
-        .image = *image,
-        .viewType = vk::ImageViewType::e2D,
-        .format = format,
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
-    };
-    imageView = vkCheck(device.createImageView(viewInfo));
+    swapchain = &targetSwapchain;
+    pipelines = &targetPipelines;
+    shader = targetShader;
     readbackBuffer = Buffer(
-        physicalDevice,
-        device,
-        sizeof(uint32_t),
+        physicalDevice, device, sizeof(uint32_t),
         vk::BufferUsageFlagBits::eTransferDst,
         vk::MemoryPropertyFlagBits::eHostVisible |
             vk::MemoryPropertyFlagBits::eHostCoherent);
+    refreshPipeline();
+}
 
-    const std::array shaderStages = {
-        vk::PipelineShaderStageCreateInfo{
-            .stage = vk::ShaderStageFlagBits::eVertex,
-            .module = shader.handle(),
-            .pName = "vertMain",
-        },
-        vk::PipelineShaderStageCreateInfo{
-            .stage = vk::ShaderStageFlagBits::eFragment,
-            .module = shader.handle(),
-            .pName = "fragMain",
-        },
+void EditorPickingPass::refreshPipeline()
+{
+    const PipelineKey key{
+        .shader = shader,
+        .layout = PipelineLayoutPreset::SceneOnly,
+        .state = PipelineState::preset(RenderMode::Picking),
+        .colorFormat = vk::Format::eR32Uint,
+        .depthFormat = swapchain->depthImageFormat(),
     };
-    const vk::VertexInputBindingDescription binding = VertexLayout::bindingDescription();
-    const auto attributes = VertexLayout::positionAttributeDescription();
-    const vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
-        .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &binding,
-        .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes.size()),
-        .pVertexAttributeDescriptions = attributes.data(),
-    };
-    const vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
-        .topology = vk::PrimitiveTopology::eTriangleList,
-    };
-    const vk::PipelineViewportStateCreateInfo viewportState{
-        .viewportCount = 1,
-        .scissorCount = 1,
-    };
-    const vk::PipelineRasterizationStateCreateInfo rasterizer{
-        .depthClampEnable = vk::False,
-        .rasterizerDiscardEnable = vk::False,
-        .polygonMode = vk::PolygonMode::eFill,
-        .cullMode = vk::CullModeFlagBits::eNone,
-        .frontFace = vk::FrontFace::eClockwise,
-        .depthBiasEnable = vk::False,
-        .lineWidth = 1.0f,
-    };
-    const vk::PipelineMultisampleStateCreateInfo multisampling{
-        .rasterizationSamples = vk::SampleCountFlagBits::e1,
-    };
-    const vk::PipelineDepthStencilStateCreateInfo depthStencil{
-        .depthTestEnable = vk::True,
-        .depthWriteEnable = vk::False,
-        .depthCompareOp = vk::CompareOp::eLessOrEqual,
-        .depthBoundsTestEnable = vk::False,
-    };
-    const vk::PipelineColorBlendAttachmentState colorBlendAttachment{
-        .blendEnable = vk::False,
-        .colorWriteMask = vk::ColorComponentFlagBits::eR,
-    };
-    const vk::PipelineColorBlendStateCreateInfo colorBlending{
-        .logicOp = vk::LogicOp::eCopy,
-        .attachmentCount = 1,
-        .pAttachments = &colorBlendAttachment,
-    };
-    constexpr std::array dynamicStates = {
-        vk::DynamicState::eViewport,
-        vk::DynamicState::eScissor,
-    };
-    const vk::PipelineDynamicStateCreateInfo dynamicState{
-        .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
-        .pDynamicStates = dynamicStates.data(),
-    };
-    const vk::PushConstantRange pushConstantRange{
-        .stageFlags = vk::ShaderStageFlagBits::eVertex |
-            vk::ShaderStageFlagBits::eFragment,
-        .offset = 0,
-        .size = sizeof(EditorPickingPushConstants),
-    };
-    const vk::PipelineLayoutCreateInfo layoutInfo{
-        .setLayoutCount = 1,
-        .pSetLayouts = &sceneLayout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &pushConstantRange,
-    };
-    pipelineLayout = vkCheck(
-        device.createPipelineLayout(layoutInfo));
-
-    vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo>
-        pipelineCreateInfoChain = {
-            {
-                .stageCount = static_cast<uint32_t>(shaderStages.size()),
-                .pStages = shaderStages.data(),
-                .pVertexInputState = &vertexInputInfo,
-                .pInputAssemblyState = &inputAssembly,
-                .pViewportState = &viewportState,
-                .pRasterizationState = &rasterizer,
-                .pMultisampleState = &multisampling,
-                .pDepthStencilState = &depthStencil,
-                .pColorBlendState = &colorBlending,
-                .pDynamicState = &dynamicState,
-                .layout = *pipelineLayout,
-                .renderPass = nullptr,
-            },
-            {
-                .colorAttachmentCount = 1,
-                .pColorAttachmentFormats = &format,
-                .depthAttachmentFormat = depthFormat,
-            },
-        };
-    pipeline = vkCheck(
-        device.createGraphicsPipeline(
-            nullptr,
-            pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()));
+    pipeline = pipelines->getOrCreate(key);
+    pipelineLayout = pipelines->layout(PipelineLayoutPreset::SceneOnly);
 }
 
 void EditorPickingPass::reset() noexcept
 {
+    readbackBuffer.reset();
     pipeline = nullptr;
     pipelineLayout = nullptr;
-    readbackBuffer.reset();
-    imageView = nullptr;
-    image = nullptr;
-    imageMemory = nullptr;
+    shader = {};
+    pipelines = nullptr;
+    swapchain = nullptr;
 }
 
 void EditorPickingPass::begin(
@@ -197,7 +65,7 @@ void EditorPickingPass::begin(
             .newLayout = vk::ImageLayout::eColorAttachmentOptimal,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = *image,
+            .image = swapchain->pickingImageHandle(),
             .subresourceRange = {
                 .aspectMask = vk::ImageAspectFlagBits::eColor,
                 .baseMipLevel = 0,
@@ -235,7 +103,7 @@ void EditorPickingPass::begin(
     const vk::ClearValue clear = vk::ClearColorValue(
         std::array<uint32_t, 4>{0u, 0u, 0u, 0u});
     const vk::RenderingAttachmentInfo colorAttachment{
-        .imageView = *imageView,
+        .imageView = swapchain->pickingImageViewHandle(),
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
         .loadOp = vk::AttachmentLoadOp::eClear,
         .storeOp = vk::AttachmentStoreOp::eStore,
@@ -258,10 +126,10 @@ void EditorPickingPass::begin(
         .pDepthAttachment = &depthAttachment,
     };
     commandBuffer.beginRendering(renderingInfo);
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     const std::array sets = {sceneDescriptorSet};
     commandBuffer.bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0, sets, {});
+        vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, sets, {});
     commandBuffer.setScissor(
         0,
         vk::Rect2D(
@@ -280,7 +148,7 @@ void EditorPickingPass::draw(
         .selectionId = selectionId,
     };
     commandBuffer.pushConstants<EditorPickingPushConstants>(
-        *pipelineLayout,
+        pipelineLayout,
         vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         0,
         pushConstants);
@@ -306,7 +174,7 @@ void EditorPickingPass::end(
         .newLayout = vk::ImageLayout::eTransferSrcOptimal,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = *image,
+        .image = swapchain->pickingImageHandle(),
         .subresourceRange = {
             .aspectMask = vk::ImageAspectFlagBits::eColor,
             .baseMipLevel = 0,
@@ -330,7 +198,7 @@ void EditorPickingPass::end(
         .imageExtent = {1, 1, 1},
     };
     commandBuffer.copyImageToBuffer(
-        *image,
+        swapchain->pickingImageHandle(),
         vk::ImageLayout::eTransferSrcOptimal,
         readbackBuffer.handle(),
         copyRegion);
@@ -345,5 +213,5 @@ uint32_t EditorPickingPass::readSelectionId()
 
 vk::PipelineLayout EditorPickingPass::layout() const
 {
-    return *pipelineLayout;
+    return pipelineLayout;
 }

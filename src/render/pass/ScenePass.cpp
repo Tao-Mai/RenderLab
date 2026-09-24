@@ -6,8 +6,6 @@
 #include "ecs/Light.h"
 #include "ecs/Render.h"
 #include "ecs/Transform.h"
-#include "render/device/FrameContext.h"
-#include "render/device/VkCheck.h"
 #include "render/pass/LightMarkers.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/Mesh.h"
@@ -16,231 +14,112 @@
 #include "render/resource/ShaderData.h"
 #include "render/resource/Texture.h"
 #include "render/device/VulkanContext.h"
-#include "ecs/Light.h"
 
 #include <algorithm>
 #include <array>
-#include <cstddef>
 #include <utility>
 
 #include <glm/vec4.hpp>
 
-namespace
+void ScenePass::bindSceneDescriptor(
+    vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex) const
 {
-struct SceneUniforms
-{
-    glm::mat4  viewProjection{1.0f};
-    glm::vec4  lightColorIntensity{1.0f, 1.0f, 1.0f, 0.0f};
-    glm::vec4  lightPositionRange{0.0f, 0.0f, 0.0f, 1.0f};
-    glm::vec4  lightDirection{0.0f, -1.0f, 0.0f, 0.0f};
-    glm::vec4  lightAreaSizeCone{1.0f, 1.0f, 0.9396926f, 0.8660254f};
-    glm::uvec4 lightFlags{0u};
-    glm::vec4  cameraPosition{0.0f, 0.0f, 0.0f, 1.0f};
-};
-
-static_assert(sizeof(SceneUniforms) == 160);
-static_assert(offsetof(SceneUniforms, lightColorIntensity) == 64);
-static_assert(offsetof(SceneUniforms, lightPositionRange) == 80);
-static_assert(offsetof(SceneUniforms, lightDirection) == 96);
-static_assert(offsetof(SceneUniforms, lightAreaSizeCone) == 112);
-static_assert(offsetof(SceneUniforms, lightFlags) == 128);
-static_assert(offsetof(SceneUniforms, cameraPosition) == 144);
-}
-
-void ScenePass::initDescriptors()
-{
-    const auto&      physicalDevice = vulkan->physicalDeviceHandle();
-    const auto&      device         = vulkan->deviceHandle();
-    const std::array poolSizes      = {
-        vk::DescriptorPoolSize{
-            .type = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1024,
-        },
-        vk::DescriptorPoolSize{
-            .type = vk::DescriptorType::eSampler,
-            .descriptorCount = 1024,
-        },
-        vk::DescriptorPoolSize{
-            .type = vk::DescriptorType::eUniformBuffer,
-            .descriptorCount = 1025,
-        },
-    };
-    const vk::DescriptorPoolCreateInfo poolInfo{
-        .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        .maxSets = 1025,
-        .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
-        .pPoolSizes = poolSizes.data(),
-    };
-    descriptorPool = vkCheck(device.createDescriptorPool(poolInfo));
-
-    const std::array materialBindings = {
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eFragment,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 1,
-            .descriptorType = vk::DescriptorType::eSampler,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eFragment,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 2,
-            .descriptorType = vk::DescriptorType::eUniformBuffer,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eFragment,
-        },
-    };
-    const vk::DescriptorSetLayoutCreateInfo materialLayoutInfo{
-        .bindingCount = static_cast<uint32_t>(materialBindings.size()),
-        .pBindings = materialBindings.data(),
-    };
-    materialLayout = vkCheck(
-        device.createDescriptorSetLayout(materialLayoutInfo));
-
-    const std::array sceneBindings = {
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eUniformBuffer,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eVertex |
-            vk::ShaderStageFlagBits::eFragment,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 1,
-            .descriptorType = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eFragment,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 2,
-            .descriptorType = vk::DescriptorType::eSampler,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eFragment,
-        },
-    };
-
-    const vk::DescriptorSetLayoutCreateInfo sceneLayoutInfo{
-        .bindingCount = sceneBindings.size(),
-        .pBindings = sceneBindings.data(),
-    };
-    sceneLayout = vkCheck(
-        device.createDescriptorSetLayout(sceneLayoutInfo));
-
-    sceneBuffer = Buffer(
-        physicalDevice,
-        device,
-        sizeof(SceneUniforms),
-        vk::BufferUsageFlagBits::eUniformBuffer,
-        vk::MemoryPropertyFlagBits::eHostVisible |
-        vk::MemoryPropertyFlagBits::eHostCoherent);
-
-    const vk::DescriptorSetLayout       layout = *sceneLayout;
-    const vk::DescriptorSetAllocateInfo allocationInfo{
-        .descriptorPool = *descriptorPool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &layout,
-    };
-    sceneSet = std::move(vkCheck(
-        device.allocateDescriptorSets(allocationInfo)).front());
-
-    const vk::DescriptorBufferInfo bufferInfo{
-        .buffer = sceneBuffer.handle(),
-        .range = sceneBuffer.size(),
-    };
-    const vk::WriteDescriptorSet write{
-        .dstSet = *sceneSet,
-        .dstBinding = 0,
-        .descriptorCount = 1,
-        .descriptorType = vk::DescriptorType::eUniformBuffer,
-        .pBufferInfo = &bufferInfo,
-    };
-    device.updateDescriptorSets(write, {});
-}
-
-void ScenePass::bindSceneDescriptor(vk::raii::CommandBuffer& commandBuffer) const
-{
-    const std::array sets = {*sceneSet};
+    const std::array sets = {frames->at(frameIndex).sceneSetHandle()};
     commandBuffer.bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics,
-        scenePipelines.layoutHandle(),
-        sceneSetIndex,
-        sets,
-        {});
+        vk::PipelineBindPoint::eGraphics, pipelineLayout,
+        RenderInterface::sceneSet, sets, {});
 }
 
-void ScenePass::init(VulkanContext& context, Swapchain&                 targetSwapchain,
-                     FrameContext&  targetFrame, RenderResourceManager& targetResources)
+void ScenePass::init(VulkanContext& context, Swapchain& targetSwapchain,
+    std::array<FrameContext, maxFramesInFlight>& targetFrames,
+    PipelineManager& targetPipelines,
+    RenderResourceManager& targetResources, ShaderHandle targetSceneShader,
+    ShaderHandle targetLightShader)
 {
-    vulkan    = &context;
+    vulkan = &context;
     swapchain = &targetSwapchain;
-    frame     = &targetFrame;
+    frames = &targetFrames;
+    pipelines = &targetPipelines;
     resources = &targetResources;
-    initDescriptors();
-    resources->configureMaterialDescriptors(*descriptorPool, *materialLayout);
-    scenePipelines.init(
-        vulkan->deviceHandle(),
-        swapchain->surfaceFormat().format,
-        swapchain->depthImageFormat(),
-        *sceneLayout,
-        *materialLayout,
-        resources->shader("scene"),
-        resources->shader("light"));
+    sceneShader = targetSceneShader;
+    lightShader = targetLightShader;
+    refreshPipelines();
+}
+
+void ScenePass::refreshPipelines()
+{
+    const vk::Format colorFormat = swapchain->surfaceFormat().format;
+    const vk::Format depthFormat = swapchain->depthImageFormat();
+    scenePipeline = pipelines->getOrCreate({
+        .shader = sceneShader,
+        .layout = PipelineLayoutPreset::SceneMaterial,
+        .state = PipelineState::preset(RenderMode::Opaque),
+        .colorFormat = colorFormat,
+        .depthFormat = depthFormat,
+    });
+    lightMarkerPipeline = pipelines->getOrCreate({
+        .shader = lightShader,
+        .layout = PipelineLayoutPreset::SceneMaterial,
+        .state = PipelineState::preset(RenderMode::LightMarker),
+        .colorFormat = colorFormat,
+        .depthFormat = depthFormat,
+    });
+    pipelineLayout = pipelines->layout(PipelineLayoutPreset::SceneMaterial);
 }
 
 void ScenePass::reset() noexcept
 {
-    scenePipelines.reset();
     environmentTexture.reset();
-    sceneSet = nullptr;
-    sceneBuffer.reset();
-    sceneLayout    = nullptr;
-    materialLayout = nullptr;
-    descriptorPool = nullptr;
-    resources      = nullptr;
-    frame          = nullptr;
-    swapchain      = nullptr;
-    vulkan         = nullptr;
+    scenePipeline = nullptr;
+    lightMarkerPipeline = nullptr;
+    pipelineLayout = nullptr;
+    sceneShader = {};
+    lightShader = {};
+    resources = nullptr;
+    pipelines = nullptr;
+    frames = nullptr;
+    swapchain = nullptr;
+    vulkan = nullptr;
 }
 
 void ScenePass::bindEnvironment(const SceneDesc& scene)
 {
     const AssetId textureId = scene.environment.environmentMap.value_or(TextureDesc::whiteCube);
     environmentTexture = resources->texture(textureId);
-
     const vk::DescriptorImageInfo imageInfo{
         .imageView = environmentTexture->imageView(),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
-    const vk::DescriptorImageInfo samplerInfo{
-        .sampler = environmentTexture->sampler(),
-    };
-    const std::array writes = {
-        vk::WriteDescriptorSet{
-            .dstSet = *sceneSet,
-            .dstBinding = 1,
-            .descriptorCount = 1,
-            .descriptorType = vk::DescriptorType::eSampledImage,
-            .pImageInfo = &imageInfo,
-        },
-        vk::WriteDescriptorSet{
-            .dstSet = *sceneSet,
-            .dstBinding = 2,
-            .descriptorCount = 1,
-            .descriptorType = vk::DescriptorType::eSampler,
-            .pImageInfo = &samplerInfo,
-        },
-    };
-    vulkan->deviceHandle().updateDescriptorSets(writes, {});
+    const vk::DescriptorImageInfo samplerInfo{.sampler = environmentTexture->sampler()};
+    for (FrameContext& frame : *frames)
+    {
+        const std::array writes = {
+            vk::WriteDescriptorSet{
+                .dstSet = frame.sceneSetHandle(),
+                .dstBinding = RenderInterface::environmentImageBinding,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eSampledImage,
+                .pImageInfo = &imageInfo,
+            },
+            vk::WriteDescriptorSet{
+                .dstSet = frame.sceneSetHandle(),
+                .dstBinding = RenderInterface::environmentSamplerBinding,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eSampler,
+                .pImageInfo = &samplerInfo,
+            },
+        };
+        vulkan->deviceHandle().updateDescriptorSets(writes, {});
+    }
 }
 
 void ScenePass::updateScene(
+    uint32_t frameIndex,
     const glm::mat4&       viewProjection,
     const glm::vec3&       cameraPosition,
     const SceneObjectDesc* lightObject)
 {
+    this->cameraPosition = cameraPosition;
     SceneUniforms uniforms{
         .viewProjection = viewProjection,
         .cameraPosition = glm::vec4{cameraPosition, 1.0f},
@@ -268,17 +147,12 @@ void ScenePass::updateScene(
             0u,
         };
     }
-    sceneBuffer.upload(&uniforms, sizeof(uniforms));
+    frames->at(frameIndex).updateScene(uniforms);
 }
 
-vk::DescriptorSetLayout ScenePass::sceneLayoutHandle() const
+vk::DescriptorSet ScenePass::sceneSetHandle(uint32_t frameIndex) const
 {
-    return *sceneLayout;
-}
-
-vk::DescriptorSet ScenePass::sceneSetHandle() const
-{
-    return *sceneSet;
+    return frames->at(frameIndex).sceneSetHandle();
 }
 
 void ScenePass::record(
@@ -286,6 +160,7 @@ void ScenePass::record(
     const std::vector<SceneRenderItem>& renderItems,
     const std::vector<LightRenderItem>& lightRenderItems,
     const LightMarkers&                 lightMarkers,
+    uint32_t                            frameIndex,
     Target                              target) const
 {
     vk::ClearValue              clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
@@ -297,7 +172,7 @@ void ScenePass::record(
         .clearValue = clearColor};
     vk::ClearValue              depthClear          = vk::ClearDepthStencilValue(1.0f, 0);
     vk::RenderingAttachmentInfo depthAttachmentInfo = {
-        .imageView = swapchain->depthImageViewHandle(),
+        .imageView = swapchain->depthImageViewHandle(frameIndex),
         .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
         .loadOp = vk::AttachmentLoadOp::eClear,
         .storeOp = target.storeDepthForPicking
@@ -313,8 +188,8 @@ void ScenePass::record(
         .pDepthAttachment = &depthAttachmentInfo};
 
     commandBuffer.beginRendering(renderingInfo);
-    scenePipelines.bindScene(commandBuffer);
-    bindSceneDescriptor(commandBuffer);
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, scenePipeline);
+    bindSceneDescriptor(commandBuffer, frameIndex);
     const ViewportRect editorViewport = target.viewport;
     const uint32_t     viewportX      = std::min(
         static_cast<uint32_t>(std::max(editorViewport.x, 0.0f)),
@@ -348,17 +223,30 @@ void ScenePass::record(
                 static_cast<int32_t>(viewportX),
                 static_cast<int32_t>(viewportY)),
             vk::Extent2D(viewportWidth, viewportHeight)));
+    struct DrawCall
+    {
+        Mesh* mesh;
+        const Material* material;
+        glm::mat4 model;
+        uint32_t firstIndex;
+        uint32_t indexCount;
+        float distanceSquared;
+    };
+    std::vector<DrawCall> opaqueDraws;
+    std::vector<DrawCall> transparentDraws;
     for (const SceneRenderItem& item : renderItems)
     {
-        item.mesh->bind(commandBuffer);
-        const ecs::Render* render =
-            item.object->components.at("Render").try_cast<ecs::Render>();
-        CHECK(render != nullptr, "SceneRenderItem missing Render component");
-
+        const auto* render = item.object->components.at("Render").try_cast<ecs::Render>();
+        const auto* transform =
+            item.object->components.at("Transform").try_cast<ecs::Transform>();
+        CHECK(render != nullptr && transform != nullptr,
+            "SceneRenderItem is missing Render or Transform");
+        const glm::vec3 offset = transform->position - cameraPosition;
+        const float distanceSquared = glm::dot(offset, offset);
         const std::vector<Submesh>& submeshes = item.mesh->submeshes();
         for (size_t index = 0; index < submeshes.size(); ++index)
         {
-            const Submesh&  submesh  = submeshes[index];
+            const Submesh& submesh = submeshes[index];
             const Material* material = submesh.material;
             if (const auto overrideIt = render->materialOverrides.find(
                     static_cast<int>(index));
@@ -370,44 +258,61 @@ void ScenePass::record(
                     const MeshDesc& mesh = context().assetManager->desc<MeshDesc>(
                         render->meshId);
                     CHECK(index < mesh.submeshes.size(),
-                          "material override index out of range");
+                        "material override index out of range");
                     materialId = mesh.submeshes[index].materialId;
                 }
                 MaterialDesc desc = resources->materialDesc(materialId);
                 applyMaterialFields(desc, overrideIt->second);
                 material = &resources->material(desc);
             }
-
-            const MeshPushConstants pushConstants{
-                .model = item.object->components.at("Transform").try_cast<
-                    ecs::Transform>()->matrix(),
+            DrawCall draw{
+                item.mesh, material, transform->matrix(),
+                submesh.firstIndex, submesh.indexCount, distanceSquared,
             };
-            commandBuffer.pushConstants<MeshPushConstants>(
-                scenePipelines.layoutHandle(),
-                vk::ShaderStageFlagBits::eVertex |
-                vk::ShaderStageFlagBits::eFragment,
-                0,
-                pushConstants);
-            const std::array materialSets = {material->descriptorSetHandle()};
-            commandBuffer.bindDescriptorSets(
-                vk::PipelineBindPoint::eGraphics,
-                scenePipelines.layoutHandle(),
-                materialSetIndex,
-                materialSets,
-                {});
-            commandBuffer.drawIndexed(
-                submesh.indexCount,
-                1,
-                submesh.firstIndex,
-                0,
-                0);
+            (material->renderMode() == RenderMode::Transparent
+                ? transparentDraws : opaqueDraws).push_back(draw);
         }
+    }
+    std::sort(transparentDraws.begin(), transparentDraws.end(),
+        [](const DrawCall& left, const DrawCall& right)
+        { return left.distanceSquared > right.distanceSquared; });
+
+    vk::Pipeline boundPipeline = scenePipeline;
+    const auto draw = [&](const DrawCall& item)
+    {
+        const vk::Pipeline pipeline = pipelines->getOrCreate(
+            item.material->pipelineKey(
+                swapchain->surfaceFormat().format, swapchain->depthImageFormat()));
+        if (pipeline != boundPipeline)
+        {
+            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+            boundPipeline = pipeline;
+        }
+        item.mesh->bind(commandBuffer);
+        const MeshPushConstants pushConstants{.model = item.model};
+        commandBuffer.pushConstants<MeshPushConstants>(
+            pipelineLayout,
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            0, pushConstants);
+        const std::array materialSets = {item.material->descriptorSetHandle()};
+        commandBuffer.bindDescriptorSets(
+            vk::PipelineBindPoint::eGraphics, pipelineLayout,
+                RenderInterface::materialSet, materialSets, {});
+        commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
+    };
+    for (const DrawCall& item : opaqueDraws)
+    {
+        draw(item);
+    }
+    for (const DrawCall& item : transparentDraws)
+    {
+        draw(item);
     }
 
     if (!lightRenderItems.empty())
     {
-        scenePipelines.bindLightMarkers(commandBuffer);
-        bindSceneDescriptor(commandBuffer);
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, lightMarkerPipeline);
+        bindSceneDescriptor(commandBuffer, frameIndex);
 
         for (const LightRenderItem& item : lightRenderItems)
         {
@@ -419,7 +324,7 @@ void ScenePass::record(
             CHECK(transform != nullptr, "light item missing Transform component");
             lightMarkers.record(
                 commandBuffer,
-                scenePipelines.layoutHandle(),
+                pipelineLayout,
                 *transform,
                 *light);
         }

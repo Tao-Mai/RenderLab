@@ -33,11 +33,7 @@ void Renderer::init()
 EditorFrameResult Renderer::render(const Camera& camera, const EditorFrameInput& editor)
 {
     CHECK(inited, "Renderer must be initialized before render()");
-
-    const glm::mat4 view       = camera.viewMatrix();
-    const glm::mat4 projection = camera.projectionMatrix(editor.aspectRatio);
-    scenePass.updateScene(projection * view, camera.worldPosition(), scene.primaryLightObject());
-    return drawFrame(editor);
+    return drawFrame(camera, editor);
 }
 
 void Renderer::loadScene(SceneDesc& targetScene)
@@ -66,11 +62,18 @@ void Renderer::shutdown() noexcept
 
     scene.reset();
     pickingPass.reset();
-    resources.reset();
     scenePass.reset();
-    frame.reset();
+    resources.reset();
+    pipelines.reset();
+    for (FrameContext& frame : frames)
+    {
+        frame.reset();
+    }
+    descriptors.reset();
+    shaders.reset();
     swapchain.reset();
     vulkan.reset();
+    frameIndex = 0;
     inited = false;
 }
 
@@ -89,6 +92,11 @@ const GpuScene& Renderer::gpuScene() const
     return scene;
 }
 
+FrameContext& Renderer::currentFrame()
+{
+    return frames[frameIndex];
+}
+
 void Renderer::initVulkan()
 {
     CHECK(context().window != nullptr, "Window must exist before Renderer");
@@ -97,18 +105,19 @@ void Renderer::initVulkan()
     Window& window = *context().window;
     vulkan.init(window);
     swapchain.init(vulkan, window);
-    frame.init(vulkan);
-    // 深度图转一下格式
-    swapchain.transitionDepthImageLayout(frame.commandPoolHandle());
-    resources.init(vulkan, frame);
-    scenePass.init(vulkan, swapchain, frame, resources);
-    pickingPass.init(
-        vulkan.physicalDeviceHandle(),
-        vulkan.deviceHandle(),
-        swapchain.extent(),
-        swapchain.depthImageFormat(),
-        scenePass.sceneLayoutHandle(),
-        resources.shader("picking"));
+    shaders.init(vulkan.deviceHandle(), *context().assetManager);
+    descriptors.init(vulkan.deviceHandle());
+    pipelines.init(vulkan.deviceHandle(), descriptors, shaders);
+    for (FrameContext& frame : frames)
+    {
+        frame.init(vulkan, descriptors);
+    }
+    swapchain.transitionDepthImageLayout(frames[0].commandPoolHandle());
+    resources.init(vulkan, descriptors, shaders);
+    scenePass.init(vulkan, swapchain, frames, pipelines, resources,
+        shaders.getOrLoad("scene"), shaders.getOrLoad("light"));
+    pickingPass.init(vulkan.physicalDeviceHandle(), vulkan.deviceHandle(),
+        swapchain, pipelines, shaders.getOrLoad("picking"));
 }
 
 void Renderer::recreateSwapchain()
@@ -129,33 +138,17 @@ void Renderer::recreateSwapchain()
     }
 
     waitIdle();
-    scene.reset();
-    pickingPass.reset();
-    resources.reset();
-    scenePass.reset();
-    frame.reset();
     swapchain.reset();
-
     swapchain.init(vulkan, window);
-    frame.init(vulkan);
-    swapchain.transitionDepthImageLayout(frame.commandPoolHandle());
-    resources.init(vulkan, frame);
-    scenePass.init(vulkan, swapchain, frame, resources);
-    pickingPass.init(
-        vulkan.physicalDeviceHandle(),
-        vulkan.deviceHandle(),
-        swapchain.extent(),
-        swapchain.depthImageFormat(),
-        scenePass.sceneLayoutHandle(),
-        resources.shader("picking"));
-    scene.load(*context().scene, resources);
-    scenePass.bindEnvironment(*context().scene);
+    swapchain.transitionDepthImageLayout(frames[0].commandPoolHandle());
+    scenePass.refreshPipelines();
+    pickingPass.refreshPipeline();
     context().editor->refreshUi();
 }
 
 void Renderer::recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& editor)
 {
-    auto& commandBuffer = frame.commandBufferHandle();
+    auto& commandBuffer = currentFrame().commandBufferHandle();
     vkCheck(commandBuffer.reset());
     vkCheck(commandBuffer.begin({}));
 
@@ -173,6 +166,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& 
         scene.renderItems(),
         scene.lightRenderItems(),
         scene.lightMarkers(),
+        frameIndex,
         {.imageIndex = imageIndex,
          .viewport = editor.viewport,
          .storeDepthForPicking = editor.requestPick});
@@ -201,9 +195,9 @@ void Renderer::recordPickingPass(
 
     pickingPass.begin(
         commandBuffer,
-        swapchain.depthImageHandle(),
-        swapchain.depthImageViewHandle(),
-        scenePass.sceneSetHandle(),
+        swapchain.depthImageHandle(frameIndex),
+        swapchain.depthImageViewHandle(frameIndex),
+        scenePass.sceneSetHandle(frameIndex),
         editor.pickX,
         editor.pickY);
 
@@ -267,7 +261,7 @@ void Renderer::transitionImageLayout(
     vk::PipelineStageFlags2 srcStageMask,
     vk::PipelineStageFlags2 dstStageMask)
 {
-    auto&                   commandBuffer = frame.commandBufferHandle();
+    auto&                   commandBuffer = currentFrame().commandBufferHandle();
     vk::ImageMemoryBarrier2 barrier       = {
         .srcStageMask = srcStageMask,
         .srcAccessMask = srcAccessMask,
@@ -291,12 +285,11 @@ void Renderer::transitionImageLayout(
     commandBuffer.pipelineBarrier2(dependencyInfo);
 }
 
-EditorFrameResult Renderer::drawFrame(const EditorFrameInput& editor)
+EditorFrameResult Renderer::drawFrame(const Camera& camera, const EditorFrameInput& editor)
 {
-    const vk::Fence         drawFence                = frame.drawFenceHandle();
-    const vk::Semaphore     presentCompleteSemaphore = frame.imageAvailableSemaphore();
-    const vk::Semaphore     renderFinishedSemaphore  = frame.renderFinishedSemaphore();
-    const vk::CommandBuffer commandBuffer            = *frame.commandBufferHandle();
+    const vk::Fence         drawFence                = currentFrame().drawFenceHandle();
+    const vk::Semaphore     imageAvailableSemaphore = currentFrame().imageAvailableSemaphore();
+    const vk::CommandBuffer commandBuffer            = *currentFrame().commandBufferHandle();
 
     const auto fenceResult = vulkan.deviceHandle().waitForFences(drawFence, vk::True, UINT64_MAX);
     CHECK(fenceResult == vk::Result::eSuccess, "failed to wait for fence!");
@@ -307,7 +300,7 @@ EditorFrameResult Renderer::drawFrame(const EditorFrameInput& editor)
             static_cast<VkDevice>(*vulkan.deviceHandle()),
             static_cast<VkSwapchainKHR>(*swapchain.handle()),
             UINT64_MAX,
-            static_cast<VkSemaphore>(presentCompleteSemaphore),
+            static_cast<VkSemaphore>(imageAvailableSemaphore),
             VK_NULL_HANDLE,
             &imageIndex));
     if (acquireResult == vk::Result::eErrorOutOfDateKHR)
@@ -319,18 +312,23 @@ EditorFrameResult Renderer::drawFrame(const EditorFrameInput& editor)
           acquireResult == vk::Result::eSuboptimalKHR,
           "vkAcquireNextImageKHR failed: {}",
           vk::to_string(acquireResult));
+    const vk::Semaphore renderFinishedSemaphore =
+        swapchain.renderFinishedSemaphore(imageIndex);
     vkCheck(vulkan.deviceHandle().resetFences(drawFence));
+
+    const glm::mat4 viewProjection = camera.projectionMatrix(editor.aspectRatio) *
+        camera.viewMatrix();
+    scenePass.updateScene(frameIndex, viewProjection, camera.worldPosition(),
+        scene.primaryLightObject());
 
     const bool resolvePickAfterSubmit = editor.requestPick;
     recordCommandBuffer(imageIndex, editor);
-
-    vkCheck(vulkan.queueHandle().waitIdle());
 
     vk::PipelineStageFlags waitDestinationStageMask(
         vk::PipelineStageFlagBits::eColorAttachmentOutput);
     const vk::SubmitInfo submitInfo{
         .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &presentCompleteSemaphore,
+        .pWaitSemaphores = &imageAvailableSemaphore,
         .pWaitDstStageMask = &waitDestinationStageMask,
         .commandBufferCount = 1,
         .pCommandBuffers = &commandBuffer,
@@ -374,5 +372,6 @@ EditorFrameResult Renderer::drawFrame(const EditorFrameInput& editor)
     {
         recreateSwapchain();
     }
+    frameIndex = (frameIndex + 1) % maxFramesInFlight;
     return frameResult;
 }

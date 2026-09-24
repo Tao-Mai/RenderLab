@@ -57,6 +57,8 @@ struct MaterialData {
     float4 baseColorFactor;
     float roughness;
     float metallic;
+    float alphaCutoff;
+    uint alphaMode;
 };
 
 [[vk::binding(0, 1)]]
@@ -97,6 +99,8 @@ float4 fragMain(VertexOutput input) : SV_Target
     float3 N = normalize(input.worldNormal);
 
     float4 baseColor = baseColorTexture.Sample(baseColorSampler, input.uv) * material.baseColorFactor;
+    if (material.alphaMode == 1 && baseColor.a < material.alphaCutoff)
+        discard;
 
     float3 L = normalize(sceneUniforms.light.position - input.worldPosition);
     float distanceToLight = length(sceneUniforms.light.position - input.worldPosition);

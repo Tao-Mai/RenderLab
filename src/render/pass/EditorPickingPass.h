@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/resource/Buffer.h"
+#include "render/ShaderManager.h"
 
 #include <cstdint>
 
@@ -8,7 +9,8 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class Mesh;
-class Shader;
+class PipelineManager;
+class Swapchain;
 
 class EditorPickingPass
 {
@@ -16,10 +18,10 @@ public:
     void init(
         const vk::raii::PhysicalDevice& physicalDevice,
         const vk::raii::Device& device,
-        vk::Extent2D extent,
-        vk::Format depthFormat,
-        vk::DescriptorSetLayout sceneLayout,
-        const Shader& shader);
+        Swapchain& swapchain,
+        PipelineManager& pipelines,
+        ShaderHandle shader);
+    void refreshPipeline();
     void reset() noexcept;
 
     void begin(
@@ -39,11 +41,10 @@ public:
     [[nodiscard]] vk::PipelineLayout layout() const;
 
 private:
-    vk::Format format = vk::Format::eR32Uint;
-    vk::raii::DeviceMemory imageMemory = nullptr;
-    vk::raii::Image image = nullptr;
-    vk::raii::ImageView imageView = nullptr;
+    Swapchain* swapchain = nullptr;
+    PipelineManager* pipelines = nullptr;
+    ShaderHandle shader;
     Buffer readbackBuffer;
-    vk::raii::PipelineLayout pipelineLayout = nullptr;
-    vk::raii::Pipeline pipeline = nullptr;
+    vk::PipelineLayout pipelineLayout;
+    vk::Pipeline pipeline;
 };

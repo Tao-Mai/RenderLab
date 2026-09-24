@@ -7,11 +7,12 @@
 #include "asset/TextureIo.h"
 #include "core/Context.h"
 #include "core/Logger.h"
-#include "render/device/FrameContext.h"
+#include "render/DescriptorManager.h"
+#include "render/ShaderManager.h"
 #include "render/device/VulkanContext.h"
+#include "render/device/VkCheck.h"
 #include "render/resource/Material.h"
 #include "render/resource/Mesh.h"
-#include "render/resource/Shader.h"
 #include "render/resource/Texture.h"
 
 #include <array>
@@ -54,19 +55,27 @@ namespace
 
 RenderResourceManager::~RenderResourceManager() = default;
 
-void RenderResourceManager::init(VulkanContext& targetVulkan, FrameContext& targetFrame)
+GpuUploadContext RenderResourceManager::uploadContext() const
+{
+    CHECK(vulkan != nullptr && *uploadPool,
+        "RenderResourceManager upload context is not initialized");
+    return {vulkan->physicalDeviceHandle(), vulkan->deviceHandle(),
+        uploadPool, vulkan->queueHandle()};
+}
+
+void RenderResourceManager::init(VulkanContext& targetVulkan,
+    DescriptorManager& targetDescriptors, ShaderManager& targetShaders)
 {
     CHECK(context().assetManager != nullptr, "AssetManager must exist before RenderResourceManager");
     assets = context().assetManager;
     vulkan = &targetVulkan;
-    frame = &targetFrame;
-}
-
-void RenderResourceManager::configureMaterialDescriptors(
-    vk::DescriptorPool pool, vk::DescriptorSetLayout layout)
-{
-    descriptorPool = pool;
-    materialLayout = layout;
+    descriptors = &targetDescriptors;
+    shaders = &targetShaders;
+    const vk::CommandPoolCreateInfo poolInfo{
+        .flags = vk::CommandPoolCreateFlagBits::eTransient,
+        .queueFamilyIndex = vulkan->graphicsQueueFamilyIndex(),
+    };
+    uploadPool = vkCheck(vulkan->deviceHandle().createCommandPool(poolInfo));
 }
 
 void RenderResourceManager::reset() noexcept
@@ -74,10 +83,9 @@ void RenderResourceManager::reset() noexcept
     meshes.clear();
     materials.clear();
     textures.clear();
-    shaders.clear();
-    descriptorPool = nullptr;
-    materialLayout = nullptr;
-    frame = nullptr;
+    uploadPool = nullptr;
+    descriptors = nullptr;
+    shaders = nullptr;
     vulkan = nullptr;
     assets = nullptr;
 }
@@ -129,7 +137,8 @@ Mesh& RenderResourceManager::mesh(const AssetId& id)
     }
 
     auto gpu = std::make_unique<Mesh>(
-        frame->uploadContext(*vulkan), std::move(geometry), std::move(parts));
+        uploadContext(),
+        std::move(geometry), std::move(parts));
     return *meshes.emplace(id, std::move(gpu)).first->second;
 }
 
@@ -150,7 +159,7 @@ Material& RenderResourceManager::material(const AssetId& id)
 
 Material& RenderResourceManager::material(const MaterialDesc& desc)
 {
-    CHECK(descriptorPool && materialLayout, "material descriptor layout is not configured");
+    CHECK(descriptors != nullptr, "RenderResourceManager is not initialized");
 
     const std::string key = rfl::json::write(desc);
     if (const auto found = materials.find(key); found != materials.end())
@@ -164,7 +173,8 @@ Material& RenderResourceManager::material(const MaterialDesc& desc)
     auto gpu = std::make_unique<Material>();
     gpu->create(
         vulkan->physicalDeviceHandle(), vulkan->deviceHandle(),
-        descriptorPool, materialLayout, desc, std::move(baseColor));
+        *descriptors, shaders->getOrLoad(desc.shaderId.value_or("scene")),
+        desc, std::move(baseColor));
     return *materials.emplace(key, std::move(gpu)).first->second;
 }
 
@@ -181,7 +191,7 @@ std::shared_ptr<Texture> RenderResourceManager::texture(const AssetId& id)
         if (id == TextureDesc::white)
         {
             constexpr std::array<uint8_t, 4> white{255, 255, 255, 255};
-            gpu = std::make_shared<Texture>(frame->uploadContext(*vulkan), white);
+            gpu = std::make_shared<Texture>(uploadContext(), white);
         }
         else
         {
@@ -193,7 +203,7 @@ std::shared_ptr<Texture> RenderResourceManager::texture(const AssetId& id)
             whiteCube.height = 1;
             const std::vector<uint8_t> bytes(6 * 4, 255);
             gpu = std::make_shared<Texture>(
-                frame->uploadContext(*vulkan), whiteCube, bytes);
+                uploadContext(), whiteCube, bytes);
         }
     }
     else
@@ -206,7 +216,7 @@ std::shared_ptr<Texture> RenderResourceManager::texture(const AssetId& id)
             CHECK(desc.layout == TextureDesc::Layout::Image2D,
                 "solid texture '{}' must be 2D", id);
             CHECK(desc.rgba.has_value(), "solid texture '{}' has no RGBA value", id);
-            gpu = std::make_shared<Texture>(frame->uploadContext(*vulkan), *desc.rgba);
+            gpu = std::make_shared<Texture>(uploadContext(), *desc.rgba);
         }
         else if (desc.source == "file" || desc.source == "environment")
         {
@@ -221,7 +231,7 @@ std::shared_ptr<Texture> RenderResourceManager::texture(const AssetId& id)
                 "texture '{}' has no binary path", id);
             const std::vector<uint8_t> bytes = texture_io::read(
                 assets->path(*desc.binary), desc);
-            gpu = std::make_shared<Texture>(frame->uploadContext(*vulkan), desc, bytes);
+            gpu = std::make_shared<Texture>(uploadContext(), desc, bytes);
         }
         else
         {
@@ -229,16 +239,4 @@ std::shared_ptr<Texture> RenderResourceManager::texture(const AssetId& id)
         }
     }
     return textures.emplace(id, std::move(gpu)).first->second;
-}
-
-Shader& RenderResourceManager::shader(const AssetId& id)
-{
-    if (const auto found = shaders.find(id); found != shaders.end())
-    {
-        return *found->second;
-    }
-    const ShaderDesc& desc = assets->desc<ShaderDesc>(id);
-    auto gpu = std::make_unique<Shader>(
-        vulkan->deviceHandle(), desc.binary.string());
-    return *shaders.emplace(id, std::move(gpu)).first->second;
 }

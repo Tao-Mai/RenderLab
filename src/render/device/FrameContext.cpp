@@ -2,10 +2,11 @@
 
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
+#include "render/DescriptorManager.h"
 
 #include <utility>
 
-void FrameContext::init(const VulkanContext& vulkan)
+void FrameContext::init(const VulkanContext& vulkan, DescriptorManager& descriptors)
 {
     const vk::CommandPoolCreateInfo poolInfo{
         .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -22,22 +23,49 @@ void FrameContext::init(const VulkanContext& vulkan)
     graphicsCommandBuffer = std::move(vkCheck(
         vulkan.deviceHandle().allocateCommandBuffers(allocationInfo)).front());
 
-    // 等present完再submit
-    presentComplete = vkCheck(vulkan.deviceHandle().createSemaphore(vk::SemaphoreCreateInfo()));
-    // 等render finish再present
-    renderFinished  = vkCheck(vulkan.deviceHandle().createSemaphore(vk::SemaphoreCreateInfo()));
+    imageAvailable = vkCheck(vulkan.deviceHandle().createSemaphore(vk::SemaphoreCreateInfo()));
     // CPU等GPU draw完之后再复用该frame的相关资源，比如UBO等
     drawFence       = vkCheck(
         vulkan.deviceHandle().createFence({.flags = vk::FenceCreateFlagBits::eSignaled}));
+
+    sceneBuffer = Buffer(
+        vulkan.physicalDeviceHandle(), vulkan.deviceHandle(),
+        sizeof(SceneUniforms), vk::BufferUsageFlagBits::eUniformBuffer,
+        vk::MemoryPropertyFlagBits::eHostVisible |
+            vk::MemoryPropertyFlagBits::eHostCoherent);
+    sceneSet = descriptors.allocate(DescriptorLayoutPreset::Scene);
+    const vk::DescriptorBufferInfo bufferInfo{
+        .buffer = sceneBuffer.handle(),
+        .range = sceneBuffer.size(),
+    };
+    const vk::WriteDescriptorSet write{
+        .dstSet = *sceneSet,
+        .dstBinding = RenderInterface::sceneUniformBinding,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
+        .pBufferInfo = &bufferInfo,
+    };
+    vulkan.deviceHandle().updateDescriptorSets(write, {});
 }
 
 void FrameContext::reset() noexcept
 {
+    sceneSet = nullptr;
+    sceneBuffer.reset();
     drawFence             = nullptr;
-    renderFinished        = nullptr;
-    presentComplete       = nullptr;
+    imageAvailable        = nullptr;
     graphicsCommandBuffer = nullptr;
     graphicsCommandPool   = nullptr;
+}
+
+void FrameContext::updateScene(const SceneUniforms& data)
+{
+    sceneBuffer.upload(&data, sizeof(data));
+}
+
+vk::DescriptorSet FrameContext::sceneSetHandle() const
+{
+    return *sceneSet;
 }
 
 const vk::raii::CommandPool& FrameContext::commandPoolHandle() const
@@ -52,25 +80,10 @@ vk::raii::CommandBuffer& FrameContext::commandBufferHandle()
 
 vk::Semaphore FrameContext::imageAvailableSemaphore() const
 {
-    return *presentComplete;
-}
-
-vk::Semaphore FrameContext::renderFinishedSemaphore() const
-{
-    return *renderFinished;
+    return *imageAvailable;
 }
 
 vk::Fence FrameContext::drawFenceHandle() const
 {
     return *drawFence;
-}
-
-GpuUploadContext FrameContext::uploadContext(VulkanContext& vulkan) const
-{
-    return {
-        vulkan.physicalDeviceHandle(),
-        vulkan.deviceHandle(),
-        graphicsCommandPool,
-        vulkan.queueHandle(),
-    };
 }

@@ -30,11 +30,14 @@ find_program(SLANGC_EXECUTABLE
 set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 set(SHADER_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 set(SLANG_SHADER "${SHADER_BINARY_DIR}/slang.spv")
+set(SLANG_SHADER_REFLECTION "${SHADER_BINARY_DIR}/slang.reflection.json")
 set(SLANG_LIGHT_SHADER "${SHADER_BINARY_DIR}/light.spv")
+set(SLANG_LIGHT_REFLECTION "${SHADER_BINARY_DIR}/light.reflection.json")
 set(SLANG_EDITOR_PICKING_SHADER "${SHADER_BINARY_DIR}/editor_picking.spv")
+set(SLANG_EDITOR_PICKING_REFLECTION "${SHADER_BINARY_DIR}/editor_picking.reflection.json")
 
 add_custom_command(
-        OUTPUT "${SLANG_SHADER}"
+        OUTPUT "${SLANG_SHADER}" "${SLANG_SHADER_REFLECTION}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
         COMMAND ${SLANGC_EXECUTABLE}
         "${SHADER_SOURCE_DIR}/shader.slang"
@@ -45,6 +48,7 @@ add_custom_command(
         -fvk-use-entrypoint-name
         -entry vertMain
         -entry fragMain
+        -reflection-json "${SLANG_SHADER_REFLECTION}"
         -o "${SLANG_SHADER}"
         DEPENDS "${SHADER_SOURCE_DIR}/shader.slang"
         COMMENT "Compiling Slang shader"
@@ -52,7 +56,7 @@ add_custom_command(
 )
 
 add_custom_command(
-        OUTPUT "${SLANG_LIGHT_SHADER}"
+        OUTPUT "${SLANG_LIGHT_SHADER}" "${SLANG_LIGHT_REFLECTION}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
         COMMAND ${SLANGC_EXECUTABLE}
         "${SHADER_SOURCE_DIR}/light.slang"
@@ -63,6 +67,7 @@ add_custom_command(
         -fvk-use-entrypoint-name
         -entry vertMain
         -entry fragMain
+        -reflection-json "${SLANG_LIGHT_REFLECTION}"
         -o "${SLANG_LIGHT_SHADER}"
         DEPENDS "${SHADER_SOURCE_DIR}/light.slang"
         COMMENT "Compiling light source Slang shader"
@@ -70,7 +75,7 @@ add_custom_command(
 )
 
 add_custom_command(
-        OUTPUT "${SLANG_EDITOR_PICKING_SHADER}"
+        OUTPUT "${SLANG_EDITOR_PICKING_SHADER}" "${SLANG_EDITOR_PICKING_REFLECTION}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
         COMMAND ${SLANGC_EXECUTABLE}
         "${SHADER_SOURCE_DIR}/editor/picking.slang"
@@ -81,6 +86,7 @@ add_custom_command(
         -fvk-use-entrypoint-name
         -entry vertMain
         -entry fragMain
+        -reflection-json "${SLANG_EDITOR_PICKING_REFLECTION}"
         -o "${SLANG_EDITOR_PICKING_SHADER}"
         DEPENDS "${SHADER_SOURCE_DIR}/editor/picking.slang"
         COMMENT "Compiling editor picking Slang shader"
@@ -89,8 +95,11 @@ add_custom_command(
 
 add_custom_target(RenderLabShaders DEPENDS
         "${SLANG_SHADER}"
+        "${SLANG_SHADER_REFLECTION}"
         "${SLANG_LIGHT_SHADER}"
+        "${SLANG_LIGHT_REFLECTION}"
         "${SLANG_EDITOR_PICKING_SHADER}"
+        "${SLANG_EDITOR_PICKING_REFLECTION}"
 )
 
 add_executable(RenderLab
@@ -143,6 +152,11 @@ add_executable(RenderLab
         src/platform/InputMethod.h
         src/render/Renderer.cpp
         src/render/Renderer.h
+        src/render/RenderConfig.h
+        src/render/ShaderManager.cpp
+        src/render/ShaderManager.h
+        src/render/DescriptorManager.cpp
+        src/render/DescriptorManager.h
         src/render/device/Memory.h
         src/render/device/VkCheck.h
         src/render/device/VulkanContext.cpp
@@ -170,8 +184,6 @@ add_executable(RenderLab
         src/render/scene/GpuScene.h
         src/render/pass/ScenePass.cpp
         src/render/pass/ScenePass.h
-        src/render/pass/ScenePipelines.cpp
-        src/render/pass/ScenePipelines.h
         src/render/pass/LightMarkers.cpp
         src/render/pass/LightMarkers.h
         src/render/pass/EditorPickingPass.cpp

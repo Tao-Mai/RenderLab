@@ -1,36 +1,41 @@
 #include "render/resource/Material.h"
 
-#include "render/device/VkCheck.h"
+#include "render/DescriptorManager.h"
+#include "render/resource/ShaderData.h"
+#include "core/Logger.h"
 
 #include <array>
-#include <cstddef>
 #include <utility>
-
-namespace
-{
-struct alignas(16) MaterialUniforms
-{
-    glm::vec4 baseColorFactor{1.0f};
-    float     roughness = 1.0f;
-    float     metallic  = 1.0f;
-    float     padding0  = 0.0f;
-    float     padding1  = 0.0f;
-};
-
-static_assert(offsetof(MaterialUniforms, baseColorFactor) == 0);
-static_assert(offsetof(MaterialUniforms, roughness) == 16);
-static_assert(offsetof(MaterialUniforms, metallic) == 20);
-static_assert(sizeof(MaterialUniforms) == 32);
-}
 
 void Material::create(
     const vk::raii::PhysicalDevice& physicalDevice,
     const vk::raii::Device&         device,
-    vk::DescriptorPool              descriptorPool,
-    vk::DescriptorSetLayout         descriptorSetLayout,
+    DescriptorManager&              descriptors,
+    ShaderHandle                     targetShader,
     const MaterialDesc&             material,
     std::shared_ptr<Texture>        texture)
 {
+    shaderHandle = targetShader;
+    const std::string alphaMode = material.alphaMode.value_or("OPAQUE");
+    if (alphaMode == "OPAQUE")
+    {
+        mode = RenderMode::Opaque;
+    }
+    else if (alphaMode == "MASK")
+    {
+        mode = RenderMode::AlphaTest;
+    }
+    else
+    {
+        CHECK(alphaMode == "BLEND", "unknown material alpha mode '{}'", alphaMode);
+        mode = RenderMode::Transparent;
+    }
+    pipelineState = PipelineState::preset(mode);
+    if (material.doubleSided == false)
+    {
+        pipelineState.cullMode = vk::CullModeFlagBits::eBack;
+    }
+
     albedoTexture  = std::move(texture);
     materialBuffer = std::make_shared<Buffer>(
         physicalDevice,
@@ -43,18 +48,13 @@ void Material::create(
         .baseColorFactor = material.baseColorFactor.value_or(glm::vec4{1.0f}),
         .roughness = material.roughness.value_or(1.0f),
         .metallic = material.metallic.value_or(1.0f),
+        .alphaCutoff = material.alphaCutoff.value_or(0.5f),
+        .alphaMode = mode == RenderMode::AlphaTest ? 1u :
+            mode == RenderMode::Transparent ? 2u : 0u,
     };
     materialBuffer->upload(&materialData, sizeof(materialData));
 
-    const vk::DescriptorSetAllocateInfo allocationInfo{
-        .descriptorPool = descriptorPool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &descriptorSetLayout,
-    };
-    auto descriptorSets = vkCheck(
-        device.allocateDescriptorSets(allocationInfo));
-    descriptorSet = std::make_shared<vk::raii::DescriptorSet>(
-        std::move(descriptorSets.front()));
+    descriptorSet = descriptors.allocate(DescriptorLayoutPreset::Material);
 
     const vk::DescriptorImageInfo imageInfo{
         .imageView = albedoTexture->imageView(),
@@ -70,22 +70,22 @@ void Material::create(
     };
     const std::array writes = {
         vk::WriteDescriptorSet{
-            .dstSet = **descriptorSet,
-            .dstBinding = 0,
+            .dstSet = *descriptorSet,
+            .dstBinding = RenderInterface::materialImageBinding,
             .descriptorCount = 1,
             .descriptorType = vk::DescriptorType::eSampledImage,
             .pImageInfo = &imageInfo,
         },
         vk::WriteDescriptorSet{
-            .dstSet = **descriptorSet,
-            .dstBinding = 1,
+            .dstSet = *descriptorSet,
+            .dstBinding = RenderInterface::materialSamplerBinding,
             .descriptorCount = 1,
             .descriptorType = vk::DescriptorType::eSampler,
             .pImageInfo = &samplerInfo,
         },
         vk::WriteDescriptorSet{
-            .dstSet = **descriptorSet,
-            .dstBinding = 2,
+            .dstSet = *descriptorSet,
+            .dstBinding = RenderInterface::materialUniformBinding,
             .descriptorCount = 1,
             .descriptorType = vk::DescriptorType::eUniformBuffer,
             .pBufferInfo = &materialBufferInfo,
@@ -96,5 +96,21 @@ void Material::create(
 
 vk::DescriptorSet Material::descriptorSetHandle() const
 {
-    return **descriptorSet;
+    return *descriptorSet;
+}
+
+PipelineKey Material::pipelineKey(vk::Format colorFormat, vk::Format depthFormat) const
+{
+    return {
+        .shader = shaderHandle,
+        .layout = PipelineLayoutPreset::SceneMaterial,
+        .state = pipelineState,
+        .colorFormat = colorFormat,
+        .depthFormat = depthFormat,
+    };
+}
+
+RenderMode Material::renderMode() const
+{
+    return mode;
 }

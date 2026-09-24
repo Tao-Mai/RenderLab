@@ -4,8 +4,8 @@
 #include "asset/AssetDesc.h"
 #include "render/resource/Material.h"
 #include "render/resource/Mesh.h"
-#include "render/resource/Shader.h"
 #include "render/resource/Texture.h"
+#include "render/device/GpuUploadContext.h"
 
 #include <memory>
 #include <unordered_map>
@@ -13,7 +13,8 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class AssetManager;
-class FrameContext;
+class DescriptorManager;
+class ShaderManager;
 class VulkanContext;
 
 class RenderResourceManager
@@ -21,10 +22,8 @@ class RenderResourceManager
 public:
     ~RenderResourceManager();
 
-    void init(VulkanContext& vulkan, FrameContext& frame);
-    void configureMaterialDescriptors(
-        vk::DescriptorPool descriptorPool,
-        vk::DescriptorSetLayout materialLayout);
+    void init(VulkanContext& vulkan, DescriptorManager& descriptors,
+        ShaderManager& shaders);
     void reset() noexcept;
 
     Mesh& mesh(const AssetId& id);
@@ -32,16 +31,16 @@ public:
     Material& material(const AssetId& id);
     Material& material(const MaterialDesc& desc);
     std::shared_ptr<Texture> texture(const AssetId& id);
-    Shader& shader(const AssetId& id);
 
 private:
     AssetManager* assets = nullptr;
     VulkanContext* vulkan = nullptr;
-    FrameContext* frame = nullptr;
-    vk::DescriptorPool descriptorPool;
-    vk::DescriptorSetLayout materialLayout;
+    DescriptorManager* descriptors = nullptr;
+    ShaderManager* shaders = nullptr;
+    vk::raii::CommandPool uploadPool = nullptr;
     std::unordered_map<AssetId, std::unique_ptr<Mesh>> meshes;
     std::unordered_map<std::string, std::unique_ptr<Material>> materials;
     std::unordered_map<AssetId, std::shared_ptr<Texture>> textures;
-    std::unordered_map<AssetId, std::unique_ptr<Shader>> shaders;
+
+    [[nodiscard]] GpuUploadContext uploadContext() const;
 };

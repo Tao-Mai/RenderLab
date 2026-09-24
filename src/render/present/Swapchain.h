@@ -1,5 +1,8 @@
 #pragma once
 
+#include "render/RenderConfig.h"
+
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -18,8 +21,11 @@ public:
     [[nodiscard]] const vk::raii::SwapchainKHR& handle() const;
     [[nodiscard]] vk::Image                     image(uint32_t index) const;
     [[nodiscard]] vk::ImageView                 imageView(uint32_t index) const;
-    [[nodiscard]] vk::Image                     depthImageHandle() const;
-    [[nodiscard]] vk::ImageView                 depthImageViewHandle() const;
+    [[nodiscard]] vk::Semaphore                 renderFinishedSemaphore(uint32_t index) const;
+    [[nodiscard]] vk::Image                     depthImageHandle(uint32_t frameIndex) const;
+    [[nodiscard]] vk::ImageView                 depthImageViewHandle(uint32_t frameIndex) const;
+    [[nodiscard]] vk::Image                     pickingImageHandle() const;
+    [[nodiscard]] vk::ImageView                 pickingImageViewHandle() const;
     [[nodiscard]] vk::SurfaceFormatKHR          surfaceFormat() const;
     [[nodiscard]] vk::Extent2D                  extent() const;
     [[nodiscard]] vk::Format                    depthImageFormat() const;
@@ -34,15 +40,24 @@ private:
     vk::SurfaceFormatKHR             swapChainSurfaceFormat;
     vk::Extent2D                     swapChainExtent;
     std::vector<vk::raii::ImageView> swapChainImageViews;
+    std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
     vk::Format                       depthFormat            = vk::Format::eUndefined;
-    vk::raii::DeviceMemory           depthImageMemory       = nullptr;
-    vk::raii::Image                  depthImage             = nullptr;
-    vk::raii::ImageView              depthImageView         = nullptr;
+    struct DepthTarget
+    {
+        vk::raii::DeviceMemory memory = nullptr;
+        vk::raii::Image image = nullptr;
+        vk::raii::ImageView view = nullptr;
+    };
+    std::array<DepthTarget, maxFramesInFlight> depthTargets;
+    vk::raii::DeviceMemory           pickingImageMemory     = nullptr;
+    vk::raii::Image                  pickingImage           = nullptr;
+    vk::raii::ImageView              pickingImageView       = nullptr;
     uint32_t                         swapChainMinImageCount = 0;
 
     void            createSwapChain();
     void            createImageViews();
     void            createDepthResources();
+    void            createPickingResources();
     static uint32_t chooseSwapMinImageCount(
         const vk::SurfaceCapabilitiesKHR& capabilities);
     static vk::SurfaceFormatKHR chooseSwapSurfaceFormat(
