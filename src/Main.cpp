@@ -1,5 +1,6 @@
 #include "Engine.h"
 #include "asset/AssetDescManager.h"
+#include "asset/AssetDataManager.h"
 #include "asset/AssetImporter.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -17,14 +18,17 @@ int main(int argc, char** argv)
               "usage: RenderLab --import-texture|--import-environmentmap|--import-mesh <source>");
         ConfigManager config;
         AssetDescManager assets;
+        AssetDataManager assetData;
         context().config = &config;
         context().assetManager = &assets;
+        context().assetDataManager = &assetData;
         config.init();
+        assetData.init();
         context().assetManager->init();
         std::filesystem::path source{argv[2]};
         if (source.is_relative())
         {
-            source = config.paths().assets / source;
+            source = config.paths().assets.parent_path() / source;
         }
         const std::string_view command{argv[1]};
         AssetId importedId;
@@ -48,6 +52,7 @@ int main(int argc, char** argv)
         context().assetManager->shutdown();
         config.shutdown();
         context().assetManager = nullptr;
+        context().assetDataManager = nullptr;
         context().config = nullptr;
         return 0;
     }

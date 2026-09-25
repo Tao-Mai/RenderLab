@@ -3,7 +3,7 @@
 #include "render/device/Memory.h"
 #include "render/device/VkCheck.h"
 #include "render/resource/Buffer.h"
-#include "asset/TextureIo.h"
+#include "asset/AssetDataManager.h"
 
 #include <memory>
 #include <utility>
@@ -13,31 +13,46 @@
 
 namespace
 {
-    [[nodiscard]] vk::Format vulkanFormat(ImageFormat format)
+[[nodiscard]] vk::Format vulkanFormat(ImageFormat format, ColorSpace colorSpace)
+{
+    switch (format)
     {
-        switch (format)
-        {
-        case ImageFormat::Rgba8Srgb: return vk::Format::eR8G8B8A8Srgb;
-        case ImageFormat::Rgba16Float: return vk::Format::eR16G16B16A16Sfloat;
-        case ImageFormat::Rgba32Float: return vk::Format::eR32G32B32A32Sfloat;
-        }
-        LOG_FATAL("invalid texture data format");
+        case ImageFormat::R8:
+            return colorSpace == ColorSpace::Srgb
+                ? vk::Format::eR8Srgb : vk::Format::eR8Unorm;
+        case ImageFormat::RG8:
+            return colorSpace == ColorSpace::Srgb
+                ? vk::Format::eR8G8Srgb : vk::Format::eR8G8Unorm;
+        case ImageFormat::RGB8:
+            return colorSpace == ColorSpace::Srgb
+                ? vk::Format::eR8G8B8Srgb : vk::Format::eR8G8B8Unorm;
+        case ImageFormat::RGBA8:
+            return colorSpace == ColorSpace::Srgb
+                ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
+        case ImageFormat::RGBA16F:
+            CHECK(colorSpace == ColorSpace::Linear,
+                  "floating-point textures require linear color space");
+            return vk::Format::eR16G16B16A16Sfloat;
+        case ImageFormat::RGBA32F:
+            CHECK(colorSpace == ColorSpace::Linear,
+                  "floating-point textures require linear color space");
+            return vk::Format::eR32G32B32A32Sfloat;
     }
+    LOG_FATAL("invalid texture data format");
+}
 }
 
 Texture::Texture(
-    GpuUploadContext upload, const TextureDesc& desc,
+    GpuUploadContext         upload, const TextureDesc& desc,
     std::span<const uint8_t> bytes)
 {
-    create(upload, bytes.data(), desc.width, desc.height,
-        vulkanFormat(desc.format), texture_io::bytesPerPixel(desc.format),
-        desc.layout);
-}
-
-Texture::Texture(GpuUploadContext upload, const std::array<uint8_t, 4> &rgba)
-{
-    create(upload, rgba.data(), 1, 1, vk::Format::eR8G8B8A8Srgb, 4,
-        TextureDesc::Layout::Image2D);
+    create(upload,
+           bytes.data(),
+           desc.width,
+           desc.height,
+           vulkanFormat(desc.format, desc.colorSpace),
+           AssetDataManager::bytesPerPixel(desc.format),
+           desc.layout);
 }
 
 vk::ImageView Texture::imageView() const
@@ -51,15 +66,15 @@ vk::Sampler Texture::sampler() const
 }
 
 void Texture::create(
-    GpuUploadContext upload, const void* pixels, uint32_t width, uint32_t height,
-    vk::Format format, uint32_t bytesPerPixel, TextureDesc::Layout layout)
+    GpuUploadContext upload, const void* pixels, uint32_t           width, uint32_t height,
+    vk::Format       format, uint32_t    bytesPerPixel, ImageLayout layout)
 {
-    const uint32_t layers = layout == TextureDesc::Layout::Cubemap ? 6 : 1;
-    const auto& physicalDevice = upload.physicalDevice;
-    const auto& device = upload.device;
-    const auto& commandPool = upload.commandPool;
-    auto& queue = upload.queue;
-    const vk::DeviceSize byteSize =
+    const uint32_t       layers         = layout == ImageLayout::Cubemap ? 6 : 1;
+    const auto&          physicalDevice = upload.physicalDevice;
+    const auto&          device         = upload.device;
+    const auto&          commandPool    = upload.commandPool;
+    auto&                queue          = upload.queue;
+    const vk::DeviceSize byteSize       =
         static_cast<vk::DeviceSize>(width) * height * layers * bytesPerPixel;
     Buffer staging(
         physicalDevice,
@@ -71,9 +86,9 @@ void Texture::create(
     staging.upload(pixels, byteSize);
 
     const vk::ImageCreateInfo imageInfo{
-        .flags = layout == TextureDesc::Layout::Cubemap
-            ? vk::ImageCreateFlags{vk::ImageCreateFlagBits::eCubeCompatible}
-            : vk::ImageCreateFlags{},
+        .flags = layout == ImageLayout::Cubemap
+        ? vk::ImageCreateFlags{vk::ImageCreateFlagBits::eCubeCompatible}
+        : vk::ImageCreateFlags{},
         .imageType = vk::ImageType::e2D,
         .format = format,
         .extent = {width, height, 1},
@@ -82,7 +97,7 @@ void Texture::create(
         .samples = vk::SampleCountFlagBits::e1,
         .tiling = vk::ImageTiling::eOptimal,
         .usage = vk::ImageUsageFlagBits::eTransferDst |
-                 vk::ImageUsageFlagBits::eSampled,
+        vk::ImageUsageFlagBits::eSampled,
         .sharingMode = vk::SharingMode::eExclusive,
         .initialLayout = vk::ImageLayout::eUndefined,
     };
@@ -175,7 +190,7 @@ void Texture::create(
     vkCheck(copyCommand.end());
 
     const vk::CommandBuffer command = *copyCommand;
-    const vk::SubmitInfo submitInfo{
+    const vk::SubmitInfo    submitInfo{
         .commandBufferCount = 1,
         .pCommandBuffers = &command,
     };
@@ -184,8 +199,9 @@ void Texture::create(
 
     const vk::ImageViewCreateInfo viewInfo{
         .image = *image,
-        .viewType = layout == TextureDesc::Layout::Cubemap
-            ? vk::ImageViewType::eCube : vk::ImageViewType::e2D,
+        .viewType = layout == ImageLayout::Cubemap
+        ? vk::ImageViewType::eCube
+        : vk::ImageViewType::e2D,
         .format = format,
         .subresourceRange = subresourceRange,
     };
@@ -195,12 +211,15 @@ void Texture::create(
         .magFilter = vk::Filter::eLinear,
         .minFilter = vk::Filter::eLinear,
         .mipmapMode = vk::SamplerMipmapMode::eLinear,
-        .addressModeU = layout == TextureDesc::Layout::Cubemap
-            ? vk::SamplerAddressMode::eClampToEdge : vk::SamplerAddressMode::eRepeat,
-        .addressModeV = layout == TextureDesc::Layout::Cubemap
-            ? vk::SamplerAddressMode::eClampToEdge : vk::SamplerAddressMode::eRepeat,
-        .addressModeW = layout == TextureDesc::Layout::Cubemap
-            ? vk::SamplerAddressMode::eClampToEdge : vk::SamplerAddressMode::eRepeat,
+        .addressModeU = layout == ImageLayout::Cubemap
+        ? vk::SamplerAddressMode::eClampToEdge
+        : vk::SamplerAddressMode::eRepeat,
+        .addressModeV = layout == ImageLayout::Cubemap
+        ? vk::SamplerAddressMode::eClampToEdge
+        : vk::SamplerAddressMode::eRepeat,
+        .addressModeW = layout == ImageLayout::Cubemap
+        ? vk::SamplerAddressMode::eClampToEdge
+        : vk::SamplerAddressMode::eRepeat,
         .mipLodBias = 0.0f,
         .anisotropyEnable = vk::False,
         .compareEnable = vk::False,

@@ -48,7 +48,13 @@ public:
         return id;
     }
 
-    [[nodiscard]] std::filesystem::path path(const std::filesystem::path& relative) const;
+    // 仅注册到内存，不落盘（用于 builtin 等运行时描述符）。
+    template <class T>
+    void add(T desc)
+    {
+        CHECK(!desc.id.empty(), "descriptor has empty id");
+        descMap<T>().insert_or_assign(desc.id, std::move(desc));
+    }
 
 private:
     template <class T>
@@ -59,9 +65,9 @@ private:
     bool     inited = false;
     DescMaps assetDescs;
 
-    void                                loadAll();
-    void                                clear();
-    [[nodiscard]] std::filesystem::path descriptorRoot() const;
+    void                                       loadAll();
+    void                                       clear();
+    static std::filesystem::path descriptorRoot();
 
     template <class T>
     [[nodiscard]] DescMap<T>& descMap()

@@ -1,0 +1,42 @@
+---
+description: 写代码时按功能适当空行，不要把实现堆在一起
+alwaysApply: true
+---
+
+# 代码按功能留空行
+
+编写或修改代码时，按功能和执行阶段适当留空行；不要把整段实现堆在一起。
+
+## 要求
+
+- 用空行区分不同阶段：参数校验、数据准备、资源创建、读写、结果检查、返回等
+- 同一功能内紧密相关的语句保持相邻，不要机械地每行都加空行
+- 函数内若有多段独立逻辑，段与段之间空一行
+
+## 示例
+
+```cpp
+// ❌ BAD：全部堆在一起
+void loadTexture(const Path& path) {
+    if (!exists(path)) throw Error("missing");
+    auto bytes = readFile(path);
+    auto img = decode(bytes);
+    auto tex = device.createTexture(img.width, img.height);
+    tex.upload(img.data);
+    cache.insert(path, tex);
+}
+
+// ✅ GOOD：按阶段空行
+void loadTexture(const Path& path) {
+    if (!exists(path))
+        throw Error("missing");
+
+    auto bytes = readFile(path);
+    auto img = decode(bytes);
+
+    auto tex = device.createTexture(img.width, img.height);
+    tex.upload(img.data);
+
+    cache.insert(path, tex);
+}
+```

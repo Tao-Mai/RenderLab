@@ -25,7 +25,7 @@ std::filesystem::path storeRelative(
     const std::filesystem::path& absolute, const std::filesystem::path& baseDir)
 {
     const auto relative = std::filesystem::relative(absolute, baseDir);
-    if (!relative.empty() && *relative.begin() != "..")
+    if (!relative.empty())
     {
         return relative.generic_string();
     }
@@ -75,11 +75,11 @@ void ConfigManager::applyDefaults()
 {
     if (data.paths.assets.empty())
     {
-        data.paths.assets = "..";
+        data.paths.assets = "../assets";
     }
     if (data.paths.geometry.empty())
     {
-        data.paths.geometry = "assets/geometry";
+        data.paths.geometry = "geometry";
     }
     if (data.initialScene == kInvalidAssetId)
     {

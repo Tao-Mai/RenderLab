@@ -142,7 +142,8 @@ AssetImporter::LoadedImage AssetImporter::loadImage(const std::filesystem::path&
               filename);
         std::vector<float> pixels(decoded.get(), decoded.get() + pixelCount * 4);
         return {
-            .format = hasFloat ? ImageFormat::Rgba32Float : ImageFormat::Rgba16Float,
+            .format = hasFloat ? ImageFormat::RGBA32F : ImageFormat::RGBA16F,
+            .fileFormat = LoadedImage::FileFormat::Exr,
             .width = static_cast<uint32_t>(width),
             .height = static_cast<uint32_t>(height),
             .projection = projection,
@@ -155,24 +156,40 @@ AssetImporter::LoadedImage AssetImporter::loadImage(const std::filesystem::path&
           extension == ".psd" || extension == ".pic" || extension == ".pnm",
           "unsupported image format: {}",
           filename);
+    CHECK(!stbi_is_16_bit(filename.c_str()),
+          "16-bit integer images are not supported: {}",
+          filename);
     int                                   width    = 0;
     int                                   height   = 0;
     int                                   channels = 0;
     std::unique_ptr<stbi_uc, StbiDeleter> decoded(
-        stbi_load(filename.c_str(), &width, &height, &channels, STBI_rgb_alpha));
-    CHECK(decoded && width > 0 && height > 0,
+        stbi_load(filename.c_str(), &width, &height, &channels, 0));
+    CHECK(decoded && width > 0 && height > 0 && channels >= 1 && channels <= 4,
           "failed to load image '{}': {}",
           filename,
           stbi_failure_reason());
-    const uint64_t byteCount = static_cast<uint64_t>(width) * height * 4;
+    const uint64_t byteCount = static_cast<uint64_t>(width) * height * channels;
     CHECK(byteCount <= std::numeric_limits<uint32_t>::max(),
           "image is too large: {}",
           filename);
     std::vector<uint8_t> pixels(decoded.get(), decoded.get() + byteCount);
     return {
-        .format = ImageFormat::Rgba8Srgb,
+        .format = channels == 1 ? ImageFormat::R8 :
+                  channels == 2 ? ImageFormat::RG8 :
+                  channels == 3 ? ImageFormat::RGB8 : ImageFormat::RGBA8,
+        .fileFormat = LoadedImage::FileFormat::JPEG,
         .width = static_cast<uint32_t>(width),
         .height = static_cast<uint32_t>(height),
         .pixels = std::move(pixels),
     };
+}
+
+ColorSpace AssetImporter::defaultColorSpace(LoadedImage::FileFormat format)
+{
+    switch (format)
+    {
+        case LoadedImage::FileFormat::Exr: return ColorSpace::Linear;
+        case LoadedImage::FileFormat::JPEG: return ColorSpace::Srgb;
+    }
+    LOG_FATAL("invalid image file format");
 }

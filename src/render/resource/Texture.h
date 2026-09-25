@@ -3,7 +3,6 @@
 #include "asset/AssetDesc.h"
 #include "render/device/GpuUploadContext.h"
 
-#include <array>
 #include <cstdint>
 #include <span>
 
@@ -15,7 +14,6 @@ public:
     Texture(
         GpuUploadContext upload, const TextureDesc& desc,
         std::span<const uint8_t> bytes);
-    Texture(GpuUploadContext upload, const std::array<uint8_t, 4>& rgba);
 
     Texture(const Texture&)            = delete;
     Texture& operator=(const Texture&) = delete;
@@ -36,5 +34,5 @@ private:
         uint32_t height,
         vk::Format format,
         uint32_t bytesPerPixel,
-        TextureDesc::Layout layout);
+        ImageLayout layout);
 };

@@ -122,16 +122,6 @@ bool editAssetId(const char* label, AssetId& id)
 
 MaterialDesc materialPreview(const AssetId& materialId)
 {
-    if (isBuiltin<MaterialDesc>(materialId))
-    {
-        MaterialDesc material{};
-        material.id = materialId;
-        material.metallic = 0.0f;
-        material.roughness = 0.4f;
-        material.baseColorFactor = glm::vec4{1.0f};
-        material.baseColorTexture = TextureDesc::white;
-        return material;
-    }
     if (context().assetManager != nullptr)
     {
         if (const MaterialDesc* material = context().assetManager->findDesc<MaterialDesc>(materialId))
@@ -218,14 +208,10 @@ void drawMaterial(const AssetId& materialId)
     }
 
     MaterialDesc material = materialPreview(materialId);
-    if (material.id.empty() && !isBuiltin<MaterialDesc>(materialId))
+    if (material.id.empty())
     {
         ImGui::TextDisabled("desc not loaded");
         return;
-    }
-    if (isBuiltin<MaterialDesc>(materialId))
-    {
-        ImGui::TextDisabled("builtin");
     }
 
     (void)drawMaterialFields(material, false);
@@ -275,12 +261,6 @@ void drawMaterial(const AssetId& materialId)
         }
         ImGui::PopID();
     };
-
-    if (isBuiltin<MeshDesc>(render.meshId))
-    {
-        drawSubmesh(0, MaterialDesc::white);
-        return edited;
-    }
 
     if (context().assetManager == nullptr)
     {

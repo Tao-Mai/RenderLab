@@ -13,6 +13,7 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class AssetDescManager;
+class AssetDataManager;
 class DescriptorManager;
 class ShaderManager;
 class VulkanContext;
@@ -34,6 +35,7 @@ public:
 
 private:
     AssetDescManager* assets = nullptr;
+    AssetDataManager* data = nullptr;
     VulkanContext* vulkan = nullptr;
     DescriptorManager* descriptors = nullptr;
     ShaderManager* shaders = nullptr;

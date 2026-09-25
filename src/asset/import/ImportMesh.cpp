@@ -5,7 +5,7 @@
 #include "asset/AssetImporter.h"
 
 #include "asset/AssetDescManager.h"
-#include "asset/GeometryIo.h"
+#include "asset/AssetDataManager.h"
 #include "asset/MeshGeometry.h"
 #include "asset/import/ImportId.h"
 #include "core/ConfigManager.h"
@@ -17,8 +17,8 @@
 #include <cstring>
 #include <functional>
 #include <iostream>
+#include <map>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include <glm/gtc/matrix_inverse.hpp>
@@ -33,14 +33,15 @@ struct GltfBuild
     MeshGeometry geometry;
     std::vector<SubmeshDesc> submeshes;
     std::vector<AssetId> materialIds;
-    std::unordered_map<std::string, AssetId> textureCache;
+    std::map<std::pair<std::string, ColorSpace>, AssetId> textureCache;
 };
 
 [[nodiscard]] AssetId textureIdFor(
     GltfBuild& build,
     const tinygltf::Model& model,
     int textureIndex,
-    const std::filesystem::path& modelDirectory)
+    const std::filesystem::path& modelDirectory,
+    ColorSpace colorSpace)
 {
     if (textureIndex < 0 || textureIndex >= static_cast<int>(model.textures.size()))
     {
@@ -67,20 +68,19 @@ struct GltfBuild
         sourcePath = (modelDirectory / image.uri).lexically_normal().string();
     }
 
-    if (const auto found = build.textureCache.find(sourcePath); found != build.textureCache.end())
+    const auto key = std::pair{sourcePath, colorSpace};
+    if (const auto found = build.textureCache.find(key); found != build.textureCache.end())
     {
         return found->second;
     }
 
     CHECK(!sourcePath.starts_with("data:") && !sourcePath.starts_with("embedded:"),
         "embedded glTF textures require external files: {}", sourcePath);
-    const auto relative = std::filesystem::relative(
-        std::filesystem::absolute(sourcePath), context().config->paths().assets);
-    CHECK(!relative.empty() && *relative.begin() != "..",
-        "texture is outside asset root: {}", sourcePath);
+    (void)asset_import::sourceRelativeToAssets(sourcePath);
 
-    const AssetId id = AssetImporter::importTexture(std::filesystem::absolute(sourcePath));
-    build.textureCache.emplace(std::move(sourcePath), id);
+    const AssetId id = AssetImporter::importTexture(
+        std::filesystem::absolute(sourcePath), colorSpace);
+    build.textureCache.emplace(key, id);
     return id;
 }
 
@@ -125,17 +125,22 @@ void registerMaterials(
         material.ao = static_cast<float>(source.occlusionTexture.strength);
         material.normalScale = static_cast<float>(source.normalTexture.scale);
         material.baseColorTexture =
-            textureIdFor(build, model, pbr.baseColorTexture.index, modelDirectory);
+            textureIdFor(build, model, pbr.baseColorTexture.index, modelDirectory,
+                         ColorSpace::Srgb);
         material.normalTexture =
-            textureIdFor(build, model, source.normalTexture.index, modelDirectory);
+            textureIdFor(build, model, source.normalTexture.index, modelDirectory,
+                         ColorSpace::Linear);
         const AssetId metallicRoughness =
-            textureIdFor(build, model, pbr.metallicRoughnessTexture.index, modelDirectory);
+            textureIdFor(build, model, pbr.metallicRoughnessTexture.index, modelDirectory,
+                         ColorSpace::Linear);
         material.metallicTexture = metallicRoughness;
         material.roughnessTexture = metallicRoughness;
         material.aoTexture =
-            textureIdFor(build, model, source.occlusionTexture.index, modelDirectory);
+            textureIdFor(build, model, source.occlusionTexture.index, modelDirectory,
+                         ColorSpace::Linear);
         material.emissiveTexture =
-            textureIdFor(build, model, source.emissiveTexture.index, modelDirectory);
+            textureIdFor(build, model, source.emissiveTexture.index, modelDirectory,
+                         ColorSpace::Srgb);
         material.alphaMode = source.alphaMode;
         material.alphaCutoff = static_cast<float>(source.alphaCutoff);
         material.doubleSided = source.doubleSided;
@@ -363,11 +368,6 @@ void appendMesh(
 
 AssetId AssetImporter::importMesh(const std::filesystem::path& path)
 {
-    const auto relativeSource = std::filesystem::relative(
-        std::filesystem::absolute(path), context().config->paths().assets);
-    CHECK(!relativeSource.empty() && *relativeSource.begin() != "..",
-        "mesh source is outside asset root: {}", path.string());
-
     tinygltf::TinyGLTF loader;
     tinygltf::Model model;
     std::string warning;
@@ -425,16 +425,9 @@ AssetId AssetImporter::importMesh(const std::filesystem::path& path)
     CHECK(!build.geometry.vertices.empty() && !build.geometry.indices.empty(),
         "glTF contains no triangle mesh data: {}", path.string());
 
-    const auto geometryFile =
-        context().config->paths().geometry / (meshId + ".bin");
-    geometry_io::write(geometryFile, build.geometry);
-
     MeshDesc mesh;
     mesh.id = meshId;
-    mesh.source.kind = "gltf";
-    mesh.source.path = relativeSource;
-    mesh.geometry = std::filesystem::relative(
-        geometryFile, context().config->paths().assets).generic_string();
+    mesh.geometry = context().assetDataManager->writeGeometry(meshId, build.geometry);
     mesh.submeshes = std::move(build.submeshes);
     return context().assetManager->save(std::move(mesh));
 }

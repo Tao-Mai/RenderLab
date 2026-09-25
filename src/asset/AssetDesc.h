@@ -87,24 +87,14 @@ struct SubmeshDesc
     AssetId  materialId;
 };
 
-struct MeshSourceDesc
-{
-    std::string                          kind;
-    std::optional<std::filesystem::path> path;
-};
+inline constexpr std::string_view kBuiltinGeometryDir   = "builtin";
+inline constexpr std::string_view kBuiltinTextureSource = "builtin";
 
 struct MeshDesc
 {
     AssetId                  id;
-    MeshSourceDesc           source;
     std::filesystem::path    geometry;
     std::vector<SubmeshDesc> submeshes;
-
-    static inline const AssetId    cube   = "cube";
-    static inline const AssetId    sphere = "sphere";
-    static inline const AssetId    plane  = "plane";
-    static inline const AssetId    arrow  = "arrow";
-    static inline const std::array builtins{&cube, &sphere, &plane, &arrow};
 };
 
 struct MaterialDesc
@@ -127,33 +117,26 @@ struct MaterialDesc
     std::optional<float>       alphaCutoff;
     std::optional<bool>        doubleSided;
 
-    static inline const AssetId    white = "white";
-    static inline const std::array builtins{&white};
+    static inline const AssetId white = "white";
 };
 
 void applyMaterialFields(MaterialDesc& dst, const MaterialDesc& src);
 
 struct TextureDesc
 {
-    enum class Layout
-    {
-        Image2D,
-        Cubemap,
-    };
-
     AssetId                               id;
     std::string                           source;
     ImageFormat                           format;
-    Layout                                layout;
+    ColorSpace                            colorSpace;
+    ImageLayout                           layout;
     uint32_t                              width;
     uint32_t                              height;
     std::optional<std::filesystem::path>  path;
     std::optional<std::filesystem::path>  binary;
     std::optional<std::array<uint8_t, 4>> rgba;
 
-    static inline const AssetId    white     = "white";
-    static inline const AssetId    whiteCube = "whiteCube";
-    static inline const std::array builtins{&white, &whiteCube};
+    static inline const AssetId white     = "white";
+    static inline const AssetId whiteCube = "whiteCube";
 };
 
 struct EnvironmentMapDesc
@@ -187,22 +170,6 @@ struct SceneDesc
         std::optional<AssetId> environmentMap;
     } environment;
 };
-
-template <class T>
-[[nodiscard]] bool isBuiltin(const AssetId& id)
-{
-    if constexpr (requires { T::builtins; })
-    {
-        for (const AssetId* builtin : T::builtins)
-        {
-            if (id == *builtin)
-            {
-                return true;
-            }
-        }
-    }
-    return false;
-}
 
 // Register new asset types here only.
 using AssetTypes = TypeList<

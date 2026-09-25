@@ -1,6 +1,6 @@
 #include "render/pass/LightMarkers.h"
 
-#include "asset/AssetDesc.h"
+#include "asset/BuiltinAssetManager.h"
 #include "ecs/Transform.h"
 #include "render/resource/RenderResourceManager.h"
 #include "render/resource/ShaderData.h"
@@ -32,9 +32,9 @@ namespace
 void LightMarkers::init(RenderResourceManager& resources)
 {
     reset();
-    sphere = &resources.mesh(MeshDesc::sphere);
-    cube = &resources.mesh(MeshDesc::cube);
-    arrow = &resources.mesh(MeshDesc::arrow);
+    sphere = &resources.mesh(BuiltinAssetManager::sphere);
+    cube = &resources.mesh(BuiltinAssetManager::cube);
+    arrow = &resources.mesh(BuiltinAssetManager::arrow);
 }
 
 void LightMarkers::reset() noexcept

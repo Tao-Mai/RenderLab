@@ -131,10 +131,6 @@ add_executable(RenderLab
         src/editor/ViewportRect.h
         src/asset/AssetDescManager.cpp
         src/asset/MaterialDesc.cpp
-        src/asset/GeometryIo.cpp
-        src/asset/GeometryIo.h
-        src/asset/TextureIo.cpp
-        src/asset/TextureIo.h
         src/asset/ImageFormat.h
         src/asset/import/ImportImage.cpp
         src/asset/import/ImportTexture.cpp
@@ -143,8 +139,8 @@ add_executable(RenderLab
         src/asset/JsonIo.h
         src/asset/RflReflectors.h
         src/asset/MeshGeometry.h
-        src/asset/BuiltinMeshes.cpp
-        src/asset/BuiltinMeshes.h
+        src/asset/BuiltinAssetManager.cpp
+        src/asset/BuiltinAssetManager.h
         src/asset/import/ImportMesh.cpp
         src/asset/Vertex.h
         src/platform/InputMethod.cpp
@@ -190,6 +186,8 @@ add_executable(RenderLab
         src/render/PipelineManager.cpp
         src/render/PipelineManager.h
         src/asset/AssetImporter.h
+        src/asset/AssetDataManager.cpp
+        src/asset/AssetDataManager.h
 )
 add_dependencies(RenderLab RenderLabShaders)
 

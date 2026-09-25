@@ -264,15 +264,11 @@ void ScenePass::record(
                     static_cast<int>(index));
                 overrideIt != render->materialOverrides.end())
             {
-                AssetId materialId = MaterialDesc::white;
-                if (!isBuiltin<MeshDesc>(render->meshId))
-                {
-                    const MeshDesc& mesh = context().assetManager->desc<MeshDesc>(
-                        render->meshId);
-                    CHECK(index < mesh.submeshes.size(),
-                          "material override index out of range");
-                    materialId = mesh.submeshes[index].materialId;
-                }
+                const MeshDesc& mesh = context().assetManager->desc<MeshDesc>(
+                    render->meshId);
+                CHECK(index < mesh.submeshes.size(),
+                      "material override index out of range");
+                const AssetId materialId = mesh.submeshes[index].materialId;
                 MaterialDesc desc = resources->materialDesc(materialId);
                 applyMaterialFields(desc, overrideIt->second);
                 material = &resources->material(desc);

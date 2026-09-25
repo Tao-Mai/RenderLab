@@ -1,6 +1,8 @@
 #include "Engine.h"
 
 #include "asset/AssetDescManager.h"
+#include "asset/AssetDataManager.h"
+#include "asset/BuiltinAssetManager.h"
 #include "Camera.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -27,14 +29,18 @@ void Engine::init()
     ctx.config = new ConfigManager();
     ctx.window = new Window();
     ctx.assetManager = new AssetDescManager();
+    ctx.assetDataManager = new AssetDataManager();
+    ctx.builtinAssetManager = new BuiltinAssetManager();
     ctx.scene = new SceneDesc();
     ctx.camera = new Camera();
     ctx.renderer = new Renderer();
     ctx.editor = new Editor();
 
     ctx.config->init();
+    ctx.assetDataManager->init();
     ctx.window->init();
     ctx.assetManager->init();
+    ctx.builtinAssetManager->init();
     inputMethod.activateEnglish();
     *ctx.scene = ctx.assetManager->desc<SceneDesc>(ctx.config->initialScene());
     ctx.camera->configure(ctx.scene->camera);
@@ -123,6 +129,16 @@ void Engine::shutdown() noexcept
         ctx.assetManager->shutdown();
         delete ctx.assetManager;
         ctx.assetManager = nullptr;
+    }
+    if (ctx.builtinAssetManager != nullptr)
+    {
+        delete ctx.builtinAssetManager;
+        ctx.builtinAssetManager = nullptr;
+    }
+    if (ctx.assetDataManager != nullptr)
+    {
+        delete ctx.assetDataManager;
+        ctx.assetDataManager = nullptr;
     }
 
     // Win8+: LoadKeyboardLayout+KLF_ACTIVATE only updates the system language while this

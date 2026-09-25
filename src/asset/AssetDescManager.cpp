@@ -55,15 +55,9 @@ void AssetDescManager::loadAll()
         });
 }
 
-std::filesystem::path AssetDescManager::descriptorRoot() const
+std::filesystem::path AssetDescManager::descriptorRoot()
 {
-    return context().config->paths().assets / "assets";
-}
-
-std::filesystem::path AssetDescManager::path(const std::filesystem::path& relative) const
-{
-    CHECK(!relative.is_absolute(), "asset path must be relative: {}", relative.string());
-    return context().config->paths().assets / relative;
+    return context().config->paths().assets;
 }
 
 void AssetDescManager::clear()

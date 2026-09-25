@@ -1,9 +1,7 @@
 #include "render/resource/RenderResourceManager.h"
 
 #include "asset/AssetDescManager.h"
-#include "asset/BuiltinMeshes.h"
-#include "asset/GeometryIo.h"
-#include "asset/TextureIo.h"
+#include "asset/AssetDataManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "render/DescriptorManager.h"
@@ -14,43 +12,11 @@
 #include "render/resource/Mesh.h"
 #include "render/resource/Texture.h"
 
-#include <array>
+#include <span>
 #include <utility>
 #include <vector>
 
 #include <rfl/json.hpp>
-
-namespace
-{
-[[nodiscard]] MeshGeometry builtinMeshGeometry(const AssetId& id)
-{
-    if (id == MeshDesc::cube)
-    {
-        return BuiltinMeshes::cube();
-    }
-    if (id == MeshDesc::sphere)
-    {
-        return BuiltinMeshes::sphere();
-    }
-    if (id == MeshDesc::plane)
-    {
-        return BuiltinMeshes::plane();
-    }
-    CHECK(id == MeshDesc::arrow, "unknown builtin mesh: {}", id);
-    return BuiltinMeshes::arrow();
-}
-
-[[nodiscard]] MaterialDesc builtinMaterialDesc(const AssetId& id)
-{
-    CHECK(id == MaterialDesc::white, "unknown builtin material: {}", id);
-    MaterialDesc desc{};
-    desc.id               = MaterialDesc::white;
-    desc.metallic         = 0.0f;
-    desc.roughness        = 0.4f;
-    desc.baseColorTexture = TextureDesc::white;
-    return desc;
-}
-}
 
 RenderResourceManager::~RenderResourceManager() = default;
 
@@ -67,7 +33,10 @@ void RenderResourceManager::init(VulkanContext&     targetVulkan,
 {
     CHECK(context().assetManager != nullptr,
           "AssetDescManager must exist before RenderResourceManager");
+    CHECK(context().assetDataManager != nullptr,
+          "AssetDataManager must exist before RenderResourceManager");
     assets      = context().assetManager;
+    data        = context().assetDataManager;
     vulkan      = &targetVulkan;
     descriptors = &targetDescriptors;
     shaders     = &targetShaders;
@@ -88,6 +57,7 @@ void RenderResourceManager::reset() noexcept
     shaders     = nullptr;
     vulkan      = nullptr;
     assets      = nullptr;
+    data        = nullptr;
 }
 
 Mesh& RenderResourceManager::mesh(const AssetId& id)
@@ -97,37 +67,21 @@ Mesh& RenderResourceManager::mesh(const AssetId& id)
         return *found->second;
     }
 
-    MeshGeometry         geometry;
+    const MeshDesc& meshDesc = assets->desc<MeshDesc>(id);
+    CHECK(!meshDesc.geometry.empty(),
+          "mesh {} has no imported geometry; import its source first",
+          id);
+
+    MeshGeometry         geometry = data->readGeometry(meshDesc.geometry);
     std::vector<Submesh> parts;
-    if (isBuiltin<MeshDesc>(id))
+    parts.reserve(meshDesc.submeshes.size());
+    for (const SubmeshDesc& submesh : meshDesc.submeshes)
     {
-        geometry = builtinMeshGeometry(id);
         parts.push_back({
-            .firstIndex = 0,
-            .indexCount = static_cast<uint32_t>(geometry.indices.size()),
-            .material = &material(MaterialDesc::white),
+            .firstIndex = submesh.firstIndex,
+            .indexCount = submesh.indexCount,
+            .material = &material(submesh.materialId),
         });
-    }
-    else
-    {
-        const MeshDesc&       meshDesc     = assets->desc<MeshDesc>(id);
-        std::filesystem::path geometryPath = meshDesc.geometry.empty()
-            ? std::filesystem::path{}
-            : assets->path(meshDesc.geometry);
-        CHECK(!geometryPath.empty() && std::filesystem::exists(geometryPath),
-              "mesh {} has no imported geometry; import its source first",
-              id);
-        geometry             = geometry_io::read(geometryPath);
-        const MeshDesc& desc = assets->desc<MeshDesc>(id);
-        parts.reserve(desc.submeshes.size());
-        for (const SubmeshDesc& submesh : desc.submeshes)
-        {
-            parts.push_back({
-                .firstIndex = submesh.firstIndex,
-                .indexCount = submesh.indexCount,
-                .material = &material(submesh.materialId),
-            });
-        }
     }
 
     auto gpu = std::make_unique<Mesh>(
@@ -139,10 +93,6 @@ Mesh& RenderResourceManager::mesh(const AssetId& id)
 
 MaterialDesc RenderResourceManager::materialDesc(const AssetId& id) const
 {
-    if (isBuiltin<MaterialDesc>(id))
-    {
-        return builtinMaterialDesc(id);
-    }
     CHECK(assets != nullptr, "RenderResourceManager is not initialized");
     return assets->desc<MaterialDesc>(id);
 }
@@ -183,65 +133,48 @@ std::shared_ptr<Texture> RenderResourceManager::texture(const AssetId& id)
         return found->second;
     }
 
+    const TextureDesc& desc = assets->desc<TextureDesc>(id);
     std::shared_ptr<Texture> gpu;
-    if (isBuiltin<TextureDesc>(id))
+    if (desc.source == "solid")
     {
-        if (id == TextureDesc::white)
-        {
-            constexpr std::array<uint8_t, 4> white{255, 255, 255, 255};
-            gpu = std::make_shared<Texture>(uploadContext(), white);
-        }
-        else
-        {
-            CHECK(id == TextureDesc::whiteCube, "unknown builtin texture: {}", id);
-            TextureDesc whiteCube{};
-            whiteCube.format = ImageFormat::Rgba8Srgb;
-            whiteCube.layout = TextureDesc::Layout::Cubemap;
-            whiteCube.width  = 1;
-            whiteCube.height = 1;
-            const std::vector<uint8_t> bytes(6 * 4, 255);
-            gpu = std::make_shared<Texture>(
-                uploadContext(),
-                whiteCube,
-                bytes);
-        }
+        CHECK(desc.format == ImageFormat::RGBA8,
+              "solid texture '{}' must use RGBA8",
+              id);
+        CHECK(desc.layout == ImageLayout::Image2D,
+              "solid texture '{}' must be 2D",
+              id);
+        CHECK(desc.width == 1 && desc.height == 1,
+              "solid texture '{}' must be 1x1",
+              id);
+        CHECK(desc.rgba.has_value(), "solid texture '{}' has no RGBA value", id);
+        gpu = std::make_shared<Texture>(
+            uploadContext(),
+            desc,
+            std::span<const uint8_t>{*desc.rgba});
+    }
+    else if (desc.source == "file" || desc.source == "environment")
+    {
+        CHECK((desc.source == "file" &&
+                  desc.layout == ImageLayout::Image2D) ||
+              (desc.source == "environment" &&
+                  desc.layout == ImageLayout::Cubemap &&
+                  (desc.format == ImageFormat::RGBA8 ||
+                      desc.format == ImageFormat::RGBA16F ||
+                      desc.format == ImageFormat::RGBA32F)),
+              "texture '{}' source, layout and data format disagree",
+              id);
+        const std::vector<uint8_t> bytes = data->readTexture(desc);
+        gpu = std::make_shared<Texture>(uploadContext(), desc, bytes);
+    }
+    else if (desc.source == kBuiltinTextureSource)
+    {
+        const std::vector<uint8_t> bytes = data->readTexture(desc);
+        gpu = std::make_shared<Texture>(uploadContext(), desc, bytes);
     }
     else
     {
-        const TextureDesc& desc = assets->desc<TextureDesc>(id);
-        if (desc.source == "solid")
-        {
-            CHECK(desc.format == ImageFormat::Rgba8Srgb,
-                  "solid texture '{}' must use Rgba8Srgb",
-                  id);
-            CHECK(desc.layout == TextureDesc::Layout::Image2D,
-                  "solid texture '{}' must be 2D",
-                  id);
-            CHECK(desc.rgba.has_value(), "solid texture '{}' has no RGBA value", id);
-            gpu = std::make_shared<Texture>(uploadContext(), *desc.rgba);
-        }
-        else if (desc.source == "file" || desc.source == "environment")
-        {
-            CHECK((desc.source == "file" &&
-                      desc.layout == TextureDesc::Layout::Image2D) ||
-                  (desc.source == "environment" &&
-                      desc.layout == TextureDesc::Layout::Cubemap &&
-                      (desc.format == ImageFormat::Rgba16Float ||
-                          desc.format == ImageFormat::Rgba32Float)),
-                  "texture '{}' source, layout and data format disagree",
-                  id);
-            CHECK(desc.binary.has_value() && !desc.binary->empty(),
-                  "texture '{}' has no binary path",
-                  id);
-            const std::vector<uint8_t> bytes = texture_io::read(
-                assets->path(*desc.binary),
-                desc);
-            gpu = std::make_shared<Texture>(uploadContext(), desc, bytes);
-        }
-        else
-        {
-            CHECK(false, "unknown texture source '{}' for '{}'", desc.source, id);
-        }
+        CHECK(false, "unknown texture source '{}' for '{}'", desc.source, id);
     }
+
     return textures.emplace(id, std::move(gpu)).first->second;
 }
