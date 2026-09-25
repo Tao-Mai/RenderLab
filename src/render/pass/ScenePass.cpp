@@ -1,7 +1,7 @@
 #include "render/pass/ScenePass.h"
 
 #include "asset/AssetDesc.h"
-#include "asset/AssetManager.h"
+#include "asset/AssetDescManager.h"
 #include "core/Context.h"
 #include "ecs/Light.h"
 #include "ecs/Render.h"
@@ -26,21 +26,24 @@ void ScenePass::bindSceneDescriptor(
 {
     const std::array sets = {frames->at(frameIndex).sceneSetHandle()};
     commandBuffer.bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics, pipelineLayout,
-        RenderInterface::sceneSet, sets, {});
+        vk::PipelineBindPoint::eGraphics,
+        pipelineLayout,
+        RenderInterface::sceneSet,
+        sets,
+        {});
 }
 
 void ScenePass::init(VulkanContext& context, Swapchain& targetSwapchain,
-    std::array<FrameContext, maxFramesInFlight>& targetFrames,
-    PipelineManager& targetPipelines,
-    RenderResourceManager& targetResources, ShaderHandle targetSceneShader,
-    ShaderHandle targetLightShader)
+                     std::array<FrameContext, maxFramesInFlight>& targetFrames,
+                     PipelineManager& targetPipelines,
+                     RenderResourceManager& targetResources, ShaderHandle targetSceneShader,
+                     ShaderHandle targetLightShader)
 {
-    vulkan = &context;
-    swapchain = &targetSwapchain;
-    frames = &targetFrames;
-    pipelines = &targetPipelines;
-    resources = &targetResources;
+    vulkan      = &context;
+    swapchain   = &targetSwapchain;
+    frames      = &targetFrames;
+    pipelines   = &targetPipelines;
+    resources   = &targetResources;
     sceneShader = targetSceneShader;
     lightShader = targetLightShader;
     refreshPipelines();
@@ -50,7 +53,7 @@ void ScenePass::refreshPipelines()
 {
     const vk::Format colorFormat = swapchain->surfaceFormat().format;
     const vk::Format depthFormat = swapchain->depthImageFormat();
-    scenePipeline = pipelines->getOrCreate({
+    scenePipeline                = pipelines->getOrCreate({
         .shader = sceneShader,
         .layout = PipelineLayoutPreset::SceneMaterial,
         .state = PipelineState::preset(RenderMode::Opaque),
@@ -70,22 +73,31 @@ void ScenePass::refreshPipelines()
 void ScenePass::reset() noexcept
 {
     environmentTexture.reset();
-    scenePipeline = nullptr;
+    scenePipeline       = nullptr;
     lightMarkerPipeline = nullptr;
-    pipelineLayout = nullptr;
-    sceneShader = {};
-    lightShader = {};
-    resources = nullptr;
-    pipelines = nullptr;
-    frames = nullptr;
-    swapchain = nullptr;
-    vulkan = nullptr;
+    pipelineLayout      = nullptr;
+    sceneShader         = {};
+    lightShader         = {};
+    resources           = nullptr;
+    pipelines           = nullptr;
+    frames              = nullptr;
+    swapchain           = nullptr;
+    vulkan              = nullptr;
 }
 
 void ScenePass::bindEnvironment(const SceneDesc& scene)
 {
-    const AssetId textureId = scene.environment.environmentMap.value_or(TextureDesc::whiteCube);
-    environmentTexture = resources->texture(textureId);
+    AssetId textureId = TextureDesc::whiteCube;
+    if (scene.environment.environmentMap.has_value())
+    {
+        const EnvironmentMapDesc& environment =
+            context().assetManager->desc<EnvironmentMapDesc>(*scene.environment.environmentMap);
+        CHECK(!environment.radiance.empty(),
+              "environment '{}' has no radiance texture",
+              environment.id);
+        textureId = environment.radiance;
+    }
+    environmentTexture      = resources->texture(textureId);
     const vk::DescriptorImageInfo imageInfo{
         .imageView = environmentTexture->imageView(),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -114,7 +126,7 @@ void ScenePass::bindEnvironment(const SceneDesc& scene)
 }
 
 void ScenePass::updateScene(
-    uint32_t frameIndex,
+    uint32_t               frameIndex,
     const glm::mat4&       viewProjection,
     const glm::vec3&       cameraPosition,
     const SceneObjectDesc* lightObject)
@@ -126,7 +138,7 @@ void ScenePass::updateScene(
     };
     if (lightObject != nullptr)
     {
-        const auto* light = lightObject->components.at("Light").try_cast<ecs::Light>();
+        const auto* light     = lightObject->components.at("Light").try_cast<ecs::Light>();
         const auto* transform =
             lightObject->components.at("Transform").try_cast<ecs::Transform>();
         CHECK(light != nullptr, "light object missing Light component");
@@ -163,7 +175,7 @@ void ScenePass::record(
     uint32_t                            frameIndex,
     Target                              target) const
 {
-    vk::ClearValue              clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+    vk::ClearValue              clearColor     = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
     vk::RenderingAttachmentInfo attachmentInfo = {
         .imageView = swapchain->imageView(target.imageIndex),
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
@@ -225,28 +237,28 @@ void ScenePass::record(
             vk::Extent2D(viewportWidth, viewportHeight)));
     struct DrawCall
     {
-        Mesh* mesh;
+        Mesh*           mesh;
         const Material* material;
-        glm::mat4 model;
-        uint32_t firstIndex;
-        uint32_t indexCount;
-        float distanceSquared;
+        glm::mat4       model;
+        uint32_t        firstIndex;
+        uint32_t        indexCount;
+        float           distanceSquared;
     };
     std::vector<DrawCall> opaqueDraws;
     std::vector<DrawCall> transparentDraws;
     for (const SceneRenderItem& item : renderItems)
     {
-        const auto* render = item.object->components.at("Render").try_cast<ecs::Render>();
+        const auto* render    = item.object->components.at("Render").try_cast<ecs::Render>();
         const auto* transform =
             item.object->components.at("Transform").try_cast<ecs::Transform>();
         CHECK(render != nullptr && transform != nullptr,
-            "SceneRenderItem is missing Render or Transform");
-        const glm::vec3 offset = transform->position - cameraPosition;
-        const float distanceSquared = glm::dot(offset, offset);
-        const std::vector<Submesh>& submeshes = item.mesh->submeshes();
+              "SceneRenderItem is missing Render or Transform");
+        const glm::vec3             offset          = transform->position - cameraPosition;
+        const float                 distanceSquared = glm::dot(offset, offset);
+        const std::vector<Submesh>& submeshes       = item.mesh->submeshes();
         for (size_t index = 0; index < submeshes.size(); ++index)
         {
-            const Submesh& submesh = submeshes[index];
+            const Submesh&  submesh  = submeshes[index];
             const Material* material = submesh.material;
             if (const auto overrideIt = render->materialOverrides.find(
                     static_cast<int>(index));
@@ -258,7 +270,7 @@ void ScenePass::record(
                     const MeshDesc& mesh = context().assetManager->desc<MeshDesc>(
                         render->meshId);
                     CHECK(index < mesh.submeshes.size(),
-                        "material override index out of range");
+                          "material override index out of range");
                     materialId = mesh.submeshes[index].materialId;
                 }
                 MaterialDesc desc = resources->materialDesc(materialId);
@@ -270,19 +282,24 @@ void ScenePass::record(
                 submesh.firstIndex, submesh.indexCount, distanceSquared,
             };
             (material->renderMode() == RenderMode::Transparent
-                ? transparentDraws : opaqueDraws).push_back(draw);
+                ? transparentDraws
+                : opaqueDraws).push_back(draw);
         }
     }
-    std::sort(transparentDraws.begin(), transparentDraws.end(),
-        [](const DrawCall& left, const DrawCall& right)
-        { return left.distanceSquared > right.distanceSquared; });
+    std::sort(transparentDraws.begin(),
+              transparentDraws.end(),
+              [](const DrawCall& left, const DrawCall& right)
+              {
+                  return left.distanceSquared > right.distanceSquared;
+              });
 
     vk::Pipeline boundPipeline = scenePipeline;
-    const auto draw = [&](const DrawCall& item)
+    const auto   draw          = [&](const DrawCall& item)
     {
         const vk::Pipeline pipeline = pipelines->getOrCreate(
             item.material->pipelineKey(
-                swapchain->surfaceFormat().format, swapchain->depthImageFormat()));
+                swapchain->surfaceFormat().format,
+                swapchain->depthImageFormat()));
         if (pipeline != boundPipeline)
         {
             commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
@@ -293,11 +310,15 @@ void ScenePass::record(
         commandBuffer.pushConstants<MeshPushConstants>(
             pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            0, pushConstants);
+            0,
+            pushConstants);
         const std::array materialSets = {item.material->descriptorSetHandle()};
         commandBuffer.bindDescriptorSets(
-            vk::PipelineBindPoint::eGraphics, pipelineLayout,
-                RenderInterface::materialSet, materialSets, {});
+            vk::PipelineBindPoint::eGraphics,
+            pipelineLayout,
+            RenderInterface::materialSet,
+            materialSets,
+            {});
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
     };
     for (const DrawCall& item : opaqueDraws)

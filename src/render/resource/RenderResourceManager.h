@@ -12,7 +12,7 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
-class AssetManager;
+class AssetDescManager;
 class DescriptorManager;
 class ShaderManager;
 class VulkanContext;
@@ -33,7 +33,7 @@ public:
     std::shared_ptr<Texture> texture(const AssetId& id);
 
 private:
-    AssetManager* assets = nullptr;
+    AssetDescManager* assets = nullptr;
     VulkanContext* vulkan = nullptr;
     DescriptorManager* descriptors = nullptr;
     ShaderManager* shaders = nullptr;

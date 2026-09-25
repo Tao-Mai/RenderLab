@@ -1,7 +1,7 @@
 #include "render/Renderer.h"
 
 #include "asset/AssetDesc.h"
-#include "asset/AssetManager.h"
+#include "asset/AssetDescManager.h"
 #include "Camera.h"
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -74,7 +74,7 @@ void Renderer::shutdown() noexcept
     swapchain.reset();
     vulkan.reset();
     frameIndex = 0;
-    inited = false;
+    inited     = false;
 }
 
 VulkanContext& Renderer::vulkanContext()
@@ -100,7 +100,7 @@ FrameContext& Renderer::currentFrame()
 void Renderer::initVulkan()
 {
     CHECK(context().window != nullptr, "Window must exist before Renderer");
-    CHECK(context().assetManager != nullptr, "AssetManager must exist before Renderer");
+    CHECK(context().assetManager != nullptr, "AssetDescManager must exist before Renderer");
 
     Window& window = *context().window;
     vulkan.init(window);
@@ -114,10 +114,18 @@ void Renderer::initVulkan()
     }
     swapchain.transitionDepthImageLayout(frames[0].commandPoolHandle());
     resources.init(vulkan, descriptors, shaders);
-    scenePass.init(vulkan, swapchain, frames, pipelines, resources,
-        shaders.getOrLoad("scene"), shaders.getOrLoad("light"));
-    pickingPass.init(vulkan.physicalDeviceHandle(), vulkan.deviceHandle(),
-        swapchain, pipelines, shaders.getOrLoad("picking"));
+    scenePass.init(vulkan,
+                   swapchain,
+                   frames,
+                   pipelines,
+                   resources,
+                   shaders.getOrLoad("scene"),
+                   shaders.getOrLoad("light"));
+    pickingPass.init(vulkan.physicalDeviceHandle(),
+                     vulkan.deviceHandle(),
+                     swapchain,
+                     pipelines,
+                     shaders.getOrLoad("picking"));
 }
 
 void Renderer::recreateSwapchain()
@@ -287,9 +295,9 @@ void Renderer::transitionImageLayout(
 
 EditorFrameResult Renderer::drawFrame(const Camera& camera, const EditorFrameInput& editor)
 {
-    const vk::Fence         drawFence                = currentFrame().drawFenceHandle();
+    const vk::Fence         drawFence               = currentFrame().drawFenceHandle();
     const vk::Semaphore     imageAvailableSemaphore = currentFrame().imageAvailableSemaphore();
-    const vk::CommandBuffer commandBuffer            = *currentFrame().commandBufferHandle();
+    const vk::CommandBuffer commandBuffer           = *currentFrame().commandBufferHandle();
 
     const auto fenceResult = vulkan.deviceHandle().waitForFences(drawFence, vk::True, UINT64_MAX);
     CHECK(fenceResult == vk::Result::eSuccess, "failed to wait for fence!");
@@ -318,8 +326,10 @@ EditorFrameResult Renderer::drawFrame(const Camera& camera, const EditorFrameInp
 
     const glm::mat4 viewProjection = camera.projectionMatrix(editor.aspectRatio) *
         camera.viewMatrix();
-    scenePass.updateScene(frameIndex, viewProjection, camera.worldPosition(),
-        scene.primaryLightObject());
+    scenePass.updateScene(frameIndex,
+                          viewProjection,
+                          camera.worldPosition(),
+                          scene.primaryLightObject());
 
     const bool resolvePickAfterSubmit = editor.requestPick;
     recordCommandBuffer(imageIndex, editor);

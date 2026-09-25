@@ -1,7 +1,7 @@
 #include "editor/Editor.h"
 
 #include "asset/AssetDesc.h"
-#include "asset/AssetManager.h"
+#include "asset/AssetDescManager.h"
 #include "Camera.h"
 #include "core/Context.h"
 #include "core/Logger.h"

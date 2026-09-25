@@ -1,7 +1,7 @@
 #include "editor/ComponentDraw.h"
 
 #include "asset/AssetDesc.h"
-#include "asset/AssetManager.h"
+#include "asset/AssetDescManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "ecs/Light.h"

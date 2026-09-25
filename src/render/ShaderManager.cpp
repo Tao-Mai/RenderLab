@@ -1,7 +1,7 @@
 #include "render/ShaderManager.h"
 
 #include "asset/AssetDesc.h"
-#include "asset/AssetManager.h"
+#include "asset/AssetDescManager.h"
 #include "core/Logger.h"
 #include "render/resource/Shader.h"
 
@@ -106,7 +106,7 @@ std::vector<ShaderMetadata::Binding> readReflection(std::filesystem::path path)
 
 ShaderManager::~ShaderManager() = default;
 
-void ShaderManager::init(const vk::raii::Device& targetDevice, AssetManager& targetAssets)
+void ShaderManager::init(const vk::raii::Device& targetDevice, AssetDescManager& targetAssets)
 {
     device = &targetDevice;
     assets = &targetAssets;

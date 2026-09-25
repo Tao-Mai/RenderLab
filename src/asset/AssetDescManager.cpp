@@ -1,4 +1,4 @@
-#include "asset/AssetManager.h"
+#include "asset/AssetDescManager.h"
 
 namespace
 {
@@ -19,29 +19,30 @@ void loadDescDirectory(
         T desc = asset_json::load<T>(entry.path());
         CHECK(!desc.id.empty(), "descriptor has empty id: {}", entry.path().string());
         CHECK(out.emplace(desc.id, desc).second,
-            "duplicate asset ID: {}", desc.id);
+              "duplicate asset ID: {}",
+              desc.id);
     }
 }
 }
 
-void AssetManager::init()
+void AssetDescManager::init()
 {
     if (inited)
     {
         return;
     }
-    CHECK(context().config != nullptr, "ConfigManager must exist before AssetManager");
+    CHECK(context().config != nullptr, "ConfigManager must exist before AssetDescManager");
     loadAll();
     inited = true;
 }
 
-void AssetManager::shutdown() noexcept
+void AssetDescManager::shutdown() noexcept
 {
     clear();
     inited = false;
 }
 
-void AssetManager::loadAll()
+void AssetDescManager::loadAll()
 {
     clear();
     AssetTypes::forEach(
@@ -49,22 +50,23 @@ void AssetManager::loadAll()
         {
             using T = typename Entry::type;
             loadDescDirectory(
-                descriptorRoot() / Entry::dir, descMap<T>());
+                descriptorRoot() / Entry::dir,
+                descMap<T>());
         });
 }
 
-std::filesystem::path AssetManager::descriptorRoot() const
+std::filesystem::path AssetDescManager::descriptorRoot() const
 {
     return context().config->paths().assets / "assets";
 }
 
-std::filesystem::path AssetManager::path(const std::filesystem::path& relative) const
+std::filesystem::path AssetDescManager::path(const std::filesystem::path& relative) const
 {
     CHECK(!relative.is_absolute(), "asset path must be relative: {}", relative.string());
     return context().config->paths().assets / relative;
 }
 
-void AssetManager::clear()
+void AssetDescManager::clear()
 {
-    std::apply([](auto&... maps) { (maps.clear(), ...); }, descs);
+    std::apply([](auto&... maps) { (maps.clear(), ...); }, assetDescs);
 }

@@ -9,6 +9,7 @@
     <option name="/Default/Housekeeping/GlobalSettingsUpgraded/IsUpgraded/@EntryValue" value="true" type="bool" />
     <option name="/Default/Housekeeping/LiveTemplatesHousekeeping/HotspotSessionHintIsShown/@EntryValue" value="true" type="bool" />
     <option name="/Default/Housekeeping/OptionsDialog/SelectedPageId/@EntryValue" value="CppFormatterOtherPage" type="string" />
+    <option name="/Default/Housekeeping/RefactoringsMru/RenameRefactoring/DoRenameType/@EntryValue" value="false" type="bool" />
     <option name="/Default/RiderDebugger/RiderRestoreDecompile/RestoreDecompileSetting/@EntryValue" value="false" type="bool" />
   </component>
   <component name="BackgroundAgentGlobalSettings">
@@ -35,20 +36,35 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="renderer">
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="调整asset">
+      <change afterPath="$PROJECT_DIR$/src/asset/AssetImporter.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/asset/import/ImportMesh.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/asset/import/ImportTexture.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/config/config.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/config.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TODO.md" beforeDir="false" afterPath="$PROJECT_DIR$/TODO.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/Engine.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/Main.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/Main.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/asset/AssetDesc.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/AssetDesc.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/GltfLoader.cpp" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/GltfLoader.h" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/JsonIo.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/JsonIo.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/RflReflectors.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/RflReflectors.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/TextureImporter.cpp" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/TextureImporter.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/asset/AssetManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/AssetDescManager.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/asset/AssetManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/AssetDescManager.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/asset/TextureIo.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/TextureIo.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/asset/TextureIo.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/TextureIo.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/core/Context.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/Context.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/core/Context.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/Context.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/editor/ComponentDraw.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/ComponentDraw.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/editor/Editor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/Editor.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/Renderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/Renderer.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/ShaderManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/ShaderManager.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/ShaderManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/ShaderManager.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/ScenePass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/ScenePass.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/resource/RenderResourceManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/RenderResourceManager.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/RenderResourceManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/RenderResourceManager.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/Texture.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/Texture.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/tool/GltfLoader.cpp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/tool/GltfLoader.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/tool/TextureImporter.cpp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/tool/TextureImporter.h" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -105,61 +121,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.9487852673683055" />
-      <entry key="MS500" value="3.705274972932858" />
-      <entry key="S2" value="5.638056012031293" />
-      <entry key="S5" value="6.3834897844641105" />
-      <entry key="S10" value="6.67814887210737" />
-      <entry key="S30" value="6.962672786720416" />
-      <entry key="S60" value="8.344109405508757" />
-      <entry key="M2" value="14.139903284826246" />
-      <entry key="M5" value="27.54113575175664" />
-      <entry key="M10" value="36.61016192347176" />
-      <entry key="M15" value="40.50322190034673" />
-      <entry key="M30" value="44.93973810136969" />
-      <entry key="H1" value="47.38657139955415" />
-      <entry key="H2" value="48.73581096580208" />
-      <entry key="H4" value="50.98033585186064" />
-      <entry key="D1" value="138.9425925242021" />
-      <entry key="W1" value="747.2906575271862" />
+      <entry key="MS100" value="1.0" />
+      <entry key="MS500" value="1.0" />
+      <entry key="S2" value="1.0" />
+      <entry key="S5" value="1.0" />
+      <entry key="S10" value="1.0" />
+      <entry key="S30" value="1.0000000000001048" />
+      <entry key="S60" value="1.0000006532224437" />
+      <entry key="M2" value="1.0017660593404227" />
+      <entry key="M5" value="1.2079616241787487" />
+      <entry key="M10" value="2.094474827357665" />
+      <entry key="M15" value="3.1438001898993853" />
+      <entry key="M30" value="7.695174276423227" />
+      <entry key="H1" value="20.595173925091256" />
+      <entry key="H2" value="40.2418095241118" />
+      <entry key="H4" value="59.29706711666063" />
+      <entry key="D1" value="163.02384933407714" />
+      <entry key="W1" value="774.9506211654243" />
     </decayedCancelled>
     <decayedSelected>
-      <entry key="MS100" value="2.29012248111965E-8" />
-      <entry key="MS500" value="0.029646384848139192" />
-      <entry key="S2" value="0.41494729279499126" />
-      <entry key="S5" value="0.7033915944835476" />
-      <entry key="S10" value="0.83868444289202" />
-      <entry key="S30" value="0.9436223255264495" />
-      <entry key="S60" value="1.000316276373391" />
-      <entry key="M2" value="1.2151518416007674" />
-      <entry key="M5" value="1.8424668491780178" />
-      <entry key="M10" value="2.4172639664906184" />
-      <entry key="M15" value="2.7495533473001337" />
-      <entry key="M30" value="3.236674371810516" />
-      <entry key="H1" value="3.5728738545641994" />
-      <entry key="H2" value="3.7992803747898565" />
-      <entry key="H4" value="4.369250016919127" />
-      <entry key="D1" value="17.766649161750912" />
-      <entry key="W1" value="97.0524898076987" />
+      <entry key="MS100" value="2.596619659873081E-19" />
+      <entry key="MS500" value="2.0284616720511097E-4" />
+      <entry key="S2" value="0.1753162529371902" />
+      <entry key="S5" value="0.7442491070510058" />
+      <entry key="S10" value="1.2169531933422109" />
+      <entry key="S30" value="1.6938136504554087" />
+      <entry key="S60" value="1.8404205417908452" />
+      <entry key="M2" value="1.9185178658560198" />
+      <entry key="M5" value="1.9669923683936792" />
+      <entry key="M10" value="1.984664993408078" />
+      <entry key="M15" value="2.006053629262579" />
+      <entry key="M30" value="2.301865322284646" />
+      <entry key="H1" value="3.4916159831355196" />
+      <entry key="H2" value="5.426590301456455" />
+      <entry key="H4" value="7.521171140025496" />
+      <entry key="D1" value="22.221760655943708" />
+      <entry key="W1" value="101.96674796597608" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="1.7710212418243512" />
-      <entry key="MS500" value="3.591687574301017" />
-      <entry key="S2" value="5.770712581708719" />
-      <entry key="S5" value="6.890997485308611" />
-      <entry key="S10" value="7.398218311755613" />
-      <entry key="S30" value="7.861224777401579" />
-      <entry key="S60" value="9.320068177988437" />
-      <entry key="M2" value="15.339165055463571" />
-      <entry key="M5" value="29.372912547930508" />
-      <entry key="M10" value="39.0199569171698" />
-      <entry key="M15" value="43.24691625052915" />
-      <entry key="M30" value="48.17280626875394" />
-      <entry key="H1" value="50.95740052596259" />
-      <entry key="H2" value="52.53395754103757" />
-      <entry key="H4" value="55.34850696221547" />
-      <entry key="D1" value="156.7071754921916" />
-      <entry key="W1" value="844.3420523260736" />
+      <entry key="MS100" value="4.423122612824147E-13" />
+      <entry key="MS500" value="0.003441491931646437" />
+      <entry key="S2" value="0.3673837563898947" />
+      <entry key="S5" value="1.2164636619678495" />
+      <entry key="S10" value="1.8892936335799508" />
+      <entry key="S30" value="2.5651210084389895" />
+      <entry key="S60" value="2.773198155076342" />
+      <entry key="M2" value="2.8858763397599323" />
+      <entry key="M5" value="3.159117067882081" />
+      <entry key="M10" value="4.067386708681827" />
+      <entry key="M15" value="5.139697690171519" />
+      <entry key="M30" value="9.989539219936631" />
+      <entry key="H1" value="24.081447062305084" />
+      <entry key="H2" value="45.664827756184195" />
+      <entry key="H4" value="66.81577281839868" />
+      <entry key="D1" value="185.24335802712918" />
+      <entry key="W1" value="876.9162366519238" />
     </decayedShown>
   </component>
   <component name="ProjectApplicationVersion">
@@ -236,10 +252,161 @@
     &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
 }</component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="D:\study\project\graphics\own\RenderLab\src\asset" />
+    </key>
+  </component>
   <component name="RunManager" selected="CMake 应用程序.RenderLab">
+    <configuration name="RenderLabTests" type="CMakeGoogleTestRunConfigurationType" factoryName="Google Test" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="RenderLabTests" CONFIG_NAME="Default" RUN_TARGET_PROJECT_NAME="RenderLab" RUN_TARGET_NAME="RenderLabTests" TEST_MODE="SUITE_TEST">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+        <option name="BeforeTestRunTask" enabled="true" />
+      </method>
+    </configuration>
     <configuration name="SceneAsset.FileRoundTrip" type="CMakeGoogleTestRunConfigurationType" factoryName="Google Test" temporary="true" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="meta_json_test" CONFIG_NAME="Default" TEST_MODE="SUITE_TEST">
       <method v="2">
         <option name="BeforeTestRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="Continuous" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="Continuous" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ContinuousBuild" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="ContinuousBuild" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ContinuousConfigure" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="ContinuousConfigure" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ContinuousCoverage" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="ContinuousCoverage" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ContinuousMemCheck" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="ContinuousMemCheck" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ContinuousStart" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="ContinuousStart" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ContinuousSubmit" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="ContinuousSubmit" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ContinuousTest" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="ContinuousTest" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ContinuousUpdate" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="ContinuousUpdate" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="Experimental" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="Experimental" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ExperimentalBuild" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="ExperimentalBuild" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ExperimentalConfigure" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="ExperimentalConfigure" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ExperimentalCoverage" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="ExperimentalCoverage" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ExperimentalMemCheck" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="ExperimentalMemCheck" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ExperimentalStart" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="ExperimentalStart" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ExperimentalSubmit" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="ExperimentalSubmit" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ExperimentalTest" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="ExperimentalTest" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="ExperimentalUpdate" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="ExperimentalUpdate" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="Nightly" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="Nightly" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="NightlyBuild" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="NightlyBuild" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="NightlyConfigure" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="NightlyConfigure" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="NightlyCoverage" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="NightlyCoverage" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="NightlyMemCheck" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="NightlyMemCheck" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="NightlyMemoryCheck" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="NightlyMemoryCheck" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="NightlyStart" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="NightlyStart" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="NightlySubmit" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="NightlySubmit" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="NightlyTest" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="NightlyTest" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="NightlyUpdate" type="CMakeRunConfiguration" factoryName="Application" folderName="CTestDashboardTargets" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="NightlyUpdate" CONFIG_NAME="Default">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
     <configuration name="RenderLab" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="RenderLab" CONFIG_NAME="Default" RUN_TARGET_PROJECT_NAME="RenderLab" RUN_TARGET_NAME="RenderLab">
@@ -264,9 +431,38 @@
       </method>
     </configuration>
     <list>
+      <item itemvalue="CMake 应用程序.Continuous" />
+      <item itemvalue="CMake 应用程序.ContinuousBuild" />
+      <item itemvalue="CMake 应用程序.ContinuousConfigure" />
+      <item itemvalue="CMake 应用程序.ContinuousCoverage" />
+      <item itemvalue="CMake 应用程序.ContinuousMemCheck" />
+      <item itemvalue="CMake 应用程序.ContinuousStart" />
+      <item itemvalue="CMake 应用程序.ContinuousSubmit" />
+      <item itemvalue="CMake 应用程序.ContinuousTest" />
+      <item itemvalue="CMake 应用程序.ContinuousUpdate" />
+      <item itemvalue="CMake 应用程序.Experimental" />
+      <item itemvalue="CMake 应用程序.ExperimentalBuild" />
+      <item itemvalue="CMake 应用程序.ExperimentalConfigure" />
+      <item itemvalue="CMake 应用程序.ExperimentalCoverage" />
+      <item itemvalue="CMake 应用程序.ExperimentalMemCheck" />
+      <item itemvalue="CMake 应用程序.ExperimentalStart" />
+      <item itemvalue="CMake 应用程序.ExperimentalSubmit" />
+      <item itemvalue="CMake 应用程序.ExperimentalTest" />
+      <item itemvalue="CMake 应用程序.ExperimentalUpdate" />
+      <item itemvalue="CMake 应用程序.Nightly" />
+      <item itemvalue="CMake 应用程序.NightlyBuild" />
+      <item itemvalue="CMake 应用程序.NightlyConfigure" />
+      <item itemvalue="CMake 应用程序.NightlyCoverage" />
+      <item itemvalue="CMake 应用程序.NightlyMemCheck" />
+      <item itemvalue="CMake 应用程序.NightlyMemoryCheck" />
+      <item itemvalue="CMake 应用程序.NightlyStart" />
+      <item itemvalue="CMake 应用程序.NightlySubmit" />
+      <item itemvalue="CMake 应用程序.NightlyTest" />
+      <item itemvalue="CMake 应用程序.NightlyUpdate" />
       <item itemvalue="CMake 应用程序.RenderLabShaders" />
       <item itemvalue="CMake 应用程序.RenderLab" />
       <item itemvalue="CTest 应用程序.所有 CTest" />
+      <item itemvalue="Google Test.RenderLabTests" />
       <item itemvalue="Google Test.SceneAsset.FileRoundTrip" />
     </list>
     <recent_temporary>
@@ -325,7 +521,8 @@
     <MESSAGE value="vk check" />
     <MESSAGE value="rename" />
     <MESSAGE value="renderer" />
-    <option name="LAST_COMMIT_MESSAGE" value="renderer" />
+    <MESSAGE value="调整asset" />
+    <option name="LAST_COMMIT_MESSAGE" value="调整asset" />
   </component>
   <component name="XDebuggerManager">
     <watches-manager>

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "asset/AssetId.h"
+#include "asset/ImageFormat.h"
 #include "ecs/Camera.h"
 
 #include <array>
@@ -134,13 +135,6 @@ void applyMaterialFields(MaterialDesc& dst, const MaterialDesc& src);
 
 struct TextureDesc
 {
-    enum class DataFormat
-    {
-        Rgba8Srgb,
-        Rgba16Float,
-        Rgba32Float,
-    };
-
     enum class Layout
     {
         Image2D,
@@ -149,7 +143,7 @@ struct TextureDesc
 
     AssetId                               id;
     std::string                           source;
-    DataFormat                            format;
+    ImageFormat                           format;
     Layout                                layout;
     uint32_t                              width;
     uint32_t                              height;
@@ -176,12 +170,10 @@ struct ShaderDesc
     std::filesystem::path binary;
 };
 
-using ComponentMap = std::unordered_map<std::string, entt::meta_any>;
-
 struct SceneObjectDesc
 {
-    std::string  name;
-    ComponentMap components;
+    std::string                                     name;
+    std::unordered_map<std::string, entt::meta_any> components;
 };
 
 struct SceneDesc
@@ -218,4 +210,6 @@ using AssetTypes = TypeList<
     AssetEntry<MaterialDesc, "material">,
     AssetEntry<TextureDesc, "texture">,
     AssetEntry<ShaderDesc, "shader">,
-    AssetEntry<SceneDesc, "scene">>;
+    AssetEntry<SceneDesc, "scene">,
+    AssetEntry<EnvironmentMapDesc, "environment_map">
+>;

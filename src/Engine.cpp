@@ -1,6 +1,6 @@
 #include "Engine.h"
 
-#include "asset/AssetManager.h"
+#include "asset/AssetDescManager.h"
 #include "Camera.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -26,7 +26,7 @@ void Engine::init()
     Context& ctx = context();
     ctx.config = new ConfigManager();
     ctx.window = new Window();
-    ctx.assetManager = new AssetManager();
+    ctx.assetManager = new AssetDescManager();
     ctx.scene = new SceneDesc();
     ctx.camera = new Camera();
     ctx.renderer = new Renderer();

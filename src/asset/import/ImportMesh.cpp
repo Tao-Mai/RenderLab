@@ -2,12 +2,12 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <tiny_gltf.h>
 
-#include "tool/GltfLoader.h"
+#include "asset/AssetImporter.h"
 
-#include "asset/AssetManager.h"
+#include "asset/AssetDescManager.h"
 #include "asset/GeometryIo.h"
 #include "asset/MeshGeometry.h"
-#include "tool/TextureImporter.h"
+#include "asset/import/ImportId.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -30,7 +30,6 @@ namespace
 {
 struct GltfBuild
 {
-    AssetManager* assets = nullptr;
     MeshGeometry geometry;
     std::vector<SubmeshDesc> submeshes;
     std::vector<AssetId> materialIds;
@@ -80,8 +79,7 @@ struct GltfBuild
     CHECK(!relative.empty() && *relative.begin() != "..",
         "texture is outside asset root: {}", sourcePath);
 
-    const AssetId id = TextureImporter::importTexture(
-        *build.assets, relative.stem().string(), std::filesystem::absolute(sourcePath));
+    const AssetId id = AssetImporter::importTexture(std::filesystem::absolute(sourcePath));
     build.textureCache.emplace(std::move(sourcePath), id);
     return id;
 }
@@ -90,21 +88,19 @@ void registerMaterials(
     GltfBuild& build,
     const tinygltf::Model& model,
     const std::filesystem::path& modelDirectory,
-    std::string_view meshName)
+    const std::filesystem::path& meshSource)
 {
     MaterialDesc defaultMaterial;
-    defaultMaterial.id = std::string(meshName) + "_default";
+    defaultMaterial.id = asset_import::nextId<MaterialDesc>(meshSource);
     defaultMaterial.baseColorTexture = TextureDesc::white;
-    build.materialIds.push_back(build.assets->save(std::move(defaultMaterial)));
+    build.materialIds.push_back(
+        context().assetManager->save(std::move(defaultMaterial)));
 
     for (size_t index = 0; index < model.materials.size(); ++index)
     {
         const tinygltf::Material& source = model.materials[index];
         MaterialDesc material;
-        const std::string materialName = source.name.empty()
-            ? std::string(meshName) + "_material_" + std::to_string(index)
-            : source.name;
-        material.id = materialName;
+        material.id = asset_import::nextId<MaterialDesc>(meshSource);
 
         const auto& pbr = source.pbrMetallicRoughness;
         if (pbr.baseColorFactor.size() == 4)
@@ -143,7 +139,8 @@ void registerMaterials(
         material.alphaMode = source.alphaMode;
         material.alphaCutoff = static_cast<float>(source.alphaCutoff);
         material.doubleSided = source.doubleSided;
-        build.materialIds.push_back(build.assets->save(std::move(material)));
+        build.materialIds.push_back(
+            context().assetManager->save(std::move(material)));
     }
 }
 
@@ -364,12 +361,13 @@ void appendMesh(
 }
 }
 
-void GLTFLoader::import(
-    AssetManager& assets,
-    AssetId meshId,
-    const std::filesystem::path& path,
-    MeshSourceDesc source)
+AssetId AssetImporter::importMesh(const std::filesystem::path& path)
 {
+    const auto relativeSource = std::filesystem::relative(
+        std::filesystem::absolute(path), context().config->paths().assets);
+    CHECK(!relativeSource.empty() && *relativeSource.begin() != "..",
+        "mesh source is outside asset root: {}", path.string());
+
     tinygltf::TinyGLTF loader;
     tinygltf::Model model;
     std::string warning;
@@ -378,6 +376,8 @@ void GLTFLoader::import(
     std::string extension = path.extension().string();
     std::ranges::transform(extension, extension.begin(),
         [](unsigned char character) { return std::tolower(character); });
+    CHECK(extension == ".gltf" || extension == ".glb",
+        "unsupported mesh source: {}", path.string());
     const bool loaded = extension == ".glb"
         ? loader.LoadBinaryFromFile(&model, &error, &warning, path.string())
         : loader.LoadASCIIFromFile(&model, &error, &warning, path.string());
@@ -387,9 +387,9 @@ void GLTFLoader::import(
     }
     CHECK(loaded, "failed to load glTF '{}': {}", path.string(), error);
 
-    const std::string meshName = path.stem().string();
-    GltfBuild build{.assets = &assets};
-    registerMaterials(build, model, path.parent_path(), meshName);
+    const AssetId meshId = asset_import::nextId<MeshDesc>(path);
+    GltfBuild build;
+    registerMaterials(build, model, path.parent_path(), path);
 
     std::function<void(int, const glm::mat4&)> visitNode;
     visitNode = [&](int nodeIndex, const glm::mat4& parentTransform)
@@ -426,14 +426,15 @@ void GLTFLoader::import(
         "glTF contains no triangle mesh data: {}", path.string());
 
     const auto geometryFile =
-        context().config->paths().geometry / (meshName + ".bin");
+        context().config->paths().geometry / (meshId + ".bin");
     geometry_io::write(geometryFile, build.geometry);
 
     MeshDesc mesh;
-    mesh.id = std::move(meshId);
-    mesh.source = std::move(source);
+    mesh.id = meshId;
+    mesh.source.kind = "gltf";
+    mesh.source.path = relativeSource;
     mesh.geometry = std::filesystem::relative(
         geometryFile, context().config->paths().assets).generic_string();
     mesh.submeshes = std::move(build.submeshes);
-    assets.save(std::move(mesh));
+    return context().assetManager->save(std::move(mesh));
 }

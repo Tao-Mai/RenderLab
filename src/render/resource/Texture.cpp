@@ -13,13 +13,13 @@
 
 namespace
 {
-    [[nodiscard]] vk::Format vulkanFormat(TextureDesc::DataFormat format)
+    [[nodiscard]] vk::Format vulkanFormat(ImageFormat format)
     {
         switch (format)
         {
-        case TextureDesc::DataFormat::Rgba8Srgb: return vk::Format::eR8G8B8A8Srgb;
-        case TextureDesc::DataFormat::Rgba16Float: return vk::Format::eR16G16B16A16Sfloat;
-        case TextureDesc::DataFormat::Rgba32Float: return vk::Format::eR32G32B32A32Sfloat;
+        case ImageFormat::Rgba8Srgb: return vk::Format::eR8G8B8A8Srgb;
+        case ImageFormat::Rgba16Float: return vk::Format::eR16G16B16A16Sfloat;
+        case ImageFormat::Rgba32Float: return vk::Format::eR32G32B32A32Sfloat;
         }
         LOG_FATAL("invalid texture data format");
     }

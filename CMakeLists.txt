@@ -129,24 +129,23 @@ add_executable(RenderLab
         src/editor/EditorUi.cpp
         src/editor/EditorUi.h
         src/editor/ViewportRect.h
-        src/asset/AssetManager.cpp
-        src/asset/AssetManager.h
-        src/asset/AssetId.h
-        src/asset/AssetDesc.h
+        src/asset/AssetDescManager.cpp
         src/asset/MaterialDesc.cpp
         src/asset/GeometryIo.cpp
         src/asset/GeometryIo.h
         src/asset/TextureIo.cpp
         src/asset/TextureIo.h
-        src/tool/TextureImporter.cpp
-        src/tool/TextureImporter.h
+        src/asset/ImageFormat.h
+        src/asset/import/ImportImage.cpp
+        src/asset/import/ImportTexture.cpp
+        src/asset/import/ImportEnvironmentMap.cpp
+        src/asset/import/ImportId.h
         src/asset/JsonIo.h
         src/asset/RflReflectors.h
         src/asset/MeshGeometry.h
         src/asset/BuiltinMeshes.cpp
         src/asset/BuiltinMeshes.h
-        src/tool/GltfLoader.cpp
-        src/tool/GltfLoader.h
+        src/asset/import/ImportMesh.cpp
         src/asset/Vertex.h
         src/platform/InputMethod.cpp
         src/platform/InputMethod.h
@@ -190,6 +189,7 @@ add_executable(RenderLab
         src/render/pass/EditorPickingPass.h
         src/render/PipelineManager.cpp
         src/render/PipelineManager.h
+        src/asset/AssetImporter.h
 )
 add_dependencies(RenderLab RenderLabShaders)
 
@@ -226,4 +226,10 @@ if (MSVC)
     set_target_properties(RenderLab PROPERTIES
             VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:RenderLab>"
     )
+endif ()
+
+include(CTest)
+if (BUILD_TESTING)
+    find_package(GTest CONFIG REQUIRED)
+    add_subdirectory(test)
 endif ()

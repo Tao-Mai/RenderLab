@@ -3,4 +3,7 @@
 1. beckmann ndf
 2. FGD的推导
 3. Kulla-Conty approximation
-4. 
+
+## 资产系统
+
+1. 全局唯一ID

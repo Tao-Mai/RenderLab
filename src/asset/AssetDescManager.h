@@ -11,10 +11,10 @@
 #include <unordered_map>
 #include <utility>
 
-class AssetManager
+class AssetDescManager
 {
 public:
-    AssetManager() = default;
+    AssetDescManager() = default;
 
     void init();
     void shutdown() noexcept;
@@ -23,7 +23,7 @@ public:
     [[nodiscard]] const T& desc(const AssetId& id) const
     {
         const auto& table = descMap<T>();
-        const auto found = table.find(id);
+        const auto  found = table.find(id);
         CHECK(found != table.end(), "descriptor not loaded: {}", id);
         return found->second;
     }
@@ -32,7 +32,7 @@ public:
     [[nodiscard]] const T* findDesc(const AssetId& id) const
     {
         const auto& table = descMap<T>();
-        const auto found = table.find(id);
+        const auto  found = table.find(id);
         return found != table.end() ? &found->second : nullptr;
     }
 
@@ -52,26 +52,26 @@ public:
 
 private:
     template <class T>
-    using DescMap = std::unordered_map<AssetId, T>;
+    using DescMap = std::unordered_map<AssetId, T>; // rehash 不会改变元素地址
 
     using DescMaps = AssetTypes::wrapTypes<DescMap>;
 
-    bool inited = false;
-    DescMaps descs;
+    bool     inited = false;
+    DescMaps assetDescs;
 
-    void loadAll();
-    void clear();
+    void                                loadAll();
+    void                                clear();
     [[nodiscard]] std::filesystem::path descriptorRoot() const;
 
     template <class T>
     [[nodiscard]] DescMap<T>& descMap()
     {
-        return std::get<DescMap<T>>(descs);
+        return std::get<DescMap<T>>(assetDescs);
     }
 
     template <class T>
     [[nodiscard]] const DescMap<T>& descMap() const
     {
-        return std::get<DescMap<T>>(descs);
+        return std::get<DescMap<T>>(assetDescs);
     }
 };

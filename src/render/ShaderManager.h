@@ -11,7 +11,7 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
-class AssetManager;
+class AssetDescManager;
 
 struct ShaderHandle
 {
@@ -40,7 +40,7 @@ class ShaderManager
 public:
     ~ShaderManager();
 
-    void init(const vk::raii::Device& device, AssetManager& assets);
+    void init(const vk::raii::Device& device, AssetDescManager& assets);
     void reset() noexcept;
 
     [[nodiscard]] ShaderHandle getOrLoad(const AssetId& id);
@@ -49,7 +49,7 @@ public:
 
 private:
     const vk::raii::Device* device = nullptr;
-    AssetManager* assets = nullptr;
+    AssetDescManager* assets = nullptr;
     std::unordered_map<AssetId, ShaderHandle> handles;
     std::vector<std::unique_ptr<Shader>> shaders;
     std::vector<ShaderMetadata> shaderMetadata;

@@ -1,6 +1,6 @@
 #include "Engine.h"
-#include "asset/AssetManager.h"
-#include "tool/TextureImporter.h"
+#include "asset/AssetDescManager.h"
+#include "asset/AssetImporter.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -13,32 +13,39 @@ int main(int argc, char** argv)
     logger::init(argv[0]);
     if (argc > 1)
     {
-        CHECK(argc == 4, "usage: RenderLab --import-texture|--import-environmentmap <id> <source>");
+        CHECK(argc == 3,
+              "usage: RenderLab --import-texture|--import-environmentmap|--import-mesh <source>");
         ConfigManager config;
-        AssetManager assets;
+        AssetDescManager assets;
         context().config = &config;
         context().assetManager = &assets;
         config.init();
-        assets.init();
-        std::filesystem::path source{argv[3]};
+        context().assetManager->init();
+        std::filesystem::path source{argv[2]};
         if (source.is_relative())
         {
             source = config.paths().assets / source;
         }
         const std::string_view command{argv[1]};
+        AssetId importedId;
         if (command == "--import-texture")
         {
-            TextureImporter::importTexture(assets, argv[2], source);
+            importedId = AssetImporter::importTexture(source);
         }
         else if (command == "--import-environmentmap")
         {
-            TextureImporter::importEnvironmentMap(assets, argv[2], source);
+            importedId = AssetImporter::importEnvironmentMap(source);
+        }
+        else if (command == "--import-mesh")
+        {
+            importedId = AssetImporter::importMesh(source);
         }
         else
         {
             LOG_FATAL("unknown import command: {}", command);
         }
-        assets.shutdown();
+        LOG_INFO("imported asset ID: {}", importedId);
+        context().assetManager->shutdown();
         config.shutdown();
         context().assetManager = nullptr;
         context().config = nullptr;
