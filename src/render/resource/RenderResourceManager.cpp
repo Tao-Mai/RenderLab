@@ -3,7 +3,7 @@
 #include "asset/AssetManager.h"
 #include "asset/BuiltinMeshes.h"
 #include "asset/GeometryIo.h"
-#include "asset/GltfLoader.h"
+#include "tool/GltfLoader.h"
 #include "asset/TextureIo.h"
 #include "core/Context.h"
 #include "core/Logger.h"

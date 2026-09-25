@@ -1,6 +1,6 @@
 #include "Engine.h"
 #include "asset/AssetManager.h"
-#include "asset/TextureImporter.h"
+#include "tool/TextureImporter.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"

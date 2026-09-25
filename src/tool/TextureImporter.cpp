@@ -1,7 +1,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-#include "asset/TextureImporter.h"
+#include "tool/TextureImporter.h"
 
 #include "asset/AssetDesc.h"
 #include "asset/AssetManager.h"

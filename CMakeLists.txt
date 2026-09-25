@@ -138,15 +138,15 @@ add_executable(RenderLab
         src/asset/GeometryIo.h
         src/asset/TextureIo.cpp
         src/asset/TextureIo.h
-        src/asset/TextureImporter.cpp
-        src/asset/TextureImporter.h
+        src/tool/TextureImporter.cpp
+        src/tool/TextureImporter.h
         src/asset/JsonIo.h
         src/asset/RflReflectors.h
         src/asset/MeshGeometry.h
         src/asset/BuiltinMeshes.cpp
         src/asset/BuiltinMeshes.h
-        src/asset/GltfLoader.cpp
-        src/asset/GltfLoader.h
+        src/tool/GltfLoader.cpp
+        src/tool/GltfLoader.h
         src/asset/Vertex.h
         src/platform/InputMethod.cpp
         src/platform/InputMethod.h

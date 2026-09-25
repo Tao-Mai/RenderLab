@@ -157,9 +157,17 @@ struct TextureDesc
     std::optional<std::filesystem::path>  binary;
     std::optional<std::array<uint8_t, 4>> rgba;
 
-    static inline const AssetId    white = "white";
+    static inline const AssetId    white     = "white";
     static inline const AssetId    whiteCube = "whiteCube";
     static inline const std::array builtins{&white, &whiteCube};
+};
+
+struct EnvironmentMapDesc
+{
+    AssetId id;
+    AssetId radiance;
+    AssetId irradiance;
+    AssetId prefilteredSpecular;
 };
 
 struct ShaderDesc

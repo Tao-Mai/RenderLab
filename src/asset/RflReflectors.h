@@ -23,6 +23,7 @@
 #include <rfl/from_generic.hpp>
 #include <rfl/parsing/Parser_base.hpp>
 #include <rfl/to_generic.hpp>
+#include <rfl/SnakeCaseToPascalCase.hpp>
 
 namespace rfl_detail
 {
@@ -103,7 +104,7 @@ template <class T>
 
     if (const MaterialDesc* material = value.try_cast<MaterialDesc>())
     {
-        return rfl::to_generic(*material);
+        return rfl::to_generic<rfl::SnakeCaseToPascalCase>(*material);
     }
 
     if (auto seq = value.as_sequence_container(); seq)
@@ -145,7 +146,12 @@ template <class T>
         hasFields = true;
         const char* name = data.name();
         CHECK(name != nullptr, "reflected field missing name");
-        object[name] = metaAnyToGeneric(data.get(value));
+        std::string jsonName{name};
+        if (!jsonName.empty() && jsonName.front() >= 'a' && jsonName.front() <= 'z')
+        {
+            jsonName.front() = static_cast<char>(jsonName.front() - 'a' + 'A');
+        }
+        object[jsonName] = metaAnyToGeneric(data.get(value));
     }
     CHECK(hasFields, "unsupported meta value type for component map serialization");
     return rfl::Generic{std::move(object)};
@@ -246,7 +252,8 @@ template <class T>
 
     if (expected.info() == entt::type_id<MaterialDesc>())
     {
-        const auto parsed = rfl::from_generic<MaterialDesc>(value);
+        const auto parsed = rfl::from_generic<MaterialDesc,
+            rfl::SnakeCaseToPascalCase>(value);
         CHECK(parsed, "{}", parsed.error().what());
         return entt::meta_any{*parsed};
     }
@@ -296,8 +303,13 @@ template <class T>
 
     for (const auto& [fieldName, fieldValue] : *object)
     {
+        CHECK(!fieldName.empty() && fieldName.front() >= 'A' &&
+            fieldName.front() <= 'Z',
+            "component field '{}' must use PascalCase", fieldName);
+        std::string memberName = fieldName;
+        memberName.front() = static_cast<char>(memberName.front() - 'A' + 'a');
         const entt::meta_data data =
-            expected.data(entt::hashed_string{fieldName.c_str()});
+            expected.data(entt::hashed_string{memberName.c_str()});
         CHECK(data, "unknown field '{}' on component '{}'", fieldName,
             expected.name() != nullptr ? expected.name() : "<unnamed>");
         const entt::meta_any fieldAny = genericToMetaAny(fieldValue, data.type());

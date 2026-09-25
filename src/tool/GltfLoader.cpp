@@ -2,12 +2,12 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <tiny_gltf.h>
 
-#include "asset/GltfLoader.h"
+#include "tool/GltfLoader.h"
 
 #include "asset/AssetManager.h"
 #include "asset/GeometryIo.h"
 #include "asset/MeshGeometry.h"
-#include "asset/TextureImporter.h"
+#include "tool/TextureImporter.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"

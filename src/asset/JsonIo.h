@@ -10,13 +10,16 @@
 #include <utility>
 
 #include <rfl/json.hpp>
+#include <rfl/NoExtraFields.hpp>
+#include <rfl/SnakeCaseToPascalCase.hpp>
 
 namespace asset_json
 {
 template <class T>
 [[nodiscard]] T load(const std::filesystem::path& file)
 {
-    auto result = rfl::json::load<T>(file.string());
+    auto result = rfl::json::load<T, rfl::SnakeCaseToPascalCase,
+        rfl::NoExtraFields>(file.string());
     CHECK(result, "failed to load JSON '{}': {}", file.string(), result.error().what());
     return std::move(*result);
 }
@@ -24,7 +27,8 @@ template <class T>
 template <class T>
 void save(const std::filesystem::path& file, const T& value)
 {
-    const std::string json = rfl::json::write(value, rfl::json::pretty);
+    const std::string json = rfl::json::write<rfl::SnakeCaseToPascalCase>(
+        value, rfl::json::pretty);
     if (file.has_parent_path())
     {
         std::filesystem::create_directories(file.parent_path());
