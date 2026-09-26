@@ -91,9 +91,9 @@ TEST(AssetDataManagerTest, PreservesMeshGeometry)
 {
     ConfiguredData assets;
     const AssetId id = uniqueId("test_mesh_");
+    const auto relative = std::filesystem::path{"binary/geometry"} / (id + ".bin");
     const TemporaryDataFile output{
-        assets.config.paths().geometry / (id + ".bin"),
-        assets.config.paths().assets};
+        assets.config.paths().assets / relative, assets.config.paths().assets};
 
     MeshGeometry mesh;
     mesh.vertices = {
@@ -104,8 +104,14 @@ TEST(AssetDataManagerTest, PreservesMeshGeometry)
     mesh.indices = {0, 1, 2};
 
     const auto geometry = assets.data.writeGeometry(id, mesh);
-    EXPECT_EQ(geometry, std::filesystem::path("geometry") / (id + ".bin"));
-    const MeshGeometry loaded = assets.data.readGeometry(geometry);
+    EXPECT_EQ(geometry, relative);
+
+    MeshDesc desc{};
+    desc.id       = id;
+    desc.source   = Source::File;
+    desc.geometry = geometry;
+
+    const MeshGeometry loaded = assets.data.readGeometry(desc);
     ASSERT_EQ(loaded.vertices.size(), mesh.vertices.size());
     EXPECT_EQ(loaded.indices, mesh.indices);
     for (size_t index = 0; index < mesh.vertices.size(); ++index)

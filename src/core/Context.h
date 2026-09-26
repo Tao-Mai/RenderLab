@@ -2,7 +2,6 @@
 
 class AssetDescManager;
 class AssetDataManager;
-class BuiltinAssetManager;
 class Camera;
 class ConfigManager;
 class SceneDesc;
@@ -12,15 +11,14 @@ class Window;
 
 struct Context
 {
-    ConfigManager*    config       = nullptr;
-    Window*           window       = nullptr;
-    AssetDescManager* assetManager = nullptr;
+    ConfigManager*    config           = nullptr;
+    Window*           window           = nullptr;
+    AssetDescManager* assetDescManager = nullptr;
     AssetDataManager* assetDataManager = nullptr;
-    BuiltinAssetManager* builtinAssetManager = nullptr;
-    SceneDesc*        scene        = nullptr;
-    Camera*           camera       = nullptr;
-    Renderer*         renderer     = nullptr;
-    Editor*           editor       = nullptr;
+    SceneDesc*        scene            = nullptr;
+    Camera*           camera           = nullptr;
+    Renderer*         renderer         = nullptr;
+    Editor*           editor           = nullptr;
 };
 
 [[nodiscard]] Context& context();

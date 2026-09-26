@@ -2,7 +2,9 @@ add_executable(RenderLabTests
         LutGgxTest.cpp
         AssetDataManagerTest.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/AssetDataManager.cpp
-        ${PROJECT_SOURCE_DIR}/src/asset/BuiltinAssetManager.cpp
+        ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinMesh.cpp
+        ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinMaterial.cpp
+        ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinTexture.cpp
         ${PROJECT_SOURCE_DIR}/src/core/ConfigManager.cpp
         ${PROJECT_SOURCE_DIR}/src/core/Context.cpp
 )

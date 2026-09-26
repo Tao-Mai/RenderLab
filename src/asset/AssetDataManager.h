@@ -15,7 +15,7 @@ public:
 
     [[nodiscard]] std::filesystem::path writeGeometry(
         const AssetId& id, const MeshGeometry& mesh) const;
-    [[nodiscard]] MeshGeometry readGeometry(const std::filesystem::path& relative) const;
+    [[nodiscard]] MeshGeometry readGeometry(const MeshDesc& desc) const;
 
     [[nodiscard]] std::filesystem::path writeTexture(
         const TextureDesc& desc, std::span<const uint8_t> bytes) const;
@@ -25,7 +25,6 @@ public:
 
 private:
     std::filesystem::path assetsRoot;
-    std::filesystem::path geometryRoot;
 
     [[nodiscard]] std::filesystem::path resolve(const std::filesystem::path& relative) const;
 };

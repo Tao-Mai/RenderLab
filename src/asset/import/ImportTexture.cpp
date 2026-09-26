@@ -23,9 +23,9 @@ AssetId AssetImporter::saveTexture(
     const std::filesystem::path& source,
     std::span<const uint8_t>     bytes)
 {
-    desc.path         = asset_import::sourceRelativeToAssets(source).generic_string();
-    desc.binary       = context().assetDataManager->writeTexture(desc, bytes);
-    return context().assetManager->save(std::move(desc));
+    desc.path   = asset_import::sourceRelativeToAssets(source).generic_string();
+    desc.binary = context().assetDataManager->writeTexture(desc, bytes);
+    return context().assetDescManager->save(std::move(desc));
 }
 
 AssetId AssetImporter::importTexture(
@@ -34,12 +34,12 @@ AssetId AssetImporter::importTexture(
     LoadedImage image = loadImage(source);
 
     TextureDesc desc{};
-    desc.id     = asset_import::nextId<TextureDesc>(source);
-    desc.source = "file";
-    desc.format = image.format;
+    desc.id         = asset_import::nextId<TextureDesc>(source);
+    desc.source     = Source::File;
+    desc.format     = image.format;
     desc.colorSpace = colorSpace.value_or(defaultColorSpace(image.fileFormat));
     CHECK((image.format == ImageFormat::RGBA16F || image.format == ImageFormat::RGBA32F)
-              ? desc.colorSpace == ColorSpace::Linear : true,
+          ? desc.colorSpace == ColorSpace::Linear : true,
           "floating-point textures require linear color space: {}",
           source.string());
     desc.layout = ImageLayout::Image2D;

@@ -12,7 +12,6 @@
 #include "render/resource/Mesh.h"
 #include "render/resource/Texture.h"
 
-#include <span>
 #include <utility>
 #include <vector>
 
@@ -31,11 +30,11 @@ GpuUploadContext RenderResourceManager::uploadContext() const
 void RenderResourceManager::init(VulkanContext&     targetVulkan,
                                  DescriptorManager& targetDescriptors, ShaderManager& targetShaders)
 {
-    CHECK(context().assetManager != nullptr,
+    CHECK(context().assetDescManager != nullptr,
           "AssetDescManager must exist before RenderResourceManager");
     CHECK(context().assetDataManager != nullptr,
           "AssetDataManager must exist before RenderResourceManager");
-    assets      = context().assetManager;
+    assets      = context().assetDescManager;
     data        = context().assetDataManager;
     vulkan      = &targetVulkan;
     descriptors = &targetDescriptors;
@@ -67,12 +66,8 @@ Mesh& RenderResourceManager::mesh(const AssetId& id)
         return *found->second;
     }
 
-    const MeshDesc& meshDesc = assets->desc<MeshDesc>(id);
-    CHECK(!meshDesc.geometry.empty(),
-          "mesh {} has no imported geometry; import its source first",
-          id);
-
-    MeshGeometry         geometry = data->readGeometry(meshDesc.geometry);
+    const MeshDesc&      meshDesc = assets->desc<MeshDesc>(id);
+    MeshGeometry         geometry = data->readGeometry(meshDesc);
     std::vector<Submesh> parts;
     parts.reserve(meshDesc.submeshes.size());
     for (const SubmeshDesc& submesh : meshDesc.submeshes)
@@ -112,10 +107,12 @@ Material& RenderResourceManager::material(const MaterialDesc& desc)
         return *found->second;
     }
 
-    const AssetId            albedoId  = desc.baseColorTexture.value_or(TextureDesc::white);
-    std::shared_ptr<Texture> baseColor =
-        texture(albedoId.empty() ? TextureDesc::white : albedoId);
-    auto gpu = std::make_unique<Material>();
+    CHECK(desc.baseColorTexture.has_value() && !desc.baseColorTexture->empty(),
+          "material '{}' missing baseColorTexture",
+          desc.id);
+
+    std::shared_ptr<Texture> baseColor = texture(*desc.baseColorTexture);
+    auto                     gpu       = std::make_unique<Material>();
     gpu->create(
         vulkan->physicalDeviceHandle(),
         vulkan->deviceHandle(),
@@ -133,48 +130,9 @@ std::shared_ptr<Texture> RenderResourceManager::texture(const AssetId& id)
         return found->second;
     }
 
-    const TextureDesc& desc = assets->desc<TextureDesc>(id);
-    std::shared_ptr<Texture> gpu;
-    if (desc.source == "solid")
-    {
-        CHECK(desc.format == ImageFormat::RGBA8,
-              "solid texture '{}' must use RGBA8",
-              id);
-        CHECK(desc.layout == ImageLayout::Image2D,
-              "solid texture '{}' must be 2D",
-              id);
-        CHECK(desc.width == 1 && desc.height == 1,
-              "solid texture '{}' must be 1x1",
-              id);
-        CHECK(desc.rgba.has_value(), "solid texture '{}' has no RGBA value", id);
-        gpu = std::make_shared<Texture>(
-            uploadContext(),
-            desc,
-            std::span<const uint8_t>{*desc.rgba});
-    }
-    else if (desc.source == "file" || desc.source == "environment")
-    {
-        CHECK((desc.source == "file" &&
-                  desc.layout == ImageLayout::Image2D) ||
-              (desc.source == "environment" &&
-                  desc.layout == ImageLayout::Cubemap &&
-                  (desc.format == ImageFormat::RGBA8 ||
-                      desc.format == ImageFormat::RGBA16F ||
-                      desc.format == ImageFormat::RGBA32F)),
-              "texture '{}' source, layout and data format disagree",
-              id);
-        const std::vector<uint8_t> bytes = data->readTexture(desc);
-        gpu = std::make_shared<Texture>(uploadContext(), desc, bytes);
-    }
-    else if (desc.source == kBuiltinTextureSource)
-    {
-        const std::vector<uint8_t> bytes = data->readTexture(desc);
-        gpu = std::make_shared<Texture>(uploadContext(), desc, bytes);
-    }
-    else
-    {
-        CHECK(false, "unknown texture source '{}' for '{}'", desc.source, id);
-    }
+    const TextureDesc&         desc  = assets->desc<TextureDesc>(id);
+    const std::vector<uint8_t> bytes = data->readTexture(desc);
+    auto                       gpu   = std::make_shared<Texture>(uploadContext(), desc, bytes);
 
     return textures.emplace(id, std::move(gpu)).first->second;
 }

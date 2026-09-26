@@ -2,6 +2,7 @@
 
 #include "asset/AssetDesc.h"
 #include "asset/AssetDescManager.h"
+#include "asset/ApplyOptionalFields.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "ecs/Light.h"
@@ -122,9 +123,9 @@ bool editAssetId(const char* label, AssetId& id)
 
 MaterialDesc materialPreview(const AssetId& materialId)
 {
-    if (context().assetManager != nullptr)
+    if (context().assetDescManager != nullptr)
     {
-        if (const MaterialDesc* material = context().assetManager->findDesc<MaterialDesc>(materialId))
+        if (const MaterialDesc* material = context().assetDescManager->findDesc<MaterialDesc>(materialId))
         {
             return *material;
         }
@@ -241,7 +242,7 @@ void drawMaterial(const AssetId& materialId)
             if (const auto it = render.materialOverrides.find(index);
                 it != render.materialOverrides.end())
             {
-                applyMaterialFields(preview, it->second);
+                applyOptionalFields(preview, it->second);
             }
 
             if (drawMaterialFields(preview, true))
@@ -262,13 +263,13 @@ void drawMaterial(const AssetId& materialId)
         ImGui::PopID();
     };
 
-    if (context().assetManager == nullptr)
+    if (context().assetDescManager == nullptr)
     {
         ImGui::TextDisabled("assets unavailable");
         return edited;
     }
 
-    const MeshDesc* mesh = context().assetManager->findDesc<MeshDesc>(render.meshId);
+    const MeshDesc* mesh = context().assetDescManager->findDesc<MeshDesc>(render.meshId);
     if (mesh == nullptr)
     {
         ImGui::TextDisabled("mesh desc not loaded");

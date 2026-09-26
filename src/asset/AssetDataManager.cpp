@@ -1,6 +1,6 @@
 #include "asset/AssetDataManager.h"
 
-#include "asset/BuiltinAssetManager.h"
+#include "asset/BuiltinAssets.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -8,6 +8,7 @@
 #include <array>
 #include <fstream>
 #include <limits>
+#include <system_error>
 #include <type_traits>
 
 namespace
@@ -98,12 +99,10 @@ void AssetDataManager::init()
           "ConfigManager must exist before AssetDataManager");
 
     const AppPaths& paths = context().config->paths();
-    CHECK(!paths.assets.empty() && paths.assets.is_absolute() &&
-          !paths.geometry.empty() && paths.geometry.is_absolute(),
+    CHECK(!paths.assets.empty() && paths.assets.is_absolute(),
           "AssetDataManager requires resolved asset paths");
 
-    assetsRoot   = paths.assets;
-    geometryRoot = paths.geometry;
+    assetsRoot = paths.assets;
 }
 
 std::filesystem::path AssetDataManager::resolve(
@@ -141,17 +140,20 @@ uint32_t AssetDataManager::bytesPerPixel(ImageFormat format)
 std::filesystem::path AssetDataManager::writeGeometry(
     const AssetId& id, const MeshGeometry& mesh) const
 {
-    CHECK(!geometryRoot.empty(), "AssetDataManager is not initialized");
     validateId(id);
 
-    const auto file = geometryRoot / (id + ".bin");
+    const auto relative = std::filesystem::path{"binary/geometry"} / (id + ".bin");
+    const auto file     = resolve(relative);
     CHECK(!mesh.vertices.empty() && !mesh.indices.empty(),
           "imported mesh has no geometry: {}",
           file.string());
 
     std::filesystem::create_directories(file.parent_path());
-    std::ofstream output(file, std::ios::binary | std::ios::trunc);
-    CHECK(output, "cannot write mesh geometry: {}", file.string());
+    std::filesystem::path temporary = file;
+    temporary                       += ".tmp";
+
+    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+    CHECK(output, "cannot write mesh geometry: {}", temporary.string());
 
     const GeometryHeader header{
         .magic = geometryMagic,
@@ -175,22 +177,32 @@ std::filesystem::path AssetDataManager::writeGeometry(
     output.write(
         reinterpret_cast<const char*>(mesh.indices.data()),
         static_cast<std::streamsize>(mesh.indices.size() * sizeof(uint32_t)));
+    output.close();
 
-    CHECK(output, "failed writing mesh geometry: {}", file.string());
+    CHECK(output, "failed writing mesh geometry: {}", temporary.string());
 
-    return std::filesystem::relative(file, assetsRoot);
+    std::error_code error;
+    std::filesystem::rename(temporary, file, error);
+    CHECK(!error,
+          "failed replacing mesh geometry '{}': {}",
+          file.string(),
+          error.message());
+
+    return relative;
 }
 
-MeshGeometry AssetDataManager::readGeometry(const std::filesystem::path& relative) const
+MeshGeometry AssetDataManager::readGeometry(const MeshDesc& desc) const
 {
-    if (relative.parent_path() == kBuiltinGeometryDir)
+    if (desc.source == Source::Builtin)
     {
-        const BuiltinAssetManager* builtin = context().builtinAssetManager;
-        CHECK(builtin != nullptr, "BuiltinAssetManager is not initialized");
-        return builtin->meshGeometry(relative);
+        const MeshGeometry* geometry = BuiltinAssets::meshGeometry(desc.id);
+        CHECK(geometry != nullptr, "unknown builtin mesh: {}", desc.id);
+        return *geometry;
     }
 
-    const auto    file = resolve(relative);
+    CHECK(!desc.geometry.empty(), "mesh '{}' has no geometry path", desc.id);
+
+    const auto    file = resolve(desc.geometry);
     std::ifstream input(file, std::ios::binary);
     CHECK(input, "cannot open mesh geometry: {}", file.string());
 
@@ -280,13 +292,12 @@ std::filesystem::path AssetDataManager::writeTexture(
 
 std::vector<uint8_t> AssetDataManager::readTexture(const TextureDesc& desc) const
 {
-    if (desc.source == kBuiltinTextureSource)
+    if (desc.source == Source::Builtin)
     {
-        const BuiltinAssetManager* builtin = context().builtinAssetManager;
-        CHECK(builtin != nullptr, "BuiltinAssetManager is not initialized");
-        std::vector<uint8_t> bytes = builtin->textureData(desc.id);
-        validateTexture(desc, bytes, desc.id);
-        return bytes;
+        const std::vector<uint8_t>* bytes = BuiltinAssets::textureData(desc.id);
+        CHECK(bytes != nullptr, "unknown builtin texture: {}", desc.id);
+        validateTexture(desc, *bytes, desc.id);
+        return *bytes;
     }
 
     CHECK(desc.binary.has_value() && !desc.binary->empty(),

@@ -16,22 +16,22 @@ int main(int argc, char** argv)
     {
         CHECK(argc == 3,
               "usage: RenderLab --import-texture|--import-environmentmap|--import-mesh <source>");
-        ConfigManager config;
+        ConfigManager    config;
         AssetDescManager assets;
         AssetDataManager assetData;
-        context().config = &config;
-        context().assetManager = &assets;
+        context().config           = &config;
+        context().assetDescManager = &assets;
         context().assetDataManager = &assetData;
         config.init();
         assetData.init();
-        context().assetManager->init();
+        context().assetDescManager->init();
         std::filesystem::path source{argv[2]};
         if (source.is_relative())
         {
             source = config.paths().assets.parent_path() / source;
         }
         const std::string_view command{argv[1]};
-        AssetId importedId;
+        AssetId                importedId;
         if (command == "--import-texture")
         {
             importedId = AssetImporter::importTexture(source);
@@ -49,11 +49,11 @@ int main(int argc, char** argv)
             LOG_FATAL("unknown import command: {}", command);
         }
         LOG_INFO("imported asset ID: {}", importedId);
-        context().assetManager->shutdown();
+        context().assetDescManager->shutdown();
         config.shutdown();
-        context().assetManager = nullptr;
+        context().assetDescManager = nullptr;
         context().assetDataManager = nullptr;
-        context().config = nullptr;
+        context().config           = nullptr;
         return 0;
     }
     Engine engine;

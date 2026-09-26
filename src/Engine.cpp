@@ -2,7 +2,6 @@
 
 #include "asset/AssetDescManager.h"
 #include "asset/AssetDataManager.h"
-#include "asset/BuiltinAssetManager.h"
 #include "Camera.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -28,9 +27,8 @@ void Engine::init()
     Context& ctx = context();
     ctx.config = new ConfigManager();
     ctx.window = new Window();
-    ctx.assetManager = new AssetDescManager();
+    ctx.assetDescManager = new AssetDescManager();
     ctx.assetDataManager = new AssetDataManager();
-    ctx.builtinAssetManager = new BuiltinAssetManager();
     ctx.scene = new SceneDesc();
     ctx.camera = new Camera();
     ctx.renderer = new Renderer();
@@ -39,10 +37,9 @@ void Engine::init()
     ctx.config->init();
     ctx.assetDataManager->init();
     ctx.window->init();
-    ctx.assetManager->init();
-    ctx.builtinAssetManager->init();
+    ctx.assetDescManager->init();
     inputMethod.activateEnglish();
-    *ctx.scene = ctx.assetManager->desc<SceneDesc>(ctx.config->initialScene());
+    *ctx.scene = ctx.assetDescManager->desc<SceneDesc>(ctx.config->initialScene());
     ctx.camera->configure(ctx.scene->camera);
     ctx.renderer->init();
     ctx.renderer->loadScene(*ctx.scene);
@@ -124,16 +121,11 @@ void Engine::shutdown() noexcept
         delete ctx.scene;
         ctx.scene = nullptr;
     }
-    if (ctx.assetManager != nullptr)
+    if (ctx.assetDescManager != nullptr)
     {
-        ctx.assetManager->shutdown();
-        delete ctx.assetManager;
-        ctx.assetManager = nullptr;
-    }
-    if (ctx.builtinAssetManager != nullptr)
-    {
-        delete ctx.builtinAssetManager;
-        ctx.builtinAssetManager = nullptr;
+        ctx.assetDescManager->shutdown();
+        delete ctx.assetDescManager;
+        ctx.assetDescManager = nullptr;
     }
     if (ctx.assetDataManager != nullptr)
     {

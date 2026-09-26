@@ -1,7 +1,6 @@
 {
   "Paths": {
-    "Assets": "../assets",
-    "Geometry": "geometry"
+    "Assets": "../assets"
   },
   "InitialScene": "default"
 }

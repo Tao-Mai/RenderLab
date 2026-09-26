@@ -27,9 +27,9 @@ template <class T>
 {
     std::string stem = source.stem().string();
     CHECK(!stem.empty(), "asset source has no filename stem: {}", source.string());
-    CHECK(context().assetManager != nullptr, "AssetDescManager is not initialized");
+    CHECK(context().assetDescManager != nullptr, "AssetDescManager is not initialized");
 
-    if (context().assetManager->findDesc<T>(stem) == nullptr)
+    if (context().assetDescManager->findDesc<T>(stem) == nullptr)
     {
         return stem;
     }
@@ -37,7 +37,7 @@ template <class T>
     for (uint32_t number = 1; number < std::numeric_limits<uint32_t>::max(); ++number)
     {
         AssetId id = stem + std::to_string(number);
-        if (context().assetManager->findDesc<T>(id) == nullptr)
+        if (context().assetDescManager->findDesc<T>(id) == nullptr)
         {
             return id;
         }

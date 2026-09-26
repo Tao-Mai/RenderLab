@@ -2,6 +2,8 @@
 
 #include "asset/AssetDesc.h"
 #include "asset/AssetDescManager.h"
+#include "asset/ApplyOptionalFields.h"
+#include "asset/BuiltinAssets.h"
 #include "core/Context.h"
 #include "ecs/Light.h"
 #include "ecs/Render.h"
@@ -87,11 +89,11 @@ void ScenePass::reset() noexcept
 
 void ScenePass::bindEnvironment(const SceneDesc& scene)
 {
-    AssetId textureId = TextureDesc::whiteCube;
+    AssetId textureId = BuiltinAssets::Texture::whiteCube;
     if (scene.environment.environmentMap.has_value())
     {
         const EnvironmentMapDesc& environment =
-            context().assetManager->desc<EnvironmentMapDesc>(*scene.environment.environmentMap);
+            context().assetDescManager->desc<EnvironmentMapDesc>(*scene.environment.environmentMap);
         CHECK(!environment.radiance.empty(),
               "environment '{}' has no radiance texture",
               environment.id);
@@ -264,13 +266,13 @@ void ScenePass::record(
                     static_cast<int>(index));
                 overrideIt != render->materialOverrides.end())
             {
-                const MeshDesc& mesh = context().assetManager->desc<MeshDesc>(
+                const MeshDesc& mesh = context().assetDescManager->desc<MeshDesc>(
                     render->meshId);
                 CHECK(index < mesh.submeshes.size(),
                       "material override index out of range");
                 const AssetId materialId = mesh.submeshes[index].materialId;
                 MaterialDesc desc = resources->materialDesc(materialId);
-                applyMaterialFields(desc, overrideIt->second);
+                applyOptionalFields(desc, overrideIt->second);
                 material = &resources->material(desc);
             }
             DrawCall draw{

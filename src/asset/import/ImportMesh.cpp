@@ -6,6 +6,7 @@
 
 #include "asset/AssetDescManager.h"
 #include "asset/AssetDataManager.h"
+#include "asset/BuiltinAssets.h"
 #include "asset/MeshGeometry.h"
 #include "asset/import/ImportId.h"
 #include "core/ConfigManager.h"
@@ -18,6 +19,7 @@
 #include <functional>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -30,31 +32,31 @@ namespace
 {
 struct GltfBuild
 {
-    MeshGeometry geometry;
-    std::vector<SubmeshDesc> submeshes;
-    std::vector<AssetId> materialIds;
+    MeshGeometry                                          geometry;
+    std::vector<SubmeshDesc>                              submeshes;
+    std::vector<AssetId>                                  materialIds;
     std::map<std::pair<std::string, ColorSpace>, AssetId> textureCache;
 };
 
-[[nodiscard]] AssetId textureIdFor(
-    GltfBuild& build,
-    const tinygltf::Model& model,
-    int textureIndex,
+[[nodiscard]] std::optional<AssetId> textureIdFor(
+    GltfBuild&                   build,
+    const tinygltf::Model&       model,
+    int                          textureIndex,
     const std::filesystem::path& modelDirectory,
-    ColorSpace colorSpace)
+    ColorSpace                   colorSpace)
 {
     if (textureIndex < 0 || textureIndex >= static_cast<int>(model.textures.size()))
     {
-        return kInvalidAssetId;
+        return std::nullopt;
     }
     const int imageIndex = model.textures[textureIndex].source;
     if (imageIndex < 0 || imageIndex >= static_cast<int>(model.images.size()))
     {
-        return kInvalidAssetId;
+        return std::nullopt;
     }
 
     const tinygltf::Image& image = model.images[imageIndex];
-    std::string sourcePath;
+    std::string            sourcePath;
     if (image.uri.empty())
     {
         sourcePath = "embedded://image/" + std::to_string(imageIndex);
@@ -75,31 +77,33 @@ struct GltfBuild
     }
 
     CHECK(!sourcePath.starts_with("data:") && !sourcePath.starts_with("embedded:"),
-        "embedded glTF textures require external files: {}", sourcePath);
+          "embedded glTF textures require external files: {}",
+          sourcePath);
     (void)asset_import::sourceRelativeToAssets(sourcePath);
 
     const AssetId id = AssetImporter::importTexture(
-        std::filesystem::absolute(sourcePath), colorSpace);
+        std::filesystem::absolute(sourcePath),
+        colorSpace);
     build.textureCache.emplace(key, id);
     return id;
 }
 
 void registerMaterials(
-    GltfBuild& build,
-    const tinygltf::Model& model,
+    GltfBuild&                   build,
+    const tinygltf::Model&       model,
     const std::filesystem::path& modelDirectory,
     const std::filesystem::path& meshSource)
 {
     MaterialDesc defaultMaterial;
-    defaultMaterial.id = asset_import::nextId<MaterialDesc>(meshSource);
-    defaultMaterial.baseColorTexture = TextureDesc::white;
+    defaultMaterial.id               = asset_import::nextId<MaterialDesc>(meshSource);
+    defaultMaterial.baseColorTexture = BuiltinAssets::Texture::white;
     build.materialIds.push_back(
-        context().assetManager->save(std::move(defaultMaterial)));
+        context().assetDescManager->save(std::move(defaultMaterial)));
 
     for (size_t index = 0; index < model.materials.size(); ++index)
     {
         const tinygltf::Material& source = model.materials[index];
-        MaterialDesc material;
+        MaterialDesc              material;
         material.id = asset_import::nextId<MaterialDesc>(meshSource);
 
         const auto& pbr = source.pbrMetallicRoughness;
@@ -112,7 +116,7 @@ void registerMaterials(
                 static_cast<float>(pbr.baseColorFactor[3]),
             };
         }
-        material.metallic = static_cast<float>(pbr.metallicFactor);
+        material.metallic  = static_cast<float>(pbr.metallicFactor);
         material.roughness = static_cast<float>(pbr.roughnessFactor);
         if (source.emissiveFactor.size() == 3)
         {
@@ -122,44 +126,59 @@ void registerMaterials(
                 static_cast<float>(source.emissiveFactor[2]),
             };
         }
-        material.ao = static_cast<float>(source.occlusionTexture.strength);
-        material.normalScale = static_cast<float>(source.normalTexture.scale);
+        material.ao               = static_cast<float>(source.occlusionTexture.strength);
+        material.normalScale      = static_cast<float>(source.normalTexture.scale);
         material.baseColorTexture =
-            textureIdFor(build, model, pbr.baseColorTexture.index, modelDirectory,
-                         ColorSpace::Srgb);
+            textureIdFor(build,
+                         model,
+                         pbr.baseColorTexture.index,
+                         modelDirectory,
+                         ColorSpace::Srgb)
+                .value_or(BuiltinAssets::Texture::white);
         material.normalTexture =
-            textureIdFor(build, model, source.normalTexture.index, modelDirectory,
+            textureIdFor(build,
+                         model,
+                         source.normalTexture.index,
+                         modelDirectory,
                          ColorSpace::Linear);
-        const AssetId metallicRoughness =
-            textureIdFor(build, model, pbr.metallicRoughnessTexture.index, modelDirectory,
+        material.metallicTexture =
+            textureIdFor(build,
+                         model,
+                         pbr.metallicRoughnessTexture.index,
+                         modelDirectory,
                          ColorSpace::Linear);
-        material.metallicTexture = metallicRoughness;
-        material.roughnessTexture = metallicRoughness;
-        material.aoTexture =
-            textureIdFor(build, model, source.occlusionTexture.index, modelDirectory,
+        material.roughnessTexture = material.metallicTexture;
+        material.aoTexture        =
+            textureIdFor(build,
+                         model,
+                         source.occlusionTexture.index,
+                         modelDirectory,
                          ColorSpace::Linear);
         material.emissiveTexture =
-            textureIdFor(build, model, source.emissiveTexture.index, modelDirectory,
+            textureIdFor(build,
+                         model,
+                         source.emissiveTexture.index,
+                         modelDirectory,
                          ColorSpace::Srgb);
-        material.alphaMode = source.alphaMode;
+        material.alphaMode   = source.alphaMode;
         material.alphaCutoff = static_cast<float>(source.alphaCutoff);
         material.doubleSided = source.doubleSided;
         build.materialIds.push_back(
-            context().assetManager->save(std::move(material)));
+            context().assetDescManager->save(std::move(material)));
     }
 }
 
 const unsigned char* accessorData(
-    const tinygltf::Model& model,
+    const tinygltf::Model&    model,
     const tinygltf::Accessor& accessor,
-    size_t& stride)
+    size_t&                   stride)
 {
     CHECK(accessor.bufferView >= 0 && !accessor.sparse.isSparse,
-        "sparse or missing glTF accessor is not supported");
+          "sparse or missing glTF accessor is not supported");
 
-    const auto& view = model.bufferViews.at(accessor.bufferView);
-    const auto& buffer = model.buffers.at(view.buffer);
-    const int byteStride = accessor.ByteStride(view);
+    const auto& view       = model.bufferViews.at(accessor.bufferView);
+    const auto& buffer     = model.buffers.at(view.buffer);
+    const int   byteStride = accessor.ByteStride(view);
     CHECK(byteStride > 0, "invalid glTF accessor stride");
     stride = static_cast<size_t>(byteStride);
 
@@ -176,58 +195,58 @@ float readFloat(const unsigned char* data)
 }
 
 glm::vec3 readVec3(
-    const tinygltf::Model& model,
+    const tinygltf::Model&    model,
     const tinygltf::Accessor& accessor,
-    size_t index)
+    size_t                    index)
 {
     CHECK(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT &&
           accessor.type == TINYGLTF_TYPE_VEC3,
-        "glTF VEC3 attribute must use float components");
-    size_t stride = 0;
-    const unsigned char* data = accessorData(model, accessor, stride) + index * stride;
+          "glTF VEC3 attribute must use float components");
+    size_t               stride = 0;
+    const unsigned char* data   = accessorData(model, accessor, stride) + index * stride;
     return {readFloat(data), readFloat(data + 4), readFloat(data + 8)};
 }
 
 glm::vec2 readVec2(
-    const tinygltf::Model& model,
+    const tinygltf::Model&    model,
     const tinygltf::Accessor& accessor,
-    size_t index)
+    size_t                    index)
 {
     CHECK(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT &&
           accessor.type == TINYGLTF_TYPE_VEC2,
-        "glTF VEC2 attribute must use float components");
-    size_t stride = 0;
-    const unsigned char* data = accessorData(model, accessor, stride) + index * stride;
+          "glTF VEC2 attribute must use float components");
+    size_t               stride = 0;
+    const unsigned char* data   = accessorData(model, accessor, stride) + index * stride;
     return {readFloat(data), readFloat(data + 4)};
 }
 
 uint32_t readIndex(
-    const tinygltf::Model& model,
+    const tinygltf::Model&    model,
     const tinygltf::Accessor& accessor,
-    size_t index)
+    size_t                    index)
 {
     CHECK(accessor.type == TINYGLTF_TYPE_SCALAR, "glTF index accessor must be scalar");
 
-    size_t stride = 0;
-    const unsigned char* data = accessorData(model, accessor, stride) + index * stride;
+    size_t               stride = 0;
+    const unsigned char* data   = accessorData(model, accessor, stride) + index * stride;
     switch (accessor.componentType)
     {
-    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-        return *data;
-    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-    {
-        uint16_t value = 0;
-        std::memcpy(&value, data, sizeof(value));
-        return value;
-    }
-    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-    {
-        uint32_t value = 0;
-        std::memcpy(&value, data, sizeof(value));
-        return value;
-    }
-    default:
-        LOG_FATAL("unsupported glTF index component type");
+        case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
+            return *data;
+        case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
+        {
+            uint16_t value = 0;
+            std::memcpy(&value, data, sizeof(value));
+            return value;
+        }
+        case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
+        {
+            uint32_t value = 0;
+            std::memcpy(&value, data, sizeof(value));
+            return value;
+        }
+        default:
+            LOG_FATAL("unsupported glTF index component type");
     }
 }
 
@@ -269,16 +288,16 @@ glm::mat4 nodeTransform(const tinygltf::Node& node)
     }
 
     glm::mat4 matrix = glm::translate(glm::mat4{1.0f}, translation);
-    matrix *= glm::mat4_cast(rotation);
-    matrix = glm::scale(matrix, scale);
+    matrix           *= glm::mat4_cast(rotation);
+    matrix           = glm::scale(matrix, scale);
     return matrix;
 }
 
 void appendPrimitive(
-    GltfBuild& build,
-    const tinygltf::Model& model,
+    GltfBuild&                 build,
+    const tinygltf::Model&     model,
     const tinygltf::Primitive& primitive,
-    const glm::mat4& transform)
+    const glm::mat4&           transform)
 {
     if (primitive.mode != -1 && primitive.mode != TINYGLTF_MODE_TRIANGLES)
     {
@@ -287,12 +306,12 @@ void appendPrimitive(
 
     const auto positionIt = primitive.attributes.find("POSITION");
     CHECK(positionIt != primitive.attributes.end(),
-        "glTF primitive has no POSITION attribute");
+          "glTF primitive has no POSITION attribute");
 
-    const auto& positions = model.accessors.at(positionIt->second);
-    const auto normalIt = primitive.attributes.find("NORMAL");
-    const auto uvIt = primitive.attributes.find("TEXCOORD_0");
-    const tinygltf::Accessor* normals = normalIt == primitive.attributes.end()
+    const auto&               positions = model.accessors.at(positionIt->second);
+    const auto                normalIt  = primitive.attributes.find("NORMAL");
+    const auto                uvIt      = primitive.attributes.find("TEXCOORD_0");
+    const tinygltf::Accessor* normals   = normalIt == primitive.attributes.end()
         ? nullptr
         : &model.accessors.at(normalIt->second);
     const tinygltf::Accessor* uvs = uvIt == primitive.attributes.end()
@@ -300,10 +319,10 @@ void appendPrimitive(
         : &model.accessors.at(uvIt->second);
     CHECK((!normals || normals->count == positions.count) &&
           (!uvs || uvs->count == positions.count),
-        "glTF vertex attribute counts do not match");
+          "glTF vertex attribute counts do not match");
 
-    const uint32_t firstVertex = static_cast<uint32_t>(build.geometry.vertices.size());
-    const uint32_t firstIndex = static_cast<uint32_t>(build.geometry.indices.size());
+    const uint32_t  firstVertex  = static_cast<uint32_t>(build.geometry.vertices.size());
+    const uint32_t  firstIndex   = static_cast<uint32_t>(build.geometry.indices.size());
     const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
     build.geometry.vertices.reserve(build.geometry.vertices.size() + positions.count);
     for (size_t index = 0; index < positions.count; ++index)
@@ -325,7 +344,7 @@ void appendPrimitive(
         {
             const uint32_t localIndex = readIndex(model, indices, index);
             CHECK(localIndex < positions.count,
-                "glTF index is outside the vertex accessor");
+                  "glTF index is outside the vertex accessor");
             build.geometry.indices.push_back(firstVertex + localIndex);
         }
     }
@@ -344,7 +363,7 @@ void appendPrimitive(
         materialSlot = static_cast<uint32_t>(primitive.material) + 1;
     }
     CHECK(materialSlot < build.materialIds.size(),
-        "glTF primitive references missing material");
+          "glTF primitive references missing material");
     build.submeshes.push_back({
         .firstIndex = firstIndex,
         .indexCount = static_cast<uint32_t>(build.geometry.indices.size()) - firstIndex,
@@ -353,10 +372,10 @@ void appendPrimitive(
 }
 
 void appendMesh(
-    GltfBuild& build,
+    GltfBuild&             build,
     const tinygltf::Model& model,
-    int meshIndex,
-    const glm::mat4& transform)
+    int                    meshIndex,
+    const glm::mat4&       transform)
 {
     const auto& mesh = model.meshes.at(meshIndex);
     for (const auto& primitive : mesh.primitives)
@@ -369,15 +388,17 @@ void appendMesh(
 AssetId AssetImporter::importMesh(const std::filesystem::path& path)
 {
     tinygltf::TinyGLTF loader;
-    tinygltf::Model model;
-    std::string warning;
-    std::string error;
+    tinygltf::Model    model;
+    std::string        warning;
+    std::string        error;
 
     std::string extension = path.extension().string();
-    std::ranges::transform(extension, extension.begin(),
-        [](unsigned char character) { return std::tolower(character); });
+    std::ranges::transform(extension,
+                           extension.begin(),
+                           [](unsigned char character) { return std::tolower(character); });
     CHECK(extension == ".gltf" || extension == ".glb",
-        "unsupported mesh source: {}", path.string());
+          "unsupported mesh source: {}",
+          path.string());
     const bool loaded = extension == ".glb"
         ? loader.LoadBinaryFromFile(&model, &error, &warning, path.string())
         : loader.LoadASCIIFromFile(&model, &error, &warning, path.string());
@@ -388,13 +409,13 @@ AssetId AssetImporter::importMesh(const std::filesystem::path& path)
     CHECK(loaded, "failed to load glTF '{}': {}", path.string(), error);
 
     const AssetId meshId = asset_import::nextId<MeshDesc>(path);
-    GltfBuild build;
+    GltfBuild     build;
     registerMaterials(build, model, path.parent_path(), path);
 
     std::function<void(int, const glm::mat4&)> visitNode;
     visitNode = [&](int nodeIndex, const glm::mat4& parentTransform)
     {
-        const auto& node = model.nodes.at(nodeIndex);
+        const auto&     node      = model.nodes.at(nodeIndex);
         const glm::mat4 transform = parentTransform * nodeTransform(node);
         if (node.mesh >= 0)
         {
@@ -423,11 +444,13 @@ AssetId AssetImporter::importMesh(const std::filesystem::path& path)
     }
 
     CHECK(!build.geometry.vertices.empty() && !build.geometry.indices.empty(),
-        "glTF contains no triangle mesh data: {}", path.string());
+          "glTF contains no triangle mesh data: {}",
+          path.string());
 
     MeshDesc mesh;
-    mesh.id = meshId;
-    mesh.geometry = context().assetDataManager->writeGeometry(meshId, build.geometry);
+    mesh.id        = meshId;
+    mesh.source    = Source::File;
+    mesh.geometry  = context().assetDataManager->writeGeometry(meshId, build.geometry);
     mesh.submeshes = std::move(build.submeshes);
-    return context().assetManager->save(std::move(mesh));
+    return context().assetDescManager->save(std::move(mesh));
 }

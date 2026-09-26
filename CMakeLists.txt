@@ -130,7 +130,6 @@ add_executable(RenderLab
         src/editor/EditorUi.h
         src/editor/ViewportRect.h
         src/asset/AssetDescManager.cpp
-        src/asset/MaterialDesc.cpp
         src/asset/ImageFormat.h
         src/asset/import/ImportImage.cpp
         src/asset/import/ImportTexture.cpp
@@ -139,8 +138,10 @@ add_executable(RenderLab
         src/asset/JsonIo.h
         src/asset/RflReflectors.h
         src/asset/MeshGeometry.h
-        src/asset/BuiltinAssetManager.cpp
-        src/asset/BuiltinAssetManager.h
+        src/asset/BuiltinAssets.h
+        src/asset/builtin/BuiltinMesh.cpp
+        src/asset/builtin/BuiltinMaterial.cpp
+        src/asset/builtin/BuiltinTexture.cpp
         src/asset/import/ImportMesh.cpp
         src/asset/Vertex.h
         src/platform/InputMethod.cpp

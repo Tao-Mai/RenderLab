@@ -4,7 +4,6 @@
 #include "asset/ImageFormat.h"
 #include "ecs/Camera.h"
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -87,12 +86,16 @@ struct SubmeshDesc
     AssetId  materialId;
 };
 
-inline constexpr std::string_view kBuiltinGeometryDir   = "builtin";
-inline constexpr std::string_view kBuiltinTextureSource = "builtin";
+enum class Source
+{
+    File,
+    Builtin
+};
 
 struct MeshDesc
 {
     AssetId                  id;
+    Source                   source;
     std::filesystem::path    geometry;
     std::vector<SubmeshDesc> submeshes;
 };
@@ -116,16 +119,12 @@ struct MaterialDesc
     std::optional<std::string> alphaMode;
     std::optional<float>       alphaCutoff;
     std::optional<bool>        doubleSided;
-
-    static inline const AssetId white = "white";
 };
-
-void applyMaterialFields(MaterialDesc& dst, const MaterialDesc& src);
 
 struct TextureDesc
 {
     AssetId                               id;
-    std::string                           source;
+    Source                                source;
     ImageFormat                           format;
     ColorSpace                            colorSpace;
     ImageLayout                           layout;
@@ -133,10 +132,6 @@ struct TextureDesc
     uint32_t                              height;
     std::optional<std::filesystem::path>  path;
     std::optional<std::filesystem::path>  binary;
-    std::optional<std::array<uint8_t, 4>> rgba;
-
-    static inline const AssetId white     = "white";
-    static inline const AssetId whiteCube = "whiteCube";
 };
 
 struct EnvironmentMapDesc

@@ -100,12 +100,12 @@ FrameContext& Renderer::currentFrame()
 void Renderer::initVulkan()
 {
     CHECK(context().window != nullptr, "Window must exist before Renderer");
-    CHECK(context().assetManager != nullptr, "AssetDescManager must exist before Renderer");
+    CHECK(context().assetDescManager != nullptr, "AssetDescManager must exist before Renderer");
 
     Window& window = *context().window;
     vulkan.init(window);
     swapchain.init(vulkan, window);
-    shaders.init(vulkan.deviceHandle(), *context().assetManager);
+    shaders.init(vulkan.deviceHandle(), *context().assetDescManager);
     descriptors.init(vulkan.deviceHandle());
     pipelines.init(vulkan.deviceHandle(), descriptors, shaders);
     for (FrameContext& frame : frames)

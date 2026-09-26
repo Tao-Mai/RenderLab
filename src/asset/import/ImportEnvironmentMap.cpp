@@ -254,7 +254,7 @@ AssetId AssetImporter::importEnvironmentMap(const std::filesystem::path& source)
 
     TextureDesc radiance{};
     radiance.id                      = asset_import::nextId<TextureDesc>(source);
-    radiance.source                  = "environment";
+    radiance.source                  = Source::File;
     radiance.format                  = environmentFormat(image.format);
     radiance.colorSpace              = defaultColorSpace(image.fileFormat);
     radiance.layout                  = ImageLayout::Cubemap;
@@ -271,5 +271,5 @@ AssetId AssetImporter::importEnvironmentMap(const std::filesystem::path& source)
     EnvironmentMapDesc environment{};
     environment.id       = asset_import::nextId<EnvironmentMapDesc>(source);
     environment.radiance = radianceId;
-    return context().assetManager->save(std::move(environment));
+    return context().assetDescManager->save(std::move(environment));
 }
