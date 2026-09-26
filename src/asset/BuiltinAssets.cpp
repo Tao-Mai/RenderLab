@@ -218,7 +218,7 @@ constexpr uint32_t kArrowIndexCount  = 48;
 {
     TextureDesc desc{};
     desc.id         = id;
-    desc.source     = kBuiltinTextureSource;
+    desc.source     = Source::Builtin;
     desc.format     = ImageFormat::RGBA8;
     desc.colorSpace = ColorSpace::Srgb;
     desc.layout     = layout;
@@ -238,6 +238,7 @@ void BuiltinAssetManager::init()
     {
         MeshDesc desc{};
         desc.id       = id;
+        desc.source   = Source::Builtin;
         desc.geometry = std::filesystem::path{kBuiltinGeometryDir} / id;
         desc.submeshes.push_back({
             .firstIndex = 0,
