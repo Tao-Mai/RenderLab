@@ -174,9 +174,13 @@ AssetImporter::LoadedImage AssetImporter::loadImage(const std::filesystem::path&
           filename);
     std::vector<uint8_t> pixels(decoded.get(), decoded.get() + byteCount);
     return {
-        .format = channels == 1 ? ImageFormat::R8 :
-                  channels == 2 ? ImageFormat::RG8 :
-                  channels == 3 ? ImageFormat::RGB8 : ImageFormat::RGBA8,
+        .format = channels == 1
+        ? ImageFormat::R8
+        : channels == 2
+        ? ImageFormat::RG8
+        : channels == 3
+        ? ImageFormat::RGB8
+        : ImageFormat::RGBA8,
         .fileFormat = LoadedImage::FileFormat::JPEG,
         .width = static_cast<uint32_t>(width),
         .height = static_cast<uint32_t>(height),
@@ -184,12 +188,15 @@ AssetImporter::LoadedImage AssetImporter::loadImage(const std::filesystem::path&
     };
 }
 
+// 下层只读数据，由上层判断解释方法
 ColorSpace AssetImporter::defaultColorSpace(LoadedImage::FileFormat format)
 {
     switch (format)
     {
-        case LoadedImage::FileFormat::Exr: return ColorSpace::Linear;
-        case LoadedImage::FileFormat::JPEG: return ColorSpace::Srgb;
+        case LoadedImage::FileFormat::Exr:
+            return ColorSpace::Linear;
+        case LoadedImage::FileFormat::JPEG:
+            return ColorSpace::Srgb;
     }
     LOG_FATAL("invalid image file format");
 }

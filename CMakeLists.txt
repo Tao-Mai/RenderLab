@@ -143,7 +143,7 @@ add_executable(RenderLab
         src/asset/builtin/BuiltinMaterial.cpp
         src/asset/builtin/BuiltinTexture.cpp
         src/asset/import/ImportMesh.cpp
-        src/asset/Vertex.h
+        src/core/Vertex.h
         src/platform/InputMethod.cpp
         src/platform/InputMethod.h
         src/render/Renderer.cpp

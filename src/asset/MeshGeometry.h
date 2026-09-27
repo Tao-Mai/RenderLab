@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset/Vertex.h"
+#include "core/Vertex.h"
 
 #include <cstdint>
 #include <vector>

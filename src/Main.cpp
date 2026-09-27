@@ -38,7 +38,7 @@ int main(int argc, char** argv)
         }
         else if (command == "--import-environmentmap")
         {
-            importedId = AssetImporter::importEnvironmentMap(source);
+            importedId = AssetImporter::importEnvironmentMap(source, {});
         }
         else if (command == "--import-mesh")
         {
