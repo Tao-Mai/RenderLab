@@ -189,6 +189,8 @@ add_executable(RenderLab
         src/asset/AssetImporter.h
         src/asset/AssetDataManager.cpp
         src/asset/AssetDataManager.h
+        src/core/math/Sampler.cpp
+        src/core/math/Sampler.h
 )
 add_dependencies(RenderLab RenderLabShaders)
 

@@ -65,19 +65,13 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="调整asset">
-      <change afterPath="$PROJECT_DIR$/src/asset/README.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/core/Vertex.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.clang-format" beforeDir="false" afterPath="$PROJECT_DIR$/.clang-format" afterDir="false" />
+    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="调整environmentmap">
+      <change afterPath="$PROJECT_DIR$/src/core/math/Sampler.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/core/math/Sampler.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/core/utils/Bitops.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Main.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/Main.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/AssetImporter.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/AssetImporter.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/MeshGeometry.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/MeshGeometry.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/Vertex.h" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/src/asset/import/ImportEnvironmentMap.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/import/ImportEnvironmentMap.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/import/ImportImage.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/import/ImportImage.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/VertexLayout.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/VertexLayout.h" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -134,61 +128,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.534419276843734" />
-      <entry key="MS500" value="2.5328164108748554" />
-      <entry key="S2" value="5.751394450469346" />
-      <entry key="S5" value="10.31554781723057" />
-      <entry key="S10" value="13.556777395096368" />
-      <entry key="S30" value="16.821356653169047" />
-      <entry key="S60" value="17.85331121389739" />
-      <entry key="M2" value="18.411179657299392" />
-      <entry key="M5" value="18.841624059615846" />
-      <entry key="M10" value="20.5364583721467" />
-      <entry key="M15" value="23.66608734060397" />
-      <entry key="M30" value="33.07944162302815" />
-      <entry key="H1" value="43.82244392688705" />
-      <entry key="H2" value="53.780211912925665" />
-      <entry key="H4" value="68.24808139434795" />
-      <entry key="D1" value="212.25979504740414" />
-      <entry key="W1" value="870.240503134112" />
+      <entry key="MS100" value="8.549397755287547E-51" />
+      <entry key="MS500" value="2.724065111586399E-10" />
+      <entry key="S2" value="0.01507990436523645" />
+      <entry key="S5" value="0.5459649511075506" />
+      <entry key="S10" value="1.8091734205686474" />
+      <entry key="S30" value="4.023046394995698" />
+      <entry key="S60" value="4.9131228487962515" />
+      <entry key="M2" value="5.4849147001944" />
+      <entry key="M5" value="9.630077219559112" />
+      <entry key="M10" value="25.780860178545403" />
+      <entry key="M15" value="42.250495443904434" />
+      <entry key="M30" value="77.53620202466378" />
+      <entry key="H1" value="114.28999950958679" />
+      <entry key="H2" value="145.67949377474685" />
+      <entry key="H4" value="173.94265080122952" />
+      <entry key="D1" value="330.91747388369635" />
+      <entry key="W1" value="993.0088003008127" />
     </decayedCancelled>
     <decayedSelected>
-      <entry key="MS100" value="8.826430448152257E-58" />
-      <entry key="MS500" value="4.088681605826933E-12" />
-      <entry key="S2" value="0.0020772643840638125" />
-      <entry key="S5" value="0.12613198575228918" />
-      <entry key="S10" value="0.5009147280994676" />
-      <entry key="S30" value="1.259934638639372" />
-      <entry key="S60" value="1.587290730020237" />
-      <entry key="M2" value="1.78170267167693" />
-      <entry key="M5" value="1.9131066530156136" />
-      <entry key="M10" value="2.0384965937422" />
-      <entry key="M15" value="2.233257691102565" />
-      <entry key="M30" value="2.8529254483192372" />
-      <entry key="H1" value="3.603964874683262" />
-      <entry key="H2" value="4.340975358668382" />
-      <entry key="H4" value="5.557696350814478" />
-      <entry key="D1" value="23.58314924919426" />
-      <entry key="W1" value="109.58315201890932" />
+      <entry key="MS100" value="1.0000133759417926" />
+      <entry key="MS500" value="1.1059900789431583" />
+      <entry key="S2" value="1.5875715775888222" />
+      <entry key="S5" value="1.994891280669747" />
+      <entry key="S10" value="2.336485357696822" />
+      <entry key="S30" value="2.7253917817168256" />
+      <entry key="S60" value="2.854494825574368" />
+      <entry key="M2" value="2.946108349675903" />
+      <entry key="M5" value="4.27076718867756" />
+      <entry key="M10" value="9.063800881395835" />
+      <entry key="M15" value="13.542982372175219" />
+      <entry key="M30" value="21.98199503279122" />
+      <entry key="H1" value="29.222062217452173" />
+      <entry key="H2" value="34.39782147747068" />
+      <entry key="H4" value="38.21534034411733" />
+      <entry key="D1" value="58.42741349945841" />
+      <entry key="W1" value="145.02083238528337" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="1.3838666411217273" />
-      <entry key="MS500" value="2.484205277968" />
-      <entry key="S2" value="5.707028249600732" />
-      <entry key="S5" value="10.359126148609715" />
-      <entry key="S10" value="13.966728564729358" />
-      <entry key="S30" value="18.023575884397943" />
-      <entry key="S60" value="19.406196942245366" />
-      <entry key="M2" value="20.17405849585405" />
-      <entry key="M5" value="20.7467344485356" />
-      <entry key="M10" value="22.57033481346108" />
-      <entry key="M15" value="25.8953592328032" />
-      <entry key="M30" value="35.92872823166414" />
-      <entry key="H1" value="47.423515624843944" />
-      <entry key="H2" value="58.11925828781607" />
-      <entry key="H4" value="73.80445983214159" />
-      <entry key="D1" value="235.8411616183432" />
-      <entry key="W1" value="979.8224850895127" />
+      <entry key="MS100" value="0.015953325297114327" />
+      <entry key="MS500" value="0.4626133704103432" />
+      <entry key="S2" value="1.2390305840744007" />
+      <entry key="S5" value="2.289524940313823" />
+      <entry key="S10" value="3.927831371083762" />
+      <entry key="S30" value="6.61976762606267" />
+      <entry key="S60" value="7.691515287573841" />
+      <entry key="M2" value="8.389201195163528" />
+      <entry key="M5" value="13.873991202179367" />
+      <entry key="M10" value="34.811403292782884" />
+      <entry key="M15" value="55.75840016129632" />
+      <entry key="M30" value="99.48818904800821" />
+      <entry key="H1" value="143.4914504431086" />
+      <entry key="H2" value="180.06489218600436" />
+      <entry key="H4" value="212.15093310263546" />
+      <entry key="D1" value="389.34210384130233" />
+      <entry key="W1" value="1138.0283153557646" />
     </decayedShown>
   </component>
   <component name="ProjectApplicationVersion">
@@ -535,7 +529,8 @@
     <MESSAGE value="rename" />
     <MESSAGE value="renderer" />
     <MESSAGE value="调整asset" />
-    <option name="LAST_COMMIT_MESSAGE" value="调整asset" />
+    <MESSAGE value="调整environmentmap" />
+    <option name="LAST_COMMIT_MESSAGE" value="调整environmentmap" />
   </component>
   <component name="XDebuggerManager">
     <watches-manager>

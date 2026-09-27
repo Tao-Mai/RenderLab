@@ -5,6 +5,7 @@
 #include "asset/import/ImportId.h"
 #include "core/Context.h"
 #include "core/Logger.h"
+#include "core/math/Sampler.h"
 
 #include <algorithm>
 #include <array>
@@ -167,17 +168,6 @@ namespace
     }
 
     return rgba;
-}
-
-// Van der Corput 基 2 序列：反转 32 位整数的二进制位，得到 [0, 1) 中的样本坐标。
-[[nodiscard]] float radicalInverse(uint32_t bits)
-{
-    bits = (bits << 16) | (bits >> 16);
-    bits = ((bits & 0x55555555u) << 1) | ((bits & 0xaaaaaaaau) >> 1);
-    bits = ((bits & 0x33333333u) << 2) | ((bits & 0xccccccccu) >> 2);
-    bits = ((bits & 0x0f0f0f0fu) << 4) | ((bits & 0xf0f0f0f0u) >> 4);
-    bits = ((bits & 0x00ff00ffu) << 8) | ((bits & 0xff00ff00u) >> 8);
-    return static_cast<float>(bits) * 0x1p-32f;
 }
 
 // 输入：loadImage 得到的 ImageFormat。输出：Cubemap 的四通道存储格式；
@@ -436,9 +426,9 @@ std::vector<uint8_t> AssetImporter::irradianceCubemap(
     std::vector<glm::vec3> hemisphereSamples(sampleCount);
     for (uint32_t sample = 0; sample < sampleCount; ++sample)
     {
-        const float radius = std::sqrt((static_cast<float>(sample) + 0.5f) /
-            sampleCount);
-        const float phi           = 2.0f * std::numbers::pi_v<float> * radicalInverse(sample);
+        const auto [radiusSquared, azimuth] = Sampler::HammersleySample2D(sample, sampleCount);
+        const float radius = std::sqrt(radiusSquared);
+        const float phi = 2.0f * std::numbers::pi_v<float> * azimuth;
         hemisphereSamples[sample] = {
             radius * std::cos(phi),
             radius * std::sin(phi),
