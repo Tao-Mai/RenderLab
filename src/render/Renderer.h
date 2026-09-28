@@ -21,8 +21,6 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class Camera;
-struct SceneDesc;
-struct SceneObjectDesc;
 
 struct EditorFrameInput
 {
@@ -31,7 +29,7 @@ struct EditorFrameInput
     bool         requestPick      = false;
     uint32_t     pickX            = 0;
     uint32_t     pickY            = 0;
-    SceneObjectDesc* selectedObject = nullptr;
+    Scene::Desc::Object* selectedObject = nullptr;
     std::function<void(VkCommandBuffer)> recordUi;
 };
 
@@ -51,7 +49,7 @@ public:
     Renderer& operator=(const Renderer&) = delete;
 
     void init();
-    void loadScene(SceneDesc& scene);
+    void loadScene(Scene::Desc& scene);
     EditorFrameResult render(const Camera& camera, const EditorFrameInput& editor);
     void waitIdle();
     void shutdown() noexcept;

@@ -1,17 +1,13 @@
 #pragma once
 
-#include "asset/AssetId.h"
+#include "asset/Asset.h"
 #include "asset/ImageFormat.h"
 #include "ecs/Camera.h"
 
-#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
-#include <string_view>
-#include <tuple>
-#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -19,72 +15,7 @@
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
-template <std::size_t N>
-struct FixedString
-{
-    char data[N]{};
-
-    constexpr FixedString(const char (&text)[N])
-    {
-        for (std::size_t index = 0; index < N; ++index)
-        {
-            data[index] = text[index];
-        }
-    }
-
-    [[nodiscard]] constexpr std::string_view view() const
-    {
-        return std::string_view{data, N - 1};
-    }
-};
-
-template <class T, FixedString Dir>
-struct AssetEntry
-{
-    using type                            = T;
-    static constexpr std::string_view dir = Dir.view();
-};
-
-template <class... Entries>
-struct TypeList
-{
-    template <class F>
-    static constexpr void forEach(F&& f)
-    {
-        (f.template operator()<Entries>(), ...);
-    }
-
-    template <template <class> class W>
-    using wrapTypes = std::tuple<W<typename Entries::type>...>;
-
-    template <class T>
-    static consteval std::string_view dir()
-    {
-        return dirOf<T, Entries...>();
-    }
-
-private:
-    template <class T, class Entry, class... Rest>
-    static consteval std::string_view dirOf()
-    {
-        if constexpr (std::is_same_v<T, typename Entry::type>)
-        {
-            return Entry::dir;
-        }
-        else
-        {
-            static_assert(sizeof...(Rest) > 0, "type is not registered in AssetTypes");
-            return dirOf<T, Rest...>();
-        }
-    }
-};
-
-struct SubmeshDesc
-{
-    uint32_t firstIndex = 0;
-    uint32_t indexCount = 0;
-    AssetId  materialId;
-};
+REGISTER_ASSETS(Texture, Mesh, Material, Shader, Scene, EnvironmentMap)
 
 enum class Source
 {
@@ -92,86 +23,84 @@ enum class Source
     Builtin
 };
 
-struct MeshDesc
+struct Mesh::Desc
 {
-    AssetId                  id;
-    Source                   source;
-    std::filesystem::path    geometry;
-    std::vector<SubmeshDesc> submeshes;
+    struct Submesh
+    {
+        uint32_t     firstIndex = 0;
+        uint32_t     indexCount = 0;
+        Material::ID materialId;
+    };
+
+    ID                    id;
+    Source                source;
+    std::filesystem::path geometry;
+    std::vector<Submesh>  submeshes;
 };
 
-struct MaterialDesc
+struct Texture::Desc
 {
-    AssetId                    id;
-    std::optional<AssetId>     shaderId;
+    ID                                   id;
+    Source                               source = Source::File;
+    ImageFormat                          format;
+    ColorSpace                           colorSpace;
+    ImageLayout                          layout;
+    uint32_t                             width{};
+    uint32_t                             height{};
+    uint32_t                             mipLevels{};
+    std::optional<std::filesystem::path> path;
+    std::optional<std::filesystem::path> binary;
+};
+
+struct Material::Desc
+{
+    ID                         id;
+    std::optional<Shader::ID>  shaderId;
     std::optional<glm::vec4>   baseColorFactor;
     std::optional<float>       metallic;
     std::optional<float>       roughness;
     std::optional<float>       ao;
     std::optional<glm::vec3>   emissive;
     std::optional<float>       normalScale;
-    std::optional<AssetId>     baseColorTexture;
-    std::optional<AssetId>     normalTexture;
-    std::optional<AssetId>     metallicTexture;
-    std::optional<AssetId>     roughnessTexture;
-    std::optional<AssetId>     aoTexture;
-    std::optional<AssetId>     emissiveTexture;
+    std::optional<Texture::ID> baseColorTexture;
+    std::optional<Texture::ID> normalTexture;
+    std::optional<Texture::ID> metallicTexture;
+    std::optional<Texture::ID> roughnessTexture;
+    std::optional<Texture::ID> aoTexture;
+    std::optional<Texture::ID> emissiveTexture;
     std::optional<std::string> alphaMode;
     std::optional<float>       alphaCutoff;
     std::optional<bool>        doubleSided;
 };
 
-struct TextureDesc
+struct EnvironmentMap::Desc
 {
-    AssetId                               id;
-    Source                                source;
-    ImageFormat                           format;
-    ColorSpace                            colorSpace;
-    ImageLayout                           layout;
-    uint32_t                              width;
-    uint32_t                              height;
-    std::optional<std::filesystem::path>  path;
-    std::optional<std::filesystem::path>  binary;
+    ID          id;
+    Texture::ID radiance;
+    Texture::ID irradiance;
+    Texture::ID prefilteredSpecular;
 };
 
-struct EnvironmentMapDesc
+struct Shader::Desc
 {
-    AssetId id;
-    AssetId radiance;
-    AssetId irradiance;
-    AssetId prefilteredSpecular;
-};
-
-struct ShaderDesc
-{
-    AssetId               id;
+    ID                    id;
     std::filesystem::path binary;
 };
 
-struct SceneObjectDesc
+struct Scene::Desc
 {
-    std::string                                     name;
-    std::unordered_map<std::string, entt::meta_any> components;
-};
+    struct Object
+    {
+        std::string                                     name;
+        std::unordered_map<std::string, entt::meta_any> components;
+    };
 
-struct SceneDesc
-{
-    AssetId                      id;
-    ecs::Camera                  camera;
-    std::vector<SceneObjectDesc> objects;
+    ID                  id;
+    ecs::Camera         camera;
+    std::vector<Object> objects;
 
     struct Environment
     {
-        std::optional<AssetId> environmentMap;
+        std::optional<EnvironmentMap::ID> environmentMap;
     } environment;
 };
-
-// Register new asset types here only.
-using AssetTypes = TypeList<
-    AssetEntry<MeshDesc, "mesh">,
-    AssetEntry<MaterialDesc, "material">,
-    AssetEntry<TextureDesc, "texture">,
-    AssetEntry<ShaderDesc, "shader">,
-    AssetEntry<SceneDesc, "scene">,
-    AssetEntry<EnvironmentMapDesc, "environment_map">
->;

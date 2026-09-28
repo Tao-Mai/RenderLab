@@ -1,7 +1,7 @@
 #pragma once
 
-#include "asset/AssetId.h"
-#include "render/resource/Shader.h"
+#include "asset/AssetDesc.h"
+#include "render/resource/GpuShader.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -30,7 +30,7 @@ struct ShaderMetadata
         vk::ShaderStageFlags stages;
     };
 
-    AssetId id;
+    Shader::ID id;
     std::filesystem::path binary;
     std::vector<Binding> bindings;
 };
@@ -43,14 +43,14 @@ public:
     void init(const vk::raii::Device& device, AssetDescManager& assets);
     void reset() noexcept;
 
-    [[nodiscard]] ShaderHandle getOrLoad(const AssetId& id);
+    [[nodiscard]] ShaderHandle getOrLoad(const Shader::ID& id);
     [[nodiscard]] vk::ShaderModule module(ShaderHandle handle) const;
     [[nodiscard]] const ShaderMetadata& metadata(ShaderHandle handle) const;
 
 private:
     const vk::raii::Device* device = nullptr;
     AssetDescManager* assets = nullptr;
-    std::unordered_map<AssetId, ShaderHandle> handles;
-    std::vector<std::unique_ptr<Shader>> shaders;
+    std::unordered_map<Shader::ID, ShaderHandle> handles;
+    std::vector<std::unique_ptr<GpuShader>> shaders;
     std::vector<ShaderMetadata> shaderMetadata;
 };

@@ -32,11 +32,27 @@ void DescriptorManager::init(const vk::raii::Device& targetDevice)
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::environmentImageBinding,
+            .binding = RenderInterface::irradianceImageBinding,
             .descriptorType = vk::DescriptorType::eSampledImage,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::environmentSamplerBinding,
+            .binding = RenderInterface::irradianceSamplerBinding,
+            .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::prefilteredSpecularImageBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::prefilteredSpecularSamplerBinding,
+            .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::brdfLutImageBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::brdfLutSamplerBinding,
             .descriptorType = vk::DescriptorType::eSampler,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
     };

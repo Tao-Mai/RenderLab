@@ -109,7 +109,8 @@ namespace
     return edited;
 }
 
-bool editAssetId(const char* label, AssetId& id)
+template <class T>
+bool editAssetId(const char* label, AssetID<T>& id)
 {
     std::array<char, 256> buffer{};
     std::snprintf(buffer.data(), buffer.size(), "%s", id.c_str());
@@ -121,11 +122,12 @@ bool editAssetId(const char* label, AssetId& id)
     return false;
 }
 
-MaterialDesc materialPreview(const AssetId& materialId)
+Material::Desc materialPreview(const Material::ID& materialId)
 {
     if (context().assetDescManager != nullptr)
     {
-        if (const MaterialDesc* material = context().assetDescManager->findDesc<MaterialDesc>(materialId))
+        if (const Material::Desc* material =
+                context().assetDescManager->findDesc<Material>(materialId))
         {
             return *material;
         }
@@ -133,7 +135,7 @@ MaterialDesc materialPreview(const AssetId& materialId)
     return {};
 }
 
-[[nodiscard]] bool drawMaterialFields(MaterialDesc& material, bool editable)
+[[nodiscard]] bool drawMaterialFields(Material::Desc& material, bool editable)
 {
     bool edited = false;
     ImGui::BeginDisabled(!editable);
@@ -164,14 +166,14 @@ MaterialDesc materialPreview(const AssetId& materialId)
     ImGui::EndDisabled();
     ImGui::Text(
         "Albedo: %s",
-        material.baseColorTexture.value_or(AssetId{}).c_str());
+        material.baseColorTexture.value_or(Texture::ID{}).c_str());
     return edited;
 }
 
-[[nodiscard]] MaterialDesc materialPatchFromDiff(
-    const MaterialDesc& stock, const MaterialDesc& edited)
+[[nodiscard]] Material::Desc materialPatchFromDiff(
+    const Material::Desc& stock, const Material::Desc& edited)
 {
-    MaterialDesc patch{};
+    Material::Desc patch{};
     if (edited.baseColorFactor != stock.baseColorFactor)
     {
         patch.baseColorFactor = edited.baseColorFactor;
@@ -191,7 +193,7 @@ MaterialDesc materialPreview(const AssetId& materialId)
     return patch;
 }
 
-[[nodiscard]] bool materialPatchEmpty(const MaterialDesc& patch)
+[[nodiscard]] bool materialPatchEmpty(const Material::Desc& patch)
 {
     return !patch.baseColorFactor && !patch.metallic && !patch.roughness && !patch.ao &&
         !patch.emissive && !patch.normalScale && !patch.baseColorTexture &&
@@ -200,7 +202,7 @@ MaterialDesc materialPreview(const AssetId& materialId)
         !patch.alphaCutoff && !patch.doubleSided;
 }
 
-void drawMaterial(const AssetId& materialId)
+void drawMaterial(const Material::ID& materialId)
 {
     ImGui::Text("Id: %s", materialId.c_str());
     if (materialId.empty())
@@ -208,7 +210,7 @@ void drawMaterial(const AssetId& materialId)
         return;
     }
 
-    MaterialDesc material = materialPreview(materialId);
+    Material::Desc material = materialPreview(materialId);
     if (material.id.empty())
     {
         ImGui::TextDisabled("desc not loaded");
@@ -232,13 +234,13 @@ void drawMaterial(const AssetId& materialId)
         return edited;
     }
 
-    auto drawSubmesh = [&](int index, const AssetId& materialId) {
+    auto drawSubmesh = [&](int index, const Material::ID& materialId) {
         ImGui::PushID(index);
         const bool open = ImGui::TreeNode("Material", "Submesh %d", index);
         if (open)
         {
-            const MaterialDesc stock = materialPreview(materialId);
-            MaterialDesc preview = stock;
+            const Material::Desc stock = materialPreview(materialId);
+            Material::Desc preview = stock;
             if (const auto it = render.materialOverrides.find(index);
                 it != render.materialOverrides.end())
             {
@@ -249,7 +251,7 @@ void drawMaterial(const AssetId& materialId)
             {
                 edited = true;
             }
-            const MaterialDesc patch = materialPatchFromDiff(stock, preview);
+            const Material::Desc patch = materialPatchFromDiff(stock, preview);
             if (materialPatchEmpty(patch))
             {
                 render.materialOverrides.erase(index);
@@ -269,7 +271,7 @@ void drawMaterial(const AssetId& materialId)
         return edited;
     }
 
-    const MeshDesc* mesh = context().assetDescManager->findDesc<MeshDesc>(render.meshId);
+    const Mesh::Desc* mesh = context().assetDescManager->findDesc<Mesh>(render.meshId);
     if (mesh == nullptr)
     {
         ImGui::TextDisabled("mesh desc not loaded");

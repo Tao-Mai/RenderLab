@@ -10,11 +10,11 @@
 #include "ecs/Transform.h"
 #include "render/pass/LightMarkers.h"
 #include "render/present/Swapchain.h"
-#include "render/resource/Mesh.h"
-#include "render/resource/Material.h"
+#include "render/resource/GpuMesh.h"
+#include "render/resource/GpuMaterial.h"
 #include "render/resource/RenderResourceManager.h"
 #include "render/resource/ShaderData.h"
-#include "render/resource/Texture.h"
+#include "render/resource/GpuTexture.h"
 #include "render/device/VulkanContext.h"
 
 #include <algorithm>
@@ -39,7 +39,7 @@ void ScenePass::init(VulkanContext& context, Swapchain& targetSwapchain,
                      std::array<FrameContext, maxFramesInFlight>& targetFrames,
                      PipelineManager& targetPipelines,
                      RenderResourceManager& targetResources, ShaderHandle targetSceneShader,
-                     ShaderHandle targetLightShader)
+                     ShaderHandle targetLightShader, std::shared_ptr<GpuTexture> brdfLut)
 {
     vulkan      = &context;
     swapchain   = &targetSwapchain;
@@ -48,6 +48,8 @@ void ScenePass::init(VulkanContext& context, Swapchain& targetSwapchain,
     resources   = &targetResources;
     sceneShader = targetSceneShader;
     lightShader = targetLightShader;
+    brdfLutTexture = std::move(brdfLut);
+    CHECK(brdfLutTexture != nullptr, "ScenePass requires a BRDF LUT texture");
     refreshPipelines();
 }
 
@@ -74,7 +76,10 @@ void ScenePass::refreshPipelines()
 
 void ScenePass::reset() noexcept
 {
-    environmentTexture.reset();
+    irradianceTexture.reset();
+    prefilteredSpecularTexture.reset();
+    brdfLutTexture.reset();
+    prefilteredSpecularMaxLod = 0.0f;
     scenePipeline       = nullptr;
     lightMarkerPipeline = nullptr;
     pipelineLayout      = nullptr;
@@ -87,40 +92,98 @@ void ScenePass::reset() noexcept
     vulkan              = nullptr;
 }
 
-void ScenePass::bindEnvironment(const SceneDesc& scene)
+void ScenePass::bindSceneTextures(const Scene::Desc& scene)
 {
-    AssetId textureId = BuiltinAssets::Texture::whiteCube;
+    Texture::ID irradianceId = BuiltinAssets::Texture::whiteCube;
+    Texture::ID prefilteredId = BuiltinAssets::Texture::whiteCube;
+    prefilteredSpecularMaxLod = 0.0f;
     if (scene.environment.environmentMap.has_value())
     {
-        const EnvironmentMapDesc& environment =
-            context().assetDescManager->desc<EnvironmentMapDesc>(*scene.environment.environmentMap);
-        CHECK(!environment.radiance.empty(),
-              "environment '{}' has no radiance texture",
+        const EnvironmentMap::Desc& environment =
+            context().assetDescManager->desc<EnvironmentMap>(*scene.environment.environmentMap);
+        CHECK(!environment.irradiance.empty() && !environment.prefilteredSpecular.empty(),
+              "environment '{}' requires irradiance and prefiltered specular textures",
               environment.id);
-        textureId = environment.radiance;
+        irradianceId = environment.irradiance;
+        prefilteredId = environment.prefilteredSpecular;
+
+        const Texture::Desc& irradianceDesc =
+            context().assetDescManager->desc<Texture>(irradianceId);
+        const Texture::Desc& prefilteredDesc =
+            context().assetDescManager->desc<Texture>(prefilteredId);
+        CHECK(irradianceDesc.layout == ImageLayout::Cubemap &&
+              irradianceDesc.colorSpace == ColorSpace::Linear &&
+              prefilteredDesc.layout == ImageLayout::Cubemap &&
+              prefilteredDesc.colorSpace == ColorSpace::Linear &&
+              prefilteredDesc.mipLevels > 0,
+              "environment '{}' requires linear irradiance and prefiltered cubemaps",
+              environment.id);
+        prefilteredSpecularMaxLod = static_cast<float>(prefilteredDesc.mipLevels - 1);
     }
-    environmentTexture      = resources->texture(textureId);
-    const vk::DescriptorImageInfo imageInfo{
-        .imageView = environmentTexture->imageView(),
+
+    irradianceTexture = resources->texture(irradianceId);
+    prefilteredSpecularTexture = resources->texture(prefilteredId);
+    const vk::DescriptorImageInfo irradianceImage{
+        .imageView = irradianceTexture->imageView(),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
-    const vk::DescriptorImageInfo samplerInfo{.sampler = environmentTexture->sampler()};
+    const vk::DescriptorImageInfo irradianceSampler{
+        .sampler = irradianceTexture->sampler()};
+    const vk::DescriptorImageInfo prefilteredImage{
+        .imageView = prefilteredSpecularTexture->imageView(),
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+    };
+    const vk::DescriptorImageInfo prefilteredSampler{
+        .sampler = prefilteredSpecularTexture->sampler()};
+    const vk::DescriptorImageInfo lutImage{
+        .imageView = brdfLutTexture->imageView(),
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+    };
+    const vk::DescriptorImageInfo lutSampler{.sampler = brdfLutTexture->sampler()};
     for (FrameContext& frame : *frames)
     {
         const std::array writes = {
             vk::WriteDescriptorSet{
                 .dstSet = frame.sceneSetHandle(),
-                .dstBinding = RenderInterface::environmentImageBinding,
+                .dstBinding = RenderInterface::irradianceImageBinding,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eSampledImage,
-                .pImageInfo = &imageInfo,
+                .pImageInfo = &irradianceImage,
             },
             vk::WriteDescriptorSet{
                 .dstSet = frame.sceneSetHandle(),
-                .dstBinding = RenderInterface::environmentSamplerBinding,
+                .dstBinding = RenderInterface::irradianceSamplerBinding,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eSampler,
-                .pImageInfo = &samplerInfo,
+                .pImageInfo = &irradianceSampler,
+            },
+            vk::WriteDescriptorSet{
+                .dstSet = frame.sceneSetHandle(),
+                .dstBinding = RenderInterface::prefilteredSpecularImageBinding,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eSampledImage,
+                .pImageInfo = &prefilteredImage,
+            },
+            vk::WriteDescriptorSet{
+                .dstSet = frame.sceneSetHandle(),
+                .dstBinding = RenderInterface::prefilteredSpecularSamplerBinding,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eSampler,
+                .pImageInfo = &prefilteredSampler,
+            },
+            vk::WriteDescriptorSet{
+                .dstSet = frame.sceneSetHandle(),
+                .dstBinding = RenderInterface::brdfLutImageBinding,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eSampledImage,
+                .pImageInfo = &lutImage,
+            },
+            vk::WriteDescriptorSet{
+                .dstSet = frame.sceneSetHandle(),
+                .dstBinding = RenderInterface::brdfLutSamplerBinding,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eSampler,
+                .pImageInfo = &lutSampler,
             },
         };
         vulkan->deviceHandle().updateDescriptorSets(writes, {});
@@ -131,12 +194,13 @@ void ScenePass::updateScene(
     uint32_t               frameIndex,
     const glm::mat4&       viewProjection,
     const glm::vec3&       cameraPosition,
-    const SceneObjectDesc* lightObject)
+    const Scene::Desc::Object* lightObject)
 {
     this->cameraPosition = cameraPosition;
     SceneUniforms uniforms{
         .viewProjection = viewProjection,
         .cameraPosition = glm::vec4{cameraPosition, 1.0f},
+        .iblParameters = glm::vec4{prefilteredSpecularMaxLod, 0.0f, 0.0f, 0.0f},
     };
     if (lightObject != nullptr)
     {
@@ -239,8 +303,8 @@ void ScenePass::record(
             vk::Extent2D(viewportWidth, viewportHeight)));
     struct DrawCall
     {
-        Mesh*           mesh;
-        const Material* material;
+        GpuMesh*           mesh;
+        const GpuMaterial* material;
         glm::mat4       model;
         uint32_t        firstIndex;
         uint32_t        indexCount;
@@ -261,17 +325,17 @@ void ScenePass::record(
         for (size_t index = 0; index < submeshes.size(); ++index)
         {
             const Submesh&  submesh  = submeshes[index];
-            const Material* material = submesh.material;
+            const GpuMaterial* material = submesh.material;
             if (const auto overrideIt = render->materialOverrides.find(
                     static_cast<int>(index));
                 overrideIt != render->materialOverrides.end())
             {
-                const MeshDesc& mesh = context().assetDescManager->desc<MeshDesc>(
+                const Mesh::Desc& mesh = context().assetDescManager->desc<Mesh>(
                     render->meshId);
                 CHECK(index < mesh.submeshes.size(),
                       "material override index out of range");
-                const AssetId materialId = mesh.submeshes[index].materialId;
-                MaterialDesc desc = resources->materialDesc(materialId);
+                const Material::ID materialId = mesh.submeshes[index].materialId;
+                Material::Desc desc = resources->materialDesc(materialId);
                 applyOptionalFields(desc, overrideIt->second);
                 material = &resources->material(desc);
             }

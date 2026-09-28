@@ -29,7 +29,7 @@ void Engine::init()
     ctx.window = new Window();
     ctx.assetDescManager = new AssetDescManager();
     ctx.assetDataManager = new AssetDataManager();
-    ctx.scene = new SceneDesc();
+    ctx.scene = new Scene::Desc();
     ctx.camera = new Camera();
     ctx.renderer = new Renderer();
     ctx.editor = new Editor();
@@ -39,7 +39,7 @@ void Engine::init()
     ctx.window->init();
     ctx.assetDescManager->init();
     inputMethod.activateEnglish();
-    *ctx.scene = ctx.assetDescManager->desc<SceneDesc>(ctx.config->initialScene());
+    *ctx.scene = ctx.assetDescManager->desc<Scene>(ctx.config->initialScene());
     ctx.camera->configure(ctx.scene->camera);
     ctx.renderer->init();
     ctx.renderer->loadScene(*ctx.scene);

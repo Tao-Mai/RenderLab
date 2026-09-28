@@ -5,12 +5,12 @@
 #include "ecs/Render.h"
 #include "render/resource/RenderResourceManager.h"
 
-void GpuScene::load(SceneDesc& scene, RenderResourceManager& resources)
+void GpuScene::load(Scene::Desc& scene, RenderResourceManager& resources)
 {
     reset();
 
     uint32_t nextSelectionId = 1;
-    for (SceneObjectDesc& object : scene.objects)
+    for (Scene::Desc::Object& object : scene.objects)
     {
         if (object.components.contains("Render"))
         {
@@ -52,12 +52,12 @@ const LightMarkers& GpuScene::lightMarkers() const
     return markers;
 }
 
-SceneObjectDesc* GpuScene::primaryLightObject() const
+Scene::Desc::Object* GpuScene::primaryLightObject() const
 {
     return primaryLight;
 }
 
-SceneObjectDesc* GpuScene::findObject(uint32_t selectionId) const
+Scene::Desc::Object* GpuScene::findObject(uint32_t selectionId) const
 {
     for (const SceneRenderItem& item : items)
     {

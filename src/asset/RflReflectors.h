@@ -71,6 +71,22 @@ template <class T>
     {
         return rfl::Generic{metaAnyAs<std::string>(value)};
     }
+
+    rfl::Generic reflectedId;
+    bool         isAssetId = false;
+    AssetTypes::forEach([&]<AssetType T>
+    {
+        if (type.info() == entt::type_id<typename T::ID>())
+        {
+            reflectedId = rfl::Generic{metaAnyAs<typename T::ID>(value).value};
+            isAssetId   = true;
+        }
+    });
+    if (isAssetId)
+    {
+        return reflectedId;
+    }
+
     if (type == entt::resolve<glm::vec2>())
     {
         return rfl::to_generic(metaAnyAs<glm::vec2>(value));
@@ -102,7 +118,7 @@ template <class T>
         CHECK(false, "unknown enumerator for meta enum serialization");
     }
 
-    if (const MaterialDesc* material = value.try_cast<MaterialDesc>())
+    if (const Material::Desc* material = value.try_cast<Material::Desc>())
     {
         return rfl::to_generic<rfl::SnakeCaseToPascalCase>(*material);
     }
@@ -216,6 +232,22 @@ template <class T>
         CHECK(parsed, "{}", parsed.error().what());
         return entt::meta_any{*parsed};
     }
+
+    entt::meta_any assetId;
+    AssetTypes::forEach([&]<AssetType T>
+    {
+        if (expected.info() == entt::type_id<typename T::ID>())
+        {
+            const auto parsed = value.to_string();
+            CHECK(parsed, "{}", parsed.error().what());
+            assetId = entt::meta_any{typename T::ID{*parsed}};
+        }
+    });
+    if (assetId)
+    {
+        return assetId;
+    }
+
     if (expected == entt::resolve<glm::vec2>())
     {
         const auto parsed = rfl::from_generic<glm::vec2>(value);
@@ -250,9 +282,9 @@ template <class T>
         return data.get({});
     }
 
-    if (expected.info() == entt::type_id<MaterialDesc>())
+    if (expected.info() == entt::type_id<Material::Desc>())
     {
-        const auto parsed = rfl::from_generic<MaterialDesc,
+        const auto parsed = rfl::from_generic<Material::Desc,
             rfl::SnakeCaseToPascalCase>(value);
         CHECK(parsed, "{}", parsed.error().what());
         return entt::meta_any{*parsed};
@@ -321,6 +353,22 @@ template <class T>
 
 namespace rfl
 {
+template <class T>
+struct Reflector<AssetID<T>>
+{
+    using ReflType = std::string;
+
+    static AssetID<T> to(const ReflType& value)
+    {
+        return AssetID<T>{value};
+    }
+
+    static ReflType from(const AssetID<T>& value)
+    {
+        return value.value;
+    }
+};
+
 template <>
 struct Reflector<glm::vec2>
 {

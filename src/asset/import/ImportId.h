@@ -22,21 +22,22 @@ namespace asset_import
     return std::filesystem::relative(absoluteSource, assetsRoot);
 }
 
-template <class T>
-[[nodiscard]] AssetId nextId(const std::filesystem::path& source)
+template <AssetType T>
+[[nodiscard]] typename T::ID nextId(const std::filesystem::path& source)
 {
     std::string stem = source.stem().string();
     CHECK(!stem.empty(), "asset source has no filename stem: {}", source.string());
     CHECK(context().assetDescManager != nullptr, "AssetDescManager is not initialized");
 
-    if (context().assetDescManager->findDesc<T>(stem) == nullptr)
+    const typename T::ID baseId{stem};
+    if (context().assetDescManager->findDesc<T>(baseId) == nullptr)
     {
-        return stem;
+        return baseId;
     }
 
     for (uint32_t number = 1; number < std::numeric_limits<uint32_t>::max(); ++number)
     {
-        AssetId id = stem + std::to_string(number);
+        typename T::ID id{stem + std::to_string(number)};
         if (context().assetDescManager->findDesc<T>(id) == nullptr)
         {
             return id;

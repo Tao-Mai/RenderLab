@@ -10,6 +10,10 @@ project(RenderLab)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+if (MSVC)
+    add_compile_options(/Zc:preprocessor)
+endif ()
+
 find_package(Vulkan 1.4 REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
@@ -130,6 +134,9 @@ add_executable(RenderLab
         src/editor/EditorUi.h
         src/editor/ViewportRect.h
         src/asset/AssetDescManager.cpp
+        src/asset/Asset.h
+        src/asset/AssetID.h
+        src/asset/AssetDesc.h
         src/asset/ImageFormat.h
         src/asset/import/ImportImage.cpp
         src/asset/import/ImportTexture.cpp
@@ -164,14 +171,14 @@ add_executable(RenderLab
         src/render/present/Swapchain.h
         src/render/resource/Buffer.cpp
         src/render/resource/Buffer.h
-        src/render/resource/Texture.cpp
-        src/render/resource/Texture.h
-        src/render/resource/Shader.cpp
-        src/render/resource/Shader.h
-        src/render/resource/Mesh.cpp
-        src/render/resource/Mesh.h
-        src/render/resource/Material.cpp
-        src/render/resource/Material.h
+        src/render/resource/GpuTexture.cpp
+        src/render/resource/GpuTexture.h
+        src/render/resource/GpuShader.cpp
+        src/render/resource/GpuShader.h
+        src/render/resource/GpuMesh.cpp
+        src/render/resource/GpuMesh.h
+        src/render/resource/GpuMaterial.cpp
+        src/render/resource/GpuMaterial.h
         src/render/resource/RenderResourceManager.cpp
         src/render/resource/RenderResourceManager.h
         src/render/resource/VertexLayout.h
@@ -189,6 +196,7 @@ add_executable(RenderLab
         src/asset/AssetImporter.h
         src/asset/AssetDataManager.cpp
         src/asset/AssetDataManager.h
+        src/asset/TextureMip.h
         src/core/math/Sampler.cpp
         src/core/math/Sampler.h
 )

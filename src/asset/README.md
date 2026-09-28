@@ -22,9 +22,9 @@ flowchart TB
 
 ### AssetID
 
-用字符串表示，并且充当名字和文件名，同一资产类型内唯一
+`AssetID<T>` 以字符串保存名字和文件名，同时用资产类型 `T` 区分引用。同一资产类型内 ID 唯一；JSON 中仍是普通字符串。
 ### AssetDesc
-描述资产信息
+`REGISTER_ASSETS` 声明资产类型与类型列表；每种资产的 `Desc` 嵌套在对应类型中。描述文件存于 `assets/<资产类名>/`，例如 `assets/Texture/`。
 
 ### AssetDescManager
 
@@ -32,12 +32,12 @@ AssetDesc管理，提供查询和保存接口 。启动时扫描所有desc并在
 
 ### AssetDataManager
 
-二进制数据层。按 `MeshDesc` / `TextureDesc` 读写几何与贴图像素：`Source::File` 走 `assets/binary/{geometry,texture}/`，
+二进制数据层。按 `Mesh::Desc` / `Texture::Desc` 读写几何与贴图像素：`Source::File` 走 `assets/binary/{geometry,texture}/`，
 `Source::Builtin` 调 `BuiltinAssets` 的 data 接口。Import 写入、RenderResourceManager 读取，都不绕过它碰磁盘。
 
 ### BuiltinAssets
 
-被动内置资产集合。对外只暴露 `Mesh` / `Material` / `Texture` 的 `AssetId`，供场景、Import、灯光标记等引用。desc / data 生成函数为
+被动内置资产集合。对外只暴露 `Mesh` / `Material` / `Texture` 的类型化 ID，供场景、Import、灯光标记等引用。desc / data 生成函数为
 private，仅 `AssetDescManager` 与 `AssetDataManager` 以 friend 调用；无实例、无 `init` 预注册。实现拆在 `builtin/` 下按类型分文件。
 
 ### JsonIo / ApplyOptionalFields

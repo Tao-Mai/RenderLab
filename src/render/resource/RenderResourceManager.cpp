@@ -8,9 +8,9 @@
 #include "render/ShaderManager.h"
 #include "render/device/VulkanContext.h"
 #include "render/device/VkCheck.h"
-#include "render/resource/Material.h"
-#include "render/resource/Mesh.h"
-#include "render/resource/Texture.h"
+#include "render/resource/GpuMaterial.h"
+#include "render/resource/GpuMesh.h"
+#include "render/resource/GpuTexture.h"
 
 #include <utility>
 #include <vector>
@@ -59,18 +59,18 @@ void RenderResourceManager::reset() noexcept
     data        = nullptr;
 }
 
-Mesh& RenderResourceManager::mesh(const AssetId& id)
+GpuMesh& RenderResourceManager::mesh(const Mesh::ID& id)
 {
     if (const auto found = meshes.find(id); found != meshes.end())
     {
         return *found->second;
     }
 
-    const MeshDesc&      meshDesc = assets->desc<MeshDesc>(id);
+    const Mesh::Desc&    meshDesc = assets->desc<Mesh>(id);
     MeshGeometry         geometry = data->readGeometry(meshDesc);
     std::vector<Submesh> parts;
     parts.reserve(meshDesc.submeshes.size());
-    for (const SubmeshDesc& submesh : meshDesc.submeshes)
+    for (const Mesh::Desc::Submesh& submesh : meshDesc.submeshes)
     {
         parts.push_back({
             .firstIndex = submesh.firstIndex,
@@ -79,25 +79,25 @@ Mesh& RenderResourceManager::mesh(const AssetId& id)
         });
     }
 
-    auto gpu = std::make_unique<Mesh>(
+    auto gpu = std::make_unique<GpuMesh>(
         uploadContext(),
         std::move(geometry),
         std::move(parts));
     return *meshes.emplace(id, std::move(gpu)).first->second;
 }
 
-MaterialDesc RenderResourceManager::materialDesc(const AssetId& id) const
+Material::Desc RenderResourceManager::materialDesc(const Material::ID& id) const
 {
     CHECK(assets != nullptr, "RenderResourceManager is not initialized");
-    return assets->desc<MaterialDesc>(id);
+    return assets->desc<Material>(id);
 }
 
-Material& RenderResourceManager::material(const AssetId& id)
+GpuMaterial& RenderResourceManager::material(const Material::ID& id)
 {
     return material(materialDesc(id));
 }
 
-Material& RenderResourceManager::material(const MaterialDesc& desc)
+GpuMaterial& RenderResourceManager::material(const Material::Desc& desc)
 {
     CHECK(descriptors != nullptr, "RenderResourceManager is not initialized");
 
@@ -111,8 +111,8 @@ Material& RenderResourceManager::material(const MaterialDesc& desc)
           "material '{}' missing baseColorTexture",
           desc.id);
 
-    std::shared_ptr<Texture> baseColor = texture(*desc.baseColorTexture);
-    auto                     gpu       = std::make_unique<Material>();
+    std::shared_ptr<GpuTexture> baseColor = texture(*desc.baseColorTexture);
+    auto                     gpu       = std::make_unique<GpuMaterial>();
     gpu->create(
         vulkan->physicalDeviceHandle(),
         vulkan->deviceHandle(),
@@ -123,16 +123,16 @@ Material& RenderResourceManager::material(const MaterialDesc& desc)
     return *materials.emplace(key, std::move(gpu)).first->second;
 }
 
-std::shared_ptr<Texture> RenderResourceManager::texture(const AssetId& id)
+std::shared_ptr<GpuTexture> RenderResourceManager::texture(const Texture::ID& id)
 {
     if (const auto found = textures.find(id); found != textures.end())
     {
         return found->second;
     }
 
-    const TextureDesc&         desc  = assets->desc<TextureDesc>(id);
+    const Texture::Desc&       desc  = assets->desc<Texture>(id);
     const std::vector<uint8_t> bytes = data->readTexture(desc);
-    auto                       gpu   = std::make_shared<Texture>(uploadContext(), desc, bytes);
+    auto                       gpu   = std::make_shared<GpuTexture>(uploadContext(), desc, bytes);
 
     return textures.emplace(id, std::move(gpu)).first->second;
 }

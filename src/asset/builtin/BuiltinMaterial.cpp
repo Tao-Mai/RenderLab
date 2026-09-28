@@ -2,9 +2,9 @@
 
 namespace
 {
-[[nodiscard]] MaterialDesc makeWhiteMaterial()
+[[nodiscard]] ::Material::Desc makeWhiteMaterial()
 {
-    MaterialDesc desc{};
+    ::Material::Desc desc{};
     desc.id               = BuiltinAssets::Material::white;
     desc.metallic         = 0.0f;
     desc.roughness        = 0.4f;
@@ -13,13 +13,13 @@ namespace
 }
 }
 
-const MaterialDesc* BuiltinAssets::materialDesc(const AssetId& id)
+const ::Material::Desc* BuiltinAssets::materialDesc(const ::Material::ID& id)
 {
-    static const MaterialDesc descs[] = {
+    static const ::Material::Desc descs[] = {
         makeWhiteMaterial(),
     };
 
-    for (const MaterialDesc& desc : descs)
+    for (const ::Material::Desc& desc : descs)
     {
         if (desc.id == id)
         {

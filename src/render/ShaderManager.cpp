@@ -3,7 +3,7 @@
 #include "asset/AssetDesc.h"
 #include "asset/AssetDescManager.h"
 #include "core/Logger.h"
-#include "render/resource/Shader.h"
+#include "render/resource/GpuShader.h"
 
 #include <algorithm>
 #include <tuple>
@@ -121,16 +121,16 @@ void ShaderManager::reset() noexcept
     device = nullptr;
 }
 
-ShaderHandle ShaderManager::getOrLoad(const AssetId& id)
+ShaderHandle ShaderManager::getOrLoad(const Shader::ID& id)
 {
     CHECK(device != nullptr && assets != nullptr, "ShaderManager is not initialized");
     if (const auto found = handles.find(id); found != handles.end())
     {
         return found->second;
     }
-    const ShaderDesc& desc = assets->desc<ShaderDesc>(id);
+    const Shader::Desc& desc = assets->desc<Shader>(id);
     CHECK(!desc.binary.empty(), "shader '{}' has no binary path", id);
-    auto shader = std::make_unique<Shader>(*device, desc.binary.string());
+    auto shader = std::make_unique<GpuShader>(*device, desc.binary.string());
     ShaderMetadata metadata{id, desc.binary, readReflection(desc.binary)};
     const ShaderHandle handle{static_cast<uint32_t>(shaders.size() + 1)};
     shaders.push_back(std::move(shader));

@@ -3,6 +3,7 @@
 #include "asset/AssetDescManager.h"
 #include "asset/AssetDataManager.h"
 #include "asset/import/ImportId.h"
+#include "asset/TextureMip.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "core/math/Sampler.h"
@@ -23,7 +24,7 @@
 
 // 执行流程：loadImage 解码源文件 -> environmentProjection 验证经纬图或竖排 Cube ->
 // environmentCubemap 生成 radiance 六面图 -> irradianceCubemap 做余弦加权半球积分 ->
-// 分别保存两张纹理，再保存引用它们的 EnvironmentMapDesc。预滤波贴图暂不生成。
+// prefilterSpecularMap 生成 GGX 预滤波 mip 链 -> 保存纹理及 EnvironmentMap::Desc。
 namespace
 {
 // 输入：face 为 0..5，依次表示 +X、-X、+Y、-Y、+Z、-Z；u、v 为面内 [-1, 1] 坐标。
@@ -268,48 +269,6 @@ void writePixel(uint8_t*    output, const std::array<float, 4>& rgba,
     return linearPixels;
 }
 
-// 输入：radiance 是已生成的六面 Cubemap 描述，bytes 为与描述匹配的交错 RGBA
-// 像素，面顺序 +X、-X、+Y、-Y、+Z、-Z。8 位值按 colorSpace 解码，半精度解包。
-// 输出：同样面顺序与行优先布局的线性 RGBA float 数组，供方向采样使用。
-[[nodiscard]] std::vector<float> decodeRadianceCubemap(
-    const TextureDesc& radiance, std::span<const uint8_t> bytes)
-{
-    CHECK(radiance.layout == ImageLayout::Cubemap &&
-          radiance.width > 0 && radiance.width == radiance.height,
-          "invalid radiance cubemap dimensions: {}", radiance.id);
-
-    const uint64_t expectedBytes = static_cast<uint64_t>(radiance.width) *
-        radiance.height * 6 * AssetDataManager::bytesPerPixel(radiance.format);
-    CHECK(bytes.size() == expectedBytes,
-          "invalid radiance cubemap payload: {}", radiance.id);
-
-    if (radiance.format == ImageFormat::RGBA8)
-    {
-        return decode8BitPixels(bytes, radiance.width, radiance.height * 6,
-                                radiance.format, radiance.colorSpace);
-    }
-
-    const size_t channelCount = static_cast<size_t>(radiance.width) *
-        radiance.height * 6 * 4;
-    std::vector<float> pixels(channelCount);
-    if (radiance.format == ImageFormat::RGBA16F)
-    {
-        for (size_t channel = 0; channel < channelCount; ++channel)
-        {
-            uint16_t half;
-            std::memcpy(&half, bytes.data() + channel * sizeof(half), sizeof(half));
-            pixels[channel] = glm::unpackHalf1x16(half);
-        }
-    }
-    else
-    {
-        CHECK(radiance.format == ImageFormat::RGBA32F,
-              "unsupported radiance cubemap format");
-        std::memcpy(pixels.data(), bytes.data(), bytes.size());
-    }
-
-    return pixels;
-}
 }
 
 // 输入：image 含源文件格式、宽高和可选 EXR envmap 投影标记，source 用于报错。
@@ -348,11 +307,11 @@ AssetImporter::LoadedImage::Projection AssetImporter::environmentProjection(
 // 普通图像是交错 RGB8/RGBA8。projection 决定按经纬图重采样或从竖排 EXR
 // 取面；side 是目标面的宽高，format 和 colorSpace 是四通道输出格式与色彩空间，
 // source 用于报错。8 位输入依 colorSpace 转为线性值后采样。
-// 输出：六个 side x side 面首尾相连的字节数组，顺序为 +X、-X、+Y、-Y、+Z、-Z。
-// 每面行优先、每像素 RGBA 交错；地址偏移为 ((face * side + y) * side + x)
-// * bytesPerPixel(format)，没有行间距或面间距。RGBA8 按 colorSpace 编码，
-// 浮点格式保持线性值。
-std::vector<uint8_t> AssetImporter::environmentCubemap(
+// 输出：线性 RGBA float 和待保存的字节数据，共用 +X、-X、+Y、-Y、+Z、-Z 面顺序。
+// 每面 side x side、行优先、每像素 RGBA 交错；线性数据按 4 个 float 寻址，
+// 字节数据按 bytesPerPixel(format) 寻址，均没有行间距或面间距。
+// RGBA8 字节按 colorSpace 编码，浮点格式的字节保持线性值。
+AssetImporter::CubemapPixels AssetImporter::environmentCubemap(
     const LoadedImage& image, LoadedImage::Projection projection, uint32_t                     side,
     ImageFormat        format, ColorSpace             colorSpace, const std::filesystem::path& source)
 {
@@ -362,9 +321,12 @@ std::vector<uint8_t> AssetImporter::environmentCubemap(
           "imported cubemap is too large: {}",
           source.string());
 
-    std::vector<uint8_t> bytes(byteCount);
-    std::vector<float>   linearPixels;
-    const float*         decoded = nullptr;
+    CubemapPixels cubemap;
+    cubemap.encoded.resize(byteCount);
+    cubemap.linear.resize(static_cast<size_t>(side) * side * 6 * 4);
+
+    std::vector<float> linearPixels;
+    const float*       decoded = nullptr;
 
     if (const auto* floats = std::get_if<std::vector<float>>(&image.pixels))
     {
@@ -403,32 +365,47 @@ std::vector<uint8_t> AssetImporter::environmentCubemap(
                                                  faceDirection(face, u, v));
                 }
 
-                uint8_t* output = bytes.data() +
-                    ((static_cast<size_t>(face) * side + y) * side + x) * bytesPerPixel;
+                const size_t pixel = (static_cast<size_t>(face) * side + y) * side + x;
+                std::copy(rgba.begin(), rgba.end(), cubemap.linear.begin() + pixel * 4);
+
+                uint8_t* output = cubemap.encoded.data() + pixel * bytesPerPixel;
                 writePixel(output, rgba, format, colorSpace);
             }
         }
     }
 
-    return bytes;
+    return cubemap;
 }
 
-// 输入：已生成的 radiance 描述和六面像素；按其格式和色彩空间解码为线性值。
+// 输入：已生成的 radiance 描述和六面线性 RGBA float 像素，面顺序与描述一致。
 // 输出：side x side x 6 的线性 RGBA32F Cubemap，面顺序 +X、-X、+Y、-Y、+Z、-Z，
 // 每面行优先、像素内 RGBA 浮点交错、Alpha 为 1。每个方向用 sampleCount 个余弦加权
 // 半球样本估计 E(n) = ∫ L(w) max(n·w) dω = π × 样本辐亮度平均值。
 std::vector<uint8_t> AssetImporter::irradianceCubemap(
-    const TextureDesc& radiance, std::span<const uint8_t> radianceBytes,
-    uint32_t side, uint32_t sampleCount)
+    const Texture::Desc&     radiance,
+    std::span<const float> radiancePixels,
+    uint32_t               side,
+    uint32_t               sampleCount
+    )
 {
-    const std::vector<float> linearPixels = decodeRadianceCubemap(radiance, radianceBytes);
+    CHECK(radiance.layout == ImageLayout::Cubemap &&
+          radiance.width > 0 && radiance.width == radiance.height,
+          "invalid radiance cubemap dimensions: {}",
+          radiance.id);
+
+    const uint64_t expectedChannels = static_cast<uint64_t>(radiance.width) *
+        radiance.height * 6 * 4;
+    CHECK(radiancePixels.size() == expectedChannels,
+          "invalid radiance cubemap pixels: {}",
+          radiance.id);
 
     std::vector<glm::vec3> hemisphereSamples(sampleCount);
     for (uint32_t sample = 0; sample < sampleCount; ++sample)
     {
-        const auto [radiusSquared, azimuth] = Sampler::HammersleySample2D(sample, sampleCount);
-        const float radius = std::sqrt(radiusSquared);
-        const float phi = 2.0f * std::numbers::pi_v<float> * azimuth;
+        // 余弦重要性采样
+        const auto  [xi1, xi2]    = Sampler::HammersleySample2D(sample, sampleCount);
+        const float radius        = std::sqrt(xi1);
+        const float phi           = 2.0f * std::numbers::pi_v<float> * xi2;
         hemisphereSamples[sample] = {
             radius * std::cos(phi),
             radius * std::sin(phi),
@@ -461,7 +438,7 @@ std::vector<uint8_t> AssetImporter::irradianceCubemap(
                 {
                     const glm::vec3 direction =
                         tangent * sample.x + bitangent * sample.y + normal * sample.z;
-                    const auto rgba = sampleCubemap(linearPixels.data(), radiance.width, direction);
+                    const auto rgba = sampleCubemap(radiancePixels.data(), radiance.width, direction);
                     for (size_t channel = 0; channel < 3; ++channel)
                     {
                         irradiance[channel] += rgba[channel];
@@ -484,13 +461,142 @@ std::vector<uint8_t> AssetImporter::irradianceCubemap(
     return bytes;
 }
 
+// 输入：radiancePixels 是按 +X、-X、+Y、-Y、+Z、-Z 排列的线性 RGBA float
+// Cubemap，六面尺寸均为 radiance.width；sampleCount 是每个输出方向的 GGX 样本数。
+// 输出：RGBA32F 的完整 mip 链。按 mip 从大到小排列，每级内部依次存六个行优先面。
+// mip 0 原样复制线性 radiance；其余级的 roughness = mip / (mipLevels - 1)。
+std::vector<uint8_t> AssetImporter::prefilterSpecularMap(
+    const Texture::Desc& radiance, std::span<const float> radiancePixels,
+    uint32_t           sampleCount)
+{
+    CHECK(radiance.layout == ImageLayout::Cubemap &&
+          radiance.width > 0 && radiance.width == radiance.height,
+          "invalid radiance cubemap dimensions: {}",
+          radiance.id);
+    CHECK(sampleCount > 0, "prefilter sample count must be positive");
+
+    const uint32_t side         = radiance.width;
+    const uint32_t mipLevels    = texture_mip::maxLevels(side, side);
+    const uint64_t baseChannels = static_cast<uint64_t>(side) * side * 6 * 4;
+    CHECK(radiancePixels.size() == baseChannels,
+          "invalid radiance cubemap pixels: {}",
+          radiance.id);
+
+    constexpr uint32_t pixelBytes = 4 * sizeof(float);
+    const uint64_t     byteCount  = texture_mip::totalBytes(
+        side,
+        side,
+        6,
+        pixelBytes,
+        mipLevels);
+    CHECK(byteCount <= std::numeric_limits<uint32_t>::max(),
+          "prefiltered cubemap is too large: {}",
+          radiance.id);
+
+    std::vector<uint8_t> bytes(static_cast<size_t>(byteCount));
+    std::memcpy(bytes.data(),
+                radiancePixels.data(),
+                static_cast<size_t>(baseChannels * sizeof(float)));
+
+    for (uint32_t mip = 1; mip < mipLevels; ++mip)
+    {
+        const uint32_t mipSide      = texture_mip::extent(side, mip);
+        const float    roughness    = static_cast<float>(mip) / (mipLevels - 1);
+        const float    alpha        = roughness * roughness;
+        const float    alphaSquared = alpha * alpha;
+        const size_t   levelOffset  = static_cast<size_t>(texture_mip::offset(
+            side,
+            side,
+            6,
+            pixelBytes,
+            mip));
+
+        std::vector<std::pair<glm::vec3, float>> directions;
+        directions.reserve(sampleCount);
+        for (uint32_t sample = 0; sample < sampleCount; ++sample)
+        {
+            const auto  [xi1, xi2]    = Sampler::HammersleySample2D(sample, sampleCount);
+            const float phi           = 2.0f * std::numbers::pi_v<float> * xi1;
+            const float cosineSquared = (1.0f - xi2) /
+                (1.0f + (alphaSquared - 1.0f) * xi2);
+            const float cosine = std::sqrt(cosineSquared);
+            const float sine   = std::sqrt(std::max(0.0f, 1.0f - cosineSquared));
+
+            // V = N。先以 GGX 分布采样半程向量 H，再反射得到入射方向 L。
+            const glm::vec3 lightDirection{
+                2.0f * cosine * sine * std::cos(phi),
+                2.0f * cosine * sine * std::sin(phi),
+                2.0f * cosineSquared - 1.0f,
+            };
+            if (lightDirection.z > 0.0f)
+            {
+                directions.emplace_back(lightDirection, lightDirection.z);
+            }
+        }
+
+        for (uint32_t face = 0; face < 6; ++face)
+        {
+            for (uint32_t y = 0; y < mipSide; ++y)
+            {
+                for (uint32_t x = 0; x < mipSide; ++x)
+                {
+                    const float     u      = 2.0f * (static_cast<float>(x) + 0.5f) / mipSide - 1.0f;
+                    const float     v      = 2.0f * (static_cast<float>(y) + 0.5f) / mipSide - 1.0f;
+                    const glm::vec3 normal = faceDirection(face, u, v);
+                    const glm::vec3 up     = std::abs(normal.y) < 0.999f
+                        ? glm::vec3{0.0f, 1.0f, 0.0f}
+                        : glm::vec3{1.0f, 0.0f, 0.0f};
+                    const glm::vec3 tangent   = glm::normalize(glm::cross(up, normal));
+                    const glm::vec3 bitangent = glm::cross(normal, tangent);
+
+                    std::array<float, 4> color{0.0f, 0.0f, 0.0f, 1.0f};
+                    float                totalWeight = 0.0f;
+                    for (const auto& [local, weight] : directions)
+                    {
+                        const glm::vec3 direction =
+                            tangent * local.x + bitangent * local.y + normal * local.z;
+                        const auto radianceSample =
+                            sampleCubemap(radiancePixels.data(), side, direction);
+                        for (size_t channel = 0; channel < 3; ++channel)
+                        {
+                            color[channel] += radianceSample[channel] * weight;
+                        }
+                        totalWeight += weight;
+                    }
+
+                    if (totalWeight > 0.0f)
+                    {
+                        for (size_t channel = 0; channel < 3; ++channel)
+                        {
+                            color[channel] /= totalWeight;
+                        }
+                    }
+                    else
+                    {
+                        color    = sampleCubemap(radiancePixels.data(), side, normal);
+                        color[3] = 1.0f;
+                    }
+
+                    const size_t pixel = (static_cast<size_t>(face) * mipSide + y) * mipSide + x;
+                    writePixel(bytes.data() + levelOffset + pixel * pixelBytes,
+                               color,
+                               ImageFormat::RGBA32F,
+                               ColorSpace::Linear);
+                }
+            }
+        }
+    }
+
+    return bytes;
+}
+
 // 输入：source 是 EXR 或支持的 8 位图像文件路径；setting 可指定源图与 radiance
-// 的色彩空间、irradiance 的面尺寸和每像素采样数。省略色彩空间时 EXR 为 Linear、
+// 的色彩空间、irradiance 的面尺寸及两种积分的采样数。省略色彩空间时 EXR 为 Linear、
 // 8 位图像为 Srgb。loadImage 返回行优先源图。
-// 输出：EnvironmentMapDesc 的资产 ID。函数选定投影和面尺寸，将六面像素按
+// 输出：EnvironmentMap::Desc 的资产 ID。函数选定投影和面尺寸，将六面像素按
 // environmentCubemap 所述布局写入 radiance；再从 radiance 计算可配置尺寸的线性
-// irradiance 纹理。环境贴图描述引用这两张纹理；prefilteredSpecular 暂不生成。
-AssetId AssetImporter::importEnvironmentMap(
+// irradiance 纹理，并生成带完整 mip 链的 GGX 预滤波纹理。环境贴图描述引用三张纹理。
+EnvironmentMap::ID AssetImporter::importEnvironmentMap(
     const std::filesystem::path& source, const ImportEnvironmentMapSetting& setting)
 {
     CHECK(setting.irradianceSize > 0,
@@ -498,6 +604,9 @@ AssetId AssetImporter::importEnvironmentMap(
           source.string());
     CHECK(setting.irradianceSampleCount > 0,
           "irradiance sample count must be positive: {}",
+          source.string());
+    CHECK(setting.prefilteredSpecularSampleCount > 0,
+          "prefilter sample count must be positive: {}",
           source.string());
     constexpr uint64_t pixelBytes = 4 * sizeof(float);
     constexpr uint64_t maxPayload = std::numeric_limits<uint32_t>::max();
@@ -514,8 +623,8 @@ AssetId AssetImporter::importEnvironmentMap(
     const ColorSpace resolvedColorSpace = setting.colorSpace.value_or(
         defaultColorSpace(image.fileFormat));
 
-    TextureDesc radiance{};
-    radiance.id         = asset_import::nextId<TextureDesc>(source);
+    Texture::Desc radiance{};
+    radiance.id         = asset_import::nextId<Texture>(source);
     radiance.source     = Source::File;
     radiance.format     = environmentFormat(image.format);
     radiance.colorSpace = resolvedColorSpace;
@@ -523,11 +632,12 @@ AssetId AssetImporter::importEnvironmentMap(
           radiance.colorSpace == ColorSpace::Linear,
           "floating-point environment textures require linear color space: {}",
           source.string());
-    radiance.layout = ImageLayout::Cubemap;
-    radiance.width  = side;
-    radiance.height = side;
+    radiance.layout    = ImageLayout::Cubemap;
+    radiance.width     = side;
+    radiance.height    = side;
+    radiance.mipLevels = 1;
 
-    const std::vector<uint8_t> bytes = environmentCubemap(
+    const CubemapPixels radiancePixels = environmentCubemap(
         image,
         projection,
         side,
@@ -536,28 +646,50 @@ AssetId AssetImporter::importEnvironmentMap(
         source);
     const std::filesystem::path irradianceName = source.parent_path() /
         (source.stem().string() + "_irradiance" + source.extension().string());
-    TextureDesc irradiance{};
-    irradiance.id         = asset_import::nextId<TextureDesc>(irradianceName);
+    Texture::Desc irradiance{};
+    irradiance.id         = asset_import::nextId<Texture>(irradianceName);
     irradiance.source     = Source::File;
     irradiance.format     = ImageFormat::RGBA32F;
     irradiance.colorSpace = ColorSpace::Linear;
     irradiance.layout     = ImageLayout::Cubemap;
     irradiance.width      = setting.irradianceSize;
     irradiance.height     = setting.irradianceSize;
+    irradiance.mipLevels  = 1;
+
+    const std::filesystem::path prefilteredName = source.parent_path() /
+        (source.stem().string() + "_prefiltered_specular" + source.extension().string());
+    Texture::Desc prefiltered{};
+    prefiltered.id         = asset_import::nextId<Texture>(prefilteredName);
+    prefiltered.source     = Source::File;
+    prefiltered.format     = ImageFormat::RGBA32F;
+    prefiltered.colorSpace = ColorSpace::Linear;
+    prefiltered.layout     = ImageLayout::Cubemap;
+    prefiltered.width      = side;
+    prefiltered.height     = side;
+    prefiltered.mipLevels  = texture_mip::maxLevels(side, side);
 
     const std::vector<uint8_t> irradianceBytes =
         irradianceCubemap(radiance,
-                          bytes,
+                          radiancePixels.linear,
                           setting.irradianceSize,
                           setting.irradianceSampleCount);
+    const std::vector<uint8_t> prefilteredBytes = prefilterSpecularMap(
+        radiance,
+        radiancePixels.linear,
+        setting.prefilteredSpecularSampleCount);
 
-    const AssetId radianceId   = saveTexture(std::move(radiance), source, bytes);
-    const AssetId irradianceId = saveTexture(std::move(irradiance), source, irradianceBytes);
+    const Texture::ID radianceId =
+        saveTexture(std::move(radiance), source, radiancePixels.encoded);
+    const Texture::ID irradianceId =
+        saveTexture(std::move(irradiance), source, irradianceBytes);
+    const Texture::ID prefilteredId =
+        saveTexture(std::move(prefiltered), source, prefilteredBytes);
 
-    EnvironmentMapDesc environment{};
-    environment.id         = asset_import::nextId<EnvironmentMapDesc>(source);
-    environment.radiance   = radianceId;
-    environment.irradiance = irradianceId;
+    EnvironmentMap::Desc environment{};
+    environment.id                  = asset_import::nextId<EnvironmentMap>(source);
+    environment.radiance            = radianceId;
+    environment.irradiance          = irradianceId;
+    environment.prefilteredSpecular = prefilteredId;
 
-    return context().assetDescManager->save(std::move(environment));
+    return context().assetDescManager->save<EnvironmentMap>(std::move(environment));
 }

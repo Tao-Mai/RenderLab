@@ -47,6 +47,7 @@ struct SceneUniforms
     Light light;
     float3 cameraPosition;
     float padding2;
+    float4 iblParameters;
 };
 
 [[vk::push_constant]]
@@ -74,11 +75,22 @@ ConstantBuffer<MaterialData> material;
 ConstantBuffer<SceneUniforms> sceneUniforms;
 
 [[vk::binding(1, 0)]]
-TextureCube<float4> environmentMap;
+TextureCube<float4> irradianceMap;
 
 [[vk::binding(2, 0)]]
-SamplerState environmentSampler;
+SamplerState irradianceMapSampler;
 
+[[vk::binding(3, 0)]]
+TextureCube<float4> prefilteredSpecularMap;
+
+[[vk::binding(4, 0)]]
+SamplerState prefilteredSpecularMapSampler;
+
+[[vk::binding(5, 0)]]
+Texture2D<float4> brdfLUT;
+
+[[vk::binding(6, 0)]]
+SamplerState brdfLUTSampler;
 
 
 [shader("vertex")]
@@ -121,19 +133,33 @@ float4 fragMain(VertexOutput input) : SV_Target
     float roughness = material.roughness;
     float metallic = material.metallic;
 
-    float3 F = FresnelSchlick(metallic, baseColor.rgb, VdotH);
+    float3 F0 = lerp(0.04, baseColor.rgb, float3(metallic));
+    float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
     float D = NormalDistributionGGX(roughness, NdotH);
     float G = GeometrySmithGGX(roughness, NdotV, NdotL);
 
-
     float3 diffuseBRDF = (1.0 - F) * (1.0 - metallic) * baseColor.rgb * INV_PI;
     float3 specularBRDF = F * D * G / max(4.0 * NdotV * NdotL, 1e-5);
+
     float3 direct = pointLight * (diffuseBRDF + specularBRDF) * NdotL;
-    float3 ambient = 0.04 * baseColor.rgb;
+
+    // 环境光照
+    float3 R = reflect(-V, N);
+
+    // 漫反射环境光照
+    float3 irradiance = irradianceMap.Sample(irradianceMapSampler, N).rgb;
+    float3 ambient_diffuse = irradiance * baseColor.rgb * INV_PI * (1.0 - metallic);
+
+    // 镜面反射环境光照 Split Sum Approximation
+    float3 env_term = prefilteredSpecularMap.SampleLevel(
+        prefilteredSpecularMapSampler, R, roughness * sceneUniforms.iblParameters.x).rgb;
+    float2 scale_bias = brdfLUT.Sample(brdfLUTSampler, float2(NdotV, roughness)).rg;
+    float3 brdf_term = scale_bias.x * F0 + scale_bias.y;
+    float3 ambient_specular = env_term * brdf_term;
+
+    float3 ambient = ambient_diffuse + ambient_specular;
+
     float3 color = direct + ambient;
 
-    float3 R = reflect(-V, N);
-    float3 envColor = environmentMap.Sample(environmentSampler, R).rgb;
-
-    return float4(envColor, baseColor.a);
+    return float4(color, baseColor.a);
 }

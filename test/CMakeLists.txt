@@ -1,4 +1,5 @@
 add_executable(RenderLabTests
+        AssetIDTest.cpp
         LutGgxTest.cpp
         AssetDataManagerTest.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/AssetDataManager.cpp

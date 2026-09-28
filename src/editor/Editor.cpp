@@ -55,7 +55,7 @@ void Editor::saveScene()
     CHECK(ctx.camera != nullptr, "camera must exist before save");
 
     ctx.scene->camera = ctx.camera->component();
-    ctx.assetDescManager->save(*ctx.scene);
+    ctx.assetDescManager->save<Scene>(*ctx.scene);
     dirty = false;
 }
 
@@ -128,8 +128,9 @@ EditorFrameInput Editor::buildFrame(
         }
     }
 
-    const AssetId& sceneId = context().scene != nullptr ? context().scene->id : AssetId{};
-    if (ui.drawInspector(selectedObject, sceneId, dirty))
+    const Scene::ID sceneId = context().scene != nullptr
+        ? context().scene->id : Scene::ID{};
+    if (ui.drawInspector(selectedObject, sceneId.value, dirty))
     {
         dirty = true;
     }

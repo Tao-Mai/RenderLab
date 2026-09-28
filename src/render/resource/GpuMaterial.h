@@ -3,7 +3,7 @@
 #include "asset/AssetDesc.h"
 #include "render/PipelineManager.h"
 #include "render/resource/Buffer.h"
-#include "render/resource/Texture.h"
+#include "render/resource/GpuTexture.h"
 
 #include <memory>
 
@@ -11,25 +11,25 @@
 
 class DescriptorManager;
 
-class Material
+class GpuMaterial
 {
 public:
-    Material() = default;
+    GpuMaterial() = default;
 
     void create(
         const vk::raii::PhysicalDevice& physicalDevice,
         const vk::raii::Device&         device,
         DescriptorManager&              descriptors,
         ShaderHandle                     shader,
-        const MaterialDesc&             material,
-        std::shared_ptr<Texture>        texture);
+        const Material::Desc&             material,
+        std::shared_ptr<GpuTexture>        texture);
 
     [[nodiscard]] vk::DescriptorSet descriptorSetHandle() const;
     [[nodiscard]] PipelineKey pipelineKey(vk::Format colorFormat, vk::Format depthFormat) const;
     [[nodiscard]] RenderMode renderMode() const;
 
 private:
-    std::shared_ptr<Texture>                 albedoTexture;
+    std::shared_ptr<GpuTexture>                 albedoTexture;
     std::shared_ptr<Buffer>                  materialBuffer;
     vk::raii::DescriptorSet                  descriptorSet = nullptr;
     ShaderHandle                              shaderHandle;

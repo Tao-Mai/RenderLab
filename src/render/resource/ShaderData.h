@@ -14,8 +14,12 @@ inline constexpr uint32_t objectSet = 2;
 inline constexpr uint32_t passSet = 3;
 
 inline constexpr uint32_t sceneUniformBinding = 0;
-inline constexpr uint32_t environmentImageBinding = 1;
-inline constexpr uint32_t environmentSamplerBinding = 2;
+inline constexpr uint32_t irradianceImageBinding = 1;
+inline constexpr uint32_t irradianceSamplerBinding = 2;
+inline constexpr uint32_t prefilteredSpecularImageBinding = 3;
+inline constexpr uint32_t prefilteredSpecularSamplerBinding = 4;
+inline constexpr uint32_t brdfLutImageBinding = 5;
+inline constexpr uint32_t brdfLutSamplerBinding = 6;
 inline constexpr uint32_t materialImageBinding = 0;
 inline constexpr uint32_t materialSamplerBinding = 1;
 inline constexpr uint32_t materialUniformBinding = 2;
@@ -30,6 +34,7 @@ struct SceneUniforms
     glm::vec4  lightAreaSizeCone{1.0f, 1.0f, 0.9396926f, 0.8660254f};
     glm::uvec4 lightFlags{0u};
     glm::vec4  cameraPosition{0.0f, 0.0f, 0.0f, 1.0f};
+    glm::vec4  iblParameters{0.0f};
 };
 
 struct alignas(16) MaterialUniforms
@@ -41,13 +46,14 @@ struct alignas(16) MaterialUniforms
     uint32_t alphaMode = 0;
 };
 
-static_assert(sizeof(SceneUniforms) == 160);
+static_assert(sizeof(SceneUniforms) == 176);
 static_assert(offsetof(SceneUniforms, lightColorIntensity) == 64);
 static_assert(offsetof(SceneUniforms, lightPositionRange) == 80);
 static_assert(offsetof(SceneUniforms, lightDirection) == 96);
 static_assert(offsetof(SceneUniforms, lightAreaSizeCone) == 112);
 static_assert(offsetof(SceneUniforms, lightFlags) == 128);
 static_assert(offsetof(SceneUniforms, cameraPosition) == 144);
+static_assert(offsetof(SceneUniforms, iblParameters) == 160);
 static_assert(sizeof(MaterialUniforms) == 32);
 static_assert(offsetof(MaterialUniforms, roughness) == 16);
 static_assert(offsetof(MaterialUniforms, metallic) == 20);

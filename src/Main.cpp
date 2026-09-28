@@ -7,6 +7,7 @@
 #include "core/Logger.h"
 
 #include <filesystem>
+#include <string>
 #include <string_view>
 
 int main(int argc, char** argv)
@@ -31,18 +32,18 @@ int main(int argc, char** argv)
             source = config.paths().assets.parent_path() / source;
         }
         const std::string_view command{argv[1]};
-        AssetId                importedId;
+        std::string            importedId;
         if (command == "--import-texture")
         {
-            importedId = AssetImporter::importTexture(source);
+            importedId = AssetImporter::importTexture(source).value;
         }
         else if (command == "--import-environmentmap")
         {
-            importedId = AssetImporter::importEnvironmentMap(source, {});
+            importedId = AssetImporter::importEnvironmentMap(source, {}).value;
         }
         else if (command == "--import-mesh")
         {
-            importedId = AssetImporter::importMesh(source);
+            importedId = AssetImporter::importMesh(source).value;
         }
         else
         {

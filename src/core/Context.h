@@ -1,10 +1,11 @@
 #pragma once
 
+#include "asset/AssetDesc.h"
+
 class AssetDescManager;
 class AssetDataManager;
 class Camera;
 class ConfigManager;
-class SceneDesc;
 class Editor;
 class Renderer;
 class Window;
@@ -15,7 +16,7 @@ struct Context
     Window*           window           = nullptr;
     AssetDescManager* assetDescManager = nullptr;
     AssetDataManager* assetDataManager = nullptr;
-    SceneDesc*        scene            = nullptr;
+    Scene::Desc*     scene            = nullptr;
     Camera*           camera           = nullptr;
     Renderer*         renderer         = nullptr;
     Editor*           editor           = nullptr;

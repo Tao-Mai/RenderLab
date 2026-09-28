@@ -24,49 +24,49 @@ namespace logger
 inline void init(const char* argv0)
 {
     google::InitGoogleLogging(argv0);
-    FLAGS_logtostderr = true;
+    FLAGS_logtostderr      = true;
     FLAGS_colorlogtostderr = true;
 }
 
 namespace detail
 {
-template <class... Args>
-void log(
-    google::LogSeverity severity,
-    const char* file,
-    int line,
-    std::format_string<Args...> fmt,
-    Args&&... args)
-{
-    google::LogMessage(file, line, severity).stream()
-        << std::format(fmt, std::forward<Args>(args)...);
-}
+    template <class... Args>
+    void log(
+        google::LogSeverity         severity,
+        const char*                 file,
+        int                         line,
+        std::format_string<Args...> fmt,
+        Args&&...                   args)
+    {
+        google::LogMessage(file, line, severity).stream()
+            << std::format(fmt, std::forward<Args>(args)...);
+    }
 
-template <class... Args>
-[[noreturn]] void fatal(
-    const char* file,
-    int line,
-    std::format_string<Args...> fmt,
-    Args&&... args)
-{
-    google::LogMessage(file, line, google::GLOG_FATAL).stream()
-        << std::format(fmt, std::forward<Args>(args)...);
-    std::abort();
-}
+    template <class... Args>
+    [[noreturn]] void fatal(
+        const char*                 file,
+        int                         line,
+        std::format_string<Args...> fmt,
+        Args&&...                   args)
+    {
+        google::LogMessage(file, line, google::GLOG_FATAL).stream()
+            << std::format(fmt, std::forward<Args>(args)...);
+        std::abort();
+    }
 
-template <class... Args>
-[[noreturn]] void checkFail(
-    const char* file,
-    int line,
-    const char* condition,
-    std::format_string<Args...> fmt,
-    Args&&... args)
-{
-    google::LogMessage(file, line, google::GLOG_FATAL).stream()
-        << "Check failed: (" << condition << ") "
-        << std::format(fmt, std::forward<Args>(args)...);
-    std::abort();
-}
+    template <class... Args>
+    [[noreturn]] void checkFail(
+        const char*                 file,
+        int                         line,
+        const char*                 condition,
+        std::format_string<Args...> fmt = "",
+        Args&&...                   args)
+    {
+        google::LogMessage(file, line, google::GLOG_FATAL).stream()
+            << "Check failed: (" << condition << ") "
+            << std::format(fmt, std::forward<Args>(args)...);
+        std::abort();
+    }
 }
 }
 

@@ -2,5 +2,8 @@
   "Paths": {
     "Assets": "."
   },
-  "InitialScene": "default"
+  "InitialScene": "default",
+  "Renderer": {
+    "BrdfLut": "lut_ggx"
+  }
 }

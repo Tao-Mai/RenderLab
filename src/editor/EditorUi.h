@@ -1,5 +1,6 @@
 #pragma once
 
+#include "asset/AssetDesc.h"
 #include "editor/ViewportRect.h"
 
 #include <cstdint>
@@ -11,7 +12,6 @@
 
 struct GLFWwindow;
 namespace ecs { struct Transform; }
-struct SceneObjectDesc;
 
 class EditorUI
 {
@@ -39,7 +39,7 @@ public:
         const glm::mat4& projection,
         bool             enableShortcuts);
     [[nodiscard]] bool drawInspector(
-        SceneObjectDesc* object,
+        Scene::Desc::Object* object,
         std::string_view sceneName,
         bool             dirty);
     void endFrame();

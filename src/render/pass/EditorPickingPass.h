@@ -8,7 +8,7 @@
 #include <glm/mat4x4.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
-class Mesh;
+class GpuMesh;
 class PipelineManager;
 class Swapchain;
 
@@ -33,7 +33,7 @@ public:
         uint32_t y) const;
     void draw(
         vk::raii::CommandBuffer& commandBuffer,
-        Mesh& mesh,
+        GpuMesh& mesh,
         const glm::mat4& model,
         uint32_t selectionId) const;
     void end(vk::raii::CommandBuffer& commandBuffer, uint32_t x, uint32_t y) const;

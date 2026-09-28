@@ -2,7 +2,7 @@
 
 #include "render/PipelineManager.h"
 #include "render/present/Swapchain.h"
-#include "render/resource/Mesh.h"
+#include "render/resource/GpuMesh.h"
 #include "render/resource/ShaderData.h"
 
 #include <array>
@@ -139,7 +139,7 @@ void EditorPickingPass::begin(
 
 void EditorPickingPass::draw(
     vk::raii::CommandBuffer& commandBuffer,
-    Mesh& mesh,
+    GpuMesh& mesh,
     const glm::mat4& model,
     uint32_t selectionId) const
 {

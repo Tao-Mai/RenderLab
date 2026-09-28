@@ -1,7 +1,6 @@
 #pragma once
 
-#include "asset/AssetId.h"
-#include "asset/ImageFormat.h"
+#include "asset/AssetDesc.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -9,8 +8,6 @@
 #include <span>
 #include <variant>
 #include <vector>
-
-struct TextureDesc;
 
 struct ImportEnvironmentMapSetting
 {
@@ -20,20 +17,22 @@ struct ImportEnvironmentMapSetting
     uint32_t irradianceSize = 32;
     // 每个输出方向的余弦加权半球采样数。
     uint32_t irradianceSampleCount = 2048;
+    // GGX 预滤波每个输出方向的半程向量采样数。
+    uint32_t prefilteredSpecularSampleCount = 128;
 };
 
 class AssetImporter
 {
 public:
-    static AssetId importTexture(
+    static Texture::ID importTexture(
         const std::filesystem::path& source,
         std::optional<ColorSpace> colorSpace = std::nullopt);
 
-    static AssetId importEnvironmentMap(
+    static EnvironmentMap::ID importEnvironmentMap(
         const std::filesystem::path& source,
         const ImportEnvironmentMapSetting& setting = {});
 
-    static AssetId importMesh(const std::filesystem::path& source);
+    static Mesh::ID importMesh(const std::filesystem::path& source);
 
 private:
     struct LoadedImage
@@ -58,11 +57,17 @@ private:
         std::variant<std::vector<uint8_t>, std::vector<float>> pixels;
     };
 
+    struct CubemapPixels
+    {
+        std::vector<float> linear;
+        std::vector<uint8_t> encoded;
+    };
+
     [[nodiscard]] static LoadedImage loadImage(const std::filesystem::path& source);
     [[nodiscard]] static ColorSpace defaultColorSpace(LoadedImage::FileFormat format);
     [[nodiscard]] static LoadedImage::Projection environmentProjection(
         const LoadedImage& image, const std::filesystem::path& source);
-    [[nodiscard]] static std::vector<uint8_t> environmentCubemap(
+    [[nodiscard]] static CubemapPixels environmentCubemap(
         const LoadedImage& image,
         LoadedImage::Projection projection,
         uint32_t side,
@@ -70,12 +75,16 @@ private:
         ColorSpace colorSpace,
         const std::filesystem::path& source);
     [[nodiscard]] static std::vector<uint8_t> irradianceCubemap(
-        const TextureDesc& radiance,
-        std::span<const uint8_t> radianceBytes,
+        const Texture::Desc& radiance,
+        std::span<const float> radiancePixels,
         uint32_t side,
         uint32_t sampleCount);
-    [[nodiscard]] static AssetId     saveTexture(
-        TextureDesc                  desc,
+    [[nodiscard]] static std::vector<uint8_t> prefilterSpecularMap(
+        const Texture::Desc& radiance,
+        std::span<const float> radiancePixels,
+        uint32_t sampleCount);
+    [[nodiscard]] static Texture::ID saveTexture(
+        Texture::Desc                  desc,
         const std::filesystem::path& source,
         std::span<const uint8_t>     bytes);
 };

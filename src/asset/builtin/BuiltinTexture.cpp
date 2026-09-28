@@ -2,9 +2,9 @@
 
 namespace
 {
-[[nodiscard]] TextureDesc makeTexture(const AssetId& id, ImageLayout layout)
+[[nodiscard]] ::Texture::Desc makeTexture(const ::Texture::ID& id, ImageLayout layout)
 {
-    TextureDesc desc{};
+    ::Texture::Desc desc{};
     desc.id         = id;
     desc.source     = Source::Builtin;
     desc.format     = ImageFormat::RGBA8;
@@ -12,18 +12,19 @@ namespace
     desc.layout     = layout;
     desc.width      = 1;
     desc.height     = 1;
+    desc.mipLevels  = 1;
     return desc;
 }
 }
 
-const TextureDesc* BuiltinAssets::textureDesc(const AssetId& id)
+const ::Texture::Desc* BuiltinAssets::textureDesc(const ::Texture::ID& id)
 {
-    static const TextureDesc descs[] = {
+    static const ::Texture::Desc descs[] = {
         makeTexture(Texture::white, ImageLayout::Image2D),
         makeTexture(Texture::whiteCube, ImageLayout::Cubemap),
     };
 
-    for (const TextureDesc& desc : descs)
+    for (const ::Texture::Desc& desc : descs)
     {
         if (desc.id == id)
         {
@@ -33,11 +34,11 @@ const TextureDesc* BuiltinAssets::textureDesc(const AssetId& id)
     return nullptr;
 }
 
-const std::vector<uint8_t>* BuiltinAssets::textureData(const AssetId& id)
+const std::vector<uint8_t>* BuiltinAssets::textureData(const ::Texture::ID& id)
 {
     struct Entry
     {
-        AssetId              id;
+        ::Texture::ID          id;
         std::vector<uint8_t> bytes;
     };
 

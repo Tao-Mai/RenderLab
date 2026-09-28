@@ -1,10 +1,10 @@
 #pragma once
 
-#include "asset/AssetId.h"
+#include "asset/AssetID.h"
 #include "asset/AssetDesc.h"
-#include "render/resource/Material.h"
-#include "render/resource/Mesh.h"
-#include "render/resource/Texture.h"
+#include "render/resource/GpuMaterial.h"
+#include "render/resource/GpuMesh.h"
+#include "render/resource/GpuTexture.h"
 #include "render/device/GpuUploadContext.h"
 
 #include <memory>
@@ -27,11 +27,11 @@ public:
         ShaderManager& shaders);
     void reset() noexcept;
 
-    Mesh& mesh(const AssetId& id);
-    [[nodiscard]] MaterialDesc materialDesc(const AssetId& id) const;
-    Material& material(const AssetId& id);
-    Material& material(const MaterialDesc& desc);
-    std::shared_ptr<Texture> texture(const AssetId& id);
+    GpuMesh& mesh(const Mesh::ID& id);
+    [[nodiscard]] Material::Desc materialDesc(const Material::ID& id) const;
+    GpuMaterial& material(const Material::ID& id);
+    GpuMaterial& material(const Material::Desc& desc);
+    std::shared_ptr<GpuTexture> texture(const Texture::ID& id);
 
 private:
     AssetDescManager* assets = nullptr;
@@ -40,9 +40,9 @@ private:
     DescriptorManager* descriptors = nullptr;
     ShaderManager* shaders = nullptr;
     vk::raii::CommandPool uploadPool = nullptr;
-    std::unordered_map<AssetId, std::unique_ptr<Mesh>> meshes;
-    std::unordered_map<std::string, std::unique_ptr<Material>> materials;
-    std::unordered_map<AssetId, std::shared_ptr<Texture>> textures;
+    std::unordered_map<Mesh::ID, std::unique_ptr<GpuMesh>> meshes;
+    std::unordered_map<std::string, std::unique_ptr<GpuMaterial>> materials;
+    std::unordered_map<Texture::ID, std::shared_ptr<GpuTexture>> textures;
 
     [[nodiscard]] GpuUploadContext uploadContext() const;
 };

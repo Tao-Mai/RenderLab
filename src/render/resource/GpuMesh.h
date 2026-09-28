@@ -9,24 +9,24 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
-class Material;
+class GpuMaterial;
 
 struct Submesh
 {
     uint32_t firstIndex = 0;
     uint32_t indexCount = 0;
-    Material* material = nullptr;
+    GpuMaterial* material = nullptr;
 };
 
-class Mesh
+class GpuMesh
 {
 public:
-    Mesh(GpuUploadContext upload, MeshGeometry geometry, std::vector<Submesh> submeshes);
+    GpuMesh(GpuUploadContext upload, MeshGeometry geometry, std::vector<Submesh> submeshes);
 
-    Mesh(const Mesh&)            = delete;
-    Mesh& operator=(const Mesh&) = delete;
-    Mesh(Mesh&&) noexcept        = default;
-    Mesh& operator=(Mesh&&) noexcept = default;
+    GpuMesh(const GpuMesh&)            = delete;
+    GpuMesh& operator=(const GpuMesh&) = delete;
+    GpuMesh(GpuMesh&&) noexcept        = default;
+    GpuMesh& operator=(GpuMesh&&) noexcept = default;
 
     void bind(vk::raii::CommandBuffer& commandBuffer) const;
     [[nodiscard]] uint32_t indexCount() const;

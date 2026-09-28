@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset/AssetId.h"
+#include "asset/AssetDesc.h"
 
 #include <filesystem>
 
@@ -9,10 +9,16 @@ struct AppPaths
     std::filesystem::path assets;
 };
 
+struct RendererConfig
+{
+    Texture::ID brdfLut;
+};
+
 struct AppConfig
 {
     AppPaths paths;
-    AssetId initialScene;
+    Scene::ID initialScene;
+    RendererConfig renderer;
 };
 
 class ConfigManager
@@ -24,7 +30,8 @@ public:
     void shutdown() noexcept;
 
     [[nodiscard]] const AppPaths& paths() const noexcept;
-    [[nodiscard]] const AssetId& initialScene() const noexcept;
+    [[nodiscard]] const Scene::ID& initialScene() const noexcept;
+    [[nodiscard]] const RendererConfig& rendererConfig() const noexcept;
 
 private:
     bool inited = false;

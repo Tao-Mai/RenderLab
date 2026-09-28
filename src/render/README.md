@@ -25,8 +25,9 @@
 | Descriptor set | Binding | 资源 | 实例持有者 |
 | --- | --- | --- | --- |
 | `0` Scene | `0` | `SceneUniforms` UBO | `FrameContext` |
-| `0` Scene | `1` | 环境贴图 sampled image | `FrameContext` 的 Scene Set，引用场景纹理 |
-| `0` Scene | `2` | 环境贴图 sampler | `FrameContext` 的 Scene Set，引用场景纹理 |
+| `0` Scene | `1` / `2` | Irradiance Cubemap image / sampler | `FrameContext` 的 Scene Set，引用场景纹理 |
+| `0` Scene | `3` / `4` | GGX Prefiltered Cubemap image / sampler | `FrameContext` 的 Scene Set，引用场景纹理 |
+| `0` Scene | `5` / `6` | BRDF LUT image / sampler | `FrameContext` 的 Scene Set，引用 Renderer 启动时加载的纹理 |
 | `1` Material | `0` | Base Color sampled image | `Material` |
 | `1` Material | `1` | Base Color sampler | `Material` |
 | `1` Material | `2` | `MaterialUniforms` UBO | `Material` |
@@ -37,21 +38,21 @@
 
 ## Shader、Descriptor 与 Pipeline
 
-构建阶段由 [`CMakeLists.txt`](../../CMakeLists.txt) 调用 Slang，生成 `.spv` 和同名 `.reflection.json`。`ShaderManager::getOrLoad(id)` 读取 [`ShaderDesc`](../asset/AssetDesc.h) 的 binary 路径及对应反射文件，缓存模块、descriptor binding 元数据，并返回 `ShaderHandle`。多个 `PipelineKey` 可以引用同一个 handle。
+构建阶段由 [`CMakeLists.txt`](../../CMakeLists.txt) 调用 Slang，生成 `.spv` 和同名 `.reflection.json`。`ShaderManager::getOrLoad(id)` 读取 [`Shader::Desc`](../asset/AssetDesc.h) 的 binary 路径及对应反射文件，缓存模块、descriptor binding 元数据，并返回 `ShaderHandle`。多个 `PipelineKey` 可以引用同一个 handle。
 
 `DescriptorManager` 创建 Scene、Material 预设 Layout，并按 binding、类型、数量和 stage flags 缓存其他 Layout。`getOrCreateLayout(shaderMetadata, set)` 可根据反射信息生成特殊 DescriptorSetLayout。当前 `PipelineManager` 只创建上述两种预设 PipelineLayout；使用特殊 Layout 的 Pass 还需要增加对应的 PipelineLayout 与绑定逻辑。
 
 `PipelineKey` 由 ShaderHandle、PipelineLayout 预设、顶点布局、拓扑、光栅化/深度/混合/MSAA 状态，以及颜色和深度 attachment 格式组成。`PipelineManager::getOrCreate` 命中缓存时复用 Pipeline；首次创建时检查 Shader 反射的 set/binding/type 是否在所选预设 Layout 中。Pipeline 不随 frame 或 scene 重建。当前图形 Pipeline 使用 Shader 的 `vertMain` 和 `fragMain` 入口。
 
-Material 可通过 `MaterialDesc::shaderId` 选择 Shader；未指定时使用 `scene`。Material 根据 alpha mode 选择 Opaque、AlphaTest 或 Transparent 状态，持有自己的 UBO 和 DescriptorSet。透明物体在 Scene Pass 中按距离从远到近绘制。
+Material 可通过 `Material::Desc::shaderId` 选择 Shader；未指定时使用 `scene`。`GpuMaterial` 根据 alpha mode 选择 Opaque、AlphaTest 或 Transparent 状态，持有自己的 UBO 和 DescriptorSet。透明物体在 Scene Pass 中按距离从远到近绘制。
 
 ## 初始化与加载场景
 
-`Renderer::init()` 依次初始化 `VulkanContext`、`Swapchain`、`ShaderManager`、`DescriptorManager`、`PipelineManager`、各 `FrameContext`、`RenderResourceManager` 和 Pass。初始化阶段加载场景、灯光及拾取 Shader，并创建对应的基础 Pipeline。
+`Renderer::init()` 依次初始化 `VulkanContext`、`Swapchain`、`ShaderManager`、`DescriptorManager`、`PipelineManager`、各 `FrameContext`、`RenderResourceManager` 和 Pass。初始化阶段从 `config/config.json` 的 `Renderer.BrdfLut` 加载线性 2D LUT 纹理，再加载场景、灯光及拾取 Shader，并创建对应的基础 Pipeline。
 
-`Renderer::loadScene(scene)` 等待当前 GPU 工作结束，然后由 `GpuScene` 建立场景对象与渲染项的引用。`RenderResourceManager` 按需加载网格、纹理和材质，上传 Buffer/Image，并为 Material 分配 DescriptorSet；随后 Scene Pass 将环境贴图写入每个 FrameContext 的 Scene Set。具体材质组合的 Pipeline 在首次绘制时按 `PipelineKey` 创建，之后复用。
+`Renderer::loadScene(scene)` 等待当前 GPU 工作结束，然后由 `GpuScene` 建立场景对象与渲染项的引用。`RenderResourceManager` 按需加载网格、纹理和材质，上传 Buffer/Image，并为 Material 分配 DescriptorSet；随后 Scene Pass 将环境贴图的 irradiance、prefiltered specular 和全局 BRDF LUT 写入每个 FrameContext 的 Scene Set。具体材质组合的 Pipeline 在首次绘制时按 `PipelineKey` 创建，之后复用。
 
-当前资产缓存跨场景加载保留，到 `Renderer::shutdown()` 才统一释放。`GpuScene` 持有渲染项和场景对象引用，不拥有 Mesh/Texture/Material 的 GPU 存储。
+当前资产缓存跨场景加载保留，到 `Renderer::shutdown()` 才统一释放。`GpuScene` 持有渲染项和场景对象引用，不拥有 `GpuMesh`、`GpuTexture`、`GpuMaterial` 的 GPU 存储。
 
 ## 每帧流程
 

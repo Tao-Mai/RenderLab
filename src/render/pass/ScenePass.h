@@ -16,13 +16,11 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class LightMarkers;
-class Mesh;
+class GpuMesh;
 class RenderResourceManager;
 class Swapchain;
-class Texture;
+class GpuTexture;
 class VulkanContext;
-struct SceneDesc;
-struct SceneObjectDesc;
 
 class ScenePass
 {
@@ -38,15 +36,15 @@ public:
         std::array<FrameContext, maxFramesInFlight>& frames,
         PipelineManager& pipelines,
         RenderResourceManager& resources, ShaderHandle sceneShader,
-        ShaderHandle lightShader);
+        ShaderHandle lightShader, std::shared_ptr<GpuTexture> brdfLut);
     void reset() noexcept;
     void refreshPipelines();
-    void bindEnvironment(const SceneDesc& scene);
+    void bindSceneTextures(const Scene::Desc& scene);
     void updateScene(
         uint32_t frameIndex,
         const glm::mat4& viewProjection,
         const glm::vec3& cameraPosition,
-        const SceneObjectDesc* lightObject);
+        const Scene::Desc::Object* lightObject);
     void record(
         vk::raii::CommandBuffer&            commandBuffer,
         const std::vector<SceneRenderItem>& renderItems,
@@ -69,7 +67,10 @@ private:
     vk::Pipeline                                           scenePipeline;
     vk::Pipeline                                           lightMarkerPipeline;
     vk::PipelineLayout                                     pipelineLayout;
-    std::shared_ptr<Texture>                              environmentTexture;
+    std::shared_ptr<GpuTexture>                              irradianceTexture;
+    std::shared_ptr<GpuTexture>                              prefilteredSpecularTexture;
+    std::shared_ptr<GpuTexture>                              brdfLutTexture;
+    float                                                 prefilteredSpecularMaxLod = 0.0f;
 
     void bindSceneDescriptor(
         vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex) const;

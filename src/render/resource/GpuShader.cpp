@@ -1,11 +1,11 @@
-#include "render/resource/Shader.h"
+#include "render/resource/GpuShader.h"
 
 #include "render/device/VkCheck.h"
 
 #include <fstream>
 #include "core/Logger.h"
 
-Shader::Shader(const vk::raii::Device &device, const std::string &filename)
+GpuShader::GpuShader(const vk::raii::Device &device, const std::string &filename)
 {
     const std::vector<uint32_t> code = readSpirv(filename);
     const vk::ShaderModuleCreateInfo createInfo{
@@ -15,12 +15,12 @@ Shader::Shader(const vk::raii::Device &device, const std::string &filename)
     module = vkCheck(device.createShaderModule(createInfo));
 }
 
-vk::ShaderModule Shader::handle() const
+vk::ShaderModule GpuShader::handle() const
 {
     return *module;
 }
 
-std::vector<uint32_t> Shader::readSpirv(const std::string &filename)
+std::vector<uint32_t> GpuShader::readSpirv(const std::string &filename)
 {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
     CHECK(file.is_open(), "failed to open shader: {}", filename);

@@ -3,6 +3,7 @@
 #include "asset/AssetDesc.h"
 #include "asset/AssetDescManager.h"
 #include "Camera.h"
+#include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "editor/Editor.h"
@@ -12,6 +13,7 @@
 #include "core/Window.h"
 
 #include <iostream>
+#include <utility>
 
 #include <glm/glm.hpp>
 
@@ -36,13 +38,13 @@ EditorFrameResult Renderer::render(const Camera& camera, const EditorFrameInput&
     return drawFrame(camera, editor);
 }
 
-void Renderer::loadScene(SceneDesc& targetScene)
+void Renderer::loadScene(Scene::Desc& targetScene)
 {
     CHECK(inited, "Renderer must be initialized before loading a scene");
 
     waitIdle();
     scene.load(targetScene, resources);
-    scenePass.bindEnvironment(targetScene);
+    scenePass.bindSceneTextures(targetScene);
 }
 
 void Renderer::waitIdle()
@@ -101,6 +103,7 @@ void Renderer::initVulkan()
 {
     CHECK(context().window != nullptr, "Window must exist before Renderer");
     CHECK(context().assetDescManager != nullptr, "AssetDescManager must exist before Renderer");
+    CHECK(context().config != nullptr, "ConfigManager must exist before Renderer");
 
     Window& window = *context().window;
     vulkan.init(window);
@@ -114,13 +117,25 @@ void Renderer::initVulkan()
     }
     swapchain.transitionDepthImageLayout(frames[0].commandPoolHandle());
     resources.init(vulkan, descriptors, shaders);
+
+    const Texture::ID& brdfLutId = context().config->rendererConfig().brdfLut;
+    const Texture::Desc& brdfLutDesc =
+        context().assetDescManager->desc<Texture>(brdfLutId);
+    CHECK(brdfLutDesc.layout == ImageLayout::Image2D &&
+          brdfLutDesc.colorSpace == ColorSpace::Linear &&
+          brdfLutDesc.format != ImageFormat::R8,
+          "renderer BRDF LUT '{}' requires a linear 2D texture with at least two channels",
+          brdfLutId);
+    std::shared_ptr<GpuTexture> brdfLut = resources.texture(brdfLutId);
+
     scenePass.init(vulkan,
                    swapchain,
                    frames,
                    pipelines,
                    resources,
                    shaders.getOrLoad("scene"),
-                   shaders.getOrLoad("light"));
+                   shaders.getOrLoad("light"),
+                   std::move(brdfLut));
     pickingPass.init(vulkan.physicalDeviceHandle(),
                      vulkan.deviceHandle(),
                      swapchain,

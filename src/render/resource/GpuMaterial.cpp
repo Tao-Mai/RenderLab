@@ -1,4 +1,4 @@
-#include "render/resource/Material.h"
+#include "render/resource/GpuMaterial.h"
 
 #include "render/DescriptorManager.h"
 #include "render/resource/ShaderData.h"
@@ -7,13 +7,13 @@
 #include <array>
 #include <utility>
 
-void Material::create(
+void GpuMaterial::create(
     const vk::raii::PhysicalDevice& physicalDevice,
     const vk::raii::Device&         device,
     DescriptorManager&              descriptors,
     ShaderHandle                     targetShader,
-    const MaterialDesc&             material,
-    std::shared_ptr<Texture>        texture)
+    const Material::Desc&             material,
+    std::shared_ptr<GpuTexture>        texture)
 {
     shaderHandle = targetShader;
     const std::string alphaMode = material.alphaMode.value_or("OPAQUE");
@@ -94,12 +94,12 @@ void Material::create(
     device.updateDescriptorSets(writes, {});
 }
 
-vk::DescriptorSet Material::descriptorSetHandle() const
+vk::DescriptorSet GpuMaterial::descriptorSetHandle() const
 {
     return *descriptorSet;
 }
 
-PipelineKey Material::pipelineKey(vk::Format colorFormat, vk::Format depthFormat) const
+PipelineKey GpuMaterial::pipelineKey(vk::Format colorFormat, vk::Format depthFormat) const
 {
     return {
         .shader = shaderHandle,
@@ -110,7 +110,7 @@ PipelineKey Material::pipelineKey(vk::Format colorFormat, vk::Format depthFormat
     };
 }
 
-RenderMode Material::renderMode() const
+RenderMode GpuMaterial::renderMode() const
 {
     return mode;
 }

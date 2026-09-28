@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/resource/Mesh.h"
+#include "render/resource/GpuMesh.h"
 #include "ecs/Light.h"
 
 #include <cstdint>
@@ -34,16 +34,16 @@ public:
 private:
     struct Part
     {
-        Mesh* mesh;
+        GpuMesh* mesh;
         glm::mat4 model;
         glm::vec3 color;
         uint32_t firstIndex;
         uint32_t indexCount;
     };
 
-    Mesh* sphere = nullptr;
-    Mesh* cube = nullptr;
-    Mesh* arrow = nullptr;
+    GpuMesh* sphere = nullptr;
+    GpuMesh* cube = nullptr;
+    GpuMesh* arrow = nullptr;
 
     [[nodiscard]] std::vector<Part> parts(
         const ecs::Transform& transform, const ecs::Light& light) const;

@@ -8,15 +8,15 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
-class Texture
+class GpuTexture
 {
 public:
-    Texture(
-        GpuUploadContext upload, const TextureDesc& desc,
+    GpuTexture(
+        GpuUploadContext upload, const Texture::Desc& desc,
         std::span<const uint8_t> bytes);
 
-    Texture(const Texture&)            = delete;
-    Texture& operator=(const Texture&) = delete;
+    GpuTexture(const GpuTexture&)            = delete;
+    GpuTexture& operator=(const GpuTexture&) = delete;
 
     [[nodiscard]] vk::ImageView imageView() const;
     [[nodiscard]] vk::Sampler   sampler() const;
@@ -29,10 +29,7 @@ private:
 
     void create(
         GpuUploadContext upload,
-        const void* pixels,
-        uint32_t width,
-        uint32_t height,
-        vk::Format format,
-        uint32_t bytesPerPixel,
-        ImageLayout layout);
+        std::span<const uint8_t> bytes,
+        const Texture::Desc& desc,
+        vk::Format format);
 };

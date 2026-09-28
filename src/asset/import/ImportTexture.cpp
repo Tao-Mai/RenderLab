@@ -18,23 +18,23 @@
 
 #include <glm/gtc/packing.hpp>
 
-AssetId AssetImporter::saveTexture(
-    TextureDesc                  desc,
+Texture::ID AssetImporter::saveTexture(
+    Texture::Desc                  desc,
     const std::filesystem::path& source,
     std::span<const uint8_t>     bytes)
 {
     desc.path   = asset_import::sourceRelativeToAssets(source).generic_string();
     desc.binary = context().assetDataManager->writeTexture(desc, bytes);
-    return context().assetDescManager->save(std::move(desc));
+    return context().assetDescManager->save<Texture>(std::move(desc));
 }
 
-AssetId AssetImporter::importTexture(
+Texture::ID AssetImporter::importTexture(
     const std::filesystem::path& source, std::optional<ColorSpace> colorSpace)
 {
     LoadedImage image = loadImage(source);
 
-    TextureDesc desc{};
-    desc.id         = asset_import::nextId<TextureDesc>(source);
+    Texture::Desc desc{};
+    desc.id         = asset_import::nextId<Texture>(source);
     desc.source     = Source::File;
     desc.format     = image.format;
     desc.colorSpace = colorSpace.value_or(defaultColorSpace(image.fileFormat));
@@ -42,9 +42,10 @@ AssetId AssetImporter::importTexture(
           ? desc.colorSpace == ColorSpace::Linear : true,
           "floating-point textures require linear color space: {}",
           source.string());
-    desc.layout = ImageLayout::Image2D;
-    desc.width  = image.width;
-    desc.height = image.height;
+    desc.layout    = ImageLayout::Image2D;
+    desc.width     = image.width;
+    desc.height    = image.height;
+    desc.mipLevels = 1;
 
     std::vector<uint8_t> bytes;
     if (auto* rgba8 = std::get_if<std::vector<uint8_t>>(&image.pixels))

@@ -1,6 +1,7 @@
 #include "asset/AssetDataManager.h"
 
 #include "asset/BuiltinAssets.h"
+#include "asset/TextureMip.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -17,7 +18,7 @@ constexpr uint32_t geometryMagic   = 0x4853454du;
 constexpr uint32_t geometryVersion = 1;
 
 constexpr uint32_t textureMagic   = 0x58455452u; // RTEX
-constexpr uint32_t textureVersion = 1;
+constexpr uint32_t textureVersion = 2;
 
 struct GeometryHeader
 {
@@ -38,17 +39,20 @@ struct TextureHeader
     uint32_t format;
     uint32_t width;
     uint32_t height;
+    uint32_t mipLevels;
     uint32_t layerCount;
     uint32_t payloadBytes;
 };
 
-static_assert(sizeof(TextureHeader) == 8 * sizeof(uint32_t));
+static_assert(sizeof(TextureHeader) == 9 * sizeof(uint32_t));
 static_assert(std::is_trivially_copyable_v<TextureHeader>);
 
-void validateId(const AssetId& id)
+template <class T>
+void validateId(const AssetID<T>& id)
 {
-    CHECK(!id.empty() && std::filesystem::path{id}.filename() == std::filesystem::path{id} &&
-          id != "." && id != "..",
+    CHECK(!id.empty() &&
+          std::filesystem::path{id.value}.filename() == std::filesystem::path{id.value} &&
+          id.value != "." && id.value != "..",
           "invalid asset data id: {}",
           id);
 }
@@ -67,7 +71,7 @@ void validateId(const AssetId& id)
 }
 
 void validateTexture(
-    const TextureDesc&           desc, std::span<const uint8_t> bytes,
+    const Texture::Desc&           desc, std::span<const uint8_t> bytes,
     const std::filesystem::path& file)
 {
     CHECK(desc.width > 0 && desc.height > 0,
@@ -76,16 +80,23 @@ void validateTexture(
     CHECK(desc.layout != ImageLayout::Cubemap || desc.width == desc.height,
           "cubemap faces must be square: {}",
           file.string());
+    CHECK(desc.mipLevels > 0 &&
+          desc.mipLevels <= texture_mip::maxLevels(desc.width, desc.height),
+          "invalid texture mip level count: {}",
+          file.string());
 
     const uint64_t maxPayload = std::numeric_limits<uint32_t>::max();
     const uint32_t pixelBytes = AssetDataManager::bytesPerPixel(desc.format);
-
     CHECK(desc.width <= maxPayload / desc.height / layerCount(desc.layout) / pixelBytes,
           "texture payload is too large: {}",
           file.string());
 
-    const uint64_t expected = static_cast<uint64_t>(desc.width) * desc.height *
-        layerCount(desc.layout) * pixelBytes;
+    const uint64_t expected = texture_mip::totalBytes(
+        desc.width, desc.height, layerCount(desc.layout), pixelBytes, desc.mipLevels);
+
+    CHECK(expected <= maxPayload,
+          "texture payload is too large: {}",
+          file.string());
 
     CHECK(expected == bytes.size(),
           "invalid texture payload size: {}",
@@ -138,11 +149,11 @@ uint32_t AssetDataManager::bytesPerPixel(ImageFormat format)
 }
 
 std::filesystem::path AssetDataManager::writeGeometry(
-    const AssetId& id, const MeshGeometry& mesh) const
+    const Mesh::ID& id, const MeshGeometry& mesh) const
 {
     validateId(id);
 
-    const auto relative = std::filesystem::path{"binary/geometry"} / (id + ".bin");
+    const auto relative = std::filesystem::path{"binary/geometry"} / (id.value + ".bin");
     const auto file     = resolve(relative);
     CHECK(!mesh.vertices.empty() && !mesh.indices.empty(),
           "imported mesh has no geometry: {}",
@@ -191,7 +202,7 @@ std::filesystem::path AssetDataManager::writeGeometry(
     return relative;
 }
 
-MeshGeometry AssetDataManager::readGeometry(const MeshDesc& desc) const
+MeshGeometry AssetDataManager::readGeometry(const Mesh::Desc& desc) const
 {
     if (desc.source == Source::Builtin)
     {
@@ -246,11 +257,12 @@ MeshGeometry AssetDataManager::readGeometry(const MeshDesc& desc) const
 }
 
 std::filesystem::path AssetDataManager::writeTexture(
-    const TextureDesc& desc, std::span<const uint8_t> bytes) const
+    const Texture::Desc& desc, std::span<const uint8_t> bytes) const
 {
     validateId(desc.id);
 
-    const auto relative = std::filesystem::path{"binary/texture"} / (desc.id + ".bin");
+    const auto relative = std::filesystem::path{"binary/texture"} /
+        (desc.id.value + ".bin");
     const auto file     = resolve(relative);
     validateTexture(desc, bytes, file);
 
@@ -268,6 +280,7 @@ std::filesystem::path AssetDataManager::writeTexture(
         .format = static_cast<uint32_t>(desc.format),
         .width = desc.width,
         .height = desc.height,
+        .mipLevels = desc.mipLevels,
         .layerCount = layerCount(desc.layout),
         .payloadBytes = static_cast<uint32_t>(bytes.size()),
     };
@@ -290,13 +303,13 @@ std::filesystem::path AssetDataManager::writeTexture(
     return relative;
 }
 
-std::vector<uint8_t> AssetDataManager::readTexture(const TextureDesc& desc) const
+std::vector<uint8_t> AssetDataManager::readTexture(const Texture::Desc& desc) const
 {
     if (desc.source == Source::Builtin)
     {
         const std::vector<uint8_t>* bytes = BuiltinAssets::textureData(desc.id);
         CHECK(bytes != nullptr, "unknown builtin texture: {}", desc.id);
-        validateTexture(desc, *bytes, desc.id);
+        validateTexture(desc, *bytes, desc.id.value);
         return *bytes;
     }
 
@@ -317,6 +330,7 @@ std::vector<uint8_t> AssetDataManager::readTexture(const TextureDesc& desc) cons
     CHECK(header.layout == static_cast<uint32_t>(desc.layout) &&
           header.format == static_cast<uint32_t>(desc.format) &&
           header.width == desc.width && header.height == desc.height &&
+          header.mipLevels == desc.mipLevels &&
           header.layerCount == layerCount(desc.layout),
           "texture binary metadata disagrees with descriptor: {}",
           file.string());

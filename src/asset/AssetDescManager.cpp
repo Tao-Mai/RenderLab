@@ -2,9 +2,10 @@
 
 namespace
 {
-template <class T>
+template <AssetType T>
 void loadDescDirectory(
-    const std::filesystem::path& directory, std::unordered_map<AssetId, T>& out)
+    const std::filesystem::path& directory,
+    std::unordered_map<typename T::ID, typename T::Desc>& out)
 {
     if (!std::filesystem::exists(directory))
     {
@@ -16,11 +17,12 @@ void loadDescDirectory(
         {
             continue;
         }
-        T desc = asset_json::load<T>(entry.path());
+        typename T::Desc desc = asset_json::load<typename T::Desc>(entry.path());
         CHECK(!desc.id.empty(), "descriptor has empty id: {}", entry.path().string());
-        CHECK(out.emplace(desc.id, desc).second,
+        const typename T::ID id = desc.id;
+        CHECK(out.emplace(id, std::move(desc)).second,
               "duplicate asset ID: {}",
-              desc.id);
+              id);
     }
 }
 }
@@ -46,11 +48,10 @@ void AssetDescManager::loadAll()
 {
     clear();
     AssetTypes::forEach(
-        [&]<class Entry>
+        [&]<AssetType T>
         {
-            using T = typename Entry::type;
-            loadDescDirectory(
-                descriptorRoot() / Entry::dir,
+            loadDescDirectory<T>(
+                descriptorRoot() / T::dir,
                 descMap<T>());
         });
 }

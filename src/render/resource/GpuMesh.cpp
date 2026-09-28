@@ -1,4 +1,4 @@
-#include "render/resource/Mesh.h"
+#include "render/resource/GpuMesh.h"
 
 #include "render/device/VkCheck.h"
 
@@ -6,7 +6,7 @@
 #include <utility>
 #include "core/Logger.h"
 
-Mesh::Mesh(GpuUploadContext upload, MeshGeometry geometry, std::vector<Submesh> submeshes) :
+GpuMesh::GpuMesh(GpuUploadContext upload, MeshGeometry geometry, std::vector<Submesh> submeshes) :
     indexTotal(static_cast<uint32_t>(geometry.indices.size())),
     parts(std::move(submeshes))
 {
@@ -55,7 +55,7 @@ Mesh::Mesh(GpuUploadContext upload, MeshGeometry geometry, std::vector<Submesh> 
     copyBuffer(device, commandPool, queue, indexStaging, indexBuffer);
 }
 
-void Mesh::bind(vk::raii::CommandBuffer& commandBuffer) const
+void GpuMesh::bind(vk::raii::CommandBuffer& commandBuffer) const
 {
     const std::array<vk::Buffer, 1> vertexBuffers{vertexBuffer.handle()};
     const std::array<vk::DeviceSize, 1> vertexOffsets{0};
@@ -63,17 +63,17 @@ void Mesh::bind(vk::raii::CommandBuffer& commandBuffer) const
     commandBuffer.bindIndexBuffer(indexBuffer.handle(), 0, vk::IndexType::eUint32);
 }
 
-uint32_t Mesh::indexCount() const
+uint32_t GpuMesh::indexCount() const
 {
     return indexTotal;
 }
 
-const std::vector<Submesh>& Mesh::submeshes() const
+const std::vector<Submesh>& GpuMesh::submeshes() const
 {
     return parts;
 }
 
-void Mesh::copyBuffer(
+void GpuMesh::copyBuffer(
     const vk::raii::Device& device,
     const vk::raii::CommandPool& commandPool,
     vk::raii::Queue& queue,

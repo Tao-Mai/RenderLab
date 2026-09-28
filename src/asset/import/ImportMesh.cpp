@@ -33,12 +33,12 @@ namespace
 struct GltfBuild
 {
     MeshGeometry                                          geometry;
-    std::vector<SubmeshDesc>                              submeshes;
-    std::vector<AssetId>                                  materialIds;
-    std::map<std::pair<std::string, ColorSpace>, AssetId> textureCache;
+    std::vector<Mesh::Desc::Submesh>                       submeshes;
+    std::vector<Material::ID>                              materialIds;
+    std::map<std::pair<std::string, ColorSpace>, Texture::ID> textureCache;
 };
 
-[[nodiscard]] std::optional<AssetId> textureIdFor(
+[[nodiscard]] std::optional<Texture::ID> textureIdFor(
     GltfBuild&                   build,
     const tinygltf::Model&       model,
     int                          textureIndex,
@@ -81,7 +81,7 @@ struct GltfBuild
           sourcePath);
     (void)asset_import::sourceRelativeToAssets(sourcePath);
 
-    const AssetId id = AssetImporter::importTexture(
+    const Texture::ID id = AssetImporter::importTexture(
         std::filesystem::absolute(sourcePath),
         colorSpace);
     build.textureCache.emplace(key, id);
@@ -94,17 +94,17 @@ void registerMaterials(
     const std::filesystem::path& modelDirectory,
     const std::filesystem::path& meshSource)
 {
-    MaterialDesc defaultMaterial;
-    defaultMaterial.id               = asset_import::nextId<MaterialDesc>(meshSource);
+    Material::Desc defaultMaterial;
+    defaultMaterial.id               = asset_import::nextId<Material>(meshSource);
     defaultMaterial.baseColorTexture = BuiltinAssets::Texture::white;
     build.materialIds.push_back(
-        context().assetDescManager->save(std::move(defaultMaterial)));
+        context().assetDescManager->save<Material>(std::move(defaultMaterial)));
 
     for (size_t index = 0; index < model.materials.size(); ++index)
     {
         const tinygltf::Material& source = model.materials[index];
-        MaterialDesc              material;
-        material.id = asset_import::nextId<MaterialDesc>(meshSource);
+        Material::Desc              material;
+        material.id = asset_import::nextId<Material>(meshSource);
 
         const auto& pbr = source.pbrMetallicRoughness;
         if (pbr.baseColorFactor.size() == 4)
@@ -164,7 +164,7 @@ void registerMaterials(
         material.alphaCutoff = static_cast<float>(source.alphaCutoff);
         material.doubleSided = source.doubleSided;
         build.materialIds.push_back(
-            context().assetDescManager->save(std::move(material)));
+            context().assetDescManager->save<Material>(std::move(material)));
     }
 }
 
@@ -385,7 +385,7 @@ void appendMesh(
 }
 }
 
-AssetId AssetImporter::importMesh(const std::filesystem::path& path)
+Mesh::ID AssetImporter::importMesh(const std::filesystem::path& path)
 {
     tinygltf::TinyGLTF loader;
     tinygltf::Model    model;
@@ -408,7 +408,7 @@ AssetId AssetImporter::importMesh(const std::filesystem::path& path)
     }
     CHECK(loaded, "failed to load glTF '{}': {}", path.string(), error);
 
-    const AssetId meshId = asset_import::nextId<MeshDesc>(path);
+    const Mesh::ID meshId = asset_import::nextId<Mesh>(path);
     GltfBuild     build;
     registerMaterials(build, model, path.parent_path(), path);
 
@@ -447,10 +447,10 @@ AssetId AssetImporter::importMesh(const std::filesystem::path& path)
           "glTF contains no triangle mesh data: {}",
           path.string());
 
-    MeshDesc mesh;
+    Mesh::Desc mesh;
     mesh.id        = meshId;
     mesh.source    = Source::File;
     mesh.geometry  = context().assetDataManager->writeGeometry(meshId, build.geometry);
     mesh.submeshes = std::move(build.submeshes);
-    return context().assetDescManager->save(std::move(mesh));
+    return context().assetDescManager->save<Mesh>(std::move(mesh));
 }

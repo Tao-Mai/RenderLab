@@ -30,7 +30,7 @@ public:
 
 private:
     EditorUI ui;
-    SceneObjectDesc* selectedObject = nullptr;
+    Scene::Desc::Object* selectedObject = nullptr;
     bool dirty = false;
 
     void saveScene();

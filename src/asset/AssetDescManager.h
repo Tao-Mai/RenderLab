@@ -20,16 +20,16 @@ public:
     void init();
     void shutdown() noexcept;
 
-    template <class T>
-    [[nodiscard]] const T& desc(const AssetId& id) const
+    template <AssetType T>
+    [[nodiscard]] const typename T::Desc& desc(const typename T::ID& id) const
     {
-        const T* found = findDesc<T>(id);
+        const typename T::Desc* found = findDesc<T>(id);
         CHECK(found != nullptr, "descriptor not loaded: {}", id);
         return *found;
     }
 
-    template <class T>
-    [[nodiscard]] const T* findDesc(const AssetId& id) const
+    template <AssetType T>
+    [[nodiscard]] const typename T::Desc* findDesc(const typename T::ID& id) const
     {
         auto& table = descMap<T>();
         if (const auto found = table.find(id); found != table.end())
@@ -37,7 +37,7 @@ public:
             return &found->second;
         }
 
-        if (const T* builtin = BuiltinAssets::makeDesc<T>(id))
+        if (const typename T::Desc* builtin = BuiltinAssets::makeDesc<T>(id))
         {
             return builtin;
         }
@@ -45,21 +45,21 @@ public:
         return nullptr;
     }
 
-    template <class T>
-    AssetId save(T desc)
+    template <AssetType T>
+    typename T::ID save(typename T::Desc desc)
     {
         CHECK(!desc.id.empty(), "descriptor has empty id");
         const auto file =
-            descriptorRoot() / AssetTypes::dir<T>() / (desc.id + ".json");
+            descriptorRoot() / T::dir / (desc.id.value + ".json");
         asset_json::save(file, desc);
-        const AssetId id = desc.id;
+        const typename T::ID id = desc.id;
         descMap<T>().insert_or_assign(id, std::move(desc));
         return id;
     }
 
 private:
-    template <class T>
-    using DescMap = std::unordered_map<AssetId, T>; // rehash 不会改变元素地址
+    template <AssetType T>
+    using DescMap = std::unordered_map<typename T::ID, typename T::Desc>;
 
     using DescMaps = AssetTypes::wrapTypes<DescMap>;
 
@@ -70,7 +70,7 @@ private:
     void                             clear();
     static std::filesystem::path     descriptorRoot();
 
-    template <class T>
+    template <AssetType T>
     [[nodiscard]] DescMap<T>& descMap() const
     {
         return std::get<DescMap<T>>(assetDescs);

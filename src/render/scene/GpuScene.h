@@ -1,44 +1,43 @@
 #pragma once
 
+#include "asset/AssetDesc.h"
 #include "render/pass/LightMarkers.h"
-#include "render/resource/Mesh.h"
+#include "render/resource/GpuMesh.h"
 
 #include <cstdint>
 #include <vector>
 
 class RenderResourceManager;
-struct SceneDesc;
-struct SceneObjectDesc;
 
 struct SceneRenderItem
 {
-    Mesh*            mesh        = nullptr;
-    SceneObjectDesc* object      = nullptr;
-    uint32_t         selectionId = 0;
+    GpuMesh*              mesh        = nullptr;
+    Scene::Desc::Object*  object      = nullptr;
+    uint32_t              selectionId = 0;
 };
 
 struct LightRenderItem
 {
-    SceneObjectDesc* object      = nullptr;
-    uint32_t         selectionId = 0;
+    Scene::Desc::Object* object      = nullptr;
+    uint32_t             selectionId = 0;
 };
 
 class GpuScene
 {
 public:
-    void load(SceneDesc& scene, RenderResourceManager& resources);
+    void load(Scene::Desc& scene, RenderResourceManager& resources);
     void reset() noexcept;
 
     [[nodiscard]] const std::vector<SceneRenderItem>& renderItems() const;
     [[nodiscard]] const std::vector<LightRenderItem>& lightRenderItems() const;
     [[nodiscard]] const LightMarkers&                 lightMarkers() const;
-    [[nodiscard]] SceneObjectDesc*                    primaryLightObject() const;
+    [[nodiscard]] Scene::Desc::Object* primaryLightObject() const;
 
-    [[nodiscard]] SceneObjectDesc* findObject(uint32_t selectionId) const;
+    [[nodiscard]] Scene::Desc::Object* findObject(uint32_t selectionId) const;
 
 private:
     std::vector<SceneRenderItem> items;
     std::vector<LightRenderItem> lights;
     LightMarkers markers;
-    SceneObjectDesc* primaryLight = nullptr;
+    Scene::Desc::Object* primaryLight = nullptr;
 };

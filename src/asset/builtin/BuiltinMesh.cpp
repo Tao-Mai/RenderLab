@@ -249,9 +249,9 @@ constexpr uint32_t kArrowIndexCount = 48;
     return mesh;
 }
 
-[[nodiscard]] MeshDesc makeMeshDesc(const AssetId& id, uint32_t indices)
+[[nodiscard]] ::Mesh::Desc makeMeshDesc(const ::Mesh::ID& id, uint32_t indices)
 {
-    MeshDesc desc{};
+    ::Mesh::Desc desc{};
     desc.id     = id;
     desc.source = Source::Builtin;
     desc.submeshes.push_back({
@@ -263,16 +263,16 @@ constexpr uint32_t kArrowIndexCount = 48;
 }
 }
 
-const MeshDesc* BuiltinAssets::meshDesc(const AssetId& id)
+const ::Mesh::Desc* BuiltinAssets::meshDesc(const ::Mesh::ID& id)
 {
-    static const MeshDesc descs[] = {
+    static const ::Mesh::Desc descs[] = {
         makeMeshDesc(Mesh::cube, kCubeIndexCount),
         makeMeshDesc(Mesh::sphere, kSphereIndexCount),
         makeMeshDesc(Mesh::plane, kPlaneIndexCount),
         makeMeshDesc(Mesh::arrow, kArrowIndexCount),
     };
 
-    for (const MeshDesc& desc : descs)
+    for (const ::Mesh::Desc& desc : descs)
     {
         if (desc.id == id)
         {
@@ -282,11 +282,11 @@ const MeshDesc* BuiltinAssets::meshDesc(const AssetId& id)
     return nullptr;
 }
 
-const MeshGeometry* BuiltinAssets::meshGeometry(const AssetId& id)
+const MeshGeometry* BuiltinAssets::meshGeometry(const ::Mesh::ID& id)
 {
     struct Entry
     {
-        AssetId      id;
+        ::Mesh::ID     id;
         MeshGeometry geometry;
     };
 

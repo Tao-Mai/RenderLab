@@ -58,9 +58,14 @@ const AppPaths& ConfigManager::paths() const noexcept
     return data.paths;
 }
 
-const AssetId& ConfigManager::initialScene() const noexcept
+const Scene::ID& ConfigManager::initialScene() const noexcept
 {
     return data.initialScene;
+}
+
+const RendererConfig& ConfigManager::rendererConfig() const noexcept
+{
+    return data.renderer;
 }
 
 void ConfigManager::save() const
@@ -76,7 +81,7 @@ void ConfigManager::applyDefaults()
     {
         data.paths.assets = "../assets";
     }
-    if (data.initialScene == kInvalidAssetId)
+    if (data.initialScene.empty())
     {
         data.initialScene = "default";
     }
@@ -87,6 +92,7 @@ void ConfigManager::load()
     if (!std::filesystem::exists(file))
     {
         applyDefaults();
+        data.renderer.brdfLut = "lut_ggx";
         resolvePaths();
         save();
         return;
@@ -94,8 +100,10 @@ void ConfigManager::load()
 
     data = asset_json::load<AppConfig>(file);
     applyDefaults();
-    CHECK(data.initialScene != kInvalidAssetId,
+    CHECK(!data.initialScene.empty(),
         "config '{}' missing initialScene", file.string());
+    CHECK(!data.renderer.brdfLut.empty(),
+          "config '{}' missing renderer.brdfLut", file.string());
     resolvePaths();
 }
 

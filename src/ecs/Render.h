@@ -1,6 +1,5 @@
 #pragma once
 
-#include "asset/AssetId.h"
 #include "asset/AssetDesc.h"
 #include "core/Reflect.h"
 #include "ecs/Component.h"
@@ -11,8 +10,8 @@ namespace ecs
 {
 struct Render
 {
-    AssetId meshId;
-    std::unordered_map<int, MaterialDesc> materialOverrides;
+    Mesh::ID meshId;
+    std::unordered_map<int, Material::Desc> materialOverrides;
 };
 
 static_assert(Component<Render>);

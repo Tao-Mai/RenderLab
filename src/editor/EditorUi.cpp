@@ -246,7 +246,7 @@ bool EditorUI::drawGizmo(
     return false;
 }
 
-bool EditorUI::drawInspector(SceneObjectDesc *object, std::string_view sceneName, bool dirty)
+bool EditorUI::drawInspector(Scene::Desc::Object* object, std::string_view sceneName, bool dirty)
 {
     ImGui::SetNextWindowDockID(editorDockId, ImGuiCond_Always);
     constexpr ImGuiWindowFlags editorFlags = ImGuiWindowFlags_NoMove |
