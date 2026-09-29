@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset/AssetDesc.h"
+#include "asset/Asset.h"
 #include "render/device/GpuUploadContext.h"
 
 #include <cstdint>
@@ -19,13 +19,11 @@ public:
     GpuTexture& operator=(const GpuTexture&) = delete;
 
     [[nodiscard]] vk::ImageView imageView() const;
-    [[nodiscard]] vk::Sampler   sampler() const;
 
 private:
     vk::raii::DeviceMemory imageMemory  = nullptr;
     vk::raii::Image        image        = nullptr;
     vk::raii::ImageView    view         = nullptr;
-    vk::raii::Sampler      imageSampler = nullptr;
 
     void create(
         GpuUploadContext upload,

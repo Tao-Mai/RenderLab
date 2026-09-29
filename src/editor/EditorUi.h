@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset/AssetDesc.h"
+#include "asset/Asset.h"
 #include "editor/ViewportRect.h"
 
 #include <cstdint>

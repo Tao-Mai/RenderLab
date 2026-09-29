@@ -11,7 +11,7 @@
 | [`ShaderManager`](ShaderManager.h) | 按资产 ID 加载 SPIR-V 和反射信息，缓存 `VkShaderModule`，返回 `ShaderHandle` | 设备级 |
 | [`DescriptorManager`](DescriptorManager.h) | 预设及缓存的 DescriptorSetLayout、DescriptorPool、DescriptorSet 分配 | Layout/Pool 为设备级；Set 随使用者销毁 |
 | [`PipelineManager`](PipelineManager.h) | 预设 PipelineLayout、渲染状态模板、按 `PipelineKey` 查找或创建 Pipeline | 设备级 |
-| [`RenderResourceManager`](resource/RenderResourceManager.h) | 将 Mesh、Texture、Material 资产映射到 GPU 资源，并缓存上传结果 | 资产级；当前缓存到 `Renderer` 关闭 |
+| [`RenderResourceManager`](resource/RenderResourceManager.h) | 将 Mesh、Texture、Material、Sampler 资产映射到 GPU 资源，并缓存创建结果 | 资产级；当前缓存到 `Renderer` 关闭 |
 | [`FrameContext`](device/FrameContext.h) | CommandPool、CommandBuffer、Fence、image-available Semaphore、Scene UBO 与 Scene DescriptorSet | 每个 frame-in-flight 一份 |
 
 [`Renderer`](Renderer.h) 持有上述模块，并协调 [`GpuScene`](scene/GpuScene.h)、[`ScenePass`](pass/ScenePass.h) 和 [`EditorPickingPass`](pass/EditorPickingPass.h)。Pass 负责录制绘制命令；Pipeline 和分辨率相关图像分别由对应的 Manager 与 `Swapchain` 持有。
@@ -38,7 +38,7 @@
 
 ## Shader、Descriptor 与 Pipeline
 
-构建阶段由 [`CMakeLists.txt`](../../CMakeLists.txt) 调用 Slang，生成 `.spv` 和同名 `.reflection.json`。`ShaderManager::getOrLoad(id)` 读取 [`Shader::Desc`](../asset/AssetDesc.h) 的 binary 路径及对应反射文件，缓存模块、descriptor binding 元数据，并返回 `ShaderHandle`。多个 `PipelineKey` 可以引用同一个 handle。
+构建阶段由 [`CMakeLists.txt`](../../CMakeLists.txt) 调用 Slang，生成 `.spv` 和同名 `.reflection.json`。`ShaderManager::getOrLoad(id)` 读取 [`Shader::Desc`](../asset/Asset.h) 的 binary 路径及对应反射文件，缓存模块、descriptor binding 元数据，并返回 `ShaderHandle`。多个 `PipelineKey` 可以引用同一个 handle。
 
 `DescriptorManager` 创建 Scene、Material 预设 Layout，并按 binding、类型、数量和 stage flags 缓存其他 Layout。`getOrCreateLayout(shaderMetadata, set)` 可根据反射信息生成特殊 DescriptorSetLayout。当前 `PipelineManager` 只创建上述两种预设 PipelineLayout；使用特殊 Layout 的 Pass 还需要增加对应的 PipelineLayout 与绑定逻辑。
 
@@ -48,9 +48,11 @@ Material 可通过 `Material::Desc::shaderId` 选择 Shader；未指定时使用
 
 ## 初始化与加载场景
 
-`Renderer::init()` 依次初始化 `VulkanContext`、`Swapchain`、`ShaderManager`、`DescriptorManager`、`PipelineManager`、各 `FrameContext`、`RenderResourceManager` 和 Pass。初始化阶段从 `config/config.json` 的 `Renderer.BrdfLut` 加载线性 2D LUT 纹理，再加载场景、灯光及拾取 Shader，并创建对应的基础 Pipeline。
+`Renderer::init()` 依次初始化 `VulkanContext`、`Swapchain`、`ShaderManager`、`DescriptorManager`、`PipelineManager`、各 `FrameContext`、`RenderResourceManager` 和 Pass。初始化阶段从 `config/config.json` 的 `Renderer.BrdfLut` 读取纹理与 sampler ID，加载线性 2D LUT，再加载场景、灯光及拾取 Shader，并创建对应的基础 Pipeline。
 
 `Renderer::loadScene(scene)` 等待当前 GPU 工作结束，然后由 `GpuScene` 建立场景对象与渲染项的引用。`RenderResourceManager` 按需加载网格、纹理和材质，上传 Buffer/Image，并为 Material 分配 DescriptorSet；随后 Scene Pass 将环境贴图的 irradiance、prefiltered specular 和全局 BRDF LUT 写入每个 FrameContext 的 Scene Set。具体材质组合的 Pipeline 在首次绘制时按 `PipelineKey` 创建，之后复用。
+
+`GpuTexture` 只持有图像与视图。`RenderResourceManager` 按 `Sampler::ID` 创建并缓存独立的 Vulkan sampler；材质和环境贴图的 `TextureBinding` 分别指定要绑定的纹理和 sampler。材质默认使用 `linearRepeat`，环境 Cubemap 默认使用 `linearClamp`；BRDF LUT 的 sampler 由 Renderer 配置指定，默认使用 `linearClamp`。
 
 当前资产缓存跨场景加载保留，到 `Renderer::shutdown()` 才统一释放。`GpuScene` 持有渲染项和场景对象引用，不拥有 `GpuMesh`、`GpuTexture`、`GpuMaterial` 的 GPU 存储。
 

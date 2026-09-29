@@ -136,7 +136,6 @@ add_executable(RenderLab
         src/asset/AssetDescManager.cpp
         src/asset/Asset.h
         src/asset/AssetID.h
-        src/asset/AssetDesc.h
         src/asset/ImageFormat.h
         src/asset/import/ImportImage.cpp
         src/asset/import/ImportTexture.cpp
@@ -149,6 +148,7 @@ add_executable(RenderLab
         src/asset/builtin/BuiltinMesh.cpp
         src/asset/builtin/BuiltinMaterial.cpp
         src/asset/builtin/BuiltinTexture.cpp
+        src/asset/builtin/BuiltinSampler.cpp
         src/asset/import/ImportMesh.cpp
         src/core/Vertex.h
         src/platform/InputMethod.cpp

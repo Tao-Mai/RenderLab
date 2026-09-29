@@ -4,7 +4,7 @@ namespace
 {
 template <AssetType T>
 void loadDescDirectory(
-    const std::filesystem::path& directory,
+    const std::filesystem::path&                          directory,
     std::unordered_map<typename T::ID, typename T::Desc>& out)
 {
     if (!std::filesystem::exists(directory))
@@ -17,7 +17,7 @@ void loadDescDirectory(
         {
             continue;
         }
-        typename T::Desc desc = asset_json::load<typename T::Desc>(entry.path());
+        auto desc = asset_json::load<typename T::Desc>(entry.path());
         CHECK(!desc.id.empty(), "descriptor has empty id: {}", entry.path().string());
         const typename T::ID id = desc.id;
         CHECK(out.emplace(id, std::move(desc)).second,

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset/AssetDesc.h"
+#include "asset/Asset.h"
 #include "render/PipelineManager.h"
 #include "render/resource/Buffer.h"
 #include "render/resource/GpuTexture.h"
@@ -22,7 +22,8 @@ public:
         DescriptorManager&              descriptors,
         ShaderHandle                     shader,
         const Material::Desc&             material,
-        std::shared_ptr<GpuTexture>        texture);
+        std::shared_ptr<GpuTexture>        texture,
+        vk::Sampler                        sampler);
 
     [[nodiscard]] vk::DescriptorSet descriptorSetHandle() const;
     [[nodiscard]] PipelineKey pipelineKey(vk::Format colorFormat, vk::Format depthFormat) const;

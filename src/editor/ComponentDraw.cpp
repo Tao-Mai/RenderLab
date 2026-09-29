@@ -1,6 +1,6 @@
 #include "editor/ComponentDraw.h"
 
-#include "asset/AssetDesc.h"
+#include "asset/Asset.h"
 #include "asset/AssetDescManager.h"
 #include "asset/ApplyOptionalFields.h"
 #include "core/Context.h"
@@ -166,7 +166,8 @@ Material::Desc materialPreview(const Material::ID& materialId)
     ImGui::EndDisabled();
     ImGui::Text(
         "Albedo: %s",
-        material.baseColorTexture.value_or(Texture::ID{}).c_str());
+        material.baseColorTexture
+            ? material.baseColorTexture->textureID.c_str() : "");
     return edited;
 }
 

@@ -38,6 +38,15 @@ struct GltfBuild
     std::map<std::pair<std::string, ColorSpace>, Texture::ID> textureCache;
 };
 
+[[nodiscard]] std::optional<TextureBinding> bindTexture(std::optional<Texture::ID> id)
+{
+    if (!id)
+    {
+        return std::nullopt;
+    }
+    return TextureBinding{*id, BuiltinAssets::Sampler::linearRepeat};
+}
+
 [[nodiscard]] std::optional<Texture::ID> textureIdFor(
     GltfBuild&                   build,
     const tinygltf::Model&       model,
@@ -96,7 +105,8 @@ void registerMaterials(
 {
     Material::Desc defaultMaterial;
     defaultMaterial.id               = asset_import::nextId<Material>(meshSource);
-    defaultMaterial.baseColorTexture = BuiltinAssets::Texture::white;
+    defaultMaterial.baseColorTexture = TextureBinding{
+        BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat};
     build.materialIds.push_back(
         context().assetDescManager->save<Material>(std::move(defaultMaterial)));
 
@@ -128,38 +138,24 @@ void registerMaterials(
         }
         material.ao               = static_cast<float>(source.occlusionTexture.strength);
         material.normalScale      = static_cast<float>(source.normalTexture.scale);
-        material.baseColorTexture =
-            textureIdFor(build,
-                         model,
-                         pbr.baseColorTexture.index,
-                         modelDirectory,
-                         ColorSpace::Srgb)
-                .value_or(BuiltinAssets::Texture::white);
-        material.normalTexture =
-            textureIdFor(build,
-                         model,
-                         source.normalTexture.index,
-                         modelDirectory,
-                         ColorSpace::Linear);
-        material.metallicTexture =
-            textureIdFor(build,
-                         model,
-                         pbr.metallicRoughnessTexture.index,
-                         modelDirectory,
-                         ColorSpace::Linear);
+        material.baseColorTexture = TextureBinding{
+            textureIdFor(build, model, pbr.baseColorTexture.index,
+                         modelDirectory, ColorSpace::Srgb)
+                .value_or(BuiltinAssets::Texture::white),
+            BuiltinAssets::Sampler::linearRepeat};
+        material.normalTexture = bindTexture(textureIdFor(
+            build, model, source.normalTexture.index,
+            modelDirectory, ColorSpace::Linear));
+        material.metallicTexture = bindTexture(textureIdFor(
+            build, model, pbr.metallicRoughnessTexture.index,
+            modelDirectory, ColorSpace::Linear));
         material.roughnessTexture = material.metallicTexture;
-        material.aoTexture        =
-            textureIdFor(build,
-                         model,
-                         source.occlusionTexture.index,
-                         modelDirectory,
-                         ColorSpace::Linear);
-        material.emissiveTexture =
-            textureIdFor(build,
-                         model,
-                         source.emissiveTexture.index,
-                         modelDirectory,
-                         ColorSpace::Srgb);
+        material.aoTexture = bindTexture(textureIdFor(
+            build, model, source.occlusionTexture.index,
+            modelDirectory, ColorSpace::Linear));
+        material.emissiveTexture = bindTexture(textureIdFor(
+            build, model, source.emissiveTexture.index,
+            modelDirectory, ColorSpace::Srgb));
         material.alphaMode   = source.alphaMode;
         material.alphaCutoff = static_cast<float>(source.alphaCutoff);
         material.doubleSided = source.doubleSided;

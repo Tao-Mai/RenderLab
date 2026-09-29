@@ -23,8 +23,11 @@ flowchart TB
 ### AssetID
 
 `AssetID<T>` 以字符串保存名字和文件名，同时用资产类型 `T` 区分引用。同一资产类型内 ID 唯一；JSON 中仍是普通字符串。
-### AssetDesc
-`REGISTER_ASSETS` 声明资产类型与类型列表；每种资产的 `Desc` 嵌套在对应类型中。描述文件存于 `assets/<资产类名>/`，例如 `assets/Texture/`。
+### Asset
+资产类型直接声明，`Desc` 定义在对应类型中，`AssetTypes` 在定义末尾列出全部资产。描述文件存于 `assets/<资产类名>/`，例如 `assets/Texture/`。
+`Sampler::Desc` 保存 Vulkan sampler 的过滤、寻址、LOD、各向异性、比较和边框颜色参数。
+`maxLod` 留空表示不限制最大 LOD，创建 Vulkan 对象时映射为 `VK_LOD_CLAMP_NONE`；显式 `0.0` 仅使用基础 mip。
+`TextureBinding` 将纹理 ID 与 sampler ID 一起用于材质和环境贴图。
 
 ### AssetDescManager
 
@@ -37,7 +40,7 @@ AssetDesc管理，提供查询和保存接口 。启动时扫描所有desc并在
 
 ### BuiltinAssets
 
-被动内置资产集合。对外只暴露 `Mesh` / `Material` / `Texture` 的类型化 ID，供场景、Import、灯光标记等引用。desc / data 生成函数为
+被动内置资产集合。对外暴露 `Mesh` / `Material` / `Texture` / `Sampler` 的类型化 ID，供场景、Import、灯光标记等引用。desc / data 生成函数为
 private，仅 `AssetDescManager` 与 `AssetDataManager` 以 friend 调用；无实例、无 `init` 预注册。实现拆在 `builtin/` 下按类型分文件。
 
 ### JsonIo / ApplyOptionalFields

@@ -36,7 +36,8 @@ public:
         std::array<FrameContext, maxFramesInFlight>& frames,
         PipelineManager& pipelines,
         RenderResourceManager& resources, ShaderHandle sceneShader,
-        ShaderHandle lightShader, std::shared_ptr<GpuTexture> brdfLut);
+        ShaderHandle lightShader, std::shared_ptr<GpuTexture> brdfLut,
+        vk::Sampler brdfLutSampler);
     void reset() noexcept;
     void refreshPipelines();
     void bindSceneTextures(const Scene::Desc& scene);
@@ -70,6 +71,7 @@ private:
     std::shared_ptr<GpuTexture>                              irradianceTexture;
     std::shared_ptr<GpuTexture>                              prefilteredSpecularTexture;
     std::shared_ptr<GpuTexture>                              brdfLutTexture;
+    vk::Sampler                                           brdfLutSampler = nullptr;
     float                                                 prefilteredSpecularMaxLod = 0.0f;
 
     void bindSceneDescriptor(

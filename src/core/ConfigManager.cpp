@@ -1,5 +1,6 @@
 #include "core/ConfigManager.h"
 
+#include "asset/BuiltinAssets.h"
 #include "asset/JsonIo.h"
 #include "core/Logger.h"
 
@@ -92,7 +93,8 @@ void ConfigManager::load()
     if (!std::filesystem::exists(file))
     {
         applyDefaults();
-        data.renderer.brdfLut = "lut_ggx";
+        data.renderer.brdfLut = TextureBinding{
+            Texture::ID{"lut_ggx"}, BuiltinAssets::Sampler::linearClamp};
         resolvePaths();
         save();
         return;
@@ -102,8 +104,10 @@ void ConfigManager::load()
     applyDefaults();
     CHECK(!data.initialScene.empty(),
         "config '{}' missing initialScene", file.string());
-    CHECK(!data.renderer.brdfLut.empty(),
-          "config '{}' missing renderer.brdfLut", file.string());
+    CHECK(!data.renderer.brdfLut.textureID.empty() &&
+          !data.renderer.brdfLut.samplerID.empty(),
+          "config '{}' requires renderer.brdfLut textureID and samplerID",
+          file.string());
     resolvePaths();
 }
 

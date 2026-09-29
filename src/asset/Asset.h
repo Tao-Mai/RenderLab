@@ -1,10 +1,22 @@
 #pragma once
 
 #include "asset/AssetID.h"
+#include "asset/ImageFormat.h"
+#include "ecs/Camera.h"
 
 #include <concepts>
+#include <cstdint>
+#include <filesystem>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <tuple>
+#include <unordered_map>
+#include <vector>
+
+#include <entt/meta/meta.hpp>
+#include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 
 struct Asset
 {
@@ -32,39 +44,203 @@ struct AssetTypeList
     using wrapTypes = std::tuple<Wrapper<Assets>...>;
 };
 
-#define DECLARE_ASSET(Name) \
-    struct Name : Asset \
-    { \
-        struct Desc; \
-        using ID = AssetID<Name>; \
-        static constexpr std::string_view dir = #Name; \
+enum class Source
+{
+    File,
+    Builtin
+};
+
+struct Texture : Asset
+{
+    using ID                              = AssetID<Texture>;
+    static constexpr std::string_view dir = "Texture";
+
+    struct Desc
+    {
+        ID                                   id;
+        Source                               source = Source::File;
+        ImageFormat                          format;
+        ColorSpace                           colorSpace;
+        ImageLayout                          layout;
+        uint32_t                             width{};
+        uint32_t                             height{};
+        uint32_t                             mipLevels{};
+        std::optional<std::filesystem::path> path;
+        std::optional<std::filesystem::path> binary;
     };
+};
 
-#define ASSET_FOR_EACH_1(M, A) M(A)
-#define ASSET_FOR_EACH_2(M, A, ...) M(A) ASSET_FOR_EACH_1(M, __VA_ARGS__)
-#define ASSET_FOR_EACH_3(M, A, ...) M(A) ASSET_FOR_EACH_2(M, __VA_ARGS__)
-#define ASSET_FOR_EACH_4(M, A, ...) M(A) ASSET_FOR_EACH_3(M, __VA_ARGS__)
-#define ASSET_FOR_EACH_5(M, A, ...) M(A) ASSET_FOR_EACH_4(M, __VA_ARGS__)
-#define ASSET_FOR_EACH_6(M, A, ...) M(A) ASSET_FOR_EACH_5(M, __VA_ARGS__)
-#define ASSET_FOR_EACH_7(M, A, ...) M(A) ASSET_FOR_EACH_6(M, __VA_ARGS__)
-#define ASSET_FOR_EACH_8(M, A, ...) M(A) ASSET_FOR_EACH_7(M, __VA_ARGS__)
-#define ASSET_FOR_EACH_9(M, A, ...) M(A) ASSET_FOR_EACH_8(M, __VA_ARGS__)
-#define ASSET_FOR_EACH_10(M, A, ...) M(A) ASSET_FOR_EACH_9(M, __VA_ARGS__)
-#define ASSET_FOR_EACH_11(M, A, ...) M(A) ASSET_FOR_EACH_10(M, __VA_ARGS__)
-#define ASSET_FOR_EACH_12(M, A, ...) M(A) ASSET_FOR_EACH_11(M, __VA_ARGS__)
-#define ASSET_FOR_EACH_13(M, A, ...) M(A) ASSET_FOR_EACH_12(M, __VA_ARGS__)
-#define ASSET_FOR_EACH_14(M, A, ...) M(A) ASSET_FOR_EACH_13(M, __VA_ARGS__)
-#define ASSET_FOR_EACH_15(M, A, ...) M(A) ASSET_FOR_EACH_14(M, __VA_ARGS__)
-#define ASSET_FOR_EACH_16(M, A, ...) M(A) ASSET_FOR_EACH_15(M, __VA_ARGS__)
-#define ASSET_FOR_EACH_SELECT( \
-    _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, Name, ...) Name
-#define ASSET_FOR_EACH(M, ...) \
-    ASSET_FOR_EACH_SELECT(__VA_ARGS__, \
-        ASSET_FOR_EACH_16, ASSET_FOR_EACH_15, ASSET_FOR_EACH_14, ASSET_FOR_EACH_13, \
-        ASSET_FOR_EACH_12, ASSET_FOR_EACH_11, ASSET_FOR_EACH_10, ASSET_FOR_EACH_9, \
-        ASSET_FOR_EACH_8, ASSET_FOR_EACH_7, ASSET_FOR_EACH_6, ASSET_FOR_EACH_5, \
-        ASSET_FOR_EACH_4, ASSET_FOR_EACH_3, ASSET_FOR_EACH_2, ASSET_FOR_EACH_1)(M, __VA_ARGS__)
+struct Sampler : Asset
+{
+    using ID                              = AssetID<Sampler>;
+    static constexpr std::string_view dir = "Sampler";
 
-#define REGISTER_ASSETS(...) \
-    ASSET_FOR_EACH(DECLARE_ASSET, __VA_ARGS__) \
-    using AssetTypes = AssetTypeList<__VA_ARGS__>;
+    struct Desc
+    {
+        enum class Filter
+        {
+            Nearest,
+            Linear
+        };
+
+        enum class MipmapMode
+        {
+            Nearest,
+            Linear
+        };
+
+        enum class AddressMode
+        {
+            Repeat,
+            MirroredRepeat,
+            ClampToEdge,
+            ClampToBorder
+        };
+
+        enum class CompareOp
+        {
+            Never,
+            Less,
+            Equal,
+            LessOrEqual,
+            Greater,
+            NotEqual,
+            GreaterOrEqual,
+            Always
+        };
+
+        enum class BorderColor
+        {
+            FloatTransparentBlack,
+            IntTransparentBlack,
+            FloatOpaqueBlack,
+            IntOpaqueBlack,
+            FloatOpaqueWhite,
+            IntOpaqueWhite
+        };
+
+        ID          id;
+        Filter      magFilter               = Filter::Linear;
+        Filter      minFilter               = Filter::Linear;
+        MipmapMode  mipmapMode              = MipmapMode::Linear;
+        AddressMode addressModeU            = AddressMode::Repeat;
+        AddressMode addressModeV            = AddressMode::Repeat;
+        AddressMode addressModeW            = AddressMode::Repeat;
+        float       mipLodBias              = 0.0f;
+        bool        anisotropyEnable        = false;
+        float       maxAnisotropy           = 1.0f;
+        bool        compareEnable           = false;
+        CompareOp   compareOp               = CompareOp::Always;
+        float       minLod                  = 0.0f;
+        // 不指定表示不限制最大 LOD；0.0 表示仅使用基础 mip。
+        std::optional<float> maxLod;
+        BorderColor borderColor             = BorderColor::FloatTransparentBlack;
+        bool        unnormalizedCoordinates = false;
+    };
+};
+
+struct TextureBinding
+{
+    Texture::ID textureID;
+    Sampler::ID samplerID;
+};
+
+struct Shader : Asset
+{
+    using ID                              = AssetID<Shader>;
+    static constexpr std::string_view dir = "Shader";
+
+    struct Desc
+    {
+        ID                    id;
+        std::filesystem::path binary;
+    };
+};
+
+struct Material : Asset
+{
+    using ID                              = AssetID<Material>;
+    static constexpr std::string_view dir = "Material";
+
+    struct Desc
+    {
+        ID                            id;
+        std::optional<Shader::ID>     shaderId;
+        std::optional<glm::vec4>      baseColorFactor;
+        std::optional<float>          metallic;
+        std::optional<float>          roughness;
+        std::optional<float>          ao;
+        std::optional<glm::vec3>      emissive;
+        std::optional<float>          normalScale;
+        std::optional<TextureBinding> baseColorTexture;
+        std::optional<TextureBinding> normalTexture;
+        std::optional<TextureBinding> metallicTexture;
+        std::optional<TextureBinding> roughnessTexture;
+        std::optional<TextureBinding> aoTexture;
+        std::optional<TextureBinding> emissiveTexture;
+        std::optional<std::string>    alphaMode;
+        std::optional<float>          alphaCutoff;
+        std::optional<bool>           doubleSided;
+    };
+};
+
+struct Mesh : Asset
+{
+    using ID                              = AssetID<Mesh>;
+    static constexpr std::string_view dir = "Mesh";
+
+    struct Desc
+    {
+        struct Submesh
+        {
+            uint32_t     firstIndex = 0;
+            uint32_t     indexCount = 0;
+            Material::ID materialId;
+        };
+
+        ID                    id;
+        Source                source;
+        std::filesystem::path geometry;
+        std::vector<Submesh>  submeshes;
+    };
+};
+
+struct EnvironmentMap : Asset
+{
+    using ID                              = AssetID<EnvironmentMap>;
+    static constexpr std::string_view dir = "EnvironmentMap";
+
+    struct Desc
+    {
+        ID             id;
+        TextureBinding radiance;
+        TextureBinding irradiance;
+        TextureBinding prefilteredSpecular;
+    };
+};
+
+struct Scene : Asset
+{
+    using ID                              = AssetID<Scene>;
+    static constexpr std::string_view dir = "Scene";
+
+    struct Desc
+    {
+        struct Object
+        {
+            std::string                                     name;
+            std::unordered_map<std::string, entt::meta_any> components;
+        };
+
+        ID                  id;
+        ecs::Camera         camera;
+        std::vector<Object> objects;
+
+        struct Environment
+        {
+            std::optional<EnvironmentMap::ID> environmentMap;
+        } environment;
+    };
+};
+
+using AssetTypes = AssetTypeList<Texture, Mesh, Material, Shader, Scene, EnvironmentMap, Sampler>;

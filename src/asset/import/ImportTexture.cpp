@@ -1,6 +1,6 @@
 #include "asset/AssetImporter.h"
 
-#include "asset/AssetDesc.h"
+#include "asset/Asset.h"
 #include "asset/AssetDescManager.h"
 #include "asset/AssetDataManager.h"
 #include "asset/import/ImportId.h"

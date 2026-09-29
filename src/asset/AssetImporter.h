@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset/AssetDesc.h"
+#include "asset/Asset.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -74,6 +74,9 @@ private:
         ImageFormat format,
         ColorSpace colorSpace,
         const std::filesystem::path& source);
+    static void buildMipmapChain(
+        CubemapPixels& cubemap,
+        const Texture::Desc& radiance);
     [[nodiscard]] static std::vector<uint8_t> irradianceCubemap(
         const Texture::Desc& radiance,
         std::span<const float> radiancePixels,

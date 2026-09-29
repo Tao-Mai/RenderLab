@@ -56,11 +56,6 @@ vk::ImageView GpuTexture::imageView() const
     return *view;
 }
 
-vk::Sampler GpuTexture::sampler() const
-{
-    return *imageSampler;
-}
-
 void GpuTexture::create(
     GpuUploadContext upload, std::span<const uint8_t> bytes,
     const Texture::Desc& desc, vk::Format format)
@@ -221,26 +216,4 @@ void GpuTexture::create(
     };
     view = vkCheck(device.createImageView(viewInfo));
 
-    const vk::SamplerCreateInfo samplerInfo{
-        .magFilter = vk::Filter::eLinear,
-        .minFilter = vk::Filter::eLinear,
-        .mipmapMode = vk::SamplerMipmapMode::eLinear,
-        .addressModeU = desc.layout == ImageLayout::Cubemap
-        ? vk::SamplerAddressMode::eClampToEdge
-        : vk::SamplerAddressMode::eRepeat,
-        .addressModeV = desc.layout == ImageLayout::Cubemap
-        ? vk::SamplerAddressMode::eClampToEdge
-        : vk::SamplerAddressMode::eRepeat,
-        .addressModeW = desc.layout == ImageLayout::Cubemap
-        ? vk::SamplerAddressMode::eClampToEdge
-        : vk::SamplerAddressMode::eRepeat,
-        .mipLodBias = 0.0f,
-        .anisotropyEnable = vk::False,
-        .compareEnable = vk::False,
-        .minLod = 0.0f,
-        .maxLod = static_cast<float>(desc.mipLevels - 1),
-        .borderColor = vk::BorderColor::eIntOpaqueBlack,
-        .unnormalizedCoordinates = vk::False,
-    };
-    imageSampler = vkCheck(device.createSampler(samplerInfo));
 }

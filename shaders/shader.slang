@@ -109,57 +109,72 @@ VertexOutput vertMain(VertexInput input)
 float4 fragMain(VertexOutput input) : SV_Target
 {
     float3 N = normalize(input.worldNormal);
-
-    float4 baseColor = baseColorTexture.Sample(baseColorSampler, input.uv) * material.baseColorFactor;
-    if (material.alphaMode == 1 && baseColor.a < material.alphaCutoff)
-        discard;
-
-    float3 L = normalize(sceneUniforms.light.position - input.worldPosition);
-    float distanceToLight = length(sceneUniforms.light.position - input.worldPosition);
-    float lightRange = max(sceneUniforms.light.range, 0.001);
-    float distanceAttenuation = saturate(1.0 - distanceToLight / lightRange);
-    distanceAttenuation *= distanceAttenuation;
-    float3 pointLight = sceneUniforms.light.color
-        * sceneUniforms.light.intensity
-        * distanceAttenuation
-        * sceneUniforms.light.enabled;
-
     float3 V = normalize(sceneUniforms.cameraPosition - input.worldPosition);
-    float3 H = normalize(L + V);
-    float NdotH = saturate(dot(N, H));
-    float NdotL = saturate(dot(N, L));
-    float NdotV = saturate(dot(N, V));
-    float VdotH = saturate(dot(V, H));
-    float roughness = material.roughness;
-    float metallic = material.metallic;
-
-    float3 F0 = lerp(0.04, baseColor.rgb, float3(metallic));
-    float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
-    float D = NormalDistributionGGX(roughness, NdotH);
-    float G = GeometrySmithGGX(roughness, NdotV, NdotL);
-
-    float3 diffuseBRDF = (1.0 - F) * (1.0 - metallic) * baseColor.rgb * INV_PI;
-    float3 specularBRDF = F * D * G / max(4.0 * NdotV * NdotL, 1e-5);
-
-    float3 direct = pointLight * (diffuseBRDF + specularBRDF) * NdotL;
-
-    // 环境光照
     float3 R = reflect(-V, N);
 
-    // 漫反射环境光照
-    float3 irradiance = irradianceMap.Sample(irradianceMapSampler, N).rgb;
-    float3 ambient_diffuse = irradiance * baseColor.rgb * INV_PI * (1.0 - metallic);
+    float lod = 7.0;
 
-    // 镜面反射环境光照 Split Sum Approximation
-    float3 env_term = prefilteredSpecularMap.SampleLevel(
-        prefilteredSpecularMapSampler, R, roughness * sceneUniforms.iblParameters.x).rgb;
-    float2 scale_bias = brdfLUT.Sample(brdfLUTSampler, float2(NdotV, roughness)).rg;
-    float3 brdf_term = scale_bias.x * F0 + scale_bias.y;
-    float3 ambient_specular = env_term * brdf_term;
+    float3 c = prefilteredSpecularMap.SampleLevel(
+        prefilteredSpecularMapSampler, R, lod).rgb;
 
-    float3 ambient = ambient_diffuse + ambient_specular;
-
-    float3 color = direct + ambient;
-
-    return float4(color, baseColor.a);
+    return float4(c, 1.0);
 }
+
+// [shader("fragment")]
+// float4 fragMain(VertexOutput input) : SV_Target
+// {
+//     float3 N = normalize(input.worldNormal);
+
+//     float4 baseColor = baseColorTexture.Sample(baseColorSampler, input.uv) * material.baseColorFactor;
+//     if (material.alphaMode == 1 && baseColor.a < material.alphaCutoff)
+//         discard;
+
+//     float3 L = normalize(sceneUniforms.light.position - input.worldPosition);
+//     float distanceToLight = length(sceneUniforms.light.position - input.worldPosition);
+//     float lightRange = max(sceneUniforms.light.range, 0.001);
+//     float distanceAttenuation = saturate(1.0 - distanceToLight / lightRange);
+//     distanceAttenuation *= distanceAttenuation;
+//     float3 pointLight = sceneUniforms.light.color
+//         * sceneUniforms.light.intensity
+//         * distanceAttenuation
+//         * sceneUniforms.light.enabled;
+
+//     float3 V = normalize(sceneUniforms.cameraPosition - input.worldPosition);
+//     float3 H = normalize(L + V);
+//     float NdotH = saturate(dot(N, H));
+//     float NdotL = saturate(dot(N, L));
+//     float NdotV = saturate(dot(N, V));
+//     float VdotH = saturate(dot(V, H));
+//     float roughness = material.roughness;
+//     float metallic = material.metallic;
+
+//     float3 F0 = lerp(0.04, baseColor.rgb, float3(metallic));
+//     float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
+//     float D = NormalDistributionGGX(roughness, NdotH);
+//     float G = GeometrySmithGGX(roughness, NdotV, NdotL);
+
+//     float3 diffuseBRDF = (1.0 - F) * (1.0 - metallic) * baseColor.rgb * INV_PI;
+//     float3 specularBRDF = F * D * G / max(4.0 * NdotV * NdotL, 1e-5);
+
+//     float3 direct = pointLight * (diffuseBRDF + specularBRDF) * NdotL;
+
+//     // 环境光照
+//     float3 R = reflect(-V, N);
+
+//     // 漫反射环境光照
+//     float3 irradiance = irradianceMap.Sample(irradianceMapSampler, N).rgb;
+//     float3 ambient_diffuse = irradiance * baseColor.rgb * INV_PI * (1.0 - metallic);
+
+//     // 镜面反射环境光照 Split Sum Approximation
+//     float3 env_term = prefilteredSpecularMap.SampleLevel(
+//         prefilteredSpecularMapSampler, R, roughness * sceneUniforms.iblParameters.x).rgb;
+//     float2 scale_bias = brdfLUT.Sample(brdfLUTSampler, float2(NdotV, roughness)).rg;
+//     float3 brdf_term = scale_bias.x * F0 + scale_bias.y;
+//     float3 ambient_specular = env_term * brdf_term;
+
+//     float3 ambient = ambient_diffuse + ambient_specular;
+
+//     float3 color = direct + ambient;
+
+//     return float4(color, baseColor.a);
+// }

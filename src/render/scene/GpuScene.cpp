@@ -1,7 +1,6 @@
 #include "render/scene/GpuScene.h"
 
-#include "asset/AssetDesc.h"
-#include "ecs/Light.h"
+#include "asset/Asset.h"
 #include "ecs/Render.h"
 #include "render/resource/RenderResourceManager.h"
 

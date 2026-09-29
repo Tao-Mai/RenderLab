@@ -266,7 +266,7 @@ void VulkanContext::createLogicalDevice()
                        vk::PhysicalDeviceVulkan11Features,
                        vk::PhysicalDeviceVulkan13Features,
                        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
-        featureChain = {
+                       featureChain = {
             {}, // vk::PhysicalDeviceFeatures2
             {.shaderDrawParameters = true}, // vk::PhysicalDeviceVulkan11Features
             {.synchronization2 = true, .dynamicRendering = true},
@@ -274,6 +274,9 @@ void VulkanContext::createLogicalDevice()
             {.extendedDynamicState = true}
             // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
         };
+
+    featureChain.get<vk::PhysicalDeviceFeatures2>().features.samplerAnisotropy =
+        deviceFeatures.samplerAnisotropy;
 
     // create a Device
     float                     queuePriority = 0.5f;

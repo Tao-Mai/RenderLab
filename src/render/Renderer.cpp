@@ -1,6 +1,6 @@
 #include "render/Renderer.h"
 
-#include "asset/AssetDesc.h"
+#include "asset/Asset.h"
 #include "asset/AssetDescManager.h"
 #include "Camera.h"
 #include "core/ConfigManager.h"
@@ -108,7 +108,7 @@ void Renderer::initVulkan()
     Window& window = *context().window;
     vulkan.init(window);
     swapchain.init(vulkan, window);
-    shaders.init(vulkan.deviceHandle(), *context().assetDescManager);
+    shaders.init(vulkan.deviceHandle());
     descriptors.init(vulkan.deviceHandle());
     pipelines.init(vulkan.deviceHandle(), descriptors, shaders);
     for (FrameContext& frame : frames)
@@ -118,9 +118,9 @@ void Renderer::initVulkan()
     swapchain.transitionDepthImageLayout(frames[0].commandPoolHandle());
     resources.init(vulkan, descriptors, shaders);
 
-    const Texture::ID& brdfLutId = context().config->rendererConfig().brdfLut;
-    const Texture::Desc& brdfLutDesc =
-        context().assetDescManager->desc<Texture>(brdfLutId);
+    const TextureBinding& brdfLutBinding = context().config->rendererConfig().brdfLut;
+    const Texture::ID&    brdfLutId      = brdfLutBinding.textureID;
+    auto&                 brdfLutDesc    = context().assetDescManager->desc(brdfLutId);
     CHECK(brdfLutDesc.layout == ImageLayout::Image2D &&
           brdfLutDesc.colorSpace == ColorSpace::Linear &&
           brdfLutDesc.format != ImageFormat::R8,
@@ -135,7 +135,8 @@ void Renderer::initVulkan()
                    resources,
                    shaders.getOrLoad("scene"),
                    shaders.getOrLoad("light"),
-                   std::move(brdfLut));
+                   std::move(brdfLut),
+                   resources.sampler(brdfLutBinding.samplerID));
     pickingPass.init(vulkan.physicalDeviceHandle(),
                      vulkan.deviceHandle(),
                      swapchain,
@@ -224,13 +225,13 @@ void Renderer::recordPickingPass(
         editor.pickX,
         editor.pickY);
 
-    for (const SceneRenderItem& item : scene.renderItems())
+    for (const auto& [mesh, object, selectionId] : scene.renderItems())
     {
         pickingPass.draw(
             commandBuffer,
-            *item.mesh,
-            item.object->components.at("Transform").try_cast<ecs::Transform>()->matrix(),
-            item.selectionId);
+            *mesh,
+            object->components.at("Transform").try_cast<ecs::Transform>()->matrix(),
+            selectionId);
     }
 
     for (const LightRenderItem& item : scene.lightRenderItems())
@@ -318,7 +319,7 @@ EditorFrameResult Renderer::drawFrame(const Camera& camera, const EditorFrameInp
     CHECK(fenceResult == vk::Result::eSuccess, "failed to wait for fence!");
 
     uint32_t         imageIndex    = 0;
-    const vk::Result acquireResult = static_cast<vk::Result>(
+    const auto acquireResult = static_cast<vk::Result>(
         swapchain.handle().getDispatcher()->vkAcquireNextImageKHR(
             static_cast<VkDevice>(*vulkan.deviceHandle()),
             static_cast<VkSwapchainKHR>(*swapchain.handle()),
@@ -368,7 +369,7 @@ EditorFrameResult Renderer::drawFrame(const Camera& camera, const EditorFrameInp
         .pSwapchains = &*swapchain.handle(),
         .pImageIndices = &imageIndex,
     };
-    const vk::Result presentResult = static_cast<vk::Result>(
+    const auto presentResult = static_cast<vk::Result>(
         vulkan.queueHandle().getDispatcher()->vkQueuePresentKHR(
             static_cast<VkQueue>(*vulkan.queueHandle()),
             reinterpret_cast<const VkPresentInfoKHR*>(&presentInfoKHR)));

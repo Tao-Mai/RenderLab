@@ -2,13 +2,14 @@
 
 namespace
 {
-[[nodiscard]] ::Material::Desc makeWhiteMaterial()
+[[nodiscard]] Material::Desc makeWhiteMaterial()
 {
     ::Material::Desc desc{};
     desc.id               = BuiltinAssets::Material::white;
     desc.metallic         = 0.0f;
     desc.roughness        = 0.4f;
-    desc.baseColorTexture = BuiltinAssets::Texture::white;
+    desc.baseColorTexture = TextureBinding{
+        BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat};
     return desc;
 }
 }

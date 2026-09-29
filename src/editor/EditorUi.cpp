@@ -1,6 +1,6 @@
 #include "editor/EditorUi.h"
 
-#include "asset/AssetDesc.h"
+#include "asset/Asset.h"
 #include "core/Logger.h"
 #include "ecs/Transform.h"
 #include "editor/ComponentDraw.h"

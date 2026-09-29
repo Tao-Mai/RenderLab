@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset/AssetDesc.h"
+#include "asset/Asset.h"
 #include "asset/BuiltinAssets.h"
 #include "asset/JsonIo.h"
 #include "core/ConfigManager.h"
@@ -21,7 +21,7 @@ public:
     void shutdown() noexcept;
 
     template <AssetType T>
-    [[nodiscard]] const typename T::Desc& desc(const typename T::ID& id) const
+    [[nodiscard]] const typename T::Desc& desc(const AssetID<T>& id) const
     {
         const typename T::Desc* found = findDesc<T>(id);
         CHECK(found != nullptr, "descriptor not loaded: {}", id);
@@ -29,7 +29,7 @@ public:
     }
 
     template <AssetType T>
-    [[nodiscard]] const typename T::Desc* findDesc(const typename T::ID& id) const
+    [[nodiscard]] const typename T::Desc* findDesc(const AssetID<T>& id) const
     {
         auto& table = descMap<T>();
         if (const auto found = table.find(id); found != table.end())
@@ -66,9 +66,9 @@ private:
     bool             inited = false;
     mutable DescMaps assetDescs;
 
-    void                             loadAll();
-    void                             clear();
-    static std::filesystem::path     descriptorRoot();
+    void                         loadAll();
+    void                         clear();
+    static std::filesystem::path descriptorRoot();
 
     template <AssetType T>
     [[nodiscard]] DescMap<T>& descMap() const

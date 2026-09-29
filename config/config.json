@@ -4,6 +4,9 @@
   },
   "InitialScene": "default",
   "Renderer": {
-    "BrdfLut": "lut_ggx"
+    "BrdfLut": {
+      "TextureID": "lut_ggx",
+      "SamplerID": "linearClamp"
+    }
   }
 }

@@ -8,6 +8,8 @@
 #include <utility>
 #include <vector>
 
+namespace math
+{
 class Sampler
 {
 public:
@@ -22,3 +24,4 @@ public:
     // 一次性生成 n 个 [0, 1) 内的二维样本。
     static std::vector<std::pair<float, float>> HammersleySample2D(int n);
 };
+}

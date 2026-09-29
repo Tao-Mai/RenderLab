@@ -13,7 +13,8 @@ void GpuMaterial::create(
     DescriptorManager&              descriptors,
     ShaderHandle                     targetShader,
     const Material::Desc&             material,
-    std::shared_ptr<GpuTexture>        texture)
+    std::shared_ptr<GpuTexture>        texture,
+    vk::Sampler                        sampler)
 {
     shaderHandle = targetShader;
     const std::string alphaMode = material.alphaMode.value_or("OPAQUE");
@@ -61,7 +62,7 @@ void GpuMaterial::create(
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
     const vk::DescriptorImageInfo samplerInfo{
-        .sampler = albedoTexture->sampler(),
+        .sampler = sampler,
     };
     const vk::DescriptorBufferInfo materialBufferInfo{
         .buffer = materialBuffer->handle(),

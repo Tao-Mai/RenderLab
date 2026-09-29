@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset/AssetDesc.h"
+#include "asset/Asset.h"
 
 #include <filesystem>
 
@@ -11,7 +11,7 @@ struct AppPaths
 
 struct RendererConfig
 {
-    Texture::ID brdfLut;
+    TextureBinding brdfLut;
 };
 
 struct AppConfig

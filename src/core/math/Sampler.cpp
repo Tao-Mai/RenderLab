@@ -11,14 +11,14 @@
 
 constexpr float kUint32ToUnitIntervalScale = 2.3283064365386963e-10f; // 1 / 2^32
 
-float Sampler::VanDerCorput(uint32_t index)
+float math::Sampler::VanDerCorput(uint32_t index)
 {
     const float sample = static_cast<float>(utils::reverseBit(index)) *
         kUint32ToUnitIntervalScale;
     return std::min(sample, std::nextafter(1.0f, 0.0f));
 }
 
-std::vector<std::pair<float, float>> Sampler::HammersleySample2D(int n)
+std::vector<std::pair<float, float>> math::Sampler::HammersleySample2D(int n)
 {
     std::vector<std::pair<float, float>> res(n);
 
@@ -30,7 +30,7 @@ std::vector<std::pair<float, float>> Sampler::HammersleySample2D(int n)
     return res;
 }
 
-std::pair<float, float> Sampler::HammersleySample2D(uint32_t index, uint32_t sampleCount)
+std::pair<float, float> math::Sampler::HammersleySample2D(uint32_t index, uint32_t sampleCount)
 {
     return {
         static_cast<float>(index) / static_cast<float>(sampleCount),
