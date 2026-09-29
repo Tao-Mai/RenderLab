@@ -634,16 +634,18 @@ std::vector<uint8_t> AssetImporter::irradianceCubemap(
 }
 
 // 输入：radiancePixels 是按 mip、+X、-X、+Y、-Y、+Z、-Z 排列的线性 RGBA float
-// Cubemap；sampleCount 是每个输出方向的 GGX 样本数。
+// Cubemap；sampleCount 是 mip 1 每个输出方向的 GGX 样本数，更高 mip 每级翻倍，
+// 直到 maxSampleCount 为止。
 // 输出：RGBA32F 的完整 mip 链。按 mip 从大到小排列，每级内部依次存六个行优先面。
 // mip 0 复制线性 radiance 基础层；其余级的 roughness = mip / (mipLevels - 1)。
 // V=N 时入射方向的 PDF = D_GGX(N·H)/4；由 1/(sampleCount * PDF) 得样本立体角，
 // 再与 radiance 基础层平均像素立体角比较得到采样 LOD。
 std::vector<uint8_t> AssetImporter::prefilterSpecularMap(
     const Texture::Desc& radiance, std::span<const float> radiancePixels,
-    uint32_t             sampleCount)
+    uint32_t             sampleCount, uint32_t maxSampleCount)
 {
-    CHECK(sampleCount > 0, "prefilter sample count must be positive");
+    CHECK(sampleCount > 0 && maxSampleCount >= sampleCount,
+          "prefilter sample count must be positive and no greater than its cap");
 
     const LinearCubemapView radianceView = linearCubemapView(radiance, radiancePixels);
     const uint32_t side         = radianceView.side;
@@ -666,6 +668,7 @@ std::vector<uint8_t> AssetImporter::prefilterSpecularMap(
                 radiancePixels.data(),
                 static_cast<size_t>(baseChannels * sizeof(float)));
 
+    uint32_t levelSampleCount = sampleCount;
     for (uint32_t mip = 1; mip < mipLevels; ++mip)
     {
         const uint32_t mipSide      = texture_mip::extent(side, mip);
@@ -686,10 +689,10 @@ std::vector<uint8_t> AssetImporter::prefilterSpecularMap(
             float lod;
         };
         std::vector<PrefilterSample> directions;
-        directions.reserve(sampleCount);
-        for (uint32_t sample = 0; sample < sampleCount; ++sample)
+        directions.reserve(levelSampleCount);
+        for (uint32_t sample = 0; sample < levelSampleCount; ++sample)
         {
-            const auto  [xi1, xi2]    = math::Sampler::HammersleySample2D(sample, sampleCount);
+            const auto  [xi1, xi2]    = math::Sampler::HammersleySample2D(sample, levelSampleCount);
             const float phi           = 2.0f * std::numbers::pi_v<float> * xi1;
             const float cosineSquared = (1.0f - xi2) /
                 (1.0f + (alphaSquared - 1.0f) * xi2);
@@ -709,7 +712,7 @@ std::vector<uint8_t> AssetImporter::prefilterSpecularMap(
                     (std::numbers::pi_v<float> * denominator * denominator);
                 const float pdf = distribution * 0.25f;
                 const float lod = mipLevelForSolidAngle(
-                    1.0f / (static_cast<float>(sampleCount) * pdf),
+                    1.0f / (static_cast<float>(levelSampleCount) * pdf),
                     radiance.width,
                     radiance.mipLevels);
                 directions.push_back({lightDirection, lightDirection.z, lod});
@@ -768,13 +771,18 @@ std::vector<uint8_t> AssetImporter::prefilterSpecularMap(
                 }
             }
         }
+
+        levelSampleCount = static_cast<uint32_t>(std::min<uint64_t>(
+            static_cast<uint64_t>(levelSampleCount) * 2,
+            maxSampleCount));
     }
 
     return bytes;
 }
 
 // 输入：source 是 EXR 或支持的 8 位图像文件路径；setting 可指定源图与 radiance
-// 的色彩空间、irradiance 的面尺寸及两种积分的采样数。省略色彩空间时 EXR 为 Linear、
+// 的色彩空间、irradiance 的面尺寸、两种积分的采样数及 GGX 采样上限。
+// 省略色彩空间时 EXR 为 Linear、
 // 8 位图像为 Srgb。loadImage 返回行优先源图。
 // 输出：EnvironmentMap::Desc 的资产 ID。函数选定投影和面尺寸，将六面像素按
 // environmentCubemap 所述布局写入 radiance 并生成完整 mip 链；再从 radiance 计算线性
@@ -790,6 +798,10 @@ EnvironmentMap::ID AssetImporter::importEnvironmentMap(
           source.string());
     CHECK(setting.prefilteredSpecularSampleCount > 0,
           "prefilter sample count must be positive: {}",
+          source.string());
+    CHECK(setting.prefilteredSpecularMaxSampleCount >=
+          setting.prefilteredSpecularSampleCount,
+          "prefilter sample cap must be at least the initial sample count: {}",
           source.string());
     constexpr uint64_t pixelBytes = 4 * sizeof(float);
     constexpr uint64_t maxPayload = std::numeric_limits<uint32_t>::max();
@@ -860,7 +872,8 @@ EnvironmentMap::ID AssetImporter::importEnvironmentMap(
     const std::vector<uint8_t> prefilteredBytes = prefilterSpecularMap(
         radiance,
         radiancePixels.linear,
-        setting.prefilteredSpecularSampleCount);
+        setting.prefilteredSpecularSampleCount,
+        setting.prefilteredSpecularMaxSampleCount);
 
     const Texture::ID radianceId =
         saveTexture(std::move(radiance), source, radiancePixels.encoded);

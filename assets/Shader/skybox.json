@@ -1,0 +1,4 @@
+{
+  "Id": "skybox",
+  "Binary": "shaders/skybox.spv"
+}

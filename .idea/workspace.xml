@@ -27,36 +27,37 @@
   <component name="CMakeRunConfigurationManager">
     <generated>
       <config projectName="RenderLab" targetName="NightlyMemoryCheck" folderName="CTestDashboardTargets" />
+      <config projectName="RenderLab" targetName="Continuous" folderName="CTestDashboardTargets" />
+      <config projectName="RenderLab" targetName="ExperimentalMemCheck" folderName="CTestDashboardTargets" />
+      <config projectName="RenderLab" targetName="ContinuousTest" folderName="CTestDashboardTargets" />
+      <config projectName="RenderLab" targetName="RenderLabTests" />
+      <config projectName="RenderLab" targetName="Nightly" folderName="CTestDashboardTargets" />
+      <config projectName="RenderLab" targetName="ExperimentalUpdate" folderName="CTestDashboardTargets" />
+      <config projectName="RenderLab" targetName="main" />
+      <config projectName="RenderLab" targetName="ExperimentalSubmit" folderName="CTestDashboardTargets" />
+      <config projectName="RenderLab" targetName="ContinuousBuild" folderName="CTestDashboardTargets" />
+      <config projectName="RenderLab" targetName="NightlySubmit" folderName="CTestDashboardTargets" />
+      <config projectName="RenderLab" targetName="ContinuousUpdate" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="ContinuousStart" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="ExperimentalTest" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="ContinuousCoverage" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="ExperimentalConfigure" folderName="CTestDashboardTargets" />
-      <config projectName="RenderLab" targetName="Continuous" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="NightlyUpdate" folderName="CTestDashboardTargets" />
-      <config projectName="RenderLab" targetName="ExperimentalMemCheck" folderName="CTestDashboardTargets" />
-      <config projectName="RenderLab" targetName="ContinuousTest" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="ExperimentalBuild" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="NightlyBuild" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="RenderLabShaders" />
-      <config projectName="RenderLab" targetName="RenderLabTests" />
-      <config projectName="RenderLab" targetName="Nightly" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="NightlyStart" folderName="CTestDashboardTargets" />
-      <config projectName="RenderLab" targetName="ExperimentalUpdate" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="NightlyCoverage" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="NightlyTest" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="ContinuousMemCheck" folderName="CTestDashboardTargets" />
-      <config projectName="RenderLab" targetName="ExperimentalSubmit" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="Experimental" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="NightlyMemCheck" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="ExperimentalCoverage" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="RenderLab" />
       <config projectName="RenderLab" targetName="ExperimentalStart" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="NightlyConfigure" folderName="CTestDashboardTargets" />
-      <config projectName="RenderLab" targetName="ContinuousBuild" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="ContinuousConfigure" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="ContinuousSubmit" folderName="CTestDashboardTargets" />
-      <config projectName="RenderLab" targetName="NightlySubmit" folderName="CTestDashboardTargets" />
-      <config projectName="RenderLab" targetName="ContinuousUpdate" folderName="CTestDashboardTargets" />
     </generated>
   </component>
   <component name="CMakeSettings">
@@ -65,55 +66,24 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="重构asset">
-      <change afterPath="$PROJECT_DIR$/shaders/shadow.slang" afterDir="false" />
+    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="重构asset，环境贴图mipmap">
+      <change afterPath="$PROJECT_DIR$/test/main.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TODO.md" beforeDir="false" afterPath="$PROJECT_DIR$/TODO.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/config/config.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/config.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/shaders/shader.slang" beforeDir="false" afterPath="$PROJECT_DIR$/shaders/shader.slang" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/Asset.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/Asset.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/AssetDataManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/AssetDataManager.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/AssetDesc.h" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/AssetDescManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/AssetDescManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/AssetDescManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/AssetDescManager.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/asset/AssetImporter.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/AssetImporter.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/BuiltinAssets.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/BuiltinAssets.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/RflReflectors.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/RflReflectors.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/builtin/BuiltinMaterial.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/builtin/BuiltinMaterial.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/asset/import/ImportEnvironmentMap.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/import/ImportEnvironmentMap.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/import/ImportMesh.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/import/ImportMesh.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/import/ImportTexture.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/import/ImportTexture.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/core/ConfigManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/ConfigManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/core/ConfigManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/ConfigManager.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/core/Context.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/Context.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/core/math/Sampler.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/math/Sampler.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/core/math/Sampler.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/math/Sampler.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/ecs/Render.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/ecs/Render.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/editor/ComponentDraw.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/ComponentDraw.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/editor/Editor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/Editor.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/editor/EditorUi.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/EditorUi.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/editor/EditorUi.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/EditorUi.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/DescriptorManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/DescriptorManager.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/PipelineManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/PipelineManager.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/Renderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/Renderer.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/ShaderManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/ShaderManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/ShaderManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/ShaderManager.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/device/VulkanContext.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/device/VulkanContext.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/Renderer.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/Renderer.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/pass/ScenePass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/ScenePass.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/pass/ScenePass.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/ScenePass.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/GpuMaterial.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuMaterial.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/GpuMaterial.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuMaterial.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/GpuTexture.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuTexture.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/GpuTexture.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuTexture.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/RenderResourceManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/RenderResourceManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/RenderResourceManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/RenderResourceManager.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/scene/GpuScene.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/scene/GpuScene.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/scene/GpuScene.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/scene/GpuScene.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/AssetIDTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/AssetIDTest.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/ShaderData.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/ShaderData.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/test/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/test/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/LutGgxTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/LutGgxTest.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/config.json" beforeDir="false" afterPath="$PROJECT_DIR$/test/config.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test/EnvironmentMapImportTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/EnvironmentMapImportTest.cpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -129,7 +99,7 @@
     </persistenceIdMap>
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="117" />
+    <option name="cachedIndexableFilesCount" value="1275" />
   </component>
   <component name="ExecutionTargetManager" SELECTED_TARGET="CMakeBuildProfile:Default-Visual Studio 2026" />
   <component name="FormatOnSaveOptions">
@@ -156,10 +126,8 @@
     <setting file="file://C:/VulkanSDK/1.4.350.0/Include/vulkan/vulkan_structs.hpp" root0="SKIP_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../../tmp/vcpkg/installed/x64-windows/include/vulkan/vulkan_raii.hpp" root0="SKIP_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../../tmp/vcpkg/installed/x64-windows/include/vulkan/vulkan_structs.hpp" root0="SKIP_HIGHLIGHTING" />
+    <setting file="mock://D:/study/project/graphics/own/RenderLab/src/asset/Asset.h" root0="SKIP_HIGHLIGHTING" />
     <setting file="mock://D:/study/project/graphics/own/RenderLab/src/asset/AssetDataManager.h" root0="SKIP_HIGHLIGHTING" />
-    <setting file="mock://D:/study/project/graphics/own/RenderLab/src/asset/AssetImporter.h" root0="SKIP_HIGHLIGHTING" />
-    <setting file="mock://D:/study/project/graphics/own/RenderLab/src/asset/import/ImportEnvironmentMap.cpp" root0="SKIP_HIGHLIGHTING" />
-    <setting file="mock://D:/study/project/graphics/own/RenderLab/src/core/Logger.h" root0="SKIP_HIGHLIGHTING" />
   </component>
   <component name="MacroExpansionManager">
     <option name="directoryName" value="7Hc8KvBN" />
@@ -170,61 +138,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.6749543186201532" />
-      <entry key="MS500" value="3.7426501134460386" />
-      <entry key="S2" value="7.514348399730451" />
-      <entry key="S5" value="10.27160334244997" />
-      <entry key="S10" value="11.819777934616118" />
-      <entry key="S30" value="13.181843954777765" />
-      <entry key="S60" value="13.577769579390205" />
-      <entry key="M2" value="13.785448089573354" />
-      <entry key="M5" value="13.913334494165378" />
-      <entry key="M10" value="13.956524755974813" />
-      <entry key="M15" value="13.970984711859264" />
-      <entry key="M30" value="13.985477912424498" />
-      <entry key="H1" value="14.001451052774588" />
-      <entry key="H2" value="14.958069889225662" />
-      <entry key="H4" value="27.686377659410493" />
-      <entry key="D1" value="291.4634667010513" />
-      <entry key="W1" value="1119.2328985871256" />
+      <entry key="MS100" value="8.66635154080576E-8" />
+      <entry key="MS500" value="0.03868719658867018" />
+      <entry key="S2" value="0.443498152576075" />
+      <entry key="S5" value="0.7223650509605111" />
+      <entry key="S10" value="0.8499206145049731" />
+      <entry key="S30" value="0.9472387463235069" />
+      <entry key="S60" value="0.9732619747626026" />
+      <entry key="M2" value="0.9877339276118977" />
+      <entry key="M5" value="1.4370250104490683" />
+      <entry key="M10" value="4.184941247553037" />
+      <entry key="M15" value="7.1570134896718" />
+      <entry key="M30" value="12.950094368910046" />
+      <entry key="H1" value="18.441217815774042" />
+      <entry key="H2" value="24.522900180880885" />
+      <entry key="H4" value="36.62867172174025" />
+      <entry key="D1" value="283.9572050803045" />
+      <entry key="W1" value="1126.1257024618574" />
     </decayedCancelled>
     <decayedSelected>
-      <entry key="MS100" value="7.241430598960922E-24" />
-      <entry key="MS500" value="2.473250416991144E-5" />
-      <entry key="S2" value="0.10264729541591185" />
-      <entry key="S5" value="0.5999711909761803" />
-      <entry key="S10" value="1.0923820128812873" />
-      <entry key="S30" value="1.633837535582383" />
-      <entry key="S60" value="1.8075308976371456" />
-      <entry key="M2" value="1.9012946927338303" />
-      <entry key="M5" value="1.9599082871543667" />
-      <entry key="M10" value="1.9798511280927642" />
-      <entry key="M15" value="1.9865444202187827" />
-      <entry key="M30" value="1.9932611313689461" />
-      <entry key="H1" value="1.9990775069610491" />
-      <entry key="H2" value="2.266157419654453" />
-      <entry key="H4" value="5.796632601262374" />
-      <entry key="D1" value="65.92323405756862" />
-      <entry key="W1" value="193.71987930179628" />
+      <entry key="MS100" value="1.0" />
+      <entry key="MS500" value="1.0" />
+      <entry key="S2" value="1.0" />
+      <entry key="S5" value="1.0" />
+      <entry key="S10" value="1.0" />
+      <entry key="S30" value="1.0" />
+      <entry key="S60" value="1.0000000188769842" />
+      <entry key="M2" value="1.0003820512009667" />
+      <entry key="M5" value="1.1489516718282302" />
+      <entry key="M10" value="2.090942098345498" />
+      <entry key="M15" value="3.1192236611985673" />
+      <entry key="M30" value="5.123475828847436" />
+      <entry key="H1" value="6.851171811692835" />
+      <entry key="H2" value="8.312551471495308" />
+      <entry key="H4" value="11.183516163262595" />
+      <entry key="D1" value="67.35691623197553" />
+      <entry key="W1" value="199.4106363460032" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="1.5223887230155022" />
-      <entry key="MS500" value="3.6683695168612473" />
-      <entry key="S2" value="7.515747415316358" />
-      <entry key="S5" value="10.717264770042314" />
-      <entry key="S10" value="12.779833447588281" />
-      <entry key="S30" value="14.751253890005621" />
-      <entry key="S60" value="15.349811377871957" />
-      <entry key="M2" value="15.66811246453238" />
-      <entry key="M5" value="15.865568923066329" />
-      <entry key="M10" value="15.932501212121986" />
-      <entry key="M15" value="15.954937570881903" />
-      <entry key="M30" value="15.977439024536618" />
-      <entry key="H1" value="15.99987610560955" />
-      <entry key="H2" value="17.223818176549536" />
-      <entry key="H4" value="33.482199133909845" />
-      <entry key="D1" value="357.38432280207684" />
-      <entry key="W1" value="1312.9513318613313" />
+      <entry key="MS100" value="0.0064790638672253455" />
+      <entry key="MS500" value="0.38680087245035555" />
+      <entry key="S2" value="1.1614954009746956" />
+      <entry key="S5" value="1.5862025825522117" />
+      <entry key="S10" value="1.7767344707232866" />
+      <entry key="S30" value="1.9215642173285217" />
+      <entry key="S60" value="1.9602548080869635" />
+      <entry key="M2" value="1.9815600766433294" />
+      <entry key="M5" value="2.582025621772993" />
+      <entry key="M10" value="6.269830451901211" />
+      <entry key="M15" value="10.269269666360183" />
+      <entry key="M30" value="18.067254431484145" />
+      <entry key="H1" value="25.288054755121976" />
+      <entry key="H2" value="32.832840506068685" />
+      <entry key="H4" value="47.810432394174754" />
+      <entry key="D1" value="351.3117699197437" />
+      <entry key="W1" value="1325.5348823362228" />
     </decayedShown>
   </component>
   <component name="ProjectApplicationVersion">
@@ -260,47 +228,47 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ASKED_MARK_IGNORED_FILES_AS_EXCLUDED&quot;: &quot;true&quot;,
-    &quot;CMake Application.RenderLab.executor&quot;: &quot;Run&quot;,
-    &quot;CMake 应用程序.RenderLab.executor&quot;: &quot;Run&quot;,
-    &quot;CidrDebugProfileConversion&quot;: &quot;true&quot;,
-    &quot;Google Test.SceneAsset.FileRoundTrip.executor&quot;: &quot;Run&quot;,
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.RadMigrateCodeStyle&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.west.config.association.type.startup.service&quot;: &quot;true&quot;,
-    &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
-    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
-    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
-    &quot;copilot.chat.legacySessionMetadata.migrated&quot;: &quot;true&quot;,
-    &quot;ctest.advertisement.all.test.configuration.is.created&quot;: &quot;true&quot;,
-    &quot;full.screen.before.presentation.mode&quot;: &quot;false&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;D:/study/project/graphics/own/RenderLab&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.jshint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.jshint&quot;: &quot;&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;org.rust.first.attach.projects&quot;: &quot;true&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;CMakeSettings&quot;,
-    &quot;settings.editor.splitter.proportion&quot;: &quot;0.24561404&quot;,
-    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
+    "CMake Application.RenderLab.executor": "Run",
+    "CMake 应用程序.RenderLab.executor": "Run",
+    "CidrDebugProfileConversion": "true",
+    "Google Test.SceneAsset.FileRoundTrip.executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.RadMigrateCodeStyle": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.readMode.enableVisualFormatting": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "RunOnceActivity.west.config.association.type.startup.service": "true",
+    "cf.first.check.clang-format": "false",
+    "cidr.known.project.marker": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "copilot.chat.legacySessionMetadata.migrated": "true",
+    "ctest.advertisement.all.test.configuration.is.created": "true",
+    "full.screen.before.presentation.mode": "false",
+    "git-widget-placeholder": "main",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "D:/study/project/graphics/own/RenderLab",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.jshint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.jshint": "",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "org.rust.first.attach.projects": "true",
+    "settings.editor.selected.configurable": "preferences.general",
+    "settings.editor.splitter.proportion": "0.24561404",
+    "to.speed.mode.migration.done": "true",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="D:\study\project\graphics\own\RenderLab\src\asset" />
@@ -468,6 +436,16 @@
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
+    <configuration default="true" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="main" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="main" CONFIG_NAME="Default-Visual Studio 2026" RUN_TARGET_PROJECT_NAME="RenderLab" RUN_TARGET_NAME="main">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
     <configuration name="所有 CTest" type="CTestRunConfiguration" factoryName="CTestRun" PROGRAM_PARAMS="--extra-verbose" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" WORKING_DIR="file://$CMakeCurrentLocalGenerationDir$" PASS_PARENT_ENVS_2="true" CONFIG_NAME="Default-Visual Studio 2026" RUN_PATH="$CTestCurrentExecutableName$" EXPLICIT_BUILD_TARGET_NAME="all" TEST_MODE="SUITE_TEST">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
@@ -504,6 +482,7 @@
       <item itemvalue="CMake 应用程序.NightlyTest" />
       <item itemvalue="CMake 应用程序.NightlyUpdate" />
       <item itemvalue="CMake 应用程序.RenderLabShaders" />
+      <item itemvalue="CMake 应用程序.main" />
       <item itemvalue="CMake 应用程序.RenderLab" />
       <item itemvalue="CTest 应用程序.所有 CTest" />
       <item itemvalue="Google Test.RenderLabTests" />
@@ -569,7 +548,8 @@
     <MESSAGE value="调整environmentmap" />
     <MESSAGE value="sampler" />
     <MESSAGE value="重构asset" />
-    <option name="LAST_COMMIT_MESSAGE" value="重构asset" />
+    <MESSAGE value="重构asset，环境贴图mipmap" />
+    <option name="LAST_COMMIT_MESSAGE" value="重构asset，环境贴图mipmap" />
   </component>
   <component name="XDebuggerManager">
     <watches-manager>

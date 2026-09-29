@@ -19,6 +19,7 @@ class LightMarkers;
 class GpuMesh;
 class RenderResourceManager;
 class Swapchain;
+class SkyboxPass;
 class GpuTexture;
 class VulkanContext;
 
@@ -51,6 +52,7 @@ public:
         const std::vector<SceneRenderItem>& renderItems,
         const std::vector<LightRenderItem>& lightRenderItems,
         const LightMarkers&                 lightMarkers,
+        const SkyboxPass&                   skyboxPass,
         uint32_t                            frameIndex,
         Target                              target) const;
 
@@ -65,11 +67,14 @@ private:
     ShaderHandle                                           sceneShader;
     ShaderHandle                                           lightShader;
     glm::vec3                                              cameraPosition{0.0f};
+    glm::mat4                                              inverseViewProjection{1.0f};
+    bool                                                   hasSkybox = false;
     vk::Pipeline                                           scenePipeline;
     vk::Pipeline                                           lightMarkerPipeline;
     vk::PipelineLayout                                     pipelineLayout;
     std::shared_ptr<GpuTexture>                              irradianceTexture;
     std::shared_ptr<GpuTexture>                              prefilteredSpecularTexture;
+    std::shared_ptr<GpuTexture>                              radianceTexture;
     std::shared_ptr<GpuTexture>                              brdfLutTexture;
     vk::Sampler                                           brdfLutSampler = nullptr;
     float                                                 prefilteredSpecularMaxLod = 0.0f;

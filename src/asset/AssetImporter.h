@@ -17,8 +17,10 @@ struct ImportEnvironmentMapSetting
     uint32_t irradianceSize = 32;
     // 每个输出方向的余弦加权半球采样数。
     uint32_t irradianceSampleCount = 2048;
-    // GGX 预滤波每个输出方向的半程向量采样数。
-    uint32_t prefilteredSpecularSampleCount = 128;
+    // GGX 预滤波 mip 1 每个输出方向的半程向量采样数；之后每级翻倍。
+    uint32_t prefilteredSpecularSampleCount = 512;
+    // 每个输出方向的 GGX 采样数上限，不能小于首级采样数。
+    uint32_t prefilteredSpecularMaxSampleCount = 65536;
 };
 
 class AssetImporter
@@ -85,7 +87,8 @@ private:
     [[nodiscard]] static std::vector<uint8_t> prefilterSpecularMap(
         const Texture::Desc& radiance,
         std::span<const float> radiancePixels,
-        uint32_t sampleCount);
+        uint32_t sampleCount,
+        uint32_t maxSampleCount);
     [[nodiscard]] static Texture::ID saveTexture(
         Texture::Desc                  desc,
         const std::filesystem::path& source,

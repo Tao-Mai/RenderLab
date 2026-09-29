@@ -9,6 +9,7 @@
 #include "render/ShaderManager.h"
 #include "render/pass/EditorPickingPass.h"
 #include "render/pass/ScenePass.h"
+#include "render/pass/SkyboxPass.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/RenderResourceManager.h"
 #include "render/scene/GpuScene.h"
@@ -70,6 +71,7 @@ private:
     uint32_t          frameIndex = 0;
     GpuScene          scene;
     ScenePass         scenePass;
+    SkyboxPass        skyboxPass;
     EditorPickingPass pickingPass;
 
     void initVulkan();

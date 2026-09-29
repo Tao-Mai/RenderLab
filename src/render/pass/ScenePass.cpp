@@ -9,6 +9,7 @@
 #include "ecs/Render.h"
 #include "ecs/Transform.h"
 #include "render/pass/LightMarkers.h"
+#include "render/pass/SkyboxPass.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/GpuMaterial.h"
@@ -22,6 +23,7 @@
 #include <utility>
 
 #include <glm/vec4.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 
 void ScenePass::bindSceneDescriptor(
     vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex) const
@@ -81,9 +83,11 @@ void ScenePass::reset() noexcept
 {
     irradianceTexture.reset();
     prefilteredSpecularTexture.reset();
+    radianceTexture.reset();
     brdfLutTexture.reset();
     brdfLutSampler = nullptr;
     prefilteredSpecularMaxLod = 0.0f;
+    hasSkybox = false;
     scenePipeline       = nullptr;
     lightMarkerPipeline = nullptr;
     pipelineLayout      = nullptr;
@@ -101,25 +105,33 @@ void ScenePass::bindSceneTextures(const Scene::Desc& scene)
     TextureBinding irradianceBinding{
         BuiltinAssets::Texture::whiteCube, BuiltinAssets::Sampler::linearClamp};
     TextureBinding prefilteredBinding = irradianceBinding;
+    TextureBinding radianceBinding = irradianceBinding;
     prefilteredSpecularMaxLod = 0.0f;
+    hasSkybox = scene.environment.environmentMap.has_value();
     if (scene.environment.environmentMap.has_value())
     {
         const EnvironmentMap::Desc& environment =
             context().assetDescManager->desc<EnvironmentMap>(*scene.environment.environmentMap);
-        CHECK(!environment.irradiance.textureID.empty() &&
+        CHECK(!environment.radiance.textureID.empty() &&
+              !environment.radiance.samplerID.empty() &&
+              !environment.irradiance.textureID.empty() &&
               !environment.irradiance.samplerID.empty() &&
               !environment.prefilteredSpecular.textureID.empty() &&
               !environment.prefilteredSpecular.samplerID.empty(),
-              "environment '{}' requires irradiance and prefiltered specular textures",
+              "environment '{}' requires radiance, irradiance and prefiltered specular textures",
               environment.id);
+        radianceBinding = environment.radiance;
         irradianceBinding = environment.irradiance;
         prefilteredBinding = environment.prefilteredSpecular;
 
+        const Texture::Desc& radianceDesc =
+            context().assetDescManager->desc<Texture>(radianceBinding.textureID);
         const Texture::Desc& irradianceDesc =
             context().assetDescManager->desc<Texture>(irradianceBinding.textureID);
         const Texture::Desc& prefilteredDesc =
             context().assetDescManager->desc<Texture>(prefilteredBinding.textureID);
-        CHECK(irradianceDesc.layout == ImageLayout::Cubemap &&
+        CHECK(radianceDesc.layout == ImageLayout::Cubemap &&
+              irradianceDesc.layout == ImageLayout::Cubemap &&
               irradianceDesc.colorSpace == ColorSpace::Linear &&
               prefilteredDesc.layout == ImageLayout::Cubemap &&
               prefilteredDesc.colorSpace == ColorSpace::Linear &&
@@ -131,6 +143,7 @@ void ScenePass::bindSceneTextures(const Scene::Desc& scene)
 
     irradianceTexture = resources->texture(irradianceBinding.textureID);
     prefilteredSpecularTexture = resources->texture(prefilteredBinding.textureID);
+    radianceTexture = resources->texture(radianceBinding.textureID);
     const vk::DescriptorImageInfo irradianceImage{
         .imageView = irradianceTexture->imageView(),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -148,6 +161,12 @@ void ScenePass::bindSceneTextures(const Scene::Desc& scene)
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
     const vk::DescriptorImageInfo lutSampler{.sampler = brdfLutSampler};
+    const vk::DescriptorImageInfo radianceImage{
+        .imageView = radianceTexture->imageView(),
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+    };
+    const vk::DescriptorImageInfo radianceSampler{
+        .sampler = resources->sampler(radianceBinding.samplerID)};
     for (FrameContext& frame : *frames)
     {
         const std::array writes = {
@@ -193,6 +212,20 @@ void ScenePass::bindSceneTextures(const Scene::Desc& scene)
                 .descriptorType = vk::DescriptorType::eSampler,
                 .pImageInfo = &lutSampler,
             },
+            vk::WriteDescriptorSet{
+                .dstSet = frame.sceneSetHandle(),
+                .dstBinding = RenderInterface::radianceImageBinding,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eSampledImage,
+                .pImageInfo = &radianceImage,
+            },
+            vk::WriteDescriptorSet{
+                .dstSet = frame.sceneSetHandle(),
+                .dstBinding = RenderInterface::radianceSamplerBinding,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eSampler,
+                .pImageInfo = &radianceSampler,
+            },
         };
         vulkan->deviceHandle().updateDescriptorSets(writes, {});
     }
@@ -205,6 +238,7 @@ void ScenePass::updateScene(
     const Scene::Desc::Object* lightObject)
 {
     this->cameraPosition = cameraPosition;
+    inverseViewProjection = glm::inverse(viewProjection);
     SceneUniforms uniforms{
         .viewProjection = viewProjection,
         .cameraPosition = glm::vec4{cameraPosition, 1.0f},
@@ -246,6 +280,7 @@ void ScenePass::record(
     const std::vector<SceneRenderItem>& renderItems,
     const std::vector<LightRenderItem>& lightRenderItems,
     const LightMarkers&                 lightMarkers,
+    const SkyboxPass&                   skyboxPass,
     uint32_t                            frameIndex,
     Target                              target) const
 {
@@ -395,6 +430,19 @@ void ScenePass::record(
     {
         draw(item);
     }
+
+    if (hasSkybox)
+    {
+        skyboxPass.record(commandBuffer, frames->at(frameIndex).sceneSetHandle(), {
+            .inverseViewProjection = inverseViewProjection,
+            .cameraPosition = glm::vec4{cameraPosition, 1.0f},
+            .viewport = glm::vec4{
+                static_cast<float>(viewportX), static_cast<float>(viewportY),
+                static_cast<float>(viewportWidth), static_cast<float>(viewportHeight)},
+        });
+        boundPipeline = nullptr;
+    }
+
     for (const DrawCall& item : transparentDraws)
     {
         draw(item);

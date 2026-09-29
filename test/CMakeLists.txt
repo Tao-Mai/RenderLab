@@ -36,3 +36,5 @@ if (MSVC)
 endif ()
 
 add_test(NAME RenderLabTests COMMAND RenderLabTests)
+
+add_executable(main main.cpp)

@@ -55,6 +55,14 @@ void DescriptorManager::init(const vk::raii::Device& targetDevice)
             .binding = RenderInterface::brdfLutSamplerBinding,
             .descriptorType = vk::DescriptorType::eSampler,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::radianceImageBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::radianceSamplerBinding,
+            .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
     };
     const std::array materialBindings = {
         vk::DescriptorSetLayoutBinding{

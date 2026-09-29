@@ -105,6 +105,7 @@ TEST(EnvironmentMapImportTest, BuildsRadianceMipsAndBakesFromThem)
     setting.irradianceSize = 4;
     setting.irradianceSampleCount = 64;
     setting.prefilteredSpecularSampleCount = 64;
+    setting.prefilteredSpecularMaxSampleCount = 64;
     const EnvironmentMap::ID environmentId =
         AssetImporter::importEnvironmentMap(source, setting);
     const EnvironmentMap::Desc& environment = assets.descs.desc(environmentId);

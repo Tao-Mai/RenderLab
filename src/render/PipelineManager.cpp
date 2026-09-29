@@ -26,6 +26,7 @@ PipelineState PipelineState::preset(RenderMode mode)
         state.vertexLayout = VertexLayoutPreset::PositionOnly;
         break;
     case RenderMode::Skybox:
+        state.vertexLayout = VertexLayoutPreset::None;
         state.depthWrite = false;
         state.depthCompare = vk::CompareOp::eLessOrEqual;
         break;
@@ -81,7 +82,7 @@ void PipelineManager::init(const vk::raii::Device& targetDevice,
     const vk::PushConstantRange pushRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .offset = 0,
-        .size = sizeof(LightPushConstants),
+        .size = sizeof(SkyboxPushConstants),
     };
     const std::array sceneMaterialSets = {
         descriptors.layout(DescriptorLayoutPreset::Scene),

@@ -64,6 +64,7 @@ void Renderer::shutdown() noexcept
 
     scene.reset();
     pickingPass.reset();
+    skyboxPass.reset();
     scenePass.reset();
     resources.reset();
     pipelines.reset();
@@ -137,6 +138,7 @@ void Renderer::initVulkan()
                    shaders.getOrLoad("light"),
                    std::move(brdfLut),
                    resources.sampler(brdfLutBinding.samplerID));
+    skyboxPass.init(swapchain, pipelines, shaders.getOrLoad("skybox"));
     pickingPass.init(vulkan.physicalDeviceHandle(),
                      vulkan.deviceHandle(),
                      swapchain,
@@ -166,6 +168,7 @@ void Renderer::recreateSwapchain()
     swapchain.init(vulkan, window);
     swapchain.transitionDepthImageLayout(frames[0].commandPoolHandle());
     scenePass.refreshPipelines();
+    skyboxPass.refreshPipeline();
     pickingPass.refreshPipeline();
     context().editor->refreshUi();
 }
@@ -190,6 +193,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& 
         scene.renderItems(),
         scene.lightRenderItems(),
         scene.lightMarkers(),
+        skyboxPass,
         frameIndex,
         {.imageIndex = imageIndex,
          .viewport = editor.viewport,

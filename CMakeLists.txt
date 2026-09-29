@@ -39,6 +39,8 @@ set(SLANG_LIGHT_SHADER "${SHADER_BINARY_DIR}/light.spv")
 set(SLANG_LIGHT_REFLECTION "${SHADER_BINARY_DIR}/light.reflection.json")
 set(SLANG_EDITOR_PICKING_SHADER "${SHADER_BINARY_DIR}/editor_picking.spv")
 set(SLANG_EDITOR_PICKING_REFLECTION "${SHADER_BINARY_DIR}/editor_picking.reflection.json")
+set(SLANG_SKYBOX_SHADER "${SHADER_BINARY_DIR}/skybox.spv")
+set(SLANG_SKYBOX_REFLECTION "${SHADER_BINARY_DIR}/skybox.reflection.json")
 
 add_custom_command(
         OUTPUT "${SLANG_SHADER}" "${SLANG_SHADER_REFLECTION}"
@@ -97,6 +99,25 @@ add_custom_command(
         VERBATIM
 )
 
+add_custom_command(
+        OUTPUT "${SLANG_SKYBOX_SHADER}" "${SLANG_SKYBOX_REFLECTION}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
+        COMMAND ${SLANGC_EXECUTABLE}
+        "${SHADER_SOURCE_DIR}/skybox.slang"
+        -target spirv
+        -profile spirv_1_4
+        -matrix-layout-column-major
+        -emit-spirv-directly
+        -fvk-use-entrypoint-name
+        -entry vertMain
+        -entry fragMain
+        -reflection-json "${SLANG_SKYBOX_REFLECTION}"
+        -o "${SLANG_SKYBOX_SHADER}"
+        DEPENDS "${SHADER_SOURCE_DIR}/skybox.slang"
+        COMMENT "Compiling skybox Slang shader"
+        VERBATIM
+)
+
 add_custom_target(RenderLabShaders DEPENDS
         "${SLANG_SHADER}"
         "${SLANG_SHADER_REFLECTION}"
@@ -104,6 +125,8 @@ add_custom_target(RenderLabShaders DEPENDS
         "${SLANG_LIGHT_REFLECTION}"
         "${SLANG_EDITOR_PICKING_SHADER}"
         "${SLANG_EDITOR_PICKING_REFLECTION}"
+        "${SLANG_SKYBOX_SHADER}"
+        "${SLANG_SKYBOX_REFLECTION}"
 )
 
 add_executable(RenderLab
@@ -187,6 +210,8 @@ add_executable(RenderLab
         src/render/scene/GpuScene.h
         src/render/pass/ScenePass.cpp
         src/render/pass/ScenePass.h
+        src/render/pass/SkyboxPass.cpp
+        src/render/pass/SkyboxPass.h
         src/render/pass/LightMarkers.cpp
         src/render/pass/LightMarkers.h
         src/render/pass/EditorPickingPass.cpp

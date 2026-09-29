@@ -20,6 +20,8 @@ inline constexpr uint32_t prefilteredSpecularImageBinding = 3;
 inline constexpr uint32_t prefilteredSpecularSamplerBinding = 4;
 inline constexpr uint32_t brdfLutImageBinding = 5;
 inline constexpr uint32_t brdfLutSamplerBinding = 6;
+inline constexpr uint32_t radianceImageBinding = 7;
+inline constexpr uint32_t radianceSamplerBinding = 8;
 inline constexpr uint32_t materialImageBinding = 0;
 inline constexpr uint32_t materialSamplerBinding = 1;
 inline constexpr uint32_t materialUniformBinding = 2;
@@ -80,6 +82,14 @@ struct EditorPickingPushConstants
     uint32_t padding2 = 0;
 };
 
+struct SkyboxPushConstants
+{
+    glm::mat4 inverseViewProjection{1.0f};
+    glm::vec4 cameraPosition{0.0f};
+    glm::vec4 viewport{0.0f};
+};
+
 static_assert(sizeof(MeshPushConstants) == 64);
 static_assert(sizeof(LightPushConstants) == 80);
 static_assert(sizeof(EditorPickingPushConstants) == 80);
+static_assert(sizeof(SkyboxPushConstants) == 96);
