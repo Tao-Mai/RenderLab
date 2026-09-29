@@ -1,0 +1,4 @@
+{
+  "Id": "light",
+  "Binary": "shaders/light.spv"
+}

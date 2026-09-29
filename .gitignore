@@ -5,8 +5,5 @@ cmake-build-default
 scripts/
 .cache
 .idea
-assets/*
-!assets/Shader/
-assets/Shader/*
-!assets/Shader/skybox.json
+assets/binary/
 resource/

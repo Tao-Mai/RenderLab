@@ -20,7 +20,7 @@ namespace
 {
 struct StbiDeleter
 {
-    void operator()(stbi_uc* pixels) const { stbi_image_free(pixels); }
+    void operator()(void* pixels) const { stbi_image_free(pixels); }
 };
 
 struct ExrPixelsDeleter
@@ -60,6 +60,7 @@ AssetImporter::LoadedImage AssetImporter::loadImage(const std::filesystem::path&
 
     if (extension == ".exr")
     {
+        LOG_INFO("Reading EXR header: '{}'", filename);
         EXRVersion version{};
         CHECK(ParseEXRVersionFromFile(&version, filename.c_str()) == TINYEXR_SUCCESS &&
               !version.multipart && !version.non_image,
@@ -98,6 +99,8 @@ AssetImporter::LoadedImage AssetImporter::loadImage(const std::filesystem::path&
             ++colorChannels;
         }
         CHECK(colorChannels >= 3, "EXR has no RGB channels: {}", filename);
+        LOG_INFO("EXR header ready: {} color channels, {} precision",
+                 colorChannels, hasFloat ? "float" : "half");
 
         std::optional<LoadedImage::Projection> projection;
         for (int index = 0; index < header.num_custom_attributes; ++index)
@@ -129,6 +132,7 @@ AssetImporter::LoadedImage AssetImporter::loadImage(const std::filesystem::path&
         int width = 0;
         int height = 0;
         const char* decodeError = nullptr;
+        LOG_INFO("Decoding EXR pixels: '{}'", filename);
         const int result = LoadEXR(&raw, &width, &height, filename.c_str(), &decodeError);
         std::unique_ptr<float, ExrPixelsDeleter> decoded(raw);
         std::unique_ptr<const char, ExrErrorDeleter> decodeErrorGuard(decodeError);
@@ -147,6 +151,33 @@ AssetImporter::LoadedImage AssetImporter::loadImage(const std::filesystem::path&
             .width = static_cast<uint32_t>(width),
             .height = static_cast<uint32_t>(height),
             .projection = projection,
+            .pixels = std::move(pixels),
+        };
+    }
+
+    if (extension == ".hdr")
+    {
+        LOG_INFO("Decoding HDR pixels: '{}'", filename);
+        int width = 0;
+        int height = 0;
+        int channels = 0;
+        std::unique_ptr<float, StbiDeleter> decoded(
+            stbi_loadf(filename.c_str(), &width, &height, &channels, 4));
+        CHECK(decoded && width > 0 && height > 0 && channels >= 1 && channels <= 4,
+              "failed to load HDR image '{}': {}",
+              filename,
+              stbi_failure_reason());
+
+        const uint64_t pixelCount = static_cast<uint64_t>(width) * height;
+        CHECK(pixelCount <= std::numeric_limits<size_t>::max() / 4,
+              "HDR image is too large: {}",
+              filename);
+        std::vector<float> pixels(decoded.get(), decoded.get() + pixelCount * 4);
+        return {
+            .format = ImageFormat::RGBA32F,
+            .fileFormat = LoadedImage::FileFormat::Hdr,
+            .width = static_cast<uint32_t>(width),
+            .height = static_cast<uint32_t>(height),
             .pixels = std::move(pixels),
         };
     }
@@ -194,6 +225,7 @@ ColorSpace AssetImporter::defaultColorSpace(LoadedImage::FileFormat format)
     switch (format)
     {
         case LoadedImage::FileFormat::Exr:
+        case LoadedImage::FileFormat::Hdr:
             return ColorSpace::Linear;
         case LoadedImage::FileFormat::JPEG:
             return ColorSpace::Srgb;

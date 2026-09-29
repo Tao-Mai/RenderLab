@@ -1,0 +1,147 @@
+{
+    "Id": "default",
+    "Camera": {
+        "Position": [
+            -7.864352703094482,
+            2.921424388885498,
+            -0.5768210291862488
+        ],
+        "WorldUp": [
+            0.0,
+            1.0,
+            0.0
+        ],
+        "Yaw": 0.360706090927124,
+        "Pitch": -15.440022468566895,
+        "FieldOfView": 45.0,
+        "NearPlane": 0.10000000149011612,
+        "FarPlane": 100.0,
+        "MovementSpeed": 3.0,
+        "SprintMultiplier": 3.0,
+        "MouseSensitivity": 0.11999999731779099
+    },
+    "Objects": [
+        {
+            "Name": "Point Light",
+            "Components": {
+                "Transform": {
+                    "Position": [
+                        0.24438335001468658,
+                        2.811169147491455,
+                        2.7880053520202637
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ],
+                    "Scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                },
+                "Light": {
+                    "Type": "Point",
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "Intensity": 5.0,
+                    "Range": 15.0,
+                    "CosInner": 0.9396926164627075,
+                    "CosOuter": 0.8660253882408142,
+                    "AreaSize": [
+                        1.0,
+                        1.0
+                    ],
+                    "Enabled": false,
+                    "CastShadow": false
+                }
+            }
+        },
+        {
+            "Name": "Sphere",
+            "Components": {
+                "Transform": {
+                    "Position": [
+                        -1.0166964530944824,
+                        0.618804931640625,
+                        0.0478077232837677
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ],
+                    "Scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                },
+                "Render": {
+                    "MeshId": "sphere",
+                    "MaterialOverrides": {
+                        "0": {
+                            "Id": "",
+                            "BaseColorFactor": [
+                                0.9323496222496033,
+                                0.9382239580154419,
+                                0.8947541117668152,
+                                1.0
+                            ],
+                            "Metallic": 1.0,
+                            "Roughness": 0.0
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "Name": "Floor",
+            "Components": {
+                "Transform": {
+                    "Position": [
+                        -2.5125086307525635,
+                        -3.508471965789795,
+                        0.0
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ],
+                    "Scale": [
+                        10.0,
+                        1.0,
+                        10.0
+                    ]
+                },
+                "Render": {
+                    "MeshId": "plane",
+                    "MaterialOverrides": {
+                        "0": {
+                            "Id": "",
+                            "BaseColorFactor": [
+                                0.16602319478988647,
+                                0.10897275060415268,
+                                0.10897275060415268,
+                                1.0
+                            ],
+                            "Metallic": 1.0,
+                            "Roughness": 0.6499999761581421
+                        }
+                    }
+                }
+            }
+        }
+    ],
+    "Environment": {
+        "EnvironmentMap": "newport_loft"
+    }
+}

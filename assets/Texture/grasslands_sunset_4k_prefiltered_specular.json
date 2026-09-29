@@ -1,0 +1,12 @@
+{
+    "Id": "grasslands_sunset_4k_prefiltered_specular",
+    "Source": "File",
+    "Format": "RGBA32F",
+    "ColorSpace": "Linear",
+    "Layout": "Cubemap",
+    "Width": 1024,
+    "Height": 1024,
+    "MipLevels": 11,
+    "Path": "../resource/grasslands_sunset_4k.exr",
+    "Binary": "binary/texture\\grasslands_sunset_4k_prefiltered_specular.bin"
+}

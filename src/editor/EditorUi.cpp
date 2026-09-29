@@ -1,14 +1,24 @@
 #include "editor/EditorUi.h"
 
 #include "asset/Asset.h"
+#include "asset/AssetDescManager.h"
+#include "core/ConfigManager.h"
+#include "core/Context.h"
 #include "core/Logger.h"
 #include "ecs/Transform.h"
 #include "editor/ComponentDraw.h"
 
 #include <algorithm>
 #include <array>
+#include <cctype>
+#include <chrono>
 #include <cmath>
+#include <exception>
+#include <filesystem>
+#include <future>
 #include <string>
+#include <system_error>
+#include <utility>
 
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
@@ -25,10 +35,92 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
+#include <commdlg.h>
 #endif
 
 namespace
 {
+    [[nodiscard]] std::string displayPath(const std::filesystem::path& path)
+    {
+        const std::u8string utf8 = path.u8string();
+        return {reinterpret_cast<const char*>(utf8.data()), utf8.size()};
+    }
+
+    void drawSourcePath(std::filesystem::path& source, const wchar_t* filter)
+    {
+        if (ImGui::Button("Source file..."))
+        {
+            std::array<wchar_t, 32768> selectedFile{};
+            const std::wstring initialDirectory =
+                context().config->paths().assets.parent_path().wstring();
+
+            OPENFILENAMEW dialog{};
+            dialog.lStructSize = sizeof(dialog);
+            dialog.hwndOwner = GetActiveWindow();
+            dialog.lpstrFilter = filter;
+            dialog.lpstrFile = selectedFile.data();
+            dialog.nMaxFile = static_cast<DWORD>(selectedFile.size());
+            dialog.lpstrInitialDir = initialDirectory.c_str();
+            dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST |
+                OFN_EXPLORER | OFN_NOCHANGEDIR;
+
+            if (GetOpenFileNameW(&dialog))
+            {
+                source = selectedFile.data();
+            }
+        }
+
+        if (!source.empty())
+        {
+            const std::string label = displayPath(source);
+            ImGui::TextWrapped("%s", label.c_str());
+        }
+    }
+
+    [[nodiscard]] bool sourceIsImportable(
+        const std::filesystem::path& source, int assetType)
+    {
+        std::error_code error;
+        if (source.empty() || !std::filesystem::is_regular_file(source, error))
+        {
+            return false;
+        }
+
+        std::string extension = source.extension().string();
+        std::ranges::transform(extension, extension.begin(),
+            [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+        if (assetType == 2)
+        {
+            return extension == ".gltf" || extension == ".glb";
+        }
+        return extension == ".exr" || extension == ".png" ||
+            extension == ".jpg" || extension == ".jpeg" || extension == ".hdr" ||
+            extension == ".bmp" || extension == ".tga" ||
+            extension == ".gif" || extension == ".psd" ||
+            extension == ".pic" || extension == ".pnm";
+    }
+
+    void drawColorSpace(std::optional<ColorSpace>& colorSpace)
+    {
+        int selected = 0;
+        if (colorSpace)
+        {
+            selected = *colorSpace == ColorSpace::Linear ? 1 : 2;
+        }
+        if (ImGui::Combo("Color space", &selected, "Auto\0Linear\0sRGB\0"))
+        {
+            colorSpace = selected == 0
+                ? std::nullopt
+                : std::optional{selected == 1 ? ColorSpace::Linear : ColorSpace::Srgb};
+        }
+    }
+
+    void drawPositiveUint(const char* label, uint32_t& value)
+    {
+        constexpr uint32_t step = 1;
+        ImGui::InputScalar(label, ImGuiDataType_U32, &value, &step);
+    }
+
     void applyModelMatrix(ecs::Transform& transform, const glm::mat4& model)
     {
         transform.position = glm::vec3{model[3]};
@@ -246,17 +338,20 @@ bool EditorUI::drawGizmo(
     return false;
 }
 
-bool EditorUI::drawInspector(Scene::Desc::Object* object, std::string_view sceneName, bool dirty)
+EditorUI::InspectorResult EditorUI::drawInspector(
+    Scene::Desc& scene, Scene::Desc::Object* object, bool dirty)
 {
     ImGui::SetNextWindowDockID(editorDockId, ImGuiCond_Always);
     constexpr ImGuiWindowFlags editorFlags = ImGuiWindowFlags_NoMove |
                                               ImGuiWindowFlags_NoCollapse |
                                               ImGuiWindowFlags_NoSavedSettings;
     ImGui::Begin("Editor", nullptr, editorFlags);
+    finishEnvironmentImport();
 
     ImGui::TextUnformatted("Performance");
     ImGui::Separator();
     ImGui::Text("FPS: %.1f", displayedFps);
+    const std::string& sceneName = scene.id.value;
     if (dirty)
     {
         ImGui::Text("%.*s*", static_cast<int>(sceneName.size()), sceneName.data());
@@ -266,8 +361,41 @@ bool EditorUI::drawInspector(Scene::Desc::Object* object, std::string_view scene
         ImGui::TextUnformatted(sceneName.data(), sceneName.data() + sceneName.size());
     }
 
-    bool edited = false;
+    InspectorResult result;
     ImGui::Spacing();
+    result.environmentChanged = drawEnvironmentSelection(scene);
+    result.edited = result.environmentChanged;
+
+    ImGui::SeparatorText("Assets");
+    constexpr const char* assetTypes[] = {"Texture", "Environment map", "Mesh"};
+    ImGui::BeginDisabled(environmentImport.valid());
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::Combo("##Import asset type", &importAssetType, assetTypes,
+                 static_cast<int>(std::size(assetTypes)));
+    if (ImGui::Button("Import"))
+    {
+        textureSetting = {};
+        environmentSetting = {};
+        meshSetting = {};
+        ImGui::OpenPopup("Import Asset");
+    }
+    ImGui::EndDisabled();
+    if (environmentImport.valid())
+    {
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel import"))
+        {
+            importStop.request_stop();
+            importStatus = "Canceling environment import...";
+        }
+    }
+    if (!importStatus.empty())
+    {
+        ImGui::TextWrapped("%s", importStatus.c_str());
+    }
+    drawImportDialog();
+
+    ImGui::SeparatorText("Object");
     if (object != nullptr)
     {
         ImGui::Text("Selected: %s", object->name.c_str());
@@ -275,7 +403,7 @@ bool EditorUI::drawInspector(Scene::Desc::Object* object, std::string_view scene
         {
             ImGui::Spacing();
             ImGui::PushID(typeName.c_str());
-            edited = drawComponent(typeName, component) || edited;
+            result.edited = drawComponent(typeName, component) || result.edited;
             ImGui::PopID();
         }
     }
@@ -285,7 +413,173 @@ bool EditorUI::drawInspector(Scene::Desc::Object* object, std::string_view scene
     }
 
     ImGui::End();
-    return edited;
+    return result;
+}
+
+bool EditorUI::drawEnvironmentSelection(Scene::Desc& scene)
+{
+    ImGui::SeparatorText("Scene environment");
+    const auto& current = scene.environment.environmentMap;
+    const char* preview = current ? current->value.c_str() : "None";
+    bool changed = false;
+
+    if (ImGui::BeginCombo("Environment map", preview))
+    {
+        if (ImGui::Selectable("None", !current) && current)
+        {
+            scene.environment.environmentMap.reset();
+            changed = true;
+        }
+
+        auto ids = context().assetDescManager->loadedIds<EnvironmentMap>();
+        std::ranges::sort(ids, {}, &EnvironmentMap::ID::value);
+        for (const EnvironmentMap::ID& id : ids)
+        {
+            const bool selected = current && *current == id;
+            if (ImGui::Selectable(id.value.c_str(), selected) && !selected)
+            {
+                scene.environment.environmentMap = id;
+                changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    return changed;
+}
+
+void EditorUI::finishEnvironmentImport()
+{
+    if (!environmentImport.valid() ||
+        environmentImport.wait_for(std::chrono::seconds{0}) != std::future_status::ready)
+    {
+        return;
+    }
+
+    try
+    {
+        auto prepared = environmentImport.get();
+        if (!prepared || importStop.stop_requested())
+        {
+            importStatus = "Environment import canceled";
+            return;
+        }
+
+        const EnvironmentMap::ID id = AssetImporter::saveEnvironmentMap(
+            std::move(*prepared));
+        importStatus = "Imported: " + id.value;
+    }
+    catch (const std::exception& error)
+    {
+        LOG_ERROR("Environment import failed: {}", error.what());
+        importStatus = std::string{"Import failed: "} + error.what();
+    }
+}
+
+void EditorUI::drawImportDialog()
+{
+    if (!ImGui::BeginPopupModal("Import Asset", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        return;
+    }
+
+    static constexpr wchar_t imageFilter[] =
+        L"Image files (*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.gif;*.psd;*.pic;*.pnm;*.exr;*.hdr)\0"
+        L"*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.gif;*.psd;*.pic;*.pnm;*.exr;*.hdr\0"
+        L"All files (*.*)\0*.*\0";
+    static constexpr wchar_t meshFilter[] =
+        L"glTF files (*.gltf;*.glb)\0*.gltf;*.glb\0All files (*.*)\0*.*\0";
+
+    std::filesystem::path* source = nullptr;
+    switch (importAssetType)
+    {
+        case 0:
+            source = &textureSetting.source;
+            drawSourcePath(*source, imageFilter);
+            drawColorSpace(textureSetting.colorSpace);
+            break;
+        case 1:
+            source = &environmentSetting.source;
+            drawSourcePath(*source, imageFilter);
+            drawColorSpace(environmentSetting.colorSpace);
+            drawPositiveUint("Irradiance face size", environmentSetting.irradianceSize);
+            drawPositiveUint("Irradiance samples", environmentSetting.irradianceSampleCount);
+            drawPositiveUint("Prefilter first mip samples",
+                             environmentSetting.prefilteredSpecularSampleCount);
+            drawPositiveUint("Prefilter sample limit",
+                             environmentSetting.prefilteredSpecularMaxSampleCount);
+            break;
+        case 2:
+            source = &meshSetting.source;
+            drawSourcePath(*source, meshFilter);
+            break;
+        default:
+            CHECK(false, "invalid import asset type");
+    }
+
+    const bool validSource = sourceIsImportable(*source, importAssetType);
+    std::string sourceExtension = source->extension().string();
+    std::ranges::transform(sourceExtension, sourceExtension.begin(),
+        [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    const bool validColorSpace = (sourceExtension != ".exr" && sourceExtension != ".hdr") ||
+        (importAssetType == 0
+            ? textureSetting.colorSpace != ColorSpace::Srgb
+            : importAssetType == 1
+                ? environmentSetting.colorSpace != ColorSpace::Srgb
+                : true);
+    const bool validSettings = importAssetType != 1 ||
+        (environmentSetting.irradianceSize > 0 &&
+         environmentSetting.irradianceSampleCount > 0 &&
+         environmentSetting.prefilteredSpecularSampleCount > 0 &&
+         environmentSetting.prefilteredSpecularMaxSampleCount >=
+             environmentSetting.prefilteredSpecularSampleCount);
+    if (!validSource)
+    {
+        ImGui::TextWrapped("Select an existing file in a supported format.");
+    }
+    else if (!validSettings || !validColorSpace)
+    {
+        ImGui::TextWrapped("Check color space and sample settings. EXR and HDR require Linear; sizes and sample counts must be positive, and the prefilter limit must cover the first mip.");
+    }
+
+    ImGui::BeginDisabled(!validSource || !validSettings || !validColorSpace);
+    if (ImGui::Button("Confirm"))
+    {
+        std::string importedId;
+        switch (importAssetType)
+        {
+            case 0:
+                importedId = AssetImporter::importTexture(textureSetting).value;
+                break;
+            case 1:
+                importStop = std::stop_source{};
+                environmentImport = std::async(
+                    std::launch::async,
+                    [setting = environmentSetting, stop = importStop.get_token()]
+                    {
+                        return AssetImporter::prepareEnvironmentMap(setting, stop);
+                    });
+                importStatus = "Importing environment map (progress in console)...";
+                break;
+            case 2:
+                importedId = AssetImporter::importMesh(meshSetting).value;
+                break;
+            default:
+                CHECK(false, "invalid import asset type");
+        }
+        if (!environmentImport.valid())
+        {
+            importStatus = "Imported: " + importedId;
+        }
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndDisabled();
+
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel"))
+    {
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
 }
 
 void EditorUI::endFrame()
@@ -350,8 +644,14 @@ ViewportRect EditorUI::sceneViewportPixels() const
     return scenePixels;
 }
 
-void EditorUI::shutdown() noexcept
+void EditorUI::shutdown(bool stopImport) noexcept
 {
+    if (stopImport && environmentImport.valid())
+    {
+        importStop.request_stop();
+        environmentImport.wait();
+    }
+
     if (vulkanBackendInitialized)
     {
         ImGui_ImplVulkan_Shutdown();

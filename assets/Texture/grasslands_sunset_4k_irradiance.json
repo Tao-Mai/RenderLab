@@ -1,0 +1,12 @@
+{
+    "Id": "grasslands_sunset_4k_irradiance",
+    "Source": "File",
+    "Format": "RGBA32F",
+    "ColorSpace": "Linear",
+    "Layout": "Cubemap",
+    "Width": 32,
+    "Height": 32,
+    "MipLevels": 1,
+    "Path": "../resource/grasslands_sunset_4k.exr",
+    "Binary": "binary/texture\\grasslands_sunset_4k_irradiance.bin"
+}

@@ -161,6 +161,9 @@ add_executable(RenderLab
         src/asset/AssetID.h
         src/asset/ImageFormat.h
         src/asset/import/ImportImage.cpp
+        src/asset/import/EnvironmentMapUtils.cpp
+        src/asset/import/EnvironmentMapUtils.h
+        src/asset/import/EnvironmentMapBake.cpp
         src/asset/import/ImportTexture.cpp
         src/asset/import/ImportEnvironmentMap.cpp
         src/asset/import/ImportId.h
@@ -252,6 +255,7 @@ target_link_libraries(RenderLab PRIVATE
         glog::glog
         EnTT::EnTT
         unofficial::tinyexr::tinyexr
+        comdlg32
 )
 
 if (MSVC)

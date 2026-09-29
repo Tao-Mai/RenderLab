@@ -43,7 +43,7 @@ void Editor::shutdown() noexcept
 
 void Editor::refreshUi()
 {
-    ui.shutdown();
+    ui.shutdown(false);
     init();
 }
 
@@ -83,7 +83,7 @@ EditorFrameInput Editor::buildFrame(
     const glm::mat4 projection = camera.projectionMatrix(ui.sceneAspectRatio());
     const bool enableGizmoShortcuts = !camera.isNavigationActive();
 
-    if (selectedObject != nullptr)
+    if (!camera.isFreeMovementActive() && selectedObject != nullptr)
     {
         if (const auto transformIt = selectedObject->components.find("Transform");
             transformIt != selectedObject->components.end())
@@ -128,11 +128,15 @@ EditorFrameInput Editor::buildFrame(
         }
     }
 
-    const Scene::ID sceneId = context().scene != nullptr
-        ? context().scene->id : Scene::ID{};
-    if (ui.drawInspector(selectedObject, sceneId.value, dirty))
+    EditorUI::InspectorResult inspector = ui.drawInspector(
+        *context().scene, selectedObject, dirty);
+    if (inspector.edited)
     {
         dirty = true;
+    }
+    if (inspector.environmentChanged)
+    {
+        context().renderer->loadScene(*context().scene);
     }
     ui.endFrame();
     return input;

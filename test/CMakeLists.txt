@@ -10,6 +10,8 @@ add_executable(RenderLabTests
         ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinTexture.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinSampler.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/import/ImportImage.cpp
+        ${PROJECT_SOURCE_DIR}/src/asset/import/EnvironmentMapUtils.cpp
+        ${PROJECT_SOURCE_DIR}/src/asset/import/EnvironmentMapBake.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/import/ImportTexture.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/import/ImportEnvironmentMap.cpp
         ${PROJECT_SOURCE_DIR}/src/core/ConfigManager.cpp

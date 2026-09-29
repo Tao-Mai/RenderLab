@@ -1,0 +1,12 @@
+{
+    "Id": "lut_ggx",
+    "Source": "File",
+    "Format": "RG8",
+    "ColorSpace": "Linear",
+    "Layout": "Image2D",
+    "Width": 1024,
+    "Height": 1024,
+    "MipLevels": 1,
+    "Path": "../resource/lut_ggx.png",
+    "Binary": "binary/texture\\lut_ggx.bin"
+}

@@ -7,19 +7,23 @@
 #include <filesystem>
 #include <limits>
 #include <string>
+#include <system_error>
 
 namespace asset_import
 {
-[[nodiscard]] inline std::filesystem::path sourceRelativeToAssets(
+[[nodiscard]] inline std::filesystem::path sourcePathForDesc(
     const std::filesystem::path& source)
 {
     const auto assetsRoot = context().config->paths().assets;
     const auto projectRoot = assetsRoot.parent_path();
     const auto absoluteSource = std::filesystem::absolute(source).lexically_normal();
-    const auto fromProject = std::filesystem::relative(absoluteSource, projectRoot);
-    CHECK(!fromProject.empty() && *fromProject.begin() != "..",
-          "asset source is outside project root: {}", source.string());
-    return std::filesystem::relative(absoluteSource, assetsRoot);
+    std::error_code error;
+    const auto fromProject = std::filesystem::relative(absoluteSource, projectRoot, error);
+    if (!error && !fromProject.empty() && *fromProject.begin() != "..")
+    {
+        return std::filesystem::relative(absoluteSource, assetsRoot);
+    }
+    return absoluteSource;
 }
 
 template <AssetType T>

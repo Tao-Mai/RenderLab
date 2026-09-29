@@ -1,0 +1,12 @@
+{
+    "Id": "newport_loft_irradiance",
+    "Source": "File",
+    "Format": "RGBA32F",
+    "ColorSpace": "Linear",
+    "Layout": "Cubemap",
+    "Width": 32,
+    "Height": 32,
+    "MipLevels": 1,
+    "Path": "../resource/newport_loft.hdr",
+    "Binary": "binary/texture\\newport_loft_irradiance.bin"
+}

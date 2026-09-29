@@ -1,0 +1,15 @@
+{
+    "Id": "grasslands_sunset_4k",
+    "Radiance": {
+        "TextureID": "grasslands_sunset_4k",
+        "SamplerID": "linearClamp"
+    },
+    "Irradiance": {
+        "TextureID": "grasslands_sunset_4k_irradiance",
+        "SamplerID": "linearClamp"
+    },
+    "PrefilteredSpecular": {
+        "TextureID": "grasslands_sunset_4k_prefiltered_specular",
+        "SamplerID": "linearClamp"
+    }
+}

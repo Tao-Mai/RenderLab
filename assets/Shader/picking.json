@@ -1,0 +1,4 @@
+{
+  "Id": "picking",
+  "Binary": "shaders/editor_picking.spv"
+}

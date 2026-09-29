@@ -6,11 +6,24 @@
 #include <filesystem>
 #include <optional>
 #include <span>
+#include <stop_token>
 #include <variant>
 #include <vector>
 
+struct ImportTextureSetting
+{
+    std::filesystem::path     source;
+    std::optional<ColorSpace> colorSpace;
+};
+
+struct ImportMeshSetting
+{
+    std::filesystem::path source;
+};
+
 struct ImportEnvironmentMapSetting
 {
+    std::filesystem::path source;
     // 源图与 radiance 的色彩空间；未指定时按文件格式推断。
     std::optional<ColorSpace> colorSpace;
     // Irradiance Cubemap 每个面的宽高；输出始终是线性 RGBA32F。
@@ -26,15 +39,25 @@ struct ImportEnvironmentMapSetting
 class AssetImporter
 {
 public:
-    static Texture::ID importTexture(
-        const std::filesystem::path& source,
-        std::optional<ColorSpace> colorSpace = std::nullopt);
+    struct PreparedEnvironmentMap
+    {
+        std::filesystem::path source;
+        Texture::Desc radiance;
+        Texture::Desc irradiance;
+        Texture::Desc prefiltered;
+        std::vector<uint8_t> radianceBytes;
+        std::vector<uint8_t> irradianceBytes;
+        std::vector<uint8_t> prefilteredBytes;
+    };
 
-    static EnvironmentMap::ID importEnvironmentMap(
-        const std::filesystem::path& source,
-        const ImportEnvironmentMapSetting& setting = {});
+    static Texture::ID importTexture(const ImportTextureSetting& setting);
 
-    static Mesh::ID importMesh(const std::filesystem::path& source);
+    static EnvironmentMap::ID importEnvironmentMap(const ImportEnvironmentMapSetting& setting);
+    [[nodiscard]] static std::optional<PreparedEnvironmentMap> prepareEnvironmentMap(
+        const ImportEnvironmentMapSetting& setting, std::stop_token stop = {});
+    static EnvironmentMap::ID saveEnvironmentMap(PreparedEnvironmentMap&& prepared);
+
+    static Mesh::ID importMesh(const ImportMeshSetting& setting);
 
 private:
     struct LoadedImage
@@ -48,6 +71,7 @@ private:
         enum class FileFormat
         {
             Exr,
+            Hdr,
             JPEG, // Other 8-bit formats decoded by stb use the same color-space default.
         };
 
@@ -78,17 +102,20 @@ private:
         const std::filesystem::path& source);
     static void buildMipmapChain(
         CubemapPixels& cubemap,
-        const Texture::Desc& radiance);
+        const Texture::Desc& radiance,
+        std::stop_token stop = {});
     [[nodiscard]] static std::vector<uint8_t> irradianceCubemap(
         const Texture::Desc& radiance,
         std::span<const float> radiancePixels,
         uint32_t side,
-        uint32_t sampleCount);
+        uint32_t sampleCount,
+        std::stop_token stop = {});
     [[nodiscard]] static std::vector<uint8_t> prefilterSpecularMap(
         const Texture::Desc& radiance,
         std::span<const float> radiancePixels,
         uint32_t sampleCount,
-        uint32_t maxSampleCount);
+        uint32_t maxSampleCount,
+        std::stop_token stop = {});
     [[nodiscard]] static Texture::ID saveTexture(
         Texture::Desc                  desc,
         const std::filesystem::path& source,

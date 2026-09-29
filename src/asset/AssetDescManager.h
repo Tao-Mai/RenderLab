@@ -11,6 +11,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 class AssetDescManager
 {
@@ -55,6 +56,18 @@ public:
         const typename T::ID id = desc.id;
         descMap<T>().insert_or_assign(id, std::move(desc));
         return id;
+    }
+
+    template <AssetType T>
+    [[nodiscard]] std::vector<typename T::ID> loadedIds() const
+    {
+        std::vector<typename T::ID> ids;
+        ids.reserve(descMap<T>().size());
+        for (const auto& [id, desc] : descMap<T>())
+        {
+            ids.push_back(id);
+        }
+        return ids;
     }
 
 private:

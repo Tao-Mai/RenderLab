@@ -15,9 +15,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstring>
 #include <functional>
-#include <iostream>
 #include <map>
 #include <optional>
 #include <string>
@@ -88,11 +88,10 @@ struct GltfBuild
     CHECK(!sourcePath.starts_with("data:") && !sourcePath.starts_with("embedded:"),
           "embedded glTF textures require external files: {}",
           sourcePath);
-    (void)asset_import::sourceRelativeToAssets(sourcePath);
-
-    const Texture::ID id = AssetImporter::importTexture(
-        std::filesystem::absolute(sourcePath),
-        colorSpace);
+    const Texture::ID id = AssetImporter::importTexture({
+        .source = std::filesystem::absolute(sourcePath),
+        .colorSpace = colorSpace,
+    });
     build.textureCache.emplace(key, id);
     return id;
 }
@@ -381,8 +380,13 @@ void appendMesh(
 }
 }
 
-Mesh::ID AssetImporter::importMesh(const std::filesystem::path& path)
+Mesh::ID AssetImporter::importMesh(const ImportMeshSetting& setting)
 {
+    const std::filesystem::path& path = setting.source;
+    CHECK(!path.empty(), "mesh source path is empty");
+    const auto start = std::chrono::steady_clock::now();
+    LOG_INFO("Import mesh '{}' started", path.string());
+
     tinygltf::TinyGLTF loader;
     tinygltf::Model    model;
     std::string        warning;
@@ -400,9 +404,11 @@ Mesh::ID AssetImporter::importMesh(const std::filesystem::path& path)
         : loader.LoadASCIIFromFile(&model, &error, &warning, path.string());
     if (!warning.empty())
     {
-        std::cerr << "TinyGLTF warning: " << warning << '\n';
+        LOG_WARNING("glTF '{}': {}", path.string(), warning);
     }
     CHECK(loaded, "failed to load glTF '{}': {}", path.string(), error);
+    LOG_INFO("glTF parsed: {} meshes, {} materials, {} textures",
+             model.meshes.size(), model.materials.size(), model.textures.size());
 
     const Mesh::ID meshId = asset_import::nextId<Mesh>(path);
     GltfBuild     build;
@@ -442,11 +448,19 @@ Mesh::ID AssetImporter::importMesh(const std::filesystem::path& path)
     CHECK(!build.geometry.vertices.empty() && !build.geometry.indices.empty(),
           "glTF contains no triangle mesh data: {}",
           path.string());
+    LOG_INFO("Mesh geometry ready: {} vertices, {} indices, {} submeshes",
+             build.geometry.vertices.size(), build.geometry.indices.size(),
+             build.submeshes.size());
 
     Mesh::Desc mesh;
     mesh.id        = meshId;
     mesh.source    = Source::File;
     mesh.geometry  = context().assetDataManager->writeGeometry(meshId, build.geometry);
     mesh.submeshes = std::move(build.submeshes);
-    return context().assetDescManager->save<Mesh>(std::move(mesh));
+    const Mesh::ID id = context().assetDescManager->save<Mesh>(std::move(mesh));
+    LOG_INFO("Import mesh '{}' completed as '{}' in {:.1f}s",
+             path.string(), id.value,
+             std::chrono::duration<double>(
+                 std::chrono::steady_clock::now() - start).count());
+    return id;
 }

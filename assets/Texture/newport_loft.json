@@ -1,0 +1,12 @@
+{
+    "Id": "newport_loft",
+    "Source": "File",
+    "Format": "RGBA32F",
+    "ColorSpace": "Linear",
+    "Layout": "Cubemap",
+    "Width": 400,
+    "Height": 400,
+    "MipLevels": 9,
+    "Path": "../resource/newport_loft.hdr",
+    "Binary": "binary/texture\\newport_loft.bin"
+}

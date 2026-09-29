@@ -1,0 +1,15 @@
+{
+    "Id": "newport_loft",
+    "Radiance": {
+        "TextureID": "newport_loft",
+        "SamplerID": "linearClamp"
+    },
+    "Irradiance": {
+        "TextureID": "newport_loft_irradiance",
+        "SamplerID": "linearClamp"
+    },
+    "PrefilteredSpecular": {
+        "TextureID": "newport_loft_prefiltered_specular",
+        "SamplerID": "linearClamp"
+    }
+}

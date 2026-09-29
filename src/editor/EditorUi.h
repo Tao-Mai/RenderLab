@@ -1,10 +1,14 @@
 #pragma once
 
 #include "asset/Asset.h"
+#include "asset/AssetImporter.h"
 #include "editor/ViewportRect.h"
 
 #include <cstdint>
-#include <string_view>
+#include <future>
+#include <optional>
+#include <stop_token>
+#include <string>
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>
@@ -16,6 +20,12 @@ namespace ecs { struct Transform; }
 class EditorUI
 {
 public:
+    struct InspectorResult
+    {
+        bool edited = false;
+        bool environmentChanged = false;
+    };
+
     EditorUI() = default;
     ~EditorUI();
 
@@ -38,13 +48,13 @@ public:
         const glm::mat4& view,
         const glm::mat4& projection,
         bool             enableShortcuts);
-    [[nodiscard]] bool drawInspector(
+    [[nodiscard]] InspectorResult drawInspector(
+        Scene::Desc& scene,
         Scene::Desc::Object* object,
-        std::string_view sceneName,
         bool             dirty);
     void endFrame();
     void render(VkCommandBuffer commandBuffer) const;
-    void shutdown() noexcept;
+    void shutdown(bool stopImport = true) noexcept;
 
     [[nodiscard]] bool         sceneClicked(glm::vec2& mousePosition) const;
     [[nodiscard]] bool         wantsInput() const;
@@ -67,4 +77,15 @@ private:
     ViewportRect                      scenePixels;
     VkFormat                          colorFormat = VK_FORMAT_UNDEFINED;
     VkPipelineRenderingCreateInfoKHR  pipelineRenderingInfo{};
+    int                               importAssetType = 0;
+    ImportTextureSetting              textureSetting;
+    ImportEnvironmentMapSetting       environmentSetting;
+    ImportMeshSetting                 meshSetting;
+    std::string                       importStatus;
+    std::stop_source                  importStop;
+    std::future<std::optional<AssetImporter::PreparedEnvironmentMap>> environmentImport;
+
+    void drawImportDialog();
+    void finishEnvironmentImport();
+    [[nodiscard]] bool drawEnvironmentSelection(Scene::Desc& scene);
 };

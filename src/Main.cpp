@@ -35,15 +35,15 @@ int main(int argc, char** argv)
         std::string            importedId;
         if (command == "--import-texture")
         {
-            importedId = AssetImporter::importTexture(source).value;
+            importedId = AssetImporter::importTexture({.source = source}).value;
         }
         else if (command == "--import-environmentmap")
         {
-            importedId = AssetImporter::importEnvironmentMap(source, {}).value;
+            importedId = AssetImporter::importEnvironmentMap({.source = source}).value;
         }
         else if (command == "--import-mesh")
         {
-            importedId = AssetImporter::importMesh(source).value;
+            importedId = AssetImporter::importMesh({.source = source}).value;
         }
         else
         {
