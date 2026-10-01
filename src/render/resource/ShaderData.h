@@ -22,6 +22,8 @@ inline constexpr uint32_t brdfLutImageBinding = 5;
 inline constexpr uint32_t brdfLutSamplerBinding = 6;
 inline constexpr uint32_t radianceImageBinding = 7;
 inline constexpr uint32_t radianceSamplerBinding = 8;
+inline constexpr uint32_t shadowImageBinding = 9;
+inline constexpr uint32_t shadowSamplerBinding = 10;
 inline constexpr uint32_t materialImageBinding = 0;
 inline constexpr uint32_t materialSamplerBinding = 1;
 inline constexpr uint32_t materialUniformBinding = 2;
@@ -67,6 +69,12 @@ struct MeshPushConstants
     glm::mat4 model{1.0f};
 };
 
+struct ShadowPushConstants
+{
+    glm::mat4 model{1.0f};
+    glm::mat4 viewProjection{1.0f};
+};
+
 struct LightPushConstants
 {
     glm::mat4 model{1.0f};
@@ -90,6 +98,7 @@ struct SkyboxPushConstants
 };
 
 static_assert(sizeof(MeshPushConstants) == 64);
+static_assert(sizeof(ShadowPushConstants) == 128);
 static_assert(sizeof(LightPushConstants) == 80);
 static_assert(sizeof(EditorPickingPushConstants) == 80);
 static_assert(sizeof(SkyboxPushConstants) == 96);

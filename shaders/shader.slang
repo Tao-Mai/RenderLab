@@ -92,6 +92,12 @@ Texture2D<float4> brdfLUT;
 [[vk::binding(6, 0)]]
 SamplerState brdfLUTSampler;
 
+[[vk::binding(9, 0)]]
+TextureCube<float> pointShadowMap;
+
+[[vk::binding(10, 0)]]
+SamplerState pointShadowSampler;
+
 
 [shader("vertex")]
 VertexOutput vertMain(VertexInput input)
@@ -104,21 +110,6 @@ VertexOutput vertMain(VertexInput input)
     output.worldPosition = worldPosition.xyz;
     return output;
 }
-
-// [shader("fragment")]
-// float4 fragMain(VertexOutput input) : SV_Target
-// {
-//     float3 N = normalize(input.worldNormal);
-//     float3 V = normalize(sceneUniforms.cameraPosition - input.worldPosition);
-//     float3 R = reflect(-V, N);
-
-//     float lod = 7.0;
-
-//     float3 c = prefilteredSpecularMap.SampleLevel(
-//         prefilteredSpecularMapSampler, R, lod).rgb;
-
-//     return float4(c, 1.0);
-// }
 
 [shader("fragment")]
 float4 fragMain(VertexOutput input) : SV_Target
@@ -157,6 +148,9 @@ float4 fragMain(VertexOutput input) : SV_Target
     float3 specularBRDF = F * D * G / max(4.0 * NdotV * NdotL, 1e-5);
 
     float3 direct = pointLight * (diffuseBRDF + specularBRDF) * NdotL;
+
+    // 阴影
+   // float depth = pointShadowMap.SampleLevel(pointShadowSampler, -L, 0.0).r;
 
     // 环境光照
     float3 R = reflect(-V, N);

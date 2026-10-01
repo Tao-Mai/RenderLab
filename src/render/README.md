@@ -14,7 +14,7 @@
 | [`RenderResourceManager`](resource/RenderResourceManager.h) | 将 Mesh、Texture、Material、Sampler 资产映射到 GPU 资源，并缓存创建结果 | 资产级；当前缓存到 `Renderer` 关闭 |
 | [`FrameContext`](device/FrameContext.h) | CommandPool、CommandBuffer、Fence、image-available Semaphore、Scene UBO 与 Scene DescriptorSet | 每个 frame-in-flight 一份 |
 
-[`Renderer`](Renderer.h) 持有上述模块，并协调 [`GpuScene`](scene/GpuScene.h)、[`ScenePass`](pass/ScenePass.h)、[`SkyboxPass`](pass/SkyboxPass.h) 和 [`EditorPickingPass`](pass/EditorPickingPass.h)。Pass 负责录制绘制命令；Pipeline 和分辨率相关图像分别由对应的 Manager 与 `Swapchain` 持有。
+[`Renderer`](Renderer.h) 持有上述模块，并协调 [`GpuScene`](scene/GpuScene.h)、[`ShadowPass`](pass/ShadowPass.h)、[`ScenePass`](pass/ScenePass.h)、[`SkyboxPass`](pass/SkyboxPass.h) 和 [`EditorPickingPass`](pass/EditorPickingPass.h)。Pass 负责录制绘制命令；Pipeline 和分辨率相关图像分别由对应的 Manager 与 `Swapchain` 持有。Shadow Pass 持有固定尺寸的每帧深度 Cubemap，与交换链尺寸无关。
 
 当前 [`maxFramesInFlight`](RenderConfig.h) 为 `2`。`Swapchain` 为每个在途帧创建独立深度图，并为每张交换链图像创建 `renderFinished` Semaphore；`FrameContext` 的 `imageAvailable` Semaphore 和 Fence 则按帧复用。拾取图属于 `Swapchain`，拾取结果的 readback Buffer 属于 `EditorPickingPass`。
 
@@ -29,13 +29,14 @@
 | `0` Scene | `3` / `4` | GGX Prefiltered Cubemap image / sampler | `FrameContext` 的 Scene Set，引用场景纹理 |
 | `0` Scene | `5` / `6` | BRDF LUT image / sampler | `FrameContext` 的 Scene Set，引用 Renderer 启动时加载的纹理 |
 | `0` Scene | `7` / `8` | Radiance Cubemap image / sampler | `FrameContext` 的 Scene Set，引用场景环境纹理 |
+| `0` Scene | `9` / `10` | 点光源深度 Cubemap image / sampler | `FrameContext` 的 Scene Set，引用 Shadow Pass 的每帧图像 |
 | `1` Material | `0` | Base Color sampled image | `Material` |
 | `1` Material | `1` | Base Color sampler | `Material` |
 | `1` Material | `2` | `MaterialUniforms` UBO | `Material` |
 
 `set 2` Object 和 `set 3` Pass 的编号已保留，但当前没有对应的预设 DescriptorSetLayout。对象变换和拾取 ID 目前通过 Push Constant 传递。
 
-`PipelineLayoutPreset` 当前提供 `SceneMaterial`（set 0 + set 1）和 `SceneOnly`（仅 set 0）。`PipelineState::preset(RenderMode)` 定义了 Opaque、AlphaTest、Transparent、Shadow、DepthOnly、Skybox、PostProcess、LightMarker、Picking 的状态模板；实际绘制路径使用场景材质、Skybox、灯光标记与拾取相关模式。新增 Pass 时，需要接入相应的录制流程。
+`PipelineLayoutPreset` 当前提供 `SceneMaterial`（set 0 + set 1）和 `SceneOnly`（仅 set 0）。`PipelineState::preset(RenderMode)` 定义了 Opaque、AlphaTest、Transparent、Shadow、DepthOnly、Skybox、PostProcess、LightMarker、Picking 的状态模板；实际绘制路径使用 Shadow、场景材质、Skybox、灯光标记与拾取相关模式。新增 Pass 时，需要接入相应的录制流程。
 
 ## Shader、Descriptor 与 Pipeline
 
@@ -55,6 +56,8 @@ Material 可通过 `Material::Desc::shaderId` 选择 Shader；未指定时使用
 
 场景配置环境贴图时，Scene Pass 在 opaque 几何之后调用 Skybox Pass，随后绘制透明几何。Skybox 使用无顶点缓冲的 fullscreen triangle，顶点深度为 1；fragment 根据逆视投影矩阵、相机位置和编辑器视口重建世界空间方向，采样 radiance cubemap 的基础 mip。Pipeline 保留深度测试、关闭深度写入，shader 请求早期深度测试，因此已有几何覆盖的像素可以在 fragment 执行前剔除。没有环境贴图时不绘制 Skybox。
 
+Shadow Pass 在 Scene Pass 之前执行。当前仅使用场景的主光源：当它是启用投影的点光源时，以 `range` 作为投影远平面，分别从六个方向绘制到 `1024 × 1024 × 6` 深度 Cubemap。fragment 写入的线性深度为 `distance(worldPosition, lightPosition) / range`，值域为 `[0, 1]`；未投影时将六个面清为 `1`。每个 frame-in-flight 有独立图像，完成后转换为深度只读布局并绑定到该帧的 Scene Set。场景 shader 已声明对应的 set 0 资源，目前尚不采样它；深度绘制暂未处理透明材质和 AlphaTest 镂空。
+
 `GpuTexture` 只持有图像与视图。`RenderResourceManager` 按 `Sampler::ID` 创建并缓存独立的 Vulkan sampler；材质和环境贴图的 `TextureBinding` 分别指定要绑定的纹理和 sampler。材质默认使用 `linearRepeat`，环境 Cubemap 默认使用 `linearClamp`；BRDF LUT 的 sampler 由 Renderer 配置指定，默认使用 `linearClamp`。
 
 当前资产缓存跨场景加载保留，到 `Renderer::shutdown()` 才统一释放。`GpuScene` 持有渲染项和场景对象引用，不拥有 `GpuMesh`、`GpuTexture`、`GpuMaterial` 的 GPU 存储。
@@ -65,7 +68,7 @@ Material 可通过 `Material::Desc::shaderId` 选择 Shader；未指定时使用
 
 1. 等待当前 `FrameContext` 的 Fence，取得交换链图像；若交换链过期，进入重建流程。
 2. 重置 Fence，更新该帧的 Scene UBO，并重置/开始录制 CommandBuffer。
-3. 录制 Scene Pass（opaque、Skybox、transparent、灯光标记）；按需要录制拾取 Pass；最后录制编辑器 UI。
+3. 录制 Shadow Pass，再录制 Scene Pass（opaque、Skybox、transparent、灯光标记）；按需要录制拾取 Pass；最后录制编辑器 UI。
 4. 提交命令：等待该帧的 `imageAvailable`，提交完成后信号通知所取得交换链图像的 `renderFinished`。
 5. Present；如果请求拾取，等待本次 Fence 后读取 selection ID。最后轮转 `frameIndex`。
 

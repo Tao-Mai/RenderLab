@@ -84,6 +84,6 @@ namespace detail
         if (!(condition))                                                \
         {                                                                \
             ::logger::detail::checkFail(                                 \
-                __FILE__, __LINE__, #condition, __VA_ARGS__);            \
+                __FILE__, __LINE__, #condition __VA_OPT__(,) __VA_ARGS__); \
         }                                                                \
     } while (0)

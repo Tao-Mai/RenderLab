@@ -66,6 +66,7 @@ void Renderer::shutdown() noexcept
     pickingPass.reset();
     skyboxPass.reset();
     scenePass.reset();
+    shadowPass.reset();
     resources.reset();
     pipelines.reset();
     for (FrameContext& frame : frames)
@@ -138,6 +139,7 @@ void Renderer::initVulkan()
                    shaders.getOrLoad("light"),
                    std::move(brdfLut),
                    resources.sampler(brdfLutBinding.samplerID));
+    shadowPass.init(vulkan, pipelines, shaders.getOrLoad("shadow"), frames);
     skyboxPass.init(swapchain, pipelines, shaders.getOrLoad("skybox"));
     pickingPass.init(vulkan.physicalDeviceHandle(),
                      vulkan.deviceHandle(),
@@ -178,6 +180,9 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& 
     auto& commandBuffer = currentFrame().commandBufferHandle();
     vkCheck(commandBuffer.reset());
     vkCheck(commandBuffer.begin({}));
+
+    shadowPass.record(commandBuffer, frameIndex,
+        scene.primaryLightObject(), scene.renderItems());
 
     transitionImageLayout(
         imageIndex,

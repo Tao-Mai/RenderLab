@@ -1,0 +1,4 @@
+{
+  "Id": "shadow",
+  "Binary": "shaders/shadow.spv"
+}

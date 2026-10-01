@@ -41,6 +41,8 @@ set(SLANG_EDITOR_PICKING_SHADER "${SHADER_BINARY_DIR}/editor_picking.spv")
 set(SLANG_EDITOR_PICKING_REFLECTION "${SHADER_BINARY_DIR}/editor_picking.reflection.json")
 set(SLANG_SKYBOX_SHADER "${SHADER_BINARY_DIR}/skybox.spv")
 set(SLANG_SKYBOX_REFLECTION "${SHADER_BINARY_DIR}/skybox.reflection.json")
+set(SLANG_SHADOW_SHADER "${SHADER_BINARY_DIR}/shadow.spv")
+set(SLANG_SHADOW_REFLECTION "${SHADER_BINARY_DIR}/shadow.reflection.json")
 
 add_custom_command(
         OUTPUT "${SLANG_SHADER}" "${SLANG_SHADER_REFLECTION}"
@@ -118,6 +120,25 @@ add_custom_command(
         VERBATIM
 )
 
+add_custom_command(
+        OUTPUT "${SLANG_SHADOW_SHADER}" "${SLANG_SHADOW_REFLECTION}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
+        COMMAND ${SLANGC_EXECUTABLE}
+        "${SHADER_SOURCE_DIR}/shadow.slang"
+        -target spirv
+        -profile spirv_1_4
+        -matrix-layout-column-major
+        -emit-spirv-directly
+        -fvk-use-entrypoint-name
+        -entry vertMain
+        -entry fragMain
+        -reflection-json "${SLANG_SHADOW_REFLECTION}"
+        -o "${SLANG_SHADOW_SHADER}"
+        DEPENDS "${SHADER_SOURCE_DIR}/shadow.slang"
+        COMMENT "Compiling shadow Slang shader"
+        VERBATIM
+)
+
 add_custom_target(RenderLabShaders DEPENDS
         "${SLANG_SHADER}"
         "${SLANG_SHADER_REFLECTION}"
@@ -127,6 +148,8 @@ add_custom_target(RenderLabShaders DEPENDS
         "${SLANG_EDITOR_PICKING_REFLECTION}"
         "${SLANG_SKYBOX_SHADER}"
         "${SLANG_SKYBOX_REFLECTION}"
+        "${SLANG_SHADOW_SHADER}"
+        "${SLANG_SHADOW_REFLECTION}"
 )
 
 add_executable(RenderLab
@@ -213,6 +236,8 @@ add_executable(RenderLab
         src/render/scene/GpuScene.h
         src/render/pass/ScenePass.cpp
         src/render/pass/ScenePass.h
+        src/render/pass/ShadowPass.cpp
+        src/render/pass/ShadowPass.h
         src/render/pass/SkyboxPass.cpp
         src/render/pass/SkyboxPass.h
         src/render/pass/LightMarkers.cpp
@@ -227,6 +252,10 @@ add_executable(RenderLab
         src/asset/TextureMip.h
         src/core/math/Sampler.cpp
         src/core/math/Sampler.h
+        src/render/pass/RenderGraph.cpp
+        src/render/pass/RenderGraph.h
+        src/render/pass/DepthPass.cpp
+        src/render/pass/DepthPass.h
 )
 add_dependencies(RenderLab RenderLabShaders)
 

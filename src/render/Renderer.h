@@ -9,6 +9,7 @@
 #include "render/ShaderManager.h"
 #include "render/pass/EditorPickingPass.h"
 #include "render/pass/ScenePass.h"
+#include "render/pass/ShadowPass.h"
 #include "render/pass/SkyboxPass.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/RenderResourceManager.h"
@@ -71,6 +72,7 @@ private:
     uint32_t          frameIndex = 0;
     GpuScene          scene;
     ScenePass         scenePass;
+    ShadowPass        shadowPass;
     SkyboxPass        skyboxPass;
     EditorPickingPass pickingPass;
 
