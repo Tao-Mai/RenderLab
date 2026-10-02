@@ -67,11 +67,16 @@ std::vector<ShaderMetadata::Binding> readReflection(std::filesystem::path path)
         else if (kind == "resource")
         {
             const std::string shape = requiredString(type, "baseShape");
-            CHECK(shape == "texture2D" || shape == "textureCube",
-                  "unsupported reflected resource shape '{}' in '{}'",
-                  shape,
-                  path.string());
-            descriptorType = vk::DescriptorType::eSampledImage;
+            if (shape == "structuredBuffer")
+            {
+                descriptorType = vk::DescriptorType::eStorageBuffer;
+            }
+            else
+            {
+                CHECK(shape == "texture2D" || shape == "textureCube",
+                      "unsupported reflected resource shape '{}' in '{}'", shape, path.string());
+                descriptorType = vk::DescriptorType::eSampledImage;
+            }
         }
         else
         {

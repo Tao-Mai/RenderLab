@@ -18,9 +18,8 @@ void GpuScene::load(Scene::Desc& scene, RenderResourceManager& resources)
         }
         if (object.components.contains("Light"))
         {
-            if (primaryLight == nullptr)
+            if (lights.empty())
             {
-                primaryLight = &object;
                 markers.init(resources);
             }
             lights.push_back({&object, nextSelectionId++});
@@ -33,7 +32,6 @@ void GpuScene::reset() noexcept
     items.clear();
     lights.clear();
     markers.reset();
-    primaryLight = nullptr;
 }
 
 const std::vector<SceneRenderItem>& GpuScene::renderItems() const
@@ -49,11 +47,6 @@ const std::vector<LightRenderItem>& GpuScene::lightRenderItems() const
 const LightMarkers& GpuScene::lightMarkers() const
 {
     return markers;
-}
-
-Scene::Desc::Object* GpuScene::primaryLightObject() const
-{
-    return primaryLight;
 }
 
 Scene::Desc::Object* GpuScene::findObject(uint32_t selectionId) const

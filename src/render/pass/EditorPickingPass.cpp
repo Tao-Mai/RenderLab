@@ -1,157 +1,90 @@
 #include "render/pass/EditorPickingPass.h"
 
-#include "render/PipelineManager.h"
-#include "render/present/Swapchain.h"
+#include "core/Logger.h"
+#include "ecs/Light.h"
+#include "ecs/Transform.h"
+#include "render/Renderer.h"
+#include "render/pass/RenderGraph.h"
+#include "render/pass/ScenePass.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/ShaderData.h"
 
+#include <algorithm>
 #include <array>
 
-void EditorPickingPass::init(
-    const vk::raii::PhysicalDevice& physicalDevice,
-    const vk::raii::Device& device,
-    Swapchain& targetSwapchain,
-    PipelineManager& targetPipelines,
-    ShaderHandle targetShader)
+void EditorPickingPass::init(RenderGraph& targetGraph)
 {
-    swapchain = &targetSwapchain;
-    pipelines = &targetPipelines;
-    shader = targetShader;
-    readbackBuffer = Buffer(
-        physicalDevice, device, sizeof(uint32_t),
-        vk::BufferUsageFlagBits::eTransferDst,
-        vk::MemoryPropertyFlagBits::eHostVisible |
-            vk::MemoryPropertyFlagBits::eHostCoherent);
-    refreshPipeline();
+    graph = &targetGraph;
+    pipelines = &graph->pipelines();
+    shader = graph->shaders().getOrLoad("picking");
 }
 
-void EditorPickingPass::refreshPipeline()
+void EditorPickingPass::registerPass(RenderGraph& graph)
 {
-    const PipelineKey key{
+    std::tie(inputSlots, outputSlots) = graph.registerPass("editor_picking", InputCount, OutputCount,
+        [this](RenderGraph& g) { setupPass(g); },
+        [this](RenderGraph& g) { executePass(g); });
+}
+
+void EditorPickingPass::setupPass(RenderGraph& graph)
+{
+    graph.bindInput(inputSlots[Depth], graph.outputSlot("scene", ScenePass::DepthResult), {
+        .imageUsage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
+        .stages = vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+            vk::PipelineStageFlagBits2::eLateFragmentTests,
+        .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead,
+        .layout = vk::ImageLayout::eDepthReadOnlyOptimal,
+    });
+    const auto extent = graph.swapchain().extent();
+    graph.createResource(inputSlots[PickingImage], {
+        .format = vk::Format::eR32Uint,
+        .extent = {extent.width, extent.height, 1},
+        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
+        .stages = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        .access = vk::AccessFlagBits2::eColorAttachmentWrite,
+        .layout = vk::ImageLayout::eColorAttachmentOptimal,
+    });
+    graph.createResource(inputSlots[Readback], {
+        .type = RenderGraph::ResourceType::Buffer,
+        .size = sizeof(uint32_t),
+        .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible |
+            vk::MemoryPropertyFlagBits::eHostCoherent,
+        .bufferUsage = vk::BufferUsageFlagBits::eTransferDst,
+        .stages = vk::PipelineStageFlagBits2::eTransfer,
+        .access = vk::AccessFlagBits2::eTransferWrite,
+    });
+    graph.bindOutput(outputSlots[ImageResult], inputSlots[PickingImage], {
+        .imageUsage = vk::ImageUsageFlagBits::eTransferSrc,
+        .stages = vk::PipelineStageFlagBits2::eTransfer,
+        .access = vk::AccessFlagBits2::eTransferRead,
+        .layout = vk::ImageLayout::eTransferSrcOptimal,
+    });
+    graph.bindOutput(outputSlots[ReadbackResult], inputSlots[Readback], {
+        .type = RenderGraph::ResourceType::Buffer,
+        .stages = vk::PipelineStageFlagBits2::eHost,
+        .access = vk::AccessFlagBits2::eHostRead,
+    });
+
+    pipeline = pipelines->getOrCreate({
         .shader = shader,
         .layout = PipelineLayoutPreset::SceneOnly,
         .state = PipelineState::preset(RenderMode::Picking),
         .colorFormat = vk::Format::eR32Uint,
-        .depthFormat = swapchain->depthImageFormat(),
-    };
-    pipeline = pipelines->getOrCreate(key);
+        .depthFormat = graph.depthFormat(),
+    });
     pipelineLayout = pipelines->layout(PipelineLayoutPreset::SceneOnly);
 }
 
-void EditorPickingPass::reset() noexcept
-{
-    readbackBuffer.reset();
-    pipeline = nullptr;
-    pipelineLayout = nullptr;
-    shader = {};
-    pipelines = nullptr;
-    swapchain = nullptr;
-}
-
-void EditorPickingPass::begin(
-    vk::raii::CommandBuffer& commandBuffer,
-    vk::Image depthImage,
-    vk::ImageView depthImageView,
-    vk::DescriptorSet sceneDescriptorSet,
-    uint32_t x,
-    uint32_t y) const
-{
-    const std::array barriers = {
-        vk::ImageMemoryBarrier2{
-            .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-            .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-            .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
-            .oldLayout = vk::ImageLayout::eUndefined,
-            .newLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = swapchain->pickingImageHandle(),
-            .subresourceRange = {
-                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1,
-            },
-        },
-        vk::ImageMemoryBarrier2{
-            .srcStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests |
-                vk::PipelineStageFlagBits2::eLateFragmentTests,
-            .srcAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-            .dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests,
-            .dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentRead,
-            .oldLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-            .newLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = depthImage,
-            .subresourceRange = {
-                .aspectMask = vk::ImageAspectFlagBits::eDepth,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1,
-            },
-        },
-    };
-    const vk::DependencyInfo dependency{
-        .imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size()),
-        .pImageMemoryBarriers = barriers.data(),
-    };
-    commandBuffer.pipelineBarrier2(dependency);
-
-    const vk::ClearValue clear = vk::ClearColorValue(
-        std::array<uint32_t, 4>{0u, 0u, 0u, 0u});
-    const vk::RenderingAttachmentInfo colorAttachment{
-        .imageView = swapchain->pickingImageViewHandle(),
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eStore,
-        .clearValue = clear,
-    };
-    const vk::RenderingAttachmentInfo depthAttachment{
-        .imageView = depthImageView,
-        .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eLoad,
-        .storeOp = vk::AttachmentStoreOp::eDontCare,
-    };
-    const vk::RenderingInfo renderingInfo{
-        .renderArea = {
-            .offset = {static_cast<int32_t>(x), static_cast<int32_t>(y)},
-            .extent = {1, 1},
-        },
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &colorAttachment,
-        .pDepthAttachment = &depthAttachment,
-    };
-    commandBuffer.beginRendering(renderingInfo);
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sets = {sceneDescriptorSet};
-    commandBuffer.bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, sets, {});
-    commandBuffer.setScissor(
-        0,
-        vk::Rect2D(
-            vk::Offset2D(static_cast<int32_t>(x), static_cast<int32_t>(y)),
-            vk::Extent2D(1, 1)));
-}
-
-void EditorPickingPass::draw(
-    vk::raii::CommandBuffer& commandBuffer,
-    GpuMesh& mesh,
-    const glm::mat4& model,
-    uint32_t selectionId) const
+void EditorPickingPass::draw(vk::raii::CommandBuffer& commandBuffer,
+    GpuMesh& mesh, const glm::mat4& model, uint32_t selectionId) const
 {
     const EditorPickingPushConstants pushConstants{
         .model = model,
         .selectionId = selectionId,
     };
-    commandBuffer.pushConstants<EditorPickingPushConstants>(
-        pipelineLayout,
+    commandBuffer.pushConstants<EditorPickingPushConstants>(pipelineLayout,
         vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        0,
-        pushConstants);
+        0, pushConstants);
     mesh.bind(commandBuffer);
     for (const Submesh& submesh : mesh.submeshes())
     {
@@ -159,59 +92,90 @@ void EditorPickingPass::draw(
     }
 }
 
-void EditorPickingPass::end(
-    vk::raii::CommandBuffer& commandBuffer,
-    uint32_t x,
-    uint32_t y) const
+void EditorPickingPass::executePass(RenderGraph& graph) const
 {
-    commandBuffer.endRendering();
-    const vk::ImageMemoryBarrier2 readBarrier{
-        .srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        .srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
-        .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
-        .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
-        .oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .newLayout = vk::ImageLayout::eTransferSrcOptimal,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = swapchain->pickingImageHandle(),
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
-    };
-    const vk::DependencyInfo dependency{
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &readBarrier,
-    };
-    commandBuffer.pipelineBarrier2(dependency);
+    const auto& editor = graph.editorInput();
+    if (!editor.requestPick)
+    {
+        return;
+    }
+    auto& commandBuffer = graph.commands();
+    const auto extent = graph.swapchain().extent();
+    CHECK(editor.pickX < extent.width && editor.pickY < extent.height,
+        "picking coordinate is outside the render target");
+    const uint32_t x = editor.pickX;
+    const uint32_t y = editor.pickY;
 
+    const vk::RenderingAttachmentInfo colorAttachment{
+        .imageView = graph.imageView(inputSlots[PickingImage]),
+        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eStore,
+        .clearValue = vk::ClearColorValue(std::array<uint32_t, 4>{0u, 0u, 0u, 0u}),
+    };
+    const vk::RenderingAttachmentInfo depthAttachment{
+        .imageView = graph.imageView(inputSlots[Depth]),
+        .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
+        .loadOp = vk::AttachmentLoadOp::eLoad,
+        .storeOp = vk::AttachmentStoreOp::eNone,
+    };
+    commandBuffer.beginRendering({
+        .renderArea = {{static_cast<int32_t>(x), static_cast<int32_t>(y)}, {1, 1}},
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &colorAttachment,
+        .pDepthAttachment = &depthAttachment,
+    });
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+    const std::array sets = {graph.frameContext(graph.frameIndex()).sceneSetHandle()};
+    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+        pipelineLayout, RenderInterface::sceneSet, sets, {});
+
+    // Match ScenePass's viewport; only the clicked pixel needs rasterization.
+    const auto& viewport = editor.viewport;
+    const uint32_t viewportX = std::min(
+        static_cast<uint32_t>(std::max(viewport.x, 0.0f)), extent.width - 1);
+    const uint32_t viewportY = std::min(
+        static_cast<uint32_t>(std::max(viewport.y, 0.0f)), extent.height - 1);
+    const uint32_t width = std::max(1u, std::min(
+        static_cast<uint32_t>(viewport.width), extent.width - viewportX));
+    const uint32_t height = std::max(1u, std::min(
+        static_cast<uint32_t>(viewport.height), extent.height - viewportY));
+    commandBuffer.setViewport(0, vk::Viewport(static_cast<float>(viewportX),
+        static_cast<float>(viewportY), static_cast<float>(width),
+        static_cast<float>(height), 0.0f, 1.0f));
+    commandBuffer.setScissor(0, vk::Rect2D({static_cast<int32_t>(x), static_cast<int32_t>(y)}, {1, 1}));
+
+    for (const SceneRenderItem& item : graph.scene().renderItems())
+    {
+        const auto* transform = item.object->components.at("Transform").try_cast<ecs::Transform>();
+        CHECK(transform != nullptr, "picking object is missing Transform");
+        draw(commandBuffer, *item.mesh, transform->matrix(), item.selectionId);
+    }
+    for (const LightRenderItem& item : graph.scene().lightRenderItems())
+    {
+        const auto* light = item.object->components.at("Light").try_cast<ecs::Light>();
+        const auto* transform = item.object->components.at("Transform").try_cast<ecs::Transform>();
+        CHECK(light != nullptr && transform != nullptr,
+            "picking light requires Light and Transform components");
+        graph.scene().lightMarkers().recordPicking(commandBuffer,
+            pipelineLayout, *transform, *light, item.selectionId);
+    }
+    commandBuffer.endRendering();
+
+    graph.useOutput(outputSlots[ImageResult]);
     const vk::BufferImageCopy copyRegion{
-        .imageSubresource = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .layerCount = 1,
-        },
+        .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
         .imageOffset = {static_cast<int32_t>(x), static_cast<int32_t>(y), 0},
         .imageExtent = {1, 1, 1},
     };
-    commandBuffer.copyImageToBuffer(
-        swapchain->pickingImageHandle(),
-        vk::ImageLayout::eTransferSrcOptimal,
-        readbackBuffer.handle(),
-        copyRegion);
+    commandBuffer.copyImageToBuffer(graph.image(inputSlots[PickingImage]),
+        vk::ImageLayout::eTransferSrcOptimal, graph.buffer(inputSlots[Readback]).handle(), copyRegion);
 }
 
-uint32_t EditorPickingPass::readSelectionId()
+uint32_t EditorPickingPass::readSelectionId(uint32_t frameIndex)
 {
     uint32_t selectionId = 0;
-    readbackBuffer.download(&selectionId, sizeof(selectionId));
+    graph->buffer(inputSlots[Readback], frameIndex).download(&selectionId, sizeof(selectionId));
     return selectionId;
-}
-
-vk::PipelineLayout EditorPickingPass::layout() const
-{
-    return pipelineLayout;
 }

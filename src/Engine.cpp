@@ -7,6 +7,7 @@
 #include "core/Context.h"
 #include "editor/Editor.h"
 #include "core/Logger.h"
+#include "core/InputManager.h"
 #include "render/Renderer.h"
 #include "core/Window.h"
 
@@ -27,6 +28,7 @@ void Engine::init()
     Context& ctx = context();
     ctx.config = new ConfigManager();
     ctx.window = new Window();
+    ctx.inputManager = new InputManager();
     ctx.assetDescManager = new AssetDescManager();
     ctx.assetDataManager = new AssetDataManager();
     ctx.scene = new Scene::Desc();
@@ -37,6 +39,7 @@ void Engine::init()
     ctx.config->init();
     ctx.assetDataManager->init();
     ctx.window->init();
+    ctx.inputManager->init();
     ctx.assetDescManager->init();
     inputMethod.activateEnglish();
     *ctx.scene = ctx.assetDescManager->desc<Scene>(ctx.config->initialScene());
@@ -60,7 +63,8 @@ void Engine::mainLoop()
     while (!ctx.window->shouldClose())
     {
         ctx.window->pollEvents();
-        if (ctx.window->keyPressed(GLFW_KEY_ESCAPE))
+        ctx.inputManager->tick();
+        if (ctx.inputManager->get(Command::Quit))
         {
             ctx.window->requestClose();
             break;
@@ -70,6 +74,8 @@ void Engine::mainLoop()
         if (framebufferWidth == 0 || framebufferHeight == 0)
         {
             ctx.window->waitEvents();
+            ctx.inputManager->tick();
+            if (ctx.inputManager->get(Command::Quit)) ctx.window->requestClose();
             previousTime = std::chrono::steady_clock::now();
             continue;
         }
@@ -104,6 +110,12 @@ void Engine::shutdown() noexcept
         ctx.editor->shutdown();
         delete ctx.editor;
         ctx.editor = nullptr;
+    }
+    if (ctx.inputManager != nullptr)
+    {
+        ctx.inputManager->shutdown();
+        delete ctx.inputManager;
+        ctx.inputManager = nullptr;
     }
     if (ctx.renderer != nullptr)
     {

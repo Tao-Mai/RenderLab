@@ -1,0 +1,20 @@
+{
+  "Bindings": [
+    {"Command": "Quit", "Key": "Escape", "Modifiers": [], "Action": "Press"},
+    {"Command": "ToggleFreeMovement", "Key": "V", "Modifiers": [], "Action": "Press"},
+    {"Command": "Navigate", "Key": "MouseRight", "Modifiers": [], "Action": "Hold"},
+    {"Command": "SelectObject", "Key": "MouseLeft", "Modifiers": [], "Action": "Press"},
+    {"Command": "MoveForward", "Key": "W", "Modifiers": [], "Action": "Hold"},
+    {"Command": "MoveBackward", "Key": "S", "Modifiers": [], "Action": "Hold"},
+    {"Command": "MoveLeft", "Key": "A", "Modifiers": [], "Action": "Hold"},
+    {"Command": "MoveRight", "Key": "D", "Modifiers": [], "Action": "Hold"},
+    {"Command": "MoveUp", "Key": "E", "Modifiers": [], "Action": "Hold"},
+    {"Command": "MoveDown", "Key": "Q", "Modifiers": [], "Action": "Hold"},
+    {"Command": "Sprint", "Key": "LeftShift", "Modifiers": [], "Action": "Hold"},
+    {"Command": "Sprint", "Key": "RightShift", "Modifiers": [], "Action": "Hold"},
+    {"Command": "SaveScene", "Key": "S", "Modifiers": ["Control"], "Action": "Press"},
+    {"Command": "GizmoTranslate", "Key": "W", "Modifiers": [], "Action": "Press"},
+    {"Command": "GizmoRotate", "Key": "E", "Modifiers": [], "Action": "Press"},
+    {"Command": "GizmoScale", "Key": "R", "Modifiers": [], "Action": "Press"}
+  ]
+}

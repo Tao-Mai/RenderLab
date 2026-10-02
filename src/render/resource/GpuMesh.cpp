@@ -91,6 +91,20 @@ void GpuMesh::copyBuffer(
         copyCommand.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit}));
     copyCommand.copyBuffer(
         source.handle(), destination.handle(), vk::BufferCopy{.size = source.size()});
+
+    // Mesh buffers are ready for direct use by any pass after upload.
+    const vk::BufferMemoryBarrier2 barrier{
+        .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+        .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eVertexAttributeInput | vk::PipelineStageFlagBits2::eIndexInput,
+        .dstAccessMask = vk::AccessFlagBits2::eVertexAttributeRead | vk::AccessFlagBits2::eIndexRead,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = destination.handle(),
+        .size = destination.size(),
+    };
+    copyCommand.pipelineBarrier2({.bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrier});
+
     vkCheck(copyCommand.end());
     const vk::CommandBuffer command = *copyCommand;
     const vk::SubmitInfo submitInfo{

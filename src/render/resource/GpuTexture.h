@@ -19,11 +19,14 @@ public:
     GpuTexture& operator=(const GpuTexture&) = delete;
 
     [[nodiscard]] vk::ImageView imageView() const;
+    [[nodiscard]] vk::Image imageHandle() const;
+    [[nodiscard]] const vk::ImageCreateInfo& imageInfo() const;
 
 private:
     vk::raii::DeviceMemory imageMemory  = nullptr;
     vk::raii::Image        image        = nullptr;
     vk::raii::ImageView    view         = nullptr;
+    vk::ImageCreateInfo creationInfo;
 
     void create(
         GpuUploadContext upload,

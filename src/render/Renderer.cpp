@@ -2,20 +2,21 @@
 
 #include "asset/Asset.h"
 #include "asset/AssetDescManager.h"
+#include "ecs/Light.h"
+#include "ecs/Transform.h"
+
 #include "Camera.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "editor/Editor.h"
-#include "ecs/Light.h"
-#include "ecs/Transform.h"
 #include "render/device/VkCheck.h"
 #include "core/Window.h"
 
-#include <iostream>
-#include <utility>
+#include <limits>
+#include <vector>
 
-#include <glm/glm.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 
 Renderer::~Renderer()
 {
@@ -44,7 +45,17 @@ void Renderer::loadScene(Scene::Desc& targetScene)
 
     waitIdle();
     scene.load(targetScene, resources);
-    scenePass.bindSceneTextures(targetScene);
+    graph.bindSceneTextures(targetScene);
+    iblParameters = {};
+    if (targetScene.environment.environmentMap)
+    {
+        const auto& environment = context().assetDescManager->desc<EnvironmentMap>(
+            *targetScene.environment.environmentMap);
+        const auto& prefiltered = context().assetDescManager->desc<Texture>(
+            environment.prefilteredSpecular.textureID);
+        iblParameters.x = static_cast<float>(prefiltered.mipLevels - 1);
+    }
+    graph.build();
 }
 
 void Renderer::waitIdle()
@@ -63,10 +74,7 @@ void Renderer::shutdown() noexcept
     }
 
     scene.reset();
-    pickingPass.reset();
-    skyboxPass.reset();
-    scenePass.reset();
-    shadowPass.reset();
+    graph.reset();
     resources.reset();
     pipelines.reset();
     for (FrameContext& frame : frames)
@@ -78,6 +86,7 @@ void Renderer::shutdown() noexcept
     swapchain.reset();
     vulkan.reset();
     frameIndex = 0;
+    iblParameters = {};
     inited     = false;
 }
 
@@ -117,35 +126,9 @@ void Renderer::initVulkan()
     {
         frame.init(vulkan, descriptors);
     }
-    swapchain.transitionDepthImageLayout(frames[0].commandPoolHandle());
     resources.init(vulkan, descriptors, shaders);
 
-    const TextureBinding& brdfLutBinding = context().config->rendererConfig().brdfLut;
-    const Texture::ID&    brdfLutId      = brdfLutBinding.textureID;
-    auto&                 brdfLutDesc    = context().assetDescManager->desc(brdfLutId);
-    CHECK(brdfLutDesc.layout == ImageLayout::Image2D &&
-          brdfLutDesc.colorSpace == ColorSpace::Linear &&
-          brdfLutDesc.format != ImageFormat::R8,
-          "renderer BRDF LUT '{}' requires a linear 2D texture with at least two channels",
-          brdfLutId);
-    std::shared_ptr<GpuTexture> brdfLut = resources.texture(brdfLutId);
-
-    scenePass.init(vulkan,
-                   swapchain,
-                   frames,
-                   pipelines,
-                   resources,
-                   shaders.getOrLoad("scene"),
-                   shaders.getOrLoad("light"),
-                   std::move(brdfLut),
-                   resources.sampler(brdfLutBinding.samplerID));
-    shadowPass.init(vulkan, pipelines, shaders.getOrLoad("shadow"), frames);
-    skyboxPass.init(swapchain, pipelines, shaders.getOrLoad("skybox"));
-    pickingPass.init(vulkan.physicalDeviceHandle(),
-                     vulkan.deviceHandle(),
-                     swapchain,
-                     pipelines,
-                     shaders.getOrLoad("picking"));
+    graph.init();
 }
 
 void Renderer::recreateSwapchain()
@@ -168,154 +151,44 @@ void Renderer::recreateSwapchain()
     waitIdle();
     swapchain.reset();
     swapchain.init(vulkan, window);
-    swapchain.transitionDepthImageLayout(frames[0].commandPoolHandle());
-    scenePass.refreshPipelines();
-    skyboxPass.refreshPipeline();
-    pickingPass.refreshPipeline();
+    graph.build();
     context().editor->refreshUi();
 }
 
-void Renderer::recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& editor)
+void Renderer::updateFrameData(const Camera& camera, const EditorFrameInput& editor)
 {
-    auto& commandBuffer = currentFrame().commandBufferHandle();
-    vkCheck(commandBuffer.reset());
-    vkCheck(commandBuffer.begin({}));
-
-    shadowPass.record(commandBuffer, frameIndex,
-        scene.primaryLightObject(), scene.renderItems());
-
-    transitionImageLayout(
-        imageIndex,
-        vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eColorAttachmentOptimal,
-        {},
-        vk::AccessFlagBits2::eColorAttachmentWrite,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput);
-
-    scenePass.record(
-        commandBuffer,
-        scene.renderItems(),
-        scene.lightRenderItems(),
-        scene.lightMarkers(),
-        skyboxPass,
-        frameIndex,
-        {.imageIndex = imageIndex,
-         .viewport = editor.viewport,
-         .storeDepthForPicking = editor.requestPick});
-    recordPickingPass(commandBuffer, editor);
-    recordUiPass(commandBuffer, imageIndex, editor);
-
-    transitionImageLayout(
-        imageIndex,
-        vk::ImageLayout::eColorAttachmentOptimal,
-        vk::ImageLayout::ePresentSrcKHR,
-        vk::AccessFlagBits2::eColorAttachmentWrite,
-        {},
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        vk::PipelineStageFlagBits2::eBottomOfPipe);
-    vkCheck(commandBuffer.end());
-}
-
-void Renderer::recordPickingPass(
-    vk::raii::CommandBuffer& commandBuffer,
-    const EditorFrameInput&  editor)
-{
-    if (!editor.requestPick)
-    {
-        return;
-    }
-
-    pickingPass.begin(
-        commandBuffer,
-        swapchain.depthImageHandle(frameIndex),
-        swapchain.depthImageViewHandle(frameIndex),
-        scenePass.sceneSetHandle(frameIndex),
-        editor.pickX,
-        editor.pickY);
-
-    for (const auto& [mesh, object, selectionId] : scene.renderItems())
-    {
-        pickingPass.draw(
-            commandBuffer,
-            *mesh,
-            object->components.at("Transform").try_cast<ecs::Transform>()->matrix(),
-            selectionId);
-    }
-
-    for (const LightRenderItem& item : scene.lightRenderItems())
-    {
-        const auto* light     = item.object->components.at("Light").try_cast<ecs::Light>();
-        const auto* transform =
-            item.object->components.at("Transform").try_cast<ecs::Transform>();
-        scene.lightMarkers().recordPicking(
-            commandBuffer,
-            pickingPass.layout(),
-            *transform,
-            *light,
-            item.selectionId);
-    }
-    pickingPass.end(commandBuffer, editor.pickX, editor.pickY);
-}
-
-void Renderer::recordUiPass(
-    vk::raii::CommandBuffer& commandBuffer,
-    uint32_t                 imageIndex,
-    const EditorFrameInput&  editor)
-{
-    if (!editor.recordUi)
-    {
-        return;
-    }
-
-    const vk::RenderingAttachmentInfo colorAttachment{
-        .imageView = swapchain.imageView(imageIndex),
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eLoad,
-        .storeOp = vk::AttachmentStoreOp::eStore,
+    const glm::mat4 viewProjection = camera.projectionMatrix(editor.aspectRatio) * camera.viewMatrix();
+    const ViewUniforms view{
+        .viewProjection = viewProjection,
+        .inverseViewProjection = glm::inverse(viewProjection),
+        .cameraPosition = glm::vec4{camera.worldPosition(), 1.0f},
     };
-    const vk::RenderingInfo renderingInfo{
-        .renderArea = {.offset = {0, 0}, .extent = swapchain.extent()},
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &colorAttachment,
-    };
-    commandBuffer.beginRendering(renderingInfo);
-    editor.recordUi(*commandBuffer);
-    commandBuffer.endRendering();
-}
 
-void Renderer::transitionImageLayout(
-    uint32_t                imageIndex,
-    vk::ImageLayout         oldLayout,
-    vk::ImageLayout         newLayout,
-    vk::AccessFlags2        srcAccessMask,
-    vk::AccessFlags2        dstAccessMask,
-    vk::PipelineStageFlags2 srcStageMask,
-    vk::PipelineStageFlags2 dstStageMask)
-{
-    auto&                   commandBuffer = currentFrame().commandBufferHandle();
-    vk::ImageMemoryBarrier2 barrier       = {
-        .srcStageMask = srcStageMask,
-        .srcAccessMask = srcAccessMask,
-        .dstStageMask = dstStageMask,
-        .dstAccessMask = dstAccessMask,
-        .oldLayout = oldLayout,
-        .newLayout = newLayout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = swapchain.image(imageIndex),
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1}};
-    vk::DependencyInfo dependencyInfo = {
-        .dependencyFlags = {},
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &barrier};
-    commandBuffer.pipelineBarrier2(dependencyInfo);
+    const auto& lightItems = scene.lightRenderItems();
+    CHECK(lightItems.size() <= std::numeric_limits<uint32_t>::max(), "too many scene lights");
+    std::vector<LightData> lights;
+    lights.reserve(lightItems.size());
+    for (const LightRenderItem& item : lightItems)
+    {
+        const auto* light = item.object->components.at("Light").try_cast<ecs::Light>();
+        const auto* transform = item.object->components.at("Transform").try_cast<ecs::Transform>();
+        CHECK(light != nullptr && transform != nullptr, "light requires Light and Transform components");
+
+        const glm::vec3 direction = glm::normalize(transform->rotation * glm::vec3{0.0f, 0.0f, -1.0f});
+        lights.push_back({
+            .colorIntensity = {light->color, light->intensity},
+            .positionRange = {transform->position, light->range},
+            .direction = {direction, 0.0f},
+            .areaSizeCone = {light->areaSize, light->cosInner, light->cosOuter},
+            .flags = {static_cast<uint32_t>(light->type), light->enabled ? 1u : 0u,
+                light->castShadow ? 1u : 0u, 0u},
+        });
+    }
+    const LightUniforms lighting{
+        .lightCount = static_cast<uint32_t>(lights.size()),
+        .iblParameters = iblParameters,
+    };
+    currentFrame().updateFrameData(view, lighting, lights);
 }
 
 EditorFrameResult Renderer::drawFrame(const Camera& camera, const EditorFrameInput& editor)
@@ -349,15 +222,10 @@ EditorFrameResult Renderer::drawFrame(const Camera& camera, const EditorFrameInp
         swapchain.renderFinishedSemaphore(imageIndex);
     vkCheck(vulkan.deviceHandle().resetFences(drawFence));
 
-    const glm::mat4 viewProjection = camera.projectionMatrix(editor.aspectRatio) *
-        camera.viewMatrix();
-    scenePass.updateScene(frameIndex,
-                          viewProjection,
-                          camera.worldPosition(),
-                          scene.primaryLightObject());
-
-    const bool resolvePickAfterSubmit = editor.requestPick;
-    recordCommandBuffer(imageIndex, editor);
+    const bool resolvePickAfterSubmit = editor.requestPick && graph.passEnabled("editor_picking");
+    updateFrameData(camera, editor);
+    graph.prepareRenderData(frameIndex);
+    graph.execute(editor, frameIndex, imageIndex);
 
     vk::PipelineStageFlags waitDestinationStageMask(
         vk::PipelineStageFlagBits::eColorAttachmentOutput);
@@ -399,7 +267,7 @@ EditorFrameResult Renderer::drawFrame(const Camera& camera, const EditorFrameInp
               "failed to wait for object picking readback");
 
         frameResult.hasPickResult     = true;
-        frameResult.pickedSelectionId = pickingPass.readSelectionId();
+        frameResult.pickedSelectionId = graph.readSelectionId(frameIndex);
     }
     if (acquireResult == vk::Result::eSuboptimalKHR ||
         presentResult == vk::Result::eSuboptimalKHR ||

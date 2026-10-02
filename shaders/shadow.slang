@@ -1,3 +1,5 @@
+#include "scene_data.slang"
+
 struct VertexInput
 {
     [[vk::location(0)]]
@@ -12,17 +14,6 @@ struct PushConstants
 
 [[vk::push_constant]]
 ConstantBuffer<PushConstants> pushConstants;
-
-// The first three fields match the offsets in ShaderData.h::SceneUniforms.
-struct SceneUniforms
-{
-    float4x4 viewProjection;
-    float4 lightColorIntensity;
-    float4 lightPositionRange;
-};
-
-[[vk::binding(0, 0)]]
-ConstantBuffer<SceneUniforms> sceneUniforms;
 
 struct VertexOutput
 {
@@ -43,7 +34,9 @@ VertexOutput vertMain(VertexInput input)
 [shader("fragment")]
 float fragMain(VertexOutput input) : SV_Depth
 {
+    // ShadowPass draws only for the first light when it is an enabled shadow-casting point light.
     // Depth 0..1 stores radial distance divided by the point light range.
+    const LightData light = lights[0];
     return saturate(distance(input.worldPosition,
-        sceneUniforms.lightPositionRange.xyz) / sceneUniforms.lightPositionRange.w);
+        light.positionRange.xyz) / light.positionRange.w);
 }

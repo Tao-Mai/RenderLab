@@ -3,11 +3,9 @@
 #include "core/Logger.h"
 #include "ecs/Light.h"
 #include "ecs/Transform.h"
-#include "render/PipelineManager.h"
-#include "render/device/FrameContext.h"
-#include "render/device/Memory.h"
+#include "render/Renderer.h"
 #include "render/device/VkCheck.h"
-#include "render/device/VulkanContext.h"
+#include "render/pass/RenderGraph.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/ShaderData.h"
 
@@ -33,79 +31,10 @@ constexpr std::array faceUp = {
 };
 }
 
-void ShadowPass::init(const VulkanContext& vulkan, PipelineManager& pipelines,
-    ShaderHandle shader, const std::array<FrameContext, maxFramesInFlight>& targetFrames)
+void ShadowPass::init(RenderGraph& graph)
 {
-    frames = &targetFrames;
-    const auto& physicalDevice = vulkan.physicalDeviceHandle();
-    const auto& device = vulkan.deviceHandle();
-    constexpr auto requiredFeatures = vk::FormatFeatureFlagBits::eDepthStencilAttachment |
-        vk::FormatFeatureFlagBits::eSampledImage |
-        vk::FormatFeatureFlagBits::eTransferDst;
-    for (const vk::Format candidate : {vk::Format::eD32Sfloat, vk::Format::eD16Unorm})
-    {
-        if ((physicalDevice.getFormatProperties(candidate).optimalTilingFeatures &
-                requiredFeatures) == requiredFeatures)
-        {
-            depthFormat = candidate;
-            break;
-        }
-    }
-    CHECK(depthFormat != vk::Format::eUndefined,
-        "point shadow map requires a sampled depth attachment format");
-
-    const vk::ImageCreateInfo imageInfo{
-        .flags = vk::ImageCreateFlagBits::eCubeCompatible,
-        .imageType = vk::ImageType::e2D,
-        .format = depthFormat,
-        .extent = {mapSize, mapSize, 1},
-        .mipLevels = 1,
-        .arrayLayers = 6,
-        .samples = vk::SampleCountFlagBits::e1,
-        .tiling = vk::ImageTiling::eOptimal,
-        .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment |
-            vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
-        .sharingMode = vk::SharingMode::eExclusive,
-        .initialLayout = vk::ImageLayout::eUndefined,
-    };
-    for (Target& target : targets)
-    {
-        target.image = vkCheck(device.createImage(imageInfo));
-        const vk::MemoryRequirements requirements = target.image.getMemoryRequirements();
-        target.memory = vkCheck(device.allocateMemory({
-            .allocationSize = requirements.size,
-            .memoryTypeIndex = vulkan_memory::findType(physicalDevice,
-                requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal),
-        }));
-        vkCheck(target.image.bindMemory(*target.memory, 0));
-
-        target.cubeView = vkCheck(device.createImageView({
-            .image = *target.image,
-            .viewType = vk::ImageViewType::eCube,
-            .format = depthFormat,
-            .subresourceRange = {
-                .aspectMask = vk::ImageAspectFlagBits::eDepth,
-                .levelCount = 1,
-                .layerCount = 6,
-            },
-        }));
-        for (uint32_t face = 0; face < 6; ++face)
-        {
-            target.faceViews[face] = vkCheck(device.createImageView({
-                .image = *target.image,
-                .viewType = vk::ImageViewType::e2D,
-                .format = depthFormat,
-                .subresourceRange = {
-                    .aspectMask = vk::ImageAspectFlagBits::eDepth,
-                    .levelCount = 1,
-                    .baseArrayLayer = face,
-                    .layerCount = 1,
-                },
-            }));
-        }
-    }
-
-    sampler = vkCheck(device.createSampler({
+    shader = graph.shaders().getOrLoad("shadow");
+    sampler = vkCheck(graph.vulkan().deviceHandle().createSampler({
         .magFilter = vk::Filter::eNearest,
         .minFilter = vk::Filter::eNearest,
         .mipmapMode = vk::SamplerMipmapMode::eNearest,
@@ -114,142 +43,98 @@ void ShadowPass::init(const VulkanContext& vulkan, PipelineManager& pipelines,
         .addressModeW = vk::SamplerAddressMode::eClampToEdge,
         .maxLod = 0.0f,
     }));
+}
 
-    pipeline = pipelines.getOrCreate({
+void ShadowPass::registerPass(RenderGraph& graph)
+{
+    std::tie(inputSlots, outputSlots) = graph.registerPass("shadow", InputCount, OutputCount,
+        [this](RenderGraph& g) { setupPass(g); },
+        [this](RenderGraph& g) { executePass(g); });
+}
+
+void ShadowPass::setupPass(RenderGraph& graph)
+{
+    const RenderGraph::ResourceDesc depthUse{
+        .format = graph.shadowFormat(),
+        .extent = {mapSize, mapSize, 1},
+        .arrayLayers = 6,
+        .imageFlags = vk::ImageCreateFlagBits::eCubeCompatible,
+        .viewType = vk::ImageViewType::eCube,
+        .aspect = vk::ImageAspectFlagBits::eDepth,
+        .imageUsage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
+        .stages = vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+            vk::PipelineStageFlagBits2::eLateFragmentTests,
+        .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead |
+            vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        .layout = vk::ImageLayout::eDepthAttachmentOptimal,
+    };
+    graph.createResource(inputSlots[Depth], depthUse);
+    graph.bindOutput(outputSlots[ShadowMap], inputSlots[Depth], {
+        .imageUsage = vk::ImageUsageFlagBits::eSampled,
+        .stages = vk::PipelineStageFlagBits2::eFragmentShader,
+        .access = vk::AccessFlagBits2::eShaderSampledRead,
+        .layout = vk::ImageLayout::eDepthReadOnlyOptimal,
+    });
+
+    pipeline = graph.pipelines().getOrCreate({
         .shader = shader,
         .layout = PipelineLayoutPreset::SceneOnly,
         .state = PipelineState::preset(RenderMode::Shadow),
-        .depthFormat = depthFormat,
+        .depthFormat = graph.shadowFormat(),
     });
-    pipelineLayout = pipelines.layout(PipelineLayoutPreset::SceneOnly);
+    pipelineLayout = graph.pipelines().layout(PipelineLayoutPreset::SceneOnly);
+}
 
+void ShadowPass::bindResources(RenderGraph& graph)
+{
     for (uint32_t frameIndex = 0; frameIndex < maxFramesInFlight; ++frameIndex)
     {
         const vk::DescriptorImageInfo imageInfo{
-            .imageView = *targets[frameIndex].cubeView,
+            .imageView = graph.imageView(inputSlots[Depth], frameIndex),
             .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
         };
         const vk::DescriptorImageInfo samplerInfo{.sampler = *sampler};
         const std::array writes = {
             vk::WriteDescriptorSet{
-                .dstSet = targetFrames[frameIndex].sceneSetHandle(),
+                .dstSet = graph.frameContext(frameIndex).sceneSetHandle(),
                 .dstBinding = RenderInterface::shadowImageBinding,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eSampledImage,
                 .pImageInfo = &imageInfo,
             },
             vk::WriteDescriptorSet{
-                .dstSet = targetFrames[frameIndex].sceneSetHandle(),
+                .dstSet = graph.frameContext(frameIndex).sceneSetHandle(),
                 .dstBinding = RenderInterface::shadowSamplerBinding,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eSampler,
                 .pImageInfo = &samplerInfo,
             },
         };
-        device.updateDescriptorSets(writes, {});
+        graph.vulkan().deviceHandle().updateDescriptorSets(writes, {});
     }
 }
 
-void ShadowPass::reset() noexcept
+void ShadowPass::executePass(RenderGraph& graph) const
 {
-    pipeline = nullptr;
-    pipelineLayout = nullptr;
-    sampler = nullptr;
-    for (Target& target : targets)
+    auto& commandBuffer = graph.commands();
+    const auto lights = graph.frameContext(graph.frameIndex()).lightData();
+    // The first SSBO element is the scene's primary light, matching shadow.slang.
+    const LightData* light = lights.empty() ? nullptr : &lights.front();
+    const bool castShadow = light != nullptr && light->flags.y != 0 && light->flags.z != 0 &&
+        light->flags.x == static_cast<uint32_t>(ecs::Light::Type::Point);
+    glm::mat4 projection{1.0f};
+    if (castShadow)
     {
-        for (auto& faceView : target.faceViews)
-        {
-            faceView = nullptr;
-        }
-        target.cubeView = nullptr;
-        target.image = nullptr;
-        target.memory = nullptr;
+        CHECK(std::isfinite(light->positionRange.w) && light->positionRange.w > 0.0f,
+            "shadow-casting point light requires a positive finite range");
+        const float nearPlane = std::min(0.1f, light->positionRange.w * 0.1f);
+        // Face up vectors account for Vulkan's downward-growing image coordinates.
+        projection = glm::perspective(std::numbers::pi_v<float> * 0.5f,
+            1.0f, nearPlane, light->positionRange.w);
     }
-    depthFormat = vk::Format::eUndefined;
-    frames = nullptr;
-}
-
-void ShadowPass::transition(vk::raii::CommandBuffer& commandBuffer, vk::Image image,
-    vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
-    vk::PipelineStageFlags2 srcStages, vk::AccessFlags2 srcAccess,
-    vk::PipelineStageFlags2 dstStages, vk::AccessFlags2 dstAccess) const
-{
-    const vk::ImageMemoryBarrier2 barrier{
-        .srcStageMask = srcStages,
-        .srcAccessMask = srcAccess,
-        .dstStageMask = dstStages,
-        .dstAccessMask = dstAccess,
-        .oldLayout = oldLayout,
-        .newLayout = newLayout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = image,
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eDepth,
-            .levelCount = 1,
-            .layerCount = 6,
-        },
-    };
-    commandBuffer.pipelineBarrier2({
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &barrier,
-    });
-}
-
-void ShadowPass::record(vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex,
-    const Scene::Desc::Object* lightObject,
-    const std::vector<SceneRenderItem>& renderItems) const
-{
-    const Target& target = targets.at(frameIndex);
-    const ecs::Light* light = nullptr;
-    const ecs::Transform* transform = nullptr;
-    if (lightObject != nullptr)
-    {
-        light = lightObject->components.at("Light").try_cast<ecs::Light>();
-        transform = lightObject->components.at("Transform").try_cast<ecs::Transform>();
-        CHECK(light != nullptr && transform != nullptr,
-            "shadow light requires Light and Transform components");
-    }
-
-    const bool castShadow = light != nullptr && light->enabled && light->castShadow &&
-        light->type == ecs::Light::Type::Point;
-    if (!castShadow)
-    {
-        transition(commandBuffer, *target.image, vk::ImageLayout::eUndefined,
-            vk::ImageLayout::eTransferDstOptimal, {}, {},
-            vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite);
-        const vk::ImageSubresourceRange range{
-            .aspectMask = vk::ImageAspectFlagBits::eDepth,
-            .levelCount = 1,
-            .layerCount = 6,
-        };
-        commandBuffer.clearDepthStencilImage(*target.image,
-            vk::ImageLayout::eTransferDstOptimal, {1.0f, 0}, range);
-        transition(commandBuffer, *target.image, vk::ImageLayout::eTransferDstOptimal,
-            vk::ImageLayout::eDepthReadOnlyOptimal,
-            vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
-            vk::PipelineStageFlagBits2::eFragmentShader,
-            vk::AccessFlagBits2::eShaderSampledRead);
-        return;
-    }
-
-    transition(commandBuffer, *target.image, vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eDepthAttachmentOptimal, {}, {},
-        vk::PipelineStageFlagBits2::eEarlyFragmentTests |
-            vk::PipelineStageFlagBits2::eLateFragmentTests,
-        vk::AccessFlagBits2::eDepthStencilAttachmentWrite);
-
-    CHECK(std::isfinite(light->range) && light->range > 0.0f,
-        "shadow-casting point light requires a positive finite range");
-    const float nearPlane = std::min(0.1f, light->range * 0.1f);
-    const float farPlane = light->range;
-    // Cubemap face rows follow EnvironmentMapUtils::faceDirection; the face up
-    // vectors already account for Vulkan's downward-growing image coordinates.
-    const glm::mat4 projection = glm::perspective(std::numbers::pi_v<float> * 0.5f,
-        1.0f, nearPlane, farPlane);
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sceneSets = {frames->at(frameIndex).sceneSetHandle()};
+    const std::array sceneSets = {graph.frameContext(graph.frameIndex()).sceneSetHandle()};
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
         pipelineLayout, RenderInterface::sceneSet, sceneSets, {});
     commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f,
@@ -259,7 +144,7 @@ void ShadowPass::record(vk::raii::CommandBuffer& commandBuffer, uint32_t frameIn
     for (uint32_t face = 0; face < 6; ++face)
     {
         const vk::RenderingAttachmentInfo depthAttachment{
-            .imageView = *target.faceViews[face],
+            .imageView = graph.layerView(inputSlots[Depth], face),
             .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
             .loadOp = vk::AttachmentLoadOp::eClear,
             .storeOp = vk::AttachmentStoreOp::eStore,
@@ -271,36 +156,33 @@ void ShadowPass::record(vk::raii::CommandBuffer& commandBuffer, uint32_t frameIn
             .pDepthAttachment = &depthAttachment,
         });
 
-        const glm::mat4 view = glm::lookAt(transform->position,
-            transform->position + faceDirections[face], faceUp[face]);
-        const glm::mat4 viewProjection = projection * view;
-        for (const SceneRenderItem& item : renderItems)
+        // No shadow-casting point light still produces a cleared, valid cubemap.
+        if (castShadow)
         {
-            const auto* objectTransform = item.object->components.at("Transform")
-                .try_cast<ecs::Transform>();
-            CHECK(objectTransform != nullptr, "shadow caster is missing Transform");
-
-            const ShadowPushConstants push{
-                .model = objectTransform->matrix(),
-                .viewProjection = viewProjection,
-            };
-            commandBuffer.pushConstants<ShadowPushConstants>(pipelineLayout,
-                vk::ShaderStageFlagBits::eVertex, 0, push);
-            item.mesh->bind(commandBuffer);
-            for (const Submesh& submesh : item.mesh->submeshes())
+            const glm::vec3 lightPosition = light->positionRange;
+            const glm::mat4 view = glm::lookAt(lightPosition,
+                lightPosition + faceDirections[face], faceUp[face]);
+            const glm::mat4 viewProjection = projection * view;
+            for (const SceneRenderItem& item : graph.scene().renderItems())
             {
-                commandBuffer.drawIndexed(submesh.indexCount, 1,
-                    submesh.firstIndex, 0, 0);
+                const auto* objectTransform = item.object->components.at("Transform")
+                    .try_cast<ecs::Transform>();
+                CHECK(objectTransform != nullptr, "shadow caster is missing Transform");
+
+                const ShadowPushConstants push{
+                    .model = objectTransform->matrix(),
+                    .viewProjection = viewProjection,
+                };
+                commandBuffer.pushConstants<ShadowPushConstants>(pipelineLayout,
+                    vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, push);
+                item.mesh->bind(commandBuffer);
+                for (const Submesh& submesh : item.mesh->submeshes())
+                {
+                    commandBuffer.drawIndexed(submesh.indexCount, 1,
+                        submesh.firstIndex, 0, 0);
+                }
             }
         }
         commandBuffer.endRendering();
     }
-
-    transition(commandBuffer, *target.image, vk::ImageLayout::eDepthAttachmentOptimal,
-        vk::ImageLayout::eDepthReadOnlyOptimal,
-        vk::PipelineStageFlagBits2::eEarlyFragmentTests |
-            vk::PipelineStageFlagBits2::eLateFragmentTests,
-        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-        vk::PipelineStageFlagBits2::eFragmentShader,
-        vk::AccessFlagBits2::eShaderSampledRead);
 }

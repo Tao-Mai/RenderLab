@@ -31,7 +31,6 @@ public:
     [[nodiscard]] const std::vector<SceneRenderItem>& renderItems() const;
     [[nodiscard]] const std::vector<LightRenderItem>& lightRenderItems() const;
     [[nodiscard]] const LightMarkers&                 lightMarkers() const;
-    [[nodiscard]] Scene::Desc::Object* primaryLightObject() const;
 
     [[nodiscard]] Scene::Desc::Object* findObject(uint32_t selectionId) const;
 
@@ -39,5 +38,4 @@ private:
     std::vector<SceneRenderItem> items;
     std::vector<LightRenderItem> lights;
     LightMarkers markers;
-    Scene::Desc::Object* primaryLight = nullptr;
 };

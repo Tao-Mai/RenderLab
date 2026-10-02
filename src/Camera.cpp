@@ -1,6 +1,9 @@
 #include "Camera.h"
 
 #include "core/Window.h"
+#include "core/Context.h"
+#include "core/InputManager.h"
+#include "core/Logger.h"
 
 #include <algorithm>
 #include <cmath>
@@ -14,20 +17,19 @@ void Camera::configure(const ecs::Camera& settings)
     data.worldUp = glm::normalize(settings.worldUp);
     looking = false;
     freeMovement = false;
-    vWasPressed = false;
 }
 
 void Camera::update(Window& window, float deltaTime, bool allowModeToggle)
 {
     deltaTime = std::clamp(deltaTime, 0.0f, 0.1f);
-    const bool vPressed = window.keyPressed(GLFW_KEY_V);
-    if (allowModeToggle && vPressed && !vWasPressed)
+    CHECK(context().inputManager != nullptr, "Camera requires InputManager");
+    const auto& input = *context().inputManager;
+    if (allowModeToggle && input.get(Command::ToggleFreeMovement))
     {
         freeMovement = !freeMovement;
     }
-    vWasPressed = vPressed;
 
-    const bool rightMousePressed = window.mouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);
+    const bool rightMousePressed = input.get(Command::Navigate);
     const bool navigationRequested = freeMovement ||
         (rightMousePressed && (allowModeToggle || looking));
     if (navigationRequested != looking)
@@ -66,17 +68,17 @@ void Camera::update(Window& window, float deltaTime, bool allowModeToggle)
     const glm::vec3 front = forward();
     const glm::vec3 right = glm::normalize(glm::cross(front, data.worldUp));
     glm::vec3 movement{0.0f};
-    if (window.keyPressed(GLFW_KEY_W)) movement += front;
-    if (window.keyPressed(GLFW_KEY_S)) movement -= front;
-    if (window.keyPressed(GLFW_KEY_D)) movement += right;
-    if (window.keyPressed(GLFW_KEY_A)) movement -= right;
-    if (window.keyPressed(GLFW_KEY_E)) movement += data.worldUp;
-    if (window.keyPressed(GLFW_KEY_Q)) movement -= data.worldUp;
+    if (input.get(Command::MoveForward)) movement += front;
+    if (input.get(Command::MoveBackward)) movement -= front;
+    if (input.get(Command::MoveRight)) movement += right;
+    if (input.get(Command::MoveLeft)) movement -= right;
+    if (input.get(Command::MoveUp)) movement += data.worldUp;
+    if (input.get(Command::MoveDown)) movement -= data.worldUp;
 
     if (glm::dot(movement, movement) > 0.0f)
     {
         float speed = data.movementSpeed;
-        if (window.keyPressed(GLFW_KEY_LEFT_SHIFT))
+        if (input.get(Command::Sprint))
         {
             speed *= data.sprintMultiplier;
         }

@@ -39,4 +39,45 @@ endif ()
 
 add_test(NAME RenderLabTests COMMAND RenderLabTests)
 
+add_executable(RenderGraphTests
+        RenderGraphTest.cpp
+        ShaderDataTest.cpp
+        ${PROJECT_SOURCE_DIR}/src/render/pass/RenderGraphSlots.cpp
+)
+target_include_directories(RenderGraphTests PRIVATE "${PROJECT_SOURCE_DIR}/src")
+add_dependencies(RenderGraphTests RenderLabShaders)
+target_compile_definitions(RenderGraphTests PRIVATE
+        RENDERLAB_SHADER_BINARY_DIR="${SHADER_BINARY_DIR}"
+        VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
+        VULKAN_HPP_NO_STRUCT_CONSTRUCTORS=1
+        VULKAN_HPP_NO_EXCEPTIONS
+        GLOG_NO_ABBREVIATED_SEVERITIES
+)
+target_link_libraries(RenderGraphTests PRIVATE
+        GTest::gtest_main
+        Vulkan::Vulkan
+        glog::glog
+        glm::glm
+        EnTT::EnTT
+        reflectcpp::reflectcpp
+)
+if (MSVC)
+    target_compile_options(RenderGraphTests PRIVATE /utf-8)
+endif ()
+add_test(NAME RenderGraphTests COMMAND RenderGraphTests)
+
+# Manual integration check requiring Vulkan and the project's configured assets.
+get_target_property(RENDERGRAPH_SMOKE_SOURCES RenderLab SOURCES)
+list(REMOVE_ITEM RENDERGRAPH_SMOKE_SOURCES src/Main.cpp)
+list(TRANSFORM RENDERGRAPH_SMOKE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+add_executable(RenderGraphGpuSmoke EXCLUDE_FROM_ALL
+        RenderGraphGpuSmoke.cpp ${RENDERGRAPH_SMOKE_SOURCES})
+foreach (PROPERTY INCLUDE_DIRECTORIES COMPILE_DEFINITIONS LINK_LIBRARIES COMPILE_OPTIONS)
+    get_target_property(RENDERGRAPH_SMOKE_${PROPERTY} RenderLab ${PROPERTY})
+    if (RENDERGRAPH_SMOKE_${PROPERTY})
+        set_property(TARGET RenderGraphGpuSmoke PROPERTY ${PROPERTY} "${RENDERGRAPH_SMOKE_${PROPERTY}}")
+    endif ()
+endforeach ()
+add_dependencies(RenderGraphGpuSmoke RenderLabShaders)
+
 add_executable(main main.cpp)

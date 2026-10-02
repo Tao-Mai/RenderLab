@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <utility>
 #include <vector>
 
@@ -9,6 +10,10 @@
 class Window
 {
   public:
+    using KeyCallback = std::function<void(int key, int scancode, int action, int mods)>;
+    using MouseButtonCallback = std::function<void(int button, int action, int mods)>;
+    using FocusCallback = std::function<void(int focused)>;
+
     Window() = default;
     ~Window();
 
@@ -20,8 +25,10 @@ class Window
     void waitEvents() const;
     [[nodiscard]] bool shouldClose() const;
     void requestClose() const;
-    [[nodiscard]] bool keyPressed(int key) const;
-    [[nodiscard]] bool mouseButtonPressed(int button) const;
+    void setKeyCallback(KeyCallback callback);
+    void setMouseButtonCallback(MouseButtonCallback callback);
+    void setFocusCallback(FocusCallback callback);
+
     [[nodiscard]] std::pair<double, double> cursorPosition() const;
     void setCursorCaptured(bool captured) const;
     double consumeScrollOffset();
@@ -36,5 +43,12 @@ class Window
     GLFWwindow *handle          = nullptr;
     double      scrollOffset    = 0.0;
 
+    KeyCallback onKey;
+    MouseButtonCallback onMouseButton;
+    FocusCallback onFocus;
+
+    static void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);
+    static void mouseButtonCallback(GLFWwindow *window, int button, int action, int mods);
+    static void focusCallback(GLFWwindow *window, int focused);
     static void scrollCallback(GLFWwindow *window, double xOffset, double yOffset);
 };

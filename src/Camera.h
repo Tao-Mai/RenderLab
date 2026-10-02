@@ -25,7 +25,6 @@ class Camera
     ecs::Camera data;
     bool looking = false;
     bool freeMovement = false;
-    bool vWasPressed = false;
     double previousMouseX = 0.0;
     double previousMouseY = 0.0;
 

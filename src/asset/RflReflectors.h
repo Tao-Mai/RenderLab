@@ -1,6 +1,7 @@
 #pragma once
 
 #include "asset/Asset.h"
+#include "core/Input.h"
 #include "core/Logger.h"
 
 #include <array>
@@ -9,6 +10,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <entt/core/hashed_string.hpp>
 #include <entt/core/type_info.hpp>
@@ -353,6 +355,49 @@ template <class T>
 
 namespace rfl
 {
+template <>
+struct Reflector<Modifier>
+{
+    using ReflType = std::vector<std::string>;
+
+    static constexpr std::array flags = {
+        std::pair{std::string_view{"Shift"}, Modifier::Shift},
+        std::pair{std::string_view{"Control"}, Modifier::Control},
+        std::pair{std::string_view{"Alt"}, Modifier::Alt},
+        std::pair{std::string_view{"Super"}, Modifier::Super},
+        std::pair{std::string_view{"CapsLock"}, Modifier::CapsLock},
+        std::pair{std::string_view{"NumLock"}, Modifier::NumLock},
+    };
+
+    static Modifier to(const ReflType& names)
+    {
+        Modifier result = Modifier::None;
+        for (const auto& name : names)
+        {
+            bool found = false;
+            for (const auto& [flagName, flag] : flags)
+            {
+                if (flagName != name) continue;
+                result |= flag;
+                found = true;
+                break;
+            }
+            CHECK(found, "unknown modifier '{}'", name);
+        }
+        return result;
+    }
+
+    static ReflType from(Modifier value)
+    {
+        ReflType names;
+        for (const auto& [name, flag] : flags)
+        {
+            if ((value & flag) != Modifier::None) names.emplace_back(name);
+        }
+        return names;
+    }
+};
+
 template <class T>
 struct Reflector<AssetID<T>>
 {

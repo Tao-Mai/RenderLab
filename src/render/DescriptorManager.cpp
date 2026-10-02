@@ -16,6 +16,7 @@ void DescriptorManager::init(const vk::raii::Device& targetDevice)
         vk::DescriptorPoolSize{.type = vk::DescriptorType::eSampledImage, .descriptorCount = 4096},
         vk::DescriptorPoolSize{.type = vk::DescriptorType::eSampler, .descriptorCount = 4096},
         vk::DescriptorPoolSize{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = 4096},
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = 4096},
     };
     const vk::DescriptorPoolCreateInfo poolInfo{
         .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
@@ -27,10 +28,18 @@ void DescriptorManager::init(const vk::raii::Device& targetDevice)
 
     const std::array sceneBindings = {
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::sceneUniformBinding,
+            .binding = RenderInterface::viewUniformBinding,
             .descriptorType = vk::DescriptorType::eUniformBuffer,
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::lightUniformBinding,
+            .descriptorType = vk::DescriptorType::eUniformBuffer,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::lightBufferBinding,
+            .descriptorType = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
             .binding = RenderInterface::irradianceImageBinding,
             .descriptorType = vk::DescriptorType::eSampledImage,

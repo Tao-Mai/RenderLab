@@ -31,7 +31,11 @@ void Window::init()
     }
     CHECK(handle != nullptr, "failed to create GLFW window");
 
+    glfwSetInputMode(handle, GLFW_LOCK_KEY_MODS, GLFW_TRUE);
     glfwSetWindowUserPointer(handle, this);
+    glfwSetKeyCallback(handle, &Window::keyCallback);
+    glfwSetMouseButtonCallback(handle, &Window::mouseButtonCallback);
+    glfwSetWindowFocusCallback(handle, &Window::focusCallback);
     glfwSetScrollCallback(handle, &Window::scrollCallback);
 }
 
@@ -58,14 +62,29 @@ void Window::requestClose() const
     }
 }
 
-bool Window::keyPressed(int key) const
+void Window::setKeyCallback(KeyCallback callback)
 {
-    return handle != nullptr && glfwGetKey(handle, key) == GLFW_PRESS;
+    CHECK(handle != nullptr, "window is not initialized");
+    CHECK(!callback || !onKey, "key callback is already registered");
+
+    onKey = std::move(callback);
 }
 
-bool Window::mouseButtonPressed(int button) const
+void Window::setMouseButtonCallback(MouseButtonCallback callback)
 {
-    return handle != nullptr && glfwGetMouseButton(handle, button) == GLFW_PRESS;
+    CHECK(handle != nullptr, "window is not initialized");
+    CHECK(!callback || !onMouseButton,
+        "mouse button callback is already registered");
+
+    onMouseButton = std::move(callback);
+}
+
+void Window::setFocusCallback(FocusCallback callback)
+{
+    CHECK(handle != nullptr, "window is not initialized");
+    CHECK(!callback || !onFocus, "focus callback is already registered");
+
+    onFocus = std::move(callback);
 }
 
 std::pair<double, double> Window::cursorPosition() const
@@ -139,10 +158,41 @@ void Window::shutdown() noexcept
         handle = nullptr;
     }
 
+    onKey = {};
+    onMouseButton = {};
+    onFocus = {};
+
     if (glfwInitialized)
     {
         glfwTerminate();
         glfwInitialized = false;
+    }
+}
+
+void Window::keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
+{
+    auto *owner = static_cast<Window *>(glfwGetWindowUserPointer(window));
+    if (owner != nullptr && owner->onKey)
+    {
+        owner->onKey(key, scancode, action, mods);
+    }
+}
+
+void Window::mouseButtonCallback(GLFWwindow *window, int button, int action, int mods)
+{
+    auto *owner = static_cast<Window *>(glfwGetWindowUserPointer(window));
+    if (owner != nullptr && owner->onMouseButton)
+    {
+        owner->onMouseButton(button, action, mods);
+    }
+}
+
+void Window::focusCallback(GLFWwindow *window, int focused)
+{
+    auto *owner = static_cast<Window *>(glfwGetWindowUserPointer(window));
+    if (owner != nullptr && owner->onFocus)
+    {
+        owner->onFocus(focused);
     }
 }
 

@@ -19,66 +19,59 @@ class LightMarkers;
 class GpuMesh;
 class RenderResourceManager;
 class Swapchain;
-class SkyboxPass;
 class GpuTexture;
 class VulkanContext;
+class RenderGraph;
 
 class ScenePass
 {
 public:
-    struct Target
-    {
-        uint32_t     imageIndex;
-        ViewportRect viewport;
-        bool         storeDepthForPicking;
-    };
+    enum Input { Color, Depth, Shadow, Irradiance, Prefiltered, Radiance, BrdfLut, InputCount };
+    enum Output { ColorResult, DepthResult, OutputCount };
 
-    void init(VulkanContext& vulkan, Swapchain& swapchain,
-        std::array<FrameContext, maxFramesInFlight>& frames,
-        PipelineManager& pipelines,
-        RenderResourceManager& resources, ShaderHandle sceneShader,
-        ShaderHandle lightShader, std::shared_ptr<GpuTexture> brdfLut,
-        vk::Sampler brdfLutSampler);
-    void reset() noexcept;
-    void refreshPipelines();
+    void init(RenderGraph& graph,
+        std::shared_ptr<GpuTexture> brdfLut, vk::Sampler brdfLutSampler);
+    void registerPass(RenderGraph& graph);
+    void setupPass(RenderGraph& graph);
+    void prepareRenderData(const FrameContext& frame);
+    void executePass(RenderGraph& graph) const;
     void bindSceneTextures(const Scene::Desc& scene);
-    void updateScene(
-        uint32_t frameIndex,
-        const glm::mat4& viewProjection,
-        const glm::vec3& cameraPosition,
-        const Scene::Desc::Object* lightObject);
-    void record(
-        vk::raii::CommandBuffer&            commandBuffer,
-        const std::vector<SceneRenderItem>& renderItems,
-        const std::vector<LightRenderItem>& lightRenderItems,
-        const LightMarkers&                 lightMarkers,
-        const SkyboxPass&                   skyboxPass,
-        uint32_t                            frameIndex,
-        Target                              target) const;
-
-    [[nodiscard]] vk::DescriptorSet sceneSetHandle(uint32_t frameIndex) const;
 
 private:
+    struct DrawCall
+    {
+        GpuMesh* mesh;
+        const GpuMaterial* material;
+        glm::mat4 model;
+        uint32_t firstIndex;
+        uint32_t indexCount;
+        float distanceSquared;
+    };
+    std::vector<DrawCall> opaqueDraws;
+    std::vector<DrawCall> transparentDraws;
     VulkanContext*                                         vulkan    = nullptr;
-    Swapchain*                                             swapchain = nullptr;
-    std::array<FrameContext, maxFramesInFlight>*            frames = nullptr;
+    RenderGraph*                                          graph = nullptr;
+    std::vector<uint32_t> inputSlots;
+    std::vector<uint32_t> outputSlots;
     PipelineManager*                                       pipelines = nullptr;
     RenderResourceManager*                                 resources = nullptr;
     ShaderHandle                                           sceneShader;
     ShaderHandle                                           lightShader;
-    glm::vec3                                              cameraPosition{0.0f};
-    glm::mat4                                              inverseViewProjection{1.0f};
+    ShaderHandle                                           skyboxShader;
     bool                                                   hasSkybox = false;
     vk::Pipeline                                           scenePipeline;
     vk::Pipeline                                           lightMarkerPipeline;
+    vk::Pipeline                                           skyboxPipeline;
     vk::PipelineLayout                                     pipelineLayout;
+    vk::PipelineLayout                                     skyboxPipelineLayout;
     std::shared_ptr<GpuTexture>                              irradianceTexture;
     std::shared_ptr<GpuTexture>                              prefilteredSpecularTexture;
     std::shared_ptr<GpuTexture>                              radianceTexture;
     std::shared_ptr<GpuTexture>                              brdfLutTexture;
     vk::Sampler                                           brdfLutSampler = nullptr;
-    float                                                 prefilteredSpecularMaxLod = 0.0f;
 
+    void recordSkybox(vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex,
+        const SkyboxPushConstants& parameters) const;
     void bindSceneDescriptor(
         vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex) const;
 };

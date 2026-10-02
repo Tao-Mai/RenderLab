@@ -4,6 +4,7 @@
 #include "asset/AssetDescManager.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
+#include "core/InputManager.h"
 #include "core/Logger.h"
 #include "ecs/Transform.h"
 #include "editor/ComponentDraw.h"
@@ -296,15 +297,15 @@ bool EditorUI::drawGizmo(
     const ImGuiIO &io = ImGui::GetIO();
     if (enableShortcuts && !io.WantTextInput && !ImGui::IsAnyItemActive())
     {
-        if (ImGui::IsKeyPressed(ImGuiKey_W, false))
+        if (context().inputManager->get(Command::GizmoTranslate))
         {
             gizmoOperation = 0;
         }
-        else if (ImGui::IsKeyPressed(ImGuiKey_E, false))
+        else if (context().inputManager->get(Command::GizmoRotate))
         {
             gizmoOperation = 1;
         }
-        else if (ImGui::IsKeyPressed(ImGuiKey_R, false))
+        else if (context().inputManager->get(Command::GizmoScale))
         {
             gizmoOperation = 2;
         }
@@ -598,7 +599,7 @@ bool EditorUI::sceneClicked(glm::vec2 &mousePosition) const
     const bool inside = mouse.x >= scenePosition.x && mouse.y >= scenePosition.y &&
                         mouse.x < scenePosition.x + sceneSize.x &&
                         mouse.y < scenePosition.y + sceneSize.y;
-    if (!inside || !ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
+    if (!inside || !context().inputManager->get(Command::SelectObject) ||
         ImGuizmo::IsOver() || ImGuizmo::IsUsing())
     {
         return false;
@@ -631,7 +632,7 @@ bool EditorUI::saveRequested() const
     {
         return false;
     }
-    return ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S);
+    return context().inputManager->get(Command::SaveScene);
 }
 
 float EditorUI::sceneAspectRatio() const

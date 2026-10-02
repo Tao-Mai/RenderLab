@@ -12,40 +12,27 @@
 
 class PipelineManager;
 class VulkanContext;
-class FrameContext;
+class RenderGraph;
 
 class ShadowPass
 {
 public:
-    void init(const VulkanContext& vulkan, PipelineManager& pipelines,
-        ShaderHandle shader, const std::array<FrameContext, maxFramesInFlight>& frames);
-    void reset() noexcept;
+    enum Input { Depth, InputCount };
+    enum Output { ShadowMap, OutputCount };
 
-    void record(vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex,
-        const Scene::Desc::Object* lightObject,
-        const std::vector<SceneRenderItem>& renderItems) const;
+    void init(RenderGraph& graph);
+    void registerPass(RenderGraph& graph);
+    void setupPass(RenderGraph& graph);
+    void bindResources(RenderGraph& graph);
+    void executePass(RenderGraph& graph) const;
 
 private:
     static constexpr uint32_t mapSize = 1024;
 
-    struct Target
-    {
-        vk::raii::Image image = nullptr;
-        vk::raii::DeviceMemory memory = nullptr;
-        vk::raii::ImageView cubeView = nullptr;
-        std::array<vk::raii::ImageView, 6> faceViews{
-            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
-    };
-
-    std::array<Target, maxFramesInFlight> targets;
+    std::vector<uint32_t> inputSlots;
+    std::vector<uint32_t> outputSlots;
+    ShaderHandle shader;
     vk::raii::Sampler sampler = nullptr;
-    vk::Format depthFormat = vk::Format::eUndefined;
     vk::Pipeline pipeline = nullptr;
     vk::PipelineLayout pipelineLayout = nullptr;
-    const std::array<FrameContext, maxFramesInFlight>* frames = nullptr;
-
-    void transition(vk::raii::CommandBuffer& commandBuffer, vk::Image image,
-        vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
-        vk::PipelineStageFlags2 srcStages, vk::AccessFlags2 srcAccess,
-        vk::PipelineStageFlags2 dstStages, vk::AccessFlags2 dstAccess) const;
 };

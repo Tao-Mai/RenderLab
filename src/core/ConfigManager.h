@@ -1,17 +1,25 @@
 #pragma once
 
 #include "asset/Asset.h"
+#include "core/Input.h"
 
 #include <filesystem>
+#include <vector>
 
 struct AppPaths
 {
     std::filesystem::path assets;
+    std::filesystem::path commands;
 };
 
 struct RendererConfig
 {
     TextureBinding brdfLut;
+};
+
+struct CommandConfig
+{
+    std::vector<CommandBinding> bindings;
 };
 
 struct AppConfig
@@ -30,6 +38,7 @@ public:
     void shutdown() noexcept;
 
     [[nodiscard]] const AppPaths& paths() const noexcept;
+    [[nodiscard]] const CommandConfig& commandConfig() const noexcept;
     [[nodiscard]] const Scene::ID& initialScene() const noexcept;
     [[nodiscard]] const RendererConfig& rendererConfig() const noexcept;
 
@@ -38,8 +47,10 @@ private:
     std::filesystem::path file;
     std::filesystem::path configDir;
     AppConfig data;
+    CommandConfig commands;
 
     void load();
+    void loadCommands();
     void save() const;
     void resolvePaths();
     void applyDefaults();

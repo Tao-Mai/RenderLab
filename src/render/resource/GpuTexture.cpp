@@ -56,6 +56,9 @@ vk::ImageView GpuTexture::imageView() const
     return *view;
 }
 
+vk::Image GpuTexture::imageHandle() const { return *image; }
+const vk::ImageCreateInfo& GpuTexture::imageInfo() const { return creationInfo; }
+
 void GpuTexture::create(
     GpuUploadContext upload, std::span<const uint8_t> bytes,
     const Texture::Desc& desc, vk::Format format)
@@ -101,6 +104,7 @@ void GpuTexture::create(
         .sharingMode = vk::SharingMode::eExclusive,
         .initialLayout = vk::ImageLayout::eUndefined,
     };
+    creationInfo = imageInfo;
     image = vkCheck(device.createImage(imageInfo));
 
     const vk::MemoryRequirements requirements = image.getMemoryRequirements();

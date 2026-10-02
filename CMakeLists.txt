@@ -59,6 +59,7 @@ add_custom_command(
         -reflection-json "${SLANG_SHADER_REFLECTION}"
         -o "${SLANG_SHADER}"
         DEPENDS "${SHADER_SOURCE_DIR}/shader.slang"
+        "${SHADER_SOURCE_DIR}/scene_data.slang"
         COMMENT "Compiling Slang shader"
         VERBATIM
 )
@@ -78,6 +79,7 @@ add_custom_command(
         -reflection-json "${SLANG_LIGHT_REFLECTION}"
         -o "${SLANG_LIGHT_SHADER}"
         DEPENDS "${SHADER_SOURCE_DIR}/light.slang"
+        "${SHADER_SOURCE_DIR}/scene_data.slang"
         COMMENT "Compiling light source Slang shader"
         VERBATIM
 )
@@ -97,6 +99,7 @@ add_custom_command(
         -reflection-json "${SLANG_EDITOR_PICKING_REFLECTION}"
         -o "${SLANG_EDITOR_PICKING_SHADER}"
         DEPENDS "${SHADER_SOURCE_DIR}/editor/picking.slang"
+        "${SHADER_SOURCE_DIR}/scene_data.slang"
         COMMENT "Compiling editor picking Slang shader"
         VERBATIM
 )
@@ -116,6 +119,7 @@ add_custom_command(
         -reflection-json "${SLANG_SKYBOX_REFLECTION}"
         -o "${SLANG_SKYBOX_SHADER}"
         DEPENDS "${SHADER_SOURCE_DIR}/skybox.slang"
+        "${SHADER_SOURCE_DIR}/scene_data.slang"
         COMMENT "Compiling skybox Slang shader"
         VERBATIM
 )
@@ -135,6 +139,7 @@ add_custom_command(
         -reflection-json "${SLANG_SHADOW_REFLECTION}"
         -o "${SLANG_SHADOW_SHADER}"
         DEPENDS "${SHADER_SOURCE_DIR}/shadow.slang"
+        "${SHADER_SOURCE_DIR}/scene_data.slang"
         COMMENT "Compiling shadow Slang shader"
         VERBATIM
 )
@@ -166,6 +171,9 @@ add_executable(RenderLab
         src/core/Reflect.h
         src/core/Window.cpp
         src/core/Window.h
+        src/core/Input.h
+        src/core/InputManager.h
+        src/core/InputManager.cpp
         src/ecs/Component.h
         src/ecs/Camera.h
         src/ecs/Light.h
@@ -238,8 +246,6 @@ add_executable(RenderLab
         src/render/pass/ScenePass.h
         src/render/pass/ShadowPass.cpp
         src/render/pass/ShadowPass.h
-        src/render/pass/SkyboxPass.cpp
-        src/render/pass/SkyboxPass.h
         src/render/pass/LightMarkers.cpp
         src/render/pass/LightMarkers.h
         src/render/pass/EditorPickingPass.cpp
@@ -254,8 +260,9 @@ add_executable(RenderLab
         src/core/math/Sampler.h
         src/render/pass/RenderGraph.cpp
         src/render/pass/RenderGraph.h
-        src/render/pass/DepthPass.cpp
-        src/render/pass/DepthPass.h
+        src/render/pass/RenderGraphSlots.cpp
+        src/render/pass/EditorUiPass.cpp
+        src/render/pass/EditorUiPass.h
 )
 add_dependencies(RenderLab RenderLabShaders)
 

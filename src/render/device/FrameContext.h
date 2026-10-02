@@ -3,6 +3,9 @@
 #include "render/resource/Buffer.h"
 #include "render/resource/ShaderData.h"
 
+#include <span>
+#include <vector>
+
 #include <vulkan/vulkan_raii.hpp>
 
 class VulkanContext;
@@ -13,7 +16,12 @@ class FrameContext
 public:
     void init(const VulkanContext& vulkan, DescriptorManager& descriptors);
     void reset() noexcept;
-    void updateScene(const SceneUniforms& data);
+    // Call after this frame's fence completes, before recording/submitting.
+    void updateFrameData(const ViewUniforms& view, const LightUniforms& lighting,
+        std::span<const LightData> lights);
+    [[nodiscard]] const ViewUniforms& viewUniforms() const;
+    [[nodiscard]] const LightUniforms& lightUniforms() const;
+    [[nodiscard]] std::span<const LightData> lightData() const;
     [[nodiscard]] vk::DescriptorSet sceneSetHandle() const;
 
     [[nodiscard]] const vk::raii::CommandPool& commandPoolHandle() const;
@@ -26,6 +34,14 @@ private:
     vk::raii::CommandBuffer graphicsCommandBuffer = nullptr;
     vk::raii::Semaphore     imageAvailable        = nullptr;
     vk::raii::Fence         drawFence             = nullptr;
-    Buffer                   sceneBuffer;
+    const VulkanContext* vulkan = nullptr;
+    ViewUniforms viewData;
+    LightUniforms lightMetadata;
+    std::vector<LightData> lights;
+    Buffer viewBuffer;
+    Buffer lightUniformBuffer;
+    Buffer lightBuffer;
     vk::raii::DescriptorSet sceneSet              = nullptr;
+
+    void bindFrameBuffers();
 };

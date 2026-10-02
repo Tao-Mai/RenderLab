@@ -1,6 +1,7 @@
 {
   "Paths": {
-    "Assets": "."
+    "Assets": ".",
+    "Commands": "../config/commands.json"
   },
   "InitialScene": "default",
   "Renderer": {

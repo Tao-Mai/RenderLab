@@ -37,6 +37,7 @@
       <config projectName="RenderLab" targetName="ExperimentalSubmit" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="ContinuousBuild" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="NightlySubmit" folderName="CTestDashboardTargets" />
+      <config projectName="RenderLab" targetName="RenderGraphTests" />
       <config projectName="RenderLab" targetName="ContinuousUpdate" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="ContinuousStart" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="ExperimentalTest" folderName="CTestDashboardTargets" />
@@ -47,6 +48,7 @@
       <config projectName="RenderLab" targetName="NightlyBuild" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="RenderLabShaders" />
       <config projectName="RenderLab" targetName="NightlyStart" folderName="CTestDashboardTargets" />
+      <config projectName="RenderLab" targetName="RenderGraphGpuSmoke" />
       <config projectName="RenderLab" targetName="NightlyCoverage" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="NightlyTest" folderName="CTestDashboardTargets" />
       <config projectName="RenderLab" targetName="ContinuousMemCheck" folderName="CTestDashboardTargets" />
@@ -66,26 +68,63 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="多线程烘焙">
-      <change afterPath="$PROJECT_DIR$/src/render/ARCH.MD" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/render/pass/DepthPass.cpp" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/render/pass/DepthPass.h" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/render/pass/PassDefine.h" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/render/pass/RenderGraph.cpp" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/render/pass/RenderGraph.h" afterDir="false" />
+    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="render graph tmp">
+      <change afterPath="$PROJECT_DIR$/NOTE.MD" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/TODO.md" beforeDir="false" afterPath="$PROJECT_DIR$/TODO.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/Scene/default.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/Scene/default.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/config.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/config.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/shaders/editor/picking.slang" beforeDir="false" afterPath="$PROJECT_DIR$/shaders/editor/picking.slang" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/shaders/light.slang" beforeDir="false" afterPath="$PROJECT_DIR$/shaders/light.slang" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/shaders/shader.slang" beforeDir="false" afterPath="$PROJECT_DIR$/shaders/shader.slang" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/shaders/shadow.slang" beforeDir="false" afterPath="$PROJECT_DIR$/shaders/shadow.slang" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/core/Logger.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/Logger.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/shaders/skybox.slang" beforeDir="false" afterPath="$PROJECT_DIR$/shaders/skybox.slang" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Camera.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/Camera.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Camera.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/Camera.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/Engine.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/core/ConfigManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/ConfigManager.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/core/ConfigManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/ConfigManager.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/core/Context.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/Context.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/core/Window.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/Window.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/core/Window.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/Window.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/editor/EditorUi.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/EditorUi.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/ARCH.MD" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/ARCH.MD" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/DescriptorManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/DescriptorManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/PipelineManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/PipelineManager.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/Renderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/Renderer.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/Renderer.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/Renderer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/ShaderManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/ShaderManager.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/device/FrameContext.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/device/FrameContext.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/device/FrameContext.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/device/FrameContext.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/DepthPass.cpp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/DepthPass.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/EditorPickingPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/EditorPickingPass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/EditorPickingPass.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/EditorPickingPass.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/LightMarkers.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/LightMarkers.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/PassDefine.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/RenderGraph.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/RenderGraph.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/RenderGraph.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/RenderGraph.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/ScenePass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/ScenePass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/ScenePass.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/ScenePass.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/ShadowPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/ShadowPass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/ShadowPass.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/ShadowPass.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/SkyboxPass.cpp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/pass/SkyboxPass.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/present/Swapchain.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/present/Swapchain.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/present/Swapchain.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/present/Swapchain.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/Buffer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/Buffer.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/Buffer.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/Buffer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/GpuMaterial.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuMaterial.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/GpuMaterial.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuMaterial.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/GpuMesh.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuMesh.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/GpuMesh.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuMesh.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/GpuTexture.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuTexture.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/resource/GpuTexture.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuTexture.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/resource/ShaderData.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/ShaderData.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/scene/GpuScene.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/scene/GpuScene.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/scene/GpuScene.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/scene/GpuScene.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/test/CMakeLists.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test/config.json" beforeDir="false" afterPath="$PROJECT_DIR$/test/config.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -140,61 +179,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.5904963307147653" />
-      <entry key="MS500" value="1.9002011592546442" />
-      <entry key="S2" value="2.2466624418436556" />
-      <entry key="S5" value="3.48549463731879" />
-      <entry key="S10" value="5.885712419889896" />
-      <entry key="S30" value="11.863306435064937" />
-      <entry key="S60" value="17.84896132162464" />
-      <entry key="M2" value="28.02243076415778" />
-      <entry key="M5" value="53.80169145186056" />
-      <entry key="M10" value="91.44312643062258" />
-      <entry key="M15" value="126.15573434985143" />
-      <entry key="M30" value="219.01109782630206" />
-      <entry key="H1" value="360.2202563610498" />
-      <entry key="H2" value="520.6531297408841" />
-      <entry key="H4" value="654.0455993304012" />
-      <entry key="D1" value="941.8261042609035" />
-      <entry key="W1" value="1853.5134602615954" />
+      <entry key="MS100" value="1.0" />
+      <entry key="MS500" value="1.0" />
+      <entry key="S2" value="1.0" />
+      <entry key="S5" value="1.0" />
+      <entry key="S10" value="1.0" />
+      <entry key="S30" value="1.0" />
+      <entry key="S60" value="1.0000000000476834" />
+      <entry key="M2" value="1.0000263934808857" />
+      <entry key="M5" value="1.0949481491578237" />
+      <entry key="M10" value="2.6623695691049756" />
+      <entry key="M15" value="5.92392707976611" />
+      <entry key="M30" value="26.736753008210165" />
+      <entry key="H1" value="113.31886233247721" />
+      <entry key="H2" value="303.7254371817667" />
+      <entry key="H4" value="535.702919700392" />
+      <entry key="D1" value="1015.5217323654393" />
+      <entry key="W1" value="1978.9042787865899" />
     </decayedCancelled>
     <decayedSelected>
-      <entry key="MS100" value="6.560874454998497E-85" />
-      <entry key="MS500" value="1.503578603309391E-17" />
-      <entry key="S2" value="8.79359995237317E-5" />
-      <entry key="S5" value="0.0354162946109112" />
-      <entry key="S10" value="0.27131803360260687" />
-      <entry key="S30" value="1.8220077374036165" />
-      <entry key="S60" value="4.809256080933935" />
-      <entry key="M2" value="9.605255000221637" />
-      <entry key="M5" value="17.362239088210643" />
-      <entry key="M10" value="24.843929101450478" />
-      <entry key="M15" value="30.888353670909986" />
-      <entry key="M30" value="47.09847505834303" />
-      <entry key="H1" value="74.47347196277047" />
-      <entry key="H2" value="108.06481215713879" />
-      <entry key="H4" value="136.9930027011344" />
-      <entry key="D1" value="202.51760716372283" />
-      <entry key="W1" value="357.7286008862882" />
+      <entry key="MS100" value="0.0" />
+      <entry key="MS500" value="0.0" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="0.0" />
+      <entry key="S10" value="7.489229118772658E-244" />
+      <entry key="S30" value="3.269279620905361E-81" />
+      <entry key="S60" value="1.7132816427154474E-40" />
+      <entry key="M2" value="4.6146945510169543E-20" />
+      <entry key="M5" value="1.2218174826069772E-7" />
+      <entry key="M10" value="0.0022677588835462023" />
+      <entry key="M15" value="0.06672802813421252" />
+      <entry key="M30" value="2.3495885774110796" />
+      <entry key="H1" value="17.41124191974145" />
+      <entry key="H2" value="54.55588102945871" />
+      <entry key="H4" value="101.89356771357734" />
+      <entry key="D1" value="205.59958898454775" />
+      <entry key="W1" value="371.98056877946453" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="0.655196770396939" />
-      <entry key="MS500" value="0.9559913897275442" />
-      <entry key="S2" value="1.6790334614501503" />
-      <entry key="S5" value="3.2155853374025227" />
-      <entry key="S10" value="5.963902616473173" />
-      <entry key="S30" value="13.559074418369677" />
-      <entry key="S60" value="22.52223055212739" />
-      <entry key="M2" value="37.48610143874831" />
-      <entry key="M5" value="71.05012485758098" />
-      <entry key="M10" value="116.19884921908901" />
-      <entry key="M15" value="156.9672949098135" />
-      <entry key="M30" value="266.04566758330105" />
-      <entry key="H1" value="434.63989003368494" />
-      <entry key="H2" value="628.6776578998353" />
-      <entry key="H4" value="791.0127344404982" />
-      <entry key="D1" value="1144.3371949782397" />
-      <entry key="W1" value="2211.2399474494127" />
+      <entry key="MS100" value="0.018710604759670756" />
+      <entry key="MS500" value="0.45125036373121497" />
+      <entry key="S2" value="0.8196046076375171" />
+      <entry key="S5" value="0.9235103275716934" />
+      <entry key="S10" value="0.9609944472116857" />
+      <entry key="S30" value="0.9868253396443663" />
+      <entry key="S60" value="0.9933908293008816" />
+      <entry key="M2" value="0.9967163285857864" />
+      <entry key="M5" value="1.0936211951964345" />
+      <entry key="M10" value="2.663951797905553" />
+      <entry key="M15" value="5.990024356631064" />
+      <entry key="M30" value="29.08298300446793" />
+      <entry key="H1" value="130.7176942721963" />
+      <entry key="H2" value="358.26131569438303" />
+      <entry key="H4" value="637.5775296894222" />
+      <entry key="D1" value="1221.1147828965384" />
+      <entry key="W1" value="2350.882684699152" />
     </decayedShown>
   </component>
   <component name="ProjectApplicationVersion">
@@ -273,11 +312,23 @@
 }</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="D:\study\project\graphics\own\RenderLab" />
       <recent name="D:\study\project\graphics\own\RenderLab\resource" />
       <recent name="D:\study\project\graphics\own\RenderLab\src\asset" />
     </key>
   </component>
   <component name="RunManager" selected="CMake 应用程序.RenderLab">
+    <configuration default="true" type="CLionExternalRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
+      <method v="2">
+        <option name="CLION.EXTERNAL.BUILD" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="RenderGraphTests" type="CMakeGoogleTestRunConfigurationType" factoryName="Google Test" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="RenderGraphTests" CONFIG_NAME="Default-Visual Studio 2026" RUN_TARGET_PROJECT_NAME="RenderLab" RUN_TARGET_NAME="RenderGraphTests" TEST_MODE="SUITE_TEST">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+        <option name="BeforeTestRunTask" enabled="true" />
+      </method>
+    </configuration>
     <configuration name="RenderLabTests" type="CMakeGoogleTestRunConfigurationType" factoryName="Google Test" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="RenderLabTests" CONFIG_NAME="Default-Visual Studio 2026" RUN_TARGET_PROJECT_NAME="RenderLab" RUN_TARGET_NAME="RenderLabTests" TEST_MODE="SUITE_TEST">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
@@ -429,17 +480,17 @@
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
+    <configuration name="RenderGraphGpuSmoke" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="RenderGraphGpuSmoke" CONFIG_NAME="Default-Visual Studio 2026" RUN_TARGET_PROJECT_NAME="RenderLab" RUN_TARGET_NAME="RenderGraphGpuSmoke">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
     <configuration name="RenderLab" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="RenderLab" CONFIG_NAME="Default-Visual Studio 2026" RUN_TARGET_PROJECT_NAME="RenderLab" RUN_TARGET_NAME="RenderLab">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
     <configuration name="RenderLabShaders" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="RenderLabShaders" CONFIG_NAME="Default-Visual Studio 2026">
-      <method v="2">
-        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
-      </method>
-    </configuration>
-    <configuration default="true" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
@@ -486,8 +537,10 @@
       <item itemvalue="CMake 应用程序.NightlyUpdate" />
       <item itemvalue="CMake 应用程序.RenderLabShaders" />
       <item itemvalue="CMake 应用程序.main" />
+      <item itemvalue="CMake 应用程序.RenderGraphGpuSmoke" />
       <item itemvalue="CMake 应用程序.RenderLab" />
       <item itemvalue="CTest 应用程序.所有 CTest" />
+      <item itemvalue="Google Test.RenderGraphTests" />
       <item itemvalue="Google Test.RenderLabTests" />
       <item itemvalue="Google Test.SceneAsset.FileRoundTrip" />
     </list>
@@ -554,7 +607,8 @@
     <MESSAGE value="重构asset，环境贴图mipmap" />
     <MESSAGE value="skybox" />
     <MESSAGE value="多线程烘焙" />
-    <option name="LAST_COMMIT_MESSAGE" value="多线程烘焙" />
+    <MESSAGE value="render graph tmp" />
+    <option name="LAST_COMMIT_MESSAGE" value="render graph tmp" />
   </component>
   <component name="XDebuggerManager">
     <watches-manager>

@@ -7,10 +7,7 @@
 #include "render/DescriptorManager.h"
 #include "render/PipelineManager.h"
 #include "render/ShaderManager.h"
-#include "render/pass/EditorPickingPass.h"
-#include "render/pass/ScenePass.h"
-#include "render/pass/ShadowPass.h"
-#include "render/pass/SkyboxPass.h"
+#include "render/pass/RenderGraph.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/RenderResourceManager.h"
 #include "render/scene/GpuScene.h"
@@ -61,6 +58,7 @@ public:
     [[nodiscard]] const GpuScene& gpuScene() const;
 
 private:
+    friend class RenderGraph;
     bool              inited = false;
     VulkanContext     vulkan;
     Swapchain         swapchain;
@@ -71,27 +69,12 @@ private:
     std::array<FrameContext, maxFramesInFlight> frames;
     uint32_t          frameIndex = 0;
     GpuScene          scene;
-    ScenePass         scenePass;
-    ShadowPass        shadowPass;
-    SkyboxPass        skyboxPass;
-    EditorPickingPass pickingPass;
+    RenderGraph       graph;
+    glm::vec4         iblParameters{0.0f};
 
     void initVulkan();
+    void updateFrameData(const Camera& camera, const EditorFrameInput& editor);
     [[nodiscard]] FrameContext& currentFrame();
     void recreateSwapchain();
-    void recordCommandBuffer(uint32_t imageIndex, const EditorFrameInput& editor);
-    void recordPickingPass(vk::raii::CommandBuffer& commandBuffer, const EditorFrameInput& editor);
-    void recordUiPass(
-        vk::raii::CommandBuffer& commandBuffer,
-        uint32_t                 imageIndex,
-        const EditorFrameInput&  editor);
-    void transitionImageLayout(
-        uint32_t                imageIndex,
-        vk::ImageLayout         oldLayout,
-        vk::ImageLayout         newLayout,
-        vk::AccessFlags2        srcAccessMask,
-        vk::AccessFlags2        dstAccessMask,
-        vk::PipelineStageFlags2 srcStageMask,
-        vk::PipelineStageFlags2 dstStageMask);
     EditorFrameResult drawFrame(const Camera& camera, const EditorFrameInput& editor);
 };

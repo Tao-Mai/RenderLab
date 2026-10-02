@@ -1,5 +1,9 @@
 #include "render/pass/ScenePass.h"
 
+#include "render/pass/RenderGraph.h"
+#include "render/pass/ShadowPass.h"
+#include "render/Renderer.h"
+
 #include "asset/Asset.h"
 #include "asset/AssetDescManager.h"
 #include "asset/ApplyOptionalFields.h"
@@ -9,7 +13,6 @@
 #include "ecs/Render.h"
 #include "ecs/Transform.h"
 #include "render/pass/LightMarkers.h"
-#include "render/pass/SkyboxPass.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/GpuMaterial.h"
@@ -23,12 +26,11 @@
 #include <utility>
 
 #include <glm/vec4.hpp>
-#include <glm/gtc/matrix_inverse.hpp>
 
 void ScenePass::bindSceneDescriptor(
     vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex) const
 {
-    const std::array sets = {frames->at(frameIndex).sceneSetHandle()};
+    const std::array sets = {graph->frameContext(frameIndex).sceneSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         pipelineLayout,
@@ -37,31 +39,69 @@ void ScenePass::bindSceneDescriptor(
         {});
 }
 
-void ScenePass::init(VulkanContext& context, Swapchain& targetSwapchain,
-                     std::array<FrameContext, maxFramesInFlight>& targetFrames,
-                     PipelineManager& targetPipelines,
-                     RenderResourceManager& targetResources, ShaderHandle targetSceneShader,
-                     ShaderHandle targetLightShader, std::shared_ptr<GpuTexture> brdfLut,
-                     vk::Sampler targetBrdfLutSampler)
+void ScenePass::init(RenderGraph& targetGraph,
+    std::shared_ptr<GpuTexture> brdfLut, vk::Sampler targetBrdfLutSampler)
 {
-    vulkan      = &context;
-    swapchain   = &targetSwapchain;
-    frames      = &targetFrames;
-    pipelines   = &targetPipelines;
-    resources   = &targetResources;
-    sceneShader = targetSceneShader;
-    lightShader = targetLightShader;
+    graph = &targetGraph;
+    vulkan = &graph->vulkan();
+    pipelines = &graph->pipelines();
+    resources = &graph->assetResources();
+    sceneShader = graph->shaders().getOrLoad("scene");
+    lightShader = graph->shaders().getOrLoad("light");
+    skyboxShader = graph->shaders().getOrLoad("skybox");
+
     brdfLutTexture = std::move(brdfLut);
     brdfLutSampler = targetBrdfLutSampler;
-    CHECK(brdfLutTexture != nullptr, "ScenePass requires a BRDF LUT texture");
-    CHECK(brdfLutSampler, "ScenePass requires a BRDF LUT sampler");
-    refreshPipelines();
+    CHECK(brdfLutTexture != nullptr && brdfLutSampler, "ScenePass requires a BRDF LUT binding");
 }
 
-void ScenePass::refreshPipelines()
+void ScenePass::registerPass(RenderGraph& graph)
 {
-    const vk::Format colorFormat = swapchain->surfaceFormat().format;
-    const vk::Format depthFormat = swapchain->depthImageFormat();
+    std::tie(inputSlots, outputSlots) = graph.registerPass("scene", InputCount, OutputCount,
+        [this](RenderGraph& g) { setupPass(g); },
+        [this](RenderGraph& g) { executePass(g); });
+}
+
+void ScenePass::setupPass(RenderGraph& graph)
+{
+    const RenderGraph::ResourceDesc colorUse{
+        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
+        .stages = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        .access = vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
+        .layout = vk::ImageLayout::eColorAttachmentOptimal,
+    };
+    const auto extent = graph.swapchain().extent();
+    const RenderGraph::ResourceDesc depthUse{
+        .format = graph.depthFormat(),
+        .extent = {extent.width, extent.height, 1},
+        .aspect = vk::ImageAspectFlagBits::eDepth,
+        .imageUsage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
+        .stages = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+        .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        .layout = vk::ImageLayout::eDepthAttachmentOptimal,
+    };
+    graph.importSwapchain(inputSlots[Color], colorUse);
+    graph.createResource(inputSlots[Depth], depthUse);
+    graph.bindOutput(outputSlots[ColorResult], inputSlots[Color], colorUse);
+    graph.bindOutput(outputSlots[DepthResult], inputSlots[Depth], depthUse);
+
+    if (graph.passEnabled("shadow"))
+        graph.bindInput(inputSlots[Shadow], graph.outputSlot("shadow", ShadowPass::ShadowMap), {
+            .imageUsage = vk::ImageUsageFlagBits::eSampled,
+            .stages = vk::PipelineStageFlagBits2::eFragmentShader,
+            .access = vk::AccessFlagBits2::eShaderSampledRead,
+            .layout = vk::ImageLayout::eDepthReadOnlyOptimal,
+        });
+    else
+        graph.ignoreInput(inputSlots[Shadow]);
+
+    graph.importTexture(inputSlots[Irradiance], *irradianceTexture);
+    graph.importTexture(inputSlots[Prefiltered], *prefilteredSpecularTexture);
+    graph.importTexture(inputSlots[Radiance], *radianceTexture);
+    graph.importTexture(inputSlots[BrdfLut], *brdfLutTexture);
+
+    const vk::Format colorFormat = graph.swapchain().surfaceFormat().format;
+    const vk::Format depthFormat = graph.depthFormat();
     scenePipeline                = pipelines->getOrCreate({
         .shader = sceneShader,
         .layout = PipelineLayoutPreset::SceneMaterial,
@@ -77,27 +117,15 @@ void ScenePass::refreshPipelines()
         .depthFormat = depthFormat,
     });
     pipelineLayout = pipelines->layout(PipelineLayoutPreset::SceneMaterial);
-}
 
-void ScenePass::reset() noexcept
-{
-    irradianceTexture.reset();
-    prefilteredSpecularTexture.reset();
-    radianceTexture.reset();
-    brdfLutTexture.reset();
-    brdfLutSampler = nullptr;
-    prefilteredSpecularMaxLod = 0.0f;
-    hasSkybox = false;
-    scenePipeline       = nullptr;
-    lightMarkerPipeline = nullptr;
-    pipelineLayout      = nullptr;
-    sceneShader         = {};
-    lightShader         = {};
-    resources           = nullptr;
-    pipelines           = nullptr;
-    frames              = nullptr;
-    swapchain           = nullptr;
-    vulkan              = nullptr;
+    skyboxPipeline = pipelines->getOrCreate({
+        .shader = skyboxShader,
+        .layout = PipelineLayoutPreset::SceneOnly,
+        .state = PipelineState::preset(RenderMode::Skybox),
+        .colorFormat = colorFormat,
+        .depthFormat = depthFormat,
+    });
+    skyboxPipelineLayout = pipelines->layout(PipelineLayoutPreset::SceneOnly);
 }
 
 void ScenePass::bindSceneTextures(const Scene::Desc& scene)
@@ -106,7 +134,6 @@ void ScenePass::bindSceneTextures(const Scene::Desc& scene)
         BuiltinAssets::Texture::whiteCube, BuiltinAssets::Sampler::linearClamp};
     TextureBinding prefilteredBinding = irradianceBinding;
     TextureBinding radianceBinding = irradianceBinding;
-    prefilteredSpecularMaxLod = 0.0f;
     hasSkybox = scene.environment.environmentMap.has_value();
     if (scene.environment.environmentMap.has_value())
     {
@@ -138,7 +165,6 @@ void ScenePass::bindSceneTextures(const Scene::Desc& scene)
               prefilteredDesc.mipLevels > 0,
               "environment '{}' requires linear irradiance and prefiltered cubemaps",
               environment.id);
-        prefilteredSpecularMaxLod = static_cast<float>(prefilteredDesc.mipLevels - 1);
     }
 
     irradianceTexture = resources->texture(irradianceBinding.textureID);
@@ -167,8 +193,9 @@ void ScenePass::bindSceneTextures(const Scene::Desc& scene)
     };
     const vk::DescriptorImageInfo radianceSampler{
         .sampler = resources->sampler(radianceBinding.samplerID)};
-    for (FrameContext& frame : *frames)
+    for (uint32_t index = 0; index < maxFramesInFlight; ++index)
     {
+        FrameContext& frame = graph->frameContext(index);
         const std::array writes = {
             vk::WriteDescriptorSet{
                 .dstSet = frame.sceneSetHandle(),
@@ -231,130 +258,12 @@ void ScenePass::bindSceneTextures(const Scene::Desc& scene)
     }
 }
 
-void ScenePass::updateScene(
-    uint32_t               frameIndex,
-    const glm::mat4&       viewProjection,
-    const glm::vec3&       cameraPosition,
-    const Scene::Desc::Object* lightObject)
+void ScenePass::prepareRenderData(const FrameContext& frame)
 {
-    this->cameraPosition = cameraPosition;
-    inverseViewProjection = glm::inverse(viewProjection);
-    SceneUniforms uniforms{
-        .viewProjection = viewProjection,
-        .cameraPosition = glm::vec4{cameraPosition, 1.0f},
-        .iblParameters = glm::vec4{prefilteredSpecularMaxLod, 0.0f, 0.0f, 0.0f},
-    };
-    if (lightObject != nullptr)
-    {
-        const auto* light     = lightObject->components.at("Light").try_cast<ecs::Light>();
-        const auto* transform =
-            lightObject->components.at("Transform").try_cast<ecs::Transform>();
-        CHECK(light != nullptr, "light object missing Light component");
-        CHECK(transform != nullptr, "light object missing Transform component");
-
-        const glm::vec3 direction =
-            glm::normalize(transform->rotation * glm::vec3{0.0f, 0.0f, -1.0f});
-        uniforms.lightColorIntensity = {light->color, light->intensity};
-        uniforms.lightPositionRange  = {transform->position, light->range};
-        uniforms.lightDirection      = glm::vec4{direction, 0.0f};
-        uniforms.lightAreaSizeCone   = {
-            light->areaSize, light->cosInner, light->cosOuter,
-        };
-        uniforms.lightFlags = {
-            static_cast<uint32_t>(light->type),
-            light->enabled ? 1u : 0u,
-            light->castShadow ? 1u : 0u,
-            0u,
-        };
-    }
-    frames->at(frameIndex).updateScene(uniforms);
-}
-
-vk::DescriptorSet ScenePass::sceneSetHandle(uint32_t frameIndex) const
-{
-    return frames->at(frameIndex).sceneSetHandle();
-}
-
-void ScenePass::record(
-    vk::raii::CommandBuffer&            commandBuffer,
-    const std::vector<SceneRenderItem>& renderItems,
-    const std::vector<LightRenderItem>& lightRenderItems,
-    const LightMarkers&                 lightMarkers,
-    const SkyboxPass&                   skyboxPass,
-    uint32_t                            frameIndex,
-    Target                              target) const
-{
-    vk::ClearValue              clearColor     = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
-    vk::RenderingAttachmentInfo attachmentInfo = {
-        .imageView = swapchain->imageView(target.imageIndex),
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eStore,
-        .clearValue = clearColor};
-    vk::ClearValue              depthClear          = vk::ClearDepthStencilValue(1.0f, 0);
-    vk::RenderingAttachmentInfo depthAttachmentInfo = {
-        .imageView = swapchain->depthImageViewHandle(frameIndex),
-        .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = target.storeDepthForPicking
-        ? vk::AttachmentStoreOp::eStore
-        : vk::AttachmentStoreOp::eDontCare,
-        .clearValue = depthClear,
-    };
-    vk::RenderingInfo renderingInfo = {
-        .renderArea = {.offset = {0, 0}, .extent = swapchain->extent()},
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &attachmentInfo,
-        .pDepthAttachment = &depthAttachmentInfo};
-
-    commandBuffer.beginRendering(renderingInfo);
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, scenePipeline);
-    bindSceneDescriptor(commandBuffer, frameIndex);
-    const ViewportRect editorViewport = target.viewport;
-    const uint32_t     viewportX      = std::min(
-        static_cast<uint32_t>(std::max(editorViewport.x, 0.0f)),
-        swapchain->extent().width - 1);
-    const uint32_t viewportY = std::min(
-        static_cast<uint32_t>(std::max(editorViewport.y, 0.0f)),
-        swapchain->extent().height - 1);
-    const uint32_t viewportWidth = std::max(
-        1u,
-        std::min(
-            static_cast<uint32_t>(editorViewport.width),
-            swapchain->extent().width - viewportX));
-    const uint32_t viewportHeight = std::max(
-        1u,
-        std::min(
-            static_cast<uint32_t>(editorViewport.height),
-            swapchain->extent().height - viewportY));
-    commandBuffer.setViewport(
-        0,
-        vk::Viewport(
-            static_cast<float>(viewportX),
-            static_cast<float>(viewportY),
-            static_cast<float>(viewportWidth),
-            static_cast<float>(viewportHeight),
-            0.0f,
-            1.0f));
-    commandBuffer.setScissor(
-        0,
-        vk::Rect2D(
-            vk::Offset2D(
-                static_cast<int32_t>(viewportX),
-                static_cast<int32_t>(viewportY)),
-            vk::Extent2D(viewportWidth, viewportHeight)));
-    struct DrawCall
-    {
-        GpuMesh*           mesh;
-        const GpuMaterial* material;
-        glm::mat4       model;
-        uint32_t        firstIndex;
-        uint32_t        indexCount;
-        float           distanceSquared;
-    };
-    std::vector<DrawCall> opaqueDraws;
-    std::vector<DrawCall> transparentDraws;
+    const glm::vec3 cameraPosition = frame.viewUniforms().cameraPosition;
+    opaqueDraws.clear();
+    transparentDraws.clear();
+    const auto& renderItems = graph->scene().renderItems();
     for (const SceneRenderItem& item : renderItems)
     {
         const auto* render    = item.object->components.at("Render").try_cast<ecs::Render>();
@@ -397,14 +306,95 @@ void ScenePass::record(
               {
                   return left.distanceSquared > right.distanceSquared;
               });
+}
 
+void ScenePass::recordSkybox(vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex,
+    const SkyboxPushConstants& parameters) const
+{
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, skyboxPipeline);
+
+    const std::array sets = {graph->frameContext(frameIndex).sceneSetHandle()};
+    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+        skyboxPipelineLayout, RenderInterface::sceneSet, sets, {});
+    commandBuffer.pushConstants<SkyboxPushConstants>(skyboxPipelineLayout,
+        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+        0, parameters);
+    commandBuffer.draw(3, 1, 0, 0);
+}
+
+void ScenePass::executePass(RenderGraph& graph) const
+{
+    auto& commandBuffer = graph.commands();
+    const auto& lightRenderItems = graph.scene().lightRenderItems();
+    const auto& lightMarkers = graph.scene().lightMarkers();
+    const uint32_t frameIndex = graph.frameIndex();
+    const auto extent = graph.swapchain().extent();
+
+    vk::ClearValue              clearColor     = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+    vk::RenderingAttachmentInfo attachmentInfo = {
+        .imageView = graph.imageView(inputSlots[Color]),
+        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eStore,
+        .clearValue = clearColor};
+    vk::ClearValue              depthClear          = vk::ClearDepthStencilValue(1.0f, 0);
+    vk::RenderingAttachmentInfo depthAttachmentInfo = {
+        .imageView = graph.imageView(inputSlots[Depth]),
+        .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eStore,
+        .clearValue = depthClear,
+    };
+    vk::RenderingInfo renderingInfo = {
+        .renderArea = {.offset = {0, 0}, .extent = extent},
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &attachmentInfo,
+        .pDepthAttachment = &depthAttachmentInfo};
+
+    commandBuffer.beginRendering(renderingInfo);
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, scenePipeline);
+    bindSceneDescriptor(commandBuffer, frameIndex);
+    const ViewportRect editorViewport = graph.editorInput().viewport;
+    const uint32_t     viewportX      = std::min(
+        static_cast<uint32_t>(std::max(editorViewport.x, 0.0f)),
+        extent.width - 1);
+    const uint32_t viewportY = std::min(
+        static_cast<uint32_t>(std::max(editorViewport.y, 0.0f)),
+        extent.height - 1);
+    const uint32_t viewportWidth = std::max(
+        1u,
+        std::min(
+            static_cast<uint32_t>(editorViewport.width),
+            extent.width - viewportX));
+    const uint32_t viewportHeight = std::max(
+        1u,
+        std::min(
+            static_cast<uint32_t>(editorViewport.height),
+            extent.height - viewportY));
+    commandBuffer.setViewport(
+        0,
+        vk::Viewport(
+            static_cast<float>(viewportX),
+            static_cast<float>(viewportY),
+            static_cast<float>(viewportWidth),
+            static_cast<float>(viewportHeight),
+            0.0f,
+            1.0f));
+    commandBuffer.setScissor(
+        0,
+        vk::Rect2D(
+            vk::Offset2D(
+                static_cast<int32_t>(viewportX),
+                static_cast<int32_t>(viewportY)),
+            vk::Extent2D(viewportWidth, viewportHeight)));
     vk::Pipeline boundPipeline = scenePipeline;
     const auto   draw          = [&](const DrawCall& item)
     {
         const vk::Pipeline pipeline = pipelines->getOrCreate(
             item.material->pipelineKey(
-                swapchain->surfaceFormat().format,
-                swapchain->depthImageFormat()));
+                graph.swapchain().surfaceFormat().format,
+                graph.depthFormat()));
         if (pipeline != boundPipeline)
         {
             commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
@@ -433,9 +423,7 @@ void ScenePass::record(
 
     if (hasSkybox)
     {
-        skyboxPass.record(commandBuffer, frames->at(frameIndex).sceneSetHandle(), {
-            .inverseViewProjection = inverseViewProjection,
-            .cameraPosition = glm::vec4{cameraPosition, 1.0f},
+        recordSkybox(commandBuffer, frameIndex, {
             .viewport = glm::vec4{
                 static_cast<float>(viewportX), static_cast<float>(viewportY),
                 static_cast<float>(viewportWidth), static_cast<float>(viewportHeight)},
