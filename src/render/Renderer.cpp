@@ -2,11 +2,11 @@
 
 #include "asset/Asset.h"
 #include "asset/AssetDescManager.h"
-#include "ecs/component/LightComponent.h"
-#include "ecs/component/TransformComponent.h"
-#include "ecs/SceneManager.h"
+#include "scene/component/LightComponent.h"
+#include "scene/component/TransformComponent.h"
+#include "scene/SceneManager.h"
 
-#include "ecs/system/CameraSystem.h"
+#include "scene/component/CameraComponent.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -34,7 +34,7 @@ void Renderer::init()
     inited = true;
 }
 
-EditorFrameResult Renderer::render(const ecs::CameraSystem& camera, const EditorFrameInput& editor)
+EditorFrameResult Renderer::render(const CameraComponent& camera, const EditorFrameInput& editor)
 {
     CHECK(inited, "Renderer must be initialized before render()");
     return drawFrame(camera, editor);
@@ -158,7 +158,7 @@ void Renderer::recreateSwapchain()
     context().editor->refreshUi();
 }
 
-void Renderer::updateFrameData(const ecs::CameraSystem& camera, const EditorFrameInput& editor)
+void Renderer::updateFrameData(const CameraComponent& camera, const EditorFrameInput& editor)
 {
     const glm::mat4 viewProjection = camera.projectionMatrix(editor.aspectRatio) * camera.viewMatrix();
     const ViewUniforms view{
@@ -173,8 +173,8 @@ void Renderer::updateFrameData(const ecs::CameraSystem& camera, const EditorFram
     lights.reserve(lightItems.size());
     for (const LightRenderItem& item : lightItems)
     {
-        const auto* light = context().sceneManager->registry().try_get<ecs::LightComponent>(item.entity);
-        const auto* transform = context().sceneManager->registry().try_get<ecs::TransformComponent>(item.entity);
+        const auto* light = item.actor->getComponent<LightComponent>();
+        const auto* transform = item.actor->getComponent<TransformComponent>();
         CHECK(light != nullptr && transform != nullptr, "light requires Light and Transform components");
 
         const glm::vec3 direction = glm::normalize(transform->rotation * glm::vec3{0.0f, 0.0f, -1.0f});
@@ -194,7 +194,7 @@ void Renderer::updateFrameData(const ecs::CameraSystem& camera, const EditorFram
     currentFrame().updateFrameData(view, lighting, lights);
 }
 
-EditorFrameResult Renderer::drawFrame(const ecs::CameraSystem& camera, const EditorFrameInput& editor)
+EditorFrameResult Renderer::drawFrame(const CameraComponent& camera, const EditorFrameInput& editor)
 {
     const vk::Fence         drawFence               = currentFrame().drawFenceHandle();
     const vk::Semaphore     imageAvailableSemaphore = currentFrame().imageAvailableSemaphore();

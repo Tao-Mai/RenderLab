@@ -3,10 +3,7 @@
 #include "editor/EditorUi.h"
 #include "render/Renderer.h"
 
-namespace ecs
-{
-class CameraSystem;
-}
+class CameraComponent;
 
 class Editor
 {
@@ -22,7 +19,7 @@ public:
     void shutdown() noexcept;
 
     [[nodiscard]] EditorFrameInput buildFrame(
-        const ecs::CameraSystem& camera,
+        const CameraComponent& camera,
         float deltaTime,
         uint32_t swapchainWidth,
         uint32_t swapchainHeight);

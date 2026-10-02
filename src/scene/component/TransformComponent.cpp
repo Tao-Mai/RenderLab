@@ -1,12 +1,10 @@
-#include "ecs/component/TransformComponent.h"
+#include "scene/component/TransformComponent.h"
 
 #include <algorithm>
 #include <cmath>
 
 #include <glm/gtc/matrix_transform.hpp>
 
-namespace ecs
-{
 glm::vec3 TransformComponent::rotationEulerDegrees() const
 {
     const glm::quat value = glm::normalize(rotation);
@@ -40,5 +38,4 @@ glm::mat4 TransformComponent::matrix() const
     glm::mat4 result = glm::translate(glm::mat4{1.0f}, position);
     result *= glm::mat4_cast(glm::normalize(rotation));
     return glm::scale(result, scale);
-}
 }

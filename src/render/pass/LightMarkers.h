@@ -1,7 +1,7 @@
 #pragma once
 
 #include "render/resource/GpuMesh.h"
-#include "ecs/component/LightComponent.h"
+#include "scene/component/LightComponent.h"
 
 #include <cstdint>
 #include <vector>
@@ -11,7 +11,7 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class RenderResourceManager;
-namespace ecs { struct TransformComponent; }
+struct TransformComponent;
 
 class LightMarkers
 {
@@ -22,13 +22,13 @@ public:
     void record(
         vk::raii::CommandBuffer& commandBuffer,
         vk::PipelineLayout pipelineLayout,
-        const ecs::TransformComponent& transform,
-        const ecs::LightComponent& light) const;
+        const TransformComponent& transform,
+        const LightComponent& light) const;
     void recordPicking(
         vk::raii::CommandBuffer& commandBuffer,
         vk::PipelineLayout pipelineLayout,
-        const ecs::TransformComponent& transform,
-        const ecs::LightComponent& light,
+        const TransformComponent& transform,
+        const LightComponent& light,
         uint32_t selectionId) const;
 
 private:
@@ -46,5 +46,5 @@ private:
     GpuMesh* arrow = nullptr;
 
     [[nodiscard]] std::vector<Part> parts(
-        const ecs::TransformComponent& transform, const ecs::LightComponent& light) const;
+        const TransformComponent& transform, const LightComponent& light) const;
 };

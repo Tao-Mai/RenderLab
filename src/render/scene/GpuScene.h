@@ -6,21 +6,20 @@
 
 #include <cstdint>
 #include <vector>
-#include <entt/entity/entity.hpp>
 
 class RenderResourceManager;
 
 struct SceneRenderItem
 {
     GpuMesh*              mesh        = nullptr;
-    entt::entity          entity      = entt::null;
+    Actor*                actor       = nullptr;
     uint32_t              selectionId = 0;
 };
 
 struct LightRenderItem
 {
-    entt::entity        entity      = entt::null;
-    uint32_t             selectionId = 0;
+    Actor*                actor       = nullptr;
+    uint32_t              selectionId = 0;
 };
 
 class GpuScene

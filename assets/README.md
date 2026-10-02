@@ -11,9 +11,14 @@ process working directory, where CMake places the compiled shaders.
 The editor saves the active scene to its descriptor file. Builtin meshes such
 as `sphere` and `plane` are referenced by ID and do not need mesh descriptors.
 
+Scenes store `actors` as `{"TypeName": {...}}`, using registered type names as
+keys. Actors own polymorphic `components` in the same format, with exactly one
+type key per non-null pointer. Scene fields use C++ member names
+and IDs use `{"value": "..."}`. Other asset descriptor formats are unchanged.
+
 Texture imports write ready-to-upload pixels to `assets/binary/texture/<id>.bin`.
 `resource/lut_ggx.png` is imported as the linear RG8 `lut_ggx` texture; `config/config.json`
-records its texture and sampler IDs under `Renderer.BrdfLut` so the renderer loads them at startup.
+records its texture and sampler IDs under `renderer.brdfLut` so the renderer loads them at startup.
 Mesh imports write geometry to `assets/binary/geometry/<id>.bin`.
 Texture descriptors keep the source `path`, the generated `binary` path, the
 pixel `format`, `colorSpace`, `width`, `height`, `mipLevels`, and the `layout` (`Image2D` or `Cubemap`). Runtime loading reads

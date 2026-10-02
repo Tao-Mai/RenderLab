@@ -1,32 +1,24 @@
-#include "ecs/system/CharacterMoveSystem.h"
+#include "scene/component/CharacterMoveComponent.h"
 
 #include "core/Context.h"
 #include "core/InputManager.h"
 #include "core/Logger.h"
-#include "ecs/SceneManager.h"
-#include "ecs/component/CharacterMoveComponent.h"
-#include "ecs/component/TransformComponent.h"
-#include "ecs/system/CameraSystem.h"
+#include "scene/SceneManager.h"
+#include "scene/component/TransformComponent.h"
+#include "scene/actor/FreeFlyCameraActor.h"
 
 #include <algorithm>
 #include <cmath>
 
 #include <glm/geometric.hpp>
 
-namespace ecs
+bool CharacterMoveComponent::tick(float deltaTime)
 {
-bool CharacterMoveSystem::tick(float deltaTime)
-{
-    CHECK(context().sceneManager != nullptr && context().cameraSystem != nullptr &&
-        context().inputManager != nullptr,
-        "CharacterMoveSystem requires SceneManager, CameraSystem and InputManager");
-    if (!context().cameraSystem->isNavigationActive()) return false;
+    CHECK(context().sceneManager != nullptr && context().inputManager != nullptr,
+        "movement requires SceneManager and InputManager");
+    const auto& camera = context().sceneManager->editorCamera().camera();
+    if (!camera.isNavigationActive()) return false;
 
-    auto& registry = context().sceneManager->registry();
-    auto view = registry.view<TransformComponent, CharacterMoveComponent>();
-    if (view.begin() == view.end()) return false;
-
-    const auto& camera = *context().cameraSystem;
     const auto& input = *context().inputManager;
     glm::vec3 up = context().sceneManager->scene().environment.up;
     const float upLengthSquared = glm::dot(up, up);
@@ -61,16 +53,10 @@ bool CharacterMoveSystem::tick(float deltaTime)
     deltaTime = std::clamp(deltaTime, 0.0f, 0.1f);
     const bool sprint = input.get(Command::Sprint);
 
-    bool changed = false;
-    for (auto [entity, transform, move] : view.each())
-    {
-        const float speed = move.speed * (sprint ? move.sprintMultiplier : 1.0f);
-        const glm::vec3 displacement = direction * speed * deltaTime;
-        if (glm::dot(displacement, displacement) == 0.0f) continue;
+    const float movementSpeed = speed * (sprint ? sprintMultiplier : 1.0f);
+    const glm::vec3 displacement = direction * movementSpeed * deltaTime;
+    if (glm::dot(displacement, displacement) == 0.0f) return false;
 
-        transform.position += displacement;
-        changed = true;
-    }
-    return changed;
-}
+    actor().transform().position += displacement;
+    return true;
 }

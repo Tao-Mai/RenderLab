@@ -1,7 +1,7 @@
 #include "render/pass/LightMarkers.h"
 
 #include "asset/BuiltinAssets.h"
-#include "ecs/component/TransformComponent.h"
+#include "scene/component/TransformComponent.h"
 #include "render/resource/RenderResourceManager.h"
 #include "render/resource/ShaderData.h"
 
@@ -13,12 +13,12 @@
 
 namespace
 {
-[[nodiscard]] glm::vec3 lightDirection(const ecs::TransformComponent& transform)
+[[nodiscard]] glm::vec3 lightDirection(const TransformComponent& transform)
 {
     return glm::normalize(transform.rotation * glm::vec3{0.0f, 0.0f, -1.0f});
 }
 
-[[nodiscard]] glm::mat4 markerTransform(const ecs::TransformComponent& transform)
+[[nodiscard]] glm::mat4 markerTransform(const TransformComponent& transform)
 {
     const glm::vec3 forward = lightDirection(transform);
     const glm::vec3 up = std::abs(glm::dot(forward, glm::vec3{0.0f, 1.0f, 0.0f})) > 0.999f
@@ -45,15 +45,15 @@ void LightMarkers::reset() noexcept
 }
 
 std::vector<LightMarkers::Part> LightMarkers::parts(
-    const ecs::TransformComponent& transform, const ecs::LightComponent& light) const
+    const TransformComponent& transform, const LightComponent& light) const
 {
     std::vector<Part> result;
     const glm::vec3 markerColor = light.enabled ? light.color : light.color * 0.15f;
 
     switch (light.type)
     {
-    case ecs::LightComponent::Type::Point:
-    case ecs::LightComponent::Type::Spot:
+    case LightComponent::Type::Point:
+    case LightComponent::Type::Spot:
         if (sphere)
         {
             result.push_back({
@@ -67,7 +67,7 @@ std::vector<LightMarkers::Part> LightMarkers::parts(
         }
         break;
 
-    case ecs::LightComponent::Type::RectArea:
+    case LightComponent::Type::RectArea:
         if (cube)
         {
             constexpr float thickness = 0.08f;
@@ -90,7 +90,7 @@ std::vector<LightMarkers::Part> LightMarkers::parts(
         }
         break;
 
-    case ecs::LightComponent::Type::Directional:
+    case LightComponent::Type::Directional:
         if (arrow)
         {
             constexpr float spacing = 0.32f;
@@ -122,8 +122,8 @@ std::vector<LightMarkers::Part> LightMarkers::parts(
 void LightMarkers::record(
     vk::raii::CommandBuffer& commandBuffer,
     vk::PipelineLayout pipelineLayout,
-    const ecs::TransformComponent& transform,
-    const ecs::LightComponent& light) const
+    const TransformComponent& transform,
+    const LightComponent& light) const
 {
     for (const Part& part : parts(transform, light))
     {
@@ -144,8 +144,8 @@ void LightMarkers::record(
 void LightMarkers::recordPicking(
     vk::raii::CommandBuffer& commandBuffer,
     vk::PipelineLayout pipelineLayout,
-    const ecs::TransformComponent& transform,
-    const ecs::LightComponent& light,
+    const TransformComponent& transform,
+    const LightComponent& light,
     uint32_t selectionId) const
 {
     for (const Part& part : parts(transform, light))

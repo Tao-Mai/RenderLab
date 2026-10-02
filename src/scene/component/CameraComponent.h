@@ -1,17 +1,23 @@
 #pragma once
 
-#include "ecs/component/CameraComponent.h"
+#include "scene/component/Component.h"
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
-namespace ecs
-{
-class CameraSystem
+class CameraComponent : public Component
 {
 public:
-    void reset();
-    [[nodiscard]] bool tick(bool allowModeToggle);
+    [[=ReflectField{}]] float yaw = -90.0f;
+    [[=ReflectField{}]] float pitch = 0.0f;
+    [[=ReflectField{}]] float fieldOfView = 45.0f;
+    [[=ReflectField{}]] float nearPlane = 0.1f;
+    [[=ReflectField{}]] float farPlane = 100.0f;
+    [[=ReflectField{}]] float mouseSensitivity = 0.12f;
+
+    bool tick(float deltaTime) override;
+    void setInputEnabled(bool enabled);
+    void resetNavigation();
 
     [[nodiscard]] bool isFreeMovementActive() const;
     [[nodiscard]] bool isNavigationActive() const;
@@ -21,12 +27,11 @@ public:
     [[nodiscard]] glm::vec3 up() const;
     [[nodiscard]] glm::mat4 viewMatrix() const;
     [[nodiscard]] glm::mat4 projectionMatrix(float aspectRatio) const;
-    [[nodiscard]] const CameraComponent& component() const;
 
 private:
+    bool inputEnabled = true;
     bool looking = false;
     bool freeMovement = false;
     double previousMouseX = 0.0;
     double previousMouseY = 0.0;
 };
-}

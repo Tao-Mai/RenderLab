@@ -22,7 +22,7 @@ flowchart TB
 
 ### AssetID
 
-`AssetID<T>` 以字符串保存名字和文件名，同时用资产类型 `T` 区分引用。同一资产类型内 ID 唯一；JSON 中仍是普通字符串。
+`AssetID<T>` 以字符串保存名字和文件名，同时用资产类型 `T` 区分引用。同一资产类型内 ID 唯一。其他资产描述仍以字符串保存 ID；使用静态反射的配置和场景以 `{"value": "..."}` 保存 ID。
 ### Asset
 资产类型直接声明，`Desc` 定义在对应类型中，`AssetTypes` 在定义末尾列出全部资产。描述文件存于 `assets/<资产类名>/`，例如 `assets/Texture/`。
 `Sampler::Desc` 保存 Vulkan sampler 的过滤、寻址、LOD、各向异性、比较和边框颜色参数。

@@ -1,11 +1,11 @@
 #include "editor/Editor.h"
 
 #include "asset/Asset.h"
-#include "ecs/SceneManager.h"
-#include "ecs/system/CameraSystem.h"
+#include "scene/SceneManager.h"
+#include "scene/component/CameraComponent.h"
 #include "core/Context.h"
 #include "core/Logger.h"
-#include "ecs/component/TransformComponent.h"
+#include "scene/component/TransformComponent.h"
 #include "render/device/VulkanContext.h"
 #include "render/present/Swapchain.h"
 #include "core/Window.h"
@@ -55,7 +55,7 @@ void Editor::saveScene()
 }
 
 EditorFrameInput Editor::buildFrame(
-    const ecs::CameraSystem& camera,
+    const CameraComponent& camera,
     float deltaTime,
     uint32_t swapchainWidth,
     uint32_t swapchainHeight)
@@ -70,30 +70,26 @@ EditorFrameInput Editor::buildFrame(
     const glm::mat4 view = camera.viewMatrix();
     const glm::mat4 projection = camera.projectionMatrix(ui.sceneAspectRatio());
     const bool enableGizmoShortcuts = !camera.isNavigationActive();
-    auto* selectedObject = context().sceneManager->findObject(selectedId);
+    auto* selectedActor = context().sceneManager->findActor(selectedId);
 
-    if (!camera.isFreeMovementActive() && selectedObject != nullptr)
+    if (!camera.isFreeMovementActive() && selectedActor != nullptr)
     {
-        if (const auto transformIt = selectedObject->components.find("Transform");
-            transformIt != selectedObject->components.end())
+        glm::mat4 gizmoProjection = projection;
+        gizmoProjection[1][1] *= -1.0f;
+        if (ui.drawGizmo(
+                selectedActor->transform(),
+                view,
+                gizmoProjection,
+                enableGizmoShortcuts))
         {
-            glm::mat4 gizmoProjection = projection;
-            gizmoProjection[1][1] *= -1.0f;
-            if (ui.drawGizmo(
-                    *transformIt->second.try_cast<ecs::TransformComponent>(),
-                    view,
-                    gizmoProjection,
-                    enableGizmoShortcuts))
-            {
-                dirty = true;
-            }
+            dirty = true;
         }
     }
 
     EditorFrameInput input{
         .viewport = ui.sceneViewportPixels(),
         .aspectRatio = ui.sceneAspectRatio(),
-        .selectedObject = selectedObject,
+        .selectedActor = selectedActor,
         .recordUi = [this](VkCommandBuffer commandBuffer) {
             ui.render(commandBuffer);
         },
@@ -118,12 +114,12 @@ EditorFrameInput Editor::buildFrame(
     }
 
     EditorUI::InspectorResult inspector = ui.drawInspector(
-        context().sceneManager->scene(), selectedObject, dirty);
+        context().sceneManager->scene(), selectedActor, dirty);
     if (inspector.edited)
     {
         dirty = true;
     }
-    if (inspector.environmentChanged)
+    if (inspector.environmentChanged || inspector.resourcesChanged)
     {
         context().renderer->loadScene();
     }

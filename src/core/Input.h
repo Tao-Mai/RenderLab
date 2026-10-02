@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/Annotations.h"
+
 enum class Key : int
 {
     Unknown = -1,
@@ -42,7 +44,7 @@ enum class Action : int
     Release, Press, Hold,
 };
 
-enum class Modifier : unsigned int
+enum class [[=Flags{}]] Modifier : unsigned int
 {
     None = 0,
     Shift = 1 << 0, Control = 1 << 1, Alt = 1 << 2, Super = 1 << 3,

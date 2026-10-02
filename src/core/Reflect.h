@@ -1,77 +1,117 @@
 #pragma once
 
-#include <entt/meta/factory.hpp>
+#include "core/Annotations.h"
 
-#define REFLECT_EXPAND(...) __VA_ARGS__
-#define REFLECT_CONCAT(a, b) REFLECT_CONCAT_I(a, b)
-#define REFLECT_CONCAT_I(a, b) a##b
+#include <functional>
+#include <memory>
+#include <meta>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <type_traits>
+#include <typeindex>
+#include <unordered_map>
+#include <vector>
 
-#define REFLECT_ARG_COUNT(...)                                                                 \
-    REFLECT_EXPAND(REFLECT_ARG_COUNT_I(                                                        \
-        __VA_ARGS__, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0))
-#define REFLECT_ARG_COUNT_I(                                                                   \
-    _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, N, ...)              \
-    N
+#include <glm/fwd.hpp>
+#include <nlohmann/json.hpp>
 
-#define REFLECT_FIELD(Type, field) .template data<&Type::field>(#field)
-#define REFLECT_ENUM_VALUE(EnumType, value) .data<EnumType::value>(#value)
+template <class T>
+inline constexpr bool IsVector = false;
 
-#define REFLECT_FOREACH_1(m, t, a1) m(t, a1)
-#define REFLECT_FOREACH_2(m, t, a1, a2) m(t, a1) m(t, a2)
-#define REFLECT_FOREACH_3(m, t, a1, a2, a3) m(t, a1) m(t, a2) m(t, a3)
-#define REFLECT_FOREACH_4(m, t, a1, a2, a3, a4)                                                \
-    m(t, a1) m(t, a2) m(t, a3) m(t, a4)
-#define REFLECT_FOREACH_5(m, t, a1, a2, a3, a4, a5)                                            \
-    m(t, a1) m(t, a2) m(t, a3) m(t, a4) m(t, a5)
-#define REFLECT_FOREACH_6(m, t, a1, a2, a3, a4, a5, a6)                                        \
-    m(t, a1) m(t, a2) m(t, a3) m(t, a4) m(t, a5) m(t, a6)
-#define REFLECT_FOREACH_7(m, t, a1, a2, a3, a4, a5, a6, a7)                                    \
-    m(t, a1) m(t, a2) m(t, a3) m(t, a4) m(t, a5) m(t, a6) m(t, a7)
-#define REFLECT_FOREACH_8(m, t, a1, a2, a3, a4, a5, a6, a7, a8)                                \
-    m(t, a1) m(t, a2) m(t, a3) m(t, a4) m(t, a5) m(t, a6) m(t, a7) m(t, a8)
-#define REFLECT_FOREACH_9(m, t, a1, a2, a3, a4, a5, a6, a7, a8, a9)                            \
-    m(t, a1) m(t, a2) m(t, a3) m(t, a4) m(t, a5) m(t, a6) m(t, a7) m(t, a8) m(t, a9)
-#define REFLECT_FOREACH_10(m, t, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10)                      \
-    m(t, a1) m(t, a2) m(t, a3) m(t, a4) m(t, a5) m(t, a6) m(t, a7) m(t, a8) m(t, a9) m(t, a10)
-#define REFLECT_FOREACH_11(m, t, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11)                 \
-    REFLECT_FOREACH_10(m, t, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10) m(t, a11)
-#define REFLECT_FOREACH_12(m, t, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12)            \
-    REFLECT_FOREACH_11(m, t, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11) m(t, a12)
-#define REFLECT_FOREACH_13(m, t, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13)       \
-    REFLECT_FOREACH_12(m, t, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12) m(t, a13)
-#define REFLECT_FOREACH_14(m, t, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14)  \
-    REFLECT_FOREACH_13(m, t, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13) m(t, a14)
-#define REFLECT_FOREACH_15(                                                                    \
-    m, t, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15)                    \
-    REFLECT_FOREACH_14(m, t, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14)       \
-    m(t, a15)
-#define REFLECT_FOREACH_16(                                                                    \
-    m, t, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16)               \
-    REFLECT_FOREACH_15(                                                                        \
-        m, t, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15)                 \
-    m(t, a16)
+template <class T, class Allocator>
+inline constexpr bool IsVector<std::vector<T, Allocator>> = true;
 
-#define REFLECT_INVOKE(macro, ...) REFLECT_EXPAND(macro(__VA_ARGS__))
+template <class T>
+inline constexpr bool IsOptional = false;
 
-#define REFLECT_FOREACH(macro, Type, ...)                                                      \
-    REFLECT_INVOKE(                                                                            \
-        REFLECT_CONCAT(REFLECT_FOREACH_, REFLECT_ARG_COUNT(__VA_ARGS__)),                      \
-        macro,                                                                                 \
-        Type,                                                                                  \
-        __VA_ARGS__)
+template <class T>
+inline constexpr bool IsOptional<std::optional<T>> = true;
 
-// Register a type under an explicit reflection name, independently of its C++ name.
-#define REFLECT(Type, Name, ...)                                                               \
-    inline const bool reflect_##Type = []() noexcept {                                         \
-        (void)(entt::meta_factory<Type>{}                                                      \
-                   .type(#Name) REFLECT_FOREACH(REFLECT_FIELD, Type, __VA_ARGS__));            \
-        return true;                                                                           \
-    }()
+template <class T>
+inline constexpr bool IsMap = false;
 
-// Register EnTT meta enum constants (serialized by enumerator name).
-#define REFLECT_ENUM(EnumType, Name, ...)                                                      \
-    inline const bool reflect_enum_##Name = []() noexcept {                                    \
-        (void)(entt::meta_factory<EnumType>{}                                                  \
-                   .type(#Name) REFLECT_FOREACH(REFLECT_ENUM_VALUE, EnumType, __VA_ARGS__));   \
-        return true;                                                                           \
-    }()
+template <class Key, class Value, class Hash, class Equal, class Allocator>
+inline constexpr bool IsMap<std::unordered_map<Key, Value, Hash, Equal, Allocator>> = true;
+
+template <class T>
+inline constexpr bool IsGlmVector = false;
+
+template <glm::length_t N, class T, glm::qualifier Q>
+inline constexpr bool IsGlmVector<glm::vec<N, T, Q>> = true;
+
+template <class T>
+concept FlagEnum = std::is_enum_v<T> &&
+    (!std::meta::annotations_of_with_type(std::meta::dealias(^^T), ^^Flags).empty());
+
+consteval std::vector<std::meta::info>
+AllDataMembers(std::meta::info type, std::meta::access_context ctx)
+{
+    std::vector<std::meta::info> result;
+    for (auto base : std::meta::bases_of(type, ctx))
+    {
+        auto members = AllDataMembers(std::meta::type_of(base), ctx);
+        result.insert(result.end(), members.begin(), members.end());
+    }
+
+    for (auto member : std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked()))
+    {
+        if (std::meta::is_accessible(member, ctx))
+            result.push_back(member);
+    }
+
+    return result;
+}
+
+consteval bool HasInheritedAnnotation(std::meta::info           type, std::meta::info annotation,
+                                      std::meta::access_context ctx)
+{
+    type = std::meta::dealias(type);
+    if (!std::meta::annotations_of_with_type(type, annotation).empty())
+        return true;
+
+    for (auto base : std::meta::bases_of(type, ctx))
+        if (HasInheritedAnnotation(std::meta::type_of(base), annotation, ctx))
+            return true;
+
+    return false;
+}
+
+consteval std::vector<std::meta::info>
+ReflectedDataMembers(std::meta::info type, std::meta::access_context ctx)
+{
+    auto members = AllDataMembers(type, ctx);
+    if (!HasInheritedAnnotation(type, ^^PartialSerialize, ctx))
+        return members;
+
+    std::vector<std::meta::info> result;
+    for (auto member : members)
+        if (!std::meta::annotations_of_with_type(member, ^^ReflectField).empty())
+            result.push_back(member);
+
+    return result;
+}
+
+struct MemberRef
+{
+    std::string_view name;
+    std::type_index  type;
+    void*            value;
+};
+
+template <class Base>
+struct BaseTypeInfo
+{
+    std::unique_ptr<Base> (*DeserializeBase)(const nlohmann::json&);
+    nlohmann::json (*       SerializeBase)(const Base&);
+    void (*                 IterateMembers)(Base&, const std::function<void(MemberRef)>&);
+
+    inline static std::unordered_map<std::string, BaseTypeInfo>    baseTypeInfoMap;
+    inline static std::unordered_map<std::type_index, std::string> typeNames;
+};
+
+// Defined alongside the serialization templates in asset/Serializer.h.
+template <class T, class Base>
+void RegisterBase(std::string_view name);
+
+void RegisterSceneTypes();

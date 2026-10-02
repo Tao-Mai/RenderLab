@@ -1,10 +1,25 @@
 add_executable(RenderLabTests
         AssetIDTest.cpp
+        ConfigSerializationTest.cpp
+        InputManagerTest.cpp
+        PartialSerializationTest.cpp
+        ComponentDrawTest.cpp
         LutGgxTest.cpp
         AssetDataManagerTest.cpp
         EnvironmentMapImportTest.cpp
         SceneManagerTest.cpp
-        ${PROJECT_SOURCE_DIR}/src/ecs/SceneManager.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/SceneManager.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/Actor.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/actor/FreeFlyCameraActor.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/actor/StaticMeshActor.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/component/TransformComponent.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/component/CameraComponent.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/component/FreeFlyMoveComponent.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/component/CharacterMoveComponent.cpp
+        ${PROJECT_SOURCE_DIR}/src/core/Reflect.cpp
+        ${PROJECT_SOURCE_DIR}/src/editor/ComponentDraw.cpp
+        ${PROJECT_SOURCE_DIR}/src/core/InputManager.cpp
+        ${PROJECT_SOURCE_DIR}/src/core/Window.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/AssetDataManager.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/AssetDescManager.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinMesh.cpp
@@ -27,17 +42,16 @@ target_compile_definitions(RenderLabTests PRIVATE
         RENDERLAB_CONFIG_FILE="${PROJECT_SOURCE_DIR}/test/config.json"
 )
 target_link_libraries(RenderLabTests PRIVATE
+        RenderLabBuildOptions
         GTest::gtest_main
         glog::glog
         glm::glm
-        EnTT::EnTT
+        glfw
+        imgui::imgui
         reflectcpp::reflectcpp
+        nlohmann_json::nlohmann_json
         unofficial::tinyexr::tinyexr
 )
-
-if (MSVC)
-    target_compile_options(RenderLabTests PRIVATE /utf-8 /bigobj)
-endif ()
 
 add_test(NAME RenderLabTests COMMAND RenderLabTests)
 
@@ -56,16 +70,13 @@ target_compile_definitions(RenderGraphTests PRIVATE
         GLOG_NO_ABBREVIATED_SEVERITIES
 )
 target_link_libraries(RenderGraphTests PRIVATE
+        RenderLabBuildOptions
         GTest::gtest_main
         Vulkan::Vulkan
         glog::glog
         glm::glm
-        EnTT::EnTT
         reflectcpp::reflectcpp
 )
-if (MSVC)
-    target_compile_options(RenderGraphTests PRIVATE /utf-8)
-endif ()
 add_test(NAME RenderGraphTests COMMAND RenderGraphTests)
 
 # Manual integration check requiring Vulkan and the project's configured assets.
@@ -83,3 +94,15 @@ endforeach ()
 add_dependencies(RenderGraphGpuSmoke RenderLabShaders)
 
 add_executable(main main.cpp)
+target_link_libraries(main PRIVATE RenderLabBuildOptions)
+
+add_executable(Cxx26ReflectionTest Cxx26ReflectionTest.cpp)
+target_link_libraries(Cxx26ReflectionTest PRIVATE RenderLabBuildOptions)
+add_test(NAME Cxx26ReflectionTest COMMAND Cxx26ReflectionTest)
+
+set_tests_properties(RenderLabTests RenderGraphTests Cxx26ReflectionTest PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${RENDERLAB_COMPILER_BIN_DIR}")
+
+foreach (target RenderLabTests RenderGraphTests RenderGraphGpuSmoke main Cxx26ReflectionTest)
+    renderlab_copy_compiler_runtime(${target})
+endforeach ()

@@ -36,8 +36,8 @@ void VulkanContext::reset() noexcept
     queue                     = nullptr;
     device                    = nullptr;
     physicalDevice            = nullptr;
-    deviceProperties          = {};
-    deviceFeatures            = {};
+    deviceProperties          = vk::PhysicalDeviceProperties{};
+    deviceFeatures            = vk::PhysicalDeviceFeatures{};
     surface                   = nullptr;
     debugMessenger            = nullptr;
     instance                  = nullptr;

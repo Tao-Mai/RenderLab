@@ -1,11 +1,11 @@
-#include "ecs/system/CameraSystem.h"
+#include "scene/component/CameraComponent.h"
 
 #include "core/Context.h"
 #include "core/InputManager.h"
 #include "core/Logger.h"
 #include "core/Window.h"
-#include "ecs/SceneManager.h"
-#include "ecs/component/TransformComponent.h"
+#include "scene/Actor.h"
+#include "scene/component/TransformComponent.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,9 +13,7 @@
 #include <glm/geometric.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-namespace ecs
-{
-void CameraSystem::reset()
+void CameraComponent::resetNavigation()
 {
     looking = false;
     freeMovement = false;
@@ -24,20 +22,21 @@ void CameraSystem::reset()
     if (context().window != nullptr) context().window->setCursorCaptured(false);
 }
 
-bool CameraSystem::tick(bool allowModeToggle)
+void CameraComponent::setInputEnabled(bool enabled) { inputEnabled = enabled; }
+
+bool CameraComponent::tick(float deltaTime)
 {
-    CHECK(context().sceneManager != nullptr && context().inputManager != nullptr &&
-        context().window != nullptr, "CameraSystem requires SceneManager, InputManager and Window");
+    CHECK(context().inputManager != nullptr && context().window != nullptr,
+        "CameraComponent requires InputManager and Window");
     auto& window = *context().window;
     const auto& input = *context().inputManager;
-    auto& camera = context().sceneManager->registry().get<CameraComponent>(
-        context().sceneManager->editorCamera());
+    auto& camera = *this;
 
-    if (allowModeToggle && input.get(Command::ToggleFreeMovement))
+    if (inputEnabled && input.get(Command::ToggleFreeMovement))
         freeMovement = !freeMovement;
 
     const bool navigationRequested = freeMovement ||
-        (input.get(Command::Navigate) && (allowModeToggle || looking));
+        (input.get(Command::Navigate) && (inputEnabled || looking));
     if (navigationRequested != looking)
     {
         looking = navigationRequested;
@@ -74,52 +73,44 @@ bool CameraSystem::tick(bool allowModeToggle)
         camera.fieldOfView != previousFieldOfView;
 }
 
-bool CameraSystem::isFreeMovementActive() const { return freeMovement; }
-bool CameraSystem::isNavigationActive() const { return looking; }
+bool CameraComponent::isFreeMovementActive() const { return freeMovement; }
+bool CameraComponent::isNavigationActive() const { return looking; }
 
-const CameraComponent& CameraSystem::component() const
+const glm::vec3& CameraComponent::worldPosition() const
 {
-    CHECK(context().sceneManager != nullptr, "CameraSystem requires SceneManager");
-    return context().sceneManager->registry().get<CameraComponent>(context().sceneManager->editorCamera());
+    return actor().transform().position;
 }
 
-const glm::vec3& CameraSystem::worldPosition() const
+glm::vec3 CameraComponent::forward() const
 {
-    return context().sceneManager->registry().get<TransformComponent>(
-        context().sceneManager->editorCamera()).position;
-}
-
-glm::vec3 CameraSystem::forward() const
-{
-    const auto& camera = component();
+    const auto& camera = *this;
     const float yaw = glm::radians(camera.yaw);
     const float pitch = glm::radians(camera.pitch);
     return glm::normalize(glm::vec3{
         std::cos(yaw) * std::cos(pitch), std::sin(pitch), std::sin(yaw) * std::cos(pitch)});
 }
 
-glm::vec3 CameraSystem::right() const
+glm::vec3 CameraComponent::right() const
 {
-    const float yaw = glm::radians(component().yaw);
-    return {-std::sin(yaw), 0.0f, std::cos(yaw)};
+    const float angle = glm::radians(yaw);
+    return {-std::sin(angle), 0.0f, std::cos(angle)};
 }
 
-glm::vec3 CameraSystem::up() const
+glm::vec3 CameraComponent::up() const
 {
     return glm::normalize(glm::cross(right(), forward()));
 }
 
-glm::mat4 CameraSystem::viewMatrix() const
+glm::mat4 CameraComponent::viewMatrix() const
 {
     return glm::lookAt(worldPosition(), worldPosition() + forward(), up());
 }
 
-glm::mat4 CameraSystem::projectionMatrix(float aspectRatio) const
+glm::mat4 CameraComponent::projectionMatrix(float aspectRatio) const
 {
-    const auto& camera = component();
+    const auto& camera = *this;
     glm::mat4 projection = glm::perspective(
         glm::radians(camera.fieldOfView), aspectRatio, camera.nearPlane, camera.farPlane);
     projection[1][1] *= -1.0f;
     return projection;
-}
 }

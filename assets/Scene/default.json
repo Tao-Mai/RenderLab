@@ -1,167 +1,231 @@
 {
-    "Id": "default",
-    "Objects": [
+    "id": {
+        "value": "default"
+    },
+    "actors": [
         {
-            "Name": "Editor Camera",
-            "Components": {
-                "Transform": {
-                    "Position": [
-                        -10.241006851196289,
-                        0.36024773120880127,
-                        -8.894845008850098
-                    ],
-                    "Rotation": [
-                        0.0,
-                        0.0,
-                        0.0,
-                        1.0
-                    ],
-                    "Scale": [
-                        1.0,
-                        1.0,
-                        1.0
-                    ]
-                },
-                "Camera": {
-                    "Yaw": 38.880496978759766,
-                    "Pitch": -15.680037498474121,
-                    "FieldOfView": 45.0,
-                    "NearPlane": 0.10000000149011612,
-                    "FarPlane": 100.0,
-                    "MouseSensitivity": 0.11999999731779099
-                },
-                "FreeFlyMove": {
-                    "Speed": 3.0,
-                    "SprintMultiplier": 3.0
-                }
-            }
-        },
-        {
-            "Name": "Point Light",
-            "Components": {
-                "Transform": {
-                    "Position": [
-                        -2.4501421451568604,
-                        0.30311763286590576,
-                        2.823641300201416
-                    ],
-                    "Rotation": [
-                        0.0,
-                        0.0,
-                        0.0,
-                        1.0
-                    ],
-                    "Scale": [
-                        1.0,
-                        1.0,
-                        1.0
-                    ]
-                },
-                "Light": {
-                    "Type": "Point",
-                    "Color": [
-                        1.0,
-                        1.0,
-                        1.0
-                    ],
-                    "Intensity": 5.0,
-                    "Range": 15.0,
-                    "CosInner": 0.9396926164627075,
-                    "CosOuter": 0.8660253882408142,
-                    "AreaSize": [
-                        1.0,
-                        1.0
-                    ],
-                    "Enabled": false,
-                    "CastShadow": false
-                }
-            }
-        },
-        {
-            "Name": "Sphere",
-            "Components": {
-                "Transform": {
-                    "Position": [
-                        -3.955781936645508,
-                        -2.8292183876037598,
-                        0.5707395672798157
-                    ],
-                    "Rotation": [
-                        0.0,
-                        0.0,
-                        0.0,
-                        1.0
-                    ],
-                    "Scale": [
-                        1.0,
-                        1.0,
-                        1.0
-                    ]
-                },
-                "Render": {
-                    "MeshId": "sphere",
-                    "MaterialOverrides": {
-                        "0": {
-                            "Id": "",
-                            "BaseColorFactor": [
-                                1.0,
-                                0.09616726636886597,
-                                0.0038610100746154785,
-                                1.0
+            "FreeFlyCameraActor": {
+                "name": "Editor Camera",
+                "components": [
+                    {
+                        "TransformComponent": {
+                            "position": [
+                                -10.241006851196289,
+                                0.36024773120880127,
+                                -8.894845008850098
                             ],
-                            "Metallic": 1.0,
-                            "Roughness": 0.30000001192092896
+                            "rotation": [
+                                0,
+                                0,
+                                0,
+                                1
+                            ],
+                            "scale": [
+                                1,
+                                1,
+                                1
+                            ]
+                        }
+                    },
+                    {
+                        "CameraComponent": {
+                            "yaw": 38.880496978759766,
+                            "pitch": -15.680037498474121,
+                            "fieldOfView": 45,
+                            "nearPlane": 0.10000000149011612,
+                            "farPlane": 100,
+                            "mouseSensitivity": 0.11999999731779099
+                        }
+                    },
+                    {
+                        "FreeFlyMoveComponent": {
+                            "speed": 3,
+                            "sprintMultiplier": 3
                         }
                     }
-                }
+                ]
             }
         },
         {
-            "Name": "Floor",
-            "Components": {
-                "Transform": {
-                    "Position": [
-                        1.131738305091858,
-                        -3.930513620376587,
-                        0.39836451411247253
-                    ],
-                    "Rotation": [
-                        0.0,
-                        0.0,
-                        0.6955733299255371,
-                        0.7184551358222961
-                    ],
-                    "Scale": [
-                        10.000112533569336,
-                        1.0000017881393433,
-                        10.0
-                    ]
-                },
-                "Render": {
-                    "MeshId": "plane",
-                    "MaterialOverrides": {
-                        "0": {
-                            "Id": "",
-                            "BaseColorFactor": [
-                                0.16602319478988647,
-                                0.10897275060415268,
-                                0.10897275060415268,
-                                1.0
+            "Actor": {
+                "name": "Point Light",
+                "components": [
+                    {
+                        "TransformComponent": {
+                            "position": [
+                                -2.4501421451568604,
+                                0.30311763286590576,
+                                2.823641300201416
                             ],
-                            "Metallic": 1.0,
-                            "Roughness": 0.15000000596046448
+                            "rotation": [
+                                0,
+                                0,
+                                0,
+                                1
+                            ],
+                            "scale": [
+                                1,
+                                1,
+                                1
+                            ]
+                        }
+                    },
+                    {
+                        "LightComponent": {
+                            "type": "Point",
+                            "color": [
+                                1,
+                                1,
+                                1
+                            ],
+                            "intensity": 5,
+                            "range": 15,
+                            "cosInner": 0.9396926164627075,
+                            "cosOuter": 0.8660253882408142,
+                            "areaSize": [
+                                1,
+                                1
+                            ],
+                            "enabled": false,
+                            "castShadow": false
                         }
                     }
-                }
+                ]
+            }
+        },
+        {
+            "StaticMeshActor": {
+                "name": "Sphere",
+                "components": [
+                    {
+                        "TransformComponent": {
+                            "position": [
+                                -3.955781936645508,
+                                -2.8292183876037598,
+                                0.5707395672798157
+                            ],
+                            "rotation": [
+                                0,
+                                0,
+                                0,
+                                1
+                            ],
+                            "scale": [
+                                1,
+                                1,
+                                1
+                            ]
+                        }
+                    },
+                    {
+                        "RenderComponent": {
+                            "meshId": {
+                                "value": "sphere"
+                            },
+                            "materialOverrides": {
+                                "0": {
+                                    "id": {
+                                        "value": ""
+                                    },
+                                    "shaderId": null,
+                                    "baseColorFactor": [
+                                        1,
+                                        0.09616726636886597,
+                                        0.0038610100746154785,
+                                        1
+                                    ],
+                                    "metallic": 1,
+                                    "roughness": 0.30000001192092896,
+                                    "ao": null,
+                                    "emissive": null,
+                                    "normalScale": null,
+                                    "baseColorTexture": null,
+                                    "normalTexture": null,
+                                    "metallicTexture": null,
+                                    "roughnessTexture": null,
+                                    "aoTexture": null,
+                                    "emissiveTexture": null,
+                                    "alphaMode": null,
+                                    "alphaCutoff": null,
+                                    "doubleSided": null
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "StaticMeshActor": {
+                "name": "Floor",
+                "components": [
+                    {
+                        "TransformComponent": {
+                            "position": [
+                                1.131738305091858,
+                                -3.930513620376587,
+                                0.39836451411247253
+                            ],
+                            "rotation": [
+                                0,
+                                0,
+                                0.6955733299255371,
+                                0.7184551358222961
+                            ],
+                            "scale": [
+                                10.000112533569336,
+                                1.0000017881393433,
+                                10
+                            ]
+                        }
+                    },
+                    {
+                        "RenderComponent": {
+                            "meshId": {
+                                "value": "plane"
+                            },
+                            "materialOverrides": {
+                                "0": {
+                                    "id": {
+                                        "value": ""
+                                    },
+                                    "shaderId": null,
+                                    "baseColorFactor": [
+                                        0.16602319478988647,
+                                        0.10897275060415268,
+                                        0.10897275060415268,
+                                        1
+                                    ],
+                                    "metallic": 1,
+                                    "roughness": 0.15000000596046448,
+                                    "ao": null,
+                                    "emissive": null,
+                                    "normalScale": null,
+                                    "baseColorTexture": null,
+                                    "normalTexture": null,
+                                    "metallicTexture": null,
+                                    "roughnessTexture": null,
+                                    "aoTexture": null,
+                                    "emissiveTexture": null,
+                                    "alphaMode": null,
+                                    "alphaCutoff": null,
+                                    "doubleSided": null
+                                }
+                            }
+                        }
+                    }
+                ]
             }
         }
     ],
-    "Environment": {
-        "EnvironmentMap": "newport_loft",
-        "Up": [
-            0.0,
-            1.0,
-            0.0
+    "environment": {
+        "environmentMap": {
+            "value": "newport_loft"
+        },
+        "up": [
+            0,
+            1,
+            0
         ]
     }
 }

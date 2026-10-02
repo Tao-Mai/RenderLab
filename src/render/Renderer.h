@@ -19,10 +19,7 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_raii.hpp>
 
-namespace ecs
-{
-class CameraSystem;
-}
+class CameraComponent;
 
 struct EditorFrameInput
 {
@@ -31,7 +28,7 @@ struct EditorFrameInput
     bool         requestPick      = false;
     uint32_t     pickX            = 0;
     uint32_t     pickY            = 0;
-    Scene::Desc::Object* selectedObject = nullptr;
+    Actor* selectedActor = nullptr;
     std::function<void(VkCommandBuffer)> recordUi;
 };
 
@@ -52,7 +49,7 @@ public:
 
     void init();
     void loadScene();
-    EditorFrameResult render(const ecs::CameraSystem& camera, const EditorFrameInput& editor);
+    EditorFrameResult render(const CameraComponent& camera, const EditorFrameInput& editor);
     void waitIdle();
     void shutdown() noexcept;
 
@@ -76,8 +73,8 @@ private:
     glm::vec4         iblParameters{0.0f};
 
     void initVulkan();
-    void updateFrameData(const ecs::CameraSystem& camera, const EditorFrameInput& editor);
+    void updateFrameData(const CameraComponent& camera, const EditorFrameInput& editor);
     [[nodiscard]] FrameContext& currentFrame();
     void recreateSwapchain();
-    EditorFrameResult drawFrame(const ecs::CameraSystem& camera, const EditorFrameInput& editor);
+    EditorFrameResult drawFrame(const CameraComponent& camera, const EditorFrameInput& editor);
 };

@@ -24,8 +24,8 @@ struct CommandConfig
 
 struct AppConfig
 {
-    AppPaths paths;
-    Scene::ID initialScene;
+    AppPaths       paths;
+    Scene::ID      initialScene;
     RendererConfig renderer;
 };
 
@@ -37,21 +37,20 @@ public:
     void init();
     void shutdown() noexcept;
 
-    [[nodiscard]] const AppPaths& paths() const noexcept;
-    [[nodiscard]] const CommandConfig& commandConfig() const noexcept;
-    [[nodiscard]] const Scene::ID& initialScene() const noexcept;
+    [[nodiscard]] const AppPaths&       paths() const noexcept;
+    [[nodiscard]] const CommandConfig&  commandConfig() const noexcept;
+    [[nodiscard]] const Scene::ID&      initialScene() const noexcept;
     [[nodiscard]] const RendererConfig& rendererConfig() const noexcept;
 
 private:
-    bool inited = false;
+    bool                  inited = false;
     std::filesystem::path file;
     std::filesystem::path configDir;
-    AppConfig data;
-    CommandConfig commands;
+    AppConfig             data;
+    CommandConfig         commands;
 
     void load();
     void loadCommands();
     void save() const;
     void resolvePaths();
-    void applyDefaults();
 };

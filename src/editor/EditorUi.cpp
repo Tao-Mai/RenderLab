@@ -6,7 +6,7 @@
 #include "core/Context.h"
 #include "core/InputManager.h"
 #include "core/Logger.h"
-#include "ecs/component/TransformComponent.h"
+#include "scene/component/TransformComponent.h"
 #include "editor/ComponentDraw.h"
 
 #include <algorithm>
@@ -41,115 +41,116 @@
 
 namespace
 {
-    [[nodiscard]] std::string displayPath(const std::filesystem::path& path)
+[[nodiscard]] std::string displayPath(const std::filesystem::path& path)
+{
+    const std::u8string utf8 = path.u8string();
+    return {reinterpret_cast<const char*>(utf8.data()), utf8.size()};
+}
+
+void drawSourcePath(std::filesystem::path& source, const wchar_t* filter)
+{
+    if (ImGui::Button("Source file..."))
     {
-        const std::u8string utf8 = path.u8string();
-        return {reinterpret_cast<const char*>(utf8.data()), utf8.size()};
-    }
+        std::array<wchar_t, 32768> selectedFile{};
+        const std::wstring         initialDirectory =
+            context().config->paths().assets.parent_path().wstring();
 
-    void drawSourcePath(std::filesystem::path& source, const wchar_t* filter)
-    {
-        if (ImGui::Button("Source file..."))
+        OPENFILENAMEW dialog{};
+        dialog.lStructSize     = sizeof(dialog);
+        dialog.hwndOwner       = GetActiveWindow();
+        dialog.lpstrFilter     = filter;
+        dialog.lpstrFile       = selectedFile.data();
+        dialog.nMaxFile        = static_cast<DWORD>(selectedFile.size());
+        dialog.lpstrInitialDir = initialDirectory.c_str();
+        dialog.Flags           = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST |
+            OFN_EXPLORER | OFN_NOCHANGEDIR;
+
+        if (GetOpenFileNameW(&dialog))
         {
-            std::array<wchar_t, 32768> selectedFile{};
-            const std::wstring initialDirectory =
-                context().config->paths().assets.parent_path().wstring();
-
-            OPENFILENAMEW dialog{};
-            dialog.lStructSize = sizeof(dialog);
-            dialog.hwndOwner = GetActiveWindow();
-            dialog.lpstrFilter = filter;
-            dialog.lpstrFile = selectedFile.data();
-            dialog.nMaxFile = static_cast<DWORD>(selectedFile.size());
-            dialog.lpstrInitialDir = initialDirectory.c_str();
-            dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST |
-                OFN_EXPLORER | OFN_NOCHANGEDIR;
-
-            if (GetOpenFileNameW(&dialog))
-            {
-                source = selectedFile.data();
-            }
-        }
-
-        if (!source.empty())
-        {
-            const std::string label = displayPath(source);
-            ImGui::TextWrapped("%s", label.c_str());
+            source = selectedFile.data();
         }
     }
 
-    [[nodiscard]] bool sourceIsImportable(
-        const std::filesystem::path& source, int assetType)
+    if (!source.empty())
     {
-        std::error_code error;
-        if (source.empty() || !std::filesystem::is_regular_file(source, error))
-        {
-            return false;
-        }
+        const std::string label = displayPath(source);
+        ImGui::TextWrapped("%s", label.c_str());
+    }
+}
 
-        std::string extension = source.extension().string();
-        std::ranges::transform(extension, extension.begin(),
-            [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
-        if (assetType == 2)
-        {
-            return extension == ".gltf" || extension == ".glb";
-        }
-        return extension == ".exr" || extension == ".png" ||
-            extension == ".jpg" || extension == ".jpeg" || extension == ".hdr" ||
-            extension == ".bmp" || extension == ".tga" ||
-            extension == ".gif" || extension == ".psd" ||
-            extension == ".pic" || extension == ".pnm";
+[[nodiscard]] bool sourceIsImportable(
+    const std::filesystem::path& source, int assetType)
+{
+    std::error_code error;
+    if (source.empty() || !std::filesystem::is_regular_file(source, error))
+    {
+        return false;
     }
 
-    void drawColorSpace(std::optional<ColorSpace>& colorSpace)
+    std::string extension = source.extension().string();
+    std::ranges::transform(extension,
+                           extension.begin(),
+                           [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    if (assetType == 2)
     {
-        int selected = 0;
-        if (colorSpace)
-        {
-            selected = *colorSpace == ColorSpace::Linear ? 1 : 2;
-        }
-        if (ImGui::Combo("Color space", &selected, "Auto\0Linear\0sRGB\0"))
-        {
-            colorSpace = selected == 0
-                ? std::nullopt
-                : std::optional{selected == 1 ? ColorSpace::Linear : ColorSpace::Srgb};
-        }
+        return extension == ".gltf" || extension == ".glb";
+    }
+    return extension == ".exr" || extension == ".png" ||
+        extension == ".jpg" || extension == ".jpeg" || extension == ".hdr" ||
+        extension == ".bmp" || extension == ".tga" ||
+        extension == ".gif" || extension == ".psd" ||
+        extension == ".pic" || extension == ".pnm";
+}
+
+void drawColorSpace(std::optional<ColorSpace>& colorSpace)
+{
+    int selected = 0;
+    if (colorSpace)
+    {
+        selected = *colorSpace == ColorSpace::Linear ? 1 : 2;
+    }
+    if (ImGui::Combo("Color space", &selected, "Auto\0Linear\0sRGB\0"))
+    {
+        colorSpace = selected == 0
+            ? std::nullopt
+            : std::optional{selected == 1 ? ColorSpace::Linear : ColorSpace::Srgb};
+    }
+}
+
+void drawPositiveUint(const char* label, uint32_t& value)
+{
+    constexpr uint32_t step = 1;
+    ImGui::InputScalar(label, ImGuiDataType_U32, &value, &step);
+}
+
+void applyModelMatrix(TransformComponent& transform, const glm::mat4& model)
+{
+    transform.position = glm::vec3{model[3]};
+
+    glm::vec3 scale{
+        glm::length(glm::vec3{model[0]}),
+        glm::length(glm::vec3{model[1]}),
+        glm::length(glm::vec3{model[2]}),
+    };
+    scale = glm::max(scale, glm::vec3{0.001f});
+
+    glm::mat3 rotationMatrix{
+        glm::vec3{model[0]} / scale.x,
+        glm::vec3{model[1]} / scale.y,
+        glm::vec3{model[2]} / scale.z,
+    };
+    glm::quat rotation = glm::normalize(glm::quat_cast(rotationMatrix));
+
+    // q and -q are the same rotation. Keeping the closest representation
+    // prevents the editor value from flipping sign during a gizmo drag.
+    if (glm::dot(rotation, transform.rotation) < 0.0f)
+    {
+        rotation = -rotation;
     }
 
-    void drawPositiveUint(const char* label, uint32_t& value)
-    {
-        constexpr uint32_t step = 1;
-        ImGui::InputScalar(label, ImGuiDataType_U32, &value, &step);
-    }
-
-    void applyModelMatrix(ecs::TransformComponent& transform, const glm::mat4& model)
-    {
-        transform.position = glm::vec3{model[3]};
-
-        glm::vec3 scale{
-            glm::length(glm::vec3{model[0]}),
-            glm::length(glm::vec3{model[1]}),
-            glm::length(glm::vec3{model[2]}),
-        };
-        scale = glm::max(scale, glm::vec3{0.001f});
-
-        glm::mat3 rotationMatrix{
-            glm::vec3{model[0]} / scale.x,
-            glm::vec3{model[1]} / scale.y,
-            glm::vec3{model[2]} / scale.z,
-        };
-        glm::quat rotation = glm::normalize(glm::quat_cast(rotationMatrix));
-
-        // q and -q are the same rotation. Keeping the closest representation
-        // prevents the editor value from flipping sign during a gizmo drag.
-        if (glm::dot(rotation, transform.rotation) < 0.0f)
-        {
-            rotation = -rotation;
-        }
-
-        transform.rotation = rotation;
-        transform.scale = scale;
-    }
+    transform.rotation = rotation;
+    transform.scale    = scale;
+}
 }
 
 EditorUI::~EditorUI()
@@ -158,15 +159,15 @@ EditorUI::~EditorUI()
 }
 
 void EditorUI::init(
-    GLFWwindow *window,
-    VkInstance instance,
+    GLFWwindow*      window,
+    VkInstance       instance,
     VkPhysicalDevice physicalDevice,
-    VkDevice device,
-    uint32_t queueFamily,
-    VkQueue queue,
-    VkFormat targetColorFormat,
-    uint32_t minImageCount,
-    uint32_t imageCount)
+    VkDevice         device,
+    uint32_t         queueFamily,
+    VkQueue          queue,
+    VkFormat         targetColorFormat,
+    uint32_t         minImageCount,
+    uint32_t         imageCount)
 {
     if (contextCreated)
     {
@@ -177,34 +178,35 @@ void EditorUI::init(
     ImGui::CreateContext();
     contextCreated = true;
 
-    ImGuiIO &io = ImGui::GetIO();
+    ImGuiIO& io    = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     ImGui::StyleColorsDark();
 
 #ifdef _WIN32
     std::array<char, MAX_PATH> windowsDirectory{};
-    const UINT directoryLength = GetWindowsDirectoryA(
+    const UINT                 directoryLength = GetWindowsDirectoryA(
         windowsDirectory.data(),
         static_cast<UINT>(windowsDirectory.size()));
     CHECK(directoryLength != 0 && directoryLength < windowsDirectory.size(),
-        "failed to locate the Windows font directory");
+          "failed to locate the Windows font directory");
     const std::string fontPath =
         std::string{windowsDirectory.data(), directoryLength} + "\\Fonts\\msyh.ttc";
     CHECK(io.Fonts->AddFontFromFileTTF(
-            fontPath.c_str(),
-            18.0f,
-            nullptr,
-            io.Fonts->GetGlyphRangesChineseFull()) != nullptr,
-        "failed to load Microsoft YaHei: {}", fontPath);
+              fontPath.c_str(),
+              18.0f,
+              nullptr,
+              io.Fonts->GetGlyphRangesChineseFull()) != nullptr,
+          "failed to load Microsoft YaHei: {}",
+          fontPath);
 #else
 #error RenderLab editor requires Windows to load Microsoft YaHei
 #endif
 
     CHECK(ImGui_ImplGlfw_InitForVulkan(window, true),
-        "failed to init ImGui GLFW backend");
+          "failed to init ImGui GLFW backend");
     glfwBackendInitialized = true;
 
-    colorFormat = targetColorFormat;
+    colorFormat           = targetColorFormat;
     pipelineRenderingInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR,
         .colorAttachmentCount = 1,
@@ -212,21 +214,21 @@ void EditorUI::init(
     };
 
     ImGui_ImplVulkan_InitInfo initInfo{};
-    initInfo.ApiVersion = VK_API_VERSION_1_4;
-    initInfo.Instance = instance;
-    initInfo.PhysicalDevice = physicalDevice;
-    initInfo.Device = device;
-    initInfo.QueueFamily = queueFamily;
-    initInfo.Queue = queue;
-    initInfo.DescriptorPoolSize = 64;
-    initInfo.MinImageCount = minImageCount;
-    initInfo.ImageCount = imageCount;
-    initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    initInfo.UseDynamicRendering = true;
+    initInfo.ApiVersion                  = VK_API_VERSION_1_4;
+    initInfo.Instance                    = instance;
+    initInfo.PhysicalDevice              = physicalDevice;
+    initInfo.Device                      = device;
+    initInfo.QueueFamily                 = queueFamily;
+    initInfo.Queue                       = queue;
+    initInfo.DescriptorPoolSize          = 64;
+    initInfo.MinImageCount               = minImageCount;
+    initInfo.ImageCount                  = imageCount;
+    initInfo.MSAASamples                 = VK_SAMPLE_COUNT_1_BIT;
+    initInfo.UseDynamicRendering         = true;
     initInfo.PipelineRenderingCreateInfo = pipelineRenderingInfo;
 
     CHECK(ImGui_ImplVulkan_Init(&initInfo),
-        "failed to init ImGui Vulkan backend");
+          "failed to init ImGui Vulkan backend");
     vulkanBackendInitialized = true;
 }
 
@@ -241,14 +243,14 @@ void EditorUI::beginFrame(float deltaTime)
     ++framesSinceRefresh;
     if (fpsRefreshTime >= 0.5f)
     {
-        displayedFps = static_cast<float>(framesSinceRefresh) / fpsRefreshTime;
-        fpsRefreshTime = 0.0f;
+        displayedFps       = static_cast<float>(framesSinceRefresh) / fpsRefreshTime;
+        fpsRefreshTime     = 0.0f;
         framesSinceRefresh = 0;
     }
 
-    const ImGuiViewport *viewport = ImGui::GetMainViewport();
+    const ImGuiViewport*     viewport  = ImGui::GetMainViewport();
     const ImGuiDockNodeFlags dockFlags = ImGuiDockNodeFlags_PassthruCentralNode |
-                                         ImGuiDockNodeFlags_NoDockingOverCentralNode;
+        ImGuiDockNodeFlags_NoDockingOverCentralNode;
     const ImGuiID dockspaceId = ImGui::DockSpaceOverViewport(0, viewport, dockFlags);
 
     if (!dockLayoutInitialized)
@@ -260,7 +262,7 @@ void EditorUI::beginFrame(float deltaTime)
         ImGui::DockBuilderSetNodeSize(dockspaceId, viewport->WorkSize);
 
         ImGuiID centerDockId = dockspaceId;
-        editorDockId = ImGui::DockBuilderSplitNode(
+        editorDockId         = ImGui::DockBuilderSplitNode(
             centerDockId,
             ImGuiDir_Right,
             0.24f,
@@ -271,15 +273,15 @@ void EditorUI::beginFrame(float deltaTime)
         dockLayoutInitialized = true;
     }
 
-    if (const ImGuiDockNode *centralNode = ImGui::DockBuilderGetCentralNode(dockspaceId))
+    if (const ImGuiDockNode* centralNode = ImGui::DockBuilderGetCentralNode(dockspaceId))
     {
         scenePosition = {centralNode->Pos.x, centralNode->Pos.y};
-        sceneSize = {
+        sceneSize     = {
             std::max(centralNode->Size.x, 1.0f),
             std::max(centralNode->Size.y, 1.0f),
         };
-        const ImGuiIO &io = ImGui::GetIO();
-        scenePixels = {
+        const ImGuiIO& io = ImGui::GetIO();
+        scenePixels       = {
             .x = (centralNode->Pos.x - viewport->Pos.x) * io.DisplayFramebufferScale.x,
             .y = (centralNode->Pos.y - viewport->Pos.y) * io.DisplayFramebufferScale.y,
             .width = centralNode->Size.x * io.DisplayFramebufferScale.x,
@@ -289,12 +291,12 @@ void EditorUI::beginFrame(float deltaTime)
 }
 
 bool EditorUI::drawGizmo(
-    ecs::TransformComponent&transform,
-    const glm::mat4 &view,
-    const glm::mat4 &projection,
-    bool enableShortcuts)
+    TransformComponent& transform,
+    const glm::mat4&         view,
+    const glm::mat4&         projection,
+    bool                     enableShortcuts)
 {
-    const ImGuiIO &io = ImGui::GetIO();
+    const ImGuiIO& io = ImGui::GetIO();
     if (enableShortcuts && !io.WantTextInput && !ImGui::IsAnyItemActive())
     {
         if (context().inputManager->get(Command::GizmoTranslate))
@@ -316,7 +318,7 @@ bool EditorUI::drawGizmo(
     ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
     ImGuizmo::SetRect(scenePosition.x, scenePosition.y, sceneSize.x, sceneSize.y);
 
-    glm::mat4 model = transform.matrix();
+    glm::mat4                     model        = transform.matrix();
     constexpr ImGuizmo::OPERATION operations[] = {
         ImGuizmo::TRANSLATE,
         ImGuizmo::ROTATE,
@@ -340,12 +342,12 @@ bool EditorUI::drawGizmo(
 }
 
 EditorUI::InspectorResult EditorUI::drawInspector(
-    Scene::Desc& scene, Scene::Desc::Object* object, bool dirty)
+    Scene::Desc& scene, Actor* object, bool dirty)
 {
     ImGui::SetNextWindowDockID(editorDockId, ImGuiCond_Always);
     constexpr ImGuiWindowFlags editorFlags = ImGuiWindowFlags_NoMove |
-                                              ImGuiWindowFlags_NoCollapse |
-                                              ImGuiWindowFlags_NoSavedSettings;
+        ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoSavedSettings;
     ImGui::Begin("Editor", nullptr, editorFlags);
     finishEnvironmentImport();
 
@@ -365,19 +367,21 @@ EditorUI::InspectorResult EditorUI::drawInspector(
     InspectorResult result;
     ImGui::Spacing();
     result.environmentChanged = drawEnvironmentSelection(scene);
-    result.edited = result.environmentChanged;
+    result.edited             = result.environmentChanged;
 
     ImGui::SeparatorText("Assets");
     constexpr const char* assetTypes[] = {"Texture", "Environment map", "Mesh"};
     ImGui::BeginDisabled(environmentImport.valid());
     ImGui::SetNextItemWidth(-1.0f);
-    ImGui::Combo("##Import asset type", &importAssetType, assetTypes,
+    ImGui::Combo("##Import asset type",
+                 &importAssetType,
+                 assetTypes,
                  static_cast<int>(std::size(assetTypes)));
     if (ImGui::Button("Import"))
     {
-        textureSetting = {};
+        textureSetting     = {};
         environmentSetting = {};
-        meshSetting = {};
+        meshSetting        = {};
         ImGui::OpenPopup("Import Asset");
     }
     ImGui::EndDisabled();
@@ -399,14 +403,17 @@ EditorUI::InspectorResult EditorUI::drawInspector(
     ImGui::SeparatorText("Object");
     if (object != nullptr)
     {
-        ImGui::Text("Selected: %s", object->name.c_str());
-        for (auto& [typeName, component] : object->components)
+        ImGui::PushID(object);
+        result.edited = component_draw::drawField("Name", object->name) || result.edited;
+        ComponentDrawResult changes;
+        for (const auto& component : object->components)
         {
-            ImGui::Spacing();
-            ImGui::PushID(typeName.c_str());
-            result.edited = drawComponent(typeName, component) || result.edited;
-            ImGui::PopID();
+            if (!component) continue;
+            changes |= drawComponent(*component);
         }
+        result.edited |= changes.edited;
+        result.resourcesChanged |= changes.resourcesChanged;
+        ImGui::PopID();
     }
     else
     {
@@ -422,7 +429,7 @@ bool EditorUI::drawEnvironmentSelection(Scene::Desc& scene)
     ImGui::SeparatorText("Scene environment");
     const auto& current = scene.environment.environmentMap;
     const char* preview = current ? current->value.c_str() : "None";
-    bool changed = false;
+    bool        changed = false;
 
     if (ImGui::BeginCombo("Environment map", preview))
     {
@@ -440,7 +447,7 @@ bool EditorUI::drawEnvironmentSelection(Scene::Desc& scene)
             if (ImGui::Selectable(id.value.c_str(), selected) && !selected)
             {
                 scene.environment.environmentMap = id;
-                changed = true;
+                changed                          = true;
             }
         }
         ImGui::EndCombo();
@@ -517,29 +524,31 @@ void EditorUI::drawImportDialog()
             CHECK(false, "invalid import asset type");
     }
 
-    const bool validSource = sourceIsImportable(*source, importAssetType);
+    const bool  validSource     = sourceIsImportable(*source, importAssetType);
     std::string sourceExtension = source->extension().string();
-    std::ranges::transform(sourceExtension, sourceExtension.begin(),
-        [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    std::ranges::transform(sourceExtension,
+                           sourceExtension.begin(),
+                           [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
     const bool validColorSpace = (sourceExtension != ".exr" && sourceExtension != ".hdr") ||
-        (importAssetType == 0
-            ? textureSetting.colorSpace != ColorSpace::Srgb
-            : importAssetType == 1
-                ? environmentSetting.colorSpace != ColorSpace::Srgb
-                : true);
+    (importAssetType == 0
+        ? textureSetting.colorSpace != ColorSpace::Srgb
+        : importAssetType == 1
+        ? environmentSetting.colorSpace != ColorSpace::Srgb
+        : true);
     const bool validSettings = importAssetType != 1 ||
-        (environmentSetting.irradianceSize > 0 &&
-         environmentSetting.irradianceSampleCount > 0 &&
-         environmentSetting.prefilteredSpecularSampleCount > 0 &&
-         environmentSetting.prefilteredSpecularMaxSampleCount >=
-             environmentSetting.prefilteredSpecularSampleCount);
+    (environmentSetting.irradianceSize > 0 &&
+        environmentSetting.irradianceSampleCount > 0 &&
+        environmentSetting.prefilteredSpecularSampleCount > 0 &&
+        environmentSetting.prefilteredSpecularMaxSampleCount >=
+        environmentSetting.prefilteredSpecularSampleCount);
     if (!validSource)
     {
         ImGui::TextWrapped("Select an existing file in a supported format.");
     }
     else if (!validSettings || !validColorSpace)
     {
-        ImGui::TextWrapped("Check color space and sample settings. EXR and HDR require Linear; sizes and sample counts must be positive, and the prefilter limit must cover the first mip.");
+        ImGui::TextWrapped(
+            "Check color space and sample settings. EXR and HDR require Linear; sizes and sample counts must be positive, and the prefilter limit must cover the first mip.");
     }
 
     ImGui::BeginDisabled(!validSource || !validSettings || !validColorSpace);
@@ -593,12 +602,12 @@ void EditorUI::render(VkCommandBuffer commandBuffer) const
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 }
 
-bool EditorUI::sceneClicked(glm::vec2 &mousePosition) const
+bool EditorUI::sceneClicked(glm::vec2& mousePosition) const
 {
-    const ImVec2 mouse = ImGui::GetMousePos();
-    const bool inside = mouse.x >= scenePosition.x && mouse.y >= scenePosition.y &&
-                        mouse.x < scenePosition.x + sceneSize.x &&
-                        mouse.y < scenePosition.y + sceneSize.y;
+    const ImVec2 mouse  = ImGui::GetMousePos();
+    const bool   inside = mouse.x >= scenePosition.x && mouse.y >= scenePosition.y &&
+        mouse.x < scenePosition.x + sceneSize.x &&
+        mouse.y < scenePosition.y + sceneSize.y;
     if (!inside || !context().inputManager->get(Command::SelectObject) ||
         ImGuizmo::IsOver() || ImGuizmo::IsUsing())
     {
@@ -617,7 +626,7 @@ bool EditorUI::wantsInput() const
     {
         return false;
     }
-    const ImGuiIO &io = ImGui::GetIO();
+    const ImGuiIO& io = ImGui::GetIO();
     return io.WantCaptureMouse || io.WantCaptureKeyboard;
 }
 
@@ -669,5 +678,5 @@ void EditorUI::shutdown(bool stopImport) noexcept
         contextCreated = false;
     }
     dockLayoutInitialized = false;
-    editorDockId = 0;
+    editorDockId          = 0;
 }

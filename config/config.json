@@ -1,13 +1,13 @@
 {
-  "Paths": {
-    "Assets": "../assets",
-    "Commands": "commands.json"
+  "paths": {
+    "assets": "../assets",
+    "commands": "commands.json"
   },
-  "InitialScene": "default",
-  "Renderer": {
-    "BrdfLut": {
-      "TextureID": "lut_ggx",
-      "SamplerID": "linearClamp"
+  "initialScene": {"value": "default"},
+  "renderer": {
+    "brdfLut": {
+      "textureID": {"value": "lut_ggx"},
+      "samplerID": {"value": "linearClamp"}
     }
   }
 }

@@ -11,7 +11,6 @@
 #include <tuple>
 #include <unordered_map>
 #include <vector>
-#include <entt/entity/registry.hpp>
 
 #include <vulkan/vulkan_raii.hpp>
 
@@ -129,7 +128,6 @@ public:
     [[nodiscard]] RenderResourceManager& assetResources() const;
     [[nodiscard]] FrameContext& frameContext(uint32_t frameIndex) const;
     [[nodiscard]] const GpuScene& scene() const;
-    [[nodiscard]] const entt::registry& registry() const;
     [[nodiscard]] vk::Format depthFormat() const;
     [[nodiscard]] vk::Format shadowFormat() const;
     [[nodiscard]] vk::raii::CommandBuffer& commands() const;

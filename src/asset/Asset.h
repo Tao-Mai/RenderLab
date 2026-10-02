@@ -2,6 +2,7 @@
 
 #include "asset/AssetID.h"
 #include "asset/ImageFormat.h"
+#include "scene/Actor.h"
 
 #include <concepts>
 #include <cstdint>
@@ -13,7 +14,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <entt/meta/meta.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
@@ -142,6 +142,8 @@ struct TextureBinding
 {
     Texture::ID textureID;
     Sampler::ID samplerID;
+
+    bool operator==(const TextureBinding&) const = default;
 };
 
 struct Shader : Asset
@@ -225,14 +227,8 @@ struct Scene : Asset
 
     struct Desc
     {
-        struct Object
-        {
-            std::string                                     name;
-            std::unordered_map<std::string, entt::meta_any> components;
-        };
-
         ID                  id;
-        std::vector<Object> objects;
+        std::vector<std::unique_ptr<Actor>> actors;
 
         struct Environment
         {

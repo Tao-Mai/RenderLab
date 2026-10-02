@@ -3,9 +3,9 @@
 #include "asset/Asset.h"
 #include "core/Context.h"
 #include "core/Logger.h"
-#include "ecs/SceneManager.h"
-#include "ecs/component/LightComponent.h"
-#include "ecs/component/RenderComponent.h"
+#include "scene/SceneManager.h"
+#include "scene/component/LightComponent.h"
+#include "scene/component/RenderComponent.h"
 #include "render/resource/RenderResourceManager.h"
 
 void GpuScene::load(RenderResourceManager& resources)
@@ -14,21 +14,20 @@ void GpuScene::load(RenderResourceManager& resources)
 
     CHECK(context().sceneManager != nullptr, "GpuScene requires SceneManager");
     const auto& manager = *context().sceneManager;
-    const auto& registry = manager.registry();
-    for (const entt::entity entity : manager.entities())
+    for (const auto& actor : manager.scene().actors)
     {
-        const uint32_t selectionId = SceneManager::selectionId(entity);
-        if (const auto* render = registry.try_get<ecs::RenderComponent>(entity))
+        const uint32_t selectionId = actor->selectionId();
+        if (const auto* render = actor->getComponent<RenderComponent>())
         {
-            items.push_back({&resources.mesh(render->meshId), entity, selectionId});
+            items.push_back({&resources.mesh(render->meshId), actor.get(), selectionId});
         }
-        if (registry.all_of<ecs::LightComponent>(entity))
+        if (actor->getComponent<LightComponent>())
         {
             if (lights.empty())
             {
                 markers.init(resources);
             }
-            lights.push_back({entity, selectionId});
+            lights.push_back({actor.get(), selectionId});
         }
     }
 }

@@ -1,18 +1,68 @@
 cmake_minimum_required(VERSION 4.2)
 
+if (CMAKE_HOST_WIN32 AND NOT DEFINED VCPKG_TARGET_TRIPLET)
+    set(VCPKG_TARGET_TRIPLET "x64-mingw-dynamic" CACHE STRING "vcpkg target triplet")
+endif ()
+
 if (NOT DEFINED CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
     set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
             CACHE FILEPATH "vcpkg toolchain file")
 endif ()
 
-project(RenderLab)
+project(RenderLab LANGUAGES C CXX)
 
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-if (MSVC)
-    add_compile_options(/Zc:preprocessor)
+if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16.2)
+    message(FATAL_ERROR "RenderLab requires GCC 16.2 or newer with C++26 reflection. Select that compiler in your toolchain.")
 endif ()
+
+if (WIN32 AND NOT VCPKG_TARGET_TRIPLET STREQUAL "x64-mingw-dynamic")
+    message(FATAL_ERROR "Windows GCC builds require VCPKG_TARGET_TRIPLET=x64-mingw-dynamic. Use a fresh build directory when changing toolchains.")
+endif ()
+
+include(CheckCXXSourceCompiles)
+include(CMakePushCheckState)
+cmake_push_check_state(RESET)
+set(CMAKE_REQUIRED_FLAGS "-freflection")
+check_cxx_source_compiles([=[
+    #include <meta>
+    #if !defined(__cpp_impl_reflection) || __cpp_impl_reflection < 202506L
+    #error C++26 reflection is unavailable
+    #endif
+    static_assert(std::meta::is_type(^^int));
+    int main() {}
+]=] RENDERLAB_HAS_CXX26_REFLECTION)
+cmake_pop_check_state()
+if (NOT RENDERLAB_HAS_CXX26_REFLECTION)
+    message(FATAL_ERROR "The selected GCC/libstdc++ cannot compile C++26 reflection with -freflection.")
+endif ()
+
+add_library(RenderLabBuildOptions INTERFACE)
+target_compile_features(RenderLabBuildOptions INTERFACE cxx_std_26)
+target_compile_options(RenderLabBuildOptions INTERFACE $<$<COMPILE_LANGUAGE:CXX>:-freflection>)
+
+get_filename_component(RENDERLAB_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+
+function(renderlab_copy_compiler_runtime target)
+    if (WIN32)
+        foreach (runtime libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll)
+            set(runtime_path "${RENDERLAB_COMPILER_BIN_DIR}/${runtime}")
+            if (NOT EXISTS "${runtime_path}")
+                message(FATAL_ERROR "Missing GCC runtime: ${runtime_path}")
+            endif ()
+
+            add_custom_command(TARGET ${target} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${runtime_path}" "$<TARGET_FILE_DIR:${target}>"
+                    VERBATIM)
+        endforeach ()
+    endif ()
+endfunction()
 
 find_package(Vulkan 1.4 REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
@@ -20,8 +70,8 @@ find_package(glm CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(imguizmo CONFIG REQUIRED)
 find_package(reflectcpp CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 find_package(glog CONFIG REQUIRED)
-find_package(EnTT CONFIG REQUIRED)
 find_package(tinyexr CONFIG REQUIRED)
 find_path(TINYGLTF_INCLUDE_DIR NAMES tiny_gltf.h REQUIRED)
 
@@ -163,31 +213,37 @@ add_executable(RenderLab
         src/Engine.h
         src/core/ConfigManager.cpp
         src/core/ConfigManager.h
+        src/core/Annotations.h
         src/core/Context.cpp
         src/core/Context.h
         src/core/Logger.h
         src/core/Reflect.h
+        src/core/Reflect.cpp
         src/core/Window.cpp
         src/core/Window.h
         src/core/Input.h
         src/core/InputManager.h
         src/core/InputManager.cpp
-        src/ecs/component/Component.h
-        src/ecs/component/CameraComponent.h
-        src/ecs/component/LightComponent.h
-        src/ecs/component/RenderComponent.h
-        src/ecs/component/TransformComponent.cpp
-        src/ecs/component/TransformComponent.h
-        src/ecs/component/FreeFlyMoveComponent.h
-        src/ecs/component/CharacterMoveComponent.h
-        src/ecs/SceneManager.cpp
-        src/ecs/SceneManager.h
-        src/ecs/system/FreeFlyMoveSystem.cpp
-        src/ecs/system/FreeFlyMoveSystem.h
-        src/ecs/system/CharacterMoveSystem.cpp
-        src/ecs/system/CharacterMoveSystem.h
-        src/ecs/system/CameraSystem.cpp
-        src/ecs/system/CameraSystem.h
+        src/scene/component/Component.h
+        src/scene/component/CameraComponent.h
+        src/scene/component/LightComponent.h
+        src/scene/component/RenderComponent.h
+        src/scene/component/TransformComponent.cpp
+        src/scene/component/TransformComponent.h
+        src/scene/component/FreeFlyMoveComponent.h
+        src/scene/component/CharacterMoveComponent.h
+        src/scene/SceneManager.cpp
+        src/scene/SceneManager.h
+        src/scene/SceneTypes.h
+        src/scene/Actor.cpp
+        src/scene/Actor.h
+        src/scene/actor/FreeFlyCameraActor.cpp
+        src/scene/actor/FreeFlyCameraActor.h
+        src/scene/actor/StaticMeshActor.cpp
+        src/scene/actor/StaticMeshActor.h
+        src/scene/component/FreeFlyMoveComponent.cpp
+        src/scene/component/CharacterMoveComponent.cpp
+        src/scene/component/CameraComponent.cpp
         src/editor/Editor.cpp
         src/editor/Editor.h
         src/editor/ComponentDraw.cpp
@@ -290,27 +346,21 @@ target_compile_definitions(RenderLab PRIVATE
 )
 
 target_link_libraries(RenderLab PRIVATE
+        RenderLabBuildOptions
         Vulkan::Vulkan
         glfw
         glm::glm
         imgui::imgui
         imguizmo::imguizmo
         reflectcpp::reflectcpp
+        nlohmann_json::nlohmann_json
         glog::glog
-        EnTT::EnTT
         unofficial::tinyexr::tinyexr
         comdlg32
 )
 
-if (MSVC)
-    target_compile_options(RenderLab PRIVATE /utf-8)
-    set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT RenderLab)
-    set_target_properties(RenderLab PROPERTIES
-            VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:RenderLab>"
-    )
-endif ()
-
 include(CTest)
+renderlab_copy_compiler_runtime(RenderLab)
 if (BUILD_TESTING)
     find_package(GTest CONFIG REQUIRED)
     add_subdirectory(test)

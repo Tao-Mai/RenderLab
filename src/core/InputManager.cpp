@@ -130,6 +130,10 @@ void InputManager::shutdown() noexcept
 
 void InputManager::tick()
 {
+    // Num Lock and Caps Lock never participate in shortcut matching.
+    constexpr Modifier shortcutModifiers =
+        Modifier::Shift | Modifier::Control | Modifier::Alt | Modifier::Super;
+
     commandSet.fill(false);
     for (const auto& event : inputEvents)
     {
@@ -147,7 +151,7 @@ void InputManager::tick()
         for (const auto& binding : bindings)
         {
             if (binding.key == event.key &&
-                binding.modifiers == event.mods &&
+                (binding.modifiers & shortcutModifiers) == (event.mods & shortcutModifiers) &&
                 binding.action == event.action)
                 commandSet[static_cast<size_t>(binding.command)] = true;
         }

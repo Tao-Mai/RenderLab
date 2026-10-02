@@ -1,6 +1,8 @@
 #pragma once
 
 #include "asset/RflReflectors.h"
+#include "asset/Asset.h"
+#include "asset/Serializer.h"
 #include "core/Logger.h"
 
 #include <filesystem>
@@ -18,17 +20,33 @@ namespace asset_json
 template <class T>
 [[nodiscard]] T load(const std::filesystem::path& file)
 {
-    auto result = rfl::json::load<T, rfl::SnakeCaseToPascalCase,
-        rfl::NoExtraFields>(file.string());
-    CHECK(result, "failed to load JSON '{}': {}", file.string(), result.error().what());
-    return std::move(*result);
+    if constexpr (std::is_same_v<T, Scene::Desc>)
+    {
+        std::ifstream input{file};
+        CHECK(input.is_open(), "failed to open scene '{}'", file.string());
+        T result;
+        Deserialize(json::parse(input), result);
+        return result;
+    }
+    else
+    {
+        auto result = rfl::json::load<T, rfl::SnakeCaseToPascalCase,
+            rfl::NoExtraFields>(file.string());
+        CHECK(result, "failed to load JSON '{}': {}", file.string(), result.error().what());
+        return std::move(*result);
+    }
 }
 
 template <class T>
 void save(const std::filesystem::path& file, const T& value)
 {
-    const std::string json = rfl::json::write<rfl::SnakeCaseToPascalCase>(
-        value, rfl::json::pretty);
+    const std::string json = [&]
+    {
+        if constexpr (std::is_same_v<T, Scene::Desc>)
+            return Serialize(value).dump(4);
+        else
+            return rfl::json::write<rfl::SnakeCaseToPascalCase>(value, rfl::json::pretty);
+    }();
     if (file.has_parent_path())
     {
         std::filesystem::create_directories(file.parent_path());

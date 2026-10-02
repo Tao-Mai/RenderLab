@@ -2,10 +2,8 @@
 
 #include "asset/AssetDescManager.h"
 #include "asset/AssetDataManager.h"
-#include "ecs/SceneManager.h"
-#include "ecs/system/CameraSystem.h"
-#include "ecs/system/FreeFlyMoveSystem.h"
-#include "ecs/system/CharacterMoveSystem.h"
+#include "scene/SceneManager.h"
+#include "scene/component/CameraComponent.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "editor/Editor.h"
@@ -35,9 +33,6 @@ void Engine::init()
     ctx.assetDescManager = new AssetDescManager();
     ctx.assetDataManager = new AssetDataManager();
     ctx.sceneManager = new SceneManager();
-    ctx.cameraSystem = new ecs::CameraSystem();
-    ctx.freeFlyMoveSystem = new ecs::FreeFlyMoveSystem();
-    ctx.characterMoveSystem = new ecs::CharacterMoveSystem();
     ctx.renderer = new Renderer();
     ctx.editor = new Editor();
 
@@ -45,10 +40,10 @@ void Engine::init()
     ctx.assetDataManager->init();
     ctx.window->init();
     ctx.inputManager->init();
+    RegisterSceneTypes();
     ctx.assetDescManager->init();
     inputMethod.activateEnglish();
     ctx.sceneManager->load(ctx.config->initialScene());
-    ctx.cameraSystem->reset();
     ctx.renderer->init();
     ctx.renderer->loadScene();
     ctx.editor->init();
@@ -90,17 +85,15 @@ void Engine::mainLoop()
             std::chrono::duration<float>(currentTime - previousTime).count();
         previousTime = currentTime;
 
-        bool sceneEdited = ctx.cameraSystem->tick(
-            ctx.cameraSystem->isNavigationActive() || !ctx.editor->wantsInput());
-        sceneEdited |= ctx.freeFlyMoveSystem->tick(deltaTime);
-        sceneEdited |= ctx.characterMoveSystem->tick(deltaTime);
-        if (sceneEdited) ctx.editor->markDirty();
+        auto& camera = ctx.sceneManager->editorCamera().camera();
+        camera.setInputEnabled(camera.isNavigationActive() || !ctx.editor->wantsInput());
+        if (ctx.sceneManager->tick(deltaTime)) ctx.editor->markDirty();
 
         const auto extent = ctx.renderer->swapchainHandle().extent();
         const EditorFrameInput editorInput = ctx.editor->buildFrame(
-            *ctx.cameraSystem, deltaTime, extent.width, extent.height);
+            camera, deltaTime, extent.width, extent.height);
         const EditorFrameResult editorResult =
-            ctx.renderer->render(*ctx.cameraSystem, editorInput);
+            ctx.renderer->render(camera, editorInput);
         ctx.editor->applyPickResult(editorResult);
     }
 
@@ -129,24 +122,9 @@ void Engine::shutdown() noexcept
         delete ctx.renderer;
         ctx.renderer = nullptr;
     }
-    if (ctx.freeFlyMoveSystem != nullptr)
-    {
-        delete ctx.freeFlyMoveSystem;
-        ctx.freeFlyMoveSystem = nullptr;
-    }
-    if (ctx.characterMoveSystem != nullptr)
-    {
-        delete ctx.characterMoveSystem;
-        ctx.characterMoveSystem = nullptr;
-    }
-    if (ctx.cameraSystem != nullptr)
-    {
-        ctx.cameraSystem->reset();
-        delete ctx.cameraSystem;
-        ctx.cameraSystem = nullptr;
-    }
     if (ctx.sceneManager != nullptr)
     {
+        ctx.sceneManager->reset();
         delete ctx.sceneManager;
         ctx.sceneManager = nullptr;
     }

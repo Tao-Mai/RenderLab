@@ -4,11 +4,13 @@
 #include "asset/JsonIo.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
-#include "ecs/component/LightComponent.h"
-#include "ecs/component/RenderComponent.h"
-#include "ecs/component/TransformComponent.h"
+#include "asset/Serializer.h"
+#include "scene/component/LightComponent.h"
+#include "scene/component/RenderComponent.h"
+#include "scene/component/TransformComponent.h"
 
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -49,7 +51,10 @@ TEST(AssetIDTest, LoadsRendererBrdfLutBinding)
 {
     const auto file = std::filesystem::path{RENDERLAB_SOURCE_DIR} /
         "config" / "config.json";
-    const AppConfig config = asset_json::load<AppConfig>(file);
+    std::ifstream input{file};
+    ASSERT_TRUE(input.is_open());
+    AppConfig config;
+    Deserialize(json::parse(input), config);
 
     EXPECT_EQ(config.renderer.brdfLut.textureID, Texture::ID{"lut_ggx"});
     EXPECT_EQ(config.renderer.brdfLut.samplerID, BuiltinAssets::Sampler::linearClamp);
@@ -175,6 +180,7 @@ TEST(AssetIDTest, LoadsEnvironmentTextureBindings)
 
 TEST(AssetIDTest, RoundTripsTypedIdsInsideSceneComponents)
 {
+    RegisterSceneTypes();
     const auto file = std::filesystem::path{RENDERLAB_SOURCE_DIR} /
         "assets" / Scene::dir / "default.json";
     ASSERT_TRUE(std::filesystem::is_regular_file(file));
@@ -182,26 +188,22 @@ TEST(AssetIDTest, RoundTripsTypedIdsInsideSceneComponents)
     const Scene::Desc scene = asset_json::load<Scene::Desc>(file);
     ASSERT_EQ(scene.id, Scene::ID{"default"});
 
+    std::ifstream input{file};
+    EXPECT_EQ(Serialize(scene), json::parse(input));
+
     bool foundRender = false;
-    for (const Scene::Desc::Object& object : scene.objects)
+    for (const auto& actor : scene.actors)
     {
-        if (const auto entry = object.components.find("Render");
-            entry != object.components.end())
+        if (const auto* render = actor->getComponent<RenderComponent>())
         {
-            const ecs::RenderComponent* render = entry->second.try_cast<ecs::RenderComponent>();
-            ASSERT_NE(render, nullptr);
             EXPECT_FALSE(render->meshId.empty());
             foundRender = true;
         }
     }
     EXPECT_TRUE(foundRender);
 
-    const std::string serialized =
-        rfl::json::write<rfl::SnakeCaseToPascalCase>(scene);
-    const auto parsed = rfl::json::read<Scene::Desc,
-                                        rfl::SnakeCaseToPascalCase, rfl::NoExtraFields>(serialized);
-    ASSERT_TRUE(parsed);
-    EXPECT_EQ(parsed->id, scene.id);
-    EXPECT_EQ(parsed->environment.environmentMap,
-              scene.environment.environmentMap);
+    Scene::Desc parsed;
+    Deserialize(Serialize(scene), parsed);
+    EXPECT_EQ(parsed.id, scene.id);
+    EXPECT_EQ(parsed.environment.environmentMap, scene.environment.environmentMap);
 }

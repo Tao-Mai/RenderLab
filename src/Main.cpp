@@ -5,6 +5,7 @@
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
+#include "core/Reflect.h"
 
 #include <filesystem>
 #include <string>
@@ -13,6 +14,7 @@
 int main(int argc, char** argv)
 {
     logger::init(argv[0]);
+    RegisterSceneTypes();
     if (argc > 1)
     {
         CHECK(argc == 3,

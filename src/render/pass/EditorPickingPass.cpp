@@ -1,8 +1,8 @@
 #include "render/pass/EditorPickingPass.h"
 
 #include "core/Logger.h"
-#include "ecs/component/LightComponent.h"
-#include "ecs/component/TransformComponent.h"
+#include "scene/component/LightComponent.h"
+#include "scene/component/TransformComponent.h"
 #include "render/Renderer.h"
 #include "render/pass/RenderGraph.h"
 #include "render/pass/ScenePass.h"
@@ -148,14 +148,14 @@ void EditorPickingPass::executePass(RenderGraph& graph) const
 
     for (const SceneRenderItem& item : graph.scene().renderItems())
     {
-        const auto* transform = graph.registry().try_get<ecs::TransformComponent>(item.entity);
+        const auto* transform = item.actor->getComponent<TransformComponent>();
         CHECK(transform != nullptr, "picking object is missing Transform");
         draw(commandBuffer, *item.mesh, transform->matrix(), item.selectionId);
     }
     for (const LightRenderItem& item : graph.scene().lightRenderItems())
     {
-        const auto* light = graph.registry().try_get<ecs::LightComponent>(item.entity);
-        const auto* transform = graph.registry().try_get<ecs::TransformComponent>(item.entity);
+        const auto* light = item.actor->getComponent<LightComponent>();
+        const auto* transform = item.actor->getComponent<TransformComponent>();
         CHECK(light != nullptr && transform != nullptr,
             "picking light requires Light and Transform components");
         graph.scene().lightMarkers().recordPicking(commandBuffer,

@@ -15,7 +15,7 @@
 #include <vulkan/vulkan.h>
 
 struct GLFWwindow;
-namespace ecs { struct TransformComponent; }
+struct TransformComponent;
 
 class EditorUI
 {
@@ -24,6 +24,7 @@ public:
     {
         bool edited = false;
         bool environmentChanged = false;
+        bool resourcesChanged = false;
     };
 
     EditorUI() = default;
@@ -44,13 +45,13 @@ public:
         uint32_t         imageCount);
     void beginFrame(float deltaTime);
     [[nodiscard]] bool drawGizmo(
-        ecs::TransformComponent&  transform,
+        TransformComponent&  transform,
         const glm::mat4& view,
         const glm::mat4& projection,
         bool             enableShortcuts);
     [[nodiscard]] InspectorResult drawInspector(
         Scene::Desc& scene,
-        Scene::Desc::Object* object,
+        Actor* object,
         bool             dirty);
     void endFrame();
     void render(VkCommandBuffer commandBuffer) const;

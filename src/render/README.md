@@ -17,6 +17,8 @@
 
 Renderer 持有上述模块和 `GpuScene`。Graph 持有 Shadow、Scene、EditorPicking、EditorUi 节点。Skybox 的 ShaderHandle、Pipeline/Layout 引用和命令录制统一放在 ScenePass 内部。Pipeline 由 PipelineManager 缓存，Pass 通过自己的 input slot 获取图资源。
 
+SceneManager 持有 Actor 和 Component。GpuScene 的 mesh/light 条目引用 Actor；各 Pass 直接访问 Actor 的 Transform、Render、Light 组件。Renderer 接收 CameraComponent 提供的视图，不持有独立相机 System。
+
 当前 `maxFramesInFlight` 为 2。Graph 为每个在途帧分配独立的 Scene 深度图、Shadow cubemap、拾取图和 readback Buffer。交换链图像和资产环境纹理作为外部资源导入，Graph 借用句柄并跟踪状态。FrameContext 的 View/Light UBO 和灯光 SSBO 由 Pass 直接引用，不登记到 Graph slot；Renderer 在录制前更新当前帧的数据。Mesh/Material 的 vertex/index buffer、材质 UBO 和 base color image 由 GpuScene 直接引用，GPU 对象由 RenderResourceManager 创建和持有。它们不登记到 Graph slot，上传与可供绘制使用的状态由资产 GPU 资源实现负责。
 
 ## 引擎预设接口
@@ -55,7 +57,7 @@ GpuMaterial 根据 alpha mode 选择 Opaque、AlphaTest 或 Transparent。Materi
 
 ## 初始化与加载场景
 
-Renderer init 依次初始化 device、swapchain、各 Manager、FrameContext、RenderResourceManager 和 Graph。Graph init 从 `config/config.json` 的 Renderer.BrdfLut 加载线性 2D LUT，初始化各 Pass，并注册 slot。
+Renderer init 依次初始化 device、swapchain、各 Manager、FrameContext、RenderResourceManager 和 Graph。Graph init 从 `config/config.json` 的 renderer.brdfLut 加载线性 2D LUT，初始化各 Pass，并注册 slot。
 
 Renderer loadScene 等待 GPU 空闲，GpuScene 加载渲染项并建立对资产 GPU 对象的引用，ScenePass 更新每帧 Scene Set 中的环境纹理绑定，随后 Graph build 编译依赖、合并 usage、分配内部资源、更新 Shadow descriptor。具体材质 Pipeline 在首次绘制时创建并缓存。
 
