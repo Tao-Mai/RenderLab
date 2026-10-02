@@ -1,38 +1,28 @@
 #pragma once
 
 #include "core/Reflect.h"
-#include "ecs/Component.h"
-
-#include <glm/vec3.hpp>
+#include "ecs/component/Component.h"
 
 namespace ecs
 {
-struct Camera
+struct CameraComponent
 {
-    glm::vec3 position{0.0f, 1.5f, 6.0f};
-    glm::vec3 worldUp{0.0f, 1.0f, 0.0f};
     float yaw = -90.0f;
     float pitch = 0.0f;
     float fieldOfView = 45.0f;
     float nearPlane = 0.1f;
     float farPlane = 100.0f;
-    float movementSpeed = 3.0f;
-    float sprintMultiplier = 3.0f;
     float mouseSensitivity = 0.12f;
 };
 
-static_assert(Component<Camera>);
+static_assert(Component<CameraComponent>);
 
 REFLECT(
-    Camera,
-    position,
-    worldUp,
+    CameraComponent, Camera,
     yaw,
     pitch,
     fieldOfView,
     nearPlane,
     farPlane,
-    movementSpeed,
-    sprintMultiplier,
     mouseSensitivity);
 }

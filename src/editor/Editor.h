@@ -3,8 +3,10 @@
 #include "editor/EditorUi.h"
 #include "render/Renderer.h"
 
-class Camera;
-class GpuScene;
+namespace ecs
+{
+class CameraSystem;
+}
 
 class Editor
 {
@@ -20,17 +22,18 @@ public:
     void shutdown() noexcept;
 
     [[nodiscard]] EditorFrameInput buildFrame(
-        const Camera& camera,
+        const ecs::CameraSystem& camera,
         float deltaTime,
         uint32_t swapchainWidth,
         uint32_t swapchainHeight);
-    void applyPickResult(const EditorFrameResult& result, const GpuScene& scene);
+    void applyPickResult(const EditorFrameResult& result);
+    void markDirty();
 
     [[nodiscard]] bool wantsInput() const;
 
 private:
     EditorUI ui;
-    Scene::Desc::Object* selectedObject = nullptr;
+    uint32_t selectedId = 0;
     bool dirty = false;
 
     void saveScene();

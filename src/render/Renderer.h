@@ -19,7 +19,10 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_raii.hpp>
 
-class Camera;
+namespace ecs
+{
+class CameraSystem;
+}
 
 struct EditorFrameInput
 {
@@ -48,8 +51,8 @@ public:
     Renderer& operator=(const Renderer&) = delete;
 
     void init();
-    void loadScene(Scene::Desc& scene);
-    EditorFrameResult render(const Camera& camera, const EditorFrameInput& editor);
+    void loadScene();
+    EditorFrameResult render(const ecs::CameraSystem& camera, const EditorFrameInput& editor);
     void waitIdle();
     void shutdown() noexcept;
 
@@ -73,8 +76,8 @@ private:
     glm::vec4         iblParameters{0.0f};
 
     void initVulkan();
-    void updateFrameData(const Camera& camera, const EditorFrameInput& editor);
+    void updateFrameData(const ecs::CameraSystem& camera, const EditorFrameInput& editor);
     [[nodiscard]] FrameContext& currentFrame();
     void recreateSwapchain();
-    EditorFrameResult drawFrame(const Camera& camera, const EditorFrameInput& editor);
+    EditorFrameResult drawFrame(const ecs::CameraSystem& camera, const EditorFrameInput& editor);
 };

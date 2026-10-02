@@ -4,9 +4,9 @@
 #include "asset/JsonIo.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
-#include "ecs/Light.h"
-#include "ecs/Render.h"
-#include "ecs/Transform.h"
+#include "ecs/component/LightComponent.h"
+#include "ecs/component/RenderComponent.h"
+#include "ecs/component/TransformComponent.h"
 
 #include <filesystem>
 #include <string>
@@ -188,7 +188,7 @@ TEST(AssetIDTest, RoundTripsTypedIdsInsideSceneComponents)
         if (const auto entry = object.components.find("Render");
             entry != object.components.end())
         {
-            const ecs::Render* render = entry->second.try_cast<ecs::Render>();
+            const ecs::RenderComponent* render = entry->second.try_cast<ecs::RenderComponent>();
             ASSERT_NE(render, nullptr);
             EXPECT_FALSE(render->meshId.empty());
             foundRender = true;

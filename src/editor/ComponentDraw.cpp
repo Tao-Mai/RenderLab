@@ -5,9 +5,9 @@
 #include "asset/ApplyOptionalFields.h"
 #include "core/Context.h"
 #include "core/Logger.h"
-#include "ecs/Light.h"
-#include "ecs/Render.h"
-#include "ecs/Transform.h"
+#include "ecs/component/LightComponent.h"
+#include "ecs/component/RenderComponent.h"
+#include "ecs/component/TransformComponent.h"
 
 #include <algorithm>
 #include <array>
@@ -24,7 +24,7 @@
 
 namespace
 {
-[[nodiscard]] bool drawTransform(ecs::Transform& transform)
+[[nodiscard]] bool drawTransform(ecs::TransformComponent& transform)
 {
     bool edited = ImGui::DragFloat3("Position", glm::value_ptr(transform.position), 0.05f);
     glm::vec3 rotationEulerDegrees = transform.rotationEulerDegrees();
@@ -47,7 +47,7 @@ namespace
     return edited;
 }
 
-[[nodiscard]] bool drawLight(ecs::Light& light)
+[[nodiscard]] bool drawLight(ecs::LightComponent& light)
 {
     bool edited = false;
     static constexpr const char* typeNames[] = {
@@ -59,7 +59,7 @@ namespace
     int type = static_cast<int>(light.type);
     if (ImGui::Combo("Type", &type, typeNames, IM_ARRAYSIZE(typeNames)))
     {
-        light.type = static_cast<ecs::Light::Type>(type);
+        light.type = static_cast<ecs::LightComponent::Type>(type);
         edited = true;
     }
 
@@ -70,7 +70,7 @@ namespace
         edited = true;
     }
 
-    if (light.type == ecs::Light::Type::Point || light.type == ecs::Light::Type::Spot)
+    if (light.type == ecs::LightComponent::Type::Point || light.type == ecs::LightComponent::Type::Spot)
     {
         if (ImGui::DragFloat("Range", &light.range, 0.1f, 0.01f, 100000.0f))
         {
@@ -78,7 +78,7 @@ namespace
             edited = true;
         }
     }
-    if (light.type == ecs::Light::Type::Spot)
+    if (light.type == ecs::LightComponent::Type::Spot)
     {
         float innerAngle = glm::degrees(std::acos(std::clamp(light.cosInner, -1.0f, 1.0f)));
         float outerAngle = glm::degrees(std::acos(std::clamp(light.cosOuter, -1.0f, 1.0f)));
@@ -95,7 +95,7 @@ namespace
             edited = true;
         }
     }
-    if (light.type == ecs::Light::Type::RectArea)
+    if (light.type == ecs::LightComponent::Type::RectArea)
     {
         if (ImGui::DragFloat2(
                 "Area Size", glm::value_ptr(light.areaSize), 0.05f, 0.01f, 100000.0f))
@@ -221,7 +221,7 @@ void drawMaterial(const Material::ID& materialId)
     (void)drawMaterialFields(material, false);
 }
 
-[[nodiscard]] bool drawRender(ecs::Render& render)
+[[nodiscard]] bool drawRender(ecs::RenderComponent& render)
 {
     bool edited = editAssetId("Mesh", render.meshId);
 
@@ -447,19 +447,19 @@ bool drawComponent(std::string_view typeName, entt::meta_any& component)
 
     if (typeName == "Transform")
     {
-        auto* transform = component.try_cast<ecs::Transform>();
+        auto* transform = component.try_cast<ecs::TransformComponent>();
         CHECK(transform != nullptr, "component '{}' is not Transform", typeName);
         return drawTransform(*transform);
     }
     if (typeName == "Light")
     {
-        auto* light = component.try_cast<ecs::Light>();
+        auto* light = component.try_cast<ecs::LightComponent>();
         CHECK(light != nullptr, "component '{}' is not Light", typeName);
         return drawLight(*light);
     }
     if (typeName == "Render")
     {
-        auto* render = component.try_cast<ecs::Render>();
+        auto* render = component.try_cast<ecs::RenderComponent>();
         CHECK(render != nullptr, "component '{}' is not Render", typeName);
         return drawRender(*render);
     }

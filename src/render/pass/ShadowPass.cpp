@@ -1,8 +1,8 @@
 #include "render/pass/ShadowPass.h"
 
 #include "core/Logger.h"
-#include "ecs/Light.h"
-#include "ecs/Transform.h"
+#include "ecs/component/LightComponent.h"
+#include "ecs/component/TransformComponent.h"
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/pass/RenderGraph.h"
@@ -121,7 +121,7 @@ void ShadowPass::executePass(RenderGraph& graph) const
     // The first SSBO element is the scene's primary light, matching shadow.slang.
     const LightData* light = lights.empty() ? nullptr : &lights.front();
     const bool castShadow = light != nullptr && light->flags.y != 0 && light->flags.z != 0 &&
-        light->flags.x == static_cast<uint32_t>(ecs::Light::Type::Point);
+        light->flags.x == static_cast<uint32_t>(ecs::LightComponent::Type::Point);
     glm::mat4 projection{1.0f};
     if (castShadow)
     {
@@ -165,8 +165,7 @@ void ShadowPass::executePass(RenderGraph& graph) const
             const glm::mat4 viewProjection = projection * view;
             for (const SceneRenderItem& item : graph.scene().renderItems())
             {
-                const auto* objectTransform = item.object->components.at("Transform")
-                    .try_cast<ecs::Transform>();
+                const auto* objectTransform = graph.registry().try_get<ecs::TransformComponent>(item.entity);
                 CHECK(objectTransform != nullptr, "shadow caster is missing Transform");
 
                 const ShadowPushConstants push{

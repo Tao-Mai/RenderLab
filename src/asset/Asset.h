@@ -2,7 +2,6 @@
 
 #include "asset/AssetID.h"
 #include "asset/ImageFormat.h"
-#include "ecs/Camera.h"
 
 #include <concepts>
 #include <cstdint>
@@ -233,12 +232,12 @@ struct Scene : Asset
         };
 
         ID                  id;
-        ecs::Camera         camera;
         std::vector<Object> objects;
 
         struct Environment
         {
             std::optional<EnvironmentMap::ID> environmentMap;
+            glm::vec3 up{0.0f, 1.0f, 0.0f};
         } environment;
     };
 };

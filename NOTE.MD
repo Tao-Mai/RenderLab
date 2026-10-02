@@ -24,5 +24,7 @@ tick时
 2. 遍历hold command，对应input set为press的则置位
 
 
-
+ecs
+1. 不做成引擎了，不考虑怎么暴露API，因为ecs不好做
+2. 作为一个playground，自己写死所有逻辑
 

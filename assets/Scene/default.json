@@ -1,26 +1,41 @@
 {
     "Id": "default",
-    "Camera": {
-        "Position": [
-            -10.241006851196289,
-            0.36024773120880127,
-            -8.894845008850098
-        ],
-        "WorldUp": [
-            0.0,
-            1.0,
-            0.0
-        ],
-        "Yaw": 38.880496978759766,
-        "Pitch": -15.680037498474121,
-        "FieldOfView": 45.0,
-        "NearPlane": 0.10000000149011612,
-        "FarPlane": 100.0,
-        "MovementSpeed": 3.0,
-        "SprintMultiplier": 3.0,
-        "MouseSensitivity": 0.11999999731779099
-    },
     "Objects": [
+        {
+            "Name": "Editor Camera",
+            "Components": {
+                "Transform": {
+                    "Position": [
+                        -10.241006851196289,
+                        0.36024773120880127,
+                        -8.894845008850098
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ],
+                    "Scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                },
+                "Camera": {
+                    "Yaw": 38.880496978759766,
+                    "Pitch": -15.680037498474121,
+                    "FieldOfView": 45.0,
+                    "NearPlane": 0.10000000149011612,
+                    "FarPlane": 100.0,
+                    "MouseSensitivity": 0.11999999731779099
+                },
+                "FreeFlyMove": {
+                    "Speed": 3.0,
+                    "SprintMultiplier": 3.0
+                }
+            }
+        },
         {
             "Name": "Point Light",
             "Components": {
@@ -142,6 +157,11 @@
         }
     ],
     "Environment": {
-        "EnvironmentMap": "newport_loft"
+        "EnvironmentMap": "newport_loft",
+        "Up": [
+            0.0,
+            1.0,
+            0.0
+        ]
     }
 }

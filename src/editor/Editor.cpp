@@ -1,14 +1,13 @@
 #include "editor/Editor.h"
 
 #include "asset/Asset.h"
-#include "asset/AssetDescManager.h"
-#include "Camera.h"
+#include "ecs/SceneManager.h"
+#include "ecs/system/CameraSystem.h"
 #include "core/Context.h"
 #include "core/Logger.h"
-#include "ecs/Transform.h"
+#include "ecs/component/TransformComponent.h"
 #include "render/device/VulkanContext.h"
 #include "render/present/Swapchain.h"
-#include "render/scene/GpuScene.h"
 #include "core/Window.h"
 
 #include <algorithm>
@@ -37,7 +36,7 @@ void Editor::init()
 void Editor::shutdown() noexcept
 {
     ui.shutdown();
-    selectedObject = nullptr;
+    selectedId = 0;
     dirty = false;
 }
 
@@ -50,29 +49,18 @@ void Editor::refreshUi()
 void Editor::saveScene()
 {
     Context& ctx = context();
-    CHECK(ctx.scene != nullptr, "scene must exist before save");
-    CHECK(ctx.assetDescManager != nullptr, "assets must exist before save");
-    CHECK(ctx.camera != nullptr, "camera must exist before save");
-
-    ctx.scene->camera = ctx.camera->component();
-    ctx.assetDescManager->save<Scene>(*ctx.scene);
+    CHECK(ctx.sceneManager != nullptr, "SceneManager must exist before save");
+    ctx.sceneManager->save();
     dirty = false;
 }
 
 EditorFrameInput Editor::buildFrame(
-    const Camera& camera,
+    const ecs::CameraSystem& camera,
     float deltaTime,
     uint32_t swapchainWidth,
     uint32_t swapchainHeight)
 {
     ui.beginFrame(deltaTime);
-
-    const ecs::Camera& currentCamera = camera.component();
-    const ecs::Camera& savedCamera = context().scene->camera;
-    dirty |= glm::any(glm::notEqual(currentCamera.position, savedCamera.position)) ||
-        currentCamera.yaw != savedCamera.yaw ||
-        currentCamera.pitch != savedCamera.pitch ||
-        currentCamera.fieldOfView != savedCamera.fieldOfView;
 
     if (ui.saveRequested())
     {
@@ -82,6 +70,7 @@ EditorFrameInput Editor::buildFrame(
     const glm::mat4 view = camera.viewMatrix();
     const glm::mat4 projection = camera.projectionMatrix(ui.sceneAspectRatio());
     const bool enableGizmoShortcuts = !camera.isNavigationActive();
+    auto* selectedObject = context().sceneManager->findObject(selectedId);
 
     if (!camera.isFreeMovementActive() && selectedObject != nullptr)
     {
@@ -91,7 +80,7 @@ EditorFrameInput Editor::buildFrame(
             glm::mat4 gizmoProjection = projection;
             gizmoProjection[1][1] *= -1.0f;
             if (ui.drawGizmo(
-                    *transformIt->second.try_cast<ecs::Transform>(),
+                    *transformIt->second.try_cast<ecs::TransformComponent>(),
                     view,
                     gizmoProjection,
                     enableGizmoShortcuts))
@@ -129,30 +118,30 @@ EditorFrameInput Editor::buildFrame(
     }
 
     EditorUI::InspectorResult inspector = ui.drawInspector(
-        *context().scene, selectedObject, dirty);
+        context().sceneManager->scene(), selectedObject, dirty);
     if (inspector.edited)
     {
         dirty = true;
     }
     if (inspector.environmentChanged)
     {
-        context().renderer->loadScene(*context().scene);
+        context().renderer->loadScene();
     }
     ui.endFrame();
     return input;
 }
 
-void Editor::applyPickResult(const EditorFrameResult& result, const GpuScene& scene)
+void Editor::applyPickResult(const EditorFrameResult& result)
 {
     if (!result.hasPickResult)
     {
         return;
     }
 
-    selectedObject = result.pickedSelectionId == 0
-        ? nullptr
-        : scene.findObject(result.pickedSelectionId);
+    selectedId = result.pickedSelectionId;
 }
+
+void Editor::markDirty() { dirty = true; }
 
 bool Editor::wantsInput() const
 {

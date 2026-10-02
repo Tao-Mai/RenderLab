@@ -1,4 +1,4 @@
-#include "ecs/Transform.h"
+#include "ecs/component/TransformComponent.h"
 
 #include <algorithm>
 #include <cmath>
@@ -7,7 +7,7 @@
 
 namespace ecs
 {
-glm::vec3 Transform::rotationEulerDegrees() const
+glm::vec3 TransformComponent::rotationEulerDegrees() const
 {
     const glm::quat value = glm::normalize(rotation);
     const float sinXCosY = 2.0f * (value.w * value.x + value.y * value.z);
@@ -26,7 +26,7 @@ glm::vec3 Transform::rotationEulerDegrees() const
     });
 }
 
-void Transform::setRotationEulerDegrees(const glm::vec3& eulerDegrees)
+void TransformComponent::setRotationEulerDegrees(const glm::vec3& eulerDegrees)
 {
     const glm::vec3 radians = glm::radians(eulerDegrees);
     rotation = glm::normalize(
@@ -35,7 +35,7 @@ void Transform::setRotationEulerDegrees(const glm::vec3& eulerDegrees)
         glm::angleAxis(radians.x, glm::vec3{1.0f, 0.0f, 0.0f}));
 }
 
-glm::mat4 Transform::matrix() const
+glm::mat4 TransformComponent::matrix() const
 {
     glm::mat4 result = glm::translate(glm::mat4{1.0f}, position);
     result *= glm::mat4_cast(glm::normalize(rotation));

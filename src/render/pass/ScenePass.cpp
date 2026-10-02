@@ -9,9 +9,9 @@
 #include "asset/ApplyOptionalFields.h"
 #include "asset/BuiltinAssets.h"
 #include "core/Context.h"
-#include "ecs/Light.h"
-#include "ecs/Render.h"
-#include "ecs/Transform.h"
+#include "ecs/component/LightComponent.h"
+#include "ecs/component/RenderComponent.h"
+#include "ecs/component/TransformComponent.h"
 #include "render/pass/LightMarkers.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
@@ -266,9 +266,8 @@ void ScenePass::prepareRenderData(const FrameContext& frame)
     const auto& renderItems = graph->scene().renderItems();
     for (const SceneRenderItem& item : renderItems)
     {
-        const auto* render    = item.object->components.at("Render").try_cast<ecs::Render>();
-        const auto* transform =
-            item.object->components.at("Transform").try_cast<ecs::Transform>();
+        const auto* render = graph->registry().try_get<ecs::RenderComponent>(item.entity);
+        const auto* transform = graph->registry().try_get<ecs::TransformComponent>(item.entity);
         CHECK(render != nullptr && transform != nullptr,
               "SceneRenderItem is missing Render or Transform");
         const glm::vec3             offset          = transform->position - cameraPosition;
@@ -443,10 +442,8 @@ void ScenePass::executePass(RenderGraph& graph) const
 
         for (const LightRenderItem& item : lightRenderItems)
         {
-            const auto* light = item.object->components.at("Light").try_cast<
-                ecs::Light>();
-            const auto* transform =
-                item.object->components.at("Transform").try_cast<ecs::Transform>();
+            const auto* light = graph.registry().try_get<ecs::LightComponent>(item.entity);
+            const auto* transform = graph.registry().try_get<ecs::TransformComponent>(item.entity);
             CHECK(light != nullptr, "light item missing Light component");
             CHECK(transform != nullptr, "light item missing Transform component");
             lightMarkers.record(

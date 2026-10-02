@@ -2,7 +2,10 @@
 
 #include "asset/AssetDescManager.h"
 #include "asset/AssetDataManager.h"
-#include "Camera.h"
+#include "ecs/SceneManager.h"
+#include "ecs/system/CameraSystem.h"
+#include "ecs/system/FreeFlyMoveSystem.h"
+#include "ecs/system/CharacterMoveSystem.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "editor/Editor.h"
@@ -31,8 +34,10 @@ void Engine::init()
     ctx.inputManager = new InputManager();
     ctx.assetDescManager = new AssetDescManager();
     ctx.assetDataManager = new AssetDataManager();
-    ctx.scene = new Scene::Desc();
-    ctx.camera = new Camera();
+    ctx.sceneManager = new SceneManager();
+    ctx.cameraSystem = new ecs::CameraSystem();
+    ctx.freeFlyMoveSystem = new ecs::FreeFlyMoveSystem();
+    ctx.characterMoveSystem = new ecs::CharacterMoveSystem();
     ctx.renderer = new Renderer();
     ctx.editor = new Editor();
 
@@ -42,10 +47,10 @@ void Engine::init()
     ctx.inputManager->init();
     ctx.assetDescManager->init();
     inputMethod.activateEnglish();
-    *ctx.scene = ctx.assetDescManager->desc<Scene>(ctx.config->initialScene());
-    ctx.camera->configure(ctx.scene->camera);
+    ctx.sceneManager->load(ctx.config->initialScene());
+    ctx.cameraSystem->reset();
     ctx.renderer->init();
-    ctx.renderer->loadScene(*ctx.scene);
+    ctx.renderer->loadScene();
     ctx.editor->init();
     inited = true;
 }
@@ -85,17 +90,18 @@ void Engine::mainLoop()
             std::chrono::duration<float>(currentTime - previousTime).count();
         previousTime = currentTime;
 
-        ctx.camera->update(
-            *ctx.window,
-            deltaTime,
-            ctx.camera->isNavigationActive() || !ctx.editor->wantsInput());
+        bool sceneEdited = ctx.cameraSystem->tick(
+            ctx.cameraSystem->isNavigationActive() || !ctx.editor->wantsInput());
+        sceneEdited |= ctx.freeFlyMoveSystem->tick(deltaTime);
+        sceneEdited |= ctx.characterMoveSystem->tick(deltaTime);
+        if (sceneEdited) ctx.editor->markDirty();
 
         const auto extent = ctx.renderer->swapchainHandle().extent();
         const EditorFrameInput editorInput = ctx.editor->buildFrame(
-            *ctx.camera, deltaTime, extent.width, extent.height);
+            *ctx.cameraSystem, deltaTime, extent.width, extent.height);
         const EditorFrameResult editorResult =
-            ctx.renderer->render(*ctx.camera, editorInput);
-        ctx.editor->applyPickResult(editorResult, ctx.renderer->gpuScene());
+            ctx.renderer->render(*ctx.cameraSystem, editorInput);
+        ctx.editor->applyPickResult(editorResult);
     }
 
     ctx.renderer->waitIdle();
@@ -123,15 +129,26 @@ void Engine::shutdown() noexcept
         delete ctx.renderer;
         ctx.renderer = nullptr;
     }
-    if (ctx.camera != nullptr)
+    if (ctx.freeFlyMoveSystem != nullptr)
     {
-        delete ctx.camera;
-        ctx.camera = nullptr;
+        delete ctx.freeFlyMoveSystem;
+        ctx.freeFlyMoveSystem = nullptr;
     }
-    if (ctx.scene != nullptr)
+    if (ctx.characterMoveSystem != nullptr)
     {
-        delete ctx.scene;
-        ctx.scene = nullptr;
+        delete ctx.characterMoveSystem;
+        ctx.characterMoveSystem = nullptr;
+    }
+    if (ctx.cameraSystem != nullptr)
+    {
+        ctx.cameraSystem->reset();
+        delete ctx.cameraSystem;
+        ctx.cameraSystem = nullptr;
+    }
+    if (ctx.sceneManager != nullptr)
+    {
+        delete ctx.sceneManager;
+        ctx.sceneManager = nullptr;
     }
     if (ctx.assetDescManager != nullptr)
     {

@@ -15,7 +15,7 @@
 #include <vulkan/vulkan.h>
 
 struct GLFWwindow;
-namespace ecs { struct Transform; }
+namespace ecs { struct TransformComponent; }
 
 class EditorUI
 {
@@ -44,7 +44,7 @@ public:
         uint32_t         imageCount);
     void beginFrame(float deltaTime);
     [[nodiscard]] bool drawGizmo(
-        ecs::Transform&  transform,
+        ecs::TransformComponent&  transform,
         const glm::mat4& view,
         const glm::mat4& projection,
         bool             enableShortcuts);

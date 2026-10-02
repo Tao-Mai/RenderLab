@@ -2,10 +2,11 @@
 
 #include "asset/Asset.h"
 #include "asset/AssetDescManager.h"
-#include "ecs/Light.h"
-#include "ecs/Transform.h"
+#include "ecs/component/LightComponent.h"
+#include "ecs/component/TransformComponent.h"
+#include "ecs/SceneManager.h"
 
-#include "Camera.h"
+#include "ecs/system/CameraSystem.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -33,18 +34,20 @@ void Renderer::init()
     inited = true;
 }
 
-EditorFrameResult Renderer::render(const Camera& camera, const EditorFrameInput& editor)
+EditorFrameResult Renderer::render(const ecs::CameraSystem& camera, const EditorFrameInput& editor)
 {
     CHECK(inited, "Renderer must be initialized before render()");
     return drawFrame(camera, editor);
 }
 
-void Renderer::loadScene(Scene::Desc& targetScene)
+void Renderer::loadScene()
 {
     CHECK(inited, "Renderer must be initialized before loading a scene");
 
     waitIdle();
-    scene.load(targetScene, resources);
+    CHECK(context().sceneManager != nullptr, "Renderer requires SceneManager");
+    const auto& targetScene = context().sceneManager->scene();
+    scene.load(resources);
     graph.bindSceneTextures(targetScene);
     iblParameters = {};
     if (targetScene.environment.environmentMap)
@@ -155,7 +158,7 @@ void Renderer::recreateSwapchain()
     context().editor->refreshUi();
 }
 
-void Renderer::updateFrameData(const Camera& camera, const EditorFrameInput& editor)
+void Renderer::updateFrameData(const ecs::CameraSystem& camera, const EditorFrameInput& editor)
 {
     const glm::mat4 viewProjection = camera.projectionMatrix(editor.aspectRatio) * camera.viewMatrix();
     const ViewUniforms view{
@@ -170,8 +173,8 @@ void Renderer::updateFrameData(const Camera& camera, const EditorFrameInput& edi
     lights.reserve(lightItems.size());
     for (const LightRenderItem& item : lightItems)
     {
-        const auto* light = item.object->components.at("Light").try_cast<ecs::Light>();
-        const auto* transform = item.object->components.at("Transform").try_cast<ecs::Transform>();
+        const auto* light = context().sceneManager->registry().try_get<ecs::LightComponent>(item.entity);
+        const auto* transform = context().sceneManager->registry().try_get<ecs::TransformComponent>(item.entity);
         CHECK(light != nullptr && transform != nullptr, "light requires Light and Transform components");
 
         const glm::vec3 direction = glm::normalize(transform->rotation * glm::vec3{0.0f, 0.0f, -1.0f});
@@ -191,7 +194,7 @@ void Renderer::updateFrameData(const Camera& camera, const EditorFrameInput& edi
     currentFrame().updateFrameData(view, lighting, lights);
 }
 
-EditorFrameResult Renderer::drawFrame(const Camera& camera, const EditorFrameInput& editor)
+EditorFrameResult Renderer::drawFrame(const ecs::CameraSystem& camera, const EditorFrameInput& editor)
 {
     const vk::Fence         drawFence               = currentFrame().drawFenceHandle();
     const vk::Semaphore     imageAvailableSemaphore = currentFrame().imageAvailableSemaphore();

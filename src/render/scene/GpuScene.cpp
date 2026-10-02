@@ -1,28 +1,34 @@
 #include "render/scene/GpuScene.h"
 
 #include "asset/Asset.h"
-#include "ecs/Render.h"
+#include "core/Context.h"
+#include "core/Logger.h"
+#include "ecs/SceneManager.h"
+#include "ecs/component/LightComponent.h"
+#include "ecs/component/RenderComponent.h"
 #include "render/resource/RenderResourceManager.h"
 
-void GpuScene::load(Scene::Desc& scene, RenderResourceManager& resources)
+void GpuScene::load(RenderResourceManager& resources)
 {
     reset();
 
-    uint32_t nextSelectionId = 1;
-    for (Scene::Desc::Object& object : scene.objects)
+    CHECK(context().sceneManager != nullptr, "GpuScene requires SceneManager");
+    const auto& manager = *context().sceneManager;
+    const auto& registry = manager.registry();
+    for (const entt::entity entity : manager.entities())
     {
-        if (object.components.contains("Render"))
+        const uint32_t selectionId = SceneManager::selectionId(entity);
+        if (const auto* render = registry.try_get<ecs::RenderComponent>(entity))
         {
-            const auto& render = *object.components.at("Render").try_cast<ecs::Render>();
-            items.push_back({&resources.mesh(render.meshId), &object, nextSelectionId++});
+            items.push_back({&resources.mesh(render->meshId), entity, selectionId});
         }
-        if (object.components.contains("Light"))
+        if (registry.all_of<ecs::LightComponent>(entity))
         {
             if (lights.empty())
             {
                 markers.init(resources);
             }
-            lights.push_back({&object, nextSelectionId++});
+            lights.push_back({entity, selectionId});
         }
     }
 }
@@ -47,23 +53,4 @@ const std::vector<LightRenderItem>& GpuScene::lightRenderItems() const
 const LightMarkers& GpuScene::lightMarkers() const
 {
     return markers;
-}
-
-Scene::Desc::Object* GpuScene::findObject(uint32_t selectionId) const
-{
-    for (const SceneRenderItem& item : items)
-    {
-        if (item.selectionId == selectionId)
-        {
-            return item.object;
-        }
-    }
-    for (const LightRenderItem& item : lights)
-    {
-        if (item.selectionId == selectionId)
-        {
-            return item.object;
-        }
-    }
-    return nullptr;
 }

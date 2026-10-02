@@ -1,32 +1,32 @@
 #pragma once
 
-#include "ecs/Camera.h"
+#include "ecs/component/CameraComponent.h"
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
-class Window;
-
-class Camera
+namespace ecs
 {
-  public:
-    void configure(const ecs::Camera& settings);
-    void update(Window& window, float deltaTime, bool allowModeToggle);
+class CameraSystem
+{
+public:
+    void reset();
+    [[nodiscard]] bool tick(bool allowModeToggle);
 
     [[nodiscard]] bool isFreeMovementActive() const;
     [[nodiscard]] bool isNavigationActive() const;
     [[nodiscard]] const glm::vec3& worldPosition() const;
+    [[nodiscard]] glm::vec3 forward() const;
+    [[nodiscard]] glm::vec3 right() const;
+    [[nodiscard]] glm::vec3 up() const;
     [[nodiscard]] glm::mat4 viewMatrix() const;
     [[nodiscard]] glm::mat4 projectionMatrix(float aspectRatio) const;
-    [[nodiscard]] ecs::Camera& component() noexcept;
-    [[nodiscard]] const ecs::Camera& component() const noexcept;
+    [[nodiscard]] const CameraComponent& component() const;
 
-  private:
-    ecs::Camera data;
+private:
     bool looking = false;
     bool freeMovement = false;
     double previousMouseX = 0.0;
     double previousMouseY = 0.0;
-
-    [[nodiscard]] glm::vec3 forward() const;
 };
+}

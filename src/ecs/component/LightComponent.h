@@ -1,14 +1,14 @@
 #pragma once
 
 #include "core/Reflect.h"
-#include "ecs/Component.h"
+#include "ecs/component/Component.h"
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
 namespace ecs
 {
-struct Light
+struct LightComponent
 {
     enum class Type
     {
@@ -29,12 +29,12 @@ struct Light
     bool castShadow = false;
 };
 
-static_assert(Component<Light>);
+static_assert(Component<LightComponent>);
 
-REFLECT_ENUM(Light::Type, LightType, Point, Directional, RectArea, Spot);
+REFLECT_ENUM(LightComponent::Type, LightType, Point, Directional, RectArea, Spot);
 
 REFLECT(
-    Light,
+    LightComponent, Light,
     type,
     color,
     intensity,

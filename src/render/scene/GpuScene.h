@@ -6,33 +6,32 @@
 
 #include <cstdint>
 #include <vector>
+#include <entt/entity/entity.hpp>
 
 class RenderResourceManager;
 
 struct SceneRenderItem
 {
     GpuMesh*              mesh        = nullptr;
-    Scene::Desc::Object*  object      = nullptr;
+    entt::entity          entity      = entt::null;
     uint32_t              selectionId = 0;
 };
 
 struct LightRenderItem
 {
-    Scene::Desc::Object* object      = nullptr;
+    entt::entity        entity      = entt::null;
     uint32_t             selectionId = 0;
 };
 
 class GpuScene
 {
 public:
-    void load(Scene::Desc& scene, RenderResourceManager& resources);
+    void load(RenderResourceManager& resources);
     void reset() noexcept;
 
     [[nodiscard]] const std::vector<SceneRenderItem>& renderItems() const;
     [[nodiscard]] const std::vector<LightRenderItem>& lightRenderItems() const;
     [[nodiscard]] const LightMarkers&                 lightMarkers() const;
-
-    [[nodiscard]] Scene::Desc::Object* findObject(uint32_t selectionId) const;
 
 private:
     std::vector<SceneRenderItem> items;

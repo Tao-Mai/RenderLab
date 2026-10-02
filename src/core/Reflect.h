@@ -60,11 +60,11 @@
         Type,                                                                                  \
         __VA_ARGS__)
 
-// Register EnTT meta type + data members. Safe in headers via inline init-once variable.
-#define REFLECT(Type, ...)                                                                     \
+// Register a type under an explicit reflection name, independently of its C++ name.
+#define REFLECT(Type, Name, ...)                                                               \
     inline const bool reflect_##Type = []() noexcept {                                         \
         (void)(entt::meta_factory<Type>{}                                                      \
-                   .type(#Type) REFLECT_FOREACH(REFLECT_FIELD, Type, __VA_ARGS__));            \
+                   .type(#Name) REFLECT_FOREACH(REFLECT_FIELD, Type, __VA_ARGS__));            \
         return true;                                                                           \
     }()
 

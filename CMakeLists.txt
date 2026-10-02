@@ -159,8 +159,6 @@ add_custom_target(RenderLabShaders DEPENDS
 
 add_executable(RenderLab
         src/Main.cpp
-        src/Camera.cpp
-        src/Camera.h
         src/Engine.cpp
         src/Engine.h
         src/core/ConfigManager.cpp
@@ -174,12 +172,22 @@ add_executable(RenderLab
         src/core/Input.h
         src/core/InputManager.h
         src/core/InputManager.cpp
-        src/ecs/Component.h
-        src/ecs/Camera.h
-        src/ecs/Light.h
-        src/ecs/Render.h
-        src/ecs/Transform.cpp
-        src/ecs/Transform.h
+        src/ecs/component/Component.h
+        src/ecs/component/CameraComponent.h
+        src/ecs/component/LightComponent.h
+        src/ecs/component/RenderComponent.h
+        src/ecs/component/TransformComponent.cpp
+        src/ecs/component/TransformComponent.h
+        src/ecs/component/FreeFlyMoveComponent.h
+        src/ecs/component/CharacterMoveComponent.h
+        src/ecs/SceneManager.cpp
+        src/ecs/SceneManager.h
+        src/ecs/system/FreeFlyMoveSystem.cpp
+        src/ecs/system/FreeFlyMoveSystem.h
+        src/ecs/system/CharacterMoveSystem.cpp
+        src/ecs/system/CharacterMoveSystem.h
+        src/ecs/system/CameraSystem.cpp
+        src/ecs/system/CameraSystem.h
         src/editor/Editor.cpp
         src/editor/Editor.h
         src/editor/ComponentDraw.cpp

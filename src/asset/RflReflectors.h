@@ -3,6 +3,12 @@
 #include "asset/Asset.h"
 #include "core/Input.h"
 #include "core/Logger.h"
+#include "ecs/component/CameraComponent.h"
+#include "ecs/component/LightComponent.h"
+#include "ecs/component/FreeFlyMoveComponent.h"
+#include "ecs/component/CharacterMoveComponent.h"
+#include "ecs/component/RenderComponent.h"
+#include "ecs/component/TransformComponent.h"
 
 #include <array>
 #include <cstdint>

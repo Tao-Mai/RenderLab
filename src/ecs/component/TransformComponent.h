@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/Reflect.h"
-#include "ecs/Component.h"
+#include "ecs/component/Component.h"
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/mat4x4.hpp>
@@ -9,7 +9,7 @@
 
 namespace ecs
 {
-struct Transform
+struct TransformComponent
 {
     glm::vec3 position{0.0f};
     glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
@@ -20,7 +20,7 @@ struct Transform
     [[nodiscard]] glm::mat4 matrix() const;
 };
 
-static_assert(Component<Transform>);
+static_assert(Component<TransformComponent>);
 
-REFLECT(Transform, position, rotation, scale);
+REFLECT(TransformComponent, Transform, position, rotation, scale);
 }

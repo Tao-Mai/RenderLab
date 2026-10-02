@@ -3,6 +3,8 @@ add_executable(RenderLabTests
         LutGgxTest.cpp
         AssetDataManagerTest.cpp
         EnvironmentMapImportTest.cpp
+        SceneManagerTest.cpp
+        ${PROJECT_SOURCE_DIR}/src/ecs/SceneManager.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/AssetDataManager.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/AssetDescManager.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinMesh.cpp

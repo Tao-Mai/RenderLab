@@ -4,6 +4,7 @@
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
+#include "ecs/SceneManager.h"
 #include "render/Renderer.h"
 #include "render/device/Memory.h"
 #include "render/device/VkCheck.h"
@@ -412,6 +413,7 @@ ShaderManager& RenderGraph::shaders() const { return renderer->shaders; }
 RenderResourceManager& RenderGraph::assetResources() const { return renderer->resources; }
 FrameContext& RenderGraph::frameContext(uint32_t index) const { return renderer->frames.at(index); }
 const GpuScene& RenderGraph::scene() const { return renderer->scene; }
+const entt::registry& RenderGraph::registry() const { return context().sceneManager->registry(); }
 vk::Format RenderGraph::depthFormat() const { return sceneDepthFormat; }
 vk::Format RenderGraph::shadowFormat() const { return pointShadowFormat; }
 vk::raii::CommandBuffer& RenderGraph::commands() const { return frameContext(currentFrame).commandBufferHandle(); }

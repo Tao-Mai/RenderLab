@@ -6,7 +6,7 @@
 #include "core/Context.h"
 #include "core/InputManager.h"
 #include "core/Logger.h"
-#include "ecs/Transform.h"
+#include "ecs/component/TransformComponent.h"
 #include "editor/ComponentDraw.h"
 
 #include <algorithm>
@@ -122,7 +122,7 @@ namespace
         ImGui::InputScalar(label, ImGuiDataType_U32, &value, &step);
     }
 
-    void applyModelMatrix(ecs::Transform& transform, const glm::mat4& model)
+    void applyModelMatrix(ecs::TransformComponent& transform, const glm::mat4& model)
     {
         transform.position = glm::vec3{model[3]};
 
@@ -289,7 +289,7 @@ void EditorUI::beginFrame(float deltaTime)
 }
 
 bool EditorUI::drawGizmo(
-    ecs::Transform&transform,
+    ecs::TransformComponent&transform,
     const glm::mat4 &view,
     const glm::mat4 &projection,
     bool enableShortcuts)
