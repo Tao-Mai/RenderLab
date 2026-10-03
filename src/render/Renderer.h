@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/Debug.h"
+
 #include "editor/ViewportRect.h"
 #include "render/device/FrameContext.h"
 #include "render/RenderConfig.h"
@@ -59,7 +61,7 @@ public:
 
 private:
     friend class RenderGraph;
-    bool              inited = false;
+    DEBUG_ONLY(bool inited = false;)
     VulkanContext     vulkan;
     Swapchain         swapchain;
     ShaderManager     shaders;

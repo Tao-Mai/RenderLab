@@ -21,17 +21,15 @@
 
 Renderer::~Renderer()
 {
-    shutdown();
+    DCHECK(!inited);
 }
 
 void Renderer::init()
 {
-    if (inited)
-    {
-        return;
-    }
+    DCHECK(!inited);
+
     initVulkan();
-    inited = true;
+    DEBUG_EXEC(inited = true);
 }
 
 EditorFrameResult Renderer::render(const CameraComponent& camera, const EditorFrameInput& editor)
@@ -90,7 +88,7 @@ void Renderer::shutdown() noexcept
     vulkan.reset();
     frameIndex = 0;
     iblParameters = {};
-    inited     = false;
+    DEBUG_EXEC(inited = false);
 }
 
 VulkanContext& Renderer::vulkanContext()

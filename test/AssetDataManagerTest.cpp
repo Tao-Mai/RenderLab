@@ -30,6 +30,7 @@ struct ConfiguredData
 
     ~ConfiguredData()
     {
+        data.shutdown();
         context().config = nullptr;
         config.shutdown();
     }

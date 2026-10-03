@@ -43,6 +43,7 @@ struct ImportContext
     ~ImportContext()
     {
         manager.shutdown();
+        data.shutdown();
         config.shutdown();
         context().assetDataManager = nullptr;
         context().assetManager = nullptr;

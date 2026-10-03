@@ -11,7 +11,9 @@
 class AssetDataManager
 {
 public:
+    ~AssetDataManager();
     void init();
+    void shutdown() noexcept;
 
     [[nodiscard]] std::filesystem::path writeGeometry(
         const MeshAsset::ID& id, const MeshGeometry& mesh) const;

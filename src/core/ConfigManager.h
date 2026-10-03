@@ -2,6 +2,7 @@
 
 #include "asset/Asset.h"
 #include "core/Input.h"
+#include "core/Debug.h"
 
 #include <filesystem>
 #include <vector>
@@ -33,6 +34,7 @@ class ConfigManager
 {
 public:
     ConfigManager() = default;
+    ~ConfigManager();
 
     void init();
     void shutdown() noexcept;
@@ -43,7 +45,7 @@ public:
     [[nodiscard]] const RendererConfig& rendererConfig() const noexcept;
 
 private:
-    bool                  inited = false;
+    DEBUG_ONLY(bool inited = false;)
     std::filesystem::path file;
     std::filesystem::path configDir;
     AppConfig             data;

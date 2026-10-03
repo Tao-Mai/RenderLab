@@ -14,6 +14,11 @@
 
 #include <glm/glm.hpp>
 
+Editor::~Editor()
+{
+    DCHECK(!inited);
+}
+
 void Editor::init()
 {
     DCHECK(context().window);
@@ -31,6 +36,7 @@ void Editor::init()
         static_cast<VkFormat>(swapchain.surfaceFormat().format),
         swapchain.minImageCount(),
         swapchain.imageCount());
+    DEBUG_EXEC(inited = true);
 }
 
 void Editor::shutdown() noexcept
@@ -38,6 +44,7 @@ void Editor::shutdown() noexcept
     ui.shutdown();
     selectedId = 0;
     dirty = false;
+    DEBUG_EXEC(inited = false);
 }
 
 void Editor::refreshUi()

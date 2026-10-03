@@ -1,6 +1,7 @@
 add_executable(RenderLabTests
         AssetIDTest.cpp
         ConfigSerializationTest.cpp
+        DebugMacrosTest.cpp
         InputManagerTest.cpp
         PartialSerializationTest.cpp
         ComponentDrawTest.cpp

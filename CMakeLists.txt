@@ -219,6 +219,7 @@ add_executable(RenderLab
         src/core/Context.cpp
         src/core/Context.h
         src/core/Logger.h
+        src/core/Debug.h
         src/core/Reflect.h
         src/core/Reflect.cpp
         src/core/Window.cpp

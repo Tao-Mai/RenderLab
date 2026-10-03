@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/Debug.h"
+
 #include <cstdlib>
 #include <format>
 #include <utility>
@@ -88,8 +90,4 @@ namespace detail
         }                                                                \
     } while (0)
 
-#ifndef NDEBUG
-#define DCHECK(condition, ...) CHECK(condition __VA_OPT__(,) __VA_ARGS__)
-#else
-#define DCHECK(...) do {} while (0)
-#endif
+#define DCHECK(...) DEBUG_EXEC(CHECK(__VA_ARGS__))

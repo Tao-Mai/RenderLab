@@ -14,27 +14,56 @@
 
 #include <chrono>
 
+namespace
+{
+template <class T>
+void shutdownSubsystem(std::unique_ptr<T>& subsystem, T*& slot)
+{
+    DCHECK(subsystem);
+    DCHECK(slot == subsystem.get());
+
+    subsystem->shutdown();
+    slot = nullptr;
+    subsystem.reset();
+}
+}
+
+Engine::Engine() = default;
+
 Engine::~Engine()
 {
-    shutdown();
+    DCHECK(!inited);
+    DCHECK(!config && !window && !inputManager && !assetManager &&
+        !assetDataManager && !sceneManager && !renderer && !editor);
 }
 
 void Engine::init()
 {
-    if (inited)
-    {
-        return;
-    }
+    DCHECK(!inited);
 
     Context& ctx = context();
-    ctx.config = new ConfigManager();
-    ctx.window = new Window();
-    ctx.inputManager = new InputManager();
-    ctx.assetManager = new AssetManager();
-    ctx.assetDataManager = new AssetDataManager();
-    ctx.sceneManager = new SceneManager();
-    ctx.renderer = new Renderer();
-    ctx.editor = new Editor();
+    DCHECK(!ctx.config && !ctx.window && !ctx.inputManager && !ctx.assetManager &&
+        !ctx.assetDataManager && !ctx.sceneManager && !ctx.renderer && !ctx.editor);
+
+    config = std::make_unique<ConfigManager>();
+    window = std::make_unique<Window>();
+    inputManager = std::make_unique<InputManager>();
+    assetManager = std::make_unique<AssetManager>();
+    assetDataManager = std::make_unique<AssetDataManager>();
+    sceneManager = std::make_unique<SceneManager>();
+    renderer = std::make_unique<Renderer>();
+    editor = std::make_unique<Editor>();
+
+    ctx = {
+        .config = config.get(),
+        .window = window.get(),
+        .inputManager = inputManager.get(),
+        .assetManager = assetManager.get(),
+        .assetDataManager = assetDataManager.get(),
+        .sceneManager = sceneManager.get(),
+        .renderer = renderer.get(),
+        .editor = editor.get(),
+    };
 
     ctx.config->init();
     ctx.assetDataManager->init();
@@ -47,7 +76,7 @@ void Engine::init()
     ctx.renderer->init();
     ctx.renderer->loadScene();
     ctx.editor->init();
-    inited = true;
+    DEBUG_EXEC(inited = true);
 }
 
 void Engine::run()
@@ -96,66 +125,27 @@ void Engine::mainLoop()
             ctx.renderer->render(camera, editorInput);
         ctx.editor->applyPickResult(editorResult);
     }
-
-    ctx.renderer->waitIdle();
 }
 
 void Engine::shutdown() noexcept
 {
+    DCHECK(inited);
     Context& ctx = context();
 
-    if (ctx.editor != nullptr)
-    {
-        ctx.editor->shutdown();
-        delete ctx.editor;
-        ctx.editor = nullptr;
-    }
-    if (ctx.inputManager != nullptr)
-    {
-        ctx.inputManager->shutdown();
-        delete ctx.inputManager;
-        ctx.inputManager = nullptr;
-    }
-    if (ctx.renderer != nullptr)
-    {
-        ctx.renderer->shutdown();
-        delete ctx.renderer;
-        ctx.renderer = nullptr;
-    }
-    if (ctx.sceneManager != nullptr)
-    {
-        ctx.sceneManager->reset();
-        delete ctx.sceneManager;
-        ctx.sceneManager = nullptr;
-    }
-    if (ctx.assetManager != nullptr)
-    {
-        ctx.assetManager->shutdown();
-        delete ctx.assetManager;
-        ctx.assetManager = nullptr;
-    }
-    if (ctx.assetDataManager != nullptr)
-    {
-        delete ctx.assetDataManager;
-        ctx.assetDataManager = nullptr;
-    }
+    renderer->waitIdle();
+    shutdownSubsystem(editor, ctx.editor);
+    shutdownSubsystem(inputManager, ctx.inputManager);
+    shutdownSubsystem(renderer, ctx.renderer);
+    shutdownSubsystem(sceneManager, ctx.sceneManager);
+    shutdownSubsystem(assetManager, ctx.assetManager);
+    shutdownSubsystem(assetDataManager, ctx.assetDataManager);
 
     // Win8+: LoadKeyboardLayout+KLF_ACTIVATE only updates the system language while this
     // process still owns the focused window. Restore before destroying it.
     inputMethod.restore();
 
-    if (ctx.window != nullptr)
-    {
-        ctx.window->shutdown();
-        delete ctx.window;
-        ctx.window = nullptr;
-    }
-    if (ctx.config != nullptr)
-    {
-        ctx.config->shutdown();
-        delete ctx.config;
-        ctx.config = nullptr;
-    }
+    shutdownSubsystem(window, ctx.window);
+    shutdownSubsystem(config, ctx.config);
 
-    inited = false;
+    DEBUG_EXEC(inited = false);
 }

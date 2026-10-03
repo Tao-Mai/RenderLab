@@ -4,7 +4,7 @@
 
 Window::~Window()
 {
-    shutdown();
+    DCHECK(!handle && !glfwInitialized);
 }
 
 void Window::init()

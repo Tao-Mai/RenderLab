@@ -1,14 +1,17 @@
 #include "platform/InputMethod.h"
+#include "core/Logger.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <Windows.h>
 #endif
 
 InputMethod::~InputMethod()
 {
-    restore();
+    DCHECK(!active);
 }
 
 void InputMethod::activateEnglish() noexcept

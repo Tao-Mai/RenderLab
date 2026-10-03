@@ -2,6 +2,7 @@
 
 #include "editor/EditorUi.h"
 #include "render/Renderer.h"
+#include "core/Debug.h"
 
 class CameraComponent;
 
@@ -9,7 +10,7 @@ class Editor
 {
 public:
     Editor() = default;
-    ~Editor() = default;
+    ~Editor();
 
     Editor(const Editor&)            = delete;
     Editor& operator=(const Editor&) = delete;
@@ -28,6 +29,7 @@ public:
     [[nodiscard]] bool wantsInput() const;
 
 private:
+    DEBUG_ONLY(bool inited = false;)
     EditorUI ui;
     uint32_t selectedId = 0;
     bool dirty = false;

@@ -9,12 +9,13 @@
 class SceneManager
 {
 public:
+    ~SceneManager();
     static constexpr std::string_view editorCameraName = "Editor Camera";
 
     void load(const SceneAsset::ID& id);
     void load(const SceneAsset& scene);
     void save();
-    void reset() noexcept;
+    void shutdown() noexcept;
     void tick(float deltaTime);
 
     [[nodiscard]] SceneAsset& scene() noexcept;

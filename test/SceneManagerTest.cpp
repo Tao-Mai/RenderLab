@@ -68,7 +68,18 @@ TEST(SceneManagerTest, ActorsOwnComponentsAndRestoreTheirOwner)
     EXPECT_EQ(&actor.getComponent<TransformComponent>()->actor(), &actor);
     EXPECT_EQ(&actor.getComponent<LightComponent>()->actor(), &actor);
     EXPECT_EQ(actor.getComponent<TransformComponent>()->position.x, 12.0f);
+    manager.shutdown();
 }
+
+#ifndef NDEBUG
+TEST(SceneManagerTest, DestructionRequiresExplicitShutdown)
+{
+    EXPECT_DEATH({
+        SceneManager manager;
+        manager.load(makeScene());
+    }, "");
+}
+#endif
 
 TEST(SceneManagerTest, PickingRejectsBackgroundAndStaleActorIds)
 {
@@ -83,6 +94,7 @@ TEST(SceneManagerTest, PickingRejectsBackgroundAndStaleActorIds)
     manager.load(makeScene());
     EXPECT_EQ(manager.findActor(id), nullptr);
     EXPECT_NE(manager.scene().actors[1]->selectionId(), id);
+    manager.shutdown();
 }
 
 TEST(SceneManagerTest, LoadingDetachesSnapshotAndCanReloadItsOwnScene)
@@ -96,6 +108,7 @@ TEST(SceneManagerTest, LoadingDetachesSnapshotAndCanReloadItsOwnScene)
     manager.load(manager.scene());
     EXPECT_EQ(manager.editorCamera().transform().position.y, 7.0f);
     EXPECT_EQ(&manager.editorCamera().camera().actor(), &manager.editorCamera());
+    manager.shutdown();
 }
 
 TEST(SceneManagerTest, PolymorphicSceneRoundTripsInheritedFieldsAndMaterialOverrides)
@@ -137,6 +150,7 @@ TEST(SceneManagerTest, CharacterMovementAndEnvironmentUpRoundTrip)
     EXPECT_NE(manager.editorCamera().getComponent<CharacterMoveComponent>(), nullptr);
     EXPECT_EQ(manager.editorCamera().getComponent<FreeFlyMoveComponent>(), nullptr);
     EXPECT_EQ(manager.scene().environment.up, scene.environment.up);
+    manager.shutdown();
 }
 
 TEST(SceneManagerTest, ComponentTickUsesItsOwningActor)
@@ -242,6 +256,7 @@ TEST(SceneManagerTest, RepeatedComponentTypesRoundTripAndRestoreEveryOwner)
     EXPECT_FLOAT_EQ(lights[1]->intensity, 7.0f);
     for (const auto& component : restored.components)
         EXPECT_EQ(&component->actor(), &restored);
+    manager.shutdown();
 }
 
 TEST(SceneManagerTest, NullComponentsAreStillRejected)
@@ -316,6 +331,7 @@ TEST(SceneManagerTest, ComponentDependenciesDoNotDependOnSerializedOrder)
         for (const auto& component : actor->components)
             EXPECT_EQ(&component->actor(), actor.get());
     EXPECT_EQ(Serialize(manager.scene()), Serialize(scene));
+    manager.shutdown();
 }
 
 TEST(SceneManagerTest, ComponentsCheckTheirOwnTransformDependency)
@@ -385,6 +401,7 @@ TEST(SceneManagerTest, ALightRoundTripsAndTicksItsComponents)
     restored->tick(0.25f);
     EXPECT_EQ(tick.ticks, 1);
     EXPECT_FLOAT_EQ(restored->transform().position.x, 1.25f);
+    manager.shutdown();
 }
 
 TEST(SceneManagerTest, ALightRequiresLightComponent)

@@ -94,7 +94,7 @@ static_assert(static_cast<unsigned int>(Modifier::NumLock) == GLFW_MOD_NUM_LOCK)
 
 }
 
-InputManager::~InputManager() { shutdown(); }
+InputManager::~InputManager() { DCHECK(!window); }
 
 void InputManager::init()
 {

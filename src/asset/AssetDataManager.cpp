@@ -104,6 +104,16 @@ void validateTexture(
 }
 }
 
+AssetDataManager::~AssetDataManager()
+{
+    DCHECK(assetsRoot.empty());
+}
+
+void AssetDataManager::shutdown() noexcept
+{
+    assetsRoot.clear();
+}
+
 void AssetDataManager::init()
 {
     DCHECK(context().config);

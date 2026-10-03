@@ -53,6 +53,7 @@ int main(int argc, char** argv)
         }
         LOG_INFO("imported asset ID: {}", importedId);
         context().assetManager->shutdown();
+        assetData.shutdown();
         config.shutdown();
         context().assetManager = nullptr;
         context().assetDataManager = nullptr;
@@ -62,4 +63,5 @@ int main(int argc, char** argv)
     Engine engine;
     engine.init();
     engine.run();
+    engine.shutdown();
 }

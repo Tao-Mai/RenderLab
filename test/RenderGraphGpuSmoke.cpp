@@ -340,8 +340,9 @@ int main(int argc, char** argv)
     ctx.inputManager = nullptr;
 
     renderer.shutdown();
-    sceneManager.reset();
+    sceneManager.shutdown();
     assets.shutdown();
+    data.shutdown();
     window.shutdown();
     config.shutdown();
     ctx = {};

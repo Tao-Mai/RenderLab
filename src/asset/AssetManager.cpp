@@ -29,21 +29,23 @@ void loadAssetDirectory(
 }
 }
 
+AssetManager::~AssetManager()
+{
+    DCHECK(!inited);
+}
+
 void AssetManager::init()
 {
-    if (inited)
-    {
-        return;
-    }
+    DCHECK(!inited);
     DCHECK(context().config);
     loadAll();
-    inited = true;
+    DEBUG_EXEC(inited = true);
 }
 
 void AssetManager::shutdown() noexcept
 {
     clear();
-    inited = false;
+    DEBUG_EXEC(inited = false);
 }
 
 void AssetManager::loadAll()

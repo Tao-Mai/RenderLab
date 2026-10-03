@@ -7,6 +7,11 @@
 
 #include <limits>
 
+SceneManager::~SceneManager()
+{
+    DCHECK(!cameraActor && data.actors.empty());
+}
+
 void SceneManager::load(const SceneAsset::ID& id)
 {
     DCHECK(context().assetManager);
@@ -49,7 +54,7 @@ void SceneManager::save()
     context().assetManager->save<SceneAsset>(std::move(snapshot));
 }
 
-void SceneManager::reset() noexcept
+void SceneManager::shutdown() noexcept
 {
     if (cameraActor)
         cameraActor->camera().resetNavigation();

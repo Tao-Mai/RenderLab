@@ -34,17 +34,20 @@ std::filesystem::path storeRelative(
 }
 }
 
+ConfigManager::~ConfigManager()
+{
+    DCHECK(!inited);
+}
+
 void ConfigManager::init()
 {
-    if (inited)
-    {
-        return;
-    }
+    DCHECK(!inited);
+
     file      = std::filesystem::absolute(RENDERLAB_CONFIG_FILE).lexically_normal();
     configDir = file.parent_path();
     load();
     loadCommands();
-    inited = true;
+    DEBUG_EXEC(inited = true);
 }
 
 void ConfigManager::shutdown() noexcept
@@ -53,7 +56,7 @@ void ConfigManager::shutdown() noexcept
     commands = {};
     file.clear();
     configDir.clear();
-    inited = false;
+    DEBUG_EXEC(inited = false);
 }
 
 const CommandConfig& ConfigManager::commandConfig() const noexcept

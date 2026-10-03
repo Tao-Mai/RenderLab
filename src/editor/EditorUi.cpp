@@ -154,7 +154,8 @@ void applyModelMatrix(TransformComponent& transform, const glm::mat4& model)
 
 EditorUI::~EditorUI()
 {
-    shutdown();
+    DCHECK(!contextCreated && !glfwBackendInitialized && !vulkanBackendInitialized);
+    DCHECK(!environmentImport.valid());
 }
 
 void EditorUI::init(
@@ -651,6 +652,7 @@ void EditorUI::shutdown(bool stopImport) noexcept
     {
         importStop.request_stop();
         environmentImport.wait();
+        environmentImport = {};
     }
 
     if (vulkanBackendInitialized)

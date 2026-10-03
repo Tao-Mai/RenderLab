@@ -17,6 +17,7 @@ class AssetManager
 {
 public:
     AssetManager() = default;
+    ~AssetManager();
 
     void init();
     void shutdown() noexcept;
@@ -77,7 +78,7 @@ private:
 
     using AssetMaps = AssetTypes::wrapTypes<AssetMap>;
 
-    bool             inited = false;
+    DEBUG_ONLY(bool inited = false;)
     AssetMaps        assets;
 
     void                         loadAll();
