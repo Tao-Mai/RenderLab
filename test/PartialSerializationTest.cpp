@@ -1,5 +1,6 @@
-#include "asset/Serializer.h"
+#include "core/Serializer.h"
 #include "scene/AActor.h"
+#include "scene/SceneManager.h"
 
 #include <gtest/gtest.h>
 
@@ -47,7 +48,9 @@ static_assert(HasInheritedAnnotation(^^DerivedTaggedComponent, ^^PartialSerializ
 
 void registerTestTypes()
 {
-    RegisterSceneTypes();
+    SceneManager registration;
+    registration.init();
+    registration.shutdown();
     static const bool registered = []
     {
         RegisterBase<ADerivedTagged, AActor>("ADerivedTagged");

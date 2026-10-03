@@ -1,6 +1,6 @@
 #include "scene/SceneManager.h"
 
-#include "asset/JsonIo.h"
+#include "core/Serializer.h"
 #include "scene/actor/ALight.h"
 #include "scene/actor/AStaticMesh.h"
 #include "scene/component/CharacterMoveComponent.h"
@@ -21,7 +21,9 @@ static_assert(std::same_as<decltype(std::declval<SceneManager&>().tick(0.0f)), v
 
 SceneAsset makeScene()
 {
-    RegisterSceneTypes();
+    SceneManager registration;
+    registration.init();
+    registration.shutdown();
     SceneAsset scene;
     scene.id = SceneAsset::ID{"actor-test"};
     scene.actors.push_back(std::make_unique<AFreeFlyCamera>());
@@ -56,6 +58,7 @@ struct TestTickComponent : Component
 TEST(SceneManagerTest, ActorsOwnComponentsAndRestoreTheirOwner)
 {
     SceneManager manager;
+    manager.init();
     manager.load(makeScene());
 
     ASSERT_EQ(manager.scene().actors.size(), 2);
@@ -76,6 +79,7 @@ TEST(SceneManagerTest, DestructionRequiresExplicitShutdown)
 {
     EXPECT_DEATH({
         SceneManager manager;
+        manager.init();
         manager.load(makeScene());
     }, "");
 }
@@ -84,6 +88,7 @@ TEST(SceneManagerTest, DestructionRequiresExplicitShutdown)
 TEST(SceneManagerTest, PickingRejectsBackgroundAndStaleActorIds)
 {
     SceneManager manager;
+    manager.init();
     manager.load(makeScene());
 
     const auto id = manager.scene().actors[1]->selectionId();
@@ -101,6 +106,7 @@ TEST(SceneManagerTest, LoadingDetachesSnapshotAndCanReloadItsOwnScene)
 {
     const auto source = makeScene();
     SceneManager manager;
+    manager.init();
     manager.load(source);
     manager.editorCamera().transform().position.y = 7.0f;
     EXPECT_EQ(source.actors[0]->transform().position.y, 0.0f);
@@ -146,6 +152,7 @@ TEST(SceneManagerTest, CharacterMovementAndEnvironmentUpRoundTrip)
     scene.environment.up = {0.0f, 0.0f, 3.0f};
 
     SceneManager manager;
+    manager.init();
     manager.load(scene);
     EXPECT_NE(manager.editorCamera().getComponent<CharacterMoveComponent>(), nullptr);
     EXPECT_EQ(manager.editorCamera().getComponent<FreeFlyMoveComponent>(), nullptr);
@@ -239,6 +246,7 @@ TEST(SceneManagerTest, RepeatedComponentTypesRoundTripAndRestoreEveryOwner)
     const auto stored = Serialize(scene);
 
     SceneManager manager;
+    manager.init();
     manager.load(scene);
     auto& restored = *manager.scene().actors[1];
     EXPECT_EQ(Serialize(manager.scene()), stored);
@@ -326,6 +334,7 @@ TEST(SceneManagerTest, ComponentDependenciesDoNotDependOnSerializedOrder)
         std::reverse(actor->components.begin(), actor->components.end());
 
     SceneManager manager;
+    manager.init();
     manager.load(scene);
     for (const auto& actor : manager.scene().actors)
         for (const auto& component : actor->components)
@@ -390,6 +399,7 @@ TEST(SceneManagerTest, ALightRoundTripsAndTicksItsComponents)
     EXPECT_TRUE(stored.at("actors")[2].contains("ALight"));
 
     SceneManager manager;
+    manager.init();
     manager.load(scene);
     auto* restored = dynamic_cast<ALight*>(manager.scene().actors[2].get());
     ASSERT_NE(restored, nullptr);
@@ -416,7 +426,9 @@ TEST(SceneManagerTest, ALightRequiresLightComponent)
 
 TEST(SceneManagerTest, BaseTypesAreNotRegistered)
 {
-    RegisterSceneTypes();
+    SceneManager registration;
+    registration.init();
+    registration.shutdown();
     EXPECT_FALSE(BaseTypeInfo<AActor>::baseTypeInfoMap.contains("AActor"));
     EXPECT_FALSE(BaseTypeInfo<Component>::baseTypeInfoMap.contains("Component"));
 }
@@ -441,12 +453,16 @@ TEST(SceneManagerTest, RejectsUnknownTypesMissingFieldsAndMissingRequiredCompone
     stored["actors"][0]["AFreeFlyCamera"]["components"].erase(0);
     Deserialize(stored, parsed);
     SceneManager manager;
+    manager.init();
     EXPECT_DEATH(manager.load(parsed), "");
+    manager.shutdown();
 }
 
 TEST(SceneManagerTest, PolymorphicPointersRequireExactlyOneTypeKey)
 {
-    RegisterSceneTypes();
+    SceneManager registration;
+    registration.init();
+    registration.shutdown();
     std::unique_ptr<AActor> actor = std::make_unique<AStaticMesh>();
     std::unique_ptr<Component> component = std::make_unique<TransformComponent>();
     const auto* originalActor = actor.get();
@@ -469,7 +485,9 @@ TEST(SceneManagerTest, PolymorphicPointersRequireExactlyOneTypeKey)
 
 TEST(SceneManagerTest, PolymorphicPointersRequireObjectData)
 {
-    RegisterSceneTypes();
+    SceneManager registration;
+    registration.init();
+    registration.shutdown();
     std::unique_ptr<AActor> actor;
     std::unique_ptr<Component> component;
 
@@ -486,7 +504,9 @@ TEST(SceneManagerTest, PolymorphicPointersRequireObjectData)
 
 TEST(SceneManagerTest, LightTypeRemainsInsideComponentData)
 {
-    RegisterSceneTypes();
+    SceneManager registration;
+    registration.init();
+    registration.shutdown();
     std::unique_ptr<Component> component = std::make_unique<LightComponent>();
     const json stored = Serialize(component);
     ASSERT_EQ(stored.size(), 1);
@@ -500,7 +520,9 @@ TEST(SceneManagerTest, LightTypeRemainsInsideComponentData)
 
 TEST(SceneManagerTest, RegistryIteratesInheritedMembersAndRejectsDuplicateRegistration)
 {
-    RegisterSceneTypes();
+    SceneManager registration;
+    registration.init();
+    registration.shutdown();
     AFreeFlyCamera actor;
     std::vector<std::string_view> members;
     const auto& type = BaseTypeInfo<AActor>::baseTypeInfoMap.at("AFreeFlyCamera");
@@ -522,5 +544,7 @@ TEST(SceneManagerTest, NullPolymorphicPointersRoundTripButNullActorsAreRejected)
     auto scene = makeScene();
     scene.actors.push_back(nullptr);
     SceneManager manager;
+    manager.init();
     EXPECT_DEATH(manager.load(scene), "");
+    manager.shutdown();
 }

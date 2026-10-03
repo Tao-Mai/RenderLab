@@ -2,7 +2,7 @@
 
 #include "asset/AssetManager.h"
 #include "asset/AssetDataManager.h"
-#include "asset/Serializer.h"
+#include "core/Serializer.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "render/DescriptorManager.h"

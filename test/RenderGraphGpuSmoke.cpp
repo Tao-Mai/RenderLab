@@ -8,7 +8,7 @@
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
-#include "asset/Serializer.h"
+#include "core/Serializer.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/InputManager.h"
@@ -201,7 +201,7 @@ int main(int argc, char** argv)
 
     config.init();
     data.init();
-    RegisterSceneTypes();
+    sceneManager.init();
     assets.init();
     window.init();
     glfwHideWindow(window.nativeHandle());

@@ -1,4 +1,4 @@
-#include "asset/Serializer.h"
+#include "core/Serializer.h"
 #include "core/ConfigManager.h"
 
 #include <filesystem>

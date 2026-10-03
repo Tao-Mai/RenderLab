@@ -221,7 +221,7 @@ add_executable(RenderLab
         src/core/Logger.h
         src/core/Debug.h
         src/core/Reflect.h
-        src/core/Reflect.cpp
+        src/core/Serializer.h
         src/core/Window.cpp
         src/core/Window.h
         src/core/Input.h
@@ -270,7 +270,6 @@ add_executable(RenderLab
         src/asset/import/ImportTexture.cpp
         src/asset/import/ImportEnvironmentMap.cpp
         src/asset/import/ImportId.h
-        src/asset/JsonIo.h
         src/asset/MeshGeometry.h
         src/asset/BuiltinAssets.h
         src/asset/builtin/BuiltinMesh.cpp

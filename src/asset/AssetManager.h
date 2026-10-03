@@ -2,7 +2,7 @@
 
 #include "asset/Asset.h"
 #include "asset/BuiltinAssets.h"
-#include "asset/JsonIo.h"
+#include "core/Serializer.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"

@@ -4,6 +4,7 @@
 #include "asset/TextureMip.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
+#include "scene/SceneManager.h"
 
 #include <algorithm>
 #include <array>
@@ -29,6 +30,7 @@ struct ImportContext
     ConfigManager config;
     AssetManager manager;
     AssetDataManager data;
+    SceneManager scenes;
 
     ImportContext()
     {
@@ -37,6 +39,7 @@ struct ImportContext
         context().assetDataManager = &data;
         config.init();
         data.init();
+        scenes.init();
         manager.init();
     }
 
@@ -44,6 +47,7 @@ struct ImportContext
     {
         manager.shutdown();
         data.shutdown();
+        scenes.shutdown();
         config.shutdown();
         context().assetDataManager = nullptr;
         context().assetManager = nullptr;

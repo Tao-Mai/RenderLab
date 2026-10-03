@@ -1,10 +1,10 @@
 #include "asset/Asset.h"
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
-#include "asset/JsonIo.h"
+#include "core/Serializer.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
-#include "asset/Serializer.h"
+#include "scene/SceneManager.h"
 #include "scene/component/LightComponent.h"
 #include "scene/component/RenderComponent.h"
 #include "scene/component/TransformComponent.h"
@@ -230,7 +230,9 @@ TEST(AssetIDTest, JsonIoSavesAndReplacesAssetsInTheUnifiedFormat)
 
 TEST(AssetIDTest, AllPersistedAssetsRoundTrip)
 {
-    RegisterSceneTypes();
+    SceneManager registration;
+    registration.init();
+    registration.shutdown();
     const auto root = std::filesystem::path{RENDERLAB_SOURCE_DIR} / "assets";
     size_t count = 0;
     AssetTypes::forEach([&]<AssetType T>
@@ -257,17 +259,20 @@ TEST(AssetIDTest, BuiltinSamplersKeepExpectedFiltersAndAddressModes)
     {
         ConfigManager config;
         AssetManager assets;
+        SceneManager scenes;
 
         ConfiguredAssets()
         {
             context().config = &config;
             config.init();
+            scenes.init();
             assets.init();
         }
 
         ~ConfiguredAssets()
         {
             assets.shutdown();
+            scenes.shutdown();
             config.shutdown();
             context().config = nullptr;
         }
@@ -315,7 +320,9 @@ TEST(AssetIDTest, LoadsEnvironmentTextureBindings)
 
 TEST(AssetIDTest, RoundTripsTypedIdsInsideSceneComponents)
 {
-    RegisterSceneTypes();
+    SceneManager registration;
+    registration.init();
+    registration.shutdown();
     const auto file = std::filesystem::path{RENDERLAB_SOURCE_DIR} /
         "assets" / SceneAsset::dir / "default.json";
     ASSERT_TRUE(std::filesystem::is_regular_file(file));

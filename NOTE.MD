@@ -29,3 +29,6 @@ ecs
 资产系统
 
 1. 目前反序列化会覆盖Actor默认构造添加的component，不过只是反序列化的时候覆盖而已
+
+Actor
+1. getcomponent待优化

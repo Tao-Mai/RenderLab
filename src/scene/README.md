@@ -36,10 +36,14 @@ hold additional behavior components; AActor itself is concrete but is not regist
 
 ## Registration and persistence
 
-`RegisterSceneTypes()` in `core/Reflect.cpp` registers the concrete AActor and
+`SceneManager::init()` registers the concrete AActor and
 Component types once during application startup. Add new concrete subclasses
 to the shared `scene/SceneTypes.h` list. Its explicit names are the persistent
 type IDs; serialization and editor drawing use the same list.
+
+Initialize SceneManager before AssetManager reads scene assets. Engine calls
+`SceneManager::loadDefaultScene()` when entering `run()`; SceneManager reads the
+initial scene ID from ConfigManager and loads the live scene before rendering.
 
 Polymorphic pointers serialize as `{"TypeName": {...}}`. Each non-null pointer
 has exactly one registered type-name key with an object value; null pointers

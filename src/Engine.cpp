@@ -69,12 +69,10 @@ void Engine::init()
     ctx.assetDataManager->init();
     ctx.window->init();
     ctx.inputManager->init();
-    RegisterSceneTypes();
+    ctx.sceneManager->init();
     ctx.assetManager->init();
     inputMethod.activateEnglish();
-    ctx.sceneManager->load(ctx.config->initialScene());
     ctx.renderer->init();
-    ctx.renderer->loadScene();
     ctx.editor->init();
     DEBUG_EXEC(inited = true);
 }
@@ -82,6 +80,10 @@ void Engine::init()
 void Engine::run()
 {
     DCHECK(inited);
+
+    sceneManager->loadDefaultScene();
+    renderer->loadScene();
+
     mainLoop();
 }
 

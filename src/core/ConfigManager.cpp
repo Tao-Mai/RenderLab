@@ -1,6 +1,6 @@
 #include "core/ConfigManager.h"
 
-#include "asset/Serializer.h"
+#include "core/Serializer.h"
 #include "core/Logger.h"
 
 #include <fstream>
@@ -103,14 +103,7 @@ void ConfigManager::save() const
 
 void ConfigManager::load()
 {
-    CHECK(std::filesystem::is_regular_file(file), "config is not a file: {}", file.string());
-
-    std::ifstream input{file, std::ios::binary};
-    CHECK(input.is_open(), "failed to open config '{}'", file.string());
-
-    const auto stored = json::parse(input, nullptr, false);
-    CHECK(!stored.is_discarded(), "invalid config JSON '{}'", file.string());
-    Deserialize(stored, data);
+    data = asset_json::load<AppConfig>(file);
 
     CHECK(!data.paths.assets.empty(), "config requires a paths.assets directory");
     CHECK(!data.paths.commands.empty(), "config requires a paths.commands file path");
@@ -126,12 +119,7 @@ void ConfigManager::load()
 
 void ConfigManager::loadCommands()
 {
-    std::ifstream input{data.paths.commands, std::ios::binary};
-    CHECK(input.is_open(), "failed to open commands config '{}'", data.paths.commands.string());
-
-    const auto stored = json::parse(input, nullptr, false);
-    CHECK(!stored.is_discarded(), "invalid commands JSON '{}'", data.paths.commands.string());
-    Deserialize(stored, commands);
+    commands = asset_json::load<CommandConfig>(data.paths.commands);
 
     for (const auto& binding : commands.bindings)
     {

@@ -110,8 +110,6 @@ struct BaseTypeInfo
     inline static std::unordered_map<std::type_index, std::string> typeNames;
 };
 
-// Defined alongside the serialization templates in asset/Serializer.h.
+// Defined alongside the serialization templates in core/Serializer.h.
 template <class T, class Base>
 void RegisterBase(std::string_view name);
-
-void RegisterSceneTypes();

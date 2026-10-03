@@ -1,26 +1,51 @@
 #include "scene/SceneManager.h"
 
 #include "asset/AssetManager.h"
-#include "asset/Serializer.h"
+#include "core/Serializer.h"
+#include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
+#include "scene/SceneTypes.h"
 
 #include <limits>
 
 SceneManager::~SceneManager()
 {
-    DCHECK(!cameraActor && data.actors.empty());
+    DCHECK(!inited);
+}
+
+void SceneManager::init()
+{
+    DCHECK(!inited);
+
+    static const bool registered = []
+    {
+        forEachComponentType([]<class T>(std::string_view name) { RegisterBase<T, Component>(name); });
+        forEachActorType([]<class T>(std::string_view name) { RegisterBase<T, AActor>(name); });
+        return true;
+    }();
+
+    DEBUG_EXEC(inited = true);
+}
+
+void SceneManager::loadDefaultScene()
+{
+    DCHECK(inited);
+    DCHECK(context().config);
+
+    load(context().config->initialScene());
 }
 
 void SceneManager::load(const SceneAsset::ID& id)
 {
+    DCHECK(inited);
     DCHECK(context().assetManager);
     load(context().assetManager->get<SceneAsset>(id));
 }
 
 void SceneManager::load(const SceneAsset& scene)
 {
-    RegisterSceneTypes();
+    DCHECK(inited);
 
     // The cache owns a snapshot; the live scene owns its actors and components.
     SceneAsset loaded;
@@ -48,6 +73,7 @@ void SceneManager::load(const SceneAsset& scene)
 
 void SceneManager::save()
 {
+    DCHECK(inited);
     DCHECK(context().assetManager);
     SceneAsset snapshot;
     Deserialize(Serialize(data), snapshot);
@@ -60,6 +86,7 @@ void SceneManager::shutdown() noexcept
         cameraActor->camera().resetNavigation();
     cameraActor = nullptr;
     data        = {};
+    DEBUG_EXEC(inited = false);
 }
 
 void SceneManager::tick(float deltaTime)

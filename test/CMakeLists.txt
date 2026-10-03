@@ -21,7 +21,6 @@ add_executable(RenderLabTests
         ${PROJECT_SOURCE_DIR}/src/scene/component/CameraComponent.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/component/FreeFlyMoveComponent.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/component/CharacterMoveComponent.cpp
-        ${PROJECT_SOURCE_DIR}/src/core/Reflect.cpp
         ${PROJECT_SOURCE_DIR}/src/editor/ComponentDraw.cpp
         ${PROJECT_SOURCE_DIR}/src/core/InputManager.cpp
         ${PROJECT_SOURCE_DIR}/src/core/Window.cpp

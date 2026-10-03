@@ -5,7 +5,7 @@
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
-#include "core/Reflect.h"
+#include "scene/SceneManager.h"
 
 #include <filesystem>
 #include <string>
@@ -14,7 +14,6 @@
 int main(int argc, char** argv)
 {
     logger::init(argv[0]);
-    RegisterSceneTypes();
     if (argc > 1)
     {
         CHECK(argc == 3,
@@ -22,11 +21,13 @@ int main(int argc, char** argv)
         ConfigManager    config;
         AssetManager assets;
         AssetDataManager assetData;
+        SceneManager scenes;
         context().config           = &config;
         context().assetManager = &assets;
         context().assetDataManager = &assetData;
         config.init();
         assetData.init();
+        scenes.init();
         context().assetManager->init();
         std::filesystem::path source{argv[2]};
         if (source.is_relative())
@@ -54,6 +55,7 @@ int main(int argc, char** argv)
         LOG_INFO("imported asset ID: {}", importedId);
         context().assetManager->shutdown();
         assetData.shutdown();
+        scenes.shutdown();
         config.shutdown();
         context().assetManager = nullptr;
         context().assetDataManager = nullptr;
