@@ -163,8 +163,8 @@ TEST(PartialSerialization, OwnedPolymorphicPointersStillRoundTrip)
 TEST(PartialSerialization, MissingMarkedFieldsRemainErrors)
 {
     DerivedTaggedComponent component;
-    EXPECT_THROW(Deserialize(json{{"value", 42}}, component), json::out_of_range);
-    EXPECT_THROW(Deserialize(json{{"extra", 73}}, component), json::out_of_range);
+    EXPECT_DEATH(Deserialize(json{{"value", 42}}, component), "");
+    EXPECT_DEATH(Deserialize(json{{"extra", 73}}, component), "");
 }
 
 TEST(PartialSerialization, RuntimeMemberIterationUsesTheSameMarkedFields)

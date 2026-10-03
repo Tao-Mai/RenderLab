@@ -18,7 +18,8 @@ through the supplied Actor; dependency presence does not depend on array order.
 Camera, movement, Render and Light require Transform. The two movement components
 reject each other in their own init hooks; movement does not require a local Camera.
 `addComponent<T>()` always initializes the added component immediately, even before
-Actor initialization; a failed addition is removed. Owner pointers are not persisted.
+Actor initialization. Invalid components or dependencies fail through CHECK;
+there is no exception rollback. Owner pointers are not persisted.
 
 Engine ticks SceneManager. The active FreeFlyCameraActor ticks first; inside that
 actor, CameraComponent updates navigation and view direction before movement.

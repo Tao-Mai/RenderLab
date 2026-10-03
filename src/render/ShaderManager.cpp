@@ -49,15 +49,8 @@ std::vector<ShaderMetadata::Binding> readReflection(std::filesystem::path path)
     path.replace_extension(".reflection.json");
     std::ifstream input{path, std::ios::binary};
     CHECK(input.is_open(), "failed to open shader reflection '{}'", path.string());
-    json reflection;
-    try
-    {
-        reflection = json::parse(input);
-    }
-    catch (const json::exception& error)
-    {
-        LOG_FATAL("failed to load shader reflection '{}': {}", path.string(), error.what());
-    }
+    const auto reflection = json::parse(input, nullptr, false);
+    CHECK(!reflection.is_discarded(), "invalid shader reflection JSON '{}'", path.string());
 
     const auto& parameters = requiredField(reflection, "parameters");
     CHECK(parameters.is_array(), "shader reflection '{}' has no parameters array", path.string());

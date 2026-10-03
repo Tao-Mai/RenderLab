@@ -157,20 +157,20 @@ TEST(AssetIDTest, RejectsMissingAndUnknownAssetFields)
 
     json invalid = stored;
     invalid.erase("roughness");
-    EXPECT_THROW(Deserialize(invalid, parsed), json::out_of_range);
+    EXPECT_DEATH(Deserialize(invalid, parsed), "");
     invalid = stored;
     invalid["id"].erase("value");
-    EXPECT_THROW(Deserialize(invalid, parsed), json::out_of_range);
+    EXPECT_DEATH(Deserialize(invalid, parsed), "");
 
     invalid = stored;
     invalid["unexpected"] = true;
-    EXPECT_THROW(Deserialize(invalid, parsed), json::other_error);
+    EXPECT_DEATH(Deserialize(invalid, parsed), "");
     invalid = stored;
     invalid["baseColorTexture"]["unexpected"] = true;
-    EXPECT_THROW(Deserialize(invalid, parsed), json::other_error);
+    EXPECT_DEATH(Deserialize(invalid, parsed), "");
     invalid = stored;
     invalid["id"]["unexpected"] = true;
-    EXPECT_THROW(Deserialize(invalid, parsed), json::other_error);
+    EXPECT_DEATH(Deserialize(invalid, parsed), "");
 }
 
 TEST(AssetIDTest, MaterialSerializationProducesStableAndDistinctCacheKeys)

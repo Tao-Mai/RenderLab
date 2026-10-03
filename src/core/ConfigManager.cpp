@@ -105,14 +105,9 @@ void ConfigManager::load()
     std::ifstream input{file, std::ios::binary};
     CHECK(input.is_open(), "failed to open config '{}'", file.string());
 
-    try
-    {
-        Deserialize(json::parse(input), data);
-    }
-    catch (const json::exception& error)
-    {
-        LOG_FATAL("failed to load config '{}': {}", file.string(), error.what());
-    }
+    const auto stored = json::parse(input, nullptr, false);
+    CHECK(!stored.is_discarded(), "invalid config JSON '{}'", file.string());
+    Deserialize(stored, data);
 
     CHECK(!data.paths.assets.empty(), "config requires a paths.assets directory");
     CHECK(!data.paths.commands.empty(), "config requires a paths.commands file path");
@@ -131,14 +126,9 @@ void ConfigManager::loadCommands()
     std::ifstream input{data.paths.commands, std::ios::binary};
     CHECK(input.is_open(), "failed to open commands config '{}'", data.paths.commands.string());
 
-    try
-    {
-        Deserialize(json::parse(input), commands);
-    }
-    catch (const json::exception& error)
-    {
-        LOG_FATAL("failed to load commands config '{}': {}", data.paths.commands.string(), error.what());
-    }
+    const auto stored = json::parse(input, nullptr, false);
+    CHECK(!stored.is_discarded(), "invalid commands JSON '{}'", data.paths.commands.string());
+    Deserialize(stored, commands);
 
     for (const auto& binding : commands.bindings)
     {

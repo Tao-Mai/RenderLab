@@ -16,10 +16,9 @@
 void CharacterMoveComponent::init(Actor* actor)
 {
     Component::init(actor);
-    if (!actor->getComponent<TransformComponent>())
-        throw std::logic_error("CharacterMoveComponent requires TransformComponent on actor: " + actor->name);
-    if (actor->getComponent<FreeFlyMoveComponent>())
-        throw std::logic_error("CharacterMoveComponent cannot coexist with FreeFlyMoveComponent on actor: " + actor->name);
+    CHECK(actor->getComponent<TransformComponent>());
+    CHECK(!actor->getComponent<FreeFlyMoveComponent>(),
+          "CharacterMoveComponent cannot coexist with FreeFlyMoveComponent on actor: {}", actor->name);
 }
 
 void CharacterMoveComponent::tick(float deltaTime)

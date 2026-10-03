@@ -10,6 +10,5 @@ StaticMeshActor::StaticMeshActor()
 void StaticMeshActor::init()
 {
     Actor::init();
-    if (!getComponent<RenderComponent>())
-        throw std::logic_error("static mesh actor requires RenderComponent: " + name);
+    CHECK(getComponent<RenderComponent>());
 }

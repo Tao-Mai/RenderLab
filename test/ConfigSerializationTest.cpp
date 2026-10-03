@@ -63,11 +63,11 @@ TEST(ConfigSerialization, MissingFieldsFailInsteadOfUsingDefaults)
     json serialized = Serialize(sampleConfig());
     serialized.at("paths").erase("commands");
     AppConfig restored;
-    EXPECT_THROW(Deserialize(serialized, restored), json::out_of_range);
+    EXPECT_DEATH(Deserialize(serialized, restored), "");
 
     serialized = Serialize(sampleConfig());
     serialized.at("renderer").at("brdfLut").at("samplerID").erase("value");
-    EXPECT_THROW(Deserialize(serialized, restored), json::out_of_range);
+    EXPECT_DEATH(Deserialize(serialized, restored), "");
 }
 
 TEST(ConfigSerialization, RejectsInvalidPathType)
@@ -75,7 +75,7 @@ TEST(ConfigSerialization, RejectsInvalidPathType)
     json serialized = Serialize(sampleConfig());
     serialized.at("paths").at("assets") = 42;
     AppConfig restored;
-    EXPECT_THROW(Deserialize(serialized, restored), json::type_error);
+    EXPECT_DEATH(Deserialize(serialized, restored), "");
 }
 
 TEST(ConfigSerialization, ConfigManagerResolvesPathsAndLoadsCommands)
@@ -141,25 +141,25 @@ TEST(ConfigSerialization, RejectsMissingAndUnknownCommandFields)
     };
     CommandBinding restored{};
     binding["command"] = "InvalidCommand";
-    EXPECT_THROW(Deserialize(binding, restored), json::other_error);
+    EXPECT_DEATH(Deserialize(binding, restored), "");
     binding["command"] = "SaveScene";
     binding["modifiers"] = json::array({"InvalidModifier"});
-    EXPECT_THROW(Deserialize(binding, restored), json::other_error);
+    EXPECT_DEATH(Deserialize(binding, restored), "");
     binding["modifiers"] = json::array();
     binding.erase("action");
-    EXPECT_THROW(Deserialize(binding, restored), json::out_of_range);
+    EXPECT_DEATH(Deserialize(binding, restored), "");
 }
 
 TEST(ConfigSerialization, RejectsInvalidContainerTypesAndFlagBits)
 {
     CommandConfig restored;
-    EXPECT_THROW(Deserialize(json{{"bindings", json::object()}}, restored), json::type_error);
+    EXPECT_DEATH(Deserialize(json{{"bindings", json::object()}}, restored), "");
 
     Modifier modifiers{};
-    EXPECT_THROW(Deserialize(json("Control"), modifiers), json::type_error);
-    EXPECT_THROW(Deserialize(json::array({"None"}), modifiers), json::other_error);
-    EXPECT_THROW(Serialize(static_cast<Modifier>(1u << 10)), json::other_error);
-    EXPECT_THROW(Serialize(static_cast<Command>(999)), json::other_error);
+    EXPECT_DEATH(Deserialize(json("Control"), modifiers), "");
+    EXPECT_DEATH(Deserialize(json::array({"None"}), modifiers), "");
+    EXPECT_DEATH(Serialize(static_cast<Modifier>(1u << 10)), "");
+    EXPECT_DEATH(Serialize(static_cast<Command>(999)), "");
 }
 
 TEST(ConfigSerialization, EnumAnnotationsDetermineSerialization)

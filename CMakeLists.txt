@@ -44,7 +44,10 @@ endif ()
 
 add_library(RenderLabBuildOptions INTERFACE)
 target_compile_features(RenderLabBuildOptions INTERFACE cxx_std_26)
-target_compile_options(RenderLabBuildOptions INTERFACE $<$<COMPILE_LANGUAGE:CXX>:-freflection>)
+target_compile_options(RenderLabBuildOptions INTERFACE
+        $<$<COMPILE_LANGUAGE:CXX>:-freflection>
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>)
+target_compile_definitions(RenderLabBuildOptions INTERFACE JSON_NOEXCEPTION TINYGLTF_NOEXCEPTION)
 
 get_filename_component(RENDERLAB_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
 

@@ -13,11 +13,10 @@ FreeFlyCameraActor::FreeFlyCameraActor()
 void FreeFlyCameraActor::init()
 {
     Actor::init();
-    if (!getComponent<CameraComponent>() ||
-        (!getComponent<FreeFlyMoveComponent>() && !getComponent<CharacterMoveComponent>()) ||
-        (getComponent<FreeFlyMoveComponent>() && getComponent<CharacterMoveComponent>()) ||
-        getComponent<RenderComponent>())
-        throw std::logic_error("camera actor requires Camera and one movement type, without Render");
+    CHECK(getComponent<CameraComponent>());
+    CHECK(getComponent<FreeFlyMoveComponent>() || getComponent<CharacterMoveComponent>(),
+          "camera actor requires one movement type");
+    CHECK(!getComponent<RenderComponent>());
 
     camera().resetNavigation();
 }
@@ -40,6 +39,6 @@ CameraComponent& FreeFlyCameraActor::camera()
 const CameraComponent& FreeFlyCameraActor::camera() const
 {
     auto* component = getComponent<CameraComponent>();
-    if (!component) throw std::logic_error("camera actor requires CameraComponent");
+    CHECK(component);
     return *component;
 }

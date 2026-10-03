@@ -1,9 +1,9 @@
 #include "render/resource/ShaderData.h"
+#include "core/Logger.h"
 
 #include <array>
 #include <filesystem>
 #include <fstream>
-#include <stdexcept>
 #include <string_view>
 
 #include <gtest/gtest.h>
@@ -25,11 +25,12 @@ json parameter(std::string_view shader, std::string_view name)
     const auto path = std::filesystem::path(RENDERLAB_SHADER_BINARY_DIR) /
         (std::string(shader) + ".reflection.json");
     std::ifstream input{path};
-    if (!input.is_open()) throw std::runtime_error("cannot open shader reflection: " + path.string());
-    const auto reflection = json::parse(input);
+    CHECK(input.is_open(), "cannot open shader reflection: {}", path.string());
+    const auto reflection = json::parse(input, nullptr, false);
+    CHECK(!reflection.is_discarded(), "invalid shader reflection: {}", path.string());
     for (const auto& value : reflection.at("parameters").get_ref<const json::array_t&>())
         if (value.at("name").get<std::string>() == name) return value;
-    throw std::runtime_error("missing shader parameter: " + std::string(name));
+    CHECK(false, "missing shader parameter: {}", name);
 }
 
 template <size_t N>

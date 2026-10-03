@@ -17,7 +17,9 @@ template <class T>
     CHECK(input.is_open(), "failed to open JSON '{}'", file.string());
 
     T result{};
-    Deserialize(json::parse(input), result);
+    const auto data = json::parse(input, nullptr, false);
+    CHECK(!data.is_discarded(), "invalid JSON '{}'", file.string());
+    Deserialize(data, result);
     return result;
 }
 
@@ -28,7 +30,9 @@ void save(const std::filesystem::path& file, const T& value)
 
     if (file.has_parent_path())
     {
-        std::filesystem::create_directories(file.parent_path());
+        std::error_code error;
+        std::filesystem::create_directories(file.parent_path(), error);
+        CHECK(!error, "failed to create JSON directory '{}': {}", file.parent_path().string(), error.message());
     }
     std::filesystem::path temporary = file;
     temporary += ".tmp";

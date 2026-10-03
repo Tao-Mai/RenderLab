@@ -248,7 +248,7 @@ TEST(SceneManagerTest, NullComponentsAreStillRejected)
 {
     StaticMeshActor actor;
     actor.components.push_back(nullptr);
-    EXPECT_THROW(actor.init(), std::logic_error);
+    EXPECT_DEATH(actor.init(), "");
 }
 
 TEST(SceneManagerTest, ComponentOwnerIsBoundOnlyDuringInit)
@@ -259,10 +259,10 @@ TEST(SceneManagerTest, ComponentOwnerIsBoundOnlyDuringInit)
     } actor;
     auto& component = *actor.getComponent<TestTickComponent>();
     EXPECT_EQ(component.inits, 0);
-    EXPECT_THROW((void)component.actor(), std::logic_error);
-    EXPECT_THROW((void)actor.transform().actor(), std::logic_error);
-    EXPECT_THROW(component.init(nullptr), std::invalid_argument);
-    EXPECT_THROW((void)component.actor(), std::logic_error);
+    EXPECT_DEATH((void)component.actor(), "");
+    EXPECT_DEATH((void)actor.transform().actor(), "");
+    EXPECT_DEATH(component.init(nullptr), "");
+    EXPECT_DEATH((void)component.actor(), "");
 
     actor.init();
     EXPECT_EQ(component.inits, 1);
@@ -290,16 +290,14 @@ TEST(SceneManagerTest, AddComponentInitializesImmediatelyBeforeActorInit)
     EXPECT_EQ(component.value, 42);
     EXPECT_EQ(component.inits, 1);
     EXPECT_EQ(&component.actor(), &actor);
-    EXPECT_THROW((void)actor.transform().actor(), std::logic_error);
+    EXPECT_DEATH((void)actor.transform().actor(), "");
 }
 
-TEST(SceneManagerTest, FailedAdditionRollsBackBeforeActorInit)
+TEST(SceneManagerTest, InvalidAdditionFailsBeforeActorInit)
 {
     StaticMeshActor actor;
     actor.components.clear();
-    EXPECT_THROW(actor.addComponent<RenderComponent>(), std::logic_error);
-    EXPECT_TRUE(actor.components.empty());
-    EXPECT_EQ(actor.getComponent<RenderComponent>(), nullptr);
+    EXPECT_DEATH(actor.addComponent<RenderComponent>(), "");
 }
 
 TEST(SceneManagerTest, ComponentDependenciesDoNotDependOnSerializedOrder)
@@ -326,11 +324,11 @@ TEST(SceneManagerTest, ComponentsCheckTheirOwnTransformDependency)
     RenderComponent render;
     LightComponent light;
 
-    EXPECT_THROW(camera.init(&actor), std::logic_error);
-    EXPECT_THROW(freeFly.init(&actor), std::logic_error);
-    EXPECT_THROW(character.init(&actor), std::logic_error);
-    EXPECT_THROW(render.init(&actor), std::logic_error);
-    EXPECT_THROW(light.init(&actor), std::logic_error);
+    EXPECT_DEATH(camera.init(&actor), "");
+    EXPECT_DEATH(freeFly.init(&actor), "");
+    EXPECT_DEATH(character.init(&actor), "");
+    EXPECT_DEATH(render.init(&actor), "");
+    EXPECT_DEATH(light.init(&actor), "");
 }
 
 TEST(SceneManagerTest, MovementInitRejectsConflictingComponentsInEitherOrder)
@@ -338,14 +336,14 @@ TEST(SceneManagerTest, MovementInitRejectsConflictingComponentsInEitherOrder)
     StaticMeshActor actor;
     auto& freeFly = actor.addDefaultComponent<FreeFlyMoveComponent>();
     auto& character = actor.addDefaultComponent<CharacterMoveComponent>();
-    EXPECT_THROW(freeFly.init(&actor), std::logic_error);
-    EXPECT_THROW(character.init(&actor), std::logic_error);
-    EXPECT_THROW(actor.init(), std::logic_error);
+    EXPECT_DEATH(freeFly.init(&actor), "");
+    EXPECT_DEATH(character.init(&actor), "");
+    EXPECT_DEATH(actor.init(), "");
     std::reverse(actor.components.begin(), actor.components.end());
-    EXPECT_THROW(actor.init(), std::logic_error);
+    EXPECT_DEATH(actor.init(), "");
 }
 
-TEST(SceneManagerTest, RuntimeAdditionInitializesAndRollsBackFailedDependencies)
+TEST(SceneManagerTest, RuntimeAdditionInitializesAndRejectsInvalidDependencies)
 {
     StaticMeshActor actor;
     actor.init();
@@ -356,10 +354,7 @@ TEST(SceneManagerTest, RuntimeAdditionInitializesAndRollsBackFailedDependencies)
     auto& freeFly = actor.addComponent<FreeFlyMoveComponent>();
     EXPECT_EQ(&freeFly.actor(), &actor);
     EXPECT_EQ(actor.getComponent<CameraComponent>(), nullptr);
-    const auto count = actor.components.size();
-    EXPECT_THROW(actor.addComponent<CharacterMoveComponent>(), std::logic_error);
-    EXPECT_EQ(actor.components.size(), count);
-    EXPECT_EQ(actor.getComponent<CharacterMoveComponent>(), nullptr);
+    EXPECT_DEATH(actor.addComponent<CharacterMoveComponent>(), "");
 }
 
 TEST(SceneManagerTest, ALightRoundTripsAndTicksItsComponents)
@@ -395,7 +390,7 @@ TEST(SceneManagerTest, ALightRequiresLightComponent)
     {
         return dynamic_cast<LightComponent*>(component.get()) != nullptr;
     });
-    EXPECT_THROW(actor.init(), std::logic_error);
+    EXPECT_DEATH(actor.init(), "");
 }
 
 TEST(SceneManagerTest, BaseTypesAreNotRegistered)
@@ -410,22 +405,22 @@ TEST(SceneManagerTest, RejectsUnknownTypesMissingFieldsAndMissingRequiredCompone
     auto stored = Serialize(makeScene());
     stored["actors"][0] = json{{"MissingActor", stored["actors"][0].at("FreeFlyCameraActor")}};
     SceneAsset parsed;
-    EXPECT_THROW(Deserialize(stored, parsed), json::other_error);
+    EXPECT_DEATH(Deserialize(stored, parsed), "");
 
     stored = Serialize(makeScene());
     auto& components = stored["actors"][0]["FreeFlyCameraActor"]["components"];
     components[1] = json{{"MissingComponent", components[1].at("CameraComponent")}};
-    EXPECT_THROW(Deserialize(stored, parsed), json::other_error);
+    EXPECT_DEATH(Deserialize(stored, parsed), "");
 
     stored = Serialize(makeScene());
     stored["actors"][0]["FreeFlyCameraActor"].erase("name");
-    EXPECT_THROW(Deserialize(stored, parsed), json::out_of_range);
+    EXPECT_DEATH(Deserialize(stored, parsed), "");
 
     stored = Serialize(makeScene());
     stored["actors"][0]["FreeFlyCameraActor"]["components"].erase(0);
     Deserialize(stored, parsed);
     SceneManager manager;
-    EXPECT_THROW(manager.load(parsed), std::logic_error);
+    EXPECT_DEATH(manager.load(parsed), "");
 }
 
 TEST(SceneManagerTest, PolymorphicPointersRequireExactlyOneTypeKey)
@@ -444,8 +439,8 @@ TEST(SceneManagerTest, PolymorphicPointersRequireExactlyOneTypeKey)
     for (const auto& stored : invalid)
     {
         SCOPED_TRACE(stored.dump());
-        EXPECT_THROW(Deserialize(stored, actor), json::other_error);
-        EXPECT_THROW(Deserialize(stored, component), json::other_error);
+        EXPECT_DEATH(Deserialize(stored, actor), "");
+        EXPECT_DEATH(Deserialize(stored, component), "");
         EXPECT_EQ(actor.get(), originalActor);
         EXPECT_EQ(component.get(), originalComponent);
     }
@@ -461,8 +456,8 @@ TEST(SceneManagerTest, PolymorphicPointersRequireObjectData)
     for (const auto& data : invalid)
     {
         SCOPED_TRACE(data.dump());
-        EXPECT_THROW(Deserialize(json{{"StaticMeshActor", data}}, actor), json::other_error);
-        EXPECT_THROW(Deserialize(json{{"TransformComponent", data}}, component), json::other_error);
+        EXPECT_DEATH(Deserialize(json{{"StaticMeshActor", data}}, actor), "");
+        EXPECT_DEATH(Deserialize(json{{"TransformComponent", data}}, component), "");
         EXPECT_EQ(actor, nullptr);
         EXPECT_EQ(component, nullptr);
     }
@@ -490,7 +485,7 @@ TEST(SceneManagerTest, RegistryIteratesInheritedMembersAndRejectsDuplicateRegist
     const auto& type = BaseTypeInfo<Actor>::baseTypeInfoMap.at("FreeFlyCameraActor");
     type.IterateMembers(actor, [&](MemberRef member) { members.push_back(member.name); });
     EXPECT_EQ(members, (std::vector<std::string_view>{"name", "components"}));
-    EXPECT_THROW((RegisterBase<TransformComponent, Component>("TransformComponent")), std::logic_error);
+    EXPECT_DEATH((RegisterBase<TransformComponent, Component>("TransformComponent")), "");
 }
 
 TEST(SceneManagerTest, NullPolymorphicPointersRoundTripButNullActorsAreRejected)
@@ -504,5 +499,5 @@ TEST(SceneManagerTest, NullPolymorphicPointersRoundTripButNullActorsAreRejected)
     auto scene = makeScene();
     scene.actors.push_back(nullptr);
     SceneManager manager;
-    EXPECT_THROW(manager.load(scene), std::logic_error);
+    EXPECT_DEATH(manager.load(scene), "");
 }

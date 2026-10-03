@@ -6,6 +6,7 @@
 
 #include "core/Annotations.h"
 #include "core/Reflect.h"
+#include "core/Logger.h"
 
 #include <bit>
 #include <filesystem>
@@ -14,7 +15,6 @@
 #include <charconv>
 #include <concepts>
 #include <optional>
-#include <stdexcept>
 #include <vector>
 #include <string>
 #include <type_traits>
@@ -27,6 +27,7 @@ using json = nlohmann::json;
 template<class T>
 T DeserializeEnum(const json& j)
 {
+    CHECK(j.is_string(), "expected an enum name");
     const std::string name = j.get<std::string>();
 
     template for (constexpr auto enumerator :
@@ -36,7 +37,7 @@ T DeserializeEnum(const json& j)
             return [:enumerator:];
     }
 
-    throw json::other_error::create(501, "unknown enumerator '" + name + "'", &j);
+    CHECK(false, "unknown enumerator '{}'", name);
 }
 
 template<FlagEnum T>
@@ -60,8 +61,7 @@ json Serialize(const T& value)
         }
     }
 
-    if (remaining != 0)
-        throw json::other_error::create(501, "unknown flag bits", &result);
+    CHECK(remaining == 0, "unknown flag bits");
 
     return result;
 }
@@ -73,8 +73,7 @@ json Serialize(const std::unique_ptr<Base>& value)
 
     const auto& names = BaseTypeInfo<Base>::typeNames;
     const auto name = names.find(typeid(*value));
-    if (name == names.end())
-        throw json::other_error::create(501, "unregistered polymorphic type", nullptr);
+    CHECK(name != names.end(), "unregistered polymorphic type");
 
     const auto& type = BaseTypeInfo<Base>::baseTypeInfoMap.at(name->second);
     return json{{name->second, type.SerializeBase(*value)}};
@@ -139,7 +138,7 @@ json Serialize(const T& value)
                 return std::string(std::meta::identifier_of(enumerator));
         }
 
-        throw json::other_error::create(501, "unknown enum value", nullptr);
+        CHECK(false, "unknown enum value");
     }
     else
     {
@@ -160,14 +159,14 @@ json Serialize(const T& value)
 template<FlagEnum T>
 void Deserialize(const json& j, T& value)
 {
+    CHECK(j.is_array(), "expected a flag array");
     const auto& array = j.get_ref<const json::array_t&>();
     using Bits = std::make_unsigned_t<std::underlying_type_t<T>>;
     Bits result = 0;
     for (const auto& name : array)
     {
         const Bits bit = static_cast<Bits>(std::to_underlying(DeserializeEnum<T>(name)));
-        if (!std::has_single_bit(bit))
-            throw json::other_error::create(501, "expected a single named flag", &name);
+        CHECK(std::has_single_bit(bit), "expected a single named flag");
 
         result |= bit;
     }
@@ -184,18 +183,15 @@ void Deserialize(const json& j, std::unique_ptr<Base>& value)
         return;
     }
 
-    if (!j.is_object() || j.size() != 1)
-        throw json::other_error::create(501, "expected exactly one polymorphic type key", &j);
+    CHECK(j.is_object() && j.size() == 1, "expected exactly one polymorphic type key");
 
     const auto entry = j.begin();
     const std::string& name = entry.key();
     const auto& types = BaseTypeInfo<Base>::baseTypeInfoMap;
     const auto type = types.find(name);
-    if (type == types.end())
-        throw json::other_error::create(501, "unregistered polymorphic type '" + name + "'", &j);
+    CHECK(type != types.end(), "unregistered polymorphic type '{}'", name);
 
-    if (!entry.value().is_object())
-        throw json::other_error::create(501, "expected object data for polymorphic type '" + name + "'", &j);
+    CHECK(entry.value().is_object(), "expected object data for polymorphic type '{}'", name);
 
     value = type->second.DeserializeBase(entry.value());
 }
@@ -207,10 +203,18 @@ void Deserialize(const json& j, T& value)
 
     if constexpr (std::is_arithmetic_v<U> || std::is_same_v<U, std::string>)
     {
+        if constexpr (std::same_as<U, std::string>)
+            CHECK(j.is_string(), "expected a string");
+        else if constexpr (std::same_as<U, bool>)
+            CHECK(j.is_boolean(), "expected a boolean");
+        else
+            CHECK(j.is_number(), "expected a number");
+
         value = j.get<U>();
     }
     else if constexpr (std::is_same_v<U, std::filesystem::path>)
     {
+        CHECK(j.is_string(), "expected a path string");
         value = j.get<std::string>();
     }
     else if constexpr (IsOptional<U>)
@@ -226,15 +230,16 @@ void Deserialize(const json& j, T& value)
     }
     else if constexpr (IsGlmVector<U> || std::is_same_v<U, glm::quat>)
     {
+        CHECK(j.is_array(), "expected a vector or quaternion array");
         const auto& array = j.get_ref<const json::array_t&>();
-        if (array.size() != static_cast<size_t>(U::length()))
-            throw json::other_error::create(501, "invalid vector or quaternion length", &j);
+        CHECK(array.size() == static_cast<size_t>(U::length()), "invalid vector or quaternion length");
 
         for (glm::length_t index = 0; index < U::length(); ++index)
-            value[index] = array[index].template get<typename U::value_type>();
+            Deserialize(array[index], value[index]);
     }
     else if constexpr (IsMap<U>)
     {
+        CHECK(j.is_object(), "expected a map object");
         const auto& object = j.get_ref<const json::object_t&>();
         U result;
         for (const auto& [name, element] : object)
@@ -245,8 +250,7 @@ void Deserialize(const json& j, T& value)
             else
             {
                 const auto [end, error] = std::from_chars(name.data(), name.data() + name.size(), key);
-                if (error != std::errc{} || end != name.data() + name.size())
-                    throw json::other_error::create(501, "invalid map key '" + name + "'", &j);
+                CHECK(error == std::errc{} && end == name.data() + name.size(), "invalid map key '{}'", name);
             }
 
             typename U::mapped_type item{};
@@ -258,6 +262,7 @@ void Deserialize(const json& j, T& value)
     }
     else if constexpr (IsVector<U>)
     {
+        CHECK(j.is_array(), "expected an array");
         const auto& array = j.get_ref<const json::array_t&>();
         U result;
         result.reserve(array.size());
@@ -279,6 +284,7 @@ void Deserialize(const json& j, T& value)
         constexpr auto ctx = std::meta::access_context::current();
         static constexpr auto members = std::define_static_array(ReflectedDataMembers(^^U, ctx));
 
+        CHECK(j.is_object(), "expected an object");
         const auto& object = j.get_ref<const json::object_t&>();
         if constexpr (!HasInheritedAnnotation(^^U, ^^PartialSerialize, ctx))
         {
@@ -289,8 +295,7 @@ void Deserialize(const json& j, T& value)
                 {
                     known |= name == std::meta::identifier_of(member);
                 }
-                if (!known)
-                    throw json::other_error::create(501, "unknown field '" + name + "'", &j);
+                CHECK(known, "unknown field '{}'", name);
             }
         }
 
@@ -298,7 +303,9 @@ void Deserialize(const json& j, T& value)
         {
             const std::string name(std::meta::identifier_of(member));
 
-            Deserialize(j.at(name), value.[:member:]);
+            const auto field = j.find(name);
+            CHECK(field != j.end(), "missing field '{}'", name);
+            Deserialize(*field, value.[:member:]);
         }
     }
 }
@@ -313,8 +320,8 @@ void RegisterBase(std::string_view name)
     auto& types = BaseTypeInfo<Base>::baseTypeInfoMap;
     auto& names = BaseTypeInfo<Base>::typeNames;
     const std::string ownedName{name};
-    if (ownedName.empty() || types.contains(ownedName) || names.contains(typeid(T)))
-        throw std::logic_error("duplicate or empty registered type name: " + ownedName);
+    CHECK(!ownedName.empty() && !types.contains(ownedName) && !names.contains(typeid(T)),
+          "duplicate or empty registered type name: {}", ownedName);
 
     types.emplace(ownedName, BaseTypeInfo<Base>{
         .DeserializeBase = [](const json& data) -> std::unique_ptr<Base>

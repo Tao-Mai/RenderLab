@@ -14,7 +14,6 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
-#include <exception>
 #include <filesystem>
 #include <future>
 #include <string>
@@ -463,24 +462,16 @@ void EditorUI::finishEnvironmentImport()
         return;
     }
 
-    try
+    auto prepared = environmentImport.get();
+    if (!prepared || importStop.stop_requested())
     {
-        auto prepared = environmentImport.get();
-        if (!prepared || importStop.stop_requested())
-        {
-            importStatus = "Environment import canceled";
-            return;
-        }
+        importStatus = "Environment import canceled";
+        return;
+    }
 
-        const EnvironmentMapAsset::ID id = AssetImporter::saveEnvironmentMap(
-            std::move(*prepared));
-        importStatus = "Imported: " + id.value;
-    }
-    catch (const std::exception& error)
-    {
-        LOG_ERROR("Environment import failed: {}", error.what());
-        importStatus = std::string{"Import failed: "} + error.what();
-    }
+    const EnvironmentMapAsset::ID id = AssetImporter::saveEnvironmentMap(
+        std::move(*prepared));
+    importStatus = "Imported: " + id.value;
 }
 
 void EditorUI::drawImportDialog()

@@ -8,11 +8,9 @@ Actor::Actor()
 void Actor::init()
 {
     for (const auto& component : components)
-        if (!component)
-            throw std::logic_error("null component on actor: " + name);
+        CHECK(component);
 
-    if (!getComponent<TransformComponent>())
-        throw std::logic_error("actor requires TransformComponent: " + name);
+    CHECK(getComponent<TransformComponent>());
 
     for (const auto& component : components)
         component->init(this);
@@ -32,8 +30,7 @@ TransformComponent& Actor::transform()
 const TransformComponent& Actor::transform() const
 {
     auto* component = getComponent<TransformComponent>();
-    if (!component)
-        throw std::logic_error("actor requires TransformComponent: " + name);
+    CHECK(component);
     return *component;
 }
 

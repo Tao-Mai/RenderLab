@@ -2,11 +2,11 @@
 
 #include "scene/Component.h"
 #include "scene/component/TransformComponent.h"
+#include "core/Logger.h"
 
 #include <concepts>
 #include <cstdint>
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -78,15 +78,7 @@ public:
     {
         auto& result = addDefaultComponent<T>(std::forward<Args>(args)...);
 
-        try
-        {
-            result.init(this);
-        }
-        catch (...)
-        {
-            components.pop_back();
-            throw;
-        }
+        result.init(this);
 
         return result;
     }

@@ -6,11 +6,10 @@
 #include "core/Logger.h"
 
 #include <limits>
-#include <stdexcept>
 
 void SceneManager::load(const SceneAsset::ID& id)
 {
-    CHECK(context().assetManager != nullptr, "SceneManager requires AssetManager");
+    CHECK(context().assetManager);
     load(context().assetManager->get<SceneAsset>(id));
 }
 
@@ -24,28 +23,27 @@ void SceneManager::load(const SceneAsset& scene)
     FreeFlyCameraActor* camera = nullptr;
     for (const auto& actor : loaded.actors)
     {
-        if (!actor) throw std::logic_error("scene contains a null actor");
+        CHECK(actor);
         actor->init();
         if (auto* candidate = dynamic_cast<FreeFlyCameraActor*>(actor.get()))
         {
-            if (camera) throw std::logic_error("scene contains multiple camera actors");
+            CHECK(!camera, "scene contains multiple camera actors");
             camera = candidate;
         }
 
-        if (nextSelectionId == std::numeric_limits<uint32_t>::max())
-            throw std::overflow_error("scene selection IDs exhausted");
+        CHECK(nextSelectionId != std::numeric_limits<uint32_t>::max(), "scene selection IDs exhausted");
         actor->id = nextSelectionId++;
     }
 
-    if (!camera) throw std::logic_error("scene requires a FreeFlyCameraActor");
+    CHECK(camera);
 
-    data = std::move(loaded);
+    data        = std::move(loaded);
     cameraActor = camera;
 }
 
 void SceneManager::save()
 {
-    CHECK(context().assetManager != nullptr, "SceneManager requires AssetManager");
+    CHECK(context().assetManager);
     SceneAsset snapshot;
     Deserialize(Serialize(data), snapshot);
     context().assetManager->save<SceneAsset>(std::move(snapshot));
@@ -53,9 +51,10 @@ void SceneManager::save()
 
 void SceneManager::reset() noexcept
 {
-    if (cameraActor) cameraActor->camera().resetNavigation();
+    if (cameraActor)
+        cameraActor->camera().resetNavigation();
     cameraActor = nullptr;
-    data = {};
+    data        = {};
 }
 
 void SceneManager::tick(float deltaTime)
@@ -67,20 +66,22 @@ void SceneManager::tick(float deltaTime)
             actor->tick(deltaTime);
 }
 
-SceneAsset& SceneManager::scene() noexcept { return data; }
+SceneAsset&       SceneManager::scene() noexcept { return data; }
 const SceneAsset& SceneManager::scene() const noexcept { return data; }
 
 FreeFlyCameraActor& SceneManager::editorCamera() const
 {
-    if (!cameraActor) throw std::logic_error("scene has no camera actor");
+    CHECK(cameraActor);
     return *cameraActor;
 }
 
 Actor* SceneManager::findActor(uint32_t selectionId) const noexcept
 {
-    if (selectionId == 0) return nullptr;
+    if (selectionId == 0)
+        return nullptr;
     for (const auto& actor : data.actors)
-        if (actor->selectionId() == selectionId) return actor.get();
+        if (actor->selectionId() == selectionId)
+            return actor.get();
 
     return nullptr;
 }

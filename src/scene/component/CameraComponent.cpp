@@ -16,8 +16,7 @@
 void CameraComponent::init(Actor* actor)
 {
     Component::init(actor);
-    if (!actor->getComponent<TransformComponent>())
-        throw std::logic_error("CameraComponent requires TransformComponent on actor: " + actor->name);
+    CHECK(actor->getComponent<TransformComponent>());
 }
 
 void CameraComponent::resetNavigation()

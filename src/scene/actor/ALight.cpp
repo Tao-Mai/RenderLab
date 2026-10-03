@@ -10,6 +10,5 @@ ALight::ALight()
 void ALight::init()
 {
     Actor::init();
-    if (!getComponent<LightComponent>())
-        throw std::logic_error("light actor requires LightComponent: " + name);
+    CHECK(getComponent<LightComponent>());
 }
