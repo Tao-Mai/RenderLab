@@ -6,6 +6,5 @@ class StaticMeshActor : public Actor
 {
 public:
     StaticMeshActor();
-    void initialize() override;
-    void tick(float deltaTime) override;
+    void init() override;
 };

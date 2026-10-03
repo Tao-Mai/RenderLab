@@ -1,6 +1,6 @@
 #pragma once
 
-#include "scene/component/Component.h"
+#include "scene/Component.h"
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/mat4x4.hpp>

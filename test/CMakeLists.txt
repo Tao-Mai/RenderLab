@@ -14,6 +14,9 @@ add_executable(RenderLabTests
         ${PROJECT_SOURCE_DIR}/src/scene/actor/ALight.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/actor/StaticMeshActor.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/component/TransformComponent.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/Component.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/component/LightComponent.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/component/RenderComponent.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/component/CameraComponent.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/component/FreeFlyMoveComponent.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/component/CharacterMoveComponent.cpp

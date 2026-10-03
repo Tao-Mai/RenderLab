@@ -1,6 +1,6 @@
 #pragma once
 
-#include "scene/component/Component.h"
+#include "scene/Component.h"
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
@@ -15,6 +15,7 @@ public:
     [[=ReflectField{}]] float farPlane = 100.0f;
     [[=ReflectField{}]] float mouseSensitivity = 0.12f;
 
+    void init(Actor* actor) override;
     void tick(float deltaTime) override;
     void setInputEnabled(bool enabled);
     void resetNavigation();

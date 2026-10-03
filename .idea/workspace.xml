@@ -71,77 +71,16 @@
   <component name="ChangeListManager">
     <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="更改架构">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/AGENTS.md" beforeDir="false" afterPath="$PROJECT_DIR$/AGENTS.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/EnvironmentMap/grasslands_sunset_4k.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/EnvironmentMap/grasslands_sunset_4k.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/EnvironmentMap/newport_loft.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/EnvironmentMap/newport_loft.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/assets/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/Scene/default.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/Scene/default.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/Shader/light.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/Shader/light.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/Shader/picking.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/Shader/picking.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/Shader/scene.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/Shader/scene.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/Shader/shadow.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/Shader/shadow.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/Shader/skybox.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/Shader/skybox.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/Texture/grasslands_sunset_4k.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/Texture/grasslands_sunset_4k.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/Texture/grasslands_sunset_4k_irradiance.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/Texture/grasslands_sunset_4k_irradiance.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/Texture/grasslands_sunset_4k_prefiltered_specular.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/Texture/grasslands_sunset_4k_prefiltered_specular.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/Texture/lut_ggx.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/Texture/lut_ggx.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/Texture/newport_loft.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/Texture/newport_loft.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/Texture/newport_loft_irradiance.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/Texture/newport_loft_irradiance.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/Texture/newport_loft_prefiltered_specular.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/Texture/newport_loft_prefiltered_specular.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/Engine.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Main.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/Main.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/ApplyOptionalFields.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/ApplyOptionalFields.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/Asset.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/Asset.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/AssetDataManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/AssetDataManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/AssetDataManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/AssetDataManager.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/AssetDescManager.cpp" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/AssetDescManager.h" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/AssetImporter.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/AssetImporter.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/BuiltinAssets.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/BuiltinAssets.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/JsonIo.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/JsonIo.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/RflReflectors.h" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/Serializer.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/Serializer.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/builtin/BuiltinMaterial.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/builtin/BuiltinMaterial.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/builtin/BuiltinMesh.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/builtin/BuiltinMesh.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/builtin/BuiltinSampler.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/builtin/BuiltinSampler.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/builtin/BuiltinTexture.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/builtin/BuiltinTexture.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/import/EnvironmentMapBake.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/import/EnvironmentMapBake.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/import/EnvironmentMapUtils.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/import/EnvironmentMapUtils.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/import/EnvironmentMapUtils.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/import/EnvironmentMapUtils.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/import/ImportEnvironmentMap.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/import/ImportEnvironmentMap.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/import/ImportId.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/import/ImportId.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/import/ImportMesh.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/import/ImportMesh.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/import/ImportTexture.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/import/ImportTexture.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/core/ConfigManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/ConfigManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/core/ConfigManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/ConfigManager.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/core/Context.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/Context.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/editor/ComponentDraw.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/ComponentDraw.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/editor/ComponentDraw.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/ComponentDraw.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/editor/Editor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/Editor.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/editor/Editor.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/Editor.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/editor/EditorUi.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/EditorUi.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/editor/EditorUi.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/EditorUi.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/Renderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/Renderer.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/ShaderManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/ShaderManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/ShaderManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/ShaderManager.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/pass/RenderGraph.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/RenderGraph.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/pass/RenderGraph.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/RenderGraph.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/pass/ScenePass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/ScenePass.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/pass/ScenePass.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/ScenePass.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/GpuMaterial.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuMaterial.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/GpuMaterial.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuMaterial.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/GpuTexture.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuTexture.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/GpuTexture.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuTexture.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/RenderResourceManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/RenderResourceManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/RenderResourceManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/RenderResourceManager.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/NOTE.MD" beforeDir="false" afterPath="$PROJECT_DIR$/NOTE.MD" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TODO.md" beforeDir="false" afterPath="$PROJECT_DIR$/TODO.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/scene/Actor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/Actor.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/scene/Actor.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/Actor.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/scene/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/scene/SceneManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/SceneManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/scene/SceneManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/SceneManager.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/scene/SceneTypes.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/SceneTypes.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/scene/actor/ALight.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/actor/ALight.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/scene/actor/ALight.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/actor/ALight.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/scene/actor/FreeFlyCameraActor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/actor/FreeFlyCameraActor.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/scene/actor/FreeFlyCameraActor.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/actor/FreeFlyCameraActor.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/scene/actor/StaticMeshActor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/actor/StaticMeshActor.cpp" afterDir="false" />
@@ -150,22 +89,15 @@
       <change beforePath="$PROJECT_DIR$/src/scene/component/CameraComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/component/CameraComponent.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/scene/component/CharacterMoveComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/component/CharacterMoveComponent.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/scene/component/CharacterMoveComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/component/CharacterMoveComponent.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/scene/component/Component.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/component/Component.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/scene/component/Component.h" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/src/scene/component/FreeFlyMoveComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/component/FreeFlyMoveComponent.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/scene/component/FreeFlyMoveComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/component/FreeFlyMoveComponent.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/scene/component/LightComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/component/LightComponent.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/scene/component/RenderComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/component/RenderComponent.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/scene/component/TransformComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/component/TransformComponent.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/AssetDataManagerTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/AssetDataManagerTest.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/AssetIDTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/AssetIDTest.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/test/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/test/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/ComponentDrawTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/ComponentDrawTest.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/ConfigSerializationTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/ConfigSerializationTest.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/EnvironmentMapImportTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/EnvironmentMapImportTest.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/test/PartialSerializationTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/PartialSerializationTest.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/RenderGraphGpuSmoke.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/RenderGraphGpuSmoke.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/test/SceneManagerTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/SceneManagerTest.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/ShaderDataTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/ShaderDataTest.cpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -221,60 +153,60 @@
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
       <entry key="MS100" value="1.0" />
-      <entry key="MS500" value="1.0" />
-      <entry key="S2" value="1.0" />
-      <entry key="S5" value="1.0" />
-      <entry key="S10" value="1.0" />
-      <entry key="S30" value="1.0000000000004738" />
-      <entry key="S60" value="1.0000011920360816" />
-      <entry key="M2" value="1.0018910180625011" />
-      <entry key="M5" value="1.159159044230535" />
-      <entry key="M10" value="1.9648000178560903" />
-      <entry key="M15" value="3.6675604658843897" />
-      <entry key="M30" value="12.970656967640595" />
-      <entry key="H1" value="49.528344849695515" />
-      <entry key="H2" value="178.5085978445844" />
-      <entry key="H4" value="412.49053022845646" />
-      <entry key="D1" value="1015.3760299802711" />
-      <entry key="W1" value="2027.7803374511693" />
+      <entry key="MS500" value="1.0000004088459695" />
+      <entry key="S2" value="1.02820999165948" />
+      <entry key="S5" value="1.4345733604690438" />
+      <entry key="S10" value="2.6538435838791417" />
+      <entry key="S30" value="6.449007157218883" />
+      <entry key="S60" value="8.676048176955907" />
+      <entry key="M2" value="10.169829977992807" />
+      <entry key="M5" value="11.222732213857647" />
+      <entry key="M10" value="11.603546135484018" />
+      <entry key="M15" value="11.740625101765144" />
+      <entry key="M30" value="12.42615573780251" />
+      <entry key="H1" value="22.2255977961032" />
+      <entry key="H2" value="93.34297017038708" />
+      <entry key="H4" value="290.4889898903656" />
+      <entry key="D1" value="963.033199530577" />
+      <entry key="W1" value="2020.905001422393" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
       <entry key="MS500" value="0.0" />
-      <entry key="S2" value="8.040688424654955E-192" />
-      <entry key="S5" value="8.269536471986925E-77" />
-      <entry key="S10" value="2.0798318754957277E-38" />
-      <entry key="S30" value="8.917618824200066E-13" />
-      <entry key="S60" value="2.3075498051250353E-6" />
-      <entry key="M2" value="0.0037186505910984766" />
-      <entry key="M5" value="0.31362083619318365" />
-      <entry key="M10" value="1.4797536600796062" />
-      <entry key="M15" value="2.8042270284917645" />
-      <entry key="M30" value="6.805746773922584" />
-      <entry key="H1" value="15.606378794753512" />
-      <entry key="H2" value="41.601862440556985" />
-      <entry key="H4" value="88.89949448411035" />
-      <entry key="D1" value="216.5441882095765" />
-      <entry key="W1" value="393.3424428994679" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="0.0" />
+      <entry key="S10" value="4.822824306324048E-284" />
+      <entry key="S30" value="1.1803386870965087E-94" />
+      <entry key="S60" value="2.6547886481523803E-47" />
+      <entry key="M2" value="1.2613186221031945E-23" />
+      <entry key="M5" value="2.0350762320308458E-9" />
+      <entry key="M10" value="1.1920028937032574E-4" />
+      <entry key="M15" value="0.005230442460485432" />
+      <entry key="M30" value="0.2939262778105605" />
+      <entry key="H1" value="3.243272639099121" />
+      <entry key="H2" value="18.965025495608533" />
+      <entry key="H4" value="60.02326563649352" />
+      <entry key="D1" value="202.82271272257123" />
+      <entry key="W1" value="389.6811425707971" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="0.9460576467255959" />
-      <entry key="MS500" value="0.9889709163809315" />
-      <entry key="S2" value="0.9972312513520695" />
-      <entry key="S5" value="0.9988915792636801" />
-      <entry key="S10" value="0.9994456359721023" />
-      <entry key="S30" value="0.9998151778349051" />
-      <entry key="S60" value="0.9999110422203461" />
-      <entry key="M2" value="1.0055295848146246" />
-      <entry key="M5" value="1.4716174501945691" />
-      <entry key="M10" value="3.4417500747417296" />
-      <entry key="M15" value="6.467989076418416" />
-      <entry key="M30" value="19.770991116934415" />
-      <entry key="H1" value="65.12695747678721" />
-      <entry key="H2" value="220.09754837033037" />
-      <entry key="H4" value="501.3748873153737" />
-      <entry key="D1" value="1231.9136153970408" />
-      <entry key="W1" value="2421.120566347352" />
+      <entry key="MS100" value="0.9526379980439373" />
+      <entry key="MS500" value="0.990343276269821" />
+      <entry key="S2" value="1.0257095700167138" />
+      <entry key="S5" value="1.4331380027617915" />
+      <entry key="S10" value="2.652471837703133" />
+      <entry key="S30" value="6.44785324870992" />
+      <entry key="S60" value="8.675263447761106" />
+      <entry key="M2" value="10.169367502611717" />
+      <entry key="M5" value="11.222527391940423" />
+      <entry key="M10" value="11.603559106662754" />
+      <entry key="M15" value="11.745776969957413" />
+      <entry key="M30" value="12.719812094613344" />
+      <entry key="H1" value="25.46723830710621" />
+      <entry key="H2" value="112.30210039703098" />
+      <entry key="H4" value="350.50203047493926" />
+      <entry key="D1" value="1165.8497270890157" />
+      <entry key="W1" value="2410.5839504893625" />
     </decayedShown>
   </component>
   <component name="ProjectApplicationVersion">
@@ -359,11 +291,6 @@
     </key>
   </component>
   <component name="RunManager" selected="CMake 应用程序.RenderLab">
-    <configuration default="true" type="CLionExternalRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
-      <method v="2">
-        <option name="CLION.EXTERNAL.BUILD" enabled="true" />
-      </method>
-    </configuration>
     <configuration name="RenderGraphTests" type="CMakeGoogleTestRunConfigurationType" factoryName="Google Test" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="RenderGraphTests" CONFIG_NAME="Default-gcc 16.2" RUN_TARGET_PROJECT_NAME="RenderLab" RUN_TARGET_NAME="RenderGraphTests" TEST_MODE="SUITE_TEST">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
@@ -714,6 +641,11 @@
       </method>
     </configuration>
     <configuration name="RenderLab" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="RenderLab" CONFIG_NAME="Default-gcc 16.2" RUN_TARGET_PROJECT_NAME="RenderLab" RUN_TARGET_NAME="RenderLab">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration default="true" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>

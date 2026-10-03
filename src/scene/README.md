@@ -1,21 +1,37 @@
 # Actor / Component
 
 SceneManager owns a live `SceneAsset` and its `unique_ptr<Actor>` objects. Each Actor owns its
-`unique_ptr<Component>` objects, including exactly one TransformComponent.
+`unique_ptr<Component>` objects, including at least one TransformComponent.
+Multiple components of the same type are allowed. `getComponent<T>()` returns
+the first matching component; `getComponents<T>()` returns all matching pointers
+in component-array order, including derived types. Const Actors return const pointers.
+`transform()` uses the first TransformComponent.
 Components hold a non-owning, private Actor pointer. Runtime pointers and state
 are not serialized.
 
+Constructors use `addDefaultComponent<T>()` to assemble components without initializing
+them; deserialization also only assembles components. `Actor::init()` validates
+the complete component array, then calls each component's virtual `init(Actor*)`.
+`Component::init()` rejects a null Actor and binds the private owner pointer.
+Overrides call the base implementation and check their own component dependencies
+through the supplied Actor; dependency presence does not depend on array order.
+Camera, movement, Render and Light require Transform. The two movement components
+reject each other in their own init hooks; movement does not require a local Camera.
+`addComponent<T>()` always initializes the added component immediately, even before
+Actor initialization; a failed addition is removed. Owner pointers are not persisted.
+
 Engine ticks SceneManager. The active FreeFlyCameraActor ticks first; inside that
 actor, CameraComponent updates navigation and view direction before movement.
-Other actors then tick their components. Actor and Component are abstract bases
-with pure virtual `void tick(float deltaTime)`. Each concrete type implements Tick;
-components without per-frame behavior implement an empty Tick. Editor edits mark
+Other actors then tick their components. Actor provides a virtual `void tick(float deltaTime)`
+that traverses all its components by default; subclasses override it only for custom behavior.
+Component retains a pure virtual Tick; components without per-frame behavior implement
+an empty Tick. Editor edits mark
 the scene dirty independently of Tick.
 
 FreeFlyCameraActor supplies CameraComponent and FreeFlyMoveComponent.
 StaticMeshActor supplies TransformComponent and RenderComponent.
 ALight supplies TransformComponent and LightComponent. Concrete actors can
-hold additional behavior components; Actor itself is not registered or instantiated.
+hold additional behavior components; Actor itself is concrete but is not registered for persistence.
 
 ## Registration and persistence
 

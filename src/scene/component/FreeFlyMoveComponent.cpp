@@ -5,11 +5,21 @@
 #include "core/Logger.h"
 #include "scene/SceneManager.h"
 #include "scene/component/TransformComponent.h"
+#include "scene/component/CharacterMoveComponent.h"
 #include "scene/actor/FreeFlyCameraActor.h"
 
 #include <algorithm>
 
 #include <glm/geometric.hpp>
+
+void FreeFlyMoveComponent::init(Actor* actor)
+{
+    Component::init(actor);
+    if (!actor->getComponent<TransformComponent>())
+        throw std::logic_error("FreeFlyMoveComponent requires TransformComponent on actor: " + actor->name);
+    if (actor->getComponent<CharacterMoveComponent>())
+        throw std::logic_error("FreeFlyMoveComponent cannot coexist with CharacterMoveComponent on actor: " + actor->name);
+}
 
 void FreeFlyMoveComponent::tick(float deltaTime)
 {

@@ -6,6 +6,5 @@ class ALight : public Actor
 {
 public:
     ALight();
-    void initialize() override;
-    void tick(float deltaTime) override;
+    void init() override;
 };

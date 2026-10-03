@@ -6,18 +6,18 @@
 FreeFlyCameraActor::FreeFlyCameraActor()
 {
     name = "Editor Camera";
-    addComponent<CameraComponent>();
-    addComponent<FreeFlyMoveComponent>();
+    addDefaultComponent<CameraComponent>();
+    addDefaultComponent<FreeFlyMoveComponent>();
 }
 
-void FreeFlyCameraActor::initialize()
+void FreeFlyCameraActor::init()
 {
-    Actor::initialize();
+    Actor::init();
     if (!getComponent<CameraComponent>() ||
         (!getComponent<FreeFlyMoveComponent>() && !getComponent<CharacterMoveComponent>()) ||
         (getComponent<FreeFlyMoveComponent>() && getComponent<CharacterMoveComponent>()) ||
         getComponent<RenderComponent>())
-        throw std::logic_error("camera actor requires Camera and one movement component, without Render");
+        throw std::logic_error("camera actor requires Camera and one movement type, without Render");
 
     camera().resetNavigation();
 }

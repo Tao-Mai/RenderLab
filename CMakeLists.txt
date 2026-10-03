@@ -223,10 +223,13 @@ add_executable(RenderLab
         src/core/Input.h
         src/core/InputManager.h
         src/core/InputManager.cpp
-        src/scene/component/Component.h
+        src/scene/Component.h
+        src/scene/Component.cpp
         src/scene/component/CameraComponent.h
         src/scene/component/LightComponent.h
+        src/scene/component/LightComponent.cpp
         src/scene/component/RenderComponent.h
+        src/scene/component/RenderComponent.cpp
         src/scene/component/TransformComponent.cpp
         src/scene/component/TransformComponent.h
         src/scene/component/FreeFlyMoveComponent.h

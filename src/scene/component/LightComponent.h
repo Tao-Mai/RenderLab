@@ -1,12 +1,13 @@
 #pragma once
 
-#include "scene/component/Component.h"
+#include "scene/Component.h"
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
 struct LightComponent : Component
 {
+    void init(Actor* actor) override;
     void tick(float) override {}
 
     enum class Type

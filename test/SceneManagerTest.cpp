@@ -13,7 +13,7 @@
 
 namespace
 {
-static_assert(std::is_abstract_v<Actor>);
+static_assert(!std::is_abstract_v<Actor>);
 static_assert(std::is_abstract_v<Component>);
 static_assert(std::same_as<decltype(std::declval<Actor&>().tick(0.0f)), void>);
 static_assert(std::same_as<decltype(std::declval<Component&>().tick(0.0f)), void>);
@@ -36,7 +36,14 @@ SceneAsset makeScene()
 
 struct TestTickComponent : Component
 {
+    int inits = 0;
     int ticks = 0;
+
+    void init(Actor* owner) override
+    {
+        Component::init(owner);
+        ++inits;
+    }
 
     void tick(float deltaTime) override
     {
@@ -134,12 +141,225 @@ TEST(SceneManagerTest, CharacterMovementAndEnvironmentUpRoundTrip)
 
 TEST(SceneManagerTest, ComponentTickUsesItsOwningActor)
 {
-    StaticMeshActor actor;
+    Actor actor;
+    actor.init();
     auto& tick = actor.addComponent<TestTickComponent>();
+    EXPECT_EQ(tick.inits, 1);
     actor.tick(0.25f);
     EXPECT_EQ(tick.ticks, 1);
     EXPECT_FLOAT_EQ(actor.transform().position.x, 0.25f);
-    EXPECT_THROW(actor.addComponent<TestTickComponent>(), std::logic_error);
+}
+
+TEST(SceneManagerTest, MultipleComponentsOfTheSameTypeInitializeAndTick)
+{
+    struct TickActor : StaticMeshActor
+    {
+        TickActor()
+        {
+            addDefaultComponent<TestTickComponent>();
+            addDefaultComponent<TestTickComponent>();
+        }
+    } actor;
+    const auto defaults = actor.getComponents<TestTickComponent>();
+    ASSERT_EQ(defaults.size(), 2);
+    auto& first = *defaults[0];
+    auto& second = *defaults[1];
+    EXPECT_EQ(first.inits, 0);
+    EXPECT_EQ(second.inits, 0);
+    actor.init();
+    auto& third = actor.addComponent<TestTickComponent>();
+
+    EXPECT_EQ(actor.getComponent<TestTickComponent>(), &first);
+    EXPECT_EQ(actor.getComponents<TestTickComponent>(),
+        (std::vector<TestTickComponent*>{&first, &second, &third}));
+    for (auto* component : actor.getComponents<TestTickComponent>())
+    {
+        EXPECT_EQ(component->inits, 1);
+        EXPECT_EQ(&component->actor(), &actor);
+    }
+
+    actor.tick(0.25f);
+    for (auto* component : actor.getComponents<TestTickComponent>())
+        EXPECT_EQ(component->ticks, 1);
+    EXPECT_FLOAT_EQ(actor.transform().position.x, 0.75f);
+}
+
+TEST(SceneManagerTest, ComponentQueriesIncludeDerivedTypesAndPreserveConstness)
+{
+    struct DerivedTickComponent : TestTickComponent {};
+
+    StaticMeshActor actor;
+    EXPECT_EQ(actor.getComponent<TestTickComponent>(), nullptr);
+    EXPECT_TRUE(actor.getComponents<TestTickComponent>().empty());
+    auto& first = actor.addComponent<DerivedTickComponent>();
+    auto& second = actor.addComponent<TestTickComponent>();
+    auto& third = actor.addComponent<DerivedTickComponent>();
+    EXPECT_EQ(actor.getComponent<TestTickComponent>(), &first);
+    EXPECT_EQ(actor.getComponent<DerivedTickComponent>(), &first);
+    EXPECT_EQ(actor.getComponents<TestTickComponent>(),
+        (std::vector<TestTickComponent*>{&first, &second, &third}));
+    EXPECT_EQ(actor.getComponents<DerivedTickComponent>(),
+        (std::vector<DerivedTickComponent*>{&first, &third}));
+
+    const Actor& readOnly = actor;
+    static_assert(std::same_as<decltype(readOnly.getComponent<TestTickComponent>()),
+        const TestTickComponent*>);
+    static_assert(std::same_as<decltype(readOnly.getComponents<TestTickComponent>()),
+        std::vector<const TestTickComponent*>>);
+    EXPECT_EQ(readOnly.getComponent<TestTickComponent>(), &first);
+    EXPECT_EQ(readOnly.getComponents<TestTickComponent>(),
+        (std::vector<const TestTickComponent*>{&first, &second, &third}));
+    EXPECT_EQ(readOnly.getComponents<DerivedTickComponent>(),
+        (std::vector<const DerivedTickComponent*>{&first, &third}));
+    EXPECT_TRUE(readOnly.getComponents<LightComponent>().empty());
+}
+
+TEST(SceneManagerTest, RepeatedComponentTypesRoundTripAndRestoreEveryOwner)
+{
+    auto scene = makeScene();
+    auto& object = *scene.actors[1];
+    object.addComponent<TransformComponent>().position.x = 8.0f;
+    object.addComponent<RenderComponent>().meshId = MeshAsset::ID{"cube"};
+    object.getComponent<LightComponent>()->intensity = 2.0f;
+    object.addComponent<LightComponent>().intensity = 7.0f;
+    const auto stored = Serialize(scene);
+
+    SceneManager manager;
+    manager.load(scene);
+    auto& restored = *manager.scene().actors[1];
+    EXPECT_EQ(Serialize(manager.scene()), stored);
+    const auto transforms = restored.getComponents<TransformComponent>();
+    ASSERT_EQ(transforms.size(), 2);
+    EXPECT_EQ(&restored.transform(), transforms[0]);
+    EXPECT_FLOAT_EQ(transforms[1]->position.x, 8.0f);
+    const auto renders = restored.getComponents<RenderComponent>();
+    ASSERT_EQ(renders.size(), 2);
+    EXPECT_EQ(renders[1]->meshId, MeshAsset::ID{"cube"});
+    const auto lights = restored.getComponents<LightComponent>();
+    ASSERT_EQ(lights.size(), 2);
+    EXPECT_EQ(restored.getComponent<LightComponent>(), lights[0]);
+    EXPECT_FLOAT_EQ(lights[0]->intensity, 2.0f);
+    EXPECT_FLOAT_EQ(lights[1]->intensity, 7.0f);
+    for (const auto& component : restored.components)
+        EXPECT_EQ(&component->actor(), &restored);
+}
+
+TEST(SceneManagerTest, NullComponentsAreStillRejected)
+{
+    StaticMeshActor actor;
+    actor.components.push_back(nullptr);
+    EXPECT_THROW(actor.init(), std::logic_error);
+}
+
+TEST(SceneManagerTest, ComponentOwnerIsBoundOnlyDuringInit)
+{
+    struct DefaultActor : StaticMeshActor
+    {
+        DefaultActor() { addDefaultComponent<TestTickComponent>(); }
+    } actor;
+    auto& component = *actor.getComponent<TestTickComponent>();
+    EXPECT_EQ(component.inits, 0);
+    EXPECT_THROW((void)component.actor(), std::logic_error);
+    EXPECT_THROW((void)actor.transform().actor(), std::logic_error);
+    EXPECT_THROW(component.init(nullptr), std::invalid_argument);
+    EXPECT_THROW((void)component.actor(), std::logic_error);
+
+    actor.init();
+    EXPECT_EQ(component.inits, 1);
+    EXPECT_EQ(&component.actor(), &actor);
+    EXPECT_EQ(&actor.transform().actor(), &actor);
+}
+
+TEST(SceneManagerTest, AddComponentInitializesImmediatelyBeforeActorInit)
+{
+    struct ProbeComponent : TestTickComponent
+    {
+        explicit ProbeComponent(int value) : value(value) {}
+
+        void init(Actor* owner) override
+        {
+            TestTickComponent::init(owner);
+            EXPECT_EQ(owner->getComponent<ProbeComponent>(), this);
+        }
+
+        int value;
+    };
+
+    StaticMeshActor actor;
+    auto& component = actor.addComponent<ProbeComponent>(42);
+    EXPECT_EQ(component.value, 42);
+    EXPECT_EQ(component.inits, 1);
+    EXPECT_EQ(&component.actor(), &actor);
+    EXPECT_THROW((void)actor.transform().actor(), std::logic_error);
+}
+
+TEST(SceneManagerTest, FailedAdditionRollsBackBeforeActorInit)
+{
+    StaticMeshActor actor;
+    actor.components.clear();
+    EXPECT_THROW(actor.addComponent<RenderComponent>(), std::logic_error);
+    EXPECT_TRUE(actor.components.empty());
+    EXPECT_EQ(actor.getComponent<RenderComponent>(), nullptr);
+}
+
+TEST(SceneManagerTest, ComponentDependenciesDoNotDependOnSerializedOrder)
+{
+    auto scene = makeScene();
+    for (const auto& actor : scene.actors)
+        std::reverse(actor->components.begin(), actor->components.end());
+
+    SceneManager manager;
+    manager.load(scene);
+    for (const auto& actor : manager.scene().actors)
+        for (const auto& component : actor->components)
+            EXPECT_EQ(&component->actor(), actor.get());
+    EXPECT_EQ(Serialize(manager.scene()), Serialize(scene));
+}
+
+TEST(SceneManagerTest, ComponentsCheckTheirOwnTransformDependency)
+{
+    StaticMeshActor actor;
+    actor.components.clear();
+    CameraComponent camera;
+    FreeFlyMoveComponent freeFly;
+    CharacterMoveComponent character;
+    RenderComponent render;
+    LightComponent light;
+
+    EXPECT_THROW(camera.init(&actor), std::logic_error);
+    EXPECT_THROW(freeFly.init(&actor), std::logic_error);
+    EXPECT_THROW(character.init(&actor), std::logic_error);
+    EXPECT_THROW(render.init(&actor), std::logic_error);
+    EXPECT_THROW(light.init(&actor), std::logic_error);
+}
+
+TEST(SceneManagerTest, MovementInitRejectsConflictingComponentsInEitherOrder)
+{
+    StaticMeshActor actor;
+    auto& freeFly = actor.addDefaultComponent<FreeFlyMoveComponent>();
+    auto& character = actor.addDefaultComponent<CharacterMoveComponent>();
+    EXPECT_THROW(freeFly.init(&actor), std::logic_error);
+    EXPECT_THROW(character.init(&actor), std::logic_error);
+    EXPECT_THROW(actor.init(), std::logic_error);
+    std::reverse(actor.components.begin(), actor.components.end());
+    EXPECT_THROW(actor.init(), std::logic_error);
+}
+
+TEST(SceneManagerTest, RuntimeAdditionInitializesAndRollsBackFailedDependencies)
+{
+    StaticMeshActor actor;
+    actor.init();
+    auto& component = actor.addComponent<TestTickComponent>();
+    EXPECT_EQ(component.inits, 1);
+    EXPECT_EQ(&component.actor(), &actor);
+
+    auto& freeFly = actor.addComponent<FreeFlyMoveComponent>();
+    EXPECT_EQ(&freeFly.actor(), &actor);
+    EXPECT_EQ(actor.getComponent<CameraComponent>(), nullptr);
+    const auto count = actor.components.size();
+    EXPECT_THROW(actor.addComponent<CharacterMoveComponent>(), std::logic_error);
+    EXPECT_EQ(actor.components.size(), count);
+    EXPECT_EQ(actor.getComponent<CharacterMoveComponent>(), nullptr);
 }
 
 TEST(SceneManagerTest, ALightRoundTripsAndTicksItsComponents)
@@ -162,6 +382,7 @@ TEST(SceneManagerTest, ALightRoundTripsAndTicksItsComponents)
     EXPECT_EQ(&restored->getComponent<LightComponent>()->actor(), restored);
 
     auto& tick = restored->addComponent<TestTickComponent>();
+    EXPECT_EQ(tick.inits, 1);
     restored->tick(0.25f);
     EXPECT_EQ(tick.ticks, 1);
     EXPECT_FLOAT_EQ(restored->transform().position.x, 1.25f);
@@ -174,10 +395,10 @@ TEST(SceneManagerTest, ALightRequiresLightComponent)
     {
         return dynamic_cast<LightComponent*>(component.get()) != nullptr;
     });
-    EXPECT_THROW(actor.initialize(), std::logic_error);
+    EXPECT_THROW(actor.init(), std::logic_error);
 }
 
-TEST(SceneManagerTest, AbstractBaseTypesAreNotRegistered)
+TEST(SceneManagerTest, BaseTypesAreNotRegistered)
 {
     RegisterSceneTypes();
     EXPECT_FALSE(BaseTypeInfo<Actor>::baseTypeInfoMap.contains("Actor"));

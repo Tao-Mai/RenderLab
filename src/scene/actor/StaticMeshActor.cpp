@@ -4,17 +4,12 @@
 
 StaticMeshActor::StaticMeshActor()
 {
-    addComponent<RenderComponent>();
+    addDefaultComponent<RenderComponent>();
 }
 
-void StaticMeshActor::initialize()
+void StaticMeshActor::init()
 {
-    Actor::initialize();
+    Actor::init();
     if (!getComponent<RenderComponent>())
         throw std::logic_error("static mesh actor requires RenderComponent: " + name);
-}
-
-void StaticMeshActor::tick(float deltaTime)
-{
-    tickComponents(deltaTime);
 }

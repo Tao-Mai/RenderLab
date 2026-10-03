@@ -25,7 +25,7 @@ void SceneManager::load(const SceneAsset& scene)
     for (const auto& actor : loaded.actors)
     {
         if (!actor) throw std::logic_error("scene contains a null actor");
-        actor->initialize();
+        actor->init();
         if (auto* candidate = dynamic_cast<FreeFlyCameraActor*>(actor.get()))
         {
             if (camera) throw std::logic_error("scene contains multiple camera actors");

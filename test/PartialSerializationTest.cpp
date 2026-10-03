@@ -25,7 +25,7 @@ struct TaggedActor : Actor
     void tick(float deltaTime) override
     {
         ++tickCount;
-        tickComponents(deltaTime);
+        Actor::tick(deltaTime);
     }
 
     [[=ReflectField{}]] float health = 100.0f;
@@ -60,6 +60,7 @@ void registerTestTypes()
 TEST(PartialSerialization, ComponentIncludesOnlyMarkedInheritedMembers)
 {
     TaggedActor owner;
+    owner.init();
     auto& component = owner.addComponent<DerivedTaggedComponent>();
     component.value = 42;
     component.extra = 73;
@@ -114,7 +115,7 @@ TEST(PartialSerialization, ActorPolicyIsInheritedAndPreservesRuntimeMembers)
     restored.tickCount = 9;
     restored.runtimeComponent = source.runtimeComponent;
     Deserialize(stored, restored);
-    restored.initialize();
+    restored.init();
 
     EXPECT_EQ(restored.tickCount, 9);
     EXPECT_EQ(restored.runtimeComponent, source.runtimeComponent);
@@ -145,7 +146,7 @@ TEST(PartialSerialization, OwnedPolymorphicPointersStillRoundTrip)
 
     std::unique_ptr<Actor> restored;
     Deserialize(stored, restored);
-    restored->initialize();
+    restored->init();
     auto* restoredActor = dynamic_cast<DerivedTaggedActor*>(restored.get());
     ASSERT_NE(restoredActor, nullptr);
     auto* restoredComponent = restoredActor->getComponent<DerivedTaggedComponent>();

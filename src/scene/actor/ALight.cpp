@@ -4,17 +4,12 @@
 
 ALight::ALight()
 {
-    addComponent<LightComponent>();
+    addDefaultComponent<LightComponent>();
 }
 
-void ALight::initialize()
+void ALight::init()
 {
-    Actor::initialize();
+    Actor::init();
     if (!getComponent<LightComponent>())
         throw std::logic_error("light actor requires LightComponent: " + name);
-}
-
-void ALight::tick(float deltaTime)
-{
-    tickComponents(deltaTime);
 }

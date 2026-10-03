@@ -1,9 +1,10 @@
 #pragma once
 
-#include "scene/component/Component.h"
+#include "scene/Component.h"
 
 struct FreeFlyMoveComponent : Component
 {
+    void init(Actor* actor) override;
     void tick(float deltaTime) override;
 
     [[=ReflectField{}]] float speed = 3.0f;

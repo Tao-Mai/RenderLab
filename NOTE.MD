@@ -16,15 +16,16 @@ SSBO
 1. 现在目前是在fence之后再prepare数据，然后scene pass draw，之后可以在fence之前做，放到ecs的render system
 2. 透明物体绘制：绘制时根据相机位置从远到近排序再绘制。 TODO 待优化
 
+input处理 回调函数生成input event数组 tick时
 
-input处理
-回调函数生成input event数组
-tick时
 1. 遍历input event数组，press/release会将目标命令置位，并且input set会记录最后一个action
 2. 遍历hold command，对应input set为press的则置位
 
-
 ecs
+
 1. 不做成引擎了，不考虑怎么暴露API，因为ecs不好做
 2. 作为一个playground，自己写死所有逻辑
 
+资产系统
+
+1. 目前反序列化会覆盖Actor默认构造添加的component，不过只是反序列化的时候覆盖而已

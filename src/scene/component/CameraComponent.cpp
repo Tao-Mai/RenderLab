@@ -13,6 +13,13 @@
 #include <glm/geometric.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+void CameraComponent::init(Actor* actor)
+{
+    Component::init(actor);
+    if (!actor->getComponent<TransformComponent>())
+        throw std::logic_error("CameraComponent requires TransformComponent on actor: " + actor->name);
+}
+
 void CameraComponent::resetNavigation()
 {
     looking = false;
