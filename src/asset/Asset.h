@@ -2,7 +2,7 @@
 
 #include "asset/AssetID.h"
 #include "asset/ImageFormat.h"
-#include "scene/Actor.h"
+#include "scene/AActor.h"
 
 #include <concepts>
 #include <cstdint>
@@ -210,7 +210,7 @@ struct SceneAsset : Asset
     static constexpr std::string_view dir = "Scene";
 
     ID                                  id;
-    std::vector<std::unique_ptr<Actor>> actors;
+    std::vector<std::unique_ptr<AActor>> actors;
 
     struct Environment
     {

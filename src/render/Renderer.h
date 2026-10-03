@@ -30,7 +30,7 @@ struct EditorFrameInput
     bool         requestPick      = false;
     uint32_t     pickX            = 0;
     uint32_t     pickY            = 0;
-    Actor* selectedActor = nullptr;
+    AActor* selectedActor = nullptr;
     std::function<void(VkCommandBuffer)> recordUi;
 };
 

@@ -1,11 +1,11 @@
-#include "scene/Actor.h"
+#include "scene/AActor.h"
 
-Actor::Actor()
+AActor::AActor()
 {
     addDefaultComponent<TransformComponent>();
 }
 
-void Actor::init()
+void AActor::init()
 {
     for (const auto& component : components)
         CHECK(component);
@@ -16,22 +16,22 @@ void Actor::init()
         component->init(this);
 }
 
-void Actor::tick(float deltaTime)
+void AActor::tick(float deltaTime)
 {
     for (const auto& component : components)
         component->tick(deltaTime);
 }
 
-TransformComponent& Actor::transform()
+TransformComponent& AActor::transform()
 {
     return const_cast<TransformComponent&>(std::as_const(*this).transform());
 }
 
-const TransformComponent& Actor::transform() const
+const TransformComponent& AActor::transform() const
 {
     auto* component = getComponent<TransformComponent>();
     DCHECK(component);
     return *component;
 }
 
-uint32_t Actor::selectionId() const noexcept { return id; }
+uint32_t AActor::selectionId() const noexcept { return id; }

@@ -12,13 +12,13 @@ class RenderResourceManager;
 struct SceneRenderItem
 {
     GpuMesh*              mesh        = nullptr;
-    Actor*                actor       = nullptr;
+    AActor*                actor       = nullptr;
     uint32_t              selectionId = 0;
 };
 
 struct LightRenderItem
 {
-    Actor*                actor       = nullptr;
+    AActor*                actor       = nullptr;
     uint32_t              selectionId = 0;
 };
 

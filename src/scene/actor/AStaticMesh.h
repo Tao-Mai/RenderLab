@@ -2,9 +2,9 @@
 
 #include "scene/AActor.h"
 
-class ALight : public AActor
+class AStaticMesh : public AActor
 {
 public:
-    ALight();
+    AStaticMesh();
     void init() override;
 };

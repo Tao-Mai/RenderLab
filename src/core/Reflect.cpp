@@ -8,7 +8,7 @@ void RegisterSceneTypes()
     static const bool registered = []
     {
         forEachComponentType([]<class T>(std::string_view name) { RegisterBase<T, Component>(name); });
-        forEachActorType([]<class T>(std::string_view name) { RegisterBase<T, Actor>(name); });
+        forEachActorType([]<class T>(std::string_view name) { RegisterBase<T, AActor>(name); });
         return true;
     }();
 }

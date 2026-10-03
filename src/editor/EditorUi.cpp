@@ -342,7 +342,7 @@ bool EditorUI::drawGizmo(
 }
 
 EditorUI::InspectorResult EditorUI::drawInspector(
-    SceneAsset& scene, Actor* object, bool dirty)
+    SceneAsset& scene, AActor* object, bool dirty)
 {
     ImGui::SetNextWindowDockID(editorDockId, ImGuiCond_Always);
     constexpr ImGuiWindowFlags editorFlags = ImGuiWindowFlags_NoMove |

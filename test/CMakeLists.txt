@@ -10,10 +10,10 @@ add_executable(RenderLabTests
         EnvironmentMapImportTest.cpp
         SceneManagerTest.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/SceneManager.cpp
-        ${PROJECT_SOURCE_DIR}/src/scene/Actor.cpp
-        ${PROJECT_SOURCE_DIR}/src/scene/actor/FreeFlyCameraActor.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/AActor.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/actor/AFreeFlyCamera.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/actor/ALight.cpp
-        ${PROJECT_SOURCE_DIR}/src/scene/actor/StaticMeshActor.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/actor/AStaticMesh.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/component/TransformComponent.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/Component.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/component/LightComponent.cpp

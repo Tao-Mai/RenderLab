@@ -2,7 +2,7 @@
 
 #include "asset/JsonIo.h"
 #include "scene/actor/ALight.h"
-#include "scene/actor/StaticMeshActor.h"
+#include "scene/actor/AStaticMesh.h"
 #include "scene/component/CharacterMoveComponent.h"
 #include "scene/component/LightComponent.h"
 #include "scene/component/RenderComponent.h"
@@ -13,9 +13,9 @@
 
 namespace
 {
-static_assert(!std::is_abstract_v<Actor>);
+static_assert(!std::is_abstract_v<AActor>);
 static_assert(std::is_abstract_v<Component>);
-static_assert(std::same_as<decltype(std::declval<Actor&>().tick(0.0f)), void>);
+static_assert(std::same_as<decltype(std::declval<AActor&>().tick(0.0f)), void>);
 static_assert(std::same_as<decltype(std::declval<Component&>().tick(0.0f)), void>);
 static_assert(std::same_as<decltype(std::declval<SceneManager&>().tick(0.0f)), void>);
 
@@ -24,9 +24,9 @@ SceneAsset makeScene()
     RegisterSceneTypes();
     SceneAsset scene;
     scene.id = SceneAsset::ID{"actor-test"};
-    scene.actors.push_back(std::make_unique<FreeFlyCameraActor>());
+    scene.actors.push_back(std::make_unique<AFreeFlyCamera>());
 
-    auto object = std::make_unique<StaticMeshActor>();
+    auto object = std::make_unique<AStaticMesh>();
     object->name = "Mesh and Light";
     object->getComponent<RenderComponent>()->meshId = MeshAsset::ID{"sphere"};
     object->addComponent<LightComponent>();
@@ -39,7 +39,7 @@ struct TestTickComponent : Component
     int inits = 0;
     int ticks = 0;
 
-    void init(Actor* owner) override
+    void init(AActor* owner) override
     {
         Component::init(owner);
         ++inits;
@@ -61,7 +61,7 @@ TEST(SceneManagerTest, ActorsOwnComponentsAndRestoreTheirOwner)
     ASSERT_EQ(manager.scene().actors.size(), 2);
     EXPECT_NE(manager.editorCamera().getComponent<CameraComponent>(), nullptr);
     EXPECT_EQ(manager.editorCamera().getComponent<RenderComponent>(), nullptr);
-    EXPECT_NE(dynamic_cast<StaticMeshActor*>(manager.scene().actors[1].get()), nullptr);
+    EXPECT_NE(dynamic_cast<AStaticMesh*>(manager.scene().actors[1].get()), nullptr);
 
     auto& actor = *manager.scene().actors[1];
     actor.transform().position.x = 12.0f;
@@ -120,7 +120,7 @@ TEST(SceneManagerTest, PolymorphicSceneRoundTripsInheritedFieldsAndMaterialOverr
 
     const json stored = Serialize(scene);
     ASSERT_EQ(stored.at("actors")[0].size(), 1);
-    const auto& cameraActor = stored.at("actors")[0].at("FreeFlyCameraActor");
+    const auto& cameraActor = stored.at("actors")[0].at("AFreeFlyCamera");
     EXPECT_EQ(cameraActor.at("name"), "Editor Camera");
     EXPECT_EQ(cameraActor.size(), 2);
     ASSERT_EQ(cameraActor.at("components")[1].size(), 1);
@@ -155,7 +155,7 @@ TEST(SceneManagerTest, CharacterMovementAndEnvironmentUpRoundTrip)
 
 TEST(SceneManagerTest, ComponentTickUsesItsOwningActor)
 {
-    Actor actor;
+    AActor actor;
     actor.init();
     auto& tick = actor.addComponent<TestTickComponent>();
     EXPECT_EQ(tick.inits, 1);
@@ -166,9 +166,9 @@ TEST(SceneManagerTest, ComponentTickUsesItsOwningActor)
 
 TEST(SceneManagerTest, MultipleComponentsOfTheSameTypeInitializeAndTick)
 {
-    struct TickActor : StaticMeshActor
+    struct ATick : AStaticMesh
     {
-        TickActor()
+        ATick()
         {
             addDefaultComponent<TestTickComponent>();
             addDefaultComponent<TestTickComponent>();
@@ -202,7 +202,7 @@ TEST(SceneManagerTest, ComponentQueriesIncludeDerivedTypesAndPreserveConstness)
 {
     struct DerivedTickComponent : TestTickComponent {};
 
-    StaticMeshActor actor;
+    AStaticMesh actor;
     EXPECT_EQ(actor.getComponent<TestTickComponent>(), nullptr);
     EXPECT_TRUE(actor.getComponents<TestTickComponent>().empty());
     auto& first = actor.addComponent<DerivedTickComponent>();
@@ -215,7 +215,7 @@ TEST(SceneManagerTest, ComponentQueriesIncludeDerivedTypesAndPreserveConstness)
     EXPECT_EQ(actor.getComponents<DerivedTickComponent>(),
         (std::vector<DerivedTickComponent*>{&first, &third}));
 
-    const Actor& readOnly = actor;
+    const AActor& readOnly = actor;
     static_assert(std::same_as<decltype(readOnly.getComponent<TestTickComponent>()),
         const TestTickComponent*>);
     static_assert(std::same_as<decltype(readOnly.getComponents<TestTickComponent>()),
@@ -261,16 +261,16 @@ TEST(SceneManagerTest, RepeatedComponentTypesRoundTripAndRestoreEveryOwner)
 
 TEST(SceneManagerTest, NullComponentsAreStillRejected)
 {
-    StaticMeshActor actor;
+    AStaticMesh actor;
     actor.components.push_back(nullptr);
     EXPECT_DEATH(actor.init(), "");
 }
 
 TEST(SceneManagerTest, ComponentOwnerIsBoundOnlyDuringInit)
 {
-    struct DefaultActor : StaticMeshActor
+    struct ADefault : AStaticMesh
     {
-        DefaultActor() { addDefaultComponent<TestTickComponent>(); }
+        ADefault() { addDefaultComponent<TestTickComponent>(); }
     } actor;
     auto& component = *actor.getComponent<TestTickComponent>();
     EXPECT_EQ(component.inits, 0);
@@ -293,7 +293,7 @@ TEST(SceneManagerTest, AddComponentInitializesImmediatelyBeforeActorInit)
     {
         explicit ProbeComponent(int value) : value(value) {}
 
-        void init(Actor* owner) override
+        void init(AActor* owner) override
         {
             TestTickComponent::init(owner);
             EXPECT_EQ(owner->getComponent<ProbeComponent>(), this);
@@ -302,7 +302,7 @@ TEST(SceneManagerTest, AddComponentInitializesImmediatelyBeforeActorInit)
         int value;
     };
 
-    StaticMeshActor actor;
+    AStaticMesh actor;
     auto& component = actor.addComponent<ProbeComponent>(42);
     EXPECT_EQ(component.value, 42);
     EXPECT_EQ(component.inits, 1);
@@ -314,7 +314,7 @@ TEST(SceneManagerTest, AddComponentInitializesImmediatelyBeforeActorInit)
 
 TEST(SceneManagerTest, InvalidAdditionFailsBeforeActorInit)
 {
-    StaticMeshActor actor;
+    AStaticMesh actor;
     actor.components.clear();
     EXPECT_DEATH(actor.addComponent<RenderComponent>(), "");
 }
@@ -336,7 +336,7 @@ TEST(SceneManagerTest, ComponentDependenciesDoNotDependOnSerializedOrder)
 
 TEST(SceneManagerTest, ComponentsCheckTheirOwnTransformDependency)
 {
-    StaticMeshActor actor;
+    AStaticMesh actor;
     actor.components.clear();
     CameraComponent camera;
     FreeFlyMoveComponent freeFly;
@@ -353,7 +353,7 @@ TEST(SceneManagerTest, ComponentsCheckTheirOwnTransformDependency)
 
 TEST(SceneManagerTest, MovementInitRejectsConflictingComponentsInEitherOrder)
 {
-    StaticMeshActor actor;
+    AStaticMesh actor;
     auto& freeFly = actor.addDefaultComponent<FreeFlyMoveComponent>();
     auto& character = actor.addDefaultComponent<CharacterMoveComponent>();
     EXPECT_DEATH(freeFly.init(&actor), "");
@@ -365,7 +365,7 @@ TEST(SceneManagerTest, MovementInitRejectsConflictingComponentsInEitherOrder)
 
 TEST(SceneManagerTest, RuntimeAdditionInitializesAndRejectsInvalidDependencies)
 {
-    StaticMeshActor actor;
+    AStaticMesh actor;
     actor.init();
     auto& component = actor.addComponent<TestTickComponent>();
     EXPECT_EQ(component.inits, 1);
@@ -417,28 +417,28 @@ TEST(SceneManagerTest, ALightRequiresLightComponent)
 TEST(SceneManagerTest, BaseTypesAreNotRegistered)
 {
     RegisterSceneTypes();
-    EXPECT_FALSE(BaseTypeInfo<Actor>::baseTypeInfoMap.contains("Actor"));
+    EXPECT_FALSE(BaseTypeInfo<AActor>::baseTypeInfoMap.contains("AActor"));
     EXPECT_FALSE(BaseTypeInfo<Component>::baseTypeInfoMap.contains("Component"));
 }
 
 TEST(SceneManagerTest, RejectsUnknownTypesMissingFieldsAndMissingRequiredComponents)
 {
     auto stored = Serialize(makeScene());
-    stored["actors"][0] = json{{"MissingActor", stored["actors"][0].at("FreeFlyCameraActor")}};
+    stored["actors"][0] = json{{"MissingActor", stored["actors"][0].at("AFreeFlyCamera")}};
     SceneAsset parsed;
     EXPECT_DEATH(Deserialize(stored, parsed), "");
 
     stored = Serialize(makeScene());
-    auto& components = stored["actors"][0]["FreeFlyCameraActor"]["components"];
+    auto& components = stored["actors"][0]["AFreeFlyCamera"]["components"];
     components[1] = json{{"MissingComponent", components[1].at("CameraComponent")}};
     EXPECT_DEATH(Deserialize(stored, parsed), "");
 
     stored = Serialize(makeScene());
-    stored["actors"][0]["FreeFlyCameraActor"].erase("name");
+    stored["actors"][0]["AFreeFlyCamera"].erase("name");
     EXPECT_DEATH(Deserialize(stored, parsed), "");
 
     stored = Serialize(makeScene());
-    stored["actors"][0]["FreeFlyCameraActor"]["components"].erase(0);
+    stored["actors"][0]["AFreeFlyCamera"]["components"].erase(0);
     Deserialize(stored, parsed);
     SceneManager manager;
     EXPECT_DEATH(manager.load(parsed), "");
@@ -447,15 +447,15 @@ TEST(SceneManagerTest, RejectsUnknownTypesMissingFieldsAndMissingRequiredCompone
 TEST(SceneManagerTest, PolymorphicPointersRequireExactlyOneTypeKey)
 {
     RegisterSceneTypes();
-    std::unique_ptr<Actor> actor = std::make_unique<StaticMeshActor>();
+    std::unique_ptr<AActor> actor = std::make_unique<AStaticMesh>();
     std::unique_ptr<Component> component = std::make_unique<TransformComponent>();
     const auto* originalActor = actor.get();
     const auto* originalComponent = component.get();
 
     const std::vector<json> invalid = {
         json::object(), json::array(), json::array({json::object()}),
-        "StaticMeshActor", 42, true,
-        json{{"StaticMeshActor", json::object()}, {"TransformComponent", json::object()}},
+        "AStaticMesh", 42, true,
+        json{{"AStaticMesh", json::object()}, {"TransformComponent", json::object()}},
     };
     for (const auto& stored : invalid)
     {
@@ -470,14 +470,14 @@ TEST(SceneManagerTest, PolymorphicPointersRequireExactlyOneTypeKey)
 TEST(SceneManagerTest, PolymorphicPointersRequireObjectData)
 {
     RegisterSceneTypes();
-    std::unique_ptr<Actor> actor;
+    std::unique_ptr<AActor> actor;
     std::unique_ptr<Component> component;
 
     const std::vector<json> invalid = {nullptr, false, 42, "not an object", json::array()};
     for (const auto& data : invalid)
     {
         SCOPED_TRACE(data.dump());
-        EXPECT_DEATH(Deserialize(json{{"StaticMeshActor", data}}, actor), "");
+        EXPECT_DEATH(Deserialize(json{{"AStaticMesh", data}}, actor), "");
         EXPECT_DEATH(Deserialize(json{{"TransformComponent", data}}, component), "");
         EXPECT_EQ(actor, nullptr);
         EXPECT_EQ(component, nullptr);
@@ -501,9 +501,9 @@ TEST(SceneManagerTest, LightTypeRemainsInsideComponentData)
 TEST(SceneManagerTest, RegistryIteratesInheritedMembersAndRejectsDuplicateRegistration)
 {
     RegisterSceneTypes();
-    FreeFlyCameraActor actor;
+    AFreeFlyCamera actor;
     std::vector<std::string_view> members;
-    const auto& type = BaseTypeInfo<Actor>::baseTypeInfoMap.at("FreeFlyCameraActor");
+    const auto& type = BaseTypeInfo<AActor>::baseTypeInfoMap.at("AFreeFlyCamera");
     type.IterateMembers(actor, [&](MemberRef member) { members.push_back(member.name); });
     EXPECT_EQ(members, (std::vector<std::string_view>{"name", "components"}));
 #ifndef NDEBUG

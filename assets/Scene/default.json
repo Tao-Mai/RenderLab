@@ -4,7 +4,7 @@
     },
     "actors": [
         {
-            "FreeFlyCameraActor": {
+            "AFreeFlyCamera": {
                 "name": "Editor Camera",
                 "components": [
                     {
@@ -94,7 +94,7 @@
             }
         },
         {
-            "StaticMeshActor": {
+            "AStaticMesh": {
                 "name": "Sphere",
                 "components": [
                     {
@@ -156,7 +156,7 @@
             }
         },
         {
-            "StaticMeshActor": {
+            "AStaticMesh": {
                 "name": "Floor",
                 "components": [
                     {

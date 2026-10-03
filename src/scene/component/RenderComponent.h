@@ -7,7 +7,7 @@
 
 struct RenderComponent : Component
 {
-    void init(Actor* actor) override;
+    void init(AActor* actor) override;
     void tick(float) override {}
 
     [[=ReflectField{}]] MeshAsset::ID meshId;

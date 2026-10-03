@@ -11,13 +11,13 @@
 #include <utility>
 #include <vector>
 
-class [[=PartialSerialize{}]] Actor
+class [[=PartialSerialize{}]] AActor
 {
 public:
-    Actor();
-    virtual ~Actor()               = default;
-    Actor(const Actor&)            = delete;
-    Actor& operator=(const Actor&) = delete;
+    AActor();
+    virtual ~AActor()               = default;
+    AActor(const AActor&)            = delete;
+    AActor& operator=(const AActor&) = delete;
 
     [[=ReflectField{}]] std::string                             name;
     [[=ReflectField{}]] std::vector<std::unique_ptr<Component>> components;

@@ -1,14 +1,14 @@
-#include "scene/actor/StaticMeshActor.h"
+#include "scene/actor/AStaticMesh.h"
 
 #include "scene/component/RenderComponent.h"
 
-StaticMeshActor::StaticMeshActor()
+AStaticMesh::AStaticMesh()
 {
     addDefaultComponent<RenderComponent>();
 }
 
-void StaticMeshActor::init()
+void AStaticMesh::init()
 {
-    Actor::init();
+    AActor::init();
     CHECK(getComponent<RenderComponent>());
 }

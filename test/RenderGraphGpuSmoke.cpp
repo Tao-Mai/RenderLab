@@ -1,5 +1,5 @@
 #include "scene/SceneManager.h"
-#include "scene/actor/StaticMeshActor.h"
+#include "scene/actor/AStaticMesh.h"
 #include "scene/component/CameraComponent.h"
 #include "scene/component/CharacterMoveComponent.h"
 #include "scene/component/FreeFlyMoveComponent.h"
@@ -45,13 +45,13 @@ void checkMovement(const SceneAsset& original, Window& window, SceneManager& man
     SceneAsset scene;
     Deserialize(Serialize(original), scene);
     const size_t freeFlyPeerIndex = scene.actors.size();
-    auto freeFlyPeer = std::make_unique<StaticMeshActor>();
+    auto freeFlyPeer = std::make_unique<AStaticMesh>();
     freeFlyPeer->name = "FreeFly peer";
     freeFlyPeer->addComponent<FreeFlyMoveComponent>().speed = 4.0f;
     scene.actors.push_back(std::move(freeFlyPeer));
 
     const size_t characterPeerIndex = scene.actors.size();
-    auto characterPeer = std::make_unique<StaticMeshActor>();
+    auto characterPeer = std::make_unique<AStaticMesh>();
     characterPeer->name = "Character peer";
     characterPeer->addComponent<CharacterMoveComponent>().speed = 1.0f;
     scene.actors.push_back(std::move(characterPeer));
@@ -279,7 +279,7 @@ int main(int argc, char** argv)
     const json templateActor = Serialize(*lightTemplate);
     for (uint32_t index = 0; index < 32; ++index)
     {
-        std::unique_ptr<Actor> actor;
+        std::unique_ptr<AActor> actor;
         Deserialize(templateActor, actor);
         actor->name = "smoke-light-" + std::to_string(index);
         auto& light = *actor->getComponent<LightComponent>();

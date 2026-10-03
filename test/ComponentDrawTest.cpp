@@ -25,7 +25,7 @@ struct DrawTestComponent : Component
     [[=ReflectField{}]] std::string text = std::string(512, 'x');
 
     int transient = 9;
-    Actor* ownerPointer = nullptr;
+    AActor* ownerPointer = nullptr;
 };
 
 struct DerivedDrawTestComponent : DrawTestComponent
@@ -106,7 +106,7 @@ protected:
 
 TEST_F(ComponentDrawTest, GenericDrawingUsesMarkedInheritedFieldsWithoutChangingValues)
 {
-    StaticMeshActor owner;
+    AStaticMesh owner;
     DerivedDrawTestComponent component;
     component.ownerPointer = &owner;
     ComponentDrawResult result;

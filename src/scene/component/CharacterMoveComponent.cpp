@@ -6,14 +6,14 @@
 #include "scene/SceneManager.h"
 #include "scene/component/TransformComponent.h"
 #include "scene/component/FreeFlyMoveComponent.h"
-#include "scene/actor/FreeFlyCameraActor.h"
+#include "scene/actor/AFreeFlyCamera.h"
 
 #include <algorithm>
 #include <cmath>
 
 #include <glm/geometric.hpp>
 
-void CharacterMoveComponent::init(Actor* actor)
+void CharacterMoveComponent::init(AActor* actor)
 {
     Component::init(actor);
     CHECK(actor->getComponent<TransformComponent>());

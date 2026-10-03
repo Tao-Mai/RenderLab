@@ -4,7 +4,7 @@
 #include "core/InputManager.h"
 #include "core/Logger.h"
 #include "core/Window.h"
-#include "scene/Actor.h"
+#include "scene/AActor.h"
 #include "scene/component/TransformComponent.h"
 
 #include <algorithm>
@@ -13,7 +13,7 @@
 #include <glm/geometric.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-void CameraComponent::init(Actor* actor)
+void CameraComponent::init(AActor* actor)
 {
     Component::init(actor);
     CHECK(actor->getComponent<TransformComponent>());

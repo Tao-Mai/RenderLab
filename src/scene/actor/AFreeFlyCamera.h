@@ -1,13 +1,13 @@
 #pragma once
 
-#include "scene/Actor.h"
+#include "scene/AActor.h"
 #include "scene/component/CameraComponent.h"
 #include "scene/component/FreeFlyMoveComponent.h"
 
-class FreeFlyCameraActor : public Actor
+class AFreeFlyCamera : public AActor
 {
 public:
-    FreeFlyCameraActor();
+    AFreeFlyCamera();
     void init() override;
     void tick(float deltaTime) override;
     [[nodiscard]] CameraComponent& camera();

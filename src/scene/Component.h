@@ -2,17 +2,17 @@
 
 #include "core/Annotations.h"
 
-class Actor;
+class AActor;
 
 class [[=PartialSerialize{}]] Component
 {
 public:
     virtual ~Component() = default;
-    virtual void init(Actor* actor);
+    virtual void init(AActor* actor);
     virtual void tick(float deltaTime) = 0;
 
-    [[nodiscard]] Actor& actor() const;
+    [[nodiscard]] AActor& actor() const;
 
 private:
-    Actor* owner = nullptr;
+    AActor* owner = nullptr;
 };

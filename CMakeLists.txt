@@ -241,14 +241,14 @@ add_executable(RenderLab
         src/scene/SceneManager.cpp
         src/scene/SceneManager.h
         src/scene/SceneTypes.h
-        src/scene/Actor.cpp
-        src/scene/Actor.h
-        src/scene/actor/FreeFlyCameraActor.cpp
-        src/scene/actor/FreeFlyCameraActor.h
+        src/scene/AActor.cpp
+        src/scene/AActor.h
+        src/scene/actor/AFreeFlyCamera.cpp
+        src/scene/actor/AFreeFlyCamera.h
         src/scene/actor/ALight.cpp
         src/scene/actor/ALight.h
-        src/scene/actor/StaticMeshActor.cpp
-        src/scene/actor/StaticMeshActor.h
+        src/scene/actor/AStaticMesh.cpp
+        src/scene/actor/AStaticMesh.h
         src/scene/component/FreeFlyMoveComponent.cpp
         src/scene/component/CharacterMoveComponent.cpp
         src/scene/component/CameraComponent.cpp

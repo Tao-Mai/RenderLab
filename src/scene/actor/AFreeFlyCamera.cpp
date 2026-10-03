@@ -1,18 +1,18 @@
-#include "scene/actor/FreeFlyCameraActor.h"
+#include "scene/actor/AFreeFlyCamera.h"
 
 #include "scene/component/CharacterMoveComponent.h"
 #include "scene/component/RenderComponent.h"
 
-FreeFlyCameraActor::FreeFlyCameraActor()
+AFreeFlyCamera::AFreeFlyCamera()
 {
     name = "Editor Camera";
     addDefaultComponent<CameraComponent>();
     addDefaultComponent<FreeFlyMoveComponent>();
 }
 
-void FreeFlyCameraActor::init()
+void AFreeFlyCamera::init()
 {
-    Actor::init();
+    AActor::init();
     CHECK(getComponent<CameraComponent>());
     CHECK(getComponent<FreeFlyMoveComponent>() || getComponent<CharacterMoveComponent>(),
           "camera actor requires one movement type");
@@ -21,7 +21,7 @@ void FreeFlyCameraActor::init()
     camera().resetNavigation();
 }
 
-void FreeFlyCameraActor::tick(float deltaTime)
+void AFreeFlyCamera::tick(float deltaTime)
 {
     // Update view direction before movement, independently of serialized component order.
     auto& view = camera();
@@ -31,12 +31,12 @@ void FreeFlyCameraActor::tick(float deltaTime)
             component->tick(deltaTime);
 }
 
-CameraComponent& FreeFlyCameraActor::camera()
+CameraComponent& AFreeFlyCamera::camera()
 {
     return const_cast<CameraComponent&>(std::as_const(*this).camera());
 }
 
-const CameraComponent& FreeFlyCameraActor::camera() const
+const CameraComponent& AFreeFlyCamera::camera() const
 {
     auto* component = getComponent<CameraComponent>();
     DCHECK(component);

@@ -51,7 +51,7 @@ public:
         bool             enableShortcuts);
     [[nodiscard]] InspectorResult drawInspector(
         SceneAsset& scene,
-        Actor* object,
+        AActor* object,
         bool             dirty);
     void endFrame();
     void render(VkCommandBuffer commandBuffer) const;

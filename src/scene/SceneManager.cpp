@@ -25,12 +25,12 @@ void SceneManager::load(const SceneAsset& scene)
     // The cache owns a snapshot; the live scene owns its actors and components.
     SceneAsset loaded;
     Deserialize(Serialize(scene), loaded);
-    FreeFlyCameraActor* camera = nullptr;
+    AFreeFlyCamera* camera = nullptr;
     for (const auto& actor : loaded.actors)
     {
         CHECK(actor);
         actor->init();
-        if (auto* candidate = dynamic_cast<FreeFlyCameraActor*>(actor.get()))
+        if (auto* candidate = dynamic_cast<AFreeFlyCamera*>(actor.get()))
         {
             CHECK(!camera, "scene contains multiple camera actors");
             camera = candidate;
@@ -74,13 +74,13 @@ void SceneManager::tick(float deltaTime)
 SceneAsset&       SceneManager::scene() noexcept { return data; }
 const SceneAsset& SceneManager::scene() const noexcept { return data; }
 
-FreeFlyCameraActor& SceneManager::editorCamera() const
+AFreeFlyCamera& SceneManager::editorCamera() const
 {
     DCHECK(cameraActor);
     return *cameraActor;
 }
 
-Actor* SceneManager::findActor(uint32_t selectionId) const noexcept
+AActor* SceneManager::findActor(uint32_t selectionId) const noexcept
 {
     if (selectionId == 0)
         return nullptr;

@@ -1,5 +1,5 @@
 #include "asset/Serializer.h"
-#include "scene/Actor.h"
+#include "scene/AActor.h"
 
 #include <gtest/gtest.h>
 
@@ -12,7 +12,7 @@ struct TaggedComponent : Component
     [[=ReflectField{}]] int value = 11;
 
     int tickCount = 0;
-    Actor* runtimeActor = nullptr;
+    AActor* runtimeActor = nullptr;
 };
 
 struct DerivedTaggedComponent : TaggedComponent
@@ -20,12 +20,12 @@ struct DerivedTaggedComponent : TaggedComponent
     [[=ReflectField{}]] int extra = 23;
 };
 
-struct TaggedActor : Actor
+struct ATagged : AActor
 {
     void tick(float deltaTime) override
     {
         ++tickCount;
-        Actor::tick(deltaTime);
+        AActor::tick(deltaTime);
     }
 
     [[=ReflectField{}]] float health = 100.0f;
@@ -34,13 +34,13 @@ struct TaggedActor : Actor
     Component* runtimeComponent = nullptr;
 };
 
-struct DerivedTaggedActor : TaggedActor
+struct ADerivedTagged : ATagged
 {
 };
 
-static_assert(std::meta::annotations_of_with_type(^^DerivedTaggedActor, ^^PartialSerialize).empty());
+static_assert(std::meta::annotations_of_with_type(^^ADerivedTagged, ^^PartialSerialize).empty());
 static_assert(std::meta::annotations_of_with_type(^^DerivedTaggedComponent, ^^PartialSerialize).empty());
-static_assert(HasInheritedAnnotation(^^DerivedTaggedActor, ^^PartialSerialize,
+static_assert(HasInheritedAnnotation(^^ADerivedTagged, ^^PartialSerialize,
                                     std::meta::access_context::current()));
 static_assert(HasInheritedAnnotation(^^DerivedTaggedComponent, ^^PartialSerialize,
                                     std::meta::access_context::current()));
@@ -50,7 +50,7 @@ void registerTestTypes()
     RegisterSceneTypes();
     static const bool registered = []
     {
-        RegisterBase<DerivedTaggedActor, Actor>("PartialSerializationActor");
+        RegisterBase<ADerivedTagged, AActor>("ADerivedTagged");
         RegisterBase<DerivedTaggedComponent, Component>("PartialSerializationComponent");
         return true;
     }();
@@ -59,7 +59,7 @@ void registerTestTypes()
 
 TEST(PartialSerialization, ComponentIncludesOnlyMarkedInheritedMembers)
 {
-    TaggedActor owner;
+    ATagged owner;
     owner.init();
     auto& component = owner.addComponent<DerivedTaggedComponent>();
     component.value = 42;
@@ -73,7 +73,7 @@ TEST(PartialSerialization, ComponentIncludesOnlyMarkedInheritedMembers)
 
 TEST(PartialSerialization, DeserializationLeavesUnmarkedMembersUntouched)
 {
-    TaggedActor runtimeActor;
+    ATagged runtimeActor;
     DerivedTaggedComponent component;
     component.tickCount = 9;
     component.runtimeActor = &runtimeActor;
@@ -94,8 +94,8 @@ TEST(PartialSerialization, DeserializationLeavesUnmarkedMembersUntouched)
 TEST(PartialSerialization, ActorPolicyIsInheritedAndPreservesRuntimeMembers)
 {
     registerTestTypes();
-    TaggedActor runtimeActor;
-    DerivedTaggedActor source;
+    ATagged runtimeActor;
+    ADerivedTagged source;
     source.name = "Tagged actor";
     source.health = 37.0f;
     source.tickCount = 5;
@@ -111,7 +111,7 @@ TEST(PartialSerialization, ActorPolicyIsInheritedAndPreservesRuntimeMembers)
     EXPECT_FALSE(stored.contains("tickCount"));
     EXPECT_FALSE(stored.contains("runtimeComponent"));
 
-    DerivedTaggedActor restored;
+    ADerivedTagged restored;
     restored.tickCount = 9;
     restored.runtimeComponent = source.runtimeComponent;
     Deserialize(stored, restored);
@@ -126,8 +126,8 @@ TEST(PartialSerialization, ActorPolicyIsInheritedAndPreservesRuntimeMembers)
 TEST(PartialSerialization, OwnedPolymorphicPointersStillRoundTrip)
 {
     registerTestTypes();
-    std::unique_ptr<Actor> source = std::make_unique<DerivedTaggedActor>();
-    auto& actor = static_cast<DerivedTaggedActor&>(*source);
+    std::unique_ptr<AActor> source = std::make_unique<ADerivedTagged>();
+    auto& actor = static_cast<ADerivedTagged&>(*source);
     actor.name = "Polymorphic actor";
     actor.health = 37.0f;
     actor.tickCount = 5;
@@ -140,14 +140,14 @@ TEST(PartialSerialization, OwnedPolymorphicPointersStillRoundTrip)
 
     const json stored = Serialize(source);
     ASSERT_EQ(stored.size(), 1);
-    const auto& storedComponent = stored.at("PartialSerializationActor").at("components")[1];
+    const auto& storedComponent = stored.at("ADerivedTagged").at("components")[1];
     ASSERT_EQ(storedComponent.size(), 1);
     EXPECT_EQ(storedComponent.at("PartialSerializationComponent"), (json{{"value", 42}, {"extra", 73}}));
 
-    std::unique_ptr<Actor> restored;
+    std::unique_ptr<AActor> restored;
     Deserialize(stored, restored);
     restored->init();
-    auto* restoredActor = dynamic_cast<DerivedTaggedActor*>(restored.get());
+    auto* restoredActor = dynamic_cast<ADerivedTagged*>(restored.get());
     ASSERT_NE(restoredActor, nullptr);
     auto* restoredComponent = restoredActor->getComponent<DerivedTaggedComponent>();
     ASSERT_NE(restoredComponent, nullptr);

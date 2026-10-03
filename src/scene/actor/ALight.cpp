@@ -9,6 +9,6 @@ ALight::ALight()
 
 void ALight::init()
 {
-    Actor::init();
+    AActor::init();
     CHECK(getComponent<LightComponent>());
 }
