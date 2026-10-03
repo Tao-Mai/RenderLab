@@ -137,8 +137,6 @@ void Editor::applyPickResult(const EditorFrameResult& result)
     selectedId = result.pickedSelectionId;
 }
 
-void Editor::markDirty() { dirty = true; }
-
 bool Editor::wantsInput() const
 {
     return ui.wantsInput();

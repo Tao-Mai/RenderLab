@@ -22,16 +22,14 @@ void FreeFlyCameraActor::initialize()
     camera().resetNavigation();
 }
 
-bool FreeFlyCameraActor::tick(float deltaTime)
+void FreeFlyCameraActor::tick(float deltaTime)
 {
     // Update view direction before movement, independently of serialized component order.
     auto& view = camera();
-    bool changed = view.tick(deltaTime);
+    view.tick(deltaTime);
     for (const auto& component : components)
         if (component.get() != &view)
-            changed = component->tick(deltaTime) || changed;
-
-    return changed;
+            component->tick(deltaTime);
 }
 
 CameraComponent& FreeFlyCameraActor::camera()

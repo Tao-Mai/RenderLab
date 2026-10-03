@@ -11,6 +11,7 @@ add_executable(RenderLabTests
         ${PROJECT_SOURCE_DIR}/src/scene/SceneManager.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/Actor.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/actor/FreeFlyCameraActor.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/actor/ALight.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/actor/StaticMeshActor.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/component/TransformComponent.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/component/CameraComponent.cpp
@@ -21,7 +22,7 @@ add_executable(RenderLabTests
         ${PROJECT_SOURCE_DIR}/src/core/InputManager.cpp
         ${PROJECT_SOURCE_DIR}/src/core/Window.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/AssetDataManager.cpp
-        ${PROJECT_SOURCE_DIR}/src/asset/AssetDescManager.cpp
+        ${PROJECT_SOURCE_DIR}/src/asset/AssetManager.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinMesh.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinMaterial.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinTexture.cpp
@@ -48,7 +49,6 @@ target_link_libraries(RenderLabTests PRIVATE
         glm::glm
         glfw
         imgui::imgui
-        reflectcpp::reflectcpp
         nlohmann_json::nlohmann_json
         unofficial::tinyexr::tinyexr
 )
@@ -75,7 +75,7 @@ target_link_libraries(RenderGraphTests PRIVATE
         Vulkan::Vulkan
         glog::glog
         glm::glm
-        reflectcpp::reflectcpp
+        nlohmann_json::nlohmann_json
 )
 add_test(NAME RenderGraphTests COMMAND RenderGraphTests)
 

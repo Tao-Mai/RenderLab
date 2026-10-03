@@ -1,4 +1,6 @@
 {
-  "Id": "light",
-  "Binary": "shaders/light.spv"
+    "id": {
+        "value": "light"
+    },
+    "binary": "shaders/light.spv"
 }

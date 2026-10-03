@@ -1,12 +1,14 @@
 {
-    "Id": "newport_loft_prefiltered_specular",
-    "Source": "File",
-    "Format": "RGBA32F",
-    "ColorSpace": "Linear",
-    "Layout": "Cubemap",
-    "Width": 400,
-    "Height": 400,
-    "MipLevels": 9,
-    "Path": "../resource/newport_loft.hdr",
-    "Binary": "binary/texture\\newport_loft_prefiltered_specular.bin"
+    "id": {
+        "value": "newport_loft_prefiltered_specular"
+    },
+    "source": "File",
+    "format": "RGBA32F",
+    "colorSpace": "Linear",
+    "layout": "Cubemap",
+    "width": 400,
+    "height": 400,
+    "mipLevels": 9,
+    "path": "../resource/newport_loft.hdr",
+    "binary": "binary/texture/newport_loft_prefiltered_specular.bin"
 }

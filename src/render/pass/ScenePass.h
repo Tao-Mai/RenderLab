@@ -35,7 +35,7 @@ public:
     void setupPass(RenderGraph& graph);
     void prepareRenderData(const FrameContext& frame);
     void executePass(RenderGraph& graph) const;
-    void bindSceneTextures(const Scene::Desc& scene);
+    void bindSceneTextures(const SceneAsset& scene);
 
 private:
     struct DrawCall

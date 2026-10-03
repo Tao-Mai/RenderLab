@@ -47,7 +47,7 @@
             }
         },
         {
-            "Actor": {
+            "ALight": {
                 "name": "Point Light",
                 "components": [
                     {

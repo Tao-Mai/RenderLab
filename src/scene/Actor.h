@@ -23,7 +23,7 @@ public:
     [[=ReflectField{}]] std::vector<std::unique_ptr<Component>> components;
 
     virtual void initialize();
-    virtual bool tick(float deltaTime);
+    virtual void tick(float deltaTime) = 0;
 
     template<std::derived_from<Component> T>
     [[nodiscard]] T* getComponent()
@@ -56,6 +56,9 @@ public:
     [[nodiscard]] TransformComponent& transform();
     [[nodiscard]] const TransformComponent& transform() const;
     [[nodiscard]] uint32_t selectionId() const noexcept;
+
+protected:
+    void tickComponents(float deltaTime);
 
 private:
     friend class SceneManager;

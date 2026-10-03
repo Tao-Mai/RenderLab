@@ -24,7 +24,6 @@ public:
         uint32_t swapchainWidth,
         uint32_t swapchainHeight);
     void applyPickResult(const EditorFrameResult& result);
-    void markDirty();
 
     [[nodiscard]] bool wantsInput() const;
 

@@ -8,6 +8,8 @@
 
 struct TransformComponent : Component
 {
+    void tick(float) override {}
+
     [[=ReflectField{}]] glm::vec3 position{0.0f};
     [[=ReflectField{}]] glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     [[=ReflectField{}]] glm::vec3 scale{1.0f};

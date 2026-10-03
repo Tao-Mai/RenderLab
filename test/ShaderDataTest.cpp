@@ -2,11 +2,14 @@
 
 #include <array>
 #include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string_view>
 
 #include <gtest/gtest.h>
-#include <rfl/json.hpp>
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
 
 namespace
 {
@@ -17,42 +20,31 @@ struct Field
     size_t size;
 };
 
-rfl::Generic field(const rfl::Generic& value, std::string_view name)
-{
-    const auto object = value.to_object();
-    if (!object) throw std::runtime_error("reflection field is not an object");
-    const auto result = object->get(std::string(name));
-    if (!result) throw std::runtime_error("missing reflection field: " + std::string(name));
-    return *result;
-}
-
-rfl::Generic parameter(std::string_view shader, std::string_view name)
+json parameter(std::string_view shader, std::string_view name)
 {
     const auto path = std::filesystem::path(RENDERLAB_SHADER_BINARY_DIR) /
         (std::string(shader) + ".reflection.json");
-    const auto reflection = rfl::json::load<rfl::Generic>(path.string());
-    if (!reflection) throw std::runtime_error(reflection.error().what());
-    const auto parameters = field(*reflection, "parameters").to_array();
-    if (!parameters) throw std::runtime_error("missing reflection parameters");
-    for (const auto& value : *parameters)
-        if (field(value, "name").to_string().value() == name) return value;
+    std::ifstream input{path};
+    if (!input.is_open()) throw std::runtime_error("cannot open shader reflection: " + path.string());
+    const auto reflection = json::parse(input);
+    for (const auto& value : reflection.at("parameters").get_ref<const json::array_t&>())
+        if (value.at("name").get<std::string>() == name) return value;
     throw std::runtime_error("missing shader parameter: " + std::string(name));
 }
 
 template <size_t N>
-void checkFields(const rfl::Generic& type, const std::array<Field, N>& expected)
+void checkFields(const json& type, const std::array<Field, N>& expected)
 {
-    const auto fields = field(type, "fields").to_array();
-    ASSERT_TRUE(fields);
-    ASSERT_EQ(fields->size(), expected.size());
+    const auto& fields = type.at("fields").get_ref<const json::array_t&>();
+    ASSERT_EQ(fields.size(), expected.size());
     for (size_t index = 0; index < expected.size(); ++index)
     {
         SCOPED_TRACE(expected[index].name);
-        const auto& value = fields->at(index);
-        EXPECT_EQ(field(value, "name").to_string().value(), expected[index].name);
-        const auto binding = field(value, "binding");
-        EXPECT_EQ(field(binding, "offset").to_int().value(), expected[index].offset);
-        EXPECT_EQ(field(binding, "size").to_int().value(), expected[index].size);
+        const auto& value = fields.at(index);
+        EXPECT_EQ(value.at("name").get<std::string>(), expected[index].name);
+        const auto& binding = value.at("binding");
+        EXPECT_EQ(binding.at("offset").get<size_t>(), expected[index].offset);
+        EXPECT_EQ(binding.at("size").get<size_t>(), expected[index].size);
     }
 }
 
@@ -70,11 +62,11 @@ TEST(ShaderDataLayout, ViewUniformsMatchCompiledShaders)
     {
         SCOPED_TRACE(shader);
         const auto value = parameter(shader, "viewUniforms");
-        EXPECT_EQ(field(field(value, "binding"), "index").to_int().value(), RenderInterface::viewUniformBinding);
-        const auto type = field(value, "type");
-        EXPECT_EQ(field(type, "kind").to_string().value(), "constantBuffer");
-        checkFields(field(type, "elementType"), expected);
-        EXPECT_EQ(field(field(field(type, "elementVarLayout"), "binding"), "size").to_int().value(), sizeof(ViewUniforms));
+        EXPECT_EQ(value.at("binding").at("index").get<uint32_t>(), RenderInterface::viewUniformBinding);
+        const auto& type = value.at("type");
+        EXPECT_EQ(type.at("kind"), "constantBuffer");
+        checkFields(type.at("elementType"), expected);
+        EXPECT_EQ(type.at("elementVarLayout").at("binding").at("size").get<size_t>(), sizeof(ViewUniforms));
     }
 }
 
@@ -91,11 +83,11 @@ TEST(ShaderDataLayout, LightUniformsMatchCompiledShaders)
     {
         SCOPED_TRACE(shader);
         const auto value = parameter(shader, "lightUniforms");
-        EXPECT_EQ(field(field(value, "binding"), "index").to_int().value(), RenderInterface::lightUniformBinding);
-        const auto type = field(value, "type");
-        EXPECT_EQ(field(type, "kind").to_string().value(), "constantBuffer");
-        checkFields(field(type, "elementType"), expected);
-        EXPECT_EQ(field(field(field(type, "elementVarLayout"), "binding"), "size").to_int().value(), sizeof(LightUniforms));
+        EXPECT_EQ(value.at("binding").at("index").get<uint32_t>(), RenderInterface::lightUniformBinding);
+        const auto& type = value.at("type");
+        EXPECT_EQ(type.at("kind"), "constantBuffer");
+        checkFields(type.at("elementType"), expected);
+        EXPECT_EQ(type.at("elementVarLayout").at("binding").at("size").get<size_t>(), sizeof(LightUniforms));
     }
 }
 
@@ -112,10 +104,10 @@ TEST(ShaderDataLayout, LightStorageElementsMatchCompiledShaders)
     {
         SCOPED_TRACE(shader);
         const auto value = parameter(shader, "lights");
-        EXPECT_EQ(field(field(value, "binding"), "index").to_int().value(), RenderInterface::lightBufferBinding);
-        const auto type = field(value, "type");
-        EXPECT_EQ(field(type, "baseShape").to_string().value(), "structuredBuffer");
-        checkFields(field(type, "resultType"), expected);
+        EXPECT_EQ(value.at("binding").at("index").get<uint32_t>(), RenderInterface::lightBufferBinding);
+        const auto& type = value.at("type");
+        EXPECT_EQ(type.at("baseShape"), "structuredBuffer");
+        checkFields(type.at("resultType"), expected);
         EXPECT_EQ(expected.back().offset + expected.back().size, sizeof(LightData));
     }
 }

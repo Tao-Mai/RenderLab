@@ -66,7 +66,7 @@ TEST(AssetDataManagerTest, PreservesCubemapPixelsAndMetadata)
 {
     ConfiguredData assets;
 
-    Texture::Desc desc{};
+    TextureAsset desc{};
     desc.id = uniqueId("test_cubemap_");
     desc.format = ImageFormat::RGBA8;
     desc.colorSpace = ColorSpace::Srgb;
@@ -94,7 +94,7 @@ TEST(AssetDataManagerTest, PreservesCubemapMipChain)
 {
     ConfiguredData assets;
 
-    Texture::Desc desc{};
+    TextureAsset desc{};
     desc.id = uniqueId("test_mipped_cubemap_");
     desc.source = Source::File;
     desc.format = ImageFormat::RGBA32F;
@@ -129,7 +129,7 @@ TEST(AssetDataManagerTest, PreservesCubemapMipChain)
 TEST(AssetDataManagerTest, PreservesMeshGeometry)
 {
     ConfiguredData assets;
-    const Mesh::ID id = uniqueId("test_mesh_");
+    const MeshAsset::ID id = uniqueId("test_mesh_");
     const auto relative = std::filesystem::path{"binary/geometry"} /
         (id.value + ".bin");
     const TemporaryDataFile output{
@@ -146,7 +146,7 @@ TEST(AssetDataManagerTest, PreservesMeshGeometry)
     const auto geometry = assets.data.writeGeometry(id, mesh);
     EXPECT_EQ(geometry, relative);
 
-    Mesh::Desc desc{};
+    MeshAsset desc{};
     desc.id       = id;
     desc.source   = Source::File;
     desc.geometry = geometry;

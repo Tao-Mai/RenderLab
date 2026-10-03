@@ -31,7 +31,7 @@ struct LinearCubemapView
 
 // The input mip chain is mip-major, then face-major, then row-major RGBA32F.
 [[nodiscard]] LinearCubemapView linearCubemapView(
-    const Texture::Desc& radiance, std::span<const float> radiancePixels);
+    const TextureAsset& radiance, std::span<const float> radiancePixels);
 [[nodiscard]] float mipLevelForSolidAngle(
     float sampleSolidAngle, uint32_t side, uint32_t mipLevels);
 [[nodiscard]] Rgba sampleRadiance(

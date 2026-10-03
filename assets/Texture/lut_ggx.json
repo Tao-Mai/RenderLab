@@ -1,12 +1,14 @@
 {
-    "Id": "lut_ggx",
-    "Source": "File",
-    "Format": "RG8",
-    "ColorSpace": "Linear",
-    "Layout": "Image2D",
-    "Width": 1024,
-    "Height": 1024,
-    "MipLevels": 1,
-    "Path": "../resource/lut_ggx.png",
-    "Binary": "binary/texture\\lut_ggx.bin"
+    "id": {
+        "value": "lut_ggx"
+    },
+    "source": "File",
+    "format": "RG8",
+    "colorSpace": "Linear",
+    "layout": "Image2D",
+    "width": 1024,
+    "height": 1024,
+    "mipLevels": 1,
+    "path": "../resource/lut_ggx.png",
+    "binary": "binary/texture/lut_ggx.bin"
 }

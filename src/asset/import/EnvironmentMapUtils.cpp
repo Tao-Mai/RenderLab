@@ -165,7 +165,7 @@ namespace asset_import::environment_map
 // 输入：radiancePixels 是完整线性 RGBA float mip 链，按 mip、六面、行优先像素排列。
 // 输出：各 mip 的起始指针；同时验证描述与缓冲区大小一致。
 [[nodiscard]] LinearCubemapView linearCubemapView(
-    const Texture::Desc& radiance, std::span<const float> radiancePixels)
+    const TextureAsset& radiance, std::span<const float> radiancePixels)
 {
     CHECK(radiance.layout == ImageLayout::Cubemap &&
           radiance.width > 0 && radiance.width == radiance.height &&

@@ -78,8 +78,8 @@ ComponentDrawResult drawFields(LightComponent& value);
 ComponentDrawResult drawFields(RenderComponent& value);
 
 // Produce a complete optional-field patch, retaining texture/shader overrides.
-Material::Desc materialOverrideDiff(const Material::Desc& stock, const Material::Desc& preview);
-bool hasMaterialOverrides(const Material::Desc& patch);
+MaterialOverride materialOverrideDiff(const MaterialAsset& stock, const MaterialAsset& preview);
+bool hasMaterialOverrides(const MaterialOverride& patch);
 
 template<class T>
 ComponentDrawResult drawFields(T& value)

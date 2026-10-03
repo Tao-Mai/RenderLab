@@ -9,7 +9,7 @@ class FreeFlyCameraActor : public Actor
 public:
     FreeFlyCameraActor();
     void initialize() override;
-    bool tick(float deltaTime) override;
+    void tick(float deltaTime) override;
     [[nodiscard]] CameraComponent& camera();
     [[nodiscard]] const CameraComponent& camera() const;
 };

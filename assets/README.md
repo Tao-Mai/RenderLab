@@ -3,7 +3,7 @@
 `config/config.json` is relative to the repository root. Its asset root is
 `../assets`. The asset root is also the descriptor root.
 
-Descriptors are grouped directly under `assets/<AssetClassName>/`. The initial scene is
+Asset JSON files are grouped under the explicit `assets/<dir>/` directories. The initial scene is
 `assets/Scene/default.json`. Source glTF models and their external textures are
 stored under `resource/`. Shader descriptor binary paths are relative to the
 process working directory, where CMake places the compiled shaders.
@@ -13,8 +13,9 @@ as `sphere` and `plane` are referenced by ID and do not need mesh descriptors.
 
 Scenes store `actors` as `{"TypeName": {...}}`, using registered type names as
 keys. Actors own polymorphic `components` in the same format, with exactly one
-type key per non-null pointer. Scene fields use C++ member names
-and IDs use `{"value": "..."}`. Other asset descriptor formats are unchanged.
+type key per non-null pointer. Configuration, scenes, and all asset descriptions
+use C++ member names and IDs use `{"value": "..."}`. Optional fields are explicitly
+null when absent; missing fields and unknown fields in complete descriptions are errors.
 
 Texture imports write ready-to-upload pixels to `assets/binary/texture/<id>.bin`.
 `resource/lut_ggx.png` is imported as the linear RG8 `lut_ggx` texture; `config/config.json`
@@ -45,7 +46,7 @@ determines whether the result uses `RGBA16F` or `RGBA32F`. EXR defaults to
 linear color space; ordinary images default to sRGB. Callers may override
 `importTexture` color space for linear data maps.
 `--import-environmentmap` converts an image to a Cubemap texture as radiance, then creates
-an `EnvironmentMap::Desc` that references radiance, irradiance, and a GGX
+an `EnvironmentMapAsset` that references radiance, irradiance, and a GGX
 prefiltered specular Cubemap. Radiance and prefiltered specular each have a
 complete mip chain; prefiltered roughness runs from 0 at mip 0 to 1 at the last
 mip. Radiance mips average linear pixels before encoding. Irradiance and GGX
@@ -54,7 +55,7 @@ angle divided by the average base-level cubemap texel solid angle, using log4.
 The configured GGX sample count applies to prefilter mip 1 and doubles at each
 higher mip.
 Environment and material texture fields use `TextureBinding` objects with
-`TextureID` and `SamplerID`. Builtin `linearRepeat` suits tiling material UVs;
+`textureID` and `samplerID`, each stored as `{"value": "..."}`. Builtin `linearRepeat` suits tiling material UVs;
 `linearClamp` suits cubemaps and LUTs. `nearestRepeat` suits tiling pixel art,
 while `nearestClamp` suits discrete lookup or mask textures.
 Environment imports inspect EXR channel storage. HALF RGB channels produce

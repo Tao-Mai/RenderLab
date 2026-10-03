@@ -90,7 +90,7 @@ void parallelFaceRows(const char* stage, uint32_t mip, uint32_t side, std::stop_
 // 输入：cubemap 含 mip 0 的线性 RGBA float 和编码数据；radiance 指定格式、色彩
 // 空间、面尺寸与完整 mip 数。每级在同一面内对前一级的像素区域取平均。
 // 输出：两个缓冲区均追加完整 mip 链，依次排列 mip、六面、行优先 RGBA 像素。
-void AssetImporter::buildMipmapChain(CubemapPixels& cubemap, const Texture::Desc& radiance, std::stop_token stop)
+void AssetImporter::buildMipmapChain(CubemapPixels& cubemap, const TextureAsset& radiance, std::stop_token stop)
 {
     CHECK(radiance.layout == ImageLayout::Cubemap && radiance.width > 0 && radiance.width == radiance.height &&
               radiance.mipLevels == texture_mip::maxLevels(radiance.width, radiance.height),
@@ -185,7 +185,7 @@ void AssetImporter::buildMipmapChain(CubemapPixels& cubemap, const Texture::Desc
 // 每面行优先、像素内 RGBA 浮点交错、Alpha 为 1。每个方向用 sampleCount 个余弦加权
 // 半球样本估计 E(n) = ∫ L(w) max(n·w) dω = π × 样本辐亮度平均值。
 // 样本 PDF = cosθ/π，样本立体角 = 1/(sampleCount * PDF)，以此选择 radiance LOD。
-std::vector<uint8_t> AssetImporter::irradianceCubemap(const Texture::Desc&   radiance,
+std::vector<uint8_t> AssetImporter::irradianceCubemap(const TextureAsset&   radiance,
                                                       std::span<const float> radiancePixels,
                                                       uint32_t               side,
                                                       uint32_t               sampleCount,
@@ -273,7 +273,7 @@ std::vector<uint8_t> AssetImporter::irradianceCubemap(const Texture::Desc&   rad
 // mip 0 复制线性 radiance 基础层；其余级的 roughness = mip / (mipLevels - 1)。
 // V=N 时入射方向的 PDF = D_GGX(N·H)/4；由 1/(sampleCount * PDF) 得样本立体角，
 // 再与 radiance 基础层平均像素立体角比较得到采样 LOD。
-std::vector<uint8_t> AssetImporter::prefilterSpecularMap(const Texture::Desc&   radiance,
+std::vector<uint8_t> AssetImporter::prefilterSpecularMap(const TextureAsset&   radiance,
                                                          std::span<const float> radiancePixels,
                                                          uint32_t               sampleCount,
                                                          uint32_t               maxSampleCount,

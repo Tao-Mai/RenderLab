@@ -50,7 +50,7 @@ public:
         const glm::mat4& projection,
         bool             enableShortcuts);
     [[nodiscard]] InspectorResult drawInspector(
-        Scene::Desc& scene,
+        SceneAsset& scene,
         Actor* object,
         bool             dirty);
     void endFrame();
@@ -88,5 +88,5 @@ private:
 
     void drawImportDialog();
     void finishEnvironmentImport();
-    [[nodiscard]] bool drawEnvironmentSelection(Scene::Desc& scene);
+    [[nodiscard]] bool drawEnvironmentSelection(SceneAsset& scene);
 };

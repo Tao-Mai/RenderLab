@@ -13,3 +13,8 @@ void StaticMeshActor::initialize()
     if (!getComponent<RenderComponent>())
         throw std::logic_error("static mesh actor requires RenderComponent: " + name);
 }
+
+void StaticMeshActor::tick(float deltaTime)
+{
+    tickComponents(deltaTime);
+}

@@ -11,12 +11,12 @@
 
 #include <glm/geometric.hpp>
 
-bool FreeFlyMoveComponent::tick(float deltaTime)
+void FreeFlyMoveComponent::tick(float deltaTime)
 {
     CHECK(context().sceneManager != nullptr && context().inputManager != nullptr,
         "movement requires SceneManager and InputManager");
     const auto& camera = context().sceneManager->editorCamera().camera();
-    if (!camera.isNavigationActive()) return false;
+    if (!camera.isNavigationActive()) return;
 
     const auto& input = *context().inputManager;
     const glm::vec3 front = camera.forward();
@@ -30,7 +30,7 @@ bool FreeFlyMoveComponent::tick(float deltaTime)
     if (input.get(Command::MoveLeft)) direction -= right;
     if (input.get(Command::MoveUp)) direction += up;
     if (input.get(Command::MoveDown)) direction -= up;
-    if (glm::dot(direction, direction) == 0.0f) return false;
+    if (glm::dot(direction, direction) == 0.0f) return;
 
     direction = glm::normalize(direction);
     deltaTime = std::clamp(deltaTime, 0.0f, 0.1f);
@@ -38,8 +38,7 @@ bool FreeFlyMoveComponent::tick(float deltaTime)
 
     const float movementSpeed = speed * (sprint ? sprintMultiplier : 1.0f);
     const glm::vec3 displacement = direction * movementSpeed * deltaTime;
-    if (glm::dot(displacement, displacement) == 0.0f) return false;
+    if (glm::dot(displacement, displacement) == 0.0f) return;
 
     actor().transform().position += displacement;
-    return true;
 }

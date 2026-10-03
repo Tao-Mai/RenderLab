@@ -11,19 +11,19 @@ class SceneManager
 public:
     static constexpr std::string_view editorCameraName = "Editor Camera";
 
-    void load(const Scene::ID& id);
-    void load(const Scene::Desc& scene);
+    void load(const SceneAsset::ID& id);
+    void load(const SceneAsset& scene);
     void save();
     void reset() noexcept;
-    bool tick(float deltaTime);
+    void tick(float deltaTime);
 
-    [[nodiscard]] Scene::Desc& scene() noexcept;
-    [[nodiscard]] const Scene::Desc& scene() const noexcept;
+    [[nodiscard]] SceneAsset& scene() noexcept;
+    [[nodiscard]] const SceneAsset& scene() const noexcept;
     [[nodiscard]] FreeFlyCameraActor& editorCamera() const;
     [[nodiscard]] Actor* findActor(uint32_t selectionId) const noexcept;
 
 private:
-    Scene::Desc data;
+    SceneAsset data;
     FreeFlyCameraActor* cameraActor = nullptr;
     uint32_t nextSelectionId = 1;
 };

@@ -1,15 +1,29 @@
 {
-    "Id": "grasslands_sunset_4k",
-    "Radiance": {
-        "TextureID": "grasslands_sunset_4k",
-        "SamplerID": "linearClamp"
+    "id": {
+        "value": "grasslands_sunset_4k"
     },
-    "Irradiance": {
-        "TextureID": "grasslands_sunset_4k_irradiance",
-        "SamplerID": "linearClamp"
+    "radiance": {
+        "textureID": {
+            "value": "grasslands_sunset_4k"
+        },
+        "samplerID": {
+            "value": "linearClamp"
+        }
     },
-    "PrefilteredSpecular": {
-        "TextureID": "grasslands_sunset_4k_prefiltered_specular",
-        "SamplerID": "linearClamp"
+    "irradiance": {
+        "textureID": {
+            "value": "grasslands_sunset_4k_irradiance"
+        },
+        "samplerID": {
+            "value": "linearClamp"
+        }
+    },
+    "prefilteredSpecular": {
+        "textureID": {
+            "value": "grasslands_sunset_4k_prefiltered_specular"
+        },
+        "samplerID": {
+            "value": "linearClamp"
+        }
     }
 }

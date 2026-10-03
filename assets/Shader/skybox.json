@@ -1,4 +1,6 @@
 {
-  "Id": "skybox",
-  "Binary": "shaders/skybox.spv"
+    "id": {
+        "value": "skybox"
+    },
+    "binary": "shaders/skybox.spv"
 }

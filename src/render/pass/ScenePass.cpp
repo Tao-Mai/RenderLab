@@ -5,7 +5,7 @@
 #include "render/Renderer.h"
 
 #include "asset/Asset.h"
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "asset/ApplyOptionalFields.h"
 #include "asset/BuiltinAssets.h"
 #include "core/Context.h"
@@ -128,7 +128,7 @@ void ScenePass::setupPass(RenderGraph& graph)
     skyboxPipelineLayout = pipelines->layout(PipelineLayoutPreset::SceneOnly);
 }
 
-void ScenePass::bindSceneTextures(const Scene::Desc& scene)
+void ScenePass::bindSceneTextures(const SceneAsset& scene)
 {
     TextureBinding irradianceBinding{
         BuiltinAssets::Texture::whiteCube, BuiltinAssets::Sampler::linearClamp};
@@ -137,8 +137,8 @@ void ScenePass::bindSceneTextures(const Scene::Desc& scene)
     hasSkybox = scene.environment.environmentMap.has_value();
     if (scene.environment.environmentMap.has_value())
     {
-        const EnvironmentMap::Desc& environment =
-            context().assetDescManager->desc<EnvironmentMap>(*scene.environment.environmentMap);
+        const EnvironmentMapAsset& environment =
+            context().assetManager->get<EnvironmentMapAsset>(*scene.environment.environmentMap);
         CHECK(!environment.radiance.textureID.empty() &&
               !environment.radiance.samplerID.empty() &&
               !environment.irradiance.textureID.empty() &&
@@ -151,12 +151,12 @@ void ScenePass::bindSceneTextures(const Scene::Desc& scene)
         irradianceBinding = environment.irradiance;
         prefilteredBinding = environment.prefilteredSpecular;
 
-        const Texture::Desc& radianceDesc =
-            context().assetDescManager->desc<Texture>(radianceBinding.textureID);
-        const Texture::Desc& irradianceDesc =
-            context().assetDescManager->desc<Texture>(irradianceBinding.textureID);
-        const Texture::Desc& prefilteredDesc =
-            context().assetDescManager->desc<Texture>(prefilteredBinding.textureID);
+        const TextureAsset& radianceDesc =
+            context().assetManager->get<TextureAsset>(radianceBinding.textureID);
+        const TextureAsset& irradianceDesc =
+            context().assetManager->get<TextureAsset>(irradianceBinding.textureID);
+        const TextureAsset& prefilteredDesc =
+            context().assetManager->get<TextureAsset>(prefilteredBinding.textureID);
         CHECK(radianceDesc.layout == ImageLayout::Cubemap &&
               irradianceDesc.layout == ImageLayout::Cubemap &&
               irradianceDesc.colorSpace == ColorSpace::Linear &&
@@ -281,14 +281,14 @@ void ScenePass::prepareRenderData(const FrameContext& frame)
                     static_cast<int>(index));
                 overrideIt != render->materialOverrides.end())
             {
-                const Mesh::Desc& mesh = context().assetDescManager->desc<Mesh>(
+                const MeshAsset& mesh = context().assetManager->get<MeshAsset>(
                     render->meshId);
                 CHECK(index < mesh.submeshes.size(),
                       "material override index out of range");
-                const Material::ID materialId = mesh.submeshes[index].materialId;
-                Material::Desc desc = resources->materialDesc(materialId);
-                applyOptionalFields(desc, overrideIt->second);
-                material = &resources->material(desc);
+                const MaterialAsset::ID materialId = mesh.submeshes[index].materialId;
+                MaterialAsset asset = resources->materialAsset(materialId);
+                applyOptionalFields(asset, overrideIt->second);
+                material = &resources->material(asset);
             }
             DrawCall draw{
                 item.mesh, material, transform->matrix(),

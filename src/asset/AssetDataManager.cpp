@@ -71,28 +71,28 @@ void validateId(const AssetID<T>& id)
 }
 
 void validateTexture(
-    const Texture::Desc&           desc, std::span<const uint8_t> bytes,
+    const TextureAsset&           asset, std::span<const uint8_t> bytes,
     const std::filesystem::path& file)
 {
-    CHECK(desc.width > 0 && desc.height > 0,
+    CHECK(asset.width > 0 && asset.height > 0,
           "invalid texture dimensions: {}",
           file.string());
-    CHECK(desc.layout != ImageLayout::Cubemap || desc.width == desc.height,
+    CHECK(asset.layout != ImageLayout::Cubemap || asset.width == asset.height,
           "cubemap faces must be square: {}",
           file.string());
-    CHECK(desc.mipLevels > 0 &&
-          desc.mipLevels <= texture_mip::maxLevels(desc.width, desc.height),
+    CHECK(asset.mipLevels > 0 &&
+          asset.mipLevels <= texture_mip::maxLevels(asset.width, asset.height),
           "invalid texture mip level count: {}",
           file.string());
 
     const uint64_t maxPayload = std::numeric_limits<uint32_t>::max();
-    const uint32_t pixelBytes = AssetDataManager::bytesPerPixel(desc.format);
-    CHECK(desc.width <= maxPayload / desc.height / layerCount(desc.layout) / pixelBytes,
+    const uint32_t pixelBytes = AssetDataManager::bytesPerPixel(asset.format);
+    CHECK(asset.width <= maxPayload / asset.height / layerCount(asset.layout) / pixelBytes,
           "texture payload is too large: {}",
           file.string());
 
     const uint64_t expected = texture_mip::totalBytes(
-        desc.width, desc.height, layerCount(desc.layout), pixelBytes, desc.mipLevels);
+        asset.width, asset.height, layerCount(asset.layout), pixelBytes, asset.mipLevels);
 
     CHECK(expected <= maxPayload,
           "texture payload is too large: {}",
@@ -149,7 +149,7 @@ uint32_t AssetDataManager::bytesPerPixel(ImageFormat format)
 }
 
 std::filesystem::path AssetDataManager::writeGeometry(
-    const Mesh::ID& id, const MeshGeometry& mesh) const
+    const MeshAsset::ID& id, const MeshGeometry& mesh) const
 {
     validateId(id);
 
@@ -202,18 +202,18 @@ std::filesystem::path AssetDataManager::writeGeometry(
     return relative;
 }
 
-MeshGeometry AssetDataManager::readGeometry(const Mesh::Desc& desc) const
+MeshGeometry AssetDataManager::readGeometry(const MeshAsset& asset) const
 {
-    if (desc.source == Source::Builtin)
+    if (asset.source == Source::Builtin)
     {
-        const MeshGeometry* geometry = BuiltinAssets::meshGeometry(desc.id);
-        CHECK(geometry != nullptr, "unknown builtin mesh: {}", desc.id);
+        const MeshGeometry* geometry = BuiltinAssets::meshGeometry(asset.id);
+        CHECK(geometry != nullptr, "unknown builtin mesh: {}", asset.id);
         return *geometry;
     }
 
-    CHECK(!desc.geometry.empty(), "mesh '{}' has no geometry path", desc.id);
+    CHECK(!asset.geometry.empty(), "mesh '{}' has no geometry path", asset.id);
 
-    const auto    file = resolve(desc.geometry);
+    const auto    file = resolve(asset.geometry);
     std::ifstream input(file, std::ios::binary);
     CHECK(input, "cannot open mesh geometry: {}", file.string());
 
@@ -257,14 +257,14 @@ MeshGeometry AssetDataManager::readGeometry(const Mesh::Desc& desc) const
 }
 
 std::filesystem::path AssetDataManager::writeTexture(
-    const Texture::Desc& desc, std::span<const uint8_t> bytes) const
+    const TextureAsset& asset, std::span<const uint8_t> bytes) const
 {
-    validateId(desc.id);
+    validateId(asset.id);
 
     const auto relative = std::filesystem::path{"binary/texture"} /
-        (desc.id.value + ".bin");
+        (asset.id.value + ".bin");
     const auto file     = resolve(relative);
-    validateTexture(desc, bytes, file);
+    validateTexture(asset, bytes, file);
 
     std::filesystem::create_directories(file.parent_path());
     std::filesystem::path temporary = file;
@@ -276,12 +276,12 @@ std::filesystem::path AssetDataManager::writeTexture(
     const TextureHeader header{
         .magic = textureMagic,
         .version = textureVersion,
-        .layout = static_cast<uint32_t>(desc.layout),
-        .format = static_cast<uint32_t>(desc.format),
-        .width = desc.width,
-        .height = desc.height,
-        .mipLevels = desc.mipLevels,
-        .layerCount = layerCount(desc.layout),
+        .layout = static_cast<uint32_t>(asset.layout),
+        .format = static_cast<uint32_t>(asset.format),
+        .width = asset.width,
+        .height = asset.height,
+        .mipLevels = asset.mipLevels,
+        .layerCount = layerCount(asset.layout),
         .payloadBytes = static_cast<uint32_t>(bytes.size()),
     };
 
@@ -303,21 +303,21 @@ std::filesystem::path AssetDataManager::writeTexture(
     return relative;
 }
 
-std::vector<uint8_t> AssetDataManager::readTexture(const Texture::Desc& desc) const
+std::vector<uint8_t> AssetDataManager::readTexture(const TextureAsset& asset) const
 {
-    if (desc.source == Source::Builtin)
+    if (asset.source == Source::Builtin)
     {
-        const std::vector<uint8_t>* bytes = BuiltinAssets::textureData(desc.id);
-        CHECK(bytes != nullptr, "unknown builtin texture: {}", desc.id);
-        validateTexture(desc, *bytes, desc.id.value);
+        const std::vector<uint8_t>* bytes = BuiltinAssets::textureData(asset.id);
+        CHECK(bytes != nullptr, "unknown builtin texture: {}", asset.id);
+        validateTexture(asset, *bytes, asset.id.value);
         return *bytes;
     }
 
-    CHECK(desc.binary.has_value() && !desc.binary->empty(),
+    CHECK(asset.binary.has_value() && !asset.binary->empty(),
           "texture '{}' has no binary path",
-          desc.id);
+          asset.id);
 
-    const auto    file = resolve(*desc.binary);
+    const auto    file = resolve(*asset.binary);
     std::ifstream input(file, std::ios::binary);
     CHECK(input, "cannot open texture binary: {}", file.string());
 
@@ -327,11 +327,11 @@ std::vector<uint8_t> AssetDataManager::readTexture(const Texture::Desc& desc) co
           "invalid texture binary header: {}",
           file.string());
 
-    CHECK(header.layout == static_cast<uint32_t>(desc.layout) &&
-          header.format == static_cast<uint32_t>(desc.format) &&
-          header.width == desc.width && header.height == desc.height &&
-          header.mipLevels == desc.mipLevels &&
-          header.layerCount == layerCount(desc.layout),
+    CHECK(header.layout == static_cast<uint32_t>(asset.layout) &&
+          header.format == static_cast<uint32_t>(asset.format) &&
+          header.width == asset.width && header.height == asset.height &&
+          header.mipLevels == asset.mipLevels &&
+          header.layerCount == layerCount(asset.layout),
           "texture binary metadata disagrees with descriptor: {}",
           file.string());
     CHECK(std::filesystem::file_size(file) == sizeof(TextureHeader) + header.payloadBytes,
@@ -339,7 +339,7 @@ std::vector<uint8_t> AssetDataManager::readTexture(const Texture::Desc& desc) co
           file.string());
 
     std::vector<uint8_t> bytes(header.payloadBytes);
-    validateTexture(desc, bytes, file);
+    validateTexture(asset, bytes, file);
 
     input.read(reinterpret_cast<char*>(bytes.data()),
                static_cast<std::streamsize>(bytes.size()));

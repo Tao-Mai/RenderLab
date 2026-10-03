@@ -1,5 +1,5 @@
 #include "asset/AssetDataManager.h"
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "asset/AssetImporter.h"
 #include "asset/TextureMip.h"
 #include "core/ConfigManager.h"
@@ -27,25 +27,25 @@ namespace
 struct ImportContext
 {
     ConfigManager config;
-    AssetDescManager descs;
+    AssetManager manager;
     AssetDataManager data;
 
     ImportContext()
     {
         context().config = &config;
-        context().assetDescManager = &descs;
+        context().assetManager = &manager;
         context().assetDataManager = &data;
         config.init();
         data.init();
-        descs.init();
+        manager.init();
     }
 
     ~ImportContext()
     {
-        descs.shutdown();
+        manager.shutdown();
         config.shutdown();
         context().assetDataManager = nullptr;
-        context().assetDescManager = nullptr;
+        context().assetManager = nullptr;
         context().config = nullptr;
     }
 };
@@ -108,8 +108,8 @@ TEST(EnvironmentMapImportTest, ImportsHdrTextureAsLinearFloat)
     output.close();
     ASSERT_TRUE(output);
 
-    const Texture::ID id = AssetImporter::importTexture({.source = source});
-    const Texture::Desc& texture = assets.descs.desc(id);
+    const TextureAsset::ID id = AssetImporter::importTexture({.source = source});
+    const TextureAsset& texture = assets.manager.get(id);
     EXPECT_EQ(texture.format, ImageFormat::RGBA32F);
     EXPECT_EQ(texture.colorSpace, ColorSpace::Linear);
     EXPECT_EQ(texture.layout, ImageLayout::Image2D);
@@ -144,11 +144,11 @@ TEST(EnvironmentMapImportTest, BakesHdrEnvironment)
     setting.irradianceSampleCount = 16;
     setting.prefilteredSpecularSampleCount = 16;
     setting.prefilteredSpecularMaxSampleCount = 16;
-    const EnvironmentMap::ID id = AssetImporter::importEnvironmentMap(setting);
-    const EnvironmentMap::Desc& environment = assets.descs.desc(id);
-    const Texture::Desc& radiance = assets.descs.desc(environment.radiance.textureID);
-    const Texture::Desc& irradiance = assets.descs.desc(environment.irradiance.textureID);
-    const Texture::Desc& prefiltered = assets.descs.desc(
+    const EnvironmentMapAsset::ID id = AssetImporter::importEnvironmentMap(setting);
+    const EnvironmentMapAsset& environment = assets.manager.get(id);
+    const TextureAsset& radiance = assets.manager.get(environment.radiance.textureID);
+    const TextureAsset& irradiance = assets.manager.get(environment.irradiance.textureID);
+    const TextureAsset& prefiltered = assets.manager.get(
         environment.prefilteredSpecular.textureID);
 
     EXPECT_EQ(radiance.format, ImageFormat::RGBA32F);
@@ -210,9 +210,9 @@ TEST(EnvironmentMapImportTest, ParallelBakeMatchesPreparedOutput)
     EXPECT_FALSE(AssetImporter::prepareEnvironmentMap(
         setting, cancellation.get_token()).has_value());
 
-    const EnvironmentMap::ID id = AssetImporter::saveEnvironmentMap(std::move(*first));
-    const EnvironmentMap::Desc& environment = assets.descs.desc(id);
-    const Texture::Desc& prefiltered = assets.descs.desc(
+    const EnvironmentMapAsset::ID id = AssetImporter::saveEnvironmentMap(std::move(*first));
+    const EnvironmentMapAsset& environment = assets.manager.get(id);
+    const TextureAsset& prefiltered = assets.manager.get(
         environment.prefilteredSpecular.textureID);
     EXPECT_EQ(assets.data.readTexture(prefiltered), second->prefilteredBytes);
 }
@@ -234,8 +234,8 @@ TEST(EnvironmentMapImportTest, ImportsTextureOutsideProject)
     output.close();
     ASSERT_TRUE(output);
 
-    const Texture::ID id = AssetImporter::importTexture({.source = source});
-    const Texture::Desc& texture = assets.descs.desc(id);
+    const TextureAsset::ID id = AssetImporter::importTexture({.source = source});
+    const TextureAsset& texture = assets.manager.get(id);
     ASSERT_TRUE(texture.path);
     EXPECT_EQ(*texture.path, source);
     EXPECT_EQ(assets.data.readTexture(texture),
@@ -275,13 +275,13 @@ TEST(EnvironmentMapImportTest, BuildsRadianceMipsAndBakesFromThem)
     setting.irradianceSampleCount = 64;
     setting.prefilteredSpecularSampleCount = 64;
     setting.prefilteredSpecularMaxSampleCount = 64;
-    const EnvironmentMap::ID environmentId =
+    const EnvironmentMapAsset::ID environmentId =
         AssetImporter::importEnvironmentMap(setting);
-    const EnvironmentMap::Desc& environment = assets.descs.desc(environmentId);
-    const auto environmentIds = assets.descs.loadedIds<EnvironmentMap>();
+    const EnvironmentMapAsset& environment = assets.manager.get(environmentId);
+    const auto environmentIds = assets.manager.loadedIds<EnvironmentMapAsset>();
     EXPECT_NE(std::ranges::find(environmentIds, environmentId), environmentIds.end());
 
-    const Texture::Desc& radiance = assets.descs.desc(environment.radiance.textureID);
+    const TextureAsset& radiance = assets.manager.get(environment.radiance.textureID);
     ASSERT_EQ(radiance.layout, ImageLayout::Cubemap);
     ASSERT_EQ(radiance.format, ImageFormat::RGBA8);
     ASSERT_EQ(radiance.width, 8u);
@@ -317,8 +317,8 @@ TEST(EnvironmentMapImportTest, BuildsRadianceMipsAndBakesFromThem)
         }
     }
 
-    const Texture::Desc& irradiance = assets.descs.desc(environment.irradiance.textureID);
-    const Texture::Desc& prefiltered = assets.descs.desc(
+    const TextureAsset& irradiance = assets.manager.get(environment.irradiance.textureID);
+    const TextureAsset& prefiltered = assets.manager.get(
         environment.prefilteredSpecular.textureID);
     ASSERT_EQ(irradiance.mipLevels, 1u);
     ASSERT_EQ(prefiltered.mipLevels, radiance.mipLevels);

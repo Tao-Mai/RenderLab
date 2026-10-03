@@ -2,10 +2,10 @@
 
 #include "scene/Actor.h"
 
-class StaticMeshActor : public Actor
+class ALight : public Actor
 {
 public:
-    StaticMeshActor();
+    ALight();
     void initialize() override;
     void tick(float deltaTime) override;
 };

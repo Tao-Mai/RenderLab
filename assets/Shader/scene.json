@@ -1,4 +1,6 @@
 {
-  "Id": "scene",
-  "Binary": "shaders/slang.spv"
+    "id": {
+        "value": "scene"
+    },
+    "binary": "shaders/slang.spv"
 }

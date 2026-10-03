@@ -7,6 +7,8 @@ namespace
 {
 struct TaggedComponent : Component
 {
+    void tick(float) override { ++tickCount; }
+
     [[=ReflectField{}]] int value = 11;
 
     int tickCount = 0;
@@ -20,6 +22,12 @@ struct DerivedTaggedComponent : TaggedComponent
 
 struct TaggedActor : Actor
 {
+    void tick(float deltaTime) override
+    {
+        ++tickCount;
+        tickComponents(deltaTime);
+    }
+
     [[=ReflectField{}]] float health = 100.0f;
 
     int tickCount = 0;
@@ -51,7 +59,7 @@ void registerTestTypes()
 
 TEST(PartialSerialization, ComponentIncludesOnlyMarkedInheritedMembers)
 {
-    Actor owner;
+    TaggedActor owner;
     auto& component = owner.addComponent<DerivedTaggedComponent>();
     component.value = 42;
     component.extra = 73;
@@ -64,7 +72,7 @@ TEST(PartialSerialization, ComponentIncludesOnlyMarkedInheritedMembers)
 
 TEST(PartialSerialization, DeserializationLeavesUnmarkedMembersUntouched)
 {
-    Actor runtimeActor;
+    TaggedActor runtimeActor;
     DerivedTaggedComponent component;
     component.tickCount = 9;
     component.runtimeActor = &runtimeActor;
@@ -85,7 +93,7 @@ TEST(PartialSerialization, DeserializationLeavesUnmarkedMembersUntouched)
 TEST(PartialSerialization, ActorPolicyIsInheritedAndPreservesRuntimeMembers)
 {
     registerTestTypes();
-    Actor runtimeActor;
+    TaggedActor runtimeActor;
     DerivedTaggedActor source;
     source.name = "Tagged actor";
     source.health = 37.0f;

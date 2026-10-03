@@ -42,22 +42,22 @@ public:
     struct PreparedEnvironmentMap
     {
         std::filesystem::path source;
-        Texture::Desc radiance;
-        Texture::Desc irradiance;
-        Texture::Desc prefiltered;
+        TextureAsset radiance;
+        TextureAsset irradiance;
+        TextureAsset prefiltered;
         std::vector<uint8_t> radianceBytes;
         std::vector<uint8_t> irradianceBytes;
         std::vector<uint8_t> prefilteredBytes;
     };
 
-    static Texture::ID importTexture(const ImportTextureSetting& setting);
+    static TextureAsset::ID importTexture(const ImportTextureSetting& setting);
 
-    static EnvironmentMap::ID importEnvironmentMap(const ImportEnvironmentMapSetting& setting);
+    static EnvironmentMapAsset::ID importEnvironmentMap(const ImportEnvironmentMapSetting& setting);
     [[nodiscard]] static std::optional<PreparedEnvironmentMap> prepareEnvironmentMap(
         const ImportEnvironmentMapSetting& setting, std::stop_token stop = {});
-    static EnvironmentMap::ID saveEnvironmentMap(PreparedEnvironmentMap&& prepared);
+    static EnvironmentMapAsset::ID saveEnvironmentMap(PreparedEnvironmentMap&& prepared);
 
-    static Mesh::ID importMesh(const ImportMeshSetting& setting);
+    static MeshAsset::ID importMesh(const ImportMeshSetting& setting);
 
 private:
     struct LoadedImage
@@ -102,22 +102,22 @@ private:
         const std::filesystem::path& source);
     static void buildMipmapChain(
         CubemapPixels& cubemap,
-        const Texture::Desc& radiance,
+        const TextureAsset& radiance,
         std::stop_token stop = {});
     [[nodiscard]] static std::vector<uint8_t> irradianceCubemap(
-        const Texture::Desc& radiance,
+        const TextureAsset& radiance,
         std::span<const float> radiancePixels,
         uint32_t side,
         uint32_t sampleCount,
         std::stop_token stop = {});
     [[nodiscard]] static std::vector<uint8_t> prefilterSpecularMap(
-        const Texture::Desc& radiance,
+        const TextureAsset& radiance,
         std::span<const float> radiancePixels,
         uint32_t sampleCount,
         uint32_t maxSampleCount,
         std::stop_token stop = {});
-    [[nodiscard]] static Texture::ID saveTexture(
-        Texture::Desc                  desc,
+    [[nodiscard]] static TextureAsset::ID saveTexture(
+        TextureAsset                  asset,
         const std::filesystem::path& source,
         std::span<const uint8_t>     bytes);
 };

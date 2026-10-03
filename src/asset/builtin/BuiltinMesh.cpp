@@ -249,44 +249,44 @@ constexpr uint32_t kArrowIndexCount = 48;
     return mesh;
 }
 
-[[nodiscard]] ::Mesh::Desc makeMeshDesc(const ::Mesh::ID& id, uint32_t indices)
+[[nodiscard]] ::MeshAsset makeMeshAsset(const ::MeshAsset::ID& id, uint32_t indices)
 {
-    ::Mesh::Desc desc{};
-    desc.id     = id;
-    desc.source = Source::Builtin;
-    desc.submeshes.push_back({
+    ::MeshAsset asset{};
+    asset.id     = id;
+    asset.source = Source::Builtin;
+    asset.submeshes.push_back({
         .firstIndex = 0,
         .indexCount = indices,
         .materialId = BuiltinAssets::Material::white,
     });
-    return desc;
+    return asset;
 }
 }
 
-const ::Mesh::Desc* BuiltinAssets::meshDesc(const ::Mesh::ID& id)
+const ::MeshAsset* BuiltinAssets::meshAsset(const ::MeshAsset::ID& id)
 {
-    static const ::Mesh::Desc descs[] = {
-        makeMeshDesc(Mesh::cube, kCubeIndexCount),
-        makeMeshDesc(Mesh::sphere, kSphereIndexCount),
-        makeMeshDesc(Mesh::plane, kPlaneIndexCount),
-        makeMeshDesc(Mesh::arrow, kArrowIndexCount),
+    static const ::MeshAsset assets[] = {
+        makeMeshAsset(Mesh::cube, kCubeIndexCount),
+        makeMeshAsset(Mesh::sphere, kSphereIndexCount),
+        makeMeshAsset(Mesh::plane, kPlaneIndexCount),
+        makeMeshAsset(Mesh::arrow, kArrowIndexCount),
     };
 
-    for (const ::Mesh::Desc& desc : descs)
+    for (const ::MeshAsset& asset : assets)
     {
-        if (desc.id == id)
+        if (asset.id == id)
         {
-            return &desc;
+            return &asset;
         }
     }
     return nullptr;
 }
 
-const MeshGeometry* BuiltinAssets::meshGeometry(const ::Mesh::ID& id)
+const MeshGeometry* BuiltinAssets::meshGeometry(const ::MeshAsset::ID& id)
 {
     struct Entry
     {
-        ::Mesh::ID     id;
+        ::MeshAsset::ID     id;
         MeshGeometry geometry;
     };
 

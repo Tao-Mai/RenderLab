@@ -8,7 +8,7 @@ class [[=PartialSerialize{}]] Component
 {
 public:
     virtual ~Component() = default;
-    virtual bool tick(float deltaTime) { return false; }
+    virtual void tick(float deltaTime) = 0;
 
     [[nodiscard]] Actor& actor() const;
 

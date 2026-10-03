@@ -2,29 +2,29 @@
 
 namespace
 {
-[[nodiscard]] Material::Desc makeWhiteMaterial()
+[[nodiscard]] MaterialAsset makeWhiteMaterial()
 {
-    ::Material::Desc desc{};
-    desc.id               = BuiltinAssets::Material::white;
-    desc.metallic         = 0.0f;
-    desc.roughness        = 0.4f;
-    desc.baseColorTexture = TextureBinding{
+    ::MaterialAsset asset{};
+    asset.id               = BuiltinAssets::Material::white;
+    asset.metallic         = 0.0f;
+    asset.roughness        = 0.4f;
+    asset.baseColorTexture = TextureBinding{
         BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat};
-    return desc;
+    return asset;
 }
 }
 
-const ::Material::Desc* BuiltinAssets::materialDesc(const ::Material::ID& id)
+const ::MaterialAsset* BuiltinAssets::materialAsset(const ::MaterialAsset::ID& id)
 {
-    static const ::Material::Desc descs[] = {
+    static const ::MaterialAsset assets[] = {
         makeWhiteMaterial(),
     };
 
-    for (const ::Material::Desc& desc : descs)
+    for (const ::MaterialAsset& asset : assets)
     {
-        if (desc.id == id)
+        if (asset.id == id)
         {
-            return &desc;
+            return &asset;
         }
     }
     return nullptr;

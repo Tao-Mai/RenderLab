@@ -66,7 +66,7 @@ const AppPaths& ConfigManager::paths() const noexcept
     return data.paths;
 }
 
-const Scene::ID& ConfigManager::initialScene() const noexcept
+const SceneAsset::ID& ConfigManager::initialScene() const noexcept
 {
     return data.initialScene;
 }

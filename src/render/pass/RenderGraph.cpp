@@ -1,6 +1,6 @@
 #include "render/pass/RenderGraph.h"
 
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -69,7 +69,7 @@ void RenderGraph::init()
 
     const TextureBinding& brdf = context().config->rendererConfig().brdfLut;
     CHECK(!brdf.textureID.empty() && !brdf.samplerID.empty(), "Renderer requires a BRDF LUT binding");
-    const Texture::Desc& desc = context().assetDescManager->desc<Texture>(brdf.textureID);
+    const TextureAsset& desc = context().assetManager->get<TextureAsset>(brdf.textureID);
     CHECK(desc.layout == ImageLayout::Image2D && desc.colorSpace == ColorSpace::Linear &&
         desc.format != ImageFormat::R8,
         "BRDF LUT must be a linear 2D texture with at least two channels");
@@ -136,7 +136,7 @@ void RenderGraph::validateCompilation()
     CHECK(errors.empty(), "RenderGraph compilation failed:{}", message);
 }
 
-void RenderGraph::bindSceneTextures(const Scene::Desc& scene)
+void RenderGraph::bindSceneTextures(const SceneAsset& scene)
 {
     CHECK(passes, "RenderGraph must be initialized before binding a scene");
     passes->scene.bindSceneTextures(scene);

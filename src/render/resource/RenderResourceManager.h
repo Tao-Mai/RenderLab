@@ -11,7 +11,7 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
-class AssetDescManager;
+class AssetManager;
 class AssetDataManager;
 class DescriptorManager;
 class ShaderManager;
@@ -26,24 +26,24 @@ public:
         ShaderManager& shaders);
     void reset() noexcept;
 
-    GpuMesh& mesh(const Mesh::ID& id);
-    [[nodiscard]] Material::Desc materialDesc(const Material::ID& id) const;
-    GpuMaterial& material(const Material::ID& id);
-    GpuMaterial& material(const Material::Desc& desc);
-    std::shared_ptr<GpuTexture> texture(const Texture::ID& id);
-    [[nodiscard]] vk::Sampler sampler(const Sampler::ID& id);
+    GpuMesh& mesh(const MeshAsset::ID& id);
+    [[nodiscard]] MaterialAsset materialAsset(const MaterialAsset::ID& id) const;
+    GpuMaterial& material(const MaterialAsset::ID& id);
+    GpuMaterial& material(const MaterialAsset& asset);
+    std::shared_ptr<GpuTexture> texture(const TextureAsset::ID& id);
+    [[nodiscard]] vk::Sampler sampler(const SamplerAsset::ID& id);
 
 private:
-    AssetDescManager* assets = nullptr;
+    AssetManager* assets = nullptr;
     AssetDataManager* data = nullptr;
     VulkanContext* vulkan = nullptr;
     DescriptorManager* descriptors = nullptr;
     ShaderManager* shaders = nullptr;
     vk::raii::CommandPool uploadPool = nullptr;
-    std::unordered_map<Mesh::ID, std::unique_ptr<GpuMesh>> meshes;
+    std::unordered_map<MeshAsset::ID, std::unique_ptr<GpuMesh>> meshes;
     std::unordered_map<std::string, std::unique_ptr<GpuMaterial>> materials;
-    std::unordered_map<Texture::ID, std::shared_ptr<GpuTexture>> textures;
-    std::unordered_map<Sampler::ID, vk::raii::Sampler> samplers;
+    std::unordered_map<TextureAsset::ID, std::shared_ptr<GpuTexture>> textures;
+    std::unordered_map<SamplerAsset::ID, vk::raii::Sampler> samplers;
 
     [[nodiscard]] GpuUploadContext uploadContext() const;
 };

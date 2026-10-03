@@ -12,12 +12,12 @@
 
 #include <glm/geometric.hpp>
 
-bool CharacterMoveComponent::tick(float deltaTime)
+void CharacterMoveComponent::tick(float deltaTime)
 {
     CHECK(context().sceneManager != nullptr && context().inputManager != nullptr,
         "movement requires SceneManager and InputManager");
     const auto& camera = context().sceneManager->editorCamera().camera();
-    if (!camera.isNavigationActive()) return false;
+    if (!camera.isNavigationActive()) return;
 
     const auto& input = *context().inputManager;
     glm::vec3 up = context().sceneManager->scene().environment.up;
@@ -47,7 +47,7 @@ bool CharacterMoveComponent::tick(float deltaTime)
     if (input.get(Command::MoveBackward)) direction -= front;
     if (input.get(Command::MoveRight)) direction += right;
     if (input.get(Command::MoveLeft)) direction -= right;
-    if (glm::dot(direction, direction) == 0.0f) return false;
+    if (glm::dot(direction, direction) == 0.0f) return;
 
     direction = glm::normalize(direction);
     deltaTime = std::clamp(deltaTime, 0.0f, 0.1f);
@@ -55,8 +55,7 @@ bool CharacterMoveComponent::tick(float deltaTime)
 
     const float movementSpeed = speed * (sprint ? sprintMultiplier : 1.0f);
     const glm::vec3 displacement = direction * movementSpeed * deltaTime;
-    if (glm::dot(displacement, displacement) == 0.0f) return false;
+    if (glm::dot(displacement, displacement) == 0.0f) return;
 
     actor().transform().position += displacement;
-    return true;
 }

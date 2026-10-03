@@ -1,6 +1,6 @@
 #include "asset/AssetImporter.h"
 
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "asset/AssetDataManager.h"
 #include "asset/BuiltinAssets.h"
 #include "asset/import/EnvironmentMapUtils.h"
@@ -22,7 +22,7 @@
 // 执行流程：loadImage 解码源文件 -> environmentProjection 验证经纬图或竖排 Cube ->
 // environmentCubemap 生成 radiance 六面图 -> buildMipmapChain 生成 radiance mip 链 ->
 // irradianceCubemap 做余弦加权半球积分 ->
-// prefilterSpecularMap 生成 GGX 预滤波 mip 链 -> 保存纹理及 EnvironmentMap::Desc。
+// prefilterSpecularMap 生成 GGX 预滤波 mip 链 -> 保存纹理及 EnvironmentMapAsset。
 namespace
 {
 using asset_import::environment_map::decode8BitPixels;
@@ -83,13 +83,13 @@ void validateSetting(const ImportEnvironmentMapSetting& setting)
             (source.stem().string() + std::string{suffix} + source.extension().string());
 }
 
-[[nodiscard]] Texture::Desc cubemapDesc(
+[[nodiscard]] TextureAsset cubemapAsset(
     const std::filesystem::path& source, std::string_view suffix,
     ImageFormat format, ColorSpace colorSpace, uint32_t side, uint32_t mipLevels)
 {
     const std::filesystem::path name = sourceWithSuffix(source, suffix);
     return {
-        .id = Texture::ID{name.stem().string()},
+        .id = TextureAsset::ID{name.stem().string()},
         .source = Source::File,
         .format = format,
         .colorSpace = colorSpace,
@@ -250,7 +250,7 @@ std::optional<AssetImporter::PreparedEnvironmentMap> AssetImporter::prepareEnvir
     LOG_INFO("Decoded environment source: {}x{}, cubemap face {}x{}, elapsed {:.1f}s",
              image.width, image.height, side, side, elapsedSeconds(importStart));
 
-    Texture::Desc radiance = cubemapDesc(
+    TextureAsset radiance = cubemapAsset(
         source, "", environmentFormat(image.format), resolvedColorSpace,
         side, texture_mip::maxLevels(side, side));
     CHECK(radiance.format == ImageFormat::RGBA8 ||
@@ -282,10 +282,10 @@ std::optional<AssetImporter::PreparedEnvironmentMap> AssetImporter::prepareEnvir
     LOG_INFO("Radiance mip chain ready, elapsed {:.1f}s",
              elapsedSeconds(importStart));
 
-    Texture::Desc irradiance = cubemapDesc(
+    TextureAsset irradiance = cubemapAsset(
         source, "_irradiance", ImageFormat::RGBA32F, ColorSpace::Linear,
         setting.irradianceSize, 1);
-    Texture::Desc prefiltered = cubemapDesc(
+    TextureAsset prefiltered = cubemapAsset(
         source, "_prefiltered_specular", ImageFormat::RGBA32F, ColorSpace::Linear,
         side, radiance.mipLevels);
 
@@ -339,28 +339,28 @@ std::optional<AssetImporter::PreparedEnvironmentMap> AssetImporter::prepareEnvir
     };
 }
 
-EnvironmentMap::ID AssetImporter::saveEnvironmentMap(PreparedEnvironmentMap&& prepared)
+EnvironmentMapAsset::ID AssetImporter::saveEnvironmentMap(PreparedEnvironmentMap&& prepared)
 {
     const std::filesystem::path& source = prepared.source;
-    prepared.radiance.id = asset_import::nextId<Texture>(source);
-    prepared.irradiance.id = asset_import::nextId<Texture>(
+    prepared.radiance.id = asset_import::nextId<TextureAsset>(source);
+    prepared.irradiance.id = asset_import::nextId<TextureAsset>(
         sourceWithSuffix(source, "_irradiance"));
-    prepared.prefiltered.id = asset_import::nextId<Texture>(
+    prepared.prefiltered.id = asset_import::nextId<TextureAsset>(
         sourceWithSuffix(source, "_prefiltered_specular"));
 
     LOG_INFO("Writing environment textures: radiance {} bytes, irradiance {} bytes, "
              "prefiltered {} bytes",
              prepared.radianceBytes.size(), prepared.irradianceBytes.size(),
              prepared.prefilteredBytes.size());
-    const Texture::ID radianceId =
+    const TextureAsset::ID radianceId =
         saveTexture(std::move(prepared.radiance), source, prepared.radianceBytes);
-    const Texture::ID irradianceId =
+    const TextureAsset::ID irradianceId =
         saveTexture(std::move(prepared.irradiance), source, prepared.irradianceBytes);
-    const Texture::ID prefilteredId =
+    const TextureAsset::ID prefilteredId =
         saveTexture(std::move(prepared.prefiltered), source, prepared.prefilteredBytes);
 
-    EnvironmentMap::Desc environment{};
-    environment.id       = asset_import::nextId<EnvironmentMap>(source);
+    EnvironmentMapAsset environment{};
+    environment.id       = asset_import::nextId<EnvironmentMapAsset>(source);
     environment.radiance = TextureBinding{
         radianceId, BuiltinAssets::Sampler::linearClamp};
     environment.irradiance = TextureBinding{
@@ -368,13 +368,13 @@ EnvironmentMap::ID AssetImporter::saveEnvironmentMap(PreparedEnvironmentMap&& pr
     environment.prefilteredSpecular = TextureBinding{
         prefilteredId, BuiltinAssets::Sampler::linearClamp};
 
-    const EnvironmentMap::ID id =
-        context().assetDescManager->save<EnvironmentMap>(std::move(environment));
+    const EnvironmentMapAsset::ID id =
+        context().assetManager->save<EnvironmentMapAsset>(std::move(environment));
     LOG_INFO("Import environment '{}' saved as '{}'", source.string(), id.value);
     return id;
 }
 
-EnvironmentMap::ID AssetImporter::importEnvironmentMap(const ImportEnvironmentMapSetting& setting)
+EnvironmentMapAsset::ID AssetImporter::importEnvironmentMap(const ImportEnvironmentMapSetting& setting)
 {
     auto prepared = prepareEnvironmentMap(setting);
     CHECK(prepared.has_value(), "environment import was canceled: {}", setting.source.string());

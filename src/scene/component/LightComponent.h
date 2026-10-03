@@ -7,6 +7,8 @@
 
 struct LightComponent : Component
 {
+    void tick(float) override {}
+
     enum class Type
     {
         Point,

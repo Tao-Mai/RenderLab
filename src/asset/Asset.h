@@ -22,11 +22,11 @@ struct Asset
 };
 
 template <class T>
-concept AssetType = std::derived_from<T, Asset> && requires
+concept AssetType = std::derived_from<T, Asset> && requires(T& value)
 {
-    typename T::Desc;
     typename T::ID;
     requires std::same_as<typename T::ID, AssetID<T>>;
+    { value.id } -> std::same_as<AssetID<T>&>;
     { T::dir } -> std::convertible_to<std::string_view>;
 };
 
@@ -49,193 +49,175 @@ enum class Source
     Builtin
 };
 
-struct Texture : Asset
+struct TextureAsset : Asset
 {
-    using ID                              = AssetID<Texture>;
+    using ID                              = AssetID<TextureAsset>;
     static constexpr std::string_view dir = "Texture";
 
-    struct Desc
-    {
-        ID                                   id;
-        Source                               source = Source::File;
-        ImageFormat                          format;
-        ColorSpace                           colorSpace;
-        ImageLayout                          layout;
-        uint32_t                             width{};
-        uint32_t                             height{};
-        uint32_t                             mipLevels{};
-        std::optional<std::filesystem::path> path;
-        std::optional<std::filesystem::path> binary;
-    };
+    ID                                   id;
+    Source                               source = Source::File;
+    ImageFormat                          format;
+    ColorSpace                           colorSpace;
+    ImageLayout                          layout;
+    uint32_t                             width{};
+    uint32_t                             height{};
+    uint32_t                             mipLevels{};
+    std::optional<std::filesystem::path> path;
+    std::optional<std::filesystem::path> binary;
 };
 
-struct Sampler : Asset
+struct SamplerAsset : Asset
 {
-    using ID                              = AssetID<Sampler>;
+    using ID                              = AssetID<SamplerAsset>;
     static constexpr std::string_view dir = "Sampler";
 
-    struct Desc
+    enum class Filter
     {
-        enum class Filter
-        {
-            Nearest,
-            Linear
-        };
-
-        enum class MipmapMode
-        {
-            Nearest,
-            Linear
-        };
-
-        enum class AddressMode
-        {
-            Repeat,
-            MirroredRepeat,
-            ClampToEdge,
-            ClampToBorder
-        };
-
-        enum class CompareOp
-        {
-            Never,
-            Less,
-            Equal,
-            LessOrEqual,
-            Greater,
-            NotEqual,
-            GreaterOrEqual,
-            Always
-        };
-
-        enum class BorderColor
-        {
-            FloatTransparentBlack,
-            IntTransparentBlack,
-            FloatOpaqueBlack,
-            IntOpaqueBlack,
-            FloatOpaqueWhite,
-            IntOpaqueWhite
-        };
-
-        ID          id;
-        Filter      magFilter               = Filter::Linear;
-        Filter      minFilter               = Filter::Linear;
-        MipmapMode  mipmapMode              = MipmapMode::Linear;
-        AddressMode addressModeU            = AddressMode::Repeat;
-        AddressMode addressModeV            = AddressMode::Repeat;
-        AddressMode addressModeW            = AddressMode::Repeat;
-        float       mipLodBias              = 0.0f;
-        bool        anisotropyEnable        = false;
-        float       maxAnisotropy           = 1.0f;
-        bool        compareEnable           = false;
-        CompareOp   compareOp               = CompareOp::Always;
-        float       minLod                  = 0.0f;
-        // 不指定表示不限制最大 LOD；0.0 表示仅使用基础 mip。
-        std::optional<float> maxLod;
-        BorderColor borderColor             = BorderColor::FloatTransparentBlack;
-        bool        unnormalizedCoordinates = false;
+        Nearest,
+        Linear
     };
+
+    enum class MipmapMode
+    {
+        Nearest,
+        Linear
+    };
+
+    enum class AddressMode
+    {
+        Repeat,
+        MirroredRepeat,
+        ClampToEdge,
+        ClampToBorder
+    };
+
+    enum class CompareOp
+    {
+        Never,
+        Less,
+        Equal,
+        LessOrEqual,
+        Greater,
+        NotEqual,
+        GreaterOrEqual,
+        Always
+    };
+
+    enum class BorderColor
+    {
+        FloatTransparentBlack,
+        IntTransparentBlack,
+        FloatOpaqueBlack,
+        IntOpaqueBlack,
+        FloatOpaqueWhite,
+        IntOpaqueWhite
+    };
+
+    ID                   id;
+    Filter               magFilter        = Filter::Linear;
+    Filter               minFilter        = Filter::Linear;
+    MipmapMode           mipmapMode       = MipmapMode::Linear;
+    AddressMode          addressModeU     = AddressMode::Repeat;
+    AddressMode          addressModeV     = AddressMode::Repeat;
+    AddressMode          addressModeW     = AddressMode::Repeat;
+    float                mipLodBias       = 0.0f;
+    bool                 anisotropyEnable = false;
+    float                maxAnisotropy    = 1.0f;
+    bool                 compareEnable    = false;
+    CompareOp            compareOp        = CompareOp::Always;
+    float                minLod           = 0.0f;
+    // 不指定表示不限制最大 LOD；0.0 表示仅使用基础 mip。
+    std::optional<float> maxLod;
+    BorderColor          borderColor             = BorderColor::FloatTransparentBlack;
+    bool                 unnormalizedCoordinates = false;
 };
 
 struct TextureBinding
 {
-    Texture::ID textureID;
-    Sampler::ID samplerID;
+    TextureAsset::ID textureID;
+    SamplerAsset::ID samplerID;
 
     bool operator==(const TextureBinding&) const = default;
 };
 
-struct Shader : Asset
+struct ShaderAsset : Asset
 {
-    using ID                              = AssetID<Shader>;
+    using ID                              = AssetID<ShaderAsset>;
     static constexpr std::string_view dir = "Shader";
 
-    struct Desc
-    {
-        ID                    id;
-        std::filesystem::path binary;
-    };
+    ID                    id;
+    std::filesystem::path binary;
 };
 
-struct Material : Asset
+struct MaterialAsset : Asset
 {
-    using ID                              = AssetID<Material>;
+    using ID                              = AssetID<MaterialAsset>;
     static constexpr std::string_view dir = "Material";
 
-    struct Desc
-    {
-        ID                            id;
-        std::optional<Shader::ID>     shaderId;
-        std::optional<glm::vec4>      baseColorFactor;
-        std::optional<float>          metallic;
-        std::optional<float>          roughness;
-        std::optional<float>          ao;
-        std::optional<glm::vec3>      emissive;
-        std::optional<float>          normalScale;
-        std::optional<TextureBinding> baseColorTexture;
-        std::optional<TextureBinding> normalTexture;
-        std::optional<TextureBinding> metallicTexture;
-        std::optional<TextureBinding> roughnessTexture;
-        std::optional<TextureBinding> aoTexture;
-        std::optional<TextureBinding> emissiveTexture;
-        std::optional<std::string>    alphaMode;
-        std::optional<float>          alphaCutoff;
-        std::optional<bool>           doubleSided;
-    };
+    ID                             id;
+    std::optional<ShaderAsset::ID> shaderId;
+    std::optional<glm::vec4>       baseColorFactor;
+    std::optional<float>           metallic;
+    std::optional<float>           roughness;
+    std::optional<float>           ao;
+    std::optional<glm::vec3>       emissive;
+    std::optional<float>           normalScale;
+    std::optional<TextureBinding>  baseColorTexture;
+    std::optional<TextureBinding>  normalTexture;
+    std::optional<TextureBinding>  metallicTexture;
+    std::optional<TextureBinding>  roughnessTexture;
+    std::optional<TextureBinding>  aoTexture;
+    std::optional<TextureBinding>  emissiveTexture;
+    std::optional<std::string>     alphaMode;
+    std::optional<float>           alphaCutoff;
+    std::optional<bool>            doubleSided;
 };
 
-struct Mesh : Asset
+using MaterialOverride = MaterialAsset;
+
+struct MeshAsset : Asset
 {
-    using ID                              = AssetID<Mesh>;
+    using ID                              = AssetID<MeshAsset>;
     static constexpr std::string_view dir = "Mesh";
 
-    struct Desc
+    struct Submesh
     {
-        struct Submesh
-        {
-            uint32_t     firstIndex = 0;
-            uint32_t     indexCount = 0;
-            Material::ID materialId;
-        };
-
-        ID                    id;
-        Source                source;
-        std::filesystem::path geometry;
-        std::vector<Submesh>  submeshes;
+        uint32_t          firstIndex = 0;
+        uint32_t          indexCount = 0;
+        MaterialAsset::ID materialId;
     };
+
+    ID                    id;
+    Source                source;
+    std::filesystem::path geometry;
+    std::vector<Submesh>  submeshes;
 };
 
-struct EnvironmentMap : Asset
+struct EnvironmentMapAsset : Asset
 {
-    using ID                              = AssetID<EnvironmentMap>;
+    using ID                              = AssetID<EnvironmentMapAsset>;
     static constexpr std::string_view dir = "EnvironmentMap";
 
-    struct Desc
-    {
-        ID             id;
-        TextureBinding radiance;
-        TextureBinding irradiance;
-        TextureBinding prefilteredSpecular;
-    };
+    ID             id;
+    TextureBinding radiance;
+    TextureBinding irradiance;
+    TextureBinding prefilteredSpecular;
 };
 
-struct Scene : Asset
+struct SceneAsset : Asset
 {
-    using ID                              = AssetID<Scene>;
+    using ID                              = AssetID<SceneAsset>;
     static constexpr std::string_view dir = "Scene";
 
-    struct Desc
-    {
-        ID                  id;
-        std::vector<std::unique_ptr<Actor>> actors;
+    ID                                  id;
+    std::vector<std::unique_ptr<Actor>> actors;
 
-        struct Environment
-        {
-            std::optional<EnvironmentMap::ID> environmentMap;
-            glm::vec3 up{0.0f, 1.0f, 0.0f};
-        } environment;
-    };
+    struct Environment
+    {
+        std::optional<EnvironmentMapAsset::ID> environmentMap;
+        glm::vec3                              up{0.0f, 1.0f, 0.0f};
+    } environment;
 };
 
-using AssetTypes = AssetTypeList<Texture, Mesh, Material, Shader, Scene, EnvironmentMap, Sampler>;
+using AssetTypes = AssetTypeList<TextureAsset, MeshAsset, MaterialAsset, ShaderAsset,
+                                 SceneAsset, EnvironmentMapAsset, SamplerAsset>;

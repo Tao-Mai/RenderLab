@@ -21,7 +21,7 @@ public:
         const vk::raii::Device&         device,
         DescriptorManager&              descriptors,
         ShaderHandle                     shader,
-        const Material::Desc&             material,
+        const MaterialAsset&             material,
         std::shared_ptr<GpuTexture>        texture,
         vk::Sampler                        sampler);
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "core/Context.h"
 
 #include <cstdint>
@@ -11,7 +11,7 @@
 
 namespace asset_import
 {
-[[nodiscard]] inline std::filesystem::path sourcePathForDesc(
+[[nodiscard]] inline std::filesystem::path sourcePathForAsset(
     const std::filesystem::path& source)
 {
     const auto assetsRoot = context().config->paths().assets;
@@ -31,10 +31,10 @@ template <AssetType T>
 {
     std::string stem = source.stem().string();
     CHECK(!stem.empty(), "asset source has no filename stem: {}", source.string());
-    CHECK(context().assetDescManager != nullptr, "AssetDescManager is not initialized");
+    CHECK(context().assetManager != nullptr, "AssetManager is not initialized");
 
     const typename T::ID baseId{stem};
-    if (context().assetDescManager->findDesc<T>(baseId) == nullptr)
+    if (context().assetManager->find<T>(baseId) == nullptr)
     {
         return baseId;
     }
@@ -42,7 +42,7 @@ template <AssetType T>
     for (uint32_t number = 1; number < std::numeric_limits<uint32_t>::max(); ++number)
     {
         typename T::ID id{stem + std::to_string(number)};
-        if (context().assetDescManager->findDesc<T>(id) == nullptr)
+        if (context().assetManager->find<T>(id) == nullptr)
         {
             return id;
         }

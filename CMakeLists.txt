@@ -69,7 +69,6 @@ find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(imguizmo CONFIG REQUIRED)
-find_package(reflectcpp CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(glog CONFIG REQUIRED)
 find_package(tinyexr CONFIG REQUIRED)
@@ -239,6 +238,8 @@ add_executable(RenderLab
         src/scene/Actor.h
         src/scene/actor/FreeFlyCameraActor.cpp
         src/scene/actor/FreeFlyCameraActor.h
+        src/scene/actor/ALight.cpp
+        src/scene/actor/ALight.h
         src/scene/actor/StaticMeshActor.cpp
         src/scene/actor/StaticMeshActor.h
         src/scene/component/FreeFlyMoveComponent.cpp
@@ -251,7 +252,7 @@ add_executable(RenderLab
         src/editor/EditorUi.cpp
         src/editor/EditorUi.h
         src/editor/ViewportRect.h
-        src/asset/AssetDescManager.cpp
+        src/asset/AssetManager.cpp
         src/asset/Asset.h
         src/asset/AssetID.h
         src/asset/ImageFormat.h
@@ -263,7 +264,6 @@ add_executable(RenderLab
         src/asset/import/ImportEnvironmentMap.cpp
         src/asset/import/ImportId.h
         src/asset/JsonIo.h
-        src/asset/RflReflectors.h
         src/asset/MeshGeometry.h
         src/asset/BuiltinAssets.h
         src/asset/builtin/BuiltinMesh.cpp
@@ -352,7 +352,6 @@ target_link_libraries(RenderLab PRIVATE
         glm::glm
         imgui::imgui
         imguizmo::imguizmo
-        reflectcpp::reflectcpp
         nlohmann_json::nlohmann_json
         glog::glog
         unofficial::tinyexr::tinyexr

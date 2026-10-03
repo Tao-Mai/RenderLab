@@ -1,7 +1,7 @@
 #include "render/Renderer.h"
 
 #include "asset/Asset.h"
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "scene/component/LightComponent.h"
 #include "scene/component/TransformComponent.h"
 #include "scene/SceneManager.h"
@@ -52,9 +52,9 @@ void Renderer::loadScene()
     iblParameters = {};
     if (targetScene.environment.environmentMap)
     {
-        const auto& environment = context().assetDescManager->desc<EnvironmentMap>(
+        const auto& environment = context().assetManager->get<EnvironmentMapAsset>(
             *targetScene.environment.environmentMap);
-        const auto& prefiltered = context().assetDescManager->desc<Texture>(
+        const auto& prefiltered = context().assetManager->get<TextureAsset>(
             environment.prefilteredSpecular.textureID);
         iblParameters.x = static_cast<float>(prefiltered.mipLevels - 1);
     }
@@ -116,7 +116,7 @@ FrameContext& Renderer::currentFrame()
 void Renderer::initVulkan()
 {
     CHECK(context().window != nullptr, "Window must exist before Renderer");
-    CHECK(context().assetDescManager != nullptr, "AssetDescManager must exist before Renderer");
+    CHECK(context().assetManager != nullptr, "AssetManager must exist before Renderer");
     CHECK(context().config != nullptr, "ConfigManager must exist before Renderer");
 
     Window& window = *context().window;

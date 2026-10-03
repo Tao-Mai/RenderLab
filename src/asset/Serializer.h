@@ -277,9 +277,24 @@ void Deserialize(const json& j, T& value)
     else
     {
         constexpr auto ctx = std::meta::access_context::current();
+        static constexpr auto members = std::define_static_array(ReflectedDataMembers(^^U, ctx));
 
-        template for (constexpr auto member :
-            std::define_static_array(ReflectedDataMembers(^^U, ctx)))
+        const auto& object = j.get_ref<const json::object_t&>();
+        if constexpr (!HasInheritedAnnotation(^^U, ^^PartialSerialize, ctx))
+        {
+            for (const auto& [name, element] : object)
+            {
+                bool known = false;
+                template for (constexpr auto member : members)
+                {
+                    known |= name == std::meta::identifier_of(member);
+                }
+                if (!known)
+                    throw json::other_error::create(501, "unknown field '" + name + "'", &j);
+            }
+        }
+
+        template for (constexpr auto member : members)
         {
             const std::string name(std::meta::identifier_of(member));
 

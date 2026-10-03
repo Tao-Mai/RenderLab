@@ -49,11 +49,11 @@ GpuMaterial 持有 Material Set。set 2 Object 和 set 3 Pass 的编号已保留
 
 ## Shader、Descriptor 与 Pipeline
 
-构建阶段用 Slang 生成 SPIR-V 和 reflection JSON。ShaderManager 根据 Shader 资产 ID 读取并缓存模块和 descriptor 元数据。DescriptorManager 创建 Scene/Material 预设 Layout，并支持从 reflection 缓存特殊 Layout；PipelineManager 当前使用上述两种预设 PipelineLayout。
+构建阶段用 Slang 生成 SPIR-V 和 reflection JSON。ShaderManager 根据 ShaderAsset ID 读取并缓存模块和 descriptor 元数据。DescriptorManager 创建 Scene/Material 预设 Layout，并支持从 reflection 缓存特殊 Layout；PipelineManager 当前使用上述两种预设 PipelineLayout。
 
 PipelineKey 包含 ShaderHandle、PipelineLayout、VertexLayout、Topology、Raster/Depth/Blend/MSAA 状态，以及颜色和深度 attachment 格式。`getOrCreate` 命中时复用；首次创建时检查 shader 的 set/binding/type 与 PipelineLayout 是否一致。Pipeline 跨帧和场景复用。
 
-GpuMaterial 根据 alpha mode 选择 Opaque、AlphaTest 或 Transparent。Material 的 shaderId 未指定时使用 scene shader。GpuTexture 只持有 Image/View；RenderResourceManager 按 Sampler::ID 创建并缓存独立 sampler。材质与环境纹理使用 TextureBinding 指定 image/sampler，BRDF LUT 的绑定来自 Renderer 配置。
+GpuMaterial 根据 alpha mode 选择 Opaque、AlphaTest 或 Transparent。MaterialAsset 的 shaderId 未指定时使用 scene shader。GpuTexture 只持有 Image/View；RenderResourceManager 按 SamplerAsset::ID 创建并缓存独立 sampler。材质与环境纹理使用 TextureBinding 指定 image/sampler，BRDF LUT 的绑定来自 Renderer 配置。
 
 ## 初始化与加载场景
 

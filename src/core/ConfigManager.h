@@ -25,7 +25,7 @@ struct CommandConfig
 struct AppConfig
 {
     AppPaths       paths;
-    Scene::ID      initialScene;
+    SceneAsset::ID      initialScene;
     RendererConfig renderer;
 };
 
@@ -39,7 +39,7 @@ public:
 
     [[nodiscard]] const AppPaths&       paths() const noexcept;
     [[nodiscard]] const CommandConfig&  commandConfig() const noexcept;
-    [[nodiscard]] const Scene::ID&      initialScene() const noexcept;
+    [[nodiscard]] const SceneAsset::ID&      initialScene() const noexcept;
     [[nodiscard]] const RendererConfig& rendererConfig() const noexcept;
 
 private:

@@ -1,7 +1,7 @@
 #include "editor/ComponentDraw.h"
 
 #include "asset/ApplyOptionalFields.h"
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "core/Context.h"
 #include "scene/SceneTypes.h"
 
@@ -104,12 +104,12 @@ ComponentDrawResult drawFields(LightComponent& light)
     return result;
 }
 
-Material::Desc materialOverrideDiff(const Material::Desc& stock, const Material::Desc& preview)
+MaterialOverride materialOverrideDiff(const MaterialAsset& stock, const MaterialAsset& preview)
 {
-    Material::Desc patch;
+    MaterialOverride patch;
     constexpr auto ctx = std::meta::access_context::current();
     template for (constexpr auto member :
-        std::define_static_array(ReflectedDataMembers(^^Material::Desc, ctx)))
+        std::define_static_array(ReflectedDataMembers(^^MaterialOverride, ctx)))
     {
         using Field = std::remove_cvref_t<decltype(patch.[:member:])>;
         if constexpr (IsOptional<Field>)
@@ -118,11 +118,11 @@ Material::Desc materialOverrideDiff(const Material::Desc& stock, const Material:
     return patch;
 }
 
-bool hasMaterialOverrides(const Material::Desc& patch)
+bool hasMaterialOverrides(const MaterialOverride& patch)
 {
     constexpr auto ctx = std::meta::access_context::current();
     template for (constexpr auto member :
-        std::define_static_array(ReflectedDataMembers(^^Material::Desc, ctx)))
+        std::define_static_array(ReflectedDataMembers(^^MaterialOverride, ctx)))
     {
         using Field = std::remove_cvref_t<decltype(patch.[:member:])>;
         if constexpr (IsOptional<Field>)
@@ -133,12 +133,12 @@ bool hasMaterialOverrides(const Material::Desc& patch)
 
 namespace
 {
-bool drawMeshSelection(RenderComponent& render, const AssetDescManager& assets)
+bool drawMeshSelection(RenderComponent& render, const AssetManager& assets)
 {
-    auto ids = assets.loadedIds<Mesh>();
+    auto ids = assets.loadedIds<MeshAsset>();
     ids.insert(ids.end(), {BuiltinAssets::Mesh::cube, BuiltinAssets::Mesh::sphere,
                           BuiltinAssets::Mesh::plane, BuiltinAssets::Mesh::arrow});
-    std::ranges::sort(ids, {}, &Mesh::ID::value);
+    std::ranges::sort(ids, {}, &MeshAsset::ID::value);
     ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
 
     bool edited = false;
@@ -157,7 +157,7 @@ bool drawMeshSelection(RenderComponent& render, const AssetDescManager& assets)
     return edited;
 }
 
-bool drawMaterialFields(Material::Desc& material)
+bool drawMaterialFields(MaterialAsset& material)
 {
     bool edited = false;
     glm::vec4 baseColor = material.baseColorFactor.value_or(glm::vec4{1.0f});
@@ -187,7 +187,7 @@ bool drawMaterialFields(Material::Desc& material)
 ComponentDrawResult drawFields(RenderComponent& render)
 {
     ComponentDrawResult result;
-    const auto* assets = context().assetDescManager;
+    const auto* assets = context().assetManager;
     if (!assets)
     {
         ImGui::TextDisabled("Assets unavailable");
@@ -196,7 +196,7 @@ ComponentDrawResult drawFields(RenderComponent& render)
 
     result.resourcesChanged = drawMeshSelection(render, *assets);
     result.edited = result.resourcesChanged;
-    const auto* mesh = assets->findDesc<Mesh>(render.meshId);
+    const auto* mesh = assets->find<MeshAsset>(render.meshId);
     if (!mesh)
     {
         ImGui::TextDisabled("Mesh description not loaded");
@@ -210,7 +210,7 @@ ComponentDrawResult drawFields(RenderComponent& render)
         if (ImGui::TreeNodeEx("Material", ImGuiTreeNodeFlags_DefaultOpen, "Submesh %zu", index))
         {
             const auto& materialId = mesh->submeshes[index].materialId;
-            const auto* stock = assets->findDesc<Material>(materialId);
+            const auto* stock = assets->find<MaterialAsset>(materialId);
             ImGui::Text("Id: %s", materialId.c_str());
             if (stock)
             {
@@ -221,7 +221,7 @@ ComponentDrawResult drawFields(RenderComponent& render)
                     result.edited = true;
                 }
 
-                Material::Desc preview = *stock;
+                MaterialAsset preview = *stock;
                 if (const auto found = render.materialOverrides.find(submeshIndex);
                     found != render.materialOverrides.end())
                     applyOptionalFields(preview, found->second);

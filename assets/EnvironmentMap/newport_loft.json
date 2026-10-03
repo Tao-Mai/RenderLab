@@ -1,15 +1,29 @@
 {
-    "Id": "newport_loft",
-    "Radiance": {
-        "TextureID": "newport_loft",
-        "SamplerID": "linearClamp"
+    "id": {
+        "value": "newport_loft"
     },
-    "Irradiance": {
-        "TextureID": "newport_loft_irradiance",
-        "SamplerID": "linearClamp"
+    "radiance": {
+        "textureID": {
+            "value": "newport_loft"
+        },
+        "samplerID": {
+            "value": "linearClamp"
+        }
     },
-    "PrefilteredSpecular": {
-        "TextureID": "newport_loft_prefiltered_specular",
-        "SamplerID": "linearClamp"
+    "irradiance": {
+        "textureID": {
+            "value": "newport_loft_irradiance"
+        },
+        "samplerID": {
+            "value": "linearClamp"
+        }
+    },
+    "prefilteredSpecular": {
+        "textureID": {
+            "value": "newport_loft_prefiltered_specular"
+        },
+        "samplerID": {
+            "value": "linearClamp"
+        }
     }
 }

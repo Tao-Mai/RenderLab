@@ -1,7 +1,8 @@
 #include "render/resource/RenderResourceManager.h"
 
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "asset/AssetDataManager.h"
+#include "asset/Serializer.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "render/DescriptorManager.h"
@@ -16,89 +17,87 @@
 #include <utility>
 #include <vector>
 
-#include <rfl/json.hpp>
-
 namespace
 {
-[[nodiscard]] vk::Filter toVulkan(Sampler::Desc::Filter filter)
+[[nodiscard]] vk::Filter toVulkan(SamplerAsset::Filter filter)
 {
     switch (filter)
     {
-        case Sampler::Desc::Filter::Nearest:
+        case SamplerAsset::Filter::Nearest:
             return vk::Filter::eNearest;
-        case Sampler::Desc::Filter::Linear:
+        case SamplerAsset::Filter::Linear:
             return vk::Filter::eLinear;
     }
     LOG_FATAL("invalid sampler filter");
 }
 
-[[nodiscard]] vk::SamplerMipmapMode toVulkan(Sampler::Desc::MipmapMode mode)
+[[nodiscard]] vk::SamplerMipmapMode toVulkan(SamplerAsset::MipmapMode mode)
 {
     switch (mode)
     {
-        case Sampler::Desc::MipmapMode::Nearest:
+        case SamplerAsset::MipmapMode::Nearest:
             return vk::SamplerMipmapMode::eNearest;
-        case Sampler::Desc::MipmapMode::Linear:
+        case SamplerAsset::MipmapMode::Linear:
             return vk::SamplerMipmapMode::eLinear;
     }
     LOG_FATAL("invalid sampler mipmap mode");
 }
 
-[[nodiscard]] vk::SamplerAddressMode toVulkan(Sampler::Desc::AddressMode mode)
+[[nodiscard]] vk::SamplerAddressMode toVulkan(SamplerAsset::AddressMode mode)
 {
     switch (mode)
     {
-        case Sampler::Desc::AddressMode::Repeat:
+        case SamplerAsset::AddressMode::Repeat:
             return vk::SamplerAddressMode::eRepeat;
-        case Sampler::Desc::AddressMode::MirroredRepeat:
+        case SamplerAsset::AddressMode::MirroredRepeat:
             return vk::SamplerAddressMode::eMirroredRepeat;
-        case Sampler::Desc::AddressMode::ClampToEdge:
+        case SamplerAsset::AddressMode::ClampToEdge:
             return vk::SamplerAddressMode::eClampToEdge;
-        case Sampler::Desc::AddressMode::ClampToBorder:
+        case SamplerAsset::AddressMode::ClampToBorder:
             return vk::SamplerAddressMode::eClampToBorder;
     }
     LOG_FATAL("invalid sampler address mode");
 }
 
-[[nodiscard]] vk::CompareOp toVulkan(Sampler::Desc::CompareOp op)
+[[nodiscard]] vk::CompareOp toVulkan(SamplerAsset::CompareOp op)
 {
     switch (op)
     {
-        case Sampler::Desc::CompareOp::Never:
+        case SamplerAsset::CompareOp::Never:
             return vk::CompareOp::eNever;
-        case Sampler::Desc::CompareOp::Less:
+        case SamplerAsset::CompareOp::Less:
             return vk::CompareOp::eLess;
-        case Sampler::Desc::CompareOp::Equal:
+        case SamplerAsset::CompareOp::Equal:
             return vk::CompareOp::eEqual;
-        case Sampler::Desc::CompareOp::LessOrEqual:
+        case SamplerAsset::CompareOp::LessOrEqual:
             return vk::CompareOp::eLessOrEqual;
-        case Sampler::Desc::CompareOp::Greater:
+        case SamplerAsset::CompareOp::Greater:
             return vk::CompareOp::eGreater;
-        case Sampler::Desc::CompareOp::NotEqual:
+        case SamplerAsset::CompareOp::NotEqual:
             return vk::CompareOp::eNotEqual;
-        case Sampler::Desc::CompareOp::GreaterOrEqual:
+        case SamplerAsset::CompareOp::GreaterOrEqual:
             return vk::CompareOp::eGreaterOrEqual;
-        case Sampler::Desc::CompareOp::Always:
+        case SamplerAsset::CompareOp::Always:
             return vk::CompareOp::eAlways;
     }
     LOG_FATAL("invalid sampler compare operation");
 }
 
-[[nodiscard]] vk::BorderColor toVulkan(Sampler::Desc::BorderColor color)
+[[nodiscard]] vk::BorderColor toVulkan(SamplerAsset::BorderColor color)
 {
     switch (color)
     {
-        case Sampler::Desc::BorderColor::FloatTransparentBlack:
+        case SamplerAsset::BorderColor::FloatTransparentBlack:
             return vk::BorderColor::eFloatTransparentBlack;
-        case Sampler::Desc::BorderColor::IntTransparentBlack:
+        case SamplerAsset::BorderColor::IntTransparentBlack:
             return vk::BorderColor::eIntTransparentBlack;
-        case Sampler::Desc::BorderColor::FloatOpaqueBlack:
+        case SamplerAsset::BorderColor::FloatOpaqueBlack:
             return vk::BorderColor::eFloatOpaqueBlack;
-        case Sampler::Desc::BorderColor::IntOpaqueBlack:
+        case SamplerAsset::BorderColor::IntOpaqueBlack:
             return vk::BorderColor::eIntOpaqueBlack;
-        case Sampler::Desc::BorderColor::FloatOpaqueWhite:
+        case SamplerAsset::BorderColor::FloatOpaqueWhite:
             return vk::BorderColor::eFloatOpaqueWhite;
-        case Sampler::Desc::BorderColor::IntOpaqueWhite:
+        case SamplerAsset::BorderColor::IntOpaqueWhite:
             return vk::BorderColor::eIntOpaqueWhite;
     }
     LOG_FATAL("invalid sampler border color");
@@ -118,11 +117,11 @@ GpuUploadContext RenderResourceManager::uploadContext() const
 void RenderResourceManager::init(VulkanContext&     targetVulkan,
                                  DescriptorManager& targetDescriptors, ShaderManager& targetShaders)
 {
-    CHECK(context().assetDescManager != nullptr,
-          "AssetDescManager must exist before RenderResourceManager");
+    CHECK(context().assetManager != nullptr,
+          "AssetManager must exist before RenderResourceManager");
     CHECK(context().assetDataManager != nullptr,
           "AssetDataManager must exist before RenderResourceManager");
-    assets      = context().assetDescManager;
+    assets      = context().assetManager;
     data        = context().assetDataManager;
     vulkan      = &targetVulkan;
     descriptors = &targetDescriptors;
@@ -148,18 +147,18 @@ void RenderResourceManager::reset() noexcept
     data        = nullptr;
 }
 
-GpuMesh& RenderResourceManager::mesh(const Mesh::ID& id)
+GpuMesh& RenderResourceManager::mesh(const MeshAsset::ID& id)
 {
     if (const auto found = meshes.find(id); found != meshes.end())
     {
         return *found->second;
     }
 
-    const Mesh::Desc&    meshDesc = assets->desc<Mesh>(id);
-    MeshGeometry         geometry = data->readGeometry(meshDesc);
+    const MeshAsset&    meshAsset = assets->get<MeshAsset>(id);
+    MeshGeometry         geometry = data->readGeometry(meshAsset);
     std::vector<Submesh> parts;
-    parts.reserve(meshDesc.submeshes.size());
-    for (const Mesh::Desc::Submesh& submesh : meshDesc.submeshes)
+    parts.reserve(meshAsset.submeshes.size());
+    for (const MeshAsset::Submesh& submesh : meshAsset.submeshes)
     {
         parts.push_back({
             .firstIndex = submesh.firstIndex,
@@ -175,61 +174,61 @@ GpuMesh& RenderResourceManager::mesh(const Mesh::ID& id)
     return *meshes.emplace(id, std::move(gpu)).first->second;
 }
 
-Material::Desc RenderResourceManager::materialDesc(const Material::ID& id) const
+MaterialAsset RenderResourceManager::materialAsset(const MaterialAsset::ID& id) const
 {
     CHECK(assets != nullptr, "RenderResourceManager is not initialized");
-    return assets->desc<Material>(id);
+    return assets->get<MaterialAsset>(id);
 }
 
-GpuMaterial& RenderResourceManager::material(const Material::ID& id)
+GpuMaterial& RenderResourceManager::material(const MaterialAsset::ID& id)
 {
-    return material(materialDesc(id));
+    return material(materialAsset(id));
 }
 
-GpuMaterial& RenderResourceManager::material(const Material::Desc& desc)
+GpuMaterial& RenderResourceManager::material(const MaterialAsset& asset)
 {
     CHECK(descriptors != nullptr, "RenderResourceManager is not initialized");
 
-    const std::string key = rfl::json::write(desc);
+    const std::string key = Serialize(asset).dump();
     if (const auto found = materials.find(key); found != materials.end())
     {
         return *found->second;
     }
 
-    CHECK(desc.baseColorTexture.has_value() &&
-          !desc.baseColorTexture->textureID.empty() &&
-          !desc.baseColorTexture->samplerID.empty(),
+    CHECK(asset.baseColorTexture.has_value() &&
+          !asset.baseColorTexture->textureID.empty() &&
+          !asset.baseColorTexture->samplerID.empty(),
           "material '{}' missing baseColorTexture",
-          desc.id);
+          asset.id);
 
-    std::shared_ptr<GpuTexture> baseColor = texture(desc.baseColorTexture->textureID);
-    const vk::Sampler baseColorSampler = sampler(desc.baseColorTexture->samplerID);
+    std::shared_ptr<GpuTexture> baseColor = texture(asset.baseColorTexture->textureID);
+    const vk::Sampler baseColorSampler = sampler(asset.baseColorTexture->samplerID);
     auto                     gpu       = std::make_unique<GpuMaterial>();
     gpu->create(
         vulkan->physicalDeviceHandle(),
         vulkan->deviceHandle(),
         *descriptors,
-        shaders->getOrLoad(desc.shaderId.value_or("scene")),
-        desc,
+        shaders->getOrLoad(asset.shaderId.value_or("scene")),
+        asset,
         std::move(baseColor), baseColorSampler);
     return *materials.emplace(key, std::move(gpu)).first->second;
 }
 
-std::shared_ptr<GpuTexture> RenderResourceManager::texture(const Texture::ID& id)
+std::shared_ptr<GpuTexture> RenderResourceManager::texture(const TextureAsset::ID& id)
 {
     if (const auto found = textures.find(id); found != textures.end())
     {
         return found->second;
     }
 
-    const Texture::Desc&       desc  = assets->desc<Texture>(id);
-    const std::vector<uint8_t> bytes = data->readTexture(desc);
-    auto                       gpu   = std::make_shared<GpuTexture>(uploadContext(), desc, bytes);
+    const TextureAsset&       asset  = assets->get<TextureAsset>(id);
+    const std::vector<uint8_t> bytes = data->readTexture(asset);
+    auto                       gpu   = std::make_shared<GpuTexture>(uploadContext(), asset, bytes);
 
     return textures.emplace(id, std::move(gpu)).first->second;
 }
 
-vk::Sampler RenderResourceManager::sampler(const Sampler::ID& id)
+vk::Sampler RenderResourceManager::sampler(const SamplerAsset::ID& id)
 {
     if (const auto found = samplers.find(id); found != samplers.end())
     {
@@ -238,54 +237,54 @@ vk::Sampler RenderResourceManager::sampler(const Sampler::ID& id)
 
     CHECK(assets != nullptr && vulkan != nullptr,
           "RenderResourceManager is not initialized");
-    const Sampler::Desc& desc = assets->desc<Sampler>(id);
+    const SamplerAsset& asset = assets->get<SamplerAsset>(id);
     const auto& limits = vulkan->properties().limits;
 
-    CHECK(std::isfinite(desc.mipLodBias) &&
-          std::isfinite(desc.maxAnisotropy) &&
-          std::isfinite(desc.minLod) &&
-          (!desc.maxLod ||
-           (std::isfinite(*desc.maxLod) && desc.minLod <= *desc.maxLod)) &&
-          std::abs(desc.mipLodBias) <= limits.maxSamplerLodBias,
+    CHECK(std::isfinite(asset.mipLodBias) &&
+          std::isfinite(asset.maxAnisotropy) &&
+          std::isfinite(asset.minLod) &&
+          (!asset.maxLod ||
+           (std::isfinite(*asset.maxLod) && asset.minLod <= *asset.maxLod)) &&
+          std::abs(asset.mipLodBias) <= limits.maxSamplerLodBias,
           "invalid sampler LOD settings: {}", id);
-    if (desc.anisotropyEnable)
+    if (asset.anisotropyEnable)
     {
         CHECK(vulkan->supportedFeatures().samplerAnisotropy &&
-              desc.maxAnisotropy >= 1.0f &&
-              desc.maxAnisotropy <= limits.maxSamplerAnisotropy,
+              asset.maxAnisotropy >= 1.0f &&
+              asset.maxAnisotropy <= limits.maxSamplerAnisotropy,
               "unsupported sampler anisotropy: {}", id);
     }
-    if (desc.unnormalizedCoordinates)
+    if (asset.unnormalizedCoordinates)
     {
-        using AddressMode = Sampler::Desc::AddressMode;
-        CHECK(desc.magFilter == desc.minFilter &&
-              desc.mipmapMode == Sampler::Desc::MipmapMode::Nearest &&
-              desc.minLod == 0.0f &&
-              desc.maxLod.has_value() && *desc.maxLod == 0.0f &&
-              !desc.anisotropyEnable && !desc.compareEnable &&
-              (desc.addressModeU == AddressMode::ClampToEdge ||
-               desc.addressModeU == AddressMode::ClampToBorder) &&
-              (desc.addressModeV == AddressMode::ClampToEdge ||
-               desc.addressModeV == AddressMode::ClampToBorder),
+        using AddressMode = SamplerAsset::AddressMode;
+        CHECK(asset.magFilter == asset.minFilter &&
+              asset.mipmapMode == SamplerAsset::MipmapMode::Nearest &&
+              asset.minLod == 0.0f &&
+              asset.maxLod.has_value() && *asset.maxLod == 0.0f &&
+              !asset.anisotropyEnable && !asset.compareEnable &&
+              (asset.addressModeU == AddressMode::ClampToEdge ||
+               asset.addressModeU == AddressMode::ClampToBorder) &&
+              (asset.addressModeV == AddressMode::ClampToEdge ||
+               asset.addressModeV == AddressMode::ClampToBorder),
               "invalid unnormalized sampler settings: {}", id);
     }
 
     const vk::SamplerCreateInfo info{
-        .magFilter = toVulkan(desc.magFilter),
-        .minFilter = toVulkan(desc.minFilter),
-        .mipmapMode = toVulkan(desc.mipmapMode),
-        .addressModeU = toVulkan(desc.addressModeU),
-        .addressModeV = toVulkan(desc.addressModeV),
-        .addressModeW = toVulkan(desc.addressModeW),
-        .mipLodBias = desc.mipLodBias,
-        .anisotropyEnable = desc.anisotropyEnable,
-        .maxAnisotropy = desc.maxAnisotropy,
-        .compareEnable = desc.compareEnable,
-        .compareOp = toVulkan(desc.compareOp),
-        .minLod = desc.minLod,
-        .maxLod = desc.maxLod.value_or(VK_LOD_CLAMP_NONE),
-        .borderColor = toVulkan(desc.borderColor),
-        .unnormalizedCoordinates = desc.unnormalizedCoordinates,
+        .magFilter = toVulkan(asset.magFilter),
+        .minFilter = toVulkan(asset.minFilter),
+        .mipmapMode = toVulkan(asset.mipmapMode),
+        .addressModeU = toVulkan(asset.addressModeU),
+        .addressModeV = toVulkan(asset.addressModeV),
+        .addressModeW = toVulkan(asset.addressModeW),
+        .mipLodBias = asset.mipLodBias,
+        .anisotropyEnable = asset.anisotropyEnable,
+        .maxAnisotropy = asset.maxAnisotropy,
+        .compareEnable = asset.compareEnable,
+        .compareOp = toVulkan(asset.compareOp),
+        .minLod = asset.minLod,
+        .maxLod = asset.maxLod.value_or(VK_LOD_CLAMP_NONE),
+        .borderColor = toVulkan(asset.borderColor),
+        .unnormalizedCoordinates = asset.unnormalizedCoordinates,
     };
     auto gpu = vkCheck(vulkan->deviceHandle().createSampler(info));
     return *samplers.emplace(id, std::move(gpu)).first->second;

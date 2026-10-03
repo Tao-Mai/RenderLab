@@ -1,5 +1,5 @@
 #include "Engine.h"
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetImporter.h"
 #include "core/ConfigManager.h"
@@ -20,14 +20,14 @@ int main(int argc, char** argv)
         CHECK(argc == 3,
               "usage: RenderLab --import-texture|--import-environmentmap|--import-mesh <source>");
         ConfigManager    config;
-        AssetDescManager assets;
+        AssetManager assets;
         AssetDataManager assetData;
         context().config           = &config;
-        context().assetDescManager = &assets;
+        context().assetManager = &assets;
         context().assetDataManager = &assetData;
         config.init();
         assetData.init();
-        context().assetDescManager->init();
+        context().assetManager->init();
         std::filesystem::path source{argv[2]};
         if (source.is_relative())
         {
@@ -52,9 +52,9 @@ int main(int argc, char** argv)
             LOG_FATAL("unknown import command: {}", command);
         }
         LOG_INFO("imported asset ID: {}", importedId);
-        context().assetDescManager->shutdown();
+        context().assetManager->shutdown();
         config.shutdown();
-        context().assetDescManager = nullptr;
+        context().assetManager = nullptr;
         context().assetDataManager = nullptr;
         context().config           = nullptr;
         return 0;

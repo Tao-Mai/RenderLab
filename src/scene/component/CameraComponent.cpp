@@ -24,7 +24,7 @@ void CameraComponent::resetNavigation()
 
 void CameraComponent::setInputEnabled(bool enabled) { inputEnabled = enabled; }
 
-bool CameraComponent::tick(float deltaTime)
+void CameraComponent::tick(float deltaTime)
 {
     CHECK(context().inputManager != nullptr && context().window != nullptr,
         "CameraComponent requires InputManager and Window");
@@ -52,12 +52,9 @@ bool CameraComponent::tick(float deltaTime)
     if (!looking)
     {
         window.consumeScrollOffset();
-        return false;
+        return;
     }
 
-    const float previousYaw = camera.yaw;
-    const float previousPitch = camera.pitch;
-    const float previousFieldOfView = camera.fieldOfView;
     const auto [x, y] = window.cursorPosition();
     camera.yaw += static_cast<float>(x - previousMouseX) * camera.mouseSensitivity;
     camera.pitch -= static_cast<float>(y - previousMouseY) * camera.mouseSensitivity;
@@ -68,9 +65,6 @@ bool CameraComponent::tick(float deltaTime)
     camera.fieldOfView = std::clamp(
         camera.fieldOfView - static_cast<float>(window.consumeScrollOffset()) * 2.0f,
         20.0f, 90.0f);
-
-    return camera.yaw != previousYaw || camera.pitch != previousPitch ||
-        camera.fieldOfView != previousFieldOfView;
 }
 
 bool CameraComponent::isFreeMovementActive() const { return freeMovement; }

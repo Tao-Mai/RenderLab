@@ -12,7 +12,7 @@ void GpuMaterial::create(
     const vk::raii::Device&         device,
     DescriptorManager&              descriptors,
     ShaderHandle                     targetShader,
-    const Material::Desc&             material,
+    const MaterialAsset&             material,
     std::shared_ptr<GpuTexture>        texture,
     vk::Sampler                        sampler)
 {

@@ -1,26 +1,34 @@
 #include "scene/SceneManager.h"
 
 #include "asset/JsonIo.h"
+#include "scene/actor/ALight.h"
 #include "scene/actor/StaticMeshActor.h"
 #include "scene/component/CharacterMoveComponent.h"
 #include "scene/component/LightComponent.h"
 #include "scene/component/RenderComponent.h"
 
 #include <algorithm>
+#include <type_traits>
 #include <gtest/gtest.h>
 
 namespace
 {
-Scene::Desc makeScene()
+static_assert(std::is_abstract_v<Actor>);
+static_assert(std::is_abstract_v<Component>);
+static_assert(std::same_as<decltype(std::declval<Actor&>().tick(0.0f)), void>);
+static_assert(std::same_as<decltype(std::declval<Component&>().tick(0.0f)), void>);
+static_assert(std::same_as<decltype(std::declval<SceneManager&>().tick(0.0f)), void>);
+
+SceneAsset makeScene()
 {
     RegisterSceneTypes();
-    Scene::Desc scene;
-    scene.id = Scene::ID{"actor-test"};
+    SceneAsset scene;
+    scene.id = SceneAsset::ID{"actor-test"};
     scene.actors.push_back(std::make_unique<FreeFlyCameraActor>());
 
     auto object = std::make_unique<StaticMeshActor>();
     object->name = "Mesh and Light";
-    object->getComponent<RenderComponent>()->meshId = Mesh::ID{"sphere"};
+    object->getComponent<RenderComponent>()->meshId = MeshAsset::ID{"sphere"};
     object->addComponent<LightComponent>();
     scene.actors.push_back(std::move(object));
     return scene;
@@ -30,11 +38,10 @@ struct TestTickComponent : Component
 {
     int ticks = 0;
 
-    bool tick(float deltaTime) override
+    void tick(float deltaTime) override
     {
         ++ticks;
         actor().transform().position.x += deltaTime;
-        return true;
     }
 };
 }
@@ -99,7 +106,7 @@ TEST(SceneManagerTest, PolymorphicSceneRoundTripsInheritedFieldsAndMaterialOverr
     ASSERT_EQ(cameraActor.at("components")[1].size(), 1);
     EXPECT_FALSE(cameraActor.at("components")[1].at("CameraComponent").contains("looking"));
 
-    Scene::Desc restored;
+    SceneAsset restored;
     Deserialize(stored, restored);
     EXPECT_EQ(Serialize(restored), stored);
     EXPECT_EQ(restored.actors[0]->transform().position.z, 5.0f);
@@ -127,19 +134,61 @@ TEST(SceneManagerTest, CharacterMovementAndEnvironmentUpRoundTrip)
 
 TEST(SceneManagerTest, ComponentTickUsesItsOwningActor)
 {
-    Actor actor;
+    StaticMeshActor actor;
     auto& tick = actor.addComponent<TestTickComponent>();
-    EXPECT_TRUE(actor.tick(0.25f));
+    actor.tick(0.25f);
     EXPECT_EQ(tick.ticks, 1);
     EXPECT_FLOAT_EQ(actor.transform().position.x, 0.25f);
     EXPECT_THROW(actor.addComponent<TestTickComponent>(), std::logic_error);
+}
+
+TEST(SceneManagerTest, ALightRoundTripsAndTicksItsComponents)
+{
+    auto scene = makeScene();
+    auto light = std::make_unique<ALight>();
+    light->name = "Point Light";
+    light->transform().position = {1.0f, 2.0f, 3.0f};
+    light->getComponent<LightComponent>()->intensity = 5.0f;
+    scene.actors.push_back(std::move(light));
+
+    const json stored = Serialize(scene);
+    EXPECT_TRUE(stored.at("actors")[2].contains("ALight"));
+
+    SceneManager manager;
+    manager.load(scene);
+    auto* restored = dynamic_cast<ALight*>(manager.scene().actors[2].get());
+    ASSERT_NE(restored, nullptr);
+    EXPECT_EQ(Serialize(manager.scene()), stored);
+    EXPECT_EQ(&restored->getComponent<LightComponent>()->actor(), restored);
+
+    auto& tick = restored->addComponent<TestTickComponent>();
+    restored->tick(0.25f);
+    EXPECT_EQ(tick.ticks, 1);
+    EXPECT_FLOAT_EQ(restored->transform().position.x, 1.25f);
+}
+
+TEST(SceneManagerTest, ALightRequiresLightComponent)
+{
+    ALight actor;
+    std::erase_if(actor.components, [](const auto& component)
+    {
+        return dynamic_cast<LightComponent*>(component.get()) != nullptr;
+    });
+    EXPECT_THROW(actor.initialize(), std::logic_error);
+}
+
+TEST(SceneManagerTest, AbstractBaseTypesAreNotRegistered)
+{
+    RegisterSceneTypes();
+    EXPECT_FALSE(BaseTypeInfo<Actor>::baseTypeInfoMap.contains("Actor"));
+    EXPECT_FALSE(BaseTypeInfo<Component>::baseTypeInfoMap.contains("Component"));
 }
 
 TEST(SceneManagerTest, RejectsUnknownTypesMissingFieldsAndMissingRequiredComponents)
 {
     auto stored = Serialize(makeScene());
     stored["actors"][0] = json{{"MissingActor", stored["actors"][0].at("FreeFlyCameraActor")}};
-    Scene::Desc parsed;
+    SceneAsset parsed;
     EXPECT_THROW(Deserialize(stored, parsed), json::other_error);
 
     stored = Serialize(makeScene());
@@ -161,15 +210,15 @@ TEST(SceneManagerTest, RejectsUnknownTypesMissingFieldsAndMissingRequiredCompone
 TEST(SceneManagerTest, PolymorphicPointersRequireExactlyOneTypeKey)
 {
     RegisterSceneTypes();
-    std::unique_ptr<Actor> actor = std::make_unique<Actor>();
+    std::unique_ptr<Actor> actor = std::make_unique<StaticMeshActor>();
     std::unique_ptr<Component> component = std::make_unique<TransformComponent>();
     const auto* originalActor = actor.get();
     const auto* originalComponent = component.get();
 
     const std::vector<json> invalid = {
         json::object(), json::array(), json::array({json::object()}),
-        "Actor", 42, true,
-        json{{"Actor", json::object()}, {"TransformComponent", json::object()}},
+        "StaticMeshActor", 42, true,
+        json{{"StaticMeshActor", json::object()}, {"TransformComponent", json::object()}},
     };
     for (const auto& stored : invalid)
     {
@@ -191,7 +240,7 @@ TEST(SceneManagerTest, PolymorphicPointersRequireObjectData)
     for (const auto& data : invalid)
     {
         SCOPED_TRACE(data.dump());
-        EXPECT_THROW(Deserialize(json{{"Actor", data}}, actor), json::other_error);
+        EXPECT_THROW(Deserialize(json{{"StaticMeshActor", data}}, actor), json::other_error);
         EXPECT_THROW(Deserialize(json{{"TransformComponent", data}}, component), json::other_error);
         EXPECT_EQ(actor, nullptr);
         EXPECT_EQ(component, nullptr);

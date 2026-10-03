@@ -45,10 +45,10 @@ namespace
 }
 
 GpuTexture::GpuTexture(
-    GpuUploadContext         upload, const Texture::Desc& desc,
+    GpuUploadContext         upload, const TextureAsset& asset,
     std::span<const uint8_t> bytes)
 {
-    create(upload, bytes, desc, vulkanFormat(desc.format, desc.colorSpace));
+    create(upload, bytes, asset, vulkanFormat(asset.format, asset.colorSpace));
 }
 
 vk::ImageView GpuTexture::imageView() const
@@ -61,24 +61,24 @@ const vk::ImageCreateInfo& GpuTexture::imageInfo() const { return creationInfo; 
 
 void GpuTexture::create(
     GpuUploadContext upload, std::span<const uint8_t> bytes,
-    const Texture::Desc& desc, vk::Format format)
+    const TextureAsset& asset, vk::Format format)
 {
-    const uint32_t       layers         = desc.layout == ImageLayout::Cubemap ? 6 : 1;
-    const uint32_t       pixelBytes     = AssetDataManager::bytesPerPixel(desc.format);
+    const uint32_t       layers         = asset.layout == ImageLayout::Cubemap ? 6 : 1;
+    const uint32_t       pixelBytes     = AssetDataManager::bytesPerPixel(asset.format);
     const auto&          physicalDevice = upload.physicalDevice;
     const auto&          device         = upload.device;
     const auto&          commandPool    = upload.commandPool;
     auto&                queue          = upload.queue;
-    CHECK(desc.width > 0 && desc.height > 0 && desc.mipLevels > 0 &&
-          desc.mipLevels <= texture_mip::maxLevels(desc.width, desc.height),
-          "invalid texture mip levels: {}", desc.id);
-    CHECK(desc.width <= std::numeric_limits<uint32_t>::max() /
-          desc.height / layers / pixelBytes,
-          "texture payload is too large: {}", desc.id);
+    CHECK(asset.width > 0 && asset.height > 0 && asset.mipLevels > 0 &&
+          asset.mipLevels <= texture_mip::maxLevels(asset.width, asset.height),
+          "invalid texture mip levels: {}", asset.id);
+    CHECK(asset.width <= std::numeric_limits<uint32_t>::max() /
+          asset.height / layers / pixelBytes,
+          "texture payload is too large: {}", asset.id);
 
     const vk::DeviceSize byteSize = texture_mip::totalBytes(
-        desc.width, desc.height, layers, pixelBytes, desc.mipLevels);
-    CHECK(bytes.size() == byteSize, "invalid texture payload size: {}", desc.id);
+        asset.width, asset.height, layers, pixelBytes, asset.mipLevels);
+    CHECK(bytes.size() == byteSize, "invalid texture payload size: {}", asset.id);
     Buffer staging(
         physicalDevice,
         device,
@@ -89,13 +89,13 @@ void GpuTexture::create(
     staging.upload(bytes.data(), byteSize);
 
     const vk::ImageCreateInfo imageInfo{
-        .flags = desc.layout == ImageLayout::Cubemap
+        .flags = asset.layout == ImageLayout::Cubemap
         ? vk::ImageCreateFlags{vk::ImageCreateFlagBits::eCubeCompatible}
         : vk::ImageCreateFlags{},
         .imageType = vk::ImageType::e2D,
         .format = format,
-        .extent = {desc.width, desc.height, 1},
-        .mipLevels = desc.mipLevels,
+        .extent = {asset.width, asset.height, 1},
+        .mipLevels = asset.mipLevels,
         .arrayLayers = layers,
         .samples = vk::SampleCountFlagBits::e1,
         .tiling = vk::ImageTiling::eOptimal,
@@ -131,7 +131,7 @@ void GpuTexture::create(
     const vk::ImageSubresourceRange subresourceRange{
         .aspectMask = vk::ImageAspectFlagBits::eColor,
         .baseMipLevel = 0,
-        .levelCount = desc.mipLevels,
+        .levelCount = asset.mipLevels,
         .baseArrayLayer = 0,
         .layerCount = layers,
     };
@@ -154,13 +154,13 @@ void GpuTexture::create(
     copyCommand.pipelineBarrier2(dependency);
 
     std::vector<vk::BufferImageCopy> copyRegions;
-    copyRegions.reserve(static_cast<size_t>(layers) * desc.mipLevels);
-    for (uint32_t mip = 0; mip < desc.mipLevels; ++mip)
+    copyRegions.reserve(static_cast<size_t>(layers) * asset.mipLevels);
+    for (uint32_t mip = 0; mip < asset.mipLevels; ++mip)
     {
-        const uint32_t mipWidth = texture_mip::extent(desc.width, mip);
-        const uint32_t mipHeight = texture_mip::extent(desc.height, mip);
+        const uint32_t mipWidth = texture_mip::extent(asset.width, mip);
+        const uint32_t mipHeight = texture_mip::extent(asset.height, mip);
         const vk::DeviceSize levelOffset = texture_mip::offset(
-            desc.width, desc.height, layers, pixelBytes, mip);
+            asset.width, asset.height, layers, pixelBytes, mip);
 
         for (uint32_t layer = 0; layer < layers; ++layer)
         {
@@ -212,7 +212,7 @@ void GpuTexture::create(
 
     const vk::ImageViewCreateInfo viewInfo{
         .image = *image,
-        .viewType = desc.layout == ImageLayout::Cubemap
+        .viewType = asset.layout == ImageLayout::Cubemap
         ? vk::ImageViewType::eCube
         : vk::ImageViewType::e2D,
         .format = format,

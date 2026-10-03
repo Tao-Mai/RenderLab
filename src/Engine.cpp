@@ -1,6 +1,6 @@
 #include "Engine.h"
 
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "asset/AssetDataManager.h"
 #include "scene/SceneManager.h"
 #include "scene/component/CameraComponent.h"
@@ -30,7 +30,7 @@ void Engine::init()
     ctx.config = new ConfigManager();
     ctx.window = new Window();
     ctx.inputManager = new InputManager();
-    ctx.assetDescManager = new AssetDescManager();
+    ctx.assetManager = new AssetManager();
     ctx.assetDataManager = new AssetDataManager();
     ctx.sceneManager = new SceneManager();
     ctx.renderer = new Renderer();
@@ -41,7 +41,7 @@ void Engine::init()
     ctx.window->init();
     ctx.inputManager->init();
     RegisterSceneTypes();
-    ctx.assetDescManager->init();
+    ctx.assetManager->init();
     inputMethod.activateEnglish();
     ctx.sceneManager->load(ctx.config->initialScene());
     ctx.renderer->init();
@@ -87,7 +87,7 @@ void Engine::mainLoop()
 
         auto& camera = ctx.sceneManager->editorCamera().camera();
         camera.setInputEnabled(camera.isNavigationActive() || !ctx.editor->wantsInput());
-        if (ctx.sceneManager->tick(deltaTime)) ctx.editor->markDirty();
+        ctx.sceneManager->tick(deltaTime);
 
         const auto extent = ctx.renderer->swapchainHandle().extent();
         const EditorFrameInput editorInput = ctx.editor->buildFrame(
@@ -128,11 +128,11 @@ void Engine::shutdown() noexcept
         delete ctx.sceneManager;
         ctx.sceneManager = nullptr;
     }
-    if (ctx.assetDescManager != nullptr)
+    if (ctx.assetManager != nullptr)
     {
-        ctx.assetDescManager->shutdown();
-        delete ctx.assetDescManager;
-        ctx.assetDescManager = nullptr;
+        ctx.assetManager->shutdown();
+        delete ctx.assetManager;
+        ctx.assetManager = nullptr;
     }
     if (ctx.assetDataManager != nullptr)
     {

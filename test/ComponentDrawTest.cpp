@@ -1,7 +1,7 @@
 #include "editor/ComponentDraw.h"
 
 #include "asset/ApplyOptionalFields.h"
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "core/Context.h"
 #include "scene/SceneTypes.h"
 
@@ -17,6 +17,8 @@ enum class [[=Flags{}]] TestFlags { None = 0, First = 1, Second = 2 };
 
 struct DrawTestComponent : Component
 {
+    void tick(float) override {}
+
     [[=ReflectField{}]] bool enabled = false;
     [[=ReflectField{}]] double precise = 1.234567890123;
     [[=ReflectField{}]] uint64_t large = std::numeric_limits<uint64_t>::max() - 4;
@@ -104,7 +106,7 @@ protected:
 
 TEST_F(ComponentDrawTest, GenericDrawingUsesMarkedInheritedFieldsWithoutChangingValues)
 {
-    Actor owner;
+    StaticMeshActor owner;
     DerivedDrawTestComponent component;
     component.ownerPointer = &owner;
     ComponentDrawResult result;
@@ -171,7 +173,7 @@ TEST_F(ComponentDrawTest, GenericDrawingSupportsFlagsOptionalContainersAndNested
     std::optional<float> optional = 0.5f;
     std::vector<std::vector<float>> vectors{{1.0f, 2.0f}};
     std::unordered_map<int, std::optional<float>> values{{3, 0.25f}};
-    TextureBinding binding{Texture::ID{"white"}, Sampler::ID{"linearRepeat"}};
+    TextureBinding binding{TextureAsset::ID{"white"}, SamplerAsset::ID{"linearRepeat"}};
 
     frame([&]
     {
@@ -184,7 +186,7 @@ TEST_F(ComponentDrawTest, GenericDrawingSupportsFlagsOptionalContainersAndNested
     EXPECT_EQ(flags, TestFlags::First);
     EXPECT_EQ(optional, 0.5f);
     EXPECT_EQ(values.at(3), 0.25f);
-    EXPECT_EQ(binding.textureID, Texture::ID{"white"});
+    EXPECT_EQ(binding.textureID, TextureAsset::ID{"white"});
 }
 
 TEST_F(ComponentDrawTest, LightEditorShowsOnlyTypeSpecificFields)
@@ -248,8 +250,8 @@ TEST_F(ComponentDrawTest, LightAngleInputIsClampedAndStoredAsCosine)
 
 TEST_F(ComponentDrawTest, EveryRegisteredComponentHasAnInspector)
 {
-    AssetDescManager assets;
-    context().assetDescManager = &assets;
+    AssetManager assets;
+    context().assetManager = &assets;
     forEachComponentType([&]<class T>(const char* name)
     {
         T component;
@@ -262,8 +264,8 @@ TEST_F(ComponentDrawTest, EveryRegisteredComponentHasAnInspector)
 
 TEST_F(ComponentDrawTest, MeshSelectionReportsResourceChanges)
 {
-    AssetDescManager assets;
-    context().assetDescManager = &assets;
+    AssetManager assets;
+    context().assetManager = &assets;
     RenderComponent render;
     render.meshId = BuiltinAssets::Mesh::sphere;
     ImGuiID combo = 0;
@@ -289,8 +291,8 @@ TEST_F(ComponentDrawTest, MeshSelectionReportsResourceChanges)
 
 TEST_F(ComponentDrawTest, ResetOverridesOnlyChangesTheChosenSubmesh)
 {
-    AssetDescManager assets;
-    context().assetDescManager = &assets;
+    AssetManager assets;
+    context().assetManager = &assets;
     RenderComponent render;
     render.meshId = BuiltinAssets::Mesh::sphere;
     render.materialOverrides[0].roughness = 0.3f;
@@ -317,15 +319,15 @@ TEST_F(ComponentDrawTest, ResetOverridesOnlyChangesTheChosenSubmesh)
 
 TEST(ComponentMaterialEdit, DiffRetainsEveryOptionalOverrideIncludingTexturesAndShader)
 {
-    Material::Desc stock;
-    stock.id = Material::ID{"white"};
+    MaterialAsset stock;
+    stock.id = MaterialAsset::ID{"white"};
     stock.roughness = 0.8f;
-    stock.baseColorTexture = TextureBinding{Texture::ID{"white"}, Sampler::ID{"linearRepeat"}};
-    Material::Desc preview = stock;
+    stock.baseColorTexture = TextureBinding{TextureAsset::ID{"white"}, SamplerAsset::ID{"linearRepeat"}};
+    MaterialAsset preview = stock;
     preview.roughness = 0.3f;
-    preview.shaderId = Shader::ID{"custom"};
-    preview.baseColorTexture = TextureBinding{Texture::ID{"albedo"}, Sampler::ID{"linearClamp"}};
-    preview.normalTexture = TextureBinding{Texture::ID{"normal"}, Sampler::ID{"linearRepeat"}};
+    preview.shaderId = ShaderAsset::ID{"custom"};
+    preview.baseColorTexture = TextureBinding{TextureAsset::ID{"albedo"}, SamplerAsset::ID{"linearClamp"}};
+    preview.normalTexture = TextureBinding{TextureAsset::ID{"normal"}, SamplerAsset::ID{"linearRepeat"}};
     preview.emissive = glm::vec3{0.1f, 0.2f, 0.3f};
     preview.doubleSided = true;
 
@@ -344,4 +346,27 @@ TEST(ComponentMaterialEdit, DiffRetainsEveryOptionalOverrideIncludingTexturesAnd
     EXPECT_EQ(component_draw::materialOverrideDiff(merged, preview).roughness, std::nullopt);
     EXPECT_FALSE(component_draw::hasMaterialOverrides(component_draw::materialOverrideDiff(merged, preview)));
     EXPECT_FALSE(component_draw::hasMaterialOverrides(component_draw::materialOverrideDiff(stock, stock)));
+}
+
+TEST(ComponentMaterialEdit, MergeIgnoresNonOptionalAndEmptyFields)
+{
+    MaterialAsset stock;
+    stock.id = MaterialAsset::ID{"stock"};
+    stock.roughness = 0.8f;
+    stock.doubleSided = true;
+    stock.emissive = glm::vec3{0.1f};
+    stock.baseColorTexture = TextureBinding{TextureAsset::ID{"white"}, SamplerAsset::ID{"linearRepeat"}};
+
+    MaterialOverride patch;
+    patch.id = MaterialAsset::ID{"not-an-override"};
+    patch.roughness = 0.0f;
+    patch.doubleSided = false;
+    applyOptionalFields(stock, patch);
+
+    EXPECT_EQ(stock.id, MaterialAsset::ID{"stock"});
+    EXPECT_EQ(stock.roughness, 0.0f);
+    EXPECT_EQ(stock.doubleSided, false);
+    EXPECT_EQ(stock.emissive, glm::vec3{0.1f});
+    ASSERT_TRUE(stock.baseColorTexture);
+    EXPECT_EQ(stock.baseColorTexture->textureID, TextureAsset::ID{"white"});
 }

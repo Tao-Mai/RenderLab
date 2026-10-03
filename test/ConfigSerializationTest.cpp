@@ -28,8 +28,8 @@ AppConfig sampleConfig()
 {
     return {
         .paths = {.assets = "../assets", .commands = "commands.json"},
-        .initialScene = Scene::ID{"default"},
-        .renderer = {.brdfLut = {Texture::ID{"lut_ggx"}, Sampler::ID{"linearClamp"}}},
+        .initialScene = SceneAsset::ID{"default"},
+        .renderer = {.brdfLut = {TextureAsset::ID{"lut_ggx"}, SamplerAsset::ID{"linearClamp"}}},
     };
 }
 }
@@ -86,7 +86,7 @@ TEST(ConfigSerialization, ConfigManagerResolvesPathsAndLoadsCommands)
     const auto source = std::filesystem::path{RENDERLAB_SOURCE_DIR};
     EXPECT_EQ(std::filesystem::weakly_canonical(manager.paths().assets), source / "test");
     EXPECT_EQ(manager.paths().commands, source / "config" / "commands.json");
-    EXPECT_EQ(manager.initialScene(), Scene::ID{"default"});
+    EXPECT_EQ(manager.initialScene(), SceneAsset::ID{"default"});
     EXPECT_EQ(manager.commandConfig().bindings.size(), 16);
     EXPECT_EQ(manager.commandConfig().bindings.front().command, Command::Quit);
     EXPECT_EQ(manager.commandConfig().bindings.at(12).command, Command::SaveScene);

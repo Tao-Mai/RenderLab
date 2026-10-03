@@ -1,12 +1,14 @@
 {
-    "Id": "grasslands_sunset_4k_prefiltered_specular",
-    "Source": "File",
-    "Format": "RGBA32F",
-    "ColorSpace": "Linear",
-    "Layout": "Cubemap",
-    "Width": 1024,
-    "Height": 1024,
-    "MipLevels": 11,
-    "Path": "../resource/grasslands_sunset_4k.exr",
-    "Binary": "binary/texture\\grasslands_sunset_4k_prefiltered_specular.bin"
+    "id": {
+        "value": "grasslands_sunset_4k_prefiltered_specular"
+    },
+    "source": "File",
+    "format": "RGBA32F",
+    "colorSpace": "Linear",
+    "layout": "Cubemap",
+    "width": 1024,
+    "height": 1024,
+    "mipLevels": 11,
+    "path": "../resource/grasslands_sunset_4k.exr",
+    "binary": "binary/texture/grasslands_sunset_4k_prefiltered_specular.bin"
 }

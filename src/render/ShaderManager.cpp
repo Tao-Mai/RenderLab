@@ -1,59 +1,75 @@
 #include "render/ShaderManager.h"
 
 #include "asset/Asset.h"
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "core/Logger.h"
 #include "render/resource/GpuShader.h"
 
 #include <algorithm>
+#include <fstream>
+#include <limits>
 #include <tuple>
 
-#include <rfl/json.hpp>
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
 
 namespace
 {
-rfl::Generic requiredField(const rfl::Generic& value, const std::string& name)
+const json& requiredField(const json& value, const std::string& name)
 {
-    const auto object = value.to_object();
-    CHECK(object, "shader reflection expected an object: {}", object.error().what());
-    const auto field = object->get(name);
-    CHECK(field, "shader reflection missing '{}': {}", name, field.error().what());
+    CHECK(value.is_object(), "shader reflection expected an object");
+    const auto field = value.find(name);
+    CHECK(field != value.end(), "shader reflection missing '{}'", name);
     return *field;
 }
 
-std::string requiredString(const rfl::Generic& value, const std::string& name)
+std::string requiredString(const json& value, const std::string& name)
 {
-    const auto string = requiredField(value, name).to_string();
-    CHECK(string, "shader reflection field '{}' is not a string", name);
-    return *string;
+    const auto& string = requiredField(value, name);
+    CHECK(string.is_string(), "shader reflection field '{}' is not a string", name);
+    return string.get<std::string>();
 }
 
-uint32_t requiredIndex(const rfl::Generic& value, const std::string& name)
+uint32_t requiredIndex(const json& value, const std::string& name)
 {
-    const auto number = requiredField(value, name).to_int();
-    CHECK(number && *number >= 0, "shader reflection field '{}' is not an index", name);
-    return static_cast<uint32_t>(*number);
+    const auto& number = requiredField(value, name);
+    CHECK(number.is_number_unsigned() ||
+          (number.is_number_integer() && number.get<int64_t>() >= 0),
+          "shader reflection field '{}' is not an index", name);
+
+    const auto index = number.get<uint64_t>();
+    CHECK(index <= std::numeric_limits<uint32_t>::max(),
+          "shader reflection field '{}' exceeds uint32_t", name);
+    return static_cast<uint32_t>(index);
 }
 
 std::vector<ShaderMetadata::Binding> readReflection(std::filesystem::path path)
 {
     path.replace_extension(".reflection.json");
-    const auto reflection = rfl::json::load<rfl::Generic>(path.string());
-    CHECK(reflection,
-          "failed to load shader reflection '{}': {}",
-          path.string(),
-          reflection.error().what());
-    const auto parameters = requiredField(*reflection, "parameters").to_array();
-    CHECK(parameters, "shader reflection '{}' has no parameters array", path.string());
-    std::vector<ShaderMetadata::Binding> bindings;
-    for (const rfl::Generic& parameter : *parameters)
+    std::ifstream input{path, std::ios::binary};
+    CHECK(input.is_open(), "failed to open shader reflection '{}'", path.string());
+    json reflection;
+    try
     {
-        const rfl::Generic binding = requiredField(parameter, "binding");
+        reflection = json::parse(input);
+    }
+    catch (const json::exception& error)
+    {
+        LOG_FATAL("failed to load shader reflection '{}': {}", path.string(), error.what());
+    }
+
+    const auto& parameters = requiredField(reflection, "parameters");
+    CHECK(parameters.is_array(), "shader reflection '{}' has no parameters array", path.string());
+    std::vector<ShaderMetadata::Binding> bindings;
+    for (const auto& parameter : parameters)
+    {
+        const auto& binding = requiredField(parameter, "binding");
         if (requiredString(binding, "kind") != "descriptorTableSlot")
         {
             continue;
         }
-        const rfl::Generic type = requiredField(parameter, "type");
+        const auto& type = requiredField(parameter, "type");
         const std::string  kind = requiredString(type, "kind");
         vk::DescriptorType descriptorType;
         if (kind == "constantBuffer")
@@ -84,18 +100,7 @@ std::vector<ShaderMetadata::Binding> readReflection(std::filesystem::path path)
                       kind,
                       path.string());
         }
-        const auto bindingObject = binding.to_object();
-        CHECK(bindingObject, "invalid shader reflection binding");
-        const auto space = bindingObject->get("space");
-        uint32_t   set   = 0;
-        if (space)
-        {
-            const auto parsed = space->to_int();
-            CHECK(parsed && *parsed >= 0,
-                  "invalid descriptor set in '{}'",
-                  path.string());
-            set = static_cast<uint32_t>(*parsed);
-        }
+        const uint32_t set = binding.contains("space") ? requiredIndex(binding, "space") : 0;
         bindings.push_back({
             set,
             requiredIndex(binding, "index"),
@@ -123,7 +128,7 @@ ShaderManager::~ShaderManager() = default;
 void ShaderManager::init(const vk::raii::Device& targetDevice)
 {
     device = &targetDevice;
-    assets = context().assetDescManager;
+    assets = context().assetManager;
 }
 
 void ShaderManager::reset() noexcept
@@ -135,14 +140,14 @@ void ShaderManager::reset() noexcept
     device = nullptr;
 }
 
-ShaderHandle ShaderManager::getOrLoad(const Shader::ID& id)
+ShaderHandle ShaderManager::getOrLoad(const ShaderAsset::ID& id)
 {
     CHECK(device != nullptr && assets != nullptr, "ShaderManager is not initialized");
     if (const auto found = handles.find(id); found != handles.end())
     {
         return found->second;
     }
-    const Shader::Desc& desc = assets->desc<Shader>(id);
+    const ShaderAsset& desc = assets->get<ShaderAsset>(id);
     CHECK(!desc.binary.empty(), "shader '{}' has no binary path", id);
     auto               shader = std::make_unique<GpuShader>(*device, desc.binary.string());
     ShaderMetadata     metadata{id, desc.binary, readReflection(desc.binary)};

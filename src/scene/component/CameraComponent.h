@@ -15,7 +15,7 @@ public:
     [[=ReflectField{}]] float farPlane = 100.0f;
     [[=ReflectField{}]] float mouseSensitivity = 0.12f;
 
-    bool tick(float deltaTime) override;
+    void tick(float deltaTime) override;
     void setInputEnabled(bool enabled);
     void resetNavigation();
 

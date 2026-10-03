@@ -1,6 +1,6 @@
 #include "scene/SceneManager.h"
 
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "asset/Serializer.h"
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -8,18 +8,18 @@
 #include <limits>
 #include <stdexcept>
 
-void SceneManager::load(const Scene::ID& id)
+void SceneManager::load(const SceneAsset::ID& id)
 {
-    CHECK(context().assetDescManager != nullptr, "SceneManager requires AssetDescManager");
-    load(context().assetDescManager->desc<Scene>(id));
+    CHECK(context().assetManager != nullptr, "SceneManager requires AssetManager");
+    load(context().assetManager->get<SceneAsset>(id));
 }
 
-void SceneManager::load(const Scene::Desc& scene)
+void SceneManager::load(const SceneAsset& scene)
 {
     RegisterSceneTypes();
 
     // The cache owns a snapshot; the live scene owns its actors and components.
-    Scene::Desc loaded;
+    SceneAsset loaded;
     Deserialize(Serialize(scene), loaded);
     FreeFlyCameraActor* camera = nullptr;
     for (const auto& actor : loaded.actors)
@@ -45,10 +45,10 @@ void SceneManager::load(const Scene::Desc& scene)
 
 void SceneManager::save()
 {
-    CHECK(context().assetDescManager != nullptr, "SceneManager requires AssetDescManager");
-    Scene::Desc snapshot;
+    CHECK(context().assetManager != nullptr, "SceneManager requires AssetManager");
+    SceneAsset snapshot;
     Deserialize(Serialize(data), snapshot);
-    context().assetDescManager->save<Scene>(std::move(snapshot));
+    context().assetManager->save<SceneAsset>(std::move(snapshot));
 }
 
 void SceneManager::reset() noexcept
@@ -58,19 +58,17 @@ void SceneManager::reset() noexcept
     data = {};
 }
 
-bool SceneManager::tick(float deltaTime)
+void SceneManager::tick(float deltaTime)
 {
     auto& camera = editorCamera();
-    bool changed = camera.tick(deltaTime);
+    camera.tick(deltaTime);
     for (const auto& actor : data.actors)
         if (actor.get() != &camera)
-            changed = actor->tick(deltaTime) || changed;
-
-    return changed;
+            actor->tick(deltaTime);
 }
 
-Scene::Desc& SceneManager::scene() noexcept { return data; }
-const Scene::Desc& SceneManager::scene() const noexcept { return data; }
+SceneAsset& SceneManager::scene() noexcept { return data; }
+const SceneAsset& SceneManager::scene() const noexcept { return data; }
 
 FreeFlyCameraActor& SceneManager::editorCamera() const
 {

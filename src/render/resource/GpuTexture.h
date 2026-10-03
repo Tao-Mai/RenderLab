@@ -12,7 +12,7 @@ class GpuTexture
 {
 public:
     GpuTexture(
-        GpuUploadContext upload, const Texture::Desc& desc,
+        GpuUploadContext upload, const TextureAsset& asset,
         std::span<const uint8_t> bytes);
 
     GpuTexture(const GpuTexture&)            = delete;
@@ -31,6 +31,6 @@ private:
     void create(
         GpuUploadContext upload,
         std::span<const uint8_t> bytes,
-        const Texture::Desc& desc,
+        const TextureAsset& asset,
         vk::Format format);
 };

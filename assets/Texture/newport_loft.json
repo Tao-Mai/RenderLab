@@ -1,12 +1,14 @@
 {
-    "Id": "newport_loft",
-    "Source": "File",
-    "Format": "RGBA32F",
-    "ColorSpace": "Linear",
-    "Layout": "Cubemap",
-    "Width": 400,
-    "Height": 400,
-    "MipLevels": 9,
-    "Path": "../resource/newport_loft.hdr",
-    "Binary": "binary/texture\\newport_loft.bin"
+    "id": {
+        "value": "newport_loft"
+    },
+    "source": "File",
+    "format": "RGBA32F",
+    "colorSpace": "Linear",
+    "layout": "Cubemap",
+    "width": 400,
+    "height": 400,
+    "mipLevels": 9,
+    "path": "../resource/newport_loft.hdr",
+    "binary": "binary/texture/newport_loft.bin"
 }

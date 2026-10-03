@@ -1,6 +1,7 @@
 #pragma once
 
 #include "scene/actor/FreeFlyCameraActor.h"
+#include "scene/actor/ALight.h"
 #include "scene/actor/StaticMeshActor.h"
 #include "scene/component/CharacterMoveComponent.h"
 #include "scene/component/LightComponent.h"
@@ -21,7 +22,7 @@ void forEachComponentType(F&& visitor)
 template<class F>
 void forEachActorType(F&& visitor)
 {
-    visitor.template operator()<Actor>("Actor");
     visitor.template operator()<FreeFlyCameraActor>("FreeFlyCameraActor");
+    visitor.template operator()<ALight>("ALight");
     visitor.template operator()<StaticMeshActor>("StaticMeshActor");
 }

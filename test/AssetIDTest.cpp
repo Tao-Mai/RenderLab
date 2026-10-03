@@ -1,5 +1,5 @@
 #include "asset/Asset.h"
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
 #include "asset/JsonIo.h"
 #include "core/ConfigManager.h"
@@ -11,40 +11,65 @@
 
 #include <filesystem>
 #include <fstream>
+#include <chrono>
 #include <string>
+#include <system_error>
 #include <type_traits>
 #include <unordered_map>
 
 #include <gtest/gtest.h>
-#include <rfl/json.hpp>
 
-static_assert(AssetType<Texture>);
-static_assert(AssetType<Mesh>);
-static_assert(!std::is_convertible_v<Texture::ID, Mesh::ID>);
+static_assert(AssetType<TextureAsset>);
+static_assert(AssetType<MeshAsset>);
+static_assert(AssetType<MaterialAsset>);
+static_assert(AssetType<ShaderAsset>);
+static_assert(AssetType<SceneAsset>);
+static_assert(AssetType<EnvironmentMapAsset>);
+static_assert(AssetType<SamplerAsset>);
+static_assert(!AssetType<Asset>);
+static_assert(std::same_as<MaterialOverride, MaterialAsset>);
+static_assert(!std::is_convertible_v<TextureAsset::ID, MeshAsset::ID>);
 
-TEST(AssetIDTest, SerializesAsStringAndKeepsAssetType)
+TEST(AssetIDTest, AssetsExposePersistentFieldsDirectly)
 {
-    const Texture::ID textureId{"lut_ggx"};
-    EXPECT_EQ(rfl::json::write(textureId), "\"lut_ggx\"");
+    AssetTypes::forEach([]<AssetType T>
+    {
+        T asset{};
+        asset.id = typename T::ID{"direct-fields"};
+        const json stored = Serialize(asset);
+        EXPECT_EQ(stored.at("id"), (json{{"value", "direct-fields"}}));
 
-    const auto parsed = rfl::json::read<Texture::ID>("\"lut_ggx\"");
-    ASSERT_TRUE(parsed);
-    EXPECT_EQ(*parsed, textureId);
-
-    std::unordered_map<Texture::ID, int> textures;
-    textures.emplace(textureId, 7);
-    EXPECT_EQ(textures.at(Texture::ID{"lut_ggx"}), 7);
+        T restored{};
+        Deserialize(stored, restored);
+        EXPECT_EQ(restored.id, asset.id);
+        EXPECT_EQ(Serialize(restored), stored);
+    });
 }
 
-TEST(AssetIDTest, LoadsDescriptorFromRegisteredDirectory)
+TEST(AssetIDTest, SerializesAsReflectedObjectAndKeepsAssetType)
+{
+    const TextureAsset::ID textureId{"lut_ggx"};
+    const json stored = {{"value", "lut_ggx"}};
+    EXPECT_EQ(Serialize(textureId), stored);
+
+    TextureAsset::ID parsed;
+    Deserialize(stored, parsed);
+    EXPECT_EQ(parsed, textureId);
+
+    std::unordered_map<TextureAsset::ID, int> textures;
+    textures.emplace(textureId, 7);
+    EXPECT_EQ(textures.at(TextureAsset::ID{"lut_ggx"}), 7);
+}
+
+TEST(AssetIDTest, LoadsAssetFromRegisteredDirectory)
 {
     const auto file = std::filesystem::path{RENDERLAB_SOURCE_DIR} /
-        "assets" / Texture::dir / "lut_ggx.json";
+        "assets" / TextureAsset::dir / "lut_ggx.json";
     ASSERT_TRUE(std::filesystem::is_regular_file(file));
 
-    const Texture::Desc desc = asset_json::load<Texture::Desc>(file);
-    EXPECT_EQ(desc.id, Texture::ID{"lut_ggx"});
-    EXPECT_EQ(desc.format, ImageFormat::RG8);
+    const TextureAsset asset = asset_json::load<TextureAsset>(file);
+    EXPECT_EQ(asset.id, TextureAsset::ID{"lut_ggx"});
+    EXPECT_EQ(asset.format, ImageFormat::RG8);
 }
 
 TEST(AssetIDTest, LoadsRendererBrdfLutBinding)
@@ -56,137 +81,247 @@ TEST(AssetIDTest, LoadsRendererBrdfLutBinding)
     AppConfig config;
     Deserialize(json::parse(input), config);
 
-    EXPECT_EQ(config.renderer.brdfLut.textureID, Texture::ID{"lut_ggx"});
+    EXPECT_EQ(config.renderer.brdfLut.textureID, TextureAsset::ID{"lut_ggx"});
     EXPECT_EQ(config.renderer.brdfLut.samplerID, BuiltinAssets::Sampler::linearClamp);
 }
 
 TEST(AssetIDTest, RoundTripsNestedMeshSubmesh)
 {
-    Mesh::Desc mesh;
-    mesh.id = Mesh::ID{"sphere"};
+    MeshAsset mesh;
+    mesh.id = MeshAsset::ID{"sphere"};
     mesh.source = Source::Builtin;
     mesh.geometry = "binary/sphere.geometry";
     mesh.submeshes.push_back({
         .firstIndex = 3,
         .indexCount = 6,
-        .materialId = Material::ID{"white"},
+        .materialId = MaterialAsset::ID{"white"},
     });
 
-    const std::string serialized =
-        rfl::json::write<rfl::SnakeCaseToPascalCase>(mesh);
-    EXPECT_NE(serialized.find("\"Submeshes\""), std::string::npos);
-    EXPECT_NE(serialized.find("\"MaterialId\""), std::string::npos);
+    const json serialized = Serialize(mesh);
+    EXPECT_EQ(serialized.at("id").at("value"), "sphere");
+    EXPECT_EQ(serialized.at("submeshes")[0].at("materialId").at("value"), "white");
 
-    const auto parsed = rfl::json::read<Mesh::Desc,
-                                        rfl::SnakeCaseToPascalCase, rfl::NoExtraFields>(serialized);
-    ASSERT_TRUE(parsed);
-    ASSERT_EQ(parsed->submeshes.size(), 1);
-    EXPECT_EQ(parsed->submeshes[0].firstIndex, 3);
-    EXPECT_EQ(parsed->submeshes[0].indexCount, 6);
-    EXPECT_EQ(parsed->submeshes[0].materialId, Material::ID{"white"});
+    MeshAsset parsed;
+    Deserialize(json::parse(serialized.dump()), parsed);
+    ASSERT_EQ(parsed.submeshes.size(), 1);
+    EXPECT_EQ(parsed.submeshes[0].firstIndex, 3);
+    EXPECT_EQ(parsed.submeshes[0].indexCount, 6);
+    EXPECT_EQ(parsed.submeshes[0].materialId, MaterialAsset::ID{"white"});
+    EXPECT_EQ(Serialize(parsed), serialized);
 }
 
 TEST(AssetIDTest, RoundTripsSamplerAndTextureBinding)
 {
-    Sampler::Desc sampler;
-    sampler.id = Sampler::ID{"custom"};
-    sampler.magFilter = Sampler::Desc::Filter::Nearest;
-    sampler.addressModeU = Sampler::Desc::AddressMode::ClampToBorder;
+    SamplerAsset sampler;
+    sampler.id = SamplerAsset::ID{"custom"};
+    sampler.magFilter = SamplerAsset::Filter::Nearest;
+    sampler.addressModeU = SamplerAsset::AddressMode::ClampToBorder;
     sampler.compareEnable = true;
-    sampler.compareOp = Sampler::Desc::CompareOp::LessOrEqual;
-    sampler.borderColor = Sampler::Desc::BorderColor::FloatOpaqueWhite;
+    sampler.compareOp = SamplerAsset::CompareOp::LessOrEqual;
+    sampler.borderColor = SamplerAsset::BorderColor::FloatOpaqueWhite;
     sampler.maxLod = 0.0f;
 
-    const std::string samplerJson =
-        rfl::json::write<rfl::SnakeCaseToPascalCase>(sampler);
-    const auto parsedSampler = rfl::json::read<Sampler::Desc,
-        rfl::SnakeCaseToPascalCase, rfl::NoExtraFields>(samplerJson);
-    ASSERT_TRUE(parsedSampler);
-    EXPECT_EQ(parsedSampler->id, sampler.id);
-    EXPECT_EQ(parsedSampler->magFilter, sampler.magFilter);
-    EXPECT_EQ(parsedSampler->addressModeU, sampler.addressModeU);
-    EXPECT_EQ(parsedSampler->compareOp, sampler.compareOp);
-    EXPECT_EQ(parsedSampler->borderColor, sampler.borderColor);
-    EXPECT_EQ(parsedSampler->maxLod, 0.0f);
+    const json samplerJson = Serialize(sampler);
+    SamplerAsset parsedSampler;
+    Deserialize(samplerJson, parsedSampler);
+    EXPECT_EQ(parsedSampler.id, sampler.id);
+    EXPECT_EQ(parsedSampler.magFilter, sampler.magFilter);
+    EXPECT_EQ(parsedSampler.addressModeU, sampler.addressModeU);
+    EXPECT_EQ(parsedSampler.compareOp, sampler.compareOp);
+    EXPECT_EQ(parsedSampler.borderColor, sampler.borderColor);
+    EXPECT_EQ(parsedSampler.maxLod, 0.0f);
+    EXPECT_EQ(Serialize(parsedSampler), samplerJson);
 
-    Material::Desc material;
-    material.id = Material::ID{"white"};
+    MaterialAsset material;
+    material.id = MaterialAsset::ID{"white"};
     material.baseColorTexture = TextureBinding{
-        Texture::ID{"white"}, Sampler::ID{"linearRepeat"}};
-    const std::string materialJson =
-        rfl::json::write<rfl::SnakeCaseToPascalCase>(material);
-    const auto parsedMaterial = rfl::json::read<Material::Desc,
-        rfl::SnakeCaseToPascalCase, rfl::NoExtraFields>(materialJson);
-    ASSERT_TRUE(parsedMaterial);
-    ASSERT_TRUE(parsedMaterial->baseColorTexture);
-    EXPECT_EQ(parsedMaterial->baseColorTexture->textureID, Texture::ID{"white"});
-    EXPECT_EQ(parsedMaterial->baseColorTexture->samplerID, Sampler::ID{"linearRepeat"});
+        TextureAsset::ID{"white"}, SamplerAsset::ID{"linearRepeat"}};
+    const json materialJson = Serialize(material);
+    EXPECT_TRUE(materialJson.at("roughness").is_null());
+    EXPECT_EQ(materialJson.at("baseColorTexture").at("textureID").at("value"), "white");
+    MaterialAsset parsedMaterial;
+    Deserialize(materialJson, parsedMaterial);
+    ASSERT_TRUE(parsedMaterial.baseColorTexture);
+    EXPECT_EQ(parsedMaterial.baseColorTexture->textureID, TextureAsset::ID{"white"});
+    EXPECT_EQ(parsedMaterial.baseColorTexture->samplerID, SamplerAsset::ID{"linearRepeat"});
+    EXPECT_EQ(Serialize(parsedMaterial), materialJson);
+}
+
+TEST(AssetIDTest, RejectsMissingAndUnknownAssetFields)
+{
+    MaterialAsset material;
+    material.id = MaterialAsset::ID{"strict-material"};
+    material.baseColorTexture = TextureBinding{TextureAsset::ID{"white"}, SamplerAsset::ID{"linearRepeat"}};
+    const json stored = Serialize(material);
+    MaterialAsset parsed;
+
+    json invalid = stored;
+    invalid.erase("roughness");
+    EXPECT_THROW(Deserialize(invalid, parsed), json::out_of_range);
+    invalid = stored;
+    invalid["id"].erase("value");
+    EXPECT_THROW(Deserialize(invalid, parsed), json::out_of_range);
+
+    invalid = stored;
+    invalid["unexpected"] = true;
+    EXPECT_THROW(Deserialize(invalid, parsed), json::other_error);
+    invalid = stored;
+    invalid["baseColorTexture"]["unexpected"] = true;
+    EXPECT_THROW(Deserialize(invalid, parsed), json::other_error);
+    invalid = stored;
+    invalid["id"]["unexpected"] = true;
+    EXPECT_THROW(Deserialize(invalid, parsed), json::other_error);
+}
+
+TEST(AssetIDTest, MaterialSerializationProducesStableAndDistinctCacheKeys)
+{
+    MaterialAsset material;
+    material.id = MaterialAsset::ID{"white"};
+    material.roughness = 0.5f;
+    material.baseColorTexture = TextureBinding{TextureAsset::ID{"white"}, SamplerAsset::ID{"linearRepeat"}};
+    const std::string key = Serialize(material).dump();
+
+    MaterialAsset copy;
+    Deserialize(json::parse(key), copy);
+    EXPECT_EQ(Serialize(copy).dump(), key);
+    copy.roughness.reset();
+    EXPECT_NE(Serialize(copy).dump(), key);
+    copy = material;
+    copy.baseColorTexture->textureID = TextureAsset::ID{"albedo"};
+    EXPECT_NE(Serialize(copy).dump(), key);
+    copy = material;
+    copy.baseColorTexture->samplerID = SamplerAsset::ID{"linearClamp"};
+    EXPECT_NE(Serialize(copy).dump(), key);
+}
+
+TEST(AssetIDTest, JsonIoSavesAndReplacesAssetsInTheUnifiedFormat)
+{
+    struct TemporaryAsset
+    {
+        std::filesystem::path directory = std::filesystem::path{RENDERLAB_SOURCE_DIR} / "test" /
+            ("json_io_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        std::filesystem::path file = directory / "material.json";
+
+        ~TemporaryAsset()
+        {
+            std::error_code error;
+            std::filesystem::remove(file, error);
+            std::filesystem::remove(file.string() + ".tmp", error);
+            std::filesystem::remove(directory, error);
+        }
+    } temporary;
+
+    MaterialAsset material;
+    material.id = MaterialAsset::ID{"persisted"};
+    material.baseColorFactor = glm::vec4{0.2f, 0.4f, 0.6f, 1.0f};
+    material.normalTexture = TextureBinding{TextureAsset::ID{"normal"}, SamplerAsset::ID{"linearRepeat"}};
+    asset_json::save(temporary.file, material);
+    EXPECT_EQ(Serialize(asset_json::load<MaterialAsset>(temporary.file)), Serialize(material));
+
+    material.roughness = 0.3f;
+    material.doubleSided = false;
+    asset_json::save(temporary.file, material);
+    EXPECT_EQ(Serialize(asset_json::load<MaterialAsset>(temporary.file)), Serialize(material));
+    EXPECT_FALSE(std::filesystem::exists(temporary.file.string() + ".tmp"));
+
+    std::ifstream input{temporary.file};
+    EXPECT_EQ(json::parse(input), Serialize(material));
+}
+
+TEST(AssetIDTest, AllPersistedAssetsRoundTrip)
+{
+    RegisterSceneTypes();
+    const auto root = std::filesystem::path{RENDERLAB_SOURCE_DIR} / "assets";
+    size_t count = 0;
+    AssetTypes::forEach([&]<AssetType T>
+    {
+        const auto directory = root / T::dir;
+        if (!std::filesystem::is_directory(directory)) return;
+
+        for (const auto& entry : std::filesystem::directory_iterator(directory))
+        {
+            if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
+            SCOPED_TRACE(entry.path().string());
+            const auto asset = asset_json::load<T>(entry.path());
+            std::ifstream input{entry.path()};
+            EXPECT_EQ(Serialize(asset), json::parse(input));
+            ++count;
+        }
+    });
+    EXPECT_GT(count, 0);
 }
 
 TEST(AssetIDTest, BuiltinSamplersKeepExpectedFiltersAndAddressModes)
 {
-    struct ConfiguredDescriptors
+    struct ConfiguredAssets
     {
         ConfigManager config;
-        AssetDescManager descriptors;
+        AssetManager assets;
 
-        ConfiguredDescriptors()
+        ConfiguredAssets()
         {
             context().config = &config;
             config.init();
-            descriptors.init();
+            assets.init();
         }
 
-        ~ConfiguredDescriptors()
+        ~ConfiguredAssets()
         {
-            descriptors.shutdown();
+            assets.shutdown();
             config.shutdown();
             context().config = nullptr;
         }
     } configured;
 
-    const auto& linearRepeat = configured.descriptors.desc<Sampler>(
+    const auto& linearRepeat = configured.assets.get<SamplerAsset>(
         BuiltinAssets::Sampler::linearRepeat);
-    const auto& linearClamp = configured.descriptors.desc<Sampler>(
+    const auto& linearClamp = configured.assets.get<SamplerAsset>(
         BuiltinAssets::Sampler::linearClamp);
-    const auto& nearestRepeat = configured.descriptors.desc<Sampler>(
+    const auto& nearestRepeat = configured.assets.get<SamplerAsset>(
         BuiltinAssets::Sampler::nearestRepeat);
-    const auto& nearestClamp = configured.descriptors.desc<Sampler>(
+    const auto& nearestClamp = configured.assets.get<SamplerAsset>(
         BuiltinAssets::Sampler::nearestClamp);
 
-    EXPECT_EQ(linearRepeat.magFilter, Sampler::Desc::Filter::Linear);
-    EXPECT_EQ(linearRepeat.addressModeU, Sampler::Desc::AddressMode::Repeat);
-    EXPECT_EQ(linearClamp.magFilter, Sampler::Desc::Filter::Linear);
-    EXPECT_EQ(linearClamp.addressModeU, Sampler::Desc::AddressMode::ClampToEdge);
-    EXPECT_EQ(nearestRepeat.magFilter, Sampler::Desc::Filter::Nearest);
-    EXPECT_EQ(nearestRepeat.addressModeU, Sampler::Desc::AddressMode::Repeat);
-    EXPECT_EQ(nearestClamp.magFilter, Sampler::Desc::Filter::Nearest);
-    EXPECT_EQ(nearestClamp.addressModeU, Sampler::Desc::AddressMode::ClampToEdge);
+    const AssetManager& assets = configured.assets;
+    const auto& texture = assets.get(BuiltinAssets::Texture::white);
+    static_assert(std::same_as<decltype(assets.get(TextureAsset::ID{})), const TextureAsset&>);
+    EXPECT_EQ(assets.find(texture.id), &texture);
+    EXPECT_EQ(assets.find(BuiltinAssets::Sampler::linearClamp), &linearClamp);
+    EXPECT_EQ(assets.find(TextureAsset::ID{"missing-test-texture"}), nullptr);
+
+    EXPECT_EQ(linearRepeat.magFilter, SamplerAsset::Filter::Linear);
+    EXPECT_EQ(linearRepeat.addressModeU, SamplerAsset::AddressMode::Repeat);
+    EXPECT_EQ(linearClamp.magFilter, SamplerAsset::Filter::Linear);
+    EXPECT_EQ(linearClamp.addressModeU, SamplerAsset::AddressMode::ClampToEdge);
+    EXPECT_EQ(nearestRepeat.magFilter, SamplerAsset::Filter::Nearest);
+    EXPECT_EQ(nearestRepeat.addressModeU, SamplerAsset::AddressMode::Repeat);
+    EXPECT_EQ(nearestClamp.magFilter, SamplerAsset::Filter::Nearest);
+    EXPECT_EQ(nearestClamp.addressModeU, SamplerAsset::AddressMode::ClampToEdge);
     EXPECT_FALSE(linearClamp.maxLod.has_value());
 }
 
 TEST(AssetIDTest, LoadsEnvironmentTextureBindings)
 {
     const auto file = std::filesystem::path{RENDERLAB_SOURCE_DIR} /
-        "assets" / EnvironmentMap::dir / "grasslands_sunset_4k.json";
+        "assets" / EnvironmentMapAsset::dir / "grasslands_sunset_4k.json";
     ASSERT_TRUE(std::filesystem::is_regular_file(file));
 
-    const auto environment = asset_json::load<EnvironmentMap::Desc>(file);
-    EXPECT_EQ(environment.radiance.textureID, Texture::ID{"grasslands_sunset_4k"});
-    EXPECT_EQ(environment.irradiance.samplerID, Sampler::ID{"linearClamp"});
+    const auto environment = asset_json::load<EnvironmentMapAsset>(file);
+    EXPECT_EQ(environment.radiance.textureID, TextureAsset::ID{"grasslands_sunset_4k"});
+    EXPECT_EQ(environment.irradiance.samplerID, SamplerAsset::ID{"linearClamp"});
     EXPECT_EQ(environment.prefilteredSpecular.samplerID,
-              Sampler::ID{"linearClamp"});
+              SamplerAsset::ID{"linearClamp"});
 }
 
 TEST(AssetIDTest, RoundTripsTypedIdsInsideSceneComponents)
 {
     RegisterSceneTypes();
     const auto file = std::filesystem::path{RENDERLAB_SOURCE_DIR} /
-        "assets" / Scene::dir / "default.json";
+        "assets" / SceneAsset::dir / "default.json";
     ASSERT_TRUE(std::filesystem::is_regular_file(file));
 
-    const Scene::Desc scene = asset_json::load<Scene::Desc>(file);
-    ASSERT_EQ(scene.id, Scene::ID{"default"});
+    const SceneAsset scene = asset_json::load<SceneAsset>(file);
+    ASSERT_EQ(scene.id, SceneAsset::ID{"default"});
 
     std::ifstream input{file};
     EXPECT_EQ(Serialize(scene), json::parse(input));
@@ -202,7 +337,7 @@ TEST(AssetIDTest, RoundTripsTypedIdsInsideSceneComponents)
     }
     EXPECT_TRUE(foundRender);
 
-    Scene::Desc parsed;
+    SceneAsset parsed;
     Deserialize(Serialize(scene), parsed);
     EXPECT_EQ(parsed.id, scene.id);
     EXPECT_EQ(parsed.environment.environmentMap, scene.environment.environmentMap);

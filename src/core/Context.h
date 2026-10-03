@@ -1,6 +1,6 @@
 #pragma once
 
-class AssetDescManager;
+class AssetManager;
 class AssetDataManager;
 class ConfigManager;
 class Editor;
@@ -14,7 +14,7 @@ struct Context
     ConfigManager*            config              = nullptr;
     Window*                   window              = nullptr;
     InputManager*             inputManager        = nullptr;
-    AssetDescManager*         assetDescManager    = nullptr;
+    AssetManager*            assetManager        = nullptr;
     AssetDataManager*         assetDataManager    = nullptr;
     SceneManager*             sceneManager        = nullptr;
     Renderer*                 renderer            = nullptr;

@@ -7,6 +7,8 @@
 
 struct RenderComponent : Component
 {
-    [[=ReflectField{}]] Mesh::ID meshId;
-    [[=ReflectField{}]] std::unordered_map<int, Material::Desc> materialOverrides;
+    void tick(float) override {}
+
+    [[=ReflectField{}]] MeshAsset::ID meshId;
+    [[=ReflectField{}]] std::unordered_map<int, MaterialOverride> materialOverrides;
 };

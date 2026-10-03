@@ -11,7 +11,7 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
-class AssetDescManager;
+class AssetManager;
 
 struct ShaderHandle
 {
@@ -30,7 +30,7 @@ struct ShaderMetadata
         vk::ShaderStageFlags stages;
     };
 
-    Shader::ID            id;
+    ShaderAsset::ID            id;
     std::filesystem::path binary;
     std::vector<Binding>  bindings;
 };
@@ -43,14 +43,14 @@ public:
     void init(const vk::raii::Device& device);
     void reset() noexcept;
 
-    [[nodiscard]] ShaderHandle          getOrLoad(const Shader::ID& id);
+    [[nodiscard]] ShaderHandle          getOrLoad(const ShaderAsset::ID& id);
     [[nodiscard]] vk::ShaderModule      module(ShaderHandle handle) const;
     [[nodiscard]] const ShaderMetadata& metadata(ShaderHandle handle) const;
 
 private:
     const vk::raii::Device*                      device = nullptr;
-    AssetDescManager*                            assets = nullptr;
-    std::unordered_map<Shader::ID, ShaderHandle> handles;
+    AssetManager*                            assets = nullptr;
+    std::unordered_map<ShaderAsset::ID, ShaderHandle> handles;
     std::vector<std::unique_ptr<GpuShader>>      shaders;
     std::vector<ShaderMetadata>                  shaderMetadata;
 };

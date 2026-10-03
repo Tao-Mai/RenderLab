@@ -1,18 +1,21 @@
 # Actor / Component
 
-SceneManager owns the live scene's `unique_ptr<Actor>` objects. Each Actor owns its
+SceneManager owns a live `SceneAsset` and its `unique_ptr<Actor>` objects. Each Actor owns its
 `unique_ptr<Component>` objects, including exactly one TransformComponent.
 Components hold a non-owning, private Actor pointer. Runtime pointers and state
 are not serialized.
 
 Engine ticks SceneManager. The active FreeFlyCameraActor ticks first; inside that
 actor, CameraComponent updates navigation and view direction before movement.
-Other actors then tick their components. Tick returns whether persistent scene
-data changed, so the editor can mark the scene dirty.
+Other actors then tick their components. Actor and Component are abstract bases
+with pure virtual `void tick(float deltaTime)`. Each concrete type implements Tick;
+components without per-frame behavior implement an empty Tick. Editor edits mark
+the scene dirty independently of Tick.
 
 FreeFlyCameraActor supplies CameraComponent and FreeFlyMoveComponent.
 StaticMeshActor supplies TransformComponent and RenderComponent.
-An ordinary Actor can hold LightComponent or additional behavior components.
+ALight supplies TransformComponent and LightComponent. Concrete actors can
+hold additional behavior components; Actor itself is not registered or instantiated.
 
 ## Registration and persistence
 
@@ -44,7 +47,7 @@ Scene JSON uses the member names `id`, `actors`, `environment`, `name` and
 and quaternions use [x, y, z, w]. Optional material fields are explicitly null
 when absent. There is no old scene-format parser.
 
-SceneManager clones the asset snapshot through Serialize/Deserialize before
+AssetManager caches a `SceneAsset` snapshot. SceneManager clones it through Serialize/Deserialize before
 binding component owners, validating required components, and assigning runtime
 picking IDs. Saving creates a detached snapshot again. The asset cache never
 owns references into the live scene. Picking IDs are not persisted and are not

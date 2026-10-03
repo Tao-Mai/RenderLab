@@ -1,12 +1,14 @@
 {
-    "Id": "newport_loft_irradiance",
-    "Source": "File",
-    "Format": "RGBA32F",
-    "ColorSpace": "Linear",
-    "Layout": "Cubemap",
-    "Width": 32,
-    "Height": 32,
-    "MipLevels": 1,
-    "Path": "../resource/newport_loft.hdr",
-    "Binary": "binary/texture\\newport_loft_irradiance.bin"
+    "id": {
+        "value": "newport_loft_irradiance"
+    },
+    "source": "File",
+    "format": "RGBA32F",
+    "colorSpace": "Linear",
+    "layout": "Cubemap",
+    "width": 32,
+    "height": 32,
+    "mipLevels": 1,
+    "path": "../resource/newport_loft.hdr",
+    "binary": "binary/texture/newport_loft_irradiance.bin"
 }

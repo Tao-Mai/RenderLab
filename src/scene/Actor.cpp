@@ -35,13 +35,10 @@ void Actor::initialize()
         throw std::logic_error("actor cannot have both movement components: " + name);
 }
 
-bool Actor::tick(float deltaTime)
+void Actor::tickComponents(float deltaTime)
 {
-    bool changed = false;
     for (const auto& component : components)
-        changed = component->tick(deltaTime) || changed;
-
-    return changed;
+        component->tick(deltaTime);
 }
 
 TransformComponent& Actor::transform()

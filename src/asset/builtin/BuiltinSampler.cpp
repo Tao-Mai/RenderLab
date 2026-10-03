@@ -2,38 +2,38 @@
 
 namespace
 {
-[[nodiscard]] ::Sampler::Desc makeSampler(
-    const ::Sampler::ID& id, ::Sampler::Desc::Filter filter,
-    ::Sampler::Desc::AddressMode addressMode)
+[[nodiscard]] ::SamplerAsset makeSampler(
+    const ::SamplerAsset::ID& id, ::SamplerAsset::Filter filter,
+    ::SamplerAsset::AddressMode addressMode)
 {
-    ::Sampler::Desc desc{};
-    desc.id           = id;
-    desc.magFilter    = filter;
-    desc.minFilter    = filter;
-    desc.addressModeU = addressMode;
-    desc.addressModeV = addressMode;
-    desc.addressModeW = addressMode;
-    return desc;
+    ::SamplerAsset asset{};
+    asset.id           = id;
+    asset.magFilter    = filter;
+    asset.minFilter    = filter;
+    asset.addressModeU = addressMode;
+    asset.addressModeV = addressMode;
+    asset.addressModeW = addressMode;
+    return asset;
 }
 }
 
-const ::Sampler::Desc* BuiltinAssets::samplerDesc(const ::Sampler::ID& id)
+const ::SamplerAsset* BuiltinAssets::samplerAsset(const ::SamplerAsset::ID& id)
 {
-    using Filter = ::Sampler::Desc::Filter;
-    using AddressMode = ::Sampler::Desc::AddressMode;
+    using Filter = ::SamplerAsset::Filter;
+    using AddressMode = ::SamplerAsset::AddressMode;
 
-    static const ::Sampler::Desc descs[] = {
+    static const ::SamplerAsset assets[] = {
         makeSampler(Sampler::linearRepeat, Filter::Linear, AddressMode::Repeat),
         makeSampler(Sampler::linearClamp, Filter::Linear, AddressMode::ClampToEdge),
         makeSampler(Sampler::nearestRepeat, Filter::Nearest, AddressMode::Repeat),
         makeSampler(Sampler::nearestClamp, Filter::Nearest, AddressMode::ClampToEdge),
     };
 
-    for (const ::Sampler::Desc& desc : descs)
+    for (const ::SamplerAsset& asset : assets)
     {
-        if (desc.id == id)
+        if (asset.id == id)
         {
-            return &desc;
+            return &asset;
         }
     }
     return nullptr;

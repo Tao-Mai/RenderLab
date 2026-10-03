@@ -85,7 +85,7 @@ public:
     void init();
     void reset() noexcept;
     void build();
-    void bindSceneTextures(const Scene::Desc& scene);
+    void bindSceneTextures(const SceneAsset& scene);
     void prepareRenderData(uint32_t frameIndex);
     void execute(const EditorFrameInput& editor,
         uint32_t frameIndex, uint32_t imageIndex);

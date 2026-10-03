@@ -1,11 +1,12 @@
 #include "scene/SceneManager.h"
+#include "scene/actor/StaticMeshActor.h"
 #include "scene/component/CameraComponent.h"
 #include "scene/component/CharacterMoveComponent.h"
 #include "scene/component/FreeFlyMoveComponent.h"
 #include "scene/component/LightComponent.h"
 #include "scene/component/RenderComponent.h"
 #include "asset/AssetDataManager.h"
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
 #include "asset/Serializer.h"
 #include "core/ConfigManager.h"
@@ -23,7 +24,7 @@
 
 namespace
 {
-void checkMovement(const Scene::Desc& original, Window& window, SceneManager& manager)
+void checkMovement(const SceneAsset& original, Window& window, SceneManager& manager)
 {
     InputManager input;
     context().inputManager = &input;
@@ -41,16 +42,16 @@ void checkMovement(const Scene::Desc& original, Window& window, SceneManager& ma
         callback(window.nativeHandle(), code, 0, action, 0);
     };
 
-    Scene::Desc scene;
+    SceneAsset scene;
     Deserialize(Serialize(original), scene);
     const size_t freeFlyPeerIndex = scene.actors.size();
-    auto freeFlyPeer = std::make_unique<Actor>();
+    auto freeFlyPeer = std::make_unique<StaticMeshActor>();
     freeFlyPeer->name = "FreeFly peer";
     freeFlyPeer->addComponent<FreeFlyMoveComponent>().speed = 4.0f;
     scene.actors.push_back(std::move(freeFlyPeer));
 
     const size_t characterPeerIndex = scene.actors.size();
-    auto characterPeer = std::make_unique<Actor>();
+    auto characterPeer = std::make_unique<StaticMeshActor>();
     characterPeer->name = "Character peer";
     characterPeer->addComponent<CharacterMoveComponent>().speed = 1.0f;
     scene.actors.push_back(std::move(characterPeer));
@@ -60,6 +61,8 @@ void checkMovement(const Scene::Desc& original, Window& window, SceneManager& ma
     cameraData.yaw = 0.0f;
     cameraData.pitch = 45.0f;
     cameraActor.getComponent<FreeFlyMoveComponent>()->speed = 2.0f;
+    // Camera navigation must tick before movement, even when component order is reversed.
+    std::reverse(cameraActor.components.begin(), cameraActor.components.end());
     scene.environment.up = {0.0f, 0.0f, 3.0f};
     manager.load(scene);
 
@@ -77,7 +80,7 @@ void checkMovement(const Scene::Desc& original, Window& window, SceneManager& ma
     {
         key(GLFW_KEY_V, GLFW_PRESS);
         input.tick();
-        (void)camera().tick(0.0f);
+        camera().tick(0.0f);
         CHECK(camera().isNavigationActive(), "V must activate free movement");
         key(GLFW_KEY_V, GLFW_RELEASE);
         input.tick();
@@ -87,16 +90,18 @@ void checkMovement(const Scene::Desc& original, Window& window, SceneManager& ma
     key(GLFW_KEY_W, GLFW_PRESS);
     input.tick();
     position() = {};
-    CHECK(!manager.tick(0.1f), "movement must require navigation");
+    manager.tick(0.1f);
+    CHECK(!camera().isNavigationActive(), "movement must require navigation");
     expectPosition({});
     mouseCallback(window.nativeHandle(), GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, 0);
     input.tick();
-    CHECK(manager.tick(0.1f), "right mouse must enable camera movement");
+    manager.tick(0.1f);
+    CHECK(camera().isNavigationActive(), "right mouse must enable camera movement");
     expectPosition(camera().forward() * 0.2f);
     mouseCallback(window.nativeHandle(), GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE, 0);
     key(GLFW_KEY_W, GLFW_RELEASE);
     input.tick();
-    (void)manager.tick(0.0f);
+    manager.tick(0.0f);
     CHECK(!camera().isNavigationActive(), "releasing right mouse must stop navigation");
 
     activateFreeMovement();
@@ -105,7 +110,7 @@ void checkMovement(const Scene::Desc& original, Window& window, SceneManager& ma
     position() = {};
     peerPosition(freeFlyPeerIndex) = {};
     peerPosition(characterPeerIndex) = {};
-    CHECK(manager.tick(0.1f));
+    manager.tick(0.1f);
     expectPosition(camera().forward() * 0.2f);
     CHECK(glm::length(peerPosition(freeFlyPeerIndex) - camera().forward() * 0.4f) < 1.0e-5f,
         "FreeFlyMove must tick each actor at its own speed");
@@ -116,7 +121,7 @@ void checkMovement(const Scene::Desc& original, Window& window, SceneManager& ma
     key(GLFW_KEY_E, GLFW_PRESS);
     input.tick();
     position() = {};
-    CHECK(manager.tick(0.1f));
+    manager.tick(0.1f);
     expectPosition(camera().up() * 0.2f);
     key(GLFW_KEY_E, GLFW_RELEASE);
 
@@ -136,7 +141,7 @@ void checkMovement(const Scene::Desc& original, Window& window, SceneManager& ma
     position() = {};
     peerPosition(freeFlyPeerIndex) = {};
     peerPosition(characterPeerIndex) = {};
-    CHECK(manager.tick(0.1f));
+    manager.tick(0.1f);
     expectPosition({0.0f, 0.0f, -0.2f});
     CHECK(glm::length(peerPosition(characterPeerIndex) - glm::vec3{0.0f, 0.0f, -0.1f}) < 1.0e-5f,
         "CharacterMove must tick each actor at its own speed");
@@ -145,12 +150,12 @@ void checkMovement(const Scene::Desc& original, Window& window, SceneManager& ma
 
     manager.scene().environment.up = {0.0f, 0.0f, 2.0f};
     position() = {};
-    CHECK(manager.tick(0.1f));
+    manager.tick(0.1f);
     expectPosition({0.0f, 0.2f, 0.0f});
 
     manager.scene().environment.up = camera().forward();
     position() = {};
-    CHECK(manager.tick(0.1f));
+    manager.tick(0.1f);
     CHECK(std::isfinite(glm::length(position())) &&
         std::abs(glm::dot(position(), manager.scene().environment.up)) < 1.0e-5f,
         "looking along Up must retain finite planar movement");
@@ -162,7 +167,7 @@ void checkMovement(const Scene::Desc& original, Window& window, SceneManager& ma
         input.tick();
         position() = {};
         peerPosition(characterPeerIndex) = {};
-        (void)manager.tick(0.1f);
+        manager.tick(0.1f);
         expectPosition({});
         CHECK(glm::length(peerPosition(characterPeerIndex)) == 0.0f,
             "CharacterMove must ignore E/Q");
@@ -180,15 +185,15 @@ int main(int argc, char** argv)
 {
     logger::init(argv[0]);
     ConfigManager config;
-    AssetDescManager assets;
+    AssetManager assets;
     AssetDataManager data;
     Window window;
-    Scene::Desc scene;
+    SceneAsset scene;
     SceneManager sceneManager;
     Renderer renderer;
     Context& ctx = context();
     ctx.config = &config;
-    ctx.assetDescManager = &assets;
+    ctx.assetManager = &assets;
     ctx.assetDataManager = &data;
     ctx.window = &window;
     ctx.sceneManager = &sceneManager;
@@ -200,11 +205,11 @@ int main(int argc, char** argv)
     assets.init();
     window.init();
     glfwHideWindow(window.nativeHandle());
-    Deserialize(Serialize(assets.desc<Scene>(config.initialScene())), scene);
+    Deserialize(Serialize(assets.get<SceneAsset>(config.initialScene())), scene);
     std::erase_if(scene.actors, [](const auto& actor)
     {
         const auto* render = actor->template getComponent<RenderComponent>();
-        return render && render->meshId != Mesh::ID{"sphere"};
+        return render && render->meshId != MeshAsset::ID{"sphere"};
     });
 
     glm::vec3 center{};

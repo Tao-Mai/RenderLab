@@ -1,7 +1,7 @@
 #include "editor/EditorUi.h"
 
 #include "asset/Asset.h"
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/InputManager.h"
@@ -342,7 +342,7 @@ bool EditorUI::drawGizmo(
 }
 
 EditorUI::InspectorResult EditorUI::drawInspector(
-    Scene::Desc& scene, Actor* object, bool dirty)
+    SceneAsset& scene, Actor* object, bool dirty)
 {
     ImGui::SetNextWindowDockID(editorDockId, ImGuiCond_Always);
     constexpr ImGuiWindowFlags editorFlags = ImGuiWindowFlags_NoMove |
@@ -424,7 +424,7 @@ EditorUI::InspectorResult EditorUI::drawInspector(
     return result;
 }
 
-bool EditorUI::drawEnvironmentSelection(Scene::Desc& scene)
+bool EditorUI::drawEnvironmentSelection(SceneAsset& scene)
 {
     ImGui::SeparatorText("Scene environment");
     const auto& current = scene.environment.environmentMap;
@@ -439,9 +439,9 @@ bool EditorUI::drawEnvironmentSelection(Scene::Desc& scene)
             changed = true;
         }
 
-        auto ids = context().assetDescManager->loadedIds<EnvironmentMap>();
-        std::ranges::sort(ids, {}, &EnvironmentMap::ID::value);
-        for (const EnvironmentMap::ID& id : ids)
+        auto ids = context().assetManager->loadedIds<EnvironmentMapAsset>();
+        std::ranges::sort(ids, {}, &EnvironmentMapAsset::ID::value);
+        for (const EnvironmentMapAsset::ID& id : ids)
         {
             const bool selected = current && *current == id;
             if (ImGui::Selectable(id.value.c_str(), selected) && !selected)
@@ -472,7 +472,7 @@ void EditorUI::finishEnvironmentImport()
             return;
         }
 
-        const EnvironmentMap::ID id = AssetImporter::saveEnvironmentMap(
+        const EnvironmentMapAsset::ID id = AssetImporter::saveEnvironmentMap(
             std::move(*prepared));
         importStatus = "Imported: " + id.value;
     }

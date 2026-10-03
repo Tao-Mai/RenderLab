@@ -4,7 +4,7 @@
 
 #include "asset/AssetImporter.h"
 
-#include "asset/AssetDescManager.h"
+#include "asset/AssetManager.h"
 #include "asset/AssetDataManager.h"
 #include "asset/BuiltinAssets.h"
 #include "asset/MeshGeometry.h"
@@ -33,12 +33,12 @@ namespace
 struct GltfBuild
 {
     MeshGeometry                                          geometry;
-    std::vector<Mesh::Desc::Submesh>                       submeshes;
-    std::vector<Material::ID>                              materialIds;
-    std::map<std::pair<std::string, ColorSpace>, Texture::ID> textureCache;
+    std::vector<MeshAsset::Submesh>                       submeshes;
+    std::vector<MaterialAsset::ID>                              materialIds;
+    std::map<std::pair<std::string, ColorSpace>, TextureAsset::ID> textureCache;
 };
 
-[[nodiscard]] std::optional<TextureBinding> bindTexture(std::optional<Texture::ID> id)
+[[nodiscard]] std::optional<TextureBinding> bindTexture(std::optional<TextureAsset::ID> id)
 {
     if (!id)
     {
@@ -47,7 +47,7 @@ struct GltfBuild
     return TextureBinding{*id, BuiltinAssets::Sampler::linearRepeat};
 }
 
-[[nodiscard]] std::optional<Texture::ID> textureIdFor(
+[[nodiscard]] std::optional<TextureAsset::ID> textureIdFor(
     GltfBuild&                   build,
     const tinygltf::Model&       model,
     int                          textureIndex,
@@ -88,7 +88,7 @@ struct GltfBuild
     CHECK(!sourcePath.starts_with("data:") && !sourcePath.starts_with("embedded:"),
           "embedded glTF textures require external files: {}",
           sourcePath);
-    const Texture::ID id = AssetImporter::importTexture({
+    const TextureAsset::ID id = AssetImporter::importTexture({
         .source = std::filesystem::absolute(sourcePath),
         .colorSpace = colorSpace,
     });
@@ -102,18 +102,18 @@ void registerMaterials(
     const std::filesystem::path& modelDirectory,
     const std::filesystem::path& meshSource)
 {
-    Material::Desc defaultMaterial;
-    defaultMaterial.id               = asset_import::nextId<Material>(meshSource);
+    MaterialAsset defaultMaterial;
+    defaultMaterial.id               = asset_import::nextId<MaterialAsset>(meshSource);
     defaultMaterial.baseColorTexture = TextureBinding{
         BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat};
     build.materialIds.push_back(
-        context().assetDescManager->save<Material>(std::move(defaultMaterial)));
+        context().assetManager->save<MaterialAsset>(std::move(defaultMaterial)));
 
     for (size_t index = 0; index < model.materials.size(); ++index)
     {
         const tinygltf::Material& source = model.materials[index];
-        Material::Desc              material;
-        material.id = asset_import::nextId<Material>(meshSource);
+        MaterialAsset              material;
+        material.id = asset_import::nextId<MaterialAsset>(meshSource);
 
         const auto& pbr = source.pbrMetallicRoughness;
         if (pbr.baseColorFactor.size() == 4)
@@ -159,7 +159,7 @@ void registerMaterials(
         material.alphaCutoff = static_cast<float>(source.alphaCutoff);
         material.doubleSided = source.doubleSided;
         build.materialIds.push_back(
-            context().assetDescManager->save<Material>(std::move(material)));
+            context().assetManager->save<MaterialAsset>(std::move(material)));
     }
 }
 
@@ -380,7 +380,7 @@ void appendMesh(
 }
 }
 
-Mesh::ID AssetImporter::importMesh(const ImportMeshSetting& setting)
+MeshAsset::ID AssetImporter::importMesh(const ImportMeshSetting& setting)
 {
     const std::filesystem::path& path = setting.source;
     CHECK(!path.empty(), "mesh source path is empty");
@@ -410,7 +410,7 @@ Mesh::ID AssetImporter::importMesh(const ImportMeshSetting& setting)
     LOG_INFO("glTF parsed: {} meshes, {} materials, {} textures",
              model.meshes.size(), model.materials.size(), model.textures.size());
 
-    const Mesh::ID meshId = asset_import::nextId<Mesh>(path);
+    const MeshAsset::ID meshId = asset_import::nextId<MeshAsset>(path);
     GltfBuild     build;
     registerMaterials(build, model, path.parent_path(), path);
 
@@ -452,12 +452,12 @@ Mesh::ID AssetImporter::importMesh(const ImportMeshSetting& setting)
              build.geometry.vertices.size(), build.geometry.indices.size(),
              build.submeshes.size());
 
-    Mesh::Desc mesh;
+    MeshAsset mesh;
     mesh.id        = meshId;
     mesh.source    = Source::File;
     mesh.geometry  = context().assetDataManager->writeGeometry(meshId, build.geometry);
     mesh.submeshes = std::move(build.submeshes);
-    const Mesh::ID id = context().assetDescManager->save<Mesh>(std::move(mesh));
+    const MeshAsset::ID id = context().assetManager->save<MeshAsset>(std::move(mesh));
     LOG_INFO("Import mesh '{}' completed as '{}' in {:.1f}s",
              path.string(), id.value,
              std::chrono::duration<double>(
