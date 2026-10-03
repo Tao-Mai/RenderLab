@@ -1,8 +1,7 @@
 #include "render/pass/EditorPickingPass.h"
 
 #include "core/Logger.h"
-#include "scene/component/LightComponent.h"
-#include "scene/component/TransformComponent.h"
+#include "scene/system/RenderSystem.h"
 #include "render/Renderer.h"
 #include "render/pass/RenderGraph.h"
 #include "render/pass/ScenePass.h"
@@ -75,21 +74,17 @@ void EditorPickingPass::setupPass(RenderGraph& graph)
     pipelineLayout = pipelines->layout(PipelineLayoutPreset::SceneOnly);
 }
 
-void EditorPickingPass::draw(vk::raii::CommandBuffer& commandBuffer,
-    GpuMesh& mesh, const glm::mat4& model, uint32_t selectionId) const
+void EditorPickingPass::draw(
+    vk::raii::CommandBuffer& commandBuffer, const DrawItem& item) const
 {
-    const EditorPickingPushConstants pushConstants{
-        .model = model,
-        .selectionId = selectionId,
+    const EditorPickingPushConstants parameters{
+        .model = item.model,
+        .selectionId = item.selectionId,
     };
     commandBuffer.pushConstants<EditorPickingPushConstants>(pipelineLayout,
-        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        0, pushConstants);
-    mesh.bind(commandBuffer);
-    for (const Submesh& submesh : mesh.submeshes())
-    {
-        commandBuffer.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);
-    }
+        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, parameters);
+    item.mesh->bind(commandBuffer);
+    commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
 }
 
 void EditorPickingPass::executePass(RenderGraph& graph) const
@@ -127,7 +122,7 @@ void EditorPickingPass::executePass(RenderGraph& graph) const
         .pDepthAttachment = &depthAttachment,
     });
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sets = {graph.frameContext(graph.frameIndex()).sceneSetHandle()};
+    const std::array sets = {graph.frameData(graph.frameIndex()).sceneSetHandle()};
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
         pipelineLayout, RenderInterface::sceneSet, sets, {});
 
@@ -146,21 +141,12 @@ void EditorPickingPass::executePass(RenderGraph& graph) const
         static_cast<float>(height), 0.0f, 1.0f));
     commandBuffer.setScissor(0, vk::Rect2D({static_cast<int32_t>(x), static_cast<int32_t>(y)}, {1, 1}));
 
-    for (const SceneRenderItem& item : graph.scene().renderItems())
+    for (const DrawItem& item : graph.renderData().drawItems)
     {
-        const auto* transform = item.actor->getComponent<TransformComponent>();
-        DCHECK(transform);
-        draw(commandBuffer, *item.mesh, transform->matrix(), item.selectionId);
+        draw(commandBuffer, item);
     }
-    for (const LightRenderItem& item : graph.scene().lightRenderItems())
-    {
-        const auto* light = item.actor->getComponent<LightComponent>();
-        const auto* transform = item.actor->getComponent<TransformComponent>();
-        DCHECK(light && transform,
-            "picking light requires Light and Transform components");
-        graph.scene().lightMarkers().recordPicking(commandBuffer,
-            pipelineLayout, *transform, *light, item.selectionId);
-    }
+    graph.lightMarkers().recordPicking(commandBuffer, pipelineLayout,
+        graph.renderData().lightDrawItems);
     commandBuffer.endRendering();
 
     graph.useOutput(outputSlots[ImageResult]);

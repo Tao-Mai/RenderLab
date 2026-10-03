@@ -2,8 +2,6 @@
 
 #include "asset/Asset.h"
 #include "asset/AssetManager.h"
-#include "scene/component/LightComponent.h"
-#include "scene/component/TransformComponent.h"
 #include "scene/SceneManager.h"
 
 #include "scene/component/CameraComponent.h"
@@ -13,9 +11,6 @@
 #include "editor/Editor.h"
 #include "render/device/VkCheck.h"
 #include "core/Window.h"
-
-#include <limits>
-#include <vector>
 
 #include <glm/gtc/matrix_inverse.hpp>
 
@@ -45,7 +40,7 @@ void Renderer::loadScene()
     waitIdle();
     DCHECK(context().sceneManager);
     const auto& targetScene = context().sceneManager->scene();
-    scene.load(resources);
+    renderSystem.load(targetScene, resources);
     graph.bindSceneTextures(targetScene);
     iblParameters = {};
     if (targetScene.environment.environmentMap)
@@ -74,7 +69,7 @@ void Renderer::shutdown() noexcept
         (void)vulkan.deviceHandle().waitIdle();
     }
 
-    scene.reset();
+    renderSystem.reset();
     graph.reset();
     resources.reset();
     pipelines.reset();
@@ -101,9 +96,9 @@ Swapchain& Renderer::swapchainHandle()
     return swapchain;
 }
 
-const GpuScene& Renderer::gpuScene() const
+const RenderData& Renderer::renderData() const
 {
-    return scene;
+    return renderSystem.renderData();
 }
 
 FrameContext& Renderer::currentFrame()
@@ -158,38 +153,20 @@ void Renderer::recreateSwapchain()
 
 void Renderer::updateFrameData(const CameraComponent& camera, const EditorFrameInput& editor)
 {
+    renderSystem.prepare(camera.worldPosition(), resources);
+
     const glm::mat4 viewProjection = camera.projectionMatrix(editor.aspectRatio) * camera.viewMatrix();
     const ViewUniforms view{
         .viewProjection = viewProjection,
         .inverseViewProjection = glm::inverse(viewProjection),
         .cameraPosition = glm::vec4{camera.worldPosition(), 1.0f},
     };
-
-    const auto& lightItems = scene.lightRenderItems();
-    CHECK(lightItems.size() <= std::numeric_limits<uint32_t>::max(), "too many scene lights");
-    std::vector<LightData> lights;
-    lights.reserve(lightItems.size());
-    for (const LightRenderItem& item : lightItems)
-    {
-        const auto* light = item.actor->getComponent<LightComponent>();
-        const auto* transform = item.actor->getComponent<TransformComponent>();
-        DCHECK(light && transform, "light requires Light and Transform components");
-
-        const glm::vec3 direction = glm::normalize(transform->rotation * glm::vec3{0.0f, 0.0f, -1.0f});
-        lights.push_back({
-            .colorIntensity = {light->color, light->intensity},
-            .positionRange = {transform->position, light->range},
-            .direction = {direction, 0.0f},
-            .areaSizeCone = {light->areaSize, light->cosInner, light->cosOuter},
-            .flags = {static_cast<uint32_t>(light->type), light->enabled ? 1u : 0u,
-                light->castShadow ? 1u : 0u, 0u},
-        });
-    }
+    const auto& lights = renderSystem.renderData().lights;
     const LightUniforms lighting{
         .lightCount = static_cast<uint32_t>(lights.size()),
         .iblParameters = iblParameters,
     };
-    currentFrame().updateFrameData(view, lighting, lights);
+    currentFrame().data.update(view, lighting, lights);
 }
 
 EditorFrameResult Renderer::drawFrame(const CameraComponent& camera, const EditorFrameInput& editor)
@@ -225,7 +202,6 @@ EditorFrameResult Renderer::drawFrame(const CameraComponent& camera, const Edito
 
     const bool resolvePickAfterSubmit = editor.requestPick && graph.passEnabled("editor_picking");
     updateFrameData(camera, editor);
-    graph.prepareRenderData(frameIndex);
     graph.execute(editor, frameIndex, imageIndex);
 
     vk::PipelineStageFlags waitDestinationStageMask(

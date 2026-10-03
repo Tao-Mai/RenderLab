@@ -21,14 +21,21 @@ input处理 回调函数生成input event数组 tick时
 1. 遍历input event数组，press/release会将目标命令置位，并且input set会记录最后一个action
 2. 遍历hold command，对应input set为press的则置位
 
-ecs
-
-1. 不做成引擎了，不考虑怎么暴露API，因为ecs不好做
-2. 作为一个playground，自己写死所有逻辑
-
 资产系统
 
 1. 目前反序列化会覆盖Actor默认构造添加的component，不过只是反序列化的时候覆盖而已
 
 Actor
+
 1. getcomponent待优化
+2. FreeFlyMoveComponent和CharacterMoveComponent 继承MoveComponent， 等之后想熟悉这部分再看，controller
+
+Editor
+
+1. 应该显式区分为一套新的模式，而不是假装在运行一场游戏
+2. 游戏play时再复制整个world
+
+ecs
+
+1. 不做成引擎了，不考虑怎么暴露API，因为ecs不好做
+2. 作为一个playground，自己写死所有逻辑

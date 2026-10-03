@@ -2,7 +2,7 @@
 
 #include "core/Logger.h"
 #include "scene/component/LightComponent.h"
-#include "scene/component/TransformComponent.h"
+#include "scene/system/RenderSystem.h"
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/pass/RenderGraph.h"
@@ -96,14 +96,14 @@ void ShadowPass::bindResources(RenderGraph& graph)
         const vk::DescriptorImageInfo samplerInfo{.sampler = *sampler};
         const std::array writes = {
             vk::WriteDescriptorSet{
-                .dstSet = graph.frameContext(frameIndex).sceneSetHandle(),
+                .dstSet = graph.frameData(frameIndex).sceneSetHandle(),
                 .dstBinding = RenderInterface::shadowImageBinding,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eSampledImage,
                 .pImageInfo = &imageInfo,
             },
             vk::WriteDescriptorSet{
-                .dstSet = graph.frameContext(frameIndex).sceneSetHandle(),
+                .dstSet = graph.frameData(frameIndex).sceneSetHandle(),
                 .dstBinding = RenderInterface::shadowSamplerBinding,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eSampler,
@@ -117,7 +117,7 @@ void ShadowPass::bindResources(RenderGraph& graph)
 void ShadowPass::executePass(RenderGraph& graph) const
 {
     auto& commandBuffer = graph.commands();
-    const auto lights = graph.frameContext(graph.frameIndex()).lightData();
+    const auto lights = graph.frameData(graph.frameIndex()).lightData();
     // The first SSBO element is the scene's primary light, matching shadow.slang.
     const LightData* light = lights.empty() ? nullptr : &lights.front();
     const bool castShadow = light != nullptr && light->flags.y != 0 && light->flags.z != 0 &&
@@ -134,7 +134,7 @@ void ShadowPass::executePass(RenderGraph& graph) const
     }
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sceneSets = {graph.frameContext(graph.frameIndex()).sceneSetHandle()};
+    const std::array sceneSets = {graph.frameData(graph.frameIndex()).sceneSetHandle()};
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
         pipelineLayout, RenderInterface::sceneSet, sceneSets, {});
     commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f,
@@ -163,23 +163,16 @@ void ShadowPass::executePass(RenderGraph& graph) const
             const glm::mat4 view = glm::lookAt(lightPosition,
                 lightPosition + faceDirections[face], faceUp[face]);
             const glm::mat4 viewProjection = projection * view;
-            for (const SceneRenderItem& item : graph.scene().renderItems())
+            for (const DrawItem& item : graph.renderData().drawItems)
             {
-                const auto* objectTransform = item.actor->getComponent<TransformComponent>();
-                DCHECK(objectTransform);
-
                 const ShadowPushConstants push{
-                    .model = objectTransform->matrix(),
+                    .model = item.model,
                     .viewProjection = viewProjection,
                 };
                 commandBuffer.pushConstants<ShadowPushConstants>(pipelineLayout,
                     vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, push);
                 item.mesh->bind(commandBuffer);
-                for (const Submesh& submesh : item.mesh->submeshes())
-                {
-                    commandBuffer.drawIndexed(submesh.indexCount, 1,
-                        submesh.firstIndex, 0, 0);
-                }
+                commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
             }
         }
         commandBuffer.endRendering();

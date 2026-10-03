@@ -2,7 +2,6 @@
 
 #include "render/RenderConfig.h"
 #include "render/ShaderManager.h"
-#include "render/scene/GpuScene.h"
 
 #include <array>
 #include <cstdint>

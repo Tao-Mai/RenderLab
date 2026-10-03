@@ -6,12 +6,8 @@
 
 #include "asset/Asset.h"
 #include "asset/AssetManager.h"
-#include "asset/ApplyOptionalFields.h"
 #include "asset/BuiltinAssets.h"
-#include "core/Context.h"
-#include "scene/component/LightComponent.h"
-#include "scene/component/RenderComponent.h"
-#include "scene/component/TransformComponent.h"
+#include "scene/system/RenderSystem.h"
 #include "render/pass/LightMarkers.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
@@ -30,7 +26,7 @@
 void ScenePass::bindSceneDescriptor(
     vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex) const
 {
-    const std::array sets = {graph->frameContext(frameIndex).sceneSetHandle()};
+    const std::array sets = {graph->frameData(frameIndex).sceneSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         pipelineLayout,
@@ -195,7 +191,7 @@ void ScenePass::bindSceneTextures(const SceneAsset& scene)
         .sampler = resources->sampler(radianceBinding.samplerID)};
     for (uint32_t index = 0; index < maxFramesInFlight; ++index)
     {
-        FrameContext& frame = graph->frameContext(index);
+        FrameData& frame = graph->frameData(index);
         const std::array writes = {
             vk::WriteDescriptorSet{
                 .dstSet = frame.sceneSetHandle(),
@@ -258,61 +254,12 @@ void ScenePass::bindSceneTextures(const SceneAsset& scene)
     }
 }
 
-void ScenePass::prepareRenderData(const FrameContext& frame)
-{
-    const glm::vec3 cameraPosition = frame.viewUniforms().cameraPosition;
-    opaqueDraws.clear();
-    transparentDraws.clear();
-    const auto& renderItems = graph->scene().renderItems();
-    for (const SceneRenderItem& item : renderItems)
-    {
-        const auto* render = item.actor->getComponent<RenderComponent>();
-        const auto* transform = item.actor->getComponent<TransformComponent>();
-        DCHECK(render && transform,
-              "SceneRenderItem is missing Render or Transform");
-        const glm::vec3             offset          = transform->position - cameraPosition;
-        const float                 distanceSquared = glm::dot(offset, offset);
-        const std::vector<Submesh>& submeshes       = item.mesh->submeshes();
-        for (size_t index = 0; index < submeshes.size(); ++index)
-        {
-            const Submesh&  submesh  = submeshes[index];
-            const GpuMaterial* material = submesh.material;
-            if (const auto overrideIt = render->materialOverrides.find(
-                    static_cast<int>(index));
-                overrideIt != render->materialOverrides.end())
-            {
-                const MeshAsset& mesh = context().assetManager->get<MeshAsset>(
-                    render->meshId);
-                CHECK(index < mesh.submeshes.size(),
-                      "material override index out of range");
-                const MaterialAsset::ID materialId = mesh.submeshes[index].materialId;
-                MaterialAsset asset = resources->materialAsset(materialId);
-                applyOptionalFields(asset, overrideIt->second);
-                material = &resources->material(asset);
-            }
-            DrawCall draw{
-                item.mesh, material, transform->matrix(),
-                submesh.firstIndex, submesh.indexCount, distanceSquared,
-            };
-            (material->renderMode() == RenderMode::Transparent
-                ? transparentDraws
-                : opaqueDraws).push_back(draw);
-        }
-    }
-    std::sort(transparentDraws.begin(),
-              transparentDraws.end(),
-              [](const DrawCall& left, const DrawCall& right)
-              {
-                  return left.distanceSquared > right.distanceSquared;
-              });
-}
-
 void ScenePass::recordSkybox(vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex,
     const SkyboxPushConstants& parameters) const
 {
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, skyboxPipeline);
 
-    const std::array sets = {graph->frameContext(frameIndex).sceneSetHandle()};
+    const std::array sets = {graph->frameData(frameIndex).sceneSetHandle()};
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
         skyboxPipelineLayout, RenderInterface::sceneSet, sets, {});
     commandBuffer.pushConstants<SkyboxPushConstants>(skyboxPipelineLayout,
@@ -324,8 +271,8 @@ void ScenePass::recordSkybox(vk::raii::CommandBuffer& commandBuffer, uint32_t fr
 void ScenePass::executePass(RenderGraph& graph) const
 {
     auto& commandBuffer = graph.commands();
-    const auto& lightRenderItems = graph.scene().lightRenderItems();
-    const auto& lightMarkers = graph.scene().lightMarkers();
+    const RenderData& renderData = graph.renderData();
+    const auto& lightMarkers = graph.lightMarkers();
     const uint32_t frameIndex = graph.frameIndex();
     const auto extent = graph.swapchain().extent();
 
@@ -388,7 +335,7 @@ void ScenePass::executePass(RenderGraph& graph) const
                 static_cast<int32_t>(viewportY)),
             vk::Extent2D(viewportWidth, viewportHeight)));
     vk::Pipeline boundPipeline = scenePipeline;
-    const auto   draw          = [&](const DrawCall& item)
+    const auto   draw          = [&](const DrawItem& item)
     {
         const vk::Pipeline pipeline = pipelines->getOrCreate(
             item.material->pipelineKey(
@@ -415,7 +362,7 @@ void ScenePass::executePass(RenderGraph& graph) const
             {});
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
     };
-    for (const DrawCall& item : opaqueDraws)
+    for (const DrawItem& item : renderData.opaqueDrawItems)
     {
         draw(item);
     }
@@ -430,28 +377,17 @@ void ScenePass::executePass(RenderGraph& graph) const
         boundPipeline = nullptr;
     }
 
-    for (const DrawCall& item : transparentDraws)
+    for (const DrawItem& item : renderData.transparentDrawItems)
     {
         draw(item);
     }
 
-    if (!lightRenderItems.empty())
+    if (!renderData.lightDrawItems.empty())
     {
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, lightMarkerPipeline);
         bindSceneDescriptor(commandBuffer, frameIndex);
 
-        for (const LightRenderItem& item : lightRenderItems)
-        {
-            const auto* light = item.actor->getComponent<LightComponent>();
-            const auto* transform = item.actor->getComponent<TransformComponent>();
-            DCHECK(light);
-            DCHECK(transform);
-            lightMarkers.record(
-                commandBuffer,
-                pipelineLayout,
-                *transform,
-                *light);
-        }
+        lightMarkers.record(commandBuffer, pipelineLayout, renderData.lightDrawItems);
     }
 
     commandBuffer.endRendering();

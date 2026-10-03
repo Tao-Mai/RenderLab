@@ -74,7 +74,7 @@ picking IDs. Saving creates a detached snapshot again. The asset cache never
 owns references into the live scene. Picking IDs are not persisted and are not
 reused after reload.
 
-Renderer/GpuScene and render passes hold AActor references and retrieve the
+Renderer/RenderSystem hold AActor references and retrieve the
 components they need; they do not use an entity registry. Editor gizmos and
 picking use the same actors. The inspector draws marked fields with typed ImGui
 overloads. Transform, Light and Render have dedicated editors for Euler rotation,

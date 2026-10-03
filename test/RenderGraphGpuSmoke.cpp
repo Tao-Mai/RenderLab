@@ -239,20 +239,20 @@ int main(int argc, char** argv)
 
     const auto renderFrames = [&]
     {
-        CHECK(renderer.gpuScene().renderItems().size() == 1, "smoke test requires one sphere");
-        const uint32_t expectedId = renderer.gpuScene().renderItems().front().selectionId;
+        CHECK(renderer.renderData().objects.size() == 1, "smoke test requires one sphere");
+        const uint32_t expectedId = renderer.renderData().objects.front().selectionId;
         const auto extent = renderer.swapchainHandle().extent();
         for (uint32_t frame = 0; frame < 8; ++frame)
         {
             window.pollEvents();
-            auto& render = *renderer.gpuScene().renderItems().front().actor->getComponent<RenderComponent>();
+            auto& render = *renderer.renderData().objects.front().actor->getComponent<RenderComponent>();
             if (frame == 2) render.materialOverrides[0].roughness = 0.65f;
             if (frame == 4) render.materialOverrides[0].baseColorTexture = TextureBinding{
                 config.rendererConfig().brdfLut.textureID, BuiltinAssets::Sampler::linearClamp};
             if (frame == 6) render.materialOverrides.clear();
 
-            for (size_t index = 1; index < renderer.gpuScene().lightRenderItems().size(); ++index)
-                renderer.gpuScene().lightRenderItems()[index].actor->getComponent<LightComponent>()->enabled =
+            for (size_t index = 1; index < renderer.renderData().lightObjects.size(); ++index)
+                renderer.renderData().lightObjects[index].actor->getComponent<LightComponent>()->enabled =
                     frame % 2 == 0;
 
             const EditorFrameInput input{
@@ -318,7 +318,7 @@ int main(int argc, char** argv)
     uiInput.init();
     editor.init();
     editor.applyPickResult({
-        .pickedSelectionId = renderer.gpuScene().renderItems().front().selectionId,
+        .pickedSelectionId = renderer.renderData().objects.front().selectionId,
         .hasPickResult = true,
     });
     const auto extent = renderer.swapchainHandle().extent();
@@ -328,7 +328,7 @@ int main(int argc, char** argv)
         uiInput.tick();
         const auto input = editor.buildFrame(
             sceneManager.editorCamera().camera(), 1.0f / 60.0f, extent.width, extent.height);
-        CHECK(input.selectedActor == renderer.gpuScene().renderItems().front().actor,
+        CHECK(input.selectedActor == renderer.renderData().objects.front().actor,
             "editor selection must reference the rendered actor");
         const auto result = renderer.render(sceneManager.editorCamera().camera(), input);
         editor.applyPickResult(result);

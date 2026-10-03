@@ -13,13 +13,14 @@
 | `PipelineManager` | PipelineLayout、RenderMode 模板、PipelineKey cache | device 级 |
 | `RenderResourceManager` | Mesh/Texture/Material/Sampler 资产到 GPU 对象的映射和缓存 | 资产级；当前缓存至 Renderer 关闭 |
 | `RenderGraph` | 注册 Pass、解析 slot、校验依赖、合并 usage、分配内部资源、barrier 和命令录制 | Graph 长期存在；内部资源在 build 时重建 |
-| `FrameContext` | CommandPool/Buffer、Fence、imageAvailable、View/Light UBO、灯光 SSBO、Scene Set | 每个 frame-in-flight 一份 |
+| `FrameContext` | CommandPool/Buffer、Fence、imageAvailable，以及一个 FrameData | 每个 frame-in-flight 一份 |
+| `FrameData` | View/Light CPU 数据与 UBO、灯光 SSBO、Scene Set、数据上传与扩容 | 由对应 FrameContext 持有 |
 
-Renderer 持有上述模块和 `GpuScene`。Graph 持有 Shadow、Scene、EditorPicking、EditorUi 节点。Skybox 的 ShaderHandle、Pipeline/Layout 引用和命令录制统一放在 ScenePass 内部。Pipeline 由 PipelineManager 缓存，Pass 通过自己的 input slot 获取图资源。
+Renderer 持有上述模块和 `RenderSystem`。Graph 持有 Shadow、Scene、EditorPicking、EditorUi 节点。Skybox 的 ShaderHandle、Pipeline/Layout 引用和命令录制统一放在 ScenePass 内部。Pipeline 由 PipelineManager 缓存，Pass 通过自己的 input slot 获取图资源。
 
-SceneManager 持有 AActor 和 Component。GpuScene 的 mesh/light 条目引用 AActor；各 Pass 直接访问 AActor 的 Transform、Render、Light 组件。Renderer 接收 CameraComponent 提供的视图，不持有独立相机 System。
+SceneManager 持有 AActor 和 Component。RenderSystem 整理场景对象，在命令录制前解析 Transform、Render、Light 组件和材质覆盖，生成网格与灯光标记的 DrawItem、透明排序和 LightData。Scene、Shadow、Picking 只消费准备好的数据，不再遍历组件。Renderer 接收 CameraComponent 提供的视图，不持有独立相机 System。
 
-当前 `maxFramesInFlight` 为 2。Graph 为每个在途帧分配独立的 Scene 深度图、Shadow cubemap、拾取图和 readback Buffer。交换链图像和资产环境纹理作为外部资源导入，Graph 借用句柄并跟踪状态。FrameContext 的 View/Light UBO 和灯光 SSBO 由 Pass 直接引用，不登记到 Graph slot；Renderer 在录制前更新当前帧的数据。Mesh/Material 的 vertex/index buffer、材质 UBO 和 base color image 由 GpuScene 直接引用，GPU 对象由 RenderResourceManager 创建和持有。它们不登记到 Graph slot，上传与可供绘制使用的状态由资产 GPU 资源实现负责。
+当前 `maxFramesInFlight` 为 2。Graph 为每个在途帧分配独立的 Scene 深度图、Shadow cubemap、拾取图和 readback Buffer。交换链图像和资产环境纹理作为外部资源导入，Graph 借用句柄并跟踪状态。FrameData 的 View/Light UBO 和灯光 SSBO 由 Pass 直接引用，不登记到 Graph slot；Renderer 在录制前更新当前帧的数据。Mesh/Material 的 vertex/index buffer、材质 UBO 和 base color image 由 RenderSystem 直接引用，GPU 对象由 RenderResourceManager 创建和持有。它们不登记到 Graph slot，上传与可供绘制使用的状态由资产 GPU 资源实现负责。
 
 ## 引擎预设接口
 
@@ -39,7 +40,7 @@ SceneManager 持有 AActor 和 Component。GpuScene 的 mesh/light 条目引用 
 | 1 Material | 1 | Base color sampler |
 | 1 Material | 2 | MaterialUniforms UBO |
 
-FrameContext 持有 Scene Set、两个 UBO 和灯光 SSBO。ViewUniforms 包含 viewProjection、inverseViewProjection 和 cameraPosition，共 144 字节。LightUniforms 包含 lightCount 和 iblParameters，共 32 字节；iblParameters.x 是 prefiltered specular 的最大 LOD。SSBO 按 GpuScene 的灯光顺序存放 LightData，每项 80 字节，包括 color/intensity、position/range、direction、area/cone 和 flags。lightCount 包括禁用灯光，Scene shader 跳过 enabled 为 0 的项，并累加现有点光源计算的结果。
+每个 FrameContext 持有一个 FrameData，后者管理 Scene Set、两个 UBO 和灯光 SSBO。ViewUniforms 包含 viewProjection、inverseViewProjection 和 cameraPosition，共 144 字节。LightUniforms 包含 lightCount 和 iblParameters，共 32 字节；iblParameters.x 是 prefiltered specular 的最大 LOD。SSBO 按 RenderSystem 的灯光顺序存放 LightData，每项 80 字节，包括 color/intensity、position/range、direction、area/cone 和 flags。lightCount 包括禁用灯光，Scene shader 跳过 enabled 为 0 的项，并累加现有点光源计算的结果。
 
 SSBO 至少分配一项以维持有效 descriptor；没有灯光时 lightCount 为 0，shader 不读取数组。数量增长时，在当前帧 fence 完成后扩容并更新该帧 descriptor，其他帧保持自己的 buffer。
 
@@ -59,9 +60,9 @@ GpuMaterial 根据 alpha mode 选择 Opaque、AlphaTest 或 Transparent。Materi
 
 Renderer init 依次初始化 device、swapchain、各 Manager、FrameContext、RenderResourceManager 和 Graph。Graph init 从 `config/config.json` 的 renderer.brdfLut 加载线性 2D LUT，初始化各 Pass，并注册 slot。
 
-Renderer loadScene 等待 GPU 空闲，GpuScene 加载渲染项并建立对资产 GPU 对象的引用，ScenePass 更新每帧 Scene Set 中的环境纹理绑定，随后 Graph build 编译依赖、合并 usage、分配内部资源、更新 Shadow descriptor。具体材质 Pipeline 在首次绘制时创建并缓存。
+Renderer loadScene 等待 GPU 空闲，RenderSystem 加载渲染项并建立对资产 GPU 对象的引用，ScenePass 更新每帧 Scene Set 中的环境纹理绑定，随后 Graph build 编译依赖、合并 usage、分配内部资源、更新 Shadow descriptor。具体材质 Pipeline 在首次绘制时创建并缓存。
 
-资产 GPU 缓存跨场景保留。GpuScene 不拥有 Mesh/Texture/Material 的 GPU 存储。
+资产 GPU 缓存跨场景保留。RenderSystem 不拥有 Mesh/Texture/Material 的 GPU 存储。
 
 ## RenderGraph 的 slot 约定
 
@@ -90,15 +91,15 @@ Shadow ── shadow cubemap ──▶ Scene ── depth ──▶ EditorPickin
 
 Scene 保持一个完整节点，内部顺序为 opaque、Skybox、transparent、灯光标记。Picking 和 UI 之间没有资源依赖，当前按注册顺序执行。
 
-Scene、Shadow 和 Picking 直接使用 GpuScene 的网格引用；Scene 的 DrawCall 引用对应 GpuMaterial，绘制时绑定其 vertex/index buffer 和 Material descriptor set。
+Scene、Shadow 和 Picking 消费 RenderSystem 生成的 DrawItem，其中包含网格、模型矩阵、索引范围和拾取 ID；Scene 绘制时还绑定对应 GpuMaterial 的 Material descriptor set。灯光标记一次准备，由 Scene 和 Picking 共享。
 
-材质覆盖在命令录制前解析，生成本帧 DrawCall。RenderResourceManager 获取或创建对应 GPU 材质，材质与纹理调整不改变 Graph 的 slot 和资源分配，也不触发重新编译。
+材质覆盖在命令录制前解析，生成本帧 DrawItem。RenderResourceManager 获取或创建对应 GPU 材质，材质与纹理调整不改变 Graph 的 slot 和资源分配，也不触发重新编译。
 
 当前状态跟踪粒度为整个 Image 的全部 mip/layer 和整个 Buffer。全图使用一个 graphics/present queue，不进行跨队列调度或资源内存别名复用。
 
 ## 绘制行为
 
-Shadow 使用当前 FrameContext 的第一项 LightData，与 shader 中的 lights[0] 对应。启用投影的点光源以 range 为 far plane，从六个方向绘制到 1024 × 1024 × 6 深度 cubemap；fragment 写入 `distance(worldPosition, lightPosition) / range` 的线性深度。没有投影时清为 1。完成后切换到深度只读状态。Scene shader 目前只声明 set 0 的 Shadow 资源，尚不采样；Shadow 绘制暂未处理透明材质和 AlphaTest 镂空。
+Shadow 使用当前 FrameData 的第一项 LightData，与 shader 中的 lights[0] 对应。启用投影的点光源以 range 为 far plane，从六个方向绘制到 1024 × 1024 × 6 深度 cubemap；fragment 写入 `distance(worldPosition, lightPosition) / range` 的线性深度。没有投影时清为 1。完成后切换到深度只读状态。Scene shader 目前只声明 set 0 的 Shadow 资源，尚不采样；Shadow 绘制暂未处理透明材质和 AlphaTest 镂空。
 
 有环境贴图时，Scene 内部在 opaque 之后绘制 Skybox。fullscreen triangle 的深度为 1，fragment 从 ViewUniforms 读取逆视投影矩阵和相机位置，结合 push constant 中的编辑器视口重建世界方向，采样 radiance 基础 mip。保留深度测试、关闭深度写入，并请求早期深度测试。随后透明几何按距离从远到近绘制，再绘制灯光标记。
 
@@ -107,8 +108,8 @@ Picking 复用 Scene 深度，只在请求拾取时绘制点击像素的 selecti
 ## 每帧流程
 
 1. Renderer 等待当前 FrameContext 的 Fence，Acquire 交换链图像，重置 Fence。
-2. Renderer 更新当前帧的 View/Light UBO 和灯光 SSBO，再调用 Graph prepareRenderData 解析材质覆盖、准备 DrawCall；这些都在 execute 之前完成。
-3. Graph execute 重置并开始 CommandBuffer，按编译顺序应用 input barrier、调用 executePass、应用 output 状态；Pass 直接绑定当前 FrameContext 的外部 Scene Set，UI 由 EditorUi 节点录制。
+2. RenderSystem prepare 整理本帧 DrawItem、灯光标记、透明排序和 LightData，Renderer 上传 View/Light UBO 与灯光 SSBO；这些都在 Graph execute 之前完成。
+3. Graph execute 重置并开始 CommandBuffer，按编译顺序应用 input barrier、调用 executePass、应用 output 状态；Pass 直接绑定当前 FrameData 的外部 Scene Set，UI 由 EditorUi 节点录制。
 4. Graph 将交换链图像转为 Present 状态，结束 CommandBuffer。
 5. Renderer 统一 submit 一次，等待 imageAvailable，完成后通知 acquired image 的 renderFinished；随后 Present。
 6. 若有拾取请求，等待本次 Fence、读取该帧结果，最后轮转 frameIndex。
@@ -119,7 +120,7 @@ Graph 保留每个物理资源实例的状态。布局变化或前后涉及写�
 
 最小化时等待非零 framebuffer 尺寸。重建时先等待 GPU 空闲，再重建交换链图像、视图和 presentation Semaphore，调用 Graph build 重建内部图资源、更新 attachment Pipeline/descriptor，最后刷新编辑器 UI。Shader、Descriptor Layout、资产 GPU 资源和 FrameContext 不因 resize 重新创建。
 
-shutdown 先等待 device 空闲，再释放 GpuScene、Graph/Pass、资产 GPU 资源、Pipeline、FrameContext、Descriptor、Shader、Swapchain，最后释放 VulkanContext。外部资源所有者的生命周期必须覆盖 Graph 的使用时间。
+shutdown 先等待 device 空闲，再释放 RenderSystem、Graph/Pass、资产 GPU 资源、Pipeline、FrameContext、Descriptor、Shader、Swapchain，最后释放 VulkanContext。外部资源所有者的生命周期必须覆盖 Graph 的使用时间。
 
 ## 验证
 

@@ -293,6 +293,8 @@ add_executable(RenderLab
         src/render/device/VulkanContext.h
         src/render/device/FrameContext.cpp
         src/render/device/FrameContext.h
+        src/render/FrameData.cpp
+        src/render/FrameData.h
         src/render/device/GpuUploadContext.h
         src/render/present/Swapchain.cpp
         src/render/present/Swapchain.h
@@ -310,8 +312,8 @@ add_executable(RenderLab
         src/render/resource/RenderResourceManager.h
         src/render/resource/VertexLayout.h
         src/render/resource/ShaderData.h
-        src/render/scene/GpuScene.cpp
-        src/render/scene/GpuScene.h
+        src/scene/system/RenderSystem.cpp
+        src/scene/system/RenderSystem.h
         src/render/pass/ScenePass.cpp
         src/render/pass/ScenePass.h
         src/render/pass/ShadowPass.cpp

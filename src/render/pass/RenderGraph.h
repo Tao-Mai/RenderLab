@@ -16,8 +16,9 @@
 
 class Buffer;
 class DescriptorManager;
-class FrameContext;
-class GpuScene;
+class FrameData;
+struct RenderData;
+class LightMarkers;
 class GpuTexture;
 class PipelineManager;
 class Renderer;
@@ -86,7 +87,6 @@ public:
     void reset() noexcept;
     void build();
     void bindSceneTextures(const SceneAsset& scene);
-    void prepareRenderData(uint32_t frameIndex);
     void execute(const EditorFrameInput& editor,
         uint32_t frameIndex, uint32_t imageIndex);
     [[nodiscard]] uint32_t readSelectionId(uint32_t frameIndex);
@@ -126,8 +126,9 @@ public:
     [[nodiscard]] PipelineManager& pipelines() const;
     [[nodiscard]] ShaderManager& shaders() const;
     [[nodiscard]] RenderResourceManager& assetResources() const;
-    [[nodiscard]] FrameContext& frameContext(uint32_t frameIndex) const;
-    [[nodiscard]] const GpuScene& scene() const;
+    [[nodiscard]] FrameData& frameData(uint32_t frameIndex) const;
+    [[nodiscard]] const RenderData& renderData() const;
+    [[nodiscard]] const LightMarkers& lightMarkers() const;
     [[nodiscard]] vk::Format depthFormat() const;
     [[nodiscard]] vk::Format shadowFormat() const;
     [[nodiscard]] vk::raii::CommandBuffer& commands() const;

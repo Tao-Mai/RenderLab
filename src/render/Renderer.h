@@ -12,7 +12,7 @@
 #include "render/pass/RenderGraph.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/RenderResourceManager.h"
-#include "render/scene/GpuScene.h"
+#include "scene/system/RenderSystem.h"
 
 #include <array>
 #include <cstdint>
@@ -57,7 +57,7 @@ public:
 
     [[nodiscard]] VulkanContext& vulkanContext();
     [[nodiscard]] Swapchain&     swapchainHandle();
-    [[nodiscard]] const GpuScene& gpuScene() const;
+    [[nodiscard]] const RenderData& renderData() const;
 
 private:
     friend class RenderGraph;
@@ -70,7 +70,7 @@ private:
     RenderResourceManager resources;
     std::array<FrameContext, maxFramesInFlight> frames;
     uint32_t          frameIndex = 0;
-    GpuScene          scene;
+    RenderSystem      renderSystem;
     RenderGraph       graph;
     glm::vec4         iblParameters{0.0f};
 

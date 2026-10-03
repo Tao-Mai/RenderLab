@@ -44,10 +44,10 @@ void LightMarkers::reset() noexcept
     arrow = nullptr;
 }
 
-std::vector<LightMarkers::Part> LightMarkers::parts(
-    const TransformComponent& transform, const LightComponent& light) const
+std::vector<LightMarkers::DrawItem> LightMarkers::buildDrawItems(
+    const TransformComponent& transform, const LightComponent& light, uint32_t selectionId) const
 {
-    std::vector<Part> result;
+    std::vector<DrawItem> result;
     const glm::vec3 markerColor = light.enabled ? light.color : light.color * 0.15f;
 
     switch (light.type)
@@ -116,16 +116,17 @@ std::vector<LightMarkers::Part> LightMarkers::parts(
         }
         break;
     }
+    for (DrawItem& item : result)
+        item.selectionId = selectionId;
     return result;
 }
 
 void LightMarkers::record(
     vk::raii::CommandBuffer& commandBuffer,
     vk::PipelineLayout pipelineLayout,
-    const TransformComponent& transform,
-    const LightComponent& light) const
+    std::span<const DrawItem> draws) const
 {
-    for (const Part& part : parts(transform, light))
+    for (const DrawItem& part : draws)
     {
         const LightPushConstants pushConstants{
             .model = part.model,
@@ -144,15 +145,13 @@ void LightMarkers::record(
 void LightMarkers::recordPicking(
     vk::raii::CommandBuffer& commandBuffer,
     vk::PipelineLayout pipelineLayout,
-    const TransformComponent& transform,
-    const LightComponent& light,
-    uint32_t selectionId) const
+    std::span<const DrawItem> draws) const
 {
-    for (const Part& part : parts(transform, light))
+    for (const DrawItem& part : draws)
     {
         const EditorPickingPushConstants pushConstants{
             .model = part.model,
-            .selectionId = selectionId,
+            .selectionId = part.selectionId,
         };
         commandBuffer.pushConstants<EditorPickingPushConstants>(
             pipelineLayout,

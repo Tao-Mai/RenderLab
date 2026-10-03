@@ -352,12 +352,6 @@ void RenderGraph::useOutput(ResourceHandle output)
     useResource(slot.resource, slot.desc);
 }
 
-void RenderGraph::prepareRenderData(uint32_t frameIndex)
-{
-    DCHECK(built && compiled, "RenderGraph must be built before preparing render data");
-    passes->scene.prepareRenderData(frameContext(frameIndex));
-}
-
 void RenderGraph::execute(const EditorFrameInput& editor,
     uint32_t frameIndex, uint32_t imageIndex)
 {
@@ -411,11 +405,12 @@ Swapchain& RenderGraph::swapchain() const { return renderer->swapchain; }
 PipelineManager& RenderGraph::pipelines() const { return renderer->pipelines; }
 ShaderManager& RenderGraph::shaders() const { return renderer->shaders; }
 RenderResourceManager& RenderGraph::assetResources() const { return renderer->resources; }
-FrameContext& RenderGraph::frameContext(uint32_t index) const { return renderer->frames.at(index); }
-const GpuScene& RenderGraph::scene() const { return renderer->scene; }
+FrameData& RenderGraph::frameData(uint32_t index) const { return renderer->frames.at(index).data; }
+const RenderData& RenderGraph::renderData() const { return renderer->renderSystem.renderData(); }
+const LightMarkers& RenderGraph::lightMarkers() const { return renderer->renderSystem.lightMarkers(); }
 vk::Format RenderGraph::depthFormat() const { return sceneDepthFormat; }
 vk::Format RenderGraph::shadowFormat() const { return pointShadowFormat; }
-vk::raii::CommandBuffer& RenderGraph::commands() const { return frameContext(currentFrame).commandBufferHandle(); }
+vk::raii::CommandBuffer& RenderGraph::commands() const { return renderer->frames.at(currentFrame).commandBufferHandle(); }
 uint32_t RenderGraph::frameIndex() const { return currentFrame; }
 const EditorFrameInput& RenderGraph::editorInput() const
 {

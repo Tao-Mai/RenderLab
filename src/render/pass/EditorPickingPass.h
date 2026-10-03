@@ -11,6 +11,7 @@
 class GpuMesh;
 class PipelineManager;
 class RenderGraph;
+struct DrawItem;
 
 class EditorPickingPass
 {
@@ -27,9 +28,7 @@ public:
 private:
     void draw(
         vk::raii::CommandBuffer& commandBuffer,
-        GpuMesh& mesh,
-        const glm::mat4& model,
-        uint32_t selectionId) const;
+        const DrawItem& item) const;
     RenderGraph* graph = nullptr;
     std::vector<uint32_t> inputSlots;
     std::vector<uint32_t> outputSlots;

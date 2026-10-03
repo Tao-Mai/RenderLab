@@ -3,8 +3,8 @@
 #include "editor/ViewportRect.h"
 #include "render/PipelineManager.h"
 #include "render/RenderConfig.h"
-#include "render/device/FrameContext.h"
-#include "render/scene/GpuScene.h"
+#include "render/FrameData.h"
+#include "asset/Asset.h"
 
 #include <array>
 #include <cstdint>
@@ -33,22 +33,10 @@ public:
         std::shared_ptr<GpuTexture> brdfLut, vk::Sampler brdfLutSampler);
     void registerPass(RenderGraph& graph);
     void setupPass(RenderGraph& graph);
-    void prepareRenderData(const FrameContext& frame);
     void executePass(RenderGraph& graph) const;
     void bindSceneTextures(const SceneAsset& scene);
 
 private:
-    struct DrawCall
-    {
-        GpuMesh* mesh;
-        const GpuMaterial* material;
-        glm::mat4 model;
-        uint32_t firstIndex;
-        uint32_t indexCount;
-        float distanceSquared;
-    };
-    std::vector<DrawCall> opaqueDraws;
-    std::vector<DrawCall> transparentDraws;
     VulkanContext*                                         vulkan    = nullptr;
     RenderGraph*                                          graph = nullptr;
     std::vector<uint32_t> inputSlots;
