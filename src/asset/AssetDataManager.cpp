@@ -106,11 +106,10 @@ void validateTexture(
 
 void AssetDataManager::init()
 {
-    CHECK(context().config != nullptr,
-          "ConfigManager must exist before AssetDataManager");
+    DCHECK(context().config);
 
     const AppPaths& paths = context().config->paths();
-    CHECK(!paths.assets.empty() && paths.assets.is_absolute(),
+    DCHECK(!paths.assets.empty() && paths.assets.is_absolute(),
           "AssetDataManager requires resolved asset paths");
 
     assetsRoot = paths.assets;
@@ -119,7 +118,7 @@ void AssetDataManager::init()
 std::filesystem::path AssetDataManager::resolve(
     const std::filesystem::path& relative) const
 {
-    CHECK(!assetsRoot.empty(), "AssetDataManager is not initialized");
+    DCHECK(!assetsRoot.empty(), "AssetDataManager is not initialized");
     CHECK(!relative.empty() && !relative.is_absolute(),
           "asset data path must be relative: {}",
           relative.string());

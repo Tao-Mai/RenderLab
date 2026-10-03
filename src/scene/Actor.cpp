@@ -30,7 +30,7 @@ TransformComponent& Actor::transform()
 const TransformComponent& Actor::transform() const
 {
     auto* component = getComponent<TransformComponent>();
-    CHECK(component);
+    DCHECK(component);
     return *component;
 }
 

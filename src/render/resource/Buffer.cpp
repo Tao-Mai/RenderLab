@@ -14,7 +14,7 @@ Buffer::Buffer(
     vk::MemoryPropertyFlags         memoryProperties) :
     byteSize(size)
 {
-    CHECK(size != 0, "buffer size must be greater than zero");
+    DCHECK(size != 0, "buffer size must be greater than zero");
 
     const vk::BufferCreateInfo bufferInfo{
         .size = size,
@@ -38,7 +38,7 @@ Buffer::Buffer(
 
 void Buffer::upload(const void* data, vk::DeviceSize byteCount)
 {
-    CHECK(data != nullptr && byteCount != 0 && byteCount <= byteSize,
+    DCHECK(data && byteCount != 0 && byteCount <= byteSize,
         "invalid buffer upload");
 
     void* mappedMemory = vkCheck(memory.mapMemory(0, byteCount));
@@ -48,7 +48,7 @@ void Buffer::upload(const void* data, vk::DeviceSize byteCount)
 
 void Buffer::download(void* data, vk::DeviceSize byteCount)
 {
-    CHECK(data != nullptr && byteCount != 0 && byteCount <= byteSize,
+    DCHECK(data && byteCount != 0 && byteCount <= byteSize,
         "invalid buffer download");
 
     void* mappedMemory = vkCheck(memory.mapMemory(0, byteCount));

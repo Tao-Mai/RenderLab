@@ -52,7 +52,7 @@ void ScenePass::init(RenderGraph& targetGraph,
 
     brdfLutTexture = std::move(brdfLut);
     brdfLutSampler = targetBrdfLutSampler;
-    CHECK(brdfLutTexture != nullptr && brdfLutSampler, "ScenePass requires a BRDF LUT binding");
+    DCHECK(brdfLutTexture && brdfLutSampler, "ScenePass requires a BRDF LUT binding");
 }
 
 void ScenePass::registerPass(RenderGraph& graph)
@@ -268,7 +268,7 @@ void ScenePass::prepareRenderData(const FrameContext& frame)
     {
         const auto* render = item.actor->getComponent<RenderComponent>();
         const auto* transform = item.actor->getComponent<TransformComponent>();
-        CHECK(render != nullptr && transform != nullptr,
+        DCHECK(render && transform,
               "SceneRenderItem is missing Render or Transform");
         const glm::vec3             offset          = transform->position - cameraPosition;
         const float                 distanceSquared = glm::dot(offset, offset);
@@ -444,8 +444,8 @@ void ScenePass::executePass(RenderGraph& graph) const
         {
             const auto* light = item.actor->getComponent<LightComponent>();
             const auto* transform = item.actor->getComponent<TransformComponent>();
-            CHECK(light != nullptr, "light item missing Light component");
-            CHECK(transform != nullptr, "light item missing Transform component");
+            DCHECK(light);
+            DCHECK(transform);
             lightMarkers.record(
                 commandBuffer,
                 pipelineLayout,

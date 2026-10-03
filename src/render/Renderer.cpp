@@ -36,16 +36,16 @@ void Renderer::init()
 
 EditorFrameResult Renderer::render(const CameraComponent& camera, const EditorFrameInput& editor)
 {
-    CHECK(inited, "Renderer must be initialized before render()");
+    DCHECK(inited);
     return drawFrame(camera, editor);
 }
 
 void Renderer::loadScene()
 {
-    CHECK(inited, "Renderer must be initialized before loading a scene");
+    DCHECK(inited);
 
     waitIdle();
-    CHECK(context().sceneManager != nullptr, "Renderer requires SceneManager");
+    DCHECK(context().sceneManager);
     const auto& targetScene = context().sceneManager->scene();
     scene.load(resources);
     graph.bindSceneTextures(targetScene);
@@ -115,9 +115,9 @@ FrameContext& Renderer::currentFrame()
 
 void Renderer::initVulkan()
 {
-    CHECK(context().window != nullptr, "Window must exist before Renderer");
-    CHECK(context().assetManager != nullptr, "AssetManager must exist before Renderer");
-    CHECK(context().config != nullptr, "ConfigManager must exist before Renderer");
+    DCHECK(context().window);
+    DCHECK(context().assetManager);
+    DCHECK(context().config);
 
     Window& window = *context().window;
     vulkan.init(window);
@@ -175,7 +175,7 @@ void Renderer::updateFrameData(const CameraComponent& camera, const EditorFrameI
     {
         const auto* light = item.actor->getComponent<LightComponent>();
         const auto* transform = item.actor->getComponent<TransformComponent>();
-        CHECK(light != nullptr && transform != nullptr, "light requires Light and Transform components");
+        DCHECK(light && transform, "light requires Light and Transform components");
 
         const glm::vec3 direction = glm::normalize(transform->rotation * glm::vec3{0.0f, 0.0f, -1.0f});
         lights.push_back({

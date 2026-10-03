@@ -101,7 +101,7 @@ void EditorPickingPass::executePass(RenderGraph& graph) const
     }
     auto& commandBuffer = graph.commands();
     const auto extent = graph.swapchain().extent();
-    CHECK(editor.pickX < extent.width && editor.pickY < extent.height,
+    DCHECK(editor.pickX < extent.width && editor.pickY < extent.height,
         "picking coordinate is outside the render target");
     const uint32_t x = editor.pickX;
     const uint32_t y = editor.pickY;
@@ -149,14 +149,14 @@ void EditorPickingPass::executePass(RenderGraph& graph) const
     for (const SceneRenderItem& item : graph.scene().renderItems())
     {
         const auto* transform = item.actor->getComponent<TransformComponent>();
-        CHECK(transform != nullptr, "picking object is missing Transform");
+        DCHECK(transform);
         draw(commandBuffer, *item.mesh, transform->matrix(), item.selectionId);
     }
     for (const LightRenderItem& item : graph.scene().lightRenderItems())
     {
         const auto* light = item.actor->getComponent<LightComponent>();
         const auto* transform = item.actor->getComponent<TransformComponent>();
-        CHECK(light != nullptr && transform != nullptr,
+        DCHECK(light && transform,
             "picking light requires Light and Transform components");
         graph.scene().lightMarkers().recordPicking(commandBuffer,
             pipelineLayout, *transform, *light, item.selectionId);

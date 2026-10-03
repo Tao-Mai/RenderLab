@@ -87,3 +87,9 @@ namespace detail
                 __FILE__, __LINE__, #condition __VA_OPT__(,) __VA_ARGS__); \
         }                                                                \
     } while (0)
+
+#ifndef NDEBUG
+#define DCHECK(condition, ...) CHECK(condition __VA_OPT__(,) __VA_ARGS__)
+#else
+#define DCHECK(...) do {} while (0)
+#endif

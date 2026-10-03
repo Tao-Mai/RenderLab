@@ -46,9 +46,9 @@ struct RenderGraph::Allocation
 
 void RenderGraph::init()
 {
-    CHECK(renderer == nullptr, "RenderGraph is already initialized");
+    DCHECK(!renderer, "RenderGraph is already initialized");
     renderer = context().renderer;
-    CHECK(renderer != nullptr, "Renderer must exist before RenderGraph");
+    DCHECK(renderer);
 
     const auto chooseDepthFormat = [&](vk::FormatFeatureFlags features)
     {
@@ -106,7 +106,7 @@ void RenderGraph::reset() noexcept
 
 void RenderGraph::build()
 {
-    CHECK(renderer != nullptr && passes, "RenderGraph must be initialized before build");
+    DCHECK(renderer && passes, "RenderGraph must be initialized before build");
     renderer->waitIdle();
     built = false;
     resources.clear();
@@ -117,7 +117,7 @@ void RenderGraph::build()
     {
         if (pass->enabled)
         {
-            CHECK(pass->setupPass && pass->executePass, "pass '{}' has no callbacks", pass->name);
+            DCHECK(pass->setupPass && pass->executePass, "pass '{}' has no callbacks", pass->name);
             pass->setupPass(*this);
         }
     }
@@ -133,12 +133,12 @@ void RenderGraph::validateCompilation()
     const auto errors = compile();
     std::string message;
     for (const auto& error : errors) message += "\n  " + error;
-    CHECK(errors.empty(), "RenderGraph compilation failed:{}", message);
+    DCHECK(errors.empty(), "RenderGraph compilation failed:{}", message);
 }
 
 void RenderGraph::bindSceneTextures(const SceneAsset& scene)
 {
-    CHECK(passes, "RenderGraph must be initialized before binding a scene");
+    DCHECK(passes);
     passes->scene.bindSceneTextures(scene);
     built = false;
 }
@@ -255,10 +255,10 @@ uint32_t RenderGraph::instanceIndex(const Resource& resource, uint32_t frameInde
 
 RenderGraph::Allocation& RenderGraph::allocation(ResourceHandle input) const
 {
-    CHECK(compiled && globalInputSlots.at(input).resource != invalidHandle,
+    DCHECK(compiled && globalInputSlots.at(input).resource != invalidHandle,
         "resource access requires a compiled and bound input slot");
     auto& resource = resources.at(globalInputSlots.at(input).resource);
-    CHECK(resource.allocation, "RenderGraph resources have not been allocated");
+    DCHECK(resource.allocation);
     return *resource.allocation;
 }
 
@@ -342,7 +342,7 @@ void RenderGraph::useResource(ResourceHandle index, const ResourceDesc& use)
 void RenderGraph::useOutput(ResourceHandle output)
 {
     const Slot& slot = globalOutputSlots.at(output);
-    CHECK(slot.owner == executingPass, "only the executing pass may apply its output state");
+    DCHECK(slot.owner == executingPass, "only the executing pass may apply its output state");
     const auto& resource = resources.at(slot.resource);
     const auto& previous = resource.allocation->instances.at(instanceIndex(resource, currentFrame)).state;
     if (previous.stages == slot.desc.stages && previous.access == slot.desc.access &&
@@ -354,14 +354,14 @@ void RenderGraph::useOutput(ResourceHandle output)
 
 void RenderGraph::prepareRenderData(uint32_t frameIndex)
 {
-    CHECK(built && compiled, "RenderGraph must be built before preparing render data");
+    DCHECK(built && compiled, "RenderGraph must be built before preparing render data");
     passes->scene.prepareRenderData(frameContext(frameIndex));
 }
 
 void RenderGraph::execute(const EditorFrameInput& editor,
     uint32_t frameIndex, uint32_t imageIndex)
 {
-    CHECK(built && compiled, "RenderGraph must be built before execution");
+    DCHECK(built && compiled, "RenderGraph must be built before execution");
     currentFrame = frameIndex;
     currentImage = imageIndex;
     currentEditor = &editor;
@@ -402,7 +402,7 @@ void RenderGraph::execute(const EditorFrameInput& editor,
 
 uint32_t RenderGraph::readSelectionId(uint32_t frameIndex)
 {
-    CHECK(passEnabled("editor_picking"), "picking pass is disabled");
+    DCHECK(passEnabled("editor_picking"), "picking pass is disabled");
     return passes->picking.readSelectionId(frameIndex);
 }
 
@@ -419,6 +419,6 @@ vk::raii::CommandBuffer& RenderGraph::commands() const { return frameContext(cur
 uint32_t RenderGraph::frameIndex() const { return currentFrame; }
 const EditorFrameInput& RenderGraph::editorInput() const
 {
-    CHECK(currentEditor != nullptr, "editor frame input is only available during graph execution");
+    DCHECK(currentEditor);
     return *currentEditor;
 }

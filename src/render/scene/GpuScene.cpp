@@ -12,7 +12,7 @@ void GpuScene::load(RenderResourceManager& resources)
 {
     reset();
 
-    CHECK(context().sceneManager != nullptr, "GpuScene requires SceneManager");
+    DCHECK(context().sceneManager);
     const auto& manager = *context().sceneManager;
     for (const auto& actor : manager.scene().actors)
     {

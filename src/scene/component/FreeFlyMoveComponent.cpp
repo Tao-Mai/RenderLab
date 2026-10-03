@@ -22,7 +22,7 @@ void FreeFlyMoveComponent::init(Actor* actor)
 
 void FreeFlyMoveComponent::tick(float deltaTime)
 {
-    CHECK(context().sceneManager != nullptr && context().inputManager != nullptr,
+    DCHECK(context().sceneManager && context().inputManager,
         "movement requires SceneManager and InputManager");
     const auto& camera = context().sceneManager->editorCamera().camera();
     if (!camera.isNavigationActive()) return;

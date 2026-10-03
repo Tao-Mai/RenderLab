@@ -9,7 +9,7 @@
 
 void SceneManager::load(const SceneAsset::ID& id)
 {
-    CHECK(context().assetManager);
+    DCHECK(context().assetManager);
     load(context().assetManager->get<SceneAsset>(id));
 }
 
@@ -43,7 +43,7 @@ void SceneManager::load(const SceneAsset& scene)
 
 void SceneManager::save()
 {
-    CHECK(context().assetManager);
+    DCHECK(context().assetManager);
     SceneAsset snapshot;
     Deserialize(Serialize(data), snapshot);
     context().assetManager->save<SceneAsset>(std::move(snapshot));
@@ -71,7 +71,7 @@ const SceneAsset& SceneManager::scene() const noexcept { return data; }
 
 FreeFlyCameraActor& SceneManager::editorCamera() const
 {
-    CHECK(cameraActor);
+    DCHECK(cameraActor);
     return *cameraActor;
 }
 

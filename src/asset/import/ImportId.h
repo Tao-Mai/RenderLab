@@ -31,7 +31,7 @@ template <AssetType T>
 {
     std::string stem = source.stem().string();
     CHECK(!stem.empty(), "asset source has no filename stem: {}", source.string());
-    CHECK(context().assetManager != nullptr, "AssetManager is not initialized");
+    DCHECK(context().assetManager);
 
     const typename T::ID baseId{stem};
     if (context().assetManager->find<T>(baseId) == nullptr)

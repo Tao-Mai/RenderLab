@@ -16,8 +16,8 @@
 
 void Editor::init()
 {
-    CHECK(context().window != nullptr, "Window must exist before Editor");
-    CHECK(context().renderer != nullptr, "Renderer must exist before Editor");
+    DCHECK(context().window);
+    DCHECK(context().renderer);
 
     VulkanContext& vulkan = context().renderer->vulkanContext();
     Swapchain& swapchain = context().renderer->swapchainHandle();
@@ -49,7 +49,7 @@ void Editor::refreshUi()
 void Editor::saveScene()
 {
     Context& ctx = context();
-    CHECK(ctx.sceneManager != nullptr, "SceneManager must exist before save");
+    DCHECK(ctx.sceneManager);
     ctx.sceneManager->save();
     dirty = false;
 }

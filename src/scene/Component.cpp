@@ -4,12 +4,12 @@
 
 void Component::init(Actor* actor)
 {
-    CHECK(actor);
+    DCHECK(actor);
     owner = actor;
 }
 
 Actor& Component::actor() const
 {
-    CHECK(owner);
+    DCHECK(owner);
     return *owner;
 }

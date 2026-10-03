@@ -259,10 +259,12 @@ TEST(SceneManagerTest, ComponentOwnerIsBoundOnlyDuringInit)
     } actor;
     auto& component = *actor.getComponent<TestTickComponent>();
     EXPECT_EQ(component.inits, 0);
+#ifndef NDEBUG
     EXPECT_DEATH((void)component.actor(), "");
     EXPECT_DEATH((void)actor.transform().actor(), "");
     EXPECT_DEATH(component.init(nullptr), "");
     EXPECT_DEATH((void)component.actor(), "");
+#endif
 
     actor.init();
     EXPECT_EQ(component.inits, 1);
@@ -290,7 +292,9 @@ TEST(SceneManagerTest, AddComponentInitializesImmediatelyBeforeActorInit)
     EXPECT_EQ(component.value, 42);
     EXPECT_EQ(component.inits, 1);
     EXPECT_EQ(&component.actor(), &actor);
+#ifndef NDEBUG
     EXPECT_DEATH((void)actor.transform().actor(), "");
+#endif
 }
 
 TEST(SceneManagerTest, InvalidAdditionFailsBeforeActorInit)
@@ -485,7 +489,9 @@ TEST(SceneManagerTest, RegistryIteratesInheritedMembersAndRejectsDuplicateRegist
     const auto& type = BaseTypeInfo<Actor>::baseTypeInfoMap.at("FreeFlyCameraActor");
     type.IterateMembers(actor, [&](MemberRef member) { members.push_back(member.name); });
     EXPECT_EQ(members, (std::vector<std::string_view>{"name", "components"}));
+#ifndef NDEBUG
     EXPECT_DEATH((RegisterBase<TransformComponent, Component>("TransformComponent")), "");
+#endif
 }
 
 TEST(SceneManagerTest, NullPolymorphicPointersRoundTripButNullActorsAreRejected)

@@ -39,6 +39,6 @@ CameraComponent& FreeFlyCameraActor::camera()
 const CameraComponent& FreeFlyCameraActor::camera() const
 {
     auto* component = getComponent<CameraComponent>();
-    CHECK(component);
+    DCHECK(component);
     return *component;
 }

@@ -86,7 +86,7 @@ void FrameContext::reset() noexcept
 void FrameContext::updateFrameData(const ViewUniforms& view, const LightUniforms& lighting,
     std::span<const LightData> frameLights)
 {
-    CHECK(vulkan != nullptr && lighting.lightCount == frameLights.size(),
+    DCHECK(vulkan && lighting.lightCount == frameLights.size(),
         "frame light count must match the uploaded SSBO elements");
     const vk::DeviceSize bytes = std::max<size_t>(frameLights.size(), 1) * sizeof(LightData);
     CHECK(bytes <= vulkan->properties().limits.maxStorageBufferRange,

@@ -64,16 +64,16 @@ void Window::requestClose() const
 
 void Window::setKeyCallback(KeyCallback callback)
 {
-    CHECK(handle != nullptr, "window is not initialized");
-    CHECK(!callback || !onKey, "key callback is already registered");
+    DCHECK(handle);
+    DCHECK(!callback || !onKey, "key callback is already registered");
 
     onKey = std::move(callback);
 }
 
 void Window::setMouseButtonCallback(MouseButtonCallback callback)
 {
-    CHECK(handle != nullptr, "window is not initialized");
-    CHECK(!callback || !onMouseButton,
+    DCHECK(handle);
+    DCHECK(!callback || !onMouseButton,
         "mouse button callback is already registered");
 
     onMouseButton = std::move(callback);
@@ -81,15 +81,15 @@ void Window::setMouseButtonCallback(MouseButtonCallback callback)
 
 void Window::setFocusCallback(FocusCallback callback)
 {
-    CHECK(handle != nullptr, "window is not initialized");
-    CHECK(!callback || !onFocus, "focus callback is already registered");
+    DCHECK(handle);
+    DCHECK(!callback || !onFocus, "focus callback is already registered");
 
     onFocus = std::move(callback);
 }
 
 std::pair<double, double> Window::cursorPosition() const
 {
-    CHECK(handle != nullptr, "window is not initialized");
+    DCHECK(handle);
     double x = 0.0;
     double y = 0.0;
     glfwGetCursorPos(handle, &x, &y);
@@ -118,7 +118,7 @@ double Window::consumeScrollOffset()
 
 VkSurfaceKHR Window::createVulkanSurface(VkInstance instance) const
 {
-    CHECK(handle != nullptr, "window is not initialized");
+    DCHECK(handle);
 
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     CHECK(glfwCreateWindowSurface(instance, handle, nullptr, &surface) == VK_SUCCESS,
@@ -137,7 +137,7 @@ std::vector<const char *> Window::requiredVulkanExtensions() const
 
 std::pair<int, int> Window::framebufferSize() const
 {
-    CHECK(handle != nullptr, "window is not initialized");
+    DCHECK(handle);
 
     int width  = 0;
     int height = 0;

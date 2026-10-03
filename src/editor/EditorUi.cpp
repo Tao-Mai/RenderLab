@@ -512,7 +512,7 @@ void EditorUI::drawImportDialog()
             drawSourcePath(*source, meshFilter);
             break;
         default:
-            CHECK(false, "invalid import asset type");
+            DCHECK(false, "invalid import asset type");
     }
 
     const bool  validSource     = sourceIsImportable(*source, importAssetType);
@@ -565,7 +565,7 @@ void EditorUI::drawImportDialog()
                 importedId = AssetImporter::importMesh(meshSetting).value;
                 break;
             default:
-                CHECK(false, "invalid import asset type");
+                DCHECK(false, "invalid import asset type");
         }
         if (!environmentImport.valid())
         {

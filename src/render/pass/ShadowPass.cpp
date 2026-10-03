@@ -166,7 +166,7 @@ void ShadowPass::executePass(RenderGraph& graph) const
             for (const SceneRenderItem& item : graph.scene().renderItems())
             {
                 const auto* objectTransform = item.actor->getComponent<TransformComponent>();
-                CHECK(objectTransform != nullptr, "shadow caster is missing Transform");
+                DCHECK(objectTransform);
 
                 const ShadowPushConstants push{
                     .model = objectTransform->matrix(),

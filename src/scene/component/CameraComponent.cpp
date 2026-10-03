@@ -32,7 +32,7 @@ void CameraComponent::setInputEnabled(bool enabled) { inputEnabled = enabled; }
 
 void CameraComponent::tick(float deltaTime)
 {
-    CHECK(context().inputManager != nullptr && context().window != nullptr,
+    DCHECK(context().inputManager && context().window,
         "CameraComponent requires InputManager and Window");
     auto& window = *context().window;
     const auto& input = *context().inputManager;

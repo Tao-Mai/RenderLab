@@ -133,13 +133,13 @@ bool DescriptorManager::containsBinding(DescriptorLayoutPreset preset,
 vk::DescriptorSetLayout DescriptorManager::getOrCreateLayout(
     std::span<const vk::DescriptorSetLayoutBinding> bindings)
 {
-    CHECK(device != nullptr, "DescriptorManager is not initialized");
+    DCHECK(device);
     std::vector<vk::DescriptorSetLayoutBinding> sortedBindings(
         bindings.begin(), bindings.end());
     std::sort(sortedBindings.begin(), sortedBindings.end(),
         [](const auto& left, const auto& right)
         { return left.binding < right.binding; });
-    CHECK(std::adjacent_find(sortedBindings.begin(), sortedBindings.end(),
+    DCHECK(std::adjacent_find(sortedBindings.begin(), sortedBindings.end(),
         [](const auto& left, const auto& right)
         { return left.binding == right.binding; }) == sortedBindings.end(),
         "duplicate descriptor layout binding");
@@ -147,7 +147,7 @@ vk::DescriptorSetLayout DescriptorManager::getOrCreateLayout(
     key.reserve(sortedBindings.size());
     for (const auto& binding : sortedBindings)
     {
-        CHECK(binding.pImmutableSamplers == nullptr,
+        DCHECK(!binding.pImmutableSamplers,
             "immutable samplers are not supported by DescriptorManager layout cache");
         key.push_back({binding.binding, static_cast<uint32_t>(binding.descriptorType),
             binding.descriptorCount, static_cast<uint32_t>(binding.stageFlags)});
@@ -189,7 +189,7 @@ vk::DescriptorSetLayout DescriptorManager::getOrCreateLayout(
 
 vk::raii::DescriptorSet DescriptorManager::allocate(vk::DescriptorSetLayout targetLayout) const
 {
-    CHECK(device != nullptr && *pool, "DescriptorManager is not initialized");
+    DCHECK(device && *pool, "DescriptorManager is not initialized");
     const vk::DescriptorSetAllocateInfo info{
         .descriptorPool = *pool,
         .descriptorSetCount = 1,

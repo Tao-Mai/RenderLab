@@ -128,7 +128,7 @@ vk::PipelineLayout PipelineManager::layout(PipelineLayoutPreset preset) const
 
 vk::Pipeline PipelineManager::getOrCreate(const PipelineKey& key)
 {
-    CHECK(device != nullptr && descriptors != nullptr && shaders != nullptr,
+    DCHECK(device && descriptors && shaders,
         "PipelineManager is not initialized");
     if (const auto found = pipelines.find(key); found != pipelines.end())
     {

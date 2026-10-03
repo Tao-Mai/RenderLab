@@ -135,7 +135,7 @@ void ShaderManager::reset() noexcept
 
 ShaderHandle ShaderManager::getOrLoad(const ShaderAsset::ID& id)
 {
-    CHECK(device != nullptr && assets != nullptr, "ShaderManager is not initialized");
+    DCHECK(device && assets, "ShaderManager is not initialized");
     if (const auto found = handles.find(id); found != handles.end())
     {
         return found->second;
@@ -153,7 +153,7 @@ ShaderHandle ShaderManager::getOrLoad(const ShaderAsset::ID& id)
 
 vk::ShaderModule ShaderManager::module(ShaderHandle handle) const
 {
-    CHECK(handle.index > 0 && handle.index <= shaders.size(),
+    DCHECK(handle.index > 0 && handle.index <= shaders.size(),
           "invalid ShaderHandle {}",
           handle.index);
     return shaders[handle.index - 1]->handle();
@@ -161,7 +161,7 @@ vk::ShaderModule ShaderManager::module(ShaderHandle handle) const
 
 const ShaderMetadata& ShaderManager::metadata(ShaderHandle handle) const
 {
-    CHECK(handle.index > 0 && handle.index <= shaderMetadata.size(),
+    DCHECK(handle.index > 0 && handle.index <= shaderMetadata.size(),
           "invalid ShaderHandle {}",
           handle.index);
     return shaderMetadata[handle.index - 1];

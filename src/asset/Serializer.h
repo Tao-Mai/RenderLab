@@ -73,7 +73,7 @@ json Serialize(const std::unique_ptr<Base>& value)
 
     const auto& names = BaseTypeInfo<Base>::typeNames;
     const auto name = names.find(typeid(*value));
-    CHECK(name != names.end(), "unregistered polymorphic type");
+    DCHECK(name != names.end(), "unregistered polymorphic type");
 
     const auto& type = BaseTypeInfo<Base>::baseTypeInfoMap.at(name->second);
     return json{{name->second, type.SerializeBase(*value)}};
@@ -320,7 +320,7 @@ void RegisterBase(std::string_view name)
     auto& types = BaseTypeInfo<Base>::baseTypeInfoMap;
     auto& names = BaseTypeInfo<Base>::typeNames;
     const std::string ownedName{name};
-    CHECK(!ownedName.empty() && !types.contains(ownedName) && !names.contains(typeid(T)),
+    DCHECK(!ownedName.empty() && !types.contains(ownedName) && !names.contains(typeid(T)),
           "duplicate or empty registered type name: {}", ownedName);
 
     types.emplace(ownedName, BaseTypeInfo<Base>{

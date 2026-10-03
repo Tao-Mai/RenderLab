@@ -108,7 +108,7 @@ RenderResourceManager::~RenderResourceManager() = default;
 
 GpuUploadContext RenderResourceManager::uploadContext() const
 {
-    CHECK(vulkan != nullptr && *uploadPool,
+    DCHECK(vulkan && *uploadPool,
           "RenderResourceManager upload context is not initialized");
     return {vulkan->physicalDeviceHandle(), vulkan->deviceHandle(),
             uploadPool, vulkan->queueHandle()};
@@ -117,10 +117,8 @@ GpuUploadContext RenderResourceManager::uploadContext() const
 void RenderResourceManager::init(VulkanContext&     targetVulkan,
                                  DescriptorManager& targetDescriptors, ShaderManager& targetShaders)
 {
-    CHECK(context().assetManager != nullptr,
-          "AssetManager must exist before RenderResourceManager");
-    CHECK(context().assetDataManager != nullptr,
-          "AssetDataManager must exist before RenderResourceManager");
+    DCHECK(context().assetManager);
+    DCHECK(context().assetDataManager);
     assets      = context().assetManager;
     data        = context().assetDataManager;
     vulkan      = &targetVulkan;
@@ -176,7 +174,7 @@ GpuMesh& RenderResourceManager::mesh(const MeshAsset::ID& id)
 
 MaterialAsset RenderResourceManager::materialAsset(const MaterialAsset::ID& id) const
 {
-    CHECK(assets != nullptr, "RenderResourceManager is not initialized");
+    DCHECK(assets);
     return assets->get<MaterialAsset>(id);
 }
 
@@ -187,7 +185,7 @@ GpuMaterial& RenderResourceManager::material(const MaterialAsset::ID& id)
 
 GpuMaterial& RenderResourceManager::material(const MaterialAsset& asset)
 {
-    CHECK(descriptors != nullptr, "RenderResourceManager is not initialized");
+    DCHECK(descriptors);
 
     const std::string key = Serialize(asset).dump();
     if (const auto found = materials.find(key); found != materials.end())
@@ -235,7 +233,7 @@ vk::Sampler RenderResourceManager::sampler(const SamplerAsset::ID& id)
         return *found->second;
     }
 
-    CHECK(assets != nullptr && vulkan != nullptr,
+    DCHECK(assets && vulkan,
           "RenderResourceManager is not initialized");
     const SamplerAsset& asset = assets->get<SamplerAsset>(id);
     const auto& limits = vulkan->properties().limits;

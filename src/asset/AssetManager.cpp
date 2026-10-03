@@ -35,7 +35,7 @@ void AssetManager::init()
     {
         return;
     }
-    CHECK(context().config != nullptr, "ConfigManager must exist before AssetManager");
+    DCHECK(context().config);
     loadAll();
     inited = true;
 }

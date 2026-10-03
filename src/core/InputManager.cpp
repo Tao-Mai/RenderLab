@@ -99,8 +99,8 @@ InputManager::~InputManager() { shutdown(); }
 void InputManager::init()
 {
     if (window != nullptr) return;
-    CHECK(context().window != nullptr && context().window->nativeHandle() != nullptr &&
-        context().config != nullptr && context().inputManager == this,
+    DCHECK(context().window && context().window->nativeHandle() &&
+        context().config && context().inputManager == this,
         "InputManager requires an initialized Window and ConfigManager in Context");
 
     bindings = context().config->commandConfig().bindings;

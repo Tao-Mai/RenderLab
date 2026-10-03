@@ -22,7 +22,7 @@ RenderGraph::registerPass(std::string_view name, uint32_t inputSlotCount,
     uint32_t outputSlotCount, std::function<void(RenderGraph&)> setup,
     std::function<void(RenderGraph&)> execute)
 {
-    CHECK(!name.empty() && !passInfos.contains(std::string(name)),
+    DCHECK(!name.empty() && !passInfos.contains(std::string(name)),
         "duplicate or empty render pass name '{}'", name);
 
     auto info = std::make_unique<PassInfo>();
@@ -51,7 +51,7 @@ RenderGraph::registerPass(std::string_view name, uint32_t inputSlotCount,
 void RenderGraph::setPassEnabled(std::string_view name, bool enabled)
 {
     const auto found = passInfos.find(std::string(name));
-    CHECK(found != passInfos.end(), "unknown render pass '{}'", name);
+    DCHECK(found != passInfos.end(), "unknown render pass '{}'", name);
     found->second->enabled = enabled;
     compiled = false;
     built = false;
@@ -60,14 +60,14 @@ void RenderGraph::setPassEnabled(std::string_view name, bool enabled)
 bool RenderGraph::passEnabled(std::string_view name) const
 {
     const auto found = passInfos.find(std::string(name));
-    CHECK(found != passInfos.end(), "unknown render pass '{}'", name);
+    DCHECK(found != passInfos.end(), "unknown render pass '{}'", name);
     return found->second->enabled;
 }
 
 RenderGraph::ResourceHandle RenderGraph::outputSlot(std::string_view name, uint32_t index) const
 {
     const auto found = passInfos.find(std::string(name));
-    CHECK(found != passInfos.end() && index < found->second->outputResourceHandles.size(),
+    DCHECK(found != passInfos.end() && index < found->second->outputResourceHandles.size(),
         "unknown output {} of render pass '{}'", index, name);
     return found->second->outputResourceHandles[index];
 }
@@ -75,7 +75,7 @@ RenderGraph::ResourceHandle RenderGraph::outputSlot(std::string_view name, uint3
 void RenderGraph::createResource(ResourceHandle input, const ResourceDesc& desc)
 {
     Slot& slot = globalInputSlots.at(input);
-    CHECK(slot.binding == Binding::Unbound, "input slot {} is already bound", input);
+    DCHECK(slot.binding == Binding::Unbound, "input slot {} is already bound", input);
     slot.binding = Binding::Resource;
     slot.resource = static_cast<ResourceHandle>(resources.size());
     slot.desc = desc;
@@ -87,7 +87,7 @@ void RenderGraph::createResource(ResourceHandle input, const ResourceDesc& desc)
 RenderGraph::ResourceHandle RenderGraph::importExternal(const ResourceDesc& desc,
     std::vector<ExternalResource> instances, bool swapchainIndexed)
 {
-    CHECK(!instances.empty(), "external resources require physical instances");
+    DCHECK(!instances.empty(), "external resources require physical instances");
     for (ResourceHandle index = 0; index < resources.size(); ++index)
     {
         const Resource& resource = resources[index];
@@ -98,7 +98,7 @@ RenderGraph::ResourceHandle RenderGraph::importExternal(const ResourceDesc& desc
                 [](const ExternalResource& a, const ExternalResource& b)
                 { return a.image == b.image && a.buffer == b.buffer; }))
         {
-            CHECK(resource.creation.format == desc.format && resource.creation.extent == desc.extent &&
+            DCHECK(resource.creation.format == desc.format && resource.creation.extent == desc.extent &&
                 resource.creation.size == desc.size && resource.creation.mipLevels == desc.mipLevels &&
                 resource.creation.arrayLayers == desc.arrayLayers && resource.creation.aspect == desc.aspect &&
                 resource.creation.imageUsage == desc.imageUsage && resource.creation.bufferUsage == desc.bufferUsage,
@@ -117,7 +117,7 @@ void RenderGraph::importResource(ResourceHandle input, const ResourceDesc& desc,
     std::vector<ExternalResource> instances, bool swapchainIndexed)
 {
     Slot& slot = globalInputSlots.at(input);
-    CHECK(slot.binding == Binding::Unbound, "external input slot {} is already bound", input);
+    DCHECK(slot.binding == Binding::Unbound, "external input slot {} is already bound", input);
     slot.binding = Binding::Resource;
     slot.resource = importExternal(desc, std::move(instances), swapchainIndexed);
     slot.desc = desc;
@@ -128,8 +128,8 @@ void RenderGraph::importResource(ResourceHandle input, const ResourceDesc& desc,
 void RenderGraph::bindInput(ResourceHandle input, ResourceHandle output, const ResourceDesc& desc)
 {
     Slot& slot = globalInputSlots.at(input);
-    CHECK(slot.binding == Binding::Unbound, "input slot {} is already bound", input);
-    CHECK(slot.owner != globalOutputSlots.at(output).owner,
+    DCHECK(slot.binding == Binding::Unbound, "input slot {} is already bound", input);
+    DCHECK(slot.owner != globalOutputSlots.at(output).owner,
         "a pass input must depend on another pass output; create new resources on its input");
     slot.binding = Binding::Alias;
     slot.ref = output;
@@ -141,7 +141,7 @@ void RenderGraph::bindInput(ResourceHandle input, ResourceHandle output, const R
 void RenderGraph::bindOutput(ResourceHandle output, ResourceHandle input, const ResourceDesc& desc)
 {
     Slot& slot = globalOutputSlots.at(output);
-    CHECK(slot.binding == Binding::Unbound && slot.owner == globalInputSlots.at(input).owner,
+    DCHECK(slot.binding == Binding::Unbound && slot.owner == globalInputSlots.at(input).owner,
         "output slot {} must bind an unbound output to its own pass input", output);
     slot.binding = Binding::Alias;
     slot.ref = input;
@@ -153,7 +153,7 @@ void RenderGraph::bindOutput(ResourceHandle output, ResourceHandle input, const 
 void RenderGraph::ignoreInput(ResourceHandle input)
 {
     Slot& slot = globalInputSlots.at(input);
-    CHECK(slot.binding == Binding::Unbound, "input slot {} is already bound", input);
+    DCHECK(slot.binding == Binding::Unbound, "input slot {} is already bound", input);
     slot.binding = Binding::Ignored;
     compiled = false;
     built = false;
@@ -403,7 +403,7 @@ std::vector<std::string> RenderGraph::executionOrder() const
 
 const RenderGraph::ResourceDesc& RenderGraph::resourceDesc(ResourceHandle input) const
 {
-    CHECK(compiled, "render graph must be compiled before resolving resources");
+    DCHECK(compiled);
     return resources.at(globalInputSlots.at(input).resource).merged;
 }
 

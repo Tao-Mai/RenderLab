@@ -12,7 +12,7 @@ are not serialized.
 Constructors use `addDefaultComponent<T>()` to assemble components without initializing
 them; deserialization also only assembles components. `Actor::init()` validates
 the complete component array, then calls each component's virtual `init(Actor*)`.
-`Component::init()` rejects a null Actor and binds the private owner pointer.
+`Component::init()` uses DCHECK to detect a null Actor in Debug and binds the private owner pointer.
 Overrides call the base implementation and check their own component dependencies
 through the supplied Actor; dependency presence does not depend on array order.
 Camera, movement, Render and Light require Transform. The two movement components

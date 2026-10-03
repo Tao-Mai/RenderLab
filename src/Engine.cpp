@@ -52,7 +52,7 @@ void Engine::init()
 
 void Engine::run()
 {
-    CHECK(inited, "Engine must be initialized before run()");
+    DCHECK(inited);
     mainLoop();
 }
 
