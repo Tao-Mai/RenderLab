@@ -338,8 +338,10 @@ std::vector<std::string> RenderGraph::compile()
         {
             errors.push_back(std::format("incomplete buffer creation description for resource {}", r));
         }
-        if (desc.type == ResourceType::Image && desc.viewType == vk::ImageViewType::eCube &&
-            (!(desc.imageFlags & vk::ImageCreateFlagBits::eCubeCompatible) || desc.arrayLayers != 6 ||
+        if (desc.type == ResourceType::Image &&
+            (desc.viewType == vk::ImageViewType::eCube || desc.viewType == vk::ImageViewType::eCubeArray) &&
+            (!(desc.imageFlags & vk::ImageCreateFlagBits::eCubeCompatible) ||
+             (desc.viewType == vk::ImageViewType::eCube ? desc.arrayLayers != 6 : desc.arrayLayers % 6 != 0) ||
              desc.extent.width != desc.extent.height || desc.extent.depth != 1))
         {
             errors.push_back(std::format("invalid cubemap creation description for resource {}", r));

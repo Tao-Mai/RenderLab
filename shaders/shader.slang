@@ -69,7 +69,7 @@ Texture2D<float4> brdfLUT;
 SamplerState brdfLUTSampler;
 
 [[vk::binding(9, 0)]]
-TextureCube<float> pointShadowMap;
+TextureCubeArray<float> pointShadowMap;
 
 [[vk::binding(10, 0)]]
 SamplerState pointShadowSampler;
@@ -134,7 +134,7 @@ float4 fragMain(VertexOutput input) : SV_Target
         }
 
         // 阴影
-        // float depth = pointShadowMap.SampleLevel(pointShadowSampler, -L, 0.0).r;
+        // float depth = pointShadowMap.SampleLevel(pointShadowSampler, float4(-L, light.shadowidx), 0.0).r;
     }
 
     float3 ambient = float3(0.0);

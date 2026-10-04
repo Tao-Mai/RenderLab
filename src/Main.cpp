@@ -10,7 +10,6 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
-#include <vulkan/vulkan_structs.hpp>
 
 int main(int argc, char** argv)
 {

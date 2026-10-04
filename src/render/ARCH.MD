@@ -11,9 +11,9 @@ Graph 和 Pass 按当前 Renderer 直接耦合。slot 表负责图资源的依�
 
 ## 资源边界
 
-- Graph 拥有：每帧 Scene depth、Shadow cubemap、Picking image、Picking readback buffer。
+- Graph 拥有：每帧 Scene depth、Shadow cubemap array、Picking image、Picking readback buffer。
 - 外部导入：swapchain images/views、环境纹理和 BRDF LUT。
-- FrameContext 持有一个 FrameData，后者管理 ViewUniforms/LightUniforms UBO 和 LightData[] SSBO。Renderer 在 execute 前更新，Pass 直接引用该帧的 Scene Set；这些 buffer 不经过 slot。
+- FrameContext 持有一个 FrameData，后者管理 ViewUniforms/LightUniforms UBO、LightData[] 和 PointShadowData[] SSBO。上传时分配有效点光源的 shadowidx，并计算六面 VP；Shadow 用 multiview 渲染六层。Pass 直接引用该帧的 Scene Set；这些 buffer 不经过 slot。
 - Mesh/Material 的 buffer、材质纹理由 RenderSystem 直接引用，RenderResourceManager 创建和持有，资产 GPU 资源实现负责上传同步和可供绘制使用的状态。
 - Pipeline/Shader/Descriptor 的长期缓存由对应 Manager 拥有。
 

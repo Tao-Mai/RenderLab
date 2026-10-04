@@ -29,7 +29,7 @@ enum class LightType : uint {
     Spot = 3,
 };
 
-// std430 array stride = 80 bytes. flags = {type, enabled, castShadow, reserved}.
+// std430 array stride = 96 bytes. flags = {type, enabled, castShadow, reserved}.
 struct LightData
 {
     float4 colorIntensity;
@@ -37,6 +37,10 @@ struct LightData
     float4 direction;
     float4 areaSizeCone;
     uint4 flags;
+    uint shadowidx;
+    uint padding0;
+    uint padding1;
+    uint padding2;
 
     property color : float3 {
         get { return colorIntensity.rgb; }
@@ -57,11 +61,16 @@ struct LightData
     }
 
     property enabled : bool {
-        get { return flags.y; }
+        get { return flags.y != 0; }
     }
     property castShadow : bool {
-        get { return flags.z; }
+        get { return flags.z != 0; }
     }
+};
+
+struct PointShadowData
+{
+    float4x4 vp[6];
 };
 
 [[vk::binding(0, 0)]]
@@ -72,5 +81,8 @@ ConstantBuffer<LightUniforms> lightUniforms;
 
 [[vk::binding(12, 0)]]
 StructuredBuffer<LightData> lights;
+
+[[vk::binding(13, 0)]]
+StructuredBuffer<PointShadowData> pointShadowData;
 
 #endif

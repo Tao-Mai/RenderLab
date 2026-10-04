@@ -9,7 +9,10 @@ struct VertexInput
 struct PushConstants
 {
     float4x4 model;
-    float4x4 viewProjection;
+    uint lightidx;
+    uint padding0;
+    uint padding1;
+    uint padding2;
 };
 
 [[vk::push_constant]]
@@ -22,11 +25,12 @@ struct VertexOutput
 };
 
 [shader("vertex")]
-VertexOutput vertMain(VertexInput input)
+VertexOutput vertMain(VertexInput input, uint viewID : SV_ViewID)
 {
     VertexOutput output;
     float4 worldPosition = mul(pushConstants.model, float4(input.position, 1.0));
-    output.position = mul(pushConstants.viewProjection, worldPosition);
+    const LightData light = lights[pushConstants.lightidx];
+    output.position = mul(pointShadowData[light.shadowidx].vp[viewID], worldPosition);
     output.worldPosition = worldPosition.xyz;
     return output;
 }
@@ -34,9 +38,8 @@ VertexOutput vertMain(VertexInput input)
 [shader("fragment")]
 float fragMain(VertexOutput input) : SV_Depth
 {
-    // ShadowPass draws only for the first light when it is an enabled shadow-casting point light.
     // Depth 0..1 stores radial distance divided by the point light range.
-    const LightData light = lights[0];
+    const LightData light = lights[pushConstants.lightidx];
     return saturate(distance(input.worldPosition,
         light.positionRange.xyz) / light.positionRange.w);
 }

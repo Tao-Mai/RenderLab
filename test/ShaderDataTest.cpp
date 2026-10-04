@@ -100,6 +100,10 @@ TEST(ShaderDataLayout, LightStorageElementsMatchCompiledShaders)
         Field{"direction", offsetof(LightData, direction), sizeof(glm::vec4)},
         Field{"areaSizeCone", offsetof(LightData, areaSizeCone), sizeof(glm::vec4)},
         Field{"flags", offsetof(LightData, flags), sizeof(glm::uvec4)},
+        Field{"shadowidx", offsetof(LightData, shadowidx), sizeof(uint32_t)},
+        Field{"padding0", offsetof(LightData, padding0), sizeof(uint32_t)},
+        Field{"padding1", offsetof(LightData, padding1), sizeof(uint32_t)},
+        Field{"padding2", offsetof(LightData, padding2), sizeof(uint32_t)},
     };
     for (const auto* shader : shaders)
     {
@@ -111,4 +115,22 @@ TEST(ShaderDataLayout, LightStorageElementsMatchCompiledShaders)
         checkFields(type.at("resultType"), expected);
         EXPECT_EQ(expected.back().offset + expected.back().size, sizeof(LightData));
     }
+}
+
+TEST(ShaderDataLayout, PointShadowStorageAndPushConstantsMatchCompiledShader)
+{
+    const auto shadow = parameter("shadow", "pointShadowData");
+    EXPECT_EQ(shadow.at("binding").at("index").get<uint32_t>(), RenderInterface::pointShadowBufferBinding);
+    const std::array expected = {Field{"vp", offsetof(PointShadowData, vp), sizeof(PointShadowData::vp)}};
+    checkFields(shadow.at("type").at("resultType"), expected);
+
+    const auto push = parameter("shadow", "pushConstants");
+    const std::array pushFields = {
+        Field{"model", offsetof(ShadowPushConstants, model), sizeof(glm::mat4)},
+        Field{"lightidx", offsetof(ShadowPushConstants, lightidx), sizeof(uint32_t)},
+        Field{"padding0", offsetof(ShadowPushConstants, padding0), sizeof(uint32_t)},
+        Field{"padding1", offsetof(ShadowPushConstants, padding1), sizeof(uint32_t)},
+        Field{"padding2", offsetof(ShadowPushConstants, padding2), sizeof(uint32_t)},
+    };
+    checkFields(push.at("type").at("elementType"), pushFields);
 }

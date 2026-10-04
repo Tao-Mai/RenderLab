@@ -7,6 +7,26 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <numbers>
+
+#include <glm/gtc/matrix_transform.hpp>
+
+namespace
+{
+constexpr std::array faceDirections = {
+    glm::vec3{1.0f, 0.0f, 0.0f}, glm::vec3{-1.0f, 0.0f, 0.0f},
+    glm::vec3{0.0f, 1.0f, 0.0f}, glm::vec3{0.0f, -1.0f, 0.0f},
+    glm::vec3{0.0f, 0.0f, 1.0f}, glm::vec3{0.0f, 0.0f, -1.0f},
+};
+
+// Face up vectors account for Vulkan's downward-growing image coordinates.
+constexpr std::array faceUp = {
+    glm::vec3{0.0f, -1.0f, 0.0f}, glm::vec3{0.0f, -1.0f, 0.0f},
+    glm::vec3{0.0f, 0.0f, 1.0f}, glm::vec3{0.0f, 0.0f, -1.0f},
+    glm::vec3{0.0f, -1.0f, 0.0f}, glm::vec3{0.0f, -1.0f, 0.0f},
+};
+}
 
 void FrameData::init(const VulkanContext& targetVulkan, DescriptorManager& descriptors)
 {
@@ -20,6 +40,8 @@ void FrameData::init(const VulkanContext& targetVulkan, DescriptorManager& descr
     // Even a scene without lights needs a nonempty, valid storage descriptor.
     lightBuffer = Buffer(vulkan->physicalDeviceHandle(), vulkan->deviceHandle(),
         sizeof(LightData), vk::BufferUsageFlagBits::eStorageBuffer, hostMemory);
+    pointShadowBuffer = Buffer(vulkan->physicalDeviceHandle(), vulkan->deviceHandle(),
+        sizeof(PointShadowData), vk::BufferUsageFlagBits::eStorageBuffer, hostMemory);
     sceneSet = descriptors.allocate(DescriptorLayoutPreset::Scene);
     bindBuffers();
 }
@@ -30,6 +52,7 @@ void FrameData::bindBuffers()
         vk::DescriptorBufferInfo{.buffer = viewBuffer.handle(), .range = viewBuffer.size()},
         vk::DescriptorBufferInfo{.buffer = lightUniformBuffer.handle(), .range = lightUniformBuffer.size()},
         vk::DescriptorBufferInfo{.buffer = lightBuffer.handle(), .range = lightBuffer.size()},
+        vk::DescriptorBufferInfo{.buffer = pointShadowBuffer.handle(), .range = pointShadowBuffer.size()},
     };
     const std::array writes = {
         vk::WriteDescriptorSet{.dstSet = *sceneSet, .dstBinding = RenderInterface::viewUniformBinding,
@@ -41,6 +64,9 @@ void FrameData::bindBuffers()
         vk::WriteDescriptorSet{.dstSet = *sceneSet, .dstBinding = RenderInterface::lightBufferBinding,
             .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer,
             .pBufferInfo = &infos[2]},
+        vk::WriteDescriptorSet{.dstSet = *sceneSet, .dstBinding = RenderInterface::pointShadowBufferBinding,
+            .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer,
+            .pBufferInfo = &infos[3]},
     };
     vulkan->deviceHandle().updateDescriptorSets(writes, {});
 }
@@ -51,10 +77,12 @@ void FrameData::reset() noexcept
     viewBuffer.reset();
     lightUniformBuffer.reset();
     lightBuffer.reset();
+    pointShadowBuffer.reset();
 
     viewData = {};
     lightMetadata = {};
     lights.clear();
+    pointShadows.clear();
     vulkan = nullptr;
 }
 
@@ -63,32 +91,61 @@ void FrameData::update(const ViewUniforms& view, const LightUniforms& lighting,
 {
     DCHECK(vulkan && lighting.lightCount == frameLights.size(),
         "frame light count must match the uploaded SSBO elements");
-    const vk::DeviceSize bytes = std::max<size_t>(frameLights.size(), 1) * sizeof(LightData);
-    CHECK(bytes <= vulkan->properties().limits.maxStorageBufferRange,
-        "light SSBO exceeds maxStorageBufferRange");
-
-    if (bytes > lightBuffer.size())
+    lights.assign(frameLights.begin(), frameLights.end());
+    pointShadows.clear();
+    for (LightData& light : lights)
     {
+        light.shadowidx = ~0u;
+        if (!light.enable() || !light.castShadow() || light.type() != LightComponent::Type::Point)
+            continue;
+
+        const float range = light.range();
+        CHECK(std::isfinite(range) && range > 0.0f,
+            "shadow-casting point light requires a positive finite range");
+        const float nearPlane = std::min(0.1f, range * 0.1f);
+        const glm::mat4 projection = glm::perspective(std::numbers::pi_v<float> * 0.5f,
+            1.0f, nearPlane, range);
+        const glm::vec3 position = light.position();
+
+        light.shadowidx = static_cast<uint32_t>(pointShadows.size());
+        PointShadowData& shadow = pointShadows.emplace_back();
+        for (size_t face = 0; face < shadow.vp.size(); ++face)
+            shadow.vp[face] = projection * glm::lookAt(position,
+                position + faceDirections[face], faceUp[face]);
+    }
+
+    const auto ensureStorage = [&](Buffer& buffer, vk::DeviceSize bytes)
+    {
+        CHECK(bytes <= vulkan->properties().limits.maxStorageBufferRange,
+            "frame SSBO exceeds maxStorageBufferRange");
+        if (bytes <= buffer.size()) return false;
+
         // The current frame's fence is complete; other frames keep their buffers.
-        lightBuffer.reset();
-        lightBuffer = Buffer(vulkan->physicalDeviceHandle(), vulkan->deviceHandle(),
+        buffer.reset();
+        buffer = Buffer(vulkan->physicalDeviceHandle(), vulkan->deviceHandle(),
             bytes, vk::BufferUsageFlagBits::eStorageBuffer,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-        bindBuffers();
-    }
+        return true;
+    };
+    const bool lightsGrew = ensureStorage(lightBuffer, std::max<size_t>(lights.size(), 1) * sizeof(LightData));
+    const bool shadowsGrew = ensureStorage(pointShadowBuffer,
+        std::max<size_t>(pointShadows.size(), 1) * sizeof(PointShadowData));
+    if (lightsGrew || shadowsGrew) bindBuffers();
 
     viewData = view;
     lightMetadata = lighting;
-    lights.assign(frameLights.begin(), frameLights.end());
     viewBuffer.upload(&viewData, sizeof(viewData));
     lightUniformBuffer.upload(&lightMetadata, sizeof(lightMetadata));
     if (!lights.empty()) lightBuffer.upload(lights.data(), lights.size() * sizeof(LightData));
+    if (!pointShadows.empty())
+        pointShadowBuffer.upload(pointShadows.data(), pointShadows.size() * sizeof(PointShadowData));
     // Host-coherent writes become available to device reads at queue submission.
 }
 
 const ViewUniforms& FrameData::viewUniforms() const { return viewData; }
 const LightUniforms& FrameData::lightUniforms() const { return lightMetadata; }
 std::span<const LightData> FrameData::lightData() const { return lights; }
+std::span<const PointShadowData> FrameData::pointShadowData() const { return pointShadows; }
 
 vk::DescriptorSet FrameData::sceneSetHandle() const
 {

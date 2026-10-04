@@ -218,10 +218,17 @@ bool VulkanContext::isDeviceSuitable(vk::raii::PhysicalDevice const& physicalDev
                                                          vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
     bool supportsRequiredFeatures = features.template get<
             vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters &&
+        features.template get<vk::PhysicalDeviceVulkan11Features>().multiview &&
+        features.template get<vk::PhysicalDeviceFeatures2>().features.imageCubeArray &&
         features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
         features.template get<vk::PhysicalDeviceVulkan13Features>().synchronization2 &&
         features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().
                  extendedDynamicState;
+
+    const auto properties = physicalDevice.getProperties2<vk::PhysicalDeviceProperties2,
+        vk::PhysicalDeviceVulkan11Properties>();
+    supportsRequiredFeatures = supportsRequiredFeatures &&
+        properties.get<vk::PhysicalDeviceVulkan11Properties>().maxMultiviewViewCount >= 6;
 
     // Return true if the physicalDevice meets all the criteria
     return supportsVulkan1_3 && supportsGraphicsAndPresent &&
@@ -294,7 +301,7 @@ void VulkanContext::createLogicalDevice()
                        vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>
                        featureChain = {
             {}, // vk::PhysicalDeviceFeatures2
-            {.shaderDrawParameters = true}, // vk::PhysicalDeviceVulkan11Features
+            {.multiview = true, .shaderDrawParameters = true}, // vk::PhysicalDeviceVulkan11Features
             {.shaderSampledImageArrayNonUniformIndexing = rayTracingSupported,
              .bufferDeviceAddress = rayTracingSupported},
             {.synchronization2 = true, .dynamicRendering = true},
@@ -308,6 +315,7 @@ void VulkanContext::createLogicalDevice()
     featureChain.get<vk::PhysicalDeviceFeatures2>().features.samplerAnisotropy =
         deviceFeatures.samplerAnisotropy;
     featureChain.get<vk::PhysicalDeviceFeatures2>().features.shaderInt64 = rayTracingSupported;
+    featureChain.get<vk::PhysicalDeviceFeatures2>().features.imageCubeArray = true;
 
     std::vector<const char*> extensions = requiredDeviceExtension;
     if (rayTracingSupported)

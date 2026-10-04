@@ -72,6 +72,7 @@ std::size_t PipelineKeyHash::operator()(const PipelineKey& key) const noexcept
     combine(key.state.blend);
     combine(static_cast<uint32_t>(key.colorFormat));
     combine(static_cast<uint32_t>(key.depthFormat));
+    combine(key.viewMask);
     return seed;
 }
 
@@ -222,7 +223,8 @@ vk::Pipeline PipelineManager::getOrCreate(const PipelineKey& key)
          .pColorBlendState = &colorBlend,
          .pDynamicState = &dynamic,
          .layout = layout(key.layout)},
-        {.colorAttachmentCount = hasColor ? 1u : 0u,
+        {.viewMask = key.viewMask,
+         .colorAttachmentCount = hasColor ? 1u : 0u,
          .pColorAttachmentFormats = hasColor ? &key.colorFormat : nullptr,
          .depthAttachmentFormat = key.depthFormat},
     };

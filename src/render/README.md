@@ -14,7 +14,7 @@
 | `RenderResourceManager` | Mesh/Texture/Material/Sampler 资产到 GPU 对象的映射和缓存 | 资产级；当前缓存至 Renderer 关闭 |
 | `RenderGraph` | 注册 Pass、解析 slot、校验依赖、合并 usage、分配内部资源、barrier 和命令录制 | Graph 长期存在；内部资源在 build 时重建 |
 | `FrameContext` | CommandPool/Buffer、Fence、imageAvailable，以及一个 FrameData | 每个 frame-in-flight 一份 |
-| `FrameData` | View/Light CPU 数据与 UBO、灯光 SSBO、Scene Set、数据上传与扩容 | 由对应 FrameContext 持有 |
+| `FrameData` | View/Light CPU 数据与 UBO、灯光/点阴影 SSBO、Scene Set、数据上传与扩容 | 由对应 FrameContext 持有 |
 
 Renderer 持有上述模块和 `RenderSystem`。Graph 持有 Shadow、Scene、RayTracing、EditorPicking、EditorUi 节点。Skybox 的 ShaderHandle、Pipeline/Layout 引用和命令录制统一放在 ScenePass 内部。光栅 Pipeline 由 PipelineManager 缓存，光追 Pipeline/SBT/BLAS/TLAS 由 RayTracingPass 持有；Pass 通过自己的 input slot 获取图资源。
 
@@ -41,20 +41,21 @@ SceneManager 持有 AActor 和 Component。RenderSystem 整理场景对象，在
 | 0 Scene | 0 | ViewUniforms UBO |
 | 0 Scene | 11 | LightUniforms UBO：light count、IBL 参数 |
 | 0 Scene | 12 | LightData[] SSBO |
+| 0 Scene | 13 | PointShadowData[] SSBO：每个点光源六个 VP |
 | 0 Scene | 1 / 2 | Irradiance image / sampler |
 | 0 Scene | 3 / 4 | Prefiltered specular image / sampler |
 | 0 Scene | 5 / 6 | BRDF LUT image / sampler |
 | 0 Scene | 7 / 8 | Radiance image / sampler |
-| 0 Scene | 9 / 10 | Point shadow cubemap image / sampler |
+| 0 Scene | 9 / 10 | Point shadow cubemap array image / sampler |
 | 1 Material | 0 | Base color image |
 | 1 Material | 1 | Base color sampler |
 | 1 Material | 2 | MaterialUniforms UBO |
 
-每个 FrameContext 持有一个 FrameData，后者管理 Scene Set、两个 UBO 和灯光 SSBO。ViewUniforms 包含 viewProjection、inverseViewProjection 和 cameraPosition，共 144 字节。LightUniforms 包含 lightCount 和 iblParameters，共 32 字节；iblParameters.x 是 prefiltered specular 的最大 LOD。SSBO 按 RenderSystem 的灯光顺序存放 LightData，每项 80 字节，包括 color/intensity、position/range、direction、area/cone 和 flags。lightCount 包括禁用灯光，Scene shader 跳过 enabled 为 0 的项，并累加现有点光源计算的结果。
+每个 FrameContext 持有一个 FrameData，后者管理 Scene Set、两个 UBO、灯光 SSBO 和点光源阴影 SSBO。ViewUniforms 包含 viewProjection、inverseViewProjection 和 cameraPosition，共 144 字节。LightUniforms 包含 lightCount 和 iblParameters，共 32 字节；iblParameters.x 是 prefiltered specular 的最大 LOD。LightData 按 RenderSystem 的灯光顺序存放，每项 96 字节，包含 shadowidx；lightCount 包括禁用灯光。上传时，仅 enabled 且 castShadow 的点光源获得连续的 shadowidx，其余为 ~0u。PointShadowData 每项包含六个 VP，共 384 字节。
 
 SSBO 至少分配一项以维持有效 descriptor；没有灯光时 lightCount 为 0，shader 不读取数组。数量增长时，在当前帧 fence 完成后扩容并更新该帧 descriptor，其他帧保持自己的 buffer。
 
-GpuMaterial 持有 Material Set。set 2 Object 和 set 3 Pass 的编号已保留，当前没有对应预设 Layout；对象变换、拾取 ID 和 Shadow 的矩阵通过 Push Constant 传递。
+GpuMaterial 持有 Material Set。set 2 Object 和 set 3 Pass 的编号已保留，当前没有对应预设 Layout；对象变换、拾取 ID 和 Shadow 的 lightidx 通过 Push Constant 传递。
 
 `PipelineLayoutPreset` 提供 SceneMaterial（set 0 + set 1）和 SceneOnly（set 0）。`PipelineState::preset(RenderMode)` 提供 Opaque、AlphaTest、Transparent、Shadow、DepthOnly、Skybox、PostProcess、LightMarker、Picking 状态模板。DepthOnly 只是状态模板，目前没有独立的深度预绘制节点。
 
@@ -111,7 +112,7 @@ Scene、Shadow 和 Picking 消费 RenderSystem 生成的 DrawItem，其中包含
 
 ## 绘制行为
 
-Shadow 使用当前 FrameData 的第一项 LightData，与 shader 中的 lights[0] 对应。启用投影的点光源以 range 为 far plane，从六个方向绘制到 1024 × 1024 × 6 深度 cubemap；fragment 写入 `distance(worldPosition, lightPosition) / range` 的线性深度。没有投影时清为 1。完成后切换到深度只读状态。Scene shader 目前只声明 set 0 的 Shadow 资源，尚不采样；Shadow 绘制暂未处理透明材质和 AlphaTest 镂空。
+FrameData 在上传时为启用投影的点光源计算六个 VP，range 为 far plane。Shadow 遍历当前帧全部灯光，对有效点光源各录制一次六面 multiview 渲染，viewMask = 0b111111；shader 按 lightidx → shadowidx → VP[SV_ViewID] 取矩阵。每个 shadowidx 对应 cubemap array 中独立的六层，fragment 写入 `distance(worldPosition, lightPosition) / range` 的线性深度。没有投影时清空第一个 cube。完成后整图切换到深度只读状态。Scene shader 的阴影采样仍未启用，其他光源阴影、透明和 AlphaTest 镂空暂不处理。设备需要支持至少六个 multiview view 和 imageCubeArray。
 
 有环境贴图时，Scene 内部在 opaque 之后绘制 Skybox。fullscreen triangle 的深度为 1，fragment 从 ViewUniforms 读取逆视投影矩阵和相机位置，结合 push constant 中的编辑器视口重建世界方向，采样 radiance 基础 mip。保留深度测试、关闭深度写入，并请求早期深度测试。随后透明几何按距离从远到近绘制，再绘制灯光标记。
 
@@ -120,7 +121,7 @@ Picking 复用 Scene 深度，只在请求拾取时绘制点击像素的 selecti
 ## 每帧流程
 
 1. Renderer 等待当前 FrameContext 的 Fence，Acquire 交换链图像，重置 Fence。
-2. RenderSystem prepare 整理本帧 DrawItem、灯光标记、透明排序和 LightData，Renderer 上传 View/Light UBO 与灯光 SSBO；这些都在 Graph execute 之前完成。
+2. RenderSystem prepare 整理本帧 DrawItem、灯光标记、透明排序和 LightData；FrameData 计算点光源六面 VP，上传 View/Light UBO、灯光和点阴影 SSBO，均在 Graph execute 之前完成。
 3. Graph execute 重置并开始 CommandBuffer，按编译顺序应用 input barrier、调用 executePass、应用 output 状态；Pass 直接绑定当前 FrameData 的外部 Scene Set，UI 由 EditorUi 节点录制。
 4. Graph 将交换链图像转为 Present 状态，结束 CommandBuffer。
 5. Renderer 统一 submit 一次，等待 imageAvailable，完成后通知 acquired image 的 renderFinished；随后 Present。

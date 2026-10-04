@@ -27,6 +27,7 @@ public:
 
 private:
     static constexpr uint32_t mapSize = 1024;
+    static constexpr uint32_t pointViewMask = 0b111111;
 
     std::vector<uint32_t> inputSlots;
     std::vector<uint32_t> outputSlots;

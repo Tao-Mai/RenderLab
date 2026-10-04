@@ -43,6 +43,7 @@ struct PipelineKey
     PipelineState state;
     vk::Format colorFormat = vk::Format::eUndefined;
     vk::Format depthFormat = vk::Format::eUndefined;
+    uint32_t viewMask = 0;
 
     [[nodiscard]] bool operator==(const PipelineKey&) const = default;
 };

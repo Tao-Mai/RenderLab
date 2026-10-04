@@ -17,6 +17,7 @@
 
 #include <array>
 #include <format>
+#include <map>
 
 struct RenderGraph::Passes
 {
@@ -34,7 +35,7 @@ struct RenderGraph::Allocation
         vk::raii::DeviceMemory memory = nullptr;
         vk::raii::Image ownedImage = nullptr;
         vk::raii::ImageView ownedView = nullptr;
-        std::vector<vk::raii::ImageView> layerViews;
+        std::map<std::pair<uint32_t, uint32_t>, vk::raii::ImageView> layerViews;
         std::unique_ptr<Buffer> ownedBuffer;
         ExternalResource external;
         ResourceState state;
@@ -207,19 +208,6 @@ void RenderGraph::allocateResources()
                 .subresourceRange = {.aspectMask = desc.aspect,
                     .levelCount = desc.mipLevels, .layerCount = desc.arrayLayers},
             }));
-            if (desc.arrayLayers > 1)
-            {
-                for (uint32_t layer = 0; layer < desc.arrayLayers; ++layer)
-                {
-                    instance.layerViews.push_back(vkCheck(device.createImageView({
-                        .image = *instance.ownedImage,
-                        .viewType = vk::ImageViewType::e2D,
-                        .format = desc.format,
-                        .subresourceRange = {.aspectMask = desc.aspect,
-                            .levelCount = 1, .baseArrayLayer = layer, .layerCount = 1},
-                    })));
-                }
-            }
         }
     }
 }
@@ -290,10 +278,28 @@ vk::ImageView RenderGraph::imageView(ResourceHandle input, uint32_t frameIndex) 
     return allocation(input).instances.at(instanceIndex(resource, frameIndex)).view();
 }
 
-vk::ImageView RenderGraph::layerView(ResourceHandle input, uint32_t layer) const
+vk::ImageView RenderGraph::layerView(ResourceHandle input, uint32_t firstLayer, uint32_t layerCount) const
 {
     const auto& resource = resources.at(globalInputSlots.at(input).resource);
-    return *allocation(input).instances.at(instanceIndex(resource, currentFrame)).layerViews.at(layer);
+    const auto& desc = resource.merged;
+    DCHECK(desc.type == ResourceType::Image && layerCount &&
+        firstLayer < desc.arrayLayers && layerCount <= desc.arrayLayers - firstLayer);
+
+    auto& instance = allocation(input).instances.at(instanceIndex(resource, currentFrame));
+    const std::pair key{firstLayer, layerCount};
+    if (const auto found = instance.layerViews.find(key); found != instance.layerViews.end())
+        return *found->second;
+
+    auto view = vkCheck(vulkan().deviceHandle().createImageView({
+        .image = instance.image(),
+        .viewType = layerCount == 1 ? vk::ImageViewType::e2D : vk::ImageViewType::e2DArray,
+        .format = desc.format,
+        .subresourceRange = {.aspectMask = desc.aspect, .levelCount = 1,
+            .baseArrayLayer = firstLayer, .layerCount = layerCount},
+    }));
+    const vk::ImageView handle = *view;
+    instance.layerViews.emplace(key, std::move(view));
+    return handle;
 }
 
 Buffer& RenderGraph::buffer(ResourceHandle input) const { return buffer(input, currentFrame); }

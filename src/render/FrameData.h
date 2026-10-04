@@ -23,6 +23,7 @@ public:
     [[nodiscard]] const ViewUniforms& viewUniforms() const;
     [[nodiscard]] const LightUniforms& lightUniforms() const;
     [[nodiscard]] std::span<const LightData> lightData() const;
+    [[nodiscard]] std::span<const PointShadowData> pointShadowData() const;
     [[nodiscard]] vk::DescriptorSet sceneSetHandle() const;
 
 private:
@@ -30,9 +31,11 @@ private:
     ViewUniforms viewData;
     LightUniforms lightMetadata;
     std::vector<LightData> lights;
+    std::vector<PointShadowData> pointShadows;
     Buffer viewBuffer;
     Buffer lightUniformBuffer;
     Buffer lightBuffer;
+    Buffer pointShadowBuffer;
     vk::raii::DescriptorSet sceneSet = nullptr;
 
     void bindBuffers();

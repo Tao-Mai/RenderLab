@@ -113,7 +113,7 @@ public:
     [[nodiscard]] vk::Image image(ResourceHandle input) const;
     [[nodiscard]] vk::ImageView imageView(ResourceHandle input) const;
     [[nodiscard]] vk::ImageView imageView(ResourceHandle input, uint32_t frameIndex) const;
-    [[nodiscard]] vk::ImageView layerView(ResourceHandle input, uint32_t layer) const;
+    [[nodiscard]] vk::ImageView layerView(ResourceHandle input, uint32_t firstLayer, uint32_t layerCount) const;
     [[nodiscard]] Buffer& buffer(ResourceHandle input) const;
     [[nodiscard]] Buffer& buffer(ResourceHandle input, uint32_t frameIndex) const;
     // Apply an output state during execution when commands need it before pass end.

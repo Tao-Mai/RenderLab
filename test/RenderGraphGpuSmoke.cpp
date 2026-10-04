@@ -25,6 +25,51 @@
 
 namespace
 {
+void checkPointShadowUpload(const VulkanContext& vulkan)
+{
+    DescriptorManager descriptors;
+    descriptors.init(vulkan.deviceHandle());
+    FrameData frame;
+    frame.init(vulkan, descriptors);
+    std::array<LightData, 5> lights;
+    for (auto& light : lights)
+    {
+        light.positionRange = {2.0f, 3.0f, 4.0f, 16.0f};
+        light.flags = {static_cast<uint32_t>(LightComponent::Type::Point), 1u, 1u, 0u};
+    }
+    lights[0].flags.y = 0;
+    lights[1].flags.x = static_cast<uint32_t>(LightComponent::Type::Spot);
+    lights[2].flags.z = 0;
+    frame.update({}, {.lightCount = static_cast<uint32_t>(lights.size())}, lights);
+    CHECK(frame.pointShadowData().size() == 2);
+    CHECK(frame.lightData()[3].shadowidx == 0 && frame.lightData()[4].shadowidx == 1);
+    CHECK(frame.lightData()[0].shadowidx == ~0u && frame.lightData()[1].shadowidx == ~0u &&
+        frame.lightData()[2].shadowidx == ~0u);
+
+    const std::array directions = {
+        glm::vec3{1, 0, 0}, glm::vec3{-1, 0, 0}, glm::vec3{0, 1, 0},
+        glm::vec3{0, -1, 0}, glm::vec3{0, 0, 1}, glm::vec3{0, 0, -1},
+    };
+    for (size_t face = 0; face < directions.size(); ++face)
+    {
+        const glm::vec4 clip = frame.pointShadowData()[0].vp[face] *
+            glm::vec4{lights[3].position() + directions[face], 1.0f};
+        CHECK(std::abs(clip.x) < 1.0e-5f && std::abs(clip.y) < 1.0e-5f && clip.w > 0.0f,
+            "point shadow VP must face its corresponding cubemap direction");
+    }
+
+    lights[0].flags.y = 1;
+    lights[2].flags.z = 1;
+    frame.update({}, {.lightCount = static_cast<uint32_t>(lights.size())}, lights);
+    CHECK(frame.pointShadowData().size() == 4);
+    CHECK(frame.lightData()[0].shadowidx == 0 && frame.lightData()[2].shadowidx == 1 &&
+        frame.lightData()[3].shadowidx == 2 && frame.lightData()[4].shadowidx == 3);
+    frame.update({}, {}, {});
+    CHECK(frame.pointShadowData().empty() && frame.lightData().empty());
+    frame.reset();
+    descriptors.reset();
+}
+
 void checkMovement(const SceneAsset& original, Window& window, SceneManager& manager)
 {
     InputManager input;
@@ -236,6 +281,7 @@ int main(int argc, char** argv)
     sceneManager.load(scene);
     checkMovement(scene, window, sceneManager);
     renderer.init();
+    checkPointShadowUpload(renderer.vulkanContext());
     renderer.loadScene();
 
     const auto renderFrames = [&]
@@ -284,7 +330,7 @@ int main(int argc, char** argv)
         Deserialize(templateActor, actor);
         actor->name = "smoke-light-" + std::to_string(index);
         auto& light = *actor->getComponent<LightComponent>();
-        light.castShadow = false;
+        light.castShadow = index < 2;
         light.intensity = 0.25f;
         actor->transform().position = center + glm::vec3{20.0f + index, 20.0f, 0.0f};
         scene.actors.push_back(std::move(actor));

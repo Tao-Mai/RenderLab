@@ -39,7 +39,12 @@ void DescriptorManager::init(const vk::raii::Device& targetDevice)
         vk::DescriptorSetLayoutBinding{
             .binding = RenderInterface::lightBufferBinding,
             .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::pointShadowBufferBinding,
+            .descriptorType = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eVertex},
         vk::DescriptorSetLayoutBinding{
             .binding = RenderInterface::irradianceImageBinding,
             .descriptorType = vk::DescriptorType::eSampledImage,

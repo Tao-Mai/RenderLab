@@ -2,33 +2,37 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <array>
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
 
+#include "scene/component/LightComponent.h"
+
 namespace RenderInterface
 {
-inline constexpr uint32_t sceneSet = 0;
+inline constexpr uint32_t sceneSet    = 0;
 inline constexpr uint32_t materialSet = 1;
-inline constexpr uint32_t objectSet = 2;
-inline constexpr uint32_t passSet = 3;
+inline constexpr uint32_t objectSet   = 2;
+inline constexpr uint32_t passSet     = 3;
 
-inline constexpr uint32_t viewUniformBinding = 0;
-inline constexpr uint32_t lightUniformBinding = 11;
-inline constexpr uint32_t lightBufferBinding = 12;
-inline constexpr uint32_t irradianceImageBinding = 1;
-inline constexpr uint32_t irradianceSamplerBinding = 2;
-inline constexpr uint32_t prefilteredSpecularImageBinding = 3;
+inline constexpr uint32_t viewUniformBinding                = 0;
+inline constexpr uint32_t lightUniformBinding               = 11;
+inline constexpr uint32_t lightBufferBinding                = 12;
+inline constexpr uint32_t pointShadowBufferBinding          = 13;
+inline constexpr uint32_t irradianceImageBinding            = 1;
+inline constexpr uint32_t irradianceSamplerBinding          = 2;
+inline constexpr uint32_t prefilteredSpecularImageBinding   = 3;
 inline constexpr uint32_t prefilteredSpecularSamplerBinding = 4;
-inline constexpr uint32_t brdfLutImageBinding = 5;
-inline constexpr uint32_t brdfLutSamplerBinding = 6;
-inline constexpr uint32_t radianceImageBinding = 7;
-inline constexpr uint32_t radianceSamplerBinding = 8;
-inline constexpr uint32_t shadowImageBinding = 9;
-inline constexpr uint32_t shadowSamplerBinding = 10;
-inline constexpr uint32_t materialImageBinding = 0;
-inline constexpr uint32_t materialSamplerBinding = 1;
-inline constexpr uint32_t materialUniformBinding = 2;
+inline constexpr uint32_t brdfLutImageBinding               = 5;
+inline constexpr uint32_t brdfLutSamplerBinding             = 6;
+inline constexpr uint32_t radianceImageBinding              = 7;
+inline constexpr uint32_t radianceSamplerBinding            = 8;
+inline constexpr uint32_t shadowImageBinding                = 9;
+inline constexpr uint32_t shadowSamplerBinding              = 10;
+inline constexpr uint32_t materialImageBinding              = 0;
+inline constexpr uint32_t materialSamplerBinding            = 1;
+inline constexpr uint32_t materialUniformBinding            = 2;
 }
 
 // Matches the std140 ViewUniforms block in shaders/scene_data.slang.
@@ -43,31 +47,65 @@ struct alignas(16) ViewUniforms
 // the maximum LOD of the scene's prefiltered specular cubemap.
 struct alignas(16) LightUniforms
 {
-    uint32_t lightCount = 0;
-    uint32_t padding0 = 0;
-    uint32_t padding1 = 0;
-    uint32_t padding2 = 0;
+    uint32_t  lightCount = 0;
+    uint32_t  padding0   = 0;
+    uint32_t  padding1   = 0;
+    uint32_t  padding2   = 0;
     glm::vec4 iblParameters{0.0f};
 };
 
-// One std430 SSBO element: five 16-byte vectors, with an 80-byte array stride.
+// One std430 SSBO element, with a 96-byte array stride.
 // flags = {light type, enabled, castShadow, reserved}.
 struct alignas(16) LightData
 {
-    glm::vec4 colorIntensity{1.0f, 1.0f, 1.0f, 0.0f};
-    glm::vec4 positionRange{0.0f, 0.0f, 0.0f, 1.0f};
-    glm::vec4 direction{0.0f, -1.0f, 0.0f, 0.0f};
-    glm::vec4 areaSizeCone{1.0f, 1.0f, 0.9396926f, 0.8660254f};
+    glm::vec4  colorIntensity{1.0f, 1.0f, 1.0f, 0.0f};
+    glm::vec4  positionRange{0.0f, 0.0f, 0.0f, 1.0f};
+    glm::vec4  direction{0.0f, -1.0f, 0.0f, 0.0f};
+    glm::vec4  areaSizeCone{1.0f, 1.0f, 0.9396926f, 0.8660254f};
     glm::uvec4 flags{0u};
+    uint32_t  shadowidx = ~0u;
+    uint32_t  padding0  = 0;
+    uint32_t  padding1  = 0;
+    uint32_t  padding2  = 0;
+
+    [[nodiscard]] glm::vec3 position() const
+    {
+        return xyz(positionRange);
+    }
+
+    [[nodiscard]] float range() const
+    {
+        return positionRange.w;
+    }
+
+    [[nodiscard]] LightComponent::Type type() const
+    {
+        return static_cast<LightComponent::Type>(flags.x);
+    }
+
+    [[nodiscard]] bool enable() const
+    {
+        return flags.y;
+    }
+
+    [[nodiscard]] bool castShadow() const
+    {
+        return flags.z;
+    }
+};
+
+struct alignas(16) PointShadowData
+{
+    std::array<glm::mat4, 6> vp;
 };
 
 struct alignas(16) MaterialUniforms
 {
     glm::vec4 baseColorFactor{1.0f};
-    float roughness = 1.0f;
-    float metallic = 1.0f;
-    float alphaCutoff = 0.5f;
-    uint32_t alphaMode = 0;
+    float     roughness   = 1.0f;
+    float     metallic    = 1.0f;
+    float     alphaCutoff = 0.5f;
+    uint32_t  alphaMode   = 0;
 };
 
 static_assert(sizeof(ViewUniforms) == 144);
@@ -75,11 +113,14 @@ static_assert(offsetof(ViewUniforms, inverseViewProjection) == 64);
 static_assert(offsetof(ViewUniforms, cameraPosition) == 128);
 static_assert(sizeof(LightUniforms) == 32);
 static_assert(offsetof(LightUniforms, iblParameters) == 16);
-static_assert(sizeof(LightData) == 80);
+static_assert(sizeof(LightData) == 96);
 static_assert(offsetof(LightData, positionRange) == 16);
 static_assert(offsetof(LightData, direction) == 32);
 static_assert(offsetof(LightData, areaSizeCone) == 48);
 static_assert(offsetof(LightData, flags) == 64);
+static_assert(offsetof(LightData, shadowidx) == 80);
+static_assert(sizeof(PointShadowData) == 384);
+static_assert(offsetof(PointShadowData, vp) == 0);
 static_assert(sizeof(MaterialUniforms) == 32);
 static_assert(offsetof(MaterialUniforms, roughness) == 16);
 static_assert(offsetof(MaterialUniforms, metallic) == 20);
@@ -94,7 +135,10 @@ struct MeshPushConstants
 struct ShadowPushConstants
 {
     glm::mat4 model{1.0f};
-    glm::mat4 viewProjection{1.0f};
+    uint32_t lightidx = 0;
+    uint32_t padding0 = 0;
+    uint32_t padding1 = 0;
+    uint32_t padding2 = 0;
 };
 
 struct LightPushConstants
@@ -106,10 +150,10 @@ struct LightPushConstants
 struct EditorPickingPushConstants
 {
     glm::mat4 model{1.0f};
-    uint32_t selectionId = 0;
-    uint32_t padding0 = 0;
-    uint32_t padding1 = 0;
-    uint32_t padding2 = 0;
+    uint32_t  selectionId = 0;
+    uint32_t  padding0    = 0;
+    uint32_t  padding1    = 0;
+    uint32_t  padding2    = 0;
 };
 
 struct SkyboxPushConstants
@@ -118,7 +162,8 @@ struct SkyboxPushConstants
 };
 
 static_assert(sizeof(MeshPushConstants) == 64);
-static_assert(sizeof(ShadowPushConstants) == 128);
+static_assert(sizeof(ShadowPushConstants) == 80);
+static_assert(offsetof(ShadowPushConstants, lightidx) == 64);
 static_assert(sizeof(LightPushConstants) == 80);
 static_assert(sizeof(EditorPickingPushConstants) == 80);
 static_assert(sizeof(SkyboxPushConstants) == 16);
