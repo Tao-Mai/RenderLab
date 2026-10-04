@@ -9,7 +9,7 @@ struct VertexInput
 struct PushConstants
 {
     float4x4 model;
-    uint lightidx;
+    uint lightIdx;
     uint padding0;
     uint padding1;
     uint padding2;
@@ -29,8 +29,8 @@ VertexOutput vertMain(VertexInput input, uint viewID : SV_ViewID)
 {
     VertexOutput output;
     float4 worldPosition = mul(pushConstants.model, float4(input.position, 1.0));
-    const LightData light = lights[pushConstants.lightidx];
-    output.position = mul(pointShadowData[light.shadowidx].vp[viewID], worldPosition);
+    const LightData light = lights[pushConstants.lightIdx];
+    output.position = mul(pointShadowData[light.shadowIdx].vp[viewID], worldPosition);
     output.worldPosition = worldPosition.xyz;
     return output;
 }
@@ -39,7 +39,7 @@ VertexOutput vertMain(VertexInput input, uint viewID : SV_ViewID)
 float fragMain(VertexOutput input) : SV_Depth
 {
     // Depth 0..1 stores radial distance divided by the point light range.
-    const LightData light = lights[pushConstants.lightidx];
+    const LightData light = lights[pushConstants.lightIdx];
     return saturate(distance(input.worldPosition,
         light.positionRange.xyz) / light.positionRange.w);
 }

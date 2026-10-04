@@ -127,7 +127,7 @@ TEST(ShaderDataLayout, PointShadowStorageAndPushConstantsMatchCompiledShader)
     const auto push = parameter("shadow", "pushConstants");
     const std::array pushFields = {
         Field{"model", offsetof(ShadowPushConstants, model), sizeof(glm::mat4)},
-        Field{"lightidx", offsetof(ShadowPushConstants, lightidx), sizeof(uint32_t)},
+        Field{"lightidx", offsetof(ShadowPushConstants, lightIdx), sizeof(uint32_t)},
         Field{"padding0", offsetof(ShadowPushConstants, padding0), sizeof(uint32_t)},
         Field{"padding1", offsetof(ShadowPushConstants, padding1), sizeof(uint32_t)},
         Field{"padding2", offsetof(ShadowPushConstants, padding2), sizeof(uint32_t)},
