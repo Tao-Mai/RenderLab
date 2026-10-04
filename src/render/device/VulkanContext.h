@@ -21,6 +21,7 @@ public:
     [[nodiscard]] uint32_t                        graphicsQueueFamilyIndex() const;
     [[nodiscard]] const vk::PhysicalDeviceProperties& properties() const;
     [[nodiscard]] const vk::PhysicalDeviceFeatures& supportedFeatures() const;
+    [[nodiscard]] bool supportsRayTracing() const { return rayTracingSupported; }
 
 private:
     Window*                          window = nullptr;
@@ -31,6 +32,7 @@ private:
     vk::raii::PhysicalDevice         physicalDevice            = nullptr;
     vk::PhysicalDeviceProperties     deviceProperties;
     vk::PhysicalDeviceFeatures       deviceFeatures;
+    bool rayTracingSupported = false;
     vk::raii::Device                 device                    = nullptr;
     uint32_t                         graphicsQueueFamilyIndex_ = ~0u;
     vk::raii::Queue                  queue                     = nullptr;

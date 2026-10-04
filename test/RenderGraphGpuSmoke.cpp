@@ -1,5 +1,6 @@
 #include "scene/SceneManager.h"
 #include "scene/actor/AStaticMesh.h"
+#include "scene/actor/ALight.h"
 #include "scene/component/CameraComponent.h"
 #include "scene/component/CharacterMoveComponent.h"
 #include "scene/component/FreeFlyMoveComponent.h"
@@ -292,7 +293,8 @@ int main(int argc, char** argv)
     renderer.loadScene();
     renderFrames();
 
-    // Rebuild graph allocations with shadow clear and environment fallback.
+    // None disables IBL while retaining the same descriptor layout.
+    const auto environmentMap = scene.environment.environmentMap;
     scene.environment.environmentMap.reset();
     for (const auto& actor : scene.actors)
         if (auto* light = actor->getComponent<LightComponent>()) light->castShadow = false;
@@ -300,6 +302,13 @@ int main(int argc, char** argv)
     sceneManager.load(scene);
     renderer.loadScene();
     renderFrames();
+
+    // Switch back to the cached IBL variant, then disable it again.
+    scene.environment.environmentMap = environmentMap;
+    sceneManager.load(scene);
+    renderer.loadScene();
+    renderFrames();
+    scene.environment.environmentMap.reset();
 
     // Zero-light scenes retain descriptors and skip SSBO reads.
     renderer.waitIdle();
@@ -311,6 +320,28 @@ int main(int argc, char** argv)
     renderer.waitIdle();
 
     // Exercise the docked UI, component inspectors, and selected-actor gizmo.
+    if (renderer.vulkanContext().supportsRayTracing())
+    {
+        const auto originalPath = config.rendererConfig().renderPath;
+        config.setRenderPath(RenderPath::RayTracing, false);
+        renderer.loadScene();
+        renderFrames();
+        renderer.waitIdle();
+        // The ray route consumes the same light marker DrawItems as rasterization.
+        auto rayLight = std::make_unique<ALight>();
+        rayLight->transform().position = center + glm::vec3{20.0f, 20.0f, 0.0f};
+        scene.actors.push_back(std::move(rayLight));
+        sceneManager.load(scene);
+        renderer.loadScene();
+        renderFrames();
+        renderer.waitIdle();
+        config.setRenderPath(originalPath, false);
+        renderer.loadScene();
+        renderFrames();
+        renderer.waitIdle();
+        std::cout << "Ray tracing route and return to rasterization passed.\n";
+    }
+
     InputManager uiInput;
     Editor editor;
     ctx.inputManager = &uiInput;

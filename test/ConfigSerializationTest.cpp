@@ -27,9 +27,10 @@ static_assert(std::meta::annotations_of_with_type(std::meta::dealias(^^TestFlags
 AppConfig sampleConfig()
 {
     return {
-        .paths = {.assets = "../assets", .commands = "commands.json"},
+        .paths = {.assets = "../assets", .commands = "commands.json", .editor = "editor.json"},
         .initialScene = SceneAsset::ID{"default"},
-        .renderer = {.brdfLut = {TextureAsset::ID{"lut_ggx"}, SamplerAsset::ID{"linearClamp"}}},
+        .renderer = {.renderPath = RenderPath::RayTracing,
+            .brdfLut = {TextureAsset::ID{"lut_ggx"}, SamplerAsset::ID{"linearClamp"}}},
     };
 }
 }
@@ -40,7 +41,9 @@ TEST(ConfigSerialization, UsesMemberNamesAndReflectedAssetIds)
 
     EXPECT_EQ(serialized.at("paths").at("assets"), "../assets");
     EXPECT_EQ(serialized.at("paths").at("commands"), "commands.json");
+    EXPECT_EQ(serialized.at("paths").at("editor"), "editor.json");
     EXPECT_EQ(serialized.at("initialScene").at("value"), "default");
+    EXPECT_EQ(serialized.at("renderer").at("renderPath"), "RayTracing");
     EXPECT_EQ(serialized.at("renderer").at("brdfLut").at("textureID").at("value"), "lut_ggx");
     EXPECT_EQ(serialized.at("renderer").at("brdfLut").at("samplerID").at("value"), "linearClamp");
 }
@@ -53,7 +56,9 @@ TEST(ConfigSerialization, RoundTripsNestedConfig)
 
     EXPECT_EQ(restored.paths.assets, original.paths.assets);
     EXPECT_EQ(restored.paths.commands, original.paths.commands);
+    EXPECT_EQ(restored.paths.editor, original.paths.editor);
     EXPECT_EQ(restored.initialScene, original.initialScene);
+    EXPECT_EQ(restored.renderer.renderPath, original.renderer.renderPath);
     EXPECT_EQ(restored.renderer.brdfLut.textureID, original.renderer.brdfLut.textureID);
     EXPECT_EQ(restored.renderer.brdfLut.samplerID, original.renderer.brdfLut.samplerID);
 }
@@ -86,6 +91,11 @@ TEST(ConfigSerialization, ConfigManagerResolvesPathsAndLoadsCommands)
     const auto source = std::filesystem::path{RENDERLAB_SOURCE_DIR};
     EXPECT_EQ(std::filesystem::weakly_canonical(manager.paths().assets), source / "test");
     EXPECT_EQ(manager.paths().commands, source / "config" / "commands.json");
+    EXPECT_EQ(manager.paths().editor, source / "config" / "editor.json");
+    const auto editor = asset_json::load<EditorConfig>(manager.paths().editor);
+    EXPECT_EQ(manager.editorConfig().width, editor.width);
+    EXPECT_EQ(manager.editorConfig().height, editor.height);
+    EXPECT_EQ(manager.editorConfig().title, editor.title);
     EXPECT_EQ(manager.initialScene(), SceneAsset::ID{"default"});
     EXPECT_EQ(manager.commandConfig().bindings.size(), 16);
     EXPECT_EQ(manager.commandConfig().bindings.front().command, Command::Quit);

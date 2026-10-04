@@ -6,12 +6,14 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
-#include <unordered_map>
+#include <map>
 #include <vector>
 
 #include <vulkan/vulkan_raii.hpp>
 
 class AssetManager;
+
+enum class ShaderVariant { Default, NoIbl };
 
 struct ShaderHandle
 {
@@ -43,14 +45,15 @@ public:
     void init(const vk::raii::Device& device);
     void reset() noexcept;
 
-    [[nodiscard]] ShaderHandle          getOrLoad(const ShaderAsset::ID& id);
+    [[nodiscard]] ShaderHandle          getOrLoad(const ShaderAsset::ID& id,
+        ShaderVariant variant = ShaderVariant::Default);
     [[nodiscard]] vk::ShaderModule      module(ShaderHandle handle) const;
     [[nodiscard]] const ShaderMetadata& metadata(ShaderHandle handle) const;
 
 private:
     const vk::raii::Device*                      device = nullptr;
     AssetManager*                            assets = nullptr;
-    std::unordered_map<ShaderAsset::ID, ShaderHandle> handles;
+    std::map<std::pair<std::string, ShaderVariant>, ShaderHandle> handles;
     std::vector<std::unique_ptr<GpuShader>>      shaders;
     std::vector<ShaderMetadata>                  shaderMetadata;
 };

@@ -47,6 +47,7 @@ void ConfigManager::init()
     configDir = file.parent_path();
     load();
     loadCommands();
+    loadEditor();
     DEBUG_EXEC(inited = true);
 }
 
@@ -54,6 +55,7 @@ void ConfigManager::shutdown() noexcept
 {
     data     = {};
     commands = {};
+    editor   = {};
     file.clear();
     configDir.clear();
     DEBUG_EXEC(inited = false);
@@ -79,11 +81,24 @@ const RendererConfig& ConfigManager::rendererConfig() const noexcept
     return data.renderer;
 }
 
+const EditorConfig& ConfigManager::editorConfig() const noexcept
+{
+    return editor;
+}
+
+void ConfigManager::setRenderPath(RenderPath path, bool persist)
+{
+    DCHECK(inited);
+    data.renderer.renderPath = path;
+    if (persist) save();
+}
+
 void ConfigManager::save() const
 {
     AppConfig stored                 = data;
     stored.paths.assets              = storeRelative(data.paths.assets, configDir);
     stored.paths.commands            = storeRelative(data.paths.commands, configDir);
+    stored.paths.editor              = storeRelative(data.paths.editor, configDir);
     const std::string     serialized = Serialize(stored).dump(2);
     std::filesystem::path temporary  = file;
     temporary                        += ".tmp";
@@ -107,6 +122,7 @@ void ConfigManager::load()
 
     CHECK(!data.paths.assets.empty(), "config requires a paths.assets directory");
     CHECK(!data.paths.commands.empty(), "config requires a paths.commands file path");
+    CHECK(!data.paths.editor.empty(), "config requires a paths.editor file path");
     CHECK(!data.initialScene.empty(),
           "config '{}' missing initialScene",
           file.string());
@@ -134,10 +150,19 @@ void ConfigManager::resolvePaths()
 {
     data.paths.assets   = resolveAgainst(configDir, std::move(data.paths.assets));
     data.paths.commands = resolveAgainst(configDir, std::move(data.paths.commands));
+    data.paths.editor   = resolveAgainst(configDir, std::move(data.paths.editor));
     CHECK(std::filesystem::is_regular_file(data.paths.commands),
           "commands config is not a file: {}",
           data.paths.commands.string());
     CHECK(std::filesystem::is_directory(data.paths.assets),
           "asset root is not a directory: {}",
           data.paths.assets.string());
+}
+
+void ConfigManager::loadEditor()
+{
+    editor = asset_json::load<EditorConfig>(data.paths.editor);
+
+    CHECK(editor.width > 0 && editor.height > 0,
+        "editor config '{}' requires positive window width and height", data.paths.editor.string());
 }

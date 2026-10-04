@@ -168,7 +168,7 @@ GpuMesh& RenderResourceManager::mesh(const MeshAsset::ID& id)
     auto gpu = std::make_unique<GpuMesh>(
         uploadContext(),
         std::move(geometry),
-        std::move(parts));
+        std::move(parts), vulkan->supportsRayTracing());
     return *meshes.emplace(id, std::move(gpu)).first->second;
 }
 

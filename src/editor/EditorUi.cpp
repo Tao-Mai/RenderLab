@@ -6,6 +6,7 @@
 #include "core/Context.h"
 #include "core/InputManager.h"
 #include "core/Logger.h"
+#include "render/Renderer.h"
 #include "scene/component/TransformComponent.h"
 #include "editor/ComponentDraw.h"
 
@@ -365,6 +366,27 @@ EditorUI::InspectorResult EditorUI::drawInspector(
     }
 
     InspectorResult result;
+    ImGui::SeparatorText("Renderer");
+    const RenderPath path = context().config->rendererConfig().renderPath;
+    if (ImGui::BeginCombo("Render path", path == RenderPath::RayTracing ? "Ray tracing" : "Rasterization"))
+    {
+        if (ImGui::Selectable("Rasterization", path == RenderPath::Rasterization) &&
+            path != RenderPath::Rasterization)
+        {
+            context().config->setRenderPath(RenderPath::Rasterization);
+            result.rendererChanged = true;
+        }
+        const bool supported = context().renderer->vulkanContext().supportsRayTracing();
+        ImGui::BeginDisabled(!supported);
+        if (ImGui::Selectable("Ray tracing", path == RenderPath::RayTracing) && path != RenderPath::RayTracing)
+        {
+            context().config->setRenderPath(RenderPath::RayTracing);
+            result.rendererChanged = true;
+        }
+        ImGui::EndDisabled();
+        if (!supported) ImGui::TextUnformatted("Ray tracing is not supported by this GPU");
+        ImGui::EndCombo();
+    }
     ImGui::Spacing();
     result.environmentChanged = drawEnvironmentSelection(scene);
     result.edited             = result.environmentChanged;

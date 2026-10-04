@@ -126,7 +126,7 @@ EditorFrameInput Editor::buildFrame(
     {
         dirty = true;
     }
-    if (inspector.environmentChanged || inspector.resourcesChanged)
+    if (inspector.environmentChanged || inspector.resourcesChanged || inspector.rendererChanged)
     {
         context().renderer->loadScene();
     }

@@ -25,6 +25,7 @@ public:
         bool edited = false;
         bool environmentChanged = false;
         bool resourcesChanged = false;
+        bool rendererChanged = false;
     };
 
     EditorUI() = default;

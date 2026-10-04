@@ -24,6 +24,7 @@ class Buffer
 
     [[nodiscard]] vk::Buffer handle() const;
     [[nodiscard]] vk::DeviceSize size() const;
+    [[nodiscard]] vk::DeviceAddress address(const vk::raii::Device& device) const;
 
   private:
     vk::DeviceSize         byteSize = 0;

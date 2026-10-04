@@ -12,6 +12,7 @@
 #include "render/pass/EditorUiPass.h"
 #include "render/pass/ScenePass.h"
 #include "render/pass/ShadowPass.h"
+#include "render/raytracing/RayTracingPass.h"
 #include "render/resource/GpuTexture.h"
 
 #include <array>
@@ -21,6 +22,7 @@ struct RenderGraph::Passes
 {
     ShadowPass shadow;
     ScenePass scene;
+    RayTracingPass raytracing;
     EditorPickingPass picking;
     EditorUiPass ui;
 };
@@ -82,6 +84,8 @@ void RenderGraph::init()
 
     passes->shadow.registerPass(*this);
     passes->scene.registerPass(*this);
+    passes->raytracing.registerPass(*this);
+    setPassEnabled("raytracing", false);
     passes->picking.registerPass(*this);
     passes->ui.registerPass(*this);
 }
@@ -108,6 +112,13 @@ void RenderGraph::build()
 {
     DCHECK(renderer && passes, "RenderGraph must be initialized before build");
     renderer->waitIdle();
+    const bool rayTracing = context().config->rendererConfig().renderPath == RenderPath::RayTracing;
+    if (rayTracing != passEnabled("raytracing"))
+    {
+        setPassEnabled("raytracing", rayTracing);
+        setPassEnabled("scene", !rayTracing);
+        setPassEnabled("shadow", !rayTracing);
+    }
     built = false;
     resources.clear();
     for (Slot& slot : globalInputSlots) slot = {.owner = slot.owner};
@@ -219,7 +230,7 @@ void RenderGraph::importSwapchain(ResourceHandle input, const ResourceDesc& use)
     desc.format = swapchain().surfaceFormat().format;
     const auto extent = swapchain().extent();
     desc.extent = vk::Extent3D{extent.width, extent.height, 1};
-    desc.imageUsage = vk::ImageUsageFlagBits::eColorAttachment;
+    desc.imageUsage |= vk::ImageUsageFlagBits::eColorAttachment;
     std::vector<ExternalResource> instances;
     for (uint32_t i = 0; i < swapchain().imageCount(); ++i)
         instances.push_back({.image = swapchain().image(i), .view = swapchain().imageView(i)});
@@ -366,7 +377,8 @@ void RenderGraph::execute(const EditorFrameInput& editor,
             // Match Renderer::drawFrame's acquire semaphore wait stage so the
             // first layout transition is part of that execution dependency.
             auto& state = resource.allocation->instances.at(currentImage).state;
-            state.stages = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+            state.stages = passEnabled("raytracing") ? vk::PipelineStageFlagBits2::eTransfer
+                : vk::PipelineStageFlagBits2::eColorAttachmentOutput;
             state.access = {};
         }
     }

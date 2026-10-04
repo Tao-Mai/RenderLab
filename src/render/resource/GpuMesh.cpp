@@ -6,8 +6,10 @@
 #include <utility>
 #include "core/Logger.h"
 
-GpuMesh::GpuMesh(GpuUploadContext upload, MeshGeometry geometry, std::vector<Submesh> submeshes) :
+GpuMesh::GpuMesh(GpuUploadContext upload, MeshGeometry geometry, std::vector<Submesh> submeshes,
+    bool rayTracing) :
     indexTotal(static_cast<uint32_t>(geometry.indices.size())),
+    vertexTotal(static_cast<uint32_t>(geometry.vertices.size())),
     parts(std::move(submeshes))
 {
     CHECK(!geometry.vertices.empty() && !geometry.indices.empty() && !parts.empty(),
@@ -27,6 +29,10 @@ GpuMesh::GpuMesh(GpuUploadContext upload, MeshGeometry geometry, std::vector<Sub
     const auto& device = upload.device;
     const auto& commandPool = upload.commandPool;
     auto& queue = upload.queue;
+    const vk::BufferUsageFlags rayUsage = rayTracing
+        ? vk::BufferUsageFlagBits::eShaderDeviceAddress |
+          vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
+        : vk::BufferUsageFlags{};
 
     const vk::DeviceSize vertexBytes = sizeof(Vertex) * geometry.vertices.size();
     Buffer vertexStaging(
@@ -37,7 +43,7 @@ GpuMesh::GpuMesh(GpuUploadContext upload, MeshGeometry geometry, std::vector<Sub
     vertexStaging.upload(geometry.vertices.data(), vertexBytes);
     vertexBuffer = Buffer(
         physicalDevice, device, vertexBytes,
-        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
+        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer | rayUsage,
         vk::MemoryPropertyFlagBits::eDeviceLocal);
     copyBuffer(device, commandPool, queue, vertexStaging, vertexBuffer);
 
@@ -50,7 +56,7 @@ GpuMesh::GpuMesh(GpuUploadContext upload, MeshGeometry geometry, std::vector<Sub
     indexStaging.upload(geometry.indices.data(), indexBytes);
     indexBuffer = Buffer(
         physicalDevice, device, indexBytes,
-        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
+        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer | rayUsage,
         vk::MemoryPropertyFlagBits::eDeviceLocal);
     copyBuffer(device, commandPool, queue, indexStaging, indexBuffer);
 }
@@ -96,8 +102,8 @@ void GpuMesh::copyBuffer(
     const vk::BufferMemoryBarrier2 barrier{
         .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
         .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
-        .dstStageMask = vk::PipelineStageFlagBits2::eVertexAttributeInput | vk::PipelineStageFlagBits2::eIndexInput,
-        .dstAccessMask = vk::AccessFlagBits2::eVertexAttributeRead | vk::AccessFlagBits2::eIndexRead,
+        .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .dstAccessMask = vk::AccessFlagBits2::eMemoryRead,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .buffer = destination.handle(),

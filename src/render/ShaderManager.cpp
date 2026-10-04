@@ -133,21 +133,26 @@ void ShaderManager::reset() noexcept
     device = nullptr;
 }
 
-ShaderHandle ShaderManager::getOrLoad(const ShaderAsset::ID& id)
+ShaderHandle ShaderManager::getOrLoad(const ShaderAsset::ID& id, ShaderVariant variant)
 {
     DCHECK(device && assets, "ShaderManager is not initialized");
-    if (const auto found = handles.find(id); found != handles.end())
+    const auto key = std::pair{id.value, variant};
+    if (const auto found = handles.find(key); found != handles.end())
     {
         return found->second;
     }
     const ShaderAsset& desc = assets->get<ShaderAsset>(id);
     CHECK(!desc.binary.empty(), "shader '{}' has no binary path", id);
-    auto               shader = std::make_unique<GpuShader>(*device, desc.binary.string());
-    ShaderMetadata     metadata{id, desc.binary, readReflection(desc.binary)};
+    std::filesystem::path binary = desc.binary;
+    if (variant == ShaderVariant::NoIbl)
+        binary.replace_filename(binary.stem().string() + ".no_ibl" + binary.extension().string());
+
+    auto               shader = std::make_unique<GpuShader>(*device, binary.string());
+    ShaderMetadata     metadata{id, binary, readReflection(binary)};
     const ShaderHandle handle{static_cast<uint32_t>(shaders.size() + 1)};
     shaders.push_back(std::move(shader));
     shaderMetadata.push_back(std::move(metadata));
-    handles.emplace(id, handle);
+    handles.emplace(key, handle);
     return handle;
 }
 

@@ -4,6 +4,7 @@
 #include "core/Window.h"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -38,6 +39,7 @@ void VulkanContext::reset() noexcept
     physicalDevice            = nullptr;
     deviceProperties          = vk::PhysicalDeviceProperties{};
     deviceFeatures            = vk::PhysicalDeviceFeatures{};
+    rayTracingSupported       = false;
     surface                   = nullptr;
     debugMessenger            = nullptr;
     instance                  = nullptr;
@@ -239,6 +241,27 @@ void VulkanContext::pickPhysicalDevice()
     physicalDevice = *devIter;
     deviceProperties = physicalDevice.getProperties();
     deviceFeatures = physicalDevice.getFeatures();
+
+    const auto extensions = vkCheck(physicalDevice.enumerateDeviceExtensionProperties());
+    rayTracingSupported = std::ranges::all_of(
+        std::array{VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+            VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME},
+        [&](const char* name)
+        {
+            return std::ranges::any_of(extensions,
+                [&](const auto& extension) { return std::strcmp(extension.extensionName, name) == 0; });
+        });
+    if (rayTracingSupported)
+    {
+        const auto features = physicalDevice.getFeatures2<vk::PhysicalDeviceFeatures2,
+            vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+            vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
+        rayTracingSupported = deviceFeatures.shaderInt64 &&
+            features.get<vk::PhysicalDeviceVulkan12Features>().bufferDeviceAddress &&
+            features.get<vk::PhysicalDeviceVulkan12Features>().shaderSampledImageArrayNonUniformIndexing &&
+            features.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>().accelerationStructure &&
+            features.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>().rayTracingPipeline;
+    }
 }
 
 void VulkanContext::createLogicalDevice()
@@ -264,19 +287,39 @@ void VulkanContext::createLogicalDevice()
     // query for Vulkan 1.3 features
     vk::StructureChain<vk::PhysicalDeviceFeatures2,
                        vk::PhysicalDeviceVulkan11Features,
+                       vk::PhysicalDeviceVulkan12Features,
                        vk::PhysicalDeviceVulkan13Features,
-                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
+                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT,
+                       vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+                       vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>
                        featureChain = {
             {}, // vk::PhysicalDeviceFeatures2
             {.shaderDrawParameters = true}, // vk::PhysicalDeviceVulkan11Features
+            {.shaderSampledImageArrayNonUniformIndexing = rayTracingSupported,
+             .bufferDeviceAddress = rayTracingSupported},
             {.synchronization2 = true, .dynamicRendering = true},
             // vk::PhysicalDeviceVulkan13Features
-            {.extendedDynamicState = true}
+            {.extendedDynamicState = true},
+            {.accelerationStructure = rayTracingSupported},
+            {.rayTracingPipeline = rayTracingSupported}
             // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
         };
 
     featureChain.get<vk::PhysicalDeviceFeatures2>().features.samplerAnisotropy =
         deviceFeatures.samplerAnisotropy;
+    featureChain.get<vk::PhysicalDeviceFeatures2>().features.shaderInt64 = rayTracingSupported;
+
+    std::vector<const char*> extensions = requiredDeviceExtension;
+    if (rayTracingSupported)
+    {
+        extensions.insert(extensions.end(), {VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+            VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME});
+    }
+    else
+    {
+        featureChain.unlink<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
+        featureChain.unlink<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
+    }
 
     // create a Device
     float                     queuePriority = 0.5f;
@@ -287,8 +330,8 @@ void VulkanContext::createLogicalDevice()
         .pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &deviceQueueCreateInfo,
-        .enabledExtensionCount = static_cast<uint32_t>(requiredDeviceExtension.size()),
-        .ppEnabledExtensionNames = requiredDeviceExtension.data()};
+        .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
+        .ppEnabledExtensionNames = extensions.data()};
 
     device = vkCheck(physicalDevice.createDevice(deviceCreateInfo));
     queue  = device.getQueue(graphicsQueueFamilyIndex_, 0);

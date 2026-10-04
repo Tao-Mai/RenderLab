@@ -24,7 +24,11 @@ Buffer::Buffer(
     buffer = vkCheck(device.createBuffer(bufferInfo));
 
     const vk::MemoryRequirements requirements = buffer.getMemoryRequirements();
+    const vk::MemoryAllocateFlagsInfo addressFlags{
+        .flags = vk::MemoryAllocateFlagBits::eDeviceAddress,
+    };
     const vk::MemoryAllocateInfo allocationInfo{
+        .pNext = (usage & vk::BufferUsageFlagBits::eShaderDeviceAddress) ? &addressFlags : nullptr,
         .allocationSize = requirements.size,
         .memoryTypeIndex = vulkan_memory::findType(
             physicalDevice,
@@ -71,4 +75,9 @@ vk::Buffer Buffer::handle() const
 vk::DeviceSize Buffer::size() const
 {
     return byteSize;
+}
+
+vk::DeviceAddress Buffer::address(const vk::raii::Device& device) const
+{
+    return device.getBufferAddress({.buffer = *buffer});
 }

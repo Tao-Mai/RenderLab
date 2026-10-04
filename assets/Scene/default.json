@@ -1,231 +1,229 @@
 {
-    "id": {
-        "value": "default"
-    },
     "actors": [
         {
             "AFreeFlyCamera": {
-                "name": "Editor Camera",
                 "components": [
                     {
                         "TransformComponent": {
                             "position": [
-                                -10.241006851196289,
-                                0.36024773120880127,
-                                -8.894845008850098
+                                -9.320343971252441,
+                                0.29620298743247986,
+                                -1.2423934936523438
                             ],
                             "rotation": [
-                                0,
-                                0,
-                                0,
-                                1
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
                             ],
                             "scale": [
-                                1,
-                                1,
-                                1
+                                1.0,
+                                1.0,
+                                1.0
                             ]
                         }
                     },
                     {
                         "CameraComponent": {
-                            "yaw": 38.880496978759766,
-                            "pitch": -15.680037498474121,
-                            "fieldOfView": 45,
+                            "farPlane": 100.0,
+                            "fieldOfView": 45.0,
+                            "mouseSensitivity": 0.11999999731779099,
                             "nearPlane": 0.10000000149011612,
-                            "farPlane": 100,
-                            "mouseSensitivity": 0.11999999731779099
+                            "pitch": -22.280080795288086,
+                            "yaw": 2.4004650115966797
                         }
                     },
                     {
                         "FreeFlyMoveComponent": {
-                            "speed": 3,
-                            "sprintMultiplier": 3
+                            "speed": 3.0,
+                            "sprintMultiplier": 3.0
                         }
                     }
-                ]
+                ],
+                "name": "Editor Camera"
             }
         },
         {
             "ALight": {
-                "name": "Point Light",
                 "components": [
                     {
                         "TransformComponent": {
                             "position": [
-                                -2.4501421451568604,
-                                0.30311763286590576,
-                                2.823641300201416
+                                -0.9316981434822083,
+                                -1.3520467281341553,
+                                0.142949640750885
                             ],
                             "rotation": [
-                                0,
-                                0,
-                                0,
-                                1
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
                             ],
                             "scale": [
-                                1,
-                                1,
-                                1
+                                1.0,
+                                1.0,
+                                1.0
                             ]
                         }
                     },
                     {
                         "LightComponent": {
-                            "type": "Point",
-                            "color": [
-                                1,
-                                1,
-                                1
+                            "areaSize": [
+                                1.0,
+                                1.0
                             ],
-                            "intensity": 5,
-                            "range": 15,
+                            "castShadow": false,
+                            "color": [
+                                1.0,
+                                1.0,
+                                1.0
+                            ],
                             "cosInner": 0.9396926164627075,
                             "cosOuter": 0.8660253882408142,
-                            "areaSize": [
-                                1,
-                                1
-                            ],
-                            "enabled": false,
-                            "castShadow": false
+                            "enabled": true,
+                            "intensity": 7.300000190734863,
+                            "range": 15.0,
+                            "type": "Point"
                         }
                     }
-                ]
+                ],
+                "name": "Point Light"
             }
         },
         {
             "AStaticMesh": {
-                "name": "Sphere",
                 "components": [
                     {
                         "TransformComponent": {
                             "position": [
-                                -3.955781936645508,
-                                -2.8292183876037598,
-                                0.5707395672798157
+                                -1.0757312774658203,
+                                -2.589268207550049,
+                                -2.6997148990631104
                             ],
                             "rotation": [
-                                0,
-                                0,
-                                0,
-                                1
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
                             ],
                             "scale": [
-                                1,
-                                1,
-                                1
+                                1.0,
+                                1.0,
+                                1.0
                             ]
                         }
                     },
                     {
                         "RenderComponent": {
-                            "meshId": {
-                                "value": "sphere"
-                            },
                             "materialOverrides": {
                                 "0": {
+                                    "alphaCutoff": null,
+                                    "alphaMode": null,
+                                    "ao": null,
+                                    "aoTexture": null,
+                                    "baseColorFactor": [
+                                        1.0,
+                                        0.09616726636886597,
+                                        0.0038610100746154785,
+                                        1.0
+                                    ],
+                                    "baseColorTexture": null,
+                                    "doubleSided": null,
+                                    "emissive": null,
+                                    "emissiveTexture": null,
                                     "id": {
                                         "value": ""
                                     },
-                                    "shaderId": null,
-                                    "baseColorFactor": [
-                                        1,
-                                        0.09616726636886597,
-                                        0.0038610100746154785,
-                                        1
-                                    ],
-                                    "metallic": 1,
-                                    "roughness": 0.30000001192092896,
-                                    "ao": null,
-                                    "emissive": null,
-                                    "normalScale": null,
-                                    "baseColorTexture": null,
-                                    "normalTexture": null,
+                                    "metallic": 1.0,
                                     "metallicTexture": null,
+                                    "normalScale": null,
+                                    "normalTexture": null,
+                                    "roughness": 0.5,
                                     "roughnessTexture": null,
-                                    "aoTexture": null,
-                                    "emissiveTexture": null,
-                                    "alphaMode": null,
-                                    "alphaCutoff": null,
-                                    "doubleSided": null
+                                    "shaderId": null
                                 }
+                            },
+                            "meshId": {
+                                "value": "sphere"
                             }
                         }
                     }
-                ]
+                ],
+                "name": "Sphere"
             }
         },
         {
             "AStaticMesh": {
-                "name": "Floor",
                 "components": [
                     {
                         "TransformComponent": {
                             "position": [
-                                1.131738305091858,
-                                -3.930513620376587,
+                                -0.6581555604934692,
+                                -3.83668851852417,
                                 0.39836451411247253
                             ],
                             "rotation": [
-                                0,
-                                0,
-                                0.6955733299255371,
-                                0.7184551358222961
+                                0.0,
+                                0.0,
+                                -0.02618330903351307,
+                                0.999657154083252
                             ],
                             "scale": [
-                                10.000112533569336,
-                                1.0000017881393433,
-                                10
+                                10.000038146972656,
+                                1.0,
+                                10.0
                             ]
                         }
                     },
                     {
                         "RenderComponent": {
-                            "meshId": {
-                                "value": "plane"
-                            },
                             "materialOverrides": {
                                 "0": {
-                                    "id": {
-                                        "value": ""
-                                    },
-                                    "shaderId": null,
+                                    "alphaCutoff": null,
+                                    "alphaMode": null,
+                                    "ao": null,
+                                    "aoTexture": null,
                                     "baseColorFactor": [
                                         0.16602319478988647,
                                         0.10897275060415268,
                                         0.10897275060415268,
-                                        1
+                                        1.0
                                     ],
-                                    "metallic": 1,
-                                    "roughness": 0.15000000596046448,
-                                    "ao": null,
-                                    "emissive": null,
-                                    "normalScale": null,
                                     "baseColorTexture": null,
-                                    "normalTexture": null,
-                                    "metallicTexture": null,
-                                    "roughnessTexture": null,
-                                    "aoTexture": null,
+                                    "doubleSided": null,
+                                    "emissive": null,
                                     "emissiveTexture": null,
-                                    "alphaMode": null,
-                                    "alphaCutoff": null,
-                                    "doubleSided": null
+                                    "id": {
+                                        "value": ""
+                                    },
+                                    "metallic": null,
+                                    "metallicTexture": null,
+                                    "normalScale": null,
+                                    "normalTexture": null,
+                                    "roughness": 0.5099999904632568,
+                                    "roughnessTexture": null,
+                                    "shaderId": null
                                 }
+                            },
+                            "meshId": {
+                                "value": "plane"
                             }
                         }
                     }
-                ]
+                ],
+                "name": "Floor"
             }
         }
     ],
     "environment": {
-        "environmentMap": {
-            "value": "newport_loft"
-        },
+        "environmentMap": null,
         "up": [
-            0,
-            1,
-            0
+            0.0,
+            1.0,
+            0.0
         ]
+    },
+    "id": {
+        "value": "default"
     }
 }

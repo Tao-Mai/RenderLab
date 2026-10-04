@@ -87,6 +87,8 @@ set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 set(SHADER_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 set(SLANG_SHADER "${SHADER_BINARY_DIR}/slang.spv")
 set(SLANG_SHADER_REFLECTION "${SHADER_BINARY_DIR}/slang.reflection.json")
+set(SLANG_NO_IBL_SHADER "${SHADER_BINARY_DIR}/slang.no_ibl.spv")
+set(SLANG_NO_IBL_REFLECTION "${SHADER_BINARY_DIR}/slang.no_ibl.reflection.json")
 set(SLANG_LIGHT_SHADER "${SHADER_BINARY_DIR}/light.spv")
 set(SLANG_LIGHT_REFLECTION "${SHADER_BINARY_DIR}/light.reflection.json")
 set(SLANG_EDITOR_PICKING_SHADER "${SHADER_BINARY_DIR}/editor_picking.spv")
@@ -96,11 +98,21 @@ set(SLANG_SKYBOX_REFLECTION "${SHADER_BINARY_DIR}/skybox.reflection.json")
 set(SLANG_SHADOW_SHADER "${SHADER_BINARY_DIR}/shadow.spv")
 set(SLANG_SHADOW_REFLECTION "${SHADER_BINARY_DIR}/shadow.reflection.json")
 
-add_custom_command(
-        OUTPUT "${SLANG_SHADER}" "${SLANG_SHADER_REFLECTION}"
+foreach (enable_ibl IN ITEMS 1 0)
+    if (enable_ibl)
+        set(scene_binary "${SLANG_SHADER}")
+        set(scene_reflection "${SLANG_SHADER_REFLECTION}")
+    else ()
+        set(scene_binary "${SLANG_NO_IBL_SHADER}")
+        set(scene_reflection "${SLANG_NO_IBL_REFLECTION}")
+    endif ()
+
+    add_custom_command(
+        OUTPUT "${scene_binary}" "${scene_reflection}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
         COMMAND ${SLANGC_EXECUTABLE}
         "${SHADER_SOURCE_DIR}/shader.slang"
+        -DENABLE_IBL=${enable_ibl}
         -target spirv
         -profile spirv_1_4
         -matrix-layout-column-major
@@ -108,13 +120,16 @@ add_custom_command(
         -fvk-use-entrypoint-name
         -entry vertMain
         -entry fragMain
-        -reflection-json "${SLANG_SHADER_REFLECTION}"
-        -o "${SLANG_SHADER}"
+        -reflection-json "${scene_reflection}"
+        -o "${scene_binary}"
         DEPENDS "${SHADER_SOURCE_DIR}/shader.slang"
         "${SHADER_SOURCE_DIR}/scene_data.slang"
-        COMMENT "Compiling Slang shader"
+        "${SHADER_SOURCE_DIR}/brdf.slang"
+        "${SHADER_SOURCE_DIR}/constant.slang"
+        COMMENT "Compiling Slang scene shader (ENABLE_IBL=${enable_ibl})"
         VERBATIM
-)
+    )
+endforeach ()
 
 add_custom_command(
         OUTPUT "${SLANG_LIGHT_SHADER}" "${SLANG_LIGHT_REFLECTION}"
@@ -199,6 +214,8 @@ add_custom_command(
 add_custom_target(RenderLabShaders DEPENDS
         "${SLANG_SHADER}"
         "${SLANG_SHADER_REFLECTION}"
+        "${SLANG_NO_IBL_SHADER}"
+        "${SLANG_NO_IBL_REFLECTION}"
         "${SLANG_LIGHT_SHADER}"
         "${SLANG_LIGHT_REFLECTION}"
         "${SLANG_EDITOR_PICKING_SHADER}"
@@ -207,6 +224,20 @@ add_custom_target(RenderLabShaders DEPENDS
         "${SLANG_SKYBOX_REFLECTION}"
         "${SLANG_SHADOW_SHADER}"
         "${SLANG_SHADOW_REFLECTION}"
+        "${SHADER_BINARY_DIR}/raytracing_base_color.spv"
+)
+
+add_custom_command(
+        OUTPUT "${SHADER_BINARY_DIR}/raytracing_base_color.spv"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
+        COMMAND ${SLANGC_EXECUTABLE} "${SHADER_SOURCE_DIR}/raytracing/base_color.slang"
+        -target spirv -profile spirv_1_4 -matrix-layout-column-major
+        -emit-spirv-directly -fvk-use-entrypoint-name
+        -entry raygenMain -entry missMain -entry closestHitMain
+        -o "${SHADER_BINARY_DIR}/raytracing_base_color.spv"
+        DEPENDS "${SHADER_SOURCE_DIR}/raytracing/base_color.slang"
+        COMMENT "Compiling Slang ray tracing base-color shader"
+        VERBATIM
 )
 
 add_executable(RenderLab
@@ -316,6 +347,10 @@ add_executable(RenderLab
         src/scene/system/RenderSystem.h
         src/render/pass/ScenePass.cpp
         src/render/pass/ScenePass.h
+        src/render/raytracing/AccelerationStructure.cpp
+        src/render/raytracing/AccelerationStructure.h
+        src/render/raytracing/RayTracingPass.cpp
+        src/render/raytracing/RayTracingPass.h
         src/render/pass/ShadowPass.cpp
         src/render/pass/ShadowPass.h
         src/render/pass/LightMarkers.cpp

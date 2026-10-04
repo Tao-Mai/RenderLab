@@ -16,7 +16,17 @@
 | `FrameContext` | CommandPool/Buffer、Fence、imageAvailable，以及一个 FrameData | 每个 frame-in-flight 一份 |
 | `FrameData` | View/Light CPU 数据与 UBO、灯光 SSBO、Scene Set、数据上传与扩容 | 由对应 FrameContext 持有 |
 
-Renderer 持有上述模块和 `RenderSystem`。Graph 持有 Shadow、Scene、EditorPicking、EditorUi 节点。Skybox 的 ShaderHandle、Pipeline/Layout 引用和命令录制统一放在 ScenePass 内部。Pipeline 由 PipelineManager 缓存，Pass 通过自己的 input slot 获取图资源。
+Renderer 持有上述模块和 `RenderSystem`。Graph 持有 Shadow、Scene、RayTracing、EditorPicking、EditorUi 节点。Skybox 的 ShaderHandle、Pipeline/Layout 引用和命令录制统一放在 ScenePass 内部。光栅 Pipeline 由 PipelineManager 缓存，光追 Pipeline/SBT/BLAS/TLAS 由 RayTracingPass 持有；Pass 通过自己的 input slot 获取图资源。
+
+## 光栅化与光追路线
+
+编辑器的 Renderer / Render path 可选择 Rasterization 或 Ray tracing，选择立即保存到 `config/config.json` 的 `renderer.renderPath`，启动时恢复。当前光栅化仍是默认路线；不支持所需 Vulkan 光追特性的 GPU 禁用光追选项，配置直接指定不支持的路线则明确报错，不自动退回光栅化。
+
+`render/raytracing/RayTracingPass` 使用独立的 `VK_KHR_ray_tracing_pipeline`：缓存每个 mesh/submesh 的 BLAS，每帧根据现有 DrawItem 的 transform 构建该帧 TLAS，通过 SBT 和 `vkCmdTraceRaysKHR` 发射相机主射线。ClosestHit 使用三角形重心坐标插值现有 Vertex UV，输出 `baseColorTexture * baseColorFactor` 后结束；Miss 输出黑色。灯光标记沿用现有网格与颜色，不计算照明。第一版没有 IBL、反弹、透明或 alpha-test，所有三角形按不透明处理；每帧最多 128 种材质纹理/采样器绑定。
+
+光追复用 GPU mesh 的 vertex/index buffer、GpuMaterial 的纹理/采样器以及 FrameData 的相机数据，不改变光栅 descriptor layout。独立的每帧光追图像在 trace 后转为 transfer source，blit 到交换链，再叠加现有 EditorUi。光追时关闭 Scene/Shadow 节点；EditorPicking 独立生成点击像素的深度，继续使用原来的拾取 shader。交换链等待阶段按路线使用 color-attachment-output 或 transfer，仍使用原来的两帧 fence/semaphore 模型。
+
+API 参考：[Khronos 基础光追示例](https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_basic/README.html)、[多实例与材质示例](https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_extended/README.html)。
 
 SceneManager 持有 AActor 和 Component。RenderSystem 整理场景对象，在命令录制前解析 Transform、Render、Light 组件和材质覆盖，生成网格与灯光标记的 DrawItem、透明排序和 LightData。Scene、Shadow、Picking 只消费准备好的数据，不再遍历组件。Renderer 接收 CameraComponent 提供的视图，不持有独立相机 System。
 
@@ -50,7 +60,9 @@ GpuMaterial 持有 Material Set。set 2 Object 和 set 3 Pass 的编号已保留
 
 ## Shader、Descriptor 与 Pipeline
 
-构建阶段用 Slang 生成 SPIR-V 和 reflection JSON。ShaderManager 根据 ShaderAsset ID 读取并缓存模块和 descriptor 元数据。DescriptorManager 创建 Scene/Material 预设 Layout，并支持从 reflection 缓存特殊 Layout；PipelineManager 当前使用上述两种预设 PipelineLayout。
+构建阶段用 Slang 生成 SPIR-V 和 reflection JSON。主场景 shader 通过 `ENABLE_IBL=1/0` 编译为 `slang.spv` 和 `slang.no_ibl.spv`；关闭变体不执行环境光采样。ShaderManager 根据 ShaderAsset ID 与 ShaderVariant 缓存模块和 descriptor 元数据，变体文件名在资产 binary 的后缀前加 `.no_ibl`。编辑器 Environment map 选择 None 时使用关闭变体，选择环境贴图时使用默认 IBL 变体；Scene/Material descriptor layout、纹理声明和绑定保持不变。自定义场景材质 shader 也需要提供同名的关闭变体。
+
+DescriptorManager 创建 Scene/Material 预设 Layout，并支持从 reflection 缓存特殊 Layout；PipelineManager 当前使用上述两种预设 PipelineLayout。
 
 PipelineKey 包含 ShaderHandle、PipelineLayout、VertexLayout、Topology、Raster/Depth/Blend/MSAA 状态，以及颜色和深度 attachment 格式。`getOrCreate` 命中时复用；首次创建时检查 shader 的 set/binding/type 与 PipelineLayout 是否一致。Pipeline 跨帧和场景复用。
 

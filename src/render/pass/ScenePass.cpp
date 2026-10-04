@@ -98,6 +98,8 @@ void ScenePass::setupPass(RenderGraph& graph)
 
     const vk::Format colorFormat = graph.swapchain().surfaceFormat().format;
     const vk::Format depthFormat = graph.depthFormat();
+    sceneShader = graph.shaders().getOrLoad("scene",
+        hasSkybox ? ShaderVariant::Default : ShaderVariant::NoIbl);
     scenePipeline                = pipelines->getOrCreate({
         .shader = sceneShader,
         .layout = PipelineLayoutPreset::SceneMaterial,
@@ -337,10 +339,14 @@ void ScenePass::executePass(RenderGraph& graph) const
     vk::Pipeline boundPipeline = scenePipeline;
     const auto   draw          = [&](const DrawItem& item)
     {
-        const vk::Pipeline pipeline = pipelines->getOrCreate(
-            item.material->pipelineKey(
-                graph.swapchain().surfaceFormat().format,
-                graph.depthFormat()));
+        PipelineKey key = item.material->pipelineKey(
+            graph.swapchain().surfaceFormat().format, graph.depthFormat());
+        if (!hasSkybox)
+        {
+            const ShaderAsset::ID shaderId = graph.shaders().metadata(key.shader).id;
+            key.shader = graph.shaders().getOrLoad(shaderId, ShaderVariant::NoIbl);
+        }
+        const vk::Pipeline pipeline = pipelines->getOrCreate(key);
         if (pipeline != boundPipeline)
         {
             commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);

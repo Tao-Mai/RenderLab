@@ -1,6 +1,10 @@
 #include "brdf.slang"
 #include "scene_data.slang"
 
+#ifndef ENABLE_IBL
+#error ENABLE_IBL must be specified when compiling the scene shader
+#endif
+
 struct VertexInput{
     [[vk::location(0)]]
     float3 position : POSITION;
@@ -104,12 +108,12 @@ float4 fragMain(VertexOutput input) : SV_Target
         LightData light = lights[index];
         if (light.flags.y == 0) continue;
 
-        float3 L = normalize(light.positionRange.xyz - input.worldPosition);
-        float distanceToLight = length(light.positionRange.xyz - input.worldPosition);
-        float lightRange = max(light.positionRange.w, 0.001);
-        float distanceAttenuation = saturate(1.0 - distanceToLight / lightRange);
-        distanceAttenuation *= distanceAttenuation;
-        float3 pointLight = light.colorIntensity.rgb * light.colorIntensity.w * distanceAttenuation;
+        float3 L = normalize(light.position - input.worldPosition);
+        float distanceToLight = length(light.position - input.worldPosition);
+        
+        if (distanceToLight > light.range) continue;
+
+        float3 pointLight = light.colorIntensity.rgb * light.colorIntensity.w / (distanceToLight * distanceToLight);
 
         float3 H = normalize(L + V);
         float NdotH = saturate(dot(N, H));
@@ -127,6 +131,8 @@ float4 fragMain(VertexOutput input) : SV_Target
         // float depth = pointShadowMap.SampleLevel(pointShadowSampler, -L, 0.0).r;
     }
 
+    float3 ambient = float3(0.0);
+#if ENABLE_IBL
     // 环境光照
     float3 R = reflect(-V, N);
 
@@ -141,7 +147,8 @@ float4 fragMain(VertexOutput input) : SV_Target
     float3 brdf_term = scale_bias.x * F0 + scale_bias.y;
     float3 ambient_specular = env_term * brdf_term;
 
-    float3 ambient = ambient_diffuse + ambient_specular;
+    ambient = ambient_diffuse + ambient_specular;
+#endif
 
     float3 color = direct + ambient;
 

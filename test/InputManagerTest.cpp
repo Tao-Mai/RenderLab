@@ -76,6 +76,17 @@ protected:
     }
 };
 
+TEST_F(InputManagerTest, WindowUsesEditorConfig)
+{
+    const auto& editor = config.editorConfig();
+    int width = 0, height = 0;
+    glfwGetWindowSize(window.nativeHandle(), &width, &height);
+
+    EXPECT_EQ(width, editor.width);
+    EXPECT_EQ(height, editor.height);
+    EXPECT_STREQ(glfwGetWindowTitle(window.nativeHandle()), editor.title.c_str());
+}
+
 TEST_F(InputManagerTest, MouseSelectionIgnoresLockStates)
 {
     for (const int locks : lockStates)

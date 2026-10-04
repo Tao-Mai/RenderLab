@@ -1,6 +1,8 @@
 #include "core/Window.h"
 
 #include "core/Logger.h"
+#include "core/ConfigManager.h"
+#include "core/Context.h"
 
 Window::~Window()
 {
@@ -14,9 +16,8 @@ void Window::init()
         return;
     }
 
-    constexpr int width = 1440;
-    constexpr int height = 900;
-    constexpr const char* title = "RenderLab";
+    DCHECK(context().config);
+    const EditorConfig& editor = context().config->editorConfig();
 
     CHECK(glfwInit() == GLFW_TRUE, "failed to init GLFW");
     glfwInitialized = true;
@@ -24,7 +25,7 @@ void Window::init()
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
-    handle = glfwCreateWindow(width, height, title, nullptr, nullptr);
+    handle = glfwCreateWindow(editor.width, editor.height, editor.title.c_str(), nullptr, nullptr);
     if (handle == nullptr)
     {
         shutdown();

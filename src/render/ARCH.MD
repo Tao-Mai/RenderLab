@@ -28,6 +28,8 @@ Graph 和 Pass 按当前 Renderer 直接耦合。slot 表负责图资源的依�
 - 多个 slot 可以引用同一物理资源，但跨节点写入必须存在依赖顺序，注册顺序不用于解决资源 hazard。
 - output 是节点的最终使用状态；中途需要该状态时调用 Graph 的 useOutput。
 
-Scene 保持一个节点，Skybox 的 shader 加载、pipeline 获取和绘制均由 ScenePass 内部负责。Shadow → Scene，Scene depth → Picking，Scene color → EditorUi。节点默认全部启用，通过 setPassEnabled 后重新 build 调整 feature。
+光栅路线的 Scene 保持一个节点，Skybox 的 shader 加载、pipeline 获取和绘制均由 ScenePass 内部负责。Shadow → Scene，Scene depth → Picking，Scene color → EditorUi。默认启用光栅路线及编辑器节点，RayTracing 默认关闭；通过 setPassEnabled 后重新 build 调整 feature。
+
+`renderer.renderPath` 选择 RayTracing 时，用独立的 RayTracing 节点替代 Shadow/Scene：BLAS/TLAS → TraceRays → 光追图像 → blit 到 swapchain → EditorUi。Picking 在该路线下拥有独立深度附件，不依赖 Scene。路线切换和 resize 均在 waitIdle 后 build；资产 GPU 对象和 BLAS 缓存继续复用，每帧 TLAS 与光追描述符在对应 frame fence 完成后更新。
 
 全图使用一个 graphics/present queue，状态粒度为整个 Image/Buffer。详细接口和逐帧流程见 [README](README.md)。

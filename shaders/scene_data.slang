@@ -30,6 +30,13 @@ struct LightData
     float4 direction;
     float4 areaSizeCone;
     uint4 flags;
+
+    property position : float3 {
+        get { return positionRange.xyz; }
+    }
+    property range : float {
+        get { return positionRange.w; }
+    }
 };
 
 [[vk::binding(0, 0)]]

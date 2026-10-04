@@ -21,7 +21,8 @@ struct Submesh
 class GpuMesh
 {
 public:
-    GpuMesh(GpuUploadContext upload, MeshGeometry geometry, std::vector<Submesh> submeshes);
+    GpuMesh(GpuUploadContext upload, MeshGeometry geometry, std::vector<Submesh> submeshes,
+        bool rayTracing);
 
     GpuMesh(const GpuMesh&)            = delete;
     GpuMesh& operator=(const GpuMesh&) = delete;
@@ -31,9 +32,13 @@ public:
     void bind(vk::raii::CommandBuffer& commandBuffer) const;
     [[nodiscard]] uint32_t indexCount() const;
     [[nodiscard]] const std::vector<Submesh>& submeshes() const;
+    [[nodiscard]] const Buffer& vertices() const { return vertexBuffer; }
+    [[nodiscard]] const Buffer& indices() const { return indexBuffer; }
+    [[nodiscard]] uint32_t vertexCount() const { return vertexTotal; }
 
 private:
     uint32_t indexTotal = 0;
+    uint32_t vertexTotal = 0;
     std::vector<Submesh> parts;
     Buffer vertexBuffer;
     Buffer indexBuffer;

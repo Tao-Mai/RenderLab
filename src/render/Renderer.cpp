@@ -205,7 +205,8 @@ EditorFrameResult Renderer::drawFrame(const CameraComponent& camera, const Edito
     graph.execute(editor, frameIndex, imageIndex);
 
     vk::PipelineStageFlags waitDestinationStageMask(
-        vk::PipelineStageFlagBits::eColorAttachmentOutput);
+        graph.passEnabled("raytracing") ? vk::PipelineStageFlagBits::eTransfer
+                                       : vk::PipelineStageFlagBits::eColorAttachmentOutput);
     const vk::SubmitInfo submitInfo{
         .waitSemaphoreCount = 1,
         .pWaitSemaphores = &imageAvailableSemaphore,

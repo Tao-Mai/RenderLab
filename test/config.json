@@ -1,10 +1,12 @@
 {
   "paths": {
     "assets": ".",
-    "commands": "../config/commands.json"
+    "commands": "../config/commands.json",
+    "editor": "../config/editor.json"
   },
   "initialScene": {"value": "default"},
   "renderer": {
+    "renderPath": "Rasterization",
     "brdfLut": {
       "textureID": {"value": "lut_ggx"},
       "samplerID": {"value": "linearClamp"}

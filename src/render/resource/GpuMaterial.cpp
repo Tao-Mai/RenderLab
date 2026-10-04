@@ -38,6 +38,8 @@ void GpuMaterial::create(
     }
 
     albedoTexture  = std::move(texture);
+    albedoSampler = sampler;
+    colorFactor = material.baseColorFactor.value_or(glm::vec4{1.0f});
     materialBuffer = std::make_shared<Buffer>(
         physicalDevice,
         device,
@@ -46,7 +48,7 @@ void GpuMaterial::create(
         vk::MemoryPropertyFlagBits::eHostVisible |
             vk::MemoryPropertyFlagBits::eHostCoherent);
     const MaterialUniforms materialData{
-        .baseColorFactor = material.baseColorFactor.value_or(glm::vec4{1.0f}),
+        .baseColorFactor = colorFactor,
         .roughness = material.roughness.value_or(1.0f),
         .metallic = material.metallic.value_or(1.0f),
         .alphaCutoff = material.alphaCutoff.value_or(0.5f),

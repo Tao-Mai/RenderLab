@@ -27,14 +27,26 @@ void EditorPickingPass::registerPass(RenderGraph& graph)
 
 void EditorPickingPass::setupPass(RenderGraph& graph)
 {
-    graph.bindInput(inputSlots[Depth], graph.outputSlot("scene", ScenePass::DepthResult), {
+    const auto extent = graph.swapchain().extent();
+    const bool rayTracing = graph.passEnabled("raytracing");
+    if (rayTracing)
+        graph.createResource(inputSlots[Depth], {
+            .format = graph.depthFormat(), .extent = {extent.width, extent.height, 1},
+            .aspect = vk::ImageAspectFlagBits::eDepth,
+            .imageUsage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
+            .stages = vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+                vk::PipelineStageFlagBits2::eLateFragmentTests,
+            .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead |
+                vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            .layout = vk::ImageLayout::eDepthAttachmentOptimal,
+        });
+    else graph.bindInput(inputSlots[Depth], graph.outputSlot("scene", ScenePass::DepthResult), {
         .imageUsage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
         .stages = vk::PipelineStageFlagBits2::eEarlyFragmentTests |
             vk::PipelineStageFlagBits2::eLateFragmentTests,
         .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead,
         .layout = vk::ImageLayout::eDepthReadOnlyOptimal,
     });
-    const auto extent = graph.swapchain().extent();
     graph.createResource(inputSlots[PickingImage], {
         .format = vk::Format::eR32Uint,
         .extent = {extent.width, extent.height, 1},
@@ -64,10 +76,12 @@ void EditorPickingPass::setupPass(RenderGraph& graph)
         .access = vk::AccessFlagBits2::eHostRead,
     });
 
+    auto state = PipelineState::preset(RenderMode::Picking);
+    state.depthWrite = rayTracing;
     pipeline = pipelines->getOrCreate({
         .shader = shader,
         .layout = PipelineLayoutPreset::SceneOnly,
-        .state = PipelineState::preset(RenderMode::Picking),
+        .state = state,
         .colorFormat = vk::Format::eR32Uint,
         .depthFormat = graph.depthFormat(),
     });
@@ -108,11 +122,14 @@ void EditorPickingPass::executePass(RenderGraph& graph) const
         .storeOp = vk::AttachmentStoreOp::eStore,
         .clearValue = vk::ClearColorValue(std::array<uint32_t, 4>{0u, 0u, 0u, 0u}),
     };
+    const bool rayTracing = graph.passEnabled("raytracing");
     const vk::RenderingAttachmentInfo depthAttachment{
         .imageView = graph.imageView(inputSlots[Depth]),
-        .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
-        .loadOp = vk::AttachmentLoadOp::eLoad,
+        .imageLayout = rayTracing ? vk::ImageLayout::eDepthAttachmentOptimal
+                                 : vk::ImageLayout::eDepthReadOnlyOptimal,
+        .loadOp = rayTracing ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad,
         .storeOp = vk::AttachmentStoreOp::eNone,
+        .clearValue = vk::ClearDepthStencilValue{1.0f, 0},
     };
     commandBuffer.beginRendering({
         .renderArea = {{static_cast<int32_t>(x), static_cast<int32_t>(y)}, {1, 1}},

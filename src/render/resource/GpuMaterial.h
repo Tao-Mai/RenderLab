@@ -28,6 +28,9 @@ public:
     [[nodiscard]] vk::DescriptorSet descriptorSetHandle() const;
     [[nodiscard]] PipelineKey pipelineKey(vk::Format colorFormat, vk::Format depthFormat) const;
     [[nodiscard]] RenderMode renderMode() const;
+    [[nodiscard]] vk::ImageView baseColorView() const { return albedoTexture->imageView(); }
+    [[nodiscard]] vk::Sampler baseColorSampler() const { return albedoSampler; }
+    [[nodiscard]] const glm::vec4& baseColorFactor() const { return colorFactor; }
 
 private:
     std::shared_ptr<GpuTexture>                 albedoTexture;
@@ -36,4 +39,6 @@ private:
     ShaderHandle                              shaderHandle;
     PipelineState                             pipelineState;
     RenderMode                                mode = RenderMode::Opaque;
+    vk::Sampler albedoSampler;
+    glm::vec4 colorFactor{1.0f};
 };

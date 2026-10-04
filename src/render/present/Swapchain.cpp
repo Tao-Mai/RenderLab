@@ -66,6 +66,9 @@ void Swapchain::createSwapChain()
         vulkan->physicalDeviceHandle().getSurfacePresentModesKHR(vulkan->surfaceHandle()
         ));
     vk::PresentModeKHR presentMode = chooseSwapPresentMode(availablePresentModes);
+    vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eColorAttachment;
+    if (surfaceCapabilities.supportedUsageFlags & vk::ImageUsageFlagBits::eTransferDst)
+        usage |= vk::ImageUsageFlagBits::eTransferDst;
 
     vk::SwapchainCreateInfoKHR swapChainCreateInfo{.surface = vulkan->surfaceHandle(),
                                                    .minImageCount =
@@ -77,7 +80,7 @@ void Swapchain::createSwapChain()
                                                    .imageExtent = swapChainExtent,
                                                    .imageArrayLayers = 1,
                                                    .imageUsage =
-                                                   vk::ImageUsageFlagBits::eColorAttachment,
+                                                   usage,
                                                    .imageSharingMode =
                                                    vk::SharingMode::eExclusive,
                                                    .preTransform = surfaceCapabilities.
