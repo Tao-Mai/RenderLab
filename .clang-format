@@ -91,11 +91,17 @@ PackConstructorInitializers: NextLine
 BinPackParameters: OnePerLine # 放不下参数的时候就每行一个
 BinPackArguments: false
 AllowAllArgumentsOnNextLine: false
+# 长函数调用在左括号后换行，右括号独占一行
+AlignAfterOpenBracket: BlockIndent
+ContinuationIndentWidth: 4
+# 二元表达式换行时，运算符保留在上一行末尾
+BreakBeforeBinaryOperators: None
 
 # 允许将简短的枚举放在单行
 AllowShortEnumsOnASingleLine: true
 
 AllowShortFunctionsOnASingleLine: All
+
 ...
 
 # 缺省值使用的基础配置，不使用
@@ -220,7 +226,7 @@ AllowShortFunctionsOnASingleLine: All
 #
 ### Functions 函数调用的风格属性
 ## 一行不能容纳所有参数时，强制把参数换到下一行
-#AlignAfterOpenBracket: AlwaysBreak
+#AlignAfterOpenBracket: BlockIndent
 ## 当函数声明过长，允许把全部参数放在第二行，而不是每个参数占用一行
 #AllowAllParametersOfDeclarationOnNextLine: true
 ## 允许短的函数定义放在一行内

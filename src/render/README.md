@@ -112,7 +112,9 @@ Scene、Shadow 和 Picking 消费 RenderSystem 生成的 DrawItem，其中包含
 
 ## 绘制行为
 
-FrameData 在上传时为启用投影的点光源计算六个 VP，range 为 far plane。Shadow 遍历当前帧全部灯光，对有效点光源各录制一次六面 multiview 渲染，viewMask = 0b111111；shader 按 lightidx → shadowidx → VP[SV_ViewID] 取矩阵。每个 shadowidx 对应 cubemap array 中独立的六层，fragment 写入 `distance(worldPosition, lightPosition) / range` 的线性深度。没有投影时清空第一个 cube。完成后整图切换到深度只读状态。Scene shader 的阴影采样仍未启用，其他光源阴影、透明和 AlphaTest 镂空暂不处理。设备需要支持至少六个 multiview view 和 imageCubeArray。
+`RenderConfig.h` 中的 `kMaxPointLightShadow = 4` 固定点光源阴影容量。每帧阴影图预留 24 层，PointShadowData SSBO 固定分配四项，不随场景灯光数量或开关状态扩容。上传时有效点光源超过四盏直接 CHECK 终止。
+
+FrameData 在上传时为启用投影的点光源计算六个 VP，range 为 far plane。Shadow 遍历当前帧全部灯光，对有效点光源各录制一次六面 multiview 渲染，viewMask = 0b111111；shader 按 lightidx → shadowidx → VP[SV_ViewID] 取矩阵。每个 shadowidx 对应 cubemap array 中独立的六层，fragment 写入 `distance(worldPosition, lightPosition) / range` 的线性深度。没有有效阴影点光源时不录制清空或绘制命令。完成后整图切换到深度只读状态。Scene shader 的阴影采样仍未启用，其他光源阴影、透明和 AlphaTest 镂空暂不处理。设备需要支持至少六个 multiview view 和 imageCubeArray。
 
 有环境贴图时，Scene 内部在 opaque 之后绘制 Skybox。fullscreen triangle 的深度为 1，fragment 从 ViewUniforms 读取逆视投影矩阵和相机位置，结合 push constant 中的编辑器视口重建世界方向，采样 radiance 基础 mip。保留深度测试、关闭深度写入，并请求早期深度测试。随后透明几何按距离从远到近绘制，再绘制灯光标记。
 

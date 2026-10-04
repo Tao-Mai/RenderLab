@@ -63,10 +63,10 @@ struct alignas(16) LightData
     glm::vec4  direction{0.0f, -1.0f, 0.0f, 0.0f};
     glm::vec4  areaSizeCone{1.0f, 1.0f, 0.9396926f, 0.8660254f};
     glm::uvec4 flags{0u};
-    uint32_t  shadowidx = ~0u;
-    uint32_t  padding0  = 0;
-    uint32_t  padding1  = 0;
-    uint32_t  padding2  = 0;
+    uint32_t   shadowidx = ~0u;
+    uint32_t   padding0  = 0;
+    uint32_t   padding1  = 0;
+    uint32_t   padding2  = 0;
 
     [[nodiscard]] glm::vec3 position() const
     {
@@ -135,10 +135,10 @@ struct MeshPushConstants
 struct ShadowPushConstants
 {
     glm::mat4 model{1.0f};
-    uint32_t lightidx = 0;
-    uint32_t padding0 = 0;
-    uint32_t padding1 = 0;
-    uint32_t padding2 = 0;
+    uint32_t  lightIdx = 0;
+    uint32_t  padding0 = 0;
+    uint32_t  padding1 = 0;
+    uint32_t  padding2 = 0;
 };
 
 struct LightPushConstants
@@ -163,7 +163,7 @@ struct SkyboxPushConstants
 
 static_assert(sizeof(MeshPushConstants) == 64);
 static_assert(sizeof(ShadowPushConstants) == 80);
-static_assert(offsetof(ShadowPushConstants, lightidx) == 64);
+static_assert(offsetof(ShadowPushConstants, lightIdx) == 64);
 static_assert(sizeof(LightPushConstants) == 80);
 static_assert(sizeof(EditorPickingPushConstants) == 80);
 static_assert(sizeof(SkyboxPushConstants) == 16);

@@ -37,7 +37,7 @@ struct LightData
     float4 direction;
     float4 areaSizeCone;
     uint4 flags;
-    uint shadowidx;
+    uint shadowIdx;
     uint padding0;
     uint padding1;
     uint padding2;
