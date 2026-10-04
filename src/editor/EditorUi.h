@@ -28,6 +28,13 @@ public:
         bool rendererChanged = false;
     };
 
+    struct HierarchyResult
+    {
+        std::optional<std::string> createType;
+        uint32_t deleteId = 0;
+        bool renamed = false;
+    };
+
     EditorUI() = default;
     ~EditorUI();
 
@@ -45,6 +52,7 @@ public:
         uint32_t         minImageCount,
         uint32_t         imageCount);
     void beginFrame(float deltaTime);
+    [[nodiscard]] HierarchyResult drawHierarchy(SceneAsset& scene, uint32_t& selectedId);
     [[nodiscard]] bool drawGizmo(
         TransformComponent&  transform,
         const glm::mat4& view,
@@ -73,6 +81,9 @@ private:
     float                             displayedFps              = 0.0f;
     uint32_t                          framesSinceRefresh        = 0;
     uint32_t                          editorDockId              = 0;
+    uint32_t                          hierarchyDockId           = 0;
+    uint32_t                          renameActorId             = 0;
+    std::string                       renameText;
     int                               gizmoOperation            = 0;
     glm::vec2                         scenePosition{0.0f};
     glm::vec2                         sceneSize{1.0f};

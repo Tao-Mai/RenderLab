@@ -18,6 +18,7 @@ public:
     void init();
     void refreshUi();
     void shutdown() noexcept;
+    void applySceneActions();
 
     [[nodiscard]] EditorFrameInput buildFrame(
         const CameraComponent& camera,
@@ -33,6 +34,7 @@ private:
     EditorUI ui;
     uint32_t selectedId = 0;
     bool dirty = false;
+    EditorUI::HierarchyResult pendingSceneActions;
 
     void saveScene();
 };

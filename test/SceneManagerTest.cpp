@@ -1,6 +1,7 @@
 #include "scene/SceneManager.h"
 
 #include "core/Serializer.h"
+#include "asset/BuiltinAssets.h"
 #include "scene/actor/ALight.h"
 #include "scene/actor/AStaticMesh.h"
 #include "scene/component/CharacterMoveComponent.h"
@@ -99,6 +100,71 @@ TEST(SceneManagerTest, PickingRejectsBackgroundAndStaleActorIds)
     manager.load(makeScene());
     EXPECT_EQ(manager.findActor(id), nullptr);
     EXPECT_NE(manager.scene().actors[1]->selectionId(), id);
+    manager.shutdown();
+}
+
+TEST(SceneManagerTest, CreatesNamesAndDeletesRegisteredActors)
+{
+    SceneManager manager;
+    manager.init();
+    manager.load(makeScene());
+
+    const auto& type = BaseTypeInfo<AActor>::baseTypeInfoMap.at("ALight");
+    EXPECT_EQ(type.parentType, std::type_index{typeid(AActor)});
+    auto& first = manager.createActor("ALight");
+    auto& second = manager.createActor("ALight");
+    EXPECT_EQ(first.name, "ALight1");
+    EXPECT_EQ(second.name, "ALight2");
+    EXPECT_EQ(&first.getComponent<LightComponent>()->actor(), &first);
+    EXPECT_NE(first.selectionId(), second.selectionId());
+
+    first.name = "ALight3";
+    auto& third = manager.createActor("ALight");
+    EXPECT_EQ(third.name, "ALight1");
+    const auto removedId = second.selectionId();
+    manager.deleteActor(removedId);
+    EXPECT_EQ(manager.findActor(removedId), nullptr);
+    EXPECT_EQ(manager.findActor(first.selectionId()), &first);
+
+    auto& mesh = manager.createActor("AStaticMesh");
+    EXPECT_EQ(mesh.name, "AStaticMesh1");
+    EXPECT_EQ(mesh.getComponent<RenderComponent>()->meshId, BuiltinAssets::Mesh::cube);
+    const auto stored = Serialize(manager.scene());
+    EXPECT_EQ(stored["actors"][2]["ALight"]["name"], "ALight3");
+    manager.load(manager.scene());
+    EXPECT_EQ(Serialize(manager.scene()), stored);
+    manager.shutdown();
+}
+
+TEST(SceneManagerTest, DeletingCamerasKeepsNavigationOutsideTheScene)
+{
+    SceneManager manager;
+    manager.init();
+    manager.load(makeScene());
+    const auto firstId = manager.editorCamera().selectionId();
+    auto& second = manager.createActor("AFreeFlyCamera");
+    const auto secondId = second.selectionId();
+    EXPECT_EQ(manager.editorCamera().selectionId(), firstId);
+    manager.load(manager.scene());
+    EXPECT_EQ(manager.scene().actors.size(), 3u);
+
+    const auto activeId = manager.editorCamera().selectionId();
+    const auto otherId = manager.scene().actors.back()->selectionId();
+    manager.deleteActor(activeId);
+    EXPECT_EQ(manager.editorCamera().selectionId(), otherId);
+    manager.editorCamera().transform().position.x = 17.0f;
+    manager.deleteActor(otherId);
+    EXPECT_EQ(manager.scene().actors.size(), 1u);
+    EXPECT_EQ(manager.editorCamera().selectionId(), 0u);
+    EXPECT_FLOAT_EQ(manager.editorCamera().transform().position.x, 17.0f);
+    EXPECT_EQ(manager.findActor(otherId), nullptr);
+    EXPECT_EQ(manager.findActor(secondId), nullptr);
+
+    manager.load(manager.scene());
+    EXPECT_EQ(manager.scene().actors.size(), 1u);
+    EXPECT_EQ(manager.editorCamera().selectionId(), 0u);
+    auto& replacement = manager.createActor("AFreeFlyCamera");
+    EXPECT_EQ(&manager.editorCamera(), &replacement);
     manager.shutdown();
 }
 

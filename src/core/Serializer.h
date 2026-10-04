@@ -325,6 +325,18 @@ void RegisterBase(std::string_view name)
     DCHECK(!ownedName.empty() && !types.contains(ownedName) && !names.contains(typeid(T)),
           "duplicate or empty registered type name: {}", ownedName);
 
+    std::optional<std::type_index> parentType;
+    template for (constexpr auto base : std::define_static_array(
+        std::meta::bases_of(^^T, std::meta::access_context::unchecked())))
+    {
+        using Parent = [:std::meta::type_of(base):];
+        if constexpr (std::derived_from<Parent, Base>)
+        {
+            DCHECK(!parentType, "registered types require a single base in their reflected hierarchy");
+            parentType = typeid(Parent);
+        }
+    }
+
     types.emplace(ownedName, BaseTypeInfo<Base>{
         .DeserializeBase = [](const json& data) -> std::unique_ptr<Base>
         {
@@ -347,6 +359,8 @@ void RegisterBase(std::string_view name)
                 visitor({std::meta::identifier_of(member), typeid(MemberType), &object.[:member:]});
             }
         },
+        .Create = []() -> std::unique_ptr<Base> { return std::make_unique<T>(); },
+        .parentType = parentType,
     });
     names.emplace(typeid(T), ownedName);
 }

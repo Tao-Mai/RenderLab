@@ -6,6 +6,7 @@
 #include "core/Context.h"
 #include "core/InputManager.h"
 #include "core/Logger.h"
+#include "core/Reflect.h"
 #include "render/Renderer.h"
 #include "scene/component/TransformComponent.h"
 #include "editor/ComponentDraw.h"
@@ -27,6 +28,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
+#include <imgui_stdlib.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
 #include <imgui_internal.h>
@@ -41,6 +43,35 @@
 
 namespace
 {
+void drawActorTypeTree(
+    std::type_index parent,
+    const std::vector<std::pair<std::type_index, std::string>>& types,
+    std::optional<std::string>& chosen)
+{
+    const auto& registry = BaseTypeInfo<AActor>::baseTypeInfoMap;
+    for (const auto& [type, name] : types)
+    {
+        const auto registered = registry.find(name);
+        DCHECK(registered != registry.end());
+        if (registered->second.parentType != parent) continue;
+
+        const bool hasChildren = std::ranges::any_of(registry, [&](const auto& entry) {
+            return entry.second.parentType == type;
+        });
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |
+            ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen;
+        if (!hasChildren) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+
+        const bool open = ImGui::TreeNodeEx(name.c_str(), flags);
+        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) chosen = name;
+        if (open && hasChildren)
+        {
+            drawActorTypeTree(type, types, chosen);
+            ImGui::TreePop();
+        }
+    }
+}
+
 [[nodiscard]] std::string displayPath(const std::filesystem::path& path)
 {
     const std::u8string utf8 = path.u8string();
@@ -270,6 +301,9 @@ void EditorUI::beginFrame(float deltaTime)
             nullptr,
             &centerDockId);
         ImGui::DockBuilderDockWindow("Editor", editorDockId);
+        hierarchyDockId = ImGui::DockBuilderSplitNode(
+            centerDockId, ImGuiDir_Left, 0.23f, nullptr, &centerDockId);
+        ImGui::DockBuilderDockWindow("Scene Objects", hierarchyDockId);
         ImGui::DockBuilderFinish(dockspaceId);
         dockLayoutInitialized = true;
     }
@@ -291,12 +325,100 @@ void EditorUI::beginFrame(float deltaTime)
     }
 }
 
+EditorUI::HierarchyResult EditorUI::drawHierarchy(SceneAsset& scene, uint32_t& selectedId)
+{
+    HierarchyResult result;
+    ImGui::SetNextWindowDockID(hierarchyDockId, ImGuiCond_Always);
+    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
+    ImGui::Begin("Scene Objects", nullptr, flags);
+
+    ImGui::TextUnformatted(scene.id.value.c_str());
+    ImGui::SameLine();
+    if (ImGui::Button("+")) ImGui::OpenPopup("New Actor");
+    if (ImGui::BeginPopup("New Actor"))
+    {
+        ImGui::TextUnformatted("Choose an Actor class");
+        ImGui::Separator();
+        std::vector<std::pair<std::type_index, std::string>> types{
+            BaseTypeInfo<AActor>::typeNames.begin(), BaseTypeInfo<AActor>::typeNames.end()};
+        std::ranges::sort(types, {}, &std::pair<std::type_index, std::string>::second);
+        if (ImGui::TreeNodeEx("AActor", ImGuiTreeNodeFlags_DefaultOpen |
+            ImGuiTreeNodeFlags_SpanAvailWidth))
+        {
+            drawActorTypeTree(typeid(AActor), types, result.createType);
+            ImGui::TreePop();
+        }
+        if (result.createType) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    ImGui::Separator();
+    bool openRename = false;
+    if (ImGui::BeginChild("Actor list", {0, 0}))
+    {
+        for (const auto& actor : scene.actors)
+        {
+            ImGui::PushID(static_cast<int>(actor->selectionId()));
+            const std::string label = actor->name + "###Actor";
+            if (ImGui::Selectable(label.c_str(), actor->selectionId() == selectedId))
+                selectedId = actor->selectionId();
+
+            if (ImGui::BeginPopupContextItem("Actor actions"))
+            {
+                selectedId = actor->selectionId();
+                if (ImGui::MenuItem("Rename"))
+                {
+                    renameActorId = selectedId;
+                    renameText = actor->name;
+                    openRename = true;
+                }
+                if (ImGui::MenuItem("Delete")) result.deleteId = actor->selectionId();
+                ImGui::EndPopup();
+            }
+            ImGui::PopID();
+        }
+    }
+    ImGui::EndChild();
+
+    if (openRename) ImGui::OpenPopup("Rename Actor");
+    if (ImGui::BeginPopupModal("Rename Actor", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        const bool enter = ImGui::InputText("Name", &renameText, ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::BeginDisabled(renameText.empty());
+        const bool confirm = ImGui::Button("Rename");
+        ImGui::EndDisabled();
+        if ((confirm || enter) && !renameText.empty())
+        {
+            const auto actor = std::ranges::find_if(scene.actors, [&](const auto& item) {
+                return item->selectionId() == renameActorId;
+            });
+            if (actor != scene.actors.end() && (*actor)->name != renameText)
+            {
+                (*actor)->name = renameText;
+                result.renamed = true;
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    ImGui::End();
+    return result;
+}
+
 bool EditorUI::drawGizmo(
     TransformComponent& transform,
     const glm::mat4&         view,
     const glm::mat4&         projection,
     bool                     enableShortcuts)
 {
+    if (ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+        return false;
+
     const ImGuiIO& io = ImGui::GetIO();
     if (enableShortcuts && !io.WantTextInput && !ImGui::IsAnyItemActive())
     {
@@ -622,7 +744,9 @@ bool EditorUI::sceneClicked(glm::vec2& mousePosition) const
     const bool   inside = mouse.x >= scenePosition.x && mouse.y >= scenePosition.y &&
         mouse.x < scenePosition.x + sceneSize.x &&
         mouse.y < scenePosition.y + sceneSize.y;
-    if (!inside || !context().inputManager->get(Command::SelectObject) ||
+    if (!inside || ImGui::GetIO().WantCaptureMouse ||
+        !context().inputManager->get(Command::SelectObject) ||
+        ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) ||
         ImGuizmo::IsOver() || ImGuizmo::IsUsing())
     {
         return false;
@@ -694,4 +818,7 @@ void EditorUI::shutdown(bool stopImport) noexcept
     }
     dockLayoutInitialized = false;
     editorDockId          = 0;
+    hierarchyDockId       = 0;
+    renameActorId         = 0;
+    renameText.clear();
 }

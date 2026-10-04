@@ -116,6 +116,7 @@ void Engine::mainLoop()
             std::chrono::duration<float>(currentTime - previousTime).count();
         previousTime = currentTime;
 
+        ctx.editor->applySceneActions();
         auto& camera = ctx.sceneManager->editorCamera().camera();
         camera.setInputEnabled(camera.isNavigationActive() || !ctx.editor->wantsInput());
         ctx.sceneManager->tick(deltaTime);

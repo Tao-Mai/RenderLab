@@ -106,26 +106,32 @@ float4 fragMain(VertexOutput input) : SV_Target
     for (uint index = 0; index < lightUniforms.lightCount; ++index)
     {
         LightData light = lights[index];
-        if (light.flags.y == 0) continue;
+        if (!light.enabled) continue;
 
-        float3 L = normalize(light.position - input.worldPosition);
-        float distanceToLight = length(light.position - input.worldPosition);
-        
-        if (distanceToLight > light.range) continue;
+        if (light.type == LightType.Point) {
+            float3 L = normalize(light.position - input.worldPosition);
+            float distanceToLight = length(light.position - input.worldPosition);
+            if (distanceToLight > light.range) continue;
 
-        float3 pointLight = light.colorIntensity.rgb * light.colorIntensity.w / (distanceToLight * distanceToLight);
+            float3 pointLight = light.color * light.intensity / (distanceToLight * distanceToLight);
 
-        float3 H = normalize(L + V);
-        float NdotH = saturate(dot(N, H));
-        float NdotL = saturate(dot(N, L));
-        float VdotH = saturate(dot(V, H));
-        float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
-        float D = NormalDistributionGGX(roughness, NdotH);
-        float G = GeometrySmithGGX(roughness, NdotV, NdotL);
+            float3 H = normalize(L + V);
+            float NdotH = saturate(dot(N, H));
+            float NdotL = saturate(dot(N, L));
+            float VdotH = saturate(dot(V, H));
+            float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
+            float D = NormalDistributionGGX(roughness, NdotH);
+            float G = GeometrySmithGGX(roughness, NdotV, NdotL);
 
-        float3 diffuseBRDF = (1.0 - F) * (1.0 - metallic) * baseColor.rgb * INV_PI;
-        float3 specularBRDF = F * D * G / max(4.0 * NdotV * NdotL, 1e-5);
-        direct += pointLight * (diffuseBRDF + specularBRDF) * NdotL;
+            float3 diffuseBRDF = (1.0 - F) * (1.0 - metallic) * baseColor.rgb * INV_PI;
+            float3 specularBRDF = F * D * G / max(4.0 * NdotV * NdotL, 1e-5);
+            direct += pointLight * (diffuseBRDF + specularBRDF) * NdotL;
+        }
+        else if (light.type == LightType.Directional) {
+            // TODO
+            float NdotL = saturate(dot(N, -light.direction.xyz));
+            direct += light.color * light.intensity * NdotL * baseColor.rgb;
+        }
 
         // 阴影
         // float depth = pointShadowMap.SampleLevel(pointShadowSampler, -L, 0.0).r;

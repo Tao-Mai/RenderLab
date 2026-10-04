@@ -22,6 +22,13 @@ struct LightUniforms
     }
 };
 
+enum class LightType : uint {
+    Point = 0,
+    Directional = 1,
+    RectArea = 2,
+    Spot = 3,
+};
+
 // std430 array stride = 80 bytes. flags = {type, enabled, castShadow, reserved}.
 struct LightData
 {
@@ -31,11 +38,29 @@ struct LightData
     float4 areaSizeCone;
     uint4 flags;
 
+    property color : float3 {
+        get { return colorIntensity.rgb; }
+    }
+    property intensity : float {
+        get { return colorIntensity.w; }
+    }
+
     property position : float3 {
         get { return positionRange.xyz; }
     }
     property range : float {
         get { return positionRange.w; }
+    }
+
+    property type : LightType {
+        get { return LightType(flags.x); }
+    }
+
+    property enabled : bool {
+        get { return flags.y; }
+    }
+    property castShadow : bool {
+        get { return flags.z; }
     }
 };
 

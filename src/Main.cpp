@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <vulkan/vulkan_structs.hpp>
 
 int main(int argc, char** argv)
 {
@@ -19,11 +20,11 @@ int main(int argc, char** argv)
         CHECK(argc == 3,
               "usage: RenderLab --import-texture|--import-environmentmap|--import-mesh <source>");
         ConfigManager    config;
-        AssetManager assets;
+        AssetManager     assets;
         AssetDataManager assetData;
-        SceneManager scenes;
+        SceneManager     scenes;
         context().config           = &config;
-        context().assetManager = &assets;
+        context().assetManager     = &assets;
         context().assetDataManager = &assetData;
         config.init();
         assetData.init();
@@ -57,7 +58,7 @@ int main(int argc, char** argv)
         assetData.shutdown();
         scenes.shutdown();
         config.shutdown();
-        context().assetManager = nullptr;
+        context().assetManager     = nullptr;
         context().assetDataManager = nullptr;
         context().config           = nullptr;
         return 0;

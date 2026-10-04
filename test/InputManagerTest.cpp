@@ -85,6 +85,13 @@ TEST_F(InputManagerTest, WindowUsesEditorConfig)
     EXPECT_EQ(width, editor.width);
     EXPECT_EQ(height, editor.height);
     EXPECT_STREQ(glfwGetWindowTitle(window.nativeHandle()), editor.title.c_str());
+
+    int workX = 0, workY = 0, workWidth = 0, workHeight = 0;
+    glfwGetMonitorWorkarea(glfwGetPrimaryMonitor(), &workX, &workY, &workWidth, &workHeight);
+    int x = 0, y = 0;
+    glfwGetWindowPos(window.nativeHandle(), &x, &y);
+    EXPECT_EQ(x, workX + (workWidth - width) / 2);
+    EXPECT_EQ(y, workY + (workHeight - height) / 2);
 }
 
 TEST_F(InputManagerTest, MouseSelectionIgnoresLockStates)

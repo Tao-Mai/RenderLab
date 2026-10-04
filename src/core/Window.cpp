@@ -32,6 +32,15 @@ void Window::init()
     }
     CHECK(handle != nullptr, "failed to create GLFW window");
 
+    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    CHECK(monitor);
+    int workX = 0, workY = 0, workWidth = 0, workHeight = 0;
+    glfwGetMonitorWorkarea(monitor, &workX, &workY, &workWidth, &workHeight);
+
+    int width = 0, height = 0;
+    glfwGetWindowSize(handle, &width, &height);
+    glfwSetWindowPos(handle, workX + (workWidth - width) / 2, workY + (workHeight - height) / 2);
+
     glfwSetInputMode(handle, GLFW_LOCK_KEY_MODS, GLFW_TRUE);
     glfwSetWindowUserPointer(handle, this);
     glfwSetKeyCallback(handle, &Window::keyCallback);

@@ -19,6 +19,8 @@ public:
     void save();
     void shutdown() noexcept;
     void tick(float deltaTime);
+    [[nodiscard]] AActor& createActor(std::string_view typeName);
+    void deleteActor(uint32_t selectionId);
 
     [[nodiscard]] SceneAsset& scene() noexcept;
     [[nodiscard]] const SceneAsset& scene() const noexcept;
@@ -29,5 +31,6 @@ private:
     DEBUG_ONLY(bool inited = false;)
     SceneAsset data;
     AFreeFlyCamera* cameraActor = nullptr;
+    std::unique_ptr<AFreeFlyCamera> navigationCamera;
     uint32_t nextSelectionId = 1;
 };

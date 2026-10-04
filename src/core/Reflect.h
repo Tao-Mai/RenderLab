@@ -105,6 +105,8 @@ struct BaseTypeInfo
     std::unique_ptr<Base> (*DeserializeBase)(const nlohmann::json&);
     nlohmann::json (*       SerializeBase)(const Base&);
     void (*                 IterateMembers)(Base&, const std::function<void(MemberRef)>&);
+    std::unique_ptr<Base> (*Create)();
+    std::optional<std::type_index> parentType;
 
     inline static std::unordered_map<std::string, BaseTypeInfo>    baseTypeInfoMap;
     inline static std::unordered_map<std::type_index, std::string> typeNames;

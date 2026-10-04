@@ -44,6 +44,7 @@ void Editor::shutdown() noexcept
     ui.shutdown();
     selectedId = 0;
     dirty = false;
+    pendingSceneActions = {};
     DEBUG_EXEC(inited = false);
 }
 
@@ -61,6 +62,26 @@ void Editor::saveScene()
     dirty = false;
 }
 
+void Editor::applySceneActions()
+{
+    if (!pendingSceneActions.createType && !pendingSceneActions.deleteId) return;
+
+    auto& scene = *context().sceneManager;
+    auto& renderer = *context().renderer;
+    renderer.waitIdle();
+    if (pendingSceneActions.deleteId)
+    {
+        scene.deleteActor(pendingSceneActions.deleteId);
+        if (selectedId == pendingSceneActions.deleteId) selectedId = 0;
+    }
+    if (pendingSceneActions.createType)
+        selectedId = scene.createActor(*pendingSceneActions.createType).selectionId();
+
+    pendingSceneActions = {};
+    dirty = true;
+    renderer.loadScene();
+}
+
 EditorFrameInput Editor::buildFrame(
     const CameraComponent& camera,
     float deltaTime,
@@ -68,6 +89,8 @@ EditorFrameInput Editor::buildFrame(
     uint32_t swapchainHeight)
 {
     ui.beginFrame(deltaTime);
+    pendingSceneActions = ui.drawHierarchy(context().sceneManager->scene(), selectedId);
+    if (pendingSceneActions.renamed) dirty = true;
 
     if (ui.saveRequested())
     {

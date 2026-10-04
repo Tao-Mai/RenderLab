@@ -10,12 +10,12 @@ struct LightComponent : Component
     void init(AActor* actor) override;
     void tick(float) override {}
 
-    enum class Type
+    enum class Type : uint32_t
     {
-        Point,
-        Directional,
-        RectArea,
-        Spot,
+        Point = 0,
+        Directional = 1,
+        RectArea = 2,
+        Spot = 3,
     };
 
     [[=ReflectField{}]] Type type = Type::Point;

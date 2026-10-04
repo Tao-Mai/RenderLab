@@ -353,17 +353,41 @@ int main(int argc, char** argv)
         .hasPickResult = true,
     });
     const auto extent = renderer.swapchainHandle().extent();
-    for (uint32_t frame = 0; frame < 3; ++frame)
+    const auto renderEditorFrame = [&]()
     {
         window.pollEvents();
         uiInput.tick();
+        editor.applySceneActions();
         const auto input = editor.buildFrame(
             sceneManager.editorCamera().camera(), 1.0f / 60.0f, extent.width, extent.height);
-        CHECK(input.selectedActor == renderer.renderData().objects.front().actor,
-            "editor selection must reference the rendered actor");
+        CHECK(input.viewport.x > 0.0f && input.viewport.width < extent.width,
+            "editor viewport must leave space for both docked sidebars");
         const auto result = renderer.render(sceneManager.editorCamera().camera(), input);
         editor.applyPickResult(result);
-    }
+        return input.selectedActor;
+    };
+    for (uint32_t frame = 0; frame < 3; ++frame)
+        CHECK(renderEditorFrame() == renderer.renderData().objects.front().actor,
+            "editor selection must reference the rendered actor");
+
+    // Rebuild draw data for live edits; never retain references to removed actors.
+    renderer.waitIdle();
+    auto& added = sceneManager.createActor("AStaticMesh");
+    const auto addedId = added.selectionId();
+    added.transform().position = center + glm::vec3{3.0f, 0.0f, 0.0f};
+    added.name = "Renamed cube";
+    renderer.loadScene();
+    editor.applyPickResult({.pickedSelectionId = addedId, .hasPickResult = true});
+    CHECK(renderEditorFrame() == &added, "new actors must render and be selectable");
+    renderer.waitIdle();
+    sceneManager.deleteActor(addedId);
+    renderer.loadScene();
+    CHECK(renderEditorFrame() == nullptr, "deleted selection must not retain an actor pointer");
+
+    renderer.waitIdle();
+    sceneManager.deleteActor(sceneManager.editorCamera().selectionId());
+    renderer.loadScene();
+    renderEditorFrame();
     renderer.waitIdle();
     editor.shutdown();
     uiInput.shutdown();
