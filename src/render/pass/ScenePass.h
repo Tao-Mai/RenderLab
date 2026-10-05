@@ -1,13 +1,10 @@
 #pragma once
 
-#include "editor/ViewportRect.h"
-#include "render/PipelineManager.h"
-#include "render/RenderConfig.h"
 #include "render/FrameData.h"
-#include "asset/Asset.h"
+#include "render/PipelineManager.h"
+#include "render/pass/PointShadowPass.h"
+#include "render/pass/RenderGraph.h"
 
-#include <array>
-#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -26,41 +23,44 @@ class RenderGraph;
 class ScenePass
 {
 public:
-    enum Input { Color, Depth, Shadow, Irradiance, Prefiltered, Radiance, BrdfLut, InputCount };
-    enum Output { ColorResult, DepthResult, OutputCount };
+    struct Output
+    {
+        RenderGraph::ImageHandle color;
+        RenderGraph::ImageHandle depth;
+    };
 
-    void init(RenderGraph& graph,
-        std::shared_ptr<GpuTexture> brdfLut, vk::Sampler brdfLutSampler);
-    void registerPass(RenderGraph& graph);
-    void setupPass(RenderGraph& graph);
-    void executePass(RenderGraph& graph) const;
-    void bindEnvironmentTextures();
+    Output setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle, PointShadowPass::Output shadow);
+    void   bindResources(RenderGraph& graph) const;
+    void   execute(RenderGraph& graph) const;
 
 private:
-    VulkanContext*                                         vulkan    = nullptr;
-    RenderGraph*                                          graph = nullptr;
-    std::vector<uint32_t> inputSlots;
-    std::vector<uint32_t> outputSlots;
-    PipelineManager*                                       pipelines = nullptr;
-    RenderResourceManager*                                 resources = nullptr;
-    ShaderHandle                                           sceneShader;
-    ShaderHandle                                           lightShader;
-    ShaderHandle                                           skyboxShader;
-    bool                                                   hasSkybox = false;
-    bool                                                   iblEnabled = false;
-    vk::Pipeline                                           scenePipeline;
-    vk::Pipeline                                           lightMarkerPipeline;
-    vk::Pipeline                                           skyboxPipeline;
-    vk::PipelineLayout                                     pipelineLayout;
-    vk::PipelineLayout                                     skyboxPipelineLayout;
-    std::shared_ptr<GpuTexture>                              irradianceTexture;
-    std::shared_ptr<GpuTexture>                              prefilteredSpecularTexture;
-    std::shared_ptr<GpuTexture>                              radianceTexture;
-    std::shared_ptr<GpuTexture>                              brdfLutTexture;
-    vk::Sampler                                           brdfLutSampler = nullptr;
+    VulkanContext*              vulkan = nullptr;
+    RenderGraph*                graph  = nullptr;
+    RenderGraph::ImageHandle    color;
+    RenderGraph::ImageHandle    depth;
+    RenderGraph::ImageHandle    pointShadowMap;
+    PipelineManager*            pipelines = nullptr;
+    RenderResourceManager*      resources = nullptr;
+    ShaderHandle                sceneShader;
+    ShaderHandle                lightShader;
+    ShaderHandle                skyboxShader;
+    bool                        hasSkybox  = false;
+    bool                        iblEnabled = false;
+    vk::Pipeline                scenePipeline;
+    vk::Pipeline                lightMarkerPipeline;
+    vk::Pipeline                skyboxPipeline;
+    vk::PipelineLayout          pipelineLayout;
+    vk::PipelineLayout          skyboxPipelineLayout;
+    std::shared_ptr<GpuTexture> irradianceTexture;
+    std::shared_ptr<GpuTexture> prefilteredSpecularTexture;
+    std::shared_ptr<GpuTexture> radianceTexture;
+    std::shared_ptr<GpuTexture> brdfLutTexture;
+    vk::Sampler                 brdfLutSampler = nullptr;
+    vk::raii::Sampler           shadowSampler  = nullptr;
 
-    void recordSkybox(vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex,
-        const SkyboxPushConstants& parameters) const;
-    void bindSceneDescriptor(
-        vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex) const;
+    void bindEnvironmentTextures();
+    void recordSkybox(
+        vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex, const SkyboxPushConstants& parameters
+    ) const;
+    void bindSceneDescriptor(vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex) const;
 };

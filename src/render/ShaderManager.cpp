@@ -124,7 +124,7 @@ void ShaderManager::init(const vk::raii::Device& targetDevice)
     assets = context().assetManager;
 }
 
-void ShaderManager::reset() noexcept
+void ShaderManager::shutdown() noexcept
 {
     handles.clear();
     shaders.clear();

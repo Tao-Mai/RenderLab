@@ -104,7 +104,7 @@ void DescriptorManager::init(const vk::raii::Device& targetDevice)
     materialLayout = getOrCreateLayout(materialBindings);
 }
 
-void DescriptorManager::reset() noexcept
+void DescriptorManager::shutdown() noexcept
 {
     pool = nullptr;
     layouts.clear();

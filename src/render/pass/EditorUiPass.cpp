@@ -1,50 +1,43 @@
 #include "render/pass/EditorUiPass.h"
 
-#include "render/pass/RenderGraph.h"
-#include "render/pass/ScenePass.h"
-#include "render/raytracing/RayTracingBlitPass.h"
 #include "render/Renderer.h"
 #include "render/present/Swapchain.h"
 
-void EditorUiPass::registerPass(RenderGraph& graph)
+EditorUiPass::Output EditorUiPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle)
 {
-    std::tie(inputSlots, outputSlots) = graph.registerPass("editor_ui", 1, 1,
-        [this](RenderGraph& g) { setupPass(g); },
-        [this](RenderGraph& g) { executePass(g); });
+    color = colorHandle;
+    graph.use(
+        color,
+        {
+            .stages = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            .access = vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
+            .layout = vk::ImageLayout::eColorAttachmentOptimal,
+        }
+    );
+    return {color};
 }
 
-void EditorUiPass::setupPass(RenderGraph& graph)
-{
-    const RenderGraph::ResourceDesc colorUse{
-        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
-        .stages = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        .access = vk::AccessFlagBits2::eColorAttachmentRead |
-            vk::AccessFlagBits2::eColorAttachmentWrite,
-        .layout = vk::ImageLayout::eColorAttachmentOptimal,
-    };
-    const auto source = graph.passEnabled("raytracing")
-        ? graph.outputSlot("raytracing_blit", RayTracingBlitPass::ColorResult)
-        : graph.outputSlot("scene", ScenePass::ColorResult);
-    graph.bindInput(inputSlots[0], source, colorUse);
-    graph.bindOutput(outputSlots[0], inputSlots[0]);
-}
-
-void EditorUiPass::executePass(RenderGraph& graph) const
+void EditorUiPass::execute(RenderGraph& graph) const
 {
     const auto& editor = graph.editorInput();
-    if (!editor.recordUi) return;
+    if (!editor.recordUi)
+        return;
 
     const vk::RenderingAttachmentInfo colorAttachment{
-        .imageView = graph.imageView(inputSlots[0]),
+        .imageView   = graph.getImage(color).getOrCreateImageView({
+              .viewType         = vk::ImageViewType::e2D,
+              .format           = graph.swapchain().surfaceFormat().format,
+              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+        }),
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eLoad,
-        .storeOp = vk::AttachmentStoreOp::eStore,
+        .loadOp      = vk::AttachmentLoadOp::eLoad,
+        .storeOp     = vk::AttachmentStoreOp::eStore,
     };
     graph.commands().beginRendering({
-        .renderArea = {{0, 0}, graph.swapchain().extent()},
-        .layerCount = 1,
+        .renderArea           = {{0, 0}, graph.swapchain().extent()},
+        .layerCount           = 1,
         .colorAttachmentCount = 1,
-        .pColorAttachments = &colorAttachment,
+        .pColorAttachments    = &colorAttachment,
     });
     editor.recordUi(*graph.commands());
     graph.commands().endRendering();

@@ -1,424 +1,419 @@
 #include "render/pass/RenderGraph.h"
 
-#include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
-#include "scene/SceneManager.h"
 #include "render/Renderer.h"
 #include "render/device/Memory.h"
 #include "render/device/VkCheck.h"
-#include "render/pass/EditorPickingPass.h"
 #include "render/pass/EditorPickingCopyPass.h"
+#include "render/pass/EditorPickingPass.h"
 #include "render/pass/EditorPickingReadbackPass.h"
 #include "render/pass/EditorUiPass.h"
+#include "render/pass/PointShadowPass.h"
 #include "render/pass/ScenePass.h"
-#include "render/pass/ShadowPass.h"
-#include "render/raytracing/RayTracingPass.h"
 #include "render/raytracing/RayTracingBlitPass.h"
+#include "render/raytracing/RayTracingPass.h"
 #include "render/resource/GpuTexture.h"
 
-#include <array>
-#include <format>
-#include <map>
+#include <tuple>
+#include <utility>
+
+namespace
+{
+vk::ImageAspectFlags imageAspect(vk::Format format)
+{
+    return format == vk::Format::eD32Sfloat || format == vk::Format::eD16Unorm ? vk::ImageAspectFlagBits::eDepth
+                                                                               : vk::ImageAspectFlagBits::eColor;
+}
+}  // namespace
 
 struct RenderGraph::Passes
 {
-    ShadowPass shadow;
-    ScenePass scene;
-    RayTracingPass raytracing;
-    RayTracingBlitPass raytracingBlit;
-    EditorPickingPass picking;
-    EditorPickingCopyPass pickingCopy;
-    EditorPickingReadbackPass pickingReadback;
-    EditorUiPass ui;
+    template <class T>
+    struct Entry
+    {
+        T                        pass;
+        std::vector<ResourceUse> uses;
+    };
+
+    template <class... Ts>
+    using PassTypeList = std::tuple<Entry<Ts>...>;
+
+    PassTypeList<
+        PointShadowPass,
+        ScenePass,
+        RayTracingPass,
+        RayTracingBlitPass,
+        EditorPickingPass,
+        EditorPickingCopyPass,
+        EditorPickingReadbackPass,
+        EditorUiPass>
+        data;
+
+    template <class T>
+    auto& get()
+    {
+        return std::get<Entry<T>>(data);
+    }
 };
+
+template <class T, class... Args>
+auto RenderGraph::setupPass(Args&&... args)
+{
+    auto& entry = passes->get<T>();
+    entry.uses.clear();
+
+    auto* previousUses = setupUses;
+    setupUses          = &entry.uses;
+
+    auto output = entry.pass.setup(*this, std::forward<Args>(args)...);
+    setupUses   = previousUses;
+    return output;
+}
+
+template <class T>
+void RenderGraph::executePass()
+{
+    auto& entry = passes->get<T>();
+    transitionResources(entry.uses);
+    entry.pass.execute(*this);
+}
 
 struct RenderGraph::Allocation
 {
     struct Instance
     {
-        vk::raii::DeviceMemory memory = nullptr;
-        vk::raii::Image ownedImage = nullptr;
-        vk::raii::ImageView ownedView = nullptr;
-        std::map<std::pair<uint32_t, uint32_t>, vk::raii::ImageView> layerViews;
-        std::unique_ptr<Buffer> ownedBuffer;
-        ExternalResource external;
-        ResourceState state;
-
-        [[nodiscard]] vk::Image image() const { return external.image ? external.image : *ownedImage; }
-        [[nodiscard]] vk::ImageView view() const { return external.view ? external.view : *ownedView; }
-        [[nodiscard]] Buffer& buffer() const { return external.buffer ? *external.buffer : *ownedBuffer; }
+        vk::raii::DeviceMemory  memory     = nullptr;
+        vk::raii::Image         ownedImage = nullptr;
+        std::unique_ptr<Buffer> buffer;
+        std::unique_ptr<Image>  image;
+        ImageAccess             state;
     };
     std::vector<Instance> instances;
 };
 
 void RenderGraph::init()
 {
-    DCHECK(!renderer, "RenderGraph is already initialized");
+    DCHECK(!renderer);
     renderer = context().renderer;
     DCHECK(renderer);
 
     const auto chooseDepthFormat = [&](vk::FormatFeatureFlags features)
     {
         for (vk::Format format : {vk::Format::eD32Sfloat, vk::Format::eD16Unorm})
-        {
-            if ((vulkan().physicalDeviceHandle().getFormatProperties(format).optimalTilingFeatures &
-                    features) == features)
-            {
+            if ((vulkan().physicalDeviceHandle().getFormatProperties(format).optimalTilingFeatures & features) ==
+                features)
                 return format;
-            }
-        }
         CHECK(false, "no depth format supports the render graph's required features");
         return vk::Format::eUndefined;
     };
-    sceneDepthFormat = chooseDepthFormat(vk::FormatFeatureFlagBits::eDepthStencilAttachment);
-    pointShadowFormat = chooseDepthFormat(vk::FormatFeatureFlagBits::eDepthStencilAttachment |
-        vk::FormatFeatureFlagBits::eSampledImage);
 
-    const TextureBinding& brdf = context().config->rendererConfig().brdfLut;
-    CHECK(!brdf.textureID.empty() && !brdf.samplerID.empty(), "Renderer requires a BRDF LUT binding");
-    const TextureAsset& desc = context().assetManager->get<TextureAsset>(brdf.textureID);
-    CHECK(desc.layout == ImageLayout::Image2D && desc.colorSpace == ColorSpace::Linear &&
-        desc.format != ImageFormat::R8,
-        "BRDF LUT must be a linear 2D texture with at least two channels");
-
+    sceneDepthFormat  = chooseDepthFormat(vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+    pointShadowFormat = chooseDepthFormat(
+        vk::FormatFeatureFlagBits::eDepthStencilAttachment | vk::FormatFeatureFlagBits::eSampledImage
+    );
     passes = std::make_shared<Passes>();
-    passes->scene.init(*this,
-        assetResources().texture(brdf.textureID), assetResources().sampler(brdf.samplerID));
-    passes->shadow.init(*this);
-    passes->picking.init(*this);
+}
 
-    passes->shadow.registerPass(*this);
-    passes->scene.registerPass(*this);
-    passes->raytracing.registerPass(*this);
-    setPassEnabled("raytracing", false);
-    passes->raytracingBlit.registerPass(*this);
-    setPassEnabled("raytracing_blit", false);
-    passes->picking.registerPass(*this);
-    passes->pickingCopy.registerPass(*this);
-    passes->pickingReadback.registerPass(*this);
-    passes->ui.registerPass(*this);
+void RenderGraph::releaseResources() noexcept
+{
+    resources.clear();
+    if (passes)
+        std::apply([](auto&... entries) { (entries.uses.clear(), ...); }, passes->data);
+    setupUses      = nullptr;
+    swapchainImage = {};
 }
 
 void RenderGraph::reset() noexcept
 {
-    resources.clear();
-    orderedPasses.clear();
-    registeredPasses.clear();
-    passInfos.clear();
-    globalInputSlots.clear();
-    globalOutputSlots.clear();
+    releaseResources();
     passes.reset();
-    renderer = nullptr;
-    currentEditor = nullptr;
-    sceneDepthFormat = vk::Format::eUndefined;
+    renderer          = nullptr;
+    currentEditor     = nullptr;
+    sceneDepthFormat  = vk::Format::eUndefined;
     pointShadowFormat = vk::Format::eUndefined;
 }
 
-void RenderGraph::build()
+void RenderGraph::setup()
 {
-    DCHECK(renderer && passes, "RenderGraph must be initialized before build");
+    DCHECK(renderer && passes);
     renderer->waitIdle();
-    const bool rayTracing = context().config->rendererConfig().renderPath == RenderPath::RayTracing;
-    if (rayTracing != passEnabled("raytracing"))
-    {
-        setPassEnabled("raytracing", rayTracing);
-        setPassEnabled("raytracing_blit", rayTracing);
-        setPassEnabled("scene", !rayTracing);
-        setPassEnabled("shadow", !rayTracing);
-    }
-    resources.clear();
-    for (Slot& slot : globalInputSlots) slot = {.owner = slot.owner};
-    for (Slot& slot : globalOutputSlots) slot = {.owner = slot.owner};
+    releaseResources();
 
-    for (PassInfo* pass : registeredPasses)
+    const auto  color = importSwapchain();
+    ImageHandle sceneColor;
+    ImageHandle sceneDepth;
+    const bool  rayTracing = context().config->rendererConfig().renderPath == RenderPath::RayTracing;
+    if (rayTracing)
     {
-        if (pass->enabled)
-        {
-            DCHECK(pass->setupPass && pass->executePass, "pass '{}' has no callbacks", pass->name);
-            pass->setupPass(*this);
-        }
+        const auto [rayImage] = setupPass<RayTracingPass>();
+        sceneColor            = setupPass<RayTracingBlitPass>(rayImage, color).color;
     }
-    validateCompilation();
+    else
+    {
+        const auto shadow = setupPass<PointShadowPass>();
+        const auto scene  = setupPass<ScenePass>(color, shadow);
+        sceneColor        = scene.color;
+        sceneDepth        = scene.depth;
+    }
+
+    const auto picking = setupPass<EditorPickingPass>(sceneDepth);
+    const auto copy    = setupPass<EditorPickingCopyPass>(picking.pickingImage);
+    setupPass<EditorPickingReadbackPass>(copy.readback);
+    setupPass<EditorUiPass>(sceneColor);
 
     allocateResources();
-    if (passEnabled("shadow")) passes->shadow.bindResources(*this);
-}
-
-void RenderGraph::validateCompilation()
-{
-    const auto errors = compile();
-    std::string message;
-    for (const auto& error : errors) message += "\n  " + error;
-    DCHECK(errors.empty(), "RenderGraph compilation failed:{}", message);
-}
-
-void RenderGraph::bindEnvironmentTextures()
-{
-    DCHECK(passes);
-    passes->scene.bindEnvironmentTextures();
+    if (!rayTracing)
+        passes->get<ScenePass>().pass.bindResources(*this);
 }
 
 void RenderGraph::allocateResources()
 {
-    const auto& device = vulkan().deviceHandle();
+    const auto& device         = vulkan().deviceHandle();
     const auto& physicalDevice = vulkan().physicalDeviceHandle();
     for (Resource& resource : resources)
     {
         resource.allocation = std::make_shared<Allocation>();
-        const ResourceDesc& desc = resource.merged;
-        const size_t count = resource.external ? resource.instances.size() : maxFramesInFlight;
+        const size_t count  = resource.externalImages.empty() ? maxFramesInFlight : resource.externalImages.size();
         resource.allocation->instances.resize(count);
         for (size_t i = 0; i < count; ++i)
         {
             auto& instance = resource.allocation->instances[i];
-            if (resource.external)
+            if (!resource.externalImages.empty())
             {
-                instance.external = resource.instances[i];
-                instance.state = resource.instances[i].state;
+                instance.image = std::make_unique<Image>(device, resource.externalImages[i]);
+                instance.state = resource.initialState;
                 continue;
             }
-            if (desc.type == ResourceType::Buffer)
+            if (resource.isBuffer)
             {
-                instance.ownedBuffer = std::make_unique<Buffer>(physicalDevice, device,
-                    desc.size, desc.bufferUsage, desc.memoryProperties);
+                DCHECK(resource.bufferUsage);
+                instance.buffer = std::make_unique<Buffer>(
+                    physicalDevice,
+                    device,
+                    resource.bufferInfo.size,
+                    resource.bufferUsage,
+                    resource.bufferInfo.memoryProperties
+                );
                 continue;
             }
 
-            instance.ownedImage = vkCheck(device.createImage({
-                .flags = desc.imageFlags,
-                .imageType = vk::ImageType::e2D,
-                .format = desc.format,
-                .extent = desc.extent,
-                .mipLevels = desc.mipLevels,
-                .arrayLayers = desc.arrayLayers,
-                .samples = vk::SampleCountFlagBits::e1,
-                .tiling = vk::ImageTiling::eOptimal,
-                .usage = desc.imageUsage,
-                .sharingMode = vk::SharingMode::eExclusive,
-                .initialLayout = vk::ImageLayout::eUndefined,
+            const auto& info = resource.imageInfo;
+            DCHECK(resource.imageUsage);
+            instance.ownedImage     = vkCheck(device.createImage({
+                    .flags         = info.flags,
+                    .imageType     = info.imageType,
+                    .format        = info.format,
+                    .extent        = info.extent,
+                    .mipLevels     = info.mipLevels,
+                    .arrayLayers   = info.arrayLayers,
+                    .samples       = vk::SampleCountFlagBits::e1,
+                    .tiling        = vk::ImageTiling::eOptimal,
+                    .usage         = resource.imageUsage,
+                    .sharingMode   = vk::SharingMode::eExclusive,
+                    .initialLayout = vk::ImageLayout::eUndefined,
             }));
             const auto requirements = instance.ownedImage.getMemoryRequirements();
-            instance.memory = vkCheck(device.allocateMemory({
-                .allocationSize = requirements.size,
-                .memoryTypeIndex = vulkan_memory::findType(physicalDevice,
-                    requirements.memoryTypeBits, desc.memoryProperties),
+            instance.memory         = vkCheck(device.allocateMemory({
+                        .allocationSize  = requirements.size,
+                        .memoryTypeIndex = vulkan_memory::findType(
+                    physicalDevice,
+                    requirements.memoryTypeBits,
+                    vk::MemoryPropertyFlagBits::eDeviceLocal
+                ),
             }));
             vkCheck(instance.ownedImage.bindMemory(*instance.memory, 0));
-            instance.ownedView = vkCheck(device.createImageView({
-                .image = *instance.ownedImage,
-                .viewType = desc.viewType,
-                .format = desc.format,
-                .subresourceRange = {.aspectMask = desc.aspect,
-                    .levelCount = desc.mipLevels, .layerCount = desc.arrayLayers},
-            }));
+            instance.image = std::make_unique<Image>(device, *instance.ownedImage);
         }
     }
 }
 
-void RenderGraph::importSwapchain(ResourceHandle input, const ResourceDesc& use)
+RenderGraph::ImageHandle RenderGraph::importSwapchain()
 {
-    ResourceDesc desc = use;
-    desc.format = swapchain().surfaceFormat().format;
+    if (swapchainImage.id != kInvalidHandle)
+        return swapchainImage;
+
     const auto extent = swapchain().extent();
-    desc.extent = vk::Extent3D{extent.width, extent.height, 1};
-    desc.imageUsage |= vk::ImageUsageFlagBits::eColorAttachment;
-    std::vector<ExternalResource> instances;
+    Resource   resource{
+          .imageInfo = {.format = swapchain().surfaceFormat().format, .extent = {extent.width, extent.height, 1}},
+          .swapchainIndexed = true,
+    };
     for (uint32_t i = 0; i < swapchain().imageCount(); ++i)
-        instances.push_back({.image = swapchain().image(i), .view = swapchain().imageView(i)});
-    importResource(input, desc, std::move(instances), true);
+        resource.externalImages.push_back(swapchain().image(i));
+    swapchainImage = {static_cast<ResourceHandle>(resources.size())};
+    resources.push_back(std::move(resource));
+    return swapchainImage;
 }
 
-void RenderGraph::importTexture(ResourceHandle input, const GpuTexture& texture)
+RenderGraph::ImageHandle RenderGraph::importTexture(const GpuTexture& texture)
 {
+    for (ResourceHandle id = 0; id < static_cast<ResourceHandle>(resources.size()); ++id)
+    {
+        const auto& images = resources[id].externalImages;
+        if (images.size() == 1 && images.front() == texture.imageHandle())
+            return {id};
+    }
+
     const auto& info = texture.imageInfo();
-    const ResourceDesc desc{
-        .format = info.format,
-        .extent = info.extent,
-        .mipLevels = info.mipLevels,
-        .arrayLayers = info.arrayLayers,
-        .imageFlags = info.flags,
-        .viewType = (info.flags & vk::ImageCreateFlagBits::eCubeCompatible)
-            ? vk::ImageViewType::eCube : vk::ImageViewType::e2D,
-        .imageUsage = info.usage,
-        .stages = vk::PipelineStageFlagBits2::eFragmentShader,
-        .access = vk::AccessFlagBits2::eShaderSampledRead,
-        .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
-    };
-    importResource(input, desc,
-        {{.image = texture.imageHandle(), .view = texture.imageView(),
-            .state = {.stages = desc.stages, .access = desc.access, .layout = desc.layout}}});
+    const auto  id   = static_cast<ResourceHandle>(resources.size());
+    resources.push_back({
+        .imageInfo =
+            {.flags       = info.flags,
+             .imageType   = info.imageType,
+             .format      = info.format,
+             .extent      = info.extent,
+             .mipLevels   = info.mipLevels,
+             .arrayLayers = info.arrayLayers},
+        .externalImages = {texture.imageHandle()},
+        .initialState   = {
+              .stages = vk::PipelineStageFlagBits2::eFragmentShader,
+              .access = vk::AccessFlagBits2::eShaderSampledRead,
+              .layout = vk::ImageLayout::eShaderReadOnlyOptimal
+        },
+    });
+    return {id};
 }
 
 uint32_t RenderGraph::instanceIndex(const Resource& resource, uint32_t frameIndex) const
 {
-    if (resource.swapchainIndexed) return currentImage;
+    if (resource.swapchainIndexed)
+        return currentImage;
     return resource.allocation->instances.size() == 1 ? 0 : frameIndex;
 }
 
-RenderGraph::Allocation& RenderGraph::allocation(ResourceHandle input) const
+Image& RenderGraph::getImage(ImageHandle image) { return getImage(image, currentFrame); }
+
+Image& RenderGraph::getImage(ImageHandle image, uint32_t frameIndex)
 {
-    DCHECK(globalInputSlots.at(input).resource != invalidHandle);
-    auto& resource = resources.at(globalInputSlots.at(input).resource);
-    DCHECK(resource.allocation);
-    return *resource.allocation;
+    const auto& resource = resources.at(image.id);
+    DCHECK(!resource.isBuffer && resource.allocation);
+    return *resource.allocation->instances.at(instanceIndex(resource, frameIndex)).image;
 }
 
-vk::Image RenderGraph::image(ResourceHandle input) const
+Buffer& RenderGraph::getBuffer(BufferHandle buffer) { return getBuffer(buffer, currentFrame); }
+
+Buffer& RenderGraph::getBuffer(BufferHandle buffer, uint32_t frameIndex)
 {
-    const auto& resource = resources.at(globalInputSlots.at(input).resource);
-    return allocation(input).instances.at(instanceIndex(resource, currentFrame)).image();
+    const auto& resource = resources.at(buffer.id);
+    DCHECK(resource.isBuffer && resource.allocation);
+    return *resource.allocation->instances.at(instanceIndex(resource, frameIndex)).buffer;
 }
 
-vk::ImageView RenderGraph::imageView(ResourceHandle input) const
+void RenderGraph::useResource(const ResourceUse& use)
 {
-    return imageView(input, currentFrame);
-}
-
-vk::ImageView RenderGraph::imageView(ResourceHandle input, uint32_t frameIndex) const
-{
-    const auto& resource = resources.at(globalInputSlots.at(input).resource);
-    return allocation(input).instances.at(instanceIndex(resource, frameIndex)).view();
-}
-
-vk::ImageView RenderGraph::layerView(ResourceHandle input, uint32_t firstLayer, uint32_t layerCount) const
-{
-    const auto& resource = resources.at(globalInputSlots.at(input).resource);
-    const auto& desc = resource.merged;
-    DCHECK(desc.type == ResourceType::Image && layerCount &&
-        firstLayer < desc.arrayLayers && layerCount <= desc.arrayLayers - firstLayer);
-
-    auto& instance = allocation(input).instances.at(instanceIndex(resource, currentFrame));
-    const std::pair key{firstLayer, layerCount};
-    if (const auto found = instance.layerViews.find(key); found != instance.layerViews.end())
-        return *found->second;
-
-    auto view = vkCheck(vulkan().deviceHandle().createImageView({
-        .image = instance.image(),
-        .viewType = layerCount == 1 ? vk::ImageViewType::e2D : vk::ImageViewType::e2DArray,
-        .format = desc.format,
-        .subresourceRange = {.aspectMask = desc.aspect, .levelCount = 1,
-            .baseArrayLayer = firstLayer, .layerCount = layerCount},
-    }));
-    const vk::ImageView handle = *view;
-    instance.layerViews.emplace(key, std::move(view));
-    return handle;
-}
-
-Buffer& RenderGraph::buffer(ResourceHandle input) const { return buffer(input, currentFrame); }
-
-Buffer& RenderGraph::buffer(ResourceHandle input, uint32_t frameIndex) const
-{
-    const auto& resource = resources.at(globalInputSlots.at(input).resource);
-    return allocation(input).instances.at(instanceIndex(resource, frameIndex)).buffer();
-}
-
-void RenderGraph::useResource(ResourceHandle index, const ResourceDesc& use)
-{
-    Resource& resource = resources.at(index);
-    auto& instance = resource.allocation->instances.at(instanceIndex(resource, currentFrame));
-    const ResourceState previous = instance.state;
-    if (!needsBarrier(previous, use))
+    Resource&  resource = resources.at(use.resource);
+    auto&      instance = resource.allocation->instances.at(instanceIndex(resource, currentFrame));
+    const auto previous = instance.state;
+    const auto next     = use.access;
+    if (!needsBarrier(previous, next))
     {
-        instance.state.stages |= use.stages;
-        instance.state.access |= use.access;
+        instance.state.stages |= next.stages;
+        instance.state.access |= next.access;
         return;
     }
 
-    if (resource.merged.type == ResourceType::Image)
-    {
-        const vk::ImageMemoryBarrier2 barrier{
-            .srcStageMask = previous.stages,
-            .srcAccessMask = previous.access,
-            .dstStageMask = use.stages,
-            .dstAccessMask = use.access,
-            .oldLayout = previous.layout,
-            .newLayout = use.layout,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = instance.image(),
-            .subresourceRange = {.aspectMask = resource.merged.aspect,
-                .levelCount = resource.merged.mipLevels, .layerCount = resource.merged.arrayLayers},
-        };
-        commands().pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
-    }
-    else
+    if (resource.isBuffer)
     {
         const vk::BufferMemoryBarrier2 barrier{
-            .srcStageMask = previous.stages,
-            .srcAccessMask = previous.access,
-            .dstStageMask = use.stages,
-            .dstAccessMask = use.access,
+            .srcStageMask        = previous.stages,
+            .srcAccessMask       = previous.access,
+            .dstStageMask        = next.stages,
+            .dstAccessMask       = next.access,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = instance.buffer().handle(),
-            .size = resource.merged.size,
+            .buffer              = instance.buffer->handle(),
+            .size                = resource.bufferInfo.size,
         };
         commands().pipelineBarrier2({.bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrier});
     }
-    instance.state = {.stages = use.stages, .access = use.access, .layout = use.layout};
+    else
+    {
+        const vk::ImageMemoryBarrier2 barrier{
+            .srcStageMask        = previous.stages,
+            .srcAccessMask       = previous.access,
+            .dstStageMask        = next.stages,
+            .dstAccessMask       = next.access,
+            .oldLayout           = previous.layout,
+            .newLayout           = next.layout,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image               = instance.image->handle(),
+            .subresourceRange    = {
+                   .aspectMask = imageAspect(resource.imageInfo.format),
+                   .levelCount = resource.imageInfo.mipLevels,
+                   .layerCount = resource.imageInfo.arrayLayers
+            },
+        };
+        commands().pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
+    }
+    instance.state = next;
 }
 
-void RenderGraph::execute(const EditorFrameInput& editor,
-    uint32_t frameIndex, uint32_t imageIndex)
+void RenderGraph::transitionResources(const std::vector<ResourceUse>& uses)
 {
-    currentFrame = frameIndex;
-    currentImage = imageIndex;
-    currentEditor = &editor;
+    for (const ResourceUse& use : uses)
+        useResource(use);
+}
+
+void RenderGraph::execute(const EditorFrameInput& editor, uint32_t frameIndex, uint32_t imageIndex)
+{
+    currentFrame          = frameIndex;
+    currentImage          = imageIndex;
+    currentEditor         = &editor;
+    const bool rayTracing = context().config->rendererConfig().renderPath == RenderPath::RayTracing;
     for (Resource& resource : resources)
     {
         if (resource.swapchainIndexed)
         {
-            // Match Renderer::drawFrame's acquire semaphore wait stage so the
-            // first layout transition is part of that execution dependency.
             auto& state = resource.allocation->instances.at(currentImage).state;
-            state.stages = passEnabled("raytracing") ? vk::PipelineStageFlagBits2::eTransfer
-                : vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+            state.stages =
+                rayTracing ? vk::PipelineStageFlagBits2::eTransfer : vk::PipelineStageFlagBits2::eColorAttachmentOutput;
             state.access = {};
         }
     }
 
     vkCheck(commands().reset());
     vkCheck(commands().begin({}));
-    for (PassInfo* pass : orderedPasses)
+    if (rayTracing)
     {
-        for (ResourceHandle input : pass->inputResourceHandles)
-        {
-            const Slot& slot = globalInputSlots[input];
-            if (slot.binding != Binding::Ignored) useResource(slot.resource, slot.desc);
-        }
-        pass->executePass(*this);
+        executePass<RayTracingPass>();
+
+        executePass<RayTracingBlitPass>();
     }
-    for (ResourceHandle index = 0; index < resources.size(); ++index)
+    else
     {
-        if (resources[index].swapchainIndexed)
-            useResource(index, {.layout = vk::ImageLayout::ePresentSrcKHR});
+        executePass<PointShadowPass>();
+
+        executePass<ScenePass>();
     }
+
+    if (editor.requestPick)
+    {
+        executePass<EditorPickingPass>();
+
+        executePass<EditorPickingCopyPass>();
+
+        executePass<EditorPickingReadbackPass>();
+    }
+
+    executePass<EditorUiPass>();
+    useResource({swapchainImage.id, {.layout = vk::ImageLayout::ePresentSrcKHR}});
     vkCheck(commands().end());
     currentEditor = nullptr;
 }
 
 uint32_t RenderGraph::readSelectionId(uint32_t frameIndex)
 {
-    DCHECK(passEnabled("editor_picking_readback"));
-    return passes->pickingReadback.readSelectionId(*this, frameIndex);
+    return passes->get<EditorPickingReadbackPass>().pass.readSelectionId(*this, frameIndex);
 }
 
-VulkanContext& RenderGraph::vulkan() const { return renderer->vulkan; }
-Swapchain& RenderGraph::swapchain() const { return renderer->swapchain; }
-PipelineManager& RenderGraph::pipelines() const { return renderer->pipelines; }
-ShaderManager& RenderGraph::shaders() const { return renderer->shaders; }
-RenderResourceManager& RenderGraph::assetResources() const { return renderer->resources; }
-FrameData& RenderGraph::frameData(uint32_t index) const { return renderer->frames.at(index).data; }
-const RenderData& RenderGraph::renderData() const { return renderer->renderSystem.renderData(); }
-const LightMarkers& RenderGraph::lightMarkers() const { return renderer->renderSystem.lightMarkers(); }
-vk::Format RenderGraph::depthFormat() const { return sceneDepthFormat; }
-vk::Format RenderGraph::shadowFormat() const { return pointShadowFormat; }
-vk::raii::CommandBuffer& RenderGraph::commands() const { return renderer->frames.at(currentFrame).commandBufferHandle(); }
-uint32_t RenderGraph::frameIndex() const { return currentFrame; }
-const EditorFrameInput& RenderGraph::editorInput() const
+VulkanContext&           RenderGraph::vulkan() const { return renderer->vulkan; }
+Swapchain&               RenderGraph::swapchain() const { return renderer->swapchain; }
+FrameData&               RenderGraph::frameData(uint32_t index) const { return renderer->frames.at(index).data; }
+const RenderData&        RenderGraph::renderData() const { return renderer->renderSystem.renderData(); }
+const LightMarkers&      RenderGraph::lightMarkers() const { return renderer->renderSystem.lightMarkers(); }
+vk::raii::CommandBuffer& RenderGraph::commands() const
 {
-    DCHECK(currentEditor);
-    return *currentEditor;
+    return renderer->frames.at(currentFrame).commandBufferHandle();
 }

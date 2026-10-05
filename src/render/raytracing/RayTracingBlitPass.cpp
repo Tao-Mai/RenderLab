@@ -9,18 +9,9 @@
 
 #include <array>
 
-void RayTracingBlitPass::registerPass(RenderGraph& graph)
-{
-    std::tie(inputSlots, outputSlots) = graph.registerPass(
-        "raytracing_blit",
-        InputCount,
-        OutputCount,
-        [this](RenderGraph& g) { setupPass(g); },
-        [this](RenderGraph& g) { executePass(g); }
-    );
-}
-
-void RayTracingBlitPass::setupPass(RenderGraph& graph)
+RayTracingBlitPass::Output RayTracingBlitPass::setup(
+    RenderGraph& graph, RenderGraph::ImageHandle rayImageHandle, RenderGraph::ImageHandle colorHandle
+)
 {
     const auto& device       = graph.vulkan().physicalDeviceHandle();
     const auto  capabilities = vkCheck(device.getSurfaceCapabilitiesKHR(graph.vulkan().surfaceHandle()));
@@ -39,29 +30,28 @@ void RayTracingBlitPass::setupPass(RenderGraph& graph)
         "ray tracing output format does not support blit sources"
     );
 
-    graph.bindInput(
-        inputSlots[RayImage],
-        graph.outputSlot("raytracing", RayTracingPass::RayImageResult),
+    rayImage = rayImageHandle;
+    color    = colorHandle;
+    graph.use(
+        rayImage,
         {
-            .imageUsage = vk::ImageUsageFlagBits::eTransferSrc,
-            .stages     = vk::PipelineStageFlagBits2::eTransfer,
-            .access     = vk::AccessFlagBits2::eTransferRead,
-            .layout     = vk::ImageLayout::eTransferSrcOptimal,
+            .stages = vk::PipelineStageFlagBits2::eTransfer,
+            .access = vk::AccessFlagBits2::eTransferRead,
+            .layout = vk::ImageLayout::eTransferSrcOptimal,
         }
     );
-    graph.importSwapchain(
-        inputSlots[Color],
+    graph.use(
+        color,
         {
-            .imageUsage = vk::ImageUsageFlagBits::eTransferDst,
-            .stages     = vk::PipelineStageFlagBits2::eTransfer,
-            .access     = vk::AccessFlagBits2::eTransferWrite,
-            .layout     = vk::ImageLayout::eTransferDstOptimal,
+            .stages = vk::PipelineStageFlagBits2::eTransfer,
+            .access = vk::AccessFlagBits2::eTransferWrite,
+            .layout = vk::ImageLayout::eTransferDstOptimal,
         }
     );
-    graph.bindOutput(outputSlots[ColorResult], inputSlots[Color]);
+    return {color};
 }
 
-void RayTracingBlitPass::executePass(RenderGraph& graph) const
+void RayTracingBlitPass::execute(RenderGraph& graph) const
 {
     const auto          extent = graph.swapchain().extent();
     const vk::ImageBlit region{
@@ -78,9 +68,9 @@ void RayTracingBlitPass::executePass(RenderGraph& graph) const
         },
     };
     graph.commands().blitImage(
-        graph.image(inputSlots[RayImage]),
+        graph.getImage(rayImage).handle(),
         vk::ImageLayout::eTransferSrcOptimal,
-        graph.image(inputSlots[Color]),
+        graph.getImage(color).handle(),
         vk::ImageLayout::eTransferDstOptimal,
         region,
         vk::Filter::eNearest

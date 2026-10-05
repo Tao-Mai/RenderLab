@@ -73,7 +73,7 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
     frame.update({}, {}, {}, true);
     CHECK(frame.pointShadowData().empty() && frame.lightData().empty());
     frame.reset();
-    descriptors.reset();
+    descriptors.shutdown();
 }
 
 void checkMovement(const SceneAsset& original, Window& window, SceneManager& manager)

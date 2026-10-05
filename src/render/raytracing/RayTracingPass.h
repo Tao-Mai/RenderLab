@@ -1,13 +1,14 @@
 #pragma once
 
-#include "render/raytracing/AccelerationStructure.h"
 #include "render/RenderConfig.h"
+#include "render/pass/RenderGraph.h"
+#include "render/raytracing/AccelerationStructure.h"
 
 #include <array>
+#include <glm/vec4.hpp>
 #include <map>
 #include <tuple>
 #include <vector>
-#include <glm/vec4.hpp>
 
 class RenderGraph;
 class GpuMesh;
@@ -15,44 +16,44 @@ class GpuMesh;
 class RayTracingPass
 {
 public:
-    enum Input { RayImage, InputCount };
-    enum Output { RayImageResult, OutputCount };
+    struct Output
+    {
+        RenderGraph::ImageHandle rayImage;
+    };
 
-    void registerPass(RenderGraph& graph);
-    void setupPass(RenderGraph& graph);
-    void executePass(RenderGraph& graph);
+    Output setup(RenderGraph& graph);
+    void   execute(RenderGraph& graph);
 
 private:
     static constexpr uint32_t maxTextures = 128;
     struct Frame
     {
-        AccelerationStructure tlas;
-        Buffer instances;
-        Buffer hitData;
-        vk::raii::DescriptorSet set = nullptr;
-        uint32_t instanceCount = ~0u;
+        AccelerationStructure   tlas;
+        Buffer                  instances;
+        Buffer                  hitData;
+        vk::raii::DescriptorSet set           = nullptr;
+        uint32_t                instanceCount = ~0u;
     };
     struct HitData
     {
-        uint64_t vertexAddress;
-        uint64_t indexAddress;
+        uint64_t  vertexAddress;
+        uint64_t  indexAddress;
         glm::vec4 baseColorFactor;
-        uint32_t firstIndex;
-        uint32_t textureIndex;
-        uint32_t padding[2]{};
+        uint32_t  firstIndex;
+        uint32_t  textureIndex;
+        uint32_t  padding[2]{};
     };
     static_assert(sizeof(HitData) == 48);
 
-    std::vector<uint32_t> inputSlots;
-    std::vector<uint32_t> outputSlots;
-    vk::raii::DescriptorSetLayout descriptorLayout = nullptr;
-    vk::raii::DescriptorPool descriptorPool = nullptr;
-    vk::raii::PipelineLayout pipelineLayout = nullptr;
-    vk::raii::Pipeline pipeline = nullptr;
-    Buffer bindingTable;
-    vk::StridedDeviceAddressRegionKHR raygenRegion, missRegion, hitRegion;
+    RenderGraph::ImageHandle                                                        rayImage;
+    vk::raii::DescriptorSetLayout                                                   descriptorLayout = nullptr;
+    vk::raii::DescriptorPool                                                        descriptorPool   = nullptr;
+    vk::raii::PipelineLayout                                                        pipelineLayout   = nullptr;
+    vk::raii::Pipeline                                                              pipeline         = nullptr;
+    Buffer                                                                          bindingTable;
+    vk::StridedDeviceAddressRegionKHR                                               raygenRegion, missRegion, hitRegion;
     std::map<std::tuple<const GpuMesh*, uint32_t, uint32_t>, AccelerationStructure> blas;
-    std::array<Frame, maxFramesInFlight> frames;
+    std::array<Frame, maxFramesInFlight>                                            frames;
 
     void createPipeline(RenderGraph& graph);
     void prepareScene(RenderGraph& graph, Frame& frame);

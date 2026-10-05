@@ -18,7 +18,7 @@ class DescriptorManager
 {
 public:
     void init(const vk::raii::Device& device);
-    void reset() noexcept;
+    void shutdown() noexcept;
 
     [[nodiscard]] vk::DescriptorSetLayout layout(DescriptorLayoutPreset preset) const;
     [[nodiscard]] bool containsBinding(DescriptorLayoutPreset preset,
