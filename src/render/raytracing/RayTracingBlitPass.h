@@ -1,30 +1,19 @@
 #pragma once
 
-#include <cstdint>
-#include <vector>
-
-class RenderGraph;
+#include "render/pass/RenderGraph.h"
 
 class RayTracingBlitPass
 {
 public:
-    enum Input
+    struct Output
     {
-        RayImage,
-        Color,
-        InputCount
-    };
-    enum Output
-    {
-        ColorResult,
-        OutputCount
+        RenderGraph::ImageHandle color;
     };
 
-    void registerPass(RenderGraph& graph);
-    void setupPass(RenderGraph& graph);
-    void executePass(RenderGraph& graph) const;
+    Output setup(RenderGraph& graph, RenderGraph::ImageHandle rayImageHandle, RenderGraph::ImageHandle colorHandle);
+    void   execute(RenderGraph& graph) const;
 
 private:
-    std::vector<uint32_t> inputSlots;
-    std::vector<uint32_t> outputSlots;
+    RenderGraph::ImageHandle rayImage;
+    RenderGraph::ImageHandle color;
 };

@@ -24,7 +24,7 @@ public:
 
     void init(VulkanContext& vulkan, DescriptorManager& descriptors,
         ShaderManager& shaders);
-    void reset() noexcept;
+    void shutdown() noexcept;
 
     GpuMesh& mesh(const MeshAsset::ID& id);
     [[nodiscard]] MaterialAsset materialAsset(const MaterialAsset::ID& id) const;

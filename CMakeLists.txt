@@ -108,26 +108,26 @@ foreach (enable_ibl IN ITEMS 1 0)
     endif ()
 
     add_custom_command(
-        OUTPUT "${scene_binary}" "${scene_reflection}"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
-        COMMAND ${SLANGC_EXECUTABLE}
-        "${SHADER_SOURCE_DIR}/shader.slang"
-        -DENABLE_IBL=${enable_ibl}
-        -target spirv
-        -profile spirv_1_4
-        -matrix-layout-column-major
-        -emit-spirv-directly
-        -fvk-use-entrypoint-name
-        -entry vertMain
-        -entry fragMain
-        -reflection-json "${scene_reflection}"
-        -o "${scene_binary}"
-        DEPENDS "${SHADER_SOURCE_DIR}/shader.slang"
-        "${SHADER_SOURCE_DIR}/scene_data.slang"
-        "${SHADER_SOURCE_DIR}/brdf.slang"
-        "${SHADER_SOURCE_DIR}/constant.slang"
-        COMMENT "Compiling Slang scene shader (ENABLE_IBL=${enable_ibl})"
-        VERBATIM
+            OUTPUT "${scene_binary}" "${scene_reflection}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
+            COMMAND ${SLANGC_EXECUTABLE}
+            "${SHADER_SOURCE_DIR}/shader.slang"
+            -DENABLE_IBL=${enable_ibl}
+            -target spirv
+            -profile spirv_1_4
+            -matrix-layout-column-major
+            -emit-spirv-directly
+            -fvk-use-entrypoint-name
+            -entry vertMain
+            -entry fragMain
+            -reflection-json "${scene_reflection}"
+            -o "${scene_binary}"
+            DEPENDS "${SHADER_SOURCE_DIR}/shader.slang"
+            "${SHADER_SOURCE_DIR}/scene_data.slang"
+            "${SHADER_SOURCE_DIR}/brdf.slang"
+            "${SHADER_SOURCE_DIR}/constant.slang"
+            COMMENT "Compiling Slang scene shader (ENABLE_IBL=${enable_ibl})"
+            VERBATIM
     )
 endforeach ()
 
@@ -327,6 +327,8 @@ add_executable(RenderLab
         src/render/device/FrameContext.h
         src/render/FrameData.cpp
         src/render/FrameData.h
+        src/render/RenderContext.cpp
+        src/render/RenderContext.h
         src/render/device/GpuUploadContext.h
         src/render/present/Swapchain.cpp
         src/render/present/Swapchain.h
@@ -354,8 +356,8 @@ add_executable(RenderLab
         src/render/raytracing/RayTracingPass.h
         src/render/raytracing/RayTracingBlitPass.cpp
         src/render/raytracing/RayTracingBlitPass.h
-        src/render/pass/ShadowPass.cpp
-        src/render/pass/ShadowPass.h
+        src/render/pass/PointShadowPass.cpp
+        src/render/pass/PointShadowPass.h
         src/render/pass/LightMarkers.cpp
         src/render/pass/LightMarkers.h
         src/render/pass/EditorPickingPass.cpp
@@ -374,9 +376,11 @@ add_executable(RenderLab
         src/core/math/Sampler.h
         src/render/pass/RenderGraph.cpp
         src/render/pass/RenderGraph.h
-        src/render/pass/RenderGraphSlots.cpp
+        src/render/pass/RenderGraphSetup.cpp
         src/render/pass/EditorUiPass.cpp
         src/render/pass/EditorUiPass.h
+        src/render/Image.cpp
+        src/render/Image.h
 )
 add_dependencies(RenderLab RenderLabShaders)
 

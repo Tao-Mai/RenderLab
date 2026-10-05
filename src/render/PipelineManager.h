@@ -58,7 +58,7 @@ class PipelineManager
 public:
     void init(const vk::raii::Device& device, DescriptorManager& descriptors,
         ShaderManager& shaders);
-    void reset() noexcept;
+    void shutdown() noexcept;
 
     [[nodiscard]] vk::PipelineLayout layout(PipelineLayoutPreset preset) const;
     [[nodiscard]] vk::Pipeline getOrCreate(const PipelineKey& key);

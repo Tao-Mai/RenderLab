@@ -2,54 +2,42 @@
 
 #include "core/Logger.h"
 #include "render/Renderer.h"
-#include "render/pass/EditorPickingPass.h"
-#include "render/pass/RenderGraph.h"
+#include "render/present/Swapchain.h"
 #include "render/resource/Buffer.h"
 
-void EditorPickingCopyPass::registerPass(RenderGraph& graph)
+EditorPickingCopyPass::Output
+EditorPickingCopyPass::setup(RenderGraph& graph, RenderGraph::ImageHandle pickingImageHandle)
 {
-    std::tie(inputSlots, outputSlots) = graph.registerPass(
-        "editor_picking_copy",
-        InputCount,
-        OutputCount,
-        [this](RenderGraph& g) { setupPass(g); },
-        [this](RenderGraph& g) { executePass(g); }
-    );
-}
-
-void EditorPickingCopyPass::setupPass(RenderGraph& graph)
-{
-    graph.bindInput(
-        inputSlots[PickingImage],
-        graph.outputSlot("editor_picking", EditorPickingPass::ImageResult),
+    pickingImage = pickingImageHandle;
+    graph.use(
+        pickingImage,
         {
-            .imageUsage = vk::ImageUsageFlagBits::eTransferSrc,
-            .stages     = vk::PipelineStageFlagBits2::eTransfer,
-            .access     = vk::AccessFlagBits2::eTransferRead,
-            .layout     = vk::ImageLayout::eTransferSrcOptimal,
+            .stages = vk::PipelineStageFlagBits2::eTransfer,
+            .access = vk::AccessFlagBits2::eTransferRead,
+            .layout = vk::ImageLayout::eTransferSrcOptimal,
         }
     );
-    graph.createResource(
-        inputSlots[Readback],
+    readback = graph.createBuffer({
+        .size             = sizeof(uint32_t),
+        .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+    });
+    graph.use(
+        readback,
         {
-            .type             = RenderGraph::ResourceType::Buffer,
-            .size             = sizeof(uint32_t),
-            .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            .bufferUsage      = vk::BufferUsageFlagBits::eTransferDst,
-            .stages           = vk::PipelineStageFlagBits2::eTransfer,
-            .access           = vk::AccessFlagBits2::eTransferWrite,
+            .stages = vk::PipelineStageFlagBits2::eTransfer,
+            .access = vk::AccessFlagBits2::eTransferWrite,
         }
     );
-    graph.bindOutput(outputSlots[ReadbackResult], inputSlots[Readback]);
+    return {readback};
 }
 
-void EditorPickingCopyPass::executePass(RenderGraph& graph) const
+void EditorPickingCopyPass::execute(RenderGraph& graph) const
 {
     const auto& editor = graph.editorInput();
     if (!editor.requestPick)
         return;
 
-    const auto& extent = graph.resourceDesc(inputSlots[PickingImage]).extent;
+    const auto extent = graph.swapchain().extent();
     DCHECK(editor.pickX < extent.width && editor.pickY < extent.height);
     const vk::BufferImageCopy copyRegion{
         .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
@@ -57,9 +45,9 @@ void EditorPickingCopyPass::executePass(RenderGraph& graph) const
         .imageExtent      = {1, 1, 1},
     };
     graph.commands().copyImageToBuffer(
-        graph.image(inputSlots[PickingImage]),
+        graph.getImage(pickingImage).handle(),
         vk::ImageLayout::eTransferSrcOptimal,
-        graph.buffer(inputSlots[Readback]).handle(),
+        graph.getBuffer(readback).handle(),
         copyRegion
     );
 }

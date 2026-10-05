@@ -131,7 +131,7 @@ void RenderResourceManager::init(VulkanContext&     targetVulkan,
     uploadPool = vkCheck(vulkan->deviceHandle().createCommandPool(poolInfo));
 }
 
-void RenderResourceManager::reset() noexcept
+void RenderResourceManager::shutdown() noexcept
 {
     meshes.clear();
     materials.clear();

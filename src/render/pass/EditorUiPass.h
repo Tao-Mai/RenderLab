@@ -1,18 +1,18 @@
 #pragma once
 
-#include <cstdint>
-#include <vector>
-
-class RenderGraph;
+#include "render/pass/RenderGraph.h"
 
 class EditorUiPass
 {
 public:
-    void registerPass(RenderGraph& graph);
-    void setupPass(RenderGraph& graph);
-    void executePass(RenderGraph& graph) const;
+    struct Output
+    {
+        RenderGraph::ImageHandle color;
+    };
+
+    Output setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle);
+    void   execute(RenderGraph& graph) const;
 
 private:
-    std::vector<uint32_t> inputSlots;
-    std::vector<uint32_t> outputSlots;
+    RenderGraph::ImageHandle color;
 };

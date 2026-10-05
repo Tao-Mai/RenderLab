@@ -1,27 +1,34 @@
 #include "render/Renderer.h"
+#include "render/RenderContext.h"
 
 #include "asset/Asset.h"
 #include "asset/AssetManager.h"
 #include "scene/SceneManager.h"
 
-#include "scene/component/CameraComponent.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
+#include "core/Window.h"
 #include "editor/Editor.h"
 #include "render/device/VkCheck.h"
-#include "core/Window.h"
+#include "scene/component/CameraComponent.h"
 
 #include <glm/gtc/matrix_inverse.hpp>
 
-Renderer::~Renderer()
-{
-    DCHECK(!inited);
-}
+Renderer::~Renderer() { DCHECK(!inited); }
 
 void Renderer::init()
 {
     DCHECK(!inited);
+
+    auto& ctx = renderContext();
+    DCHECK(!ctx.shaderManager && !ctx.descriptors && !ctx.pipelineManager && !ctx.resources);
+    ctx = {
+        .shaderManager   = &shaders,
+        .descriptors     = &descriptors,
+        .pipelineManager = &pipelines,
+        .resources       = &resources,
+    };
 
     initVulkan();
     DEBUG_EXEC(inited = true);
@@ -40,19 +47,16 @@ void Renderer::loadScene()
     waitIdle();
     DCHECK(context().sceneManager);
     const auto& targetScene = context().sceneManager->scene();
-    renderSystem.load(targetScene, resources);
-    graph.bindEnvironmentTextures();
-    iblParameters = {};
+    renderSystem.load(targetScene, *renderContext().resources);
+    iblParameters              = {};
     const auto& environmentMap = context().config->rendererConfig().environmentMap;
     if (environmentMap)
     {
-        const auto& environment = context().assetManager->get<EnvironmentMapAsset>(
-            *environmentMap);
-        const auto& prefiltered = context().assetManager->get<TextureAsset>(
-            environment.prefilteredSpecular.textureID);
-        iblParameters.x = static_cast<float>(prefiltered.mipLevels - 1);
+        const auto& environment = context().assetManager->get<EnvironmentMapAsset>(*environmentMap);
+        const auto& prefiltered = context().assetManager->get<TextureAsset>(environment.prefilteredSpecular.textureID);
+        iblParameters.x         = static_cast<float>(prefiltered.mipLevels - 1);
     }
-    graph.build();
+    graph.setup();
 }
 
 void Renderer::waitIdle()
@@ -65,6 +69,9 @@ void Renderer::waitIdle()
 
 void Renderer::shutdown() noexcept
 {
+    DCHECK(inited);
+    auto& ctx = renderContext();
+
     if (*vulkan.deviceHandle())
     {
         (void)vulkan.deviceHandle().waitIdle();
@@ -72,40 +79,29 @@ void Renderer::shutdown() noexcept
 
     renderSystem.reset();
     graph.reset();
-    resources.reset();
-    pipelines.reset();
+    ctx.resources->shutdown();
+    ctx.pipelineManager->shutdown();
     for (FrameContext& frame : frames)
     {
         frame.reset();
     }
-    descriptors.reset();
-    shaders.reset();
+    ctx.descriptors->shutdown();
+    ctx.shaderManager->shutdown();
+    ctx = {};
     swapchain.reset();
     vulkan.reset();
-    frameIndex = 0;
+    frameIndex    = 0;
     iblParameters = {};
     DEBUG_EXEC(inited = false);
 }
 
-VulkanContext& Renderer::vulkanContext()
-{
-    return vulkan;
-}
+VulkanContext& Renderer::vulkanContext() { return vulkan; }
 
-Swapchain& Renderer::swapchainHandle()
-{
-    return swapchain;
-}
+Swapchain& Renderer::swapchainHandle() { return swapchain; }
 
-const RenderData& Renderer::renderData() const
-{
-    return renderSystem.renderData();
-}
+const RenderData& Renderer::renderData() const { return renderSystem.renderData(); }
 
-FrameContext& Renderer::currentFrame()
-{
-    return frames[frameIndex];
-}
+FrameContext& Renderer::currentFrame() { return frames[frameIndex]; }
 
 void Renderer::initVulkan()
 {
@@ -116,14 +112,15 @@ void Renderer::initVulkan()
     Window& window = *context().window;
     vulkan.init(window);
     swapchain.init(vulkan, window);
-    shaders.init(vulkan.deviceHandle());
-    descriptors.init(vulkan.deviceHandle());
-    pipelines.init(vulkan.deviceHandle(), descriptors, shaders);
+    auto& ctx = renderContext();
+    ctx.shaderManager->init(vulkan.deviceHandle());
+    ctx.descriptors->init(vulkan.deviceHandle());
+    ctx.pipelineManager->init(vulkan.deviceHandle(), *ctx.descriptors, *ctx.shaderManager);
     for (FrameContext& frame : frames)
     {
-        frame.init(vulkan, descriptors);
+        frame.init(vulkan, *ctx.descriptors);
     }
-    resources.init(vulkan, descriptors, shaders);
+    ctx.resources->init(vulkan, *ctx.descriptors, *ctx.shaderManager);
 
     graph.init();
 }
@@ -146,30 +143,36 @@ void Renderer::recreateSwapchain()
     }
 
     waitIdle();
+    graph.releaseResources();
     swapchain.reset();
     swapchain.init(vulkan, window);
-    graph.build();
+    graph.setup();
     context().editor->refreshUi();
 }
 
 void Renderer::updateFrameData(const CameraComponent& camera, const EditorFrameInput& editor)
 {
-    renderSystem.prepare(camera.worldPosition(), resources);
+    renderSystem.prepare(camera.worldPosition(), *renderContext().resources);
 
-    const glm::mat4 viewProjection = camera.projectionMatrix(editor.aspectRatio) * camera.viewMatrix();
+    const glm::mat4    viewProjection = camera.projectionMatrix(editor.aspectRatio) * camera.viewMatrix();
     const ViewUniforms view{
-        .viewProjection = viewProjection,
+        .viewProjection        = viewProjection,
         .inverseViewProjection = glm::inverse(viewProjection),
-        .cameraPosition = glm::vec4{camera.worldPosition(), 1.0f},
+        .cameraPosition        = glm::vec4{camera.worldPosition(), 1.0f},
     };
-    const auto& lights = renderSystem.renderData().lights;
+    const auto&         lights = renderSystem.renderData().lights;
     const LightUniforms lighting{
-        .lightCount = static_cast<uint32_t>(lights.size()),
+        .lightCount         = static_cast<uint32_t>(lights.size()),
         .ambientCoefficient = context().config->rendererConfig().feature.ambientCoefficient,
-        .iblParameters = iblParameters,
+        .iblParameters      = iblParameters,
     };
-    currentFrame().data.update(view, lighting, lights,
-        context().config->rendererConfig().feature.shadow.enable && graph.passEnabled("shadow"));
+    currentFrame().data.update(
+        view,
+        lighting,
+        lights,
+        context().config->rendererConfig().feature.shadow.enable &&
+            context().config->rendererConfig().renderPath == RenderPath::Rasterization
+    );
 }
 
 EditorFrameResult Renderer::drawFrame(const CameraComponent& camera, const EditorFrameInput& editor)
@@ -181,77 +184,75 @@ EditorFrameResult Renderer::drawFrame(const CameraComponent& camera, const Edito
     const auto fenceResult = vulkan.deviceHandle().waitForFences(drawFence, vk::True, UINT64_MAX);
     CHECK(fenceResult == vk::Result::eSuccess, "failed to wait for fence!");
 
-    uint32_t         imageIndex    = 0;
-    const auto acquireResult = static_cast<vk::Result>(
-        swapchain.handle().getDispatcher()->vkAcquireNextImageKHR(
-            static_cast<VkDevice>(*vulkan.deviceHandle()),
-            static_cast<VkSwapchainKHR>(*swapchain.handle()),
-            UINT64_MAX,
-            static_cast<VkSemaphore>(imageAvailableSemaphore),
-            VK_NULL_HANDLE,
-            &imageIndex));
+    uint32_t   imageIndex    = 0;
+    const auto acquireResult = static_cast<vk::Result>(swapchain.handle().getDispatcher()->vkAcquireNextImageKHR(
+        static_cast<VkDevice>(*vulkan.deviceHandle()),
+        static_cast<VkSwapchainKHR>(*swapchain.handle()),
+        UINT64_MAX,
+        static_cast<VkSemaphore>(imageAvailableSemaphore),
+        VK_NULL_HANDLE,
+        &imageIndex
+    ));
     if (acquireResult == vk::Result::eErrorOutOfDateKHR)
     {
         recreateSwapchain();
         return {};
     }
-    CHECK(acquireResult == vk::Result::eSuccess ||
-          acquireResult == vk::Result::eSuboptimalKHR,
-          "vkAcquireNextImageKHR failed: {}",
-          vk::to_string(acquireResult));
-    const vk::Semaphore renderFinishedSemaphore =
-        swapchain.renderFinishedSemaphore(imageIndex);
+    CHECK(
+        acquireResult == vk::Result::eSuccess || acquireResult == vk::Result::eSuboptimalKHR,
+        "vkAcquireNextImageKHR failed: {}",
+        vk::to_string(acquireResult)
+    );
+    const vk::Semaphore renderFinishedSemaphore = swapchain.renderFinishedSemaphore(imageIndex);
     vkCheck(vulkan.deviceHandle().resetFences(drawFence));
 
-    const bool resolvePickAfterSubmit = editor.requestPick && graph.passEnabled("editor_picking_readback");
+    const bool resolvePickAfterSubmit = editor.requestPick;
     updateFrameData(camera, editor);
     graph.execute(editor, frameIndex, imageIndex);
 
     vk::PipelineStageFlags waitDestinationStageMask(
-        graph.passEnabled("raytracing") ? vk::PipelineStageFlagBits::eTransfer
-                                       : vk::PipelineStageFlagBits::eColorAttachmentOutput);
+        context().config->rendererConfig().renderPath == RenderPath::RayTracing ? vk::PipelineStageFlagBits::eTransfer
+                                        : vk::PipelineStageFlagBits::eColorAttachmentOutput
+    );
     const vk::SubmitInfo submitInfo{
-        .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &imageAvailableSemaphore,
-        .pWaitDstStageMask = &waitDestinationStageMask,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &commandBuffer,
+        .waitSemaphoreCount   = 1,
+        .pWaitSemaphores      = &imageAvailableSemaphore,
+        .pWaitDstStageMask    = &waitDestinationStageMask,
+        .commandBufferCount   = 1,
+        .pCommandBuffers      = &commandBuffer,
         .signalSemaphoreCount = 1,
-        .pSignalSemaphores = &renderFinishedSemaphore};
+        .pSignalSemaphores    = &renderFinishedSemaphore
+    };
     vkCheck(vulkan.queueHandle().submit(submitInfo, drawFence));
 
     const vk::PresentInfoKHR presentInfoKHR{
         .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &renderFinishedSemaphore,
-        .swapchainCount = 1,
-        .pSwapchains = &*swapchain.handle(),
-        .pImageIndices = &imageIndex,
+        .pWaitSemaphores    = &renderFinishedSemaphore,
+        .swapchainCount     = 1,
+        .pSwapchains        = &*swapchain.handle(),
+        .pImageIndices      = &imageIndex,
     };
-    const auto presentResult = static_cast<vk::Result>(
-        vulkan.queueHandle().getDispatcher()->vkQueuePresentKHR(
-            static_cast<VkQueue>(*vulkan.queueHandle()),
-            reinterpret_cast<const VkPresentInfoKHR*>(&presentInfoKHR)));
-    CHECK(presentResult == vk::Result::eSuccess ||
-          presentResult == vk::Result::eSuboptimalKHR ||
-          presentResult == vk::Result::eErrorOutOfDateKHR,
-          "vkQueuePresentKHR failed: {}",
-          vk::to_string(presentResult));
+    const auto presentResult = static_cast<vk::Result>(vulkan.queueHandle().getDispatcher()->vkQueuePresentKHR(
+        static_cast<VkQueue>(*vulkan.queueHandle()),
+        reinterpret_cast<const VkPresentInfoKHR*>(&presentInfoKHR)
+    ));
+    CHECK(
+        presentResult == vk::Result::eSuccess || presentResult == vk::Result::eSuboptimalKHR ||
+            presentResult == vk::Result::eErrorOutOfDateKHR,
+        "vkQueuePresentKHR failed: {}",
+        vk::to_string(presentResult)
+    );
 
     EditorFrameResult frameResult;
     if (resolvePickAfterSubmit)
     {
-        const vk::Result pickFenceResult = vulkan.deviceHandle().waitForFences(
-            drawFence,
-            vk::True,
-            UINT64_MAX);
-        CHECK(pickFenceResult == vk::Result::eSuccess,
-              "failed to wait for object picking readback");
+        const vk::Result pickFenceResult = vulkan.deviceHandle().waitForFences(drawFence, vk::True, UINT64_MAX);
+        CHECK(pickFenceResult == vk::Result::eSuccess, "failed to wait for object picking readback");
 
         frameResult.hasPickResult     = true;
         frameResult.pickedSelectionId = graph.readSelectionId(frameIndex);
     }
-    if (acquireResult == vk::Result::eSuboptimalKHR ||
-        presentResult == vk::Result::eSuboptimalKHR ||
+    if (acquireResult == vk::Result::eSuboptimalKHR || presentResult == vk::Result::eSuboptimalKHR ||
         presentResult == vk::Result::eErrorOutOfDateKHR)
     {
         recreateSwapchain();

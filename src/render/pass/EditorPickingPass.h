@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/ShaderManager.h"
+#include "render/pass/RenderGraph.h"
 
 #include <cstdint>
 #include <vector>
@@ -16,22 +17,21 @@ struct DrawItem;
 class EditorPickingPass
 {
 public:
-    enum Input { Depth, PickingImage, InputCount };
-    enum Output { ImageResult, OutputCount };
+    struct Output
+    {
+        RenderGraph::ImageHandle pickingImage;
+    };
 
-    void init(RenderGraph& graph);
-    void registerPass(RenderGraph& graph);
-    void setupPass(RenderGraph& graph);
-    void executePass(RenderGraph& graph) const;
+    Output setup(RenderGraph& graph, RenderGraph::ImageHandle depthHandle);
+    void   execute(RenderGraph& graph) const;
 
 private:
-    void draw(
-        vk::raii::CommandBuffer& commandBuffer,
-        const DrawItem& item) const;
-    std::vector<uint32_t> inputSlots;
-    std::vector<uint32_t> outputSlots;
-    PipelineManager* pipelines = nullptr;
-    ShaderHandle shader;
-    vk::PipelineLayout pipelineLayout;
-    vk::Pipeline pipeline;
+    void                     draw(vk::raii::CommandBuffer& commandBuffer, const DrawItem& item) const;
+    RenderGraph::ImageHandle depth;
+    RenderGraph::ImageHandle pickingImage;
+    bool                     ownsDepth = false;
+    PipelineManager*         pipelines = nullptr;
+    ShaderHandle             shader;
+    vk::PipelineLayout       pipelineLayout;
+    vk::Pipeline             pipeline;
 };

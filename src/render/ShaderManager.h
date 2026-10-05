@@ -43,7 +43,7 @@ public:
     ~ShaderManager();
 
     void init(const vk::raii::Device& device);
-    void reset() noexcept;
+    void shutdown() noexcept;
 
     [[nodiscard]] ShaderHandle          getOrLoad(const ShaderAsset::ID& id,
         ShaderVariant variant = ShaderVariant::Default);
