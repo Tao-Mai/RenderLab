@@ -48,26 +48,11 @@ void RayTracingPass::registerPass(RenderGraph& graph)
 void RayTracingPass::setupPass(RenderGraph& graph)
 {
     CHECK(graph.vulkan().supportsRayTracing(), "selected GPU does not support the ray tracing route");
-    const auto capabilities = vkCheck(graph.vulkan().physicalDeviceHandle().getSurfaceCapabilitiesKHR(
-        graph.vulkan().surfaceHandle()));
-    CHECK(capabilities.supportedUsageFlags & vk::ImageUsageFlagBits::eTransferDst,
-        "ray tracing requires transfer-destination swapchain images");
     const auto& device = graph.vulkan().physicalDeviceHandle();
-    CHECK(device.getFormatProperties(graph.swapchain().surfaceFormat().format).optimalTilingFeatures &
-        vk::FormatFeatureFlagBits::eBlitDst, "swapchain format does not support blit destinations");
     const auto features = device.getFormatProperties(vk::Format::eR8G8B8A8Unorm).optimalTilingFeatures;
-    CHECK((features & (vk::FormatFeatureFlagBits::eStorageImage | vk::FormatFeatureFlagBits::eBlitSrc)) ==
-        (vk::FormatFeatureFlagBits::eStorageImage | vk::FormatFeatureFlagBits::eBlitSrc),
-        "ray tracing output format does not support storage images and blits");
+    CHECK(features & vk::FormatFeatureFlagBits::eStorageImage,
+        "ray tracing output format does not support storage images");
 
-    const RenderGraph::ResourceDesc transferDestination{
-        .imageUsage = vk::ImageUsageFlagBits::eTransferDst,
-        .stages = vk::PipelineStageFlagBits2::eTransfer,
-        .access = vk::AccessFlagBits2::eTransferWrite,
-        .layout = vk::ImageLayout::eTransferDstOptimal,
-    };
-    graph.importSwapchain(inputSlots[Color], transferDestination);
-    graph.bindOutput(outputSlots[ColorResult], inputSlots[Color], transferDestination);
     const auto extent = graph.swapchain().extent();
     graph.createResource(inputSlots[RayImage], {
         .format = vk::Format::eR8G8B8A8Unorm,
@@ -77,12 +62,7 @@ void RayTracingPass::setupPass(RenderGraph& graph)
         .access = vk::AccessFlagBits2::eShaderStorageWrite,
         .layout = vk::ImageLayout::eGeneral,
     });
-    graph.bindOutput(outputSlots[RayImageResult], inputSlots[RayImage], {
-        .imageUsage = vk::ImageUsageFlagBits::eTransferSrc,
-        .stages = vk::PipelineStageFlagBits2::eTransfer,
-        .access = vk::AccessFlagBits2::eTransferRead,
-        .layout = vk::ImageLayout::eTransferSrcOptimal,
-    });
+    graph.bindOutput(outputSlots[RayImageResult], inputSlots[RayImage]);
     if (!*pipeline) createPipeline(graph);
 }
 
@@ -352,16 +332,4 @@ void RayTracingPass::executePass(RenderGraph& graph)
             {viewport.x, viewport.y, viewport.width, viewport.height}});
     const auto extent = graph.swapchain().extent();
     commands.traceRaysKHR(raygenRegion, missRegion, hitRegion, {}, extent.width, extent.height, 1);
-
-    graph.useOutput(outputSlots[RayImageResult]);
-    const vk::ImageBlit region{
-        .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-        .srcOffsets = std::array{vk::Offset3D{0, 0, 0},
-            vk::Offset3D{static_cast<int32_t>(extent.width), static_cast<int32_t>(extent.height), 1}},
-        .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-        .dstOffsets = std::array{vk::Offset3D{0, 0, 0},
-            vk::Offset3D{static_cast<int32_t>(extent.width), static_cast<int32_t>(extent.height), 1}},
-    };
-    commands.blitImage(graph.image(inputSlots[RayImage]), vk::ImageLayout::eTransferSrcOptimal,
-        graph.image(inputSlots[Color]), vk::ImageLayout::eTransferDstOptimal, region, vk::Filter::eNearest);
 }

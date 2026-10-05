@@ -34,7 +34,7 @@ public:
     void registerPass(RenderGraph& graph);
     void setupPass(RenderGraph& graph);
     void executePass(RenderGraph& graph) const;
-    void bindSceneTextures(const SceneAsset& scene);
+    void bindEnvironmentTextures();
 
 private:
     VulkanContext*                                         vulkan    = nullptr;
@@ -47,6 +47,7 @@ private:
     ShaderHandle                                           lightShader;
     ShaderHandle                                           skyboxShader;
     bool                                                   hasSkybox = false;
+    bool                                                   iblEnabled = false;
     vk::Pipeline                                           scenePipeline;
     vk::Pipeline                                           lightMarkerPipeline;
     vk::Pipeline                                           skyboxPipeline;

@@ -49,7 +49,7 @@ void checkFields(const json& type, const std::array<Field, N>& expected)
     }
 }
 
-constexpr std::array shaders = {"slang", "light", "editor_picking", "shadow", "skybox"};
+constexpr std::array shaders = {"slang", "slang.no_ibl", "light", "editor_picking", "shadow", "skybox"};
 }
 
 TEST(ShaderDataLayout, ViewUniformsMatchCompiledShaders)
@@ -75,7 +75,7 @@ TEST(ShaderDataLayout, LightUniformsMatchCompiledShaders)
 {
     const std::array expected = {
         Field{"lightCount", offsetof(LightUniforms, lightCount), sizeof(uint32_t)},
-        Field{"padding0", offsetof(LightUniforms, padding0), sizeof(uint32_t)},
+        Field{"ambientCoefficient", offsetof(LightUniforms, ambientCoefficient), sizeof(float)},
         Field{"padding1", offsetof(LightUniforms, padding1), sizeof(uint32_t)},
         Field{"padding2", offsetof(LightUniforms, padding2), sizeof(uint32_t)},
         Field{"iblParameters", offsetof(LightUniforms, iblParameters), sizeof(glm::vec4)},
@@ -100,7 +100,7 @@ TEST(ShaderDataLayout, LightStorageElementsMatchCompiledShaders)
         Field{"direction", offsetof(LightData, direction), sizeof(glm::vec4)},
         Field{"areaSizeCone", offsetof(LightData, areaSizeCone), sizeof(glm::vec4)},
         Field{"flags", offsetof(LightData, flags), sizeof(glm::uvec4)},
-        Field{"shadowidx", offsetof(LightData, shadowidx), sizeof(uint32_t)},
+        Field{"shadowIdx", offsetof(LightData, shadowidx), sizeof(uint32_t)},
         Field{"padding0", offsetof(LightData, padding0), sizeof(uint32_t)},
         Field{"padding1", offsetof(LightData, padding1), sizeof(uint32_t)},
         Field{"padding2", offsetof(LightData, padding2), sizeof(uint32_t)},
@@ -127,7 +127,7 @@ TEST(ShaderDataLayout, PointShadowStorageAndPushConstantsMatchCompiledShader)
     const auto push = parameter("shadow", "pushConstants");
     const std::array pushFields = {
         Field{"model", offsetof(ShadowPushConstants, model), sizeof(glm::mat4)},
-        Field{"lightidx", offsetof(ShadowPushConstants, lightIdx), sizeof(uint32_t)},
+        Field{"lightIdx", offsetof(ShadowPushConstants, lightIdx), sizeof(uint32_t)},
         Field{"padding0", offsetof(ShadowPushConstants, padding0), sizeof(uint32_t)},
         Field{"padding1", offsetof(ShadowPushConstants, padding1), sizeof(uint32_t)},
         Field{"padding2", offsetof(ShadowPushConstants, padding2), sizeof(uint32_t)},

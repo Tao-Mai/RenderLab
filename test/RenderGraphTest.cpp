@@ -45,11 +45,11 @@ TEST(RenderGraph, ResolvesSlotChainMergesUsageAndSortsDependencies)
     ASSERT_EQ(producerOutputs.size(), 2);
 
     graph.createResource(producerInputs[0], colorTarget());
-    graph.bindOutput(producerOutputs[0], producerInputs[0], colorTarget());
-    graph.bindOutput(producerOutputs[1], producerInputs[0], colorTarget());
+    graph.bindOutput(producerOutputs[0], producerInputs[0]);
+    graph.bindOutput(producerOutputs[1], producerInputs[0]);
     graph.bindInput(consumerInputs[0], producerOutputs[0], sampledImage());
     graph.ignoreInput(consumerInputs[1]);
-    graph.bindOutput(consumerOutputs[0], consumerInputs[0], sampledImage());
+    graph.bindOutput(consumerOutputs[0], consumerInputs[0]);
 
     EXPECT_TRUE(graph.compile().empty());
     EXPECT_EQ(graph.executionOrder(), (std::vector<std::string>{"producer", "consumer"}));
@@ -63,7 +63,7 @@ TEST(RenderGraph, RejectsUnboundAndIgnoredOutputResources)
     RenderGraph graph;
     auto [inputs, outputs] = graph.registerPass("pass", 2, 1);
     graph.ignoreInput(inputs[0]);
-    graph.bindOutput(outputs[0], inputs[0], sampledImage());
+    graph.bindOutput(outputs[0], inputs[0]);
 
     const auto errors = graph.compile();
     EXPECT_TRUE(contains(errors, "unbound input"));
@@ -75,8 +75,8 @@ TEST(RenderGraph, RejectsReferenceAndPassCycles)
     RenderGraph graph;
     auto [aInputs, aOutputs] = graph.registerPass("a", 1, 1);
     auto [bInputs, bOutputs] = graph.registerPass("b", 1, 1);
-    graph.bindOutput(aOutputs[0], aInputs[0], sampledImage());
-    graph.bindOutput(bOutputs[0], bInputs[0], sampledImage());
+    graph.bindOutput(aOutputs[0], aInputs[0]);
+    graph.bindOutput(bOutputs[0], bInputs[0]);
     graph.bindInput(aInputs[0], bOutputs[0], sampledImage());
     graph.bindInput(bInputs[0], aOutputs[0], sampledImage());
 
@@ -107,7 +107,7 @@ TEST(RenderGraph, RejectsUnorderedWritesToAliasedResource)
     auto [bInputs, bOutputs] = graph.registerPass("reader", 1, 0);
     auto [cInputs, cOutputs] = graph.registerPass("writer", 1, 0);
     graph.createResource(aInputs[0], colorTarget());
-    graph.bindOutput(aOutputs[0], aInputs[0], colorTarget());
+    graph.bindOutput(aOutputs[0], aInputs[0]);
     graph.bindInput(bInputs[0], aOutputs[0], sampledImage());
     graph.bindInput(cInputs[0], aOutputs[0], colorTarget());
 
@@ -121,7 +121,7 @@ TEST(RenderGraph, AllowsUnorderedReaders)
     auto [bInputs, bOutputs] = graph.registerPass("reader1", 1, 0);
     auto [cInputs, cOutputs] = graph.registerPass("reader2", 1, 0);
     graph.createResource(aInputs[0], colorTarget());
-    graph.bindOutput(aOutputs[0], aInputs[0], colorTarget());
+    graph.bindOutput(aOutputs[0], aInputs[0]);
     graph.bindInput(bInputs[0], aOutputs[0], sampledImage());
     graph.bindInput(cInputs[0], aOutputs[0], sampledImage());
 
@@ -134,7 +134,7 @@ TEST(RenderGraph, ValidatesTypeAndCreationRequirements)
     auto [aInputs, aOutputs] = graph.registerPass("producer", 1, 1);
     auto [bInputs, bOutputs] = graph.registerPass("consumer", 1, 0);
     graph.createResource(aInputs[0], {.type = Type::Buffer});
-    graph.bindOutput(aOutputs[0], aInputs[0], {.type = Type::Buffer});
+    graph.bindOutput(aOutputs[0], aInputs[0]);
     graph.bindInput(bInputs[0], aOutputs[0], sampledImage());
 
     const auto errors = graph.compile();
@@ -149,7 +149,7 @@ TEST(RenderGraph, ExternalUsageCannotBeExpandedByConsumer)
     auto [bInputs, bOutputs] = graph.registerPass("consumer", 1, 0);
     const auto handle = vk::Image(reinterpret_cast<VkImage>(static_cast<uintptr_t>(1)));
     graph.importResource(aInputs[0], colorTarget(), {{.image = handle}});
-    graph.bindOutput(aOutputs[0], aInputs[0], colorTarget());
+    graph.bindOutput(aOutputs[0], aInputs[0]);
     graph.bindInput(bInputs[0], aOutputs[0], sampledImage());
 
     EXPECT_TRUE(contains(graph.compile(), "lacks required usage flags"));

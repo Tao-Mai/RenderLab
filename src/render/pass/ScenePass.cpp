@@ -7,6 +7,7 @@
 #include "asset/Asset.h"
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
+#include "core/ConfigManager.h"
 #include "scene/system/RenderSystem.h"
 #include "render/pass/LightMarkers.h"
 #include "render/present/Swapchain.h"
@@ -78,8 +79,8 @@ void ScenePass::setupPass(RenderGraph& graph)
     };
     graph.importSwapchain(inputSlots[Color], colorUse);
     graph.createResource(inputSlots[Depth], depthUse);
-    graph.bindOutput(outputSlots[ColorResult], inputSlots[Color], colorUse);
-    graph.bindOutput(outputSlots[DepthResult], inputSlots[Depth], depthUse);
+    graph.bindOutput(outputSlots[ColorResult], inputSlots[Color]);
+    graph.bindOutput(outputSlots[DepthResult], inputSlots[Depth]);
 
     if (graph.passEnabled("shadow"))
         graph.bindInput(inputSlots[Shadow], graph.outputSlot("shadow", ShadowPass::ShadowMap), {
@@ -98,8 +99,9 @@ void ScenePass::setupPass(RenderGraph& graph)
 
     const vk::Format colorFormat = graph.swapchain().surfaceFormat().format;
     const vk::Format depthFormat = graph.depthFormat();
+    iblEnabled = context().config->rendererConfig().feature.ibl;
     sceneShader = graph.shaders().getOrLoad("scene",
-        hasSkybox ? ShaderVariant::Default : ShaderVariant::NoIbl);
+        iblEnabled ? ShaderVariant::Default : ShaderVariant::NoIbl);
     scenePipeline                = pipelines->getOrCreate({
         .shader = sceneShader,
         .layout = PipelineLayoutPreset::SceneMaterial,
@@ -126,17 +128,18 @@ void ScenePass::setupPass(RenderGraph& graph)
     skyboxPipelineLayout = pipelines->layout(PipelineLayoutPreset::SceneOnly);
 }
 
-void ScenePass::bindSceneTextures(const SceneAsset& scene)
+void ScenePass::bindEnvironmentTextures()
 {
     TextureBinding irradianceBinding{
         BuiltinAssets::Texture::whiteCube, BuiltinAssets::Sampler::linearClamp};
     TextureBinding prefilteredBinding = irradianceBinding;
     TextureBinding radianceBinding = irradianceBinding;
-    hasSkybox = scene.environment.environmentMap.has_value();
-    if (scene.environment.environmentMap.has_value())
+    const auto& environmentMap = context().config->rendererConfig().environmentMap;
+    hasSkybox = environmentMap.has_value();
+    if (environmentMap)
     {
         const EnvironmentMapAsset& environment =
-            context().assetManager->get<EnvironmentMapAsset>(*scene.environment.environmentMap);
+            context().assetManager->get<EnvironmentMapAsset>(*environmentMap);
         CHECK(!environment.radiance.textureID.empty() &&
               !environment.radiance.samplerID.empty() &&
               !environment.irradiance.textureID.empty() &&
@@ -341,7 +344,7 @@ void ScenePass::executePass(RenderGraph& graph) const
     {
         PipelineKey key = item.material->pipelineKey(
             graph.swapchain().surfaceFormat().format, graph.depthFormat());
-        if (!hasSkybox)
+        if (!iblEnabled)
         {
             const ShaderAsset::ID shaderId = graph.shaders().metadata(key.shader).id;
             key.shader = graph.shaders().getOrLoad(shaderId, ShaderVariant::NoIbl);

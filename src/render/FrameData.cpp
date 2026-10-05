@@ -101,7 +101,7 @@ void FrameData::reset() noexcept
 }
 
 void FrameData::update(const ViewUniforms&        view, const LightUniforms& lighting,
-                       std::span<const LightData> frameLights)
+                       std::span<const LightData> frameLights, bool shadowsEnabled)
 {
     DCHECK(vulkan && lighting.lightCount == frameLights.size(),
            "frame light count must match the uploaded SSBO elements");
@@ -110,6 +110,7 @@ void FrameData::update(const ViewUniforms&        view, const LightUniforms& lig
     for (LightData& light : lights)
     {
         light.shadowidx = ~0u;
+        if (!shadowsEnabled) light.flags.z = 0;
         if (!light.enable() || !light.castShadow() || light.type() != LightComponent::Type::Point)
             continue;
 

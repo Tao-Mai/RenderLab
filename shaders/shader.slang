@@ -154,8 +154,9 @@ float4 fragMain(VertexOutput input) : SV_Target
     float3 ambient_specular = env_term * brdf_term;
 
     ambient = ambient_diffuse + ambient_specular;
+#else
+    ambient = lightUniforms.ambientCoefficient * baseColor.rgb;
 #endif
-
     float3 color = direct + ambient;
 
     return float4(color, baseColor.a);

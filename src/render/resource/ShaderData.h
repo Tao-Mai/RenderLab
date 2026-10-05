@@ -48,7 +48,7 @@ struct alignas(16) ViewUniforms
 struct alignas(16) LightUniforms
 {
     uint32_t  lightCount = 0;
-    uint32_t  padding0   = 0;
+    float     ambientCoefficient = 0.1f;
     uint32_t  padding1   = 0;
     uint32_t  padding2   = 0;
     glm::vec4 iblParameters{0.0f};
@@ -112,6 +112,7 @@ static_assert(sizeof(ViewUniforms) == 144);
 static_assert(offsetof(ViewUniforms, inverseViewProjection) == 64);
 static_assert(offsetof(ViewUniforms, cameraPosition) == 128);
 static_assert(sizeof(LightUniforms) == 32);
+static_assert(offsetof(LightUniforms, ambientCoefficient) == 4);
 static_assert(offsetof(LightUniforms, iblParameters) == 16);
 static_assert(sizeof(LightData) == 96);
 static_assert(offsetof(LightData, positionRange) == 16);

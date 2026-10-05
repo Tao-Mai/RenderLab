@@ -41,12 +41,13 @@ void Renderer::loadScene()
     DCHECK(context().sceneManager);
     const auto& targetScene = context().sceneManager->scene();
     renderSystem.load(targetScene, resources);
-    graph.bindSceneTextures(targetScene);
+    graph.bindEnvironmentTextures();
     iblParameters = {};
-    if (targetScene.environment.environmentMap)
+    const auto& environmentMap = context().config->rendererConfig().environmentMap;
+    if (environmentMap)
     {
         const auto& environment = context().assetManager->get<EnvironmentMapAsset>(
-            *targetScene.environment.environmentMap);
+            *environmentMap);
         const auto& prefiltered = context().assetManager->get<TextureAsset>(
             environment.prefilteredSpecular.textureID);
         iblParameters.x = static_cast<float>(prefiltered.mipLevels - 1);
@@ -164,9 +165,11 @@ void Renderer::updateFrameData(const CameraComponent& camera, const EditorFrameI
     const auto& lights = renderSystem.renderData().lights;
     const LightUniforms lighting{
         .lightCount = static_cast<uint32_t>(lights.size()),
+        .ambientCoefficient = context().config->rendererConfig().feature.ambientCoefficient,
         .iblParameters = iblParameters,
     };
-    currentFrame().data.update(view, lighting, lights);
+    currentFrame().data.update(view, lighting, lights,
+        context().config->rendererConfig().feature.shadow.enable && graph.passEnabled("shadow"));
 }
 
 EditorFrameResult Renderer::drawFrame(const CameraComponent& camera, const EditorFrameInput& editor)
@@ -200,7 +203,7 @@ EditorFrameResult Renderer::drawFrame(const CameraComponent& camera, const Edito
         swapchain.renderFinishedSemaphore(imageIndex);
     vkCheck(vulkan.deviceHandle().resetFences(drawFence));
 
-    const bool resolvePickAfterSubmit = editor.requestPick && graph.passEnabled("editor_picking");
+    const bool resolvePickAfterSubmit = editor.requestPick && graph.passEnabled("editor_picking_readback");
     updateFrameData(camera, editor);
     graph.execute(editor, frameIndex, imageIndex);
 

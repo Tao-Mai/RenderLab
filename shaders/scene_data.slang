@@ -12,7 +12,7 @@ struct ViewUniforms
 struct LightUniforms
 {
     uint lightCount;
-    uint padding0;
+    float ambientCoefficient;
     uint padding1;
     uint padding2;
     float4 iblParameters;

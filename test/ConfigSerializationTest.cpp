@@ -27,10 +27,20 @@ static_assert(std::meta::annotations_of_with_type(std::meta::dealias(^^TestFlags
 AppConfig sampleConfig()
 {
     return {
-        .paths = {.assets = "../assets", .commands = "commands.json", .editor = "editor.json"},
+        .paths = {.assets = "../assets", .commands = "commands.json", .editor = "editor.json",
+            .renderer = "renderer.json"},
         .initialScene = SceneAsset::ID{"default"},
-        .renderer = {.renderPath = RenderPath::RayTracing,
-            .brdfLut = {TextureAsset::ID{"lut_ggx"}, SamplerAsset::ID{"linearClamp"}}},
+    };
+}
+
+RendererConfig sampleRendererConfig()
+{
+    return {
+        .renderPath = RenderPath::RayTracing,
+        .brdfLut = {TextureAsset::ID{"lut_ggx"}, SamplerAsset::ID{"linearClamp"}},
+        .feature = {.ibl = false, .ambientCoefficient = 0.25f,
+            .shadow = {.enable = false, .pointShadowMapSize = 2048}},
+        .environmentMap = EnvironmentMapAsset::ID{"grasslands"},
     };
 }
 }
@@ -42,10 +52,9 @@ TEST(ConfigSerialization, UsesMemberNamesAndReflectedAssetIds)
     EXPECT_EQ(serialized.at("paths").at("assets"), "../assets");
     EXPECT_EQ(serialized.at("paths").at("commands"), "commands.json");
     EXPECT_EQ(serialized.at("paths").at("editor"), "editor.json");
+    EXPECT_EQ(serialized.at("paths").at("renderer"), "renderer.json");
     EXPECT_EQ(serialized.at("initialScene").at("value"), "default");
-    EXPECT_EQ(serialized.at("renderer").at("renderPath"), "RayTracing");
-    EXPECT_EQ(serialized.at("renderer").at("brdfLut").at("textureID").at("value"), "lut_ggx");
-    EXPECT_EQ(serialized.at("renderer").at("brdfLut").at("samplerID").at("value"), "linearClamp");
+    EXPECT_FALSE(serialized.contains("renderer"));
 }
 
 TEST(ConfigSerialization, RoundTripsNestedConfig)
@@ -57,10 +66,26 @@ TEST(ConfigSerialization, RoundTripsNestedConfig)
     EXPECT_EQ(restored.paths.assets, original.paths.assets);
     EXPECT_EQ(restored.paths.commands, original.paths.commands);
     EXPECT_EQ(restored.paths.editor, original.paths.editor);
+    EXPECT_EQ(restored.paths.renderer, original.paths.renderer);
     EXPECT_EQ(restored.initialScene, original.initialScene);
-    EXPECT_EQ(restored.renderer.renderPath, original.renderer.renderPath);
-    EXPECT_EQ(restored.renderer.brdfLut.textureID, original.renderer.brdfLut.textureID);
-    EXPECT_EQ(restored.renderer.brdfLut.samplerID, original.renderer.brdfLut.samplerID);
+}
+
+TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
+{
+    const auto original = sampleRendererConfig();
+    const json serialized = Serialize(original);
+    EXPECT_EQ(serialized.at("renderPath"), "RayTracing");
+    EXPECT_EQ(serialized.at("brdfLut").at("textureID").at("value"), "lut_ggx");
+    EXPECT_EQ(serialized.at("brdfLut").at("samplerID").at("value"), "linearClamp");
+    EXPECT_EQ(serialized.at("feature").at("ibl"), false);
+    EXPECT_FLOAT_EQ(serialized.at("feature").at("ambientCoefficient").get<float>(), 0.25f);
+    EXPECT_EQ(serialized.at("environmentMap").at("value"), "grasslands");
+    EXPECT_EQ(serialized.at("feature").at("shadow").at("enable"), false);
+    EXPECT_EQ(serialized.at("feature").at("shadow").at("pointShadowMapSize"), 2048);
+
+    RendererConfig restored;
+    Deserialize(serialized, restored);
+    EXPECT_EQ(Serialize(restored), serialized);
 }
 
 TEST(ConfigSerialization, MissingFieldsFailInsteadOfUsingDefaults)
@@ -70,9 +95,14 @@ TEST(ConfigSerialization, MissingFieldsFailInsteadOfUsingDefaults)
     AppConfig restored;
     EXPECT_DEATH(Deserialize(serialized, restored), "");
 
-    serialized = Serialize(sampleConfig());
-    serialized.at("renderer").at("brdfLut").at("samplerID").erase("value");
-    EXPECT_DEATH(Deserialize(serialized, restored), "");
+    RendererConfig restoredRenderer;
+    serialized = Serialize(sampleRendererConfig());
+    serialized.at("brdfLut").at("samplerID").erase("value");
+    EXPECT_DEATH(Deserialize(serialized, restoredRenderer), "");
+
+    serialized = Serialize(sampleRendererConfig());
+    serialized.at("feature").erase("ibl");
+    EXPECT_DEATH(Deserialize(serialized, restoredRenderer), "");
 }
 
 TEST(ConfigSerialization, RejectsInvalidPathType)
@@ -92,6 +122,18 @@ TEST(ConfigSerialization, ConfigManagerResolvesPathsAndLoadsCommands)
     EXPECT_EQ(std::filesystem::weakly_canonical(manager.paths().assets), source / "test");
     EXPECT_EQ(manager.paths().commands, source / "config" / "commands.json");
     EXPECT_EQ(manager.paths().editor, source / "config" / "editor.json");
+    EXPECT_EQ(manager.paths().renderer, source / "test" / "renderer.json");
+    EXPECT_EQ(Serialize(manager.rendererConfig()),
+        Serialize(asset_json::load<RendererConfig>(manager.paths().renderer)));
+    const auto rendererFile = manager.paths().renderer;
+    const auto originalRenderer = manager.rendererConfig();
+    manager.setRenderPath(RenderPath::RayTracing);
+    manager.setEnvironmentMap(EnvironmentMapAsset::ID{"grasslands"});
+    manager.setRenderFeature({.ibl = false, .ambientCoefficient = 0.3f,
+        .shadow = {.enable = false, .pointShadowMapSize = 512}});
+    EXPECT_FALSE(manager.rendererConfig().feature.ibl);
+    EXPECT_FLOAT_EQ(manager.rendererConfig().feature.ambientCoefficient, 0.3f);
+    EXPECT_EQ(Serialize(asset_json::load<RendererConfig>(rendererFile)), Serialize(originalRenderer));
     const auto editor = asset_json::load<EditorConfig>(manager.paths().editor);
     EXPECT_EQ(manager.editorConfig().width, editor.width);
     EXPECT_EQ(manager.editorConfig().height, editor.height);
@@ -102,7 +144,10 @@ TEST(ConfigSerialization, ConfigManagerResolvesPathsAndLoadsCommands)
     EXPECT_EQ(manager.commandConfig().bindings.at(12).command, Command::SaveScene);
     EXPECT_EQ(manager.commandConfig().bindings.at(12).modifiers, Modifier::Control);
 
+    const auto expectedRenderer = manager.rendererConfig();
     manager.shutdown();
+    EXPECT_EQ(Serialize(asset_json::load<RendererConfig>(rendererFile)), Serialize(expectedRenderer));
+    asset_json::save(rendererFile, originalRenderer);
 }
 
 TEST(ConfigSerialization, CommandsRoundTripEnumsAndCombinedModifiers)

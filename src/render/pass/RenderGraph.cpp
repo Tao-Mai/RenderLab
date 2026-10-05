@@ -9,10 +9,13 @@
 #include "render/device/Memory.h"
 #include "render/device/VkCheck.h"
 #include "render/pass/EditorPickingPass.h"
+#include "render/pass/EditorPickingCopyPass.h"
+#include "render/pass/EditorPickingReadbackPass.h"
 #include "render/pass/EditorUiPass.h"
 #include "render/pass/ScenePass.h"
 #include "render/pass/ShadowPass.h"
 #include "render/raytracing/RayTracingPass.h"
+#include "render/raytracing/RayTracingBlitPass.h"
 #include "render/resource/GpuTexture.h"
 
 #include <array>
@@ -24,7 +27,10 @@ struct RenderGraph::Passes
     ShadowPass shadow;
     ScenePass scene;
     RayTracingPass raytracing;
+    RayTracingBlitPass raytracingBlit;
     EditorPickingPass picking;
+    EditorPickingCopyPass pickingCopy;
+    EditorPickingReadbackPass pickingReadback;
     EditorUiPass ui;
 };
 
@@ -87,14 +93,16 @@ void RenderGraph::init()
     passes->scene.registerPass(*this);
     passes->raytracing.registerPass(*this);
     setPassEnabled("raytracing", false);
+    passes->raytracingBlit.registerPass(*this);
+    setPassEnabled("raytracing_blit", false);
     passes->picking.registerPass(*this);
+    passes->pickingCopy.registerPass(*this);
+    passes->pickingReadback.registerPass(*this);
     passes->ui.registerPass(*this);
 }
 
 void RenderGraph::reset() noexcept
 {
-    built = false;
-    compiled = false;
     resources.clear();
     orderedPasses.clear();
     registeredPasses.clear();
@@ -103,7 +111,6 @@ void RenderGraph::reset() noexcept
     globalOutputSlots.clear();
     passes.reset();
     renderer = nullptr;
-    executingPass = nullptr;
     currentEditor = nullptr;
     sceneDepthFormat = vk::Format::eUndefined;
     pointShadowFormat = vk::Format::eUndefined;
@@ -117,10 +124,10 @@ void RenderGraph::build()
     if (rayTracing != passEnabled("raytracing"))
     {
         setPassEnabled("raytracing", rayTracing);
+        setPassEnabled("raytracing_blit", rayTracing);
         setPassEnabled("scene", !rayTracing);
         setPassEnabled("shadow", !rayTracing);
     }
-    built = false;
     resources.clear();
     for (Slot& slot : globalInputSlots) slot = {.owner = slot.owner};
     for (Slot& slot : globalOutputSlots) slot = {.owner = slot.owner};
@@ -137,7 +144,6 @@ void RenderGraph::build()
 
     allocateResources();
     if (passEnabled("shadow")) passes->shadow.bindResources(*this);
-    built = true;
 }
 
 void RenderGraph::validateCompilation()
@@ -148,11 +154,10 @@ void RenderGraph::validateCompilation()
     DCHECK(errors.empty(), "RenderGraph compilation failed:{}", message);
 }
 
-void RenderGraph::bindSceneTextures(const SceneAsset& scene)
+void RenderGraph::bindEnvironmentTextures()
 {
     DCHECK(passes);
-    passes->scene.bindSceneTextures(scene);
-    built = false;
+    passes->scene.bindEnvironmentTextures();
 }
 
 void RenderGraph::allocateResources()
@@ -254,8 +259,7 @@ uint32_t RenderGraph::instanceIndex(const Resource& resource, uint32_t frameInde
 
 RenderGraph::Allocation& RenderGraph::allocation(ResourceHandle input) const
 {
-    DCHECK(compiled && globalInputSlots.at(input).resource != invalidHandle,
-        "resource access requires a compiled and bound input slot");
+    DCHECK(globalInputSlots.at(input).resource != invalidHandle);
     auto& resource = resources.at(globalInputSlots.at(input).resource);
     DCHECK(resource.allocation);
     return *resource.allocation;
@@ -356,23 +360,9 @@ void RenderGraph::useResource(ResourceHandle index, const ResourceDesc& use)
     instance.state = {.stages = use.stages, .access = use.access, .layout = use.layout};
 }
 
-void RenderGraph::useOutput(ResourceHandle output)
-{
-    const Slot& slot = globalOutputSlots.at(output);
-    DCHECK(slot.owner == executingPass, "only the executing pass may apply its output state");
-    const auto& resource = resources.at(slot.resource);
-    const auto& previous = resource.allocation->instances.at(instanceIndex(resource, currentFrame)).state;
-    if (previous.stages == slot.desc.stages && previous.access == slot.desc.access &&
-        (resource.merged.type == ResourceType::Buffer || previous.layout == slot.desc.layout))
-        return;
-
-    useResource(slot.resource, slot.desc);
-}
-
 void RenderGraph::execute(const EditorFrameInput& editor,
     uint32_t frameIndex, uint32_t imageIndex)
 {
-    DCHECK(built && compiled, "RenderGraph must be built before execution");
     currentFrame = frameIndex;
     currentImage = imageIndex;
     currentEditor = &editor;
@@ -393,14 +383,12 @@ void RenderGraph::execute(const EditorFrameInput& editor,
     vkCheck(commands().begin({}));
     for (PassInfo* pass : orderedPasses)
     {
-        executingPass = pass;
         for (ResourceHandle input : pass->inputResourceHandles)
         {
             const Slot& slot = globalInputSlots[input];
             if (slot.binding != Binding::Ignored) useResource(slot.resource, slot.desc);
         }
         pass->executePass(*this);
-        for (ResourceHandle output : pass->outputResourceHandles) useOutput(output);
     }
     for (ResourceHandle index = 0; index < resources.size(); ++index)
     {
@@ -408,14 +396,13 @@ void RenderGraph::execute(const EditorFrameInput& editor,
             useResource(index, {.layout = vk::ImageLayout::ePresentSrcKHR});
     }
     vkCheck(commands().end());
-    executingPass = nullptr;
     currentEditor = nullptr;
 }
 
 uint32_t RenderGraph::readSelectionId(uint32_t frameIndex)
 {
-    DCHECK(passEnabled("editor_picking"), "picking pass is disabled");
-    return passes->picking.readSelectionId(frameIndex);
+    DCHECK(passEnabled("editor_picking_readback"));
+    return passes->pickingReadback.readSelectionId(*this, frameIndex);
 }
 
 VulkanContext& RenderGraph::vulkan() const { return renderer->vulkan; }

@@ -214,7 +214,6 @@ struct SceneAsset : Asset
 
     struct Environment
     {
-        std::optional<EnvironmentMapAsset::ID> environmentMap;
         glm::vec3                              up{0.0f, 1.0f, 0.0f};
     } environment;
 };
