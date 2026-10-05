@@ -1,0 +1,20 @@
+{
+    "brdfLut": {
+        "samplerID": {
+            "value": "linearClamp"
+        },
+        "textureID": {
+            "value": "lut_ggx"
+        }
+    },
+    "environmentMap": null,
+    "feature": {
+        "ambientCoefficient": 0.10000000149011612,
+        "ibl": true,
+        "shadow": {
+            "enable": true,
+            "pointShadowMapSize": 1024
+        }
+    },
+    "renderPath": "Rasterization"
+}

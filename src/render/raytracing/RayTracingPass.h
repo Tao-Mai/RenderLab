@@ -15,8 +15,8 @@ class GpuMesh;
 class RayTracingPass
 {
 public:
-    enum Input { Color, RayImage, InputCount };
-    enum Output { ColorResult, RayImageResult, OutputCount };
+    enum Input { RayImage, InputCount };
+    enum Output { RayImageResult, OutputCount };
 
     void registerPass(RenderGraph& graph);
     void setupPass(RenderGraph& graph);

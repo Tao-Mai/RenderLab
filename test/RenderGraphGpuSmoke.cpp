@@ -40,7 +40,7 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
     lights[0].flags.y = 0;
     lights[1].flags.x = static_cast<uint32_t>(LightComponent::Type::Spot);
     lights[2].flags.z = 0;
-    frame.update({}, {.lightCount = static_cast<uint32_t>(lights.size())}, lights);
+    frame.update({}, {.lightCount = static_cast<uint32_t>(lights.size())}, lights, true);
     CHECK(frame.pointShadowData().size() == 2);
     CHECK(frame.lightData()[3].shadowidx == 0 && frame.lightData()[4].shadowidx == 1);
     CHECK(frame.lightData()[0].shadowidx == ~0u && frame.lightData()[1].shadowidx == ~0u &&
@@ -60,11 +60,17 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
 
     lights[0].flags.y = 1;
     lights[2].flags.z = 1;
-    frame.update({}, {.lightCount = static_cast<uint32_t>(lights.size())}, lights);
+    frame.update({}, {.lightCount = static_cast<uint32_t>(lights.size())}, lights, true);
     CHECK(frame.pointShadowData().size() == 4);
     CHECK(frame.lightData()[0].shadowidx == 0 && frame.lightData()[2].shadowidx == 1 &&
         frame.lightData()[3].shadowidx == 2 && frame.lightData()[4].shadowidx == 3);
-    frame.update({}, {}, {});
+    frame.update({}, {.lightCount = static_cast<uint32_t>(lights.size())}, lights, false);
+    CHECK(frame.pointShadowData().empty());
+    for (const auto& light : frame.lightData())
+        CHECK(!light.castShadow() && light.shadowidx == ~0u);
+    CHECK(lights[0].castShadow());
+
+    frame.update({}, {}, {}, true);
     CHECK(frame.pointShadowData().empty() && frame.lightData().empty());
     frame.reset();
     descriptors.reset();
@@ -246,9 +252,13 @@ int main(int argc, char** argv)
     ctx.renderer = &renderer;
 
     config.init();
+    const auto originalRenderer = config.rendererConfig();
     data.init();
     sceneManager.init();
     assets.init();
+    const auto environmentIds = assets.loadedIds<EnvironmentMapAsset>();
+    CHECK(!environmentIds.empty());
+    config.setEnvironmentMap(environmentIds.front());
     window.init();
     glfwHideWindow(window.nativeHandle());
     Deserialize(Serialize(assets.get<SceneAsset>(config.initialScene())), scene);
@@ -339,9 +349,23 @@ int main(int argc, char** argv)
     renderer.loadScene();
     renderFrames();
 
-    // None disables IBL while retaining the same descriptor layout.
-    const auto environmentMap = scene.environment.environmentMap;
-    scene.environment.environmentMap.reset();
+    // Disable IBL explicitly without discarding the selected environment map.
+    const auto environmentMap = config.rendererConfig().environmentMap;
+    const RenderFeature originalFeature = config.rendererConfig().feature;
+    RenderFeature feature = originalFeature;
+    feature.shadow.enable = false;
+    config.setRenderFeature(feature);
+    renderFrames();
+
+    feature.shadow.enable = true;
+    feature.shadow.pointShadowMapSize = 512;
+    config.setRenderFeature(feature);
+    renderer.loadScene();
+    renderFrames();
+
+    feature.ibl = false;
+    feature.ambientCoefficient = 0.25f;
+    config.setRenderFeature(feature);
     for (const auto& actor : scene.actors)
         if (auto* light = actor->getComponent<LightComponent>()) light->castShadow = false;
 
@@ -350,11 +374,25 @@ int main(int argc, char** argv)
     renderFrames();
 
     // Switch back to the cached IBL variant, then disable it again.
-    scene.environment.environmentMap = environmentMap;
+    feature.ibl = true;
+    config.setRenderFeature(feature);
     sceneManager.load(scene);
     renderer.loadScene();
     renderFrames();
-    scene.environment.environmentMap.reset();
+    feature.ibl = false;
+    config.setRenderFeature(feature);
+    CHECK(config.rendererConfig().environmentMap == environmentMap);
+
+    // Missing environment maps retain valid fallback resources without disabling IBL.
+    config.setEnvironmentMap(std::nullopt);
+    feature.ibl = true;
+    config.setRenderFeature(feature);
+    sceneManager.load(scene);
+    renderer.loadScene();
+    renderFrames();
+    CHECK(config.rendererConfig().feature.ibl);
+    feature.ibl = false;
+    config.setRenderFeature(feature);
 
     // Zero-light scenes retain descriptors and skip SSBO reads.
     renderer.waitIdle();
@@ -369,7 +407,7 @@ int main(int argc, char** argv)
     if (renderer.vulkanContext().supportsRayTracing())
     {
         const auto originalPath = config.rendererConfig().renderPath;
-        config.setRenderPath(RenderPath::RayTracing, false);
+        config.setRenderPath(RenderPath::RayTracing);
         renderer.loadScene();
         renderFrames();
         renderer.waitIdle();
@@ -381,7 +419,7 @@ int main(int argc, char** argv)
         renderer.loadScene();
         renderFrames();
         renderer.waitIdle();
-        config.setRenderPath(originalPath, false);
+        config.setRenderPath(originalPath);
         renderer.loadScene();
         renderFrames();
         renderer.waitIdle();
@@ -441,6 +479,9 @@ int main(int argc, char** argv)
     ctx.inputManager = nullptr;
 
     renderer.shutdown();
+    config.setRenderPath(originalRenderer.renderPath);
+    config.setRenderFeature(originalRenderer.feature);
+    config.setEnvironmentMap(originalRenderer.environmentMap);
     sceneManager.shutdown();
     assets.shutdown();
     data.shutdown();

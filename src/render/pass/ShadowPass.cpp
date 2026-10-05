@@ -1,5 +1,7 @@
 #include "render/pass/ShadowPass.h"
 
+#include "core/ConfigManager.h"
+#include "core/Context.h"
 #include "core/Logger.h"
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
@@ -10,10 +12,13 @@
 #include "scene/system/RenderSystem.h"
 
 #include <array>
+#include <meta>
 
 void ShadowPass::init(RenderGraph& graph)
 {
-    shader  = graph.shaders().getOrLoad("shadow");
+    shader = graph.shaders().getOrLoad("shadow");
+
+    // 用Nearest，因为插值的话得到的是无意义的深度
     sampler = vkCheck(graph.vulkan().deviceHandle().createSampler({
         .magFilter    = vk::Filter::eNearest,
         .minFilter    = vk::Filter::eNearest,
@@ -29,8 +34,8 @@ void ShadowPass::registerPass(RenderGraph& graph)
 {
     std::tie(inputSlots, outputSlots) = graph.registerPass(
         "shadow",
-        InputCount,
-        OutputCount,
+        inputCount,
+        outputCount,
         [this](RenderGraph& g) { setupPass(g); },
         [this](RenderGraph& g) { executePass(g); }
     );
@@ -38,13 +43,23 @@ void ShadowPass::registerPass(RenderGraph& graph)
 
 void ShadowPass::setupPass(RenderGraph& graph)
 {
+    pointShadowMapSize = context().config->rendererConfig().feature.shadow.pointShadowMapSize;
+    const auto& limits = graph.vulkan().properties().limits;
+    CHECK(
+        pointShadowMapSize > 0 && pointShadowMapSize <= limits.maxImageDimensionCube &&
+            pointShadowMapSize <= limits.maxImageDimension2D && pointShadowMapSize <= limits.maxFramebufferWidth &&
+            pointShadowMapSize <= limits.maxFramebufferHeight,
+        "point shadow map size {} exceeds device limits",
+        pointShadowMapSize
+    );
+
     CHECK(
         kMaxPointLightShadow <= graph.vulkan().properties().limits.maxImageArrayLayers / 6,
         "point shadow cubemap array exceeds maxImageArrayLayers"
     );
     const RenderGraph::ResourceDesc depthUse{
         .format      = graph.shadowFormat(),
-        .extent      = {mapSize, mapSize, 1},
+        .extent      = {pointShadowMapSize, pointShadowMapSize, 1},
         .arrayLayers = kMaxPointLightShadow * 6,
         .imageFlags  = vk::ImageCreateFlagBits::eCubeCompatible,
         .viewType    = vk::ImageViewType::eCubeArray,
@@ -55,24 +70,16 @@ void ShadowPass::setupPass(RenderGraph& graph)
         .layout = vk::ImageLayout::eDepthAttachmentOptimal,
     };
     graph.createResource(inputSlots[Depth], depthUse);
-    graph.bindOutput(
-        outputSlots[ShadowMap],
-        inputSlots[Depth],
-        {
-            .imageUsage = vk::ImageUsageFlagBits::eSampled,
-            .stages     = vk::PipelineStageFlagBits2::eFragmentShader,
-            .access     = vk::AccessFlagBits2::eShaderSampledRead,
-            .layout     = vk::ImageLayout::eDepthReadOnlyOptimal,
-        }
-    );
+    graph.bindOutput(outputSlots[ShadowMap], inputSlots[Depth]);
 
-    pipeline       = graph.pipelines().getOrCreate({
-              .shader      = shader,
-              .layout      = PipelineLayoutPreset::SceneOnly,
-              .state       = PipelineState::preset(RenderMode::Shadow),
-              .depthFormat = graph.shadowFormat(),
-              .viewMask    = pointViewMask,
+    pipeline = graph.pipelines().getOrCreate({
+        .shader      = shader,
+        .layout      = PipelineLayoutPreset::SceneOnly,
+        .state       = PipelineState::preset(RenderMode::Shadow),
+        .depthFormat = graph.shadowFormat(),
+        .viewMask    = pointViewMask,
     });
+
     pipelineLayout = graph.pipelines().layout(PipelineLayoutPreset::SceneOnly);
 }
 
@@ -107,6 +114,9 @@ void ShadowPass::bindResources(RenderGraph& graph)
 
 void ShadowPass::executePass(RenderGraph& graph) const
 {
+    if (!context().config->rendererConfig().feature.shadow.enable)
+        return;
+
     auto&            commandBuffer = graph.commands();
     const std::array sceneSets     = {graph.frameData(graph.frameIndex()).sceneSetHandle()};
     const auto       lights        = graph.frameData(graph.frameIndex()).lightData();
@@ -127,7 +137,7 @@ void ShadowPass::executePass(RenderGraph& graph) const
             .clearValue  = vk::ClearDepthStencilValue(1.0f, 0),
         };
         commandBuffer.beginRendering({
-            .renderArea       = {{0, 0}, {mapSize, mapSize}},
+            .renderArea       = {{0, 0}, {pointShadowMapSize, pointShadowMapSize}},
             .layerCount       = 1,
             .viewMask         = pointViewMask,
             .pDepthAttachment = &depthAttachment,
@@ -144,9 +154,16 @@ void ShadowPass::executePass(RenderGraph& graph) const
         );
         commandBuffer.setViewport(
             0,
-            vk::Viewport(0.0f, 0.0f, static_cast<float>(mapSize), static_cast<float>(mapSize), 0.0f, 1.0f)
+            vk::Viewport(
+                0.0f,
+                0.0f,
+                static_cast<float>(pointShadowMapSize),
+                static_cast<float>(pointShadowMapSize),
+                0.0f,
+                1.0f
+            )
         );
-        commandBuffer.setScissor(0, vk::Rect2D({0, 0}, {mapSize, mapSize}));
+        commandBuffer.setScissor(0, vk::Rect2D({0, 0}, {pointShadowMapSize, pointShadowMapSize}));
 
         for (const DrawItem& item : graph.renderData().drawItems)
         {

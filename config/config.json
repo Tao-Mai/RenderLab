@@ -5,17 +5,7 @@
   "paths": {
     "assets": "../assets",
     "commands": "commands.json",
-    "editor": "editor.json"
-  },
-  "renderer": {
-    "brdfLut": {
-      "samplerID": {
-        "value": "linearClamp"
-      },
-      "textureID": {
-        "value": "lut_ggx"
-      }
-    },
-    "renderPath": "Rasterization"
+    "editor": "editor.json",
+    "renderer": "renderer.json"
   }
 }

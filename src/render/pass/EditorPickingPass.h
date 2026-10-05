@@ -16,20 +16,18 @@ struct DrawItem;
 class EditorPickingPass
 {
 public:
-    enum Input { Depth, PickingImage, Readback, InputCount };
-    enum Output { ImageResult, ReadbackResult, OutputCount };
+    enum Input { Depth, PickingImage, InputCount };
+    enum Output { ImageResult, OutputCount };
 
     void init(RenderGraph& graph);
     void registerPass(RenderGraph& graph);
     void setupPass(RenderGraph& graph);
     void executePass(RenderGraph& graph) const;
-    [[nodiscard]] uint32_t readSelectionId(uint32_t frameIndex);
 
 private:
     void draw(
         vk::raii::CommandBuffer& commandBuffer,
         const DrawItem& item) const;
-    RenderGraph* graph = nullptr;
     std::vector<uint32_t> inputSlots;
     std::vector<uint32_t> outputSlots;
     PipelineManager* pipelines = nullptr;

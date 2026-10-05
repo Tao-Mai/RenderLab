@@ -1,8 +1,9 @@
 #pragma once
 
 #include "asset/Asset.h"
-#include "core/Input.h"
 #include "core/Debug.h"
+#include "core/Input.h"
+#include "render/RendererConfig.h"
 
 #include <filesystem>
 #include <string>
@@ -13,14 +14,7 @@ struct AppPaths
     std::filesystem::path assets;
     std::filesystem::path commands;
     std::filesystem::path editor;
-};
-
-enum class RenderPath { Rasterization, RayTracing };
-
-struct RendererConfig
-{
-    RenderPath renderPath;
-    TextureBinding brdfLut;
+    std::filesystem::path renderer;
 };
 
 struct CommandConfig
@@ -30,16 +24,15 @@ struct CommandConfig
 
 struct EditorConfig
 {
-    int width;
-    int height;
+    int         width;
+    int         height;
     std::string title;
 };
 
 struct AppConfig
 {
     AppPaths       paths;
-    SceneAsset::ID      initialScene;
-    RendererConfig renderer;
+    SceneAsset::ID initialScene;
 };
 
 class ConfigManager
@@ -53,10 +46,12 @@ public:
 
     [[nodiscard]] const AppPaths&       paths() const noexcept;
     [[nodiscard]] const CommandConfig&  commandConfig() const noexcept;
-    [[nodiscard]] const SceneAsset::ID&      initialScene() const noexcept;
+    [[nodiscard]] const SceneAsset::ID& initialScene() const noexcept;
     [[nodiscard]] const RendererConfig& rendererConfig() const noexcept;
-    [[nodiscard]] const EditorConfig& editorConfig() const noexcept;
-    void setRenderPath(RenderPath path, bool persist = true);
+    [[nodiscard]] const EditorConfig&   editorConfig() const noexcept;
+    void                                setRenderPath(RenderPath path);
+    void                                setRenderFeature(const RenderFeature& feature);
+    void                                setEnvironmentMap(std::optional<EnvironmentMapAsset::ID> id);
 
 private:
     DEBUG_ONLY(bool inited = false;)
@@ -65,10 +60,11 @@ private:
     AppConfig             data;
     CommandConfig         commands;
     EditorConfig          editor;
+    RendererConfig        renderer;
 
     void load();
     void loadCommands();
     void loadEditor();
-    void save() const;
+    void loadRenderer();
     void resolvePaths();
 };

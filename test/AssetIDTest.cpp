@@ -75,14 +75,14 @@ TEST(AssetIDTest, LoadsAssetFromRegisteredDirectory)
 TEST(AssetIDTest, LoadsRendererBrdfLutBinding)
 {
     const auto file = std::filesystem::path{RENDERLAB_SOURCE_DIR} /
-        "config" / "config.json";
+        "config" / "renderer.json";
     std::ifstream input{file};
     ASSERT_TRUE(input.is_open());
-    AppConfig config;
+    RendererConfig config;
     Deserialize(json::parse(input), config);
 
-    EXPECT_EQ(config.renderer.brdfLut.textureID, TextureAsset::ID{"lut_ggx"});
-    EXPECT_EQ(config.renderer.brdfLut.samplerID, BuiltinAssets::Sampler::linearClamp);
+    EXPECT_EQ(config.brdfLut.textureID, TextureAsset::ID{"lut_ggx"});
+    EXPECT_EQ(config.brdfLut.samplerID, BuiltinAssets::Sampler::linearClamp);
 }
 
 TEST(AssetIDTest, RoundTripsNestedMeshSubmesh)
@@ -347,5 +347,5 @@ TEST(AssetIDTest, RoundTripsTypedIdsInsideSceneComponents)
     SceneAsset parsed;
     Deserialize(Serialize(scene), parsed);
     EXPECT_EQ(parsed.id, scene.id);
-    EXPECT_EQ(parsed.environment.environmentMap, scene.environment.environmentMap);
+    EXPECT_EQ(parsed.environment.up, scene.environment.up);
 }

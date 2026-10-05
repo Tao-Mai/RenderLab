@@ -246,6 +246,7 @@ add_executable(RenderLab
         src/Engine.h
         src/core/ConfigManager.cpp
         src/core/ConfigManager.h
+        src/render/RendererConfig.h
         src/core/Annotations.h
         src/core/Context.cpp
         src/core/Context.h
@@ -351,12 +352,18 @@ add_executable(RenderLab
         src/render/raytracing/AccelerationStructure.h
         src/render/raytracing/RayTracingPass.cpp
         src/render/raytracing/RayTracingPass.h
+        src/render/raytracing/RayTracingBlitPass.cpp
+        src/render/raytracing/RayTracingBlitPass.h
         src/render/pass/ShadowPass.cpp
         src/render/pass/ShadowPass.h
         src/render/pass/LightMarkers.cpp
         src/render/pass/LightMarkers.h
         src/render/pass/EditorPickingPass.cpp
         src/render/pass/EditorPickingPass.h
+        src/render/pass/EditorPickingCopyPass.cpp
+        src/render/pass/EditorPickingCopyPass.h
+        src/render/pass/EditorPickingReadbackPass.cpp
+        src/render/pass/EditorPickingReadbackPass.h
         src/render/PipelineManager.cpp
         src/render/PipelineManager.h
         src/asset/AssetImporter.h

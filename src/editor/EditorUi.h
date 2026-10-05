@@ -100,5 +100,5 @@ private:
 
     void drawImportDialog();
     void finishEnvironmentImport();
-    [[nodiscard]] bool drawEnvironmentSelection(SceneAsset& scene);
+    [[nodiscard]] bool drawEnvironmentSelection();
 };

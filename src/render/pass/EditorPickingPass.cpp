@@ -11,11 +11,10 @@
 #include <algorithm>
 #include <array>
 
-void EditorPickingPass::init(RenderGraph& targetGraph)
+void EditorPickingPass::init(RenderGraph& graph)
 {
-    graph = &targetGraph;
-    pipelines = &graph->pipelines();
-    shader = graph->shaders().getOrLoad("picking");
+    pipelines = &graph.pipelines();
+    shader = graph.shaders().getOrLoad("picking");
 }
 
 void EditorPickingPass::registerPass(RenderGraph& graph)
@@ -55,26 +54,7 @@ void EditorPickingPass::setupPass(RenderGraph& graph)
         .access = vk::AccessFlagBits2::eColorAttachmentWrite,
         .layout = vk::ImageLayout::eColorAttachmentOptimal,
     });
-    graph.createResource(inputSlots[Readback], {
-        .type = RenderGraph::ResourceType::Buffer,
-        .size = sizeof(uint32_t),
-        .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible |
-            vk::MemoryPropertyFlagBits::eHostCoherent,
-        .bufferUsage = vk::BufferUsageFlagBits::eTransferDst,
-        .stages = vk::PipelineStageFlagBits2::eTransfer,
-        .access = vk::AccessFlagBits2::eTransferWrite,
-    });
-    graph.bindOutput(outputSlots[ImageResult], inputSlots[PickingImage], {
-        .imageUsage = vk::ImageUsageFlagBits::eTransferSrc,
-        .stages = vk::PipelineStageFlagBits2::eTransfer,
-        .access = vk::AccessFlagBits2::eTransferRead,
-        .layout = vk::ImageLayout::eTransferSrcOptimal,
-    });
-    graph.bindOutput(outputSlots[ReadbackResult], inputSlots[Readback], {
-        .type = RenderGraph::ResourceType::Buffer,
-        .stages = vk::PipelineStageFlagBits2::eHost,
-        .access = vk::AccessFlagBits2::eHostRead,
-    });
+    graph.bindOutput(outputSlots[ImageResult], inputSlots[PickingImage]);
 
     auto state = PipelineState::preset(RenderMode::Picking);
     state.depthWrite = rayTracing;
@@ -165,20 +145,4 @@ void EditorPickingPass::executePass(RenderGraph& graph) const
     graph.lightMarkers().recordPicking(commandBuffer, pipelineLayout,
         graph.renderData().lightDrawItems);
     commandBuffer.endRendering();
-
-    graph.useOutput(outputSlots[ImageResult]);
-    const vk::BufferImageCopy copyRegion{
-        .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
-        .imageOffset = {static_cast<int32_t>(x), static_cast<int32_t>(y), 0},
-        .imageExtent = {1, 1, 1},
-    };
-    commandBuffer.copyImageToBuffer(graph.image(inputSlots[PickingImage]),
-        vk::ImageLayout::eTransferSrcOptimal, graph.buffer(inputSlots[Readback]).handle(), copyRegion);
-}
-
-uint32_t EditorPickingPass::readSelectionId(uint32_t frameIndex)
-{
-    uint32_t selectionId = 0;
-    graph->buffer(inputSlots[Readback], frameIndex).download(&selectionId, sizeof(selectionId));
-    return selectionId;
 }

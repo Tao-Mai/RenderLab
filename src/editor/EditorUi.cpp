@@ -510,8 +510,60 @@ EditorUI::InspectorResult EditorUI::drawInspector(
         ImGui::EndCombo();
     }
     ImGui::Spacing();
-    result.environmentChanged = drawEnvironmentSelection(scene);
-    result.edited             = result.environmentChanged;
+
+    RenderFeature feature = context().config->rendererConfig().feature;
+    if (ImGui::Checkbox("IBL", &feature.ibl))
+    {
+        context().config->setRenderFeature(feature);
+        result.rendererChanged = true;
+    }
+    if (feature.ibl)
+    {
+        result.environmentChanged = drawEnvironmentSelection();
+    }
+    else if (ImGui::DragFloat(
+                 "Ambient coefficient",
+                 &feature.ambientCoefficient,
+                 0.01f,
+                 0.0f,
+                 1.0f,
+                 "%.3f",
+                 ImGuiSliderFlags_AlwaysClamp
+             ))
+    {
+        context().config->setRenderFeature(feature);
+    }
+
+    ImGui::SeparatorText("Shadows");
+    if (ImGui::Checkbox("Enable shadows", &feature.shadow.enable))
+    {
+        context().config->setRenderFeature(feature);
+    }
+
+    ImGui::BeginDisabled(!feature.shadow.enable);
+    const std::string shadowSize = std::to_string(feature.shadow.pointShadowMapSize);
+    if (ImGui::BeginCombo("Point shadow map size", shadowSize.c_str()))
+    {
+        constexpr uint32_t kShadowMapSizes[] = {256, 512, 1024, 2048, 4096, 8192};
+        const auto& limits = context().renderer->vulkanContext().properties().limits;
+        for (uint32_t size : kShadowMapSizes)
+        {
+            if (size > limits.maxImageDimensionCube || size > limits.maxImageDimension2D ||
+                size > limits.maxFramebufferWidth || size > limits.maxFramebufferHeight)
+                continue;
+
+            const bool selected = feature.shadow.pointShadowMapSize == size;
+            const std::string label = std::to_string(size);
+            if (ImGui::Selectable(label.c_str(), selected) && !selected)
+            {
+                feature.shadow.pointShadowMapSize = size;
+                context().config->setRenderFeature(feature);
+                result.rendererChanged = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::EndDisabled();
 
     ImGui::SeparatorText("Assets");
     constexpr const char* assetTypes[] = {"Texture", "Environment map", "Mesh"};
@@ -568,21 +620,15 @@ EditorUI::InspectorResult EditorUI::drawInspector(
     return result;
 }
 
-bool EditorUI::drawEnvironmentSelection(SceneAsset& scene)
+bool EditorUI::drawEnvironmentSelection()
 {
-    ImGui::SeparatorText("Scene environment");
-    const auto& current = scene.environment.environmentMap;
-    const char* preview = current ? current->value.c_str() : "None";
+    ImGui::SeparatorText("Environment");
+    const auto& current = context().config->rendererConfig().environmentMap;
+    const char* preview = current ? current->value.c_str() : "Select environment map...";
     bool        changed = false;
 
     if (ImGui::BeginCombo("Environment map", preview))
     {
-        if (ImGui::Selectable("None", !current) && current)
-        {
-            scene.environment.environmentMap.reset();
-            changed = true;
-        }
-
         auto ids = context().assetManager->loadedIds<EnvironmentMapAsset>();
         std::ranges::sort(ids, {}, &EnvironmentMapAsset::ID::value);
         for (const EnvironmentMapAsset::ID& id : ids)
@@ -590,12 +636,13 @@ bool EditorUI::drawEnvironmentSelection(SceneAsset& scene)
             const bool selected = current && *current == id;
             if (ImGui::Selectable(id.value.c_str(), selected) && !selected)
             {
-                scene.environment.environmentMap = id;
-                changed                          = true;
+                context().config->setEnvironmentMap(id);
+                changed = true;
             }
         }
         ImGui::EndCombo();
     }
+    if (!current) ImGui::TextUnformatted("Using fallback environment lighting");
     return changed;
 }
 

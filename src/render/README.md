@@ -16,15 +16,15 @@
 | `FrameContext` | CommandPool/Buffer、Fence、imageAvailable，以及一个 FrameData | 每个 frame-in-flight 一份 |
 | `FrameData` | View/Light CPU 数据与 UBO、灯光/点阴影 SSBO、Scene Set、数据上传与扩容 | 由对应 FrameContext 持有 |
 
-Renderer 持有上述模块和 `RenderSystem`。Graph 持有 Shadow、Scene、RayTracing、EditorPicking、EditorUi 节点。Skybox 的 ShaderHandle、Pipeline/Layout 引用和命令录制统一放在 ScenePass 内部。光栅 Pipeline 由 PipelineManager 缓存，光追 Pipeline/SBT/BLAS/TLAS 由 RayTracingPass 持有；Pass 通过自己的 input slot 获取图资源。
+Renderer 持有上述模块和 `RenderSystem`。Graph 持有 Shadow、Scene、RayTracing、RayTracingBlit、EditorPicking、EditorPickingCopy、EditorPickingReadback、EditorUi 节点。Skybox 的 ShaderHandle、Pipeline/Layout 引用和命令录制统一放在 ScenePass 内部。光栅 Pipeline 由 PipelineManager 缓存，光追 Pipeline/SBT/BLAS/TLAS 由 RayTracingPass 持有；Pass 通过自己的 input slot 获取图资源。
 
 ## 光栅化与光追路线
 
-编辑器的 Renderer / Render path 可选择 Rasterization 或 Ray tracing，选择立即保存到 `config/config.json` 的 `renderer.renderPath`，启动时恢复。当前光栅化仍是默认路线；不支持所需 Vulkan 光追特性的 GPU 禁用光追选项，配置直接指定不支持的路线则明确报错，不自动退回光栅化。
+编辑器的 Renderer / Render path 可选择 Rasterization 或 Ray tracing，选择保存在内存中的 `renderPath`，正常关闭时由 ConfigManager 统一写入 `config/renderer.json`，启动时恢复。该文件由 `config/config.json` 的 `paths.renderer` 指定，并保存 BRDF LUT 绑定、RenderFeature 和环境图选择。当前光栅化仍是默认路线；不支持所需 Vulkan 光追特性的 GPU 禁用光追选项，配置直接指定不支持的路线则明确报错，不自动退回光栅化。
 
 `render/raytracing/RayTracingPass` 使用独立的 `VK_KHR_ray_tracing_pipeline`：缓存每个 mesh/submesh 的 BLAS，每帧根据现有 DrawItem 的 transform 构建该帧 TLAS，通过 SBT 和 `vkCmdTraceRaysKHR` 发射相机主射线。ClosestHit 使用三角形重心坐标插值现有 Vertex UV，输出 `baseColorTexture * baseColorFactor` 后结束；Miss 输出黑色。灯光标记沿用现有网格与颜色，不计算照明。第一版没有 IBL、反弹、透明或 alpha-test，所有三角形按不透明处理；每帧最多 128 种材质纹理/采样器绑定。
 
-光追复用 GPU mesh 的 vertex/index buffer、GpuMaterial 的纹理/采样器以及 FrameData 的相机数据，不改变光栅 descriptor layout。独立的每帧光追图像在 trace 后转为 transfer source，blit 到交换链，再叠加现有 EditorUi。光追时关闭 Scene/Shadow 节点；EditorPicking 独立生成点击像素的深度，继续使用原来的拾取 shader。交换链等待阶段按路线使用 color-attachment-output 或 transfer，仍使用原来的两帧 fence/semaphore 模型。
+光追复用 GPU mesh 的 vertex/index buffer、GpuMaterial 的纹理/采样器以及 FrameData 的相机数据，不改变光栅 descriptor layout。RayTracing 只写光追图像，独立的 RayTracingBlit 节点声明 TransferSrc/TransferDst 输入并 blit 到交换链，随后叠加 EditorUi。光追时关闭 Scene/Shadow 节点；EditorPicking 独立生成点击像素的深度，继续使用原来的拾取 shader。交换链等待阶段按路线使用 color-attachment-output 或 transfer，仍使用原来的两帧 fence/semaphore 模型。加速结构构建/复用仍使用其原有内部内存屏障，不属于 Graph 当前管理的图像/缓冲区 slot。
 
 API 参考：[Khronos 基础光追示例](https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_basic/README.html)、[多实例与材质示例](https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_extended/README.html)。
 
@@ -39,7 +39,7 @@ SceneManager 持有 AActor 和 Component。RenderSystem 整理场景对象，在
 | Set | Binding | 资源 |
 | --- | --- | --- |
 | 0 Scene | 0 | ViewUniforms UBO |
-| 0 Scene | 11 | LightUniforms UBO：light count、IBL 参数 |
+| 0 Scene | 11 | LightUniforms UBO：light count、环境光系数、IBL 参数 |
 | 0 Scene | 12 | LightData[] SSBO |
 | 0 Scene | 13 | PointShadowData[] SSBO：每个点光源六个 VP |
 | 0 Scene | 1 / 2 | Irradiance image / sampler |
@@ -51,7 +51,7 @@ SceneManager 持有 AActor 和 Component。RenderSystem 整理场景对象，在
 | 1 Material | 1 | Base color sampler |
 | 1 Material | 2 | MaterialUniforms UBO |
 
-每个 FrameContext 持有一个 FrameData，后者管理 Scene Set、两个 UBO、灯光 SSBO 和点光源阴影 SSBO。ViewUniforms 包含 viewProjection、inverseViewProjection 和 cameraPosition，共 144 字节。LightUniforms 包含 lightCount 和 iblParameters，共 32 字节；iblParameters.x 是 prefiltered specular 的最大 LOD。LightData 按 RenderSystem 的灯光顺序存放，每项 96 字节，包含 shadowidx；lightCount 包括禁用灯光。上传时，仅 enabled 且 castShadow 的点光源获得连续的 shadowidx，其余为 ~0u。PointShadowData 每项包含六个 VP，共 384 字节。
+每个 FrameContext 持有一个 FrameData，后者管理 Scene Set、两个 UBO、灯光 SSBO 和点光源阴影 SSBO。ViewUniforms 包含 viewProjection、inverseViewProjection 和 cameraPosition，共 144 字节。LightUniforms 包含 lightCount、ambientCoefficient 和 iblParameters，共 32 字节；iblParameters.x 是 prefiltered specular 的最大 LOD。LightData 按 RenderSystem 的灯光顺序存放，每项 96 字节，包含 shadowidx；lightCount 包括禁用灯光。上传时，仅 enabled 且 castShadow 的点光源获得连续的 shadowidx，其余为 ~0u。PointShadowData 每项包含六个 VP，共 384 字节。
 
 SSBO 至少分配一项以维持有效 descriptor；没有灯光时 lightCount 为 0，shader 不读取数组。数量增长时，在当前帧 fence 完成后扩容并更新该帧 descriptor，其他帧保持自己的 buffer。
 
@@ -61,7 +61,9 @@ GpuMaterial 持有 Material Set。set 2 Object 和 set 3 Pass 的编号已保留
 
 ## Shader、Descriptor 与 Pipeline
 
-构建阶段用 Slang 生成 SPIR-V 和 reflection JSON。主场景 shader 通过 `ENABLE_IBL=1/0` 编译为 `slang.spv` 和 `slang.no_ibl.spv`；关闭变体不执行环境光采样。ShaderManager 根据 ShaderAsset ID 与 ShaderVariant 缓存模块和 descriptor 元数据，变体文件名在资产 binary 的后缀前加 `.no_ibl`。编辑器 Environment map 选择 None 时使用关闭变体，选择环境贴图时使用默认 IBL 变体；Scene/Material descriptor layout、纹理声明和绑定保持不变。自定义场景材质 shader 也需要提供同名的关闭变体。
+`feature.shadow.enable` 控制阴影绘制和点光源阴影 VP 上传。关闭时上传的灯光不带 castShadow 标记，源场景中的灯光属性保持不变；保留阴影资源与 descriptor，重新开启即可继续使用。`feature.shadow.pointShadowMapSize` 指定每个 cube 面的分辨率，修改后重建图资源；容量仍为固定的四个点光源。编辑器提供阴影勾选框和设备支持范围内的常用分辨率，配置随其他渲染设置在正常关闭时保存。主 shader 当前的阴影采样仍是注释状态，不在此配置适配中修改。
+
+构建阶段用 Slang 生成 SPIR-V 和 reflection JSON。主场景 shader 通过 `ENABLE_IBL=1/0` 编译为 `slang.spv` 和 `slang.no_ibl.spv`；关闭变体不执行环境光采样，而是使用 `ambientCoefficient * baseColor.rgb`。ShaderManager 根据 ShaderAsset ID 与 ShaderVariant 缓存模块和 descriptor 元数据，变体文件名在资产 binary 的后缀前加 `.no_ibl`。`config/renderer.json` 的 `feature.ibl` 显式控制变体，`feature.ambientCoefficient` 保存关闭 IBL 时的环境光系数，`environmentMap` 保存环境图选择。编辑器勾选 IBL 时显示环境图选择（不提供 None 选项），取消时显示系数调整；关闭 IBL 不丢弃已选环境图。未选择环境图时使用白色 cubemap 兜底，不隐式关闭 IBL，天空盒仍按环境图是否存在绘制。所有渲染设置正常关闭时统一持久化，不会连带保存场景物体编辑。Scene/Material descriptor layout、纹理声明和绑定保持不变。自定义场景材质 shader 也需要提供同名的关闭变体。
 
 DescriptorManager 创建 Scene/Material 预设 Layout，并支持从 reflection 缓存特殊 Layout；PipelineManager 当前使用上述两种预设 PipelineLayout。
 
@@ -71,7 +73,7 @@ GpuMaterial 根据 alpha mode 选择 Opaque、AlphaTest 或 Transparent。Materi
 
 ## 初始化与加载场景
 
-Renderer init 依次初始化 device、swapchain、各 Manager、FrameContext、RenderResourceManager 和 Graph。Graph init 从 `config/config.json` 的 renderer.brdfLut 加载线性 2D LUT，初始化各 Pass，并注册 slot。
+Renderer init 依次初始化 device、swapchain、各 Manager、FrameContext、RenderResourceManager 和 Graph。Graph init 从 `config/renderer.json` 的 brdfLut 加载线性 2D LUT，初始化各 Pass，并注册 slot。
 
 Renderer loadScene 等待 GPU 空闲，RenderSystem 加载渲染项并建立对资产 GPU 对象的引用，ScenePass 更新每帧 Scene Set 中的环境纹理绑定，随后 Graph build 编译依赖、合并 usage、分配内部资源、更新 Shadow descriptor。具体材质 Pipeline 在首次绘制时创建并缓存。
 
@@ -86,20 +88,23 @@ setupPass 中：
 - `createResource(input, desc)`：从自己的 input 声明新内部资源。
 - `importResource(input, desc, instances)`：导入一个外部资源。同一组物理句柄只跟踪一份。
 - `bindInput(input, otherOutput, desc)`：显式依赖另一个 Pass 的 output。
-- `bindOutput(output, ownInput, desc)`：output 只引用同一 Pass 自己的 input。
+- `bindOutput(output, ownInput)`：output 只映射到同一 Pass 自己的 input。
 - `ignoreInput(input)`：显式忽略当前 feature 不需要的输入；这个输入不能导出为 output。
 
-ResourceDesc 同时记录创建信息（类型、格式、尺寸、mip/layer、内存属性）和 slot 的 Vulkan usage、pipeline stage、access、image layout。引用既有资源时可以只填写使用状态；物理创建信息由创建资源的 input 决定，usage 在所有 slot 之间合并。
+ResourceDesc 同时记录创建信息（类型、格式、尺寸、mip/layer、内存属性）和 input 的 Vulkan usage、pipeline stage、access、image layout。引用既有资源时可以只填写使用状态；物理创建信息由创建资源的 input 决定，usage 在所有 input 之间合并。output 不参与状态声明或 usage 合并。
 
 每个 slot 引用一个资源。外部资源的 instances 表示同一资源的共享实例、每帧实例或交换链实例；Graph 按当前 frame index 或取得的 swapchain image index 选择对应实例。
 
-input 状态在 Pass 开始前应用，output 状态在 Pass 结束后应用。拾取 Pass 需要先把 ID 图转换为 TransferSrc，再执行复制，因此在 pass 内通过 `useOutput()` 提前请求该状态；实际 barrier 由 Graph 生成。
+Graph 在每个 Pass 开始前应用 input 状态。Pass 内不转换图资源状态，output 只建立映射。需要改变状态的后续操作拆成另一个 Pass：EditorPicking 绘制 ID 图，EditorPickingCopy 将点击像素复制到 readback buffer，EditorPickingReadback 声明 HostRead，让 Graph 录制 CPU 读回所需的 buffer barrier。Renderer 仍在提交 fence 完成后读取 ID。光追图像写入与 blit 同样由两个节点分别声明各自的 input 状态。
 
 build 等待 GPU 空闲，调用启用节点的 setup，并检查未绑定 slot、引用环、禁用的 producer、类型/格式/尺寸不一致、不完整创建信息、外部资源 usage 不足，以及没有依赖顺序的共享资源写入。随后排序、分配资源。关闭节点后仍依赖它的消费者会明确报错；Scene 在 Shadow 关闭时主动忽略这个输入。feature 变化后必须重新 build。
 
 ```text
 Shadow ── shadow cubemap ──▶ Scene ── depth ──▶ EditorPicking
                               └──── color ──▶ EditorUi
+
+EditorPicking ── ID image ──▶ EditorPickingCopy ── buffer ──▶ EditorPickingReadback
+RayTracing ── ray image ──▶ RayTracingBlit ── swapchain ──▶ EditorUi
 ```
 
 Scene 保持一个完整节点，内部顺序为 opaque、Skybox、transparent、灯光标记。Picking 和 UI 之间没有资源依赖，当前按注册顺序执行。
@@ -124,7 +129,7 @@ Picking 复用 Scene 深度，只在请求拾取时绘制点击像素的 selecti
 
 1. Renderer 等待当前 FrameContext 的 Fence，Acquire 交换链图像，重置 Fence。
 2. RenderSystem prepare 整理本帧 DrawItem、灯光标记、透明排序和 LightData；FrameData 计算点光源六面 VP，上传 View/Light UBO、灯光和点阴影 SSBO，均在 Graph execute 之前完成。
-3. Graph execute 重置并开始 CommandBuffer，按编译顺序应用 input barrier、调用 executePass、应用 output 状态；Pass 直接绑定当前 FrameData 的外部 Scene Set，UI 由 EditorUi 节点录制。
+3. Graph execute 重置并开始 CommandBuffer，按编译顺序应用 input barrier 并调用 executePass；output 只建立映射。Pass 直接绑定当前 FrameData 的外部 Scene Set，UI 由 EditorUi 节点录制。
 4. Graph 将交换链图像转为 Present 状态，结束 CommandBuffer。
 5. Renderer 统一 submit 一次，等待 imageAvailable，完成后通知 acquired image 的 renderFinished；随后 Present。
 6. 若有拾取请求，等待本次 Fence、读取该帧结果，最后轮转 frameIndex。

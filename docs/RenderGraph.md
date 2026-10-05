@@ -1,0 +1,11 @@
+graph的三个阶段：setup、compile、execute
+
+setup，graph根据feature，有选择性的调用pass进行setup，pass内部也要根据feature确定输入依赖或输出
+
+compile，graph根据当前所有pass的拓扑图，剪枝，分配资源，不重叠的资源可以重复利用。
+
+execute，根据依赖在特定的地方插入barrier或semaphore就行
+
+所以一个pass的局部连接，以及feature导致的局部连接应该预先知道。 graph解决的是全局上，剔除输出不依赖的那条路径，以及资源分配和重用、barrier插入、状态转换
+
+barrier是根据资源的RAW WAW WAR决定了，和图中是否相邻没有关系

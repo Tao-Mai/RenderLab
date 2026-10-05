@@ -18,7 +18,7 @@ public:
     void reset() noexcept;
     // Update only after the owning frame's fence completes.
     void update(const ViewUniforms& view, const LightUniforms& lighting,
-        std::span<const LightData> lights);
+        std::span<const LightData> lights, bool shadowsEnabled);
 
     [[nodiscard]] const ViewUniforms& viewUniforms() const;
     [[nodiscard]] const LightUniforms& lightUniforms() const;

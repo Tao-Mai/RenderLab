@@ -2,7 +2,7 @@
 
 #include "render/pass/RenderGraph.h"
 #include "render/pass/ScenePass.h"
-#include "render/raytracing/RayTracingPass.h"
+#include "render/raytracing/RayTracingBlitPass.h"
 #include "render/Renderer.h"
 #include "render/present/Swapchain.h"
 
@@ -23,10 +23,10 @@ void EditorUiPass::setupPass(RenderGraph& graph)
         .layout = vk::ImageLayout::eColorAttachmentOptimal,
     };
     const auto source = graph.passEnabled("raytracing")
-        ? graph.outputSlot("raytracing", RayTracingPass::ColorResult)
+        ? graph.outputSlot("raytracing_blit", RayTracingBlitPass::ColorResult)
         : graph.outputSlot("scene", ScenePass::ColorResult);
     graph.bindInput(inputSlots[0], source, colorUse);
-    graph.bindOutput(outputSlots[0], inputSlots[0], colorUse);
+    graph.bindOutput(outputSlots[0], inputSlots[0]);
 }
 
 void EditorUiPass::executePass(RenderGraph& graph) const

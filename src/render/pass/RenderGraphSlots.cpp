@@ -43,8 +43,6 @@ RenderGraph::registerPass(std::string_view name, uint32_t inputSlotCount,
     auto handles = std::make_tuple(info->inputResourceHandles, info->outputResourceHandles);
     registeredPasses.push_back(info.get());
     passInfos.emplace(std::string(name), std::move(info));
-    compiled = false;
-    built = false;
     return handles;
 }
 
@@ -53,8 +51,6 @@ void RenderGraph::setPassEnabled(std::string_view name, bool enabled)
     const auto found = passInfos.find(std::string(name));
     DCHECK(found != passInfos.end(), "unknown render pass '{}'", name);
     found->second->enabled = enabled;
-    compiled = false;
-    built = false;
 }
 
 bool RenderGraph::passEnabled(std::string_view name) const
@@ -80,8 +76,6 @@ void RenderGraph::createResource(ResourceHandle input, const ResourceDesc& desc)
     slot.resource = static_cast<ResourceHandle>(resources.size());
     slot.desc = desc;
     resources.push_back({.creation = desc, .merged = desc});
-    compiled = false;
-    built = false;
 }
 
 RenderGraph::ResourceHandle RenderGraph::importExternal(const ResourceDesc& desc,
@@ -121,8 +115,6 @@ void RenderGraph::importResource(ResourceHandle input, const ResourceDesc& desc,
     slot.binding = Binding::Resource;
     slot.resource = importExternal(desc, std::move(instances), swapchainIndexed);
     slot.desc = desc;
-    compiled = false;
-    built = false;
 }
 
 void RenderGraph::bindInput(ResourceHandle input, ResourceHandle output, const ResourceDesc& desc)
@@ -134,20 +126,15 @@ void RenderGraph::bindInput(ResourceHandle input, ResourceHandle output, const R
     slot.binding = Binding::Alias;
     slot.ref = output;
     slot.desc = desc;
-    compiled = false;
-    built = false;
 }
 
-void RenderGraph::bindOutput(ResourceHandle output, ResourceHandle input, const ResourceDesc& desc)
+void RenderGraph::bindOutput(ResourceHandle output, ResourceHandle input)
 {
     Slot& slot = globalOutputSlots.at(output);
     DCHECK(slot.binding == Binding::Unbound && slot.owner == globalInputSlots.at(input).owner,
         "output slot {} must bind an unbound output to its own pass input", output);
     slot.binding = Binding::Alias;
     slot.ref = input;
-    slot.desc = desc;
-    compiled = false;
-    built = false;
 }
 
 void RenderGraph::ignoreInput(ResourceHandle input)
@@ -155,14 +142,10 @@ void RenderGraph::ignoreInput(ResourceHandle input)
     Slot& slot = globalInputSlots.at(input);
     DCHECK(slot.binding == Binding::Unbound, "input slot {} is already bound", input);
     slot.binding = Binding::Ignored;
-    compiled = false;
-    built = false;
 }
 
 std::vector<std::string> RenderGraph::compile()
 {
-    compiled = false;
-    built = false;
     orderedPasses.clear();
     std::vector<std::string> errors;
     std::vector<uint8_t> inputVisits(globalInputSlots.size());
@@ -300,10 +283,8 @@ std::vector<std::string> RenderGraph::compile()
             mergeUse(slot, slot.resource);
     };
     for (const Slot& slot : globalInputSlots) mergeSlot(slot);
-    for (const Slot& slot : globalOutputSlots) mergeSlot(slot);
 
-    // Simultaneous input uses must agree. A pass's intra-pass state transitions
-    // are represented by output states and applied with useOutput instead.
+    // Each pass uses its inputs in one state. State changes require another pass.
     for (const PassInfo* pass : registeredPasses)
     {
         if (!pass->enabled) continue;
@@ -391,8 +372,7 @@ std::vector<std::string> RenderGraph::compile()
             errors.push_back(std::format("pass dependency cycle or disabled producer blocks '{}'",
                 registeredPasses[i]->name));
 
-    compiled = errors.empty();
-    if (!compiled) orderedPasses.clear();
+    if (!errors.empty()) orderedPasses.clear();
     return errors;
 }
 
@@ -405,7 +385,6 @@ std::vector<std::string> RenderGraph::executionOrder() const
 
 const RenderGraph::ResourceDesc& RenderGraph::resourceDesc(ResourceHandle input) const
 {
-    DCHECK(compiled);
     return resources.at(globalInputSlots.at(input).resource).merged;
 }
 
