@@ -1,4 +1,4 @@
-#include "render/feature/PointShadowPass.h"
+#include "render/feature/PointLightShadowPass.h"
 
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -16,7 +16,7 @@
 #include <meta>
 
 
-PointShadowPass::Output PointShadowPass::setup(RenderGraph& graph)
+PointLightShadowPass::Output PointLightShadowPass::setup(RenderGraph& graph)
 {
     constexpr auto kRequiredFeatures =
         vk::FormatFeatureFlagBits::eDepthStencilAttachment | vk::FormatFeatureFlagBits::eSampledImage;
@@ -40,7 +40,7 @@ PointShadowPass::Output PointShadowPass::setup(RenderGraph& graph)
 
 
     // usage 由graph推导
-    pointShadowMap = graph.createImage(
+    pointLightShadowMap = graph.createImage(
         {.flags       = vk::ImageCreateFlagBits::eCubeCompatible,
          .imageType   = vk::ImageType::e2D,
          .format      = vk::Format::eD32Sfloat,
@@ -48,25 +48,25 @@ PointShadowPass::Output PointShadowPass::setup(RenderGraph& graph)
          .mipLevels   = 1,
          .arrayLayers = 6 * kMaxPointLightShadow}
     );
-    pointShadowMap = graph.write(pointShadowMap);
+    pointLightShadowMap = graph.write(pointLightShadowMap);
 
 
     graph.use(
-        pointShadowMap,
+        pointLightShadowMap,
         {.stages = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
          .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
          .layout = vk::ImageLayout::eDepthAttachmentOptimal}
     );
 
-    return {pointShadowMap};
+    return {pointLightShadowMap};
 }
 
-void PointShadowPass::execute(RenderGraph& graph) const
+void PointLightShadowPass::execute(RenderGraph& graph) const
 {
     if (!context().config->rendererConfig().feature.shadow.enable)
         return;
 
-    auto& image = graph.getImage(pointShadowMap);
+    auto& image = graph.getImage(pointLightShadowMap);
 
     auto&            commandBuffer = graph.commands();
     const std::array sceneSets     = {graph.frameData(graph.frameIndex()).sceneSetHandle()};

@@ -10,12 +10,12 @@ class PipelineManager;
 class VulkanContext;
 class RenderGraph;
 
-class PointShadowPass
+class PointLightShadowPass
 {
 public:
     struct Output
     {
-        RenderGraph::ImageHandle pointShadowMap;
+        RenderGraph::ImageHandle pointLightShadowMap;
     };
 
     Output setup(RenderGraph& graph);
@@ -24,7 +24,7 @@ public:
 private:
     static constexpr uint32_t kPointViewMask = 0b111111;
 
-    RenderGraph::ImageHandle pointShadowMap;
+    RenderGraph::ImageHandle pointLightShadowMap;
 
     uint32_t           pointShadowMapSize = 0;
     ShaderHandle       shader;

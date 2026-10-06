@@ -12,7 +12,7 @@
 #include "editor/Editor.h"
 #include "render/device/VkCheck.h"
 #include "render/feature/EndPass.h"
-#include "render/feature/PointShadowPass.h"
+#include "render/feature/PointLightShadowPass.h"
 #include "render/feature/ScenePass.h"
 #include "render/feature/editor/EditorPickingCopyPass.h"
 #include "render/feature/editor/EditorPickingPass.h"
@@ -31,7 +31,7 @@
 struct Renderer::Passes
 {
     std::tuple<
-        PointShadowPass,
+        PointLightShadowPass,
         ScenePass,
         LightMarkerPass,
         RayTracingPass,
@@ -182,7 +182,7 @@ void Renderer::setupRenderGraph()
     }
     else
     {
-        const auto shadow  = setupPass<PointShadowPass>();
+        const auto shadow  = setupPass<PointLightShadowPass>();
         const auto scene   = setupPass<ScenePass>(color, shadow);
         const auto markers = setupPass<LightMarkerPass>(scene.color, scene.depth);
         sceneColor         = markers.color;
