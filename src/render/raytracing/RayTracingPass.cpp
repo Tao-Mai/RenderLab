@@ -51,6 +51,7 @@ RayTracingPass::Output RayTracingPass::setup(RenderGraph& graph)
 
     const auto extent = graph.swapchain().extent();
     rayImage = graph.createImage({.format = vk::Format::eR8G8B8A8Unorm, .extent = {extent.width, extent.height, 1}});
+    rayImage = graph.write(rayImage);
     graph.use(
         rayImage,
         {

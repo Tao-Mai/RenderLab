@@ -6,17 +6,21 @@
 #include "render/Renderer.h"
 #include "render/device/Memory.h"
 #include "render/device/VkCheck.h"
-#include "render/feature/editor/EditorPickingCopyPass.h"
-#include "render/feature/editor/EditorPickingPass.h"
-#include "render/feature/editor/EditorPickingReadbackPass.h"
-#include "render/feature/editor/EditorUiPass.h"
+#include "render/feature/EndPass.h"
 #include "render/feature/PointShadowPass.h"
 #include "render/feature/ScenePass.h"
+#include "render/feature/editor/EditorPickingCopyPass.h"
+#include "render/feature/editor/EditorPickingPass.h"
+#include "render/feature/editor/EditorUiPass.h"
+#include "render/feature/editor/LightMarkerPass.h"
 #include "render/raytracing/RayTracingBlitPass.h"
 #include "render/raytracing/RayTracingPass.h"
-#include "render/resource/GpuTexture.h"
+#include "render/resource/Buffer.h"
 
+#include <algorithm>
+#include <meta>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 namespace
@@ -32,8 +36,8 @@ struct RenderGraph::Passes
     template <class T>
     struct Entry
     {
-        T                        pass;
-        std::vector<ResourceUse> uses;
+        T        pass;
+        PassNode node;
     };
 
     template <class... Ts>
@@ -42,12 +46,13 @@ struct RenderGraph::Passes
     PassTypeList<
         PointShadowPass,
         ScenePass,
+        LightMarkerPass,
         RayTracingPass,
         RayTracingBlitPass,
         EditorPickingPass,
         EditorPickingCopyPass,
-        EditorPickingReadbackPass,
-        EditorUiPass>
+        EditorUiPass,
+        EndPass>
         data;
 
     template <class T>
@@ -57,26 +62,54 @@ struct RenderGraph::Passes
     }
 };
 
+template <class T>
+void RenderGraph::collectDependencies(PassNode& node, const T& value)
+{
+    using U = std::remove_cvref_t<T>;
+    if constexpr (std::is_same_v<U, ImageHandle> || std::is_same_v<U, BufferHandle>)
+    {
+        if (value.id == kInvalidHandle)
+            return;
+
+        DCHECK(value.id >= 0 && value.id < resources.size());
+        if (std::ranges::find(node.dependency, value.id) == node.dependency.end())
+            node.dependency.push_back(value.id);
+    }
+    else
+    {
+        static_assert(std::is_aggregate_v<U>, "pass arguments must be handles or aggregates of handles");
+        constexpr auto ctx = std::meta::access_context::current();
+        template for (constexpr auto member : std::define_static_array(std::meta::nonstatic_data_members_of(^^U, ctx)))
+        {
+            collectDependencies(node, value.[:member:]);
+        }
+    }
+}
+
 template <class T, class... Args>
 auto RenderGraph::setupPass(Args&&... args)
 {
     auto& entry = passes->get<T>();
-    entry.uses.clear();
+    auto& node  = entry.node;
+    node.dependency.clear();
+    node.writeSrc.clear();
+    node.prev.clear();
+    node.next.clear();
+    node.uses.clear();
+    node.execute = [pass = &entry.pass](RenderGraph& graph) { pass->execute(graph); };
+    (collectDependencies(node, args), ...);
+    nodes.push_back(&node);
 
-    auto* previousUses = setupUses;
-    setupUses          = &entry.uses;
+    auto* previousNode = setupNode;
+    setupNode          = &node;
+    auto output        = entry.pass.setup(*this, std::forward<Args>(args)...);
+    setupNode          = previousNode;
 
-    auto output = entry.pass.setup(*this, std::forward<Args>(args)...);
-    setupUses   = previousUses;
+    for (ResourceHandle source : node.writeSrc)
+        if (std::ranges::find(node.dependency, source) == node.dependency.end())
+            node.dependency.push_back(source);
+
     return output;
-}
-
-template <class T>
-void RenderGraph::executePass()
-{
-    auto& entry = passes->get<T>();
-    transitionResources(entry.uses);
-    entry.pass.execute(*this);
 }
 
 struct RenderGraph::Allocation
@@ -104,10 +137,14 @@ void RenderGraph::init()
 void RenderGraph::releaseResources() noexcept
 {
     resources.clear();
-    if (passes)
-        std::apply([](auto&... entries) { (entries.uses.clear(), ...); }, passes->data);
-    setupUses      = nullptr;
-    swapchainImage = {};
+    for (auto* node : nodes)
+        *node = {};
+    nodes.clear();
+    sortedNodes.clear();
+
+    setupNode       = nullptr;
+    swapchainImage  = {};
+    pickingReadback = {};
 }
 
 void RenderGraph::reset() noexcept
@@ -135,16 +172,19 @@ void RenderGraph::setup()
     }
     else
     {
-        const auto shadow = setupPass<PointShadowPass>();
-        const auto scene  = setupPass<ScenePass>(color, shadow);
-        sceneColor        = scene.color;
-        sceneDepth        = scene.depth;
+        const auto shadow  = setupPass<PointShadowPass>();
+        const auto scene   = setupPass<ScenePass>(color, shadow);
+        const auto markers = setupPass<LightMarkerPass>(scene.color, scene.depth);
+        sceneColor         = markers.color;
+        sceneDepth         = markers.depth;
     }
 
     const auto [pickingImage] = setupPass<EditorPickingPass>(sceneDepth);
     const auto [readback]     = setupPass<EditorPickingCopyPass>(pickingImage);
-    setupPass<EditorPickingReadbackPass>(readback);
-    setupPass<EditorUiPass>(sceneColor);
+    const auto [finalColor]   = setupPass<EditorUiPass>(sceneColor);
+    pickingReadback           = readback;
+
+    setupPass<EndPass>(finalColor, readback);
 
     allocateResources();
     if (!rayTracing)
@@ -155,8 +195,12 @@ void RenderGraph::allocateResources()
 {
     const auto& device         = vulkan().deviceHandle();
     const auto& physicalDevice = vulkan().physicalDeviceHandle();
-    for (Resource& resource : resources)
+    for (Resource& entry : resources)
     {
+        if (!entry.data)
+            continue;
+
+        auto& resource      = *entry.data;
         resource.allocation = std::make_shared<Allocation>();
         const size_t count  = resource.externalImages.empty() ? maxFramesInFlight : resource.externalImages.size();
         resource.allocation->instances.resize(count);
@@ -217,48 +261,19 @@ RenderGraph::ImageHandle RenderGraph::importSwapchain()
     if (swapchainImage.id != kInvalidHandle)
         return swapchainImage;
 
-    const auto extent = swapchain().extent();
-    Resource   resource{
-          .imageInfo = {.format = swapchain().surfaceFormat().format, .extent = {extent.width, extent.height, 1}},
-          .swapchainIndexed = true,
-    };
+    const auto extent   = swapchain().extent();
+    auto       resource = std::make_unique<ResourceData>(ResourceData{
+              .imageInfo = {.format = swapchain().surfaceFormat().format, .extent = {extent.width, extent.height, 1}},
+              .swapchainIndexed = true,
+    });
     for (uint32_t i = 0; i < swapchain().imageCount(); ++i)
-        resource.externalImages.push_back(swapchain().image(i));
+        resource->externalImages.push_back(swapchain().image(i));
     swapchainImage = {static_cast<ResourceHandle>(resources.size())};
-    resources.push_back(std::move(resource));
+    resources.push_back({.data = std::move(resource)});
     return swapchainImage;
 }
 
-RenderGraph::ImageHandle RenderGraph::importTexture(const GpuTexture& texture)
-{
-    for (ResourceHandle id = 0; id < static_cast<ResourceHandle>(resources.size()); ++id)
-    {
-        const auto& images = resources[id].externalImages;
-        if (images.size() == 1 && images.front() == texture.imageHandle())
-            return {id};
-    }
-
-    const auto& info = texture.imageInfo();
-    const auto  id   = static_cast<ResourceHandle>(resources.size());
-    resources.push_back({
-        .imageInfo =
-            {.flags       = info.flags,
-             .imageType   = info.imageType,
-             .format      = info.format,
-             .extent      = info.extent,
-             .mipLevels   = info.mipLevels,
-             .arrayLayers = info.arrayLayers},
-        .externalImages = {texture.imageHandle()},
-        .initialState   = {
-              .stages = vk::PipelineStageFlagBits2::eFragmentShader,
-              .access = vk::AccessFlagBits2::eShaderSampledRead,
-              .layout = vk::ImageLayout::eShaderReadOnlyOptimal
-        },
-    });
-    return {id};
-}
-
-uint32_t RenderGraph::instanceIndex(const Resource& resource, uint32_t frameIndex) const
+uint32_t RenderGraph::instanceIndex(const ResourceData& resource, uint32_t frameIndex) const
 {
     if (resource.swapchainIndexed)
         return currentImage;
@@ -269,7 +284,7 @@ Image& RenderGraph::getImage(ImageHandle image) { return getImage(image, current
 
 Image& RenderGraph::getImage(ImageHandle image, uint32_t frameIndex)
 {
-    const auto& resource = resources.at(image.id);
+    const auto& resource = resolveResource(image.id);
     DCHECK(!resource.isBuffer && resource.allocation);
     return *resource.allocation->instances.at(instanceIndex(resource, frameIndex)).image;
 }
@@ -278,14 +293,14 @@ Buffer& RenderGraph::getBuffer(BufferHandle buffer) { return getBuffer(buffer, c
 
 Buffer& RenderGraph::getBuffer(BufferHandle buffer, uint32_t frameIndex)
 {
-    const auto& resource = resources.at(buffer.id);
+    const auto& resource = resolveResource(buffer.id);
     DCHECK(resource.isBuffer && resource.allocation);
     return *resource.allocation->instances.at(instanceIndex(resource, frameIndex)).buffer;
 }
 
 void RenderGraph::useResource(const ResourceUse& use)
 {
-    Resource&  resource = resources.at(use.resource);
+    auto&      resource = resolveResource(use.resource);
     auto&      instance = resource.allocation->instances.at(instanceIndex(resource, currentFrame));
     const auto previous = instance.state;
     const auto next     = use.access;
@@ -341,54 +356,43 @@ void RenderGraph::transitionResources(const std::vector<ResourceUse>& uses)
 
 void RenderGraph::execute(const EditorFrameInput& editor, uint32_t frameIndex, uint32_t imageIndex)
 {
-    currentFrame          = frameIndex;
-    currentImage          = imageIndex;
-    currentEditor         = &editor;
-    const bool rayTracing = context().config->rendererConfig().renderPath == RenderPath::RayTracing;
-    for (Resource& resource : resources)
+    DCHECK(!sortedNodes.empty());
+
+    // TODO
+    currentFrame  = frameIndex;
+    currentImage  = imageIndex;
+    currentEditor = &editor;
+    for (Resource& entry : resources)
     {
+        if (!entry.data)
+            continue;
+
+        auto& resource = *entry.data;
         if (resource.swapchainIndexed)
         {
-            auto& state = resource.allocation->instances.at(currentImage).state;
-            state.stages =
-                rayTracing ? vk::PipelineStageFlagBits2::eTransfer : vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+            auto& state  = resource.allocation->instances.at(currentImage).state;
+            state.stages = resource.initialState.stages;
             state.access = {};
         }
     }
 
     vkCheck(commands().reset());
     vkCheck(commands().begin({}));
-    if (rayTracing)
+    for (auto* node : sortedNodes)
     {
-        executePass<RayTracingPass>();
-
-        executePass<RayTracingBlitPass>();
-    }
-    else
-    {
-        executePass<PointShadowPass>();
-
-        executePass<ScenePass>();
+        transitionResources(node->uses);
+        node->execute(*this);
     }
 
-    if (editor.requestPick)
-    {
-        executePass<EditorPickingPass>();
-
-        executePass<EditorPickingCopyPass>();
-
-        executePass<EditorPickingReadbackPass>();
-    }
-
-    executePass<EditorUiPass>();
-    useResource({swapchainImage.id, {.layout = vk::ImageLayout::ePresentSrcKHR}});
     vkCheck(commands().end());
     currentEditor = nullptr;
 }
 
 uint32_t RenderGraph::readSelectionId(uint32_t frameIndex)
 {
-    return passes->get<EditorPickingReadbackPass>().pass.readSelectionId(*this, frameIndex);
+    uint32_t selectionId = 0;
+    getBuffer(pickingReadback, frameIndex).download(&selectionId, sizeof(selectionId));
+    return selectionId;
 }
 
 VulkanContext&           RenderGraph::vulkan() const { return renderer->vulkan; }

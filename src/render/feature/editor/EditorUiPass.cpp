@@ -5,7 +5,7 @@
 
 EditorUiPass::Output EditorUiPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle)
 {
-    color = colorHandle;
+    color = graph.write(colorHandle);
     graph.use(
         color,
         {

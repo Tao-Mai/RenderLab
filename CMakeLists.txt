@@ -360,12 +360,12 @@ add_executable(RenderLab
         src/render/feature/PointShadowPass.h
         src/render/feature/LightMarkers.cpp
         src/render/feature/LightMarkers.h
+        src/render/feature/editor/LightMarkerPass.cpp
+        src/render/feature/editor/LightMarkerPass.h
         src/render/feature/editor/EditorPickingPass.cpp
         src/render/feature/editor/EditorPickingPass.h
         src/render/feature/editor/EditorPickingCopyPass.cpp
         src/render/feature/editor/EditorPickingCopyPass.h
-        src/render/feature/editor/EditorPickingReadbackPass.cpp
-        src/render/feature/editor/EditorPickingReadbackPass.h
         src/render/PipelineManager.cpp
         src/render/PipelineManager.h
         src/asset/AssetImporter.h
@@ -377,6 +377,8 @@ add_executable(RenderLab
         src/render/feature/RenderGraph.cpp
         src/render/feature/RenderGraph.h
         src/render/feature/RenderGraphSetup.cpp
+        src/render/feature/EndPass.cpp
+        src/render/feature/EndPass.h
         src/render/feature/editor/EditorUiPass.cpp
         src/render/feature/editor/EditorUiPass.h
         src/render/Image.cpp

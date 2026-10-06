@@ -6,13 +6,8 @@
 #include "render/feature/RenderGraph.h"
 
 #include <memory>
-#include <vector>
-
-#include <glm/mat4x4.hpp>
-#include <glm/vec3.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
-class LightMarkers;
 class GpuMesh;
 class RenderResourceManager;
 class Swapchain;
@@ -42,12 +37,10 @@ private:
     PipelineManager*            pipelines = nullptr;
     RenderResourceManager*      resources = nullptr;
     ShaderHandle                sceneShader;
-    ShaderHandle                lightShader;
     ShaderHandle                skyboxShader;
     bool                        hasSkybox  = false;
     bool                        iblEnabled = false;
     vk::Pipeline                scenePipeline;
-    vk::Pipeline                lightMarkerPipeline;
     vk::Pipeline                skyboxPipeline;
     vk::PipelineLayout          pipelineLayout;
     vk::PipelineLayout          skyboxPipelineLayout;

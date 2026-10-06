@@ -25,7 +25,10 @@ EditorPickingPass::Output EditorPickingPass::setup(RenderGraph& graph, RenderGra
     depth             = depthHandle;
     ownsDepth         = depth.id == RenderGraph::kInvalidHandle;
     if (ownsDepth)
+    {
         depth = graph.createImage({.format = vk::Format::eD32Sfloat, .extent = {extent.width, extent.height, 1}});
+        depth = graph.write(depth);
+    }
     graph.use(
         depth,
         {
@@ -38,6 +41,7 @@ EditorPickingPass::Output EditorPickingPass::setup(RenderGraph& graph, RenderGra
     );
 
     pickingImage = graph.createImage({.format = vk::Format::eR32Uint, .extent = {extent.width, extent.height, 1}});
+    pickingImage = graph.write(pickingImage);
     graph.use(
         pickingImage,
         {

@@ -57,6 +57,7 @@ void Renderer::loadScene()
         iblParameters.x         = static_cast<float>(prefiltered.mipLevels - 1);
     }
     graph.setup();
+    graph.compile();
 }
 
 void Renderer::waitIdle()
@@ -147,6 +148,7 @@ void Renderer::recreateSwapchain()
     swapchain.reset();
     swapchain.init(vulkan, window);
     graph.setup();
+    graph.compile();
     context().editor->refreshUi();
 }
 

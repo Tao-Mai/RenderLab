@@ -69,13 +69,28 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="rendergraph改造">
+    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="路径改造">
+      <change afterPath="$PROJECT_DIR$/src/render/feature/EndPass.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/render/feature/EndPass.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/pass/EditorPickingPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/EditorPickingPass.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/pass/PointShadowPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/PointShadowPass.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/pass/RenderGraph.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/RenderGraph.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/pass/RenderGraph.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/RenderGraph.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/pass/ScenePass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/pass/ScenePass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/RenderGraph.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/RenderGraph.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/ARCH.MD" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/ARCH.MD" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/Renderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/Renderer.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/PointShadowPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/PointShadowPass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/RenderGraph.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/RenderGraph.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/RenderGraph.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/RenderGraph.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/RenderGraphSetup.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/RenderGraphSetup.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/ScenePass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/ScenePass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/ScenePass.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/ScenePass.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/editor/EditorPickingCopyPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/editor/EditorPickingCopyPass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/editor/EditorPickingPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/editor/EditorPickingPass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/editor/EditorPickingReadbackPass.cpp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/editor/EditorPickingReadbackPass.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/editor/EditorUiPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/editor/EditorUiPass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/raytracing/RayTracingBlitPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/raytracing/RayTracingBlitPass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/raytracing/RayTracingPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/raytracing/RayTracingPass.cpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -128,61 +143,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.0000000007831458" />
-      <entry key="MS500" value="1.0150927551394506" />
-      <entry key="S2" value="1.3505033164153462" />
-      <entry key="S5" value="1.6574713801025354" />
-      <entry key="S10" value="1.8108460890344946" />
-      <entry key="S30" value="1.9324942061695594" />
-      <entry key="S60" value="1.9656573958562726" />
-      <entry key="M2" value="1.9826841464530345" />
-      <entry key="M5" value="2.05765898688622" />
-      <entry key="M10" value="3.576356385736451" />
-      <entry key="M15" value="6.734470651352805" />
-      <entry key="M30" value="18.496458305900333" />
-      <entry key="H1" value="40.8161447629922" />
-      <entry key="H2" value="71.0823311687637" />
-      <entry key="H4" value="111.55052759880452" />
-      <entry key="D1" value="572.6676442959761" />
-      <entry key="W1" value="2202.81654002497" />
+      <entry key="MS100" value="1.0" />
+      <entry key="MS500" value="1.0" />
+      <entry key="S2" value="1.0" />
+      <entry key="S5" value="1.0" />
+      <entry key="S10" value="1.0000000024299396" />
+      <entry key="S30" value="1.0041349394928067" />
+      <entry key="S60" value="1.1737452321504982" />
+      <entry key="M2" value="2.175824068304607" />
+      <entry key="M5" value="5.096535178925214" />
+      <entry key="M10" value="8.53700679804093" />
+      <entry key="M15" value="12.114478612525977" />
+      <entry key="M30" value="25.183186819528935" />
+      <entry key="H1" value="52.36603770493128" />
+      <entry key="H2" value="96.72460590470972" />
+      <entry key="H4" value="157.19285070221707" />
+      <entry key="D1" value="637.2245337408935" />
+      <entry key="W1" value="2294.181923199981" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
       <entry key="MS500" value="0.0" />
       <entry key="S2" value="0.0" />
-      <entry key="S5" value="2.104855430800849E-157" />
-      <entry key="S10" value="4.839688605525489E-79" />
-      <entry key="S30" value="1.0680230205417453E-26" />
-      <entry key="S60" value="1.4674642669561985E-13" />
-      <entry key="M2" value="6.330223591576173E-7" />
-      <entry key="M5" value="0.008264749893403579" />
-      <entry key="M10" value="0.2294120030608943" />
-      <entry key="M15" value="0.7671770076287617" />
-      <entry key="M30" value="3.808620477676227" />
-      <entry key="H1" value="12.124934322013935" />
-      <entry key="H2" value="24.519952894704836" />
-      <entry key="H4" value="39.78223182246857" />
-      <entry key="D1" value="160.52225848694349" />
-      <entry key="W1" value="489.87178156697286" />
+      <entry key="S5" value="1.0460320512855425E-243" />
+      <entry key="S10" value="3.234241876059274E-122" />
+      <entry key="S30" value="3.186086067508269E-41" />
+      <entry key="S60" value="5.645166346164811E-21" />
+      <entry key="M2" value="7.614582823592624E-11" />
+      <entry key="M5" value="1.214774362732435E-4" />
+      <entry key="M10" value="0.028289756033000938" />
+      <entry key="M15" value="0.24033739796439735" />
+      <entry key="M30" value="2.5240578100537983" />
+      <entry key="H1" value="9.72301852401672" />
+      <entry key="H2" value="23.701537290939324" />
+      <entry key="H4" value="44.253050072811824" />
+      <entry key="D1" value="174.3419158136525" />
+      <entry key="W1" value="513.0031553805286" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="1.7170909431993863E-8" />
-      <entry key="MS500" value="0.04270559207440143" />
-      <entry key="S2" value="0.7578767456108377" />
-      <entry key="S5" value="1.35565135329041" />
-      <entry key="S10" value="1.6464076248630102" />
-      <entry key="S30" value="1.8743656198137013" />
-      <entry key="S60" value="1.9361576567525967" />
-      <entry key="M2" value="1.967824388388209" />
-      <entry key="M5" value="2.0598290806898074" />
-      <entry key="M10" value="3.8010962107832995" />
-      <entry key="M15" value="7.495954249695316" />
-      <entry key="M30" value="22.295166567635626" />
-      <entry key="H1" value="52.926896241783226" />
-      <entry key="H2" value="95.5886287494714" />
-      <entry key="H4" value="151.32202852538123" />
-      <entry key="D1" value="733.1835622738737" />
-      <entry key="W1" value="2692.685525636736" />
+      <entry key="MS100" value="5.026800642502278E-5" />
+      <entry key="MS500" value="0.13812056059998895" />
+      <entry key="S2" value="0.6096275470381516" />
+      <entry key="S5" value="0.8204003429403908" />
+      <entry key="S10" value="0.905759541677794" />
+      <entry key="S30" value="0.9716789099410462" />
+      <entry key="S60" value="1.157371732519283" />
+      <entry key="M2" value="2.167569690564031" />
+      <entry key="M5" value="5.093304912695349" />
+      <entry key="M10" value="8.563437945910419" />
+      <entry key="M15" value="12.352887996825173" />
+      <entry key="M30" value="27.703212889339607" />
+      <entry key="H1" value="62.082092335355576" />
+      <entry key="H2" value="120.41694272119334" />
+      <entry key="H4" value="201.436602110576" />
+      <entry key="D1" value="811.5599943414328" />
+      <entry key="W1" value="2807.18221731323" />
     </decayedShown>
   </component>
   <component name="ProjectApplicationVersion">
@@ -745,7 +760,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="1" />
     <MESSAGE value="environment map" />
     <MESSAGE value="vk check" />
     <MESSAGE value="rename" />
@@ -770,7 +784,8 @@
     <MESSAGE value="clangformat" />
     <MESSAGE value="开始调整rendergraph架构" />
     <MESSAGE value="rendergraph改造" />
-    <option name="LAST_COMMIT_MESSAGE" value="rendergraph改造" />
+    <MESSAGE value="路径改造" />
+    <option name="LAST_COMMIT_MESSAGE" value="路径改造" />
   </component>
   <component name="XDebuggerManager">
     <watches-manager>

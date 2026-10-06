@@ -31,7 +31,7 @@ RayTracingBlitPass::Output RayTracingBlitPass::setup(
     );
 
     rayImage = rayImageHandle;
-    color    = colorHandle;
+    color    = graph.write(colorHandle);
     graph.use(
         rayImage,
         {
