@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "render/pass/LightMarkers.h"
+#include "render/feature/LightMarkers.h"
 #include "render/resource/ShaderData.h"
 
 #include <cstdint>

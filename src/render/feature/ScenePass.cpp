@@ -1,8 +1,8 @@
-#include "render/pass/ScenePass.h"
+#include "render/feature/ScenePass.h"
 
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
-#include "render/pass/RenderGraph.h"
+#include "render/feature/RenderGraph.h"
 
 #include "asset/Asset.h"
 #include "asset/AssetManager.h"
@@ -10,7 +10,7 @@
 #include "core/ConfigManager.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
-#include "render/pass/LightMarkers.h"
+#include "render/feature/LightMarkers.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMaterial.h"
 #include "render/resource/GpuMesh.h"
@@ -35,8 +35,13 @@ void ScenePass::bindSceneDescriptor(vk::raii::CommandBuffer& commandBuffer, uint
 ScenePass::Output
 ScenePass::setup(RenderGraph& targetGraph, RenderGraph::ImageHandle colorHandle, PointShadowPass::Output shadow)
 {
-    graph          = &targetGraph;
-    vulkan         = &graph->vulkan();
+    graph  = &targetGraph;
+    vulkan = &graph->vulkan();
+    CHECK(
+        vulkan->physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures &
+        vk::FormatFeatureFlagBits::eDepthStencilAttachment
+    );
+
     pipelines      = renderContext().pipelineManager;
     resources      = renderContext().resources;
     color          = colorHandle;
@@ -69,7 +74,7 @@ ScenePass::setup(RenderGraph& targetGraph, RenderGraph::ImageHandle colorHandle,
 
     auto&      graph  = targetGraph;
     const auto extent = graph.swapchain().extent();
-    depth             = graph.createImage({.format = graph.depthFormat(), .extent = {extent.width, extent.height, 1}});
+    depth = graph.createImage({.format = vk::Format::eD32Sfloat, .extent = {extent.width, extent.height, 1}});
     graph.use(
         color,
         {
@@ -107,7 +112,6 @@ ScenePass::setup(RenderGraph& targetGraph, RenderGraph::ImageHandle colorHandle,
     graph.use(graph.importTexture(*brdfLutTexture), sampled);
 
     const vk::Format colorFormat = graph.swapchain().surfaceFormat().format;
-    const vk::Format depthFormat = graph.depthFormat();
     iblEnabled                   = context().config->rendererConfig().feature.ibl;
     sceneShader =
         renderContext().shaderManager->getOrLoad("scene", iblEnabled ? ShaderVariant::Default : ShaderVariant::NoIbl);
@@ -116,14 +120,14 @@ ScenePass::setup(RenderGraph& targetGraph, RenderGraph::ImageHandle colorHandle,
               .layout      = PipelineLayoutPreset::SceneMaterial,
               .state       = PipelineState::preset(RenderMode::Opaque),
               .colorFormat = colorFormat,
-              .depthFormat = depthFormat,
+              .depthFormat = vk::Format::eD32Sfloat,
     });
     lightMarkerPipeline = pipelines->getOrCreate({
         .shader      = lightShader,
         .layout      = PipelineLayoutPreset::SceneMaterial,
         .state       = PipelineState::preset(RenderMode::LightMarker),
         .colorFormat = colorFormat,
-        .depthFormat = depthFormat,
+        .depthFormat = vk::Format::eD32Sfloat,
     });
     pipelineLayout      = pipelines->layout(PipelineLayoutPreset::SceneMaterial);
 
@@ -132,7 +136,7 @@ ScenePass::setup(RenderGraph& targetGraph, RenderGraph::ImageHandle colorHandle,
               .layout      = PipelineLayoutPreset::SceneOnly,
               .state       = PipelineState::preset(RenderMode::Skybox),
               .colorFormat = colorFormat,
-              .depthFormat = depthFormat,
+              .depthFormat = vk::Format::eD32Sfloat,
     });
     skyboxPipelineLayout = pipelines->layout(PipelineLayoutPreset::SceneOnly);
     return {color, depth};
@@ -146,7 +150,7 @@ void ScenePass::bindResources(RenderGraph& graph) const
             .imageView = graph.getImage(pointShadowMap, frameIndex)
                              .getOrCreateImageView({
                                  .viewType = vk::ImageViewType::eCubeArray,
-                                 .format   = graph.shadowFormat(),
+                                 .format   = vk::Format::eD32Sfloat,
                                  .subresourceRange =
                                      {.aspectMask = vk::ImageAspectFlagBits::eDepth,
                                       .levelCount = 1,
@@ -184,7 +188,7 @@ void ScenePass::bindEnvironmentTextures()
     hasSkybox                         = environmentMap.has_value();
     if (environmentMap)
     {
-        const EnvironmentMapAsset& environment = context().assetManager->get<EnvironmentMapAsset>(*environmentMap);
+        const auto& environment = context().assetManager->get<EnvironmentMapAsset>(*environmentMap);
         CHECK(
             !environment.radiance.textureID.empty() && !environment.radiance.samplerID.empty() &&
                 !environment.irradiance.textureID.empty() && !environment.irradiance.samplerID.empty() &&
@@ -345,7 +349,7 @@ void ScenePass::execute(RenderGraph& graph) const
     vk::RenderingAttachmentInfo depthAttachmentInfo = {
         .imageView   = graph.getImage(depth).getOrCreateImageView({
               .viewType         = vk::ImageViewType::e2D,
-              .format           = graph.depthFormat(),
+              .format           = vk::Format::eD32Sfloat,
               .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
         }),
         .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
@@ -392,7 +396,7 @@ void ScenePass::execute(RenderGraph& graph) const
     vk::Pipeline boundPipeline = scenePipeline;
     const auto   draw          = [&](const DrawItem& item)
     {
-        PipelineKey key = item.material->pipelineKey(graph.swapchain().surfaceFormat().format, graph.depthFormat());
+        PipelineKey key = item.material->pipelineKey(graph.swapchain().surfaceFormat().format, vk::Format::eD32Sfloat);
         if (!iblEnabled)
         {
             const ShaderAsset::ID shaderId = renderContext().shaderManager->metadata(key.shader).id;

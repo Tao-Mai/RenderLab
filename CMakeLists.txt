@@ -348,24 +348,24 @@ add_executable(RenderLab
         src/render/resource/ShaderData.h
         src/scene/system/RenderSystem.cpp
         src/scene/system/RenderSystem.h
-        src/render/pass/ScenePass.cpp
-        src/render/pass/ScenePass.h
+        src/render/feature/ScenePass.cpp
+        src/render/feature/ScenePass.h
         src/render/raytracing/AccelerationStructure.cpp
         src/render/raytracing/AccelerationStructure.h
         src/render/raytracing/RayTracingPass.cpp
         src/render/raytracing/RayTracingPass.h
         src/render/raytracing/RayTracingBlitPass.cpp
         src/render/raytracing/RayTracingBlitPass.h
-        src/render/pass/PointShadowPass.cpp
-        src/render/pass/PointShadowPass.h
-        src/render/pass/LightMarkers.cpp
-        src/render/pass/LightMarkers.h
-        src/render/pass/EditorPickingPass.cpp
-        src/render/pass/EditorPickingPass.h
-        src/render/pass/EditorPickingCopyPass.cpp
-        src/render/pass/EditorPickingCopyPass.h
-        src/render/pass/EditorPickingReadbackPass.cpp
-        src/render/pass/EditorPickingReadbackPass.h
+        src/render/feature/PointShadowPass.cpp
+        src/render/feature/PointShadowPass.h
+        src/render/feature/LightMarkers.cpp
+        src/render/feature/LightMarkers.h
+        src/render/feature/editor/EditorPickingPass.cpp
+        src/render/feature/editor/EditorPickingPass.h
+        src/render/feature/editor/EditorPickingCopyPass.cpp
+        src/render/feature/editor/EditorPickingCopyPass.h
+        src/render/feature/editor/EditorPickingReadbackPass.cpp
+        src/render/feature/editor/EditorPickingReadbackPass.h
         src/render/PipelineManager.cpp
         src/render/PipelineManager.h
         src/asset/AssetImporter.h
@@ -374,11 +374,11 @@ add_executable(RenderLab
         src/asset/TextureMip.h
         src/core/math/Sampler.cpp
         src/core/math/Sampler.h
-        src/render/pass/RenderGraph.cpp
-        src/render/pass/RenderGraph.h
-        src/render/pass/RenderGraphSetup.cpp
-        src/render/pass/EditorUiPass.cpp
-        src/render/pass/EditorUiPass.h
+        src/render/feature/RenderGraph.cpp
+        src/render/feature/RenderGraph.h
+        src/render/feature/RenderGraphSetup.cpp
+        src/render/feature/editor/EditorUiPass.cpp
+        src/render/feature/editor/EditorUiPass.h
         src/render/Image.cpp
         src/render/Image.h
 )

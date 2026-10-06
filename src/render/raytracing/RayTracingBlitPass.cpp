@@ -3,7 +3,7 @@
 #include "core/Logger.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
-#include "render/pass/RenderGraph.h"
+#include "render/feature/RenderGraph.h"
 #include "render/present/Swapchain.h"
 #include "render/raytracing/RayTracingPass.h"
 

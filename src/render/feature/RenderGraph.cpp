@@ -1,4 +1,4 @@
-#include "render/pass/RenderGraph.h"
+#include "render/feature/RenderGraph.h"
 
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -6,12 +6,12 @@
 #include "render/Renderer.h"
 #include "render/device/Memory.h"
 #include "render/device/VkCheck.h"
-#include "render/pass/EditorPickingCopyPass.h"
-#include "render/pass/EditorPickingPass.h"
-#include "render/pass/EditorPickingReadbackPass.h"
-#include "render/pass/EditorUiPass.h"
-#include "render/pass/PointShadowPass.h"
-#include "render/pass/ScenePass.h"
+#include "render/feature/editor/EditorPickingCopyPass.h"
+#include "render/feature/editor/EditorPickingPass.h"
+#include "render/feature/editor/EditorPickingReadbackPass.h"
+#include "render/feature/editor/EditorUiPass.h"
+#include "render/feature/PointShadowPass.h"
+#include "render/feature/ScenePass.h"
 #include "render/raytracing/RayTracingBlitPass.h"
 #include "render/raytracing/RayTracingPass.h"
 #include "render/resource/GpuTexture.h"
@@ -23,8 +23,7 @@ namespace
 {
 vk::ImageAspectFlags imageAspect(vk::Format format)
 {
-    return format == vk::Format::eD32Sfloat || format == vk::Format::eD16Unorm ? vk::ImageAspectFlagBits::eDepth
-                                                                               : vk::ImageAspectFlagBits::eColor;
+    return format == vk::Format::eD32Sfloat ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor;
 }
 }  // namespace
 
@@ -99,20 +98,6 @@ void RenderGraph::init()
     renderer = context().renderer;
     DCHECK(renderer);
 
-    const auto chooseDepthFormat = [&](vk::FormatFeatureFlags features)
-    {
-        for (vk::Format format : {vk::Format::eD32Sfloat, vk::Format::eD16Unorm})
-            if ((vulkan().physicalDeviceHandle().getFormatProperties(format).optimalTilingFeatures & features) ==
-                features)
-                return format;
-        CHECK(false, "no depth format supports the render graph's required features");
-        return vk::Format::eUndefined;
-    };
-
-    sceneDepthFormat  = chooseDepthFormat(vk::FormatFeatureFlagBits::eDepthStencilAttachment);
-    pointShadowFormat = chooseDepthFormat(
-        vk::FormatFeatureFlagBits::eDepthStencilAttachment | vk::FormatFeatureFlagBits::eSampledImage
-    );
     passes = std::make_shared<Passes>();
 }
 
@@ -129,10 +114,8 @@ void RenderGraph::reset() noexcept
 {
     releaseResources();
     passes.reset();
-    renderer          = nullptr;
-    currentEditor     = nullptr;
-    sceneDepthFormat  = vk::Format::eUndefined;
-    pointShadowFormat = vk::Format::eUndefined;
+    renderer      = nullptr;
+    currentEditor = nullptr;
 }
 
 void RenderGraph::setup()
@@ -158,9 +141,9 @@ void RenderGraph::setup()
         sceneDepth        = scene.depth;
     }
 
-    const auto picking = setupPass<EditorPickingPass>(sceneDepth);
-    const auto copy    = setupPass<EditorPickingCopyPass>(picking.pickingImage);
-    setupPass<EditorPickingReadbackPass>(copy.readback);
+    const auto [pickingImage] = setupPass<EditorPickingPass>(sceneDepth);
+    const auto [readback]     = setupPass<EditorPickingCopyPass>(pickingImage);
+    setupPass<EditorPickingReadbackPass>(readback);
     setupPass<EditorUiPass>(sceneColor);
 
     allocateResources();

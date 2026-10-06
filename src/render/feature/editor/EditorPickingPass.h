@@ -1,7 +1,7 @@
 #pragma once
 
 #include "render/ShaderManager.h"
-#include "render/pass/RenderGraph.h"
+#include "render/feature/RenderGraph.h"
 
 #include <cstdint>
 #include <vector>

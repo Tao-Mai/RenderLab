@@ -1,4 +1,4 @@
-#include "render/pass/EditorPickingReadbackPass.h"
+#include "render/feature/editor/EditorPickingReadbackPass.h"
 
 #include "render/resource/Buffer.h"
 

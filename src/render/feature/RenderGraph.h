@@ -87,8 +87,6 @@ public:
     [[nodiscard]] FrameData&               frameData(uint32_t frameIndex) const;
     [[nodiscard]] const RenderData&        renderData() const;
     [[nodiscard]] const LightMarkers&      lightMarkers() const;
-    [[nodiscard]] vk::Format               depthFormat() const { return sceneDepthFormat; }
-    [[nodiscard]] vk::Format               shadowFormat() const { return pointShadowFormat; }
     [[nodiscard]] vk::raii::CommandBuffer& commands() const;
     [[nodiscard]] uint32_t                 frameIndex() const { return currentFrame; }
     [[nodiscard]] const EditorFrameInput&  editorInput() const
@@ -122,11 +120,9 @@ private:
     std::shared_ptr<Passes>   passes;
     std::vector<ResourceUse>* setupUses = nullptr;
     std::vector<Resource>     resources;
-    vk::Format                sceneDepthFormat  = vk::Format::eUndefined;
-    vk::Format                pointShadowFormat = vk::Format::eUndefined;
-    uint32_t                  currentFrame      = 0;
-    uint32_t                  currentImage      = 0;
-    const EditorFrameInput*   currentEditor     = nullptr;
+    uint32_t                  currentFrame  = 0;
+    uint32_t                  currentImage  = 0;
+    const EditorFrameInput*   currentEditor = nullptr;
     ImageHandle               swapchainImage;
 
     template <class T, class... Args>

@@ -2,8 +2,8 @@
 
 #include "render/FrameData.h"
 #include "render/PipelineManager.h"
-#include "render/pass/PointShadowPass.h"
-#include "render/pass/RenderGraph.h"
+#include "render/feature/PointShadowPass.h"
+#include "render/feature/RenderGraph.h"
 
 #include <memory>
 #include <vector>

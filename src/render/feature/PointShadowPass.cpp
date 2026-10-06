@@ -1,4 +1,4 @@
-#include "render/pass/PointShadowPass.h"
+#include "render/feature/PointShadowPass.h"
 
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -6,7 +6,7 @@
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
-#include "render/pass/RenderGraph.h"
+#include "render/feature/RenderGraph.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/ShaderData.h"
 #include "scene/component/LightComponent.h"
@@ -18,6 +18,12 @@
 
 PointShadowPass::Output PointShadowPass::setup(RenderGraph& graph)
 {
+    constexpr auto kRequiredFeatures =
+        vk::FormatFeatureFlagBits::eDepthStencilAttachment | vk::FormatFeatureFlagBits::eSampledImage;
+    const auto features =
+        graph.vulkan().physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures;
+    CHECK((features & kRequiredFeatures) == kRequiredFeatures);
+
     // 资源缓存
     pointShadowMapSize = context().config->rendererConfig().feature.shadow.pointShadowMapSize;
 
@@ -28,7 +34,7 @@ PointShadowPass::Output PointShadowPass::setup(RenderGraph& graph)
         .shader      = shader,
         .layout      = PipelineLayoutPreset::SceneOnly,
         .state       = PipelineState::preset(RenderMode::Shadow),
-        .depthFormat = graph.shadowFormat(),
+        .depthFormat = vk::Format::eD32Sfloat,
         .viewMask    = kPointViewMask,
     });
 
@@ -37,7 +43,7 @@ PointShadowPass::Output PointShadowPass::setup(RenderGraph& graph)
     pointShadowMap = graph.createImage(
         {.flags       = vk::ImageCreateFlagBits::eCubeCompatible,
          .imageType   = vk::ImageType::e2D,
-         .format      = graph.shadowFormat(),
+         .format      = vk::Format::eD32Sfloat,
          .extent      = {pointShadowMapSize, pointShadowMapSize, 1},
          .mipLevels   = 1,
          .arrayLayers = 6 * kMaxPointLightShadow}
@@ -76,7 +82,7 @@ void PointShadowPass::execute(RenderGraph& graph) const
         // TODO 提前算
         const auto& imageView = image.getOrCreateImageView(
             {.viewType         = vk::ImageViewType::e2DArray,
-             .format           = graph.shadowFormat(),
+             .format           = vk::Format::eD32Sfloat,
              .subresourceRange = vk::ImageSubresourceRange{
                  .aspectMask     = vk::ImageAspectFlagBits::eDepth,
                  .baseMipLevel   = 0,
