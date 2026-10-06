@@ -16,9 +16,20 @@ struct LightUniforms
     uint padding1;
     uint padding2;
     float4 iblParameters;
+    float4 shadowParameters;
 
     property iblPrefilteredMaxMipLevel : float {
         get { return iblParameters.x; }
+    }
+
+    property shadowBias : float {
+        get { return shadowParameters.x; }
+    }
+    property shadowSampleRadius : float {
+        get { return shadowParameters.y; }
+    }
+    property shadowPixelRotation : bool {
+        get { return shadowParameters.z != 0.0; }
     }
 };
 
@@ -65,6 +76,10 @@ struct LightData
     }
     property castShadow : bool {
         get { return flags.z != 0; }
+    }
+
+    property areaSize : float2 {
+        get { return areaSizeCone.xy; }
     }
 };
 

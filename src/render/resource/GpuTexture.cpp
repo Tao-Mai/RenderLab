@@ -26,8 +26,6 @@ namespace
             return colorSpace == ColorSpace::Srgb
                 ? vk::Format::eR8G8Srgb : vk::Format::eR8G8Unorm;
         case ImageFormat::RGB8:
-            return colorSpace == ColorSpace::Srgb
-                ? vk::Format::eR8G8B8Srgb : vk::Format::eR8G8B8Unorm;
         case ImageFormat::RGBA8:
             return colorSpace == ColorSpace::Srgb
                 ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
@@ -48,7 +46,7 @@ GpuTexture::GpuTexture(
     GpuUploadContext         upload, const TextureAsset& asset,
     std::span<const uint8_t> bytes)
 {
-    create(upload, bytes, asset, vulkanFormat(asset.format, asset.colorSpace));
+    create(upload, bytes, asset);
 }
 
 vk::ImageView GpuTexture::imageView() const
@@ -61,14 +59,17 @@ const vk::ImageCreateInfo& GpuTexture::imageInfo() const { return creationInfo; 
 
 void GpuTexture::create(
     GpuUploadContext upload, std::span<const uint8_t> bytes,
-    const TextureAsset& asset, vk::Format format)
+    const TextureAsset& asset)
 {
-    const uint32_t       layers         = asset.layout == ImageLayout::Cubemap ? 6 : 1;
-    const uint32_t       pixelBytes     = AssetDataManager::bytesPerPixel(asset.format);
-    const auto&          physicalDevice = upload.physicalDevice;
-    const auto&          device         = upload.device;
-    const auto&          commandPool    = upload.commandPool;
-    auto&                queue          = upload.queue;
+    const uint32_t   layers           = asset.layout == ImageLayout::Cubemap ? 6 : 1;
+    const uint32_t   sourcePixelBytes = AssetDataManager::bytesPerPixel(asset.format);
+    const uint32_t   pixelBytes       = asset.format == ImageFormat::RGB8 ? 4 : sourcePixelBytes;
+    const vk::Format format           = vulkanFormat(asset.format, asset.colorSpace);
+    const auto&     physicalDevice   = upload.physicalDevice;
+    const auto&     device           = upload.device;
+    const auto&     commandPool      = upload.commandPool;
+    auto&           queue            = upload.queue;
+
     CHECK(asset.width > 0 && asset.height > 0 && asset.mipLevels > 0 &&
           asset.mipLevels <= texture_mip::maxLevels(asset.width, asset.height),
           "invalid texture mip levels: {}", asset.id);
@@ -76,9 +77,29 @@ void GpuTexture::create(
           asset.height / layers / pixelBytes,
           "texture payload is too large: {}", asset.id);
 
+    const vk::DeviceSize sourceByteSize = texture_mip::totalBytes(
+        asset.width, asset.height, layers, sourcePixelBytes, asset.mipLevels);
+    CHECK(bytes.size() == sourceByteSize, "invalid texture payload size: {}", asset.id);
+
     const vk::DeviceSize byteSize = texture_mip::totalBytes(
         asset.width, asset.height, layers, pixelBytes, asset.mipLevels);
-    CHECK(bytes.size() == byteSize, "invalid texture payload size: {}", asset.id);
+    std::vector<uint8_t> rgbaPixels;
+    if (asset.format == ImageFormat::RGB8)
+    {
+        // The payload packs all mip levels and cube faces consecutively.
+        // Expand every RGB texel; GPU copies then use a four-byte pixel stride.
+        rgbaPixels.resize(static_cast<size_t>(byteSize));
+        for (size_t sourceOffset = 0, destinationOffset = 0;
+             sourceOffset < bytes.size(); sourceOffset += 3, destinationOffset += 4)
+        {
+            rgbaPixels[destinationOffset]     = bytes[sourceOffset];
+            rgbaPixels[destinationOffset + 1] = bytes[sourceOffset + 1];
+            rgbaPixels[destinationOffset + 2] = bytes[sourceOffset + 2];
+            rgbaPixels[destinationOffset + 3] = 255;
+        }
+        bytes = rgbaPixels;
+    }
+
     Buffer staging(
         physicalDevice,
         device,

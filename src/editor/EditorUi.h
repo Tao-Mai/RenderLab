@@ -3,6 +3,7 @@
 #include "asset/Asset.h"
 #include "asset/AssetImporter.h"
 #include "editor/ViewportRect.h"
+#include "editor/MeshImportPreview.h"
 
 #include <cstdint>
 #include <future>
@@ -83,6 +84,7 @@ private:
     uint32_t                          editorDockId              = 0;
     uint32_t                          hierarchyDockId           = 0;
     uint32_t                          renameActorId             = 0;
+    bool                              focusRename               = false;
     std::string                       renameText;
     int                               gizmoOperation            = 0;
     glm::vec2                         scenePosition{0.0f};
@@ -94,6 +96,7 @@ private:
     ImportTextureSetting              textureSetting;
     ImportEnvironmentMapSetting       environmentSetting;
     ImportMeshSetting                 meshSetting;
+    MeshImportPreview                 meshPreview;
     std::string                       importStatus;
     std::stop_source                  importStop;
     std::future<std::optional<AssetImporter::PreparedEnvironmentMap>> environmentImport;

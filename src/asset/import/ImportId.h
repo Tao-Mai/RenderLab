@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <system_error>
 
 namespace asset_import
@@ -26,27 +27,52 @@ namespace asset_import
     return absoluteSource;
 }
 
-template <AssetType T>
-[[nodiscard]] typename T::ID nextId(const std::filesystem::path& source)
+[[nodiscard]] inline bool validId(std::string_view id)
 {
-    std::string stem = source.stem().string();
-    CHECK(!stem.empty(), "asset source has no filename stem: {}", source.string());
-    DCHECK(context().assetManager);
+    if (id.empty() || id.back() == '.' || id.back() == ' ' ||
+        id.find_first_of("<>:\"/\\|?*") != std::string_view::npos)
+        return false;
 
-    const typename T::ID baseId{stem};
-    if (context().assetManager->find<T>(baseId) == nullptr)
+    for (unsigned char character : id)
+        if (character < 32)
+            return false;
+
+    return true;
+}
+
+template <AssetType T>
+[[nodiscard]] typename T::ID nextId(const std::string& baseName)
+{
+    CHECK(validId(baseName), "invalid asset ID: {}", baseName);
+    DCHECK(context().assetManager);
+    DCHECK(context().config);
+
+    const auto available = [](const typename T::ID& id)
+    {
+        if (context().assetManager->find<T>(id))
+            return false;
+
+        const auto      file = context().config->paths().assets / T::dir / (id.value + ".json");
+        std::error_code error;
+        const bool      exists = std::filesystem::exists(file, error);
+        CHECK(!error, "cannot check asset ID '{}': {}", id.value, error.message());
+        return !exists;
+    };
+
+    const typename T::ID baseId{baseName};
+    if (available(baseId))
     {
         return baseId;
     }
 
     for (uint32_t number = 1; number < std::numeric_limits<uint32_t>::max(); ++number)
     {
-        typename T::ID id{stem + std::to_string(number)};
-        if (context().assetManager->find<T>(id) == nullptr)
+        typename T::ID id{baseName + std::to_string(number)};
+        if (available(id))
         {
             return id;
         }
     }
-    LOG_FATAL("no available asset ID for {}", source.string());
+    LOG_FATAL("no available asset ID for {}", baseName);
 }
-}
+}  // namespace asset_import

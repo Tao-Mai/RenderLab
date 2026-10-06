@@ -6,4 +6,5 @@ scripts/
 .cache
 .idea
 assets/binary/
+assets
 resource/

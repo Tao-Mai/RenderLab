@@ -44,7 +44,9 @@ struct alignas(16) ViewUniforms
 };
 
 // The SSBO contains lightCount entries, including disabled lights. IBL.x is
-// the maximum LOD of the scene's prefiltered specular cubemap.
+// the maximum LOD of the scene's prefiltered specular cubemap. shadowParameters.x
+// is the normalized point shadow depth bias, y is the direction-space PCF radius,
+// z enables per-pixel rotation (0/1), and w is reserved.
 struct alignas(16) LightUniforms
 {
     uint32_t  lightCount = 0;
@@ -52,6 +54,7 @@ struct alignas(16) LightUniforms
     uint32_t  padding1   = 0;
     uint32_t  padding2   = 0;
     glm::vec4 iblParameters{0.0f};
+    glm::vec4 shadowParameters{0.0f};
 };
 
 // One std430 SSBO element, with a 96-byte array stride.
@@ -111,9 +114,10 @@ struct alignas(16) MaterialUniforms
 static_assert(sizeof(ViewUniforms) == 144);
 static_assert(offsetof(ViewUniforms, inverseViewProjection) == 64);
 static_assert(offsetof(ViewUniforms, cameraPosition) == 128);
-static_assert(sizeof(LightUniforms) == 32);
+static_assert(sizeof(LightUniforms) == 48);
 static_assert(offsetof(LightUniforms, ambientCoefficient) == 4);
 static_assert(offsetof(LightUniforms, iblParameters) == 16);
+static_assert(offsetof(LightUniforms, shadowParameters) == 32);
 static_assert(sizeof(LightData) == 96);
 static_assert(offsetof(LightData, positionRange) == 16);
 static_assert(offsetof(LightData, direction) == 32);

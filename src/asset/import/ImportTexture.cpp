@@ -43,7 +43,7 @@ TextureAsset::ID AssetImporter::importTexture(const ImportTextureSetting& settin
     LOG_INFO("Texture source decoded: {}x{}", image.width, image.height);
 
     TextureAsset asset{};
-    asset.id         = asset_import::nextId<TextureAsset>(source);
+    asset.id         = asset_import::nextId<TextureAsset>(source.stem().string());
     asset.source     = Source::File;
     asset.format     = image.format;
     asset.colorSpace = setting.colorSpace.value_or(defaultColorSpace(image.fileFormat));

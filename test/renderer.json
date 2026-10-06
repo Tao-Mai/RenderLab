@@ -13,7 +13,11 @@
         "ibl": true,
         "shadow": {
             "enable": true,
-            "pointShadowMapSize": 1024
+            "filter": "Linear",
+            "pointShadowMapSize": 1024,
+            "bias": 0.001,
+            "pixelRotation": true,
+            "sampleRadius": 0.02
         }
     },
     "renderPath": "Rasterization"

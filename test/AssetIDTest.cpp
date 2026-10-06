@@ -91,6 +91,7 @@ TEST(AssetIDTest, RoundTripsNestedMeshSubmesh)
     mesh.id = MeshAsset::ID{"sphere"};
     mesh.source = Source::Builtin;
     mesh.geometry = "binary/sphere.geometry";
+    mesh.importScale = 2.0f;
     mesh.submeshes.push_back({
         .firstIndex = 3,
         .indexCount = 6,
@@ -99,6 +100,8 @@ TEST(AssetIDTest, RoundTripsNestedMeshSubmesh)
 
     const json serialized = Serialize(mesh);
     EXPECT_EQ(serialized.at("id").at("value"), "sphere");
+    EXPECT_EQ(serialized.at("importScale"), 2.0f);
+    EXPECT_TRUE(serialized.at("path").is_null());
     EXPECT_EQ(serialized.at("submeshes")[0].at("materialId").at("value"), "white");
 
     MeshAsset parsed;

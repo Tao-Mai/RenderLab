@@ -39,7 +39,8 @@ RendererConfig sampleRendererConfig()
         .renderPath = RenderPath::RayTracing,
         .brdfLut = {TextureAsset::ID{"lut_ggx"}, SamplerAsset::ID{"linearClamp"}},
         .feature = {.ibl = false, .ambientCoefficient = 0.25f,
-            .shadow = {.enable = false, .pointShadowMapSize = 2048}},
+            .shadow = {.enable = false, .pointShadowMapSize = 2048, .bias = 0.0025f,
+                .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.03f}},
         .environmentMap = EnvironmentMapAsset::ID{"grasslands"},
     };
 }
@@ -82,6 +83,10 @@ TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
     EXPECT_EQ(serialized.at("environmentMap").at("value"), "grasslands");
     EXPECT_EQ(serialized.at("feature").at("shadow").at("enable"), false);
     EXPECT_EQ(serialized.at("feature").at("shadow").at("pointShadowMapSize"), 2048);
+    EXPECT_FLOAT_EQ(serialized.at("feature").at("shadow").at("bias").get<float>(), 0.0025f);
+    EXPECT_EQ(serialized.at("feature").at("shadow").at("filter"), "Nearest");
+    EXPECT_EQ(serialized.at("feature").at("shadow").at("pixelRotation"), false);
+    EXPECT_FLOAT_EQ(serialized.at("feature").at("shadow").at("sampleRadius").get<float>(), 0.03f);
 
     RendererConfig restored;
     Deserialize(serialized, restored);
@@ -102,6 +107,22 @@ TEST(ConfigSerialization, MissingFieldsFailInsteadOfUsingDefaults)
 
     serialized = Serialize(sampleRendererConfig());
     serialized.at("feature").erase("ibl");
+    EXPECT_DEATH(Deserialize(serialized, restoredRenderer), "");
+
+    serialized = Serialize(sampleRendererConfig());
+    serialized.at("feature").at("shadow").erase("bias");
+    EXPECT_DEATH(Deserialize(serialized, restoredRenderer), "");
+
+    serialized = Serialize(sampleRendererConfig());
+    serialized.at("feature").at("shadow").erase("filter");
+    EXPECT_DEATH(Deserialize(serialized, restoredRenderer), "");
+
+    serialized = Serialize(sampleRendererConfig());
+    serialized.at("feature").at("shadow").erase("pixelRotation");
+    EXPECT_DEATH(Deserialize(serialized, restoredRenderer), "");
+
+    serialized = Serialize(sampleRendererConfig());
+    serialized.at("feature").at("shadow").erase("sampleRadius");
     EXPECT_DEATH(Deserialize(serialized, restoredRenderer), "");
 }
 
@@ -130,9 +151,14 @@ TEST(ConfigSerialization, ConfigManagerResolvesPathsAndLoadsCommands)
     manager.setRenderPath(RenderPath::RayTracing);
     manager.setEnvironmentMap(EnvironmentMapAsset::ID{"grasslands"});
     manager.setRenderFeature({.ibl = false, .ambientCoefficient = 0.3f,
-        .shadow = {.enable = false, .pointShadowMapSize = 512}});
+        .shadow = {.enable = false, .pointShadowMapSize = 512, .bias = 0.005f,
+            .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.04f}});
     EXPECT_FALSE(manager.rendererConfig().feature.ibl);
     EXPECT_FLOAT_EQ(manager.rendererConfig().feature.ambientCoefficient, 0.3f);
+    EXPECT_FLOAT_EQ(manager.rendererConfig().feature.shadow.bias, 0.005f);
+    EXPECT_EQ(manager.rendererConfig().feature.shadow.filter, SamplerAsset::Filter::Nearest);
+    EXPECT_FALSE(manager.rendererConfig().feature.shadow.pixelRotation);
+    EXPECT_FLOAT_EQ(manager.rendererConfig().feature.shadow.sampleRadius, 0.04f);
     EXPECT_EQ(Serialize(asset_json::load<RendererConfig>(rendererFile)), Serialize(originalRenderer));
     const auto editor = asset_json::load<EditorConfig>(manager.paths().editor);
     EXPECT_EQ(manager.editorConfig().width, editor.width);

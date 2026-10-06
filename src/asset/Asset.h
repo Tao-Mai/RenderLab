@@ -189,6 +189,8 @@ struct MeshAsset : Asset
 
     ID                    id;
     Source                source;
+    std::optional<std::filesystem::path> path;
+    float                 importScale = 1.0f;
     std::filesystem::path geometry;
     std::vector<Submesh>  submeshes;
 };

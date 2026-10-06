@@ -12,8 +12,12 @@
         "ambientCoefficient": 0.0,
         "ibl": false,
         "shadow": {
+            "bias": 0.004999999888241291,
             "enable": true,
-            "pointShadowMapSize": 512
+            "filter": "Linear",
+            "pixelRotation": true,
+            "pointShadowMapSize": 512,
+            "sampleRadius": 0.019999999552965164
         }
     },
     "renderPath": "Rasterization"

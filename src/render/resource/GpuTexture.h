@@ -31,6 +31,5 @@ private:
     void create(
         GpuUploadContext upload,
         std::span<const uint8_t> bytes,
-        const TextureAsset& asset,
-        vk::Format format);
+        const TextureAsset& asset);
 };

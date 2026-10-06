@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -32,8 +33,6 @@ namespace
 {
 struct GltfBuild
 {
-    MeshGeometry                                          geometry;
-    std::vector<MeshAsset::Submesh>                       submeshes;
     std::vector<MaterialAsset::ID>                              materialIds;
     std::map<std::pair<std::string, ColorSpace>, TextureAsset::ID> textureCache;
 };
@@ -103,7 +102,7 @@ void registerMaterials(
     const std::filesystem::path& meshSource)
 {
     MaterialAsset defaultMaterial;
-    defaultMaterial.id               = asset_import::nextId<MaterialAsset>(meshSource);
+    defaultMaterial.id               = asset_import::nextId<MaterialAsset>(meshSource.stem().string());
     defaultMaterial.baseColorTexture = TextureBinding{
         BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat};
     build.materialIds.push_back(
@@ -113,7 +112,7 @@ void registerMaterials(
     {
         const tinygltf::Material& source = model.materials[index];
         MaterialAsset              material;
-        material.id = asset_import::nextId<MaterialAsset>(meshSource);
+        material.id = asset_import::nextId<MaterialAsset>(meshSource.stem().string());
 
         const auto& pbr = source.pbrMetallicRoughness;
         if (pbr.baseColorFactor.size() == 4)
@@ -289,7 +288,7 @@ glm::mat4 nodeTransform(const tinygltf::Node& node)
 }
 
 void appendPrimitive(
-    GltfBuild&                 build,
+    AssetImporter::PreparedMesh& build,
     const tinygltf::Model&     model,
     const tinygltf::Primitive& primitive,
     const glm::mat4&           transform)
@@ -351,23 +350,17 @@ void appendPrimitive(
         }
     }
 
-    uint32_t materialSlot = 0;
-    if (primitive.material >= 0 &&
-        primitive.material < static_cast<int>(model.materials.size()))
-    {
-        materialSlot = static_cast<uint32_t>(primitive.material) + 1;
-    }
-    CHECK(materialSlot < build.materialIds.size(),
+    CHECK(primitive.material >= -1 && primitive.material < static_cast<int>(model.materials.size()),
           "glTF primitive references missing material");
     build.submeshes.push_back({
         .firstIndex = firstIndex,
         .indexCount = static_cast<uint32_t>(build.geometry.indices.size()) - firstIndex,
-        .materialId = build.materialIds[materialSlot],
+        .materialIndex = primitive.material,
     });
 }
 
 void appendMesh(
-    GltfBuild&             build,
+    AssetImporter::PreparedMesh& build,
     const tinygltf::Model& model,
     int                    meshIndex,
     const glm::mat4&       transform)
@@ -382,37 +375,44 @@ void appendMesh(
 
 MeshAsset::ID AssetImporter::importMesh(const ImportMeshSetting& setting)
 {
-    const std::filesystem::path& path = setting.source;
+    CHECK(std::isfinite(setting.importScale) && setting.importScale > 0.0f);
+    return saveMesh(prepareMesh(setting.source), setting);
+}
+
+AssetImporter::PreparedMesh AssetImporter::prepareMesh(const std::filesystem::path& path)
+{
     CHECK(!path.empty(), "mesh source path is empty");
     const auto start = std::chrono::steady_clock::now();
     LOG_INFO("Import mesh '{}' started", path.string());
 
     tinygltf::TinyGLTF loader;
-    tinygltf::Model    model;
-    std::string        warning;
-    std::string        error;
+    PreparedMesh       build;
+    build.source      = std::filesystem::absolute(path).lexically_normal();
+    build.model       = std::make_shared<tinygltf::Model>();
+    auto&       model = *build.model;
+    std::string warning;
+    std::string error;
 
     std::string extension = path.extension().string();
-    std::ranges::transform(extension,
-                           extension.begin(),
-                           [](unsigned char character) { return std::tolower(character); });
-    CHECK(extension == ".gltf" || extension == ".glb",
-          "unsupported mesh source: {}",
-          path.string());
-    const bool loaded = extension == ".glb"
-        ? loader.LoadBinaryFromFile(&model, &error, &warning, path.string())
-        : loader.LoadASCIIFromFile(&model, &error, &warning, path.string());
+    std::ranges::transform(
+        extension,
+        extension.begin(),
+        [](unsigned char character) { return std::tolower(character); }
+    );
+    CHECK(extension == ".gltf" || extension == ".glb", "unsupported mesh source: {}", path.string());
+    const bool loaded = extension == ".glb" ? loader.LoadBinaryFromFile(&model, &error, &warning, path.string())
+                                            : loader.LoadASCIIFromFile(&model, &error, &warning, path.string());
     if (!warning.empty())
     {
         LOG_WARNING("glTF '{}': {}", path.string(), warning);
     }
     CHECK(loaded, "failed to load glTF '{}': {}", path.string(), error);
-    LOG_INFO("glTF parsed: {} meshes, {} materials, {} textures",
-             model.meshes.size(), model.materials.size(), model.textures.size());
-
-    const MeshAsset::ID meshId = asset_import::nextId<MeshAsset>(path);
-    GltfBuild     build;
-    registerMaterials(build, model, path.parent_path(), path);
+    LOG_INFO(
+        "glTF parsed: {} meshes, {} materials, {} textures",
+        model.meshes.size(),
+        model.materials.size(),
+        model.textures.size()
+    );
 
     std::function<void(int, const glm::mat4&)> visitNode;
     visitNode = [&](int nodeIndex, const glm::mat4& parentTransform)
@@ -445,22 +445,77 @@ MeshAsset::ID AssetImporter::importMesh(const ImportMeshSetting& setting)
         }
     }
 
-    CHECK(!build.geometry.vertices.empty() && !build.geometry.indices.empty(),
-          "glTF contains no triangle mesh data: {}",
-          path.string());
-    LOG_INFO("Mesh geometry ready: {} vertices, {} indices, {} submeshes",
-             build.geometry.vertices.size(), build.geometry.indices.size(),
-             build.submeshes.size());
+    CHECK(
+        !build.geometry.vertices.empty() && !build.geometry.indices.empty(),
+        "glTF contains no triangle mesh data: {}",
+        path.string()
+    );
+    LOG_INFO(
+        "Mesh geometry ready: {} vertices, {} indices, {} submeshes",
+        build.geometry.vertices.size(),
+        build.geometry.indices.size(),
+        build.submeshes.size()
+    );
+
+    build.boundsMin = build.boundsMax = build.geometry.vertices.front().position;
+    for (const auto& vertex : build.geometry.vertices)
+    {
+        CHECK(
+            std::isfinite(vertex.position.x) && std::isfinite(vertex.position.y) && std::isfinite(vertex.position.z),
+            "non-finite glTF position: {}",
+            path.string()
+        );
+        build.boundsMin = glm::min(build.boundsMin, vertex.position);
+        build.boundsMax = glm::max(build.boundsMax, vertex.position);
+    }
+    LOG_INFO(
+        "Mesh preview prepared in {:.1f}s",
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count()
+    );
+    return build;
+}
+
+MeshAsset::ID AssetImporter::saveMesh(PreparedMesh&& prepared, const ImportMeshSetting& setting)
+{
+    const float importScale = setting.importScale;
+    CHECK(std::isfinite(importScale) && importScale > 0.0f);
+    DCHECK(prepared.model);
+    const auto          start = std::chrono::steady_clock::now();
+    const auto&         path  = prepared.source;
+    const MeshAsset::ID meshId =
+        asset_import::nextId<MeshAsset>(setting.id.empty() ? path.stem().string() : setting.id.value);
+    GltfBuild materials;
+    registerMaterials(materials, *prepared.model, path.parent_path(), path);
+
+    for (auto& vertex : prepared.geometry.vertices)
+    {
+        vertex.position *= importScale;
+        CHECK(
+            std::isfinite(vertex.position.x) && std::isfinite(vertex.position.y) && std::isfinite(vertex.position.z),
+            "scaled mesh position overflows: {}",
+            path.string()
+        );
+    }
 
     MeshAsset mesh;
-    mesh.id        = meshId;
-    mesh.source    = Source::File;
-    mesh.geometry  = context().assetDataManager->writeGeometry(meshId, build.geometry);
-    mesh.submeshes = std::move(build.submeshes);
+    mesh.id          = meshId;
+    mesh.source      = Source::File;
+    mesh.path        = asset_import::sourcePathForAsset(path);
+    mesh.importScale = importScale;
+    mesh.geometry    = context().assetDataManager->writeGeometry(meshId, prepared.geometry);
+    mesh.submeshes.reserve(prepared.submeshes.size());
+    for (const auto& submesh : prepared.submeshes)
+    {
+        const auto slot = static_cast<size_t>(submesh.materialIndex + 1);
+        DCHECK(slot < materials.materialIds.size());
+        mesh.submeshes.push_back({submesh.firstIndex, submesh.indexCount, materials.materialIds[slot]});
+    }
     const MeshAsset::ID id = context().assetManager->save<MeshAsset>(std::move(mesh));
-    LOG_INFO("Import mesh '{}' completed as '{}' in {:.1f}s",
-             path.string(), id.value,
-             std::chrono::duration<double>(
-                 std::chrono::steady_clock::now() - start).count());
+    LOG_INFO(
+        "Import mesh '{}' completed as '{}' in {:.1f}s",
+        path.string(),
+        id.value,
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count()
+    );
     return id;
 }
