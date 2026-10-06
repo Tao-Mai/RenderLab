@@ -17,6 +17,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <memory>
 
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_raii.hpp>
@@ -61,20 +62,28 @@ public:
 
 private:
     friend class RenderGraph;
+    struct Passes;
     DEBUG_ONLY(bool inited = false;)
-    VulkanContext     vulkan;
-    Swapchain         swapchain;
-    ShaderManager     shaders;
-    DescriptorManager descriptors;
-    PipelineManager   pipelines;
-    RenderResourceManager resources;
+    VulkanContext                             vulkan;
+    Swapchain                                 swapchain;
+    ShaderManager                             shaders;
+    DescriptorManager                         descriptors;
+    PipelineManager                           pipelines;
+    RenderResourceManager                     resources;
     std::array<FrameContext, maxFramesInFlight> frames;
-    uint32_t          frameIndex = 0;
-    RenderSystem      renderSystem;
-    RenderGraph       graph;
-    glm::vec4         iblParameters{0.0f};
+    uint32_t                                  frameIndex = 0;
+    RenderSystem                              renderSystem;
+    RenderGraph                               graph;
+    std::shared_ptr<Passes>                    passes;
+    RenderGraph::BufferHandle                  pickingReadback;
+    glm::vec4                                 iblParameters{0.0f};
 
     void initVulkan();
+    void setupRenderGraph();
+
+    template <class T, class... Args>
+    auto setupPass(Args&&... args);
+
     void updateFrameData(const CameraComponent& camera, const EditorFrameInput& editor);
     [[nodiscard]] FrameContext& currentFrame();
     void recreateSwapchain();

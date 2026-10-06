@@ -1,27 +1,13 @@
 #include "render/feature/RenderGraph.h"
 
-#include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "render/Renderer.h"
 #include "render/device/Memory.h"
 #include "render/device/VkCheck.h"
-#include "render/feature/EndPass.h"
-#include "render/feature/PointShadowPass.h"
-#include "render/feature/ScenePass.h"
-#include "render/feature/editor/EditorPickingCopyPass.h"
-#include "render/feature/editor/EditorPickingPass.h"
-#include "render/feature/editor/EditorUiPass.h"
-#include "render/feature/editor/LightMarkerPass.h"
-#include "render/raytracing/RayTracingBlitPass.h"
-#include "render/raytracing/RayTracingPass.h"
 #include "render/resource/Buffer.h"
 
 #include <algorithm>
-#include <meta>
-#include <tuple>
-#include <type_traits>
-#include <utility>
 
 namespace
 {
@@ -30,87 +16,6 @@ vk::ImageAspectFlags imageAspect(vk::Format format)
     return format == vk::Format::eD32Sfloat ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor;
 }
 }  // namespace
-
-struct RenderGraph::Passes
-{
-    template <class T>
-    struct Entry
-    {
-        T        pass;
-        PassNode node;
-    };
-
-    template <class... Ts>
-    using PassTypeList = std::tuple<Entry<Ts>...>;
-
-    PassTypeList<
-        PointShadowPass,
-        ScenePass,
-        LightMarkerPass,
-        RayTracingPass,
-        RayTracingBlitPass,
-        EditorPickingPass,
-        EditorPickingCopyPass,
-        EditorUiPass,
-        EndPass>
-        data;
-
-    template <class T>
-    auto& get()
-    {
-        return std::get<Entry<T>>(data);
-    }
-};
-
-template <class T>
-void RenderGraph::collectDependencies(PassNode& node, const T& value)
-{
-    using U = std::remove_cvref_t<T>;
-    if constexpr (std::is_same_v<U, ImageHandle> || std::is_same_v<U, BufferHandle>)
-    {
-        if (value.id == kInvalidHandle)
-            return;
-
-        DCHECK(value.id >= 0 && value.id < resources.size());
-        if (std::ranges::find(node.dependency, value.id) == node.dependency.end())
-            node.dependency.push_back(value.id);
-    }
-    else
-    {
-        static_assert(std::is_aggregate_v<U>, "pass arguments must be handles or aggregates of handles");
-        constexpr auto ctx = std::meta::access_context::current();
-        template for (constexpr auto member : std::define_static_array(std::meta::nonstatic_data_members_of(^^U, ctx)))
-        {
-            collectDependencies(node, value.[:member:]);
-        }
-    }
-}
-
-template <class T, class... Args>
-auto RenderGraph::setupPass(Args&&... args)
-{
-    auto& entry = passes->get<T>();
-    auto& node  = entry.node;
-    node.dependency.clear();
-    node.writeSrc.clear();
-    node.prev.clear();
-    node.next.clear();
-    node.uses.clear();
-    node.execute = [pass = &entry.pass](RenderGraph& graph) { pass->execute(graph); };
-    (collectDependencies(node, args), ...);
-    nodes.push_back(&node);
-
-    auto* previousNode = setupNode;
-    setupNode          = &node;
-    auto output        = entry.pass.setup(*this, std::forward<Args>(args)...);
-    setupNode          = previousNode;
-
-    for (ResourceHandle source : node.writeSrc)
-        if (std::ranges::find(node.dependency, source) == node.dependency.end())
-            node.dependency.push_back(source);
-
-    return output;
-}
 
 struct RenderGraph::Allocation
 {
@@ -130,65 +35,30 @@ void RenderGraph::init()
     DCHECK(!renderer);
     renderer = context().renderer;
     DCHECK(renderer);
-
-    passes = std::make_shared<Passes>();
 }
 
 void RenderGraph::releaseResources() noexcept
 {
     resources.clear();
-    for (auto* node : nodes)
-        *node = {};
     nodes.clear();
     sortedNodes.clear();
+    nodeStorage.clear();
 
-    setupNode       = nullptr;
-    swapchainImage  = {};
-    pickingReadback = {};
+    setupNode      = nullptr;
+    swapchainImage = {};
 }
 
 void RenderGraph::reset() noexcept
 {
     releaseResources();
-    passes.reset();
     renderer      = nullptr;
     currentEditor = nullptr;
 }
 
-void RenderGraph::setup()
+void RenderGraph::compile()
 {
-    DCHECK(renderer && passes);
-    renderer->waitIdle();
-    releaseResources();
-
-    const auto  color = importSwapchain();
-    ImageHandle sceneColor;
-    ImageHandle sceneDepth;
-    const bool  rayTracing = context().config->rendererConfig().renderPath == RenderPath::RayTracing;
-    if (rayTracing)
-    {
-        const auto [rayImage] = setupPass<RayTracingPass>();
-        sceneColor            = setupPass<RayTracingBlitPass>(rayImage, color).color;
-    }
-    else
-    {
-        const auto shadow  = setupPass<PointShadowPass>();
-        const auto scene   = setupPass<ScenePass>(color, shadow);
-        const auto markers = setupPass<LightMarkerPass>(scene.color, scene.depth);
-        sceneColor         = markers.color;
-        sceneDepth         = markers.depth;
-    }
-
-    const auto [pickingImage] = setupPass<EditorPickingPass>(sceneDepth);
-    const auto [readback]     = setupPass<EditorPickingCopyPass>(pickingImage);
-    const auto [finalColor]   = setupPass<EditorUiPass>(sceneColor);
-    pickingReadback           = readback;
-
-    setupPass<EndPass>(finalColor, readback);
-
+    compileNodes();
     allocateResources();
-    if (!rayTracing)
-        passes->get<ScenePass>().pass.bindResources(*this);
 }
 
 void RenderGraph::allocateResources()
@@ -386,13 +256,6 @@ void RenderGraph::execute(const EditorFrameInput& editor, uint32_t frameIndex, u
 
     vkCheck(commands().end());
     currentEditor = nullptr;
-}
-
-uint32_t RenderGraph::readSelectionId(uint32_t frameIndex)
-{
-    uint32_t selectionId = 0;
-    getBuffer(pickingReadback, frameIndex).download(&selectionId, sizeof(selectionId));
-    return selectionId;
 }
 
 VulkanContext&           RenderGraph::vulkan() const { return renderer->vulkan; }
