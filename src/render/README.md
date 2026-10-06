@@ -16,7 +16,7 @@
 | `FrameContext` | CommandPool/Buffer、Fence、imageAvailable，以及一个 FrameData | 每个 frame-in-flight 一份 |
 | `FrameData` | View/Light CPU 数据与 UBO、灯光/点阴影 SSBO、Scene Set、数据上传与扩容 | 由对应 FrameContext 持有 |
 
-Renderer 持有上述模块和 `RenderSystem`。Graph 持有 PointShadow、Scene、RayTracing、RayTracingBlit、EditorPicking、EditorPickingCopy、EditorPickingReadback、EditorUi 节点。Skybox 的 ShaderHandle、Pipeline/Layout 引用和命令录制统一放在 ScenePass 内部。光栅 Pipeline 由 PipelineManager 缓存，光追 Pipeline/SBT/BLAS/TLAS 由 RayTracingPass 持有；Pass 直接接收类型化句柄或前序 Pass 的 Output，通过 Image 对象取得缓存 View。
+Renderer 持有上述模块和 `RenderSystem`。Graph 持有 PointShadow、Scene、LightMarker、RayTracing、RayTracingBlit、EditorPicking、EditorPickingCopy、EditorUi 和终点节点。终点依赖最终颜色和 readback buffer，声明 Present 和 HostRead 状态；CPU 拾取读取由 Graph 在 fence 完成后提供，不再单设 Readback Pass。Skybox 的 ShaderHandle、Pipeline/Layout 引用和命令录制统一放在 ScenePass 内部；LightMarkerPass 独立管理灯光标记的 ShaderHandle、Pipeline/Layout 和绘制，在 Scene 之后加载颜色和深度附件。光栅 Pipeline 由 PipelineManager 缓存，光追 Pipeline/SBT/BLAS/TLAS 由 RayTracingPass 持有；Pass 直接接收类型化句柄或前序 Pass 的 Output，通过 Image 对象取得缓存 View。
 
 ## 光栅化与光追路线
 
@@ -30,7 +30,7 @@ API 参考：[Khronos 基础光追示例](https://docs.vulkan.org/samples/latest
 
 SceneManager 持有 AActor 和 Component。RenderSystem 整理场景对象，在命令录制前解析 Transform、Render、Light 组件和材质覆盖，生成网格与灯光标记的 DrawItem、透明排序和 LightData。Scene、Shadow、Picking 只消费准备好的数据，不再遍历组件。Renderer 接收 CameraComponent 提供的视图，不持有独立相机 System。
 
-当前 `maxFramesInFlight` 为 2。Graph 为每个在途帧分配独立的 Scene 深度图、Shadow cubemap、拾取图和 readback Buffer。交换链图像和资产环境纹理作为外部资源导入，Graph 借用句柄并跟踪状态。FrameData 的 View/Light UBO 和灯光 SSBO 由 Pass 直接引用，不登记到 Graph 资源声明；Renderer 在录制前更新当前帧的数据。Mesh/Material 的 vertex/index buffer、材质 UBO 和 base color image 由 RenderSystem 直接引用，GPU 对象由 RenderResourceManager 创建和持有。它们不登记到 Graph 资源声明，上传与可供绘制使用的状态由资产 GPU 资源实现负责。
+当前 `maxFramesInFlight` 为 2。Graph 为每个在途帧分配独立的 Scene 深度图、Shadow cubemap、拾取图和 readback Buffer。交换链图像作为外部资源导入，Graph 借用句柄并跟踪状态。资产环境纹理不登记到 Graph，由资产 GPU 资源负责上传和采样状态，Pass 直接绑定 descriptor。FrameData 的 View/Light UBO 和灯光 SSBO 由 Pass 直接引用，不登记到 Graph 资源声明；Renderer 在录制前更新当前帧的数据。Mesh/Material 的 vertex/index buffer、材质 UBO 和 base color image 由 RenderSystem 直接引用，GPU 对象由 RenderResourceManager 创建和持有。它们不登记到 Graph 资源声明，上传与可供绘制使用的状态由资产 GPU 资源实现负责。
 
 ## 引擎预设接口
 
@@ -83,24 +83,24 @@ Renderer loadScene 等待 GPU 空闲，RenderSystem 加载渲染项并建立对�
 
 各 Pass 提供 setup/execute；setup 直接接收 ImageHandle/BufferHandle 或前序 Pass 的 Output，返回 Output。
 Graph setup 根据 renderer 配置通过 setupPass<T>(args...) 完美转发参数，显式串接资源句柄；ScenePass 直接接收 color 和 PointShadowPass::Output。
-所有 Pass 类型只在 RenderGraph.cpp 的类型列表中集中声明一次，tuple 的每项保存 Pass 对象和 Graph 的 use 记录，通过类型直接访问。
-setupPass 内部限定访问记录的切换范围并在返回时恢复；Pass 仍调用 graph.use(handle, access)。executePass<T>() 先应用该项的 barrier，再调用 execute，不使用字符串注册或存储执行回调。
+所有 Pass 类型只在 RenderGraph.cpp 的类型列表中集中声明一次，tuple 的每项保存 Pass 对象和 PassNode，通过类型直接访问。
+setupPass 内部限定访问记录的切换范围并在返回时恢复；Pass 仍调用 graph.use(handle, access)。节点保存资源依赖、use 记录和 execute 回调，不使用字符串注册。
 类型列表和模板定义只放在 cpp，RenderGraph.h 不包含各 Pass 的头文件。
-执行顺序与 setup 一致，暂不实现拓扑排序、剪枝或资源复用。
+Renderer 在 setup 后显式调用 compile，从 EndPass 回溯资源依赖、补充写前读约束，并将保留节点按拓扑顺序写入 sortedNodes。execute 只遍历 sortedNodes，先转换节点声明的资源状态，再调用执行回调。暂不实现资源复用。
 
 - createImage/createBuffer 只描述创建属性。
-- importSwapchain/importTexture 借用外部资源。
+- importSwapchain 借用交换链图像。
 - use(handle, access) 声明 stage/access/layout，Graph 从实际访问推导创建 usage。
 - getImage 返回长期保存的 Image 引用，Pass 调用 Image 的 getOrCreateImageView。View 缓存属于 Image。
 - getBuffer 按当前帧或指定帧取得 Buffer。
 
 Graph 在每个 Pass 前转换其声明的资源状态，Pass 内不转换图资源状态。
-Picking 绘制、复制和 HostRead 分成三个 Pass，光追写入与 blit 分成两个 Pass。
-没有拾取请求时跳过 Picking 链，CPU 仍在提交 fence 完成后读取 ID。
+Picking 绘制与复制分成两个 Pass，HostRead 和 Present 出口状态由 EndPass 声明；光追写入与 blit 分成两个 Pass。
+没有拾取请求时 Picking 和 PickingCopy 的 execute 提前返回，不绘制或复制，Graph 仍处理节点声明的资源状态；有拾取请求时，CPU 在提交 fence 完成后读取 ID。
 
 Scene 内部绘制 opaque、Skybox、transparent 和灯光标记。
 Mesh/Material 直接引用 RenderSystem 准备的资产 GPU 对象，不进入图资源分配。
-内部资源按 frame-in-flight 分配，交换链按 acquired image index 选择，资产纹理共享一个实例。
+内部资源按 frame-in-flight 分配，交换链按 acquired image index 选择；资产纹理由 RenderResourceManager 缓存，不参与 Graph 分配。
 状态粒度为整个 Image 的全部 mip/layer 和整个 Buffer，仍使用一个 graphics/present queue。
 
 ## 绘制行为
@@ -117,7 +117,7 @@ Picking 复用 Scene 深度，只在请求拾取时绘制点击像素的 selecti
 
 1. Renderer 等待当前 FrameContext 的 Fence，Acquire 交换链图像，重置 Fence。
 2. RenderSystem prepare 整理本帧 DrawItem、灯光标记、透明排序和 LightData；FrameData 计算点光源六面 VP，上传 View/Light UBO、灯光和点阴影 SSBO，均在 Graph execute 之前完成。
-3. Graph execute 重置并开始 CommandBuffer，按 setup 顺序应用 use 声明的 barrier 并调用 execute。Pass 直接绑定当前 FrameData 的外部 Scene Set，UI 由 EditorUi 节点录制。
+3. Graph execute 重置并开始 CommandBuffer，按 compile 得到的 sortedNodes 顺序应用 use 声明的 barrier 并调用节点执行回调。Pass 直接绑定当前 FrameData 的外部 Scene Set，UI 由 EditorUi 节点录制。
 4. Graph 将交换链图像转为 Present 状态，结束 CommandBuffer。
 5. Renderer 统一 submit 一次，等待 imageAvailable，完成后通知 acquired image 的 renderFinished；随后 Present。
 6. 若有拾取请求，等待本次 Fence、读取该帧结果，最后轮转 frameIndex。

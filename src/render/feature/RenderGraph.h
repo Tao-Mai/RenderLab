@@ -4,12 +4,12 @@
 #include "render/Image.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 
 class Buffer;
 class FrameData;
-class GpuTexture;
 class LightMarkers;
 class Renderer;
 class Swapchain;
@@ -64,12 +64,14 @@ public:
     void init();
     void reset() noexcept;
     void setup();
+    void compile();
     void releaseResources() noexcept;
 
     ImageHandle  createImage(ImageCreateInfo info);
     BufferHandle createBuffer(BufferCreateInfo info);
     ImageHandle  importSwapchain();
-    ImageHandle  importTexture(const GpuTexture& texture);
+    ImageHandle  write(ImageHandle image);
+    BufferHandle write(BufferHandle buffer);
     void         use(ImageHandle image, ImageAccess access);
     void         use(BufferHandle buffer, BufferAccess access);
 
@@ -97,13 +99,14 @@ public:
 
 private:
     struct Passes;
+    struct PassNode;
     struct Allocation;
     struct ResourceUse
     {
         ResourceHandle resource;
         ImageAccess    access;
     };
-    struct Resource
+    struct ResourceData
     {
         bool                        isBuffer = false;
         ImageCreateInfo             imageInfo;
@@ -115,24 +118,45 @@ private:
         bool                        swapchainIndexed = false;
         std::shared_ptr<Allocation> allocation;
     };
+    struct Resource
+    {
+        // Root resources own data; written versions refer to the previous handle.
+        std::unique_ptr<ResourceData> data;
+        ResourceHandle                previous = kInvalidHandle;
+        PassNode*                     owner    = nullptr;
+    };
 
-    Renderer*                 renderer = nullptr;
-    std::shared_ptr<Passes>   passes;
-    std::vector<ResourceUse>* setupUses = nullptr;
-    std::vector<Resource>     resources;
-    uint32_t                  currentFrame  = 0;
-    uint32_t                  currentImage  = 0;
-    const EditorFrameInput*   currentEditor = nullptr;
-    ImageHandle               swapchainImage;
+    struct PassNode
+    {
+        std::vector<ResourceHandle>       dependency;
+        std::vector<ResourceHandle>       writeSrc;
+        std::vector<PassNode*>            prev;
+        std::vector<PassNode*>            next;
+        std::vector<ResourceUse>          uses;
+        std::function<void(RenderGraph&)> execute;
+    };
+
+    Renderer*               renderer = nullptr;
+    std::shared_ptr<Passes> passes;
+    std::vector<PassNode*>  nodes;
+    std::vector<PassNode*>  sortedNodes;
+    PassNode*               setupNode = nullptr;
+    std::vector<Resource>   resources;
+    uint32_t                currentFrame  = 0;
+    uint32_t                currentImage  = 0;
+    const EditorFrameInput* currentEditor = nullptr;
+    ImageHandle             swapchainImage;
+    BufferHandle            pickingReadback;
 
     template <class T, class... Args>
     auto setupPass(Args&&... args);
 
     template <class T>
-    void executePass();
+    void collectDependencies(PassNode& node, const T& value);
 
     void                   allocateResources();
+    ResourceData&          resolveResource(ResourceHandle handle);
     void                   useResource(const ResourceUse& use);
     void                   transitionResources(const std::vector<ResourceUse>& uses);
-    [[nodiscard]] uint32_t instanceIndex(const Resource& resource, uint32_t frameIndex) const;
+    [[nodiscard]] uint32_t instanceIndex(const ResourceData& resource, uint32_t frameIndex) const;
 };

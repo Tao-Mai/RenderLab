@@ -21,6 +21,7 @@ EditorPickingCopyPass::setup(RenderGraph& graph, RenderGraph::ImageHandle pickin
         .size             = sizeof(uint32_t),
         .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
     });
+    readback = graph.write(readback);
     graph.use(
         readback,
         {

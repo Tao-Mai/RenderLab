@@ -3,6 +3,8 @@
 #include "core/Logger.h"
 
 #include <algorithm>
+#include <queue>
+#include <unordered_map>
 
 namespace
 {
@@ -15,7 +17,7 @@ RenderGraph::ImageHandle RenderGraph::createImage(ImageCreateInfo info)
 {
     DCHECK(info.format != vk::Format::eUndefined && info.extent.width && info.extent.height);
     const auto id = static_cast<ResourceHandle>(resources.size());
-    resources.push_back({.imageInfo = info});
+    resources.push_back({.data = std::make_unique<ResourceData>(ResourceData{.imageInfo = info})});
     return {id};
 }
 
@@ -23,14 +25,48 @@ RenderGraph::BufferHandle RenderGraph::createBuffer(BufferCreateInfo info)
 {
     DCHECK(info.size);
     const auto id = static_cast<ResourceHandle>(resources.size());
-    resources.push_back({.isBuffer = true, .bufferInfo = info});
+    resources.push_back({.data = std::make_unique<ResourceData>(ResourceData{.isBuffer = true, .bufferInfo = info})});
     return {id};
+}
+
+RenderGraph::ImageHandle RenderGraph::write(ImageHandle image)
+{
+    DCHECK(setupNode);
+    DCHECK(!resolveResource(image.id).isBuffer);
+
+    const auto id = static_cast<ResourceHandle>(resources.size());
+    resources.push_back({.previous = image.id, .owner = setupNode});
+    setupNode->writeSrc.push_back(image.id);
+
+    return {id};
+}
+
+RenderGraph::BufferHandle RenderGraph::write(BufferHandle buffer)
+{
+    DCHECK(setupNode);
+    DCHECK(resolveResource(buffer.id).isBuffer);
+
+    const auto id = static_cast<ResourceHandle>(resources.size());
+    resources.push_back({.previous = buffer.id, .owner = setupNode});
+    setupNode->writeSrc.push_back(buffer.id);
+    return {id};
+}
+
+RenderGraph::ResourceData& RenderGraph::resolveResource(ResourceHandle handle)
+{
+    DCHECK(handle >= 0 && handle < resources.size());
+    auto* resource = &resources.at(handle);
+    while (resource->previous != kInvalidHandle)
+        resource = &resources.at(resource->previous);
+
+    DCHECK(resource->data);
+    return *resource->data;
 }
 
 void RenderGraph::use(ImageHandle image, ImageAccess access)
 {
-    DCHECK(setupUses && image.id >= 0 && image.id < resources.size());
-    Resource& resource = resources.at(image.id);
+    DCHECK(setupNode && image.id >= 0 && image.id < resources.size());
+    auto& resource = resolveResource(image.id);
     DCHECK(!resource.isBuffer && access.layout != vk::ImageLayout::eUndefined);
 
     // Creation usage is the union of the actual uses declared by passes.
@@ -48,7 +84,7 @@ void RenderGraph::use(ImageHandle image, ImageAccess access)
     if (access.access & vk::AccessFlagBits2::eTransferWrite)
         resource.imageUsage |= vk::ImageUsageFlagBits::eTransferDst;
 
-    auto&      uses  = *setupUses;
+    auto&      uses  = setupNode->uses;
     const auto found = std::ranges::find(uses, image.id, &ResourceUse::resource);
     if (found != uses.end())
     {
@@ -62,8 +98,8 @@ void RenderGraph::use(ImageHandle image, ImageAccess access)
 
 void RenderGraph::use(BufferHandle buffer, BufferAccess access)
 {
-    DCHECK(setupUses && buffer.id >= 0 && buffer.id < resources.size());
-    Resource& resource = resources.at(buffer.id);
+    DCHECK(setupNode && buffer.id >= 0 && buffer.id < resources.size());
+    auto& resource = resolveResource(buffer.id);
     DCHECK(resource.isBuffer);
 
     if (access.access & vk::AccessFlagBits2::eTransferRead)
@@ -75,7 +111,7 @@ void RenderGraph::use(BufferHandle buffer, BufferAccess access)
     if (access.access & vk::AccessFlagBits2::eUniformRead)
         resource.bufferUsage |= vk::BufferUsageFlagBits::eUniformBuffer;
 
-    auto&      uses  = *setupUses;
+    auto&      uses  = setupNode->uses;
     const auto found = std::ranges::find(uses, buffer.id, &ResourceUse::resource);
     if (found != uses.end())
     {
@@ -89,4 +125,119 @@ void RenderGraph::use(BufferHandle buffer, BufferAccess access)
 bool RenderGraph::needsBarrier(const ImageAccess& previous, const ImageAccess& next)
 {
     return previous.layout != next.layout || static_cast<bool>((previous.access | next.access) & kWriteAccess);
+}
+
+void RenderGraph::compile()
+{
+    DCHECK(!setupNode);
+    CHECK(!nodes.empty());
+    sortedNodes.clear();
+
+    std::vector<bool> written(resources.size());
+    for (auto* node : nodes)
+    {
+        node->prev.clear();
+        node->next.clear();
+
+        for (ResourceHandle source : node->writeSrc)
+        {
+            CHECK(source >= 0 && source < resources.size());
+            CHECK(!written[source]);
+            written[source] = true;
+        }
+    }
+
+    const auto connect = [](PassNode* producer, PassNode* consumer)
+    {
+        if (!producer || producer == consumer)
+            return;
+        if (std::ranges::find(producer->next, consumer) != producer->next.end())
+            return;
+
+        producer->next.push_back(consumer);
+        consumer->prev.push_back(producer);
+    };
+
+    // Follow resource producers backwards from the endpoint; unused nodes remain disconnected.
+    std::vector<std::vector<PassNode*>>   consumers(resources.size());
+    std::unordered_map<PassNode*, size_t> remaining;
+    std::queue<PassNode*>                 pending;
+    auto*                                 end = nodes.back();
+    remaining.emplace(end, 0);
+    pending.push(end);
+
+    while (!pending.empty())
+    {
+        auto* node = pending.front();
+        pending.pop();
+
+        for (ResourceHandle handle : node->dependency)
+        {
+            CHECK(handle >= 0 && handle < resources.size());
+            consumers[handle].push_back(node);
+            auto* producer = resources[handle].owner;
+            connect(producer, node);
+            if (producer && remaining.emplace(producer, 0).second)
+                pending.push(producer);
+        }
+    }
+
+    // Preserve reads of an old version before overwriting it, only between retained nodes.
+    for (auto* node : nodes)
+    {
+        if (!remaining.contains(node))
+            continue;
+
+        for (ResourceHandle source : node->writeSrc)
+        {
+            for (auto* consumer : consumers[source])
+                connect(consumer, node);
+        }
+    }
+
+    // Kahn's algorithm keeps the graph connections intact; isolated non-end nodes are culled.
+    for (auto* node : nodes)
+    {
+        if (node != end && node->next.empty())
+            CHECK(node->prev.empty());
+
+        remaining[node] = node->prev.size();
+        if (node->prev.empty() && (node == end || !node->next.empty()))
+            pending.push(node);
+    }
+
+    while (!pending.empty())
+    {
+        auto* node = pending.front();
+        pending.pop();
+        sortedNodes.push_back(node);
+        remaining.erase(node);
+
+        for (auto* next : node->next)
+        {
+            auto& count = remaining.at(next);
+            CHECK(count);
+            if (--count == 0)
+                pending.push(next);
+        }
+    }
+
+    // Any connected node left unsorted belongs to, or is blocked by, a cycle.
+    for (const auto& [node, count] : remaining)
+        CHECK(node->prev.empty() && node->next.empty());
+
+    // Seed swapchain synchronization from its first retained use.
+    for (auto& entry : resources)
+        if (entry.data && entry.data->swapchainIndexed)
+            entry.data->initialState.stages = {};
+
+    for (auto* node : sortedNodes)
+    {
+        for (const auto& use : node->uses)
+        {
+            auto& resource = resolveResource(use.resource);
+            if (resource.swapchainIndexed && !resource.initialState.stages)
+                resource.initialState.stages = use.access.stages;
+        }
+    }
 }

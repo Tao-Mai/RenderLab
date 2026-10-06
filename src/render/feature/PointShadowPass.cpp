@@ -48,6 +48,7 @@ PointShadowPass::Output PointShadowPass::setup(RenderGraph& graph)
          .mipLevels   = 1,
          .arrayLayers = 6 * kMaxPointLightShadow}
     );
+    pointShadowMap = graph.write(pointShadowMap);
 
 
     graph.use(

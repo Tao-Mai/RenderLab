@@ -10,7 +10,6 @@
 #include "core/ConfigManager.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
-#include "render/feature/LightMarkers.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMaterial.h"
 #include "render/resource/GpuMesh.h"
@@ -44,9 +43,8 @@ ScenePass::setup(RenderGraph& targetGraph, RenderGraph::ImageHandle colorHandle,
 
     pipelines      = renderContext().pipelineManager;
     resources      = renderContext().resources;
-    color          = colorHandle;
+    color          = graph->write(colorHandle);
     pointShadowMap = shadow.pointShadowMap;
-    lightShader    = renderContext().shaderManager->getOrLoad("light");
     skyboxShader   = renderContext().shaderManager->getOrLoad("skybox");
 
     const auto& brdf = context().config->rendererConfig().brdfLut;
@@ -75,6 +73,7 @@ ScenePass::setup(RenderGraph& targetGraph, RenderGraph::ImageHandle colorHandle,
     auto&      graph  = targetGraph;
     const auto extent = graph.swapchain().extent();
     depth = graph.createImage({.format = vk::Format::eD32Sfloat, .extent = {extent.width, extent.height, 1}});
+    depth = graph.write(depth);
     graph.use(
         color,
         {
@@ -101,35 +100,18 @@ ScenePass::setup(RenderGraph& targetGraph, RenderGraph::ImageHandle colorHandle,
         }
     );
 
-    const RenderGraph::ImageAccess sampled{
-        .stages = vk::PipelineStageFlagBits2::eFragmentShader,
-        .access = vk::AccessFlagBits2::eShaderSampledRead,
-        .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
-    };
-    graph.use(graph.importTexture(*irradianceTexture), sampled);
-    graph.use(graph.importTexture(*prefilteredSpecularTexture), sampled);
-    graph.use(graph.importTexture(*radianceTexture), sampled);
-    graph.use(graph.importTexture(*brdfLutTexture), sampled);
-
     const vk::Format colorFormat = graph.swapchain().surfaceFormat().format;
     iblEnabled                   = context().config->rendererConfig().feature.ibl;
     sceneShader =
         renderContext().shaderManager->getOrLoad("scene", iblEnabled ? ShaderVariant::Default : ShaderVariant::NoIbl);
-    scenePipeline       = pipelines->getOrCreate({
-              .shader      = sceneShader,
-              .layout      = PipelineLayoutPreset::SceneMaterial,
-              .state       = PipelineState::preset(RenderMode::Opaque),
-              .colorFormat = colorFormat,
-              .depthFormat = vk::Format::eD32Sfloat,
+    scenePipeline  = pipelines->getOrCreate({
+         .shader      = sceneShader,
+         .layout      = PipelineLayoutPreset::SceneMaterial,
+         .state       = PipelineState::preset(RenderMode::Opaque),
+         .colorFormat = colorFormat,
+         .depthFormat = vk::Format::eD32Sfloat,
     });
-    lightMarkerPipeline = pipelines->getOrCreate({
-        .shader      = lightShader,
-        .layout      = PipelineLayoutPreset::SceneMaterial,
-        .state       = PipelineState::preset(RenderMode::LightMarker),
-        .colorFormat = colorFormat,
-        .depthFormat = vk::Format::eD32Sfloat,
-    });
-    pipelineLayout      = pipelines->layout(PipelineLayoutPreset::SceneMaterial);
+    pipelineLayout = pipelines->layout(PipelineLayoutPreset::SceneMaterial);
 
     skyboxPipeline       = pipelines->getOrCreate({
               .shader      = skyboxShader,
@@ -328,7 +310,6 @@ void ScenePass::execute(RenderGraph& graph) const
 {
     auto&             commandBuffer = graph.commands();
     const RenderData& renderData    = graph.renderData();
-    const auto&       lightMarkers  = graph.lightMarkers();
     const uint32_t    frameIndex    = graph.frameIndex();
     const auto        extent        = graph.swapchain().extent();
 
@@ -451,14 +432,6 @@ void ScenePass::execute(RenderGraph& graph) const
     for (const DrawItem& item : renderData.transparentDrawItems)
     {
         draw(item);
-    }
-
-    if (!renderData.lightDrawItems.empty())
-    {
-        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, lightMarkerPipeline);
-        bindSceneDescriptor(commandBuffer, frameIndex);
-
-        lightMarkers.record(commandBuffer, pipelineLayout, renderData.lightDrawItems);
     }
 
     commandBuffer.endRendering();
