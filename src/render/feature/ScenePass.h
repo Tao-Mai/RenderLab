@@ -2,7 +2,7 @@
 
 #include "render/FrameData.h"
 #include "render/PipelineManager.h"
-#include "render/feature/PointShadowPass.h"
+#include "render/feature/PointLightShadowPass.h"
 #include "render/feature/RenderGraph.h"
 
 #include <memory>
@@ -24,7 +24,7 @@ public:
         RenderGraph::ImageHandle depth;
     };
 
-    Output setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle, PointShadowPass::Output shadow);
+    Output setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle, PointLightShadowPass::Output shadow);
     void   bindResources(RenderGraph& graph) const;
     void   execute(RenderGraph& graph) const;
 

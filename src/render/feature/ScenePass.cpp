@@ -32,7 +32,7 @@ void ScenePass::bindSceneDescriptor(vk::raii::CommandBuffer& commandBuffer, uint
 }
 
 ScenePass::Output
-ScenePass::setup(RenderGraph& targetGraph, RenderGraph::ImageHandle colorHandle, PointShadowPass::Output shadow)
+ScenePass::setup(RenderGraph& targetGraph, RenderGraph::ImageHandle colorHandle, PointLightShadowPass::Output shadow)
 {
     graph  = &targetGraph;
     vulkan = &graph->vulkan();
@@ -44,7 +44,7 @@ ScenePass::setup(RenderGraph& targetGraph, RenderGraph::ImageHandle colorHandle,
     pipelines      = renderContext().pipelineManager;
     resources      = renderContext().resources;
     color          = graph->write(colorHandle);
-    pointShadowMap = shadow.pointShadowMap;
+    pointShadowMap = shadow.pointLightShadowMap;
     skyboxShader   = renderContext().shaderManager->getOrLoad("skybox");
 
     const auto& brdf = context().config->rendererConfig().brdfLut;
