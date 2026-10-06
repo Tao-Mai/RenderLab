@@ -1,4 +1,4 @@
-#include "render/pass/EditorPickingCopyPass.h"
+#include "render/feature/editor/EditorPickingCopyPass.h"
 
 #include "core/Logger.h"
 #include "render/Renderer.h"

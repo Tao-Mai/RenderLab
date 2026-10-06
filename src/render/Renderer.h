@@ -9,7 +9,7 @@
 #include "render/DescriptorManager.h"
 #include "render/PipelineManager.h"
 #include "render/ShaderManager.h"
-#include "render/pass/RenderGraph.h"
+#include "render/feature/RenderGraph.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/RenderResourceManager.h"
 #include "scene/system/RenderSystem.h"

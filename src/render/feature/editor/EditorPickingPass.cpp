@@ -1,10 +1,9 @@
-#include "render/pass/EditorPickingPass.h"
+#include "render/feature/editor/EditorPickingPass.h"
 
 #include "core/Logger.h"
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
-#include "render/pass/RenderGraph.h"
-#include "render/pass/ScenePass.h"
+#include "render/feature/RenderGraph.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/ShaderData.h"
 #include "scene/system/RenderSystem.h"
@@ -14,6 +13,11 @@
 
 EditorPickingPass::Output EditorPickingPass::setup(RenderGraph& graph, RenderGraph::ImageHandle depthHandle)
 {
+    CHECK(
+        graph.vulkan().physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures &
+        vk::FormatFeatureFlagBits::eDepthStencilAttachment
+    );
+
     pipelines = renderContext().pipelineManager;
     shader    = renderContext().shaderManager->getOrLoad("picking");
 
@@ -21,7 +25,7 @@ EditorPickingPass::Output EditorPickingPass::setup(RenderGraph& graph, RenderGra
     depth             = depthHandle;
     ownsDepth         = depth.id == RenderGraph::kInvalidHandle;
     if (ownsDepth)
-        depth = graph.createImage({.format = graph.depthFormat(), .extent = {extent.width, extent.height, 1}});
+        depth = graph.createImage({.format = vk::Format::eD32Sfloat, .extent = {extent.width, extent.height, 1}});
     graph.use(
         depth,
         {
@@ -50,7 +54,7 @@ EditorPickingPass::Output EditorPickingPass::setup(RenderGraph& graph, RenderGra
                 .layout      = PipelineLayoutPreset::SceneOnly,
                 .state       = state,
                 .colorFormat = vk::Format::eR32Uint,
-                .depthFormat = graph.depthFormat(),
+                .depthFormat = vk::Format::eD32Sfloat,
     });
     pipelineLayout   = pipelines->layout(PipelineLayoutPreset::SceneOnly);
     return {pickingImage};
@@ -104,7 +108,7 @@ void EditorPickingPass::execute(RenderGraph& graph) const
     const vk::RenderingAttachmentInfo depthAttachment{
         .imageView   = graph.getImage(depth).getOrCreateImageView({
               .viewType         = vk::ImageViewType::e2D,
-              .format           = graph.depthFormat(),
+              .format           = vk::Format::eD32Sfloat,
               .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
         }),
         .imageLayout = ownsDepth ? vk::ImageLayout::eDepthAttachmentOptimal : vk::ImageLayout::eDepthReadOnlyOptimal,

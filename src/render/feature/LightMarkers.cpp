@@ -1,4 +1,4 @@
-#include "render/pass/LightMarkers.h"
+#include "render/feature/LightMarkers.h"
 
 #include "asset/BuiltinAssets.h"
 #include "scene/component/TransformComponent.h"

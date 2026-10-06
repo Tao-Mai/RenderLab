@@ -61,7 +61,7 @@ add_test(NAME RenderLabTests COMMAND RenderLabTests)
 add_executable(RenderGraphTests
         RenderGraphTest.cpp
         ShaderDataTest.cpp
-        ${PROJECT_SOURCE_DIR}/src/render/pass/RenderGraphSetup.cpp
+        ${PROJECT_SOURCE_DIR}/src/render/feature/RenderGraphSetup.cpp
 )
 target_include_directories(RenderGraphTests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_dependencies(RenderGraphTests RenderLabShaders)
