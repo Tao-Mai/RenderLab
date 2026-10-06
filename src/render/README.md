@@ -12,11 +12,11 @@
 | `DescriptorManager` | 预设和反射 Layout、Layout cache、Pool、Set allocation | Layout/Pool 为 device 级；Set 随使用者 |
 | `PipelineManager` | PipelineLayout、RenderMode 模板、PipelineKey cache | device 级 |
 | `RenderResourceManager` | Mesh/Texture/Material/Sampler 资产到 GPU 对象的映射和缓存 | 资产级；当前缓存至 Renderer 关闭 |
-| `RenderGraph` | 串接 Pass、合并 usage、分配内部资源、barrier 和命令录制 | Graph 长期存在；内部资源在 setup 时重建 |
+| `RenderGraph` | 登记节点、合并 usage、编译依赖、分配内部资源、barrier 和命令录制 | Graph 长期存在；内部资源在重新组图并 compile 时重建 |
 | `FrameContext` | CommandPool/Buffer、Fence、imageAvailable，以及一个 FrameData | 每个 frame-in-flight 一份 |
 | `FrameData` | View/Light CPU 数据与 UBO、灯光/点阴影 SSBO、Scene Set、数据上传与扩容 | 由对应 FrameContext 持有 |
 
-Renderer 持有上述模块和 `RenderSystem`。Graph 持有 PointShadow、Scene、LightMarker、RayTracing、RayTracingBlit、EditorPicking、EditorPickingCopy、EditorUi 和终点节点。终点依赖最终颜色和 readback buffer，声明 Present 和 HostRead 状态；CPU 拾取读取由 Graph 在 fence 完成后提供，不再单设 Readback Pass。Skybox 的 ShaderHandle、Pipeline/Layout 引用和命令录制统一放在 ScenePass 内部；LightMarkerPass 独立管理灯光标记的 ShaderHandle、Pipeline/Layout 和绘制，在 Scene 之后加载颜色和深度附件。光栅 Pipeline 由 PipelineManager 缓存，光追 Pipeline/SBT/BLAS/TLAS 由 RayTracingPass 持有；Pass 直接接收类型化句柄或前序 Pass 的 Output，通过 Image 对象取得缓存 View。
+Renderer 持有上述模块、`RenderSystem` 和各 Pass 对象，负责按配置组图。Graph 持有对应节点，不依赖具体 Pass 类型。终点依赖最终颜色和 readback buffer，声明 Present 和 HostRead 状态；Renderer 保存 PickingCopy 的 readback handle，在 fence 完成后通过 Graph 的 getBuffer 下载 selection ID，不再单设 Readback Pass。Skybox 的 ShaderHandle、Pipeline/Layout 引用和命令录制统一放在 ScenePass 内部；LightMarkerPass 独立管理灯光标记的 ShaderHandle、Pipeline/Layout 和绘制，在 Scene 之后加载颜色和深度附件。光栅 Pipeline 由 PipelineManager 缓存，光追 Pipeline/SBT/BLAS/TLAS 由 RayTracingPass 持有；Pass 直接接收类型化句柄或前序 Pass 的 Output，通过 Image 对象取得缓存 View。
 
 ## 光栅化与光追路线
 
@@ -73,20 +73,20 @@ GpuMaterial 根据 alpha mode 选择 Opaque、AlphaTest 或 Transparent。Materi
 
 ## 初始化与加载场景
 
-Renderer init 依次初始化 device、swapchain、各 Manager、FrameContext、RenderResourceManager 和 Graph。四个 Manager 由 Renderer 持有，通过 renderContext() 暴露；Renderer 显式调用 init/shutdown。Graph init 选择深度格式并创建 Pass 对象。
+Renderer init 依次初始化 device、swapchain、各 Manager、FrameContext、RenderResourceManager 和 Graph，并创建 Pass 对象。四个 Manager 由 Renderer 持有，通过 renderContext() 暴露；Renderer 显式调用 init/shutdown。Graph init 只建立对 Renderer 的引用。
 
-Renderer loadScene 等待 GPU 空闲，RenderSystem 加载渲染项并建立对资产 GPU 对象的引用，随后 Graph setup 按配置串接各 Pass。ScenePass setup 加载 BRDF LUT、更新环境绑定；Graph 合并 usage 并分配资源后，ScenePass 绑定阴影 descriptor。具体材质 Pipeline 在首次绘制时创建并缓存。
+Renderer loadScene 等待 GPU 空闲，RenderSystem 加载渲染项并建立对资产 GPU 对象的引用，随后 setupRenderGraph 按配置串接各 Pass 并调用 Graph compile。ScenePass setup 加载 BRDF LUT、更新环境绑定；Graph 分配资源后，Renderer 调用 ScenePass 绑定阴影 descriptor。具体材质 Pipeline 在首次绘制时创建并缓存。
 
 资产 GPU 缓存跨场景保留。RenderSystem 不拥有 Mesh/Texture/Material 的 GPU 存储。
 
 ## RenderGraph 接口
 
 各 Pass 提供 setup/execute；setup 直接接收 ImageHandle/BufferHandle 或前序 Pass 的 Output，返回 Output。
-Graph setup 根据 renderer 配置通过 setupPass<T>(args...) 完美转发参数，显式串接资源句柄；ScenePass 直接接收 color 和 PointShadowPass::Output。
-所有 Pass 类型只在 RenderGraph.cpp 的类型列表中集中声明一次，tuple 的每项保存 Pass 对象和 PassNode，通过类型直接访问。
-setupPass 内部限定访问记录的切换范围并在返回时恢复；Pass 仍调用 graph.use(handle, access)。节点保存资源依赖、use 记录和 execute 回调，不使用字符串注册。
-类型列表和模板定义只放在 cpp，RenderGraph.h 不包含各 Pass 的头文件。
-Renderer 在 setup 后显式调用 compile，从 EndPass 回溯资源依赖、补充写前读约束，并将保留节点按拓扑顺序写入 sortedNodes。execute 只遍历 sortedNodes，先转换节点声明的资源状态，再调用执行回调。暂不实现资源复用。
+Renderer setupRenderGraph 根据配置通过 setupPass<T>(args...) 完美转发参数，显式串接资源句柄；ScenePass 直接接收 color 和 PointShadowPass::Output。Graph 不再提供业务组图的 setup 接口。
+所有 Pass 类型只在 Renderer.cpp 的 tuple 类型列表中集中声明一次，保存 Pass 对象，通过类型直接访问。
+Renderer 的 setupPass 将 Pass 对象交给 graph.addPass；addPass 通过静态反射收集参数中的 handle，限定访问记录的切换范围并在返回时恢复。Pass 仍调用 graph.use(handle, access)。Graph 单独拥有节点，保存资源依赖、use 记录和 execute 回调，不使用字符串注册。
+类型列表和 Renderer 的 setupPass 模板定义只放在 cpp；RenderGraph.h 定义通用模板，不包含各 Pass 的头文件。
+Renderer 在组图后显式调用 compile，从 EndPass 回溯资源依赖、补充写前读约束，将保留节点按拓扑顺序写入 sortedNodes 并分配资源。execute 只遍历 sortedNodes，先转换节点声明的资源状态，再调用执行回调。暂不实现资源复用。
 
 - createImage/createBuffer 只描述创建属性。
 - importSwapchain 借用交换链图像。
@@ -126,7 +126,7 @@ Graph 保留每个物理资源实例的状态。布局变化或前后涉及写�
 
 ## Resize 与销毁
 
-最小化时等待非零 framebuffer 尺寸。重建时先等待 GPU 空闲，先释放 Graph 资源与缓存 View，再重建交换链图像、视图和 presentation Semaphore，调用 Graph setup 重建内部图资源、更新 attachment Pipeline/descriptor，最后刷新编辑器 UI。Shader、Descriptor Layout、资产 GPU 资源和 FrameContext 不因 resize 重新创建。
+最小化时等待非零 framebuffer 尺寸。重建时先等待 GPU 空闲，先释放 Graph 资源与缓存 View，再重建交换链图像、视图和 presentation Semaphore，由 Renderer setupRenderGraph 重新组图并 compile、更新 attachment Pipeline/descriptor，最后刷新编辑器 UI。Shader、Descriptor Layout、资产 GPU 资源和 FrameContext 不因 resize 重新创建。
 
 shutdown 先等待 device 空闲，再释放 RenderSystem、Graph/Pass、资产 GPU 资源、Pipeline、FrameContext、Descriptor、Shader、Swapchain，最后释放 VulkanContext。外部资源所有者的生命周期必须覆盖 Graph 的使用时间。
 

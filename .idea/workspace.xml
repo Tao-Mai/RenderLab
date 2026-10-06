@@ -69,28 +69,15 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="路径改造">
-      <change afterPath="$PROJECT_DIR$/src/render/feature/EndPass.cpp" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/render/feature/EndPass.h" afterDir="false" />
+    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="render graph">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/RenderGraph.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/RenderGraph.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/ARCH.MD" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/ARCH.MD" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/Renderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/Renderer.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/feature/PointShadowPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/PointShadowPass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/Renderer.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/Renderer.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/feature/RenderGraph.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/RenderGraph.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/feature/RenderGraph.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/RenderGraph.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/feature/RenderGraphSetup.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/RenderGraphSetup.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/feature/ScenePass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/ScenePass.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/feature/ScenePass.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/ScenePass.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/feature/editor/EditorPickingCopyPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/editor/EditorPickingCopyPass.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/feature/editor/EditorPickingPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/editor/EditorPickingPass.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/feature/editor/EditorPickingReadbackPass.cpp" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/feature/editor/EditorPickingReadbackPass.h" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/feature/editor/EditorUiPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/editor/EditorUiPass.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/raytracing/RayTracingBlitPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/raytracing/RayTracingBlitPass.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/raytracing/RayTracingPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/raytracing/RayTracingPass.cpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -103,7 +90,7 @@
     </persistenceIdMap>
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="1275" />
+    <option name="cachedIndexableFilesCount" value="1344" />
   </component>
   <component name="ExecutionTargetManager" SELECTED_TARGET="CMakeBuildProfile:Default-gcc 16.2" />
   <component name="FormatOnSaveOptions">
@@ -133,6 +120,7 @@
     <setting file="file://$PROJECT_DIR$/../../../tmp/vcpkg/installed/x64-windows/include/vulkan/vulkan_raii.hpp" root0="SKIP_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../../tmp/vcpkg/installed/x64-windows/include/vulkan/vulkan_structs.hpp" root0="SKIP_HIGHLIGHTING" />
     <setting file="mock://D:/study/project/graphics/own/RenderLab/src/render/device/VulkanContext.cpp" root0="SKIP_HIGHLIGHTING" />
+    <setting file="mock://D:/study/project/graphics/own/RenderLab/src/render/feature/RenderGraph.h" root0="SKIP_HIGHLIGHTING" />
   </component>
   <component name="MacroExpansionManager">
     <option name="directoryName" value="7Hc8KvBN" />
@@ -143,61 +131,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.0" />
-      <entry key="MS500" value="1.0" />
-      <entry key="S2" value="1.0" />
-      <entry key="S5" value="1.0" />
-      <entry key="S10" value="1.0000000024299396" />
-      <entry key="S30" value="1.0041349394928067" />
-      <entry key="S60" value="1.1737452321504982" />
-      <entry key="M2" value="2.175824068304607" />
-      <entry key="M5" value="5.096535178925214" />
-      <entry key="M10" value="8.53700679804093" />
-      <entry key="M15" value="12.114478612525977" />
-      <entry key="M30" value="25.183186819528935" />
-      <entry key="H1" value="52.36603770493128" />
-      <entry key="H2" value="96.72460590470972" />
-      <entry key="H4" value="157.19285070221707" />
-      <entry key="D1" value="637.2245337408935" />
-      <entry key="W1" value="2294.181923199981" />
+      <entry key="MS100" value="1.0000984670116237" />
+      <entry key="MS500" value="1.158000387306601" />
+      <entry key="S2" value="1.6304701622396474" />
+      <entry key="S5" value="1.831506819063088" />
+      <entry key="S10" value="1.9118699575242988" />
+      <entry key="S30" value="1.9703066572152679" />
+      <entry key="S60" value="2.0132224750366228" />
+      <entry key="M2" value="2.33127586181379" />
+      <entry key="M5" value="4.419474431587128" />
+      <entry key="M10" value="7.884243727598183" />
+      <entry key="M15" value="11.453441372368983" />
+      <entry key="M30" value="24.246762639056715" />
+      <entry key="H1" value="51.21874340008872" />
+      <entry key="H2" value="95.77302148137103" />
+      <entry key="H4" value="156.7759139965679" />
+      <entry key="D1" value="637.5810528527817" />
+      <entry key="W1" value="2295.3357086550873" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
       <entry key="MS500" value="0.0" />
       <entry key="S2" value="0.0" />
-      <entry key="S5" value="1.0460320512855425E-243" />
-      <entry key="S10" value="3.234241876059274E-122" />
-      <entry key="S30" value="3.186086067508269E-41" />
-      <entry key="S60" value="5.645166346164811E-21" />
-      <entry key="M2" value="7.614582823592624E-11" />
-      <entry key="M5" value="1.214774362732435E-4" />
-      <entry key="M10" value="0.028289756033000938" />
-      <entry key="M15" value="0.24033739796439735" />
-      <entry key="M30" value="2.5240578100537983" />
-      <entry key="H1" value="9.72301852401672" />
-      <entry key="H2" value="23.701537290939324" />
-      <entry key="H4" value="44.253050072811824" />
-      <entry key="D1" value="174.3419158136525" />
-      <entry key="W1" value="513.0031553805286" />
+      <entry key="S5" value="4.358672947717628E-263" />
+      <entry key="S10" value="6.602024649846153E-132" />
+      <entry key="S30" value="1.8759692642593677E-44" />
+      <entry key="S60" value="1.3698116371286148E-22" />
+      <entry key="M2" value="1.1861460546509989E-11" />
+      <entry key="M5" value="5.774208201807127E-5" />
+      <entry key="M10" value="0.019504176255875225" />
+      <entry key="M15" value="0.1875657892173565" />
+      <entry key="M30" value="2.2297975529753247" />
+      <entry key="H1" value="9.138694967180124" />
+      <entry key="H2" value="22.97830817257605" />
+      <entry key="H4" value="43.572650261577024" />
+      <entry key="D1" value="173.89226937059726" />
+      <entry key="W1" value="512.8139332684019" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="5.026800642502278E-5" />
-      <entry key="MS500" value="0.13812056059998895" />
-      <entry key="S2" value="0.6096275470381516" />
-      <entry key="S5" value="0.8204003429403908" />
-      <entry key="S10" value="0.905759541677794" />
-      <entry key="S30" value="0.9716789099410462" />
-      <entry key="S60" value="1.157371732519283" />
-      <entry key="M2" value="2.167569690564031" />
-      <entry key="M5" value="5.093304912695349" />
-      <entry key="M10" value="8.563437945910419" />
-      <entry key="M15" value="12.352887996825173" />
-      <entry key="M30" value="27.703212889339607" />
-      <entry key="H1" value="62.082092335355576" />
-      <entry key="H2" value="120.41694272119334" />
-      <entry key="H4" value="201.436602110576" />
-      <entry key="D1" value="811.5599943414328" />
-      <entry key="W1" value="2807.18221731323" />
+      <entry key="MS100" value="0.9526530467607418" />
+      <entry key="MS500" value="1.098860400383155" />
+      <entry key="S2" value="1.5715281321919554" />
+      <entry key="S5" value="1.7998778692849617" />
+      <entry key="S10" value="1.8944159175574888" />
+      <entry key="S30" value="1.964072990519205" />
+      <entry key="S60" value="2.0096661814377725" />
+      <entry key="M2" value="2.3283974665890828" />
+      <entry key="M5" value="4.417298785221228" />
+      <entry key="M10" value="7.902145871119588" />
+      <entry key="M15" value="11.639288617857822" />
+      <entry key="M30" value="26.472891487196172" />
+      <entry key="H1" value="60.35083947066372" />
+      <entry key="H2" value="118.74238316342834" />
+      <entry key="H4" value="200.33939518191355" />
+      <entry key="D1" value="811.4668814287108" />
+      <entry key="W1" value="2808.1467813929844" />
     </decayedShown>
   </component>
   <component name="ProjectApplicationVersion">
@@ -233,48 +221,48 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
-    "CMake Application.RenderLab.executor": "Run",
-    "CMake 应用程序.RenderLab.executor": "Run",
-    "CidrDebugProfileConversion": "true",
-    "Google Test.SceneAsset.FileRoundTrip.executor": "Run",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.MCP Project settings loaded": "true",
-    "RunOnceActivity.RadMigrateCodeStyle": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.cidr.known.project.marker": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.readMode.enableVisualFormatting": "true",
-    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "RunOnceActivity.west.config.association.type.startup.service": "true",
-    "cf.advertisement.text.overridden": "true",
-    "cf.first.check.clang-format": "false",
-    "cidr.known.project.marker": "true",
-    "codeWithMe.voiceChat.enabledByDefault": "false",
-    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
-    "copilot.chat.legacySessionMetadata.migrated": "true",
-    "ctest.advertisement.all.test.configuration.is.created": "true",
-    "full.screen.before.presentation.mode": "false",
-    "git-widget-placeholder": "main",
-    "junie.onboarding.icon.badge.shown": "true",
-    "last_opened_file_path": "D:/study/project/graphics/own/RenderLab",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.jshint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.jshint": "",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "org.rust.first.attach.projects": "true",
-    "settings.editor.selected.configurable": "preferences.general",
-    "settings.editor.splitter.proportion": "0.24561404",
-    "to.speed.mode.migration.done": "true",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ASKED_MARK_IGNORED_FILES_AS_EXCLUDED&quot;: &quot;true&quot;,
+    &quot;CMake Application.RenderLab.executor&quot;: &quot;Run&quot;,
+    &quot;CMake 应用程序.RenderLab.executor&quot;: &quot;Run&quot;,
+    &quot;CidrDebugProfileConversion&quot;: &quot;true&quot;,
+    &quot;Google Test.SceneAsset.FileRoundTrip.executor&quot;: &quot;Run&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.RadMigrateCodeStyle&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.west.config.association.type.startup.service&quot;: &quot;true&quot;,
+    &quot;cf.advertisement.text.overridden&quot;: &quot;true&quot;,
+    &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
+    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
+    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
+    &quot;copilot.chat.legacySessionMetadata.migrated&quot;: &quot;true&quot;,
+    &quot;ctest.advertisement.all.test.configuration.is.created&quot;: &quot;true&quot;,
+    &quot;full.screen.before.presentation.mode&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;D:/study/project/graphics/own/RenderLab&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.jshint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.jshint&quot;: &quot;&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;org.rust.first.attach.projects&quot;: &quot;true&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.general&quot;,
+    &quot;settings.editor.splitter.proportion&quot;: &quot;0.24561404&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="D:\study\project\graphics\own\RenderLab\docs" />
@@ -284,11 +272,6 @@
     </key>
   </component>
   <component name="RunManager" selected="CMake 应用程序.RenderLab">
-    <configuration default="true" type="CLionExternalRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
-      <method v="2">
-        <option name="CLION.EXTERNAL.BUILD" enabled="true" />
-      </method>
-    </configuration>
     <configuration name="RenderGraphTests" type="CMakeGoogleTestRunConfigurationType" factoryName="Google Test" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="RenderLab" TARGET_NAME="RenderGraphTests" CONFIG_NAME="Default-gcc 16.2" RUN_TARGET_PROJECT_NAME="RenderLab" RUN_TARGET_NAME="RenderGraphTests" TEST_MODE="SUITE_TEST">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
@@ -760,7 +743,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="environment map" />
     <MESSAGE value="vk check" />
     <MESSAGE value="rename" />
     <MESSAGE value="renderer" />
@@ -785,7 +767,8 @@
     <MESSAGE value="开始调整rendergraph架构" />
     <MESSAGE value="rendergraph改造" />
     <MESSAGE value="路径改造" />
-    <option name="LAST_COMMIT_MESSAGE" value="路径改造" />
+    <MESSAGE value="render graph" />
+    <option name="LAST_COMMIT_MESSAGE" value="render graph" />
   </component>
   <component name="XDebuggerManager">
     <watches-manager>

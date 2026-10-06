@@ -11,9 +11,46 @@
 #include "core/Window.h"
 #include "editor/Editor.h"
 #include "render/device/VkCheck.h"
+#include "render/feature/EndPass.h"
+#include "render/feature/PointShadowPass.h"
+#include "render/feature/ScenePass.h"
+#include "render/feature/editor/EditorPickingCopyPass.h"
+#include "render/feature/editor/EditorPickingPass.h"
+#include "render/feature/editor/EditorUiPass.h"
+#include "render/feature/editor/LightMarkerPass.h"
+#include "render/raytracing/RayTracingBlitPass.h"
+#include "render/raytracing/RayTracingPass.h"
+#include "render/resource/Buffer.h"
 #include "scene/component/CameraComponent.h"
 
 #include <glm/gtc/matrix_inverse.hpp>
+
+#include <tuple>
+#include <utility>
+
+struct Renderer::Passes
+{
+    std::tuple<
+        PointShadowPass,
+        ScenePass,
+        LightMarkerPass,
+        RayTracingPass,
+        RayTracingBlitPass,
+        EditorPickingPass,
+        EditorPickingCopyPass,
+        EditorUiPass,
+        EndPass>
+        data;
+
+    template <class T>
+    T& get() { return std::get<T>(data); }
+};
+
+template <class T, class... Args>
+auto Renderer::setupPass(Args&&... args)
+{
+    return graph.addPass(passes->get<T>(), std::forward<Args>(args)...);
+}
 
 Renderer::~Renderer() { DCHECK(!inited); }
 
@@ -56,8 +93,7 @@ void Renderer::loadScene()
         const auto& prefiltered = context().assetManager->get<TextureAsset>(environment.prefilteredSpecular.textureID);
         iblParameters.x         = static_cast<float>(prefiltered.mipLevels - 1);
     }
-    graph.setup();
-    graph.compile();
+    setupRenderGraph();
 }
 
 void Renderer::waitIdle()
@@ -80,6 +116,8 @@ void Renderer::shutdown() noexcept
 
     renderSystem.reset();
     graph.reset();
+    passes.reset();
+    pickingReadback = {};
     ctx.resources->shutdown();
     ctx.pipelineManager->shutdown();
     for (FrameContext& frame : frames)
@@ -124,6 +162,42 @@ void Renderer::initVulkan()
     ctx.resources->init(vulkan, *ctx.descriptors, *ctx.shaderManager);
 
     graph.init();
+    passes = std::make_shared<Passes>();
+}
+
+void Renderer::setupRenderGraph()
+{
+    DCHECK(passes);
+    waitIdle();
+    graph.releaseResources();
+
+    const auto               color = graph.importSwapchain();
+    RenderGraph::ImageHandle sceneColor;
+    RenderGraph::ImageHandle sceneDepth;
+    const bool               rayTracing = context().config->rendererConfig().renderPath == RenderPath::RayTracing;
+    if (rayTracing)
+    {
+        const auto [rayImage] = setupPass<RayTracingPass>();
+        sceneColor            = setupPass<RayTracingBlitPass>(rayImage, color).color;
+    }
+    else
+    {
+        const auto shadow  = setupPass<PointShadowPass>();
+        const auto scene   = setupPass<ScenePass>(color, shadow);
+        const auto markers = setupPass<LightMarkerPass>(scene.color, scene.depth);
+        sceneColor         = markers.color;
+        sceneDepth         = markers.depth;
+    }
+
+    const auto [pickingImage] = setupPass<EditorPickingPass>(sceneDepth);
+    const auto [readback]     = setupPass<EditorPickingCopyPass>(pickingImage);
+    const auto [finalColor]   = setupPass<EditorUiPass>(sceneColor);
+    setupPass<EndPass>(finalColor, readback);
+    pickingReadback = readback;
+
+    graph.compile();
+    if (!rayTracing)
+        passes->get<ScenePass>().bindResources(graph);
 }
 
 void Renderer::recreateSwapchain()
@@ -147,8 +221,7 @@ void Renderer::recreateSwapchain()
     graph.releaseResources();
     swapchain.reset();
     swapchain.init(vulkan, window);
-    graph.setup();
-    graph.compile();
+    setupRenderGraph();
     context().editor->refreshUi();
 }
 
@@ -251,8 +324,10 @@ EditorFrameResult Renderer::drawFrame(const CameraComponent& camera, const Edito
         const vk::Result pickFenceResult = vulkan.deviceHandle().waitForFences(drawFence, vk::True, UINT64_MAX);
         CHECK(pickFenceResult == vk::Result::eSuccess, "failed to wait for object picking readback");
 
-        frameResult.hasPickResult     = true;
-        frameResult.pickedSelectionId = graph.readSelectionId(frameIndex);
+        graph.getBuffer(pickingReadback, frameIndex).download(
+            &frameResult.pickedSelectionId, sizeof(frameResult.pickedSelectionId)
+        );
+        frameResult.hasPickResult = true;
     }
     if (acquireResult == vk::Result::eSuboptimalKHR || presentResult == vk::Result::eSuboptimalKHR ||
         presentResult == vk::Result::eErrorOutOfDateKHR)

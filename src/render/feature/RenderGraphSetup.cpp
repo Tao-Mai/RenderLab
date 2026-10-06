@@ -127,7 +127,7 @@ bool RenderGraph::needsBarrier(const ImageAccess& previous, const ImageAccess& n
     return previous.layout != next.layout || static_cast<bool>((previous.access | next.access) & kWriteAccess);
 }
 
-void RenderGraph::compile()
+void RenderGraph::compileNodes()
 {
     DCHECK(!setupNode);
     CHECK(!nodes.empty());
