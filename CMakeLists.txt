@@ -124,6 +124,7 @@ foreach (enable_ibl IN ITEMS 1 0)
             -o "${scene_binary}"
             DEPENDS "${SHADER_SOURCE_DIR}/shader.slang"
             "${SHADER_SOURCE_DIR}/scene_data.slang"
+            "${SHADER_SOURCE_DIR}/sampling.slang"
             "${SHADER_SOURCE_DIR}/brdf.slang"
             "${SHADER_SOURCE_DIR}/constant.slang"
             COMMENT "Compiling Slang scene shader (ENABLE_IBL=${enable_ibl})"
@@ -290,6 +291,8 @@ add_executable(RenderLab
         src/editor/ComponentDraw.h
         src/editor/EditorUi.cpp
         src/editor/EditorUi.h
+        src/editor/MeshImportPreview.cpp
+        src/editor/MeshImportPreview.h
         src/editor/ViewportRect.h
         src/asset/AssetManager.cpp
         src/asset/Asset.h

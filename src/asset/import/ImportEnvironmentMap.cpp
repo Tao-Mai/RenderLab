@@ -342,11 +342,11 @@ std::optional<AssetImporter::PreparedEnvironmentMap> AssetImporter::prepareEnvir
 EnvironmentMapAsset::ID AssetImporter::saveEnvironmentMap(PreparedEnvironmentMap&& prepared)
 {
     const std::filesystem::path& source = prepared.source;
-    prepared.radiance.id = asset_import::nextId<TextureAsset>(source);
+    prepared.radiance.id = asset_import::nextId<TextureAsset>(source.stem().string());
     prepared.irradiance.id = asset_import::nextId<TextureAsset>(
-        sourceWithSuffix(source, "_irradiance"));
+        sourceWithSuffix(source, "_irradiance").stem().string());
     prepared.prefiltered.id = asset_import::nextId<TextureAsset>(
-        sourceWithSuffix(source, "_prefiltered_specular"));
+        sourceWithSuffix(source, "_prefiltered_specular").stem().string());
 
     LOG_INFO("Writing environment textures: radiance {} bytes, irradiance {} bytes, "
              "prefiltered {} bytes",
@@ -360,7 +360,7 @@ EnvironmentMapAsset::ID AssetImporter::saveEnvironmentMap(PreparedEnvironmentMap
         saveTexture(std::move(prepared.prefiltered), source, prepared.prefilteredBytes);
 
     EnvironmentMapAsset environment{};
-    environment.id       = asset_import::nextId<EnvironmentMapAsset>(source);
+    environment.id       = asset_import::nextId<EnvironmentMapAsset>(source.stem().string());
     environment.radiance = TextureBinding{
         radianceId, BuiltinAssets::Sampler::linearClamp};
     environment.irradiance = TextureBinding{

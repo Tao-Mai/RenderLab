@@ -1,14 +1,21 @@
 #pragma once
 
 #include "asset/Asset.h"
+#include "asset/MeshGeometry.h"
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <span>
 #include <stop_token>
 #include <variant>
 #include <vector>
+
+namespace tinygltf
+{
+class Model;
+}
 
 struct ImportTextureSetting
 {
@@ -19,6 +26,8 @@ struct ImportTextureSetting
 struct ImportMeshSetting
 {
     std::filesystem::path source;
+    MeshAsset::ID         id;
+    float                 importScale = 1.0f;
 };
 
 struct ImportEnvironmentMapSetting
@@ -39,25 +48,44 @@ struct ImportEnvironmentMapSetting
 class AssetImporter
 {
 public:
+    struct PreparedMesh
+    {
+        struct Submesh
+        {
+            uint32_t firstIndex;
+            uint32_t indexCount;
+            int      materialIndex;
+        };
+
+        std::filesystem::path            source;
+        MeshGeometry                     geometry;
+        std::vector<Submesh>             submeshes;
+        glm::vec3                        boundsMin{0.0f};
+        glm::vec3                        boundsMax{0.0f};
+        std::shared_ptr<tinygltf::Model> model;
+    };
+
     struct PreparedEnvironmentMap
     {
         std::filesystem::path source;
-        TextureAsset radiance;
-        TextureAsset irradiance;
-        TextureAsset prefiltered;
-        std::vector<uint8_t> radianceBytes;
-        std::vector<uint8_t> irradianceBytes;
-        std::vector<uint8_t> prefilteredBytes;
+        TextureAsset          radiance;
+        TextureAsset          irradiance;
+        TextureAsset          prefiltered;
+        std::vector<uint8_t>  radianceBytes;
+        std::vector<uint8_t>  irradianceBytes;
+        std::vector<uint8_t>  prefilteredBytes;
     };
 
     static TextureAsset::ID importTexture(const ImportTextureSetting& setting);
 
     static EnvironmentMapAsset::ID importEnvironmentMap(const ImportEnvironmentMapSetting& setting);
-    [[nodiscard]] static std::optional<PreparedEnvironmentMap> prepareEnvironmentMap(
-        const ImportEnvironmentMapSetting& setting, std::stop_token stop = {});
+    [[nodiscard]] static std::optional<PreparedEnvironmentMap>
+    prepareEnvironmentMap(const ImportEnvironmentMapSetting& setting, std::stop_token stop = {});
     static EnvironmentMapAsset::ID saveEnvironmentMap(PreparedEnvironmentMap&& prepared);
 
-    static MeshAsset::ID importMesh(const ImportMeshSetting& setting);
+    static MeshAsset::ID              importMesh(const ImportMeshSetting& setting);
+    [[nodiscard]] static PreparedMesh prepareMesh(const std::filesystem::path& source);
+    static MeshAsset::ID              saveMesh(PreparedMesh&& prepared, const ImportMeshSetting& setting);
 
 private:
     struct LoadedImage
@@ -72,7 +100,7 @@ private:
         {
             Exr,
             Hdr,
-            JPEG, // Other 8-bit formats decoded by stb use the same color-space default.
+            JPEG,  // Other 8-bit formats decoded by stb use the same color-space default.
         };
 
         ImageFormat                                            format;
@@ -85,39 +113,37 @@ private:
 
     struct CubemapPixels
     {
-        std::vector<float> linear;
+        std::vector<float>   linear;
         std::vector<uint8_t> encoded;
     };
 
     [[nodiscard]] static LoadedImage loadImage(const std::filesystem::path& source);
-    [[nodiscard]] static ColorSpace defaultColorSpace(LoadedImage::FileFormat format);
-    [[nodiscard]] static LoadedImage::Projection environmentProjection(
-        const LoadedImage& image, const std::filesystem::path& source);
+    [[nodiscard]] static ColorSpace  defaultColorSpace(LoadedImage::FileFormat format);
+    [[nodiscard]] static LoadedImage::Projection
+    environmentProjection(const LoadedImage& image, const std::filesystem::path& source);
     [[nodiscard]] static CubemapPixels environmentCubemap(
-        const LoadedImage& image,
-        LoadedImage::Projection projection,
-        uint32_t side,
-        ImageFormat format,
-        ColorSpace colorSpace,
-        const std::filesystem::path& source);
-    static void buildMipmapChain(
-        CubemapPixels& cubemap,
-        const TextureAsset& radiance,
-        std::stop_token stop = {});
+        const LoadedImage&           image,
+        LoadedImage::Projection      projection,
+        uint32_t                     side,
+        ImageFormat                  format,
+        ColorSpace                   colorSpace,
+        const std::filesystem::path& source
+    );
+    static void buildMipmapChain(CubemapPixels& cubemap, const TextureAsset& radiance, std::stop_token stop = {});
     [[nodiscard]] static std::vector<uint8_t> irradianceCubemap(
-        const TextureAsset& radiance,
+        const TextureAsset&    radiance,
         std::span<const float> radiancePixels,
-        uint32_t side,
-        uint32_t sampleCount,
-        std::stop_token stop = {});
+        uint32_t               side,
+        uint32_t               sampleCount,
+        std::stop_token        stop = {}
+    );
     [[nodiscard]] static std::vector<uint8_t> prefilterSpecularMap(
-        const TextureAsset& radiance,
+        const TextureAsset&    radiance,
         std::span<const float> radiancePixels,
-        uint32_t sampleCount,
-        uint32_t maxSampleCount,
-        std::stop_token stop = {});
-    [[nodiscard]] static TextureAsset::ID saveTexture(
-        TextureAsset                  asset,
-        const std::filesystem::path& source,
-        std::span<const uint8_t>     bytes);
+        uint32_t               sampleCount,
+        uint32_t               maxSampleCount,
+        std::stop_token        stop = {}
+    );
+    [[nodiscard]] static TextureAsset::ID
+    saveTexture(TextureAsset asset, const std::filesystem::path& source, std::span<const uint8_t> bytes);
 };

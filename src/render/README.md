@@ -51,7 +51,7 @@ SceneManager 持有 AActor 和 Component。RenderSystem 整理场景对象，在
 | 1 Material | 1 | Base color sampler |
 | 1 Material | 2 | MaterialUniforms UBO |
 
-每个 FrameContext 持有一个 FrameData，后者管理 Scene Set、两个 UBO、灯光 SSBO 和点光源阴影 SSBO。ViewUniforms 包含 viewProjection、inverseViewProjection 和 cameraPosition，共 144 字节。LightUniforms 包含 lightCount、ambientCoefficient 和 iblParameters，共 32 字节；iblParameters.x 是 prefiltered specular 的最大 LOD。LightData 按 RenderSystem 的灯光顺序存放，每项 96 字节，包含 shadowidx；lightCount 包括禁用灯光。上传时，仅 enabled 且 castShadow 的点光源获得连续的 shadowidx，其余为 ~0u。PointShadowData 每项包含六个 VP，共 384 字节。
+每个 FrameContext 持有一个 FrameData，后者管理 Scene Set、两个 UBO、灯光 SSBO 和点光源阴影 SSBO。ViewUniforms 包含 viewProjection、inverseViewProjection 和 cameraPosition，共 144 字节。LightUniforms 包含 lightCount、ambientCoefficient、iblParameters 和 shadowParameters，共 48 字节；iblParameters.x 是 prefiltered specular 的最大 LOD，shadowParameters 的 x/y/z 分别为归一化点阴影深度 bias、方向空间 PCF 半径、逐像素旋转开关（0/1），w 预留为 0。LightData 按 RenderSystem 的灯光顺序存放，每项 96 字节，包含 shadowidx；lightCount 包括禁用灯光。上传时，仅 enabled 且 castShadow 的点光源获得连续的 shadowidx，其余为 ~0u。PointShadowData 每项包含六个 VP，共 384 字节。
 
 SSBO 至少分配一项以维持有效 descriptor；没有灯光时 lightCount 为 0，shader 不读取数组。数量增长时，在当前帧 fence 完成后扩容并更新该帧 descriptor，其他帧保持自己的 buffer。
 
@@ -61,7 +61,9 @@ GpuMaterial 持有 Material Set。set 2 Object 和 set 3 Pass 的编号已保留
 
 ## Shader、Descriptor 与 Pipeline
 
-`feature.shadow.enable` 控制阴影绘制和点光源阴影 VP 上传。关闭时上传的灯光不带 castShadow 标记，源场景中的灯光属性保持不变；保留阴影资源与 descriptor，重新开启即可继续使用。`feature.shadow.pointShadowMapSize` 指定每个 cube 面的分辨率，修改后重建图资源；容量仍为固定的四个点光源。编辑器提供阴影勾选框和设备支持范围内的常用分辨率，配置随其他渲染设置在正常关闭时保存。主 shader 当前的阴影采样仍是注释状态，不在此配置适配中修改。
+`feature.shadow.enable` 控制阴影绘制和点光源阴影 VP 上传。关闭时上传的灯光不带 castShadow 标记，源场景中的灯光属性保持不变；保留阴影资源与 descriptor，重新开启即可继续使用。`feature.shadow.pointShadowMapSize` 指定每个 cube 面的分辨率，修改后重建图资源；容量仍为固定的四个点光源。`feature.shadow.bias` 每帧上传到 LightUniforms.shadowParameters.x，调节时无需重建图资源。`feature.shadow.filter` 选择 Nearest 或 Linear 比较过滤，默认 Linear；切换时沿用现有渲染图重建流程，在等待 GPU 空闲后重建 sampler 并重新绑定 descriptor。编辑器 Shadows 区域提供阴影勾选框、过滤模式、常用分辨率和 Shadow bias，编辑只更新内存，配置随其他渲染设置在正常关闭时统一保存。
+
+点阴影 PCF 使用 `sampling.slang` 中独立的 16 点泊松圆盘表，32 点表保持原样供其他采样使用。`feature.shadow.pixelRotation` 控制稳定的逐像素旋转，`feature.shadow.sampleRadius` 控制方向空间采样半径，默认分别为 true 和 0.02；编辑器 Shadows 区域可直接调整，两项每帧通过 shadowParameters 上传，不重建图资源，同样只在关闭时持久化。
 
 构建阶段用 Slang 生成 SPIR-V 和 reflection JSON。主场景 shader 通过 `ENABLE_IBL=1/0` 编译为 `slang.spv` 和 `slang.no_ibl.spv`；关闭变体不执行环境光采样，而是使用 `ambientCoefficient * baseColor.rgb`。ShaderManager 根据 ShaderAsset ID 与 ShaderVariant 缓存模块和 descriptor 元数据，变体文件名在资产 binary 的后缀前加 `.no_ibl`。`config/renderer.json` 的 `feature.ibl` 显式控制变体，`feature.ambientCoefficient` 保存关闭 IBL 时的环境光系数，`environmentMap` 保存环境图选择。编辑器勾选 IBL 时显示环境图选择（不提供 None 选项），取消时显示系数调整；关闭 IBL 不丢弃已选环境图。未选择环境图时使用白色 cubemap 兜底，不隐式关闭 IBL，天空盒仍按环境图是否存在绘制。所有渲染设置正常关闭时统一持久化，不会连带保存场景物体编辑。Scene/Material descriptor layout、纹理声明和绑定保持不变。自定义场景材质 shader 也需要提供同名的关闭变体。
 

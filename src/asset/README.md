@@ -27,6 +27,8 @@ flowchart TB
 ### Asset
 
 `TextureAsset`、`MeshAsset`、`MaterialAsset`、`ShaderAsset`、`SceneAsset`、`EnvironmentMapAsset`、`SamplerAsset` 直接继承空基类 `Asset`，并直接声明持久化字段。
+
+Mesh 导入先通过 `prepareMesh` 解析节点变换、几何和包围盒，不写入资产。编辑器提供线框预览、原始/缩放后 XYZ 尺寸（米）、可旋转缩放的视图及 1 米参照立方体，也可输入目标最长边（米）自动计算导入比例。Mesh ID 可编辑，默认使用源文件名去掉扩展名；仅在确认导入时查重，重名则依次追加数字，输入框不会预先补序号。确认时 `saveMesh` 导入材质和纹理，将正的统一 `importScale` 烘焙到顶点位置后写入二进制；法线和 UV 不变。`MeshAsset.path` 保存源文件位置，`MeshAsset.importScale` 保存导入比例；运行时直接读取烘焙后的几何，不再应用这个比例。Actor 的 Transform Scale 仍仅表示实例缩放。
 `AssetTypes` 在定义末尾列出全部资产。`AssetType` 检查类型化 ID、`id` 字段和显式目录名 `dir`；JSON 存于 `assets/<dir>/`，例如 `assets/Texture/`，不依赖 C++ 类型名。
 `MaterialOverride` 是 `MaterialAsset` 的别名，表示物体局部覆写；有值的 optional 字段参与合并，ID 不参与覆写。
 `SamplerAsset` 保存 Vulkan sampler 的过滤、寻址、LOD、各向异性、比较和边框颜色参数。

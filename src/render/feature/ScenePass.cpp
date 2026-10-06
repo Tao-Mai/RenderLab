@@ -59,16 +59,25 @@ ScenePass::setup(RenderGraph& targetGraph, RenderGraph::ImageHandle colorHandle,
     brdfLutSampler = resources->sampler(brdf.samplerID);
     bindEnvironmentTextures();
 
-    if (!*shadowSampler)
-        shadowSampler = vkCheck(vulkan->deviceHandle().createSampler({
-            .magFilter    = vk::Filter::eNearest,
-            .minFilter    = vk::Filter::eNearest,
-            .mipmapMode   = vk::SamplerMipmapMode::eNearest,
-            .addressModeU = vk::SamplerAddressMode::eClampToEdge,
-            .addressModeV = vk::SamplerAddressMode::eClampToEdge,
-            .addressModeW = vk::SamplerAddressMode::eClampToEdge,
-            .maxLod       = 0.0f,
-        }));
+    const vk::Filter filter = context().config->rendererConfig().feature.shadow.filter ==
+            SamplerAsset::Filter::Linear
+        ? vk::Filter::eLinear
+        : vk::Filter::eNearest;
+    if (!*shadowSampler || shadowFilter != filter)
+    {
+        shadowSampler = vkCheck(vulkan->deviceHandle().createSampler(
+            {.magFilter     = filter,
+             .minFilter     = filter,
+             .mipmapMode    = vk::SamplerMipmapMode::eNearest,
+             .addressModeU  = vk::SamplerAddressMode::eClampToEdge,
+             .addressModeV  = vk::SamplerAddressMode::eClampToEdge,
+             .addressModeW  = vk::SamplerAddressMode::eClampToEdge,
+             .compareEnable = true,
+             .compareOp     = vk::CompareOp::eLessOrEqual,
+             .maxLod        = 0.0f}
+        ));
+        shadowFilter = filter;
+    }
 
     auto&      graph  = targetGraph;
     const auto extent = graph.swapchain().extent();

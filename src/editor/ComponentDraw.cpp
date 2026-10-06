@@ -149,6 +149,7 @@ bool drawMeshSelection(RenderComponent& render, const AssetManager& assets)
         if (ImGui::Selectable(id.c_str(), selected) && !selected)
         {
             render.meshId = id;
+            render.materialOverrides.clear();
             edited = true;
         }
         if (selected) ImGui::SetItemDefaultFocus();

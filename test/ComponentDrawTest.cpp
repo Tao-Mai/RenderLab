@@ -268,6 +268,8 @@ TEST_F(ComponentDrawTest, MeshSelectionReportsResourceChanges)
     context().assetManager = &assets;
     RenderComponent render;
     render.meshId = BuiltinAssets::Mesh::sphere;
+    render.materialOverrides[0].baseColorFactor = glm::vec4{0.2f, 0.8f, 0.3f, 1.0f};
+    render.materialOverrides[9].roughness = 0.3f;
     ImGuiID combo = 0;
     frame([&]
     {
@@ -277,6 +279,7 @@ TEST_F(ComponentDrawTest, MeshSelectionReportsResourceChanges)
 
     ImGui::ActivateItemByID(combo);
     frame([&] { (void)component_draw::drawFields(render); });
+    EXPECT_EQ(render.materialOverrides.size(), 2);
     auto* popup = ImGui::FindWindowByName("##Combo_00");
     ASSERT_NE(popup, nullptr);
     ASSERT_TRUE(popup->Active);
@@ -287,6 +290,7 @@ TEST_F(ComponentDrawTest, MeshSelectionReportsResourceChanges)
     EXPECT_EQ(render.meshId, BuiltinAssets::Mesh::cube);
     EXPECT_TRUE(result.edited);
     EXPECT_TRUE(result.resourcesChanged);
+    EXPECT_TRUE(render.materialOverrides.empty());
 }
 
 TEST_F(ComponentDrawTest, ResetOverridesOnlyChangesTheChosenSubmesh)

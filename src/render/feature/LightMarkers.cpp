@@ -93,26 +93,13 @@ std::vector<LightMarkers::DrawItem> LightMarkers::buildDrawItems(
     case LightComponent::Type::Directional:
         if (arrow)
         {
-            constexpr float spacing = 0.32f;
-            const glm::mat4 base = markerTransform(transform);
-            result.reserve(9);
-            for (int y = -1; y <= 1; ++y)
-            {
-                for (int x = -1; x <= 1; ++x)
-                {
-                    result.push_back({
-                        arrow,
-                        base *
-                            glm::translate(
-                                glm::mat4{1.0f},
-                                glm::vec3{x * spacing, y * spacing, 0.0f}) *
-                            glm::scale(glm::mat4{1.0f}, glm::vec3{0.75f}),
-                        markerColor,
-                        0,
-                        arrow->indexCount(),
-                    });
-                }
-            }
+            result.push_back({
+                arrow,
+                markerTransform(transform) * glm::scale(glm::mat4{1.0f}, glm::vec3{1.0f, 1.0f, 0.75f}),
+                markerColor,
+                0,
+                arrow->indexCount(),
+            });
         }
         break;
     }

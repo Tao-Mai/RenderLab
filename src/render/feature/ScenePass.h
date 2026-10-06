@@ -50,6 +50,7 @@ private:
     std::shared_ptr<GpuTexture> brdfLutTexture;
     vk::Sampler                 brdfLutSampler = nullptr;
     vk::raii::Sampler           shadowSampler  = nullptr;
+    vk::Filter                  shadowFilter   = vk::Filter::eLinear;
 
     void bindEnvironmentTextures();
     void recordSkybox(

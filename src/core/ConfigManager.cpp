@@ -72,6 +72,10 @@ void ConfigManager::setRenderFeature(const RenderFeature& feature)
     DCHECK(inited);
     CHECK(std::isfinite(feature.ambientCoefficient) && feature.ambientCoefficient >= 0.0f);
     CHECK(feature.shadow.pointShadowMapSize > 0);
+    CHECK(std::isfinite(feature.shadow.bias) && feature.shadow.bias >= 0.0f);
+    CHECK(std::isfinite(feature.shadow.sampleRadius) && feature.shadow.sampleRadius >= 0.0f);
+    CHECK(feature.shadow.filter == SamplerAsset::Filter::Nearest ||
+          feature.shadow.filter == SamplerAsset::Filter::Linear);
 
     renderer.feature = feature;
 }
@@ -145,6 +149,8 @@ void ConfigManager::loadRenderer()
 
     CHECK(!renderer.environmentMap || !renderer.environmentMap->empty());
     CHECK(renderer.feature.shadow.pointShadowMapSize > 0);
+    CHECK(std::isfinite(renderer.feature.shadow.bias) && renderer.feature.shadow.bias >= 0.0f);
+    CHECK(std::isfinite(renderer.feature.shadow.sampleRadius) && renderer.feature.shadow.sampleRadius >= 0.0f);
 
     CHECK(
         !renderer.brdfLut.textureID.empty() && !renderer.brdfLut.samplerID.empty(),

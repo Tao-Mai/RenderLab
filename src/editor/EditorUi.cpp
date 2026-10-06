@@ -2,6 +2,7 @@
 
 #include "asset/Asset.h"
 #include "asset/AssetManager.h"
+#include "asset/import/ImportId.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/InputManager.h"
@@ -354,15 +355,53 @@ EditorUI::HierarchyResult EditorUI::drawHierarchy(SceneAsset& scene, uint32_t& s
     }
 
     ImGui::Separator();
-    bool openRename = false;
+    if (renameActorId &&
+        !std::ranges::any_of(scene.actors, [&](const auto& actor) { return actor->selectionId() == renameActorId; }))
+    {
+        renameActorId = 0;
+        focusRename   = false;
+        renameText.clear();
+    }
+
     if (ImGui::BeginChild("Actor list", {0, 0}))
     {
         for (const auto& actor : scene.actors)
         {
             ImGui::PushID(static_cast<int>(actor->selectionId()));
-            const std::string label = actor->name + "###Actor";
-            if (ImGui::Selectable(label.c_str(), actor->selectionId() == selectedId))
-                selectedId = actor->selectionId();
+            if (actor->selectionId() == renameActorId)
+            {
+                if (focusRename)
+                {
+                    ImGui::SetKeyboardFocusHere();
+                    focusRename = false;
+                }
+                ImGui::SetNextItemWidth(-1.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{ImGui::GetStyle().FramePadding.x, 0.0f});
+                const bool enter = ImGui::InputText(
+                    "##Actor name",
+                    &renameText,
+                    ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll
+                );
+                const bool finished = enter || ImGui::IsItemDeactivated();
+                ImGui::PopStyleVar();
+
+                if (finished)
+                {
+                    if (!renameText.empty() && actor->name != renameText)
+                    {
+                        actor->name    = renameText;
+                        result.renamed = true;
+                    }
+                    renameActorId = 0;
+                    renameText.clear();
+                }
+            }
+            else
+            {
+                const std::string label = actor->name + "###Actor";
+                if (ImGui::Selectable(label.c_str(), actor->selectionId() == selectedId))
+                    selectedId = actor->selectionId();
+            }
 
             if (ImGui::BeginPopupContextItem("Actor actions"))
             {
@@ -370,10 +409,11 @@ EditorUI::HierarchyResult EditorUI::drawHierarchy(SceneAsset& scene, uint32_t& s
                 if (ImGui::MenuItem("Rename"))
                 {
                     renameActorId = selectedId;
-                    renameText = actor->name;
-                    openRename = true;
+                    renameText    = actor->name;
+                    focusRename   = true;
                 }
-                if (ImGui::MenuItem("Delete")) result.deleteId = actor->selectionId();
+                if (ImGui::MenuItem("Delete"))
+                    result.deleteId = actor->selectionId();
                 ImGui::EndPopup();
             }
             ImGui::PopID();
@@ -381,31 +421,6 @@ EditorUI::HierarchyResult EditorUI::drawHierarchy(SceneAsset& scene, uint32_t& s
     }
     ImGui::EndChild();
 
-    if (openRename) ImGui::OpenPopup("Rename Actor");
-    if (ImGui::BeginPopupModal("Rename Actor", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-    {
-        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
-        const bool enter = ImGui::InputText("Name", &renameText, ImGuiInputTextFlags_EnterReturnsTrue);
-        ImGui::BeginDisabled(renameText.empty());
-        const bool confirm = ImGui::Button("Rename");
-        ImGui::EndDisabled();
-        if ((confirm || enter) && !renameText.empty())
-        {
-            const auto actor = std::ranges::find_if(scene.actors, [&](const auto& item) {
-                return item->selectionId() == renameActorId;
-            });
-            if (actor != scene.actors.end() && (*actor)->name != renameText)
-            {
-                (*actor)->name = renameText;
-                result.renamed = true;
-            }
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape))
-            ImGui::CloseCurrentPopup();
-        ImGui::EndPopup();
-    }
     ImGui::End();
     return result;
 }
@@ -541,6 +556,14 @@ EditorUI::InspectorResult EditorUI::drawInspector(
     }
 
     ImGui::BeginDisabled(!feature.shadow.enable);
+    int shadowFilter = static_cast<int>(feature.shadow.filter);
+    if (ImGui::Combo("Shadow filter", &shadowFilter, "Nearest\0Linear\0"))
+    {
+        feature.shadow.filter = static_cast<SamplerAsset::Filter>(shadowFilter);
+        context().config->setRenderFeature(feature);
+        result.rendererChanged = true;
+    }
+
     const std::string shadowSize = std::to_string(feature.shadow.pointShadowMapSize);
     if (ImGui::BeginCombo("Point shadow map size", shadowSize.c_str()))
     {
@@ -563,6 +586,34 @@ EditorUI::InspectorResult EditorUI::drawInspector(
         }
         ImGui::EndCombo();
     }
+    if (ImGui::DragFloat(
+            "Shadow bias",
+            &feature.shadow.bias,
+            0.0001f,
+            0.0f,
+            1.0f,
+            "%.5f",
+            ImGuiSliderFlags_AlwaysClamp
+        ))
+    {
+        context().config->setRenderFeature(feature);
+    }
+    if (ImGui::Checkbox("Per-pixel rotation", &feature.shadow.pixelRotation))
+    {
+        context().config->setRenderFeature(feature);
+    }
+    if (ImGui::DragFloat(
+            "PCF radius",
+            &feature.shadow.sampleRadius,
+            0.0005f,
+            0.0f,
+            1.0f,
+            "%.4f",
+            ImGuiSliderFlags_AlwaysClamp
+        ))
+    {
+        context().config->setRenderFeature(feature);
+    }
     ImGui::EndDisabled();
 
     ImGui::SeparatorText("Assets");
@@ -578,6 +629,7 @@ EditorUI::InspectorResult EditorUI::drawInspector(
         textureSetting     = {};
         environmentSetting = {};
         meshSetting        = {};
+        meshPreview.clear();
         ImGui::OpenPopup("Import Asset");
     }
     ImGui::EndDisabled();
@@ -696,34 +748,58 @@ void EditorUI::drawImportDialog()
             drawPositiveUint("Irradiance samples", environmentSetting.irradianceSampleCount);
             drawPositiveUint("Prefilter first mip samples",
                              environmentSetting.prefilteredSpecularSampleCount);
-            drawPositiveUint("Prefilter sample limit",
-                             environmentSetting.prefilteredSpecularMaxSampleCount);
+            drawPositiveUint("Prefilter sample limit", environmentSetting.prefilteredSpecularMaxSampleCount);
             break;
         case 2:
-            source = &meshSetting.source;
-            drawSourcePath(*source, meshFilter);
-            break;
+            {
+                source                    = &meshSetting.source;
+                const auto previousSource = *source;
+                drawSourcePath(*source, meshFilter);
+                if (*source != previousSource)
+                {
+                    meshPreview.clear();
+                    meshSetting.id = source->stem().string();
+                }
+                if (sourceIsImportable(*source, importAssetType) && !meshPreview.ready())
+                    meshPreview.load(*source);
+
+                ImGui::InputText("Mesh ID", &meshSetting.id.value);
+                ImGui::InputFloat("Import scale", &meshSetting.importScale, 0.1f, 1.0f, "%.6g");
+                if (meshPreview.ready())
+                {
+                    const auto& prepared    = meshPreview.prepared();
+                    const auto  size        = prepared.boundsMax - prepared.boundsMin;
+                    const float longestSide = std::max({size.x, size.y, size.z});
+                    float       targetSize  = longestSide * meshSetting.importScale;
+                    if (ImGui::InputFloat("Target longest side (m)", &targetSize, 0.1f, 1.0f, "%.6g") &&
+                        std::isfinite(targetSize) && targetSize > 0.0f && longestSide > 0.0f)
+                        meshSetting.importScale = targetSize / longestSide;
+                }
+                meshPreview.draw(meshSetting.importScale);
+                break;
+            }
         default:
             DCHECK(false, "invalid import asset type");
     }
 
     const bool  validSource     = sourceIsImportable(*source, importAssetType);
     std::string sourceExtension = source->extension().string();
-    std::ranges::transform(sourceExtension,
-                           sourceExtension.begin(),
-                           [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    std::ranges::transform(
+        sourceExtension,
+        sourceExtension.begin(),
+        [](unsigned char character) { return static_cast<char>(std::tolower(character)); }
+    );
     const bool validColorSpace = (sourceExtension != ".exr" && sourceExtension != ".hdr") ||
-    (importAssetType == 0
-        ? textureSetting.colorSpace != ColorSpace::Srgb
-        : importAssetType == 1
-        ? environmentSetting.colorSpace != ColorSpace::Srgb
-        : true);
-    const bool validSettings = importAssetType != 1 ||
-    (environmentSetting.irradianceSize > 0 &&
-        environmentSetting.irradianceSampleCount > 0 &&
-        environmentSetting.prefilteredSpecularSampleCount > 0 &&
-        environmentSetting.prefilteredSpecularMaxSampleCount >=
-        environmentSetting.prefilteredSpecularSampleCount);
+        (importAssetType == 0       ? textureSetting.colorSpace != ColorSpace::Srgb
+             : importAssetType == 1 ? environmentSetting.colorSpace != ColorSpace::Srgb
+                                    : true);
+    const bool validSettings = importAssetType == 2
+        ? meshPreview.ready() && asset_import::validId(meshSetting.id.value) &&
+            std::isfinite(meshSetting.importScale) && meshSetting.importScale > 0.0f
+        : importAssetType != 1 ||
+            (environmentSetting.irradianceSize > 0 && environmentSetting.irradianceSampleCount > 0 &&
+             environmentSetting.prefilteredSpecularSampleCount > 0 &&
+             environmentSetting.prefilteredSpecularMaxSampleCount >= environmentSetting.prefilteredSpecularSampleCount);
     if (!validSource)
     {
         ImGui::TextWrapped("Select an existing file in a supported format.");
@@ -731,7 +807,10 @@ void EditorUI::drawImportDialog()
     else if (!validSettings || !validColorSpace)
     {
         ImGui::TextWrapped(
-            "Check color space and sample settings. EXR and HDR require Linear; sizes and sample counts must be positive, and the prefilter limit must cover the first mip.");
+            "Check import settings. Mesh ID must be a valid filename; import scale must be finite and positive; "
+            "EXR and HDR require Linear; sizes and sample counts must be positive, and the prefilter limit must cover "
+            "the first mip."
+        );
     }
 
     ImGui::BeginDisabled(!validSource || !validSettings || !validColorSpace);
@@ -754,7 +833,8 @@ void EditorUI::drawImportDialog()
                 importStatus = "Importing environment map (progress in console)...";
                 break;
             case 2:
-                importedId = AssetImporter::importMesh(meshSetting).value;
+                importedId = AssetImporter::saveMesh(std::move(meshPreview.prepared()), meshSetting).value;
+                meshPreview.clear();
                 break;
             default:
                 DCHECK(false, "invalid import asset type");
@@ -770,6 +850,7 @@ void EditorUI::drawImportDialog()
     ImGui::SameLine();
     if (ImGui::Button("Cancel"))
     {
+        meshPreview.clear();
         ImGui::CloseCurrentPopup();
     }
     ImGui::EndPopup();
@@ -841,6 +922,7 @@ ViewportRect EditorUI::sceneViewportPixels() const
 
 void EditorUI::shutdown(bool stopImport) noexcept
 {
+    meshPreview.clear();
     if (stopImport && environmentImport.valid())
     {
         importStop.request_stop();
@@ -867,5 +949,6 @@ void EditorUI::shutdown(bool stopImport) noexcept
     editorDockId          = 0;
     hierarchyDockId       = 0;
     renameActorId         = 0;
+    focusRename           = false;
     renameText.clear();
 }

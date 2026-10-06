@@ -79,6 +79,7 @@ TEST(ShaderDataLayout, LightUniformsMatchCompiledShaders)
         Field{"padding1", offsetof(LightUniforms, padding1), sizeof(uint32_t)},
         Field{"padding2", offsetof(LightUniforms, padding2), sizeof(uint32_t)},
         Field{"iblParameters", offsetof(LightUniforms, iblParameters), sizeof(glm::vec4)},
+        Field{"shadowParameters", offsetof(LightUniforms, shadowParameters), sizeof(glm::vec4)},
     };
     for (const auto* shader : shaders)
     {

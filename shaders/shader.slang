@@ -1,5 +1,6 @@
 #include "brdf.slang"
 #include "scene_data.slang"
+#include "sampling.slang"
 
 #ifndef ENABLE_IBL
 #error ENABLE_IBL must be specified when compiling the scene shader
@@ -72,8 +73,34 @@ SamplerState brdfLUTSampler;
 TextureCubeArray<float> pointShadowMap;
 
 [[vk::binding(10, 0)]]
-SamplerState pointShadowSampler;
+SamplerComparisonState pointShadowSampler;
 
+
+
+float pcf(float3 dir, uint shadowIndex, float depth, float2 rotation)
+{
+    float3 direction = normalize(dir);
+    float3 referenceAxis = abs(direction.z) < 0.999
+        ? float3(0.0, 0.0, 1.0)
+        : float3(0.0, 1.0, 0.0);
+    float3 tangent = normalize(cross(direction, referenceAxis));
+    float3 bitangent = cross(direction, tangent);
+    float3 rotatedTangent = tangent * rotation.x + bitangent * rotation.y;
+    float3 rotatedBitangent = bitangent * rotation.x - tangent * rotation.y;
+
+    float totalVisibility = 0.0;
+    [unroll]
+    for (uint sampleIndex = 0; sampleIndex < kPoissonDisk16SampleCount; ++sampleIndex)
+    {
+        float2 offset = kPoissonDisk16[sampleIndex] * lightUniforms.shadowSampleRadius;
+        float3 sampleDirection = normalize(
+            direction + rotatedTangent * offset.x + rotatedBitangent * offset.y);
+        totalVisibility += pointShadowMap.SampleCmpLevelZero(
+            pointShadowSampler, float4(sampleDirection, shadowIndex), depth);
+    }
+
+    return totalVisibility / kPoissonDisk16SampleCount;
+}
 
 [shader("vertex")]
 VertexOutput vertMain(VertexInput input)
@@ -102,6 +129,9 @@ float4 fragMain(VertexOutput input) : SV_Target
     float metallic = material.metallic;
     float3 F0 = lerp(0.04, baseColor.rgb, float3(metallic));
 
+    float2 shadowRotation = lightUniforms.shadowPixelRotation
+        ? pixelSampleRotation(uint2(input.position.xy))
+        : float2(1.0, 0.0);
     float3 direct = float3(0.0);
     for (uint index = 0; index < lightUniforms.lightCount; ++index)
     {
@@ -112,6 +142,17 @@ float4 fragMain(VertexOutput input) : SV_Target
             float3 L = normalize(light.position - input.worldPosition);
             float distanceToLight = length(light.position - input.worldPosition);
             if (distanceToLight > light.range) continue;
+
+            float visibility = 1.0;
+            if (light.castShadow) {
+                uint shadowidx = light.shadowIdx;
+                float depth = distanceToLight / light.range - lightUniforms.shadowBias;
+
+                // depth <= shadowMapDepth，用的less or equal
+                visibility = pcf(-L, shadowidx, depth, shadowRotation);
+
+                if (visibility == 0.0) continue;
+            }
 
             float3 pointLight = light.color * light.intensity / (distanceToLight * distanceToLight);
 
@@ -125,16 +166,13 @@ float4 fragMain(VertexOutput input) : SV_Target
 
             float3 diffuseBRDF = (1.0 - F) * (1.0 - metallic) * baseColor.rgb * INV_PI;
             float3 specularBRDF = F * D * G / max(4.0 * NdotV * NdotL, 1e-5);
-            direct += pointLight * (diffuseBRDF + specularBRDF) * NdotL;
+            direct += pointLight * (diffuseBRDF + specularBRDF) * NdotL * visibility;
         }
         else if (light.type == LightType.Directional) {
             // TODO
             float NdotL = saturate(dot(N, -light.direction.xyz));
             direct += light.color * light.intensity * NdotL * baseColor.rgb;
         }
-
-        // 阴影
-        // float depth = pointShadowMap.SampleLevel(pointShadowSampler, float4(-L, light.shadowidx), 0.0).r;
     }
 
     float3 ambient = float3(0.0);

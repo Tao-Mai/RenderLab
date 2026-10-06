@@ -236,10 +236,12 @@ void Renderer::updateFrameData(const CameraComponent& camera, const EditorFrameI
         .cameraPosition        = glm::vec4{camera.worldPosition(), 1.0f},
     };
     const auto&         lights = renderSystem.renderData().lights;
+    const auto&         shadow = context().config->rendererConfig().feature.shadow;
     const LightUniforms lighting{
         .lightCount         = static_cast<uint32_t>(lights.size()),
         .ambientCoefficient = context().config->rendererConfig().feature.ambientCoefficient,
         .iblParameters      = iblParameters,
+        .shadowParameters   = {shadow.bias, shadow.sampleRadius, shadow.pixelRotation ? 1.0f : 0.0f, 0.0f},
     };
     currentFrame().data.update(
         view,
