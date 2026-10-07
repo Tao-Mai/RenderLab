@@ -1,49 +1,6 @@
 {
     "actors": [
         {
-            "AFreeFlyCamera": {
-                "components": [
-                    {
-                        "TransformComponent": {
-                            "position": [
-                                -1.4415388107299805,
-                                1.306012511253357,
-                                -7.379378318786621
-                            ],
-                            "rotation": [
-                                0.0,
-                                0.0,
-                                0.0,
-                                1.0
-                            ],
-                            "scale": [
-                                1.0,
-                                1.0,
-                                1.0
-                            ]
-                        }
-                    },
-                    {
-                        "CameraComponent": {
-                            "farPlane": 100.0,
-                            "fieldOfView": 45.0,
-                            "mouseSensitivity": 0.11999999731779099,
-                            "nearPlane": 0.10000000149011612,
-                            "pitch": -24.44013786315918,
-                            "yaw": 103.20112609863281
-                        }
-                    },
-                    {
-                        "FreeFlyMoveComponent": {
-                            "speed": 3.0,
-                            "sprintMultiplier": 3.0
-                        }
-                    }
-                ],
-                "name": "Editor Camera"
-            }
-        },
-        {
             "ALight": {
                 "components": [
                     {
@@ -80,7 +37,7 @@
                             ],
                             "cosInner": 0.9396926164627075,
                             "cosOuter": 0.8660253882408142,
-                            "enabled": true,
+                            "enabled": false,
                             "intensity": 10.050000190734863,
                             "range": 15.0,
                             "type": "Point"
@@ -96,9 +53,9 @@
                     {
                         "TransformComponent": {
                             "position": [
-                                -1.4611163139343262,
-                                -3.2146058082580566,
-                                -0.1408952921628952
+                                -1.74592924118042,
+                                -3.2884058952331543,
+                                -1.743619441986084
                             ],
                             "rotation": [
                                 0.0,
@@ -115,36 +72,9 @@
                     },
                     {
                         "RenderComponent": {
-                            "materialOverrides": {
-                                "0": {
-                                    "alphaCutoff": null,
-                                    "alphaMode": null,
-                                    "ao": null,
-                                    "aoTexture": null,
-                                    "baseColorFactor": [
-                                        1.0,
-                                        0.09616726636886597,
-                                        0.0038610100746154785,
-                                        1.0
-                                    ],
-                                    "baseColorTexture": null,
-                                    "doubleSided": null,
-                                    "emissive": null,
-                                    "emissiveTexture": null,
-                                    "id": {
-                                        "value": ""
-                                    },
-                                    "metallic": 1.0,
-                                    "metallicTexture": null,
-                                    "normalScale": null,
-                                    "normalTexture": null,
-                                    "roughness": 0.5,
-                                    "roughnessTexture": null,
-                                    "shaderId": null
-                                }
-                            },
+                            "materialOverrides": {},
                             "meshId": {
-                                "value": "sphere"
+                                "value": "cube"
                             }
                         }
                     }
@@ -251,7 +181,7 @@
                             ],
                             "cosInner": 0.9396926164627075,
                             "cosOuter": 0.8660253882408142,
-                            "enabled": false,
+                            "enabled": true,
                             "intensity": 0.30000001192092896,
                             "range": 10.0,
                             "type": "Directional"
@@ -295,8 +225,70 @@
                 ],
                 "name": "Cube"
             }
+        },
+        {
+            "ALight": {
+                "components": [
+                    {
+                        "TransformComponent": {
+                            "position": [
+                                0.7153400778770447,
+                                -0.9667158126831055,
+                                2.9665486812591553
+                            ],
+                            "rotation": [
+                                0.08601405471563339,
+                                -0.1058882549405098,
+                                -0.04834508150815964,
+                                -0.9894706606864929
+                            ],
+                            "scale": [
+                                0.9099996089935303,
+                                1.0000596046447754,
+                                1.0000487565994263
+                            ]
+                        }
+                    },
+                    {
+                        "LightComponent": {
+                            "areaSize": [
+                                0.7099999785423279,
+                                0.550000011920929
+                            ],
+                            "castShadow": true,
+                            "color": [
+                                1.0,
+                                1.0,
+                                1.0
+                            ],
+                            "cosInner": 0.9396926164627075,
+                            "cosOuter": 0.8660253882408142,
+                            "enabled": true,
+                            "intensity": 500.0,
+                            "range": 10.0,
+                            "type": "RectArea"
+                        }
+                    }
+                ],
+                "name": "ALight1"
+            }
         }
     ],
+    "editorCamera": {
+        "farPlane": 100,
+        "fieldOfView": 45,
+        "mouseSensitivity": 0.11999999731779099,
+        "nearPlane": 0.10000000149011612,
+        "pitch": -48.920162200927734,
+        "yaw": 155.52096557617188,
+        "speed": 5,
+        "sprintMultiplier": 3,
+        "position": [
+            7.578222751617432,
+            6.609982967376709,
+            -4.872868061065674
+        ]
+    },
     "environment": {
         "up": [
             0.0,

@@ -13,7 +13,7 @@
 
 class AssetManager;
 
-enum class ShaderVariant { Default, NoIbl };
+enum class ShaderVariant { Default, NoIbl, RectAreaShadow };
 
 struct ShaderHandle
 {

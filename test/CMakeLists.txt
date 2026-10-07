@@ -10,6 +10,7 @@ add_executable(RenderLabTests
         EnvironmentMapImportTest.cpp
         SceneManagerTest.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/SceneManager.cpp
+        ${PROJECT_SOURCE_DIR}/src/editor/EditorCamera.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/AActor.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/actor/AFreeFlyCamera.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/actor/ALight.cpp

@@ -30,7 +30,7 @@ public:
     [[nodiscard]] glm::mat4 projectionMatrix(float aspectRatio) const;
 
 private:
-    bool inputEnabled = true;
+    bool inputEnabled = false;
     bool looking = false;
     bool freeMovement = false;
     double previousMouseX = 0.0;

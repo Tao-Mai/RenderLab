@@ -22,7 +22,7 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_raii.hpp>
 
-class CameraComponent;
+class EditorCamera;
 
 struct EditorFrameInput
 {
@@ -52,7 +52,7 @@ public:
 
     void init();
     void loadScene();
-    EditorFrameResult render(const CameraComponent& camera, const EditorFrameInput& editor);
+    EditorFrameResult render(const EditorCamera& camera, const EditorFrameInput& editor);
     void waitIdle();
     void shutdown() noexcept;
 
@@ -84,8 +84,8 @@ private:
     template <class T, class... Args>
     auto setupPass(Args&&... args);
 
-    void updateFrameData(const CameraComponent& camera, const EditorFrameInput& editor);
+    void updateFrameData(const EditorCamera& camera, const EditorFrameInput& editor);
     [[nodiscard]] FrameContext& currentFrame();
     void recreateSwapchain();
-    EditorFrameResult drawFrame(const CameraComponent& camera, const EditorFrameInput& editor);
+    EditorFrameResult drawFrame(const EditorCamera& camera, const EditorFrameInput& editor);
 };

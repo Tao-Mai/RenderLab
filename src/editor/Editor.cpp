@@ -2,7 +2,7 @@
 
 #include "asset/Asset.h"
 #include "scene/SceneManager.h"
-#include "scene/component/CameraComponent.h"
+#include "editor/EditorCamera.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "scene/component/TransformComponent.h"
@@ -83,7 +83,7 @@ void Editor::applySceneActions()
 }
 
 EditorFrameInput Editor::buildFrame(
-    const CameraComponent& camera,
+    const EditorCamera& camera,
     float deltaTime,
     uint32_t swapchainWidth,
     uint32_t swapchainHeight)

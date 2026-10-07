@@ -4,7 +4,7 @@
 #include "render/Renderer.h"
 #include "core/Debug.h"
 
-class CameraComponent;
+class EditorCamera;
 
 class Editor
 {
@@ -21,7 +21,7 @@ public:
     void applySceneActions();
 
     [[nodiscard]] EditorFrameInput buildFrame(
-        const CameraComponent& camera,
+        const EditorCamera& camera,
         float deltaTime,
         uint32_t swapchainWidth,
         uint32_t swapchainHeight);

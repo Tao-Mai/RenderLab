@@ -61,6 +61,34 @@ static const float2 kPoissonDisk[kPoissonDiskSampleCapacity] = {
     float2(0.685985, 0.021427),
 };
 
+static const uint kRectangle16GridSize = 4;
+static const uint kRectangle16SampleCount = kRectangle16GridSize * kRectangle16GridSize;
+
+uint rectangleSampleHash(uint value)
+{
+    value ^= value >> 16;
+    value *= 0x7feb352du;
+    value ^= value >> 15;
+    value *= 0x846ca68bu;
+    value ^= value >> 16;
+    return value;
+}
+
+// One sample per cell in [-1,1]^2. Jitter stays inside its cell and never rotates the rectangle.
+float2 rectangleSample16(uint sampleIndex, uint2 pixel, bool jitterEnabled)
+{
+    uint2 cell = uint2(sampleIndex % kRectangle16GridSize, sampleIndex / kRectangle16GridSize);
+    float2 jitter = float2(0.5);
+    if (jitterEnabled)
+    {
+        uint seed = (pixel.x * 0x9e3779b9u) ^ (pixel.y * 0x85ebca6bu)
+            ^ (sampleIndex * 0xc2b2ae35u);
+        uint2 hashes = uint2(rectangleSampleHash(seed), rectangleSampleHash(seed ^ 0x68bc21ebu));
+        jitter = float2(hashes >> 8) * (1.0 / 16777216.0);
+    }
+    return (float2(cell) + jitter) * (2.0 / kRectangle16GridSize) - 1.0;
+}
+
 // Stable per-pixel rotation, returned as {cos(angle), sin(angle)}.
 float2 pixelSampleRotation(uint2 pixel)
 {

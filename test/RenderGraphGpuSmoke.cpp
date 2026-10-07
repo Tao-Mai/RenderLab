@@ -1,7 +1,6 @@
 #include "scene/SceneManager.h"
 #include "scene/actor/AStaticMesh.h"
 #include "scene/actor/ALight.h"
-#include "scene/component/CameraComponent.h"
 #include "scene/component/CharacterMoveComponent.h"
 #include "scene/component/FreeFlyMoveComponent.h"
 #include "scene/component/LightComponent.h"
@@ -108,18 +107,15 @@ void checkMovement(const SceneAsset& original, Window& window, SceneManager& man
     characterPeer->addComponent<CharacterMoveComponent>().speed = 1.0f;
     scene.actors.push_back(std::move(characterPeer));
 
-    auto& cameraActor = *scene.actors[0];
-    auto& cameraData = *cameraActor.getComponent<CameraComponent>();
+    auto& cameraData = scene.editorCamera;
     cameraData.yaw = 0.0f;
     cameraData.pitch = 45.0f;
-    cameraActor.getComponent<FreeFlyMoveComponent>()->speed = 2.0f;
-    // Camera navigation must tick before movement, even when component order is reversed.
-    std::reverse(cameraActor.components.begin(), cameraActor.components.end());
+    cameraData.speed = 2.0f;
     scene.environment.up = {0.0f, 0.0f, 3.0f};
     manager.load(scene);
 
-    const auto camera = [&]() -> CameraComponent& { return manager.editorCamera().camera(); };
-    const auto position = [&]() -> glm::vec3& { return manager.editorCamera().transform().position; };
+    const auto camera = [&]() -> EditorCamera& { return manager.editorCamera(); };
+    const auto position = [&]() -> glm::vec3& { return manager.editorCamera().config().position; };
     const auto peerPosition = [&](size_t index) -> glm::vec3&
     {
         return manager.scene().actors[index]->transform().position;
@@ -177,11 +173,6 @@ void checkMovement(const SceneAsset& original, Window& window, SceneManager& man
     expectPosition(camera().up() * 0.2f);
     key(GLFW_KEY_E, GLFW_RELEASE);
 
-    std::erase_if(cameraActor.components, [](const auto& component)
-    {
-        return dynamic_cast<FreeFlyMoveComponent*>(component.get()) != nullptr;
-    });
-    cameraActor.addComponent<CharacterMoveComponent>().speed = 2.0f;
     cameraData.yaw = -90.0f;
     cameraData.pitch = 60.0f;
     scene.environment.up = {0.0f, 5.0f, 0.0f};
@@ -194,7 +185,7 @@ void checkMovement(const SceneAsset& original, Window& window, SceneManager& man
     peerPosition(freeFlyPeerIndex) = {};
     peerPosition(characterPeerIndex) = {};
     manager.tick(0.1f);
-    expectPosition({0.0f, 0.0f, -0.2f});
+    expectPosition(camera().forward() * 0.2f);
     CHECK(glm::length(peerPosition(characterPeerIndex) - glm::vec3{0.0f, 0.0f, -0.1f}) < 1.0e-5f,
         "CharacterMove must tick each actor at its own speed");
     CHECK(glm::length(peerPosition(freeFlyPeerIndex) - camera().forward() * 0.4f) < 1.0e-5f,
@@ -203,13 +194,14 @@ void checkMovement(const SceneAsset& original, Window& window, SceneManager& man
     manager.scene().environment.up = {0.0f, 0.0f, 2.0f};
     position() = {};
     manager.tick(0.1f);
-    expectPosition({0.0f, 0.2f, 0.0f});
+    expectPosition(camera().forward() * 0.2f);
 
     manager.scene().environment.up = camera().forward();
     position() = {};
+    peerPosition(characterPeerIndex) = {};
     manager.tick(0.1f);
-    CHECK(std::isfinite(glm::length(position())) &&
-        std::abs(glm::dot(position(), manager.scene().environment.up)) < 1.0e-5f,
+    CHECK(std::isfinite(glm::length(peerPosition(characterPeerIndex))) &&
+        std::abs(glm::dot(peerPosition(characterPeerIndex), manager.scene().environment.up)) < 1.0e-5f,
         "looking along Up must retain finite planar movement");
 
     key(GLFW_KEY_W, GLFW_RELEASE);
@@ -220,7 +212,8 @@ void checkMovement(const SceneAsset& original, Window& window, SceneManager& man
         position() = {};
         peerPosition(characterPeerIndex) = {};
         manager.tick(0.1f);
-        expectPosition({});
+        const float sign = code == GLFW_KEY_E ? 1.0f : -1.0f;
+        expectPosition(camera().up() * 0.2f * sign);
         CHECK(glm::length(peerPosition(characterPeerIndex)) == 0.0f,
             "CharacterMove must ignore E/Q");
         key(code, GLFW_RELEASE);
@@ -278,15 +271,10 @@ int main(int argc, char** argv)
             light->castShadow = true;
             light->range = 16.0f;
         }
-        if (auto* camera = actor->getComponent<CameraComponent>())
-        {
-            camera->yaw = -90.0f;
-            camera->pitch = 0.0f;
-        }
     }
-    for (const auto& actor : scene.actors)
-        if (actor->getComponent<CameraComponent>())
-            actor->transform().position = center + glm::vec3{0.0f, 0.0f, 6.0f};
+    scene.editorCamera.yaw = -90.0f;
+    scene.editorCamera.pitch = 0.0f;
+    scene.editorCamera.position = center + glm::vec3{0.0f, 0.0f, 6.0f};
 
     sceneManager.load(scene);
     checkMovement(scene, window, sceneManager);
@@ -319,7 +307,7 @@ int main(int argc, char** argv)
                 .pickX = extent.width / 2,
                 .pickY = extent.height / 2,
             };
-            const auto result = renderer.render(sceneManager.editorCamera().camera(), input);
+            const auto result = renderer.render(sceneManager.editorCamera(), input);
             CHECK(result.hasPickResult == input.requestPick, "missing picking result");
             if (input.requestPick)
                 CHECK(result.pickedSelectionId == expectedId,
@@ -443,10 +431,10 @@ int main(int argc, char** argv)
         uiInput.tick();
         editor.applySceneActions();
         const auto input = editor.buildFrame(
-            sceneManager.editorCamera().camera(), 1.0f / 60.0f, extent.width, extent.height);
+            sceneManager.editorCamera(), 1.0f / 60.0f, extent.width, extent.height);
         CHECK(input.viewport.x > 0.0f && input.viewport.width < extent.width,
             "editor viewport must leave space for both docked sidebars");
-        const auto result = renderer.render(sceneManager.editorCamera().camera(), input);
+        const auto result = renderer.render(sceneManager.editorCamera(), input);
         editor.applyPickResult(result);
         return input.selectedActor;
     };
@@ -469,7 +457,7 @@ int main(int argc, char** argv)
     CHECK(renderEditorFrame() == nullptr, "deleted selection must not retain an actor pointer");
 
     renderer.waitIdle();
-    sceneManager.deleteActor(sceneManager.editorCamera().selectionId());
+    sceneManager.deleteActor(sceneManager.scene().actors.front()->selectionId());
     renderer.loadScene();
     renderEditorFrame();
     renderer.waitIdle();

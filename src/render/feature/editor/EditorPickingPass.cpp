@@ -130,7 +130,7 @@ void EditorPickingPass::execute(RenderGraph& graph) const
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     const std::array sets = {graph.frameData(graph.frameIndex()).sceneSetHandle()};
     commandBuffer
-        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, RenderInterface::sceneSet, sets, {});
+        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, RenderInterface::kSceneSet, sets, {});
 
     // Match ScenePass's viewport; only the clicked pixel needs rasterization.
     const auto&    viewport  = editor.viewport;

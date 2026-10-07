@@ -97,6 +97,8 @@ set(SLANG_SKYBOX_SHADER "${SHADER_BINARY_DIR}/skybox.spv")
 set(SLANG_SKYBOX_REFLECTION "${SHADER_BINARY_DIR}/skybox.reflection.json")
 set(SLANG_SHADOW_SHADER "${SHADER_BINARY_DIR}/shadow.spv")
 set(SLANG_SHADOW_REFLECTION "${SHADER_BINARY_DIR}/shadow.reflection.json")
+set(SLANG_RECT_AREA_SHADOW_SHADER "${SHADER_BINARY_DIR}/shadow.rect_area.spv")
+set(SLANG_RECT_AREA_SHADOW_REFLECTION "${SHADER_BINARY_DIR}/shadow.rect_area.reflection.json")
 
 foreach (enable_ibl IN ITEMS 1 0)
     if (enable_ibl)
@@ -192,11 +194,20 @@ add_custom_command(
         VERBATIM
 )
 
-add_custom_command(
-        OUTPUT "${SLANG_SHADOW_SHADER}" "${SLANG_SHADOW_REFLECTION}"
+foreach (shadow_point IN ITEMS 1 0)
+    if (shadow_point)
+        set(shadow_binary "${SLANG_SHADOW_SHADER}")
+        set(shadow_reflection "${SLANG_SHADOW_REFLECTION}")
+    else ()
+        set(shadow_binary "${SLANG_RECT_AREA_SHADOW_SHADER}")
+        set(shadow_reflection "${SLANG_RECT_AREA_SHADOW_REFLECTION}")
+    endif ()
+    add_custom_command(
+        OUTPUT "${shadow_binary}" "${shadow_reflection}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
         COMMAND ${SLANGC_EXECUTABLE}
         "${SHADER_SOURCE_DIR}/shadow.slang"
+        -DSHADOW_POINT=${shadow_point}
         -target spirv
         -profile spirv_1_4
         -matrix-layout-column-major
@@ -204,13 +215,14 @@ add_custom_command(
         -fvk-use-entrypoint-name
         -entry vertMain
         -entry fragMain
-        -reflection-json "${SLANG_SHADOW_REFLECTION}"
-        -o "${SLANG_SHADOW_SHADER}"
+        -reflection-json "${shadow_reflection}"
+        -o "${shadow_binary}"
         DEPENDS "${SHADER_SOURCE_DIR}/shadow.slang"
         "${SHADER_SOURCE_DIR}/scene_data.slang"
-        COMMENT "Compiling shadow Slang shader"
+        COMMENT "Compiling shadow Slang shader (SHADOW_POINT=${shadow_point})"
         VERBATIM
 )
+endforeach ()
 
 add_custom_target(RenderLabShaders DEPENDS
         "${SLANG_SHADER}"
@@ -225,6 +237,8 @@ add_custom_target(RenderLabShaders DEPENDS
         "${SLANG_SKYBOX_REFLECTION}"
         "${SLANG_SHADOW_SHADER}"
         "${SLANG_SHADOW_REFLECTION}"
+        "${SLANG_RECT_AREA_SHADOW_SHADER}"
+        "${SLANG_RECT_AREA_SHADOW_REFLECTION}"
         "${SHADER_BINARY_DIR}/raytracing_base_color.spv"
 )
 
@@ -286,6 +300,9 @@ add_executable(RenderLab
         src/scene/component/CharacterMoveComponent.cpp
         src/scene/component/CameraComponent.cpp
         src/editor/Editor.cpp
+        src/editor/EditorCamera.cpp
+        src/editor/EditorCamera.h
+        src/editor/EditorCameraConfig.h
         src/editor/Editor.h
         src/editor/ComponentDraw.cpp
         src/editor/ComponentDraw.h
@@ -359,8 +376,8 @@ add_executable(RenderLab
         src/render/raytracing/RayTracingPass.h
         src/render/raytracing/RayTracingBlitPass.cpp
         src/render/raytracing/RayTracingBlitPass.h
-        src/render/feature/PointShadowPass.cpp
-        src/render/feature/PointShadowPass.h
+        src/render/feature/shadow/PointLightShadowPass.cpp
+        src/render/feature/shadow/PointLightShadowPass.h
         src/render/feature/LightMarkers.cpp
         src/render/feature/LightMarkers.h
         src/render/feature/editor/LightMarkerPass.cpp
@@ -386,6 +403,8 @@ add_executable(RenderLab
         src/render/feature/editor/EditorUiPass.h
         src/render/Image.cpp
         src/render/Image.h
+        src/render/feature/shadow/RectAreaLightShadowPass.cpp
+        src/render/feature/shadow/RectAreaLightShadowPass.h
 )
 add_dependencies(RenderLab RenderLabShaders)
 

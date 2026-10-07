@@ -1,4 +1,4 @@
-#include "render/feature/PointLightShadowPass.h"
+#include "render/feature/shadow/RectAreaLightShadowPass.h"
 
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -13,21 +13,21 @@
 #include "scene/system/RenderSystem.h"
 
 #include <array>
-#include <meta>
 
 
-PointLightShadowPass::Output PointLightShadowPass::setup(RenderGraph& graph)
+RectAreaLightShadowPass::Output RectAreaLightShadowPass::setup(RenderGraph& graph)
 {
     constexpr auto kRequiredFeatures =
-        vk::FormatFeatureFlagBits::eDepthStencilAttachment | vk::FormatFeatureFlagBits::eSampledImage;
+        vk::FormatFeatureFlagBits::eDepthStencilAttachment | vk::FormatFeatureFlagBits::eSampledImage |
+        vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
     const auto features =
         graph.vulkan().physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures;
     CHECK((features & kRequiredFeatures) == kRequiredFeatures);
 
     // 资源缓存
-    pointShadowMapSize = context().config->rendererConfig().feature.shadow.pointShadowMapSize;
+    rectAreaShadowMapSize = context().config->rendererConfig().feature.shadow.rectAreaShadowMapSize;
 
-    shader         = renderContext().shaderManager->getOrLoad("shadow");
+    shader         = renderContext().shaderManager->getOrLoad("shadow", ShaderVariant::RectAreaShadow);
     pipelineLayout = renderContext().pipelineManager->layout(PipelineLayoutPreset::SceneOnly);
 
     pipeline = renderContext().pipelineManager->getOrCreate({
@@ -35,38 +35,36 @@ PointLightShadowPass::Output PointLightShadowPass::setup(RenderGraph& graph)
         .layout      = PipelineLayoutPreset::SceneOnly,
         .state       = PipelineState::preset(RenderMode::Shadow),
         .depthFormat = vk::Format::eD32Sfloat,
-        .viewMask    = kPointViewMask,
     });
 
 
     // usage 由graph推导
-    pointLightShadowMap = graph.createImage(
-        {.flags       = vk::ImageCreateFlagBits::eCubeCompatible,
-         .imageType   = vk::ImageType::e2D,
+    rectAreaLightShadowMap = graph.createImage(
+        {.imageType   = vk::ImageType::e2D,
          .format      = vk::Format::eD32Sfloat,
-         .extent      = {pointShadowMapSize, pointShadowMapSize, 1},
+         .extent      = {rectAreaShadowMapSize, rectAreaShadowMapSize, 1},
          .mipLevels   = 1,
-         .arrayLayers = 6 * kMaxPointLightShadow}
+         .arrayLayers = kMaxRectAreaLightShadow}
     );
-    pointLightShadowMap = graph.write(pointLightShadowMap);
+    rectAreaLightShadowMap = graph.write(rectAreaLightShadowMap);
 
 
     graph.use(
-        pointLightShadowMap,
+        rectAreaLightShadowMap,
         {.stages = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
          .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
          .layout = vk::ImageLayout::eDepthAttachmentOptimal}
     );
 
-    return {pointLightShadowMap};
+    return {rectAreaLightShadowMap};
 }
 
-void PointLightShadowPass::execute(RenderGraph& graph) const
+void RectAreaLightShadowPass::execute(RenderGraph& graph) const
 {
     if (!context().config->rendererConfig().feature.shadow.enable)
         return;
 
-    auto& image = graph.getImage(pointLightShadowMap);
+    auto& image = graph.getImage(rectAreaLightShadowMap);
 
     auto&            commandBuffer = graph.commands();
     const std::array sceneSets     = {graph.frameData(graph.frameIndex()).sceneSetHandle()};
@@ -75,21 +73,20 @@ void PointLightShadowPass::execute(RenderGraph& graph) const
     for (uint32_t lightIdx = 0; lightIdx < lights.size(); ++lightIdx)
     {
         const LightData& light = lights[lightIdx];
-        if (!light.enable() || !light.castShadow() || light.type() != LightComponent::Type::Point)
+        if (!light.enable() || !light.castShadow() || light.type() != LightComponent::Type::RectArea)
             continue;
 
-        DCHECK(light.shadowidx < graph.frameData(graph.frameIndex()).pointShadowData().size());
+        DCHECK(light.shadowidx < graph.frameData(graph.frameIndex()).rectAreaShadowData().size());
 
-        // TODO 提前算
         const auto& imageView = image.getOrCreateImageView(
-            {.viewType         = vk::ImageViewType::e2DArray,
+            {.viewType         = vk::ImageViewType::e2D,
              .format           = vk::Format::eD32Sfloat,
              .subresourceRange = vk::ImageSubresourceRange{
                  .aspectMask     = vk::ImageAspectFlagBits::eDepth,
                  .baseMipLevel   = 0,
                  .levelCount     = 1,
-                 .baseArrayLayer = light.shadowidx * 6,
-                 .layerCount     = 6
+                 .baseArrayLayer = light.shadowidx,
+                 .layerCount     = 1
              }}
         );
 
@@ -103,18 +100,16 @@ void PointLightShadowPass::execute(RenderGraph& graph) const
 
 
         commandBuffer.beginRendering({
-            .renderArea       = {{0, 0}, {pointShadowMapSize, pointShadowMapSize}},
+            .renderArea       = {{0, 0}, {rectAreaShadowMapSize, rectAreaShadowMapSize}},
             .layerCount       = 1,
-            .viewMask         = kPointViewMask,
             .pDepthAttachment = &depthAttachment,
         });
 
-        // Multiview resets graphics state at the beginning of each rendering instance.
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
         commandBuffer.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics,
             pipelineLayout,
-            RenderInterface::sceneSet,
+            RenderInterface::kSceneSet,
             sceneSets,
             {}
         );
@@ -123,13 +118,13 @@ void PointLightShadowPass::execute(RenderGraph& graph) const
             vk::Viewport(
                 0.0f,
                 0.0f,
-                static_cast<float>(pointShadowMapSize),
-                static_cast<float>(pointShadowMapSize),
+                static_cast<float>(rectAreaShadowMapSize),
+                static_cast<float>(rectAreaShadowMapSize),
                 0.0f,
                 1.0f
             )
         );
-        commandBuffer.setScissor(0, vk::Rect2D({0, 0}, {pointShadowMapSize, pointShadowMapSize}));
+        commandBuffer.setScissor(0, vk::Rect2D({0, 0}, {rectAreaShadowMapSize, rectAreaShadowMapSize}));
 
         for (const DrawItem& item : graph.renderData().drawItems)
         {

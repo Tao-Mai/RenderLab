@@ -1,0 +1,9 @@
+{
+    "paths": {
+        "assets": "../assets",
+        "commands": "../config/commands.json",
+        "editor": "../config/editor.json",
+        "renderer": "renderer.json"
+    },
+    "initialScene": {"value": "default"}
+}

@@ -12,7 +12,8 @@
 #include "editor/Editor.h"
 #include "render/device/VkCheck.h"
 #include "render/feature/EndPass.h"
-#include "render/feature/PointLightShadowPass.h"
+#include "render/feature/shadow/PointLightShadowPass.h"
+#include "render/feature/shadow/RectAreaLightShadowPass.h"
 #include "render/feature/ScenePass.h"
 #include "render/feature/editor/EditorPickingCopyPass.h"
 #include "render/feature/editor/EditorPickingPass.h"
@@ -21,7 +22,7 @@
 #include "render/raytracing/RayTracingBlitPass.h"
 #include "render/raytracing/RayTracingPass.h"
 #include "render/resource/Buffer.h"
-#include "scene/component/CameraComponent.h"
+#include "editor/EditorCamera.h"
 
 #include <glm/gtc/matrix_inverse.hpp>
 
@@ -32,6 +33,7 @@ struct Renderer::Passes
 {
     std::tuple<
         PointLightShadowPass,
+        RectAreaLightShadowPass,
         ScenePass,
         LightMarkerPass,
         RayTracingPass,
@@ -71,7 +73,7 @@ void Renderer::init()
     DEBUG_EXEC(inited = true);
 }
 
-EditorFrameResult Renderer::render(const CameraComponent& camera, const EditorFrameInput& editor)
+EditorFrameResult Renderer::render(const EditorCamera& camera, const EditorFrameInput& editor)
 {
     DCHECK(inited);
     return drawFrame(camera, editor);
@@ -182,11 +184,12 @@ void Renderer::setupRenderGraph()
     }
     else
     {
-        const auto shadow  = setupPass<PointLightShadowPass>();
-        const auto scene   = setupPass<ScenePass>(color, shadow);
-        const auto markers = setupPass<LightMarkerPass>(scene.color, scene.depth);
-        sceneColor         = markers.color;
-        sceneDepth         = markers.depth;
+        const auto shadow         = setupPass<PointLightShadowPass>();
+        const auto rectAreaShadow = setupPass<RectAreaLightShadowPass>();
+        const auto scene          = setupPass<ScenePass>(color, shadow, rectAreaShadow);
+        const auto markers        = setupPass<LightMarkerPass>(scene.color, scene.depth);
+        sceneColor                = markers.color;
+        sceneDepth                = markers.depth;
     }
 
     const auto [pickingImage] = setupPass<EditorPickingPass>(sceneDepth);
@@ -225,7 +228,7 @@ void Renderer::recreateSwapchain()
     context().editor->refreshUi();
 }
 
-void Renderer::updateFrameData(const CameraComponent& camera, const EditorFrameInput& editor)
+void Renderer::updateFrameData(const EditorCamera& camera, const EditorFrameInput& editor)
 {
     renderSystem.prepare(camera.worldPosition(), *renderContext().resources);
 
@@ -252,7 +255,7 @@ void Renderer::updateFrameData(const CameraComponent& camera, const EditorFrameI
     );
 }
 
-EditorFrameResult Renderer::drawFrame(const CameraComponent& camera, const EditorFrameInput& editor)
+EditorFrameResult Renderer::drawFrame(const EditorCamera& camera, const EditorFrameInput& editor)
 {
     const vk::Fence         drawFence               = currentFrame().drawFenceHandle();
     const vk::Semaphore     imageAvailableSemaphore = currentFrame().imageAvailableSemaphore();

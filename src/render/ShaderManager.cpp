@@ -146,6 +146,8 @@ ShaderHandle ShaderManager::getOrLoad(const ShaderAsset::ID& id, ShaderVariant v
     std::filesystem::path binary = desc.binary;
     if (variant == ShaderVariant::NoIbl)
         binary.replace_filename(binary.stem().string() + ".no_ibl" + binary.extension().string());
+    else if (variant == ShaderVariant::RectAreaShadow)
+        binary.replace_filename(binary.stem().string() + ".rect_area" + binary.extension().string());
 
     auto               shader = std::make_unique<GpuShader>(*device, binary.string());
     ShaderMetadata     metadata{id, binary, readReflection(binary)};

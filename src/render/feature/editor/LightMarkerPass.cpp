@@ -115,7 +115,7 @@ void LightMarkerPass::execute(RenderGraph& graph) const
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     const std::array sceneSets = {graph.frameData(graph.frameIndex()).sceneSetHandle()};
     commandBuffer
-        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, RenderInterface::sceneSet, sceneSets, {});
+        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, RenderInterface::kSceneSet, sceneSets, {});
     graph.lightMarkers().record(commandBuffer, pipelineLayout, lightDrawItems);
 
     commandBuffer.endRendering();

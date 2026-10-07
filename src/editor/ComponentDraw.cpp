@@ -6,6 +6,7 @@
 #include "scene/SceneTypes.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 #include <glm/common.hpp>
@@ -30,32 +31,46 @@ bool drawField(const char* label, glm::vec3& value)
 {
     return ImGui::DragFloat3(label, glm::value_ptr(value), 0.05f);
 }
-bool drawField(const char* label, glm::vec4& value)
-{
-    return ImGui::DragFloat4(label, glm::value_ptr(value), 0.05f);
-}
+bool drawField(const char* label, glm::vec4& value) { return ImGui::DragFloat4(label, glm::value_ptr(value), 0.05f); }
 bool drawField(const char* label, glm::quat& value)
 {
-    glm::vec3 degrees = glm::degrees(glm::eulerAngles(glm::normalize(value)));
-    if (!ImGui::DragFloat3(label, glm::value_ptr(degrees), 0.25f, 0.0f, 0.0f, "%.1f deg"))
-        return false;
+    const glm::quat current = glm::normalize(value);
+    glm::vec3       degrees = glm::degrees(glm::eulerAngles(current));
 
-    glm::quat rotation = glm::normalize(glm::quat(glm::radians(degrees)));
-    if (glm::dot(rotation, value) < 0.0f) rotation = -rotation;
-    value = rotation;
-    return true;
+    // Keep the user's Euler representation until something else changes rotation.
+    ImGui::PushID(label);
+    const std::array angleIds = {ImGui::GetID("Euler X"), ImGui::GetID("Euler Y"), ImGui::GetID("Euler Z")};
+    ImGui::PopID();
+    auto&           storage = *ImGui::GetStateStorage();
+    const glm::vec3 cachedDegrees{
+        storage.GetFloat(angleIds[0], degrees.x),
+        storage.GetFloat(angleIds[1], degrees.y),
+        storage.GetFloat(angleIds[2], degrees.z),
+    };
+    const glm::quat cachedRotation     = glm::normalize(glm::quat(glm::radians(cachedDegrees)));
+    constexpr float kRotationTolerance = 1e-6f;
+    if (std::min(glm::length(current - cachedRotation), glm::length(current + cachedRotation)) < kRotationTolerance)
+        degrees = cachedDegrees;
+
+    const bool edited = ImGui::DragFloat3(label, glm::value_ptr(degrees), 0.25f, 0.0f, 0.0f, "%.1f deg");
+    if (edited)
+    {
+        glm::quat rotation = glm::normalize(glm::quat(glm::radians(degrees)));
+        if (glm::dot(rotation, value) < 0.0f)
+            rotation = -rotation;
+        value = rotation;
+    }
+    for (size_t axis = 0; axis < angleIds.size(); ++axis)
+        storage.SetFloat(angleIds[axis], degrees[axis]);
+
+    return edited;
 }
 
 ComponentDrawResult drawFields(TransformComponent& transform)
 {
     ComponentDrawResult result;
     result.edited = ImGui::DragFloat3("Position", glm::value_ptr(transform.position), 0.05f);
-    glm::vec3 degrees = transform.rotationEulerDegrees();
-    if (ImGui::DragFloat3("Rotation", glm::value_ptr(degrees), 0.25f, 0.0f, 0.0f, "%.1f deg"))
-    {
-        transform.setRotationEulerDegrees(degrees);
-        result.edited = true;
-    }
+    result.edited = drawField("Rotation", transform.rotation) || result.edited;
 
     if (ImGui::DragFloat3("Scale", glm::value_ptr(transform.scale), 0.01f))
     {
@@ -70,10 +85,12 @@ ComponentDrawResult drawFields(LightComponent& light)
     ComponentDrawResult result;
     result.edited = drawField("Type", light.type);
     result.edited = ImGui::ColorEdit3("Color", glm::value_ptr(light.color)) || result.edited;
-    result.edited = ImGui::DragFloat("Intensity", &light.intensity, 0.05f, 0.0f, 100000.0f,
+    const char* intensityLabel = light.type == LightComponent::Type::RectArea ? "Radiance" : "Intensity";
+    result.edited = ImGui::DragFloat(intensityLabel, &light.intensity, 0.05f, 0.0f, 100000.0f,
                                    "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
 
-    if (light.type == LightComponent::Type::Point || light.type == LightComponent::Type::Spot)
+    if (light.type == LightComponent::Type::Point || light.type == LightComponent::Type::Spot ||
+        light.type == LightComponent::Type::RectArea)
         result.edited = ImGui::DragFloat("Range", &light.range, 0.1f, 0.01f, 100000.0f,
                                        "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
 

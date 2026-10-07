@@ -5,29 +5,17 @@
 #include "render/resource/RenderResourceManager.h"
 #include "render/resource/ShaderData.h"
 
-#include <cmath>
-
 #include <glm/geometric.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 namespace
 {
-[[nodiscard]] glm::vec3 lightDirection(const TransformComponent& transform)
-{
-    return glm::normalize(transform.rotation * glm::vec3{0.0f, 0.0f, -1.0f});
-}
-
 [[nodiscard]] glm::mat4 markerTransform(const TransformComponent& transform)
 {
-    const glm::vec3 forward = lightDirection(transform);
-    const glm::vec3 up = std::abs(glm::dot(forward, glm::vec3{0.0f, 1.0f, 0.0f})) > 0.999f
-        ? glm::vec3{0.0f, 0.0f, 1.0f}
-        : glm::vec3{0.0f, 1.0f, 0.0f};
-    const glm::quat rotation = glm::normalize(glm::quatLookAtRH(forward, up));
-    return glm::translate(glm::mat4{1.0f}, transform.position) * glm::mat4_cast(rotation);
+    return glm::translate(glm::mat4{1.0f}, transform.position) * glm::mat4_cast(glm::normalize(transform.rotation));
 }
-}
+}  // namespace
 
 void LightMarkers::init(RenderResourceManager& resources)
 {
