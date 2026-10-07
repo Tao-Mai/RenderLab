@@ -201,9 +201,10 @@ TEST_F(ComponentDrawTest, LightEditorShowsOnlyTypeSpecificFields)
         EXPECT_FALSE(result.edited);
         EXPECT_FALSE(result.resourcesChanged);
         const auto shown = [&](const char* label) { return text.find(label) != std::string::npos; };
-        EXPECT_TRUE(shown("Intensity"));
+        EXPECT_EQ(shown("Intensity"), type != LightComponent::Type::RectArea);
+        EXPECT_EQ(shown("Radiance"), type == LightComponent::Type::RectArea);
         EXPECT_TRUE(shown("Cast Shadow"));
-        EXPECT_EQ(shown("Range"), type == LightComponent::Type::Point || type == LightComponent::Type::Spot);
+        EXPECT_EQ(shown("Range"), type != LightComponent::Type::Directional);
         EXPECT_EQ(shown("Inner Angle"), type == LightComponent::Type::Spot);
         EXPECT_EQ(shown("Outer Angle"), type == LightComponent::Type::Spot);
         EXPECT_EQ(shown("Area Size"), type == LightComponent::Type::RectArea);
@@ -235,14 +236,36 @@ TEST_F(ComponentDrawTest, TransformEditsEulerRotationAndClampsScale)
     EXPECT_FLOAT_EQ(transform.scale.x, 0.001f);
 }
 
+TEST_F(ComponentDrawTest, RotationRetainsEnteredAnglesAcrossEulerBoundaries)
+{
+    TransformComponent transform;
+    const auto draw = [&] { return component_draw::drawFields(transform); };
+    EXPECT_TRUE(enterScalar(draw, [] { return vectorElementId("Rotation", 1); }, "100").edited);
+    auto text = frame([&] { EXPECT_FALSE(draw().edited); });
+    EXPECT_NE(text.find("100.0 deg"), std::string::npos);
+    EXPECT_NEAR(std::abs(glm::dot(transform.rotation, glm::quat(glm::radians(glm::vec3{0.0f, 100.0f, 0.0f})))), 1.0f, 1e-6f);
+
+    EXPECT_TRUE(enterScalar(draw, [] { return vectorElementId("Rotation", 1); }, "190").edited);
+    text = frame([&] { EXPECT_FALSE(draw().edited); });
+    EXPECT_NE(text.find("190.0 deg"), std::string::npos);
+
+    // Gizmo/runtime edits must refresh the cached inspector representation.
+    transform.setRotationEulerDegrees({10.0f, 20.0f, 30.0f});
+    text = frame([&] { EXPECT_FALSE(draw().edited); });
+    EXPECT_NE(text.find("20.0 deg"), std::string::npos);
+    EXPECT_EQ(text.find("190.0 deg"), std::string::npos);
+}
+
 TEST_F(ComponentDrawTest, LightAngleInputIsClampedAndStoredAsCosine)
 {
     LightComponent light;
-    light.type = LightComponent::Type::Spot;
-    const float outer = light.cosOuter;
-    const auto result = enterScalar(
+    light.type         = LightComponent::Type::Spot;
+    const float outer  = light.cosOuter;
+    const auto  result = enterScalar(
         [&] { return component_draw::drawFields(light); },
-        [] { return ImGui::GetID("Inner Angle"); }, "100");
+        [] { return ImGui::GetID("Inner Angle"); },
+        "100"
+    );
     EXPECT_TRUE(result.edited);
     EXPECT_NEAR(light.cosInner, outer, 0.0001f);
     EXPECT_FLOAT_EQ(light.cosOuter, outer);
@@ -252,14 +275,17 @@ TEST_F(ComponentDrawTest, EveryRegisteredComponentHasAnInspector)
 {
     AssetManager assets;
     context().assetManager = &assets;
-    forEachComponentType([&]<class T>(const char* name)
-    {
-        T component;
-        if constexpr (std::same_as<T, RenderComponent>) component.meshId = BuiltinAssets::Mesh::sphere;
-        const auto text = frame([&] { EXPECT_FALSE(drawComponent(component).edited); });
-        EXPECT_NE(text.find(name), std::string::npos);
-        EXPECT_EQ(text.find("no registered inspector"), std::string::npos);
-    });
+    forEachComponentType(
+        [&]<class T>(const char* name)
+        {
+            T component;
+            if constexpr (std::same_as<T, RenderComponent>)
+                component.meshId = BuiltinAssets::Mesh::sphere;
+            const auto text = frame([&] { EXPECT_FALSE(drawComponent(component).edited); });
+            EXPECT_NE(text.find(name), std::string::npos);
+            EXPECT_EQ(text.find("no registered inspector"), std::string::npos);
+        }
+    );
 }
 
 TEST_F(ComponentDrawTest, MeshSelectionReportsResourceChanges)

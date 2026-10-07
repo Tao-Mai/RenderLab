@@ -83,6 +83,7 @@ TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
     EXPECT_EQ(serialized.at("environmentMap").at("value"), "grasslands");
     EXPECT_EQ(serialized.at("feature").at("shadow").at("enable"), false);
     EXPECT_EQ(serialized.at("feature").at("shadow").at("pointShadowMapSize"), 2048);
+    EXPECT_EQ(serialized.at("feature").at("shadow").at("rectAreaShadowMapSize"), 1024);
     EXPECT_FLOAT_EQ(serialized.at("feature").at("shadow").at("bias").get<float>(), 0.0025f);
     EXPECT_EQ(serialized.at("feature").at("shadow").at("filter"), "Nearest");
     EXPECT_EQ(serialized.at("feature").at("shadow").at("pixelRotation"), false);

@@ -28,75 +28,90 @@ void DescriptorManager::init(const vk::raii::Device& targetDevice)
 
     const std::array sceneBindings = {
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::viewUniformBinding,
+            .binding = RenderInterface::kViewUniformBinding,
             .descriptorType = vk::DescriptorType::eUniformBuffer,
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::lightUniformBinding,
+            .binding = RenderInterface::kLightUniformBinding,
             .descriptorType = vk::DescriptorType::eUniformBuffer,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::lightBufferBinding,
+            .binding = RenderInterface::kLightBufferBinding,
             .descriptorType = vk::DescriptorType::eStorageBuffer,
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::pointShadowBufferBinding,
+            .binding = RenderInterface::kPointShadowBufferBinding,
             .descriptorType = vk::DescriptorType::eStorageBuffer,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eVertex},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::irradianceImageBinding,
+            .binding = RenderInterface::kRectAreaShadowBufferBinding,
+            .descriptorType = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
+
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kPointShadowImageBinding,
             .descriptorType = vk::DescriptorType::eSampledImage,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::irradianceSamplerBinding,
+            .binding = RenderInterface::kRectAreaShadowImageBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kShadowComparisonSamplerBinding,
             .descriptorType = vk::DescriptorType::eSampler,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::prefilteredSpecularImageBinding,
+            .binding = RenderInterface::kLinearSamplerBinding,
+            .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kIrradianceImageBinding,
             .descriptorType = vk::DescriptorType::eSampledImage,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::prefilteredSpecularSamplerBinding,
+            .binding = RenderInterface::kIrradianceSamplerBinding,
             .descriptorType = vk::DescriptorType::eSampler,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::brdfLutImageBinding,
+            .binding = RenderInterface::kPrefilteredSpecularImageBinding,
             .descriptorType = vk::DescriptorType::eSampledImage,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::brdfLutSamplerBinding,
+            .binding = RenderInterface::kPrefilteredSpecularSamplerBinding,
             .descriptorType = vk::DescriptorType::eSampler,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::radianceImageBinding,
+            .binding = RenderInterface::kBrdfLutImageBinding,
             .descriptorType = vk::DescriptorType::eSampledImage,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::radianceSamplerBinding,
+            .binding = RenderInterface::kBrdfLutSamplerBinding,
             .descriptorType = vk::DescriptorType::eSampler,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::shadowImageBinding,
+            .binding = RenderInterface::kRadianceImageBinding,
             .descriptorType = vk::DescriptorType::eSampledImage,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::shadowSamplerBinding,
+            .binding = RenderInterface::kRadianceSamplerBinding,
             .descriptorType = vk::DescriptorType::eSampler,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
     };
     const std::array materialBindings = {
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::materialImageBinding,
+            .binding = RenderInterface::kMaterialImageBinding,
             .descriptorType = vk::DescriptorType::eSampledImage,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::materialSamplerBinding,
+            .binding = RenderInterface::kMaterialSamplerBinding,
             .descriptorType = vk::DescriptorType::eSampler,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
-            .binding = RenderInterface::materialUniformBinding,
+            .binding = RenderInterface::kMaterialUniformBinding,
             .descriptorType = vk::DescriptorType::eUniformBuffer,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
     };

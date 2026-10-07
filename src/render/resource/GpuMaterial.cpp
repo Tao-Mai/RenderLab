@@ -74,21 +74,21 @@ void GpuMaterial::create(
     const std::array writes = {
         vk::WriteDescriptorSet{
             .dstSet = *descriptorSet,
-            .dstBinding = RenderInterface::materialImageBinding,
+            .dstBinding = RenderInterface::kMaterialImageBinding,
             .descriptorCount = 1,
             .descriptorType = vk::DescriptorType::eSampledImage,
             .pImageInfo = &imageInfo,
         },
         vk::WriteDescriptorSet{
             .dstSet = *descriptorSet,
-            .dstBinding = RenderInterface::materialSamplerBinding,
+            .dstBinding = RenderInterface::kMaterialSamplerBinding,
             .descriptorCount = 1,
             .descriptorType = vk::DescriptorType::eSampler,
             .pImageInfo = &samplerInfo,
         },
         vk::WriteDescriptorSet{
             .dstSet = *descriptorSet,
-            .dstBinding = RenderInterface::materialUniformBinding,
+            .dstBinding = RenderInterface::kMaterialUniformBinding,
             .descriptorCount = 1,
             .descriptorType = vk::DescriptorType::eUniformBuffer,
             .pBufferInfo = &materialBufferInfo,

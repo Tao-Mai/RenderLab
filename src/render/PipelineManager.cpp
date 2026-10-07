@@ -135,9 +135,9 @@ vk::Pipeline PipelineManager::getOrCreate(const PipelineKey& key)
     const ShaderMetadata& metadata = shaders->metadata(key.shader);
     for (const ShaderMetadata::Binding& binding : metadata.bindings)
     {
-        const bool supported = binding.set == RenderInterface::sceneSet
+        const bool supported = binding.set == RenderInterface::kSceneSet
             ? descriptors->containsBinding(DescriptorLayoutPreset::Scene, binding.binding, binding.type)
-            : binding.set == RenderInterface::materialSet && key.layout == PipelineLayoutPreset::SceneMaterial &&
+            : binding.set == RenderInterface::kMaterialSet && key.layout == PipelineLayoutPreset::SceneMaterial &&
                 descriptors->containsBinding(DescriptorLayoutPreset::Material, binding.binding, binding.type);
         CHECK(
             supported,

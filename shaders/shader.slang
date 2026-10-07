@@ -51,29 +51,37 @@ SamplerState baseColorSampler;
 [[vk::binding(2, 1)]]
 ConstantBuffer<MaterialData> material;
 
-[[vk::binding(1, 0)]]
-TextureCube<float4> irradianceMap;
-
-[[vk::binding(2, 0)]]
-SamplerState irradianceMapSampler;
-
-[[vk::binding(3, 0)]]
-TextureCube<float4> prefilteredSpecularMap;
-
-[[vk::binding(4, 0)]]
-SamplerState prefilteredSpecularMapSampler;
-
+// Scene shadow resources (bindings 5..8).
 [[vk::binding(5, 0)]]
-Texture2D<float4> brdfLUT;
-
-[[vk::binding(6, 0)]]
-SamplerState brdfLUTSampler;
-
-[[vk::binding(9, 0)]]
 TextureCubeArray<float> pointShadowMap;
 
+[[vk::binding(6, 0)]]
+Texture2DArray<float> rectAreaShadowMap;
+
+[[vk::binding(7, 0)]]
+SamplerComparisonState shadowSampler;
+
+[[vk::binding(8, 0)]]
+SamplerState linearSampler;
+
+// Scene environment image / sampler pairs (bindings 9..16).
+[[vk::binding(9, 0)]]
+TextureCube<float4> irradianceMap;
+
 [[vk::binding(10, 0)]]
-SamplerComparisonState pointShadowSampler;
+SamplerState irradianceMapSampler;
+
+[[vk::binding(11, 0)]]
+TextureCube<float4> prefilteredSpecularMap;
+
+[[vk::binding(12, 0)]]
+SamplerState prefilteredSpecularMapSampler;
+
+[[vk::binding(13, 0)]]
+Texture2D<float4> brdfLUT;
+
+[[vk::binding(14, 0)]]
+SamplerState brdfLUTSampler;
 
 
 
@@ -96,10 +104,81 @@ float pcf(float3 dir, uint shadowIndex, float depth, float2 rotation)
         float3 sampleDirection = normalize(
             direction + rotatedTangent * offset.x + rotatedBitangent * offset.y);
         totalVisibility += pointShadowMap.SampleCmpLevelZero(
-            pointShadowSampler, float4(sampleDirection, shadowIndex), depth);
+            shadowSampler, float4(sampleDirection, shadowIndex), depth - lightUniforms.shadowBias);
     }
 
     return totalVisibility / kPoissonDisk16SampleCount;
+}
+
+
+float rectAreaShadowPCSS(LightData light, float3 worldPos, uint2 pixel)
+{
+    uint shadowIndex = light.shadowIdx;
+    RectAreaShadowData shadow = rectAreaShadowData[shadowIndex];
+    float4 pos = mul(shadow.vp, float4(worldPos, 1.0));
+    if (pos.w <= 0.0)
+        return 1.0;
+
+    float3 projected = pos.xyz / pos.w;
+    float2 uv = projected.xy * 0.5 + 0.5;
+    if (any(uv < 0.0) || any(uv > 1.0) || projected.z < 0.0 || projected.z > 1.0)
+        return 1.0;
+
+    // clip.w is the positive, linear depth along the light's viewing direction.
+    float receiverLinearDepth = pos.w;
+    float receiverDepth = max(projected.z - lightUniforms.shadowBias, 0.0);
+    float2 lightHalfSize = light.areaSize * 0.5;
+
+    // The blocker depth is unknown: project the search footprint onto the near plane.
+    float2 searchSize = lightHalfSize * max(receiverLinearDepth - shadow.nearPlane, 0.0)
+        / receiverLinearDepth;
+    float2 searchRadiusUv = searchSize * shadow.worldToUvScale / shadow.nearPlane;
+    uint blockerCount = 0;
+    float avgBlockerLinearDepth = 0.0;
+    [unroll]
+    for (uint sampleIndex = 0; sampleIndex < kRectangle16SampleCount; ++sampleIndex)
+    {
+        float2 offset = rectangleSample16(sampleIndex, pixel, lightUniforms.shadowPixelRotation);
+        float2 sampleUv = uv + offset * searchRadiusUv;
+        if (any(sampleUv < 0.0) || any(sampleUv > 1.0))
+            continue;
+
+        float blockerDepth = rectAreaShadowMap.SampleLevel(
+            linearSampler, float3(sampleUv, shadowIndex), 0.0);
+        // Keep bias and comparison in the same non-linear 0..1 depth space as PCF.
+        if (blockerDepth < receiverDepth)
+        {
+            float blockerLinearDepth = shadow.nearPlane * shadow.farPlane
+                / (shadow.farPlane + (shadow.nearPlane - shadow.farPlane) * blockerDepth);
+            avgBlockerLinearDepth += blockerLinearDepth;
+            ++blockerCount;
+        }
+    }
+
+    if (blockerCount == 0)
+        return 1.0;
+    avgBlockerLinearDepth /= blockerCount;
+
+    // Small-triangle footprint on the blocker plane; convert using blocker depth.
+    float ratio = max(receiverLinearDepth - avgBlockerLinearDepth, 0.0) / receiverLinearDepth;
+    float2 filterSize = lightHalfSize * ratio;
+    float2 filterRadiusUv = filterSize * shadow.worldToUvScale / avgBlockerLinearDepth;
+    float totalVisibility = 0.0;
+    [unroll]
+    for (uint sampleIndex = 0; sampleIndex < kRectangle16SampleCount; ++sampleIndex)
+    {
+        float2 offset = rectangleSample16(sampleIndex, pixel, lightUniforms.shadowPixelRotation);
+        float2 sampleUv = uv + offset * filterRadiusUv;
+        if (any(sampleUv < 0.0) || any(sampleUv > 1.0))
+        {
+            totalVisibility += 1.0;
+            continue;
+        }
+
+        totalVisibility += rectAreaShadowMap.SampleCmpLevelZero(
+            shadowSampler, float3(sampleUv, shadowIndex), receiverDepth);
+    }
+    return totalVisibility / kRectangle16SampleCount;
 }
 
 [shader("vertex")]
@@ -146,7 +225,7 @@ float4 fragMain(VertexOutput input) : SV_Target
             float visibility = 1.0;
             if (light.castShadow) {
                 uint shadowidx = light.shadowIdx;
-                float depth = distanceToLight / light.range - lightUniforms.shadowBias;
+                float depth = distanceToLight / light.range;
 
                 // depth <= shadowMapDepth，用的less or equal
                 visibility = pcf(-L, shadowidx, depth, shadowRotation);
@@ -172,6 +251,19 @@ float4 fragMain(VertexOutput input) : SV_Target
             // TODO
             float NdotL = saturate(dot(N, -light.direction.xyz));
             direct += light.color * light.intensity * NdotL * baseColor.rgb;
+        } else if (light.type == LightType.RectArea) {
+            float3 L = normalize(light.position - input.worldPosition);
+            float distanceToLight = length(light.position - input.worldPosition);
+            float NdotL = saturate(dot(N, L));
+            float projectedArea = light.areaSize.x * light.areaSize.y * saturate(dot(-L, light.direction.xyz));
+            float omegaRange = projectedArea / (distanceToLight * distanceToLight);
+
+            float visibility = 1.0;
+            if (light.castShadow) {
+                visibility = rectAreaShadowPCSS(light, input.worldPosition, uint2(input.position.xy));
+            }
+
+            direct += light.color * light.radiance * NdotL * omegaRange * INV_PI * visibility * baseColor.rgb;
         }
     }
 

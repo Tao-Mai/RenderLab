@@ -2,7 +2,8 @@
 
 #include "render/FrameData.h"
 #include "render/PipelineManager.h"
-#include "render/feature/PointLightShadowPass.h"
+#include "render/feature/shadow/PointLightShadowPass.h"
+#include "render/feature/shadow/RectAreaLightShadowPass.h"
 #include "render/feature/RenderGraph.h"
 
 #include <memory>
@@ -24,9 +25,14 @@ public:
         RenderGraph::ImageHandle depth;
     };
 
-    Output setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle, PointLightShadowPass::Output shadow);
-    void   bindResources(RenderGraph& graph) const;
-    void   execute(RenderGraph& graph) const;
+    Output setup(
+        RenderGraph&                    graph,
+        RenderGraph::ImageHandle        colorHandle,
+        PointLightShadowPass::Output    pointShadow,
+        RectAreaLightShadowPass::Output rectAreaShadow
+    );
+    void bindResources(RenderGraph& graph) const;
+    void execute(RenderGraph& graph) const;
 
 private:
     VulkanContext*              vulkan = nullptr;
@@ -34,6 +40,7 @@ private:
     RenderGraph::ImageHandle    color;
     RenderGraph::ImageHandle    depth;
     RenderGraph::ImageHandle    pointShadowMap;
+    RenderGraph::ImageHandle    rectAreaShadowMap;
     PipelineManager*            pipelines = nullptr;
     RenderResourceManager*      resources = nullptr;
     ShaderHandle                sceneShader;

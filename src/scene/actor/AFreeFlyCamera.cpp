@@ -5,7 +5,7 @@
 
 AFreeFlyCamera::AFreeFlyCamera()
 {
-    name = "Editor Camera";
+    name = "AFreeFlyCamera";
     addDefaultComponent<CameraComponent>();
     addDefaultComponent<FreeFlyMoveComponent>();
 }

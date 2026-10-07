@@ -40,7 +40,7 @@ enum class LightType : uint {
     Spot = 3,
 };
 
-// std430 array stride = 96 bytes. flags = {type, enabled, castShadow, reserved}.
+// std430 array stride = 112 bytes. flags = {type, enabled, castShadow, reserved}.
 struct LightData
 {
     float4 colorIntensity;
@@ -52,12 +52,17 @@ struct LightData
     uint padding0;
     uint padding1;
     uint padding2;
+    float4 areaRightData;
 
     property color : float3 {
         get { return colorIntensity.rgb; }
     }
     property intensity : float {
         get { return colorIntensity.w; }
+    }
+
+    property radiance : float {
+        get {return colorIntensity.w;}
     }
 
     property position : float3 {
@@ -81,6 +86,11 @@ struct LightData
     property areaSize : float2 {
         get { return areaSizeCone.xy; }
     }
+
+    // World-space direction along the rectangle's width (local +X).
+    property areaRight : float3 {
+        get { return areaRightData.xyz; }
+    }
 };
 
 struct PointShadowData
@@ -88,16 +98,28 @@ struct PointShadowData
     float4x4 vp[6];
 };
 
+struct RectAreaShadowData
+{
+    float4x4 vp;
+    float nearPlane;
+    float farPlane;
+    // World-space radius at light-view depth z maps to radius * worldToUvScale / z.
+    float2 worldToUvScale;
+};
+
 [[vk::binding(0, 0)]]
 ConstantBuffer<ViewUniforms> viewUniforms;
 
-[[vk::binding(11, 0)]]
+[[vk::binding(1, 0)]]
 ConstantBuffer<LightUniforms> lightUniforms;
 
-[[vk::binding(12, 0)]]
+[[vk::binding(2, 0)]]
 StructuredBuffer<LightData> lights;
 
-[[vk::binding(13, 0)]]
+[[vk::binding(3, 0)]]
 StructuredBuffer<PointShadowData> pointShadowData;
+
+[[vk::binding(4, 0)]]
+StructuredBuffer<RectAreaShadowData> rectAreaShadowData;
 
 #endif

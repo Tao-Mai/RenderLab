@@ -101,6 +101,7 @@ void RenderSystem::prepare(const glm::vec3& cameraPosition, RenderResourceManage
             .areaSizeCone = {light->areaSize, light->cosInner, light->cosOuter},
             .flags = {static_cast<uint32_t>(light->type), light->enabled ? 1u : 0u,
                 light->castShadow ? 1u : 0u, 0u},
+            .areaRightData = {glm::normalize(transform->rotation * glm::vec3{1.0f, 0.0f, 0.0f}), 0.0f},
         });
 
         const auto draws = markers.buildDrawItems(*transform, *light, object.selectionId);

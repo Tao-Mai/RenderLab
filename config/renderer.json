@@ -17,6 +17,7 @@
             "filter": "Linear",
             "pixelRotation": true,
             "pointShadowMapSize": 512,
+            "rectAreaShadowMapSize": 2048,
             "sampleRadius": 0.019999999552965164
         }
     },

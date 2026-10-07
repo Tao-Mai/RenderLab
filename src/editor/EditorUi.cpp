@@ -503,6 +503,27 @@ EditorUI::InspectorResult EditorUI::drawInspector(
     }
 
     InspectorResult result;
+    if (ImGui::CollapsingHeader("Editor camera"))
+    {
+        auto& camera = scene.editorCamera;
+        result.edited |= ImGui::DragFloat3("Camera position", glm::value_ptr(camera.position), 0.05f);
+        result.edited |= ImGui::DragFloat("Camera yaw", &camera.yaw, 0.2f, 0.0f, 0.0f, "%.1f deg");
+        result.edited |= ImGui::DragFloat("Camera pitch", &camera.pitch, 0.2f, -89.0f, 89.0f,
+                                         "%.1f deg", ImGuiSliderFlags_AlwaysClamp);
+        result.edited |= ImGui::DragFloat("Camera FOV", &camera.fieldOfView, 0.2f, 20.0f, 90.0f,
+                                         "%.1f deg", ImGuiSliderFlags_AlwaysClamp);
+        result.edited |= ImGui::DragFloat("Camera near", &camera.nearPlane, 0.01f, 0.001f,
+                                         camera.farPlane - 0.001f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+        result.edited |= ImGui::DragFloat("Camera far", &camera.farPlane, 0.5f,
+                                         camera.nearPlane + 0.001f, 100000.0f, "%.1f", ImGuiSliderFlags_AlwaysClamp);
+        result.edited |= ImGui::DragFloat("Camera sensitivity", &camera.mouseSensitivity, 0.001f,
+                                         0.001f, 10.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+        result.edited |= ImGui::DragFloat("Camera speed", &camera.speed, 0.1f, 0.01f, 1000.0f,
+                                         "%.2f", ImGuiSliderFlags_AlwaysClamp);
+        result.edited |= ImGui::DragFloat("Camera sprint multiplier", &camera.sprintMultiplier, 0.1f,
+                                         1.0f, 100.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+    }
+
     ImGui::SeparatorText("Renderer");
     const RenderPath path = context().config->rendererConfig().renderPath;
     if (ImGui::BeginCombo("Render path", path == RenderPath::RayTracing ? "Ray tracing" : "Rasterization"))
@@ -564,28 +585,33 @@ EditorUI::InspectorResult EditorUI::drawInspector(
         result.rendererChanged = true;
     }
 
-    const std::string shadowSize = std::to_string(feature.shadow.pointShadowMapSize);
-    if (ImGui::BeginCombo("Point shadow map size", shadowSize.c_str()))
+    const auto drawShadowMapSize = [&](const char* label, uint32_t& mapSize, bool cube)
     {
+        const std::string shadowSize = std::to_string(mapSize);
+        if (!ImGui::BeginCombo(label, shadowSize.c_str()))
+            return;
+
         constexpr uint32_t kShadowMapSizes[] = {256, 512, 1024, 2048, 4096, 8192};
-        const auto& limits = context().renderer->vulkanContext().properties().limits;
+        const auto&        limits            = context().renderer->vulkanContext().properties().limits;
         for (uint32_t size : kShadowMapSizes)
         {
-            if (size > limits.maxImageDimensionCube || size > limits.maxImageDimension2D ||
+            if ((cube && size > limits.maxImageDimensionCube) || size > limits.maxImageDimension2D ||
                 size > limits.maxFramebufferWidth || size > limits.maxFramebufferHeight)
                 continue;
 
-            const bool selected = feature.shadow.pointShadowMapSize == size;
-            const std::string label = std::to_string(size);
+            const bool        selected = mapSize == size;
+            const std::string label    = std::to_string(size);
             if (ImGui::Selectable(label.c_str(), selected) && !selected)
             {
-                feature.shadow.pointShadowMapSize = size;
+                mapSize = size;
                 context().config->setRenderFeature(feature);
                 result.rendererChanged = true;
             }
         }
         ImGui::EndCombo();
-    }
+    };
+    drawShadowMapSize("Point shadow map size", feature.shadow.pointShadowMapSize, true);
+    drawShadowMapSize("Rect area shadow map size", feature.shadow.rectAreaShadowMapSize, false);
     if (ImGui::DragFloat(
             "Shadow bias",
             &feature.shadow.bias,

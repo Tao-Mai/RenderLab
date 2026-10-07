@@ -3,7 +3,7 @@
 #include "asset/AssetManager.h"
 #include "asset/AssetDataManager.h"
 #include "scene/SceneManager.h"
-#include "scene/component/CameraComponent.h"
+#include "editor/EditorCamera.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "editor/Editor.h"
@@ -117,7 +117,7 @@ void Engine::mainLoop()
         previousTime = currentTime;
 
         ctx.editor->applySceneActions();
-        auto& camera = ctx.sceneManager->editorCamera().camera();
+        auto& camera = ctx.sceneManager->editorCamera();
         camera.setInputEnabled(camera.isNavigationActive() || !ctx.editor->wantsInput());
         ctx.sceneManager->tick(deltaTime);
 

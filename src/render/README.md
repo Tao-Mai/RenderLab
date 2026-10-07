@@ -39,19 +39,23 @@ SceneManager 持有 AActor 和 Component。RenderSystem 整理场景对象，在
 | Set | Binding | 资源 |
 | --- | --- | --- |
 | 0 Scene | 0 | ViewUniforms UBO |
-| 0 Scene | 11 | LightUniforms UBO：light count、环境光系数、IBL 参数 |
-| 0 Scene | 12 | LightData[] SSBO |
-| 0 Scene | 13 | PointShadowData[] SSBO：每个点光源六个 VP |
-| 0 Scene | 1 / 2 | Irradiance image / sampler |
-| 0 Scene | 3 / 4 | Prefiltered specular image / sampler |
-| 0 Scene | 5 / 6 | BRDF LUT image / sampler |
-| 0 Scene | 7 / 8 | Radiance image / sampler |
-| 0 Scene | 9 / 10 | Point shadow cubemap array image / sampler |
+| 0 Scene | 1 | LightUniforms UBO：light count、环境光系数、IBL 参数 |
+| 0 Scene | 2 | LightData[] SSBO |
+| 0 Scene | 3 | PointShadowData[] SSBO：每个点光源六个 VP |
+| 0 Scene | 4 | RectAreaShadowData[] SSBO：VP、near/far、UV 系数 |
+| 0 Scene | 5 | Point shadow cubemap array image |
+| 0 Scene | 6 | Rect area shadow 2D array image |
+| 0 Scene | 7 | 阴影比较 sampler，点光源和矩形光源共用 |
+| 0 Scene | 8 | Linear clamp sampler，非比较模式，用于读取原始纹理值 |
+| 0 Scene | 9 / 10 | Irradiance image / sampler |
+| 0 Scene | 11 / 12 | Prefiltered specular image / sampler |
+| 0 Scene | 13 / 14 | BRDF LUT image / sampler |
+| 0 Scene | 15 / 16 | Radiance image / sampler |
 | 1 Material | 0 | Base color image |
 | 1 Material | 1 | Base color sampler |
 | 1 Material | 2 | MaterialUniforms UBO |
 
-每个 FrameContext 持有一个 FrameData，后者管理 Scene Set、两个 UBO、灯光 SSBO 和点光源阴影 SSBO。ViewUniforms 包含 viewProjection、inverseViewProjection 和 cameraPosition，共 144 字节。LightUniforms 包含 lightCount、ambientCoefficient、iblParameters 和 shadowParameters，共 48 字节；iblParameters.x 是 prefiltered specular 的最大 LOD，shadowParameters 的 x/y/z 分别为归一化点阴影深度 bias、方向空间 PCF 半径、逐像素旋转开关（0/1），w 预留为 0。LightData 按 RenderSystem 的灯光顺序存放，每项 96 字节，包含 shadowidx；lightCount 包括禁用灯光。上传时，仅 enabled 且 castShadow 的点光源获得连续的 shadowidx，其余为 ~0u。PointShadowData 每项包含六个 VP，共 384 字节。
+每个 FrameContext 持有一个 FrameData，后者管理 Scene Set、两个 UBO、灯光 SSBO 和点光源/矩形光源阴影 SSBO。ViewUniforms 包含 viewProjection、inverseViewProjection 和 cameraPosition，共 144 字节。LightUniforms 包含 lightCount、ambientCoefficient、iblParameters 和 shadowParameters，共 48 字节；iblParameters.x 是 prefiltered specular 的最大 LOD，shadowParameters 的 x/y/z 分别为归一化阴影深度 bias、点阴影方向空间 PCF 半径、逐像素旋转开关（0/1），w 预留为 0。LightData 按 RenderSystem 的灯光顺序存放，每项 112 字节，包含 shadowidx 和保留矩形旋转的 areaRightData（通过 areaRight 访问右方向）；lightCount 包括禁用灯光。上传时，enabled 且 castShadow 的点光源和矩形光源各自获得连续的 shadowidx，其余为 ~0u。PointShadowData 每项包含六个 VP，共 384 字节；RectAreaShadowData 包含 VP、nearPlane、farPlane 和 worldToUvScale，共 80 字节，Scene Set binding 4。
 
 SSBO 至少分配一项以维持有效 descriptor；没有灯光时 lightCount 为 0，shader 不读取数组。数量增长时，在当前帧 fence 完成后扩容并更新该帧 descriptor，其他帧保持自己的 buffer。
 
@@ -84,7 +88,7 @@ Renderer loadScene 等待 GPU 空闲，RenderSystem 加载渲染项并建立对�
 ## RenderGraph 接口
 
 各 Pass 提供 setup/execute；setup 直接接收 ImageHandle/BufferHandle 或前序 Pass 的 Output，返回 Output。
-Renderer setupRenderGraph 根据配置通过 setupPass<T>(args...) 完美转发参数，显式串接资源句柄；ScenePass 直接接收 color 和 PointShadowPass::Output。Graph 不再提供业务组图的 setup 接口。
+Renderer setupRenderGraph 根据配置通过 setupPass<T>(args...) 完美转发参数，显式串接资源句柄；ScenePass 直接接收 color、PointLightShadowPass::Output 和 RectAreaLightShadowPass::Output。Graph 不再提供业务组图的 setup 接口。
 所有 Pass 类型只在 Renderer.cpp 的 tuple 类型列表中集中声明一次，保存 Pass 对象，通过类型直接访问。
 Renderer 的 setupPass 将 Pass 对象交给 graph.addPass；addPass 通过静态反射收集参数中的 handle，限定访问记录的切换范围并在返回时恢复。Pass 仍调用 graph.use(handle, access)。Graph 单独拥有节点，保存资源依赖、use 记录和 execute 回调，不使用字符串注册。
 类型列表和 Renderer 的 setupPass 模板定义只放在 cpp；RenderGraph.h 定义通用模板，不包含各 Pass 的头文件。
@@ -109,7 +113,9 @@ Mesh/Material 直接引用 RenderSystem 准备的资产 GPU 对象，不进入�
 
 `RenderConfig.h` 中的 `kMaxPointLightShadow = 4` 固定点光源阴影容量。每帧阴影图预留 24 层，PointShadowData SSBO 固定分配四项，不随场景灯光数量或开关状态扩容。上传时有效点光源超过四盏直接 CHECK 终止。
 
-FrameData 在上传时为启用投影的点光源计算六个 VP，range 为 far plane。Shadow 遍历当前帧全部灯光，对有效点光源各录制一次六面 multiview 渲染，viewMask = 0b111111；shader 按 lightidx → shadowidx → VP[SV_ViewID] 取矩阵。每个 shadowidx 对应 cubemap array 中独立的六层，fragment 写入 `distance(worldPosition, lightPosition) / range` 的线性深度。没有有效阴影点光源时不录制清空或绘制命令。完成后整图切换到深度只读状态。Scene shader 的阴影采样仍未启用，其他光源阴影、透明和 AlphaTest 镂空暂不处理。设备需要支持至少六个 multiview view 和 imageCubeArray。
+FrameData 在上传时为启用投影的点光源计算六个 VP，range 为 far plane。PointLightShadowPass 遍历当前帧全部灯光，对有效点光源各录制一次六面 multiview 渲染，viewMask = 0b111111；shader 按 lightidx → shadowidx → VP[SV_ViewID] 取矩阵。每个 shadowidx 对应 cubemap array 中独立的六层，fragment 写入 `distance(worldPosition, lightPosition) / range` 的线性深度。没有有效阴影点光源时不录制清空或绘制命令。Graph 负责切换到深度只读状态。设备需要支持至少六个 multiview view 和 imageCubeArray。
+
+RectAreaLightShadowPass 不使用 multiview，每个有效矩形阴影光源使用一层 2D 深度图。`kMaxRectAreaLightShadow = 4` 固定图像层数和 RectAreaShadowData SSBO 容量，shadowidx 在矩形类型内独立编号。上传阶段从光源中心计算透视 VP：垂直 FOV 100 度、宽高比 areaSize.x / areaSize.y、near plane 为 min(0.5, range * 0.1)、far plane 为 range，areaRight 保留光源绕发光方向的旋转。worldToUvScale 是投影矩阵 XY 对角元素绝对值的一半，深度 z 处的世界空间半径通过 radius * worldToUvScale / z 转为 UV 半径。shadow.slang 通过 SHADOW_POINT 宏编译为 shadow.spv 和 shadow.rect_area.spv，只有点光源变体声明 SV_ViewID。矩形变体写透视深度，不写径向距离。主场景采用矩形核 PCSS：blocker 搜索和 PCF 各使用 4×4 分层的 16 点矩形采样，采样方法位于 sampling.slang，先在 [-1,1]² 中每格取一点，再按光源宽高和投影缩放。feature.shadow.pixelRotation 对点光源仍控制圆盘旋转，对矩形光源控制稳定的逐像素格内抖动；关闭时使用每格中心，始终不旋转矩形核。搜索范围投影到 near plane，用非比较 Linear sampler 搜索 blocker，再按平均线性 blocker 深度计算过滤半径，用比较 sampler 执行 PCF，过滤模式仍由阴影配置控制。超出投影范围和越界过滤样本视为未遮挡，越界搜索样本跳过。此方案仍是单张中心投影阴影图的软阴影近似，不是精确矩形光源积分。Spot、Directional 阴影及 AlphaTest 镂空暂不处理。
 
 有环境贴图时，Scene 内部在 opaque 之后绘制 Skybox。fullscreen triangle 的深度为 1，fragment 从 ViewUniforms 读取逆视投影矩阵和相机位置，结合 push constant 中的编辑器视口重建世界方向，采样 radiance 基础 mip。保留深度测试、关闭深度写入，并请求早期深度测试。随后透明几何按距离从远到近绘制，再绘制灯光标记。
 

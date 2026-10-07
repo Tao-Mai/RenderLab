@@ -6,7 +6,7 @@
 #include "scene/SceneManager.h"
 #include "scene/component/TransformComponent.h"
 #include "scene/component/FreeFlyMoveComponent.h"
-#include "scene/actor/AFreeFlyCamera.h"
+#include "scene/component/CameraComponent.h"
 
 #include <algorithm>
 #include <cmath>
@@ -28,7 +28,7 @@ void CharacterMoveComponent::tick(float deltaTime)
     if (const auto* ownCamera = actor().getComponent<CameraComponent>();
         ownCamera && !ownCamera->isNavigationActive()) return;
 
-    const auto& camera = context().sceneManager->editorCamera().camera();
+    const auto& camera = context().sceneManager->editorCamera();
     if (!camera.isNavigationActive()) return;
 
     const auto& input = *context().inputManager;

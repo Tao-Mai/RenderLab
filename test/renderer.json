@@ -15,6 +15,7 @@
             "enable": true,
             "filter": "Linear",
             "pointShadowMapSize": 1024,
+            "rectAreaShadowMapSize": 1024,
             "bias": 0.001,
             "pixelRotation": true,
             "sampleRadius": 0.02

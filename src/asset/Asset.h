@@ -2,6 +2,7 @@
 
 #include "asset/AssetID.h"
 #include "asset/ImageFormat.h"
+#include "editor/EditorCameraConfig.h"
 #include "scene/AActor.h"
 
 #include <concepts>
@@ -213,6 +214,7 @@ struct SceneAsset : Asset
 
     ID                                  id;
     std::vector<std::unique_ptr<AActor>> actors;
+    EditorCameraConfig                  editorCamera;
 
     struct Environment
     {

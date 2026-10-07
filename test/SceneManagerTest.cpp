@@ -1,4 +1,5 @@
 #include "scene/SceneManager.h"
+#include "scene/actor/AFreeFlyCamera.h"
 
 #include "core/Serializer.h"
 #include "asset/BuiltinAssets.h"
@@ -16,6 +17,8 @@ namespace
 {
 static_assert(!std::is_abstract_v<AActor>);
 static_assert(std::is_abstract_v<Component>);
+static_assert(!std::derived_from<EditorCamera, AActor>);
+static_assert(!std::derived_from<EditorCamera, Component>);
 static_assert(std::same_as<decltype(std::declval<AActor&>().tick(0.0f)), void>);
 static_assert(std::same_as<decltype(std::declval<Component&>().tick(0.0f)), void>);
 static_assert(std::same_as<decltype(std::declval<SceneManager&>().tick(0.0f)), void>);
@@ -63,8 +66,7 @@ TEST(SceneManagerTest, ActorsOwnComponentsAndRestoreTheirOwner)
     manager.load(makeScene());
 
     ASSERT_EQ(manager.scene().actors.size(), 2);
-    EXPECT_NE(manager.editorCamera().getComponent<CameraComponent>(), nullptr);
-    EXPECT_EQ(manager.editorCamera().getComponent<RenderComponent>(), nullptr);
+    EXPECT_EQ(&manager.editorCamera().config(), &manager.scene().editorCamera);
     EXPECT_NE(dynamic_cast<AStaticMesh*>(manager.scene().actors[1].get()), nullptr);
 
     auto& actor = *manager.scene().actors[1];
@@ -136,35 +138,28 @@ TEST(SceneManagerTest, CreatesNamesAndDeletesRegisteredActors)
     manager.shutdown();
 }
 
-TEST(SceneManagerTest, DeletingCamerasKeepsNavigationOutsideTheScene)
+TEST(SceneManagerTest, EditorCameraIsIndependentOfCameraActors)
 {
     SceneManager manager;
     manager.init();
     manager.load(makeScene());
-    const auto firstId = manager.editorCamera().selectionId();
+    auto* camera = &manager.editorCamera();
+    manager.scene().editorCamera.position.x = 17.0f;
+    const auto firstId = manager.scene().actors.front()->selectionId();
     auto& second = manager.createActor("AFreeFlyCamera");
     const auto secondId = second.selectionId();
-    EXPECT_EQ(manager.editorCamera().selectionId(), firstId);
-    manager.load(manager.scene());
-    EXPECT_EQ(manager.scene().actors.size(), 3u);
-
-    const auto activeId = manager.editorCamera().selectionId();
-    const auto otherId = manager.scene().actors.back()->selectionId();
-    manager.deleteActor(activeId);
-    EXPECT_EQ(manager.editorCamera().selectionId(), otherId);
-    manager.editorCamera().transform().position.x = 17.0f;
-    manager.deleteActor(otherId);
+    EXPECT_EQ(&manager.editorCamera(), camera);
+    manager.deleteActor(firstId);
+    manager.deleteActor(secondId);
     EXPECT_EQ(manager.scene().actors.size(), 1u);
-    EXPECT_EQ(manager.editorCamera().selectionId(), 0u);
-    EXPECT_FLOAT_EQ(manager.editorCamera().transform().position.x, 17.0f);
-    EXPECT_EQ(manager.findActor(otherId), nullptr);
-    EXPECT_EQ(manager.findActor(secondId), nullptr);
+    EXPECT_EQ(&manager.editorCamera(), camera);
+    EXPECT_FLOAT_EQ(manager.editorCamera().worldPosition().x, 17.0f);
 
+    const auto stored = Serialize(manager.scene());
+    EXPECT_EQ(stored["editorCamera"]["position"][0], 17.0f);
+    EXPECT_FALSE(stored["editorCamera"].contains("components"));
     manager.load(manager.scene());
-    EXPECT_EQ(manager.scene().actors.size(), 1u);
-    EXPECT_EQ(manager.editorCamera().selectionId(), 0u);
-    auto& replacement = manager.createActor("AFreeFlyCamera");
-    EXPECT_EQ(&manager.editorCamera(), &replacement);
+    EXPECT_EQ(Serialize(manager.scene()), stored);
     manager.shutdown();
 }
 
@@ -174,12 +169,12 @@ TEST(SceneManagerTest, LoadingDetachesSnapshotAndCanReloadItsOwnScene)
     SceneManager manager;
     manager.init();
     manager.load(source);
-    manager.editorCamera().transform().position.y = 7.0f;
-    EXPECT_EQ(source.actors[0]->transform().position.y, 0.0f);
+    manager.scene().editorCamera.position.y = 7.0f;
+    EXPECT_EQ(source.editorCamera.position.y, 0.0f);
 
     manager.load(manager.scene());
-    EXPECT_EQ(manager.editorCamera().transform().position.y, 7.0f);
-    EXPECT_EQ(&manager.editorCamera().camera().actor(), &manager.editorCamera());
+    EXPECT_EQ(manager.scene().editorCamera.position.y, 7.0f);
+    EXPECT_EQ(&manager.editorCamera().config(), &manager.scene().editorCamera);
     manager.shutdown();
 }
 
@@ -193,7 +188,7 @@ TEST(SceneManagerTest, PolymorphicSceneRoundTripsInheritedFieldsAndMaterialOverr
     const json stored = Serialize(scene);
     ASSERT_EQ(stored.at("actors")[0].size(), 1);
     const auto& cameraActor = stored.at("actors")[0].at("AFreeFlyCamera");
-    EXPECT_EQ(cameraActor.at("name"), "Editor Camera");
+    EXPECT_EQ(cameraActor.at("name"), "AFreeFlyCamera");
     EXPECT_EQ(cameraActor.size(), 2);
     ASSERT_EQ(cameraActor.at("components")[1].size(), 1);
     EXPECT_FALSE(cameraActor.at("components")[1].at("CameraComponent").contains("looking"));
@@ -220,8 +215,8 @@ TEST(SceneManagerTest, CharacterMovementAndEnvironmentUpRoundTrip)
     SceneManager manager;
     manager.init();
     manager.load(scene);
-    EXPECT_NE(manager.editorCamera().getComponent<CharacterMoveComponent>(), nullptr);
-    EXPECT_EQ(manager.editorCamera().getComponent<FreeFlyMoveComponent>(), nullptr);
+    EXPECT_NE(manager.scene().actors[0]->getComponent<CharacterMoveComponent>(), nullptr);
+    EXPECT_EQ(manager.scene().actors[0]->getComponent<FreeFlyMoveComponent>(), nullptr);
     EXPECT_EQ(manager.scene().environment.up, scene.environment.up);
     manager.shutdown();
 }

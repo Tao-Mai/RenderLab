@@ -21,17 +21,19 @@ void CameraComponent::init(AActor* actor)
 
 void CameraComponent::resetNavigation()
 {
+    if (looking && context().window) context().window->setCursorCaptured(false);
     looking = false;
     freeMovement = false;
     previousMouseX = 0.0;
     previousMouseY = 0.0;
-    if (context().window != nullptr) context().window->setCursorCaptured(false);
 }
 
 void CameraComponent::setInputEnabled(bool enabled) { inputEnabled = enabled; }
 
 void CameraComponent::tick(float deltaTime)
 {
+    if (!inputEnabled && !looking && !freeMovement) return;
+
     DCHECK(context().inputManager && context().window,
         "CameraComponent requires InputManager and Window");
     auto& window = *context().window;

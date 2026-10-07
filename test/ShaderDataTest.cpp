@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string_view>
+#include <utility>
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -49,7 +50,9 @@ void checkFields(const json& type, const std::array<Field, N>& expected)
     }
 }
 
-constexpr std::array shaders = {"slang", "slang.no_ibl", "light", "editor_picking", "shadow", "skybox"};
+constexpr std::array shaders = {
+    "slang", "slang.no_ibl", "light", "editor_picking", "shadow", "shadow.rect_area", "skybox"
+};
 }
 
 TEST(ShaderDataLayout, ViewUniformsMatchCompiledShaders)
@@ -63,7 +66,7 @@ TEST(ShaderDataLayout, ViewUniformsMatchCompiledShaders)
     {
         SCOPED_TRACE(shader);
         const auto value = parameter(shader, "viewUniforms");
-        EXPECT_EQ(value.at("binding").at("index").get<uint32_t>(), RenderInterface::viewUniformBinding);
+        EXPECT_EQ(value.at("binding").at("index").get<uint32_t>(), RenderInterface::kViewUniformBinding);
         const auto& type = value.at("type");
         EXPECT_EQ(type.at("kind"), "constantBuffer");
         checkFields(type.at("elementType"), expected);
@@ -85,7 +88,7 @@ TEST(ShaderDataLayout, LightUniformsMatchCompiledShaders)
     {
         SCOPED_TRACE(shader);
         const auto value = parameter(shader, "lightUniforms");
-        EXPECT_EQ(value.at("binding").at("index").get<uint32_t>(), RenderInterface::lightUniformBinding);
+        EXPECT_EQ(value.at("binding").at("index").get<uint32_t>(), RenderInterface::kLightUniformBinding);
         const auto& type = value.at("type");
         EXPECT_EQ(type.at("kind"), "constantBuffer");
         checkFields(type.at("elementType"), expected);
@@ -105,12 +108,13 @@ TEST(ShaderDataLayout, LightStorageElementsMatchCompiledShaders)
         Field{"padding0", offsetof(LightData, padding0), sizeof(uint32_t)},
         Field{"padding1", offsetof(LightData, padding1), sizeof(uint32_t)},
         Field{"padding2", offsetof(LightData, padding2), sizeof(uint32_t)},
+        Field{"areaRightData", offsetof(LightData, areaRightData), sizeof(glm::vec4)},
     };
     for (const auto* shader : shaders)
     {
         SCOPED_TRACE(shader);
         const auto value = parameter(shader, "lights");
-        EXPECT_EQ(value.at("binding").at("index").get<uint32_t>(), RenderInterface::lightBufferBinding);
+        EXPECT_EQ(value.at("binding").at("index").get<uint32_t>(), RenderInterface::kLightBufferBinding);
         const auto& type = value.at("type");
         EXPECT_EQ(type.at("baseShape"), "structuredBuffer");
         checkFields(type.at("resultType"), expected);
@@ -121,7 +125,7 @@ TEST(ShaderDataLayout, LightStorageElementsMatchCompiledShaders)
 TEST(ShaderDataLayout, PointShadowStorageAndPushConstantsMatchCompiledShader)
 {
     const auto shadow = parameter("shadow", "pointShadowData");
-    EXPECT_EQ(shadow.at("binding").at("index").get<uint32_t>(), RenderInterface::pointShadowBufferBinding);
+    EXPECT_EQ(shadow.at("binding").at("index").get<uint32_t>(), RenderInterface::kPointShadowBufferBinding);
     const std::array expected = {Field{"vp", offsetof(PointShadowData, vp), sizeof(PointShadowData::vp)}};
     checkFields(shadow.at("type").at("resultType"), expected);
 
@@ -134,4 +138,53 @@ TEST(ShaderDataLayout, PointShadowStorageAndPushConstantsMatchCompiledShader)
         Field{"padding2", offsetof(ShadowPushConstants, padding2), sizeof(uint32_t)},
     };
     checkFields(push.at("type").at("elementType"), pushFields);
+}
+
+TEST(ShaderDataLayout, RectAreaShadowStorageMatchesCompiledShaders)
+{
+    const std::array expected = {
+        Field{"vp", offsetof(RectAreaShadowData, vp), sizeof(glm::mat4)},
+        Field{"nearPlane", offsetof(RectAreaShadowData, nearPlane), sizeof(float)},
+        Field{"farPlane", offsetof(RectAreaShadowData, farPlane), sizeof(float)},
+        Field{"worldToUvScale", offsetof(RectAreaShadowData, worldToUvScale), sizeof(glm::vec2)},
+    };
+    for (const auto* shader : {"shadow.rect_area", "slang", "slang.no_ibl"})
+    {
+        SCOPED_TRACE(shader);
+        const auto shadow = parameter(shader, "rectAreaShadowData");
+        EXPECT_EQ(shadow.at("binding").at("index").get<uint32_t>(), RenderInterface::kRectAreaShadowBufferBinding);
+        checkFields(shadow.at("type").at("resultType"), expected);
+    }
+}
+
+TEST(ShaderDataLayout, TextureAndSamplerBindingsMatchCompiledShaders)
+{
+    const std::array bindings = {
+        std::pair{"pointShadowMap", RenderInterface::kPointShadowImageBinding},
+        std::pair{"rectAreaShadowMap", RenderInterface::kRectAreaShadowImageBinding},
+        std::pair{"shadowSampler", RenderInterface::kShadowComparisonSamplerBinding},
+        std::pair{"linearSampler", RenderInterface::kLinearSamplerBinding},
+        std::pair{"irradianceMap", RenderInterface::kIrradianceImageBinding},
+        std::pair{"irradianceMapSampler", RenderInterface::kIrradianceSamplerBinding},
+        std::pair{"prefilteredSpecularMap", RenderInterface::kPrefilteredSpecularImageBinding},
+        std::pair{"prefilteredSpecularMapSampler", RenderInterface::kPrefilteredSpecularSamplerBinding},
+        std::pair{"brdfLUT", RenderInterface::kBrdfLutImageBinding},
+        std::pair{"brdfLUTSampler", RenderInterface::kBrdfLutSamplerBinding},
+        std::pair{"baseColorTexture", RenderInterface::kMaterialImageBinding},
+        std::pair{"baseColorSampler", RenderInterface::kMaterialSamplerBinding},
+        std::pair{"material", RenderInterface::kMaterialUniformBinding},
+    };
+    for (const auto* shader : {"slang", "slang.no_ibl"})
+    {
+        SCOPED_TRACE(shader);
+        for (const auto& [name, binding] : bindings)
+        {
+            SCOPED_TRACE(name);
+            EXPECT_EQ(parameter(shader, name).at("binding").at("index").get<uint32_t>(), binding);
+        }
+    }
+    EXPECT_EQ(parameter("skybox", "radianceMap").at("binding").at("index").get<uint32_t>(),
+              RenderInterface::kRadianceImageBinding);
+    EXPECT_EQ(parameter("skybox", "radianceSampler").at("binding").at("index").get<uint32_t>(),
+              RenderInterface::kRadianceSamplerBinding);
 }
