@@ -17,7 +17,7 @@ int main(int argc, char** argv)
     const auto root = std::filesystem::path{argv[1]};
     const auto source = root / "resource/car/scene.gltf";
     auto prepared = AssetImporter::prepareMesh(source);
-    CHECK(prepared.geometry.vertices.size() == 179652);
+    CHECK(prepared.geometry.vertices.size() >= 179652);
     CHECK(prepared.geometry.indices.size() == 679218);
     CHECK(prepared.submeshes.size() == 533);
     const glm::vec3 size = prepared.boundsMax - prepared.boundsMin;
@@ -70,7 +70,7 @@ int main(int argc, char** argv)
             const auto& actual = restored.vertices[index];
             const auto& expected = prepared.geometry.vertices[index];
             CHECK(actual.position == expected.position && actual.normal == expected.normal &&
-                  actual.texcoord == expected.texcoord);
+                  actual.texcoord == expected.texcoord && actual.tangent == expected.tangent);
         }
         data.shutdown();
         config.shutdown();

@@ -75,6 +75,7 @@ find_package(imguizmo CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(glog CONFIG REQUIRED)
 find_package(tinyexr CONFIG REQUIRED)
+find_package(mikktspace CONFIG REQUIRED)
 find_path(TINYGLTF_INCLUDE_DIR NAMES tiny_gltf.h REQUIRED)
 
 find_program(SLANGC_EXECUTABLE
@@ -323,6 +324,7 @@ add_executable(RenderLab
         src/asset/import/ImportEnvironmentMap.cpp
         src/asset/import/ImportId.h
         src/asset/MeshGeometry.h
+        src/asset/MeshGeometry.cpp
         src/asset/BuiltinAssets.h
         src/asset/builtin/BuiltinMesh.cpp
         src/asset/builtin/BuiltinMaterial.cpp
@@ -424,6 +426,7 @@ target_compile_definitions(RenderLab PRIVATE
 )
 
 target_link_libraries(RenderLab PRIVATE
+        mikktspace::mikktspace
         RenderLabBuildOptions
         Vulkan::Vulkan
         glfw
@@ -434,6 +437,25 @@ target_link_libraries(RenderLab PRIVATE
         glog::glog
         unofficial::tinyexr::tinyexr
         comdlg32
+)
+
+# Only stable dependency headers belong here; project headers stay outside the PCH.
+target_precompile_headers(RenderLab PRIVATE
+        <algorithm>
+        <array>
+        <cstdint>
+        <filesystem>
+        <format>
+        <memory>
+        <optional>
+        <string>
+        <unordered_map>
+        <utility>
+        <vector>
+        <glm/glm.hpp>
+        <glm/gtc/quaternion.hpp>
+        <nlohmann/json.hpp>
+        <vulkan/vulkan_raii.hpp>
 )
 
 include(CTest)

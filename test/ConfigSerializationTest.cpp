@@ -137,6 +137,8 @@ TEST(ConfigSerialization, RejectsInvalidPathType)
 
 TEST(ConfigSerialization, ConfigManagerResolvesPathsAndLoadsCommands)
 {
+    const auto configFile = std::filesystem::path{RENDERLAB_CONFIG_FILE};
+    const auto originalConfig = asset_json::load<AppConfig>(configFile);
     ConfigManager manager;
     manager.init();
 
@@ -166,6 +168,9 @@ TEST(ConfigSerialization, ConfigManagerResolvesPathsAndLoadsCommands)
     EXPECT_EQ(manager.editorConfig().height, editor.height);
     EXPECT_EQ(manager.editorConfig().title, editor.title);
     EXPECT_EQ(manager.initialScene(), SceneAsset::ID{"default"});
+    manager.setInitialScene(SceneAsset::ID{"selected-scene"});
+    EXPECT_EQ(manager.initialScene(), SceneAsset::ID{"selected-scene"});
+    EXPECT_EQ(Serialize(asset_json::load<AppConfig>(configFile)), Serialize(originalConfig));
     EXPECT_EQ(manager.commandConfig().bindings.size(), 16);
     EXPECT_EQ(manager.commandConfig().bindings.front().command, Command::Quit);
     EXPECT_EQ(manager.commandConfig().bindings.at(12).command, Command::SaveScene);
@@ -173,7 +178,17 @@ TEST(ConfigSerialization, ConfigManagerResolvesPathsAndLoadsCommands)
 
     const auto expectedRenderer = manager.rendererConfig();
     manager.shutdown();
+    auto expectedConfig = originalConfig;
+    expectedConfig.initialScene = "selected-scene";
+    EXPECT_EQ(Serialize(asset_json::load<AppConfig>(configFile)), Serialize(expectedConfig));
     EXPECT_EQ(Serialize(asset_json::load<RendererConfig>(rendererFile)), Serialize(expectedRenderer));
+
+    ConfigManager reloaded;
+    reloaded.init();
+    EXPECT_EQ(reloaded.initialScene(), expectedConfig.initialScene);
+    reloaded.shutdown();
+
+    asset_json::save(configFile, originalConfig);
     asset_json::save(rendererFile, originalRenderer);
 }
 

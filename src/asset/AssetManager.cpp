@@ -1,5 +1,8 @@
 #include "asset/AssetManager.h"
 
+#include "core/ConfigManager.h"
+#include "core/Context.h"
+
 namespace
 {
 template <AssetType T>

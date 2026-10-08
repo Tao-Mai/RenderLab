@@ -14,7 +14,7 @@
 #include <vector>
 
 #include <glm/fwd.hpp>
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 template <class T>
 inline constexpr bool IsVector = false;

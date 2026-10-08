@@ -15,6 +15,9 @@ struct VertexInput{
 
     [[vk::location(2)]]
     float2 uv : TEXCOORD;
+
+    [[vk::location(3)]]
+    float4 tangent : TANGENT;
 };
 
 struct VertexOutput
@@ -23,6 +26,7 @@ struct VertexOutput
     float3 worldNormal : NORMAL;
     float2 uv : TEXCOORD0;
     float3 worldPosition : POSITION0;
+    float4 worldTangent : TEXCOORD1;
 };
 
 struct PushConstants
@@ -40,6 +44,10 @@ struct MaterialData {
     float metallic;
     float alphaCutoff;
     uint alphaMode;
+    float normalScale;
+    float padding0;
+    float padding1;
+    float padding2;
 };
 
 [[vk::binding(0, 1)]]
@@ -50,6 +58,24 @@ SamplerState baseColorSampler;
 
 [[vk::binding(2, 1)]]
 ConstantBuffer<MaterialData> material;
+
+[[vk::binding(3, 1)]]
+Texture2D<float4> normalTexture;
+
+[[vk::binding(4, 1)]]
+SamplerState normalSampler;
+
+[[vk::binding(5, 1)]]
+Texture2D<float4> metallicTexture;
+
+[[vk::binding(6, 1)]]
+SamplerState metallicSampler;
+
+[[vk::binding(7, 1)]]
+Texture2D<float4> roughnessTexture;
+
+[[vk::binding(8, 1)]]
+SamplerState roughnessSampler;
 
 // Scene shadow resources (bindings 5..8).
 [[vk::binding(5, 0)]]
@@ -187,7 +213,15 @@ VertexOutput vertMain(VertexInput input)
     VertexOutput output;
     float4 worldPosition = mul(pushConstants.model, float4(input.position, 1.0));
     output.position = mul(viewUniforms.viewProjection, worldPosition);
-    output.worldNormal = mul(pushConstants.model, float4(input.normal, 0.0)).xyz; // 没有平移
+    float3x3 model = (float3x3)pushConstants.model;
+    // cofactor矩阵，伴随矩阵的转置
+    float3x3 cofactor = float3x3(
+        cross(model[1], model[2]),
+        cross(model[2], model[0]),
+        cross(model[0], model[1]));
+    float handedness = determinant(model) < 0.0 ? -1.0 : 1.0;
+    output.worldNormal = normalize(mul(cofactor, input.normal)) * handedness;
+    output.worldTangent = float4(normalize(mul(model, input.tangent.xyz)), input.tangent.w * handedness);
     output.uv = input.uv;
     output.worldPosition = worldPosition.xyz;
     return output;
@@ -197,6 +231,11 @@ VertexOutput vertMain(VertexInput input)
 float4 fragMain(VertexOutput input) : SV_Target
 {
     float3 N = normalize(input.worldNormal);
+    float3 T = normalize(input.worldTangent.xyz - N * dot(N, input.worldTangent.xyz));
+    float3 B = cross(N, T) * input.worldTangent.w;
+    float3 normalTs = normalTexture.Sample(normalSampler, input.uv).xyz * 2.0 - 1.0;
+    normalTs.xy *= material.normalScale;
+    N = normalize(T * normalTs.x + B * normalTs.y + N * normalTs.z);
 
     float4 baseColor = baseColorTexture.Sample(baseColorSampler, input.uv) * material.baseColorFactor;
     if (material.alphaMode == 1 && baseColor.a < material.alphaCutoff)
@@ -204,8 +243,9 @@ float4 fragMain(VertexOutput input) : SV_Target
 
     float3 V = normalize(viewUniforms.cameraPosition.xyz - input.worldPosition);
     float NdotV = saturate(dot(N, V));
-    float roughness = material.roughness;
-    float metallic = material.metallic;
+    // glTF metallic-roughness textures store roughness in G and metallic in B.
+    float roughness = saturate(material.roughness * roughnessTexture.Sample(roughnessSampler, input.uv).g);
+    float metallic = saturate(material.metallic * metallicTexture.Sample(metallicSampler, input.uv).b);
     float3 F0 = lerp(0.04, baseColor.rgb, float3(metallic));
 
     float2 shadowRotation = lightUniforms.shadowPixelRotation

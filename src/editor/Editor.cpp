@@ -64,11 +64,22 @@ void Editor::saveScene()
 
 void Editor::applySceneActions()
 {
-    if (!pendingSceneActions.createType && !pendingSceneActions.deleteId) return;
+    if (!pendingSceneActions.sceneId && !pendingSceneActions.createType && !pendingSceneActions.deleteId) return;
 
     auto& scene = *context().sceneManager;
     auto& renderer = *context().renderer;
     renderer.waitIdle();
+
+    if (pendingSceneActions.sceneId)
+    {
+        scene.load(*pendingSceneActions.sceneId);
+        selectedId = 0;
+        dirty = false;
+        pendingSceneActions = {};
+        renderer.loadScene();
+        return;
+    }
+
     if (pendingSceneActions.deleteId)
     {
         scene.deleteActor(pendingSceneActions.deleteId);
@@ -92,7 +103,7 @@ EditorFrameInput Editor::buildFrame(
     pendingSceneActions = ui.drawHierarchy(context().sceneManager->scene(), selectedId);
     if (pendingSceneActions.renamed) dirty = true;
 
-    if (ui.saveRequested())
+    if (!pendingSceneActions.sceneId && ui.saveRequested())
     {
         saveScene();
     }

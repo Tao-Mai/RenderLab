@@ -2,6 +2,7 @@
 
 #include "asset/Asset.h"
 #include "asset/AssetManager.h"
+#include "core/Context.h"
 #include "core/Logger.h"
 #include "render/resource/GpuShader.h"
 

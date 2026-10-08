@@ -18,7 +18,7 @@ namespace VertexLayout
     };
 }
 
-[[nodiscard]] inline std::array<vk::VertexInputAttributeDescription, 3>
+[[nodiscard]] inline std::array<vk::VertexInputAttributeDescription, 4>
 attributeDescriptions()
 {
     return {
@@ -39,6 +39,12 @@ attributeDescriptions()
             .binding = 0,
             .format = vk::Format::eR32G32Sfloat,
             .offset = static_cast<uint32_t>(offsetof(Vertex, texcoord)),
+        },
+        vk::VertexInputAttributeDescription{
+            .location = 3,
+            .binding = 0,
+            .format = vk::Format::eR32G32B32A32Sfloat,
+            .offset = static_cast<uint32_t>(offsetof(Vertex, tangent)),
         },
     };
 }

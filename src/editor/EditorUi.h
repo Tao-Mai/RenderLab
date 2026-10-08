@@ -31,6 +31,7 @@ public:
 
     struct HierarchyResult
     {
+        std::optional<SceneAsset::ID> sceneId;
         std::optional<std::string> createType;
         uint32_t deleteId = 0;
         bool renamed = false;

@@ -135,6 +135,9 @@ void Engine::shutdown() noexcept
     DCHECK(inited);
     Context& ctx = context();
 
+    if (const auto& sceneId = sceneManager->scene().id; !sceneId.empty())
+        config->setInitialScene(sceneId);
+
     renderer->waitIdle();
     shutdownSubsystem(editor, ctx.editor);
     shutdownSubsystem(inputManager, ctx.inputManager);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "asset/AssetManager.h"
+#include "core/ConfigManager.h"
 #include "core/Context.h"
 
 #include <cstdint>

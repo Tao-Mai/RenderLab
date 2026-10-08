@@ -26,6 +26,7 @@ add_executable(RenderLabTests
         ${PROJECT_SOURCE_DIR}/src/core/InputManager.cpp
         ${PROJECT_SOURCE_DIR}/src/core/Window.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/AssetDataManager.cpp
+        ${PROJECT_SOURCE_DIR}/src/asset/MeshGeometry.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/AssetManager.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinMesh.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinMaterial.cpp
@@ -47,6 +48,7 @@ target_compile_definitions(RenderLabTests PRIVATE
         RENDERLAB_CONFIG_FILE="${PROJECT_SOURCE_DIR}/test/config.json"
 )
 target_link_libraries(RenderLabTests PRIVATE
+        mikktspace::mikktspace
         RenderLabBuildOptions
         GTest::gtest_main
         glog::glog

@@ -69,7 +69,7 @@ GpuMaterial 持有 Material Set。set 2 Object 和 set 3 Pass 的编号已保留
 
 点阴影 PCF 使用 `sampling.slang` 中独立的 16 点泊松圆盘表，32 点表保持原样供其他采样使用。`feature.shadow.pixelRotation` 控制稳定的逐像素旋转，`feature.shadow.sampleRadius` 控制方向空间采样半径，默认分别为 true 和 0.02；编辑器 Shadows 区域可直接调整，两项每帧通过 shadowParameters 上传，不重建图资源，同样只在关闭时持久化。
 
-构建阶段用 Slang 生成 SPIR-V 和 reflection JSON。主场景 shader 通过 `ENABLE_IBL=1/0` 编译为 `slang.spv` 和 `slang.no_ibl.spv`；关闭变体不执行环境光采样，而是使用 `ambientCoefficient * baseColor.rgb`。ShaderManager 根据 ShaderAsset ID 与 ShaderVariant 缓存模块和 descriptor 元数据，变体文件名在资产 binary 的后缀前加 `.no_ibl`。`config/renderer.json` 的 `feature.ibl` 显式控制变体，`feature.ambientCoefficient` 保存关闭 IBL 时的环境光系数，`environmentMap` 保存环境图选择。编辑器勾选 IBL 时显示环境图选择（不提供 None 选项），取消时显示系数调整；关闭 IBL 不丢弃已选环境图。未选择环境图时使用白色 cubemap 兜底，不隐式关闭 IBL，天空盒仍按环境图是否存在绘制。所有渲染设置正常关闭时统一持久化，不会连带保存场景物体编辑。Scene/Material descriptor layout、纹理声明和绑定保持不变。自定义场景材质 shader 也需要提供同名的关闭变体。
+构建阶段用 Slang 生成 SPIR-V 和 reflection JSON。主场景 shader 通过 `ENABLE_IBL=1/0` 编译为 `slang.spv` 和 `slang.no_ibl.spv`；关闭变体不执行环境光采样，而是使用 `ambientCoefficient * baseColor.rgb`。ShaderManager 根据 ShaderAsset ID 与 ShaderVariant 缓存模块和 descriptor 元数据，变体文件名在资产 binary 的后缀前加 `.no_ibl`。`config/renderer.json` 的 `feature.ibl` 显式控制变体，`feature.ambientCoefficient` 保存关闭 IBL 时的环境光系数，`environmentMap` 保存环境图选择。编辑器勾选 IBL 时显示环境图选择（不提供 None 选项），取消时显示系数调整；关闭 IBL 不丢弃已选环境图。未选择环境图时使用白色 cubemap 兜底，不隐式关闭 IBL；天空盒仅在启用 IBL 且存在环境图时绘制，关闭时跳过天空盒 shader 和 pipeline 的创建。所有渲染设置正常关闭时统一持久化，不会连带保存场景物体编辑。Scene/Material descriptor layout、纹理声明和绑定保持不变。自定义场景材质 shader 也需要提供同名的关闭变体。
 
 DescriptorManager 创建 Scene/Material 预设 Layout，并支持从 reflection 缓存特殊 Layout；PipelineManager 当前使用上述两种预设 PipelineLayout。
 
@@ -117,7 +117,7 @@ FrameData 在上传时为启用投影的点光源计算六个 VP，range 为 far
 
 RectAreaLightShadowPass 不使用 multiview，每个有效矩形阴影光源使用一层 2D 深度图。`kMaxRectAreaLightShadow = 4` 固定图像层数和 RectAreaShadowData SSBO 容量，shadowidx 在矩形类型内独立编号。上传阶段从光源中心计算透视 VP：垂直 FOV 100 度、宽高比 areaSize.x / areaSize.y、near plane 为 min(0.5, range * 0.1)、far plane 为 range，areaRight 保留光源绕发光方向的旋转。worldToUvScale 是投影矩阵 XY 对角元素绝对值的一半，深度 z 处的世界空间半径通过 radius * worldToUvScale / z 转为 UV 半径。shadow.slang 通过 SHADOW_POINT 宏编译为 shadow.spv 和 shadow.rect_area.spv，只有点光源变体声明 SV_ViewID。矩形变体写透视深度，不写径向距离。主场景采用矩形核 PCSS：blocker 搜索和 PCF 各使用 4×4 分层的 16 点矩形采样，采样方法位于 sampling.slang，先在 [-1,1]² 中每格取一点，再按光源宽高和投影缩放。feature.shadow.pixelRotation 对点光源仍控制圆盘旋转，对矩形光源控制稳定的逐像素格内抖动；关闭时使用每格中心，始终不旋转矩形核。搜索范围投影到 near plane，用非比较 Linear sampler 搜索 blocker，再按平均线性 blocker 深度计算过滤半径，用比较 sampler 执行 PCF，过滤模式仍由阴影配置控制。超出投影范围和越界过滤样本视为未遮挡，越界搜索样本跳过。此方案仍是单张中心投影阴影图的软阴影近似，不是精确矩形光源积分。Spot、Directional 阴影及 AlphaTest 镂空暂不处理。
 
-有环境贴图时，Scene 内部在 opaque 之后绘制 Skybox。fullscreen triangle 的深度为 1，fragment 从 ViewUniforms 读取逆视投影矩阵和相机位置，结合 push constant 中的编辑器视口重建世界方向，采样 radiance 基础 mip。保留深度测试、关闭深度写入，并请求早期深度测试。随后透明几何按距离从远到近绘制，再绘制灯光标记。
+启用 IBL 且有环境贴图时，Scene 内部在 opaque 之后绘制 Skybox。fullscreen triangle 的深度为 1，fragment 从 ViewUniforms 读取逆视投影矩阵和相机位置，结合 push constant 中的编辑器视口重建世界方向，采样 radiance 基础 mip。保留深度测试、关闭深度写入，并请求早期深度测试。随后透明几何按距离从远到近绘制，再绘制灯光标记。
 
 Picking 复用 Scene 深度，只在请求拾取时绘制点击像素的 selection ID、复制至该帧的回读 Buffer。深度以只读 attachment 使用。
 

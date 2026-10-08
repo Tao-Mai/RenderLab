@@ -7,10 +7,12 @@
             "value": "lut_ggx"
         }
     },
-    "environmentMap": null,
+    "environmentMap": {
+        "value": "newport_loft"
+    },
     "feature": {
         "ambientCoefficient": 0.0,
-        "ibl": false,
+        "ibl": true,
         "shadow": {
             "bias": 0.004999999888241291,
             "enable": true,

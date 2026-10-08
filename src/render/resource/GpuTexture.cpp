@@ -1,5 +1,6 @@
 #include "render/resource/GpuTexture.h"
 
+#include "asset/Asset.h"
 #include "render/device/Memory.h"
 #include "render/device/VkCheck.h"
 #include "render/resource/Buffer.h"

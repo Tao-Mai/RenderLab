@@ -144,6 +144,8 @@ void registerMaterials(
         material.normalTexture = bindTexture(textureIdFor(
             build, model, source.normalTexture.index,
             modelDirectory, ColorSpace::Linear));
+        CHECK(pbr.metallicRoughnessTexture.index < 0 || pbr.metallicRoughnessTexture.texCoord == 0,
+              "metallic-roughness textures require TEXCOORD_0: {}", meshSource.string());
         material.metallicTexture = bindTexture(textureIdFor(
             build, model, pbr.metallicRoughnessTexture.index,
             modelDirectory, ColorSpace::Linear));
@@ -199,6 +201,17 @@ glm::vec3 readVec3(
     size_t               stride = 0;
     const unsigned char* data   = accessorData(model, accessor, stride) + index * stride;
     return {readFloat(data), readFloat(data + 4), readFloat(data + 8)};
+}
+
+glm::vec4 readVec4(
+    const tinygltf::Model& model, const tinygltf::Accessor& accessor, size_t index)
+{
+    CHECK(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT &&
+          accessor.type == TINYGLTF_TYPE_VEC4,
+          "glTF VEC4 attribute must use float components");
+    size_t stride = 0;
+    const unsigned char* data = accessorData(model, accessor, stride) + index * stride;
+    return {readFloat(data), readFloat(data + 4), readFloat(data + 8), readFloat(data + 12)};
 }
 
 glm::vec2 readVec2(
@@ -305,29 +318,40 @@ void appendPrimitive(
     const auto&               positions = model.accessors.at(positionIt->second);
     const auto                normalIt  = primitive.attributes.find("NORMAL");
     const auto                uvIt      = primitive.attributes.find("TEXCOORD_0");
+    const auto                tangentIt = primitive.attributes.find("TANGENT");
     const tinygltf::Accessor* normals   = normalIt == primitive.attributes.end()
         ? nullptr
         : &model.accessors.at(normalIt->second);
     const tinygltf::Accessor* uvs = uvIt == primitive.attributes.end()
         ? nullptr
         : &model.accessors.at(uvIt->second);
+    const tinygltf::Accessor* tangents = tangentIt == primitive.attributes.end()
+        ? nullptr
+        : &model.accessors.at(tangentIt->second);
     CHECK((!normals || normals->count == positions.count) &&
-          (!uvs || uvs->count == positions.count),
+          (!uvs || uvs->count == positions.count) &&
+          (!tangents || tangents->count == positions.count),
           "glTF vertex attribute counts do not match");
+    CHECK(primitive.material >= -1 && primitive.material < static_cast<int>(model.materials.size()),
+          "glTF primitive references missing material");
+    if (primitive.material >= 0 && model.materials[primitive.material].normalTexture.index >= 0)
+    {
+        CHECK(uvs && model.materials[primitive.material].normalTexture.texCoord == 0,
+              "normal-mapped glTF primitives require TEXCOORD_0");
+    }
 
     const uint32_t  firstVertex  = static_cast<uint32_t>(build.geometry.vertices.size());
     const uint32_t  firstIndex   = static_cast<uint32_t>(build.geometry.indices.size());
-    const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
     build.geometry.vertices.reserve(build.geometry.vertices.size() + positions.count);
     for (size_t index = 0; index < positions.count; ++index)
     {
-        const glm::vec3 position = glm::vec3(transform *
-            glm::vec4(readVec3(model, positions, index), 1.0f));
-        glm::vec3 normal = normals
-            ? glm::normalize(normalMatrix * readVec3(model, *normals, index))
+        const glm::vec3 position = readVec3(model, positions, index);
+        const glm::vec3 normal = normals
+            ? glm::normalize(readVec3(model, *normals, index))
             : glm::vec3{0.0f, 0.0f, 1.0f};
         const glm::vec2 uv = uvs ? readVec2(model, *uvs, index) : glm::vec2{0.0f};
-        build.geometry.vertices.push_back({position, normal, uv});
+        const glm::vec4 tangent = tangents ? readVec4(model, *tangents, index) : glm::vec4{1, 0, 0, 1};
+        build.geometry.vertices.push_back({position, normal, uv, tangent});
     }
 
     if (primitive.indices >= 0)
@@ -350,11 +374,53 @@ void appendPrimitive(
         }
     }
 
-    CHECK(primitive.material >= -1 && primitive.material < static_cast<int>(model.materials.size()),
-          "glTF primitive references missing material");
+    const uint32_t indexCount = static_cast<uint32_t>(build.geometry.indices.size()) - firstIndex;
+    CHECK(indexCount % 3 == 0);
+    if (!normals)
+    {
+        // glTF primitives without NORMAL use flat shading. Separate corners
+        // before generating tangents so adjacent faces cannot share normals.
+        std::vector<Vertex> corners;
+        corners.reserve(indexCount);
+        for (uint32_t index = firstIndex; index < firstIndex + indexCount; index += 3)
+        {
+            Vertex a = build.geometry.vertices[build.geometry.indices[index]];
+            Vertex b = build.geometry.vertices[build.geometry.indices[index + 1]];
+            Vertex c = build.geometry.vertices[build.geometry.indices[index + 2]];
+            const glm::vec3 faceNormal = glm::cross(b.position - a.position, c.position - a.position);
+            CHECK(glm::dot(faceNormal, faceNormal) > 0.0f);
+            a.normal = b.normal = c.normal = glm::normalize(faceNormal);
+            corners.insert(corners.end(), {a, b, c});
+        }
+        build.geometry.vertices.resize(firstVertex);
+        build.geometry.vertices.insert(build.geometry.vertices.end(), corners.begin(), corners.end());
+        for (uint32_t corner = 0; corner < indexCount; ++corner)
+            build.geometry.indices[firstIndex + corner] = firstVertex + corner;
+    }
+    if (!tangents || !normals)
+        generateTangents(build.geometry, firstIndex, indexCount);
+
+    // Tangents are generated in the source mesh's space, matching its bake.
+    // Bake node transforms only afterwards, including the handedness change.
+    const glm::mat3 linearTransform{transform};
+    const float determinant = glm::determinant(linearTransform);
+    CHECK(std::isfinite(determinant) && determinant != 0.0f);
+    const glm::mat3 normalMatrix = glm::inverseTranspose(linearTransform);
+    const float handedness = determinant < 0.0f ? -1.0f : 1.0f;
+    for (size_t index = firstVertex; index < build.geometry.vertices.size(); ++index)
+    {
+        auto& vertex = build.geometry.vertices[index];
+        vertex.position = glm::vec3(transform * glm::vec4(vertex.position, 1.0f));
+        vertex.normal = glm::normalize(normalMatrix * vertex.normal);
+        glm::vec3 tangent = linearTransform * glm::vec3(vertex.tangent);
+        tangent -= vertex.normal * glm::dot(vertex.normal, tangent);
+        CHECK(glm::dot(tangent, tangent) > 0.0f);
+        vertex.tangent = glm::vec4(glm::normalize(tangent), vertex.tangent.w * handedness);
+    }
+
     build.submeshes.push_back({
         .firstIndex = firstIndex,
-        .indexCount = static_cast<uint32_t>(build.geometry.indices.size()) - firstIndex,
+        .indexCount = indexCount,
         .materialIndex = primitive.material,
     });
 }

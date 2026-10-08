@@ -1,6 +1,5 @@
 #pragma once
 
-#include "render/resource/GpuMesh.h"
 #include "scene/component/LightComponent.h"
 
 #include <cstdint>
@@ -11,6 +10,7 @@
 #include <glm/vec3.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
+class GpuMesh;
 class RenderResourceManager;
 struct TransformComponent;
 

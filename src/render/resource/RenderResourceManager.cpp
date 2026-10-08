@@ -2,6 +2,7 @@
 
 #include "asset/AssetManager.h"
 #include "asset/AssetDataManager.h"
+#include "asset/BuiltinAssets.h"
 #include "core/Serializer.h"
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -193,14 +194,28 @@ GpuMaterial& RenderResourceManager::material(const MaterialAsset& asset)
         return *found->second;
     }
 
-    CHECK(asset.baseColorTexture.has_value() &&
-          !asset.baseColorTexture->textureID.empty() &&
-          !asset.baseColorTexture->samplerID.empty(),
-          "material '{}' missing baseColorTexture",
-          asset.id);
+    const auto loadTexture = [&](const std::optional<TextureBinding>& source,
+                                 const TextureAsset::ID& fallback,
+                                 std::optional<ColorSpace> colorSpace = std::nullopt)
+    {
+        const TextureBinding binding = source.value_or(TextureBinding{
+            fallback, BuiltinAssets::Sampler::linearRepeat});
+        CHECK(!binding.textureID.empty() && !binding.samplerID.empty(),
+              "material '{}' has an invalid texture binding", asset.id);
+        if (colorSpace)
+        {
+            CHECK(assets->get<TextureAsset>(binding.textureID).colorSpace == *colorSpace,
+                  "material '{}' texture '{}' has an invalid color space", asset.id, binding.textureID);
+        }
+        return GpuMaterial::Texture{texture(binding.textureID), sampler(binding.samplerID)};
+    };
+    GpuMaterial::Textures textures{
+        .baseColor = loadTexture(asset.baseColorTexture, BuiltinAssets::Texture::white),
+        .normal = loadTexture(asset.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear),
+        .metallic = loadTexture(asset.metallicTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+        .roughness = loadTexture(asset.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+    };
 
-    std::shared_ptr<GpuTexture> baseColor = texture(asset.baseColorTexture->textureID);
-    const vk::Sampler baseColorSampler = sampler(asset.baseColorTexture->samplerID);
     auto                     gpu       = std::make_unique<GpuMaterial>();
     gpu->create(
         vulkan->physicalDeviceHandle(),
@@ -208,7 +223,7 @@ GpuMaterial& RenderResourceManager::material(const MaterialAsset& asset)
         *descriptors,
         shaders->getOrLoad(asset.shaderId.value_or("scene")),
         asset,
-        std::move(baseColor), baseColorSampler);
+        std::move(textures));
     return *materials.emplace(key, std::move(gpu)).first->second;
 }
 

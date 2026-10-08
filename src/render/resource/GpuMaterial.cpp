@@ -10,11 +10,10 @@
 void GpuMaterial::create(
     const vk::raii::PhysicalDevice& physicalDevice,
     const vk::raii::Device&         device,
-    DescriptorManager&              descriptors,
-    ShaderHandle                     targetShader,
-    const MaterialAsset&             material,
-    std::shared_ptr<GpuTexture>        texture,
-    vk::Sampler                        sampler)
+    DescriptorManager&            descriptors,
+    ShaderHandle                  targetShader,
+    const MaterialAsset&          material,
+    Textures                      materialTextures)
 {
     shaderHandle = targetShader;
     const std::string alphaMode = material.alphaMode.value_or("OPAQUE");
@@ -37,8 +36,7 @@ void GpuMaterial::create(
         pipelineState.cullMode = vk::CullModeFlagBits::eBack;
     }
 
-    albedoTexture  = std::move(texture);
-    albedoSampler = sampler;
+    textures = std::move(materialTextures);
     colorFactor = material.baseColorFactor.value_or(glm::vec4{1.0f});
     materialBuffer = std::make_shared<Buffer>(
         physicalDevice,
@@ -54,45 +52,67 @@ void GpuMaterial::create(
         .alphaCutoff = material.alphaCutoff.value_or(0.5f),
         .alphaMode = mode == RenderMode::AlphaTest ? 1u :
             mode == RenderMode::Transparent ? 2u : 0u,
+        .normalScale = material.normalScale.value_or(1.0f),
     };
     materialBuffer->upload(&materialData, sizeof(materialData));
 
     descriptorSet = descriptors.allocate(DescriptorLayoutPreset::Material);
 
-    const vk::DescriptorImageInfo imageInfo{
-        .imageView = albedoTexture->imageView(),
-        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-    };
-    const vk::DescriptorImageInfo samplerInfo{
-        .sampler = sampler,
-    };
     const vk::DescriptorBufferInfo materialBufferInfo{
         .buffer = materialBuffer->handle(),
         .offset = 0,
         .range = sizeof(MaterialUniforms),
     };
-    const std::array writes = {
-        vk::WriteDescriptorSet{
+    struct TextureDescriptor
+    {
+        uint32_t imageBinding;
+        uint32_t samplerBinding;
+        const Texture* texture;
+    };
+    const std::array bindings = {
+        TextureDescriptor{RenderInterface::kMaterialImageBinding,
+                       RenderInterface::kMaterialSamplerBinding, &textures.baseColor},
+        TextureDescriptor{RenderInterface::kMaterialNormalImageBinding,
+                       RenderInterface::kMaterialNormalSamplerBinding, &textures.normal},
+        TextureDescriptor{RenderInterface::kMaterialMetallicImageBinding,
+                       RenderInterface::kMaterialMetallicSamplerBinding, &textures.metallic},
+        TextureDescriptor{RenderInterface::kMaterialRoughnessImageBinding,
+                       RenderInterface::kMaterialRoughnessSamplerBinding, &textures.roughness},
+    };
+    std::array<vk::DescriptorImageInfo, bindings.size()> images;
+    std::array<vk::DescriptorImageInfo, bindings.size()> samplers;
+    std::array<vk::WriteDescriptorSet, bindings.size() * 2 + 1> writes;
+    for (size_t index = 0; index < bindings.size(); ++index)
+    {
+        const auto& binding = bindings[index];
+        DCHECK(binding.texture->image);
+        DCHECK(binding.texture->sampler);
+        images[index] = vk::DescriptorImageInfo{
+            .imageView = binding.texture->image->imageView(),
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+        };
+        samplers[index] = vk::DescriptorImageInfo{.sampler = binding.texture->sampler};
+        writes[index * 2] = vk::WriteDescriptorSet{
             .dstSet = *descriptorSet,
-            .dstBinding = RenderInterface::kMaterialImageBinding,
+            .dstBinding = binding.imageBinding,
             .descriptorCount = 1,
             .descriptorType = vk::DescriptorType::eSampledImage,
-            .pImageInfo = &imageInfo,
-        },
-        vk::WriteDescriptorSet{
+            .pImageInfo = &images[index],
+        };
+        writes[index * 2 + 1] = vk::WriteDescriptorSet{
             .dstSet = *descriptorSet,
-            .dstBinding = RenderInterface::kMaterialSamplerBinding,
+            .dstBinding = binding.samplerBinding,
             .descriptorCount = 1,
             .descriptorType = vk::DescriptorType::eSampler,
-            .pImageInfo = &samplerInfo,
-        },
-        vk::WriteDescriptorSet{
-            .dstSet = *descriptorSet,
-            .dstBinding = RenderInterface::kMaterialUniformBinding,
-            .descriptorCount = 1,
-            .descriptorType = vk::DescriptorType::eUniformBuffer,
-            .pBufferInfo = &materialBufferInfo,
-        },
+            .pImageInfo = &samplers[index],
+        };
+    }
+    writes.back() = vk::WriteDescriptorSet{
+        .dstSet = *descriptorSet,
+        .dstBinding = RenderInterface::kMaterialUniformBinding,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
+        .pBufferInfo = &materialBufferInfo,
     };
     device.updateDescriptorSets(writes, {});
 }

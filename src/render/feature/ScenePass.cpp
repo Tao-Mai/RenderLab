@@ -8,6 +8,7 @@
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
 #include "core/ConfigManager.h"
+#include "core/Context.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/present/Swapchain.h"
@@ -50,7 +51,6 @@ ScenePass::Output ScenePass::setup(
     color             = graph->write(colorHandle);
     pointShadowMap    = pointShadow.pointLightShadowMap;
     rectAreaShadowMap = rectAreaShadow.rectAreaLightShadowMap;
-    skyboxShader      = renderContext().shaderManager->getOrLoad("skybox");
 
     const auto& brdf = context().config->rendererConfig().brdfLut;
     CHECK(!brdf.textureID.empty() && !brdf.samplerID.empty());
@@ -136,14 +136,18 @@ ScenePass::Output ScenePass::setup(
     });
     pipelineLayout = pipelines->layout(PipelineLayoutPreset::SceneMaterial);
 
-    skyboxPipeline       = pipelines->getOrCreate({
-              .shader      = skyboxShader,
-              .layout      = PipelineLayoutPreset::SceneOnly,
-              .state       = PipelineState::preset(RenderMode::Skybox),
-              .colorFormat = colorFormat,
-              .depthFormat = vk::Format::eD32Sfloat,
-    });
-    skyboxPipelineLayout = pipelines->layout(PipelineLayoutPreset::SceneOnly);
+    if (hasSkybox)
+    {
+        skyboxShader = renderContext().shaderManager->getOrLoad("skybox");
+        skyboxPipeline = pipelines->getOrCreate({
+            .shader      = skyboxShader,
+            .layout      = PipelineLayoutPreset::SceneOnly,
+            .state       = PipelineState::preset(RenderMode::Skybox),
+            .colorFormat = colorFormat,
+            .depthFormat = vk::Format::eD32Sfloat,
+        });
+        skyboxPipelineLayout = pipelines->layout(PipelineLayoutPreset::SceneOnly);
+    }
     return {color, depth};
 }
 
@@ -220,7 +224,7 @@ void ScenePass::bindEnvironmentTextures()
     TextureBinding prefilteredBinding = irradianceBinding;
     TextureBinding radianceBinding    = irradianceBinding;
     const auto&    environmentMap     = context().config->rendererConfig().environmentMap;
-    hasSkybox                         = environmentMap.has_value();
+    hasSkybox = context().config->rendererConfig().feature.ibl && environmentMap.has_value();
     if (environmentMap)
     {
         const auto& environment = context().assetManager->get<EnvironmentMapAsset>(*environmentMap);
