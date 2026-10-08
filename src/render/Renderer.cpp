@@ -13,9 +13,7 @@
 #include "render/device/VkCheck.h"
 #include "render/feature/EndPass.h"
 #include "render/feature/DepthPrepass.h"
-#include "render/feature/shadow/PointLightShadowPass.h"
-#include "render/feature/shadow/RectAreaLightShadowPass.h"
-#include "render/feature/shadow/DirectionalShadowPass.h"
+#include "render/feature/shadow/ShadowPass.h"
 #include "render/feature/ScenePass.h"
 #include "render/feature/postprocess/ToneMappingPass.h"
 #include "render/feature/editor/EditorPickingCopyPass.h"
@@ -35,9 +33,7 @@
 struct Renderer::Passes
 {
     std::tuple<
-        PointLightShadowPass,
-        RectAreaLightShadowPass,
-        DirectionalShadowPass,
+        ShadowPass,
         DepthPrepass,
         ScenePass,
         LightMarkerPass,
@@ -191,12 +187,13 @@ void Renderer::setupRenderGraph()
     }
     else
     {
-        const auto shadow            = setupPass<PointLightShadowPass>();
-        const auto rectAreaShadow    = setupPass<RectAreaLightShadowPass>();
-        const auto directionalShadow = setupPass<DirectionalShadowPass>();
-        const auto depth             = setupPass<DepthPrepass>();
-        const auto scene             = setupPass<ScenePass>(depth.depth, shadow, rectAreaShadow, directionalShadow);
-        const auto markers           = setupPass<LightMarkerPass>(scene.color, scene.depth);
+        ShadowPass::Output shadow;
+        if (config.feature.shadow.enable)
+            shadow = setupPass<ShadowPass>();
+
+        const auto depth   = setupPass<DepthPrepass>();
+        const auto scene   = setupPass<ScenePass>(depth.depth, shadow);
+        const auto markers = setupPass<LightMarkerPass>(scene.color, scene.depth);
         sceneColor = config.feature.hdr ? setupPass<ToneMappingPass>(markers.color, color).color : markers.color;
         sceneDepth = markers.depth;
     }

@@ -244,7 +244,7 @@ float4 fragMain(VertexOutput input) : SV_Target
     // glTF metallic-roughness textures store roughness in G and metallic in B.
     float roughness = saturate(material.roughness * roughnessTexture.Sample(roughnessSampler, input.uv).g);
     float metallic = saturate(material.metallic * metallicTexture.Sample(metallicSampler, input.uv).b);
-    float3 F0 = lerp(0.04, baseColor.rgb, float3(metallic));
+    float3 f0 = lerp(0.04, baseColor.rgb, float3(metallic));
 
     float2 shadowRotation = lightUniforms.shadowPixelRotation
         ? pixelSampleRotation(uint2(input.position.xy))
@@ -255,54 +255,55 @@ float4 fragMain(VertexOutput input) : SV_Target
         LightData light = lights[index];
         if (!light.enabled) continue;
 
-        if (light.type == LightType.Point) {
-            float3 L = normalize(light.position - input.worldPosition);
-            float distanceToLight = length(light.position - input.worldPosition);
-            if (distanceToLight > light.range) continue;
+        float3 lightDirection;
+        float3 incidentRadiance;
+        float visibility = 1.0;
 
-            float visibility = 1.0;
-            if (light.castShadow) {
-                uint shadowidx = light.shadowIdx;
+        if (light.type == LightType.Point)
+        {
+            float distanceToLight = length(light.position - input.worldPosition);
+            if (distanceToLight <= 0.0 || distanceToLight > light.range)
+                continue;
+
+            lightDirection = (light.position - input.worldPosition) / distanceToLight;
+            incidentRadiance = light.color * light.intensity / (distanceToLight * distanceToLight);
+            if (light.castShadow)
+            {
                 float depth = distanceToLight / light.range;
-
-                // depth <= shadowMapDepth，用的less or equal
-                visibility = pcf(-L, shadowidx, depth, shadowRotation);
-
-                if (visibility == 0.0) continue;
+                visibility = pcf(-lightDirection, light.shadowIdx, depth, shadowRotation);
             }
-
-            float3 pointLight = light.color * light.intensity / (distanceToLight * distanceToLight);
-
-            float3 H = normalize(L + V);
-            float NdotH = saturate(dot(N, H));
-            float NdotL = saturate(dot(N, L));
-            float VdotH = saturate(dot(V, H));
-            float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
-            float D = NormalDistributionGGX(roughness, NdotH);
-            float G = GeometrySmithGGX(roughness, NdotV, NdotL);
-
-            float3 diffuseBRDF = (1.0 - F) * (1.0 - metallic) * baseColor.rgb * INV_PI;
-            float3 specularBRDF = F * D * G / max(4.0 * NdotV * NdotL, 1e-5);
-            direct += pointLight * (diffuseBRDF + specularBRDF) * NdotL * visibility;
         }
-        else if (light.type == LightType.Directional) {
-            float NdotL = saturate(dot(N, -light.direction.xyz));
-            float visibility = light.castShadow ? directionalShadowVisibility(light, input.worldPosition) : 1.0;
-            direct += light.color * light.intensity * NdotL * baseColor.rgb * visibility;
-        } else if (light.type == LightType.RectArea) {
-            float3 L = normalize(light.position - input.worldPosition);
+        else if (light.type == LightType.Directional)
+        {
+            lightDirection = -light.direction.xyz;
+            incidentRadiance = light.color * light.intensity;
+            if (light.castShadow)
+                visibility = directionalShadowVisibility(light, input.worldPosition);
+        }
+        else if (light.type == LightType.RectArea)
+        {
             float distanceToLight = length(light.position - input.worldPosition);
-            float NdotL = saturate(dot(N, L));
-            float projectedArea = light.areaSize.x * light.areaSize.y * saturate(dot(-L, light.direction.xyz));
-            float omegaRange = projectedArea / (distanceToLight * distanceToLight);
+            if (distanceToLight <= 0.0)
+                continue;
 
-            float visibility = 1.0;
-            if (light.castShadow) {
+            // Center-direction approximation; finite-area specular integration is not included.
+            lightDirection = (light.position - input.worldPosition) / distanceToLight;
+            float projectedArea = light.areaSize.x * light.areaSize.y
+                * saturate(dot(-lightDirection, light.direction.xyz));
+            float solidAngle = projectedArea / (distanceToLight * distanceToLight);
+            incidentRadiance = light.color * light.radiance * solidAngle;
+            if (light.castShadow)
                 visibility = rectAreaShadowPCSS(light, input.worldPosition, uint2(input.position.xy));
-            }
-
-            direct += light.color * light.radiance * NdotL * omegaRange * INV_PI * visibility * baseColor.rgb;
         }
+        else
+            continue;
+
+        float nDotL = saturate(dot(N, lightDirection));
+        if (nDotL <= 0.0 || visibility <= 0.0)
+            continue;
+
+        float3 brdf = evaluateDirectBrdf(baseColor.rgb, metallic, roughness, N, V, lightDirection);
+        direct += incidentRadiance * brdf * nDotL * visibility;
     }
 
     float3 ambient = float3(0.0);
@@ -318,7 +319,7 @@ float4 fragMain(VertexOutput input) : SV_Target
     float3 env_term = prefilteredSpecularMap.SampleLevel(
         prefilteredSpecularMapSampler, R, roughness * lightUniforms.iblPrefilteredMaxMipLevel).rgb;
     float2 scale_bias = brdfLUT.Sample(brdfLUTSampler, float2(NdotV, roughness)).rg;
-    float3 brdf_term = scale_bias.x * F0 + scale_bias.y;
+    float3 brdf_term = scale_bias.x * f0 + scale_bias.y;
     float3 ambient_specular = env_term * brdf_term;
 
     ambient = ambient_diffuse + ambient_specular;

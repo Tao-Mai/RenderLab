@@ -8,6 +8,7 @@
 #include "asset/TextureMip.h"
 
 #include <limits>
+#include <cstring>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -101,29 +102,72 @@ void GpuTexture::create(
         bytes = rgbaPixels;
     }
 
+    // Packed asset mips can start at odd offsets for R8/RG8 NPOT images.
+    // Keep the persistent payload compact and align only the GPU staging copies.
+    constexpr vk::DeviceSize kCopyOffsetAlignment = 4;
+    vk::DeviceSize                   stagingSize          = 0;
+    std::vector<vk::BufferImageCopy> copyRegions;
+    copyRegions.reserve(static_cast<size_t>(layers) * asset.mipLevels);
+    for (uint32_t mip = 0; mip < asset.mipLevels; ++mip)
+    {
+        const uint32_t       mipWidth   = texture_mip::extent(asset.width, mip);
+        const uint32_t       mipHeight  = texture_mip::extent(asset.height, mip);
+        const vk::DeviceSize layerBytes = static_cast<vk::DeviceSize>(mipWidth) * mipHeight * pixelBytes;
+        for (uint32_t layer = 0; layer < layers; ++layer)
+        {
+            stagingSize = (stagingSize + kCopyOffsetAlignment - 1) & ~(kCopyOffsetAlignment - 1);
+            copyRegions.push_back({
+                .bufferOffset = stagingSize,
+                .imageSubresource =
+                    {
+                        .aspectMask     = vk::ImageAspectFlagBits::eColor,
+                        .mipLevel       = mip,
+                        .baseArrayLayer = layer,
+                        .layerCount     = 1,
+                    },
+                .imageExtent = {mipWidth, mipHeight, 1},
+            });
+            stagingSize += layerBytes;
+        }
+    }
+
+    std::vector<uint8_t> alignedPixels;
+    if (stagingSize != bytes.size())
+    {
+        alignedPixels.resize(static_cast<size_t>(stagingSize));
+        for (const auto& region : copyRegions)
+        {
+            const vk::DeviceSize layerBytes =
+                static_cast<vk::DeviceSize>(region.imageExtent.width) * region.imageExtent.height * pixelBytes;
+            const auto sourceOffset =
+                texture_mip::offset(asset.width, asset.height, layers, pixelBytes, region.imageSubresource.mipLevel) +
+                region.imageSubresource.baseArrayLayer * layerBytes;
+            std::memcpy(alignedPixels.data() + region.bufferOffset, bytes.data() + sourceOffset, layerBytes);
+        }
+        bytes = alignedPixels;
+    }
+
     Buffer staging(
         physicalDevice,
         device,
-        byteSize,
+        stagingSize,
         vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eHostVisible |
-        vk::MemoryPropertyFlagBits::eHostCoherent);
-    staging.upload(bytes.data(), byteSize);
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+    );
+    staging.upload(bytes.data(), stagingSize);
 
     const vk::ImageCreateInfo imageInfo{
-        .flags = asset.layout == ImageLayout::Cubemap
-        ? vk::ImageCreateFlags{vk::ImageCreateFlagBits::eCubeCompatible}
-        : vk::ImageCreateFlags{},
-        .imageType = vk::ImageType::e2D,
-        .format = format,
-        .extent = {asset.width, asset.height, 1},
-        .mipLevels = asset.mipLevels,
-        .arrayLayers = layers,
-        .samples = vk::SampleCountFlagBits::e1,
-        .tiling = vk::ImageTiling::eOptimal,
-        .usage = vk::ImageUsageFlagBits::eTransferDst |
-        vk::ImageUsageFlagBits::eSampled,
-        .sharingMode = vk::SharingMode::eExclusive,
+        .flags = asset.layout == ImageLayout::Cubemap ? vk::ImageCreateFlags{vk::ImageCreateFlagBits::eCubeCompatible}
+                                                      : vk::ImageCreateFlags{},
+        .imageType     = vk::ImageType::e2D,
+        .format        = format,
+        .extent        = {asset.width, asset.height, 1},
+        .mipLevels     = asset.mipLevels,
+        .arrayLayers   = layers,
+        .samples       = vk::SampleCountFlagBits::e1,
+        .tiling        = vk::ImageTiling::eOptimal,
+        .usage         = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+        .sharingMode   = vk::SharingMode::eExclusive,
         .initialLayout = vk::ImageLayout::eUndefined,
     };
     creationInfo = imageInfo;
@@ -175,33 +219,6 @@ void GpuTexture::create(
     };
     copyCommand.pipelineBarrier2(dependency);
 
-    std::vector<vk::BufferImageCopy> copyRegions;
-    copyRegions.reserve(static_cast<size_t>(layers) * asset.mipLevels);
-    for (uint32_t mip = 0; mip < asset.mipLevels; ++mip)
-    {
-        const uint32_t mipWidth = texture_mip::extent(asset.width, mip);
-        const uint32_t mipHeight = texture_mip::extent(asset.height, mip);
-        const vk::DeviceSize levelOffset = texture_mip::offset(
-            asset.width, asset.height, layers, pixelBytes, mip);
-
-        for (uint32_t layer = 0; layer < layers; ++layer)
-        {
-            copyRegions.push_back(vk::BufferImageCopy{
-                .bufferOffset = levelOffset +
-                    static_cast<vk::DeviceSize>(layer) * mipWidth * mipHeight * pixelBytes,
-                .bufferRowLength = 0,
-                .bufferImageHeight = 0,
-                .imageSubresource = {
-                    .aspectMask = vk::ImageAspectFlagBits::eColor,
-                    .mipLevel = mip,
-                    .baseArrayLayer = layer,
-                    .layerCount = 1,
-                },
-                .imageOffset = {0, 0, 0},
-                .imageExtent = {mipWidth, mipHeight, 1},
-            });
-        }
-    }
     copyCommand.copyBufferToImage(
         staging.handle(),
         *image,

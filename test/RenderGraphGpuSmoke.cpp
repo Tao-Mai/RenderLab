@@ -343,6 +343,7 @@ int main(int argc, char** argv)
     RenderFeature feature = originalFeature;
     feature.shadow.enable = false;
     config.setRenderFeature(feature);
+    renderer.loadScene();
     renderFrames();
 
     feature.shadow.enable = true;

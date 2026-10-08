@@ -104,6 +104,7 @@ int main(int, char** argv)
         {
             feature.shadow.enable = frame == 6;
             config.setRenderFeature(feature);
+            renderer.loadScene();
         }
         window.pollEvents();
         renderer.render(

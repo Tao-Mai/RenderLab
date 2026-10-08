@@ -616,6 +616,7 @@ EditorUI::InspectorResult EditorUI::drawInspector(
     if (ImGui::Checkbox("Enable shadows", &feature.shadow.enable))
     {
         context().config->setRenderFeature(feature);
+        result.rendererChanged = true;
     }
 
     ImGui::BeginDisabled(!feature.shadow.enable);

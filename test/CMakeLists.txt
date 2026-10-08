@@ -26,6 +26,7 @@ add_executable(RenderLabTests
         ${PROJECT_SOURCE_DIR}/src/core/InputManager.cpp
         ${PROJECT_SOURCE_DIR}/src/core/Window.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/AssetDataManager.cpp
+        ${PROJECT_SOURCE_DIR}/src/asset/TextureMip.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/MeshGeometry.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/AssetManager.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinMesh.cpp

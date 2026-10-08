@@ -120,9 +120,10 @@ TEST(EnvironmentMapImportTest, ImportsHdrTextureAsLinearFloat)
     EXPECT_EQ(texture.layout, ImageLayout::Image2D);
     EXPECT_EQ(texture.width, 4u);
     EXPECT_EQ(texture.height, 2u);
+    EXPECT_EQ(texture.mipLevels, 3u);
 
     const std::vector<uint8_t> bytes = assets.data.readTexture(texture);
-    ASSERT_EQ(bytes.size(), 4u * 2u * 4u * sizeof(float));
+    ASSERT_EQ(bytes.size(), texture_mip::totalBytes(4, 2, 1, 4 * sizeof(float), texture.mipLevels));
     EXPECT_NEAR(floatAt(bytes, 0, 0), 1.0f, 0.01f);
     EXPECT_NEAR(floatAt(bytes, 0, 1), 0.5f, 0.01f);
     EXPECT_NEAR(floatAt(bytes, 0, 2), 0.25f, 0.01f);
