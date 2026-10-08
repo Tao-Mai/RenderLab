@@ -15,6 +15,7 @@
 #include "render/feature/DepthPrepass.h"
 #include "render/feature/shadow/PointLightShadowPass.h"
 #include "render/feature/shadow/RectAreaLightShadowPass.h"
+#include "render/feature/shadow/DirectionalShadowPass.h"
 #include "render/feature/ScenePass.h"
 #include "render/feature/postprocess/ToneMappingPass.h"
 #include "render/feature/editor/EditorPickingCopyPass.h"
@@ -36,6 +37,7 @@ struct Renderer::Passes
     std::tuple<
         PointLightShadowPass,
         RectAreaLightShadowPass,
+        DirectionalShadowPass,
         DepthPrepass,
         ScenePass,
         LightMarkerPass,
@@ -180,7 +182,7 @@ void Renderer::setupRenderGraph()
     const auto               color = graph.importSwapchain();
     RenderGraph::ImageHandle sceneColor;
     RenderGraph::ImageHandle sceneDepth;
-    const auto&              config = context().config->rendererConfig();
+    const auto&              config     = context().config->rendererConfig();
     const bool               rayTracing = config.renderPath == RenderPath::RayTracing;
     if (rayTracing)
     {
@@ -189,15 +191,14 @@ void Renderer::setupRenderGraph()
     }
     else
     {
-        const auto shadow         = setupPass<PointLightShadowPass>();
-        const auto rectAreaShadow = setupPass<RectAreaLightShadowPass>();
-        const auto depth          = setupPass<DepthPrepass>();
-        const auto scene          = setupPass<ScenePass>(depth.depth, shadow, rectAreaShadow);
-        const auto markers        = setupPass<LightMarkerPass>(scene.color, scene.depth);
-        sceneColor                = config.feature.hdr
-            ? setupPass<ToneMappingPass>(markers.color, color).color
-            : markers.color;
-        sceneDepth                = markers.depth;
+        const auto shadow            = setupPass<PointLightShadowPass>();
+        const auto rectAreaShadow    = setupPass<RectAreaLightShadowPass>();
+        const auto directionalShadow = setupPass<DirectionalShadowPass>();
+        const auto depth             = setupPass<DepthPrepass>();
+        const auto scene             = setupPass<ScenePass>(depth.depth, shadow, rectAreaShadow, directionalShadow);
+        const auto markers           = setupPass<LightMarkerPass>(scene.color, scene.depth);
+        sceneColor = config.feature.hdr ? setupPass<ToneMappingPass>(markers.color, color).color : markers.color;
+        sceneDepth = markers.depth;
     }
 
     const auto [pickingImage] = setupPass<EditorPickingPass>(sceneDepth);
@@ -244,27 +245,24 @@ void Renderer::updateFrameData(const EditorCamera& camera, const EditorFrameInpu
 {
     renderSystem.prepare(camera.worldPosition(), *renderContext().resources);
 
-    const glm::mat4    viewProjection = camera.projectionMatrix(editor.aspectRatio) * camera.viewMatrix();
+    const glm::mat4    viewMatrix     = camera.viewMatrix();
+    const glm::mat4    viewProjection = camera.projectionMatrix(editor.aspectRatio) * viewMatrix;
     const ViewUniforms view{
         .viewProjection        = viewProjection,
         .inverseViewProjection = glm::inverse(viewProjection),
         .cameraPosition        = glm::vec4{camera.worldPosition(), 1.0f},
+        .view                  = viewMatrix,
     };
-    const auto&         lights = renderSystem.renderData().lights;
-    const auto&         shadow = context().config->rendererConfig().feature.shadow;
+    const auto& lights = renderSystem.renderData().lights;
+    auto        shadow = context().config->rendererConfig().feature.shadow;
+    shadow.enable      = shadow.enable && context().config->rendererConfig().renderPath == RenderPath::Rasterization;
     const LightUniforms lighting{
         .lightCount         = static_cast<uint32_t>(lights.size()),
         .ambientCoefficient = context().config->rendererConfig().feature.ambientCoefficient,
         .iblParameters      = iblParameters,
         .shadowParameters   = {shadow.bias, shadow.sampleRadius, shadow.pixelRotation ? 1.0f : 0.0f, 0.0f},
     };
-    currentFrame().data.update(
-        view,
-        lighting,
-        lights,
-        context().config->rendererConfig().feature.shadow.enable &&
-            context().config->rendererConfig().renderPath == RenderPath::Rasterization
-    );
+    currentFrame().data.update(view, lighting, lights, shadow);
 }
 
 EditorFrameResult Renderer::drawFrame(const EditorCamera& camera, const EditorFrameInput& editor)

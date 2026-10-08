@@ -50,6 +50,11 @@ void DescriptorManager::init(const vk::raii::Device& targetDevice)
             .descriptorType = vk::DescriptorType::eStorageBuffer,
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kDirectionalShadowBufferBinding,
+            .descriptorType = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
 
         vk::DescriptorSetLayoutBinding{
             .binding = RenderInterface::kPointShadowImageBinding,
@@ -57,6 +62,10 @@ void DescriptorManager::init(const vk::raii::Device& targetDevice)
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{
             .binding = RenderInterface::kRectAreaShadowImageBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kDirectionalShadowImageBinding,
             .descriptorType = vk::DescriptorType::eSampledImage,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
         vk::DescriptorSetLayoutBinding{

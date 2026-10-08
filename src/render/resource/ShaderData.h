@@ -8,6 +8,7 @@
 #include <glm/vec4.hpp>
 
 #include "scene/component/LightComponent.h"
+#include "render/RenderConfig.h"
 
 namespace RenderInterface
 {
@@ -22,22 +23,24 @@ inline constexpr uint32_t kLightUniformBinding         = 1;
 inline constexpr uint32_t kLightBufferBinding          = 2;
 inline constexpr uint32_t kPointShadowBufferBinding    = 3;
 inline constexpr uint32_t kRectAreaShadowBufferBinding = 4;
+inline constexpr uint32_t kDirectionalShadowBufferBinding = 5;
 
 // Shadow images, then comparison and regular samplers.
-inline constexpr uint32_t kPointShadowImageBinding        = 5;
-inline constexpr uint32_t kRectAreaShadowImageBinding     = 6;
-inline constexpr uint32_t kShadowComparisonSamplerBinding = 7;
-inline constexpr uint32_t kLinearSamplerBinding           = 8;
+inline constexpr uint32_t kPointShadowImageBinding        = 6;
+inline constexpr uint32_t kRectAreaShadowImageBinding     = 7;
+inline constexpr uint32_t kDirectionalShadowImageBinding  = 8;
+inline constexpr uint32_t kShadowComparisonSamplerBinding = 9;
+inline constexpr uint32_t kLinearSamplerBinding           = 10;
 
 // Environment textures: adjacent image / sampler pairs.
-inline constexpr uint32_t kIrradianceImageBinding            = 9;
-inline constexpr uint32_t kIrradianceSamplerBinding          = 10;
-inline constexpr uint32_t kPrefilteredSpecularImageBinding   = 11;
-inline constexpr uint32_t kPrefilteredSpecularSamplerBinding = 12;
-inline constexpr uint32_t kBrdfLutImageBinding               = 13;
-inline constexpr uint32_t kBrdfLutSamplerBinding             = 14;
-inline constexpr uint32_t kRadianceImageBinding              = 15;
-inline constexpr uint32_t kRadianceSamplerBinding            = 16;
+inline constexpr uint32_t kIrradianceImageBinding            = 11;
+inline constexpr uint32_t kIrradianceSamplerBinding          = 12;
+inline constexpr uint32_t kPrefilteredSpecularImageBinding   = 13;
+inline constexpr uint32_t kPrefilteredSpecularSamplerBinding = 14;
+inline constexpr uint32_t kBrdfLutImageBinding               = 15;
+inline constexpr uint32_t kBrdfLutSamplerBinding             = 16;
+inline constexpr uint32_t kRadianceImageBinding              = 17;
+inline constexpr uint32_t kRadianceSamplerBinding            = 18;
 
 // Material set.
 inline constexpr uint32_t kMaterialImageBinding           = 0;
@@ -65,6 +68,7 @@ struct alignas(16) ViewUniforms
     glm::mat4 viewProjection{1.0f};
     glm::mat4 inverseViewProjection{1.0f};
     glm::vec4 cameraPosition{0.0f, 0.0f, 0.0f, 1.0f};
+    glm::mat4 view{1.0f};
 };
 
 // The SSBO contains lightCount entries, including disabled lights. IBL.x is
@@ -75,7 +79,7 @@ struct alignas(16) LightUniforms
 {
     uint32_t  lightCount = 0;
     float     ambientCoefficient = 0.1f;
-    uint32_t  padding1   = 0;
+    uint32_t  cascadeCount = 0;
     uint32_t  padding2   = 0;
     glm::vec4 iblParameters{0.0f};
     glm::vec4 shadowParameters{0.0f};
@@ -138,6 +142,20 @@ struct alignas(16) RectAreaShadowData
     glm::vec2 worldToUvScale{0.0f};
 };
 
+struct alignas(16) CascadeShadowData
+{
+    glm::mat4 vp{1.0f};
+    float     depthUpperBound = 0.0f;  // Positive camera-view depth, not distance to the camera.
+    float     padding0 = 0.0f;
+    float     padding1 = 0.0f;
+    float     padding2 = 0.0f;
+};
+
+struct alignas(16) DirectionalShadowData
+{
+    std::array<CascadeShadowData, kMaxDirectionalShadowCascades> cascades;
+};
+
 struct alignas(16) MaterialUniforms
 {
     glm::vec4 baseColorFactor{1.0f};
@@ -152,11 +170,13 @@ struct alignas(16) MaterialUniforms
     glm::vec4 emissiveFactor{0.0f};
 };
 
-static_assert(sizeof(ViewUniforms) == 144);
+static_assert(sizeof(ViewUniforms) == 208);
 static_assert(offsetof(ViewUniforms, inverseViewProjection) == 64);
 static_assert(offsetof(ViewUniforms, cameraPosition) == 128);
+static_assert(offsetof(ViewUniforms, view) == 144);
 static_assert(sizeof(LightUniforms) == 48);
 static_assert(offsetof(LightUniforms, ambientCoefficient) == 4);
+static_assert(offsetof(LightUniforms, cascadeCount) == 8);
 static_assert(offsetof(LightUniforms, iblParameters) == 16);
 static_assert(offsetof(LightUniforms, shadowParameters) == 32);
 static_assert(sizeof(LightData) == 112);
@@ -173,6 +193,9 @@ static_assert(offsetof(RectAreaShadowData, vp) == 0);
 static_assert(offsetof(RectAreaShadowData, nearPlane) == 64);
 static_assert(offsetof(RectAreaShadowData, farPlane) == 68);
 static_assert(offsetof(RectAreaShadowData, worldToUvScale) == 72);
+static_assert(sizeof(CascadeShadowData) == 80);
+static_assert(offsetof(CascadeShadowData, depthUpperBound) == 64);
+static_assert(sizeof(DirectionalShadowData) == kMaxDirectionalShadowCascades * sizeof(CascadeShadowData));
 static_assert(sizeof(MaterialUniforms) == 64);
 static_assert(offsetof(MaterialUniforms, roughness) == 16);
 static_assert(offsetof(MaterialUniforms, metallic) == 20);
@@ -191,7 +214,7 @@ struct ShadowPushConstants
 {
     glm::mat4 model{1.0f};
     uint32_t  lightIdx = 0;
-    uint32_t  padding0 = 0;
+    uint32_t  cascadeIndex = 0;
     uint32_t  padding1 = 0;
     uint32_t  padding2 = 0;
 };
@@ -227,6 +250,7 @@ struct ToneMappingPushConstants
 static_assert(sizeof(MeshPushConstants) == 64);
 static_assert(sizeof(ShadowPushConstants) == 80);
 static_assert(offsetof(ShadowPushConstants, lightIdx) == 64);
+static_assert(offsetof(ShadowPushConstants, cascadeIndex) == 68);
 static_assert(sizeof(LightPushConstants) == 80);
 static_assert(sizeof(EditorPickingPushConstants) == 80);
 static_assert(sizeof(SkyboxPushConstants) == 16);

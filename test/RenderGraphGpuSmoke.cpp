@@ -39,7 +39,7 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
     lights[0].flags.y = 0;
     lights[1].flags.x = static_cast<uint32_t>(LightComponent::Type::Spot);
     lights[2].flags.z = 0;
-    frame.update({}, {.lightCount = static_cast<uint32_t>(lights.size())}, lights, true);
+    frame.update({}, {.lightCount = static_cast<uint32_t>(lights.size())}, lights, {.enable = true});
     CHECK(frame.pointShadowData().size() == 2);
     CHECK(frame.lightData()[3].shadowidx == 0 && frame.lightData()[4].shadowidx == 1);
     CHECK(frame.lightData()[0].shadowidx == ~0u && frame.lightData()[1].shadowidx == ~0u &&
@@ -59,17 +59,17 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
 
     lights[0].flags.y = 1;
     lights[2].flags.z = 1;
-    frame.update({}, {.lightCount = static_cast<uint32_t>(lights.size())}, lights, true);
+    frame.update({}, {.lightCount = static_cast<uint32_t>(lights.size())}, lights, {.enable = true});
     CHECK(frame.pointShadowData().size() == 4);
     CHECK(frame.lightData()[0].shadowidx == 0 && frame.lightData()[2].shadowidx == 1 &&
         frame.lightData()[3].shadowidx == 2 && frame.lightData()[4].shadowidx == 3);
-    frame.update({}, {.lightCount = static_cast<uint32_t>(lights.size())}, lights, false);
+    frame.update({}, {.lightCount = static_cast<uint32_t>(lights.size())}, lights, {.enable = false});
     CHECK(frame.pointShadowData().empty());
     for (const auto& light : frame.lightData())
         CHECK(!light.castShadow() && light.shadowidx == ~0u);
     CHECK(lights[0].castShadow());
 
-    frame.update({}, {}, {}, true);
+    frame.update({}, {}, {}, {.enable = true});
     CHECK(frame.pointShadowData().empty() && frame.lightData().empty());
     frame.reset();
     descriptors.shutdown();

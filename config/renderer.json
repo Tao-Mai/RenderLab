@@ -13,9 +13,16 @@
     "feature": {
         "ambientCoefficient": 0.0,
         "hdr": true,
-        "ibl": true,
+        "ibl": false,
         "shadow": {
             "bias": 0.004999999888241291,
+            "cascade": {
+                "count": 4,
+                "depthPadding": 10.0,
+                "maxDistance": 50.0,
+                "shadowMapSize": 2048,
+                "splitLambda": 0.5
+            },
             "enable": true,
             "filter": "Linear",
             "pixelRotation": true,

@@ -654,6 +654,37 @@ EditorUI::InspectorResult EditorUI::drawInspector(
     };
     drawShadowMapSize("Point shadow map size", feature.shadow.pointShadowMapSize, true);
     drawShadowMapSize("Rect area shadow map size", feature.shadow.rectAreaShadowMapSize, false);
+    drawShadowMapSize("Directional shadow map size", feature.shadow.cascade.shadowMapSize, false);
+    int cascadeCount = static_cast<int>(feature.shadow.cascade.count);
+    if (ImGui::SliderInt("Shadow cascades", &cascadeCount, 1, static_cast<int>(kMaxDirectionalShadowCascades)))
+    {
+        feature.shadow.cascade.count = static_cast<uint32_t>(cascadeCount);
+        context().config->setRenderFeature(feature);
+        result.rendererChanged = true;
+    }
+    const float minimumShadowDistance = scene.editorCamera.nearPlane * 1.01f;
+    if (ImGui::DragFloat(
+            "Directional shadow distance",
+            &feature.shadow.cascade.maxDistance,
+            0.5f,
+            minimumShadowDistance,
+            100000.0f,
+            "%.2f",
+            ImGuiSliderFlags_AlwaysClamp
+        ))
+        context().config->setRenderFeature(feature);
+    if (ImGui::SliderFloat("Cascade split lambda", &feature.shadow.cascade.splitLambda, 0.0f, 1.0f, "%.2f"))
+        context().config->setRenderFeature(feature);
+    if (ImGui::DragFloat(
+            "Cascade depth padding",
+            &feature.shadow.cascade.depthPadding,
+            0.1f,
+            0.0f,
+            100000.0f,
+            "%.2f",
+            ImGuiSliderFlags_AlwaysClamp
+        ))
+        context().config->setRenderFeature(feature);
     if (ImGui::DragFloat(
             "Shadow bias",
             &feature.shadow.bias,

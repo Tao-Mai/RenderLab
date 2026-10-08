@@ -2,12 +2,22 @@
 
 #include "core/Logger.h"
 #include "core/Serializer.h"
+#include "render/RenderConfig.h"
 
 #include <cmath>
 #include <utility>
 
 namespace
 {
+void validateCascade(const RenderFeature::Shadow::Cascade& cascade)
+{
+    CHECK(cascade.count > 0 && cascade.count <= kMaxDirectionalShadowCascades);
+    CHECK(cascade.shadowMapSize > 0);
+    CHECK(std::isfinite(cascade.maxDistance) && cascade.maxDistance > 0.0f);
+    CHECK(std::isfinite(cascade.splitLambda) && cascade.splitLambda >= 0.0f && cascade.splitLambda <= 1.0f);
+    CHECK(std::isfinite(cascade.depthPadding) && cascade.depthPadding >= 0.0f);
+}
+
 void validateToneMapping(const RenderFeature::ToneMapping& toneMapping)
 {
     CHECK(std::isfinite(toneMapping.exposure) &&
@@ -95,6 +105,7 @@ void ConfigManager::setRenderFeature(const RenderFeature& feature)
     CHECK(feature.shadow.filter == SamplerAsset::Filter::Nearest ||
           feature.shadow.filter == SamplerAsset::Filter::Linear);
     validateToneMapping(feature.toneMapping);
+    validateCascade(feature.shadow.cascade);
 
     renderer.feature = feature;
 }
@@ -166,6 +177,7 @@ void ConfigManager::loadRenderer()
 {
     renderer = asset_json::load<RendererConfig>(resolvedPaths.renderer);
     validateToneMapping(renderer.feature.toneMapping);
+    validateCascade(renderer.feature.shadow.cascade);
 
     CHECK(!renderer.environmentMap || !renderer.environmentMap->empty());
     CHECK(renderer.feature.shadow.pointShadowMapSize > 0);

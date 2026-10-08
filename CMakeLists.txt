@@ -104,6 +104,8 @@ set(SLANG_SHADOW_SHADER "${SHADER_BINARY_DIR}/shadow.spv")
 set(SLANG_SHADOW_REFLECTION "${SHADER_BINARY_DIR}/shadow.reflection.json")
 set(SLANG_RECT_AREA_SHADOW_SHADER "${SHADER_BINARY_DIR}/shadow.rect_area.spv")
 set(SLANG_RECT_AREA_SHADOW_REFLECTION "${SHADER_BINARY_DIR}/shadow.rect_area.reflection.json")
+set(SLANG_DIRECTIONAL_SHADOW_SHADER "${SHADER_BINARY_DIR}/shadow.directional.spv")
+set(SLANG_DIRECTIONAL_SHADOW_REFLECTION "${SHADER_BINARY_DIR}/shadow.directional.reflection.json")
 
 foreach (enable_ibl IN ITEMS 1 0)
     if (enable_ibl)
@@ -232,34 +234,37 @@ add_custom_command(
         VERBATIM
 )
 
-foreach (shadow_point IN ITEMS 1 0)
-    if (shadow_point)
+foreach (shadow_type IN ITEMS 0 1 2)
+    if (shadow_type EQUAL 0)
         set(shadow_binary "${SLANG_SHADOW_SHADER}")
         set(shadow_reflection "${SLANG_SHADOW_REFLECTION}")
+    elseif (shadow_type EQUAL 1)
+        set(shadow_binary "${SLANG_DIRECTIONAL_SHADOW_SHADER}")
+        set(shadow_reflection "${SLANG_DIRECTIONAL_SHADOW_REFLECTION}")
     else ()
         set(shadow_binary "${SLANG_RECT_AREA_SHADOW_SHADER}")
         set(shadow_reflection "${SLANG_RECT_AREA_SHADOW_REFLECTION}")
     endif ()
     add_custom_command(
-        OUTPUT "${shadow_binary}" "${shadow_reflection}"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
-        COMMAND ${SLANGC_EXECUTABLE}
-        "${SHADER_SOURCE_DIR}/shadow.slang"
-        -DSHADOW_POINT=${shadow_point}
-        -target spirv
-        -profile spirv_1_4
-        -matrix-layout-column-major
-        -emit-spirv-directly
-        -fvk-use-entrypoint-name
-        -entry vertMain
-        -entry fragMain
-        -reflection-json "${shadow_reflection}"
-        -o "${shadow_binary}"
-        DEPENDS "${SHADER_SOURCE_DIR}/shadow.slang"
-        "${SHADER_SOURCE_DIR}/scene_data.slang"
-        COMMENT "Compiling shadow Slang shader (SHADOW_POINT=${shadow_point})"
-        VERBATIM
-)
+            OUTPUT "${shadow_binary}" "${shadow_reflection}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
+            COMMAND ${SLANGC_EXECUTABLE}
+            "${SHADER_SOURCE_DIR}/shadow.slang"
+            -DSHADOW_TYPE=${shadow_type}
+            -target spirv
+            -profile spirv_1_4
+            -matrix-layout-column-major
+            -emit-spirv-directly
+            -fvk-use-entrypoint-name
+            -entry vertMain
+            -entry fragMain
+            -reflection-json "${shadow_reflection}"
+            -o "${shadow_binary}"
+            DEPENDS "${SHADER_SOURCE_DIR}/shadow.slang"
+            "${SHADER_SOURCE_DIR}/scene_data.slang"
+            COMMENT "Compiling shadow Slang shader (SHADOW_TYPE=${shadow_type})"
+            VERBATIM
+    )
 endforeach ()
 
 add_custom_target(RenderLabShaders DEPENDS
@@ -281,6 +286,8 @@ add_custom_target(RenderLabShaders DEPENDS
         "${SLANG_SHADOW_REFLECTION}"
         "${SLANG_RECT_AREA_SHADOW_SHADER}"
         "${SLANG_RECT_AREA_SHADOW_REFLECTION}"
+        "${SLANG_DIRECTIONAL_SHADOW_SHADER}"
+        "${SLANG_DIRECTIONAL_SHADOW_REFLECTION}"
         "${SHADER_BINARY_DIR}/raytracing_base_color.spv"
 )
 
@@ -452,6 +459,8 @@ add_executable(RenderLab
         src/render/Image.h
         src/render/feature/shadow/RectAreaLightShadowPass.cpp
         src/render/feature/shadow/RectAreaLightShadowPass.h
+        src/render/feature/shadow/DirectionalShadowPass.cpp
+        src/render/feature/shadow/DirectionalShadowPass.h
 )
 add_dependencies(RenderLab RenderLabShaders)
 

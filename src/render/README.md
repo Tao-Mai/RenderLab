@@ -53,14 +53,16 @@ SceneManager 持有 AActor 和 Component。RenderSystem 整理场景对象，在
 | 0 Scene | 2 | LightData[] SSBO |
 | 0 Scene | 3 | PointShadowData[] SSBO：每个点光源六个 VP |
 | 0 Scene | 4 | RectAreaShadowData[] SSBO：VP、near/far、UV 系数 |
-| 0 Scene | 5 | Point shadow cubemap array image |
-| 0 Scene | 6 | Rect area shadow 2D array image |
-| 0 Scene | 7 | 阴影比较 sampler，点光源和矩形光源共用 |
-| 0 Scene | 8 | Linear clamp sampler，非比较模式，用于读取原始纹理值 |
-| 0 Scene | 9 / 10 | Irradiance image / sampler |
-| 0 Scene | 11 / 12 | Prefiltered specular image / sampler |
-| 0 Scene | 13 / 14 | BRDF LUT image / sampler |
-| 0 Scene | 15 / 16 | Radiance image / sampler |
+| 0 Scene | 5 | DirectionalShadowData[] SSBO：每层 VP 和相机空间深度上限 |
+| 0 Scene | 6 | Point shadow cubemap array image |
+| 0 Scene | 7 | Rect area shadow 2D array image |
+| 0 Scene | 8 | Directional cascade shadow 2D array image |
+| 0 Scene | 9 | 三种阴影共用的比较 sampler |
+| 0 Scene | 10 | Linear clamp sampler，非比较模式，用于读取原始纹理值 |
+| 0 Scene | 11 / 12 | Irradiance image / sampler |
+| 0 Scene | 13 / 14 | Prefiltered specular image / sampler |
+| 0 Scene | 15 / 16 | BRDF LUT image / sampler |
+| 0 Scene | 17 / 18 | Radiance image / sampler |
 | 1 Material | 0 | Base color image |
 | 1 Material | 1 | Base color sampler |
 | 1 Material | 2 | MaterialUniforms UBO |
@@ -70,7 +72,7 @@ SceneManager 持有 AActor 和 Component。RenderSystem 整理场景对象，在
 | 1 Material | 9 / 10 | Emissive image / sampler |
 | 1 Material | 11 / 12 | Occlusion image / sampler |
 
-每个 FrameContext 持有一个 FrameData，后者管理 Scene Set、两个 UBO、灯光 SSBO 和点光源/矩形光源阴影 SSBO。ViewUniforms 包含 viewProjection、inverseViewProjection 和 cameraPosition，共 144 字节。LightUniforms 包含 lightCount、ambientCoefficient、iblParameters 和 shadowParameters，共 48 字节；iblParameters.x 是 prefiltered specular 的最大 LOD，shadowParameters 的 x/y/z 分别为归一化阴影深度 bias、点阴影方向空间 PCF 半径、逐像素旋转开关（0/1），w 预留为 0。LightData 按 RenderSystem 的灯光顺序存放，每项 112 字节，包含 shadowidx 和保留矩形旋转的 areaRightData（通过 areaRight 访问右方向）；lightCount 包括禁用灯光。上传时，enabled 且 castShadow 的点光源和矩形光源各自获得连续的 shadowidx，其余为 ~0u。PointShadowData 每项包含六个 VP，共 384 字节；RectAreaShadowData 包含 VP、nearPlane、farPlane 和 worldToUvScale，共 80 字节，Scene Set binding 4。
+每个 FrameContext 持有一个 FrameData，后者管理 Scene Set、两个 UBO、灯光 SSBO 和三种阴影 SSBO。ViewUniforms 包含 viewProjection、inverseViewProjection、cameraPosition 和 view，共 208 字节；view 用于取得正的相机空间深度。LightUniforms 包含 lightCount、ambientCoefficient、cascadeCount、iblParameters 和 shadowParameters，共 48 字节；iblParameters.x 是 prefiltered specular 的最大 LOD，shadowParameters 的 x/y/z 分别为归一化阴影深度 bias、点阴影方向空间 PCF 半径、逐像素旋转开关（0/1），w 预留为 0。LightData 按 RenderSystem 的灯光顺序存放，每项 112 字节，包含 shadowidx 和保留矩形旋转的 areaRightData（通过 areaRight 访问右方向）；lightCount 包括禁用灯光。上传时，enabled 且 castShadow 的点光源、矩形光源和方向光各自在类型内获得连续的 shadowidx，其余为 ~0u。PointShadowData 每项包含六个 VP，共 384 字节；RectAreaShadowData 包含 VP、nearPlane、farPlane 和 worldToUvScale，共 80 字节。DirectionalShadowData 为固定四层 CascadeShadowData 数组，每层 80 字节，包含 VP 和 depthUpperBound，整项 320 字节。
 
 SSBO 至少分配一项以维持有效 descriptor；没有灯光时 lightCount 为 0，shader 不读取数组。数量增长时，在当前帧 fence 完成后扩容并更新该帧 descriptor，其他帧保持自己的 buffer。
 
@@ -132,7 +134,11 @@ Mesh/Material 直接引用 RenderSystem 准备的资产 GPU 对象，不进入�
 
 FrameData 在上传时为启用投影的点光源计算六个 VP，range 为 far plane。PointLightShadowPass 遍历当前帧全部灯光，对有效点光源各录制一次六面 multiview 渲染，viewMask = 0b111111；shader 按 lightidx → shadowidx → VP[SV_ViewID] 取矩阵。每个 shadowidx 对应 cubemap array 中独立的六层，fragment 写入 `distance(worldPosition, lightPosition) / range` 的线性深度。没有有效阴影点光源时不录制清空或绘制命令。Graph 负责切换到深度只读状态。设备需要支持至少六个 multiview view 和 imageCubeArray。
 
-RectAreaLightShadowPass 不使用 multiview，每个有效矩形阴影光源使用一层 2D 深度图。`kMaxRectAreaLightShadow = 4` 固定图像层数和 RectAreaShadowData SSBO 容量，shadowidx 在矩形类型内独立编号。上传阶段从光源中心计算透视 VP：垂直 FOV 100 度、宽高比 areaSize.x / areaSize.y、near plane 为 min(0.5, range * 0.1)、far plane 为 range，areaRight 保留光源绕发光方向的旋转。worldToUvScale 是投影矩阵 XY 对角元素绝对值的一半，深度 z 处的世界空间半径通过 radius * worldToUvScale / z 转为 UV 半径。shadow.slang 通过 SHADOW_POINT 宏编译为 shadow.spv 和 shadow.rect_area.spv，只有点光源变体声明 SV_ViewID。矩形变体写透视深度，不写径向距离。主场景采用矩形核 PCSS：blocker 搜索和 PCF 各使用 4×4 分层的 16 点矩形采样，采样方法位于 sampling.slang，先在 [-1,1]² 中每格取一点，再按光源宽高和投影缩放。feature.shadow.pixelRotation 对点光源仍控制圆盘旋转，对矩形光源控制稳定的逐像素格内抖动；关闭时使用每格中心，始终不旋转矩形核。搜索范围投影到 near plane，用非比较 Linear sampler 搜索 blocker，再按平均线性 blocker 深度计算过滤半径，用比较 sampler 执行 PCF，过滤模式仍由阴影配置控制。超出投影范围和越界过滤样本视为未遮挡，越界搜索样本跳过。此方案仍是单张中心投影阴影图的软阴影近似，不是精确矩形光源积分。Spot、Directional 阴影及 AlphaTest 镂空暂不处理。
+RectAreaLightShadowPass 不使用 multiview，每个有效矩形阴影光源使用一层 2D 深度图。`kMaxRectAreaLightShadow = 4` 固定图像层数和 RectAreaShadowData SSBO 容量，shadowidx 在矩形类型内独立编号。上传阶段从光源中心计算透视 VP：垂直 FOV 100 度、宽高比 areaSize.x / areaSize.y、near plane 为 min(0.5, range * 0.1)、far plane 为 range，areaRight 保留光源绕发光方向的旋转。worldToUvScale 是投影矩阵 XY 对角元素绝对值的一半，深度 z 处的世界空间半径通过 radius * worldToUvScale / z 转为 UV 半径。shadow.slang 通过 SHADOW_TYPE 宏编译为 point、rect_area 和 directional 三个变体，只有点光源变体声明 SV_ViewID。矩形变体写透视深度，不写径向距离。主场景采用矩形核 PCSS：blocker 搜索和 PCF 各使用 4×4 分层的 16 点矩形采样，采样方法位于 sampling.slang，先在 [-1,1]² 中每格取一点，再按光源宽高和投影缩放。feature.shadow.pixelRotation 对点光源仍控制圆盘旋转，对矩形光源控制稳定的逐像素格内抖动；关闭时使用每格中心，始终不旋转矩形核。搜索范围投影到 near plane，用非比较 Linear sampler 搜索 blocker，再按平均线性 blocker 深度计算过滤半径，用比较 sampler 执行 PCF，过滤模式仍由阴影配置控制。超出投影范围和越界过滤样本视为未遮挡，越界搜索样本跳过。此方案仍是单张中心投影阴影图的软阴影近似，不是精确矩形光源积分。Spot 阴影及阴影 Pass 的 AlphaTest 镂空暂不处理。
+
+DirectionalShadowPass 使用单层 2D View 逐层绘制，不使用 multiview 或 cube 图像。`kMaxDirectionalLightShadow = 1` 限制一盏有效阴影方向光，`kMaxDirectionalShadowCascades = 4` 固定 SSBO 中的级联容量；图像按配置的 count 预留层数，不随灯光开关重建。feature.shadow.cascade 包含 count、shadowMapSize、maxDistance、splitLambda 和 depthPadding。上传阶段把相机视锥按均匀/对数混合分层，为每层包围球生成方向光正交 VP，Y 翻转匹配 Vulkan；depthPadding 沿光线方向扩展深度范围，避免把相机视锥外的遮挡物全裁掉。Scene shader 逐层比较正的相机空间深度和 depthUpperBound，找到第一个覆盖层后采样 shadowidx * cascadeCount + cascadeIndex。超出最后一层不再计算阴影；共用 Shadow bias 和 Nearest/Linear 比较过滤，暂不做级联混合、texel snapping、距离淡出或额外 PCF 核。
+
+分层流程参考 [Vulkan cascaded shadow mapping 示例](https://github.com/SaschaWillems/Vulkan/tree/master/examples/shadowmappingcascade)。编辑器 Shadows 区域可调全部级联配置；count 和 shadowMapSize 修改时重建 Graph，其余参数逐帧生效，正常关闭时统一保存 renderer.json。
 
 启用 IBL 且有环境贴图时，Scene 内部在 opaque 之后绘制 Skybox。fullscreen triangle 的深度为 1，fragment 从 ViewUniforms 读取逆视投影矩阵和相机位置，结合 push constant 中的编辑器视口重建世界方向，采样 radiance 基础 mip。保留深度测试、关闭深度写入，并请求早期深度测试。随后透明几何按距离从远到近绘制，再绘制灯光标记。
 
