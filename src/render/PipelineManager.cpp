@@ -8,6 +8,7 @@
 
 #include <array>
 #include <functional>
+#include <span>
 #include <utility>
 
 PipelineState PipelineState::preset(RenderMode mode)
@@ -107,6 +108,19 @@ void PipelineManager::init(
         .pPushConstantRanges    = &pushRange,
     };
     sceneOnlyLayout = vkCheck(device->createPipelineLayout(sceneOnlyInfo));
+
+    const auto toneMappingSet = descriptors.layout(DescriptorLayoutPreset::ToneMapping);
+    const vk::PushConstantRange toneMappingPushRange{
+        .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+        .offset = 0,
+        .size = sizeof(ToneMappingPushConstants),
+    };
+    toneMappingLayout = vkCheck(device->createPipelineLayout({
+        .setLayoutCount = 1,
+        .pSetLayouts = &toneMappingSet,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &toneMappingPushRange,
+    }));
 }
 
 void PipelineManager::shutdown() noexcept
@@ -114,6 +128,7 @@ void PipelineManager::shutdown() noexcept
     pipelines.clear();
     pipelineCache       = nullptr;
     sceneOnlyLayout     = nullptr;
+    toneMappingLayout   = nullptr;
     sceneMaterialLayout = nullptr;
     descriptors         = nullptr;
     shaders             = nullptr;
@@ -122,7 +137,13 @@ void PipelineManager::shutdown() noexcept
 
 vk::PipelineLayout PipelineManager::layout(PipelineLayoutPreset preset) const
 {
-    return preset == PipelineLayoutPreset::SceneMaterial ? *sceneMaterialLayout : *sceneOnlyLayout;
+    switch (preset)
+    {
+        case PipelineLayoutPreset::SceneMaterial: return *sceneMaterialLayout;
+        case PipelineLayoutPreset::SceneOnly: return *sceneOnlyLayout;
+        case PipelineLayoutPreset::ToneMapping: return *toneMappingLayout;
+    }
+    LOG_FATAL("invalid pipeline layout preset");
 }
 
 vk::Pipeline PipelineManager::getOrCreate(const PipelineKey& key)
@@ -135,7 +156,10 @@ vk::Pipeline PipelineManager::getOrCreate(const PipelineKey& key)
     const ShaderMetadata& metadata = shaders->metadata(key.shader);
     for (const ShaderMetadata::Binding& binding : metadata.bindings)
     {
-        const bool supported = binding.set == RenderInterface::kSceneSet
+        const bool supported = key.layout == PipelineLayoutPreset::ToneMapping
+            ? binding.set == 0 && descriptors->containsBinding(
+                DescriptorLayoutPreset::ToneMapping, binding.binding, binding.type)
+            : binding.set == RenderInterface::kSceneSet
             ? descriptors->containsBinding(DescriptorLayoutPreset::Scene, binding.binding, binding.type)
             : binding.set == RenderInterface::kMaterialSet && key.layout == PipelineLayoutPreset::SceneMaterial &&
                 descriptors->containsBinding(DescriptorLayoutPreset::Material, binding.binding, binding.type);
@@ -163,17 +187,28 @@ vk::Pipeline PipelineManager::getOrCreate(const PipelineKey& key)
     const vk::VertexInputBindingDescription      binding            = VertexLayout::bindingDescription();
     const auto                                   meshAttributes     = VertexLayout::attributeDescriptions();
     const auto                                   positionAttributes = VertexLayout::positionAttributeDescription();
-    const bool                                   hasVertexInput  = key.state.vertexLayout != VertexLayoutPreset::None;
-    const bool                                   fullVertexInput = key.state.vertexLayout == VertexLayoutPreset::Mesh;
+    const std::array positionUvAttributes = {meshAttributes[0], meshAttributes[2]};
+    std::span<const vk::VertexInputAttributeDescription> attributes;
+    switch (key.state.vertexLayout)
+    {
+        case VertexLayoutPreset::Mesh:
+            attributes = meshAttributes;
+            break;
+        case VertexLayoutPreset::PositionOnly:
+            attributes = positionAttributes;
+            break;
+        case VertexLayoutPreset::PositionUv:
+            attributes = positionUvAttributes;
+            break;
+        case VertexLayoutPreset::None:
+            break;
+    }
+    const bool hasVertexInput = !attributes.empty();
     const vk::PipelineVertexInputStateCreateInfo vertexInput{
         .vertexBindingDescriptionCount   = hasVertexInput ? 1u : 0u,
         .pVertexBindingDescriptions      = hasVertexInput ? &binding : nullptr,
-        .vertexAttributeDescriptionCount = hasVertexInput
-            ? (fullVertexInput ? static_cast<uint32_t>(meshAttributes.size())
-                               : static_cast<uint32_t>(positionAttributes.size()))
-            : 0u,
-        .pVertexAttributeDescriptions =
-            hasVertexInput ? (fullVertexInput ? meshAttributes.data() : positionAttributes.data()) : nullptr,
+        .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes.size()),
+        .pVertexAttributeDescriptions    = attributes.data(),
     };
     const vk::PipelineInputAssemblyStateCreateInfo inputAssembly{.topology = key.state.topology};
     const vk::PipelineViewportStateCreateInfo      viewport{.viewportCount = 1, .scissorCount = 1};

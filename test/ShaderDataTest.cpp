@@ -51,7 +51,7 @@ void checkFields(const json& type, const std::array<Field, N>& expected)
 }
 
 constexpr std::array shaders = {
-    "slang", "slang.no_ibl", "light", "editor_picking", "shadow", "shadow.rect_area", "skybox"
+    "slang", "slang.no_ibl", "depth", "light", "editor_picking", "shadow", "shadow.rect_area", "skybox"
 };
 }
 
@@ -179,6 +179,10 @@ TEST(ShaderDataLayout, TextureAndSamplerBindingsMatchCompiledShaders)
         std::pair{"metallicSampler", RenderInterface::kMaterialMetallicSamplerBinding},
         std::pair{"roughnessTexture", RenderInterface::kMaterialRoughnessImageBinding},
         std::pair{"roughnessSampler", RenderInterface::kMaterialRoughnessSamplerBinding},
+        std::pair{"emissiveTexture", RenderInterface::kMaterialEmissiveImageBinding},
+        std::pair{"emissiveSampler", RenderInterface::kMaterialEmissiveSamplerBinding},
+        std::pair{"occlusionTexture", RenderInterface::kMaterialOcclusionImageBinding},
+        std::pair{"occlusionSampler", RenderInterface::kMaterialOcclusionSamplerBinding},
     };
     for (const auto* shader : {"slang", "slang.no_ibl"})
     {
@@ -204,15 +208,31 @@ TEST(ShaderDataLayout, MaterialUniformsMatchCompiledShaders)
         Field{"alphaCutoff", offsetof(MaterialUniforms, alphaCutoff), sizeof(float)},
         Field{"alphaMode", offsetof(MaterialUniforms, alphaMode), sizeof(uint32_t)},
         Field{"normalScale", offsetof(MaterialUniforms, normalScale), sizeof(float)},
-        Field{"padding0", offsetof(MaterialUniforms, padding0), sizeof(float)},
+        Field{"occlusionStrength", offsetof(MaterialUniforms, occlusionStrength), sizeof(float)},
         Field{"padding1", offsetof(MaterialUniforms, padding1), sizeof(float)},
         Field{"padding2", offsetof(MaterialUniforms, padding2), sizeof(float)},
+        Field{"emissiveFactor", offsetof(MaterialUniforms, emissiveFactor), sizeof(glm::vec4)},
     };
-    for (const auto* shader : {"slang", "slang.no_ibl"})
+    for (const auto* shader : {"slang", "slang.no_ibl", "depth"})
     {
         const auto material = parameter(shader, "material");
         checkFields(material.at("type").at("elementType"), expected);
         EXPECT_EQ(material.at("type").at("elementVarLayout").at("binding").at("size"),
                   sizeof(MaterialUniforms));
     }
+}
+
+TEST(ShaderDataLayout, ToneMappingMatchesCompiledShader)
+{
+    const std::array expected = {
+        Field{"exposure", offsetof(ToneMappingPushConstants, exposure), sizeof(float)},
+        Field{"mode", offsetof(ToneMappingPushConstants, mode), sizeof(uint32_t)},
+        Field{"encodeSrgb", offsetof(ToneMappingPushConstants, encodeSrgb), sizeof(uint32_t)},
+        Field{"padding", offsetof(ToneMappingPushConstants, padding), sizeof(uint32_t)},
+    };
+    checkFields(parameter("tonemapping", "parameters").at("type").at("elementType"), expected);
+    EXPECT_EQ(parameter("tonemapping", "hdrColor").at("binding").at("index"),
+              RenderInterface::kToneMappingImageBinding);
+    EXPECT_EQ(parameter("tonemapping", "hdrSampler").at("binding").at("index"),
+              RenderInterface::kToneMappingSamplerBinding);
 }

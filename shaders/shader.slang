@@ -1,63 +1,21 @@
 #include "brdf.slang"
 #include "scene_data.slang"
 #include "sampling.slang"
+#include "mesh_vertex.slang"
+#include "material_data.slang"
 
 #ifndef ENABLE_IBL
 #error ENABLE_IBL must be specified when compiling the scene shader
 #endif
 
-struct VertexInput{
-    [[vk::location(0)]]
-    float3 position : POSITION;
-
-    [[vk::location(1)]]
-    float3 normal : NORMAL;
-
-    [[vk::location(2)]]
-    float2 uv : TEXCOORD;
-
-    [[vk::location(3)]]
-    float4 tangent : TANGENT;
-};
-
 struct VertexOutput
 {
-    float4 position : SV_Position;
+    precise float4 position : SV_Position;
     float3 worldNormal : NORMAL;
     float2 uv : TEXCOORD0;
     float3 worldPosition : POSITION0;
     float4 worldTangent : TEXCOORD1;
 };
-
-struct PushConstants
-{
-    float4x4 model;
-};
-
-[[vk::push_constant]]
-ConstantBuffer<PushConstants> pushConstants;
-
-
-struct MaterialData {
-    float4 baseColorFactor;
-    float roughness;
-    float metallic;
-    float alphaCutoff;
-    uint alphaMode;
-    float normalScale;
-    float padding0;
-    float padding1;
-    float padding2;
-};
-
-[[vk::binding(0, 1)]]
-Texture2D<float4> baseColorTexture;
-
-[[vk::binding(1, 1)]]
-SamplerState baseColorSampler;
-
-[[vk::binding(2, 1)]]
-ConstantBuffer<MaterialData> material;
 
 [[vk::binding(3, 1)]]
 Texture2D<float4> normalTexture;
@@ -76,6 +34,18 @@ Texture2D<float4> roughnessTexture;
 
 [[vk::binding(8, 1)]]
 SamplerState roughnessSampler;
+
+[[vk::binding(9, 1)]]
+Texture2D<float4> emissiveTexture;
+
+[[vk::binding(10, 1)]]
+SamplerState emissiveSampler;
+
+[[vk::binding(11, 1)]]
+Texture2D<float4> occlusionTexture;
+
+[[vk::binding(12, 1)]]
+SamplerState occlusionSampler;
 
 // Scene shadow resources (bindings 5..8).
 [[vk::binding(5, 0)]]
@@ -211,8 +181,8 @@ float rectAreaShadowPCSS(LightData light, float3 worldPos, uint2 pixel)
 VertexOutput vertMain(VertexInput input)
 {
     VertexOutput output;
-    float4 worldPosition = mul(pushConstants.model, float4(input.position, 1.0));
-    output.position = mul(viewUniforms.viewProjection, worldPosition);
+    float4 worldPosition;
+    output.position = transformMeshPosition(input.position, worldPosition);
     float3x3 model = (float3x3)pushConstants.model;
     // cofactor矩阵，伴随矩阵的转置
     float3x3 cofactor = float3x3(
@@ -238,8 +208,7 @@ float4 fragMain(VertexOutput input) : SV_Target
     N = normalize(T * normalTs.x + B * normalTs.y + N * normalTs.z);
 
     float4 baseColor = baseColorTexture.Sample(baseColorSampler, input.uv) * material.baseColorFactor;
-    if (material.alphaMode == 1 && baseColor.a < material.alphaCutoff)
-        discard;
+    applyAlphaTest(baseColor.a);
 
     float3 V = normalize(viewUniforms.cameraPosition.xyz - input.worldPosition);
     float NdotV = saturate(dot(N, V));
@@ -327,7 +296,11 @@ float4 fragMain(VertexOutput input) : SV_Target
 #else
     ambient = lightUniforms.ambientCoefficient * baseColor.rgb;
 #endif
-    float3 color = direct + ambient;
+    float occlusion = lerp(1.0, occlusionTexture.Sample(occlusionSampler, input.uv).r, material.occlusionStrength);
+    ambient *= occlusion;
+
+    float3 emissive = emissiveTexture.Sample(emissiveSampler, input.uv).rgb * material.emissiveFactor.rgb;
+    float3 color = direct + ambient + emissive;
 
     return float4(color, baseColor.a);
 }

@@ -20,6 +20,16 @@ Renderer 持有上述模块、`RenderSystem` 和各 Pass 对象，负责按配�
 
 ## 光栅化与光追路线
 
+光栅化链路为 DepthPrepass → Scene（不透明物体、天空盒、透明物体）→ LightMarker → ToneMapping → EditorUi → Present。DepthPrepass 创建并清空 D32 深度图，绘制 Opaque 和 MASK 物体，沿用材质的剔除设置和 alpha cutoff，BLEND 物体不参与预绘制。Scene 加载只读深度附件，不再写深度；不透明和 MASK 物体使用 Equal 比较，透明物体保持原来的深度比较和排序，天空盒仍使用 LessOrEqual。两个 Pass 共用 mesh_vertex.slang 的 precise 顶点位置计算，以及 material_data.slang 的材质布局和 Alpha Test。Graph 根据深度依赖排序并插入 Write → Read barrier；LightMarker 随后继续写入深度供拾取使用。
+
+Scene 和 LightMarker 使用 RGBA16F HDR 颜色图，Graph 为每个在途帧单独分配。ToneMappingPass 持有独立 descriptor set、pipeline 和绘制逻辑，只采样当前帧的 HDR 图，Graph 根据声明插入 ColorAttachment → ShaderRead barrier。UI 和坐标轴在 Tone Mapping 之后绘制，不受曝光影响。
+
+`feature.hdr` 控制整条 HDR 链路，默认 true。编辑器 Enable HDR 切换后走现有 rendererChanged 流程重新组图并 compile；关闭时 Scene 直接写交换链，LightMarker 随后加载该颜色附件，不创建 HDR 图，也不登记或绑定 ToneMappingPass。曝光和 Tone Mapping 参数保留但控件禁用，重新开启后继续使用；开关与其他渲染设置一样仅在正常关闭时统一持久化。
+
+`feature.toneMapping.exposure` 使用档位，0 为原始亮度，+1 为亮度乘 2，-1 为乘 0.5；`mode` 提供 Neutral（默认的 Khronos PBR Neutral）和 Reinhard。编辑器修改通过 push constants 每帧生效，不重建渲染图；正常关闭时统一保存到 renderer.json。Tone Mapping 输出线性颜色到 sRGB attachment，由硬件编码一次；若交换链使用 UNORM + sRGB nonlinear 色彩空间，则由该 shader 显式编码。此版本不包含自动曝光或 Bloom，光追 base-color 路线保持原来的 blit 输出，Tone Mapping 控件在该路线下禁用。
+
+Neutral 算法参考 [Khronos PBR Neutral Tone Mapper](https://github.com/KhronosGroup/ToneMapping/tree/main/PBR_Neutral)，shader 中注明 Slang 改写及 CC-BY-4.0 来源。
+
 编辑器的 Renderer / Render path 可选择 Rasterization 或 Ray tracing，选择保存在内存中的 `renderPath`，正常关闭时由 ConfigManager 统一写入 `config/renderer.json`，启动时恢复。该文件由 `config/config.json` 的 `paths.renderer` 指定，并保存 BRDF LUT 绑定、RenderFeature 和环境图选择。当前光栅化仍是默认路线；不支持所需 Vulkan 光追特性的 GPU 禁用光追选项，配置直接指定不支持的路线则明确报错，不自动退回光栅化。
 
 `render/raytracing/RayTracingPass` 使用独立的 `VK_KHR_ray_tracing_pipeline`：缓存每个 mesh/submesh 的 BLAS，每帧根据现有 DrawItem 的 transform 构建该帧 TLAS，通过 SBT 和 `vkCmdTraceRaysKHR` 发射相机主射线。ClosestHit 使用三角形重心坐标插值现有 Vertex UV，输出 `baseColorTexture * baseColorFactor` 后结束；Miss 输出黑色。灯光标记沿用现有网格与颜色，不计算照明。第一版没有 IBL、反弹、透明或 alpha-test，所有三角形按不透明处理；每帧最多 128 种材质纹理/采样器绑定。
@@ -54,14 +64,21 @@ SceneManager 持有 AActor 和 Component。RenderSystem 整理场景对象，在
 | 1 Material | 0 | Base color image |
 | 1 Material | 1 | Base color sampler |
 | 1 Material | 2 | MaterialUniforms UBO |
+| 1 Material | 3 / 4 | Normal image / sampler |
+| 1 Material | 5 / 6 | Metallic image / sampler |
+| 1 Material | 7 / 8 | Roughness image / sampler |
+| 1 Material | 9 / 10 | Emissive image / sampler |
+| 1 Material | 11 / 12 | Occlusion image / sampler |
 
 每个 FrameContext 持有一个 FrameData，后者管理 Scene Set、两个 UBO、灯光 SSBO 和点光源/矩形光源阴影 SSBO。ViewUniforms 包含 viewProjection、inverseViewProjection 和 cameraPosition，共 144 字节。LightUniforms 包含 lightCount、ambientCoefficient、iblParameters 和 shadowParameters，共 48 字节；iblParameters.x 是 prefiltered specular 的最大 LOD，shadowParameters 的 x/y/z 分别为归一化阴影深度 bias、点阴影方向空间 PCF 半径、逐像素旋转开关（0/1），w 预留为 0。LightData 按 RenderSystem 的灯光顺序存放，每项 112 字节，包含 shadowidx 和保留矩形旋转的 areaRightData（通过 areaRight 访问右方向）；lightCount 包括禁用灯光。上传时，enabled 且 castShadow 的点光源和矩形光源各自获得连续的 shadowidx，其余为 ~0u。PointShadowData 每项包含六个 VP，共 384 字节；RectAreaShadowData 包含 VP、nearPlane、farPlane 和 worldToUvScale，共 80 字节，Scene Set binding 4。
 
 SSBO 至少分配一项以维持有效 descriptor；没有灯光时 lightCount 为 0，shader 不读取数组。数量增长时，在当前帧 fence 完成后扩容并更新该帧 descriptor，其他帧保持自己的 buffer。
 
-GpuMaterial 持有 Material Set。set 2 Object 和 set 3 Pass 的编号已保留，当前没有对应预设 Layout；对象变换、拾取 ID 和 Shadow 的 lightidx 通过 Push Constant 传递。
+GpuMaterial 持有 Material Set。MaterialUniforms 为 64 字节，emissiveFactor 位于偏移 48；自发光贴图使用 sRGB，采样转换为线性颜色后乘资产中的 emissive 系数，直接加入主场景光照结果，不受灯光、IBL 开关或阴影影响。缺少自发光贴图时绑定白色 fallback，未设置系数时默认为零。set 2 Object 和 set 3 Pass 的编号已保留，当前没有对应预设 Layout；对象变换、拾取 ID 和 Shadow 的 lightidx 通过 Push Constant 传递。
 
-`PipelineLayoutPreset` 提供 SceneMaterial（set 0 + set 1）和 SceneOnly（set 0）。`PipelineState::preset(RenderMode)` 提供 Opaque、AlphaTest、Transparent、Shadow、DepthOnly、Skybox、PostProcess、LightMarker、Picking 状态模板。DepthOnly 只是状态模板，目前没有独立的深度预绘制节点。
+AO 贴图使用 Linear 色彩空间的 R 通道，缺少时绑定白色 Linear fallback。资产的 ao 字段作为 occlusionStrength 上传到 MaterialUniforms 偏移 36；shader 使用 lerp(1, sampledAO, occlusionStrength)，只乘环境光（IBL 的漫反射和镜面反射，或关闭 IBL 时的环境光系数结果），不影响直接光和自发光。编辑器现有 AO 控件调节该强度，0 表示禁用遮蔽，1 表示完整使用贴图。
+
+`PipelineLayoutPreset` 提供 SceneMaterial（set 0 + set 1）、SceneOnly（set 0）和 ToneMapping（独立 set 0 的 HDR image/sampler）。ToneMapping 的 push constants 为 16 字节，包含 exposure、mode 和 encodeSrgb。`PipelineState::preset(RenderMode)` 提供 Opaque、AlphaTest、Transparent、Shadow、DepthOnly、Skybox、PostProcess、LightMarker、Picking 状态模板。DepthPrepass 复用 SceneMaterial layout 和材质状态，只替换深度 shader、关闭颜色输出，不引入额外 descriptor。
 
 ## Shader、Descriptor 与 Pipeline
 

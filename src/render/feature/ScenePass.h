@@ -27,7 +27,7 @@ public:
 
     Output setup(
         RenderGraph&                    graph,
-        RenderGraph::ImageHandle        colorHandle,
+        RenderGraph::ImageHandle        depthHandle,
         PointLightShadowPass::Output    pointShadow,
         RectAreaLightShadowPass::Output rectAreaShadow
     );
@@ -51,6 +51,7 @@ private:
     vk::Pipeline                skyboxPipeline;
     vk::PipelineLayout          pipelineLayout;
     vk::PipelineLayout          skyboxPipelineLayout;
+    vk::Format                  colorFormat = vk::Format::eUndefined;
     std::shared_ptr<GpuTexture> irradianceTexture;
     std::shared_ptr<GpuTexture> prefilteredSpecularTexture;
     std::shared_ptr<GpuTexture> radianceTexture;

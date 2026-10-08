@@ -138,9 +138,36 @@ void DescriptorManager::init(const vk::raii::Device& targetDevice)
             .binding = RenderInterface::kMaterialRoughnessSamplerBinding,
             .descriptorType = vk::DescriptorType::eSampler,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kMaterialEmissiveImageBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kMaterialEmissiveSamplerBinding,
+            .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kMaterialOcclusionImageBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kMaterialOcclusionSamplerBinding,
+            .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
     };
     sceneLayout = getOrCreateLayout(sceneBindings);
     materialLayout = getOrCreateLayout(materialBindings);
+    const std::array toneMappingBindings = {
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kToneMappingImageBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kToneMappingSamplerBinding,
+            .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+    };
+    toneMappingLayout = getOrCreateLayout(toneMappingBindings);
 }
 
 void DescriptorManager::shutdown() noexcept
@@ -149,12 +176,19 @@ void DescriptorManager::shutdown() noexcept
     layouts.clear();
     sceneLayout = nullptr;
     materialLayout = nullptr;
+    toneMappingLayout = nullptr;
     device = nullptr;
 }
 
 vk::DescriptorSetLayout DescriptorManager::layout(DescriptorLayoutPreset preset) const
 {
-    return preset == DescriptorLayoutPreset::Scene ? sceneLayout : materialLayout;
+    switch (preset)
+    {
+        case DescriptorLayoutPreset::Scene: return sceneLayout;
+        case DescriptorLayoutPreset::Material: return materialLayout;
+        case DescriptorLayoutPreset::ToneMapping: return toneMappingLayout;
+    }
+    LOG_FATAL("invalid descriptor layout preset");
 }
 
 bool DescriptorManager::containsBinding(DescriptorLayoutPreset preset,

@@ -38,9 +38,10 @@ RendererConfig sampleRendererConfig()
     return {
         .renderPath = RenderPath::RayTracing,
         .brdfLut = {TextureAsset::ID{"lut_ggx"}, SamplerAsset::ID{"linearClamp"}},
-        .feature = {.ibl = false, .ambientCoefficient = 0.25f,
+        .feature = {.ibl = false, .ambientCoefficient = 0.25f, .hdr = false,
             .shadow = {.enable = false, .pointShadowMapSize = 2048, .bias = 0.0025f,
-                .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.03f}},
+                .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.03f},
+            .toneMapping = {.exposure = 1.5f, .mode = ToneMappingOperator::Reinhard}},
         .environmentMap = EnvironmentMapAsset::ID{"grasslands"},
     };
 }
@@ -79,6 +80,7 @@ TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
     EXPECT_EQ(serialized.at("brdfLut").at("textureID").at("value"), "lut_ggx");
     EXPECT_EQ(serialized.at("brdfLut").at("samplerID").at("value"), "linearClamp");
     EXPECT_EQ(serialized.at("feature").at("ibl"), false);
+    EXPECT_EQ(serialized.at("feature").at("hdr"), false);
     EXPECT_FLOAT_EQ(serialized.at("feature").at("ambientCoefficient").get<float>(), 0.25f);
     EXPECT_EQ(serialized.at("environmentMap").at("value"), "grasslands");
     EXPECT_EQ(serialized.at("feature").at("shadow").at("enable"), false);
@@ -88,6 +90,8 @@ TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
     EXPECT_EQ(serialized.at("feature").at("shadow").at("filter"), "Nearest");
     EXPECT_EQ(serialized.at("feature").at("shadow").at("pixelRotation"), false);
     EXPECT_FLOAT_EQ(serialized.at("feature").at("shadow").at("sampleRadius").get<float>(), 0.03f);
+    EXPECT_FLOAT_EQ(serialized.at("feature").at("toneMapping").at("exposure").get<float>(), 1.5f);
+    EXPECT_EQ(serialized.at("feature").at("toneMapping").at("mode"), "Reinhard");
 
     RendererConfig restored;
     Deserialize(serialized, restored);
@@ -124,6 +128,10 @@ TEST(ConfigSerialization, MissingFieldsFailInsteadOfUsingDefaults)
 
     serialized = Serialize(sampleRendererConfig());
     serialized.at("feature").at("shadow").erase("sampleRadius");
+    EXPECT_DEATH(Deserialize(serialized, restoredRenderer), "");
+
+    serialized = Serialize(sampleRendererConfig());
+    serialized.at("feature").erase("toneMapping");
     EXPECT_DEATH(Deserialize(serialized, restoredRenderer), "");
 }
 

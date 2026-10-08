@@ -10,6 +10,7 @@
     "environmentMap": null,
     "feature": {
         "ambientCoefficient": 0.10000000149011612,
+        "hdr": true,
         "ibl": true,
         "shadow": {
             "enable": true,
@@ -19,6 +20,10 @@
             "bias": 0.001,
             "pixelRotation": true,
             "sampleRadius": 0.02
+        },
+        "toneMapping": {
+            "exposure": 0.0,
+            "mode": "Neutral"
         }
     },
     "renderPath": "Rasterization"

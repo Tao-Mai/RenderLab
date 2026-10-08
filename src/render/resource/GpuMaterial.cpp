@@ -53,6 +53,8 @@ void GpuMaterial::create(
         .alphaMode = mode == RenderMode::AlphaTest ? 1u :
             mode == RenderMode::Transparent ? 2u : 0u,
         .normalScale = material.normalScale.value_or(1.0f),
+        .occlusionStrength = material.ao.value_or(1.0f),
+        .emissiveFactor = glm::vec4(material.emissive.value_or(glm::vec3{0.0f}), 0.0f),
     };
     materialBuffer->upload(&materialData, sizeof(materialData));
 
@@ -78,6 +80,10 @@ void GpuMaterial::create(
                        RenderInterface::kMaterialMetallicSamplerBinding, &textures.metallic},
         TextureDescriptor{RenderInterface::kMaterialRoughnessImageBinding,
                        RenderInterface::kMaterialRoughnessSamplerBinding, &textures.roughness},
+        TextureDescriptor{RenderInterface::kMaterialEmissiveImageBinding,
+                       RenderInterface::kMaterialEmissiveSamplerBinding, &textures.emissive},
+        TextureDescriptor{RenderInterface::kMaterialOcclusionImageBinding,
+                       RenderInterface::kMaterialOcclusionSamplerBinding, &textures.occlusion},
     };
     std::array<vk::DescriptorImageInfo, bindings.size()> images;
     std::array<vk::DescriptorImageInfo, bindings.size()> samplers;

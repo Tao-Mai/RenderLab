@@ -85,6 +85,7 @@ public:
     [[nodiscard]] Image&  getImage(ImageHandle image, uint32_t frameIndex);
     [[nodiscard]] Buffer& getBuffer(BufferHandle buffer);
     [[nodiscard]] Buffer& getBuffer(BufferHandle buffer, uint32_t frameIndex);
+    [[nodiscard]] const ImageCreateInfo& imageInfo(ImageHandle image);
 
     void                      execute(const EditorFrameInput& editor, uint32_t frameIndex, uint32_t imageIndex);
     [[nodiscard]] static bool needsBarrier(const ImageAccess& previous, const ImageAccess& next);

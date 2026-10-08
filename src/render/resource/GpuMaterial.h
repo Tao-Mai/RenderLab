@@ -28,6 +28,8 @@ public:
         Texture normal;
         Texture metallic;
         Texture roughness;
+        Texture emissive;
+        Texture occlusion;
     };
 
     void create(

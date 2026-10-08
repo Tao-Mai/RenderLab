@@ -8,6 +8,15 @@
 
 namespace
 {
+void validateToneMapping(const RenderFeature::ToneMapping& toneMapping)
+{
+    CHECK(std::isfinite(toneMapping.exposure) &&
+          std::isfinite(std::exp2(toneMapping.exposure)) &&
+          std::exp2(toneMapping.exposure) > 0.0f);
+    CHECK(toneMapping.mode == ToneMappingOperator::Neutral ||
+          toneMapping.mode == ToneMappingOperator::Reinhard);
+}
+
 std::filesystem::path resolveAgainst(const std::filesystem::path& baseDir, std::filesystem::path value)
 {
     if (value.empty())
@@ -85,6 +94,7 @@ void ConfigManager::setRenderFeature(const RenderFeature& feature)
     CHECK(std::isfinite(feature.shadow.sampleRadius) && feature.shadow.sampleRadius >= 0.0f);
     CHECK(feature.shadow.filter == SamplerAsset::Filter::Nearest ||
           feature.shadow.filter == SamplerAsset::Filter::Linear);
+    validateToneMapping(feature.toneMapping);
 
     renderer.feature = feature;
 }
@@ -155,6 +165,7 @@ void ConfigManager::loadEditor()
 void ConfigManager::loadRenderer()
 {
     renderer = asset_json::load<RendererConfig>(resolvedPaths.renderer);
+    validateToneMapping(renderer.feature.toneMapping);
 
     CHECK(!renderer.environmentMap || !renderer.environmentMap->empty());
     CHECK(renderer.feature.shadow.pointShadowMapSize > 0);
