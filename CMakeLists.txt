@@ -430,8 +430,8 @@ add_executable(RenderLab
         src/render/raytracing/RayTracingPass.h
         src/render/raytracing/RayTracingBlitPass.cpp
         src/render/raytracing/RayTracingBlitPass.h
-        src/render/feature/shadow/PointLightShadowPass.cpp
-        src/render/feature/shadow/PointLightShadowPass.h
+        src/render/feature/shadow/ShadowPass.cpp
+        src/render/feature/shadow/ShadowPass.h
         src/render/feature/LightMarkers.cpp
         src/render/feature/LightMarkers.h
         src/render/feature/editor/LightMarkerPass.cpp
@@ -446,6 +446,7 @@ add_executable(RenderLab
         src/asset/AssetDataManager.cpp
         src/asset/AssetDataManager.h
         src/asset/TextureMip.h
+        src/asset/TextureMip.cpp
         src/core/math/Sampler.cpp
         src/core/math/Sampler.h
         src/render/feature/RenderGraph.cpp
@@ -457,10 +458,6 @@ add_executable(RenderLab
         src/render/feature/editor/EditorUiPass.h
         src/render/Image.cpp
         src/render/Image.h
-        src/render/feature/shadow/RectAreaLightShadowPass.cpp
-        src/render/feature/shadow/RectAreaLightShadowPass.h
-        src/render/feature/shadow/DirectionalShadowPass.cpp
-        src/render/feature/shadow/DirectionalShadowPass.h
 )
 add_dependencies(RenderLab RenderLabShaders)
 

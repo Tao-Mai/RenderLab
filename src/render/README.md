@@ -22,6 +22,8 @@ Renderer 持有上述模块、`RenderSystem` 和各 Pass 对象，负责按配�
 
 光栅化链路为 DepthPrepass → Scene（不透明物体、天空盒、透明物体）→ LightMarker → ToneMapping → EditorUi → Present。DepthPrepass 创建并清空 D32 深度图，绘制 Opaque 和 MASK 物体，沿用材质的剔除设置和 alpha cutoff，BLEND 物体不参与预绘制。Scene 加载只读深度附件，不再写深度；不透明和 MASK 物体使用 Equal 比较，透明物体保持原来的深度比较和排序，天空盒仍使用 LessOrEqual。两个 Pass 共用 mesh_vertex.slang 的 precise 顶点位置计算，以及 material_data.slang 的材质布局和 Alpha Test。Graph 根据深度依赖排序并插入 Write → Read barrier；LightMarker 随后继续写入深度供拾取使用。
 
+点光源、方向光和矩形光共用 brdf.slang 的直接光 BRDF：Schlick Fresnel、GGX 分布、height-correlated Smith 可见性和 Lambert 漫反射，金属度同时控制 F0 和漫反射权重。光源分支只生成光线方向、入射光量和阴影可见性，最后统一乘 BRDF 和 NdotL。直接光的感知粗糙度下限为 0.045，避免零粗糙度数值退化；材质数据和 IBL 粗糙度保持原值。矩形光仍用中心方向与投影面积/距离平方近似立体角，新增的镜面响应不代表有限面积光源积分；Spot 暂未接入。
+
 Scene 和 LightMarker 使用 RGBA16F HDR 颜色图，Graph 为每个在途帧单独分配。ToneMappingPass 持有独立 descriptor set、pipeline 和绘制逻辑，只采样当前帧的 HDR 图，Graph 根据声明插入 ColorAttachment → ShaderRead barrier。UI 和坐标轴在 Tone Mapping 之后绘制，不受曝光影响。
 
 `feature.hdr` 控制整条 HDR 链路，默认 true。编辑器 Enable HDR 切换后走现有 rendererChanged 流程重新组图并 compile；关闭时 Scene 直接写交换链，LightMarker 随后加载该颜色附件，不创建 HDR 图，也不登记或绑定 ToneMappingPass。曝光和 Tone Mapping 参数保留但控件禁用，重新开启后继续使用；开关与其他渲染设置一样仅在正常关闭时统一持久化。
@@ -96,6 +98,8 @@ PipelineKey 包含 ShaderHandle、PipelineLayout、VertexLayout、Topology、Ras
 
 GpuMaterial 根据 alpha mode 选择 Opaque、AlphaTest 或 Transparent。MaterialAsset 的 shaderId 未指定时使用 scene shader。GpuTexture 只持有 Image/View；RenderResourceManager 按 SamplerAsset::ID 创建并缓存独立 sampler。材质与环境纹理使用 TextureBinding 指定 image/sampler，BRDF LUT 的绑定来自 Renderer 配置。
 
+普通 2D 贴图在导入阶段生成完整 mip 链并持久化，GpuTexture 上传全部层级，材质 sampler 默认使用 Linear mip 过滤且不限制最大 LOD。sRGB 颜色在线性空间做 box 过滤，Alpha 保持线性；线性数据贴图不做伽马变换。R8/RG8 非 2 次幂贴图的紧凑 mip 数据只在上传 staging 时补齐 copy offset 对齐，不改变资产二进制格式。环境图的烘焙流程保持独立。
+
 ## 初始化与加载场景
 
 Renderer init 依次初始化 device、swapchain、各 Manager、FrameContext、RenderResourceManager 和 Graph，并创建 Pass 对象。四个 Manager 由 Renderer 持有，通过 renderContext() 暴露；Renderer 显式调用 init/shutdown。Graph init 只建立对 Renderer 的引用。
@@ -107,7 +111,7 @@ Renderer loadScene 等待 GPU 空闲，RenderSystem 加载渲染项并建立对�
 ## RenderGraph 接口
 
 各 Pass 提供 setup/execute；setup 直接接收 ImageHandle/BufferHandle 或前序 Pass 的 Output，返回 Output。
-Renderer setupRenderGraph 根据配置通过 setupPass<T>(args...) 完美转发参数，显式串接资源句柄；ScenePass 直接接收 color、PointLightShadowPass::Output 和 RectAreaLightShadowPass::Output。Graph 不再提供业务组图的 setup 接口。
+Renderer setupRenderGraph 根据配置通过 setupPass<T>(args...) 完美转发参数，显式串接资源句柄；ScenePass 直接接收深度 handle 和 ShadowPass::Output。Graph 不再提供业务组图的 setup 接口。
 所有 Pass 类型只在 Renderer.cpp 的 tuple 类型列表中集中声明一次，保存 Pass 对象，通过类型直接访问。
 Renderer 的 setupPass 将 Pass 对象交给 graph.addPass；addPass 通过静态反射收集参数中的 handle，限定访问记录的切换范围并在返回时恢复。Pass 仍调用 graph.use(handle, access)。Graph 单独拥有节点，保存资源依赖、use 记录和 execute 回调，不使用字符串注册。
 类型列表和 Renderer 的 setupPass 模板定义只放在 cpp；RenderGraph.h 定义通用模板，不包含各 Pass 的头文件。
@@ -130,13 +134,17 @@ Mesh/Material 直接引用 RenderSystem 准备的资产 GPU 对象，不进入�
 
 ## 绘制行为
 
-`RenderConfig.h` 中的 `kMaxPointLightShadow = 4` 固定点光源阴影容量。每帧阴影图预留 24 层，PointShadowData SSBO 固定分配四项，不随场景灯光数量或开关状态扩容。上传时有效点光源超过四盏直接 CHECK 终止。
+`RenderConfig.h` 中的 `kMaxPointLightShadow = 4` 固定点光源阴影容量。启用阴影时，每帧阴影图预留 24 层，PointShadowData SSBO 固定分配四项，不随场景灯光数量或单灯开关状态扩容。上传时有效点光源超过四盏直接 CHECK 终止。
 
-FrameData 在上传时为启用投影的点光源计算六个 VP，range 为 far plane。PointLightShadowPass 遍历当前帧全部灯光，对有效点光源各录制一次六面 multiview 渲染，viewMask = 0b111111；shader 按 lightidx → shadowidx → VP[SV_ViewID] 取矩阵。每个 shadowidx 对应 cubemap array 中独立的六层，fragment 写入 `distance(worldPosition, lightPosition) / range` 的线性深度。没有有效阴影点光源时不录制清空或绘制命令。Graph 负责切换到深度只读状态。设备需要支持至少六个 multiview view 和 imageCubeArray。
+ShadowPass 作为一个 Graph 节点统一创建并输出点光源、矩形面光源和方向光三组阴影资源，保留各自的 shader variant 和 pipeline。execute 遍历有效阴影灯光，通过共用的 recordShadow 录制 attachment、descriptor、viewport、push constants 和 mesh 绘制；Graph 统一负责资源状态转换。
 
-RectAreaLightShadowPass 不使用 multiview，每个有效矩形阴影光源使用一层 2D 深度图。`kMaxRectAreaLightShadow = 4` 固定图像层数和 RectAreaShadowData SSBO 容量，shadowidx 在矩形类型内独立编号。上传阶段从光源中心计算透视 VP：垂直 FOV 100 度、宽高比 areaSize.x / areaSize.y、near plane 为 min(0.5, range * 0.1)、far plane 为 range，areaRight 保留光源绕发光方向的旋转。worldToUvScale 是投影矩阵 XY 对角元素绝对值的一半，深度 z 处的世界空间半径通过 radius * worldToUvScale / z 转为 UV 半径。shadow.slang 通过 SHADOW_TYPE 宏编译为 point、rect_area 和 directional 三个变体，只有点光源变体声明 SV_ViewID。矩形变体写透视深度，不写径向距离。主场景采用矩形核 PCSS：blocker 搜索和 PCF 各使用 4×4 分层的 16 点矩形采样，采样方法位于 sampling.slang，先在 [-1,1]² 中每格取一点，再按光源宽高和投影缩放。feature.shadow.pixelRotation 对点光源仍控制圆盘旋转，对矩形光源控制稳定的逐像素格内抖动；关闭时使用每格中心，始终不旋转矩形核。搜索范围投影到 near plane，用非比较 Linear sampler 搜索 blocker，再按平均线性 blocker 深度计算过滤半径，用比较 sampler 执行 PCF，过滤模式仍由阴影配置控制。超出投影范围和越界过滤样本视为未遮挡，越界搜索样本跳过。此方案仍是单张中心投影阴影图的软阴影近似，不是精确矩形光源积分。Spot 阴影及阴影 Pass 的 AlphaTest 镂空暂不处理。
+阴影总开关切换时重建 Graph；关闭时 Renderer 不添加 ShadowPass，ScenePass 接收无效阴影 handle，并用同一张 1×1 六层深度占位图填充三类阴影 descriptor。上传阶段会清除灯光的 castShadow 标记，因此 shader 不采样占位图。阴影纹理在 ScenePass 中统一声明为 ShaderReadOnlyOptimal，由 Graph 转换状态；ShadowPass::execute 不再检查总开关。
 
-DirectionalShadowPass 使用单层 2D View 逐层绘制，不使用 multiview 或 cube 图像。`kMaxDirectionalLightShadow = 1` 限制一盏有效阴影方向光，`kMaxDirectionalShadowCascades = 4` 固定 SSBO 中的级联容量；图像按配置的 count 预留层数，不随灯光开关重建。feature.shadow.cascade 包含 count、shadowMapSize、maxDistance、splitLambda 和 depthPadding。上传阶段把相机视锥按均匀/对数混合分层，为每层包围球生成方向光正交 VP，Y 翻转匹配 Vulkan；depthPadding 沿光线方向扩展深度范围，避免把相机视锥外的遮挡物全裁掉。Scene shader 逐层比较正的相机空间深度和 depthUpperBound，找到第一个覆盖层后采样 shadowidx * cascadeCount + cascadeIndex。超出最后一层不再计算阴影；共用 Shadow bias 和 Nearest/Linear 比较过滤，暂不做级联混合、texel snapping、距离淡出或额外 PCF 核。
+FrameData 在上传时为启用投影的点光源计算六个 VP，range 为 far plane。ShadowPass 对有效点光源各录制一次六面 multiview 渲染，viewMask = 0b111111；shader 按 lightidx → shadowidx → VP[SV_ViewID] 取矩阵。每个 shadowidx 对应 cubemap array 中独立的六层，fragment 写入 `distance(worldPosition, lightPosition) / range` 的线性深度。没有有效阴影点光源时不录制清空或绘制命令。Graph 在 ScenePass 前切换阴影图到 shader 只读状态。设备需要支持至少六个 multiview view 和 imageCubeArray。
+
+ShadowPass 的矩形面光源绘制不使用 multiview，每个有效矩形阴影光源使用一层 2D 深度图。`kMaxRectAreaLightShadow = 4` 固定图像层数和 RectAreaShadowData SSBO 容量，shadowidx 在矩形类型内独立编号。上传阶段从光源中心计算透视 VP：垂直 FOV 100 度、宽高比 areaSize.x / areaSize.y、near plane 为 min(0.5, range * 0.1)、far plane 为 range，areaRight 保留光源绕发光方向的旋转。worldToUvScale 是投影矩阵 XY 对角元素绝对值的一半，深度 z 处的世界空间半径通过 radius * worldToUvScale / z 转为 UV 半径。shadow.slang 通过 SHADOW_TYPE 宏编译为 point、rect_area 和 directional 三个变体，只有点光源变体声明 SV_ViewID。矩形变体写透视深度，不写径向距离。主场景采用矩形核 PCSS：blocker 搜索和 PCF 各使用 4×4 分层的 16 点矩形采样，采样方法位于 sampling.slang，先在 [-1,1]² 中每格取一点，再按光源宽高和投影缩放。feature.shadow.pixelRotation 对点光源仍控制圆盘旋转，对矩形光源控制稳定的逐像素格内抖动；关闭时使用每格中心，始终不旋转矩形核。搜索范围投影到 near plane，用非比较 Linear sampler 搜索 blocker，再按平均线性 blocker 深度计算过滤半径，用比较 sampler 执行 PCF，过滤模式仍由阴影配置控制。超出投影范围和越界过滤样本视为未遮挡，越界搜索样本跳过。此方案仍是单张中心投影阴影图的软阴影近似，不是精确矩形光源积分。Spot 阴影及阴影 Pass 的 AlphaTest 镂空暂不处理。
+
+ShadowPass 的方向光绘制使用单层 2D View 逐层绘制，不使用 multiview 或 cube 图像。`kMaxDirectionalLightShadow = 1` 限制一盏有效阴影方向光，`kMaxDirectionalShadowCascades = 4` 固定 SSBO 中的级联容量；图像按配置的 count 预留层数，不随灯光开关重建。feature.shadow.cascade 包含 count、shadowMapSize、maxDistance、splitLambda 和 depthPadding。上传阶段把相机视锥按均匀/对数混合分层，为每层包围球生成方向光正交 VP，Y 翻转匹配 Vulkan；depthPadding 沿光线方向扩展深度范围，避免把相机视锥外的遮挡物全裁掉。Scene shader 逐层比较正的相机空间深度和 depthUpperBound，找到第一个覆盖层后采样 shadowidx * cascadeCount + cascadeIndex。超出最后一层不再计算阴影；共用 Shadow bias 和 Nearest/Linear 比较过滤，暂不做级联混合、texel snapping、距离淡出或额外 PCF 核。
 
 分层流程参考 [Vulkan cascaded shadow mapping 示例](https://github.com/SaschaWillems/Vulkan/tree/master/examples/shadowmappingcascade)。编辑器 Shadows 区域可调全部级联配置；count 和 shadowMapSize 修改时重建 Graph，其余参数逐帧生效，正常关闭时统一保存 renderer.json。
 

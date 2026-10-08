@@ -2,9 +2,7 @@
 
 #include "render/FrameData.h"
 #include "render/PipelineManager.h"
-#include "render/feature/shadow/PointLightShadowPass.h"
-#include "render/feature/shadow/RectAreaLightShadowPass.h"
-#include "render/feature/shadow/DirectionalShadowPass.h"
+#include "render/feature/shadow/ShadowPass.h"
 #include "render/feature/RenderGraph.h"
 
 #include <memory>
@@ -26,13 +24,7 @@ public:
         RenderGraph::ImageHandle depth;
     };
 
-    Output setup(
-        RenderGraph&                    graph,
-        RenderGraph::ImageHandle        depthHandle,
-        PointLightShadowPass::Output    pointShadow,
-        RectAreaLightShadowPass::Output rectAreaShadow,
-        DirectionalShadowPass::Output   directionalShadow
-    );
+    Output setup(RenderGraph& graph, RenderGraph::ImageHandle depthHandle, ShadowPass::Output shadow);
     void bindResources(RenderGraph& graph) const;
     void execute(RenderGraph& graph) const;
 

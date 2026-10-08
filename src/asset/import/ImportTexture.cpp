@@ -3,6 +3,7 @@
 #include "asset/Asset.h"
 #include "asset/AssetManager.h"
 #include "asset/AssetDataManager.h"
+#include "asset/TextureMip.h"
 #include "asset/import/ImportId.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -54,7 +55,7 @@ TextureAsset::ID AssetImporter::importTexture(const ImportTextureSetting& settin
     asset.layout    = ImageLayout::Image2D;
     asset.width     = image.width;
     asset.height    = image.height;
-    asset.mipLevels = 1;
+    asset.mipLevels = texture_mip::maxLevels(asset.width, asset.height);
 
     std::vector<uint8_t> bytes;
     if (auto* rgba8 = std::get_if<std::vector<uint8_t>>(&image.pixels))
@@ -93,6 +94,7 @@ TextureAsset::ID AssetImporter::importTexture(const ImportTextureSetting& settin
             std::memcpy(bytes.data(), rgba.data(), bytes.size());
         }
     }
+    bytes = texture_mip::generateChain(asset, bytes);
     const TextureAsset::ID id = saveTexture(std::move(asset), source, bytes);
     LOG_INFO("Import texture '{}' completed as '{}' in {:.1f}s",
              source.string(), id.value,

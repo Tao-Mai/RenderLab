@@ -34,11 +34,7 @@ void ScenePass::bindSceneDescriptor(vk::raii::CommandBuffer& commandBuffer, uint
 }
 
 ScenePass::Output ScenePass::setup(
-    RenderGraph&                    targetGraph,
-    RenderGraph::ImageHandle        depthHandle,
-    PointLightShadowPass::Output    pointShadow,
-    RectAreaLightShadowPass::Output rectAreaShadow,
-    DirectionalShadowPass::Output   directionalShadow
+    RenderGraph& targetGraph, RenderGraph::ImageHandle depthHandle, ShadowPass::Output shadow
 )
 {
     graph  = &targetGraph;
@@ -54,11 +50,31 @@ ScenePass::Output ScenePass::setup(
               "GPU does not support an RGBA16F HDR color attachment with blending and sampling");
     }
 
-    pipelines         = renderContext().pipelineManager;
-    resources         = renderContext().resources;
-    pointShadowMap    = pointShadow.pointLightShadowMap;
-    rectAreaShadowMap = rectAreaShadow.rectAreaLightShadowMap;
-    cascadeShadowMap  = directionalShadow.cascadeShadowMap;
+    pipelines = renderContext().pipelineManager;
+    resources = renderContext().resources;
+
+    RenderGraph::ImageHandle fallbackShadowMap;
+    const auto resolveShadowMap = [&](RenderGraph::ImageHandle image)
+    {
+        if (image.id != RenderGraph::kInvalidHandle)
+            return image;
+
+        if (fallbackShadowMap.id == RenderGraph::kInvalidHandle)
+        {
+            // Keep statically used descriptors valid; disabled lights never sample this image.
+            constexpr uint32_t kCubeFaceCount = 6;
+            fallbackShadowMap = graph->createImage({
+                .flags       = vk::ImageCreateFlagBits::eCubeCompatible,
+                .format      = vk::Format::eD32Sfloat,
+                .extent      = {1, 1, 1},
+                .arrayLayers = kCubeFaceCount,
+            });
+        }
+        return fallbackShadowMap;
+    };
+    pointShadowMap    = resolveShadowMap(shadow.pointLightShadowMap);
+    rectAreaShadowMap = resolveShadowMap(shadow.rectAreaLightShadowMap);
+    cascadeShadowMap  = resolveShadowMap(shadow.cascadeShadowMap);
 
     const auto& brdf = context().config->rendererConfig().brdfLut;
     CHECK(!brdf.textureID.empty() && !brdf.samplerID.empty());
@@ -120,7 +136,7 @@ ScenePass::Output ScenePass::setup(
         {
             .stages = vk::PipelineStageFlagBits2::eFragmentShader,
             .access = vk::AccessFlagBits2::eShaderSampledRead,
-            .layout = vk::ImageLayout::eDepthReadOnlyOptimal,
+            .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
         }
     );
     graph.use(
@@ -128,7 +144,7 @@ ScenePass::Output ScenePass::setup(
         {
             .stages = vk::PipelineStageFlagBits2::eFragmentShader,
             .access = vk::AccessFlagBits2::eShaderSampledRead,
-            .layout = vk::ImageLayout::eDepthReadOnlyOptimal,
+            .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
         }
     );
     graph.use(
@@ -136,7 +152,7 @@ ScenePass::Output ScenePass::setup(
         {
             .stages = vk::PipelineStageFlagBits2::eFragmentShader,
             .access = vk::AccessFlagBits2::eShaderSampledRead,
-            .layout = vk::ImageLayout::eDepthReadOnlyOptimal,
+            .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
         }
     );
 
@@ -187,9 +203,9 @@ void ScenePass::bindResources(RenderGraph& graph) const
                                  .subresourceRange =
                                      {.aspectMask = vk::ImageAspectFlagBits::eDepth,
                                       .levelCount = 1,
-                                      .layerCount = kMaxPointLightShadow * 6},
+                                      .layerCount = graph.imageInfo(pointShadowMap).arrayLayers},
                              }),
-            .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
         };
         const vk::DescriptorImageInfo rectAreaShadowImage{
             .imageView = graph.getImage(rectAreaShadowMap, frameIndex)
@@ -199,9 +215,9 @@ void ScenePass::bindResources(RenderGraph& graph) const
                                  .subresourceRange =
                                      {.aspectMask = vk::ImageAspectFlagBits::eDepth,
                                       .levelCount = 1,
-                                      .layerCount = kMaxRectAreaLightShadow},
+                                      .layerCount = graph.imageInfo(rectAreaShadowMap).arrayLayers},
                              }),
-            .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
         };
         const vk::DescriptorImageInfo shadowSamplerInfo{.sampler = *shadowSampler};
         const vk::DescriptorImageInfo directionalShadowImage{
@@ -214,7 +230,7 @@ void ScenePass::bindResources(RenderGraph& graph) const
                     .layerCount = graph.imageInfo(cascadeShadowMap).arrayLayers,
                 },
             }),
-            .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
         };
         const std::array              writes = {
             vk::WriteDescriptorSet{

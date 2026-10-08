@@ -95,12 +95,14 @@ int main(int, char** argv)
         {
             feature.shadow.enable = false;
             config.setRenderFeature(feature);
+            renderer.loadScene();
         }
         if (frame == 6)
         {
             feature.shadow.enable = true;
             config.setRenderFeature(feature);
             sceneLight.castShadow = false;
+            renderer.loadScene();
         }
 
         window.pollEvents();

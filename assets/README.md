@@ -18,6 +18,10 @@ use C++ member names and IDs use `{"value": "..."}`. Optional fields are explici
 null when absent; missing fields and unknown fields in complete descriptions are errors.
 
 Texture imports write ready-to-upload pixels to `assets/binary/texture/<id>.bin`.
+Ordinary 2D textures include a complete mip chain down to 1x1, packed mip-major.
+Mip 0 is preserved; sRGB colors are filtered in linear space, with linear alpha
+and alpha-weighted RGB for sRGB RGBA images. Linear data maps and floating-point
+images stay linear. Odd-sized and non-square images are supported.
 `resource/lut_ggx.png` is imported as the linear RG8 `lut_ggx` texture; `config/config.json`
 records its texture and sampler IDs under `renderer.brdfLut` so the renderer loads them at startup.
 Mesh imports write geometry to `assets/binary/geometry/<id>.bin`.
