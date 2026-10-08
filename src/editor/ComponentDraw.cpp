@@ -199,6 +199,13 @@ bool drawMaterialFields(MaterialAsset& material)
     edited = drawFactor("Roughness", material.roughness, 1.0f) || edited;
     edited = drawFactor("AO", material.ao, 1.0f) || edited;
 
+    glm::vec3 emissive = material.emissive.value_or(glm::vec3{0.0f});
+    if (ImGui::ColorEdit3("Emissive", glm::value_ptr(emissive), ImGuiColorEditFlags_Float))
+    {
+        material.emissive = emissive;
+        edited = true;
+    }
+
     ImGui::BeginDisabled(!material.normalTexture);
     float normalScale = material.normalScale.value_or(1.0f);
     if (ImGui::DragFloat("Normal Scale", &normalScale, 0.05f, 0.0f,
@@ -213,6 +220,8 @@ bool drawMaterialFields(MaterialAsset& material)
     ImGui::Text("Normal: %s", material.normalTexture ? material.normalTexture->textureID.c_str() : "None");
     ImGui::Text("Metallic: %s", material.metallicTexture ? material.metallicTexture->textureID.c_str() : "None");
     ImGui::Text("Roughness: %s", material.roughnessTexture ? material.roughnessTexture->textureID.c_str() : "None");
+    ImGui::Text("Emissive: %s", material.emissiveTexture ? material.emissiveTexture->textureID.c_str() : "None");
+    ImGui::Text("AO: %s", material.aoTexture ? material.aoTexture->textureID.c_str() : "None");
     return edited;
 }
 }

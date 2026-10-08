@@ -12,6 +12,7 @@ enum class DescriptorLayoutPreset
 {
     Scene,
     Material,
+    ToneMapping,
 };
 
 class DescriptorManager
@@ -46,4 +47,5 @@ private:
     std::map<std::vector<BindingKey>, vk::raii::DescriptorSetLayout> layouts;
     vk::DescriptorSetLayout sceneLayout;
     vk::DescriptorSetLayout materialLayout;
+    vk::DescriptorSetLayout toneMappingLayout;
 };

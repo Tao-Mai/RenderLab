@@ -69,58 +69,34 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="PCSS">
-      <change afterPath="$PROJECT_DIR$/docs/shadow.md" afterDir="false" />
+    <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="调整头文件，添加法线贴图支持">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/AGENTS.md" beforeDir="false" afterPath="$PROJECT_DIR$/AGENTS.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/Scene/default.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/Scene/default.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/config/config.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/config.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/config/renderer.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/renderer.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/shaders/raytracing/base_color.slang" beforeDir="false" afterPath="$PROJECT_DIR$/shaders/raytracing/base_color.slang" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/shaders/shader.slang" beforeDir="false" afterPath="$PROJECT_DIR$/shaders/shader.slang" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/Engine.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/AssetDataManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/AssetDataManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/AssetManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/AssetManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/AssetManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/AssetManager.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/BuiltinAssets.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/BuiltinAssets.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/MeshGeometry.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/MeshGeometry.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/builtin/BuiltinMesh.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/builtin/BuiltinMesh.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/builtin/BuiltinTexture.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/builtin/BuiltinTexture.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/import/ImportId.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/import/ImportId.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/asset/import/ImportMesh.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/asset/import/ImportMesh.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/core/ConfigManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/ConfigManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/core/ConfigManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/ConfigManager.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/core/Reflect.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/Reflect.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/core/Vertex.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/Vertex.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/editor/ComponentDraw.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/ComponentDraw.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/editor/Editor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/Editor.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/editor/EditorUi.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/EditorUi.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/editor/EditorUi.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/EditorUi.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/DescriptorManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/DescriptorManager.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/DescriptorManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/DescriptorManager.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/PipelineManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/PipelineManager.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/PipelineManager.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/PipelineManager.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/ShaderManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/ShaderManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/feature/LightMarkers.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/LightMarkers.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/feature/LightMarkers.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/LightMarkers.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/RenderConfig.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/RenderConfig.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/Renderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/Renderer.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/RendererConfig.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/RendererConfig.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/RenderGraph.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/RenderGraph.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/RenderGraph.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/RenderGraph.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/feature/ScenePass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/ScenePass.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/raytracing/RayTracingPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/raytracing/RayTracingPass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/ScenePass.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/ScenePass.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/editor/LightMarkerPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/editor/LightMarkerPass.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/resource/GpuMaterial.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuMaterial.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/resource/GpuMaterial.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuMaterial.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/GpuTexture.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuTexture.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/GpuTexture.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/GpuTexture.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/resource/RenderResourceManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/RenderResourceManager.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/resource/ShaderData.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/ShaderData.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/resource/VertexLayout.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/resource/VertexLayout.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/AssetDataManagerTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/AssetDataManagerTest.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/AssetIDTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/AssetIDTest.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/test/CMakeLists.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/test/ConfigSerializationTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/ConfigSerializationTest.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/MeshImportCheck.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/MeshImportCheck.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/RenderGraphTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/RenderGraphTest.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/SceneManagerTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/SceneManagerTest.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/test/ShaderDataTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/ShaderDataTest.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/config.json" beforeDir="false" afterPath="$PROJECT_DIR$/test/config.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test/renderer.json" beforeDir="false" afterPath="$PROJECT_DIR$/test/renderer.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -162,6 +138,7 @@
     <setting file="file://$PROJECT_DIR$/../../../tmp/vcpkg/installed/x64-mingw-dynamic/include/vulkan/vulkan_structs.hpp" root0="SKIP_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../../tmp/vcpkg/installed/x64-windows/include/vulkan/vulkan_raii.hpp" root0="SKIP_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../../tmp/vcpkg/installed/x64-windows/include/vulkan/vulkan_structs.hpp" root0="SKIP_HIGHLIGHTING" />
+    <setting file="mock://D:/study/project/graphics/own/RenderLab/src/core/Reflect.h" root0="SKIP_HIGHLIGHTING" />
     <setting file="mock://D:/study/project/graphics/own/RenderLab/src/scene/actor/AFreeFlyCamera.cpp" root0="SKIP_HIGHLIGHTING" />
   </component>
   <component name="MacroExpansionManager">
@@ -173,23 +150,23 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.0000008476664364" />
-      <entry key="MS500" value="1.0610442833414064" />
-      <entry key="S2" value="1.5051921285551508" />
-      <entry key="S5" value="2.0663974939751193" />
-      <entry key="S10" value="3.1800811237139417" />
-      <entry key="S30" value="6.576072478298586" />
-      <entry key="S60" value="8.889887232725698" />
-      <entry key="M2" value="10.63065151096997" />
-      <entry key="M5" value="11.96025142072147" />
-      <entry key="M10" value="12.463109582863806" />
-      <entry key="M15" value="12.638154370655844" />
-      <entry key="M30" value="12.817224356742015" />
-      <entry key="H1" value="12.969058668107662" />
-      <entry key="H2" value="14.406884806553013" />
-      <entry key="H4" value="25.353275736011806" />
-      <entry key="D1" value="409.51427789573023" />
-      <entry key="W1" value="2170.3103322181587" />
+      <entry key="MS100" value="1.0000001542747106" />
+      <entry key="MS500" value="1.0550510228895262" />
+      <entry key="S2" value="1.784948814013902" />
+      <entry key="S5" value="2.371371073691957" />
+      <entry key="S10" value="2.6552282471028166" />
+      <entry key="S30" value="2.877530962492849" />
+      <entry key="S60" value="2.937769103160276" />
+      <entry key="M2" value="2.9686312740805" />
+      <entry key="M5" value="2.9873911793210914" />
+      <entry key="M10" value="2.993685322282743" />
+      <entry key="M15" value="2.9957879298209162" />
+      <entry key="M30" value="2.997892821543513" />
+      <entry key="H1" value="2.9989471076150434" />
+      <entry key="H2" value="3.003439041664788" />
+      <entry key="H4" value="3.4203935298118" />
+      <entry key="D1" value="209.81624008908415" />
+      <entry key="W1" value="1971.5133419296153" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
@@ -197,37 +174,37 @@
       <entry key="S2" value="0.0" />
       <entry key="S5" value="0.0" />
       <entry key="S10" value="0.0" />
-      <entry key="S30" value="2.0958E-319" />
-      <entry key="S60" value="9.989459005245766E-160" />
-      <entry key="M2" value="7.815546593651027E-80" />
-      <entry key="M5" value="7.21393595682585E-32" />
-      <entry key="M10" value="7.248848542118219E-16" />
-      <entry key="M15" value="1.5857703598012394E-10" />
-      <entry key="M30" value="3.5200748160674935E-5" />
-      <entry key="H1" value="0.016767189117017436" />
-      <entry key="H2" value="0.41732675908892025" />
-      <entry key="H4" value="3.841989932292628" />
-      <entry key="D1" value="113.87937299816107" />
-      <entry key="W1" value="492.6004820867797" />
+      <entry key="S30" value="0.0" />
+      <entry key="S60" value="0.0" />
+      <entry key="M2" value="1.9065609488124688E-293" />
+      <entry key="M5" value="2.5887422823846045E-117" />
+      <entry key="M10" value="1.3731794422836828E-58" />
+      <entry key="M15" value="5.230531327821779E-39" />
+      <entry key="M30" value="2.0216438543163053E-19" />
+      <entry key="H1" value="1.2706813058301964E-9" />
+      <entry key="H2" value="1.1488528914351437E-4" />
+      <entry key="H4" value="0.0637456152240853" />
+      <entry key="D1" value="57.512301817936304" />
+      <entry key="W1" value="446.79814214802485" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="0.9526387889446883" />
-      <entry key="MS500" value="1.0505467405872342" />
-      <entry key="S2" value="1.5010269841419321" />
-      <entry key="S5" value="2.0640470913507105" />
-      <entry key="S10" value="3.1782979554755926" />
-      <entry key="S30" value="6.574876244180732" />
-      <entry key="S60" value="8.889084559880907" />
-      <entry key="M2" value="10.630173133807409" />
-      <entry key="M5" value="11.96003650528285" />
-      <entry key="M10" value="12.462997665943412" />
-      <entry key="M15" value="12.638078724437488" />
-      <entry key="M30" value="12.81722114826833" />
-      <entry key="H1" value="12.985792554177635" />
-      <entry key="H2" value="14.824025382344633" />
-      <entry key="H4" value="29.1944396576347" />
-      <entry key="D1" value="523.389437025074" />
-      <entry key="W1" value="2662.9080723109737" />
+      <entry key="MS100" value="0.9659364758791291" />
+      <entry key="MS500" value="1.0474530956054584" />
+      <entry key="S2" value="1.7801816599029634" />
+      <entry key="S5" value="2.368461377157198" />
+      <entry key="S10" value="2.6535244702117873" />
+      <entry key="S30" value="2.876897344392208" />
+      <entry key="S60" value="2.9374433460451277" />
+      <entry key="M2" value="2.968466099615023" />
+      <entry key="M5" value="2.987324550817741" />
+      <entry key="M10" value="2.9936519142631073" />
+      <entry key="M15" value="2.995765636922223" />
+      <entry key="M30" value="2.9978816646392725" />
+      <entry key="H1" value="2.998941527815088" />
+      <entry key="H2" value="3.0035510845114577" />
+      <entry key="H4" value="3.4841240442556467" />
+      <entry key="D1" value="267.3264135515265" />
+      <entry key="W1" value="2418.30899700297" />
     </decayedShown>
   </component>
   <component name="ProjectApplicationVersion">
@@ -790,7 +767,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="调整asset" />
     <MESSAGE value="调整environmentmap" />
     <MESSAGE value="sampler" />
     <MESSAGE value="重构asset" />
@@ -815,7 +791,8 @@
     <MESSAGE value="import" />
     <MESSAGE value="rename" />
     <MESSAGE value="PCSS" />
-    <option name="LAST_COMMIT_MESSAGE" value="PCSS" />
+    <MESSAGE value="调整头文件，添加法线贴图支持" />
+    <option name="LAST_COMMIT_MESSAGE" value="调整头文件，添加法线贴图支持" />
   </component>
   <component name="XDebuggerManager">
     <watches-manager>

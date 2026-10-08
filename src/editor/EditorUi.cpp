@@ -590,6 +590,28 @@ EditorUI::InspectorResult EditorUI::drawInspector(
         context().config->setRenderFeature(feature);
     }
 
+    ImGui::SeparatorText("HDR");
+    ImGui::BeginDisabled(path == RenderPath::RayTracing);
+    if (ImGui::Checkbox("Enable HDR", &feature.hdr))
+    {
+        context().config->setRenderFeature(feature);
+        result.rendererChanged = true;
+    }
+    ImGui::BeginDisabled(!feature.hdr);
+    int toneMappingMode = static_cast<int>(feature.toneMapping.mode);
+    if (ImGui::Combo("Operator", &toneMappingMode, "Khronos PBR Neutral\0Reinhard\0"))
+    {
+        feature.toneMapping.mode = static_cast<ToneMappingOperator>(toneMappingMode);
+        context().config->setRenderFeature(feature);
+    }
+    if (ImGui::DragFloat("Exposure (stops)", &feature.toneMapping.exposure,
+                         0.05f, -10.0f, 10.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+    {
+        context().config->setRenderFeature(feature);
+    }
+    ImGui::EndDisabled();
+    ImGui::EndDisabled();
+
     ImGui::SeparatorText("Shadows");
     if (ImGui::Checkbox("Enable shadows", &feature.shadow.enable))
     {

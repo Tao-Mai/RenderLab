@@ -152,6 +152,13 @@ uint32_t RenderGraph::instanceIndex(const ResourceData& resource, uint32_t frame
 
 Image& RenderGraph::getImage(ImageHandle image) { return getImage(image, currentFrame); }
 
+const RenderGraph::ImageCreateInfo& RenderGraph::imageInfo(ImageHandle image)
+{
+    const auto& resource = resolveResource(image.id);
+    DCHECK(!resource.isBuffer);
+    return resource.imageInfo;
+}
+
 Image& RenderGraph::getImage(ImageHandle image, uint32_t frameIndex)
 {
     const auto& resource = resolveResource(image.id);

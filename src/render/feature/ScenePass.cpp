@@ -1,6 +1,7 @@
 #include "render/feature/ScenePass.h"
 
 #include "render/RenderContext.h"
+#include "render/RenderConfig.h"
 #include "render/Renderer.h"
 #include "render/feature/RenderGraph.h"
 
@@ -34,21 +35,26 @@ void ScenePass::bindSceneDescriptor(vk::raii::CommandBuffer& commandBuffer, uint
 
 ScenePass::Output ScenePass::setup(
     RenderGraph&                    targetGraph,
-    RenderGraph::ImageHandle        colorHandle,
+    RenderGraph::ImageHandle        depthHandle,
     PointLightShadowPass::Output    pointShadow,
     RectAreaLightShadowPass::Output rectAreaShadow
 )
 {
     graph  = &targetGraph;
     vulkan = &graph->vulkan();
-    CHECK(
-        vulkan->physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures &
-        vk::FormatFeatureFlagBits::eDepthStencilAttachment
-    );
+    const bool hdr = context().config->rendererConfig().feature.hdr;
+    if (hdr)
+    {
+        const auto formatFeatures = vulkan->physicalDeviceHandle().getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
+        constexpr auto kRequiredFeatures = vk::FormatFeatureFlagBits::eColorAttachment |
+            vk::FormatFeatureFlagBits::eColorAttachmentBlend | vk::FormatFeatureFlagBits::eSampledImage |
+            vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
+        CHECK((formatFeatures & kRequiredFeatures) == kRequiredFeatures,
+              "GPU does not support an RGBA16F HDR color attachment with blending and sampling");
+    }
 
     pipelines         = renderContext().pipelineManager;
     resources         = renderContext().resources;
-    color             = graph->write(colorHandle);
     pointShadowMap    = pointShadow.pointLightShadowMap;
     rectAreaShadowMap = rectAreaShadow.rectAreaLightShadowMap;
 
@@ -86,8 +92,11 @@ ScenePass::Output ScenePass::setup(
 
     auto&      graph  = targetGraph;
     const auto extent = graph.swapchain().extent();
-    depth = graph.createImage({.format = vk::Format::eD32Sfloat, .extent = {extent.width, extent.height, 1}});
-    depth = graph.write(depth);
+    color = hdr
+        ? graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}})
+        : graph.importSwapchain();
+    color = graph.write(color);
+    depth = depthHandle;
     graph.use(
         color,
         {
@@ -100,9 +109,8 @@ ScenePass::Output ScenePass::setup(
         depth,
         {
             .stages = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-            .access =
-                vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-            .layout = vk::ImageLayout::eDepthAttachmentOptimal,
+            .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead,
+            .layout = vk::ImageLayout::eDepthReadOnlyOptimal,
         }
     );
     graph.use(
@@ -123,14 +131,17 @@ ScenePass::Output ScenePass::setup(
         }
     );
 
-    const vk::Format colorFormat = graph.swapchain().surfaceFormat().format;
+    colorFormat                  = graph.imageInfo(color).format;
     iblEnabled                   = context().config->rendererConfig().feature.ibl;
     sceneShader =
         renderContext().shaderManager->getOrLoad("scene", iblEnabled ? ShaderVariant::Default : ShaderVariant::NoIbl);
-    scenePipeline  = pipelines->getOrCreate({
+    auto sceneState         = PipelineState::preset(RenderMode::Opaque);
+    sceneState.depthWrite   = false;
+    sceneState.depthCompare = vk::CompareOp::eEqual;
+    scenePipeline           = pipelines->getOrCreate({
          .shader      = sceneShader,
          .layout      = PipelineLayoutPreset::SceneMaterial,
-         .state       = PipelineState::preset(RenderMode::Opaque),
+         .state       = sceneState,
          .colorFormat = colorFormat,
          .depthFormat = vk::Format::eD32Sfloat,
     });
@@ -375,7 +386,7 @@ void ScenePass::execute(RenderGraph& graph) const
     vk::RenderingAttachmentInfo attachmentInfo = {
         .imageView   = graph.getImage(color).getOrCreateImageView({
               .viewType         = vk::ImageViewType::e2D,
-              .format           = graph.swapchain().surfaceFormat().format,
+              .format           = colorFormat,
               .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
         }),
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
@@ -383,17 +394,15 @@ void ScenePass::execute(RenderGraph& graph) const
         .storeOp     = vk::AttachmentStoreOp::eStore,
         .clearValue  = clearColor
     };
-    vk::ClearValue              depthClear          = vk::ClearDepthStencilValue(1.0f, 0);
     vk::RenderingAttachmentInfo depthAttachmentInfo = {
         .imageView   = graph.getImage(depth).getOrCreateImageView({
               .viewType         = vk::ImageViewType::e2D,
               .format           = vk::Format::eD32Sfloat,
               .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
         }),
-        .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-        .loadOp      = vk::AttachmentLoadOp::eClear,
-        .storeOp     = vk::AttachmentStoreOp::eStore,
-        .clearValue  = depthClear,
+        .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
+        .loadOp      = vk::AttachmentLoadOp::eLoad,
+        .storeOp     = vk::AttachmentStoreOp::eNone,
     };
     vk::RenderingInfo renderingInfo = {
         .renderArea           = {.offset = {0, 0}, .extent = extent},
@@ -434,7 +443,10 @@ void ScenePass::execute(RenderGraph& graph) const
     vk::Pipeline boundPipeline = scenePipeline;
     const auto   draw          = [&](const DrawItem& item)
     {
-        PipelineKey key = item.material->pipelineKey(graph.swapchain().surfaceFormat().format, vk::Format::eD32Sfloat);
+        PipelineKey key      = item.material->pipelineKey(colorFormat, vk::Format::eD32Sfloat);
+        key.state.depthWrite = false;
+        if (item.material->renderMode() != RenderMode::Transparent)
+            key.state.depthCompare = vk::CompareOp::eEqual;
         if (!iblEnabled)
         {
             const ShaderAsset::ID shaderId = renderContext().shaderManager->metadata(key.shader).id;

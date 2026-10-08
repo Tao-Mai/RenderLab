@@ -12,9 +12,11 @@
 #include "editor/Editor.h"
 #include "render/device/VkCheck.h"
 #include "render/feature/EndPass.h"
+#include "render/feature/DepthPrepass.h"
 #include "render/feature/shadow/PointLightShadowPass.h"
 #include "render/feature/shadow/RectAreaLightShadowPass.h"
 #include "render/feature/ScenePass.h"
+#include "render/feature/postprocess/ToneMappingPass.h"
 #include "render/feature/editor/EditorPickingCopyPass.h"
 #include "render/feature/editor/EditorPickingPass.h"
 #include "render/feature/editor/EditorUiPass.h"
@@ -34,8 +36,10 @@ struct Renderer::Passes
     std::tuple<
         PointLightShadowPass,
         RectAreaLightShadowPass,
+        DepthPrepass,
         ScenePass,
         LightMarkerPass,
+        ToneMappingPass,
         RayTracingPass,
         RayTracingBlitPass,
         EditorPickingPass,
@@ -176,7 +180,8 @@ void Renderer::setupRenderGraph()
     const auto               color = graph.importSwapchain();
     RenderGraph::ImageHandle sceneColor;
     RenderGraph::ImageHandle sceneDepth;
-    const bool               rayTracing = context().config->rendererConfig().renderPath == RenderPath::RayTracing;
+    const auto&              config = context().config->rendererConfig();
+    const bool               rayTracing = config.renderPath == RenderPath::RayTracing;
     if (rayTracing)
     {
         const auto [rayImage] = setupPass<RayTracingPass>();
@@ -186,9 +191,12 @@ void Renderer::setupRenderGraph()
     {
         const auto shadow         = setupPass<PointLightShadowPass>();
         const auto rectAreaShadow = setupPass<RectAreaLightShadowPass>();
-        const auto scene          = setupPass<ScenePass>(color, shadow, rectAreaShadow);
+        const auto depth          = setupPass<DepthPrepass>();
+        const auto scene          = setupPass<ScenePass>(depth.depth, shadow, rectAreaShadow);
         const auto markers        = setupPass<LightMarkerPass>(scene.color, scene.depth);
-        sceneColor                = markers.color;
+        sceneColor                = config.feature.hdr
+            ? setupPass<ToneMappingPass>(markers.color, color).color
+            : markers.color;
         sceneDepth                = markers.depth;
     }
 
@@ -200,7 +208,11 @@ void Renderer::setupRenderGraph()
 
     graph.compile();
     if (!rayTracing)
+    {
         passes->get<ScenePass>().bindResources(graph);
+        if (config.feature.hdr)
+            passes->get<ToneMappingPass>().bindResources(graph);
+    }
 }
 
 void Renderer::recreateSwapchain()

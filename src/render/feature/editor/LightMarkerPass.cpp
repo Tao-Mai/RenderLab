@@ -42,7 +42,7 @@ LightMarkerPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle,
                .shader      = shader,
                .layout      = PipelineLayoutPreset::SceneMaterial,
                .state       = PipelineState::preset(RenderMode::LightMarker),
-               .colorFormat = graph.swapchain().surfaceFormat().format,
+               .colorFormat = graph.imageInfo(color).format,
                .depthFormat = vk::Format::eD32Sfloat,
     });
     pipelineLayout  = pipelines.layout(PipelineLayoutPreset::SceneMaterial);
@@ -61,7 +61,7 @@ void LightMarkerPass::execute(RenderGraph& graph) const
     const vk::RenderingAttachmentInfo colorAttachment{
         .imageView   = graph.getImage(color).getOrCreateImageView({
               .viewType         = vk::ImageViewType::e2D,
-              .format           = graph.swapchain().surfaceFormat().format,
+              .format           = graph.imageInfo(color).format,
               .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
         }),
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,

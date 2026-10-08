@@ -49,6 +49,14 @@ inline constexpr uint32_t kMaterialMetallicImageBinding   = 5;
 inline constexpr uint32_t kMaterialMetallicSamplerBinding = 6;
 inline constexpr uint32_t kMaterialRoughnessImageBinding   = 7;
 inline constexpr uint32_t kMaterialRoughnessSamplerBinding = 8;
+inline constexpr uint32_t kMaterialEmissiveImageBinding   = 9;
+inline constexpr uint32_t kMaterialEmissiveSamplerBinding = 10;
+inline constexpr uint32_t kMaterialOcclusionImageBinding   = 11;
+inline constexpr uint32_t kMaterialOcclusionSamplerBinding = 12;
+
+// Tone mapping uses its own set 0, not the scene layout.
+inline constexpr uint32_t kToneMappingImageBinding = 0;
+inline constexpr uint32_t kToneMappingSamplerBinding = 1;
 }  // namespace RenderInterface
 
 // Matches the std140 ViewUniforms block in shaders/scene_data.slang.
@@ -138,9 +146,10 @@ struct alignas(16) MaterialUniforms
     float     alphaCutoff = 0.5f;
     uint32_t  alphaMode   = 0;
     float     normalScale = 1.0f;
-    float     padding0 = 0.0f;
+    float     occlusionStrength = 1.0f;
     float     padding1 = 0.0f;
     float     padding2 = 0.0f;
+    glm::vec4 emissiveFactor{0.0f};
 };
 
 static_assert(sizeof(ViewUniforms) == 144);
@@ -164,12 +173,14 @@ static_assert(offsetof(RectAreaShadowData, vp) == 0);
 static_assert(offsetof(RectAreaShadowData, nearPlane) == 64);
 static_assert(offsetof(RectAreaShadowData, farPlane) == 68);
 static_assert(offsetof(RectAreaShadowData, worldToUvScale) == 72);
-static_assert(sizeof(MaterialUniforms) == 48);
+static_assert(sizeof(MaterialUniforms) == 64);
 static_assert(offsetof(MaterialUniforms, roughness) == 16);
 static_assert(offsetof(MaterialUniforms, metallic) == 20);
 static_assert(offsetof(MaterialUniforms, alphaCutoff) == 24);
 static_assert(offsetof(MaterialUniforms, alphaMode) == 28);
 static_assert(offsetof(MaterialUniforms, normalScale) == 32);
+static_assert(offsetof(MaterialUniforms, occlusionStrength) == 36);
+static_assert(offsetof(MaterialUniforms, emissiveFactor) == 48);
 
 struct MeshPushConstants
 {
@@ -205,9 +216,20 @@ struct SkyboxPushConstants
     glm::vec4 viewport{0.0f};
 };
 
+struct ToneMappingPushConstants
+{
+    float exposure = 0.0f;
+    uint32_t mode = 0;
+    uint32_t encodeSrgb = 0;
+    uint32_t padding = 0;
+};
+
 static_assert(sizeof(MeshPushConstants) == 64);
 static_assert(sizeof(ShadowPushConstants) == 80);
 static_assert(offsetof(ShadowPushConstants, lightIdx) == 64);
 static_assert(sizeof(LightPushConstants) == 80);
 static_assert(sizeof(EditorPickingPushConstants) == 80);
 static_assert(sizeof(SkyboxPushConstants) == 16);
+static_assert(sizeof(ToneMappingPushConstants) == 16);
+static_assert(offsetof(ToneMappingPushConstants, mode) == 4);
+static_assert(offsetof(ToneMappingPushConstants, encodeSrgb) == 8);

@@ -214,6 +214,8 @@ GpuMaterial& RenderResourceManager::material(const MaterialAsset& asset)
         .normal = loadTexture(asset.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear),
         .metallic = loadTexture(asset.metallicTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
         .roughness = loadTexture(asset.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+        .emissive = loadTexture(asset.emissiveTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb),
+        .occlusion = loadTexture(asset.aoTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
     };
 
     auto                     gpu       = std::make_unique<GpuMaterial>();

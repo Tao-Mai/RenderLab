@@ -8,10 +8,11 @@
         }
     },
     "environmentMap": {
-        "value": "newport_loft"
+        "value": "grasslands_sunset_4k"
     },
     "feature": {
         "ambientCoefficient": 0.0,
+        "hdr": true,
         "ibl": true,
         "shadow": {
             "bias": 0.004999999888241291,
@@ -21,6 +22,10 @@
             "pointShadowMapSize": 512,
             "rectAreaShadowMapSize": 2048,
             "sampleRadius": 0.019999999552965164
+        },
+        "toneMapping": {
+            "exposure": 0.0,
+            "mode": "Neutral"
         }
     },
     "renderPath": "Rasterization"
