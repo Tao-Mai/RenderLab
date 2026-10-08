@@ -37,7 +37,8 @@ ScenePass::Output ScenePass::setup(
     RenderGraph&                    targetGraph,
     RenderGraph::ImageHandle        depthHandle,
     PointLightShadowPass::Output    pointShadow,
-    RectAreaLightShadowPass::Output rectAreaShadow
+    RectAreaLightShadowPass::Output rectAreaShadow,
+    DirectionalShadowPass::Output   directionalShadow
 )
 {
     graph  = &targetGraph;
@@ -57,6 +58,7 @@ ScenePass::Output ScenePass::setup(
     resources         = renderContext().resources;
     pointShadowMap    = pointShadow.pointLightShadowMap;
     rectAreaShadowMap = rectAreaShadow.rectAreaLightShadowMap;
+    cascadeShadowMap  = directionalShadow.cascadeShadowMap;
 
     const auto& brdf = context().config->rendererConfig().brdfLut;
     CHECK(!brdf.textureID.empty() && !brdf.samplerID.empty());
@@ -121,9 +123,16 @@ ScenePass::Output ScenePass::setup(
             .layout = vk::ImageLayout::eDepthReadOnlyOptimal,
         }
     );
-    // Keep the generated map in the graph and leave it ready for future sampling.
     graph.use(
         rectAreaShadowMap,
+        {
+            .stages = vk::PipelineStageFlagBits2::eFragmentShader,
+            .access = vk::AccessFlagBits2::eShaderSampledRead,
+            .layout = vk::ImageLayout::eDepthReadOnlyOptimal,
+        }
+    );
+    graph.use(
+        cascadeShadowMap,
         {
             .stages = vk::PipelineStageFlagBits2::eFragmentShader,
             .access = vk::AccessFlagBits2::eShaderSampledRead,
@@ -195,6 +204,18 @@ void ScenePass::bindResources(RenderGraph& graph) const
             .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
         };
         const vk::DescriptorImageInfo shadowSamplerInfo{.sampler = *shadowSampler};
+        const vk::DescriptorImageInfo directionalShadowImage{
+            .imageView = graph.getImage(cascadeShadowMap, frameIndex).getOrCreateImageView({
+                .viewType = vk::ImageViewType::e2DArray,
+                .format   = vk::Format::eD32Sfloat,
+                .subresourceRange = {
+                    .aspectMask = vk::ImageAspectFlagBits::eDepth,
+                    .levelCount = 1,
+                    .layerCount = graph.imageInfo(cascadeShadowMap).arrayLayers,
+                },
+            }),
+            .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
+        };
         const std::array              writes = {
             vk::WriteDescriptorSet{
                              .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
@@ -209,6 +230,13 @@ void ScenePass::bindResources(RenderGraph& graph) const
                              .descriptorCount = 1,
                              .descriptorType  = vk::DescriptorType::eSampledImage,
                              .pImageInfo      = &rectAreaShadowImage
+            },
+            vk::WriteDescriptorSet{
+                             .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
+                             .dstBinding      = RenderInterface::kDirectionalShadowImageBinding,
+                             .descriptorCount = 1,
+                             .descriptorType  = vk::DescriptorType::eSampledImage,
+                             .pImageInfo      = &directionalShadowImage,
             },
             vk::WriteDescriptorSet{
                              .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),

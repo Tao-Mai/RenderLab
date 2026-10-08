@@ -13,6 +13,13 @@
         "hdr": true,
         "ibl": true,
         "shadow": {
+            "cascade": {
+                "count": 4,
+                "shadowMapSize": 2048,
+                "maxDistance": 50.0,
+                "splitLambda": 0.5,
+                "depthPadding": 10.0
+            },
             "enable": true,
             "filter": "Linear",
             "pointShadowMapSize": 1024,

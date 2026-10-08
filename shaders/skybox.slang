@@ -13,10 +13,10 @@ struct SkyboxPushConstants
 [[vk::push_constant]]
 ConstantBuffer<SkyboxPushConstants> pushConstants;
 
-[[vk::binding(15, 0)]]
+[[vk::binding(17, 0)]]
 TextureCube<float4> radianceMap;
 
-[[vk::binding(16, 0)]]
+[[vk::binding(18, 0)]]
 SamplerState radianceSampler;
 
 [shader("vertex")]

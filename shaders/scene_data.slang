@@ -7,13 +7,14 @@ struct ViewUniforms
     float4x4 viewProjection;
     float4x4 inverseViewProjection;
     float4 cameraPosition;
+    float4x4 view;
 };
 
 struct LightUniforms
 {
     uint lightCount;
     float ambientCoefficient;
-    uint padding1;
+    uint cascadeCount;
     uint padding2;
     float4 iblParameters;
     float4 shadowParameters;
@@ -107,6 +108,23 @@ struct RectAreaShadowData
     float2 worldToUvScale;
 };
 
+// Must match kMaxDirectionalShadowCascades in RenderConfig.h.
+static const uint kMaxDirectionalShadowCascades = 4;
+
+struct CascadeShadowData
+{
+    float4x4 vp;
+    float depthUpperBound;
+    float padding0;
+    float padding1;
+    float padding2;
+};
+
+struct DirectionalShadowData
+{
+    CascadeShadowData cascades[kMaxDirectionalShadowCascades];
+};
+
 [[vk::binding(0, 0)]]
 ConstantBuffer<ViewUniforms> viewUniforms;
 
@@ -121,5 +139,8 @@ StructuredBuffer<PointShadowData> pointShadowData;
 
 [[vk::binding(4, 0)]]
 StructuredBuffer<RectAreaShadowData> rectAreaShadowData;
+
+[[vk::binding(5, 0)]]
+StructuredBuffer<DirectionalShadowData> directionalShadowData;
 
 #endif

@@ -47,38 +47,67 @@ Texture2D<float4> occlusionTexture;
 [[vk::binding(12, 1)]]
 SamplerState occlusionSampler;
 
-// Scene shadow resources (bindings 5..8).
-[[vk::binding(5, 0)]]
+// Scene shadow resources (bindings 6..10).
+[[vk::binding(6, 0)]]
 TextureCubeArray<float> pointShadowMap;
 
-[[vk::binding(6, 0)]]
+[[vk::binding(7, 0)]]
 Texture2DArray<float> rectAreaShadowMap;
 
-[[vk::binding(7, 0)]]
+[[vk::binding(8, 0)]]
+Texture2DArray<float> cascadeShadowMap;
+
+[[vk::binding(9, 0)]]
 SamplerComparisonState shadowSampler;
 
-[[vk::binding(8, 0)]]
+[[vk::binding(10, 0)]]
 SamplerState linearSampler;
 
-// Scene environment image / sampler pairs (bindings 9..16).
-[[vk::binding(9, 0)]]
+// Scene environment image / sampler pairs (bindings 11..18).
+[[vk::binding(11, 0)]]
 TextureCube<float4> irradianceMap;
 
-[[vk::binding(10, 0)]]
+[[vk::binding(12, 0)]]
 SamplerState irradianceMapSampler;
 
-[[vk::binding(11, 0)]]
+[[vk::binding(13, 0)]]
 TextureCube<float4> prefilteredSpecularMap;
 
-[[vk::binding(12, 0)]]
+[[vk::binding(14, 0)]]
 SamplerState prefilteredSpecularMapSampler;
 
-[[vk::binding(13, 0)]]
+[[vk::binding(15, 0)]]
 Texture2D<float4> brdfLUT;
 
-[[vk::binding(14, 0)]]
+[[vk::binding(16, 0)]]
 SamplerState brdfLUTSampler;
 
+float directionalShadowVisibility(LightData light, float3 worldPosition)
+{
+    float viewDepth = -mul(viewUniforms.view, float4(worldPosition, 1.0)).z;
+    if (viewDepth <= 0.0)
+        return 1.0;
+
+    [loop]
+    for (uint cascadeIndex = 0; cascadeIndex < lightUniforms.cascadeCount; ++cascadeIndex)
+    {
+        CascadeShadowData cascade = directionalShadowData[light.shadowIdx].cascades[cascadeIndex];
+        if (viewDepth > cascade.depthUpperBound)
+            continue;
+
+        float4 clip = mul(cascade.vp, float4(worldPosition, 1.0));
+        float3 projected = clip.xyz / clip.w;
+        float2 uv = projected.xy * 0.5 + 0.5;
+        if (any(uv < 0.0) || any(uv > 1.0) || projected.z < 0.0 || projected.z > 1.0)
+            return 1.0;
+
+        uint layer = light.shadowIdx * lightUniforms.cascadeCount + cascadeIndex;
+        return cascadeShadowMap.SampleCmpLevelZero(
+            shadowSampler, float3(uv, layer), projected.z - lightUniforms.shadowBias);
+    }
+    // Beyond the configured shadow distance, only direct lighting remains.
+    return 1.0;
+}
 
 
 float pcf(float3 dir, uint shadowIndex, float depth, float2 rotation)
@@ -257,9 +286,9 @@ float4 fragMain(VertexOutput input) : SV_Target
             direct += pointLight * (diffuseBRDF + specularBRDF) * NdotL * visibility;
         }
         else if (light.type == LightType.Directional) {
-            // TODO
             float NdotL = saturate(dot(N, -light.direction.xyz));
-            direct += light.color * light.intensity * NdotL * baseColor.rgb;
+            float visibility = light.castShadow ? directionalShadowVisibility(light, input.worldPosition) : 1.0;
+            direct += light.color * light.intensity * NdotL * baseColor.rgb * visibility;
         } else if (light.type == LightType.RectArea) {
             float3 L = normalize(light.position - input.worldPosition);
             float distanceToLight = length(light.position - input.worldPosition);

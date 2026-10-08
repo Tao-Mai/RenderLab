@@ -4,6 +4,7 @@
 #include "render/PipelineManager.h"
 #include "render/feature/shadow/PointLightShadowPass.h"
 #include "render/feature/shadow/RectAreaLightShadowPass.h"
+#include "render/feature/shadow/DirectionalShadowPass.h"
 #include "render/feature/RenderGraph.h"
 
 #include <memory>
@@ -29,7 +30,8 @@ public:
         RenderGraph&                    graph,
         RenderGraph::ImageHandle        depthHandle,
         PointLightShadowPass::Output    pointShadow,
-        RectAreaLightShadowPass::Output rectAreaShadow
+        RectAreaLightShadowPass::Output rectAreaShadow,
+        DirectionalShadowPass::Output   directionalShadow
     );
     void bindResources(RenderGraph& graph) const;
     void execute(RenderGraph& graph) const;
@@ -41,6 +43,7 @@ private:
     RenderGraph::ImageHandle    depth;
     RenderGraph::ImageHandle    pointShadowMap;
     RenderGraph::ImageHandle    rectAreaShadowMap;
+    RenderGraph::ImageHandle    cascadeShadowMap;
     PipelineManager*            pipelines = nullptr;
     RenderResourceManager*      resources = nullptr;
     ShaderHandle                sceneShader;

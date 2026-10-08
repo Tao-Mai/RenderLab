@@ -51,7 +51,7 @@ void checkFields(const json& type, const std::array<Field, N>& expected)
 }
 
 constexpr std::array shaders = {
-    "slang", "slang.no_ibl", "depth", "light", "editor_picking", "shadow", "shadow.rect_area", "skybox"
+    "slang", "slang.no_ibl", "depth", "light", "editor_picking", "shadow", "shadow.rect_area", "shadow.directional", "skybox"
 };
 }
 
@@ -61,6 +61,7 @@ TEST(ShaderDataLayout, ViewUniformsMatchCompiledShaders)
         Field{"viewProjection", offsetof(ViewUniforms, viewProjection), sizeof(glm::mat4)},
         Field{"inverseViewProjection", offsetof(ViewUniforms, inverseViewProjection), sizeof(glm::mat4)},
         Field{"cameraPosition", offsetof(ViewUniforms, cameraPosition), sizeof(glm::vec4)},
+        Field{"view", offsetof(ViewUniforms, view), sizeof(glm::mat4)},
     };
     for (const auto* shader : shaders)
     {
@@ -79,7 +80,7 @@ TEST(ShaderDataLayout, LightUniformsMatchCompiledShaders)
     const std::array expected = {
         Field{"lightCount", offsetof(LightUniforms, lightCount), sizeof(uint32_t)},
         Field{"ambientCoefficient", offsetof(LightUniforms, ambientCoefficient), sizeof(float)},
-        Field{"padding1", offsetof(LightUniforms, padding1), sizeof(uint32_t)},
+        Field{"cascadeCount", offsetof(LightUniforms, cascadeCount), sizeof(uint32_t)},
         Field{"padding2", offsetof(LightUniforms, padding2), sizeof(uint32_t)},
         Field{"iblParameters", offsetof(LightUniforms, iblParameters), sizeof(glm::vec4)},
         Field{"shadowParameters", offsetof(LightUniforms, shadowParameters), sizeof(glm::vec4)},
@@ -129,15 +130,35 @@ TEST(ShaderDataLayout, PointShadowStorageAndPushConstantsMatchCompiledShader)
     const std::array expected = {Field{"vp", offsetof(PointShadowData, vp), sizeof(PointShadowData::vp)}};
     checkFields(shadow.at("type").at("resultType"), expected);
 
-    const auto push = parameter("shadow", "pushConstants");
     const std::array pushFields = {
         Field{"model", offsetof(ShadowPushConstants, model), sizeof(glm::mat4)},
         Field{"lightIdx", offsetof(ShadowPushConstants, lightIdx), sizeof(uint32_t)},
-        Field{"padding0", offsetof(ShadowPushConstants, padding0), sizeof(uint32_t)},
+        Field{"cascadeIndex", offsetof(ShadowPushConstants, cascadeIndex), sizeof(uint32_t)},
         Field{"padding1", offsetof(ShadowPushConstants, padding1), sizeof(uint32_t)},
         Field{"padding2", offsetof(ShadowPushConstants, padding2), sizeof(uint32_t)},
     };
-    checkFields(push.at("type").at("elementType"), pushFields);
+    for (const auto* shader : {"shadow", "shadow.rect_area", "shadow.directional"})
+        checkFields(parameter(shader, "pushConstants").at("type").at("elementType"), pushFields);
+}
+
+TEST(ShaderDataLayout, DirectionalShadowStorageMatchesCompiledShaders)
+{
+    const std::array expected = {
+        Field{"vp", offsetof(CascadeShadowData, vp), sizeof(glm::mat4)},
+        Field{"depthUpperBound", offsetof(CascadeShadowData, depthUpperBound), sizeof(float)},
+        Field{"padding0", offsetof(CascadeShadowData, padding0), sizeof(float)},
+        Field{"padding1", offsetof(CascadeShadowData, padding1), sizeof(float)},
+        Field{"padding2", offsetof(CascadeShadowData, padding2), sizeof(float)},
+    };
+    for (const auto* shader : {"shadow.directional", "slang", "slang.no_ibl"})
+    {
+        const auto shadow = parameter(shader, "directionalShadowData");
+        EXPECT_EQ(shadow.at("binding").at("index"), RenderInterface::kDirectionalShadowBufferBinding);
+        const auto& cascades = shadow.at("type").at("resultType").at("fields").at(0);
+        EXPECT_EQ(cascades.at("type").at("elementCount"), kMaxDirectionalShadowCascades);
+        EXPECT_EQ(cascades.at("binding").at("size"), sizeof(DirectionalShadowData));
+        checkFields(cascades.at("type").at("elementType"), expected);
+    }
 }
 
 TEST(ShaderDataLayout, RectAreaShadowStorageMatchesCompiledShaders)
@@ -162,6 +183,7 @@ TEST(ShaderDataLayout, TextureAndSamplerBindingsMatchCompiledShaders)
     const std::array bindings = {
         std::pair{"pointShadowMap", RenderInterface::kPointShadowImageBinding},
         std::pair{"rectAreaShadowMap", RenderInterface::kRectAreaShadowImageBinding},
+        std::pair{"cascadeShadowMap", RenderInterface::kDirectionalShadowImageBinding},
         std::pair{"shadowSampler", RenderInterface::kShadowComparisonSamplerBinding},
         std::pair{"linearSampler", RenderInterface::kLinearSamplerBinding},
         std::pair{"irradianceMap", RenderInterface::kIrradianceImageBinding},

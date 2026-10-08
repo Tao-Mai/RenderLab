@@ -27,13 +27,89 @@ constexpr std::array faceUp = {
     glm::vec3{0.0f, 0.0f, 1.0f}, glm::vec3{0.0f, 0.0f, -1.0f},
     glm::vec3{0.0f, -1.0f, 0.0f}, glm::vec3{0.0f, -1.0f, 0.0f},
 };
+
+DirectionalShadowData
+makeDirectionalShadow(const ViewUniforms& view, const LightData& light, const RenderFeature::Shadow::Cascade& config)
+{
+    constexpr std::array kClipCorners = {
+        glm::vec3{-1.0f, -1.0f, 0.0f},
+        glm::vec3{1.0f, -1.0f, 0.0f},
+        glm::vec3{1.0f, 1.0f, 0.0f},
+        glm::vec3{-1.0f, 1.0f, 0.0f},
+        glm::vec3{-1.0f, -1.0f, 1.0f},
+        glm::vec3{1.0f, -1.0f, 1.0f},
+        glm::vec3{1.0f, 1.0f, 1.0f},
+        glm::vec3{-1.0f, 1.0f, 1.0f},
+    };
+    constexpr size_t                           kPlaneCornerCount = kClipCorners.size() / 2;
+    std::array<glm::vec3, kClipCorners.size()> frustumCorners;
+    for (size_t index = 0; index < frustumCorners.size(); ++index)
+    {
+        const glm::vec4 world = view.inverseViewProjection * glm::vec4{kClipCorners[index], 1.0f};
+        DCHECK(world.w != 0.0f);
+        frustumCorners[index] = glm::vec3{world} / world.w;
+    }
+
+    const float cameraNear = -(view.view * glm::vec4{frustumCorners.front(), 1.0f}).z;
+    const float cameraFar  = -(view.view * glm::vec4{frustumCorners.back(), 1.0f}).z;
+    CHECK(std::isfinite(cameraNear) && std::isfinite(cameraFar) && cameraNear > 0.0f && cameraFar > cameraNear);
+    const float shadowFar = std::min(config.maxDistance, cameraFar);
+    CHECK(
+        shadowFar > cameraNear,
+        "directional shadow distance {} must exceed camera near plane {}",
+        config.maxDistance,
+        cameraNear
+    );
+
+    const glm::vec3 lightDirection{light.direction};
+    CHECK(std::isfinite(glm::dot(lightDirection, lightDirection)) && glm::dot(lightDirection, lightDirection) > 0.0f);
+    const auto direction = glm::normalize(lightDirection);
+    const auto up        = std::abs(direction.y) < 0.99f ? glm::vec3{0.0f, 1.0f, 0.0f} : glm::vec3{0.0f, 0.0f, 1.0f};
+
+    DirectionalShadowData shadow;
+    float                 previousDepth = cameraNear;
+    for (uint32_t cascadeIndex = 0; cascadeIndex < config.count; ++cascadeIndex)
+    {
+        const float fraction         = static_cast<float>(cascadeIndex + 1) / config.count;
+        const float uniformSplit     = cameraNear + (shadowFar - cameraNear) * fraction;
+        const float logarithmicSplit = cameraNear * std::pow(shadowFar / cameraNear, fraction);
+        const float splitDepth       = cascadeIndex + 1 == config.count
+                  ? shadowFar
+                  : std::lerp(uniformSplit, logarithmicSplit, config.splitLambda);
+        const float nearFraction     = (previousDepth - cameraNear) / (cameraFar - cameraNear);
+        const float farFraction      = (splitDepth - cameraNear) / (cameraFar - cameraNear);
+
+        std::array<glm::vec3, kClipCorners.size()> corners;
+        glm::vec3                                  center{0.0f};
+        for (size_t index = 0; index < kPlaneCornerCount; ++index)
+        {
+            corners[index] = glm::mix(frustumCorners[index], frustumCorners[index + kPlaneCornerCount], nearFraction);
+            corners[index + kPlaneCornerCount] =
+                glm::mix(frustumCorners[index], frustumCorners[index + kPlaneCornerCount], farFraction);
+            center += corners[index] + corners[index + kPlaneCornerCount];
+        }
+        center /= static_cast<float>(corners.size());
+        float radius = 0.0f;
+        for (const auto& corner : corners)
+            radius = std::max(radius, glm::length(corner - center));
+        DCHECK(radius > 0.0f);
+
+        // Extra light-view depth includes casters upstream of the visible camera slice.
+        const float lightDistance = radius + config.depthPadding;
+        const auto  lightView     = glm::lookAt(center - direction * lightDistance, center, up);
+        glm::mat4   projection    = glm::ortho(-radius, radius, -radius, radius, 0.0f, 2.0f * lightDistance);
+        projection[1][1] *= -1.0f;
+        shadow.cascades[cascadeIndex] = {.vp = projection * lightView, .depthUpperBound = splitDepth};
+        previousDepth                 = splitDepth;
+    }
+    return shadow;
 }
+}  // namespace
 
 void FrameData::init(const VulkanContext& targetVulkan, DescriptorManager& descriptors)
 {
     vulkan                = &targetVulkan;
-    const auto hostMemory = vk::MemoryPropertyFlagBits::eHostVisible |
-        vk::MemoryPropertyFlagBits::eHostCoherent;
+    const auto hostMemory = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
     viewBuffer = Buffer(vulkan->physicalDeviceHandle(),
                         vulkan->deviceHandle(),
                         sizeof(ViewUniforms),
@@ -66,6 +142,14 @@ void FrameData::init(const VulkanContext& targetVulkan, DescriptorManager& descr
         hostMemory
     );
     rectAreaShadows.reserve(kMaxRectAreaLightShadow);
+    directionalShadowBuffer = Buffer(
+        vulkan->physicalDeviceHandle(),
+        vulkan->deviceHandle(),
+        kMaxDirectionalLightShadow * sizeof(DirectionalShadowData),
+        vk::BufferUsageFlagBits::eStorageBuffer,
+        hostMemory
+    );
+    directionalShadows.reserve(kMaxDirectionalLightShadow);
     sceneSet = descriptors.allocate(DescriptorLayoutPreset::Scene);
     bindBuffers();
 }
@@ -78,6 +162,7 @@ void FrameData::bindBuffers()
         vk::DescriptorBufferInfo{.buffer = lightBuffer.handle(), .range = lightBuffer.size()},
         vk::DescriptorBufferInfo{.buffer = pointShadowBuffer.handle(), .range = pointShadowBuffer.size()},
         vk::DescriptorBufferInfo{.buffer = rectAreaShadowBuffer.handle(), .range = rectAreaShadowBuffer.size()},
+        vk::DescriptorBufferInfo{.buffer = directionalShadowBuffer.handle(), .range = directionalShadowBuffer.size()},
     };
     const std::array writes = {
         vk::WriteDescriptorSet{
@@ -115,6 +200,13 @@ void FrameData::bindBuffers()
             .descriptorType  = vk::DescriptorType::eStorageBuffer,
             .pBufferInfo     = &infos[4]
         },
+        vk::WriteDescriptorSet{
+            .dstSet          = *sceneSet,
+            .dstBinding      = RenderInterface::kDirectionalShadowBufferBinding,
+            .descriptorCount = 1,
+            .descriptorType  = vk::DescriptorType::eStorageBuffer,
+            .pBufferInfo     = &infos[5]
+        },
     };
     vulkan->deviceHandle().updateDescriptorSets(writes, {});
 }
@@ -127,30 +219,53 @@ void FrameData::reset() noexcept
     lightBuffer.reset();
     pointShadowBuffer.reset();
     rectAreaShadowBuffer.reset();
+    directionalShadowBuffer.reset();
 
     viewData      = {};
     lightMetadata = {};
     lights.clear();
     pointShadows.clear();
     rectAreaShadows.clear();
+    directionalShadows.clear();
     vulkan = nullptr;
 }
 
-void FrameData::update(const ViewUniforms&        view, const LightUniforms& lighting,
-                       std::span<const LightData> frameLights, bool shadowsEnabled)
+void FrameData::update(
+    const ViewUniforms&          view,
+    const LightUniforms&         lighting,
+    std::span<const LightData>   frameLights,
+    const RenderFeature::Shadow& shadows
+)
 {
-    DCHECK(vulkan && lighting.lightCount == frameLights.size(),
-           "frame light count must match the uploaded SSBO elements");
+    DCHECK(
+        vulkan && lighting.lightCount == frameLights.size(),
+        "frame light count must match the uploaded SSBO elements"
+    );
+    CHECK(shadows.cascade.count > 0 && shadows.cascade.count <= kMaxDirectionalShadowCascades);
     lights.assign(frameLights.begin(), frameLights.end());
     pointShadows.clear();
     rectAreaShadows.clear();
+    directionalShadows.clear();
     for (LightData& light : lights)
     {
         light.shadowidx = ~0u;
-        if (!shadowsEnabled)
+        if (!shadows.enable)
             light.flags.z = 0;
-        if (!light.enable() || !light.castShadow() ||
-            (light.type() != LightComponent::Type::Point && light.type() != LightComponent::Type::RectArea))
+        if (!light.enable() || !light.castShadow())
+            continue;
+
+        if (light.type() == LightComponent::Type::Directional)
+        {
+            light.shadowidx = static_cast<uint32_t>(directionalShadows.size());
+            CHECK(
+                light.shadowidx < kMaxDirectionalLightShadow,
+                "enabled shadow-casting directional lights exceed capacity {}",
+                kMaxDirectionalLightShadow
+            );
+            directionalShadows.push_back(makeDirectionalShadow(view, light, shadows.cascade));
+            continue;
+        }
+        if (light.type() != LightComponent::Type::Point && light.type() != LightComponent::Type::RectArea)
             continue;
 
         const float range = light.range();
@@ -220,6 +335,7 @@ void FrameData::update(const ViewUniforms&        view, const LightUniforms& lig
 
     viewData      = view;
     lightMetadata = lighting;
+    lightMetadata.cascadeCount = shadows.cascade.count;
     viewBuffer.upload(&viewData, sizeof(viewData));
     lightUniformBuffer.upload(&lightMetadata, sizeof(lightMetadata));
     if (!lights.empty())
@@ -228,6 +344,11 @@ void FrameData::update(const ViewUniforms&        view, const LightUniforms& lig
         pointShadowBuffer.upload(pointShadows.data(), pointShadows.size() * sizeof(PointShadowData));
     if (!rectAreaShadows.empty())
         rectAreaShadowBuffer.upload(rectAreaShadows.data(), rectAreaShadows.size() * sizeof(RectAreaShadowData));
+    if (!directionalShadows.empty())
+        directionalShadowBuffer.upload(
+            directionalShadows.data(),
+            directionalShadows.size() * sizeof(DirectionalShadowData)
+        );
     // Host-coherent writes become available to device reads at queue submission.
 }
 

@@ -39,7 +39,8 @@ RendererConfig sampleRendererConfig()
         .renderPath = RenderPath::RayTracing,
         .brdfLut = {TextureAsset::ID{"lut_ggx"}, SamplerAsset::ID{"linearClamp"}},
         .feature = {.ibl = false, .ambientCoefficient = 0.25f, .hdr = false,
-            .shadow = {.enable = false, .pointShadowMapSize = 2048, .bias = 0.0025f,
+            .shadow = {.enable = false, .cascade = {.count = 3, .shadowMapSize = 1024,
+                .maxDistance = 40.0f, .splitLambda = 0.75f, .depthPadding = 5.0f}, .pointShadowMapSize = 2048, .bias = 0.0025f,
                 .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.03f},
             .toneMapping = {.exposure = 1.5f, .mode = ToneMappingOperator::Reinhard}},
         .environmentMap = EnvironmentMapAsset::ID{"grasslands"},
@@ -84,6 +85,8 @@ TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
     EXPECT_FLOAT_EQ(serialized.at("feature").at("ambientCoefficient").get<float>(), 0.25f);
     EXPECT_EQ(serialized.at("environmentMap").at("value"), "grasslands");
     EXPECT_EQ(serialized.at("feature").at("shadow").at("enable"), false);
+    EXPECT_EQ(serialized.at("feature").at("shadow").at("cascade"),
+              Serialize(original.feature.shadow.cascade));
     EXPECT_EQ(serialized.at("feature").at("shadow").at("pointShadowMapSize"), 2048);
     EXPECT_EQ(serialized.at("feature").at("shadow").at("rectAreaShadowMapSize"), 1024);
     EXPECT_FLOAT_EQ(serialized.at("feature").at("shadow").at("bias").get<float>(), 0.0025f);

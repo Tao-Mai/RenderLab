@@ -21,7 +21,15 @@ struct RenderFeature
     bool  hdr                = true;
     struct Shadow
     {
-        bool                 enable                = true;
+        bool enable = true;
+        struct Cascade
+        {
+            uint32_t count         = 4;
+            uint32_t shadowMapSize = 2048;
+            float    maxDistance   = 50.0f;
+            float    splitLambda   = 0.5f;
+            float    depthPadding  = 10.0f;
+        } cascade;
         uint32_t             pointShadowMapSize    = 1024;
         uint32_t             rectAreaShadowMapSize = 1024;
         float                bias                  = 0.001f;
@@ -32,8 +40,8 @@ struct RenderFeature
 
     struct ToneMapping
     {
-        float exposure = 0.0f; // Stops: +1 doubles linear scene brightness.
-        ToneMappingOperator mode = ToneMappingOperator::Neutral;
+        float               exposure = 0.0f;  // Stops: +1 doubles linear scene brightness.
+        ToneMappingOperator mode     = ToneMappingOperator::Neutral;
     } toneMapping;
 };
 
