@@ -54,7 +54,7 @@
                         "TransformComponent": {
                             "position": [
                                 -1.74592924118042,
-                                -3.2884058952331543,
+                                -2.2272427082061768,
                                 -1.743619441986084
                             ],
                             "rotation": [
@@ -74,7 +74,7 @@
                         "RenderComponent": {
                             "materialOverrides": {},
                             "meshId": {
-                                "value": "cube"
+                                "value": "FlightHelmet"
                             }
                         }
                     }
@@ -181,7 +181,7 @@
                             ],
                             "cosInner": 0.9396926164627075,
                             "cosOuter": 0.8660253882408142,
-                            "enabled": true,
+                            "enabled": false,
                             "intensity": 0.30000001192092896,
                             "range": 10.0,
                             "type": "Directional"
@@ -255,7 +255,7 @@
                                 0.7099999785423279,
                                 0.550000011920929
                             ],
-                            "castShadow": true,
+                            "castShadow": false,
                             "color": [
                                 1.0,
                                 1.0,
@@ -263,7 +263,7 @@
                             ],
                             "cosInner": 0.9396926164627075,
                             "cosOuter": 0.8660253882408142,
-                            "enabled": true,
+                            "enabled": false,
                             "intensity": 500.0,
                             "range": 10.0,
                             "type": "RectArea"
@@ -275,19 +275,19 @@
         }
     ],
     "editorCamera": {
-        "farPlane": 100,
-        "fieldOfView": 45,
+        "farPlane": 100.0,
+        "fieldOfView": 45.0,
         "mouseSensitivity": 0.11999999731779099,
         "nearPlane": 0.10000000149011612,
-        "pitch": -48.920162200927734,
-        "yaw": 155.52096557617188,
-        "speed": 5,
-        "sprintMultiplier": 3,
+        "pitch": -9.68018913269043,
         "position": [
-            7.578222751617432,
-            6.609982967376709,
-            -4.872868061065674
-        ]
+            -3.7937028408050537,
+            -1.2681547403335571,
+            1.9857581853866577
+        ],
+        "speed": 5.0,
+        "sprintMultiplier": 3.0,
+        "yaw": 300.1201171875
     },
     "environment": {
         "up": [

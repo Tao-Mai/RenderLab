@@ -1,6 +1,29 @@
 #include "render/feature/RenderGraph.h"
+#include "render/PipelineManager.h"
+
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <gtest/gtest.h>
+
+TEST(PipelineWinding, PreservesCcwFrontFacesWithVulkanProjection)
+{
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 100.0f);
+    projection[1][1] *= -1.0f;
+    const glm::vec3 vertices[] = {{-1.0f, -1.0f, -3.0f}, {1.0f, -1.0f, -3.0f}, {1.0f, 1.0f, -3.0f}};
+    glm::vec2 projected[3];
+    for (size_t index = 0; index < 3; ++index)
+    {
+        const glm::vec4 clip = projection * glm::vec4(vertices[index], 1.0f);
+        projected[index] = glm::vec2(clip) / clip.w;
+    }
+
+    const auto edgeA = projected[1] - projected[0];
+    const auto edgeB = projected[2] - projected[0];
+    // Vulkan's signed framebuffer area has the opposite sign to the usual 2D cross product.
+    const float area = -0.5f * (edgeA.x * edgeB.y - edgeA.y * edgeB.x);
+    EXPECT_GT(area, 0.0f);
+    EXPECT_EQ(PipelineState{}.frontFace, vk::FrontFace::eCounterClockwise);
+}
 
 TEST(RenderGraphBarrier, CoversLayoutsAndReadAfterWrite)
 {

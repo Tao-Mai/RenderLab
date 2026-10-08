@@ -40,9 +40,15 @@ inline constexpr uint32_t kRadianceImageBinding              = 15;
 inline constexpr uint32_t kRadianceSamplerBinding            = 16;
 
 // Material set.
-inline constexpr uint32_t kMaterialImageBinding   = 0;
-inline constexpr uint32_t kMaterialSamplerBinding = 1;
-inline constexpr uint32_t kMaterialUniformBinding = 2;
+inline constexpr uint32_t kMaterialImageBinding           = 0;
+inline constexpr uint32_t kMaterialSamplerBinding         = 1;
+inline constexpr uint32_t kMaterialUniformBinding         = 2;
+inline constexpr uint32_t kMaterialNormalImageBinding     = 3;
+inline constexpr uint32_t kMaterialNormalSamplerBinding   = 4;
+inline constexpr uint32_t kMaterialMetallicImageBinding   = 5;
+inline constexpr uint32_t kMaterialMetallicSamplerBinding = 6;
+inline constexpr uint32_t kMaterialRoughnessImageBinding   = 7;
+inline constexpr uint32_t kMaterialRoughnessSamplerBinding = 8;
 }  // namespace RenderInterface
 
 // Matches the std140 ViewUniforms block in shaders/scene_data.slang.
@@ -131,6 +137,10 @@ struct alignas(16) MaterialUniforms
     float     metallic    = 1.0f;
     float     alphaCutoff = 0.5f;
     uint32_t  alphaMode   = 0;
+    float     normalScale = 1.0f;
+    float     padding0 = 0.0f;
+    float     padding1 = 0.0f;
+    float     padding2 = 0.0f;
 };
 
 static_assert(sizeof(ViewUniforms) == 144);
@@ -154,11 +164,12 @@ static_assert(offsetof(RectAreaShadowData, vp) == 0);
 static_assert(offsetof(RectAreaShadowData, nearPlane) == 64);
 static_assert(offsetof(RectAreaShadowData, farPlane) == 68);
 static_assert(offsetof(RectAreaShadowData, worldToUvScale) == 72);
-static_assert(sizeof(MaterialUniforms) == 32);
+static_assert(sizeof(MaterialUniforms) == 48);
 static_assert(offsetof(MaterialUniforms, roughness) == 16);
 static_assert(offsetof(MaterialUniforms, metallic) == 20);
 static_assert(offsetof(MaterialUniforms, alphaCutoff) == 24);
 static_assert(offsetof(MaterialUniforms, alphaMode) == 28);
+static_assert(offsetof(MaterialUniforms, normalScale) == 32);
 
 struct MeshPushConstants
 {

@@ -114,6 +114,30 @@ void DescriptorManager::init(const vk::raii::Device& targetDevice)
             .binding = RenderInterface::kMaterialUniformBinding,
             .descriptorType = vk::DescriptorType::eUniformBuffer,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kMaterialNormalImageBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kMaterialNormalSamplerBinding,
+            .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kMaterialMetallicImageBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kMaterialMetallicSamplerBinding,
+            .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kMaterialRoughnessImageBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kMaterialRoughnessSamplerBinding,
+            .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
     };
     sceneLayout = getOrCreateLayout(sceneBindings);
     materialLayout = getOrCreateLayout(materialBindings);

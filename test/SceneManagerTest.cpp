@@ -178,6 +178,30 @@ TEST(SceneManagerTest, LoadingDetachesSnapshotAndCanReloadItsOwnScene)
     manager.shutdown();
 }
 
+TEST(SceneManagerTest, SwitchingScenesDiscardsUnsavedChanges)
+{
+    const auto first = makeScene();
+    auto second = makeScene();
+    second.id = "second-scene";
+    second.editorCamera.position = {1.0f, 2.0f, 3.0f};
+
+    SceneManager manager;
+    manager.init();
+    manager.load(first);
+    const auto oldId = manager.scene().actors.front()->selectionId();
+    manager.scene().actors.front()->name = "Unsaved rename";
+    manager.scene().actors.front()->transform().position.x = 99.0f;
+    manager.scene().editorCamera.speed = 30.0f;
+    (void)manager.createActor("AStaticMesh");
+
+    manager.load(second);
+    EXPECT_EQ(Serialize(manager.scene()), Serialize(second));
+    EXPECT_FALSE(manager.findActor(oldId));
+    manager.load(first);
+    EXPECT_EQ(Serialize(manager.scene()), Serialize(first));
+    manager.shutdown();
+}
+
 TEST(SceneManagerTest, PolymorphicSceneRoundTripsInheritedFieldsAndMaterialOverrides)
 {
     auto scene = makeScene();

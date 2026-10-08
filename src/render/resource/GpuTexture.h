@@ -1,12 +1,13 @@
 #pragma once
 
-#include "asset/Asset.h"
 #include "render/device/GpuUploadContext.h"
 
 #include <cstdint>
 #include <span>
 
 #include <vulkan/vulkan_raii.hpp>
+
+struct TextureAsset;
 
 class GpuTexture
 {

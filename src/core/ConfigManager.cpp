@@ -40,12 +40,14 @@ void ConfigManager::init()
 void ConfigManager::shutdown() noexcept
 {
     DCHECK(inited);
-    asset_json::save(data.paths.renderer, renderer);
+    asset_json::save(file, data);
+    asset_json::save(resolvedPaths.renderer, renderer);
 
-    data     = {};
-    commands = {};
-    editor   = {};
-    renderer = {};
+    data          = {};
+    resolvedPaths = {};
+    commands      = {};
+    editor        = {};
+    renderer      = {};
     file.clear();
     configDir.clear();
     DEBUG_EXEC(inited = false);
@@ -53,13 +55,19 @@ void ConfigManager::shutdown() noexcept
 
 const CommandConfig& ConfigManager::commandConfig() const noexcept { return commands; }
 
-const AppPaths& ConfigManager::paths() const noexcept { return data.paths; }
-
 const SceneAsset::ID& ConfigManager::initialScene() const noexcept { return data.initialScene; }
 
 const RendererConfig& ConfigManager::rendererConfig() const noexcept { return renderer; }
 
 const EditorConfig& ConfigManager::editorConfig() const noexcept { return editor; }
+
+void ConfigManager::setInitialScene(SceneAsset::ID id)
+{
+    DCHECK(inited);
+    CHECK(!id.empty());
+
+    data.initialScene = std::move(id);
+}
 
 void ConfigManager::setRenderPath(RenderPath path)
 {
@@ -103,7 +111,7 @@ void ConfigManager::load()
 
 void ConfigManager::loadCommands()
 {
-    commands = asset_json::load<CommandConfig>(data.paths.commands);
+    commands = asset_json::load<CommandConfig>(resolvedPaths.commands);
 
     for (const auto& binding : commands.bindings)
     {
@@ -117,36 +125,36 @@ void ConfigManager::loadCommands()
 
 void ConfigManager::resolvePaths()
 {
-    data.paths.assets   = resolveAgainst(configDir, std::move(data.paths.assets));
-    data.paths.commands = resolveAgainst(configDir, std::move(data.paths.commands));
-    data.paths.editor   = resolveAgainst(configDir, std::move(data.paths.editor));
-    data.paths.renderer = resolveAgainst(configDir, std::move(data.paths.renderer));
+    resolvedPaths.assets   = resolveAgainst(configDir, data.paths.assets);
+    resolvedPaths.commands = resolveAgainst(configDir, data.paths.commands);
+    resolvedPaths.editor   = resolveAgainst(configDir, data.paths.editor);
+    resolvedPaths.renderer = resolveAgainst(configDir, data.paths.renderer);
     CHECK(
-        std::filesystem::is_regular_file(data.paths.commands),
+        std::filesystem::is_regular_file(resolvedPaths.commands),
         "commands config is not a file: {}",
-        data.paths.commands.string()
+        resolvedPaths.commands.string()
     );
     CHECK(
-        std::filesystem::is_directory(data.paths.assets),
+        std::filesystem::is_directory(resolvedPaths.assets),
         "asset root is not a directory: {}",
-        data.paths.assets.string()
+        resolvedPaths.assets.string()
     );
 }
 
 void ConfigManager::loadEditor()
 {
-    editor = asset_json::load<EditorConfig>(data.paths.editor);
+    editor = asset_json::load<EditorConfig>(resolvedPaths.editor);
 
     CHECK(
         editor.width > 0 && editor.height > 0,
         "editor config '{}' requires positive window width and height",
-        data.paths.editor.string()
+        resolvedPaths.editor.string()
     );
 }
 
 void ConfigManager::loadRenderer()
 {
-    renderer = asset_json::load<RendererConfig>(data.paths.renderer);
+    renderer = asset_json::load<RendererConfig>(resolvedPaths.renderer);
 
     CHECK(!renderer.environmentMap || !renderer.environmentMap->empty());
     CHECK(renderer.feature.shadow.pointShadowMapSize > 0);
@@ -157,11 +165,11 @@ void ConfigManager::loadRenderer()
     CHECK(
         !renderer.brdfLut.textureID.empty() && !renderer.brdfLut.samplerID.empty(),
         "renderer config '{}' requires brdfLut textureID and samplerID",
-        data.paths.renderer.string()
+        resolvedPaths.renderer.string()
     );
     CHECK(
         std::isfinite(renderer.feature.ambientCoefficient) && renderer.feature.ambientCoefficient >= 0.0f,
         "renderer config '{}' requires a finite nonnegative ambientCoefficient",
-        data.paths.renderer.string()
+        resolvedPaths.renderer.string()
     );
 }

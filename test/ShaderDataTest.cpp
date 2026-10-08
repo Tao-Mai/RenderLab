@@ -173,6 +173,12 @@ TEST(ShaderDataLayout, TextureAndSamplerBindingsMatchCompiledShaders)
         std::pair{"baseColorTexture", RenderInterface::kMaterialImageBinding},
         std::pair{"baseColorSampler", RenderInterface::kMaterialSamplerBinding},
         std::pair{"material", RenderInterface::kMaterialUniformBinding},
+        std::pair{"normalTexture", RenderInterface::kMaterialNormalImageBinding},
+        std::pair{"normalSampler", RenderInterface::kMaterialNormalSamplerBinding},
+        std::pair{"metallicTexture", RenderInterface::kMaterialMetallicImageBinding},
+        std::pair{"metallicSampler", RenderInterface::kMaterialMetallicSamplerBinding},
+        std::pair{"roughnessTexture", RenderInterface::kMaterialRoughnessImageBinding},
+        std::pair{"roughnessSampler", RenderInterface::kMaterialRoughnessSamplerBinding},
     };
     for (const auto* shader : {"slang", "slang.no_ibl"})
     {
@@ -187,4 +193,26 @@ TEST(ShaderDataLayout, TextureAndSamplerBindingsMatchCompiledShaders)
               RenderInterface::kRadianceImageBinding);
     EXPECT_EQ(parameter("skybox", "radianceSampler").at("binding").at("index").get<uint32_t>(),
               RenderInterface::kRadianceSamplerBinding);
+}
+
+TEST(ShaderDataLayout, MaterialUniformsMatchCompiledShaders)
+{
+    const std::array expected = {
+        Field{"baseColorFactor", offsetof(MaterialUniforms, baseColorFactor), sizeof(glm::vec4)},
+        Field{"roughness", offsetof(MaterialUniforms, roughness), sizeof(float)},
+        Field{"metallic", offsetof(MaterialUniforms, metallic), sizeof(float)},
+        Field{"alphaCutoff", offsetof(MaterialUniforms, alphaCutoff), sizeof(float)},
+        Field{"alphaMode", offsetof(MaterialUniforms, alphaMode), sizeof(uint32_t)},
+        Field{"normalScale", offsetof(MaterialUniforms, normalScale), sizeof(float)},
+        Field{"padding0", offsetof(MaterialUniforms, padding0), sizeof(float)},
+        Field{"padding1", offsetof(MaterialUniforms, padding1), sizeof(float)},
+        Field{"padding2", offsetof(MaterialUniforms, padding2), sizeof(float)},
+    };
+    for (const auto* shader : {"slang", "slang.no_ibl"})
+    {
+        const auto material = parameter(shader, "material");
+        checkFields(material.at("type").at("elementType"), expected);
+        EXPECT_EQ(material.at("type").at("elementVarLayout").at("binding").at("size"),
+                  sizeof(MaterialUniforms));
+    }
 }

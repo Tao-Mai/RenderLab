@@ -3,8 +3,6 @@
 #include "asset/Asset.h"
 #include "asset/BuiltinAssets.h"
 #include "core/Serializer.h"
-#include "core/ConfigManager.h"
-#include "core/Context.h"
 #include "core/Logger.h"
 
 #include <filesystem>

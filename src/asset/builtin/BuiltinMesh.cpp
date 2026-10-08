@@ -96,6 +96,7 @@ constexpr uint32_t kCubeIndexCount = 36;
             {h, -h, -h},
             {h, -h, h},
             {-h, -h, h});
+    generateTangents(mesh, 0, static_cast<uint32_t>(mesh.indices.size()));
     return mesh;
 }
 
@@ -147,6 +148,7 @@ constexpr uint32_t kSphereIndexCount  = kSphereSegments * kSphereRings * 6;
                                 });
         }
     }
+    generateTangents(mesh, 0, static_cast<uint32_t>(mesh.indices.size()));
     return mesh;
 }
 
@@ -166,6 +168,7 @@ constexpr uint32_t kPlaneIndexCount = 6;
             {-h, 0.0f, h},
             {h, 0.0f, h},
             {h, 0.0f, -h});
+    generateTangents(mesh, 0, static_cast<uint32_t>(mesh.indices.size()));
     return mesh;
 }
 
@@ -246,6 +249,7 @@ constexpr uint32_t kArrowIndexCount = 48;
                 bottomLeft,
                 topLeft,
                 arrowTip);
+    generateTangents(mesh, 0, static_cast<uint32_t>(mesh.indices.size()));
     return mesh;
 }
 

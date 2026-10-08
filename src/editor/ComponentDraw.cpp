@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 
 #include <glm/common.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -197,7 +198,21 @@ bool drawMaterialFields(MaterialAsset& material)
     edited = drawFactor("Metallic", material.metallic, 0.0f) || edited;
     edited = drawFactor("Roughness", material.roughness, 1.0f) || edited;
     edited = drawFactor("AO", material.ao, 1.0f) || edited;
+
+    ImGui::BeginDisabled(!material.normalTexture);
+    float normalScale = material.normalScale.value_or(1.0f);
+    if (ImGui::DragFloat("Normal Scale", &normalScale, 0.05f, 0.0f,
+                         std::numeric_limits<float>::max(), "%.3f", ImGuiSliderFlags_AlwaysClamp))
+    {
+        material.normalScale = normalScale;
+        edited = true;
+    }
+    ImGui::EndDisabled();
+
     ImGui::Text("Albedo: %s", material.baseColorTexture ? material.baseColorTexture->textureID.c_str() : "");
+    ImGui::Text("Normal: %s", material.normalTexture ? material.normalTexture->textureID.c_str() : "None");
+    ImGui::Text("Metallic: %s", material.metallicTexture ? material.metallicTexture->textureID.c_str() : "None");
+    ImGui::Text("Roughness: %s", material.roughnessTexture ? material.roughnessTexture->textureID.c_str() : "None");
     return edited;
 }
 }
@@ -233,11 +248,14 @@ ComponentDrawResult drawFields(RenderComponent& render)
             if (stock)
             {
                 const int submeshIndex = static_cast<int>(index);
-                if (render.materialOverrides.contains(submeshIndex) && ImGui::Button("Reset overrides"))
+                ImGui::SameLine();
+                ImGui::BeginDisabled(!render.materialOverrides.contains(submeshIndex));
+                if (ImGui::SmallButton("Reset overrides"))
                 {
                     render.materialOverrides.erase(submeshIndex);
                     result.edited = true;
                 }
+                ImGui::EndDisabled();
 
                 MaterialAsset preview = *stock;
                 if (const auto found = render.materialOverrides.find(submeshIndex);

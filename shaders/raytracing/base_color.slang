@@ -63,12 +63,12 @@ void closestHitMain(inout Payload payload, BuiltInTriangleIntersectionAttributes
         return;
     }
     uint* indices = (uint*)object.indexAddress;
-    // Reuse the existing 32-byte Vertex layout (position, normal, texcoord).
+    // Matches the 48-byte Vertex layout (position, normal, texcoord, tangent).
     float* vertices = (float*)object.vertexAddress;
     uint first = object.firstIndex + PrimitiveIndex() * 3;
-    uint i0 = indices[first] * 8 + 6;
-    uint i1 = indices[first + 1] * 8 + 6;
-    uint i2 = indices[first + 2] * 8 + 6;
+    uint i0 = indices[first] * 12 + 6;
+    uint i1 = indices[first + 1] * 12 + 6;
+    uint i2 = indices[first + 2] * 12 + 6;
     float3 barycentric = float3(1.0 - attributes.barycentrics.x - attributes.barycentrics.y,
         attributes.barycentrics);
     float2 uv = float2(vertices[i0], vertices[i0 + 1]) * barycentric.x

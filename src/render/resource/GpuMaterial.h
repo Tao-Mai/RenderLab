@@ -16,29 +16,41 @@ class GpuMaterial
 public:
     GpuMaterial() = default;
 
+    struct Texture
+    {
+        std::shared_ptr<GpuTexture> image;
+        vk::Sampler sampler;
+    };
+
+    struct Textures
+    {
+        Texture baseColor;
+        Texture normal;
+        Texture metallic;
+        Texture roughness;
+    };
+
     void create(
         const vk::raii::PhysicalDevice& physicalDevice,
         const vk::raii::Device&         device,
-        DescriptorManager&              descriptors,
-        ShaderHandle                     shader,
-        const MaterialAsset&             material,
-        std::shared_ptr<GpuTexture>        texture,
-        vk::Sampler                        sampler);
+        DescriptorManager&            descriptors,
+        ShaderHandle                  shader,
+        const MaterialAsset&          material,
+        Textures                      textures);
 
     [[nodiscard]] vk::DescriptorSet descriptorSetHandle() const;
     [[nodiscard]] PipelineKey pipelineKey(vk::Format colorFormat, vk::Format depthFormat) const;
     [[nodiscard]] RenderMode renderMode() const;
-    [[nodiscard]] vk::ImageView baseColorView() const { return albedoTexture->imageView(); }
-    [[nodiscard]] vk::Sampler baseColorSampler() const { return albedoSampler; }
+    [[nodiscard]] vk::ImageView baseColorView() const { return textures.baseColor.image->imageView(); }
+    [[nodiscard]] vk::Sampler baseColorSampler() const { return textures.baseColor.sampler; }
     [[nodiscard]] const glm::vec4& baseColorFactor() const { return colorFactor; }
 
 private:
-    std::shared_ptr<GpuTexture>                 albedoTexture;
-    std::shared_ptr<Buffer>                  materialBuffer;
-    vk::raii::DescriptorSet                  descriptorSet = nullptr;
-    ShaderHandle                              shaderHandle;
-    PipelineState                             pipelineState;
-    RenderMode                                mode = RenderMode::Opaque;
-    vk::Sampler albedoSampler;
-    glm::vec4 colorFactor{1.0f};
+    Textures                textures;
+    std::shared_ptr<Buffer>  materialBuffer;
+    vk::raii::DescriptorSet  descriptorSet = nullptr;
+    ShaderHandle            shaderHandle;
+    PipelineState           pipelineState;
+    RenderMode              mode = RenderMode::Opaque;
+    glm::vec4               colorFactor{1.0f};
 };

@@ -15,7 +15,7 @@
 namespace
 {
 constexpr uint32_t geometryMagic   = 0x4853454du;
-constexpr uint32_t geometryVersion = 1;
+constexpr uint32_t kGeometryVersion = 2;
 
 constexpr uint32_t textureMagic   = 0x58455452u; // RTEX
 constexpr uint32_t textureVersion = 2;
@@ -177,7 +177,7 @@ std::filesystem::path AssetDataManager::writeGeometry(
 
     const GeometryHeader header{
         .magic = geometryMagic,
-        .version = geometryVersion,
+        .version = kGeometryVersion,
         .vertexCount = static_cast<uint32_t>(mesh.vertices.size()),
         .indexCount = static_cast<uint32_t>(mesh.indices.size()),
     };
@@ -186,10 +186,11 @@ std::filesystem::path AssetDataManager::writeGeometry(
 
     for (const Vertex& vertex : mesh.vertices)
     {
-        const std::array<float, 8> values{
+        const std::array<float, 12> values{
             vertex.position.x, vertex.position.y, vertex.position.z,
             vertex.normal.x, vertex.normal.y, vertex.normal.z,
             vertex.texcoord.x, vertex.texcoord.y,
+            vertex.tangent.x, vertex.tangent.y, vertex.tangent.z, vertex.tangent.w,
         };
         output.write(reinterpret_cast<const char*>(values.data()), sizeof(values));
     }
@@ -228,12 +229,12 @@ MeshGeometry AssetDataManager::readGeometry(const MeshAsset& asset) const
 
     GeometryHeader header{};
     input.read(reinterpret_cast<char*>(&header), sizeof(header));
-    CHECK(input && header.magic == geometryMagic && header.version == geometryVersion,
+    CHECK(input && header.magic == geometryMagic && header.version == kGeometryVersion,
           "invalid mesh geometry header: {}",
           file.string());
 
     const uint64_t expectedSize = sizeof(header) +
-        static_cast<uint64_t>(header.vertexCount) * 8 * sizeof(float) +
+        static_cast<uint64_t>(header.vertexCount) * 12 * sizeof(float) +
         static_cast<uint64_t>(header.indexCount) * sizeof(uint32_t);
 
     CHECK(std::filesystem::file_size(file) == expectedSize &&
@@ -247,12 +248,13 @@ MeshGeometry AssetDataManager::readGeometry(const MeshAsset& asset) const
 
     for (uint32_t index = 0; index < header.vertexCount; ++index)
     {
-        std::array<float, 8> values{};
+        std::array<float, 12> values{};
         input.read(reinterpret_cast<char*>(values.data()), sizeof(values));
         geometry.vertices.push_back({
             .position = {values[0], values[1], values[2]},
             .normal = {values[3], values[4], values[5]},
             .texcoord = {values[6], values[7]},
+            .tangent = {values[8], values[9], values[10], values[11]},
         });
     }
 

@@ -1,4 +1,5 @@
 #include "asset/AssetDataManager.h"
+#include "asset/AssetManager.h"
 #include "asset/TextureMip.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -12,6 +13,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <glm/geometric.hpp>
 #include <glm/vector_relational.hpp>
 
 namespace
@@ -61,6 +63,40 @@ struct TemporaryDataFile
     return prefix + std::to_string(
         std::chrono::steady_clock::now().time_since_epoch().count());
 }
+}
+
+TEST(AssetDataManagerTest, TangentsSplitSharedVerticesAcrossMirroredUvs)
+{
+    MeshGeometry mesh;
+    mesh.vertices = {
+        {{0, 0, 0}, {0, 0, 1}, {0, 0}},
+        {{1, 0, 0}, {0, 0, 1}, {1, 0}},
+        {{0, 1, 0}, {0, 0, 1}, {0, 1}},
+        {{0, -1, 0}, {0, 0, 1}, {0, 1}},
+    };
+    mesh.indices = {0, 1, 2, 0, 3, 1};
+    generateTangents(mesh, 0, static_cast<uint32_t>(mesh.indices.size()));
+
+    EXPECT_GT(mesh.vertices.size(), 4u);
+    const auto& first = mesh.vertices[mesh.indices[0]];
+    const auto& mirrored = mesh.vertices[mesh.indices[3]];
+    EXPECT_NE(mesh.indices[0], mesh.indices[3]);
+    EXPECT_FLOAT_EQ(first.tangent.w, 1.0f);
+    EXPECT_FLOAT_EQ(mirrored.tangent.w, -1.0f);
+    EXPECT_NEAR(glm::dot(first.normal, glm::vec3(first.tangent)), 0.0f, 1e-6f);
+}
+
+TEST(AssetDataManagerTest, BuiltinFlatNormalUsesLinearNeutralPixels)
+{
+    AssetManager assets;
+    AssetDataManager data;
+    const auto& normal = assets.get<TextureAsset>(BuiltinAssets::Texture::flatNormal);
+
+    EXPECT_EQ(normal.colorSpace, ColorSpace::Linear);
+    EXPECT_EQ(normal.format, ImageFormat::RGBA8);
+    EXPECT_EQ(normal.width, 1u);
+    EXPECT_EQ(normal.height, 1u);
+    EXPECT_EQ(data.readTexture(normal), (std::vector<uint8_t>{128, 128, 255, 255}));
 }
 
 TEST(AssetDataManagerTest, PreservesCubemapPixelsAndMetadata)
@@ -143,6 +179,7 @@ TEST(AssetDataManagerTest, PreservesMeshGeometry)
         {{6.0f, 7.0f, 8.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
     };
     mesh.indices = {0, 1, 2};
+    mesh.vertices[0].tangent = {0.0f, 1.0f, 0.0f, -1.0f};
 
     const auto geometry = assets.data.writeGeometry(id, mesh);
     EXPECT_EQ(geometry, relative);
@@ -163,5 +200,6 @@ TEST(AssetDataManagerTest, PreservesMeshGeometry)
             loaded.vertices[index].normal, mesh.vertices[index].normal)));
         EXPECT_TRUE(glm::all(glm::equal(
             loaded.vertices[index].texcoord, mesh.vertices[index].texcoord)));
+        EXPECT_EQ(loaded.vertices[index].tangent, mesh.vertices[index].tangent);
     }
 }

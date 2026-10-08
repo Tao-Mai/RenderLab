@@ -44,11 +44,12 @@ public:
     void init();
     void shutdown() noexcept;
 
-    [[nodiscard]] const AppPaths&       paths() const noexcept;
+    [[nodiscard]] const AppPaths&       paths() const noexcept { return resolvedPaths; }
     [[nodiscard]] const CommandConfig&  commandConfig() const noexcept;
     [[nodiscard]] const SceneAsset::ID& initialScene() const noexcept;
     [[nodiscard]] const RendererConfig& rendererConfig() const noexcept;
     [[nodiscard]] const EditorConfig&   editorConfig() const noexcept;
+    void                                setInitialScene(SceneAsset::ID id);
     void                                setRenderPath(RenderPath path);
     void                                setRenderFeature(const RenderFeature& feature);
     void                                setEnvironmentMap(std::optional<EnvironmentMapAsset::ID> id);
@@ -58,6 +59,7 @@ private:
     std::filesystem::path file;
     std::filesystem::path configDir;
     AppConfig             data;
+    AppPaths              resolvedPaths;
     CommandConfig         commands;
     EditorConfig          editor;
     RendererConfig        renderer;

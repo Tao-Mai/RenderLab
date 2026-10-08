@@ -321,6 +321,31 @@ TEST(AssetIDTest, LoadsEnvironmentTextureBindings)
               SamplerAsset::ID{"linearClamp"});
 }
 
+TEST(AssetIDTest, LoadsCornellBoxWithIndependentEditorCamera)
+{
+    SceneManager manager;
+    manager.init();
+    const auto file = std::filesystem::path{RENDERLAB_SOURCE_DIR} /
+        "assets" / SceneAsset::dir / "cornell_box.json";
+    const auto scene = asset_json::load<SceneAsset>(file);
+    manager.load(scene);
+
+    EXPECT_EQ(manager.scene().id, SceneAsset::ID{"cornell_box"});
+    EXPECT_EQ(manager.scene().actors.size(), 8u);
+    EXPECT_EQ(manager.editorCamera().worldPosition(), glm::vec3(0.0f, 2.75f, 10.5f));
+    AssetManager assets;
+    for (const auto& actor : manager.scene().actors)
+        if (const auto* render = actor->getComponent<RenderComponent>())
+            EXPECT_NE(assets.find<MeshAsset>(render->meshId), nullptr);
+
+    const auto* light = manager.scene().actors.back()->getComponent<LightComponent>();
+    EXPECT_TRUE(light && light->type == LightComponent::Type::RectArea && light->enabled && light->castShadow);
+    const auto direction = manager.scene().actors.back()->transform().rotation * glm::vec3(0.0f, 0.0f, -1.0f);
+    EXPECT_NEAR(direction.y, -1.0f, 1.0e-6f);
+    EXPECT_EQ(Serialize(manager.scene()), Serialize(scene));
+    manager.shutdown();
+}
+
 TEST(AssetIDTest, RoundTripsTypedIdsInsideSceneComponents)
 {
     SceneManager registration;

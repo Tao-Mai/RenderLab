@@ -3,6 +3,7 @@
 #include "asset/BuiltinAssets.h"
 #include "scene/component/TransformComponent.h"
 #include "render/resource/RenderResourceManager.h"
+#include "render/resource/GpuMesh.h"
 #include "render/resource/ShaderData.h"
 
 #include <glm/geometric.hpp>

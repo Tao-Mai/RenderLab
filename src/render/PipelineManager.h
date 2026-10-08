@@ -25,7 +25,7 @@ struct PipelineState
     vk::PrimitiveTopology topology = vk::PrimitiveTopology::eTriangleList;
     vk::PolygonMode polygonMode = vk::PolygonMode::eFill;
     vk::CullModeFlags cullMode = vk::CullModeFlagBits::eNone;
-    vk::FrontFace frontFace = vk::FrontFace::eClockwise;
+    vk::FrontFace frontFace = vk::FrontFace::eCounterClockwise;
     vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1;
     vk::CompareOp depthCompare = vk::CompareOp::eLess;
     bool depthTest = true;

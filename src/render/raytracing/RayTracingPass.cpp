@@ -260,7 +260,7 @@ void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
     const auto& items    = graph.renderData().drawItems;
     const auto& markers  = graph.renderData().lightDrawItems;
     CHECK(items.size() + markers.size() < (1u << 24), "ray tracing instance count exceeds the custom-index limit");
-    static_assert(sizeof(Vertex) == 32 && offsetof(Vertex, texcoord) == 24);
+    static_assert(sizeof(Vertex) == 48 && offsetof(Vertex, texcoord) == 24);
 
     const vk::MemoryBarrier2 reuseBarrier{
         .srcStageMask  = vk::PipelineStageFlagBits2::eAllCommands,
