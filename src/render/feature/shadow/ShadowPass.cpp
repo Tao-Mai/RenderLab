@@ -11,7 +11,7 @@
 #include "render/resource/GpuMesh.h"
 #include "render/resource/ShaderData.h"
 #include "scene/component/LightComponent.h"
-#include "scene/system/RenderSystem.h"
+#include "render/RenderData.h"
 
 #include <array>
 

@@ -16,6 +16,8 @@
 #include "core/Window.h"
 #include "editor/Editor.h"
 #include "render/Renderer.h"
+#include "render/RenderContext.h"
+#include "scene/system/RenderSystem.h"
 
 #include <algorithm>
 #include <cmath>
@@ -236,6 +238,7 @@ int main(int argc, char** argv)
     SceneAsset scene;
     SceneManager sceneManager;
     Renderer renderer;
+    RenderSystem renderSystem;
     Context& ctx = context();
     ctx.config = &config;
     ctx.assetManager = &assets;
@@ -282,23 +285,36 @@ int main(int argc, char** argv)
     checkPointShadowUpload(renderer.vulkanContext());
     renderer.loadScene();
 
+    const auto renderActor = [&]() -> AActor*
+    {
+        for (const auto& actor : sceneManager.scene().actors)
+            if (actor->getComponent<RenderComponent>())
+                return actor.get();
+        return nullptr;
+    };
     const auto renderFrames = [&]
     {
-        CHECK(renderer.renderData().objects.size() == 1, "smoke test requires one sphere");
-        const uint32_t expectedId = renderer.renderData().objects.front().selectionId;
+        CHECK(std::ranges::count_if(sceneManager.scene().actors, [](const auto& actor)
+        {
+            return actor->template getComponent<RenderComponent>() != nullptr;
+        }) == 1, "smoke test requires one sphere");
+        const uint32_t expectedId = renderActor()->selectionId();
+        std::vector<LightComponent*> lights;
+        for (const auto& actor : sceneManager.scene().actors)
+            if (auto* light = actor->getComponent<LightComponent>())
+                lights.push_back(light);
         const auto extent = renderer.swapchainHandle().extent();
         for (uint32_t frame = 0; frame < 8; ++frame)
         {
             window.pollEvents();
-            auto& render = *renderer.renderData().objects.front().actor->getComponent<RenderComponent>();
+            auto& render = *renderActor()->getComponent<RenderComponent>();
             if (frame == 2) render.materialOverrides[0].roughness = 0.65f;
             if (frame == 4) render.materialOverrides[0].baseColorTexture = TextureBinding{
                 config.rendererConfig().brdfLut.textureID, BuiltinAssets::Sampler::linearClamp};
             if (frame == 6) render.materialOverrides.clear();
 
-            for (size_t index = 1; index < renderer.renderData().lightObjects.size(); ++index)
-                renderer.renderData().lightObjects[index].actor->getComponent<LightComponent>()->enabled =
-                    frame % 2 == 0;
+            for (size_t index = 1; index < lights.size(); ++index)
+                lights[index]->enabled = frame % 2 == 0;
 
             const EditorFrameInput input{
                 .viewport = {0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height)},
@@ -307,7 +323,9 @@ int main(int argc, char** argv)
                 .pickX = extent.width / 2,
                 .pickY = extent.height / 2,
             };
-            const auto result = renderer.render(sceneManager.editorCamera(), input);
+            const auto& renderData = renderSystem.prepare(
+                sceneManager.scene(), sceneManager.editorCamera().worldPosition(), *renderContext().resources);
+            const auto result = renderer.render(sceneManager.editorCamera(), renderData, input);
             CHECK(result.hasPickResult == input.requestPick, "missing picking result");
             if (input.requestPick)
                 CHECK(result.pickedSelectionId == expectedId,
@@ -422,7 +440,7 @@ int main(int argc, char** argv)
     uiInput.init();
     editor.init();
     editor.applyPickResult({
-        .pickedSelectionId = renderer.renderData().objects.front().selectionId,
+        .pickedSelectionId = renderActor()->selectionId(),
         .hasPickResult = true,
     });
     const auto extent = renderer.swapchainHandle().extent();
@@ -435,12 +453,14 @@ int main(int argc, char** argv)
             sceneManager.editorCamera(), 1.0f / 60.0f, extent.width, extent.height);
         CHECK(input.viewport.x > 0.0f && input.viewport.width < extent.width,
             "editor viewport must leave space for both docked sidebars");
-        const auto result = renderer.render(sceneManager.editorCamera(), input);
+        const auto& renderData = renderSystem.prepare(
+            sceneManager.scene(), sceneManager.editorCamera().worldPosition(), *renderContext().resources);
+        const auto result = renderer.render(sceneManager.editorCamera(), renderData, input);
         editor.applyPickResult(result);
         return input.selectedActor;
     };
     for (uint32_t frame = 0; frame < 3; ++frame)
-        CHECK(renderEditorFrame() == renderer.renderData().objects.front().actor,
+        CHECK(renderEditorFrame() == renderActor(),
             "editor selection must reference the rendered actor");
 
     // Rebuild draw data for live edits; never retain references to removed actors.

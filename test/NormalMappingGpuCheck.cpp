@@ -5,6 +5,8 @@
 #include "core/Context.h"
 #include "core/Window.h"
 #include "render/Renderer.h"
+#include "render/RenderContext.h"
+#include "scene/system/RenderSystem.h"
 #include "scene/SceneManager.h"
 #include "scene/SceneTypes.h"
 
@@ -19,6 +21,7 @@ int main(int argc, char** argv)
     SceneManager scenes;
     Window window;
     Renderer renderer;
+    RenderSystem renderSystem;
     context().config = &config;
     context().assetManager = &assets;
     context().assetDataManager = &data;
@@ -88,7 +91,9 @@ int main(int argc, char** argv)
                     material.clearcoat = std::move(clearcoat);
                 }
             }
-            renderer.render(scenes.editorCamera(), input);
+            const auto& renderData = renderSystem.prepare(
+                scenes.scene(), scenes.editorCamera().worldPosition(), *renderContext().resources);
+            renderer.render(scenes.editorCamera(), renderData, input);
         }
     }
     renderer.waitIdle();

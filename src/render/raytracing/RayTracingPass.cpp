@@ -14,7 +14,7 @@
 #include "render/resource/GpuMesh.h"
 #include "render/resource/GpuShader.h"
 #include "render/resource/RenderResourceManager.h"
-#include "scene/system/RenderSystem.h"
+#include "render/RenderData.h"
 
 #include <algorithm>
 #include <cstring>

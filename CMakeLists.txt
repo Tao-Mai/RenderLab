@@ -438,6 +438,7 @@ add_executable(RenderLab
         src/render/resource/ShaderData.h
         src/scene/system/RenderSystem.cpp
         src/scene/system/RenderSystem.h
+        src/render/RenderData.h
         src/render/feature/ScenePass.cpp
         src/render/feature/ScenePass.h
         src/render/feature/SceneDraw.cpp

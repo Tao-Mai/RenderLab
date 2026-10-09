@@ -5,6 +5,8 @@
 #include "core/Context.h"
 #include "core/Window.h"
 #include "render/Renderer.h"
+#include "render/RenderContext.h"
+#include "scene/system/RenderSystem.h"
 #include "scene/SceneManager.h"
 #include "scene/SceneTypes.h"
 
@@ -19,6 +21,7 @@ int main(int argc, char** argv)
     SceneManager scenes;
     Window window;
     Renderer renderer;
+    RenderSystem renderSystem;
     context().config = &config;
     context().assetManager = &assets;
     context().assetDataManager = &data;
@@ -72,7 +75,9 @@ int main(int argc, char** argv)
                 auto& light = *scenes.scene().actors[1];
                 light.transform().position = {0, 0, z};
                 window.pollEvents();
-                const auto result = renderer.render(scenes.editorCamera(), input);
+                const auto& renderData = renderSystem.prepare(
+                    scenes.scene(), scenes.editorCamera().worldPosition(), *renderContext().resources);
+                const auto result = renderer.render(scenes.editorCamera(), renderData, input);
                 const auto expected = z > 0 ? light.selectionId() : scenes.scene().actors[0]->selectionId();
                 CHECK(result.hasPickResult && result.pickedSelectionId == expected,
                       "path {} HDR {} light Z {}: picked {}, expected {}",

@@ -13,7 +13,6 @@
 #include "render/feature/editor/LightMarkers.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/RenderResourceManager.h"
-#include "scene/system/RenderSystem.h"
 
 #include <array>
 #include <cstdint>
@@ -24,6 +23,8 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class EditorCamera;
+class AActor;
+struct RenderData;
 
 struct EditorFrameInput
 {
@@ -53,13 +54,12 @@ public:
 
     void init();
     void loadScene();
-    EditorFrameResult render(const EditorCamera& camera, const EditorFrameInput& editor);
+    EditorFrameResult render(const EditorCamera& camera, const RenderData& renderData, const EditorFrameInput& editor);
     void waitIdle();
     void shutdown() noexcept;
 
     [[nodiscard]] VulkanContext& vulkanContext();
     [[nodiscard]] Swapchain&     swapchainHandle();
-    [[nodiscard]] const RenderData& renderData() const;
 
 private:
     friend class RenderGraph;
@@ -73,7 +73,6 @@ private:
     RenderResourceManager                     resources;
     std::array<FrameContext, maxFramesInFlight> frames;
     uint32_t                                  frameIndex = 0;
-    RenderSystem                              renderSystem;
     LightMarkers                              lightMarkers;
     RenderGraph                               graph;
     std::shared_ptr<Passes>                    passes;
@@ -86,8 +85,8 @@ private:
     template <class T, class... Args>
     auto setupPass(Args&&... args);
 
-    void updateFrameData(const EditorCamera& camera, const EditorFrameInput& editor);
+    void updateFrameData(const EditorCamera& camera, const RenderData& renderData, const EditorFrameInput& editor);
     [[nodiscard]] FrameContext& currentFrame();
     void recreateSwapchain();
-    EditorFrameResult drawFrame(const EditorCamera& camera, const EditorFrameInput& editor);
+    EditorFrameResult drawFrame(const EditorCamera& camera, const RenderData& renderData, const EditorFrameInput& editor);
 };

@@ -1,5 +1,6 @@
 #include "render/Renderer.h"
 #include "render/RenderContext.h"
+#include "render/RenderData.h"
 
 #include "asset/Asset.h"
 #include "asset/AssetManager.h"
@@ -81,10 +82,11 @@ void Renderer::init()
     DEBUG_EXEC(inited = true);
 }
 
-EditorFrameResult Renderer::render(const EditorCamera& camera, const EditorFrameInput& editor)
+EditorFrameResult Renderer::render(
+    const EditorCamera& camera, const RenderData& renderData, const EditorFrameInput& editor)
 {
     DCHECK(inited);
-    return drawFrame(camera, editor);
+    return drawFrame(camera, renderData, editor);
 }
 
 void Renderer::loadScene()
@@ -94,7 +96,6 @@ void Renderer::loadScene()
     waitIdle();
     DCHECK(context().sceneManager);
     const auto& targetScene = context().sceneManager->scene();
-    renderSystem.load(targetScene, *renderContext().resources);
     lightMarkers.load(targetScene, *renderContext().resources);
     iblParameters              = {};
     const auto& environmentMap = context().config->rendererConfig().environmentMap;
@@ -125,7 +126,6 @@ void Renderer::shutdown() noexcept
         (void)vulkan.deviceHandle().waitIdle();
     }
 
-    renderSystem.reset();
     lightMarkers.reset();
     graph.reset();
     passes.reset();
@@ -149,8 +149,6 @@ void Renderer::shutdown() noexcept
 VulkanContext& Renderer::vulkanContext() { return vulkan; }
 
 Swapchain& Renderer::swapchainHandle() { return swapchain; }
-
-const RenderData& Renderer::renderData() const { return renderSystem.renderData(); }
 
 FrameContext& Renderer::currentFrame() { return frames[frameIndex]; }
 
@@ -252,9 +250,9 @@ void Renderer::recreateSwapchain()
     context().editor->refreshUi();
 }
 
-void Renderer::updateFrameData(const EditorCamera& camera, const EditorFrameInput& editor)
+void Renderer::updateFrameData(
+    const EditorCamera& camera, const RenderData& renderData, const EditorFrameInput& editor)
 {
-    renderSystem.prepare(camera.worldPosition(), *renderContext().resources);
     lightMarkers.prepare();
 
     const glm::mat4    viewMatrix     = camera.viewMatrix();
@@ -265,7 +263,7 @@ void Renderer::updateFrameData(const EditorCamera& camera, const EditorFrameInpu
         .cameraPosition        = glm::vec4{camera.worldPosition(), 1.0f},
         .view                  = viewMatrix,
     };
-    const auto& lights = renderSystem.renderData().lights;
+    const auto& lights = renderData.lights;
     auto        shadow = context().config->rendererConfig().feature.shadow;
     shadow.enable      = shadow.enable && context().config->rendererConfig().renderPath == RenderPath::Rasterization;
     const LightUniforms lighting{
@@ -277,7 +275,8 @@ void Renderer::updateFrameData(const EditorCamera& camera, const EditorFrameInpu
     currentFrame().data.update(view, lighting, lights, shadow);
 }
 
-EditorFrameResult Renderer::drawFrame(const EditorCamera& camera, const EditorFrameInput& editor)
+EditorFrameResult Renderer::drawFrame(
+    const EditorCamera& camera, const RenderData& renderData, const EditorFrameInput& editor)
 {
     const vk::Fence         drawFence               = currentFrame().drawFenceHandle();
     const vk::Semaphore     imageAvailableSemaphore = currentFrame().imageAvailableSemaphore();
@@ -309,8 +308,8 @@ EditorFrameResult Renderer::drawFrame(const EditorCamera& camera, const EditorFr
     vkCheck(vulkan.deviceHandle().resetFences(drawFence));
 
     const bool resolvePickAfterSubmit = editor.requestPick;
-    updateFrameData(camera, editor);
-    graph.execute(editor, frameIndex, imageIndex);
+    updateFrameData(camera, renderData, editor);
+    graph.execute(renderData, editor, frameIndex, imageIndex);
 
     vk::PipelineStageFlags waitDestinationStageMask(
         context().config->rendererConfig().renderPath == RenderPath::RayTracing ? vk::PipelineStageFlagBits::eTransfer

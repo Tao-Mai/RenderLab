@@ -17,7 +17,7 @@
 #include "render/resource/GpuTexture.h"
 #include "render/resource/RenderResourceManager.h"
 #include "render/resource/ShaderData.h"
-#include "scene/system/RenderSystem.h"
+#include "render/RenderData.h"
 
 #include <array>
 

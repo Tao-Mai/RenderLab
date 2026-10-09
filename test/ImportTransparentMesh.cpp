@@ -8,6 +8,7 @@
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
 #include "scene/SceneManager.h"
+#include "scene/system/RenderSystem.h"
 
 #include <charconv>
 #include <cmath>
@@ -30,6 +31,7 @@ int main(int argc, char** argv)
     SceneManager     scenes;
     Window           window;
     Renderer         renderer;
+    RenderSystem     renderSystem;
     auto&            ctx = context();
     ctx.config           = &config;
     ctx.assetManager     = &assets;
@@ -69,14 +71,17 @@ int main(int argc, char** argv)
     for (int frame = 0; frame < 4; ++frame)
     {
         window.pollEvents();
+        const auto& renderData = renderSystem.prepare(
+            scenes.scene(), scenes.editorCamera().worldPosition(), *renderContext().resources);
         renderer.render(
             scenes.editorCamera(),
+            renderData,
             {
                 .viewport    = {0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height)},
                 .aspectRatio = static_cast<float>(extent.width) / extent.height,
             }
         );
-        for (const auto& item : renderer.renderData().transparentDrawItems)
+        for (const auto& item : renderData.transparentDrawItems)
             renderedTransparentMaterial |= item.material == importedMaterial;
     }
     CHECK(renderedTransparentMaterial);
