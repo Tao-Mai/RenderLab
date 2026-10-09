@@ -1,9 +1,13 @@
+#include <vulkan/vulkan.hpp>
+
 #include "render/resource/ShaderData.h"
+#include "render/feature/editor/EditorShaderData.h"
 #include "core/Logger.h"
 
 #include <array>
 #include <filesystem>
 #include <fstream>
+#include <span>
 #include <string_view>
 #include <utility>
 
@@ -34,8 +38,7 @@ json parameter(std::string_view shader, std::string_view name)
     CHECK(false, "missing shader parameter: {}", name);
 }
 
-template <size_t N>
-void checkFields(const json& type, const std::array<Field, N>& expected)
+void checkFields(const json& type, std::span<const Field> expected)
 {
     const auto& fields = type.at("fields").get_ref<const json::array_t&>();
     ASSERT_EQ(fields.size(), expected.size());
@@ -51,7 +54,7 @@ void checkFields(const json& type, const std::array<Field, N>& expected)
 }
 
 constexpr std::array shaders = {
-    "slang", "slang.no_ibl", "depth", "light", "editor_picking", "shadow", "shadow.rect_area", "shadow.directional", "skybox"
+    "slang", "slang.no_ibl", "slang.clearcoat", "slang.clearcoat.no_ibl", "depth", "shadow", "shadow.rect_area", "shadow.directional", "skybox"
 };
 }
 
@@ -206,7 +209,7 @@ TEST(ShaderDataLayout, TextureAndSamplerBindingsMatchCompiledShaders)
         std::pair{"occlusionTexture", RenderInterface::kMaterialOcclusionImageBinding},
         std::pair{"occlusionSampler", RenderInterface::kMaterialOcclusionSamplerBinding},
     };
-    for (const auto* shader : {"slang", "slang.no_ibl"})
+    for (const auto* shader : {"slang", "slang.no_ibl", "slang.clearcoat", "slang.clearcoat.no_ibl"})
     {
         SCOPED_TRACE(shader);
         for (const auto& [name, binding] : bindings)
@@ -234,13 +237,43 @@ TEST(ShaderDataLayout, MaterialUniformsMatchCompiledShaders)
         Field{"padding1", offsetof(MaterialUniforms, padding1), sizeof(float)},
         Field{"padding2", offsetof(MaterialUniforms, padding2), sizeof(float)},
         Field{"emissiveFactor", offsetof(MaterialUniforms, emissiveFactor), sizeof(glm::vec4)},
+        Field{"clearcoatFactor", offsetof(MaterialUniforms, clearcoatFactor), sizeof(float)},
+        Field{"clearcoatRoughnessFactor", offsetof(MaterialUniforms, clearcoatRoughnessFactor), sizeof(float)},
+        Field{"clearcoatNormalScale", offsetof(MaterialUniforms, clearcoatNormalScale), sizeof(float)},
+        Field{"clearcoatPadding", offsetof(MaterialUniforms, clearcoatPadding), sizeof(float)},
     };
-    for (const auto* shader : {"slang", "slang.no_ibl", "depth"})
+    for (const auto* shader : {"slang", "slang.no_ibl", "depth", "slang.clearcoat", "slang.clearcoat.no_ibl"})
     {
+        SCOPED_TRACE(shader);
+        const bool clearcoat = std::string_view(shader).contains(".clearcoat");
+        const size_t fieldCount = clearcoat ? expected.size() : expected.size() - 4;
+        const size_t uniformSize = clearcoat ? sizeof(MaterialUniforms) : offsetof(MaterialUniforms, clearcoatFactor);
         const auto material = parameter(shader, "material");
-        checkFields(material.at("type").at("elementType"), expected);
+        checkFields(material.at("type").at("elementType"), std::span(expected).first(fieldCount));
         EXPECT_EQ(material.at("type").at("elementVarLayout").at("binding").at("size"),
-                  sizeof(MaterialUniforms));
+                  uniformSize);
+    }
+}
+
+TEST(ShaderDataLayout, ClearcoatBindingsMatchCompiledShaders)
+{
+    const std::array bindings = {
+        std::pair{"clearcoatTexture", RenderInterface::kMaterialClearcoatImageBinding},
+        std::pair{"clearcoatSampler", RenderInterface::kMaterialClearcoatSamplerBinding},
+        std::pair{"clearcoatRoughnessTexture", RenderInterface::kMaterialClearcoatRoughnessImageBinding},
+        std::pair{"clearcoatRoughnessSampler", RenderInterface::kMaterialClearcoatRoughnessSamplerBinding},
+        std::pair{"clearcoatNormalTexture", RenderInterface::kMaterialClearcoatNormalImageBinding},
+        std::pair{"clearcoatNormalSampler", RenderInterface::kMaterialClearcoatNormalSamplerBinding},
+    };
+    for (const auto* shader : {"slang.clearcoat", "slang.clearcoat.no_ibl"})
+    {
+        SCOPED_TRACE(shader);
+        for (const auto& [name, binding] : bindings)
+        {
+            const auto value = parameter(shader, name);
+            EXPECT_EQ(value.at("binding").at("space").get<uint32_t>(), RenderInterface::kMaterialSet);
+            EXPECT_EQ(value.at("binding").at("index").get<uint32_t>(), binding);
+        }
     }
 }
 
@@ -257,4 +290,40 @@ TEST(ShaderDataLayout, ToneMappingMatchesCompiledShader)
               RenderInterface::kToneMappingImageBinding);
     EXPECT_EQ(parameter("tonemapping", "hdrSampler").at("binding").at("index"),
               RenderInterface::kToneMappingSamplerBinding);
+}
+
+TEST(ShaderDataLayout, EditorShadersUseOnlyViewData)
+{
+    const std::array viewFields = {Field{"viewProjection", 0, sizeof(glm::mat4)}};
+    for (const auto* shader : {"editor_light_marker", "editor_picking", "editor_depth"})
+    {
+        SCOPED_TRACE(shader);
+        const auto view = parameter(shader, "editorView");
+        EXPECT_EQ(view.at("binding").at("index"), EditorInterface::kViewUniformBinding);
+        EXPECT_EQ(view.at("binding").value("space", 0), EditorInterface::kViewSet);
+        checkFields(view.at("type").at("elementType"), viewFields);
+        const auto path = std::filesystem::path(RENDERLAB_SHADER_BINARY_DIR) /
+            (std::string(shader) + ".reflection.json");
+        std::ifstream input{path};
+        const auto reflection = json::parse(input, nullptr, false);
+        size_t descriptors = 0;
+        for (const auto& value : reflection.at("parameters"))
+            if (value.at("binding").at("kind") == "descriptorTableSlot")
+                ++descriptors;
+        EXPECT_EQ(descriptors, 1);
+    }
+
+    const std::array markerFields = {
+        Field{"model", offsetof(EditorLightMarkerPushConstants, model), sizeof(glm::mat4)},
+        Field{"color", offsetof(EditorLightMarkerPushConstants, color), sizeof(glm::vec4)},
+    };
+    checkFields(parameter("editor_light_marker", "pushConstants").at("type").at("elementType"), markerFields);
+    const std::array pickingFields = {
+        Field{"model", offsetof(EditorPickingPushConstants, model), sizeof(glm::mat4)},
+        Field{"selectionId", offsetof(EditorPickingPushConstants, selectionId), sizeof(uint32_t)},
+        Field{"padding0", offsetof(EditorPickingPushConstants, padding0), sizeof(uint32_t)},
+        Field{"padding1", offsetof(EditorPickingPushConstants, padding1), sizeof(uint32_t)},
+        Field{"padding2", offsetof(EditorPickingPushConstants, padding2), sizeof(uint32_t)},
+    };
+    checkFields(parameter("editor_picking", "pushConstants").at("type").at("elementType"), pickingFields);
 }

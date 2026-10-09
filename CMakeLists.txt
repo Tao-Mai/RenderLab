@@ -86,14 +86,12 @@ find_program(SLANGC_EXECUTABLE
 
 set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 set(SHADER_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
-set(SLANG_SHADER "${SHADER_BINARY_DIR}/slang.spv")
-set(SLANG_SHADER_REFLECTION "${SHADER_BINARY_DIR}/slang.reflection.json")
-set(SLANG_NO_IBL_SHADER "${SHADER_BINARY_DIR}/slang.no_ibl.spv")
-set(SLANG_NO_IBL_REFLECTION "${SHADER_BINARY_DIR}/slang.no_ibl.reflection.json")
 set(SLANG_DEPTH_SHADER "${SHADER_BINARY_DIR}/depth.spv")
 set(SLANG_DEPTH_REFLECTION "${SHADER_BINARY_DIR}/depth.reflection.json")
-set(SLANG_LIGHT_SHADER "${SHADER_BINARY_DIR}/light.spv")
-set(SLANG_LIGHT_REFLECTION "${SHADER_BINARY_DIR}/light.reflection.json")
+set(SLANG_EDITOR_LIGHT_MARKER_SHADER "${SHADER_BINARY_DIR}/editor_light_marker.spv")
+set(SLANG_EDITOR_LIGHT_MARKER_REFLECTION "${SHADER_BINARY_DIR}/editor_light_marker.reflection.json")
+set(SLANG_EDITOR_DEPTH_SHADER "${SHADER_BINARY_DIR}/editor_depth.spv")
+set(SLANG_EDITOR_DEPTH_REFLECTION "${SHADER_BINARY_DIR}/editor_depth.reflection.json")
 set(SLANG_EDITOR_PICKING_SHADER "${SHADER_BINARY_DIR}/editor_picking.spv")
 set(SLANG_EDITOR_PICKING_REFLECTION "${SHADER_BINARY_DIR}/editor_picking.reflection.json")
 set(SLANG_SKYBOX_SHADER "${SHADER_BINARY_DIR}/skybox.spv")
@@ -107,46 +105,54 @@ set(SLANG_RECT_AREA_SHADOW_REFLECTION "${SHADER_BINARY_DIR}/shadow.rect_area.ref
 set(SLANG_DIRECTIONAL_SHADOW_SHADER "${SHADER_BINARY_DIR}/shadow.directional.spv")
 set(SLANG_DIRECTIONAL_SHADOW_REFLECTION "${SHADER_BINARY_DIR}/shadow.directional.reflection.json")
 
-foreach (enable_ibl IN ITEMS 1 0)
-    if (enable_ibl)
-        set(scene_binary "${SLANG_SHADER}")
-        set(scene_reflection "${SLANG_SHADER_REFLECTION}")
-    else ()
-        set(scene_binary "${SLANG_NO_IBL_SHADER}")
-        set(scene_reflection "${SLANG_NO_IBL_REFLECTION}")
-    endif ()
+set(SCENE_SHADER_OUTPUTS)
+foreach (enable_clearcoat IN ITEMS 0 1)
+    foreach (enable_ibl IN ITEMS 1 0)
+        set(scene_name "slang")
+        if (enable_clearcoat)
+            string(APPEND scene_name ".clearcoat")
+        endif ()
+        if (NOT enable_ibl)
+            string(APPEND scene_name ".no_ibl")
+        endif ()
+        set(scene_binary "${SHADER_BINARY_DIR}/${scene_name}.spv")
+        set(scene_reflection "${SHADER_BINARY_DIR}/${scene_name}.reflection.json")
+        list(APPEND SCENE_SHADER_OUTPUTS "${scene_binary}" "${scene_reflection}")
 
-    add_custom_command(
-            OUTPUT "${scene_binary}" "${scene_reflection}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
-            COMMAND ${SLANGC_EXECUTABLE}
-            "${SHADER_SOURCE_DIR}/shader.slang"
-            -DENABLE_IBL=${enable_ibl}
-            -target spirv
-            -profile spirv_1_4
-            -matrix-layout-column-major
-            -emit-spirv-directly
-            -fvk-use-entrypoint-name
-            -entry vertMain
-            -entry fragMain
-            -reflection-json "${scene_reflection}"
-            -o "${scene_binary}"
-            DEPENDS "${SHADER_SOURCE_DIR}/shader.slang"
-            "${SHADER_SOURCE_DIR}/scene_data.slang"
-            "${SHADER_SOURCE_DIR}/mesh_vertex.slang"
-            "${SHADER_SOURCE_DIR}/material_data.slang"
-            "${SHADER_SOURCE_DIR}/sampling.slang"
-            "${SHADER_SOURCE_DIR}/brdf.slang"
-            "${SHADER_SOURCE_DIR}/constant.slang"
-            COMMENT "Compiling Slang scene shader (ENABLE_IBL=${enable_ibl})"
-            VERBATIM
-    )
+        add_custom_command(
+                OUTPUT "${scene_binary}" "${scene_reflection}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
+                COMMAND ${SLANGC_EXECUTABLE}
+                "${SHADER_SOURCE_DIR}/shader.slang"
+                -DENABLE_IBL=${enable_ibl}
+                -DENABLE_CLEARCOAT=${enable_clearcoat}
+                -target spirv
+                -profile spirv_1_4
+                -matrix-layout-column-major
+                -emit-spirv-directly
+                -fvk-use-entrypoint-name
+                -entry vertMain
+                -entry fragMain
+                -reflection-json "${scene_reflection}"
+                -o "${scene_binary}"
+                DEPENDS "${SHADER_SOURCE_DIR}/shader.slang"
+                "${SHADER_SOURCE_DIR}/scene_data.slang"
+                "${SHADER_SOURCE_DIR}/mesh_vertex.slang"
+                "${SHADER_SOURCE_DIR}/material_data.slang"
+                "${SHADER_SOURCE_DIR}/sampling.slang"
+                "${SHADER_SOURCE_DIR}/brdf.slang"
+                "${SHADER_SOURCE_DIR}/constant.slang"
+                COMMENT "Compiling Slang scene shader (ENABLE_IBL=${enable_ibl}, ENABLE_CLEARCOAT=${enable_clearcoat})"
+                VERBATIM
+        )
+    endforeach ()
 endforeach ()
 
 add_custom_command(
         OUTPUT "${SLANG_DEPTH_SHADER}" "${SLANG_DEPTH_REFLECTION}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
         COMMAND ${SLANGC_EXECUTABLE} "${SHADER_SOURCE_DIR}/depth.slang"
+        -DENABLE_CLEARCOAT=0
         -target spirv -profile spirv_1_4 -matrix-layout-column-major
         -emit-spirv-directly -fvk-use-entrypoint-name
         -entry vertMain -entry fragMain
@@ -161,10 +167,10 @@ add_custom_command(
 )
 
 add_custom_command(
-        OUTPUT "${SLANG_LIGHT_SHADER}" "${SLANG_LIGHT_REFLECTION}"
+        OUTPUT "${SLANG_EDITOR_LIGHT_MARKER_SHADER}" "${SLANG_EDITOR_LIGHT_MARKER_REFLECTION}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
         COMMAND ${SLANGC_EXECUTABLE}
-        "${SHADER_SOURCE_DIR}/light.slang"
+        "${SHADER_SOURCE_DIR}/editor/light_marker.slang"
         -target spirv
         -profile spirv_1_4
         -matrix-layout-column-major
@@ -172,11 +178,11 @@ add_custom_command(
         -fvk-use-entrypoint-name
         -entry vertMain
         -entry fragMain
-        -reflection-json "${SLANG_LIGHT_REFLECTION}"
-        -o "${SLANG_LIGHT_SHADER}"
-        DEPENDS "${SHADER_SOURCE_DIR}/light.slang"
-        "${SHADER_SOURCE_DIR}/scene_data.slang"
-        COMMENT "Compiling light source Slang shader"
+        -reflection-json "${SLANG_EDITOR_LIGHT_MARKER_REFLECTION}"
+        -o "${SLANG_EDITOR_LIGHT_MARKER_SHADER}"
+        DEPENDS "${SHADER_SOURCE_DIR}/editor/light_marker.slang"
+        "${SHADER_SOURCE_DIR}/editor/view.slang"
+        COMMENT "Compiling editor light marker Slang shader"
         VERBATIM
 )
 
@@ -195,8 +201,23 @@ add_custom_command(
         -reflection-json "${SLANG_EDITOR_PICKING_REFLECTION}"
         -o "${SLANG_EDITOR_PICKING_SHADER}"
         DEPENDS "${SHADER_SOURCE_DIR}/editor/picking.slang"
-        "${SHADER_SOURCE_DIR}/scene_data.slang"
+        "${SHADER_SOURCE_DIR}/editor/view.slang"
         COMMENT "Compiling editor picking Slang shader"
+        VERBATIM
+)
+
+add_custom_command(
+        OUTPUT "${SLANG_EDITOR_DEPTH_SHADER}" "${SLANG_EDITOR_DEPTH_REFLECTION}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
+        COMMAND ${SLANGC_EXECUTABLE} "${SHADER_SOURCE_DIR}/editor/depth.slang"
+        -target spirv -profile spirv_1_4 -matrix-layout-column-major
+        -emit-spirv-directly -fvk-use-entrypoint-name
+        -entry vertMain -entry fragMain
+        -reflection-json "${SLANG_EDITOR_DEPTH_REFLECTION}"
+        -o "${SLANG_EDITOR_DEPTH_SHADER}"
+        DEPENDS "${SHADER_SOURCE_DIR}/editor/depth.slang"
+        "${SHADER_SOURCE_DIR}/editor/view.slang"
+        COMMENT "Compiling editor depth Slang shader"
         VERBATIM
 )
 
@@ -268,14 +289,13 @@ foreach (shadow_type IN ITEMS 0 1 2)
 endforeach ()
 
 add_custom_target(RenderLabShaders DEPENDS
-        "${SLANG_SHADER}"
-        "${SLANG_SHADER_REFLECTION}"
-        "${SLANG_NO_IBL_SHADER}"
-        "${SLANG_NO_IBL_REFLECTION}"
+        ${SCENE_SHADER_OUTPUTS}
         "${SLANG_DEPTH_SHADER}"
         "${SLANG_DEPTH_REFLECTION}"
-        "${SLANG_LIGHT_SHADER}"
-        "${SLANG_LIGHT_REFLECTION}"
+        "${SLANG_EDITOR_LIGHT_MARKER_SHADER}"
+        "${SLANG_EDITOR_LIGHT_MARKER_REFLECTION}"
+        "${SLANG_EDITOR_DEPTH_SHADER}"
+        "${SLANG_EDITOR_DEPTH_REFLECTION}"
         "${SLANG_EDITOR_PICKING_SHADER}"
         "${SLANG_EDITOR_PICKING_REFLECTION}"
         "${SLANG_SKYBOX_SHADER}"
@@ -420,6 +440,12 @@ add_executable(RenderLab
         src/scene/system/RenderSystem.h
         src/render/feature/ScenePass.cpp
         src/render/feature/ScenePass.h
+        src/render/feature/SceneDraw.cpp
+        src/render/feature/SceneDraw.h
+        src/render/feature/SkyboxPass.cpp
+        src/render/feature/SkyboxPass.h
+        src/render/feature/TransparentPass.cpp
+        src/render/feature/TransparentPass.h
         src/render/feature/DepthPrepass.cpp
         src/render/feature/DepthPrepass.h
         src/render/feature/postprocess/ToneMappingPass.cpp
@@ -432,8 +458,11 @@ add_executable(RenderLab
         src/render/raytracing/RayTracingBlitPass.h
         src/render/feature/shadow/ShadowPass.cpp
         src/render/feature/shadow/ShadowPass.h
-        src/render/feature/LightMarkers.cpp
-        src/render/feature/LightMarkers.h
+        src/render/feature/editor/LightMarkers.cpp
+        src/render/feature/editor/LightMarkers.h
+        src/render/feature/editor/EditorShaderData.h
+        src/render/feature/editor/EditorDepthPass.cpp
+        src/render/feature/editor/EditorDepthPass.h
         src/render/feature/editor/LightMarkerPass.cpp
         src/render/feature/editor/LightMarkerPass.h
         src/render/feature/editor/EditorPickingPass.cpp

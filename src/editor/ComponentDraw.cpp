@@ -186,6 +186,13 @@ bool drawMaterialFields(MaterialAsset& material)
         edited = true;
     }
 
+    bool doubleSided = material.doubleSided.value_or(true);
+    if (ImGui::Checkbox("Double Sided", &doubleSided))
+    {
+        material.doubleSided = doubleSided;
+        edited = true;
+    }
+
     const auto drawFactor = [&](const char* label, std::optional<float>& field, float defaultValue)
     {
         float value = field.value_or(defaultValue);
@@ -222,6 +229,30 @@ bool drawMaterialFields(MaterialAsset& material)
     ImGui::Text("Roughness: %s", material.roughnessTexture ? material.roughnessTexture->textureID.c_str() : "None");
     ImGui::Text("Emissive: %s", material.emissiveTexture ? material.emissiveTexture->textureID.c_str() : "None");
     ImGui::Text("AO: %s", material.aoTexture ? material.aoTexture->textureID.c_str() : "None");
+
+    if (material.clearcoat)
+    {
+        auto& clearcoat = *material.clearcoat;
+        ImGui::PushID("Clearcoat");
+        ImGui::SeparatorText("Clearcoat");
+        edited = ImGui::DragFloat("Factor", &clearcoat.factor, 0.01f, 0.0f, 1.0f,
+                                 "%.3f", ImGuiSliderFlags_AlwaysClamp) || edited;
+        edited = ImGui::DragFloat("Roughness", &clearcoat.roughnessFactor, 0.01f, 0.0f, 1.0f,
+                                 "%.3f", ImGuiSliderFlags_AlwaysClamp) || edited;
+
+        ImGui::BeginDisabled(!clearcoat.normalTexture);
+        edited = ImGui::DragFloat("Normal Scale", &clearcoat.normalScale, 0.05f, 0.0f,
+                                 std::numeric_limits<float>::max(), "%.3f", ImGuiSliderFlags_AlwaysClamp) || edited;
+        ImGui::EndDisabled();
+
+        ImGui::Text("Intensity texture: %s",
+                    clearcoat.texture ? clearcoat.texture->textureID.c_str() : "None");
+        ImGui::Text("Roughness texture: %s",
+                    clearcoat.roughnessTexture ? clearcoat.roughnessTexture->textureID.c_str() : "None");
+        ImGui::Text("Normal texture: %s",
+                    clearcoat.normalTexture ? clearcoat.normalTexture->textureID.c_str() : "None");
+        ImGui::PopID();
+    }
     return edited;
 }
 }

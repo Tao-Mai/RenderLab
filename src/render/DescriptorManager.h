@@ -11,6 +11,7 @@
 enum class DescriptorLayoutPreset
 {
     Scene,
+    View,
     Material,
     ToneMapping,
 };
@@ -46,6 +47,7 @@ private:
     vk::raii::DescriptorPool pool = nullptr;
     std::map<std::vector<BindingKey>, vk::raii::DescriptorSetLayout> layouts;
     vk::DescriptorSetLayout sceneLayout;
+    vk::DescriptorSetLayout viewLayout;
     vk::DescriptorSetLayout materialLayout;
     vk::DescriptorSetLayout toneMappingLayout;
 };

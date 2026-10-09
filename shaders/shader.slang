@@ -17,36 +17,6 @@ struct VertexOutput
     float4 worldTangent : TEXCOORD1;
 };
 
-[[vk::binding(3, 1)]]
-Texture2D<float4> normalTexture;
-
-[[vk::binding(4, 1)]]
-SamplerState normalSampler;
-
-[[vk::binding(5, 1)]]
-Texture2D<float4> metallicTexture;
-
-[[vk::binding(6, 1)]]
-SamplerState metallicSampler;
-
-[[vk::binding(7, 1)]]
-Texture2D<float4> roughnessTexture;
-
-[[vk::binding(8, 1)]]
-SamplerState roughnessSampler;
-
-[[vk::binding(9, 1)]]
-Texture2D<float4> emissiveTexture;
-
-[[vk::binding(10, 1)]]
-SamplerState emissiveSampler;
-
-[[vk::binding(11, 1)]]
-Texture2D<float4> occlusionTexture;
-
-[[vk::binding(12, 1)]]
-SamplerState occlusionSampler;
-
 // Scene shadow resources (bindings 6..10).
 [[vk::binding(6, 0)]]
 TextureCubeArray<float> pointShadowMap;
@@ -227,14 +197,19 @@ VertexOutput vertMain(VertexInput input)
 }
 
 [shader("fragment")]
-float4 fragMain(VertexOutput input) : SV_Target
+float4 fragMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target
 {
     float3 N = normalize(input.worldNormal);
+#if ENABLE_CLEARCOAT
+    float3 geometricNormal = N;
+#endif
     float3 T = normalize(input.worldTangent.xyz - N * dot(N, input.worldTangent.xyz));
     float3 B = cross(N, T) * input.worldTangent.w;
     float3 normalTs = normalTexture.Sample(normalSampler, input.uv).xyz * 2.0 - 1.0;
     normalTs.xy *= material.normalScale;
     N = normalize(T * normalTs.x + B * normalTs.y + N * normalTs.z);
+    // Reverse the final shading normal, including the normal-map perturbation.
+    N = isFrontFace ? N : -N;
 
     float4 baseColor = baseColorTexture.Sample(baseColorSampler, input.uv) * material.baseColorFactor;
     applyAlphaTest(baseColor.a);
@@ -245,6 +220,23 @@ float4 fragMain(VertexOutput input) : SV_Target
     float roughness = saturate(material.roughness * roughnessTexture.Sample(roughnessSampler, input.uv).g);
     float metallic = saturate(material.metallic * metallicTexture.Sample(metallicSampler, input.uv).b);
     float3 f0 = lerp(0.04, baseColor.rgb, float3(metallic));
+
+#if ENABLE_CLEARCOAT
+    // Clearcoat has an independent tangent-space normal; a flat fallback must
+    // use the geometric normal, not inherit the base material's normal map.
+    float3 clearcoatNormalTs = clearcoatNormalTexture.Sample(clearcoatNormalSampler, input.uv).xyz * 2.0 - 1.0;
+    clearcoatNormalTs.xy *= material.clearcoatNormalScale;
+    float3 clearcoatNormal = normalize(
+        T * clearcoatNormalTs.x + B * clearcoatNormalTs.y + geometricNormal * clearcoatNormalTs.z);
+    clearcoatNormal = isFrontFace ? clearcoatNormal : -clearcoatNormal;
+    float clearcoatFactor = saturate(material.clearcoatFactor * clearcoatTexture.Sample(clearcoatSampler, input.uv).r);
+    float clearcoatRoughness = saturate(
+        material.clearcoatRoughnessFactor * clearcoatRoughnessTexture.Sample(clearcoatRoughnessSampler, input.uv).g);
+    float clearcoatNdotV = saturate(dot(clearcoatNormal, V));
+    // glTF's simple layering approximation uses view-normal Fresnel for both
+    // the coat contribution and attenuation of all light leaving the base.
+    float clearcoatWeight = clearcoatFactor * fresnelSchlick(float3(kClearcoatF0), clearcoatNdotV).x;
+#endif
 
     float2 shadowRotation = lightUniforms.shadowPixelRotation
         ? pixelSampleRotation(uint2(input.position.xy))
@@ -299,11 +291,18 @@ float4 fragMain(VertexOutput input) : SV_Target
             continue;
 
         float nDotL = saturate(dot(N, lightDirection));
-        if (nDotL <= 0.0 || visibility <= 0.0)
+        if (visibility <= 0.0)
             continue;
 
         float3 brdf = evaluateDirectBrdf(baseColor.rgb, metallic, roughness, N, V, lightDirection);
-        direct += incidentRadiance * brdf * nDotL * visibility;
+        float3 response = brdf * nDotL;
+#if ENABLE_CLEARCOAT
+        float clearcoatNdotL = saturate(dot(clearcoatNormal, lightDirection));
+        float clearcoatResponse = evaluateClearcoatBrdf(clearcoatRoughness, clearcoatNormal, V, lightDirection)
+            * clearcoatNdotL;
+        response = lerp(response, float3(clearcoatResponse), clearcoatWeight);
+#endif
+        direct += incidentRadiance * response * visibility;
     }
 
     float3 ambient = float3(0.0);
@@ -326,10 +325,27 @@ float4 fragMain(VertexOutput input) : SV_Target
 #else
     ambient = lightUniforms.ambientCoefficient * baseColor.rgb;
 #endif
+#if ENABLE_CLEARCOAT
+    ambient *= 1.0 - clearcoatWeight;
+#if ENABLE_IBL
+    float3 clearcoatReflection = reflect(-V, clearcoatNormal);
+    float3 clearcoatEnvironment = prefilteredSpecularMap.SampleLevel(
+        prefilteredSpecularMapSampler,
+        clearcoatReflection,
+        clearcoatRoughness * lightUniforms.iblPrefilteredMaxMipLevel).rgb;
+    float2 clearcoatScaleBias = brdfLUT.Sample(brdfLUTSampler, float2(clearcoatNdotV, clearcoatRoughness)).rg;
+    // The layer weight already includes Fresnel. Use the LUT's unit-Fresnel
+    // response (scale + bias), avoiding a second Fresnel multiplication.
+    ambient += clearcoatEnvironment * (clearcoatScaleBias.x + clearcoatScaleBias.y) * clearcoatWeight;
+#endif
+#endif
     float occlusion = lerp(1.0, occlusionTexture.Sample(occlusionSampler, input.uv).r, material.occlusionStrength);
     ambient *= occlusion;
 
     float3 emissive = emissiveTexture.Sample(emissiveSampler, input.uv).rgb * material.emissiveFactor.rgb;
+#if ENABLE_CLEARCOAT
+    emissive *= 1.0 - clearcoatWeight;
+#endif
     float3 color = direct + ambient + emissive;
 
     return float4(color, baseColor.a);

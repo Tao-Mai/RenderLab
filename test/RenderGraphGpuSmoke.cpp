@@ -400,7 +400,7 @@ int main(int argc, char** argv)
         renderer.loadScene();
         renderFrames();
         renderer.waitIdle();
-        // The ray route consumes the same light marker DrawItems as rasterization.
+        // Both routes draw light markers through the independent editor overlay.
         auto rayLight = std::make_unique<ALight>();
         rayLight->transform().position = center + glm::vec3{20.0f, 20.0f, 0.0f};
         scene.actors.push_back(std::move(rayLight));

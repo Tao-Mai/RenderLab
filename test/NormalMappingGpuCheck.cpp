@@ -57,10 +57,12 @@ int main(int argc, char** argv)
         .viewport = {0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)},
         .aspectRatio = static_cast<float>(extent.width) / extent.height,
     };
-    for (const bool ibl : {false, true})
+    for (int mode = 0; mode < 4; ++mode)
     {
         auto feature = originalFeature;
-        feature.ibl = ibl;
+        feature.ibl = (mode & 1) != 0;
+        feature.hdr = mode < 2;
+        feature.shadow.enable = mode < 2;
         config.setRenderFeature(feature);
         renderer.loadScene();
 
@@ -74,6 +76,17 @@ int main(int argc, char** argv)
                 material.normalScale = frame % 2 == 0 ? 1.0f : 0.0f;
                 material.metallic = frame % 2 == 0 ? 1.0f : 0.0f;
                 material.roughness = frame % 2 == 0 ? 0.2f : 1.0f;
+                const auto& submesh = assets.get<MeshAsset>(meshId).submeshes[index];
+                const auto& sourceMaterial = assets.get<MaterialAsset>(submesh.materialId);
+                if (sourceMaterial.clearcoat)
+                {
+                    auto clearcoat = *sourceMaterial.clearcoat;
+                    clearcoat.factor = frame % 2 == 0 ? 0.0f : 1.0f;
+                    clearcoat.roughnessFactor = frame < 2 ? 0.0f : 0.5f;
+                    if (frame >= 2)
+                        clearcoat.normalTexture = sourceMaterial.normalTexture;
+                    material.clearcoat = std::move(clearcoat);
+                }
             }
             renderer.render(scenes.editorCamera(), input);
         }
@@ -88,5 +101,5 @@ int main(int argc, char** argv)
     config.setRenderFeature(originalFeature);
     config.shutdown();
     context() = {};
-    LOG_INFO("Mesh '{}' rendered with normal/metallic/roughness overrides, with and without IBL", meshId);
+    LOG_INFO("Mesh '{}' rendered with base/clearcoat overrides and IBL/HDR/shadow toggles", meshId);
 }

@@ -24,12 +24,20 @@ public:
 
     struct Textures
     {
+        struct Clearcoat
+        {
+            Texture factor;
+            Texture roughness;
+            Texture normal;
+        };
+
         Texture baseColor;
         Texture normal;
         Texture metallic;
         Texture roughness;
         Texture emissive;
         Texture occlusion;
+        std::optional<Clearcoat> clearcoat;
     };
 
     void create(

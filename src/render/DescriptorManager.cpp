@@ -163,8 +163,40 @@ void DescriptorManager::init(const vk::raii::Device& targetDevice)
             .binding = RenderInterface::kMaterialOcclusionSamplerBinding,
             .descriptorType = vk::DescriptorType::eSampler,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kMaterialClearcoatImageBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kMaterialClearcoatSamplerBinding,
+            .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kMaterialClearcoatRoughnessImageBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kMaterialClearcoatRoughnessSamplerBinding,
+            .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kMaterialClearcoatNormalImageBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kMaterialClearcoatNormalSamplerBinding,
+            .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
     };
     sceneLayout = getOrCreateLayout(sceneBindings);
+    const std::array viewBindings = {
+        vk::DescriptorSetLayoutBinding{
+            .binding = RenderInterface::kViewUniformBinding,
+            .descriptorType = vk::DescriptorType::eUniformBuffer,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
+    };
+    viewLayout = getOrCreateLayout(viewBindings);
     materialLayout = getOrCreateLayout(materialBindings);
     const std::array toneMappingBindings = {
         vk::DescriptorSetLayoutBinding{
@@ -184,6 +216,7 @@ void DescriptorManager::shutdown() noexcept
     pool = nullptr;
     layouts.clear();
     sceneLayout = nullptr;
+    viewLayout = nullptr;
     materialLayout = nullptr;
     toneMappingLayout = nullptr;
     device = nullptr;
@@ -194,6 +227,7 @@ vk::DescriptorSetLayout DescriptorManager::layout(DescriptorLayoutPreset preset)
     switch (preset)
     {
         case DescriptorLayoutPreset::Scene: return sceneLayout;
+        case DescriptorLayoutPreset::View: return viewLayout;
         case DescriptorLayoutPreset::Material: return materialLayout;
         case DescriptorLayoutPreset::ToneMapping: return toneMappingLayout;
     }

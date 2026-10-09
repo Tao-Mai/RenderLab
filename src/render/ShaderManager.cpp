@@ -147,13 +147,17 @@ ShaderHandle ShaderManager::getOrLoad(const ShaderAsset::ID& id, ShaderVariant v
     std::filesystem::path binary = desc.binary;
     if (variant == ShaderVariant::NoIbl)
         binary.replace_filename(binary.stem().string() + ".no_ibl" + binary.extension().string());
+    else if (variant == ShaderVariant::Clearcoat)
+        binary.replace_filename(binary.stem().string() + ".clearcoat" + binary.extension().string());
+    else if (variant == ShaderVariant::ClearcoatNoIbl)
+        binary.replace_filename(binary.stem().string() + ".clearcoat.no_ibl" + binary.extension().string());
     else if (variant == ShaderVariant::RectAreaShadow)
         binary.replace_filename(binary.stem().string() + ".rect_area" + binary.extension().string());
     else if (variant == ShaderVariant::DirectionalShadow)
         binary.replace_filename(binary.stem().string() + ".directional" + binary.extension().string());
 
     auto               shader = std::make_unique<GpuShader>(*device, binary.string());
-    ShaderMetadata     metadata{id, binary, readReflection(binary)};
+    ShaderMetadata     metadata{id, binary, readReflection(binary), variant};
     const ShaderHandle handle{static_cast<uint32_t>(shaders.size() + 1)};
     shaders.push_back(std::move(shader));
     shaderMetadata.push_back(std::move(metadata));

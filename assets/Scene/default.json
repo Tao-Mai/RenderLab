@@ -120,6 +120,7 @@
                                         1.0
                                     ],
                                     "baseColorTexture": null,
+                                    "clearcoat": null,
                                     "doubleSided": null,
                                     "emissive": null,
                                     "emissiveTexture": null,
@@ -255,7 +256,7 @@
                                 0.7099999785423279,
                                 0.550000011920929
                             ],
-                            "castShadow": true,
+                            "castShadow": false,
                             "color": [
                                 1.0,
                                 1.0,
@@ -263,7 +264,7 @@
                             ],
                             "cosInner": 0.9396926164627075,
                             "cosOuter": 0.8660253882408142,
-                            "enabled": true,
+                            "enabled": false,
                             "intensity": 500.0,
                             "range": 10.0,
                             "type": "RectArea"
@@ -307,6 +308,41 @@
                 ],
                 "name": "Glass Vase"
             }
+        },
+        {
+            "AStaticMesh": {
+                "components": [
+                    {
+                        "TransformComponent": {
+                            "position": [
+                                -2.0,
+                                0.5632816553115845,
+                                -3.1254513263702393
+                            ],
+                            "rotation": [
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
+                            ],
+                            "scale": [
+                                1.0,
+                                1.0,
+                                1.0
+                            ]
+                        }
+                    },
+                    {
+                        "RenderComponent": {
+                            "materialOverrides": {},
+                            "meshId": {
+                                "value": "ToyCar"
+                            }
+                        }
+                    }
+                ],
+                "name": "Toy Car"
+            }
         }
     ],
     "editorCamera": {
@@ -314,15 +350,15 @@
         "fieldOfView": 45.0,
         "mouseSensitivity": 0.11999999731779099,
         "nearPlane": 0.10000000149011612,
-        "pitch": -22.400203704833984,
+        "pitch": -25.640188217163086,
         "position": [
-            -10.15226936340332,
-            4.582963466644287,
-            -0.5794674754142761
+            -3.3987836837768555,
+            1.5326106548309326,
+            -4.294665813446045
         ],
         "speed": 5.0,
         "sprintMultiplier": 3.0,
-        "yaw": 365.5202331542969
+        "yaw": 395.2793884277344
     },
     "environment": {
         "up": [

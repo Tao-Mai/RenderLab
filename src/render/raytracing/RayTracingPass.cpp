@@ -258,8 +258,7 @@ void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
     const auto& device   = vulkan.deviceHandle();
     auto&       commands = graph.commands();
     const auto& items    = graph.renderData().drawItems;
-    const auto& markers  = graph.renderData().lightDrawItems;
-    CHECK(items.size() + markers.size() < (1u << 24), "ray tracing instance count exceeds the custom-index limit");
+    CHECK(items.size() < (1u << 24), "ray tracing instance count exceeds the custom-index limit");
     static_assert(sizeof(Vertex) == 48 && offsetof(Vertex, texcoord) == 24);
 
     const vk::MemoryBarrier2 reuseBarrier{
@@ -341,8 +340,6 @@ void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
             material->second
         );
     }
-    for (const auto& marker : markers)
-        append(*marker.mesh, marker.firstIndex, marker.indexCount, marker.model, glm::vec4{marker.color, 1.0f}, ~0u);
     buildBarrier(commands, false);
 
     const uint32_t count = static_cast<uint32_t>(instances.size());

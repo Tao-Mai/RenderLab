@@ -13,7 +13,7 @@
 
 class AssetManager;
 
-enum class ShaderVariant { Default, NoIbl, RectAreaShadow, DirectionalShadow };
+enum class ShaderVariant { Default, NoIbl, Clearcoat, ClearcoatNoIbl, RectAreaShadow, DirectionalShadow };
 
 struct ShaderHandle
 {
@@ -35,6 +35,7 @@ struct ShaderMetadata
     ShaderAsset::ID            id;
     std::filesystem::path binary;
     std::vector<Binding>  bindings;
+    ShaderVariant variant = ShaderVariant::Default;
 };
 
 class ShaderManager

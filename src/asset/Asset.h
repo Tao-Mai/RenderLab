@@ -155,6 +155,18 @@ struct MaterialAsset : Asset
     using ID                              = AssetID<MaterialAsset>;
     static constexpr std::string_view dir = "Material";
 
+    struct Clearcoat
+    {
+        float factor = 0.0f;
+        float roughnessFactor = 0.0f;
+        float normalScale = 1.0f;
+        std::optional<TextureBinding> texture;
+        std::optional<TextureBinding> roughnessTexture;
+        std::optional<TextureBinding> normalTexture;
+
+        bool operator==(const Clearcoat&) const = default;
+    };
+
     ID                             id;
     std::optional<ShaderAsset::ID> shaderId;
     std::optional<glm::vec4>       baseColorFactor;
@@ -172,6 +184,7 @@ struct MaterialAsset : Asset
     std::optional<std::string>     alphaMode;
     std::optional<float>           alphaCutoff;
     std::optional<bool>            doubleSided;
+    std::optional<Clearcoat>       clearcoat;
 };
 
 using MaterialOverride = MaterialAsset;

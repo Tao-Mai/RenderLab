@@ -1,9 +1,10 @@
 #include "render/feature/ScenePass.h"
 
-#include "render/RenderContext.h"
+#include "render/FrameData.h"
 #include "render/RenderConfig.h"
-#include "render/Renderer.h"
+#include "render/RenderContext.h"
 #include "render/feature/RenderGraph.h"
+#include "render/feature/SceneDraw.h"
 
 #include "asset/Asset.h"
 #include "asset/AssetManager.h"
@@ -13,48 +14,36 @@
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/present/Swapchain.h"
-#include "render/resource/GpuMaterial.h"
-#include "render/resource/GpuMesh.h"
 #include "render/resource/GpuTexture.h"
 #include "render/resource/RenderResourceManager.h"
 #include "render/resource/ShaderData.h"
 #include "scene/system/RenderSystem.h"
 
-#include <algorithm>
 #include <array>
-#include <utility>
 
-#include <glm/vec4.hpp>
-
-void ScenePass::bindSceneDescriptor(vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex) const
+ScenePass::Output
+ScenePass::setup(RenderGraph& targetGraph, RenderGraph::ImageHandle depthHandle, ShadowPass::Output shadow)
 {
-    const std::array sets = {graph->frameData(frameIndex).sceneSetHandle()};
-    commandBuffer
-        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, RenderInterface::kSceneSet, sets, {});
-}
-
-ScenePass::Output ScenePass::setup(
-    RenderGraph& targetGraph, RenderGraph::ImageHandle depthHandle, ShadowPass::Output shadow
-)
-{
-    graph  = &targetGraph;
-    vulkan = &graph->vulkan();
+    graph          = &targetGraph;
+    vulkan         = &graph->vulkan();
     const bool hdr = context().config->rendererConfig().feature.hdr;
     if (hdr)
     {
-        const auto formatFeatures = vulkan->physicalDeviceHandle().getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
+        const auto formatFeatures =
+            vulkan->physicalDeviceHandle().getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
         constexpr auto kRequiredFeatures = vk::FormatFeatureFlagBits::eColorAttachment |
             vk::FormatFeatureFlagBits::eColorAttachmentBlend | vk::FormatFeatureFlagBits::eSampledImage |
             vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
-        CHECK((formatFeatures & kRequiredFeatures) == kRequiredFeatures,
-              "GPU does not support an RGBA16F HDR color attachment with blending and sampling");
+        CHECK(
+            (formatFeatures & kRequiredFeatures) == kRequiredFeatures,
+            "GPU does not support an RGBA16F HDR color attachment with blending and sampling"
+        );
     }
 
-    pipelines = renderContext().pipelineManager;
     resources = renderContext().resources;
 
     RenderGraph::ImageHandle fallbackShadowMap;
-    const auto resolveShadowMap = [&](RenderGraph::ImageHandle image)
+    const auto               resolveShadowMap = [&](RenderGraph::ImageHandle image)
     {
         if (image.id != RenderGraph::kInvalidHandle)
             return image;
@@ -63,11 +52,11 @@ ScenePass::Output ScenePass::setup(
         {
             // Keep statically used descriptors valid; disabled lights never sample this image.
             constexpr uint32_t kCubeFaceCount = 6;
-            fallbackShadowMap = graph->createImage({
-                .flags       = vk::ImageCreateFlagBits::eCubeCompatible,
-                .format      = vk::Format::eD32Sfloat,
-                .extent      = {1, 1, 1},
-                .arrayLayers = kCubeFaceCount,
+            fallbackShadowMap                 = graph->createImage({
+                                .flags       = vk::ImageCreateFlagBits::eCubeCompatible,
+                                .format      = vk::Format::eD32Sfloat,
+                                .extent      = {1, 1, 1},
+                                .arrayLayers = kCubeFaceCount,
             });
         }
         return fallbackShadowMap;
@@ -88,8 +77,7 @@ ScenePass::Output ScenePass::setup(
     brdfLutSampler = resources->sampler(brdf.samplerID);
     bindEnvironmentTextures();
 
-    const vk::Filter filter = context().config->rendererConfig().feature.shadow.filter ==
-            SamplerAsset::Filter::Linear
+    const vk::Filter filter = context().config->rendererConfig().feature.shadow.filter == SamplerAsset::Filter::Linear
         ? vk::Filter::eLinear
         : vk::Filter::eNearest;
     if (!*shadowSampler || shadowFilter != filter)
@@ -105,32 +93,16 @@ ScenePass::Output ScenePass::setup(
              .compareOp     = vk::CompareOp::eLessOrEqual,
              .maxLod        = 0.0f}
         ));
-        shadowFilter = filter;
+        shadowFilter  = filter;
     }
 
     auto&      graph  = targetGraph;
     const auto extent = graph.swapchain().extent();
-    color = hdr
-        ? graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}})
-        : graph.importSwapchain();
-    color = graph.write(color);
-    depth = depthHandle;
-    graph.use(
-        color,
-        {
-            .stages = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-            .access = vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
-            .layout = vk::ImageLayout::eColorAttachmentOptimal,
-        }
-    );
-    graph.use(
-        depth,
-        {
-            .stages = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-            .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead,
-            .layout = vk::ImageLayout::eDepthReadOnlyOptimal,
-        }
-    );
+    color             = hdr ? graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}})
+                            : graph.importSwapchain();
+    color             = graph.write(color);
+    depth             = depthHandle;
+    SceneDraw::useAttachments(graph, color, depth);
     graph.use(
         pointShadowMap,
         {
@@ -156,35 +128,7 @@ ScenePass::Output ScenePass::setup(
         }
     );
 
-    colorFormat                  = graph.imageInfo(color).format;
-    iblEnabled                   = context().config->rendererConfig().feature.ibl;
-    sceneShader =
-        renderContext().shaderManager->getOrLoad("scene", iblEnabled ? ShaderVariant::Default : ShaderVariant::NoIbl);
-    auto sceneState         = PipelineState::preset(RenderMode::Opaque);
-    sceneState.depthWrite   = false;
-    sceneState.depthCompare = vk::CompareOp::eEqual;
-    scenePipeline           = pipelines->getOrCreate({
-         .shader      = sceneShader,
-         .layout      = PipelineLayoutPreset::SceneMaterial,
-         .state       = sceneState,
-         .colorFormat = colorFormat,
-         .depthFormat = vk::Format::eD32Sfloat,
-    });
-    pipelineLayout = pipelines->layout(PipelineLayoutPreset::SceneMaterial);
-
-    if (hasSkybox)
-    {
-        skyboxShader = renderContext().shaderManager->getOrLoad("skybox");
-        skyboxPipeline = pipelines->getOrCreate({
-            .shader      = skyboxShader,
-            .layout      = PipelineLayoutPreset::SceneOnly,
-            .state       = PipelineState::preset(RenderMode::Skybox),
-            .colorFormat = colorFormat,
-            .depthFormat = vk::Format::eD32Sfloat,
-        });
-        skyboxPipelineLayout = pipelines->layout(PipelineLayoutPreset::SceneOnly);
-    }
-    return {color, depth};
+    return {color, depth, {pointShadowMap, rectAreaShadowMap, cascadeShadowMap}};
 }
 
 void ScenePass::bindResources(RenderGraph& graph) const
@@ -221,52 +165,54 @@ void ScenePass::bindResources(RenderGraph& graph) const
         };
         const vk::DescriptorImageInfo shadowSamplerInfo{.sampler = *shadowSampler};
         const vk::DescriptorImageInfo directionalShadowImage{
-            .imageView = graph.getImage(cascadeShadowMap, frameIndex).getOrCreateImageView({
-                .viewType = vk::ImageViewType::e2DArray,
-                .format   = vk::Format::eD32Sfloat,
-                .subresourceRange = {
-                    .aspectMask = vk::ImageAspectFlagBits::eDepth,
-                    .levelCount = 1,
-                    .layerCount = graph.imageInfo(cascadeShadowMap).arrayLayers,
-                },
-            }),
+            .imageView = graph.getImage(cascadeShadowMap, frameIndex)
+                             .getOrCreateImageView({
+                                 .viewType = vk::ImageViewType::e2DArray,
+                                 .format   = vk::Format::eD32Sfloat,
+                                 .subresourceRange =
+                                     {
+                                         .aspectMask = vk::ImageAspectFlagBits::eDepth,
+                                         .levelCount = 1,
+                                         .layerCount = graph.imageInfo(cascadeShadowMap).arrayLayers,
+                                     },
+                             }),
             .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
         };
-        const std::array              writes = {
+        const std::array writes = {
             vk::WriteDescriptorSet{
-                             .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
-                             .dstBinding      = RenderInterface::kPointShadowImageBinding,
-                             .descriptorCount = 1,
-                             .descriptorType  = vk::DescriptorType::eSampledImage,
-                             .pImageInfo      = &shadowImage,
+                .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
+                .dstBinding      = RenderInterface::kPointShadowImageBinding,
+                .descriptorCount = 1,
+                .descriptorType  = vk::DescriptorType::eSampledImage,
+                .pImageInfo      = &shadowImage,
             },
             vk::WriteDescriptorSet{
-                             .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
-                             .dstBinding      = RenderInterface::kRectAreaShadowImageBinding,
-                             .descriptorCount = 1,
-                             .descriptorType  = vk::DescriptorType::eSampledImage,
-                             .pImageInfo      = &rectAreaShadowImage
+                .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
+                .dstBinding      = RenderInterface::kRectAreaShadowImageBinding,
+                .descriptorCount = 1,
+                .descriptorType  = vk::DescriptorType::eSampledImage,
+                .pImageInfo      = &rectAreaShadowImage
             },
             vk::WriteDescriptorSet{
-                             .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
-                             .dstBinding      = RenderInterface::kDirectionalShadowImageBinding,
-                             .descriptorCount = 1,
-                             .descriptorType  = vk::DescriptorType::eSampledImage,
-                             .pImageInfo      = &directionalShadowImage,
+                .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
+                .dstBinding      = RenderInterface::kDirectionalShadowImageBinding,
+                .descriptorCount = 1,
+                .descriptorType  = vk::DescriptorType::eSampledImage,
+                .pImageInfo      = &directionalShadowImage,
             },
             vk::WriteDescriptorSet{
-                             .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
-                             .dstBinding      = RenderInterface::kShadowComparisonSamplerBinding,
-                             .descriptorCount = 1,
-                             .descriptorType  = vk::DescriptorType::eSampler,
-                             .pImageInfo      = &shadowSamplerInfo
+                .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
+                .dstBinding      = RenderInterface::kShadowComparisonSamplerBinding,
+                .descriptorCount = 1,
+                .descriptorType  = vk::DescriptorType::eSampler,
+                .pImageInfo      = &shadowSamplerInfo
             },
             vk::WriteDescriptorSet{
-                             .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
-                             .dstBinding      = RenderInterface::kLinearSamplerBinding,
-                             .descriptorCount = 1,
-                             .descriptorType  = vk::DescriptorType::eSampler,
-                             .pImageInfo      = &linearSamplerInfo,
+                .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
+                .dstBinding      = RenderInterface::kLinearSamplerBinding,
+                .descriptorCount = 1,
+                .descriptorType  = vk::DescriptorType::eSampler,
+                .pImageInfo      = &linearSamplerInfo,
             },
         };
         vulkan->deviceHandle().updateDescriptorSets(writes, {});
@@ -277,31 +223,26 @@ void ScenePass::bindEnvironmentTextures()
 {
     TextureBinding irradianceBinding{BuiltinAssets::Texture::whiteCube, BuiltinAssets::Sampler::linearClamp};
     TextureBinding prefilteredBinding = irradianceBinding;
-    TextureBinding radianceBinding    = irradianceBinding;
     const auto&    environmentMap     = context().config->rendererConfig().environmentMap;
-    hasSkybox = context().config->rendererConfig().feature.ibl && environmentMap.has_value();
     if (environmentMap)
     {
         const auto& environment = context().assetManager->get<EnvironmentMapAsset>(*environmentMap);
         CHECK(
-            !environment.radiance.textureID.empty() && !environment.radiance.samplerID.empty() &&
-                !environment.irradiance.textureID.empty() && !environment.irradiance.samplerID.empty() &&
+            !environment.irradiance.textureID.empty() && !environment.irradiance.samplerID.empty() &&
                 !environment.prefilteredSpecular.textureID.empty() &&
                 !environment.prefilteredSpecular.samplerID.empty(),
-            "environment '{}' requires radiance, irradiance and prefiltered specular textures",
+            "environment '{}' requires irradiance and prefiltered specular textures",
             environment.id
         );
-        radianceBinding    = environment.radiance;
         irradianceBinding  = environment.irradiance;
         prefilteredBinding = environment.prefilteredSpecular;
 
-        const TextureAsset& radianceDesc    = context().assetManager->get<TextureAsset>(radianceBinding.textureID);
         const TextureAsset& irradianceDesc  = context().assetManager->get<TextureAsset>(irradianceBinding.textureID);
         const TextureAsset& prefilteredDesc = context().assetManager->get<TextureAsset>(prefilteredBinding.textureID);
         CHECK(
-            radianceDesc.layout == ImageLayout::Cubemap && irradianceDesc.layout == ImageLayout::Cubemap &&
-                irradianceDesc.colorSpace == ColorSpace::Linear && prefilteredDesc.layout == ImageLayout::Cubemap &&
-                prefilteredDesc.colorSpace == ColorSpace::Linear && prefilteredDesc.mipLevels > 0,
+            irradianceDesc.layout == ImageLayout::Cubemap && irradianceDesc.colorSpace == ColorSpace::Linear &&
+                prefilteredDesc.layout == ImageLayout::Cubemap && prefilteredDesc.colorSpace == ColorSpace::Linear &&
+                prefilteredDesc.mipLevels > 0,
             "environment '{}' requires linear irradiance and prefiltered cubemaps",
             environment.id
         );
@@ -309,7 +250,6 @@ void ScenePass::bindEnvironmentTextures()
 
     irradianceTexture          = resources->texture(irradianceBinding.textureID);
     prefilteredSpecularTexture = resources->texture(prefilteredBinding.textureID);
-    radianceTexture            = resources->texture(radianceBinding.textureID);
     const vk::DescriptorImageInfo irradianceImage{
         .imageView   = irradianceTexture->imageView(),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -325,11 +265,6 @@ void ScenePass::bindEnvironmentTextures()
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
     const vk::DescriptorImageInfo lutSampler{.sampler = brdfLutSampler};
-    const vk::DescriptorImageInfo radianceImage{
-        .imageView   = radianceTexture->imageView(),
-        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-    };
-    const vk::DescriptorImageInfo radianceSampler{.sampler = resources->sampler(radianceBinding.samplerID)};
     for (uint32_t index = 0; index < maxFramesInFlight; ++index)
     {
         FrameData&       frame  = graph->frameData(index);
@@ -376,176 +311,14 @@ void ScenePass::bindEnvironmentTextures()
                 .descriptorType  = vk::DescriptorType::eSampler,
                 .pImageInfo      = &lutSampler,
             },
-            vk::WriteDescriptorSet{
-                .dstSet          = frame.sceneSetHandle(),
-                .dstBinding      = RenderInterface::kRadianceImageBinding,
-                .descriptorCount = 1,
-                .descriptorType  = vk::DescriptorType::eSampledImage,
-                .pImageInfo      = &radianceImage,
-            },
-            vk::WriteDescriptorSet{
-                .dstSet          = frame.sceneSetHandle(),
-                .dstBinding      = RenderInterface::kRadianceSamplerBinding,
-                .descriptorCount = 1,
-                .descriptorType  = vk::DescriptorType::eSampler,
-                .pImageInfo      = &radianceSampler,
-            },
         };
         vulkan->deviceHandle().updateDescriptorSets(writes, {});
     }
 }
 
-void ScenePass::recordSkybox(
-    vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex, const SkyboxPushConstants& parameters
-) const
-{
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, skyboxPipeline);
-
-    const std::array sets = {graph->frameData(frameIndex).sceneSetHandle()};
-    commandBuffer.bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics,
-        skyboxPipelineLayout,
-        RenderInterface::kSceneSet,
-        sets,
-        {}
-    );
-    commandBuffer.pushConstants<SkyboxPushConstants>(
-        skyboxPipelineLayout,
-        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        0,
-        parameters
-    );
-    commandBuffer.draw(3, 1, 0, 0);
-}
-
 void ScenePass::execute(RenderGraph& graph) const
 {
-    auto&             commandBuffer = graph.commands();
-    const RenderData& renderData    = graph.renderData();
-    const uint32_t    frameIndex    = graph.frameIndex();
-    const auto        extent        = graph.swapchain().extent();
-
-
-    vk::ClearValue              clearColor     = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
-    vk::RenderingAttachmentInfo attachmentInfo = {
-        .imageView   = graph.getImage(color).getOrCreateImageView({
-              .viewType         = vk::ImageViewType::e2D,
-              .format           = colorFormat,
-              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        }),
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp      = vk::AttachmentLoadOp::eClear,
-        .storeOp     = vk::AttachmentStoreOp::eStore,
-        .clearValue  = clearColor
-    };
-    vk::RenderingAttachmentInfo depthAttachmentInfo = {
-        .imageView   = graph.getImage(depth).getOrCreateImageView({
-              .viewType         = vk::ImageViewType::e2D,
-              .format           = vk::Format::eD32Sfloat,
-              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
-        }),
-        .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
-        .loadOp      = vk::AttachmentLoadOp::eLoad,
-        .storeOp     = vk::AttachmentStoreOp::eNone,
-    };
-    vk::RenderingInfo renderingInfo = {
-        .renderArea           = {.offset = {0, 0}, .extent = extent},
-        .layerCount           = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments    = &attachmentInfo,
-        .pDepthAttachment     = &depthAttachmentInfo
-    };
-
-    commandBuffer.beginRendering(renderingInfo);
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, scenePipeline);
-    bindSceneDescriptor(commandBuffer, frameIndex);
-    const ViewportRect editorViewport = graph.editorInput().viewport;
-    const uint32_t     viewportX = std::min(static_cast<uint32_t>(std::max(editorViewport.x, 0.0f)), extent.width - 1);
-    const uint32_t     viewportY = std::min(static_cast<uint32_t>(std::max(editorViewport.y, 0.0f)), extent.height - 1);
-    const uint32_t     viewportWidth =
-        std::max(1u, std::min(static_cast<uint32_t>(editorViewport.width), extent.width - viewportX));
-    const uint32_t viewportHeight =
-        std::max(1u, std::min(static_cast<uint32_t>(editorViewport.height), extent.height - viewportY));
-    commandBuffer.setViewport(
-        0,
-        vk::Viewport(
-            static_cast<float>(viewportX),
-            static_cast<float>(viewportY),
-            static_cast<float>(viewportWidth),
-            static_cast<float>(viewportHeight),
-            0.0f,
-            1.0f
-        )
-    );
-    commandBuffer.setScissor(
-        0,
-        vk::Rect2D(
-            vk::Offset2D(static_cast<int32_t>(viewportX), static_cast<int32_t>(viewportY)),
-            vk::Extent2D(viewportWidth, viewportHeight)
-        )
-    );
-    vk::Pipeline boundPipeline = scenePipeline;
-    const auto   draw          = [&](const DrawItem& item)
-    {
-        PipelineKey key      = item.material->pipelineKey(colorFormat, vk::Format::eD32Sfloat);
-        key.state.depthWrite = false;
-        if (item.material->renderMode() != RenderMode::Transparent)
-            key.state.depthCompare = vk::CompareOp::eEqual;
-        if (!iblEnabled)
-        {
-            const ShaderAsset::ID shaderId = renderContext().shaderManager->metadata(key.shader).id;
-            key.shader                     = renderContext().shaderManager->getOrLoad(shaderId, ShaderVariant::NoIbl);
-        }
-        const vk::Pipeline pipeline = pipelines->getOrCreate(key);
-        if (pipeline != boundPipeline)
-        {
-            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-            boundPipeline = pipeline;
-        }
-        item.mesh->bind(commandBuffer);
-        const MeshPushConstants pushConstants{.model = item.model};
-        commandBuffer.pushConstants<MeshPushConstants>(
-            pipelineLayout,
-            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            0,
-            pushConstants
-        );
-        const std::array materialSets = {item.material->descriptorSetHandle()};
-        commandBuffer.bindDescriptorSets(
-            vk::PipelineBindPoint::eGraphics,
-            pipelineLayout,
-            RenderInterface::kMaterialSet,
-            materialSets,
-            {}
-        );
-        commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
-    };
-    for (const DrawItem& item : renderData.opaqueDrawItems)
-    {
-        draw(item);
-    }
-
-    if (hasSkybox)
-    {
-        recordSkybox(
-            commandBuffer,
-            frameIndex,
-            {
-                .viewport = glm::vec4{
-                    static_cast<float>(viewportX),
-                    static_cast<float>(viewportY),
-                    static_cast<float>(viewportWidth),
-                    static_cast<float>(viewportHeight)
-                },
-            }
-        );
-        boundPipeline = nullptr;
-    }
-
-    for (const DrawItem& item : renderData.transparentDrawItems)
-    {
-        draw(item);
-    }
-
-    commandBuffer.endRendering();
+    SceneDraw::beginRendering(graph, color, depth, vk::AttachmentLoadOp::eClear);
+    SceneDraw::recordMeshes(graph, graph.renderData().opaqueDrawItems, graph.imageInfo(color).format);
+    graph.commands().endRendering();
 }

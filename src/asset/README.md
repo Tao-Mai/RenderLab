@@ -35,6 +35,8 @@ Mesh 导入先通过 `prepareMesh` 解析节点变换、几何和包围盒，不
 `maxLod` 留空表示不限制最大 LOD，创建 Vulkan 对象时映射为 `VK_LOD_CLAMP_NONE`；显式 `0.0` 仅使用基础 mip。
 `TextureBinding` 将纹理 ID 与 sampler ID 一起用于材质和环境贴图。
 
+`MaterialAsset::clearcoat` 保存 glTF `KHR_materials_clearcoat` 的 factor、roughnessFactor、normalScale，以及强度、粗糙度、法线三类 TextureBinding；无扩展时为 null。导入默认值遵循 glTF（强度和粗糙度为 0、法线强度为 1），三类贴图均使用 Linear 色彩空间。清漆层使用独立法线和粗糙度，直接光采用 GGX + Kelemen，IBL 复用 GGX 预过滤环境与 LUT，按 Fresnel 分层混合并衰减底层自发光。
+
 ### AssetManager
 
 底层资产读写和缓存工具。启动时扫描资产 JSON 并直接缓存资产对象；`get(id)` 返回只读引用，`find(id)` 返回指针，`save(asset)` 持久化并更新缓存。

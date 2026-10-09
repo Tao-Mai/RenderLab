@@ -8,12 +8,12 @@
         }
     },
     "environmentMap": {
-        "value": "grasslands_sunset_4k"
+        "value": "newport_loft"
     },
     "feature": {
         "ambientCoefficient": 0.0,
         "hdr": true,
-        "ibl": false,
+        "ibl": true,
         "shadow": {
             "bias": 0.004999999888241291,
             "cascade": {
