@@ -17,6 +17,7 @@ class FrameData
 public:
     void init(const VulkanContext& vulkan, DescriptorManager& descriptors);
     void reset() noexcept;
+    void updateView(const ViewUniforms& view);
     // Update only after the owning frame's fence completes.
     void update(
         const ViewUniforms&          view,

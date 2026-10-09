@@ -113,7 +113,6 @@ TEST_F(ComponentDrawTest, GenericDrawingUsesMarkedInheritedFieldsWithoutChanging
     const auto text = frame([&] { result = component_draw::drawFields(component); });
 
     EXPECT_FALSE(result.edited);
-    EXPECT_FALSE(result.resourcesChanged);
     EXPECT_NE(text.find("enabled"), std::string::npos);
     EXPECT_NE(text.find("offset"), std::string::npos);
     EXPECT_EQ(text.find("transient"), std::string::npos);
@@ -140,7 +139,6 @@ TEST_F(ComponentDrawTest, GenericCheckboxEditsTheOriginalMember)
     ComponentDrawResult result;
     frame([&] { result = component_draw::drawFields(component); });
     EXPECT_TRUE(result.edited);
-    EXPECT_FALSE(result.resourcesChanged);
     EXPECT_TRUE(component.enabled);
 }
 
@@ -199,7 +197,6 @@ TEST_F(ComponentDrawTest, LightEditorShowsOnlyTypeSpecificFields)
         ComponentDrawResult result;
         const auto text = frame([&] { result = drawComponent(light); });
         EXPECT_FALSE(result.edited);
-        EXPECT_FALSE(result.resourcesChanged);
         const auto shown = [&](const char* label) { return text.find(label) != std::string::npos; };
         EXPECT_EQ(shown("Intensity"), type != LightComponent::Type::RectArea);
         EXPECT_EQ(shown("Radiance"), type == LightComponent::Type::RectArea);
@@ -227,7 +224,6 @@ TEST_F(ComponentDrawTest, TransformEditsEulerRotationAndClampsScale)
     const auto draw = [&] { return component_draw::drawFields(transform); };
     const auto rotation = enterScalar(draw, [] { return vectorElementId("Rotation", 0); }, "60");
     EXPECT_TRUE(rotation.edited);
-    EXPECT_FALSE(rotation.resourcesChanged);
     EXPECT_NEAR(transform.rotationEulerDegrees().x, 60.0f, 0.001f);
     EXPECT_NEAR(glm::length(transform.rotation), 1.0f, 0.0001f);
 
@@ -288,7 +284,7 @@ TEST_F(ComponentDrawTest, EveryRegisteredComponentHasAnInspector)
     );
 }
 
-TEST_F(ComponentDrawTest, MeshSelectionReportsResourceChanges)
+TEST_F(ComponentDrawTest, MeshSelectionClearsMaterialOverrides)
 {
     AssetManager assets;
     context().assetManager = &assets;
@@ -315,7 +311,6 @@ TEST_F(ComponentDrawTest, MeshSelectionReportsResourceChanges)
 
     EXPECT_EQ(render.meshId, BuiltinAssets::Mesh::cube);
     EXPECT_TRUE(result.edited);
-    EXPECT_TRUE(result.resourcesChanged);
     EXPECT_TRUE(render.materialOverrides.empty());
 }
 
@@ -342,7 +337,6 @@ TEST_F(ComponentDrawTest, ResetOverridesOnlyChangesTheChosenSubmesh)
     ComponentDrawResult result;
     frame([&] { result = component_draw::drawFields(render); });
     EXPECT_TRUE(result.edited);
-    EXPECT_FALSE(result.resourcesChanged);
     EXPECT_FALSE(render.materialOverrides.contains(0));
     EXPECT_EQ(render.materialOverrides.at(9).metallic, 0.8f);
 }

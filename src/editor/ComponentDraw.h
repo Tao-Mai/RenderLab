@@ -17,12 +17,10 @@ struct RenderComponent;
 struct ComponentDrawResult
 {
     bool edited = false;
-    bool resourcesChanged = false;
 
     ComponentDrawResult& operator|=(const ComponentDrawResult& other)
     {
         edited |= other.edited;
-        resourcesChanged |= other.resourcesChanged;
         return *this;
     }
 };

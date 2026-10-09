@@ -72,25 +72,50 @@
     <list default="true" id="bac4e732-e3e9-48f9-b2ee-e17b8e1b5914" name="Changes" comment="1">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/Scene/default.json" beforeDir="false" afterPath="$PROJECT_DIR$/assets/Scene/default.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/renderer.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/renderer.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/feature.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/feature.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/shaders/raytracing/base_color.slang" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/shaders/scene_data.slang" beforeDir="false" afterPath="$PROJECT_DIR$/shaders/scene_data.slang" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/Engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/Engine.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Engine.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/Engine.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/editor/ComponentDraw.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/ComponentDraw.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/editor/ComponentDraw.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/ComponentDraw.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/editor/Editor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/Editor.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/editor/Editor.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/Editor.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/editor/EditorCamera.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/EditorCamera.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/editor/EditorCamera.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/EditorCamera.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/editor/EditorUi.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/EditorUi.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/editor/EditorUi.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/editor/EditorUi.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/editor/ViewportRect.h" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/ARCH.MD" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/ARCH.MD" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/FrameData.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/FrameData.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/FrameData.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/FrameData.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/Renderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/Renderer.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/Renderer.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/Renderer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/device/FrameContext.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/device/FrameContext.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/device/FrameContext.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/device/FrameContext.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/feature/DepthPrepass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/DepthPrepass.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/feature/RenderGraph.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/RenderGraph.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/feature/RenderGraph.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/RenderGraph.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/feature/SceneDraw.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/SceneDraw.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/feature/ScenePass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/ScenePass.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/feature/TransparentPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/TransparentPass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/ScenePass.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/ScenePass.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/feature/editor/EditorDepthPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/editor/EditorDepthPass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/editor/EditorPickingCopyPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/editor/EditorPickingCopyPass.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/feature/editor/EditorPickingPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/editor/EditorPickingPass.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render/feature/shadow/ShadowPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/shadow/ShadowPass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/editor/EditorUiPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/editor/EditorUiPass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/editor/LightMarkerPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/editor/LightMarkerPass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/editor/LightMarkers.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/editor/LightMarkers.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/editor/LightMarkers.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/editor/LightMarkers.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/postprocess/ToneMappingPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/postprocess/ToneMappingPass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/feature/postprocess/ToneMappingPass.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/feature/postprocess/ToneMappingPass.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/present/Swapchain.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/present/Swapchain.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/present/Swapchain.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/present/Swapchain.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render/raytracing/RayTracingPass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/raytracing/RayTracingPass.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render/raytracing/RayTracingPass.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/render/raytracing/RayTracingPass.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/scene/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/scene/system/RenderSystem.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/system/RenderSystem.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/scene/system/RenderSystem.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/scene/system/RenderSystem.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test/ComponentDrawTest.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/ComponentDrawTest.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/test/DirectionalShadowCheck.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/DirectionalShadowCheck.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/test/EditorOverlayGpuCheck.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/EditorOverlayGpuCheck.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/test/ImportTransparentMesh.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/test/ImportTransparentMesh.cpp" afterDir="false" />

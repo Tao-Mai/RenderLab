@@ -1,19 +1,19 @@
 # Renderer
 
-`Renderer` 组织 Vulkan 初始化、场景加载和逐帧绘制。长期 device 对象、资产 GPU 资源、图资源和 frame-in-flight 数据分别管理生命周期。
+`Renderer` 组织 Vulkan 初始化、按配置组图和逐帧提交。场景由 SceneManager 加载，Engine 和 Editor 准备绘制数据。长期 device 对象、资产 GPU 资源、图资源和 frame-in-flight 数据分别管理生命周期。
 
 ## 模块与所有权
 
 | 模块 | 职责 | 生命周期 |
 | --- | --- | --- |
 | `VulkanContext` | Instance、PhysicalDevice、Device、Queues、queue family、features/properties | 整个 Renderer |
-| `Swapchain` | 交换链、图像和视图、每张图像的 renderFinished Semaphore | 每次交换链创建至重建 |
+| `Swapchain` | 交换链、图像和视图、每张图像的 renderFinished Semaphore、acquire/present | 每次交换链创建至重建 |
 | `ShaderManager` | SPIR-V 与反射加载、VkShaderModule 缓存、ShaderHandle | device 级 |
 | `DescriptorManager` | 预设和反射 Layout、Layout cache、Pool、Set allocation | Layout/Pool 为 device 级；Set 随使用者 |
 | `PipelineManager` | PipelineLayout、RenderMode 模板、PipelineKey cache | device 级 |
 | `RenderResourceManager` | Mesh/Texture/Material/Sampler 资产到 GPU 对象的映射和缓存 | 资产级；当前缓存至 Renderer 关闭 |
 | `RenderGraph` | 登记节点、合并 usage、编译依赖、分配内部资源、barrier 和命令录制 | Graph 长期存在；内部资源在重新组图并 compile 时重建 |
-| `FrameContext` | CommandPool/Buffer、Fence、imageAvailable，以及一个 FrameData | 每个 frame-in-flight 一份 |
+| `FrameContext` | CommandPool/Buffer、Fence、imageAvailable、wait/submit，以及一个 FrameData | 每个 frame-in-flight 一份 |
 | `FrameData` | View/Light CPU 数据与 UBO、灯光/点阴影 SSBO、Scene Set、数据上传与扩容 | 由对应 FrameContext 持有 |
 
 Renderer 持有上述模块和各 Pass 对象，负责按配置组图。`RenderSystem` 由 Engine 持有和调用，Renderer 只接收其生成的 `RenderData`。Graph 持有对应节点，不依赖具体 Pass 类型。终点依赖最终颜色和 readback buffer，声明 Present 和 HostRead 状态；Renderer 保存 PickingCopy 的 readback handle，在 fence 完成后通过 Graph 的 getBuffer 下载 selection ID，不再单设 Readback Pass。ScenePass 只绘制不透明和 MASK 物体；SkyboxPass 管理 radiance descriptor、Pipeline/Layout 和天空盒绘制；TransparentPass 加载已有颜色和深度，绘制排序后的透明物体。SceneDraw 共用附件、视口设置和材质网格绘制逻辑，不增加新的资源管理层。LightMarkerPass 随后独立绘制灯光标记。光栅 Pipeline 由 PipelineManager 缓存，光追 Pipeline/SBT/BLAS/TLAS 由 RayTracingPass 持有；Pass 直接接收类型化句柄或前序 Pass 的 Output，通过 Image 对象取得缓存 View。
@@ -28,19 +28,19 @@ Scene 使用 RGBA16F HDR 颜色图，Graph 为每个在途帧单独分配。Tone
 
 `feature.hdr` 控制整条 HDR 链路，默认 true。编辑器 Enable HDR 切换后走现有 rendererChanged 流程重新组图并 compile；关闭时 Scene 直接写交换链，LightMarker 随后加载该颜色附件，不创建 HDR 图，也不登记或绑定 ToneMappingPass。曝光和 Tone Mapping 参数保留但控件禁用，重新开启后继续使用；开关与其他渲染设置一样仅在正常关闭时统一持久化。
 
-`feature.toneMapping.exposure` 使用档位，0 为原始亮度，+1 为亮度乘 2，-1 为乘 0.5；`mode` 提供 Neutral（默认的 Khronos PBR Neutral）和 Reinhard。编辑器修改通过 push constants 每帧生效，不重建渲染图；正常关闭时统一保存到 renderer.json。Tone Mapping 输出线性颜色到 sRGB attachment，由硬件编码一次；若交换链使用 UNORM + sRGB nonlinear 色彩空间，则由该 shader 显式编码。此版本不包含自动曝光或 Bloom，光追 base-color 路线保持原来的 blit 输出，Tone Mapping 控件在该路线下禁用。
+`feature.toneMapping.exposure` 使用档位，0 为原始亮度，+1 为亮度乘 2，-1 为乘 0.5；`mode` 提供 Neutral（默认的 Khronos PBR Neutral）和 Reinhard。编辑器修改通过 push constants 每帧生效，不重建渲染图；正常关闭时统一保存到 renderer.json。Tone Mapping 输出线性颜色到 sRGB attachment，由硬件编码一次；若交换链使用 UNORM + sRGB nonlinear 色彩空间，则由该 shader 显式编码。此版本不包含自动曝光或 Bloom，光追路线保持原来的 blit 输出，Tone Mapping 控件在该路线下禁用。
 
 Neutral 算法参考 [Khronos PBR Neutral Tone Mapper](https://github.com/KhronosGroup/ToneMapping/tree/main/PBR_Neutral)，shader 中注明 Slang 改写及 CC-BY-4.0 来源。
 
 编辑器的 Renderer / Render path 可选择 Rasterization 或 Ray tracing，选择保存在内存中的 `renderPath`，正常关闭时由 ConfigManager 统一写入 `config/renderer.json`，启动时恢复。该文件由 `config/config.json` 的 `paths.renderer` 指定，并保存 BRDF LUT 绑定、RenderFeature 和环境图选择。当前光栅化仍是默认路线；不支持所需 Vulkan 光追特性的 GPU 禁用光追选项，配置直接指定不支持的路线则明确报错，不自动退回光栅化。
 
-`render/raytracing/RayTracingPass` 使用独立的 `VK_KHR_ray_tracing_pipeline`：缓存每个 mesh/submesh 的 BLAS，每帧根据现有 DrawItem 的 transform 构建该帧 TLAS，通过 SBT 和 `vkCmdTraceRaysKHR` 发射相机主射线。ClosestHit 使用三角形重心坐标插值现有 Vertex UV，输出 `baseColorTexture * baseColorFactor` 后结束；Miss 输出黑色。TLAS 只包含场景网格，不包含编辑器灯光标记，也没有标记专用的材质或命中分支。第一版没有 IBL、反弹、透明或 alpha-test，所有三角形按不透明处理；每帧最多 128 种材质纹理/采样器绑定。
+`render/raytracing/RayTracingPass` 使用独立的 `VK_KHR_ray_tracing_pipeline`：缓存每个 mesh/submesh 的 BLAS，每帧根据现有 DrawItem 的 transform 构建该帧 TLAS，通过 SBT 和 `vkCmdTraceRaysKHR` 发射相机主射线。`raytracing/raytracing.slang` 将相机射线、命中表面和着色封装为结构体方法。ClosestHit 插值 Vertex UV 和法线，通过实例变换的逆转置得到世界空间法线；对第一个启用的点光源计算 `baseColorTexture * baseColorFactor * light.color * light.intensity / distanceSquared * saturate(dot(N, L)) * visibility`。Surface::isVisible 从沿法线偏移后的命中点向光源发射阴影射线，只检查光源之前的遮挡；遇到首个不透明物体立即停止并跳过 closest-hit，无命中时由独立 visibility miss shader 返回可见。SBT 包含一个 raygen、两个 miss 和一个 hit group，管线递归深度为 2。Miss 或无有效点光源时输出黑色。TLAS 只包含场景网格，不包含编辑器灯光标记，也没有标记专用的材质或命中分支。当前只有点光源硬阴影，没有 IBL、反弹、透明或 alpha-test，所有三角形按不透明处理；每帧最多 128 种材质纹理/采样器绑定。
 
-光追复用 GPU mesh 的 vertex/index buffer、GpuMaterial 的纹理/采样器以及 FrameData 的相机数据，不改变光栅 descriptor layout。RayTracing 只写光追图像，独立的 RayTracingBlit 节点声明 TransferSrc/TransferDst 输入并 blit 到交换链。光追时关闭 Scene/Shadow 节点；EditorDepthPass 使用独立 editor/depth.slang，为编辑器遮挡和拾取生成深度，不走场景材质逻辑，与当前光追一样按不透明几何处理。两条路线统一在主场景输出之后执行 LightMarkerPass，再执行 Picking 和 EditorUi。交换链等待阶段按路线使用 color-attachment-output 或 transfer，仍使用原来的两帧 fence/semaphore 模型。加速结构构建/复用仍使用其原有内部内存屏障，不属于 Graph 当前管理的图像/缓冲区资源。
+光追复用 GPU mesh 的 vertex/index buffer、GpuMaterial 的纹理/采样器以及 FrameData 的相机数据，并将 RenderData 的灯光列表上传到当前光追帧的独立 SSBO；`light_data.slang` 与光栅路线共用 LightData 类型，不改变光栅 descriptor layout。RayTracing 只写光追图像，独立的 RayTracingBlit 节点声明 TransferSrc/TransferDst 输入并 blit 到交换链。光追时关闭 Scene/Shadow 节点；EditorDepthPass 使用独立 editor/depth.slang，为编辑器遮挡和拾取生成深度，不走场景材质逻辑，与当前光追一样按不透明几何处理。两条路线统一在主场景输出之后执行 LightMarkerPass，再执行 Picking 和 EditorUi。交换链等待阶段按路线使用 color-attachment-output 或 transfer，仍使用原来的两帧 fence/semaphore 模型。加速结构构建/复用仍使用其原有内部内存屏障，不属于 Graph 当前管理的图像/缓冲区资源。
 
-API 参考：[Khronos 基础光追示例](https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_basic/README.html)、[多实例与材质示例](https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_extended/README.html)。
+API 参考：[Khronos 基础光追示例](https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_basic/README.html)、[多实例与材质示例](https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_extended/README.html)、[阴影射线与递归示例](https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_reflection/README.html)。
 
-SceneManager 持有 AActor 和 Component。Engine 在场景 Tick 和编辑器更新之后调用 RenderSystem，遍历当前场景，解析 Transform、Render、Light 组件和材质覆盖，生成场景网格 DrawItem、透明排序和 LightData。RenderData 独立定义在 render/RenderData.h，只包含绘制数据，不缓存 Actor 引用；场景切换、增删 Actor 和 Mesh 修改在下一次 prepare 时自然生效。Renderer 和各 Pass 不依赖 RenderSystem。Renderer 单独持有编辑器 LightMarkers，后者加载灯光 Actor 引用、准备标记 DrawItem，并独立录制标记及其拾取命令。编辑器只复用网格 GPU 资源和相机数据，不复用 SceneDraw 或材质绑定逻辑。Renderer 接收独立 EditorCamera 提供的视图。
+SceneManager 持有 AActor 和 Component。Engine 在场景 Tick 和编辑器更新之后调用 RenderSystem，遍历当前场景，解析 Transform、Render、Light 组件和材质覆盖，生成场景网格 DrawItem、透明排序和 LightData。RenderData 独立定义在 render/RenderData.h，只包含绘制数据，不缓存 Actor 引用；场景切换、增删 Actor 和 Mesh 修改在下一次 prepare 时自然生效，不重建 Graph。Editor 持有 LightMarkers，每帧读取当前场景，生成独立标记 DrawItem；绘制和拾取由对应编辑器 Pass 录制，不复用 SceneDraw 或材质逻辑。EditorCamera 生成普通 RenderView；Renderer 不依赖 Actor、SceneManager、EditorCamera 或 Editor 对象，只接收 RenderView、RenderData 和 EditorFrameInput。
 
 当前 `maxFramesInFlight` 为 2。Graph 为每个在途帧分配独立的 Scene 深度图、Shadow cubemap、拾取图和 readback Buffer。交换链图像作为外部资源导入，Graph 借用句柄并跟踪状态。资产环境纹理不登记到 Graph，由资产 GPU 资源负责上传和采样状态，Pass 直接绑定 descriptor。FrameData 的 View/Light UBO 和灯光 SSBO 由 Pass 直接引用，不登记到 Graph 资源声明；Renderer 在录制前更新当前帧的数据。Mesh/Material 的 vertex/index buffer、材质 UBO 和 base color image 由 RenderSystem 直接引用，GPU 对象由 RenderResourceManager 创建和持有。它们不登记到 Graph 资源声明，上传与可供绘制使用的状态由资产 GPU 资源实现负责。
 
@@ -107,17 +107,17 @@ GpuMaterial 根据 alpha mode 选择 Opaque、AlphaTest 或 Transparent。Materi
 
 普通 2D 贴图在导入阶段生成完整 mip 链并持久化，GpuTexture 上传全部层级，材质 sampler 默认使用 Linear mip 过滤且不限制最大 LOD。sRGB 颜色在线性空间做 box 过滤，Alpha 保持线性；线性数据贴图不做伽马变换。R8/RG8 非 2 次幂贴图的紧凑 mip 数据只在上传 staging 时补齐 copy offset 对齐，不改变资产二进制格式。环境图的烘焙流程保持独立。
 
-## 初始化与加载场景
+## 初始化与图重建
 
-Renderer init 依次初始化 device、swapchain、各 Manager、FrameContext、RenderResourceManager 和 Graph，并创建 Pass 对象。四个 Manager 由 Renderer 持有，通过 renderContext() 暴露；Renderer 显式调用 init/shutdown。Graph init 只建立对 Renderer 的引用。
+Renderer init 依次初始化 device、swapchain、各 Manager、FrameContext、RenderResourceManager 和 Graph，并独占持有 Pass 对象。四个 Manager 通过 renderContext() 向外部暴露；Renderer 内部直接调用成员的 init/shutdown。Graph init 显式接收 VulkanContext、Swapchain 和 FrameContext span，不持有 Renderer 或访问其私有成员。
 
-Renderer loadScene 等待 GPU 空闲，刷新编辑器 LightMarkers 和 IBL 参数，随后 setupRenderGraph 按配置串接各 Pass 并调用 Graph compile，不调用 RenderSystem。ScenePass setup 加载 BRDF LUT、更新 IBL 绑定，SkyboxPass setup 单独绑定 radiance；Graph 分配资源后，Renderer 调用 ScenePass 绑定共用的阴影 descriptor。ScenePass 的 Output 同时传出解析后的阴影 handle，供 TransparentPass 声明采样依赖，包括关闭阴影时的占位图。具体材质 Pipeline 在首次绘制时创建并缓存。
+Engine 首次加载场景后调用 Renderer rebuildGraph；编辑器结构性渲染配置变化时再次调用。rebuildGraph 等待 GPU 空闲、释放旧图，再由 setupRenderGraph 显式串接 Pass 并 compile。ScenePass setup 加载 BRDF LUT、环境纹理和对应最大 mip 参数，SkyboxPass setup 单独绑定 radiance。Graph 分配资源后按拓扑顺序调用节点可选的 prepare 回调，ScenePass 和 ToneMappingPass 在此绑定图资源 descriptor，Renderer 不逐个特判。ScenePass 的 Output 同时传出解析后的阴影 handle，供 TransparentPass 声明采样依赖，包括关闭阴影时的占位图。具体材质 Pipeline 在首次绘制时创建并缓存。
 
 资产 GPU 缓存跨场景保留。RenderSystem 不拥有 Mesh/Texture/Material 的 GPU 存储。
 
 ## RenderGraph 接口
 
-各 Pass 提供 setup/execute；setup 直接接收 ImageHandle/BufferHandle 或前序 Pass 的 Output，返回 Output。
+各 Pass 提供 setup/execute，可选提供 prepare；setup 直接接收 ImageHandle/BufferHandle 或前序 Pass 的 Output，返回 Output，prepare 在图资源分配后执行。
 Renderer setupRenderGraph 根据配置通过 setupPass<T>(args...) 完美转发参数，显式串接资源句柄；ScenePass 直接接收深度 handle 和 ShadowPass::Output。Graph 不再提供业务组图的 setup 接口。
 所有 Pass 类型只在 Renderer.cpp 的 tuple 类型列表中集中声明一次，保存 Pass 对象，通过类型直接访问。
 Renderer 的 setupPass 将 Pass 对象交给 graph.addPass；addPass 通过静态反射收集参数中的 handle，限定访问记录的切换范围并在返回时恢复。Pass 仍调用 graph.use(handle, access)。Graph 单独拥有节点，保存资源依赖、use 记录和 execute 回调，不使用字符串注册。
@@ -161,20 +161,20 @@ Picking 读取 LightMarkerPass 输出的深度，其中保留场景和灯光标�
 
 ## 每帧流程
 
-1. Engine 完成场景和编辑器更新，调用 RenderSystem prepare 整理 DrawItem、透明排序和 LightData，再通过 Renderer render 显式传入 RenderData。
-2. Renderer 等待当前 FrameContext 的 Fence，Acquire 交换链图像，重置 Fence。LightMarkers 单独整理编辑器标记；FrameData 计算点光源六面 VP，上传 View/Light UBO、灯光和点阴影 SSBO，均在 Graph execute 之前完成。
+1. Engine 完成场景更新；Editor 准备 RenderView、灯光标记和 UI，返回是否需要重建图。Engine 调用 RenderSystem prepare，再向 Renderer 显式传入视图、场景和编辑器绘制数据。
+2. FrameContext 等待 Fence，Swapchain acquire 图像。光栅路线由 ScenePass 组织 LightUniforms 并调用 FrameData 上传相机、灯光和阴影数据；光追路线只更新所需视图数据。
 3. Graph execute 重置并开始 CommandBuffer，按 compile 得到的 sortedNodes 顺序应用 use 声明的 barrier 并调用节点执行回调。Pass 直接绑定当前 FrameData 的外部 Scene Set，UI 由 EditorUi 节点录制。
 4. Graph 将交换链图像转为 Present 状态，结束 CommandBuffer。
-5. Renderer 统一 submit 一次，等待 imageAvailable，完成后通知 acquired image 的 renderFinished；随后 Present。
+5. FrameContext 重置 Fence 并 submit 一次，等待 imageAvailable，完成后通知 acquired image 的 renderFinished；Swapchain present。
 6. 若有拾取请求，等待本次 Fence、读取该帧结果，最后轮转 frameIndex。
 
 Graph 保留每个物理资源实例的状态。布局变化或前后涉及写入时插入 pipelineBarrier2；相同布局的连续读取合并 stage/access。每帧 buffer 使用 host-coherent 内存，录制前的 host 写入在 queue submit 时对 GPU 可见；Graph 不负责这些外部 buffer 的更新或状态跟踪。普通帧不等待整个 device 空闲；拾取帧为同步回读额外等待本次提交。
 
 ## Resize 与销毁
 
-最小化时等待非零 framebuffer 尺寸。重建时先等待 GPU 空闲，先释放 Graph 资源与缓存 View，再重建交换链图像、视图和 presentation Semaphore，由 Renderer setupRenderGraph 重新组图并 compile、更新 attachment Pipeline/descriptor，最后刷新编辑器 UI。Shader、Descriptor Layout、资产 GPU 资源和 FrameContext 不因 resize 重新创建。
+Renderer 将 acquire/present 的重建需求通过 RenderFrameResult 返回，不处理窗口事件或反向调用 Editor。Engine 在 framebuffer 尺寸非零时调用 Renderer recreateSwapchain，随后通知 Editor refreshUi。交换链重建等待 GPU 空闲、释放旧图资源、重建交换链并组图，各执行一次。Shader、Descriptor Layout、资产 GPU 资源和 FrameContext 不因 resize 重新创建。
 
-Engine 在 Renderer shutdown 前清空 RenderSystem 的 CPU 数据。Renderer shutdown 先等待 device 空闲，再释放 LightMarkers、Graph/Pass、资产 GPU 资源、Pipeline、FrameContext、Descriptor、Shader、Swapchain，最后释放 VulkanContext。外部资源所有者的生命周期必须覆盖 Graph 的使用时间。
+Engine 在 Renderer shutdown 前关闭 Editor 并清空 RenderSystem 的 CPU 数据。Renderer shutdown 先等待 device 空闲，再释放 Graph/Pass、资产 GPU 资源、Pipeline、FrameContext、Descriptor、Shader、Swapchain，最后释放 VulkanContext。外部资源所有者的生命周期必须覆盖 Graph 的使用时间。
 
 ## 验证
 

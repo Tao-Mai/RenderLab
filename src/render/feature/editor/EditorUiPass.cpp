@@ -1,6 +1,6 @@
 #include "render/feature/editor/EditorUiPass.h"
 
-#include "render/Renderer.h"
+#include "render/feature/editor/EditorFrameInput.h"
 #include "render/present/Swapchain.h"
 
 EditorUiPass::Output EditorUiPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle)

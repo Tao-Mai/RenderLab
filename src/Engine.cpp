@@ -83,7 +83,7 @@ void Engine::run()
     DCHECK(inited);
 
     sceneManager->loadDefaultScene();
-    renderer->loadScene();
+    renderer->rebuildGraph();
 
     mainLoop();
 }
@@ -92,6 +92,7 @@ void Engine::mainLoop()
 {
     Context& ctx = context();
     auto previousTime = std::chrono::steady_clock::now();
+    bool     swapchainNeedsRebuild = false;
     while (!ctx.window->shouldClose())
     {
         ctx.window->pollEvents();
@@ -117,18 +118,27 @@ void Engine::mainLoop()
             std::chrono::duration<float>(currentTime - previousTime).count();
         previousTime = currentTime;
 
+        if (swapchainNeedsRebuild)
+        {
+            ctx.renderer->recreateSwapchain();
+            ctx.editor->refreshUi();
+            swapchainNeedsRebuild = false;
+        }
+
         ctx.editor->applySceneActions();
         auto& camera = ctx.sceneManager->editorCamera();
         camera.setInputEnabled(camera.isNavigationActive() || !ctx.editor->wantsInput());
         ctx.sceneManager->tick(deltaTime);
 
         const auto extent = ctx.renderer->swapchainHandle().extent();
-        const EditorFrameInput editorInput = ctx.editor->buildFrame(
-            camera, deltaTime, extent.width, extent.height);
+        const auto editorFrame = ctx.editor->buildFrame(camera, deltaTime, extent.width, extent.height);
+        if (editorFrame.rebuildGraph)
+            ctx.renderer->rebuildGraph();
+
         const auto& renderData = renderSystem.prepare(
             ctx.sceneManager->scene(), camera.worldPosition(), *renderContext().resources);
-        const EditorFrameResult editorResult =
-            ctx.renderer->render(camera, renderData, editorInput);
+        const auto editorResult = ctx.renderer->render(editorFrame.view, renderData, editorFrame.input);
+        swapchainNeedsRebuild   = editorResult.swapchainNeedsRebuild;
         ctx.editor->applyPickResult(editorResult);
     }
 }

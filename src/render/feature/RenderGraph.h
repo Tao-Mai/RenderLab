@@ -8,17 +8,18 @@
 #include <functional>
 #include <memory>
 #include <meta>
+#include <span>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 class Buffer;
 class FrameData;
-class LightMarkers;
-class Renderer;
+class FrameContext;
 class Swapchain;
 class VulkanContext;
 struct RenderData;
+struct RenderView;
 struct EditorFrameInput;
 
 class RenderGraph
@@ -65,7 +66,7 @@ public:
         vk::AccessFlags2        access;
     };
 
-    void init();
+    void init(VulkanContext& vulkan, Swapchain& swapchain, std::span<FrameContext> frames);
     void reset() noexcept;
     void compile();
     void releaseResources() noexcept;
@@ -87,18 +88,28 @@ public:
     [[nodiscard]] Buffer& getBuffer(BufferHandle buffer, uint32_t frameIndex);
     [[nodiscard]] const ImageCreateInfo& imageInfo(ImageHandle image);
 
-    void execute(const RenderData& renderData, const EditorFrameInput& editor, uint32_t frameIndex, uint32_t imageIndex);
+    void execute(
+        const RenderView& view,
+        const RenderData& renderData,
+        const EditorFrameInput& editor,
+        uint32_t frameIndex,
+        uint32_t imageIndex
+    );
     [[nodiscard]] static bool needsBarrier(const ImageAccess& previous, const ImageAccess& next);
 
-    [[nodiscard]] VulkanContext&           vulkan() const;
-    [[nodiscard]] Swapchain&               swapchain() const;
-    [[nodiscard]] FrameData&               frameData(uint32_t frameIndex) const;
+    [[nodiscard]] VulkanContext& vulkan() const { return *deviceContext; }
+    [[nodiscard]] Swapchain&     swapchain() const { return *targetSwapchain; }
+    [[nodiscard]] FrameData&     frameData(uint32_t frameIndex) const;
     [[nodiscard]] const RenderData& renderData() const
     {
         DCHECK(currentRenderData);
         return *currentRenderData;
     }
-    [[nodiscard]] const LightMarkers&      lightMarkers() const;
+    [[nodiscard]] const RenderView& view() const
+    {
+        DCHECK(currentView);
+        return *currentView;
+    }
     [[nodiscard]] vk::raii::CommandBuffer& commands() const;
     [[nodiscard]] uint32_t                 frameIndex() const { return currentFrame; }
     [[nodiscard]] const EditorFrameInput&  editorInput() const
@@ -142,10 +153,13 @@ private:
         std::vector<PassNode*>            prev;
         std::vector<PassNode*>            next;
         std::vector<ResourceUse>          uses;
+        std::function<void(RenderGraph&)> prepare;
         std::function<void(RenderGraph&)> execute;
     };
 
-    Renderer*                            renderer = nullptr;
+    VulkanContext*                       deviceContext   = nullptr;
+    Swapchain*                           targetSwapchain = nullptr;
+    std::span<FrameContext>               frames;
     std::vector<std::unique_ptr<PassNode>> nodeStorage;
     std::vector<PassNode*>                nodes;
     std::vector<PassNode*>                sortedNodes;
@@ -155,6 +169,7 @@ private:
     uint32_t                             currentImage      = 0;
     const EditorFrameInput*               currentEditor     = nullptr;
     const RenderData*                     currentRenderData = nullptr;
+    const RenderView*                     currentView       = nullptr;
     ImageHandle                          swapchainImage;
 
     template <class T>
@@ -173,6 +188,8 @@ auto RenderGraph::addPass(T& pass, Args&&... args)
 {
     auto& node   = *nodeStorage.emplace_back(std::make_unique<PassNode>());
     node.execute = [pass = &pass](RenderGraph& graph) { pass->execute(graph); };
+    if constexpr (requires { pass.prepare(*this); })
+        node.prepare = [pass = &pass](RenderGraph& graph) { pass->prepare(graph); };
     (collectDependencies(node, args), ...);
     nodes.push_back(&node);
 

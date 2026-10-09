@@ -239,6 +239,13 @@ void FrameData::reset() noexcept
     vulkan = nullptr;
 }
 
+void FrameData::updateView(const ViewUniforms& view)
+{
+    DCHECK(vulkan);
+    viewData = view;
+    viewBuffer.upload(&viewData, sizeof(viewData));
+}
+
 void FrameData::update(
     const ViewUniforms&          view,
     const LightUniforms&         lighting,
@@ -342,10 +349,9 @@ void FrameData::update(
     if (ensureStorage(lightBuffer, std::max<size_t>(lights.size(), 1) * sizeof(LightData)))
         bindBuffers();  // 有多少上传多少，而不是固定按最大数量
 
-    viewData      = view;
+    updateView(view);
     lightMetadata = lighting;
     lightMetadata.cascadeCount = shadows.cascade.count;
-    viewBuffer.upload(&viewData, sizeof(viewData));
     lightUniformBuffer.upload(&lightMetadata, sizeof(lightMetadata));
     if (!lights.empty())
         lightBuffer.upload(lights.data(), lights.size() * sizeof(LightData));

@@ -10,6 +10,9 @@ class RenderResourceManager;
 class GpuTexture;
 class VulkanContext;
 class RenderGraph;
+class FrameData;
+struct RenderData;
+struct ViewUniforms;
 
 class ScenePass
 {
@@ -22,7 +25,8 @@ public:
     };
 
     Output setup(RenderGraph& graph, RenderGraph::ImageHandle depthHandle, ShadowPass::Output shadow);
-    void   bindResources(RenderGraph& graph) const;
+    void   prepare(RenderGraph& graph) const;
+    void   updateFrame(FrameData& frame, const ViewUniforms& view, const RenderData& scene) const;
     void   execute(RenderGraph& graph) const;
 
 private:
@@ -40,6 +44,7 @@ private:
     vk::Sampler                 brdfLutSampler = nullptr;
     vk::raii::Sampler           shadowSampler  = nullptr;
     vk::Filter                  shadowFilter   = vk::Filter::eLinear;
+    float                       prefilteredMaxLod = 0.0f;
 
     void bindEnvironmentTextures();
 };

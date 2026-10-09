@@ -131,7 +131,7 @@ ScenePass::setup(RenderGraph& targetGraph, RenderGraph::ImageHandle depthHandle,
     return {color, depth, {pointShadowMap, rectAreaShadowMap, cascadeShadowMap}};
 }
 
-void ScenePass::bindResources(RenderGraph& graph) const
+void ScenePass::prepare(RenderGraph& graph) const
 {
     const vk::DescriptorImageInfo linearSamplerInfo{
         .sampler = resources->sampler(BuiltinAssets::Sampler::linearClamp),
@@ -250,6 +250,7 @@ void ScenePass::bindEnvironmentTextures()
 
     irradianceTexture          = resources->texture(irradianceBinding.textureID);
     prefilteredSpecularTexture = resources->texture(prefilteredBinding.textureID);
+    prefilteredMaxLod          = static_cast<float>(prefilteredSpecularTexture->imageInfo().mipLevels - 1);
     const vk::DescriptorImageInfo irradianceImage{
         .imageView   = irradianceTexture->imageView(),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -314,6 +315,19 @@ void ScenePass::bindEnvironmentTextures()
         };
         vulkan->deviceHandle().updateDescriptorSets(writes, {});
     }
+}
+
+void ScenePass::updateFrame(FrameData& frame, const ViewUniforms& view, const RenderData& scene) const
+{
+    const auto&         feature = context().config->rendererConfig().feature;
+    const auto&         shadow  = feature.shadow;
+    const LightUniforms lighting{
+        .lightCount         = static_cast<uint32_t>(scene.lights.size()),
+        .ambientCoefficient = feature.ambientCoefficient,
+        .iblParameters      = {prefilteredMaxLod, 0.0f, 0.0f, 0.0f},
+        .shadowParameters   = {shadow.bias, shadow.sampleRadius, shadow.pixelRotation ? 1.0f : 0.0f, 0.0f},
+    };
+    frame.update(view, lighting, scene.lights, shadow);
 }
 
 void ScenePass::execute(RenderGraph& graph) const

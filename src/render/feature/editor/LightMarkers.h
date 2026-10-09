@@ -8,11 +8,9 @@
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
-#include <vulkan/vulkan_raii.hpp>
 
 class GpuMesh;
 class RenderResourceManager;
-class AActor;
 struct SceneAsset;
 struct TransformComponent;
 
@@ -29,21 +27,12 @@ public:
         uint32_t  selectionId = 0;
     };
 
-    void load(const SceneAsset& scene, RenderResourceManager& resources);
-    void prepare();
+    void prepare(const SceneAsset& scene, RenderResourceManager& resources);
     void reset() noexcept;
 
     [[nodiscard]] std::span<const DrawItem> drawItems() const { return draws; }
 
-    void record(
-        vk::raii::CommandBuffer& commandBuffer, vk::PipelineLayout pipelineLayout, std::span<const DrawItem> items
-    ) const;
-    void recordPicking(
-        vk::raii::CommandBuffer& commandBuffer, vk::PipelineLayout pipelineLayout, std::span<const DrawItem> items
-    ) const;
-
 private:
-    std::vector<AActor*>  actors;
     std::vector<DrawItem> draws;
 
     [[nodiscard]] std::vector<DrawItem>

@@ -22,6 +22,7 @@ int main(int argc, char** argv)
     Window window;
     Renderer renderer;
     RenderSystem renderSystem;
+    LightMarkers     lightMarkers;
     context().config = &config;
     context().assetManager = &assets;
     context().assetDataManager = &data;
@@ -48,12 +49,12 @@ int main(int argc, char** argv)
     scenes.load(scene);
     renderer.init();
     const auto extent = renderer.swapchainHandle().extent();
-    const EditorFrameInput input{
-        .viewport = {0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)},
-        .aspectRatio = static_cast<float>(extent.width) / extent.height,
+    const auto view =
+        scenes.editorCamera().renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
+    EditorFrameInput input{
         .requestPick = true,
-        .pickX = extent.width / 2,
-        .pickY = extent.height / 2,
+        .pickX       = extent.width / 2,
+        .pickY       = extent.height / 2,
     };
 
     for (const auto path : {RenderPath::Rasterization, RenderPath::RayTracing})
@@ -69,7 +70,7 @@ int main(int argc, char** argv)
             feature.ibl = false;
             feature.shadow.enable = false;
             config.setRenderFeature(feature);
-            renderer.loadScene();
+            renderer.rebuildGraph();
             for (const float z : {1.5f, -1.5f})
             {
                 auto& light = *scenes.scene().actors[1];
@@ -77,7 +78,9 @@ int main(int argc, char** argv)
                 window.pollEvents();
                 const auto& renderData = renderSystem.prepare(
                     scenes.scene(), scenes.editorCamera().worldPosition(), *renderContext().resources);
-                const auto result = renderer.render(scenes.editorCamera(), renderData, input);
+                lightMarkers.prepare(scenes.scene(), *renderContext().resources);
+                input.lightDrawItems = lightMarkers.drawItems();
+                const auto result    = renderer.render(view, renderData, input);
                 const auto expected = z > 0 ? light.selectionId() : scenes.scene().actors[0]->selectionId();
                 CHECK(result.hasPickResult && result.pickedSelectionId == expected,
                       "path {} HDR {} light Z {}: picked {}, expected {}",

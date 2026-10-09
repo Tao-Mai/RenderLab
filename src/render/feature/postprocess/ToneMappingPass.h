@@ -13,7 +13,7 @@ public:
     };
 
     Output setup(RenderGraph& graph, RenderGraph::ImageHandle hdrColor, RenderGraph::ImageHandle target);
-    void bindResources(RenderGraph& graph) const;
+    void   prepare(RenderGraph& graph) const;
     void execute(RenderGraph& graph) const;
 
 private:

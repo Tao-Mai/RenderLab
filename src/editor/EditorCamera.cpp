@@ -4,6 +4,7 @@
 #include "core/InputManager.h"
 #include "core/Logger.h"
 #include "core/Window.h"
+#include "render/RenderView.h"
 
 #include <algorithm>
 #include <cmath>
@@ -98,4 +99,21 @@ glm::mat4 EditorCamera::projectionMatrix(float aspectRatio) const
     glm::mat4 projection = glm::perspective(glm::radians(data.fieldOfView), aspectRatio, data.nearPlane, data.farPlane);
     projection[1][1] *= -1.0f;
     return projection;
+}
+
+RenderView EditorCamera::renderView(ViewportRect viewport) const
+{
+    DCHECK(viewport.width > 0.0f && viewport.height > 0.0f);
+    const auto view           = viewMatrix();
+    const auto viewProjection = projectionMatrix(viewport.width / viewport.height) * view;
+    return {
+        .uniforms =
+            {
+                .viewProjection        = viewProjection,
+                .inverseViewProjection = glm::inverse(viewProjection),
+                .cameraPosition        = glm::vec4{worldPosition(), 1.0f},
+                .view                  = view,
+            },
+        .viewport = viewport,
+    };
 }

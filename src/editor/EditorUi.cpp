@@ -760,7 +760,6 @@ EditorUI::InspectorResult EditorUI::drawInspector(
             changes |= drawComponent(*component);
         }
         result.edited |= changes.edited;
-        result.resourcesChanged |= changes.resourcesChanged;
         ImGui::PopID();
     }
     else

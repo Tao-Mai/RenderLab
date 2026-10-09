@@ -25,6 +25,7 @@ int main(int, char** argv)
     Window           window;
     Renderer         renderer;
     RenderSystem     renderSystem;
+    LightMarkers     lightMarkers;
     auto&            ctx = context();
     ctx.config           = &config;
     ctx.assetManager     = &assets;
@@ -64,7 +65,7 @@ int main(int, char** argv)
     scenes.load(scene);
     scenes.editorCamera().config().position = {0.0f, 0.0f, 6.0f};
     renderer.init();
-    renderer.loadScene();
+    renderer.rebuildGraph();
 
     DescriptorManager descriptors;
     descriptors.init(renderer.vulkanContext().deviceHandle());
@@ -98,25 +99,27 @@ int main(int, char** argv)
         {
             feature.shadow.enable = false;
             config.setRenderFeature(feature);
-            renderer.loadScene();
+            renderer.rebuildGraph();
         }
         if (frame == 6)
         {
             feature.shadow.enable = true;
             config.setRenderFeature(feature);
             sceneLight.castShadow = false;
-            renderer.loadScene();
+            renderer.rebuildGraph();
         }
 
         window.pollEvents();
         const auto& renderData = renderSystem.prepare(
             scenes.scene(), scenes.editorCamera().worldPosition(), *renderContext().resources);
+        lightMarkers.prepare(scenes.scene(), *renderContext().resources);
         renderer.render(
-            scenes.editorCamera(),
+            scenes.editorCamera().renderView(
+                {0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)}
+            ),
             renderData,
             {
-                .viewport    = {0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height)},
-                .aspectRatio = static_cast<float>(extent.width) / extent.height,
+                .lightDrawItems = lightMarkers.drawItems(),
             }
         );
     }

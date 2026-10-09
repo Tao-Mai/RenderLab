@@ -3,10 +3,12 @@
 #include "render/FrameData.h"
 #include "render/PipelineManager.h"
 #include "render/RenderContext.h"
-#include "render/Renderer.h"
+#include "render/RenderView.h"
+#include "render/feature/editor/EditorFrameInput.h"
 #include "render/feature/editor/EditorShaderData.h"
 #include "render/feature/editor/LightMarkers.h"
 #include "render/present/Swapchain.h"
+#include "render/resource/GpuMesh.h"
 
 #include <algorithm>
 #include <array>
@@ -51,7 +53,7 @@ LightMarkerPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle,
 
 void LightMarkerPass::execute(RenderGraph& graph) const
 {
-    const auto lightDrawItems = graph.lightMarkers().drawItems();
+    const auto lightDrawItems = graph.editorInput().lightDrawItems;
     if (lightDrawItems.empty())
         return;
 
@@ -85,7 +87,7 @@ void LightMarkerPass::execute(RenderGraph& graph) const
         .pDepthAttachment     = &depthAttachment,
     });
 
-    const auto&    editorViewport = graph.editorInput().viewport;
+    const auto&    editorViewport = graph.view().viewport;
     const uint32_t viewportX      = std::min(static_cast<uint32_t>(std::max(editorViewport.x, 0.0f)), extent.width - 1);
     const uint32_t viewportY = std::min(static_cast<uint32_t>(std::max(editorViewport.y, 0.0f)), extent.height - 1);
     const uint32_t viewportWidth =
@@ -115,7 +117,21 @@ void LightMarkerPass::execute(RenderGraph& graph) const
     const std::array viewSets = {graph.frameData(graph.frameIndex()).viewSetHandle()};
     commandBuffer
         .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, EditorInterface::kViewSet, viewSets, {});
-    graph.lightMarkers().record(commandBuffer, pipelineLayout, lightDrawItems);
+    for (const auto& item : lightDrawItems)
+    {
+        const EditorLightMarkerPushConstants push{
+            .model = item.model,
+            .color = glm::vec4{item.color, 1.0f},
+        };
+        commandBuffer.pushConstants<EditorLightMarkerPushConstants>(
+            pipelineLayout,
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            0,
+            push
+        );
+        item.mesh->bind(commandBuffer);
+        commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
+    }
 
     commandBuffer.endRendering();
 }

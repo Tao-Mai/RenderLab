@@ -2,7 +2,6 @@
 
 #include "asset/Asset.h"
 #include "asset/BuiltinAssets.h"
-#include "render/feature/editor/EditorShaderData.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/RenderResourceManager.h"
 #include "scene/AActor.h"
@@ -20,29 +19,24 @@ namespace
 }
 }  // namespace
 
-void LightMarkers::load(const SceneAsset& scene, RenderResourceManager& resources)
-{
-    reset();
-    for (const auto& actor : scene.actors)
-        if (actor->getComponent<LightComponent>())
-            actors.push_back(actor.get());
-
-    if (actors.empty())
-        return;
-
-    sphere = &resources.mesh(BuiltinAssets::Mesh::sphere);
-    cube   = &resources.mesh(BuiltinAssets::Mesh::cube);
-    arrow  = &resources.mesh(BuiltinAssets::Mesh::arrow);
-}
-
-void LightMarkers::prepare()
+void LightMarkers::prepare(const SceneAsset& scene, RenderResourceManager& resources)
 {
     draws.clear();
-    for (const auto* actor : actors)
+    for (const auto& actor : scene.actors)
     {
         const auto* light     = actor->getComponent<LightComponent>();
+        if (!light)
+            continue;
+
+        if (!sphere)
+        {
+            sphere = &resources.mesh(BuiltinAssets::Mesh::sphere);
+            cube   = &resources.mesh(BuiltinAssets::Mesh::cube);
+            arrow  = &resources.mesh(BuiltinAssets::Mesh::arrow);
+        }
+
         const auto* transform = actor->getComponent<TransformComponent>();
-        DCHECK(light && transform);
+        DCHECK(transform);
         const auto parts = buildDrawItems(*transform, *light, actor->selectionId());
         draws.insert(draws.end(), parts.begin(), parts.end());
     }
@@ -50,7 +44,6 @@ void LightMarkers::prepare()
 
 void LightMarkers::reset() noexcept
 {
-    actors.clear();
     draws.clear();
     sphere = nullptr;
     cube   = nullptr;
@@ -119,46 +112,4 @@ std::vector<LightMarkers::DrawItem> LightMarkers::buildDrawItems(
     for (DrawItem& item : result)
         item.selectionId = selectionId;
     return result;
-}
-
-void LightMarkers::record(
-    vk::raii::CommandBuffer& commandBuffer, vk::PipelineLayout pipelineLayout, std::span<const DrawItem> items
-) const
-{
-    for (const DrawItem& part : items)
-    {
-        const EditorLightMarkerPushConstants pushConstants{
-            .model = part.model,
-            .color = glm::vec4{part.color, 1.0f},
-        };
-        commandBuffer.pushConstants<EditorLightMarkerPushConstants>(
-            pipelineLayout,
-            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            0,
-            pushConstants
-        );
-        part.mesh->bind(commandBuffer);
-        commandBuffer.drawIndexed(part.indexCount, 1, part.firstIndex, 0, 0);
-    }
-}
-
-void LightMarkers::recordPicking(
-    vk::raii::CommandBuffer& commandBuffer, vk::PipelineLayout pipelineLayout, std::span<const DrawItem> items
-) const
-{
-    for (const DrawItem& part : items)
-    {
-        const EditorPickingPushConstants pushConstants{
-            .model       = part.model,
-            .selectionId = part.selectionId,
-        };
-        commandBuffer.pushConstants<EditorPickingPushConstants>(
-            pipelineLayout,
-            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            0,
-            pushConstants
-        );
-        part.mesh->bind(commandBuffer);
-        commandBuffer.drawIndexed(part.indexCount, 1, part.firstIndex, 0, 0);
-    }
 }
