@@ -7,7 +7,7 @@
 #include "render/feature/editor/EditorShaderData.h"
 #include "render/feature/editor/LightMarkers.h"
 #include "render/resource/GpuMesh.h"
-#include "scene/system/RenderSystem.h"
+#include "render/RenderData.h"
 
 #include <algorithm>
 #include <array>

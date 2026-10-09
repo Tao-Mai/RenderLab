@@ -1,7 +1,7 @@
 #include "render/feature/TransparentPass.h"
 
 #include "render/feature/SceneDraw.h"
-#include "scene/system/RenderSystem.h"
+#include "render/RenderData.h"
 
 TransparentPass::Output TransparentPass::setup(
     RenderGraph&             graph,

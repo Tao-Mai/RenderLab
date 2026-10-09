@@ -9,7 +9,7 @@
 #include "render/resource/GpuMaterial.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/ShaderData.h"
-#include "scene/system/RenderSystem.h"
+#include "render/RenderData.h"
 
 #include <algorithm>
 #include <array>

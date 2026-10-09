@@ -3,6 +3,7 @@
 #include "platform/InputMethod.h"
 #include "core/Context.h"
 #include "core/Debug.h"
+#include "scene/system/RenderSystem.h"
 
 #include <memory>
 
@@ -22,6 +23,7 @@ public:
 private:
     DEBUG_ONLY(bool inited = false;)
     InputMethod inputMethod;
+    RenderSystem renderSystem;
     std::unique_ptr<ConfigManager> config;
     std::unique_ptr<Window> window;
     std::unique_ptr<InputManager> inputManager;

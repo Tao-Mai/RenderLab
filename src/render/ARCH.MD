@@ -10,7 +10,7 @@ Graph 通过 addPass 登记节点，节点记录依赖、资源访问和执行�
 1. Renderer init：初始化 Graph，创建 Pass 对象。
 2. Renderer setupRenderGraph：等待 GPU 空闲并释放旧图资源，按配置显式串接 Pass，调用 setup 收集 use、合并 usage。最后通过 setupPass<EndPass> 设置终点，自动收集有效的颜色和 readback handle 依赖，声明 Present 和 HostRead 出口状态。
 3. Graph compile：由 Renderer 显式调用，从终点 BFS 回溯资源生产者，给保留节点补充写前读依赖，再做拓扑排序并分配资源。重复写和循环在所有构建中通过 CHECK 检查。资源分配完成后，Renderer 调用 ScenePass 绑定阴影 descriptor。
-4. Renderer 等待当前帧 fence，RenderSystem 整理 DrawItem 和 LightData，FrameData 上传相机、灯光和点阴影六面 VP。
+4. Engine 调用 RenderSystem 整理 DrawItem 和 LightData，再将 RenderData 交给 Renderer；Renderer 等待当前帧 fence，FrameData 上传相机、灯光和点阴影六面 VP。
 5. Graph 遍历 sortedNodes，先应用节点的资源状态，再调用执行回调。EndPass 在最后应用出口状态。
 6. Renderer 保存 PickingCopy 的 readback handle，统一 submit/present；fence 完成后由 Renderer 通过 Graph 的 getBuffer 下载 selection ID。Graph 不负责结果解释或拾取状态。
 

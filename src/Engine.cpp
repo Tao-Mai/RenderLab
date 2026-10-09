@@ -10,6 +10,7 @@
 #include "core/Logger.h"
 #include "core/InputManager.h"
 #include "render/Renderer.h"
+#include "render/RenderContext.h"
 #include "core/Window.h"
 
 #include <chrono>
@@ -124,8 +125,10 @@ void Engine::mainLoop()
         const auto extent = ctx.renderer->swapchainHandle().extent();
         const EditorFrameInput editorInput = ctx.editor->buildFrame(
             camera, deltaTime, extent.width, extent.height);
+        const auto& renderData = renderSystem.prepare(
+            ctx.sceneManager->scene(), camera.worldPosition(), *renderContext().resources);
         const EditorFrameResult editorResult =
-            ctx.renderer->render(camera, editorInput);
+            ctx.renderer->render(camera, renderData, editorInput);
         ctx.editor->applyPickResult(editorResult);
     }
 }
@@ -141,6 +144,7 @@ void Engine::shutdown() noexcept
     renderer->waitIdle();
     shutdownSubsystem(editor, ctx.editor);
     shutdownSubsystem(inputManager, ctx.inputManager);
+    renderSystem.reset();
     shutdownSubsystem(renderer, ctx.renderer);
     shutdownSubsystem(sceneManager, ctx.sceneManager);
     shutdownSubsystem(assetManager, ctx.assetManager);

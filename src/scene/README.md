@@ -74,8 +74,9 @@ picking IDs. Saving creates a detached snapshot again. The asset cache never
 owns references into the live scene. Picking IDs are not persisted and are not
 reused after reload.
 
-Renderer/RenderSystem hold AActor references and retrieve the
-components they need; they do not use an entity registry. Editor gizmos and
+Engine invokes RenderSystem each frame to read the live actors and their
+components, then passes the resulting RenderData to Renderer. RenderData does
+not retain actor references. Editor gizmos and
 picking use the same actors. The inspector draws marked fields with typed ImGui
 overloads. Transform, Light and Render have dedicated editors for Euler rotation,
 light-type-specific properties and submesh material overrides. Mesh selection

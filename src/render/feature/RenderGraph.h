@@ -87,13 +87,17 @@ public:
     [[nodiscard]] Buffer& getBuffer(BufferHandle buffer, uint32_t frameIndex);
     [[nodiscard]] const ImageCreateInfo& imageInfo(ImageHandle image);
 
-    void                      execute(const EditorFrameInput& editor, uint32_t frameIndex, uint32_t imageIndex);
+    void execute(const RenderData& renderData, const EditorFrameInput& editor, uint32_t frameIndex, uint32_t imageIndex);
     [[nodiscard]] static bool needsBarrier(const ImageAccess& previous, const ImageAccess& next);
 
     [[nodiscard]] VulkanContext&           vulkan() const;
     [[nodiscard]] Swapchain&               swapchain() const;
     [[nodiscard]] FrameData&               frameData(uint32_t frameIndex) const;
-    [[nodiscard]] const RenderData&        renderData() const;
+    [[nodiscard]] const RenderData& renderData() const
+    {
+        DCHECK(currentRenderData);
+        return *currentRenderData;
+    }
     [[nodiscard]] const LightMarkers&      lightMarkers() const;
     [[nodiscard]] vk::raii::CommandBuffer& commands() const;
     [[nodiscard]] uint32_t                 frameIndex() const { return currentFrame; }
@@ -147,9 +151,10 @@ private:
     std::vector<PassNode*>                sortedNodes;
     PassNode*                            setupNode = nullptr;
     std::vector<Resource>                resources;
-    uint32_t                             currentFrame  = 0;
-    uint32_t                             currentImage  = 0;
-    const EditorFrameInput*              currentEditor = nullptr;
+    uint32_t                             currentFrame      = 0;
+    uint32_t                             currentImage      = 0;
+    const EditorFrameInput*               currentEditor     = nullptr;
+    const RenderData*                     currentRenderData = nullptr;
     ImageHandle                          swapchainImage;
 
     template <class T>

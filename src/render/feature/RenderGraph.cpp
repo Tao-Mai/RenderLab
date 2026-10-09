@@ -51,8 +51,9 @@ void RenderGraph::releaseResources() noexcept
 void RenderGraph::reset() noexcept
 {
     releaseResources();
-    renderer      = nullptr;
-    currentEditor = nullptr;
+    renderer          = nullptr;
+    currentEditor     = nullptr;
+    currentRenderData = nullptr;
 }
 
 void RenderGraph::compile()
@@ -231,14 +232,16 @@ void RenderGraph::transitionResources(const std::vector<ResourceUse>& uses)
         useResource(use);
 }
 
-void RenderGraph::execute(const EditorFrameInput& editor, uint32_t frameIndex, uint32_t imageIndex)
+void RenderGraph::execute(
+    const RenderData& renderData, const EditorFrameInput& editor, uint32_t frameIndex, uint32_t imageIndex)
 {
     DCHECK(!sortedNodes.empty());
 
     // TODO
-    currentFrame  = frameIndex;
-    currentImage  = imageIndex;
-    currentEditor = &editor;
+    currentFrame      = frameIndex;
+    currentImage      = imageIndex;
+    currentEditor     = &editor;
+    currentRenderData = &renderData;
     for (Resource& entry : resources)
     {
         if (!entry.data)
@@ -262,13 +265,13 @@ void RenderGraph::execute(const EditorFrameInput& editor, uint32_t frameIndex, u
     }
 
     vkCheck(commands().end());
-    currentEditor = nullptr;
+    currentEditor     = nullptr;
+    currentRenderData = nullptr;
 }
 
 VulkanContext&           RenderGraph::vulkan() const { return renderer->vulkan; }
 Swapchain&               RenderGraph::swapchain() const { return renderer->swapchain; }
 FrameData&               RenderGraph::frameData(uint32_t index) const { return renderer->frames.at(index).data; }
-const RenderData&        RenderGraph::renderData() const { return renderer->renderSystem.renderData(); }
 const LightMarkers&      RenderGraph::lightMarkers() const { return renderer->lightMarkers; }
 vk::raii::CommandBuffer& RenderGraph::commands() const
 {
