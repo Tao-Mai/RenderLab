@@ -4,6 +4,7 @@
 #include "render/DescriptorManager.h"
 #include "render/device/VkCheck.h"
 #include "render/resource/ShaderData.h"
+#include "render/feature/editor/EditorShaderData.h"
 #include "render/resource/VertexLayout.h"
 
 #include <array>
@@ -109,6 +110,18 @@ void PipelineManager::init(
     };
     sceneOnlyLayout = vkCheck(device->createPipelineLayout(sceneOnlyInfo));
 
+    const auto viewSet = descriptors.layout(DescriptorLayoutPreset::View);
+    const vk::PushConstantRange editorPushRange{
+        .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+        .size = sizeof(EditorLightMarkerPushConstants),
+    };
+    editorLayout = vkCheck(device->createPipelineLayout({
+        .setLayoutCount = 1,
+        .pSetLayouts = &viewSet,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &editorPushRange,
+    }));
+
     const auto toneMappingSet = descriptors.layout(DescriptorLayoutPreset::ToneMapping);
     const vk::PushConstantRange toneMappingPushRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
@@ -128,6 +141,7 @@ void PipelineManager::shutdown() noexcept
     pipelines.clear();
     pipelineCache       = nullptr;
     sceneOnlyLayout     = nullptr;
+    editorLayout        = nullptr;
     toneMappingLayout   = nullptr;
     sceneMaterialLayout = nullptr;
     descriptors         = nullptr;
@@ -141,6 +155,7 @@ vk::PipelineLayout PipelineManager::layout(PipelineLayoutPreset preset) const
     {
         case PipelineLayoutPreset::SceneMaterial: return *sceneMaterialLayout;
         case PipelineLayoutPreset::SceneOnly: return *sceneOnlyLayout;
+        case PipelineLayoutPreset::Editor: return *editorLayout;
         case PipelineLayoutPreset::ToneMapping: return *toneMappingLayout;
     }
     LOG_FATAL("invalid pipeline layout preset");
@@ -156,7 +171,10 @@ vk::Pipeline PipelineManager::getOrCreate(const PipelineKey& key)
     const ShaderMetadata& metadata = shaders->metadata(key.shader);
     for (const ShaderMetadata::Binding& binding : metadata.bindings)
     {
-        const bool supported = key.layout == PipelineLayoutPreset::ToneMapping
+        const bool supported = key.layout == PipelineLayoutPreset::Editor
+            ? binding.set == EditorInterface::kViewSet && descriptors->containsBinding(
+                DescriptorLayoutPreset::View, binding.binding, binding.type)
+            : key.layout == PipelineLayoutPreset::ToneMapping
             ? binding.set == 0 && descriptors->containsBinding(
                 DescriptorLayoutPreset::ToneMapping, binding.binding, binding.type)
             : binding.set == RenderInterface::kSceneSet

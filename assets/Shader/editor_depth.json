@@ -1,0 +1,6 @@
+{
+    "id": {
+        "value": "editor_depth"
+    },
+    "binary": "shaders/editor_depth.spv"
+}

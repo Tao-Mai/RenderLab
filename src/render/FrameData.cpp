@@ -151,6 +151,7 @@ void FrameData::init(const VulkanContext& targetVulkan, DescriptorManager& descr
     );
     directionalShadows.reserve(kMaxDirectionalLightShadow);
     sceneSet = descriptors.allocate(DescriptorLayoutPreset::Scene);
+    viewSet = descriptors.allocate(DescriptorLayoutPreset::View);
     bindBuffers();
 }
 
@@ -165,6 +166,13 @@ void FrameData::bindBuffers()
         vk::DescriptorBufferInfo{.buffer = directionalShadowBuffer.handle(), .range = directionalShadowBuffer.size()},
     };
     const std::array writes = {
+        vk::WriteDescriptorSet{
+            .dstSet          = *viewSet,
+            .dstBinding      = RenderInterface::kViewUniformBinding,
+            .descriptorCount = 1,
+            .descriptorType  = vk::DescriptorType::eUniformBuffer,
+            .pBufferInfo     = &infos[0]
+        },
         vk::WriteDescriptorSet{
             .dstSet          = *sceneSet,
             .dstBinding      = RenderInterface::kViewUniformBinding,
@@ -214,6 +222,7 @@ void FrameData::bindBuffers()
 void FrameData::reset() noexcept
 {
     sceneSet = nullptr;
+    viewSet = nullptr;
     viewBuffer.reset();
     lightUniformBuffer.reset();
     lightBuffer.reset();

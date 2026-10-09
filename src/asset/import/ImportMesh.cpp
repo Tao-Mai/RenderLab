@@ -159,6 +159,58 @@ void registerMaterials(
         material.alphaMode   = source.alphaMode;
         material.alphaCutoff = static_cast<float>(source.alphaCutoff);
         material.doubleSided = source.doubleSided;
+
+        if (const auto extension = source.extensions.find("KHR_materials_clearcoat");
+            extension != source.extensions.end())
+        {
+            const auto& value = extension->second;
+            CHECK(value.IsObject(), "invalid clearcoat material in '{}'", meshSource.string());
+            const auto readFactor = [&](const char* name, float defaultValue, float maximum)
+            {
+                if (!value.Has(name))
+                    return defaultValue;
+                const auto& field = value.Get(name);
+                CHECK(field.IsNumber(), "invalid clearcoat '{}' in '{}'", name, meshSource.string());
+                const float result = static_cast<float>(field.GetNumberAsDouble());
+                CHECK(std::isfinite(result) && result >= 0.0f && result <= maximum,
+                      "invalid clearcoat '{}' value {} in '{}'", name, result, meshSource.string());
+                return result;
+            };
+            const auto readTexture = [&](const char* name)
+            {
+                if (!value.Has(name))
+                    return std::optional<TextureBinding>{};
+                const auto& info = value.Get(name);
+                CHECK(info.IsObject() && info.Has("index") && info.Get("index").IsInt(),
+                      "invalid clearcoat texture '{}' in '{}'", name, meshSource.string());
+                const int index = info.Get("index").GetNumberAsInt();
+                CHECK(index >= 0 && index < static_cast<int>(model.textures.size()),
+                      "invalid clearcoat texture index {} in '{}'", index, meshSource.string());
+                CHECK(!info.Has("texCoord") || (info.Get("texCoord").IsInt() &&
+                      info.Get("texCoord").GetNumberAsInt() == 0),
+                      "clearcoat textures require TEXCOORD_0: {}", meshSource.string());
+                return bindTexture(textureIdFor(build, model, index, modelDirectory, ColorSpace::Linear));
+            };
+
+            MaterialAsset::Clearcoat clearcoat{
+                .factor = readFactor("clearcoatFactor", 0.0f, 1.0f),
+                .roughnessFactor = readFactor("clearcoatRoughnessFactor", 0.0f, 1.0f),
+                .texture = readTexture("clearcoatTexture"),
+                .roughnessTexture = readTexture("clearcoatRoughnessTexture"),
+                .normalTexture = readTexture("clearcoatNormalTexture"),
+            };
+            if (value.Has("clearcoatNormalTexture"))
+            {
+                const auto& normal = value.Get("clearcoatNormalTexture");
+                if (normal.Has("scale"))
+                {
+                    CHECK(normal.Get("scale").IsNumber());
+                    clearcoat.normalScale = static_cast<float>(normal.Get("scale").GetNumberAsDouble());
+                    CHECK(std::isfinite(clearcoat.normalScale) && clearcoat.normalScale >= 0.0f);
+                }
+            }
+            material.clearcoat = std::move(clearcoat);
+        }
         build.materialIds.push_back(
             context().assetManager->save<MaterialAsset>(std::move(material)));
     }

@@ -10,6 +10,7 @@
 #include "render/PipelineManager.h"
 #include "render/ShaderManager.h"
 #include "render/feature/RenderGraph.h"
+#include "render/feature/editor/LightMarkers.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/RenderResourceManager.h"
 #include "scene/system/RenderSystem.h"
@@ -73,6 +74,7 @@ private:
     std::array<FrameContext, maxFramesInFlight> frames;
     uint32_t                                  frameIndex = 0;
     RenderSystem                              renderSystem;
+    LightMarkers                              lightMarkers;
     RenderGraph                               graph;
     std::shared_ptr<Passes>                    passes;
     RenderGraph::BufferHandle                  pickingReadback;

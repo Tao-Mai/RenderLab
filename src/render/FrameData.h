@@ -32,6 +32,7 @@ public:
     [[nodiscard]] std::span<const RectAreaShadowData>    rectAreaShadowData() const { return rectAreaShadows; }
     [[nodiscard]] std::span<const DirectionalShadowData> directionalShadowData() const { return directionalShadows; }
     [[nodiscard]] vk::DescriptorSet                      sceneSetHandle() const;
+    [[nodiscard]] vk::DescriptorSet                      viewSetHandle() const { return *viewSet; }
 
 private:
     const VulkanContext*               vulkan = nullptr;
@@ -48,6 +49,7 @@ private:
     Buffer                             rectAreaShadowBuffer;
     Buffer                             directionalShadowBuffer;
     vk::raii::DescriptorSet            sceneSet = nullptr;
+    vk::raii::DescriptorSet            viewSet = nullptr;
 
     void bindBuffers();
 };

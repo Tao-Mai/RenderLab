@@ -31,9 +31,6 @@ void RenderSystem::load(const SceneAsset& scene, RenderResourceManager& resource
         if (actor->getComponent<LightComponent>())
             data.lightObjects.push_back({actor.get(), selectionId});
     }
-
-    if (!data.lightObjects.empty())
-        markers.init(resources);
 }
 
 void RenderSystem::prepare(const glm::vec3& cameraPosition, RenderResourceManager& resources)
@@ -41,7 +38,6 @@ void RenderSystem::prepare(const glm::vec3& cameraPosition, RenderResourceManage
     data.drawItems.clear();
     data.opaqueDrawItems.clear();
     data.transparentDrawItems.clear();
-    data.lightDrawItems.clear();
     data.lights.clear();
 
     for (const RenderObject& object : data.objects)
@@ -103,14 +99,10 @@ void RenderSystem::prepare(const glm::vec3& cameraPosition, RenderResourceManage
                 light->castShadow ? 1u : 0u, 0u},
             .areaRightData = {glm::normalize(transform->rotation * glm::vec3{1.0f, 0.0f, 0.0f}), 0.0f},
         });
-
-        const auto draws = markers.buildDrawItems(*transform, *light, object.selectionId);
-        data.lightDrawItems.insert(data.lightDrawItems.end(), draws.begin(), draws.end());
     }
 }
 
 void RenderSystem::reset() noexcept
 {
     data = {};
-    markers.reset();
 }

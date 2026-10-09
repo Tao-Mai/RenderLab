@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include "render/feature/LightMarkers.h"
 #include "render/resource/ShaderData.h"
 
 #include <cstdint>
@@ -50,7 +49,6 @@ struct RenderData
     std::vector<DrawItem> drawItems;
     std::vector<DrawItem> opaqueDrawItems;
     std::vector<DrawItem> transparentDrawItems;
-    std::vector<LightMarkers::DrawItem> lightDrawItems;
     std::vector<LightData> lights;
 };
 
@@ -62,9 +60,7 @@ public:
     void reset() noexcept;
 
     [[nodiscard]] const RenderData& renderData() const { return data; }
-    [[nodiscard]] const LightMarkers& lightMarkers() const { return markers; }
 
 private:
     RenderData data;
-    LightMarkers markers;
 };

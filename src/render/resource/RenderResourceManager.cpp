@@ -217,13 +217,23 @@ GpuMaterial& RenderResourceManager::material(const MaterialAsset& asset)
         .emissive = loadTexture(asset.emissiveTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb),
         .occlusion = loadTexture(asset.aoTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
     };
+    if (asset.clearcoat)
+    {
+        const auto& clearcoat = *asset.clearcoat;
+        textures.clearcoat = GpuMaterial::Textures::Clearcoat{
+            .factor = loadTexture(clearcoat.texture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+            .roughness = loadTexture(clearcoat.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+            .normal = loadTexture(clearcoat.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear),
+        };
+    }
 
     auto                     gpu       = std::make_unique<GpuMaterial>();
     gpu->create(
         vulkan->physicalDeviceHandle(),
         vulkan->deviceHandle(),
         *descriptors,
-        shaders->getOrLoad(asset.shaderId.value_or("scene")),
+        shaders->getOrLoad(asset.shaderId.value_or("scene"),
+            asset.clearcoat ? ShaderVariant::Clearcoat : ShaderVariant::Default),
         asset,
         std::move(textures));
     return *materials.emplace(key, std::move(gpu)).first->second;

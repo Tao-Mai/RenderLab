@@ -1,0 +1,6 @@
+{
+    "id": {
+        "value": "editor_light_marker"
+    },
+    "binary": "shaders/editor_light_marker.spv"
+}

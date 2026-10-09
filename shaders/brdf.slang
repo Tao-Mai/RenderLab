@@ -1,5 +1,9 @@
 #include "constant.slang"
 
+#ifndef ENABLE_CLEARCOAT
+#error ENABLE_CLEARCOAT must be specified when compiling the scene shader
+#endif
+
 // Keep the analytical-light GGX lobe finite at zero perceptual roughness (FP32).
 static const float kMinDirectRoughness = 0.045;
 static const float kMinBrdfDenominator = 1e-6;
@@ -33,19 +37,20 @@ float3 evaluateDirectBrdf(
     float3 baseColor,
     float metallic,
     float roughness,
-    float3 normal,
-    float3 viewDirection,
-    float3 lightDirection)
+    float3 N,
+    float3 V,
+    float3 L
+)
 {
-    float nDotV = saturate(dot(normal, viewDirection));
-    float nDotL = saturate(dot(normal, lightDirection));
+    float nDotV = saturate(dot(N, V));
+    float nDotL = saturate(dot(N, L));
     if (nDotV <= 0.0 || nDotL <= 0.0)
         return float3(0.0);
 
     roughness = max(roughness, kMinDirectRoughness);
-    float3 halfDirection = normalize(viewDirection + lightDirection);
-    float nDotH = saturate(dot(normal, halfDirection));
-    float vDotH = saturate(dot(viewDirection, halfDirection));
+    float3 H = normalize(V + L);
+    float nDotH = saturate(dot(N, H));
+    float vDotH = saturate(dot(V, H));
     float3 f0 = lerp(float3(0.04), baseColor, metallic);
     float3 fresnel = fresnelSchlick(f0, vDotH);
     float distribution = normalDistributionGgx(roughness, nDotH);
@@ -56,3 +61,26 @@ float3 evaluateDirectBrdf(
     return diffuse + specular;
 }
 
+#if ENABLE_CLEARCOAT
+// Air / clearcoat interface with IOR 1.5; the base material keeps its own F0.
+static const float kClearcoatF0 = 0.04;
+
+float kelemenVisibility(float lDotH)
+{
+    return 0.25 / max(lDotH * lDotH, kMinBrdfDenominator);
+}
+
+// GGX D * Kelemen V only. The caller applies the glTF Fresnel layer weight and
+// this layer's own NdotL, rather than the base normal's cosine.
+float evaluateClearcoatBrdf(float roughness, float3 normal, float3 V, float3 L)
+{
+    if (dot(normal, V) <= 0.0 || dot(normal, L) <= 0.0)
+        return 0.0;
+
+    roughness = max(roughness, kMinDirectRoughness);
+    float3 H = normalize(V + L);
+    float nDotH = saturate(dot(normal, H));
+    float lDotH = saturate(dot(L, H));
+    return normalDistributionGgx(roughness, nDotH) * kelemenVisibility(lDotH);
+}
+#endif

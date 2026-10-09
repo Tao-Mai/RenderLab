@@ -56,6 +56,12 @@ inline constexpr uint32_t kMaterialEmissiveImageBinding   = 9;
 inline constexpr uint32_t kMaterialEmissiveSamplerBinding = 10;
 inline constexpr uint32_t kMaterialOcclusionImageBinding   = 11;
 inline constexpr uint32_t kMaterialOcclusionSamplerBinding = 12;
+inline constexpr uint32_t kMaterialClearcoatImageBinding = 13;
+inline constexpr uint32_t kMaterialClearcoatSamplerBinding = 14;
+inline constexpr uint32_t kMaterialClearcoatRoughnessImageBinding = 15;
+inline constexpr uint32_t kMaterialClearcoatRoughnessSamplerBinding = 16;
+inline constexpr uint32_t kMaterialClearcoatNormalImageBinding = 17;
+inline constexpr uint32_t kMaterialClearcoatNormalSamplerBinding = 18;
 
 // Tone mapping uses its own set 0, not the scene layout.
 inline constexpr uint32_t kToneMappingImageBinding = 0;
@@ -168,6 +174,11 @@ struct alignas(16) MaterialUniforms
     float     padding1 = 0.0f;
     float     padding2 = 0.0f;
     glm::vec4 emissiveFactor{0.0f};
+    // Optional shader-variant tail; ordinary materials only upload the prefix.
+    float clearcoatFactor = 0.0f;
+    float clearcoatRoughnessFactor = 0.0f;
+    float clearcoatNormalScale = 1.0f;
+    float clearcoatPadding = 0.0f;
 };
 
 static_assert(sizeof(ViewUniforms) == 208);
@@ -196,7 +207,10 @@ static_assert(offsetof(RectAreaShadowData, worldToUvScale) == 72);
 static_assert(sizeof(CascadeShadowData) == 80);
 static_assert(offsetof(CascadeShadowData, depthUpperBound) == 64);
 static_assert(sizeof(DirectionalShadowData) == kMaxDirectionalShadowCascades * sizeof(CascadeShadowData));
-static_assert(sizeof(MaterialUniforms) == 64);
+static_assert(sizeof(MaterialUniforms) == 80);
+static_assert(offsetof(MaterialUniforms, clearcoatFactor) == 64);
+static_assert(offsetof(MaterialUniforms, clearcoatRoughnessFactor) == 68);
+static_assert(offsetof(MaterialUniforms, clearcoatNormalScale) == 72);
 static_assert(offsetof(MaterialUniforms, roughness) == 16);
 static_assert(offsetof(MaterialUniforms, metallic) == 20);
 static_assert(offsetof(MaterialUniforms, alphaCutoff) == 24);
@@ -219,21 +233,6 @@ struct ShadowPushConstants
     uint32_t  padding2 = 0;
 };
 
-struct LightPushConstants
-{
-    glm::mat4 model{1.0f};
-    glm::vec4 color{1.0f};
-};
-
-struct EditorPickingPushConstants
-{
-    glm::mat4 model{1.0f};
-    uint32_t  selectionId = 0;
-    uint32_t  padding0    = 0;
-    uint32_t  padding1    = 0;
-    uint32_t  padding2    = 0;
-};
-
 struct SkyboxPushConstants
 {
     glm::vec4 viewport{0.0f};
@@ -251,8 +250,6 @@ static_assert(sizeof(MeshPushConstants) == 64);
 static_assert(sizeof(ShadowPushConstants) == 80);
 static_assert(offsetof(ShadowPushConstants, lightIdx) == 64);
 static_assert(offsetof(ShadowPushConstants, cascadeIndex) == 68);
-static_assert(sizeof(LightPushConstants) == 80);
-static_assert(sizeof(EditorPickingPushConstants) == 80);
 static_assert(sizeof(SkyboxPushConstants) == 16);
 static_assert(sizeof(ToneMappingPushConstants) == 16);
 static_assert(offsetof(ToneMappingPushConstants, mode) == 4);

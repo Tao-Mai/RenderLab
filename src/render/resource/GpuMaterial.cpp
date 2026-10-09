@@ -4,8 +4,8 @@
 #include "render/resource/ShaderData.h"
 #include "core/Logger.h"
 
-#include <array>
 #include <utility>
+#include <vector>
 
 void GpuMaterial::create(
     const vk::raii::PhysicalDevice& physicalDevice,
@@ -31,17 +31,19 @@ void GpuMaterial::create(
         mode = RenderMode::Transparent;
     }
     pipelineState = PipelineState::preset(mode);
-    if (material.doubleSided == false)
-    {
-        pipelineState.cullMode = vk::CullModeFlagBits::eBack;
-    }
+    pipelineState.cullMode = material.doubleSided.value_or(true)
+        ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack;
 
     textures = std::move(materialTextures);
     colorFactor = material.baseColorFactor.value_or(glm::vec4{1.0f});
+    DCHECK(material.clearcoat.has_value() == textures.clearcoat.has_value());
+    const auto clearcoat = material.clearcoat.value_or(MaterialAsset::Clearcoat{});
+    const size_t uniformSize = material.clearcoat
+        ? sizeof(MaterialUniforms) : offsetof(MaterialUniforms, clearcoatFactor);
     materialBuffer = std::make_shared<Buffer>(
         physicalDevice,
         device,
-        sizeof(MaterialUniforms),
+        uniformSize,
         vk::BufferUsageFlagBits::eUniformBuffer,
         vk::MemoryPropertyFlagBits::eHostVisible |
             vk::MemoryPropertyFlagBits::eHostCoherent);
@@ -55,15 +57,18 @@ void GpuMaterial::create(
         .normalScale = material.normalScale.value_or(1.0f),
         .occlusionStrength = material.ao.value_or(1.0f),
         .emissiveFactor = glm::vec4(material.emissive.value_or(glm::vec3{0.0f}), 0.0f),
+        .clearcoatFactor = clearcoat.factor,
+        .clearcoatRoughnessFactor = clearcoat.roughnessFactor,
+        .clearcoatNormalScale = clearcoat.normalScale,
     };
-    materialBuffer->upload(&materialData, sizeof(materialData));
+    materialBuffer->upload(&materialData, uniformSize);
 
     descriptorSet = descriptors.allocate(DescriptorLayoutPreset::Material);
 
     const vk::DescriptorBufferInfo materialBufferInfo{
         .buffer = materialBuffer->handle(),
         .offset = 0,
-        .range = sizeof(MaterialUniforms),
+        .range = uniformSize,
     };
     struct TextureDescriptor
     {
@@ -71,7 +76,7 @@ void GpuMaterial::create(
         uint32_t samplerBinding;
         const Texture* texture;
     };
-    const std::array bindings = {
+    std::vector bindings = {
         TextureDescriptor{RenderInterface::kMaterialImageBinding,
                        RenderInterface::kMaterialSamplerBinding, &textures.baseColor},
         TextureDescriptor{RenderInterface::kMaterialNormalImageBinding,
@@ -85,9 +90,18 @@ void GpuMaterial::create(
         TextureDescriptor{RenderInterface::kMaterialOcclusionImageBinding,
                        RenderInterface::kMaterialOcclusionSamplerBinding, &textures.occlusion},
     };
-    std::array<vk::DescriptorImageInfo, bindings.size()> images;
-    std::array<vk::DescriptorImageInfo, bindings.size()> samplers;
-    std::array<vk::WriteDescriptorSet, bindings.size() * 2 + 1> writes;
+    if (textures.clearcoat)
+    {
+        bindings.push_back({RenderInterface::kMaterialClearcoatImageBinding,
+                            RenderInterface::kMaterialClearcoatSamplerBinding, &textures.clearcoat->factor});
+        bindings.push_back({RenderInterface::kMaterialClearcoatRoughnessImageBinding,
+                            RenderInterface::kMaterialClearcoatRoughnessSamplerBinding, &textures.clearcoat->roughness});
+        bindings.push_back({RenderInterface::kMaterialClearcoatNormalImageBinding,
+                            RenderInterface::kMaterialClearcoatNormalSamplerBinding, &textures.clearcoat->normal});
+    }
+    std::vector<vk::DescriptorImageInfo> images(bindings.size());
+    std::vector<vk::DescriptorImageInfo> samplers(bindings.size());
+    std::vector<vk::WriteDescriptorSet> writes(bindings.size() * 2 + 1);
     for (size_t index = 0; index < bindings.size(); ++index)
     {
         const auto& binding = bindings[index];

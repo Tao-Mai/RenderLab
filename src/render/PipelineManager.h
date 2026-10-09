@@ -16,7 +16,7 @@ enum class RenderMode
     PostProcess, LightMarker, Picking,
 };
 
-enum class PipelineLayoutPreset { SceneMaterial, SceneOnly, ToneMapping };
+enum class PipelineLayoutPreset { SceneMaterial, SceneOnly, Editor, ToneMapping };
 enum class VertexLayoutPreset { Mesh, PositionOnly, PositionUv, None };
 
 struct PipelineState
@@ -69,6 +69,7 @@ private:
     ShaderManager* shaders = nullptr;
     vk::raii::PipelineLayout sceneMaterialLayout = nullptr;
     vk::raii::PipelineLayout sceneOnlyLayout = nullptr;
+    vk::raii::PipelineLayout editorLayout = nullptr;
     vk::raii::PipelineLayout toneMappingLayout = nullptr;
     vk::raii::PipelineCache pipelineCache = nullptr;
     std::unordered_map<PipelineKey, vk::raii::Pipeline, PipelineKeyHash> pipelines;

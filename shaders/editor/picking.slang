@@ -1,4 +1,4 @@
-#include "../scene_data.slang"
+#include "view.slang"
 
 struct VertexInput
 {
@@ -27,8 +27,9 @@ ConstantBuffer<PushConstants> pushConstants;
 VertexOutput vertMain(VertexInput input)
 {
     VertexOutput output;
-    float4 worldPosition = mul(pushConstants.model, float4(input.position, 1.0));
-    output.position = mul(viewUniforms.viewProjection, worldPosition);
+    precise float4 worldPosition = mul(pushConstants.model, float4(input.position, 1.0));
+    precise float4 clipPosition = mul(editorView.viewProjection, worldPosition);
+    output.position = clipPosition;
     return output;
 }
 

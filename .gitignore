@@ -6,5 +6,9 @@ scripts/
 .cache
 .idea
 assets/binary/
-assets
+assets/*
+!assets/Shader/
+assets/Shader/*
+!assets/Shader/editor_light_marker.json
+!assets/Shader/editor_depth.json
 resource/

@@ -29,7 +29,6 @@ private:
     void                     draw(vk::raii::CommandBuffer& commandBuffer, const DrawItem& item) const;
     RenderGraph::ImageHandle depth;
     RenderGraph::ImageHandle pickingImage;
-    bool                     ownsDepth = false;
     PipelineManager*         pipelines = nullptr;
     ShaderHandle             shader;
     vk::PipelineLayout       pipelineLayout;

@@ -269,7 +269,7 @@ VulkanContext&           RenderGraph::vulkan() const { return renderer->vulkan; 
 Swapchain&               RenderGraph::swapchain() const { return renderer->swapchain; }
 FrameData&               RenderGraph::frameData(uint32_t index) const { return renderer->frames.at(index).data; }
 const RenderData&        RenderGraph::renderData() const { return renderer->renderSystem.renderData(); }
-const LightMarkers&      RenderGraph::lightMarkers() const { return renderer->renderSystem.lightMarkers(); }
+const LightMarkers&      RenderGraph::lightMarkers() const { return renderer->lightMarkers; }
 vk::raii::CommandBuffer& RenderGraph::commands() const
 {
     return renderer->frames.at(currentFrame).commandBufferHandle();

@@ -4,10 +4,9 @@
 #include "render/PipelineManager.h"
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
-#include "render/feature/LightMarkers.h"
+#include "render/feature/editor/EditorShaderData.h"
+#include "render/feature/editor/LightMarkers.h"
 #include "render/present/Swapchain.h"
-#include "render/resource/ShaderData.h"
-#include "scene/system/RenderSystem.h"
 
 #include <algorithm>
 #include <array>
@@ -36,23 +35,23 @@ LightMarkerPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle,
         }
     );
 
-    shader          = renderContext().shaderManager->getOrLoad("light");
+    shader          = renderContext().shaderManager->getOrLoad("editor_light_marker");
     auto& pipelines = *renderContext().pipelineManager;
     pipeline        = pipelines.getOrCreate({
                .shader      = shader,
-               .layout      = PipelineLayoutPreset::SceneMaterial,
+               .layout      = PipelineLayoutPreset::Editor,
                .state       = PipelineState::preset(RenderMode::LightMarker),
                .colorFormat = graph.imageInfo(color).format,
                .depthFormat = vk::Format::eD32Sfloat,
     });
-    pipelineLayout  = pipelines.layout(PipelineLayoutPreset::SceneMaterial);
+    pipelineLayout  = pipelines.layout(PipelineLayoutPreset::Editor);
 
     return {color, depth};
 }
 
 void LightMarkerPass::execute(RenderGraph& graph) const
 {
-    const auto& lightDrawItems = graph.renderData().lightDrawItems;
+    const auto lightDrawItems = graph.lightMarkers().drawItems();
     if (lightDrawItems.empty())
         return;
 
@@ -113,9 +112,9 @@ void LightMarkerPass::execute(RenderGraph& graph) const
     );
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sceneSets = {graph.frameData(graph.frameIndex()).sceneSetHandle()};
+    const std::array viewSets = {graph.frameData(graph.frameIndex()).viewSetHandle()};
     commandBuffer
-        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, RenderInterface::kSceneSet, sceneSets, {});
+        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, EditorInterface::kViewSet, viewSets, {});
     graph.lightMarkers().record(commandBuffer, pipelineLayout, lightDrawItems);
 
     commandBuffer.endRendering();

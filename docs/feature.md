@@ -14,6 +14,8 @@
 - glTF Metallic-Roughness PBR：Base Color、Metallic、Roughness、Normal、AO、Emissive。
 - 直接光 BRDF：GGX、Schlick Fresnel、Smith 可见性、Lambert 漫反射。
 - 法线贴图：MikkTSpace 切线、TBN 变换、可调 Normal Scale。
+- 双面材质：编辑器勾选、关闭背面剔除、背面法线翻转；深度预通道跟随材质剔除设置。
+- Clearcoat：三类贴图、独立法线 / 粗糙度、GGX + Kelemen 清漆层、Fresnel 分层、IBL 高光与底层自发光衰减；编辑器调节强度、粗糙度与法线强度。
 - AO 贴图与强度：仅作用于环境光；自发光使用贴图与颜色系数。
 - 缺失贴图绑定 fallback 纹理；支持每个 Submesh 的材质覆盖与重置。
 - 点光源：距离平方衰减、照射范围；方向光：固定方向照明。
@@ -70,7 +72,7 @@
 - 按继承关系创建 Actor；支持删除、原地重命名与默认名称编号。
 - Transform 数值编辑与 ImGuizmo 局部移动 / 旋转 / 缩放，W / E / R 切换工具。
 - 按光源类型显示对应参数；矩形面光源显示 Radiance。
-- 光源标记：点光源 / Spot 小球、矩形面光源薄盒、方向光箭头。
+- 光源标记：点光源 / Spot 小球、矩形面光源薄盒、方向光箭头；独立编辑器 shader，在 Tone Mapping 后、拾取前叠加，光栅和光追共用编辑器标记逻辑。
 - 编辑网格、Submesh 材质覆盖、相机、渲染路线、IBL、HDR 与阴影参数。
 - 相机右键控制视角，WASD + Q / E 移动，Shift 加速，滚轮调整 FOV；V 切换隐藏鼠标自由模式。
 - 可配置移动速度、灵敏度、FOV、Near / Far 与输入绑定；忽略 Caps Lock / Num Lock，Esc 退出。

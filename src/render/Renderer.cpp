@@ -15,11 +15,14 @@
 #include "render/feature/DepthPrepass.h"
 #include "render/feature/shadow/ShadowPass.h"
 #include "render/feature/ScenePass.h"
+#include "render/feature/SkyboxPass.h"
+#include "render/feature/TransparentPass.h"
 #include "render/feature/postprocess/ToneMappingPass.h"
 #include "render/feature/editor/EditorPickingCopyPass.h"
 #include "render/feature/editor/EditorPickingPass.h"
 #include "render/feature/editor/EditorUiPass.h"
 #include "render/feature/editor/LightMarkerPass.h"
+#include "render/feature/editor/EditorDepthPass.h"
 #include "render/raytracing/RayTracingBlitPass.h"
 #include "render/raytracing/RayTracingPass.h"
 #include "render/resource/Buffer.h"
@@ -36,10 +39,13 @@ struct Renderer::Passes
         ShadowPass,
         DepthPrepass,
         ScenePass,
+        SkyboxPass,
+        TransparentPass,
         LightMarkerPass,
         ToneMappingPass,
         RayTracingPass,
         RayTracingBlitPass,
+        EditorDepthPass,
         EditorPickingPass,
         EditorPickingCopyPass,
         EditorUiPass,
@@ -89,6 +95,7 @@ void Renderer::loadScene()
     DCHECK(context().sceneManager);
     const auto& targetScene = context().sceneManager->scene();
     renderSystem.load(targetScene, *renderContext().resources);
+    lightMarkers.load(targetScene, *renderContext().resources);
     iblParameters              = {};
     const auto& environmentMap = context().config->rendererConfig().environmentMap;
     if (environmentMap)
@@ -119,6 +126,7 @@ void Renderer::shutdown() noexcept
     }
 
     renderSystem.reset();
+    lightMarkers.reset();
     graph.reset();
     passes.reset();
     pickingReadback = {};
@@ -184,6 +192,7 @@ void Renderer::setupRenderGraph()
     {
         const auto [rayImage] = setupPass<RayTracingPass>();
         sceneColor            = setupPass<RayTracingBlitPass>(rayImage, color).color;
+        sceneDepth            = setupPass<EditorDepthPass>().depth;
     }
     else
     {
@@ -191,16 +200,21 @@ void Renderer::setupRenderGraph()
         if (config.feature.shadow.enable)
             shadow = setupPass<ShadowPass>();
 
-        const auto depth   = setupPass<DepthPrepass>();
-        const auto scene   = setupPass<ScenePass>(depth.depth, shadow);
-        const auto markers = setupPass<LightMarkerPass>(scene.color, scene.depth);
-        sceneColor = config.feature.hdr ? setupPass<ToneMappingPass>(markers.color, color).color : markers.color;
-        sceneDepth = markers.depth;
+        const auto depth = setupPass<DepthPrepass>();
+        auto scene = setupPass<ScenePass>(depth.depth, shadow);
+
+        if (config.feature.ibl && config.environmentMap)
+            scene.color = setupPass<SkyboxPass>(scene.color, scene.depth).color;
+
+        const auto transparent = setupPass<TransparentPass>(scene.color, scene.depth, scene.shadow);
+        sceneColor = config.feature.hdr ? setupPass<ToneMappingPass>(transparent.color, color).color : transparent.color;
+        sceneDepth = scene.depth;
     }
 
-    const auto [pickingImage] = setupPass<EditorPickingPass>(sceneDepth);
+    const auto markers = setupPass<LightMarkerPass>(sceneColor, sceneDepth);
+    const auto [pickingImage] = setupPass<EditorPickingPass>(markers.depth);
     const auto [readback]     = setupPass<EditorPickingCopyPass>(pickingImage);
-    const auto [finalColor]   = setupPass<EditorUiPass>(sceneColor);
+    const auto [finalColor]   = setupPass<EditorUiPass>(markers.color);
     setupPass<EndPass>(finalColor, readback);
     pickingReadback = readback;
 
@@ -241,6 +255,7 @@ void Renderer::recreateSwapchain()
 void Renderer::updateFrameData(const EditorCamera& camera, const EditorFrameInput& editor)
 {
     renderSystem.prepare(camera.worldPosition(), *renderContext().resources);
+    lightMarkers.prepare();
 
     const glm::mat4    viewMatrix     = camera.viewMatrix();
     const glm::mat4    viewProjection = camera.projectionMatrix(editor.aspectRatio) * viewMatrix;

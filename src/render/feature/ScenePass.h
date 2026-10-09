@@ -1,16 +1,12 @@
 #pragma once
 
-#include "render/FrameData.h"
-#include "render/PipelineManager.h"
-#include "render/feature/shadow/ShadowPass.h"
 #include "render/feature/RenderGraph.h"
+#include "render/feature/shadow/ShadowPass.h"
 
 #include <memory>
 #include <vulkan/vulkan_raii.hpp>
 
-class GpuMesh;
 class RenderResourceManager;
-class Swapchain;
 class GpuTexture;
 class VulkanContext;
 class RenderGraph;
@@ -22,11 +18,12 @@ public:
     {
         RenderGraph::ImageHandle color;
         RenderGraph::ImageHandle depth;
+        ShadowPass::Output       shadow;
     };
 
     Output setup(RenderGraph& graph, RenderGraph::ImageHandle depthHandle, ShadowPass::Output shadow);
-    void bindResources(RenderGraph& graph) const;
-    void execute(RenderGraph& graph) const;
+    void   bindResources(RenderGraph& graph) const;
+    void   execute(RenderGraph& graph) const;
 
 private:
     VulkanContext*              vulkan = nullptr;
@@ -36,28 +33,13 @@ private:
     RenderGraph::ImageHandle    pointShadowMap;
     RenderGraph::ImageHandle    rectAreaShadowMap;
     RenderGraph::ImageHandle    cascadeShadowMap;
-    PipelineManager*            pipelines = nullptr;
     RenderResourceManager*      resources = nullptr;
-    ShaderHandle                sceneShader;
-    ShaderHandle                skyboxShader;
-    bool                        hasSkybox  = false;
-    bool                        iblEnabled = false;
-    vk::Pipeline                scenePipeline;
-    vk::Pipeline                skyboxPipeline;
-    vk::PipelineLayout          pipelineLayout;
-    vk::PipelineLayout          skyboxPipelineLayout;
-    vk::Format                  colorFormat = vk::Format::eUndefined;
     std::shared_ptr<GpuTexture> irradianceTexture;
     std::shared_ptr<GpuTexture> prefilteredSpecularTexture;
-    std::shared_ptr<GpuTexture> radianceTexture;
     std::shared_ptr<GpuTexture> brdfLutTexture;
     vk::Sampler                 brdfLutSampler = nullptr;
     vk::raii::Sampler           shadowSampler  = nullptr;
     vk::Filter                  shadowFilter   = vk::Filter::eLinear;
 
     void bindEnvironmentTextures();
-    void recordSkybox(
-        vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex, const SkyboxPushConstants& parameters
-    ) const;
-    void bindSceneDescriptor(vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex) const;
 };

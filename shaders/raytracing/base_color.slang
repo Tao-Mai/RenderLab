@@ -57,11 +57,6 @@ void missMain(inout Payload payload)
 void closestHitMain(inout Payload payload, BuiltInTriangleIntersectionAttributes attributes)
 {
     HitData object = objects[InstanceID()];
-    if (object.textureIndex == ~0u)
-    {
-        payload.color = object.baseColorFactor.rgb;
-        return;
-    }
     uint* indices = (uint*)object.indexAddress;
     // Matches the 48-byte Vertex layout (position, normal, texcoord, tangent).
     float* vertices = (float*)object.vertexAddress;
