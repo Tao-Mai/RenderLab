@@ -143,7 +143,8 @@ void Renderer::setupRenderGraph()
     if (rayTracing)
     {
         const auto [rayImage] = setupPass<RayTracingPass>();
-        sceneColor            = setupPass<RayTracingBlitPass>(rayImage, color).color;
+        sceneColor = config.feature.hdr ? setupPass<ToneMappingPass>(rayImage, color).color
+                                        : setupPass<RayTracingBlitPass>(rayImage, color).color;
         sceneDepth            = setupPass<EditorDepthPass>().depth;
     }
     else
@@ -203,7 +204,8 @@ RenderFrameResult Renderer::render(const RenderView& view, const RenderData& ren
         frame.data.updateView(view.uniforms);
     graph.execute(view, renderData, editor, frameIndex, imageIndex);
 
-    const vk::PipelineStageFlags waitStages = renderPath == RenderPath::RayTracing
+    const bool directBlit = renderPath == RenderPath::RayTracing && !context().config->rendererConfig().feature.hdr;
+    const vk::PipelineStageFlags waitStages = directBlit
         ? vk::PipelineStageFlagBits::eTransfer
         : vk::PipelineStageFlagBits::eColorAttachmentOutput;
     frame.submit(swapchain.renderFinishedSemaphore(imageIndex), waitStages);

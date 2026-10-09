@@ -325,6 +325,7 @@ add_custom_command(
         -o "${SHADER_BINARY_DIR}/raytracing.spv"
         DEPENDS "${SHADER_SOURCE_DIR}/raytracing/raytracing.slang"
         "${SHADER_SOURCE_DIR}/light_data.slang"
+        "${SHADER_SOURCE_DIR}/constant.slang"
         COMMENT "Compiling Slang ray tracing shader"
         VERBATIM
 )
