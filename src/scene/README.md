@@ -80,6 +80,6 @@ not retain actor references. Editor gizmos and
 picking use the same actors. The inspector draws marked fields with typed ImGui
 overloads. Transform, Light and Render have dedicated editors for Euler rotation,
 light-type-specific properties and submesh material overrides. Mesh selection
-notifies Renderer to refresh GPU scene resources; ordinary edits mark the scene
-dirty without rebuilding the scene. UI callbacks and ImGui dependencies stay in
+and other actor edits are picked up by the next RenderSystem preparation without
+rebuilding the render graph. UI callbacks and ImGui dependencies stay in
 the editor layer.

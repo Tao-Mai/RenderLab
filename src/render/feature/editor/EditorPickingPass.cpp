@@ -1,13 +1,17 @@
 #include "render/feature/editor/EditorPickingPass.h"
 
 #include "core/Logger.h"
+#include "render/FrameData.h"
+#include "render/PipelineManager.h"
 #include "render/RenderContext.h"
-#include "render/Renderer.h"
+#include "render/RenderData.h"
+#include "render/RenderView.h"
 #include "render/feature/RenderGraph.h"
+#include "render/feature/editor/EditorFrameInput.h"
 #include "render/feature/editor/EditorShaderData.h"
 #include "render/feature/editor/LightMarkers.h"
+#include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
-#include "render/RenderData.h"
 
 #include <algorithm>
 #include <array>
@@ -121,7 +125,7 @@ void EditorPickingPass::execute(RenderGraph& graph) const
         .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, EditorInterface::kViewSet, sets, {});
 
     // Match ScenePass's viewport; only the clicked pixel needs rasterization.
-    const auto&    viewport  = editor.viewport;
+    const auto&    viewport  = graph.view().viewport;
     const uint32_t viewportX = std::min(static_cast<uint32_t>(std::max(viewport.x, 0.0f)), extent.width - 1);
     const uint32_t viewportY = std::min(static_cast<uint32_t>(std::max(viewport.y, 0.0f)), extent.height - 1);
     const uint32_t width     = std::max(1u, std::min(static_cast<uint32_t>(viewport.width), extent.width - viewportX));
@@ -143,6 +147,20 @@ void EditorPickingPass::execute(RenderGraph& graph) const
     {
         draw(commandBuffer, item);
     }
-    graph.lightMarkers().recordPicking(commandBuffer, pipelineLayout, graph.lightMarkers().drawItems());
+    for (const auto& item : editor.lightDrawItems)
+    {
+        const EditorPickingPushConstants push{
+            .model       = item.model,
+            .selectionId = item.selectionId,
+        };
+        commandBuffer.pushConstants<EditorPickingPushConstants>(
+            pipelineLayout,
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            0,
+            push
+        );
+        item.mesh->bind(commandBuffer);
+        commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
+    }
     commandBuffer.endRendering();
 }

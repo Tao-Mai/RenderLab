@@ -6,9 +6,9 @@
                     {
                         "TransformComponent": {
                             "position": [
-                                -3.0807113647460938,
-                                2.3394362926483154,
-                                0.7638948559761047
+                                -1.7011680603027344,
+                                2.535170793533325,
+                                -0.42266568541526794
                             ],
                             "rotation": [
                                 0.0,
@@ -37,8 +37,8 @@
                             ],
                             "cosInner": 0.9396926164627075,
                             "cosOuter": 0.8660253882408142,
-                            "enabled": false,
-                            "intensity": 10.050000190734863,
+                            "enabled": true,
+                            "intensity": 15.050000190734863,
                             "range": 15.0,
                             "type": "Point"
                         }
@@ -224,7 +224,7 @@
                         }
                     }
                 ],
-                "name": "Cube"
+                "name": "Car"
             }
         },
         {
@@ -271,7 +271,7 @@
                         }
                     }
                 ],
-                "name": "ALight1"
+                "name": "AreaLight"
             }
         },
         {
@@ -308,41 +308,6 @@
                 ],
                 "name": "Glass Vase"
             }
-        },
-        {
-            "AStaticMesh": {
-                "components": [
-                    {
-                        "TransformComponent": {
-                            "position": [
-                                -2.0,
-                                0.5632816553115845,
-                                -3.1254513263702393
-                            ],
-                            "rotation": [
-                                0.0,
-                                0.0,
-                                0.0,
-                                1.0
-                            ],
-                            "scale": [
-                                1.0,
-                                1.0,
-                                1.0
-                            ]
-                        }
-                    },
-                    {
-                        "RenderComponent": {
-                            "materialOverrides": {},
-                            "meshId": {
-                                "value": "ToyCar"
-                            }
-                        }
-                    }
-                ],
-                "name": "Toy Car"
-            }
         }
     ],
     "editorCamera": {
@@ -350,15 +315,15 @@
         "fieldOfView": 45.0,
         "mouseSensitivity": 0.11999999731779099,
         "nearPlane": 0.10000000149011612,
-        "pitch": -25.640188217163086,
+        "pitch": -17.48007583618164,
         "position": [
-            -3.3987836837768555,
-            1.5326106548309326,
-            -4.294665813446045
+            -9.45900821685791,
+            4.785314559936523,
+            -5.531331539154053
         ],
         "speed": 5.0,
         "sprintMultiplier": 3.0,
-        "yaw": 395.2793884277344
+        "yaw": 395.1587219238281
     },
     "environment": {
         "up": [

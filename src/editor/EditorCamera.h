@@ -4,6 +4,9 @@
 
 #include <glm/mat4x4.hpp>
 
+struct RenderView;
+struct ViewportRect;
+
 class EditorCamera
 {
 public:
@@ -26,6 +29,7 @@ public:
     [[nodiscard]] glm::vec3                 up() const;
     [[nodiscard]] glm::mat4                 viewMatrix() const;
     [[nodiscard]] glm::mat4                 projectionMatrix(float aspectRatio) const;
+    [[nodiscard]] RenderView                renderView(ViewportRect viewport) const;
 
 private:
     EditorCameraConfig& data;

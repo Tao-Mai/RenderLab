@@ -2,8 +2,8 @@
 
 #include "asset/Asset.h"
 #include "asset/AssetImporter.h"
-#include "editor/ViewportRect.h"
 #include "editor/MeshImportPreview.h"
+#include "render/ViewportRect.h"
 
 #include <cstdint>
 #include <future>
@@ -25,7 +25,6 @@ public:
     {
         bool edited = false;
         bool environmentChanged = false;
-        bool resourcesChanged = false;
         bool rendererChanged = false;
     };
 

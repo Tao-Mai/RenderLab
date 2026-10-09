@@ -31,6 +31,7 @@ private:
         AccelerationStructure   tlas;
         Buffer                  instances;
         Buffer                  hitData;
+        Buffer                  lightData;
         vk::raii::DescriptorSet set           = nullptr;
         uint32_t                instanceCount = ~0u;
     };
@@ -45,6 +46,17 @@ private:
     };
     static_assert(sizeof(HitData) == 48);
 
+    struct RayTracingParameters
+    {
+        glm::mat4 inverseViewProjection;
+        glm::vec4 cameraPosition;
+        glm::vec4 viewport;
+        uint32_t  lightCount;
+        uint32_t  padding[3]{};
+    };
+    static_assert(sizeof(RayTracingParameters) == 112);
+    static_assert(offsetof(RayTracingParameters, lightCount) == 96);
+
     RenderGraph::ImageHandle                                                        rayImage;
     vk::raii::DescriptorSetLayout                                                   descriptorLayout = nullptr;
     vk::raii::DescriptorPool                                                        descriptorPool   = nullptr;
@@ -56,5 +68,6 @@ private:
     std::array<Frame, maxFramesInFlight>                                            frames;
 
     void createPipeline(RenderGraph& graph);
+    void prepareLights(RenderGraph& graph, Frame& frame) const;
     void prepareScene(RenderGraph& graph, Frame& frame);
 };

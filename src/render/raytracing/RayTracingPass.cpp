@@ -5,7 +5,8 @@
 #include "core/Vertex.h"
 #include "render/FrameData.h"
 #include "render/RenderContext.h"
-#include "render/Renderer.h"
+#include "render/RenderData.h"
+#include "render/RenderView.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/feature/RenderGraph.h"
@@ -14,13 +15,15 @@
 #include "render/resource/GpuMesh.h"
 #include "render/resource/GpuShader.h"
 #include "render/resource/RenderResourceManager.h"
-#include "render/RenderData.h"
 
 #include <algorithm>
 #include <cstring>
 
 namespace
 {
+constexpr uint32_t kRayRecursionDepth = 2;
+constexpr uint32_t kMissShaderCount   = 2;
+
 vk::DeviceSize alignUp(vk::DeviceSize value, vk::DeviceSize alignment)
 {
     return (value + alignment - 1) & ~(alignment - 1);
@@ -74,6 +77,12 @@ void RayTracingPass::createPipeline(RenderGraph& graph)
             .getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
     const auto& limits = properties.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
     CHECK(
+        limits.maxRayRecursionDepth >= kRayRecursionDepth,
+        "ray tracing visibility requires recursion depth {}, GPU supports {}",
+        kRayRecursionDepth,
+        limits.maxRayRecursionDepth
+    );
+    CHECK(
         vulkan.properties().limits.maxPerStageDescriptorSamplers >= maxTextures &&
             vulkan.properties().limits.maxPerStageDescriptorSampledImages >= maxTextures,
         "ray tracing requires {} material texture descriptors",
@@ -85,7 +94,7 @@ void RayTracingPass::createPipeline(RenderGraph& graph)
             .binding         = 0,
             .descriptorType  = vk::DescriptorType::eAccelerationStructureKHR,
             .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
+            .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR
         },
         vk::DescriptorSetLayoutBinding{
             .binding         = 1,
@@ -111,6 +120,12 @@ void RayTracingPass::createPipeline(RenderGraph& graph)
             .descriptorCount = maxTextures,
             .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
         },
+        vk::DescriptorSetLayoutBinding{
+            .binding         = 5,
+            .descriptorType  = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount = 1,
+            .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
+        },
     };
     descriptorLayout           = vkCheck(device.createDescriptorSetLayout(
         {.bindingCount = static_cast<uint32_t>(bindings.size()), .pBindings = bindings.data()}
@@ -121,7 +136,7 @@ void RayTracingPass::createPipeline(RenderGraph& graph)
             .descriptorCount = maxFramesInFlight
         },
         vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = maxFramesInFlight},
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxFramesInFlight},
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxFramesInFlight * 2},
         vk::DescriptorPoolSize{
             .type            = vk::DescriptorType::eSampledImage,
             .descriptorCount = maxFramesInFlight * maxTextures
@@ -145,14 +160,17 @@ void RayTracingPass::createPipeline(RenderGraph& graph)
                 .front()
         );
 
-    const vk::PushConstantRange cameraRange{.stageFlags = vk::ShaderStageFlagBits::eRaygenKHR, .size = 96};
+    const vk::PushConstantRange parameterRange{
+        .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR,
+        .size       = sizeof(RayTracingParameters),
+    };
     pipelineLayout = vkCheck(device.createPipelineLayout(
         {.setLayoutCount         = 1,
          .pSetLayouts            = &*descriptorLayout,
          .pushConstantRangeCount = 1,
-         .pPushConstantRanges    = &cameraRange}
+         .pPushConstantRanges    = &parameterRange}
     ));
-    GpuShader        shader(device, "shaders/raytracing_base_color.spv");
+    GpuShader        shader(device, "shaders/raytracing.spv");
     const std::array stages = {
         vk::PipelineShaderStageCreateInfo{
             .stage  = vk::ShaderStageFlagBits::eRaygenKHR,
@@ -163,6 +181,11 @@ void RayTracingPass::createPipeline(RenderGraph& graph)
             .stage  = vk::ShaderStageFlagBits::eMissKHR,
             .module = shader.handle(),
             .pName  = "missMain"
+        },
+        vk::PipelineShaderStageCreateInfo{
+            .stage  = vk::ShaderStageFlagBits::eMissKHR,
+            .module = shader.handle(),
+            .pName  = "visibilityMissMain"
         },
         vk::PipelineShaderStageCreateInfo{
             .stage  = vk::ShaderStageFlagBits::eClosestHitKHR,
@@ -186,9 +209,16 @@ void RayTracingPass::createPipeline(RenderGraph& graph)
             .intersectionShader = VK_SHADER_UNUSED_KHR
         },
         vk::RayTracingShaderGroupCreateInfoKHR{
+            .type               = vk::RayTracingShaderGroupTypeKHR::eGeneral,
+            .generalShader      = 2,
+            .closestHitShader   = VK_SHADER_UNUSED_KHR,
+            .anyHitShader       = VK_SHADER_UNUSED_KHR,
+            .intersectionShader = VK_SHADER_UNUSED_KHR
+        },
+        vk::RayTracingShaderGroupCreateInfoKHR{
             .type               = vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
             .generalShader      = VK_SHADER_UNUSED_KHR,
-            .closestHitShader   = 2,
+            .closestHitShader   = 3,
             .anyHitShader       = VK_SHADER_UNUSED_KHR,
             .intersectionShader = VK_SHADER_UNUSED_KHR
         },
@@ -198,7 +228,7 @@ void RayTracingPass::createPipeline(RenderGraph& graph)
         .pStages                      = stages.data(),
         .groupCount                   = static_cast<uint32_t>(groups.size()),
         .pGroups                      = groups.data(),
-        .maxPipelineRayRecursionDepth = 1,
+        .maxPipelineRayRecursionDepth = kRayRecursionDepth,
         .layout                       = *pipelineLayout,
     };
     VkPipeline rawPipeline = VK_NULL_HANDLE;
@@ -215,41 +245,70 @@ void RayTracingPass::createPipeline(RenderGraph& graph)
     );
     pipeline = vk::raii::Pipeline(device, rawPipeline);
 
-    const vk::DeviceSize stride  = alignUp(limits.shaderGroupHandleSize, limits.shaderGroupHandleAlignment);
-    const vk::DeviceSize spacing = alignUp(stride, limits.shaderGroupBaseAlignment);
+    const vk::DeviceSize stride     = alignUp(limits.shaderGroupHandleSize, limits.shaderGroupHandleAlignment);
+    const vk::DeviceSize missOffset = alignUp(stride, limits.shaderGroupBaseAlignment);
+    const vk::DeviceSize hitOffset  = alignUp(missOffset + stride * kMissShaderCount, limits.shaderGroupBaseAlignment);
     CHECK(stride <= limits.maxShaderGroupStride, "shader binding table stride exceeds the device limit");
     bindingTable = Buffer(
         vulkan.physicalDeviceHandle(),
         device,
-        spacing * 3 + limits.shaderGroupBaseAlignment,
+        hitOffset + stride + limits.shaderGroupBaseAlignment,
         vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
     );
-    const vk::DeviceAddress address = bindingTable.address(device);
-    const vk::DeviceAddress base    = alignUp(address, limits.shaderGroupBaseAlignment);
-    std::vector<uint8_t>    handles(limits.shaderGroupHandleSize * 3);
+    const vk::DeviceAddress address     = bindingTable.address(device);
+    const vk::DeviceAddress base        = alignUp(address, limits.shaderGroupBaseAlignment);
+    const uint32_t          kGroupCount = static_cast<uint32_t>(groups.size());
+    std::vector<uint8_t>    handles(limits.shaderGroupHandleSize * kGroupCount);
     vkCheck(
         static_cast<vk::Result>(device.getDispatcher()->vkGetRayTracingShaderGroupHandlesKHR(
             static_cast<VkDevice>(*device),
             static_cast<VkPipeline>(*pipeline),
             0,
-            3,
+            kGroupCount,
             handles.size(),
             handles.data()
         ))
     );
     std::vector<uint8_t> records(bindingTable.size());
-    for (uint32_t group = 0; group < 3; ++group)
+    // Group order: raygen, primary miss, visibility miss, closest hit.
+    const std::array<vk::DeviceSize, 4> recordOffsets{0, missOffset, missOffset + stride, hitOffset};
+    for (uint32_t group = 0; group < kGroupCount; ++group)
         std::memcpy(
-            records.data() + base - address + spacing * group,
+            records.data() + base - address + recordOffsets[group],
             handles.data() + limits.shaderGroupHandleSize * group,
             limits.shaderGroupHandleSize
         );
     bindingTable.upload(records.data(), records.size());
     raygenRegion = vk::StridedDeviceAddressRegionKHR{.deviceAddress = base, .stride = stride, .size = stride};
-    missRegion   = vk::StridedDeviceAddressRegionKHR{.deviceAddress = base + spacing, .stride = stride, .size = stride};
-    hitRegion =
-        vk::StridedDeviceAddressRegionKHR{.deviceAddress = base + spacing * 2, .stride = stride, .size = stride};
+    missRegion   = vk::StridedDeviceAddressRegionKHR{
+          .deviceAddress = base + missOffset,
+          .stride        = stride,
+          .size          = stride * kMissShaderCount,
+    };
+    hitRegion = vk::StridedDeviceAddressRegionKHR{.deviceAddress = base + hitOffset, .stride = stride, .size = stride};
+}
+
+void RayTracingPass::prepareLights(RenderGraph& graph, Frame& frame) const
+{
+    const auto&          vulkan = graph.vulkan();
+    const auto&          lights = graph.renderData().lights;
+    const vk::DeviceSize bytes  = std::max<size_t>(lights.size(), 1) * sizeof(LightData);
+    CHECK(bytes <= vulkan.properties().limits.maxStorageBufferRange, "ray tracing lights exceed maxStorageBufferRange");
+
+    if (frame.lightData.size() < bytes)
+    {
+        frame.lightData.reset();
+        frame.lightData = Buffer(
+            vulkan.physicalDeviceHandle(),
+            vulkan.deviceHandle(),
+            bytes,
+            vk::BufferUsageFlagBits::eStorageBuffer,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+        );
+    }
+    if (!lights.empty())
+        frame.lightData.upload(lights.data(), lights.size() * sizeof(LightData));
 }
 
 void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
@@ -259,7 +318,7 @@ void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
     auto&       commands = graph.commands();
     const auto& items    = graph.renderData().drawItems;
     CHECK(items.size() < (1u << 24), "ray tracing instance count exceeds the custom-index limit");
-    static_assert(sizeof(Vertex) == 48 && offsetof(Vertex, texcoord) == 24);
+    static_assert(sizeof(Vertex) == 48 && offsetof(Vertex, normal) == 12 && offsetof(Vertex, texcoord) == 24);
 
     const vk::MemoryBarrier2 reuseBarrier{
         .srcStageMask  = vk::PipelineStageFlagBits2::eAllCommands,
@@ -404,6 +463,7 @@ void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
         .imageLayout = vk::ImageLayout::eGeneral
     };
     const vk::DescriptorBufferInfo hitInfo{.buffer = frame.hitData.handle(), .range = frame.hitData.size()};
+    const vk::DescriptorBufferInfo lightInfo{.buffer = frame.lightData.handle(), .range = frame.lightData.size()};
     const std::array               writes = {
         vk::WriteDescriptorSet{
                           .pNext           = &accelerationInfo,
@@ -440,6 +500,13 @@ void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
                           .descriptorType  = vk::DescriptorType::eSampler,
                           .pImageInfo      = samplers.data()
         },
+        vk::WriteDescriptorSet{
+                          .dstSet          = *frame.set,
+                          .dstBinding      = 5,
+                          .descriptorCount = 1,
+                          .descriptorType  = vk::DescriptorType::eStorageBuffer,
+                          .pBufferInfo     = &lightInfo
+        },
     };
     device.updateDescriptorSets(writes, {});
 }
@@ -448,26 +515,22 @@ void RayTracingPass::execute(RenderGraph& graph)
 {
     auto&  commands = graph.commands();
     Frame& frame    = frames[graph.frameIndex()];
+    prepareLights(graph, frame);
     prepareScene(graph, frame);
     commands.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
     const std::array sets = {*frame.set};
     commands.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, *pipelineLayout, 0, sets, {});
     const auto& view     = graph.frameData(graph.frameIndex()).viewUniforms();
-    const auto& viewport = graph.editorInput().viewport;
-    struct CameraData
-    {
-        glm::mat4 inverseViewProjection;
-        glm::vec4 position, viewport;
-    };
-    static_assert(sizeof(CameraData) == 96);
-    commands.pushConstants<CameraData>(
+    const auto& viewport = graph.view().viewport;
+    commands.pushConstants<RayTracingParameters>(
         *pipelineLayout,
-        vk::ShaderStageFlagBits::eRaygenKHR,
+        vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR,
         0,
-        CameraData{
-            view.inverseViewProjection,
-            view.cameraPosition,
-            {viewport.x, viewport.y, viewport.width, viewport.height}
+        RayTracingParameters{
+            .inverseViewProjection = view.inverseViewProjection,
+            .cameraPosition        = view.cameraPosition,
+            .viewport              = {viewport.x, viewport.y, viewport.width, viewport.height},
+            .lightCount            = static_cast<uint32_t>(graph.renderData().lights.size()),
         }
     );
     const auto extent = graph.swapchain().extent();

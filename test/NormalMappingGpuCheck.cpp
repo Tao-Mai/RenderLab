@@ -22,6 +22,7 @@ int main(int argc, char** argv)
     Window window;
     Renderer renderer;
     RenderSystem renderSystem;
+    LightMarkers     lightMarkers;
     context().config = &config;
     context().assetManager = &assets;
     context().assetDataManager = &data;
@@ -54,12 +55,11 @@ int main(int argc, char** argv)
     scenes.load(scene);
 
     renderer.init();
-    renderer.loadScene();
+    renderer.rebuildGraph();
     const auto extent = renderer.swapchainHandle().extent();
-    const EditorFrameInput input{
-        .viewport = {0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)},
-        .aspectRatio = static_cast<float>(extent.width) / extent.height,
-    };
+    const auto view =
+        scenes.editorCamera().renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
+    EditorFrameInput input;
     for (int mode = 0; mode < 4; ++mode)
     {
         auto feature = originalFeature;
@@ -67,7 +67,7 @@ int main(int argc, char** argv)
         feature.hdr = mode < 2;
         feature.shadow.enable = mode < 2;
         config.setRenderFeature(feature);
-        renderer.loadScene();
+        renderer.rebuildGraph();
 
         auto& overrides = scenes.scene().actors[0]->getComponent<RenderComponent>()->materialOverrides;
         for (int frame = 0; frame < 4; ++frame)
@@ -93,7 +93,9 @@ int main(int argc, char** argv)
             }
             const auto& renderData = renderSystem.prepare(
                 scenes.scene(), scenes.editorCamera().worldPosition(), *renderContext().resources);
-            renderer.render(scenes.editorCamera(), renderData, input);
+            lightMarkers.prepare(scenes.scene(), *renderContext().resources);
+            input.lightDrawItems = lightMarkers.drawItems();
+            renderer.render(view, renderData, input);
         }
     }
     renderer.waitIdle();

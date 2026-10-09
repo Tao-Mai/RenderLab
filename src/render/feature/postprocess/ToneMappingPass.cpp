@@ -58,7 +58,7 @@ ToneMappingPass::Output ToneMappingPass::setup(
     return {color};
 }
 
-void ToneMappingPass::bindResources(RenderGraph& graph) const
+void ToneMappingPass::prepare(RenderGraph& graph) const
 {
     const auto& device = graph.vulkan().deviceHandle();
     for (uint32_t index = 0; index < maxFramesInFlight; ++index)

@@ -1,7 +1,7 @@
 #include "render/feature/editor/EditorPickingCopyPass.h"
 
 #include "core/Logger.h"
-#include "render/Renderer.h"
+#include "render/feature/editor/EditorFrameInput.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/Buffer.h"
 

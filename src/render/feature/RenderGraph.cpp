@@ -1,10 +1,12 @@
 #include "render/feature/RenderGraph.h"
 
-#include "core/Context.h"
 #include "core/Logger.h"
-#include "render/Renderer.h"
+#include "render/RenderView.h"
+#include "render/device/FrameContext.h"
 #include "render/device/Memory.h"
 #include "render/device/VkCheck.h"
+#include "render/device/VulkanContext.h"
+#include "render/present/Swapchain.h"
 #include "render/resource/Buffer.h"
 
 #include <algorithm>
@@ -30,11 +32,13 @@ struct RenderGraph::Allocation
     std::vector<Instance> instances;
 };
 
-void RenderGraph::init()
+void RenderGraph::init(VulkanContext& vulkan, Swapchain& swapchain, std::span<FrameContext> frameContexts)
 {
-    DCHECK(!renderer);
-    renderer = context().renderer;
-    DCHECK(renderer);
+    DCHECK(!deviceContext);
+    DCHECK(!frameContexts.empty());
+    deviceContext   = &vulkan;
+    targetSwapchain = &swapchain;
+    frames          = frameContexts;
 }
 
 void RenderGraph::releaseResources() noexcept
@@ -51,15 +55,21 @@ void RenderGraph::releaseResources() noexcept
 void RenderGraph::reset() noexcept
 {
     releaseResources();
-    renderer          = nullptr;
+    deviceContext     = nullptr;
+    targetSwapchain   = nullptr;
+    frames            = {};
     currentEditor     = nullptr;
     currentRenderData = nullptr;
+    currentView       = nullptr;
 }
 
 void RenderGraph::compile()
 {
     compileNodes();
     allocateResources();
+    for (auto* node : sortedNodes)
+        if (node->prepare)
+            node->prepare(*this);
 }
 
 void RenderGraph::allocateResources()
@@ -233,7 +243,12 @@ void RenderGraph::transitionResources(const std::vector<ResourceUse>& uses)
 }
 
 void RenderGraph::execute(
-    const RenderData& renderData, const EditorFrameInput& editor, uint32_t frameIndex, uint32_t imageIndex)
+    const RenderView&       view,
+    const RenderData&       renderData,
+    const EditorFrameInput& editor,
+    uint32_t                frameIndex,
+    uint32_t                imageIndex
+)
 {
     DCHECK(!sortedNodes.empty());
 
@@ -242,6 +257,7 @@ void RenderGraph::execute(
     currentImage      = imageIndex;
     currentEditor     = &editor;
     currentRenderData = &renderData;
+    currentView       = &view;
     for (Resource& entry : resources)
     {
         if (!entry.data)
@@ -267,13 +283,16 @@ void RenderGraph::execute(
     vkCheck(commands().end());
     currentEditor     = nullptr;
     currentRenderData = nullptr;
+    currentView       = nullptr;
 }
 
-VulkanContext&           RenderGraph::vulkan() const { return renderer->vulkan; }
-Swapchain&               RenderGraph::swapchain() const { return renderer->swapchain; }
-FrameData&               RenderGraph::frameData(uint32_t index) const { return renderer->frames.at(index).data; }
-const LightMarkers&      RenderGraph::lightMarkers() const { return renderer->lightMarkers; }
+FrameData& RenderGraph::frameData(uint32_t index) const
+{
+    DCHECK(index < frames.size());
+    return frames[index].data;
+}
 vk::raii::CommandBuffer& RenderGraph::commands() const
 {
-    return renderer->frames.at(currentFrame).commandBufferHandle();
+    DCHECK(currentFrame < frames.size());
+    return frames[currentFrame].commandBufferHandle();
 }

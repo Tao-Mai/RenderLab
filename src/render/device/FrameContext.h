@@ -12,14 +12,17 @@ class FrameContext
 public:
     FrameData data;
 
-    void init(const VulkanContext& vulkan, DescriptorManager& descriptors);
+    void init(VulkanContext& vulkan, DescriptorManager& descriptors);
     void reset() noexcept;
-    [[nodiscard]] const vk::raii::CommandPool& commandPoolHandle() const;
-    [[nodiscard]] vk::raii::CommandBuffer&     commandBufferHandle();
-    [[nodiscard]] vk::Semaphore                imageAvailableSemaphore() const;
-    [[nodiscard]] vk::Fence                    drawFenceHandle() const;
+    void wait() const;
+    void submit(vk::Semaphore renderFinished, vk::PipelineStageFlags waitStages) const;
+    [[nodiscard]] const vk::raii::CommandPool& commandPoolHandle() const { return graphicsCommandPool; }
+    [[nodiscard]] vk::raii::CommandBuffer&     commandBufferHandle() { return graphicsCommandBuffer; }
+    [[nodiscard]] vk::Semaphore                imageAvailableSemaphore() const { return *imageAvailable; }
+    [[nodiscard]] vk::Fence                    drawFenceHandle() const { return *drawFence; }
 
 private:
+    VulkanContext*          vulkan                = nullptr;
     vk::raii::CommandPool   graphicsCommandPool   = nullptr;
     vk::raii::CommandBuffer graphicsCommandBuffer = nullptr;
     vk::raii::Semaphore     imageAvailable        = nullptr;

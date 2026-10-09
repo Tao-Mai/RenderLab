@@ -97,6 +97,7 @@ int main(int, char** argv)
     Window           window;
     Renderer         renderer;
     RenderSystem     renderSystem;
+    LightMarkers     lightMarkers;
     auto&            ctx = context();
     ctx.config           = &config;
     ctx.assetManager     = &assets;
@@ -138,19 +139,21 @@ int main(int, char** argv)
     glfwHideWindow(window.nativeHandle());
     renderer.init();
     checkNpotUploads(renderer.vulkanContext());
-    renderer.loadScene();
+    renderer.rebuildGraph();
     const auto extent = renderer.swapchainHandle().extent();
     for (int frame = 0; frame < 4; ++frame)
     {
         window.pollEvents();
         const auto& renderData = renderSystem.prepare(
             scenes.scene(), scenes.editorCamera().worldPosition(), *renderContext().resources);
+        lightMarkers.prepare(scenes.scene(), *renderContext().resources);
         renderer.render(
-            scenes.editorCamera(),
+            scenes.editorCamera().renderView(
+                {0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)}
+            ),
             renderData,
             {
-                .viewport    = {0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height)},
-                .aspectRatio = static_cast<float>(extent.width) / extent.height,
+                .lightDrawItems = lightMarkers.drawItems(),
             }
         );
     }

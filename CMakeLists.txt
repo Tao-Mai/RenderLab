@@ -137,6 +137,7 @@ foreach (enable_clearcoat IN ITEMS 0 1)
                 -o "${scene_binary}"
                 DEPENDS "${SHADER_SOURCE_DIR}/shader.slang"
                 "${SHADER_SOURCE_DIR}/scene_data.slang"
+                "${SHADER_SOURCE_DIR}/light_data.slang"
                 "${SHADER_SOURCE_DIR}/mesh_vertex.slang"
                 "${SHADER_SOURCE_DIR}/material_data.slang"
                 "${SHADER_SOURCE_DIR}/sampling.slang"
@@ -161,6 +162,7 @@ add_custom_command(
         DEPENDS "${SHADER_SOURCE_DIR}/depth.slang"
         "${SHADER_SOURCE_DIR}/mesh_vertex.slang"
         "${SHADER_SOURCE_DIR}/scene_data.slang"
+        "${SHADER_SOURCE_DIR}/light_data.slang"
         "${SHADER_SOURCE_DIR}/material_data.slang"
         COMMENT "Compiling Slang depth prepass shader"
         VERBATIM
@@ -237,6 +239,7 @@ add_custom_command(
         -o "${SLANG_SKYBOX_SHADER}"
         DEPENDS "${SHADER_SOURCE_DIR}/skybox.slang"
         "${SHADER_SOURCE_DIR}/scene_data.slang"
+        "${SHADER_SOURCE_DIR}/light_data.slang"
         COMMENT "Compiling skybox Slang shader"
         VERBATIM
 )
@@ -283,6 +286,7 @@ foreach (shadow_type IN ITEMS 0 1 2)
             -o "${shadow_binary}"
             DEPENDS "${SHADER_SOURCE_DIR}/shadow.slang"
             "${SHADER_SOURCE_DIR}/scene_data.slang"
+            "${SHADER_SOURCE_DIR}/light_data.slang"
             COMMENT "Compiling shadow Slang shader (SHADOW_TYPE=${shadow_type})"
             VERBATIM
     )
@@ -308,19 +312,20 @@ add_custom_target(RenderLabShaders DEPENDS
         "${SLANG_RECT_AREA_SHADOW_REFLECTION}"
         "${SLANG_DIRECTIONAL_SHADOW_SHADER}"
         "${SLANG_DIRECTIONAL_SHADOW_REFLECTION}"
-        "${SHADER_BINARY_DIR}/raytracing_base_color.spv"
+        "${SHADER_BINARY_DIR}/raytracing.spv"
 )
 
 add_custom_command(
-        OUTPUT "${SHADER_BINARY_DIR}/raytracing_base_color.spv"
+        OUTPUT "${SHADER_BINARY_DIR}/raytracing.spv"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
-        COMMAND ${SLANGC_EXECUTABLE} "${SHADER_SOURCE_DIR}/raytracing/base_color.slang"
+        COMMAND ${SLANGC_EXECUTABLE} "${SHADER_SOURCE_DIR}/raytracing/raytracing.slang"
         -target spirv -profile spirv_1_4 -matrix-layout-column-major
         -emit-spirv-directly -fvk-use-entrypoint-name
-        -entry raygenMain -entry missMain -entry closestHitMain
-        -o "${SHADER_BINARY_DIR}/raytracing_base_color.spv"
-        DEPENDS "${SHADER_SOURCE_DIR}/raytracing/base_color.slang"
-        COMMENT "Compiling Slang ray tracing base-color shader"
+        -entry raygenMain -entry missMain -entry visibilityMissMain -entry closestHitMain
+        -o "${SHADER_BINARY_DIR}/raytracing.spv"
+        DEPENDS "${SHADER_SOURCE_DIR}/raytracing/raytracing.slang"
+        "${SHADER_SOURCE_DIR}/light_data.slang"
+        COMMENT "Compiling Slang ray tracing shader"
         VERBATIM
 )
 
@@ -379,7 +384,9 @@ add_executable(RenderLab
         src/editor/EditorUi.h
         src/editor/MeshImportPreview.cpp
         src/editor/MeshImportPreview.h
-        src/editor/ViewportRect.h
+        src/render/ViewportRect.h
+        src/render/RenderView.h
+        src/render/feature/editor/EditorFrameInput.h
         src/asset/AssetManager.cpp
         src/asset/Asset.h
         src/asset/AssetID.h

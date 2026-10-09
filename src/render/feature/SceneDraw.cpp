@@ -5,12 +5,12 @@
 #include "render/FrameData.h"
 #include "render/PipelineManager.h"
 #include "render/RenderContext.h"
-#include "render/Renderer.h"
+#include "render/RenderData.h"
+#include "render/RenderView.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMaterial.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/ShaderData.h"
-#include "render/RenderData.h"
 
 #include <algorithm>
 #include <array>
@@ -70,7 +70,7 @@ vk::Rect2D SceneDraw::beginRendering(
         .pDepthAttachment     = &depthAttachment,
     });
 
-    const auto&    editorViewport = graph.editorInput().viewport;
+    const auto&    editorViewport = graph.view().viewport;
     const uint32_t viewportX      = std::min(static_cast<uint32_t>(std::max(editorViewport.x, 0.0f)), extent.width - 1);
     const uint32_t viewportY = std::min(static_cast<uint32_t>(std::max(editorViewport.y, 0.0f)), extent.height - 1);
     const uint32_t viewportWidth =

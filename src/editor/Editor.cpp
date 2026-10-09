@@ -1,14 +1,16 @@
 #include "editor/Editor.h"
 
 #include "asset/Asset.h"
-#include "scene/SceneManager.h"
-#include "editor/EditorCamera.h"
 #include "core/Context.h"
 #include "core/Logger.h"
-#include "scene/component/TransformComponent.h"
+#include "core/Window.h"
+#include "editor/EditorCamera.h"
+#include "render/RenderContext.h"
+#include "render/Renderer.h"
 #include "render/device/VulkanContext.h"
 #include "render/present/Swapchain.h"
-#include "core/Window.h"
+#include "scene/SceneManager.h"
+#include "scene/component/TransformComponent.h"
 
 #include <algorithm>
 
@@ -42,6 +44,7 @@ void Editor::init()
 void Editor::shutdown() noexcept
 {
     ui.shutdown();
+    lightMarkers.reset();
     selectedId = 0;
     dirty = false;
     pendingSceneActions = {};
@@ -67,8 +70,6 @@ void Editor::applySceneActions()
     if (!pendingSceneActions.sceneId && !pendingSceneActions.createType && !pendingSceneActions.deleteId) return;
 
     auto& scene = *context().sceneManager;
-    auto& renderer = *context().renderer;
-    renderer.waitIdle();
 
     if (pendingSceneActions.sceneId)
     {
@@ -76,7 +77,6 @@ void Editor::applySceneActions()
         selectedId = 0;
         dirty = false;
         pendingSceneActions = {};
-        renderer.loadScene();
         return;
     }
 
@@ -90,14 +90,10 @@ void Editor::applySceneActions()
 
     pendingSceneActions = {};
     dirty = true;
-    renderer.loadScene();
 }
 
-EditorFrameInput Editor::buildFrame(
-    const EditorCamera& camera,
-    float deltaTime,
-    uint32_t swapchainWidth,
-    uint32_t swapchainHeight)
+Editor::Frame
+Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapchainWidth, uint32_t swapchainHeight)
 {
     ui.beginFrame(deltaTime);
     pendingSceneActions = ui.drawHierarchy(context().sceneManager->scene(), selectedId);
@@ -127,21 +123,16 @@ EditorFrameInput Editor::buildFrame(
         }
     }
 
-    EditorFrameInput input{
-        .viewport = ui.sceneViewportPixels(),
-        .aspectRatio = ui.sceneAspectRatio(),
-        .selectedActor = selectedActor,
-        .recordUi = [this](VkCommandBuffer commandBuffer) {
-            ui.render(commandBuffer);
-        },
-    };
+    Frame frame;
+    auto& input    = frame.input;
+    input.recordUi = [this](VkCommandBuffer commandBuffer) { ui.render(commandBuffer); };
 
     if (!camera.isNavigationActive())
     {
         glm::vec2 clickNdc;
         if (ui.sceneClicked(clickNdc))
         {
-            const ViewportRect viewport = input.viewport;
+            const ViewportRect viewport    = ui.sceneViewportPixels();
             const float normalizedX = std::clamp(clickNdc.x * 0.5f + 0.5f, 0.0f, 1.0f);
             const float normalizedY = std::clamp(clickNdc.y * 0.5f + 0.5f, 0.0f, 1.0f);
             input.pickX = std::min(
@@ -160,15 +151,15 @@ EditorFrameInput Editor::buildFrame(
     {
         dirty = true;
     }
-    if (inspector.environmentChanged || inspector.resourcesChanged || inspector.rendererChanged)
-    {
-        context().renderer->loadScene();
-    }
+    frame.rebuildGraph = inspector.environmentChanged || inspector.rendererChanged;
+    frame.view         = camera.renderView(ui.sceneViewportPixels());
+    lightMarkers.prepare(context().sceneManager->scene(), *renderContext().resources);
+    input.lightDrawItems = lightMarkers.drawItems();
     ui.endFrame();
-    return input;
+    return frame;
 }
 
-void Editor::applyPickResult(const EditorFrameResult& result)
+void Editor::applyPickResult(const RenderFrameResult& result)
 {
     if (!result.hasPickResult)
     {

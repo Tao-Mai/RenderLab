@@ -239,6 +239,7 @@ int main(int argc, char** argv)
     SceneManager sceneManager;
     Renderer renderer;
     RenderSystem renderSystem;
+    LightMarkers     lightMarkers;
     Context& ctx = context();
     ctx.config = &config;
     ctx.assetManager = &assets;
@@ -260,9 +261,11 @@ int main(int argc, char** argv)
     Deserialize(Serialize(assets.get<SceneAsset>(config.initialScene())), scene);
     std::erase_if(scene.actors, [](const auto& actor)
     {
-        const auto* render = actor->template getComponent<RenderComponent>();
-        return render && render->meshId != MeshAsset::ID{"sphere"};
+        return actor->template getComponent<RenderComponent>() != nullptr;
     });
+    auto sphere = std::make_unique<AStaticMesh>();
+    sphere->getComponent<RenderComponent>()->meshId = BuiltinAssets::Mesh::sphere;
+    scene.actors.push_back(std::move(sphere));
 
     glm::vec3 center{};
     for (const auto& actor : scene.actors)
@@ -283,7 +286,7 @@ int main(int argc, char** argv)
     checkMovement(scene, window, sceneManager);
     renderer.init();
     checkPointShadowUpload(renderer.vulkanContext());
-    renderer.loadScene();
+    renderer.rebuildGraph();
 
     const auto renderActor = [&]() -> AActor*
     {
@@ -316,16 +319,19 @@ int main(int argc, char** argv)
             for (size_t index = 1; index < lights.size(); ++index)
                 lights[index]->enabled = frame % 2 == 0;
 
+            lightMarkers.prepare(sceneManager.scene(), *renderContext().resources);
             const EditorFrameInput input{
-                .viewport = {0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height)},
-                .aspectRatio = static_cast<float>(extent.width) / extent.height,
-                .requestPick = (frame % 3 != 0),
-                .pickX = extent.width / 2,
-                .pickY = extent.height / 2,
+                .requestPick    = (frame % 3 != 0),
+                .pickX          = extent.width / 2,
+                .pickY          = extent.height / 2,
+                .lightDrawItems = lightMarkers.drawItems(),
             };
             const auto& renderData = renderSystem.prepare(
                 sceneManager.scene(), sceneManager.editorCamera().worldPosition(), *renderContext().resources);
-            const auto result = renderer.render(sceneManager.editorCamera(), renderData, input);
+            const auto view = sceneManager.editorCamera().renderView(
+                {0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)}
+            );
+            const auto result = renderer.render(view, renderData, input);
             CHECK(result.hasPickResult == input.requestPick, "missing picking result");
             if (input.requestPick)
                 CHECK(result.pickedSelectionId == expectedId,
@@ -352,7 +358,7 @@ int main(int argc, char** argv)
         scene.actors.push_back(std::move(actor));
     }
     sceneManager.load(scene);
-    renderer.loadScene();
+    renderer.rebuildGraph();
     renderFrames();
 
     // Disable IBL explicitly without discarding the selected environment map.
@@ -361,13 +367,13 @@ int main(int argc, char** argv)
     RenderFeature feature = originalFeature;
     feature.shadow.enable = false;
     config.setRenderFeature(feature);
-    renderer.loadScene();
+    renderer.rebuildGraph();
     renderFrames();
 
     feature.shadow.enable = true;
     feature.shadow.pointShadowMapSize = 512;
     config.setRenderFeature(feature);
-    renderer.loadScene();
+    renderer.rebuildGraph();
     renderFrames();
 
     feature.ibl = false;
@@ -377,14 +383,14 @@ int main(int argc, char** argv)
         if (auto* light = actor->getComponent<LightComponent>()) light->castShadow = false;
 
     sceneManager.load(scene);
-    renderer.loadScene();
+    renderer.rebuildGraph();
     renderFrames();
 
     // Switch back to the cached IBL variant, then disable it again.
     feature.ibl = true;
     config.setRenderFeature(feature);
     sceneManager.load(scene);
-    renderer.loadScene();
+    renderer.rebuildGraph();
     renderFrames();
     feature.ibl = false;
     config.setRenderFeature(feature);
@@ -395,7 +401,7 @@ int main(int argc, char** argv)
     feature.ibl = true;
     config.setRenderFeature(feature);
     sceneManager.load(scene);
-    renderer.loadScene();
+    renderer.rebuildGraph();
     renderFrames();
     CHECK(config.rendererConfig().feature.ibl);
     feature.ibl = false;
@@ -406,7 +412,7 @@ int main(int argc, char** argv)
     std::erase_if(scene.actors,
         [](const auto& actor) { return actor->template getComponent<LightComponent>() != nullptr; });
     sceneManager.load(scene);
-    renderer.loadScene();
+    renderer.rebuildGraph();
     renderFrames();
     renderer.waitIdle();
 
@@ -415,7 +421,7 @@ int main(int argc, char** argv)
     {
         const auto originalPath = config.rendererConfig().renderPath;
         config.setRenderPath(RenderPath::RayTracing);
-        renderer.loadScene();
+        renderer.rebuildGraph();
         renderFrames();
         renderer.waitIdle();
         // Both routes draw light markers through the independent editor overlay.
@@ -423,11 +429,11 @@ int main(int argc, char** argv)
         rayLight->transform().position = center + glm::vec3{20.0f, 20.0f, 0.0f};
         scene.actors.push_back(std::move(rayLight));
         sceneManager.load(scene);
-        renderer.loadScene();
+        renderer.rebuildGraph();
         renderFrames();
         renderer.waitIdle();
         config.setRenderPath(originalPath);
-        renderer.loadScene();
+        renderer.rebuildGraph();
         renderFrames();
         renderer.waitIdle();
         std::cout << "Ray tracing route and return to rasterization passed.\n";
@@ -443,25 +449,36 @@ int main(int argc, char** argv)
         .pickedSelectionId = renderActor()->selectionId(),
         .hasPickResult = true,
     });
-    const auto extent = renderer.swapchainHandle().extent();
+    auto       extent            = renderer.swapchainHandle().extent();
     const auto renderEditorFrame = [&]()
     {
         window.pollEvents();
         uiInput.tick();
         editor.applySceneActions();
-        const auto input = editor.buildFrame(
-            sceneManager.editorCamera(), 1.0f / 60.0f, extent.width, extent.height);
-        CHECK(input.viewport.x > 0.0f && input.viewport.width < extent.width,
-            "editor viewport must leave space for both docked sidebars");
+        const auto frame = editor.buildFrame(sceneManager.editorCamera(), 1.0f / 60.0f, extent.width, extent.height);
+        if (frame.rebuildGraph)
+            renderer.rebuildGraph();
+        CHECK(
+            frame.view.viewport.x > 0.0f && frame.view.viewport.width < extent.width,
+            "editor viewport must leave space for both docked sidebars"
+        );
         const auto& renderData = renderSystem.prepare(
             sceneManager.scene(), sceneManager.editorCamera().worldPosition(), *renderContext().resources);
-        const auto result = renderer.render(sceneManager.editorCamera(), renderData, input);
+        const auto result = renderer.render(frame.view, renderData, frame.input);
         editor.applyPickResult(result);
-        return input.selectedActor;
+        return sceneManager.findActor(editor.selectionId());
     };
     for (uint32_t frame = 0; frame < 3; ++frame)
         CHECK(renderEditorFrame() == renderActor(),
             "editor selection must reference the rendered actor");
+
+    // Follow the Engine resize path: rebuild GPU targets, then refresh the UI backend.
+    glfwSetWindowSize(window.nativeHandle(), 1440, 900);
+    window.pollEvents();
+    renderer.recreateSwapchain();
+    editor.refreshUi();
+    extent = renderer.swapchainHandle().extent();
+    CHECK(renderEditorFrame() == renderActor());
 
     // Rebuild draw data for live edits; never retain references to removed actors.
     renderer.waitIdle();
@@ -469,17 +486,14 @@ int main(int argc, char** argv)
     const auto addedId = added.selectionId();
     added.transform().position = center + glm::vec3{3.0f, 0.0f, 0.0f};
     added.name = "Renamed cube";
-    renderer.loadScene();
     editor.applyPickResult({.pickedSelectionId = addedId, .hasPickResult = true});
     CHECK(renderEditorFrame() == &added, "new actors must render and be selectable");
     renderer.waitIdle();
     sceneManager.deleteActor(addedId);
-    renderer.loadScene();
     CHECK(renderEditorFrame() == nullptr, "deleted selection must not retain an actor pointer");
 
     renderer.waitIdle();
     sceneManager.deleteActor(sceneManager.scene().actors.front()->selectionId());
-    renderer.loadScene();
     renderEditorFrame();
     renderer.waitIdle();
     editor.shutdown();

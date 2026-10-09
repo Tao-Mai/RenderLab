@@ -267,8 +267,7 @@ ComponentDrawResult drawFields(RenderComponent& render)
         return result;
     }
 
-    result.resourcesChanged = drawMeshSelection(render, *assets);
-    result.edited = result.resourcesChanged;
+    result.edited    = drawMeshSelection(render, *assets);
     const auto* mesh = assets->find<MeshAsset>(render.meshId);
     if (!mesh)
     {

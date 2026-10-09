@@ -24,6 +24,7 @@ int main(int, char** argv)
     Window           window;
     Renderer         renderer;
     RenderSystem     renderSystem;
+    LightMarkers     lightMarkers;
     auto&            ctx = context();
     ctx.config           = &config;
     ctx.assetManager     = &assets;
@@ -60,7 +61,7 @@ int main(int, char** argv)
     scene.actors.push_back(std::move(actor));
     scenes.load(scene);
     renderer.init();
-    renderer.loadScene();
+    renderer.rebuildGraph();
 
     DescriptorManager descriptors;
     descriptors.init(renderer.vulkanContext().deviceHandle());
@@ -101,23 +102,23 @@ int main(int, char** argv)
         {
             feature.shadow.cascade.count = 1;
             config.setRenderFeature(feature);
-            renderer.loadScene();
+            renderer.rebuildGraph();
         }
         if (frame == 4 || frame == 6)
         {
             feature.shadow.enable = frame == 6;
             config.setRenderFeature(feature);
-            renderer.loadScene();
+            renderer.rebuildGraph();
         }
         window.pollEvents();
         const auto& renderData = renderSystem.prepare(
             scenes.scene(), camera.worldPosition(), *renderContext().resources);
+        lightMarkers.prepare(scenes.scene(), *renderContext().resources);
         renderer.render(
-            camera,
+            camera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)}),
             renderData,
             {
-                .viewport    = {0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height)},
-                .aspectRatio = static_cast<float>(extent.width) / extent.height,
+                .lightDrawItems = lightMarkers.drawItems(),
             }
         );
     }

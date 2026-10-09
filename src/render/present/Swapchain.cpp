@@ -28,7 +28,49 @@ void Swapchain::reset() noexcept
     vulkan                 = nullptr;
 }
 
-const vk::raii::SwapchainKHR& Swapchain::handle() const { return swapChain; }
+vk::ResultValue<uint32_t> Swapchain::acquire(vk::Semaphore imageAvailable) const
+{
+    uint32_t   imageIndex = 0;
+    const auto result     = static_cast<vk::Result>(swapChain.getDispatcher()->vkAcquireNextImageKHR(
+        static_cast<VkDevice>(*vulkan->deviceHandle()),
+        static_cast<VkSwapchainKHR>(*swapChain),
+        UINT64_MAX,
+        static_cast<VkSemaphore>(imageAvailable),
+        VK_NULL_HANDLE,
+        &imageIndex
+    ));
+    CHECK(
+        result == vk::Result::eSuccess || result == vk::Result::eSuboptimalKHR ||
+            result == vk::Result::eErrorOutOfDateKHR,
+        "vkAcquireNextImageKHR failed: {}",
+        vk::to_string(result)
+    );
+    return {result, imageIndex};
+}
+
+vk::Result Swapchain::present(uint32_t imageIndex) const
+{
+    const auto               renderFinished = renderFinishedSemaphore(imageIndex);
+    const vk::PresentInfoKHR info{
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores    = &renderFinished,
+        .swapchainCount     = 1,
+        .pSwapchains        = &*swapChain,
+        .pImageIndices      = &imageIndex,
+    };
+    const auto result = static_cast<vk::Result>(vulkan->queueHandle().getDispatcher()->vkQueuePresentKHR(
+        static_cast<VkQueue>(*vulkan->queueHandle()),
+        reinterpret_cast<const VkPresentInfoKHR*>(&info)
+    ));
+    CHECK(
+        result == vk::Result::eSuccess || result == vk::Result::eSuboptimalKHR ||
+            result == vk::Result::eErrorOutOfDateKHR,
+        "vkQueuePresentKHR failed: {}",
+        vk::to_string(result)
+    );
+    return result;
+}
+
 vk::Image Swapchain::image(uint32_t index) const { return swapChainImages[index]; }
 
 vk::ImageView Swapchain::imageView(uint32_t index) const
@@ -39,15 +81,6 @@ vk::ImageView Swapchain::imageView(uint32_t index) const
 vk::Semaphore Swapchain::renderFinishedSemaphore(uint32_t index) const
 {
     return *renderFinishedSemaphores.at(index);
-}
-
-vk::SurfaceFormatKHR Swapchain::surfaceFormat() const { return swapChainSurfaceFormat; }
-vk::Extent2D         Swapchain::extent() const { return swapChainExtent; }
-uint32_t             Swapchain::minImageCount() const { return swapChainMinImageCount; }
-
-uint32_t Swapchain::imageCount() const
-{
-    return static_cast<uint32_t>(swapChainImages.size());
 }
 
 void Swapchain::createSwapChain()

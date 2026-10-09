@@ -5,8 +5,10 @@
 
 #include <utility>
 
-void FrameContext::init(const VulkanContext& targetVulkan, DescriptorManager& descriptors)
+void FrameContext::init(VulkanContext& targetVulkan, DescriptorManager& descriptors)
 {
+    DCHECK(!vulkan);
+    vulkan = &targetVulkan;
     const vk::CommandPoolCreateInfo poolInfo{
         .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
         .queueFamilyIndex = targetVulkan.graphicsQueueFamilyIndex(),
@@ -38,24 +40,27 @@ void FrameContext::reset() noexcept
     imageAvailable = nullptr;
     graphicsCommandBuffer = nullptr;
     graphicsCommandPool = nullptr;
+    vulkan                = nullptr;
 }
 
-const vk::raii::CommandPool& FrameContext::commandPoolHandle() const
+void FrameContext::wait() const
 {
-    return graphicsCommandPool;
+    DCHECK(vulkan);
+    vkCheck(vulkan->deviceHandle().waitForFences(*drawFence, vk::True, UINT64_MAX));
 }
 
-vk::raii::CommandBuffer& FrameContext::commandBufferHandle()
+void FrameContext::submit(vk::Semaphore renderFinished, vk::PipelineStageFlags waitStages) const
 {
-    return graphicsCommandBuffer;
-}
-
-vk::Semaphore FrameContext::imageAvailableSemaphore() const
-{
-    return *imageAvailable;
-}
-
-vk::Fence FrameContext::drawFenceHandle() const
-{
-    return *drawFence;
+    DCHECK(vulkan);
+    vkCheck(vulkan->deviceHandle().resetFences(*drawFence));
+    const vk::SubmitInfo submitInfo{
+        .waitSemaphoreCount   = 1,
+        .pWaitSemaphores      = &*imageAvailable,
+        .pWaitDstStageMask    = &waitStages,
+        .commandBufferCount   = 1,
+        .pCommandBuffers      = &*graphicsCommandBuffer,
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores    = &renderFinished,
+    };
+    vkCheck(vulkan->queueHandle().submit(submitInfo, *drawFence));
 }
