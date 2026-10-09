@@ -5,7 +5,7 @@
 - Vulkan 前向渲染：深度预通道、主场景、天空盒、光源标记、编辑器叠加。
 - 不透明、Alpha Mask、Alpha Blend；双面材质与背面剔除。
 - 透明物体按距离从后向前绘制，开启混合、不写入深度。
-- HDR 链路可开关：RGBA16F 颜色缓冲、曝光、Khronos PBR Neutral / Reinhard 色调映射、sRGB 输出。
+- HDR 链路可开关：光栅和光追共用曝光、Khronos PBR Neutral / Reinhard 色调映射及 sRGB 输出；光追始终使用 RGBA16F 颜色缓冲。
 - HDR 开关触发 RenderGraph 重建；编辑器 UI 与坐标轴不参与曝光和色调映射。
 - 独立硬件光追路线：BLAS / TLAS、相机主光线、材质 Base Color、插值世界空间法线；第一个启用的点光源使用 NdotL、颜色、强度及距离平方衰减，visibility 阴影射线查询遮挡；暂不计算多次反弹。
 

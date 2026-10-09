@@ -591,7 +591,6 @@ EditorUI::InspectorResult EditorUI::drawInspector(
     }
 
     ImGui::SeparatorText("HDR");
-    ImGui::BeginDisabled(path == RenderPath::RayTracing);
     if (ImGui::Checkbox("Enable HDR", &feature.hdr))
     {
         context().config->setRenderFeature(feature);
@@ -609,7 +608,6 @@ EditorUI::InspectorResult EditorUI::drawInspector(
     {
         context().config->setRenderFeature(feature);
     }
-    ImGui::EndDisabled();
     ImGui::EndDisabled();
 
     ImGui::SeparatorText("Shadows");

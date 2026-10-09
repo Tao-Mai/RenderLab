@@ -15,6 +15,7 @@
 #include "scene/system/RenderSystem.h"
 
 #include <GLFW/glfw3.h>
+#include <glm/gtc/packing.hpp>
 
 namespace
 {
@@ -27,7 +28,7 @@ struct PixelReadbackPass
     {
         image  = source;
         buffer = graph.createBuffer({
-            .size             = 4,
+            .size             = sizeof(uint16_t) * 4,
             .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
         });
         buffer = graph.write(buffer);
@@ -78,6 +79,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     RenderSystem      renderSystem;
     graph.init(vulkan, renderer.swapchainHandle(), frames);
     const auto output = graph.addPass(trace);
+    CHECK(graph.imageInfo(output.rayImage).format == kHdrColorFormat);
     const auto buffer = graph.addPass(readback, output.rayImage);
     graph.addPass(end, RenderGraph::ImageHandle{}, buffer);
     graph.compile();
@@ -95,13 +97,13 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         const vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &commandBuffer};
         vkCheck(vulkan.queueHandle().submit(submitInfo));
         vkCheck(vulkan.queueHandle().waitIdle());
-        std::array<uint8_t, 4> pixel;
-        graph.getBuffer(buffer, 0).download(pixel.data(), pixel.size());
-        return pixel[0];
+        std::array<uint16_t, 4> pixel;
+        graph.getBuffer(buffer, 0).download(pixel.data(), sizeof(pixel));
+        return glm::unpackHalf1x16(pixel[0]);
     };
 
     const auto clear = sample();
-    CHECK(clear > 32, "unoccluded surface is unexpectedly dark: {}", clear);
+    CHECK(clear > 1.0f, "HDR surface radiance is unexpectedly clipped or dark: {}", clear);
 
     auto& blocker                = scenes.createActor("AStaticMesh");
     blocker.transform().position = {1, 0, 2};
@@ -152,7 +154,7 @@ int main(int, char** argv)
     scene.actors.push_back(std::move(sphere));
     auto light                                       = std::make_unique<ALight>();
     light->transform().position                      = {2, 0, 3};
-    light->getComponent<LightComponent>()->intensity = 8;
+    light->getComponent<LightComponent>()->intensity = 100;
     scene.actors.push_back(std::move(light));
     scenes.load(scene);
     renderer.init();

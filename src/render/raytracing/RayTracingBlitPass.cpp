@@ -5,7 +5,6 @@
 #include "render/device/VulkanContext.h"
 #include "render/feature/RenderGraph.h"
 #include "render/present/Swapchain.h"
-#include "render/raytracing/RayTracingPass.h"
 
 #include <array>
 
@@ -25,7 +24,7 @@ RayTracingBlitPass::Output RayTracingBlitPass::setup(
         "swapchain format does not support blit destinations"
     );
     CHECK(
-        device.getFormatProperties(vk::Format::eR8G8B8A8Unorm).optimalTilingFeatures &
+        device.getFormatProperties(graph.imageInfo(rayImageHandle).format).optimalTilingFeatures &
             vk::FormatFeatureFlagBits::eBlitSrc,
         "ray tracing output format does not support blit sources"
     );

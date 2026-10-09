@@ -26,9 +26,9 @@ Renderer 持有上述模块和各 Pass 对象，负责按配置组图。`RenderS
 
 Scene 使用 RGBA16F HDR 颜色图，Graph 为每个在途帧单独分配。ToneMappingPass 持有独立 descriptor set、pipeline 和绘制逻辑，只采样当前帧的 HDR 图，Graph 根据声明插入 ColorAttachment → ShaderRead barrier。灯光标记、UI 和坐标轴都在 Tone Mapping 之后绘制，不受曝光和 Tone Mapping 模式影响。
 
-`feature.hdr` 控制整条 HDR 链路，默认 true。编辑器 Enable HDR 切换后走现有 rendererChanged 流程重新组图并 compile；关闭时 Scene 直接写交换链，LightMarker 随后加载该颜色附件，不创建 HDR 图，也不登记或绑定 ToneMappingPass。曝光和 Tone Mapping 参数保留但控件禁用，重新开启后继续使用；开关与其他渲染设置一样仅在正常关闭时统一持久化。
+`feature.hdr` 控制 HDR 输出链路，默认 true，光栅和光追均可在编辑器切换。Enable HDR 切换后走现有 rendererChanged 流程重新组图并 compile；关闭时 Scene 直接写交换链，光追则将 RGBA16F 图直接 blit 到交换链，不登记 ToneMappingPass。曝光和 Tone Mapping 参数保留但控件禁用，重新开启后继续使用；开关与其他渲染设置一样仅在正常关闭时统一持久化。
 
-`feature.toneMapping.exposure` 使用档位，0 为原始亮度，+1 为亮度乘 2，-1 为乘 0.5；`mode` 提供 Neutral（默认的 Khronos PBR Neutral）和 Reinhard。编辑器修改通过 push constants 每帧生效，不重建渲染图；正常关闭时统一保存到 renderer.json。Tone Mapping 输出线性颜色到 sRGB attachment，由硬件编码一次；若交换链使用 UNORM + sRGB nonlinear 色彩空间，则由该 shader 显式编码。此版本不包含自动曝光或 Bloom，光追路线保持原来的 blit 输出，Tone Mapping 控件在该路线下禁用。
+`feature.toneMapping.exposure` 使用档位，0 为原始亮度，+1 为亮度乘 2，-1 为乘 0.5；`mode` 提供 Neutral（默认的 Khronos PBR Neutral）和 Reinhard。编辑器修改通过 push constants 每帧生效，不重建渲染图；正常关闭时统一保存到 renderer.json。Tone Mapping 输出线性颜色到 sRGB attachment，由硬件编码一次；若交换链使用 UNORM + sRGB nonlinear 色彩空间，则由该 shader 显式编码。此版本不包含自动曝光或 Bloom。
 
 Neutral 算法参考 [Khronos PBR Neutral Tone Mapper](https://github.com/KhronosGroup/ToneMapping/tree/main/PBR_Neutral)，shader 中注明 Slang 改写及 CC-BY-4.0 来源。
 
@@ -36,7 +36,7 @@ Neutral 算法参考 [Khronos PBR Neutral Tone Mapper](https://github.com/Khrono
 
 `render/raytracing/RayTracingPass` 使用独立的 `VK_KHR_ray_tracing_pipeline`：缓存每个 mesh/submesh 的 BLAS，每帧根据现有 DrawItem 的 transform 构建该帧 TLAS，通过 SBT 和 `vkCmdTraceRaysKHR` 发射相机主射线。`raytracing/raytracing.slang` 将相机射线、命中表面和着色封装为结构体方法。ClosestHit 插值 Vertex UV 和法线，通过实例变换的逆转置得到世界空间法线；对第一个启用的点光源计算 `baseColorTexture * baseColorFactor * light.color * light.intensity / distanceSquared * saturate(dot(N, L)) * visibility`。Surface::isVisible 从沿法线偏移后的命中点向光源发射阴影射线，只检查光源之前的遮挡；遇到首个不透明物体立即停止并跳过 closest-hit，无命中时由独立 visibility miss shader 返回可见。SBT 包含一个 raygen、两个 miss 和一个 hit group，管线递归深度为 2。Miss 或无有效点光源时输出黑色。TLAS 只包含场景网格，不包含编辑器灯光标记，也没有标记专用的材质或命中分支。当前只有点光源硬阴影，没有 IBL、反弹、透明或 alpha-test，所有三角形按不透明处理；每帧最多 128 种材质纹理/采样器绑定。
 
-光追复用 GPU mesh 的 vertex/index buffer、GpuMaterial 的纹理/采样器以及 FrameData 的相机数据，并将 RenderData 的灯光列表上传到当前光追帧的独立 SSBO；`light_data.slang` 与光栅路线共用 LightData 类型，不改变光栅 descriptor layout。RayTracing 只写光追图像，独立的 RayTracingBlit 节点声明 TransferSrc/TransferDst 输入并 blit 到交换链。光追时关闭 Scene/Shadow 节点；EditorDepthPass 使用独立 editor/depth.slang，为编辑器遮挡和拾取生成深度，不走场景材质逻辑，与当前光追一样按不透明几何处理。两条路线统一在主场景输出之后执行 LightMarkerPass，再执行 Picking 和 EditorUi。交换链等待阶段按路线使用 color-attachment-output 或 transfer，仍使用原来的两帧 fence/semaphore 模型。加速结构构建/复用仍使用其原有内部内存屏障，不属于 Graph 当前管理的图像/缓冲区资源。
+光追复用 GPU mesh 的 vertex/index buffer、GpuMaterial 的纹理/采样器以及 FrameData 的相机数据，并将 RenderData 的灯光列表上传到当前光追帧的独立 SSBO；`light_data.slang` 与光栅路线共用 LightData 类型，不改变光栅 descriptor layout。RayTracing 写入 RGBA16F storage image，保留线性 HDR 光照；开启 HDR 时复用 ToneMappingPass 输出到交换链，Graph 插入 ShaderStorageWrite → ShaderSampledRead barrier，关闭时由 RayTracingBlit 直接输出。光追时关闭 Scene/Shadow 节点；EditorDepthPass 使用独立 editor/depth.slang，为编辑器遮挡和拾取生成深度，不走场景材质逻辑，与当前光追一样按不透明几何处理。两条路线统一在主场景输出之后执行 LightMarkerPass，再执行 Picking 和 EditorUi。交换链等待阶段在直接 blit 时使用 transfer，其他情况使用 color-attachment-output，仍使用原来的两帧 fence/semaphore 模型。加速结构构建/复用仍使用其原有内部内存屏障，不属于 Graph 当前管理的图像/缓冲区资源。
 
 API 参考：[Khronos 基础光追示例](https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_basic/README.html)、[多实例与材质示例](https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_extended/README.html)、[阴影射线与递归示例](https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_reflection/README.html)。
 
@@ -131,7 +131,7 @@ Renderer 在组图后显式调用 compile，从 EndPass 回溯资源依赖、补
 - getBuffer 按当前帧或指定帧取得 Buffer。
 
 Graph 在每个 Pass 前转换其声明的资源状态，Pass 内不转换图资源状态。
-Picking 绘制与复制分成两个 Pass，HostRead 和 Present 出口状态由 EndPass 声明；光追写入与 blit 分成两个 Pass。
+Picking 绘制与复制分成两个 Pass，HostRead 和 Present 出口状态由 EndPass 声明；光追写入与 Tone Mapping（或直接 blit）分成两个 Pass。
 没有拾取请求时 Picking 和 PickingCopy 的 execute 提前返回，不绘制或复制，Graph 仍处理节点声明的资源状态；有拾取请求时，CPU 在提交 fence 完成后读取 ID。
 
 ScenePass、SkyboxPass、TransparentPass 和 LightMarkerPass 分别负责不透明物体、天空盒、透明物体和灯光标记。

@@ -159,7 +159,7 @@ struct RayTracingParameters
 };
 
 [[vk::push_constant]] ConstantBuffer<RayTracingParameters> parameters;
-[[vk::binding(1, 0)]] [[vk::image_format("rgba8")]] RWTexture2D<float4> outputImage;
+[[vk::binding(1, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> outputImage;
 [[vk::binding(2, 0)]] StructuredBuffer<HitData> objects;
 
 [shader("raygeneration")]

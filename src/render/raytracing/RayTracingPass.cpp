@@ -46,14 +46,16 @@ RayTracingPass::Output RayTracingPass::setup(RenderGraph& graph)
 {
     CHECK(graph.vulkan().supportsRayTracing(), "selected GPU does not support the ray tracing route");
     const auto& device   = graph.vulkan().physicalDeviceHandle();
-    const auto  features = device.getFormatProperties(vk::Format::eR8G8B8A8Unorm).optimalTilingFeatures;
+    const auto  features = device.getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
+    constexpr auto kRequiredFeatures = vk::FormatFeatureFlagBits::eStorageImage |
+        vk::FormatFeatureFlagBits::eSampledImage | vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
     CHECK(
-        features & vk::FormatFeatureFlagBits::eStorageImage,
-        "ray tracing output format does not support storage images"
+        (features & kRequiredFeatures) == kRequiredFeatures,
+        "GPU does not support RGBA16F ray tracing output with storage writes and linear sampling"
     );
 
     const auto extent = graph.swapchain().extent();
-    rayImage = graph.createImage({.format = vk::Format::eR8G8B8A8Unorm, .extent = {extent.width, extent.height, 1}});
+    rayImage = graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}});
     rayImage = graph.write(rayImage);
     graph.use(
         rayImage,
@@ -457,7 +459,7 @@ void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
     const vk::DescriptorImageInfo output{
         .imageView   = graph.getImage(rayImage).getOrCreateImageView({
               .viewType         = vk::ImageViewType::e2D,
-              .format           = vk::Format::eR8G8B8A8Unorm,
+              .format           = graph.imageInfo(rayImage).format,
               .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
         }),
         .imageLayout = vk::ImageLayout::eGeneral
