@@ -5,6 +5,7 @@
 enum class RenderPath
 {
     Rasterization,
+    Deferred,
     RayTracing
 };
 

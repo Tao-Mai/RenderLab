@@ -17,6 +17,11 @@ inline constexpr uint32_t kMaterialSet = 1;
 inline constexpr uint32_t kObjectSet   = 2;
 inline constexpr uint32_t kPassSet     = 3;
 
+inline constexpr uint32_t kGBufferAlbedoBinding   = 0;
+inline constexpr uint32_t kGBufferNormalBinding   = 1;
+inline constexpr uint32_t kGBufferEmissiveBinding = 2;
+inline constexpr uint32_t kGBufferDepthBinding    = 3;
+
 // Scene data: UBOs, then SSBOs.
 inline constexpr uint32_t kViewUniformBinding          = 0;
 inline constexpr uint32_t kLightUniformBinding         = 1;
@@ -238,6 +243,11 @@ struct SkyboxPushConstants
     glm::vec4 viewport{0.0f};
 };
 
+struct DeferredLightingPushConstants
+{
+    glm::vec4 viewport{0.0f};
+};
+
 struct ToneMappingPushConstants
 {
     float exposure = 0.0f;
@@ -251,6 +261,7 @@ static_assert(sizeof(ShadowPushConstants) == 80);
 static_assert(offsetof(ShadowPushConstants, lightIdx) == 64);
 static_assert(offsetof(ShadowPushConstants, cascadeIndex) == 68);
 static_assert(sizeof(SkyboxPushConstants) == 16);
+static_assert(sizeof(DeferredLightingPushConstants) == 16);
 static_assert(sizeof(ToneMappingPushConstants) == 16);
 static_assert(offsetof(ToneMappingPushConstants, mode) == 4);
 static_assert(offsetof(ToneMappingPushConstants, encodeSrgb) == 8);

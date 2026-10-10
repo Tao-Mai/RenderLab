@@ -45,7 +45,7 @@ ToneMappingPass::Output ToneMappingPass::setup(
         .shader = shader,
         .layout = PipelineLayoutPreset::ToneMapping,
         .state = PipelineState::preset(RenderMode::PostProcess),
-        .colorFormat = surfaceFormat.format,
+        .colorFormats = {surfaceFormat.format},
     });
     pipelineLayout = ctx.pipelineManager->layout(PipelineLayoutPreset::ToneMapping);
     sampler = ctx.resources->sampler(BuiltinAssets::Sampler::linearClamp);

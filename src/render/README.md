@@ -20,6 +20,27 @@ Renderer 持有上述模块和各 Pass 对象，负责按配置组图。`RenderS
 
 ## 光栅化与光追路线
 
+编辑器 Render path 提供 Forward、Deferred 和 Ray tracing，选择在关闭时持久化到 renderer.json。Forward 保留现有逐物体光照；Deferred 使用下述 G-buffer 链路，两条光栅路线共用透明排序、天空盒、HDR、编辑器绘制和拾取。
+
+### 延迟渲染
+
+DepthPrepass → GBufferPass → DeferredLightingPass → Skybox → Transparent → ToneMapping → 编辑器。仍使用 dynamic rendering 和现有 Graph，不引入 subpass、光源体积或新的同步模型。
+
+| G-buffer | 格式 | 内容 |
+| --- | --- | --- |
+| Albedo/Occlusion | RGBA8 sRGB | 线性 Base Color 经硬件编码存储，alpha 为 AO |
+| Normal/Roughness | RGBA16F | 法线贴图修正后的世界法线、roughness |
+| Emissive/Metallic | RGBA16F | 线性 emissive、metallic |
+| Depth | D32 | 复用预通道深度，通过 inverse VP 重建位置 |
+
+GBufferPass 只绘制不透明和 MASK 物体，保持双面和 alpha-test。DeferredLightingPass 按像素读取 G-buffer，复用 scene_lighting.slang 的直接光 BRDF、点光源 PCF、矩形光源 PCSS、方向光 CSM、IBL 和环境光系数；AO 仅影响环境光。透明材质继续前向混合。延迟路线中的 clearcoat 材质仅使用基础 PBR 数据，没有额外材质分类或扩展 G-buffer。
+
+SceneBindings 复用场景 UBO/SSBO 上传、阴影占位资源和环境 descriptor；ScenePass 与 DeferredLightingPass 各自负责绘制。PipelineKey 使用颜色格式数组支持 MRT，原有单附件 Pass 使用单元素数组，深度 Pass 使用空数组。
+
+G-buffer 与深度重建参考 [Khronos 延迟渲染示例](https://docs.vulkan.org/samples/latest/samples/performance/subpasses/README.html)；此项目保留独立 Pass 和 dynamic rendering，不采用该示例的 subpass 优化。
+
+### 前向渲染
+
 光栅化链路为 DepthPrepass → Scene → Skybox → Transparent → ToneMapping → LightMarker → Picking / EditorUi → Present。DepthPrepass 创建并清空 D32 深度图，绘制 Opaque 和 MASK 物体，沿用材质的剔除设置和 alpha cutoff，BLEND 物体不参与预绘制。Scene 清空颜色附件，Skybox 和 Transparent 加载前序颜色，各自通过 write 生成新版本的颜色 handle；三个 Pass 都加载只读深度附件，不再写深度。不透明和 MASK 物体使用 Equal 比较，透明物体保持原来的深度比较和排序，天空盒仍使用 LessOrEqual。深度与场景 shader 共用 mesh_vertex.slang 的 precise 顶点位置计算，以及 material_data.slang 的材质布局和 Alpha Test。Graph 根据依赖排序并插入 barrier；编辑器 LightMarkerPass 在 Tone Mapping 之后叠加标记，写入深度供拾取使用。
 
 点光源、方向光和矩形光共用 brdf.slang 的直接光 BRDF：Schlick Fresnel、GGX 分布、height-correlated Smith 可见性和 Lambert 漫反射，金属度同时控制 F0 和漫反射权重。光源分支只生成光线方向、入射光量和阴影可见性，最后统一乘 BRDF 和 NdotL。直接光的感知粗糙度下限为 0.045，避免零粗糙度数值退化；材质数据和 IBL 粗糙度保持原值。矩形光仍用中心方向与投影面积/距离平方近似立体角，新增的镜面响应不代表有限面积光源积分；Spot 暂未接入。

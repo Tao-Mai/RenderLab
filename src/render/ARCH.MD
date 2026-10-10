@@ -27,6 +27,8 @@ compile 将保留节点的拓扑顺序保存到 sortedNodes，execute 只执行�
 
 光栅依赖：Shadow / DepthPrepass → Scene → Skybox → Transparent → ToneMapping → LightMarker，随后分为 EditorUi 和 Picking → PickingCopy 两条分支，最终汇合到 EndPass。Skybox、ToneMapping 和 Shadow 按配置登记。关闭阴影时不登记 ShadowPass，ScenePass 提供占位纹理，并清除上传数据中的 castShadow 标记。
 
+延迟依赖：Shadow / DepthPrepass → GBuffer → DeferredLighting → Skybox → Transparent → ToneMapping → LightMarker，后续编辑器节点与前向相同。GBuffer 保存统一基础材质数据，DeferredLighting 根据深度和逆 VP 重建世界位置；两个光栅路线复用 SceneBindings、BRDF、阴影和 IBL。延迟路线不读取 clearcoat 扩展，透明物体仍走前向绘制。
+
 光追依赖：RayTracing（RGBA16F）→ ToneMapping，与 EditorDepthPass 汇合到 LightMarker，再分为 EditorUi 和 Picking → PickingCopy 两条分支，最终汇合到 EndPass。关闭 HDR 时用 RayTracingBlit 代替 ToneMapping。Picking 读取前序深度，不创建独立深度图。光追的 BLAS/TLAS 构建同步仍由原实现负责，不纳入图资源状态跟踪。
 
 无拾取请求时 Picking 和 PickingCopy 在 execute 内提前返回，不绘制或复制；Graph 仍按节点声明处理资源状态。Resize 时先释放 Graph 资源和缓存 View，再销毁交换链，最后由 Renderer 重新组图和 compile。

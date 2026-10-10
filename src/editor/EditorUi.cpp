@@ -546,22 +546,26 @@ EditorUI::InspectorResult EditorUI::drawInspector(
 
     ImGui::SeparatorText("Renderer");
     const RenderPath path = context().config->rendererConfig().renderPath;
-    if (ImGui::BeginCombo("Render path", path == RenderPath::RayTracing ? "Ray tracing" : "Rasterization"))
+    constexpr std::array kRenderPaths{
+        std::pair{RenderPath::Rasterization, "Forward"},
+        std::pair{RenderPath::Deferred, "Deferred"},
+        std::pair{RenderPath::RayTracing, "Ray tracing"},
+    };
+    const auto selected = std::ranges::find_if(kRenderPaths, [path](const auto& option) { return option.first == path; });
+    DCHECK(selected != kRenderPaths.end());
+    if (ImGui::BeginCombo("Render path", selected->second))
     {
-        if (ImGui::Selectable("Rasterization", path == RenderPath::Rasterization) &&
-            path != RenderPath::Rasterization)
-        {
-            context().config->setRenderPath(RenderPath::Rasterization);
-            result.rendererChanged = true;
-        }
         const bool supported = context().renderer->vulkanContext().supportsRayTracing();
-        ImGui::BeginDisabled(!supported);
-        if (ImGui::Selectable("Ray tracing", path == RenderPath::RayTracing) && path != RenderPath::RayTracing)
+        for (const auto& [candidate, label] : kRenderPaths)
         {
-            context().config->setRenderPath(RenderPath::RayTracing);
-            result.rendererChanged = true;
+            ImGui::BeginDisabled(candidate == RenderPath::RayTracing && !supported);
+            if (ImGui::Selectable(label, path == candidate) && path != candidate)
+            {
+                context().config->setRenderPath(candidate);
+                result.rendererChanged = true;
+            }
+            ImGui::EndDisabled();
         }
-        ImGui::EndDisabled();
         if (!supported) ImGui::TextUnformatted("Ray tracing is not supported by this GPU");
         ImGui::EndCombo();
     }

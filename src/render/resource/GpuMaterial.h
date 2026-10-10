@@ -6,6 +6,7 @@
 #include "render/resource/GpuTexture.h"
 
 #include <memory>
+#include <span>
 
 #include <vulkan/vulkan_raii.hpp>
 
@@ -49,7 +50,7 @@ public:
         Textures                      textures);
 
     [[nodiscard]] vk::DescriptorSet descriptorSetHandle() const;
-    [[nodiscard]] PipelineKey pipelineKey(vk::Format colorFormat, vk::Format depthFormat) const;
+    [[nodiscard]] PipelineKey pipelineKey(std::span<const vk::Format> colorFormats, vk::Format depthFormat) const;
     [[nodiscard]] RenderMode renderMode() const;
     [[nodiscard]] vk::ImageView baseColorView() const { return textures.baseColor.image->imageView(); }
     [[nodiscard]] vk::Sampler baseColorSampler() const { return textures.baseColor.sampler; }

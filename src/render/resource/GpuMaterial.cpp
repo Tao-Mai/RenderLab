@@ -142,13 +142,13 @@ vk::DescriptorSet GpuMaterial::descriptorSetHandle() const
     return *descriptorSet;
 }
 
-PipelineKey GpuMaterial::pipelineKey(vk::Format colorFormat, vk::Format depthFormat) const
+PipelineKey GpuMaterial::pipelineKey(std::span<const vk::Format> colorFormats, vk::Format depthFormat) const
 {
     return {
         .shader = shaderHandle,
         .layout = PipelineLayoutPreset::SceneMaterial,
         .state = pipelineState,
-        .colorFormat = colorFormat,
+        .colorFormats = std::vector<vk::Format>(colorFormats.begin(), colorFormats.end()),
         .depthFormat = depthFormat,
     };
 }

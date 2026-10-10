@@ -3,6 +3,8 @@
 ## 渲染
 
 - Vulkan 前向渲染：深度预通道、主场景、天空盒、光源标记、编辑器叠加。
+- Vulkan 延迟渲染：G-buffer、深度重建位置、全屏 PBR 光照；透明物体继续前向绘制，clearcoat 暂按普通材质处理。
+- 编辑器可切换 Forward / Deferred / Ray tracing，关闭时保存渲染路线选择。
 - 不透明、Alpha Mask、Alpha Blend；双面材质与背面剔除。
 - 透明物体按距离从后向前绘制，开启混合、不写入深度。
 - HDR 链路可开关：光栅和光追共用曝光、Khronos PBR Neutral / Reinhard 色调映射及 sRGB 输出；光追始终使用 RGBA16F 颜色缓冲。

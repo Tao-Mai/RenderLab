@@ -50,7 +50,7 @@ EditorPickingPass::Output EditorPickingPass::setup(RenderGraph& graph, RenderGra
               .shader      = shader,
               .layout      = PipelineLayoutPreset::Editor,
               .state       = state,
-              .colorFormat = vk::Format::eR32Uint,
+              .colorFormats = {vk::Format::eR32Uint},
               .depthFormat = vk::Format::eD32Sfloat,
     });
     pipelineLayout = pipelines->layout(PipelineLayoutPreset::Editor);

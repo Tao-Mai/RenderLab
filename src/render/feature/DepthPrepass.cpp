@@ -100,7 +100,7 @@ void DepthPrepass::execute(RenderGraph& graph) const
     vk::Pipeline boundPipeline;
     for (const DrawItem& item : graph.renderData().opaqueDrawItems)
     {
-        PipelineKey key        = item.material->pipelineKey(vk::Format::eUndefined, vk::Format::eD32Sfloat);
+        PipelineKey key        = item.material->pipelineKey({}, vk::Format::eD32Sfloat);
         key.shader             = shader;
         key.state.vertexLayout = VertexLayoutPreset::PositionUv;
         key.state.depthCompare = vk::CompareOp::eLess;

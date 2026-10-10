@@ -209,6 +209,22 @@ void DescriptorManager::init(const vk::raii::Device& targetDevice)
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
     };
     toneMappingLayout = getOrCreateLayout(toneMappingBindings);
+
+    const std::array gBufferBindings = {
+        vk::DescriptorSetLayoutBinding{.binding = RenderInterface::kGBufferAlbedoBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage, .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{.binding = RenderInterface::kGBufferNormalBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage, .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{.binding = RenderInterface::kGBufferEmissiveBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage, .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment},
+        vk::DescriptorSetLayoutBinding{.binding = RenderInterface::kGBufferDepthBinding,
+            .descriptorType = vk::DescriptorType::eSampledImage, .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment},
+    };
+    gBufferLayout = getOrCreateLayout(gBufferBindings);
 }
 
 void DescriptorManager::shutdown() noexcept
@@ -219,6 +235,7 @@ void DescriptorManager::shutdown() noexcept
     viewLayout = nullptr;
     materialLayout = nullptr;
     toneMappingLayout = nullptr;
+    gBufferLayout = nullptr;
     device = nullptr;
 }
 
@@ -230,6 +247,7 @@ vk::DescriptorSetLayout DescriptorManager::layout(DescriptorLayoutPreset preset)
         case DescriptorLayoutPreset::View: return viewLayout;
         case DescriptorLayoutPreset::Material: return materialLayout;
         case DescriptorLayoutPreset::ToneMapping: return toneMappingLayout;
+        case DescriptorLayoutPreset::GBuffer: return gBufferLayout;
     }
     LOG_FATAL("invalid descriptor layout preset");
 }
