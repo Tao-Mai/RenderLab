@@ -70,7 +70,9 @@ std::size_t PipelineKeyHash::operator()(const PipelineKey& key) const noexcept
     combine(key.state.depthTest);
     combine(key.state.depthWrite);
     combine(key.state.blend);
-    combine(static_cast<uint32_t>(key.colorFormat));
+    combine(key.colorFormats.size());
+    for (const auto format : key.colorFormats)
+        combine(static_cast<uint32_t>(format));
     combine(static_cast<uint32_t>(key.depthFormat));
     combine(key.viewMask);
     return seed;
@@ -134,6 +136,21 @@ void PipelineManager::init(
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &toneMappingPushRange,
     }));
+
+    const auto emptySet = descriptors.getOrCreateLayout(std::span<const vk::DescriptorSetLayoutBinding>{});
+    const std::array deferredSets = {
+        sceneSet, emptySet, emptySet, descriptors.layout(DescriptorLayoutPreset::GBuffer),
+    };
+    const vk::PushConstantRange deferredPushRange{
+        .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+        .size = sizeof(DeferredLightingPushConstants),
+    };
+    deferredLightingLayout = vkCheck(device->createPipelineLayout({
+        .setLayoutCount = static_cast<uint32_t>(deferredSets.size()),
+        .pSetLayouts = deferredSets.data(),
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &deferredPushRange,
+    }));
 }
 
 void PipelineManager::shutdown() noexcept
@@ -143,6 +160,7 @@ void PipelineManager::shutdown() noexcept
     sceneOnlyLayout     = nullptr;
     editorLayout        = nullptr;
     toneMappingLayout   = nullptr;
+    deferredLightingLayout = nullptr;
     sceneMaterialLayout = nullptr;
     descriptors         = nullptr;
     shaders             = nullptr;
@@ -157,6 +175,7 @@ vk::PipelineLayout PipelineManager::layout(PipelineLayoutPreset preset) const
         case PipelineLayoutPreset::SceneOnly: return *sceneOnlyLayout;
         case PipelineLayoutPreset::Editor: return *editorLayout;
         case PipelineLayoutPreset::ToneMapping: return *toneMappingLayout;
+        case PipelineLayoutPreset::DeferredLighting: return *deferredLightingLayout;
     }
     LOG_FATAL("invalid pipeline layout preset");
 }
@@ -177,6 +196,11 @@ vk::Pipeline PipelineManager::getOrCreate(const PipelineKey& key)
             : key.layout == PipelineLayoutPreset::ToneMapping
             ? binding.set == 0 && descriptors->containsBinding(
                 DescriptorLayoutPreset::ToneMapping, binding.binding, binding.type)
+            : key.layout == PipelineLayoutPreset::DeferredLighting
+            ? (binding.set == RenderInterface::kSceneSet && descriptors->containsBinding(
+                DescriptorLayoutPreset::Scene, binding.binding, binding.type)) ||
+              (binding.set == RenderInterface::kPassSet && descriptors->containsBinding(
+                DescriptorLayoutPreset::GBuffer, binding.binding, binding.type))
             : binding.set == RenderInterface::kSceneSet
             ? descriptors->containsBinding(DescriptorLayoutPreset::Scene, binding.binding, binding.type)
             : binding.set == RenderInterface::kMaterialSet && key.layout == PipelineLayoutPreset::SceneMaterial &&
@@ -255,10 +279,10 @@ vk::Pipeline PipelineManager::getOrCreate(const PipelineKey& key)
         .colorWriteMask      = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
             vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
     };
-    const bool                                  hasColor = key.colorFormat != vk::Format::eUndefined;
+    const std::vector colorBlendAttachments(key.colorFormats.size(), colorBlendAttachment);
     const vk::PipelineColorBlendStateCreateInfo colorBlend{
-        .attachmentCount = hasColor ? 1u : 0u,
-        .pAttachments    = hasColor ? &colorBlendAttachment : nullptr,
+        .attachmentCount = static_cast<uint32_t>(colorBlendAttachments.size()),
+        .pAttachments    = colorBlendAttachments.data(),
     };
     constexpr std::array                     dynamicStates = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
     const vk::PipelineDynamicStateCreateInfo dynamic{
@@ -278,8 +302,8 @@ vk::Pipeline PipelineManager::getOrCreate(const PipelineKey& key)
          .pDynamicState       = &dynamic,
          .layout              = layout(key.layout)},
         {.viewMask                = key.viewMask,
-         .colorAttachmentCount    = hasColor ? 1u : 0u,
-         .pColorAttachmentFormats = hasColor ? &key.colorFormat : nullptr,
+         .colorAttachmentCount    = static_cast<uint32_t>(key.colorFormats.size()),
+         .pColorAttachmentFormats = key.colorFormats.data(),
          .depthAttachmentFormat   = key.depthFormat},
     };
     auto pipeline = vkCheck(device->createGraphicsPipeline(pipelineCache, chain.get<vk::GraphicsPipelineCreateInfo>()));

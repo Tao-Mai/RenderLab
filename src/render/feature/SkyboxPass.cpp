@@ -21,7 +21,7 @@ SkyboxPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle, Rend
 {
     color = graph.write(colorHandle);
     depth = depthHandle;
-    SceneDraw::useAttachments(graph, color, depth);
+    SceneDraw::useAttachments(graph, std::array{color}, depth);
 
     const auto& environmentId = context().config->rendererConfig().environmentMap;
     DCHECK(environmentId);
@@ -64,7 +64,7 @@ SkyboxPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle, Rend
                .shader      = renderContext().shaderManager->getOrLoad("skybox"),
                .layout      = PipelineLayoutPreset::SceneOnly,
                .state       = PipelineState::preset(RenderMode::Skybox),
-               .colorFormat = graph.imageInfo(color).format,
+               .colorFormats = {graph.imageInfo(color).format},
                .depthFormat = vk::Format::eD32Sfloat,
     });
     pipelineLayout  = pipelines.layout(PipelineLayoutPreset::SceneOnly);
@@ -73,7 +73,7 @@ SkyboxPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle, Rend
 
 void SkyboxPass::execute(RenderGraph& graph) const
 {
-    const auto viewport      = SceneDraw::beginRendering(graph, color, depth, vk::AttachmentLoadOp::eLoad);
+    const auto viewport      = SceneDraw::beginRendering(graph, std::array{color}, depth, vk::AttachmentLoadOp::eLoad);
     auto&      commandBuffer = graph.commands();
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     const std::array sceneSets = {graph.frameData(graph.frameIndex()).sceneSetHandle()};

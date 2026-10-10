@@ -57,7 +57,7 @@ int main(int argc, char** argv)
         .pickY       = extent.height / 2,
     };
 
-    for (const auto path : {RenderPath::Rasterization, RenderPath::RayTracing})
+    for (const auto path : {RenderPath::Rasterization, RenderPath::Deferred, RenderPath::RayTracing})
     {
         if (path == RenderPath::RayTracing && !renderer.vulkanContext().supportsRayTracing())
             continue;

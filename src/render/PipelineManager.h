@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <unordered_map>
+#include <vector>
 
 #include <vulkan/vulkan_raii.hpp>
 
@@ -16,7 +17,7 @@ enum class RenderMode
     PostProcess, LightMarker, Picking,
 };
 
-enum class PipelineLayoutPreset { SceneMaterial, SceneOnly, Editor, ToneMapping };
+enum class PipelineLayoutPreset { SceneMaterial, SceneOnly, Editor, ToneMapping, DeferredLighting };
 enum class VertexLayoutPreset { Mesh, PositionOnly, PositionUv, None };
 
 struct PipelineState
@@ -41,7 +42,7 @@ struct PipelineKey
     ShaderHandle shader;
     PipelineLayoutPreset layout = PipelineLayoutPreset::SceneMaterial;
     PipelineState state;
-    vk::Format colorFormat = vk::Format::eUndefined;
+    std::vector<vk::Format> colorFormats;
     vk::Format depthFormat = vk::Format::eUndefined;
     uint32_t viewMask = 0;
 
@@ -71,6 +72,7 @@ private:
     vk::raii::PipelineLayout sceneOnlyLayout = nullptr;
     vk::raii::PipelineLayout editorLayout = nullptr;
     vk::raii::PipelineLayout toneMappingLayout = nullptr;
+    vk::raii::PipelineLayout deferredLightingLayout = nullptr;
     vk::raii::PipelineCache pipelineCache = nullptr;
     std::unordered_map<PipelineKey, vk::raii::Pipeline, PipelineKeyHash> pipelines;
 };

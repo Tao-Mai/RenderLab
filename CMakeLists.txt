@@ -106,6 +106,18 @@ set(SLANG_DIRECTIONAL_SHADOW_SHADER "${SHADER_BINARY_DIR}/shadow.directional.spv
 set(SLANG_DIRECTIONAL_SHADOW_REFLECTION "${SHADER_BINARY_DIR}/shadow.directional.reflection.json")
 
 set(SCENE_SHADER_OUTPUTS)
+set(SCENE_SHADER_INCLUDES
+        "${SHADER_SOURCE_DIR}/scene_data.slang"
+        "${SHADER_SOURCE_DIR}/light_data.slang"
+        "${SHADER_SOURCE_DIR}/mesh_vertex.slang"
+        "${SHADER_SOURCE_DIR}/mesh_surface.slang"
+        "${SHADER_SOURCE_DIR}/surface.slang"
+        "${SHADER_SOURCE_DIR}/material_data.slang"
+        "${SHADER_SOURCE_DIR}/scene_lighting.slang"
+        "${SHADER_SOURCE_DIR}/sampling.slang"
+        "${SHADER_SOURCE_DIR}/brdf.slang"
+        "${SHADER_SOURCE_DIR}/constant.slang"
+)
 foreach (enable_clearcoat IN ITEMS 0 1)
     foreach (enable_ibl IN ITEMS 1 0)
         set(scene_name "slang")
@@ -136,17 +148,41 @@ foreach (enable_clearcoat IN ITEMS 0 1)
                 -reflection-json "${scene_reflection}"
                 -o "${scene_binary}"
                 DEPENDS "${SHADER_SOURCE_DIR}/shader.slang"
-                "${SHADER_SOURCE_DIR}/scene_data.slang"
-                "${SHADER_SOURCE_DIR}/light_data.slang"
-                "${SHADER_SOURCE_DIR}/mesh_vertex.slang"
-                "${SHADER_SOURCE_DIR}/material_data.slang"
-                "${SHADER_SOURCE_DIR}/sampling.slang"
-                "${SHADER_SOURCE_DIR}/brdf.slang"
-                "${SHADER_SOURCE_DIR}/constant.slang"
+                ${SCENE_SHADER_INCLUDES}
                 COMMENT "Compiling Slang scene shader (ENABLE_IBL=${enable_ibl}, ENABLE_CLEARCOAT=${enable_clearcoat})"
                 VERBATIM
         )
     endforeach ()
+endforeach ()
+
+set(DEFERRED_SHADER_OUTPUTS)
+foreach (shader IN ITEMS gbuffer deferred_lighting deferred_lighting.no_ibl)
+    if (shader STREQUAL "gbuffer")
+        set(shader_source "${SHADER_SOURCE_DIR}/deferred/gbuffer.slang")
+    else ()
+        set(shader_source "${SHADER_SOURCE_DIR}/deferred/lighting.slang")
+    endif ()
+    if (shader STREQUAL "deferred_lighting.no_ibl")
+        set(enable_ibl 0)
+    else ()
+        set(enable_ibl 1)
+    endif ()
+    set(binary "${SHADER_BINARY_DIR}/${shader}.spv")
+    set(reflection "${SHADER_BINARY_DIR}/${shader}.reflection.json")
+    list(APPEND DEFERRED_SHADER_OUTPUTS "${binary}" "${reflection}")
+    add_custom_command(
+            OUTPUT "${binary}" "${reflection}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
+            COMMAND ${SLANGC_EXECUTABLE} "${shader_source}"
+            -DENABLE_IBL=${enable_ibl} -DENABLE_CLEARCOAT=0
+            -target spirv -profile spirv_1_4 -matrix-layout-column-major
+            -emit-spirv-directly -fvk-use-entrypoint-name
+            -entry vertMain -entry fragMain
+            -reflection-json "${reflection}" -o "${binary}"
+            DEPENDS "${shader_source}" ${SCENE_SHADER_INCLUDES}
+            COMMENT "Compiling Slang deferred shader (${shader})"
+            VERBATIM
+    )
 endforeach ()
 
 add_custom_command(
@@ -293,6 +329,7 @@ foreach (shadow_type IN ITEMS 0 1 2)
 endforeach ()
 
 add_custom_target(RenderLabShaders DEPENDS
+        ${DEFERRED_SHADER_OUTPUTS}
         ${SCENE_SHADER_OUTPUTS}
         "${SLANG_DEPTH_SHADER}"
         "${SLANG_DEPTH_REFLECTION}"
@@ -449,6 +486,12 @@ add_executable(RenderLab
         src/render/RenderData.h
         src/render/feature/ScenePass.cpp
         src/render/feature/ScenePass.h
+        src/render/feature/SceneBindings.cpp
+        src/render/feature/SceneBindings.h
+        src/render/feature/deferred/GBufferPass.cpp
+        src/render/feature/deferred/GBufferPass.h
+        src/render/feature/deferred/DeferredLightingPass.cpp
+        src/render/feature/deferred/DeferredLightingPass.h
         src/render/feature/SceneDraw.cpp
         src/render/feature/SceneDraw.h
         src/render/feature/SkyboxPass.cpp

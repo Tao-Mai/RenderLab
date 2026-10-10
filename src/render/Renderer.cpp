@@ -13,6 +13,8 @@
 #include "render/feature/ScenePass.h"
 #include "render/feature/SkyboxPass.h"
 #include "render/feature/TransparentPass.h"
+#include "render/feature/deferred/GBufferPass.h"
+#include "render/feature/deferred/DeferredLightingPass.h"
 #include "render/feature/postprocess/ToneMappingPass.h"
 #include "render/feature/editor/EditorPickingCopyPass.h"
 #include "render/feature/editor/EditorPickingPass.h"
@@ -32,6 +34,8 @@ struct Renderer::Passes
         ShadowPass,
         DepthPrepass,
         ScenePass,
+        GBufferPass,
+        DeferredLightingPass,
         SkyboxPass,
         TransparentPass,
         LightMarkerPass,
@@ -154,14 +158,28 @@ void Renderer::setupRenderGraph()
             shadow = setupPass<ShadowPass>();
 
         const auto depth = setupPass<DepthPrepass>();
-        auto scene = setupPass<ScenePass>(depth.depth, shadow);
+        ShadowPass::Output resolvedShadow;
+        if (config.renderPath == RenderPath::Deferred)
+        {
+            const auto gBuffer = setupPass<GBufferPass>(depth.depth);
+            const auto lighting = setupPass<DeferredLightingPass>(gBuffer, shadow);
+            sceneColor = lighting.color;
+            sceneDepth = lighting.depth;
+            resolvedShadow = lighting.shadow;
+        }
+        else
+        {
+            const auto scene = setupPass<ScenePass>(depth.depth, shadow);
+            sceneColor = scene.color;
+            sceneDepth = scene.depth;
+            resolvedShadow = scene.shadow;
+        }
 
         if (config.feature.ibl && config.environmentMap)
-            scene.color = setupPass<SkyboxPass>(scene.color, scene.depth).color;
+            sceneColor = setupPass<SkyboxPass>(sceneColor, sceneDepth).color;
 
-        const auto transparent = setupPass<TransparentPass>(scene.color, scene.depth, scene.shadow);
+        const auto transparent = setupPass<TransparentPass>(sceneColor, sceneDepth, resolvedShadow);
         sceneColor = config.feature.hdr ? setupPass<ToneMappingPass>(transparent.color, color).color : transparent.color;
-        sceneDepth = scene.depth;
     }
 
     const auto markers = setupPass<LightMarkerPass>(sceneColor, sceneDepth);
@@ -198,10 +216,18 @@ RenderFrameResult Renderer::render(const RenderView& view, const RenderData& ren
         return {.swapchainNeedsRebuild = true};
 
     const auto renderPath = context().config->rendererConfig().renderPath;
-    if (renderPath == RenderPath::Rasterization)
-        passes->get<ScenePass>().updateFrame(frame.data, view.uniforms, renderData);
-    else
-        frame.data.updateView(view.uniforms);
+    switch (renderPath)
+    {
+        case RenderPath::Rasterization:
+            passes->get<ScenePass>().updateFrame(frame.data, view.uniforms, renderData);
+            break;
+        case RenderPath::Deferred:
+            passes->get<DeferredLightingPass>().updateFrame(frame.data, view.uniforms, renderData);
+            break;
+        case RenderPath::RayTracing:
+            frame.data.updateView(view.uniforms);
+            break;
+    }
     graph.execute(view, renderData, editor, frameIndex, imageIndex);
 
     const bool directBlit = renderPath == RenderPath::RayTracing && !context().config->rendererConfig().feature.hdr;

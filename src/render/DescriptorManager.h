@@ -14,6 +14,7 @@ enum class DescriptorLayoutPreset
     View,
     Material,
     ToneMapping,
+    GBuffer,
 };
 
 class DescriptorManager
@@ -50,4 +51,5 @@ private:
     vk::DescriptorSetLayout viewLayout;
     vk::DescriptorSetLayout materialLayout;
     vk::DescriptorSetLayout toneMappingLayout;
+    vk::DescriptorSetLayout gBufferLayout;
 };

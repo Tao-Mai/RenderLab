@@ -43,7 +43,7 @@ LightMarkerPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle,
                .shader      = shader,
                .layout      = PipelineLayoutPreset::Editor,
                .state       = PipelineState::preset(RenderMode::LightMarker),
-               .colorFormat = graph.imageInfo(color).format,
+               .colorFormats = {graph.imageInfo(color).format},
                .depthFormat = vk::Format::eD32Sfloat,
     });
     pipelineLayout  = pipelines.layout(PipelineLayoutPreset::Editor);

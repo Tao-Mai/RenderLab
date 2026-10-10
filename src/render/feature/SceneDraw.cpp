@@ -15,16 +15,19 @@
 #include <algorithm>
 #include <array>
 
-void SceneDraw::useAttachments(RenderGraph& graph, RenderGraph::ImageHandle color, RenderGraph::ImageHandle depth)
+void SceneDraw::useAttachments(
+    RenderGraph& graph, std::span<const RenderGraph::ImageHandle> colors, RenderGraph::ImageHandle depth
+)
 {
-    graph.use(
-        color,
-        {
-            .stages = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-            .access = vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
-            .layout = vk::ImageLayout::eColorAttachmentOptimal,
-        }
-    );
+    for (const auto color : colors)
+        graph.use(
+            color,
+            {
+                .stages = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                .access = vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
+                .layout = vk::ImageLayout::eColorAttachmentOptimal,
+            }
+        );
     graph.use(
         depth,
         {
@@ -36,22 +39,28 @@ void SceneDraw::useAttachments(RenderGraph& graph, RenderGraph::ImageHandle colo
 }
 
 vk::Rect2D SceneDraw::beginRendering(
-    RenderGraph& graph, RenderGraph::ImageHandle color, RenderGraph::ImageHandle depth, vk::AttachmentLoadOp colorLoadOp
+    RenderGraph&                              graph,
+    std::span<const RenderGraph::ImageHandle> colors,
+    RenderGraph::ImageHandle                  depth,
+    vk::AttachmentLoadOp                      colorLoadOp
 )
 {
-    auto&                             commandBuffer = graph.commands();
-    const auto                        extent        = graph.swapchain().extent();
-    const vk::RenderingAttachmentInfo colorAttachment{
-        .imageView   = graph.getImage(color).getOrCreateImageView({
-              .viewType         = vk::ImageViewType::e2D,
-              .format           = graph.imageInfo(color).format,
-              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        }),
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp      = colorLoadOp,
-        .storeOp     = vk::AttachmentStoreOp::eStore,
-        .clearValue  = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f),
-    };
+    auto&                                    commandBuffer = graph.commands();
+    const auto                               extent        = graph.swapchain().extent();
+    std::vector<vk::RenderingAttachmentInfo> colorAttachments;
+    colorAttachments.reserve(colors.size());
+    for (const auto color : colors)
+        colorAttachments.push_back({
+            .imageView   = graph.getImage(color).getOrCreateImageView({
+                  .viewType         = vk::ImageViewType::e2D,
+                  .format           = graph.imageInfo(color).format,
+                  .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+            }),
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp      = colorLoadOp,
+            .storeOp     = vk::AttachmentStoreOp::eStore,
+            .clearValue  = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f),
+        });
     const vk::RenderingAttachmentInfo depthAttachment{
         .imageView   = graph.getImage(depth).getOrCreateImageView({
               .viewType         = vk::ImageViewType::e2D,
@@ -65,8 +74,8 @@ vk::Rect2D SceneDraw::beginRendering(
     commandBuffer.beginRendering({
         .renderArea           = {.offset = {0, 0}, .extent = extent},
         .layerCount           = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments    = &colorAttachment,
+        .colorAttachmentCount = static_cast<uint32_t>(colorAttachments.size()),
+        .pColorAttachments    = colorAttachments.data(),
         .pDepthAttachment     = &depthAttachment,
     });
 
@@ -96,7 +105,9 @@ vk::Rect2D SceneDraw::beginRendering(
     return viewport;
 }
 
-void SceneDraw::recordMeshes(RenderGraph& graph, std::span<const DrawItem> items, vk::Format colorFormat)
+void SceneDraw::recordMeshes(
+    RenderGraph& graph, std::span<const DrawItem> items, std::span<const vk::Format> colorFormats, ShaderHandle shader
+)
 {
     auto&            commandBuffer  = graph.commands();
     auto&            pipelines      = *renderContext().pipelineManager;
@@ -115,16 +126,22 @@ void SceneDraw::recordMeshes(RenderGraph& graph, std::span<const DrawItem> items
     vk::Pipeline boundPipeline;
     for (const DrawItem& item : items)
     {
-        PipelineKey key      = item.material->pipelineKey(colorFormat, vk::Format::eD32Sfloat);
+        PipelineKey key      = item.material->pipelineKey(colorFormats, vk::Format::eD32Sfloat);
         key.state.depthWrite = false;
         if (item.material->renderMode() != RenderMode::Transparent)
             key.state.depthCompare = vk::CompareOp::eEqual;
-        if (!iblEnabled)
+        if (shader.index)
         {
-            const auto& metadata = shaders.metadata(key.shader);
-            const auto  variant =
-                metadata.variant == ShaderVariant::Clearcoat ? ShaderVariant::ClearcoatNoIbl : ShaderVariant::NoIbl;
-            key.shader = shaders.getOrLoad(metadata.id, variant);
+            key.shader = shader;
+        }
+        else
+        {
+            const auto& metadata  = shaders.metadata(key.shader);
+            const bool  clearcoat = metadata.variant == ShaderVariant::Clearcoat &&
+                context().config->rendererConfig().renderPath != RenderPath::Deferred;
+            const auto variant = clearcoat ? (iblEnabled ? ShaderVariant::Clearcoat : ShaderVariant::ClearcoatNoIbl)
+                                           : (iblEnabled ? ShaderVariant::Default : ShaderVariant::NoIbl);
+            key.shader         = shaders.getOrLoad(metadata.id, variant);
         }
         const vk::Pipeline pipeline = pipelines.getOrCreate(key);
         if (pipeline != boundPipeline)
