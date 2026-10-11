@@ -1,7 +1,6 @@
 #include "render/feature/SceneDraw.h"
+#include "render/feature/SceneInterface.h"
 
-#include "core/ConfigManager.h"
-#include "core/Context.h"
 #include "render/FrameData.h"
 #include "render/PipelineManager.h"
 #include "render/RenderContext.h"
@@ -106,15 +105,19 @@ vk::Rect2D SceneDraw::beginRendering(
 }
 
 void SceneDraw::recordMeshes(
-    RenderGraph& graph, std::span<const DrawItem> items, std::span<const vk::Format> colorFormats, ShaderHandle shader
+    RenderGraph&                graph,
+    std::span<const DrawItem>   items,
+    std::span<const vk::Format> colorFormats,
+    ShaderHandle                shader,
+    SceneShaderOptions          options
 )
 {
-    auto&            commandBuffer  = graph.commands();
-    auto&            pipelines      = *renderContext().pipelineManager;
-    auto&            shaders        = *renderContext().shaderManager;
-    const bool       iblEnabled     = context().config->rendererConfig().feature.ibl;
-    const auto       pipelineLayout = pipelines.layout(PipelineLayoutPreset::SceneMaterial);
-    const std::array sceneSets      = {graph.frameData(graph.frameIndex()).sceneSetHandle()};
+    auto&      commandBuffer = graph.commands();
+    auto&      pipelines     = *renderContext().pipelineManager;
+    auto&      shaders       = *renderContext().shaderManager;
+    const auto pipelineLayout =
+        SceneInterface::meshLayout(*renderContext().descriptors, *renderContext().pipelineManager);
+    const std::array sceneSets = {graph.frameData(graph.frameIndex()).sceneSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         pipelineLayout,
@@ -126,9 +129,9 @@ void SceneDraw::recordMeshes(
     vk::Pipeline boundPipeline;
     for (const DrawItem& item : items)
     {
-        PipelineKey key      = item.material->pipelineKey(colorFormats, vk::Format::eD32Sfloat);
+        PipelineKey key      = item.material->pipelineKey(colorFormats, vk::Format::eD32Sfloat, pipelineLayout);
         key.state.depthWrite = false;
-        if (item.material->renderMode() != RenderMode::Transparent)
+        if (item.material->alphaMode() != MaterialAlphaMode::Blend)
             key.state.depthCompare = vk::CompareOp::eEqual;
         if (shader.index)
         {
@@ -137,11 +140,12 @@ void SceneDraw::recordMeshes(
         else
         {
             const auto& metadata  = shaders.metadata(key.shader);
-            const bool  clearcoat = metadata.variant == ShaderVariant::Clearcoat &&
-                context().config->rendererConfig().renderPath != RenderPath::Deferred;
-            const auto variant = clearcoat ? (iblEnabled ? ShaderVariant::Clearcoat : ShaderVariant::ClearcoatNoIbl)
-                                           : (iblEnabled ? ShaderVariant::Default : ShaderVariant::NoIbl);
-            key.shader         = shaders.getOrLoad(metadata.id, variant);
+            const bool  clearcoat = metadata.defines.contains("ENABLE_CLEARCOAT") &&
+                metadata.defines.at("ENABLE_CLEARCOAT") && options.clearcoat;
+            key.shader = shaders.getOrLoad(
+                metadata.id,
+                {{"ENABLE_IBL", options.ibl ? 1 : 0}, {"ENABLE_CLEARCOAT", clearcoat ? 1 : 0}}
+            );
         }
         const vk::Pipeline pipeline = pipelines.getOrCreate(key);
         if (pipeline != boundPipeline)

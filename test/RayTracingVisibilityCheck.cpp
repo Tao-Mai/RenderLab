@@ -1,3 +1,4 @@
+#include "editor/EditorCamera.h"
 // Manual GPU check: visibility along the finite segment to a point light.
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
@@ -66,18 +67,22 @@ struct PixelReadbackPass
 
 void checkVisibility(Renderer& renderer, SceneManager& scenes)
 {
-    auto& vulkan = renderer.vulkanContext();
+    EditorCamera scenesCamera{scenes.scene().editorCamera};
+    auto&        vulkan = renderer.vulkanContext();
     CHECK(vulkan.supportsRayTracing());
     std::array<FrameContext, maxFramesInFlight> frames;
     for (auto& frame : frames)
-        frame.init(vulkan, *renderContext().descriptors);
+        frame.init(vulkan);
+    std::array<FrameData, maxFramesInFlight> frameData;
+    for (auto& data : frameData)
+        data.init(vulkan, *renderContext().descriptors);
 
     RenderGraph       graph;
     RayTracingPass    trace;
     PixelReadbackPass readback;
     EndPass           end;
     RenderSystem      renderSystem;
-    graph.init(vulkan, renderer.swapchainHandle(), frames);
+    graph.init(vulkan, renderer.swapchainHandle(), frames, frameData);
     const auto output = graph.addPass(trace);
     CHECK(graph.imageInfo(output.rayImage).format == kHdrColorFormat);
     const auto buffer = graph.addPass(readback, output.rayImage);
@@ -86,12 +91,12 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
 
     const auto extent = renderer.swapchainHandle().extent();
     const auto view =
-        scenes.editorCamera().renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
+        scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
     const auto sample = [&]
     {
-        const auto& data =
-            renderSystem.prepare(scenes.scene(), scenes.editorCamera().worldPosition(), *renderContext().resources);
-        frames[0].data.updateView(view.uniforms);
+        const auto& sceneData = renderSystem.prepare(scenes.scene(), scenesCamera.worldPosition());
+        const auto& data      = renderContext().resources->prepare(sceneData, 0);
+        frameData[0].updateView(view.uniforms);
         graph.execute(view, data, {}, 0, 0);
         const auto           commandBuffer = *frames[0].commandBufferHandle();
         const vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &commandBuffer};
@@ -117,6 +122,8 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     LOG_INFO("Ray tracing visibility passed: clear {}, blocked {}, beyond light {}", clear, blocked, beyondLight);
 
     graph.reset();
+    for (auto& data : frameData)
+        data.reset();
     for (auto& frame : frames)
         frame.reset();
 }
@@ -129,6 +136,7 @@ int main(int, char** argv)
     AssetManager     assets;
     AssetDataManager data;
     SceneManager     scenes;
+    EditorCamera     scenesCamera{scenes.scene().editorCamera};
     Window           window;
     Renderer         renderer;
     context().config           = &config;
@@ -138,9 +146,9 @@ int main(int, char** argv)
     context().window           = &window;
     context().renderer         = &renderer;
     config.init();
-    data.init();
+    data.init(config.paths().assets);
     scenes.init();
-    assets.init();
+    assets.init(config.paths().assets);
     CHECK(glfwInit());
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     window.init();

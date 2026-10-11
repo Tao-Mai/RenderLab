@@ -17,8 +17,9 @@ public:
 
     Output setup(RenderGraph& graph, GBufferPass::Output gBuffer, ShadowPass::Output shadow);
     void   prepare(RenderGraph& graph) const;
-    void   updateFrame(FrameData& frame, const ViewUniforms& view, const RenderData& scene) const;
     void   execute(RenderGraph& graph) const;
+
+    SceneBindings& sceneBindings() { return bindings; }
 
 private:
     SceneBindings                        bindings;

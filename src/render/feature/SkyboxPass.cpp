@@ -1,7 +1,9 @@
 #include "render/feature/SkyboxPass.h"
+#include "render/feature/SceneInterface.h"
 
-#include "asset/Asset.h"
 #include "asset/AssetManager.h"
+#include "asset/EnvironmentMapAsset.h"
+#include "asset/TextureAsset.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "render/FrameData.h"
@@ -23,6 +25,58 @@ SkyboxPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle, Rend
     depth = depthHandle;
     SceneDraw::useAttachments(graph, std::array{color}, depth);
 
+    refreshBindings(graph);
+
+    auto& pipelines = *renderContext().pipelineManager;
+    pipelineLayout  = SceneInterface::skyboxLayout(*renderContext().descriptors, *renderContext().pipelineManager);
+    pipeline        = pipelines.getOrCreate({
+               .shader = renderContext().shaderManager->getOrLoad("skybox"),
+               .layout = pipelineLayout,
+               .state =
+            PipelineState{
+                       .vertexLayout = VertexLayoutPreset::None,
+                       .depthCompare = vk::CompareOp::eLessOrEqual,
+                       .depthWrite   = false
+            },
+               .colorFormats = {graph.imageInfo(color).format},
+               .depthFormat  = vk::Format::eD32Sfloat,
+    });
+    return {color};
+}
+
+void SkyboxPass::execute(RenderGraph& graph) const
+{
+    const auto viewport      = SceneDraw::beginRendering(graph, std::array{color}, depth, vk::AttachmentLoadOp::eLoad);
+    auto&      commandBuffer = graph.commands();
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+    const std::array sceneSets = {graph.frameData(graph.frameIndex()).sceneSetHandle()};
+    commandBuffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        pipelineLayout,
+        RenderInterface::kSceneSet,
+        sceneSets,
+        {}
+    );
+    const SkyboxPushConstants parameters{
+        .viewport = {
+            static_cast<float>(viewport.offset.x),
+            static_cast<float>(viewport.offset.y),
+            static_cast<float>(viewport.extent.width),
+            static_cast<float>(viewport.extent.height),
+        },
+    };
+    commandBuffer.pushConstants<SkyboxPushConstants>(
+        pipelineLayout,
+        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+        0,
+        parameters
+    );
+    commandBuffer.draw(3, 1, 0, 0);
+    commandBuffer.endRendering();
+}
+
+void SkyboxPass::refreshBindings(RenderGraph& graph)
+{
     const auto& environmentId = context().config->rendererConfig().environmentMap;
     DCHECK(environmentId);
     const auto& environment = context().assetManager->get<EnvironmentMapAsset>(*environmentId);
@@ -58,46 +112,4 @@ SkyboxPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle, Rend
         };
         graph.vulkan().deviceHandle().updateDescriptorSets(writes, {});
     }
-
-    auto& pipelines = *renderContext().pipelineManager;
-    pipeline        = pipelines.getOrCreate({
-               .shader      = renderContext().shaderManager->getOrLoad("skybox"),
-               .layout      = PipelineLayoutPreset::SceneOnly,
-               .state       = PipelineState::preset(RenderMode::Skybox),
-               .colorFormats = {graph.imageInfo(color).format},
-               .depthFormat = vk::Format::eD32Sfloat,
-    });
-    pipelineLayout  = pipelines.layout(PipelineLayoutPreset::SceneOnly);
-    return {color};
-}
-
-void SkyboxPass::execute(RenderGraph& graph) const
-{
-    const auto viewport      = SceneDraw::beginRendering(graph, std::array{color}, depth, vk::AttachmentLoadOp::eLoad);
-    auto&      commandBuffer = graph.commands();
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sceneSets = {graph.frameData(graph.frameIndex()).sceneSetHandle()};
-    commandBuffer.bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics,
-        pipelineLayout,
-        RenderInterface::kSceneSet,
-        sceneSets,
-        {}
-    );
-    const SkyboxPushConstants parameters{
-        .viewport = {
-            static_cast<float>(viewport.offset.x),
-            static_cast<float>(viewport.offset.y),
-            static_cast<float>(viewport.extent.width),
-            static_cast<float>(viewport.extent.height),
-        },
-    };
-    commandBuffer.pushConstants<SkyboxPushConstants>(
-        pipelineLayout,
-        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        0,
-        parameters
-    );
-    commandBuffer.draw(3, 1, 0, 0);
-    commandBuffer.endRendering();
 }

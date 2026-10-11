@@ -7,6 +7,12 @@
 
 struct DrawItem;
 
+struct SceneShaderOptions
+{
+    bool ibl       = true;
+    bool clearcoat = true;
+};
+
 namespace SceneDraw
 {
 void useAttachments(
@@ -22,6 +28,7 @@ void recordMeshes(
     RenderGraph&                graph,
     std::span<const DrawItem>   items,
     std::span<const vk::Format> colorFormats,
-    ShaderHandle                shader = {}
+    ShaderHandle                shader  = {},
+    SceneShaderOptions          options = {}
 );
 }  // namespace SceneDraw

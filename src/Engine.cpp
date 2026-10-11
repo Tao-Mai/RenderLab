@@ -1,17 +1,17 @@
 #include "Engine.h"
 
-#include "asset/AssetManager.h"
 #include "asset/AssetDataManager.h"
-#include "scene/SceneManager.h"
-#include "editor/EditorCamera.h"
+#include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
-#include "editor/Editor.h"
-#include "core/Logger.h"
 #include "core/InputManager.h"
-#include "render/Renderer.h"
-#include "render/RenderContext.h"
+#include "core/Logger.h"
 #include "core/Window.h"
+#include "editor/Editor.h"
+#include "editor/EditorCamera.h"
+#include "render/RenderContext.h"
+#include "render/Renderer.h"
+#include "scene/SceneManager.h"
 
 #include <chrono>
 
@@ -27,15 +27,17 @@ void shutdownSubsystem(std::unique_ptr<T>& subsystem, T*& slot)
     slot = nullptr;
     subsystem.reset();
 }
-}
+}  // namespace
 
 Engine::Engine() = default;
 
 Engine::~Engine()
 {
     DCHECK(!inited);
-    DCHECK(!config && !window && !inputManager && !assetManager &&
-        !assetDataManager && !sceneManager && !renderer && !editor);
+    DCHECK(
+        !config && !window && !inputManager && !assetManager && !assetDataManager && !sceneManager && !renderer &&
+        !editor
+    );
 }
 
 void Engine::init()
@@ -43,35 +45,37 @@ void Engine::init()
     DCHECK(!inited);
 
     Context& ctx = context();
-    DCHECK(!ctx.config && !ctx.window && !ctx.inputManager && !ctx.assetManager &&
-        !ctx.assetDataManager && !ctx.sceneManager && !ctx.renderer && !ctx.editor);
+    DCHECK(
+        !ctx.config && !ctx.window && !ctx.inputManager && !ctx.assetManager && !ctx.assetDataManager &&
+        !ctx.sceneManager && !ctx.renderer && !ctx.editor
+    );
 
-    config = std::make_unique<ConfigManager>();
-    window = std::make_unique<Window>();
-    inputManager = std::make_unique<InputManager>();
-    assetManager = std::make_unique<AssetManager>();
+    config           = std::make_unique<ConfigManager>();
+    window           = std::make_unique<Window>();
+    inputManager     = std::make_unique<InputManager>();
+    assetManager     = std::make_unique<AssetManager>();
     assetDataManager = std::make_unique<AssetDataManager>();
-    sceneManager = std::make_unique<SceneManager>();
-    renderer = std::make_unique<Renderer>();
-    editor = std::make_unique<Editor>();
+    sceneManager     = std::make_unique<SceneManager>();
+    renderer         = std::make_unique<Renderer>();
+    editor           = std::make_unique<Editor>();
 
     ctx = {
-        .config = config.get(),
-        .window = window.get(),
-        .inputManager = inputManager.get(),
-        .assetManager = assetManager.get(),
+        .config           = config.get(),
+        .window           = window.get(),
+        .inputManager     = inputManager.get(),
+        .assetManager     = assetManager.get(),
         .assetDataManager = assetDataManager.get(),
-        .sceneManager = sceneManager.get(),
-        .renderer = renderer.get(),
-        .editor = editor.get(),
+        .sceneManager     = sceneManager.get(),
+        .renderer         = renderer.get(),
+        .editor           = editor.get(),
     };
 
     ctx.config->init();
-    ctx.assetDataManager->init();
+    ctx.assetDataManager->init(ctx.config->paths().assets);
     ctx.window->init();
     ctx.inputManager->init();
     ctx.sceneManager->init();
-    ctx.assetManager->init();
+    ctx.assetManager->init(ctx.config->paths().assets);
     inputMethod.activateEnglish();
     ctx.renderer->init();
     ctx.editor->init();
@@ -90,8 +94,8 @@ void Engine::run()
 
 void Engine::mainLoop()
 {
-    Context& ctx = context();
-    auto previousTime = std::chrono::steady_clock::now();
+    Context& ctx                   = context();
+    auto     previousTime          = std::chrono::steady_clock::now();
     bool     swapchainNeedsRebuild = false;
     while (!ctx.window->shouldClose())
     {
@@ -108,15 +112,15 @@ void Engine::mainLoop()
         {
             ctx.window->waitEvents();
             ctx.inputManager->tick();
-            if (ctx.inputManager->get(Command::Quit)) ctx.window->requestClose();
+            if (ctx.inputManager->get(Command::Quit))
+                ctx.window->requestClose();
             previousTime = std::chrono::steady_clock::now();
             continue;
         }
 
-        const auto currentTime = std::chrono::steady_clock::now();
-        const float deltaTime =
-            std::chrono::duration<float>(currentTime - previousTime).count();
-        previousTime = currentTime;
+        const auto  currentTime = std::chrono::steady_clock::now();
+        const float deltaTime   = std::chrono::duration<float>(currentTime - previousTime).count();
+        previousTime            = currentTime;
 
         if (swapchainNeedsRebuild)
         {
@@ -126,19 +130,16 @@ void Engine::mainLoop()
         }
 
         ctx.editor->applySceneActions();
-        auto& camera = ctx.sceneManager->editorCamera();
-        camera.setInputEnabled(camera.isNavigationActive() || !ctx.editor->wantsInput());
+        auto& camera = ctx.editor->camera();
+        ctx.editor->tick(deltaTime);
         ctx.sceneManager->tick(deltaTime);
 
-        const auto extent = ctx.renderer->swapchainHandle().extent();
+        const auto extent      = ctx.renderer->swapchainHandle().extent();
         const auto editorFrame = ctx.editor->buildFrame(camera, deltaTime, extent.width, extent.height);
-        if (editorFrame.rebuildGraph)
-            ctx.renderer->rebuildGraph();
 
-        const auto& renderData = renderSystem.prepare(
-            ctx.sceneManager->scene(), camera.worldPosition(), *renderContext().resources);
-        const auto editorResult = ctx.renderer->render(editorFrame.view, renderData, editorFrame.input);
-        swapchainNeedsRebuild   = editorResult.swapchainNeedsRebuild;
+        const auto& renderData   = renderSystem.prepare(ctx.sceneManager->scene(), camera.worldPosition());
+        const auto  editorResult = ctx.renderer->render(editorFrame.view, renderData, editorFrame.input);
+        swapchainNeedsRebuild    = editorResult.swapchainNeedsRebuild;
         ctx.editor->applyPickResult(editorResult);
     }
 }

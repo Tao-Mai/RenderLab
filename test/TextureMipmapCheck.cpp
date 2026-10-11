@@ -1,3 +1,4 @@
+#include "editor/EditorCamera.h"
 // Small filtering/upload check and one-time rebake of existing ordinary textures.
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
@@ -5,11 +6,11 @@
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Window.h"
-#include "render/Renderer.h"
 #include "render/RenderContext.h"
-#include "scene/system/RenderSystem.h"
+#include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "scene/SceneManager.h"
+#include "scene/system/RenderSystem.h"
 
 #include <algorithm>
 #include <array>
@@ -94,6 +95,7 @@ int main(int, char** argv)
     AssetManager     assets;
     AssetDataManager data;
     SceneManager     scenes;
+    EditorCamera     scenesCamera{scenes.scene().editorCamera};
     Window           window;
     Renderer         renderer;
     RenderSystem     renderSystem;
@@ -106,9 +108,9 @@ int main(int, char** argv)
     ctx.window           = &window;
     ctx.renderer         = &renderer;
     config.init();
-    data.init();
+    data.init(config.paths().assets);
     scenes.init();
-    assets.init();
+    assets.init(config.paths().assets);
 
     size_t rebuilt = 0;
     for (const auto& id : assets.loadedIds<TextureAsset>())
@@ -144,13 +146,10 @@ int main(int, char** argv)
     for (int frame = 0; frame < 4; ++frame)
     {
         window.pollEvents();
-        const auto& renderData = renderSystem.prepare(
-            scenes.scene(), scenes.editorCamera().worldPosition(), *renderContext().resources);
+        const auto& renderData = renderSystem.prepare(scenes.scene(), scenesCamera.worldPosition());
         lightMarkers.prepare(scenes.scene(), *renderContext().resources);
         renderer.render(
-            scenes.editorCamera().renderView(
-                {0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)}
-            ),
+            scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)}),
             renderData,
             {
                 .lightDrawItems = lightMarkers.drawItems(),

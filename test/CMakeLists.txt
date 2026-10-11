@@ -45,6 +45,7 @@ add_executable(RenderLabTests
 
 target_include_directories(RenderLabTests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_compile_definitions(RenderLabTests PRIVATE
+        VULKAN_HPP_NO_EXCEPTIONS
         RENDERLAB_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
         RENDERLAB_CONFIG_FILE="${PROJECT_SOURCE_DIR}/test/config.json"
 )
@@ -87,18 +88,11 @@ target_link_libraries(RenderGraphTests PRIVATE
 add_test(NAME RenderGraphTests COMMAND RenderGraphTests)
 
 # Manual integration check requiring Vulkan and the project's configured assets.
-get_target_property(RENDERGRAPH_SMOKE_SOURCES RenderLab SOURCES)
-list(REMOVE_ITEM RENDERGRAPH_SMOKE_SOURCES src/Main.cpp)
-list(TRANSFORM RENDERGRAPH_SMOKE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
-add_executable(RenderGraphGpuSmoke EXCLUDE_FROM_ALL
-        RenderGraphGpuSmoke.cpp ${RENDERGRAPH_SMOKE_SOURCES})
-foreach (PROPERTY INCLUDE_DIRECTORIES COMPILE_DEFINITIONS LINK_LIBRARIES COMPILE_OPTIONS)
-    get_target_property(RENDERGRAPH_SMOKE_${PROPERTY} RenderLab ${PROPERTY})
-    if (RENDERGRAPH_SMOKE_${PROPERTY})
-        set_property(TARGET RenderGraphGpuSmoke PROPERTY ${PROPERTY} "${RENDERGRAPH_SMOKE_${PROPERTY}}")
-    endif ()
-endforeach ()
-add_dependencies(RenderGraphGpuSmoke RenderLabShaders)
+foreach(check IN ITEMS RenderGraphGpuSmoke EditorOverlayGpuCheck DeferredRenderingCheck RayTracingVisibilityCheck)
+    add_executable(${check} EXCLUDE_FROM_ALL ${check}.cpp)
+    target_link_libraries(${check} PRIVATE RenderLabRuntime)
+    renderlab_copy_compiler_runtime(${check})
+endforeach()
 
 add_executable(main main.cpp)
 target_link_libraries(main PRIVATE RenderLabBuildOptions)
@@ -110,6 +104,6 @@ add_test(NAME Cxx26ReflectionTest COMMAND Cxx26ReflectionTest)
 set_tests_properties(RenderLabTests RenderGraphTests Cxx26ReflectionTest PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${RENDERLAB_COMPILER_BIN_DIR}")
 
-foreach (target RenderLabTests RenderGraphTests RenderGraphGpuSmoke main Cxx26ReflectionTest)
+foreach (target RenderLabTests RenderGraphTests main Cxx26ReflectionTest)
     renderlab_copy_compiler_runtime(${target})
 endforeach ()

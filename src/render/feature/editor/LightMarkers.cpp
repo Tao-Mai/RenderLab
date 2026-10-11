@@ -1,7 +1,7 @@
 #include "render/feature/editor/LightMarkers.h"
 
-#include "asset/Asset.h"
 #include "asset/BuiltinAssets.h"
+#include "asset/SceneAsset.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/RenderResourceManager.h"
 #include "scene/AActor.h"
@@ -24,7 +24,7 @@ void LightMarkers::prepare(const SceneAsset& scene, RenderResourceManager& resou
     draws.clear();
     for (const auto& actor : scene.actors)
     {
-        const auto* light     = actor->getComponent<LightComponent>();
+        const auto* light = actor->getComponent<LightComponent>();
         if (!light)
             continue;
 

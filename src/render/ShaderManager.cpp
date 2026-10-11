@@ -1,8 +1,7 @@
 #include "render/ShaderManager.h"
 
-#include "asset/Asset.h"
 #include "asset/AssetManager.h"
-#include "core/Context.h"
+#include "asset/ShaderAsset.h"
 #include "core/Logger.h"
 #include "render/resource/GpuShader.h"
 
@@ -35,17 +34,18 @@ std::string requiredString(const json& value, const std::string& name)
 uint32_t requiredIndex(const json& value, const std::string& name)
 {
     const auto& number = requiredField(value, name);
-    CHECK(number.is_number_unsigned() ||
-          (number.is_number_integer() && number.get<int64_t>() >= 0),
-          "shader reflection field '{}' is not an index", name);
+    CHECK(
+        number.is_number_unsigned() || (number.is_number_integer() && number.get<int64_t>() >= 0),
+        "shader reflection field '{}' is not an index",
+        name
+    );
 
     const auto index = number.get<uint64_t>();
-    CHECK(index <= std::numeric_limits<uint32_t>::max(),
-          "shader reflection field '{}' exceeds uint32_t", name);
+    CHECK(index <= std::numeric_limits<uint32_t>::max(), "shader reflection field '{}' exceeds uint32_t", name);
     return static_cast<uint32_t>(index);
 }
 
-std::vector<ShaderMetadata::Binding> readReflection(std::filesystem::path path)
+void readReflection(std::filesystem::path path, ShaderMetadata& metadata)
 {
     path.replace_extension(".reflection.json");
     std::ifstream input{path, std::ios::binary};
@@ -55,15 +55,28 @@ std::vector<ShaderMetadata::Binding> readReflection(std::filesystem::path path)
 
     const auto& parameters = requiredField(reflection, "parameters");
     CHECK(parameters.is_array(), "shader reflection '{}' has no parameters array", path.string());
-    std::vector<ShaderMetadata::Binding> bindings;
+    auto& bindings = metadata.bindings;
     for (const auto& parameter : parameters)
     {
         const auto& binding = requiredField(parameter, "binding");
+        if (requiredString(binding, "kind") == "pushConstantBuffer")
+        {
+            const auto& layout =
+                requiredField(requiredField(requiredField(parameter, "type"), "elementVarLayout"), "binding");
+            metadata.pushConstantSize = requiredIndex(layout, "offset") + requiredIndex(layout, "size");
+        }
         if (requiredString(binding, "kind") != "descriptorTableSlot")
         {
             continue;
         }
-        const auto& type = requiredField(parameter, "type");
+        const json* reflectedType = &requiredField(parameter, "type");
+        uint32_t    count         = 1;
+        while (requiredString(*reflectedType, "kind") == "array")
+        {
+            count *= requiredIndex(*reflectedType, "elementCount");
+            reflectedType = &requiredField(*reflectedType, "elementType");
+        }
+        const auto&        type = *reflectedType;
         const std::string  kind = requiredString(type, "kind");
         vk::DescriptorType descriptorType;
         if (kind == "constantBuffer")
@@ -83,16 +96,18 @@ std::vector<ShaderMetadata::Binding> readReflection(std::filesystem::path path)
             }
             else
             {
-                CHECK(shape == "texture2D" || shape == "textureCube",
-                      "unsupported reflected resource shape '{}' in '{}'", shape, path.string());
+                CHECK(
+                    shape == "texture2D" || shape == "textureCube",
+                    "unsupported reflected resource shape '{}' in '{}'",
+                    shape,
+                    path.string()
+                );
                 descriptorType = vk::DescriptorType::eSampledImage;
             }
         }
         else
         {
-            LOG_FATAL("unsupported reflected descriptor type '{}' in '{}'",
-                      kind,
-                      path.string());
+            LOG_FATAL("unsupported reflected descriptor type '{}' in '{}'", kind, path.string());
         }
         const uint32_t set = binding.contains("space") ? requiredIndex(binding, "space") : 0;
         bindings.push_back({
@@ -100,29 +115,33 @@ std::vector<ShaderMetadata::Binding> readReflection(std::filesystem::path path)
             requiredIndex(binding, "index"),
             descriptorType,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            count,
         });
     }
-    std::sort(bindings.begin(),
-              bindings.end(),
-              [](const auto& left, const auto& right)
-              {
-                  return std::tie(left.set, left.binding) < std::tie(right.set, right.binding);
-              });
-    CHECK(std::adjacent_find(bindings.begin(), bindings.end(),
-              [](const auto& left, const auto& right)
-              { return left.set == right.set && left.binding == right.binding; }) == bindings.end(),
-          "duplicate shader reflection bindings in '{}'",
-          path.string());
-    return bindings;
+    std::sort(
+        bindings.begin(),
+        bindings.end(),
+        [](const auto& left, const auto& right)
+        { return std::tie(left.set, left.binding) < std::tie(right.set, right.binding); }
+    );
+    CHECK(
+        std::adjacent_find(
+            bindings.begin(),
+            bindings.end(),
+            [](const auto& left, const auto& right) { return left.set == right.set && left.binding == right.binding; }
+        ) == bindings.end(),
+        "duplicate shader reflection bindings in '{}'",
+        path.string()
+    );
 }
-}
+}  // namespace
 
-ShaderManager::~ShaderManager() = default;
+ShaderManager::~ShaderManager() { DCHECK(!device); }
 
-void ShaderManager::init(const vk::raii::Device& targetDevice)
+void ShaderManager::init(const vk::raii::Device& targetDevice, AssetManager& targetAssets)
 {
     device = &targetDevice;
-    assets = context().assetManager;
+    assets = &targetAssets;
 }
 
 void ShaderManager::shutdown() noexcept
@@ -134,30 +153,47 @@ void ShaderManager::shutdown() noexcept
     device = nullptr;
 }
 
-ShaderHandle ShaderManager::getOrLoad(const ShaderAsset::ID& id, ShaderVariant variant)
+ShaderHandle ShaderManager::getOrLoad(const ShaderAsset::ID& id, const ShaderDefines& defines)
 {
-    DCHECK(device && assets, "ShaderManager is not initialized");
-    const auto key = std::pair{id.value, variant};
+    DCHECK(device && assets);
+    const auto key = std::pair{id.value, defines};
     if (const auto found = handles.find(key); found != handles.end())
     {
         return found->second;
     }
     const ShaderAsset& desc = assets->get<ShaderAsset>(id);
     CHECK(!desc.binary.empty(), "shader '{}' has no binary path", id);
-    std::filesystem::path binary = desc.binary;
-    if (variant == ShaderVariant::NoIbl)
-        binary.replace_filename(binary.stem().string() + ".no_ibl" + binary.extension().string());
-    else if (variant == ShaderVariant::Clearcoat)
-        binary.replace_filename(binary.stem().string() + ".clearcoat" + binary.extension().string());
-    else if (variant == ShaderVariant::ClearcoatNoIbl)
-        binary.replace_filename(binary.stem().string() + ".clearcoat.no_ibl" + binary.extension().string());
-    else if (variant == ShaderVariant::RectAreaShadow)
-        binary.replace_filename(binary.stem().string() + ".rect_area" + binary.extension().string());
-    else if (variant == ShaderVariant::DirectionalShadow)
-        binary.replace_filename(binary.stem().string() + ".directional" + binary.extension().string());
-
-    auto               shader = std::make_unique<GpuShader>(*device, binary.string());
-    ShaderMetadata     metadata{id, binary, readReflection(binary), variant};
+    auto manifestPath = desc.binary;
+    manifestPath.replace_extension(".variants.json");
+    std::ifstream input{manifestPath};
+    CHECK(input.is_open(), "missing shader manifest '{}'", manifestPath.string());
+    const auto manifest = json::parse(input, nullptr, false);
+    CHECK(manifest.is_array() && !manifest.empty(), "invalid shader manifest '{}'", manifestPath.string());
+    const json* selected = defines.empty() ? &manifest.front() : nullptr;
+    if (!selected)
+        for (const auto& variant : manifest)
+        {
+            const auto& options = requiredField(variant, "defines");
+            if (std::ranges::all_of(
+                    defines,
+                    [&](const auto& option)
+                    { return options.contains(option.first) && options[option.first] == option.second; }
+                ))
+            {
+                CHECK(!selected, "ambiguous shader options for '{}'", id);
+                selected = &variant;
+            }
+        }
+    CHECK(selected, "shader '{}' has no matching compiled variant", id);
+    const auto     binary = manifestPath.parent_path() / requiredString(*selected, "binary");
+    auto           shader = std::make_unique<GpuShader>(*device, binary.string());
+    ShaderMetadata metadata{
+        .id      = id,
+        .binary  = binary,
+        .defines = selected->at("defines").get<ShaderDefines>(),
+        .entries = selected->at("entries").get<std::vector<std::string>>()
+    };
+    readReflection(binary, metadata);
     const ShaderHandle handle{static_cast<uint32_t>(shaders.size() + 1)};
     shaders.push_back(std::move(shader));
     shaderMetadata.push_back(std::move(metadata));
@@ -167,16 +203,12 @@ ShaderHandle ShaderManager::getOrLoad(const ShaderAsset::ID& id, ShaderVariant v
 
 vk::ShaderModule ShaderManager::module(ShaderHandle handle) const
 {
-    DCHECK(handle.index > 0 && handle.index <= shaders.size(),
-          "invalid ShaderHandle {}",
-          handle.index);
+    DCHECK(handle.index > 0 && handle.index <= shaders.size(), "invalid ShaderHandle {}", handle.index);
     return shaders[handle.index - 1]->handle();
 }
 
 const ShaderMetadata& ShaderManager::metadata(ShaderHandle handle) const
 {
-    DCHECK(handle.index > 0 && handle.index <= shaderMetadata.size(),
-          "invalid ShaderHandle {}",
-          handle.index);
+    DCHECK(handle.index > 0 && handle.index <= shaderMetadata.size(), "invalid ShaderHandle {}", handle.index);
     return shaderMetadata[handle.index - 1];
 }

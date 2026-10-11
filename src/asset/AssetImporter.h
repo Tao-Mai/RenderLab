@@ -1,7 +1,9 @@
 #pragma once
 
-#include "asset/Asset.h"
+#include "asset/EnvironmentMapAsset.h"
+#include "asset/MeshAsset.h"
 #include "asset/MeshGeometry.h"
+#include "asset/TextureAsset.h"
 
 #include <cstdint>
 #include <filesystem>

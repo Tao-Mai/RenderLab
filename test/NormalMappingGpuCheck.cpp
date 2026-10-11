@@ -1,55 +1,57 @@
+#include "editor/EditorCamera.h"
 // Small hidden-window integration check; does not save the temporary scene.
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Window.h"
-#include "render/Renderer.h"
 #include "render/RenderContext.h"
-#include "scene/system/RenderSystem.h"
+#include "render/Renderer.h"
 #include "scene/SceneManager.h"
 #include "scene/SceneTypes.h"
+#include "scene/system/RenderSystem.h"
 
 #include <GLFW/glfw3.h>
 
 int main(int argc, char** argv)
 {
     logger::init(argv[0]);
-    ConfigManager config;
-    AssetManager assets;
+    ConfigManager    config;
+    AssetManager     assets;
     AssetDataManager data;
-    SceneManager scenes;
-    Window window;
-    Renderer renderer;
-    RenderSystem renderSystem;
+    SceneManager     scenes;
+    EditorCamera     scenesCamera{scenes.scene().editorCamera};
+    Window           window;
+    Renderer         renderer;
+    RenderSystem     renderSystem;
     LightMarkers     lightMarkers;
-    context().config = &config;
-    context().assetManager = &assets;
+    context().config           = &config;
+    context().assetManager     = &assets;
     context().assetDataManager = &data;
-    context().sceneManager = &scenes;
-    context().window = &window;
-    context().renderer = &renderer;
+    context().sceneManager     = &scenes;
+    context().window           = &window;
+    context().renderer         = &renderer;
 
     config.init();
-    const auto originalPath = config.rendererConfig().renderPath;
+    const auto originalPath    = config.rendererConfig().renderPath;
     const auto originalFeature = config.rendererConfig().feature;
     config.setRenderPath(RenderPath::Rasterization);
     scenes.init();
-    assets.init();
-    data.init();
+    assets.init(config.paths().assets);
+    data.init(config.paths().assets);
     CHECK(glfwInit());
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     window.init();
 
     SceneAsset scene;
-    scene.id = "normal_mapping_check";
-    scene.editorCamera.position = {0, 0, 5};
-    auto object = std::make_unique<AStaticMesh>();
-    const MeshAsset::ID meshId = argc > 1 ? argv[1] : "NormalTangentTest";
+    scene.id                                        = "normal_mapping_check";
+    scene.editorCamera.position                     = {0, 0, 5};
+    auto                object                      = std::make_unique<AStaticMesh>();
+    const MeshAsset::ID meshId                      = argc > 1 ? argv[1] : "NormalTangentTest";
     object->getComponent<RenderComponent>()->meshId = meshId;
     scene.actors.push_back(std::move(object));
-    auto light = std::make_unique<ALight>();
-    light->transform().position = {1, 2, 3};
+    auto light                                       = std::make_unique<ALight>();
+    light->transform().position                      = {1, 2, 3};
     light->getComponent<LightComponent>()->intensity = 100.0f;
     scene.actors.push_back(std::move(light));
     scenes.load(scene);
@@ -58,13 +60,13 @@ int main(int argc, char** argv)
     renderer.rebuildGraph();
     const auto extent = renderer.swapchainHandle().extent();
     const auto view =
-        scenes.editorCamera().renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
+        scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
     EditorFrameInput input;
     for (int mode = 0; mode < 4; ++mode)
     {
-        auto feature = originalFeature;
-        feature.ibl = (mode & 1) != 0;
-        feature.hdr = mode < 2;
+        auto feature          = originalFeature;
+        feature.ibl           = (mode & 1) != 0;
+        feature.hdr           = mode < 2;
         feature.shadow.enable = mode < 2;
         config.setRenderFeature(feature);
         renderer.rebuildGraph();
@@ -75,24 +77,23 @@ int main(int argc, char** argv)
             window.pollEvents();
             for (size_t index = 0; index < assets.get<MeshAsset>(meshId).submeshes.size(); ++index)
             {
-                auto& material = overrides[index];
-                material.normalScale = frame % 2 == 0 ? 1.0f : 0.0f;
-                material.metallic = frame % 2 == 0 ? 1.0f : 0.0f;
-                material.roughness = frame % 2 == 0 ? 0.2f : 1.0f;
-                const auto& submesh = assets.get<MeshAsset>(meshId).submeshes[index];
+                auto& material             = overrides[index];
+                material.normalScale       = frame % 2 == 0 ? 1.0f : 0.0f;
+                material.metallic          = frame % 2 == 0 ? 1.0f : 0.0f;
+                material.roughness         = frame % 2 == 0 ? 0.2f : 1.0f;
+                const auto& submesh        = assets.get<MeshAsset>(meshId).submeshes[index];
                 const auto& sourceMaterial = assets.get<MaterialAsset>(submesh.materialId);
                 if (sourceMaterial.clearcoat)
                 {
-                    auto clearcoat = *sourceMaterial.clearcoat;
-                    clearcoat.factor = frame % 2 == 0 ? 0.0f : 1.0f;
+                    auto clearcoat            = *sourceMaterial.clearcoat;
+                    clearcoat.factor          = frame % 2 == 0 ? 0.0f : 1.0f;
                     clearcoat.roughnessFactor = frame < 2 ? 0.0f : 0.5f;
                     if (frame >= 2)
                         clearcoat.normalTexture = sourceMaterial.normalTexture;
                     material.clearcoat = std::move(clearcoat);
                 }
             }
-            const auto& renderData = renderSystem.prepare(
-                scenes.scene(), scenes.editorCamera().worldPosition(), *renderContext().resources);
+            const auto& renderData = renderSystem.prepare(scenes.scene(), scenesCamera.worldPosition());
             lightMarkers.prepare(scenes.scene(), *renderContext().resources);
             input.lightDrawItems = lightMarkers.drawItems();
             renderer.render(view, renderData, input);

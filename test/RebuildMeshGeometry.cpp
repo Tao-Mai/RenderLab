@@ -12,22 +12,23 @@
 int main(int argc, char** argv)
 {
     logger::init(argv[0]);
-    ConfigManager config;
-    AssetManager assets;
+    ConfigManager    config;
+    AssetManager     assets;
     AssetDataManager data;
-    SceneManager scenes;
-    context().config = &config;
-    context().assetManager = &assets;
+    SceneManager     scenes;
+    context().config           = &config;
+    context().assetManager     = &assets;
     context().assetDataManager = &data;
     config.init();
     scenes.init();
-    assets.init();
-    data.init();
+    assets.init(config.paths().assets);
+    data.init(config.paths().assets);
 
     for (const auto& id : assets.loadedIds<MeshAsset>())
     {
         const auto& asset = assets.get<MeshAsset>(id);
-        if (asset.source != Source::File) continue;
+        if (asset.source != Source::File)
+            continue;
         CHECK(asset.path);
         auto prepared = AssetImporter::prepareMesh(config.paths().assets / *asset.path);
         CHECK(prepared.submeshes.size() == asset.submeshes.size());
@@ -36,7 +37,8 @@ int main(int argc, char** argv)
             CHECK(prepared.submeshes[index].firstIndex == asset.submeshes[index].firstIndex);
             CHECK(prepared.submeshes[index].indexCount == asset.submeshes[index].indexCount);
         }
-        for (auto& vertex : prepared.geometry.vertices) vertex.position *= asset.importScale;
+        for (auto& vertex : prepared.geometry.vertices)
+            vertex.position *= asset.importScale;
         CHECK(data.writeGeometry(id, prepared.geometry) == asset.geometry);
         const auto saved = data.readGeometry(asset);
         CHECK(saved.indices == prepared.geometry.indices);
@@ -49,12 +51,19 @@ int main(int argc, char** argv)
             CHECK(std::abs(glm::length(glm::vec3(vertex.tangent)) - 1.0f) < 1e-4f);
             CHECK(vertex.tangent.w == 1.0f || vertex.tangent.w == -1.0f);
         }
-        LOG_INFO("Rebuilt geometry '{}': {} vertices, {} indices", id.value,
-                 saved.vertices.size(), saved.indices.size());
+        LOG_INFO(
+            "Rebuilt geometry '{}': {} vertices, {} indices",
+            id.value,
+            saved.vertices.size(),
+            saved.indices.size()
+        );
     }
 
-    for (const auto& id : {BuiltinAssets::Mesh::plane, BuiltinAssets::Mesh::cube,
-                          BuiltinAssets::Mesh::sphere, BuiltinAssets::Mesh::arrow})
+    for (const auto& id :
+         {BuiltinAssets::Mesh::plane,
+          BuiltinAssets::Mesh::cube,
+          BuiltinAssets::Mesh::sphere,
+          BuiltinAssets::Mesh::arrow})
     {
         const auto geometry = data.readGeometry(assets.get<MeshAsset>(id));
         for (const auto& vertex : geometry.vertices)

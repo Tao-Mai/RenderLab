@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/RendererConfig.h"
+#include "render/feature/shadow/ShadowData.h"
 #include "render/resource/Buffer.h"
 #include "render/resource/ShaderData.h"
 
@@ -19,38 +19,33 @@ public:
     void reset() noexcept;
     void updateView(const ViewUniforms& view);
     // Update only after the owning frame's fence completes.
-    void update(
-        const ViewUniforms&          view,
-        const LightUniforms&         lighting,
-        std::span<const LightData>   lights,
-        const RenderFeature::Shadow& shadows
-    );
+    void update(const ViewUniforms& view, const LightUniforms& lighting, ShadowFrameData prepared);
 
-    [[nodiscard]] const ViewUniforms&                    viewUniforms() const;
-    [[nodiscard]] const LightUniforms&                   lightUniforms() const;
-    [[nodiscard]] std::span<const LightData>             lightData() const;
-    [[nodiscard]] std::span<const PointShadowData>       pointShadowData() const;
-    [[nodiscard]] std::span<const RectAreaShadowData>    rectAreaShadowData() const { return rectAreaShadows; }
-    [[nodiscard]] std::span<const DirectionalShadowData> directionalShadowData() const { return directionalShadows; }
-    [[nodiscard]] vk::DescriptorSet                      sceneSetHandle() const;
-    [[nodiscard]] vk::DescriptorSet                      viewSetHandle() const { return *viewSet; }
+    [[nodiscard]] const ViewUniforms&                 viewUniforms() const { return viewData; }
+    [[nodiscard]] const LightUniforms&                lightUniforms() const { return lightMetadata; }
+    [[nodiscard]] std::span<const LightData>          lightData() const { return shadowData.lights; }
+    [[nodiscard]] std::span<const PointShadowData>    pointShadowData() const { return shadowData.pointShadows; }
+    [[nodiscard]] std::span<const RectAreaShadowData> rectAreaShadowData() const { return shadowData.rectAreaShadows; }
+    [[nodiscard]] std::span<const DirectionalShadowData> directionalShadowData() const
+    {
+        return shadowData.directionalShadows;
+    }
+    [[nodiscard]] vk::DescriptorSet sceneSetHandle() const { return *sceneSet; }
+    [[nodiscard]] vk::DescriptorSet viewSetHandle() const { return *viewSet; }
 
 private:
-    const VulkanContext*               vulkan = nullptr;
-    ViewUniforms                       viewData;
-    LightUniforms                      lightMetadata;
-    std::vector<LightData>             lights;
-    std::vector<PointShadowData>       pointShadows;
-    std::vector<RectAreaShadowData>    rectAreaShadows;
-    std::vector<DirectionalShadowData> directionalShadows;
-    Buffer                             viewBuffer;
-    Buffer                             lightUniformBuffer;
-    Buffer                             lightBuffer;
-    Buffer                             pointShadowBuffer;
-    Buffer                             rectAreaShadowBuffer;
-    Buffer                             directionalShadowBuffer;
-    vk::raii::DescriptorSet            sceneSet = nullptr;
-    vk::raii::DescriptorSet            viewSet = nullptr;
+    const VulkanContext*    vulkan = nullptr;
+    ShadowFrameData         shadowData;
+    ViewUniforms            viewData;
+    LightUniforms           lightMetadata;
+    Buffer                  viewBuffer;
+    Buffer                  lightUniformBuffer;
+    Buffer                  lightBuffer;
+    Buffer                  pointShadowBuffer;
+    Buffer                  rectAreaShadowBuffer;
+    Buffer                  directionalShadowBuffer;
+    vk::raii::DescriptorSet sceneSet = nullptr;
+    vk::raii::DescriptorSet viewSet  = nullptr;
 
     void bindBuffers();
 };

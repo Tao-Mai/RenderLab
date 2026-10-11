@@ -1,18 +1,18 @@
 #include "render/resource/RenderResourceManager.h"
 
-#include "asset/AssetManager.h"
+#include "asset/ApplyOptionalFields.h"
 #include "asset/AssetDataManager.h"
+#include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
-#include "core/Serializer.h"
-#include "core/Context.h"
 #include "core/Logger.h"
 #include "render/DescriptorManager.h"
 #include "render/ShaderManager.h"
-#include "render/device/VulkanContext.h"
 #include "render/device/VkCheck.h"
+#include "render/device/VulkanContext.h"
 #include "render/resource/GpuMaterial.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/GpuTexture.h"
+#include "scene/system/SceneRenderData.h"
 
 #include <cmath>
 #include <utility>
@@ -103,30 +103,31 @@ namespace
     }
     LOG_FATAL("invalid sampler border color");
 }
-}
+}  // namespace
 
-RenderResourceManager::~RenderResourceManager() = default;
+RenderResourceManager::~RenderResourceManager() { DCHECK(!vulkan); }
 
 GpuUploadContext RenderResourceManager::uploadContext() const
 {
-    DCHECK(vulkan && *uploadPool,
-          "RenderResourceManager upload context is not initialized");
-    return {vulkan->physicalDeviceHandle(), vulkan->deviceHandle(),
-            uploadPool, vulkan->queueHandle()};
+    DCHECK(vulkan && *uploadPool);
+    return {vulkan->physicalDeviceHandle(), vulkan->deviceHandle(), uploadPool, vulkan->queueHandle()};
 }
 
-void RenderResourceManager::init(VulkanContext&     targetVulkan,
-                                 DescriptorManager& targetDescriptors, ShaderManager& targetShaders)
+void RenderResourceManager::init(
+    VulkanContext&     targetVulkan,
+    DescriptorManager& targetDescriptors,
+    ShaderManager&     targetShaders,
+    AssetManager&      targetAssets,
+    AssetDataManager&  targetData
+)
 {
-    DCHECK(context().assetManager);
-    DCHECK(context().assetDataManager);
-    assets      = context().assetManager;
-    data        = context().assetDataManager;
+    assets      = &targetAssets;
+    data        = &targetData;
     vulkan      = &targetVulkan;
     descriptors = &targetDescriptors;
     shaders     = &targetShaders;
     const vk::CommandPoolCreateInfo poolInfo{
-        .flags = vk::CommandPoolCreateFlagBits::eTransient,
+        .flags            = vk::CommandPoolCreateFlagBits::eTransient,
         .queueFamilyIndex = vulkan->graphicsQueueFamilyIndex(),
     };
     uploadPool = vkCheck(vulkan->deviceHandle().createCommandPool(poolInfo));
@@ -134,6 +135,8 @@ void RenderResourceManager::init(VulkanContext&     targetVulkan,
 
 void RenderResourceManager::shutdown() noexcept
 {
+    for (auto& frame : frameResources)
+        frame = {};
     meshes.clear();
     materials.clear();
     textures.clear();
@@ -153,8 +156,8 @@ GpuMesh& RenderResourceManager::mesh(const MeshAsset::ID& id)
         return *found->second;
     }
 
-    const MeshAsset&    meshAsset = assets->get<MeshAsset>(id);
-    MeshGeometry         geometry = data->readGeometry(meshAsset);
+    const MeshAsset&     meshAsset = assets->get<MeshAsset>(id);
+    MeshGeometry         geometry  = data->readGeometry(meshAsset);
     std::vector<Submesh> parts;
     parts.reserve(meshAsset.submeshes.size());
     for (const MeshAsset::Submesh& submesh : meshAsset.submeshes)
@@ -162,81 +165,83 @@ GpuMesh& RenderResourceManager::mesh(const MeshAsset::ID& id)
         parts.push_back({
             .firstIndex = submesh.firstIndex,
             .indexCount = submesh.indexCount,
-            .material = &material(submesh.materialId),
+            .material   = material(submesh.materialId),
         });
     }
 
-    auto gpu = std::make_unique<GpuMesh>(
-        uploadContext(),
-        std::move(geometry),
-        std::move(parts), vulkan->supportsRayTracing());
+    auto gpu =
+        std::make_unique<GpuMesh>(uploadContext(), std::move(geometry), std::move(parts), vulkan->supportsRayTracing());
     return *meshes.emplace(id, std::move(gpu)).first->second;
 }
 
-MaterialAsset RenderResourceManager::materialAsset(const MaterialAsset::ID& id) const
+std::shared_ptr<GpuMaterial> RenderResourceManager::material(const MaterialAsset::ID& id)
 {
-    DCHECK(assets);
-    return assets->get<MaterialAsset>(id);
+    auto&      entry    = materials[id];
+    const auto revision = assets->revision<MaterialAsset>(id);
+    if (!entry.gpu || entry.revision != revision)
+    {
+        entry.gpu      = createMaterial(assets->get<MaterialAsset>(id));
+        entry.revision = revision;
+    }
+    return entry.gpu;
 }
 
-GpuMaterial& RenderResourceManager::material(const MaterialAsset::ID& id)
-{
-    return material(materialAsset(id));
-}
-
-GpuMaterial& RenderResourceManager::material(const MaterialAsset& asset)
+std::shared_ptr<GpuMaterial> RenderResourceManager::createMaterial(const MaterialAsset& asset)
 {
     DCHECK(descriptors);
-
-    const std::string key = Serialize(asset).dump();
-    if (const auto found = materials.find(key); found != materials.end())
-    {
-        return *found->second;
-    }
-
     const auto loadTexture = [&](const std::optional<TextureBinding>& source,
-                                 const TextureAsset::ID& fallback,
-                                 std::optional<ColorSpace> colorSpace = std::nullopt)
+                                 const TextureAsset::ID&              fallback,
+                                 std::optional<ColorSpace>            colorSpace = std::nullopt)
     {
-        const TextureBinding binding = source.value_or(TextureBinding{
-            fallback, BuiltinAssets::Sampler::linearRepeat});
-        CHECK(!binding.textureID.empty() && !binding.samplerID.empty(),
-              "material '{}' has an invalid texture binding", asset.id);
+        const TextureBinding binding = source.value_or(TextureBinding{fallback, BuiltinAssets::Sampler::linearRepeat});
+        CHECK(
+            !binding.textureID.empty() && !binding.samplerID.empty(),
+            "material '{}' has an invalid texture binding",
+            asset.id
+        );
         if (colorSpace)
         {
-            CHECK(assets->get<TextureAsset>(binding.textureID).colorSpace == *colorSpace,
-                  "material '{}' texture '{}' has an invalid color space", asset.id, binding.textureID);
+            CHECK(
+                assets->get<TextureAsset>(binding.textureID).colorSpace == *colorSpace,
+                "material '{}' texture '{}' has an invalid color space",
+                asset.id,
+                binding.textureID
+            );
         }
         return GpuMaterial::Texture{texture(binding.textureID), sampler(binding.samplerID)};
     };
     GpuMaterial::Textures textures{
         .baseColor = loadTexture(asset.baseColorTexture, BuiltinAssets::Texture::white),
-        .normal = loadTexture(asset.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear),
-        .metallic = loadTexture(asset.metallicTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+        .normal    = loadTexture(asset.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear),
+        .metallic  = loadTexture(asset.metallicTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
         .roughness = loadTexture(asset.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
-        .emissive = loadTexture(asset.emissiveTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb),
+        .emissive  = loadTexture(asset.emissiveTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb),
         .occlusion = loadTexture(asset.aoTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
     };
     if (asset.clearcoat)
     {
         const auto& clearcoat = *asset.clearcoat;
-        textures.clearcoat = GpuMaterial::Textures::Clearcoat{
-            .factor = loadTexture(clearcoat.texture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
-            .roughness = loadTexture(clearcoat.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
-            .normal = loadTexture(clearcoat.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear),
+        textures.clearcoat    = GpuMaterial::Textures::Clearcoat{
+               .factor = loadTexture(clearcoat.texture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+               .roughness =
+                loadTexture(clearcoat.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+               .normal = loadTexture(clearcoat.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear),
         };
     }
 
-    auto                     gpu       = std::make_unique<GpuMaterial>();
+    auto gpu = std::make_shared<GpuMaterial>();
     gpu->create(
         vulkan->physicalDeviceHandle(),
         vulkan->deviceHandle(),
         *descriptors,
-        shaders->getOrLoad(asset.shaderId.value_or("scene"),
-            asset.clearcoat ? ShaderVariant::Clearcoat : ShaderVariant::Default),
+        shaders->getOrLoad(
+            asset.shaderId.value_or("scene"),
+            {{"ENABLE_IBL", 1}, {"ENABLE_CLEARCOAT", asset.clearcoat ? 1 : 0}}
+        ),
         asset,
-        std::move(textures));
-    return *materials.emplace(key, std::move(gpu)).first->second;
+        std::move(textures)
+    );
+    return gpu;
 }
 
 std::shared_ptr<GpuTexture> RenderResourceManager::texture(const TextureAsset::ID& id)
@@ -246,7 +251,7 @@ std::shared_ptr<GpuTexture> RenderResourceManager::texture(const TextureAsset::I
         return found->second;
     }
 
-    const TextureAsset&       asset  = assets->get<TextureAsset>(id);
+    const TextureAsset&        asset = assets->get<TextureAsset>(id);
     const std::vector<uint8_t> bytes = data->readTexture(asset);
     auto                       gpu   = std::make_shared<GpuTexture>(uploadContext(), asset, bytes);
 
@@ -260,57 +265,127 @@ vk::Sampler RenderResourceManager::sampler(const SamplerAsset::ID& id)
         return *found->second;
     }
 
-    DCHECK(assets && vulkan,
-          "RenderResourceManager is not initialized");
-    const SamplerAsset& asset = assets->get<SamplerAsset>(id);
-    const auto& limits = vulkan->properties().limits;
+    DCHECK(assets && vulkan);
+    const SamplerAsset& asset  = assets->get<SamplerAsset>(id);
+    const auto&         limits = vulkan->properties().limits;
 
-    CHECK(std::isfinite(asset.mipLodBias) &&
-          std::isfinite(asset.maxAnisotropy) &&
-          std::isfinite(asset.minLod) &&
-          (!asset.maxLod ||
-           (std::isfinite(*asset.maxLod) && asset.minLod <= *asset.maxLod)) &&
-          std::abs(asset.mipLodBias) <= limits.maxSamplerLodBias,
-          "invalid sampler LOD settings: {}", id);
+    CHECK(
+        std::isfinite(asset.mipLodBias) && std::isfinite(asset.maxAnisotropy) && std::isfinite(asset.minLod) &&
+            (!asset.maxLod || (std::isfinite(*asset.maxLod) && asset.minLod <= *asset.maxLod)) &&
+            std::abs(asset.mipLodBias) <= limits.maxSamplerLodBias,
+        "invalid sampler LOD settings: {}",
+        id
+    );
     if (asset.anisotropyEnable)
     {
-        CHECK(vulkan->supportedFeatures().samplerAnisotropy &&
-              asset.maxAnisotropy >= 1.0f &&
-              asset.maxAnisotropy <= limits.maxSamplerAnisotropy,
-              "unsupported sampler anisotropy: {}", id);
+        CHECK(
+            vulkan->supportedFeatures().samplerAnisotropy && asset.maxAnisotropy >= 1.0f &&
+                asset.maxAnisotropy <= limits.maxSamplerAnisotropy,
+            "unsupported sampler anisotropy: {}",
+            id
+        );
     }
     if (asset.unnormalizedCoordinates)
     {
         using AddressMode = SamplerAsset::AddressMode;
-        CHECK(asset.magFilter == asset.minFilter &&
-              asset.mipmapMode == SamplerAsset::MipmapMode::Nearest &&
-              asset.minLod == 0.0f &&
-              asset.maxLod.has_value() && *asset.maxLod == 0.0f &&
-              !asset.anisotropyEnable && !asset.compareEnable &&
-              (asset.addressModeU == AddressMode::ClampToEdge ||
-               asset.addressModeU == AddressMode::ClampToBorder) &&
-              (asset.addressModeV == AddressMode::ClampToEdge ||
-               asset.addressModeV == AddressMode::ClampToBorder),
-              "invalid unnormalized sampler settings: {}", id);
+        CHECK(
+            asset.magFilter == asset.minFilter && asset.mipmapMode == SamplerAsset::MipmapMode::Nearest &&
+                asset.minLod == 0.0f && asset.maxLod.has_value() && *asset.maxLod == 0.0f && !asset.anisotropyEnable &&
+                !asset.compareEnable &&
+                (asset.addressModeU == AddressMode::ClampToEdge || asset.addressModeU == AddressMode::ClampToBorder) &&
+                (asset.addressModeV == AddressMode::ClampToEdge || asset.addressModeV == AddressMode::ClampToBorder),
+            "invalid unnormalized sampler settings: {}",
+            id
+        );
     }
 
     const vk::SamplerCreateInfo info{
-        .magFilter = toVulkan(asset.magFilter),
-        .minFilter = toVulkan(asset.minFilter),
-        .mipmapMode = toVulkan(asset.mipmapMode),
-        .addressModeU = toVulkan(asset.addressModeU),
-        .addressModeV = toVulkan(asset.addressModeV),
-        .addressModeW = toVulkan(asset.addressModeW),
-        .mipLodBias = asset.mipLodBias,
-        .anisotropyEnable = asset.anisotropyEnable,
-        .maxAnisotropy = asset.maxAnisotropy,
-        .compareEnable = asset.compareEnable,
-        .compareOp = toVulkan(asset.compareOp),
-        .minLod = asset.minLod,
-        .maxLod = asset.maxLod.value_or(VK_LOD_CLAMP_NONE),
-        .borderColor = toVulkan(asset.borderColor),
+        .magFilter               = toVulkan(asset.magFilter),
+        .minFilter               = toVulkan(asset.minFilter),
+        .mipmapMode              = toVulkan(asset.mipmapMode),
+        .addressModeU            = toVulkan(asset.addressModeU),
+        .addressModeV            = toVulkan(asset.addressModeV),
+        .addressModeW            = toVulkan(asset.addressModeW),
+        .mipLodBias              = asset.mipLodBias,
+        .anisotropyEnable        = asset.anisotropyEnable,
+        .maxAnisotropy           = asset.maxAnisotropy,
+        .compareEnable           = asset.compareEnable,
+        .compareOp               = toVulkan(asset.compareOp),
+        .minLod                  = asset.minLod,
+        .maxLod                  = asset.maxLod.value_or(VK_LOD_CLAMP_NONE),
+        .borderColor             = toVulkan(asset.borderColor),
         .unnormalizedCoordinates = asset.unnormalizedCoordinates,
     };
     auto gpu = vkCheck(vulkan->deviceHandle().createSampler(info));
     return *samplers.emplace(id, std::move(gpu)).first->second;
+}
+
+namespace
+{
+bool sameMaterialResources(const MaterialAsset& a, const MaterialAsset& b)
+{
+    if (a.shaderId != b.shaderId || a.clearcoat.has_value() != b.clearcoat.has_value())
+        return false;
+    if (a.clearcoat &&
+        (a.clearcoat->texture != b.clearcoat->texture ||
+         a.clearcoat->roughnessTexture != b.clearcoat->roughnessTexture ||
+         a.clearcoat->normalTexture != b.clearcoat->normalTexture))
+        return false;
+    return a.baseColorTexture == b.baseColorTexture && a.normalTexture == b.normalTexture &&
+        a.metallicTexture == b.metallicTexture && a.roughnessTexture == b.roughnessTexture &&
+        a.emissiveTexture == b.emissiveTexture && a.aoTexture == b.aoTexture;
+}
+}  // namespace
+
+const RenderData& RenderResourceManager::prepare(const SceneRenderData& scene, uint32_t frameIndex)
+{
+    DCHECK(frameIndex < frameResources.size());
+    auto& frame = frameResources[frameIndex];
+    auto& draws = frame.draws;
+    draws.drawItems.clear();
+    draws.opaqueDrawItems.clear();
+    draws.transparentDrawItems.clear();
+    draws.lights = scene.lights;
+    for (auto& [key, instance] : frame.instances)
+        instance.used = false;
+
+    for (const auto& object : scene.objects)
+    {
+        auto&       gpuMesh   = mesh(object.mesh);
+        const auto& meshAsset = assets->get<MeshAsset>(object.mesh);
+        for (uint32_t index = 0; index < meshAsset.submeshes.size(); ++index)
+        {
+            const auto& submesh     = meshAsset.submeshes[index];
+            auto        gpuMaterial = material(submesh.materialId);
+            if (const auto override = object.materialOverrides.find(static_cast<int>(index));
+                override != object.materialOverrides.end())
+            {
+                auto asset = assets->get<MaterialAsset>(submesh.materialId);
+                applyOptionalFields(asset, override->second);
+                auto& instance = frame.instances[{object.selectionId, object.componentIndex, index}];
+                if (!instance.gpu || !sameMaterialResources(instance.asset, asset))
+                    instance.gpu = createMaterial(asset);
+                else if (instance.asset != asset)
+                    instance.gpu->updateParameters(asset);
+                instance.asset = std::move(asset);
+                instance.used  = true;
+                gpuMaterial    = instance.gpu;
+            }
+            const DrawItem draw{
+                &gpuMesh,
+                gpuMaterial,
+                object.model,
+                submesh.firstIndex,
+                submesh.indexCount,
+                object.selectionId,
+                object.distanceSquared
+            };
+            draws.drawItems.push_back(draw);
+            (gpuMaterial->alphaMode() == MaterialAlphaMode::Blend ? draws.transparentDrawItems : draws.opaqueDrawItems)
+                .push_back(draw);
+        }
+    }
+    std::erase_if(frame.instances, [](const auto& entry) { return !entry.second.used; });
+    std::ranges::sort(draws.transparentDrawItems, std::greater{}, &DrawItem::distanceSquared);
+    return draws;
 }

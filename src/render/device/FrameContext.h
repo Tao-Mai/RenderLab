@@ -1,18 +1,14 @@
 #pragma once
 
-#include "render/FrameData.h"
 
 #include <vulkan/vulkan_raii.hpp>
 
 class VulkanContext;
-class DescriptorManager;
 
 class FrameContext
 {
 public:
-    FrameData data;
-
-    void init(VulkanContext& vulkan, DescriptorManager& descriptors);
+    void init(VulkanContext& vulkan);
     void reset() noexcept;
     void wait() const;
     void submit(vk::Semaphore renderFinished, vk::PipelineStageFlags waitStages) const;

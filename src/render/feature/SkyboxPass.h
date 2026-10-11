@@ -15,6 +15,7 @@ public:
     };
 
     Output setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle, RenderGraph::ImageHandle depthHandle);
+    void   refreshBindings(RenderGraph& graph);
     void   execute(RenderGraph& graph) const;
 
 private:

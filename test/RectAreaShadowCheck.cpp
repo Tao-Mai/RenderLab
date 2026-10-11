@@ -1,16 +1,17 @@
+#include "editor/EditorCamera.h"
 // Standalone, short GPU check. Uses test configuration and never saves a scene.
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Window.h"
-#include "render/Renderer.h"
 #include "render/RenderContext.h"
-#include "scene/system/RenderSystem.h"
+#include "render/Renderer.h"
 #include "scene/SceneManager.h"
 #include "scene/actor/ALight.h"
 #include "scene/actor/AStaticMesh.h"
 #include "scene/component/RenderComponent.h"
+#include "scene/system/RenderSystem.h"
 
 #include <cmath>
 #include <iostream>
@@ -22,6 +23,7 @@ int main(int, char** argv)
     AssetManager     assets;
     AssetDataManager data;
     SceneManager     scenes;
+    EditorCamera     scenesCamera{scenes.scene().editorCamera};
     Window           window;
     Renderer         renderer;
     RenderSystem     renderSystem;
@@ -44,9 +46,9 @@ int main(int, char** argv)
     config.setRenderFeature(feature);
     config.setRenderPath(RenderPath::Rasterization);
     config.setEnvironmentMap(std::nullopt);
-    data.init();
+    data.init(config.paths().assets);
     scenes.init();
-    assets.init();
+    assets.init(config.paths().assets);
     window.init();
     glfwHideWindow(window.nativeHandle());
 
@@ -63,7 +65,7 @@ int main(int, char** argv)
     light.range                 = 16.0f;
     scene.actors.push_back(std::move(actor));
     scenes.load(scene);
-    scenes.editorCamera().config().position = {0.0f, 0.0f, 6.0f};
+    scenesCamera.config().position = {0.0f, 0.0f, 6.0f};
     renderer.init();
     renderer.rebuildGraph();
 
@@ -89,8 +91,8 @@ int main(int, char** argv)
     upload.reset();
     descriptors.shutdown();
 
-    auto& sceneLight = *scenes.scene().actors.back()->getComponent<LightComponent>();
-    const auto extent = renderer.swapchainHandle().extent();
+    auto&      sceneLight = *scenes.scene().actors.back()->getComponent<LightComponent>();
+    const auto extent     = renderer.swapchainHandle().extent();
     for (int frame = 0; frame < 8; ++frame)
     {
         if (frame == 2)
@@ -110,13 +112,10 @@ int main(int, char** argv)
         }
 
         window.pollEvents();
-        const auto& renderData = renderSystem.prepare(
-            scenes.scene(), scenes.editorCamera().worldPosition(), *renderContext().resources);
+        const auto& renderData = renderSystem.prepare(scenes.scene(), scenesCamera.worldPosition());
         lightMarkers.prepare(scenes.scene(), *renderContext().resources);
         renderer.render(
-            scenes.editorCamera().renderView(
-                {0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)}
-            ),
+            scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)}),
             renderData,
             {
                 .lightDrawItems = lightMarkers.drawItems(),

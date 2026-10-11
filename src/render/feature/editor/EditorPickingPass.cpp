@@ -1,4 +1,5 @@
 #include "render/feature/editor/EditorPickingPass.h"
+#include "render/feature/editor/EditorInterface.h"
 
 #include "core/Logger.h"
 #include "render/FrameData.h"
@@ -45,15 +46,19 @@ EditorPickingPass::Output EditorPickingPass::setup(RenderGraph& graph, RenderGra
         }
     );
 
-    auto state     = PipelineState::preset(RenderMode::Picking);
-    pipeline       = pipelines->getOrCreate({
-              .shader      = shader,
-              .layout      = PipelineLayoutPreset::Editor,
-              .state       = state,
-              .colorFormats = {vk::Format::eR32Uint},
-              .depthFormat = vk::Format::eD32Sfloat,
+    pipelineLayout = EditorInterface::pipelineLayout(*renderContext().descriptors, *renderContext().pipelineManager);
+    auto state     = PipelineState{
+            .vertexLayout = VertexLayoutPreset::PositionOnly,
+            .depthCompare = vk::CompareOp::eLessOrEqual,
+            .depthWrite   = false
+    };
+    pipeline = pipelines->getOrCreate({
+        .shader       = shader,
+        .layout       = pipelineLayout,
+        .state        = state,
+        .colorFormats = {vk::Format::eR32Uint},
+        .depthFormat  = vk::Format::eD32Sfloat,
     });
-    pipelineLayout = pipelines->layout(PipelineLayoutPreset::Editor);
     return {pickingImage};
 }
 

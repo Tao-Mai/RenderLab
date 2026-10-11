@@ -1,6 +1,7 @@
 #pragma once
 
-#include "asset/Asset.h"
+#include "asset/MaterialAsset.h"
+#include "asset/MeshAsset.h"
 #include "scene/Component.h"
 
 #include <unordered_map>

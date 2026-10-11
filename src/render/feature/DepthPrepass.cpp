@@ -1,4 +1,5 @@
 #include "render/feature/DepthPrepass.h"
+#include "render/feature/SceneInterface.h"
 
 #include "render/FrameData.h"
 #include "render/PipelineManager.h"
@@ -35,7 +36,7 @@ DepthPrepass::Output DepthPrepass::setup(RenderGraph& graph)
     );
 
     shader         = renderContext().shaderManager->getOrLoad("depth");
-    pipelineLayout = renderContext().pipelineManager->layout(PipelineLayoutPreset::SceneMaterial);
+    pipelineLayout = SceneInterface::meshLayout(*renderContext().descriptors, *renderContext().pipelineManager);
     return {depth};
 }
 
@@ -100,7 +101,7 @@ void DepthPrepass::execute(RenderGraph& graph) const
     vk::Pipeline boundPipeline;
     for (const DrawItem& item : graph.renderData().opaqueDrawItems)
     {
-        PipelineKey key        = item.material->pipelineKey({}, vk::Format::eD32Sfloat);
+        PipelineKey key        = item.material->pipelineKey({}, vk::Format::eD32Sfloat, pipelineLayout);
         key.shader             = shader;
         key.state.vertexLayout = VertexLayoutPreset::PositionUv;
         key.state.depthCompare = vk::CompareOp::eLess;

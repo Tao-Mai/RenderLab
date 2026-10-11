@@ -1,4 +1,5 @@
 #include "render/feature/editor/LightMarkerPass.h"
+#include "render/feature/editor/EditorInterface.h"
 
 #include "render/FrameData.h"
 #include "render/PipelineManager.h"
@@ -39,14 +40,14 @@ LightMarkerPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle,
 
     shader          = renderContext().shaderManager->getOrLoad("editor_light_marker");
     auto& pipelines = *renderContext().pipelineManager;
+    pipelineLayout  = EditorInterface::pipelineLayout(*renderContext().descriptors, *renderContext().pipelineManager);
     pipeline        = pipelines.getOrCreate({
-               .shader      = shader,
-               .layout      = PipelineLayoutPreset::Editor,
-               .state       = PipelineState::preset(RenderMode::LightMarker),
+               .shader       = shader,
+               .layout       = pipelineLayout,
+               .state        = PipelineState{.vertexLayout = VertexLayoutPreset::PositionOnly},
                .colorFormats = {graph.imageInfo(color).format},
-               .depthFormat = vk::Format::eD32Sfloat,
+               .depthFormat  = vk::Format::eD32Sfloat,
     });
-    pipelineLayout  = pipelines.layout(PipelineLayoutPreset::Editor);
 
     return {color, depth};
 }

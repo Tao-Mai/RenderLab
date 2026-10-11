@@ -1,9 +1,9 @@
 #pragma once
 
-#include "asset/Asset.h"
+#include "asset/AssetTypes.h"
 #include "asset/BuiltinAssets.h"
-#include "core/Serializer.h"
 #include "core/Logger.h"
+#include "core/Serializer.h"
 
 #include <filesystem>
 #include <tuple>
@@ -17,7 +17,7 @@ public:
     AssetManager() = default;
     ~AssetManager();
 
-    void init();
+    void init(std::filesystem::path root);
     void shutdown() noexcept;
 
     template <AssetType T>
@@ -49,12 +49,12 @@ public:
     typename T::ID save(T asset)
     {
         CHECK(!asset.id.empty(), "asset has empty id");
-        const auto file =
-            assetRoot() / T::dir / (asset.id.value + ".json");
+        const auto file = root / T::dir / (asset.id.value + ".json");
         asset_json::save(file, asset);
 
         const typename T::ID id = asset.id;
         assetMap<T>().insert_or_assign(id, std::move(asset));
+        std::get<RevisionMap<T>>(revisions)[id] = ++nextRevision;
         return id;
     }
 
@@ -70,18 +70,31 @@ public:
         return ids;
     }
 
+    template <AssetType T>
+    [[nodiscard]] uint64_t revision(const AssetID<T>& id) const
+    {
+        const auto& map   = std::get<RevisionMap<T>>(revisions);
+        const auto  found = map.find(id);
+        return found == map.end() ? 0 : found->second;
+    }
+
 private:
+    template <AssetType T>
+    using RevisionMap = std::unordered_map<typename T::ID, uint64_t>;
+    AssetTypes::wrapTypes<RevisionMap> revisions;
+    uint64_t                           nextRevision = 0;
+    std::filesystem::path              root;
+
     template <AssetType T>
     using AssetMap = std::unordered_map<typename T::ID, T>;
 
     using AssetMaps = AssetTypes::wrapTypes<AssetMap>;
 
     DEBUG_ONLY(bool inited = false;)
-    AssetMaps        assets;
+    AssetMaps assets;
 
-    void                         loadAll();
-    void                         clear();
-    static std::filesystem::path assetRoot();
+    void loadAll();
+    void clear();
 
     template <AssetType T>
     [[nodiscard]] AssetMap<T>& assetMap()

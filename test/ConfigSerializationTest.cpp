@@ -1,5 +1,6 @@
 #include "core/Serializer.h"
 #include "core/ConfigManager.h"
+#include "asset/TextureAsset.h"
 
 #include <filesystem>
 #include <fstream>

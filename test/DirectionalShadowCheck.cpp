@@ -1,15 +1,16 @@
+#include "editor/EditorCamera.h"
 // Short manual check, linked against the application's existing objects.
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Window.h"
-#include "render/Renderer.h"
 #include "render/RenderContext.h"
-#include "scene/system/RenderSystem.h"
+#include "render/Renderer.h"
 #include "scene/SceneManager.h"
 #include "scene/actor/ALight.h"
 #include "scene/actor/AStaticMesh.h"
+#include "scene/system/RenderSystem.h"
 
 #include <cmath>
 #include <iostream>
@@ -21,6 +22,7 @@ int main(int, char** argv)
     AssetManager     assets;
     AssetDataManager data;
     SceneManager     scenes;
+    EditorCamera     scenesCamera{scenes.scene().editorCamera};
     Window           window;
     Renderer         renderer;
     RenderSystem     renderSystem;
@@ -44,9 +46,9 @@ int main(int, char** argv)
     config.setRenderFeature(feature);
     config.setRenderPath(RenderPath::Rasterization);
     config.setEnvironmentMap(std::nullopt);
-    data.init();
+    data.init(config.paths().assets);
     scenes.init();
-    assets.init();
+    assets.init(config.paths().assets);
     window.init();
     glfwHideWindow(window.nativeHandle());
 
@@ -67,7 +69,7 @@ int main(int, char** argv)
     descriptors.init(renderer.vulkanContext().deviceHandle());
     FrameData upload;
     upload.init(renderer.vulkanContext(), descriptors);
-    const auto&        camera         = scenes.editorCamera();
+    const auto&        camera         = scenesCamera;
     const auto         viewProjection = camera.projectionMatrix(1.0f) * camera.viewMatrix();
     const ViewUniforms view{
         .viewProjection        = viewProjection,
@@ -111,8 +113,7 @@ int main(int, char** argv)
             renderer.rebuildGraph();
         }
         window.pollEvents();
-        const auto& renderData = renderSystem.prepare(
-            scenes.scene(), camera.worldPosition(), *renderContext().resources);
+        const auto& renderData = renderSystem.prepare(scenes.scene(), camera.worldPosition());
         lightMarkers.prepare(scenes.scene(), *renderContext().resources);
         renderer.render(
             camera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)}),

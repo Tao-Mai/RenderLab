@@ -1,4 +1,5 @@
 #include "render/feature/shadow/ShadowPass.h"
+#include "render/feature/SceneInterface.h"
 
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -6,12 +7,12 @@
 #include "render/PipelineManager.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
+#include "render/RenderData.h"
 #include "render/ShaderManager.h"
 #include "render/device/VulkanContext.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/ShaderData.h"
 #include "scene/component/LightComponent.h"
-#include "render/RenderData.h"
 
 #include <array>
 
@@ -34,18 +35,16 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph)
         graph.vulkan().physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures;
     CHECK((features & kRequiredFeatures) == kRequiredFeatures);
 
-    auto& pipelines         = *renderContext().pipelineManager;
-    pipelineLayout          = pipelines.layout(PipelineLayoutPreset::SceneOnly);
-    const auto createTarget = [&](RenderGraph::ImageCreateInfo info,
-                                  ShaderVariant                variant,
-                                  uint32_t                     viewMask       = 0,
-                                  uint32_t                     viewLayerCount = 1)
+    auto& pipelines = *renderContext().pipelineManager;
+    pipelineLayout  = SceneInterface::shadowLayout(*renderContext().descriptors, *renderContext().pipelineManager);
+    const auto createTarget =
+        [&](RenderGraph::ImageCreateInfo info, int shadowType, uint32_t viewMask = 0, uint32_t viewLayerCount = 1)
     {
-        const auto shader   = renderContext().shaderManager->getOrLoad("shadow", variant);
+        const auto shader   = renderContext().shaderManager->getOrLoad("shadow", {{"SHADOW_TYPE", shadowType}});
         const auto pipeline = pipelines.getOrCreate({
             .shader      = shader,
-            .layout      = PipelineLayoutPreset::SceneOnly,
-            .state       = PipelineState::preset(RenderMode::Shadow),
+            .layout      = pipelineLayout,
+            .state       = PipelineState{.vertexLayout = VertexLayoutPreset::PositionOnly},
             .depthFormat = vk::Format::eD32Sfloat,
             .viewMask    = viewMask,
         });
@@ -79,7 +78,7 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph)
             .extent      = {shadow.pointShadowMapSize, shadow.pointShadowMapSize, 1},
             .arrayLayers = kPointFaceCount * kMaxPointLightShadow,
         },
-        ShaderVariant::Default,
+        0,
         kPointViewMask,
         kPointFaceCount
     );
@@ -89,7 +88,7 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph)
             .extent      = {shadow.rectAreaShadowMapSize, shadow.rectAreaShadowMapSize, 1},
             .arrayLayers = kMaxRectAreaLightShadow,
         },
-        ShaderVariant::RectAreaShadow
+        2
     );
     directional = createTarget(
         {
@@ -97,7 +96,7 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph)
             .extent      = {shadow.cascade.shadowMapSize, shadow.cascade.shadowMapSize, 1},
             .arrayLayers = kMaxDirectionalLightShadow * cascadeCount,
         },
-        ShaderVariant::DirectionalShadow
+        1
     );
 
     return {point.image, rectArea.image, directional.image};

@@ -16,33 +16,33 @@ int main(int argc, char** argv)
     logger::init(argv[0]);
     CHECK(argc == 3);
     const std::string_view sizeArgument = argv[2];
-    float targetSize = 0.0f;
+    float                  targetSize   = 0.0f;
     const auto parsed = std::from_chars(sizeArgument.data(), sizeArgument.data() + sizeArgument.size(), targetSize);
     CHECK(parsed.ec == std::errc{} && parsed.ptr == sizeArgument.data() + sizeArgument.size());
     CHECK(std::isfinite(targetSize) && targetSize > 0.0f);
 
-    ConfigManager config;
-    AssetManager assets;
+    ConfigManager    config;
+    AssetManager     assets;
     AssetDataManager data;
-    SceneManager scenes;
-    context().config = &config;
-    context().assetManager = &assets;
+    SceneManager     scenes;
+    context().config           = &config;
+    context().assetManager     = &assets;
     context().assetDataManager = &data;
 
     config.init();
     scenes.init();
-    assets.init();
-    data.init();
+    assets.init(config.paths().assets);
+    data.init(config.paths().assets);
 
-    auto prepared = AssetImporter::prepareMesh(argv[1]);
-    const auto extent = prepared.boundsMax - prepared.boundsMin;
+    auto        prepared    = AssetImporter::prepareMesh(argv[1]);
+    const auto  extent      = prepared.boundsMax - prepared.boundsMin;
     const float importScale = targetSize / std::max({extent.x, extent.y, extent.z});
     const float floorOffset = -prepared.boundsMin.y * importScale;
-    const auto id = AssetImporter::saveMesh(std::move(prepared), {.source = argv[1], .importScale = importScale});
+    const auto  id = AssetImporter::saveMesh(std::move(prepared), {.source = argv[1], .importScale = importScale});
 
     // Reload persisted descriptions, including the new extension and texture bindings.
     assets.shutdown();
-    assets.init();
+    assets.init(config.paths().assets);
     bool hasClearcoat = false;
     for (const auto& submesh : assets.get<MeshAsset>(id).submeshes)
     {

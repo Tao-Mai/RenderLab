@@ -1,14 +1,10 @@
 #include "asset/AssetManager.h"
 
-#include "core/ConfigManager.h"
-#include "core/Context.h"
 
 namespace
 {
 template <AssetType T>
-void loadAssetDirectory(
-    const std::filesystem::path&          directory,
-    std::unordered_map<typename T::ID, T>& out)
+void loadAssetDirectory(const std::filesystem::path& directory, std::unordered_map<typename T::ID, T>& out)
 {
     if (!std::filesystem::exists(directory))
     {
@@ -25,22 +21,18 @@ void loadAssetDirectory(
         CHECK(!asset.id.empty(), "asset has empty id: {}", entry.path().string());
 
         const typename T::ID id = asset.id;
-        CHECK(out.emplace(id, std::move(asset)).second,
-              "duplicate asset ID: {}",
-              id);
+        CHECK(out.emplace(id, std::move(asset)).second, "duplicate asset ID: {}", id);
     }
 }
-}
+}  // namespace
 
-AssetManager::~AssetManager()
+AssetManager::~AssetManager() { DCHECK(!inited); }
+
+void AssetManager::init(std::filesystem::path assetRoot)
 {
     DCHECK(!inited);
-}
-
-void AssetManager::init()
-{
-    DCHECK(!inited);
-    DCHECK(context().config);
+    DCHECK(!assetRoot.empty());
+    root = std::move(assetRoot);
     loadAll();
     DEBUG_EXEC(inited = true);
 }
@@ -54,21 +46,11 @@ void AssetManager::shutdown() noexcept
 void AssetManager::loadAll()
 {
     clear();
-    AssetTypes::forEach(
-        [&]<AssetType T>
-        {
-            loadAssetDirectory<T>(
-                assetRoot() / T::dir,
-                assetMap<T>());
-        });
-}
-
-std::filesystem::path AssetManager::assetRoot()
-{
-    return context().config->paths().assets;
+    AssetTypes::forEach([&]<AssetType T> { loadAssetDirectory<T>(root / T::dir, assetMap<T>()); });
 }
 
 void AssetManager::clear()
 {
+    std::apply([](auto&... maps) { (maps.clear(), ...); }, revisions);
     std::apply([](auto&... maps) { (maps.clear(), ...); }, assets);
 }
