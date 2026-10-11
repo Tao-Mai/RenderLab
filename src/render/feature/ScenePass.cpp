@@ -11,6 +11,9 @@
 
 ScenePass::Output ScenePass::setup(RenderGraph& graph, RenderGraph::ImageHandle depthHandle, ShadowPass::Output shadow)
 {
+    const auto& config = context().config->rendererConfig();
+    shaderOptions      = {.ibl = config.feature.ibl, .clearcoat = config.renderPath != RenderPath::Deferred};
+
     const auto resolvedShadow = bindings.setup(graph, shadow);
     const bool hdr            = context().config->rendererConfig().feature.hdr;
     if (hdr)
@@ -37,14 +40,15 @@ ScenePass::Output ScenePass::setup(RenderGraph& graph, RenderGraph::ImageHandle 
 
 void ScenePass::prepare(RenderGraph& graph) const { bindings.prepare(graph); }
 
-void ScenePass::updateFrame(FrameData& frame, const ViewUniforms& view, const RenderData& scene) const
-{
-    bindings.updateFrame(frame, view, scene);
-}
-
 void ScenePass::execute(RenderGraph& graph) const
 {
     SceneDraw::beginRendering(graph, std::array{color}, depth, vk::AttachmentLoadOp::eClear);
-    SceneDraw::recordMeshes(graph, graph.renderData().opaqueDrawItems, std::array{graph.imageInfo(color).format});
+    SceneDraw::recordMeshes(
+        graph,
+        graph.renderData().opaqueDrawItems,
+        std::array{graph.imageInfo(color).format},
+        {},
+        shaderOptions
+    );
     graph.commands().endRendering();
 }

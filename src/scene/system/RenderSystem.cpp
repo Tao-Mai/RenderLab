@@ -3,12 +3,9 @@
 //
 
 #include "scene/system/RenderSystem.h"
+#include "asset/SceneAsset.h"
 
-#include "asset/ApplyOptionalFields.h"
-#include "asset/AssetManager.h"
-#include "core/Context.h"
 #include "core/Logger.h"
-#include "render/resource/RenderResourceManager.h"
 #include "scene/component/LightComponent.h"
 #include "scene/component/RenderComponent.h"
 #include "scene/component/TransformComponent.h"
@@ -18,63 +15,28 @@
 
 #include <glm/geometric.hpp>
 
-const RenderData&
-RenderSystem::prepare(const SceneAsset& scene, const glm::vec3& cameraPosition, RenderResourceManager& resources)
+const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene, const glm::vec3& cameraPosition)
 {
-    data.drawItems.clear();
-    data.opaqueDrawItems.clear();
-    data.transparentDrawItems.clear();
+    data.objects.clear();
     data.lights.clear();
-
     for (const auto& actor : scene.actors)
     {
-        const auto* render = actor->getComponent<RenderComponent>();
-        if (!render)
-            continue;
-
         const auto* transform = actor->getComponent<TransformComponent>();
         DCHECK(transform);
-
-        GpuMesh&        mesh            = resources.mesh(render->meshId);
-        const glm::mat4 model           = transform->matrix();
-        const glm::vec3 offset          = transform->position - cameraPosition;
-        const float     distanceSquared = glm::dot(offset, offset);
-        const auto&     submeshes       = mesh.submeshes();
-        for (size_t index = 0; index < submeshes.size(); ++index)
+        const auto offset         = transform->position - cameraPosition;
+        uint32_t   componentIndex = 0;
+        for (const auto* render : actor->getComponents<RenderComponent>())
         {
-            const Submesh&     submesh  = submeshes[index];
-            const GpuMaterial* material = submesh.material;
-            if (const auto overrideIt = render->materialOverrides.find(static_cast<int>(index));
-                overrideIt != render->materialOverrides.end())
-            {
-                DCHECK(context().assetManager);
-                const MeshAsset& meshAsset = context().assetManager->get<MeshAsset>(render->meshId);
-                CHECK(index < meshAsset.submeshes.size());
-                MaterialAsset asset = resources.materialAsset(meshAsset.submeshes[index].materialId);
-                applyOptionalFields(asset, overrideIt->second);
-                material = &resources.material(asset);
-            }
-
-            const DrawItem draw{
-                &mesh,
-                material,
-                model,
-                submesh.firstIndex,
-                submesh.indexCount,
-                actor->selectionId(),
-                distanceSquared,
-            };
-            data.drawItems.push_back(draw);
-            (material->renderMode() == RenderMode::Transparent ? data.transparentDrawItems : data.opaqueDrawItems)
-                .push_back(draw);
+            data.objects.push_back({
+                .mesh              = render->meshId,
+                .materialOverrides = render->materialOverrides,
+                .model             = transform->matrix(),
+                .selectionId       = actor->selectionId(),
+                .componentIndex    = componentIndex++,
+                .distanceSquared   = glm::dot(offset, offset),
+            });
         }
     }
-
-    std::sort(
-        data.transparentDrawItems.begin(),
-        data.transparentDrawItems.end(),
-        [](const DrawItem& left, const DrawItem& right) { return left.distanceSquared > right.distanceSquared; }
-    );
 
     for (const auto& actor : scene.actors)
     {

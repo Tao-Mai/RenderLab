@@ -18,6 +18,7 @@ class SceneBindings
 {
 public:
     ShadowPass::Output setup(RenderGraph& graph, ShadowPass::Output shadow);
+    void               refreshBindings();
     void               prepare(RenderGraph& graph) const;
     void               updateFrame(FrameData& frame, const ViewUniforms& view, const RenderData& scene) const;
 

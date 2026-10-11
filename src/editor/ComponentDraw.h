@@ -1,6 +1,9 @@
 #pragma once
 
-#include "asset/Asset.h"
+struct Component;
+struct TransformComponent;
+
+#include "asset/MaterialAsset.h"
 #include "core/Reflect.h"
 
 #include <bit>

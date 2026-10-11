@@ -1,6 +1,8 @@
 #pragma once
 
-#include "asset/Asset.h"
+#include "asset/EnvironmentMapAsset.h"
+#include "asset/SamplerAsset.h"
+#include "asset/TextureBinding.h"
 
 enum class RenderPath
 {

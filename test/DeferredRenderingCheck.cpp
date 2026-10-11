@@ -1,3 +1,4 @@
+#include "editor/EditorCamera.h"
 // Small pixel comparison: shared forward/deferred lighting and base-material clearcoat behavior.
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
@@ -70,10 +71,14 @@ struct PixelReadbackPass
 
 void checkDeferred(Renderer& renderer, SceneManager& scenes)
 {
+    EditorCamera                                scenesCamera{scenes.scene().editorCamera};
     auto&                                       vulkan = renderer.vulkanContext();
     std::array<FrameContext, maxFramesInFlight> frames;
     for (auto& frame : frames)
-        frame.init(vulkan, *renderContext().descriptors);
+        frame.init(vulkan);
+    std::array<FrameData, maxFramesInFlight> frameData;
+    for (auto& data : frameData)
+        data.init(vulkan, *renderContext().descriptors);
 
     RenderGraph          graph;
     ShadowPass           shadow;
@@ -84,11 +89,11 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
     PixelReadbackPass    readback;
     EndPass              end;
     RenderSystem         renderSystem;
-    graph.init(vulkan, renderer.swapchainHandle(), frames);
+    graph.init(vulkan, renderer.swapchainHandle(), frames, frameData);
     const auto originalFeature = context().config->rendererConfig().feature;
     const auto originalPath    = context().config->rendererConfig().renderPath;
     const auto extent          = renderer.swapchainHandle().extent();
-    const auto view            = scenes.editorCamera().renderView(
+    const auto view            = scenesCamera.renderView(
         {64, 32, static_cast<float>(extent.width) - 192, static_cast<float>(extent.height) - 96}
     );
     const auto sample = [&](bool deferred, bool ibl, bool shadows)
@@ -116,12 +121,12 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
         const auto buffer = graph.addPass(readback, color);
         graph.addPass(end, RenderGraph::ImageHandle{}, buffer);
         graph.compile();
-        const auto& data =
-            renderSystem.prepare(scenes.scene(), scenes.editorCamera().worldPosition(), *renderContext().resources);
+        const auto& sceneData = renderSystem.prepare(scenes.scene(), scenesCamera.worldPosition());
+        const auto& data      = renderContext().resources->prepare(sceneData, 0);
         if (deferred)
-            lighting.updateFrame(frames[0].data, view.uniforms, data);
+            lighting.sceneBindings().updateFrame(frameData[0], view.uniforms, data);
         else
-            forward.updateFrame(frames[0].data, view.uniforms, data);
+            forward.sceneBindings().updateFrame(frameData[0], view.uniforms, data);
         graph.execute(view, data, {}, 0, 0);
         const auto           commandBuffer = *frames[0].commandBufferHandle();
         const vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &commandBuffer};
@@ -165,6 +170,8 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
     compare(lastDeferred, sample(true, true, true));
     LOG_INFO("Deferred uses the base PBR material when clearcoat is present.");
     graph.reset();
+    for (auto& data : frameData)
+        data.reset();
     for (auto& frame : frames)
         frame.reset();
     context().config->setRenderFeature(originalFeature);
@@ -179,6 +186,7 @@ int main(int, char** argv)
     AssetManager     assets;
     AssetDataManager data;
     SceneManager     scenes;
+    EditorCamera     scenesCamera{scenes.scene().editorCamera};
     Window           window;
     Renderer         renderer;
     context().config           = &config;
@@ -188,9 +196,9 @@ int main(int, char** argv)
     context().window           = &window;
     context().renderer         = &renderer;
     config.init();
-    data.init();
+    data.init(config.paths().assets);
     scenes.init();
-    assets.init();
+    assets.init(config.paths().assets);
     CHECK(glfwInit());
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     window.init();

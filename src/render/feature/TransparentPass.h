@@ -1,4 +1,5 @@
 #pragma once
+#include "render/feature/SceneDraw.h"
 
 #include "render/feature/RenderGraph.h"
 #include "render/feature/shadow/ShadowPass.h"
@@ -20,6 +21,7 @@ public:
     void execute(RenderGraph& graph) const;
 
 private:
+    SceneShaderOptions       shaderOptions;
     RenderGraph::ImageHandle color;
     RenderGraph::ImageHandle depth;
 };

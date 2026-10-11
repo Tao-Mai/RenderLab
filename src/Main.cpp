@@ -1,7 +1,7 @@
 #include "Engine.h"
-#include "asset/AssetManager.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetImporter.h"
+#include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -16,8 +16,7 @@ int main(int argc, char** argv)
     logger::init(argv[0]);
     if (argc > 1)
     {
-        CHECK(argc == 3,
-              "usage: RenderLab --import-texture|--import-environmentmap|--import-mesh <source>");
+        CHECK(argc == 3, "usage: RenderLab --import-texture|--import-environmentmap|--import-mesh <source>");
         ConfigManager    config;
         AssetManager     assets;
         AssetDataManager assetData;
@@ -26,9 +25,9 @@ int main(int argc, char** argv)
         context().assetManager     = &assets;
         context().assetDataManager = &assetData;
         config.init();
-        assetData.init();
+        assetData.init(config.paths().assets);
         scenes.init();
-        context().assetManager->init();
+        context().assetManager->init(config.paths().assets);
         std::filesystem::path source{argv[2]};
         if (source.is_relative())
         {

@@ -1,8 +1,9 @@
+#include "editor/EditorCamera.h"
 #include "scene/SceneManager.h"
 #include "scene/actor/AFreeFlyCamera.h"
 
-#include "core/Serializer.h"
 #include "asset/BuiltinAssets.h"
+#include "core/Serializer.h"
 #include "scene/actor/ALight.h"
 #include "scene/actor/AStaticMesh.h"
 #include "scene/component/CharacterMoveComponent.h"
@@ -10,8 +11,8 @@
 #include "scene/component/RenderComponent.h"
 
 #include <algorithm>
-#include <type_traits>
 #include <gtest/gtest.h>
+#include <type_traits>
 
 namespace
 {
@@ -32,8 +33,8 @@ SceneAsset makeScene()
     scene.id = SceneAsset::ID{"actor-test"};
     scene.actors.push_back(std::make_unique<AFreeFlyCamera>());
 
-    auto object = std::make_unique<AStaticMesh>();
-    object->name = "Mesh and Light";
+    auto object                                     = std::make_unique<AStaticMesh>();
+    object->name                                    = "Mesh and Light";
     object->getComponent<RenderComponent>()->meshId = MeshAsset::ID{"sphere"};
     object->addComponent<LightComponent>();
     scene.actors.push_back(std::move(object));
@@ -57,19 +58,20 @@ struct TestTickComponent : Component
         actor().transform().position.x += deltaTime;
     }
 };
-}
+}  // namespace
 
 TEST(SceneManagerTest, ActorsOwnComponentsAndRestoreTheirOwner)
 {
     SceneManager manager;
+    EditorCamera managerCamera{manager.scene().editorCamera};
     manager.init();
     manager.load(makeScene());
 
     ASSERT_EQ(manager.scene().actors.size(), 2);
-    EXPECT_EQ(&manager.editorCamera().config(), &manager.scene().editorCamera);
+    EXPECT_EQ(&managerCamera.config(), &manager.scene().editorCamera);
     EXPECT_NE(dynamic_cast<AStaticMesh*>(manager.scene().actors[1].get()), nullptr);
 
-    auto& actor = *manager.scene().actors[1];
+    auto& actor                  = *manager.scene().actors[1];
     actor.transform().position.x = 12.0f;
     EXPECT_EQ(&actor.getComponent<TransformComponent>()->actor(), &actor);
     EXPECT_EQ(&actor.getComponent<LightComponent>()->actor(), &actor);
@@ -80,17 +82,22 @@ TEST(SceneManagerTest, ActorsOwnComponentsAndRestoreTheirOwner)
 #ifndef NDEBUG
 TEST(SceneManagerTest, DestructionRequiresExplicitShutdown)
 {
-    EXPECT_DEATH({
-        SceneManager manager;
-        manager.init();
-        manager.load(makeScene());
-    }, "");
+    EXPECT_DEATH(
+        {
+            SceneManager manager;
+            EditorCamera managerCamera{manager.scene().editorCamera};
+            manager.init();
+            manager.load(makeScene());
+        },
+        ""
+    );
 }
 #endif
 
 TEST(SceneManagerTest, PickingRejectsBackgroundAndStaleActorIds)
 {
     SceneManager manager;
+    EditorCamera managerCamera{manager.scene().editorCamera};
     manager.init();
     manager.load(makeScene());
 
@@ -108,19 +115,20 @@ TEST(SceneManagerTest, PickingRejectsBackgroundAndStaleActorIds)
 TEST(SceneManagerTest, CreatesNamesAndDeletesRegisteredActors)
 {
     SceneManager manager;
+    EditorCamera managerCamera{manager.scene().editorCamera};
     manager.init();
     manager.load(makeScene());
 
     const auto& type = BaseTypeInfo<AActor>::baseTypeInfoMap.at("ALight");
     EXPECT_EQ(type.parentType, std::type_index{typeid(AActor)});
-    auto& first = manager.createActor("ALight");
+    auto& first  = manager.createActor("ALight");
     auto& second = manager.createActor("ALight");
     EXPECT_EQ(first.name, "ALight1");
     EXPECT_EQ(second.name, "ALight2");
     EXPECT_EQ(&first.getComponent<LightComponent>()->actor(), &first);
     EXPECT_NE(first.selectionId(), second.selectionId());
 
-    first.name = "ALight3";
+    first.name  = "ALight3";
     auto& third = manager.createActor("ALight");
     EXPECT_EQ(third.name, "ALight1");
     const auto removedId = second.selectionId();
@@ -141,19 +149,20 @@ TEST(SceneManagerTest, CreatesNamesAndDeletesRegisteredActors)
 TEST(SceneManagerTest, EditorCameraIsIndependentOfCameraActors)
 {
     SceneManager manager;
+    EditorCamera managerCamera{manager.scene().editorCamera};
     manager.init();
     manager.load(makeScene());
-    auto* camera = &manager.editorCamera();
+    auto* camera                            = &managerCamera;
     manager.scene().editorCamera.position.x = 17.0f;
-    const auto firstId = manager.scene().actors.front()->selectionId();
-    auto& second = manager.createActor("AFreeFlyCamera");
-    const auto secondId = second.selectionId();
-    EXPECT_EQ(&manager.editorCamera(), camera);
+    const auto firstId                      = manager.scene().actors.front()->selectionId();
+    auto&      second                       = manager.createActor("AFreeFlyCamera");
+    const auto secondId                     = second.selectionId();
+    EXPECT_EQ(&managerCamera, camera);
     manager.deleteActor(firstId);
     manager.deleteActor(secondId);
     EXPECT_EQ(manager.scene().actors.size(), 1u);
-    EXPECT_EQ(&manager.editorCamera(), camera);
-    EXPECT_FLOAT_EQ(manager.editorCamera().worldPosition().x, 17.0f);
+    EXPECT_EQ(&managerCamera, camera);
+    EXPECT_FLOAT_EQ(managerCamera.worldPosition().x, 17.0f);
 
     const auto stored = Serialize(manager.scene());
     EXPECT_EQ(stored["editorCamera"]["position"][0], 17.0f);
@@ -165,8 +174,9 @@ TEST(SceneManagerTest, EditorCameraIsIndependentOfCameraActors)
 
 TEST(SceneManagerTest, LoadingDetachesSnapshotAndCanReloadItsOwnScene)
 {
-    const auto source = makeScene();
+    const auto   source = makeScene();
     SceneManager manager;
+    EditorCamera managerCamera{manager.scene().editorCamera};
     manager.init();
     manager.load(source);
     manager.scene().editorCamera.position.y = 7.0f;
@@ -174,24 +184,25 @@ TEST(SceneManagerTest, LoadingDetachesSnapshotAndCanReloadItsOwnScene)
 
     manager.load(manager.scene());
     EXPECT_EQ(manager.scene().editorCamera.position.y, 7.0f);
-    EXPECT_EQ(&manager.editorCamera().config(), &manager.scene().editorCamera);
+    EXPECT_EQ(&managerCamera.config(), &manager.scene().editorCamera);
     manager.shutdown();
 }
 
 TEST(SceneManagerTest, SwitchingScenesDiscardsUnsavedChanges)
 {
-    const auto first = makeScene();
-    auto second = makeScene();
-    second.id = "second-scene";
+    const auto first             = makeScene();
+    auto       second            = makeScene();
+    second.id                    = "second-scene";
     second.editorCamera.position = {1.0f, 2.0f, 3.0f};
 
     SceneManager manager;
+    EditorCamera managerCamera{manager.scene().editorCamera};
     manager.init();
     manager.load(first);
-    const auto oldId = manager.scene().actors.front()->selectionId();
-    manager.scene().actors.front()->name = "Unsaved rename";
+    const auto oldId                                       = manager.scene().actors.front()->selectionId();
+    manager.scene().actors.front()->name                   = "Unsaved rename";
     manager.scene().actors.front()->transform().position.x = 99.0f;
-    manager.scene().editorCamera.speed = 30.0f;
+    manager.scene().editorCamera.speed                     = 30.0f;
     (void)manager.createActor("AStaticMesh");
 
     manager.load(second);
@@ -204,9 +215,9 @@ TEST(SceneManagerTest, SwitchingScenesDiscardsUnsavedChanges)
 
 TEST(SceneManagerTest, PolymorphicSceneRoundTripsInheritedFieldsAndMaterialOverrides)
 {
-    auto scene = makeScene();
-    scene.actors[0]->transform().position.z = 5.0f;
-    scene.actors[0]->getComponent<CameraComponent>()->yaw = 30.0f;
+    auto scene                                                                       = makeScene();
+    scene.actors[0]->transform().position.z                                          = 5.0f;
+    scene.actors[0]->getComponent<CameraComponent>()->yaw                            = 30.0f;
     scene.actors[1]->getComponent<RenderComponent>()->materialOverrides[0].roughness = 0.3f;
 
     const json stored = Serialize(scene);
@@ -227,16 +238,17 @@ TEST(SceneManagerTest, PolymorphicSceneRoundTripsInheritedFieldsAndMaterialOverr
 
 TEST(SceneManagerTest, CharacterMovementAndEnvironmentUpRoundTrip)
 {
-    auto scene = makeScene();
+    auto  scene = makeScene();
     auto& actor = *scene.actors[0];
-    std::erase_if(actor.components, [](const auto& component)
-    {
-        return dynamic_cast<FreeFlyMoveComponent*>(component.get()) != nullptr;
-    });
+    std::erase_if(
+        actor.components,
+        [](const auto& component) { return dynamic_cast<FreeFlyMoveComponent*>(component.get()) != nullptr; }
+    );
     actor.addComponent<CharacterMoveComponent>();
     scene.environment.up = {0.0f, 0.0f, 3.0f};
 
     SceneManager manager;
+    EditorCamera managerCamera{manager.scene().editorCamera};
     manager.init();
     manager.load(scene);
     EXPECT_NE(manager.scene().actors[0]->getComponent<CharacterMoveComponent>(), nullptr);
@@ -268,7 +280,7 @@ TEST(SceneManagerTest, MultipleComponentsOfTheSameTypeInitializeAndTick)
     } actor;
     const auto defaults = actor.getComponents<TestTickComponent>();
     ASSERT_EQ(defaults.size(), 2);
-    auto& first = *defaults[0];
+    auto& first  = *defaults[0];
     auto& second = *defaults[1];
     EXPECT_EQ(first.inits, 0);
     EXPECT_EQ(second.inits, 0);
@@ -276,8 +288,7 @@ TEST(SceneManagerTest, MultipleComponentsOfTheSameTypeInitializeAndTick)
     auto& third = actor.addComponent<TestTickComponent>();
 
     EXPECT_EQ(actor.getComponent<TestTickComponent>(), &first);
-    EXPECT_EQ(actor.getComponents<TestTickComponent>(),
-        (std::vector<TestTickComponent*>{&first, &second, &third}));
+    EXPECT_EQ(actor.getComponents<TestTickComponent>(), (std::vector<TestTickComponent*>{&first, &second, &third}));
     for (auto* component : actor.getComponents<TestTickComponent>())
     {
         EXPECT_EQ(component->inits, 1);
@@ -292,45 +303,50 @@ TEST(SceneManagerTest, MultipleComponentsOfTheSameTypeInitializeAndTick)
 
 TEST(SceneManagerTest, ComponentQueriesIncludeDerivedTypesAndPreserveConstness)
 {
-    struct DerivedTickComponent : TestTickComponent {};
+    struct DerivedTickComponent : TestTickComponent
+    {
+    };
 
     AStaticMesh actor;
     EXPECT_EQ(actor.getComponent<TestTickComponent>(), nullptr);
     EXPECT_TRUE(actor.getComponents<TestTickComponent>().empty());
-    auto& first = actor.addComponent<DerivedTickComponent>();
+    auto& first  = actor.addComponent<DerivedTickComponent>();
     auto& second = actor.addComponent<TestTickComponent>();
-    auto& third = actor.addComponent<DerivedTickComponent>();
+    auto& third  = actor.addComponent<DerivedTickComponent>();
     EXPECT_EQ(actor.getComponent<TestTickComponent>(), &first);
     EXPECT_EQ(actor.getComponent<DerivedTickComponent>(), &first);
-    EXPECT_EQ(actor.getComponents<TestTickComponent>(),
-        (std::vector<TestTickComponent*>{&first, &second, &third}));
-    EXPECT_EQ(actor.getComponents<DerivedTickComponent>(),
-        (std::vector<DerivedTickComponent*>{&first, &third}));
+    EXPECT_EQ(actor.getComponents<TestTickComponent>(), (std::vector<TestTickComponent*>{&first, &second, &third}));
+    EXPECT_EQ(actor.getComponents<DerivedTickComponent>(), (std::vector<DerivedTickComponent*>{&first, &third}));
 
     const AActor& readOnly = actor;
-    static_assert(std::same_as<decltype(readOnly.getComponent<TestTickComponent>()),
-        const TestTickComponent*>);
-    static_assert(std::same_as<decltype(readOnly.getComponents<TestTickComponent>()),
-        std::vector<const TestTickComponent*>>);
+    static_assert(std::same_as<decltype(readOnly.getComponent<TestTickComponent>()), const TestTickComponent*>);
+    static_assert(
+        std::same_as<decltype(readOnly.getComponents<TestTickComponent>()), std::vector<const TestTickComponent*>>
+    );
     EXPECT_EQ(readOnly.getComponent<TestTickComponent>(), &first);
-    EXPECT_EQ(readOnly.getComponents<TestTickComponent>(),
-        (std::vector<const TestTickComponent*>{&first, &second, &third}));
-    EXPECT_EQ(readOnly.getComponents<DerivedTickComponent>(),
-        (std::vector<const DerivedTickComponent*>{&first, &third}));
+    EXPECT_EQ(
+        readOnly.getComponents<TestTickComponent>(),
+        (std::vector<const TestTickComponent*>{&first, &second, &third})
+    );
+    EXPECT_EQ(
+        readOnly.getComponents<DerivedTickComponent>(),
+        (std::vector<const DerivedTickComponent*>{&first, &third})
+    );
     EXPECT_TRUE(readOnly.getComponents<LightComponent>().empty());
 }
 
 TEST(SceneManagerTest, RepeatedComponentTypesRoundTripAndRestoreEveryOwner)
 {
-    auto scene = makeScene();
-    auto& object = *scene.actors[1];
+    auto  scene                                          = makeScene();
+    auto& object                                         = *scene.actors[1];
     object.addComponent<TransformComponent>().position.x = 8.0f;
-    object.addComponent<RenderComponent>().meshId = MeshAsset::ID{"cube"};
-    object.getComponent<LightComponent>()->intensity = 2.0f;
-    object.addComponent<LightComponent>().intensity = 7.0f;
-    const auto stored = Serialize(scene);
+    object.addComponent<RenderComponent>().meshId        = MeshAsset::ID{"cube"};
+    object.getComponent<LightComponent>()->intensity     = 2.0f;
+    object.addComponent<LightComponent>().intensity      = 7.0f;
+    const auto stored                                    = Serialize(scene);
 
     SceneManager manager;
+    EditorCamera managerCamera{manager.scene().editorCamera};
     manager.init();
     manager.load(scene);
     auto& restored = *manager.scene().actors[1];
@@ -396,7 +412,7 @@ TEST(SceneManagerTest, AddComponentInitializesImmediatelyBeforeActorInit)
     };
 
     AStaticMesh actor;
-    auto& component = actor.addComponent<ProbeComponent>(42);
+    auto&       component = actor.addComponent<ProbeComponent>(42);
     EXPECT_EQ(component.value, 42);
     EXPECT_EQ(component.inits, 1);
     EXPECT_EQ(&component.actor(), &actor);
@@ -419,6 +435,7 @@ TEST(SceneManagerTest, ComponentDependenciesDoNotDependOnSerializedOrder)
         std::reverse(actor->components.begin(), actor->components.end());
 
     SceneManager manager;
+    EditorCamera managerCamera{manager.scene().editorCamera};
     manager.init();
     manager.load(scene);
     for (const auto& actor : manager.scene().actors)
@@ -432,11 +449,11 @@ TEST(SceneManagerTest, ComponentsCheckTheirOwnTransformDependency)
 {
     AStaticMesh actor;
     actor.components.clear();
-    CameraComponent camera;
-    FreeFlyMoveComponent freeFly;
+    CameraComponent        camera;
+    FreeFlyMoveComponent   freeFly;
     CharacterMoveComponent character;
-    RenderComponent render;
-    LightComponent light;
+    RenderComponent        render;
+    LightComponent         light;
 
     EXPECT_DEATH(camera.init(&actor), "");
     EXPECT_DEATH(freeFly.init(&actor), "");
@@ -448,8 +465,8 @@ TEST(SceneManagerTest, ComponentsCheckTheirOwnTransformDependency)
 TEST(SceneManagerTest, MovementInitRejectsConflictingComponentsInEitherOrder)
 {
     AStaticMesh actor;
-    auto& freeFly = actor.addDefaultComponent<FreeFlyMoveComponent>();
-    auto& character = actor.addDefaultComponent<CharacterMoveComponent>();
+    auto&       freeFly   = actor.addDefaultComponent<FreeFlyMoveComponent>();
+    auto&       character = actor.addDefaultComponent<CharacterMoveComponent>();
     EXPECT_DEATH(freeFly.init(&actor), "");
     EXPECT_DEATH(character.init(&actor), "");
     EXPECT_DEATH(actor.init(), "");
@@ -473,10 +490,10 @@ TEST(SceneManagerTest, RuntimeAdditionInitializesAndRejectsInvalidDependencies)
 
 TEST(SceneManagerTest, ALightRoundTripsAndTicksItsComponents)
 {
-    auto scene = makeScene();
-    auto light = std::make_unique<ALight>();
-    light->name = "Point Light";
-    light->transform().position = {1.0f, 2.0f, 3.0f};
+    auto scene                                       = makeScene();
+    auto light                                       = std::make_unique<ALight>();
+    light->name                                      = "Point Light";
+    light->transform().position                      = {1.0f, 2.0f, 3.0f};
     light->getComponent<LightComponent>()->intensity = 5.0f;
     scene.actors.push_back(std::move(light));
 
@@ -484,6 +501,7 @@ TEST(SceneManagerTest, ALightRoundTripsAndTicksItsComponents)
     EXPECT_TRUE(stored.at("actors")[2].contains("ALight"));
 
     SceneManager manager;
+    EditorCamera managerCamera{manager.scene().editorCamera};
     manager.init();
     manager.load(scene);
     auto* restored = dynamic_cast<ALight*>(manager.scene().actors[2].get());
@@ -502,10 +520,10 @@ TEST(SceneManagerTest, ALightRoundTripsAndTicksItsComponents)
 TEST(SceneManagerTest, ALightRequiresLightComponent)
 {
     ALight actor;
-    std::erase_if(actor.components, [](const auto& component)
-    {
-        return dynamic_cast<LightComponent*>(component.get()) != nullptr;
-    });
+    std::erase_if(
+        actor.components,
+        [](const auto& component) { return dynamic_cast<LightComponent*>(component.get()) != nullptr; }
+    );
     EXPECT_DEATH(actor.init(), "");
 }
 
@@ -520,14 +538,14 @@ TEST(SceneManagerTest, BaseTypesAreNotRegistered)
 
 TEST(SceneManagerTest, RejectsUnknownTypesMissingFieldsAndMissingRequiredComponents)
 {
-    auto stored = Serialize(makeScene());
+    auto stored         = Serialize(makeScene());
     stored["actors"][0] = json{{"MissingActor", stored["actors"][0].at("AFreeFlyCamera")}};
     SceneAsset parsed;
     EXPECT_DEATH(Deserialize(stored, parsed), "");
 
-    stored = Serialize(makeScene());
+    stored           = Serialize(makeScene());
     auto& components = stored["actors"][0]["AFreeFlyCamera"]["components"];
-    components[1] = json{{"MissingComponent", components[1].at("CameraComponent")}};
+    components[1]    = json{{"MissingComponent", components[1].at("CameraComponent")}};
     EXPECT_DEATH(Deserialize(stored, parsed), "");
 
     stored = Serialize(makeScene());
@@ -538,6 +556,7 @@ TEST(SceneManagerTest, RejectsUnknownTypesMissingFieldsAndMissingRequiredCompone
     stored["actors"][0]["AFreeFlyCamera"]["components"].erase(0);
     Deserialize(stored, parsed);
     SceneManager manager;
+    EditorCamera managerCamera{manager.scene().editorCamera};
     manager.init();
     EXPECT_DEATH(manager.load(parsed), "");
     manager.shutdown();
@@ -548,14 +567,18 @@ TEST(SceneManagerTest, PolymorphicPointersRequireExactlyOneTypeKey)
     SceneManager registration;
     registration.init();
     registration.shutdown();
-    std::unique_ptr<AActor> actor = std::make_unique<AStaticMesh>();
-    std::unique_ptr<Component> component = std::make_unique<TransformComponent>();
-    const auto* originalActor = actor.get();
-    const auto* originalComponent = component.get();
+    std::unique_ptr<AActor>    actor             = std::make_unique<AStaticMesh>();
+    std::unique_ptr<Component> component         = std::make_unique<TransformComponent>();
+    const auto*                originalActor     = actor.get();
+    const auto*                originalComponent = component.get();
 
     const std::vector<json> invalid = {
-        json::object(), json::array(), json::array({json::object()}),
-        "AStaticMesh", 42, true,
+        json::object(),
+        json::array(),
+        json::array({json::object()}),
+        "AStaticMesh",
+        42,
+        true,
         json{{"AStaticMesh", json::object()}, {"TransformComponent", json::object()}},
     };
     for (const auto& stored : invalid)
@@ -573,7 +596,7 @@ TEST(SceneManagerTest, PolymorphicPointersRequireObjectData)
     SceneManager registration;
     registration.init();
     registration.shutdown();
-    std::unique_ptr<AActor> actor;
+    std::unique_ptr<AActor>    actor;
     std::unique_ptr<Component> component;
 
     const std::vector<json> invalid = {nullptr, false, 42, "not an object", json::array()};
@@ -593,7 +616,7 @@ TEST(SceneManagerTest, LightTypeRemainsInsideComponentData)
     registration.init();
     registration.shutdown();
     std::unique_ptr<Component> component = std::make_unique<LightComponent>();
-    const json stored = Serialize(component);
+    const json                 stored    = Serialize(component);
     ASSERT_EQ(stored.size(), 1);
     EXPECT_EQ(stored.at("LightComponent").at("type"), "Point");
 
@@ -608,9 +631,9 @@ TEST(SceneManagerTest, RegistryIteratesInheritedMembersAndRejectsDuplicateRegist
     SceneManager registration;
     registration.init();
     registration.shutdown();
-    AFreeFlyCamera actor;
+    AFreeFlyCamera                actor;
     std::vector<std::string_view> members;
-    const auto& type = BaseTypeInfo<AActor>::baseTypeInfoMap.at("AFreeFlyCamera");
+    const auto&                   type = BaseTypeInfo<AActor>::baseTypeInfoMap.at("AFreeFlyCamera");
     type.IterateMembers(actor, [&](MemberRef member) { members.push_back(member.name); });
     EXPECT_EQ(members, (std::vector<std::string_view>{"name", "components"}));
 #ifndef NDEBUG
@@ -629,6 +652,7 @@ TEST(SceneManagerTest, NullPolymorphicPointersRoundTripButNullActorsAreRejected)
     auto scene = makeScene();
     scene.actors.push_back(nullptr);
     SceneManager manager;
+    EditorCamera managerCamera{manager.scene().editorCamera};
     manager.init();
     EXPECT_DEATH(manager.load(scene), "");
     manager.shutdown();

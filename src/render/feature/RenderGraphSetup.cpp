@@ -241,3 +241,14 @@ void RenderGraph::compileNodes()
         }
     }
 }
+
+const RenderGraph::ResourceData& RenderGraph::resolveResource(ResourceHandle handle) const
+{
+    DCHECK(handle >= 0 && handle < resources.size());
+    auto* resource = &resources.at(handle);
+    while (resource->previous != kInvalidHandle)
+        resource = &resources.at(resource->previous);
+
+    DCHECK(resource->data);
+    return *resource->data;
+}

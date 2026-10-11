@@ -66,7 +66,7 @@ public:
         vk::AccessFlags2        access;
     };
 
-    void init(VulkanContext& vulkan, Swapchain& swapchain, std::span<FrameContext> frames);
+    void init(VulkanContext& vulkan, Swapchain& swapchain, std::span<FrameContext> frames, std::span<FrameData> frameData);
     void reset() noexcept;
     void compile();
     void releaseResources() noexcept;
@@ -76,7 +76,13 @@ public:
 
     ImageHandle  createImage(ImageCreateInfo info);
     BufferHandle createBuffer(BufferCreateInfo info);
-    ImageHandle  importSwapchain();
+    ImageHandle importSwapchain();
+    // Borrowed resources must outlive the graph and all submitted frames.
+    // Owners provide the initial access; graph preserves state between executions.
+    ImageHandle importImage(Image& image, ImageCreateInfo info, ImageAccess initial);
+    BufferHandle importBuffer(Buffer& buffer, BufferAccess initial);
+    [[nodiscard]] ImageAccess imageState(ImageHandle image, uint32_t frameIndex) const;
+    [[nodiscard]] BufferAccess bufferState(BufferHandle buffer, uint32_t frameIndex) const;
     ImageHandle  write(ImageHandle image);
     BufferHandle write(BufferHandle buffer);
     void         use(ImageHandle image, ImageAccess access);
@@ -134,6 +140,8 @@ private:
         vk::ImageUsageFlags         imageUsage;
         vk::BufferUsageFlags        bufferUsage;
         std::vector<vk::Image>      externalImages;
+        Image* importedImage = nullptr;
+        Buffer* importedBuffer = nullptr;
         ImageAccess                 initialState;
         bool                        swapchainIndexed = false;
         std::shared_ptr<Allocation> allocation;
@@ -159,7 +167,8 @@ private:
 
     VulkanContext*                       deviceContext   = nullptr;
     Swapchain*                           targetSwapchain = nullptr;
-    std::span<FrameContext>               frames;
+    std::span<FrameContext> frames;
+    std::span<FrameData> frameStorage;
     std::vector<std::unique_ptr<PassNode>> nodeStorage;
     std::vector<PassNode*>                nodes;
     std::vector<PassNode*>                sortedNodes;
@@ -178,6 +187,7 @@ private:
     void                   compileNodes();
     void                   allocateResources();
     ResourceData&          resolveResource(ResourceHandle handle);
+    const ResourceData& resolveResource(ResourceHandle handle) const;
     void                   useResource(const ResourceUse& use);
     void                   transitionResources(const std::vector<ResourceUse>& uses);
     [[nodiscard]] uint32_t instanceIndex(const ResourceData& resource, uint32_t frameIndex) const;

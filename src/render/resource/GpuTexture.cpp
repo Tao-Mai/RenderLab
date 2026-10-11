@@ -1,14 +1,14 @@
 #include "render/resource/GpuTexture.h"
 
-#include "asset/Asset.h"
+#include "asset/AssetDataManager.h"
+#include "asset/TextureAsset.h"
+#include "asset/TextureMip.h"
 #include "render/device/Memory.h"
 #include "render/device/VkCheck.h"
 #include "render/resource/Buffer.h"
-#include "asset/AssetDataManager.h"
-#include "asset/TextureMip.h"
 
-#include <limits>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -22,77 +22,70 @@ namespace
     switch (format)
     {
         case ImageFormat::R8:
-            return colorSpace == ColorSpace::Srgb
-                ? vk::Format::eR8Srgb : vk::Format::eR8Unorm;
+            return colorSpace == ColorSpace::Srgb ? vk::Format::eR8Srgb : vk::Format::eR8Unorm;
         case ImageFormat::RG8:
-            return colorSpace == ColorSpace::Srgb
-                ? vk::Format::eR8G8Srgb : vk::Format::eR8G8Unorm;
+            return colorSpace == ColorSpace::Srgb ? vk::Format::eR8G8Srgb : vk::Format::eR8G8Unorm;
         case ImageFormat::RGB8:
         case ImageFormat::RGBA8:
-            return colorSpace == ColorSpace::Srgb
-                ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
+            return colorSpace == ColorSpace::Srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
         case ImageFormat::RGBA16F:
-            CHECK(colorSpace == ColorSpace::Linear,
-                  "floating-point textures require linear color space");
+            CHECK(colorSpace == ColorSpace::Linear, "floating-point textures require linear color space");
             return vk::Format::eR16G16B16A16Sfloat;
         case ImageFormat::RGBA32F:
-            CHECK(colorSpace == ColorSpace::Linear,
-                  "floating-point textures require linear color space");
+            CHECK(colorSpace == ColorSpace::Linear, "floating-point textures require linear color space");
             return vk::Format::eR32G32B32A32Sfloat;
     }
     LOG_FATAL("invalid texture data format");
 }
-}
+}  // namespace
 
-GpuTexture::GpuTexture(
-    GpuUploadContext         upload, const TextureAsset& asset,
-    std::span<const uint8_t> bytes)
+GpuTexture::GpuTexture(GpuUploadContext upload, const TextureAsset& asset, std::span<const uint8_t> bytes)
 {
     create(upload, bytes, asset);
 }
 
-vk::ImageView GpuTexture::imageView() const
-{
-    return *view;
-}
+vk::ImageView GpuTexture::imageView() const { return *view; }
 
-vk::Image GpuTexture::imageHandle() const { return *image; }
+vk::Image                  GpuTexture::imageHandle() const { return *image; }
 const vk::ImageCreateInfo& GpuTexture::imageInfo() const { return creationInfo; }
 
-void GpuTexture::create(
-    GpuUploadContext upload, std::span<const uint8_t> bytes,
-    const TextureAsset& asset)
+void GpuTexture::create(GpuUploadContext upload, std::span<const uint8_t> bytes, const TextureAsset& asset)
 {
     const uint32_t   layers           = asset.layout == ImageLayout::Cubemap ? 6 : 1;
     const uint32_t   sourcePixelBytes = AssetDataManager::bytesPerPixel(asset.format);
     const uint32_t   pixelBytes       = asset.format == ImageFormat::RGB8 ? 4 : sourcePixelBytes;
     const vk::Format format           = vulkanFormat(asset.format, asset.colorSpace);
-    const auto&     physicalDevice   = upload.physicalDevice;
-    const auto&     device           = upload.device;
-    const auto&     commandPool      = upload.commandPool;
-    auto&           queue            = upload.queue;
+    const auto&      physicalDevice   = upload.physicalDevice;
+    const auto&      device           = upload.device;
+    const auto&      commandPool      = upload.commandPool;
+    auto&            queue            = upload.queue;
 
-    CHECK(asset.width > 0 && asset.height > 0 && asset.mipLevels > 0 &&
-          asset.mipLevels <= texture_mip::maxLevels(asset.width, asset.height),
-          "invalid texture mip levels: {}", asset.id);
-    CHECK(asset.width <= std::numeric_limits<uint32_t>::max() /
-          asset.height / layers / pixelBytes,
-          "texture payload is too large: {}", asset.id);
+    CHECK(
+        asset.width > 0 && asset.height > 0 && asset.mipLevels > 0 &&
+            asset.mipLevels <= texture_mip::maxLevels(asset.width, asset.height),
+        "invalid texture mip levels: {}",
+        asset.id
+    );
+    CHECK(
+        asset.width <= std::numeric_limits<uint32_t>::max() / asset.height / layers / pixelBytes,
+        "texture payload is too large: {}",
+        asset.id
+    );
 
-    const vk::DeviceSize sourceByteSize = texture_mip::totalBytes(
-        asset.width, asset.height, layers, sourcePixelBytes, asset.mipLevels);
+    const vk::DeviceSize sourceByteSize =
+        texture_mip::totalBytes(asset.width, asset.height, layers, sourcePixelBytes, asset.mipLevels);
     CHECK(bytes.size() == sourceByteSize, "invalid texture payload size: {}", asset.id);
 
-    const vk::DeviceSize byteSize = texture_mip::totalBytes(
-        asset.width, asset.height, layers, pixelBytes, asset.mipLevels);
+    const vk::DeviceSize byteSize =
+        texture_mip::totalBytes(asset.width, asset.height, layers, pixelBytes, asset.mipLevels);
     std::vector<uint8_t> rgbaPixels;
     if (asset.format == ImageFormat::RGB8)
     {
         // The payload packs all mip levels and cube faces consecutively.
         // Expand every RGB texel; GPU copies then use a four-byte pixel stride.
         rgbaPixels.resize(static_cast<size_t>(byteSize));
-        for (size_t sourceOffset = 0, destinationOffset = 0;
-             sourceOffset < bytes.size(); sourceOffset += 3, destinationOffset += 4)
+        for (size_t sourceOffset = 0, destinationOffset = 0; sourceOffset < bytes.size();
+             sourceOffset += 3, destinationOffset += 4)
         {
             rgbaPixels[destinationOffset]     = bytes[sourceOffset];
             rgbaPixels[destinationOffset + 1] = bytes[sourceOffset + 1];
@@ -104,7 +97,7 @@ void GpuTexture::create(
 
     // Packed asset mips can start at odd offsets for R8/RG8 NPOT images.
     // Keep the persistent payload compact and align only the GPU staging copies.
-    constexpr vk::DeviceSize kCopyOffsetAlignment = 4;
+    constexpr vk::DeviceSize         kCopyOffsetAlignment = 4;
     vk::DeviceSize                   stagingSize          = 0;
     std::vector<vk::BufferImageCopy> copyRegions;
     copyRegions.reserve(static_cast<size_t>(layers) * asset.mipLevels);
@@ -171,71 +164,66 @@ void GpuTexture::create(
         .initialLayout = vk::ImageLayout::eUndefined,
     };
     creationInfo = imageInfo;
-    image = vkCheck(device.createImage(imageInfo));
+    image        = vkCheck(device.createImage(imageInfo));
 
     const vk::MemoryRequirements requirements = image.getMemoryRequirements();
     const vk::MemoryAllocateInfo allocationInfo{
-        .allocationSize = requirements.size,
+        .allocationSize  = requirements.size,
         .memoryTypeIndex = vulkan_memory::findType(
             physicalDevice,
             requirements.memoryTypeBits,
-            vk::MemoryPropertyFlagBits::eDeviceLocal),
+            vk::MemoryPropertyFlagBits::eDeviceLocal
+        ),
     };
     imageMemory = vkCheck(device.allocateMemory(allocationInfo));
     vkCheck(image.bindMemory(*imageMemory, 0));
 
     const vk::CommandBufferAllocateInfo commandInfo{
-        .commandPool = commandPool,
-        .level = vk::CommandBufferLevel::ePrimary,
+        .commandPool        = commandPool,
+        .level              = vk::CommandBufferLevel::ePrimary,
         .commandBufferCount = 1,
     };
-    vk::raii::CommandBuffer copyCommand = std::move(vkCheck(
-        device.allocateCommandBuffers(commandInfo)).front());
-    vkCheck(
-        copyCommand.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit}));
+    vk::raii::CommandBuffer copyCommand = std::move(vkCheck(device.allocateCommandBuffers(commandInfo)).front());
+    vkCheck(copyCommand.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit}));
 
     const vk::ImageSubresourceRange subresourceRange{
-        .aspectMask = vk::ImageAspectFlagBits::eColor,
-        .baseMipLevel = 0,
-        .levelCount = asset.mipLevels,
+        .aspectMask     = vk::ImageAspectFlagBits::eColor,
+        .baseMipLevel   = 0,
+        .levelCount     = asset.mipLevels,
         .baseArrayLayer = 0,
-        .layerCount = layers,
+        .layerCount     = layers,
     };
     const vk::ImageMemoryBarrier2 toTransfer{
-        .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-        .srcAccessMask = {},
-        .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
-        .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
-        .oldLayout = vk::ImageLayout::eUndefined,
-        .newLayout = vk::ImageLayout::eTransferDstOptimal,
+        .srcStageMask        = vk::PipelineStageFlagBits2::eTopOfPipe,
+        .srcAccessMask       = {},
+        .dstStageMask        = vk::PipelineStageFlagBits2::eTransfer,
+        .dstAccessMask       = vk::AccessFlagBits2::eTransferWrite,
+        .oldLayout           = vk::ImageLayout::eUndefined,
+        .newLayout           = vk::ImageLayout::eTransferDstOptimal,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = *image,
-        .subresourceRange = subresourceRange,
+        .image               = *image,
+        .subresourceRange    = subresourceRange,
     };
     vk::DependencyInfo dependency{
         .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &toTransfer,
+        .pImageMemoryBarriers    = &toTransfer,
     };
     copyCommand.pipelineBarrier2(dependency);
 
-    copyCommand.copyBufferToImage(
-        staging.handle(),
-        *image,
-        vk::ImageLayout::eTransferDstOptimal,
-        copyRegions);
+    copyCommand.copyBufferToImage(staging.handle(), *image, vk::ImageLayout::eTransferDstOptimal, copyRegions);
 
     const vk::ImageMemoryBarrier2 toShader{
-        .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
-        .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
-        .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-        .dstAccessMask = vk::AccessFlagBits2::eShaderSampledRead,
-        .oldLayout = vk::ImageLayout::eTransferDstOptimal,
-        .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+        .srcStageMask        = vk::PipelineStageFlagBits2::eTransfer,
+        .srcAccessMask       = vk::AccessFlagBits2::eTransferWrite,
+        .dstStageMask        = vk::PipelineStageFlagBits2::eAllCommands,
+        .dstAccessMask       = vk::AccessFlagBits2::eShaderSampledRead,
+        .oldLayout           = vk::ImageLayout::eTransferDstOptimal,
+        .newLayout           = vk::ImageLayout::eShaderReadOnlyOptimal,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = *image,
-        .subresourceRange = subresourceRange,
+        .image               = *image,
+        .subresourceRange    = subresourceRange,
     };
     dependency.pImageMemoryBarriers = &toShader;
     copyCommand.pipelineBarrier2(dependency);
@@ -243,20 +231,17 @@ void GpuTexture::create(
 
     const vk::CommandBuffer command = *copyCommand;
     const vk::SubmitInfo    submitInfo{
-        .commandBufferCount = 1,
-        .pCommandBuffers = &command,
+           .commandBufferCount = 1,
+           .pCommandBuffers    = &command,
     };
     vkCheck(queue.submit(submitInfo, nullptr));
     vkCheck(queue.waitIdle());
 
     const vk::ImageViewCreateInfo viewInfo{
-        .image = *image,
-        .viewType = asset.layout == ImageLayout::Cubemap
-        ? vk::ImageViewType::eCube
-        : vk::ImageViewType::e2D,
-        .format = format,
+        .image            = *image,
+        .viewType         = asset.layout == ImageLayout::Cubemap ? vk::ImageViewType::eCube : vk::ImageViewType::e2D,
+        .format           = format,
         .subresourceRange = subresourceRange,
     };
     view = vkCheck(device.createImageView(viewInfo));
-
 }

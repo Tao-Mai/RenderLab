@@ -1,3 +1,4 @@
+#include "editor/EditorCamera.h"
 // One-time import and short rendering check using the configured default scene.
 #include "asset/AssetDataManager.h"
 #include "asset/AssetImporter.h"
@@ -29,6 +30,7 @@ int main(int argc, char** argv)
     AssetManager     assets;
     AssetDataManager data;
     SceneManager     scenes;
+    EditorCamera     scenesCamera{scenes.scene().editorCamera};
     Window           window;
     Renderer         renderer;
     RenderSystem     renderSystem;
@@ -42,9 +44,9 @@ int main(int argc, char** argv)
     ctx.renderer         = &renderer;
 
     config.init();
-    data.init();
+    data.init(config.paths().assets);
     scenes.init();
-    assets.init();
+    assets.init(config.paths().assets);
     const auto  meshId   = AssetImporter::importMesh({.source = argv[1], .importScale = importScale});
     const auto& mesh     = assets.get<MeshAsset>(meshId);
     const auto  geometry = data.readGeometry(mesh);
@@ -66,25 +68,24 @@ int main(int argc, char** argv)
     glfwHideWindow(window.nativeHandle());
     renderer.init();
     renderer.rebuildGraph();
-    const auto* importedMaterial            = &renderContext().resources->material(transparentMaterial);
-    const auto  extent                      = renderer.swapchainHandle().extent();
-    bool        renderedTransparentMaterial = false;
+    const auto importedMaterial            = renderContext().resources->material(transparentMaterial);
+    const auto extent                      = renderer.swapchainHandle().extent();
+    bool       renderedTransparentMaterial = false;
     for (int frame = 0; frame < 4; ++frame)
     {
         window.pollEvents();
-        const auto& renderData = renderSystem.prepare(
-            scenes.scene(), scenes.editorCamera().worldPosition(), *renderContext().resources);
+        const auto& renderData = renderSystem.prepare(scenes.scene(), scenesCamera.worldPosition());
         lightMarkers.prepare(scenes.scene(), *renderContext().resources);
         renderer.render(
-            scenes.editorCamera().renderView(
-                {0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)}
-            ),
+            scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)}),
             renderData,
             {
                 .lightDrawItems = lightMarkers.drawItems(),
             }
         );
-        for (const auto& item : renderData.transparentDrawItems)
+        renderer.waitIdle();
+        const auto& gpuData = renderContext().resources->prepare(renderData, 0);
+        for (const auto& item : gpuData.transparentDrawItems)
             renderedTransparentMaterial |= item.material == importedMaterial;
     }
     CHECK(renderedTransparentMaterial);

@@ -1,16 +1,24 @@
 #pragma once
 
-#include "asset/Asset.h"
+#include <array>
+#include <map>
+#include "asset/MaterialAsset.h"
+#include "asset/MeshAsset.h"
+#include "asset/SamplerAsset.h"
+#include "asset/TextureAsset.h"
+#include "render/RenderConfig.h"
+#include "render/RenderData.h"
+#include "render/device/GpuUploadContext.h"
 #include "render/resource/GpuMaterial.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/GpuTexture.h"
-#include "render/device/GpuUploadContext.h"
 
 #include <memory>
 #include <unordered_map>
 
 #include <vulkan/vulkan_raii.hpp>
 
+struct SceneRenderData;
 class AssetManager;
 class AssetDataManager;
 class DescriptorManager;
@@ -22,28 +30,51 @@ class RenderResourceManager
 public:
     ~RenderResourceManager();
 
-    void init(VulkanContext& vulkan, DescriptorManager& descriptors,
-        ShaderManager& shaders);
+    void init(
+        VulkanContext&     vulkan,
+        DescriptorManager& descriptors,
+        ShaderManager&     shaders,
+        AssetManager&      assets,
+        AssetDataManager&  data
+    );
     void shutdown() noexcept;
 
-    GpuMesh& mesh(const MeshAsset::ID& id);
-    [[nodiscard]] MaterialAsset materialAsset(const MaterialAsset::ID& id) const;
-    GpuMaterial& material(const MaterialAsset::ID& id);
-    GpuMaterial& material(const MaterialAsset& asset);
+    GpuMesh&                     mesh(const MeshAsset::ID& id);
+    std::shared_ptr<GpuMaterial> material(const MaterialAsset::ID& id);
+    // The caller must wait for this frame's fence before preparing its resources.
+    const RenderData&           prepare(const SceneRenderData& scene, uint32_t frameIndex);
     std::shared_ptr<GpuTexture> texture(const TextureAsset::ID& id);
-    [[nodiscard]] vk::Sampler sampler(const SamplerAsset::ID& id);
+    [[nodiscard]] vk::Sampler   sampler(const SamplerAsset::ID& id);
 
 private:
-    AssetManager* assets = nullptr;
-    AssetDataManager* data = nullptr;
-    VulkanContext* vulkan = nullptr;
-    DescriptorManager* descriptors = nullptr;
-    ShaderManager* shaders = nullptr;
-    vk::raii::CommandPool uploadPool = nullptr;
+    AssetManager*                                               assets      = nullptr;
+    AssetDataManager*                                           data        = nullptr;
+    VulkanContext*                                              vulkan      = nullptr;
+    DescriptorManager*                                          descriptors = nullptr;
+    ShaderManager*                                              shaders     = nullptr;
+    vk::raii::CommandPool                                       uploadPool  = nullptr;
     std::unordered_map<MeshAsset::ID, std::unique_ptr<GpuMesh>> meshes;
-    std::unordered_map<std::string, std::unique_ptr<GpuMaterial>> materials;
+    struct SharedMaterial
+    {
+        uint64_t                     revision = 0;
+        std::shared_ptr<GpuMaterial> gpu;
+    };
+    struct MaterialInstance
+    {
+        MaterialAsset                asset;
+        std::shared_ptr<GpuMaterial> gpu;
+        bool                         used = false;
+    };
+    struct FrameResources
+    {
+        RenderData                                                           draws;
+        std::map<std::tuple<uint32_t, uint32_t, uint32_t>, MaterialInstance> instances;
+    };
+    std::array<FrameResources, maxFramesInFlight>                     frameResources;
+    std::unordered_map<MaterialAsset::ID, SharedMaterial>             materials;
+    std::shared_ptr<GpuMaterial>                                      createMaterial(const MaterialAsset& asset);
     std::unordered_map<TextureAsset::ID, std::shared_ptr<GpuTexture>> textures;
-    std::unordered_map<SamplerAsset::ID, vk::raii::Sampler> samplers;
+    std::unordered_map<SamplerAsset::ID, vk::raii::Sampler>           samplers;
 
     [[nodiscard]] GpuUploadContext uploadContext() const;
 };

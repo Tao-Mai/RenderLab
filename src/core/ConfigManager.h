@@ -1,6 +1,7 @@
 #pragma once
 
-#include "asset/Asset.h"
+#include "asset/EnvironmentMapAsset.h"
+#include "asset/SceneAsset.h"
 #include "core/Debug.h"
 #include "core/Input.h"
 #include "render/RendererConfig.h"

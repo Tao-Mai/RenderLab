@@ -1,4 +1,5 @@
 #include "render/feature/RenderGraph.h"
+#include "render/FrameData.h"
 
 #include "core/Logger.h"
 #include "render/RenderView.h"
@@ -32,13 +33,17 @@ struct RenderGraph::Allocation
     std::vector<Instance> instances;
 };
 
-void RenderGraph::init(VulkanContext& vulkan, Swapchain& swapchain, std::span<FrameContext> frameContexts)
+void RenderGraph::init(
+    VulkanContext& vulkan, Swapchain& swapchain, std::span<FrameContext> frameContexts, std::span<FrameData> frameData
+)
 {
     DCHECK(!deviceContext);
     DCHECK(!frameContexts.empty());
     deviceContext   = &vulkan;
     targetSwapchain = &swapchain;
     frames          = frameContexts;
+    frameStorage    = frameData;
+    DCHECK(frames.size() == frameStorage.size());
 }
 
 void RenderGraph::releaseResources() noexcept
@@ -58,6 +63,7 @@ void RenderGraph::reset() noexcept
     deviceContext     = nullptr;
     targetSwapchain   = nullptr;
     frames            = {};
+    frameStorage      = {};
     currentEditor     = nullptr;
     currentRenderData = nullptr;
     currentView       = nullptr;
@@ -83,11 +89,18 @@ void RenderGraph::allocateResources()
 
         auto& resource      = *entry.data;
         resource.allocation = std::make_shared<Allocation>();
-        const size_t count  = resource.externalImages.empty() ? maxFramesInFlight : resource.externalImages.size();
+        const size_t count  = resource.importedImage || resource.importedBuffer ? 1
+             : resource.externalImages.empty()                                  ? maxFramesInFlight
+                                                                                : resource.externalImages.size();
         resource.allocation->instances.resize(count);
         for (size_t i = 0; i < count; ++i)
         {
             auto& instance = resource.allocation->instances[i];
+            if (resource.importedImage || resource.importedBuffer)
+            {
+                instance.state = resource.initialState;
+                continue;
+            }
             if (!resource.externalImages.empty())
             {
                 instance.image = std::make_unique<Image>(device, resource.externalImages[i]);
@@ -174,6 +187,8 @@ Image& RenderGraph::getImage(ImageHandle image, uint32_t frameIndex)
 {
     const auto& resource = resolveResource(image.id);
     DCHECK(!resource.isBuffer && resource.allocation);
+    if (resource.importedImage)
+        return *resource.importedImage;
     return *resource.allocation->instances.at(instanceIndex(resource, frameIndex)).image;
 }
 
@@ -183,6 +198,8 @@ Buffer& RenderGraph::getBuffer(BufferHandle buffer, uint32_t frameIndex)
 {
     const auto& resource = resolveResource(buffer.id);
     DCHECK(resource.isBuffer && resource.allocation);
+    if (resource.importedBuffer)
+        return *resource.importedBuffer;
     return *resource.allocation->instances.at(instanceIndex(resource, frameIndex)).buffer;
 }
 
@@ -208,8 +225,8 @@ void RenderGraph::useResource(const ResourceUse& use)
             .dstAccessMask       = next.access,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer              = instance.buffer->handle(),
-            .size                = resource.bufferInfo.size,
+            .buffer = resource.importedBuffer ? resource.importedBuffer->handle() : instance.buffer->handle(),
+            .size   = resource.bufferInfo.size,
         };
         commands().pipelineBarrier2({.bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrier});
     }
@@ -224,7 +241,7 @@ void RenderGraph::useResource(const ResourceUse& use)
             .newLayout           = next.layout,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image               = instance.image->handle(),
+            .image               = resource.importedImage ? resource.importedImage->handle() : instance.image->handle(),
             .subresourceRange    = {
                    .aspectMask = imageAspect(resource.imageInfo.format),
                    .levelCount = resource.imageInfo.mipLevels,
@@ -289,10 +306,54 @@ void RenderGraph::execute(
 FrameData& RenderGraph::frameData(uint32_t index) const
 {
     DCHECK(index < frames.size());
-    return frames[index].data;
+    return frameStorage[index];
 }
 vk::raii::CommandBuffer& RenderGraph::commands() const
 {
     DCHECK(currentFrame < frames.size());
     return frames[currentFrame].commandBufferHandle();
+}
+
+RenderGraph::ImageHandle RenderGraph::importImage(Image& image, ImageCreateInfo info, ImageAccess initial)
+{
+    for (size_t index = 0; index < resources.size(); ++index)
+        if (resources[index].data && resources[index].data->importedImage == &image)
+            return {static_cast<ResourceHandle>(index)};
+    auto data           = std::make_unique<ResourceData>();
+    data->imageInfo     = info;
+    data->importedImage = &image;
+    data->initialState  = initial;
+    const ImageHandle handle{static_cast<ResourceHandle>(resources.size())};
+    resources.push_back({.data = std::move(data)});
+    return handle;
+}
+
+RenderGraph::BufferHandle RenderGraph::importBuffer(Buffer& buffer, BufferAccess initial)
+{
+    for (size_t index = 0; index < resources.size(); ++index)
+        if (resources[index].data && resources[index].data->importedBuffer == &buffer)
+            return {static_cast<ResourceHandle>(index)};
+    auto data             = std::make_unique<ResourceData>();
+    data->isBuffer        = true;
+    data->bufferInfo.size = buffer.size();
+    data->importedBuffer  = &buffer;
+    data->initialState    = {.stages = initial.stages, .access = initial.access};
+    const BufferHandle handle{static_cast<ResourceHandle>(resources.size())};
+    resources.push_back({.data = std::move(data)});
+    return handle;
+}
+
+RenderGraph::ImageAccess RenderGraph::imageState(ImageHandle image, uint32_t frameIndex) const
+{
+    const auto& resource = resolveResource(image.id);
+    DCHECK(!resource.isBuffer && resource.allocation);
+    return resource.allocation->instances.at(instanceIndex(resource, frameIndex)).state;
+}
+
+RenderGraph::BufferAccess RenderGraph::bufferState(BufferHandle buffer, uint32_t frameIndex) const
+{
+    const auto& resource = resolveResource(buffer.id);
+    DCHECK(resource.isBuffer && resource.allocation);
+    const auto& state = resource.allocation->instances.at(instanceIndex(resource, frameIndex)).state;
+    return {state.stages, state.access};
 }

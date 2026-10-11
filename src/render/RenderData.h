@@ -3,6 +3,7 @@
 #include "render/resource/ShaderData.h"
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include <glm/mat4x4.hpp>
@@ -12,13 +13,13 @@ class GpuMesh;
 
 struct DrawItem
 {
-    GpuMesh*           mesh;
-    const GpuMaterial* material;
-    glm::mat4          model;
-    uint32_t           firstIndex;
-    uint32_t           indexCount;
-    uint32_t           selectionId;
-    float              distanceSquared;
+    GpuMesh*                           mesh;
+    std::shared_ptr<const GpuMaterial> material;
+    glm::mat4                          model;
+    uint32_t                           firstIndex;
+    uint32_t                           indexCount;
+    uint32_t                           selectionId;
+    float                              distanceSquared;
 };
 
 struct RenderData

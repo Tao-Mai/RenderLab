@@ -1,4 +1,5 @@
 #include "render/feature/editor/EditorDepthPass.h"
+#include "render/feature/editor/EditorInterface.h"
 
 #include "render/FrameData.h"
 #include "render/PipelineManager.h"
@@ -33,13 +34,13 @@ EditorDepthPass::Output EditorDepthPass::setup(RenderGraph& graph)
     );
 
     auto& pipelines = *renderContext().pipelineManager;
+    pipelineLayout  = EditorInterface::pipelineLayout(*renderContext().descriptors, *renderContext().pipelineManager);
     pipeline        = pipelines.getOrCreate({
                .shader      = renderContext().shaderManager->getOrLoad("editor_depth"),
-               .layout      = PipelineLayoutPreset::Editor,
-               .state       = PipelineState::preset(RenderMode::DepthOnly),
+               .layout      = pipelineLayout,
+               .state       = PipelineState{.vertexLayout = VertexLayoutPreset::PositionOnly},
                .depthFormat = vk::Format::eD32Sfloat,
     });
-    pipelineLayout  = pipelines.layout(PipelineLayoutPreset::Editor);
     return {depth};
 }
 

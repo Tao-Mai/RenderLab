@@ -3,55 +3,13 @@
 #include "core/Logger.h"
 #include "render/DescriptorManager.h"
 #include "render/device/VkCheck.h"
-#include "render/resource/ShaderData.h"
-#include "render/feature/editor/EditorShaderData.h"
 #include "render/resource/VertexLayout.h"
 
 #include <array>
 #include <functional>
 #include <span>
 #include <utility>
-
-PipelineState PipelineState::preset(RenderMode mode)
-{
-    PipelineState state;
-    switch (mode)
-    {
-        case RenderMode::Opaque:
-        case RenderMode::AlphaTest:
-            break;
-        case RenderMode::Transparent:
-            state.depthWrite = false;
-            state.blend      = true;
-            break;
-        case RenderMode::Shadow:
-            state.vertexLayout = VertexLayoutPreset::PositionOnly;
-            state.cullMode     = vk::CullModeFlagBits::eNone;
-            break;
-        case RenderMode::DepthOnly:
-            state.vertexLayout = VertexLayoutPreset::PositionOnly;
-            break;
-        case RenderMode::Skybox:
-            state.vertexLayout = VertexLayoutPreset::None;
-            state.depthWrite   = false;
-            state.depthCompare = vk::CompareOp::eLessOrEqual;
-            break;
-        case RenderMode::PostProcess:
-            state.vertexLayout = VertexLayoutPreset::None;
-            state.depthTest    = false;
-            state.depthWrite   = false;
-            break;
-        case RenderMode::LightMarker:
-            state.vertexLayout = VertexLayoutPreset::PositionOnly;
-            break;
-        case RenderMode::Picking:
-            state.vertexLayout = VertexLayoutPreset::PositionOnly;
-            state.depthWrite   = false;
-            state.depthCompare = vk::CompareOp::eLessOrEqual;
-            break;
-    }
-    return state;
-}
+#include <vulkan/vulkan_hash.hpp>
 
 std::size_t PipelineKeyHash::operator()(const PipelineKey& key) const noexcept
 {
@@ -59,7 +17,7 @@ std::size_t PipelineKeyHash::operator()(const PipelineKey& key) const noexcept
     const auto  combine = [&seed](uint64_t value)
     { seed ^= std::hash<uint64_t>{}(value) + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2); };
     combine(key.shader.index);
-    combine(static_cast<uint32_t>(key.layout));
+    combine(std::hash<vk::PipelineLayout>{}(key.layout));
     combine(static_cast<uint32_t>(key.state.vertexLayout));
     combine(static_cast<uint32_t>(key.state.topology));
     combine(static_cast<uint32_t>(key.state.polygonMode));
@@ -86,98 +44,34 @@ void PipelineManager::init(
     this->descriptors = &descriptors;
     shaders           = &targetShaders;
     pipelineCache     = vkCheck(device->createPipelineCache(vk::PipelineCacheCreateInfo{}));
-    const vk::PushConstantRange pushRange{
-        .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        .offset     = 0,
-        .size       = sizeof(ShadowPushConstants),
-    };
-    const std::array sceneMaterialSets = {
-        descriptors.layout(DescriptorLayoutPreset::Scene),
-        descriptors.layout(DescriptorLayoutPreset::Material),
-    };
-    const vk::PipelineLayoutCreateInfo sceneMaterialInfo{
-        .setLayoutCount         = static_cast<uint32_t>(sceneMaterialSets.size()),
-        .pSetLayouts            = sceneMaterialSets.data(),
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges    = &pushRange,
-    };
-    sceneMaterialLayout = vkCheck(device->createPipelineLayout(sceneMaterialInfo));
-
-    const vk::DescriptorSetLayout      sceneSet = descriptors.layout(DescriptorLayoutPreset::Scene);
-    const vk::PipelineLayoutCreateInfo sceneOnlyInfo{
-        .setLayoutCount         = 1,
-        .pSetLayouts            = &sceneSet,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges    = &pushRange,
-    };
-    sceneOnlyLayout = vkCheck(device->createPipelineLayout(sceneOnlyInfo));
-
-    const auto viewSet = descriptors.layout(DescriptorLayoutPreset::View);
-    const vk::PushConstantRange editorPushRange{
-        .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        .size = sizeof(EditorLightMarkerPushConstants),
-    };
-    editorLayout = vkCheck(device->createPipelineLayout({
-        .setLayoutCount = 1,
-        .pSetLayouts = &viewSet,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &editorPushRange,
-    }));
-
-    const auto toneMappingSet = descriptors.layout(DescriptorLayoutPreset::ToneMapping);
-    const vk::PushConstantRange toneMappingPushRange{
-        .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        .offset = 0,
-        .size = sizeof(ToneMappingPushConstants),
-    };
-    toneMappingLayout = vkCheck(device->createPipelineLayout({
-        .setLayoutCount = 1,
-        .pSetLayouts = &toneMappingSet,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &toneMappingPushRange,
-    }));
-
-    const auto emptySet = descriptors.getOrCreateLayout(std::span<const vk::DescriptorSetLayoutBinding>{});
-    const std::array deferredSets = {
-        sceneSet, emptySet, emptySet, descriptors.layout(DescriptorLayoutPreset::GBuffer),
-    };
-    const vk::PushConstantRange deferredPushRange{
-        .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        .size = sizeof(DeferredLightingPushConstants),
-    };
-    deferredLightingLayout = vkCheck(device->createPipelineLayout({
-        .setLayoutCount = static_cast<uint32_t>(deferredSets.size()),
-        .pSetLayouts = deferredSets.data(),
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &deferredPushRange,
-    }));
 }
 
 void PipelineManager::shutdown() noexcept
 {
     pipelines.clear();
-    pipelineCache       = nullptr;
-    sceneOnlyLayout     = nullptr;
-    editorLayout        = nullptr;
-    toneMappingLayout   = nullptr;
-    deferredLightingLayout = nullptr;
-    sceneMaterialLayout = nullptr;
-    descriptors         = nullptr;
-    shaders             = nullptr;
-    device              = nullptr;
+    layouts.clear();
+    pipelineCache = nullptr;
+    descriptors   = nullptr;
+    shaders       = nullptr;
+    device        = nullptr;
 }
 
-vk::PipelineLayout PipelineManager::layout(PipelineLayoutPreset preset) const
+vk::PipelineLayout PipelineManager::getOrCreateLayout(
+    std::span<const vk::DescriptorSetLayout> sets, std::span<const vk::PushConstantRange> ranges
+)
 {
-    switch (preset)
-    {
-        case PipelineLayoutPreset::SceneMaterial: return *sceneMaterialLayout;
-        case PipelineLayoutPreset::SceneOnly: return *sceneOnlyLayout;
-        case PipelineLayoutPreset::Editor: return *editorLayout;
-        case PipelineLayoutPreset::ToneMapping: return *toneMappingLayout;
-        case PipelineLayoutPreset::DeferredLighting: return *deferredLightingLayout;
-    }
-    LOG_FATAL("invalid pipeline layout preset");
+    for (const auto& entry : layouts)
+        if (std::ranges::equal(entry.sets, sets) && std::ranges::equal(entry.ranges, ranges))
+            return *entry.layout;
+    auto       layout = vkCheck(device->createPipelineLayout({
+              .setLayoutCount         = static_cast<uint32_t>(sets.size()),
+              .pSetLayouts            = sets.data(),
+              .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
+              .pPushConstantRanges    = ranges.data(),
+    }));
+    const auto handle = *layout;
+    layouts.push_back({{sets.begin(), sets.end()}, {ranges.begin(), ranges.end()}, std::move(layout)});
+    return handle;
 }
 
 vk::Pipeline PipelineManager::getOrCreate(const PipelineKey& key)
@@ -188,48 +82,47 @@ vk::Pipeline PipelineManager::getOrCreate(const PipelineKey& key)
         return *found->second;
     }
     const ShaderMetadata& metadata = shaders->metadata(key.shader);
-    for (const ShaderMetadata::Binding& binding : metadata.bindings)
-    {
-        const bool supported = key.layout == PipelineLayoutPreset::Editor
-            ? binding.set == EditorInterface::kViewSet && descriptors->containsBinding(
-                DescriptorLayoutPreset::View, binding.binding, binding.type)
-            : key.layout == PipelineLayoutPreset::ToneMapping
-            ? binding.set == 0 && descriptors->containsBinding(
-                DescriptorLayoutPreset::ToneMapping, binding.binding, binding.type)
-            : key.layout == PipelineLayoutPreset::DeferredLighting
-            ? (binding.set == RenderInterface::kSceneSet && descriptors->containsBinding(
-                DescriptorLayoutPreset::Scene, binding.binding, binding.type)) ||
-              (binding.set == RenderInterface::kPassSet && descriptors->containsBinding(
-                DescriptorLayoutPreset::GBuffer, binding.binding, binding.type))
-            : binding.set == RenderInterface::kSceneSet
-            ? descriptors->containsBinding(DescriptorLayoutPreset::Scene, binding.binding, binding.type)
-            : binding.set == RenderInterface::kMaterialSet && key.layout == PipelineLayoutPreset::SceneMaterial &&
-                descriptors->containsBinding(DescriptorLayoutPreset::Material, binding.binding, binding.type);
+    const auto layout = std::ranges::find_if(layouts, [&](const auto& entry) { return *entry.layout == key.layout; });
+    DCHECK(layout != layouts.end());
+    for (const auto& binding : metadata.bindings)
         CHECK(
-            supported,
-            "shader '{}' binding set {} binding {} ({}) is not in the selected pipeline layout",
+            binding.set < layout->sets.size() && descriptors->containsBinding(layout->sets[binding.set], binding),
+            "shader '{}' set {} binding {} does not match pipeline layout",
             metadata.id,
             binding.set,
-            binding.binding,
-            vk::to_string(binding.type)
+            binding.binding
         );
-    }
+    if (metadata.pushConstantSize)
+        CHECK(
+            std::ranges::any_of(
+                layout->ranges,
+                [&](const auto& range)
+                {
+                    return range.offset == 0 && range.size >= metadata.pushConstantSize &&
+                        (range.stageFlags & (vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)) ==
+                        (vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
+                }
+            ),
+            "shader '{}' push constants do not fit pipeline layout",
+            metadata.id
+        );
+    CHECK(metadata.entries.size() == 2);
     const std::array shaderStages = {
         vk::PipelineShaderStageCreateInfo{
             .stage  = vk::ShaderStageFlagBits::eVertex,
             .module = shaders->module(key.shader),
-            .pName  = "vertMain"
+            .pName  = metadata.entries[0].c_str()
         },
         vk::PipelineShaderStageCreateInfo{
             .stage  = vk::ShaderStageFlagBits::eFragment,
             .module = shaders->module(key.shader),
-            .pName  = "fragMain"
+            .pName  = metadata.entries[1].c_str()
         },
     };
-    const vk::VertexInputBindingDescription      binding            = VertexLayout::bindingDescription();
-    const auto                                   meshAttributes     = VertexLayout::attributeDescriptions();
-    const auto                                   positionAttributes = VertexLayout::positionAttributeDescription();
-    const std::array positionUvAttributes = {meshAttributes[0], meshAttributes[2]};
+    const vk::VertexInputBindingDescription binding              = VertexLayout::bindingDescription();
+    const auto                              meshAttributes       = VertexLayout::attributeDescriptions();
+    const auto                              positionAttributes   = VertexLayout::positionAttributeDescription();
+    const std::array                        positionUvAttributes = {meshAttributes[0], meshAttributes[2]};
     std::span<const vk::VertexInputAttributeDescription> attributes;
     switch (key.state.vertexLayout)
     {
@@ -245,7 +138,7 @@ vk::Pipeline PipelineManager::getOrCreate(const PipelineKey& key)
         case VertexLayoutPreset::None:
             break;
     }
-    const bool hasVertexInput = !attributes.empty();
+    const bool                                   hasVertexInput = !attributes.empty();
     const vk::PipelineVertexInputStateCreateInfo vertexInput{
         .vertexBindingDescriptionCount   = hasVertexInput ? 1u : 0u,
         .pVertexBindingDescriptions      = hasVertexInput ? &binding : nullptr,
@@ -279,7 +172,7 @@ vk::Pipeline PipelineManager::getOrCreate(const PipelineKey& key)
         .colorWriteMask      = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
             vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
     };
-    const std::vector colorBlendAttachments(key.colorFormats.size(), colorBlendAttachment);
+    const std::vector                           colorBlendAttachments(key.colorFormats.size(), colorBlendAttachment);
     const vk::PipelineColorBlendStateCreateInfo colorBlend{
         .attachmentCount = static_cast<uint32_t>(colorBlendAttachments.size()),
         .pAttachments    = colorBlendAttachments.data(),
@@ -300,7 +193,7 @@ vk::Pipeline PipelineManager::getOrCreate(const PipelineKey& key)
          .pDepthStencilState  = key.depthFormat == vk::Format::eUndefined ? nullptr : &depth,
          .pColorBlendState    = &colorBlend,
          .pDynamicState       = &dynamic,
-         .layout              = layout(key.layout)},
+         .layout              = key.layout},
         {.viewMask                = key.viewMask,
          .colorAttachmentCount    = static_cast<uint32_t>(key.colorFormats.size()),
          .pColorAttachmentFormats = key.colorFormats.data(),

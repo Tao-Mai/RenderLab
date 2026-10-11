@@ -4,20 +4,18 @@
 
 #pragma once
 
-#include "render/RenderData.h"
+#include "scene/system/SceneRenderData.h"
 
 #include <glm/vec3.hpp>
 
-class RenderResourceManager;
 struct SceneAsset;
 
 class RenderSystem
 {
 public:
-    [[nodiscard]] const RenderData&
-         prepare(const SceneAsset& scene, const glm::vec3& cameraPosition, RenderResourceManager& resources);
-    void reset() noexcept;
+    [[nodiscard]] const SceneRenderData& prepare(const SceneAsset& scene, const glm::vec3& cameraPosition);
+    void                                 reset() noexcept;
 
 private:
-    RenderData data;
+    SceneRenderData data;
 };

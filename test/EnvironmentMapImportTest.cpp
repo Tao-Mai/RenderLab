@@ -1,6 +1,6 @@
 #include "asset/AssetDataManager.h"
-#include "asset/AssetManager.h"
 #include "asset/AssetImporter.h"
+#include "asset/AssetManager.h"
 #include "asset/TextureMip.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -27,20 +27,20 @@ namespace
 {
 struct ImportContext
 {
-    ConfigManager config;
-    AssetManager manager;
+    ConfigManager    config;
+    AssetManager     manager;
     AssetDataManager data;
-    SceneManager scenes;
+    SceneManager     scenes;
 
     ImportContext()
     {
-        context().config = &config;
-        context().assetManager = &manager;
+        context().config           = &config;
+        context().assetManager     = &manager;
         context().assetDataManager = &data;
         config.init();
-        data.init();
+        data.init(config.paths().assets);
         scenes.init();
-        manager.init();
+        manager.init(config.paths().assets);
     }
 
     ~ImportContext()
@@ -50,15 +50,15 @@ struct ImportContext
         scenes.shutdown();
         config.shutdown();
         context().assetDataManager = nullptr;
-        context().assetManager = nullptr;
-        context().config = nullptr;
+        context().assetManager     = nullptr;
+        context().config           = nullptr;
     }
 };
 
 struct ImportFiles
 {
-    std::filesystem::path root;
-    std::string stem;
+    std::filesystem::path                root;
+    std::string                          stem;
     std::optional<std::filesystem::path> externalSource;
 
     ~ImportFiles()
@@ -74,8 +74,7 @@ struct ImportFiles
         for (const std::string suffix : {"", "_irradiance", "_prefiltered_specular"})
         {
             std::filesystem::remove(root / "Texture" / (stem + suffix + ".json"), error);
-            std::filesystem::remove(root / "binary" / "texture" /
-                                        (stem + suffix + ".bin"), error);
+            std::filesystem::remove(root / "binary" / "texture" / (stem + suffix + ".bin"), error);
         }
     }
 };
@@ -83,8 +82,7 @@ struct ImportFiles
 [[nodiscard]] float floatAt(const std::vector<uint8_t>& bytes, size_t pixel, size_t channel)
 {
     float value;
-    std::memcpy(&value, bytes.data() + pixel * 4 * sizeof(float) +
-                channel * sizeof(float), sizeof(value));
+    std::memcpy(&value, bytes.data() + pixel * 4 * sizeof(float) + channel * sizeof(float), sizeof(value));
     return value;
 }
 
@@ -97,14 +95,14 @@ void writeConstantHdr(std::ofstream& output)
         output.write(reinterpret_cast<const char*>(rgbe.data()), rgbe.size());
     }
 }
-}
+}  // namespace
 
 TEST(EnvironmentMapImportTest, ImportsHdrTextureAsLinearFloat)
 {
-    ImportContext assets;
-    const std::string stem = "test_hdr_texture_" + std::to_string(
-        std::chrono::steady_clock::now().time_since_epoch().count());
-    const ImportFiles files{assets.config.paths().assets, stem};
+    ImportContext     assets;
+    const std::string stem =
+        "test_hdr_texture_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    const ImportFiles           files{assets.config.paths().assets, stem};
     const std::filesystem::path source = files.root / (stem + ".hdr");
 
     std::ofstream output(source, std::ios::binary);
@@ -113,8 +111,8 @@ TEST(EnvironmentMapImportTest, ImportsHdrTextureAsLinearFloat)
     output.close();
     ASSERT_TRUE(output);
 
-    const TextureAsset::ID id = AssetImporter::importTexture({.source = source});
-    const TextureAsset& texture = assets.manager.get(id);
+    const TextureAsset::ID id      = AssetImporter::importTexture({.source = source});
+    const TextureAsset&    texture = assets.manager.get(id);
     EXPECT_EQ(texture.format, ImageFormat::RGBA32F);
     EXPECT_EQ(texture.colorSpace, ColorSpace::Linear);
     EXPECT_EQ(texture.layout, ImageLayout::Image2D);
@@ -132,10 +130,10 @@ TEST(EnvironmentMapImportTest, ImportsHdrTextureAsLinearFloat)
 
 TEST(EnvironmentMapImportTest, BakesHdrEnvironment)
 {
-    ImportContext assets;
-    const std::string stem = "test_hdr_environment_" + std::to_string(
-        std::chrono::steady_clock::now().time_since_epoch().count());
-    const ImportFiles files{assets.config.paths().assets, stem};
+    ImportContext     assets;
+    const std::string stem =
+        "test_hdr_environment_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    const ImportFiles           files{assets.config.paths().assets, stem};
     const std::filesystem::path source = files.root / (stem + ".hdr");
 
     std::ofstream output(source, std::ios::binary);
@@ -145,17 +143,16 @@ TEST(EnvironmentMapImportTest, BakesHdrEnvironment)
     ASSERT_TRUE(output);
 
     ImportEnvironmentMapSetting setting{};
-    setting.source = source;
-    setting.irradianceSize = 2;
-    setting.irradianceSampleCount = 16;
-    setting.prefilteredSpecularSampleCount = 16;
+    setting.source                            = source;
+    setting.irradianceSize                    = 2;
+    setting.irradianceSampleCount             = 16;
+    setting.prefilteredSpecularSampleCount    = 16;
     setting.prefilteredSpecularMaxSampleCount = 16;
-    const EnvironmentMapAsset::ID id = AssetImporter::importEnvironmentMap(setting);
-    const EnvironmentMapAsset& environment = assets.manager.get(id);
-    const TextureAsset& radiance = assets.manager.get(environment.radiance.textureID);
-    const TextureAsset& irradiance = assets.manager.get(environment.irradiance.textureID);
-    const TextureAsset& prefiltered = assets.manager.get(
-        environment.prefilteredSpecular.textureID);
+    const EnvironmentMapAsset::ID id          = AssetImporter::importEnvironmentMap(setting);
+    const EnvironmentMapAsset&    environment = assets.manager.get(id);
+    const TextureAsset&           radiance    = assets.manager.get(environment.radiance.textureID);
+    const TextureAsset&           irradiance  = assets.manager.get(environment.irradiance.textureID);
+    const TextureAsset&           prefiltered = assets.manager.get(environment.prefilteredSpecular.textureID);
 
     EXPECT_EQ(radiance.format, ImageFormat::RGBA32F);
     EXPECT_EQ(radiance.colorSpace, ColorSpace::Linear);
@@ -172,10 +169,10 @@ TEST(EnvironmentMapImportTest, BakesHdrEnvironment)
 
 TEST(EnvironmentMapImportTest, ParallelBakeMatchesPreparedOutput)
 {
-    ImportContext assets;
-    const std::string stem = "test_parallel_environment_" + std::to_string(
-        std::chrono::steady_clock::now().time_since_epoch().count());
-    const ImportFiles files{assets.config.paths().assets, stem};
+    ImportContext     assets;
+    const std::string stem =
+        "test_parallel_environment_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    const ImportFiles           files{assets.config.paths().assets, stem};
     const std::filesystem::path source = files.root / (stem + ".pnm");
 
     std::ofstream output(source, std::ios::binary);
@@ -197,13 +194,13 @@ TEST(EnvironmentMapImportTest, ParallelBakeMatchesPreparedOutput)
     ASSERT_TRUE(output);
 
     ImportEnvironmentMapSetting setting{};
-    setting.source = source;
-    setting.irradianceSize = 6;
-    setting.irradianceSampleCount = 32;
-    setting.prefilteredSpecularSampleCount = 32;
+    setting.source                            = source;
+    setting.irradianceSize                    = 6;
+    setting.irradianceSampleCount             = 32;
+    setting.prefilteredSpecularSampleCount    = 32;
     setting.prefilteredSpecularMaxSampleCount = 64;
 
-    auto first = AssetImporter::prepareEnvironmentMap(setting);
+    auto first  = AssetImporter::prepareEnvironmentMap(setting);
     auto second = AssetImporter::prepareEnvironmentMap(setting);
     ASSERT_TRUE(first);
     ASSERT_TRUE(second);
@@ -213,24 +210,21 @@ TEST(EnvironmentMapImportTest, ParallelBakeMatchesPreparedOutput)
 
     std::stop_source cancellation;
     cancellation.request_stop();
-    EXPECT_FALSE(AssetImporter::prepareEnvironmentMap(
-        setting, cancellation.get_token()).has_value());
+    EXPECT_FALSE(AssetImporter::prepareEnvironmentMap(setting, cancellation.get_token()).has_value());
 
-    const EnvironmentMapAsset::ID id = AssetImporter::saveEnvironmentMap(std::move(*first));
-    const EnvironmentMapAsset& environment = assets.manager.get(id);
-    const TextureAsset& prefiltered = assets.manager.get(
-        environment.prefilteredSpecular.textureID);
+    const EnvironmentMapAsset::ID id          = AssetImporter::saveEnvironmentMap(std::move(*first));
+    const EnvironmentMapAsset&    environment = assets.manager.get(id);
+    const TextureAsset&           prefiltered = assets.manager.get(environment.prefilteredSpecular.textureID);
     EXPECT_EQ(assets.data.readTexture(prefiltered), second->prefilteredBytes);
 }
 
 TEST(EnvironmentMapImportTest, ImportsTextureOutsideProject)
 {
-    ImportContext assets;
-    const std::string stem = "test_external_texture_" + std::to_string(
-        std::chrono::steady_clock::now().time_since_epoch().count());
-    const std::filesystem::path source =
-        std::filesystem::temp_directory_path() / (stem + ".pnm");
-    const ImportFiles files{assets.config.paths().assets, stem, source};
+    ImportContext     assets;
+    const std::string stem =
+        "test_external_texture_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    const std::filesystem::path source = std::filesystem::temp_directory_path() / (stem + ".pnm");
+    const ImportFiles           files{assets.config.paths().assets, stem, source};
 
     std::ofstream output(source, std::ios::binary);
     ASSERT_TRUE(output);
@@ -240,20 +234,19 @@ TEST(EnvironmentMapImportTest, ImportsTextureOutsideProject)
     output.close();
     ASSERT_TRUE(output);
 
-    const TextureAsset::ID id = AssetImporter::importTexture({.source = source});
-    const TextureAsset& texture = assets.manager.get(id);
+    const TextureAsset::ID id      = AssetImporter::importTexture({.source = source});
+    const TextureAsset&    texture = assets.manager.get(id);
     ASSERT_TRUE(texture.path);
     EXPECT_EQ(*texture.path, source);
-    EXPECT_EQ(assets.data.readTexture(texture),
-              std::vector<uint8_t>(rgb.begin(), rgb.end()));
+    EXPECT_EQ(assets.data.readTexture(texture), std::vector<uint8_t>(rgb.begin(), rgb.end()));
 }
 
 TEST(EnvironmentMapImportTest, BuildsRadianceMipsAndBakesFromThem)
 {
-    ImportContext assets;
-    const std::string stem = "test_environment_mips_" + std::to_string(
-        std::chrono::steady_clock::now().time_since_epoch().count());
-    const ImportFiles files{assets.config.paths().assets, stem};
+    ImportContext     assets;
+    const std::string stem =
+        "test_environment_mips_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    const ImportFiles           files{assets.config.paths().assets, stem};
     const std::filesystem::path source = files.root / (stem + ".pnm");
 
     std::ofstream output(source, std::ios::binary);
@@ -275,16 +268,15 @@ TEST(EnvironmentMapImportTest, BuildsRadianceMipsAndBakesFromThem)
     ASSERT_TRUE(output);
 
     ImportEnvironmentMapSetting setting{};
-    setting.source = source;
-    setting.colorSpace = ColorSpace::Linear;
-    setting.irradianceSize = 4;
-    setting.irradianceSampleCount = 64;
-    setting.prefilteredSpecularSampleCount = 64;
-    setting.prefilteredSpecularMaxSampleCount = 64;
-    const EnvironmentMapAsset::ID environmentId =
-        AssetImporter::importEnvironmentMap(setting);
-    const EnvironmentMapAsset& environment = assets.manager.get(environmentId);
-    const auto environmentIds = assets.manager.loadedIds<EnvironmentMapAsset>();
+    setting.source                               = source;
+    setting.colorSpace                           = ColorSpace::Linear;
+    setting.irradianceSize                       = 4;
+    setting.irradianceSampleCount                = 64;
+    setting.prefilteredSpecularSampleCount       = 64;
+    setting.prefilteredSpecularMaxSampleCount    = 64;
+    const EnvironmentMapAsset::ID environmentId  = AssetImporter::importEnvironmentMap(setting);
+    const EnvironmentMapAsset&    environment    = assets.manager.get(environmentId);
+    const auto                    environmentIds = assets.manager.loadedIds<EnvironmentMapAsset>();
     EXPECT_NE(std::ranges::find(environmentIds, environmentId), environmentIds.end());
 
     const TextureAsset& radiance = assets.manager.get(environment.radiance.textureID);
@@ -302,8 +294,7 @@ TEST(EnvironmentMapImportTest, BuildsRadianceMipsAndBakesFromThem)
         {
             for (uint32_t x = 0; x < 4; ++x)
             {
-                const size_t target = mip1Offset +
-                    ((static_cast<size_t>(face) * 4 + y) * 4 + x) * 4;
+                const size_t target = mip1Offset + ((static_cast<size_t>(face) * 4 + y) * 4 + x) * 4;
                 for (uint32_t channel = 0; channel < 3; ++channel)
                 {
                     uint32_t sum = 0;
@@ -312,8 +303,7 @@ TEST(EnvironmentMapImportTest, BuildsRadianceMipsAndBakesFromThem)
                         for (uint32_t dx = 0; dx < 2; ++dx)
                         {
                             const size_t sourcePixel =
-                                ((static_cast<size_t>(face) * 8 + y * 2 + dy) * 8 +
-                                    x * 2 + dx) * 4;
+                                ((static_cast<size_t>(face) * 8 + y * 2 + dy) * 8 + x * 2 + dx) * 4;
                             sum += radianceBytes[sourcePixel + channel];
                         }
                     }
@@ -323,12 +313,11 @@ TEST(EnvironmentMapImportTest, BuildsRadianceMipsAndBakesFromThem)
         }
     }
 
-    const TextureAsset& irradiance = assets.manager.get(environment.irradiance.textureID);
-    const TextureAsset& prefiltered = assets.manager.get(
-        environment.prefilteredSpecular.textureID);
+    const TextureAsset& irradiance  = assets.manager.get(environment.irradiance.textureID);
+    const TextureAsset& prefiltered = assets.manager.get(environment.prefilteredSpecular.textureID);
     ASSERT_EQ(irradiance.mipLevels, 1u);
     ASSERT_EQ(prefiltered.mipLevels, radiance.mipLevels);
-    const std::vector<uint8_t> irradianceBytes = assets.data.readTexture(irradiance);
+    const std::vector<uint8_t> irradianceBytes  = assets.data.readTexture(irradiance);
     const std::vector<uint8_t> prefilteredBytes = assets.data.readTexture(prefiltered);
     ASSERT_EQ(irradianceBytes.size(), texture_mip::totalBytes(4, 4, 6, 16, 1));
     ASSERT_EQ(prefilteredBytes.size(), texture_mip::totalBytes(8, 8, 6, 16, 4));

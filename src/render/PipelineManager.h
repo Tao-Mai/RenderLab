@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -11,40 +12,38 @@
 
 class DescriptorManager;
 
-enum class RenderMode
+enum class VertexLayoutPreset
 {
-    Opaque, AlphaTest, Transparent, Shadow, DepthOnly, Skybox,
-    PostProcess, LightMarker, Picking,
+    Mesh,
+    PositionOnly,
+    PositionUv,
+    None
 };
-
-enum class PipelineLayoutPreset { SceneMaterial, SceneOnly, Editor, ToneMapping, DeferredLighting };
-enum class VertexLayoutPreset { Mesh, PositionOnly, PositionUv, None };
 
 struct PipelineState
 {
-    VertexLayoutPreset vertexLayout = VertexLayoutPreset::Mesh;
-    vk::PrimitiveTopology topology = vk::PrimitiveTopology::eTriangleList;
-    vk::PolygonMode polygonMode = vk::PolygonMode::eFill;
-    vk::CullModeFlags cullMode = vk::CullModeFlagBits::eNone;
-    vk::FrontFace frontFace = vk::FrontFace::eCounterClockwise;
-    vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1;
-    vk::CompareOp depthCompare = vk::CompareOp::eLess;
-    bool depthTest = true;
-    bool depthWrite = true;
-    bool blend = false;
+    VertexLayoutPreset      vertexLayout = VertexLayoutPreset::Mesh;
+    vk::PrimitiveTopology   topology     = vk::PrimitiveTopology::eTriangleList;
+    vk::PolygonMode         polygonMode  = vk::PolygonMode::eFill;
+    vk::CullModeFlags       cullMode     = vk::CullModeFlagBits::eNone;
+    vk::FrontFace           frontFace    = vk::FrontFace::eCounterClockwise;
+    vk::SampleCountFlagBits samples      = vk::SampleCountFlagBits::e1;
+    vk::CompareOp           depthCompare = vk::CompareOp::eLess;
+    bool                    depthTest    = true;
+    bool                    depthWrite   = true;
+    bool                    blend        = false;
 
     [[nodiscard]] bool operator==(const PipelineState&) const = default;
-    [[nodiscard]] static PipelineState preset(RenderMode mode);
 };
 
 struct PipelineKey
 {
-    ShaderHandle shader;
-    PipelineLayoutPreset layout = PipelineLayoutPreset::SceneMaterial;
-    PipelineState state;
+    ShaderHandle            shader;
+    vk::PipelineLayout      layout;
+    PipelineState           state;
     std::vector<vk::Format> colorFormats;
-    vk::Format depthFormat = vk::Format::eUndefined;
-    uint32_t viewMask = 0;
+    vk::Format              depthFormat = vk::Format::eUndefined;
+    uint32_t                viewMask    = 0;
 
     [[nodiscard]] bool operator==(const PipelineKey&) const = default;
 };
@@ -57,22 +56,24 @@ struct PipelineKeyHash
 class PipelineManager
 {
 public:
-    void init(const vk::raii::Device& device, DescriptorManager& descriptors,
-        ShaderManager& shaders);
+    void init(const vk::raii::Device& device, DescriptorManager& descriptors, ShaderManager& shaders);
     void shutdown() noexcept;
 
-    [[nodiscard]] vk::PipelineLayout layout(PipelineLayoutPreset preset) const;
+    [[nodiscard]] vk::PipelineLayout
+    getOrCreateLayout(std::span<const vk::DescriptorSetLayout> sets, std::span<const vk::PushConstantRange> ranges);
     [[nodiscard]] vk::Pipeline getOrCreate(const PipelineKey& key);
 
 private:
-    const vk::raii::Device* device = nullptr;
-    DescriptorManager* descriptors = nullptr;
-    ShaderManager* shaders = nullptr;
-    vk::raii::PipelineLayout sceneMaterialLayout = nullptr;
-    vk::raii::PipelineLayout sceneOnlyLayout = nullptr;
-    vk::raii::PipelineLayout editorLayout = nullptr;
-    vk::raii::PipelineLayout toneMappingLayout = nullptr;
-    vk::raii::PipelineLayout deferredLightingLayout = nullptr;
-    vk::raii::PipelineCache pipelineCache = nullptr;
+    struct Layout
+    {
+        std::vector<vk::DescriptorSetLayout> sets;
+        std::vector<vk::PushConstantRange>   ranges;
+        vk::raii::PipelineLayout             layout;
+    };
+    std::vector<Layout>                                                  layouts;
+    const vk::raii::Device*                                              device        = nullptr;
+    DescriptorManager*                                                   descriptors   = nullptr;
+    ShaderManager*                                                       shaders       = nullptr;
+    vk::raii::PipelineCache                                              pipelineCache = nullptr;
     std::unordered_map<PipelineKey, vk::raii::Pipeline, PipelineKeyHash> pipelines;
 };

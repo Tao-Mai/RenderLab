@@ -1,19 +1,16 @@
 #include "scene/SceneManager.h"
 
 #include "asset/AssetManager.h"
-#include "core/Serializer.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
+#include "core/Serializer.h"
 #include "scene/SceneTypes.h"
 
 #include <algorithm>
 #include <limits>
 
-SceneManager::~SceneManager()
-{
-    DCHECK(!inited);
-}
+SceneManager::~SceneManager() { DCHECK(!inited); }
 
 void SceneManager::init()
 {
@@ -60,8 +57,8 @@ void SceneManager::load(const SceneAsset& scene)
         actor->id = nextSelectionId++;
     }
 
-    camera.resetNavigation();
     data = std::move(loaded);
+    ++generation;
 }
 
 void SceneManager::save()
@@ -77,21 +74,20 @@ AActor& SceneManager::createActor(std::string_view typeName)
 {
     DCHECK(inited);
     const auto& types = BaseTypeInfo<AActor>::baseTypeInfoMap;
-    const auto type = types.find(std::string{typeName});
+    const auto  type  = types.find(std::string{typeName});
     CHECK(type != types.end(), "unknown actor type: {}", typeName);
 
-    auto actor = type->second.Create();
+    auto     actor = type->second.Create();
     uint64_t index = 1;
     do
     {
         actor->name = std::string{typeName} + std::to_string(index++);
-    } while (std::ranges::any_of(data.actors, [&](const auto& existing) {
-        return existing->name == actor->name;
-    }));
+    }
+    while (std::ranges::any_of(data.actors, [&](const auto& existing) { return existing->name == actor->name; }));
 
     actor->init();
     CHECK(nextSelectionId != std::numeric_limits<uint32_t>::max(), "scene selection IDs exhausted");
-    actor->id = nextSelectionId++;
+    actor->id    = nextSelectionId++;
     auto& result = *actor;
     data.actors.push_back(std::move(actor));
 
@@ -101,24 +97,22 @@ AActor& SceneManager::createActor(std::string_view typeName)
 void SceneManager::deleteActor(uint32_t selectionId)
 {
     DCHECK(inited);
-    const auto found = std::ranges::find_if(data.actors, [=](const auto& actor) {
-        return actor->selectionId() == selectionId;
-    });
-    if (found == data.actors.end()) return;
+    const auto found =
+        std::ranges::find_if(data.actors, [=](const auto& actor) { return actor->selectionId() == selectionId; });
+    if (found == data.actors.end())
+        return;
 
     data.actors.erase(found);
 }
 
 void SceneManager::shutdown() noexcept
 {
-    camera.resetNavigation();
-    data        = {};
+    data = {};
     DEBUG_EXEC(inited = false);
 }
 
 void SceneManager::tick(float deltaTime)
 {
-    camera.tick(deltaTime);
     for (const auto& actor : data.actors)
         actor->tick(deltaTime);
 }

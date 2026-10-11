@@ -1,4 +1,5 @@
 #include "render/feature/deferred/DeferredLightingPass.h"
+#include "render/feature/SceneInterface.h"
 
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -59,18 +60,57 @@ DeferredLightingPass::setup(RenderGraph& graph, GBufferPass::Output input, Shado
         }
     );
 
-    auto&      ctx     = renderContext();
-    const auto variant = context().config->rendererConfig().feature.ibl ? ShaderVariant::Default : ShaderVariant::NoIbl;
-    pipeline           = ctx.pipelineManager->getOrCreate({
-                  .shader       = ctx.shaderManager->getOrLoad(kDeferredLightingShader, variant),
-                  .layout       = PipelineLayoutPreset::DeferredLighting,
-                  .state        = PipelineState::preset(RenderMode::PostProcess),
-                  .colorFormats = {graph.imageInfo(color).format},
+    const std::array gBufferBindings = {
+        vk::DescriptorSetLayoutBinding{
+            .binding         = RenderInterface::kGBufferAlbedoBinding,
+            .descriptorType  = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1,
+            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding         = RenderInterface::kGBufferNormalBinding,
+            .descriptorType  = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1,
+            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding         = RenderInterface::kGBufferEmissiveBinding,
+            .descriptorType  = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1,
+            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding         = RenderInterface::kGBufferDepthBinding,
+            .descriptorType  = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1,
+            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+        },
+    };
+    auto&            descriptors = *renderContext().descriptors;
+    auto&            pipelines   = *renderContext().pipelineManager;
+    const auto       passLayout  = descriptors.getOrCreateLayout(gBufferBindings);
+    const auto       emptySet    = descriptors.getOrCreateLayout(std::span<const vk::DescriptorSetLayoutBinding>{});
+    const std::array sets{SceneInterface::sceneLayout(descriptors), emptySet, emptySet, passLayout};
+    const std::array ranges{vk::PushConstantRange{
+        .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+        .size       = sizeof(DeferredLightingPushConstants)
+    }};
+    pipelineLayout = pipelines.getOrCreateLayout(sets, ranges);
+
+    auto&               ctx = renderContext();
+    const ShaderDefines variant{
+        {"ENABLE_IBL", context().config->rendererConfig().feature.ibl ? 1 : 0},
+        {"ENABLE_CLEARCOAT", 0}
+    };
+    pipeline = ctx.pipelineManager->getOrCreate({
+        .shader = ctx.shaderManager->getOrLoad(kDeferredLightingShader, variant),
+        .layout = pipelineLayout,
+        .state  = PipelineState{.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
+        .colorFormats = {graph.imageInfo(color).format},
     });
-    pipelineLayout     = ctx.pipelineManager->layout(PipelineLayoutPreset::DeferredLighting);
     descriptorSets.clear();
     for (uint32_t index = 0; index < maxFramesInFlight; ++index)
-        descriptorSets.push_back(ctx.descriptors->allocate(DescriptorLayoutPreset::GBuffer));
+        descriptorSets.push_back(descriptors.allocate(passLayout));
     return {color, gBuffer.depth, resolvedShadow};
 }
 
@@ -114,11 +154,6 @@ void DeferredLightingPass::prepare(RenderGraph& graph) const
             graph.vulkan().deviceHandle().updateDescriptorSets(write, {});
         }
     }
-}
-
-void DeferredLightingPass::updateFrame(FrameData& frame, const ViewUniforms& view, const RenderData& scene) const
-{
-    bindings.updateFrame(frame, view, scene);
 }
 
 void DeferredLightingPass::execute(RenderGraph& graph) const

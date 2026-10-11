@@ -3,8 +3,8 @@
 
 #include "asset/TextureMip.h"
 
-#include "asset/Asset.h"
 #include "asset/AssetDataManager.h"
+#include "asset/TextureAsset.h"
 #include "core/Logger.h"
 
 #include <cstring>

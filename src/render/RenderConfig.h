@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan.hpp>
 
 inline constexpr uint32_t   maxFramesInFlight             = 2;
 inline constexpr uint32_t   kMaxDirectionalLightShadow    = 1;

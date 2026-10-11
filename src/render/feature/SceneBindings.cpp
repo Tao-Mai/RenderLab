@@ -1,8 +1,11 @@
 #include "render/feature/SceneBindings.h"
 
-#include "asset/Asset.h"
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
+#include "asset/EnvironmentMapAsset.h"
+#include "asset/SamplerAsset.h"
+#include "asset/TextureAsset.h"
+#include "asset/TextureBinding.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "render/FrameData.h"
@@ -44,36 +47,7 @@ ShadowPass::Output SceneBindings::setup(RenderGraph& targetGraph, ShadowPass::Ou
     rectAreaShadowMap = resolveShadowMap(shadow.rectAreaLightShadowMap);
     cascadeShadowMap  = resolveShadowMap(shadow.cascadeShadowMap);
 
-    const auto& brdf = context().config->rendererConfig().brdfLut;
-    CHECK(!brdf.textureID.empty() && !brdf.samplerID.empty());
-    const auto& brdfAsset = context().assetManager->get<TextureAsset>(brdf.textureID);
-    CHECK(
-        brdfAsset.layout == ImageLayout::Image2D && brdfAsset.colorSpace == ColorSpace::Linear &&
-            brdfAsset.format != ImageFormat::R8,
-        "BRDF LUT must be a linear 2D texture with at least two channels"
-    );
-    brdfLutTexture = resources->texture(brdf.textureID);
-    brdfLutSampler = resources->sampler(brdf.samplerID);
-    bindEnvironmentTextures();
-
-    const vk::Filter filter = context().config->rendererConfig().feature.shadow.filter == SamplerAsset::Filter::Linear
-        ? vk::Filter::eLinear
-        : vk::Filter::eNearest;
-    if (!*shadowSampler || shadowFilter != filter)
-    {
-        shadowSampler = vkCheck(vulkan->deviceHandle().createSampler(
-            {.magFilter     = filter,
-             .minFilter     = filter,
-             .mipmapMode    = vk::SamplerMipmapMode::eNearest,
-             .addressModeU  = vk::SamplerAddressMode::eClampToEdge,
-             .addressModeV  = vk::SamplerAddressMode::eClampToEdge,
-             .addressModeW  = vk::SamplerAddressMode::eClampToEdge,
-             .compareEnable = true,
-             .compareOp     = vk::CompareOp::eLessOrEqual,
-             .maxLod        = 0.0f}
-        ));
-        shadowFilter  = filter;
-    }
+    refreshBindings();
 
     auto& graph = targetGraph;
     graph.use(
@@ -292,13 +266,48 @@ void SceneBindings::bindEnvironmentTextures()
 
 void SceneBindings::updateFrame(FrameData& frame, const ViewUniforms& view, const RenderData& scene) const
 {
-    const auto&         feature = context().config->rendererConfig().feature;
-    const auto&         shadow  = feature.shadow;
-    const LightUniforms lighting{
+    const auto&   feature = context().config->rendererConfig().feature;
+    const auto&   shadow  = feature.shadow;
+    LightUniforms lighting{
         .lightCount         = static_cast<uint32_t>(scene.lights.size()),
         .ambientCoefficient = feature.ambientCoefficient,
         .iblParameters      = {prefilteredMaxLod, 0.0f, 0.0f, 0.0f},
         .shadowParameters   = {shadow.bias, shadow.sampleRadius, shadow.pixelRotation ? 1.0f : 0.0f, 0.0f},
     };
-    frame.update(view, lighting, scene.lights, shadow);
+    lighting.cascadeCount = shadow.cascade.count;
+    frame.update(view, lighting, prepareShadows(view, scene.lights, shadow));
+}
+
+void SceneBindings::refreshBindings()
+{
+    const auto& brdf = context().config->rendererConfig().brdfLut;
+    CHECK(!brdf.textureID.empty() && !brdf.samplerID.empty());
+    const auto& brdfAsset = context().assetManager->get<TextureAsset>(brdf.textureID);
+    CHECK(
+        brdfAsset.layout == ImageLayout::Image2D && brdfAsset.colorSpace == ColorSpace::Linear &&
+            brdfAsset.format != ImageFormat::R8,
+        "BRDF LUT must be a linear 2D texture with at least two channels"
+    );
+    brdfLutTexture = resources->texture(brdf.textureID);
+    brdfLutSampler = resources->sampler(brdf.samplerID);
+    bindEnvironmentTextures();
+
+    const vk::Filter filter = context().config->rendererConfig().feature.shadow.filter == SamplerAsset::Filter::Linear
+        ? vk::Filter::eLinear
+        : vk::Filter::eNearest;
+    if (!*shadowSampler || shadowFilter != filter)
+    {
+        shadowSampler = vkCheck(vulkan->deviceHandle().createSampler(
+            {.magFilter     = filter,
+             .minFilter     = filter,
+             .mipmapMode    = vk::SamplerMipmapMode::eNearest,
+             .addressModeU  = vk::SamplerAddressMode::eClampToEdge,
+             .addressModeV  = vk::SamplerAddressMode::eClampToEdge,
+             .addressModeW  = vk::SamplerAddressMode::eClampToEdge,
+             .compareEnable = true,
+             .compareOp     = vk::CompareOp::eLessOrEqual,
+             .maxLod        = 0.0f}
+        ));
+        shadowFilter  = filter;
+    }
 }

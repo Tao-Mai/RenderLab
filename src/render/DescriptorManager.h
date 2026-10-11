@@ -1,21 +1,14 @@
 #pragma once
 
-#include <cstdint>
+#include "render/ShaderManager.h"
+
 #include <compare>
+#include <cstdint>
 #include <map>
 #include <span>
 #include <vector>
 
 #include <vulkan/vulkan_raii.hpp>
-
-enum class DescriptorLayoutPreset
-{
-    Scene,
-    View,
-    Material,
-    ToneMapping,
-    GBuffer,
-};
 
 class DescriptorManager
 {
@@ -23,15 +16,10 @@ public:
     void init(const vk::raii::Device& device);
     void shutdown() noexcept;
 
-    [[nodiscard]] vk::DescriptorSetLayout layout(DescriptorLayoutPreset preset) const;
-    [[nodiscard]] bool containsBinding(DescriptorLayoutPreset preset,
-        uint32_t binding, vk::DescriptorType type) const;
-    [[nodiscard]] vk::DescriptorSetLayout getOrCreateLayout(
-        std::span<const vk::DescriptorSetLayoutBinding> bindings);
-    [[nodiscard]] vk::DescriptorSetLayout getOrCreateLayout(
-        const struct ShaderMetadata& shader, uint32_t set);
+    [[nodiscard]] bool containsBinding(vk::DescriptorSetLayout layout, const ShaderMetadata::Binding& binding) const;
+    [[nodiscard]] vk::DescriptorSetLayout getOrCreateLayout(std::span<const vk::DescriptorSetLayoutBinding> bindings);
+    [[nodiscard]] vk::DescriptorSetLayout getOrCreateLayout(const struct ShaderMetadata& shader, uint32_t set);
     [[nodiscard]] vk::raii::DescriptorSet allocate(vk::DescriptorSetLayout layout) const;
-    [[nodiscard]] vk::raii::DescriptorSet allocate(DescriptorLayoutPreset preset) const;
 
 private:
     struct BindingKey
@@ -44,12 +32,7 @@ private:
         [[nodiscard]] auto operator<=>(const BindingKey&) const = default;
     };
 
-    const vk::raii::Device* device = nullptr;
-    vk::raii::DescriptorPool pool = nullptr;
+    const vk::raii::Device*                                          device = nullptr;
+    vk::raii::DescriptorPool                                         pool   = nullptr;
     std::map<std::vector<BindingKey>, vk::raii::DescriptorSetLayout> layouts;
-    vk::DescriptorSetLayout sceneLayout;
-    vk::DescriptorSetLayout viewLayout;
-    vk::DescriptorSetLayout materialLayout;
-    vk::DescriptorSetLayout toneMappingLayout;
-    vk::DescriptorSetLayout gBufferLayout;
 };

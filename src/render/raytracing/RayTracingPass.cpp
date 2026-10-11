@@ -45,8 +45,8 @@ void buildBarrier(vk::raii::CommandBuffer& commands, bool trace)
 RayTracingPass::Output RayTracingPass::setup(RenderGraph& graph)
 {
     CHECK(graph.vulkan().supportsRayTracing(), "selected GPU does not support the ray tracing route");
-    const auto& device   = graph.vulkan().physicalDeviceHandle();
-    const auto  features = device.getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
+    const auto&    device            = graph.vulkan().physicalDeviceHandle();
+    const auto     features          = device.getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
     constexpr auto kRequiredFeatures = vk::FormatFeatureFlagBits::eStorageImage |
         vk::FormatFeatureFlagBits::eSampledImage | vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
     CHECK(
@@ -55,8 +55,8 @@ RayTracingPass::Output RayTracingPass::setup(RenderGraph& graph)
     );
 
     const auto extent = graph.swapchain().extent();
-    rayImage = graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}});
-    rayImage = graph.write(rayImage);
+    rayImage          = graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}});
+    rayImage          = graph.write(rayImage);
     graph.use(
         rayImage,
         {
@@ -382,7 +382,7 @@ void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
     for (const auto& item : items)
     {
         const auto [material, added] =
-            materialIndices.try_emplace(item.material, static_cast<uint32_t>(materialIndices.size()));
+            materialIndices.try_emplace(item.material.get(), static_cast<uint32_t>(materialIndices.size()));
         CHECK(material->second < maxTextures, "ray tracing supports at most {} materials per frame", maxTextures);
         if (added)
         {

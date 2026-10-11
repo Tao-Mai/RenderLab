@@ -2,8 +2,6 @@
 
 #include "asset/BuiltinAssets.h"
 #include "asset/TextureMip.h"
-#include "core/ConfigManager.h"
-#include "core/Context.h"
 #include "core/Logger.h"
 
 #include <array>
@@ -14,10 +12,10 @@
 
 namespace
 {
-constexpr uint32_t geometryMagic   = 0x4853454du;
+constexpr uint32_t geometryMagic    = 0x4853454du;
 constexpr uint32_t kGeometryVersion = 2;
 
-constexpr uint32_t textureMagic   = 0x58455452u; // RTEX
+constexpr uint32_t textureMagic   = 0x58455452u;  // RTEX
 constexpr uint32_t textureVersion = 2;
 
 struct GeometryHeader
@@ -50,11 +48,12 @@ static_assert(std::is_trivially_copyable_v<TextureHeader>);
 template <class T>
 void validateId(const AssetID<T>& id)
 {
-    CHECK(!id.empty() &&
-          std::filesystem::path{id.value}.filename() == std::filesystem::path{id.value} &&
-          id.value != "." && id.value != "..",
-          "invalid asset data id: {}",
-          id);
+    CHECK(
+        !id.empty() && std::filesystem::path{id.value}.filename() == std::filesystem::path{id.value} &&
+            id.value != "." && id.value != "..",
+        "invalid asset data id: {}",
+        id
+    );
 }
 
 [[nodiscard]] uint32_t layerCount(ImageLayout layout)
@@ -70,68 +69,51 @@ void validateId(const AssetID<T>& id)
     LOG_FATAL("invalid texture layout");
 }
 
-void validateTexture(
-    const TextureAsset&           asset, std::span<const uint8_t> bytes,
-    const std::filesystem::path& file)
+void validateTexture(const TextureAsset& asset, std::span<const uint8_t> bytes, const std::filesystem::path& file)
 {
-    CHECK(asset.width > 0 && asset.height > 0,
-          "invalid texture dimensions: {}",
-          file.string());
-    CHECK(asset.layout != ImageLayout::Cubemap || asset.width == asset.height,
-          "cubemap faces must be square: {}",
-          file.string());
-    CHECK(asset.mipLevels > 0 &&
-          asset.mipLevels <= texture_mip::maxLevels(asset.width, asset.height),
-          "invalid texture mip level count: {}",
-          file.string());
+    CHECK(asset.width > 0 && asset.height > 0, "invalid texture dimensions: {}", file.string());
+    CHECK(
+        asset.layout != ImageLayout::Cubemap || asset.width == asset.height,
+        "cubemap faces must be square: {}",
+        file.string()
+    );
+    CHECK(
+        asset.mipLevels > 0 && asset.mipLevels <= texture_mip::maxLevels(asset.width, asset.height),
+        "invalid texture mip level count: {}",
+        file.string()
+    );
 
     const uint64_t maxPayload = std::numeric_limits<uint32_t>::max();
     const uint32_t pixelBytes = AssetDataManager::bytesPerPixel(asset.format);
-    CHECK(asset.width <= maxPayload / asset.height / layerCount(asset.layout) / pixelBytes,
-          "texture payload is too large: {}",
-          file.string());
+    CHECK(
+        asset.width <= maxPayload / asset.height / layerCount(asset.layout) / pixelBytes,
+        "texture payload is too large: {}",
+        file.string()
+    );
 
-    const uint64_t expected = texture_mip::totalBytes(
-        asset.width, asset.height, layerCount(asset.layout), pixelBytes, asset.mipLevels);
+    const uint64_t expected =
+        texture_mip::totalBytes(asset.width, asset.height, layerCount(asset.layout), pixelBytes, asset.mipLevels);
 
-    CHECK(expected <= maxPayload,
-          "texture payload is too large: {}",
-          file.string());
+    CHECK(expected <= maxPayload, "texture payload is too large: {}", file.string());
 
-    CHECK(expected == bytes.size(),
-          "invalid texture payload size: {}",
-          file.string());
+    CHECK(expected == bytes.size(), "invalid texture payload size: {}", file.string());
 }
-}
+}  // namespace
 
-AssetDataManager::~AssetDataManager()
+AssetDataManager::~AssetDataManager() { DCHECK(assetsRoot.empty()); }
+
+void AssetDataManager::shutdown() noexcept { assetsRoot.clear(); }
+
+void AssetDataManager::init(std::filesystem::path root)
 {
-    DCHECK(assetsRoot.empty());
+    DCHECK(!root.empty() && root.is_absolute());
+    assetsRoot = std::move(root);
 }
 
-void AssetDataManager::shutdown() noexcept
-{
-    assetsRoot.clear();
-}
-
-void AssetDataManager::init()
-{
-    DCHECK(context().config);
-
-    const AppPaths& paths = context().config->paths();
-    DCHECK(!paths.assets.empty() && paths.assets.is_absolute(),
-          "AssetDataManager requires resolved asset paths");
-
-    assetsRoot = paths.assets;
-}
-
-std::filesystem::path AssetDataManager::resolve(
-    const std::filesystem::path& relative) const
+std::filesystem::path AssetDataManager::resolve(const std::filesystem::path& relative) const
 {
     DCHECK(!assetsRoot.empty(), "AssetDataManager is not initialized");
-    CHECK(!relative.empty() && !relative.is_absolute(),
-          "asset data path must be relative: {}",
-          relative.string());
+    CHECK(!relative.empty() && !relative.is_absolute(), "asset data path must be relative: {}", relative.string());
 
     return (assetsRoot / relative).lexically_normal();
 }
@@ -157,29 +139,26 @@ uint32_t AssetDataManager::bytesPerPixel(ImageFormat format)
     LOG_FATAL("invalid texture data format");
 }
 
-std::filesystem::path AssetDataManager::writeGeometry(
-    const MeshAsset::ID& id, const MeshGeometry& mesh) const
+std::filesystem::path AssetDataManager::writeGeometry(const MeshAsset::ID& id, const MeshGeometry& mesh) const
 {
     validateId(id);
 
     const auto relative = std::filesystem::path{"binary/geometry"} / (id.value + ".bin");
     const auto file     = resolve(relative);
-    CHECK(!mesh.vertices.empty() && !mesh.indices.empty(),
-          "imported mesh has no geometry: {}",
-          file.string());
+    CHECK(!mesh.vertices.empty() && !mesh.indices.empty(), "imported mesh has no geometry: {}", file.string());
 
     std::filesystem::create_directories(file.parent_path());
     std::filesystem::path temporary = file;
-    temporary                       += ".tmp";
+    temporary += ".tmp";
 
     std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
     CHECK(output, "cannot write mesh geometry: {}", temporary.string());
 
     const GeometryHeader header{
-        .magic = geometryMagic,
-        .version = kGeometryVersion,
+        .magic       = geometryMagic,
+        .version     = kGeometryVersion,
         .vertexCount = static_cast<uint32_t>(mesh.vertices.size()),
-        .indexCount = static_cast<uint32_t>(mesh.indices.size()),
+        .indexCount  = static_cast<uint32_t>(mesh.indices.size()),
     };
 
     output.write(reinterpret_cast<const char*>(&header), sizeof(header));
@@ -187,27 +166,33 @@ std::filesystem::path AssetDataManager::writeGeometry(
     for (const Vertex& vertex : mesh.vertices)
     {
         const std::array<float, 12> values{
-            vertex.position.x, vertex.position.y, vertex.position.z,
-            vertex.normal.x, vertex.normal.y, vertex.normal.z,
-            vertex.texcoord.x, vertex.texcoord.y,
-            vertex.tangent.x, vertex.tangent.y, vertex.tangent.z, vertex.tangent.w,
+            vertex.position.x,
+            vertex.position.y,
+            vertex.position.z,
+            vertex.normal.x,
+            vertex.normal.y,
+            vertex.normal.z,
+            vertex.texcoord.x,
+            vertex.texcoord.y,
+            vertex.tangent.x,
+            vertex.tangent.y,
+            vertex.tangent.z,
+            vertex.tangent.w,
         };
         output.write(reinterpret_cast<const char*>(values.data()), sizeof(values));
     }
 
     output.write(
         reinterpret_cast<const char*>(mesh.indices.data()),
-        static_cast<std::streamsize>(mesh.indices.size() * sizeof(uint32_t)));
+        static_cast<std::streamsize>(mesh.indices.size() * sizeof(uint32_t))
+    );
     output.close();
 
     CHECK(output, "failed writing mesh geometry: {}", temporary.string());
 
     std::error_code error;
     std::filesystem::rename(temporary, file, error);
-    CHECK(!error,
-          "failed replacing mesh geometry '{}': {}",
-          file.string(),
-          error.message());
+    CHECK(!error, "failed replacing mesh geometry '{}': {}", file.string(), error.message());
 
     return relative;
 }
@@ -229,18 +214,20 @@ MeshGeometry AssetDataManager::readGeometry(const MeshAsset& asset) const
 
     GeometryHeader header{};
     input.read(reinterpret_cast<char*>(&header), sizeof(header));
-    CHECK(input && header.magic == geometryMagic && header.version == kGeometryVersion,
-          "invalid mesh geometry header: {}",
-          file.string());
+    CHECK(
+        input && header.magic == geometryMagic && header.version == kGeometryVersion,
+        "invalid mesh geometry header: {}",
+        file.string()
+    );
 
-    const uint64_t expectedSize = sizeof(header) +
-        static_cast<uint64_t>(header.vertexCount) * 12 * sizeof(float) +
+    const uint64_t expectedSize = sizeof(header) + static_cast<uint64_t>(header.vertexCount) * 12 * sizeof(float) +
         static_cast<uint64_t>(header.indexCount) * sizeof(uint32_t);
 
-    CHECK(std::filesystem::file_size(file) == expectedSize &&
-          header.vertexCount != 0 && header.indexCount != 0,
-          "invalid mesh geometry size: {}",
-          file.string());
+    CHECK(
+        std::filesystem::file_size(file) == expectedSize && header.vertexCount != 0 && header.indexCount != 0,
+        "invalid mesh geometry size: {}",
+        file.string()
+    );
 
     MeshGeometry geometry;
     geometry.vertices.reserve(header.vertexCount);
@@ -252,53 +239,51 @@ MeshGeometry AssetDataManager::readGeometry(const MeshAsset& asset) const
         input.read(reinterpret_cast<char*>(values.data()), sizeof(values));
         geometry.vertices.push_back({
             .position = {values[0], values[1], values[2]},
-            .normal = {values[3], values[4], values[5]},
+            .normal   = {values[3], values[4], values[5]},
             .texcoord = {values[6], values[7]},
-            .tangent = {values[8], values[9], values[10], values[11]},
+            .tangent  = {values[8], values[9], values[10], values[11]},
         });
     }
 
     input.read(
         reinterpret_cast<char*>(geometry.indices.data()),
-        static_cast<std::streamsize>(geometry.indices.size() * sizeof(uint32_t)));
+        static_cast<std::streamsize>(geometry.indices.size() * sizeof(uint32_t))
+    );
 
     CHECK(input, "failed reading mesh geometry: {}", file.string());
 
     return geometry;
 }
 
-std::filesystem::path AssetDataManager::writeTexture(
-    const TextureAsset& asset, std::span<const uint8_t> bytes) const
+std::filesystem::path AssetDataManager::writeTexture(const TextureAsset& asset, std::span<const uint8_t> bytes) const
 {
     validateId(asset.id);
 
-    const auto relative = std::filesystem::path{"binary/texture"} /
-        (asset.id.value + ".bin");
+    const auto relative = std::filesystem::path{"binary/texture"} / (asset.id.value + ".bin");
     const auto file     = resolve(relative);
     validateTexture(asset, bytes, file);
 
     std::filesystem::create_directories(file.parent_path());
     std::filesystem::path temporary = file;
-    temporary                       += ".tmp";
+    temporary += ".tmp";
 
     std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
     CHECK(output, "cannot write texture binary: {}", temporary.string());
 
     const TextureHeader header{
-        .magic = textureMagic,
-        .version = textureVersion,
-        .layout = static_cast<uint32_t>(asset.layout),
-        .format = static_cast<uint32_t>(asset.format),
-        .width = asset.width,
-        .height = asset.height,
-        .mipLevels = asset.mipLevels,
-        .layerCount = layerCount(asset.layout),
+        .magic        = textureMagic,
+        .version      = textureVersion,
+        .layout       = static_cast<uint32_t>(asset.layout),
+        .format       = static_cast<uint32_t>(asset.format),
+        .width        = asset.width,
+        .height       = asset.height,
+        .mipLevels    = asset.mipLevels,
+        .layerCount   = layerCount(asset.layout),
         .payloadBytes = static_cast<uint32_t>(bytes.size()),
     };
 
     output.write(reinterpret_cast<const char*>(&header), sizeof(header));
-    output.write(reinterpret_cast<const char*>(bytes.data()),
-                 static_cast<std::streamsize>(bytes.size()));
+    output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     output.close();
 
     CHECK(output, "failed writing texture binary: {}", temporary.string());
@@ -306,10 +291,7 @@ std::filesystem::path AssetDataManager::writeTexture(
     std::error_code error;
     std::filesystem::rename(temporary, file, error);
 
-    CHECK(!error,
-          "failed replacing texture binary '{}': {}",
-          file.string(),
-          error.message());
+    CHECK(!error, "failed replacing texture binary '{}': {}", file.string(), error.message());
 
     return relative;
 }
@@ -324,9 +306,7 @@ std::vector<uint8_t> AssetDataManager::readTexture(const TextureAsset& asset) co
         return *bytes;
     }
 
-    CHECK(asset.binary.has_value() && !asset.binary->empty(),
-          "texture '{}' has no binary path",
-          asset.id);
+    CHECK(asset.binary.has_value() && !asset.binary->empty(), "texture '{}' has no binary path", asset.id);
 
     const auto    file = resolve(*asset.binary);
     std::ifstream input(file, std::ios::binary);
@@ -334,26 +314,29 @@ std::vector<uint8_t> AssetDataManager::readTexture(const TextureAsset& asset) co
 
     TextureHeader header{};
     input.read(reinterpret_cast<char*>(&header), sizeof(header));
-    CHECK(input && header.magic == textureMagic && header.version == textureVersion,
-          "invalid texture binary header: {}",
-          file.string());
+    CHECK(
+        input && header.magic == textureMagic && header.version == textureVersion,
+        "invalid texture binary header: {}",
+        file.string()
+    );
 
-    CHECK(header.layout == static_cast<uint32_t>(asset.layout) &&
-          header.format == static_cast<uint32_t>(asset.format) &&
-          header.width == asset.width && header.height == asset.height &&
-          header.mipLevels == asset.mipLevels &&
-          header.layerCount == layerCount(asset.layout),
-          "texture binary metadata disagrees with descriptor: {}",
-          file.string());
-    CHECK(std::filesystem::file_size(file) == sizeof(TextureHeader) + header.payloadBytes,
-          "invalid texture binary size: {}",
-          file.string());
+    CHECK(
+        header.layout == static_cast<uint32_t>(asset.layout) && header.format == static_cast<uint32_t>(asset.format) &&
+            header.width == asset.width && header.height == asset.height && header.mipLevels == asset.mipLevels &&
+            header.layerCount == layerCount(asset.layout),
+        "texture binary metadata disagrees with descriptor: {}",
+        file.string()
+    );
+    CHECK(
+        std::filesystem::file_size(file) == sizeof(TextureHeader) + header.payloadBytes,
+        "invalid texture binary size: {}",
+        file.string()
+    );
 
     std::vector<uint8_t> bytes(header.payloadBytes);
     validateTexture(asset, bytes, file);
 
-    input.read(reinterpret_cast<char*>(bytes.data()),
-               static_cast<std::streamsize>(bytes.size()));
+    input.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     CHECK(input, "failed reading texture binary: {}", file.string());
 
     return bytes;

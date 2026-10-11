@@ -1,7 +1,9 @@
 #include "render/feature/TransparentPass.h"
+#include "core/ConfigManager.h"
+#include "core/Context.h"
 
-#include "render/feature/SceneDraw.h"
 #include "render/RenderData.h"
+#include "render/feature/SceneDraw.h"
 
 #include <array>
 
@@ -12,6 +14,9 @@ TransparentPass::Output TransparentPass::setup(
     ShadowPass::Output       shadow
 )
 {
+    const auto& config = context().config->rendererConfig();
+    shaderOptions      = {.ibl = config.feature.ibl, .clearcoat = config.renderPath != RenderPath::Deferred};
+
     color = graph.write(colorHandle);
     depth = depthHandle;
     SceneDraw::useAttachments(graph, std::array{color}, depth);
@@ -36,6 +41,6 @@ void TransparentPass::execute(RenderGraph& graph) const
         return;
 
     SceneDraw::beginRendering(graph, std::array{color}, depth, vk::AttachmentLoadOp::eLoad);
-    SceneDraw::recordMeshes(graph, items, std::array{graph.imageInfo(color).format});
+    SceneDraw::recordMeshes(graph, items, std::array{graph.imageInfo(color).format}, {}, shaderOptions);
     graph.commands().endRendering();
 }

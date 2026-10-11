@@ -1,8 +1,8 @@
 #include "asset/AssetImporter.h"
 
-#include "asset/Asset.h"
-#include "asset/AssetManager.h"
 #include "asset/AssetDataManager.h"
+#include "asset/AssetManager.h"
+#include "asset/TextureAsset.h"
 #include "asset/TextureMip.h"
 #include "asset/import/ImportId.h"
 #include "core/ConfigManager.h"
@@ -20,15 +20,19 @@
 
 #include <glm/gtc/packing.hpp>
 
-TextureAsset::ID AssetImporter::saveTexture(
-    TextureAsset                  asset,
-    const std::filesystem::path& source,
-    std::span<const uint8_t>     bytes)
+TextureAsset::ID
+AssetImporter::saveTexture(TextureAsset asset, const std::filesystem::path& source, std::span<const uint8_t> bytes)
 {
-    asset.path   = asset_import::sourcePathForAsset(source).generic_string();
-    LOG_INFO("Writing texture '{}' ({}x{}, {} mips, {} bytes)",
-             asset.id.value, asset.width, asset.height, asset.mipLevels, bytes.size());
-    asset.binary = context().assetDataManager->writeTexture(asset, bytes);
+    asset.path = asset_import::sourcePathForAsset(source).generic_string();
+    LOG_INFO(
+        "Writing texture '{}' ({}x{}, {} mips, {} bytes)",
+        asset.id.value,
+        asset.width,
+        asset.height,
+        asset.mipLevels,
+        bytes.size()
+    );
+    asset.binary              = context().assetDataManager->writeTexture(asset, bytes);
     const TextureAsset::ID id = context().assetManager->save<TextureAsset>(std::move(asset));
     LOG_INFO("Texture '{}' saved", id.value);
     return id;
@@ -48,10 +52,13 @@ TextureAsset::ID AssetImporter::importTexture(const ImportTextureSetting& settin
     asset.source     = Source::File;
     asset.format     = image.format;
     asset.colorSpace = setting.colorSpace.value_or(defaultColorSpace(image.fileFormat));
-    CHECK((image.format == ImageFormat::RGBA16F || image.format == ImageFormat::RGBA32F)
-          ? asset.colorSpace == ColorSpace::Linear : true,
-          "floating-point textures require linear color space: {}",
-          source.string());
+    CHECK(
+        (image.format == ImageFormat::RGBA16F || image.format == ImageFormat::RGBA32F)
+            ? asset.colorSpace == ColorSpace::Linear
+            : true,
+        "floating-point textures require linear color space: {}",
+        source.string()
+    );
     asset.layout    = ImageLayout::Image2D;
     asset.width     = image.width;
     asset.height    = image.height;
@@ -67,9 +74,7 @@ TextureAsset::ID AssetImporter::importTexture(const ImportTextureSetting& settin
         const auto&    rgba       = std::get<std::vector<float>>(image.pixels);
         const uint64_t pixelCount = static_cast<uint64_t>(image.width) * image.height;
         const uint64_t byteCount  = pixelCount * AssetDataManager::bytesPerPixel(image.format);
-        CHECK(byteCount <= std::numeric_limits<uint32_t>::max(),
-              "imported image is too large: {}",
-              source.string());
+        CHECK(byteCount <= std::numeric_limits<uint32_t>::max(), "imported image is too large: {}", source.string());
         bytes.resize(static_cast<size_t>(byteCount));
         if (image.format == ImageFormat::RGBA16F)
         {
@@ -81,24 +86,22 @@ TextureAsset::ID AssetImporter::importTexture(const ImportTextureSetting& settin
                     glm::packHalf1x16(rgba[pixel * 4 + 2]),
                     glm::packHalf1x16(rgba[pixel * 4 + 3]),
                 };
-                std::memcpy(bytes.data() + pixel * sizeof(half),
-                            half.data(),
-                            sizeof(half));
+                std::memcpy(bytes.data() + pixel * sizeof(half), half.data(), sizeof(half));
             }
         }
         else
         {
-            CHECK(image.format == ImageFormat::RGBA32F,
-                  "invalid floating-point image format: {}",
-                  source.string());
+            CHECK(image.format == ImageFormat::RGBA32F, "invalid floating-point image format: {}", source.string());
             std::memcpy(bytes.data(), rgba.data(), bytes.size());
         }
     }
-    bytes = texture_mip::generateChain(asset, bytes);
+    bytes                     = texture_mip::generateChain(asset, bytes);
     const TextureAsset::ID id = saveTexture(std::move(asset), source, bytes);
-    LOG_INFO("Import texture '{}' completed as '{}' in {:.1f}s",
-             source.string(), id.value,
-             std::chrono::duration<double>(
-                 std::chrono::steady_clock::now() - start).count());
+    LOG_INFO(
+        "Import texture '{}' completed as '{}' in {:.1f}s",
+        source.string(),
+        id.value,
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count()
+    );
     return id;
 }

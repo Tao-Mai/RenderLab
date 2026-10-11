@@ -16,19 +16,24 @@
 
 #include <glm/glm.hpp>
 
-Editor::~Editor()
-{
-    DCHECK(!inited);
-}
+Editor::~Editor() { DCHECK(!inited); }
 
 void Editor::init()
 {
     DCHECK(context().window);
     DCHECK(context().renderer);
 
-    VulkanContext& vulkan = context().renderer->vulkanContext();
-    Swapchain& swapchain = context().renderer->swapchainHandle();
-    ui.init(
+    editorCamera    = std::make_unique<EditorCamera>(context().sceneManager->scene().editorCamera);
+    sceneGeneration = context().sceneManager->sceneGeneration();
+    initBackend();
+    DEBUG_EXEC(inited = true);
+}
+
+void Editor::initBackend()
+{
+    VulkanContext& vulkan    = context().renderer->vulkanContext();
+    Swapchain&     swapchain = context().renderer->swapchainHandle();
+    backend.init(
         context().window->nativeHandle(),
         *vulkan.instanceHandle(),
         *vulkan.physicalDeviceHandle(),
@@ -37,24 +42,28 @@ void Editor::init()
         *vulkan.queueHandle(),
         static_cast<VkFormat>(swapchain.surfaceFormat().format),
         swapchain.minImageCount(),
-        swapchain.imageCount());
-    DEBUG_EXEC(inited = true);
+        swapchain.imageCount()
+    );
 }
 
 void Editor::shutdown() noexcept
 {
+    editorCamera->resetNavigation();
+    editorCamera.reset();
     ui.shutdown();
+    backend.shutdown();
     lightMarkers.reset();
-    selectedId = 0;
-    dirty = false;
+    selectedId          = 0;
+    dirty               = false;
     pendingSceneActions = {};
     DEBUG_EXEC(inited = false);
 }
 
 void Editor::refreshUi()
 {
-    ui.shutdown(false);
-    init();
+    backend.shutdown();
+    ui.resetLayout();
+    initBackend();
 }
 
 void Editor::saveScene()
@@ -67,15 +76,16 @@ void Editor::saveScene()
 
 void Editor::applySceneActions()
 {
-    if (!pendingSceneActions.sceneId && !pendingSceneActions.createType && !pendingSceneActions.deleteId) return;
+    if (!pendingSceneActions.sceneId && !pendingSceneActions.createType && !pendingSceneActions.deleteId)
+        return;
 
     auto& scene = *context().sceneManager;
 
     if (pendingSceneActions.sceneId)
     {
         scene.load(*pendingSceneActions.sceneId);
-        selectedId = 0;
-        dirty = false;
+        selectedId          = 0;
+        dirty               = false;
         pendingSceneActions = {};
         return;
     }
@@ -83,41 +93,40 @@ void Editor::applySceneActions()
     if (pendingSceneActions.deleteId)
     {
         scene.deleteActor(pendingSceneActions.deleteId);
-        if (selectedId == pendingSceneActions.deleteId) selectedId = 0;
+        if (selectedId == pendingSceneActions.deleteId)
+            selectedId = 0;
     }
     if (pendingSceneActions.createType)
         selectedId = scene.createActor(*pendingSceneActions.createType).selectionId();
 
     pendingSceneActions = {};
-    dirty = true;
+    dirty               = true;
 }
 
 Editor::Frame
 Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapchainWidth, uint32_t swapchainHeight)
 {
+    backend.beginFrame();
     ui.beginFrame(deltaTime);
     pendingSceneActions = ui.drawHierarchy(context().sceneManager->scene(), selectedId);
-    if (pendingSceneActions.renamed) dirty = true;
+    if (pendingSceneActions.renamed)
+        dirty = true;
 
     if (!pendingSceneActions.sceneId && ui.saveRequested())
     {
         saveScene();
     }
 
-    const glm::mat4 view = camera.viewMatrix();
-    const glm::mat4 projection = camera.projectionMatrix(ui.sceneAspectRatio());
-    const bool enableGizmoShortcuts = !camera.isNavigationActive();
-    auto* selectedActor = context().sceneManager->findActor(selectedId);
+    const glm::mat4 view                 = camera.viewMatrix();
+    const glm::mat4 projection           = camera.projectionMatrix(ui.sceneAspectRatio());
+    const bool      enableGizmoShortcuts = !camera.isNavigationActive();
+    auto*           selectedActor        = context().sceneManager->findActor(selectedId);
 
     if (!camera.isFreeMovementActive() && selectedActor != nullptr)
     {
         glm::mat4 gizmoProjection = projection;
         gizmoProjection[1][1] *= -1.0f;
-        if (ui.drawGizmo(
-                selectedActor->transform(),
-                view,
-                gizmoProjection,
-                enableGizmoShortcuts))
+        if (ui.drawGizmo(selectedActor->transform(), view, gizmoProjection, enableGizmoShortcuts))
         {
             dirty = true;
         }
@@ -125,7 +134,7 @@ Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapcha
 
     Frame frame;
     auto& input    = frame.input;
-    input.recordUi = [this](VkCommandBuffer commandBuffer) { ui.render(commandBuffer); };
+    input.recordUi = [this](VkCommandBuffer commandBuffer) { backend.render(commandBuffer); };
 
     if (!camera.isNavigationActive())
     {
@@ -133,26 +142,26 @@ Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapcha
         if (ui.sceneClicked(clickNdc))
         {
             const ViewportRect viewport    = ui.sceneViewportPixels();
-            const float normalizedX = std::clamp(clickNdc.x * 0.5f + 0.5f, 0.0f, 1.0f);
-            const float normalizedY = std::clamp(clickNdc.y * 0.5f + 0.5f, 0.0f, 1.0f);
-            input.pickX = std::min(
+            const float        normalizedX = std::clamp(clickNdc.x * 0.5f + 0.5f, 0.0f, 1.0f);
+            const float        normalizedY = std::clamp(clickNdc.y * 0.5f + 0.5f, 0.0f, 1.0f);
+            input.pickX                    = std::min(
                 static_cast<uint32_t>(std::max(viewport.x + normalizedX * viewport.width, 0.0f)),
-                swapchainWidth - 1);
+                swapchainWidth - 1
+            );
             input.pickY = std::min(
                 static_cast<uint32_t>(std::max(viewport.y + normalizedY * viewport.height, 0.0f)),
-                swapchainHeight - 1);
+                swapchainHeight - 1
+            );
             input.requestPick = true;
         }
     }
 
-    EditorUI::InspectorResult inspector = ui.drawInspector(
-        context().sceneManager->scene(), selectedActor, dirty);
+    EditorUI::InspectorResult inspector = ui.drawInspector(context().sceneManager->scene(), selectedActor, dirty);
     if (inspector.edited)
     {
         dirty = true;
     }
-    frame.rebuildGraph = inspector.environmentChanged || inspector.rendererChanged;
-    frame.view         = camera.renderView(ui.sceneViewportPixels());
+    frame.view = camera.renderView(ui.sceneViewportPixels());
     lightMarkers.prepare(context().sceneManager->scene(), *renderContext().resources);
     input.lightDrawItems = lightMarkers.drawItems();
     ui.endFrame();
@@ -169,7 +178,18 @@ void Editor::applyPickResult(const RenderFrameResult& result)
     selectedId = result.pickedSelectionId;
 }
 
-bool Editor::wantsInput() const
+bool Editor::wantsInput() const { return ui.wantsInput(); }
+
+void Editor::tick(float deltaTime)
 {
-    return ui.wantsInput();
+    const auto generation = context().sceneManager->sceneGeneration();
+    if (generation != sceneGeneration)
+    {
+        editorCamera->resetNavigation();
+        selectedId      = 0;
+        dirty           = false;
+        sceneGeneration = generation;
+    }
+    editorCamera->setInputEnabled(editorCamera->isNavigationActive() || !wantsInput());
+    editorCamera->tick(deltaTime);
 }

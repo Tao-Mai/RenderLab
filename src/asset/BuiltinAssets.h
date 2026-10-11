@@ -1,7 +1,10 @@
 #pragma once
 
-#include "asset/Asset.h"
+#include "asset/MaterialAsset.h"
+#include "asset/MeshAsset.h"
 #include "asset/MeshGeometry.h"
+#include "asset/SamplerAsset.h"
+#include "asset/TextureAsset.h"
 
 #include <cstdint>
 #include <type_traits>
@@ -26,25 +29,25 @@ public:
 
     struct Texture
     {
-        static inline const ::TextureAsset::ID white     = "white";
-        static inline const ::TextureAsset::ID whiteCube = "whiteCube";
-        static inline const ::TextureAsset::ID flatNormal = "flatNormal";
+        static inline const ::TextureAsset::ID white        = "white";
+        static inline const ::TextureAsset::ID whiteCube    = "whiteCube";
+        static inline const ::TextureAsset::ID flatNormal   = "flatNormal";
         static inline const ::TextureAsset::ID kWhiteLinear = "whiteLinear";
     };
 
     struct Sampler
     {
         // 普通可平铺材质贴图，例如 glTF 的 Base Color。
-        static inline const ::SamplerAsset::ID linearRepeat  = "linearRepeat";
+        static inline const ::SamplerAsset::ID linearRepeat = "linearRepeat";
 
         // 环境 Cubemap、BRDF LUT 等需要平滑采样且不应在边缘重复的纹理。
-        static inline const ::SamplerAsset::ID linearClamp   = "linearClamp";
+        static inline const ::SamplerAsset::ID linearClamp = "linearClamp";
 
         // 可平铺的像素风格纹理，保留清晰的像素边界。
         static inline const ::SamplerAsset::ID nearestRepeat = "nearestRepeat";
 
         // 掩码、索引或查找纹理，需要精确 texel 且不应在边缘重复。
-        static inline const ::SamplerAsset::ID nearestClamp  = "nearestClamp";
+        static inline const ::SamplerAsset::ID nearestClamp = "nearestClamp";
     };
 
 private:
@@ -76,11 +79,11 @@ private:
         }
     }
 
-    [[nodiscard]] static const ::MeshAsset* meshAsset(const ::MeshAsset::ID& id);
+    [[nodiscard]] static const ::MeshAsset*     meshAsset(const ::MeshAsset::ID& id);
     [[nodiscard]] static const ::MaterialAsset* materialAsset(const ::MaterialAsset::ID& id);
-    [[nodiscard]] static const ::TextureAsset* textureAsset(const ::TextureAsset::ID& id);
-    [[nodiscard]] static const ::SamplerAsset* samplerAsset(const ::SamplerAsset::ID& id);
+    [[nodiscard]] static const ::TextureAsset*  textureAsset(const ::TextureAsset::ID& id);
+    [[nodiscard]] static const ::SamplerAsset*  samplerAsset(const ::SamplerAsset::ID& id);
 
-    [[nodiscard]] static const MeshGeometry* meshGeometry(const ::MeshAsset::ID& id);
+    [[nodiscard]] static const MeshGeometry*         meshGeometry(const ::MeshAsset::ID& id);
     [[nodiscard]] static const std::vector<uint8_t>* textureData(const ::TextureAsset::ID& id);
 };
