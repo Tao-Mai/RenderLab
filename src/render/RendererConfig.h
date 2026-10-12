@@ -17,6 +17,9 @@ enum class ToneMappingOperator
     Reinhard,
 };
 
+// The primary ray and its visibility query each consume one recursion level.
+inline constexpr uint32_t kMinRayRecursionDepth = 2;
+
 struct RenderFeature
 {
     bool  ibl                = true;
@@ -46,6 +49,11 @@ struct RenderFeature
         float               exposure = 0.0f;  // Stops: +1 doubles linear scene brightness.
         ToneMappingOperator mode     = ToneMappingOperator::Neutral;
     } toneMapping;
+
+    struct RayTracing
+    {
+        uint32_t maxRecursionDepth = 4;
+    } rayTracing;
 };
 
 struct RendererConfig

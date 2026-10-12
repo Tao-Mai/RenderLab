@@ -94,6 +94,30 @@ TEST_F(InputManagerTest, WindowUsesEditorConfig)
     EXPECT_EQ(y, workY + (workHeight - height) / 2);
 }
 
+TEST_F(InputManagerTest, WindowResizeUpdatesEditorConfig)
+{
+    const auto original = config.editorConfig();
+    const auto handle = window.nativeHandle();
+    EXPECT_EQ(glfwGetWindowAttrib(handle, GLFW_RESIZABLE), GLFW_TRUE);
+
+    glfwSetWindowSize(handle, 1200, 800);
+    window.pollEvents();
+    int width = 0, height = 0;
+    glfwGetWindowSize(handle, &width, &height);
+    EXPECT_EQ(width, 1200);
+    EXPECT_EQ(height, 800);
+    EXPECT_EQ(config.editorConfig().width, width);
+    EXPECT_EQ(config.editorConfig().height, height);
+
+    glfwSetWindowSize(handle, 1100, 700);
+    window.pollEvents();
+    EXPECT_EQ(config.editorConfig().width, 1100);
+    EXPECT_EQ(config.editorConfig().height, 700);
+
+    glfwSetWindowSize(handle, original.width, original.height);
+    window.pollEvents();
+}
+
 TEST_F(InputManagerTest, MouseSelectionIgnoresLockStates)
 {
     for (const int locks : lockStates)

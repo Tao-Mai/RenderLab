@@ -23,7 +23,7 @@ void Window::init()
     glfwInitialized = true;
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
     handle = glfwCreateWindow(editor.width, editor.height, editor.title.c_str(), nullptr, nullptr);
     if (handle == nullptr)
@@ -39,6 +39,7 @@ void Window::init()
 
     int width = 0, height = 0;
     glfwGetWindowSize(handle, &width, &height);
+    context().config->setEditorSize(width, height);
     glfwSetWindowPos(handle, workX + (workWidth - width) / 2, workY + (workHeight - height) / 2);
 
     glfwSetInputMode(handle, GLFW_LOCK_KEY_MODS, GLFW_TRUE);
@@ -46,6 +47,7 @@ void Window::init()
     glfwSetKeyCallback(handle, &Window::keyCallback);
     glfwSetMouseButtonCallback(handle, &Window::mouseButtonCallback);
     glfwSetWindowFocusCallback(handle, &Window::focusCallback);
+    glfwSetWindowSizeCallback(handle, &Window::sizeCallback);
     glfwSetScrollCallback(handle, &Window::scrollCallback);
 }
 
@@ -204,6 +206,15 @@ void Window::focusCallback(GLFWwindow *window, int focused)
     {
         owner->onFocus(focused);
     }
+}
+
+void Window::sizeCallback(GLFWwindow *window, int width, int height)
+{
+    DCHECK(glfwGetWindowUserPointer(window));
+
+    // A minimized window must not persist a zero size.
+    if (width > 0 && height > 0)
+        context().config->setEditorSize(width, height);
 }
 
 void Window::scrollCallback(GLFWwindow *window, double, double yOffset)

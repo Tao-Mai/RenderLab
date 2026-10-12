@@ -50,9 +50,11 @@ public:
     [[nodiscard]] bool         saveRequested() const;
     [[nodiscard]] float        sceneAspectRatio() const;
     [[nodiscard]] ViewportRect sceneViewportPixels() const { return scenePixels; }
+    [[nodiscard]] bool         isSceneFocused() const { return sceneFocused; }
 
 private:
     bool             dockLayoutInitialized = false;
+    bool             sceneFocused          = false;
     float            fpsRefreshTime        = 0.0f;
     float            displayedFps          = 0.0f;
     uint32_t         framesSinceRefresh    = 0;

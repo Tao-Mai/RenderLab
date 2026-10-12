@@ -122,7 +122,9 @@ void Engine::mainLoop()
         const float deltaTime   = std::chrono::duration<float>(currentTime - previousTime).count();
         previousTime            = currentTime;
 
-        if (swapchainNeedsRebuild)
+        const auto currentExtent = ctx.renderer->swapchainHandle().extent();
+        if (swapchainNeedsRebuild || currentExtent.width != static_cast<uint32_t>(framebufferWidth) ||
+            currentExtent.height != static_cast<uint32_t>(framebufferHeight))
         {
             ctx.renderer->recreateSwapchain();
             ctx.editor->refreshUi();

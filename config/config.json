@@ -1,6 +1,6 @@
 {
     "initialScene": {
-        "value": "default"
+        "value": "cornell_box"
     },
     "paths": {
         "assets": "../assets",

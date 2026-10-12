@@ -1,6 +1,8 @@
 #include "render/raytracing/RayTracingPass.h"
 
 #include "asset/BuiltinAssets.h"
+#include "core/ConfigManager.h"
+#include "core/Context.h"
 #include "core/Logger.h"
 #include "core/Vertex.h"
 #include "render/FrameData.h"
@@ -17,16 +19,31 @@
 #include "render/resource/RenderResourceManager.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <glm/geometric.hpp>
 
 namespace
 {
-constexpr uint32_t kRayRecursionDepth = 2;
 constexpr uint32_t kMissShaderCount   = 2;
+constexpr uint32_t kHitShaderCount    = 2;
+// Match raytracing.slang. The surface hit group is record 0, the emitter hit group is record 1.
+constexpr uint32_t kSceneMask         = 0x01;
+constexpr uint32_t kLightMask         = 0x02;
+constexpr uint32_t kLightHitRecord    = 1;
 
 vk::DeviceSize alignUp(vk::DeviceSize value, vk::DeviceSize alignment)
 {
     return (value + alignment - 1) & ~(alignment - 1);
+}
+
+VkTransformMatrixKHR instanceTransform(const glm::mat4& model)
+{
+    VkTransformMatrixKHR transform{};
+    for (uint32_t row = 0; row < 3; ++row)
+        for (uint32_t column = 0; column < 4; ++column)
+            transform.matrix[row][column] = model[column][row];
+    return transform;
 }
 
 void buildBarrier(vk::raii::CommandBuffer& commands, bool trace)
@@ -65,12 +82,13 @@ RayTracingPass::Output RayTracingPass::setup(RenderGraph& graph)
             .layout = vk::ImageLayout::eGeneral,
         }
     );
-    if (!*pipeline)
-        createPipeline(graph);
+    const auto maxRecursionDepth = context().config->rendererConfig().feature.rayTracing.maxRecursionDepth;
+    if (!*pipeline || pipelineRecursionDepth != maxRecursionDepth)
+        createPipeline(graph, maxRecursionDepth);
     return {rayImage};
 }
 
-void RayTracingPass::createPipeline(RenderGraph& graph)
+void RayTracingPass::createPipeline(RenderGraph& graph, uint32_t maxRecursionDepth)
 {
     const auto& vulkan = graph.vulkan();
     const auto& device = vulkan.deviceHandle();
@@ -78,10 +96,11 @@ void RayTracingPass::createPipeline(RenderGraph& graph)
         vulkan.physicalDeviceHandle()
             .getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
     const auto& limits = properties.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
+    CHECK(maxRecursionDepth >= kMinRayRecursionDepth);
     CHECK(
-        limits.maxRayRecursionDepth >= kRayRecursionDepth,
-        "ray tracing visibility requires recursion depth {}, GPU supports {}",
-        kRayRecursionDepth,
+        maxRecursionDepth <= limits.maxRayRecursionDepth,
+        "ray tracing requests recursion depth {}, GPU supports {}",
+        maxRecursionDepth,
         limits.maxRayRecursionDepth
     );
     CHECK(
@@ -91,87 +110,91 @@ void RayTracingPass::createPipeline(RenderGraph& graph)
         maxTextures
     );
 
-    const std::array bindings = {
-        vk::DescriptorSetLayoutBinding{
-            .binding         = 0,
-            .descriptorType  = vk::DescriptorType::eAccelerationStructureKHR,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = 1,
-            .descriptorType  = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = 2,
-            .descriptorType  = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = 3,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = maxTextures,
-            .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = 4,
-            .descriptorType  = vk::DescriptorType::eSampler,
-            .descriptorCount = maxTextures,
-            .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = 5,
-            .descriptorType  = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
-        },
-    };
-    descriptorLayout           = vkCheck(device.createDescriptorSetLayout(
-        {.bindingCount = static_cast<uint32_t>(bindings.size()), .pBindings = bindings.data()}
-    ));
-    const std::array poolSizes = {
-        vk::DescriptorPoolSize{
-            .type            = vk::DescriptorType::eAccelerationStructureKHR,
-            .descriptorCount = maxFramesInFlight
-        },
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = maxFramesInFlight},
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxFramesInFlight * 2},
-        vk::DescriptorPoolSize{
-            .type            = vk::DescriptorType::eSampledImage,
-            .descriptorCount = maxFramesInFlight * maxTextures
-        },
-        vk::DescriptorPoolSize{
-            .type            = vk::DescriptorType::eSampler,
-            .descriptorCount = maxFramesInFlight * maxTextures
-        },
-    };
-    descriptorPool = vkCheck(device.createDescriptorPool(
-        {.flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-         .maxSets       = maxFramesInFlight,
-         .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
-         .pPoolSizes    = poolSizes.data()}
-    ));
-    for (auto& frame : frames)
-        frame.set = std::move(
-            vkCheck(device.allocateDescriptorSets(
-                        {.descriptorPool = *descriptorPool, .descriptorSetCount = 1, .pSetLayouts = &*descriptorLayout}
-                    ))
-                .front()
-        );
+    if (!*pipelineLayout)
+    {
+        const std::array bindings = {
+            vk::DescriptorSetLayoutBinding{
+                .binding         = 0,
+                .descriptorType  = vk::DescriptorType::eAccelerationStructureKHR,
+                .descriptorCount = 1,
+                .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR
+            },
+            vk::DescriptorSetLayoutBinding{
+                .binding         = 1,
+                .descriptorType  = vk::DescriptorType::eStorageImage,
+                .descriptorCount = 1,
+                .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
+            },
+            vk::DescriptorSetLayoutBinding{
+                .binding         = 2,
+                .descriptorType  = vk::DescriptorType::eStorageBuffer,
+                .descriptorCount = 1,
+                .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
+            },
+            vk::DescriptorSetLayoutBinding{
+                .binding         = 3,
+                .descriptorType  = vk::DescriptorType::eSampledImage,
+                .descriptorCount = maxTextures,
+                .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
+            },
+            vk::DescriptorSetLayoutBinding{
+                .binding         = 4,
+                .descriptorType  = vk::DescriptorType::eSampler,
+                .descriptorCount = maxTextures,
+                .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
+            },
+            vk::DescriptorSetLayoutBinding{
+                .binding         = 5,
+                .descriptorType  = vk::DescriptorType::eStorageBuffer,
+                .descriptorCount = 1,
+                .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
+            },
+        };
+        descriptorLayout           = vkCheck(device.createDescriptorSetLayout(
+            {.bindingCount = static_cast<uint32_t>(bindings.size()), .pBindings = bindings.data()}
+        ));
+        const std::array poolSizes = {
+            vk::DescriptorPoolSize{
+                .type            = vk::DescriptorType::eAccelerationStructureKHR,
+                .descriptorCount = maxFramesInFlight
+            },
+            vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = maxFramesInFlight},
+            vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxFramesInFlight * 2},
+            vk::DescriptorPoolSize{
+                .type            = vk::DescriptorType::eSampledImage,
+                .descriptorCount = maxFramesInFlight * maxTextures
+            },
+            vk::DescriptorPoolSize{
+                .type            = vk::DescriptorType::eSampler,
+                .descriptorCount = maxFramesInFlight * maxTextures
+            },
+        };
+        descriptorPool = vkCheck(device.createDescriptorPool(
+            {.flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+             .maxSets       = maxFramesInFlight,
+             .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
+             .pPoolSizes    = poolSizes.data()}
+        ));
+        for (auto& frame : frames)
+            frame.set = std::move(
+                vkCheck(device.allocateDescriptorSets(
+                            {.descriptorPool = *descriptorPool, .descriptorSetCount = 1, .pSetLayouts = &*descriptorLayout}
+                        ))
+                    .front()
+            );
 
-    const vk::PushConstantRange parameterRange{
-        .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR,
-        .size       = sizeof(RayTracingParameters),
-    };
-    pipelineLayout = vkCheck(device.createPipelineLayout(
-        {.setLayoutCount         = 1,
-         .pSetLayouts            = &*descriptorLayout,
-         .pushConstantRangeCount = 1,
-         .pPushConstantRanges    = &parameterRange}
-    ));
+        const vk::PushConstantRange parameterRange{
+            .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR,
+            .size       = sizeof(RayTracingParameters),
+        };
+        pipelineLayout = vkCheck(device.createPipelineLayout(
+            {.setLayoutCount         = 1,
+             .pSetLayouts            = &*descriptorLayout,
+             .pushConstantRangeCount = 1,
+             .pPushConstantRanges    = &parameterRange}
+        ));
+    }
+
     GpuShader        shader(device, "shaders/raytracing.spv");
     const std::array stages = {
         vk::PipelineShaderStageCreateInfo{
@@ -193,6 +216,11 @@ void RayTracingPass::createPipeline(RenderGraph& graph)
             .stage  = vk::ShaderStageFlagBits::eClosestHitKHR,
             .module = shader.handle(),
             .pName  = "closestHitMain"
+        },
+        vk::PipelineShaderStageCreateInfo{
+            .stage  = vk::ShaderStageFlagBits::eClosestHitKHR,
+            .module = shader.handle(),
+            .pName  = "lightClosestHitMain"
         },
     };
     const std::array groups = {
@@ -224,13 +252,20 @@ void RayTracingPass::createPipeline(RenderGraph& graph)
             .anyHitShader       = VK_SHADER_UNUSED_KHR,
             .intersectionShader = VK_SHADER_UNUSED_KHR
         },
+        vk::RayTracingShaderGroupCreateInfoKHR{
+            .type               = vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
+            .generalShader      = VK_SHADER_UNUSED_KHR,
+            .closestHitShader   = 4,
+            .anyHitShader       = VK_SHADER_UNUSED_KHR,
+            .intersectionShader = VK_SHADER_UNUSED_KHR
+        },
     };
     const vk::RayTracingPipelineCreateInfoKHR info{
         .stageCount                   = static_cast<uint32_t>(stages.size()),
         .pStages                      = stages.data(),
         .groupCount                   = static_cast<uint32_t>(groups.size()),
         .pGroups                      = groups.data(),
-        .maxPipelineRayRecursionDepth = kRayRecursionDepth,
+        .maxPipelineRayRecursionDepth = maxRecursionDepth,
         .layout                       = *pipelineLayout,
     };
     VkPipeline rawPipeline = VK_NULL_HANDLE;
@@ -246,15 +281,17 @@ void RayTracingPass::createPipeline(RenderGraph& graph)
         ))
     );
     pipeline = vk::raii::Pipeline(device, rawPipeline);
+    pipelineRecursionDepth = maxRecursionDepth;
 
     const vk::DeviceSize stride     = alignUp(limits.shaderGroupHandleSize, limits.shaderGroupHandleAlignment);
     const vk::DeviceSize missOffset = alignUp(stride, limits.shaderGroupBaseAlignment);
     const vk::DeviceSize hitOffset  = alignUp(missOffset + stride * kMissShaderCount, limits.shaderGroupBaseAlignment);
     CHECK(stride <= limits.maxShaderGroupStride, "shader binding table stride exceeds the device limit");
+    bindingTable.reset();
     bindingTable = Buffer(
         vulkan.physicalDeviceHandle(),
         device,
-        hitOffset + stride + limits.shaderGroupBaseAlignment,
+        hitOffset + stride * kHitShaderCount + limits.shaderGroupBaseAlignment,
         vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
     );
@@ -273,8 +310,8 @@ void RayTracingPass::createPipeline(RenderGraph& graph)
         ))
     );
     std::vector<uint8_t> records(bindingTable.size());
-    // Group order: raygen, primary miss, visibility miss, closest hit.
-    const std::array<vk::DeviceSize, 4> recordOffsets{0, missOffset, missOffset + stride, hitOffset};
+    // Group order: raygen, primary miss, visibility miss, surface hit, light hit.
+    const std::array<vk::DeviceSize, 5> recordOffsets{0, missOffset, missOffset + stride, hitOffset, hitOffset + stride};
     for (uint32_t group = 0; group < kGroupCount; ++group)
         std::memcpy(
             records.data() + base - address + recordOffsets[group],
@@ -288,7 +325,46 @@ void RayTracingPass::createPipeline(RenderGraph& graph)
           .stride        = stride,
           .size          = stride * kMissShaderCount,
     };
-    hitRegion = vk::StridedDeviceAddressRegionKHR{.deviceAddress = base + hitOffset, .stride = stride, .size = stride};
+    hitRegion = vk::StridedDeviceAddressRegionKHR{
+        .deviceAddress = base + hitOffset, .stride = stride, .size = stride * kHitShaderCount
+    };
+}
+
+void RayTracingPass::createRectLightGeometry(RenderGraph& graph)
+{
+    const auto& vulkan = graph.vulkan();
+    const auto& device = vulkan.deviceHandle();
+    // A unit XY rectangle facing local -Z. Every light shares this BLAS.
+    constexpr std::array<float, 12> kVertices{
+        -0.5f, -0.5f, 0.0f, 0.5f, -0.5f, 0.0f,
+        0.5f, 0.5f, 0.0f, -0.5f, 0.5f, 0.0f
+    };
+    constexpr std::array<uint32_t, 6> kIndices{0, 2, 1, 0, 3, 2};
+    const auto usage = vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
+        vk::BufferUsageFlagBits::eShaderDeviceAddress;
+    const auto host = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
+    rectLightVertices = Buffer(vulkan.physicalDeviceHandle(), device, sizeof(kVertices), usage, host);
+    rectLightIndices = Buffer(vulkan.physicalDeviceHandle(), device, sizeof(kIndices), usage, host);
+    rectLightVertices.upload(kVertices.data(), sizeof(kVertices));
+    rectLightIndices.upload(kIndices.data(), sizeof(kIndices));
+
+    VkAccelerationStructureGeometryKHR triangles{
+        .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
+        .geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR,
+        .flags = VK_GEOMETRY_OPAQUE_BIT_KHR,
+    };
+    triangles.geometry.triangles = {
+        .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
+        .vertexFormat = VK_FORMAT_R32G32B32_SFLOAT,
+        .vertexData = {.deviceAddress = rectLightVertices.address(device)},
+        .vertexStride = sizeof(float) * 3,
+        .maxVertex = static_cast<uint32_t>(kVertices.size() / 3 - 1),
+        .indexType = VK_INDEX_TYPE_UINT32,
+        .indexData = {.deviceAddress = rectLightIndices.address(device)},
+    };
+    constexpr uint32_t kTriangleCount = kIndices.size() / 3;
+    rectLightBlas.create(vulkan, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, triangles, kTriangleCount);
+    rectLightBlas.build(vulkan, graph.commands(), triangles, kTriangleCount);
 }
 
 void RayTracingPass::prepareLights(RenderGraph& graph, Frame& frame) const
@@ -369,11 +445,9 @@ void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
             bottom->second.build(vulkan, commands, triangles, indexCount / 3);
         }
         VkAccelerationStructureInstanceKHR instance{};
-        for (uint32_t row = 0; row < 3; ++row)
-            for (uint32_t column = 0; column < 4; ++column)
-                instance.transform.matrix[row][column] = model[column][row];
+        instance.transform                      = instanceTransform(model);
         instance.instanceCustomIndex            = static_cast<uint32_t>(hits.size());
-        instance.mask                           = 0xff;
+        instance.mask                           = kSceneMask;
         instance.flags                          = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
         instance.accelerationStructureReference = bottom->second.address();
         instances.push_back(instance);
@@ -400,6 +474,39 @@ void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
             item.material->baseColorFactor(),
             material->second
         );
+    }
+
+    const auto& lights = graph.renderData().lights;
+    CHECK(lights.size() < (1u << 24), "ray tracing light index exceeds the custom-index limit");
+    for (uint32_t index = 0; index < lights.size(); ++index)
+    {
+        const auto& light = lights[index];
+        if (!light.enable() || light.type() != LightComponent::Type::RectArea)
+            continue;
+
+        const glm::vec2 size{light.areaSizeCone};
+        CHECK(
+            std::isfinite(size.x) && std::isfinite(size.y) && size.x > 0 && size.y > 0,
+            "rectangular light {} requires finite positive dimensions", index
+        );
+        if (!rectLightBlas.handle())
+            createRectLightGeometry(graph);
+
+        const glm::vec3 right = light.areaRight();
+        const glm::vec3 direction{light.direction};
+        const glm::vec3 up = glm::cross(right, direction);
+        const glm::mat4 model{
+            glm::vec4{right * size.x, 0}, glm::vec4{up * size.y, 0},
+            glm::vec4{-direction, 0}, glm::vec4{light.position(), 1}
+        };
+        VkAccelerationStructureInstanceKHR instance{};
+        instance.transform = instanceTransform(model);
+        instance.instanceCustomIndex = index;
+        instance.mask = kLightMask;
+        instance.instanceShaderBindingTableRecordOffset = kLightHitRecord;
+        // Unlike scene meshes, light instances keep facing culling enabled for one-sided emission.
+        instance.accelerationStructureReference = rectLightBlas.address();
+        instances.push_back(instance);
     }
     buildBarrier(commands, false);
 
@@ -446,6 +553,9 @@ void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
     if (count)
     {
         frame.instances.upload(instances.data(), instances.size() * sizeof(instances.front()));
+    }
+    if (!hits.empty())
+    {
         frame.hitData.upload(hits.data(), hits.size() * sizeof(hits.front()));
     }
     frame.tlas.build(vulkan, commands, top, count);
@@ -533,6 +643,7 @@ void RayTracingPass::execute(RenderGraph& graph)
             .cameraPosition        = view.cameraPosition,
             .viewport              = {viewport.x, viewport.y, viewport.width, viewport.height},
             .lightCount            = static_cast<uint32_t>(graph.renderData().lights.size()),
+            .maxRecursionDepth     = pipelineRecursionDepth,
         }
     );
     const auto extent = graph.swapchain().extent();
