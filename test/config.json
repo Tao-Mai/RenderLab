@@ -1,9 +1,11 @@
 {
-  "paths": {
-    "assets": ".",
-    "commands": "../config/commands.json",
-    "editor": "../config/editor.json",
-    "renderer": "renderer.json"
-  },
-  "initialScene": {"value": "default"}
+    "initialScene": {
+        "value": "default"
+    },
+    "paths": {
+        "assets": ".",
+        "commands": "../config/commands.json",
+        "editor": "editor.json",
+        "renderer": "renderer.json"
+    }
 }

@@ -220,6 +220,7 @@ void Renderer::applyConfiguration()
             value.renderPath,
             value.feature.ibl,
             value.feature.hdr,
+            value.feature.rayTracing.maxRecursionDepth,
             shadow.enable,
             shadow.pointShadowMapSize,
             shadow.rectAreaShadowMapSize,

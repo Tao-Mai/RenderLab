@@ -1,5 +1,5 @@
 #include "editor/EditorCamera.h"
-// Manual GPU check: visibility along the finite segment to a point light.
+// Manual GPU check: finite visibility, diffuse bounces, and triangle light emission.
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
@@ -16,6 +16,7 @@
 #include "scene/system/RenderSystem.h"
 
 #include <GLFW/glfw3.h>
+#include <cmath>
 #include <glm/gtc/packing.hpp>
 
 namespace
@@ -83,11 +84,17 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     EndPass           end;
     RenderSystem      renderSystem;
     graph.init(vulkan, renderer.swapchainHandle(), frames, frameData);
-    const auto output = graph.addPass(trace);
-    CHECK(graph.imageInfo(output.rayImage).format == kHdrColorFormat);
-    const auto buffer = graph.addPass(readback, output.rayImage);
-    graph.addPass(end, RenderGraph::ImageHandle{}, buffer);
-    graph.compile();
+    RenderGraph::BufferHandle buffer;
+    const auto setup = [&]
+    {
+        graph.releaseResources();
+        const auto output = graph.addPass(trace);
+        CHECK(graph.imageInfo(output.rayImage).format == kHdrColorFormat);
+        buffer = graph.addPass(readback, output.rayImage);
+        graph.addPass(end, RenderGraph::ImageHandle{}, buffer);
+        graph.compile();
+    };
+    setup();
 
     const auto extent = renderer.swapchainHandle().extent();
     const auto view =
@@ -121,6 +128,98 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     CHECK(beyondLight == clear, "geometry behind the light changed visibility: {} vs {}", beyondLight, clear);
     LOG_INFO("Ray tracing visibility passed: clear {}, blocked {}, beyond light {}", clear, blocked, beyondLight);
 
+    // Two facing diffuse planes catch the secondary ray without blocking the camera or point light.
+    for (float height : {-2.0f, 2.0f})
+    {
+        auto& plane = scenes.createActor("AStaticMesh");
+        plane.getComponent<RenderComponent>()->meshId = BuiltinAssets::Mesh::plane;
+        plane.transform().position.y = height;
+        plane.transform().scale = {100.0f, 1.0f, 100.0f};
+        if (height > 0)
+            plane.transform().setRotationEulerDegrees({180.0f, 0.0f, 0.0f});
+    }
+
+    auto feature = context().config->rendererConfig().feature;
+    for (uint32_t depth : {3u, 4u, 2u})
+    {
+        feature.rayTracing.maxRecursionDepth = depth;
+        context().config->setRenderFeature(feature);
+        setup();
+        const auto radiance = sample();
+        CHECK(std::isfinite(radiance) && radiance > 0, "invalid radiance {} at recursion depth {}", radiance, depth);
+        if (depth > kMinRayRecursionDepth)
+            CHECK(radiance > clear, "secondary ray contributed no indirect light at depth {}: {}", depth, radiance);
+        else
+            CHECK(radiance == clear);
+        LOG_INFO("Ray tracing recursion depth {} passed: radiance {}", depth, radiance);
+    }
+
+    SceneAsset areaScene;
+    areaScene.editorCamera = scenes.scene().editorCamera;
+    auto sphere = std::make_unique<AStaticMesh>();
+    sphere->getComponent<RenderComponent>()->meshId = BuiltinAssets::Mesh::sphere;
+    areaScene.actors.push_back(std::move(sphere));
+    auto areaLight = std::make_unique<ALight>();
+    areaLight->transform().position = {0, 0, 7};
+    auto& lightData = *areaLight->getComponent<LightComponent>();
+    lightData.type = LightComponent::Type::RectArea;
+    lightData.areaSize = {20, 20};
+    lightData.intensity = 8;
+    areaScene.actors.push_back(std::move(areaLight));
+    scenes.load(areaScene);
+    setup();
+
+    const auto areaClear = sample();
+    CHECK(std::isfinite(areaClear) && areaClear > 0);
+    auto& light = *scenes.scene().actors[1]->getComponent<LightComponent>();
+    light.enabled = false;
+    CHECK(sample() == 0);
+    light.enabled = true;
+    scenes.scene().actors[1]->transform().setRotationEulerDegrees({0, 180, 0});
+    CHECK(sample() == 0);
+    scenes.scene().actors[1]->transform().setRotationEulerDegrees({0, 0, 0});
+
+    // No other surface can receive this outgoing ray: terminal emission and full tracing must agree.
+    feature.rayTracing.maxRecursionDepth = 3;
+    context().config->setRenderFeature(feature);
+    setup();
+    CHECK(sample() == areaClear);
+    feature.rayTracing.maxRecursionDepth = kMinRayRecursionDepth;
+    context().config->setRenderFeature(feature);
+    setup();
+
+    auto& areaBlocker = scenes.createActor("AStaticMesh");
+    areaBlocker.transform().position = {0, 0, 6};
+    areaBlocker.transform().scale = {100, 100, 0.2f};
+    CHECK(sample() == 0);
+    areaBlocker.transform().position.z = 8;
+    CHECK(sample() == areaClear);
+    LOG_INFO("Triangle area light passed: radiance {}, disabled/back face/blocked 0, beyond light unchanged", areaClear);
+
+    scenes.deleteActor(areaBlocker.selectionId());
+    auto& farLight = scenes.createActor("ALight");
+    farLight.transform().position = {0, 0, 9};
+    auto& farData = *farLight.getComponent<LightComponent>();
+    farData.type = LightComponent::Type::RectArea;
+    farData.areaSize = {20, 20};
+    farData.intensity = 100;
+    // The near emitter still occludes the farther lamp when its emitted radiance is zero.
+    light.intensity = 0;
+    CHECK(sample() == 0);
+    light.enabled = false;
+    CHECK(sample() > 0);
+
+    SceneAsset onlyLights;
+    onlyLights.editorCamera = areaScene.editorCamera;
+    auto lamp = std::make_unique<ALight>();
+    lamp->getComponent<LightComponent>()->type = LightComponent::Type::RectArea;
+    lamp->transform().position = {0, 0, 3};
+    onlyLights.actors.push_back(std::move(lamp));
+    scenes.load(onlyLights);
+    // Light geometry is excluded from primary rays, including scenes with no mesh HitData.
+    CHECK(sample() == 0);
+    LOG_INFO("Triangle lights passed: nearest emitter, disabled index mapping, and camera mask without scene meshes");
+
     graph.reset();
     for (auto& data : frameData)
         data.reset();
@@ -146,6 +245,10 @@ int main(int, char** argv)
     context().window           = &window;
     context().renderer         = &renderer;
     config.init();
+    const auto originalFeature = config.rendererConfig().feature;
+    auto feature = originalFeature;
+    feature.rayTracing.maxRecursionDepth = kMinRayRecursionDepth;
+    config.setRenderFeature(feature);
     data.init(config.paths().assets);
     scenes.init();
     assets.init(config.paths().assets);
@@ -172,6 +275,7 @@ int main(int, char** argv)
     assets.shutdown();
     data.shutdown();
     window.shutdown();
+    config.setRenderFeature(originalFeature);
     config.shutdown();
     context() = {};
 }

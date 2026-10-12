@@ -43,7 +43,8 @@ RendererConfig sampleRendererConfig()
             .shadow = {.enable = false, .cascade = {.count = 3, .shadowMapSize = 1024,
                 .maxDistance = 40.0f, .splitLambda = 0.75f, .depthPadding = 5.0f}, .pointShadowMapSize = 2048, .bias = 0.0025f,
                 .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.03f},
-            .toneMapping = {.exposure = 1.5f, .mode = ToneMappingOperator::Reinhard}},
+            .toneMapping = {.exposure = 1.5f, .mode = ToneMappingOperator::Reinhard},
+            .rayTracing = {.maxRecursionDepth = 3}},
         .environmentMap = EnvironmentMapAsset::ID{"grasslands"},
     };
 }
@@ -96,6 +97,7 @@ TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
     EXPECT_FLOAT_EQ(serialized.at("feature").at("shadow").at("sampleRadius").get<float>(), 0.03f);
     EXPECT_FLOAT_EQ(serialized.at("feature").at("toneMapping").at("exposure").get<float>(), 1.5f);
     EXPECT_EQ(serialized.at("feature").at("toneMapping").at("mode"), "Reinhard");
+    EXPECT_EQ(serialized.at("feature").at("rayTracing").at("maxRecursionDepth"), 3);
 
     RendererConfig restored;
     Deserialize(serialized, restored);
@@ -137,6 +139,10 @@ TEST(ConfigSerialization, MissingFieldsFailInsteadOfUsingDefaults)
     serialized = Serialize(sampleRendererConfig());
     serialized.at("feature").erase("toneMapping");
     EXPECT_DEATH(Deserialize(serialized, restoredRenderer), "");
+
+    serialized = Serialize(sampleRendererConfig());
+    serialized.at("feature").at("rayTracing").erase("maxRecursionDepth");
+    EXPECT_DEATH(Deserialize(serialized, restoredRenderer), "");
 }
 
 TEST(ConfigSerialization, RejectsInvalidPathType)
@@ -157,7 +163,7 @@ TEST(ConfigSerialization, ConfigManagerResolvesPathsAndLoadsCommands)
     const auto source = std::filesystem::path{RENDERLAB_SOURCE_DIR};
     EXPECT_EQ(std::filesystem::weakly_canonical(manager.paths().assets), source / "test");
     EXPECT_EQ(manager.paths().commands, source / "config" / "commands.json");
-    EXPECT_EQ(manager.paths().editor, source / "config" / "editor.json");
+    EXPECT_EQ(manager.paths().editor, source / "test" / "editor.json");
     EXPECT_EQ(manager.paths().renderer, source / "test" / "renderer.json");
     EXPECT_EQ(Serialize(manager.rendererConfig()),
         Serialize(asset_json::load<RendererConfig>(manager.paths().renderer)));
@@ -167,18 +173,25 @@ TEST(ConfigSerialization, ConfigManagerResolvesPathsAndLoadsCommands)
     manager.setEnvironmentMap(EnvironmentMapAsset::ID{"grasslands"});
     manager.setRenderFeature({.ibl = false, .ambientCoefficient = 0.3f,
         .shadow = {.enable = false, .pointShadowMapSize = 512, .bias = 0.005f,
-            .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.04f}});
+            .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.04f},
+        .rayTracing = {.maxRecursionDepth = 3}});
     EXPECT_FALSE(manager.rendererConfig().feature.ibl);
     EXPECT_FLOAT_EQ(manager.rendererConfig().feature.ambientCoefficient, 0.3f);
     EXPECT_FLOAT_EQ(manager.rendererConfig().feature.shadow.bias, 0.005f);
     EXPECT_EQ(manager.rendererConfig().feature.shadow.filter, SamplerAsset::Filter::Nearest);
     EXPECT_FALSE(manager.rendererConfig().feature.shadow.pixelRotation);
     EXPECT_FLOAT_EQ(manager.rendererConfig().feature.shadow.sampleRadius, 0.04f);
+    EXPECT_EQ(manager.rendererConfig().feature.rayTracing.maxRecursionDepth, 3);
     EXPECT_EQ(Serialize(asset_json::load<RendererConfig>(rendererFile)), Serialize(originalRenderer));
     const auto editor = asset_json::load<EditorConfig>(manager.paths().editor);
     EXPECT_EQ(manager.editorConfig().width, editor.width);
     EXPECT_EQ(manager.editorConfig().height, editor.height);
     EXPECT_EQ(manager.editorConfig().title, editor.title);
+    const auto editorFile = manager.paths().editor;
+    manager.setEditorSize(1600, 900);
+    EXPECT_EQ(manager.editorConfig().width, 1600);
+    EXPECT_EQ(manager.editorConfig().height, 900);
+    EXPECT_EQ(Serialize(asset_json::load<EditorConfig>(editorFile)), Serialize(editor));
     EXPECT_EQ(manager.initialScene(), SceneAsset::ID{"default"});
     manager.setInitialScene(SceneAsset::ID{"selected-scene"});
     EXPECT_EQ(manager.initialScene(), SceneAsset::ID{"selected-scene"});
@@ -194,14 +207,20 @@ TEST(ConfigSerialization, ConfigManagerResolvesPathsAndLoadsCommands)
     expectedConfig.initialScene = "selected-scene";
     EXPECT_EQ(Serialize(asset_json::load<AppConfig>(configFile)), Serialize(expectedConfig));
     EXPECT_EQ(Serialize(asset_json::load<RendererConfig>(rendererFile)), Serialize(expectedRenderer));
+    auto expectedEditor = editor;
+    expectedEditor.width = 1600;
+    expectedEditor.height = 900;
+    EXPECT_EQ(Serialize(asset_json::load<EditorConfig>(editorFile)), Serialize(expectedEditor));
 
     ConfigManager reloaded;
     reloaded.init();
     EXPECT_EQ(reloaded.initialScene(), expectedConfig.initialScene);
+    EXPECT_EQ(Serialize(reloaded.editorConfig()), Serialize(expectedEditor));
     reloaded.shutdown();
 
     asset_json::save(configFile, originalConfig);
     asset_json::save(rendererFile, originalRenderer);
+    asset_json::save(editorFile, editor);
 }
 
 TEST(ConfigSerialization, CommandsRoundTripEnumsAndCombinedModifiers)

@@ -61,6 +61,7 @@ void ConfigManager::shutdown() noexcept
     DCHECK(inited);
     asset_json::save(file, data);
     asset_json::save(resolvedPaths.renderer, renderer);
+    asset_json::save(resolvedPaths.editor, editor);
 
     data          = {};
     resolvedPaths = {};
@@ -79,6 +80,15 @@ const SceneAsset::ID& ConfigManager::initialScene() const noexcept { return data
 const RendererConfig& ConfigManager::rendererConfig() const noexcept { return renderer; }
 
 const EditorConfig& ConfigManager::editorConfig() const noexcept { return editor; }
+
+void ConfigManager::setEditorSize(int width, int height)
+{
+    DCHECK(inited);
+    CHECK(width > 0 && height > 0);
+
+    editor.width = width;
+    editor.height = height;
+}
 
 void ConfigManager::setInitialScene(SceneAsset::ID id)
 {
@@ -106,6 +116,7 @@ void ConfigManager::setRenderFeature(const RenderFeature& feature)
           feature.shadow.filter == SamplerAsset::Filter::Linear);
     validateToneMapping(feature.toneMapping);
     validateCascade(feature.shadow.cascade);
+    CHECK(feature.rayTracing.maxRecursionDepth >= kMinRayRecursionDepth);
 
     renderer.feature = feature;
 }
@@ -178,6 +189,7 @@ void ConfigManager::loadRenderer()
     renderer = asset_json::load<RendererConfig>(resolvedPaths.renderer);
     validateToneMapping(renderer.feature.toneMapping);
     validateCascade(renderer.feature.shadow.cascade);
+    CHECK(renderer.feature.rayTracing.maxRecursionDepth >= kMinRayRecursionDepth);
 
     CHECK(!renderer.environmentMap || !renderer.environmentMap->empty());
     CHECK(renderer.feature.shadow.pointShadowMapSize > 0);

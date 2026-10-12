@@ -110,6 +110,30 @@ void drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
     }
     ImGui::EndDisabled();
 
+    if (config.rendererConfig().renderPath == RenderPath::RayTracing)
+    {
+        ImGui::SeparatorText("Ray tracing");
+        const auto properties = vulkan.physicalDeviceHandle().getProperties2<
+            vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
+        const auto maxDepth = properties.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>().maxRayRecursionDepth;
+        int recursionDepth = static_cast<int>(feature.rayTracing.maxRecursionDepth);
+        if (ImGui::SliderInt(
+                "Max recursion depth",
+                &recursionDepth,
+                static_cast<int>(kMinRayRecursionDepth),
+                static_cast<int>(maxDepth),
+                "%d",
+                ImGuiSliderFlags_AlwaysClamp
+            ))
+        {
+            feature.rayTracing.maxRecursionDepth = static_cast<uint32_t>(recursionDepth);
+            config.setRenderFeature(feature);
+        }
+        ImGui::SetItemTooltip("Includes the primary ray and one level reserved for visibility queries.\n"
+                              "Depth 2: direct lighting only; depth 4: up to two diffuse bounces.");
+        return;
+    }
+
     ImGui::SeparatorText("Shadows");
     if (ImGui::Checkbox("Enable shadows", &feature.shadow.enable))
     {

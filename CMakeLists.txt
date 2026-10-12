@@ -137,8 +137,9 @@ foreach(type IN ITEMS 0 1 2)
         INCLUDES ${SCENE_SHADER_INCLUDES})
 endforeach()
 renderlab_shader(raytracing raytracing/raytracing.slang raytracing
-    ENTRIES raygenMain missMain visibilityMissMain closestHitMain
-    INCLUDES "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang")
+    ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
+    INCLUDES "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
+        "${SHADER_SOURCE_DIR}/random.slang")
 renderlab_shader_manifests()
 
 add_library(RenderLabRuntime STATIC

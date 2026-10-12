@@ -5,10 +5,12 @@
 // ImGuizmo requires ImGui types to be declared before its header.
 #include <ImGuizmo.h>
 #include <algorithm>
+#include <cmath>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui_internal.h>
 #include <imgui_stdlib.h>
+#include <utility>
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/InputManager.h"
@@ -20,6 +22,9 @@
 
 namespace
 {
+constexpr float kEditorWidthRatio = 0.24f;
+constexpr float kHierarchyWidthRatio = 0.23f;
+
 void applyModelMatrix(TransformComponent& transform, const glm::mat4& model)
 {
     transform.position = glm::vec3{model[3]};
@@ -63,6 +68,36 @@ void EditorUI::beginFrame(float deltaTime)
     }
 
     const ImGuiViewport*     viewport = ImGui::GetMainViewport();
+    const ImGuiIO& io = ImGui::GetIO();
+    const glm::vec2 framebufferScale{io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y};
+    DCHECK(framebufferScale.x > 0.0f && framebufferScale.y > 0.0f);
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float separator = style.DockingSeparatorSize;
+    const auto fitPanelWidths = [&](float hierarchyWidth, float editorWidth)
+    {
+        const float availableWidth = std::max(viewport->WorkSize.x - 2.0f * separator, 1.0f);
+        const float minimumWidth = std::min(style.WindowMinSize.x, availableWidth / 3.0f);
+        const float squareWidth = std::min(
+            std::floor(viewport->WorkSize.y * framebufferScale.y / framebufferScale.x),
+            availableWidth - 2.0f * minimumWidth
+        );
+        const float panelWidth = availableWidth - squareWidth;
+        const float adjustment = (panelWidth - hierarchyWidth - editorWidth) * 0.5f;
+        hierarchyWidth = std::floor(std::clamp(hierarchyWidth + adjustment, minimumWidth, panelWidth - minimumWidth));
+        return std::pair{hierarchyWidth, panelWidth - hierarchyWidth};
+    };
+
+    // Apply explicit panel widths before DockSpace performs its layout, so the center uses the square remainder.
+    if (dockLayoutInitialized)
+    {
+        const auto* hierarchyNode = ImGui::DockBuilderGetNode(hierarchyDockId);
+        const auto* editorNode = ImGui::DockBuilderGetNode(editorDockId);
+        DCHECK(hierarchyNode && editorNode);
+        const auto [hierarchyWidth, editorWidth] = fitPanelWidths(hierarchyNode->SizeRef.x, editorNode->SizeRef.x);
+        ImGui::DockBuilderSetNodeSize(hierarchyDockId, {hierarchyWidth, viewport->WorkSize.y});
+        ImGui::DockBuilderSetNodeSize(editorDockId, {editorWidth, viewport->WorkSize.y});
+    }
+
     const ImGuiDockNodeFlags dockFlags =
         ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_NoDockingOverCentralNode;
     const ImGuiID dockspaceId = ImGui::DockSpaceOverViewport(0, viewport, dockFlags);
@@ -76,10 +111,23 @@ void EditorUI::beginFrame(float deltaTime)
         );
         ImGui::DockBuilderSetNodeSize(dockspaceId, viewport->WorkSize);
 
+        const float defaultEditorWidth = viewport->WorkSize.x * kEditorWidthRatio;
+        const auto [hierarchyWidth, editorWidth] = fitPanelWidths(
+            (viewport->WorkSize.x - defaultEditorWidth - separator) * kHierarchyWidthRatio,
+            defaultEditorWidth
+        );
         ImGuiID centerDockId = dockspaceId;
-        editorDockId         = ImGui::DockBuilderSplitNode(centerDockId, ImGuiDir_Right, 0.24f, nullptr, &centerDockId);
+        editorDockId = ImGui::DockBuilderSplitNode(
+            centerDockId, ImGuiDir_Right, editorWidth / (viewport->WorkSize.x - separator), nullptr, &centerDockId
+        );
+        ImGui::DockBuilderSetNodeSize(editorDockId, {editorWidth, viewport->WorkSize.y});
         ImGui::DockBuilderDockWindow("Editor", editorDockId);
-        hierarchyDockId = ImGui::DockBuilderSplitNode(centerDockId, ImGuiDir_Left, 0.23f, nullptr, &centerDockId);
+        const float centerWidth = viewport->WorkSize.x - editorWidth - separator;
+        ImGui::DockBuilderSetNodeSize(centerDockId, {centerWidth, viewport->WorkSize.y});
+        hierarchyDockId = ImGui::DockBuilderSplitNode(
+            centerDockId, ImGuiDir_Left, hierarchyWidth / (centerWidth - separator), nullptr, &centerDockId
+        );
+        ImGui::DockBuilderSetNodeSize(hierarchyDockId, {hierarchyWidth, viewport->WorkSize.y});
         ImGui::DockBuilderDockWindow("Scene Objects", hierarchyDockId);
         ImGui::DockBuilderFinish(dockspaceId);
         dockLayoutInitialized = true;
@@ -87,18 +135,42 @@ void EditorUI::beginFrame(float deltaTime)
 
     if (const ImGuiDockNode* centralNode = ImGui::DockBuilderGetCentralNode(dockspaceId))
     {
-        scenePosition = {centralNode->Pos.x, centralNode->Pos.y};
-        sceneSize     = {
-            std::max(centralNode->Size.x, 1.0f),
-            std::max(centralNode->Size.y, 1.0f),
+        const glm::vec2 availablePixels{
+            std::max(centralNode->Size.x, 1.0f) * framebufferScale.x,
+            std::max(centralNode->Size.y, 1.0f) * framebufferScale.y,
         };
-        const ImGuiIO& io = ImGui::GetIO();
-        scenePixels       = {
-                  .x      = (centralNode->Pos.x - viewport->Pos.x) * io.DisplayFramebufferScale.x,
-                  .y      = (centralNode->Pos.y - viewport->Pos.y) * io.DisplayFramebufferScale.y,
-                  .width  = centralNode->Size.x * io.DisplayFramebufferScale.x,
-                  .height = centralNode->Size.y * io.DisplayFramebufferScale.y,
+        const float side = std::max(1.0f, std::floor(std::min(availablePixels.x, availablePixels.y)));
+        // Fit and center a pixel-aligned square; all render paths consume this same viewport.
+        scenePixels = {
+            .x = std::floor((centralNode->Pos.x - viewport->Pos.x) * framebufferScale.x +
+                            (availablePixels.x - side) * 0.5f),
+            .y = std::floor((centralNode->Pos.y - viewport->Pos.y) * framebufferScale.y +
+                            (availablePixels.y - side) * 0.5f),
+            .width = side,
+            .height = side,
         };
+
+        // ImGui, picking and ImGuizmo use screen coordinates, including framebuffer scaling.
+        scenePosition = {
+            viewport->Pos.x + scenePixels.x / framebufferScale.x,
+            viewport->Pos.y + scenePixels.y / framebufferScale.y,
+        };
+        sceneSize = {side / framebufferScale.x, side / framebufferScale.y};
+    }
+
+    // Focus follows mouse clicks, not hover, so moving into a panel does not hide the gizmo.
+    for (int button = 0; button < ImGuiMouseButton_COUNT; ++button)
+    {
+        if (!ImGui::IsMouseClicked(button))
+            continue;
+
+        sceneFocused = ImGui::IsMouseHoveringRect(
+            {scenePosition.x, scenePosition.y},
+            {scenePosition.x + sceneSize.x, scenePosition.y + sceneSize.y},
+            false
+        ) && !io.WantCaptureMouse &&
+            !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+        break;
     }
 }
 bool EditorUI::drawGizmo(
@@ -127,7 +199,8 @@ bool EditorUI::drawGizmo(
 
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::AllowAxisFlip(false);
-    ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    ImGuizmo::SetDrawlist(drawList);
     ImGuizmo::SetRect(scenePosition.x, scenePosition.y, sceneSize.x, sceneSize.y);
 
     glm::mat4                     model        = transform.matrix();
@@ -137,6 +210,11 @@ bool EditorUI::drawGizmo(
         ImGuizmo::SCALE,
     };
     const ImGuizmo::OPERATION operation = operations[std::clamp(gizmoOperation, 0, 2)];
+    drawList->PushClipRect(
+        {scenePosition.x, scenePosition.y},
+        {scenePosition.x + sceneSize.x, scenePosition.y + sceneSize.y},
+        true
+    );
     ImGuizmo::Manipulate(
         glm::value_ptr(view),
         glm::value_ptr(projection),
@@ -144,6 +222,7 @@ bool EditorUI::drawGizmo(
         ImGuizmo::LOCAL,
         glm::value_ptr(model)
     );
+    drawList->PopClipRect();
 
     if (ImGuizmo::IsUsing())
     {
@@ -231,12 +310,13 @@ bool EditorUI::saveRequested() const
     return context().inputManager->get(Command::SaveScene);
 }
 
-float EditorUI::sceneAspectRatio() const { return sceneSize.x / std::max(sceneSize.y, 1.0f); }
+float EditorUI::sceneAspectRatio() const { return scenePixels.width / scenePixels.height; }
 
 
 void EditorUI::resetLayout()
 {
     dockLayoutInitialized = false;
+    sceneFocused          = false;
     editorDockId          = 0;
     hierarchyDockId       = 0;
     hierarchy.reset();

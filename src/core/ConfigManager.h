@@ -50,6 +50,7 @@ public:
     [[nodiscard]] const SceneAsset::ID& initialScene() const noexcept;
     [[nodiscard]] const RendererConfig& rendererConfig() const noexcept;
     [[nodiscard]] const EditorConfig&   editorConfig() const noexcept;
+    void                                setEditorSize(int width, int height);
     void                                setInitialScene(SceneAsset::ID id);
     void                                setRenderPath(RenderPath path);
     void                                setRenderFeature(const RenderFeature& feature);
