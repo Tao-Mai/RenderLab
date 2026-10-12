@@ -100,7 +100,9 @@ struct alignas(16) LightUniforms
 // flags = {light type, enabled, castShadow, reserved}.
 struct alignas(16) LightData
 {
-    glm::vec4  colorIntensity{1.0f, 1.0f, 1.0f, 0.0f};
+    bool operator==(const LightData&) const = default;
+    // RGB: unit-luminance linear tint; W: Point/Spot cd, Directional lux, RectArea cd/m^2.
+    glm::vec4  colorEmission{1.0f, 1.0f, 1.0f, 0.0f};
     glm::vec4  positionRange{0.0f, 0.0f, 0.0f, 1.0f};
     glm::vec4  direction{0.0f, -1.0f, 0.0f, 0.0f};
     glm::vec4  areaSizeCone{1.0f, 1.0f, 0.9396926f, 0.8660254f};
@@ -250,7 +252,7 @@ struct DeferredLightingPushConstants
 
 struct ToneMappingPushConstants
 {
-    float exposure = 0.0f;
+    float exposureScale = 1.0f;
     uint32_t mode = 0;
     uint32_t encodeSrgb = 0;
     uint32_t padding = 0;

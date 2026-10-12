@@ -18,6 +18,7 @@
 #include "scene/system/RenderSystem.h"
 
 #include <cmath>
+#include <numbers>
 
 #include <GLFW/glfw3.h>
 #include <glm/gtc/packing.hpp>
@@ -218,7 +219,7 @@ int main(int, char** argv)
     scene.actors.push_back(std::move(cube));
     auto light                                        = std::make_unique<ALight>();
     light->transform().position                       = {2, 0, 3};
-    light->getComponent<LightComponent>()->intensity  = 30;
+    light->getComponent<LightComponent>()->intensity  = 30.0f * 4.0f * std::numbers::pi_v<float>;
     light->getComponent<LightComponent>()->castShadow = true;
     scene.actors.push_back(std::move(light));
     scenes.load(scene);

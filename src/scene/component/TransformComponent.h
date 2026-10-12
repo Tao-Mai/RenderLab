@@ -10,6 +10,7 @@ struct TransformComponent : Component
 {
     void tick(float) override {}
 
+    // World-space distances are in meters (1 unit = 1 m).
     [[=ReflectField{}]] glm::vec3 position{0.0f};
     [[=ReflectField{}]] glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     [[=ReflectField{}]] glm::vec3 scale{1.0f};

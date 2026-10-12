@@ -65,7 +65,7 @@ void drawSourcePath(std::filesystem::path& source, const wchar_t* filter)
         extension.begin(),
         [](unsigned char character) { return static_cast<char>(std::tolower(character)); }
     );
-    if (assetType == 2)
+    if (assetType == 2 || assetType == 3)
     {
         return extension == ".gltf" || extension == ".glb";
     }
@@ -99,7 +99,7 @@ void AssetImportPanel::draw()
     if (auto status = environmentImport.poll())
         importStatus = std::move(*status);
     ImGui::SeparatorText("Assets");
-    constexpr const char* assetTypes[] = {"Texture", "Environment map", "Mesh"};
+    constexpr const char* assetTypes[] = {"Texture", "Environment map", "Mesh", "Scene"};
     ImGui::BeginDisabled(environmentImport.busy());
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::Combo("##Import asset type", &importAssetType, assetTypes, static_cast<int>(std::size(assetTypes)));
@@ -108,6 +108,7 @@ void AssetImportPanel::draw()
         textureSetting     = {};
         environmentSetting = {};
         meshSetting        = {};
+        sceneSetting       = {};
         meshPreview.clear();
         ImGui::OpenPopup("Import Asset");
     }
@@ -185,6 +186,18 @@ void AssetImportPanel::drawDialog()
                 meshPreview.draw(meshSetting.importScale);
                 break;
             }
+        case 3:
+            {
+                source = &sceneSetting.source;
+                const auto previousSource = *source;
+                drawSourcePath(*source, meshFilter);
+                if (*source != previousSource)
+                    sceneSetting.id = source->stem().string();
+                ImGui::InputText("Scene ID", &sceneSetting.id.value);
+                ImGui::InputFloat("Import scale", &sceneSetting.importScale, 0.1f, 1.0f, "%.6g");
+                ImGui::TextUnformatted("Keep mesh instances; import or fit an editor camera.");
+                break;
+            }
         default:
             DCHECK(false, "invalid import asset type");
     }
@@ -203,6 +216,9 @@ void AssetImportPanel::drawDialog()
     const bool validSettings = importAssetType == 2
         ? meshPreview.ready() && asset_import::validId(meshSetting.id.value) &&
             std::isfinite(meshSetting.importScale) && meshSetting.importScale > 0.0f
+        : importAssetType == 3
+            ? asset_import::validId(sceneSetting.id.value) &&
+                std::isfinite(sceneSetting.importScale) && sceneSetting.importScale > 0.0f
         : importAssetType != 1 ||
             (environmentSetting.irradianceSize > 0 && environmentSetting.irradianceSampleCount > 0 &&
              environmentSetting.prefilteredSpecularSampleCount > 0 &&
@@ -214,7 +230,7 @@ void AssetImportPanel::drawDialog()
     else if (!validSettings || !validColorSpace)
     {
         ImGui::TextWrapped(
-            "Check import settings. Mesh ID must be a valid filename; import scale must be finite and positive; "
+            "Check import settings. Mesh/Scene ID must be a valid filename; import scale must be finite and positive; "
             "EXR and HDR require Linear; sizes and sample counts must be positive, and the prefilter limit must cover "
             "the first mip."
         );
@@ -236,6 +252,9 @@ void AssetImportPanel::drawDialog()
             case 2:
                 importedId = AssetImporter::saveMesh(std::move(meshPreview.prepared()), meshSetting).value;
                 meshPreview.clear();
+                break;
+            case 3:
+                importedId = AssetImporter::importScene(sceneSetting).value;
                 break;
             default:
                 DCHECK(false, "invalid import asset type");

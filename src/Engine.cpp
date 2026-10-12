@@ -87,7 +87,6 @@ void Engine::run()
     DCHECK(inited);
 
     sceneManager->loadDefaultScene();
-    renderer->rebuildGraph();
 
     mainLoop();
 }

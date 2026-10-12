@@ -12,6 +12,7 @@
 #include "scene/system/RenderSystem.h"
 
 #include <GLFW/glfw3.h>
+#include <numbers>
 
 int main(int argc, char** argv)
 {
@@ -52,7 +53,7 @@ int main(int argc, char** argv)
     scene.actors.push_back(std::move(object));
     auto light                                       = std::make_unique<ALight>();
     light->transform().position                      = {1, 2, 3};
-    light->getComponent<LightComponent>()->intensity = 100.0f;
+    light->getComponent<LightComponent>()->intensity = 100.0f * 4.0f * std::numbers::pi_v<float>;
     scene.actors.push_back(std::move(light));
     scenes.load(scene);
 

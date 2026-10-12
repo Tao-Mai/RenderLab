@@ -30,7 +30,7 @@ int main(int argc, char** argv)
         if (asset.source != Source::File)
             continue;
         CHECK(asset.path);
-        auto prepared = AssetImporter::prepareMesh(config.paths().assets / *asset.path);
+        auto prepared = AssetImporter::prepareMesh(config.paths().assets / *asset.path, asset.meshIndex);
         CHECK(prepared.submeshes.size() == asset.submeshes.size());
         for (size_t index = 0; index < asset.submeshes.size(); ++index)
         {

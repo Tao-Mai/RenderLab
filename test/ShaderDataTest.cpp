@@ -103,7 +103,7 @@ TEST(ShaderDataLayout, LightUniformsMatchCompiledShaders)
 TEST(ShaderDataLayout, LightStorageElementsMatchCompiledShaders)
 {
     const std::array expected = {
-        Field{"colorIntensity", offsetof(LightData, colorIntensity), sizeof(glm::vec4)},
+        Field{"colorEmission", offsetof(LightData, colorEmission), sizeof(glm::vec4)},
         Field{"positionRange", offsetof(LightData, positionRange), sizeof(glm::vec4)},
         Field{"direction", offsetof(LightData, direction), sizeof(glm::vec4)},
         Field{"areaSizeCone", offsetof(LightData, areaSizeCone), sizeof(glm::vec4)},
@@ -280,7 +280,7 @@ TEST(ShaderDataLayout, ClearcoatBindingsMatchCompiledShaders)
 TEST(ShaderDataLayout, ToneMappingMatchesCompiledShader)
 {
     const std::array expected = {
-        Field{"exposure", offsetof(ToneMappingPushConstants, exposure), sizeof(float)},
+        Field{"exposureScale", offsetof(ToneMappingPushConstants, exposureScale), sizeof(float)},
         Field{"mode", offsetof(ToneMappingPushConstants, mode), sizeof(uint32_t)},
         Field{"encodeSrgb", offsetof(ToneMappingPushConstants, encodeSrgb), sizeof(uint32_t)},
         Field{"padding", offsetof(ToneMappingPushConstants, padding), sizeof(uint32_t)},

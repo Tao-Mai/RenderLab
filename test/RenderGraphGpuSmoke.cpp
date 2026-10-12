@@ -283,10 +283,10 @@ int main(int argc, char** argv)
     assets.init(config.paths().assets);
     const auto environmentIds = assets.loadedIds<EnvironmentMapAsset>();
     CHECK(!environmentIds.empty());
-    config.setEnvironmentMap(environmentIds.front());
     window.init();
     glfwHideWindow(window.nativeHandle());
     Deserialize(Serialize(assets.get<SceneAsset>(config.initialScene())), scene);
+    scene.environmentMap = environmentIds.front();
     std::erase_if(
         scene.actors,
         [](const auto& actor) { return actor->template getComponent<RenderComponent>() != nullptr; }
@@ -401,7 +401,7 @@ int main(int argc, char** argv)
     renderFrames();
 
     // Disable IBL explicitly without discarding the selected environment map.
-    const auto          environmentMap  = config.rendererConfig().environmentMap;
+    const auto          environmentMap  = scene.environmentMap;
     const RenderFeature originalFeature = config.rendererConfig().feature;
     RenderFeature       feature         = originalFeature;
     feature.shadow.enable               = false;
@@ -434,10 +434,10 @@ int main(int argc, char** argv)
     renderFrames();
     feature.ibl = false;
     config.setRenderFeature(feature);
-    CHECK(config.rendererConfig().environmentMap == environmentMap);
+    CHECK(scene.environmentMap == environmentMap);
 
     // Missing environment maps retain valid fallback resources without disabling IBL.
-    config.setEnvironmentMap(std::nullopt);
+    scene.environmentMap.reset();
     feature.ibl = true;
     config.setRenderFeature(feature);
     sceneManager.load(scene);
@@ -544,7 +544,6 @@ int main(int argc, char** argv)
     renderer.shutdown();
     config.setRenderPath(originalRenderer.renderPath);
     config.setRenderFeature(originalRenderer.feature);
-    config.setEnvironmentMap(originalRenderer.environmentMap);
     sceneManager.shutdown();
     assets.shutdown();
     data.shutdown();

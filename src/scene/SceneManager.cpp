@@ -48,6 +48,7 @@ void SceneManager::load(const SceneAsset& scene)
     // The cache owns a snapshot; the live scene owns its actors and components.
     SceneAsset loaded;
     Deserialize(Serialize(scene), loaded);
+    CHECK(!loaded.environmentMap || !loaded.environmentMap->empty());
     for (const auto& actor : loaded.actors)
     {
         CHECK(actor);

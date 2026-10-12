@@ -1,6 +1,5 @@
 #pragma once
 
-#include "asset/EnvironmentMapAsset.h"
 #include "asset/SceneAsset.h"
 #include "core/Debug.h"
 #include "core/Input.h"
@@ -54,7 +53,6 @@ public:
     void                                setInitialScene(SceneAsset::ID id);
     void                                setRenderPath(RenderPath path);
     void                                setRenderFeature(const RenderFeature& feature);
-    void                                setEnvironmentMap(std::optional<EnvironmentMapAsset::ID> id);
 
 private:
     DEBUG_ONLY(bool inited = false;)

@@ -170,7 +170,6 @@ void SceneBindings::bindEnvironmentTextures()
 {
     TextureBinding irradianceBinding{BuiltinAssets::Texture::whiteCube, BuiltinAssets::Sampler::linearClamp};
     TextureBinding prefilteredBinding = irradianceBinding;
-    const auto&    environmentMap     = context().config->rendererConfig().environmentMap;
     if (environmentMap)
     {
         const auto& environment = context().assetManager->get<EnvironmentMapAsset>(*environmentMap);

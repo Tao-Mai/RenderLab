@@ -4,6 +4,7 @@
 
 
 static const uint kVertexStrideFloats = 12;
+static const uint kRussianRouletteStartDepth = 3;
 static const float kRayEpsilon = 0.001;
 static const uint kVisibilityMissIndex = 1;
 static const float kMaxRayDistance = 3.402823466e+38;
@@ -22,6 +23,7 @@ struct Payload
     uint depth;
     uint randomState;
     float brdfPdf;
+    float3 throughput;
 };
 
 struct VisibilityPayload
@@ -66,18 +68,6 @@ float balanceHeuristic(float samplePdf, float otherPdf)
     return samplePdf / (samplePdf + otherPdf);
 }
 
-bool isUnoccluded(RayDesc ray)
-{
-    VisibilityPayload payload = {0};
-    TraceRay(
-        scene,
-        RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES |
-            RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
-        kSceneMask | kLightMask, 0, 0, kVisibilityMissIndex, ray, payload
-    );
-    return payload.visible != 0;
-}
-
 struct Surface
 {
     float3 position;
@@ -85,21 +75,25 @@ struct Surface
     float3 viewDirection; // World-space direction toward the previous ray vertex (wo).
     float3 baseColor;
 
-    bool isVisible(float3 target)
+    bool isVisible(float3 direction, float distance)
     {
-        float3 origin = position + normal * kRayEpsilon;
-        float3 toTarget = target - origin;
-        float distance = length(toTarget);
         if (distance <= 2.0 * kRayEpsilon)
             return true;
 
         RayDesc ray;
-        ray.Origin = origin;
-        ray.Direction = toTarget / distance;
+        ray.Origin = position + normal * kRayEpsilon;
+        ray.Direction = direction;
         ray.TMin = kRayEpsilon;
         ray.TMax = distance - kRayEpsilon;
 
-        return isUnoccluded(ray);
+        VisibilityPayload payload = {0};
+        TraceRay(
+            scene,
+            RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES |
+                RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
+            kSceneMask | kLightMask, 0, 0, kVisibilityMissIndex, ray, payload
+        );
+        return payload.visible != 0;
     }
 
     float3 sampleDiffuseDirection(inout uint state)
@@ -115,8 +109,23 @@ struct Surface
         );
     }
 
-    float3 sampleDiffuseRadiance(uint depth, inout uint state)
+    float3 sampleDiffuseLuminance(uint depth, float3 throughput, inout uint state)
     {
+        // Cosine-weighted Lambert sampling has BRDF * cosine / PDF = baseColor.
+        float3 nextThroughput = throughput * baseColor;
+        float survivalProbability = 1.0;
+        if (depth >= kRussianRouletteStartDepth)
+        {
+            survivalProbability = saturate(max(nextThroughput.x, max(nextThroughput.y, nextThroughput.z)));
+            if (survivalProbability == 0.0)
+                return float3(0.0);
+
+            if (survivalProbability < 1.0 && randomFloat(state) >= survivalProbability)
+                return float3(0.0);
+
+            nextThroughput /= survivalProbability;
+        }
+
         RayDesc ray;
         ray.Origin = position + normal * kRayEpsilon;
         ray.Direction = sampleDiffuseDirection(state);
@@ -124,7 +133,7 @@ struct Surface
         ray.TMax = kMaxRayDistance;
 
         float brdfPdf = saturate(dot(normal, ray.Direction)) * INV_PI;
-        Payload bounce = {float3(0.0), depth + 1, state, brdfPdf};
+        Payload bounce = {float3(0.0), depth + 1, state, brdfPdf, nextThroughput};
         TraceRay(
             scene, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
             kSceneMask | kLightMask, 0, 0, 0, ray, bounce
@@ -133,12 +142,14 @@ struct Surface
 
         // The light hit shader applies MIS to emission; the surface hit shader returns unweighted indirect light.
         // Cosine-weighted Lambert sampling cancels BRDF * cos(theta) / PDF; shade applies baseColor once.
-        return bounce.color;
+        // Throughput guides later roulette decisions; recursive returns apply each factor exactly once.
+        return bounce.color / survivalProbability;
     }
 
-    float3 shade(uint lightCount, uint depth, inout uint state)
+    float3 shade(uint lightCount, uint depth, float3 throughput, inout uint state)
     {
-        float3 radiance = float3(0.0);
+        float3 luminance = float3(0.0);
+        float3 origin = position + normal * kRayEpsilon;
 
         for (uint index = 0; index < lightCount; ++index)
         {
@@ -154,16 +165,27 @@ struct Surface
 
                 float3 lightDirection = toLight * rsqrt(distanceSquared);
                 float nDotL = saturate(dot(normal, lightDirection));
-                if (nDotL == 0.0 || !isVisible(light.position))
+                float3 shadowOffset = light.position - origin;
+                float shadowDistance = length(shadowOffset);
+                if (nDotL == 0.0 || !isVisible(normalize(shadowOffset), shadowDistance))
                     continue;
 
-                float3 in_radiance = light.color * light.intensity / distanceSquared;
-                float3 irradiance = in_radiance * nDotL;
+                float3 incidentIlluminance = light.color * light.luminousIntensity / distanceSquared;
+                float3 illuminance = incidentIlluminance * nDotL;
                 float brdf = INV_PI;
-                radiance += irradiance * brdf;
+                luminance += illuminance * brdf;
+            } else if (light.type == LightType::Directional) {
+                // Stored direction is light propagation; visibility points toward the source at infinity.
+                float3 lightDirection = -normalize(light.direction.xyz);
+                float nDotL = saturate(dot(normal, lightDirection));
+                if (nDotL == 0.0 || !isVisible(lightDirection, kMaxRayDistance))
+                    continue;
+
+                // A delta light has no competing diffuse-sampling path or distance attenuation.
+                float3 incidentIlluminance = light.color * light.illuminance;
+                luminance += incidentIlluminance * nDotL * INV_PI;
             } else if (light.type == LightType::RectArea) {
                 RectAreaLight emitter = {light};
-                float3 origin = position + normal * kRayEpsilon;
                 float3 sampleLightPosition = emitter.samplePosition(state);
                 float3 toLight = sampleLightPosition - origin;
                 float distanceSquared = dot(toLight, toLight);
@@ -173,20 +195,20 @@ struct Surface
                 float3 lightDirection = toLight * rsqrt(distanceSquared);
                 float nDotL = saturate(dot(normal, lightDirection));
                 float lightPdf = emitter.pdf(origin, sampleLightPosition);
-                if (nDotL == 0.0 || lightPdf == 0.0 || !isVisible(sampleLightPosition))
+                if (nDotL == 0.0 || lightPdf == 0.0 || !isVisible(lightDirection, sqrt(distanceSquared)))
                     continue;
 
                 // Every enabled light receives one NEE sample, so no light-selection probability is needed.
                 float brdfPdf = nDotL * INV_PI;
                 float weight = balanceHeuristic(lightPdf, brdfPdf);
-                radiance += light.color * light.radiance * nDotL * INV_PI * weight / lightPdf;
+                luminance += light.color * light.luminance * nDotL * INV_PI * weight / lightPdf;
             }
             
         }
 
-        radiance += sampleDiffuseRadiance(depth, state);
+        luminance += sampleDiffuseLuminance(depth, throughput, state);
 
-        return baseColor * radiance;
+        return baseColor * luminance;
     }
 };
 
@@ -277,7 +299,7 @@ struct RayTracingParameters
 void raygenMain()
 {
     uint2 pixel = DispatchRaysIndex().xy;
-    Payload payload = {float3(0.0), 1, pixel.x + pixel.y * DispatchRaysDimensions().x, 0};
+    Payload payload = {float3(0.0), 1, pixel.x + pixel.y * DispatchRaysDimensions().x, 0, float3(1.0)};
     if (parameters.containsPixel(pixel))
     {
         RayDesc ray = parameters.createRay(pixel);
@@ -310,7 +332,7 @@ void closestHitMain(inout Payload payload, BuiltInTriangleIntersectionAttributes
 
     HitData hit = objects[InstanceID()];
     Surface surface = hit.surfaceAt(PrimitiveIndex(), attributes.barycentrics);
-    payload.color = surface.shade(parameters.lightCount, payload.depth, payload.randomState);
+    payload.color = surface.shade(parameters.lightCount, payload.depth, payload.throughput, payload.randomState);
 }
 
 [shader("closesthit")]
@@ -322,5 +344,5 @@ void lightClosestHitMain(inout Payload payload, BuiltInTriangleIntersectionAttri
     float3 target = origin + WorldRayDirection() * RayTCurrent();
     float lightPdf = emitter.pdf(origin, target);
     float weight = balanceHeuristic(payload.brdfPdf, lightPdf);
-    payload.color = emitter.data.color * emitter.data.radiance * weight;
+    payload.color = emitter.data.color * emitter.data.luminance * weight;
 }

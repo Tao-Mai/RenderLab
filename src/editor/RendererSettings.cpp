@@ -4,14 +4,17 @@
 #include <imgui.h>
 #include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
+#include "core/Context.h"
+#include "render/Renderer.h"
 #include "render/device/VulkanContext.h"
 #include "render/resource/ShaderData.h"
 namespace
 {
-void drawEnvironmentSelection(ConfigManager& config, AssetManager& assets)
+bool drawEnvironmentSelection(SceneAsset& scene, AssetManager& assets)
 {
     ImGui::SeparatorText("Environment");
-    const auto& current = config.rendererConfig().environmentMap;
+    auto& current = scene.environmentMap;
+    bool edited = false;
     const char* preview = current ? current->value.c_str() : "Select environment map...";
 
     if (ImGui::BeginCombo("Environment map", preview))
@@ -23,23 +26,27 @@ void drawEnvironmentSelection(ConfigManager& config, AssetManager& assets)
             const bool selected = current && *current == id;
             if (ImGui::Selectable(id.value.c_str(), selected) && !selected)
             {
-                config.setEnvironmentMap(id);
+                current = id;
+                edited = true;
             }
         }
         ImGui::EndCombo();
     }
     if (!current)
         ImGui::TextUnformatted("Using fallback environment lighting");
+    return edited;
 }
 }  // namespace
-void drawRendererSettings(ConfigManager& config, AssetManager& assets, const VulkanContext& vulkan, float cameraNear)
+bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const VulkanContext& vulkan, SceneAsset& scene)
 {
+    bool sceneEdited = false;
     ImGui::SeparatorText("Renderer");
     const RenderPath     path = config.rendererConfig().renderPath;
     constexpr std::array kRenderPaths{
         std::pair{RenderPath::Rasterization, "Forward"},
         std::pair{RenderPath::Deferred, "Deferred"},
-        std::pair{RenderPath::RayTracing, "Ray tracing"},
+        std::pair{RenderPath::RayTracing, "Real-time ray tracing"},
+        std::pair{RenderPath::OfflinePathTracing, "Offline path tracing"},
     };
     const auto selected =
         std::ranges::find_if(kRenderPaths, [path](const auto& option) { return option.first == path; });
@@ -49,7 +56,7 @@ void drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
         const bool supported = vulkan.supportsRayTracing();
         for (const auto& [candidate, label] : kRenderPaths)
         {
-            ImGui::BeginDisabled(candidate == RenderPath::RayTracing && !supported);
+            ImGui::BeginDisabled((candidate == RenderPath::RayTracing || candidate == RenderPath::OfflinePathTracing) && !supported);
             if (ImGui::Selectable(label, path == candidate) && path != candidate)
             {
                 config.setRenderPath(candidate);
@@ -69,7 +76,7 @@ void drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
     }
     if (feature.ibl)
     {
-        drawEnvironmentSelection(config, assets);
+        sceneEdited = drawEnvironmentSelection(scene, assets);
     }
     else if (ImGui::DragFloat(
                  "Ambient coefficient",
@@ -97,8 +104,21 @@ void drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
         config.setRenderFeature(feature);
     }
     if (ImGui::DragFloat(
-            "Exposure (stops)",
-            &feature.toneMapping.exposure,
+            "EV100",
+            &feature.toneMapping.ev100,
+            0.05f,
+            -10.0f,
+            30.0f,
+            "%.2f",
+            ImGuiSliderFlags_AlwaysClamp
+        ))
+    {
+        config.setRenderFeature(feature);
+    }
+    ImGui::SetItemTooltip("Higher EV100 darkens the image; +1 halves linear brightness.");
+    if (ImGui::DragFloat(
+            "Exposure compensation (stops)",
+            &feature.toneMapping.exposureCompensation,
             0.05f,
             -10.0f,
             10.0f,
@@ -109,6 +129,24 @@ void drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
         config.setRenderFeature(feature);
     }
     ImGui::EndDisabled();
+
+    if (config.rendererConfig().renderPath == RenderPath::OfflinePathTracing)
+    {
+        ImGui::SeparatorText("Offline path tracing");
+        ImGui::Text("Samples per pixel: %u", context().renderer->offlineSampleCount());
+        const auto properties = vulkan.physicalDeviceHandle().getProperties2<
+            vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
+        const int maxDepth = static_cast<int>(properties.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>().maxRayRecursionDepth);
+        int depth = static_cast<int>(feature.offline.maxRecursionDepth);
+        if (ImGui::SliderInt("Max recursion depth", &depth, static_cast<int>(kMinRayRecursionDepth), maxDepth,
+                             "%d", ImGuiSliderFlags_AlwaysClamp))
+        {
+            feature.offline.maxRecursionDepth = static_cast<uint32_t>(depth);
+            config.setRenderFeature(feature);
+        }
+        ImGui::TextUnformatted("1 sample/pixel per frame; scene/camera changes reset accumulation.");
+        return sceneEdited;
+    }
 
     if (config.rendererConfig().renderPath == RenderPath::RayTracing)
     {
@@ -131,7 +169,7 @@ void drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
         }
         ImGui::SetItemTooltip("Includes the primary ray and one level reserved for visibility queries.\n"
                               "Depth 2: direct lighting only; depth 4: up to two diffuse bounces.");
-        return;
+        return sceneEdited;
     }
 
     ImGui::SeparatorText("Shadows");
@@ -181,7 +219,7 @@ void drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
         feature.shadow.cascade.count = static_cast<uint32_t>(cascadeCount);
         config.setRenderFeature(feature);
     }
-    const float minimumShadowDistance = cameraNear * 1.01f;
+    const float minimumShadowDistance = scene.editorCamera.nearPlane * 1.01f;
     if (ImGui::DragFloat(
             "Directional shadow distance",
             &feature.shadow.cascade.maxDistance,
@@ -233,4 +271,5 @@ void drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
         config.setRenderFeature(feature);
     }
     ImGui::EndDisabled();
+    return sceneEdited;
 }

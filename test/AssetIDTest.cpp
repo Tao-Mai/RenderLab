@@ -102,6 +102,7 @@ TEST(AssetIDTest, RoundTripsNestedMeshSubmesh)
     const json serialized = Serialize(mesh);
     EXPECT_EQ(serialized.at("id").at("value"), "sphere");
     EXPECT_EQ(serialized.at("importScale"), 2.0f);
+    EXPECT_TRUE(serialized.at("meshIndex").is_null());
     EXPECT_TRUE(serialized.at("path").is_null());
     EXPECT_EQ(serialized.at("submeshes")[0].at("materialId").at("value"), "white");
 

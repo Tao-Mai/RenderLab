@@ -20,9 +20,8 @@ void validateCascade(const RenderFeature::Shadow::Cascade& cascade)
 
 void validateToneMapping(const RenderFeature::ToneMapping& toneMapping)
 {
-    CHECK(std::isfinite(toneMapping.exposure) &&
-          std::isfinite(std::exp2(toneMapping.exposure)) &&
-          std::exp2(toneMapping.exposure) > 0.0f);
+    CHECK(std::isfinite(toneMapping.ev100) && std::isfinite(toneMapping.exposureCompensation));
+    CHECK(std::isfinite(toneMapping.exposureScale()) && toneMapping.exposureScale() > 0.0f);
     CHECK(toneMapping.mode == ToneMappingOperator::Neutral ||
           toneMapping.mode == ToneMappingOperator::Reinhard);
 }
@@ -117,16 +116,9 @@ void ConfigManager::setRenderFeature(const RenderFeature& feature)
     validateToneMapping(feature.toneMapping);
     validateCascade(feature.shadow.cascade);
     CHECK(feature.rayTracing.maxRecursionDepth >= kMinRayRecursionDepth);
+    CHECK(feature.offline.maxRecursionDepth >= kMinRayRecursionDepth);
 
     renderer.feature = feature;
-}
-
-void ConfigManager::setEnvironmentMap(std::optional<EnvironmentMapAsset::ID> id)
-{
-    DCHECK(inited);
-    CHECK(!id || !id->empty());
-
-    renderer.environmentMap = std::move(id);
 }
 
 void ConfigManager::load()
@@ -190,8 +182,8 @@ void ConfigManager::loadRenderer()
     validateToneMapping(renderer.feature.toneMapping);
     validateCascade(renderer.feature.shadow.cascade);
     CHECK(renderer.feature.rayTracing.maxRecursionDepth >= kMinRayRecursionDepth);
+    CHECK(renderer.feature.offline.maxRecursionDepth >= kMinRayRecursionDepth);
 
-    CHECK(!renderer.environmentMap || !renderer.environmentMap->empty());
     CHECK(renderer.feature.shadow.pointShadowMapSize > 0);
     CHECK(renderer.feature.shadow.rectAreaShadowMapSize > 0);
     CHECK(std::isfinite(renderer.feature.shadow.bias) && renderer.feature.shadow.bias >= 0.0f);

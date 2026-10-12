@@ -191,7 +191,8 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
         if (!light.enabled) continue;
 
         float3 lightDirection;
-        float3 incidentRadiance;
+        // Incident illuminance on a plane perpendicular to lightDirection (lux), before NdotL.
+        float3 incidentIlluminance;
         float visibility = 1.0;
 
         if (light.type == LightType.Point)
@@ -201,7 +202,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
                 continue;
 
             lightDirection = (light.position - surface.worldPosition) / distanceToLight;
-            incidentRadiance = light.color * light.intensity / (distanceToLight * distanceToLight);
+            incidentIlluminance = light.color * light.luminousIntensity / (distanceToLight * distanceToLight);
             if (light.castShadow)
             {
                 float depth = distanceToLight / light.range;
@@ -211,7 +212,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
         else if (light.type == LightType.Directional)
         {
             lightDirection = -light.direction.xyz;
-            incidentRadiance = light.color * light.intensity;
+            incidentIlluminance = light.color * light.illuminance;
             if (light.castShadow)
                 visibility = directionalShadowVisibility(light, surface.worldPosition);
         }
@@ -226,7 +227,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
             float projectedArea = light.areaSize.x * light.areaSize.y
                 * saturate(dot(-lightDirection, light.direction.xyz));
             float solidAngle = projectedArea / (distanceToLight * distanceToLight);
-            incidentRadiance = light.color * light.radiance * solidAngle;
+            incidentIlluminance = light.color * light.luminance * solidAngle;
             if (light.castShadow)
                 visibility = rectAreaShadowPCSS(light, surface.worldPosition, pixel);
         }
@@ -245,7 +246,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
             * clearcoatNdotL;
         response = lerp(response, float3(clearcoatResponse), clearcoatWeight);
 #endif
-        direct += incidentRadiance * response * visibility;
+        direct += incidentIlluminance * response * visibility;
     }
 
     float3 ambient = float3(0.0);

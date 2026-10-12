@@ -1,5 +1,5 @@
 #include "editor/EditorCamera.h"
-// Manual GPU check: finite visibility, diffuse bounces, and triangle light emission.
+// Manual GPU check: finite/directional visibility, diffuse bounces, and triangle light emission.
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
@@ -17,6 +17,7 @@
 
 #include <GLFW/glfw3.h>
 #include <cmath>
+#include <numbers>
 #include <glm/gtc/packing.hpp>
 
 namespace
@@ -115,7 +116,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     };
 
     const auto clear = sample();
-    CHECK(clear > 1.0f, "HDR surface radiance is unexpectedly clipped or dark: {}", clear);
+    CHECK(clear > 1.0f, "HDR surface luminance is unexpectedly clipped or dark: {}", clear);
 
     auto& blocker                = scenes.createActor("AStaticMesh");
     blocker.transform().position = {1, 0, 2};
@@ -127,6 +128,38 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     const auto beyondLight       = sample();
     CHECK(beyondLight == clear, "geometry behind the light changed visibility: {} vs {}", beyondLight, clear);
     LOG_INFO("Ray tracing visibility passed: clear {}, blocked {}, beyond light {}", clear, blocked, beyondLight);
+
+    auto& sun     = *scenes.scene().actors[1];
+    auto& sunData = *sun.getComponent<LightComponent>();
+    const float pointFlux = sunData.intensity;
+    sunData.type = LightComponent::Type::Directional;
+    sunData.intensity = 100;
+    sun.transform().setRotationEulerDegrees({0, 45, 0});
+    blocker.transform().position = {4, 3, 5};
+    const auto directionalClear = sample();
+    CHECK(std::isfinite(directionalClear) && directionalClear > 0);
+    blocker.transform().position = {1, 0, 2};
+    CHECK(sample() == 0);
+    blocker.transform().position = {20, 0, 21};
+    CHECK(sample() == 0);
+    blocker.transform().position = {4, 3, 5};
+    sun.transform().position = {200, 0, 300};
+    CHECK(sample() == directionalClear);
+    sunData.enabled = false;
+    CHECK(sample() == 0);
+    sunData.enabled = true;
+    sun.transform().setRotationEulerDegrees({0, 225, 0});
+    CHECK(sample() == 0);
+    LOG_INFO(
+        "Directional light passed: luminance {}, near/far blockers, position independence and direction",
+        directionalClear
+    );
+
+    sunData.type = LightComponent::Type::Point;
+    sunData.intensity = pointFlux;
+    sun.transform().setRotationEulerDegrees({0, 0, 0});
+    sun.transform().position = {2, 0, 3};
+    blocker.transform().position = {4, 0, 5};
 
     // Two facing diffuse planes catch the secondary ray without blocking the camera or point light.
     for (float height : {-2.0f, 2.0f})
@@ -145,13 +178,13 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         feature.rayTracing.maxRecursionDepth = depth;
         context().config->setRenderFeature(feature);
         setup();
-        const auto radiance = sample();
-        CHECK(std::isfinite(radiance) && radiance > 0, "invalid radiance {} at recursion depth {}", radiance, depth);
+        const auto luminance = sample();
+        CHECK(std::isfinite(luminance) && luminance > 0, "invalid luminance {} at recursion depth {}", luminance, depth);
         if (depth > kMinRayRecursionDepth)
-            CHECK(radiance > clear, "secondary ray contributed no indirect light at depth {}: {}", depth, radiance);
+            CHECK(luminance > clear, "secondary ray contributed no indirect light at depth {}: {}", depth, luminance);
         else
-            CHECK(radiance == clear);
-        LOG_INFO("Ray tracing recursion depth {} passed: radiance {}", depth, radiance);
+            CHECK(luminance == clear);
+        LOG_INFO("Ray tracing recursion depth {} passed: luminance {}", depth, luminance);
     }
 
     SceneAsset areaScene;
@@ -164,7 +197,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     auto& lightData = *areaLight->getComponent<LightComponent>();
     lightData.type = LightComponent::Type::RectArea;
     lightData.areaSize = {20, 20};
-    lightData.intensity = 8;
+    lightData.intensity = 8.0f * std::numbers::pi_v<float> * 20.0f * 20.0f;
     areaScene.actors.push_back(std::move(areaLight));
     scenes.load(areaScene);
     setup();
@@ -194,7 +227,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     CHECK(sample() == 0);
     areaBlocker.transform().position.z = 8;
     CHECK(sample() == areaClear);
-    LOG_INFO("Triangle area light passed: radiance {}, disabled/back face/blocked 0, beyond light unchanged", areaClear);
+    LOG_INFO("Triangle area light passed: luminance {}, disabled/back face/blocked 0, beyond light unchanged", areaClear);
 
     scenes.deleteActor(areaBlocker.selectionId());
     auto& farLight = scenes.createActor("ALight");
@@ -202,8 +235,8 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     auto& farData = *farLight.getComponent<LightComponent>();
     farData.type = LightComponent::Type::RectArea;
     farData.areaSize = {20, 20};
-    farData.intensity = 100;
-    // The near emitter still occludes the farther lamp when its emitted radiance is zero.
+    farData.intensity = 100.0f * std::numbers::pi_v<float> * 20.0f * 20.0f;
+    // The near emitter still occludes the farther lamp when its emitted luminance is zero.
     light.intensity = 0;
     CHECK(sample() == 0);
     light.enabled = false;
@@ -265,7 +298,7 @@ int main(int, char** argv)
     scene.actors.push_back(std::move(sphere));
     auto light                                       = std::make_unique<ALight>();
     light->transform().position                      = {2, 0, 3};
-    light->getComponent<LightComponent>()->intensity = 100;
+    light->getComponent<LightComponent>()->intensity = 100.0f * 4.0f * std::numbers::pi_v<float>;
     scene.actors.push_back(std::move(light));
     scenes.load(scene);
     renderer.init();

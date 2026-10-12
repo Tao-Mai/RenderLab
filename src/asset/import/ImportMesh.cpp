@@ -9,6 +9,7 @@
 #include "asset/BuiltinAssets.h"
 #include "asset/MeshGeometry.h"
 #include "asset/import/ImportId.h"
+#include "asset/import/GltfImport.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -31,6 +32,8 @@
 
 namespace
 {
+constexpr float kMinimumTangentLengthSquared = 1e-12f;
+
 struct GltfBuild
 {
     std::vector<MaterialAsset::ID>                              materialIds;
@@ -394,6 +397,7 @@ void appendPrimitive(
 
     const uint32_t  firstVertex  = static_cast<uint32_t>(build.geometry.vertices.size());
     const uint32_t  firstIndex   = static_cast<uint32_t>(build.geometry.indices.size());
+    bool regenerateTangents = !tangents || !normals;
     build.geometry.vertices.reserve(build.geometry.vertices.size() + positions.count);
     for (size_t index = 0; index < positions.count; ++index)
     {
@@ -402,7 +406,18 @@ void appendPrimitive(
             ? glm::normalize(readVec3(model, *normals, index))
             : glm::vec3{0.0f, 0.0f, 1.0f};
         const glm::vec2 uv = uvs ? readVec2(model, *uvs, index) : glm::vec2{0.0f};
-        const glm::vec4 tangent = tangents ? readVec4(model, *tangents, index) : glm::vec4{1, 0, 0, 1};
+        // Unreferenced vertices are not visited by MikkTSpace; their initial frame must still be valid.
+        const glm::vec3 axis = std::abs(normal.z) < 0.999f ? glm::vec3{0, 0, 1} : glm::vec3{0, 1, 0};
+        const glm::vec4 defaultTangent{glm::normalize(glm::cross(axis, normal)), 1.0f};
+        glm::vec4 tangent = tangents ? readVec4(model, *tangents, index) : defaultTangent;
+        const glm::vec3 projected = glm::vec3{tangent} - normal * glm::dot(normal, glm::vec3{tangent});
+        const float tangentLengthSquared = glm::dot(projected, projected);
+        if (!std::isfinite(tangentLengthSquared) || tangentLengthSquared <= kMinimumTangentLengthSquared ||
+            (tangent.w != 1.0f && tangent.w != -1.0f))
+        {
+            regenerateTangents = true;
+            tangent = defaultTangent;
+        }
         build.geometry.vertices.push_back({position, normal, uv, tangent});
     }
 
@@ -449,8 +464,16 @@ void appendPrimitive(
         for (uint32_t corner = 0; corner < indexCount; ++corner)
             build.geometry.indices[firstIndex + corner] = firstVertex + corner;
     }
-    if (!tangents || !normals)
+    if (regenerateTangents)
+    {
+        if (tangents && normals)
+            LOG_WARNING(
+                "Regenerating degenerate glTF tangents at primitive firstIndex {}: {}",
+                firstIndex,
+                build.source.string()
+            );
         generateTangents(build.geometry, firstIndex, indexCount);
+    }
 
     // Tangents are generated in the source mesh's space, matching its bake.
     // Bake node transforms only afterwards, including the handedness change.
@@ -466,7 +489,8 @@ void appendPrimitive(
         vertex.normal = glm::normalize(normalMatrix * vertex.normal);
         glm::vec3 tangent = linearTransform * glm::vec3(vertex.tangent);
         tangent -= vertex.normal * glm::dot(vertex.normal, tangent);
-        CHECK(glm::dot(tangent, tangent) > 0.0f);
+        CHECK(glm::dot(tangent, tangent) > 0.0f,
+              "invalid tangent at vertex {}, primitive firstIndex {}", index - firstVertex, firstIndex);
         vertex.tangent = glm::vec4(glm::normalize(tangent), vertex.tangent.w * handedness);
     }
 
@@ -494,20 +518,20 @@ void appendMesh(
 MeshAsset::ID AssetImporter::importMesh(const ImportMeshSetting& setting)
 {
     CHECK(std::isfinite(setting.importScale) && setting.importScale > 0.0f);
-    return saveMesh(prepareMesh(setting.source), setting);
+    GltfImport gltf{setting.source};
+    return gltf.saveMesh(gltf.prepareMesh(), setting);
 }
 
-AssetImporter::PreparedMesh AssetImporter::prepareMesh(const std::filesystem::path& path)
+GltfImport::GltfImport(const std::filesystem::path& path)
 {
-    CHECK(!path.empty(), "mesh source path is empty");
+    CHECK(!path.empty(), "glTF source path is empty");
     const auto start = std::chrono::steady_clock::now();
-    LOG_INFO("Import mesh '{}' started", path.string());
+    LOG_INFO("Import glTF '{}' started", path.string());
 
     tinygltf::TinyGLTF loader;
-    PreparedMesh       build;
-    build.source      = std::filesystem::absolute(path).lexically_normal();
-    build.model       = std::make_shared<tinygltf::Model>();
-    auto&       model = *build.model;
+    source = std::filesystem::absolute(path).lexically_normal();
+    this->model = std::make_shared<tinygltf::Model>();
+    auto& model = *this->model;
     std::string warning;
     std::string error;
 
@@ -531,29 +555,71 @@ AssetImporter::PreparedMesh AssetImporter::prepareMesh(const std::filesystem::pa
         model.materials.size(),
         model.textures.size()
     );
+    LOG_INFO("glTF parsed in {:.1f}s", std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
+}
 
-    std::function<void(int, const glm::mat4&)> visitNode;
-    visitNode = [&](int nodeIndex, const glm::mat4& parentTransform)
+GltfImport::GltfImport(const AssetImporter::PreparedMesh& prepared)
+    : source(prepared.source), model(prepared.model)
+{
+    DCHECK(model);
+}
+
+AssetImporter::PreparedMesh AssetImporter::prepareMesh(
+    const std::filesystem::path& path, std::optional<uint32_t> meshIndex)
+{
+    return GltfImport{path}.prepareMesh(meshIndex);
+}
+
+void GltfImport::visitNodes(
+    const std::function<void(uint32_t, const glm::mat4&)>& visitor, float importScale) const
+{
+    CHECK(std::isfinite(importScale) && importScale > 0.0f);
+    CHECK(!model->scenes.empty(), "glTF has no scene: {}", source.string());
+    const int sceneIndex = model->defaultScene >= 0 ? model->defaultScene : 0;
+    CHECK(static_cast<size_t>(sceneIndex) < model->scenes.size());
+
+    std::vector<bool> visited(model->nodes.size());
+    const auto visit = [&](this auto&& self, int nodeIndex, const glm::mat4& parent) -> void
     {
-        const auto&     node      = model.nodes.at(nodeIndex);
-        const glm::mat4 transform = parentTransform * nodeTransform(node);
-        if (node.mesh >= 0)
-        {
-            appendMesh(build, model, node.mesh, transform);
-        }
-        for (const int child : node.children)
-        {
-            visitNode(child, transform);
-        }
+        CHECK(nodeIndex >= 0 && static_cast<size_t>(nodeIndex) < model->nodes.size());
+        CHECK(!visited[nodeIndex], "glTF scene contains a cycle or duplicate node {}: {}", nodeIndex, source.string());
+        visited[nodeIndex] = true;
+
+        const auto& node = model->nodes[nodeIndex];
+        const glm::mat4 world = parent * nodeTransform(node);
+        visitor(static_cast<uint32_t>(nodeIndex), world);
+        for (int child : node.children)
+            self(child, world);
     };
 
-    if (!model.scenes.empty())
+    const glm::mat4 root = glm::scale(glm::mat4{1.0f}, glm::vec3{importScale});
+    for (int node : model->scenes[sceneIndex].nodes)
+        visit(node, root);
+}
+
+AssetImporter::PreparedMesh GltfImport::prepareMesh(std::optional<uint32_t> meshIndex) const
+{
+    const auto start = std::chrono::steady_clock::now();
+    const auto& path = source;
+    const auto& model = *this->model;
+    AssetImporter::PreparedMesh build;
+    build.source = source;
+    build.model = this->model;
+    build.meshIndex = meshIndex;
+
+    if (meshIndex)
     {
-        const int sceneIndex = model.defaultScene >= 0 ? model.defaultScene : 0;
-        for (const int node : model.scenes.at(sceneIndex).nodes)
+        CHECK(*meshIndex < model.meshes.size());
+        appendMesh(build, model, static_cast<int>(*meshIndex), glm::mat4{1.0f});
+    }
+    else if (!model.scenes.empty())
+    {
+        visitNodes([&](uint32_t nodeIndex, const glm::mat4& transform)
         {
-            visitNode(node, glm::mat4{1.0f});
-        }
+            const auto& node = model.nodes[nodeIndex];
+            if (node.mesh >= 0)
+                appendMesh(build, model, node.mesh, transform);
+        });
     }
     else
     {
@@ -595,15 +661,25 @@ AssetImporter::PreparedMesh AssetImporter::prepareMesh(const std::filesystem::pa
 
 MeshAsset::ID AssetImporter::saveMesh(PreparedMesh&& prepared, const ImportMeshSetting& setting)
 {
+    GltfImport gltf{prepared};
+    return gltf.saveMesh(std::move(prepared), setting);
+}
+
+MeshAsset::ID GltfImport::saveMesh(AssetImporter::PreparedMesh&& prepared, const ImportMeshSetting& setting)
+{
     const float importScale = setting.importScale;
     CHECK(std::isfinite(importScale) && importScale > 0.0f);
-    DCHECK(prepared.model);
+    DCHECK(prepared.model == model);
     const auto          start = std::chrono::steady_clock::now();
     const auto&         path  = prepared.source;
     const MeshAsset::ID meshId =
         asset_import::nextId<MeshAsset>(setting.id.empty() ? path.stem().string() : setting.id.value);
-    GltfBuild materials;
-    registerMaterials(materials, *prepared.model, path.parent_path(), path);
+    if (materialIds.empty())
+    {
+        GltfBuild materials;
+        registerMaterials(materials, *model, path.parent_path(), path);
+        materialIds = std::move(materials.materialIds);
+    }
 
     for (auto& vertex : prepared.geometry.vertices)
     {
@@ -619,14 +695,15 @@ MeshAsset::ID AssetImporter::saveMesh(PreparedMesh&& prepared, const ImportMeshS
     mesh.id          = meshId;
     mesh.source      = Source::File;
     mesh.path        = asset_import::sourcePathForAsset(path);
+    mesh.meshIndex   = prepared.meshIndex;
     mesh.importScale = importScale;
     mesh.geometry    = context().assetDataManager->writeGeometry(meshId, prepared.geometry);
     mesh.submeshes.reserve(prepared.submeshes.size());
     for (const auto& submesh : prepared.submeshes)
     {
         const auto slot = static_cast<size_t>(submesh.materialIndex + 1);
-        DCHECK(slot < materials.materialIds.size());
-        mesh.submeshes.push_back({submesh.firstIndex, submesh.indexCount, materials.materialIds[slot]});
+        CHECK(slot < materialIds.size());
+        mesh.submeshes.push_back({submesh.firstIndex, submesh.indexCount, materialIds[slot]});
     }
     const MeshAsset::ID id = context().assetManager->save<MeshAsset>(std::move(mesh));
     LOG_INFO(

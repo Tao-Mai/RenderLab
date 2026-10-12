@@ -198,8 +198,9 @@ TEST_F(ComponentDrawTest, LightEditorShowsOnlyTypeSpecificFields)
         const auto text = frame([&] { result = drawComponent(light); });
         EXPECT_FALSE(result.edited);
         const auto shown = [&](const char* label) { return text.find(label) != std::string::npos; };
-        EXPECT_EQ(shown("Intensity"), type != LightComponent::Type::RectArea);
-        EXPECT_EQ(shown("Radiance"), type == LightComponent::Type::RectArea);
+        EXPECT_EQ(shown("Illuminance (lux)"), type == LightComponent::Type::Directional);
+        EXPECT_EQ(shown("Luminous intensity (cd)"), type == LightComponent::Type::Spot);
+        EXPECT_EQ(shown("Luminous flux (lm)"), type == LightComponent::Type::Point || type == LightComponent::Type::RectArea);
         EXPECT_TRUE(shown("Cast Shadow"));
         EXPECT_EQ(shown("Range"), type != LightComponent::Type::Directional);
         EXPECT_EQ(shown("Inner Angle"), type == LightComponent::Type::Spot);

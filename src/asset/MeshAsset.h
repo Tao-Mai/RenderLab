@@ -22,6 +22,8 @@ struct MeshAsset : Asset
     ID                                   id;
     Source                               source;
     std::optional<std::filesystem::path> path;
+    // Null imports the whole file; a value identifies mesh-local geometry within that file.
+    std::optional<uint32_t>              meshIndex;
     float                                importScale = 1.0f;
     std::filesystem::path                geometry;
     std::vector<Submesh>                 submeshes;
