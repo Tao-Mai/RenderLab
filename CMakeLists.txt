@@ -140,9 +140,15 @@ renderlab_shader(raytracing raytracing/raytracing.slang raytracing
     ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
     INCLUDES "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
         "${SHADER_SOURCE_DIR}/random.slang")
+renderlab_shader(offline_pathtracing offline/pathtracing.slang offline_pathtracing
+    ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
+    INCLUDES "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
+        "${SHADER_SOURCE_DIR}/random.slang")
 renderlab_shader_manifests()
 
 add_library(RenderLabRuntime STATIC
+    src/render/offline/OfflinePathTracingPass.cpp
+    src/render/offline/OfflinePathTracingPass.h
     src/editor/Inspector.cpp
     src/editor/EditorBackend.cpp
     src/editor/EnvironmentImportTask.cpp
@@ -227,6 +233,8 @@ add_library(RenderLabRuntime STATIC
         src/asset/builtin/BuiltinTexture.cpp
         src/asset/builtin/BuiltinSampler.cpp
         src/asset/import/ImportMesh.cpp
+        src/asset/import/ImportScene.cpp
+        src/asset/import/GltfImport.h
         src/core/Vertex.h
         src/platform/InputMethod.cpp
         src/platform/InputMethod.h

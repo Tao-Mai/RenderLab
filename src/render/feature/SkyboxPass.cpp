@@ -4,7 +4,6 @@
 #include "asset/AssetManager.h"
 #include "asset/EnvironmentMapAsset.h"
 #include "asset/TextureAsset.h"
-#include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "render/FrameData.h"
 #include "render/PipelineManager.h"
@@ -77,9 +76,8 @@ void SkyboxPass::execute(RenderGraph& graph) const
 
 void SkyboxPass::refreshBindings(RenderGraph& graph)
 {
-    const auto& environmentId = context().config->rendererConfig().environmentMap;
-    DCHECK(environmentId);
-    const auto& environment = context().assetManager->get<EnvironmentMapAsset>(*environmentId);
+    DCHECK(!environmentMap.empty());
+    const auto& environment = context().assetManager->get<EnvironmentMapAsset>(environmentMap);
     const auto& binding     = environment.radiance;
     CHECK(!binding.textureID.empty() && !binding.samplerID.empty());
     const auto& asset = context().assetManager->get<TextureAsset>(binding.textureID);

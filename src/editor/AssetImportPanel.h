@@ -12,6 +12,7 @@ private:
     ImportTextureSetting        textureSetting;
     ImportEnvironmentMapSetting environmentSetting;
     ImportMeshSetting           meshSetting;
+    ImportSceneSetting          sceneSetting;
     MeshImportPreview           meshPreview;
     std::string                 importStatus;
 

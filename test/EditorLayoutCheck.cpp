@@ -103,6 +103,18 @@ int main(int, char** argv)
     frameAt(sceneCenter, ImGuiMouseButton_Right, false);
     LOG_INFO("Viewport focus follows clicks, not mouse movement");
 
+    // ImGuizmo captures the next frame's mouse while hovered/dragged, without hovering a UI window.
+    ImGui::SetNextFrameWantCaptureMouse(true);
+    frameAt(sceneCenter, ImGuiMouseButton_Left, true);
+    CHECK(io.WantCaptureMouse);
+    CHECK(ui.isSceneFocused());
+    frameAt(sceneCenter, ImGuiMouseButton_Left, false);
+    ImGui::SetNextFrameWantCaptureMouse(true);
+    frameAt(panelCenter, ImGuiMouseButton_Left, true);
+    CHECK(!ui.isSceneFocused());
+    frameAt(panelCenter, ImGuiMouseButton_Left, false);
+    LOG_INFO("Gizmo mouse capture preserves viewport focus; panel clicks still clear it");
+
     ui.shutdown();
     ImGui::DestroyContext();
 }

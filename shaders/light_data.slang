@@ -12,7 +12,8 @@ enum class LightType : uint {
 // flags = {type, enabled, castShadow, reserved}.
 struct LightData
 {
-    float4 colorIntensity;
+    // RGB is a unit-luminance linear tint; W is cd (Point/Spot), lux (Directional), cd/m^2 (RectArea).
+    float4 colorEmission;
     float4 positionRange;
     float4 direction;
     float4 areaSizeCone;
@@ -24,13 +25,17 @@ struct LightData
     float4 areaRightData;
 
     property color : float3 {
-        get { return colorIntensity.rgb; }
+        get { return colorEmission.rgb; }
     }
-    property intensity : float {
-        get { return colorIntensity.w; }
+    property luminousIntensity : float {
+        get { return colorEmission.w; }
     }
-    property radiance : float {
-        get { return colorIntensity.w; }
+    // Directional light's illuminance at perpendicular incidence (E_perp), in lux.
+    property illuminance : float {
+        get { return colorEmission.w; }
+    }
+    property luminance : float {
+        get { return colorEmission.w; }
     }
     property position : float3 {
         get { return positionRange.xyz; }

@@ -43,9 +43,8 @@ RendererConfig sampleRendererConfig()
             .shadow = {.enable = false, .cascade = {.count = 3, .shadowMapSize = 1024,
                 .maxDistance = 40.0f, .splitLambda = 0.75f, .depthPadding = 5.0f}, .pointShadowMapSize = 2048, .bias = 0.0025f,
                 .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.03f},
-            .toneMapping = {.exposure = 1.5f, .mode = ToneMappingOperator::Reinhard},
+            .toneMapping = {.ev100 = 5.0f, .exposureCompensation = 1.5f, .mode = ToneMappingOperator::Reinhard},
             .rayTracing = {.maxRecursionDepth = 3}},
-        .environmentMap = EnvironmentMapAsset::ID{"grasslands"},
     };
 }
 }
@@ -85,7 +84,7 @@ TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
     EXPECT_EQ(serialized.at("feature").at("ibl"), false);
     EXPECT_EQ(serialized.at("feature").at("hdr"), false);
     EXPECT_FLOAT_EQ(serialized.at("feature").at("ambientCoefficient").get<float>(), 0.25f);
-    EXPECT_EQ(serialized.at("environmentMap").at("value"), "grasslands");
+    EXPECT_FALSE(serialized.contains("environmentMap"));
     EXPECT_EQ(serialized.at("feature").at("shadow").at("enable"), false);
     EXPECT_EQ(serialized.at("feature").at("shadow").at("cascade"),
               Serialize(original.feature.shadow.cascade));
@@ -95,13 +94,56 @@ TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
     EXPECT_EQ(serialized.at("feature").at("shadow").at("filter"), "Nearest");
     EXPECT_EQ(serialized.at("feature").at("shadow").at("pixelRotation"), false);
     EXPECT_FLOAT_EQ(serialized.at("feature").at("shadow").at("sampleRadius").get<float>(), 0.03f);
-    EXPECT_FLOAT_EQ(serialized.at("feature").at("toneMapping").at("exposure").get<float>(), 1.5f);
+    EXPECT_FLOAT_EQ(serialized.at("feature").at("toneMapping").at("ev100").get<float>(), 5.0f);
+    EXPECT_FLOAT_EQ(serialized.at("feature").at("toneMapping").at("exposureCompensation").get<float>(), 1.5f);
     EXPECT_EQ(serialized.at("feature").at("toneMapping").at("mode"), "Reinhard");
     EXPECT_EQ(serialized.at("feature").at("rayTracing").at("maxRecursionDepth"), 3);
+    EXPECT_EQ(serialized.at("feature").at("offline").at("maxRecursionDepth"), 6);
 
     RendererConfig restored;
     Deserialize(serialized, restored);
     EXPECT_EQ(Serialize(restored), serialized);
+}
+
+TEST(ConfigSerialization, EnvironmentMapBelongsToScene)
+{
+    SceneAsset scene;
+    scene.environmentMap = EnvironmentMapAsset::ID{"grasslands"};
+    const auto serialized = Serialize(scene);
+    EXPECT_EQ(serialized.at("environmentMap").at("value"), "grasslands");
+    EXPECT_FALSE(Serialize(sampleRendererConfig()).contains("environmentMap"));
+
+    SceneAsset restored;
+    Deserialize(serialized, restored);
+    EXPECT_EQ(restored.environmentMap, scene.environmentMap);
+    scene.environmentMap.reset();
+    EXPECT_TRUE(Serialize(scene).at("environmentMap").is_null());
+}
+
+TEST(ConfigSerialization, OfflineRouteAndSettingsRoundTripIndependently)
+{
+    auto config = sampleRendererConfig();
+    config.renderPath = RenderPath::OfflinePathTracing;
+    config.feature.offline.maxRecursionDepth = 8;
+    const auto serialized = Serialize(config);
+    EXPECT_EQ(serialized.at("renderPath"), "OfflinePathTracing");
+    EXPECT_EQ(serialized.at("feature").at("rayTracing").at("maxRecursionDepth"), 3);
+    EXPECT_EQ(serialized.at("feature").at("offline").at("maxRecursionDepth"), 8);
+    RendererConfig restored;
+    Deserialize(serialized, restored);
+    EXPECT_EQ(Serialize(restored), serialized);
+}
+
+TEST(ConfigSerialization, PhysicalExposureUsesEv100AndCompensation)
+{
+    RenderFeature::ToneMapping settings;
+    settings.ev100 = 10.0f;
+    const float scale = settings.exposureScale();
+    EXPECT_NEAR(scale, 1.0f / (1.2f * 1024.0f), 1e-8f);
+    settings.ev100 += 1.0f;
+    EXPECT_FLOAT_EQ(settings.exposureScale(), scale * 0.5f);
+    settings.exposureCompensation = 1.0f;
+    EXPECT_FLOAT_EQ(settings.exposureScale(), scale);
 }
 
 TEST(ConfigSerialization, MissingFieldsFailInsteadOfUsingDefaults)
@@ -170,7 +212,6 @@ TEST(ConfigSerialization, ConfigManagerResolvesPathsAndLoadsCommands)
     const auto rendererFile = manager.paths().renderer;
     const auto originalRenderer = manager.rendererConfig();
     manager.setRenderPath(RenderPath::RayTracing);
-    manager.setEnvironmentMap(EnvironmentMapAsset::ID{"grasslands"});
     manager.setRenderFeature({.ibl = false, .ambientCoefficient = 0.3f,
         .shadow = {.enable = false, .pointShadowMapSize = 512, .bias = 0.005f,
             .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.04f},

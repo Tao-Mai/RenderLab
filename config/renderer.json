@@ -7,13 +7,13 @@
             "value": "lut_ggx"
         }
     },
-    "environmentMap": {
-        "value": "newport_loft"
-    },
     "feature": {
         "ambientCoefficient": 0.0,
         "hdr": true,
         "ibl": false,
+        "offline": {
+            "maxRecursionDepth": 5
+        },
         "rayTracing": {
             "maxRecursionDepth": 6
         },
@@ -34,9 +34,10 @@
             "sampleRadius": 0.019999999552965164
         },
         "toneMapping": {
-            "exposure": 0.0,
+            "ev100": -0.2630344033241272,
+            "exposureCompensation": 0.0,
             "mode": "Neutral"
         }
     },
-    "renderPath": "RayTracing"
+    "renderPath": "OfflinePathTracing"
 }

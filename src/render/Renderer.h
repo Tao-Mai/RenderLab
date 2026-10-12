@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Debug.h"
+#include "asset/EnvironmentMapAsset.h"
 
 #include "render/DescriptorManager.h"
 #include "render/FrameData.h"
@@ -18,6 +19,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_raii.hpp>
@@ -43,6 +45,8 @@ public:
 
     [[nodiscard]] VulkanContext& vulkanContext() { return vulkan; }
     [[nodiscard]] Swapchain&     swapchainHandle() { return swapchain; }
+    [[nodiscard]] uint32_t offlineSampleCount() const;
+    [[nodiscard]] uint32_t framesInFlight() const { return activeFramesInFlight; }
 
 private:
     struct Passes;
@@ -57,6 +61,8 @@ private:
     std::array<FrameData, maxFramesInFlight>    frameStorage;
     SceneBindings*                              activeSceneBindings = nullptr;
     std::optional<RendererConfig>               appliedConfig;
+    std::optional<EnvironmentMapAsset::ID>        environmentMap;
+    std::optional<EnvironmentMapAsset::ID>        appliedEnvironmentMap;
     struct SceneOutput
     {
         RenderGraph::ImageHandle color;
@@ -64,10 +70,12 @@ private:
     };
     SceneOutput               setupRasterization();
     SceneOutput               setupRayTracing();
+    SceneOutput               setupOffline();
     RenderGraph::ImageHandle  setupPostProcess(RenderGraph::ImageHandle color);
     void                      setupEditor(SceneOutput scene);
-    void                      applyConfiguration();
+    void                      applyConfiguration(const SceneRenderData& scene);
     uint32_t                  frameIndex = 0;
+    uint32_t                  activeFramesInFlight = maxFramesInFlight;
     RenderGraph               graph;
     std::unique_ptr<Passes>   passes;
     RenderGraph::BufferHandle pickingReadback;

@@ -45,7 +45,6 @@ int main(int, char** argv)
     feature.shadow.rectAreaShadowMapSize = 256;
     config.setRenderFeature(feature);
     config.setRenderPath(RenderPath::Rasterization);
-    config.setEnvironmentMap(std::nullopt);
     data.init(config.paths().assets);
     scenes.init();
     assets.init(config.paths().assets);
@@ -129,7 +128,6 @@ int main(int, char** argv)
     window.shutdown();
     config.setRenderPath(original.renderPath);
     config.setRenderFeature(original.feature);
-    config.setEnvironmentMap(original.environmentMap);
     config.shutdown();
     ctx = {};
     std::cout << "Rect area light GPU frames passed: no shadow, shadow enabled, global shadow disable and re-enable.\n";

@@ -1,11 +1,14 @@
 #include "render/Renderer.h"
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
+#include "scene/system/SceneRenderData.h"
 
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "core/Window.h"
+#include "asset/AssetManager.h"
+#include "render/offline/OfflinePathTracingPass.h"
 #include "render/device/VkCheck.h"
 #include "render/feature/DepthPrepass.h"
 #include "render/feature/EndPass.h"
@@ -41,6 +44,7 @@ struct Renderer::Passes
         LightMarkerPass,
         ToneMappingPass,
         RayTracingPass,
+        OfflinePathTracingPass,
         RayTracingBlitPass,
         EditorDepthPass,
         EditorPickingPass,
@@ -132,6 +136,10 @@ void Renderer::shutdown() noexcept
     swapchain.reset();
     vulkan.reset();
     frameIndex = 0;
+    activeFramesInFlight = maxFramesInFlight;
+    environmentMap.reset();
+    appliedEnvironmentMap.reset();
+    appliedConfig.reset();
     DEBUG_EXEC(inited = false);
 }
 
@@ -148,16 +156,40 @@ void Renderer::setupRenderGraph()
     DCHECK(passes);
     activeSceneBindings = nullptr;
     const auto& config  = context().config->rendererConfig();
-    auto        scene   = config.renderPath == RenderPath::RayTracing ? setupRayTracing() : setupRasterization();
+    activeFramesInFlight = config.renderPath == RenderPath::OfflinePathTracing ? 1u : maxFramesInFlight;
+    frameIndex = 0;
+    if (!appliedConfig || appliedConfig->renderPath != config.renderPath ||
+        appliedConfig->feature.offline.maxRecursionDepth != config.feature.offline.maxRecursionDepth)
+        passes->get<OfflinePathTracingPass>().resetAccumulation();
+
+    SceneOutput scene;
+    switch (config.renderPath)
+    {
+    case RenderPath::OfflinePathTracing: scene = setupOffline(); break;
+    case RenderPath::RayTracing: scene = setupRayTracing(); break;
+    case RenderPath::Rasterization:
+    case RenderPath::Deferred: scene = setupRasterization(); break;
+    }
     scene.color         = setupPostProcess(scene.color);
     setupEditor(scene);
     graph.compile();
     appliedConfig = config;
+    appliedEnvironmentMap = environmentMap;
 }
 
 Renderer::SceneOutput Renderer::setupRayTracing()
 {
     return {setupPass<RayTracingPass>().rayImage, setupPass<EditorDepthPass>().depth};
+}
+
+Renderer::SceneOutput Renderer::setupOffline()
+{
+    return {setupPass<OfflinePathTracingPass>().rayImage, setupPass<EditorDepthPass>().depth};
+}
+
+uint32_t Renderer::offlineSampleCount() const
+{
+    return passes ? passes->get<OfflinePathTracingPass>().sampleCount() : 0;
 }
 
 Renderer::SceneOutput Renderer::setupRasterization()
@@ -171,6 +203,7 @@ Renderer::SceneOutput Renderer::setupRasterization()
     SceneOutput output;
     if (config.renderPath == RenderPath::Deferred)
     {
+        passes->get<DeferredLightingPass>().sceneBindings().setEnvironmentMap(environmentMap);
         const auto gBuffer  = setupPass<GBufferPass>(depth);
         const auto lighting = setupPass<DeferredLightingPass>(gBuffer, shadow);
         output              = {lighting.color, lighting.depth};
@@ -179,13 +212,17 @@ Renderer::SceneOutput Renderer::setupRasterization()
     }
     else
     {
+        passes->get<ScenePass>().sceneBindings().setEnvironmentMap(environmentMap);
         const auto scene    = setupPass<ScenePass>(depth, shadow);
         output              = {scene.color, scene.depth};
         shadow              = scene.shadow;
         activeSceneBindings = &passes->get<ScenePass>().sceneBindings();
     }
-    if (config.feature.ibl && config.environmentMap)
+    if (config.feature.ibl && environmentMap)
+    {
+        passes->get<SkyboxPass>().setEnvironmentMap(*environmentMap);
         output.color = setupPass<SkyboxPass>(output.color, output.depth).color;
+    }
     output.color = setupPass<TransparentPass>(output.color, output.depth, shadow).color;
     return output;
 }
@@ -195,7 +232,7 @@ RenderGraph::ImageHandle Renderer::setupPostProcess(RenderGraph::ImageHandle col
     const auto& config = context().config->rendererConfig();
     if (config.feature.hdr)
         return setupPass<ToneMappingPass>(color, graph.importSwapchain()).color;
-    if (config.renderPath == RenderPath::RayTracing)
+    if (config.renderPath == RenderPath::RayTracing || config.renderPath == RenderPath::OfflinePathTracing)
         return setupPass<RayTracingBlitPass>(color, graph.importSwapchain()).color;
     return color;
 }
@@ -210,8 +247,9 @@ void Renderer::setupEditor(SceneOutput scene)
     pickingReadback = readback;
 }
 
-void Renderer::applyConfiguration()
+void Renderer::applyConfiguration(const SceneRenderData& scene)
 {
+    environmentMap = scene.environmentMap;
     const auto& config   = context().config->rendererConfig();
     const auto  graphKey = [](const RendererConfig& value)
     {
@@ -221,32 +259,38 @@ void Renderer::applyConfiguration()
             value.feature.ibl,
             value.feature.hdr,
             value.feature.rayTracing.maxRecursionDepth,
+            value.feature.offline.maxRecursionDepth,
             shadow.enable,
             shadow.pointShadowMapSize,
             shadow.rectAreaShadowMapSize,
             shadow.cascade.shadowMapSize,
-            shadow.cascade.count,
-            value.environmentMap.has_value()
+            shadow.cascade.count
         };
     };
-    if (!appliedConfig || graphKey(*appliedConfig) != graphKey(config))
+    if (!appliedConfig || graphKey(*appliedConfig) != graphKey(config) ||
+        appliedEnvironmentMap.has_value() != environmentMap.has_value())
     {
         rebuildGraph();
         return;
     }
-    if (appliedConfig->environmentMap != config.environmentMap || appliedConfig->brdfLut != config.brdfLut ||
+    if (appliedEnvironmentMap != environmentMap || appliedConfig->brdfLut != config.brdfLut ||
         appliedConfig->feature.shadow.filter != config.feature.shadow.filter)
     {
         waitIdle();
         if (activeSceneBindings)
         {
+            activeSceneBindings->setEnvironmentMap(environmentMap);
             activeSceneBindings->refreshBindings();
             activeSceneBindings->prepare(graph);
         }
-        if (config.renderPath != RenderPath::RayTracing && config.feature.ibl && config.environmentMap)
+        if (activeSceneBindings && config.feature.ibl && environmentMap)
+        {
+            passes->get<SkyboxPass>().setEnvironmentMap(*environmentMap);
             passes->get<SkyboxPass>().refreshBindings(graph);
+        }
     }
     appliedConfig = config;
+    appliedEnvironmentMap = environmentMap;
 }
 
 void Renderer::recreateSwapchain()
@@ -265,7 +309,7 @@ void Renderer::recreateSwapchain()
 RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData& scene, const EditorFrameInput& editor)
 {
     DCHECK(inited);
-    applyConfiguration();
+    applyConfiguration(scene);
     auto& frame = currentFrame();
     frame.wait();
 
@@ -275,6 +319,8 @@ RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData
 
     const auto& renderData = resources.prepare(scene, frameIndex);
     const auto  renderPath = context().config->rendererConfig().renderPath;
+    if (renderPath == RenderPath::OfflinePathTracing)
+        passes->get<OfflinePathTracingPass>().updateScene(view, scene, context().assetManager->contentRevision());
     auto&       data       = frameStorage[frameIndex];
     if (activeSceneBindings)
         activeSceneBindings->updateFrame(data, view.uniforms, renderData);
@@ -282,7 +328,8 @@ RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData
         data.updateView(view.uniforms);
     graph.execute(view, renderData, editor, frameIndex, imageIndex);
 
-    const bool directBlit = renderPath == RenderPath::RayTracing && !context().config->rendererConfig().feature.hdr;
+    const bool directBlit = (renderPath == RenderPath::RayTracing || renderPath == RenderPath::OfflinePathTracing) &&
+        !context().config->rendererConfig().feature.hdr;
     const vk::PipelineStageFlags waitStages =
         directBlit ? vk::PipelineStageFlagBits::eTransfer : vk::PipelineStageFlagBits::eColorAttachmentOutput;
     frame.submit(swapchain.renderFinishedSemaphore(imageIndex), waitStages);
@@ -300,6 +347,6 @@ RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData
             .download(&frameResult.pickedSelectionId, sizeof(frameResult.pickedSelectionId));
         frameResult.hasPickResult = true;
     }
-    frameIndex = (frameIndex + 1) % maxFramesInFlight;
+    frameIndex = (frameIndex + 1) % activeFramesInFlight;
     return frameResult;
 }

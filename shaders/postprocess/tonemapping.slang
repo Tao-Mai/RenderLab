@@ -1,6 +1,6 @@
 struct ToneMappingParameters
 {
-    float exposure;
+    float exposureScale;
     uint mode;
     uint encodeSrgb;
     uint padding;
@@ -64,7 +64,7 @@ float linearToSrgb(float value)
 float4 fragMain(VertexOutput input) : SV_Target
 {
     float3 color = max(hdrColor.Sample(hdrSampler, input.uv).rgb, float3(0.0));
-    color *= exp2(parameters.exposure);
+    color *= parameters.exposureScale;
     color = parameters.mode == 0 ? neutralToneMapping(color) : color / (1.0 + color);
     color = saturate(color);
 

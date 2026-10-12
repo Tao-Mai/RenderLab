@@ -11,6 +11,7 @@
 #include "scene/component/RenderComponent.h"
 
 #include <algorithm>
+#include <numbers>
 #include <gtest/gtest.h>
 #include <type_traits>
 
@@ -515,6 +516,31 @@ TEST(SceneManagerTest, ALightRoundTripsAndTicksItsComponents)
     EXPECT_EQ(tick.ticks, 1);
     EXPECT_FLOAT_EQ(restored->transform().position.x, 1.25f);
     manager.shutdown();
+}
+
+TEST(LightPhotometry, ConvertsFluxAndNormalizesLinearColor)
+{
+    LightComponent light;
+    light.intensity = 1000.0f;
+    EXPECT_NEAR(light.photometricEmission().w, 1000.0f / (4.0f * std::numbers::pi_v<float>), 0.0001f);
+
+    light.type = LightComponent::Type::RectArea;
+    light.areaSize = {2, 3};
+    const float luminance = light.photometricEmission().w;
+    EXPECT_NEAR(luminance, 1000.0f / (6.0f * std::numbers::pi_v<float>), 0.0001f);
+    light.areaSize.y *= 2;
+    EXPECT_FLOAT_EQ(light.photometricEmission().w, luminance * 0.5f);
+
+    light.type = LightComponent::Type::Directional;
+    light.color = {1.0f, 0.5f, 0.25f};
+    const auto emission = light.photometricEmission();
+    EXPECT_FLOAT_EQ(emission.w, 1000.0f);
+    EXPECT_NEAR(glm::dot(glm::vec3{emission}, glm::vec3{0.2126f, 0.7152f, 0.0722f}), 1.0f, 0.0001f);
+
+    light.type = LightComponent::Type::Spot;
+    EXPECT_FLOAT_EQ(light.photometricEmission().w, 1000.0f);
+    light.color = glm::vec3{0.0f};
+    EXPECT_EQ(light.photometricEmission(), glm::vec4{0.0f});
 }
 
 TEST(SceneManagerTest, ALightRequiresLightComponent)

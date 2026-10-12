@@ -1,6 +1,7 @@
 #pragma once
 
-#include "asset/EnvironmentMapAsset.h"
+#include <cmath>
+
 #include "asset/SamplerAsset.h"
 #include "asset/TextureBinding.h"
 
@@ -8,7 +9,8 @@ enum class RenderPath
 {
     Rasterization,
     Deferred,
-    RayTracing
+    RayTracing,
+    OfflinePathTracing
 };
 
 enum class ToneMappingOperator
@@ -19,6 +21,7 @@ enum class ToneMappingOperator
 
 // The primary ray and its visibility query each consume one recursion level.
 inline constexpr uint32_t kMinRayRecursionDepth = 2;
+inline constexpr float    kExposureCalibration  = 1.2f;
 
 struct RenderFeature
 {
@@ -46,20 +49,30 @@ struct RenderFeature
 
     struct ToneMapping
     {
-        float               exposure = 0.0f;  // Stops: +1 doubles linear scene brightness.
-        ToneMappingOperator mode     = ToneMappingOperator::Neutral;
+        float               ev100                = 0.0f;
+        float               exposureCompensation = 0.0f;  // Stops: +1 doubles brightness.
+        ToneMappingOperator mode                 = ToneMappingOperator::Neutral;
+
+        [[nodiscard]] float exposureScale() const
+        {
+            return std::exp2(exposureCompensation - ev100) / kExposureCalibration;
+        }
     } toneMapping;
 
     struct RayTracing
     {
         uint32_t maxRecursionDepth = 4;
     } rayTracing;
+
+    struct Offline
+    {
+        uint32_t maxRecursionDepth = 6;
+    } offline;
 };
 
 struct RendererConfig
 {
-    RenderPath                             renderPath = RenderPath::Rasterization;
-    TextureBinding                         brdfLut;
-    RenderFeature                          feature;
-    std::optional<EnvironmentMapAsset::ID> environmentMap;
+    RenderPath     renderPath = RenderPath::Rasterization;
+    TextureBinding brdfLut;
+    RenderFeature  feature;
 };

@@ -19,6 +19,8 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene, const glm:
 {
     data.objects.clear();
     data.lights.clear();
+    data.sceneId = scene.id;
+    data.environmentMap = scene.environmentMap;
     for (const auto& actor : scene.actors)
     {
         const auto* transform = actor->getComponent<TransformComponent>();
@@ -49,7 +51,7 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene, const glm:
 
         const glm::vec3 direction = glm::normalize(transform->rotation * glm::vec3{0.0f, 0.0f, -1.0f});
         data.lights.push_back({
-            .colorIntensity = {light->color, light->intensity},
+            .colorEmission  = light->photometricEmission(),
             .positionRange  = {transform->position, light->range},
             .direction      = {direction, 0.0f},
             .areaSizeCone   = {light->areaSize, light->cosInner, light->cosOuter},

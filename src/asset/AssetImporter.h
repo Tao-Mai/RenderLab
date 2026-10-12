@@ -19,6 +19,8 @@ namespace tinygltf
 class Model;
 }
 
+struct SceneAsset;
+
 struct ImportTextureSetting
 {
     std::filesystem::path     source;
@@ -29,6 +31,13 @@ struct ImportMeshSetting
 {
     std::filesystem::path source;
     MeshAsset::ID         id;
+    float                 importScale = 1.0f;
+};
+
+struct ImportSceneSetting
+{
+    std::filesystem::path source;
+    AssetID<SceneAsset>    id;
     float                 importScale = 1.0f;
 };
 
@@ -65,6 +74,7 @@ public:
         glm::vec3                        boundsMin{0.0f};
         glm::vec3                        boundsMax{0.0f};
         std::shared_ptr<tinygltf::Model> model;
+        std::optional<uint32_t>          meshIndex;
     };
 
     struct PreparedEnvironmentMap
@@ -86,8 +96,10 @@ public:
     static EnvironmentMapAsset::ID saveEnvironmentMap(PreparedEnvironmentMap&& prepared);
 
     static MeshAsset::ID              importMesh(const ImportMeshSetting& setting);
-    [[nodiscard]] static PreparedMesh prepareMesh(const std::filesystem::path& source);
+    [[nodiscard]] static PreparedMesh prepareMesh(
+        const std::filesystem::path& source, std::optional<uint32_t> meshIndex = std::nullopt);
     static MeshAsset::ID              saveMesh(PreparedMesh&& prepared, const ImportMeshSetting& setting);
+    static AssetID<SceneAsset>        importScene(const ImportSceneSetting& setting);
 
 private:
     struct LoadedImage

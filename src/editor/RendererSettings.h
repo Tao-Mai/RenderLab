@@ -2,4 +2,5 @@
 class ConfigManager;
 class AssetManager;
 class VulkanContext;
-void drawRendererSettings(ConfigManager& config, AssetManager& assets, const VulkanContext& vulkan, float cameraNear);
+struct SceneAsset;
+bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const VulkanContext& vulkan, SceneAsset& scene);

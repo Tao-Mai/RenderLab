@@ -168,7 +168,8 @@ void EditorUI::beginFrame(float deltaTime)
             {scenePosition.x, scenePosition.y},
             {scenePosition.x + sceneSize.x, scenePosition.y + sceneSize.y},
             false
-        ) && !io.WantCaptureMouse &&
+        ) && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) &&
+            !ImGui::IsAnyItemActive() &&
             !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
         break;
     }
@@ -254,11 +255,11 @@ EditorUI::InspectorResult EditorUI::drawInspector(SceneAsset& scene, AActor* obj
     InspectorResult result;
     result.edited |= drawCameraInspector(scene.editorCamera);
 
-    drawRendererSettings(
+    result.edited |= drawRendererSettings(
         *context().config,
         *context().assetManager,
         context().renderer->vulkanContext(),
-        scene.editorCamera.nearPlane
+        scene
     );
     imports.draw();
 
@@ -273,7 +274,9 @@ bool EditorUI::sceneClicked(glm::vec2& mousePosition) const
     const ImVec2 mouse  = ImGui::GetMousePos();
     const bool   inside = mouse.x >= scenePosition.x && mouse.y >= scenePosition.y &&
         mouse.x < scenePosition.x + sceneSize.x && mouse.y < scenePosition.y + sceneSize.y;
-    if (!inside || ImGui::GetIO().WantCaptureMouse || !context().inputManager->get(Command::SelectObject) ||
+    if (!inside ||
+        ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) ||
+        ImGui::IsAnyItemActive() || !context().inputManager->get(Command::SelectObject) ||
         ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) || ImGuizmo::IsOver() ||
         ImGuizmo::IsUsing())
     {

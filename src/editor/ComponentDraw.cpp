@@ -86,13 +86,14 @@ ComponentDrawResult drawFields(LightComponent& light)
     ComponentDrawResult result;
     result.edited = drawField("Type", light.type);
     result.edited = ImGui::ColorEdit3("Color", glm::value_ptr(light.color)) || result.edited;
-    const char* intensityLabel = light.type == LightComponent::Type::RectArea ? "Radiance" : "Intensity";
-    result.edited = ImGui::DragFloat(intensityLabel, &light.intensity, 0.05f, 0.0f, 100000.0f,
+    const char* intensityLabel = light.type == LightComponent::Type::Directional ? "Illuminance (lux)" :
+        light.type == LightComponent::Type::Spot ? "Luminous intensity (cd)" : "Luminous flux (lm)";
+    result.edited = ImGui::DragFloat(intensityLabel, &light.intensity, 1.0f, 0.0f, std::numeric_limits<float>::max(),
                                    "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
 
     if (light.type == LightComponent::Type::Point || light.type == LightComponent::Type::Spot ||
         light.type == LightComponent::Type::RectArea)
-        result.edited = ImGui::DragFloat("Range", &light.range, 0.1f, 0.01f, 100000.0f,
+        result.edited = ImGui::DragFloat("Range (m)", &light.range, 0.1f, 0.01f, 100000.0f,
                                        "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
 
     if (light.type == LightComponent::Type::Spot)
@@ -113,7 +114,7 @@ ComponentDrawResult drawFields(LightComponent& light)
         }
     }
     if (light.type == LightComponent::Type::RectArea)
-        result.edited = ImGui::DragFloat2("Area Size", glm::value_ptr(light.areaSize), 0.05f,
+        result.edited = ImGui::DragFloat2("Area Size (m)", glm::value_ptr(light.areaSize), 0.05f,
                                         0.01f, 100000.0f, "%.3f",
                                         ImGuiSliderFlags_AlwaysClamp) || result.edited;
 

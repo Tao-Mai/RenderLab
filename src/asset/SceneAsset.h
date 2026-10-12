@@ -2,8 +2,10 @@
 
 #include <glm/vec3.hpp>
 #include <memory>
+#include <optional>
 #include <vector>
 #include "asset/Asset.h"
+#include "asset/EnvironmentMapAsset.h"
 #include "editor/EditorCameraConfig.h"
 #include "scene/AActor.h"
 
@@ -15,6 +17,7 @@ struct SceneAsset : Asset
     ID                                   id;
     std::vector<std::unique_ptr<AActor>> actors;
     EditorCameraConfig                   editorCamera;
+    std::optional<EnvironmentMapAsset::ID> environmentMap;
 
     struct Environment
     {

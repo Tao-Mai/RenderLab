@@ -4,11 +4,13 @@
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 
 struct LightComponent : Component
 {
     void init(AActor* actor) override;
     void tick(float) override {}
+    [[nodiscard]] glm::vec4 photometricEmission() const;
 
     enum class Type : uint32_t
     {
@@ -20,7 +22,8 @@ struct LightComponent : Component
 
     [[=ReflectField{}]] Type type = Type::Point;
     [[=ReflectField{}]] glm::vec3 color{1.0f};
-    [[=ReflectField{}]] float intensity = 1.0f;
+    // Point/RectArea: luminous flux (lm); Directional: illuminance (lux); Spot: luminous intensity (cd).
+    [[=ReflectField{}]] float intensity = 1000.0f;
     [[=ReflectField{}]] float range = 10.0f;
     [[=ReflectField{}]] float cosInner = 0.9396926f;
     [[=ReflectField{}]] float cosOuter = 0.8660254f;

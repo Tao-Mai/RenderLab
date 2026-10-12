@@ -45,7 +45,6 @@ int main(int, char** argv)
     feature.shadow.cascade               = {.count = 4, .shadowMapSize = 256, .maxDistance = 40.0f};
     config.setRenderFeature(feature);
     config.setRenderPath(RenderPath::Rasterization);
-    config.setEnvironmentMap(std::nullopt);
     data.init(config.paths().assets);
     scenes.init();
     assets.init(config.paths().assets);
@@ -131,7 +130,6 @@ int main(int, char** argv)
     window.shutdown();
     config.setRenderPath(original.renderPath);
     config.setRenderFeature(original.feature);
-    config.setEnvironmentMap(original.environmentMap);
     config.shutdown();
     ctx = {};
     std::cout << "Directional shadow upload and GPU frames passed (4/1 cascades, disable/re-enable).\n";

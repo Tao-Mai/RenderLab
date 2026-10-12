@@ -158,9 +158,9 @@ void ToneMappingPass::execute(RenderGraph& graph) const
 
     const auto&                    settings = context().config->rendererConfig().feature.toneMapping;
     const ToneMappingPushConstants parameters{
-        .exposure   = settings.exposure,
-        .mode       = static_cast<uint32_t>(settings.mode),
-        .encodeSrgb = encodeSrgb ? 1u : 0u,
+        .exposureScale = settings.exposureScale(),
+        .mode          = static_cast<uint32_t>(settings.mode),
+        .encodeSrgb    = encodeSrgb ? 1u : 0u,
     };
     commands.pushConstants<ToneMappingPushConstants>(
         pipelineLayout,
