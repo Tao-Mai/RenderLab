@@ -6,7 +6,9 @@
 #include "core/Serializer.h"
 
 #include <filesystem>
+#include <memory>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -35,7 +37,7 @@ public:
         const auto& table = assetMap<T>();
         if (const auto found = table.find(id); found != table.end())
         {
-            return &found->second;
+            return found->second.get();
         }
 
         if (const T* builtin = BuiltinAssets::findAsset<T>(id))
@@ -46,16 +48,23 @@ public:
         return nullptr;
     }
 
-    template <AssetType T>
+    template <std::derived_from<Asset> T>
     typename T::ID save(T asset)
     {
+        using Base = typename T::ID::AssetClass;
+        static_assert(AssetType<Base> && std::derived_from<T, Base>);
+        static_assert(!std::is_polymorphic_v<Base> || !std::same_as<T, Base>, "save a concrete derived asset");
         CHECK(!asset.id.empty(), "asset has empty id");
-        const auto file = root / T::dir / (asset.id.value + ".json");
-        asset_json::save(file, asset);
-
         const typename T::ID id = asset.id;
-        assetMap<T>().insert_or_assign(id, std::move(asset));
-        std::get<RevisionMap<T>>(revisions)[id] = ++nextRevision;
+        const auto file = root / Base::dir / (id.value + ".json");
+        std::unique_ptr<Base> owned = std::make_unique<T>(std::move(asset));
+        if constexpr (std::is_polymorphic_v<Base>)
+            asset_json::save(file, owned);
+        else
+            asset_json::save(file, *owned);
+
+        assetMap<Base>().insert_or_assign(id, std::move(owned));
+        std::get<RevisionMap<Base>>(revisions)[id] = ++nextRevision;
         return id;
     }
 
@@ -87,7 +96,7 @@ private:
     std::filesystem::path              root;
 
     template <AssetType T>
-    using AssetMap = std::unordered_map<typename T::ID, T>;
+    using AssetMap = std::unordered_map<typename T::ID, std::unique_ptr<T>>;
 
     using AssetMaps = AssetTypes::wrapTypes<AssetMap>;
 

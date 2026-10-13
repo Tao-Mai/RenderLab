@@ -1,6 +1,6 @@
 {
     "initialScene": {
-        "value": "sponza"
+        "value": "default"
     },
     "paths": {
         "assets": "../assets",

@@ -51,7 +51,7 @@ Scene 使用 RGBA16F HDR 颜色图，Graph 为每个在途帧单独分配。Tone
 
 `feature.toneMapping.ev100` 是手动相机曝光值，`exposureCompensation` 是额外补偿档位。CPU 计算倍率 `2^(exposureCompensation - ev100) / 1.2`，通过 push constants 传给 Tone Mapping；EV100 +1 使亮度减半，补偿 +1 使亮度加倍。编辑器修改每帧生效，不重建渲染图；正常关闭时统一保存到 renderer.json。`mode` 提供 Neutral（Khronos PBR Neutral）和 Reinhard。输出线性颜色到 sRGB attachment，由硬件编码一次；UNORM + sRGB nonlinear 交换链由 shader 显式编码。此版本不包含自动曝光、Pre-Exposure 或 Bloom。
 
-物理灯光采用 1 世界单位 = 1 米。LightComponent 的 intensity 按类型表示 Point/RectArea 的光通量（lm）、Directional 的照度（lux）、Spot 的发光强度（cd，暂不参与照明）。RenderSystem 调用 photometricEmission：点光源除以 `4π` 转为 cd；单面 Lambert 矩形光源除以 `π × 面积` 转为 cd/m²；方向光保持 lux。线性 Rec.709 灯光颜色归一化到单位亮度，光栅与光追共享同一 LightData 和单位约定。面光源面积改变时总光通量保持不变，单位面积亮度随之改变；面积由 areaSize 决定，不使用 Actor scale。环境 HDR 图、自发光 glTF 材质仍是未做绝对光度标定的线性数据，不能据此声称整个场景都具备真实亮度。
+物理灯光采用 1 世界单位 = 1 米。LightComponent 的 intensity 按类型表示 Point/RectArea/Spot 的发光强度（cd，Spot 暂不参与照明）、Directional 的照度（lux）。RectArea 表示整个发光面正面方向的发光强度；单面 Lambert 光源在其他方向的强度乘发射方向余弦。RenderSystem 调用 photometricEmission：矩形光源除以面积转为亮度（cd/m²），点光源保持 cd，方向光保持 lux。线性 Rec.709 灯光颜色归一化到单位亮度，光栅和两条光追路线共享同一 LightData 和单位约定。面光源面积改变时整个光源的正面发光强度保持不变，单位面积亮度随之改变；面积由 areaSize 决定，不使用 Actor scale。环境 HDR 图、自发光 glTF 材质仍是未做绝对光度标定的线性数据，不能据此声称整个场景都具备真实亮度。
 
 Neutral 算法参考 [Khronos PBR Neutral Tone Mapper](https://github.com/KhronosGroup/ToneMapping/tree/main/PBR_Neutral)，shader 中注明 Slang 改写及 CC-BY-4.0 来源。
 
@@ -116,7 +116,7 @@ SSBO 至少分配一项以维持有效 descriptor；没有灯光时 lightCount �
 
 GpuMaterial 持有 Material Set。MaterialUniforms 的普通材质前缀为 64 字节，emissiveFactor 位于偏移 48；自发光贴图使用 sRGB，采样转换为线性颜色后乘资产中的 emissive 系数，直接加入主场景光照结果，不受灯光、IBL 开关或阴影影响。缺少自发光贴图时绑定白色 fallback，未设置系数时默认为零。set 2 Object 和 set 3 Pass 的编号已保留，当前没有对应预设 Layout；对象变换、拾取 ID 和 Shadow 的 lightidx 通过 Push Constant 传递。
 
-MaterialAsset::clearcoat 有值时选择 ENABLE_CLEARCOAT=1 变体（`.clearcoat.spv` / `.clearcoat.no_ibl.spv`），MaterialData 追加 clearcoatFactor、clearcoatRoughnessFactor、clearcoatNormalScale 与 padding，共 80 字节；未启用的材质仍上传 64 字节且不加载 clearcoat 贴图。所有变体共享 Material descriptor layout。clearcoat 三类纹理均为 Linear，强度取 R、粗糙度取 G；未指定强度/粗糙度贴图时绑定白色 Linear fallback，未指定法线时绑定 flatNormal。
+PbrMaterialAsset::clearcoat 有值时选择 ENABLE_CLEARCOAT=1 变体（`.clearcoat.spv` / `.clearcoat.no_ibl.spv`），MaterialData 追加 clearcoatFactor、clearcoatRoughnessFactor、clearcoatNormalScale 与 padding，共 80 字节；未启用的材质仍上传 64 字节且不加载 clearcoat 贴图。所有变体共享 Material descriptor layout。clearcoat 三类纹理均为 Linear，强度取 R、粗糙度取 G；未指定强度/粗糙度贴图时绑定白色 Linear fallback，未指定法线时绑定 flatNormal。
 
 清漆层法线独立从原始 TBN 变换，不继承底层法线贴图细节，双面材质分别翻转两层法线。清漆层采用 IOR 1.5 对应的 F0=0.04，不修改底层材质的金属度和 F0。直接光复用 GGX 分布、采用 Kelemen 可见性，两个波瓣分别乘自身 NdotL，再按 glTF 的 `clearcoatFactor * Schlick(clearcoatNormal·V)` 简单分层近似混合；两层共用现有阴影可见性。IBL 复用预过滤 GGX 环境贴图与 BRDF LUT，以清漆层的法线和粗糙度采样，LUT 使用单位 Fresnel 响应（scale+bias），避免层权重重复乘 Fresnel。AO 仍只作用于环境光，底层自发光乘 `(1-clearcoatWeight)`；关闭 IBL 后只保留清漆层直接高光和底层环境光系数衰减。
 
@@ -136,7 +136,7 @@ DescriptorManager 只缓存调用方或 reflection 声明的 Layout 并分配 Se
 
 PipelineKey 包含 ShaderHandle、PipelineLayout、VertexLayout、Topology、Raster/Depth/Blend/MSAA 状态，以及颜色和深度 attachment 格式。`getOrCreate` 命中时复用；首次创建时检查 shader 的 set/binding/type 与 PipelineLayout 是否一致。Pipeline 跨帧和场景复用。
 
-GpuMaterial 根据 alpha mode 选择 Opaque、AlphaTest 或 Transparent。MaterialAsset 的 shaderId 未指定时使用 scene shader。GpuTexture 只持有 Image/View；RenderResourceManager 按 SamplerAsset::ID 创建并缓存独立 sampler。材质与环境纹理使用 TextureBinding 指定 image/sampler，BRDF LUT 的绑定来自 Renderer 配置。
+GpuMaterial 根据 alpha mode 选择 Opaque、AlphaTest 或 Transparent。PbrMaterialAsset 的 shaderId 未指定时使用 scene shader。GpuTexture 只持有 Image/View；RenderResourceManager 按 SamplerAsset::ID 创建并缓存独立 sampler。材质与环境纹理使用 TextureBinding 指定 image/sampler，BRDF LUT 的绑定来自 Renderer 配置。
 
 普通 2D 贴图在导入阶段生成完整 mip 链并持久化，GpuTexture 上传全部层级，材质 sampler 默认使用 Linear mip 过滤且不限制最大 LOD。sRGB 颜色在线性空间做 box 过滤，Alpha 保持线性；线性数据贴图不做伽马变换。R8/RG8 非 2 次幂贴图的紧凑 mip 数据只在上传 staging 时补齐 copy offset 对齐，不改变资产二进制格式。环境图的烘焙流程保持独立。
 

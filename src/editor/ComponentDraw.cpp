@@ -81,49 +81,69 @@ ComponentDrawResult drawFields(TransformComponent& transform)
     return result;
 }
 
-ComponentDrawResult drawFields(LightComponent& light)
+namespace
+{
+ComponentDrawResult drawLightFields(LightComponent& light)
 {
     ComponentDrawResult result;
-    result.edited = drawField("Type", light.type);
-    result.edited = ImGui::ColorEdit3("Color", glm::value_ptr(light.color)) || result.edited;
-    const char* intensityLabel = light.type == LightComponent::Type::Directional ? "Illuminance (lux)" :
-        light.type == LightComponent::Type::Spot ? "Luminous intensity (cd)" : "Luminous flux (lm)";
-    result.edited = ImGui::DragFloat(intensityLabel, &light.intensity, 1.0f, 0.0f, std::numeric_limits<float>::max(),
-                                   "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
-
-    if (light.type == LightComponent::Type::Point || light.type == LightComponent::Type::Spot ||
-        light.type == LightComponent::Type::RectArea)
-        result.edited = ImGui::DragFloat("Range (m)", &light.range, 0.1f, 0.01f, 100000.0f,
-                                       "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
-
-    if (light.type == LightComponent::Type::Spot)
-    {
-        float inner = glm::degrees(std::acos(std::clamp(light.cosInner, -1.0f, 1.0f)));
-        float outer = glm::degrees(std::acos(std::clamp(light.cosOuter, -1.0f, 1.0f)));
-        if (ImGui::DragFloat("Inner Angle", &inner, 0.25f, 0.0f, outer,
-                             "%.1f deg", ImGuiSliderFlags_AlwaysClamp))
-        {
-            light.cosInner = std::cos(glm::radians(inner));
-            result.edited = true;
-        }
-        if (ImGui::DragFloat("Outer Angle", &outer, 0.25f, inner, 89.0f,
-                             "%.1f deg", ImGuiSliderFlags_AlwaysClamp))
-        {
-            light.cosOuter = std::cos(glm::radians(outer));
-            result.edited = true;
-        }
-    }
-    if (light.type == LightComponent::Type::RectArea)
-        result.edited = ImGui::DragFloat2("Area Size (m)", glm::value_ptr(light.areaSize), 0.05f,
-                                        0.01f, 100000.0f, "%.3f",
-                                        ImGuiSliderFlags_AlwaysClamp) || result.edited;
-
+    result.edited = ImGui::ColorEdit3("Color", glm::value_ptr(light.color));
+    const char* intensityLabel = light.type() == LightComponent::Type::Directional ?
+        "Illuminance (lux)" : "Luminous intensity (cd)";
+    result.edited = ImGui::DragFloat(intensityLabel, &light.intensity, 1.0f, 0.0f,
+        std::numeric_limits<float>::max(), "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
     result.edited = drawField("Enabled", light.enabled) || result.edited;
     result.edited = drawField("Cast Shadow", light.castShadow) || result.edited;
     return result;
 }
 
-MaterialOverride materialOverrideDiff(const MaterialAsset& stock, const MaterialAsset& preview)
+ComponentDrawResult drawLocalLightFields(LocalLightComponent& light)
+{
+    auto result = drawLightFields(light);
+    result.edited = ImGui::DragFloat("Range (m)", &light.range, 0.1f, 0.01f, 100000.0f,
+        "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
+    return result;
+}
+}
+
+ComponentDrawResult drawFields(PointLightComponent& light)
+{
+    return drawLocalLightFields(light);
+}
+
+ComponentDrawResult drawFields(DirectionalLightComponent& light)
+{
+    return drawLightFields(light);
+}
+
+ComponentDrawResult drawFields(RectAreaLightComponent& light)
+{
+    auto result = drawLocalLightFields(light);
+    result.edited = ImGui::DragFloat2("Area Size (m)", glm::value_ptr(light.areaSize), 0.05f,
+        0.01f, 100000.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
+    return result;
+}
+
+ComponentDrawResult drawFields(SpotLightComponent& light)
+{
+    auto result = drawLocalLightFields(light);
+    float inner = glm::degrees(std::acos(std::clamp(light.cosInner, -1.0f, 1.0f)));
+    float outer = glm::degrees(std::acos(std::clamp(light.cosOuter, -1.0f, 1.0f)));
+    if (ImGui::DragFloat("Inner Angle", &inner, 0.25f, 0.0f, outer,
+        "%.1f deg", ImGuiSliderFlags_AlwaysClamp))
+    {
+        light.cosInner = std::cos(glm::radians(inner));
+        result.edited = true;
+    }
+    if (ImGui::DragFloat("Outer Angle", &outer, 0.25f, inner, 89.0f,
+        "%.1f deg", ImGuiSliderFlags_AlwaysClamp))
+    {
+        light.cosOuter = std::cos(glm::radians(outer));
+        result.edited = true;
+    }
+    return result;
+}
+
+MaterialOverride materialOverrideDiff(const PbrMaterialAsset& stock, const PbrMaterialAsset& preview)
 {
     MaterialOverride patch;
     constexpr auto ctx = std::meta::access_context::current();
@@ -177,7 +197,7 @@ bool drawMeshSelection(RenderComponent& render, const AssetManager& assets)
     return edited;
 }
 
-bool drawMaterialFields(MaterialAsset& material)
+bool drawMaterialFields(PbrMaterialAsset& material)
 {
     bool edited = false;
     glm::vec4 baseColor = material.baseColorFactor.value_or(glm::vec4{1.0f});
@@ -283,7 +303,8 @@ ComponentDrawResult drawFields(RenderComponent& render)
         if (ImGui::TreeNodeEx("Material", ImGuiTreeNodeFlags_DefaultOpen, "Submesh %zu", index))
         {
             const auto& materialId = mesh->submeshes[index].materialId;
-            const auto* stock = assets->find<MaterialAsset>(materialId);
+            const auto* asset = assets->find<MaterialAsset>(materialId);
+            const auto* stock = dynamic_cast<const PbrMaterialAsset*>(asset);
             ImGui::Text("Id: %s", materialId.c_str());
             if (stock)
             {
@@ -297,7 +318,7 @@ ComponentDrawResult drawFields(RenderComponent& render)
                 }
                 ImGui::EndDisabled();
 
-                MaterialAsset preview = *stock;
+                PbrMaterialAsset preview = *stock;
                 if (const auto found = render.materialOverrides.find(submeshIndex);
                     found != render.materialOverrides.end())
                     applyOptionalFields(preview, found->second);
@@ -310,7 +331,7 @@ ComponentDrawResult drawFields(RenderComponent& render)
                     result.edited = true;
                 }
             }
-            else ImGui::TextDisabled("Material description not loaded");
+            else ImGui::TextDisabled(asset ? "Offline material editing is not available" : "Material description not loaded");
 
             ImGui::TreePop();
         }
@@ -348,9 +369,26 @@ ComponentDrawResult drawComponent(Component& component)
     }
 
     ComponentDrawResult result;
+    auto* light = dynamic_cast<LightComponent*>(&component);
+    std::optional<LightComponent::Type> selectedLightType;
     ImGui::PushID(&component);
     if (ImGui::CollapsingHeader(found->second.name, ImGuiTreeNodeFlags_DefaultOpen))
-        result = found->second.draw(component);
+    {
+        if (light)
+        {
+            auto type = light->type();
+            if (component_draw::drawField("Type", type))
+            {
+                selectedLightType = type;
+                result.edited = true;
+            }
+        }
+        result |= found->second.draw(component);
+    }
     ImGui::PopID();
+
+    // Replace only after drawing has finished using the old component.
+    if (selectedLightType)
+        replaceLightComponent(*light, *selectedLightType);
     return result;
 }

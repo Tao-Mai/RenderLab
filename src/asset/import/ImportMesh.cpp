@@ -104,17 +104,17 @@ void registerMaterials(
     const std::filesystem::path& modelDirectory,
     const std::filesystem::path& meshSource)
 {
-    MaterialAsset defaultMaterial;
+    PbrMaterialAsset defaultMaterial;
     defaultMaterial.id               = asset_import::nextId<MaterialAsset>(meshSource.stem().string());
     defaultMaterial.baseColorTexture = TextureBinding{
         BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat};
     build.materialIds.push_back(
-        context().assetManager->save<MaterialAsset>(std::move(defaultMaterial)));
+        context().assetManager->save(std::move(defaultMaterial)));
 
     for (size_t index = 0; index < model.materials.size(); ++index)
     {
         const tinygltf::Material& source = model.materials[index];
-        MaterialAsset              material;
+        PbrMaterialAsset              material;
         material.id = asset_import::nextId<MaterialAsset>(meshSource.stem().string());
 
         const auto& pbr = source.pbrMetallicRoughness;
@@ -195,7 +195,7 @@ void registerMaterials(
                 return bindTexture(textureIdFor(build, model, index, modelDirectory, ColorSpace::Linear));
             };
 
-            MaterialAsset::Clearcoat clearcoat{
+            PbrMaterialAsset::Clearcoat clearcoat{
                 .factor = readFactor("clearcoatFactor", 0.0f, 1.0f),
                 .roughnessFactor = readFactor("clearcoatRoughnessFactor", 0.0f, 1.0f),
                 .texture = readTexture("clearcoatTexture"),
@@ -215,7 +215,7 @@ void registerMaterials(
             material.clearcoat = std::move(clearcoat);
         }
         build.materialIds.push_back(
-            context().assetManager->save<MaterialAsset>(std::move(material)));
+            context().assetManager->save(std::move(material)));
     }
 }
 

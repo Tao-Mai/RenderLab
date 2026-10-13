@@ -26,20 +26,24 @@ flowchart TB
 
 ### Asset
 
-`TextureAsset`、`MeshAsset`、`MaterialAsset`、`ShaderAsset`、`SceneAsset`、`EnvironmentMapAsset`、`SamplerAsset` 直接继承空基类 `Asset`，并直接声明持久化字段。
+`TextureAsset`、`MeshAsset`、`ShaderAsset`、`SceneAsset`、`EnvironmentMapAsset`、`SamplerAsset` 直接继承空基类 `Asset`，并直接声明持久化字段。`MaterialAsset` 是具有虚析构的材质基类，只保存统一的 `MaterialAsset::ID`；`PbrMaterialAsset` 与 `OfflineMaterialAsset` 继承它，共享 `Material` 目录和 ID 空间，Mesh/Submesh 不区分具体材质模型。
+
+`PbrMaterialAsset` 保存现有 PBR 参数。`OfflineMaterialAsset.parameters` 使用 `std::variant` 区分 Diffuse、Conductor、Dielectric 的 RGB 参数，当前仅支持资产读写，不代表已经实现这些模型的 shader 求值。现有光栅、实时光追和离线路线仍渲染 PBR 材质；不支持的材质类型明确报错，不隐式转换。
+
+材质文件按 `{"PbrMaterialAsset": {...}}` 或 `{"OfflineMaterialAsset": {...}}` 保存，离线参数按 `{"Diffuse": {...}}` 等保存。类型标签不使用 RTTI 名称。AssetManager 初始化时注册材质类型；多态读写复用 Serializer 的基类指针序列化，旧的无类型标签格式不再支持。
 
 Mesh 导入先通过 `prepareMesh` 解析节点变换、几何和包围盒，不写入资产。编辑器提供线框预览、原始/缩放后 XYZ 尺寸（米）、可旋转缩放的视图及 1 米参照立方体，也可输入目标最长边（米）自动计算导入比例。Mesh ID 可编辑，默认使用源文件名去掉扩展名；仅在确认导入时查重，重名则依次追加数字，输入框不会预先补序号。确认时 `saveMesh` 导入材质和纹理，将正的统一 `importScale` 烘焙到顶点位置后写入二进制；法线和 UV 不变。`MeshAsset.path` 保存源文件位置，`MeshAsset.importScale` 保存导入比例；运行时直接读取烘焙后的几何，不再应用这个比例。Actor 的 Transform Scale 仍仅表示实例缩放。
 `AssetTypes` 在定义末尾列出全部资产。`AssetType` 检查类型化 ID、`id` 字段和显式目录名 `dir`；JSON 存于 `assets/<dir>/`，例如 `assets/Texture/`，不依赖 C++ 类型名。
-`MaterialOverride` 是 `MaterialAsset` 的别名，表示物体局部覆写；有值的 optional 字段参与合并，ID 不参与覆写。
+`MaterialOverride` 是 `PbrMaterialAsset` 的别名，表示现有 PBR 材质的物体局部覆写；有值的 optional 字段参与合并，ID 不参与覆写。离线材质覆写与编辑界面尚未实现。
 `SamplerAsset` 保存 Vulkan sampler 的过滤、寻址、LOD、各向异性、比较和边框颜色参数。
 `maxLod` 留空表示不限制最大 LOD，创建 Vulkan 对象时映射为 `VK_LOD_CLAMP_NONE`；显式 `0.0` 仅使用基础 mip。
 `TextureBinding` 将纹理 ID 与 sampler ID 一起用于材质和环境贴图。
 
-`MaterialAsset::clearcoat` 保存 glTF `KHR_materials_clearcoat` 的 factor、roughnessFactor、normalScale，以及强度、粗糙度、法线三类 TextureBinding；无扩展时为 null。导入默认值遵循 glTF（强度和粗糙度为 0、法线强度为 1），三类贴图均使用 Linear 色彩空间。清漆层使用独立法线和粗糙度，直接光采用 GGX + Kelemen，IBL 复用 GGX 预过滤环境与 LUT，按 Fresnel 分层混合并衰减底层自发光。
+`PbrMaterialAsset::clearcoat` 保存 glTF `KHR_materials_clearcoat` 的 factor、roughnessFactor、normalScale，以及强度、粗糙度、法线三类 TextureBinding；无扩展时为 null。导入默认值遵循 glTF（强度和粗糙度为 0、法线强度为 1），三类贴图均使用 Linear 色彩空间。清漆层使用独立法线和粗糙度，直接光采用 GGX + Kelemen，IBL 复用 GGX 预过滤环境与 LUT，按 Fresnel 分层混合并衰减底层自发光。
 
 ### AssetManager
 
-底层资产读写和缓存工具。启动时扫描资产 JSON 并直接缓存资产对象；`get(id)` 返回只读引用，`find(id)` 返回指针，`save(asset)` 持久化并更新缓存。
+底层资产读写和缓存工具。启动时扫描资产 JSON，缓存拥有所有权的资产指针，避免多态对象切片；`get(id)` 返回只读引用，`find(id)` 返回指针，`save(asset)` 持久化并更新缓存。
 查询内置 ID 时从 `BuiltinAssets` 获取资产。它不创建 GPU 对象，也不负责场景实例化或生命周期。
 
 ### AssetDataManager

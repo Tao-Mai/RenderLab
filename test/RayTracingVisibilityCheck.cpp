@@ -17,7 +17,6 @@
 
 #include <GLFW/glfw3.h>
 #include <cmath>
-#include <numbers>
 #include <glm/gtc/packing.hpp>
 
 namespace
@@ -130,9 +129,8 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     LOG_INFO("Ray tracing visibility passed: clear {}, blocked {}, beyond light {}", clear, blocked, beyondLight);
 
     auto& sun     = *scenes.scene().actors[1];
-    auto& sunData = *sun.getComponent<LightComponent>();
-    const float pointFlux = sunData.intensity;
-    sunData.type = LightComponent::Type::Directional;
+    const float pointIntensity = sun.getComponent<LightComponent>()->intensity;
+    auto& sunData = replaceLightComponent(*sun.getComponent<LightComponent>(), LightComponent::Type::Directional);
     sunData.intensity = 100;
     sun.transform().setRotationEulerDegrees({0, 45, 0});
     blocker.transform().position = {4, 3, 5};
@@ -155,8 +153,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         directionalClear
     );
 
-    sunData.type = LightComponent::Type::Point;
-    sunData.intensity = pointFlux;
+    replaceLightComponent(sunData, LightComponent::Type::Point).intensity = pointIntensity;
     sun.transform().setRotationEulerDegrees({0, 0, 0});
     sun.transform().position = {2, 0, 3};
     blocker.transform().position = {4, 0, 5};
@@ -192,12 +189,11 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     auto sphere = std::make_unique<AStaticMesh>();
     sphere->getComponent<RenderComponent>()->meshId = BuiltinAssets::Mesh::sphere;
     areaScene.actors.push_back(std::move(sphere));
-    auto areaLight = std::make_unique<ALight>();
+    auto areaLight = std::make_unique<ALight>(LightComponent::Type::RectArea);
     areaLight->transform().position = {0, 0, 7};
-    auto& lightData = *areaLight->getComponent<LightComponent>();
-    lightData.type = LightComponent::Type::RectArea;
+    auto& lightData = *areaLight->getComponent<RectAreaLightComponent>();
     lightData.areaSize = {20, 20};
-    lightData.intensity = 8.0f * std::numbers::pi_v<float> * 20.0f * 20.0f;
+    lightData.intensity = 8.0f * 20.0f * 20.0f;
     areaScene.actors.push_back(std::move(areaLight));
     scenes.load(areaScene);
     setup();
@@ -232,10 +228,10 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     scenes.deleteActor(areaBlocker.selectionId());
     auto& farLight = scenes.createActor("ALight");
     farLight.transform().position = {0, 0, 9};
-    auto& farData = *farLight.getComponent<LightComponent>();
-    farData.type = LightComponent::Type::RectArea;
+    replaceLightComponent(*farLight.getComponent<LightComponent>(), LightComponent::Type::RectArea);
+    auto& farData = *farLight.getComponent<RectAreaLightComponent>();
     farData.areaSize = {20, 20};
-    farData.intensity = 100.0f * std::numbers::pi_v<float> * 20.0f * 20.0f;
+    farData.intensity = 100.0f * 20.0f * 20.0f;
     // The near emitter still occludes the farther lamp when its emitted luminance is zero.
     light.intensity = 0;
     CHECK(sample() == 0);
@@ -244,8 +240,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
 
     SceneAsset onlyLights;
     onlyLights.editorCamera = areaScene.editorCamera;
-    auto lamp = std::make_unique<ALight>();
-    lamp->getComponent<LightComponent>()->type = LightComponent::Type::RectArea;
+    auto lamp = std::make_unique<ALight>(LightComponent::Type::RectArea);
     lamp->transform().position = {0, 0, 3};
     onlyLights.actors.push_back(std::move(lamp));
     scenes.load(onlyLights);
@@ -298,7 +293,7 @@ int main(int, char** argv)
     scene.actors.push_back(std::move(sphere));
     auto light                                       = std::make_unique<ALight>();
     light->transform().position                      = {2, 0, 3};
-    light->getComponent<LightComponent>()->intensity = 100.0f * 4.0f * std::numbers::pi_v<float>;
+    light->getComponent<LightComponent>()->intensity = 100.0f;
     scene.actors.push_back(std::move(light));
     scenes.load(scene);
     renderer.init();

@@ -10,6 +10,7 @@
 #include "scene/SceneManager.h"
 #include "scene/actor/ALight.h"
 #include "scene/actor/AStaticMesh.h"
+#include "scene/component/RectAreaLightComponent.h"
 #include "scene/component/RenderComponent.h"
 #include "scene/system/RenderSystem.h"
 
@@ -54,11 +55,10 @@ int main(int, char** argv)
     SceneAsset scene;
     scene.id = "rect-shadow-check";
     scene.actors.push_back(std::make_unique<AStaticMesh>());
-    auto actor                  = std::make_unique<ALight>();
+    auto actor                  = std::make_unique<ALight>(LightComponent::Type::RectArea);
     actor->transform().position = {0.0f, 0.0f, 4.0f};
     actor->transform().rotation = glm::angleAxis(glm::radians(30.0f), glm::vec3{0.0f, 0.0f, 1.0f});
-    auto& light                 = *actor->getComponent<LightComponent>();
-    light.type                  = LightComponent::Type::RectArea;
+    auto& light                 = *actor->getComponent<RectAreaLightComponent>();
     light.castShadow            = false;
     light.areaSize              = {2.0f, 1.0f};
     light.range                 = 16.0f;

@@ -2,7 +2,7 @@
 
 #include <array>
 #include <map>
-#include "asset/MaterialAsset.h"
+#include "asset/PbrMaterialAsset.h"
 #include "asset/MeshAsset.h"
 #include "asset/SamplerAsset.h"
 #include "asset/TextureAsset.h"
@@ -61,7 +61,7 @@ private:
     };
     struct MaterialInstance
     {
-        MaterialAsset                asset;
+        PbrMaterialAsset             asset;
         std::shared_ptr<GpuMaterial> gpu;
         bool                         used = false;
     };
@@ -72,7 +72,7 @@ private:
     };
     std::array<FrameResources, maxFramesInFlight>                     frameResources;
     std::unordered_map<MaterialAsset::ID, SharedMaterial>             materials;
-    std::shared_ptr<GpuMaterial>                                      createMaterial(const MaterialAsset& asset);
+    std::shared_ptr<GpuMaterial>                                      createMaterial(const PbrMaterialAsset& asset);
     std::unordered_map<TextureAsset::ID, std::shared_ptr<GpuTexture>> textures;
     std::unordered_map<SamplerAsset::ID, vk::raii::Sampler>           samplers;
 

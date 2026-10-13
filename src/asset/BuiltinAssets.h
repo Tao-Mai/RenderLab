@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset/MaterialAsset.h"
+#include "asset/PbrMaterialAsset.h"
 #include "asset/MeshAsset.h"
 #include "asset/MeshGeometry.h"
 #include "asset/SamplerAsset.h"

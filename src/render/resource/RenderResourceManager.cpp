@@ -180,13 +180,13 @@ std::shared_ptr<GpuMaterial> RenderResourceManager::material(const MaterialAsset
     const auto revision = assets->revision<MaterialAsset>(id);
     if (!entry.gpu || entry.revision != revision)
     {
-        entry.gpu      = createMaterial(assets->get<MaterialAsset>(id));
+        entry.gpu      = createMaterial(assets->get<MaterialAsset>(id).as<PbrMaterialAsset>());
         entry.revision = revision;
     }
     return entry.gpu;
 }
 
-std::shared_ptr<GpuMaterial> RenderResourceManager::createMaterial(const MaterialAsset& asset)
+std::shared_ptr<GpuMaterial> RenderResourceManager::createMaterial(const PbrMaterialAsset& asset)
 {
     DCHECK(descriptors);
     const auto loadTexture = [&](const std::optional<TextureBinding>& source,
@@ -322,7 +322,7 @@ vk::Sampler RenderResourceManager::sampler(const SamplerAsset::ID& id)
 
 namespace
 {
-bool sameMaterialResources(const MaterialAsset& a, const MaterialAsset& b)
+bool sameMaterialResources(const PbrMaterialAsset& a, const PbrMaterialAsset& b)
 {
     if (a.shaderId != b.shaderId || a.clearcoat.has_value() != b.clearcoat.has_value())
         return false;
@@ -360,7 +360,7 @@ const RenderData& RenderResourceManager::prepare(const SceneRenderData& scene, u
             if (const auto override = object.materialOverrides.find(static_cast<int>(index));
                 override != object.materialOverrides.end())
             {
-                auto asset = assets->get<MaterialAsset>(submesh.materialId);
+                auto asset = assets->get<MaterialAsset>(submesh.materialId).as<PbrMaterialAsset>();
                 applyOptionalFields(asset, override->second);
                 auto& instance = frame.instances[{object.selectionId, object.componentIndex, index}];
                 if (!instance.gpu || !sameMaterialResources(instance.asset, asset))

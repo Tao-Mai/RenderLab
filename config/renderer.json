@@ -39,5 +39,5 @@
             "mode": "Neutral"
         }
     },
-    "renderPath": "OfflinePathTracing"
+    "renderPath": "RayTracing"
 }

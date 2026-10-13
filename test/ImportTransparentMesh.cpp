@@ -55,7 +55,7 @@ int main(int argc, char** argv)
     MaterialAsset::ID transparentMaterial;
     for (const auto& submesh : mesh.submeshes)
     {
-        const auto& material = assets.get<MaterialAsset>(submesh.materialId);
+        const auto& material = assets.get<MaterialAsset>(submesh.materialId).as<PbrMaterialAsset>();
         if (material.alphaMode != "BLEND")
             continue;
         CHECK(material.baseColorFactor && material.baseColorFactor->a > 0.0f && material.baseColorFactor->a < 1.0f);

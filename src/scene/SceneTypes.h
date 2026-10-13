@@ -4,7 +4,7 @@
 #include "scene/actor/ALight.h"
 #include "scene/actor/AStaticMesh.h"
 #include "scene/component/CharacterMoveComponent.h"
-#include "scene/component/LightComponent.h"
+#include "scene/component/LightTypes.h"
 #include "scene/component/RenderComponent.h"
 
 // Explicit names are the persistent type IDs; serialization and UI share this list.
@@ -16,7 +16,7 @@ void forEachComponentType(F&& visitor)
     visitor.template operator()<FreeFlyMoveComponent>("FreeFlyMoveComponent");
     visitor.template operator()<CharacterMoveComponent>("CharacterMoveComponent");
     visitor.template operator()<RenderComponent>("RenderComponent");
-    visitor.template operator()<LightComponent>("LightComponent");
+    forEachLightComponentType(visitor);
 }
 
 template<class F>

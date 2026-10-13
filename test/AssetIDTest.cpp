@@ -1,12 +1,13 @@
 #include "asset/AssetManager.h"
 #include "asset/AssetTypes.h"
 #include "asset/BuiltinAssets.h"
+#include "asset/OfflineMaterialAsset.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Serializer.h"
 #include "editor/EditorCamera.h"
 #include "scene/SceneManager.h"
-#include "scene/component/LightComponent.h"
+#include "scene/component/LightTypes.h"
 #include "scene/component/RenderComponent.h"
 #include "scene/component/TransformComponent.h"
 
@@ -28,7 +29,7 @@ static_assert(AssetType<SceneAsset>);
 static_assert(AssetType<EnvironmentMapAsset>);
 static_assert(AssetType<SamplerAsset>);
 static_assert(!AssetType<Asset>);
-static_assert(std::same_as<MaterialOverride, MaterialAsset>);
+static_assert(std::same_as<MaterialOverride, PbrMaterialAsset>);
 static_assert(!std::is_convertible_v<TextureAsset::ID, MeshAsset::ID>);
 
 TEST(AssetIDTest, AssetsExposePersistentFieldsDirectly)
@@ -137,13 +138,13 @@ TEST(AssetIDTest, RoundTripsSamplerAndTextureBinding)
     EXPECT_EQ(parsedSampler.maxLod, 0.0f);
     EXPECT_EQ(Serialize(parsedSampler), samplerJson);
 
-    MaterialAsset material;
+    PbrMaterialAsset material;
     material.id               = MaterialAsset::ID{"white"};
     material.baseColorTexture = TextureBinding{TextureAsset::ID{"white"}, SamplerAsset::ID{"linearRepeat"}};
     const json materialJson   = Serialize(material);
     EXPECT_TRUE(materialJson.at("roughness").is_null());
     EXPECT_EQ(materialJson.at("baseColorTexture").at("textureID").at("value"), "white");
-    MaterialAsset parsedMaterial;
+    PbrMaterialAsset parsedMaterial;
     Deserialize(materialJson, parsedMaterial);
     ASSERT_TRUE(parsedMaterial.baseColorTexture);
     EXPECT_EQ(parsedMaterial.baseColorTexture->textureID, TextureAsset::ID{"white"});
@@ -153,11 +154,11 @@ TEST(AssetIDTest, RoundTripsSamplerAndTextureBinding)
 
 TEST(AssetIDTest, RejectsMissingAndUnknownAssetFields)
 {
-    MaterialAsset material;
+    PbrMaterialAsset material;
     material.id               = MaterialAsset::ID{"strict-material"};
     material.baseColorTexture = TextureBinding{TextureAsset::ID{"white"}, SamplerAsset::ID{"linearRepeat"}};
     const json    stored      = Serialize(material);
-    MaterialAsset parsed;
+    PbrMaterialAsset parsed;
 
     json invalid = stored;
     invalid.erase("roughness");
@@ -179,12 +180,12 @@ TEST(AssetIDTest, RejectsMissingAndUnknownAssetFields)
 
 TEST(AssetIDTest, MaterialEqualityDetectsParameterAndBindingChanges)
 {
-    MaterialAsset material;
+    PbrMaterialAsset material;
     material.id               = MaterialAsset::ID{"white"};
     material.roughness        = 0.5f;
     material.baseColorTexture = TextureBinding{TextureAsset::ID{"white"}, SamplerAsset::ID{"linearRepeat"}};
 
-    MaterialAsset copy;
+    PbrMaterialAsset copy;
     Deserialize(Serialize(material), copy);
     EXPECT_EQ(copy, material);
     copy.roughness.reset();
@@ -203,32 +204,73 @@ TEST(AssetIDTest, JsonIoSavesAndReplacesAssetsInTheUnifiedFormat)
     {
         std::filesystem::path directory = std::filesystem::path{RENDERLAB_SOURCE_DIR} / "test" /
             ("json_io_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-        std::filesystem::path file = directory / "material.json";
+        std::filesystem::path file = directory / MaterialAsset::dir / "persisted.json";
 
         ~TemporaryAsset()
         {
             std::error_code error;
             std::filesystem::remove(file, error);
             std::filesystem::remove(file.string() + ".tmp", error);
+            std::filesystem::remove(file.parent_path(), error);
             std::filesystem::remove(directory, error);
         }
     } temporary;
 
-    MaterialAsset material;
+    AssetManager assets;
+    assets.init(temporary.directory);
+    PbrMaterialAsset material;
     material.id              = MaterialAsset::ID{"persisted"};
     material.baseColorFactor = glm::vec4{0.2f, 0.4f, 0.6f, 1.0f};
     material.normalTexture   = TextureBinding{TextureAsset::ID{"normal"}, SamplerAsset::ID{"linearRepeat"}};
-    asset_json::save(temporary.file, material);
-    EXPECT_EQ(Serialize(asset_json::load<MaterialAsset>(temporary.file)), Serialize(material));
+    assets.save(material);
+    auto restored = asset_json::load<std::unique_ptr<MaterialAsset>>(temporary.file);
+    EXPECT_EQ(restored->as<PbrMaterialAsset>(), material);
 
     material.roughness   = 0.3f;
     material.doubleSided = false;
-    asset_json::save(temporary.file, material);
-    EXPECT_EQ(Serialize(asset_json::load<MaterialAsset>(temporary.file)), Serialize(material));
+    assets.save(material);
+    restored = asset_json::load<std::unique_ptr<MaterialAsset>>(temporary.file);
+    EXPECT_EQ(restored->as<PbrMaterialAsset>(), material);
     EXPECT_FALSE(std::filesystem::exists(temporary.file.string() + ".tmp"));
 
     std::ifstream input{temporary.file};
-    EXPECT_EQ(json::parse(input), Serialize(material));
+    EXPECT_EQ(json::parse(input), Serialize(restored));
+    input.close();
+
+    OfflineMaterialAsset offline;
+    offline.id = material.id;
+    offline.parameters = OfflineMaterialAsset::Dielectric{.eta = 1.6f, .roughness = {0.2f, 0.3f}};
+    assets.save(offline);
+    EXPECT_EQ(assets.get(offline.id).as<OfflineMaterialAsset>(), offline);
+    EXPECT_EQ(assets.loadedIds<MaterialAsset>().size(), 1u);
+    restored = asset_json::load<std::unique_ptr<MaterialAsset>>(temporary.file);
+    EXPECT_EQ(restored->as<OfflineMaterialAsset>(), offline);
+    EXPECT_TRUE(Serialize(restored).at("OfflineMaterialAsset").at("parameters").contains("Dielectric"));
+
+    assets.shutdown();
+    AssetManager reloaded;
+    reloaded.init(temporary.directory);
+    EXPECT_EQ(reloaded.get(offline.id).as<OfflineMaterialAsset>(), offline);
+    reloaded.shutdown();
+}
+
+TEST(AssetIDTest, OfflineMaterialParametersUseNamedAlternatives)
+{
+    OfflineMaterialAsset material;
+    material.id = MaterialAsset::ID{"offline"};
+    material.parameters = OfflineMaterialAsset::Diffuse{.reflectance = {0.2f, 0.3f, 0.4f}};
+    auto stored = Serialize(material);
+    EXPECT_TRUE(stored.at("parameters").contains("Diffuse"));
+    OfflineMaterialAsset restored;
+    Deserialize(stored, restored);
+    EXPECT_EQ(restored, material);
+
+    material.parameters = OfflineMaterialAsset::Conductor{.eta = {0.2f, 0.4f, 0.6f}, .k = {3, 4, 5}};
+    stored = Serialize(material);
+    EXPECT_TRUE(stored.at("parameters").contains("Conductor"));
+    Deserialize(stored, restored);
+    EXPECT_EQ(restored, material);
+    EXPECT_DEATH(Deserialize(json{{"UnknownModel", json::object()}}, restored.parameters), "");
 }
 
 TEST(AssetIDTest, AllPersistedAssetsRoundTrip)
@@ -237,6 +279,8 @@ TEST(AssetIDTest, AllPersistedAssetsRoundTrip)
     registration.init();
     registration.shutdown();
     const auto root  = std::filesystem::path{RENDERLAB_SOURCE_DIR} / "assets";
+    AssetManager assets;
+    assets.init(root);
     size_t     count = 0;
     AssetTypes::forEach(
         [&]<AssetType T>
@@ -250,7 +294,8 @@ TEST(AssetIDTest, AllPersistedAssetsRoundTrip)
                 if (!entry.is_regular_file() || entry.path().extension() != ".json")
                     continue;
                 SCOPED_TRACE(entry.path().string());
-                const auto    asset = asset_json::load<T>(entry.path());
+                using Stored = std::conditional_t<std::is_polymorphic_v<T>, std::unique_ptr<T>, T>;
+                const auto    asset = asset_json::load<Stored>(entry.path());
                 std::ifstream input{entry.path()};
                 EXPECT_EQ(Serialize(asset), json::parse(input));
                 ++count;
@@ -258,6 +303,7 @@ TEST(AssetIDTest, AllPersistedAssetsRoundTrip)
         }
     );
     EXPECT_GT(count, 0);
+    assets.shutdown();
 }
 
 TEST(AssetIDTest, BuiltinSamplersKeepExpectedFiltersAndAddressModes)
@@ -338,7 +384,7 @@ TEST(AssetIDTest, LoadsCornellBoxWithIndependentEditorCamera)
             EXPECT_NE(assets.find<MeshAsset>(render->meshId), nullptr);
 
     const auto* light = manager.scene().actors.back()->getComponent<LightComponent>();
-    EXPECT_TRUE(light && light->type == LightComponent::Type::RectArea && light->enabled && light->castShadow);
+    EXPECT_TRUE(light && light->type() == LightComponent::Type::RectArea && light->enabled && light->castShadow);
     const auto direction = manager.scene().actors.back()->transform().rotation * glm::vec3(0.0f, 0.0f, -1.0f);
     EXPECT_NEAR(direction.y, -1.0f, 1.0e-6f);
     EXPECT_EQ(Serialize(manager.scene()), Serialize(scene));

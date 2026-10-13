@@ -18,7 +18,6 @@
 #include "scene/system/RenderSystem.h"
 
 #include <cmath>
-#include <numbers>
 
 #include <GLFW/glfw3.h>
 #include <glm/gtc/packing.hpp>
@@ -167,7 +166,7 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
             );
         }
     auto& material     = scenes.scene().actors[0]->getComponent<RenderComponent>()->materialOverrides[0];
-    material.clearcoat = MaterialAsset::Clearcoat{.factor = 1.0f, .roughnessFactor = 0.2f};
+    material.clearcoat = PbrMaterialAsset::Clearcoat{.factor = 1.0f, .roughnessFactor = 0.2f};
     compare(lastDeferred, sample(true, true, true));
     LOG_INFO("Deferred uses the base PBR material when clearcoat is present.");
     graph.reset();
@@ -219,7 +218,7 @@ int main(int, char** argv)
     scene.actors.push_back(std::move(cube));
     auto light                                        = std::make_unique<ALight>();
     light->transform().position                       = {2, 0, 3};
-    light->getComponent<LightComponent>()->intensity  = 30.0f * 4.0f * std::numbers::pi_v<float>;
+    light->getComponent<LightComponent>()->intensity  = 30.0f;
     light->getComponent<LightComponent>()->castShadow = true;
     scene.actors.push_back(std::move(light));
     scenes.load(scene);

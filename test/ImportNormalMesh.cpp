@@ -35,7 +35,7 @@ int main(int argc, char** argv)
     bool hasNormalTexture = false;
     for (const auto& submesh : mesh.submeshes)
     {
-        const auto& material = assets.get<MaterialAsset>(submesh.materialId);
+        const auto& material = assets.get<MaterialAsset>(submesh.materialId).as<PbrMaterialAsset>();
         if (!material.normalTexture)
             continue;
 

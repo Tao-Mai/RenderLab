@@ -156,10 +156,9 @@ int main(int, char** argv)
     auto sphere                                     = std::make_unique<AStaticMesh>();
     sphere->getComponent<RenderComponent>()->meshId = BuiltinAssets::Mesh::sphere;
     scene.actors.push_back(std::move(sphere));
-    auto lamp                                       = std::make_unique<ALight>();
+    auto lamp                                       = std::make_unique<ALight>(LightComponent::Type::RectArea);
     lamp->transform().position                      = {2, 2, 3};
-    lamp->getComponent<LightComponent>()->type      = LightComponent::Type::RectArea;
-    lamp->getComponent<LightComponent>()->intensity = 500;
+    lamp->getComponent<LightComponent>()->intensity = 159.154943f;
     scene.actors.push_back(std::move(lamp));
     scenes.load(scene);
     EditorCamera camera{scenes.scene().editorCamera};

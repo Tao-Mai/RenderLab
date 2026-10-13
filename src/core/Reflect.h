@@ -12,6 +12,7 @@
 #include <typeindex>
 #include <unordered_map>
 #include <vector>
+#include <variant>
 
 #include <glm/fwd.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -24,6 +25,12 @@ inline constexpr bool IsVector<std::vector<T, Allocator>> = true;
 
 template <class T>
 inline constexpr bool IsOptional = false;
+
+template <class T>
+inline constexpr bool IsVariant = false;
+
+template <class... T>
+inline constexpr bool IsVariant<std::variant<T...>> = true;
 
 template <class T>
 inline constexpr bool IsOptional<std::optional<T>> = true;

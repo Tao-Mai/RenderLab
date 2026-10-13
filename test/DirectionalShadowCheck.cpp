@@ -55,9 +55,8 @@ int main(int, char** argv)
     scene.id                    = "directional-shadow-check";
     scene.editorCamera.position = {0.0f, 1.0f, 6.0f};
     scene.actors.push_back(std::make_unique<AStaticMesh>());
-    auto  actor      = std::make_unique<ALight>();
+    auto  actor      = std::make_unique<ALight>(LightComponent::Type::Directional);
     auto& light      = *actor->getComponent<LightComponent>();
-    light.type       = LightComponent::Type::Directional;
     light.castShadow = true;
     scene.actors.push_back(std::move(actor));
     scenes.load(scene);
