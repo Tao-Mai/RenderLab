@@ -4,10 +4,11 @@
 #error SHADOW_TYPE must be specified when compiling the shadow shader
 #endif
 
-// Match LightType: Point = 0, Directional = 1, RectArea = 2.
+// Match LightType: Point = 0, Directional = 1, RectArea = 2, Spot = 3.
 #define SHADOW_TYPE_POINT 0
 #define SHADOW_TYPE_DIRECTIONAL 1
 #define SHADOW_TYPE_RECT_AREA 2
+#define SHADOW_TYPE_SPOT 3
 
 struct VertexInput
 {
@@ -52,6 +53,8 @@ VertexOutput vertMain(VertexInput input
     output.position = mul(directionalShadowData[light.shadowIdx].cascades[pushConstants.cascadeIndex].vp, worldPosition);
 #elif SHADOW_TYPE == SHADOW_TYPE_RECT_AREA
     output.position = mul(rectAreaShadowData[light.shadowIdx].vp, worldPosition);
+#elif SHADOW_TYPE == SHADOW_TYPE_SPOT
+    output.position = mul(spotShadowData[light.shadowIdx].vp, worldPosition);
 #else
 #error Unsupported SHADOW_TYPE
 #endif

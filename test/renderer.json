@@ -31,7 +31,9 @@
             "pixelRotation": true,
             "pointShadowMapSize": 1024,
             "rectAreaShadowMapSize": 1024,
-            "sampleRadius": 0.019999999552965164
+            "sampleRadius": 0.019999999552965164,
+            "spotSampleRadius": 1.5,
+            "spotShadowMapSize": 1024
         },
         "toneMapping": {
             "ev100": -0.2630344033241272,

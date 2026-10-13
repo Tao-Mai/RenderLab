@@ -653,9 +653,9 @@ TEST(SceneManagerTest, LightTypeUsesConcreteComponentTag)
         const auto& fields = stored.at(name);
         EXPECT_FALSE(fields.contains("type"));
         EXPECT_EQ(fields.contains("range"), (std::derived_from<T, LocalLightComponent>));
-        EXPECT_EQ(fields.contains("areaSize"), T::kType == LightComponent::Type::RectArea);
-        EXPECT_EQ(fields.contains("cosInner"), T::kType == LightComponent::Type::Spot);
-        EXPECT_EQ(fields.contains("cosOuter"), T::kType == LightComponent::Type::Spot);
+        EXPECT_EQ(fields.contains("areaSize"), (std::same_as<T, RectAreaLightComponent>));
+        EXPECT_EQ(fields.contains("cosInner"), (std::same_as<T, SpotLightComponent>));
+        EXPECT_EQ(fields.contains("cosOuter"), (std::same_as<T, SpotLightComponent>));
 
         std::unique_ptr<Component> restored;
         Deserialize(stored, restored);

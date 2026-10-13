@@ -10,40 +10,82 @@
 #error ENABLE_IBL must be specified when compiling scene lighting
 #endif
 
-// Scene shadow resources (bindings 6..10).
-[[vk::binding(6, 0)]]
+// Scene shadow resources (bindings 7..12).
+[[vk::binding(7, 0)]]
 TextureCubeArray<float> pointShadowMap;
 
-[[vk::binding(7, 0)]]
-Texture2DArray<float> rectAreaShadowMap;
-
 [[vk::binding(8, 0)]]
-Texture2DArray<float> cascadeShadowMap;
+Texture2DArray<float> spotShadowMap;
 
 [[vk::binding(9, 0)]]
-SamplerComparisonState shadowSampler;
+Texture2DArray<float> rectAreaShadowMap;
 
 [[vk::binding(10, 0)]]
-SamplerState linearSampler;
+Texture2DArray<float> cascadeShadowMap;
 
-// Scene environment image / sampler pairs (bindings 11..18).
 [[vk::binding(11, 0)]]
-TextureCube<float4> irradianceMap;
+SamplerComparisonState shadowSampler;
 
 [[vk::binding(12, 0)]]
-SamplerState irradianceMapSampler;
+SamplerState linearSampler;
 
+// Scene environment image / sampler pairs (bindings 13..20).
 [[vk::binding(13, 0)]]
-TextureCube<float4> prefilteredSpecularMap;
+TextureCube<float4> irradianceMap;
 
 [[vk::binding(14, 0)]]
-SamplerState prefilteredSpecularMapSampler;
+SamplerState irradianceMapSampler;
 
 [[vk::binding(15, 0)]]
-Texture2D<float4> brdfLUT;
+TextureCube<float4> prefilteredSpecularMap;
 
 [[vk::binding(16, 0)]]
+SamplerState prefilteredSpecularMapSampler;
+
+[[vk::binding(17, 0)]]
+Texture2D<float4> brdfLUT;
+
+[[vk::binding(18, 0)]]
 SamplerState brdfLUTSampler;
+
+float spotAngularAttenuation(LightData light, float3 lightToSurfaceDirection)
+{
+    float cosine = dot(light.direction.xyz, lightToSurfaceDirection);
+    // Equal inner/outer angles describe a hard-edged cone.
+    if (light.cosInner <= light.cosOuter)
+        return cosine >= light.cosOuter ? 1.0 : 0.0;
+    float attenuation = saturate((cosine - light.cosOuter) / (light.cosInner - light.cosOuter));
+    return attenuation * attenuation;
+}
+
+float spotShadowVisibility(LightData light, float3 worldPosition, float2 rotation)
+{
+    float4 clip = mul(spotShadowData[light.shadowIdx].vp, float4(worldPosition, 1.0));
+    if (clip.w <= 0.0)
+        return 1.0;
+    float3 projected = clip.xyz / clip.w;
+    float2 uv = projected.xy * 0.5 + 0.5;
+    if (any(uv < 0.0) || any(uv > 1.0) || projected.z < 0.0 || projected.z > 1.0)
+        return 1.0;
+
+    uint width;
+    uint height;
+    uint layers;
+    spotShadowMap.GetDimensions(width, height, layers);
+    float2 radiusUv = lightUniforms.spotShadowSampleRadius / float2(width, height);
+    float depth = projected.z - lightUniforms.shadowBias;
+    float visibility = 0.0;
+    [unroll]
+    for (uint sampleIndex = 0; sampleIndex < kPoissonDisk16SampleCount; ++sampleIndex)
+    {
+        float2 offset = kPoissonDisk16[sampleIndex];
+        offset = float2(offset.x * rotation.x - offset.y * rotation.y,
+                        offset.x * rotation.y + offset.y * rotation.x);
+        visibility += spotShadowMap.SampleCmpLevelZero(
+            shadowSampler, float3(uv + offset * radiusUv, light.shadowIdx), depth);
+    }
+    return visibility / kPoissonDisk16SampleCount;
+}
 
 float directionalShadowVisibility(LightData light, float3 worldPosition)
 {
@@ -195,7 +237,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
         float3 incidentIlluminance;
         float visibility = 1.0;
 
-        if (light.type == LightType.Point)
+        if (light.type == LightType.Point || light.type == LightType.Spot)
         {
             float distanceToLight = length(light.position - surface.worldPosition);
             if (distanceToLight <= 0.0 || distanceToLight > light.range)
@@ -203,10 +245,22 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
 
             lightDirection = (light.position - surface.worldPosition) / distanceToLight;
             incidentIlluminance = light.color * light.luminousIntensity / (distanceToLight * distanceToLight);
+            if (light.type == LightType.Spot)
+            {
+                float attenuation = spotAngularAttenuation(light, -lightDirection);
+                if (attenuation <= 0.0)
+                    continue;
+                incidentIlluminance *= attenuation;
+            }
             if (light.castShadow)
             {
-                float depth = distanceToLight / light.range;
-                visibility = pcf(-lightDirection, light.shadowIdx, depth, shadowRotation);
+                if (light.type == LightType.Point)
+                {
+                    float depth = distanceToLight / light.range;
+                    visibility = pcf(-lightDirection, light.shadowIdx, depth, shadowRotation);
+                }
+                else
+                    visibility = spotShadowVisibility(light, surface.worldPosition, shadowRotation);
             }
         }
         else if (light.type == LightType.Directional)

@@ -37,10 +37,10 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
     for (auto& light : lights)
     {
         light.positionRange = {2.0f, 3.0f, 4.0f, 16.0f};
-        light.flags         = {static_cast<uint32_t>(LightComponent::Type::Point), 1u, 1u, 0u};
+        light.flags         = {static_cast<uint32_t>(GpuLightType::Point), 1u, 1u, 0u};
     }
     lights[0].flags.y = 0;
-    lights[1].flags.x = static_cast<uint32_t>(LightComponent::Type::Spot);
+    lights[1].flags.x = static_cast<uint32_t>(GpuLightType::Spot);
     lights[2].flags.z = 0;
     frame
         .update({}, {.lightCount = static_cast<uint32_t>(lights.size())}, prepareShadows({}, lights, {.enable = true}));

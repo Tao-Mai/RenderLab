@@ -41,10 +41,12 @@ struct RenderFeature
         } cascade;
         uint32_t             pointShadowMapSize    = 1024;
         uint32_t             rectAreaShadowMapSize = 1024;
+        uint32_t             spotShadowMapSize     = 1024;
         float                bias                  = 0.001f;
         SamplerAsset::Filter filter                = SamplerAsset::Filter::Linear;
         bool                 pixelRotation         = true;
         float                sampleRadius          = 0.02f;
+        float                spotSampleRadius      = 1.5f; // Texels, independent of shadow map resolution.
     } shadow;
 
     struct ToneMapping

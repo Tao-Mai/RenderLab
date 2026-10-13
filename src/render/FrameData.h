@@ -25,6 +25,7 @@ public:
     [[nodiscard]] const LightUniforms&                lightUniforms() const { return lightMetadata; }
     [[nodiscard]] std::span<const LightData>          lightData() const { return shadowData.lights; }
     [[nodiscard]] std::span<const PointShadowData>    pointShadowData() const { return shadowData.pointShadows; }
+    [[nodiscard]] std::span<const SpotShadowData>     spotShadowData() const { return shadowData.spotShadows; }
     [[nodiscard]] std::span<const RectAreaShadowData> rectAreaShadowData() const { return shadowData.rectAreaShadows; }
     [[nodiscard]] std::span<const DirectionalShadowData> directionalShadowData() const
     {
@@ -42,6 +43,7 @@ private:
     Buffer                  lightUniformBuffer;
     Buffer                  lightBuffer;
     Buffer                  pointShadowBuffer;
+    Buffer                  spotShadowBuffer;
     Buffer                  rectAreaShadowBuffer;
     Buffer                  directionalShadowBuffer;
     vk::raii::DescriptorSet sceneSet = nullptr;

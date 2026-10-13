@@ -13,8 +13,8 @@ namespace
 bool drawEnvironmentSelection(SceneAsset& scene, AssetManager& assets)
 {
     ImGui::SeparatorText("Environment");
-    auto& current = scene.environmentMap;
-    bool edited = false;
+    auto&       current = scene.environmentMap;
+    bool        edited  = false;
     const char* preview = current ? current->value.c_str() : "Select environment map...";
 
     if (ImGui::BeginCombo("Environment map", preview))
@@ -27,7 +27,7 @@ bool drawEnvironmentSelection(SceneAsset& scene, AssetManager& assets)
             if (ImGui::Selectable(id.value.c_str(), selected) && !selected)
             {
                 current = id;
-                edited = true;
+                edited  = true;
             }
         }
         ImGui::EndCombo();
@@ -56,7 +56,9 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
         const bool supported = vulkan.supportsRayTracing();
         for (const auto& [candidate, label] : kRenderPaths)
         {
-            ImGui::BeginDisabled((candidate == RenderPath::RayTracing || candidate == RenderPath::OfflinePathTracing) && !supported);
+            ImGui::BeginDisabled(
+                (candidate == RenderPath::RayTracing || candidate == RenderPath::OfflinePathTracing) && !supported
+            );
             if (ImGui::Selectable(label, path == candidate) && path != candidate)
             {
                 config.setRenderPath(candidate);
@@ -134,12 +136,20 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
     {
         ImGui::SeparatorText("Offline path tracing");
         ImGui::Text("Samples per pixel: %u", context().renderer->offlineSampleCount());
-        const auto properties = vulkan.physicalDeviceHandle().getProperties2<
-            vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
-        const int maxDepth = static_cast<int>(properties.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>().maxRayRecursionDepth);
+        const auto properties =
+            vulkan.physicalDeviceHandle()
+                .getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
+        const int maxDepth =
+            static_cast<int>(properties.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>().maxRayRecursionDepth);
         int depth = static_cast<int>(feature.offline.maxRecursionDepth);
-        if (ImGui::SliderInt("Max recursion depth", &depth, static_cast<int>(kMinRayRecursionDepth), maxDepth,
-                             "%d", ImGuiSliderFlags_AlwaysClamp))
+        if (ImGui::SliderInt(
+                "Max recursion depth",
+                &depth,
+                static_cast<int>(kMinRayRecursionDepth),
+                maxDepth,
+                "%d",
+                ImGuiSliderFlags_AlwaysClamp
+            ))
         {
             feature.offline.maxRecursionDepth = static_cast<uint32_t>(depth);
             config.setRenderFeature(feature);
@@ -151,10 +161,11 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
     if (config.rendererConfig().renderPath == RenderPath::RayTracing)
     {
         ImGui::SeparatorText("Ray tracing");
-        const auto properties = vulkan.physicalDeviceHandle().getProperties2<
-            vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
+        const auto properties =
+            vulkan.physicalDeviceHandle()
+                .getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
         const auto maxDepth = properties.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>().maxRayRecursionDepth;
-        int recursionDepth = static_cast<int>(feature.rayTracing.maxRecursionDepth);
+        int        recursionDepth = static_cast<int>(feature.rayTracing.maxRecursionDepth);
         if (ImGui::SliderInt(
                 "Max recursion depth",
                 &recursionDepth,
@@ -167,8 +178,10 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
             feature.rayTracing.maxRecursionDepth = static_cast<uint32_t>(recursionDepth);
             config.setRenderFeature(feature);
         }
-        ImGui::SetItemTooltip("Includes the primary ray and one level reserved for visibility queries.\n"
-                              "Depth 2: direct lighting only; depth 4: up to two diffuse bounces.");
+        ImGui::SetItemTooltip(
+            "Includes the primary ray and one level reserved for visibility queries.\n"
+            "Depth 2: direct lighting only; depth 4: up to two diffuse bounces."
+        );
         return sceneEdited;
     }
 
@@ -211,6 +224,7 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
         ImGui::EndCombo();
     };
     drawShadowMapSize("Point shadow map size", feature.shadow.pointShadowMapSize, true);
+    drawShadowMapSize("Spot shadow map size", feature.shadow.spotShadowMapSize, false);
     drawShadowMapSize("Rect area shadow map size", feature.shadow.rectAreaShadowMapSize, false);
     drawShadowMapSize("Directional shadow map size", feature.shadow.cascade.shadowMapSize, false);
     int cascadeCount = static_cast<int>(feature.shadow.cascade.count);
@@ -270,6 +284,16 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
     {
         config.setRenderFeature(feature);
     }
+    if (ImGui::DragFloat(
+            "Spot PCF radius (texels)",
+            &feature.shadow.spotSampleRadius,
+            0.1f,
+            0.0f,
+            32.0f,
+            "%.2f",
+            ImGuiSliderFlags_AlwaysClamp
+        ))
+        config.setRenderFeature(feature);
     ImGui::EndDisabled();
     return sceneEdited;
 }

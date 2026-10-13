@@ -165,6 +165,43 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
                 lastDeferred.b
             );
         }
+    auto&      lamp             = *scenes.scene().actors[1];
+    const auto originalRotation = lamp.transform().rotation;
+    replaceLightComponent(*lamp.getComponent<LightComponent>(), std::make_unique<SpotLightComponent>());
+    auto& spot    = *lamp.getComponent<SpotLightComponent>();
+    spot.cosInner = std::cos(glm::radians(15.0f));
+    spot.cosOuter = std::cos(glm::radians(30.0f));
+    lamp.transform().setRotationEulerDegrees({0, 45, 0});
+    spot.enabled         = false;
+    const auto unlit     = sample(false, false, false);
+    spot.enabled         = true;
+    const auto spotClear = sample(false, false, false);
+    compare(spotClear, sample(true, false, false));
+    CHECK(glm::length(spotClear - unlit) > 0.05f);
+    lamp.transform().setRotationEulerDegrees({0, 65, 0});
+    const auto penumbra = sample(false, false, false);
+    CHECK(glm::length(penumbra - unlit) > 0.0f && glm::length(penumbra - unlit) < glm::length(spotClear - unlit));
+    lamp.transform().setRotationEulerDegrees({0, 180, 0});
+    compare(unlit, sample(false, false, false));
+    lamp.transform().setRotationEulerDegrees({0, 45, 0});
+    compare(spotClear, sample(false, false, true));
+
+    auto& blocker                = scenes.createActor("AStaticMesh");
+    blocker.transform().position = {1, 0, 2};
+    blocker.transform().scale    = glm::vec3{0.6f};
+    compare(spotClear, sample(false, false, false));
+    const auto shadowed = sample(false, false, true);
+    compare(shadowed, sample(true, false, true));
+    compare(shadowed, unlit);
+    LOG_INFO(
+        "Spot lighting/shadows match forward and deferred: clear {}, shadowed {}",
+        glm::length(spotClear),
+        glm::length(shadowed)
+    );
+    scenes.deleteActor(blocker.selectionId());
+    replaceLightComponent(spot, std::make_unique<PointLightComponent>());
+    lamp.transform().rotation = originalRotation;
+
     auto& material     = scenes.scene().actors[0]->getComponent<RenderComponent>()->materialOverrides[0];
     material.clearcoat = PbrMaterialAsset::Clearcoat{.factor = 1.0f, .roughnessFactor = 0.2f};
     compare(lastDeferred, sample(true, true, true));

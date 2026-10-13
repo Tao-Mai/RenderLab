@@ -44,6 +44,7 @@ ShadowPass::Output SceneBindings::setup(RenderGraph& targetGraph, ShadowPass::Ou
         return fallbackShadowMap;
     };
     pointShadowMap    = resolveShadowMap(shadow.pointLightShadowMap);
+    spotShadowMap     = resolveShadowMap(shadow.spotLightShadowMap);
     rectAreaShadowMap = resolveShadowMap(shadow.rectAreaLightShadowMap);
     cascadeShadowMap  = resolveShadowMap(shadow.cascadeShadowMap);
 
@@ -52,6 +53,14 @@ ShadowPass::Output SceneBindings::setup(RenderGraph& targetGraph, ShadowPass::Ou
     auto& graph = targetGraph;
     graph.use(
         pointShadowMap,
+        {
+            .stages = vk::PipelineStageFlagBits2::eFragmentShader,
+            .access = vk::AccessFlagBits2::eShaderSampledRead,
+            .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
+        }
+    );
+    graph.use(
+        spotShadowMap,
         {
             .stages = vk::PipelineStageFlagBits2::eFragmentShader,
             .access = vk::AccessFlagBits2::eShaderSampledRead,
@@ -75,7 +84,7 @@ ShadowPass::Output SceneBindings::setup(RenderGraph& targetGraph, ShadowPass::Ou
         }
     );
 
-    return {pointShadowMap, rectAreaShadowMap, cascadeShadowMap};
+    return {pointShadowMap, spotShadowMap, rectAreaShadowMap, cascadeShadowMap};
 }
 
 void SceneBindings::prepare(RenderGraph& graph) const
@@ -95,6 +104,18 @@ void SceneBindings::prepare(RenderGraph& graph) const
                                      {.aspectMask = vk::ImageAspectFlagBits::eDepth,
                                       .levelCount = 1,
                                       .layerCount = graph.imageInfo(pointShadowMap).arrayLayers},
+                             }),
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+        };
+        const vk::DescriptorImageInfo spotShadowImage{
+            .imageView = graph.getImage(spotShadowMap, frameIndex)
+                             .getOrCreateImageView({
+                                 .viewType = vk::ImageViewType::e2DArray,
+                                 .format   = vk::Format::eD32Sfloat,
+                                 .subresourceRange =
+                                     {.aspectMask = vk::ImageAspectFlagBits::eDepth,
+                                      .levelCount = 1,
+                                      .layerCount = graph.imageInfo(spotShadowMap).arrayLayers},
                              }),
             .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
         };
@@ -132,6 +153,13 @@ void SceneBindings::prepare(RenderGraph& graph) const
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &shadowImage,
+            },
+            vk::WriteDescriptorSet{
+                .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
+                .dstBinding      = RenderInterface::kSpotShadowImageBinding,
+                .descriptorCount = 1,
+                .descriptorType  = vk::DescriptorType::eSampledImage,
+                .pImageInfo      = &spotShadowImage,
             },
             vk::WriteDescriptorSet{
                 .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
@@ -271,7 +299,8 @@ void SceneBindings::updateFrame(FrameData& frame, const ViewUniforms& view, cons
         .lightCount         = static_cast<uint32_t>(scene.lights.size()),
         .ambientCoefficient = feature.ambientCoefficient,
         .iblParameters      = {prefilteredMaxLod, 0.0f, 0.0f, 0.0f},
-        .shadowParameters   = {shadow.bias, shadow.sampleRadius, shadow.pixelRotation ? 1.0f : 0.0f, 0.0f},
+        .shadowParameters =
+            {shadow.bias, shadow.sampleRadius, shadow.pixelRotation ? 1.0f : 0.0f, shadow.spotSampleRadius},
     };
     lighting.cascadeCount = shadow.cascade.count;
     frame.update(view, lighting, prepareShadows(view, scene.lights, shadow));

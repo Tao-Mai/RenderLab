@@ -1,8 +1,8 @@
 #include <vulkan/vulkan.hpp>
 
-#include "render/resource/ShaderData.h"
-#include "render/feature/editor/EditorShaderData.h"
 #include "core/Logger.h"
+#include "render/feature/editor/EditorShaderData.h"
+#include "render/resource/ShaderData.h"
 
 #include <array>
 #include <filesystem>
@@ -21,20 +21,20 @@ namespace
 struct Field
 {
     std::string_view name;
-    size_t offset;
-    size_t size;
+    size_t           offset;
+    size_t           size;
 };
 
 json parameter(std::string_view shader, std::string_view name)
 {
-    const auto path = std::filesystem::path(RENDERLAB_SHADER_BINARY_DIR) /
-        (std::string(shader) + ".reflection.json");
+    const auto path = std::filesystem::path(RENDERLAB_SHADER_BINARY_DIR) / (std::string(shader) + ".reflection.json");
     std::ifstream input{path};
     CHECK(input.is_open(), "cannot open shader reflection: {}", path.string());
     const auto reflection = json::parse(input, nullptr, false);
     CHECK(!reflection.is_discarded(), "invalid shader reflection: {}", path.string());
     for (const auto& value : reflection.at("parameters").get_ref<const json::array_t&>())
-        if (value.at("name").get<std::string>() == name) return value;
+        if (value.at("name").get<std::string>() == name)
+            return value;
     CHECK(false, "missing shader parameter: {}", name);
 }
 
@@ -54,9 +54,18 @@ void checkFields(const json& type, std::span<const Field> expected)
 }
 
 constexpr std::array shaders = {
-    "slang", "slang.no_ibl", "slang.clearcoat", "slang.clearcoat.no_ibl", "depth", "shadow", "shadow.rect_area", "shadow.directional", "skybox"
+    "slang",
+    "slang.no_ibl",
+    "slang.clearcoat",
+    "slang.clearcoat.no_ibl",
+    "depth",
+    "shadow",
+    "shadow.rect_area",
+    "shadow.directional",
+    "shadow.spot",
+    "skybox"
 };
-}
+}  // namespace
 
 TEST(ShaderDataLayout, ViewUniformsMatchCompiledShaders)
 {
@@ -140,7 +149,7 @@ TEST(ShaderDataLayout, PointShadowStorageAndPushConstantsMatchCompiledShader)
         Field{"padding1", offsetof(ShadowPushConstants, padding1), sizeof(uint32_t)},
         Field{"padding2", offsetof(ShadowPushConstants, padding2), sizeof(uint32_t)},
     };
-    for (const auto* shader : {"shadow", "shadow.rect_area", "shadow.directional"})
+    for (const auto* shader : {"shadow", "shadow.rect_area", "shadow.directional", "shadow.spot"})
         checkFields(parameter(shader, "pushConstants").at("type").at("elementType"), pushFields);
 }
 
@@ -161,6 +170,18 @@ TEST(ShaderDataLayout, DirectionalShadowStorageMatchesCompiledShaders)
         EXPECT_EQ(cascades.at("type").at("elementCount"), kMaxDirectionalShadowCascades);
         EXPECT_EQ(cascades.at("binding").at("size"), sizeof(DirectionalShadowData));
         checkFields(cascades.at("type").at("elementType"), expected);
+    }
+}
+
+TEST(ShaderDataLayout, SpotShadowStorageMatchesCompiledShaders)
+{
+    const std::array expected = {Field{"vp", offsetof(SpotShadowData, vp), sizeof(glm::mat4)}};
+    for (const auto* shader : {"shadow.spot", "slang", "slang.no_ibl", "deferred_lighting"})
+    {
+        SCOPED_TRACE(shader);
+        const auto shadow = parameter(shader, "spotShadowData");
+        EXPECT_EQ(shadow.at("binding").at("index"), RenderInterface::kSpotShadowBufferBinding);
+        checkFields(shadow.at("type").at("resultType"), expected);
     }
 }
 
@@ -185,6 +206,7 @@ TEST(ShaderDataLayout, TextureAndSamplerBindingsMatchCompiledShaders)
 {
     const std::array bindings = {
         std::pair{"pointShadowMap", RenderInterface::kPointShadowImageBinding},
+        std::pair{"spotShadowMap", RenderInterface::kSpotShadowImageBinding},
         std::pair{"rectAreaShadowMap", RenderInterface::kRectAreaShadowImageBinding},
         std::pair{"cascadeShadowMap", RenderInterface::kDirectionalShadowImageBinding},
         std::pair{"shadowSampler", RenderInterface::kShadowComparisonSamplerBinding},
@@ -218,10 +240,14 @@ TEST(ShaderDataLayout, TextureAndSamplerBindingsMatchCompiledShaders)
             EXPECT_EQ(parameter(shader, name).at("binding").at("index").get<uint32_t>(), binding);
         }
     }
-    EXPECT_EQ(parameter("skybox", "radianceMap").at("binding").at("index").get<uint32_t>(),
-              RenderInterface::kRadianceImageBinding);
-    EXPECT_EQ(parameter("skybox", "radianceSampler").at("binding").at("index").get<uint32_t>(),
-              RenderInterface::kRadianceSamplerBinding);
+    EXPECT_EQ(
+        parameter("skybox", "radianceMap").at("binding").at("index").get<uint32_t>(),
+        RenderInterface::kRadianceImageBinding
+    );
+    EXPECT_EQ(
+        parameter("skybox", "radianceSampler").at("binding").at("index").get<uint32_t>(),
+        RenderInterface::kRadianceSamplerBinding
+    );
 }
 
 TEST(ShaderDataLayout, MaterialUniformsMatchCompiledShaders)
@@ -245,13 +271,12 @@ TEST(ShaderDataLayout, MaterialUniformsMatchCompiledShaders)
     for (const auto* shader : {"slang", "slang.no_ibl", "depth", "slang.clearcoat", "slang.clearcoat.no_ibl"})
     {
         SCOPED_TRACE(shader);
-        const bool clearcoat = std::string_view(shader).contains(".clearcoat");
-        const size_t fieldCount = clearcoat ? expected.size() : expected.size() - 4;
+        const bool   clearcoat   = std::string_view(shader).contains(".clearcoat");
+        const size_t fieldCount  = clearcoat ? expected.size() : expected.size() - 4;
         const size_t uniformSize = clearcoat ? sizeof(MaterialUniforms) : offsetof(MaterialUniforms, clearcoatFactor);
-        const auto material = parameter(shader, "material");
+        const auto   material    = parameter(shader, "material");
         checkFields(material.at("type").at("elementType"), std::span(expected).first(fieldCount));
-        EXPECT_EQ(material.at("type").at("elementVarLayout").at("binding").at("size"),
-                  uniformSize);
+        EXPECT_EQ(material.at("type").at("elementVarLayout").at("binding").at("size"), uniformSize);
     }
 }
 
@@ -286,10 +311,14 @@ TEST(ShaderDataLayout, ToneMappingMatchesCompiledShader)
         Field{"padding", offsetof(ToneMappingPushConstants, padding), sizeof(uint32_t)},
     };
     checkFields(parameter("tonemapping", "parameters").at("type").at("elementType"), expected);
-    EXPECT_EQ(parameter("tonemapping", "hdrColor").at("binding").at("index"),
-              RenderInterface::kToneMappingImageBinding);
-    EXPECT_EQ(parameter("tonemapping", "hdrSampler").at("binding").at("index"),
-              RenderInterface::kToneMappingSamplerBinding);
+    EXPECT_EQ(
+        parameter("tonemapping", "hdrColor").at("binding").at("index"),
+        RenderInterface::kToneMappingImageBinding
+    );
+    EXPECT_EQ(
+        parameter("tonemapping", "hdrSampler").at("binding").at("index"),
+        RenderInterface::kToneMappingSamplerBinding
+    );
 }
 
 TEST(ShaderDataLayout, EditorShadersUseOnlyViewData)
@@ -302,11 +331,11 @@ TEST(ShaderDataLayout, EditorShadersUseOnlyViewData)
         EXPECT_EQ(view.at("binding").at("index"), EditorInterface::kViewUniformBinding);
         EXPECT_EQ(view.at("binding").value("space", 0), EditorInterface::kViewSet);
         checkFields(view.at("type").at("elementType"), viewFields);
-        const auto path = std::filesystem::path(RENDERLAB_SHADER_BINARY_DIR) /
-            (std::string(shader) + ".reflection.json");
+        const auto path =
+            std::filesystem::path(RENDERLAB_SHADER_BINARY_DIR) / (std::string(shader) + ".reflection.json");
         std::ifstream input{path};
-        const auto reflection = json::parse(input, nullptr, false);
-        size_t descriptors = 0;
+        const auto    reflection  = json::parse(input, nullptr, false);
+        size_t        descriptors = 0;
         for (const auto& value : reflection.at("parameters"))
             if (value.at("binding").at("kind") == "descriptorTableSlot")
                 ++descriptors;

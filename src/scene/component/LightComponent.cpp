@@ -6,16 +6,27 @@
 #include <algorithm>
 #include <cmath>
 #include <glm/geometric.hpp>
+#include <typeinfo>
 
 namespace
 {
 constexpr glm::vec3 kLuminanceWeights{0.2126f, 0.7152f, 0.0722f};
 }
 
+LightComponent::~LightComponent() = default;
+
 void LightComponent::init(AActor* actor)
 {
     Component::init(actor);
     CHECK(actor->getComponent<TransformComponent>());
+}
+
+void SpotLightComponent::init(AActor* actor)
+{
+    LightComponent::init(actor);
+    CHECK(std::isfinite(range) && range > 0.0f);
+    CHECK(std::isfinite(cosOuter) && cosOuter > 0.0f && cosOuter < 1.0f);
+    CHECK(std::isfinite(cosInner) && cosInner >= cosOuter && cosInner <= 1.0f);
 }
 
 glm::vec4 LightComponent::photometricEmission() const
@@ -46,31 +57,19 @@ float RectAreaLightComponent::emissionScale() const
     return 1.0f / area;
 }
 
-std::unique_ptr<LightComponent> createLightComponent(LightComponent::Type type)
+LightComponent& replaceLightComponent(LightComponent& light, std::unique_ptr<LightComponent> replacement)
 {
-    std::unique_ptr<LightComponent> result;
-    forEachLightComponentType([&]<class T>(const char*)
-    {
-        if (type == T::kType)
-            result = std::make_unique<T>();
-    });
-    CHECK(result, "invalid light type: {}", static_cast<uint32_t>(type));
-    return result;
-}
-
-LightComponent& replaceLightComponent(LightComponent& light, LightComponent::Type type)
-{
-    if (light.type() == type)
+    DCHECK(replacement);
+    if (typeid(light) == typeid(*replacement))
         return light;
 
-    auto& owner = light.actor();
+    auto&      owner = light.actor();
     const auto found = std::ranges::find_if(owner.components, [&](const auto& item) { return item.get() == &light; });
     DCHECK(found != owner.components.end());
 
-    auto replacement = createLightComponent(type);
-    replacement->color = light.color;
-    replacement->intensity = light.intensity;
-    replacement->enabled = light.enabled;
+    replacement->color      = light.color;
+    replacement->intensity  = light.intensity;
+    replacement->enabled    = light.enabled;
     replacement->castShadow = light.castShadow;
     if (const auto* source = dynamic_cast<const LocalLightComponent*>(&light))
         if (auto* target = dynamic_cast<LocalLightComponent*>(replacement.get()))
@@ -78,6 +77,6 @@ LightComponent& replaceLightComponent(LightComponent& light, LightComponent::Typ
 
     replacement->init(&owner);
     auto& result = *replacement;
-    *found = std::move(replacement);
+    *found       = std::move(replacement);
     return result;
 }

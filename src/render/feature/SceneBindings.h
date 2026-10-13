@@ -31,6 +31,7 @@ private:
     VulkanContext*              vulkan = nullptr;
     RenderGraph*                graph  = nullptr;
     RenderGraph::ImageHandle    pointShadowMap;
+    RenderGraph::ImageHandle    spotShadowMap;
     RenderGraph::ImageHandle    rectAreaShadowMap;
     RenderGraph::ImageHandle    cascadeShadowMap;
     RenderResourceManager*      resources = nullptr;

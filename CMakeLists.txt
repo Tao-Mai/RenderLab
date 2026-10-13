@@ -130,8 +130,8 @@ foreach(name IN ITEMS light_marker depth picking)
     renderlab_shader(editor_${name} editor/${name}.slang editor_${name}
         INCLUDES "${SHADER_SOURCE_DIR}/editor/view.slang")
 endforeach()
-foreach(type IN ITEMS 0 1 2)
-    set(names shadow shadow.directional shadow.rect_area)
+foreach(type IN ITEMS 0 1 2 3)
+    set(names shadow shadow.directional shadow.rect_area shadow.spot)
     list(GET names ${type} binary)
     renderlab_shader(shadow shadow.slang "${binary}" DEFINES SHADOW_TYPE=${type}
         INCLUDES ${SCENE_SHADER_INCLUDES})

@@ -40,3 +40,18 @@
 现在vulkan错误直接崩，以后再处理
 
 之后再做离线，先搞好实时渲染再说
+
+## 传统材质
+|方向|需要掌握的传统模型和概念|优先级|
+|---|---|---|
+|基础表面反射|Lambert、Oren–Nayar、Cook–Torrance、GGX、Smith、Fresnel、Multiple Scattering|已有基础，补全即可|
+|各向异性材质|Anisotropic GGX、拉丝金属、微表面方向分布|高|
+|分层材质|Clear Coat、Layered BSDF、涂漆、塑料、多界面散射|高|
+|织物材质|Sheen、布料纤维散射、微纤维结构|高|
+|表面微结构|Normal Mapping、Displacement、Parallax、Self-shadowing、Glints|很高|
+|测量材质|Measured BRDF、SVBRDF、BTF、材质采集和拟合|很高|
+|多尺度材质|BRDF Filtering、Normal Distribution Filtering、材质 LOD|很高|
+|透射材质|BTDF、Microfacet Transmission、粗糙玻璃|中|
+|次表面散射|BSSRDF、皮肤、蜡、玉石|中|
+|光谱和薄膜|Spectral BRDF、Thin-film Interference、Iridescence|中|
+|毛发材质|Marschner、双重反射与透射、纤维束散射|后期选学|

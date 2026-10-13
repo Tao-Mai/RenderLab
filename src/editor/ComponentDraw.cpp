@@ -83,12 +83,10 @@ ComponentDrawResult drawFields(TransformComponent& transform)
 
 namespace
 {
-ComponentDrawResult drawLightFields(LightComponent& light)
+ComponentDrawResult drawLightFields(LightComponent& light, const char* intensityLabel)
 {
     ComponentDrawResult result;
     result.edited = ImGui::ColorEdit3("Color", glm::value_ptr(light.color));
-    const char* intensityLabel = light.type() == LightComponent::Type::Directional ?
-        "Illuminance (lux)" : "Luminous intensity (cd)";
     result.edited = ImGui::DragFloat(intensityLabel, &light.intensity, 1.0f, 0.0f,
         std::numeric_limits<float>::max(), "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
     result.edited = drawField("Enabled", light.enabled) || result.edited;
@@ -98,7 +96,7 @@ ComponentDrawResult drawLightFields(LightComponent& light)
 
 ComponentDrawResult drawLocalLightFields(LocalLightComponent& light)
 {
-    auto result = drawLightFields(light);
+    auto result = drawLightFields(light, "Luminous intensity (cd)");
     result.edited = ImGui::DragFloat("Range (m)", &light.range, 0.1f, 0.01f, 100000.0f,
         "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
     return result;
@@ -112,7 +110,7 @@ ComponentDrawResult drawFields(PointLightComponent& light)
 
 ComponentDrawResult drawFields(DirectionalLightComponent& light)
 {
-    return drawLightFields(light);
+    return drawLightFields(light, "Illuminance (lux)");
 }
 
 ComponentDrawResult drawFields(RectAreaLightComponent& light)
@@ -134,7 +132,8 @@ ComponentDrawResult drawFields(SpotLightComponent& light)
         light.cosInner = std::cos(glm::radians(inner));
         result.edited = true;
     }
-    if (ImGui::DragFloat("Outer Angle", &outer, 0.25f, inner, 89.0f,
+    constexpr float kMinimumOuterAngle = 0.1f;
+    if (ImGui::DragFloat("Outer Angle", &outer, 0.25f, std::max(inner, kMinimumOuterAngle), 89.0f,
         "%.1f deg", ImGuiSliderFlags_AlwaysClamp))
     {
         light.cosOuter = std::cos(glm::radians(outer));
@@ -370,17 +369,32 @@ ComponentDrawResult drawComponent(Component& component)
 
     ComponentDrawResult result;
     auto* light = dynamic_cast<LightComponent*>(&component);
-    std::optional<LightComponent::Type> selectedLightType;
+    std::unique_ptr<LightComponent> replacement;
     ImGui::PushID(&component);
     if (ImGui::CollapsingHeader(found->second.name, ImGuiTreeNodeFlags_DefaultOpen))
     {
         if (light)
         {
-            auto type = light->type();
-            if (component_draw::drawField("Type", type))
+            // The registered class name is also the inspector's type label.
+            const auto label = [](std::string_view name)
             {
-                selectedLightType = type;
-                result.edited = true;
+                return name.substr(0, name.size() - std::string_view{"LightComponent"}.size());
+            };
+            const std::string preview{label(found->second.name)};
+            if (ImGui::BeginCombo("Type", preview.c_str()))
+            {
+                forEachLightComponentType([&]<class T>(const char* name)
+                {
+                    const bool selected = typeid(component) == typeid(T);
+                    const std::string itemLabel{label(name)};
+                    if (ImGui::Selectable(itemLabel.c_str(), selected) && !selected)
+                    {
+                        replacement = std::make_unique<T>();
+                        result.edited = true;
+                    }
+                    if (selected) ImGui::SetItemDefaultFocus();
+                });
+                ImGui::EndCombo();
             }
         }
         result |= found->second.draw(component);
@@ -388,7 +402,7 @@ ComponentDrawResult drawComponent(Component& component)
     ImGui::PopID();
 
     // Replace only after drawing has finished using the old component.
-    if (selectedLightType)
-        replaceLightComponent(*light, *selectedLightType);
+    if (replacement)
+        replaceLightComponent(*light, std::move(replacement));
     return result;
 }

@@ -4,8 +4,7 @@
 
 struct SpotLightComponent : LocalLightComponent
 {
-    static constexpr Type kType = Type::Spot;
-    [[nodiscard]] Type type() const override { return kType; }
+    void init(AActor* actor) override;
 
     [[=ReflectField{}]] float cosInner = 0.9396926f;
     [[=ReflectField{}]] float cosOuter = 0.8660254f;

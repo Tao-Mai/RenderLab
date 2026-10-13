@@ -189,22 +189,21 @@ TEST_F(ComponentDrawTest, GenericDrawingSupportsFlagsOptionalContainersAndNested
 
 TEST_F(ComponentDrawTest, LightEditorShowsOnlyTypeSpecificFields)
 {
-    for (auto type : {LightComponent::Type::Point, LightComponent::Type::Directional,
-                      LightComponent::Type::RectArea, LightComponent::Type::Spot})
+    forEachLightComponentType([&]<class T>(const char*)
     {
-        auto light = createLightComponent(type);
+        T light;
         ComponentDrawResult result;
-        const auto text = frame([&] { result = drawComponent(*light); });
+        const auto text = frame([&] { result = drawComponent(light); });
         EXPECT_FALSE(result.edited);
         const auto shown = [&](const char* label) { return text.find(label) != std::string::npos; };
-        EXPECT_EQ(shown("Illuminance (lux)"), type == LightComponent::Type::Directional);
-        EXPECT_EQ(shown("Luminous intensity (cd)"), type != LightComponent::Type::Directional);
+        EXPECT_EQ(shown("Illuminance (lux)"), (std::same_as<T, DirectionalLightComponent>));
+        EXPECT_EQ(shown("Luminous intensity (cd)"), (std::derived_from<T, LocalLightComponent>));
         EXPECT_TRUE(shown("Cast Shadow"));
-        EXPECT_EQ(shown("Range"), type != LightComponent::Type::Directional);
-        EXPECT_EQ(shown("Inner Angle"), type == LightComponent::Type::Spot);
-        EXPECT_EQ(shown("Outer Angle"), type == LightComponent::Type::Spot);
-        EXPECT_EQ(shown("Area Size"), type == LightComponent::Type::RectArea);
-    }
+        EXPECT_EQ(shown("Range"), (std::derived_from<T, LocalLightComponent>));
+        EXPECT_EQ(shown("Inner Angle"), (std::same_as<T, SpotLightComponent>));
+        EXPECT_EQ(shown("Outer Angle"), (std::same_as<T, SpotLightComponent>));
+        EXPECT_EQ(shown("Area Size"), (std::same_as<T, RectAreaLightComponent>));
+    });
 }
 
 TEST_F(ComponentDrawTest, LightTypeSelectionReplacesComponentAndPreservesCommonProperties)

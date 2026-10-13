@@ -55,7 +55,7 @@ int main(int, char** argv)
     SceneAsset scene;
     scene.id = "rect-shadow-check";
     scene.actors.push_back(std::make_unique<AStaticMesh>());
-    auto actor                  = std::make_unique<ALight>(LightComponent::Type::RectArea);
+    auto actor                  = std::make_unique<ALight>(std::make_unique<RectAreaLightComponent>());
     actor->transform().position = {0.0f, 0.0f, 4.0f};
     actor->transform().rotation = glm::angleAxis(glm::radians(30.0f), glm::vec3{0.0f, 0.0f, 1.0f});
     auto& light                 = *actor->getComponent<RectAreaLightComponent>();
@@ -76,7 +76,7 @@ int main(int, char** argv)
     source.positionRange = {0.0f, 0.0f, 4.0f, 16.0f};
     source.direction     = {0.0f, 0.0f, -1.0f, 0.0f};
     source.areaRightData = {0.0f, 1.0f, 0.0f, 0.0f};
-    source.flags         = {static_cast<uint32_t>(LightComponent::Type::RectArea), 1u, 1u, 0u};
+    source.flags         = {static_cast<uint32_t>(GpuLightType::RectArea), 1u, 1u, 0u};
     upload.update({}, {.lightCount = 1}, {&source, 1}, {.enable = true});
     CHECK(upload.rectAreaShadowData().size() == 1 && upload.lightData()[0].shadowidx == 0);
     CHECK(upload.pointShadowData().empty());

@@ -263,6 +263,7 @@ void Renderer::applyConfiguration(const SceneRenderData& scene)
             shadow.enable,
             shadow.pointShadowMapSize,
             shadow.rectAreaShadowMapSize,
+            shadow.spotShadowMapSize,
             shadow.cascade.shadowMapSize,
             shadow.cascade.count
         };

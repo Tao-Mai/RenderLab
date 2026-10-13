@@ -9,6 +9,7 @@ struct ShadowFrameData
 {
     std::vector<LightData>             lights;
     std::vector<PointShadowData>       pointShadows;
+    std::vector<SpotShadowData>        spotShadows;
     std::vector<RectAreaShadowData>    rectAreaShadows;
     std::vector<DirectionalShadowData> directionalShadows;
 };

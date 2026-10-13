@@ -120,7 +120,7 @@ prepareShadows(const ViewUniforms& view, std::span<const LightData> frameLights,
         if (!light.enable() || !light.castShadow())
             continue;
 
-        if (light.type() == LightComponent::Type::Directional)
+        if (light.type() == GpuLightType::Directional)
         {
             light.shadowidx = static_cast<uint32_t>(result.directionalShadows.size());
             CHECK(
@@ -131,14 +131,15 @@ prepareShadows(const ViewUniforms& view, std::span<const LightData> frameLights,
             result.directionalShadows.push_back(makeDirectionalShadow(view, light, shadows.cascade));
             continue;
         }
-        if (light.type() != LightComponent::Type::Point && light.type() != LightComponent::Type::RectArea)
+        if (light.type() != GpuLightType::Point && light.type() != GpuLightType::RectArea &&
+            light.type() != GpuLightType::Spot)
             continue;
 
         const float range = light.range();
         CHECK(std::isfinite(range) && range > 0.0f);
         const glm::vec3 position = light.position();
 
-        if (light.type() == LightComponent::Type::Point)
+        if (light.type() == GpuLightType::Point)
         {
             light.shadowidx = static_cast<uint32_t>(result.pointShadows.size());
             CHECK(
@@ -152,6 +153,27 @@ prepareShadows(const ViewUniforms& view, std::span<const LightData> frameLights,
             PointShadowData& shadow     = result.pointShadows.emplace_back();
             for (size_t face = 0; face < shadow.vp.size(); ++face)
                 shadow.vp[face] = projection * glm::lookAt(position, position + kFaceDirections[face], kFaceUp[face]);
+        }
+        else if (light.type() == GpuLightType::Spot)
+        {
+            light.shadowidx = static_cast<uint32_t>(result.spotShadows.size());
+            CHECK(
+                light.shadowidx < kMaxSpotLightShadow,
+                "enabled shadow-casting spot lights exceed capacity {}",
+                kMaxSpotLightShadow
+            );
+            const float cosOuter = light.areaSizeCone.w;
+            const float cosInner = light.areaSizeCone.z;
+            CHECK(std::isfinite(cosOuter) && cosOuter > 0.0f && cosOuter < 1.0f);
+            CHECK(std::isfinite(cosInner) && cosInner >= cosOuter && cosInner <= 1.0f);
+
+            const glm::vec3 direction = glm::normalize(glm::vec3{light.direction});
+            const glm::vec3 up        = glm::normalize(glm::cross(light.areaRight(), direction));
+            CHECK(std::isfinite(glm::dot(direction, direction)) && std::isfinite(glm::dot(up, up)));
+            const float nearPlane  = std::min(0.1f, range * 0.1f);
+            glm::mat4   projection = glm::perspective(2.0f * std::acos(cosOuter), 1.0f, nearPlane, range);
+            projection[1][1] *= -1.0f;
+            result.spotShadows.push_back({.vp = projection * glm::lookAt(position, position + direction, up)});
         }
         else
         {

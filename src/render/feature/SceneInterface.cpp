@@ -31,6 +31,12 @@ vk::DescriptorSetLayout SceneInterface::sceneLayout(DescriptorManager& descripto
             .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
         },
         vk::DescriptorSetLayoutBinding{
+            .binding         = RenderInterface::kSpotShadowBufferBinding,
+            .descriptorType  = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount = 1,
+            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+        },
+        vk::DescriptorSetLayoutBinding{
             .binding         = RenderInterface::kRectAreaShadowBufferBinding,
             .descriptorType  = vk::DescriptorType::eStorageBuffer,
             .descriptorCount = 1,
@@ -45,6 +51,12 @@ vk::DescriptorSetLayout SceneInterface::sceneLayout(DescriptorManager& descripto
 
         vk::DescriptorSetLayoutBinding{
             .binding         = RenderInterface::kPointShadowImageBinding,
+            .descriptorType  = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1,
+            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding         = RenderInterface::kSpotShadowImageBinding,
             .descriptorType  = vk::DescriptorType::eSampledImage,
             .descriptorCount = 1,
             .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment

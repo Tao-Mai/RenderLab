@@ -67,6 +67,7 @@ add_executable(RenderGraphTests
         RenderGraphTest.cpp
         ShaderDataTest.cpp
         ${PROJECT_SOURCE_DIR}/src/render/feature/RenderGraphSetup.cpp
+        ${PROJECT_SOURCE_DIR}/src/render/feature/shadow/ShadowData.cpp
 )
 target_include_directories(RenderGraphTests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_dependencies(RenderGraphTests RenderLabShaders)
@@ -76,6 +77,7 @@ target_compile_definitions(RenderGraphTests PRIVATE
         VULKAN_HPP_NO_STRUCT_CONSTRUCTORS=1
         VULKAN_HPP_NO_EXCEPTIONS
         GLOG_NO_ABBREVIATED_SEVERITIES
+        GLM_FORCE_DEPTH_ZERO_TO_ONE
 )
 target_link_libraries(RenderGraphTests PRIVATE
         RenderLabBuildOptions
@@ -94,9 +96,6 @@ foreach(check IN ITEMS RenderGraphGpuSmoke EditorOverlayGpuCheck DeferredRenderi
     renderlab_copy_compiler_runtime(${check})
 endforeach()
 
-add_executable(main main.cpp)
-target_link_libraries(main PRIVATE RenderLabBuildOptions)
-
 add_executable(Cxx26ReflectionTest Cxx26ReflectionTest.cpp)
 target_link_libraries(Cxx26ReflectionTest PRIVATE RenderLabBuildOptions)
 add_test(NAME Cxx26ReflectionTest COMMAND Cxx26ReflectionTest)
@@ -104,6 +103,6 @@ add_test(NAME Cxx26ReflectionTest COMMAND Cxx26ReflectionTest)
 set_tests_properties(RenderLabTests RenderGraphTests Cxx26ReflectionTest PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${RENDERLAB_COMPILER_BIN_DIR}")
 
-foreach (target RenderLabTests RenderGraphTests main Cxx26ReflectionTest)
+foreach (target RenderLabTests RenderGraphTests Cxx26ReflectionTest)
     renderlab_copy_compiler_runtime(${target})
 endforeach ()

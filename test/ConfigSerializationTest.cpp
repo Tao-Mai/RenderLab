@@ -41,8 +41,9 @@ RendererConfig sampleRendererConfig()
         .brdfLut = {TextureAsset::ID{"lut_ggx"}, SamplerAsset::ID{"linearClamp"}},
         .feature = {.ibl = false, .ambientCoefficient = 0.25f, .hdr = false,
             .shadow = {.enable = false, .cascade = {.count = 3, .shadowMapSize = 1024,
-                .maxDistance = 40.0f, .splitLambda = 0.75f, .depthPadding = 5.0f}, .pointShadowMapSize = 2048, .bias = 0.0025f,
-                .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.03f},
+                .maxDistance = 40.0f, .splitLambda = 0.75f, .depthPadding = 5.0f}, .pointShadowMapSize = 2048,
+                .spotShadowMapSize = 512, .bias = 0.0025f,
+                .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.03f, .spotSampleRadius = 2.5f},
             .toneMapping = {.ev100 = 5.0f, .exposureCompensation = 1.5f, .mode = ToneMappingOperator::Reinhard},
             .rayTracing = {.maxRecursionDepth = 3}},
     };
@@ -90,6 +91,8 @@ TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
               Serialize(original.feature.shadow.cascade));
     EXPECT_EQ(serialized.at("feature").at("shadow").at("pointShadowMapSize"), 2048);
     EXPECT_EQ(serialized.at("feature").at("shadow").at("rectAreaShadowMapSize"), 1024);
+    EXPECT_EQ(serialized.at("feature").at("shadow").at("spotShadowMapSize"), 512);
+    EXPECT_FLOAT_EQ(serialized.at("feature").at("shadow").at("spotSampleRadius").get<float>(), 2.5f);
     EXPECT_FLOAT_EQ(serialized.at("feature").at("shadow").at("bias").get<float>(), 0.0025f);
     EXPECT_EQ(serialized.at("feature").at("shadow").at("filter"), "Nearest");
     EXPECT_EQ(serialized.at("feature").at("shadow").at("pixelRotation"), false);
