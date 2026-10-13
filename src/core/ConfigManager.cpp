@@ -109,8 +109,10 @@ void ConfigManager::setRenderFeature(const RenderFeature& feature)
     CHECK(std::isfinite(feature.ambientCoefficient) && feature.ambientCoefficient >= 0.0f);
     CHECK(feature.shadow.pointShadowMapSize > 0);
     CHECK(feature.shadow.rectAreaShadowMapSize > 0);
+    CHECK(feature.shadow.spotShadowMapSize > 0);
     CHECK(std::isfinite(feature.shadow.bias) && feature.shadow.bias >= 0.0f);
     CHECK(std::isfinite(feature.shadow.sampleRadius) && feature.shadow.sampleRadius >= 0.0f);
+    CHECK(std::isfinite(feature.shadow.spotSampleRadius) && feature.shadow.spotSampleRadius >= 0.0f);
     CHECK(feature.shadow.filter == SamplerAsset::Filter::Nearest ||
           feature.shadow.filter == SamplerAsset::Filter::Linear);
     validateToneMapping(feature.toneMapping);
@@ -186,8 +188,10 @@ void ConfigManager::loadRenderer()
 
     CHECK(renderer.feature.shadow.pointShadowMapSize > 0);
     CHECK(renderer.feature.shadow.rectAreaShadowMapSize > 0);
+    CHECK(renderer.feature.shadow.spotShadowMapSize > 0);
     CHECK(std::isfinite(renderer.feature.shadow.bias) && renderer.feature.shadow.bias >= 0.0f);
     CHECK(std::isfinite(renderer.feature.shadow.sampleRadius) && renderer.feature.shadow.sampleRadius >= 0.0f);
+    CHECK(std::isfinite(renderer.feature.shadow.spotSampleRadius) && renderer.feature.shadow.spotSampleRadius >= 0.0f);
 
     CHECK(
         !renderer.brdfLut.textureID.empty() && !renderer.brdfLut.samplerID.empty(),

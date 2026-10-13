@@ -16,5 +16,4 @@ void forEachLightComponentType(F&& visitor)
     visitor.template operator()<SpotLightComponent>("SpotLightComponent");
 }
 
-[[nodiscard]] std::unique_ptr<LightComponent> createLightComponent(LightComponent::Type type);
-LightComponent& replaceLightComponent(LightComponent& light, LightComponent::Type type);
+LightComponent& replaceLightComponent(LightComponent& light, std::unique_ptr<LightComponent> replacement);

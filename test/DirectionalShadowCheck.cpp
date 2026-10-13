@@ -9,6 +9,7 @@
 #include "render/Renderer.h"
 #include "scene/SceneManager.h"
 #include "scene/actor/ALight.h"
+#include "scene/component/DirectionalLightComponent.h"
 #include "scene/actor/AStaticMesh.h"
 #include "scene/system/RenderSystem.h"
 
@@ -55,7 +56,7 @@ int main(int, char** argv)
     scene.id                    = "directional-shadow-check";
     scene.editorCamera.position = {0.0f, 1.0f, 6.0f};
     scene.actors.push_back(std::make_unique<AStaticMesh>());
-    auto  actor      = std::make_unique<ALight>(LightComponent::Type::Directional);
+    auto  actor      = std::make_unique<ALight>(std::make_unique<DirectionalLightComponent>());
     auto& light      = *actor->getComponent<LightComponent>();
     light.castShadow = true;
     scene.actors.push_back(std::move(actor));
@@ -77,7 +78,7 @@ int main(int, char** argv)
     };
     LightData source;
     source.direction = {0.0f, -1.0f, 0.0f, 0.0f};
-    source.flags     = {static_cast<uint32_t>(LightComponent::Type::Directional), 1u, 1u, 0u};
+    source.flags     = {static_cast<uint32_t>(GpuLightType::Directional), 1u, 1u, 0u};
     upload.update(view, {.lightCount = 1}, {&source, 1}, feature.shadow);
     CHECK(upload.directionalShadowData().size() == 1 && upload.lightData()[0].shadowidx == 0);
     CHECK(upload.lightUniforms().cascadeCount == 4);

@@ -481,7 +481,7 @@ void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
     for (uint32_t index = 0; index < lights.size(); ++index)
     {
         const auto& light = lights[index];
-        if (!light.enable() || light.type() != LightComponent::Type::RectArea)
+        if (!light.enable() || light.type() != GpuLightType::RectArea)
             continue;
 
         const glm::vec2 size{light.areaSizeCone};

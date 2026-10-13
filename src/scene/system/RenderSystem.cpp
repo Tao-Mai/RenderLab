@@ -19,7 +19,7 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene, const glm:
 {
     data.objects.clear();
     data.lights.clear();
-    data.sceneId = scene.id;
+    data.sceneId        = scene.id;
     data.environmentMap = scene.environmentMap;
     for (const auto& actor : scene.actors)
     {
@@ -50,11 +50,26 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene, const glm:
         DCHECK(transform);
 
         const glm::vec3 direction = glm::normalize(transform->rotation * glm::vec3{0.0f, 0.0f, -1.0f});
+        GpuLightType    lightType;
+        if (dynamic_cast<const PointLightComponent*>(light))
+            lightType = GpuLightType::Point;
+        else if (dynamic_cast<const DirectionalLightComponent*>(light))
+            lightType = GpuLightType::Directional;
+        else if (dynamic_cast<const RectAreaLightComponent*>(light))
+            lightType = GpuLightType::RectArea;
+        else if (dynamic_cast<const SpotLightComponent*>(light))
+            lightType = GpuLightType::Spot;
+        else
+        {
+            CHECK(false, "light component has no GPU representation");
+            continue;
+        }
+
         LightData lightData{
-            .colorEmission  = light->photometricEmission(),
-            .positionRange  = {transform->position, 0.0f},
-            .direction      = {direction, 0.0f},
-            .flags = {static_cast<uint32_t>(light->type()), light->enabled ? 1u : 0u, light->castShadow ? 1u : 0u, 0u},
+            .colorEmission = light->photometricEmission(),
+            .positionRange = {transform->position, 0.0f},
+            .direction     = {direction, 0.0f},
+            .flags = {static_cast<uint32_t>(lightType), light->enabled ? 1u : 0u, light->castShadow ? 1u : 0u, 0u},
             .areaRightData = {glm::normalize(transform->rotation * glm::vec3{1.0f, 0.0f, 0.0f}), 0.0f},
         };
         if (const auto* local = dynamic_cast<const LocalLightComponent*>(light))

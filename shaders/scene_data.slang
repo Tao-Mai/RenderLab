@@ -31,6 +31,9 @@ struct LightUniforms
     property shadowSampleRadius : float {
         get { return shadowParameters.y; }
     }
+    property spotShadowSampleRadius : float {
+        get { return shadowParameters.w; }
+    }
     property shadowPixelRotation : bool {
         get { return shadowParameters.z != 0.0; }
     }
@@ -39,6 +42,11 @@ struct LightUniforms
 struct PointShadowData
 {
     float4x4 vp[6];
+};
+
+struct SpotShadowData
+{
+    float4x4 vp;
 };
 
 struct RectAreaShadowData
@@ -80,9 +88,12 @@ StructuredBuffer<LightData> lights;
 StructuredBuffer<PointShadowData> pointShadowData;
 
 [[vk::binding(4, 0)]]
-StructuredBuffer<RectAreaShadowData> rectAreaShadowData;
+StructuredBuffer<SpotShadowData> spotShadowData;
 
 [[vk::binding(5, 0)]]
+StructuredBuffer<RectAreaShadowData> rectAreaShadowData;
+
+[[vk::binding(6, 0)]]
 StructuredBuffer<DirectionalShadowData> directionalShadowData;
 
 #endif

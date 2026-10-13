@@ -130,7 +130,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
 
     auto& sun     = *scenes.scene().actors[1];
     const float pointIntensity = sun.getComponent<LightComponent>()->intensity;
-    auto& sunData = replaceLightComponent(*sun.getComponent<LightComponent>(), LightComponent::Type::Directional);
+    auto& sunData = replaceLightComponent(*sun.getComponent<LightComponent>(), std::make_unique<DirectionalLightComponent>());
     sunData.intensity = 100;
     sun.transform().setRotationEulerDegrees({0, 45, 0});
     blocker.transform().position = {4, 3, 5};
@@ -153,7 +153,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         directionalClear
     );
 
-    replaceLightComponent(sunData, LightComponent::Type::Point).intensity = pointIntensity;
+    replaceLightComponent(sunData, std::make_unique<PointLightComponent>()).intensity = pointIntensity;
     sun.transform().setRotationEulerDegrees({0, 0, 0});
     sun.transform().position = {2, 0, 3};
     blocker.transform().position = {4, 0, 5};
@@ -189,7 +189,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     auto sphere = std::make_unique<AStaticMesh>();
     sphere->getComponent<RenderComponent>()->meshId = BuiltinAssets::Mesh::sphere;
     areaScene.actors.push_back(std::move(sphere));
-    auto areaLight = std::make_unique<ALight>(LightComponent::Type::RectArea);
+    auto areaLight = std::make_unique<ALight>(std::make_unique<RectAreaLightComponent>());
     areaLight->transform().position = {0, 0, 7};
     auto& lightData = *areaLight->getComponent<RectAreaLightComponent>();
     lightData.areaSize = {20, 20};
@@ -228,7 +228,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     scenes.deleteActor(areaBlocker.selectionId());
     auto& farLight = scenes.createActor("ALight");
     farLight.transform().position = {0, 0, 9};
-    replaceLightComponent(*farLight.getComponent<LightComponent>(), LightComponent::Type::RectArea);
+    replaceLightComponent(*farLight.getComponent<LightComponent>(), std::make_unique<RectAreaLightComponent>());
     auto& farData = *farLight.getComponent<RectAreaLightComponent>();
     farData.areaSize = {20, 20};
     farData.intensity = 100.0f * 20.0f * 20.0f;
@@ -240,7 +240,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
 
     SceneAsset onlyLights;
     onlyLights.editorCamera = areaScene.editorCamera;
-    auto lamp = std::make_unique<ALight>(LightComponent::Type::RectArea);
+    auto lamp = std::make_unique<ALight>(std::make_unique<RectAreaLightComponent>());
     lamp->transform().position = {0, 0, 3};
     onlyLights.actors.push_back(std::move(lamp));
     scenes.load(onlyLights);

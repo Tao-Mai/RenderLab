@@ -46,6 +46,13 @@ void FrameData::init(const VulkanContext& targetVulkan, DescriptorManager& descr
         vk::BufferUsageFlagBits::eStorageBuffer,
         hostMemory
     );
+    spotShadowBuffer = Buffer(
+        vulkan->physicalDeviceHandle(),
+        vulkan->deviceHandle(),
+        kMaxSpotLightShadow * sizeof(SpotShadowData),
+        vk::BufferUsageFlagBits::eStorageBuffer,
+        hostMemory
+    );
     rectAreaShadowBuffer = Buffer(
         vulkan->physicalDeviceHandle(),
         vulkan->deviceHandle(),
@@ -72,6 +79,7 @@ void FrameData::bindBuffers()
         vk::DescriptorBufferInfo{.buffer = lightUniformBuffer.handle(), .range = lightUniformBuffer.size()},
         vk::DescriptorBufferInfo{.buffer = lightBuffer.handle(), .range = lightBuffer.size()},
         vk::DescriptorBufferInfo{.buffer = pointShadowBuffer.handle(), .range = pointShadowBuffer.size()},
+        vk::DescriptorBufferInfo{.buffer = spotShadowBuffer.handle(), .range = spotShadowBuffer.size()},
         vk::DescriptorBufferInfo{.buffer = rectAreaShadowBuffer.handle(), .range = rectAreaShadowBuffer.size()},
         vk::DescriptorBufferInfo{.buffer = directionalShadowBuffer.handle(), .range = directionalShadowBuffer.size()},
     };
@@ -113,17 +121,24 @@ void FrameData::bindBuffers()
         },
         vk::WriteDescriptorSet{
             .dstSet          = *sceneSet,
-            .dstBinding      = RenderInterface::kRectAreaShadowBufferBinding,
+            .dstBinding      = RenderInterface::kSpotShadowBufferBinding,
             .descriptorCount = 1,
             .descriptorType  = vk::DescriptorType::eStorageBuffer,
             .pBufferInfo     = &infos[4]
         },
         vk::WriteDescriptorSet{
             .dstSet          = *sceneSet,
-            .dstBinding      = RenderInterface::kDirectionalShadowBufferBinding,
+            .dstBinding      = RenderInterface::kRectAreaShadowBufferBinding,
             .descriptorCount = 1,
             .descriptorType  = vk::DescriptorType::eStorageBuffer,
             .pBufferInfo     = &infos[5]
+        },
+        vk::WriteDescriptorSet{
+            .dstSet          = *sceneSet,
+            .dstBinding      = RenderInterface::kDirectionalShadowBufferBinding,
+            .descriptorCount = 1,
+            .descriptorType  = vk::DescriptorType::eStorageBuffer,
+            .pBufferInfo     = &infos[6]
         },
     };
     vulkan->deviceHandle().updateDescriptorSets(writes, {});
@@ -137,6 +152,7 @@ void FrameData::reset() noexcept
     lightUniformBuffer.reset();
     lightBuffer.reset();
     pointShadowBuffer.reset();
+    spotShadowBuffer.reset();
     rectAreaShadowBuffer.reset();
     directionalShadowBuffer.reset();
 
@@ -188,6 +204,8 @@ void FrameData::update(const ViewUniforms& view, const LightUniforms& lighting, 
             shadowData.pointShadows.data(),
             shadowData.pointShadows.size() * sizeof(PointShadowData)
         );
+    if (!shadowData.spotShadows.empty())
+        spotShadowBuffer.upload(shadowData.spotShadows.data(), shadowData.spotShadows.size() * sizeof(SpotShadowData));
     if (!shadowData.rectAreaShadows.empty())
         rectAreaShadowBuffer.upload(
             shadowData.rectAreaShadows.data(),

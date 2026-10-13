@@ -55,6 +55,12 @@ struct LightData
     property areaSize : float2 {
         get { return areaSizeCone.xy; }
     }
+    property cosInner : float {
+        get { return areaSizeCone.z; }
+    }
+    property cosOuter : float {
+        get { return areaSizeCone.w; }
+    }
     // World-space direction along the rectangle's width (local +X).
     property areaRight : float3 {
         get { return areaRightData.xyz; }

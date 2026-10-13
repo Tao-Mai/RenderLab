@@ -7,7 +7,6 @@
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
 
-#include "scene/component/LightComponent.h"
 #include "render/RenderConfig.h"
 
 namespace RenderInterface
@@ -27,25 +26,27 @@ inline constexpr uint32_t kViewUniformBinding          = 0;
 inline constexpr uint32_t kLightUniformBinding         = 1;
 inline constexpr uint32_t kLightBufferBinding          = 2;
 inline constexpr uint32_t kPointShadowBufferBinding    = 3;
-inline constexpr uint32_t kRectAreaShadowBufferBinding = 4;
-inline constexpr uint32_t kDirectionalShadowBufferBinding = 5;
+inline constexpr uint32_t kSpotShadowBufferBinding     = 4;
+inline constexpr uint32_t kRectAreaShadowBufferBinding = 5;
+inline constexpr uint32_t kDirectionalShadowBufferBinding = 6;
 
 // Shadow images, then comparison and regular samplers.
-inline constexpr uint32_t kPointShadowImageBinding        = 6;
-inline constexpr uint32_t kRectAreaShadowImageBinding     = 7;
-inline constexpr uint32_t kDirectionalShadowImageBinding  = 8;
-inline constexpr uint32_t kShadowComparisonSamplerBinding = 9;
-inline constexpr uint32_t kLinearSamplerBinding           = 10;
+inline constexpr uint32_t kPointShadowImageBinding        = 7;
+inline constexpr uint32_t kSpotShadowImageBinding         = 8;
+inline constexpr uint32_t kRectAreaShadowImageBinding     = 9;
+inline constexpr uint32_t kDirectionalShadowImageBinding  = 10;
+inline constexpr uint32_t kShadowComparisonSamplerBinding = 11;
+inline constexpr uint32_t kLinearSamplerBinding           = 12;
 
 // Environment textures: adjacent image / sampler pairs.
-inline constexpr uint32_t kIrradianceImageBinding            = 11;
-inline constexpr uint32_t kIrradianceSamplerBinding          = 12;
-inline constexpr uint32_t kPrefilteredSpecularImageBinding   = 13;
-inline constexpr uint32_t kPrefilteredSpecularSamplerBinding = 14;
-inline constexpr uint32_t kBrdfLutImageBinding               = 15;
-inline constexpr uint32_t kBrdfLutSamplerBinding             = 16;
-inline constexpr uint32_t kRadianceImageBinding              = 17;
-inline constexpr uint32_t kRadianceSamplerBinding            = 18;
+inline constexpr uint32_t kIrradianceImageBinding            = 13;
+inline constexpr uint32_t kIrradianceSamplerBinding          = 14;
+inline constexpr uint32_t kPrefilteredSpecularImageBinding   = 15;
+inline constexpr uint32_t kPrefilteredSpecularSamplerBinding = 16;
+inline constexpr uint32_t kBrdfLutImageBinding               = 17;
+inline constexpr uint32_t kBrdfLutSamplerBinding             = 18;
+inline constexpr uint32_t kRadianceImageBinding              = 19;
+inline constexpr uint32_t kRadianceSamplerBinding            = 20;
 
 // Material set.
 inline constexpr uint32_t kMaterialImageBinding           = 0;
@@ -85,7 +86,7 @@ struct alignas(16) ViewUniforms
 // The SSBO contains lightCount entries, including disabled lights. IBL.x is
 // the maximum LOD of the scene's prefiltered specular cubemap. shadowParameters.x
 // is the normalized shadow depth bias, y is the point-shadow direction-space PCF radius,
-// z enables per-pixel rotation (0/1), and w is reserved.
+// z enables per-pixel rotation (0/1), and w is the spot-shadow PCF radius in texels.
 struct alignas(16) LightUniforms
 {
     uint32_t  lightCount = 0;
@@ -94,6 +95,15 @@ struct alignas(16) LightUniforms
     uint32_t  padding2   = 0;
     glm::vec4 iblParameters{0.0f};
     glm::vec4 shadowParameters{0.0f};
+};
+
+// GPU discriminator; values match shaders/light_data.slang.
+enum class GpuLightType : uint32_t
+{
+    Point = 0,
+    Directional = 1,
+    RectArea = 2,
+    Spot = 3,
 };
 
 // One std430 SSBO element, with a 112-byte array stride.
@@ -125,9 +135,9 @@ struct alignas(16) LightData
         return positionRange.w;
     }
 
-    [[nodiscard]] LightComponent::Type type() const
+    [[nodiscard]] GpuLightType type() const
     {
-        return static_cast<LightComponent::Type>(flags.x);
+        return static_cast<GpuLightType>(flags.x);
     }
 
     [[nodiscard]] bool enable() const
@@ -144,6 +154,11 @@ struct alignas(16) LightData
 struct alignas(16) PointShadowData
 {
     std::array<glm::mat4, 6> vp;
+};
+
+struct alignas(16) SpotShadowData
+{
+    glm::mat4 vp{1.0f};
 };
 
 struct alignas(16) RectAreaShadowData
@@ -207,6 +222,7 @@ static_assert(offsetof(LightData, areaRightData) == 96);
 static_assert(sizeof(PointShadowData) == 384);
 static_assert(offsetof(PointShadowData, vp) == 0);
 static_assert(sizeof(RectAreaShadowData) == 80);
+static_assert(sizeof(SpotShadowData) == 64);
 static_assert(offsetof(RectAreaShadowData, vp) == 0);
 static_assert(offsetof(RectAreaShadowData, nearPlane) == 64);
 static_assert(offsetof(RectAreaShadowData, farPlane) == 68);

@@ -43,7 +43,7 @@ G-buffer 与深度重建参考 [Khronos 延迟渲染示例](https://docs.vulkan.
 
 光栅化链路为 DepthPrepass → Scene → Skybox → Transparent → ToneMapping → LightMarker → Picking / EditorUi → Present。DepthPrepass 创建并清空 D32 深度图，绘制 Opaque 和 MASK 物体，沿用材质的剔除设置和 alpha cutoff，BLEND 物体不参与预绘制。Scene 清空颜色附件，Skybox 和 Transparent 加载前序颜色，各自通过 write 生成新版本的颜色 handle；三个 Pass 都加载只读深度附件，不再写深度。不透明和 MASK 物体使用 Equal 比较，透明物体保持原来的深度比较和排序，天空盒仍使用 LessOrEqual。深度与场景 shader 共用 mesh_vertex.slang 的 precise 顶点位置计算，以及 material_data.slang 的材质布局和 Alpha Test。Graph 根据依赖排序并插入 barrier；编辑器 LightMarkerPass 在 Tone Mapping 之后叠加标记，写入深度供拾取使用。
 
-点光源、方向光和矩形光共用 brdf.slang 的直接光 BRDF：Schlick Fresnel、GGX 分布、height-correlated Smith 可见性和 Lambert 漫反射，金属度同时控制 F0 和漫反射权重。光源分支只生成光线方向、入射光量和阴影可见性，最后统一乘 BRDF 和 NdotL。直接光的感知粗糙度下限为 0.045，避免零粗糙度数值退化；材质数据和 IBL 粗糙度保持原值。矩形光仍用中心方向与投影面积/距离平方近似立体角，新增的镜面响应不代表有限面积光源积分；Spot 暂未接入。
+点光源、Spot、方向光和矩形光共用 brdf.slang 的直接光 BRDF：Schlick Fresnel、GGX 分布、height-correlated Smith 可见性和 Lambert 漫反射，金属度同时控制 F0 和漫反射权重。光源分支只生成光线方向、入射光量和阴影可见性，最后统一乘 BRDF 和 NdotL。直接光的感知粗糙度下限为 0.045，避免零粗糙度数值退化；材质数据和 IBL 粗糙度保持原值。矩形光仍用中心方向与投影面积/距离平方近似立体角，新增的镜面响应不代表有限面积光源积分。Spot 使用内外锥角余弦之间的平方衰减；内锥强度保持 cd，不按锥角重新归一化。Spot 当前只接入光栅路线，实时与离线光追仍不计算 Spot。
 
 Scene 使用 RGBA16F HDR 颜色图，Graph 为每个在途帧单独分配。ToneMappingPass 持有独立 descriptor set、pipeline 和绘制逻辑，只采样当前帧的 HDR 图，Graph 根据声明插入 ColorAttachment → ShaderRead barrier。灯光标记、UI 和坐标轴都在 Tone Mapping 之后绘制，不受曝光和 Tone Mapping 模式影响。
 
@@ -51,7 +51,7 @@ Scene 使用 RGBA16F HDR 颜色图，Graph 为每个在途帧单独分配。Tone
 
 `feature.toneMapping.ev100` 是手动相机曝光值，`exposureCompensation` 是额外补偿档位。CPU 计算倍率 `2^(exposureCompensation - ev100) / 1.2`，通过 push constants 传给 Tone Mapping；EV100 +1 使亮度减半，补偿 +1 使亮度加倍。编辑器修改每帧生效，不重建渲染图；正常关闭时统一保存到 renderer.json。`mode` 提供 Neutral（Khronos PBR Neutral）和 Reinhard。输出线性颜色到 sRGB attachment，由硬件编码一次；UNORM + sRGB nonlinear 交换链由 shader 显式编码。此版本不包含自动曝光、Pre-Exposure 或 Bloom。
 
-物理灯光采用 1 世界单位 = 1 米。LightComponent 的 intensity 按类型表示 Point/RectArea/Spot 的发光强度（cd，Spot 暂不参与照明）、Directional 的照度（lux）。RectArea 表示整个发光面正面方向的发光强度；单面 Lambert 光源在其他方向的强度乘发射方向余弦。RenderSystem 调用 photometricEmission：矩形光源除以面积转为亮度（cd/m²），点光源保持 cd，方向光保持 lux。线性 Rec.709 灯光颜色归一化到单位亮度，光栅和两条光追路线共享同一 LightData 和单位约定。面光源面积改变时整个光源的正面发光强度保持不变，单位面积亮度随之改变；面积由 areaSize 决定，不使用 Actor scale。环境 HDR 图、自发光 glTF 材质仍是未做绝对光度标定的线性数据，不能据此声称整个场景都具备真实亮度。
+物理灯光采用 1 世界单位 = 1 米。LightComponent 的 intensity 按类型表示 Point/RectArea/Spot 的发光强度（cd）、Directional 的照度（lux）。RectArea 表示整个发光面正面方向的发光强度；单面 Lambert 光源在其他方向的强度乘发射方向余弦。RenderSystem 调用 photometricEmission：矩形光源除以面积转为亮度（cd/m²），点光源保持 cd，方向光保持 lux。线性 Rec.709 灯光颜色归一化到单位亮度，光栅和两条光追路线共享同一 LightData 和单位约定。面光源面积改变时整个光源的正面发光强度保持不变，单位面积亮度随之改变；面积由 areaSize 决定，不使用 Actor scale。环境 HDR 图、自发光 glTF 材质仍是未做绝对光度标定的线性数据，不能据此声称整个场景都具备真实亮度。
 
 Neutral 算法参考 [Khronos PBR Neutral Tone Mapper](https://github.com/KhronosGroup/ToneMapping/tree/main/PBR_Neutral)，shader 中注明 Slang 改写及 CC-BY-4.0 来源。
 
@@ -87,17 +87,19 @@ Pass 比较 CPU SceneRenderData 快照、相机逆 VP / 位置 / 视口和资产
 | 0 Scene | 1 | LightUniforms UBO：light count、环境光系数、IBL 参数 |
 | 0 Scene | 2 | LightData[] SSBO |
 | 0 Scene | 3 | PointShadowData[] SSBO：每个点光源六个 VP |
-| 0 Scene | 4 | RectAreaShadowData[] SSBO：VP、near/far、UV 系数 |
-| 0 Scene | 5 | DirectionalShadowData[] SSBO：每层 VP 和相机空间深度上限 |
-| 0 Scene | 6 | Point shadow cubemap array image |
-| 0 Scene | 7 | Rect area shadow 2D array image |
-| 0 Scene | 8 | Directional cascade shadow 2D array image |
-| 0 Scene | 9 | 三种阴影共用的比较 sampler |
-| 0 Scene | 10 | Linear clamp sampler，非比较模式，用于读取原始纹理值 |
-| 0 Scene | 11 / 12 | Irradiance image / sampler |
-| 0 Scene | 13 / 14 | Prefiltered specular image / sampler |
-| 0 Scene | 15 / 16 | BRDF LUT image / sampler |
-| 0 Scene | 17 / 18 | Radiance image / sampler |
+| 0 Scene | 4 | SpotShadowData[] SSBO：每个 Spot 一个 VP |
+| 0 Scene | 5 | RectAreaShadowData[] SSBO：VP、near/far、UV 系数 |
+| 0 Scene | 6 | DirectionalShadowData[] SSBO：每层 VP 和相机空间深度上限 |
+| 0 Scene | 7 | Point shadow cubemap array image |
+| 0 Scene | 8 | Spot shadow 2D array image |
+| 0 Scene | 9 | Rect area shadow 2D array image |
+| 0 Scene | 10 | Directional cascade shadow 2D array image |
+| 0 Scene | 11 | 四种阴影共用的比较 sampler |
+| 0 Scene | 12 | Linear clamp sampler，非比较模式，用于读取原始纹理值 |
+| 0 Scene | 13 / 14 | Irradiance image / sampler |
+| 0 Scene | 15 / 16 | Prefiltered specular image / sampler |
+| 0 Scene | 17 / 18 | BRDF LUT image / sampler |
+| 0 Scene | 19 / 20 | Radiance image / sampler |
 | 1 Material | 0 | Base color image |
 | 1 Material | 1 | Base color sampler |
 | 1 Material | 2 | MaterialUniforms UBO |
@@ -110,7 +112,7 @@ Pass 比较 CPU SceneRenderData 快照、相机逆 VP / 位置 / 视口和资产
 | 1 Material | 15 / 16 | Clearcoat roughness image / sampler |
 | 1 Material | 17 / 18 | Clearcoat normal image / sampler |
 
-Renderer 为每个在途帧单独持有 FrameContext 与 FrameData，后者管理 Scene Set、两个 UBO、灯光 SSBO 和三种阴影 SSBO。ViewUniforms 包含 viewProjection、inverseViewProjection、cameraPosition 和 view，共 208 字节；view 用于取得正的相机空间深度。LightUniforms 包含 lightCount、ambientCoefficient、cascadeCount、iblParameters 和 shadowParameters，共 48 字节；iblParameters.x 是 prefiltered specular 的最大 LOD，shadowParameters 的 x/y/z 分别为归一化阴影深度 bias、点阴影方向空间 PCF 半径、逐像素旋转开关（0/1），w 预留为 0。LightData 按 RenderSystem 的灯光顺序存放，每项 112 字节，包含 shadowidx 和保留矩形旋转的 areaRightData（通过 areaRight 访问右方向）；lightCount 包括禁用灯光。上传时，enabled 且 castShadow 的点光源、矩形光源和方向光各自在类型内获得连续的 shadowidx，其余为 ~0u。PointShadowData 每项包含六个 VP，共 384 字节；RectAreaShadowData 包含 VP、nearPlane、farPlane 和 worldToUvScale，共 80 字节。DirectionalShadowData 为固定四层 CascadeShadowData 数组，每层 80 字节，包含 VP 和 depthUpperBound，整项 320 字节。
+Renderer 为每个在途帧单独持有 FrameContext 与 FrameData，后者管理 Scene Set、两个 UBO、灯光 SSBO 和四种阴影 SSBO。ViewUniforms 包含 viewProjection、inverseViewProjection、cameraPosition 和 view，共 208 字节；view 用于取得正的相机空间深度。LightUniforms 包含 lightCount、ambientCoefficient、cascadeCount、iblParameters 和 shadowParameters，共 48 字节；iblParameters.x 是 prefiltered specular 的最大 LOD，shadowParameters 的 x/y/z 分别为归一化阴影深度 bias、点阴影方向空间 PCF 半径、逐像素旋转开关（0/1），w 是 Spot PCF 半径（texel）。LightData 按 RenderSystem 的灯光顺序存放，每项 112 字节，包含 shadowidx 和保留矩形旋转的 areaRightData（通过 areaRight 访问右方向）；lightCount 包括禁用灯光。上传时，enabled 且 castShadow 的点光源、Spot、矩形光源和方向光各自在类型内获得连续的 shadowidx，其余为 ~0u。PointShadowData 每项包含六个 VP，共 384 字节；SpotShadowData 包含一个 VP，共 64 字节；RectAreaShadowData 包含 VP、nearPlane、farPlane 和 worldToUvScale，共 80 字节。DirectionalShadowData 为固定四层 CascadeShadowData 数组，每层 80 字节，包含 VP 和 depthUpperBound，整项 320 字节。
 
 SSBO 至少分配一项以维持有效 descriptor；没有灯光时 lightCount 为 0，shader 不读取数组。数量增长时，在当前帧 fence 完成后扩容并更新该帧 descriptor，其他帧保持自己的 buffer。
 
@@ -216,3 +218,5 @@ Engine 在 Renderer shutdown 前关闭 Editor 并清空 RenderSystem 的 CPU 数
 
 `test/RenderGraphGpuSmoke.cpp` 是需要 Vulkan 和当前配置资产的手动集成测试，不加入自动 CTest。显式构建 RenderGraphGpuSmoke 后运行，检查两帧资源轮转、真实 Shadow 绘制与清空、Skybox、重复拾取、运行中材质/纹理更新、多灯光、禁用灯光、零灯光、两帧 SSBO 扩容、Graph 重建和正常销毁；仅修改内存中的场景。
 `RenderGraphGpuSmoke` 从构建根目录运行（例如 `cmake-build-default` 下的 `test/RenderGraphGpuSmoke.exe`），以便找到构建后的 shader。可设置 `VK_LAYER_VALIDATE_SYNC=1` 启用同步 validation。
+
+Spot 在 ShadowPass 内使用单层二维 attachment，不使用 multiview。上传阶段按两倍外锥角、正方形比例与 range 计算透视 VP；固定预留 kMaxSpotLightShadow = 4 层图像与对应 SSBO，禁用或关闭 Cast Shadow 不重新分配资源。feature.shadow.spotShadowMapSize 改变时 Renderer 重建图；spotSampleRadius 以 texel 为单位通过 shadowParameters.w 更新，配合全局 Shadow filter、Bias 和逐像素旋转。配置仍只在正常关闭时持久化。

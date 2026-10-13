@@ -20,7 +20,11 @@ TransparentPass::Output TransparentPass::setup(
     color = graph.write(colorHandle);
     depth = depthHandle;
     SceneDraw::useAttachments(graph, std::array{color}, depth);
-    for (const auto image : {shadow.pointLightShadowMap, shadow.rectAreaLightShadowMap, shadow.cascadeShadowMap})
+    for (const auto image :
+         {shadow.pointLightShadowMap,
+          shadow.spotLightShadowMap,
+          shadow.rectAreaLightShadowMap,
+          shadow.cascadeShadowMap})
     {
         graph.use(
             image,

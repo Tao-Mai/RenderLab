@@ -8,6 +8,7 @@ public:
     struct Output
     {
         RenderGraph::ImageHandle pointLightShadowMap;
+        RenderGraph::ImageHandle spotLightShadowMap;
         RenderGraph::ImageHandle rectAreaLightShadowMap;
         RenderGraph::ImageHandle cascadeShadowMap;
     };
@@ -29,6 +30,7 @@ private:
     };
 
     ShadowTarget       point;
+    ShadowTarget       spot;
     ShadowTarget       rectArea;
     ShadowTarget       directional;
     uint32_t           cascadeCount   = 0;

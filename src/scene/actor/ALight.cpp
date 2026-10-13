@@ -1,10 +1,13 @@
 #include "scene/actor/ALight.h"
 
-#include "scene/component/LightTypes.h"
+#include "scene/component/PointLightComponent.h"
 
-ALight::ALight(LightComponent::Type type)
+ALight::ALight() : ALight(std::make_unique<PointLightComponent>()) {}
+
+ALight::ALight(std::unique_ptr<LightComponent> light)
 {
-    components.push_back(createLightComponent(type));
+    DCHECK(light);
+    components.push_back(std::move(light));
 }
 
 void ALight::init()

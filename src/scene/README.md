@@ -32,10 +32,11 @@ the scene dirty independently of Tick.
 AFreeFlyCamera supplies CameraComponent and FreeFlyMoveComponent.
 AStaticMesh supplies TransformComponent and RenderComponent.
 ALight supplies TransformComponent and a PointLightComponent by default; its constructor
-can select another concrete light component. LightComponent is an abstract base for shared
+accepts another concrete light component directly. LightComponent is an abstract base for shared
 color, intensity, enabled and shadow properties. PointLightComponent, DirectionalLightComponent,
 RectAreaLightComponent and SpotLightComponent store only their own parameters; finite lights
-share range through LocalLightComponent. RenderSystem packs them into the unchanged GPU LightData.
+share range through LocalLightComponent. Components have no duplicate type enum; RenderSystem
+maps concrete classes to GpuLightType only when packing the unchanged GPU LightData.
 The editor changes light type by replacing the component after drawing, preserving shared
 properties and the owner's transform. Concrete actors can
 hold additional behavior components; AActor itself is concrete but is not registered for persistence.

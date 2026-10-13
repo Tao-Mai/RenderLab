@@ -40,6 +40,14 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph)
     const auto createTarget =
         [&](RenderGraph::ImageCreateInfo info, int shadowType, uint32_t viewMask = 0, uint32_t viewLayerCount = 1)
     {
+        CHECK(info.extent.width > 0 && info.extent.height > 0);
+        CHECK(
+            info.extent.width <= limits.maxImageDimension2D && info.extent.height <= limits.maxImageDimension2D &&
+            info.extent.width <= limits.maxFramebufferWidth && info.extent.height <= limits.maxFramebufferHeight &&
+            info.arrayLayers <= limits.maxImageArrayLayers
+        );
+        if (info.flags & vk::ImageCreateFlagBits::eCubeCompatible)
+            CHECK(info.extent.width <= limits.maxImageDimensionCube);
         const auto shader   = renderContext().shaderManager->getOrLoad("shadow", {{"SHADOW_TYPE", shadowType}});
         const auto pipeline = pipelines.getOrCreate({
             .shader      = shader,
@@ -82,6 +90,14 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph)
         kPointViewMask,
         kPointFaceCount
     );
+    spot = createTarget(
+        {
+            .format      = vk::Format::eD32Sfloat,
+            .extent      = {shadow.spotShadowMapSize, shadow.spotShadowMapSize, 1},
+            .arrayLayers = kMaxSpotLightShadow,
+        },
+        static_cast<int>(GpuLightType::Spot)
+    );
     rectArea = createTarget(
         {
             .format      = vk::Format::eD32Sfloat,
@@ -99,7 +115,7 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph)
         1
     );
 
-    return {point.image, rectArea.image, directional.image};
+    return {point.image, spot.image, rectArea.image, directional.image};
 }
 
 void ShadowPass::execute(RenderGraph& graph) const
@@ -114,19 +130,25 @@ void ShadowPass::execute(RenderGraph& graph) const
 
         switch (light.type())
         {
-            case LightComponent::Type::Point:
+            case GpuLightType::Point:
                 {
                     DCHECK(light.shadowidx < frame.pointShadowData().size());
                     recordShadow(graph, point, lightIndex, light.shadowidx * kPointFaceCount);
                     break;
                 }
-            case LightComponent::Type::RectArea:
+            case GpuLightType::Spot:
+                {
+                    DCHECK(light.shadowidx < frame.spotShadowData().size());
+                    recordShadow(graph, spot, lightIndex, light.shadowidx);
+                    break;
+                }
+            case GpuLightType::RectArea:
                 {
                     DCHECK(light.shadowidx < frame.rectAreaShadowData().size());
                     recordShadow(graph, rectArea, lightIndex, light.shadowidx);
                     break;
                 }
-            case LightComponent::Type::Directional:
+            case GpuLightType::Directional:
                 {
                     DCHECK(light.shadowidx < frame.directionalShadowData().size());
                     DCHECK(cascadeCount == frame.lightUniforms().cascadeCount);

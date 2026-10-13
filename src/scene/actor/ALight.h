@@ -6,6 +6,7 @@
 class ALight : public AActor
 {
 public:
-    explicit ALight(LightComponent::Type type = LightComponent::Type::Point);
+    ALight();
+    explicit ALight(std::unique_ptr<LightComponent> light);
     void init() override;
 };

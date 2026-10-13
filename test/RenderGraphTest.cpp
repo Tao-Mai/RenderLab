@@ -1,20 +1,62 @@
-#include "render/feature/RenderGraph.h"
 #include "render/PipelineManager.h"
+#include "render/feature/RenderGraph.h"
+#include "render/feature/shadow/ShadowData.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <gtest/gtest.h>
+
+TEST(SpotShadow, PreparesActiveLayersAndConeProjection)
+{
+    LightData source;
+    source.flags          = {static_cast<uint32_t>(GpuLightType::Spot), 1u, 1u, 0u};
+    source.positionRange  = {0, 0, 3, 10};
+    source.direction      = {0, 0, -1, 0};
+    source.areaSizeCone.z = std::cos(glm::radians(15.0f));
+    source.areaSizeCone.w = std::cos(glm::radians(30.0f));
+    std::array lights{source, source, source, source};
+    lights[0].flags.y   = 0;
+    lights[2].flags.z   = 0;
+    const auto prepared = prepareShadows({}, lights, {});
+    ASSERT_EQ(prepared.spotShadows.size(), 2u);
+    EXPECT_EQ(prepared.lights[0].shadowidx, ~0u);
+    EXPECT_EQ(prepared.lights[1].shadowidx, 0u);
+    EXPECT_EQ(prepared.lights[2].shadowidx, ~0u);
+    EXPECT_EQ(prepared.lights[3].shadowidx, 1u);
+    const auto center = prepared.spotShadows[0].vp * glm::vec4(0, 0, 1, 1);
+    EXPECT_NEAR(center.x, 0.0f, 0.0001f);
+    EXPECT_NEAR(center.y, 0.0f, 0.0001f);
+    EXPECT_GT(center.z, 0.0f);
+    EXPECT_LT(center.z, center.w);
+    const auto edge = prepared.spotShadows[0].vp * glm::vec4(2 * std::tan(glm::radians(30.0f)), 0, 1, 1);
+    EXPECT_NEAR(edge.x / edge.w, 1.0f, 0.0001f);
+    const auto disabled = prepareShadows({}, lights, {.enable = false});
+    EXPECT_TRUE(disabled.spotShadows.empty());
+    for (const auto& light : disabled.lights)
+        EXPECT_FALSE(light.castShadow());
+}
+
+TEST(SpotShadow, RejectsCapacityOverflow)
+{
+    std::array<LightData, kMaxSpotLightShadow + 1> lights;
+    for (auto& light : lights)
+    {
+        light.flags     = {static_cast<uint32_t>(GpuLightType::Spot), 1u, 1u, 0u};
+        light.direction = {0, 0, -1, 0};
+    }
+    EXPECT_DEATH(prepareShadows({}, lights, {}), "");
+}
 
 TEST(PipelineWinding, PreservesCcwFrontFacesWithVulkanProjection)
 {
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 100.0f);
     projection[1][1] *= -1.0f;
     const glm::vec3 vertices[] = {{-1.0f, -1.0f, -3.0f}, {1.0f, -1.0f, -3.0f}, {1.0f, 1.0f, -3.0f}};
-    glm::vec2 projected[3];
+    glm::vec2       projected[3];
     for (size_t index = 0; index < 3; ++index)
     {
         const glm::vec4 clip = projection * glm::vec4(vertices[index], 1.0f);
-        projected[index] = glm::vec2(clip) / clip.w;
+        projected[index]     = glm::vec2(clip) / clip.w;
     }
 
     const auto edgeA = projected[1] - projected[0];
