@@ -5,6 +5,7 @@
 
 #include "core/ConfigManager.h"
 #include "core/Context.h"
+#include "core/profiling/Profiler.h"
 #include "core/Logger.h"
 #include "core/Window.h"
 #include "asset/AssetManager.h"
@@ -108,6 +109,7 @@ void Renderer::init()
 
 void Renderer::waitIdle()
 {
+    CpuProfileScope timing{context().profiler, "Device idle wait"};
     if (*vulkan.deviceHandle())
     {
         vkCheck(vulkan.deviceHandle().waitIdle());
@@ -145,6 +147,7 @@ void Renderer::shutdown() noexcept
 
 void Renderer::rebuildGraph()
 {
+    CpuProfileScope timing{context().profiler, "Graph rebuild"};
     DCHECK(inited);
     waitIdle();
     graph.releaseResources();
@@ -153,6 +156,8 @@ void Renderer::rebuildGraph()
 
 void Renderer::setupRenderGraph()
 {
+    if (context().profiler) context().profiler->clearGpu();
+    for (auto& frame : frames) frame.gpuProfiler().discard();
     DCHECK(passes);
     activeSceneBindings = nullptr;
     const auto& config  = context().config->rendererConfig();
@@ -312,29 +317,53 @@ RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData
     DCHECK(inited);
     applyConfiguration(scene);
     auto& frame = currentFrame();
-    frame.wait();
+    {
+        CpuProfileScope timing{context().profiler, "Fence wait"};
+        frame.wait();
+    }
 
-    const auto [acquireResult, imageIndex] = swapchain.acquire(frame.imageAvailableSemaphore());
+    const auto [acquireResult, imageIndex] = [&]
+    {
+        CpuProfileScope timing{context().profiler, "Swapchain acquire"};
+        return swapchain.acquire(frame.imageAvailableSemaphore());
+    }();
     if (acquireResult == vk::Result::eErrorOutOfDateKHR)
         return {.swapchainNeedsRebuild = true};
 
-    const auto& renderData = resources.prepare(scene, frameIndex);
+    const auto& renderData = [&]() -> const RenderData&
+    {
+        CpuProfileScope timing{context().profiler, "Render resources"};
+        return resources.prepare(scene, frameIndex);
+    }();
     const auto  renderPath = context().config->rendererConfig().renderPath;
     if (renderPath == RenderPath::OfflinePathTracing)
         passes->get<OfflinePathTracingPass>().updateScene(view, scene, context().assetManager->contentRevision());
     auto&       data       = frameStorage[frameIndex];
-    if (activeSceneBindings)
-        activeSceneBindings->updateFrame(data, view.uniforms, renderData);
-    else
-        data.updateView(view.uniforms);
-    graph.execute(view, renderData, editor, frameIndex, imageIndex);
+    {
+        CpuProfileScope timing{context().profiler, "Frame upload"};
+        if (activeSceneBindings)
+            activeSceneBindings->updateFrame(data, view.uniforms, scene.lighting);
+        else
+            data.updateView(view.uniforms);
+    }
+    {
+        CpuProfileScope timing{context().profiler, "Command recording"};
+        graph.execute(view, renderData, editor, frameIndex, imageIndex);
+    }
 
     const bool directBlit = (renderPath == RenderPath::RayTracing || renderPath == RenderPath::OfflinePathTracing) &&
         !context().config->rendererConfig().feature.hdr;
     const vk::PipelineStageFlags waitStages =
         directBlit ? vk::PipelineStageFlagBits::eTransfer : vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    frame.submit(swapchain.renderFinishedSemaphore(imageIndex), waitStages);
-    const auto presentResult = swapchain.present(imageIndex);
+    {
+        CpuProfileScope timing{context().profiler, "Queue submit"};
+        frame.submit(swapchain.renderFinishedSemaphore(imageIndex), waitStages);
+    }
+    const auto presentResult = [&]
+    {
+        CpuProfileScope timing{context().profiler, "Present"};
+        return swapchain.present(imageIndex);
+    }();
 
     RenderFrameResult frameResult{
         .swapchainNeedsRebuild = acquireResult == vk::Result::eSuboptimalKHR ||
@@ -342,6 +371,7 @@ RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData
     };
     if (editor.requestPick)
     {
+        CpuProfileScope timing{context().profiler, "Picking wait/readback"};
         frame.wait();
 
         graph.getBuffer(pickingReadback, frameIndex)

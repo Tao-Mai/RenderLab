@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/feature/editor/LightMarkers.h"
+#include "core/profiling/Profiler.h"
 
 #include <cstdint>
 #include <functional>
@@ -14,5 +15,5 @@ struct EditorFrameInput
     uint32_t                               pickX       = 0;
     uint32_t                               pickY       = 0;
     std::span<const LightMarkers::DrawItem> lightDrawItems;
-    std::function<void(VkCommandBuffer)>    recordUi;
+    std::function<DrawStatistics(VkCommandBuffer)> recordUi;
 };

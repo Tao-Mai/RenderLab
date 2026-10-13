@@ -1,4 +1,6 @@
 #include "editor/EditorBackend.h"
+#include "core/Context.h"
+#include <algorithm>
 #include <array>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -88,9 +90,28 @@ void EditorBackend::beginFrame()
     ImGui::NewFrame();
 }
 
-void EditorBackend::render(VkCommandBuffer commands) const
+DrawStatistics EditorBackend::render(VkCommandBuffer commands) const
 {
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commands);
+    auto* data = ImGui::GetDrawData();
+    ImGui_ImplVulkan_RenderDrawData(data, commands);
+    DrawStatistics statistics;
+    if (!context().profiler) return statistics;
+    const auto width = static_cast<int>(data->DisplaySize.x * data->FramebufferScale.x);
+    const auto height = static_cast<int>(data->DisplaySize.y * data->FramebufferScale.y);
+    if (width <= 0 || height <= 0) return statistics;
+    for (const auto* list : data->CmdLists)
+        for (const auto& command : list->CmdBuffer)
+        {
+            if (command.UserCallback) continue;
+            const float minX = std::max(0.0f, (command.ClipRect.x - data->DisplayPos.x) * data->FramebufferScale.x);
+            const float minY = std::max(0.0f, (command.ClipRect.y - data->DisplayPos.y) * data->FramebufferScale.y);
+            const float maxX = std::min(static_cast<float>(width), (command.ClipRect.z - data->DisplayPos.x) * data->FramebufferScale.x);
+            const float maxY = std::min(static_cast<float>(height), (command.ClipRect.w - data->DisplayPos.y) * data->FramebufferScale.y);
+            if (maxX <= minX || maxY <= minY) continue;
+            ++statistics.drawCalls;
+            statistics.triangles += command.ElemCount / 3;
+        }
+    return statistics;
 }
 
 void EditorBackend::shutdown() noexcept

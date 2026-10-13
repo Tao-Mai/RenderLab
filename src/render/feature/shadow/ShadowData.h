@@ -7,6 +7,7 @@
 // CPU output of shadow preparation, independent of GPU allocation and upload.
 struct ShadowFrameData
 {
+    bool operator==(const ShadowFrameData&) const = default;
     std::vector<LightData>             lights;
     std::vector<PointShadowData>       pointShadows;
     std::vector<SpotShadowData>        spotShadows;

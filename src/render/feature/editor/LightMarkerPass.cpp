@@ -132,6 +132,7 @@ void LightMarkerPass::execute(RenderGraph& graph) const
         );
         item.mesh->bind(commandBuffer);
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
+        graph.recordDraw(item.indexCount);
     }
 
     commandBuffer.endRendering();

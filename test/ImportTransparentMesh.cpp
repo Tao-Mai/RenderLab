@@ -74,10 +74,11 @@ int main(int argc, char** argv)
     for (int frame = 0; frame < 4; ++frame)
     {
         window.pollEvents();
-        const auto& renderData = renderSystem.prepare(scenes.scene(), scenesCamera.worldPosition());
+        const auto view = scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
+        const auto& renderData = renderSystem.prepare(scenes.scene(), view.uniforms, config.rendererConfig().feature.shadow);
         lightMarkers.prepare(scenes.scene(), *renderContext().resources);
         renderer.render(
-            scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)}),
+            view,
             renderData,
             {
                 .lightDrawItems = lightMarkers.drawItems(),

@@ -698,6 +698,7 @@ MeshAsset::ID GltfImport::saveMesh(AssetImporter::PreparedMesh&& prepared, const
     mesh.meshIndex   = prepared.meshIndex;
     mesh.importScale = importScale;
     mesh.geometry    = context().assetDataManager->writeGeometry(meshId, prepared.geometry);
+    mesh.bounds      = calculateBounds(prepared.geometry);
     mesh.submeshes.reserve(prepared.submeshes.size());
     for (const auto& submesh : prepared.submeshes)
     {

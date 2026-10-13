@@ -2,6 +2,7 @@
 #include "render/FrameData.h"
 
 #include "core/Logger.h"
+#include "core/Context.h"
 #include "render/RenderView.h"
 #include "render/device/FrameContext.h"
 #include "render/device/Memory.h"
@@ -291,12 +292,36 @@ void RenderGraph::execute(
 
     vkCheck(commands().reset());
     vkCheck(commands().begin({}));
+    auto* profiler = context().profiler;
+    auto& gpu = frames[currentFrame].gpuProfiler();
+    passStatistics.clear();
+    if (profiler)
+    {
+        std::vector<std::string_view> names;
+        for (const auto* node : sortedNodes) names.push_back(node->name);
+        gpu.beginFrame(commands(), names);
+        passStatistics.reserve(sortedNodes.size());
+    }
+    uint32_t passIndex = 0;
     for (auto* node : sortedNodes)
     {
+        CpuProfileScope timing{profiler, node->name};
+        if (profiler)
+        {
+            currentPassStatistics = &passStatistics.emplace_back(std::string{node->name}, DrawStatistics{});
+            gpu.beginPass(commands(), passIndex);
+        }
         transitionResources(node->uses);
         node->execute(*this);
+        if (profiler) gpu.endPass(commands(), passIndex);
+        ++passIndex;
     }
-
+    currentPassStatistics = nullptr;
+    if (profiler)
+    {
+        gpu.endFrame(commands());
+        profiler->recordDraws(passStatistics);
+    }
     vkCheck(commands().end());
     currentEditor     = nullptr;
     currentRenderData = nullptr;
@@ -307,6 +332,18 @@ FrameData& RenderGraph::frameData(uint32_t index) const
 {
     DCHECK(index < frames.size());
     return frameStorage[index];
+}
+
+void RenderGraph::recordDraw(uint32_t count, uint32_t instanceCount)
+{
+    recordDrawStatistics({.drawCalls = 1, .triangles = static_cast<uint64_t>(count / 3) * instanceCount});
+}
+
+void RenderGraph::recordDrawStatistics(DrawStatistics statistics)
+{
+    if (!currentPassStatistics) return;
+    currentPassStatistics->draws.drawCalls += statistics.drawCalls;
+    currentPassStatistics->draws.triangles += statistics.triangles;
 }
 vk::raii::CommandBuffer& RenderGraph::commands() const
 {

@@ -101,7 +101,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
     const auto sample = [&]
     {
-        const auto& sceneData = renderSystem.prepare(scenes.scene(), scenesCamera.worldPosition());
+        const auto& sceneData = renderSystem.prepare(scenes.scene(), view.uniforms, context().config->rendererConfig().feature.shadow);
         const auto& data      = renderContext().resources->prepare(sceneData, 0);
         frameData[0].updateView(view.uniforms);
         graph.execute(view, data, {}, 0, 0);

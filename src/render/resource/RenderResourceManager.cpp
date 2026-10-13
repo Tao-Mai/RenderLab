@@ -13,6 +13,7 @@
 #include "render/resource/GpuMesh.h"
 #include "render/resource/GpuTexture.h"
 #include "scene/system/SceneRenderData.h"
+#include "scene/system/Visibility.h"
 
 #include <cmath>
 #include <utility>
@@ -345,7 +346,7 @@ const RenderData& RenderResourceManager::prepare(const SceneRenderData& scene, u
     draws.drawItems.clear();
     draws.opaqueDrawItems.clear();
     draws.transparentDrawItems.clear();
-    draws.lights = scene.lights;
+    draws.lights = scene.lighting.lights;
     for (auto& [key, instance] : frame.instances)
         instance.used = false;
 
@@ -378,11 +379,13 @@ const RenderData& RenderResourceManager::prepare(const SceneRenderData& scene, u
                 submesh.firstIndex,
                 submesh.indexCount,
                 object.selectionId,
-                object.distanceSquared
+                object.distanceSquared,
+                object.visibilityMask
             };
             draws.drawItems.push_back(draw);
-            (gpuMaterial->alphaMode() == MaterialAlphaMode::Blend ? draws.transparentDrawItems : draws.opaqueDrawItems)
-                .push_back(draw);
+            if (object.visibilityMask & RenderVisibility::kMainView)
+                (gpuMaterial->alphaMode() == MaterialAlphaMode::Blend ? draws.transparentDrawItems : draws.opaqueDrawItems)
+                    .push_back(draw);
         }
     }
     std::erase_if(frame.instances, [](const auto& entry) { return !entry.second.used; });

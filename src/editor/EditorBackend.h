@@ -1,5 +1,6 @@
 #pragma once
 #include <vulkan/vulkan.h>
+#include "core/profiling/Profiler.h"
 struct GLFWwindow;
 class EditorBackend
 {
@@ -18,7 +19,7 @@ public:
     );
 
     void beginFrame();
-    void render(VkCommandBuffer commands) const;
+    [[nodiscard]] DrawStatistics render(VkCommandBuffer commands) const;
     void shutdown() noexcept;
 
 private:

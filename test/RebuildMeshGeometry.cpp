@@ -57,6 +57,9 @@ int main(int argc, char** argv)
             saved.vertices.size(),
             saved.indices.size()
         );
+        auto rebuilt = asset;
+        rebuilt.bounds = calculateBounds(saved);
+        (void)assets.save(std::move(rebuilt));
     }
 
     for (const auto& id :

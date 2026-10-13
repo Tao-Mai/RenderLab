@@ -39,6 +39,6 @@ void EditorUiPass::execute(RenderGraph& graph) const
         .colorAttachmentCount = 1,
         .pColorAttachments    = &colorAttachment,
     });
-    editor.recordUi(*graph.commands());
+    graph.recordDrawStatistics(editor.recordUi(*graph.commands()));
     graph.commands().endRendering();
 }

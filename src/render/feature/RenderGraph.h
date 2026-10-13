@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Logger.h"
+#include "core/profiling/Profiler.h"
 #include "render/Image.h"
 
 #include <algorithm>
@@ -102,6 +103,8 @@ public:
         uint32_t imageIndex
     );
     [[nodiscard]] static bool needsBarrier(const ImageAccess& previous, const ImageAccess& next);
+    void recordDraw(uint32_t vertexOrIndexCount, uint32_t instanceCount = 1);
+    void recordDrawStatistics(DrawStatistics statistics);
 
     [[nodiscard]] VulkanContext& vulkan() const { return *deviceContext; }
     [[nodiscard]] Swapchain&     swapchain() const { return *targetSwapchain; }
@@ -156,6 +159,7 @@ private:
 
     struct PassNode
     {
+        std::string_view name;
         std::vector<ResourceHandle>       dependency;
         std::vector<ResourceHandle>       writeSrc;
         std::vector<PassNode*>            prev;
@@ -180,6 +184,8 @@ private:
     const RenderData*                     currentRenderData = nullptr;
     const RenderView*                     currentView       = nullptr;
     ImageHandle                          swapchainImage;
+    std::vector<PassDrawStatistics>       passStatistics;
+    PassDrawStatistics*                  currentPassStatistics = nullptr;
 
     template <class T>
     void collectDependencies(PassNode& node, const T& value);
@@ -197,6 +203,7 @@ template <class T, class... Args>
 auto RenderGraph::addPass(T& pass, Args&&... args)
 {
     auto& node   = *nodeStorage.emplace_back(std::make_unique<PassNode>());
+    node.name = std::define_static_string(std::meta::identifier_of(^^T));
     node.execute = [pass = &pass](RenderGraph& graph) { pass->execute(graph); };
     if constexpr (requires { pass.prepare(*this); })
         node.prepare = [pass = &pass](RenderGraph& graph) { pass->prepare(graph); };

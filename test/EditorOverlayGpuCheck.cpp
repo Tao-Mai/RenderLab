@@ -77,7 +77,7 @@ int main(int argc, char** argv)
                 auto& light                = *scenes.scene().actors[1];
                 light.transform().position = {0, 0, z};
                 window.pollEvents();
-                const auto& renderData = renderSystem.prepare(scenes.scene(), scenesCamera.worldPosition());
+                const auto& renderData = renderSystem.prepare(scenes.scene(), view.uniforms, config.rendererConfig().feature.shadow);
                 lightMarkers.prepare(scenes.scene(), *renderContext().resources);
                 input.lightDrawItems = lightMarkers.drawItems();
                 const auto result    = renderer.render(view, renderData, input);

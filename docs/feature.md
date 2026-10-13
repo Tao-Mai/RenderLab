@@ -7,9 +7,11 @@
 - 编辑器可切换 Forward / Deferred / Real-time ray tracing / Offline path tracing，关闭时保存渲染路线选择。
 - 不透明、Alpha Mask、Alpha Blend；双面材质与背面剔除。
 - 透明物体按距离从后向前绘制，开启混合、不写入深度。
+- 视锥剔除：资产局部 AABB、Transform 世界包围盒、主视图与各阴影视图可见性 bit；点光源六面共享一位，方向光逐 Cascade 剔除，光追保留完整几何。
 - HDR 链路可开关：光栅和光追共用曝光、Khronos PBR Neutral / Reinhard 色调映射及 sRGB 输出；光追始终使用 RGBA16F 颜色缓冲。
 - HDR 开关触发 RenderGraph 重建；编辑器 UI 与坐标轴不参与曝光和色调映射。
 - 手动物理曝光：EV100、曝光补偿；关闭时统一保存配置，暂不支持自动曝光。
+- 性能分析：统一 CPU 作用域计时、GPU 每 Pass timestamp、等待/上传/录制耗时、draw/triangle 提交计数、各视图剔除统计；性能面板半秒刷新，显示帧时间曲线及 P95/P99。
 - 独立硬件光追路线：BLAS / TLAS、相机主光线、材质 Base Color、插值世界空间法线；点光源距离平方衰减，方向光无限长 visibility 阴影射线，矩形面光源采样与三角形求交；漫反射多次反弹、面光源 MIS、俄罗斯轮盘终止。
 
 - 独立离线路线与 shader：单在途帧、每轮 1 SPP、像素内抖动、FP32 buffer 累积后平均；场景 / 相机变化重置，曝光与重命名不重置，编辑器显示 SPP。
@@ -42,7 +44,7 @@
 
 ## 资产
 
-- `MeshAsset`：顶点、索引、Submesh 与材质引用，记录导入来源、源 mesh 索引和缩放。
+- `MeshAsset`：顶点、索引、Submesh 与材质引用、持久化局部 AABB，记录导入来源、源 mesh 索引和缩放。
 - `MaterialAsset`：统一材质 ID 和多态持久化；`PbrMaterialAsset` 保存现有 PBR 参数、贴图、透明模式和双面设置；`OfflineMaterialAsset` 保存 Diffuse / Conductor / Dielectric 参数，暂未接入 shader 求值。
 - `TextureAsset`：纹理尺寸、格式、色彩空间、Mip 链与像素数据。
 - `ShaderAsset`：编译后的 SPIR-V Shader 资源。

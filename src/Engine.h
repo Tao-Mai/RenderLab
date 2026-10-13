@@ -3,6 +3,7 @@
 #include "platform/InputMethod.h"
 #include "core/Context.h"
 #include "core/Debug.h"
+#include "core/profiling/Profiler.h"
 #include "scene/system/RenderSystem.h"
 
 #include <memory>
@@ -24,6 +25,7 @@ private:
     DEBUG_ONLY(bool inited = false;)
     InputMethod inputMethod;
     RenderSystem renderSystem;
+    Profiler profiler;
     std::unique_ptr<ConfigManager> config;
     std::unique_ptr<Window> window;
     std::unique_ptr<InputManager> inputManager;

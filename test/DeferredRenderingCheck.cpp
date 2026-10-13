@@ -121,12 +121,12 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
         const auto buffer = graph.addPass(readback, color);
         graph.addPass(end, RenderGraph::ImageHandle{}, buffer);
         graph.compile();
-        const auto& sceneData = renderSystem.prepare(scenes.scene(), scenesCamera.worldPosition());
+        const auto& sceneData = renderSystem.prepare(scenes.scene(), view.uniforms, context().config->rendererConfig().feature.shadow);
         const auto& data      = renderContext().resources->prepare(sceneData, 0);
         if (deferred)
-            lighting.sceneBindings().updateFrame(frameData[0], view.uniforms, data);
+            lighting.sceneBindings().updateFrame(frameData[0], view.uniforms, sceneData.lighting);
         else
-            forward.sceneBindings().updateFrame(frameData[0], view.uniforms, data);
+            forward.sceneBindings().updateFrame(frameData[0], view.uniforms, sceneData.lighting);
         graph.execute(view, data, {}, 0, 0);
         const auto           commandBuffer = *frames[0].commandBufferHandle();
         const vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &commandBuffer};

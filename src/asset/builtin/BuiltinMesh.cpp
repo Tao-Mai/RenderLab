@@ -253,14 +253,15 @@ constexpr uint32_t kArrowIndexCount = 48;
     return mesh;
 }
 
-[[nodiscard]] ::MeshAsset makeMeshAsset(const ::MeshAsset::ID& id, uint32_t indices)
+[[nodiscard]] ::MeshAsset makeMeshAsset(const ::MeshAsset::ID& id, const MeshGeometry& geometry)
 {
     ::MeshAsset asset{};
     asset.id     = id;
     asset.source = Source::Builtin;
+    asset.bounds = calculateBounds(geometry);
     asset.submeshes.push_back({
         .firstIndex = 0,
-        .indexCount = indices,
+        .indexCount = static_cast<uint32_t>(geometry.indices.size()),
         .materialId = BuiltinAssets::Material::white,
     });
     return asset;
@@ -270,10 +271,10 @@ constexpr uint32_t kArrowIndexCount = 48;
 const ::MeshAsset* BuiltinAssets::meshAsset(const ::MeshAsset::ID& id)
 {
     static const ::MeshAsset assets[] = {
-        makeMeshAsset(Mesh::cube, kCubeIndexCount),
-        makeMeshAsset(Mesh::sphere, kSphereIndexCount),
-        makeMeshAsset(Mesh::plane, kPlaneIndexCount),
-        makeMeshAsset(Mesh::arrow, kArrowIndexCount),
+        makeMeshAsset(Mesh::cube, *meshGeometry(Mesh::cube)),
+        makeMeshAsset(Mesh::sphere, *meshGeometry(Mesh::sphere)),
+        makeMeshAsset(Mesh::plane, *meshGeometry(Mesh::plane)),
+        makeMeshAsset(Mesh::arrow, *meshGeometry(Mesh::arrow)),
     };
 
     for (const ::MeshAsset& asset : assets)

@@ -63,6 +63,8 @@ int main(int argc, char** argv)
             vertex.position *= asset.importScale;
         const auto output = data.writeGeometry(asset.id, prepared.geometry);
         CHECK(output == asset.geometry);
+        asset.bounds = calculateBounds(prepared.geometry);
+        asset_json::save(config.paths().assets / MeshAsset::dir / (asset.id.value + ".json"), asset);
         const auto restored = data.readGeometry(asset);
         CHECK(restored.indices == originalIndices);
         CHECK(restored.vertices.size() == prepared.geometry.vertices.size());

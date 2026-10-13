@@ -3,6 +3,7 @@
 #include "asset/BuiltinAssets.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
+#include "core/profiling/Profiler.h"
 #include "core/InputManager.h"
 #include "core/Logger.h"
 #include "core/Serializer.h"
@@ -47,9 +48,10 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
     CHECK(frame.pointShadowData().size() == 2);
     CHECK(frame.lightData()[3].shadowidx == 0 && frame.lightData()[4].shadowidx == 1);
     CHECK(
-        frame.lightData()[0].shadowidx == ~0u && frame.lightData()[1].shadowidx == ~0u &&
+        frame.lightData()[0].shadowidx == ~0u && frame.lightData()[1].shadowidx == 0 &&
         frame.lightData()[2].shadowidx == ~0u
     );
+    CHECK(frame.spotShadowData().size() == 1);
 
     const std::array directions = {
         glm::vec3{1, 0, 0},
@@ -268,6 +270,7 @@ int main(int argc, char** argv)
     Renderer         renderer;
     RenderSystem     renderSystem;
     LightMarkers     lightMarkers;
+    Profiler         profiling;
     Context&         ctx = context();
     ctx.config           = &config;
     ctx.assetManager     = &assets;
@@ -275,6 +278,7 @@ int main(int argc, char** argv)
     ctx.window           = &window;
     ctx.sceneManager     = &sceneManager;
     ctx.renderer         = &renderer;
+    ctx.profiler         = &profiling;
 
     config.init();
     const auto originalRenderer = config.rendererConfig();
@@ -361,10 +365,9 @@ int main(int argc, char** argv)
                 .pickY          = extent.height / 2,
                 .lightDrawItems = lightMarkers.drawItems(),
             };
-            const auto& renderData = renderSystem.prepare(sceneManager.scene(), sceneManagerCamera.worldPosition());
-            const auto  view       = sceneManagerCamera.renderView(
-                {0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)}
-            );
+            const auto view = sceneManagerCamera.renderView(
+                {0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
+            const auto& renderData = renderSystem.prepare(sceneManager.scene(), view.uniforms, config.rendererConfig().feature.shadow);
             const auto result = renderer.render(view, renderData, input);
             CHECK(result.hasPickResult == input.requestPick, "missing picking result");
             if (input.requestPick)
@@ -496,6 +499,7 @@ int main(int argc, char** argv)
     auto       extent            = renderer.swapchainHandle().extent();
     const auto renderEditorFrame = [&]()
     {
+        profiling.beginFrame();
         window.pollEvents();
         uiInput.tick();
         editor.applySceneActions();
@@ -505,9 +509,10 @@ int main(int argc, char** argv)
             frame.view.viewport.x > 0.0f && frame.view.viewport.width < extent.width,
             "editor viewport must leave space for both docked sidebars"
         );
-        const auto& renderData = renderSystem.prepare(sceneManager.scene(), sceneManagerCamera.worldPosition());
+        const auto& renderData = renderSystem.prepare(sceneManager.scene(), frame.view.uniforms, config.rendererConfig().feature.shadow);
         const auto  result     = renderer.render(frame.view, renderData, frame.input);
         editor.applyPickResult(result);
+        profiling.endFrame(1000.0 / 60.0);
         return sceneManager.findActor(editor.selectionId());
     };
     for (uint32_t frame = 0; frame < 3; ++frame)
@@ -538,6 +543,10 @@ int main(int argc, char** argv)
     renderEditorFrame();
     renderer.waitIdle();
     editor.shutdown();
+    CHECK(!profiling.gpuTimings().empty(), "GPU profiling produced no pass timings");
+    for (const auto& timing : profiling.gpuTimings())
+        CHECK(std::isfinite(timing.milliseconds) && timing.milliseconds >= 0.0);
+    CHECK(!profiling.display().passes.empty());
     uiInput.shutdown();
     ctx.editor       = nullptr;
     ctx.inputManager = nullptr;
