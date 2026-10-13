@@ -153,16 +153,19 @@ struct alignas(16) LightData
 
 struct alignas(16) PointShadowData
 {
+    bool operator==(const PointShadowData&) const = default;
     std::array<glm::mat4, 6> vp;
 };
 
 struct alignas(16) SpotShadowData
 {
+    bool operator==(const SpotShadowData&) const = default;
     glm::mat4 vp{1.0f};
 };
 
 struct alignas(16) RectAreaShadowData
 {
+    bool operator==(const RectAreaShadowData&) const = default;
     glm::mat4 vp{1.0f};
     float     nearPlane = 0.0f;
     float     farPlane  = 0.0f;
@@ -172,6 +175,7 @@ struct alignas(16) RectAreaShadowData
 
 struct alignas(16) CascadeShadowData
 {
+    bool operator==(const CascadeShadowData&) const = default;
     glm::mat4 vp{1.0f};
     float     depthUpperBound = 0.0f;  // Positive camera-view depth, not distance to the camera.
     float     padding0 = 0.0f;
@@ -181,6 +185,7 @@ struct alignas(16) CascadeShadowData
 
 struct alignas(16) DirectionalShadowData
 {
+    bool operator==(const DirectionalShadowData&) const = default;
     std::array<CascadeShadowData, kMaxDirectionalShadowCascades> cascades;
 };
 

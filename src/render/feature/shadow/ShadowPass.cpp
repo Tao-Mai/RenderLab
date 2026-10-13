@@ -12,7 +12,7 @@
 #include "render/device/VulkanContext.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/ShaderData.h"
-#include "scene/component/LightComponent.h"
+#include "scene/system/Visibility.h"
 
 #include <array>
 
@@ -219,8 +219,13 @@ void ShadowPass::recordShadow(
     );
     commandBuffer.setScissor(0, vk::Rect2D({0, 0}, {target.mapSize, target.mapSize}));
 
+    const auto& light      = graph.frameData(graph.frameIndex()).lightData()[lightIndex];
+    const auto visibility = RenderVisibility::shadowMask(light.type(), light.shadowidx, cascadeIndex);
     for (const DrawItem& item : graph.renderData().drawItems)
     {
+        if (!(item.visibilityMask & visibility))
+            continue;
+
         const ShadowPushConstants push{.model = item.model, .lightIdx = lightIndex, .cascadeIndex = cascadeIndex};
         commandBuffer.pushConstants<ShadowPushConstants>(
             pipelineLayout,
@@ -230,6 +235,7 @@ void ShadowPass::recordShadow(
         );
         item.mesh->bind(commandBuffer);
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
+        graph.recordDraw(item.indexCount);
     }
 
     commandBuffer.endRendering();

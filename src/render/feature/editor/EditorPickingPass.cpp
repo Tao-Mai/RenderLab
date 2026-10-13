@@ -1,4 +1,5 @@
 #include "render/feature/editor/EditorPickingPass.h"
+#include "scene/system/Visibility.h"
 #include "render/feature/editor/EditorInterface.h"
 
 #include "core/Logger.h"
@@ -150,7 +151,11 @@ void EditorPickingPass::execute(RenderGraph& graph) const
 
     for (const DrawItem& item : graph.renderData().drawItems)
     {
+        if (!(item.visibilityMask & RenderVisibility::kMainView))
+            continue;
+
         draw(commandBuffer, item);
+        graph.recordDraw(item.indexCount);
     }
     for (const auto& item : editor.lightDrawItems)
     {
@@ -166,6 +171,7 @@ void EditorPickingPass::execute(RenderGraph& graph) const
         );
         item.mesh->bind(commandBuffer);
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
+        graph.recordDraw(item.indexCount);
     }
     commandBuffer.endRendering();
 }

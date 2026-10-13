@@ -169,5 +169,6 @@ void ToneMappingPass::execute(RenderGraph& graph) const
         parameters
     );
     commands.draw(3, 1, 0, 0);
+    graph.recordDraw(3);
     commands.endRendering();
 }

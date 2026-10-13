@@ -9,6 +9,13 @@ add_executable(RenderLabTests
         AssetDataManagerTest.cpp
         EnvironmentMapImportTest.cpp
         SceneManagerTest.cpp
+        VisibilityTest.cpp
+        ProfilerTest.cpp
+        ${PROJECT_SOURCE_DIR}/src/core/time/Timer.cpp
+        ${PROJECT_SOURCE_DIR}/src/core/profiling/Profiler.cpp
+        ${PROJECT_SOURCE_DIR}/src/core/math/Bounds.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/system/RenderSystem.cpp
+        ${PROJECT_SOURCE_DIR}/src/render/feature/shadow/ShadowData.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/SceneManager.cpp
         ${PROJECT_SOURCE_DIR}/src/editor/EditorCamera.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/AActor.cpp
@@ -46,6 +53,7 @@ add_executable(RenderLabTests
 target_include_directories(RenderLabTests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_compile_definitions(RenderLabTests PRIVATE
         VULKAN_HPP_NO_EXCEPTIONS
+        GLM_FORCE_DEPTH_ZERO_TO_ONE
         RENDERLAB_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
         RENDERLAB_CONFIG_FILE="${PROJECT_SOURCE_DIR}/test/config.json"
 )

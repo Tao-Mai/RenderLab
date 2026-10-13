@@ -5,6 +5,7 @@
 #include <optional>
 #include <vector>
 #include "asset/Asset.h"
+#include "core/math/Bounds.h"
 struct MaterialAsset;
 
 struct MeshAsset : Asset
@@ -26,5 +27,6 @@ struct MeshAsset : Asset
     std::optional<uint32_t>              meshIndex;
     float                                importScale = 1.0f;
     std::filesystem::path                geometry;
+    Aabb                                 bounds;
     std::vector<Submesh>                 submeshes;
 };

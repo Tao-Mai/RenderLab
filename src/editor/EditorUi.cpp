@@ -1,4 +1,5 @@
 #include "editor/EditorUi.h"
+#include "editor/PerformancePanel.h"
 
 #include <imgui.h>
 
@@ -54,18 +55,9 @@ void applyModelMatrix(TransformComponent& transform, const glm::mat4& model)
     transform.scale    = scale;
 }
 }  // namespace
-void EditorUI::beginFrame(float deltaTime)
+void EditorUI::beginFrame(float)
 {
     ImGuizmo::BeginFrame();
-
-    fpsRefreshTime += deltaTime;
-    ++framesSinceRefresh;
-    if (fpsRefreshTime >= 0.5f)
-    {
-        displayedFps       = static_cast<float>(framesSinceRefresh) / fpsRefreshTime;
-        fpsRefreshTime     = 0.0f;
-        framesSinceRefresh = 0;
-    }
 
     const ImGuiViewport*     viewport = ImGui::GetMainViewport();
     const ImGuiIO& io = ImGui::GetIO();
@@ -239,9 +231,7 @@ EditorUI::InspectorResult EditorUI::drawInspector(SceneAsset& scene, AActor* obj
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
     ImGui::Begin("Editor", nullptr, editorFlags);
 
-    ImGui::TextUnformatted("Performance");
-    ImGui::Separator();
-    ImGui::Text("FPS: %.1f", displayedFps);
+    drawPerformance(context().profiler);
     const std::string& sceneName = scene.id.value;
     if (dirty)
     {

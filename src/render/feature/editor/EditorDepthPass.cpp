@@ -1,4 +1,5 @@
 #include "render/feature/editor/EditorDepthPass.h"
+#include "scene/system/Visibility.h"
 #include "render/feature/editor/EditorInterface.h"
 
 #include "render/FrameData.h"
@@ -94,6 +95,9 @@ void EditorDepthPass::execute(RenderGraph& graph) const
         .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, EditorInterface::kViewSet, viewSets, {});
     for (const DrawItem& item : graph.renderData().drawItems)
     {
+        if (!(item.visibilityMask & RenderVisibility::kMainView))
+            continue;
+
         const EditorDepthPushConstants parameters{.model = item.model};
         commandBuffer.pushConstants<EditorDepthPushConstants>(
             pipelineLayout,
@@ -103,6 +107,7 @@ void EditorDepthPass::execute(RenderGraph& graph) const
         );
         item.mesh->bind(commandBuffer);
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
+        graph.recordDraw(item.indexCount);
     }
     commandBuffer.endRendering();
 }

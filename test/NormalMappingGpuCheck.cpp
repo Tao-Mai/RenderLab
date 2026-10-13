@@ -93,7 +93,7 @@ int main(int argc, char** argv)
                     material.clearcoat = std::move(clearcoat);
                 }
             }
-            const auto& renderData = renderSystem.prepare(scenes.scene(), scenesCamera.worldPosition());
+            const auto& renderData = renderSystem.prepare(scenes.scene(), view.uniforms, config.rendererConfig().feature.shadow);
             lightMarkers.prepare(scenes.scene(), *renderContext().resources);
             input.lightDrawItems = lightMarkers.drawItems();
             renderer.render(view, renderData, input);

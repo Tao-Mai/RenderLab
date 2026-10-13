@@ -82,7 +82,7 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
     const auto sample = [&]
     {
         const auto  view     = camera.renderView({0, 0, float(extent.width), float(extent.height)});
-        const auto& snapshot = system.prepare(scenes.scene(), camera.worldPosition());
+        const auto& snapshot = system.prepare(scenes.scene(), view.uniforms, context().config->rendererConfig().feature.shadow);
         const auto& draws    = renderContext().resources->prepare(snapshot, 0);
         pass.updateScene(view, snapshot, context().assetManager->contentRevision());
         data.updateView(view.uniforms);
@@ -169,7 +169,7 @@ int main(int, char** argv)
     const auto draw   = [&]
     {
         const auto  view     = camera.renderView({0, 0, float(extent.width), float(extent.height)});
-        const auto& snapshot = system.prepare(scenes.scene(), camera.worldPosition());
+        const auto& snapshot = system.prepare(scenes.scene(), view.uniforms, config.rendererConfig().feature.shadow);
         const auto  result   = renderer.render(view, snapshot, {});
         CHECK(!result.swapchainNeedsRebuild);
         renderer.waitIdle();

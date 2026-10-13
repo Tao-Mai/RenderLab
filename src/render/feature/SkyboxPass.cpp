@@ -71,6 +71,7 @@ void SkyboxPass::execute(RenderGraph& graph) const
         parameters
     );
     commandBuffer.draw(3, 1, 0, 0);
+    graph.recordDraw(3);
     commandBuffer.endRendering();
 }
 

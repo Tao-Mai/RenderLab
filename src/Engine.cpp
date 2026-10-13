@@ -13,8 +13,6 @@
 #include "render/Renderer.h"
 #include "scene/SceneManager.h"
 
-#include <chrono>
-
 namespace
 {
 template <class T>
@@ -47,7 +45,7 @@ void Engine::init()
     Context& ctx = context();
     DCHECK(
         !ctx.config && !ctx.window && !ctx.inputManager && !ctx.assetManager && !ctx.assetDataManager &&
-        !ctx.sceneManager && !ctx.renderer && !ctx.editor
+        !ctx.sceneManager && !ctx.renderer && !ctx.editor && !ctx.profiler
     );
 
     config           = std::make_unique<ConfigManager>();
@@ -68,6 +66,7 @@ void Engine::init()
         .sceneManager     = sceneManager.get(),
         .renderer         = renderer.get(),
         .editor           = editor.get(),
+        .profiler         = &profiler,
     };
 
     ctx.config->init();
@@ -94,7 +93,7 @@ void Engine::run()
 void Engine::mainLoop()
 {
     Context& ctx                   = context();
-    auto     previousTime          = std::chrono::steady_clock::now();
+    Timer    deltaTimer;
     bool     swapchainNeedsRebuild = false;
     while (!ctx.window->shouldClose())
     {
@@ -113,13 +112,12 @@ void Engine::mainLoop()
             ctx.inputManager->tick();
             if (ctx.inputManager->get(Command::Quit))
                 ctx.window->requestClose();
-            previousTime = std::chrono::steady_clock::now();
+            deltaTimer.reset();
             continue;
         }
 
-        const auto  currentTime = std::chrono::steady_clock::now();
-        const float deltaTime   = std::chrono::duration<float>(currentTime - previousTime).count();
-        previousTime            = currentTime;
+        const float deltaTime = static_cast<float>(deltaTimer.restartMilliseconds() / 1000.0);
+        profiler.beginFrame();
 
         const auto currentExtent = ctx.renderer->swapchainHandle().extent();
         if (swapchainNeedsRebuild || currentExtent.width != static_cast<uint32_t>(framebufferWidth) ||
@@ -130,18 +128,33 @@ void Engine::mainLoop()
             swapchainNeedsRebuild = false;
         }
 
-        ctx.editor->applySceneActions();
+        {
+            CpuProfileScope timing{&profiler, "Scene actions"};
+            ctx.editor->applySceneActions();
+        }
         auto& camera = ctx.editor->camera();
-        ctx.editor->tick(deltaTime);
-        ctx.sceneManager->tick(deltaTime);
+        {
+            CpuProfileScope timing{&profiler, "Editor tick"};
+            ctx.editor->tick(deltaTime);
+        }
+        {
+            CpuProfileScope timing{&profiler, "Scene tick"};
+            ctx.sceneManager->tick(deltaTime);
+        }
 
         const auto extent      = ctx.renderer->swapchainHandle().extent();
-        const auto editorFrame = ctx.editor->buildFrame(camera, deltaTime, extent.width, extent.height);
+        const auto editorFrame = [&]
+        {
+            CpuProfileScope timing{&profiler, "Editor UI"};
+            return ctx.editor->buildFrame(camera, deltaTime, extent.width, extent.height);
+        }();
 
-        const auto& renderData   = renderSystem.prepare(ctx.sceneManager->scene(), camera.worldPosition());
+        const auto& renderData   = renderSystem.prepare(
+            ctx.sceneManager->scene(), editorFrame.view.uniforms, ctx.config->rendererConfig().feature.shadow);
         const auto  editorResult = ctx.renderer->render(editorFrame.view, renderData, editorFrame.input);
         swapchainNeedsRebuild    = editorResult.swapchainNeedsRebuild;
         ctx.editor->applyPickResult(editorResult);
+        profiler.endFrame(deltaTime * 1000.0);
     }
 }
 
@@ -168,6 +181,8 @@ void Engine::shutdown() noexcept
 
     shutdownSubsystem(window, ctx.window);
     shutdownSubsystem(config, ctx.config);
+    ctx.profiler = nullptr;
+    profiler.reset();
 
     DEBUG_EXEC(inited = false);
 }

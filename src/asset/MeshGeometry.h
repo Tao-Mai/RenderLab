@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Vertex.h"
+#include "core/math/Bounds.h"
 
 #include <cstdint>
 #include <vector>
@@ -12,3 +13,4 @@ struct MeshGeometry
 };
 
 void generateTangents(MeshGeometry& mesh, uint32_t firstIndex, uint32_t indexCount);
+[[nodiscard]] Aabb calculateBounds(const MeshGeometry& mesh);

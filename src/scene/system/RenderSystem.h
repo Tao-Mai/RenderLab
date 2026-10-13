@@ -13,7 +13,8 @@ struct SceneAsset;
 class RenderSystem
 {
 public:
-    [[nodiscard]] const SceneRenderData& prepare(const SceneAsset& scene, const glm::vec3& cameraPosition);
+    [[nodiscard]] const SceneRenderData& prepare(
+        const SceneAsset& scene, const ViewUniforms& view, const RenderFeature::Shadow& shadows);
     void                                 reset() noexcept;
 
 private:

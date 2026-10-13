@@ -82,7 +82,11 @@ owns references into the live scene. Picking IDs are not persisted and are not
 reused after reload.
 
 Engine invokes RenderSystem each frame to read the live actors and their
-components, then passes the resulting RenderData to Renderer. RenderData does
+components, prepares shadow VPs and computes main-view/shadow visibility bits from
+asset-local AABBs transformed to world space, then passes SceneRenderData to Renderer.
+Point lights share one bit across all six faces; directional cascades have separate bits.
+The complete object list is retained for ray tracing; raster draws filter the relevant bit.
+SceneRenderData does
 not retain actor references. Editor gizmos and
 picking use the same actors. The inspector draws marked fields with typed ImGui
 overloads. Transform, Light and Render have dedicated editors for Euler rotation,

@@ -171,5 +171,6 @@ void SceneDraw::recordMeshes(
             {}
         );
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
+        graph.recordDraw(item.indexCount);
     }
 }

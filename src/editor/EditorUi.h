@@ -55,9 +55,6 @@ public:
 private:
     bool             dockLayoutInitialized = false;
     bool             sceneFocused          = false;
-    float            fpsRefreshTime        = 0.0f;
-    float            displayedFps          = 0.0f;
-    uint32_t         framesSinceRefresh    = 0;
     uint32_t         editorDockId          = 0;
     uint32_t         hierarchyDockId       = 0;
     int              gizmoOperation        = 0;

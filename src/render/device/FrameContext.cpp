@@ -2,6 +2,7 @@
 
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
+#include "core/Context.h"
 
 #include <utility>
 
@@ -26,10 +27,12 @@ void FrameContext::init(VulkanContext& targetVulkan)
     imageAvailable = vkCheck(targetVulkan.deviceHandle().createSemaphore(vk::SemaphoreCreateInfo()));
     // CPU等GPU draw完之后再复用该frame的相关资源，比如UBO等
     drawFence = vkCheck(targetVulkan.deviceHandle().createFence({.flags = vk::FenceCreateFlagBits::eSignaled}));
+    profiling.init(targetVulkan);
 }
 
 void FrameContext::reset() noexcept
 {
+    profiling.reset();
 
     drawFence             = nullptr;
     imageAvailable        = nullptr;
@@ -38,10 +41,11 @@ void FrameContext::reset() noexcept
     vulkan                = nullptr;
 }
 
-void FrameContext::wait() const
+void FrameContext::wait()
 {
     DCHECK(vulkan);
     vkCheck(vulkan->deviceHandle().waitForFences(*drawFence, vk::True, UINT64_MAX));
+    profiling.collect(context().profiler);
 }
 
 void FrameContext::submit(vk::Semaphore renderFinished, vk::PipelineStageFlags waitStages) const

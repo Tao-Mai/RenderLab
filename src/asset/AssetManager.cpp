@@ -1,5 +1,6 @@
 #include "asset/AssetManager.h"
 #include "asset/MaterialTypes.h"
+#include <cmath>
 
 
 namespace
@@ -25,6 +26,10 @@ void loadAssetDirectory(const std::filesystem::path& directory, std::unordered_m
             asset = std::make_unique<T>(asset_json::load<T>(entry.path()));
         CHECK(asset, "null asset: {}", entry.path().string());
         CHECK(!asset->id.empty(), "asset has empty id: {}", entry.path().string());
+        if constexpr (std::same_as<T, MeshAsset>)
+            for (glm::length_t axis = 0; axis < 3; ++axis)
+                CHECK(std::isfinite(asset->bounds.min[axis]) && std::isfinite(asset->bounds.max[axis]) &&
+                    asset->bounds.min[axis] <= asset->bounds.max[axis], "invalid mesh bounds: {}", asset->id);
 
         const typename T::ID id = asset->id;
         CHECK(out.emplace(id, std::move(asset)).second, "duplicate asset ID: {}", id);

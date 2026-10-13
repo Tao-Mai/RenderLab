@@ -20,6 +20,7 @@ struct DrawItem
     uint32_t                           indexCount;
     uint32_t                           selectionId;
     float                              distanceSquared;
+    uint32_t                           visibilityMask = 0;
 };
 
 struct RenderData

@@ -16,6 +16,7 @@ class RenderGraph;
 class FrameData;
 struct RenderData;
 struct ViewUniforms;
+struct ShadowFrameData;
 
 class SceneBindings
 {
@@ -23,7 +24,7 @@ public:
     ShadowPass::Output setup(RenderGraph& graph, ShadowPass::Output shadow);
     void               refreshBindings();
     void               prepare(RenderGraph& graph) const;
-    void               updateFrame(FrameData& frame, const ViewUniforms& view, const RenderData& scene) const;
+    void               updateFrame(FrameData& frame, const ViewUniforms& view, const ShadowFrameData& lighting) const;
     void setEnvironmentMap(std::optional<EnvironmentMapAsset::ID> id) { environmentMap = std::move(id); }
 
 private:

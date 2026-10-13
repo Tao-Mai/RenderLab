@@ -10,6 +10,7 @@
 
 #include <mikktspace.h>
 #include <glm/geometric.hpp>
+#include <glm/common.hpp>
 
 namespace
 {
@@ -24,6 +25,20 @@ struct TangentBuild
         return mesh.vertices[mesh.indices[firstIndex + face * 3 + corner]];
     }
 };
+}
+
+Aabb calculateBounds(const MeshGeometry& mesh)
+{
+    CHECK(!mesh.vertices.empty());
+    Aabb bounds{mesh.vertices.front().position, mesh.vertices.front().position};
+    for (const auto& vertex : mesh.vertices)
+    {
+        const auto& position = vertex.position;
+        CHECK(std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z));
+        bounds.min = glm::min(bounds.min, position);
+        bounds.max = glm::max(bounds.max, position);
+    }
+    return bounds;
 }
 
 void generateTangents(MeshGeometry& mesh, uint32_t firstIndex, uint32_t indexCount)

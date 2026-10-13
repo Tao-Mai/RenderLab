@@ -112,10 +112,11 @@ int main(int, char** argv)
             renderer.rebuildGraph();
         }
         window.pollEvents();
-        const auto& renderData = renderSystem.prepare(scenes.scene(), camera.worldPosition());
+        const auto view = camera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
+        const auto& renderData = renderSystem.prepare(scenes.scene(), view.uniforms, config.rendererConfig().feature.shadow);
         lightMarkers.prepare(scenes.scene(), *renderContext().resources);
         renderer.render(
-            camera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)}),
+            view,
             renderData,
             {
                 .lightDrawItems = lightMarkers.drawItems(),

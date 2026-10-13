@@ -11,6 +11,12 @@ endif ()
 
 project(RenderLab LANGUAGES C CXX)
 
+# CLion's Default profile leaves the build type empty; use an optimized build.
+# An explicitly selected Debug/RelWithDebInfo configuration remains unchanged.
+if (NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
+endif ()
+
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -20,6 +26,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16.2)
     message(FATAL_ERROR "RenderLab requires GCC 16.2 or newer with C++26 reflection. Select that compiler in your toolchain.")
 endif ()
+
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 
 if (WIN32 AND NOT VCPKG_TARGET_TRIPLET STREQUAL "x64-mingw-dynamic")
     message(FATAL_ERROR "Windows GCC builds require VCPKG_TARGET_TRIPLET=x64-mingw-dynamic. Use a fresh build directory when changing toolchains.")
@@ -320,6 +328,11 @@ add_library(RenderLabRuntime STATIC
         src/asset/TextureMip.h
         src/asset/TextureMip.cpp
         src/core/math/Sampler.cpp
+        src/core/math/Bounds.cpp
+        src/core/time/Timer.cpp
+        src/core/profiling/Profiler.cpp
+        src/editor/PerformancePanel.cpp
+        src/render/device/GpuProfiler.cpp
         src/core/math/Sampler.h
         src/render/feature/RenderGraph.cpp
         src/render/feature/RenderGraph.h

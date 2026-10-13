@@ -7,6 +7,7 @@
 #include "asset/MeshAsset.h"
 #include "asset/EnvironmentMapAsset.h"
 #include "render/resource/ShaderData.h"
+#include "render/feature/shadow/ShadowData.h"
 
 struct RenderObject
 {
@@ -17,6 +18,7 @@ struct RenderObject
     uint32_t                                  selectionId     = 0;
     uint32_t                                  componentIndex  = 0;
     float                                     distanceSquared = 0.0f;
+    uint32_t                                  visibilityMask = 0;
 };
 // A CPU snapshot. Scene extraction never allocates or uploads GPU resources.
 struct SceneRenderData
@@ -25,5 +27,5 @@ struct SceneRenderData
     AssetID<struct SceneAsset> sceneId;
     std::optional<EnvironmentMapAsset::ID> environmentMap;
     std::vector<RenderObject> objects;
-    std::vector<LightData>    lights;
+    ShadowFrameData          lighting;
 };
