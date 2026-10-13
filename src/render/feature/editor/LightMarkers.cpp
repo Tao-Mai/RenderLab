@@ -6,6 +6,7 @@
 #include "render/resource/RenderResourceManager.h"
 #include "scene/AActor.h"
 #include "scene/component/TransformComponent.h"
+#include "scene/component/RectAreaLightComponent.h"
 
 #include <glm/geometric.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -57,7 +58,7 @@ std::vector<LightMarkers::DrawItem> LightMarkers::buildDrawItems(
     std::vector<DrawItem> result;
     const glm::vec3       markerColor = light.enabled ? light.color : light.color * 0.15f;
 
-    switch (light.type)
+    switch (light.type())
     {
         case LightComponent::Type::Point:
         case LightComponent::Type::Spot:
@@ -80,7 +81,7 @@ std::vector<LightMarkers::DrawItem> LightMarkers::buildDrawItems(
                 constexpr uint32_t kIndicesPerFace = 6;
                 constexpr uint32_t kEmittingFace   = 1;
                 const glm::mat4    model =
-                    markerTransform(transform) * glm::scale(glm::mat4{1.0f}, glm::vec3{light.areaSize, kThickness});
+                    markerTransform(transform) * glm::scale(glm::mat4{1.0f}, glm::vec3{static_cast<const RectAreaLightComponent&>(light).areaSize, kThickness});
                 const glm::vec3 housingColor = light.enabled ? glm::vec3{0.28f} : glm::vec3{0.12f};
                 result.reserve(6);
                 for (uint32_t face = 0; face < 6; ++face)

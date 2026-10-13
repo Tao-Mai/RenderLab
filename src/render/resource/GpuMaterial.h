@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset/MaterialAsset.h"
+#include "asset/PbrMaterialAsset.h"
 #include "render/PipelineManager.h"
 #include "render/resource/Buffer.h"
 #include "render/resource/GpuTexture.h"
@@ -52,11 +52,11 @@ public:
         const vk::raii::Device&         device,
         DescriptorManager&              descriptors,
         ShaderHandle                    shader,
-        const MaterialAsset&            material,
+        const PbrMaterialAsset&         material,
         Textures                        textures
     );
 
-    void                            updateParameters(const MaterialAsset& material);
+    void                            updateParameters(const PbrMaterialAsset& material);
     [[nodiscard]] vk::DescriptorSet descriptorSetHandle() const { return *descriptorSet; }
     [[nodiscard]] PipelineKey
     pipelineKey(std::span<const vk::Format> colorFormats, vk::Format depthFormat, vk::PipelineLayout layout) const;

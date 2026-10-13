@@ -12,7 +12,6 @@
 #include "scene/system/RenderSystem.h"
 
 #include <GLFW/glfw3.h>
-#include <numbers>
 
 int main(int argc, char** argv)
 {
@@ -53,7 +52,7 @@ int main(int argc, char** argv)
     scene.actors.push_back(std::move(object));
     auto light                                       = std::make_unique<ALight>();
     light->transform().position                      = {1, 2, 3};
-    light->getComponent<LightComponent>()->intensity = 100.0f * 4.0f * std::numbers::pi_v<float>;
+    light->getComponent<LightComponent>()->intensity = 100.0f;
     scene.actors.push_back(std::move(light));
     scenes.load(scene);
 
@@ -83,7 +82,7 @@ int main(int argc, char** argv)
                 material.metallic          = frame % 2 == 0 ? 1.0f : 0.0f;
                 material.roughness         = frame % 2 == 0 ? 0.2f : 1.0f;
                 const auto& submesh        = assets.get<MeshAsset>(meshId).submeshes[index];
-                const auto& sourceMaterial = assets.get<MaterialAsset>(submesh.materialId);
+                const auto& sourceMaterial = assets.get<MaterialAsset>(submesh.materialId).as<PbrMaterialAsset>();
                 if (sourceMaterial.clearcoat)
                 {
                     auto clearcoat            = *sourceMaterial.clearcoat;

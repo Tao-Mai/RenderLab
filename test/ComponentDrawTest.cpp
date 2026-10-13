@@ -192,21 +192,57 @@ TEST_F(ComponentDrawTest, LightEditorShowsOnlyTypeSpecificFields)
     for (auto type : {LightComponent::Type::Point, LightComponent::Type::Directional,
                       LightComponent::Type::RectArea, LightComponent::Type::Spot})
     {
-        LightComponent light;
-        light.type = type;
+        auto light = createLightComponent(type);
         ComponentDrawResult result;
-        const auto text = frame([&] { result = drawComponent(light); });
+        const auto text = frame([&] { result = drawComponent(*light); });
         EXPECT_FALSE(result.edited);
         const auto shown = [&](const char* label) { return text.find(label) != std::string::npos; };
         EXPECT_EQ(shown("Illuminance (lux)"), type == LightComponent::Type::Directional);
-        EXPECT_EQ(shown("Luminous intensity (cd)"), type == LightComponent::Type::Spot);
-        EXPECT_EQ(shown("Luminous flux (lm)"), type == LightComponent::Type::Point || type == LightComponent::Type::RectArea);
+        EXPECT_EQ(shown("Luminous intensity (cd)"), type != LightComponent::Type::Directional);
         EXPECT_TRUE(shown("Cast Shadow"));
         EXPECT_EQ(shown("Range"), type != LightComponent::Type::Directional);
         EXPECT_EQ(shown("Inner Angle"), type == LightComponent::Type::Spot);
         EXPECT_EQ(shown("Outer Angle"), type == LightComponent::Type::Spot);
         EXPECT_EQ(shown("Area Size"), type == LightComponent::Type::RectArea);
     }
+}
+
+TEST_F(ComponentDrawTest, LightTypeSelectionReplacesComponentAndPreservesCommonProperties)
+{
+    ALight actor;
+    actor.init();
+    auto* point = actor.getComponent<PointLightComponent>();
+    point->color = {0.2f, 0.4f, 0.6f};
+    point->intensity = 42.0f;
+    point->range = 25.0f;
+    point->castShadow = true;
+    const auto draw = [&] { return drawComponent(*actor.getComponent<LightComponent>()); };
+    ImGuiID combo = 0;
+    frame([&]
+    {
+        ImGui::PushID(point);
+        combo = ImGui::GetID("Type");
+        ImGui::PopID();
+        (void)draw();
+    });
+    ImGui::ActivateItemByID(combo);
+    frame([&] { (void)draw(); });
+    auto* popup = ImGui::FindWindowByName("##Combo_00");
+    ASSERT_NE(popup, nullptr);
+    ASSERT_TRUE(popup->Active);
+    ImGui::ActivateItemByID(popup->GetID("RectArea"));
+    ComponentDrawResult result;
+    frame([&] { result = draw(); });
+    EXPECT_TRUE(result.edited);
+    auto* area = actor.getComponent<RectAreaLightComponent>();
+    ASSERT_NE(area, nullptr);
+    EXPECT_EQ(actor.getComponent<PointLightComponent>(), nullptr);
+    EXPECT_EQ(actor.components.size(), 2u);
+    EXPECT_EQ(&area->actor(), &actor);
+    EXPECT_EQ(area->color, glm::vec3(0.2f, 0.4f, 0.6f));
+    EXPECT_FLOAT_EQ(area->intensity, 42.0f);
+    EXPECT_FLOAT_EQ(area->range, 25.0f);
+    EXPECT_TRUE(area->castShadow);
 }
 
 TEST_F(ComponentDrawTest, TransformUsesEulerAnglesAndDoesNotModifyIdleQuaternion)
@@ -255,8 +291,7 @@ TEST_F(ComponentDrawTest, RotationRetainsEnteredAnglesAcrossEulerBoundaries)
 
 TEST_F(ComponentDrawTest, LightAngleInputIsClampedAndStoredAsCosine)
 {
-    LightComponent light;
-    light.type         = LightComponent::Type::Spot;
+    SpotLightComponent light;
     const float outer  = light.cosOuter;
     const auto  result = enterScalar(
         [&] { return component_draw::drawFields(light); },
@@ -344,11 +379,11 @@ TEST_F(ComponentDrawTest, ResetOverridesOnlyChangesTheChosenSubmesh)
 
 TEST(ComponentMaterialEdit, DiffRetainsEveryOptionalOverrideIncludingTexturesAndShader)
 {
-    MaterialAsset stock;
+    PbrMaterialAsset stock;
     stock.id = MaterialAsset::ID{"white"};
     stock.roughness = 0.8f;
     stock.baseColorTexture = TextureBinding{TextureAsset::ID{"white"}, SamplerAsset::ID{"linearRepeat"}};
-    MaterialAsset preview = stock;
+    PbrMaterialAsset preview = stock;
     preview.roughness = 0.3f;
     preview.shaderId = ShaderAsset::ID{"custom"};
     preview.baseColorTexture = TextureBinding{TextureAsset::ID{"albedo"}, SamplerAsset::ID{"linearClamp"}};
@@ -375,7 +410,7 @@ TEST(ComponentMaterialEdit, DiffRetainsEveryOptionalOverrideIncludingTexturesAnd
 
 TEST(ComponentMaterialEdit, MergeIgnoresNonOptionalAndEmptyFields)
 {
-    MaterialAsset stock;
+    PbrMaterialAsset stock;
     stock.id = MaterialAsset::ID{"stock"};
     stock.roughness = 0.8f;
     stock.doubleSided = true;

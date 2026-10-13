@@ -16,7 +16,7 @@
 #include "scene/actor/AStaticMesh.h"
 #include "scene/component/CharacterMoveComponent.h"
 #include "scene/component/FreeFlyMoveComponent.h"
-#include "scene/component/LightComponent.h"
+#include "scene/component/LightTypes.h"
 #include "scene/component/RenderComponent.h"
 #include "scene/system/RenderSystem.h"
 
@@ -304,7 +304,8 @@ int main(int argc, char** argv)
         {
             light->enabled    = true;
             light->castShadow = true;
-            light->range      = 16.0f;
+            if (auto* local = dynamic_cast<LocalLightComponent*>(light))
+                local->range = 16.0f;
         }
     }
     scene.editorCamera.yaw      = -90.0f;

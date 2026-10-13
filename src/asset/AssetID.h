@@ -10,6 +10,8 @@
 template <class T>
 struct AssetID
 {
+    using AssetClass = T;
+
     std::string value;
 
     AssetID() = default;

@@ -1,10 +1,11 @@
 #include "scene/component/LightComponent.h"
 
 #include "scene/AActor.h"
+#include "scene/component/LightTypes.h"
 
+#include <algorithm>
 #include <cmath>
 #include <glm/geometric.hpp>
-#include <numbers>
 
 namespace
 {
@@ -23,28 +24,7 @@ glm::vec4 LightComponent::photometricEmission() const
     for (int axis = 0; axis < 3; ++axis)
         CHECK(std::isfinite(color[axis]) && color[axis] >= 0.0f);
 
-    float emission = intensity;
-    switch (type)
-    {
-        case Type::Point:
-            emission /= 4.0f * std::numbers::pi_v<float>;
-            break;
-        case Type::RectArea:
-        {
-            CHECK(std::isfinite(areaSize.x) && areaSize.x > 0.0f);
-            CHECK(std::isfinite(areaSize.y) && areaSize.y > 0.0f);
-            // One-sided Lambert emitter: luminous flux = pi * area * luminance.
-            const float area = areaSize.x * areaSize.y;
-            CHECK(std::isfinite(area) && area > 0.0f);
-            emission = emission / std::numbers::pi_v<float> / area;
-            break;
-        }
-        case Type::Directional:
-        case Type::Spot:
-            break;
-        default:
-            CHECK(false, "invalid light type: {}", static_cast<uint32_t>(type));
-    }
+    const float emission = intensity * emissionScale();
     CHECK(std::isfinite(emission));
 
     // Linear Rec.709 tint with unit luminance keeps intensity independent of color.
@@ -54,4 +34,50 @@ glm::vec4 LightComponent::photometricEmission() const
         return glm::vec4{0.0f};
 
     return {color / luminance, emission};
+}
+
+float RectAreaLightComponent::emissionScale() const
+{
+    CHECK(std::isfinite(areaSize.x) && areaSize.x > 0.0f);
+    CHECK(std::isfinite(areaSize.y) && areaSize.y > 0.0f);
+    const float area = areaSize.x * areaSize.y;
+    CHECK(std::isfinite(area) && area > 0.0f);
+    // Whole-emitter normal-direction intensity / area gives luminance.
+    return 1.0f / area;
+}
+
+std::unique_ptr<LightComponent> createLightComponent(LightComponent::Type type)
+{
+    std::unique_ptr<LightComponent> result;
+    forEachLightComponentType([&]<class T>(const char*)
+    {
+        if (type == T::kType)
+            result = std::make_unique<T>();
+    });
+    CHECK(result, "invalid light type: {}", static_cast<uint32_t>(type));
+    return result;
+}
+
+LightComponent& replaceLightComponent(LightComponent& light, LightComponent::Type type)
+{
+    if (light.type() == type)
+        return light;
+
+    auto& owner = light.actor();
+    const auto found = std::ranges::find_if(owner.components, [&](const auto& item) { return item.get() == &light; });
+    DCHECK(found != owner.components.end());
+
+    auto replacement = createLightComponent(type);
+    replacement->color = light.color;
+    replacement->intensity = light.intensity;
+    replacement->enabled = light.enabled;
+    replacement->castShadow = light.castShadow;
+    if (const auto* source = dynamic_cast<const LocalLightComponent*>(&light))
+        if (auto* target = dynamic_cast<LocalLightComponent*>(replacement.get()))
+            target->range = source->range;
+
+    replacement->init(&owner);
+    auto& result = *replacement;
+    *found = std::move(replacement);
+    return result;
 }

@@ -20,14 +20,14 @@ struct LightComponent : Component
         Spot = 3,
     };
 
-    [[=ReflectField{}]] Type type = Type::Point;
+    [[nodiscard]] virtual Type type() const = 0;
     [[=ReflectField{}]] glm::vec3 color{1.0f};
-    // Point/RectArea: luminous flux (lm); Directional: illuminance (lux); Spot: luminous intensity (cd).
-    [[=ReflectField{}]] float intensity = 1000.0f;
-    [[=ReflectField{}]] float range = 10.0f;
-    [[=ReflectField{}]] float cosInner = 0.9396926f;
-    [[=ReflectField{}]] float cosOuter = 0.8660254f;
-    [[=ReflectField{}]] glm::vec2 areaSize{1.0f};
+    // Point/Spot: luminous intensity (cd); Directional: illuminance (lux).
+    // RectArea: whole-emitter luminous intensity along its normal (cd), independent of area.
+    [[=ReflectField{}]] float intensity = 8.0f;
     [[=ReflectField{}]] bool enabled = true;
     [[=ReflectField{}]] bool castShadow = false;
+
+protected:
+    [[nodiscard]] virtual float emissionScale() const { return 1.0f; }
 };

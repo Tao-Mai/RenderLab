@@ -94,6 +94,13 @@ json Serialize(const T& value)
     {
         return value.generic_string();
     }
+    else if constexpr (IsVariant<U>)
+    {
+        return std::visit([]<class Alternative>(const Alternative& data)
+        {
+            return json{{std::string(std::meta::identifier_of(std::meta::dealias(^^Alternative))), Serialize(data)}};
+        }, value);
+    }
     else if constexpr (IsOptional<U>)
     {
         return value ? Serialize(*value) : json(nullptr);
@@ -218,6 +225,24 @@ void Deserialize(const json& j, T& value)
     {
         CHECK(j.is_string(), "expected a path string");
         value = j.get<std::string>();
+    }
+    else if constexpr (IsVariant<U>)
+    {
+        CHECK(j.is_object() && j.size() == 1, "expected exactly one variant type key");
+        const auto entry = j.begin();
+        template for (constexpr auto type :
+            std::define_static_array(std::meta::template_arguments_of(std::meta::dealias(^^U))))
+        {
+            using Alternative = [:type:];
+            if (entry.key() == std::meta::identifier_of(std::meta::dealias(type)))
+            {
+                Alternative data{};
+                Deserialize(entry.value(), data);
+                value = std::move(data);
+                return;
+            }
+        }
+        CHECK(false, "unknown variant type '{}'", entry.key());
     }
     else if constexpr (IsOptional<U>)
     {

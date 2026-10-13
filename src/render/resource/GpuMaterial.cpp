@@ -13,7 +13,7 @@ void GpuMaterial::create(
     const vk::raii::Device&         device,
     DescriptorManager&              descriptors,
     ShaderHandle                    targetShader,
-    const MaterialAsset&            material,
+    const PbrMaterialAsset&         material,
     Textures                        materialTextures
 )
 {
@@ -145,7 +145,7 @@ PipelineKey GpuMaterial::pipelineKey(
 }
 
 
-void GpuMaterial::updateParameters(const MaterialAsset& material)
+void GpuMaterial::updateParameters(const PbrMaterialAsset& material)
 {
     const std::string alphaMode = material.alphaMode.value_or("OPAQUE");
     if (alphaMode == "OPAQUE")
@@ -167,7 +167,7 @@ void GpuMaterial::updateParameters(const MaterialAsset& material)
 
     colorFactor = material.baseColorFactor.value_or(glm::vec4{1.0f});
     DCHECK(material.clearcoat.has_value() == textures.clearcoat.has_value());
-    const auto             clearcoat = material.clearcoat.value_or(MaterialAsset::Clearcoat{});
+    const auto             clearcoat = material.clearcoat.value_or(PbrMaterialAsset::Clearcoat{});
     const MaterialUniforms materialData{
         .baseColorFactor          = colorFactor,
         .roughness                = material.roughness.value_or(1.0f),

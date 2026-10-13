@@ -6,7 +6,7 @@
 #include "asset/SceneAsset.h"
 
 #include "core/Logger.h"
-#include "scene/component/LightComponent.h"
+#include "scene/component/LightTypes.h"
 #include "scene/component/RenderComponent.h"
 #include "scene/component/TransformComponent.h"
 
@@ -50,14 +50,26 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene, const glm:
         DCHECK(transform);
 
         const glm::vec3 direction = glm::normalize(transform->rotation * glm::vec3{0.0f, 0.0f, -1.0f});
-        data.lights.push_back({
+        LightData lightData{
             .colorEmission  = light->photometricEmission(),
-            .positionRange  = {transform->position, light->range},
+            .positionRange  = {transform->position, 0.0f},
             .direction      = {direction, 0.0f},
-            .areaSizeCone   = {light->areaSize, light->cosInner, light->cosOuter},
-            .flags = {static_cast<uint32_t>(light->type), light->enabled ? 1u : 0u, light->castShadow ? 1u : 0u, 0u},
+            .flags = {static_cast<uint32_t>(light->type()), light->enabled ? 1u : 0u, light->castShadow ? 1u : 0u, 0u},
             .areaRightData = {glm::normalize(transform->rotation * glm::vec3{1.0f, 0.0f, 0.0f}), 0.0f},
-        });
+        };
+        if (const auto* local = dynamic_cast<const LocalLightComponent*>(light))
+            lightData.positionRange.w = local->range;
+        if (const auto* area = dynamic_cast<const RectAreaLightComponent*>(light))
+        {
+            lightData.areaSizeCone.x = area->areaSize.x;
+            lightData.areaSizeCone.y = area->areaSize.y;
+        }
+        if (const auto* spot = dynamic_cast<const SpotLightComponent*>(light))
+        {
+            lightData.areaSizeCone.z = spot->cosInner;
+            lightData.areaSizeCone.w = spot->cosOuter;
+        }
+        data.lights.push_back(lightData);
     }
 
     CHECK(data.lights.size() <= std::numeric_limits<uint32_t>::max());

@@ -3,7 +3,7 @@
 #include <unordered_map>
 #include <optional>
 #include <vector>
-#include "asset/MaterialAsset.h"
+#include "asset/PbrMaterialAsset.h"
 #include "asset/MeshAsset.h"
 #include "asset/EnvironmentMapAsset.h"
 #include "render/resource/ShaderData.h"

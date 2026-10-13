@@ -1,10 +1,10 @@
 #include "scene/actor/ALight.h"
 
-#include "scene/component/LightComponent.h"
+#include "scene/component/LightTypes.h"
 
-ALight::ALight()
+ALight::ALight(LightComponent::Type type)
 {
-    addDefaultComponent<LightComponent>();
+    components.push_back(createLightComponent(type));
 }
 
 void ALight::init()

@@ -23,7 +23,8 @@
 - Clearcoat：三类贴图、独立法线 / 粗糙度、GGX + Kelemen 清漆层、Fresnel 分层、IBL 高光与底层自发光衰减；编辑器调节强度、粗糙度与法线强度。
 - AO 贴图与强度：仅作用于环境光；自发光使用贴图与颜色系数。
 - 缺失贴图绑定 fallback 纹理；支持每个 Submesh 的材质覆盖与重置。
-- 物理灯光单位：点光源 / 矩形面光源 lm、方向光 lux、Spot cd；世界距离与面积按米计算，光栅和光追共享换算。
+- 物理灯光单位：点光源 / 矩形面光源 / Spot 使用 cd、方向光使用 lux；矩形面光源表示整个发光面正面方向的发光强度，扩大面积时降低单位面积亮度；世界距离与面积按米计算，光栅和光追共享换算。
+- 光源组件：Point / Directional / RectArea / Spot 独立子类，按具体类型持久化；shader 共享统一 LightData。
 - 点光源：距离平方衰减、照射范围；方向光：固定方向照明。
 - 矩形面光源：按中心方向、投影面积与距离近似照明；Spot 暂时只有参数编辑与标记。
 - IBL：漫反射辐照度、GGX 预过滤环境贴图、BRDF LUT；关闭时改用环境光系数，同时关闭天空盒。
@@ -41,7 +42,7 @@
 ## 资产
 
 - `MeshAsset`：顶点、索引、Submesh 与材质引用，记录导入来源、源 mesh 索引和缩放。
-- `MaterialAsset`：PBR 参数、贴图引用、透明模式和双面设置。
+- `MaterialAsset`：统一材质 ID 和多态持久化；`PbrMaterialAsset` 保存现有 PBR 参数、贴图、透明模式和双面设置；`OfflineMaterialAsset` 保存 Diffuse / Conductor / Dielectric 参数，暂未接入 shader 求值。
 - `TextureAsset`：纹理尺寸、格式、色彩空间、Mip 链与像素数据。
 - `ShaderAsset`：编译后的 SPIR-V Shader 资源。
 - `SceneAsset`：Actor / Component 数据、编辑器相机配置、环境贴图选择与环境朝向。

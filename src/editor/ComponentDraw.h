@@ -3,7 +3,7 @@
 struct Component;
 struct TransformComponent;
 
-#include "asset/MaterialAsset.h"
+#include "asset/PbrMaterialAsset.h"
 #include "core/Reflect.h"
 
 #include <bit>
@@ -14,7 +14,10 @@ struct TransformComponent;
 #include <glm/gtc/quaternion.hpp>
 #include <imgui.h>
 
-struct LightComponent;
+struct PointLightComponent;
+struct DirectionalLightComponent;
+struct RectAreaLightComponent;
+struct SpotLightComponent;
 struct RenderComponent;
 
 struct ComponentDrawResult
@@ -75,11 +78,14 @@ template<class T>
 ComponentDrawResult drawFields(T& value);
 
 ComponentDrawResult drawFields(TransformComponent& value);
-ComponentDrawResult drawFields(LightComponent& value);
+ComponentDrawResult drawFields(PointLightComponent& value);
+ComponentDrawResult drawFields(DirectionalLightComponent& value);
+ComponentDrawResult drawFields(RectAreaLightComponent& value);
+ComponentDrawResult drawFields(SpotLightComponent& value);
 ComponentDrawResult drawFields(RenderComponent& value);
 
 // Produce a complete optional-field patch, retaining texture/shader overrides.
-MaterialOverride materialOverrideDiff(const MaterialAsset& stock, const MaterialAsset& preview);
+MaterialOverride materialOverrideDiff(const PbrMaterialAsset& stock, const PbrMaterialAsset& preview);
 bool hasMaterialOverrides(const MaterialOverride& patch);
 
 template<class T>

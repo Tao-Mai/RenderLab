@@ -1,10 +1,11 @@
 #include "asset/AssetManager.h"
+#include "asset/MaterialTypes.h"
 
 
 namespace
 {
 template <AssetType T>
-void loadAssetDirectory(const std::filesystem::path& directory, std::unordered_map<typename T::ID, T>& out)
+void loadAssetDirectory(const std::filesystem::path& directory, std::unordered_map<typename T::ID, std::unique_ptr<T>>& out)
 {
     if (!std::filesystem::exists(directory))
     {
@@ -17,10 +18,15 @@ void loadAssetDirectory(const std::filesystem::path& directory, std::unordered_m
         {
             continue;
         }
-        auto asset = asset_json::load<T>(entry.path());
-        CHECK(!asset.id.empty(), "asset has empty id: {}", entry.path().string());
+        std::unique_ptr<T> asset;
+        if constexpr (std::is_polymorphic_v<T>)
+            asset = asset_json::load<std::unique_ptr<T>>(entry.path());
+        else
+            asset = std::make_unique<T>(asset_json::load<T>(entry.path()));
+        CHECK(asset, "null asset: {}", entry.path().string());
+        CHECK(!asset->id.empty(), "asset has empty id: {}", entry.path().string());
 
-        const typename T::ID id = asset.id;
+        const typename T::ID id = asset->id;
         CHECK(out.emplace(id, std::move(asset)).second, "duplicate asset ID: {}", id);
     }
 }
@@ -32,6 +38,12 @@ void AssetManager::init(std::filesystem::path assetRoot)
 {
     DCHECK(!inited);
     DCHECK(!assetRoot.empty());
+    static const bool kRegistered = []
+    {
+        forEachMaterialType([]<class T>(std::string_view name) { RegisterBase<T, MaterialAsset>(name); });
+        return true;
+    }();
+
     root = std::move(assetRoot);
     loadAll();
     DEBUG_EXEC(inited = true);

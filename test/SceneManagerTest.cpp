@@ -7,11 +7,10 @@
 #include "scene/actor/ALight.h"
 #include "scene/actor/AStaticMesh.h"
 #include "scene/component/CharacterMoveComponent.h"
-#include "scene/component/LightComponent.h"
+#include "scene/component/LightTypes.h"
 #include "scene/component/RenderComponent.h"
 
 #include <algorithm>
-#include <numbers>
 #include <gtest/gtest.h>
 #include <type_traits>
 
@@ -37,7 +36,7 @@ SceneAsset makeScene()
     auto object                                     = std::make_unique<AStaticMesh>();
     object->name                                    = "Mesh and Light";
     object->getComponent<RenderComponent>()->meshId = MeshAsset::ID{"sphere"};
-    object->addComponent<LightComponent>();
+    object->addComponent<PointLightComponent>();
     scene.actors.push_back(std::move(object));
     return scene;
 }
@@ -343,7 +342,7 @@ TEST(SceneManagerTest, RepeatedComponentTypesRoundTripAndRestoreEveryOwner)
     object.addComponent<TransformComponent>().position.x = 8.0f;
     object.addComponent<RenderComponent>().meshId        = MeshAsset::ID{"cube"};
     object.getComponent<LightComponent>()->intensity     = 2.0f;
-    object.addComponent<LightComponent>().intensity      = 7.0f;
+    object.addComponent<PointLightComponent>().intensity      = 7.0f;
     const auto stored                                    = Serialize(scene);
 
     SceneManager manager;
@@ -454,7 +453,7 @@ TEST(SceneManagerTest, ComponentsCheckTheirOwnTransformDependency)
     FreeFlyMoveComponent   freeFly;
     CharacterMoveComponent character;
     RenderComponent        render;
-    LightComponent         light;
+    PointLightComponent         light;
 
     EXPECT_DEATH(camera.init(&actor), "");
     EXPECT_DEATH(freeFly.init(&actor), "");
@@ -518,29 +517,33 @@ TEST(SceneManagerTest, ALightRoundTripsAndTicksItsComponents)
     manager.shutdown();
 }
 
-TEST(LightPhotometry, ConvertsFluxAndNormalizesLinearColor)
+TEST(LightPhotometry, ConvertsWholeLightIntensityAndNormalizesLinearColor)
 {
-    LightComponent light;
+    PointLightComponent light;
     light.intensity = 1000.0f;
-    EXPECT_NEAR(light.photometricEmission().w, 1000.0f / (4.0f * std::numbers::pi_v<float>), 0.0001f);
+    EXPECT_FLOAT_EQ(light.photometricEmission().w, 1000.0f);
 
-    light.type = LightComponent::Type::RectArea;
-    light.areaSize = {2, 3};
-    const float luminance = light.photometricEmission().w;
-    EXPECT_NEAR(luminance, 1000.0f / (6.0f * std::numbers::pi_v<float>), 0.0001f);
-    light.areaSize.y *= 2;
-    EXPECT_FLOAT_EQ(light.photometricEmission().w, luminance * 0.5f);
+    RectAreaLightComponent area;
+    area.intensity = light.intensity;
+    area.areaSize = {2, 3};
+    const float luminance = area.photometricEmission().w;
+    EXPECT_NEAR(luminance, 1000.0f / 6.0f, 0.0001f);
+    area.areaSize.y *= 2;
+    EXPECT_FLOAT_EQ(area.photometricEmission().w, luminance * 0.5f);
+    EXPECT_FLOAT_EQ(area.intensity, 1000.0f);
 
-    light.type = LightComponent::Type::Directional;
-    light.color = {1.0f, 0.5f, 0.25f};
-    const auto emission = light.photometricEmission();
+    DirectionalLightComponent directional;
+    directional.intensity = light.intensity;
+    directional.color = {1.0f, 0.5f, 0.25f};
+    const auto emission = directional.photometricEmission();
     EXPECT_FLOAT_EQ(emission.w, 1000.0f);
     EXPECT_NEAR(glm::dot(glm::vec3{emission}, glm::vec3{0.2126f, 0.7152f, 0.0722f}), 1.0f, 0.0001f);
 
-    light.type = LightComponent::Type::Spot;
-    EXPECT_FLOAT_EQ(light.photometricEmission().w, 1000.0f);
-    light.color = glm::vec3{0.0f};
-    EXPECT_EQ(light.photometricEmission(), glm::vec4{0.0f});
+    SpotLightComponent spot;
+    spot.intensity = light.intensity;
+    EXPECT_FLOAT_EQ(spot.photometricEmission().w, 1000.0f);
+    spot.color = glm::vec3{0.0f};
+    EXPECT_EQ(spot.photometricEmission(), glm::vec4{0.0f});
 }
 
 TEST(SceneManagerTest, ALightRequiresLightComponent)
@@ -636,20 +639,29 @@ TEST(SceneManagerTest, PolymorphicPointersRequireObjectData)
     }
 }
 
-TEST(SceneManagerTest, LightTypeRemainsInsideComponentData)
+TEST(SceneManagerTest, LightTypeUsesConcreteComponentTag)
 {
     SceneManager registration;
     registration.init();
     registration.shutdown();
-    std::unique_ptr<Component> component = std::make_unique<LightComponent>();
-    const json                 stored    = Serialize(component);
-    ASSERT_EQ(stored.size(), 1);
-    EXPECT_EQ(stored.at("LightComponent").at("type"), "Point");
+    forEachLightComponentType([]<class T>(const char* name)
+    {
+        std::unique_ptr<Component> component = std::make_unique<T>();
+        const json stored = Serialize(component);
+        ASSERT_EQ(stored.size(), 1);
+        EXPECT_TRUE(stored.contains(name));
+        const auto& fields = stored.at(name);
+        EXPECT_FALSE(fields.contains("type"));
+        EXPECT_EQ(fields.contains("range"), (std::derived_from<T, LocalLightComponent>));
+        EXPECT_EQ(fields.contains("areaSize"), T::kType == LightComponent::Type::RectArea);
+        EXPECT_EQ(fields.contains("cosInner"), T::kType == LightComponent::Type::Spot);
+        EXPECT_EQ(fields.contains("cosOuter"), T::kType == LightComponent::Type::Spot);
 
-    std::unique_ptr<Component> restored;
-    Deserialize(stored, restored);
-    ASSERT_NE(dynamic_cast<LightComponent*>(restored.get()), nullptr);
-    EXPECT_EQ(Serialize(restored), stored);
+        std::unique_ptr<Component> restored;
+        Deserialize(stored, restored);
+        ASSERT_NE(dynamic_cast<T*>(restored.get()), nullptr);
+        EXPECT_EQ(Serialize(restored), stored);
+    });
 }
 
 TEST(SceneManagerTest, RegistryIteratesInheritedMembersAndRejectsDuplicateRegistration)
@@ -671,7 +683,7 @@ TEST(SceneManagerTest, NullPolymorphicPointersRoundTripButNullActorsAreRejected)
 {
     std::unique_ptr<Component> component;
     EXPECT_TRUE(Serialize(component).is_null());
-    component = std::make_unique<LightComponent>();
+    component = std::make_unique<PointLightComponent>();
     Deserialize(json(nullptr), component);
     EXPECT_EQ(component, nullptr);
 
