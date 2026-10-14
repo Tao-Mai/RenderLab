@@ -134,6 +134,13 @@ endforeach()
 renderlab_shader(depth depth.slang depth DEFINES ENABLE_CLEARCOAT=0 INCLUDES ${SCENE_SHADER_INCLUDES})
 renderlab_shader(skybox skybox.slang skybox INCLUDES ${SCENE_SHADER_INCLUDES})
 renderlab_shader(tonemapping postprocess/tonemapping.slang tonemapping)
+foreach(stage IN ITEMS 0 1 2)
+    set(binary bloom)
+    if(NOT stage EQUAL 0)
+        string(APPEND binary ".${stage}")
+    endif()
+    renderlab_shader(bloom postprocess/bloom.slang "${binary}" DEFINES BLOOM_STAGE=${stage})
+endforeach()
 foreach(name IN ITEMS light_marker depth picking)
     renderlab_shader(editor_${name} editor/${name}.slang editor_${name}
         INCLUDES "${SHADER_SOURCE_DIR}/editor/view.slang")
@@ -147,7 +154,7 @@ endforeach()
 renderlab_shader(raytracing raytracing/raytracing.slang raytracing
     ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
     INCLUDES "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
-        "${SHADER_SOURCE_DIR}/random.slang")
+        "${SHADER_SOURCE_DIR}/random.slang" "${SHADER_SOURCE_DIR}/raytracing/material_data.slang")
 renderlab_shader(offline_pathtracing offline/pathtracing.slang offline_pathtracing
     ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
     INCLUDES "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
@@ -243,6 +250,8 @@ add_library(RenderLabRuntime STATIC
         src/asset/import/ImportMesh.cpp
         src/asset/import/ImportScene.cpp
         src/asset/import/GltfImport.h
+        src/asset/import/GltfMaterialExtensions.h
+        src/asset/import/GltfMaterialExtensions.cpp
         src/core/Vertex.h
         src/platform/InputMethod.cpp
         src/platform/InputMethod.h
@@ -300,11 +309,14 @@ add_library(RenderLabRuntime STATIC
         src/render/feature/DepthPrepass.cpp
         src/render/feature/DepthPrepass.h
         src/render/feature/postprocess/ToneMappingPass.cpp
+        src/render/feature/postprocess/BloomPass.h
+        src/render/feature/postprocess/BloomPass.cpp
         src/render/feature/postprocess/ToneMappingPass.h
         src/render/raytracing/AccelerationStructure.cpp
         src/render/raytracing/AccelerationStructure.h
         src/render/raytracing/RayTracingPass.cpp
         src/render/raytracing/RayTracingPass.h
+        src/render/raytracing/RayTracingData.h
         src/render/raytracing/RayTracingBlitPass.cpp
         src/render/raytracing/RayTracingBlitPass.h
         src/render/feature/shadow/ShadowPass.cpp

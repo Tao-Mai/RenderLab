@@ -22,6 +22,7 @@ enum class ToneMappingOperator
 // The primary ray and its visibility query each consume one recursion level.
 inline constexpr uint32_t kMinRayRecursionDepth = 2;
 inline constexpr float    kExposureCalibration  = 1.2f;
+inline constexpr uint32_t kMaxBloomLevels        = 6;
 
 struct RenderFeature
 {
@@ -60,6 +61,14 @@ struct RenderFeature
             return std::exp2(exposureCompensation - ev100) / kExposureCalibration;
         }
     } toneMapping;
+
+    struct Bloom
+    {
+        bool     enable       = true;
+        float    intensity    = 0.04f;
+        float    filterRadius = 1.0f; // Texels of each downsampled level.
+        uint32_t levels       = 5;
+    } bloom;
 
     struct RayTracing
     {

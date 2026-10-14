@@ -1,0 +1,74 @@
+[
+    {
+        "field": "clearcoat",
+        "model": "ClearCoatTest",
+        "source": "../resource/material_samples/ClearCoatTest/glTF/ClearCoatTest.gltf",
+        "targetSize": 3
+    },
+    {
+        "field": "sheen",
+        "model": "SheenTestGrid",
+        "source": "../resource/material_samples/SheenTestGrid/glTF/SheenTestGrid.gltf",
+        "targetSize": 3
+    },
+    {
+        "field": "anisotropy",
+        "model": "AnisotropyBarnLamp",
+        "source": "../resource/material_samples/AnisotropyBarnLamp/glTF/AnisotropyBarnLamp.gltf",
+        "targetSize": 3
+    },
+    {
+        "field": "transmission",
+        "model": "TransmissionRoughnessTest",
+        "source": "../resource/material_samples/TransmissionRoughnessTest/glTF/TransmissionRoughnessTest.gltf",
+        "targetSize": 3
+    },
+    {
+        "field": "volume",
+        "model": "AttenuationTest",
+        "source": "../resource/material_samples/AttenuationTest/glTF/AttenuationTest.gltf",
+        "targetSize": 3
+    },
+    {
+        "field": "ior",
+        "model": "IORTestGrid",
+        "source": "../resource/material_samples/IORTestGrid/glTF/IORTestGrid.gltf",
+        "targetSize": 3
+    },
+    {
+        "field": "specular",
+        "model": "SpecularTest",
+        "source": "../resource/material_samples/SpecularTest/glTF/SpecularTest.gltf",
+        "targetSize": 3
+    },
+    {
+        "field": "iridescence",
+        "model": "IridescenceLamp",
+        "source": "../resource/material_samples/IridescenceLamp/glTF/IridescenceLamp.gltf",
+        "targetSize": 3
+    },
+    {
+        "field": "dispersion",
+        "model": "DispersionTest",
+        "source": "../resource/material_samples/DispersionTest/glTF/DispersionTest.gltf",
+        "targetSize": 3
+    },
+    {
+        "field": "emissiveStrength",
+        "model": "EmissiveStrengthTest",
+        "source": "../resource/material_samples/EmissiveStrengthTest/glTF/EmissiveStrengthTest.gltf",
+        "targetSize": 3
+    },
+    {
+        "field": "unlit",
+        "model": "UnlitTest",
+        "source": "../resource/material_samples/UnlitTest/glTF/UnlitTest.gltf",
+        "targetSize": 3
+    },
+    {
+        "field": "diffuseTransmission",
+        "model": "DiffuseTransmissionTeacup",
+        "source": "../resource/material_samples/DiffuseTransmissionTeacup/glTF/DiffuseTransmissionTeacup.gltf",
+        "targetSize": 3
+    }
+]

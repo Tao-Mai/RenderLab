@@ -1,5 +1,6 @@
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
+#include "asset/BuiltinAssets.h"
 #include "asset/TextureMip.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -154,6 +155,33 @@ TEST(AssetDataManagerTest, PreservesCubemapMipChain)
     desc.binary = assets.data.writeTexture(desc, pixels);
 
     EXPECT_EQ(assets.data.readTexture(desc), pixels);
+}
+
+TEST(AssetDataManagerTest, BuiltinSphereWindingMatchesOutwardNormals)
+{
+    AssetDataManager data;
+    MeshAsset        asset;
+    asset.id     = BuiltinAssets::Mesh::sphere;
+    asset.source = Source::Builtin;
+    const auto mesh = data.readGeometry(asset);
+
+    constexpr float kMinAreaSquared = 1e-16f;
+    size_t checkedTriangles = 0;
+    for (size_t index = 0; index < mesh.indices.size(); index += 3)
+    {
+        const auto& a = mesh.vertices[mesh.indices[index]];
+        const auto& b = mesh.vertices[mesh.indices[index + 1]];
+        const auto& c = mesh.vertices[mesh.indices[index + 2]];
+        const auto geometricNormal = glm::cross(b.position - a.position, c.position - a.position);
+        // Pole triangles have zero area and no defined winding.
+        if (glm::dot(geometricNormal, geometricNormal) <= kMinAreaSquared)
+            continue;
+
+        ASSERT_GT(glm::dot(geometricNormal, a.normal + b.normal + c.normal), 0.0f) << index / 3;
+        ASSERT_GT(glm::dot(geometricNormal, a.position + b.position + c.position), 0.0f) << index / 3;
+        ++checkedTriangles;
+    }
+    EXPECT_GT(checkedTriangles, 0u);
 }
 
 TEST(AssetDataManagerTest, PreservesMeshGeometry)

@@ -24,6 +24,7 @@
 #include "render/feature/editor/EditorUiPass.h"
 #include "render/feature/editor/LightMarkerPass.h"
 #include "render/feature/postprocess/ToneMappingPass.h"
+#include "render/feature/postprocess/BloomPass.h"
 #include "render/feature/shadow/ShadowPass.h"
 #include "render/raytracing/RayTracingBlitPass.h"
 #include "render/raytracing/RayTracingPass.h"
@@ -34,6 +35,7 @@
 
 struct Renderer::Passes
 {
+    std::vector<std::unique_ptr<BloomPass>> bloom;
     std::tuple<
         ShadowPass,
         DepthPrepass,
@@ -159,6 +161,7 @@ void Renderer::setupRenderGraph()
     if (context().profiler) context().profiler->clearGpu();
     for (auto& frame : frames) frame.gpuProfiler().discard();
     DCHECK(passes);
+    passes->bloom.clear();
     activeSceneBindings = nullptr;
     const auto& config  = context().config->rendererConfig();
     activeFramesInFlight = config.renderPath == RenderPath::OfflinePathTracing ? 1u : maxFramesInFlight;
@@ -236,7 +239,11 @@ RenderGraph::ImageHandle Renderer::setupPostProcess(RenderGraph::ImageHandle col
 {
     const auto& config = context().config->rendererConfig();
     if (config.feature.hdr)
+    {
+        if (config.feature.bloom.enable)
+            color = BloomPass::setupChain(graph, color, passes->bloom);
         return setupPass<ToneMappingPass>(color, graph.importSwapchain()).color;
+    }
     if (config.renderPath == RenderPath::RayTracing || config.renderPath == RenderPath::OfflinePathTracing)
         return setupPass<RayTracingBlitPass>(color, graph.importSwapchain()).color;
     return color;
@@ -263,6 +270,8 @@ void Renderer::applyConfiguration(const SceneRenderData& scene)
             value.renderPath,
             value.feature.ibl,
             value.feature.hdr,
+            value.feature.bloom.enable,
+            value.feature.bloom.levels,
             value.feature.rayTracing.maxRecursionDepth,
             value.feature.offline.maxRecursionDepth,
             shadow.enable,

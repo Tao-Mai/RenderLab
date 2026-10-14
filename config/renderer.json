@@ -9,6 +9,12 @@
     },
     "feature": {
         "ambientCoefficient": 0.0,
+        "bloom": {
+            "enable": true,
+            "filterRadius": 1.100000023841858,
+            "intensity": 0.041999999433755875,
+            "levels": 5
+        },
         "hdr": true,
         "ibl": false,
         "offline": {

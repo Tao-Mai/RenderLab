@@ -45,6 +45,7 @@ RendererConfig sampleRendererConfig()
                 .spotShadowMapSize = 512, .bias = 0.0025f,
                 .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.03f, .spotSampleRadius = 2.5f},
             .toneMapping = {.ev100 = 5.0f, .exposureCompensation = 1.5f, .mode = ToneMappingOperator::Reinhard},
+            .bloom = {.enable = false, .intensity = 0.15f, .filterRadius = 2.0f, .levels = 3},
             .rayTracing = {.maxRecursionDepth = 3}},
     };
 }
@@ -84,6 +85,7 @@ TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
     EXPECT_EQ(serialized.at("brdfLut").at("samplerID").at("value"), "linearClamp");
     EXPECT_EQ(serialized.at("feature").at("ibl"), false);
     EXPECT_EQ(serialized.at("feature").at("hdr"), false);
+    EXPECT_EQ(serialized.at("feature").at("bloom"), Serialize(original.feature.bloom));
     EXPECT_FLOAT_EQ(serialized.at("feature").at("ambientCoefficient").get<float>(), 0.25f);
     EXPECT_FALSE(serialized.contains("environmentMap"));
     EXPECT_EQ(serialized.at("feature").at("shadow").at("enable"), false);

@@ -100,8 +100,8 @@ constexpr uint32_t kCubeIndexCount = 36;
     return mesh;
 }
 
-constexpr uint32_t kSphereSegments    = 32;
-constexpr uint32_t kSphereRings       = 16;
+constexpr uint32_t kSphereSegments    = 128;
+constexpr uint32_t kSphereRings       = 64;
 constexpr uint32_t kSphereIndexCount  = kSphereSegments * kSphereRings * 6;
 
 [[nodiscard]] MeshGeometry makeSphere()
@@ -143,8 +143,8 @@ constexpr uint32_t kSphereIndexCount  = kSphereSegments * kSphereRings * 6;
             const uint32_t b = a + rowSize;
             mesh.indices.insert(mesh.indices.end(),
                                 {
-                                    a, b, a + 1,
-                                    a + 1, b, b + 1,
+                                    a, a + 1, b,
+                                    a + 1, b + 1, b,
                                 });
         }
     }

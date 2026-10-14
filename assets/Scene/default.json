@@ -126,7 +126,18 @@
                                     "normalTexture": null,
                                     "roughness": 0.5099999904632568,
                                     "roughnessTexture": null,
-                                    "shaderId": null
+                                    "shaderId": null,
+                                    "sheen": null,
+                                    "anisotropy": null,
+                                    "transmission": null,
+                                    "volume": null,
+                                    "ior": null,
+                                    "specular": null,
+                                    "iridescence": null,
+                                    "dispersion": null,
+                                    "emissiveStrength": null,
+                                    "unlit": null,
+                                    "diffuseTransmission": null
                                 }
                             },
                             "meshId": {

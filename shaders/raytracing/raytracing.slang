@@ -1,6 +1,7 @@
 #include "../light_data.slang"
 #include "../constant.slang"
 #include "../random.slang"
+#include "material_data.slang"
 
 
 static const uint kVertexStrideFloats = 12;
@@ -13,8 +14,6 @@ static const uint kSceneMask = 0x01;
 static const uint kLightMask = 0x02;
 
 [[vk::binding(0, 0)]] RaytracingAccelerationStructure scene;
-[[vk::binding(3, 0)]] Texture2D<float4> textures[128];
-[[vk::binding(4, 0)]] SamplerState samplers[128];
 [[vk::binding(5, 0)]] StructuredBuffer<LightData> lights;
 
 struct Payload
@@ -222,9 +221,8 @@ struct HitData
 {
     uint64_t vertexAddress;
     uint64_t indexAddress;
-    float4 baseColorFactor;
     uint firstIndex;
-    uint textureIndex;
+    uint materialIndex;
     uint2 padding;
 
     VertexAttributes loadVertex(uint index)
@@ -247,14 +245,16 @@ struct HitData
         float3 weights = float3(1.0 - barycentrics.x - barycentrics.y, barycentrics);
         float2 uv = v0.uv * weights.x + v1.uv * weights.y + v2.uv * weights.z;
         float3 objectNormal = v0.normal * weights.x + v1.normal * weights.y + v2.normal * weights.z;
-        uint materialIndex = NonUniformResourceIndex(textureIndex);
+        MaterialData material = materials[materialIndex];
+        uint textureIndex = NonUniformResourceIndex(material.baseColorTexture.textureIndex);
+        uint samplerIndex = NonUniformResourceIndex(material.baseColorTexture.samplerIndex);
 
         // Row-vector multiplication applies the inverse transpose, including nonuniform scale.
         return {
             WorldRayOrigin() + WorldRayDirection() * RayTCurrent(),
             normalize(mul(objectNormal, (float3x3)WorldToObject3x4())),
             -normalize(WorldRayDirection()),
-            textures[materialIndex].SampleLevel(samplers[materialIndex], uv, 0).rgb * baseColorFactor.rgb,
+            textures[textureIndex].SampleLevel(samplers[samplerIndex], uv, 0).rgb * material.baseColorFactor.rgb,
         };
     }
 };

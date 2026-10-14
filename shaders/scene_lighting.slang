@@ -308,16 +308,17 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
     // 环境光照
     float3 R = reflect(-V, surface.normal);
 
-    // 漫反射环境光照
-    float3 irradiance = irradianceMap.Sample(irradianceMapSampler, surface.normal).rgb;
-    float3 ambientDiffuse = irradiance * surface.baseColor.rgb * INV_PI * (1.0 - surface.metallic);
-
     // 镜面反射环境光照 Split Sum Approximation
     float3 environmentTerm = prefilteredSpecularMap.SampleLevel(
         prefilteredSpecularMapSampler, R, surface.roughness * lightUniforms.iblPrefilteredMaxMipLevel).rgb;
     float2 scaleBias = brdfLUT.Sample(brdfLUTSampler, float2(NdotV, surface.roughness)).rg;
     float3 brdfTerm = scaleBias.x * f0 + scaleBias.y;
     float3 ambientSpecular = environmentTerm * brdfTerm;
+
+    // The LUT integrates Fresnel and visibility; allocate the remaining energy to diffuse.
+    float3 diffuseWeight = (1.0 - saturate(brdfTerm)) * (1.0 - surface.metallic);
+    float3 irradiance = irradianceMap.Sample(irradianceMapSampler, surface.normal).rgb;
+    float3 ambientDiffuse = irradiance * surface.baseColor.rgb * INV_PI * diffuseWeight;
 
     ambient = ambientDiffuse + ambientSpecular;
 #else
