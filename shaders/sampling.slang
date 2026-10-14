@@ -3,6 +3,19 @@
 
 #include "constant.slang"
 
+static const uint kPoissonDisk8SampleCount = 8;
+// Independent 8-point disk distribution; retain the larger tables for other effects.
+static const float2 kPoissonDisk8[kPoissonDisk8SampleCount] = {
+    float2(-0.76, 0.29),
+    float2(-0.43, -0.64),
+    float2(0.06, 0.02),
+    float2(0.62, -0.58),
+    float2(0.79, 0.37),
+    float2(-0.23, 0.85),
+    float2(0.23, -0.91),
+    float2(0.22, 0.62),
+};
+
 static const uint kPoissonDisk16SampleCount = 16;
 // Independent 16-point distribution, not a prefix of the 32-point table.
 static const float2 kPoissonDisk16[kPoissonDisk16SampleCount] = {

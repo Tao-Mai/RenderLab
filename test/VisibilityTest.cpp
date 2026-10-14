@@ -51,7 +51,7 @@ TEST(Visibility, ExcludingNearPlaneStillCullsAgainstOtherFivePlanes)
     EXPECT_FALSE(frustum.intersects({{-0.5f, -0.5f, 1.1f}, {0.5f, 0.5f, 2}}));
 }
 
-TEST(Visibility, DirectionalCascadesFitTranslatedFrustumAndBoundsPadding)
+TEST(Visibility, DirectionalCascadeCubesContainBlendedFrustum)
 {
     constexpr float kCameraNear = 0.25f;
     constexpr float kCameraFar  = 80.0f;
@@ -64,7 +64,7 @@ TEST(Visibility, DirectionalCascadesFitTranslatedFrustumAndBoundsPadding)
     view.inverseViewProjection = glm::inverse(view.viewProjection);
 
     RenderFeature::Shadow config;
-    config.cascade = {.count = 4, .maxDistance = 12.0f, .padding = 0.01f};
+    config.cascade = {.count = 4, .maxDistance = 12.0f};
     LightData  light;
     const auto direction = glm::normalize(glm::vec3{0.4f, -1.0f, -0.3f});
     light.direction      = glm::vec4{direction, 0.0f};
@@ -72,12 +72,21 @@ TEST(Visibility, DirectionalCascadesFitTranslatedFrustumAndBoundsPadding)
     const auto shadows   = prepareShadows(view, {&light, 1}, config);
     ASSERT_EQ(shadows.directionalShadows.size(), 1u);
 
-    const auto inverseView   = glm::inverse(view.view);
-    float      previousDepth = kCameraNear;
+    const auto inverseView    = glm::inverse(view.view);
+    float      previousDepth  = kCameraNear;
+    float      sliceNearDepth = kCameraNear;
     for (const auto& cascade : shadows.directionalShadows.front().cascades)
     {
         ASSERT_GT(cascade.depthUpperBound, previousDepth);
-        for (float depth : {previousDepth, cascade.depthUpperBound})
+        EXPECT_GE(cascade.blendStartDepth, previousDepth);
+        EXPECT_LE(cascade.blendStartDepth, cascade.depthUpperBound);
+        const auto  inverseVp  = glm::inverse(cascade.vp);
+        const float width      = 2.0f * glm::length(glm::vec3{inverseVp[0]});
+        const float height     = 2.0f * glm::length(glm::vec3{inverseVp[1]});
+        const float depthRange = glm::length(glm::vec3{inverseVp[2]});
+        EXPECT_NEAR(width, height, kTolerance);
+        EXPECT_NEAR(width, depthRange, kTolerance);
+        for (float depth : {sliceNearDepth, cascade.depthUpperBound})
             for (float x : {-1.0f, 1.0f})
                 for (float y : {-1.0f, 1.0f})
                 {
@@ -85,18 +94,17 @@ TEST(Visibility, DirectionalCascadesFitTranslatedFrustumAndBoundsPadding)
                     const glm::vec3 corner{
                         inverseView * glm::vec4{x * halfHeight * kAspect, y * halfHeight, -depth, 1}
                     };
-                    for (float padding : {-config.cascade.padding, 0.0f, config.cascade.padding})
-                    {
-                        const auto clip = cascade.vp * glm::vec4{corner + direction * padding, 1};
-                        EXPECT_LE(std::abs(clip.x), clip.w + kTolerance);
-                        EXPECT_LE(std::abs(clip.y), clip.w + kTolerance);
-                        EXPECT_GE(clip.z, -kTolerance);
-                        EXPECT_LE(clip.z, clip.w + kTolerance);
-                    }
+                    const auto clip = cascade.vp * glm::vec4{corner, 1};
+                    EXPECT_LE(std::abs(clip.x), clip.w + kTolerance);
+                    EXPECT_LE(std::abs(clip.y), clip.w + kTolerance);
+                    EXPECT_GE(clip.z, -kTolerance);
+                    EXPECT_LE(clip.z, clip.w + kTolerance);
                 }
-        previousDepth = cascade.depthUpperBound;
+        sliceNearDepth = cascade.blendStartDepth;
+        previousDepth  = cascade.depthUpperBound;
     }
     EXPECT_NEAR(previousDepth, config.cascade.maxDistance, kTolerance);
+    EXPECT_FLOAT_EQ(shadows.directionalShadows[0].cascades.back().blendStartDepth, previousDepth);
 }
 
 TEST(Visibility, DirectionalShadowRetainsUpstreamCasters)
@@ -124,6 +132,81 @@ TEST(Visibility, DirectionalShadowRetainsUpstreamCasters)
     EXPECT_EQ(prepared.objects[0].visibilityMask, mask);
     EXPECT_FALSE(prepared.objects[1].visibilityMask & mask);
     EXPECT_FALSE(prepared.objects[2].visibilityMask & mask);
+}
+
+TEST(Visibility, CascadeTexelSnappingKeepsSubTexelMotionStable)
+{
+    const auto projection = glm::perspective(glm::radians(60.0f), 1.0f, 0.1f, 40.0f);
+    LightData  light;
+    light.direction = {0, 0, -1, 0};
+    light.flags     = {static_cast<uint32_t>(GpuLightType::Directional), 1, 1, 0};
+    RenderFeature::Shadow config;
+    config.cascade     = {.count = 1, .shadowMapSize = 256, .maxDistance = 20.0f, .sampleRadius = 0.0f};
+    const auto prepare = [&](float cameraX)
+    {
+        ViewUniforms view;
+        view.view                  = glm::translate(glm::mat4{1}, glm::vec3{-cameraX, 0, 0});
+        view.viewProjection        = projection * view.view;
+        view.inverseViewProjection = glm::inverse(view.viewProjection);
+        return prepareShadows(view, {&light, 1}, config).directionalShadows[0].cascades[0].vp;
+    };
+    const auto  reference          = prepare(0.0f);
+    const float worldUnitsPerTexel = 2.0f / (reference[0][0] * config.cascade.shadowMapSize);
+    for (float motion : {0.25f, 0.75f, -0.75f})
+    {
+        const auto  vp                = prepare(worldUnitsPerTexel * motion);
+        const float expectedClipShift = -std::round(motion) * 2.0f / config.cascade.shadowMapSize;
+        EXPECT_NEAR(vp[0][0], reference[0][0], 1e-6f);
+        EXPECT_NEAR(vp[1][1], reference[1][1], 1e-6f);
+        EXPECT_NEAR(vp[3][0] - reference[3][0], expectedClipShift, 1e-6f);
+        EXPECT_NEAR(vp[3][1], reference[3][1], 1e-6f);
+        const float halfHeight = 20.0f * std::tan(glm::radians(30.0f));
+        for (float x : {-1.0f, 1.0f})
+            for (float y : {-1.0f, 1.0f})
+            {
+                const auto clip = vp * glm::vec4{x * halfHeight + worldUnitsPerTexel * motion, y * halfHeight, -20, 1};
+                EXPECT_LE(std::abs(clip.x), clip.w + 1e-5f);
+                EXPECT_LE(std::abs(clip.y), clip.w + 1e-5f);
+                EXPECT_GE(clip.z, -1e-5f);
+                EXPECT_LE(clip.z, clip.w + 1e-5f);
+            }
+    }
+    config.cascade.sampleRadius = 4.0f;
+    EXPECT_LT(prepare(0.0f)[0][0], reference[0][0]);  // The filter footprint is included in the culling volume.
+}
+
+TEST(Visibility, UniformCascadeSplitsIgnoreLambdaAndPracticalKeepsNearResolution)
+{
+    ViewUniforms view;
+    view.viewProjection        = glm::perspective(glm::radians(55.0f), 1.0f, 0.1f, 120.0f);
+    view.inverseViewProjection = glm::inverse(view.viewProjection);
+    LightData light;
+    light.direction = {0, -1, 0, 0};
+    light.flags     = {static_cast<uint32_t>(GpuLightType::Directional), 1, 1, 0};
+    RenderFeature::Shadow config;
+    const auto            practical       = prepareShadows(view, {&light, 1}, config);
+    config.cascade.splitStrategy          = CascadeSplitStrategy::Uniform;
+    const auto uniform                    = prepareShadows(view, {&light, 1}, config);
+    config.cascade.splitLambda            = 1.0f;
+    const auto uniformWithDifferentLambda = prepareShadows(view, {&light, 1}, config);
+    for (uint32_t index = 0; index < config.cascade.count; ++index)
+    {
+        const float expected = 0.1f + (50.0f - 0.1f) * (index + 1) / config.cascade.count;
+        EXPECT_NEAR(uniform.directionalShadows[0].cascades[index].depthUpperBound, expected, 1e-4f);
+    }
+    EXPECT_EQ(uniform.directionalShadows, uniformWithDifferentLambda.directionalShadows);
+    EXPECT_LT(
+        practical.directionalShadows[0].cascades[0].depthUpperBound,
+        uniform.directionalShadows[0].cascades[0].depthUpperBound
+    );
+    EXPECT_LT(
+        uniform.directionalShadows[0].cascades[0].blendStartDepth,
+        uniform.directionalShadows[0].cascades[0].depthUpperBound
+    );
+    config.cascade.blendRatio  = 0.0f;
+    const auto withoutBlending = prepareShadows(view, {&light, 1}, config);
+    for (const auto& cascade : withoutBlending.directionalShadows[0].cascades)
+        EXPECT_FLOAT_EQ(cascade.blendStartDepth, cascade.depthUpperBound);
 }
 
 TEST(Visibility, MainAndShadowBitsAreIndependentAndDisabledLightsHaveNoBit)

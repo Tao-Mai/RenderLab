@@ -298,6 +298,7 @@ void SceneBindings::updateFrame(FrameData& frame, const ViewUniforms& view, cons
     LightUniforms lighting{
         .lightCount         = static_cast<uint32_t>(prepared.lights.size()),
         .ambientCoefficient = feature.ambientCoefficient,
+        .directionalShadowSampleRadius = shadow.cascade.sampleRadius,
         .iblParameters      = {prefilteredMaxLod, 0.0f, 0.0f, 0.0f},
         .shadowParameters =
             {shadow.bias, shadow.sampleRadius, shadow.pixelRotation ? 1.0f : 0.0f, shadow.spotSampleRadius},

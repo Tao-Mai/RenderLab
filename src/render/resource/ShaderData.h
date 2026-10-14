@@ -92,7 +92,7 @@ struct alignas(16) LightUniforms
     uint32_t  lightCount = 0;
     float     ambientCoefficient = 0.1f;
     uint32_t  cascadeCount = 0;
-    uint32_t  padding2   = 0;
+    float     directionalShadowSampleRadius = 0.0f;  // Shadow-map texels.
     glm::vec4 iblParameters{0.0f};
     glm::vec4 shadowParameters{0.0f};
 };
@@ -178,7 +178,7 @@ struct alignas(16) CascadeShadowData
     bool operator==(const CascadeShadowData&) const = default;
     glm::mat4 vp{1.0f};
     float     depthUpperBound = 0.0f;  // Positive camera-view depth, not distance to the camera.
-    float     padding0 = 0.0f;
+    float     blendStartDepth = 0.0f;
     float     padding1 = 0.0f;
     float     padding2 = 0.0f;
 };
@@ -213,6 +213,7 @@ static_assert(offsetof(ViewUniforms, inverseViewProjection) == 64);
 static_assert(offsetof(ViewUniforms, cameraPosition) == 128);
 static_assert(offsetof(ViewUniforms, view) == 144);
 static_assert(sizeof(LightUniforms) == 48);
+static_assert(offsetof(LightUniforms, directionalShadowSampleRadius) == 12);
 static_assert(offsetof(LightUniforms, ambientCoefficient) == 4);
 static_assert(offsetof(LightUniforms, cascadeCount) == 8);
 static_assert(offsetof(LightUniforms, iblParameters) == 16);
@@ -234,6 +235,7 @@ static_assert(offsetof(RectAreaShadowData, farPlane) == 68);
 static_assert(offsetof(RectAreaShadowData, worldToUvScale) == 72);
 static_assert(sizeof(CascadeShadowData) == 80);
 static_assert(offsetof(CascadeShadowData, depthUpperBound) == 64);
+static_assert(offsetof(CascadeShadowData, blendStartDepth) == 68);
 static_assert(sizeof(DirectionalShadowData) == kMaxDirectionalShadowCascades * sizeof(CascadeShadowData));
 static_assert(sizeof(MaterialUniforms) == 80);
 static_assert(offsetof(MaterialUniforms, clearcoatFactor) == 64);

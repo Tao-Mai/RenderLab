@@ -12,10 +12,14 @@ namespace
 void validateCascade(const RenderFeature::Shadow::Cascade& cascade)
 {
     CHECK(cascade.count > 0 && cascade.count <= kMaxDirectionalShadowCascades);
-    CHECK(cascade.shadowMapSize > 0);
+    CHECK(cascade.shadowMapSize > 1);
     CHECK(std::isfinite(cascade.maxDistance) && cascade.maxDistance > 0.0f);
+    CHECK(cascade.splitStrategy == CascadeSplitStrategy::Practical ||
+          cascade.splitStrategy == CascadeSplitStrategy::Uniform);
     CHECK(std::isfinite(cascade.splitLambda) && cascade.splitLambda >= 0.0f && cascade.splitLambda <= 1.0f);
-    CHECK(std::isfinite(cascade.padding) && cascade.padding >= 0.0f);
+    CHECK(std::isfinite(cascade.blendRatio) && cascade.blendRatio >= 0.0f && cascade.blendRatio <= 0.5f);
+    CHECK(std::isfinite(cascade.sampleRadius) && cascade.sampleRadius >= 0.0f);
+    CHECK(cascade.shadowMapSize > 2.0f * (cascade.sampleRadius + 1.0f));
 }
 
 void validateToneMapping(const RenderFeature::ToneMapping& toneMapping)

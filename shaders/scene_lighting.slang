@@ -87,7 +87,43 @@ float spotShadowVisibility(LightData light, float3 worldPosition, float2 rotatio
     return visibility / kPoissonDisk16SampleCount;
 }
 
-float directionalShadowVisibility(LightData light, float3 worldPosition)
+float sampleDirectionalCascade(LightData light, uint cascadeIndex, float3 worldPosition, float2 rotation)
+{
+    CascadeShadowData cascade = directionalShadowData[light.shadowIdx].cascades[cascadeIndex];
+    float4 clip = mul(cascade.vp, float4(worldPosition, 1.0));
+    float3 projected = clip.xyz / clip.w;
+    float2 uv = projected.xy * 0.5 + 0.5;
+    if (any(uv < 0.0) || any(uv > 1.0) || projected.z < 0.0 || projected.z > 1.0)
+        return 1.0;
+
+    uint layer = light.shadowIdx * lightUniforms.cascadeCount + cascadeIndex;
+    float depth = projected.z - lightUniforms.shadowBias;
+    if (lightUniforms.directionalShadowSampleRadius <= 0.0)
+        return cascadeShadowMap.SampleCmpLevelZero(shadowSampler, float3(uv, layer), depth);
+
+    uint width;
+    uint height;
+    uint layers;
+    cascadeShadowMap.GetDimensions(width, height, layers);
+    float2 radiusUv = lightUniforms.directionalShadowSampleRadius / float2(width, height);
+    float visibility = 0.0;
+    [unroll]
+    for (uint sampleIndex = 0; sampleIndex < kPoissonDisk8SampleCount; ++sampleIndex)
+    {
+        float2 offset = kPoissonDisk8[sampleIndex];
+        offset = float2(offset.x * rotation.x - offset.y * rotation.y,
+                        offset.x * rotation.y + offset.y * rotation.x);
+        float2 sampleUv = uv + offset * radiusUv;
+        // Outside the shadow map there is no recorded occluder; don't repeat the edge texel.
+        if (any(sampleUv < 0.0) || any(sampleUv > 1.0))
+            visibility += 1.0;
+        else
+            visibility += cascadeShadowMap.SampleCmpLevelZero(shadowSampler, float3(sampleUv, layer), depth);
+    }
+    return visibility / kPoissonDisk8SampleCount;
+}
+
+float directionalShadowVisibility(LightData light, float3 worldPosition, float2 rotation)
 {
     float viewDepth = -mul(viewUniforms.view, float4(worldPosition, 1.0)).z;
     if (viewDepth <= 0.0)
@@ -100,15 +136,16 @@ float directionalShadowVisibility(LightData light, float3 worldPosition)
         if (viewDepth > cascade.depthUpperBound)
             continue;
 
-        float4 clip = mul(cascade.vp, float4(worldPosition, 1.0));
-        float3 projected = clip.xyz / clip.w;
-        float2 uv = projected.xy * 0.5 + 0.5;
-        if (any(uv < 0.0) || any(uv > 1.0) || projected.z < 0.0 || projected.z > 1.0)
-            return 1.0;
-
-        uint layer = light.shadowIdx * lightUniforms.cascadeCount + cascadeIndex;
-        return cascadeShadowMap.SampleCmpLevelZero(
-            shadowSampler, float3(uv, layer), projected.z - lightUniforms.shadowBias);
+        float visibility = sampleDirectionalCascade(light, cascadeIndex, worldPosition, rotation);
+        float blendWidth = cascade.depthUpperBound - cascade.blendStartDepth;
+        if (cascadeIndex + 1 < lightUniforms.cascadeCount && blendWidth > 0.0 &&
+            viewDepth > cascade.blendStartDepth)
+        {
+            float nextVisibility = sampleDirectionalCascade(light, cascadeIndex + 1, worldPosition, rotation);
+            float blend = saturate((viewDepth - cascade.blendStartDepth) / blendWidth);
+            return lerp(visibility, nextVisibility, blend);
+        }
+        return visibility;
     }
     // Beyond the configured shadow distance, only direct lighting remains.
     return 1.0;
@@ -268,7 +305,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
             lightDirection = -light.direction.xyz;
             incidentIlluminance = light.color * light.illuminance;
             if (light.castShadow)
-                visibility = directionalShadowVisibility(light, surface.worldPosition);
+                visibility = directionalShadowVisibility(light, surface.worldPosition, shadowRotation);
         }
         else if (light.type == LightType.RectArea)
         {

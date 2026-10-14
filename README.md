@@ -26,6 +26,7 @@
 ## 文档
 
 - [功能清单](docs/feature.md)
+- [CSM 算法、优化与测试](docs/shadow/csm.md)
 - [渲染模块说明](src/render/README.md)
 
 项目仍在持续开发，离线路线目前是基础 RGB 漫反射路径追踪，尚未完整复刻 PBRT。
