@@ -19,10 +19,16 @@ enum class ToneMappingOperator
     Reinhard,
 };
 
+enum class CascadeSplitStrategy
+{
+    Practical,
+    Uniform,
+};
+
 // The primary ray and its visibility query each consume one recursion level.
 inline constexpr uint32_t kMinRayRecursionDepth = 2;
 inline constexpr float    kExposureCalibration  = 1.2f;
-inline constexpr uint32_t kMaxBloomLevels        = 6;
+inline constexpr uint32_t kMaxBloomLevels       = 6;
 
 struct RenderFeature
 {
@@ -34,11 +40,13 @@ struct RenderFeature
         bool enable = true;
         struct Cascade
         {
-            uint32_t count         = 4;
-            uint32_t shadowMapSize = 2048;
-            float    maxDistance   = 50.0f;
-            float    splitLambda   = 0.5f;
-            float    padding       = 0.01f;  // World-space padding on all six bounds.
+            uint32_t             count         = 4;
+            uint32_t             shadowMapSize = 2048;
+            float                maxDistance   = 50.0f;
+            CascadeSplitStrategy splitStrategy = CascadeSplitStrategy::Practical;
+            float                splitLambda   = 0.5f;
+            float                blendRatio    = 0.1f;  // Fraction of each slice's depth interval; 0 disables blending.
+            float                sampleRadius  = 2.0f;  // PCF radius in shadow-map texels.
         } cascade;
         uint32_t             pointShadowMapSize    = 1024;
         uint32_t             rectAreaShadowMapSize = 1024;
@@ -47,7 +55,7 @@ struct RenderFeature
         SamplerAsset::Filter filter                = SamplerAsset::Filter::Linear;
         bool                 pixelRotation         = true;
         float                sampleRadius          = 0.02f;
-        float                spotSampleRadius      = 1.5f; // Texels, independent of shadow map resolution.
+        float                spotSampleRadius      = 1.5f;  // Texels, independent of shadow map resolution.
     } shadow;
 
     struct ToneMapping
@@ -66,7 +74,7 @@ struct RenderFeature
     {
         bool     enable       = true;
         float    intensity    = 0.04f;
-        float    filterRadius = 1.0f; // Texels of each downsampled level.
+        float    filterRadius = 1.0f;  // Texels of each downsampled level.
         uint32_t levels       = 5;
     } bloom;
 

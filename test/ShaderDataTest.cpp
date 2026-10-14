@@ -94,7 +94,7 @@ TEST(ShaderDataLayout, LightUniformsMatchCompiledShaders)
         Field{"lightCount", offsetof(LightUniforms, lightCount), sizeof(uint32_t)},
         Field{"ambientCoefficient", offsetof(LightUniforms, ambientCoefficient), sizeof(float)},
         Field{"cascadeCount", offsetof(LightUniforms, cascadeCount), sizeof(uint32_t)},
-        Field{"padding2", offsetof(LightUniforms, padding2), sizeof(uint32_t)},
+        Field{"directionalShadowSampleRadius", offsetof(LightUniforms, directionalShadowSampleRadius), sizeof(float)},
         Field{"iblParameters", offsetof(LightUniforms, iblParameters), sizeof(glm::vec4)},
         Field{"shadowParameters", offsetof(LightUniforms, shadowParameters), sizeof(glm::vec4)},
     };
@@ -159,7 +159,7 @@ TEST(ShaderDataLayout, DirectionalShadowStorageMatchesCompiledShaders)
     const std::array expected = {
         Field{"vp", offsetof(CascadeShadowData, vp), sizeof(glm::mat4)},
         Field{"depthUpperBound", offsetof(CascadeShadowData, depthUpperBound), sizeof(float)},
-        Field{"padding0", offsetof(CascadeShadowData, padding0), sizeof(float)},
+        Field{"blendStartDepth", offsetof(CascadeShadowData, blendStartDepth), sizeof(float)},
         Field{"padding1", offsetof(CascadeShadowData, padding1), sizeof(float)},
         Field{"padding2", offsetof(CascadeShadowData, padding2), sizeof(float)},
     };

@@ -352,15 +352,25 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
             ImGuiSliderFlags_AlwaysClamp
         ))
         config.setRenderFeature(feature);
-    if (ImGui::SliderFloat("Cascade split lambda", &feature.shadow.cascade.splitLambda, 0.0f, 1.0f, "%.2f"))
+    int splitStrategy = static_cast<int>(feature.shadow.cascade.splitStrategy);
+    if (ImGui::Combo("Cascade split strategy", &splitStrategy, "Practical (uniform/log)\0Uniform\0"))
+    {
+        feature.shadow.cascade.splitStrategy = static_cast<CascadeSplitStrategy>(splitStrategy);
         config.setRenderFeature(feature);
+    }
+    if (feature.shadow.cascade.splitStrategy == CascadeSplitStrategy::Practical)
+        if (ImGui::SliderFloat("Cascade split lambda", &feature.shadow.cascade.splitLambda, 0.0f, 1.0f, "%.2f"))
+            config.setRenderFeature(feature);
+    if (ImGui::SliderFloat("Cascade blend ratio", &feature.shadow.cascade.blendRatio, 0.0f, 0.5f, "%.2f"))
+        config.setRenderFeature(feature);
+    ImGui::SetItemTooltip("Blend the last fraction of each cascade into the next. 0 disables blending.");
     if (ImGui::DragFloat(
-            "Cascade bounds padding",
-            &feature.shadow.cascade.padding,
-            0.001f,
+            "Directional PCF radius (texels)",
+            &feature.shadow.cascade.sampleRadius,
+            0.1f,
             0.0f,
-            100000.0f,
-            "%.3f",
+            32.0f,
+            "%.2f",
             ImGuiSliderFlags_AlwaysClamp
         ))
         config.setRenderFeature(feature);

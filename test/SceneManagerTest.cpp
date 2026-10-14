@@ -3,6 +3,7 @@
 #include "scene/actor/AFreeFlyCamera.h"
 
 #include "asset/BuiltinAssets.h"
+#include "asset/AssetManager.h"
 #include "core/Serializer.h"
 #include "scene/actor/ALight.h"
 #include "scene/actor/AStaticMesh.h"
@@ -11,6 +12,7 @@
 #include "scene/component/RenderComponent.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <gtest/gtest.h>
 #include <type_traits>
 
@@ -76,6 +78,36 @@ TEST(SceneManagerTest, ActorsOwnComponentsAndRestoreTheirOwner)
     EXPECT_EQ(&actor.getComponent<TransformComponent>()->actor(), &actor);
     EXPECT_EQ(&actor.getComponent<LightComponent>()->actor(), &actor);
     EXPECT_EQ(actor.getComponent<TransformComponent>()->position.x, 12.0f);
+    manager.shutdown();
+}
+
+TEST(SceneManagerTest, CsmSceneLoadsBuiltinGeometryAndOneShadowCastingSun)
+{
+    SceneManager manager;
+    manager.init();
+    const auto scene = asset_json::load<SceneAsset>(
+        std::filesystem::path{RENDERLAB_SOURCE_DIR} / "assets/Scene/csm_test.json");
+    manager.load(scene);
+    AssetManager assets;
+    size_t lightCount = 0;
+    size_t objectCount = 0;
+    for (const auto& actor : manager.scene().actors)
+    {
+        if (const auto* light = actor->getComponent<LightComponent>())
+        {
+            ++lightCount;
+            EXPECT_NE(dynamic_cast<const DirectionalLightComponent*>(light), nullptr);
+            EXPECT_TRUE(light->enabled && light->castShadow);
+        }
+        if (const auto* render = actor->getComponent<RenderComponent>())
+        {
+            ++objectCount;
+            EXPECT_FALSE(assets.get<MeshAsset>(render->meshId).submeshes.empty());
+        }
+    }
+    EXPECT_EQ(lightCount, 1u);
+    EXPECT_GT(objectCount, 1u);
+    EXPECT_FALSE(manager.scene().environmentMap);
     manager.shutdown();
 }
 

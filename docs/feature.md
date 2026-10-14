@@ -38,8 +38,8 @@
 - 点光源：Multiview 一次绘制六面 Cube Shadow Map，16 点泊松圆盘 PCF。
 - 矩形面光源：中心透视投影近似，矩形采样 PCSS（Blocker Search、半影估计、PCF）。
 - Spot：单张透视深度图、16 点泊松 PCF、可调 texel 半径和逐像素旋转；Forward / Deferred 共用。
-- 方向光：基础 CSM，支持 1～4 级 Cascade，按相机深度选择阴影层。
-- CSM 配置：分辨率、最大距离、级联划分系数、深度扩展范围。
+- 方向光：基础 CSM，支持 1～4 级 Cascade，按相机深度选择阴影层；包围球外接正方体、texel snapping；8 点泊松 PCF、texel 半径可调；重叠过渡区域线性混合 visibility，宽度可调。
+- CSM 配置：分辨率、最大距离、混合 / 均匀深度划分、混合划分系数、过渡宽度；cascade depth clamp，CPU 五面剔除保留 near plane 上游遮挡物。
 - 阴影设置：总开关（切换时重建图）、每灯 Cast Shadow、各类型分辨率、Bias、Nearest / Linear 过滤。
 - 软阴影设置：采样半径、逐像素旋转；共享采样工具保留 16 / 32 点泊松表。
 - 阴影容量：4 个点光源、4 个 Spot、4 个矩形面光源、1 个方向光。

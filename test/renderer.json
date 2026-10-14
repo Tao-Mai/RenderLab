@@ -20,10 +20,12 @@
         "shadow": {
             "bias": 0.0010000000474974513,
             "cascade": {
+                "blendRatio": 0.1,
                 "count": 4,
-                "padding": 0.01,
                 "maxDistance": 50,
+                "sampleRadius": 2.0,
                 "shadowMapSize": 2048,
+                "splitStrategy": "Practical",
                 "splitLambda": 0.5
             },
             "enable": true,

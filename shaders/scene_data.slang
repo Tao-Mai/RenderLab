@@ -17,7 +17,7 @@ struct LightUniforms
     uint lightCount;
     float ambientCoefficient;
     uint cascadeCount;
-    uint padding2;
+    float directionalShadowSampleRadius;
     float4 iblParameters;
     float4 shadowParameters;
 
@@ -65,7 +65,7 @@ struct CascadeShadowData
 {
     float4x4 vp;
     float depthUpperBound;
-    float padding0;
+    float blendStartDepth;
     float padding1;
     float padding2;
 };

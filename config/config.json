@@ -1,6 +1,6 @@
 {
     "initialScene": {
-        "value": "cornell_box"
+        "value": "csm_test"
     },
     "paths": {
         "assets": "../assets",

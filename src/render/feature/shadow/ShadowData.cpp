@@ -27,14 +27,39 @@ constexpr std::array kFaceUp = {
     glm::vec3{0.0f, -1.0f, 0.0f},
 };
 
-using FrustumCorners               = std::array<glm::vec3, 8>;
-constexpr size_t kPlaneCornerCount = FrustumCorners{}.size() / 2;
+using FrustumCorners                       = std::array<glm::vec3, 8>;
+constexpr size_t kPlaneCornerCount         = FrustumCorners{}.size() / 2;
+constexpr float  kShadowRadiusQuantization = 16.0f;  // Round outward to 1/16 meter.
 
 struct FrustumSlice
 {
     FrustumCorners corners;
     float          depthUpperBound = 0.0f;
+    float          blendStartDepth = 0.0f;
 };
+
+struct BoundingSphere
+{
+    glm::vec3 center;
+    float     radius;
+};
+
+BoundingSphere boundFrustumCorners(const FrustumCorners& corners)
+{
+    glm::vec3 center{0.0f};
+    for (const auto& corner : corners)
+        center += corner;
+    center /= static_cast<float>(corners.size());
+
+    float radiusSquared = 0.0f;
+    for (const auto& corner : corners)
+    {
+        const auto offset = corner - center;
+        radiusSquared     = std::max(radiusSquared, glm::dot(offset, offset));
+    }
+    DCHECK(radiusSquared > 0.0f);
+    return {center, std::sqrt(radiusSquared)};
+}
 
 FrustumCorners restoreFrustumCorners(const glm::mat4& inverseViewProjection)
 {
@@ -63,15 +88,21 @@ std::array<FrustumSlice, kMaxDirectionalShadowCascades> splitFrustum(
 )
 {
     std::array<FrustumSlice, kMaxDirectionalShadowCascades> slices{};
-    float                                                   previousDepth = nearPlane;
+    float                                                   previousDepth  = nearPlane;
+    float                                                   sliceNearDepth = nearPlane;
     for (uint32_t cascadeIndex = 0; cascadeIndex < config.count; ++cascadeIndex)
     {
-        const float fraction         = static_cast<float>(cascadeIndex + 1) / config.count;
-        const float uniformSplit     = nearPlane + (farPlane - nearPlane) * fraction;
-        const float logarithmicSplit = nearPlane * std::pow(farPlane / nearPlane, fraction);
-        const float splitDepth =
-            cascadeIndex + 1 == config.count ? farPlane : std::lerp(uniformSplit, logarithmicSplit, config.splitLambda);
-        const float nearFraction = (previousDepth - nearPlane) / (farPlane - nearPlane);
+        const float fraction     = static_cast<float>(cascadeIndex + 1) / config.count;
+        const float uniformSplit = nearPlane + (farPlane - nearPlane) * fraction;
+        float       splitDepth   = uniformSplit;
+        if (config.splitStrategy == CascadeSplitStrategy::Practical)
+        {
+            const float logarithmicSplit = nearPlane * std::pow(farPlane / nearPlane, fraction);
+            splitDepth                   = std::lerp(uniformSplit, logarithmicSplit, config.splitLambda);
+        }
+        if (cascadeIndex + 1 == config.count)
+            splitDepth = farPlane;
+        const float nearFraction = (sliceNearDepth - nearPlane) / (farPlane - nearPlane);
         const float farFraction  = (splitDepth - nearPlane) / (farPlane - nearPlane);
 
         auto& slice = slices[cascadeIndex];
@@ -82,7 +113,12 @@ std::array<FrustumSlice, kMaxDirectionalShadowCascades> splitFrustum(
                 glm::mix(corners[index], corners[index + kPlaneCornerCount], farFraction);
         }
         slice.depthUpperBound = splitDepth;
-        previousDepth         = splitDepth;
+        slice.blendStartDepth = cascadeIndex + 1 < config.count
+            ? splitDepth - (splitDepth - previousDepth) * config.blendRatio
+            : splitDepth;
+        // The next cascade must also render the current cascade's blend interval.
+        sliceNearDepth = slice.blendStartDepth;
+        previousDepth  = splitDepth;
     }
     return slices;
 }
@@ -90,6 +126,8 @@ std::array<FrustumSlice, kMaxDirectionalShadowCascades> splitFrustum(
 DirectionalShadowData
 makeDirectionalShadow(const ViewUniforms& view, const LightData& light, const RenderFeature::Shadow::Cascade& config)
 {
+    CHECK(config.shadowMapSize > 1);
+
     // 1. Restore the camera frustum's world-space corners.
     auto frustumCorners = restoreFrustumCorners(view.inverseViewProjection);
 
@@ -112,7 +150,7 @@ makeDirectionalShadow(const ViewUniforms& view, const LightData& light, const Re
     // 3. Split the truncated frustum into cascade slices.
     const auto slices = splitFrustum(frustumCorners, cameraNear, shadowFar, config);
 
-    // 4. Fit each orthographic projection in the rotation-only light view.
+    // 4. Enclose each slice in a sphere, then fit its light-aligned bounding cube.
     const glm::vec3 lightDirection{light.direction};
     CHECK(std::isfinite(glm::dot(lightDirection, lightDirection)) && glm::dot(lightDirection, lightDirection) > 0.0f);
     const auto direction = glm::normalize(lightDirection);
@@ -122,25 +160,34 @@ makeDirectionalShadow(const ViewUniforms& view, const LightData& light, const Re
     DirectionalShadowData shadow;
     for (uint32_t cascadeIndex = 0; cascadeIndex < config.count; ++cascadeIndex)
     {
-        const auto& slice = slices[cascadeIndex];
-        glm::vec3   min   = glm::vec3{lightView * glm::vec4{slice.corners.front(), 1.0f}};
-        glm::vec3   max   = min;
-        for (const auto& corner : slice.corners)
-        {
-            const glm::vec3 lightCorner{lightView * glm::vec4{corner, 1.0f}};
-            min = glm::min(min, lightCorner);
-            max = glm::max(max, lightCorner);
-        }
-        DCHECK(max.x > min.x && max.y > min.y && max.z > min.z);
+        const auto& slice  = slices[cascadeIndex];
+        const auto  sphere = boundFrustumCorners(slice.corners);
+        glm::vec3   lightCenter{lightView * glm::vec4{sphere.center, 1.0f}};
 
-        min -= glm::vec3{config.padding};
-        max += glm::vec3{config.padding};
+        // Stabilize the grid scale against small floating-point changes in the sphere radius.
+        const float quantizedRadius = std::ceil(sphere.radius * kShadowRadiusQuantization) / kShadowRadiusQuantization;
+        const float mapSize         = static_cast<float>(config.shadowMapSize);
+        // Reserve the PCF footprint, plus half a texel each for snapping and linear comparison filtering.
+        const float guardTexels = config.sampleRadius + 1.0f;
+        CHECK(mapSize > 2.0f * guardTexels);
+        const float halfExtent         = quantizedRadius * mapSize / (mapSize - 2.0f * guardTexels);
+        const float worldUnitsPerTexel = 2.0f * halfExtent / mapSize;
+        lightCenter.x                  = std::round(lightCenter.x / worldUnitsPerTexel) * worldUnitsPerTexel;
+        lightCenter.y                  = std::round(lightCenter.y / worldUnitsPerTexel) * worldUnitsPerTexel;
+
+        const glm::vec3 extent{halfExtent};
+        const auto      min = lightCenter - extent;
+        const auto      max = lightCenter + extent;
 
         // Light-view forward is -Z. Upstream casters are retained by depth clamping.
         glm::mat4 projection = glm::ortho(min.x, max.x, min.y, max.y, -max.z, -min.z);
         projection[1][1] *= -1.0f;
         projection[3][1] *= -1.0f;
-        shadow.cascades[cascadeIndex] = {.vp = projection * lightView, .depthUpperBound = slice.depthUpperBound};
+        shadow.cascades[cascadeIndex] = {
+            .vp              = projection * lightView,
+            .depthUpperBound = slice.depthUpperBound,
+            .blendStartDepth = slice.blendStartDepth,
+        };
     }
     return shadow;
 }
