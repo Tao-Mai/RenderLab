@@ -1,3 +1,4 @@
+#include "editor/LightMarkers.h"
 #include "editor/EditorCamera.h"
 // Small filtering/upload check and one-time rebake of existing ordinary textures.
 #include "asset/AssetDataManager.h"
@@ -146,8 +147,9 @@ int main(int, char** argv)
     for (int frame = 0; frame < 4; ++frame)
     {
         window.pollEvents();
-        const auto view = scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
-        const auto& renderData = renderSystem.prepare(scenes.scene(), view.uniforms, config.rendererConfig().feature.shadow);
+        const auto view =
+            scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
+        const auto& renderData = renderSystem.prepare(scenes.scene());
         lightMarkers.prepare(scenes.scene(), *renderContext().resources);
         renderer.render(
             view,

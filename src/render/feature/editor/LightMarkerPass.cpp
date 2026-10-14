@@ -7,15 +7,18 @@
 #include "render/RenderView.h"
 #include "render/feature/editor/EditorFrameInput.h"
 #include "render/feature/editor/EditorShaderData.h"
-#include "render/feature/editor/LightMarkers.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
 
 #include <algorithm>
 #include <array>
 
-LightMarkerPass::Output
-LightMarkerPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle, RenderGraph::ImageHandle depthHandle)
+LightMarkerPass::Output LightMarkerPass::setup(
+    RenderGraph&             graph,
+    const PassSetup&         setup,
+    RenderGraph::ImageHandle colorHandle,
+    RenderGraph::ImageHandle depthHandle
+)
 {
     color = graph.write(colorHandle);
     depth = graph.write(depthHandle);
@@ -52,30 +55,33 @@ LightMarkerPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle,
     return {color, depth};
 }
 
-void LightMarkerPass::execute(RenderGraph& graph) const
+void LightMarkerPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
 {
-    const auto lightDrawItems = graph.editorInput().lightDrawItems;
+    const auto lightDrawItems = execution.editor.lightDrawItems;
     if (lightDrawItems.empty())
         return;
 
-    auto&                             commandBuffer = graph.commands();
-    const auto                        extent        = graph.swapchain().extent();
+    const auto                        extent = execution.setup.swapchain.extent();
     const vk::RenderingAttachmentInfo colorAttachment{
-        .imageView   = graph.getImage(color).getOrCreateImageView({
-              .viewType         = vk::ImageViewType::e2D,
-              .format           = graph.imageInfo(color).format,
-              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        }),
+        .imageView = graph.getImage(color, execution.frameIndex)
+                         .getOrCreateImageView({
+                             .viewType = vk::ImageViewType::e2D,
+                             .format   = graph.imageInfo(color).format,
+                             .subresourceRange =
+                                 {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+                         }),
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
         .loadOp      = vk::AttachmentLoadOp::eLoad,
         .storeOp     = vk::AttachmentStoreOp::eStore,
     };
     const vk::RenderingAttachmentInfo depthAttachment{
-        .imageView   = graph.getImage(depth).getOrCreateImageView({
-              .viewType         = vk::ImageViewType::e2D,
-              .format           = vk::Format::eD32Sfloat,
-              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
-        }),
+        .imageView = graph.getImage(depth, execution.frameIndex)
+                         .getOrCreateImageView({
+                             .viewType = vk::ImageViewType::e2D,
+                             .format   = vk::Format::eD32Sfloat,
+                             .subresourceRange =
+                                 {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
+                         }),
         .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
         .loadOp      = vk::AttachmentLoadOp::eLoad,
         .storeOp     = vk::AttachmentStoreOp::eStore,
@@ -88,7 +94,7 @@ void LightMarkerPass::execute(RenderGraph& graph) const
         .pDepthAttachment     = &depthAttachment,
     });
 
-    const auto&    editorViewport = graph.view().viewport;
+    const auto&    editorViewport = execution.view.viewport;
     const uint32_t viewportX      = std::min(static_cast<uint32_t>(std::max(editorViewport.x, 0.0f)), extent.width - 1);
     const uint32_t viewportY = std::min(static_cast<uint32_t>(std::max(editorViewport.y, 0.0f)), extent.height - 1);
     const uint32_t viewportWidth =
@@ -115,7 +121,7 @@ void LightMarkerPass::execute(RenderGraph& graph) const
     );
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array viewSets = {graph.frameData(graph.frameIndex()).viewSetHandle()};
+    const std::array viewSets = {execution.data.viewSetHandle()};
     commandBuffer
         .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, EditorInterface::kViewSet, viewSets, {});
     for (const auto& item : lightDrawItems)
@@ -132,7 +138,6 @@ void LightMarkerPass::execute(RenderGraph& graph) const
         );
         item.mesh->bind(commandBuffer);
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
-        graph.recordDraw(item.indexCount);
     }
 
     commandBuffer.endRendering();

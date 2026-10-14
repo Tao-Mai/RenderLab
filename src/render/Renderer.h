@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/Debug.h"
 #include "asset/EnvironmentMapAsset.h"
+#include "core/Debug.h"
 
 #include "render/DescriptorManager.h"
 #include "render/FrameData.h"
@@ -45,8 +45,8 @@ public:
 
     [[nodiscard]] VulkanContext& vulkanContext() { return vulkan; }
     [[nodiscard]] Swapchain&     swapchainHandle() { return swapchain; }
-    [[nodiscard]] uint32_t offlineSampleCount() const;
-    [[nodiscard]] uint32_t framesInFlight() const { return activeFramesInFlight; }
+    [[nodiscard]] uint32_t       offlineSampleCount() const;
+    [[nodiscard]] uint32_t       framesInFlight() const { return activeFramesInFlight; }
 
 private:
     struct Passes;
@@ -61,8 +61,8 @@ private:
     std::array<FrameData, maxFramesInFlight>    frameStorage;
     SceneBindings*                              activeSceneBindings = nullptr;
     std::optional<RendererConfig>               appliedConfig;
-    std::optional<EnvironmentMapAsset::ID>        environmentMap;
-    std::optional<EnvironmentMapAsset::ID>        appliedEnvironmentMap;
+    std::optional<EnvironmentMapAsset::ID>      environmentMap;
+    std::optional<EnvironmentMapAsset::ID>      appliedEnvironmentMap;
     struct SceneOutput
     {
         RenderGraph::ImageHandle color;
@@ -74,7 +74,8 @@ private:
     RenderGraph::ImageHandle  setupPostProcess(RenderGraph::ImageHandle color);
     void                      setupEditor(SceneOutput scene);
     void                      applyConfiguration(const SceneRenderData& scene);
-    uint32_t                  frameIndex = 0;
+    const RenderData&         prepare(const RenderView& view, const SceneRenderData& scene);
+    uint32_t                  frameIndex           = 0;
     uint32_t                  activeFramesInFlight = maxFramesInFlight;
     RenderGraph               graph;
     std::unique_ptr<Passes>   passes;

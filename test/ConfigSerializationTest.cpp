@@ -41,7 +41,7 @@ RendererConfig sampleRendererConfig()
         .brdfLut = {TextureAsset::ID{"lut_ggx"}, SamplerAsset::ID{"linearClamp"}},
         .feature = {.ibl = false, .ambientCoefficient = 0.25f, .hdr = false,
             .shadow = {.enable = false, .cascade = {.count = 3, .shadowMapSize = 1024,
-                .maxDistance = 40.0f, .splitLambda = 0.75f, .depthPadding = 5.0f}, .pointShadowMapSize = 2048,
+                .maxDistance = 40.0f, .splitLambda = 0.75f, .padding = 0.02f}, .pointShadowMapSize = 2048,
                 .spotShadowMapSize = 512, .bias = 0.0025f,
                 .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.03f, .spotSampleRadius = 2.5f},
             .toneMapping = {.ev100 = 5.0f, .exposureCompensation = 1.5f, .mode = ToneMappingOperator::Reinhard},

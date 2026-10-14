@@ -1,3 +1,4 @@
+#include "editor/LightMarkers.h"
 #include "editor/EditorCamera.h"
 // Standalone, short GPU check. Uses test configuration and never saves a scene.
 #include "asset/AssetDataManager.h"
@@ -111,8 +112,9 @@ int main(int, char** argv)
         }
 
         window.pollEvents();
-        const auto view = scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
-        const auto& renderData = renderSystem.prepare(scenes.scene(), view.uniforms, config.rendererConfig().feature.shadow);
+        const auto view =
+            scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
+        const auto& renderData = renderSystem.prepare(scenes.scene());
         lightMarkers.prepare(scenes.scene(), *renderContext().resources);
         renderer.render(
             view,

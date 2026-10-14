@@ -1,4 +1,4 @@
-#include "render/feature/editor/LightMarkers.h"
+#include "editor/LightMarkers.h"
 
 #include "asset/BuiltinAssets.h"
 #include "asset/SceneAsset.h"
@@ -54,12 +54,12 @@ void LightMarkers::reset() noexcept
     arrow  = nullptr;
 }
 
-std::vector<LightMarkers::DrawItem> LightMarkers::buildDrawItems(
+std::vector<LightMarkerDrawItem> LightMarkers::buildDrawItems(
     const TransformComponent& transform, const LightComponent& light, uint32_t selectionId
 ) const
 {
-    std::vector<DrawItem> result;
-    const glm::vec3       markerColor = light.enabled ? light.color : light.color * 0.15f;
+    std::vector<LightMarkerDrawItem> result;
+    const glm::vec3                  markerColor = light.enabled ? light.color : light.color * 0.15f;
 
     if (const auto* area = dynamic_cast<const RectAreaLightComponent*>(&light))
     {
@@ -110,7 +110,7 @@ std::vector<LightMarkers::DrawItem> LightMarkers::buildDrawItems(
             });
         }
     }
-    for (DrawItem& item : result)
+    for (LightMarkerDrawItem& item : result)
         item.selectionId = selectionId;
     return result;
 }

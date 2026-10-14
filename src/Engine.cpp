@@ -92,7 +92,7 @@ void Engine::run()
 
 void Engine::mainLoop()
 {
-    Context& ctx                   = context();
+    Context& ctx = context();
     Timer    deltaTimer;
     bool     swapchainNeedsRebuild = false;
     while (!ctx.window->shouldClose())
@@ -149,8 +149,7 @@ void Engine::mainLoop()
             return ctx.editor->buildFrame(camera, deltaTime, extent.width, extent.height);
         }();
 
-        const auto& renderData   = renderSystem.prepare(
-            ctx.sceneManager->scene(), editorFrame.view.uniforms, ctx.config->rendererConfig().feature.shadow);
+        const auto& renderData   = renderSystem.prepare(ctx.sceneManager->scene());
         const auto  editorResult = ctx.renderer->render(editorFrame.view, renderData, editorFrame.input);
         swapchainNeedsRebuild    = editorResult.swapchainNeedsRebuild;
         ctx.editor->applyPickResult(editorResult);

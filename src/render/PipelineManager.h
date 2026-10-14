@@ -29,6 +29,7 @@ struct PipelineState
     vk::FrontFace           frontFace    = vk::FrontFace::eCounterClockwise;
     vk::SampleCountFlagBits samples      = vk::SampleCountFlagBits::e1;
     vk::CompareOp           depthCompare = vk::CompareOp::eLess;
+    bool                    depthClamp   = false;
     bool                    depthTest    = true;
     bool                    depthWrite   = true;
     bool                    blend        = false;

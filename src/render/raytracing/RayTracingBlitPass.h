@@ -10,8 +10,13 @@ public:
         RenderGraph::ImageHandle color;
     };
 
-    Output setup(RenderGraph& graph, RenderGraph::ImageHandle rayImageHandle, RenderGraph::ImageHandle colorHandle);
-    void   execute(RenderGraph& graph) const;
+    Output setup(
+        RenderGraph&             graph,
+        const PassSetup&         setup,
+        RenderGraph::ImageHandle rayImageHandle,
+        RenderGraph::ImageHandle colorHandle
+    );
+    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const;
 
 private:
     RenderGraph::ImageHandle rayImage;

@@ -38,7 +38,7 @@ struct RenderFeature
             uint32_t shadowMapSize = 2048;
             float    maxDistance   = 50.0f;
             float    splitLambda   = 0.5f;
-            float    depthPadding  = 10.0f;
+            float    padding       = 0.01f;  // World-space padding on all six bounds.
         } cascade;
         uint32_t             pointShadowMapSize    = 1024;
         uint32_t             rectAreaShadowMapSize = 1024;

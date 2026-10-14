@@ -24,8 +24,8 @@ public:
         RenderGraph::ImageHandle rayImage;
     };
 
-    Output                 setup(RenderGraph& graph);
-    void                   execute(RenderGraph& graph);
+    Output                 setup(RenderGraph& graph, const PassSetup& setup);
+    void                   execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution);
     void                   updateScene(const RenderView& view, const SceneRenderData& scene, uint64_t assetRevision);
     void                   resetAccumulation() noexcept;
     [[nodiscard]] uint32_t sampleCount() const { return accumulatedSamples; }
@@ -88,8 +88,8 @@ private:
     RenderView                                                                      previousView{};
     uint64_t                                                                        previousAssetRevision = 0;
 
-    void createPipeline(RenderGraph& graph, uint32_t maxRecursionDepth);
-    void createRectLightGeometry(RenderGraph& graph);
-    void prepareLights(RenderGraph& graph, Frame& frame) const;
-    void prepareScene(RenderGraph& graph, Frame& frame);
+    void createPipeline(const PassSetup& setup, uint32_t maxRecursionDepth);
+    void createRectLightGeometry(CommandRecorder& commandBuffer, const PassFrame& execution);
+    void prepareLights(const PassFrame& execution, Frame& frame) const;
+    void prepareScene(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution, Frame& frame);
 };

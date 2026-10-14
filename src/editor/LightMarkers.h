@@ -1,6 +1,6 @@
 #pragma once
 
-#include "scene/component/LightComponent.h"
+#include "render/feature/editor/EditorFrameInput.h"
 
 #include <cstdint>
 #include <span>
@@ -13,29 +13,20 @@ class GpuMesh;
 class RenderResourceManager;
 struct SceneAsset;
 struct TransformComponent;
+struct LightComponent;
 
 class LightMarkers
 {
 public:
-    struct DrawItem
-    {
-        GpuMesh*  mesh;
-        glm::mat4 model;
-        glm::vec3 color;
-        uint32_t  firstIndex;
-        uint32_t  indexCount;
-        uint32_t  selectionId = 0;
-    };
-
     void prepare(const SceneAsset& scene, RenderResourceManager& resources);
     void reset() noexcept;
 
-    [[nodiscard]] std::span<const DrawItem> drawItems() const { return draws; }
+    [[nodiscard]] std::span<const LightMarkerDrawItem> drawItems() const { return draws; }
 
 private:
-    std::vector<DrawItem> draws;
+    std::vector<LightMarkerDrawItem> draws;
 
-    [[nodiscard]] std::vector<DrawItem>
+    [[nodiscard]] std::vector<LightMarkerDrawItem>
     buildDrawItems(const TransformComponent& transform, const LightComponent& light, uint32_t selectionId) const;
 
     GpuMesh* sphere = nullptr;

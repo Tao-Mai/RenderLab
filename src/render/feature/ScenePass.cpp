@@ -9,17 +9,19 @@
 
 #include <array>
 
-ScenePass::Output ScenePass::setup(RenderGraph& graph, RenderGraph::ImageHandle depthHandle, ShadowPass::Output shadow)
+ScenePass::Output ScenePass::setup(
+    RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle depthHandle, ShadowPass::Output shadow
+)
 {
     const auto& config = context().config->rendererConfig();
     shaderOptions      = {.ibl = config.feature.ibl, .clearcoat = config.renderPath != RenderPath::Deferred};
 
-    const auto resolvedShadow = bindings.setup(graph, shadow);
+    const auto resolvedShadow = bindings.setup(graph, setup, shadow);
     const bool hdr            = context().config->rendererConfig().feature.hdr;
     if (hdr)
     {
         const auto features =
-            graph.vulkan().physicalDeviceHandle().getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
+            setup.vulkan.physicalDeviceHandle().getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
         constexpr auto kRequiredFeatures = vk::FormatFeatureFlagBits::eColorAttachment |
             vk::FormatFeatureFlagBits::eColorAttachmentBlend | vk::FormatFeatureFlagBits::eSampledImage |
             vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
@@ -29,7 +31,7 @@ ScenePass::Output ScenePass::setup(RenderGraph& graph, RenderGraph::ImageHandle 
         );
     }
 
-    const auto extent = graph.swapchain().extent();
+    const auto extent = setup.swapchain.extent();
     color             = hdr ? graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}})
                             : graph.importSwapchain();
     color             = graph.write(color);
@@ -38,17 +40,18 @@ ScenePass::Output ScenePass::setup(RenderGraph& graph, RenderGraph::ImageHandle 
     return {color, depth, resolvedShadow};
 }
 
-void ScenePass::prepare(RenderGraph& graph) const { bindings.prepare(graph); }
+void ScenePass::prepare(RenderGraph& graph, const PassSetup& setup) const { bindings.prepare(graph, setup); }
 
-void ScenePass::execute(RenderGraph& graph) const
+void ScenePass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
 {
-    SceneDraw::beginRendering(graph, std::array{color}, depth, vk::AttachmentLoadOp::eClear);
+    SceneDraw::beginRendering(graph, commandBuffer, execution, std::array{color}, depth, vk::AttachmentLoadOp::eClear);
     SceneDraw::recordMeshes(
-        graph,
-        graph.renderData().opaqueDrawItems,
+        commandBuffer,
+        execution,
+        execution.renderData.opaqueDrawItems,
         std::array{graph.imageInfo(color).format},
         {},
         shaderOptions
     );
-    graph.commands().endRendering();
+    commandBuffer.endRendering();
 }

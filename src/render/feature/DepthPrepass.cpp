@@ -15,14 +15,14 @@
 #include <algorithm>
 #include <array>
 
-DepthPrepass::Output DepthPrepass::setup(RenderGraph& graph)
+DepthPrepass::Output DepthPrepass::setup(RenderGraph& graph, const PassSetup& setup)
 {
     CHECK(
-        graph.vulkan().physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures &
+        setup.vulkan.physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures &
         vk::FormatFeatureFlagBits::eDepthStencilAttachment
     );
 
-    const auto extent = graph.swapchain().extent();
+    const auto extent = setup.swapchain.extent();
     depth = graph.createImage({.format = vk::Format::eD32Sfloat, .extent = {extent.width, extent.height, 1}});
     depth = graph.write(depth);
     graph.use(
@@ -40,18 +40,19 @@ DepthPrepass::Output DepthPrepass::setup(RenderGraph& graph)
     return {depth};
 }
 
-void DepthPrepass::execute(RenderGraph& graph) const
+void DepthPrepass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
 {
-    auto&      commandBuffer = graph.commands();
-    auto&      pipelines     = *renderContext().pipelineManager;
-    const auto extent        = graph.swapchain().extent();
+    auto&      pipelines = *renderContext().pipelineManager;
+    const auto extent    = execution.setup.swapchain.extent();
 
     const vk::RenderingAttachmentInfo depthAttachment{
-        .imageView   = graph.getImage(depth).getOrCreateImageView({
-              .viewType         = vk::ImageViewType::e2D,
-              .format           = vk::Format::eD32Sfloat,
-              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
-        }),
+        .imageView = graph.getImage(depth, execution.frameIndex)
+                         .getOrCreateImageView({
+                             .viewType = vk::ImageViewType::e2D,
+                             .format   = vk::Format::eD32Sfloat,
+                             .subresourceRange =
+                                 {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
+                         }),
         .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
         .loadOp      = vk::AttachmentLoadOp::eClear,
         .storeOp     = vk::AttachmentStoreOp::eStore,
@@ -63,7 +64,7 @@ void DepthPrepass::execute(RenderGraph& graph) const
         .pDepthAttachment = &depthAttachment,
     });
 
-    const auto&    editorViewport = graph.view().viewport;
+    const auto&    editorViewport = execution.view.viewport;
     const uint32_t viewportX      = std::min(static_cast<uint32_t>(std::max(editorViewport.x, 0.0f)), extent.width - 1);
     const uint32_t viewportY = std::min(static_cast<uint32_t>(std::max(editorViewport.y, 0.0f)), extent.height - 1);
     const uint32_t viewportWidth =
@@ -89,7 +90,7 @@ void DepthPrepass::execute(RenderGraph& graph) const
         )
     );
 
-    const std::array sceneSets = {graph.frameData(graph.frameIndex()).sceneSetHandle()};
+    const std::array sceneSets = {execution.data.sceneSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         pipelineLayout,
@@ -99,7 +100,7 @@ void DepthPrepass::execute(RenderGraph& graph) const
     );
 
     vk::Pipeline boundPipeline;
-    for (const DrawItem& item : graph.renderData().opaqueDrawItems)
+    for (const DrawItem& item : execution.renderData.opaqueDrawItems)
     {
         PipelineKey key        = item.material->pipelineKey({}, vk::Format::eD32Sfloat, pipelineLayout);
         key.shader             = shader;
@@ -131,7 +132,6 @@ void DepthPrepass::execute(RenderGraph& graph) const
             {}
         );
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
-        graph.recordDraw(item.indexCount);
     }
 
     commandBuffer.endRendering();

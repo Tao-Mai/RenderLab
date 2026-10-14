@@ -1,4 +1,5 @@
 #pragma once
+#include "editor/LightMarkers.h"
 
 #include <memory>
 #include "core/Debug.h"

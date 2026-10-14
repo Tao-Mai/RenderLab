@@ -14,11 +14,12 @@ public:
 
     Output setup(
         RenderGraph&             graph,
+        const PassSetup&         setup,
         RenderGraph::ImageHandle colorHandle,
         RenderGraph::ImageHandle depthHandle,
         ShadowPass::Output       shadow
     );
-    void execute(RenderGraph& graph) const;
+    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const;
 
 private:
     SceneShaderOptions       shaderOptions;

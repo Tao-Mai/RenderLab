@@ -7,6 +7,7 @@
 #include "core/Context.h"
 #include "core/Window.h"
 #include "render/RenderContext.h"
+#include "render/RenderPreparation.h"
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/feature/DepthPrepass.h"
@@ -29,7 +30,7 @@ struct PixelReadbackPass
     RenderGraph::ImageHandle  image;
     RenderGraph::BufferHandle buffer;
 
-    RenderGraph::BufferHandle setup(RenderGraph& graph, RenderGraph::ImageHandle source)
+    RenderGraph::BufferHandle setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle source)
     {
         image  = source;
         buffer = graph.createBuffer({
@@ -52,7 +53,7 @@ struct PixelReadbackPass
         return buffer;
     }
 
-    void execute(RenderGraph& graph) const
+    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
     {
         const auto                extent = graph.imageInfo(image).extent;
         const vk::BufferImageCopy region{
@@ -60,10 +61,10 @@ struct PixelReadbackPass
             .imageOffset      = {static_cast<int32_t>(extent.width / 2), static_cast<int32_t>(extent.height / 2), 0},
             .imageExtent      = {1, 1, 1},
         };
-        graph.commands().copyImageToBuffer(
-            graph.getImage(image).handle(),
+        commandBuffer.copyImageToBuffer(
+            graph.getImage(image, execution.frameIndex).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
-            graph.getBuffer(buffer).handle(),
+            graph.getBuffer(buffer, execution.frameIndex).handle(),
             region
         );
     }
@@ -89,11 +90,12 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
     PixelReadbackPass    readback;
     EndPass              end;
     RenderSystem         renderSystem;
-    graph.init(vulkan, renderer.swapchainHandle(), frames, frameData);
-    const auto originalFeature = context().config->rendererConfig().feature;
-    const auto originalPath    = context().config->rendererConfig().renderPath;
-    const auto extent          = renderer.swapchainHandle().extent();
-    const auto view            = scenesCamera.renderView(
+    graph.init(vulkan, renderer.swapchainHandle());
+    const PassSetup setup{vulkan, renderer.swapchainHandle(), frameData};
+    const auto      originalFeature = context().config->rendererConfig().feature;
+    const auto      originalPath    = context().config->rendererConfig().renderPath;
+    const auto      extent          = renderer.swapchainHandle().extent();
+    const auto      view            = scenesCamera.renderView(
         {64, 32, static_cast<float>(extent.width) - 192, static_cast<float>(extent.height) - 96}
     );
     const auto sample = [&](bool deferred, bool ibl, bool shadows)
@@ -108,26 +110,43 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
         context().config->setRenderPath(deferred ? RenderPath::Deferred : RenderPath::Rasterization);
         ShadowPass::Output shadowOutput;
         if (shadows)
-            shadowOutput = graph.addPass(shadow);
-        const auto               depthOutput = graph.addPass(depth);
+            shadowOutput = graph.addPass(shadow, setup);
+        const auto               depthOutput = graph.addPass(depth, setup);
         RenderGraph::ImageHandle color;
         if (deferred)
         {
-            const auto geometry = graph.addPass(gBuffer, depthOutput.depth);
-            color               = graph.addPass(lighting, geometry, shadowOutput).color;
+            const auto geometry = graph.addPass(gBuffer, setup, depthOutput.depth);
+            color               = graph.addPass(lighting, setup, geometry, shadowOutput).color;
         }
         else
-            color = graph.addPass(forward, depthOutput.depth, shadowOutput).color;
-        const auto buffer = graph.addPass(readback, color);
-        graph.addPass(end, RenderGraph::ImageHandle{}, buffer);
-        graph.compile();
-        const auto& sceneData = renderSystem.prepare(scenes.scene(), view.uniforms, context().config->rendererConfig().feature.shadow);
-        const auto& data      = renderContext().resources->prepare(sceneData, 0);
+            color = graph.addPass(forward, setup, depthOutput.depth, shadowOutput).color;
+        const auto buffer = graph.addPass(readback, setup, color);
+        graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
+        graph.compile(setup);
+        const auto& sceneData = renderSystem.prepare(scenes.scene());
+        const auto  prepared  = prepareRenderScene(
+            sceneData,
+            view.uniforms,
+            context().config->rendererConfig().feature.shadow,
+            *context().assetManager,
+            context().profiler
+        );
+        const auto& data = renderContext().resources->prepare(sceneData, prepared, 0);
         if (deferred)
-            lighting.sceneBindings().updateFrame(frameData[0], view.uniforms, sceneData.lighting);
+            lighting.sceneBindings().updateFrame(frameData[0], view.uniforms, prepared.lighting);
         else
-            forward.sceneBindings().updateFrame(frameData[0], view.uniforms, sceneData.lighting);
-        graph.execute(view, data, {}, 0, 0);
+            forward.sceneBindings().updateFrame(frameData[0], view.uniforms, prepared.lighting);
+        auto& recording = frames[0].commandBufferHandle();
+        vkCheck(recording.reset());
+        vkCheck(recording.begin({}));
+        graph.execute(
+            recording,
+            {setup, frameData[0], view, data, {}, 0},
+            0,
+            frames[0].gpuProfiler(),
+            context().profiler
+        );
+        vkCheck(recording.end());
         const auto           commandBuffer = *frames[0].commandBufferHandle();
         const vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &commandBuffer};
         vkCheck(vulkan.queueHandle().submit(submitInfo));
@@ -199,8 +218,30 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
         glm::length(shadowed)
     );
     scenes.deleteActor(blocker.selectionId());
-    replaceLightComponent(spot, std::make_unique<PointLightComponent>());
-    lamp.transform().rotation = originalRotation;
+
+    const float originalIntensity = spot.intensity;
+    replaceLightComponent(spot, std::make_unique<DirectionalLightComponent>());
+    lamp.getComponent<LightComponent>()->intensity = 3.0f;
+    lamp.transform().setRotationEulerDegrees({0, 45, 0});
+    const auto directionalClear = sample(false, false, true);
+    compare(directionalClear, sample(true, false, true));
+    auto& upstreamBlocker                = scenes.createActor("AStaticMesh");
+    upstreamBlocker.transform().position = {100, 0, 101};
+    upstreamBlocker.transform().scale    = glm::vec3{2};
+    compare(directionalClear, sample(false, false, false));
+    const auto directionalShadowed = sample(false, false, true);
+    compare(directionalShadowed, sample(true, false, true));
+    CHECK(glm::length(directionalClear - directionalShadowed) > 0.05f);
+    compare(directionalShadowed, unlit);
+    LOG_INFO(
+        "Cascade depth clamp retains an upstream caster: clear {}, shadowed {}",
+        glm::length(directionalClear),
+        glm::length(directionalShadowed)
+    );
+    scenes.deleteActor(upstreamBlocker.selectionId());
+    replaceLightComponent(*lamp.getComponent<LightComponent>(), std::make_unique<PointLightComponent>());
+    lamp.getComponent<LightComponent>()->intensity = originalIntensity;
+    lamp.transform().rotation                      = originalRotation;
 
     auto& material     = scenes.scene().actors[0]->getComponent<RenderComponent>()->materialOverrides[0];
     material.clearcoat = PbrMaterialAsset::Clearcoat{.factor = 1.0f, .roughnessFactor = 0.2f};

@@ -6,14 +6,15 @@
 #include "asset/BuiltinAssets.h"
 #include "core/Logger.h"
 #include "render/DescriptorManager.h"
+#include "render/RenderPreparation.h"
 #include "render/ShaderManager.h"
+#include "render/Visibility.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/resource/GpuMaterial.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/GpuTexture.h"
 #include "scene/system/SceneRenderData.h"
-#include "scene/system/Visibility.h"
 
 #include <cmath>
 #include <utility>
@@ -338,22 +339,26 @@ bool sameMaterialResources(const PbrMaterialAsset& a, const PbrMaterialAsset& b)
 }
 }  // namespace
 
-const RenderData& RenderResourceManager::prepare(const SceneRenderData& scene, uint32_t frameIndex)
+const RenderData&
+RenderResourceManager::prepare(const SceneRenderData& scene, const PreparedScene& prepared, uint32_t frameIndex)
 {
     DCHECK(frameIndex < frameResources.size());
+    DCHECK(scene.objects.size() == prepared.objects.size());
     auto& frame = frameResources[frameIndex];
     auto& draws = frame.draws;
     draws.drawItems.clear();
     draws.opaqueDrawItems.clear();
     draws.transparentDrawItems.clear();
-    draws.lights = scene.lighting.lights;
+    draws.lights = scene.lights;
     for (auto& [key, instance] : frame.instances)
         instance.used = false;
 
-    for (const auto& object : scene.objects)
+    for (size_t objectIndex = 0; objectIndex < scene.objects.size(); ++objectIndex)
     {
-        auto&       gpuMesh   = mesh(object.mesh);
-        const auto& meshAsset = assets->get<MeshAsset>(object.mesh);
+        const auto& object     = scene.objects[objectIndex];
+        const auto& visibility = prepared.objects[objectIndex];
+        auto&       gpuMesh    = mesh(object.mesh);
+        const auto& meshAsset  = assets->get<MeshAsset>(object.mesh);
         for (uint32_t index = 0; index < meshAsset.submeshes.size(); ++index)
         {
             const auto& submesh     = meshAsset.submeshes[index];
@@ -363,7 +368,7 @@ const RenderData& RenderResourceManager::prepare(const SceneRenderData& scene, u
             {
                 auto asset = assets->get<MaterialAsset>(submesh.materialId).as<PbrMaterialAsset>();
                 applyOptionalFields(asset, override->second);
-                auto& instance = frame.instances[{object.selectionId, object.componentIndex, index}];
+                auto& instance = frame.instances[{object.selectionId, object.instanceIndex, index}];
                 if (!instance.gpu || !sameMaterialResources(instance.asset, asset))
                     instance.gpu = createMaterial(asset);
                 else if (instance.asset != asset)
@@ -379,12 +384,13 @@ const RenderData& RenderResourceManager::prepare(const SceneRenderData& scene, u
                 submesh.firstIndex,
                 submesh.indexCount,
                 object.selectionId,
-                object.distanceSquared,
-                object.visibilityMask
+                visibility.distanceSquared,
+                visibility.visibilityMask
             };
             draws.drawItems.push_back(draw);
-            if (object.visibilityMask & RenderVisibility::kMainView)
-                (gpuMaterial->alphaMode() == MaterialAlphaMode::Blend ? draws.transparentDrawItems : draws.opaqueDrawItems)
+            if (visibility.visibilityMask & RenderVisibility::kMainView)
+                (gpuMaterial->alphaMode() == MaterialAlphaMode::Blend ? draws.transparentDrawItems
+                                                                      : draws.opaqueDrawItems)
                     .push_back(draw);
         }
     }

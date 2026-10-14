@@ -21,7 +21,7 @@
             "bias": 0.0010000000474974513,
             "cascade": {
                 "count": 4,
-                "depthPadding": 10,
+                "padding": 0.01,
                 "maxDistance": 50,
                 "shadowMapSize": 2048,
                 "splitLambda": 0.5

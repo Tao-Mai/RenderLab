@@ -22,8 +22,8 @@ public:
         RenderGraph::ImageHandle rayImage;
     };
 
-    Output setup(RenderGraph& graph);
-    void   execute(RenderGraph& graph);
+    Output setup(RenderGraph& graph, const PassSetup& setup);
+    void   execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution);
 
 private:
     struct Frame
@@ -63,8 +63,8 @@ private:
     std::map<std::tuple<const GpuMesh*, uint32_t, uint32_t>, AccelerationStructure> blas;
     std::array<Frame, maxFramesInFlight>                                            frames;
 
-    void createPipeline(RenderGraph& graph, uint32_t maxRecursionDepth);
-    void createRectLightGeometry(RenderGraph& graph);
-    void prepareLights(RenderGraph& graph, Frame& frame) const;
-    void prepareScene(RenderGraph& graph, Frame& frame);
+    void createPipeline(const PassSetup& setup, uint32_t maxRecursionDepth);
+    void createRectLightGeometry(CommandRecorder& commandBuffer, const PassFrame& execution);
+    void prepareLights(const PassFrame& execution, Frame& frame) const;
+    void prepareScene(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution, Frame& frame);
 };

@@ -4,8 +4,8 @@
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Window.h"
-#include "render/Renderer.h"
 #include "render/RenderContext.h"
+#include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/feature/EndPass.h"
 #include "render/feature/postprocess/BloomPass.h"
@@ -28,9 +28,9 @@ struct HdrSourcePass
     bool                     uniform = false;
     vk::Offset2D             lightCenter;
 
-    Output setup(RenderGraph& graph)
+    Output setup(RenderGraph& graph, const PassSetup& setup)
     {
-        const auto extent = graph.swapchain().extent();
+        const auto extent = setup.swapchain.extent();
         color = graph.write(graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}}));
         graph.use(
             color,
@@ -41,21 +41,23 @@ struct HdrSourcePass
         return {color};
     }
 
-    void execute(RenderGraph& graph) const
+    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
     {
-        const auto                        extent = graph.swapchain().extent();
+        const auto                        extent = execution.setup.swapchain.extent();
         const vk::RenderingAttachmentInfo attachment{
-            .imageView = graph.getImage(color).getOrCreateImageView(
-                {.viewType         = vk::ImageViewType::e2D,
-                 .format           = kHdrColorFormat,
-                 .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1}}
-            ),
+            .imageView = graph.getImage(color, execution.frameIndex)
+                             .getOrCreateImageView(
+                                 {.viewType = vk::ImageViewType::e2D,
+                                  .format   = kHdrColorFormat,
+                                  .subresourceRange =
+                                      {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1}}
+                             ),
             .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
             .loadOp      = vk::AttachmentLoadOp::eClear,
             .storeOp     = vk::AttachmentStoreOp::eStore,
             .clearValue  = uniform ? vk::ClearColorValue(4.0f, 2.0f, 1.0f, 1.0f) : vk::ClearColorValue(0, 0, 0, 1),
         };
-        auto& commands = graph.commands();
+        auto& commands = commandBuffer;
         commands.beginRendering(
             {.renderArea           = {{0, 0}, extent},
              .layerCount           = 1,
@@ -81,7 +83,7 @@ struct ReadPixelPass
     RenderGraph::BufferHandle buffer;
     vk::Offset3D              pixel;
 
-    RenderGraph::BufferHandle setup(RenderGraph& graph, RenderGraph::ImageHandle image)
+    RenderGraph::BufferHandle setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle image)
     {
         source = image;
         buffer = graph.write(graph.createBuffer(
@@ -101,17 +103,17 @@ struct ReadPixelPass
         return buffer;
     }
 
-    void execute(RenderGraph& graph) const
+    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
     {
         const vk::BufferImageCopy copy{
             .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
             .imageOffset      = pixel,
             .imageExtent      = {1, 1, 1}
         };
-        graph.commands().copyImageToBuffer(
-            graph.getImage(source).handle(),
+        commandBuffer.copyImageToBuffer(
+            graph.getImage(source, execution.frameIndex).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
-            graph.getBuffer(buffer).handle(),
+            graph.getBuffer(buffer, execution.frameIndex).handle(),
             copy
         );
     }
@@ -127,6 +129,7 @@ int main(int argc, char** argv)
     SceneManager     scenes;
     Window           window;
     Renderer         renderer;
+    Profiler         profiler;
     auto&            ctx = context();
     ctx.config           = &config;
     ctx.assetManager     = &assets;
@@ -134,6 +137,7 @@ int main(int argc, char** argv)
     ctx.sceneManager     = &scenes;
     ctx.window           = &window;
     ctx.renderer         = &renderer;
+    ctx.profiler         = &profiler;
     config.init();
     const auto original = config.rendererConfig().feature;
     data.init(config.paths().assets);
@@ -152,12 +156,13 @@ int main(int argc, char** argv)
     for (auto& frame : frameData)
         frame.init(vulkan, *renderContext().descriptors);
     RenderGraph graph;
-    graph.init(vulkan, renderer.swapchainHandle(), frames, frameData);
-    HdrSourcePass                           source;
-    ReadPixelPass                           readback;
-    EndPass                                 end;
-    std::vector<std::unique_ptr<BloomPass>> bloom;
-    const auto                              extent = renderer.swapchainHandle().extent();
+    graph.init(vulkan, renderer.swapchainHandle());
+    const PassSetup setup{vulkan, renderer.swapchainHandle(), frameData};
+    HdrSourcePass   source;
+    ReadPixelPass   readback;
+    EndPass         end;
+    BloomPass       bloom;
+    const auto      extent = renderer.swapchainHandle().extent();
     CHECK(extent.width > 32 && extent.height > 32);
     const int  centerX = static_cast<int>(extent.width / 2);
     const int  centerY = static_cast<int>(extent.height / 2);
@@ -172,15 +177,32 @@ int main(int argc, char** argv)
         feature.bloom = {.enable = enabled, .intensity = intensity, .filterRadius = 1, .levels = levels};
         config.setRenderFeature(feature);
         graph.releaseResources();
-        bloom.clear();
-        auto color = graph.addPass(source).color;
+        auto color = graph.addPass(source, setup).color;
         if (feature.hdr && feature.bloom.enable)
-            color = BloomPass::setupChain(graph, color, bloom);
-        CHECK(!bloom.empty() == (hdr && enabled));
-        const auto buffer = graph.addPass(readback, color);
-        graph.addPass(end, RenderGraph::ImageHandle{}, buffer);
-        graph.compile();
-        graph.execute(view, {}, {}, 0, 0);
+            color = graph.addPass(bloom, setup, color).color;
+        const auto buffer = graph.addPass(readback, setup, color);
+        graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
+        graph.compile(setup);
+        profiler.reset();
+        profiler.beginFrame();
+        auto& recording = frames[0].commandBufferHandle();
+        vkCheck(recording.reset());
+        vkCheck(recording.begin({}));
+        graph
+            .execute(recording, {setup, frameData[0], view, {}, {}, 0}, 0, frames[0].gpuProfiler(), context().profiler);
+        vkCheck(recording.end());
+        profiler.endFrame(1.0);
+
+        DrawStatistics counts;
+        for (const auto& pass : profiler.display().passes)
+        {
+            counts.drawCalls += pass.draws.drawCalls;
+            counts.triangles += pass.draws.triangles;
+        }
+        const uint64_t expectedDraws = ctx.profiler && hdr && enabled ? 2 * levels : 0;
+        CHECK(counts.drawCalls == expectedDraws);
+        CHECK(counts.triangles == expectedDraws);
+
         const auto command = *frames[0].commandBufferHandle();
         vkCheck(vulkan.queueHandle().submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &command}));
         vkCheck(vulkan.queueHandle().waitIdle());
@@ -210,10 +232,14 @@ int main(int argc, char** argv)
     view.viewport =
         {static_cast<float>(centerX), 0, static_cast<float>(extent.width - centerX), static_cast<float>(extent.height)};
     CHECK(sample(true).x == 0);
+    ctx.profiler   = nullptr;
+    source.uniform = true;
+    view.viewport  = {0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)};
+    CHECK(glm::length(sample(true) - glm::vec3{4, 2, 1}) < 0.01f);
     LOG_INFO("Bloom GPU checks passed; glow RGB = {}, {}, {}", glow.x, glow.y, glow.z);
 
     graph.reset();
-    bloom.clear();
+    bloom = {};
     for (auto& frame : frameData)
         frame.reset();
     for (auto& frame : frames)

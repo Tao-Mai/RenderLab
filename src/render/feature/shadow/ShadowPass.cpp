@@ -9,20 +9,20 @@
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
 #include "render/ShaderManager.h"
+#include "render/Visibility.h"
 #include "render/device/VulkanContext.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/ShaderData.h"
-#include "scene/system/Visibility.h"
 
 #include <array>
 
-ShadowPass::Output ShadowPass::setup(RenderGraph& graph)
+ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup)
 {
     const auto& shadow = context().config->rendererConfig().feature.shadow;
     cascadeCount       = shadow.cascade.count;
 
     CHECK(cascadeCount > 0 && cascadeCount <= kMaxDirectionalShadowCascades);
-    const auto& limits = graph.vulkan().properties().limits;
+    const auto& limits = setup.vulkan.properties().limits;
     CHECK(
         shadow.cascade.shadowMapSize <= limits.maxImageDimension2D &&
         shadow.cascade.shadowMapSize <= limits.maxFramebufferWidth &&
@@ -32,7 +32,7 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph)
     constexpr auto kRequiredFeatures = vk::FormatFeatureFlagBits::eDepthStencilAttachment |
         vk::FormatFeatureFlagBits::eSampledImage | vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
     const auto features =
-        graph.vulkan().physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures;
+        setup.vulkan.physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures;
     CHECK((features & kRequiredFeatures) == kRequiredFeatures);
 
     auto& pipelines = *renderContext().pipelineManager;
@@ -50,9 +50,13 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph)
             CHECK(info.extent.width <= limits.maxImageDimensionCube);
         const auto shader   = renderContext().shaderManager->getOrLoad("shadow", {{"SHADOW_TYPE", shadowType}});
         const auto pipeline = pipelines.getOrCreate({
-            .shader      = shader,
-            .layout      = pipelineLayout,
-            .state       = PipelineState{.vertexLayout = VertexLayoutPreset::PositionOnly},
+            .shader = shader,
+            .layout = pipelineLayout,
+            .state =
+                PipelineState{
+                    .vertexLayout = VertexLayoutPreset::PositionOnly,
+                    .depthClamp   = shadowType == static_cast<int>(GpuLightType::Directional),
+                },
             .depthFormat = vk::Format::eD32Sfloat,
             .viewMask    = viewMask,
         });
@@ -118,9 +122,9 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph)
     return {point.image, spot.image, rectArea.image, directional.image};
 }
 
-void ShadowPass::execute(RenderGraph& graph) const
+void ShadowPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
 {
-    const auto& frame  = graph.frameData(graph.frameIndex());
+    const auto& frame  = execution.data;
     const auto  lights = frame.lightData();
     for (uint32_t lightIndex = 0; lightIndex < lights.size(); ++lightIndex)
     {
@@ -133,19 +137,19 @@ void ShadowPass::execute(RenderGraph& graph) const
             case GpuLightType::Point:
                 {
                     DCHECK(light.shadowidx < frame.pointShadowData().size());
-                    recordShadow(graph, point, lightIndex, light.shadowidx * kPointFaceCount);
+                    recordShadow(graph, commandBuffer, execution, point, lightIndex, light.shadowidx * kPointFaceCount);
                     break;
                 }
             case GpuLightType::Spot:
                 {
                     DCHECK(light.shadowidx < frame.spotShadowData().size());
-                    recordShadow(graph, spot, lightIndex, light.shadowidx);
+                    recordShadow(graph, commandBuffer, execution, spot, lightIndex, light.shadowidx);
                     break;
                 }
             case GpuLightType::RectArea:
                 {
                     DCHECK(light.shadowidx < frame.rectAreaShadowData().size());
-                    recordShadow(graph, rectArea, lightIndex, light.shadowidx);
+                    recordShadow(graph, commandBuffer, execution, rectArea, lightIndex, light.shadowidx);
                     break;
                 }
             case GpuLightType::Directional:
@@ -156,6 +160,8 @@ void ShadowPass::execute(RenderGraph& graph) const
                     {
                         recordShadow(
                             graph,
+                            commandBuffer,
+                            execution,
                             directional,
                             lightIndex,
                             light.shadowidx * cascadeCount + cascadeIndex,
@@ -171,12 +177,18 @@ void ShadowPass::execute(RenderGraph& graph) const
 }
 
 void ShadowPass::recordShadow(
-    RenderGraph& graph, const ShadowTarget& target, uint32_t lightIndex, uint32_t baseArrayLayer, uint32_t cascadeIndex
+    RenderGraph&        graph,
+    CommandRecorder&    commandBuffer,
+    const PassFrame&    execution,
+    const ShadowTarget& target,
+    uint32_t            lightIndex,
+    uint32_t            baseArrayLayer,
+    uint32_t            cascadeIndex
 ) const
 {
     // TODO 提前算
     const auto imageView =
-        graph.getImage(target.image)
+        graph.getImage(target.image, execution.frameIndex)
             .getOrCreateImageView({
                 .viewType         = target.viewLayerCount > 1 ? vk::ImageViewType::e2DArray : vk::ImageViewType::e2D,
                 .format           = vk::Format::eD32Sfloat,
@@ -195,7 +207,6 @@ void ShadowPass::recordShadow(
         .clearValue  = vk::ClearDepthStencilValue(1.0f, 0),
     };
 
-    auto& commandBuffer = graph.commands();
     commandBuffer.beginRendering({
         .renderArea       = {{0, 0}, {target.mapSize, target.mapSize}},
         .layerCount       = 1,
@@ -205,7 +216,7 @@ void ShadowPass::recordShadow(
 
     // Multiview resets graphics state at the beginning of each rendering instance.
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, target.pipeline);
-    const std::array sceneSets = {graph.frameData(graph.frameIndex()).sceneSetHandle()};
+    const std::array sceneSets = {execution.data.sceneSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         pipelineLayout,
@@ -219,9 +230,9 @@ void ShadowPass::recordShadow(
     );
     commandBuffer.setScissor(0, vk::Rect2D({0, 0}, {target.mapSize, target.mapSize}));
 
-    const auto& light      = graph.frameData(graph.frameIndex()).lightData()[lightIndex];
-    const auto visibility = RenderVisibility::shadowMask(light.type(), light.shadowidx, cascadeIndex);
-    for (const DrawItem& item : graph.renderData().drawItems)
+    const auto& light      = execution.data.lightData()[lightIndex];
+    const auto  visibility = RenderVisibility::shadowMask(light.type(), light.shadowidx, cascadeIndex);
+    for (const DrawItem& item : execution.renderData.drawItems)
     {
         if (!(item.visibilityMask & visibility))
             continue;
@@ -235,7 +246,6 @@ void ShadowPass::recordShadow(
         );
         item.mesh->bind(commandBuffer);
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
-        graph.recordDraw(item.indexCount);
     }
 
     commandBuffer.endRendering();

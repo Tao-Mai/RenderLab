@@ -220,6 +220,7 @@ bool VulkanContext::isDeviceSuitable(vk::raii::PhysicalDevice const& physicalDev
             vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters &&
         features.template get<vk::PhysicalDeviceVulkan11Features>().multiview &&
         features.template get<vk::PhysicalDeviceFeatures2>().features.imageCubeArray &&
+        features.template get<vk::PhysicalDeviceFeatures2>().features.depthClamp &&
         features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
         features.template get<vk::PhysicalDeviceVulkan13Features>().synchronization2 &&
         features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().
@@ -316,6 +317,7 @@ void VulkanContext::createLogicalDevice()
         deviceFeatures.samplerAnisotropy;
     featureChain.get<vk::PhysicalDeviceFeatures2>().features.shaderInt64 = rayTracingSupported;
     featureChain.get<vk::PhysicalDeviceFeatures2>().features.imageCubeArray = true;
+    featureChain.get<vk::PhysicalDeviceFeatures2>().features.depthClamp = true;
 
     std::vector<const char*> extensions = requiredDeviceExtension;
     if (rayTracingSupported)

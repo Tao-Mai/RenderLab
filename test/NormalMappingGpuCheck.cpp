@@ -1,3 +1,4 @@
+#include "editor/LightMarkers.h"
 #include "editor/EditorCamera.h"
 // Small hidden-window integration check; does not save the temporary scene.
 #include "asset/AssetDataManager.h"
@@ -93,7 +94,7 @@ int main(int argc, char** argv)
                     material.clearcoat = std::move(clearcoat);
                 }
             }
-            const auto& renderData = renderSystem.prepare(scenes.scene(), view.uniforms, config.rendererConfig().feature.shadow);
+            const auto& renderData = renderSystem.prepare(scenes.scene());
             lightMarkers.prepare(scenes.scene(), *renderContext().resources);
             input.lightDrawItems = lightMarkers.drawItems();
             renderer.render(view, renderData, input);

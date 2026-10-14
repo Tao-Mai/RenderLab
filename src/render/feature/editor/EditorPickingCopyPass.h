@@ -10,8 +10,8 @@ public:
         RenderGraph::BufferHandle readback;
     };
 
-    Output setup(RenderGraph& graph, RenderGraph::ImageHandle pickingImageHandle);
-    void   execute(RenderGraph& graph) const;
+    Output setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle pickingImageHandle);
+    void   execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const;
 
 private:
     RenderGraph::ImageHandle  pickingImage;

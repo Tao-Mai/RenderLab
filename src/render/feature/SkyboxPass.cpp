@@ -17,14 +17,18 @@
 
 #include <array>
 
-SkyboxPass::Output
-SkyboxPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle, RenderGraph::ImageHandle depthHandle)
+SkyboxPass::Output SkyboxPass::setup(
+    RenderGraph&             graph,
+    const PassSetup&         setup,
+    RenderGraph::ImageHandle colorHandle,
+    RenderGraph::ImageHandle depthHandle
+)
 {
     color = graph.write(colorHandle);
     depth = depthHandle;
     SceneDraw::useAttachments(graph, std::array{color}, depth);
 
-    refreshBindings(graph);
+    refreshBindings(setup);
 
     auto& pipelines = *renderContext().pipelineManager;
     pipelineLayout  = SceneInterface::skyboxLayout(*renderContext().descriptors, *renderContext().pipelineManager);
@@ -43,12 +47,18 @@ SkyboxPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle, Rend
     return {color};
 }
 
-void SkyboxPass::execute(RenderGraph& graph) const
+void SkyboxPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
 {
-    const auto viewport      = SceneDraw::beginRendering(graph, std::array{color}, depth, vk::AttachmentLoadOp::eLoad);
-    auto&      commandBuffer = graph.commands();
+    const auto viewport = SceneDraw::beginRendering(
+        graph,
+        commandBuffer,
+        execution,
+        std::array{color},
+        depth,
+        vk::AttachmentLoadOp::eLoad
+    );
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sceneSets = {graph.frameData(graph.frameIndex()).sceneSetHandle()};
+    const std::array sceneSets = {execution.data.sceneSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         pipelineLayout,
@@ -71,11 +81,10 @@ void SkyboxPass::execute(RenderGraph& graph) const
         parameters
     );
     commandBuffer.draw(3, 1, 0, 0);
-    graph.recordDraw(3);
     commandBuffer.endRendering();
 }
 
-void SkyboxPass::refreshBindings(RenderGraph& graph)
+void SkyboxPass::refreshBindings(const PassSetup& setup)
 {
     DCHECK(!environmentMap.empty());
     const auto& environment = context().assetManager->get<EnvironmentMapAsset>(environmentMap);
@@ -92,7 +101,7 @@ void SkyboxPass::refreshBindings(RenderGraph& graph)
     const vk::DescriptorImageInfo radianceSampler{.sampler = resources.sampler(binding.samplerID)};
     for (uint32_t frameIndex = 0; frameIndex < maxFramesInFlight; ++frameIndex)
     {
-        const auto       set    = graph.frameData(frameIndex).sceneSetHandle();
+        const auto       set    = setup.frameData[frameIndex].sceneSetHandle();
         const std::array writes = {
             vk::WriteDescriptorSet{
                 .dstSet          = set,
@@ -109,6 +118,6 @@ void SkyboxPass::refreshBindings(RenderGraph& graph)
                 .pImageInfo      = &radianceSampler,
             },
         };
-        graph.vulkan().deviceHandle().updateDescriptorSets(writes, {});
+        setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});
     }
 }

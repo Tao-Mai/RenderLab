@@ -59,10 +59,10 @@ void buildBarrier(vk::raii::CommandBuffer& commands, bool trace)
 }
 }  // namespace
 
-RayTracingPass::Output RayTracingPass::setup(RenderGraph& graph)
+RayTracingPass::Output RayTracingPass::setup(RenderGraph& graph, const PassSetup& setup)
 {
-    CHECK(graph.vulkan().supportsRayTracing(), "selected GPU does not support the ray tracing route");
-    const auto&    device            = graph.vulkan().physicalDeviceHandle();
+    CHECK(setup.vulkan.supportsRayTracing(), "selected GPU does not support the ray tracing route");
+    const auto&    device            = setup.vulkan.physicalDeviceHandle();
     const auto     features          = device.getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
     constexpr auto kRequiredFeatures = vk::FormatFeatureFlagBits::eStorageImage |
         vk::FormatFeatureFlagBits::eSampledImage | vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
@@ -71,7 +71,7 @@ RayTracingPass::Output RayTracingPass::setup(RenderGraph& graph)
         "GPU does not support RGBA16F ray tracing output with storage writes and linear sampling"
     );
 
-    const auto extent = graph.swapchain().extent();
+    const auto extent = setup.swapchain.extent();
     rayImage          = graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}});
     rayImage          = graph.write(rayImage);
     graph.use(
@@ -84,13 +84,13 @@ RayTracingPass::Output RayTracingPass::setup(RenderGraph& graph)
     );
     const auto maxRecursionDepth = context().config->rendererConfig().feature.rayTracing.maxRecursionDepth;
     if (!*pipeline || pipelineRecursionDepth != maxRecursionDepth)
-        createPipeline(graph, maxRecursionDepth);
+        createPipeline(setup, maxRecursionDepth);
     return {rayImage};
 }
 
-void RayTracingPass::createPipeline(RenderGraph& graph, uint32_t maxRecursionDepth)
+void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursionDepth)
 {
-    const auto& vulkan = graph.vulkan();
+    const auto& vulkan = setup.vulkan;
     const auto& device = vulkan.deviceHandle();
     const auto  properties =
         vulkan.physicalDeviceHandle()
@@ -343,9 +343,9 @@ void RayTracingPass::createPipeline(RenderGraph& graph, uint32_t maxRecursionDep
     };
 }
 
-void RayTracingPass::createRectLightGeometry(RenderGraph& graph)
+void RayTracingPass::createRectLightGeometry(CommandRecorder& commandBuffer, const PassFrame& execution)
 {
-    const auto& vulkan = graph.vulkan();
+    const auto& vulkan = execution.setup.vulkan;
     const auto& device = vulkan.deviceHandle();
     // A unit XY rectangle facing local -Z. Every light shares this BLAS.
     constexpr std::array<float, 12>
@@ -375,13 +375,13 @@ void RayTracingPass::createRectLightGeometry(RenderGraph& graph)
     };
     constexpr uint32_t kTriangleCount = kIndices.size() / 3;
     rectLightBlas.create(vulkan, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, triangles, kTriangleCount);
-    rectLightBlas.build(vulkan, graph.commands(), triangles, kTriangleCount);
+    rectLightBlas.build(vulkan, commandBuffer, triangles, kTriangleCount);
 }
 
-void RayTracingPass::prepareLights(RenderGraph& graph, Frame& frame) const
+void RayTracingPass::prepareLights(const PassFrame& execution, Frame& frame) const
 {
-    const auto&          vulkan = graph.vulkan();
-    const auto&          lights = graph.renderData().lights;
+    const auto&          vulkan = execution.setup.vulkan;
+    const auto&          lights = execution.renderData.lights;
     const vk::DeviceSize bytes  = std::max<size_t>(lights.size(), 1) * sizeof(LightData);
     CHECK(bytes <= vulkan.properties().limits.maxStorageBufferRange, "ray tracing lights exceed maxStorageBufferRange");
 
@@ -400,12 +400,14 @@ void RayTracingPass::prepareLights(RenderGraph& graph, Frame& frame) const
         frame.lightData.upload(lights.data(), lights.size() * sizeof(LightData));
 }
 
-void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
+void RayTracingPass::prepareScene(
+    RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution, Frame& frame
+)
 {
-    const auto& vulkan   = graph.vulkan();
+    const auto& vulkan   = execution.setup.vulkan;
     const auto& device   = vulkan.deviceHandle();
-    auto&       commands = graph.commands();
-    const auto& items    = graph.renderData().drawItems;
+    auto&       commands = commandBuffer;
+    const auto& items    = execution.renderData.drawItems;
     CHECK(items.size() < (1u << 24), "ray tracing instance count exceeds the custom-index limit");
     static_assert(sizeof(Vertex) == 48 && offsetof(Vertex, normal) == 12 && offsetof(Vertex, texcoord) == 24);
 
@@ -532,7 +534,7 @@ void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
     for (const auto& item : items)
         append(*item.mesh, item.firstIndex, item.indexCount, item.model, addMaterial(*item.material));
 
-    const auto& lights = graph.renderData().lights;
+    const auto& lights = execution.renderData.lights;
     CHECK(lights.size() < (1u << 24), "ray tracing light index exceeds the custom-index limit");
     for (uint32_t index = 0; index < lights.size(); ++index)
     {
@@ -547,7 +549,7 @@ void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
             index
         );
         if (!rectLightBlas.handle())
-            createRectLightGeometry(graph);
+            createRectLightGeometry(commandBuffer, execution);
 
         const glm::vec3 right = light.areaRight();
         const glm::vec3 direction{light.direction};
@@ -647,11 +649,13 @@ void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
         .pAccelerationStructures    = &tlas
     };
     const vk::DescriptorImageInfo output{
-        .imageView   = graph.getImage(rayImage).getOrCreateImageView({
-              .viewType         = vk::ImageViewType::e2D,
-              .format           = graph.imageInfo(rayImage).format,
-              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        }),
+        .imageView = graph.getImage(rayImage, execution.frameIndex)
+                         .getOrCreateImageView({
+                             .viewType = vk::ImageViewType::e2D,
+                             .format   = graph.imageInfo(rayImage).format,
+                             .subresourceRange =
+                                 {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+                         }),
         .imageLayout = vk::ImageLayout::eGeneral
     };
     const vk::DescriptorBufferInfo hitInfo{.buffer = frame.hitData.handle(), .range = frame.hitData.size()};
@@ -714,17 +718,17 @@ void RayTracingPass::prepareScene(RenderGraph& graph, Frame& frame)
     device.updateDescriptorSets(writes, {});
 }
 
-void RayTracingPass::execute(RenderGraph& graph)
+void RayTracingPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution)
 {
-    auto&  commands = graph.commands();
-    Frame& frame    = frames[graph.frameIndex()];
-    prepareLights(graph, frame);
-    prepareScene(graph, frame);
+    auto&  commands = commandBuffer;
+    Frame& frame    = frames[execution.frameIndex];
+    prepareLights(execution, frame);
+    prepareScene(graph, commandBuffer, execution, frame);
     commands.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
     const std::array sets = {*frame.set};
     commands.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, *pipelineLayout, 0, sets, {});
-    const auto& view     = graph.frameData(graph.frameIndex()).viewUniforms();
-    const auto& viewport = graph.view().viewport;
+    const auto& view     = execution.data.viewUniforms();
+    const auto& viewport = execution.view.viewport;
     commands.pushConstants<RayTracingParameters>(
         *pipelineLayout,
         vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR,
@@ -733,10 +737,10 @@ void RayTracingPass::execute(RenderGraph& graph)
             .inverseViewProjection = view.inverseViewProjection,
             .cameraPosition        = view.cameraPosition,
             .viewport              = {viewport.x, viewport.y, viewport.width, viewport.height},
-            .lightCount            = static_cast<uint32_t>(graph.renderData().lights.size()),
+            .lightCount            = static_cast<uint32_t>(execution.renderData.lights.size()),
             .maxRecursionDepth     = pipelineRecursionDepth,
         }
     );
-    const auto extent = graph.swapchain().extent();
+    const auto extent = execution.setup.swapchain.extent();
     commands.traceRaysKHR(raygenRegion, missRegion, hitRegion, {}, extent.width, extent.height, 1);
 }

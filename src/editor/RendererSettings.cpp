@@ -355,12 +355,12 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
     if (ImGui::SliderFloat("Cascade split lambda", &feature.shadow.cascade.splitLambda, 0.0f, 1.0f, "%.2f"))
         config.setRenderFeature(feature);
     if (ImGui::DragFloat(
-            "Cascade depth padding",
-            &feature.shadow.cascade.depthPadding,
-            0.1f,
+            "Cascade bounds padding",
+            &feature.shadow.cascade.padding,
+            0.001f,
             0.0f,
             100000.0f,
-            "%.2f",
+            "%.3f",
             ImGuiSliderFlags_AlwaysClamp
         ))
         config.setRenderFeature(feature);

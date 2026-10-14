@@ -6,15 +6,12 @@
 
 #include "scene/system/SceneRenderData.h"
 
-#include <glm/vec3.hpp>
-
 struct SceneAsset;
 
 class RenderSystem
 {
 public:
-    [[nodiscard]] const SceneRenderData& prepare(
-        const SceneAsset& scene, const ViewUniforms& view, const RenderFeature::Shadow& shadows);
+    [[nodiscard]] const SceneRenderData& prepare(const SceneAsset& scene);
     void                                 reset() noexcept;
 
 private:

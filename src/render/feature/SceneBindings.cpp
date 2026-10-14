@@ -18,11 +18,12 @@
 
 #include <array>
 
-ShadowPass::Output SceneBindings::setup(RenderGraph& targetGraph, ShadowPass::Output shadow)
+ShadowPass::Output SceneBindings::setup(RenderGraph& targetGraph, const PassSetup& setup, ShadowPass::Output shadow)
 {
-    graph     = &targetGraph;
-    vulkan    = &graph->vulkan();
-    resources = renderContext().resources;
+    auto& graph = targetGraph;
+    vulkan      = &setup.vulkan;
+    frameData   = setup.frameData;
+    resources   = renderContext().resources;
 
     RenderGraph::ImageHandle fallbackShadowMap;
     const auto               resolveShadowMap = [&](RenderGraph::ImageHandle image)
@@ -34,7 +35,7 @@ ShadowPass::Output SceneBindings::setup(RenderGraph& targetGraph, ShadowPass::Ou
         {
             // Keep statically used descriptors valid; disabled lights never sample this image.
             constexpr uint32_t kCubeFaceCount = 6;
-            fallbackShadowMap                 = graph->createImage({
+            fallbackShadowMap                 = graph.createImage({
                                 .flags       = vk::ImageCreateFlagBits::eCubeCompatible,
                                 .format      = vk::Format::eD32Sfloat,
                                 .extent      = {1, 1, 1},
@@ -50,7 +51,6 @@ ShadowPass::Output SceneBindings::setup(RenderGraph& targetGraph, ShadowPass::Ou
 
     refreshBindings();
 
-    auto& graph = targetGraph;
     graph.use(
         pointShadowMap,
         {
@@ -87,7 +87,7 @@ ShadowPass::Output SceneBindings::setup(RenderGraph& targetGraph, ShadowPass::Ou
     return {pointShadowMap, spotShadowMap, rectAreaShadowMap, cascadeShadowMap};
 }
 
-void SceneBindings::prepare(RenderGraph& graph) const
+void SceneBindings::prepare(RenderGraph& graph, const PassSetup& setup) const
 {
     const vk::DescriptorImageInfo linearSamplerInfo{
         .sampler = resources->sampler(BuiltinAssets::Sampler::linearClamp),
@@ -148,42 +148,42 @@ void SceneBindings::prepare(RenderGraph& graph) const
         };
         const std::array writes = {
             vk::WriteDescriptorSet{
-                .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
+                .dstSet          = setup.frameData[frameIndex].sceneSetHandle(),
                 .dstBinding      = RenderInterface::kPointShadowImageBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &shadowImage,
             },
             vk::WriteDescriptorSet{
-                .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
+                .dstSet          = setup.frameData[frameIndex].sceneSetHandle(),
                 .dstBinding      = RenderInterface::kSpotShadowImageBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &spotShadowImage,
             },
             vk::WriteDescriptorSet{
-                .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
+                .dstSet          = setup.frameData[frameIndex].sceneSetHandle(),
                 .dstBinding      = RenderInterface::kRectAreaShadowImageBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &rectAreaShadowImage
             },
             vk::WriteDescriptorSet{
-                .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
+                .dstSet          = setup.frameData[frameIndex].sceneSetHandle(),
                 .dstBinding      = RenderInterface::kDirectionalShadowImageBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &directionalShadowImage,
             },
             vk::WriteDescriptorSet{
-                .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
+                .dstSet          = setup.frameData[frameIndex].sceneSetHandle(),
                 .dstBinding      = RenderInterface::kShadowComparisonSamplerBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampler,
                 .pImageInfo      = &shadowSamplerInfo
             },
             vk::WriteDescriptorSet{
-                .dstSet          = graph.frameData(frameIndex).sceneSetHandle(),
+                .dstSet          = setup.frameData[frameIndex].sceneSetHandle(),
                 .dstBinding      = RenderInterface::kLinearSamplerBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampler,
@@ -242,7 +242,7 @@ void SceneBindings::bindEnvironmentTextures()
     const vk::DescriptorImageInfo lutSampler{.sampler = brdfLutSampler};
     for (uint32_t index = 0; index < maxFramesInFlight; ++index)
     {
-        FrameData&       frame  = graph->frameData(index);
+        FrameData&       frame  = frameData[index];
         const std::array writes = {
             vk::WriteDescriptorSet{
                 .dstSet          = frame.sceneSetHandle(),

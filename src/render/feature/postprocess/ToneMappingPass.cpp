@@ -14,8 +14,9 @@
 
 #include <array>
 
-ToneMappingPass::Output
-ToneMappingPass::setup(RenderGraph& graph, RenderGraph::ImageHandle hdrColorHandle, RenderGraph::ImageHandle target)
+ToneMappingPass::Output ToneMappingPass::setup(
+    RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle hdrColorHandle, RenderGraph::ImageHandle target
+)
 {
     hdrColor = hdrColorHandle;
     color    = graph.write(target);
@@ -36,7 +37,7 @@ ToneMappingPass::setup(RenderGraph& graph, RenderGraph::ImageHandle hdrColorHand
         }
     );
 
-    const auto surfaceFormat = graph.swapchain().surfaceFormat();
+    const auto surfaceFormat = setup.swapchain.surfaceFormat();
     CHECK(surfaceFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear);
     const bool srgbAttachment =
         surfaceFormat.format == vk::Format::eB8G8R8A8Srgb || surfaceFormat.format == vk::Format::eR8G8B8A8Srgb;
@@ -90,9 +91,9 @@ ToneMappingPass::setup(RenderGraph& graph, RenderGraph::ImageHandle hdrColorHand
     return {color};
 }
 
-void ToneMappingPass::prepare(RenderGraph& graph) const
+void ToneMappingPass::prepare(RenderGraph& graph, const PassSetup& setup) const
 {
-    const auto& device = graph.vulkan().deviceHandle();
+    const auto& device = setup.vulkan.deviceHandle();
     for (uint32_t index = 0; index < maxFramesInFlight; ++index)
     {
         const vk::DescriptorImageInfo imageInfo{
@@ -126,21 +127,23 @@ void ToneMappingPass::prepare(RenderGraph& graph) const
     }
 }
 
-void ToneMappingPass::execute(RenderGraph& graph) const
+void ToneMappingPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
 {
-    const auto                        extent = graph.swapchain().extent();
+    const auto                        extent = execution.setup.swapchain.extent();
     const vk::RenderingAttachmentInfo attachment{
-        .imageView   = graph.getImage(color).getOrCreateImageView({
-              .viewType         = vk::ImageViewType::e2D,
-              .format           = graph.imageInfo(color).format,
-              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        }),
+        .imageView = graph.getImage(color, execution.frameIndex)
+                         .getOrCreateImageView({
+                             .viewType = vk::ImageViewType::e2D,
+                             .format   = graph.imageInfo(color).format,
+                             .subresourceRange =
+                                 {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+                         }),
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
         .loadOp      = vk::AttachmentLoadOp::eDontCare,
         .storeOp     = vk::AttachmentStoreOp::eStore,
     };
 
-    auto& commands = graph.commands();
+    auto& commands = commandBuffer;
     commands.beginRendering({
         .renderArea           = {{0, 0}, extent},
         .layerCount           = 1,
@@ -153,7 +156,7 @@ void ToneMappingPass::execute(RenderGraph& graph) const
     );
     commands.setScissor(0, vk::Rect2D({0, 0}, extent));
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sets = {*descriptorSets[graph.frameIndex()]};
+    const std::array sets = {*descriptorSets[execution.frameIndex]};
     commands.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, sets, {});
 
     const auto&                    settings = context().config->rendererConfig().feature.toneMapping;
@@ -169,6 +172,5 @@ void ToneMappingPass::execute(RenderGraph& graph) const
         parameters
     );
     commands.draw(3, 1, 0, 0);
-    graph.recordDraw(3);
     commands.endRendering();
 }

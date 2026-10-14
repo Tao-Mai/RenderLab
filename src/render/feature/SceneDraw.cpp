@@ -39,33 +39,38 @@ void SceneDraw::useAttachments(
 
 vk::Rect2D SceneDraw::beginRendering(
     RenderGraph&                              graph,
+    CommandRecorder&                          commandBuffer,
+    const PassFrame&                          execution,
     std::span<const RenderGraph::ImageHandle> colors,
     RenderGraph::ImageHandle                  depth,
     vk::AttachmentLoadOp                      colorLoadOp
 )
 {
-    auto&                                    commandBuffer = graph.commands();
-    const auto                               extent        = graph.swapchain().extent();
+    const auto                               extent = execution.setup.swapchain.extent();
     std::vector<vk::RenderingAttachmentInfo> colorAttachments;
     colorAttachments.reserve(colors.size());
     for (const auto color : colors)
         colorAttachments.push_back({
-            .imageView   = graph.getImage(color).getOrCreateImageView({
-                  .viewType         = vk::ImageViewType::e2D,
-                  .format           = graph.imageInfo(color).format,
-                  .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-            }),
+            .imageView = graph.getImage(color, execution.frameIndex)
+                             .getOrCreateImageView({
+                                 .viewType = vk::ImageViewType::e2D,
+                                 .format   = graph.imageInfo(color).format,
+                                 .subresourceRange =
+                                     {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+                             }),
             .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
             .loadOp      = colorLoadOp,
             .storeOp     = vk::AttachmentStoreOp::eStore,
             .clearValue  = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f),
         });
     const vk::RenderingAttachmentInfo depthAttachment{
-        .imageView   = graph.getImage(depth).getOrCreateImageView({
-              .viewType         = vk::ImageViewType::e2D,
-              .format           = vk::Format::eD32Sfloat,
-              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
-        }),
+        .imageView = graph.getImage(depth, execution.frameIndex)
+                         .getOrCreateImageView({
+                             .viewType = vk::ImageViewType::e2D,
+                             .format   = vk::Format::eD32Sfloat,
+                             .subresourceRange =
+                                 {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
+                         }),
         .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
         .loadOp      = vk::AttachmentLoadOp::eLoad,
         .storeOp     = vk::AttachmentStoreOp::eNone,
@@ -78,7 +83,7 @@ vk::Rect2D SceneDraw::beginRendering(
         .pDepthAttachment     = &depthAttachment,
     });
 
-    const auto&    editorViewport = graph.view().viewport;
+    const auto&    editorViewport = execution.view.viewport;
     const uint32_t viewportX      = std::min(static_cast<uint32_t>(std::max(editorViewport.x, 0.0f)), extent.width - 1);
     const uint32_t viewportY = std::min(static_cast<uint32_t>(std::max(editorViewport.y, 0.0f)), extent.height - 1);
     const uint32_t viewportWidth =
@@ -105,19 +110,19 @@ vk::Rect2D SceneDraw::beginRendering(
 }
 
 void SceneDraw::recordMeshes(
-    RenderGraph&                graph,
+    CommandRecorder&            commandBuffer,
+    const PassFrame&            execution,
     std::span<const DrawItem>   items,
     std::span<const vk::Format> colorFormats,
     ShaderHandle                shader,
     SceneShaderOptions          options
 )
 {
-    auto&      commandBuffer = graph.commands();
-    auto&      pipelines     = *renderContext().pipelineManager;
-    auto&      shaders       = *renderContext().shaderManager;
+    auto&      pipelines = *renderContext().pipelineManager;
+    auto&      shaders   = *renderContext().shaderManager;
     const auto pipelineLayout =
         SceneInterface::meshLayout(*renderContext().descriptors, *renderContext().pipelineManager);
-    const std::array sceneSets = {graph.frameData(graph.frameIndex()).sceneSetHandle()};
+    const std::array sceneSets = {execution.data.sceneSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         pipelineLayout,
@@ -171,6 +176,5 @@ void SceneDraw::recordMeshes(
             {}
         );
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
-        graph.recordDraw(item.indexCount);
     }
 }
