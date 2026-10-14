@@ -16,6 +16,7 @@
 #include "scene/system/RenderSystem.h"
 
 #include <GLFW/glfw3.h>
+#include <algorithm>
 #include <cmath>
 #include <glm/gtc/packing.hpp>
 
@@ -127,6 +128,21 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     const auto beyondLight       = sample();
     CHECK(beyondLight == clear, "geometry behind the light changed visibility: {} vs {}", beyondLight, clear);
     LOG_INFO("Ray tracing visibility passed: clear {}, blocked {}, beyond light {}", clear, blocked, beyondLight);
+
+    // Same image, different sampler: the receiver's texture index stays 0 while
+    // the preceding off-camera material occupies sampler slot 0.
+    auto& receiver = *scenes.scene().actors.front()->getComponent<RenderComponent>();
+    auto originalOverrides = receiver.materialOverrides;
+    receiver.materialOverrides[0].baseColorTexture =
+        TextureBinding{BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearClamp};
+    auto& samplerCarrier = scenes.createActor("AStaticMesh");
+    const auto carrierId = samplerCarrier.selectionId();
+    samplerCarrier.transform().position = {1000, 1000, 1000};
+    auto& actors = scenes.scene().actors;
+    std::rotate(actors.begin(), actors.end() - 1, actors.end());
+    CHECK(sample() == beyondLight, "independent texture/sampler indices changed base color");
+    scenes.deleteActor(carrierId);
+    receiver.materialOverrides = std::move(originalOverrides);
 
     auto& sun     = *scenes.scene().actors[1];
     const float pointIntensity = sun.getComponent<LightComponent>()->intensity;

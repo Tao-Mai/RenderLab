@@ -26,6 +26,13 @@ void validateToneMapping(const RenderFeature::ToneMapping& toneMapping)
           toneMapping.mode == ToneMappingOperator::Reinhard);
 }
 
+void validateBloom(const RenderFeature::Bloom& bloom)
+{
+    CHECK(std::isfinite(bloom.intensity) && bloom.intensity >= 0.0f && bloom.intensity <= 1.0f);
+    CHECK(std::isfinite(bloom.filterRadius) && bloom.filterRadius > 0.0f);
+    CHECK(bloom.levels > 0 && bloom.levels <= kMaxBloomLevels);
+}
+
 std::filesystem::path resolveAgainst(const std::filesystem::path& baseDir, std::filesystem::path value)
 {
     if (value.empty())
@@ -116,6 +123,7 @@ void ConfigManager::setRenderFeature(const RenderFeature& feature)
     CHECK(feature.shadow.filter == SamplerAsset::Filter::Nearest ||
           feature.shadow.filter == SamplerAsset::Filter::Linear);
     validateToneMapping(feature.toneMapping);
+    validateBloom(feature.bloom);
     validateCascade(feature.shadow.cascade);
     CHECK(feature.rayTracing.maxRecursionDepth >= kMinRayRecursionDepth);
     CHECK(feature.offline.maxRecursionDepth >= kMinRayRecursionDepth);
@@ -182,6 +190,7 @@ void ConfigManager::loadRenderer()
 {
     renderer = asset_json::load<RendererConfig>(resolvedPaths.renderer);
     validateToneMapping(renderer.feature.toneMapping);
+    validateBloom(renderer.feature.bloom);
     validateCascade(renderer.feature.shadow.cascade);
     CHECK(renderer.feature.rayTracing.maxRecursionDepth >= kMinRayRecursionDepth);
     CHECK(renderer.feature.offline.maxRecursionDepth >= kMinRayRecursionDepth);

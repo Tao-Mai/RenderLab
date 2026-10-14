@@ -3,6 +3,7 @@
 #include "core/Logger.h"
 #include "render/feature/editor/EditorShaderData.h"
 #include "render/resource/ShaderData.h"
+#include "render/raytracing/RayTracingData.h"
 
 #include <array>
 #include <filesystem>
@@ -278,6 +279,52 @@ TEST(ShaderDataLayout, MaterialUniformsMatchCompiledShaders)
         checkFields(material.at("type").at("elementType"), std::span(expected).first(fieldCount));
         EXPECT_EQ(material.at("type").at("elementVarLayout").at("binding").at("size"), uniformSize);
     }
+}
+
+TEST(ShaderDataLayout, RayTracingMaterialAndIndependentResourceIndices)
+{
+    const std::array fields = {
+        Field{"baseColorFactor", offsetof(RayTracingMaterialData, baseColorFactor), sizeof(glm::vec4)},
+        Field{"emissiveFactor", offsetof(RayTracingMaterialData, emissiveFactor), sizeof(glm::vec4)},
+        Field{"metallic", offsetof(RayTracingMaterialData, metallic), sizeof(float)},
+        Field{"roughness", offsetof(RayTracingMaterialData, roughness), sizeof(float)},
+        Field{"normalScale", offsetof(RayTracingMaterialData, normalScale), sizeof(float)},
+        Field{"occlusionStrength", offsetof(RayTracingMaterialData, occlusionStrength), sizeof(float)},
+        Field{"alphaCutoff", offsetof(RayTracingMaterialData, alphaCutoff), sizeof(float)},
+        Field{"alphaMode", offsetof(RayTracingMaterialData, alphaMode), sizeof(uint32_t)},
+        Field{"doubleSided", offsetof(RayTracingMaterialData, doubleSided), sizeof(uint32_t)},
+        Field{"padding", offsetof(RayTracingMaterialData, padding), sizeof(uint32_t)},
+        Field{"baseColorTexture", offsetof(RayTracingMaterialData, baseColorTexture), sizeof(RayTracingTextureRef)},
+        Field{"normalTexture", offsetof(RayTracingMaterialData, normalTexture), sizeof(RayTracingTextureRef)},
+        Field{"metallicTexture", offsetof(RayTracingMaterialData, metallicTexture), sizeof(RayTracingTextureRef)},
+        Field{"roughnessTexture", offsetof(RayTracingMaterialData, roughnessTexture), sizeof(RayTracingTextureRef)},
+        Field{"emissiveTexture", offsetof(RayTracingMaterialData, emissiveTexture), sizeof(RayTracingTextureRef)},
+        Field{"occlusionTexture", offsetof(RayTracingMaterialData, occlusionTexture), sizeof(RayTracingTextureRef)},
+    };
+    const auto material = parameter("raytracing", "materials");
+    EXPECT_EQ(material.at("binding").at("index"), 6);
+    checkFields(material.at("type").at("resultType"), fields);
+    EXPECT_EQ(fields.back().offset + fields.back().size, sizeof(RayTracingMaterialData));
+    const auto& textureType = material.at("type").at("resultType").at("fields").at(10).at("type");
+    const std::array indices = {
+        Field{"textureIndex", offsetof(RayTracingTextureRef, textureIndex), sizeof(uint32_t)},
+        Field{"samplerIndex", offsetof(RayTracingTextureRef, samplerIndex), sizeof(uint32_t)},
+    };
+    checkFields(textureType, indices);
+    const std::array hitFields = {
+        Field{"vertexAddress", offsetof(RayTracingHitData, vertexAddress), sizeof(uint64_t)},
+        Field{"indexAddress", offsetof(RayTracingHitData, indexAddress), sizeof(uint64_t)},
+        Field{"firstIndex", offsetof(RayTracingHitData, firstIndex), sizeof(uint32_t)},
+        Field{"materialIndex", offsetof(RayTracingHitData, materialIndex), sizeof(uint32_t)},
+        Field{"padding", offsetof(RayTracingHitData, padding), sizeof(RayTracingHitData::padding)},
+    };
+    checkFields(parameter("raytracing", "objects").at("type").at("resultType"), hitFields);
+    const auto textures = parameter("raytracing", "textures");
+    const auto samplers = parameter("raytracing", "samplers");
+    EXPECT_EQ(textures.at("binding").at("index"), 3);
+    EXPECT_EQ(samplers.at("binding").at("index"), 4);
+    EXPECT_EQ(textures.at("type").at("elementCount"), kMaxRayTracingTextures);
+    EXPECT_EQ(samplers.at("type").at("elementCount"), kMaxRayTracingSamplers);
 }
 
 TEST(ShaderDataLayout, ClearcoatBindingsMatchCompiledShaders)

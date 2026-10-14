@@ -1,7 +1,9 @@
 #include "editor/RendererSettings.h"
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <imgui.h>
+#include <numbers>
 #include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -10,11 +12,58 @@
 #include "render/resource/ShaderData.h"
 namespace
 {
+bool drawSettingsHeader(const char* label)
+{
+    bool        reset      = false;
+    const float buttonSize = ImGui::GetFrameHeight();
+    ImGui::PushID(label);
+    ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(0.0f, 0.0f));
+    if (ImGui::BeginTable("Header", 2, ImGuiTableFlags_NoSavedSettings))
+    {
+        ImGui::TableSetupColumn("Title", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Reset", ImGuiTableColumnFlags_WidthFixed, buttonSize);
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::SeparatorText(label);
+        ImGui::TableNextColumn();
+        reset = ImGui::Button("##ResetDefaults", ImVec2(buttonSize, buttonSize));
+        ImGui::SetItemTooltip("Restore default parameters");
+
+        const ImVec2    min = ImGui::GetItemRectMin();
+        const ImVec2    center(min.x + buttonSize * 0.5f, min.y + buttonSize * 0.5f);
+        const float     radius      = buttonSize * 0.23f;
+        constexpr float kStartAngle = std::numbers::pi_v<float> * 0.15f;
+        constexpr float kEndAngle   = std::numbers::pi_v<float> * 1.75f;
+        const ImVec2    radial(std::cos(kEndAngle), std::sin(kEndAngle));
+        const ImVec2    tangent(-radial.y, radial.x);
+        const ImVec2    end(center.x + radial.x * radius, center.y + radial.y * radius);
+        const float     arrowSize = radius * 0.65f;
+        const ImU32     color     = ImGui::GetColorU32(ImGuiCol_Text);
+        auto*           drawList  = ImGui::GetWindowDrawList();
+        drawList->PathArcTo(center, radius, kStartAngle, kEndAngle);
+        drawList->PathStroke(color, 0, std::max(1.0f, buttonSize * 0.06f));
+        drawList->AddTriangleFilled(
+            ImVec2(end.x + tangent.x * arrowSize, end.y + tangent.y * arrowSize),
+            ImVec2(end.x + radial.x * arrowSize, end.y + radial.y * arrowSize),
+            ImVec2(end.x - radial.x * arrowSize, end.y - radial.y * arrowSize),
+            color
+        );
+        ImGui::EndTable();
+    }
+    ImGui::PopStyleVar();
+    ImGui::PopID();
+    return reset;
+}
+
 bool drawEnvironmentSelection(SceneAsset& scene, AssetManager& assets)
 {
-    ImGui::SeparatorText("Environment");
+    bool edited = false;
+    if (drawSettingsHeader("Environment") && scene.environmentMap)
+    {
+        scene.environmentMap = SceneAsset{}.environmentMap;
+        edited               = true;
+    }
     auto&       current = scene.environmentMap;
-    bool        edited  = false;
     const char* preview = current ? current->value.c_str() : "Select environment map...";
 
     if (ImGui::BeginCombo("Environment map", preview))
@@ -39,8 +88,16 @@ bool drawEnvironmentSelection(SceneAsset& scene, AssetManager& assets)
 }  // namespace
 bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const VulkanContext& vulkan, SceneAsset& scene)
 {
-    bool sceneEdited = false;
-    ImGui::SeparatorText("Renderer");
+    bool          sceneEdited = false;
+    RenderFeature feature     = config.rendererConfig().feature;
+    if (drawSettingsHeader("Renderer"))
+    {
+        const RendererConfig defaults;
+        config.setRenderPath(defaults.renderPath);
+        feature.ibl                = defaults.feature.ibl;
+        feature.ambientCoefficient = defaults.feature.ambientCoefficient;
+        config.setRenderFeature(feature);
+    }
     const RenderPath     path = config.rendererConfig().renderPath;
     constexpr std::array kRenderPaths{
         std::pair{RenderPath::Rasterization, "Forward"},
@@ -71,7 +128,6 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
     }
     ImGui::Spacing();
 
-    RenderFeature feature = config.rendererConfig().feature;
     if (ImGui::Checkbox("IBL", &feature.ibl))
     {
         config.setRenderFeature(feature);
@@ -93,7 +149,12 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
         config.setRenderFeature(feature);
     }
 
-    ImGui::SeparatorText("HDR");
+    if (drawSettingsHeader("HDR"))
+    {
+        feature.hdr         = RenderFeature{}.hdr;
+        feature.toneMapping = {};
+        config.setRenderFeature(feature);
+    }
     if (ImGui::Checkbox("Enable HDR", &feature.hdr))
     {
         config.setRenderFeature(feature);
@@ -132,15 +193,53 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
     }
     ImGui::EndDisabled();
 
+    if (drawSettingsHeader("Bloom"))
+    {
+        feature.bloom = {};
+        config.setRenderFeature(feature);
+    }
+    ImGui::BeginDisabled(!feature.hdr);
+    if (ImGui::Checkbox("Enable bloom", &feature.bloom.enable))
+        config.setRenderFeature(feature);
+    ImGui::SetItemTooltip("HDR lens glow; editor markers and gizmos are excluded. Requires HDR.");
+    ImGui::BeginDisabled(!feature.bloom.enable);
+    bool bloomEdited = ImGui::SliderFloat("Bloom intensity", &feature.bloom.intensity, 0.0f, 1.0f, "%.3f");
+    bloomEdited      = ImGui::DragFloat(
+                      "Bloom radius",
+                      &feature.bloom.filterRadius,
+                      0.05f,
+                      0.1f,
+                      5.0f,
+                      "%.2f",
+                      ImGuiSliderFlags_AlwaysClamp
+                  ) ||
+        bloomEdited;
+    int bloomLevels = static_cast<int>(feature.bloom.levels);
+    if (ImGui::SliderInt("Bloom levels", &bloomLevels, 1, static_cast<int>(kMaxBloomLevels)))
+    {
+        feature.bloom.levels = static_cast<uint32_t>(bloomLevels);
+        bloomEdited          = true;
+    }
+    if (bloomEdited)
+        config.setRenderFeature(feature);
+    ImGui::EndDisabled();
+    ImGui::EndDisabled();
+
     if (config.rendererConfig().renderPath == RenderPath::OfflinePathTracing)
     {
-        ImGui::SeparatorText("Offline path tracing");
-        ImGui::Text("Samples per pixel: %u", context().renderer->offlineSampleCount());
         const auto properties =
             vulkan.physicalDeviceHandle()
                 .getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
         const int maxDepth =
             static_cast<int>(properties.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>().maxRayRecursionDepth);
+        if (drawSettingsHeader("Offline path tracing"))
+        {
+            feature.offline = {};
+            feature.offline.maxRecursionDepth =
+                std::min(feature.offline.maxRecursionDepth, static_cast<uint32_t>(maxDepth));
+            config.setRenderFeature(feature);
+        }
+        ImGui::Text("Samples per pixel: %u", context().renderer->offlineSampleCount());
         int depth = static_cast<int>(feature.offline.maxRecursionDepth);
         if (ImGui::SliderInt(
                 "Max recursion depth",
@@ -160,12 +259,17 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
 
     if (config.rendererConfig().renderPath == RenderPath::RayTracing)
     {
-        ImGui::SeparatorText("Ray tracing");
         const auto properties =
             vulkan.physicalDeviceHandle()
                 .getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
         const auto maxDepth = properties.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>().maxRayRecursionDepth;
-        int        recursionDepth = static_cast<int>(feature.rayTracing.maxRecursionDepth);
+        if (drawSettingsHeader("Ray tracing"))
+        {
+            feature.rayTracing                   = {};
+            feature.rayTracing.maxRecursionDepth = std::min(feature.rayTracing.maxRecursionDepth, maxDepth);
+            config.setRenderFeature(feature);
+        }
+        int recursionDepth = static_cast<int>(feature.rayTracing.maxRecursionDepth);
         if (ImGui::SliderInt(
                 "Max recursion depth",
                 &recursionDepth,
@@ -185,7 +289,11 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
         return sceneEdited;
     }
 
-    ImGui::SeparatorText("Shadows");
+    if (drawSettingsHeader("Shadows"))
+    {
+        feature.shadow = {};
+        config.setRenderFeature(feature);
+    }
     if (ImGui::Checkbox("Enable shadows", &feature.shadow.enable))
     {
         config.setRenderFeature(feature);

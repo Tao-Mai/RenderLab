@@ -165,11 +165,10 @@ void GpuMaterial::updateParameters(const PbrMaterialAsset& material)
     pipelineState.cullMode =
         material.doubleSided.value_or(true) ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack;
 
-    colorFactor = material.baseColorFactor.value_or(glm::vec4{1.0f});
     DCHECK(material.clearcoat.has_value() == textures.clearcoat.has_value());
-    const auto             clearcoat = material.clearcoat.value_or(PbrMaterialAsset::Clearcoat{});
-    const MaterialUniforms materialData{
-        .baseColorFactor          = colorFactor,
+    const auto clearcoat = material.clearcoat.value_or(PbrMaterialAsset::Clearcoat{});
+    parameterData = MaterialUniforms{
+        .baseColorFactor          = material.baseColorFactor.value_or(glm::vec4{1.0f}),
         .roughness                = material.roughness.value_or(1.0f),
         .metallic                 = material.metallic.value_or(1.0f),
         .alphaCutoff              = material.alphaCutoff.value_or(0.5f),
@@ -183,5 +182,7 @@ void GpuMaterial::updateParameters(const PbrMaterialAsset& material)
         .clearcoatRoughnessFactor = clearcoat.roughnessFactor,
         .clearcoatNormalScale     = clearcoat.normalScale,
     };
-    materialBuffer->upload(&materialData, materialBuffer->size());
+    materialBuffer->upload(&parameterData, materialBuffer->size());
 }
+
+bool GpuMaterial::doubleSided() const { return pipelineState.cullMode == vk::CullModeFlagBits::eNone; }

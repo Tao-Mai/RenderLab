@@ -1,10 +1,7 @@
 1. 性能分析与调试视图
-    - 每个 Pass 的 GPU Timestamp、CPU 帧耗时。
-    - Draw Call、三角形、可见物体和显存统计。
     - G-buffer、阴影层、Cascade 的可视化。
     - 能用 RenderDoc 说明一次完整渲染流程。
 2. 可见性与批处理
-    - 包围盒、CPU 视锥剔除。
     - 同 Mesh/Material 的 Instancing。
     - 先拿到明确收益，再考虑 Hi-Z 遮挡剔除和 Indirect Draw。
 3. 多光源优化
@@ -18,7 +15,6 @@
     - SSAO 或 GTAO，选一种做完整，包括边缘保持滤波。
     - 你现在有 AO 贴图，但还没有几何产生的屏幕空间遮蔽。
 6. 补齐现有光照与阴影
-    - Spot 的实际光照与阴影。
     - CSM 的 Texel Snapping、级联过渡和 Bias 处理。
     - 矩形光源用 LTC 等方案替代当前中心方向近似，尤其有利于材质展示。
 7. 常规后处理
@@ -27,7 +23,6 @@
     - 自动曝光可选；你已有手动曝光和 Tone Mapping，不必重做。 为后续研究材质准备 建议做一个固定的“材质实验室”：
 
 - 可切换 HDR 环境、点光源、矩形光源。
-- Metallic/Roughness 参数球阵列。
 - 固定曝光、法线和 BRDF 调试视图。
 - White Furnace 能量测试。
 - 后续补一个基础 Path Tracer，作为材质结果的参考，而不只是展示光追能力。 体积光、OIT、ReSTIR、复杂 GI 可以作为专项亮点，不必全部做完才开始研究材质。
@@ -42,16 +37,32 @@
 之后再做离线，先搞好实时渲染再说
 
 ## 传统材质
-|方向|需要掌握的传统模型和概念|优先级|
-|---|---|---|
-|基础表面反射|Lambert、Oren–Nayar、Cook–Torrance、GGX、Smith、Fresnel、Multiple Scattering|已有基础，补全即可|
-|各向异性材质|Anisotropic GGX、拉丝金属、微表面方向分布|高|
-|分层材质|Clear Coat、Layered BSDF、涂漆、塑料、多界面散射|高|
-|织物材质|Sheen、布料纤维散射、微纤维结构|高|
-|表面微结构|Normal Mapping、Displacement、Parallax、Self-shadowing、Glints|很高|
-|测量材质|Measured BRDF、SVBRDF、BTF、材质采集和拟合|很高|
-|多尺度材质|BRDF Filtering、Normal Distribution Filtering、材质 LOD|很高|
-|透射材质|BTDF、Microfacet Transmission、粗糙玻璃|中|
-|次表面散射|BSSRDF、皮肤、蜡、玉石|中|
-|光谱和薄膜|Spectral BRDF、Thin-film Interference、Iridescence|中|
-|毛发材质|Marschner、双重反射与透射、纤维束散射|后期选学|
+
+| 方向         | 需要掌握的传统模型和概念                                                     | 优先级             |
+|--------------|------------------------------------------------------------------------------|--------------------|
+| 基础表面反射 | Lambert、Oren–Nayar、Cook–Torrance、GGX、Smith、Fresnel、Multiple Scattering | 已有基础，补全即可 |
+| 各向异性材质 | Anisotropic GGX、拉丝金属、微表面方向分布                                    | 高                 |
+| 分层材质     | Clear Coat、Layered BSDF、涂漆、塑料、多界面散射                             | 高                 |
+| 织物材质     | Sheen、布料纤维散射、微纤维结构                                              | 高                 |
+| 表面微结构   | Normal Mapping、Displacement、Parallax、Self-shadowing、Glints               | 很高               |
+| 测量材质     | Measured BRDF、SVBRDF、BTF、材质采集和拟合                                   | 很高               |
+| 多尺度材质   | BRDF Filtering、Normal Distribution Filtering、材质 LOD                      | 很高               |
+| 透射材质     | BTDF、Microfacet Transmission、粗糙玻璃                                      | 中                 |
+| 次表面散射   | BSSRDF、皮肤、蜡、玉石                                                       | 中                 |
+| 光谱和薄膜   | Spectral BRDF、Thin-film Interference、Iridescence                           | 中                 |
+| 毛发材质     | Marschner、双重反射与透射、纤维束散射                                        | 后期选学           |
+
+## gltf扩展
+
+| 扩展                | 效果 / 典型用途                                |
+|---------------------|------------------------------------------------|
+| `sheen`             | 布料、丝绒的纤维反射层                         |
+| `anisotropy`        | 各向异性高光，如拉丝金属                       |
+| `transmission`      | 光线透射，如玻璃；不是简单 Alpha 混合          |
+| `volume`            | 厚度与体积吸收，如有色玻璃；本身不实现体积散射 |
+| `ior`               | 折射率，影响反射和折射                         |
+| `specular`          | 调整非金属的镜面反射强度和颜色                 |
+| `iridescence`       | 薄膜干涉，如肥皂泡、镀膜彩虹色                 |
+| `dispersion`        | 色散，不同波长折射角不同                       |
+| `emissive_strength` | 支持超过基础范围的自发光强度                   |
+| `unlit`             | 不参与光照的材质                               |
