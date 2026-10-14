@@ -1,3 +1,4 @@
+#include "editor/LightMarkers.h"
 #include "editor/EditorCamera.h"
 // Short manual check, linked against the application's existing objects.
 #include "asset/AssetDataManager.h"
@@ -9,8 +10,8 @@
 #include "render/Renderer.h"
 #include "scene/SceneManager.h"
 #include "scene/actor/ALight.h"
-#include "scene/component/DirectionalLightComponent.h"
 #include "scene/actor/AStaticMesh.h"
+#include "scene/component/DirectionalLightComponent.h"
 #include "scene/system/RenderSystem.h"
 
 #include <cmath>
@@ -112,8 +113,9 @@ int main(int, char** argv)
             renderer.rebuildGraph();
         }
         window.pollEvents();
-        const auto view = camera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
-        const auto& renderData = renderSystem.prepare(scenes.scene(), view.uniforms, config.rendererConfig().feature.shadow);
+        const auto view =
+            camera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
+        const auto& renderData = renderSystem.prepare(scenes.scene());
         lightMarkers.prepare(scenes.scene(), *renderContext().resources);
         renderer.render(
             view,

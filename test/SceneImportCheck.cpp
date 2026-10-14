@@ -91,7 +91,7 @@ int main(int argc, char** argv)
         const float  side   = static_cast<float>(std::min(extent.width, extent.height));
         const auto   view =
             editorCamera.renderView({(extent.width - side) * 0.5f, (extent.height - side) * 0.5f, side, side});
-        renderer.render(view, system.prepare(scenes.scene(), view.uniforms, config.rendererConfig().feature.shadow), {});
+        renderer.render(view, system.prepare(scenes.scene()), {});
         renderer.waitIdle();
         renderer.shutdown();
         window.shutdown();

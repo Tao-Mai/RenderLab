@@ -1,3 +1,4 @@
+#include "editor/LightMarkers.h"
 #include "editor/EditorCamera.h"
 // Short manual check; uses temporary actors and never saves a scene.
 #include "asset/AssetDataManager.h"
@@ -77,7 +78,7 @@ int main(int argc, char** argv)
                 auto& light                = *scenes.scene().actors[1];
                 light.transform().position = {0, 0, z};
                 window.pollEvents();
-                const auto& renderData = renderSystem.prepare(scenes.scene(), view.uniforms, config.rendererConfig().feature.shadow);
+                const auto& renderData = renderSystem.prepare(scenes.scene());
                 lightMarkers.prepare(scenes.scene(), *renderContext().resources);
                 input.lightDrawItems = lightMarkers.drawItems();
                 const auto result    = renderer.render(view, renderData, input);

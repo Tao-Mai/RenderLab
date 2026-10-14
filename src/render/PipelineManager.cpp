@@ -25,6 +25,7 @@ std::size_t PipelineKeyHash::operator()(const PipelineKey& key) const noexcept
     combine(static_cast<uint32_t>(key.state.frontFace));
     combine(static_cast<uint32_t>(key.state.samples));
     combine(static_cast<uint32_t>(key.state.depthCompare));
+    combine(key.state.depthClamp);
     combine(key.state.depthTest);
     combine(key.state.depthWrite);
     combine(key.state.blend);
@@ -148,10 +149,11 @@ vk::Pipeline PipelineManager::getOrCreate(const PipelineKey& key)
     const vk::PipelineInputAssemblyStateCreateInfo inputAssembly{.topology = key.state.topology};
     const vk::PipelineViewportStateCreateInfo      viewport{.viewportCount = 1, .scissorCount = 1};
     const vk::PipelineRasterizationStateCreateInfo raster{
-        .polygonMode = key.state.polygonMode,
-        .cullMode    = key.state.cullMode,
-        .frontFace   = key.state.frontFace,
-        .lineWidth   = 1.0f,
+        .depthClampEnable = key.state.depthClamp,
+        .polygonMode      = key.state.polygonMode,
+        .cullMode         = key.state.cullMode,
+        .frontFace        = key.state.frontFace,
+        .lineWidth        = 1.0f,
     };
     const vk::PipelineMultisampleStateCreateInfo multisample{
         .rasterizationSamples = key.state.samples,

@@ -3,7 +3,8 @@
 #include "render/feature/editor/EditorFrameInput.h"
 #include "render/present/Swapchain.h"
 
-EditorUiPass::Output EditorUiPass::setup(RenderGraph& graph, RenderGraph::ImageHandle colorHandle)
+EditorUiPass::Output
+EditorUiPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle colorHandle)
 {
     color = graph.write(colorHandle);
     graph.use(
@@ -17,28 +18,30 @@ EditorUiPass::Output EditorUiPass::setup(RenderGraph& graph, RenderGraph::ImageH
     return {color};
 }
 
-void EditorUiPass::execute(RenderGraph& graph) const
+void EditorUiPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
 {
-    const auto& editor = graph.editorInput();
+    const auto& editor = execution.editor;
     if (!editor.recordUi)
         return;
 
     const vk::RenderingAttachmentInfo colorAttachment{
-        .imageView   = graph.getImage(color).getOrCreateImageView({
-              .viewType         = vk::ImageViewType::e2D,
-              .format           = graph.swapchain().surfaceFormat().format,
-              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        }),
+        .imageView = graph.getImage(color, execution.frameIndex)
+                         .getOrCreateImageView({
+                             .viewType = vk::ImageViewType::e2D,
+                             .format   = execution.setup.swapchain.surfaceFormat().format,
+                             .subresourceRange =
+                                 {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+                         }),
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
         .loadOp      = vk::AttachmentLoadOp::eLoad,
         .storeOp     = vk::AttachmentStoreOp::eStore,
     };
-    graph.commands().beginRendering({
-        .renderArea           = {{0, 0}, graph.swapchain().extent()},
+    commandBuffer.beginRendering({
+        .renderArea           = {{0, 0}, execution.setup.swapchain.extent()},
         .layerCount           = 1,
         .colorAttachmentCount = 1,
         .pColorAttachments    = &colorAttachment,
     });
-    graph.recordDrawStatistics(editor.recordUi(*graph.commands()));
-    graph.commands().endRendering();
+    commandBuffer.addStatistics(editor.recordUi(*commandBuffer));
+    commandBuffer.endRendering();
 }

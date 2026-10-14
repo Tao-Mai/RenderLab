@@ -54,7 +54,7 @@ int main(int, char** argv)
     const auto   view   = camera.renderView({(extent.width - side) * 0.5f, (extent.height - side) * 0.5f, side, side});
     const auto   render = [&]
     {
-        const auto& snapshot = system.prepare(scenes.scene(), view.uniforms, config.rendererConfig().feature.shadow);
+        const auto& snapshot = system.prepare(scenes.scene());
         CHECK(snapshot.environmentMap == scenes.scene().environmentMap);
         renderer.render(view, snapshot, {});
     };

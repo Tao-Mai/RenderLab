@@ -1,6 +1,7 @@
 #include "render/device/GpuProfiler.h"
 
 #include "core/profiling/Profiler.h"
+#include "render/device/CommandRecorder.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 
@@ -28,11 +29,21 @@ void GpuProfiler::discard()
 {
     pending = false;
     passNames.clear();
+    passStatistics.clear();
+    recordingProfiler = nullptr;
 }
 
-void GpuProfiler::beginFrame(vk::raii::CommandBuffer& commands, std::span<const std::string_view> names)
+void GpuProfiler::beginFrame(CommandRecorder& commands, std::span<const std::string_view> names, Profiler* profiler)
 {
     DCHECK(device);
+    recordingProfiler = profiler;
+    commands.setStatistics(nullptr);
+    passStatistics.clear();
+    pending = false;
+    if (!recordingProfiler)
+        return;
+    passNames.assign(names.begin(), names.end());
+    passStatistics.reserve(names.size());
     if (!validBits)
         return;
     DCHECK(names.size() < (std::numeric_limits<uint32_t>::max() - 2) / 2);
@@ -43,24 +54,35 @@ void GpuProfiler::beginFrame(vk::raii::CommandBuffer& commands, std::span<const 
         pool     = vkCheck(device->createQueryPool({.queryType = vk::QueryType::eTimestamp, .queryCount = count}));
         capacity = count;
     }
-    pending = false;
-    passNames.assign(names.begin(), names.end());
     commands.resetQueryPool(*pool, 0, count);
     commands.writeTimestamp2(vk::PipelineStageFlagBits2::eTopOfPipe, *pool, 0);
 }
 
-void GpuProfiler::beginPass(vk::raii::CommandBuffer& commands, uint32_t index) const
+void GpuProfiler::beginPass(CommandRecorder& commands, uint32_t index)
 {
+    if (!recordingProfiler)
+        return;
+    DCHECK(index < passNames.size());
+    auto& statistics = passStatistics.emplace_back(passNames[index], DrawStatistics{});
+    commands.setStatistics(&statistics.draws);
     if (validBits)
         commands.writeTimestamp2(vk::PipelineStageFlagBits2::eTopOfPipe, *pool, 2 + index * 2);
 }
-void GpuProfiler::endPass(vk::raii::CommandBuffer& commands, uint32_t index) const
+void GpuProfiler::endPass(CommandRecorder& commands, uint32_t index) const
 {
+    commands.setStatistics(nullptr);
+    if (!recordingProfiler)
+        return;
     if (validBits)
         commands.writeTimestamp2(vk::PipelineStageFlagBits2::eBottomOfPipe, *pool, 3 + index * 2);
 }
-void GpuProfiler::endFrame(vk::raii::CommandBuffer& commands)
+void GpuProfiler::endFrame(CommandRecorder& commands)
 {
+    commands.setStatistics(nullptr);
+    if (!recordingProfiler)
+        return;
+    recordingProfiler->recordDraws(passStatistics);
+    recordingProfiler = nullptr;
     if (!validBits)
         return;
     commands.writeTimestamp2(vk::PipelineStageFlagBits2::eBottomOfPipe, *pool, 1);

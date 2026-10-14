@@ -1,8 +1,8 @@
 #include "render/device/FrameContext.h"
 
+#include "core/Context.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
-#include "core/Context.h"
 
 #include <utility>
 
@@ -22,7 +22,7 @@ void FrameContext::init(VulkanContext& targetVulkan)
         .commandBufferCount = 1,
     };
     graphicsCommandBuffer =
-        std::move(vkCheck(targetVulkan.deviceHandle().allocateCommandBuffers(allocationInfo)).front());
+        CommandRecorder{std::move(vkCheck(targetVulkan.deviceHandle().allocateCommandBuffers(allocationInfo)).front())};
 
     imageAvailable = vkCheck(targetVulkan.deviceHandle().createSemaphore(vk::SemaphoreCreateInfo()));
     // CPU等GPU draw完之后再复用该frame的相关资源，比如UBO等

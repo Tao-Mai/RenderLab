@@ -7,6 +7,7 @@
 #include "core/Context.h"
 #include "core/Window.h"
 #include "render/RenderContext.h"
+#include "render/RenderPreparation.h"
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/feature/EndPass.h"
@@ -27,7 +28,7 @@ struct PixelReadbackPass
     RenderGraph::ImageHandle  image;
     RenderGraph::BufferHandle buffer;
 
-    RenderGraph::BufferHandle setup(RenderGraph& graph, RenderGraph::ImageHandle source)
+    RenderGraph::BufferHandle setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle source)
     {
         image  = source;
         buffer = graph.createBuffer({
@@ -50,7 +51,7 @@ struct PixelReadbackPass
         return buffer;
     }
 
-    void execute(RenderGraph& graph) const
+    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
     {
         const auto                extent = graph.imageInfo(image).extent;
         const vk::BufferImageCopy region{
@@ -58,10 +59,10 @@ struct PixelReadbackPass
             .imageOffset      = {static_cast<int32_t>(extent.width / 2), static_cast<int32_t>(extent.height / 2), 0},
             .imageExtent      = {1, 1, 1},
         };
-        graph.commands().copyImageToBuffer(
-            graph.getImage(image).handle(),
+        commandBuffer.copyImageToBuffer(
+            graph.getImage(image, execution.frameIndex).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
-            graph.getBuffer(buffer).handle(),
+            graph.getBuffer(buffer, execution.frameIndex).handle(),
             region
         );
     }
@@ -84,28 +85,46 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     PixelReadbackPass readback;
     EndPass           end;
     RenderSystem      renderSystem;
-    graph.init(vulkan, renderer.swapchainHandle(), frames, frameData);
+    graph.init(vulkan, renderer.swapchainHandle());
+    const PassSetup           setup{vulkan, renderer.swapchainHandle(), frameData};
     RenderGraph::BufferHandle buffer;
-    const auto setup = [&]
+    const auto                rebuildGraph = [&]
     {
         graph.releaseResources();
-        const auto output = graph.addPass(trace);
+        const auto output = graph.addPass(trace, setup);
         CHECK(graph.imageInfo(output.rayImage).format == kHdrColorFormat);
-        buffer = graph.addPass(readback, output.rayImage);
-        graph.addPass(end, RenderGraph::ImageHandle{}, buffer);
-        graph.compile();
+        buffer = graph.addPass(readback, setup, output.rayImage);
+        graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
+        graph.compile(setup);
     };
-    setup();
+    rebuildGraph();
 
     const auto extent = renderer.swapchainHandle().extent();
     const auto view =
         scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
     const auto sample = [&]
     {
-        const auto& sceneData = renderSystem.prepare(scenes.scene(), view.uniforms, context().config->rendererConfig().feature.shadow);
-        const auto& data      = renderContext().resources->prepare(sceneData, 0);
+        const auto& sceneData = renderSystem.prepare(scenes.scene());
+        const auto  prepared  = prepareRenderScene(
+            sceneData,
+            view.uniforms,
+            {.enable = false},
+            *context().assetManager,
+            context().profiler
+        );
+        const auto& data = renderContext().resources->prepare(sceneData, prepared, 0);
         frameData[0].updateView(view.uniforms);
-        graph.execute(view, data, {}, 0, 0);
+        auto& recording = frames[0].commandBufferHandle();
+        vkCheck(recording.reset());
+        vkCheck(recording.begin({}));
+        graph.execute(
+            recording,
+            {setup, frameData[0], view, data, {}, 0},
+            0,
+            frames[0].gpuProfiler(),
+            context().profiler
+        );
+        vkCheck(recording.end());
         const auto           commandBuffer = *frames[0].commandBufferHandle();
         const vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &commandBuffer};
         vkCheck(vulkan.queueHandle().submit(submitInfo));
@@ -131,33 +150,34 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
 
     // Same image, different sampler: the receiver's texture index stays 0 while
     // the preceding off-camera material occupies sampler slot 0.
-    auto& receiver = *scenes.scene().actors.front()->getComponent<RenderComponent>();
-    auto originalOverrides = receiver.materialOverrides;
+    auto& receiver          = *scenes.scene().actors.front()->getComponent<RenderComponent>();
+    auto  originalOverrides = receiver.materialOverrides;
     receiver.materialOverrides[0].baseColorTexture =
         TextureBinding{BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearClamp};
-    auto& samplerCarrier = scenes.createActor("AStaticMesh");
-    const auto carrierId = samplerCarrier.selectionId();
+    auto&      samplerCarrier           = scenes.createActor("AStaticMesh");
+    const auto carrierId                = samplerCarrier.selectionId();
     samplerCarrier.transform().position = {1000, 1000, 1000};
-    auto& actors = scenes.scene().actors;
+    auto& actors                        = scenes.scene().actors;
     std::rotate(actors.begin(), actors.end() - 1, actors.end());
     CHECK(sample() == beyondLight, "independent texture/sampler indices changed base color");
     scenes.deleteActor(carrierId);
     receiver.materialOverrides = std::move(originalOverrides);
 
-    auto& sun     = *scenes.scene().actors[1];
+    auto&       sun            = *scenes.scene().actors[1];
     const float pointIntensity = sun.getComponent<LightComponent>()->intensity;
-    auto& sunData = replaceLightComponent(*sun.getComponent<LightComponent>(), std::make_unique<DirectionalLightComponent>());
+    auto&       sunData =
+        replaceLightComponent(*sun.getComponent<LightComponent>(), std::make_unique<DirectionalLightComponent>());
     sunData.intensity = 100;
     sun.transform().setRotationEulerDegrees({0, 45, 0});
     blocker.transform().position = {4, 3, 5};
-    const auto directionalClear = sample();
+    const auto directionalClear  = sample();
     CHECK(std::isfinite(directionalClear) && directionalClear > 0);
     blocker.transform().position = {1, 0, 2};
     CHECK(sample() == 0);
     blocker.transform().position = {20, 0, 21};
     CHECK(sample() == 0);
     blocker.transform().position = {4, 3, 5};
-    sun.transform().position = {200, 0, 300};
+    sun.transform().position     = {200, 0, 300};
     CHECK(sample() == directionalClear);
     sunData.enabled = false;
     CHECK(sample() == 0);
@@ -171,16 +191,16 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
 
     replaceLightComponent(sunData, std::make_unique<PointLightComponent>()).intensity = pointIntensity;
     sun.transform().setRotationEulerDegrees({0, 0, 0});
-    sun.transform().position = {2, 0, 3};
+    sun.transform().position     = {2, 0, 3};
     blocker.transform().position = {4, 0, 5};
 
     // Two facing diffuse planes catch the secondary ray without blocking the camera or point light.
     for (float height : {-2.0f, 2.0f})
     {
-        auto& plane = scenes.createActor("AStaticMesh");
+        auto& plane                                   = scenes.createActor("AStaticMesh");
         plane.getComponent<RenderComponent>()->meshId = BuiltinAssets::Mesh::plane;
-        plane.transform().position.y = height;
-        plane.transform().scale = {100.0f, 1.0f, 100.0f};
+        plane.transform().position.y                  = height;
+        plane.transform().scale                       = {100.0f, 1.0f, 100.0f};
         if (height > 0)
             plane.transform().setRotationEulerDegrees({180.0f, 0.0f, 0.0f});
     }
@@ -190,9 +210,14 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     {
         feature.rayTracing.maxRecursionDepth = depth;
         context().config->setRenderFeature(feature);
-        setup();
+        rebuildGraph();
         const auto luminance = sample();
-        CHECK(std::isfinite(luminance) && luminance > 0, "invalid luminance {} at recursion depth {}", luminance, depth);
+        CHECK(
+            std::isfinite(luminance) && luminance > 0,
+            "invalid luminance {} at recursion depth {}",
+            luminance,
+            depth
+        );
         if (depth > kMinRayRecursionDepth)
             CHECK(luminance > clear, "secondary ray contributed no indirect light at depth {}: {}", depth, luminance);
         else
@@ -201,22 +226,22 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     }
 
     SceneAsset areaScene;
-    areaScene.editorCamera = scenes.scene().editorCamera;
-    auto sphere = std::make_unique<AStaticMesh>();
+    areaScene.editorCamera                          = scenes.scene().editorCamera;
+    auto sphere                                     = std::make_unique<AStaticMesh>();
     sphere->getComponent<RenderComponent>()->meshId = BuiltinAssets::Mesh::sphere;
     areaScene.actors.push_back(std::move(sphere));
-    auto areaLight = std::make_unique<ALight>(std::make_unique<RectAreaLightComponent>());
+    auto areaLight                  = std::make_unique<ALight>(std::make_unique<RectAreaLightComponent>());
     areaLight->transform().position = {0, 0, 7};
-    auto& lightData = *areaLight->getComponent<RectAreaLightComponent>();
-    lightData.areaSize = {20, 20};
-    lightData.intensity = 8.0f * 20.0f * 20.0f;
+    auto& lightData                 = *areaLight->getComponent<RectAreaLightComponent>();
+    lightData.areaSize              = {20, 20};
+    lightData.intensity             = 8.0f * 20.0f * 20.0f;
     areaScene.actors.push_back(std::move(areaLight));
     scenes.load(areaScene);
-    setup();
+    rebuildGraph();
 
     const auto areaClear = sample();
     CHECK(std::isfinite(areaClear) && areaClear > 0);
-    auto& light = *scenes.scene().actors[1]->getComponent<LightComponent>();
+    auto& light   = *scenes.scene().actors[1]->getComponent<LightComponent>();
     light.enabled = false;
     CHECK(sample() == 0);
     light.enabled = true;
@@ -227,26 +252,29 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     // No other surface can receive this outgoing ray: terminal emission and full tracing must agree.
     feature.rayTracing.maxRecursionDepth = 3;
     context().config->setRenderFeature(feature);
-    setup();
+    rebuildGraph();
     CHECK(sample() == areaClear);
     feature.rayTracing.maxRecursionDepth = kMinRayRecursionDepth;
     context().config->setRenderFeature(feature);
-    setup();
+    rebuildGraph();
 
-    auto& areaBlocker = scenes.createActor("AStaticMesh");
+    auto& areaBlocker                = scenes.createActor("AStaticMesh");
     areaBlocker.transform().position = {0, 0, 6};
-    areaBlocker.transform().scale = {100, 100, 0.2f};
+    areaBlocker.transform().scale    = {100, 100, 0.2f};
     CHECK(sample() == 0);
     areaBlocker.transform().position.z = 8;
     CHECK(sample() == areaClear);
-    LOG_INFO("Triangle area light passed: luminance {}, disabled/back face/blocked 0, beyond light unchanged", areaClear);
+    LOG_INFO(
+        "Triangle area light passed: luminance {}, disabled/back face/blocked 0, beyond light unchanged",
+        areaClear
+    );
 
     scenes.deleteActor(areaBlocker.selectionId());
-    auto& farLight = scenes.createActor("ALight");
+    auto& farLight                = scenes.createActor("ALight");
     farLight.transform().position = {0, 0, 9};
     replaceLightComponent(*farLight.getComponent<LightComponent>(), std::make_unique<RectAreaLightComponent>());
-    auto& farData = *farLight.getComponent<RectAreaLightComponent>();
-    farData.areaSize = {20, 20};
+    auto& farData     = *farLight.getComponent<RectAreaLightComponent>();
+    farData.areaSize  = {20, 20};
     farData.intensity = 100.0f * 20.0f * 20.0f;
     // The near emitter still occludes the farther lamp when its emitted luminance is zero.
     light.intensity = 0;
@@ -255,8 +283,8 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     CHECK(sample() > 0);
 
     SceneAsset onlyLights;
-    onlyLights.editorCamera = areaScene.editorCamera;
-    auto lamp = std::make_unique<ALight>(std::make_unique<RectAreaLightComponent>());
+    onlyLights.editorCamera    = areaScene.editorCamera;
+    auto lamp                  = std::make_unique<ALight>(std::make_unique<RectAreaLightComponent>());
     lamp->transform().position = {0, 0, 3};
     onlyLights.actors.push_back(std::move(lamp));
     scenes.load(onlyLights);
@@ -289,8 +317,8 @@ int main(int, char** argv)
     context().window           = &window;
     context().renderer         = &renderer;
     config.init();
-    const auto originalFeature = config.rendererConfig().feature;
-    auto feature = originalFeature;
+    const auto originalFeature           = config.rendererConfig().feature;
+    auto       feature                   = originalFeature;
     feature.rayTracing.maxRecursionDepth = kMinRayRecursionDepth;
     config.setRenderFeature(feature);
     data.init(config.paths().assets);

@@ -1,3 +1,4 @@
+#include "editor/LightMarkers.h"
 #include "editor/EditorCamera.h"
 // One-time import and short rendering check using the configured default scene.
 #include "asset/AssetDataManager.h"
@@ -7,6 +8,7 @@
 #include "core/Context.h"
 #include "core/Window.h"
 #include "render/RenderContext.h"
+#include "render/RenderPreparation.h"
 #include "render/Renderer.h"
 #include "scene/SceneManager.h"
 #include "scene/system/RenderSystem.h"
@@ -74,8 +76,9 @@ int main(int argc, char** argv)
     for (int frame = 0; frame < 4; ++frame)
     {
         window.pollEvents();
-        const auto view = scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
-        const auto& renderData = renderSystem.prepare(scenes.scene(), view.uniforms, config.rendererConfig().feature.shadow);
+        const auto view =
+            scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
+        const auto& renderData = renderSystem.prepare(scenes.scene());
         lightMarkers.prepare(scenes.scene(), *renderContext().resources);
         renderer.render(
             view,
@@ -85,7 +88,14 @@ int main(int argc, char** argv)
             }
         );
         renderer.waitIdle();
-        const auto& gpuData = renderContext().resources->prepare(renderData, 0);
+        const auto prepared = prepareRenderScene(
+            renderData,
+            view.uniforms,
+            config.rendererConfig().feature.shadow,
+            assets,
+            context().profiler
+        );
+        const auto& gpuData = renderContext().resources->prepare(renderData, prepared, 0);
         for (const auto& item : gpuData.transparentDrawItems)
             renderedTransparentMaterial |= item.material == importedMaterial;
     }

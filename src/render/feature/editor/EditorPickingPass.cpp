@@ -1,5 +1,5 @@
 #include "render/feature/editor/EditorPickingPass.h"
-#include "scene/system/Visibility.h"
+#include "render/Visibility.h"
 #include "render/feature/editor/EditorInterface.h"
 
 #include "core/Logger.h"
@@ -11,21 +11,21 @@
 #include "render/feature/RenderGraph.h"
 #include "render/feature/editor/EditorFrameInput.h"
 #include "render/feature/editor/EditorShaderData.h"
-#include "render/feature/editor/LightMarkers.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
 
 #include <algorithm>
 #include <array>
 
-EditorPickingPass::Output EditorPickingPass::setup(RenderGraph& graph, RenderGraph::ImageHandle depthHandle)
+EditorPickingPass::Output
+EditorPickingPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle depthHandle)
 {
     DCHECK(depthHandle.id != RenderGraph::kInvalidHandle);
 
     pipelines = renderContext().pipelineManager;
     shader    = renderContext().shaderManager->getOrLoad("picking");
 
-    const auto extent = graph.swapchain().extent();
+    const auto extent = setup.swapchain.extent();
     depth             = depthHandle;
     graph.use(
         depth,
@@ -63,7 +63,7 @@ EditorPickingPass::Output EditorPickingPass::setup(RenderGraph& graph, RenderGra
     return {pickingImage};
 }
 
-void EditorPickingPass::draw(vk::raii::CommandBuffer& commandBuffer, const DrawItem& item) const
+void EditorPickingPass::draw(CommandRecorder& commandBuffer, const DrawItem& item) const
 {
     const EditorPickingPushConstants parameters{
         .model       = item.model,
@@ -79,15 +79,14 @@ void EditorPickingPass::draw(vk::raii::CommandBuffer& commandBuffer, const DrawI
     commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
 }
 
-void EditorPickingPass::execute(RenderGraph& graph) const
+void EditorPickingPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
 {
-    const auto& editor = graph.editorInput();
+    const auto& editor = execution.editor;
     if (!editor.requestPick)
     {
         return;
     }
-    auto&      commandBuffer = graph.commands();
-    const auto extent        = graph.swapchain().extent();
+    const auto extent = execution.setup.swapchain.extent();
     DCHECK(
         editor.pickX < extent.width && editor.pickY < extent.height,
         "picking coordinate is outside the render target"
@@ -96,7 +95,7 @@ void EditorPickingPass::execute(RenderGraph& graph) const
     const uint32_t y = editor.pickY;
 
     const vk::RenderingAttachmentInfo colorAttachment{
-        .imageView = graph.getImage(pickingImage)
+        .imageView = graph.getImage(pickingImage, execution.frameIndex)
                          .getOrCreateImageView({
                              .viewType = vk::ImageViewType::e2D,
                              .format   = vk::Format::eR32Uint,
@@ -109,11 +108,13 @@ void EditorPickingPass::execute(RenderGraph& graph) const
         .clearValue  = vk::ClearColorValue(std::array<uint32_t, 4>{0u, 0u, 0u, 0u}),
     };
     const vk::RenderingAttachmentInfo depthAttachment{
-        .imageView   = graph.getImage(depth).getOrCreateImageView({
-              .viewType         = vk::ImageViewType::e2D,
-              .format           = vk::Format::eD32Sfloat,
-              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
-        }),
+        .imageView = graph.getImage(depth, execution.frameIndex)
+                         .getOrCreateImageView({
+                             .viewType = vk::ImageViewType::e2D,
+                             .format   = vk::Format::eD32Sfloat,
+                             .subresourceRange =
+                                 {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
+                         }),
         .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
         .loadOp      = vk::AttachmentLoadOp::eLoad,
         .storeOp     = vk::AttachmentStoreOp::eNone,
@@ -126,12 +127,12 @@ void EditorPickingPass::execute(RenderGraph& graph) const
         .pDepthAttachment     = &depthAttachment,
     });
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sets = {graph.frameData(graph.frameIndex()).viewSetHandle()};
+    const std::array sets = {execution.data.viewSetHandle()};
     commandBuffer
         .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, EditorInterface::kViewSet, sets, {});
 
     // Match ScenePass's viewport; only the clicked pixel needs rasterization.
-    const auto&    viewport  = graph.view().viewport;
+    const auto&    viewport  = execution.view.viewport;
     const uint32_t viewportX = std::min(static_cast<uint32_t>(std::max(viewport.x, 0.0f)), extent.width - 1);
     const uint32_t viewportY = std::min(static_cast<uint32_t>(std::max(viewport.y, 0.0f)), extent.height - 1);
     const uint32_t width     = std::max(1u, std::min(static_cast<uint32_t>(viewport.width), extent.width - viewportX));
@@ -149,13 +150,12 @@ void EditorPickingPass::execute(RenderGraph& graph) const
     );
     commandBuffer.setScissor(0, vk::Rect2D({static_cast<int32_t>(x), static_cast<int32_t>(y)}, {1, 1}));
 
-    for (const DrawItem& item : graph.renderData().drawItems)
+    for (const DrawItem& item : execution.renderData.drawItems)
     {
         if (!(item.visibilityMask & RenderVisibility::kMainView))
             continue;
 
         draw(commandBuffer, item);
-        graph.recordDraw(item.indexCount);
     }
     for (const auto& item : editor.lightDrawItems)
     {
@@ -171,7 +171,6 @@ void EditorPickingPass::execute(RenderGraph& graph) const
         );
         item.mesh->bind(commandBuffer);
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
-        graph.recordDraw(item.indexCount);
     }
     commandBuffer.endRendering();
 }

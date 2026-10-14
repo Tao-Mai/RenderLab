@@ -9,6 +9,7 @@
 
 TransparentPass::Output TransparentPass::setup(
     RenderGraph&             graph,
+    const PassSetup&         setup,
     RenderGraph::ImageHandle colorHandle,
     RenderGraph::ImageHandle depthHandle,
     ShadowPass::Output       shadow
@@ -38,13 +39,20 @@ TransparentPass::Output TransparentPass::setup(
     return {color};
 }
 
-void TransparentPass::execute(RenderGraph& graph) const
+void TransparentPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
 {
-    const auto& items = graph.renderData().transparentDrawItems;
+    const auto& items = execution.renderData.transparentDrawItems;
     if (items.empty())
         return;
 
-    SceneDraw::beginRendering(graph, std::array{color}, depth, vk::AttachmentLoadOp::eLoad);
-    SceneDraw::recordMeshes(graph, items, std::array{graph.imageInfo(color).format}, {}, shaderOptions);
-    graph.commands().endRendering();
+    SceneDraw::beginRendering(graph, commandBuffer, execution, std::array{color}, depth, vk::AttachmentLoadOp::eLoad);
+    SceneDraw::recordMeshes(
+        commandBuffer,
+        execution,
+        items,
+        std::array{graph.imageInfo(color).format},
+        {},
+        shaderOptions
+    );
+    commandBuffer.endRendering();
 }

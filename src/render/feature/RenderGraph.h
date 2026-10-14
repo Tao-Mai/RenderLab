@@ -3,6 +3,8 @@
 #include "core/Logger.h"
 #include "core/profiling/Profiler.h"
 #include "render/Image.h"
+#include "render/device/CommandRecorder.h"
+#include "render/feature/PassInputs.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -15,13 +17,9 @@
 #include <vector>
 
 class Buffer;
-class FrameData;
-class FrameContext;
+class GpuProfiler;
 class Swapchain;
 class VulkanContext;
-struct RenderData;
-struct RenderView;
-struct EditorFrameInput;
 
 class RenderGraph
 {
@@ -67,13 +65,13 @@ public:
         vk::AccessFlags2        access;
     };
 
-    void init(VulkanContext& vulkan, Swapchain& swapchain, std::span<FrameContext> frames, std::span<FrameData> frameData);
+    void init(VulkanContext& vulkan, Swapchain& swapchain);
     void reset() noexcept;
-    void compile();
+    void compile(const PassSetup& setup);
     void releaseResources() noexcept;
 
     template <class T, class... Args>
-    auto addPass(T& pass, Args&&... args);
+    auto addPass(T& pass, const PassSetup& setup, Args&&... args);
 
     ImageHandle  createImage(ImageCreateInfo info);
     BufferHandle createBuffer(BufferCreateInfo info);
@@ -89,43 +87,18 @@ public:
     void         use(ImageHandle image, ImageAccess access);
     void         use(BufferHandle buffer, BufferAccess access);
 
-    [[nodiscard]] Image&  getImage(ImageHandle image);
-    [[nodiscard]] Image&  getImage(ImageHandle image, uint32_t frameIndex);
-    [[nodiscard]] Buffer& getBuffer(BufferHandle buffer);
-    [[nodiscard]] Buffer& getBuffer(BufferHandle buffer, uint32_t frameIndex);
+    [[nodiscard]] Image&                 getImage(ImageHandle image, uint32_t frameIndex);
+    [[nodiscard]] Buffer&                getBuffer(BufferHandle buffer, uint32_t frameIndex);
     [[nodiscard]] const ImageCreateInfo& imageInfo(ImageHandle image);
 
     void execute(
-        const RenderView& view,
-        const RenderData& renderData,
-        const EditorFrameInput& editor,
-        uint32_t frameIndex,
-        uint32_t imageIndex
+        CommandRecorder& commandBuffer,
+        const PassFrame& frame,
+        uint32_t         imageIndex,
+        GpuProfiler&     gpuProfiler,
+        Profiler*        profiler
     );
     [[nodiscard]] static bool needsBarrier(const ImageAccess& previous, const ImageAccess& next);
-    void recordDraw(uint32_t vertexOrIndexCount, uint32_t instanceCount = 1);
-    void recordDrawStatistics(DrawStatistics statistics);
-
-    [[nodiscard]] VulkanContext& vulkan() const { return *deviceContext; }
-    [[nodiscard]] Swapchain&     swapchain() const { return *targetSwapchain; }
-    [[nodiscard]] FrameData&     frameData(uint32_t frameIndex) const;
-    [[nodiscard]] const RenderData& renderData() const
-    {
-        DCHECK(currentRenderData);
-        return *currentRenderData;
-    }
-    [[nodiscard]] const RenderView& view() const
-    {
-        DCHECK(currentView);
-        return *currentView;
-    }
-    [[nodiscard]] vk::raii::CommandBuffer& commands() const;
-    [[nodiscard]] uint32_t                 frameIndex() const { return currentFrame; }
-    [[nodiscard]] const EditorFrameInput&  editorInput() const
-    {
-        DCHECK(currentEditor);
-        return *currentEditor;
-    }
 
 private:
     struct PassNode;
@@ -142,9 +115,9 @@ private:
         BufferCreateInfo            bufferInfo;
         vk::ImageUsageFlags         imageUsage;
         vk::BufferUsageFlags        bufferUsage;
-        std::vector<vk::Image>      externalImages;
-        Image* importedImage = nullptr;
-        Buffer* importedBuffer = nullptr;
+        std::vector<vk::Image>       externalImages;
+        Image*                      importedImage = nullptr;
+        Buffer*                     importedBuffer = nullptr;
         ImageAccess                 initialState;
         bool                        swapchainIndexed = false;
         std::shared_ptr<Allocation> allocation;
@@ -159,67 +132,73 @@ private:
 
     struct PassNode
     {
-        std::string_view name;
+        std::string_view                  name;
         std::vector<ResourceHandle>       dependency;
         std::vector<ResourceHandle>       writeSrc;
         std::vector<PassNode*>            prev;
         std::vector<PassNode*>            next;
         std::vector<ResourceUse>          uses;
-        std::function<void(RenderGraph&)> prepare;
-        std::function<void(RenderGraph&)> execute;
+        std::function<void(RenderGraph&, const PassSetup&)>                  prepare;
+        std::function<void(RenderGraph&, CommandRecorder&, const PassFrame&)> execute;
     };
 
     VulkanContext*                       deviceContext   = nullptr;
     Swapchain*                           targetSwapchain = nullptr;
-    std::span<FrameContext> frames;
-    std::span<FrameData> frameStorage;
     std::vector<std::unique_ptr<PassNode>> nodeStorage;
     std::vector<PassNode*>                nodes;
     std::vector<PassNode*>                sortedNodes;
-    PassNode*                            setupNode = nullptr;
+    PassNode*                            setupNode       = nullptr;
     std::vector<Resource>                resources;
-    uint32_t                             currentFrame      = 0;
-    uint32_t                             currentImage      = 0;
-    const EditorFrameInput*               currentEditor     = nullptr;
-    const RenderData*                     currentRenderData = nullptr;
-    const RenderView*                     currentView       = nullptr;
+    uint32_t                             currentImage    = 0;
     ImageHandle                          swapchainImage;
-    std::vector<PassDrawStatistics>       passStatistics;
-    PassDrawStatistics*                  currentPassStatistics = nullptr;
 
     template <class T>
     void collectDependencies(PassNode& node, const T& value);
 
-    void                   compileNodes();
-    void                   allocateResources();
-    ResourceData&          resolveResource(ResourceHandle handle);
+    void                compileNodes();
+    void                allocateResources();
+    ResourceData&       resolveResource(ResourceHandle handle);
     const ResourceData& resolveResource(ResourceHandle handle) const;
-    void                   useResource(const ResourceUse& use);
-    void                   transitionResources(const std::vector<ResourceUse>& uses);
+    void useResource(CommandRecorder& commandBuffer, const ResourceUse& use, uint32_t frameIndex);
+    void transitionResources(
+        CommandRecorder& commandBuffer, const std::vector<ResourceUse>& uses, uint32_t frameIndex
+    );
     [[nodiscard]] uint32_t instanceIndex(const ResourceData& resource, uint32_t frameIndex) const;
 };
 
 template <class T, class... Args>
-auto RenderGraph::addPass(T& pass, Args&&... args)
+auto RenderGraph::addPass(T& pass, const PassSetup& setup, Args&&... args)
 {
-    auto& node   = *nodeStorage.emplace_back(std::make_unique<PassNode>());
-    node.name = std::define_static_string(std::meta::identifier_of(^^T));
-    node.execute = [pass = &pass](RenderGraph& graph) { pass->execute(graph); };
-    if constexpr (requires { pass.prepare(*this); })
-        node.prepare = [pass = &pass](RenderGraph& graph) { pass->prepare(graph); };
-    (collectDependencies(node, args), ...);
-    nodes.push_back(&node);
+    if constexpr (!requires(CommandRecorder& commandBuffer, const PassFrame& frame)
+                  { pass.execute(*this, commandBuffer, frame); })
+    {
+        // Setup-only passes register their executable nodes internally.
+        return pass.setup(*this, setup, std::forward<Args>(args)...);
+    }
+    else
+    {
+        auto& node   = *nodeStorage.emplace_back(std::make_unique<PassNode>());
+        node.name    = std::define_static_string(std::meta::identifier_of(^^T));
+        node.execute = [pass = &pass](RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& frame)
+        {
+            pass->execute(graph, commandBuffer, frame);
+        };
+        if constexpr (requires { pass.prepare(*this, setup); })
+            node.prepare = [pass = &pass](RenderGraph& graph, const PassSetup& setup) { pass->prepare(graph, setup); };
+        (collectDependencies(node, args), ...);
+        nodes.push_back(&node);
 
-    auto* previousNode = setupNode;
-    setupNode          = &node;
-    auto output        = pass.setup(*this, std::forward<Args>(args)...);
-    setupNode          = previousNode;
+        auto* previousNode = setupNode;
+        setupNode          = &node;
+        auto output        = pass.setup(*this, setup, std::forward<Args>(args)...);
+        setupNode          = previousNode;
 
-    for (ResourceHandle source : node.writeSrc)
-        if (std::ranges::find(node.dependency, source) == node.dependency.end())
-            node.dependency.push_back(source);
+        for (ResourceHandle source : node.writeSrc)
+            if (std::ranges::find(node.dependency, source) == node.dependency.end())
+                node.dependency.push_back(source);
 
-    return output;
+        return output;
+    }
 }
 
 template <class T>

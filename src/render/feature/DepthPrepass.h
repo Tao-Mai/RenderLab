@@ -11,8 +11,8 @@ public:
         RenderGraph::ImageHandle depth;
     };
 
-    Output setup(RenderGraph& graph);
-    void   execute(RenderGraph& graph) const;
+    Output setup(RenderGraph& graph, const PassSetup& setup);
+    void   execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const;
 
 private:
     RenderGraph::ImageHandle depth;

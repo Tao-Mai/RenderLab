@@ -1,10 +1,8 @@
 #include "render/feature/RenderGraph.h"
-#include "render/FrameData.h"
 
 #include "core/Logger.h"
-#include "core/Context.h"
-#include "render/RenderView.h"
-#include "render/device/FrameContext.h"
+#include "render/RenderConfig.h"
+#include "render/device/GpuProfiler.h"
 #include "render/device/Memory.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
@@ -34,17 +32,11 @@ struct RenderGraph::Allocation
     std::vector<Instance> instances;
 };
 
-void RenderGraph::init(
-    VulkanContext& vulkan, Swapchain& swapchain, std::span<FrameContext> frameContexts, std::span<FrameData> frameData
-)
+void RenderGraph::init(VulkanContext& vulkan, Swapchain& swapchain)
 {
     DCHECK(!deviceContext);
-    DCHECK(!frameContexts.empty());
     deviceContext   = &vulkan;
     targetSwapchain = &swapchain;
-    frames          = frameContexts;
-    frameStorage    = frameData;
-    DCHECK(frames.size() == frameStorage.size());
 }
 
 void RenderGraph::releaseResources() noexcept
@@ -61,28 +53,23 @@ void RenderGraph::releaseResources() noexcept
 void RenderGraph::reset() noexcept
 {
     releaseResources();
-    deviceContext     = nullptr;
-    targetSwapchain   = nullptr;
-    frames            = {};
-    frameStorage      = {};
-    currentEditor     = nullptr;
-    currentRenderData = nullptr;
-    currentView       = nullptr;
+    deviceContext   = nullptr;
+    targetSwapchain = nullptr;
 }
 
-void RenderGraph::compile()
+void RenderGraph::compile(const PassSetup& setup)
 {
     compileNodes();
     allocateResources();
     for (auto* node : sortedNodes)
         if (node->prepare)
-            node->prepare(*this);
+            node->prepare(*this, setup);
 }
 
 void RenderGraph::allocateResources()
 {
-    const auto& device         = vulkan().deviceHandle();
-    const auto& physicalDevice = vulkan().physicalDeviceHandle();
+    const auto& device         = deviceContext->deviceHandle();
+    const auto& physicalDevice = deviceContext->physicalDeviceHandle();
     for (Resource& entry : resources)
     {
         if (!entry.data)
@@ -156,13 +143,13 @@ RenderGraph::ImageHandle RenderGraph::importSwapchain()
     if (swapchainImage.id != kInvalidHandle)
         return swapchainImage;
 
-    const auto extent   = swapchain().extent();
+    const auto extent   = targetSwapchain->extent();
     auto       resource = std::make_unique<ResourceData>(ResourceData{
-              .imageInfo = {.format = swapchain().surfaceFormat().format, .extent = {extent.width, extent.height, 1}},
+              .imageInfo = {.format = targetSwapchain->surfaceFormat().format, .extent = {extent.width, extent.height, 1}},
               .swapchainIndexed = true,
     });
-    for (uint32_t i = 0; i < swapchain().imageCount(); ++i)
-        resource->externalImages.push_back(swapchain().image(i));
+    for (uint32_t i = 0; i < targetSwapchain->imageCount(); ++i)
+        resource->externalImages.push_back(targetSwapchain->image(i));
     swapchainImage = {static_cast<ResourceHandle>(resources.size())};
     resources.push_back({.data = std::move(resource)});
     return swapchainImage;
@@ -174,8 +161,6 @@ uint32_t RenderGraph::instanceIndex(const ResourceData& resource, uint32_t frame
         return currentImage;
     return resource.allocation->instances.size() == 1 ? 0 : frameIndex;
 }
-
-Image& RenderGraph::getImage(ImageHandle image) { return getImage(image, currentFrame); }
 
 const RenderGraph::ImageCreateInfo& RenderGraph::imageInfo(ImageHandle image)
 {
@@ -193,8 +178,6 @@ Image& RenderGraph::getImage(ImageHandle image, uint32_t frameIndex)
     return *resource.allocation->instances.at(instanceIndex(resource, frameIndex)).image;
 }
 
-Buffer& RenderGraph::getBuffer(BufferHandle buffer) { return getBuffer(buffer, currentFrame); }
-
 Buffer& RenderGraph::getBuffer(BufferHandle buffer, uint32_t frameIndex)
 {
     const auto& resource = resolveResource(buffer.id);
@@ -204,10 +187,10 @@ Buffer& RenderGraph::getBuffer(BufferHandle buffer, uint32_t frameIndex)
     return *resource.allocation->instances.at(instanceIndex(resource, frameIndex)).buffer;
 }
 
-void RenderGraph::useResource(const ResourceUse& use)
+void RenderGraph::useResource(CommandRecorder& commandBuffer, const ResourceUse& use, uint32_t frameIndex)
 {
     auto&      resource = resolveResource(use.resource);
-    auto&      instance = resource.allocation->instances.at(instanceIndex(resource, currentFrame));
+    auto&      instance = resource.allocation->instances.at(instanceIndex(resource, frameIndex));
     const auto previous = instance.state;
     const auto next     = use.access;
     if (!needsBarrier(previous, next))
@@ -229,7 +212,7 @@ void RenderGraph::useResource(const ResourceUse& use)
             .buffer = resource.importedBuffer ? resource.importedBuffer->handle() : instance.buffer->handle(),
             .size   = resource.bufferInfo.size,
         };
-        commands().pipelineBarrier2({.bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrier});
+        commandBuffer.pipelineBarrier2({.bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrier});
     }
     else
     {
@@ -249,33 +232,31 @@ void RenderGraph::useResource(const ResourceUse& use)
                    .layerCount = resource.imageInfo.arrayLayers
             },
         };
-        commands().pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
+        commandBuffer.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
     }
     instance.state = next;
 }
 
-void RenderGraph::transitionResources(const std::vector<ResourceUse>& uses)
+void RenderGraph::transitionResources(
+    CommandRecorder& commandBuffer, const std::vector<ResourceUse>& uses, uint32_t frameIndex
+)
 {
     for (const ResourceUse& use : uses)
-        useResource(use);
+        useResource(commandBuffer, use, frameIndex);
 }
 
 void RenderGraph::execute(
-    const RenderView&       view,
-    const RenderData&       renderData,
-    const EditorFrameInput& editor,
-    uint32_t                frameIndex,
-    uint32_t                imageIndex
+    CommandRecorder& commandBuffer,
+    const PassFrame& frame,
+    uint32_t         imageIndex,
+    GpuProfiler&     gpuProfiler,
+    Profiler*        profiler
 )
 {
     DCHECK(!sortedNodes.empty());
 
     // TODO
-    currentFrame      = frameIndex;
-    currentImage      = imageIndex;
-    currentEditor     = &editor;
-    currentRenderData = &renderData;
-    currentView       = &view;
+    currentImage = imageIndex;
     for (Resource& entry : resources)
     {
         if (!entry.data)
@@ -290,65 +271,24 @@ void RenderGraph::execute(
         }
     }
 
-    vkCheck(commands().reset());
-    vkCheck(commands().begin({}));
-    auto* profiler = context().profiler;
-    auto& gpu = frames[currentFrame].gpuProfiler();
-    passStatistics.clear();
+    std::vector<std::string_view> names;
     if (profiler)
     {
-        std::vector<std::string_view> names;
-        for (const auto* node : sortedNodes) names.push_back(node->name);
-        gpu.beginFrame(commands(), names);
-        passStatistics.reserve(sortedNodes.size());
+        for (const auto* node : sortedNodes)
+            names.push_back(node->name);
     }
+    gpuProfiler.beginFrame(commandBuffer, names, profiler);
     uint32_t passIndex = 0;
     for (auto* node : sortedNodes)
     {
         CpuProfileScope timing{profiler, node->name};
-        if (profiler)
-        {
-            currentPassStatistics = &passStatistics.emplace_back(std::string{node->name}, DrawStatistics{});
-            gpu.beginPass(commands(), passIndex);
-        }
-        transitionResources(node->uses);
-        node->execute(*this);
-        if (profiler) gpu.endPass(commands(), passIndex);
+        gpuProfiler.beginPass(commandBuffer, passIndex);
+        transitionResources(commandBuffer, node->uses, frame.frameIndex);
+        node->execute(*this, commandBuffer, frame);
+        gpuProfiler.endPass(commandBuffer, passIndex);
         ++passIndex;
     }
-    currentPassStatistics = nullptr;
-    if (profiler)
-    {
-        gpu.endFrame(commands());
-        profiler->recordDraws(passStatistics);
-    }
-    vkCheck(commands().end());
-    currentEditor     = nullptr;
-    currentRenderData = nullptr;
-    currentView       = nullptr;
-}
-
-FrameData& RenderGraph::frameData(uint32_t index) const
-{
-    DCHECK(index < frames.size());
-    return frameStorage[index];
-}
-
-void RenderGraph::recordDraw(uint32_t count, uint32_t instanceCount)
-{
-    recordDrawStatistics({.drawCalls = 1, .triangles = static_cast<uint64_t>(count / 3) * instanceCount});
-}
-
-void RenderGraph::recordDrawStatistics(DrawStatistics statistics)
-{
-    if (!currentPassStatistics) return;
-    currentPassStatistics->draws.drawCalls += statistics.drawCalls;
-    currentPassStatistics->draws.triangles += statistics.triangles;
-}
-vk::raii::CommandBuffer& RenderGraph::commands() const
-{
-    DCHECK(currentFrame < frames.size());
-    return frames[currentFrame].commandBufferHandle();
+    gpuProfiler.endFrame(commandBuffer);
 }
 
 RenderGraph::ImageHandle RenderGraph::importImage(Image& image, ImageCreateInfo info, ImageAccess initial)

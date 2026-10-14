@@ -9,6 +9,7 @@
 #include "core/Window.h"
 #include "editor/EditorCamera.h"
 #include "render/RenderContext.h"
+#include "render/RenderPreparation.h"
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/feature/EndPass.h"
@@ -24,7 +25,7 @@ struct PixelReadbackPass
     RenderGraph::ImageHandle  image;
     RenderGraph::BufferHandle buffer;
 
-    RenderGraph::BufferHandle setup(RenderGraph& graph, RenderGraph::ImageHandle source)
+    RenderGraph::BufferHandle setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle source)
     {
         image  = source;
         buffer = graph.write(graph.createBuffer({
@@ -44,7 +45,7 @@ struct PixelReadbackPass
         return buffer;
     }
 
-    void execute(RenderGraph& graph) const
+    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
     {
         const auto                extent = graph.imageInfo(image).extent;
         const vk::BufferImageCopy region{
@@ -52,10 +53,10 @@ struct PixelReadbackPass
             .imageOffset      = {int32_t(extent.width / 2), int32_t(extent.height / 2), 0},
             .imageExtent      = {1, 1, 1},
         };
-        graph.commands().copyImageToBuffer(
-            graph.getImage(image).handle(),
+        commandBuffer.copyImageToBuffer(
+            graph.getImage(image, execution.frameIndex).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
-            graph.getBuffer(buffer).handle(),
+            graph.getBuffer(buffer, execution.frameIndex).handle(),
             region
         );
     }
@@ -73,21 +74,28 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
     PixelReadbackPass      readback;
     EndPass                end;
     RenderSystem           system;
-    graph.init(vulkan, renderer.swapchainHandle(), {&frame, 1}, {&data, 1});
-    const auto image  = graph.addPass(pass).rayImage;
-    const auto buffer = graph.addPass(readback, image);
-    graph.addPass(end, RenderGraph::ImageHandle{}, buffer);
-    graph.compile();
+    graph.init(vulkan, renderer.swapchainHandle());
+    const PassSetup setup{vulkan, renderer.swapchainHandle(), {&data, 1}};
+    const auto      image  = graph.addPass(pass, setup).rayImage;
+    const auto      buffer = graph.addPass(readback, setup, image);
+    graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
+    graph.compile(setup);
     const auto extent = renderer.swapchainHandle().extent();
     const auto sample = [&]
     {
         const auto  view     = camera.renderView({0, 0, float(extent.width), float(extent.height)});
-        const auto& snapshot = system.prepare(scenes.scene(), view.uniforms, context().config->rendererConfig().feature.shadow);
-        const auto& draws    = renderContext().resources->prepare(snapshot, 0);
+        const auto& snapshot = system.prepare(scenes.scene());
+        const auto  prepared =
+            prepareRenderScene(snapshot, view.uniforms, {.enable = false}, *context().assetManager, context().profiler);
+        const auto& draws = renderContext().resources->prepare(snapshot, prepared, 0);
         pass.updateScene(view, snapshot, context().assetManager->contentRevision());
         data.updateView(view.uniforms);
-        graph.execute(view, draws, {}, 0, 0);
-        const auto commandBuffer = *frame.commandBufferHandle();
+        auto& recording = frame.commandBufferHandle();
+        vkCheck(recording.reset());
+        vkCheck(recording.begin({}));
+        graph.execute(recording, {setup, data, view, draws, {}, 0}, 0, frame.gpuProfiler(), context().profiler);
+        vkCheck(recording.end());
+        const auto           commandBuffer = *frame.commandBufferHandle();
         const vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &commandBuffer};
         vkCheck(vulkan.queueHandle().submit(submitInfo));
         vkCheck(vulkan.queueHandle().waitIdle());
@@ -156,8 +164,8 @@ int main(int, char** argv)
     auto sphere                                     = std::make_unique<AStaticMesh>();
     sphere->getComponent<RenderComponent>()->meshId = BuiltinAssets::Mesh::sphere;
     scene.actors.push_back(std::move(sphere));
-    auto lamp                                       = std::make_unique<ALight>(std::make_unique<RectAreaLightComponent>());
-    lamp->transform().position                      = {2, 2, 3};
+    auto lamp                  = std::make_unique<ALight>(std::make_unique<RectAreaLightComponent>());
+    lamp->transform().position = {2, 2, 3};
     lamp->getComponent<LightComponent>()->intensity = 159.154943f;
     scene.actors.push_back(std::move(lamp));
     scenes.load(scene);
@@ -169,7 +177,7 @@ int main(int, char** argv)
     const auto draw   = [&]
     {
         const auto  view     = camera.renderView({0, 0, float(extent.width), float(extent.height)});
-        const auto& snapshot = system.prepare(scenes.scene(), view.uniforms, config.rendererConfig().feature.shadow);
+        const auto& snapshot = system.prepare(scenes.scene());
         const auto  result   = renderer.render(view, snapshot, {});
         CHECK(!result.swapchainNeedsRebuild);
         renderer.waitIdle();

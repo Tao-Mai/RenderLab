@@ -42,20 +42,19 @@ vk::ImageView imageView(RenderGraph& graph, RenderGraph::ImageHandle image, uint
 }
 }  // namespace
 
-RenderGraph::ImageHandle BloomPass::setupChain(
-    RenderGraph& graph, RenderGraph::ImageHandle hdrColor, std::vector<std::unique_ptr<BloomPass>>& storage
-)
+BloomPass::Output BloomPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle hdrColor)
 {
     DCHECK(graph.imageInfo(hdrColor).format == kHdrColorFormat);
     const auto features =
-        graph.vulkan().physicalDeviceHandle().getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
+        setup.vulkan.physicalDeviceHandle().getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
     CHECK(features & vk::FormatFeatureFlagBits::eSampledImageFilterLinear);
-    storage.clear();
+    filters.clear();
 
+    using Stage    = FilterPass::Stage;
     const auto add = [&](Stage stage, RenderGraph::ImageHandle source, RenderGraph::ImageHandle base = {})
     {
-        auto& pass = *storage.emplace_back(std::make_unique<BloomPass>(stage));
-        return graph.addPass(pass, source, base).color;
+        auto& pass = *filters.emplace_back(std::make_unique<FilterPass>(stage));
+        return graph.addPass(pass, setup, source, base).color;
     };
     std::vector<RenderGraph::ImageHandle> pyramid;
     auto                                  source = hdrColor;
@@ -72,11 +71,12 @@ RenderGraph::ImageHandle BloomPass::setupChain(
     auto blurred = pyramid.back();
     for (size_t level = pyramid.size() - 1; level > 0; --level)
         blurred = add(Stage::Upsample, blurred, pyramid[level - 1]);
-    return add(Stage::Composite, hdrColor, blurred);
+    return {add(Stage::Composite, hdrColor, blurred)};
 }
 
-BloomPass::Output
-BloomPass::setup(RenderGraph& graph, RenderGraph::ImageHandle input, RenderGraph::ImageHandle baseInput)
+BloomPass::Output BloomPass::FilterPass::setup(
+    RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle input, RenderGraph::ImageHandle baseInput
+)
 {
     source             = input;
     base               = baseInput.id == RenderGraph::kInvalidHandle ? input : baseInput;
@@ -144,7 +144,7 @@ BloomPass::setup(RenderGraph& graph, RenderGraph::ImageHandle input, RenderGraph
     return {color};
 }
 
-void BloomPass::prepare(RenderGraph& graph) const
+void BloomPass::FilterPass::prepare(RenderGraph& graph, const PassSetup& setup) const
 {
     for (uint32_t frameIndex = 0; frameIndex < maxFramesInFlight; ++frameIndex)
     {
@@ -182,20 +182,22 @@ void BloomPass::prepare(RenderGraph& graph) const
                 .pImageInfo      = &images[2]
             },
         };
-        graph.vulkan().deviceHandle().updateDescriptorSets(writes, {});
+        setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});
     }
 }
 
-void BloomPass::execute(RenderGraph& graph) const
+void BloomPass::FilterPass::execute(
+    RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution
+) const
 {
     const auto                        extent = graph.imageInfo(color).extent;
     const vk::RenderingAttachmentInfo attachment{
-        .imageView   = imageView(graph, color, graph.frameIndex()),
+        .imageView   = imageView(graph, color, execution.frameIndex),
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
         .loadOp      = vk::AttachmentLoadOp::eDontCare,
         .storeOp     = vk::AttachmentStoreOp::eStore,
     };
-    auto& commands = graph.commands();
+    auto& commands = commandBuffer;
     commands.beginRendering({
         .renderArea           = {{0, 0}, {extent.width, extent.height}},
         .layerCount           = 1,
@@ -208,12 +210,12 @@ void BloomPass::execute(RenderGraph& graph) const
     );
     commands.setScissor(0, vk::Rect2D({0, 0}, {extent.width, extent.height}));
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sets{*descriptorSets[graph.frameIndex()]};
+    const std::array sets{*descriptorSets[execution.frameIndex]};
     commands.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, sets, {});
 
     const auto            sourceExtent = graph.imageInfo(source).extent;
-    const auto            frameExtent  = graph.swapchain().extent();
-    const auto&           viewport     = graph.view().viewport;
+    const auto            frameExtent  = execution.setup.swapchain.extent();
+    const auto&           viewport     = execution.view.viewport;
     const auto&           settings     = context().config->rendererConfig().feature.bloom;
     const BloomParameters parameters{
         .viewport =
@@ -227,6 +229,5 @@ void BloomPass::execute(RenderGraph& graph) const
     };
     commands.pushConstants<BloomParameters>(pipelineLayout, kShaderStages, 0, parameters);
     commands.draw(3, 1, 0, 0);
-    graph.recordDraw(3);
     commands.endRendering();
 }

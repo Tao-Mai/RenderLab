@@ -2,8 +2,8 @@
 
 #include <array>
 #include <map>
-#include "asset/PbrMaterialAsset.h"
 #include "asset/MeshAsset.h"
+#include "asset/PbrMaterialAsset.h"
 #include "asset/SamplerAsset.h"
 #include "asset/TextureAsset.h"
 #include "render/RenderConfig.h"
@@ -19,6 +19,7 @@
 #include <vulkan/vulkan_raii.hpp>
 
 struct SceneRenderData;
+struct PreparedScene;
 class AssetManager;
 class AssetDataManager;
 class DescriptorManager;
@@ -42,7 +43,7 @@ public:
     GpuMesh&                     mesh(const MeshAsset::ID& id);
     std::shared_ptr<GpuMaterial> material(const MaterialAsset::ID& id);
     // The caller must wait for this frame's fence before preparing its resources.
-    const RenderData&           prepare(const SceneRenderData& scene, uint32_t frameIndex);
+    const RenderData& prepare(const SceneRenderData& scene, const PreparedScene& prepared, uint32_t frameIndex);
     std::shared_ptr<GpuTexture> texture(const TextureAsset::ID& id);
     [[nodiscard]] vk::Sampler   sampler(const SamplerAsset::ID& id);
 

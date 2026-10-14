@@ -6,7 +6,7 @@
 #include "render/resource/Buffer.h"
 
 EditorPickingCopyPass::Output
-EditorPickingCopyPass::setup(RenderGraph& graph, RenderGraph::ImageHandle pickingImageHandle)
+EditorPickingCopyPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle pickingImageHandle)
 {
     pickingImage = pickingImageHandle;
     graph.use(
@@ -32,23 +32,25 @@ EditorPickingCopyPass::setup(RenderGraph& graph, RenderGraph::ImageHandle pickin
     return {readback};
 }
 
-void EditorPickingCopyPass::execute(RenderGraph& graph) const
+void EditorPickingCopyPass::execute(
+    RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution
+) const
 {
-    const auto& editor = graph.editorInput();
+    const auto& editor = execution.editor;
     if (!editor.requestPick)
         return;
 
-    const auto extent = graph.swapchain().extent();
+    const auto extent = execution.setup.swapchain.extent();
     DCHECK(editor.pickX < extent.width && editor.pickY < extent.height);
     const vk::BufferImageCopy copyRegion{
         .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
         .imageOffset      = {static_cast<int32_t>(editor.pickX), static_cast<int32_t>(editor.pickY), 0},
         .imageExtent      = {1, 1, 1},
     };
-    graph.commands().copyImageToBuffer(
-        graph.getImage(pickingImage).handle(),
+    commandBuffer.copyImageToBuffer(
+        graph.getImage(pickingImage, execution.frameIndex).handle(),
         vk::ImageLayout::eTransferSrcOptimal,
-        graph.getBuffer(readback).handle(),
+        graph.getBuffer(readback, execution.frameIndex).handle(),
         copyRegion
     );
 }

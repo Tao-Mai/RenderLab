@@ -1,15 +1,15 @@
 #include "render/Renderer.h"
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
+#include "render/RenderPreparation.h"
 #include "scene/system/SceneRenderData.h"
 
+#include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
-#include "core/profiling/Profiler.h"
 #include "core/Logger.h"
 #include "core/Window.h"
-#include "asset/AssetManager.h"
-#include "render/offline/OfflinePathTracingPass.h"
+#include "core/profiling/Profiler.h"
 #include "render/device/VkCheck.h"
 #include "render/feature/DepthPrepass.h"
 #include "render/feature/EndPass.h"
@@ -23,9 +23,10 @@
 #include "render/feature/editor/EditorPickingPass.h"
 #include "render/feature/editor/EditorUiPass.h"
 #include "render/feature/editor/LightMarkerPass.h"
-#include "render/feature/postprocess/ToneMappingPass.h"
 #include "render/feature/postprocess/BloomPass.h"
+#include "render/feature/postprocess/ToneMappingPass.h"
 #include "render/feature/shadow/ShadowPass.h"
+#include "render/offline/OfflinePathTracingPass.h"
 #include "render/raytracing/RayTracingBlitPass.h"
 #include "render/raytracing/RayTracingPass.h"
 #include "render/resource/Buffer.h"
@@ -35,7 +36,6 @@
 
 struct Renderer::Passes
 {
-    std::vector<std::unique_ptr<BloomPass>> bloom;
     std::tuple<
         ShadowPass,
         DepthPrepass,
@@ -45,6 +45,7 @@ struct Renderer::Passes
         SkyboxPass,
         TransparentPass,
         LightMarkerPass,
+        BloomPass,
         ToneMappingPass,
         RayTracingPass,
         OfflinePathTracingPass,
@@ -66,7 +67,7 @@ struct Renderer::Passes
 template <class T, class... Args>
 auto Renderer::setupPass(Args&&... args)
 {
-    return graph.addPass(passes->get<T>(), std::forward<Args>(args)...);
+    return graph.addPass(passes->get<T>(), PassSetup{vulkan, swapchain, frameStorage}, std::forward<Args>(args)...);
 }
 
 Renderer::Renderer() = default;
@@ -97,7 +98,7 @@ void Renderer::init()
         data.init(vulkan, descriptors);
 
     resources.init(vulkan, descriptors, shaders, *context().assetManager, *context().assetDataManager);
-    graph.init(vulkan, swapchain, frames, frameStorage);
+    graph.init(vulkan, swapchain);
     passes = std::make_unique<Passes>();
 
     ctx = {
@@ -139,7 +140,7 @@ void Renderer::shutdown() noexcept
     renderContext() = {};
     swapchain.reset();
     vulkan.reset();
-    frameIndex = 0;
+    frameIndex           = 0;
     activeFramesInFlight = maxFramesInFlight;
     environmentMap.reset();
     appliedEnvironmentMap.reset();
@@ -158,14 +159,15 @@ void Renderer::rebuildGraph()
 
 void Renderer::setupRenderGraph()
 {
-    if (context().profiler) context().profiler->clearGpu();
-    for (auto& frame : frames) frame.gpuProfiler().discard();
+    if (context().profiler)
+        context().profiler->clearGpu();
+    for (auto& frame : frames)
+        frame.gpuProfiler().discard();
     DCHECK(passes);
-    passes->bloom.clear();
-    activeSceneBindings = nullptr;
-    const auto& config  = context().config->rendererConfig();
+    activeSceneBindings  = nullptr;
+    const auto& config   = context().config->rendererConfig();
     activeFramesInFlight = config.renderPath == RenderPath::OfflinePathTracing ? 1u : maxFramesInFlight;
-    frameIndex = 0;
+    frameIndex           = 0;
     if (!appliedConfig || appliedConfig->renderPath != config.renderPath ||
         appliedConfig->feature.offline.maxRecursionDepth != config.feature.offline.maxRecursionDepth)
         passes->get<OfflinePathTracingPass>().resetAccumulation();
@@ -173,15 +175,21 @@ void Renderer::setupRenderGraph()
     SceneOutput scene;
     switch (config.renderPath)
     {
-    case RenderPath::OfflinePathTracing: scene = setupOffline(); break;
-    case RenderPath::RayTracing: scene = setupRayTracing(); break;
-    case RenderPath::Rasterization:
-    case RenderPath::Deferred: scene = setupRasterization(); break;
+        case RenderPath::OfflinePathTracing:
+            scene = setupOffline();
+            break;
+        case RenderPath::RayTracing:
+            scene = setupRayTracing();
+            break;
+        case RenderPath::Rasterization:
+        case RenderPath::Deferred:
+            scene = setupRasterization();
+            break;
     }
-    scene.color         = setupPostProcess(scene.color);
+    scene.color = setupPostProcess(scene.color);
     setupEditor(scene);
-    graph.compile();
-    appliedConfig = config;
+    graph.compile({vulkan, swapchain, frameStorage});
+    appliedConfig         = config;
     appliedEnvironmentMap = environmentMap;
 }
 
@@ -241,7 +249,7 @@ RenderGraph::ImageHandle Renderer::setupPostProcess(RenderGraph::ImageHandle col
     if (config.feature.hdr)
     {
         if (config.feature.bloom.enable)
-            color = BloomPass::setupChain(graph, color, passes->bloom);
+            color = setupPass<BloomPass>(color).color;
         return setupPass<ToneMappingPass>(color, graph.importSwapchain()).color;
     }
     if (config.renderPath == RenderPath::RayTracing || config.renderPath == RenderPath::OfflinePathTracing)
@@ -261,7 +269,7 @@ void Renderer::setupEditor(SceneOutput scene)
 
 void Renderer::applyConfiguration(const SceneRenderData& scene)
 {
-    environmentMap = scene.environmentMap;
+    environmentMap       = scene.environmentMap;
     const auto& config   = context().config->rendererConfig();
     const auto  graphKey = [](const RendererConfig& value)
     {
@@ -296,15 +304,15 @@ void Renderer::applyConfiguration(const SceneRenderData& scene)
         {
             activeSceneBindings->setEnvironmentMap(environmentMap);
             activeSceneBindings->refreshBindings();
-            activeSceneBindings->prepare(graph);
+            activeSceneBindings->prepare(graph, {vulkan, swapchain, frameStorage});
         }
         if (activeSceneBindings && config.feature.ibl && environmentMap)
         {
             passes->get<SkyboxPass>().setEnvironmentMap(*environmentMap);
-            passes->get<SkyboxPass>().refreshBindings(graph);
+            passes->get<SkyboxPass>().refreshBindings({vulkan, swapchain, frameStorage});
         }
     }
-    appliedConfig = config;
+    appliedConfig         = config;
     appliedEnvironmentMap = environmentMap;
 }
 
@@ -319,6 +327,33 @@ void Renderer::recreateSwapchain()
     swapchain.reset();
     swapchain.init(vulkan, window);
     setupRenderGraph();
+}
+
+const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderData& scene)
+{
+    const auto& config  = context().config->rendererConfig();
+    auto        shadows = config.feature.shadow;
+    if (config.renderPath == RenderPath::RayTracing || config.renderPath == RenderPath::OfflinePathTracing)
+        shadows.enable = false;
+
+    auto* assets = context().assetManager;
+    DCHECK(assets);
+    const auto  prepared   = prepareRenderScene(scene, view.uniforms, shadows, *assets, context().profiler);
+    const auto& renderData = [&]() -> const RenderData&
+    {
+        CpuProfileScope timing{context().profiler, "Render resources"};
+        return resources.prepare(scene, prepared, frameIndex);
+    }();
+
+    {
+        CpuProfileScope timing{context().profiler, "Frame upload"};
+        auto&           data = frameStorage[frameIndex];
+        if (activeSceneBindings)
+            activeSceneBindings->updateFrame(data, view.uniforms, prepared.lighting);
+        else
+            data.updateView(view.uniforms);
+    }
+    return renderData;
 }
 
 RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData& scene, const EditorFrameInput& editor)
@@ -339,25 +374,20 @@ RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData
     if (acquireResult == vk::Result::eErrorOutOfDateKHR)
         return {.swapchainNeedsRebuild = true};
 
-    const auto& renderData = [&]() -> const RenderData&
-    {
-        CpuProfileScope timing{context().profiler, "Render resources"};
-        return resources.prepare(scene, frameIndex);
-    }();
+    const auto& renderData = prepare(view, scene);
     const auto  renderPath = context().config->rendererConfig().renderPath;
     if (renderPath == RenderPath::OfflinePathTracing)
         passes->get<OfflinePathTracingPass>().updateScene(view, scene, context().assetManager->contentRevision());
-    auto&       data       = frameStorage[frameIndex];
-    {
-        CpuProfileScope timing{context().profiler, "Frame upload"};
-        if (activeSceneBindings)
-            activeSceneBindings->updateFrame(data, view.uniforms, scene.lighting);
-        else
-            data.updateView(view.uniforms);
-    }
+    auto& data = frameStorage[frameIndex];
     {
         CpuProfileScope timing{context().profiler, "Command recording"};
-        graph.execute(view, renderData, editor, frameIndex, imageIndex);
+        const PassSetup setup{vulkan, swapchain, frameStorage};
+        const PassFrame execution{setup, data, view, renderData, editor, frameIndex};
+        auto&           commandBuffer = frame.commandBufferHandle();
+        vkCheck(commandBuffer.reset());
+        vkCheck(commandBuffer.begin({}));
+        graph.execute(commandBuffer, execution, imageIndex, frame.gpuProfiler(), context().profiler);
+        vkCheck(commandBuffer.end());
     }
 
     const bool directBlit = (renderPath == RenderPath::RayTracing || renderPath == RenderPath::OfflinePathTracing) &&

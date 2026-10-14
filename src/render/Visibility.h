@@ -1,9 +1,9 @@
 #pragma once
 
-#include "core/Logger.h"
-#include "render/resource/ShaderData.h"
 #include <bit>
 #include <format>
+#include "core/Logger.h"
+#include "render/resource/ShaderData.h"
 
 namespace RenderVisibility
 {
@@ -19,12 +19,19 @@ static_assert(kBitCount <= 32);
 {
     DCHECK(std::has_single_bit(mask));
     const uint32_t bit = std::countr_zero(mask);
-    if (bit == 0) return "Main view";
-    if (bit < kSpotOffset) return std::format("Point shadow {}", bit - kPointOffset);
-    if (bit < kRectAreaOffset) return std::format("Spot shadow {}", bit - kSpotOffset);
-    if (bit < kDirectionalOffset) return std::format("Area shadow {}", bit - kRectAreaOffset);
-    return std::format("Directional {} cascade {}", (bit - kDirectionalOffset) / kMaxDirectionalShadowCascades,
-        (bit - kDirectionalOffset) % kMaxDirectionalShadowCascades);
+    if (bit == 0)
+        return "Main view";
+    if (bit < kSpotOffset)
+        return std::format("Point shadow {}", bit - kPointOffset);
+    if (bit < kRectAreaOffset)
+        return std::format("Spot shadow {}", bit - kSpotOffset);
+    if (bit < kDirectionalOffset)
+        return std::format("Area shadow {}", bit - kRectAreaOffset);
+    return std::format(
+        "Directional {} cascade {}",
+        (bit - kDirectionalOffset) / kMaxDirectionalShadowCascades,
+        (bit - kDirectionalOffset) % kMaxDirectionalShadowCascades
+    );
 }
 
 [[nodiscard]] inline uint32_t shadowMask(GpuLightType type, uint32_t shadowIndex, uint32_t cascadeIndex = 0)

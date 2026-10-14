@@ -1,6 +1,8 @@
 #include "render/feature/EndPass.h"
 
-EndPass::Output EndPass::setup(RenderGraph& graph, RenderGraph::ImageHandle color, RenderGraph::BufferHandle readback)
+EndPass::Output EndPass::setup(
+    RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle color, RenderGraph::BufferHandle readback
+)
 {
     if (color.id != RenderGraph::kInvalidHandle)
         graph.use(color, {.layout = vk::ImageLayout::ePresentSrcKHR});

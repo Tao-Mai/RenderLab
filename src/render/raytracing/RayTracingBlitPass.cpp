@@ -9,17 +9,20 @@
 #include <array>
 
 RayTracingBlitPass::Output RayTracingBlitPass::setup(
-    RenderGraph& graph, RenderGraph::ImageHandle rayImageHandle, RenderGraph::ImageHandle colorHandle
+    RenderGraph&             graph,
+    const PassSetup&         setup,
+    RenderGraph::ImageHandle rayImageHandle,
+    RenderGraph::ImageHandle colorHandle
 )
 {
-    const auto& device       = graph.vulkan().physicalDeviceHandle();
-    const auto  capabilities = vkCheck(device.getSurfaceCapabilitiesKHR(graph.vulkan().surfaceHandle()));
+    const auto& device       = setup.vulkan.physicalDeviceHandle();
+    const auto  capabilities = vkCheck(device.getSurfaceCapabilitiesKHR(setup.vulkan.surfaceHandle()));
     CHECK(
         capabilities.supportedUsageFlags & vk::ImageUsageFlagBits::eTransferDst,
         "ray tracing requires transfer-destination swapchain images"
     );
     CHECK(
-        device.getFormatProperties(graph.swapchain().surfaceFormat().format).optimalTilingFeatures &
+        device.getFormatProperties(setup.swapchain.surfaceFormat().format).optimalTilingFeatures &
             vk::FormatFeatureFlagBits::eBlitDst,
         "swapchain format does not support blit destinations"
     );
@@ -50,9 +53,9 @@ RayTracingBlitPass::Output RayTracingBlitPass::setup(
     return {color};
 }
 
-void RayTracingBlitPass::execute(RenderGraph& graph) const
+void RayTracingBlitPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
 {
-    const auto          extent = graph.swapchain().extent();
+    const auto          extent = execution.setup.swapchain.extent();
     const vk::ImageBlit region{
         .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
         .srcOffsets =
@@ -66,10 +69,10 @@ void RayTracingBlitPass::execute(RenderGraph& graph) const
             vk::Offset3D{static_cast<int32_t>(extent.width), static_cast<int32_t>(extent.height), 1}
         },
     };
-    graph.commands().blitImage(
-        graph.getImage(rayImage).handle(),
+    commandBuffer.blitImage(
+        graph.getImage(rayImage, execution.frameIndex).handle(),
         vk::ImageLayout::eTransferSrcOptimal,
-        graph.getImage(color).handle(),
+        graph.getImage(color, execution.frameIndex).handle(),
         vk::ImageLayout::eTransferDstOptimal,
         region,
         vk::Filter::eNearest

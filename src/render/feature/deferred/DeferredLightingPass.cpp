@@ -19,11 +19,12 @@ namespace
 const ShaderAsset::ID kDeferredLightingShader = "deferred_lighting";
 }
 
-DeferredLightingPass::Output
-DeferredLightingPass::setup(RenderGraph& graph, GBufferPass::Output input, ShadowPass::Output shadow)
+DeferredLightingPass::Output DeferredLightingPass::setup(
+    RenderGraph& graph, const PassSetup& setup, GBufferPass::Output input, ShadowPass::Output shadow
+)
 {
     gBuffer                   = input;
-    const auto resolvedShadow = bindings.setup(graph, shadow);
+    const auto resolvedShadow = bindings.setup(graph, setup, shadow);
     for (const auto image : {gBuffer.albedoOcclusion, gBuffer.normalRoughness, gBuffer.emissiveMetallic, gBuffer.depth})
         graph.use(
             image,
@@ -41,13 +42,13 @@ DeferredLightingPass::setup(RenderGraph& graph, GBufferPass::Output input, Shado
             vk::FormatFeatureFlagBits::eColorAttachmentBlend | vk::FormatFeatureFlagBits::eSampledImage |
             vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
         const auto features =
-            graph.vulkan().physicalDeviceHandle().getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
+            setup.vulkan.physicalDeviceHandle().getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
         CHECK(
             (features & kRequiredFeatures) == kRequiredFeatures,
             "GPU does not support an RGBA16F HDR color attachment with blending and sampling"
         );
     }
-    const auto extent = graph.swapchain().extent();
+    const auto extent = setup.swapchain.extent();
     color             = hdr ? graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}})
                             : graph.importSwapchain();
     color             = graph.write(color);
@@ -114,9 +115,9 @@ DeferredLightingPass::setup(RenderGraph& graph, GBufferPass::Output input, Shado
     return {color, gBuffer.depth, resolvedShadow};
 }
 
-void DeferredLightingPass::prepare(RenderGraph& graph) const
+void DeferredLightingPass::prepare(RenderGraph& graph, const PassSetup& setup) const
 {
-    bindings.prepare(graph);
+    bindings.prepare(graph, setup);
     const std::array images{gBuffer.albedoOcclusion, gBuffer.normalRoughness, gBuffer.emissiveMetallic, gBuffer.depth};
     constexpr std::array kBindings{
         RenderInterface::kGBufferAlbedoBinding,
@@ -151,25 +152,27 @@ void DeferredLightingPass::prepare(RenderGraph& graph) const
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &imageInfo,
             };
-            graph.vulkan().deviceHandle().updateDescriptorSets(write, {});
+            setup.vulkan.deviceHandle().updateDescriptorSets(write, {});
         }
     }
 }
 
-void DeferredLightingPass::execute(RenderGraph& graph) const
+void DeferredLightingPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
 {
-    const auto                        extent = graph.swapchain().extent();
+    const auto                        extent = execution.setup.swapchain.extent();
     const vk::RenderingAttachmentInfo attachment{
-        .imageView   = graph.getImage(color).getOrCreateImageView({
-              .viewType         = vk::ImageViewType::e2D,
-              .format           = graph.imageInfo(color).format,
-              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        }),
+        .imageView = graph.getImage(color, execution.frameIndex)
+                         .getOrCreateImageView({
+                             .viewType = vk::ImageViewType::e2D,
+                             .format   = graph.imageInfo(color).format,
+                             .subresourceRange =
+                                 {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+                         }),
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
         .loadOp      = vk::AttachmentLoadOp::eDontCare,
         .storeOp     = vk::AttachmentStoreOp::eStore,
     };
-    auto& commands = graph.commands();
+    auto& commands = commandBuffer;
     commands.beginRendering(
         {.renderArea = {{0, 0}, extent}, .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &attachment}
     );
@@ -179,7 +182,7 @@ void DeferredLightingPass::execute(RenderGraph& graph) const
     );
     commands.setScissor(0, vk::Rect2D{{0, 0}, extent});
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sceneSets{graph.frameData(graph.frameIndex()).sceneSetHandle()};
+    const std::array sceneSets{execution.data.sceneSetHandle()};
     commands.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         pipelineLayout,
@@ -187,10 +190,10 @@ void DeferredLightingPass::execute(RenderGraph& graph) const
         sceneSets,
         {}
     );
-    const std::array passSets{*descriptorSets[graph.frameIndex()]};
+    const std::array passSets{*descriptorSets[execution.frameIndex]};
     commands
         .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, RenderInterface::kPassSet, passSets, {});
-    const auto&                         viewport = graph.view().viewport;
+    const auto&                         viewport = execution.view.viewport;
     const DeferredLightingPushConstants parameters{
         .viewport = {viewport.x, viewport.y, viewport.width, viewport.height}
     };
@@ -201,6 +204,5 @@ void DeferredLightingPass::execute(RenderGraph& graph) const
         parameters
     );
     commands.draw(3, 1, 0, 0);
-    graph.recordDraw(3);
     commands.endRendering();
 }

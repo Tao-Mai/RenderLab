@@ -9,6 +9,8 @@ public:
     {
     };
 
-    Output setup(RenderGraph& graph, RenderGraph::ImageHandle color, RenderGraph::BufferHandle readback);
-    void   execute(RenderGraph&) const {}
+    Output setup(
+        RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle color, RenderGraph::BufferHandle readback
+    );
+    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const {}
 };

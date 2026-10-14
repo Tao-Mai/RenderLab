@@ -267,6 +267,8 @@ add_library(RenderLabRuntime STATIC
         src/render/device/VulkanContext.cpp
         src/render/device/VulkanContext.h
         src/render/device/FrameContext.cpp
+        src/render/device/CommandRecorder.h
+        src/render/device/CommandRecorder.cpp
         src/render/device/FrameContext.h
         src/render/FrameData.cpp
         src/render/FrameData.h
@@ -292,6 +294,9 @@ add_library(RenderLabRuntime STATIC
         src/scene/system/RenderSystem.cpp
         src/scene/system/RenderSystem.h
         src/render/RenderData.h
+        src/render/RenderPreparation.h
+        src/render/RenderPreparation.cpp
+        src/render/Visibility.h
         src/render/feature/ScenePass.cpp
         src/render/feature/ScenePass.h
         src/render/feature/SceneBindings.cpp
@@ -321,8 +326,8 @@ add_library(RenderLabRuntime STATIC
         src/render/raytracing/RayTracingBlitPass.h
         src/render/feature/shadow/ShadowPass.cpp
         src/render/feature/shadow/ShadowPass.h
-        src/render/feature/editor/LightMarkers.cpp
-        src/render/feature/editor/LightMarkers.h
+        src/editor/LightMarkers.cpp
+        src/editor/LightMarkers.h
         src/render/feature/editor/EditorShaderData.h
         src/render/feature/editor/EditorDepthPass.cpp
         src/render/feature/editor/EditorDepthPass.h
@@ -348,6 +353,7 @@ add_library(RenderLabRuntime STATIC
         src/core/math/Sampler.h
         src/render/feature/RenderGraph.cpp
         src/render/feature/RenderGraph.h
+        src/render/feature/PassInputs.h
         src/render/feature/RenderGraphSetup.cpp
         src/render/feature/EndPass.cpp
         src/render/feature/EndPass.h

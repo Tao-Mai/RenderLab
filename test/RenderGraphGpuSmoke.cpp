@@ -1,13 +1,14 @@
+#include "editor/LightMarkers.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
-#include "core/profiling/Profiler.h"
 #include "core/InputManager.h"
 #include "core/Logger.h"
 #include "core/Serializer.h"
 #include "core/Window.h"
+#include "core/profiling/Profiler.h"
 #include "editor/Editor.h"
 #include "editor/EditorCamera.h"
 #include "render/RenderContext.h"
@@ -366,9 +367,10 @@ int main(int argc, char** argv)
                 .lightDrawItems = lightMarkers.drawItems(),
             };
             const auto view = sceneManagerCamera.renderView(
-                {0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
-            const auto& renderData = renderSystem.prepare(sceneManager.scene(), view.uniforms, config.rendererConfig().feature.shadow);
-            const auto result = renderer.render(view, renderData, input);
+                {0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)}
+            );
+            const auto& renderData = renderSystem.prepare(sceneManager.scene());
+            const auto  result     = renderer.render(view, renderData, input);
             CHECK(result.hasPickResult == input.requestPick, "missing picking result");
             if (input.requestPick)
                 CHECK(
@@ -509,7 +511,7 @@ int main(int argc, char** argv)
             frame.view.viewport.x > 0.0f && frame.view.viewport.width < extent.width,
             "editor viewport must leave space for both docked sidebars"
         );
-        const auto& renderData = renderSystem.prepare(sceneManager.scene(), frame.view.uniforms, config.rendererConfig().feature.shadow);
+        const auto& renderData = renderSystem.prepare(sceneManager.scene());
         const auto  result     = renderer.render(frame.view, renderData, frame.input);
         editor.applyPickResult(result);
         profiling.endFrame(1000.0 / 60.0);

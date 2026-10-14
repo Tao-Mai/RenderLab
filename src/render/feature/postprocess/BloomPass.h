@@ -5,33 +5,45 @@
 class BloomPass
 {
 public:
-    enum class Stage : uint32_t
-    {
-        Downsample,
-        Upsample,
-        Composite
-    };
-
     struct Output
     {
         RenderGraph::ImageHandle color;
     };
 
-    explicit BloomPass(Stage stage) : stage(stage) {}
-
-    static RenderGraph::ImageHandle
-    setupChain(RenderGraph& graph, RenderGraph::ImageHandle hdrColor, std::vector<std::unique_ptr<BloomPass>>& storage);
-    Output setup(RenderGraph& graph, RenderGraph::ImageHandle source, RenderGraph::ImageHandle base = {});
-    void   prepare(RenderGraph& graph) const;
-    void   execute(RenderGraph& graph) const;
+    Output setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle hdrColor);
 
 private:
-    Stage                                stage;
-    RenderGraph::ImageHandle             source;
-    RenderGraph::ImageHandle             base;
-    RenderGraph::ImageHandle             color;
-    std::vector<vk::raii::DescriptorSet> descriptorSets;
-    vk::Sampler                          sampler;
-    vk::Pipeline                         pipeline;
-    vk::PipelineLayout                   pipelineLayout;
+    class FilterPass
+    {
+    public:
+        enum class Stage : uint32_t
+        {
+            Downsample,
+            Upsample,
+            Composite
+        };
+
+        explicit FilterPass(Stage stage) : stage(stage) {}
+
+        Output setup(
+            RenderGraph&             graph,
+            const PassSetup&         setup,
+            RenderGraph::ImageHandle source,
+            RenderGraph::ImageHandle base = {}
+        );
+        void prepare(RenderGraph& graph, const PassSetup& setup) const;
+        void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const;
+
+    private:
+        Stage                                stage;
+        RenderGraph::ImageHandle             source;
+        RenderGraph::ImageHandle             base;
+        RenderGraph::ImageHandle             color;
+        std::vector<vk::raii::DescriptorSet> descriptorSets;
+        vk::Sampler                          sampler;
+        vk::Pipeline                         pipeline;
+        vk::PipelineLayout                   pipelineLayout;
+    };
+
+    std::vector<std::unique_ptr<FilterPass>> filters;
 };

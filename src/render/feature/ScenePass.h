@@ -13,9 +13,10 @@ public:
         ShadowPass::Output       shadow;
     };
 
-    Output setup(RenderGraph& graph, RenderGraph::ImageHandle depthHandle, ShadowPass::Output shadow);
-    void   prepare(RenderGraph& graph) const;
-    void   execute(RenderGraph& graph) const;
+    Output
+    setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle depthHandle, ShadowPass::Output shadow);
+    void prepare(RenderGraph& graph, const PassSetup& setup) const;
+    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const;
 
     SceneBindings& sceneBindings() { return bindings; }
 
