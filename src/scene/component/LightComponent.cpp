@@ -5,13 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
-#include <glm/geometric.hpp>
 #include <typeinfo>
-
-namespace
-{
-constexpr glm::vec3 kLuminanceWeights{0.2126f, 0.7152f, 0.0722f};
-}
 
 LightComponent::~LightComponent() = default;
 
@@ -29,32 +23,38 @@ void SpotLightComponent::init(AActor* actor)
     CHECK(std::isfinite(cosInner) && cosInner >= cosOuter && cosInner <= 1.0f);
 }
 
-glm::vec4 LightComponent::photometricEmission() const
+glm::vec3 LightComponent::coloredEmission(float strength) const
 {
-    CHECK(std::isfinite(intensity) && intensity >= 0.0f);
+    CHECK(std::isfinite(strength) && strength >= 0.0f);
     for (int axis = 0; axis < 3; ++axis)
         CHECK(std::isfinite(color[axis]) && color[axis] >= 0.0f);
 
-    const float emission = intensity * emissionScale();
-    CHECK(std::isfinite(emission));
+    // Photometric-scaled RGB: no luminance normalization or spectral conversion.
+    const glm::vec3 emission = color * strength;
+    for (int axis = 0; axis < 3; ++axis)
+        CHECK(std::isfinite(emission[axis]));
 
-    // Linear Rec.709 tint with unit luminance keeps intensity independent of color.
-    const float luminance = glm::dot(color, kLuminanceWeights);
-    CHECK(std::isfinite(luminance));
-    if (luminance == 0.0f)
-        return glm::vec4{0.0f};
-
-    return {color / luminance, emission};
+    return emission;
 }
 
-float RectAreaLightComponent::emissionScale() const
+glm::vec3 LocalLightComponent::emissionColor() const
+{
+    return coloredEmission(luminousIntensity);
+}
+
+glm::vec3 DirectionalLightComponent::emissionColor() const
+{
+    return coloredEmission(illuminance);
+}
+
+glm::vec3 RectAreaLightComponent::emissionColor() const
 {
     CHECK(std::isfinite(areaSize.x) && areaSize.x > 0.0f);
     CHECK(std::isfinite(areaSize.y) && areaSize.y > 0.0f);
     const float area = areaSize.x * areaSize.y;
     CHECK(std::isfinite(area) && area > 0.0f);
-    // Whole-emitter normal-direction intensity / area gives luminance.
-    return 1.0f / area;
+    // Whole-emitter normal-direction intensity / area gives luminance before RGB tinting.
+    return coloredEmission(luminousIntensity / area);
 }
 
 LightComponent& replaceLightComponent(LightComponent& light, std::unique_ptr<LightComponent> replacement)
@@ -68,12 +68,25 @@ LightComponent& replaceLightComponent(LightComponent& light, std::unique_ptr<Lig
     DCHECK(found != owner.components.end());
 
     replacement->color      = light.color;
-    replacement->intensity  = light.intensity;
     replacement->enabled    = light.enabled;
     replacement->castShadow = light.castShadow;
-    if (const auto* source = dynamic_cast<const LocalLightComponent*>(&light))
-        if (auto* target = dynamic_cast<LocalLightComponent*>(replacement.get()))
-            target->range = source->range;
+
+    const auto* sourceLocal = dynamic_cast<const LocalLightComponent*>(&light);
+    const auto* sourceDirectional = dynamic_cast<const DirectionalLightComponent*>(&light);
+    DCHECK(sourceLocal || sourceDirectional);
+    const float strength = sourceLocal ? sourceLocal->luminousIntensity : sourceDirectional->illuminance;
+    if (auto* target = dynamic_cast<LocalLightComponent*>(replacement.get()))
+    {
+        target->luminousIntensity = strength;
+        if (sourceLocal)
+            target->range = sourceLocal->range;
+    }
+    else
+    {
+        auto* directionalTarget = dynamic_cast<DirectionalLightComponent*>(replacement.get());
+        DCHECK(directionalTarget);
+        directionalTarget->illuminance = strength;
+    }
 
     replacement->init(&owner);
     auto& result = *replacement;

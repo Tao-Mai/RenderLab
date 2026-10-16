@@ -4,8 +4,7 @@
 
 struct RectAreaLightComponent : LocalLightComponent
 {
-    [[=ReflectField{}]] glm::vec2 areaSize{1.0f};
+    [[nodiscard]] glm::vec3 emissionColor() const override;
 
-protected:
-    [[nodiscard]] float emissionScale() const override;
+    [[=ReflectField{}]] glm::vec2 areaSize{1.0f};
 };

@@ -39,6 +39,7 @@ RendererConfig sampleRendererConfig()
     return {
         .renderPath = RenderPath::RayTracing,
         .brdfLut = {TextureAsset::ID{"lut_ggx"}, SamplerAsset::ID{"linearClamp"}},
+        .sheenLut = {TextureAsset::ID{"lut_sheen_E"}, SamplerAsset::ID{"linearClamp"}},
         .feature = {.ibl = false, .ambientCoefficient = 0.25f, .hdr = false,
             .shadow = {.enable = false, .cascade = {.count = 3, .shadowMapSize = 1024,
                 .maxDistance = 40.0f, .splitStrategy = CascadeSplitStrategy::Uniform,
@@ -84,6 +85,7 @@ TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
     EXPECT_EQ(serialized.at("renderPath"), "RayTracing");
     EXPECT_EQ(serialized.at("brdfLut").at("textureID").at("value"), "lut_ggx");
     EXPECT_EQ(serialized.at("brdfLut").at("samplerID").at("value"), "linearClamp");
+    EXPECT_EQ(serialized.at("sheenLut"), Serialize(original.sheenLut));
     EXPECT_EQ(serialized.at("feature").at("ibl"), false);
     EXPECT_EQ(serialized.at("feature").at("hdr"), false);
     EXPECT_EQ(serialized.at("feature").at("bloom"), Serialize(original.feature.bloom));

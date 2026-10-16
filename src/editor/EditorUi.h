@@ -50,11 +50,9 @@ public:
     [[nodiscard]] bool         saveRequested() const;
     [[nodiscard]] float        sceneAspectRatio() const;
     [[nodiscard]] ViewportRect sceneViewportPixels() const { return scenePixels; }
-    [[nodiscard]] bool         isSceneFocused() const { return sceneFocused; }
 
 private:
     bool             dockLayoutInitialized = false;
-    bool             sceneFocused          = false;
     uint32_t         editorDockId          = 0;
     uint32_t         hierarchyDockId       = 0;
     int              gizmoOperation        = 0;

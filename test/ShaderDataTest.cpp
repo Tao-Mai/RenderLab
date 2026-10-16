@@ -91,10 +91,11 @@ TEST(ShaderDataLayout, ViewUniformsMatchCompiledShaders)
 TEST(ShaderDataLayout, LightUniformsMatchCompiledShaders)
 {
     const std::array expected = {
-        Field{"lightCount", offsetof(LightUniforms, lightCount), sizeof(uint32_t)},
+        Field{"lightRanges", offsetof(LightUniforms, lightRanges), sizeof(LightRanges)},
         Field{"ambientCoefficient", offsetof(LightUniforms, ambientCoefficient), sizeof(float)},
         Field{"cascadeCount", offsetof(LightUniforms, cascadeCount), sizeof(uint32_t)},
         Field{"directionalShadowSampleRadius", offsetof(LightUniforms, directionalShadowSampleRadius), sizeof(float)},
+        Field{"padding", offsetof(LightUniforms, padding), sizeof(float)},
         Field{"iblParameters", offsetof(LightUniforms, iblParameters), sizeof(glm::vec4)},
         Field{"shadowParameters", offsetof(LightUniforms, shadowParameters), sizeof(glm::vec4)},
     };
@@ -113,7 +114,8 @@ TEST(ShaderDataLayout, LightUniformsMatchCompiledShaders)
 TEST(ShaderDataLayout, LightStorageElementsMatchCompiledShaders)
 {
     const std::array expected = {
-        Field{"colorEmission", offsetof(LightData, colorEmission), sizeof(glm::vec4)},
+        Field{"color", offsetof(LightData, color), sizeof(glm::vec3)},
+        Field{"padding3", offsetof(LightData, padding3), sizeof(float)},
         Field{"positionRange", offsetof(LightData, positionRange), sizeof(glm::vec4)},
         Field{"direction", offsetof(LightData, direction), sizeof(glm::vec4)},
         Field{"areaSizeCone", offsetof(LightData, areaSizeCone), sizeof(glm::vec4)},
@@ -264,12 +266,16 @@ TEST(ShaderDataLayout, MaterialUniformsMatchCompiledShaders)
         Field{"padding1", offsetof(MaterialUniforms, padding1), sizeof(float)},
         Field{"padding2", offsetof(MaterialUniforms, padding2), sizeof(float)},
         Field{"emissiveFactor", offsetof(MaterialUniforms, emissiveFactor), sizeof(glm::vec4)},
+        Field{"sheenColorFactor", offsetof(MaterialUniforms, sheenColorFactor), sizeof(glm::vec3)},
+        Field{"sheenRoughnessFactor", offsetof(MaterialUniforms, sheenRoughnessFactor), sizeof(float)},
         Field{"clearcoatFactor", offsetof(MaterialUniforms, clearcoatFactor), sizeof(float)},
         Field{"clearcoatRoughnessFactor", offsetof(MaterialUniforms, clearcoatRoughnessFactor), sizeof(float)},
         Field{"clearcoatNormalScale", offsetof(MaterialUniforms, clearcoatNormalScale), sizeof(float)},
         Field{"clearcoatPadding", offsetof(MaterialUniforms, clearcoatPadding), sizeof(float)},
     };
-    for (const auto* shader : {"slang", "slang.no_ibl", "depth", "slang.clearcoat", "slang.clearcoat.no_ibl"})
+    for (const auto* shader : {"slang", "slang.no_ibl", "depth", "slang.clearcoat", "slang.clearcoat.no_ibl",
+                              "slang.sheen", "slang.sheen.no_ibl", "slang.clearcoat.sheen", "slang.clearcoat.sheen.no_ibl",
+                              "gbuffer"})
     {
         SCOPED_TRACE(shader);
         const bool   clearcoat   = std::string_view(shader).contains(".clearcoat");
@@ -278,6 +284,25 @@ TEST(ShaderDataLayout, MaterialUniformsMatchCompiledShaders)
         const auto   material    = parameter(shader, "material");
         checkFields(material.at("type").at("elementType"), std::span(expected).first(fieldCount));
         EXPECT_EQ(material.at("type").at("elementVarLayout").at("binding").at("size"), uniformSize);
+    }
+}
+
+TEST(ShaderDataLayout, SheenBindingsMatchCompiledShaders)
+{
+    for (const auto* shader : {"slang.sheen", "slang.sheen.no_ibl", "slang.clearcoat.sheen",
+                               "slang.clearcoat.sheen.no_ibl", "deferred_lighting", "deferred_lighting.no_ibl"})
+    {
+        SCOPED_TRACE(shader);
+        EXPECT_EQ(parameter(shader, "sheenLUT").at("binding").at("index"), RenderInterface::kSheenLutImageBinding);
+        EXPECT_EQ(parameter(shader, "sheenLUTSampler").at("binding").at("index"), RenderInterface::kSheenLutSamplerBinding);
+    }
+    for (const auto* shader : {"slang.sheen", "slang.clearcoat.sheen", "gbuffer"})
+    {
+        SCOPED_TRACE(shader);
+        EXPECT_EQ(parameter(shader, "sheenColorTexture").at("binding").at("index"),
+                  RenderInterface::kMaterialSheenColorImageBinding);
+        EXPECT_EQ(parameter(shader, "sheenRoughnessTexture").at("binding").at("index"),
+                  RenderInterface::kMaterialSheenRoughnessImageBinding);
     }
 }
 

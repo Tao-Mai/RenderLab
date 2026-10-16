@@ -108,12 +108,12 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
     const auto averaged = sample();
     CHECK(std::isfinite(averaged) && averaged > 0);
     CHECK(pass.sampleCount() == 2);
-    auto&       light     = *scenes.scene().actors[1]->getComponent<LightComponent>();
-    const float intensity = light.intensity;
-    light.intensity       = 0;
+    auto&       light     = *scenes.scene().actors[1]->getComponent<RectAreaLightComponent>();
+    const float intensity = light.luminousIntensity;
+    light.luminousIntensity       = 0;
     CHECK(sample() == 0);
     CHECK(pass.sampleCount() == 1);
-    light.intensity = intensity;
+    light.luminousIntensity = intensity;
     CHECK(sample() == first);
     CHECK(pass.sampleCount() == 1);
     LOG_INFO(
@@ -166,8 +166,11 @@ int main(int, char** argv)
     scene.actors.push_back(std::move(sphere));
     auto lamp                  = std::make_unique<ALight>(std::make_unique<RectAreaLightComponent>());
     lamp->transform().position = {2, 2, 3};
-    lamp->getComponent<LightComponent>()->intensity = 159.154943f;
+    lamp->getComponent<LocalLightComponent>()->luminousIntensity = 159.154943f;
     scene.actors.push_back(std::move(lamp));
+    auto disabledSun = std::make_unique<ALight>(std::make_unique<DirectionalLightComponent>());
+    disabledSun->getComponent<DirectionalLightComponent>()->enabled = false;
+    scene.actors.push_back(std::move(disabledSun));
     scenes.load(scene);
     EditorCamera camera{scenes.scene().editorCamera};
     RenderSystem system;
@@ -210,7 +213,7 @@ int main(int, char** argv)
     draw();
     CHECK(renderer.offlineSampleCount() == 1);
     draw();
-    scenes.scene().actors[1]->getComponent<LightComponent>()->intensity *= 2;
+    scenes.scene().actors[1]->getComponent<LocalLightComponent>()->luminousIntensity *= 2;
     draw();
     CHECK(renderer.offlineSampleCount() == 1);
     feature.offline.maxRecursionDepth = 3;

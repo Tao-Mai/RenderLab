@@ -5,6 +5,7 @@
 [[vk::binding(1, 3)]] Texture2D<float4> normalRoughness;
 [[vk::binding(2, 3)]] Texture2D<float4> emissiveMetallic;
 [[vk::binding(3, 3)]] Texture2D<float> sceneDepth;
+[[vk::binding(4, 3)]] Texture2D<float4> sheenColorRoughness;
 
 struct DeferredLightingParameters
 {
@@ -46,5 +47,8 @@ float4 fragMain(VertexOutput input) : SV_Target
     surface.roughness = normal.a;
     surface.metallic = emissive.a;
     surface.emissive = emissive.rgb;
+    float4 sheen = sheenColorRoughness.Load(int3(pixel, 0));
+    surface.sheenColor = sheen.rgb;
+    surface.sheenRoughness = sheen.a;
     return float4(evaluateLighting(surface, pixel), 1.0);
 }

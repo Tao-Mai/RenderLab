@@ -1,4 +1,5 @@
 #include "editor/ComponentDraw.h"
+#include "editor/MaterialExtensionsDraw.h"
 
 #include "asset/ApplyOptionalFields.h"
 #include "asset/AssetManager.h"
@@ -212,7 +213,7 @@ TEST_F(ComponentDrawTest, LightTypeSelectionReplacesComponentAndPreservesCommonP
     actor.init();
     auto* point = actor.getComponent<PointLightComponent>();
     point->color = {0.2f, 0.4f, 0.6f};
-    point->intensity = 42.0f;
+    point->luminousIntensity = 42.0f;
     point->range = 25.0f;
     point->castShadow = true;
     const auto draw = [&] { return drawComponent(*actor.getComponent<LightComponent>()); };
@@ -239,7 +240,7 @@ TEST_F(ComponentDrawTest, LightTypeSelectionReplacesComponentAndPreservesCommonP
     EXPECT_EQ(actor.components.size(), 2u);
     EXPECT_EQ(&area->actor(), &actor);
     EXPECT_EQ(area->color, glm::vec3(0.2f, 0.4f, 0.6f));
-    EXPECT_FLOAT_EQ(area->intensity, 42.0f);
+    EXPECT_FLOAT_EQ(area->luminousIntensity, 42.0f);
     EXPECT_FLOAT_EQ(area->range, 25.0f);
     EXPECT_TRUE(area->castShadow);
 }
@@ -428,4 +429,54 @@ TEST(ComponentMaterialEdit, MergeIgnoresNonOptionalAndEmptyFields)
     EXPECT_EQ(stock.emissive, glm::vec3{0.1f});
     ASSERT_TRUE(stock.baseColorTexture);
     EXPECT_EQ(stock.baseColorTexture->textureID, TextureAsset::ID{"white"});
+}
+
+TEST_F(ComponentDrawTest, MaterialExtensionInspectorShowsParametersWithoutChangingIdleValues)
+{
+    PbrMaterialAsset material;
+    material.clearcoat.emplace();
+    material.sheen.emplace();
+    material.anisotropy.emplace();
+    material.transmission.emplace();
+    material.volume.emplace();
+    material.ior = 1.5f;
+    material.specular.emplace();
+    material.iridescence.emplace();
+    material.dispersion = 0.5f;
+    material.emissiveStrength = 5.0f;
+    material.unlit = true;
+    material.diffuseTransmission.emplace();
+    const auto original = Serialize(material);
+    const auto text = frame([&] { EXPECT_FALSE(drawMaterialExtensions(material)); });
+
+    for (const auto* label : {"Clearcoat", "Sheen", "Anisotropy", "Transmission", "Volume", "IOR",
+                             "Specular", "Iridescence", "Dispersion", "Emissive Strength", "Unlit",
+                             "Diffuse Transmission"})
+        EXPECT_NE(text.find(label), std::string::npos) << label;
+    EXPECT_EQ(Serialize(material), original);
+    EXPECT_FALSE(material.volume->attenuationDistance);
+}
+
+TEST_F(ComponentDrawTest, AnisotropyInspectorClampsStrengthAndStoresRotationInRadians)
+{
+    PbrMaterialAsset material;
+    material.anisotropy.emplace();
+    const auto draw = [&] { return ComponentDrawResult{drawMaterialExtensions(material)}; };
+    const auto extensionField = [](const char* label)
+    {
+        ImGui::PushID("Anisotropy");
+        const auto id = ImGui::GetID(label);
+        ImGui::PopID();
+        return id;
+    };
+    EXPECT_TRUE(enterScalar(draw, [&] { return extensionField("Strength"); }, "2").edited);
+    EXPECT_FLOAT_EQ(material.anisotropy->strength, 1.0f);
+    EXPECT_TRUE(enterScalar(draw, [&] { return extensionField("Rotation"); }, "90").edited);
+    EXPECT_NEAR(material.anisotropy->rotation, glm::radians(90.0f), 0.0001f);
+
+    const PbrMaterialAsset stock;
+    const auto patch = component_draw::materialOverrideDiff(stock, material);
+    PbrMaterialAsset restored;
+    Deserialize(Serialize(patch), restored);
+    EXPECT_EQ(restored.anisotropy, material.anisotropy);
 }

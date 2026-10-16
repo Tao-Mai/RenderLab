@@ -219,9 +219,9 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
     );
     scenes.deleteActor(blocker.selectionId());
 
-    const float originalIntensity = spot.intensity;
+    const float originalIntensity = spot.luminousIntensity;
     replaceLightComponent(spot, std::make_unique<DirectionalLightComponent>());
-    lamp.getComponent<LightComponent>()->intensity = 3.0f;
+    lamp.getComponent<DirectionalLightComponent>()->illuminance = 3.0f;
     lamp.transform().setRotationEulerDegrees({0, 45, 0});
     const auto directionalClear = sample(false, false, true);
     compare(directionalClear, sample(true, false, true));
@@ -240,13 +240,35 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
     );
     scenes.deleteActor(upstreamBlocker.selectionId());
     replaceLightComponent(*lamp.getComponent<LightComponent>(), std::make_unique<PointLightComponent>());
-    lamp.getComponent<LightComponent>()->intensity = originalIntensity;
+    lamp.getComponent<LocalLightComponent>()->luminousIntensity = originalIntensity;
     lamp.transform().rotation                      = originalRotation;
 
     auto& material     = scenes.scene().actors[0]->getComponent<RenderComponent>()->materialOverrides[0];
     material.clearcoat = PbrMaterialAsset::Clearcoat{.factor = 1.0f, .roughnessFactor = 0.2f};
     compare(lastDeferred, sample(true, true, true));
     LOG_INFO("Deferred uses the base PBR material when clearcoat is present.");
+
+    material.clearcoat.reset();
+    material.sheen = PbrMaterialAsset::Sheen{.colorFactor = glm::vec3{0.0f}, .roughnessFactor = 0.5f};
+    const auto zeroSheen = sample(false, true, false);
+    material.sheen.reset();
+    compare(zeroSheen, sample(false, true, false));
+    material.sheen = PbrMaterialAsset::Sheen{.colorFactor = {0.7f, 0.4f, 0.2f}, .roughnessFactor = 0.5f};
+    for (const bool ibl : {false, true})
+    {
+        const auto sheen = sample(false, ibl, false);
+        compare(sheen, sample(true, ibl, false));
+        CHECK(std::isfinite(sheen.x) && std::isfinite(sheen.y) && std::isfinite(sheen.z));
+    }
+    CHECK(glm::length(sample(false, true, false) - zeroSheen) > 0.005f);
+    for (const float roughness : {0.0f, 1.0f})
+    {
+        material.sheen->roughnessFactor = roughness;
+        const auto sheen = sample(false, true, false);
+        compare(sheen, sample(true, true, false));
+        CHECK(std::isfinite(sheen.x) && std::isfinite(sheen.y) && std::isfinite(sheen.z));
+    }
+    LOG_INFO("Sheen: zero-layer identity, Forward/Deferred, IBL, and roughness endpoints passed.");
     graph.reset();
     for (auto& data : frameData)
         data.reset();
@@ -296,7 +318,7 @@ int main(int, char** argv)
     scene.actors.push_back(std::move(cube));
     auto light                                        = std::make_unique<ALight>();
     light->transform().position                       = {2, 0, 3};
-    light->getComponent<LightComponent>()->intensity  = 30.0f;
+    light->getComponent<LocalLightComponent>()->luminousIntensity  = 30.0f;
     light->getComponent<LightComponent>()->castShadow = true;
     scene.actors.push_back(std::move(light));
     scenes.load(scene);

@@ -93,6 +93,16 @@ void GpuMaterial::create(
              &textures.clearcoat->normal}
         );
     }
+    bindings.push_back(
+        {RenderInterface::kMaterialSheenColorImageBinding,
+         RenderInterface::kMaterialSheenColorSamplerBinding,
+         &textures.sheenColor}
+    );
+    bindings.push_back(
+        {RenderInterface::kMaterialSheenRoughnessImageBinding,
+         RenderInterface::kMaterialSheenRoughnessSamplerBinding,
+         &textures.sheenRoughness}
+    );
     std::vector<vk::DescriptorImageInfo> images(bindings.size());
     std::vector<vk::DescriptorImageInfo> samplers(bindings.size());
     std::vector<vk::WriteDescriptorSet>  writes(bindings.size() * 2 + 1);
@@ -167,20 +177,23 @@ void GpuMaterial::updateParameters(const PbrMaterialAsset& material)
 
     DCHECK(material.clearcoat.has_value() == textures.clearcoat.has_value());
     const auto clearcoat = material.clearcoat.value_or(PbrMaterialAsset::Clearcoat{});
-    parameterData = MaterialUniforms{
-        .baseColorFactor          = material.baseColorFactor.value_or(glm::vec4{1.0f}),
-        .roughness                = material.roughness.value_or(1.0f),
-        .metallic                 = material.metallic.value_or(1.0f),
-        .alphaCutoff              = material.alphaCutoff.value_or(0.5f),
-        .alphaMode                = mode == MaterialAlphaMode::Mask ? 1u
-                           : mode == MaterialAlphaMode::Blend       ? 2u
-                                                                    : 0u,
-        .normalScale              = material.normalScale.value_or(1.0f),
-        .occlusionStrength        = material.ao.value_or(1.0f),
-        .emissiveFactor           = glm::vec4(material.emissive.value_or(glm::vec3{0.0f}), 0.0f),
-        .clearcoatFactor          = clearcoat.factor,
-        .clearcoatRoughnessFactor = clearcoat.roughnessFactor,
-        .clearcoatNormalScale     = clearcoat.normalScale,
+    const auto sheen     = material.sheen.value_or(PbrMaterialAsset::Sheen{});
+    parameterData        = MaterialUniforms{
+               .baseColorFactor          = material.baseColorFactor.value_or(glm::vec4{1.0f}),
+               .roughness                = material.roughness.value_or(1.0f),
+               .metallic                 = material.metallic.value_or(1.0f),
+               .alphaCutoff              = material.alphaCutoff.value_or(0.5f),
+               .alphaMode                = mode == MaterialAlphaMode::Mask ? 1u
+                                  : mode == MaterialAlphaMode::Blend       ? 2u
+                                                                           : 0u,
+               .normalScale              = material.normalScale.value_or(1.0f),
+               .occlusionStrength        = material.ao.value_or(1.0f),
+               .emissiveFactor           = glm::vec4(material.emissive.value_or(glm::vec3{0.0f}), 0.0f),
+               .sheenColorFactor         = sheen.colorFactor,
+               .sheenRoughnessFactor     = sheen.roughnessFactor,
+               .clearcoatFactor          = clearcoat.factor,
+               .clearcoatRoughnessFactor = clearcoat.roughnessFactor,
+               .clearcoatNormalScale     = clearcoat.normalScale,
     };
     materialBuffer->upload(&parameterData, materialBuffer->size());
 }

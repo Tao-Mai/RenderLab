@@ -1,6 +1,6 @@
 {
     "initialScene": {
-        "value": "csm_test"
+        "value": "material_gallery"
     },
     "paths": {
         "assets": "../assets",

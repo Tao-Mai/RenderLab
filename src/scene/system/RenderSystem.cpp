@@ -66,7 +66,7 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
         }
 
         LightData lightData{
-            .colorEmission = light->photometricEmission(),
+            .color         = light->emissionColor(),
             .positionRange = {transform->position, 0.0f},
             .direction     = {direction, 0.0f},
             .flags = {static_cast<uint32_t>(lightType), light->enabled ? 1u : 0u, light->castShadow ? 1u : 0u, 0u},

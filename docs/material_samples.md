@@ -20,7 +20,7 @@
 
 - 每份源模型导入为一个 MeshAsset，保留 submesh 的材质关联；最长轴统一缩放为 3 米。
 - 参数与扩展贴图引用存入 PbrMaterialAsset；纹理按属性要求区分 Linear / sRGB，并生成 mipmap。
-- 原有 Clearcoat 渲染保持不变；本轮新增的扩展尚未接入 GPU 数据、descriptor 或 shader 着色。
+- Clearcoat 与 Sheen 已接入渲染；其余扩展目前仅导入参数和纹理引用。
 - Volume 的 attenuationDistance 为 null 时表示无限衰减距离，而不是将无穷大写入 JSON。
 - 本轮没有修改默认场景、曝光或其他全局渲染设置。
 - 当前纹理绑定只支持 TEXCOORD_0，扩展贴图的 KHR_texture_transform 暂不支持，导入时明确检查。

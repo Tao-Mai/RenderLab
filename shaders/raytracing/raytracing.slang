@@ -1,6 +1,7 @@
 #include "../light_data.slang"
 #include "../constant.slang"
 #include "../random.slang"
+#include "../point_light_sampling.slang"
 #include "material_data.slang"
 
 
@@ -108,7 +109,7 @@ struct Surface
         );
     }
 
-    float3 sampleDiffuseLuminance(uint depth, float3 throughput, inout uint state)
+    float3 sampleDiffuseRadiance(uint depth, float3 throughput, inout uint state)
     {
         // Cosine-weighted Lambert sampling has BRDF * cosine / PDF = baseColor.
         float3 nextThroughput = throughput * baseColor;
@@ -145,69 +146,77 @@ struct Surface
         return bounce.color / survivalProbability;
     }
 
-    float3 shade(uint lightCount, uint depth, float3 throughput, inout uint state)
+    float3 samplePointLightRadiance(LightRanges ranges, inout uint state)
     {
-        float3 luminance = float3(0.0);
-        float3 origin = position + normal * kRayEpsilon;
+        PointLightSample selected = samplePointLight(lights, ranges.directionalEnd, ranges.pointEnd, position, state);
+        if (selected.probability == 0.0)
+            return float3(0.0);
 
-        for (uint index = 0; index < lightCount; ++index)
+        LightData light = lights[selected.index];
+        float3 toLight = light.position - position;
+        float distanceSquared = dot(toLight, toLight);
+        float3 lightDirection = toLight * rsqrt(distanceSquared);
+        float nDotL = saturate(dot(normal, lightDirection));
+        if (nDotL == 0.0)
+            return float3(0.0);
+
+        float3 shadowOffset = light.position - (position + normal * kRayEpsilon);
+        float shadowDistance = length(shadowOffset);
+        if (!isVisible(normalize(shadowOffset), shadowDistance))
+            return float3(0.0);
+
+        // Delta point lights do not compete with the BRDF's continuous direction sampling.
+        float3 incidentIrradiance = light.color / distanceSquared;
+        return incidentIrradiance * nDotL * INV_PI / selected.probability;
+    }
+
+    float3 shade(LightRanges ranges, uint depth, float3 throughput, inout uint state)
+    {
+        float3 radiance = samplePointLightRadiance(ranges, state);
+        for (uint index = 0; index < ranges.directionalEnd; ++index)
         {
             LightData light = lights[index];
             if (!light.enabled)
                 continue;
 
-            if (light.type == LightType::Point) { 
-                float3 toLight = light.position - position;
-                float distanceSquared = dot(toLight, toLight);
-                if (distanceSquared == 0.0)
-                    continue;
+            // Stored direction is light propagation; visibility points toward the source at infinity.
+            float3 lightDirection = -normalize(light.direction.xyz);
+            float nDotL = saturate(dot(normal, lightDirection));
+            if (nDotL == 0.0 || !isVisible(lightDirection, kMaxRayDistance))
+                continue;
 
-                float3 lightDirection = toLight * rsqrt(distanceSquared);
-                float nDotL = saturate(dot(normal, lightDirection));
-                float3 shadowOffset = light.position - origin;
-                float shadowDistance = length(shadowOffset);
-                if (nDotL == 0.0 || !isVisible(normalize(shadowOffset), shadowDistance))
-                    continue;
-
-                float3 incidentIlluminance = light.color * light.luminousIntensity / distanceSquared;
-                float3 illuminance = incidentIlluminance * nDotL;
-                float brdf = INV_PI;
-                luminance += illuminance * brdf;
-            } else if (light.type == LightType::Directional) {
-                // Stored direction is light propagation; visibility points toward the source at infinity.
-                float3 lightDirection = -normalize(light.direction.xyz);
-                float nDotL = saturate(dot(normal, lightDirection));
-                if (nDotL == 0.0 || !isVisible(lightDirection, kMaxRayDistance))
-                    continue;
-
-                // A delta light has no competing diffuse-sampling path or distance attenuation.
-                float3 incidentIlluminance = light.color * light.illuminance;
-                luminance += incidentIlluminance * nDotL * INV_PI;
-            } else if (light.type == LightType::RectArea) {
-                RectAreaLight emitter = {light};
-                float3 sampleLightPosition = emitter.samplePosition(state);
-                float3 toLight = sampleLightPosition - origin;
-                float distanceSquared = dot(toLight, toLight);
-                if (distanceSquared == 0.0)
-                    continue;
-
-                float3 lightDirection = toLight * rsqrt(distanceSquared);
-                float nDotL = saturate(dot(normal, lightDirection));
-                float lightPdf = emitter.pdf(origin, sampleLightPosition);
-                if (nDotL == 0.0 || lightPdf == 0.0 || !isVisible(lightDirection, sqrt(distanceSquared)))
-                    continue;
-
-                // Every enabled light receives one NEE sample, so no light-selection probability is needed.
-                float brdfPdf = nDotL * INV_PI;
-                float weight = balanceHeuristic(lightPdf, brdfPdf);
-                luminance += light.color * light.luminance * nDotL * INV_PI * weight / lightPdf;
-            }
-            
+            // A delta light has no competing diffuse-sampling path or distance attenuation.
+            radiance += light.color * nDotL * INV_PI;
         }
 
-        luminance += sampleDiffuseLuminance(depth, throughput, state);
+        float3 origin = position + normal * kRayEpsilon;
+        for (uint index = ranges.pointEnd; index < ranges.rectAreaEnd; ++index)
+        {
+            LightData light = lights[index];
+            if (!light.enabled)
+                continue;
 
-        return baseColor * luminance;
+            RectAreaLight emitter = {light};
+            float3 sampleLightPosition = emitter.samplePosition(state);
+            float3 toLight = sampleLightPosition - origin;
+            float distanceSquared = dot(toLight, toLight);
+            if (distanceSquared == 0.0)
+                continue;
+
+            float3 lightDirection = toLight * rsqrt(distanceSquared);
+            float nDotL = saturate(dot(normal, lightDirection));
+            float lightPdf = emitter.pdf(origin, sampleLightPosition);
+            if (nDotL == 0.0 || lightPdf == 0.0 || !isVisible(lightDirection, sqrt(distanceSquared)))
+                continue;
+
+            // Every enabled area light receives one NEE sample; point-light selection does not enter this MIS.
+            float brdfPdf = nDotL * INV_PI;
+            float weight = balanceHeuristic(lightPdf, brdfPdf);
+            radiance += light.color * nDotL * INV_PI * weight / lightPdf;
+        }
+
+        radiance += sampleDiffuseRadiance(depth, throughput, state);
+        return baseColor * radiance;
     }
 };
 
@@ -264,8 +273,9 @@ struct RayTracingParameters
     float4x4 inverseViewProjection;
     float4 cameraPosition;
     float4 viewport;
-    uint lightCount;
+    LightRanges lightRanges;
     uint maxRecursionDepth;
+    uint padding0;
     uint padding1;
     uint padding2;
 
@@ -332,7 +342,7 @@ void closestHitMain(inout Payload payload, BuiltInTriangleIntersectionAttributes
 
     HitData hit = objects[InstanceID()];
     Surface surface = hit.surfaceAt(PrimitiveIndex(), attributes.barycentrics);
-    payload.color = surface.shade(parameters.lightCount, payload.depth, payload.throughput, payload.randomState);
+    payload.color = surface.shade(parameters.lightRanges, payload.depth, payload.throughput, payload.randomState);
 }
 
 [shader("closesthit")]
@@ -344,5 +354,5 @@ void lightClosestHitMain(inout Payload payload, BuiltInTriangleIntersectionAttri
     float3 target = origin + WorldRayDirection() * RayTCurrent();
     float lightPdf = emitter.pdf(origin, target);
     float weight = balanceHeuristic(payload.brdfPdf, lightPdf);
-    payload.color = emitter.data.color * emitter.data.luminance * weight;
+    payload.color = emitter.data.color * weight;
 }

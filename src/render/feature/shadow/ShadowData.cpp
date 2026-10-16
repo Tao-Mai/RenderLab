@@ -8,6 +8,26 @@
 
 namespace
 {
+LightRanges groupLights(std::span<const LightData> source, std::vector<LightData>& grouped)
+{
+    grouped.reserve(source.size());
+    const auto append = [&](GpuLightType type)
+    {
+        for (const auto& light : source)
+            if (light.type() == type)
+                grouped.push_back(light);
+        return static_cast<uint32_t>(grouped.size());
+    };
+
+    LightRanges ranges;
+    ranges.directionalEnd = append(GpuLightType::Directional);
+    ranges.pointEnd       = append(GpuLightType::Point);
+    ranges.rectAreaEnd    = append(GpuLightType::RectArea);
+    ranges.spotEnd        = append(GpuLightType::Spot);
+    DCHECK(grouped.size() == source.size());
+    return ranges;
+}
+
 constexpr std::array kFaceDirections = {
     glm::vec3{1.0f, 0.0f, 0.0f},
     glm::vec3{-1.0f, 0.0f, 0.0f},
@@ -199,7 +219,7 @@ prepareShadows(const ViewUniforms& view, std::span<const LightData> frameLights,
 {
     ShadowFrameData result;
     CHECK(shadows.cascade.count > 0 && shadows.cascade.count <= kMaxDirectionalShadowCascades);
-    result.lights.assign(frameLights.begin(), frameLights.end());
+    result.lightRanges = groupLights(frameLights, result.lights);
     for (LightData& light : result.lights)
     {
         light.shadowidx = ~0u;

@@ -45,6 +45,8 @@ public:
         Texture                  roughness;
         Texture                  emissive;
         Texture                  occlusion;
+        Texture                  sheenColor;
+        Texture                  sheenRoughness;
         std::optional<Clearcoat> clearcoat;
     };
 
@@ -61,13 +63,13 @@ public:
     [[nodiscard]] vk::DescriptorSet descriptorSetHandle() const { return *descriptorSet; }
     [[nodiscard]] PipelineKey
     pipelineKey(std::span<const vk::Format> colorFormats, vk::Format depthFormat, vk::PipelineLayout layout) const;
-    [[nodiscard]] MaterialAlphaMode alphaMode() const { return mode; }
-    [[nodiscard]] vk::ImageView     baseColorView() const { return textures.baseColor.image->imageView(); }
-    [[nodiscard]] vk::Sampler       baseColorSampler() const { return textures.baseColor.sampler; }
-    [[nodiscard]] const glm::vec4&  baseColorFactor() const { return parameterData.baseColorFactor; }
+    [[nodiscard]] MaterialAlphaMode       alphaMode() const { return mode; }
+    [[nodiscard]] vk::ImageView           baseColorView() const { return textures.baseColor.image->imageView(); }
+    [[nodiscard]] vk::Sampler             baseColorSampler() const { return textures.baseColor.sampler; }
+    [[nodiscard]] const glm::vec4&        baseColorFactor() const { return parameterData.baseColorFactor; }
     [[nodiscard]] const MaterialUniforms& parameters() const { return parameterData; }
-    [[nodiscard]] const Textures& textureBindings() const { return textures; }
-    [[nodiscard]] bool doubleSided() const;
+    [[nodiscard]] const Textures&         textureBindings() const { return textures; }
+    [[nodiscard]] bool                    doubleSided() const;
 
 private:
     Textures                textures;

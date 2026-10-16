@@ -48,6 +48,40 @@ Texture2D<float4> brdfLUT;
 [[vk::binding(18, 0)]]
 SamplerState brdfLUTSampler;
 
+#if ENABLE_SHEEN
+[[vk::binding(21, 0)]] Texture2D<float4> sheenLUT;
+[[vk::binding(22, 0)]] SamplerState sheenLUTSampler;
+#if ENABLE_IBL
+[[vk::binding(19, 0)]] TextureCube<float4> radianceMap;
+[[vk::binding(20, 0)]] SamplerState radianceSampler;
+
+// Integrate Charlie against the original radiance, not the GGX-prefiltered environment.
+// Cosine-weighted sampling cancels NdotL / PDF to PI. No extra Fresnel or E normalization.
+static const uint kSheenIblSampleCount = 64;
+float3 evaluateSheenIbl(Surface surface, float3 V)
+{
+    if (!any(surface.sheenColor > 0.0))
+        return float3(0.0);
+    float3 N = surface.normal;
+    float3 axis = abs(N.z) < 0.999 ? float3(0.0, 0.0, 1.0) : float3(0.0, 1.0, 0.0);
+    float3 T = normalize(cross(axis, N));
+    float3 B = cross(N, T);
+    float3 integral = float3(0.0);
+    [loop]
+    for (uint sampleIndex = 0; sampleIndex < kSheenIblSampleCount; ++sampleIndex)
+    {
+        float u = (float(sampleIndex) + 0.5) / kSheenIblSampleCount;
+        float angle = float(reversebits(sampleIndex)) * (2.0 * PI / 4294967296.0);
+        float radius = sqrt(u);
+        float3 L = T * (radius * cos(angle)) + B * (radius * sin(angle)) + N * sqrt(1.0 - u);
+        float brdf = evaluateSheenBrdf(surface.sheenRoughness, N, V, L);
+        integral += radianceMap.SampleLevel(radianceSampler, L, 0.0).rgb * brdf;
+    }
+    return surface.sheenColor * integral * (PI / kSheenIblSampleCount);
+}
+#endif
+#endif
+
 float spotAngularAttenuation(LightData light, float3 lightToSurfaceDirection)
 {
     float cosine = dot(light.direction.xyz, lightToSurfaceDirection);
@@ -248,11 +282,46 @@ float rectAreaShadowPCSS(LightData light, float3 worldPos, uint2 pixel)
     return totalVisibility / kRectangle16SampleCount;
 }
 
+float3 evaluateDirectContribution(
+    Surface surface, float3 V, float3 lightDirection, float3 incidentIrradiance, float visibility)
+{
+    if (visibility <= 0.0)
+        return float3(0.0);
+
+    float nDotL = saturate(dot(surface.normal, lightDirection));
+    float3 brdf = evaluateDirectBrdf(
+        surface.baseColor.rgb, surface.metallic, surface.roughness, surface.normal, V, lightDirection);
+    float3 response = brdf * nDotL;
+#if ENABLE_SHEEN
+    float sheenStrength = max(surface.sheenColor.x, max(surface.sheenColor.y, surface.sheenColor.z));
+    float nDotV = saturate(dot(surface.normal, V));
+    float sheenViewAlbedo = sheenLUT.SampleLevel(sheenLUTSampler, float2(nDotV, surface.sheenRoughness), 0.0).r;
+    float sheenLightAlbedo = sheenLUT.SampleLevel(sheenLUTSampler, float2(nDotL, surface.sheenRoughness), 0.0).r;
+    float baseScale = saturate(1.0 - sheenStrength * max(sheenViewAlbedo, sheenLightAlbedo));
+    response = response * baseScale + surface.sheenColor
+        * evaluateSheenBrdf(surface.sheenRoughness, surface.normal, V, lightDirection) * nDotL;
+#endif
+#if ENABLE_CLEARCOAT
+    float clearcoatNdotV = saturate(dot(surface.clearcoatNormal, V));
+    float clearcoatWeight = surface.clearcoatFactor * fresnelSchlick(float3(kClearcoatF0), clearcoatNdotV).x;
+    float clearcoatNdotL = saturate(dot(surface.clearcoatNormal, lightDirection));
+    float clearcoatResponse = evaluateClearcoatBrdf(
+        surface.clearcoatRoughness, surface.clearcoatNormal, V, lightDirection) * clearcoatNdotL;
+    response = lerp(response, float3(clearcoatResponse), clearcoatWeight);
+#endif
+    return incidentIrradiance * response * visibility;
+}
+
 float3 evaluateLighting(Surface surface, uint2 pixel)
 {
     float3 V = normalize(viewUniforms.cameraPosition.xyz - surface.worldPosition);
     float NdotV = saturate(dot(surface.normal, V));
     float3 f0 = lerp(0.04, surface.baseColor.rgb, float3(surface.metallic));
+#if ENABLE_SHEEN
+    float sheenStrength = max(surface.sheenColor.x, max(surface.sheenColor.y, surface.sheenColor.z));
+    float sheenViewAlbedo = sheenLUT.SampleLevel(sheenLUTSampler, float2(NdotV, surface.sheenRoughness), 0.0).r;
+    float sheenAmbientScale = saturate(1.0 - sheenStrength * sheenViewAlbedo);
+#endif
 #if ENABLE_CLEARCOAT
     float3 clearcoatNormal = surface.clearcoatNormal;
     float clearcoatRoughness = surface.clearcoatRoughness;
@@ -263,81 +332,81 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
     float2 shadowRotation = lightUniforms.shadowPixelRotation
         ? pixelSampleRotation(pixel)
         : float2(1.0, 0.0);
+    LightRanges ranges = lightUniforms.lightRanges;
     float3 direct = float3(0.0);
-    for (uint index = 0; index < lightUniforms.lightCount; ++index)
+    for (uint index = 0; index < ranges.directionalEnd; ++index)
     {
         LightData light = lights[index];
-        if (!light.enabled) continue;
+        if (!light.enabled)
+            continue;
 
-        float3 lightDirection;
-        // Incident illuminance on a plane perpendicular to lightDirection (lux), before NdotL.
-        float3 incidentIlluminance;
+        float3 lightDirection = -light.direction.xyz;
         float visibility = 1.0;
+        if (light.castShadow)
+            visibility = directionalShadowVisibility(light, surface.worldPosition, shadowRotation);
+        direct += evaluateDirectContribution(surface, V, lightDirection, light.color, visibility);
+    }
 
-        if (light.type == LightType.Point || light.type == LightType.Spot)
-        {
-            float distanceToLight = length(light.position - surface.worldPosition);
-            if (distanceToLight <= 0.0 || distanceToLight > light.range)
-                continue;
-
-            lightDirection = (light.position - surface.worldPosition) / distanceToLight;
-            incidentIlluminance = light.color * light.luminousIntensity / (distanceToLight * distanceToLight);
-            if (light.type == LightType.Spot)
-            {
-                float attenuation = spotAngularAttenuation(light, -lightDirection);
-                if (attenuation <= 0.0)
-                    continue;
-                incidentIlluminance *= attenuation;
-            }
-            if (light.castShadow)
-            {
-                if (light.type == LightType.Point)
-                {
-                    float depth = distanceToLight / light.range;
-                    visibility = pcf(-lightDirection, light.shadowIdx, depth, shadowRotation);
-                }
-                else
-                    visibility = spotShadowVisibility(light, surface.worldPosition, shadowRotation);
-            }
-        }
-        else if (light.type == LightType.Directional)
-        {
-            lightDirection = -light.direction.xyz;
-            incidentIlluminance = light.color * light.illuminance;
-            if (light.castShadow)
-                visibility = directionalShadowVisibility(light, surface.worldPosition, shadowRotation);
-        }
-        else if (light.type == LightType.RectArea)
-        {
-            float distanceToLight = length(light.position - surface.worldPosition);
-            if (distanceToLight <= 0.0)
-                continue;
-
-            // Center-direction approximation; finite-area specular integration is not included.
-            lightDirection = (light.position - surface.worldPosition) / distanceToLight;
-            float projectedArea = light.areaSize.x * light.areaSize.y
-                * saturate(dot(-lightDirection, light.direction.xyz));
-            float solidAngle = projectedArea / (distanceToLight * distanceToLight);
-            incidentIlluminance = light.color * light.luminance * solidAngle;
-            if (light.castShadow)
-                visibility = rectAreaShadowPCSS(light, surface.worldPosition, pixel);
-        }
-        else
+    for (uint index = ranges.directionalEnd; index < ranges.pointEnd; ++index)
+    {
+        LightData light = lights[index];
+        if (!light.enabled)
             continue;
 
-        float nDotL = saturate(dot(surface.normal, lightDirection));
-        if (visibility <= 0.0)
+        float distanceToLight = length(light.position - surface.worldPosition);
+        if (distanceToLight <= 0.0 || distanceToLight > light.range)
             continue;
 
-        float3 brdf = evaluateDirectBrdf(surface.baseColor.rgb, surface.metallic, surface.roughness, surface.normal, V, lightDirection);
-        float3 response = brdf * nDotL;
-#if ENABLE_CLEARCOAT
-        float clearcoatNdotL = saturate(dot(clearcoatNormal, lightDirection));
-        float clearcoatResponse = evaluateClearcoatBrdf(clearcoatRoughness, clearcoatNormal, V, lightDirection)
-            * clearcoatNdotL;
-        response = lerp(response, float3(clearcoatResponse), clearcoatWeight);
-#endif
-        direct += incidentIlluminance * response * visibility;
+        float3 lightDirection = (light.position - surface.worldPosition) / distanceToLight;
+        float3 incidentIrradiance = light.color / (distanceToLight * distanceToLight);
+        float visibility = 1.0;
+        if (light.castShadow)
+            visibility = pcf(-lightDirection, light.shadowIdx, distanceToLight / light.range, shadowRotation);
+        direct += evaluateDirectContribution(surface, V, lightDirection, incidentIrradiance, visibility);
+    }
+
+    for (uint index = ranges.pointEnd; index < ranges.rectAreaEnd; ++index)
+    {
+        LightData light = lights[index];
+        if (!light.enabled)
+            continue;
+
+        float distanceToLight = length(light.position - surface.worldPosition);
+        if (distanceToLight <= 0.0)
+            continue;
+
+        // Center-direction approximation; finite-area specular integration is not included.
+        float3 lightDirection = (light.position - surface.worldPosition) / distanceToLight;
+        float projectedArea = light.areaSize.x * light.areaSize.y
+            * saturate(dot(-lightDirection, light.direction.xyz));
+        float solidAngle = projectedArea / (distanceToLight * distanceToLight);
+        float3 incidentIrradiance = light.color * solidAngle;
+        float visibility = 1.0;
+        if (light.castShadow)
+            visibility = rectAreaShadowPCSS(light, surface.worldPosition, pixel);
+        direct += evaluateDirectContribution(surface, V, lightDirection, incidentIrradiance, visibility);
+    }
+
+    for (uint index = ranges.rectAreaEnd; index < ranges.spotEnd; ++index)
+    {
+        LightData light = lights[index];
+        if (!light.enabled)
+            continue;
+
+        float distanceToLight = length(light.position - surface.worldPosition);
+        if (distanceToLight <= 0.0 || distanceToLight > light.range)
+            continue;
+
+        float3 lightDirection = (light.position - surface.worldPosition) / distanceToLight;
+        float attenuation = spotAngularAttenuation(light, -lightDirection);
+        if (attenuation <= 0.0)
+            continue;
+
+        float3 incidentIrradiance = light.color * attenuation / (distanceToLight * distanceToLight);
+        float visibility = 1.0;
+        if (light.castShadow)
+            visibility = spotShadowVisibility(light, surface.worldPosition, shadowRotation);
+        direct += evaluateDirectContribution(surface, V, lightDirection, incidentIrradiance, visibility);
     }
 
     float3 ambient = float3(0.0);
@@ -360,6 +429,12 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
     ambient = ambientDiffuse + ambientSpecular;
 #else
     ambient = lightUniforms.ambientCoefficient * surface.baseColor.rgb;
+#endif
+#if ENABLE_SHEEN
+    ambient *= sheenAmbientScale;
+#if ENABLE_IBL
+    ambient += evaluateSheenIbl(surface, V);
+#endif
 #endif
 #if ENABLE_CLEARCOAT
     ambient *= 1.0 - clearcoatWeight;

@@ -47,6 +47,30 @@ TEST(SpotShadow, RejectsCapacityOverflow)
     EXPECT_DEATH(prepareShadows({}, lights, {}), "");
 }
 
+TEST(LightGroups, PreservesTypeOrderAndEmptyRangesWithoutChangingSource)
+{
+    std::array<LightData, 6> lights;
+    const std::array types = {GpuLightType::Spot, GpuLightType::Point, GpuLightType::RectArea,
+                             GpuLightType::Directional, GpuLightType::Point, GpuLightType::Spot};
+    for (size_t index = 0; index < lights.size(); ++index)
+    {
+        lights[index].flags.x = static_cast<uint32_t>(types[index]);
+        lights[index].positionRange.x = static_cast<float>(index);
+    }
+    const auto source = lights;
+    const auto prepared = prepareShadows({}, lights, {.enable = false});
+    EXPECT_EQ(lights, source);
+    EXPECT_EQ(prepared.lightRanges, (LightRanges{1, 3, 4, 6}));
+    const std::array expectedSourceIndices = {3u, 1u, 4u, 2u, 0u, 5u};
+    for (size_t index = 0; index < lights.size(); ++index)
+        EXPECT_EQ(prepared.lights[index].positionRange.x, static_cast<float>(expectedSourceIndices[index]));
+
+    const auto empty = prepareShadows({}, {}, {.enable = false});
+    EXPECT_EQ(empty.lightRanges, LightRanges{});
+    const auto onlySpot = prepareShadows({}, std::span{lights}.first(1), {.enable = false});
+    EXPECT_EQ(onlySpot.lightRanges, (LightRanges{0, 0, 0, 1}));
+}
+
 TEST(PipelineWinding, PreservesCcwFrontFacesWithVulkanProjection)
 {
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 100.0f);

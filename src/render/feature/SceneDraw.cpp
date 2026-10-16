@@ -149,7 +149,9 @@ void SceneDraw::recordMeshes(
                 metadata.defines.at("ENABLE_CLEARCOAT") && options.clearcoat;
             key.shader = shaders.getOrLoad(
                 metadata.id,
-                {{"ENABLE_IBL", options.ibl ? 1 : 0}, {"ENABLE_CLEARCOAT", clearcoat ? 1 : 0}}
+                {{"ENABLE_IBL", options.ibl ? 1 : 0},
+                 {"ENABLE_CLEARCOAT", clearcoat ? 1 : 0},
+                 {"ENABLE_SHEEN", metadata.defines.at("ENABLE_SHEEN")}}
             );
         }
         const vk::Pipeline pipeline = pipelines.getOrCreate(key);

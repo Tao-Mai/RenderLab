@@ -150,21 +150,6 @@ void EditorUI::beginFrame(float)
         sceneSize = {side / framebufferScale.x, side / framebufferScale.y};
     }
 
-    // Focus follows mouse clicks, not hover, so moving into a panel does not hide the gizmo.
-    for (int button = 0; button < ImGuiMouseButton_COUNT; ++button)
-    {
-        if (!ImGui::IsMouseClicked(button))
-            continue;
-
-        sceneFocused = ImGui::IsMouseHoveringRect(
-            {scenePosition.x, scenePosition.y},
-            {scenePosition.x + sceneSize.x, scenePosition.y + sceneSize.y},
-            false
-        ) && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) &&
-            !ImGui::IsAnyItemActive() &&
-            !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
-        break;
-    }
 }
 bool EditorUI::drawGizmo(
     TransformComponent& transform, const glm::mat4& view, const glm::mat4& projection, bool enableShortcuts
@@ -309,7 +294,6 @@ float EditorUI::sceneAspectRatio() const { return scenePixels.width / scenePixel
 void EditorUI::resetLayout()
 {
     dockLayoutInitialized = false;
-    sceneFocused          = false;
     editorDockId          = 0;
     hierarchyDockId       = 0;
     hierarchy.reset();

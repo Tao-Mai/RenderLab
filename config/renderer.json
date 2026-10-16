@@ -24,7 +24,7 @@
             "maxRecursionDepth": 6
         },
         "shadow": {
-            "bias": 0.003000000026077032,
+            "bias": 0.004399999976158142,
             "cascade": {
                 "blendRatio": 0.10000000149011612,
                 "count": 4,
@@ -49,5 +49,13 @@
             "mode": "Neutral"
         }
     },
-    "renderPath": "Rasterization"
+    "renderPath": "Rasterization",
+    "sheenLut": {
+        "samplerID": {
+            "value": "linearClamp"
+        },
+        "textureID": {
+            "value": "lut_sheen_E"
+        }
+    }
 }

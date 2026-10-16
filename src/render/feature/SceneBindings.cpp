@@ -198,6 +198,7 @@ void SceneBindings::bindEnvironmentTextures()
 {
     TextureBinding irradianceBinding{BuiltinAssets::Texture::whiteCube, BuiltinAssets::Sampler::linearClamp};
     TextureBinding prefilteredBinding = irradianceBinding;
+    TextureBinding radianceBinding    = irradianceBinding;
     if (environmentMap)
     {
         const auto& environment = context().assetManager->get<EnvironmentMapAsset>(*environmentMap);
@@ -206,6 +207,13 @@ void SceneBindings::bindEnvironmentTextures()
                 !environment.prefilteredSpecular.textureID.empty() &&
                 !environment.prefilteredSpecular.samplerID.empty(),
             "environment '{}' requires irradiance and prefiltered specular textures",
+            environment.id
+        );
+        radianceBinding          = environment.radiance;
+        const auto& radianceDesc = context().assetManager->get<TextureAsset>(radianceBinding.textureID);
+        CHECK(
+            radianceDesc.layout == ImageLayout::Cubemap && radianceDesc.colorSpace == ColorSpace::Linear,
+            "environment '{}' requires a linear radiance cubemap",
             environment.id
         );
         irradianceBinding  = environment.irradiance;
@@ -222,6 +230,7 @@ void SceneBindings::bindEnvironmentTextures()
         );
     }
 
+    radianceTexture            = resources->texture(radianceBinding.textureID);
     irradianceTexture          = resources->texture(irradianceBinding.textureID);
     prefilteredSpecularTexture = resources->texture(prefilteredBinding.textureID);
     prefilteredMaxLod          = static_cast<float>(prefilteredSpecularTexture->imageInfo().mipLevels - 1);
@@ -240,6 +249,16 @@ void SceneBindings::bindEnvironmentTextures()
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
     const vk::DescriptorImageInfo lutSampler{.sampler = brdfLutSampler};
+    const vk::DescriptorImageInfo sheenImage{
+        .imageView   = sheenLutTexture->imageView(),
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+    };
+    const vk::DescriptorImageInfo sheenSampler{.sampler = sheenLutSampler};
+    const vk::DescriptorImageInfo radianceImage{
+        .imageView   = radianceTexture->imageView(),
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+    };
+    const vk::DescriptorImageInfo radianceSampler{.sampler = resources->sampler(radianceBinding.samplerID)};
     for (uint32_t index = 0; index < maxFramesInFlight; ++index)
     {
         FrameData&       frame  = frameData[index];
@@ -286,6 +305,34 @@ void SceneBindings::bindEnvironmentTextures()
                 .descriptorType  = vk::DescriptorType::eSampler,
                 .pImageInfo      = &lutSampler,
             },
+            vk::WriteDescriptorSet{
+                .dstSet          = frame.sceneSetHandle(),
+                .dstBinding      = RenderInterface::kSheenLutImageBinding,
+                .descriptorCount = 1,
+                .descriptorType  = vk::DescriptorType::eSampledImage,
+                .pImageInfo      = &sheenImage
+            },
+            vk::WriteDescriptorSet{
+                .dstSet          = frame.sceneSetHandle(),
+                .dstBinding      = RenderInterface::kSheenLutSamplerBinding,
+                .descriptorCount = 1,
+                .descriptorType  = vk::DescriptorType::eSampler,
+                .pImageInfo      = &sheenSampler
+            },
+            vk::WriteDescriptorSet{
+                .dstSet          = frame.sceneSetHandle(),
+                .dstBinding      = RenderInterface::kRadianceImageBinding,
+                .descriptorCount = 1,
+                .descriptorType  = vk::DescriptorType::eSampledImage,
+                .pImageInfo      = &radianceImage
+            },
+            vk::WriteDescriptorSet{
+                .dstSet          = frame.sceneSetHandle(),
+                .dstBinding      = RenderInterface::kRadianceSamplerBinding,
+                .descriptorCount = 1,
+                .descriptorType  = vk::DescriptorType::eSampler,
+                .pImageInfo      = &radianceSampler
+            },
         };
         vulkan->deviceHandle().updateDescriptorSets(writes, {});
     }
@@ -296,10 +343,10 @@ void SceneBindings::updateFrame(FrameData& frame, const ViewUniforms& view, cons
     const auto&   feature = context().config->rendererConfig().feature;
     const auto&   shadow  = feature.shadow;
     LightUniforms lighting{
-        .lightCount         = static_cast<uint32_t>(prepared.lights.size()),
-        .ambientCoefficient = feature.ambientCoefficient,
+        .lightRanges                   = prepared.lightRanges,
+        .ambientCoefficient            = feature.ambientCoefficient,
         .directionalShadowSampleRadius = shadow.cascade.sampleRadius,
-        .iblParameters      = {prefilteredMaxLod, 0.0f, 0.0f, 0.0f},
+        .iblParameters                 = {prefilteredMaxLod, 0.0f, 0.0f, 0.0f},
         .shadowParameters =
             {shadow.bias, shadow.sampleRadius, shadow.pixelRotation ? 1.0f : 0.0f, shadow.spotSampleRadius},
     };
@@ -317,8 +364,19 @@ void SceneBindings::refreshBindings()
             brdfAsset.format != ImageFormat::R8,
         "BRDF LUT must be a linear 2D texture with at least two channels"
     );
-    brdfLutTexture = resources->texture(brdf.textureID);
-    brdfLutSampler = resources->sampler(brdf.samplerID);
+    brdfLutTexture    = resources->texture(brdf.textureID);
+    brdfLutSampler    = resources->sampler(brdf.samplerID);
+    const auto& sheen = context().config->rendererConfig().sheenLut;
+    CHECK(!sheen.textureID.empty() && !sheen.samplerID.empty());
+    const auto& sheenAsset = context().assetManager->get<TextureAsset>(sheen.textureID);
+    CHECK(
+        sheenAsset.layout == ImageLayout::Image2D && sheenAsset.colorSpace == ColorSpace::Linear &&
+            sheenAsset.mipLevels == 1,
+        "Sheen LUT must be a linear 2D single-mip texture: {}",
+        sheen.textureID
+    );
+    sheenLutTexture = resources->texture(sheen.textureID);
+    sheenLutSampler = resources->sampler(sheen.samplerID);
     bindEnvironmentTextures();
 
     const vk::Filter filter = context().config->rendererConfig().feature.shadow.filter == SamplerAsset::Filter::Linear

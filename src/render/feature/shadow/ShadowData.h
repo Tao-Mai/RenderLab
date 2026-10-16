@@ -9,6 +9,7 @@ struct ShadowFrameData
 {
     bool operator==(const ShadowFrameData&) const = default;
     std::vector<LightData>             lights;
+    LightRanges                       lightRanges;
     std::vector<PointShadowData>       pointShadows;
     std::vector<SpotShadowData>        spotShadows;
     std::vector<RectAreaShadowData>    rectAreaShadows;

@@ -31,6 +31,7 @@ add_executable(RenderLabTests
         ${PROJECT_SOURCE_DIR}/src/scene/component/FreeFlyMoveComponent.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/component/CharacterMoveComponent.cpp
         ${PROJECT_SOURCE_DIR}/src/editor/ComponentDraw.cpp
+        ${PROJECT_SOURCE_DIR}/src/editor/MaterialExtensionsDraw.cpp
         ${PROJECT_SOURCE_DIR}/src/core/InputManager.cpp
         ${PROJECT_SOURCE_DIR}/src/core/Window.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/AssetDataManager.cpp
@@ -99,7 +100,7 @@ target_link_libraries(RenderGraphTests PRIVATE
 add_test(NAME RenderGraphTests COMMAND RenderGraphTests)
 
 # Manual checks; GPU variants require Vulkan and the project's configured assets.
-foreach(check IN ITEMS RenderGraphGpuSmoke EditorOverlayGpuCheck DeferredRenderingCheck RayTracingVisibilityCheck EditorLayoutCheck SceneImportCheck SceneEnvironmentCheck OfflineRenderingCheck ImportMaterialSamples BloomGpuCheck)
+foreach(check IN ITEMS RenderGraphGpuSmoke EditorOverlayGpuCheck DeferredRenderingCheck RayTracingVisibilityCheck EditorLayoutCheck SceneImportCheck SceneEnvironmentCheck OfflineRenderingCheck ImportMaterialSamples ImportSheenLut BloomGpuCheck)
     add_executable(${check} EXCLUDE_FROM_ALL ${check}.cpp)
     target_link_libraries(${check} PRIVATE RenderLabRuntime)
     renderlab_copy_compiler_runtime(${check})

@@ -52,6 +52,11 @@ Surface sampleSurface(VertexOutput input, bool isFrontFace)
     surface.metallic = saturate(material.metallic * metallicTexture.Sample(metallicSampler, input.uv).b);
     surface.occlusion = lerp(1.0, occlusionTexture.Sample(occlusionSampler, input.uv).r, material.occlusionStrength);
     surface.emissive = emissiveTexture.Sample(emissiveSampler, input.uv).rgb * material.emissiveFactor.rgb;
+#if ENABLE_SHEEN
+    surface.sheenColor = sheenColorTexture.Sample(sheenColorSampler, input.uv).rgb * material.sheenColorFactor;
+    surface.sheenRoughness = saturate(sheenRoughnessTexture.Sample(sheenRoughnessSampler, input.uv).a
+        * material.sheenRoughnessFactor);
+#endif
 #if ENABLE_CLEARCOAT
     float3 clearcoatNormalTs = clearcoatNormalTexture.Sample(clearcoatNormalSampler, input.uv).xyz * 2.0 - 1.0;
     clearcoatNormalTs.xy *= material.clearcoatNormalScale;

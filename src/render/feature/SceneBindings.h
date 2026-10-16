@@ -39,6 +39,9 @@ private:
     std::shared_ptr<GpuTexture>            irradianceTexture;
     std::shared_ptr<GpuTexture>            prefilteredSpecularTexture;
     std::shared_ptr<GpuTexture>            brdfLutTexture;
+    std::shared_ptr<GpuTexture>            sheenLutTexture;
+    std::shared_ptr<GpuTexture>            radianceTexture;
+    vk::Sampler                            sheenLutSampler   = nullptr;
     vk::Sampler                            brdfLutSampler    = nullptr;
     vk::raii::Sampler                      shadowSampler     = nullptr;
     vk::Filter                             shadowFilter      = vk::Filter::eLinear;

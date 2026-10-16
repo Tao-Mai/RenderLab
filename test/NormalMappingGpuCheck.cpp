@@ -53,7 +53,7 @@ int main(int argc, char** argv)
     scene.actors.push_back(std::move(object));
     auto light                                       = std::make_unique<ALight>();
     light->transform().position                      = {1, 2, 3};
-    light->getComponent<LightComponent>()->intensity = 100.0f;
+    light->getComponent<LocalLightComponent>()->luminousIntensity = 100.0f;
     scene.actors.push_back(std::move(light));
     scenes.load(scene);
 

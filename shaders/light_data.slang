@@ -8,12 +8,23 @@ enum class LightType : uint {
     Spot = 3,
 };
 
+// Exclusive group ends; matches LightRanges in ShaderData.h.
+struct LightRanges
+{
+    uint directionalEnd;
+    uint pointEnd;
+    uint rectAreaEnd;
+    uint spotEnd;
+};
+
 // Must match LightData in ShaderData.h. std430 array stride = 112 bytes.
 // flags = {type, enabled, castShadow, reserved}.
 struct LightData
 {
-    // RGB is a unit-luminance linear tint; W is cd (Point/Spot), lux (Directional), cd/m^2 (RectArea).
-    float4 colorEmission;
+    // Photometric-scaled RGB: Point/Spot intensity, Directional irradiance at perpendicular incidence,
+    // RectArea radiance. Already includes the light's RGB tint and scalar strength.
+    float3 color;
+    float padding3;
     float4 positionRange;
     float4 direction;
     float4 areaSizeCone;
@@ -24,19 +35,6 @@ struct LightData
     uint padding2;
     float4 areaRightData;
 
-    property color : float3 {
-        get { return colorEmission.rgb; }
-    }
-    property luminousIntensity : float {
-        get { return colorEmission.w; }
-    }
-    // Directional light's illuminance at perpendicular incidence (E_perp), in lux.
-    property illuminance : float {
-        get { return colorEmission.w; }
-    }
-    property luminance : float {
-        get { return colorEmission.w; }
-    }
     property position : float3 {
         get { return positionRange.xyz; }
     }

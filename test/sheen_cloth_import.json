@@ -1,0 +1,8 @@
+[
+    {
+        "source": "../resource/sheen_cloth/SheenCloth_Gallery.gltf",
+        "model": "sheen_cloth",
+        "field": "sheen",
+        "targetSize": 2.2
+    }
+]
