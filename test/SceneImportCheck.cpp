@@ -22,6 +22,26 @@ int main(int argc, char** argv)
 {
     logger::init(argv[0]);
     CHECK(argc == 4 || argc == 5);
+    if (std::string_view{argv[2]} == "--prepare-mesh")
+    {
+        const std::string_view  argument = argv[3];
+        std::optional<uint32_t> meshIndex;
+        if (argument != "all")
+        {
+            uint32_t   index  = 0;
+            const auto parsed = std::from_chars(argument.data(), argument.data() + argument.size(), index);
+            CHECK(parsed.ec == std::errc{} && parsed.ptr == argument.data() + argument.size());
+            meshIndex = index;
+        }
+        const auto mesh = AssetImporter::prepareMesh(argv[1], meshIndex);
+        LOG_INFO(
+            "Mesh {} prepared: {} vertices, {} indices",
+            argument,
+            mesh.geometry.vertices.size(),
+            mesh.geometry.indices.size()
+        );
+        return 0;
+    }
     const std::string_view scaleArgument = argv[3];
     float                  importScale   = 0.0f;
     const auto parsed = std::from_chars(scaleArgument.data(), scaleArgument.data() + scaleArgument.size(), importScale);

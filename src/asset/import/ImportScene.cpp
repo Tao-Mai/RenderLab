@@ -2,8 +2,8 @@
 #include "asset/AssetImporter.h"
 
 #include "asset/AssetManager.h"
-#include "asset/import/GltfImport.h"
 #include "asset/import/ImportId.h"
+#include "asset/import/ModelImport.h"
 #include "core/Context.h"
 #include "scene/actor/AStaticMesh.h"
 #include "scene/component/RenderComponent.h"
@@ -13,7 +13,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
 #include <glm/vector_relational.hpp>
-#include <tiny_gltf.h>
+#include <unordered_map>
 
 namespace
 {
@@ -34,17 +34,17 @@ void setTransform(TransformComponent& transform, const glm::mat4& world, uint32_
     glm::vec4 perspective;
     CHECK(
         glm::decompose(world, transform.scale, transform.rotation, transform.position, skew, perspective),
-        "cannot decompose glTF node {} transform",
+        "cannot decompose model node {} transform",
         nodeIndex
     );
     CHECK(
         glm::all(glm::lessThanEqual(glm::abs(skew), glm::vec3{kTransformTolerance})),
-        "glTF node {} has shear, which the current actor Transform cannot represent",
+        "model node {} has shear, which the current actor Transform cannot represent",
         nodeIndex
     );
     CHECK(
         glm::all(glm::lessThanEqual(glm::abs(perspective - glm::vec4{0, 0, 0, 1}), glm::vec4{kTransformTolerance})),
-        "glTF node {} has a perspective transform",
+        "model node {} has a perspective transform",
         nodeIndex
     );
     transform.rotation = glm::normalize(transform.rotation);
@@ -63,22 +63,19 @@ void fitCamera(EditorCameraConfig& camera, glm::vec3 boundsMin, glm::vec3 bounds
     camera.speed             = radius * 0.2f;
 }
 
-void importCamera(EditorCameraConfig& camera, const tinygltf::Camera& source, const glm::mat4& world, float importScale)
+void importCamera(EditorCameraConfig& camera, const ModelImport::Camera& source)
 {
-    CHECK(source.type == "perspective", "editor camera cannot represent glTF camera type '{}'", source.type);
-    const auto& projection = source.perspective;
-    CHECK(std::isfinite(projection.yfov) && projection.yfov > 0 && projection.yfov < glm::pi<double>());
-    CHECK(std::isfinite(projection.znear) && projection.znear > 0);
-
-    const glm::vec3 direction = glm::normalize(glm::vec3{world * glm::vec4{0, 0, -1, 0}});
-    camera.position           = glm::vec3{world[3]};
-    camera.yaw                = glm::degrees(std::atan2(direction.z, direction.x));
-    camera.pitch              = glm::degrees(std::asin(std::clamp(direction.y, -1.0f, 1.0f)));
-    camera.fieldOfView        = glm::degrees(static_cast<float>(projection.yfov));
-    camera.nearPlane          = static_cast<float>(projection.znear) * importScale;
-    // glTF permits an infinite far plane; retain the scene-bounds fit for that case.
-    if (projection.zfar > 0)
-        camera.farPlane = static_cast<float>(projection.zfar) * importScale;
+    CHECK(std::isfinite(source.fieldOfView) && source.fieldOfView > 0 && source.fieldOfView < 180);
+    CHECK(std::isfinite(source.nearPlane) && source.nearPlane > 0);
+    const auto direction = glm::normalize(source.direction);
+    camera.position      = source.position;
+    camera.yaw           = glm::degrees(std::atan2(direction.z, direction.x));
+    camera.pitch         = glm::degrees(std::asin(std::clamp(direction.y, -1.0f, 1.0f)));
+    camera.fieldOfView   = source.fieldOfView;
+    camera.nearPlane     = source.nearPlane;
+    // Infinite source projections retain the finite scene-bounds fit.
+    if (source.farPlane > 0)
+        camera.farPlane = source.farPlane;
     CHECK(camera.farPlane > camera.nearPlane);
 }
 }  // namespace
@@ -86,77 +83,71 @@ void importCamera(EditorCameraConfig& camera, const tinygltf::Camera& source, co
 AssetID<SceneAsset> AssetImporter::importScene(const ImportSceneSetting& setting)
 {
     CHECK(std::isfinite(setting.importScale) && setting.importScale > 0.0f);
-    GltfImport  gltf{setting.source};
-    const auto& model = *gltf.model;
+    auto        importer = ModelImport::open(setting.source);
+    const auto& source   = importer->sourcePath();
     SceneAsset  scene;
-    scene.id = asset_import::nextId<SceneAsset>(setting.id.empty() ? gltf.source.stem().string() : setting.id.value);
+    scene.id = asset_import::nextId<SceneAsset>(setting.id.empty() ? source.stem().string() : setting.id.value);
 
-    std::vector<ImportedMesh>                meshes(model.meshes.size());
-    glm::vec3                                boundsMin{0.0f}, boundsMax{0.0f};
-    bool                                     hasBounds = false;
-    std::optional<std::pair<int, glm::mat4>> cameraNode;
-    gltf.visitNodes(
-        [&](uint32_t nodeIndex, const glm::mat4& world)
+    std::unordered_map<uint32_t, ImportedMesh> meshes;
+    glm::vec3                                  boundsMin{0.0f}, boundsMax{0.0f};
+    bool                                       hasBounds = false;
+    std::optional<ModelImport::Camera>         camera;
+    importer->visitNodes(
+        [&](const ModelImport::Node& node)
         {
-            const auto& node = model.nodes[nodeIndex];
-            if (node.camera >= 0 && !cameraNode)
+            if (node.camera && !camera)
+                camera = node.camera;
+            for (uint32_t meshIndex : node.meshes)
             {
-                CHECK(static_cast<size_t>(node.camera) < model.cameras.size());
-                cameraNode = std::pair{node.camera, world};
-            }
-            if (node.mesh < 0)
-                return;
-
-            CHECK(static_cast<size_t>(node.mesh) < meshes.size());
-            CHECK(node.skin < 0, "scene import currently supports static meshes, not glTF skin on node {}", nodeIndex);
-            auto& mesh = meshes[node.mesh];
-            if (!mesh.id)
-            {
-                auto prepared  = gltf.prepareMesh(static_cast<uint32_t>(node.mesh));
-                mesh.boundsMin = prepared.boundsMin;
-                mesh.boundsMax = prepared.boundsMax;
-                mesh.id        = gltf.saveMesh(
-                    std::move(prepared),
-                    {
-                               .source = gltf.source,
-                               .id     = scene.id.value + "_mesh" + std::to_string(node.mesh),
-                    }
-                );
-            }
-
-            auto actor  = std::make_unique<AStaticMesh>();
-            actor->name = node.name.empty() ? model.meshes[node.mesh].name : node.name;
-            if (actor->name.empty())
-                actor->name = "AStaticMesh" + std::to_string(nodeIndex);
-            setTransform(actor->transform(), world, nodeIndex);
-            actor->getComponent<RenderComponent>()->meshId = *mesh.id;
-            scene.actors.push_back(std::move(actor));
-
-            for (uint32_t corner = 0; corner < 8; ++corner)
-            {
-                const glm::vec3 local{
-                    (corner & 1) ? mesh.boundsMax.x : mesh.boundsMin.x,
-                    (corner & 2) ? mesh.boundsMax.y : mesh.boundsMin.y,
-                    (corner & 4) ? mesh.boundsMax.z : mesh.boundsMin.z,
-                };
-                const glm::vec3 point{world * glm::vec4{local, 1.0f}};
-                CHECK(std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z));
-                if (!hasBounds)
+                auto& mesh = meshes[meshIndex];
+                if (!mesh.id)
                 {
-                    boundsMin = boundsMax = point;
-                    hasBounds             = true;
+                    auto prepared  = importer->prepareMesh(meshIndex);
+                    mesh.boundsMin = prepared.boundsMin;
+                    mesh.boundsMax = prepared.boundsMax;
+                    mesh.id        = importer->saveMesh(
+                        std::move(prepared),
+                        {
+                                   .source = source,
+                                   .id     = scene.id.value + "_mesh" + std::to_string(meshIndex),
+                        }
+                    );
                 }
-                boundsMin = glm::min(boundsMin, point);
-                boundsMax = glm::max(boundsMax, point);
+
+                auto actor  = std::make_unique<AStaticMesh>();
+                actor->name = node.name.empty() ? "AStaticMesh" + std::to_string(node.index) : node.name;
+                if (node.meshes.size() > 1)
+                    actor->name += "_" + std::to_string(meshIndex);
+                setTransform(actor->transform(), node.world, node.index);
+                actor->getComponent<RenderComponent>()->meshId = *mesh.id;
+                scene.actors.push_back(std::move(actor));
+
+                for (uint32_t corner = 0; corner < 8; ++corner)
+                {
+                    const glm::vec3 local{
+                        (corner & 1) ? mesh.boundsMax.x : mesh.boundsMin.x,
+                        (corner & 2) ? mesh.boundsMax.y : mesh.boundsMin.y,
+                        (corner & 4) ? mesh.boundsMax.z : mesh.boundsMin.z,
+                    };
+                    const glm::vec3 point{node.world * glm::vec4{local, 1.0f}};
+                    CHECK(std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z));
+                    if (!hasBounds)
+                    {
+                        boundsMin = boundsMax = point;
+                        hasBounds             = true;
+                    }
+                    boundsMin = glm::min(boundsMin, point);
+                    boundsMax = glm::max(boundsMax, point);
+                }
             }
         },
         setting.importScale
     );
 
-    CHECK(hasBounds, "glTF scene has no static mesh instances: {}", gltf.source.string());
+    CHECK(hasBounds, "scene has no static mesh instances: {}", source.string());
     fitCamera(scene.editorCamera, boundsMin, boundsMax);
-    if (cameraNode)
-        importCamera(scene.editorCamera, model.cameras[cameraNode->first], cameraNode->second, setting.importScale);
+    if (camera)
+        importCamera(scene.editorCamera, *camera);
 
     LOG_INFO(
         "Imported scene '{}': {} actors, bounds [{}, {}, {}] - [{}, {}, {}]",

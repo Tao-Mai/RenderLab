@@ -1,4 +1,5 @@
 #include "render/feature/shadow/ShadowData.h"
+#include "scene/system/SceneRenderData.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -8,14 +9,14 @@
 
 namespace
 {
-LightRanges groupLights(std::span<const LightData> source, std::vector<LightData>& grouped)
+LightRanges groupLights(std::span<const RenderLight> source, std::vector<LightData>& grouped)
 {
     grouped.reserve(source.size());
     const auto append = [&](GpuLightType type)
     {
         for (const auto& light : source)
-            if (light.type() == type)
-                grouped.push_back(light);
+            if (light.enabled && light.data.type() == type)
+                grouped.push_back(light.data);
         return static_cast<uint32_t>(grouped.size());
     };
 
@@ -24,7 +25,6 @@ LightRanges groupLights(std::span<const LightData> source, std::vector<LightData
     ranges.pointEnd       = append(GpuLightType::Point);
     ranges.rectAreaEnd    = append(GpuLightType::RectArea);
     ranges.spotEnd        = append(GpuLightType::Spot);
-    DCHECK(grouped.size() == source.size());
     return ranges;
 }
 
@@ -215,7 +215,7 @@ makeDirectionalShadow(const ViewUniforms& view, const LightData& light, const Re
 
 
 ShadowFrameData
-prepareShadows(const ViewUniforms& view, std::span<const LightData> frameLights, const RenderFeature::Shadow& shadows)
+prepareShadows(const ViewUniforms& view, std::span<const RenderLight> frameLights, const RenderFeature::Shadow& shadows)
 {
     ShadowFrameData result;
     CHECK(shadows.cascade.count > 0 && shadows.cascade.count <= kMaxDirectionalShadowCascades);
@@ -224,8 +224,8 @@ prepareShadows(const ViewUniforms& view, std::span<const LightData> frameLights,
     {
         light.shadowidx = ~0u;
         if (!shadows.enable)
-            light.flags.z = 0;
-        if (!light.enable() || !light.castShadow())
+            light.shadowEnabled = 0;
+        if (!light.castShadow())
             continue;
 
         if (light.type() == GpuLightType::Directional)

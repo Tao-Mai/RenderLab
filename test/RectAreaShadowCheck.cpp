@@ -73,11 +73,12 @@ int main(int, char** argv)
     descriptors.init(renderer.vulkanContext().deviceHandle());
     FrameData upload;
     upload.init(renderer.vulkanContext(), descriptors);
-    LightData source;
-    source.positionRange = {0.0f, 0.0f, 4.0f, 16.0f};
-    source.direction     = {0.0f, 0.0f, -1.0f, 0.0f};
-    source.areaRightData = {0.0f, 1.0f, 0.0f, 0.0f};
-    source.flags         = {static_cast<uint32_t>(GpuLightType::RectArea), 1u, 1u, 0u};
+    RenderLight source;
+    source.data.positionRange = {0.0f, 0.0f, 4.0f, 16.0f};
+    source.data.direction     = {0.0f, 0.0f, -1.0f, 0.0f};
+    source.data.areaRightData = {0.0f, 1.0f, 0.0f, 0.0f};
+    source.data.lightType = GpuLightType::RectArea;
+    source.data.shadowEnabled = 1;
     auto prepared = prepareShadows({}, {&source, 1}, {.enable = true});
     upload.update({}, {.lightRanges = prepared.lightRanges}, std::move(prepared));
     CHECK(upload.rectAreaShadowData().size() == 1 && upload.lightData()[0].shadowidx == 0);

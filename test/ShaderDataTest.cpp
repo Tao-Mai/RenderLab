@@ -119,11 +119,10 @@ TEST(ShaderDataLayout, LightStorageElementsMatchCompiledShaders)
         Field{"positionRange", offsetof(LightData, positionRange), sizeof(glm::vec4)},
         Field{"direction", offsetof(LightData, direction), sizeof(glm::vec4)},
         Field{"areaSizeCone", offsetof(LightData, areaSizeCone), sizeof(glm::vec4)},
-        Field{"flags", offsetof(LightData, flags), sizeof(glm::uvec4)},
+        Field{"lightType", offsetof(LightData, lightType), sizeof(GpuLightType)},
+        Field{"shadowEnabled", offsetof(LightData, shadowEnabled), sizeof(uint32_t)},
         Field{"shadowIdx", offsetof(LightData, shadowidx), sizeof(uint32_t)},
         Field{"padding0", offsetof(LightData, padding0), sizeof(uint32_t)},
-        Field{"padding1", offsetof(LightData, padding1), sizeof(uint32_t)},
-        Field{"padding2", offsetof(LightData, padding2), sizeof(uint32_t)},
         Field{"areaRightData", offsetof(LightData, areaRightData), sizeof(glm::vec4)},
     };
     for (const auto* shader : shaders)

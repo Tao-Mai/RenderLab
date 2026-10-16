@@ -69,7 +69,8 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
             .color         = light->emissionColor(),
             .positionRange = {transform->position, 0.0f},
             .direction     = {direction, 0.0f},
-            .flags = {static_cast<uint32_t>(lightType), light->enabled ? 1u : 0u, light->castShadow ? 1u : 0u, 0u},
+            .lightType     = lightType,
+            .shadowEnabled = light->castShadow ? 1u : 0u,
             .areaRightData = {glm::normalize(transform->rotation * glm::vec3{1.0f, 0.0f, 0.0f}), 0.0f},
         };
         if (const auto* local = dynamic_cast<const LocalLightComponent*>(light))
@@ -84,7 +85,7 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
             lightData.areaSizeCone.z = spot->cosInner;
             lightData.areaSizeCone.w = spot->cosOuter;
         }
-        data.lights.push_back(lightData);
+        data.lights.push_back({.data = lightData, .enabled = light->enabled});
     }
 
     return data;

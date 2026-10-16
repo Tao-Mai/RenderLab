@@ -49,7 +49,7 @@
             "mode": "Neutral"
         }
     },
-    "renderPath": "Rasterization",
+    "renderPath": "OfflinePathTracing",
     "sheenLut": {
         "samplerID": {
             "value": "linearClamp"

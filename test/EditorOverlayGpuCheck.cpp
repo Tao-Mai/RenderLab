@@ -49,6 +49,7 @@ int main(int argc, char** argv)
     scene.editorCamera.pitch    = 0;
     scene.actors.push_back(std::make_unique<AStaticMesh>());
     scene.actors.push_back(std::make_unique<ALight>());
+    scene.actors.back()->getComponent<LightComponent>()->enabled = false;
     scenes.load(scene);
     renderer.init();
     const auto extent = renderer.swapchainHandle().extent();
@@ -81,6 +82,7 @@ int main(int argc, char** argv)
                 const auto& renderData = renderSystem.prepare(scenes.scene());
                 lightMarkers.prepare(scenes.scene(), *renderContext().resources);
                 input.lightDrawItems = lightMarkers.drawItems();
+                CHECK(!input.lightDrawItems.empty());
                 const auto result    = renderer.render(view, renderData, input);
                 const auto expected  = z > 0 ? light.selectionId() : scenes.scene().actors[0]->selectionId();
                 CHECK(
@@ -94,7 +96,7 @@ int main(int argc, char** argv)
                 );
             }
         }
-        LOG_INFO("Editor marker visibility and picking passed for render path {}", static_cast<int>(path));
+        LOG_INFO("Disabled light marker visibility and picking passed for render path {}", static_cast<int>(path));
     }
 
     renderer.waitIdle();

@@ -2,6 +2,7 @@
 #include "../constant.slang"
 #include "../random.slang"
 #include "../point_light_sampling.slang"
+#include "../rect_area_light_sampling.slang"
 #include "material_data.slang"
 
 
@@ -24,43 +25,12 @@ struct Payload
     uint randomState;
     float brdfPdf;
     float3 throughput;
+    float rectAreaLightWeightSum; // Selection weights at this ray's origin, not the current hit.
 };
 
 struct VisibilityPayload
 {
     uint visible;
-};
-
-// Sampling remains analytic; intersection is handled by the light's two triangles in the TLAS.
-struct RectAreaLight
-{
-    LightData data;
-
-    float3 up()
-    {
-        return normalize(cross(data.direction.xyz, data.areaRight));
-    }
-
-    float3 samplePosition(inout uint state)
-    {
-        float u = (randomFloat(state) - 0.5) * data.areaSize.x;
-        float v = (randomFloat(state) - 0.5) * data.areaSize.y;
-        return data.position + data.areaRight * u + up() * v;
-    }
-
-    float pdf(float3 origin, float3 target)
-    {
-        float3 offset = target - origin;
-        float distanceSquared = dot(offset, offset);
-        if (distanceSquared == 0.0 || any(data.areaSize <= 0.0))
-            return 0.0;
-
-        float lightCosine = -dot(offset * rsqrt(distanceSquared), data.direction.xyz);
-        if (lightCosine <= 0.0)
-            return 0.0;
-
-        return distanceSquared / (data.areaSize.x * data.areaSize.y * lightCosine);
-    }
 };
 
 float balanceHeuristic(float samplePdf, float otherPdf)
@@ -109,7 +79,7 @@ struct Surface
         );
     }
 
-    float3 sampleDiffuseRadiance(uint depth, float3 throughput, inout uint state)
+    float3 sampleDiffuseRadiance(uint depth, float3 throughput, float rectAreaLightWeightSum, inout uint state)
     {
         // Cosine-weighted Lambert sampling has BRDF * cosine / PDF = baseColor.
         float3 nextThroughput = throughput * baseColor;
@@ -133,7 +103,7 @@ struct Surface
         ray.TMax = kMaxRayDistance;
 
         float brdfPdf = saturate(dot(normal, ray.Direction)) * INV_PI;
-        Payload bounce = {float3(0.0), depth + 1, state, brdfPdf, nextThroughput};
+        Payload bounce = {float3(0.0), depth + 1, state, brdfPdf, nextThroughput, rectAreaLightWeightSum};
         TraceRay(
             scene, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
             kSceneMask | kLightMask, 0, 0, 0, ray, bounce
@@ -170,14 +140,37 @@ struct Surface
         return incidentIrradiance * nDotL * INV_PI / selected.probability;
     }
 
+    float3 sampleRectAreaLightRadiance(RectAreaLightSample selected, inout uint state)
+    {
+        if (selected.probability == 0.0)
+            return float3(0.0);
+
+        float3 origin = position + normal * kRayEpsilon;
+        RectAreaLight emitter = {lights[selected.index]};
+        float3 sampleLightPosition = emitter.samplePosition(state);
+        float3 toLight = sampleLightPosition - origin;
+        float distanceSquared = dot(toLight, toLight);
+        if (distanceSquared == 0.0)
+            return float3(0.0);
+
+        float3 lightDirection = toLight * rsqrt(distanceSquared);
+        float nDotL = saturate(dot(normal, lightDirection));
+        float lightPdf = selected.probability * emitter.pdf(origin, sampleLightPosition);
+        if (nDotL == 0.0 || lightPdf == 0.0 || !isVisible(lightDirection, sqrt(distanceSquared)))
+            return float3(0.0);
+
+        // The full NEE PDF includes discrete light selection and conditional surface sampling.
+        float brdfPdf = nDotL * INV_PI;
+        float weight = balanceHeuristic(lightPdf, brdfPdf);
+        return emitter.data.color * nDotL * INV_PI * weight / lightPdf;
+    }
+
     float3 shade(LightRanges ranges, uint depth, float3 throughput, inout uint state)
     {
         float3 radiance = samplePointLightRadiance(ranges, state);
         for (uint index = 0; index < ranges.directionalEnd; ++index)
         {
             LightData light = lights[index];
-            if (!light.enabled)
-                continue;
 
             // Stored direction is light propagation; visibility points toward the source at infinity.
             float3 lightDirection = -normalize(light.direction.xyz);
@@ -189,33 +182,12 @@ struct Surface
             radiance += light.color * nDotL * INV_PI;
         }
 
+        // NEE and the BRDF bounce share the selection distribution at the same ray origin.
         float3 origin = position + normal * kRayEpsilon;
-        for (uint index = ranges.pointEnd; index < ranges.rectAreaEnd; ++index)
-        {
-            LightData light = lights[index];
-            if (!light.enabled)
-                continue;
+        RectAreaLightSample selected = sampleRectAreaLight(lights, ranges.pointEnd, ranges.rectAreaEnd, origin, state);
+        radiance += sampleRectAreaLightRadiance(selected, state);
 
-            RectAreaLight emitter = {light};
-            float3 sampleLightPosition = emitter.samplePosition(state);
-            float3 toLight = sampleLightPosition - origin;
-            float distanceSquared = dot(toLight, toLight);
-            if (distanceSquared == 0.0)
-                continue;
-
-            float3 lightDirection = toLight * rsqrt(distanceSquared);
-            float nDotL = saturate(dot(normal, lightDirection));
-            float lightPdf = emitter.pdf(origin, sampleLightPosition);
-            if (nDotL == 0.0 || lightPdf == 0.0 || !isVisible(lightDirection, sqrt(distanceSquared)))
-                continue;
-
-            // Every enabled area light receives one NEE sample; point-light selection does not enter this MIS.
-            float brdfPdf = nDotL * INV_PI;
-            float weight = balanceHeuristic(lightPdf, brdfPdf);
-            radiance += light.color * nDotL * INV_PI * weight / lightPdf;
-        }
-
-        radiance += sampleDiffuseRadiance(depth, throughput, state);
+        radiance += sampleDiffuseRadiance(depth, throughput, selected.weightSum, state);
         return baseColor * radiance;
     }
 };
@@ -309,7 +281,7 @@ struct RayTracingParameters
 void raygenMain()
 {
     uint2 pixel = DispatchRaysIndex().xy;
-    Payload payload = {float3(0.0), 1, pixel.x + pixel.y * DispatchRaysDimensions().x, 0, float3(1.0)};
+    Payload payload = {float3(0.0), 1, pixel.x + pixel.y * DispatchRaysDimensions().x, 0, float3(1.0), 0.0};
     if (parameters.containsPixel(pixel))
     {
         RayDesc ray = parameters.createRay(pixel);
@@ -353,6 +325,15 @@ void lightClosestHitMain(inout Payload payload, BuiltInTriangleIntersectionAttri
     float3 origin = WorldRayOrigin();
     float3 target = origin + WorldRayDirection() * RayTCurrent();
     float lightPdf = emitter.pdf(origin, target);
+    if (lightPdf <= 0.0)
+    {
+        payload.color = float3(0.0);
+        return;
+    }
+
+    float selectionProbability = payload.rectAreaLightWeightSum > 0.0
+        ? emitter.selectionWeight(origin) / payload.rectAreaLightWeightSum : 0.0;
+    lightPdf *= selectionProbability;
     float weight = balanceHeuristic(payload.brdfPdf, lightPdf);
     payload.color = emitter.data.color * weight;
 }

@@ -84,6 +84,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(glog CONFIG REQUIRED)
 find_package(tinyexr CONFIG REQUIRED)
 find_package(mikktspace CONFIG REQUIRED)
+find_package(assimp CONFIG REQUIRED)
 find_path(TINYGLTF_INCLUDE_DIR NAMES tiny_gltf.h REQUIRED)
 
 find_program(SLANGC_EXECUTABLE
@@ -160,11 +161,13 @@ renderlab_shader(raytracing raytracing/raytracing.slang raytracing
     ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
     INCLUDES "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
         "${SHADER_SOURCE_DIR}/random.slang" "${SHADER_SOURCE_DIR}/point_light_sampling.slang"
+        "${SHADER_SOURCE_DIR}/rect_area_light_sampling.slang"
         "${SHADER_SOURCE_DIR}/raytracing/material_data.slang")
 renderlab_shader(offline_pathtracing offline/pathtracing.slang offline_pathtracing
     ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
     INCLUDES "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
-        "${SHADER_SOURCE_DIR}/random.slang" "${SHADER_SOURCE_DIR}/point_light_sampling.slang")
+        "${SHADER_SOURCE_DIR}/random.slang" "${SHADER_SOURCE_DIR}/point_light_sampling.slang"
+        "${SHADER_SOURCE_DIR}/rect_area_light_sampling.slang")
 renderlab_shader_manifests()
 
 add_library(RenderLabRuntime STATIC
@@ -258,6 +261,10 @@ add_library(RenderLabRuntime STATIC
         src/asset/import/ImportMesh.cpp
         src/asset/import/ImportScene.cpp
         src/asset/import/GltfImport.h
+        src/asset/import/GltfImport.cpp
+        src/asset/import/AssimpImport.h
+        src/asset/import/AssimpImport.cpp
+        src/asset/import/ModelImport.h
         src/asset/import/GltfMaterialExtensions.h
         src/asset/import/GltfMaterialExtensions.cpp
         src/core/Vertex.h
@@ -392,6 +399,7 @@ target_compile_definitions(RenderLabRuntime PUBLIC
 
 target_link_libraries(RenderLabRuntime PUBLIC
         mikktspace::mikktspace
+        assimp::assimp
         RenderLabBuildOptions
         Vulkan::Vulkan
         glfw

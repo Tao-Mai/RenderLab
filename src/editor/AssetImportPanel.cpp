@@ -67,7 +67,7 @@ void drawSourcePath(std::filesystem::path& source, const wchar_t* filter)
     );
     if (assetType == 2 || assetType == 3)
     {
-        return extension == ".gltf" || extension == ".glb";
+        return AssetImporter::supportsModel(source);
     }
     return extension == ".exr" || extension == ".png" || extension == ".jpg" || extension == ".jpeg" ||
         extension == ".hdr" || extension == ".bmp" || extension == ".tga" || extension == ".gif" ||
@@ -139,7 +139,19 @@ void AssetImportPanel::drawDialog()
         L"Image files (*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.gif;*.psd;*.pic;*.pnm;*.exr;*.hdr)\0"
         L"*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.gif;*.psd;*.pic;*.pnm;*.exr;*.hdr\0"
         L"All files (*.*)\0*.*\0";
-    static constexpr wchar_t meshFilter[] = L"glTF files (*.gltf;*.glb)\0*.gltf;*.glb\0All files (*.*)\0*.*\0";
+    static const std::wstring kModelFilter = []
+    {
+        const auto extensions = AssetImporter::modelExtensions();
+        std::wstring filter = L"Model files";
+        filter += L'\0';
+        filter.append(extensions.begin(), extensions.end());
+        filter += L'\0';
+        filter += L"All files (*.*)";
+        filter += L'\0';
+        filter += L"*.*";
+        filter.append(2, L'\0');
+        return filter;
+    }();
 
     std::filesystem::path* source = nullptr;
     switch (importAssetType)
@@ -162,7 +174,7 @@ void AssetImportPanel::drawDialog()
             {
                 source                    = &meshSetting.source;
                 const auto previousSource = *source;
-                drawSourcePath(*source, meshFilter);
+                drawSourcePath(*source, kModelFilter.c_str());
                 if (*source != previousSource)
                 {
                     meshPreview.clear();
@@ -190,7 +202,7 @@ void AssetImportPanel::drawDialog()
             {
                 source = &sceneSetting.source;
                 const auto previousSource = *source;
-                drawSourcePath(*source, meshFilter);
+                drawSourcePath(*source, kModelFilter.c_str());
                 if (*source != previousSource)
                     sceneSetting.id = source->stem().string();
                 ImGui::InputText("Scene ID", &sceneSetting.id.value);

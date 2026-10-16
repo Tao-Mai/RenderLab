@@ -20,8 +20,6 @@ PointLightSample samplePointLight(
     for (uint index = begin; index < end; ++index)
     {
         LightData light = lights[index];
-        if (!light.enabled)
-            continue;
 
         float3 offset = light.position - position;
         float distanceSquared = dot(offset, offset);

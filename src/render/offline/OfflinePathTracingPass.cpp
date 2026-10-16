@@ -515,8 +515,6 @@ void OfflinePathTracingPass::prepareScene(
     for (uint32_t index = ranges.pointEnd; index < ranges.rectAreaEnd; ++index)
     {
         const auto& light = lights[index];
-        if (!light.enable())
-            continue;
 
         const glm::vec2 size{light.areaSizeCone};
         CHECK(
