@@ -21,6 +21,8 @@ public:
     struct Output
     {
         RenderGraph::ImageHandle rayImage;
+        RenderGraph::ImageHandle depth;
+        RenderGraph::ImageHandle worldNormal;
     };
 
     Output setup(RenderGraph& graph, const PassSetup& setup);
@@ -44,13 +46,17 @@ private:
         glm::vec4 viewport;
         LightRanges lightRanges;
         uint32_t  maxRecursionDepth;
-        uint32_t  padding[3]{};
+        uint32_t  sampleIndex;
+        uint32_t  padding[2]{};
     };
     static_assert(sizeof(RayTracingParameters) == 128);
     static_assert(offsetof(RayTracingParameters, lightRanges) == 96);
     static_assert(offsetof(RayTracingParameters, maxRecursionDepth) == 112);
 
     RenderGraph::ImageHandle                                                        rayImage;
+    RenderGraph::ImageHandle                                                        depth;
+    RenderGraph::ImageHandle                                                        worldNormal;
+    uint32_t                                                                        sampleIndex = 0;
     vk::raii::DescriptorSetLayout                                                   descriptorLayout       = nullptr;
     vk::raii::DescriptorPool                                                        descriptorPool         = nullptr;
     vk::raii::PipelineLayout                                                        pipelineLayout         = nullptr;

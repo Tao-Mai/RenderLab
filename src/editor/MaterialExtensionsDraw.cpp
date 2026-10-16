@@ -193,7 +193,8 @@ bool drawMaterialExtensions(PbrMaterialAsset& material)
     edited |= drawExtension(
         "Emissive Strength",
         material.emissiveStrength,
-        [](float& value) { return dragFloat("Strength", value, 0.0f, kMaxValue, 0.1f); }
+        [](float& value) { return dragFloat("Strength", value, 0.0f, kMaxValue, 0.1f); },
+        true
     );
     edited |= drawExtension("Unlit", material.unlit, [](bool& value) { return ImGui::Checkbox("Unlit", &value); });
 

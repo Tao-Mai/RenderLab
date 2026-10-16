@@ -5,6 +5,7 @@
 #include "render/RenderView.h"
 #include "render/feature/RenderGraph.h"
 #include "render/raytracing/AccelerationStructure.h"
+#include "render/raytracing/RayTracingData.h"
 #include "scene/system/SceneRenderData.h"
 
 #include <array>
@@ -31,27 +32,16 @@ public:
     [[nodiscard]] uint32_t sampleCount() const { return accumulatedSamples; }
 
 private:
-    static constexpr uint32_t kMaxTextures = 128;
     struct Frame
     {
         AccelerationStructure   tlas;
         Buffer                  instances;
         Buffer                  hitData;
         Buffer                  lightData;
+        Buffer                  materialData;
         vk::raii::DescriptorSet set           = nullptr;
         uint32_t                instanceCount = ~0u;
     };
-    struct HitData
-    {
-        uint64_t  vertexAddress;
-        uint64_t  indexAddress;
-        glm::vec4 baseColorFactor;
-        uint32_t  firstIndex;
-        uint32_t  textureIndex;
-        uint32_t  padding[2]{};
-    };
-    static_assert(sizeof(HitData) == 48);
-
     struct OfflineParameters
     {
         glm::mat4 inverseViewProjection;

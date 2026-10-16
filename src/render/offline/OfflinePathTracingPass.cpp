@@ -1,6 +1,5 @@
 #include "render/offline/OfflinePathTracingPass.h"
 
-#include "asset/BuiltinAssets.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -13,10 +12,9 @@
 #include "render/device/VulkanContext.h"
 #include "render/feature/RenderGraph.h"
 #include "render/present/Swapchain.h"
-#include "render/resource/GpuMaterial.h"
+#include "render/raytracing/RayTracingMaterials.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/GpuShader.h"
-#include "render/resource/RenderResourceManager.h"
 
 #include <algorithm>
 #include <cmath>
@@ -138,10 +136,11 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
         limits.maxRayRecursionDepth
     );
     CHECK(
-        vulkan.properties().limits.maxPerStageDescriptorSamplers >= kMaxTextures &&
-            vulkan.properties().limits.maxPerStageDescriptorSampledImages >= kMaxTextures,
-        "ray tracing requires {} material texture descriptors",
-        kMaxTextures
+        vulkan.properties().limits.maxPerStageDescriptorSamplers >= kMaxRayTracingSamplers &&
+            vulkan.properties().limits.maxPerStageDescriptorSampledImages >= kMaxRayTracingTextures,
+        "ray tracing requires {} texture and {} sampler descriptors",
+        kMaxRayTracingTextures,
+        kMaxRayTracingSamplers
     );
 
     if (!*pipelineLayout)
@@ -168,13 +167,13 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
             vk::DescriptorSetLayoutBinding{
                 .binding         = 3,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
-                .descriptorCount = kMaxTextures,
+                .descriptorCount = kMaxRayTracingTextures,
                 .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
             },
             vk::DescriptorSetLayoutBinding{
                 .binding         = 4,
                 .descriptorType  = vk::DescriptorType::eSampler,
-                .descriptorCount = kMaxTextures,
+                .descriptorCount = kMaxRayTracingSamplers,
                 .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
             },
             vk::DescriptorSetLayoutBinding{
@@ -187,6 +186,12 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
                 .binding         = 6,
                 .descriptorType  = vk::DescriptorType::eStorageBuffer,
                 .descriptorCount = 1,
+                .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR,
+            },
+            vk::DescriptorSetLayoutBinding{
+                .binding         = 7,
+                .descriptorType  = vk::DescriptorType::eStorageBuffer,
+                .descriptorCount = 1,
                 .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR,
             },
         };
@@ -196,9 +201,9 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
         const std::array poolSizes = {
             vk::DescriptorPoolSize{.type = vk::DescriptorType::eAccelerationStructureKHR, .descriptorCount = 1},
             vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = 1},
-            vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = 3},
-            vk::DescriptorPoolSize{.type = vk::DescriptorType::eSampledImage, .descriptorCount = kMaxTextures},
-            vk::DescriptorPoolSize{.type = vk::DescriptorType::eSampler, .descriptorCount = kMaxTextures},
+            vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = 4},
+            vk::DescriptorPoolSize{.type = vk::DescriptorType::eSampledImage, .descriptorCount = kMaxRayTracingTextures},
+            vk::DescriptorPoolSize{.type = vk::DescriptorType::eSampler, .descriptorCount = kMaxRayTracingSamplers},
         };
         descriptorPool = vkCheck(device.createDescriptorPool(
             {.flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
@@ -440,19 +445,13 @@ void OfflinePathTracingPass::prepareScene(
     };
     commands.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &reuseBarrier});
     std::vector<VkAccelerationStructureInstanceKHR> instances;
-    std::vector<HitData>                            hits;
-    std::map<const GpuMaterial*, uint32_t>          materialIndices;
-    const auto white   = renderContext().resources->texture(BuiltinAssets::Texture::white);
-    const auto sampler = renderContext().resources->sampler(BuiltinAssets::Sampler::linearRepeat);
-    std::array<vk::DescriptorImageInfo, kMaxTextures> images, samplers;
-    images.fill({.imageView = white->imageView(), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal});
-    samplers.fill({.sampler = sampler});
+    std::vector<RayTracingHitData>                 hits;
+    RayTracingMaterials                           materials{*renderContext().resources};
     const auto append = [&](const GpuMesh&   mesh,
                             uint32_t         firstIndex,
                             uint32_t         indexCount,
                             const glm::mat4& model,
-                            const glm::vec4& color,
-                            uint32_t         textureIndex)
+                            uint32_t         materialIndex)
     {
         CHECK(indexCount % 3 == 0, "ray tracing submesh requires triangle indices");
         const uint64_t                     vertexAddress = mesh.vertices().address(device);
@@ -484,30 +483,10 @@ void OfflinePathTracingPass::prepareScene(
         instance.flags                          = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
         instance.accelerationStructureReference = bottom->second.address();
         instances.push_back(instance);
-        hits.push_back({vertexAddress, indexAddress, color, firstIndex, textureIndex});
+        hits.push_back({vertexAddress, indexAddress, firstIndex, materialIndex});
     };
     for (const auto& item : items)
-    {
-        const auto [material, added] =
-            materialIndices.try_emplace(item.material.get(), static_cast<uint32_t>(materialIndices.size()));
-        CHECK(material->second < kMaxTextures, "ray tracing supports at most {} materials per frame", kMaxTextures);
-        if (added)
-        {
-            images[material->second] = vk::DescriptorImageInfo{
-                .imageView   = item.material->baseColorView(),
-                .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-            };
-            samplers[material->second] = vk::DescriptorImageInfo{.sampler = item.material->baseColorSampler()};
-        }
-        append(
-            *item.mesh,
-            item.firstIndex,
-            item.indexCount,
-            item.model,
-            item.material->baseColorFactor(),
-            material->second
-        );
-    }
+        append(*item.mesh, item.firstIndex, item.indexCount, item.model, materials.add(*item.material));
 
     const auto& lights = execution.renderData.lights;
     CHECK(lights.size() < (1u << 24), "ray tracing light index exceeds the custom-index limit");
@@ -547,7 +526,7 @@ void OfflinePathTracingPass::prepareScene(
 
     const uint32_t count = static_cast<uint32_t>(instances.size());
     CHECK(
-        std::max(count, 1u) * sizeof(HitData) <= vulkan.properties().limits.maxStorageBufferRange,
+        std::max(count, 1u) * sizeof(RayTracingHitData) <= vulkan.properties().limits.maxStorageBufferRange,
         "ray tracing hit data exceeds maxStorageBufferRange"
     );
     if (frame.instanceCount != count)
@@ -567,7 +546,7 @@ void OfflinePathTracingPass::prepareScene(
         frame.hitData = Buffer(
             vulkan.physicalDeviceHandle(),
             device,
-            std::max(count, 1u) * sizeof(HitData),
+            std::max(count, 1u) * sizeof(RayTracingHitData),
             vk::BufferUsageFlagBits::eStorageBuffer,
             host
         );
@@ -593,6 +572,8 @@ void OfflinePathTracingPass::prepareScene(
     {
         frame.hitData.upload(hits.data(), hits.size() * sizeof(hits.front()));
     }
+    materials.upload(frame.materialData, vulkan);
+
     frame.tlas.build(vulkan, commands, top, count);
     buildBarrier(commands, true);
 
@@ -613,6 +594,7 @@ void OfflinePathTracingPass::prepareScene(
     };
     const vk::DescriptorBufferInfo hitInfo{.buffer = frame.hitData.handle(), .range = frame.hitData.size()};
     const vk::DescriptorBufferInfo lightInfo{.buffer = frame.lightData.handle(), .range = frame.lightData.size()};
+    const vk::DescriptorBufferInfo materialInfo{.buffer = frame.materialData.handle(), .range = frame.materialData.size()};
     const vk::DescriptorBufferInfo accumulationInfo{.buffer = accumulation.handle(), .range = accumulation.size()};
     const std::array               writes = {
         vk::WriteDescriptorSet{
@@ -639,16 +621,16 @@ void OfflinePathTracingPass::prepareScene(
         vk::WriteDescriptorSet{
                           .dstSet          = *frame.set,
                           .dstBinding      = 3,
-                          .descriptorCount = kMaxTextures,
+                          .descriptorCount = kMaxRayTracingTextures,
                           .descriptorType  = vk::DescriptorType::eSampledImage,
-                          .pImageInfo      = images.data()
+                          .pImageInfo      = materials.images.data()
         },
         vk::WriteDescriptorSet{
                           .dstSet          = *frame.set,
                           .dstBinding      = 4,
-                          .descriptorCount = kMaxTextures,
+                          .descriptorCount = kMaxRayTracingSamplers,
                           .descriptorType  = vk::DescriptorType::eSampler,
-                          .pImageInfo      = samplers.data()
+                          .pImageInfo      = materials.samplers.data()
         },
         vk::WriteDescriptorSet{
                           .dstSet          = *frame.set,
@@ -657,12 +639,19 @@ void OfflinePathTracingPass::prepareScene(
                           .descriptorType  = vk::DescriptorType::eStorageBuffer,
                           .pBufferInfo     = &lightInfo
         },
+        vk::WriteDescriptorSet{
+                          .dstSet          = *frame.set,
+                          .dstBinding      = 6,
+                          .descriptorCount = 1,
+                          .descriptorType  = vk::DescriptorType::eStorageBuffer,
+                          .pBufferInfo     = &materialInfo
+        },
     };
     device.updateDescriptorSets(writes, {});
     device.updateDescriptorSets(
         vk::WriteDescriptorSet{
             .dstSet          = *frame.set,
-            .dstBinding      = 6,
+            .dstBinding      = 7,
             .descriptorCount = 1,
             .descriptorType  = vk::DescriptorType::eStorageBuffer,
             .pBufferInfo     = &accumulationInfo

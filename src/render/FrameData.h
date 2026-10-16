@@ -33,6 +33,7 @@ public:
     }
     [[nodiscard]] vk::DescriptorSet sceneSetHandle() const { return *sceneSet; }
     [[nodiscard]] vk::DescriptorSet viewSetHandle() const { return *viewSet; }
+    [[nodiscard]] const Buffer& viewUniformBuffer() const { return viewBuffer; }
 
 private:
     const VulkanContext*    vulkan = nullptr;

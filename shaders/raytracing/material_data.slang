@@ -34,4 +34,11 @@ struct MaterialData
 [[vk::binding(4, 0)]] SamplerState samplers[kMaxRayTracingSamplers];
 [[vk::binding(6, 0)]] StructuredBuffer<MaterialData> materials;
 
+float4 sampleTexture(TextureRef texture, float2 uv)
+{
+    uint textureIndex = NonUniformResourceIndex(texture.textureIndex);
+    uint samplerIndex = NonUniformResourceIndex(texture.samplerIndex);
+    return textures[textureIndex].SampleLevel(samplers[samplerIndex], uv, 0);
+}
+
 #endif

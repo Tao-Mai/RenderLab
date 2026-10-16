@@ -286,6 +286,37 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
             "Includes the primary ray and one level reserved for visibility queries.\n"
             "Depth 2: direct lighting only; depth 4: up to two diffuse bounces."
         );
+
+        if (ImGui::Checkbox("Enable SVGF", &feature.rayTracing.svgf))
+            config.setRenderFeature(feature);
+        ImGui::SetItemTooltip("Currently implements temporal reprojection and accumulation only.");
+
+        ImGui::BeginDisabled(!feature.rayTracing.svgf);
+        int emaStartSampleCount = static_cast<int>(feature.rayTracing.emaStartSampleCount);
+        if (ImGui::SliderInt(
+                "EMA start samples",
+                &emaStartSampleCount,
+                1,
+                static_cast<int>(kMaxEmaStartSampleCount),
+                "%d",
+                ImGuiSliderFlags_AlwaysClamp
+            ))
+        {
+            feature.rayTracing.emaStartSampleCount = static_cast<uint32_t>(emaStartSampleCount);
+            config.setRenderFeature(feature);
+        }
+        ImGui::SetItemTooltip("Average the first N samples arithmetically; use EMA for subsequent samples.");
+        if (ImGui::SliderFloat(
+                "EMA sample weight",
+                &feature.rayTracing.emaAlpha,
+                0.0f,
+                1.0f,
+                "%.3f",
+                ImGuiSliderFlags_AlwaysClamp
+            ))
+            config.setRenderFeature(feature);
+        ImGui::SetItemTooltip("New mean = history * (1 - weight) + current sample * weight.");
+        ImGui::EndDisabled();
         return sceneEdited;
     }
 
