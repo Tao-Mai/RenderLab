@@ -1,4 +1,5 @@
 #include "editor/ComponentDraw.h"
+#include "editor/MaterialExtensionsDraw.h"
 
 #include "asset/ApplyOptionalFields.h"
 #include "asset/AssetManager.h"
@@ -83,11 +84,11 @@ ComponentDrawResult drawFields(TransformComponent& transform)
 
 namespace
 {
-ComponentDrawResult drawLightFields(LightComponent& light, const char* intensityLabel)
+ComponentDrawResult drawLightFields(LightComponent& light, float& strength, const char* intensityLabel)
 {
     ComponentDrawResult result;
     result.edited = ImGui::ColorEdit3("Color", glm::value_ptr(light.color));
-    result.edited = ImGui::DragFloat(intensityLabel, &light.intensity, 1.0f, 0.0f,
+    result.edited = ImGui::DragFloat(intensityLabel, &strength, 1.0f, 0.0f,
         std::numeric_limits<float>::max(), "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
     result.edited = drawField("Enabled", light.enabled) || result.edited;
     result.edited = drawField("Cast Shadow", light.castShadow) || result.edited;
@@ -96,7 +97,7 @@ ComponentDrawResult drawLightFields(LightComponent& light, const char* intensity
 
 ComponentDrawResult drawLocalLightFields(LocalLightComponent& light)
 {
-    auto result = drawLightFields(light, "Luminous intensity (cd)");
+    auto result = drawLightFields(light, light.luminousIntensity, "Luminous intensity (cd)");
     result.edited = ImGui::DragFloat("Range (m)", &light.range, 0.1f, 0.01f, 100000.0f,
         "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
     return result;
@@ -110,7 +111,7 @@ ComponentDrawResult drawFields(PointLightComponent& light)
 
 ComponentDrawResult drawFields(DirectionalLightComponent& light)
 {
-    return drawLightFields(light, "Illuminance (lux)");
+    return drawLightFields(light, light.illuminance, "Illuminance (lux)");
 }
 
 ComponentDrawResult drawFields(RectAreaLightComponent& light)
@@ -226,6 +227,26 @@ bool drawMaterialFields(PbrMaterialAsset& material)
     edited = drawFactor("Roughness", material.roughness, 1.0f) || edited;
     edited = drawFactor("AO", material.ao, 1.0f) || edited;
 
+    constexpr const char* kAlphaModes[] = {"OPAQUE", "MASK", "BLEND"};
+    const std::string alphaMode = material.alphaMode.value_or("OPAQUE");
+    if (ImGui::BeginCombo("Alpha Mode", alphaMode.c_str()))
+    {
+        for (const auto* mode : kAlphaModes)
+        {
+            const bool selected = alphaMode == mode;
+            if (ImGui::Selectable(mode, selected) && !selected)
+            {
+                material.alphaMode = mode;
+                edited = true;
+            }
+            if (selected)
+                ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+    }
+    if (material.alphaMode.value_or("OPAQUE") == "MASK")
+        edited = drawFactor("Alpha Cutoff", material.alphaCutoff, 0.5f) || edited;
+
     glm::vec3 emissive = material.emissive.value_or(glm::vec3{0.0f});
     if (ImGui::ColorEdit3("Emissive", glm::value_ptr(emissive), ImGuiColorEditFlags_Float))
     {
@@ -250,29 +271,7 @@ bool drawMaterialFields(PbrMaterialAsset& material)
     ImGui::Text("Emissive: %s", material.emissiveTexture ? material.emissiveTexture->textureID.c_str() : "None");
     ImGui::Text("AO: %s", material.aoTexture ? material.aoTexture->textureID.c_str() : "None");
 
-    if (material.clearcoat)
-    {
-        auto& clearcoat = *material.clearcoat;
-        ImGui::PushID("Clearcoat");
-        ImGui::SeparatorText("Clearcoat");
-        edited = ImGui::DragFloat("Factor", &clearcoat.factor, 0.01f, 0.0f, 1.0f,
-                                 "%.3f", ImGuiSliderFlags_AlwaysClamp) || edited;
-        edited = ImGui::DragFloat("Roughness", &clearcoat.roughnessFactor, 0.01f, 0.0f, 1.0f,
-                                 "%.3f", ImGuiSliderFlags_AlwaysClamp) || edited;
-
-        ImGui::BeginDisabled(!clearcoat.normalTexture);
-        edited = ImGui::DragFloat("Normal Scale", &clearcoat.normalScale, 0.05f, 0.0f,
-                                 std::numeric_limits<float>::max(), "%.3f", ImGuiSliderFlags_AlwaysClamp) || edited;
-        ImGui::EndDisabled();
-
-        ImGui::Text("Intensity texture: %s",
-                    clearcoat.texture ? clearcoat.texture->textureID.c_str() : "None");
-        ImGui::Text("Roughness texture: %s",
-                    clearcoat.roughnessTexture ? clearcoat.roughnessTexture->textureID.c_str() : "None");
-        ImGui::Text("Normal texture: %s",
-                    clearcoat.normalTexture ? clearcoat.normalTexture->textureID.c_str() : "None");
-        ImGui::PopID();
-    }
+    edited = drawMaterialExtensions(material) || edited;
     return edited;
 }
 }

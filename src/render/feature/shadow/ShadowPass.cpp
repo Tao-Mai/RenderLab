@@ -124,55 +124,51 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup)
 
 void ShadowPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
 {
-    const auto& frame  = execution.data;
-    const auto  lights = frame.lightData();
-    for (uint32_t lightIndex = 0; lightIndex < lights.size(); ++lightIndex)
+    const auto& frame = execution.data;
+    const auto lights = frame.lightData();
+    const auto& ranges = frame.lightUniforms().lightRanges;
+
+    for (uint32_t index = 0; index < ranges.directionalEnd; ++index)
     {
-        const LightData& light = lights[lightIndex];
+        const auto& light = lights[index];
         if (!light.enable() || !light.castShadow())
             continue;
 
-        switch (light.type())
-        {
-            case GpuLightType::Point:
-                {
-                    DCHECK(light.shadowidx < frame.pointShadowData().size());
-                    recordShadow(graph, commandBuffer, execution, point, lightIndex, light.shadowidx * kPointFaceCount);
-                    break;
-                }
-            case GpuLightType::Spot:
-                {
-                    DCHECK(light.shadowidx < frame.spotShadowData().size());
-                    recordShadow(graph, commandBuffer, execution, spot, lightIndex, light.shadowidx);
-                    break;
-                }
-            case GpuLightType::RectArea:
-                {
-                    DCHECK(light.shadowidx < frame.rectAreaShadowData().size());
-                    recordShadow(graph, commandBuffer, execution, rectArea, lightIndex, light.shadowidx);
-                    break;
-                }
-            case GpuLightType::Directional:
-                {
-                    DCHECK(light.shadowidx < frame.directionalShadowData().size());
-                    DCHECK(cascadeCount == frame.lightUniforms().cascadeCount);
-                    for (uint32_t cascadeIndex = 0; cascadeIndex < cascadeCount; ++cascadeIndex)
-                    {
-                        recordShadow(
-                            graph,
-                            commandBuffer,
-                            execution,
-                            directional,
-                            lightIndex,
-                            light.shadowidx * cascadeCount + cascadeIndex,
-                            cascadeIndex
-                        );
-                    }
-                    break;
-                }
-            default:
-                break;
-        }
+        DCHECK(light.shadowidx < frame.directionalShadowData().size());
+        DCHECK(cascadeCount == frame.lightUniforms().cascadeCount);
+        for (uint32_t cascadeIndex = 0; cascadeIndex < cascadeCount; ++cascadeIndex)
+            recordShadow(graph, commandBuffer, execution, directional, index,
+                         light.shadowidx * cascadeCount + cascadeIndex, cascadeIndex);
+    }
+
+    for (uint32_t index = ranges.directionalEnd; index < ranges.pointEnd; ++index)
+    {
+        const auto& light = lights[index];
+        if (!light.enable() || !light.castShadow())
+            continue;
+
+        DCHECK(light.shadowidx < frame.pointShadowData().size());
+        recordShadow(graph, commandBuffer, execution, point, index, light.shadowidx * kPointFaceCount);
+    }
+
+    for (uint32_t index = ranges.pointEnd; index < ranges.rectAreaEnd; ++index)
+    {
+        const auto& light = lights[index];
+        if (!light.enable() || !light.castShadow())
+            continue;
+
+        DCHECK(light.shadowidx < frame.rectAreaShadowData().size());
+        recordShadow(graph, commandBuffer, execution, rectArea, index, light.shadowidx);
+    }
+
+    for (uint32_t index = ranges.rectAreaEnd; index < ranges.spotEnd; ++index)
+    {
+        const auto& light = lights[index];
+        if (!light.enable() || !light.castShadow())
+            continue;
+
+        DCHECK(light.shadowidx < frame.spotShadowData().size());
+        recordShadow(graph, commandBuffer, execution, spot, index, light.shadowidx);
     }
 }
 

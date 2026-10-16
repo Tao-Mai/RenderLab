@@ -297,6 +297,7 @@ void Renderer::applyConfiguration(const SceneRenderData& scene)
         return;
     }
     if (appliedEnvironmentMap != environmentMap || appliedConfig->brdfLut != config.brdfLut ||
+        appliedConfig->sheenLut != config.sheenLut ||
         appliedConfig->feature.shadow.filter != config.feature.shadow.filter)
     {
         waitIdle();

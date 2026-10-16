@@ -57,15 +57,15 @@ private:
         glm::mat4 inverseViewProjection;
         glm::vec4 cameraPosition;
         glm::vec4 viewport;
-        uint32_t  lightCount;
+        LightRanges lightRanges;
         uint32_t  maxRecursionDepth;
         uint32_t  sampleIndex;
-        uint32_t  padding{};
+        uint32_t  padding[2]{};
     };
-    static_assert(sizeof(OfflineParameters) == 112);
-    static_assert(offsetof(OfflineParameters, lightCount) == 96);
-    static_assert(offsetof(OfflineParameters, maxRecursionDepth) == 100);
-    static_assert(offsetof(OfflineParameters, sampleIndex) == 104);
+    static_assert(sizeof(OfflineParameters) == 128);
+    static_assert(offsetof(OfflineParameters, lightRanges) == 96);
+    static_assert(offsetof(OfflineParameters, maxRecursionDepth) == 112);
+    static_assert(offsetof(OfflineParameters, sampleIndex) == 116);
 
     RenderGraph::ImageHandle                                                        rayImage;
     vk::raii::DescriptorSetLayout                                                   descriptorLayout       = nullptr;

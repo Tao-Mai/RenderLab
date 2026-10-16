@@ -44,13 +44,17 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
     lights[0].flags.y = 0;
     lights[1].flags.x = static_cast<uint32_t>(GpuLightType::Spot);
     lights[2].flags.z = 0;
-    frame
-        .update({}, {.lightCount = static_cast<uint32_t>(lights.size())}, prepareShadows({}, lights, {.enable = true}));
+    const auto upload = [&](bool enabled)
+    {
+        auto prepared = prepareShadows({}, lights, {.enable = enabled});
+        frame.update({}, {.lightRanges = prepared.lightRanges}, std::move(prepared));
+    };
+    upload(true);
     CHECK(frame.pointShadowData().size() == 2);
-    CHECK(frame.lightData()[3].shadowidx == 0 && frame.lightData()[4].shadowidx == 1);
+    CHECK(frame.lightData()[2].shadowidx == 0 && frame.lightData()[3].shadowidx == 1);
     CHECK(
-        frame.lightData()[0].shadowidx == ~0u && frame.lightData()[1].shadowidx == 0 &&
-        frame.lightData()[2].shadowidx == ~0u
+        frame.lightData()[0].shadowidx == ~0u && frame.lightData()[1].shadowidx == ~0u &&
+        frame.lightData()[4].shadowidx == 0
     );
     CHECK(frame.spotShadowData().size() == 1);
 
@@ -74,18 +78,13 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
 
     lights[0].flags.y = 1;
     lights[2].flags.z = 1;
-    frame
-        .update({}, {.lightCount = static_cast<uint32_t>(lights.size())}, prepareShadows({}, lights, {.enable = true}));
+    upload(true);
     CHECK(frame.pointShadowData().size() == 4);
     CHECK(
-        frame.lightData()[0].shadowidx == 0 && frame.lightData()[2].shadowidx == 1 &&
-        frame.lightData()[3].shadowidx == 2 && frame.lightData()[4].shadowidx == 3
+        frame.lightData()[0].shadowidx == 0 && frame.lightData()[1].shadowidx == 1 &&
+        frame.lightData()[2].shadowidx == 2 && frame.lightData()[3].shadowidx == 3
     );
-    frame.update(
-        {},
-        {.lightCount = static_cast<uint32_t>(lights.size())},
-        prepareShadows({}, lights, {.enable = false})
-    );
+    upload(false);
     CHECK(frame.pointShadowData().empty());
     for (const auto& light : frame.lightData())
         CHECK(!light.castShadow() && light.shadowidx == ~0u);
@@ -398,7 +397,10 @@ int main(int argc, char** argv)
         actor->name                 = "smoke-light-" + std::to_string(index);
         auto& light                 = *actor->getComponent<LightComponent>();
         light.castShadow            = index < 2;
-        light.intensity             = 0.25f;
+        if (auto* local = actor->getComponent<LocalLightComponent>())
+            local->luminousIntensity = 0.25f;
+        else
+            actor->getComponent<DirectionalLightComponent>()->illuminance = 0.25f;
         actor->transform().position = center + glm::vec3{20.0f + index, 20.0f, 0.0f};
         scene.actors.push_back(std::move(actor));
     }

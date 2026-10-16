@@ -80,7 +80,9 @@ int main(int, char** argv)
     LightData source;
     source.direction = {0.0f, -1.0f, 0.0f, 0.0f};
     source.flags     = {static_cast<uint32_t>(GpuLightType::Directional), 1u, 1u, 0u};
-    upload.update(view, {.lightCount = 1}, {&source, 1}, feature.shadow);
+    auto prepared = prepareShadows(view, {&source, 1}, feature.shadow);
+    upload.update(view, {.lightRanges = prepared.lightRanges, .cascadeCount = feature.shadow.cascade.count},
+                  std::move(prepared));
     CHECK(upload.directionalShadowData().size() == 1 && upload.lightData()[0].shadowidx == 0);
     CHECK(upload.lightUniforms().cascadeCount == 4);
     float previousDepth = camera.config().nearPlane;

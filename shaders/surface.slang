@@ -10,6 +10,10 @@ struct Surface
     float metallic;
     float occlusion;
     float3 emissive;
+#if ENABLE_SHEEN
+    float3 sheenColor;
+    float sheenRoughness;
+#endif
 #if ENABLE_CLEARCOAT
     float3 clearcoatNormal;
     float clearcoatFactor;

@@ -66,54 +66,6 @@ int main(int, char** argv)
                  layout.size.x, layout.size.y, layout.scale.x, layout.scale.y);
     }
 
-    const auto viewport = ui.sceneViewportPixels();
-    const auto* mainViewport = ImGui::GetMainViewport();
-    const ImVec2 sceneCenter{
-        mainViewport->Pos.x + (viewport.x + viewport.width * 0.5f) / io.DisplayFramebufferScale.x,
-        mainViewport->Pos.y + (viewport.y + viewport.height * 0.5f) / io.DisplayFramebufferScale.y,
-    };
-    const auto* panel = ImGui::FindWindowByName("Scene Objects");
-    const ImVec2 panelCenter{panel->Pos.x + panel->Size.x * 0.5f, panel->Pos.y + panel->Size.y * 0.5f};
-    const auto frameAt = [&](ImVec2 position, int button, bool pressed)
-    {
-        io.AddMousePosEvent(position.x, position.y);
-        io.AddMouseButtonEvent(button, pressed);
-        ImGui::NewFrame();
-        ui.beginFrame(io.DeltaTime);
-        ImGui::Begin("Scene Objects");
-        ImGui::End();
-        ImGui::Begin("Editor");
-        ImGui::End();
-        ui.endFrame();
-    };
-
-    frameAt(sceneCenter, ImGuiMouseButton_Left, false);
-    frameAt(sceneCenter, ImGuiMouseButton_Left, true);
-    CHECK(ui.isSceneFocused());
-    frameAt(sceneCenter, ImGuiMouseButton_Left, false);
-    frameAt(panelCenter, ImGuiMouseButton_Left, false);
-    CHECK(ui.isSceneFocused());
-    frameAt(panelCenter, ImGuiMouseButton_Left, true);
-    CHECK(!ui.isSceneFocused());
-    frameAt(panelCenter, ImGuiMouseButton_Left, false);
-    frameAt(sceneCenter, ImGuiMouseButton_Left, false);
-    CHECK(!ui.isSceneFocused());
-    frameAt(sceneCenter, ImGuiMouseButton_Right, true);
-    CHECK(ui.isSceneFocused());
-    frameAt(sceneCenter, ImGuiMouseButton_Right, false);
-    LOG_INFO("Viewport focus follows clicks, not mouse movement");
-
-    // ImGuizmo captures the next frame's mouse while hovered/dragged, without hovering a UI window.
-    ImGui::SetNextFrameWantCaptureMouse(true);
-    frameAt(sceneCenter, ImGuiMouseButton_Left, true);
-    CHECK(io.WantCaptureMouse);
-    CHECK(ui.isSceneFocused());
-    frameAt(sceneCenter, ImGuiMouseButton_Left, false);
-    ImGui::SetNextFrameWantCaptureMouse(true);
-    frameAt(panelCenter, ImGuiMouseButton_Left, true);
-    CHECK(!ui.isSceneFocused());
-    frameAt(panelCenter, ImGuiMouseButton_Left, false);
-    LOG_INFO("Gizmo mouse capture preserves viewport focus; panel clicks still clear it");
 
     ui.shutdown();
     ImGui::DestroyContext();

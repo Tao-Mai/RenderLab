@@ -24,7 +24,7 @@
                         }
                     },
                     {
-                        "PointLightComponent": {
+"PointLightComponent": {
                             "castShadow": false,
                             "color": [
                                 1,
@@ -32,7 +32,7 @@
                                 1
                             ],
                             "enabled": true,
-                            "intensity": 8,
+                            "luminousIntensity": 8,
                             "range": 15
                         }
                     }
@@ -173,7 +173,7 @@
                         }
                     },
                     {
-                        "DirectionalLightComponent": {
+"DirectionalLightComponent": {
                             "castShadow": false,
                             "color": [
                                 1,
@@ -181,7 +181,7 @@
                                 1
                             ],
                             "enabled": false,
-                            "intensity": 5
+                            "illuminance": 5
                         }
                     }
                 ],
@@ -247,7 +247,7 @@
                         }
                     },
                     {
-                        "RectAreaLightComponent": {
+"RectAreaLightComponent": {
                             "areaSize": [
                                 0.5,
                                 0.5
@@ -259,7 +259,7 @@
                                 1
                             ],
                             "enabled": true,
-                            "intensity": 8,
+                            "luminousIntensity": 8,
                             "range": 10
                         }
                     }

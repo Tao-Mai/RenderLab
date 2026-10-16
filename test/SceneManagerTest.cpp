@@ -111,6 +111,57 @@ TEST(SceneManagerTest, CsmSceneLoadsBuiltinGeometryAndOneShadowCastingSun)
     manager.shutdown();
 }
 
+TEST(SceneManagerTest, MaterialGalleryLoadsGridAndPreservesExtensionData)
+{
+    SceneManager manager;
+    manager.init();
+    const auto scene = asset_json::load<SceneAsset>(
+        std::filesystem::path{RENDERLAB_SOURCE_DIR} / "assets/Scene/material_gallery.json");
+    manager.load(scene);
+    EXPECT_EQ(Serialize(manager.scene()), Serialize(scene));
+
+    size_t objects = 0;
+    size_t cloths = 0;
+    size_t lights = 0;
+    json extensions = json::object();
+    for (const auto& actor : manager.scene().actors)
+    {
+        if (actor->getComponent<LightComponent>())
+            ++lights;
+        if (const auto* render = actor->getComponent<RenderComponent>())
+        {
+            const auto& material = render->materialOverrides.at(0);
+            const auto fields = Serialize(material);
+            for (const auto* field : {"clearcoat", "sheen", "anisotropy", "transmission", "volume", "ior",
+                                     "specular", "iridescence", "dispersion", "emissiveStrength", "unlit",
+                                     "diffuseTransmission"})
+                if (!fields.at(field).is_null())
+                    extensions[field] = fields.at(field);
+
+            if (material.sheen)
+            {
+                EXPECT_FALSE(render->meshId.empty());
+                EXPECT_NE(render->meshId, BuiltinAssets::Mesh::sphere);
+                EXPECT_TRUE(material.doubleSided.value_or(false));
+                ++cloths;
+            }
+            else
+            {
+                EXPECT_EQ(render->meshId, BuiltinAssets::Mesh::sphere);
+                const auto& position = actor->transform().position;
+                EXPECT_FLOAT_EQ(position.x, (static_cast<float>(objects % 4) - 1.5f) * 3.0f);
+                EXPECT_FLOAT_EQ(position.y, (1.5f - static_cast<float>(objects / 4)) * 3.0f);
+            }
+            ++objects;
+        }
+    }
+    EXPECT_EQ(objects, 16u);
+    EXPECT_EQ(cloths, 1u);
+    EXPECT_EQ(lights, 2u);
+    EXPECT_EQ(extensions.size(), 12u);
+    manager.shutdown();
+}
+
 #ifndef NDEBUG
 TEST(SceneManagerTest, DestructionRequiresExplicitShutdown)
 {
@@ -373,8 +424,8 @@ TEST(SceneManagerTest, RepeatedComponentTypesRoundTripAndRestoreEveryOwner)
     auto& object                                         = *scene.actors[1];
     object.addComponent<TransformComponent>().position.x = 8.0f;
     object.addComponent<RenderComponent>().meshId        = MeshAsset::ID{"cube"};
-    object.getComponent<LightComponent>()->intensity     = 2.0f;
-    object.addComponent<PointLightComponent>().intensity      = 7.0f;
+    object.getComponent<PointLightComponent>()->luminousIntensity     = 2.0f;
+    object.addComponent<PointLightComponent>().luminousIntensity      = 7.0f;
     const auto stored                                    = Serialize(scene);
 
     SceneManager manager;
@@ -390,11 +441,11 @@ TEST(SceneManagerTest, RepeatedComponentTypesRoundTripAndRestoreEveryOwner)
     const auto renders = restored.getComponents<RenderComponent>();
     ASSERT_EQ(renders.size(), 2);
     EXPECT_EQ(renders[1]->meshId, MeshAsset::ID{"cube"});
-    const auto lights = restored.getComponents<LightComponent>();
+    const auto lights = restored.getComponents<PointLightComponent>();
     ASSERT_EQ(lights.size(), 2);
     EXPECT_EQ(restored.getComponent<LightComponent>(), lights[0]);
-    EXPECT_FLOAT_EQ(lights[0]->intensity, 2.0f);
-    EXPECT_FLOAT_EQ(lights[1]->intensity, 7.0f);
+    EXPECT_FLOAT_EQ(lights[0]->luminousIntensity, 2.0f);
+    EXPECT_FLOAT_EQ(lights[1]->luminousIntensity, 7.0f);
     for (const auto& component : restored.components)
         EXPECT_EQ(&component->actor(), &restored);
     manager.shutdown();
@@ -526,7 +577,7 @@ TEST(SceneManagerTest, ALightRoundTripsAndTicksItsComponents)
     auto light                                       = std::make_unique<ALight>();
     light->name                                      = "Point Light";
     light->transform().position                      = {1.0f, 2.0f, 3.0f};
-    light->getComponent<LightComponent>()->intensity = 5.0f;
+    light->getComponent<PointLightComponent>()->luminousIntensity = 5.0f;
     scene.actors.push_back(std::move(light));
 
     const json stored = Serialize(scene);
@@ -549,33 +600,37 @@ TEST(SceneManagerTest, ALightRoundTripsAndTicksItsComponents)
     manager.shutdown();
 }
 
-TEST(LightPhotometry, ConvertsWholeLightIntensityAndNormalizesLinearColor)
+TEST(LightPhotometry, MultipliesLinearColorWithoutNormalization)
 {
     PointLightComponent light;
-    light.intensity = 1000.0f;
-    EXPECT_FLOAT_EQ(light.photometricEmission().w, 1000.0f);
+    light.luminousIntensity = 1000.0f;
+    EXPECT_EQ(light.emissionColor(), glm::vec3{1000.0f});
+    light.color = {1.0f, 0.5f, 0.25f};
+    EXPECT_EQ(light.emissionColor(), (glm::vec3{1000.0f, 500.0f, 250.0f}));
 
     RectAreaLightComponent area;
-    area.intensity = light.intensity;
+    area.luminousIntensity = light.luminousIntensity;
+    area.color = light.color;
     area.areaSize = {2, 3};
-    const float luminance = area.photometricEmission().w;
-    EXPECT_NEAR(luminance, 1000.0f / 6.0f, 0.0001f);
+    const auto emission = area.emissionColor();
+    EXPECT_NEAR(emission.x, 1000.0f / 6.0f, 0.0001f);
+    EXPECT_NEAR(emission.y, 500.0f / 6.0f, 0.0001f);
+    EXPECT_NEAR(emission.z, 250.0f / 6.0f, 0.0001f);
     area.areaSize.y *= 2;
-    EXPECT_FLOAT_EQ(area.photometricEmission().w, luminance * 0.5f);
-    EXPECT_FLOAT_EQ(area.intensity, 1000.0f);
+    EXPECT_EQ(area.emissionColor(), emission * 0.5f);
+    EXPECT_FLOAT_EQ(area.luminousIntensity, 1000.0f);
 
     DirectionalLightComponent directional;
-    directional.intensity = light.intensity;
-    directional.color = {1.0f, 0.5f, 0.25f};
-    const auto emission = directional.photometricEmission();
-    EXPECT_FLOAT_EQ(emission.w, 1000.0f);
-    EXPECT_NEAR(glm::dot(glm::vec3{emission}, glm::vec3{0.2126f, 0.7152f, 0.0722f}), 1.0f, 0.0001f);
+    directional.illuminance = light.luminousIntensity;
+    directional.color = light.color;
+    EXPECT_EQ(directional.emissionColor(), light.emissionColor());
 
     SpotLightComponent spot;
-    spot.intensity = light.intensity;
-    EXPECT_FLOAT_EQ(spot.photometricEmission().w, 1000.0f);
+    spot.luminousIntensity = light.luminousIntensity;
+    spot.color = light.color;
+    EXPECT_EQ(spot.emissionColor(), light.emissionColor());
     spot.color = glm::vec3{0.0f};
-    EXPECT_EQ(spot.photometricEmission(), glm::vec4{0.0f});
+    EXPECT_EQ(spot.emissionColor(), glm::vec3{0.0f});
 }
 
 TEST(SceneManagerTest, ALightRequiresLightComponent)

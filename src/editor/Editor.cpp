@@ -122,7 +122,7 @@ Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapcha
     const bool      enableGizmoShortcuts = !camera.isNavigationActive();
     auto*           selectedActor        = context().sceneManager->findActor(selectedId);
 
-    if (ui.isSceneFocused() && !camera.isFreeMovementActive() && selectedActor != nullptr)
+    if (!camera.isFreeMovementActive() && selectedActor != nullptr)
     {
         glm::mat4 gizmoProjection = projection;
         gizmoProjection[1][1] *= -1.0f;

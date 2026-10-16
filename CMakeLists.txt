@@ -108,20 +108,25 @@ set(SCENE_SHADER_INCLUDES
         "${SHADER_SOURCE_DIR}/constant.slang"
 )
 foreach(enable_clearcoat IN ITEMS 0 1)
-    foreach(enable_ibl IN ITEMS 1 0)
-        set(binary slang)
-        if(enable_clearcoat)
-            string(APPEND binary ".clearcoat")
-        endif()
-        if(NOT enable_ibl)
-            string(APPEND binary ".no_ibl")
-        endif()
-        renderlab_shader(slang shader.slang "${binary}"
-            DEFINES ENABLE_IBL=${enable_ibl} ENABLE_CLEARCOAT=${enable_clearcoat}
-            INCLUDES ${SCENE_SHADER_INCLUDES})
+    foreach(enable_sheen IN ITEMS 0 1)
+        foreach(enable_ibl IN ITEMS 1 0)
+            set(binary slang)
+            if(enable_clearcoat)
+                string(APPEND binary ".clearcoat")
+            endif()
+            if(enable_sheen)
+                string(APPEND binary ".sheen")
+            endif()
+            if(NOT enable_ibl)
+                string(APPEND binary ".no_ibl")
+            endif()
+            renderlab_shader(slang shader.slang "${binary}"
+                DEFINES ENABLE_IBL=${enable_ibl} ENABLE_CLEARCOAT=${enable_clearcoat} ENABLE_SHEEN=${enable_sheen}
+                INCLUDES ${SCENE_SHADER_INCLUDES})
+        endforeach()
     endforeach()
 endforeach()
-renderlab_shader(gbuffer deferred/gbuffer.slang gbuffer DEFINES ENABLE_CLEARCOAT=0
+renderlab_shader(gbuffer deferred/gbuffer.slang gbuffer DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=1
     INCLUDES ${SCENE_SHADER_INCLUDES})
 foreach(enable_ibl IN ITEMS 1 0)
     set(binary deferred_lighting)
@@ -129,9 +134,9 @@ foreach(enable_ibl IN ITEMS 1 0)
         string(APPEND binary ".no_ibl")
     endif()
     renderlab_shader(deferred_lighting deferred/lighting.slang "${binary}"
-        DEFINES ENABLE_IBL=${enable_ibl} ENABLE_CLEARCOAT=0 INCLUDES ${SCENE_SHADER_INCLUDES})
+        DEFINES ENABLE_IBL=${enable_ibl} ENABLE_CLEARCOAT=0 ENABLE_SHEEN=1 INCLUDES ${SCENE_SHADER_INCLUDES})
 endforeach()
-renderlab_shader(depth depth.slang depth DEFINES ENABLE_CLEARCOAT=0 INCLUDES ${SCENE_SHADER_INCLUDES})
+renderlab_shader(depth depth.slang depth DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 INCLUDES ${SCENE_SHADER_INCLUDES})
 renderlab_shader(skybox skybox.slang skybox INCLUDES ${SCENE_SHADER_INCLUDES})
 renderlab_shader(tonemapping postprocess/tonemapping.slang tonemapping)
 foreach(stage IN ITEMS 0 1 2)
@@ -154,11 +159,12 @@ endforeach()
 renderlab_shader(raytracing raytracing/raytracing.slang raytracing
     ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
     INCLUDES "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
-        "${SHADER_SOURCE_DIR}/random.slang" "${SHADER_SOURCE_DIR}/raytracing/material_data.slang")
+        "${SHADER_SOURCE_DIR}/random.slang" "${SHADER_SOURCE_DIR}/point_light_sampling.slang"
+        "${SHADER_SOURCE_DIR}/raytracing/material_data.slang")
 renderlab_shader(offline_pathtracing offline/pathtracing.slang offline_pathtracing
     ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
     INCLUDES "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
-        "${SHADER_SOURCE_DIR}/random.slang")
+        "${SHADER_SOURCE_DIR}/random.slang" "${SHADER_SOURCE_DIR}/point_light_sampling.slang")
 renderlab_shader_manifests()
 
 add_library(RenderLabRuntime STATIC
@@ -222,6 +228,8 @@ add_library(RenderLabRuntime STATIC
         src/editor/Editor.h
         src/editor/ComponentDraw.cpp
         src/editor/ComponentDraw.h
+        src/editor/MaterialExtensionsDraw.cpp
+        src/editor/MaterialExtensionsDraw.h
         src/editor/EditorUi.cpp
         src/editor/EditorUi.h
         src/editor/MeshImportPreview.cpp

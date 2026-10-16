@@ -13,6 +13,8 @@ struct MaterialData
     float padding1;
     float padding2;
     float4 emissiveFactor;
+    float3 sheenColorFactor;
+    float sheenRoughnessFactor;
 #if ENABLE_CLEARCOAT
     float clearcoatFactor;
     float clearcoatRoughnessFactor;
@@ -78,6 +80,13 @@ Texture2D<float4> clearcoatNormalTexture;
 
 [[vk::binding(18, 1)]]
 SamplerState clearcoatNormalSampler;
+#endif
+
+#if ENABLE_SHEEN
+[[vk::binding(19, 1)]] Texture2D<float4> sheenColorTexture;
+[[vk::binding(20, 1)]] SamplerState sheenColorSampler;
+[[vk::binding(21, 1)]] Texture2D<float4> sheenRoughnessTexture;
+[[vk::binding(22, 1)]] SamplerState sheenRoughnessSampler;
 #endif
 
 void applyAlphaTest(float alpha)

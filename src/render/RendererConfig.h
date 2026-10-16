@@ -93,5 +93,6 @@ struct RendererConfig
 {
     RenderPath     renderPath = RenderPath::Rasterization;
     TextureBinding brdfLut;
+    TextureBinding sheenLut;
     RenderFeature  feature;
 };

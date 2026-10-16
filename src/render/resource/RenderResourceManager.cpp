@@ -212,13 +212,16 @@ std::shared_ptr<GpuMaterial> RenderResourceManager::createMaterial(const PbrMate
         }
         return GpuMaterial::Texture{texture(binding.textureID), sampler(binding.samplerID)};
     };
+    const auto            sheen = asset.sheen.value_or(PbrMaterialAsset::Sheen{});
     GpuMaterial::Textures textures{
-        .baseColor = loadTexture(asset.baseColorTexture, BuiltinAssets::Texture::white),
-        .normal    = loadTexture(asset.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear),
-        .metallic  = loadTexture(asset.metallicTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
-        .roughness = loadTexture(asset.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
-        .emissive  = loadTexture(asset.emissiveTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb),
-        .occlusion = loadTexture(asset.aoTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+        .baseColor      = loadTexture(asset.baseColorTexture, BuiltinAssets::Texture::white),
+        .normal         = loadTexture(asset.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear),
+        .metallic       = loadTexture(asset.metallicTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+        .roughness      = loadTexture(asset.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+        .emissive       = loadTexture(asset.emissiveTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb),
+        .occlusion      = loadTexture(asset.aoTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+        .sheenColor     = loadTexture(sheen.colorTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb),
+        .sheenRoughness = loadTexture(sheen.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
     };
     if (asset.clearcoat)
     {
@@ -238,7 +241,7 @@ std::shared_ptr<GpuMaterial> RenderResourceManager::createMaterial(const PbrMate
         *descriptors,
         shaders->getOrLoad(
             asset.shaderId.value_or("scene"),
-            {{"ENABLE_IBL", 1}, {"ENABLE_CLEARCOAT", asset.clearcoat ? 1 : 0}}
+            {{"ENABLE_IBL", 1}, {"ENABLE_CLEARCOAT", asset.clearcoat ? 1 : 0}, {"ENABLE_SHEEN", asset.sheen ? 1 : 0}}
         ),
         asset,
         std::move(textures)
@@ -326,12 +329,16 @@ namespace
 {
 bool sameMaterialResources(const PbrMaterialAsset& a, const PbrMaterialAsset& b)
 {
-    if (a.shaderId != b.shaderId || a.clearcoat.has_value() != b.clearcoat.has_value())
+    if (a.shaderId != b.shaderId || a.clearcoat.has_value() != b.clearcoat.has_value() ||
+        a.sheen.has_value() != b.sheen.has_value())
         return false;
     if (a.clearcoat &&
         (a.clearcoat->texture != b.clearcoat->texture ||
          a.clearcoat->roughnessTexture != b.clearcoat->roughnessTexture ||
          a.clearcoat->normalTexture != b.clearcoat->normalTexture))
+        return false;
+    if (a.sheen &&
+        (a.sheen->colorTexture != b.sheen->colorTexture || a.sheen->roughnessTexture != b.sheen->roughnessTexture))
         return false;
     return a.baseColorTexture == b.baseColorTexture && a.normalTexture == b.normalTexture &&
         a.metallicTexture == b.metallicTexture && a.roughnessTexture == b.roughnessTexture &&
@@ -349,7 +356,8 @@ RenderResourceManager::prepare(const SceneRenderData& scene, const PreparedScene
     draws.drawItems.clear();
     draws.opaqueDrawItems.clear();
     draws.transparentDrawItems.clear();
-    draws.lights = scene.lights;
+    draws.lights      = prepared.lighting.lights;
+    draws.lightRanges = prepared.lighting.lightRanges;
     for (auto& [key, instance] : frame.instances)
         instance.used = false;
 

@@ -511,10 +511,11 @@ void OfflinePathTracingPass::prepareScene(
 
     const auto& lights = execution.renderData.lights;
     CHECK(lights.size() < (1u << 24), "ray tracing light index exceeds the custom-index limit");
-    for (uint32_t index = 0; index < lights.size(); ++index)
+    const auto& ranges = execution.renderData.lightRanges;
+    for (uint32_t index = ranges.pointEnd; index < ranges.rectAreaEnd; ++index)
     {
         const auto& light = lights[index];
-        if (!light.enable() || light.type() != GpuLightType::RectArea)
+        if (!light.enable())
             continue;
 
         const glm::vec2 size{light.areaSizeCone};
@@ -692,7 +693,7 @@ void OfflinePathTracingPass::execute(RenderGraph& graph, CommandRecorder& comman
             .inverseViewProjection = view.inverseViewProjection,
             .cameraPosition        = view.cameraPosition,
             .viewport              = {viewport.x, viewport.y, viewport.width, viewport.height},
-            .lightCount            = static_cast<uint32_t>(execution.renderData.lights.size()),
+            .lightRanges           = execution.renderData.lightRanges,
             .maxRecursionDepth     = pipelineRecursionDepth,
             .sampleIndex           = accumulatedSamples,
         }

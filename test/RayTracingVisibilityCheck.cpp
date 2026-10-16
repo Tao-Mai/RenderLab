@@ -137,6 +137,32 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     const auto clear = sample();
     CHECK(clear > 1.0f, "HDR surface luminance is unexpectedly clipped or dark: {}", clear);
 
+    // Proportional, colocated point lights yield the same compensated estimate whichever is selected.
+    const auto& pointActor = *scenes.scene().actors[1];
+    const auto& point = *pointActor.getComponent<PointLightComponent>();
+    auto& secondPoint = scenes.createActor("ALight");
+    secondPoint.transform().position = pointActor.transform().position;
+    auto& second = *secondPoint.getComponent<PointLightComponent>();
+    second.color = point.color;
+    second.luminousIntensity = point.luminousIntensity * 3.0f;
+    auto& ignoredPoint = scenes.createActor("ALight");
+    ignoredPoint.transform().position = pointActor.transform().position;
+    auto& ignored = *ignoredPoint.getComponent<PointLightComponent>();
+    ignored.luminousIntensity = point.luminousIntensity * 100.0f;
+    ignored.color = glm::vec3{0.0f};
+
+    constexpr float kSamplingRelativeTolerance = 0.005f;
+    for (int index = 0; index < 8; ++index)
+    {
+        CHECK(std::abs(sample() - clear * 4.0f) <= clear * 4.0f * kSamplingRelativeTolerance);
+        ignored.color = point.color;
+        ignored.enabled = false;
+    }
+    scenes.deleteActor(secondPoint.selectionId());
+    scenes.deleteActor(ignoredPoint.selectionId());
+    CHECK(sample() == clear);
+    LOG_INFO("Streaming point-light selection passed: 1:3 weights, inverse-PMF compensation, black/disabled lights");
+
     auto& blocker                = scenes.createActor("AStaticMesh");
     blocker.transform().position = {1, 0, 2};
     blocker.transform().scale    = glm::vec3{0.6f};
@@ -164,10 +190,10 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     receiver.materialOverrides = std::move(originalOverrides);
 
     auto&       sun            = *scenes.scene().actors[1];
-    const float pointIntensity = sun.getComponent<LightComponent>()->intensity;
-    auto&       sunData =
-        replaceLightComponent(*sun.getComponent<LightComponent>(), std::make_unique<DirectionalLightComponent>());
-    sunData.intensity = 100;
+    const float pointIntensity = sun.getComponent<LocalLightComponent>()->luminousIntensity;
+    replaceLightComponent(*sun.getComponent<LightComponent>(), std::make_unique<DirectionalLightComponent>());
+    auto& sunData = *sun.getComponent<DirectionalLightComponent>();
+    sunData.illuminance = 100;
     sun.transform().setRotationEulerDegrees({0, 45, 0});
     blocker.transform().position = {4, 3, 5};
     const auto directionalClear  = sample();
@@ -189,7 +215,8 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         directionalClear
     );
 
-    replaceLightComponent(sunData, std::make_unique<PointLightComponent>()).intensity = pointIntensity;
+    replaceLightComponent(sunData, std::make_unique<PointLightComponent>());
+    sun.getComponent<PointLightComponent>()->luminousIntensity = pointIntensity;
     sun.transform().setRotationEulerDegrees({0, 0, 0});
     sun.transform().position     = {2, 0, 3};
     blocker.transform().position = {4, 0, 5};
@@ -234,14 +261,17 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     areaLight->transform().position = {0, 0, 7};
     auto& lightData                 = *areaLight->getComponent<RectAreaLightComponent>();
     lightData.areaSize              = {20, 20};
-    lightData.intensity             = 8.0f * 20.0f * 20.0f;
+    lightData.luminousIntensity             = 8.0f * 20.0f * 20.0f;
     areaScene.actors.push_back(std::move(areaLight));
+    auto disabledSun = std::make_unique<ALight>(std::make_unique<DirectionalLightComponent>());
+    disabledSun->getComponent<DirectionalLightComponent>()->enabled = false;
+    areaScene.actors.push_back(std::move(disabledSun)); // Rect TLAS IDs must include preceding light groups.
     scenes.load(areaScene);
     rebuildGraph();
 
     const auto areaClear = sample();
     CHECK(std::isfinite(areaClear) && areaClear > 0);
-    auto& light   = *scenes.scene().actors[1]->getComponent<LightComponent>();
+    auto& light   = *scenes.scene().actors[1]->getComponent<RectAreaLightComponent>();
     light.enabled = false;
     CHECK(sample() == 0);
     light.enabled = true;
@@ -275,9 +305,9 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     replaceLightComponent(*farLight.getComponent<LightComponent>(), std::make_unique<RectAreaLightComponent>());
     auto& farData     = *farLight.getComponent<RectAreaLightComponent>();
     farData.areaSize  = {20, 20};
-    farData.intensity = 100.0f * 20.0f * 20.0f;
+    farData.luminousIntensity = 100.0f * 20.0f * 20.0f;
     // The near emitter still occludes the farther lamp when its emitted luminance is zero.
-    light.intensity = 0;
+    light.luminousIntensity = 0;
     CHECK(sample() == 0);
     light.enabled = false;
     CHECK(sample() > 0);
@@ -337,7 +367,7 @@ int main(int, char** argv)
     scene.actors.push_back(std::move(sphere));
     auto light                                       = std::make_unique<ALight>();
     light->transform().position                      = {2, 0, 3};
-    light->getComponent<LightComponent>()->intensity = 100.0f;
+    light->getComponent<LocalLightComponent>()->luminousIntensity = 100.0f;
     scene.actors.push_back(std::move(light));
     scenes.load(scene);
     renderer.init();

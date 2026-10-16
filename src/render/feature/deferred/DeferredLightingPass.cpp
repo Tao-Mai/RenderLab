@@ -25,7 +25,12 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
 {
     gBuffer                   = input;
     const auto resolvedShadow = bindings.setup(graph, setup, shadow);
-    for (const auto image : {gBuffer.albedoOcclusion, gBuffer.normalRoughness, gBuffer.emissiveMetallic, gBuffer.depth})
+    for (const auto image :
+         {gBuffer.albedoOcclusion,
+          gBuffer.normalRoughness,
+          gBuffer.emissiveMetallic,
+          gBuffer.sheenColorRoughness,
+          gBuffer.depth})
         graph.use(
             image,
             {
@@ -86,6 +91,12 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
             .descriptorCount = 1,
             .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
         },
+        vk::DescriptorSetLayoutBinding{
+            .binding         = RenderInterface::kGBufferSheenBinding,
+            .descriptorType  = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1,
+            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+        },
     };
     auto&            descriptors = *renderContext().descriptors;
     auto&            pipelines   = *renderContext().pipelineManager;
@@ -101,7 +112,8 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
     auto&               ctx = renderContext();
     const ShaderDefines variant{
         {"ENABLE_IBL", context().config->rendererConfig().feature.ibl ? 1 : 0},
-        {"ENABLE_CLEARCOAT", 0}
+        {"ENABLE_CLEARCOAT", 0},
+        {"ENABLE_SHEEN", 1}
     };
     pipeline = ctx.pipelineManager->getOrCreate({
         .shader = ctx.shaderManager->getOrLoad(kDeferredLightingShader, variant),
@@ -118,12 +130,19 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
 void DeferredLightingPass::prepare(RenderGraph& graph, const PassSetup& setup) const
 {
     bindings.prepare(graph, setup);
-    const std::array images{gBuffer.albedoOcclusion, gBuffer.normalRoughness, gBuffer.emissiveMetallic, gBuffer.depth};
+    const std::array images{
+        gBuffer.albedoOcclusion,
+        gBuffer.normalRoughness,
+        gBuffer.emissiveMetallic,
+        gBuffer.depth,
+        gBuffer.sheenColorRoughness
+    };
     constexpr std::array kBindings{
         RenderInterface::kGBufferAlbedoBinding,
         RenderInterface::kGBufferNormalBinding,
         RenderInterface::kGBufferEmissiveBinding,
-        RenderInterface::kGBufferDepthBinding
+        RenderInterface::kGBufferDepthBinding,
+        RenderInterface::kGBufferSheenBinding
     };
     for (uint32_t frame = 0; frame < maxFramesInFlight; ++frame)
     {

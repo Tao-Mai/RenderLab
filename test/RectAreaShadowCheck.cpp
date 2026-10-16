@@ -78,7 +78,8 @@ int main(int, char** argv)
     source.direction     = {0.0f, 0.0f, -1.0f, 0.0f};
     source.areaRightData = {0.0f, 1.0f, 0.0f, 0.0f};
     source.flags         = {static_cast<uint32_t>(GpuLightType::RectArea), 1u, 1u, 0u};
-    upload.update({}, {.lightCount = 1}, {&source, 1}, {.enable = true});
+    auto prepared = prepareShadows({}, {&source, 1}, {.enable = true});
+    upload.update({}, {.lightRanges = prepared.lightRanges}, std::move(prepared));
     CHECK(upload.rectAreaShadowData().size() == 1 && upload.lightData()[0].shadowidx == 0);
     CHECK(upload.pointShadowData().empty());
     const auto& shadow = upload.rectAreaShadowData()[0];
@@ -86,7 +87,8 @@ int main(int, char** argv)
     CHECK(glm::length(shadow.worldToUvScale - glm::vec2{0.41954982f}) < 1e-5f);
     const auto clip = upload.rectAreaShadowData()[0].vp * glm::vec4{0.0f, 0.0f, 3.0f, 1.0f};
     CHECK(std::abs(clip.x) < 1e-5f && std::abs(clip.y) < 1e-5f && clip.z > 0.0f && clip.z < clip.w);
-    upload.update({}, {.lightCount = 1}, {&source, 1}, {.enable = false});
+    prepared = prepareShadows({}, {&source, 1}, {.enable = false});
+    upload.update({}, {.lightRanges = prepared.lightRanges}, std::move(prepared));
     CHECK(upload.rectAreaShadowData().empty() && upload.lightData()[0].shadowidx == ~0u);
     upload.reset();
     descriptors.shutdown();

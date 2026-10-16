@@ -14,10 +14,11 @@ struct ViewUniforms
 
 struct LightUniforms
 {
-    uint lightCount;
+    LightRanges lightRanges;
     float ambientCoefficient;
     uint cascadeCount;
     float directionalShadowSampleRadius;
+    float padding;
     float4 iblParameters;
     float4 shadowParameters;
 

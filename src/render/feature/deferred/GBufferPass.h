@@ -13,6 +13,7 @@ public:
         RenderGraph::ImageHandle albedoOcclusion;
         RenderGraph::ImageHandle normalRoughness;
         RenderGraph::ImageHandle emissiveMetallic;
+        RenderGraph::ImageHandle sheenColorRoughness;
         RenderGraph::ImageHandle depth;
     };
 
@@ -22,6 +23,7 @@ public:
 private:
     static constexpr std::array kColorFormats{
         vk::Format::eR8G8B8A8Srgb,
+        vk::Format::eR16G16B16A16Sfloat,
         vk::Format::eR16G16B16A16Sfloat,
         vk::Format::eR16G16B16A16Sfloat,
     };

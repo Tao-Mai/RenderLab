@@ -4,6 +4,7 @@
 #include "render/feature/RenderGraph.h"
 #include "render/raytracing/AccelerationStructure.h"
 #include "render/raytracing/RayTracingData.h"
+#include "render/resource/ShaderData.h"
 
 #include <array>
 #include <glm/vec4.hpp>
@@ -41,13 +42,13 @@ private:
         glm::mat4 inverseViewProjection;
         glm::vec4 cameraPosition;
         glm::vec4 viewport;
-        uint32_t  lightCount;
+        LightRanges lightRanges;
         uint32_t  maxRecursionDepth;
-        uint32_t  padding[2]{};
+        uint32_t  padding[3]{};
     };
-    static_assert(sizeof(RayTracingParameters) == 112);
-    static_assert(offsetof(RayTracingParameters, lightCount) == 96);
-    static_assert(offsetof(RayTracingParameters, maxRecursionDepth) == 100);
+    static_assert(sizeof(RayTracingParameters) == 128);
+    static_assert(offsetof(RayTracingParameters, lightRanges) == 96);
+    static_assert(offsetof(RayTracingParameters, maxRecursionDepth) == 112);
 
     RenderGraph::ImageHandle                                                        rayImage;
     vk::raii::DescriptorSetLayout                                                   descriptorLayout       = nullptr;

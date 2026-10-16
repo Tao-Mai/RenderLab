@@ -9,6 +9,12 @@
     },
     "feature": {
         "ambientCoefficient": 0.10000000149011612,
+        "bloom": {
+            "enable": true,
+            "filterRadius": 1.0,
+            "intensity": 0.03999999910593033,
+            "levels": 5
+        },
         "hdr": true,
         "ibl": true,
         "offline": {
@@ -20,13 +26,13 @@
         "shadow": {
             "bias": 0.0010000000474974513,
             "cascade": {
-                "blendRatio": 0.1,
+                "blendRatio": 0.10000000149011612,
                 "count": 4,
-                "maxDistance": 50,
+                "maxDistance": 50.0,
                 "sampleRadius": 2.0,
                 "shadowMapSize": 2048,
-                "splitStrategy": "Practical",
-                "splitLambda": 0.5
+                "splitLambda": 0.5,
+                "splitStrategy": "Practical"
             },
             "enable": true,
             "filter": "Linear",
@@ -39,15 +45,17 @@
         },
         "toneMapping": {
             "ev100": -0.2630344033241272,
-            "exposureCompensation": 0,
+            "exposureCompensation": 0.0,
             "mode": "Neutral"
-        },
-        "bloom": {
-            "enable": true,
-            "intensity": 0.04,
-            "filterRadius": 1,
-            "levels": 5
         }
     },
-    "renderPath": "Rasterization"
+    "renderPath": "Rasterization",
+    "sheenLut": {
+        "samplerID": {
+            "value": "linearClamp"
+        },
+        "textureID": {
+            "value": "lut_sheen_E"
+        }
+    }
 }

@@ -29,4 +29,5 @@ struct RenderData
     std::vector<DrawItem>  opaqueDrawItems;
     std::vector<DrawItem>  transparentDrawItems;
     std::vector<LightData> lights;
+    LightRanges           lightRanges;
 };

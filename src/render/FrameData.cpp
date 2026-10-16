@@ -171,7 +171,8 @@ void FrameData::updateView(const ViewUniforms& view)
 
 void FrameData::update(const ViewUniforms& view, const LightUniforms& lighting, ShadowFrameData prepared)
 {
-    DCHECK(vulkan && lighting.lightCount == prepared.lights.size());
+    DCHECK(vulkan && lighting.lightRanges.spotEnd == prepared.lights.size());
+    DCHECK(lighting.lightRanges == prepared.lightRanges);
     shadowData = std::move(prepared);
 
     const auto ensureStorage = [&](Buffer& buffer, vk::DeviceSize bytes)
