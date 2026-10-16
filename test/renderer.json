@@ -21,7 +21,10 @@
             "maxRecursionDepth": 6
         },
         "rayTracing": {
-            "maxRecursionDepth": 4
+            "emaAlpha": 0.1,
+            "emaStartSampleCount": 10,
+            "maxRecursionDepth": 4,
+            "svgf": true
         },
         "shadow": {
             "bias": 0.0010000000474974513,

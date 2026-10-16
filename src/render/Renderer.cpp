@@ -29,6 +29,7 @@
 #include "render/offline/OfflinePathTracingPass.h"
 #include "render/raytracing/RayTracingBlitPass.h"
 #include "render/raytracing/RayTracingPass.h"
+#include "render/raytracing/TemporalReprojectionPass.h"
 #include "render/resource/Buffer.h"
 
 #include <tuple>
@@ -48,6 +49,7 @@ struct Renderer::Passes
         BloomPass,
         ToneMappingPass,
         RayTracingPass,
+        TemporalReprojectionPass,
         OfflinePathTracingPass,
         RayTracingBlitPass,
         EditorDepthPass,
@@ -195,7 +197,11 @@ void Renderer::setupRenderGraph()
 
 Renderer::SceneOutput Renderer::setupRayTracing()
 {
-    return {setupPass<RayTracingPass>().rayImage, setupPass<EditorDepthPass>().depth};
+    const auto traced = setupPass<RayTracingPass>();
+    auto       color  = traced.rayImage;
+    if (context().config->rendererConfig().feature.rayTracing.svgf)
+        color = setupPass<TemporalReprojectionPass>(traced).color;
+    return {color, setupPass<EditorDepthPass>().depth};
 }
 
 Renderer::SceneOutput Renderer::setupOffline()
@@ -281,6 +287,7 @@ void Renderer::applyConfiguration(const SceneRenderData& scene)
             value.feature.bloom.enable,
             value.feature.bloom.levels,
             value.feature.rayTracing.maxRecursionDepth,
+            value.feature.rayTracing.svgf,
             value.feature.offline.maxRecursionDepth,
             shadow.enable,
             shadow.pointShadowMapSize,

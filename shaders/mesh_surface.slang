@@ -4,6 +4,7 @@
 #include "mesh_vertex.slang"
 #include "material_data.slang"
 #include "surface.slang"
+#include "normal_mapping.slang"
 
 struct VertexOutput
 {
@@ -37,14 +38,10 @@ VertexOutput vertMain(VertexInput input)
 Surface sampleSurface(VertexOutput input, bool isFrontFace)
 {
     float3 geometricNormal = normalize(input.worldNormal);
-    float3 T = normalize(input.worldTangent.xyz - geometricNormal * dot(geometricNormal, input.worldTangent.xyz));
-    float3 B = cross(geometricNormal, T) * input.worldTangent.w;
-    float3 normalTs = normalTexture.Sample(normalSampler, input.uv).xyz * 2.0 - 1.0;
-    normalTs.xy *= material.normalScale;
-
     Surface surface;
     surface.worldPosition = input.worldPosition;
-    surface.normal = normalize(T * normalTs.x + B * normalTs.y + geometricNormal * normalTs.z);
+    surface.normal = applyNormalMap(geometricNormal, input.worldTangent,
+        normalTexture.Sample(normalSampler, input.uv).xyz, material.normalScale);
     surface.normal = isFrontFace ? surface.normal : -surface.normal;
     surface.baseColor = baseColorTexture.Sample(baseColorSampler, input.uv) * material.baseColorFactor;
     applyAlphaTest(surface.baseColor.a);
@@ -58,9 +55,8 @@ Surface sampleSurface(VertexOutput input, bool isFrontFace)
         * material.sheenRoughnessFactor);
 #endif
 #if ENABLE_CLEARCOAT
-    float3 clearcoatNormalTs = clearcoatNormalTexture.Sample(clearcoatNormalSampler, input.uv).xyz * 2.0 - 1.0;
-    clearcoatNormalTs.xy *= material.clearcoatNormalScale;
-    surface.clearcoatNormal = normalize(T * clearcoatNormalTs.x + B * clearcoatNormalTs.y + geometricNormal * clearcoatNormalTs.z);
+    surface.clearcoatNormal = applyNormalMap(geometricNormal, input.worldTangent,
+        clearcoatNormalTexture.Sample(clearcoatNormalSampler, input.uv).xyz, material.clearcoatNormalScale);
     surface.clearcoatNormal = isFrontFace ? surface.clearcoatNormal : -surface.clearcoatNormal;
     surface.clearcoatFactor = saturate(material.clearcoatFactor * clearcoatTexture.Sample(clearcoatSampler, input.uv).r);
     surface.clearcoatRoughness = saturate(material.clearcoatRoughnessFactor * clearcoatRoughnessTexture.Sample(clearcoatRoughnessSampler, input.uv).g);

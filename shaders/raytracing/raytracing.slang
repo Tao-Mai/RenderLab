@@ -4,6 +4,9 @@
 #include "../point_light_sampling.slang"
 #include "../rect_area_light_sampling.slang"
 #include "material_data.slang"
+#include "../pbr_brdf.slang"
+#include "../normal_mapping.slang"
+#include "../view_data.slang"
 
 
 static const uint kVertexStrideFloats = 12;
@@ -26,6 +29,8 @@ struct Payload
     float brdfPdf;
     float3 throughput;
     float rectAreaLightWeightSum; // Selection weights at this ray's origin, not the current hit.
+    float primaryDepth;
+    float3 primaryNormal;
 };
 
 struct VisibilityPayload
@@ -41,9 +46,24 @@ float balanceHeuristic(float samplePdf, float otherPdf)
 struct Surface
 {
     float3 position;
+    float3 geometricNormal;
     float3 normal;
     float3 viewDirection; // World-space direction toward the previous ray vertex (wo).
-    float3 baseColor;
+    PbrBrdf brdf;
+    float3 emissive;
+
+    float3 rayOrigin()
+    {
+        return position + geometricNormal * kRayEpsilon;
+    }
+
+    float3 evaluateLight(float3 direction, float3 incidentLight)
+    {
+        if (dot(geometricNormal, direction) <= 0.0)
+            return float3(0.0);
+        return brdf.evaluate(normal, viewDirection, direction)
+            * saturate(dot(normal, direction)) * incidentLight;
+    }
 
     bool isVisible(float3 direction, float distance)
     {
@@ -51,7 +71,7 @@ struct Surface
             return true;
 
         RayDesc ray;
-        ray.Origin = position + normal * kRayEpsilon;
+        ray.Origin = rayOrigin();
         ray.Direction = direction;
         ray.TMin = kRayEpsilon;
         ray.TMax = distance - kRayEpsilon;
@@ -66,23 +86,17 @@ struct Surface
         return payload.visible != 0;
     }
 
-    float3 sampleDiffuseDirection(inout uint state)
+    float3 sampleBrdfRadiance(uint depth, float3 throughput, float rectAreaLightWeightSum, inout uint state)
     {
-        float radius = sqrt(randomFloat(state));
-        float phi = randomFloat(state) * 2.0 * PI;
-        float3 tmp = abs(normal.z) < 0.9 ? float3(0.0, 0.0, 1.0) : float3(0.0, 1.0, 0.0);
-        float3 tangent = normalize(cross(normal, tmp));
-        float3 bitangent = cross(normal, tangent);
-        return normalize(
-            radius * cos(phi) * tangent + radius * sin(phi) * bitangent +
-            sqrt(max(0.0, 1.0 - radius * radius)) * normal
-        );
-    }
+        float3 randomSample;
+        randomSample.x = randomFloat(state);
+        randomSample.y = randomFloat(state);
+        randomSample.z = randomFloat(state);
+        BrdfSample sampled = brdf.sample(normal, viewDirection, randomSample);
+        if (sampled.pdf <= 0.0 || dot(geometricNormal, sampled.direction) <= 0.0 || !any(sampled.weight > 0.0))
+            return float3(0.0);
 
-    float3 sampleDiffuseRadiance(uint depth, float3 throughput, float rectAreaLightWeightSum, inout uint state)
-    {
-        // Cosine-weighted Lambert sampling has BRDF * cosine / PDF = baseColor.
-        float3 nextThroughput = throughput * baseColor;
+        float3 nextThroughput = throughput * sampled.weight;
         float survivalProbability = 1.0;
         if (depth >= kRussianRouletteStartDepth)
         {
@@ -97,23 +111,21 @@ struct Surface
         }
 
         RayDesc ray;
-        ray.Origin = position + normal * kRayEpsilon;
-        ray.Direction = sampleDiffuseDirection(state);
+        ray.Origin = rayOrigin();
+        ray.Direction = sampled.direction;
         ray.TMin = kRayEpsilon;
         ray.TMax = kMaxRayDistance;
 
-        float brdfPdf = saturate(dot(normal, ray.Direction)) * INV_PI;
-        Payload bounce = {float3(0.0), depth + 1, state, brdfPdf, nextThroughput, rectAreaLightWeightSum};
+        Payload bounce = {float3(0.0), depth + 1, state, sampled.pdf, nextThroughput, rectAreaLightWeightSum,
+            -1.0, float3(0.0)};
         TraceRay(
             scene, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
             kSceneMask | kLightMask, 0, 0, 0, ray, bounce
         );
         state = bounce.randomState;
 
-        // The light hit shader applies MIS to emission; the surface hit shader returns unweighted indirect light.
-        // Cosine-weighted Lambert sampling cancels BRDF * cos(theta) / PDF; shade applies baseColor once.
-        // Throughput guides later roulette decisions; recursive returns apply each factor exactly once.
-        return bounce.color / survivalProbability;
+        // Payload throughput guides roulette; recursive returns apply BRDF * cosine / PDF exactly once.
+        return sampled.weight * bounce.color / survivalProbability;
     }
 
     float3 samplePointLightRadiance(LightRanges ranges, inout uint state)
@@ -130,14 +142,14 @@ struct Surface
         if (nDotL == 0.0)
             return float3(0.0);
 
-        float3 shadowOffset = light.position - (position + normal * kRayEpsilon);
+        float3 shadowOffset = light.position - rayOrigin();
         float shadowDistance = length(shadowOffset);
         if (!isVisible(normalize(shadowOffset), shadowDistance))
             return float3(0.0);
 
         // Delta point lights do not compete with the BRDF's continuous direction sampling.
         float3 incidentIrradiance = light.color / distanceSquared;
-        return incidentIrradiance * nDotL * INV_PI / selected.probability;
+        return evaluateLight(lightDirection, incidentIrradiance) / selected.probability;
     }
 
     float3 sampleRectAreaLightRadiance(RectAreaLightSample selected, inout uint state)
@@ -145,7 +157,7 @@ struct Surface
         if (selected.probability == 0.0)
             return float3(0.0);
 
-        float3 origin = position + normal * kRayEpsilon;
+        float3 origin = rayOrigin();
         RectAreaLight emitter = {lights[selected.index]};
         float3 sampleLightPosition = emitter.samplePosition(state);
         float3 toLight = sampleLightPosition - origin;
@@ -160,9 +172,10 @@ struct Surface
             return float3(0.0);
 
         // The full NEE PDF includes discrete light selection and conditional surface sampling.
-        float brdfPdf = nDotL * INV_PI;
+        float brdfPdf = dot(geometricNormal, lightDirection) > 0.0
+            ? brdf.pdf(normal, viewDirection, lightDirection) : 0.0;
         float weight = balanceHeuristic(lightPdf, brdfPdf);
-        return emitter.data.color * nDotL * INV_PI * weight / lightPdf;
+        return evaluateLight(lightDirection, emitter.data.color) * weight / lightPdf;
     }
 
     float3 shade(LightRanges ranges, uint depth, float3 throughput, inout uint state)
@@ -178,24 +191,26 @@ struct Surface
             if (nDotL == 0.0 || !isVisible(lightDirection, kMaxRayDistance))
                 continue;
 
-            // A delta light has no competing diffuse-sampling path or distance attenuation.
-            radiance += light.color * nDotL * INV_PI;
+            // A delta light has no competing BRDF-sampling path or distance attenuation.
+            radiance += evaluateLight(lightDirection, light.color);
         }
 
         // NEE and the BRDF bounce share the selection distribution at the same ray origin.
-        float3 origin = position + normal * kRayEpsilon;
+        float3 origin = rayOrigin();
         RectAreaLightSample selected = sampleRectAreaLight(lights, ranges.pointEnd, ranges.rectAreaEnd, origin, state);
         radiance += sampleRectAreaLightRadiance(selected, state);
 
-        radiance += sampleDiffuseRadiance(depth, throughput, selected.weightSum, state);
-        return baseColor * radiance;
+        radiance += sampleBrdfRadiance(depth, throughput, selected.weightSum, state);
+        return radiance;
     }
 };
 
 struct VertexAttributes
 {
+    float3 position;
     float3 normal;
     float2 uv;
+    float4 tangent;
 };
 
 struct HitData
@@ -211,8 +226,10 @@ struct HitData
         // Matches the packed 48-byte C++ Vertex; do not apply std430 float3 alignment.
         float* vertex = (float*)vertexAddress + index * kVertexStrideFloats;
         return {
+            float3(vertex[0], vertex[1], vertex[2]),
             float3(vertex[3], vertex[4], vertex[5]),
             float2(vertex[6], vertex[7]),
+            float4(vertex[8], vertex[9], vertex[10], vertex[11]),
         };
     }
 
@@ -226,17 +243,35 @@ struct HitData
         float3 weights = float3(1.0 - barycentrics.x - barycentrics.y, barycentrics);
         float2 uv = v0.uv * weights.x + v1.uv * weights.y + v2.uv * weights.z;
         float3 objectNormal = v0.normal * weights.x + v1.normal * weights.y + v2.normal * weights.z;
+        float4 objectTangent = v0.tangent * weights.x + v1.tangent * weights.y + v2.tangent * weights.z;
         MaterialData material = materials[materialIndex];
-        uint textureIndex = NonUniformResourceIndex(material.baseColorTexture.textureIndex);
-        uint samplerIndex = NonUniformResourceIndex(material.baseColorTexture.samplerIndex);
 
         // Row-vector multiplication applies the inverse transpose, including nonuniform scale.
-        return {
-            WorldRayOrigin() + WorldRayDirection() * RayTCurrent(),
-            normalize(mul(objectNormal, (float3x3)WorldToObject3x4())),
-            -normalize(WorldRayDirection()),
-            textures[textureIndex].SampleLevel(samplers[samplerIndex], uv, 0).rgb * material.baseColorFactor.rgb,
-        };
+        float3 worldNormal = normalize(mul(objectNormal, (float3x3)WorldToObject3x4()));
+        float3x3 model = (float3x3)ObjectToWorld3x4();
+        float handedness = determinant(model) < 0.0 ? -1.0 : 1.0;
+        float4 worldTangent = float4(mul(model, objectTangent.xyz), sign(objectTangent.w) * handedness);
+        float3 geometricNormal = normalize(cross(mul(model, v1.position - v0.position),
+            mul(model, v2.position - v0.position)));
+        if (dot(geometricNormal, worldNormal) < 0.0)
+            geometricNormal = -geometricNormal;
+
+        Surface surface;
+        surface.position = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
+        surface.viewDirection = -normalize(WorldRayDirection());
+        surface.normal = applyNormalMap(worldNormal, worldTangent,
+            sampleTexture(material.normalTexture, uv).xyz, material.normalScale);
+        float facing = dot(geometricNormal, surface.viewDirection) < 0.0 ? -1.0 : 1.0;
+        surface.geometricNormal = geometricNormal * facing;
+        surface.normal *= facing;
+        if (dot(surface.normal, surface.viewDirection) <= 0.0)
+            surface.normal = surface.geometricNormal;
+
+        surface.brdf.baseColor = sampleTexture(material.baseColorTexture, uv).rgb * material.baseColorFactor.rgb;
+        surface.brdf.metallic = saturate(material.metallic * sampleTexture(material.metallicTexture, uv).b);
+        surface.brdf.roughness = saturate(material.roughness * sampleTexture(material.roughnessTexture, uv).g);
+        surface.emissive = sampleTexture(material.emissiveTexture, uv).rgb * material.emissiveFactor.rgb;
+        return surface;
     }
 };
 
@@ -247,7 +282,7 @@ struct RayTracingParameters
     float4 viewport;
     LightRanges lightRanges;
     uint maxRecursionDepth;
-    uint padding0;
+    uint sampleIndex;
     uint padding1;
     uint padding2;
 
@@ -276,18 +311,25 @@ struct RayTracingParameters
 [[vk::push_constant]] ConstantBuffer<RayTracingParameters> parameters;
 [[vk::binding(1, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> outputImage;
 [[vk::binding(2, 0)]] StructuredBuffer<HitData> objects;
+[[vk::binding(7, 0)]] [[vk::image_format("r32f")]] RWTexture2D<float> depthImage;
+[[vk::binding(8, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> normalImage;
+[[vk::binding(9, 0)]] ConstantBuffer<ViewUniforms> viewUniforms;
 
 [shader("raygeneration")]
 void raygenMain()
 {
     uint2 pixel = DispatchRaysIndex().xy;
-    Payload payload = {float3(0.0), 1, pixel.x + pixel.y * DispatchRaysDimensions().x, 0, float3(1.0), 0.0};
+    static const uint kSampleSeedMultiplier = 0x9e3779b9u;
+    uint state = (pixel.x + pixel.y * DispatchRaysDimensions().x) ^ (parameters.sampleIndex * kSampleSeedMultiplier);
+    Payload payload = {float3(0.0), 1, state, 0, float3(1.0), 0.0, -1.0, float3(0.0)};
     if (parameters.containsPixel(pixel))
     {
         RayDesc ray = parameters.createRay(pixel);
         TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, kSceneMask, 0, 0, 0, ray, payload);
     }
     outputImage[pixel] = float4(payload.color, 1.0);
+    depthImage[pixel] = payload.primaryDepth;
+    normalImage[pixel] = float4(payload.primaryNormal, 0.0);
 }
 
 [shader("miss")]
@@ -305,16 +347,20 @@ void visibilityMissMain(inout VisibilityPayload payload)
 [shader("closesthit")]
 void closestHitMain(inout Payload payload, BuiltInTriangleIntersectionAttributes attributes)
 {
-    // At the pipeline limit a ray may hit an emitter, but another surface cannot issue shadow rays.
-    if (payload.depth >= parameters.maxRecursionDepth)
-    {
-        payload.color = float3(0.0);
-        return;
-    }
-
     HitData hit = objects[InstanceID()];
     Surface surface = hit.surfaceAt(PrimitiveIndex(), attributes.barycentrics);
-    payload.color = surface.shade(parameters.lightRanges, payload.depth, payload.throughput, payload.randomState);
+    if (payload.depth == 1)
+    {
+        float4 clip = mul(viewUniforms.viewProjection, float4(surface.position, 1.0));
+        payload.primaryDepth = saturate(clip.z / clip.w);
+        payload.primaryNormal = surface.geometricNormal;
+    }
+    payload.color = surface.emissive;
+    // Terminal surface emission needs no extra ray; direct lighting would issue visibility rays.
+    if (payload.depth >= parameters.maxRecursionDepth)
+        return;
+
+    payload.color += surface.shade(parameters.lightRanges, payload.depth, payload.throughput, payload.randomState);
 }
 
 [shader("closesthit")]

@@ -1,5 +1,5 @@
 #include "editor/EditorCamera.h"
-// Manual GPU check: finite/directional visibility, diffuse bounces, and triangle light emission.
+// Manual GPU check: PBR materials, visibility, BRDF bounces, and triangle light emission.
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
@@ -104,6 +104,8 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
     const auto sample = [&]
     {
+        // Independent lighting checks use the same initial random sample.
+        rebuildGraph();
         const auto& sceneData = renderSystem.prepare(scenes.scene());
         const auto  prepared  = prepareRenderScene(
             sceneData,
@@ -136,6 +138,52 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
 
     const auto clear = sample();
     CHECK(clear > 1.0f, "HDR surface luminance is unexpectedly clipped or dark: {}", clear);
+
+    {
+        auto& receiver         = *scenes.scene().actors.front()->getComponent<RenderComponent>();
+        auto originalOverrides = receiver.materialOverrides;
+        auto& material         = receiver.materialOverrides[0];
+        material.baseColorFactor = glm::vec4{0.8f, 0.2f, 0.1f, 1.0f};
+        material.metallic        = 0.0f;
+        material.roughness       = 0.12f;
+        const auto dielectric = sample();
+        material.metallic = 1.0f;
+        const auto smoothMetal = sample();
+        material.roughness = 0.8f;
+        const auto roughMetal = sample();
+        CHECK(std::isfinite(dielectric) && dielectric > 0);
+        CHECK(std::isfinite(smoothMetal) && smoothMetal > 0);
+        CHECK(std::isfinite(roughMetal) && roughMetal > 0);
+        CHECK(dielectric != smoothMetal && smoothMetal != roughMetal);
+
+        material.metallic = 0.0f;
+        material.normalTexture =
+            TextureBinding{BuiltinAssets::Texture::kWhiteLinear, BuiltinAssets::Sampler::linearRepeat};
+        material.normalScale = 0.0f;
+        const auto unperturbed = sample();
+        material.normalScale = 1.0f;
+        const auto perturbed = sample();
+        CHECK(std::isfinite(perturbed) && perturbed >= 0 && perturbed != unperturbed);
+
+        auto& point = *scenes.scene().actors[1]->getComponent<PointLightComponent>();
+        point.enabled = false;
+        material.emissive = glm::vec3{0.5f, 0.125f, 0.025f};
+        material.emissiveStrength = 4.0f;
+        CHECK(sample() == 2.0f);
+        material.emissiveStrength = 2.0f;
+        CHECK(sample() == 1.0f);
+        material.emissiveStrength = 0.0f;
+        CHECK(sample() == 0.0f);
+        material.emissiveStrength.reset();
+        CHECK(sample() == 0.5f);
+        point.enabled = true;
+        receiver.materialOverrides = std::move(originalOverrides);
+        CHECK(sample() == clear);
+        LOG_INFO(
+            "PBR passed: dielectric {}, smooth metal {}, rough metal {}, normal {} -> {}, emission 2",
+            dielectric, smoothMetal, roughMetal, unperturbed, perturbed
+        );
+    }
 
     // Proportional, colocated point lights yield the same compensated estimate whichever is selected.
     const auto& pointActor = *scenes.scene().actors[1];

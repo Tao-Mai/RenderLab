@@ -1,6 +1,5 @@
 #include "render/raytracing/RayTracingPass.h"
 
-#include "asset/BuiltinAssets.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -13,10 +12,9 @@
 #include "render/device/VulkanContext.h"
 #include "render/feature/RenderGraph.h"
 #include "render/present/Swapchain.h"
-#include "render/resource/GpuMaterial.h"
+#include "render/raytracing/RayTracingMaterials.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/GpuShader.h"
-#include "render/resource/RenderResourceManager.h"
 
 #include <algorithm>
 #include <cmath>
@@ -82,10 +80,24 @@ RayTracingPass::Output RayTracingPass::setup(RenderGraph& graph, const PassSetup
             .layout = vk::ImageLayout::eGeneral,
         }
     );
+    const auto createGBuffer = [&](vk::Format format)
+    {
+        CHECK(device.getFormatProperties(format).optimalTilingFeatures & vk::FormatFeatureFlagBits::eStorageImage);
+        auto image = graph.write(graph.createImage({.format = format, .extent = {extent.width, extent.height, 1}}));
+        graph.use(image, {
+            .stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
+            .access = vk::AccessFlagBits2::eShaderStorageWrite,
+            .layout = vk::ImageLayout::eGeneral,
+        });
+        return image;
+    };
+    depth = createGBuffer(vk::Format::eR32Sfloat);
+    worldNormal = createGBuffer(vk::Format::eR16G16B16A16Sfloat);
+    sampleIndex = 0;
     const auto maxRecursionDepth = context().config->rendererConfig().feature.rayTracing.maxRecursionDepth;
     if (!*pipeline || pipelineRecursionDepth != maxRecursionDepth)
         createPipeline(setup, maxRecursionDepth);
-    return {rayImage};
+    return {rayImage, depth, worldNormal};
 }
 
 void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursionDepth)
@@ -156,6 +168,18 @@ void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursio
                 .descriptorCount = 1,
                 .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
             },
+            vk::DescriptorSetLayoutBinding{
+                .binding = 7, .descriptorType = vk::DescriptorType::eStorageImage, .descriptorCount = 1,
+                .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR
+            },
+            vk::DescriptorSetLayoutBinding{
+                .binding = 8, .descriptorType = vk::DescriptorType::eStorageImage, .descriptorCount = 1,
+                .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR
+            },
+            vk::DescriptorSetLayoutBinding{
+                .binding = 9, .descriptorType = vk::DescriptorType::eUniformBuffer, .descriptorCount = 1,
+                .stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR
+            },
         };
         descriptorLayout           = vkCheck(device.createDescriptorSetLayout(
             {.bindingCount = static_cast<uint32_t>(bindings.size()), .pBindings = bindings.data()}
@@ -165,7 +189,8 @@ void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursio
                 .type            = vk::DescriptorType::eAccelerationStructureKHR,
                 .descriptorCount = maxFramesInFlight
             },
-            vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = maxFramesInFlight},
+            vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = maxFramesInFlight * 3},
+            vk::DescriptorPoolSize{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxFramesInFlight},
             vk::DescriptorPoolSize{
                 .type            = vk::DescriptorType::eStorageBuffer,
                 .descriptorCount = maxFramesInFlight * 3
@@ -421,78 +446,7 @@ void RayTracingPass::prepareScene(
     commands.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &reuseBarrier});
     std::vector<VkAccelerationStructureInstanceKHR> instances;
     std::vector<RayTracingHitData>                  hits;
-    std::vector<RayTracingMaterialData>             materials;
-    std::map<const GpuMaterial*, uint32_t>          materialIndices;
-    std::vector<vk::ImageView>                      textureViews;
-    std::vector<vk::Sampler>                        samplerHandles;
-    const auto white   = renderContext().resources->texture(BuiltinAssets::Texture::white);
-    const auto sampler = renderContext().resources->sampler(BuiltinAssets::Sampler::linearRepeat);
-    std::array<vk::DescriptorImageInfo, kMaxRayTracingTextures> images;
-    std::array<vk::DescriptorImageInfo, kMaxRayTracingSamplers> samplers;
-    images.fill({.imageView = white->imageView(), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal});
-    samplers.fill({.sampler = sampler});
-
-    const auto addDescriptor = []<class T, size_t Capacity>(
-                                   std::vector<T>&                                handles,
-                                   std::array<vk::DescriptorImageInfo, Capacity>& descriptors,
-                                   T                                              handle,
-                                   vk::DescriptorImageInfo                        descriptor,
-                                   std::string_view                               kind
-                               )
-    {
-        const auto found = std::ranges::find(handles, handle);
-        if (found != handles.end())
-            return static_cast<uint32_t>(found - handles.begin());
-
-        CHECK(handles.size() < Capacity, "ray tracing {} descriptors exceed capacity {}", kind, Capacity);
-        const auto index = static_cast<uint32_t>(handles.size());
-        handles.push_back(handle);
-        descriptors[index] = descriptor;
-        return index;
-    };
-    const auto bindTexture = [&](const GpuMaterial::Texture& texture)
-    {
-        DCHECK(texture.image && texture.sampler);
-        const auto view = texture.image->imageView();
-        return RayTracingTextureRef{
-            .textureIndex = addDescriptor(
-                textureViews,
-                images,
-                view,
-                {.imageView = view, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal},
-                "texture"
-            ),
-            .samplerIndex =
-                addDescriptor(samplerHandles, samplers, texture.sampler, {.sampler = texture.sampler}, "sampler"),
-        };
-    };
-    const auto addMaterial = [&](const GpuMaterial& material)
-    {
-        const auto [found, added] = materialIndices.try_emplace(&material, static_cast<uint32_t>(materials.size()));
-        if (added)
-        {
-            const auto& parameters = material.parameters();
-            const auto& textures   = material.textureBindings();
-            materials.push_back({
-                .baseColorFactor   = parameters.baseColorFactor,
-                .emissiveFactor    = parameters.emissiveFactor,
-                .metallic          = parameters.metallic,
-                .roughness         = parameters.roughness,
-                .normalScale       = parameters.normalScale,
-                .occlusionStrength = parameters.occlusionStrength,
-                .alphaCutoff       = parameters.alphaCutoff,
-                .alphaMode         = parameters.alphaMode,
-                .doubleSided       = material.doubleSided() ? 1u : 0u,
-                .baseColorTexture  = bindTexture(textures.baseColor),
-                .normalTexture     = bindTexture(textures.normal),
-                .metallicTexture   = bindTexture(textures.metallic),
-                .roughnessTexture  = bindTexture(textures.roughness),
-                .emissiveTexture   = bindTexture(textures.emissive),
-                .occlusionTexture  = bindTexture(textures.occlusion),
-            });
-        }
-        return found->second;
-    };
+    RayTracingMaterials materials{*renderContext().resources};
     const auto append = [&](const GpuMesh&   mesh,
                             uint32_t         firstIndex,
                             uint32_t         indexCount,
@@ -532,7 +486,7 @@ void RayTracingPass::prepareScene(
         hits.push_back({vertexAddress, indexAddress, firstIndex, materialIndex});
     };
     for (const auto& item : items)
-        append(*item.mesh, item.firstIndex, item.indexCount, item.model, addMaterial(*item.material));
+        append(*item.mesh, item.firstIndex, item.indexCount, item.model, materials.add(*item.material));
 
     const auto& lights = execution.renderData.lights;
     CHECK(lights.size() < (1u << 24), "ray tracing light index exceeds the custom-index limit");
@@ -618,26 +572,7 @@ void RayTracingPass::prepareScene(
     {
         frame.hitData.upload(hits.data(), hits.size() * sizeof(hits.front()));
     }
-    const vk::DeviceSize materialBytes = std::max<size_t>(materials.size(), 1) * sizeof(RayTracingMaterialData);
-    CHECK(
-        materialBytes <= vulkan.properties().limits.maxStorageBufferRange,
-        "ray tracing material data exceeds maxStorageBufferRange"
-    );
-    if (materialBytes > frame.materialData.size())
-        frame.materialData = Buffer(
-            vulkan.physicalDeviceHandle(),
-            device,
-            materialBytes,
-            vk::BufferUsageFlagBits::eStorageBuffer,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-        );
-    if (materials.empty())
-    {
-        const RayTracingMaterialData empty{};
-        frame.materialData.upload(&empty, sizeof(empty));
-    }
-    else
-        frame.materialData.upload(materials.data(), materials.size() * sizeof(RayTracingMaterialData));
+    materials.upload(frame.materialData, vulkan);
 
     frame.tlas.build(vulkan, commands, top, count);
     buildBarrier(commands, true);
@@ -657,6 +592,20 @@ void RayTracingPass::prepareScene(
                          }),
         .imageLayout = vk::ImageLayout::eGeneral
     };
+    const auto gBufferInfo = [&](RenderGraph::ImageHandle image)
+    {
+        return vk::DescriptorImageInfo{
+            .imageView = graph.getImage(image, execution.frameIndex).getOrCreateImageView({
+                .viewType = vk::ImageViewType::e2D, .format = graph.imageInfo(image).format,
+                .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+            }),
+            .imageLayout = vk::ImageLayout::eGeneral,
+        };
+    };
+    const auto depthInfo = gBufferInfo(depth);
+    const auto normalInfo = gBufferInfo(worldNormal);
+    const auto& viewBuffer = execution.data.viewUniformBuffer();
+    const vk::DescriptorBufferInfo viewInfo{.buffer = viewBuffer.handle(), .range = viewBuffer.size()};
     const vk::DescriptorBufferInfo hitInfo{.buffer = frame.hitData.handle(), .range = frame.hitData.size()};
     const vk::DescriptorBufferInfo lightInfo{.buffer = frame.lightData.handle(), .range = frame.lightData.size()};
     const vk::DescriptorBufferInfo materialInfo{
@@ -690,14 +639,14 @@ void RayTracingPass::prepareScene(
             .dstBinding      = 3,
             .descriptorCount = kMaxRayTracingTextures,
             .descriptorType  = vk::DescriptorType::eSampledImage,
-            .pImageInfo      = images.data()
+            .pImageInfo      = materials.images.data()
         },
         vk::WriteDescriptorSet{
             .dstSet          = *frame.set,
             .dstBinding      = 4,
             .descriptorCount = kMaxRayTracingSamplers,
             .descriptorType  = vk::DescriptorType::eSampler,
-            .pImageInfo      = samplers.data()
+            .pImageInfo      = materials.samplers.data()
         },
         vk::WriteDescriptorSet{
             .dstSet          = *frame.set,
@@ -712,6 +661,18 @@ void RayTracingPass::prepareScene(
             .descriptorCount = 1,
             .descriptorType  = vk::DescriptorType::eStorageBuffer,
             .pBufferInfo     = &materialInfo
+        },
+        vk::WriteDescriptorSet{
+            .dstSet = *frame.set, .dstBinding = 7, .descriptorCount = 1,
+            .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &depthInfo,
+        },
+        vk::WriteDescriptorSet{
+            .dstSet = *frame.set, .dstBinding = 8, .descriptorCount = 1,
+            .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &normalInfo,
+        },
+        vk::WriteDescriptorSet{
+            .dstSet = *frame.set, .dstBinding = 9, .descriptorCount = 1,
+            .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &viewInfo,
         },
     };
     device.updateDescriptorSets(writes, {});
@@ -738,6 +699,7 @@ void RayTracingPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer,
             .viewport              = {viewport.x, viewport.y, viewport.width, viewport.height},
             .lightRanges           = execution.renderData.lightRanges,
             .maxRecursionDepth     = pipelineRecursionDepth,
+            .sampleIndex           = sampleIndex++,
         }
     );
     const auto extent = execution.setup.swapchain.extent();

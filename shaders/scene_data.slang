@@ -2,15 +2,7 @@
 #define RENDERLAB_SCENE_DATA_SLANG
 
 #include "light_data.slang"
-
-// Must match ShaderData.h. Matrices use column-major storage; vectors are 16 bytes.
-struct ViewUniforms
-{
-    float4x4 viewProjection;
-    float4x4 inverseViewProjection;
-    float4 cameraPosition;
-    float4x4 view;
-};
+#include "view_data.slang"
 
 struct LightUniforms
 {

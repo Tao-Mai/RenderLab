@@ -5,6 +5,7 @@
 #include "render/DescriptorManager.h"
 #include "render/resource/ShaderData.h"
 
+#include <cmath>
 #include <utility>
 #include <vector>
 
@@ -176,6 +177,10 @@ void GpuMaterial::updateParameters(const PbrMaterialAsset& material)
         material.doubleSided.value_or(true) ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack;
 
     DCHECK(material.clearcoat.has_value() == textures.clearcoat.has_value());
+    const float emissiveStrength = material.emissiveStrength.value_or(1.0f);
+    CHECK(std::isfinite(emissiveStrength) && emissiveStrength >= 0.0f);
+
+    const auto emissive  = material.emissive.value_or(glm::vec3{0.0f}) * emissiveStrength;
     const auto clearcoat = material.clearcoat.value_or(PbrMaterialAsset::Clearcoat{});
     const auto sheen     = material.sheen.value_or(PbrMaterialAsset::Sheen{});
     parameterData        = MaterialUniforms{
@@ -188,7 +193,7 @@ void GpuMaterial::updateParameters(const PbrMaterialAsset& material)
                                                                            : 0u,
                .normalScale              = material.normalScale.value_or(1.0f),
                .occlusionStrength        = material.ao.value_or(1.0f),
-               .emissiveFactor           = glm::vec4(material.emissive.value_or(glm::vec3{0.0f}), 0.0f),
+               .emissiveFactor           = glm::vec4(emissive, 0.0f),
                .sheenColorFactor         = sheen.colorFactor,
                .sheenRoughnessFactor     = sheen.roughnessFactor,
                .clearcoatFactor          = clearcoat.factor,
