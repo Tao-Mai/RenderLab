@@ -17,8 +17,7 @@ struct LightRanges
     uint spotEnd;
 };
 
-// Must match LightData in ShaderData.h. std430 array stride = 112 bytes.
-// flags = {type, enabled, castShadow, reserved}.
+// Must match LightData in ShaderData.h. std430 array stride = 96 bytes; only enabled lights are uploaded.
 struct LightData
 {
     // Photometric-scaled RGB: Point/Spot intensity, Directional irradiance at perpendicular incidence,
@@ -28,11 +27,10 @@ struct LightData
     float4 positionRange;
     float4 direction;
     float4 areaSizeCone;
-    uint4 flags;
+    uint lightType;
+    uint shadowEnabled;
     uint shadowIdx;
     uint padding0;
-    uint padding1;
-    uint padding2;
     float4 areaRightData;
 
     property position : float3 {
@@ -42,13 +40,10 @@ struct LightData
         get { return positionRange.w; }
     }
     property type : LightType {
-        get { return LightType(flags.x); }
-    }
-    property enabled : bool {
-        get { return flags.y != 0; }
+        get { return LightType(lightType); }
     }
     property castShadow : bool {
-        get { return flags.z != 0; }
+        get { return shadowEnabled != 0; }
     }
     property areaSize : float2 {
         get { return areaSizeCone.xy; }

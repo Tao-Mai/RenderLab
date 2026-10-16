@@ -1,24 +1,26 @@
 #pragma once
 
-#include "asset/AssetImporter.h"
+#include "asset/import/ModelImport.h"
 
 #include <functional>
 #include <glm/mat4x4.hpp>
 
-// One import session per source file: parsed data and imported materials are shared by its meshes.
-class GltfImport
+namespace tinygltf
+{
+class Model;
+}
+
+class GltfImport final : public ModelImport
 {
 public:
     explicit GltfImport(const std::filesystem::path& source);
-    explicit GltfImport(const AssetImporter::PreparedMesh& prepared);
-
-    [[nodiscard]] AssetImporter::PreparedMesh prepareMesh(std::optional<uint32_t> meshIndex = std::nullopt) const;
-    MeshAsset::ID saveMesh(AssetImporter::PreparedMesh&& prepared, const ImportMeshSetting& setting);
-    void visitNodes(const std::function<void(uint32_t, const glm::mat4&)>& visitor, float importScale = 1.0f) const;
-
-    std::filesystem::path            source;
-    std::shared_ptr<tinygltf::Model> model;
+    ~GltfImport() override;
+    void visitNodes(const std::function<void(const Node&)>& visitor, float importScale = 1.0f) const override;
 
 private:
-    std::vector<AssetID<MaterialAsset>> materialIds;
+    [[nodiscard]] AssetImporter::PreparedMesh    readMesh(std::optional<uint32_t> meshIndex) const override;
+    [[nodiscard]] std::vector<MaterialAsset::ID> importMaterials() override;
+    void visitGltfNodes(const std::function<void(uint32_t, const glm::mat4&)>& visitor, float importScale = 1.0f) const;
+
+    std::unique_ptr<tinygltf::Model> model;
 };

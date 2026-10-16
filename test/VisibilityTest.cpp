@@ -65,10 +65,11 @@ TEST(Visibility, DirectionalCascadeCubesContainBlendedFrustum)
 
     RenderFeature::Shadow config;
     config.cascade = {.count = 4, .maxDistance = 12.0f};
-    LightData  light;
+    RenderLight  light;
     const auto direction = glm::normalize(glm::vec3{0.4f, -1.0f, -0.3f});
-    light.direction      = glm::vec4{direction, 0.0f};
-    light.flags          = {static_cast<uint32_t>(GpuLightType::Directional), 1, 1, 0};
+    light.data.direction      = glm::vec4{direction, 0.0f};
+    light.data.lightType = GpuLightType::Directional;
+    light.data.shadowEnabled = 1;
     const auto shadows   = prepareShadows(view, {&light, 1}, config);
     ASSERT_EQ(shadows.directionalShadows.size(), 1u);
 
@@ -116,9 +117,10 @@ TEST(Visibility, DirectionalShadowRetainsUpstreamCasters)
             .mesh  = BuiltinAssets::Mesh::cube,
             .model = glm::translate(glm::mat4{1}, position),
         });
-    LightData light;
-    light.direction = {0, -1, 0, 0};
-    light.flags     = {static_cast<uint32_t>(GpuLightType::Directional), 1, 1, 0};
+    RenderLight light;
+    light.data.direction = {0, -1, 0, 0};
+    light.data.lightType = GpuLightType::Directional;
+    light.data.shadowEnabled = 1;
     scene.lights.push_back(light);
 
     ViewUniforms view;
@@ -137,9 +139,10 @@ TEST(Visibility, DirectionalShadowRetainsUpstreamCasters)
 TEST(Visibility, CascadeTexelSnappingKeepsSubTexelMotionStable)
 {
     const auto projection = glm::perspective(glm::radians(60.0f), 1.0f, 0.1f, 40.0f);
-    LightData  light;
-    light.direction = {0, 0, -1, 0};
-    light.flags     = {static_cast<uint32_t>(GpuLightType::Directional), 1, 1, 0};
+    RenderLight  light;
+    light.data.direction = {0, 0, -1, 0};
+    light.data.lightType = GpuLightType::Directional;
+    light.data.shadowEnabled = 1;
     RenderFeature::Shadow config;
     config.cascade     = {.count = 1, .shadowMapSize = 256, .maxDistance = 20.0f, .sampleRadius = 0.0f};
     const auto prepare = [&](float cameraX)
@@ -180,9 +183,10 @@ TEST(Visibility, UniformCascadeSplitsIgnoreLambdaAndPracticalKeepsNearResolution
     ViewUniforms view;
     view.viewProjection        = glm::perspective(glm::radians(55.0f), 1.0f, 0.1f, 120.0f);
     view.inverseViewProjection = glm::inverse(view.viewProjection);
-    LightData light;
-    light.direction = {0, -1, 0, 0};
-    light.flags     = {static_cast<uint32_t>(GpuLightType::Directional), 1, 1, 0};
+    RenderLight light;
+    light.data.direction = {0, -1, 0, 0};
+    light.data.lightType = GpuLightType::Directional;
+    light.data.shadowEnabled = 1;
     RenderFeature::Shadow config;
     const auto            practical       = prepareShadows(view, {&light, 1}, config);
     config.cascade.splitStrategy          = CascadeSplitStrategy::Uniform;
@@ -255,6 +259,12 @@ TEST(Visibility, MainAndShadowBitsAreIndependentAndDisabledLightsHaveNoBit)
 
     scene.actors.front()->transform().position.z             = -3;
     scene.actors[1]->getComponent<LightComponent>()->enabled = false;
+    const auto& disabledSnapshot = system.prepare(scene);
+    ASSERT_EQ(disabledSnapshot.lights.size(), 4u); // Scene submission still includes disabled components.
+    EXPECT_FALSE(disabledSnapshot.lights[0].enabled);
+    const auto filtered = prepare();
+    EXPECT_EQ(filtered.lighting.lights.size(), 3u);
+    EXPECT_EQ(filtered.lighting.lightRanges.directionalEnd, filtered.lighting.lightRanges.pointEnd);
     const auto visible                                       = prepare().objects.front().visibilityMask;
     EXPECT_TRUE(visible & RenderVisibility::kMainView);
     EXPECT_FALSE(visible & RenderVisibility::shadowMask(GpuLightType::Point, 0));

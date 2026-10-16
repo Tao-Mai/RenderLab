@@ -77,9 +77,10 @@ int main(int, char** argv)
         .cameraPosition        = glm::vec4{camera.worldPosition(), 1.0f},
         .view                  = camera.viewMatrix(),
     };
-    LightData source;
-    source.direction = {0.0f, -1.0f, 0.0f, 0.0f};
-    source.flags     = {static_cast<uint32_t>(GpuLightType::Directional), 1u, 1u, 0u};
+    RenderLight source;
+    source.data.direction = {0.0f, -1.0f, 0.0f, 0.0f};
+    source.data.lightType = GpuLightType::Directional;
+    source.data.shadowEnabled = 1;
     auto prepared = prepareShadows(view, {&source, 1}, feature.shadow);
     upload.update(view, {.lightRanges = prepared.lightRanges, .cascadeCount = feature.shadow.cascade.count},
                   std::move(prepared));

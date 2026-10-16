@@ -1,6 +1,7 @@
 #include "render/PipelineManager.h"
 #include "render/feature/RenderGraph.h"
 #include "render/feature/shadow/ShadowData.h"
+#include "scene/system/SceneRenderData.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -8,21 +9,22 @@
 
 TEST(SpotShadow, PreparesActiveLayersAndConeProjection)
 {
-    LightData source;
-    source.flags          = {static_cast<uint32_t>(GpuLightType::Spot), 1u, 1u, 0u};
-    source.positionRange  = {0, 0, 3, 10};
-    source.direction      = {0, 0, -1, 0};
-    source.areaSizeCone.z = std::cos(glm::radians(15.0f));
-    source.areaSizeCone.w = std::cos(glm::radians(30.0f));
+    RenderLight source;
+    source.data.lightType = GpuLightType::Spot;
+    source.data.shadowEnabled = 1;
+    source.data.positionRange  = {0, 0, 3, 10};
+    source.data.direction      = {0, 0, -1, 0};
+    source.data.areaSizeCone.z = std::cos(glm::radians(15.0f));
+    source.data.areaSizeCone.w = std::cos(glm::radians(30.0f));
     std::array lights{source, source, source, source};
-    lights[0].flags.y   = 0;
-    lights[2].flags.z   = 0;
+    lights[0].enabled = false;
+    lights[2].data.shadowEnabled = 0;
     const auto prepared = prepareShadows({}, lights, {});
     ASSERT_EQ(prepared.spotShadows.size(), 2u);
-    EXPECT_EQ(prepared.lights[0].shadowidx, ~0u);
-    EXPECT_EQ(prepared.lights[1].shadowidx, 0u);
-    EXPECT_EQ(prepared.lights[2].shadowidx, ~0u);
-    EXPECT_EQ(prepared.lights[3].shadowidx, 1u);
+    ASSERT_EQ(prepared.lights.size(), 3u);
+    EXPECT_EQ(prepared.lights[0].shadowidx, 0u);
+    EXPECT_EQ(prepared.lights[1].shadowidx, ~0u);
+    EXPECT_EQ(prepared.lights[2].shadowidx, 1u);
     const auto center = prepared.spotShadows[0].vp * glm::vec4(0, 0, 1, 1);
     EXPECT_NEAR(center.x, 0.0f, 0.0001f);
     EXPECT_NEAR(center.y, 0.0f, 0.0001f);
@@ -38,24 +40,25 @@ TEST(SpotShadow, PreparesActiveLayersAndConeProjection)
 
 TEST(SpotShadow, RejectsCapacityOverflow)
 {
-    std::array<LightData, kMaxSpotLightShadow + 1> lights;
+    std::array<RenderLight, kMaxSpotLightShadow + 1> lights;
     for (auto& light : lights)
     {
-        light.flags     = {static_cast<uint32_t>(GpuLightType::Spot), 1u, 1u, 0u};
-        light.direction = {0, 0, -1, 0};
+        light.data.lightType = GpuLightType::Spot;
+        light.data.shadowEnabled = 1;
+        light.data.direction = {0, 0, -1, 0};
     }
     EXPECT_DEATH(prepareShadows({}, lights, {}), "");
 }
 
 TEST(LightGroups, PreservesTypeOrderAndEmptyRangesWithoutChangingSource)
 {
-    std::array<LightData, 6> lights;
+    std::array<RenderLight, 6> lights;
     const std::array types = {GpuLightType::Spot, GpuLightType::Point, GpuLightType::RectArea,
                              GpuLightType::Directional, GpuLightType::Point, GpuLightType::Spot};
     for (size_t index = 0; index < lights.size(); ++index)
     {
-        lights[index].flags.x = static_cast<uint32_t>(types[index]);
-        lights[index].positionRange.x = static_cast<float>(index);
+        lights[index].data.lightType = types[index];
+        lights[index].data.positionRange.x = static_cast<float>(index);
     }
     const auto source = lights;
     const auto prepared = prepareShadows({}, lights, {.enable = false});
@@ -69,6 +72,24 @@ TEST(LightGroups, PreservesTypeOrderAndEmptyRangesWithoutChangingSource)
     EXPECT_EQ(empty.lightRanges, LightRanges{});
     const auto onlySpot = prepareShadows({}, std::span{lights}.first(1), {.enable = false});
     EXPECT_EQ(onlySpot.lightRanges, (LightRanges{0, 0, 0, 1}));
+
+    lights[1].enabled = false;
+    lights[3].enabled = false;
+    lights[5].enabled = false;
+    const auto submitted = lights;
+    const auto filtered = prepareShadows({}, lights, {.enable = false});
+    EXPECT_EQ(lights, submitted);
+    ASSERT_EQ(filtered.lights.size(), 3u);
+    EXPECT_EQ(filtered.lightRanges, (LightRanges{0, 1, 2, 3}));
+    EXPECT_FLOAT_EQ(filtered.lights[0].positionRange.x, 4.0f);
+    EXPECT_FLOAT_EQ(filtered.lights[1].positionRange.x, 2.0f);
+    EXPECT_FLOAT_EQ(filtered.lights[2].positionRange.x, 0.0f);
+
+    for (auto& light : lights)
+        light.enabled = false;
+    const auto allDisabled = prepareShadows({}, lights, {});
+    EXPECT_TRUE(allDisabled.lights.empty());
+    EXPECT_EQ(allDisabled.lightRanges, LightRanges{});
 }
 
 TEST(PipelineWinding, PreservesCcwFrontFacesWithVulkanProjection)

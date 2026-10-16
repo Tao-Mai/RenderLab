@@ -8,3 +8,4 @@ scripts/
 assets/*
 resource/
 .cursor
+test/model_import/

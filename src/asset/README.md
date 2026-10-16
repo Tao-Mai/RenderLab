@@ -65,5 +65,9 @@ private，仅 `AssetManager` 与 `AssetDataManager` 以 friend 调用；无实�
 
 ### Main / Import 与 render / editor
 
+上层统一调用 `AssetImporter::importMesh` / `importScene`，预览沿用 `prepareMesh` / `saveMesh`。导入层按扩展名选择后端：glTF / GLB 使用 TinyGLTF，其他受支持格式使用 Assimp；不会在 glTF 解析失败后再尝试 Assimp。编辑器的格式检查和文件过滤列表也从导入层查询。
+
+`ModelImport` 是每个源文件的导入会话，持有解析数据和共享材质，统一负责几何缩放与持久化。后端只解码几何、材质、节点和相机；`importScene` 不依赖第三方类型，统一展开节点变换、创建静态物体、复用 Mesh 并设置编辑器相机。Assimp 的传统 Diffuse / Shininess 材质近似转换为现有 PBR 参数，独立标量贴图的 R 通道展开供现有 shader 使用；纹理保存为 RGBA8 并生成 mipmap。内嵌纹理直接持久化像素，`TextureAsset.path` 留空，所属 Mesh 仍保留容器文件来源。动画、蒙皮和多层纹理不在本次静态导入范围内。
+
 Import（经 `AssetImporter`）解码源文件后，向 DataManager 写 binary、向 AssetManager `save` 资产。render / editor 只读两侧
 Manager；需要默认白贴图、内置网格等时引用 Builtin 的 ID，不调用其生成接口。

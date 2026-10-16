@@ -337,8 +337,6 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
     for (uint index = 0; index < ranges.directionalEnd; ++index)
     {
         LightData light = lights[index];
-        if (!light.enabled)
-            continue;
 
         float3 lightDirection = -light.direction.xyz;
         float visibility = 1.0;
@@ -350,8 +348,6 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
     for (uint index = ranges.directionalEnd; index < ranges.pointEnd; ++index)
     {
         LightData light = lights[index];
-        if (!light.enabled)
-            continue;
 
         float distanceToLight = length(light.position - surface.worldPosition);
         if (distanceToLight <= 0.0 || distanceToLight > light.range)
@@ -368,8 +364,6 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
     for (uint index = ranges.pointEnd; index < ranges.rectAreaEnd; ++index)
     {
         LightData light = lights[index];
-        if (!light.enabled)
-            continue;
 
         float distanceToLight = length(light.position - surface.worldPosition);
         if (distanceToLight <= 0.0)
@@ -390,8 +384,6 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
     for (uint index = ranges.rectAreaEnd; index < ranges.spotEnd; ++index)
     {
         LightData light = lights[index];
-        if (!light.enabled)
-            continue;
 
         float distanceToLight = length(light.position - surface.worldPosition);
         if (distanceToLight <= 0.0 || distanceToLight > light.range)

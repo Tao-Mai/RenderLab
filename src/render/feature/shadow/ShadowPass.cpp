@@ -131,7 +131,7 @@ void ShadowPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, con
     for (uint32_t index = 0; index < ranges.directionalEnd; ++index)
     {
         const auto& light = lights[index];
-        if (!light.enable() || !light.castShadow())
+        if (!light.castShadow())
             continue;
 
         DCHECK(light.shadowidx < frame.directionalShadowData().size());
@@ -144,7 +144,7 @@ void ShadowPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, con
     for (uint32_t index = ranges.directionalEnd; index < ranges.pointEnd; ++index)
     {
         const auto& light = lights[index];
-        if (!light.enable() || !light.castShadow())
+        if (!light.castShadow())
             continue;
 
         DCHECK(light.shadowidx < frame.pointShadowData().size());
@@ -154,7 +154,7 @@ void ShadowPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, con
     for (uint32_t index = ranges.pointEnd; index < ranges.rectAreaEnd; ++index)
     {
         const auto& light = lights[index];
-        if (!light.enable() || !light.castShadow())
+        if (!light.castShadow())
             continue;
 
         DCHECK(light.shadowidx < frame.rectAreaShadowData().size());
@@ -164,7 +164,7 @@ void ShadowPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, con
     for (uint32_t index = ranges.rectAreaEnd; index < ranges.spotEnd; ++index)
     {
         const auto& light = lights[index];
-        if (!light.enable() || !light.castShadow())
+        if (!light.castShadow())
             continue;
 
         DCHECK(light.shadowidx < frame.spotShadowData().size());

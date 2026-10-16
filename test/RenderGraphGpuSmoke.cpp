@@ -35,15 +35,16 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
     descriptors.init(vulkan.deviceHandle());
     FrameData frame;
     frame.init(vulkan, descriptors);
-    std::array<LightData, 5> lights;
+    std::array<RenderLight, 5> lights;
     for (auto& light : lights)
     {
-        light.positionRange = {2.0f, 3.0f, 4.0f, 16.0f};
-        light.flags         = {static_cast<uint32_t>(GpuLightType::Point), 1u, 1u, 0u};
+        light.data.positionRange = {2.0f, 3.0f, 4.0f, 16.0f};
+        light.data.lightType = GpuLightType::Point;
+        light.data.shadowEnabled = 1;
     }
-    lights[0].flags.y = 0;
-    lights[1].flags.x = static_cast<uint32_t>(GpuLightType::Spot);
-    lights[2].flags.z = 0;
+    lights[0].enabled = false;
+    lights[1].data.lightType = GpuLightType::Spot;
+    lights[2].data.shadowEnabled = 0;
     const auto upload = [&](bool enabled)
     {
         auto prepared = prepareShadows({}, lights, {.enable = enabled});
@@ -51,10 +52,10 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
     };
     upload(true);
     CHECK(frame.pointShadowData().size() == 2);
-    CHECK(frame.lightData()[2].shadowidx == 0 && frame.lightData()[3].shadowidx == 1);
+    CHECK(frame.lightData().size() == 4);
+    CHECK(frame.lightData()[1].shadowidx == 0 && frame.lightData()[2].shadowidx == 1);
     CHECK(
-        frame.lightData()[0].shadowidx == ~0u && frame.lightData()[1].shadowidx == ~0u &&
-        frame.lightData()[4].shadowidx == 0
+        frame.lightData()[0].shadowidx == ~0u && frame.lightData()[3].shadowidx == 0
     );
     CHECK(frame.spotShadowData().size() == 1);
 
@@ -69,15 +70,15 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
     for (size_t face = 0; face < directions.size(); ++face)
     {
         const glm::vec4 clip =
-            frame.pointShadowData()[0].vp[face] * glm::vec4{lights[3].position() + directions[face], 1.0f};
+            frame.pointShadowData()[0].vp[face] * glm::vec4{lights[3].data.position() + directions[face], 1.0f};
         CHECK(
             std::abs(clip.x) < 1.0e-5f && std::abs(clip.y) < 1.0e-5f && clip.w > 0.0f,
             "point shadow VP must face its corresponding cubemap direction"
         );
     }
 
-    lights[0].flags.y = 1;
-    lights[2].flags.z = 1;
+    lights[0].enabled = true;
+    lights[2].data.shadowEnabled = 1;
     upload(true);
     CHECK(frame.pointShadowData().size() == 4);
     CHECK(
@@ -88,7 +89,7 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
     CHECK(frame.pointShadowData().empty());
     for (const auto& light : frame.lightData())
         CHECK(!light.castShadow() && light.shadowidx == ~0u);
-    CHECK(lights[0].castShadow());
+    CHECK(lights[0].data.castShadow());
 
     frame.update({}, {}, prepareShadows({}, {}, {.enable = true}));
     CHECK(frame.pointShadowData().empty() && frame.lightData().empty());

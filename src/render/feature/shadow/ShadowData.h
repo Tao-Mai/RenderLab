@@ -4,6 +4,8 @@
 #include "render/RendererConfig.h"
 #include "render/resource/ShaderData.h"
 
+struct RenderLight;
+
 // CPU output of shadow preparation, independent of GPU allocation and upload.
 struct ShadowFrameData
 {
@@ -16,4 +18,4 @@ struct ShadowFrameData
     std::vector<DirectionalShadowData> directionalShadows;
 };
 ShadowFrameData
-prepareShadows(const ViewUniforms& view, std::span<const LightData> lights, const RenderFeature::Shadow& settings);
+prepareShadows(const ViewUniforms& view, std::span<const RenderLight> lights, const RenderFeature::Shadow& settings);

@@ -91,7 +91,7 @@ struct alignas(16) ViewUniforms
 };
 
 // Exclusive group ends in one SSBO: Directional, Point, RectArea, Spot.
-// Disabled lights stay in their groups; an empty group has equal begin/end indices.
+// Only enabled lights are uploaded; an empty group has equal begin/end indices.
 struct LightRanges
 {
     bool operator==(const LightRanges&) const = default;
@@ -102,7 +102,7 @@ struct LightRanges
 };
 static_assert(sizeof(LightRanges) == 16);
 
-// The SSBO contains lightRanges.spotEnd entries, including disabled lights. IBL.x is
+// The SSBO contains lightRanges.spotEnd active entries. IBL.x is
 // the maximum LOD of the scene's prefiltered specular cubemap. shadowParameters.x
 // is the normalized shadow depth bias, y is the point-shadow direction-space PCF radius,
 // z enables per-pixel rotation (0/1), and w is the spot-shadow PCF radius in texels.
@@ -126,8 +126,7 @@ enum class GpuLightType : uint32_t
     Spot        = 3,
 };
 
-// One std430 SSBO element, with a 112-byte array stride.
-// flags = {light type, enabled, castShadow, reserved}.
+// One std430 SSBO element, with a 96-byte array stride. CPU preparation removes disabled lights.
 struct alignas(16) LightData
 {
     bool operator==(const LightData&) const = default;
@@ -137,11 +136,10 @@ struct alignas(16) LightData
     glm::vec4  positionRange{0.0f, 0.0f, 0.0f, 1.0f};
     glm::vec4  direction{0.0f, -1.0f, 0.0f, 0.0f};
     glm::vec4  areaSizeCone{1.0f, 1.0f, 0.9396926f, 0.8660254f};
-    glm::uvec4 flags{0u};
+    GpuLightType lightType = GpuLightType::Point;
+    uint32_t   shadowEnabled = 0;
     uint32_t   shadowidx = ~0u;
     uint32_t   padding0  = 0;
-    uint32_t   padding1  = 0;
-    uint32_t   padding2  = 0;
     glm::vec4  areaRightData{1.0f, 0.0f, 0.0f, 0.0f};
 
     [[nodiscard]] glm::vec3 areaRight() const { return xyz(areaRightData); }
@@ -150,11 +148,9 @@ struct alignas(16) LightData
 
     [[nodiscard]] float range() const { return positionRange.w; }
 
-    [[nodiscard]] GpuLightType type() const { return static_cast<GpuLightType>(flags.x); }
+    [[nodiscard]] GpuLightType type() const { return lightType; }
 
-    [[nodiscard]] bool enable() const { return flags.y; }
-
-    [[nodiscard]] bool castShadow() const { return flags.z; }
+    [[nodiscard]] bool castShadow() const { return shadowEnabled != 0; }
 };
 
 struct alignas(16) PointShadowData
@@ -228,15 +224,16 @@ static_assert(offsetof(LightUniforms, cascadeCount) == 20);
 static_assert(offsetof(LightUniforms, padding) == 28);
 static_assert(offsetof(LightUniforms, iblParameters) == 32);
 static_assert(offsetof(LightUniforms, shadowParameters) == 48);
-static_assert(sizeof(LightData) == 112);
+static_assert(sizeof(LightData) == 96);
 static_assert(offsetof(LightData, color) == 0);
 static_assert(offsetof(LightData, padding3) == 12);
 static_assert(offsetof(LightData, positionRange) == 16);
 static_assert(offsetof(LightData, direction) == 32);
 static_assert(offsetof(LightData, areaSizeCone) == 48);
-static_assert(offsetof(LightData, flags) == 64);
-static_assert(offsetof(LightData, shadowidx) == 80);
-static_assert(offsetof(LightData, areaRightData) == 96);
+static_assert(offsetof(LightData, lightType) == 64);
+static_assert(offsetof(LightData, shadowEnabled) == 68);
+static_assert(offsetof(LightData, shadowidx) == 72);
+static_assert(offsetof(LightData, areaRightData) == 80);
 static_assert(sizeof(PointShadowData) == 384);
 static_assert(offsetof(PointShadowData, vp) == 0);
 static_assert(sizeof(RectAreaShadowData) == 80);

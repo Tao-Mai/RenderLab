@@ -11,14 +11,11 @@
 #include <optional>
 #include <span>
 #include <stop_token>
+#include <string>
 #include <variant>
 #include <vector>
 
-namespace tinygltf
-{
-class Model;
-}
-
+class ModelImport;
 struct SceneAsset;
 
 struct ImportTextureSetting
@@ -37,7 +34,7 @@ struct ImportMeshSetting
 struct ImportSceneSetting
 {
     std::filesystem::path source;
-    AssetID<SceneAsset>    id;
+    AssetID<SceneAsset>   id;
     float                 importScale = 1.0f;
 };
 
@@ -68,13 +65,13 @@ public:
             int      materialIndex;
         };
 
-        std::filesystem::path            source;
-        MeshGeometry                     geometry;
-        std::vector<Submesh>             submeshes;
-        glm::vec3                        boundsMin{0.0f};
-        glm::vec3                        boundsMax{0.0f};
-        std::shared_ptr<tinygltf::Model> model;
-        std::optional<uint32_t>          meshIndex;
+        std::filesystem::path        source;
+        MeshGeometry                 geometry;
+        std::vector<Submesh>         submeshes;
+        glm::vec3                    boundsMin{0.0f};
+        glm::vec3                    boundsMax{0.0f};
+        std::shared_ptr<ModelImport> importer;
+        std::optional<uint32_t>      meshIndex;
     };
 
     struct PreparedEnvironmentMap
@@ -95,11 +92,13 @@ public:
     prepareEnvironmentMap(const ImportEnvironmentMapSetting& setting, std::stop_token stop = {});
     static EnvironmentMapAsset::ID saveEnvironmentMap(PreparedEnvironmentMap&& prepared);
 
-    static MeshAsset::ID              importMesh(const ImportMeshSetting& setting);
-    [[nodiscard]] static PreparedMesh prepareMesh(
-        const std::filesystem::path& source, std::optional<uint32_t> meshIndex = std::nullopt);
-    static MeshAsset::ID              saveMesh(PreparedMesh&& prepared, const ImportMeshSetting& setting);
-    static AssetID<SceneAsset>        importScene(const ImportSceneSetting& setting);
+    static MeshAsset::ID             importMesh(const ImportMeshSetting& setting);
+    [[nodiscard]] static bool        supportsModel(const std::filesystem::path& source);
+    [[nodiscard]] static std::string modelExtensions();
+    [[nodiscard]] static PreparedMesh
+    prepareMesh(const std::filesystem::path& source, std::optional<uint32_t> meshIndex = std::nullopt);
+    static MeshAsset::ID       saveMesh(PreparedMesh&& prepared, const ImportMeshSetting& setting);
+    static AssetID<SceneAsset> importScene(const ImportSceneSetting& setting);
 
 private:
     struct LoadedImage
