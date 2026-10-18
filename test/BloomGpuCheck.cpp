@@ -41,7 +41,7 @@ struct HdrSourcePass
         return {color};
     }
 
-    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
     {
         const auto                        extent = execution.setup.swapchain.extent();
         const vk::RenderingAttachmentInfo attachment{
@@ -88,7 +88,8 @@ struct ReadPixelPass
         source = image;
         buffer = graph.write(graph.createBuffer(
             {.size             = sizeof(uint16_t) * 4,
-             .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent}
+             .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+             .scope            = RenderGraph::ResourceScope::PerFrame}
         ));
         graph.use(
             source,
@@ -103,7 +104,7 @@ struct ReadPixelPass
         return buffer;
     }
 
-    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
     {
         const vk::BufferImageCopy copy{
             .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
@@ -191,6 +192,10 @@ int main(int argc, char** argv)
         graph
             .execute(recording, {setup, frameData[0], view, {}, {}, 0}, 0, frames[0].gpuProfiler(), context().profiler);
         vkCheck(recording.end());
+        const auto command = *frames[0].commandBufferHandle();
+        vkCheck(vulkan.queueHandle().submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &command}));
+        vkCheck(vulkan.queueHandle().waitIdle());
+        frames[0].gpuProfiler().collect(ctx.profiler);
         profiler.endFrame(1.0);
 
         DrawStatistics counts;
@@ -203,9 +208,6 @@ int main(int argc, char** argv)
         CHECK(counts.drawCalls == expectedDraws);
         CHECK(counts.triangles == expectedDraws);
 
-        const auto command = *frames[0].commandBufferHandle();
-        vkCheck(vulkan.queueHandle().submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &command}));
-        vkCheck(vulkan.queueHandle().waitIdle());
         std::array<uint16_t, 4> pixel;
         graph.getBuffer(buffer, 0).download(pixel.data(), sizeof(pixel));
         const glm::vec3 result{

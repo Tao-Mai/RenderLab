@@ -14,7 +14,7 @@ public:
     };
 
     Output setup(RenderGraph& graph, const PassSetup& setup);
-    void   execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const;
+    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
 private:
     static constexpr uint32_t kPointFaceCount = 6;
@@ -37,12 +37,12 @@ private:
     vk::PipelineLayout pipelineLayout = nullptr;
 
     void recordShadow(
-        RenderGraph&        graph,
-        CommandRecorder&    commandBuffer,
-        const PassFrame&    execution,
-        const ShadowTarget& target,
-        uint32_t            lightIndex,
-        uint32_t            baseArrayLayer,
-        uint32_t            cascadeIndex = 0
+        RenderGraph&             graph,
+        vk::raii::CommandBuffer& commandBuffer,
+        const PassFrame&         execution,
+        const ShadowTarget&      target,
+        uint32_t                 lightIndex,
+        uint32_t                 baseArrayLayer,
+        uint32_t                 cascadeIndex = 0
     ) const;
 };

@@ -1,12 +1,4 @@
 {
-    "brdfLut": {
-        "samplerID": {
-            "value": "linearClamp"
-        },
-        "textureID": {
-            "value": "lut_ggx"
-        }
-    },
     "feature": {
         "ambientCoefficient": 0.0,
         "bloom": {
@@ -52,13 +44,5 @@
             "mode": "Neutral"
         }
     },
-    "renderPath": "RayTracing",
-    "sheenLut": {
-        "samplerID": {
-            "value": "linearClamp"
-        },
-        "textureID": {
-            "value": "lut_sheen_E"
-        }
-    }
+    "renderPath": "RayTracing"
 }

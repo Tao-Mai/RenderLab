@@ -214,16 +214,6 @@ void ConfigManager::loadRenderer()
     CHECK(std::isfinite(renderer.feature.shadow.spotSampleRadius) && renderer.feature.shadow.spotSampleRadius >= 0.0f);
 
     CHECK(
-        !renderer.brdfLut.textureID.empty() && !renderer.brdfLut.samplerID.empty(),
-        "renderer config '{}' requires brdfLut textureID and samplerID",
-        resolvedPaths.renderer.string()
-    );
-    CHECK(
-        !renderer.sheenLut.textureID.empty() && !renderer.sheenLut.samplerID.empty(),
-        "renderer config '{}' requires sheenLut textureID and samplerID",
-        resolvedPaths.renderer.string()
-    );
-    CHECK(
         std::isfinite(renderer.feature.ambientCoefficient) && renderer.feature.ambientCoefficient >= 0.0f,
         "renderer config '{}' requires a finite nonnegative ambientCoefficient",
         resolvedPaths.renderer.string()

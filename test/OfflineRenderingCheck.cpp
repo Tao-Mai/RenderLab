@@ -32,6 +32,7 @@ struct PixelReadbackPass
         buffer = graph.write(graph.createBuffer({
             .size             = sizeof(uint16_t) * 4,
             .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            .scope            = RenderGraph::ResourceScope::PerFrame,
         }));
         graph.use(
             image,
@@ -46,7 +47,7 @@ struct PixelReadbackPass
         return buffer;
     }
 
-    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
     {
         const auto                extent = graph.imageInfo(image).extent;
         const vk::BufferImageCopy region{
@@ -247,7 +248,7 @@ int main(int, char** argv)
     feature.hdr = !feature.hdr;
     config.setRenderFeature(feature);
     draw();
-    CHECK(renderer.offlineSampleCount() == 4);
+    CHECK(renderer.offlineSampleCount() == 1);
 
     scenes.scene().editorCamera.position.x += 0.25f;
     draw();

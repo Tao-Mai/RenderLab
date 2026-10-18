@@ -187,7 +187,7 @@ void BloomPass::FilterPass::prepare(RenderGraph& graph, const PassSetup& setup) 
 }
 
 void BloomPass::FilterPass::execute(
-    RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution
+    RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
 ) const
 {
     const auto                        extent = graph.imageInfo(color).extent;
@@ -229,5 +229,6 @@ void BloomPass::FilterPass::execute(
     };
     commands.pushConstants<BloomParameters>(pipelineLayout, kShaderStages, 0, parameters);
     commands.draw(3, 1, 0, 0);
+    recordDraw(context().profiler, 3);
     commands.endRendering();
 }

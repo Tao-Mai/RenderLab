@@ -36,6 +36,7 @@ struct PixelReadbackPass
         buffer = graph.createBuffer({
             .size             = sizeof(uint16_t) * 4,
             .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            .scope            = RenderGraph::ResourceScope::PerFrame,
         });
         buffer = graph.write(buffer);
         graph.use(
@@ -53,7 +54,7 @@ struct PixelReadbackPass
         return buffer;
     }
 
-    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
     {
         const auto                extent = graph.imageInfo(image).extent;
         const vk::BufferImageCopy region{
@@ -123,6 +124,10 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
         const auto buffer = graph.addPass(readback, setup, color);
         graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
         graph.compile(setup);
+        if (shadows)
+            for (const auto image : {shadowOutput.pointLightShadowMap, shadowOutput.spotLightShadowMap,
+                     shadowOutput.rectAreaLightShadowMap, shadowOutput.cascadeShadowMap})
+                CHECK(graph.getImage(image, 0).handle() == graph.getImage(image, 1).handle());
         const auto& sceneData = renderSystem.prepare(scenes.scene());
         const auto  prepared  = prepareRenderScene(
             sceneData,
@@ -131,28 +136,34 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
             *context().assetManager,
             context().profiler
         );
-        const auto& data = renderContext().resources->prepare(sceneData, prepared, 0);
-        if (deferred)
-            lighting.sceneBindings().updateFrame(frameData[0], view.uniforms, prepared.lighting);
-        else
-            forward.sceneBindings().updateFrame(frameData[0], view.uniforms, prepared.lighting);
-        auto& recording = frames[0].commandBufferHandle();
-        vkCheck(recording.reset());
-        vkCheck(recording.begin({}));
-        graph.execute(
-            recording,
-            {setup, frameData[0], view, data, {}, 0},
-            0,
-            frames[0].gpuProfiler(),
-            context().profiler
-        );
-        vkCheck(recording.end());
-        const auto           commandBuffer = *frames[0].commandBufferHandle();
-        const vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &commandBuffer};
-        vkCheck(vulkan.queueHandle().submit(submitInfo));
+        for (uint32_t index = 0; index < maxFramesInFlight; ++index)
+        {
+            const auto& data = renderContext().resources->prepare(sceneData, prepared, index);
+            if (deferred)
+                lighting.sceneBindings().updateFrame(frameData[index], view.uniforms, prepared.lighting);
+            else
+                forward.sceneBindings().updateFrame(frameData[index], view.uniforms, prepared.lighting);
+            auto& recording = frames[index].commandBufferHandle();
+            vkCheck(recording.reset());
+            vkCheck(recording.begin({}));
+            graph.execute(
+                recording,
+                {setup, frameData[index], view, data, {}, index},
+                0,
+                frames[index].gpuProfiler(),
+                context().profiler
+            );
+            vkCheck(recording.end());
+            const auto           commandBuffer = *recording;
+            const vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &commandBuffer};
+            vkCheck(vulkan.queueHandle().submit(submitInfo));
+        }
         vkCheck(vulkan.queueHandle().waitIdle());
         std::array<uint16_t, 4> pixel;
         graph.getBuffer(buffer, 0).download(pixel.data(), sizeof(pixel));
+        std::array<uint16_t, 4> nextPixel;
+        graph.getBuffer(buffer, 1).download(nextPixel.data(), sizeof(nextPixel));
+        CHECK(pixel == nextPixel);
         return glm::vec3{glm::unpackHalf1x16(pixel[0]), glm::unpackHalf1x16(pixel[1]), glm::unpackHalf1x16(pixel[2])};
     };
     const auto compare = [](glm::vec3 a, glm::vec3 b)

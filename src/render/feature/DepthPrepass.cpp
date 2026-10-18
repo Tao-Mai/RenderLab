@@ -1,4 +1,5 @@
 #include "render/feature/DepthPrepass.h"
+#include "core/Context.h"
 #include "render/feature/SceneInterface.h"
 
 #include "render/FrameData.h"
@@ -40,7 +41,7 @@ DepthPrepass::Output DepthPrepass::setup(RenderGraph& graph, const PassSetup& se
     return {depth};
 }
 
-void DepthPrepass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
+void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
 {
     auto&      pipelines = *renderContext().pipelineManager;
     const auto extent    = execution.setup.swapchain.extent();
@@ -132,6 +133,7 @@ void DepthPrepass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, c
             {}
         );
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
+        recordDraw(context().profiler, item.indexCount);
     }
 
     commandBuffer.endRendering();

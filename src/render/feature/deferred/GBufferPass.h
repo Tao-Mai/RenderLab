@@ -18,7 +18,7 @@ public:
     };
 
     Output setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle depthHandle);
-    void   execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const;
+    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
 private:
     static constexpr std::array kColorFormats{

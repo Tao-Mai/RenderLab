@@ -52,8 +52,8 @@ TEST(AssetIDTest, AssetsExposePersistentFieldsDirectly)
 
 TEST(AssetIDTest, SerializesAsReflectedObjectAndKeepsAssetType)
 {
-    const TextureAsset::ID textureId{"lut_ggx"};
-    const json             stored = {{"value", "lut_ggx"}};
+    const TextureAsset::ID textureId{"test-texture"};
+    const json             stored = {{"value", "test-texture"}};
     EXPECT_EQ(Serialize(textureId), stored);
 
     TextureAsset::ID parsed;
@@ -62,29 +62,26 @@ TEST(AssetIDTest, SerializesAsReflectedObjectAndKeepsAssetType)
 
     std::unordered_map<TextureAsset::ID, int> textures;
     textures.emplace(textureId, 7);
-    EXPECT_EQ(textures.at(TextureAsset::ID{"lut_ggx"}), 7);
+    EXPECT_EQ(textures.at(TextureAsset::ID{"test-texture"}), 7);
 }
 
-TEST(AssetIDTest, LoadsAssetFromRegisteredDirectory)
+TEST(AssetIDTest, ResolvesBuiltinLutsWithoutAnAssetDirectory)
 {
-    const auto file = std::filesystem::path{RENDERLAB_SOURCE_DIR} / "assets" / TextureAsset::dir / "lut_ggx.json";
-    ASSERT_TRUE(std::filesystem::is_regular_file(file));
-
-    const TextureAsset asset = asset_json::load<TextureAsset>(file);
-    EXPECT_EQ(asset.id, TextureAsset::ID{"lut_ggx"});
-    EXPECT_EQ(asset.format, ImageFormat::RG8);
-}
-
-TEST(AssetIDTest, LoadsRendererBrdfLutBinding)
-{
-    const auto    file = std::filesystem::path{RENDERLAB_SOURCE_DIR} / "config" / "renderer.json";
-    std::ifstream input{file};
-    ASSERT_TRUE(input.is_open());
-    RendererConfig config;
-    Deserialize(json::parse(input), config);
-
-    EXPECT_EQ(config.brdfLut.textureID, TextureAsset::ID{"lut_ggx"});
-    EXPECT_EQ(config.brdfLut.samplerID, BuiltinAssets::Sampler::linearClamp);
+    AssetManager assets;
+    const auto& brdf = assets.get(BuiltinAssets::Texture::kBrdfLut);
+    const auto& sheen = assets.get(BuiltinAssets::Texture::kSheenLut);
+    EXPECT_EQ(brdf.source, Source::Builtin);
+    EXPECT_EQ(brdf.format, ImageFormat::RG8);
+    EXPECT_EQ(sheen.source, Source::Builtin);
+    EXPECT_EQ(sheen.format, ImageFormat::RGBA32F);
+    for (const auto* texture : {&brdf, &sheen})
+    {
+        EXPECT_EQ(texture->colorSpace, ColorSpace::Linear);
+        EXPECT_EQ(texture->layout, ImageLayout::Image2D);
+        EXPECT_EQ(texture->mipLevels, 1u);
+        EXPECT_FALSE(texture->path);
+        EXPECT_FALSE(texture->binary);
+    }
 }
 
 TEST(AssetIDTest, RoundTripsNestedMeshSubmesh)

@@ -1,12 +1,4 @@
 {
-    "brdfLut": {
-        "samplerID": {
-            "value": "linearClamp"
-        },
-        "textureID": {
-            "value": "lut_ggx"
-        }
-    },
     "feature": {
         "ambientCoefficient": 0.10000000149011612,
         "bloom": {
@@ -21,7 +13,7 @@
             "maxRecursionDepth": 6
         },
         "rayTracing": {
-            "emaAlpha": 0.1,
+            "emaAlpha": 0.10000000149011612,
             "emaStartSampleCount": 10,
             "maxRecursionDepth": 4,
             "svgf": true
@@ -52,13 +44,5 @@
             "mode": "Neutral"
         }
     },
-    "renderPath": "Rasterization",
-    "sheenLut": {
-        "samplerID": {
-            "value": "linearClamp"
-        },
-        "textureID": {
-            "value": "lut_sheen_E"
-        }
-    }
+    "renderPath": "Rasterization"
 }

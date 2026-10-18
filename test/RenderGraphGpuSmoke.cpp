@@ -320,7 +320,7 @@ int main(int argc, char** argv)
     sceneManager.load(scene);
     renderer.init();
     checkPointShadowUpload(renderer.vulkanContext());
-    renderer.rebuildGraph(renderSystem.prepare(sceneManager.scene()));
+    renderer.rebuildGraph();
 
     const auto renderActor = [&]() -> AActor*
     {
@@ -352,7 +352,7 @@ int main(int argc, char** argv)
                 render.materialOverrides[0].roughness = 0.65f;
             if (frame == 4)
                 render.materialOverrides[0].baseColorTexture =
-                    TextureBinding{config.rendererConfig().brdfLut.textureID, BuiltinAssets::Sampler::linearClamp};
+                    TextureBinding{BuiltinAssets::Texture::kBrdfLut, BuiltinAssets::Sampler::linearClamp};
             if (frame == 6)
                 render.materialOverrides.clear();
 
@@ -406,7 +406,7 @@ int main(int argc, char** argv)
         scene.actors.push_back(std::move(actor));
     }
     sceneManager.load(scene);
-    renderer.rebuildGraph(renderSystem.prepare(sceneManager.scene()));
+    renderer.rebuildGraph();
     renderFrames();
 
     // Disable IBL explicitly without discarding the selected environment map.
@@ -415,13 +415,13 @@ int main(int argc, char** argv)
     RenderFeature       feature         = originalFeature;
     feature.shadow.enable               = false;
     config.setRenderFeature(feature);
-    renderer.rebuildGraph(renderSystem.prepare(sceneManager.scene()));
+    renderer.rebuildGraph();
     renderFrames();
 
     feature.shadow.enable             = true;
     feature.shadow.pointShadowMapSize = 512;
     config.setRenderFeature(feature);
-    renderer.rebuildGraph(renderSystem.prepare(sceneManager.scene()));
+    renderer.rebuildGraph();
     renderFrames();
 
     feature.ibl                = false;
@@ -432,14 +432,14 @@ int main(int argc, char** argv)
             light->castShadow = false;
 
     sceneManager.load(scene);
-    renderer.rebuildGraph(renderSystem.prepare(sceneManager.scene()));
+    renderer.rebuildGraph();
     renderFrames();
 
     // Switch back to the cached IBL variant, then disable it again.
     feature.ibl = true;
     config.setRenderFeature(feature);
     sceneManager.load(scene);
-    renderer.rebuildGraph(renderSystem.prepare(sceneManager.scene()));
+    renderer.rebuildGraph();
     renderFrames();
     feature.ibl = false;
     config.setRenderFeature(feature);
@@ -450,7 +450,7 @@ int main(int argc, char** argv)
     feature.ibl = true;
     config.setRenderFeature(feature);
     sceneManager.load(scene);
-    renderer.rebuildGraph(renderSystem.prepare(sceneManager.scene()));
+    renderer.rebuildGraph();
     renderFrames();
     CHECK(config.rendererConfig().feature.ibl);
     feature.ibl = false;
@@ -463,7 +463,7 @@ int main(int argc, char** argv)
         [](const auto& actor) { return actor->template getComponent<LightComponent>() != nullptr; }
     );
     sceneManager.load(scene);
-    renderer.rebuildGraph(renderSystem.prepare(sceneManager.scene()));
+    renderer.rebuildGraph();
     renderFrames();
     renderer.waitIdle();
 
@@ -472,7 +472,7 @@ int main(int argc, char** argv)
     {
         const auto originalPath = config.rendererConfig().renderPath;
         config.setRenderPath(RenderPath::RayTracing);
-        renderer.rebuildGraph(renderSystem.prepare(sceneManager.scene()));
+        renderer.rebuildGraph();
         renderFrames();
         renderer.waitIdle();
         // Both routes draw light markers through the independent editor overlay.
@@ -480,11 +480,11 @@ int main(int argc, char** argv)
         rayLight->transform().position = center + glm::vec3{20.0f, 20.0f, 0.0f};
         scene.actors.push_back(std::move(rayLight));
         sceneManager.load(scene);
-        renderer.rebuildGraph(renderSystem.prepare(sceneManager.scene()));
+        renderer.rebuildGraph();
         renderFrames();
         renderer.waitIdle();
         config.setRenderPath(originalPath);
-        renderer.rebuildGraph(renderSystem.prepare(sceneManager.scene()));
+        renderer.rebuildGraph();
         renderFrames();
         renderer.waitIdle();
         std::cout << "Ray tracing route and return to rasterization passed.\n";
@@ -526,7 +526,7 @@ int main(int argc, char** argv)
     // Follow the Engine resize path: rebuild GPU targets, then refresh the UI backend.
     glfwSetWindowSize(window.nativeHandle(), 1440, 900);
     window.pollEvents();
-    renderer.recreateSwapchain(renderSystem.prepare(sceneManager.scene()));
+    renderer.recreateSwapchain();
     editor.refreshUi();
     extent = renderer.swapchainHandle().extent();
     CHECK(renderEditorFrame() == renderActor());

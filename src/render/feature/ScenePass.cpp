@@ -42,7 +42,7 @@ ScenePass::Output ScenePass::setup(
 
 void ScenePass::prepare(RenderGraph& graph, const PassSetup& setup) const { bindings.prepare(graph, setup); }
 
-void ScenePass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
+void ScenePass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
 {
     SceneDraw::beginRendering(graph, commandBuffer, execution, std::array{color}, depth, vk::AttachmentLoadOp::eClear);
     SceneDraw::recordMeshes(

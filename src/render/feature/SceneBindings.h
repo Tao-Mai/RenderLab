@@ -6,7 +6,6 @@
 
 #include <memory>
 #include <optional>
-#include <utility>
 #include <vulkan/vulkan_raii.hpp>
 
 class RenderResourceManager;
@@ -25,8 +24,7 @@ public:
     void               refreshBindings();
     void               prepare(RenderGraph& graph, const PassSetup& setup) const;
     void               updateFrame(FrameData& frame, const ViewUniforms& view, const ShadowFrameData& lighting) const;
-    void               setEnvironmentMap(std::optional<EnvironmentMapAsset::ID> id) { environmentMap = std::move(id); }
-    const std::optional<EnvironmentMapAsset::ID>& environmentMapId() const { return environmentMap; }
+    void               updateEnvironmentMap(const std::optional<EnvironmentMapAsset::ID>& id);
 
 private:
     std::optional<EnvironmentMapAsset::ID> environmentMap;
@@ -42,8 +40,6 @@ private:
     std::shared_ptr<GpuTexture>            brdfLutTexture;
     std::shared_ptr<GpuTexture>            sheenLutTexture;
     std::shared_ptr<GpuTexture>            radianceTexture;
-    vk::Sampler                            sheenLutSampler   = nullptr;
-    vk::Sampler                            brdfLutSampler    = nullptr;
     vk::raii::Sampler                      shadowSampler     = nullptr;
     vk::Filter                             shadowFilter      = vk::Filter::eLinear;
     float                                  prefilteredMaxLod = 0.0f;

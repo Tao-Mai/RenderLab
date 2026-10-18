@@ -191,7 +191,7 @@ void TemporalReprojectionPass::prepare(RenderGraph& graph, const PassSetup& setu
     }
 }
 
-void TemporalReprojectionPass::execute(RenderGraph& graph, CommandRecorder& commands, const PassFrame& frame)
+void TemporalReprojectionPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame)
 {
     const auto& settings = context().config->rendererConfig().feature.rayTracing;
     const auto& viewport = frame.view.viewport;

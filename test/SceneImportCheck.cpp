@@ -106,7 +106,7 @@ int main(int argc, char** argv)
         renderer.init();
         EditorCamera editorCamera{scenes.scene().editorCamera};
         RenderSystem system;
-        renderer.rebuildGraph(system.prepare(scenes.scene()));
+        renderer.rebuildGraph();
         const auto   extent = renderer.swapchainHandle().extent();
         const float  side   = static_cast<float>(std::min(extent.width, extent.height));
         const auto   view =

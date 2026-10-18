@@ -98,6 +98,22 @@ TEST(AssetDataManagerTest, BuiltinFlatNormalUsesLinearNeutralPixels)
     EXPECT_EQ(data.readTexture(normal), (std::vector<uint8_t>{128, 128, 255, 255}));
 }
 
+TEST(AssetDataManagerTest, BuiltinLutsProvidePixelsWithoutPersistedData)
+{
+    AssetManager     assets;
+    AssetDataManager data;
+    for (const auto& id : {BuiltinAssets::Texture::kBrdfLut, BuiltinAssets::Texture::kSheenLut})
+    {
+        const auto& texture = assets.get(id);
+        const auto  pixels  = data.readTexture(texture);
+        EXPECT_EQ(
+            pixels.size(),
+            static_cast<size_t>(texture.width) * texture.height * AssetDataManager::bytesPerPixel(texture.format)
+        );
+        EXPECT_TRUE(std::ranges::any_of(pixels, [](uint8_t value) { return value != 0; }));
+    }
+}
+
 TEST(AssetDataManagerTest, PreservesCubemapPixelsAndMetadata)
 {
     ConfiguredData assets;

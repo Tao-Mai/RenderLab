@@ -127,7 +127,9 @@ void ToneMappingPass::prepare(RenderGraph& graph, const PassSetup& setup) const
     }
 }
 
-void ToneMappingPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
+void ToneMappingPass::execute(
+    RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
+) const
 {
     const auto                        extent = execution.setup.swapchain.extent();
     const vk::RenderingAttachmentInfo attachment{
@@ -172,5 +174,6 @@ void ToneMappingPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer
         parameters
     );
     commands.draw(3, 1, 0, 0);
+    recordDraw(context().profiler, 3);
     commands.endRendering();
 }

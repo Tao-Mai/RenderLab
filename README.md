@@ -2,6 +2,20 @@
 
 基于 C++26、Vulkan 和 Slang 的图形渲染实验项目，用于学习与实现渲染算法，并逐步探索材质和路径追踪。
 
+## 渲染展示
+
+以下图片均由本项目直接渲染输出，分辨率为 960 × 960，不包含编辑器 UI。两张离线路径追踪图均累计 2048 samples/pixel，使用项目现有的 Bloom 和 Tone Mapping。
+
+| Sibenik：多光源路径追踪 | Cornell Box：间接光照与颜色渗透 |
+| --- | --- |
+| ![Sibenik 教堂，多彩点光源与矩形面光源](docs/images/sibenik-pathtracing.png) | ![康奈尔盒，离线渐进式路径追踪](docs/images/cornell-pathtracing.png) |
+
+| PBR：Metallic / Roughness 球阵列与 IBL | 阴影：稳定 CSM 与 PCF |
+| --- | --- |
+| ![PBR 金属度与粗糙度参数球阵列](docs/images/pbr-ibl.png) | ![级联阴影测试场景](docs/images/csm.png) |
+
+Sibenik 模型来自 [McGuire Computer Graphics Archive](https://casual-effects.com/g3d/data10/index.html)，由 Marko Dabrovic 建模、Kenzie Lamar 修复几何、Morgan McGuire 制作高分辨率纹理，采用 CC BY-NC 许可；展示中的灯光由本项目布置。
+
 ## 主要功能
 
 - 前向渲染、延迟渲染、实时光追和独立的离线渐进式路径追踪。
@@ -29,4 +43,4 @@
 - [CSM 算法、优化与测试](docs/shadow/csm.md)
 - [渲染模块说明](src/render/README.md)
 
-项目仍在持续开发，离线路线目前是基础 RGB 漫反射路径追踪，尚未完整复刻 PBRT。
+项目仍在持续开发，离线路线尚未完整复刻 PBRT。

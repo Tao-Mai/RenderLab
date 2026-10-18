@@ -18,7 +18,7 @@ public:
         RenderGraph::ImageHandle colorHandle,
         RenderGraph::ImageHandle depthHandle
     );
-    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const;
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
 private:
     RenderGraph::ImageHandle color;

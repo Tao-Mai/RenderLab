@@ -9,7 +9,13 @@ TEST(Profiler, CapturesCpuGpuDrawsAndCulling)
     profiler.recordCpu("Scene tick", 2.0);
     profiler.recordCpu("Scene tick", 1.0);
     profiler.recordGpu(profiler.frameNumber(), 4.0, {{"ScenePass", 3.5}, {"EndPass", 0.5}});
-    profiler.recordDraws({{"ScenePass", {2, 24}}, {"EditorUiPass", {3, 15}}});
+    profiler.beginPass("ScenePass");
+    recordDraw(&profiler, 36);
+    recordDraw(&profiler, 18, 2);
+    profiler.beginPass("EditorUiPass");
+    recordDraw(&profiler, 15);
+    recordDraw(&profiler, 15);
+    recordDraw(&profiler, 15);
     profiler.recordCulling(10, {{"Main view", 4}, {"Point shadow 0", 7}});
     profiler.endFrame(16.0);
 
@@ -23,11 +29,15 @@ TEST(Profiler, CapturesCpuGpuDrawsAndCulling)
     EXPECT_DOUBLE_EQ(stats.gpuMilliseconds, 4.0);
     ASSERT_EQ(stats.gpuTimings.size(), 2u);
     ASSERT_EQ(stats.passes.size(), 2u);
+    EXPECT_EQ(stats.passes[0].draws.drawCalls, 2u);
     EXPECT_EQ(stats.passes[0].draws.triangles, 24u);
+    EXPECT_EQ(stats.passes[1].draws.drawCalls, 3u);
+    EXPECT_EQ(stats.passes[1].draws.triangles, 15u);
     EXPECT_EQ(stats.totalObjects, 10u);
     EXPECT_EQ(stats.views[0].visibleObjects, 4u);
     profiler.clearGpu();
     EXPECT_FALSE(profiler.display().hasGpuTimings);
+    EXPECT_TRUE(profiler.display().passes.empty());
     profiler.reset();
     EXPECT_TRUE(profiler.display().frameHistory.empty());
 }

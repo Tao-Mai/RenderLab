@@ -3,7 +3,6 @@
 #include <cmath>
 
 #include "asset/SamplerAsset.h"
-#include "asset/TextureBinding.h"
 
 enum class RenderPath
 {
@@ -95,8 +94,6 @@ struct RenderFeature
 
 struct RendererConfig
 {
-    RenderPath     renderPath = RenderPath::Rasterization;
-    TextureBinding brdfLut;
-    TextureBinding sheenLut;
-    RenderFeature  feature;
+    RenderPath    renderPath = RenderPath::Rasterization;
+    RenderFeature feature;
 };

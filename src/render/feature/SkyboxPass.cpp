@@ -1,18 +1,12 @@
 #include "render/feature/SkyboxPass.h"
 #include "render/feature/SceneInterface.h"
 
-#include "asset/AssetManager.h"
-#include "asset/EnvironmentMapAsset.h"
-#include "asset/TextureAsset.h"
 #include "core/Context.h"
 #include "render/FrameData.h"
 #include "render/PipelineManager.h"
-#include "render/RenderConfig.h"
 #include "render/RenderContext.h"
-#include "render/device/VulkanContext.h"
+#include "render/RenderData.h"
 #include "render/feature/SceneDraw.h"
-#include "render/resource/GpuTexture.h"
-#include "render/resource/RenderResourceManager.h"
 #include "render/resource/ShaderData.h"
 
 #include <array>
@@ -27,8 +21,6 @@ SkyboxPass::Output SkyboxPass::setup(
     color = graph.write(colorHandle);
     depth = depthHandle;
     SceneDraw::useAttachments(graph, std::array{color}, depth);
-
-    refreshBindings(setup);
 
     auto& pipelines = *renderContext().pipelineManager;
     pipelineLayout  = SceneInterface::skyboxLayout(*renderContext().descriptors, *renderContext().pipelineManager);
@@ -47,8 +39,11 @@ SkyboxPass::Output SkyboxPass::setup(
     return {color};
 }
 
-void SkyboxPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
+void SkyboxPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
 {
+    if (!execution.renderData.environmentMap)
+        return;
+
     const auto viewport = SceneDraw::beginRendering(
         graph,
         commandBuffer,
@@ -81,43 +76,6 @@ void SkyboxPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, con
         parameters
     );
     commandBuffer.draw(3, 1, 0, 0);
+    recordDraw(context().profiler, 3);
     commandBuffer.endRendering();
-}
-
-void SkyboxPass::refreshBindings(const PassSetup& setup)
-{
-    DCHECK(!environmentMap.empty());
-    const auto& environment = context().assetManager->get<EnvironmentMapAsset>(environmentMap);
-    const auto& binding     = environment.radiance;
-    CHECK(!binding.textureID.empty() && !binding.samplerID.empty());
-    const auto& asset = context().assetManager->get<TextureAsset>(binding.textureID);
-    CHECK(asset.layout == ImageLayout::Cubemap, "environment '{}' requires a radiance cubemap", environment.id);
-    auto& resources = *renderContext().resources;
-    radianceTexture = resources.texture(binding.textureID);
-    const vk::DescriptorImageInfo radianceImage{
-        .imageView   = radianceTexture->imageView(),
-        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-    };
-    const vk::DescriptorImageInfo radianceSampler{.sampler = resources.sampler(binding.samplerID)};
-    for (uint32_t frameIndex = 0; frameIndex < maxFramesInFlight; ++frameIndex)
-    {
-        const auto       set    = setup.frameData[frameIndex].sceneSetHandle();
-        const std::array writes = {
-            vk::WriteDescriptorSet{
-                .dstSet          = set,
-                .dstBinding      = RenderInterface::kRadianceImageBinding,
-                .descriptorCount = 1,
-                .descriptorType  = vk::DescriptorType::eSampledImage,
-                .pImageInfo      = &radianceImage,
-            },
-            vk::WriteDescriptorSet{
-                .dstSet          = set,
-                .dstBinding      = RenderInterface::kRadianceSamplerBinding,
-                .descriptorCount = 1,
-                .descriptorType  = vk::DescriptorType::eSampler,
-                .pImageInfo      = &radianceSampler,
-            },
-        };
-        setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});
-    }
 }

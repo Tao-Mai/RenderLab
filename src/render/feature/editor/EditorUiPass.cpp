@@ -18,7 +18,7 @@ EditorUiPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::Ima
     return {color};
 }
 
-void EditorUiPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
+void EditorUiPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
 {
     const auto& editor = execution.editor;
     if (!editor.recordUi)
@@ -42,6 +42,6 @@ void EditorUiPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, c
         .colorAttachmentCount = 1,
         .pColorAttachments    = &colorAttachment,
     });
-    commandBuffer.addStatistics(editor.recordUi(*commandBuffer));
+    editor.recordUi(*commandBuffer);
     commandBuffer.endRendering();
 }

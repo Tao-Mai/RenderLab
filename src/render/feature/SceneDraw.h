@@ -20,14 +20,14 @@ void useAttachments(
 );
 vk::Rect2D beginRendering(
     RenderGraph&                              graph,
-    CommandRecorder&                          commandBuffer,
+    vk::raii::CommandBuffer&                  commandBuffer,
     const PassFrame&                          execution,
     std::span<const RenderGraph::ImageHandle> colors,
     RenderGraph::ImageHandle                  depth,
     vk::AttachmentLoadOp                      colorLoadOp
 );
 void recordMeshes(
-    CommandRecorder&            commandBuffer,
+    vk::raii::CommandBuffer&    commandBuffer,
     const PassFrame&            execution,
     std::span<const DrawItem>   items,
     std::span<const vk::Format> colorFormats,

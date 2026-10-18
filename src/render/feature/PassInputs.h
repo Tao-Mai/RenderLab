@@ -6,6 +6,7 @@
 class VulkanContext;
 class Swapchain;
 class FrameData;
+class GpuProfiler;
 struct RenderView;
 struct RenderData;
 struct EditorFrameInput;
@@ -26,4 +27,5 @@ struct PassFrame
     const RenderData&       renderData;
     const EditorFrameInput& editor;
     uint32_t                frameIndex;
+    GpuProfiler*            gpuProfiler = nullptr;
 };

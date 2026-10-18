@@ -16,7 +16,7 @@ public:
         RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle hdrColor, RenderGraph::ImageHandle target
     );
     void prepare(RenderGraph& graph, const PassSetup& setup) const;
-    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const;
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
 private:
     RenderGraph::ImageHandle             hdrColor;

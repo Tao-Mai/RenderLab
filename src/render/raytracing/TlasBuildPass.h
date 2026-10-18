@@ -16,7 +16,7 @@ public:
     };
 
     Output setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::AccelerationStructureHandle blas);
-    void   execute(RenderGraph& graph, CommandRecorder& commands, const PassFrame& frame);
+    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame);
 
 private:
     struct Frame

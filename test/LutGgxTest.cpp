@@ -12,7 +12,7 @@
 
 TEST(LutGgxTest, StoresTwoValuesInEightBitRedAndGreenChannels)
 {
-    const auto path = std::filesystem::path{RENDERLAB_SOURCE_DIR} / "resource/lut_ggx.png";
+    const auto path = std::filesystem::path{RENDERLAB_SOURCE_DIR} / "src/asset/builtin/data/lut_ggx.png";
 
     std::ifstream file(path, std::ios::binary);
     ASSERT_TRUE(file.is_open());

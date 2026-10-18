@@ -16,7 +16,7 @@ public:
         RenderGraph::ImageHandle rayImageHandle,
         RenderGraph::ImageHandle colorHandle
     );
-    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const;
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
 private:
     RenderGraph::ImageHandle rayImage;

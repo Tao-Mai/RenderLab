@@ -61,12 +61,13 @@ public:
     void stopLogging();
     void recordCpu(std::string_view name, double milliseconds);
     void recordGpu(uint64_t frame, double milliseconds, std::vector<ProfileTiming> timings);
-    void recordDraws(std::vector<PassDrawStatistics> passes);
+    void beginPass(std::string_view name);
+    void recordDraw(uint32_t vertexCount, uint32_t instanceCount = 1);
     void recordCulling(uint32_t totalObjects, std::vector<ViewCullingStatistics> views);
     void clearGpu();
     [[nodiscard]] const PerformanceSnapshot&        display() const { return displayed; }
     [[nodiscard]] const std::vector<ProfileTiming>& gpuTimings() const { return current.gpuTimings; }
-    [[nodiscard]] uint64_t frameNumber() const { return frame; }
+    [[nodiscard]] uint64_t                          frameNumber() const { return frame; }
 
 private:
     static constexpr size_t kHistorySize         = 240;
@@ -74,7 +75,7 @@ private:
     Timer                   frameTimer;
     Timer                   refreshTimer;
     bool                    capturing = false;
-    uint64_t                frame = 0;
+    uint64_t                frame     = 0;
     std::ofstream           logFile;
     std::deque<float>       frameHistory;
     std::deque<double>      cpuHistory;
@@ -82,6 +83,12 @@ private:
     PerformanceSnapshot     displayed;
     void logTiming(uint64_t frame, std::string_view domain, std::string_view name, double milliseconds);
 };
+
+inline void recordDraw(Profiler* profiler, uint32_t vertexCount, uint32_t instanceCount = 1)
+{
+    if (profiler)
+        profiler->recordDraw(vertexCount, instanceCount);
+}
 
 class CpuProfileScope
 {

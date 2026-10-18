@@ -63,7 +63,7 @@ int main(int, char** argv)
     scene.actors.push_back(std::move(actor));
     scenes.load(scene);
     renderer.init();
-    renderer.rebuildGraph(renderSystem.prepare(scenes.scene()));
+    renderer.rebuildGraph();
 
     DescriptorManager descriptors;
     descriptors.init(renderer.vulkanContext().deviceHandle());
@@ -107,13 +107,13 @@ int main(int, char** argv)
         {
             feature.shadow.cascade.count = 1;
             config.setRenderFeature(feature);
-            renderer.rebuildGraph(renderSystem.prepare(scenes.scene()));
+            renderer.rebuildGraph();
         }
         if (frame == 4 || frame == 6)
         {
             feature.shadow.enable = frame == 6;
             config.setRenderFeature(feature);
-            renderer.rebuildGraph(renderSystem.prepare(scenes.scene()));
+            renderer.rebuildGraph();
         }
         window.pollEvents();
         const auto view =

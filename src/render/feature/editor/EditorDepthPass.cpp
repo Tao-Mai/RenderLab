@@ -1,4 +1,5 @@
 #include "render/feature/editor/EditorDepthPass.h"
+#include "core/Context.h"
 #include "render/Visibility.h"
 #include "render/feature/editor/EditorInterface.h"
 
@@ -45,7 +46,9 @@ EditorDepthPass::Output EditorDepthPass::setup(RenderGraph& graph, const PassSet
     return {depth};
 }
 
-void EditorDepthPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
+void EditorDepthPass::execute(
+    RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
+) const
 {
     const auto                        extent = execution.setup.swapchain.extent();
     const vk::RenderingAttachmentInfo depthAttachment{
@@ -108,6 +111,7 @@ void EditorDepthPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer
         );
         item.mesh->bind(commandBuffer);
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
+        recordDraw(context().profiler, item.indexCount);
     }
     commandBuffer.endRendering();
 }

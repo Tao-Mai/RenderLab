@@ -58,7 +58,7 @@ int main(int argc, char** argv)
     scenes.load(scene);
 
     renderer.init();
-    renderer.rebuildGraph(renderSystem.prepare(scenes.scene()));
+    renderer.rebuildGraph();
     const auto extent = renderer.swapchainHandle().extent();
     const auto view =
         scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
@@ -70,7 +70,7 @@ int main(int argc, char** argv)
         feature.hdr           = mode < 2;
         feature.shadow.enable = mode < 2;
         config.setRenderFeature(feature);
-        renderer.rebuildGraph(renderSystem.prepare(scenes.scene()));
+        renderer.rebuildGraph();
 
         auto& overrides = scenes.scene().actors[0]->getComponent<RenderComponent>()->materialOverrides;
         for (int frame = 0; frame < 4; ++frame)

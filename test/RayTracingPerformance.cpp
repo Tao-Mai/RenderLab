@@ -36,7 +36,7 @@ struct SinkPass
                 .access = vk::AccessFlagBits2::eShaderStorageRead, .layout = vk::ImageLayout::eGeneral});
         return {};
     }
-    void execute(RenderGraph&, CommandRecorder&, const PassFrame&) const {}
+    void execute(RenderGraph&, vk::raii::CommandBuffer&, const PassFrame&) const {}
 };
 
 void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const std::filesystem::path& logPath)

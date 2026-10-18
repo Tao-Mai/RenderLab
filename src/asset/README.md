@@ -56,6 +56,8 @@ Mesh 导入先通过 `prepareMesh` 解析节点变换、几何和包围盒，不
 被动内置资产集合。通过 `BuiltinAssets::Mesh` / `Material` / `Texture` / `Sampler` 分组暴露类型化 ID，供场景、Import、灯光标记等引用。资产 / data 生成函数为
 private，仅 `AssetManager` 与 `AssetDataManager` 以 friend 调用；无实例、无 `init` 预注册。实现拆在 `builtin/` 下按类型分文件。
 
+BRDF 与 Sheen LUT 也是内置纹理，分别通过 `Texture::kBrdfLut`、`Texture::kSheenLut` 引用。`builtin/data/` 保存原始 PNG 和许可证，PNG 编译时嵌入，按需解码后缓存；不依赖渲染配置或导入后的 JSON/bin。二者均为 Linear、单级 mip，使用内置 `linearClamp` sampler。
+
 ### JsonIo / ApplyOptionalFields
 
 序列化与字段工具，不算业务流程模块。`JsonIo` 统一调用 C++26 静态反射的 `Serialize/Deserialize`，字段名直接使用 C++ 成员名。

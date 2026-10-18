@@ -28,7 +28,7 @@ RenderGraph::AccelerationStructureHandle BlasBuildPass::setup(RenderGraph& graph
     return output;
 }
 
-void BlasBuildPass::execute(RenderGraph& graph, CommandRecorder& commands, const PassFrame& frame)
+void BlasBuildPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame)
 {
     const auto&                         vulkan = frame.setup.vulkan;
     const auto&                         device = vulkan.deviceHandle();
@@ -71,7 +71,7 @@ void BlasBuildPass::execute(RenderGraph& graph, CommandRecorder& commands, const
     graph.bindAccelerationStructures(output, structures);
 }
 
-void BlasBuildPass::createRectLightGeometry(CommandRecorder& commands, const VulkanContext& vulkan)
+void BlasBuildPass::createRectLightGeometry(vk::raii::CommandBuffer& commands, const VulkanContext& vulkan)
 {
     const auto& device = vulkan.deviceHandle();
     // A unit XY rectangle facing local -Z. Every light shares this BLAS.

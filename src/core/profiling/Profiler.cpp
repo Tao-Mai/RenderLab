@@ -73,7 +73,22 @@ void Profiler::recordGpu(uint64_t sourceFrame, double milliseconds, std::vector<
     current.hasGpuTimings   = true;
 }
 
-void Profiler::recordDraws(std::vector<PassDrawStatistics> passes) { current.passes = std::move(passes); }
+void Profiler::beginPass(std::string_view name)
+{
+    if (capturing)
+        current.passes.push_back({std::string{name}, {}});
+}
+
+void Profiler::recordDraw(uint32_t vertexCount, uint32_t instanceCount)
+{
+    if (!capturing)
+        return;
+    DCHECK(!current.passes.empty());
+    auto& draws = current.passes.back().draws;
+    ++draws.drawCalls;
+    draws.triangles += static_cast<uint64_t>(vertexCount / 3) * instanceCount;
+}
+
 void Profiler::recordCulling(uint32_t totalObjects, std::vector<ViewCullingStatistics> views)
 {
     current.totalObjects = totalObjects;
@@ -85,15 +100,17 @@ void Profiler::clearGpu()
     current.gpuTimings.clear();
     current.gpuMilliseconds = 0.0;
     current.hasGpuTimings   = false;
+    current.passes.clear();
     displayed.gpuTimings.clear();
     displayed.hasGpuTimings = false;
+    displayed.passes.clear();
 }
 
 void Profiler::reset()
 {
     DCHECK(!capturing);
     stopLogging();
-    frame = 0;
+    frame     = 0;
     current   = {};
     displayed = {};
     frameHistory.clear();
@@ -129,8 +146,8 @@ void Profiler::stopLogging()
 void Profiler::logTiming(uint64_t sourceFrame, std::string_view domain, std::string_view name, double milliseconds)
 {
     if (logFile.is_open())
-        logFile << sourceFrame << ',' << domain << ',' << std::quoted(std::string{name}, '"', '"')
-                << ',' << milliseconds << '\n';
+        logFile << sourceFrame << ',' << domain << ',' << std::quoted(std::string{name}, '"', '"') << ','
+                << milliseconds << '\n';
 }
 
 CpuProfileScope::CpuProfileScope(Profiler* target, std::string_view label) : profiler(target), name(label) {}

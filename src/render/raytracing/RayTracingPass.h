@@ -20,7 +20,7 @@ public:
     };
 
     Output setup(RenderGraph& graph, const PassSetup& setup, TlasBuildPass::Output scene);
-    void   execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution);
+    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution);
 
 private:
     struct Frame

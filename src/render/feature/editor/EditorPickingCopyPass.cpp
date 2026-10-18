@@ -20,6 +20,7 @@ EditorPickingCopyPass::setup(RenderGraph& graph, const PassSetup& setup, RenderG
     readback = graph.createBuffer({
         .size             = sizeof(uint32_t),
         .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        .scope            = RenderGraph::ResourceScope::PerFrame,
     });
     readback = graph.write(readback);
     graph.use(
@@ -33,7 +34,7 @@ EditorPickingCopyPass::setup(RenderGraph& graph, const PassSetup& setup, RenderG
 }
 
 void EditorPickingCopyPass::execute(
-    RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution
+    RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
 ) const
 {
     const auto& editor = execution.editor;

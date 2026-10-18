@@ -16,7 +16,7 @@
 | `FrameContext` | CommandPool/Buffer、Fence、imageAvailable、wait/submit | 每个 frame-in-flight 一份 |
 | `FrameData` | View/Light CPU 数据与 UBO、灯光/点阴影 SSBO、Scene Set、数据上传与扩容 | 由 Renderer 按在途帧持有 |
 
-Renderer 持有上述模块和各 Pass 对象，负责按配置组图。`RenderSystem` 由 Engine 持有和调用，Renderer 接收其生成的 CPU `SceneRenderData`，等待当前帧 fence 后由 RenderResourceManager 解析为 GPU `RenderData`。Graph 持有对应节点，不依赖具体 Pass 类型。终点依赖最终颜色和 readback buffer，声明 Present 和 HostRead 状态；Renderer 保存 PickingCopy 的 readback handle，在 fence 完成后通过 Graph 的 getBuffer 下载 selection ID，不再单设 Readback Pass。ScenePass 只绘制不透明和 MASK 物体；SkyboxPass 管理 radiance descriptor、Pipeline/Layout 和天空盒绘制；TransparentPass 加载已有颜色和深度，绘制排序后的透明物体。SceneDraw 共用附件、视口设置和材质网格绘制逻辑，不增加新的资源管理层。LightMarkerPass 随后独立绘制灯光标记。光栅 Pipeline 由 PipelineManager 缓存，光追 Pipeline/SBT 由相应追踪 Pass 持有，BLAS 缓存和逐帧 TLAS 分别由 BlasBuildPass、TlasBuildPass 持有；Pass 直接接收类型化句柄或前序 Pass 的 Output，通过 Image 对象取得缓存 View。
+Renderer 持有上述模块和各 Pass 对象，负责按配置组图。`RenderSystem` 由 Engine 持有和调用，Renderer 接收其生成的 CPU `SceneRenderData`，等待当前帧 fence 后由 RenderResourceManager 解析为 GPU `RenderData`。Graph 持有对应节点，不依赖具体 Pass 类型。终点依赖最终颜色和 readback buffer，声明 Present 和 HostRead 状态；Renderer 保存 PickingCopy 的 readback handle，在 fence 完成后通过 Graph 的 getBuffer 下载 selection ID，不再单设 Readback Pass。ScenePass 只绘制不透明和 MASK 物体；SkyboxPass 复用 SceneBindings 的 radiance descriptor，管理 Pipeline/Layout 和天空盒绘制；TransparentPass 加载已有颜色和深度，绘制排序后的透明物体。SceneDraw 共用附件、视口设置和材质网格绘制逻辑，不增加新的资源管理层。LightMarkerPass 随后独立绘制灯光标记。光栅 Pipeline 由 PipelineManager 缓存，光追 Pipeline/SBT 由相应追踪 Pass 持有，BLAS 缓存和逐帧 TLAS 分别由 BlasBuildPass、TlasBuildPass 持有；Pass 直接接收类型化句柄或前序 Pass 的 Output，通过 Image 对象取得缓存 View。
 
 ## 光栅化与光追路线
 
@@ -45,7 +45,7 @@ G-buffer 与深度重建参考 [Khronos 延迟渲染示例](https://docs.vulkan.
 
 点光源、Spot、方向光和矩形光共用 brdf.slang 的直接光 BRDF：Schlick Fresnel、GGX 分布、height-correlated Smith 可见性和 Lambert 漫反射，金属度同时控制 F0 和漫反射权重。光源分支只生成光线方向、入射光量和阴影可见性，最后统一乘 BRDF 和 NdotL。直接光的感知粗糙度下限为 0.045，避免零粗糙度数值退化；材质数据和 IBL 粗糙度保持原值。矩形光仍用中心方向与投影面积/距离平方近似立体角，新增的镜面响应不代表有限面积光源积分。Spot 使用内外锥角余弦之间的平方衰减；内锥强度保持 cd，不按锥角重新归一化。Spot 当前只接入光栅路线，实时与离线光追仍不计算 Spot。
 
-Scene 使用 RGBA16F HDR 颜色图，Graph 为每个在途帧单独分配。ToneMappingPass 持有独立 descriptor set、pipeline 和绘制逻辑，只采样当前帧的 HDR 图，Graph 根据声明插入 ColorAttachment → ShaderRead barrier。灯光标记、UI 和坐标轴都在 Tone Mapping 之后绘制，不受曝光和 Tone Mapping 模式影响。
+Scene 使用跨帧共享的一张 RGBA16F HDR 颜色图。ToneMappingPass 持有独立 descriptor set、pipeline 和绘制逻辑，每帧采样该图，Graph 根据声明插入 ColorAttachment → ShaderRead barrier，并在下一帧重新写入前同步上一帧的采样。灯光标记、UI 和坐标轴都在 Tone Mapping 之后绘制，不受曝光和 Tone Mapping 模式影响。
 
 `feature.hdr` 控制 HDR 输出链路，默认 true，光栅和光追均可在编辑器切换。Renderer 检测到 Enable HDR 配置变化后重新组图并 compile；关闭时 Scene 直接写交换链，光追则将 RGBA16F 图直接 blit 到交换链，不登记 ToneMappingPass。曝光和 Tone Mapping 参数保留但控件禁用，重新开启后继续使用；开关与其他渲染设置一样仅在正常关闭时统一持久化。
 
@@ -55,7 +55,7 @@ Scene 使用 RGBA16F HDR 颜色图，Graph 为每个在途帧单独分配。Tone
 
 Neutral 算法参考 [Khronos PBR Neutral Tone Mapper](https://github.com/KhronosGroup/ToneMapping/tree/main/PBR_Neutral)，shader 中注明 Slang 改写及 CC-BY-4.0 来源。
 
-编辑器的 Renderer / Render path 可选择 Rasterization 或 Ray tracing，选择保存在内存中的 `renderPath`，正常关闭时由 ConfigManager 统一写入 `config/renderer.json`，启动时恢复。该文件由 `config/config.json` 的 `paths.renderer` 指定，并保存 BRDF LUT 绑定和 RenderFeature；环境图选择保存在 SceneAsset.environmentMap，随场景保存和切换。当前光栅化仍是默认路线；不支持所需 Vulkan 光追特性的 GPU 禁用光追选项，配置直接指定不支持的路线则明确报错，不自动退回光栅化。
+编辑器的 Renderer / Render path 可选择 Rasterization 或 Ray tracing，选择保存在内存中的 `renderPath`，正常关闭时由 ConfigManager 统一写入 `config/renderer.json`，启动时恢复。该文件由 `config/config.json` 的 `paths.renderer` 指定，并保存 RenderFeature；环境图选择保存在 SceneAsset.environmentMap，随场景保存和切换。当前光栅化仍是默认路线；不支持所需 Vulkan 光追特性的 GPU 禁用光追选项，配置直接指定不支持的路线则明确报错，不自动退回光栅化。
 
 `render/raytracing/RayTracingPass` 使用独立的 `VK_KHR_ray_tracing_pipeline`。Renderer 在实时和离线路线中显式串接 `BlasBuildPass → TlasBuildPass → 追踪 Pass`，所有 Pass 统一由 Renderer 的 tuple 持有，追踪 Pass 不再持有或注册构建 Pass：BLAS 按 mesh/submesh 缓存，TLAS 根据当帧 DrawItem 的 transform 构建，追踪 Pass 负责绑定场景数据并通过 SBT 和 `vkCmdTraceRaysKHR` 发射射线。构建与追踪是独立 Graph 节点，Graph 根据加速结构的读写声明同步 BLAS 构建、TLAS 构建、射线读取和跨帧复用，Pass 不手写 barrier。`raytracing/raytracing.slang` 将相机射线、命中表面和着色封装为结构体方法。ClosestHit 插值 Vertex UV 和法线，通过实例变换的逆转置得到世界空间法线；支持点光源直接光照和矩形光源直接光 MIS：RectAreaLight 负责矩形采样和立体角 PDF；所有矩形灯共享一个单位矩形的双三角形 BLAS，实例变换提供位置、旋转和宽高，实例自定义索引直接对应灯光 SSBO。BRDF 射线由 TLAS 确定最近命中；表面 hit group 继续着色，独立 light hit group 返回单面发光值，不再解析遍历所有灯。NEE 和 BRDF 命中发光面分别乘 balance heuristic 权重，不对物体间接光重复加权。矩形灯只生成光追内部几何，不创建 Mesh 资产或 RenderComponent；主相机射线通过 mask 排除灯面，反弹和阴影射线包含灯面，编辑器标记保持独立。Surface::isVisible 沿法线偏移后向光源发射有限长度的阴影射线，首个遮挡即可停止，跳过 closest-hit；独立 visibility miss shader 返回可见。Surface::shade 使用余弦加权半球采样，Payload 传递递归深度、随机状态和上一表面的 BRDF PDF，各次命中累积间接光照。最终着色顶点仍可发射 BRDF 射线命中灯面；到达递归上限时，普通表面 hit shader 直接返回黑色，不再发射阴影射线，而 light hit shader 仍可返回发光值。`feature.rayTracing.maxRecursionDepth` 控制 Vulkan 管线递归深度（默认 4，至少 2，受 GPU 上限限制），编辑器调整后重建光追 Pipeline/SBT，关闭时持久化；包括主射线和为可见性查询预留的一层，因此 2 仅直接光，4 最多两次反弹。SBT 包含一个 raygen、两个 miss 和两个 hit group。Miss 返回黑色，TLAS 包含场景网格和矩形发光面，不包含编辑器灯光标记。暂不包含 IBL、透明、alpha-test、时域累积或降噪，所有三角形按不透明处理；每帧最多 128 种材质纹理/采样器绑定。
 
@@ -67,7 +67,7 @@ API 参考：[Khronos 基础光追示例](https://docs.vulkan.org/samples/latest
 
 SceneManager 持有 AActor 和 Component。Engine 在场景 Tick 和编辑器更新之后调用 `RenderSystem::prepare(scene)`，提取全部可渲染对象的资产 ID、Transform、材质覆盖和原始灯光数据，生成不含 GPU 对象的 SceneRenderData；场景提交不读取相机或渲染配置，也不做剔除。`Renderer::prepare` 根据 RenderView 和 shadow feature 生成独立的 PreparedScene：计算阴影矩阵、世界 AABB、主视图/各光源阴影视锥可见性和相机距离；关闭阴影或使用光追路线时不生成光栅阴影剔除体。RenderResourceManager 在当前帧可安全更新后解析资产，根据准备结果生成 DrawItem 并排序透明物体；完整 drawItems 保留全部几何供光追使用，opaqueDrawItems/transparentDrawItems 仅包含主视图可见物体。RenderData 不缓存 Actor 或 Component 引用。Editor 持有 `editor/LightMarkers`，读取场景并生成纯数据的 LightMarkerDrawItem；渲染层只接收 EditorFrameInput，不访问组件。EditorCamera 生成普通 RenderView；Renderer 不依赖 Actor、SceneManager、EditorCamera 或 Editor 对象。场景切换、增删 Actor 和 Mesh 修改在下一次 prepare 时自然生效，不重建 Graph。
 
-当前 `maxFramesInFlight` 为 2。Graph 为每个在途帧分配独立的 Scene 深度图、Shadow cubemap、拾取图和 readback Buffer。交换链图像作为外部资源导入，Graph 借用句柄并跟踪状态。资产环境纹理不登记到 Graph，由资产 GPU 资源负责上传和采样状态，Pass 直接绑定 descriptor。FrameData 的 View/Light UBO 和灯光 SSBO 由 Pass 直接引用，不登记到 Graph 资源声明；Renderer 在录制前更新当前帧的数据。Mesh/Material 的 vertex/index buffer、材质 UBO 和 base color image 由 RenderResourceManager 解析并在 DrawItem 中引用，GPU 对象由 RenderResourceManager 创建和持有。它们不登记到 Graph 资源声明，上传与可供绘制使用的状态由资产 GPU 资源实现负责。
+当前 `maxFramesInFlight` 为 2。Graph 创建的图像和 GPU Buffer 默认使用 `ResourceScope::Shared`，Scene 深度图、各类 Shadowmap、G-buffer、HDR 中间图和拾取图均只分配一份。需要 CPU 逐帧访问的 readback Buffer 显式使用 `ResourceScope::PerFrame`，在对应 fence 完成后读取。交换链图像作为外部资源导入，Graph 按 acquired image index 借用句柄并跟踪状态。资产环境纹理不登记到 Graph，由资产 GPU 资源负责上传和采样状态，Pass 直接绑定 descriptor。FrameData 的 View/Light UBO 和灯光 SSBO 由 Pass 直接引用，不登记到 Graph 资源声明；Renderer 在录制前更新当前帧的数据。Mesh/Material 的 vertex/index buffer、材质 UBO 和 base color image 由 RenderResourceManager 解析并在 DrawItem 中引用，GPU 对象由 RenderResourceManager 创建和持有。它们不登记到 Graph 资源声明，上传与可供绘制使用的状态由资产 GPU 资源实现负责。
 
 ### 离线渐进式路径追踪
 
@@ -75,7 +75,7 @@ SceneManager 持有 AActor 和 Component。Engine 在场景 Tick 和编辑器更
 
 Renderer 在离线路线只复用 frame 0，每次提交前等待其 fence；其他路线保持两帧在途，swapchain 图像数量不变。离线 Pass 独立持有一个 device-local FP32 float4 累积 buffer，通过 importBuffer 登记给 Graph，由 Graph 插入跨帧 storage read/write barrier。每轮每像素采样一次，随机种子包含 pixelIndex 和 sampleIndex，相机射线在像素内部抖动；线性样本总和除以 SPP 后写入 RGBA16F，再走现有 Tone Mapping 或直接 blit。首次采样覆盖 buffer，不读取旧值；视口外像素清零。
 
-Pass 比较 CPU SceneRenderData 快照、相机逆 VP / 位置 / 视口和资产版本。物体、材质、灯光、环境或相机变化重置 SPP，下一轮覆盖旧贡献；对象重命名、选中和曝光变化不重置。HDR 显示链路重建保留累积 buffer，切换路线、修改离线递归深度或改变输出尺寸重新开始。`feature.offline.maxRecursionDepth` 独立于实时参数，正常关闭时与路线一起保存；采样历史不持久化。编辑器显示当前 SPP。第一版连续采样，不提供目标 SPP、暂停或图片导出。
+Pass 比较 CPU SceneRenderData 快照、相机逆 VP / 位置 / 视口和资产版本。物体、材质、灯光、环境或相机变化重置 SPP，下一轮覆盖旧贡献；对象重命名、选中和曝光变化不重置。离线 Pass 每次 setup 都开始新一轮累积，因此 HDR 链路重建、切回离线路线、修改离线递归深度或改变输出尺寸都会重新开始；Renderer 不额外通知 Pass 重置。`feature.offline.maxRecursionDepth` 独立于实时参数，正常关闭时与路线一起保存；采样历史不持久化。编辑器显示当前 SPP。第一版连续采样，不提供目标 SPP、暂停或图片导出。
 
 ## 场景 Shader 接口
 
@@ -132,13 +132,13 @@ SceneInterface 定义场景和材质的共享绑定接口，EditorInterface 独�
 
 点阴影 PCF 使用 `sampling.slang` 中独立的 16 点泊松圆盘表，32 点表保持原样供其他采样使用。`feature.shadow.pixelRotation` 控制稳定的逐像素旋转，`feature.shadow.sampleRadius` 控制方向空间采样半径，默认分别为 true 和 0.02；编辑器 Shadows 区域可直接调整，两项每帧通过 shadowParameters 上传，不重建图资源，同样只在关闭时持久化。
 
-构建阶段用 Slang 生成 SPIR-V 和 reflection JSON。主场景 shader 通过 `ENABLE_IBL=1/0` 编译为 `slang.spv` 和 `slang.no_ibl.spv`；关闭变体不执行环境光采样，而是使用 `ambientCoefficient * baseColor.rgb`。ShaderManager 根据 ShaderAsset ID 与 ShaderDefines 缓存模块和 descriptor 元数据，实际文件和编译宏由 CMake 生成的 `.variants.json` 清单解析，运行时不再拼接变体后缀。`config/renderer.json` 的 `feature.ibl` 显式控制变体，`feature.ambientCoefficient` 保存关闭 IBL 时的环境光系数；SceneAsset.environmentMap 保存环境图选择，由 RenderSystem 放入 SceneRenderData，再由 Renderer 配置 SceneBindings 和 SkyboxPass，不反向读取 SceneManager。编辑器勾选 IBL 时显示当前场景的环境图选择（不提供 None 选项），取消时显示系数调整；关闭 IBL 不丢弃场景的已选环境图。未选择环境图时使用白色 cubemap 兜底，不隐式关闭 IBL；天空盒仅在启用 IBL 且存在环境图时绘制，关闭时跳过天空盒 shader 和 pipeline 的创建。环境图修改标记场景 dirty，手动保存场景时持久化；切换场景仍丢弃未保存修改。渲染设置正常关闭时统一持久化，不会连带保存场景编辑。Scene/Material descriptor layout、纹理声明和绑定保持不变。自定义场景材质 shader 需要在清单中声明对应编译宏组合。
+构建阶段用 Slang 生成 SPIR-V 和 reflection JSON。主场景 shader 通过 `ENABLE_IBL=1/0` 编译为 `slang.spv` 和 `slang.no_ibl.spv`；关闭变体不执行环境光采样，而是使用 `ambientCoefficient * baseColor.rgb`。ShaderManager 根据 ShaderAsset ID 与 ShaderDefines 缓存模块和 descriptor 元数据，实际文件和编译宏由 CMake 生成的 `.variants.json` 清单解析，运行时不再拼接变体后缀。`config/renderer.json` 的 `feature.ibl` 显式控制变体，`feature.ambientCoefficient` 保存关闭 IBL 时的环境光系数；SceneAsset.environmentMap 保存环境图选择，由 RenderSystem 放入 SceneRenderData，再随 GPU RenderData 交给 SceneBindings 更新资源绑定，不反向读取 SceneManager，也不参与图结构变化。编辑器勾选 IBL 时显示当前场景的环境图选择（不提供 None 选项），取消时显示系数调整；关闭 IBL 不丢弃场景的已选环境图。未选择环境图时使用白色 cubemap 兜底，不隐式关闭 IBL；IBL 开关决定是否 setup SkyboxPass，未选择环境图时由 SkyboxPass 内部跳过绘制，IBL 关闭时不创建天空盒 shader 和 pipeline。环境图修改标记场景 dirty，手动保存场景时持久化；切换场景仍丢弃未保存修改。渲染设置正常关闭时统一持久化，不会连带保存场景编辑。Scene/Material descriptor layout、纹理声明和绑定保持不变。自定义场景材质 shader 需要在清单中声明对应编译宏组合。
 
 DescriptorManager 只缓存调用方或 reflection 声明的 Layout 并分配 Set；PipelineManager 接收实际 Layout，校验反射中的 binding 类型、数组容量、stage 和 push constant 范围。业务绑定定义归 SceneInterface、EditorInterface 或对应 Pass。
 
 PipelineKey 包含 ShaderHandle、PipelineLayout、VertexLayout、Topology、Raster/Depth/Blend/MSAA 状态，以及颜色和深度 attachment 格式。`getOrCreate` 命中时复用；首次创建时检查 shader 的 set/binding/type 与 PipelineLayout 是否一致。Pipeline 跨帧和场景复用。
 
-GpuMaterial 根据 alpha mode 选择 Opaque、AlphaTest 或 Transparent。PbrMaterialAsset 的 shaderId 未指定时使用 scene shader。GpuTexture 只持有 Image/View；RenderResourceManager 按 SamplerAsset::ID 创建并缓存独立 sampler。材质与环境纹理使用 TextureBinding 指定 image/sampler，BRDF LUT 的绑定来自 Renderer 配置。
+GpuMaterial 根据 alpha mode 选择 Opaque、AlphaTest 或 Transparent。PbrMaterialAsset 的 shaderId 未指定时使用 scene shader。GpuTexture 只持有 Image/View；RenderResourceManager 按 SamplerAsset::ID 创建并缓存独立 sampler。材质与环境纹理使用 TextureBinding 指定 image/sampler，BRDF 与 Sheen LUT 固定使用 BuiltinAssets 的内置纹理和 linearClamp sampler，不属于渲染配置。
 
 普通 2D 贴图在导入阶段生成完整 mip 链并持久化，GpuTexture 上传全部层级，材质 sampler 默认使用 Linear mip 过滤且不限制最大 LOD。sRGB 颜色在线性空间做 box 过滤，Alpha 保持线性；线性数据贴图不做伽马变换。R8/RG8 非 2 次幂贴图的紧凑 mip 数据只在上传 staging 时补齐 copy offset 对齐，不改变资产二进制格式。环境图的烘焙流程保持独立。
 
@@ -146,7 +146,7 @@ GpuMaterial 根据 alpha mode 选择 Opaque、AlphaTest 或 Transparent。PbrMat
 
 Renderer init 依次初始化 device、swapchain、各 Manager、FrameContext、RenderResourceManager 和 Graph，并独占持有 Pass 对象。四个 Manager 通过 renderContext() 向外部暴露；Renderer 内部直接调用成员的 init/shutdown。Graph init 显式接收 VulkanContext、Swapchain、FrameContext 和 FrameData span，不持有 Renderer 或访问其私有成员。
 
-Renderer 首次接收 SceneRenderData 时组图，之后检测结构性渲染配置和场景环境变化。环境图直接来自本次 SceneRenderData，Renderer 不保存当前或上次的环境图；更新检测使用 SceneBindings 已绑定的 ID。rebuildGraph 和 recreateSwapchain 显式接收 SceneRenderData，等待 GPU 空闲、释放旧图，再由 setupRenderGraph 根据传入场景串接 Pass 并 compile。ScenePass setup 加载 BRDF LUT、环境纹理和对应最大 mip 参数，SkyboxPass setup 单独绑定 radiance。Graph 分配资源后按拓扑顺序调用节点可选的 prepare 回调，ScenePass 和 ToneMappingPass 在此绑定图资源 descriptor，Renderer 不逐个特判。ScenePass 的 Output 同时传出解析后的阴影 handle，供 TransparentPass 声明采样依赖，包括关闭阴影时的占位图。具体材质 Pipeline 在首次绘制时创建并缓存。
+Renderer 首次接收 SceneRenderData 时组图，之后仅根据渲染路线和结构性 feature 变化重建图。组图、rebuildGraph 和 recreateSwapchain 不接收场景数据。环境图随 RenderData 提交，由 SceneBindings 在资源更新阶段检测绑定变化，更新环境纹理和最大 mip 参数；切换、清空环境图均不重建图。共享 descriptor 更新前等待 GPU 空闲，SkyboxPass 直接复用其中的 radiance 绑定。Graph 分配资源后按拓扑顺序调用节点可选的 prepare 回调，ScenePass 和 ToneMappingPass 在此绑定图资源 descriptor，Renderer 不逐个特判。ScenePass 的 Output 同时传出解析后的阴影 handle，供 TransparentPass 声明采样依赖，包括关闭阴影时的占位图。具体材质 Pipeline 在首次绘制时创建并缓存。
 
 资产 GPU 缓存跨场景保留。RenderSystem 不拥有 Mesh/Texture/Material 的 GPU 存储。
 
@@ -173,12 +173,12 @@ Picking 绘制与复制分成两个 Pass，HostRead 和 Present 出口状态由 
 
 ScenePass、SkyboxPass、TransparentPass 和 LightMarkerPass 分别负责不透明物体、天空盒、透明物体和灯光标记。
 Mesh/Material 直接引用 RenderSystem 准备的资产 GPU 对象，不进入图资源分配。
-内部资源按 frame-in-flight 分配，交换链按 acquired image index 选择；资产纹理由 RenderResourceManager 缓存，不参与 Graph 分配。
+内部资源默认跨帧共享；声明 `ResourceScope::PerFrame` 时按 frame-in-flight 分配，交换链按 acquired image index 选择。资产纹理由 RenderResourceManager 缓存，不参与 Graph 分配。
 状态粒度为整个 Image 的全部 mip/layer 和整个 Buffer，仍使用一个 graphics/present queue。
 
 ## 绘制行为
 
-`RenderConfig.h` 中的 `kMaxPointLightShadow = 4` 固定点光源阴影容量。启用阴影时，每帧阴影图预留 24 层，PointShadowData SSBO 固定分配四项，不随场景灯光数量或单灯开关状态扩容。上传时有效点光源超过四盏直接 CHECK 终止。
+`RenderConfig.h` 中的 `kMaxPointLightShadow = 4` 固定点光源阴影容量。启用阴影时，共享阴影图预留 24 层，PointShadowData SSBO 按在途帧固定分配四项，不随场景灯光数量或单灯开关状态扩容。上传时有效点光源超过四盏直接 CHECK 终止。
 
 ShadowPass 作为一个 Graph 节点统一创建并输出点光源、矩形面光源和方向光三组阴影资源，保留各自的 shader variant 和 pipeline。execute 遍历有效阴影灯光，通过共用的 recordShadow 录制 attachment、descriptor、viewport、push constants 和 mesh 绘制；Graph 统一负责资源状态转换。
 
@@ -192,7 +192,7 @@ ShadowPass 的方向光绘制使用单层 2D View 逐层绘制，不使用 multi
 
 分层流程参考 [Vulkan cascaded shadow mapping 示例](https://github.com/SaschaWillems/Vulkan/tree/master/examples/shadowmappingcascade)。编辑器 Shadows 区域通过 splitStrategy 选择 Practical（现有均匀/对数混合划分）或 Uniform（均匀深度划分）；仅 Practical 使用 splitLambda。count 和 shadowMapSize 修改时重建 Graph，其余参数逐帧生效，正常关闭时统一保存 renderer.json。`csm_test` 场景及观察方法见 [CSM 算法、优化与测试](../../docs/shadow/csm.md)。
 
-仅启用 IBL 且有环境贴图时，Renderer 才在 ScenePass 之后登记 SkyboxPass。fullscreen triangle 的深度为 1，fragment 从 ViewUniforms 读取逆视投影矩阵和相机位置，结合 push constant 中的编辑器视口重建世界方向，采样 radiance 基础 mip。保留深度测试、关闭深度写入，并请求早期深度测试。随后 TransparentPass 按距离从远到近绘制透明几何，经过可选的 Tone Mapping 后才由编辑器 LightMarkerPass 绘制灯光标记。
+光栅路线中，Renderer 仅按 IBL 开关决定是否在 ScenePass 之后登记 SkyboxPass；环境图为空时由 SkyboxPass::execute 跳过绘制，不改变图结构。fullscreen triangle 的深度为 1，fragment 从 ViewUniforms 读取逆视投影矩阵和相机位置，结合 push constant 中的编辑器视口重建世界方向，采样 radiance 基础 mip。保留深度测试、关闭深度写入，并请求早期深度测试。随后 TransparentPass 按距离从远到近绘制透明几何，经过可选的 Tone Mapping 后才由编辑器 LightMarkerPass 绘制灯光标记。
 
 Picking 读取 LightMarkerPass 输出的深度，其中保留场景和灯光标记的遮挡关系；只在请求拾取时绘制点击像素的 selection ID、复制至该帧的回读 Buffer。深度以只读 attachment 使用，标记从编辑器自己的 DrawItem 列表绘制。
 
@@ -205,7 +205,9 @@ Picking 读取 LightMarkerPass 输出的深度，其中保留场景和灯光标�
 5. FrameContext 重置 Fence 并 submit 一次，等待 imageAvailable，完成后通知 acquired image 的 renderFinished；Swapchain present。
 6. 若有拾取请求，等待本次 Fence、读取该帧结果，最后轮转 frameIndex。
 
-Graph 保留每个物理资源实例的状态。布局变化或前后涉及写入时插入 pipelineBarrier2；相同布局的连续读取合并 stage/access。每帧 buffer 使用 host-coherent 内存，录制前的 host 写入在 queue submit 时对 GPU 可见；Graph 不负责这些外部 buffer 的更新或状态跟踪。普通帧不等待整个 device 空闲；拾取帧为同步回读额外等待本次提交。
+Graph 保留每个物理资源实例的状态。布局变化或前后涉及写入时插入 pipelineBarrier2；相同布局的连续读取合并 stage/access。共享资源的状态不在帧开始时清空，下一帧首次使用会从上一帧最终访问状态转换；write 版本解析到同一个物理实例，合并全部尾部读取阶段。所有渲染提交使用同一队列，barrier 同步前一次提交的访问，不增加 CPU 等待。FrameData 等每帧外部 buffer 使用 host-coherent 内存，录制前的 host 写入在 queue submit 时对 GPU 可见；Graph 不负责这些外部 buffer 的更新或状态跟踪。普通帧不等待整个 device 空闲；拾取帧为同步回读额外等待本次提交。
+
+各 Pass 直接使用 vk::raii::CommandBuffer，在 draw/drawIndexed 后调用 recordDraw(context().profiler, vertexCount, instanceCount) 累加提交次数和三角形数；后者按 triangle-list 统计、计入 instanceCount，不计算 multiview 放大。ImGui 绘制也计入编辑器 Pass。Graph 只在节点边界通知 Profiler 开始当前 Pass，不包装绘制命令；GpuProfiler 保留 timestamp 计时，并在该帧 Fence 完成后读取结果，不增加同步等待。
 
 ## Resize 与销毁
 

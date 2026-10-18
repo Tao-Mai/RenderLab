@@ -194,6 +194,18 @@ void SceneBindings::prepare(RenderGraph& graph, const PassSetup& setup) const
     }
 }
 
+void SceneBindings::updateEnvironmentMap(const std::optional<EnvironmentMapAsset::ID>& id)
+{
+    if (environmentMap == id)
+        return;
+
+    DCHECK(vulkan);
+    // The environment descriptors are shared by all frames in flight.
+    vkCheck(vulkan->deviceHandle().waitIdle());
+    environmentMap = id;
+    bindEnvironmentTextures();
+}
+
 void SceneBindings::bindEnvironmentTextures()
 {
     TextureBinding irradianceBinding{BuiltinAssets::Texture::whiteCube, BuiltinAssets::Sampler::linearClamp};
@@ -248,12 +260,11 @@ void SceneBindings::bindEnvironmentTextures()
         .imageView   = brdfLutTexture->imageView(),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
-    const vk::DescriptorImageInfo lutSampler{.sampler = brdfLutSampler};
+    const vk::DescriptorImageInfo lutSampler{.sampler = resources->sampler(BuiltinAssets::Sampler::linearClamp)};
     const vk::DescriptorImageInfo sheenImage{
         .imageView   = sheenLutTexture->imageView(),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
     };
-    const vk::DescriptorImageInfo sheenSampler{.sampler = sheenLutSampler};
     const vk::DescriptorImageInfo radianceImage{
         .imageView   = radianceTexture->imageView(),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
@@ -317,7 +328,7 @@ void SceneBindings::bindEnvironmentTextures()
                 .dstBinding      = RenderInterface::kSheenLutSamplerBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampler,
-                .pImageInfo      = &sheenSampler
+                .pImageInfo      = &lutSampler
             },
             vk::WriteDescriptorSet{
                 .dstSet          = frame.sceneSetHandle(),
@@ -356,27 +367,8 @@ void SceneBindings::updateFrame(FrameData& frame, const ViewUniforms& view, cons
 
 void SceneBindings::refreshBindings()
 {
-    const auto& brdf = context().config->rendererConfig().brdfLut;
-    CHECK(!brdf.textureID.empty() && !brdf.samplerID.empty());
-    const auto& brdfAsset = context().assetManager->get<TextureAsset>(brdf.textureID);
-    CHECK(
-        brdfAsset.layout == ImageLayout::Image2D && brdfAsset.colorSpace == ColorSpace::Linear &&
-            brdfAsset.format != ImageFormat::R8,
-        "BRDF LUT must be a linear 2D texture with at least two channels"
-    );
-    brdfLutTexture    = resources->texture(brdf.textureID);
-    brdfLutSampler    = resources->sampler(brdf.samplerID);
-    const auto& sheen = context().config->rendererConfig().sheenLut;
-    CHECK(!sheen.textureID.empty() && !sheen.samplerID.empty());
-    const auto& sheenAsset = context().assetManager->get<TextureAsset>(sheen.textureID);
-    CHECK(
-        sheenAsset.layout == ImageLayout::Image2D && sheenAsset.colorSpace == ColorSpace::Linear &&
-            sheenAsset.mipLevels == 1,
-        "Sheen LUT must be a linear 2D single-mip texture: {}",
-        sheen.textureID
-    );
-    sheenLutTexture = resources->texture(sheen.textureID);
-    sheenLutSampler = resources->sampler(sheen.samplerID);
+    brdfLutTexture = resources->texture(BuiltinAssets::Texture::kBrdfLut);
+    sheenLutTexture = resources->texture(BuiltinAssets::Texture::kSheenLut);
     bindEnvironmentTextures();
 
     const vk::Filter filter = context().config->rendererConfig().feature.shadow.filter == SamplerAsset::Filter::Linear

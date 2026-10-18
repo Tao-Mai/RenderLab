@@ -513,13 +513,13 @@ void RayTracingPass::prepareBindings(RenderGraph& graph, const PassFrame& execut
     device.updateDescriptorSets(writes, {});
 }
 
-void RayTracingPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution)
+void RayTracingPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution)
 {
     auto&  commands = commandBuffer;
     Frame& frame    = frames[execution.frameIndex];
     {
         CpuProfileScope timing{context().profiler, "RT.Binding preparation"};
-        GpuProfileScope gpuTiming{commands, "RT.Binding preparation"};
+        GpuProfileScope gpuTiming{execution.gpuProfiler, commands, "RT.Binding preparation"};
         prepareLights(execution, frame);
         prepareBindings(graph, execution, frame);
     }
@@ -542,6 +542,6 @@ void RayTracingPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer,
         }
     );
     const auto extent = execution.setup.swapchain.extent();
-    GpuProfileScope timing{commands, "RT.Trace rays"};
+    GpuProfileScope timing{execution.gpuProfiler, commands, "RT.Trace rays"};
     commands.traceRaysKHR(raygenRegion, missRegion, hitRegion, {}, extent.width, extent.height, 1);
 }

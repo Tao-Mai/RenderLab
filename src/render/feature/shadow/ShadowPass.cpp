@@ -122,7 +122,7 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup)
     return {point.image, spot.image, rectArea.image, directional.image};
 }
 
-void ShadowPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
+void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
 {
     const auto& frame = execution.data;
     const auto lights = frame.lightData();
@@ -173,13 +173,13 @@ void ShadowPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, con
 }
 
 void ShadowPass::recordShadow(
-    RenderGraph&        graph,
-    CommandRecorder&    commandBuffer,
-    const PassFrame&    execution,
-    const ShadowTarget& target,
-    uint32_t            lightIndex,
-    uint32_t            baseArrayLayer,
-    uint32_t            cascadeIndex
+    RenderGraph&             graph,
+    vk::raii::CommandBuffer& commandBuffer,
+    const PassFrame&         execution,
+    const ShadowTarget&      target,
+    uint32_t                 lightIndex,
+    uint32_t                 baseArrayLayer,
+    uint32_t                 cascadeIndex
 ) const
 {
     // TODO 提前算
@@ -242,6 +242,7 @@ void ShadowPass::recordShadow(
         );
         item.mesh->bind(commandBuffer);
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
+        recordDraw(context().profiler, item.indexCount);
     }
 
     commandBuffer.endRendering();

@@ -23,10 +23,10 @@ public:
     };
 
     Output setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle depthHandle);
-    void   execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const;
+    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
 private:
-    void                     draw(CommandRecorder& commandBuffer, const DrawItem& item) const;
+    void                     draw(vk::raii::CommandBuffer& commandBuffer, const DrawItem& item) const;
     RenderGraph::ImageHandle depth;
     RenderGraph::ImageHandle pickingImage;
     PipelineManager*         pipelines = nullptr;

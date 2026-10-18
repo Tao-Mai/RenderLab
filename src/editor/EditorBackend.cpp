@@ -1,12 +1,13 @@
 #include "editor/EditorBackend.h"
-#include "core/Context.h"
 #include <algorithm>
 #include <array>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
 #include <string>
+#include "core/Context.h"
 #include "core/Logger.h"
+#include "core/profiling/Profiler.h"
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -90,28 +91,37 @@ void EditorBackend::beginFrame()
     ImGui::NewFrame();
 }
 
-DrawStatistics EditorBackend::render(VkCommandBuffer commands) const
+void EditorBackend::render(VkCommandBuffer commands) const
 {
     auto* data = ImGui::GetDrawData();
     ImGui_ImplVulkan_RenderDrawData(data, commands);
-    DrawStatistics statistics;
-    if (!context().profiler) return statistics;
-    const auto width = static_cast<int>(data->DisplaySize.x * data->FramebufferScale.x);
+    auto* profiler = context().profiler;
+    if (!profiler)
+        return;
+
+    const auto width  = static_cast<int>(data->DisplaySize.x * data->FramebufferScale.x);
     const auto height = static_cast<int>(data->DisplaySize.y * data->FramebufferScale.y);
-    if (width <= 0 || height <= 0) return statistics;
+    if (width <= 0 || height <= 0)
+        return;
     for (const auto* list : data->CmdLists)
         for (const auto& command : list->CmdBuffer)
         {
-            if (command.UserCallback) continue;
+            if (command.UserCallback)
+                continue;
             const float minX = std::max(0.0f, (command.ClipRect.x - data->DisplayPos.x) * data->FramebufferScale.x);
             const float minY = std::max(0.0f, (command.ClipRect.y - data->DisplayPos.y) * data->FramebufferScale.y);
-            const float maxX = std::min(static_cast<float>(width), (command.ClipRect.z - data->DisplayPos.x) * data->FramebufferScale.x);
-            const float maxY = std::min(static_cast<float>(height), (command.ClipRect.w - data->DisplayPos.y) * data->FramebufferScale.y);
-            if (maxX <= minX || maxY <= minY) continue;
-            ++statistics.drawCalls;
-            statistics.triangles += command.ElemCount / 3;
+            const float maxX = std::min(
+                static_cast<float>(width),
+                (command.ClipRect.z - data->DisplayPos.x) * data->FramebufferScale.x
+            );
+            const float maxY = std::min(
+                static_cast<float>(height),
+                (command.ClipRect.w - data->DisplayPos.y) * data->FramebufferScale.y
+            );
+            if (maxX <= minX || maxY <= minY)
+                continue;
+            recordDraw(profiler, command.ElemCount);
         }
-    return statistics;
 }
 
 void EditorBackend::shutdown() noexcept

@@ -3,7 +3,6 @@
 #include "core/Logger.h"
 #include "core/profiling/Profiler.h"
 #include "render/Image.h"
-#include "render/device/CommandRecorder.h"
 #include "render/feature/PassInputs.h"
 
 #include <algorithm>
@@ -15,6 +14,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <vulkan/vulkan_raii.hpp>
 
 class Buffer;
 class AccelerationStructure;
@@ -41,6 +41,12 @@ public:
         ResourceHandle id = kInvalidHandle;
     };
 
+    enum class ResourceScope
+    {
+        Shared,
+        PerFrame
+    };
+
     struct ImageCreateInfo
     {
         vk::ImageCreateFlags flags;
@@ -49,12 +55,14 @@ public:
         vk::Extent3D         extent{0, 0, 1};
         uint32_t             mipLevels   = 1;
         uint32_t             arrayLayers = 1;
+        ResourceScope        scope       = ResourceScope::Shared;
     };
 
     struct BufferCreateInfo
     {
         vk::DeviceSize          size             = 0;
         vk::MemoryPropertyFlags memoryProperties = vk::MemoryPropertyFlagBits::eDeviceLocal;
+        ResourceScope           scope            = ResourceScope::Shared;
     };
 
     struct ImageAccess
@@ -111,7 +119,7 @@ public:
     [[nodiscard]] const ImageCreateInfo& imageInfo(ImageHandle image);
 
     void execute(
-        CommandRecorder& commandBuffer,
+        vk::raii::CommandBuffer& commandBuffer,
         const PassFrame& frame,
         uint32_t         imageIndex,
         GpuProfiler&     gpuProfiler,
@@ -165,7 +173,7 @@ private:
         std::vector<PassNode*>            next;
         std::vector<ResourceUse>          uses;
         std::function<void(RenderGraph&, const PassSetup&)>                  prepare;
-        std::function<void(RenderGraph&, CommandRecorder&, const PassFrame&)> execute;
+        std::function<void(RenderGraph&, vk::raii::CommandBuffer&, const PassFrame&)> execute;
     };
 
     VulkanContext*                       deviceContext   = nullptr;
@@ -185,9 +193,9 @@ private:
     void                allocateResources();
     ResourceData&       resolveResource(ResourceHandle handle);
     const ResourceData& resolveResource(ResourceHandle handle) const;
-    void useResource(CommandRecorder& commandBuffer, const ResourceUse& use, uint32_t frameIndex);
+    void useResource(vk::raii::CommandBuffer& commandBuffer, const ResourceUse& use, uint32_t frameIndex);
     void transitionResources(
-        CommandRecorder& commandBuffer, const std::vector<ResourceUse>& uses, uint32_t frameIndex
+        vk::raii::CommandBuffer& commandBuffer, const std::vector<ResourceUse>& uses, uint32_t frameIndex
     );
     [[nodiscard]] uint32_t instanceIndex(const ResourceData& resource, uint32_t frameIndex) const;
 };
@@ -195,7 +203,7 @@ private:
 template <class T, class... Args>
 auto RenderGraph::addPass(T& pass, const PassSetup& setup, Args&&... args)
 {
-    if constexpr (!requires(CommandRecorder& commandBuffer, const PassFrame& frame)
+    if constexpr (!requires(vk::raii::CommandBuffer& commandBuffer, const PassFrame& frame)
                   { pass.execute(*this, commandBuffer, frame); })
     {
         // Setup-only passes register their executable nodes internally.
@@ -205,7 +213,7 @@ auto RenderGraph::addPass(T& pass, const PassSetup& setup, Args&&... args)
     {
         auto& node   = *nodeStorage.emplace_back(std::make_unique<PassNode>());
         node.name    = std::define_static_string(std::meta::identifier_of(^^T));
-        node.execute = [pass = &pass](RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& frame)
+        node.execute = [pass = &pass](RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& frame)
         {
             pass->execute(graph, commandBuffer, frame);
         };

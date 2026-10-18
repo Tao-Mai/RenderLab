@@ -1,4 +1,5 @@
 #include "render/feature/SceneDraw.h"
+#include "core/Context.h"
 #include "render/feature/SceneInterface.h"
 
 #include "render/FrameData.h"
@@ -39,7 +40,7 @@ void SceneDraw::useAttachments(
 
 vk::Rect2D SceneDraw::beginRendering(
     RenderGraph&                              graph,
-    CommandRecorder&                          commandBuffer,
+    vk::raii::CommandBuffer&                  commandBuffer,
     const PassFrame&                          execution,
     std::span<const RenderGraph::ImageHandle> colors,
     RenderGraph::ImageHandle                  depth,
@@ -110,7 +111,7 @@ vk::Rect2D SceneDraw::beginRendering(
 }
 
 void SceneDraw::recordMeshes(
-    CommandRecorder&            commandBuffer,
+    vk::raii::CommandBuffer&    commandBuffer,
     const PassFrame&            execution,
     std::span<const DrawItem>   items,
     std::span<const vk::Format> colorFormats,
@@ -178,5 +179,6 @@ void SceneDraw::recordMeshes(
             {}
         );
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
+        recordDraw(context().profiler, item.indexCount);
     }
 }

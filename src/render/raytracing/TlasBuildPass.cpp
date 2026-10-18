@@ -54,7 +54,7 @@ TlasBuildPass::setup(RenderGraph& graph, const PassSetup&, RenderGraph::Accelera
     return structures;
 }
 
-void TlasBuildPass::execute(RenderGraph& graph, CommandRecorder& commands, const PassFrame& execution)
+void TlasBuildPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& execution)
 {
     const auto& vulkan = execution.setup.vulkan;
     const auto& device = vulkan.deviceHandle();

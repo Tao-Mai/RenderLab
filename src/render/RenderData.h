@@ -1,15 +1,18 @@
 #pragma once
 
+#include "asset/AssetID.h"
 #include "render/resource/ShaderData.h"
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <glm/mat4x4.hpp>
 
 class GpuMaterial;
 class GpuMesh;
+struct EnvironmentMapAsset;
 
 struct DrawItem
 {
@@ -25,9 +28,10 @@ struct DrawItem
 
 struct RenderData
 {
-    std::vector<DrawItem>  drawItems;
-    std::vector<DrawItem>  opaqueDrawItems;
-    std::vector<DrawItem>  transparentDrawItems;
-    std::vector<LightData> lights;
-    LightRanges           lightRanges;
+    std::optional<AssetID<EnvironmentMapAsset>> environmentMap;
+    std::vector<DrawItem>                       drawItems;
+    std::vector<DrawItem>                       opaqueDrawItems;
+    std::vector<DrawItem>                       transparentDrawItems;
+    std::vector<LightData>                      lights;
+    LightRanges                                 lightRanges;
 };

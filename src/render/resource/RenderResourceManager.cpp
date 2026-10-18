@@ -351,8 +351,9 @@ RenderResourceManager::prepare(const SceneRenderData& scene, const PreparedScene
 {
     DCHECK(frameIndex < frameResources.size());
     DCHECK(scene.objects.size() == prepared.objects.size());
-    auto& frame = frameResources[frameIndex];
-    auto& draws = frame.draws;
+    auto& frame          = frameResources[frameIndex];
+    auto& draws          = frame.draws;
+    draws.environmentMap = scene.environmentMap;
     draws.drawItems.clear();
     draws.opaqueDrawItems.clear();
     draws.transparentDrawItems.clear();

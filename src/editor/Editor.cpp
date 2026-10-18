@@ -134,7 +134,7 @@ Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapcha
 
     Frame frame;
     auto& input    = frame.input;
-    input.recordUi = [this](VkCommandBuffer commandBuffer) { return backend.render(commandBuffer); };
+    input.recordUi = [this](VkCommandBuffer commandBuffer) { backend.render(commandBuffer); };
 
     if (!camera.isNavigationActive())
     {

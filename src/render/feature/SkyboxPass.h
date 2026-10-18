@@ -1,12 +1,6 @@
 #pragma once
 
-#include "asset/EnvironmentMapAsset.h"
 #include "render/feature/RenderGraph.h"
-
-#include <memory>
-#include <utility>
-
-class GpuTexture;
 
 class SkyboxPass
 {
@@ -22,15 +16,11 @@ public:
         RenderGraph::ImageHandle colorHandle,
         RenderGraph::ImageHandle depthHandle
     );
-    void refreshBindings(const PassSetup& setup);
-    void execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const;
-    void setEnvironmentMap(EnvironmentMapAsset::ID id) { environmentMap = std::move(id); }
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
 private:
-    EnvironmentMapAsset::ID     environmentMap;
-    RenderGraph::ImageHandle    color;
-    RenderGraph::ImageHandle    depth;
-    std::shared_ptr<GpuTexture> radianceTexture;
-    vk::Pipeline                pipeline;
-    vk::PipelineLayout          pipelineLayout;
+    RenderGraph::ImageHandle color;
+    RenderGraph::ImageHandle depth;
+    vk::Pipeline             pipeline;
+    vk::PipelineLayout       pipelineLayout;
 };

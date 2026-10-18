@@ -17,7 +17,7 @@ public:
 
     Output setup(RenderGraph& graph, const PassSetup& setup, GBufferPass::Output gBuffer, ShadowPass::Output shadow);
     void   prepare(RenderGraph& graph, const PassSetup& setup) const;
-    void   execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const;
+    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
     SceneBindings& sceneBindings() { return bindings; }
 

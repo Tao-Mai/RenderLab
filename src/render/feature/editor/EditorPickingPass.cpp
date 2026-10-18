@@ -1,4 +1,5 @@
 #include "render/feature/editor/EditorPickingPass.h"
+#include "core/Context.h"
 #include "render/Visibility.h"
 #include "render/feature/editor/EditorInterface.h"
 
@@ -63,7 +64,7 @@ EditorPickingPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph
     return {pickingImage};
 }
 
-void EditorPickingPass::draw(CommandRecorder& commandBuffer, const DrawItem& item) const
+void EditorPickingPass::draw(vk::raii::CommandBuffer& commandBuffer, const DrawItem& item) const
 {
     const EditorPickingPushConstants parameters{
         .model       = item.model,
@@ -77,9 +78,12 @@ void EditorPickingPass::draw(CommandRecorder& commandBuffer, const DrawItem& ite
     );
     item.mesh->bind(commandBuffer);
     commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
+    recordDraw(context().profiler, item.indexCount);
 }
 
-void EditorPickingPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
+void EditorPickingPass::execute(
+    RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
+) const
 {
     const auto& editor = execution.editor;
     if (!editor.requestPick)
@@ -171,6 +175,7 @@ void EditorPickingPass::execute(RenderGraph& graph, CommandRecorder& commandBuff
         );
         item.mesh->bind(commandBuffer);
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
+        recordDraw(context().profiler, item.indexCount);
     }
     commandBuffer.endRendering();
 }

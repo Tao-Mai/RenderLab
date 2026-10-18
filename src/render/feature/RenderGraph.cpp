@@ -77,17 +77,16 @@ void RenderGraph::allocateResources()
 
         auto& resource      = *entry.data;
         resource.allocation = std::make_shared<Allocation>();
-        const size_t count =
-            resource.importedImage || resource.importedBuffer || resource.type == ResourceType::AccelerationStructure
-            ? 1
-            : resource.externalImages.empty() ? maxFramesInFlight
-                                              : resource.externalImages.size();
+        const bool imported = resource.importedImage || resource.importedBuffer ||
+            resource.type == ResourceType::AccelerationStructure;
+        const auto scope = resource.type == ResourceType::Buffer ? resource.bufferInfo.scope : resource.imageInfo.scope;
+        const size_t count = resource.swapchainIndexed ? resource.externalImages.size()
+            : !imported && scope == ResourceScope::PerFrame ? maxFramesInFlight : 1;
         resource.allocation->instances.resize(count);
         for (size_t i = 0; i < count; ++i)
         {
             auto& instance = resource.allocation->instances[i];
-            if (resource.importedImage || resource.importedBuffer ||
-                resource.type == ResourceType::AccelerationStructure)
+            if (imported)
             {
                 instance.state = resource.initialState;
                 continue;
@@ -208,10 +207,12 @@ AccelerationStructure& RenderGraph::getAccelerationStructure(AccelerationStructu
     return *resource.accelerationStructures[index];
 }
 
-void RenderGraph::useResource(CommandRecorder& commandBuffer, const ResourceUse& use, uint32_t frameIndex)
+void RenderGraph::useResource(vk::raii::CommandBuffer& commandBuffer, const ResourceUse& use, uint32_t frameIndex)
 {
     auto&      resource = resolveResource(use.resource);
     auto&      instance = resource.allocation->instances.at(instanceIndex(resource, frameIndex));
+    // Shared instances retain the previous submission's access, including all trailing readers.
+    // Their first use in this frame therefore also synchronizes across frame boundaries.
     const auto previous = instance.state;
     const auto next     = use.access;
     if (!needsBarrier(previous, next))
@@ -269,7 +270,7 @@ void RenderGraph::useResource(CommandRecorder& commandBuffer, const ResourceUse&
 }
 
 void RenderGraph::transitionResources(
-    CommandRecorder& commandBuffer, const std::vector<ResourceUse>& uses, uint32_t frameIndex
+    vk::raii::CommandBuffer& commandBuffer, const std::vector<ResourceUse>& uses, uint32_t frameIndex
 )
 {
     for (const ResourceUse& use : uses)
@@ -277,11 +278,11 @@ void RenderGraph::transitionResources(
 }
 
 void RenderGraph::execute(
-    CommandRecorder& commandBuffer,
-    const PassFrame& frame,
-    uint32_t         imageIndex,
-    GpuProfiler&     gpuProfiler,
-    Profiler*        profiler
+    vk::raii::CommandBuffer& commandBuffer,
+    const PassFrame&         frame,
+    uint32_t                 imageIndex,
+    GpuProfiler&             gpuProfiler,
+    Profiler*                profiler
 )
 {
     DCHECK(!sortedNodes.empty());
@@ -309,13 +310,17 @@ void RenderGraph::execute(
             names.push_back(node->name);
     }
     gpuProfiler.beginFrame(commandBuffer, names, profiler);
+    auto execution = frame;
+    execution.gpuProfiler = profiler ? &gpuProfiler : nullptr;
     uint32_t passIndex = 0;
     for (auto* node : sortedNodes)
     {
         CpuProfileScope timing{profiler, node->name};
+        if (profiler)
+            profiler->beginPass(node->name);
         gpuProfiler.beginPass(commandBuffer, passIndex);
         transitionResources(commandBuffer, node->uses, frame.frameIndex);
-        node->execute(*this, commandBuffer, frame);
+        node->execute(*this, commandBuffer, execution);
         gpuProfiler.endPass(commandBuffer, passIndex);
         ++passIndex;
     }

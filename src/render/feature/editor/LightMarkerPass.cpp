@@ -1,4 +1,5 @@
 #include "render/feature/editor/LightMarkerPass.h"
+#include "core/Context.h"
 #include "render/feature/editor/EditorInterface.h"
 
 #include "render/FrameData.h"
@@ -55,7 +56,9 @@ LightMarkerPass::Output LightMarkerPass::setup(
     return {color, depth};
 }
 
-void LightMarkerPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
+void LightMarkerPass::execute(
+    RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
+) const
 {
     const auto lightDrawItems = execution.editor.lightDrawItems;
     if (lightDrawItems.empty())
@@ -138,6 +141,7 @@ void LightMarkerPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer
         );
         item.mesh->bind(commandBuffer);
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
+        recordDraw(context().profiler, item.indexCount);
     }
 
     commandBuffer.endRendering();

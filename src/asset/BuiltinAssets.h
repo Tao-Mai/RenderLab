@@ -33,6 +33,8 @@ public:
         static inline const ::TextureAsset::ID whiteCube    = "whiteCube";
         static inline const ::TextureAsset::ID flatNormal   = "flatNormal";
         static inline const ::TextureAsset::ID kWhiteLinear = "whiteLinear";
+        static inline const ::TextureAsset::ID kBrdfLut     = "brdfLut";
+        static inline const ::TextureAsset::ID kSheenLut    = "sheenLut";
     };
 
     struct Sampler

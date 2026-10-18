@@ -14,7 +14,7 @@ public:
 
     Output setup(RenderGraph& graph, const PassSetup& setup, RayTracingPass::Output input);
     void prepare(RenderGraph& graph, const PassSetup& setup) const;
-    void execute(RenderGraph& graph, CommandRecorder& commands, const PassFrame& frame);
+    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame);
 
 private:
     struct HistoryImage

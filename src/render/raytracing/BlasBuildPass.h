@@ -12,7 +12,7 @@ class BlasBuildPass
 {
 public:
     RenderGraph::AccelerationStructureHandle setup(RenderGraph& graph, const PassSetup& setup);
-    void execute(RenderGraph& graph, CommandRecorder& commands, const PassFrame& frame);
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame);
 
 private:
     RenderGraph::AccelerationStructureHandle                                        output;
@@ -21,5 +21,5 @@ private:
     Buffer                                                                          rectLightIndices;
     AccelerationStructure                                                           rectLightBlas;
 
-    void createRectLightGeometry(CommandRecorder& commands, const VulkanContext& vulkan);
+    void createRectLightGeometry(vk::raii::CommandBuffer& commands, const VulkanContext& vulkan);
 };

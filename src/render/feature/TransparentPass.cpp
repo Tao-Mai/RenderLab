@@ -39,7 +39,9 @@ TransparentPass::Output TransparentPass::setup(
     return {color};
 }
 
-void TransparentPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
+void TransparentPass::execute(
+    RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
+) const
 {
     const auto& items = execution.renderData.transparentDrawItems;
     if (items.empty())

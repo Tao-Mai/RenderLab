@@ -1,7 +1,5 @@
 #pragma once
 
-#include "core/profiling/Profiler.h"
-
 #include <cstdint>
 #include <functional>
 #include <glm/mat4x4.hpp>
@@ -28,5 +26,5 @@ struct EditorFrameInput
     uint32_t                                       pickX       = 0;
     uint32_t                                       pickY       = 0;
     std::span<const LightMarkerDrawItem>           lightDrawItems;
-    std::function<DrawStatistics(VkCommandBuffer)> recordUi;
+    std::function<void(VkCommandBuffer)> recordUi;
 };

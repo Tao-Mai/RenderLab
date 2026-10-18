@@ -118,7 +118,6 @@ int main(int, char** argv)
     {
         TextureAsset texture = assets.get<TextureAsset>(id);
         if (texture.source != Source::File || texture.layout != ImageLayout::Image2D ||
-            id == config.rendererConfig().brdfLut.textureID ||
             texture.mipLevels == texture_mip::maxLevels(texture.width, texture.height))
             continue;
         const auto original  = data.readTexture(texture);
@@ -142,7 +141,7 @@ int main(int, char** argv)
     glfwHideWindow(window.nativeHandle());
     renderer.init();
     checkNpotUploads(renderer.vulkanContext());
-    renderer.rebuildGraph(renderSystem.prepare(scenes.scene()));
+    renderer.rebuildGraph();
     const auto extent = renderer.swapchainHandle().extent();
     for (int frame = 0; frame < 4; ++frame)
     {

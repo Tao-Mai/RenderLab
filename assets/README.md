@@ -22,8 +22,9 @@ Ordinary 2D textures include a complete mip chain down to 1x1, packed mip-major.
 Mip 0 is preserved; sRGB colors are filtered in linear space, with linear alpha
 and alpha-weighted RGB for sRGB RGBA images. Linear data maps and floating-point
 images stay linear. Odd-sized and non-square images are supported.
-`resource/lut_ggx.png` is imported as the linear RG8 `lut_ggx` texture; `config/config.json`
-records its texture and sampler IDs under `renderer.brdfLut` so the renderer loads them at startup.
+BRDF and Sheen LUTs are builtin textures exposed by `BuiltinAssets::Texture::kBrdfLut`
+and `kSheenLut`. Their PNG data is embedded from `src/asset/builtin/data/`, with no
+renderer configuration entries or persisted texture descriptors/binaries.
 Mesh imports write geometry to `assets/binary/geometry/<id>.bin`.
 Texture descriptors keep the source `path`, the generated `binary` path, the
 pixel `format`, `colorSpace`, `width`, `height`, `mipLevels`, and the `layout` (`Image2D` or `Cubemap`). Runtime loading reads

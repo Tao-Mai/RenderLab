@@ -38,7 +38,7 @@ struct SourcePass
         return output;
     }
 
-    void execute(RenderGraph& graph, CommandRecorder& commands, const PassFrame& frame) const
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame) const
     {
         const std::array handles{output.rayImage, output.depth, output.worldNormal};
         const std::array values{glm::vec4{value, 0, 0, 1}, glm::vec4{depth, 0, 0, 0}, normal};
@@ -59,14 +59,15 @@ struct ReadbackPass
     {
         image = source;
         buffer = graph.write(graph.createBuffer({.size = sizeof(uint16_t) * 4,
-            .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent}));
+            .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            .scope = RenderGraph::ResourceScope::PerFrame}));
         graph.use(image, {.stages = vk::PipelineStageFlagBits2::eTransfer,
             .access = vk::AccessFlagBits2::eTransferRead, .layout = vk::ImageLayout::eTransferSrcOptimal});
         graph.use(buffer, {.stages = vk::PipelineStageFlagBits2::eTransfer,
             .access = vk::AccessFlagBits2::eTransferWrite});
         return buffer;
     }
-    void execute(RenderGraph& graph, CommandRecorder& commands, const PassFrame& frame) const
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame) const
     {
         const auto extent = graph.imageInfo(image).extent;
         const vk::BufferImageCopy copy{
@@ -109,16 +110,20 @@ void check(Renderer& renderer)
         buffer = graph.addPass(readback, setup, color);
         graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
         graph.compile(setup);
+        for (const auto image : {source.output.rayImage, source.output.depth, source.output.worldNormal})
+            CHECK(graph.getImage(image, 0).handle() == graph.getImage(image, 1).handle());
+        CHECK(graph.getBuffer(buffer, 0).handle() != graph.getBuffer(buffer, 1).handle());
     };
     build();
     const auto extent = renderer.swapchainHandle().extent();
     RenderView view{.viewport = {0, 0, float(extent.width), float(extent.height)}};
     view.uniforms.view[2][2] = -1; // Positive Z world positions have positive camera-forward depth.
     uint32_t frameNumber = 0;
-    const auto sample = [&](float value)
+    const auto submit = [&](float value)
     {
         source.value = value;
         const auto index = frameNumber++ % maxFramesInFlight;
+        frames[index].wait();
         data[index].updateView(view.uniforms);
         auto& commands = frames[index].commandBufferHandle();
         vkCheck(commands.reset());
@@ -126,12 +131,19 @@ void check(Renderer& renderer)
         graph.execute(commands, {setup, data[index], view, {}, {}, index}, 0, frames[index].gpuProfiler(), nullptr);
         vkCheck(commands.end());
         const auto command = *commands;
-        vkCheck(vulkan.queueHandle().submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &command}));
-        vkCheck(vulkan.queueHandle().waitIdle());
+        vkCheck(vulkan.deviceHandle().resetFences(frames[index].drawFenceHandle()));
+        vkCheck(vulkan.queueHandle().submit(
+            vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &command}, frames[index].drawFenceHandle()));
+        return index;
+    };
+    const auto read = [&](uint32_t index)
+    {
+        frames[index].wait();
         std::array<uint16_t, 4> pixel;
         graph.getBuffer(buffer, index).download(pixel.data(), sizeof(pixel));
         return glm::unpackHalf1x16(pixel[0]);
     };
+    const auto sample = [&](float value) { return read(submit(value)); };
     for (int count = 1; count <= 10; ++count)
         CHECK(std::abs(sample(float(count)) - (count + 1.0f) * 0.5f) < 0.01f);
     CHECK(std::abs(sample(20) - 6.95f) < 0.01f);
@@ -176,6 +188,13 @@ void check(Renderer& renderer)
     build();
     CHECK(sample(2) == 2);
     CHECK(sample(4) == 3);
+
+    build();
+    const auto first = submit(2);
+    const auto second = submit(4);
+    CHECK(first != second);
+    CHECK(read(first) == 2);
+    CHECK(read(second) == 3);
 
     config.setRenderFeature(originalFeature);
     LOG_INFO("Temporal reprojection passed: raw linear depth, mean/EMA, equal-depth tangential motion, normal/depth/viewport/miss rejection, graph reset");

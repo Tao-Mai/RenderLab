@@ -152,16 +152,16 @@ void Renderer::shutdown() noexcept
     DEBUG_EXEC(inited = false);
 }
 
-void Renderer::rebuildGraph(const SceneRenderData& scene)
+void Renderer::rebuildGraph()
 {
     CpuProfileScope timing{context().profiler, "Graph rebuild"};
     DCHECK(inited);
     waitIdle();
     graph.releaseResources();
-    setupRenderGraph(scene);
+    setupRenderGraph();
 }
 
-void Renderer::setupRenderGraph(const SceneRenderData& sceneData)
+void Renderer::setupRenderGraph()
 {
     if (context().profiler)
         context().profiler->clearGpu();
@@ -172,9 +172,6 @@ void Renderer::setupRenderGraph(const SceneRenderData& sceneData)
     const auto& config   = context().config->rendererConfig();
     activeFramesInFlight = config.renderPath == RenderPath::OfflinePathTracing ? 1u : maxFramesInFlight;
     frameIndex           = 0;
-    if (!appliedConfig || appliedConfig->renderPath != config.renderPath ||
-        appliedConfig->feature.offline.maxRecursionDepth != config.feature.offline.maxRecursionDepth)
-        passes->get<OfflinePathTracingPass>().resetAccumulation();
 
     SceneOutput scene;
     switch (config.renderPath)
@@ -187,7 +184,7 @@ void Renderer::setupRenderGraph(const SceneRenderData& sceneData)
             break;
         case RenderPath::Rasterization:
         case RenderPath::Deferred:
-            scene = setupRasterization(sceneData);
+            scene = setupRasterization();
             break;
     }
     scene.color = setupPostProcess(scene.color);
@@ -219,7 +216,7 @@ uint32_t Renderer::offlineSampleCount() const
     return passes ? passes->get<OfflinePathTracingPass>().sampleCount() : 0;
 }
 
-Renderer::SceneOutput Renderer::setupRasterization(const SceneRenderData& sceneData)
+Renderer::SceneOutput Renderer::setupRasterization()
 {
     const auto&        config = context().config->rendererConfig();
     ShadowPass::Output shadow;
@@ -230,7 +227,6 @@ Renderer::SceneOutput Renderer::setupRasterization(const SceneRenderData& sceneD
     SceneOutput output;
     if (config.renderPath == RenderPath::Deferred)
     {
-        passes->get<DeferredLightingPass>().sceneBindings().setEnvironmentMap(sceneData.environmentMap);
         const auto gBuffer  = setupPass<GBufferPass>(depth);
         const auto lighting = setupPass<DeferredLightingPass>(gBuffer, shadow);
         output              = {lighting.color, lighting.depth};
@@ -239,17 +235,13 @@ Renderer::SceneOutput Renderer::setupRasterization(const SceneRenderData& sceneD
     }
     else
     {
-        passes->get<ScenePass>().sceneBindings().setEnvironmentMap(sceneData.environmentMap);
         const auto scene    = setupPass<ScenePass>(depth, shadow);
         output              = {scene.color, scene.depth};
         shadow              = scene.shadow;
         activeSceneBindings = &passes->get<ScenePass>().sceneBindings();
     }
-    if (config.feature.ibl && sceneData.environmentMap)
-    {
-        passes->get<SkyboxPass>().setEnvironmentMap(*sceneData.environmentMap);
+    if (config.feature.ibl)
         output.color = setupPass<SkyboxPass>(output.color, output.depth).color;
-    }
     output.color = setupPass<TransparentPass>(output.color, output.depth, shadow).color;
     return output;
 }
@@ -281,7 +273,7 @@ void Renderer::setupEditor(SceneOutput scene)
     pickingReadback = readback;
 }
 
-void Renderer::applyConfiguration(const SceneRenderData& scene)
+void Renderer::applyConfiguration()
 {
     const auto& config   = context().config->rendererConfig();
     const auto  graphKey = [](const RendererConfig& value)
@@ -304,35 +296,24 @@ void Renderer::applyConfiguration(const SceneRenderData& scene)
             shadow.cascade.count
         };
     };
-    const bool environmentChanged =
-        activeSceneBindings && activeSceneBindings->environmentMapId() != scene.environmentMap;
-    if (!appliedConfig || graphKey(*appliedConfig) != graphKey(config) ||
-        (activeSceneBindings &&
-         activeSceneBindings->environmentMapId().has_value() != scene.environmentMap.has_value()))
+    if (!appliedConfig || graphKey(*appliedConfig) != graphKey(config))
     {
-        rebuildGraph(scene);
+        rebuildGraph();
         return;
     }
-    if (environmentChanged || appliedConfig->brdfLut != config.brdfLut || appliedConfig->sheenLut != config.sheenLut ||
-        appliedConfig->feature.shadow.filter != config.feature.shadow.filter)
+    if (appliedConfig->feature.shadow.filter != config.feature.shadow.filter)
     {
         waitIdle();
         if (activeSceneBindings)
         {
-            activeSceneBindings->setEnvironmentMap(scene.environmentMap);
             activeSceneBindings->refreshBindings();
             activeSceneBindings->prepare(graph, {vulkan, swapchain, frameStorage});
-        }
-        if (activeSceneBindings && config.feature.ibl && scene.environmentMap)
-        {
-            passes->get<SkyboxPass>().setEnvironmentMap(*scene.environmentMap);
-            passes->get<SkyboxPass>().refreshBindings({vulkan, swapchain, frameStorage});
         }
     }
     appliedConfig = config;
 }
 
-void Renderer::recreateSwapchain(const SceneRenderData& scene)
+void Renderer::recreateSwapchain()
 {
     DCHECK(inited);
     Window& window = *context().window;
@@ -342,7 +323,7 @@ void Renderer::recreateSwapchain(const SceneRenderData& scene)
     graph.releaseResources();
     swapchain.reset();
     swapchain.init(vulkan, window);
-    setupRenderGraph(scene);
+    setupRenderGraph();
 }
 
 const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderData& scene)
@@ -365,7 +346,10 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
         CpuProfileScope timing{context().profiler, "Frame upload"};
         auto&           data = frameStorage[frameIndex];
         if (activeSceneBindings)
+        {
+            activeSceneBindings->updateEnvironmentMap(renderData.environmentMap);
             activeSceneBindings->updateFrame(data, view.uniforms, prepared.lighting);
+        }
         else
             data.updateView(view.uniforms);
     }
@@ -375,7 +359,7 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
 RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData& scene, const EditorFrameInput& editor)
 {
     DCHECK(inited);
-    applyConfiguration(scene);
+    applyConfiguration();
     auto& frame = currentFrame();
     {
         CpuProfileScope timing{context().profiler, "Fence wait"};

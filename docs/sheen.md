@@ -22,7 +22,7 @@
 ## GPU 数据与编辑器
 
 - Material UBO 增加 Sheen Color / Roughness；材质 set 1 增加两组贴图与 sampler。
-- Scene set 0 增加 Sheen LUT 的贴图与 sampler。`renderer.json` 中的必填 `sheenLut` 绑定选择纹理资产和采样器，随配置保存。
+- Scene set 0 绑定内置 `BuiltinAssets::Texture::kSheenLut` 和 `linearClamp` sampler，不通过渲染配置选择。
 - 前向场景 shader 按 Sheen 有无编译分支；IBL、Clearcoat 与 Sheen 的组合均参与变体选择。
 - G-buffer 增加线性 RGBA16F attachment，保存 Sheen RGB 和 Roughness；延迟光照复用同一套 BRDF 与环境积分。
 - 编辑器现有 Sheen 颜色和粗糙度控件立即更新 GPU；`material_gallery` 中的 `05 Sheen Cloth` 使用静态褶皱布料观察着色变化。仍按现有流程手动保存场景。

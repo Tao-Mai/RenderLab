@@ -53,7 +53,9 @@ RayTracingBlitPass::Output RayTracingBlitPass::setup(
     return {color};
 }
 
-void RayTracingBlitPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
+void RayTracingBlitPass::execute(
+    RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
+) const
 {
     const auto          extent = execution.setup.swapchain.extent();
     const vk::ImageBlit region{

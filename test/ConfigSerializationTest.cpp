@@ -1,6 +1,5 @@
 #include "core/Serializer.h"
 #include "core/ConfigManager.h"
-#include "asset/TextureAsset.h"
 
 #include <filesystem>
 #include <fstream>
@@ -38,8 +37,6 @@ RendererConfig sampleRendererConfig()
 {
     return {
         .renderPath = RenderPath::RayTracing,
-        .brdfLut = {TextureAsset::ID{"lut_ggx"}, SamplerAsset::ID{"linearClamp"}},
-        .sheenLut = {TextureAsset::ID{"lut_sheen_E"}, SamplerAsset::ID{"linearClamp"}},
         .feature = {.ibl = false, .ambientCoefficient = 0.25f, .hdr = false,
             .shadow = {.enable = false, .cascade = {.count = 3, .shadowMapSize = 1024,
                 .maxDistance = 40.0f, .splitStrategy = CascadeSplitStrategy::Uniform,
@@ -83,9 +80,8 @@ TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
     const auto original = sampleRendererConfig();
     const json serialized = Serialize(original);
     EXPECT_EQ(serialized.at("renderPath"), "RayTracing");
-    EXPECT_EQ(serialized.at("brdfLut").at("textureID").at("value"), "lut_ggx");
-    EXPECT_EQ(serialized.at("brdfLut").at("samplerID").at("value"), "linearClamp");
-    EXPECT_EQ(serialized.at("sheenLut"), Serialize(original.sheenLut));
+    EXPECT_FALSE(serialized.contains("brdfLut"));
+    EXPECT_FALSE(serialized.contains("sheenLut"));
     EXPECT_EQ(serialized.at("feature").at("ibl"), false);
     EXPECT_EQ(serialized.at("feature").at("hdr"), false);
     EXPECT_EQ(serialized.at("feature").at("bloom"), Serialize(original.feature.bloom));
@@ -165,10 +161,6 @@ TEST(ConfigSerialization, MissingFieldsFailInsteadOfUsingDefaults)
     EXPECT_DEATH(Deserialize(serialized, restored), "");
 
     RendererConfig restoredRenderer;
-    serialized = Serialize(sampleRendererConfig());
-    serialized.at("brdfLut").at("samplerID").erase("value");
-    EXPECT_DEATH(Deserialize(serialized, restoredRenderer), "");
-
     serialized = Serialize(sampleRendererConfig());
     serialized.at("feature").erase("ibl");
     EXPECT_DEATH(Deserialize(serialized, restoredRenderer), "");

@@ -176,7 +176,9 @@ void DeferredLightingPass::prepare(RenderGraph& graph, const PassSetup& setup) c
     }
 }
 
-void DeferredLightingPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution) const
+void DeferredLightingPass::execute(
+    RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
+) const
 {
     const auto                        extent = execution.setup.swapchain.extent();
     const vk::RenderingAttachmentInfo attachment{
@@ -223,5 +225,6 @@ void DeferredLightingPass::execute(RenderGraph& graph, CommandRecorder& commandB
         parameters
     );
     commands.draw(3, 1, 0, 0);
+    recordDraw(context().profiler, 3);
     commands.endRendering();
 }

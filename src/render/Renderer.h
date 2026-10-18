@@ -36,8 +36,8 @@ public:
     Renderer& operator=(const Renderer&) = delete;
 
     void              init();
-    void              rebuildGraph(const SceneRenderData& scene);
-    void              recreateSwapchain(const SceneRenderData& scene);
+    void              rebuildGraph();
+    void              recreateSwapchain();
     RenderFrameResult render(const RenderView& view, const SceneRenderData& scene, const EditorFrameInput& editor);
     void              waitIdle();
     void              shutdown() noexcept;
@@ -65,19 +65,19 @@ private:
         RenderGraph::ImageHandle color;
         RenderGraph::ImageHandle depth;
     };
-    SceneOutput               setupRasterization(const SceneRenderData& scene);
+    SceneOutput               setupRasterization();
     SceneOutput               setupRayTracing();
     SceneOutput               setupOffline();
     RenderGraph::ImageHandle  setupPostProcess(RenderGraph::ImageHandle color);
     void                      setupEditor(SceneOutput scene);
-    void                      applyConfiguration(const SceneRenderData& scene);
+    void                      applyConfiguration();
     const RenderData&         prepare(const RenderView& view, const SceneRenderData& scene);
     uint32_t                  frameIndex           = 0;
     uint32_t                  activeFramesInFlight = maxFramesInFlight;
     RenderGraph               graph;
     std::unique_ptr<Passes>   passes;
     RenderGraph::BufferHandle pickingReadback;
-    void                      setupRenderGraph(const SceneRenderData& scene);
+    void                      setupRenderGraph();
 
     template <class T, class... Args>
     auto setupPass(Args&&... args);

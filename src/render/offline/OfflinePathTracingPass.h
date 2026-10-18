@@ -20,9 +20,8 @@ public:
     };
 
     Output                 setup(RenderGraph& graph, const PassSetup& setup, TlasBuildPass::Output scene);
-    void                   execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution);
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution);
     void                   updateScene(const RenderView& view, const SceneRenderData& scene, uint64_t assetRevision);
-    void                   resetAccumulation() noexcept;
     [[nodiscard]] uint32_t sampleCount() const { return accumulatedSamples; }
 
 private:
@@ -59,7 +58,6 @@ private:
     RenderGraph::AccelerationStructureHandle sceneTlas;
     Frame                                    frame;
     Buffer                                   accumulation;
-    vk::Extent2D                             accumulationExtent{};
     RenderGraph::BufferHandle                accumulationHandle;
     uint32_t                                 accumulatedSamples = 0;
     std::optional<SceneRenderData>           previousScene;

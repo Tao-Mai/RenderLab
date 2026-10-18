@@ -81,11 +81,6 @@ OfflinePathTracingPass::setup(RenderGraph& graph, const PassSetup& setup, TlasBu
             vk::MemoryPropertyFlagBits::eDeviceLocal
         );
     }
-    if (accumulationExtent != extent)
-    {
-        accumulationExtent = extent;
-        resetAccumulation();
-    }
     accumulationHandle = graph.importBuffer(
         accumulation,
         {.stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
@@ -101,6 +96,9 @@ OfflinePathTracingPass::setup(RenderGraph& graph, const PassSetup& setup, TlasBu
     const auto maxRecursionDepth = context().config->rendererConfig().feature.offline.maxRecursionDepth;
     if (!*pipeline || pipelineRecursionDepth != maxRecursionDepth)
         createPipeline(setup, maxRecursionDepth);
+
+    accumulatedSamples = 0;
+    previousScene.reset();
     return {rayImage};
 }
 
@@ -495,7 +493,9 @@ void OfflinePathTracingPass::prepareBindings(RenderGraph& graph, const PassFrame
     );
 }
 
-void OfflinePathTracingPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution)
+void OfflinePathTracingPass::execute(
+    RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
+)
 {
     auto& commands = commandBuffer;
     DCHECK(execution.frameIndex == 0);
@@ -523,12 +523,6 @@ void OfflinePathTracingPass::execute(RenderGraph& graph, CommandRecorder& comman
     const auto extent = execution.setup.swapchain.extent();
     commands.traceRaysKHR(raygenRegion, missRegion, hitRegion, {}, extent.width, extent.height, 1);
     ++accumulatedSamples;
-}
-
-void OfflinePathTracingPass::resetAccumulation() noexcept
-{
-    accumulatedSamples = 0;
-    previousScene.reset();
 }
 
 void OfflinePathTracingPass::updateScene(const RenderView& view, const SceneRenderData& scene, uint64_t assetRevision)

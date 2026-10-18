@@ -21,6 +21,7 @@ int main(int, char** argv)
     SceneManager     scenes;
     Window           window;
     Renderer         renderer;
+    Profiler         profiling;
     auto&            ctx = context();
     ctx.config           = &config;
     ctx.assetManager     = &assets;
@@ -28,6 +29,7 @@ int main(int, char** argv)
     ctx.sceneManager     = &scenes;
     ctx.window           = &window;
     ctx.renderer         = &renderer;
+    ctx.profiler         = &profiling;
     config.init();
     const auto original   = config.rendererConfig();
     auto       feature    = original.feature;
@@ -54,35 +56,46 @@ int main(int, char** argv)
     const auto   view   = camera.renderView({(extent.width - side) * 0.5f, (extent.height - side) * 0.5f, side, side});
     const auto   render = [&]
     {
+        profiling.reset();
+        profiling.beginFrame();
         const auto& snapshot = system.prepare(scenes.scene());
         CHECK(snapshot.environmentMap == scenes.scene().environmentMap);
         renderer.render(view, snapshot, {});
+        profiling.endFrame(1.0);
+
+        const auto& stats  = profiling.display();
+        const auto skybox = std::ranges::find_if(stats.passes, [](const auto& pass) { return pass.name == "SkyboxPass"; });
+        CHECK((skybox != stats.passes.end()) == config.rendererConfig().feature.ibl);
+        if (skybox != stats.passes.end())
+            CHECK(skybox->draws.drawCalls == (snapshot.environmentMap ? 1u : 0u));
+
+        return std::ranges::any_of(stats.cpuTimings, [](const auto& timing) { return timing.name == "Graph rebuild"; });
     };
     for (const auto path : {RenderPath::Rasterization, RenderPath::Deferred})
     {
         config.setRenderPath(path);
         scenes.scene().environmentMap = environments.front();
-        render();
+        CHECK(render());
         if (environments.size() > 1)
         {
             scenes.scene().environmentMap = environments.back();
-            render();
+            CHECK(!render());
         }
         scene.environmentMap.reset();
         scenes.load(scene);
-        render();
+        CHECK(!render());
         CHECK(config.rendererConfig().feature.ibl);
         scenes.scene().environmentMap = environments.front();
-        render();
-        renderer.rebuildGraph(system.prepare(scenes.scene()));
-        render();
-        renderer.recreateSwapchain(system.prepare(scenes.scene()));
-        render();
+        CHECK(!render());
+        renderer.rebuildGraph();
+        CHECK(!render());
+        renderer.recreateSwapchain();
+        CHECK(!render());
         LOG_INFO("Scene environment changes passed for render path {}", static_cast<int>(path));
     }
     feature.ibl = false;
     config.setRenderFeature(feature);
-    render();
+    CHECK(render());
     CHECK(scenes.scene().environmentMap == environments.front());
     renderer.waitIdle();
     renderer.shutdown();

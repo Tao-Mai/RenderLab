@@ -295,8 +295,6 @@ add_library(RenderLabRuntime STATIC
         src/render/device/VulkanContext.cpp
         src/render/device/VulkanContext.h
         src/render/device/FrameContext.cpp
-        src/render/device/CommandRecorder.h
-        src/render/device/CommandRecorder.cpp
         src/render/device/FrameContext.h
         src/render/FrameData.cpp
         src/render/FrameData.h
