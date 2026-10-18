@@ -12,6 +12,7 @@
 #include "scene/SceneManager.h"
 
 #include <glm/gtc/packing.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <cmath>
 
 namespace
@@ -152,6 +153,7 @@ void check(Renderer& renderer)
     build();
     CHECK(sample(100) == 100);
     view.uniforms.view[3][2] = -2.0f;
+    source.depth = 2.7f; // The same surface now has a different raw view-space depth.
     CHECK(sample(120) == 110); // Camera depth changed, but comparison still uses the previous view.
     CHECK(sample(140) == 120); // Stored history now uses the new camera's linear depth.
 
@@ -165,8 +167,18 @@ void check(Renderer& renderer)
     feature.rayTracing.emaAlpha = 0.5f;
     config.setRenderFeature(feature);
     CHECK(sample(10) == 7.375f); // Weight changes apply without rebuilding the graph.
+
+    view.uniforms.view = glm::mat4{1};
+    view.uniforms.viewProjection = glm::perspective(
+        glm::radians(60.0f), float(extent.width) / float(extent.height), 0.1f, 100.0f);
+    view.uniforms.inverseViewProjection = glm::inverse(view.uniforms.viewProjection);
+    source.depth = 10.0f; // Linear depths above one must remain valid and reproject correctly.
+    build();
+    CHECK(sample(2) == 2);
+    CHECK(sample(4) == 3);
+
     config.setRenderFeature(originalFeature);
-    LOG_INFO("Temporal reprojection passed: mean/EMA, equal-depth tangential motion, normal/depth/viewport/miss rejection, graph reset");
+    LOG_INFO("Temporal reprojection passed: raw linear depth, mean/EMA, equal-depth tangential motion, normal/depth/viewport/miss rejection, graph reset");
     graph.reset();
     for (auto& frame : data) frame.reset();
     for (auto& frame : frames) frame.reset();

@@ -152,8 +152,6 @@ void RenderGraph::use(AccelerationStructureHandle structure, MemoryAccess access
 {
     DCHECK(setupNode);
     DCHECK(resolveResource(structure.id).type == ResourceType::AccelerationStructure);
-    collectDependencies(*setupNode, structure);
-
     auto&      uses  = setupNode->uses;
     const auto found = std::ranges::find(uses, structure.id, &ResourceUse::resource);
     if (found != uses.end())

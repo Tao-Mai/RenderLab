@@ -12,12 +12,6 @@
 class RayTracingPass
 {
 public:
-    RayTracingPass()                                 = default;
-    RayTracingPass(const RayTracingPass&)            = delete;
-    RayTracingPass& operator=(const RayTracingPass&) = delete;
-    RayTracingPass(RayTracingPass&&)                 = delete;
-    RayTracingPass& operator=(RayTracingPass&&)      = delete;
-
     struct Output
     {
         RenderGraph::ImageHandle rayImage;
@@ -25,7 +19,7 @@ public:
         RenderGraph::ImageHandle worldNormal;
     };
 
-    Output setup(RenderGraph& graph, const PassSetup& setup);
+    Output setup(RenderGraph& graph, const PassSetup& setup, TlasBuildPass::Output scene);
     void   execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution);
 
 private:
@@ -50,20 +44,19 @@ private:
     static_assert(offsetof(RayTracingParameters, lightRanges) == 96);
     static_assert(offsetof(RayTracingParameters, maxRecursionDepth) == 112);
 
-    RenderGraph::ImageHandle             rayImage;
-    RenderGraph::ImageHandle             depth;
-    RenderGraph::ImageHandle             worldNormal;
-    uint32_t                             sampleIndex            = 0;
-    vk::raii::DescriptorSetLayout        descriptorLayout       = nullptr;
-    vk::raii::DescriptorPool             descriptorPool         = nullptr;
-    vk::raii::PipelineLayout             pipelineLayout         = nullptr;
-    vk::raii::Pipeline                   pipeline               = nullptr;
-    uint32_t                             pipelineRecursionDepth = 0;
-    Buffer                               bindingTable;
-    vk::StridedDeviceAddressRegionKHR    raygenRegion, missRegion, hitRegion;
-    BlasBuildPass                        bottomLevels;
-    TlasBuildPass                        topLevel{bottomLevels};
-    std::array<Frame, maxFramesInFlight> frames;
+    RenderGraph::ImageHandle                 rayImage;
+    RenderGraph::ImageHandle                 depth;
+    RenderGraph::ImageHandle                 worldNormal;
+    uint32_t                                 sampleIndex            = 0;
+    vk::raii::DescriptorSetLayout            descriptorLayout       = nullptr;
+    vk::raii::DescriptorPool                 descriptorPool         = nullptr;
+    vk::raii::PipelineLayout                 pipelineLayout         = nullptr;
+    vk::raii::Pipeline                       pipeline               = nullptr;
+    uint32_t                                 pipelineRecursionDepth = 0;
+    Buffer                                   bindingTable;
+    vk::StridedDeviceAddressRegionKHR        raygenRegion, missRegion, hitRegion;
+    RenderGraph::AccelerationStructureHandle sceneTlas;
+    std::array<Frame, maxFramesInFlight>     frames;
 
     void createPipeline(const PassSetup& setup, uint32_t maxRecursionDepth);
     void prepareLights(const PassFrame& execution, Frame& frame) const;

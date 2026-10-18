@@ -142,7 +142,7 @@ int main(int, char** argv)
     glfwHideWindow(window.nativeHandle());
     renderer.init();
     checkNpotUploads(renderer.vulkanContext());
-    renderer.rebuildGraph();
+    renderer.rebuildGraph(renderSystem.prepare(scenes.scene()));
     const auto extent = renderer.swapchainHandle().extent();
     for (int frame = 0; frame < 4; ++frame)
     {

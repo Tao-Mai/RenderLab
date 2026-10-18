@@ -127,7 +127,7 @@ void Engine::mainLoop()
         if (swapchainNeedsRebuild || currentExtent.width != static_cast<uint32_t>(framebufferWidth) ||
             currentExtent.height != static_cast<uint32_t>(framebufferHeight))
         {
-            ctx.renderer->recreateSwapchain();
+            ctx.renderer->recreateSwapchain(renderSystem.prepare(ctx.sceneManager->scene()));
             ctx.editor->refreshUi();
             swapchainNeedsRebuild = false;
         }

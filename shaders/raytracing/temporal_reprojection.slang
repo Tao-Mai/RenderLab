@@ -1,7 +1,7 @@
 #include "../view_data.slang"
 
 [[vk::binding(0, 0)]] Texture2D<float4> currentColor;
-[[vk::binding(1, 0)]] Texture2D<float> currentDepth;
+[[vk::binding(1, 0)]] Texture2D<float> currentDepth; // Unnormalized positive view-space depth.
 [[vk::binding(2, 0)]] Texture2D<float4> currentNormal;
 [[vk::binding(3, 0)]] [[vk::image_format("rgba32f")]] RWTexture2DArray<float4> historyColor;
 [[vk::binding(4, 0)]] [[vk::image_format("r32f")]] RWTexture2DArray<float> historyDepth;
@@ -81,9 +81,9 @@ void computeMain(uint3 thread : SV_DispatchThreadID)
     float luminance = dot(sample, float3(0.2126, 0.7152, 0.0722));
     float2 sampleMoments = float2(luminance, luminance * luminance);
     float depth = currentDepth.Load(int3(pixel, 0));
-    bool valid = depth >= 0.0 && depth <= 1.0;
+    bool valid = depth > 0.0;
     float2 ndc = (float2(pixel) + 0.5 - parameters.viewport.xy) / parameters.viewport.zw * 2.0 - 1.0;
-    float3 position = valid ? reconstructWorldPosition(ndc, depth, viewUniforms.inverseViewProjection) : float3(0.0);
+    float3 position = valid ? reconstructWorldPositionFromLinearDepth(ndc, depth, viewUniforms) : float3(0.0);
     float3 normal = currentNormal.Load(int3(pixel, 0)).xyz;
     float3 mean = sample;
     float2 moments = sampleMoments;
@@ -100,7 +100,7 @@ void computeMain(uint3 thread : SV_DispatchThreadID)
 
     uint3 location = uint3(pixel, parameters.writeLayer);
     historyColor[location] = float4(mean, count);
-    historyDepth[location] = valid ? max(linearViewDepth(position, viewUniforms.view), 0.0) : 0.0;
+    historyDepth[location] = valid ? depth : 0.0;
     historyNormal[location] = float4(normal, 0.0);
     historyMoments[location] = moments;
     outputColor[pixel] = float4(mean, 1.0);

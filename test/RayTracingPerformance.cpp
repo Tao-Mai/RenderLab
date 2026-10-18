@@ -11,6 +11,7 @@
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/raytracing/RayTracingPass.h"
+#include "render/raytracing/BlasBuildPass.h"
 #include "scene/SceneManager.h"
 #include "scene/component/LightComponent.h"
 #include "scene/system/RenderSystem.h"
@@ -48,10 +49,14 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
     for (auto& frame : data) frame.init(vulkan, *renderContext().descriptors);
     RenderGraph graph;
     graph.init(vulkan, renderer.swapchainHandle());
-    RayTracingPass trace;
-    SinkPass sink;
+    RayTracingPass  trace;
+    BlasBuildPass   blasBuild;
+    TlasBuildPass   tlasBuild;
+    SinkPass        sink;
     const PassSetup setup{vulkan, renderer.swapchainHandle(), data};
-    const auto source = graph.addPass(trace, setup);
+    const auto      blas       = graph.addPass(blasBuild, setup);
+    const auto      structures = graph.addPass(tlasBuild, setup, blas);
+    const auto      source     = graph.addPass(trace, setup, structures);
     graph.addPass(sink, setup, source);
     graph.compile(setup);
 

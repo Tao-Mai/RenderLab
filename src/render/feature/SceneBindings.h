@@ -26,6 +26,7 @@ public:
     void               prepare(RenderGraph& graph, const PassSetup& setup) const;
     void               updateFrame(FrameData& frame, const ViewUniforms& view, const ShadowFrameData& lighting) const;
     void               setEnvironmentMap(std::optional<EnvironmentMapAsset::ID> id) { environmentMap = std::move(id); }
+    const std::optional<EnvironmentMapAsset::ID>& environmentMapId() const { return environmentMap; }
 
 private:
     std::optional<EnvironmentMapAsset::ID> environmentMap;

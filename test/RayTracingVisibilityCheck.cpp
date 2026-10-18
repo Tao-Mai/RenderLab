@@ -12,6 +12,7 @@
 #include "render/device/VkCheck.h"
 #include "render/feature/EndPass.h"
 #include "render/raytracing/RayTracingPass.h"
+#include "render/raytracing/BlasBuildPass.h"
 #include "scene/SceneManager.h"
 #include "scene/SceneTypes.h"
 #include "scene/system/RenderSystem.h"
@@ -81,6 +82,8 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         data.init(vulkan, *renderContext().descriptors);
 
     RenderGraph       graph;
+    BlasBuildPass     blasBuild;
+    TlasBuildPass     tlasBuild;
     RayTracingPass    trace;
     PixelReadbackPass readback;
     EndPass           end;
@@ -91,7 +94,9 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     const auto                rebuildGraph = [&]
     {
         graph.releaseResources();
-        const auto output = graph.addPass(trace, setup);
+        const auto blas       = graph.addPass(blasBuild, setup);
+        const auto structures = graph.addPass(tlasBuild, setup, blas);
+        const auto output     = graph.addPass(trace, setup, structures);
         CHECK(graph.imageInfo(output.rayImage).format == kHdrColorFormat);
         buffer = graph.addPass(readback, setup, output.rayImage);
         graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);

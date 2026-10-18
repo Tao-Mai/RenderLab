@@ -31,7 +31,7 @@ vk::DeviceSize alignUp(vk::DeviceSize value, vk::DeviceSize alignment)
 
 }  // namespace
 
-RayTracingPass::Output RayTracingPass::setup(RenderGraph& graph, const PassSetup& setup)
+RayTracingPass::Output RayTracingPass::setup(RenderGraph& graph, const PassSetup& setup, TlasBuildPass::Output scene)
 {
     CHECK(setup.vulkan.supportsRayTracing(), "selected GPU does not support the ray tracing route");
     const auto&    device            = setup.vulkan.physicalDeviceHandle();
@@ -43,9 +43,8 @@ RayTracingPass::Output RayTracingPass::setup(RenderGraph& graph, const PassSetup
         "GPU does not support RGBA16F ray tracing output with storage writes and linear sampling"
     );
 
-    const auto blas       = graph.addPass(bottomLevels, setup);
-    const auto structures = graph.addPass(topLevel, setup, blas);
-    for (const auto structure : {structures.blas, structures.tlas})
+    sceneTlas = scene.tlas;
+    for (const auto structure : {scene.blas, scene.tlas})
         graph.use(
             structure,
             {
@@ -413,7 +412,7 @@ void RayTracingPass::prepareBindings(RenderGraph& graph, const PassFrame& execut
         frame.hitData.upload(hits.data(), hits.size() * sizeof(hits.front()));
     materials.upload(frame.materialData, vulkan);
 
-    const vk::AccelerationStructureKHR                   tlas = topLevel.structure(execution.frameIndex).handle();
+    const vk::AccelerationStructureKHR                   tlas = graph.getAccelerationStructure(sceneTlas).handle();
     const vk::WriteDescriptorSetAccelerationStructureKHR accelerationInfo{
         .accelerationStructureCount = 1,
         .pAccelerationStructures    = &tlas

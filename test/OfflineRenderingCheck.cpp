@@ -14,6 +14,7 @@
 #include "render/device/VkCheck.h"
 #include "render/feature/EndPass.h"
 #include "render/offline/OfflinePathTracingPass.h"
+#include "render/raytracing/BlasBuildPass.h"
 #include "scene/SceneManager.h"
 #include "scene/SceneTypes.h"
 #include "scene/system/RenderSystem.h"
@@ -71,13 +72,17 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
     data.init(vulkan, *renderContext().descriptors);
     RenderGraph            graph;
     OfflinePathTracingPass pass;
+    BlasBuildPass          blasBuild;
+    TlasBuildPass          tlasBuild;
     PixelReadbackPass      readback;
     EndPass                end;
     RenderSystem           system;
     graph.init(vulkan, renderer.swapchainHandle());
     const PassSetup setup{vulkan, renderer.swapchainHandle(), {&data, 1}};
-    const auto      image  = graph.addPass(pass, setup).rayImage;
-    const auto      buffer = graph.addPass(readback, setup, image);
+    const auto      blas       = graph.addPass(blasBuild, setup);
+    const auto      structures = graph.addPass(tlasBuild, setup, blas);
+    const auto      image      = graph.addPass(pass, setup, structures).rayImage;
+    const auto      buffer     = graph.addPass(readback, setup, image);
     graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
     graph.compile(setup);
     const auto extent = renderer.swapchainHandle().extent();

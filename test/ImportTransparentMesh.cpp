@@ -69,7 +69,7 @@ int main(int argc, char** argv)
     window.init();
     glfwHideWindow(window.nativeHandle());
     renderer.init();
-    renderer.rebuildGraph();
+    renderer.rebuildGraph(renderSystem.prepare(scenes.scene()));
     const auto importedMaterial            = renderContext().resources->material(transparentMaterial);
     const auto extent                      = renderer.swapchainHandle().extent();
     bool       renderedTransparentMaterial = false;

@@ -50,10 +50,11 @@ TlasBuildPass::setup(RenderGraph& graph, const PassSetup&, RenderGraph::Accelera
                 vk::AccessFlagBits2::eAccelerationStructureWriteKHR,
         }
     );
-    return {blas, tlas};
+    structures = {blas, tlas};
+    return structures;
 }
 
-void TlasBuildPass::execute(RenderGraph&, CommandRecorder& commands, const PassFrame& execution)
+void TlasBuildPass::execute(RenderGraph& graph, CommandRecorder& commands, const PassFrame& execution)
 {
     const auto& vulkan = execution.setup.vulkan;
     const auto& device = vulkan.deviceHandle();
@@ -67,11 +68,12 @@ void TlasBuildPass::execute(RenderGraph&, CommandRecorder& commands, const PassF
     for (const auto& item : items)
     {
         VkAccelerationStructureInstanceKHR instance{};
-        instance.transform                      = instanceTransform(item.model);
-        instance.instanceCustomIndex            = static_cast<uint32_t>(instances.size());
-        instance.mask                           = kSceneMask;
-        instance.flags                          = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-        instance.accelerationStructureReference = bottomLevels.mesh(item).address();
+        instance.transform           = instanceTransform(item.model);
+        instance.instanceCustomIndex = static_cast<uint32_t>(instances.size());
+        instance.mask                = kSceneMask;
+        instance.flags               = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+        instance.accelerationStructureReference =
+            graph.getAccelerationStructure(structures.blas, instances.size()).address();
         instances.push_back(instance);
     }
 
@@ -103,7 +105,8 @@ void TlasBuildPass::execute(RenderGraph&, CommandRecorder& commands, const PassF
         instance.mask                                   = kLightMask;
         instance.instanceShaderBindingTableRecordOffset = kLightHitRecord;
         // One-sided emission retains facing culling, unlike scene geometry.
-        instance.accelerationStructureReference = bottomLevels.rectLight().address();
+        instance.accelerationStructureReference =
+            graph.getAccelerationStructure(structures.blas, items.size()).address();
         instances.push_back(instance);
     }
 
@@ -139,4 +142,6 @@ void TlasBuildPass::execute(RenderGraph&, CommandRecorder& commands, const PassF
         frame.instances.upload(instances.data(), instances.size() * sizeof(instances.front()));
 
     frame.tlas.build(vulkan, commands, geometry, count);
+    const std::array nativeStructures{&frame.tlas};
+    graph.bindAccelerationStructures(structures.tlas, nativeStructures);
 }

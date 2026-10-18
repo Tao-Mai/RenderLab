@@ -1,6 +1,5 @@
 #pragma once
 
-#include "asset/EnvironmentMapAsset.h"
 #include "core/Debug.h"
 
 #include "render/DescriptorManager.h"
@@ -37,8 +36,8 @@ public:
     Renderer& operator=(const Renderer&) = delete;
 
     void              init();
-    void              rebuildGraph();
-    void              recreateSwapchain();
+    void              rebuildGraph(const SceneRenderData& scene);
+    void              recreateSwapchain(const SceneRenderData& scene);
     RenderFrameResult render(const RenderView& view, const SceneRenderData& scene, const EditorFrameInput& editor);
     void              waitIdle();
     void              shutdown() noexcept;
@@ -61,14 +60,12 @@ private:
     std::array<FrameData, maxFramesInFlight>    frameStorage;
     SceneBindings*                              activeSceneBindings = nullptr;
     std::optional<RendererConfig>               appliedConfig;
-    std::optional<EnvironmentMapAsset::ID>      environmentMap;
-    std::optional<EnvironmentMapAsset::ID>      appliedEnvironmentMap;
     struct SceneOutput
     {
         RenderGraph::ImageHandle color;
         RenderGraph::ImageHandle depth;
     };
-    SceneOutput               setupRasterization();
+    SceneOutput               setupRasterization(const SceneRenderData& scene);
     SceneOutput               setupRayTracing();
     SceneOutput               setupOffline();
     RenderGraph::ImageHandle  setupPostProcess(RenderGraph::ImageHandle color);
@@ -80,7 +77,7 @@ private:
     RenderGraph               graph;
     std::unique_ptr<Passes>   passes;
     RenderGraph::BufferHandle pickingReadback;
-    void                      setupRenderGraph();
+    void                      setupRenderGraph(const SceneRenderData& scene);
 
     template <class T, class... Args>
     auto setupPass(Args&&... args);

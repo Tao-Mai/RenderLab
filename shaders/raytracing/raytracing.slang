@@ -29,7 +29,7 @@ struct Payload
     float brdfPdf;
     float3 throughput;
     float rectAreaLightWeightSum; // Selection weights at this ray's origin, not the current hit.
-    float primaryDepth;
+    float primaryDepth; // Unnormalized positive view-space depth; -1 means no surface.
     float3 primaryNormal;
 };
 
@@ -351,8 +351,7 @@ void closestHitMain(inout Payload payload, BuiltInTriangleIntersectionAttributes
     Surface surface = hit.surfaceAt(PrimitiveIndex(), attributes.barycentrics);
     if (payload.depth == 1)
     {
-        float4 clip = mul(viewUniforms.viewProjection, float4(surface.position, 1.0));
-        payload.primaryDepth = saturate(clip.z / clip.w);
+        payload.primaryDepth = linearViewDepth(surface.position, viewUniforms.view);
         payload.primaryNormal = surface.geometricNormal;
     }
     payload.color = surface.emissive;

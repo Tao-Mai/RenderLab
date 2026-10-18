@@ -27,9 +27,11 @@
 #include "render/feature/postprocess/ToneMappingPass.h"
 #include "render/feature/shadow/ShadowPass.h"
 #include "render/offline/OfflinePathTracingPass.h"
+#include "render/raytracing/BlasBuildPass.h"
 #include "render/raytracing/RayTracingBlitPass.h"
 #include "render/raytracing/RayTracingPass.h"
 #include "render/raytracing/TemporalReprojectionPass.h"
+#include "render/raytracing/TlasBuildPass.h"
 #include "render/resource/Buffer.h"
 
 #include <tuple>
@@ -48,6 +50,8 @@ struct Renderer::Passes
         LightMarkerPass,
         BloomPass,
         ToneMappingPass,
+        BlasBuildPass,
+        TlasBuildPass,
         RayTracingPass,
         TemporalReprojectionPass,
         OfflinePathTracingPass,
@@ -144,22 +148,20 @@ void Renderer::shutdown() noexcept
     vulkan.reset();
     frameIndex           = 0;
     activeFramesInFlight = maxFramesInFlight;
-    environmentMap.reset();
-    appliedEnvironmentMap.reset();
     appliedConfig.reset();
     DEBUG_EXEC(inited = false);
 }
 
-void Renderer::rebuildGraph()
+void Renderer::rebuildGraph(const SceneRenderData& scene)
 {
     CpuProfileScope timing{context().profiler, "Graph rebuild"};
     DCHECK(inited);
     waitIdle();
     graph.releaseResources();
-    setupRenderGraph();
+    setupRenderGraph(scene);
 }
 
-void Renderer::setupRenderGraph()
+void Renderer::setupRenderGraph(const SceneRenderData& sceneData)
 {
     if (context().profiler)
         context().profiler->clearGpu();
@@ -185,28 +187,31 @@ void Renderer::setupRenderGraph()
             break;
         case RenderPath::Rasterization:
         case RenderPath::Deferred:
-            scene = setupRasterization();
+            scene = setupRasterization(sceneData);
             break;
     }
     scene.color = setupPostProcess(scene.color);
     setupEditor(scene);
     graph.compile({vulkan, swapchain, frameStorage});
-    appliedConfig         = config;
-    appliedEnvironmentMap = environmentMap;
+    appliedConfig = config;
 }
 
 Renderer::SceneOutput Renderer::setupRayTracing()
 {
-    const auto traced = setupPass<RayTracingPass>();
-    auto       color  = traced.rayImage;
+    const auto blas       = setupPass<BlasBuildPass>();
+    const auto structures = setupPass<TlasBuildPass>(blas);
+    const auto traced     = setupPass<RayTracingPass>(structures);
+    auto       color      = traced.rayImage;
     if (context().config->rendererConfig().feature.rayTracing.svgf)
         color = setupPass<TemporalReprojectionPass>(traced).color;
-    return {color, setupPass<EditorDepthPass>().depth};
+    return {.color = color};
 }
 
 Renderer::SceneOutput Renderer::setupOffline()
 {
-    return {setupPass<OfflinePathTracingPass>().rayImage, setupPass<EditorDepthPass>().depth};
+    const auto blas       = setupPass<BlasBuildPass>();
+    const auto structures = setupPass<TlasBuildPass>(blas);
+    return {.color = setupPass<OfflinePathTracingPass>(structures).rayImage};
 }
 
 uint32_t Renderer::offlineSampleCount() const
@@ -214,7 +219,7 @@ uint32_t Renderer::offlineSampleCount() const
     return passes ? passes->get<OfflinePathTracingPass>().sampleCount() : 0;
 }
 
-Renderer::SceneOutput Renderer::setupRasterization()
+Renderer::SceneOutput Renderer::setupRasterization(const SceneRenderData& sceneData)
 {
     const auto&        config = context().config->rendererConfig();
     ShadowPass::Output shadow;
@@ -225,7 +230,7 @@ Renderer::SceneOutput Renderer::setupRasterization()
     SceneOutput output;
     if (config.renderPath == RenderPath::Deferred)
     {
-        passes->get<DeferredLightingPass>().sceneBindings().setEnvironmentMap(environmentMap);
+        passes->get<DeferredLightingPass>().sceneBindings().setEnvironmentMap(sceneData.environmentMap);
         const auto gBuffer  = setupPass<GBufferPass>(depth);
         const auto lighting = setupPass<DeferredLightingPass>(gBuffer, shadow);
         output              = {lighting.color, lighting.depth};
@@ -234,15 +239,15 @@ Renderer::SceneOutput Renderer::setupRasterization()
     }
     else
     {
-        passes->get<ScenePass>().sceneBindings().setEnvironmentMap(environmentMap);
+        passes->get<ScenePass>().sceneBindings().setEnvironmentMap(sceneData.environmentMap);
         const auto scene    = setupPass<ScenePass>(depth, shadow);
         output              = {scene.color, scene.depth};
         shadow              = scene.shadow;
         activeSceneBindings = &passes->get<ScenePass>().sceneBindings();
     }
-    if (config.feature.ibl && environmentMap)
+    if (config.feature.ibl && sceneData.environmentMap)
     {
-        passes->get<SkyboxPass>().setEnvironmentMap(*environmentMap);
+        passes->get<SkyboxPass>().setEnvironmentMap(*sceneData.environmentMap);
         output.color = setupPass<SkyboxPass>(output.color, output.depth).color;
     }
     output.color = setupPass<TransparentPass>(output.color, output.depth, shadow).color;
@@ -265,6 +270,9 @@ RenderGraph::ImageHandle Renderer::setupPostProcess(RenderGraph::ImageHandle col
 
 void Renderer::setupEditor(SceneOutput scene)
 {
+    if (scene.depth.id == RenderGraph::kInvalidHandle)
+        scene.depth = setupPass<EditorDepthPass>().depth;
+
     const auto markers        = setupPass<LightMarkerPass>(scene.color, scene.depth);
     const auto [pickingImage] = setupPass<EditorPickingPass>(markers.depth);
     const auto [readback]     = setupPass<EditorPickingCopyPass>(pickingImage);
@@ -275,7 +283,6 @@ void Renderer::setupEditor(SceneOutput scene)
 
 void Renderer::applyConfiguration(const SceneRenderData& scene)
 {
-    environmentMap       = scene.environmentMap;
     const auto& config   = context().config->rendererConfig();
     const auto  graphKey = [](const RendererConfig& value)
     {
@@ -297,34 +304,35 @@ void Renderer::applyConfiguration(const SceneRenderData& scene)
             shadow.cascade.count
         };
     };
+    const bool environmentChanged =
+        activeSceneBindings && activeSceneBindings->environmentMapId() != scene.environmentMap;
     if (!appliedConfig || graphKey(*appliedConfig) != graphKey(config) ||
-        appliedEnvironmentMap.has_value() != environmentMap.has_value())
+        (activeSceneBindings &&
+         activeSceneBindings->environmentMapId().has_value() != scene.environmentMap.has_value()))
     {
-        rebuildGraph();
+        rebuildGraph(scene);
         return;
     }
-    if (appliedEnvironmentMap != environmentMap || appliedConfig->brdfLut != config.brdfLut ||
-        appliedConfig->sheenLut != config.sheenLut ||
+    if (environmentChanged || appliedConfig->brdfLut != config.brdfLut || appliedConfig->sheenLut != config.sheenLut ||
         appliedConfig->feature.shadow.filter != config.feature.shadow.filter)
     {
         waitIdle();
         if (activeSceneBindings)
         {
-            activeSceneBindings->setEnvironmentMap(environmentMap);
+            activeSceneBindings->setEnvironmentMap(scene.environmentMap);
             activeSceneBindings->refreshBindings();
             activeSceneBindings->prepare(graph, {vulkan, swapchain, frameStorage});
         }
-        if (activeSceneBindings && config.feature.ibl && environmentMap)
+        if (activeSceneBindings && config.feature.ibl && scene.environmentMap)
         {
-            passes->get<SkyboxPass>().setEnvironmentMap(*environmentMap);
+            passes->get<SkyboxPass>().setEnvironmentMap(*scene.environmentMap);
             passes->get<SkyboxPass>().refreshBindings({vulkan, swapchain, frameStorage});
         }
     }
-    appliedConfig         = config;
-    appliedEnvironmentMap = environmentMap;
+    appliedConfig = config;
 }
 
-void Renderer::recreateSwapchain()
+void Renderer::recreateSwapchain(const SceneRenderData& scene)
 {
     DCHECK(inited);
     Window& window = *context().window;
@@ -334,7 +342,7 @@ void Renderer::recreateSwapchain()
     graph.releaseResources();
     swapchain.reset();
     swapchain.init(vulkan, window);
-    setupRenderGraph();
+    setupRenderGraph(scene);
 }
 
 const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderData& scene)

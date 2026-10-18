@@ -1,7 +1,8 @@
 #pragma once
 
 #include "render/RenderConfig.h"
-#include "render/raytracing/BlasBuildPass.h"
+#include "render/feature/RenderGraph.h"
+#include "render/raytracing/AccelerationStructure.h"
 
 #include <array>
 
@@ -14,12 +15,8 @@ public:
         RenderGraph::AccelerationStructureHandle tlas;
     };
 
-    explicit TlasBuildPass(const BlasBuildPass& bottomLevels) : bottomLevels(bottomLevels) {}
-
     Output setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::AccelerationStructureHandle blas);
     void   execute(RenderGraph& graph, CommandRecorder& commands, const PassFrame& frame);
-
-    [[nodiscard]] const AccelerationStructure& structure(uint32_t frameIndex) const { return frames[frameIndex].tlas; }
 
 private:
     struct Frame
@@ -29,6 +26,6 @@ private:
         uint32_t              instanceCount = ~0u;
     };
 
-    const BlasBuildPass&                 bottomLevels;
+    Output                               structures;
     std::array<Frame, maxFramesInFlight> frames;
 };

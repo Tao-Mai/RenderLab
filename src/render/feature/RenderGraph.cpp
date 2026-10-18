@@ -190,6 +190,24 @@ Buffer& RenderGraph::getBuffer(BufferHandle buffer, uint32_t frameIndex)
     return *resource.allocation->instances.at(instanceIndex(resource, frameIndex)).buffer;
 }
 
+void RenderGraph::bindAccelerationStructures(
+    AccelerationStructureHandle handle, std::span<AccelerationStructure* const> structures
+)
+{
+    auto& resource = resolveResource(handle.id);
+    DCHECK(resource.type == ResourceType::AccelerationStructure);
+    resource.accelerationStructures.assign(structures.begin(), structures.end());
+}
+
+AccelerationStructure& RenderGraph::getAccelerationStructure(AccelerationStructureHandle handle, size_t index)
+{
+    auto& resource = resolveResource(handle.id);
+    DCHECK(resource.type == ResourceType::AccelerationStructure);
+    DCHECK(index < resource.accelerationStructures.size());
+    DCHECK(resource.accelerationStructures[index]);
+    return *resource.accelerationStructures[index];
+}
+
 void RenderGraph::useResource(CommandRecorder& commandBuffer, const ResourceUse& use, uint32_t frameIndex)
 {
     auto&      resource = resolveResource(use.resource);

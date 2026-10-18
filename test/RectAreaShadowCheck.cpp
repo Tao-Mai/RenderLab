@@ -67,7 +67,7 @@ int main(int, char** argv)
     scenes.load(scene);
     scenesCamera.config().position = {0.0f, 0.0f, 6.0f};
     renderer.init();
-    renderer.rebuildGraph();
+    renderer.rebuildGraph(renderSystem.prepare(scenes.scene()));
 
     DescriptorManager descriptors;
     descriptors.init(renderer.vulkanContext().deviceHandle());
@@ -104,14 +104,14 @@ int main(int, char** argv)
         {
             feature.shadow.enable = false;
             config.setRenderFeature(feature);
-            renderer.rebuildGraph();
+            renderer.rebuildGraph(renderSystem.prepare(scenes.scene()));
         }
         if (frame == 6)
         {
             feature.shadow.enable = true;
             config.setRenderFeature(feature);
             sceneLight.castShadow = false;
-            renderer.rebuildGraph();
+            renderer.rebuildGraph(renderSystem.prepare(scenes.scene()));
         }
 
         window.pollEvents();

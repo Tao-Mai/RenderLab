@@ -74,6 +74,10 @@ int main(int, char** argv)
         CHECK(config.rendererConfig().feature.ibl);
         scenes.scene().environmentMap = environments.front();
         render();
+        renderer.rebuildGraph(system.prepare(scenes.scene()));
+        render();
+        renderer.recreateSwapchain(system.prepare(scenes.scene()));
+        render();
         LOG_INFO("Scene environment changes passed for render path {}", static_cast<int>(path));
     }
     feature.ibl = false;

@@ -14,18 +14,12 @@
 class OfflinePathTracingPass
 {
 public:
-    OfflinePathTracingPass()                                         = default;
-    OfflinePathTracingPass(const OfflinePathTracingPass&)            = delete;
-    OfflinePathTracingPass& operator=(const OfflinePathTracingPass&) = delete;
-    OfflinePathTracingPass(OfflinePathTracingPass&&)                 = delete;
-    OfflinePathTracingPass& operator=(OfflinePathTracingPass&&)      = delete;
-
     struct Output
     {
         RenderGraph::ImageHandle rayImage;
     };
 
-    Output                 setup(RenderGraph& graph, const PassSetup& setup);
+    Output                 setup(RenderGraph& graph, const PassSetup& setup, TlasBuildPass::Output scene);
     void                   execute(RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution);
     void                   updateScene(const RenderView& view, const SceneRenderData& scene, uint64_t assetRevision);
     void                   resetAccumulation() noexcept;
@@ -54,24 +48,23 @@ private:
     static_assert(offsetof(OfflineParameters, maxRecursionDepth) == 112);
     static_assert(offsetof(OfflineParameters, sampleIndex) == 116);
 
-    RenderGraph::ImageHandle          rayImage;
-    vk::raii::DescriptorSetLayout     descriptorLayout       = nullptr;
-    vk::raii::DescriptorPool          descriptorPool         = nullptr;
-    vk::raii::PipelineLayout          pipelineLayout         = nullptr;
-    vk::raii::Pipeline                pipeline               = nullptr;
-    uint32_t                          pipelineRecursionDepth = 0;
-    Buffer                            bindingTable;
-    vk::StridedDeviceAddressRegionKHR raygenRegion, missRegion, hitRegion;
-    BlasBuildPass                     bottomLevels;
-    TlasBuildPass                     topLevel{bottomLevels};
-    Frame                             frame;
-    Buffer                            accumulation;
-    vk::Extent2D                      accumulationExtent{};
-    RenderGraph::BufferHandle         accumulationHandle;
-    uint32_t                          accumulatedSamples = 0;
-    std::optional<SceneRenderData>    previousScene;
-    RenderView                        previousView{};
-    uint64_t                          previousAssetRevision = 0;
+    RenderGraph::ImageHandle                 rayImage;
+    vk::raii::DescriptorSetLayout            descriptorLayout       = nullptr;
+    vk::raii::DescriptorPool                 descriptorPool         = nullptr;
+    vk::raii::PipelineLayout                 pipelineLayout         = nullptr;
+    vk::raii::Pipeline                       pipeline               = nullptr;
+    uint32_t                                 pipelineRecursionDepth = 0;
+    Buffer                                   bindingTable;
+    vk::StridedDeviceAddressRegionKHR        raygenRegion, missRegion, hitRegion;
+    RenderGraph::AccelerationStructureHandle sceneTlas;
+    Frame                                    frame;
+    Buffer                                   accumulation;
+    vk::Extent2D                             accumulationExtent{};
+    RenderGraph::BufferHandle                accumulationHandle;
+    uint32_t                                 accumulatedSamples = 0;
+    std::optional<SceneRenderData>           previousScene;
+    RenderView                               previousView{};
+    uint64_t                                 previousAssetRevision = 0;
 
     void createPipeline(const PassSetup& setup, uint32_t maxRecursionDepth);
     void prepareLights(const PassFrame& execution, Frame& frame) const;

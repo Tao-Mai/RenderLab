@@ -17,6 +17,7 @@
 #include <vector>
 
 class Buffer;
+class AccelerationStructure;
 class GpuProfiler;
 class Swapchain;
 class VulkanContext;
@@ -101,6 +102,12 @@ public:
 
     [[nodiscard]] Image&                 getImage(ImageHandle image, uint32_t frameIndex);
     [[nodiscard]] Buffer&                getBuffer(BufferHandle buffer, uint32_t frameIndex);
+    // Bind pass-owned objects for downstream lookup; the pass retains ownership.
+    void bindAccelerationStructures(
+        AccelerationStructureHandle handle, std::span<AccelerationStructure* const> structures
+    );
+    [[nodiscard]] AccelerationStructure&
+    getAccelerationStructure(AccelerationStructureHandle handle, size_t index = 0);
     [[nodiscard]] const ImageCreateInfo& imageInfo(ImageHandle image);
 
     void execute(
@@ -136,6 +143,7 @@ private:
         std::vector<vk::Image>       externalImages;
         Image*                      importedImage = nullptr;
         Buffer*                     importedBuffer = nullptr;
+        std::vector<AccelerationStructure*> accelerationStructures;
         ImageAccess                 initialState;
         bool                        swapchainIndexed = false;
         std::shared_ptr<Allocation> allocation;

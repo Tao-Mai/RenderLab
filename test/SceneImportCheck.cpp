@@ -104,9 +104,9 @@ int main(int argc, char** argv)
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
         window.init();
         renderer.init();
-        renderer.rebuildGraph();
         EditorCamera editorCamera{scenes.scene().editorCamera};
         RenderSystem system;
+        renderer.rebuildGraph(system.prepare(scenes.scene()));
         const auto   extent = renderer.swapchainHandle().extent();
         const float  side   = static_cast<float>(std::min(extent.width, extent.height));
         const auto   view =

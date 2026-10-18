@@ -11,7 +11,7 @@ RenderGraph::AccelerationStructureHandle BlasBuildPass::setup(RenderGraph& graph
 {
     CHECK(setup.vulkan.supportsRayTracing());
     // Cached BLAS and scratch storage survive graph rebuilds.
-    const auto output = graph.write(graph.createAccelerationStructure({
+    output = graph.write(graph.createAccelerationStructure({
         .stages = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR |
             vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
         .access =
@@ -28,14 +28,17 @@ RenderGraph::AccelerationStructureHandle BlasBuildPass::setup(RenderGraph& graph
     return output;
 }
 
-void BlasBuildPass::execute(RenderGraph&, CommandRecorder& commands, const PassFrame& frame)
+void BlasBuildPass::execute(RenderGraph& graph, CommandRecorder& commands, const PassFrame& frame)
 {
-    const auto& vulkan = frame.setup.vulkan;
-    const auto& device = vulkan.deviceHandle();
+    const auto&                         vulkan = frame.setup.vulkan;
+    const auto&                         device = vulkan.deviceHandle();
+    std::vector<AccelerationStructure*> structures;
+    structures.reserve(frame.renderData.drawItems.size() + 1);
     for (const auto& item : frame.renderData.drawItems)
     {
         CHECK(item.indexCount % 3 == 0, "ray tracing submesh requires triangle indices");
         const auto [entry, created] = meshes.try_emplace({item.mesh, item.firstIndex, item.indexCount});
+        structures.push_back(&entry->second);
         if (!created)
             continue;
 
@@ -59,15 +62,13 @@ void BlasBuildPass::execute(RenderGraph&, CommandRecorder& commands, const PassF
     }
 
     const auto& ranges = frame.renderData.lightRanges;
-    if (ranges.rectAreaEnd > ranges.pointEnd && !rectLightBlas.handle())
-        createRectLightGeometry(commands, vulkan);
-}
-
-const AccelerationStructure& BlasBuildPass::mesh(const DrawItem& item) const
-{
-    const auto found = meshes.find({item.mesh, item.firstIndex, item.indexCount});
-    DCHECK(found != meshes.end());
-    return found->second;
+    if (ranges.rectAreaEnd > ranges.pointEnd)
+    {
+        if (!rectLightBlas.handle())
+            createRectLightGeometry(commands, vulkan);
+        structures.push_back(&rectLightBlas);
+    }
+    graph.bindAccelerationStructures(output, structures);
 }
 
 void BlasBuildPass::createRectLightGeometry(CommandRecorder& commands, const VulkanContext& vulkan)
