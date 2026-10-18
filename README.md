@@ -4,15 +4,25 @@
 
 ## 渲染展示
 
-以下图片均由本项目直接渲染输出，分辨率为 960 × 960，不包含编辑器 UI。两张离线路径追踪图均累计 2048 samples/pixel，使用项目现有的 Bloom 和 Tone Mapping。
+以下图片均由本项目直接渲染输出，分辨率为 960 × 960，不包含编辑器 UI，使用项目现有的 Bloom 和 Tone Mapping。
 
-| Sibenik：多光源路径追踪 | Cornell Box：间接光照与颜色渗透 |
-| --- | --- |
-| ![Sibenik 教堂，多彩点光源与矩形面光源](docs/images/sibenik-pathtracing.png) | ![康奈尔盒，离线渐进式路径追踪](docs/images/cornell-pathtracing.png) |
+### 实时渲染
+
+Sibenik 实时光追：每帧 **1 spp**、最大递归深度 6、两帧在途。启用当前 SVGF 的历史重投影，前 10 帧算术平均，之后使用 EMA（当前帧权重 0.105）；截图取预热后的第 32 帧。未使用离线路线的渐进式累积或额外降噪。
+
+![Sibenik 实时光追，1 spp/帧，历史重投影，第 32 帧](docs/images/sibenik-realtime.png)
 
 | PBR：Metallic / Roughness 球阵列与 IBL | 阴影：稳定 CSM 与 PCF |
 | --- | --- |
 | ![PBR 金属度与粗糙度参数球阵列](docs/images/pbr-ibl.png) | ![级联阴影测试场景](docs/images/csm.png) |
+
+### 离线渲染
+
+以下两张使用独立离线路线，各累计 **2048 samples/pixel**，不代表实时渲染画质。
+
+| Sibenik：多光源路径追踪 | Cornell Box：间接光照与颜色渗透 |
+| --- | --- |
+| ![Sibenik 教堂，离线渐进式路径追踪](docs/images/sibenik-pathtracing.png) | ![康奈尔盒，离线渐进式路径追踪](docs/images/cornell-pathtracing.png) |
 
 Sibenik 模型来自 [McGuire Computer Graphics Archive](https://casual-effects.com/g3d/data10/index.html)，由 Marko Dabrovic 建模、Kenzie Lamar 修复几何、Morgan McGuire 制作高分辨率纹理，采用 CC BY-NC 许可；展示中的灯光由本项目布置。
 

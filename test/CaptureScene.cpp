@@ -17,6 +17,7 @@
 #include "render/feature/postprocess/ToneMappingPass.h"
 #include "render/offline/OfflinePathTracingPass.h"
 #include "render/raytracing/BlasBuildPass.h"
+#include "render/raytracing/TemporalReprojectionPass.h"
 #include "render/raytracing/TlasBuildPass.h"
 #include "scene/SceneManager.h"
 #include "scene/system/RenderSystem.h"
@@ -83,7 +84,7 @@ struct ImageReadbackPass
     }
 };
 
-void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::path& output, uint32_t samples)
+void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::path& output, uint32_t frameCount)
 {
     auto&       vulkan    = renderer.vulkanContext();
     const auto& swapchain = renderer.swapchainHandle();
@@ -91,34 +92,46 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     const auto  format    = swapchain.surfaceFormat().format;
     const auto& config    = context().config->rendererConfig();
     const bool  offline   = config.renderPath == RenderPath::OfflinePathTracing;
+    const bool  realtime  = config.renderPath == RenderPath::RayTracing;
 
-    FrameContext frame;
-    frame.init(vulkan);
+    std::array<FrameContext, maxFramesInFlight> frames;
+    for (auto& frame : frames)
+        frame.init(vulkan);
     std::array<FrameData, maxFramesInFlight> frameData;
     for (auto& data : frameData)
         data.init(vulkan, *renderContext().descriptors);
     const PassSetup setup{vulkan, renderer.swapchainHandle(), frameData};
     RenderGraph     graph;
     graph.init(vulkan, renderer.swapchainHandle());
-    ShadowPass             shadow;
-    DepthPrepass           depth;
-    ScenePass              scene;
-    SkyboxPass             skybox;
-    TransparentPass        transparent;
-    BlasBuildPass          blas;
-    TlasBuildPass          tlas;
-    OfflinePathTracingPass tracing;
-    BloomPass              bloom;
-    ToneMappingPass        toneMapping;
-    ImageReadbackPass      readback;
-    EndPass                end;
+    ShadowPass               shadow;
+    DepthPrepass             depth;
+    ScenePass                scene;
+    SkyboxPass               skybox;
+    TransparentPass          transparent;
+    BlasBuildPass            blas;
+    TlasBuildPass            tlas;
+    OfflinePathTracingPass   tracing;
+    RayTracingPass           realtimeTracing;
+    TemporalReprojectionPass reprojection;
+    BloomPass                bloom;
+    ToneMappingPass          toneMapping;
+    ImageReadbackPass        readback;
+    EndPass                  end;
 
     RenderGraph::ImageHandle color;
-    if (offline)
+    if (offline || realtime)
     {
         const auto meshes     = graph.addPass(blas, setup);
         const auto structures = graph.addPass(tlas, setup, meshes);
-        color                 = graph.addPass(tracing, setup, structures).rayImage;
+        if (offline)
+            color = graph.addPass(tracing, setup, structures).rayImage;
+        else
+        {
+            const auto traced = graph.addPass(realtimeTracing, setup, structures);
+            color             = traced.rayImage;
+            if (config.feature.rayTracing.svgf)
+                color = graph.addPass(reprojection, setup, traced).color;
+        }
     }
     else
     {
@@ -145,28 +158,35 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     RenderSystem system;
     const auto&  snapshot = system.prepare(scenes.scene());
     auto         shadows  = config.feature.shadow;
-    if (offline)
+    if (offline || realtime)
         shadows.enable = false;
     const auto  prepared   = prepareRenderScene(snapshot, view.uniforms, shadows, *context().assetManager, nullptr);
     const auto& renderData = renderContext().resources->prepare(snapshot, prepared, 0);
-    if (offline)
+    if (offline || realtime)
     {
-        frameData[0].updateView(view.uniforms);
-        tracing.updateScene(view, snapshot, context().assetManager->contentRevision());
+        for (auto& data : frameData)
+            data.updateView(view.uniforms);
+        if (offline)
+            tracing.updateScene(view, snapshot, context().assetManager->contentRevision());
     }
     else
     {
         scene.sceneBindings().updateEnvironmentMap(renderData.environmentMap);
-        scene.sceneBindings().updateFrame(frameData[0], view.uniforms, prepared.lighting);
+        for (auto& data : frameData)
+            scene.sceneBindings().updateFrame(data, view.uniforms, prepared.lighting);
     }
 
-    for (uint32_t sample = 0; sample < samples; ++sample)
+    const auto activeFrameCount = offline ? 1u : maxFramesInFlight;
+    for (uint32_t frameNumber = 0; frameNumber < frameCount; ++frameNumber)
     {
+        const auto index = frameNumber % activeFrameCount;
+        auto&      frame = frames[index];
         frame.wait();
         auto& commands = frame.commandBufferHandle();
         vkCheck(commands.reset());
         vkCheck(commands.begin({}));
-        graph.execute(commands, {setup, frameData[0], view, renderData, {}, 0}, 0, frame.gpuProfiler(), nullptr);
+        graph
+            .execute(commands, {setup, frameData[index], view, renderData, {}, index}, 0, frame.gpuProfiler(), nullptr);
         vkCheck(commands.end());
         const auto command = *commands;
         vkCheck(vulkan.deviceHandle().resetFences(frame.drawFenceHandle()));
@@ -174,10 +194,11 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
             vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &command},
             frame.drawFenceHandle()
         ));
-        if ((sample + 1) % 64 == 0 || sample + 1 == samples)
-            LOG_INFO("{}: sample {}/{}", scenes.scene().id, sample + 1, samples);
+        if ((frameNumber + 1) % 64 == 0 || frameNumber + 1 == frameCount)
+            LOG_INFO("{}: frame {}/{}", scenes.scene().id, frameNumber + 1, frameCount);
     }
-    frame.wait();
+    for (auto& frame : frames)
+        frame.wait();
 
     std::vector<uint8_t> pixels(size_t(extent.width) * extent.height * 4);
     graph.getBuffer(buffer, 0).download(pixels.data(), pixels.size());
@@ -200,12 +221,13 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         "cannot write capture: {}",
         output.string()
     );
-    LOG_INFO("Saved {} ({}x{}, {} samples)", output.string(), extent.width, extent.height, samples);
+    LOG_INFO("Saved {} ({}x{}, {} frames)", output.string(), extent.width, extent.height, frameCount);
 
     graph.reset();
     for (auto& data : frameData)
         data.reset();
-    frame.reset();
+    for (auto& frame : frames)
+        frame.reset();
 }
 }  // namespace
 
@@ -214,13 +236,13 @@ int main(int argc, char** argv)
     logger::init(argv[0]);
     CHECK(
         argc >= 4 && argc <= 7,
-        "usage: CaptureScene <scene-id> <forward|offline> <output.png> [samples=1] [size=960] [ev100]"
+        "usage: CaptureScene <scene-id> <forward|realtime|offline> <output.png> [frames=1] [size=960] [ev100]"
     );
     const std::string_view route{argv[2]};
-    CHECK(route == "forward" || route == "offline", "unsupported capture route: {}", route);
-    const auto samples = argc > 4 ? parseNumber<uint32_t>(argv[4]) : 1u;
-    const auto side    = argc > 5 ? parseNumber<int>(argv[5]) : 960;
-    CHECK(samples > 0 && side > 0);
+    CHECK(route == "forward" || route == "realtime" || route == "offline", "unsupported capture route: {}", route);
+    const auto frameCount = argc > 4 ? parseNumber<uint32_t>(argv[4]) : 1u;
+    const auto side       = argc > 5 ? parseNumber<int>(argv[5]) : 960;
+    CHECK(frameCount > 0 && side > 0);
 
     ConfigManager    config;
     AssetManager     assets;
@@ -247,13 +269,17 @@ int main(int argc, char** argv)
     if (argc > 6)
         feature.toneMapping.ev100 = parseNumber<float>(argv[6]);
     config.setRenderFeature(feature);
-    config.setRenderPath(route == "offline" ? RenderPath::OfflinePathTracing : RenderPath::Rasterization);
+    config.setRenderPath(
+        route == "offline"        ? RenderPath::OfflinePathTracing
+            : route == "realtime" ? RenderPath::RayTracing
+                                  : RenderPath::Rasterization
+    );
     config.setEditorSize(side, side);
     CHECK(glfwInit());
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     window.init();
     renderer.init();
-    capture(renderer, scenes, std::filesystem::path{argv[3]}, samples);
+    capture(renderer, scenes, std::filesystem::path{argv[3]}, frameCount);
     renderer.shutdown();
     scenes.shutdown();
     assets.shutdown();
