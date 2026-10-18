@@ -4,6 +4,7 @@
 #include "core/Context.h"
 #include "core/Window.h"
 #include "editor/EditorCamera.h"
+#include "editor/LightMarkers.h"
 #include "render/RenderContext.h"
 #include "render/RenderPreparation.h"
 #include "render/Renderer.h"
@@ -13,6 +14,8 @@
 #include "render/feature/ScenePass.h"
 #include "render/feature/SkyboxPass.h"
 #include "render/feature/TransparentPass.h"
+#include "render/feature/editor/EditorDepthPass.h"
+#include "render/feature/editor/LightMarkerPass.h"
 #include "render/feature/postprocess/BloomPass.h"
 #include "render/feature/postprocess/ToneMappingPass.h"
 #include "render/offline/OfflinePathTracingPass.h"
@@ -115,10 +118,13 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     TemporalReprojectionPass reprojection;
     BloomPass                bloom;
     ToneMappingPass          toneMapping;
+    EditorDepthPass          editorDepth;
+    LightMarkerPass          lightMarker;
     ImageReadbackPass        readback;
     EndPass                  end;
 
     RenderGraph::ImageHandle color;
+    RenderGraph::ImageHandle depthImage;
     if (offline || realtime)
     {
         const auto meshes     = graph.addPass(blas, setup);
@@ -141,6 +147,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         const auto depthOutput = graph.addPass(depth, setup);
         const auto sceneOutput = graph.addPass(scene, setup, depthOutput.depth, shadows);
         color                  = sceneOutput.color;
+        depthImage             = sceneOutput.depth;
         if (config.feature.ibl)
             color = graph.addPass(skybox, setup, color, sceneOutput.depth).color;
         color = graph.addPass(transparent, setup, color, sceneOutput.depth, sceneOutput.shadow).color;
@@ -149,6 +156,12 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         color = graph.addPass(bloom, setup, color).color;
     const auto target = graph.createImage({.format = format, .extent = {extent.width, extent.height, 1}});
     color             = graph.addPass(toneMapping, setup, color, target).color;
+    if (!offline)
+    {
+        if (depthImage.id == RenderGraph::kInvalidHandle)
+            depthImage = graph.addPass(editorDepth, setup).depth;
+        color = graph.addPass(lightMarker, setup, color, depthImage).color;
+    }
     const auto buffer = graph.addPass(readback, setup, color);
     graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
     graph.compile(setup);
@@ -160,8 +173,12 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     auto         shadows  = config.feature.shadow;
     if (offline || realtime)
         shadows.enable = false;
-    const auto  prepared   = prepareRenderScene(snapshot, view.uniforms, shadows, *context().assetManager, nullptr);
-    const auto& renderData = renderContext().resources->prepare(snapshot, prepared, 0);
+    const auto   prepared   = prepareRenderScene(snapshot, view.uniforms, shadows, *context().assetManager, nullptr);
+    const auto&  renderData = renderContext().resources->prepare(snapshot, prepared, 0);
+    LightMarkers lightMarkers;
+    if (!offline)
+        lightMarkers.prepare(scenes.scene(), *renderContext().resources);
+    const EditorFrameInput editor{.lightDrawItems = lightMarkers.drawItems()};
     if (offline || realtime)
     {
         for (auto& data : frameData)
@@ -185,8 +202,13 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         auto& commands = frame.commandBufferHandle();
         vkCheck(commands.reset());
         vkCheck(commands.begin({}));
-        graph
-            .execute(commands, {setup, frameData[index], view, renderData, {}, index}, 0, frame.gpuProfiler(), nullptr);
+        graph.execute(
+            commands,
+            {setup, frameData[index], view, renderData, editor, index},
+            0,
+            frame.gpuProfiler(),
+            nullptr
+        );
         vkCheck(commands.end());
         const auto command = *commands;
         vkCheck(vulkan.deviceHandle().resetFences(frame.drawFenceHandle()));
