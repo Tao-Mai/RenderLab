@@ -315,6 +315,8 @@ void VulkanContext::createLogicalDevice()
 
     featureChain.get<vk::PhysicalDeviceFeatures2>().features.samplerAnisotropy =
         deviceFeatures.samplerAnisotropy;
+    featureChain.get<vk::PhysicalDeviceFeatures2>().features.shaderStorageImageExtendedFormats =
+        deviceFeatures.shaderStorageImageExtendedFormats;
     featureChain.get<vk::PhysicalDeviceFeatures2>().features.shaderInt64 = rayTracingSupported;
     featureChain.get<vk::PhysicalDeviceFeatures2>().features.imageCubeArray = true;
     featureChain.get<vk::PhysicalDeviceFeatures2>().features.depthClamp = true;

@@ -16,7 +16,7 @@
 | `FrameContext` | CommandPool/Buffer、Fence、imageAvailable、wait/submit | 每个 frame-in-flight 一份 |
 | `FrameData` | View/Light CPU 数据与 UBO、灯光/点阴影 SSBO、Scene Set、数据上传与扩容 | 由 Renderer 按在途帧持有 |
 
-Renderer 持有上述模块和各 Pass 对象，负责按配置组图。`RenderSystem` 由 Engine 持有和调用，Renderer 接收其生成的 CPU `SceneRenderData`，等待当前帧 fence 后由 RenderResourceManager 解析为 GPU `RenderData`。Graph 持有对应节点，不依赖具体 Pass 类型。终点依赖最终颜色和 readback buffer，声明 Present 和 HostRead 状态；Renderer 保存 PickingCopy 的 readback handle，在 fence 完成后通过 Graph 的 getBuffer 下载 selection ID，不再单设 Readback Pass。ScenePass 只绘制不透明和 MASK 物体；SkyboxPass 管理 radiance descriptor、Pipeline/Layout 和天空盒绘制；TransparentPass 加载已有颜色和深度，绘制排序后的透明物体。SceneDraw 共用附件、视口设置和材质网格绘制逻辑，不增加新的资源管理层。LightMarkerPass 随后独立绘制灯光标记。光栅 Pipeline 由 PipelineManager 缓存，光追 Pipeline/SBT/BLAS/TLAS 由 RayTracingPass 持有；Pass 直接接收类型化句柄或前序 Pass 的 Output，通过 Image 对象取得缓存 View。
+Renderer 持有上述模块和各 Pass 对象，负责按配置组图。`RenderSystem` 由 Engine 持有和调用，Renderer 接收其生成的 CPU `SceneRenderData`，等待当前帧 fence 后由 RenderResourceManager 解析为 GPU `RenderData`。Graph 持有对应节点，不依赖具体 Pass 类型。终点依赖最终颜色和 readback buffer，声明 Present 和 HostRead 状态；Renderer 保存 PickingCopy 的 readback handle，在 fence 完成后通过 Graph 的 getBuffer 下载 selection ID，不再单设 Readback Pass。ScenePass 只绘制不透明和 MASK 物体；SkyboxPass 管理 radiance descriptor、Pipeline/Layout 和天空盒绘制；TransparentPass 加载已有颜色和深度，绘制排序后的透明物体。SceneDraw 共用附件、视口设置和材质网格绘制逻辑，不增加新的资源管理层。LightMarkerPass 随后独立绘制灯光标记。光栅 Pipeline 由 PipelineManager 缓存，光追 Pipeline/SBT 由相应追踪 Pass 持有，BLAS 缓存和逐帧 TLAS 分别由 BlasBuildPass、TlasBuildPass 持有；Pass 直接接收类型化句柄或前序 Pass 的 Output，通过 Image 对象取得缓存 View。
 
 ## 光栅化与光追路线
 
@@ -57,7 +57,7 @@ Neutral 算法参考 [Khronos PBR Neutral Tone Mapper](https://github.com/Khrono
 
 编辑器的 Renderer / Render path 可选择 Rasterization 或 Ray tracing，选择保存在内存中的 `renderPath`，正常关闭时由 ConfigManager 统一写入 `config/renderer.json`，启动时恢复。该文件由 `config/config.json` 的 `paths.renderer` 指定，并保存 BRDF LUT 绑定和 RenderFeature；环境图选择保存在 SceneAsset.environmentMap，随场景保存和切换。当前光栅化仍是默认路线；不支持所需 Vulkan 光追特性的 GPU 禁用光追选项，配置直接指定不支持的路线则明确报错，不自动退回光栅化。
 
-`render/raytracing/RayTracingPass` 使用独立的 `VK_KHR_ray_tracing_pipeline`：缓存每个 mesh/submesh 的 BLAS，每帧根据现有 DrawItem 的 transform 构建该帧 TLAS，通过 SBT 和 `vkCmdTraceRaysKHR` 发射相机主射线。`raytracing/raytracing.slang` 将相机射线、命中表面和着色封装为结构体方法。ClosestHit 插值 Vertex UV 和法线，通过实例变换的逆转置得到世界空间法线；支持点光源直接光照和矩形光源直接光 MIS：RectAreaLight 负责矩形采样和立体角 PDF；所有矩形灯共享一个单位矩形的双三角形 BLAS，实例变换提供位置、旋转和宽高，实例自定义索引直接对应灯光 SSBO。BRDF 射线由 TLAS 确定最近命中；表面 hit group 继续着色，独立 light hit group 返回单面发光值，不再解析遍历所有灯。NEE 和 BRDF 命中发光面分别乘 balance heuristic 权重，不对物体间接光重复加权。矩形灯只生成光追内部几何，不创建 Mesh 资产或 RenderComponent；主相机射线通过 mask 排除灯面，反弹和阴影射线包含灯面，编辑器标记保持独立。Surface::isVisible 沿法线偏移后向光源发射有限长度的阴影射线，首个遮挡即可停止，跳过 closest-hit；独立 visibility miss shader 返回可见。Surface::shade 使用余弦加权半球采样，Payload 传递递归深度、随机状态和上一表面的 BRDF PDF，各次命中累积间接光照。最终着色顶点仍可发射 BRDF 射线命中灯面；到达递归上限时，普通表面 hit shader 直接返回黑色，不再发射阴影射线，而 light hit shader 仍可返回发光值。`feature.rayTracing.maxRecursionDepth` 控制 Vulkan 管线递归深度（默认 4，至少 2，受 GPU 上限限制），编辑器调整后重建光追 Pipeline/SBT，关闭时持久化；包括主射线和为可见性查询预留的一层，因此 2 仅直接光，4 最多两次反弹。SBT 包含一个 raygen、两个 miss 和两个 hit group。Miss 返回黑色，TLAS 包含场景网格和矩形发光面，不包含编辑器灯光标记。暂不包含 IBL、透明、alpha-test、时域累积或降噪，所有三角形按不透明处理；每帧最多 128 种材质纹理/采样器绑定。
+`render/raytracing/RayTracingPass` 使用独立的 `VK_KHR_ray_tracing_pipeline`。实时和离线追踪各自通过 setup 注册 `BlasBuildPass → TlasBuildPass → 追踪 Pass`：BLAS 按 mesh/submesh 缓存，TLAS 根据当帧 DrawItem 的 transform 构建，追踪 Pass 负责绑定场景数据并通过 SBT 和 `vkCmdTraceRaysKHR` 发射射线。构建与追踪是独立 Graph 节点，Graph 根据加速结构的读写声明同步 BLAS 构建、TLAS 构建、射线读取和跨帧复用，Pass 不手写 barrier。`raytracing/raytracing.slang` 将相机射线、命中表面和着色封装为结构体方法。ClosestHit 插值 Vertex UV 和法线，通过实例变换的逆转置得到世界空间法线；支持点光源直接光照和矩形光源直接光 MIS：RectAreaLight 负责矩形采样和立体角 PDF；所有矩形灯共享一个单位矩形的双三角形 BLAS，实例变换提供位置、旋转和宽高，实例自定义索引直接对应灯光 SSBO。BRDF 射线由 TLAS 确定最近命中；表面 hit group 继续着色，独立 light hit group 返回单面发光值，不再解析遍历所有灯。NEE 和 BRDF 命中发光面分别乘 balance heuristic 权重，不对物体间接光重复加权。矩形灯只生成光追内部几何，不创建 Mesh 资产或 RenderComponent；主相机射线通过 mask 排除灯面，反弹和阴影射线包含灯面，编辑器标记保持独立。Surface::isVisible 沿法线偏移后向光源发射有限长度的阴影射线，首个遮挡即可停止，跳过 closest-hit；独立 visibility miss shader 返回可见。Surface::shade 使用余弦加权半球采样，Payload 传递递归深度、随机状态和上一表面的 BRDF PDF，各次命中累积间接光照。最终着色顶点仍可发射 BRDF 射线命中灯面；到达递归上限时，普通表面 hit shader 直接返回黑色，不再发射阴影射线，而 light hit shader 仍可返回发光值。`feature.rayTracing.maxRecursionDepth` 控制 Vulkan 管线递归深度（默认 4，至少 2，受 GPU 上限限制），编辑器调整后重建光追 Pipeline/SBT，关闭时持久化；包括主射线和为可见性查询预留的一层，因此 2 仅直接光，4 最多两次反弹。SBT 包含一个 raygen、两个 miss 和两个 hit group。Miss 返回黑色，TLAS 包含场景网格和矩形发光面，不包含编辑器灯光标记。暂不包含 IBL、透明、alpha-test、时域累积或降噪，所有三角形按不透明处理；每帧最多 128 种材质纹理/采样器绑定。
 
 光追复用 GPU mesh 的 vertex/index buffer、GpuMaterial 的纹理/采样器以及 FrameData 的相机数据，并将 RenderData 的灯光列表上传到当前光追帧的独立 SSBO；`light_data.slang` 与光栅路线共用 LightData 类型，不改变光栅 descriptor layout。RayTracing 写入 RGBA16F storage image，保留线性 HDR 光照；开启 HDR 时复用 ToneMappingPass 输出到交换链，Graph 插入 ShaderStorageWrite → ShaderSampledRead barrier，关闭时由 RayTracingBlit 直接输出。光追时关闭 Scene/Shadow 节点；EditorDepthPass 使用独立 editor/depth.slang，为编辑器遮挡和拾取生成深度，不走场景材质逻辑，与当前光追一样按不透明几何处理。两条路线统一在主场景输出之后执行 LightMarkerPass，再执行 Picking 和 EditorUi。交换链等待阶段在直接 blit 时使用 transfer，其他情况使用 color-attachment-output，仍使用原来的两帧 fence/semaphore 模型。加速结构构建/复用仍使用其原有内部内存屏障，不属于 Graph 当前管理的图像/缓冲区资源。
 
@@ -154,12 +154,13 @@ Renderer 首次接收 SceneRenderData 时组图，之后检测结构性渲染配
 
 各 Pass 提供 setup/execute，可选提供 prepare；setup 直接接收 ImageHandle/BufferHandle 或前序 Pass 的 Output，返回 Output，prepare 在图资源分配后执行。
 Renderer setupRenderGraph 根据配置通过 setupPass<T>(args...) 完美转发参数，显式串接资源句柄；ScenePass 直接接收深度 handle 和 ShadowPass::Output。Graph 不再提供业务组图的 setup 接口。
-所有 Pass 类型只在 Renderer.cpp 的 tuple 类型列表中集中声明一次，保存 Pass 对象，通过类型直接访问。
+顶层 Pass 类型只在 Renderer.cpp 的 tuple 类型列表中集中声明一次，保存 Pass 对象，通过类型直接访问。
 Renderer 的 setupPass 将 Pass 对象交给 graph.addPass；addPass 通过静态反射收集参数中的 handle，限定访问记录的切换范围并在返回时恢复。Pass 仍调用 graph.use(handle, access)。Graph 单独拥有节点，保存资源依赖、use 记录和 execute 回调，不使用字符串注册。
 类型列表和 Renderer 的 setupPass 模板定义只放在 cpp；RenderGraph.h 定义通用模板，不包含各 Pass 的头文件。
 Renderer 在组图后显式调用 compile，从 EndPass 回溯资源依赖、补充写前读约束，将保留节点按拓扑顺序写入 sortedNodes 并分配资源。execute 只遍历 sortedNodes，先转换节点声明的资源状态，再调用执行回调。暂不实现资源复用。
 
 - createImage/createBuffer 只描述创建属性。
+- createAccelerationStructure 记录 Pass 所有的加速结构或 BLAS 集合的依赖及访问状态，不负责 Vulkan 分配；use 声明读写并建立依赖，由 Graph 生成全局内存屏障。
 - importSwapchain 借用交换链图像。
 - importImage/importBuffer 借用外部资源并接收初始状态；imageState/bufferState 查询执行后的状态，所有者负责资源存活与后续使用。
 - use(handle, access) 声明 stage/access/layout，Graph 从实际访问推导创建 usage。

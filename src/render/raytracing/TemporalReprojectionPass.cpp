@@ -16,6 +16,7 @@ constexpr std::array kHistoryFormats{
     vk::Format::eR32G32B32A32Sfloat, // RGB mean + sample count.
     vk::Format::eR32Sfloat, // Positive view-space depth; zero means no surface.
     vk::Format::eR16G16B16A16Sfloat, // World geometric normal.
+    vk::Format::eR32G32Sfloat, // Luminance first and second raw moments.
 };
 constexpr auto kHistoryAccess = RenderGraph::ImageAccess{
     .stages = vk::PipelineStageFlagBits2::eComputeShader,
@@ -63,6 +64,7 @@ TemporalReprojectionPass::Output TemporalReprojectionPass::setup(
     const auto newExtent = graph.imageInfo(input.rayImage).extent;
     const auto& vulkan = setup.vulkan;
     const auto& device = vulkan.deviceHandle();
+    CHECK(vulkan.supportedFeatures().shaderStorageImageExtendedFormats);
     for (size_t index = 0; index < history.size(); ++index)
     {
         RenderGraph::ImageCreateInfo info{
@@ -113,7 +115,7 @@ TemporalReprojectionPass::Output TemporalReprojectionPass::setup(
     });
     if (!*pipeline)
         createPipeline(vulkan);
-    return {color};
+    return {color, history[3]->handle};
 }
 
 void TemporalReprojectionPass::createPipeline(const VulkanContext& vulkan)
@@ -121,11 +123,11 @@ void TemporalReprojectionPass::createPipeline(const VulkanContext& vulkan)
     CHECK(vulkan.physicalDeviceHandle().getQueueFamilyProperties()[vulkan.graphicsQueueFamilyIndex()].queueFlags &
         vk::QueueFlagBits::eCompute);
     const auto& device = vulkan.deviceHandle();
-    std::array<vk::DescriptorSetLayoutBinding, 8> bindings;
+    std::array<vk::DescriptorSetLayoutBinding, 9> bindings;
     for (uint32_t binding = 0; binding < bindings.size(); ++binding)
         bindings[binding] = {
             .binding = binding,
-            .descriptorType = binding == 7 ? vk::DescriptorType::eUniformBuffer
+            .descriptorType = binding == 8 ? vk::DescriptorType::eUniformBuffer
                 : binding < 3 ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute,
         };
@@ -146,7 +148,7 @@ void TemporalReprojectionPass::createPipeline(const VulkanContext& vulkan)
     }));
     const std::array poolSizes{
         vk::DescriptorPoolSize{.type = vk::DescriptorType::eSampledImage, .descriptorCount = maxFramesInFlight * 3},
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = maxFramesInFlight * 4},
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = maxFramesInFlight * 5},
         vk::DescriptorPoolSize{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxFramesInFlight},
     };
     descriptorPool = vkCheck(device.createDescriptorPool({
@@ -164,9 +166,9 @@ void TemporalReprojectionPass::prepare(RenderGraph& graph, const PassSetup& setu
     for (uint32_t frameIndex = 0; frameIndex < maxFramesInFlight; ++frameIndex)
     {
         const std::array handles{input.rayImage, input.depth, input.worldNormal,
-            history[0]->handle, history[1]->handle, history[2]->handle, color};
-        std::array<vk::DescriptorImageInfo, 7> images;
-        std::array<vk::WriteDescriptorSet, 8> writes;
+            history[0]->handle, history[1]->handle, history[2]->handle, history[3]->handle, color};
+        std::array<vk::DescriptorImageInfo, 8> images;
+        std::array<vk::WriteDescriptorSet, 9> writes;
         for (uint32_t binding = 0; binding < handles.size(); ++binding)
         {
             images[binding] = {
@@ -181,8 +183,8 @@ void TemporalReprojectionPass::prepare(RenderGraph& graph, const PassSetup& setu
         }
         const auto& buffer = setup.frameData[frameIndex].viewUniformBuffer();
         const vk::DescriptorBufferInfo viewInfo{.buffer = buffer.handle(), .range = buffer.size()};
-        writes[7] = {
-            .dstSet = *sets[frameIndex], .dstBinding = 7, .descriptorCount = 1,
+        writes[8] = {
+            .dstSet = *sets[frameIndex], .dstBinding = 8, .descriptorCount = 1,
             .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &viewInfo,
         };
         setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});

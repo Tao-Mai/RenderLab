@@ -8,7 +8,7 @@ TEST(Profiler, CapturesCpuGpuDrawsAndCulling)
     profiler.beginFrame();
     profiler.recordCpu("Scene tick", 2.0);
     profiler.recordCpu("Scene tick", 1.0);
-    profiler.recordGpu(4.0, {{"ScenePass", 3.5}, {"EndPass", 0.5}});
+    profiler.recordGpu(profiler.frameNumber(), 4.0, {{"ScenePass", 3.5}, {"EndPass", 0.5}});
     profiler.recordDraws({{"ScenePass", {2, 24}}, {"EditorUiPass", {3, 15}}});
     profiler.recordCulling(10, {{"Main view", 4}, {"Point shadow 0", 7}});
     profiler.endFrame(16.0);

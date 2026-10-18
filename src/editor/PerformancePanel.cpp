@@ -67,7 +67,7 @@ void drawPerformance(const Profiler* profiler)
     }
     if (ImGui::TreeNode("GPU passes"))
     {
-        ImGui::TextDisabled("Last completed frame; total is measured separately.");
+        ImGui::TextDisabled("Last completed frame; nested scopes overlap; total is measured separately.");
         drawTimings("GPU timings", stats.gpuTimings);
         ImGui::TreePop();
     }

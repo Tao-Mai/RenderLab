@@ -8,6 +8,8 @@ public:
     struct Output
     {
         RenderGraph::ImageHandle color;
+        // RG = E[luminance], E[luminance^2]; two temporal ping-pong layers.
+        RenderGraph::ImageHandle moments;
     };
 
     Output setup(RenderGraph& graph, const PassSetup& setup, RayTracingPass::Output input);
@@ -26,7 +28,7 @@ private:
 
     RayTracingPass::Output input;
     RenderGraph::ImageHandle color;
-    std::array<std::unique_ptr<HistoryImage>, 3> history;
+    std::array<std::unique_ptr<HistoryImage>, 4> history;
     vk::Extent3D extent{};
     vk::raii::DescriptorSetLayout descriptorLayout = nullptr;
     vk::raii::PipelineLayout pipelineLayout = nullptr;

@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
+#include <locale>
 #include <numeric>
 #include <utility>
 
@@ -10,6 +12,7 @@ void Profiler::beginFrame()
 {
     DCHECK(!capturing);
     capturing = true;
+    ++frame;
     current.cpuTimings.clear();
     current.passes.clear();
     current.views.clear();
@@ -24,6 +27,10 @@ void Profiler::endFrame(double milliseconds)
     DCHECK(std::isfinite(milliseconds) && milliseconds > 0.0);
     frameHistory.push_back(static_cast<float>(milliseconds));
     cpuHistory.push_back(frameTimer.elapsedMilliseconds());
+    logTiming(frame, "wall", "Frame interval", milliseconds);
+    logTiming(frame, "cpu", "Frame", cpuHistory.back());
+    for (const auto& timing : current.cpuTimings)
+        logTiming(frame, "cpu", timing.name, timing.milliseconds);
     if (frameHistory.size() > kHistorySize)
     {
         frameHistory.pop_front();
@@ -56,8 +63,11 @@ void Profiler::recordCpu(std::string_view name, double milliseconds)
         found->milliseconds += milliseconds;
 }
 
-void Profiler::recordGpu(double milliseconds, std::vector<ProfileTiming> timings)
+void Profiler::recordGpu(uint64_t sourceFrame, double milliseconds, std::vector<ProfileTiming> timings)
 {
+    logTiming(sourceFrame, "gpu", "Frame", milliseconds);
+    for (const auto& timing : timings)
+        logTiming(sourceFrame, "gpu", timing.name, timing.milliseconds);
     current.gpuMilliseconds = milliseconds;
     current.gpuTimings      = std::move(timings);
     current.hasGpuTimings   = true;
@@ -82,11 +92,45 @@ void Profiler::clearGpu()
 void Profiler::reset()
 {
     DCHECK(!capturing);
+    stopLogging();
+    frame = 0;
     current   = {};
     displayed = {};
     frameHistory.clear();
     cpuHistory.clear();
     refreshTimer.reset();
+}
+
+void Profiler::startLogging(const std::filesystem::path& path)
+{
+    DCHECK(!logFile.is_open());
+    if (!path.parent_path().empty())
+    {
+        std::error_code error;
+        std::filesystem::create_directories(path.parent_path(), error);
+        CHECK(!error, "cannot create profile log directory '{}': {}", path.parent_path().string(), error.message());
+    }
+    logFile.open(path, std::ios::trunc);
+    CHECK(logFile.is_open(), "cannot open profile log '{}'", path.string());
+    logFile.imbue(std::locale::classic());
+    logFile << "frame,domain,scope,milliseconds\n" << std::fixed << std::setprecision(6);
+    LOG_INFO("Performance log: {}", path.string());
+}
+
+void Profiler::stopLogging()
+{
+    if (!logFile.is_open())
+        return;
+    logFile.flush();
+    CHECK(logFile.good());
+    logFile.close();
+}
+
+void Profiler::logTiming(uint64_t sourceFrame, std::string_view domain, std::string_view name, double milliseconds)
+{
+    if (logFile.is_open())
+        logFile << sourceFrame << ',' << domain << ',' << std::quoted(std::string{name}, '"', '"')
+                << ',' << milliseconds << '\n';
 }
 
 CpuProfileScope::CpuProfileScope(Profiler* target, std::string_view label) : profiler(target), name(label) {}

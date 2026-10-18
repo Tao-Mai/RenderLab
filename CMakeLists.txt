@@ -347,6 +347,10 @@ add_library(RenderLabRuntime STATIC
         src/render/feature/postprocess/ToneMappingPass.h
         src/render/raytracing/AccelerationStructure.cpp
         src/render/raytracing/AccelerationStructure.h
+        src/render/raytracing/BlasBuildPass.cpp
+        src/render/raytracing/BlasBuildPass.h
+        src/render/raytracing/TlasBuildPass.cpp
+        src/render/raytracing/TlasBuildPass.h
         src/render/raytracing/RayTracingPass.cpp
         src/render/raytracing/RayTracingPass.h
         src/render/raytracing/RayTracingData.h

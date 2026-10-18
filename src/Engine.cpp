@@ -13,6 +13,8 @@
 #include "render/Renderer.h"
 #include "scene/SceneManager.h"
 
+#include <cstdlib>
+
 namespace
 {
 template <class T>
@@ -70,6 +72,8 @@ void Engine::init()
     };
 
     ctx.config->init();
+    if (const char* profileLog = std::getenv("RENDERLAB_PROFILE_LOG"))
+        profiler.startLogging(profileLog);
     ctx.assetDataManager->init(ctx.config->paths().assets);
     ctx.window->init();
     ctx.inputManager->init();

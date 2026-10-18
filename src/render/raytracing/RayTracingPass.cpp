@@ -8,6 +8,7 @@
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
 #include "render/RenderView.h"
+#include "render/device/GpuProfiler.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/feature/RenderGraph.h"
@@ -17,44 +18,17 @@
 #include "render/resource/GpuShader.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstring>
-#include <glm/geometric.hpp>
 
 namespace
 {
 constexpr uint32_t kMissShaderCount = 2;
 constexpr uint32_t kHitShaderCount  = 2;
-// Match raytracing.slang. The surface hit group is record 0, the emitter hit group is record 1.
-constexpr uint32_t kSceneMask      = 0x01;
-constexpr uint32_t kLightMask      = 0x02;
-constexpr uint32_t kLightHitRecord = 1;
-
 vk::DeviceSize alignUp(vk::DeviceSize value, vk::DeviceSize alignment)
 {
     return (value + alignment - 1) & ~(alignment - 1);
 }
 
-VkTransformMatrixKHR instanceTransform(const glm::mat4& model)
-{
-    VkTransformMatrixKHR transform{};
-    for (uint32_t row = 0; row < 3; ++row)
-        for (uint32_t column = 0; column < 4; ++column)
-            transform.matrix[row][column] = model[column][row];
-    return transform;
-}
-
-void buildBarrier(vk::raii::CommandBuffer& commands, bool trace)
-{
-    const vk::MemoryBarrier2 barrier{
-        .srcStageMask  = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
-        .srcAccessMask = vk::AccessFlagBits2::eAccelerationStructureWriteKHR,
-        .dstStageMask  = trace ? vk::PipelineStageFlagBits2::eRayTracingShaderKHR
-                               : vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
-        .dstAccessMask = vk::AccessFlagBits2::eAccelerationStructureReadKHR,
-    };
-    commands.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &barrier});
-}
 }  // namespace
 
 RayTracingPass::Output RayTracingPass::setup(RenderGraph& graph, const PassSetup& setup)
@@ -68,6 +42,17 @@ RayTracingPass::Output RayTracingPass::setup(RenderGraph& graph, const PassSetup
         (features & kRequiredFeatures) == kRequiredFeatures,
         "GPU does not support RGBA16F ray tracing output with storage writes and linear sampling"
     );
+
+    const auto blas       = graph.addPass(bottomLevels, setup);
+    const auto structures = graph.addPass(topLevel, setup, blas);
+    for (const auto structure : {structures.blas, structures.tlas})
+        graph.use(
+            structure,
+            {
+                .stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
+                .access = vk::AccessFlagBits2::eAccelerationStructureReadKHR,
+            }
+        );
 
     const auto extent = setup.swapchain.extent();
     rayImage          = graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}});
@@ -368,41 +353,6 @@ void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursio
     };
 }
 
-void RayTracingPass::createRectLightGeometry(CommandRecorder& commandBuffer, const PassFrame& execution)
-{
-    const auto& vulkan = execution.setup.vulkan;
-    const auto& device = vulkan.deviceHandle();
-    // A unit XY rectangle facing local -Z. Every light shares this BLAS.
-    constexpr std::array<float, 12>
-        kVertices{-0.5f, -0.5f, 0.0f, 0.5f, -0.5f, 0.0f, 0.5f, 0.5f, 0.0f, -0.5f, 0.5f, 0.0f};
-    constexpr std::array<uint32_t, 6> kIndices{0, 2, 1, 0, 3, 2};
-    const auto                        usage = vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
-        vk::BufferUsageFlagBits::eShaderDeviceAddress;
-    const auto host   = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
-    rectLightVertices = Buffer(vulkan.physicalDeviceHandle(), device, sizeof(kVertices), usage, host);
-    rectLightIndices  = Buffer(vulkan.physicalDeviceHandle(), device, sizeof(kIndices), usage, host);
-    rectLightVertices.upload(kVertices.data(), sizeof(kVertices));
-    rectLightIndices.upload(kIndices.data(), sizeof(kIndices));
-
-    VkAccelerationStructureGeometryKHR triangles{
-        .sType        = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
-        .geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR,
-        .flags        = VK_GEOMETRY_OPAQUE_BIT_KHR,
-    };
-    triangles.geometry.triangles = {
-        .sType        = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
-        .vertexFormat = VK_FORMAT_R32G32B32_SFLOAT,
-        .vertexData   = {.deviceAddress = rectLightVertices.address(device)},
-        .vertexStride = sizeof(float) * 3,
-        .maxVertex    = static_cast<uint32_t>(kVertices.size() / 3 - 1),
-        .indexType    = VK_INDEX_TYPE_UINT32,
-        .indexData    = {.deviceAddress = rectLightIndices.address(device)},
-    };
-    constexpr uint32_t kTriangleCount = kIndices.size() / 3;
-    rectLightBlas.create(vulkan, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, triangles, kTriangleCount);
-    rectLightBlas.build(vulkan, commandBuffer, triangles, kTriangleCount);
-}
-
 void RayTracingPass::prepareLights(const PassFrame& execution, Frame& frame) const
 {
     const auto&          vulkan = execution.setup.vulkan;
@@ -425,159 +375,45 @@ void RayTracingPass::prepareLights(const PassFrame& execution, Frame& frame) con
         frame.lightData.upload(lights.data(), lights.size() * sizeof(LightData));
 }
 
-void RayTracingPass::prepareScene(
-    RenderGraph& graph, CommandRecorder& commandBuffer, const PassFrame& execution, Frame& frame
-)
+void RayTracingPass::prepareBindings(RenderGraph& graph, const PassFrame& execution, Frame& frame)
 {
-    const auto& vulkan   = execution.setup.vulkan;
-    const auto& device   = vulkan.deviceHandle();
-    auto&       commands = commandBuffer;
-    const auto& items    = execution.renderData.drawItems;
-    CHECK(items.size() < (1u << 24), "ray tracing instance count exceeds the custom-index limit");
+    const auto& vulkan = execution.setup.vulkan;
+    const auto& device = vulkan.deviceHandle();
+    const auto& items  = execution.renderData.drawItems;
     static_assert(sizeof(Vertex) == 48 && offsetof(Vertex, normal) == 12 && offsetof(Vertex, texcoord) == 24);
 
-    const vk::MemoryBarrier2 reuseBarrier{
-        .srcStageMask  = vk::PipelineStageFlagBits2::eAllCommands,
-        .srcAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
-        .dstStageMask  = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
-        .dstAccessMask =
-            vk::AccessFlagBits2::eAccelerationStructureReadKHR | vk::AccessFlagBits2::eAccelerationStructureWriteKHR,
-    };
-    commands.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &reuseBarrier});
-    std::vector<VkAccelerationStructureInstanceKHR> instances;
-    std::vector<RayTracingHitData>                  hits;
     RayTracingMaterials materials{*renderContext().resources};
-    const auto append = [&](const GpuMesh&   mesh,
-                            uint32_t         firstIndex,
-                            uint32_t         indexCount,
-                            const glm::mat4& model,
-                            uint32_t         materialIndex)
-    {
-        CHECK(indexCount % 3 == 0, "ray tracing submesh requires triangle indices");
-        const uint64_t                     vertexAddress = mesh.vertices().address(device);
-        const uint64_t                     indexAddress  = mesh.indices().address(device);
-        VkAccelerationStructureGeometryKHR triangles{
-            .sType        = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
-            .geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR,
-            .flags        = VK_GEOMETRY_OPAQUE_BIT_KHR,
-        };
-        triangles.geometry.triangles = {
-            .sType        = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
-            .vertexFormat = VK_FORMAT_R32G32B32_SFLOAT,
-            .vertexData   = {.deviceAddress = vertexAddress},
-            .vertexStride = sizeof(Vertex),
-            .maxVertex    = mesh.vertexCount() - 1,
-            .indexType    = VK_INDEX_TYPE_UINT32,
-            .indexData    = {.deviceAddress = indexAddress + firstIndex * sizeof(uint32_t)},
-        };
-        const auto [bottom, created] = blas.try_emplace({&mesh, firstIndex, indexCount});
-        if (created)
-        {
-            bottom->second.create(vulkan, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, triangles, indexCount / 3);
-            bottom->second.build(vulkan, commands, triangles, indexCount / 3);
-        }
-        VkAccelerationStructureInstanceKHR instance{};
-        instance.transform                      = instanceTransform(model);
-        instance.instanceCustomIndex            = static_cast<uint32_t>(hits.size());
-        instance.mask                           = kSceneMask;
-        instance.flags                          = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-        instance.accelerationStructureReference = bottom->second.address();
-        instances.push_back(instance);
-        hits.push_back({vertexAddress, indexAddress, firstIndex, materialIndex});
-    };
+    std::vector<RayTracingHitData> hits;
+    hits.reserve(items.size());
     for (const auto& item : items)
-        append(*item.mesh, item.firstIndex, item.indexCount, item.model, materials.add(*item.material));
+        hits.push_back({
+            item.mesh->vertices().address(device),
+            item.mesh->indices().address(device),
+            item.firstIndex,
+            materials.add(*item.material),
+        });
 
-    const auto& lights = execution.renderData.lights;
-    CHECK(lights.size() < (1u << 24), "ray tracing light index exceeds the custom-index limit");
-    const auto& ranges = execution.renderData.lightRanges;
-    for (uint32_t index = ranges.pointEnd; index < ranges.rectAreaEnd; ++index)
-    {
-        const auto& light = lights[index];
-
-        const glm::vec2 size{light.areaSizeCone};
-        CHECK(
-            std::isfinite(size.x) && std::isfinite(size.y) && size.x > 0 && size.y > 0,
-            "rectangular light {} requires finite positive dimensions",
-            index
-        );
-        if (!rectLightBlas.handle())
-            createRectLightGeometry(commandBuffer, execution);
-
-        const glm::vec3 right = light.areaRight();
-        const glm::vec3 direction{light.direction};
-        const glm::vec3 up = glm::cross(right, direction);
-        const glm::mat4 model{
-            glm::vec4{right * size.x, 0},
-            glm::vec4{up * size.y, 0},
-            glm::vec4{-direction, 0},
-            glm::vec4{light.position(), 1}
-        };
-        VkAccelerationStructureInstanceKHR instance{};
-        instance.transform                              = instanceTransform(model);
-        instance.instanceCustomIndex                    = index;
-        instance.mask                                   = kLightMask;
-        instance.instanceShaderBindingTableRecordOffset = kLightHitRecord;
-        // Unlike scene meshes, light instances keep facing culling enabled for one-sided emission.
-        instance.accelerationStructureReference = rectLightBlas.address();
-        instances.push_back(instance);
-    }
-    buildBarrier(commands, false);
-
-    const uint32_t count = static_cast<uint32_t>(instances.size());
+    const vk::DeviceSize bytes = std::max<size_t>(hits.size(), 1) * sizeof(RayTracingHitData);
     CHECK(
-        std::max(count, 1u) * sizeof(RayTracingHitData) <= vulkan.properties().limits.maxStorageBufferRange,
+        bytes <= vulkan.properties().limits.maxStorageBufferRange,
         "ray tracing hit data exceeds maxStorageBufferRange"
     );
-    if (frame.instanceCount != count)
+    if (frame.hitData.size() < bytes)
     {
-        frame.tlas.reset();
-        frame.instances.reset();
         frame.hitData.reset();
-        const auto host = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
-        frame.instances = Buffer(
-            vulkan.physicalDeviceHandle(),
-            device,
-            std::max(count, 1u) * sizeof(VkAccelerationStructureInstanceKHR),
-            vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
-                vk::BufferUsageFlagBits::eShaderDeviceAddress,
-            host
-        );
         frame.hitData = Buffer(
             vulkan.physicalDeviceHandle(),
             device,
-            std::max(count, 1u) * sizeof(RayTracingHitData),
+            bytes,
             vk::BufferUsageFlagBits::eStorageBuffer,
-            host
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
         );
     }
-    VkAccelerationStructureGeometryKHR top{
-        .sType        = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
-        .geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR,
-    };
-    top.geometry.instances = {
-        .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR,
-        .data  = {.deviceAddress = frame.instances.address(device)},
-    };
-    if (frame.instanceCount != count)
-    {
-        frame.tlas.create(vulkan, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR, top, count);
-        frame.instanceCount = count;
-    }
-    if (count)
-    {
-        frame.instances.upload(instances.data(), instances.size() * sizeof(instances.front()));
-    }
     if (!hits.empty())
-    {
         frame.hitData.upload(hits.data(), hits.size() * sizeof(hits.front()));
-    }
     materials.upload(frame.materialData, vulkan);
 
-    frame.tlas.build(vulkan, commands, top, count);
-    buildBarrier(commands, true);
-
-    const vk::AccelerationStructureKHR                   tlas = frame.tlas.handle();
+    const vk::AccelerationStructureKHR                   tlas = topLevel.structure(execution.frameIndex).handle();
     const vk::WriteDescriptorSetAccelerationStructureKHR accelerationInfo{
         .accelerationStructureCount = 1,
         .pAccelerationStructures    = &tlas
@@ -682,8 +518,12 @@ void RayTracingPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer,
 {
     auto&  commands = commandBuffer;
     Frame& frame    = frames[execution.frameIndex];
-    prepareLights(execution, frame);
-    prepareScene(graph, commandBuffer, execution, frame);
+    {
+        CpuProfileScope timing{context().profiler, "RT.Binding preparation"};
+        GpuProfileScope gpuTiming{commands, "RT.Binding preparation"};
+        prepareLights(execution, frame);
+        prepareBindings(graph, execution, frame);
+    }
     commands.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
     const std::array sets = {*frame.set};
     commands.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, *pipelineLayout, 0, sets, {});
@@ -703,5 +543,6 @@ void RayTracingPass::execute(RenderGraph& graph, CommandRecorder& commandBuffer,
         }
     );
     const auto extent = execution.setup.swapchain.extent();
+    GpuProfileScope timing{commands, "RT.Trace rays"};
     commands.traceRaysKHR(raygenRegion, missRegion, hitRegion, {}, extent.width, extent.height, 1);
 }

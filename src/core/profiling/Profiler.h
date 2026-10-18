@@ -4,6 +4,8 @@
 
 #include <cstdint>
 #include <deque>
+#include <filesystem>
+#include <fstream>
 #include <span>
 #include <string>
 #include <string_view>
@@ -55,13 +57,16 @@ public:
     void beginFrame();
     void endFrame(double frameMilliseconds);
     void reset();
+    void startLogging(const std::filesystem::path& path);
+    void stopLogging();
     void recordCpu(std::string_view name, double milliseconds);
-    void recordGpu(double milliseconds, std::vector<ProfileTiming> timings);
+    void recordGpu(uint64_t frame, double milliseconds, std::vector<ProfileTiming> timings);
     void recordDraws(std::vector<PassDrawStatistics> passes);
     void recordCulling(uint32_t totalObjects, std::vector<ViewCullingStatistics> views);
     void clearGpu();
     [[nodiscard]] const PerformanceSnapshot&        display() const { return displayed; }
     [[nodiscard]] const std::vector<ProfileTiming>& gpuTimings() const { return current.gpuTimings; }
+    [[nodiscard]] uint64_t frameNumber() const { return frame; }
 
 private:
     static constexpr size_t kHistorySize         = 240;
@@ -69,10 +74,13 @@ private:
     Timer                   frameTimer;
     Timer                   refreshTimer;
     bool                    capturing = false;
+    uint64_t                frame = 0;
+    std::ofstream           logFile;
     std::deque<float>       frameHistory;
     std::deque<double>      cpuHistory;
     PerformanceSnapshot     current;
     PerformanceSnapshot     displayed;
+    void logTiming(uint64_t frame, std::string_view domain, std::string_view name, double milliseconds);
 };
 
 class CpuProfileScope

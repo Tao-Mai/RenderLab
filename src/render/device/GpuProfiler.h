@@ -22,8 +22,17 @@ public:
     void endPass(CommandRecorder& commands, uint32_t index) const;
     void endFrame(CommandRecorder& commands);
     void collect(Profiler* profiler);
+    uint32_t beginScope(CommandRecorder& commands, std::string_view name);
+    void endScope(CommandRecorder& commands, uint32_t scope) const;
 
 private:
+    static constexpr uint32_t kMaxScopes = 64;
+    struct Scope
+    {
+        std::string name;
+        uint32_t begin;
+        uint32_t end;
+    };
     const vk::raii::Device*         device          = nullptr;
     vk::raii::QueryPool             pool            = nullptr;
     uint32_t                        capacity        = 0;
@@ -33,4 +42,20 @@ private:
     std::vector<std::string>        passNames;
     std::vector<PassDrawStatistics> passStatistics;
     Profiler*                       recordingProfiler = nullptr;
+    uint64_t frameNumber = 0;
+    std::vector<Scope> scopes;
+};
+
+class GpuProfileScope
+{
+public:
+    GpuProfileScope(CommandRecorder& commands, std::string_view name);
+    ~GpuProfileScope();
+    GpuProfileScope(const GpuProfileScope&) = delete;
+    GpuProfileScope& operator=(const GpuProfileScope&) = delete;
+
+private:
+    CommandRecorder& commands;
+    GpuProfiler* profiler;
+    uint32_t scope = ~0u;
 };

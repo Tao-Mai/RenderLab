@@ -35,6 +35,10 @@ public:
     {
         ResourceHandle id = kInvalidHandle;
     };
+    struct AccelerationStructureHandle
+    {
+        ResourceHandle id = kInvalidHandle;
+    };
 
     struct ImageCreateInfo
     {
@@ -59,7 +63,7 @@ public:
         vk::ImageLayout         layout = vk::ImageLayout::eUndefined;
     };
 
-    struct BufferAccess
+    struct MemoryAccess
     {
         vk::PipelineStageFlags2 stages;
         vk::AccessFlags2        access;
@@ -73,19 +77,27 @@ public:
     template <class T, class... Args>
     auto addPass(T& pass, const PassSetup& setup, Args&&... args);
 
-    ImageHandle  createImage(ImageCreateInfo info);
+    ImageHandle createImage(ImageCreateInfo info);
     BufferHandle createBuffer(BufferCreateInfo info);
+
+    // Tracks a pass-owned AS or BLAS collection; allocation remains with the owner.
+    AccelerationStructureHandle createAccelerationStructure(MemoryAccess initial);
     ImageHandle importSwapchain();
+
     // Borrowed resources must outlive the graph and all submitted frames.
     // Owners provide the initial access; graph preserves state between executions.
     ImageHandle importImage(Image& image, ImageCreateInfo info, ImageAccess initial);
-    BufferHandle importBuffer(Buffer& buffer, BufferAccess initial);
+    BufferHandle importBuffer(Buffer& buffer, MemoryAccess initial);
     [[nodiscard]] ImageAccess imageState(ImageHandle image, uint32_t frameIndex) const;
-    [[nodiscard]] BufferAccess bufferState(BufferHandle buffer, uint32_t frameIndex) const;
-    ImageHandle  write(ImageHandle image);
+    [[nodiscard]] MemoryAccess bufferState(BufferHandle buffer, uint32_t frameIndex) const;
+
+    ImageHandle write(ImageHandle image);
     BufferHandle write(BufferHandle buffer);
-    void         use(ImageHandle image, ImageAccess access);
-    void         use(BufferHandle buffer, BufferAccess access);
+    AccelerationStructureHandle write(AccelerationStructureHandle structure);
+
+    void use(ImageHandle image, ImageAccess access);
+    void use(BufferHandle buffer, MemoryAccess access);
+    void use(AccelerationStructureHandle structure, MemoryAccess access);
 
     [[nodiscard]] Image&                 getImage(ImageHandle image, uint32_t frameIndex);
     [[nodiscard]] Buffer&                getBuffer(BufferHandle buffer, uint32_t frameIndex);
@@ -101,6 +113,12 @@ public:
     [[nodiscard]] static bool needsBarrier(const ImageAccess& previous, const ImageAccess& next);
 
 private:
+    enum class ResourceType
+    {
+        Image,
+        Buffer,
+        AccelerationStructure
+    };
     struct PassNode;
     struct Allocation;
     struct ResourceUse
@@ -110,7 +128,7 @@ private:
     };
     struct ResourceData
     {
-        bool                        isBuffer = false;
+        ResourceType                type = ResourceType::Image;
         ImageCreateInfo             imageInfo;
         BufferCreateInfo            bufferInfo;
         vk::ImageUsageFlags         imageUsage;
@@ -205,7 +223,8 @@ template <class T>
 void RenderGraph::collectDependencies(PassNode& node, const T& value)
 {
     using U = std::remove_cvref_t<T>;
-    if constexpr (std::is_same_v<U, ImageHandle> || std::is_same_v<U, BufferHandle>)
+    if constexpr (std::is_same_v<U, ImageHandle> || std::is_same_v<U, BufferHandle> ||
+                  std::is_same_v<U, AccelerationStructureHandle>)
     {
         if (value.id == kInvalidHandle)
             return;

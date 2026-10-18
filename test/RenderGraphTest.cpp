@@ -139,3 +139,24 @@ TEST(RenderGraphBarrier, CoversLayoutsAndReadAfterWrite)
     EXPECT_TRUE(RenderGraph::needsBarrier(transferWrite, hostRead));
     EXPECT_TRUE(RenderGraph::needsBarrier(hostRead, transferWrite));
 }
+
+TEST(RenderGraphBarrier, CoversAccelerationStructureBuildAndTraversal)
+{
+    const RenderGraph::ImageAccess build{
+        .stages = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
+        .access =
+            vk::AccessFlagBits2::eAccelerationStructureReadKHR | vk::AccessFlagBits2::eAccelerationStructureWriteKHR,
+    };
+    const RenderGraph::ImageAccess tlasRead{
+        .stages = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
+        .access = vk::AccessFlagBits2::eAccelerationStructureReadKHR,
+    };
+    const RenderGraph::ImageAccess traversal{
+        .stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
+        .access = vk::AccessFlagBits2::eAccelerationStructureReadKHR,
+    };
+    EXPECT_TRUE(RenderGraph::needsBarrier(build, tlasRead));
+    EXPECT_TRUE(RenderGraph::needsBarrier(build, traversal));
+    EXPECT_TRUE(RenderGraph::needsBarrier(traversal, build));
+    EXPECT_FALSE(RenderGraph::needsBarrier(tlasRead, traversal));
+}
