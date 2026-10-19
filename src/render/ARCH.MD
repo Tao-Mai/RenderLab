@@ -1,36 +1,52 @@
 # RenderGraph
 
-Renderer 负责业务组图，Graph 负责节点、资源和执行。Graph 显式引用 VulkanContext、Swapchain 和 FrameContext，不引用 Renderer。各 Pass 直接接收类型化资源句柄或前序 Pass 的 Output，返回 Output，不使用 Input 结构或 slot 表。
+[渲染模块](README.md) · [项目架构](../../docs/architecture.md)
 
-Renderer 持有 Pass 对象，类型在 Renderer.cpp 的 tuple 类型列表中集中声明，通过 setupPass<T> 按类型访问。
-Graph 通过 addPass 登记节点，节点记录依赖、资源访问和执行回调。setup 的隐式切换限定在模板内部，返回时自动恢复。Graph 头文件定义通用登记和反射模板，不引入具体 Pass 头文件。
+Renderer 决定加入哪些 Pass，Pass 声明资源访问，Graph 负责依赖、分配、状态转换与执行。它不解释场景、材质或拾取结果。
 
-## 生命周期
+## Setup → Compile → Execute
 
-1. Renderer init：初始化 Graph，创建 Pass 对象。
-2. Renderer rebuildGraph：等待 GPU 空闲并释放旧图资源，再由 setupRenderGraph 按配置串接 Pass，调用 setup 收集 use、合并 usage。最后通过 setupPass<EndPass> 设置终点，声明 Present 和 HostRead 出口状态。场景对象和 Mesh 更新不触发图重建。
-3. Graph compile：由 Renderer 显式调用，从终点 BFS 回溯资源生产者，补充写前读依赖，拓扑排序并分配资源，然后执行保留节点可选的 prepare 回调。ScenePass 和 ToneMappingPass 在 prepare 中绑定图资源 descriptor。重复写和循环在所有构建中通过 CHECK 检查。
-4. Engine 调用 RenderSystem 整理场景数据，Editor 准备普通 RenderView 和灯光标记；Renderer 等待当前帧 fence，ScenePass 组织光照参数并调用 FrameData 上传相机、灯光和阴影数据。
-5. Graph 遍历 sortedNodes，先应用节点的资源状态，再调用执行回调。EndPass 在最后应用出口状态。
-6. FrameContext submit，Swapchain present；Renderer 等待拾取 fence 后下载 selection ID。Renderer 返回交换链重建需求，Engine 协调重建和 Editor UI 刷新。Graph 不负责结果解释或拾取状态。
+### Setup：描述工作
 
-compile 将保留节点的拓扑顺序保存到 sortedNodes，execute 只执行这些节点，被剪枝节点不录制命令。当前不做资源复用或跨队列调度。状态粒度为整个 Image/Buffer。
+- Renderer 按配置串接具体 Pass，通过类型访问，避免字符串节点和业务类型映射。
+- Pass 接收 Image / Buffer Handle 或上游 Output，返回自己的 Output。
+- 模板使用 C++26 静态反射收集参数中的资源依赖；Graph 头文件不引入具体 Pass。
+- 资源记录生产者。write 创建新版本 Handle 并指向旧版本，同一资源的版本共享底层存储。
+- EndPass 声明最终呈现与 CPU 回读出口。
 
-## 资源边界
+### Compile：建立执行图
 
-- Graph 持有每帧的 Scene depth、点阴影 cubemap array、Picking image、readback buffer 和光追输出图像；交换链为借用资源。资产纹理不登记到 Graph，由资产 GPU 资源负责上传和采样状态，Pass 直接绑定 descriptor。
-- 每个图像实例持有 Image，View 缓存在 Image 内。Pass 通过 getImage 获取引用，再调用 getOrCreateImageView；Graph 不提供 View 缓存或转发接口。
-- FrameContext/FrameData 持有 UBO、灯光和点阴影 SSBO、Scene Set；Mesh/Material 的资产 GPU 对象由 RenderResourceManager 缓存。
-- Renderer 通过 RenderContext 暴露 Shader/Descriptor/Pipeline/Resource Manager，并负责 init/shutdown。
+- 从终点回溯有效生产者，建立依赖并补充覆盖写之前的读取约束。
+- 拓扑排序，剪去未参与最终结果的节点；重复写和循环在所有构建中检查。
+- 合并资源 Usage、创建物理资源；资源就绪后调用保留节点的 prepare 完成绑定。
+- 保存执行顺序，场景对象变化不要求重新编译图。
 
-## 当前路线
+### Execute：录制命令
 
-光栅依赖：Shadow / DepthPrepass → Scene → Skybox → Transparent → ToneMapping → LightMarker，随后分为 EditorUi 和 Picking → PickingCopy 两条分支，最终汇合到 EndPass。Skybox、ToneMapping 和 Shadow 按配置登记。关闭阴影时不登记 ShadowPass，ScenePass 提供占位纹理，并清除上传数据中的 castShadow 标记。
+- 按编译顺序处理资源访问、插入 Barrier，再执行 Pass 回调。
+- EndPass 应用 Present / HostRead 等出口状态。
+- 场景绘制和计算使用原生 Vulkan 调用；Graph 不包装每一次 Draw。
+- 拾取结果由 Renderer / Editor 消费，Graph 只处理图像、回读缓冲与同步。
 
-延迟依赖：Shadow / DepthPrepass → GBuffer → DeferredLighting → Skybox → Transparent → ToneMapping → LightMarker，后续编辑器节点与前向相同。GBuffer 保存统一基础材质数据，DeferredLighting 根据深度和逆 VP 重建世界位置；两个光栅路线复用 SceneBindings、BRDF、阴影和 IBL。延迟路线不读取 clearcoat 扩展，透明物体仍走前向绘制。
+## 资源与跨帧同步
 
-光追依赖：RayTracing（RGBA16F）→ ToneMapping，与 EditorDepthPass 汇合到 LightMarker，再分为 EditorUi 和 Picking → PickingCopy 两条分支，最终汇合到 EndPass。关闭 HDR 时用 RayTracingBlit 代替 ToneMapping。Picking 读取前序深度，不创建独立深度图。光追的 BLAS/TLAS 构建同步仍由原实现负责，不纳入图资源状态跟踪。
+| 资源 | 管理方式 |
+| --- | --- |
+| 深度、阴影图、G-buffer、HDR 中间结果 | Graph 持有，默认 Shared，全局一份 |
+| CPU 回读缓冲 | 显式 PerFrame，按在途槽位分配 |
+| 交换链图像 | Graph 借用，按获取的交换链图像选择 |
+| 时域历史 | Pass 持有并导入 Graph，双层 Ping-pong |
+| Mesh / Material / Texture | RenderResourceManager 缓存，不作为普通图临时资源 |
 
-无拾取请求时 Picking 和 PickingCopy 在 execute 内提前返回，不绘制或复制；Graph 仍按节点声明处理资源状态。Resize 时先释放 Graph 资源和缓存 View，再销毁交换链，最后由 Renderer 重新组图和 compile。
+Shared 资源的访问状态在帧间保留：下一帧首次访问与上一帧最后的读写建立同步；连续只读访问合并阶段和访问范围。当前运行在同一队列，状态粒度为整个 Image / Buffer。
 
-详细接口和逐帧流程见 [README](README.md)。
+Image 自己缓存 ImageView，Pass 获取 Image 后创建所需 View；Graph 不维护 View 缓存。借用资源的所有者负责保证 GPU 使用期间的生命周期。
+
+## 重建边界
+
+- 渲染路线、HDR、IBL、阴影开关或资源规格等改变时重建图。
+- 普通物体变换、材质参数和灯光变化更新帧数据，不重新组图。
+- 场景环境图是资源绑定，不是拓扑条件；IBL 开关才决定是否登记 SkyboxPass。
+- Resize 时释放旧图资源与 View，重建交换链，再 Setup / Compile。
+
+当前不实现临时资源别名复用、多队列调度或异步 Compute。实现入口：[RenderGraph.h](feature/RenderGraph.h)、[RenderGraph.cpp](feature/RenderGraph.cpp)。

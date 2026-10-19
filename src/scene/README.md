@@ -1,96 +1,36 @@
-# AActor / Component
+# 场景模块
 
-SceneManager owns a live `SceneAsset` and its `unique_ptr<AActor>` objects. Each AActor owns its
-`unique_ptr<Component>` objects, including at least one TransformComponent.
-Multiple components of the same type are allowed. `getComponent<T>()` returns
-the first matching component; `getComponents<T>()` returns all matching pointers
-in component-array order, including derived types. Const Actors return const pointers.
-`transform()` uses the first TransformComponent.
-Components hold a non-owning, private AActor pointer. Runtime pointers and state
-are not serialized.
+[项目首页](../../README.md) · [项目架构](../../docs/architecture.md)
 
-Constructors use `addDefaultComponent<T>()` to assemble components without initializing
-them; deserialization also only assembles components. `AActor::init()` validates
-the complete component array, then calls each component's virtual `init(AActor*)`.
-`Component::init()` uses DCHECK to detect a null AActor in Debug and binds the private owner pointer.
-Overrides call the base implementation and check their own component dependencies
-through the supplied AActor; dependency presence does not depend on array order.
-Camera, movement, Render and Light require Transform. The two movement components
-reject each other in their own init hooks; movement does not require a local Camera.
-`addComponent<T>()` always initializes the added component immediately, even before
-AActor initialization. Invalid components or dependencies fail through CHECK;
-there is no exception rollback. Owner pointers are not persisted.
+场景使用 Actor 持有 Component 的对象模型。SceneManager 管理运行时场景；编辑器相机独立于 Actor / Component。
 
-Engine ticks SceneManager. The active AFreeFlyCamera ticks first; inside that
-actor, CameraComponent updates navigation and view direction before movement.
-Other actors then tick their components. AActor provides a virtual `void tick(float deltaTime)`
-that traverses all its components by default; subclasses override it only for custom behavior.
-Component retains a pure virtual Tick; components without per-frame behavior implement
-an empty Tick. Editor edits mark
-the scene dirty independently of Tick.
+## 对象与组件
 
-AFreeFlyCamera supplies CameraComponent and FreeFlyMoveComponent.
-AStaticMesh supplies TransformComponent and RenderComponent.
-ALight supplies TransformComponent and a PointLightComponent by default; its constructor
-accepts another concrete light component directly. LightComponent is an abstract base for shared
-color, intensity, enabled and shadow properties. PointLightComponent, DirectionalLightComponent,
-RectAreaLightComponent and SpotLightComponent store only their own parameters; finite lights
-share range through LocalLightComponent. Components have no duplicate type enum; RenderSystem
-maps concrete classes to GpuLightType only when packing the unchanged GPU LightData.
-The editor changes light type by replacing the component after drawing, preserving shared
-properties and the owner's transform. Concrete actors can
-hold additional behavior components; AActor itself is concrete but is not registered for persistence.
+- AActor 持有组件数组，默认 Tick 遍历组件，子类可覆盖自身行为。
+- 支持多个同类型组件；`getComponent<T>()` 返回首个，`getComponents<T>()` 返回全部。
+- 构造函数用 `addDefaultComponent` 组装默认组件，Actor 初始化后统一绑定 Owner 并检查依赖。
+- 运行时 `addComponent` 添加后立即初始化，Owner 为非拥有指针。
+- AStaticMesh 组合 Transform 与 RenderComponent；ALight 使用具体的灯光组件。
+- Point / Directional / RectArea / Spot 分别使用子类，仅在提交渲染数据时映射为 GPU 光源类型。
 
-## Registration and persistence
+编辑器相机的位置与投影保存在 SceneAsset 中，但相机实例与导航状态归 Editor，不占用场景对象。
 
-`SceneManager::init()` registers the concrete AActor and
-Component types once during application startup. Add new concrete subclasses
-to the shared `scene/SceneTypes.h` list. Its explicit names are the persistent
-type IDs; serialization and editor drawing use the same list.
+## 反射与持久化
 
-Initialize SceneManager before AssetManager reads scene assets. Engine calls
-`SceneManager::loadDefaultScene()` when entering `run()`; SceneManager reads the
-initial scene ID from ConfigManager and loads the live scene before rendering.
+SceneManager 初始化时注册 [SceneTypes.h](SceneTypes.h) 中的类型；Engine 进入 Run 时，由 SceneManager 读取配置中的默认场景 ID 并加载。
 
-Polymorphic pointers serialize as `{"TypeName": {...}}`. Each non-null pointer
-has exactly one registered type-name key with an object value; null pointers
-serialize as `null`. Unknown types and malformed wrappers are errors.
-RegisterBase generates construction, static-reflection serialization and
-member-iteration callbacks; subclasses do not need serialization overrides.
-AActor and Component carry `[[=PartialSerialize{}]]`. The serializer checks base
-classes recursively, so subclasses inherit this opt-in policy without another
-class annotation. Only accessible members marked `[[=ReflectField{}]]` are
-serialized and deserialized, including marked inherited members. Unmarked
-members retain their current or constructor-initialized values on deserialization.
-The owned `components` field is marked; its polymorphic pointers still serialize
-as objects rather than addresses. Owner pointers, picking IDs and navigation
-state are unmarked. Unknown types and missing marked fields are errors.
+- Actor / Component 通过 `ReflectField` 标记持久化字段，继承类沿用该字段选择策略。
+- 多态指针保存为 `{"TypeName": {...}}`，空指针为 null；不保存内存地址或编译器 RTTI 名称。
+- Owner、拾取 ID、导航状态等运行时数据不参与序列化。
+- 场景从资产快照恢复为独立对象，避免运行时修改直接污染资产缓存。
+- 切换场景丢弃未保存修改；显式保存才写入场景内容，关闭时只记录默认场景选择。
 
-Ordinary configuration and asset description structs still serialize all
-accessible fields. `core/Reflect.h` supplies the same inherited field selection
-to serialization, member iteration, and generic editor drawing.
+## 向渲染层提交
 
-Scene JSON uses the member names `id`, `actors`, `environment`, `name` and
-`components`. Asset IDs use `{"value": "..."}`, GLM vectors use numeric arrays,
-and quaternions use [x, y, z, w]. Optional material fields are explicitly null
-when absent. There is no old scene-format parser.
+Engine 调用 RenderSystem 遍历逻辑上需要渲染的对象，提取资产 ID、变换、材质覆盖与灯光，生成 SceneRenderData。
 
-AssetManager caches a `SceneAsset` snapshot. SceneManager clones it through Serialize/Deserialize before
-binding component owners, validating required components, and assigning runtime
-picking IDs. Saving creates a detached snapshot again. The asset cache never
-owns references into the live scene. Picking IDs are not persisted and are not
-reused after reload.
+RenderSystem 不做视锥剔除，不加载 GPU 资源。Renderer 根据主相机与阴影配置计算可见性，RenderResourceManager 再将快照转换为 GPU 渲染表示。下层不接触 Component，新增渲染路线无需修改场景对象体系。
 
-Engine invokes RenderSystem each frame to read the live actors and their
-components, prepares shadow VPs and computes main-view/shadow visibility bits from
-asset-local AABBs transformed to world space, then passes SceneRenderData to Renderer.
-Point lights share one bit across all six faces; directional cascades have separate bits.
-The complete object list is retained for ray tracing; raster draws filter the relevant bit.
-SceneRenderData does
-not retain actor references. Editor gizmos and
-picking use the same actors. The inspector draws marked fields with typed ImGui
-overloads. Transform, Light and Render have dedicated editors for Euler rotation,
-light-type-specific properties and submesh material overrides. Mesh selection
-and other actor edits are picked up by the next RenderSystem preparation without
-rebuilding the render graph. UI callbacks and ImGui dependencies stay in
-the editor layer.
+编辑器的组件属性控件、Transform Gizmo 与材质覆盖 UI 留在 editor 模块。
+
+实现入口：[SceneManager](SceneManager.cpp)、[AActor](AActor.h)、[Component](Component.h)、[RenderSystem](system/RenderSystem.cpp)。

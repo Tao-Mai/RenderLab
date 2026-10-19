@@ -1,74 +1,54 @@
-# RenderLab asset layout
+# 资产与运行数据
 
-`config/config.json` is relative to the repository root. Its asset root is
-`../assets`. The asset root is also the descriptor root.
+[项目首页](../README.md) · [资产模块](../src/asset/README.md) · [材质示例](../docs/material_samples.md)
 
-Asset JSON files are grouped under the explicit `assets/<dir>/` directories. The initial scene is
-`assets/Scene/default.json`. Source glTF models and their external textures are
-stored under `resource/`. Shader descriptor binary paths are relative to the
-process working directory, where CMake places the compiled shaders.
+资产描述、导入后的二进制与源模型分开保存。运行时读取处理好的资产，不在每帧解析 glTF / OBJ。
 
-The editor saves the active scene to its descriptor file. Builtin meshes such
-as `sphere` and `plane` are referenced by ID and do not need mesh descriptors.
+## 目录约定
 
-Scenes store `actors` as `{"TypeName": {...}}`, using registered type names as
-keys. Actors own polymorphic `components` in the same format, with exactly one
-type key per non-null pointer. Configuration, scenes, and all asset descriptions
-use C++ member names and IDs use `{"value": "..."}`. Optional fields are explicitly
-null when absent; missing fields and unknown fields in complete descriptions are errors.
+```text
+assets/
+  Mesh/ Material/ Texture/ Shader/ Scene/ EnvironmentMap/ Sampler/
+  binary/
+    geometry/     网格顶点与索引
+    texture/      像素、Cubemap 与 Mipmap
+resource/         模型、纹理与来源许可
+```
 
-Texture imports write ready-to-upload pixels to `assets/binary/texture/<id>.bin`.
-Ordinary 2D textures include a complete mip chain down to 1x1, packed mip-major.
-Mip 0 is preserved; sRGB colors are filtered in linear space, with linear alpha
-and alpha-weighted RGB for sRGB RGBA images. Linear data maps and floating-point
-images stay linear. Odd-sized and non-square images are supported.
-BRDF and Sheen LUTs are builtin textures exposed by `BuiltinAssets::Texture::kBrdfLut`
-and `kSheenLut`. Their PNG data is embedded from `src/asset/builtin/data/`, with no
-renderer configuration entries or persisted texture descriptors/binaries.
-Mesh imports write geometry to `assets/binary/geometry/<id>.bin`.
-Texture descriptors keep the source `path`, the generated `binary` path, the
-pixel `format`, `colorSpace`, `width`, `height`, `mipLevels`, and the `layout` (`Image2D` or `Cubemap`). Runtime loading reads
-only the binary. Paths in descriptors are relative to `assets/`; source files
-in `resource/` use `../resource/...`. The `assets/` directory
-is ignored by Git.
+- JSON 目录由各资产类型显式声明；同一类型内 ID 唯一。
+- 资产引用使用类型化 ID，JSON 形式为 `{"value": "..."}`。
+- 网格保存局部 AABB 与 Submesh 的材质引用；几何数据独立存储。
+- TextureBinding 同时引用 Texture 和 Sampler。
+- 内置几何、fallback 纹理、Sampler、BRDF / Sheen LUT 无需额外导入。
 
-From the repository root, use:
+## 导入
 
-`cmake-build-default/RenderLab.exe --import-texture <source-image>`
+编辑器提供模型预览、尺寸 / 缩放与 ID 调整；确认时才查重并自动追加序号。完整场景导入将模型节点转换为静态物体，保留实例变换、共享网格和子网格材质，并设置编辑器相机。
 
-`cmake-build-default/RenderLab.exe --import-environmentmap <source.exr|source.png|source.jpg>`
+底层统一使用 AssetImporter：glTF / GLB 由 TinyGLTF 解析，其余受支持模型格式由 Assimp 解析。当前面向静态资产，不导入动画与骨骼蒙皮。
 
-`cmake-build-default/RenderLab.exe --import-mesh <source.gltf|source.glb>`
+也可使用以下命令，`<RenderLab.exe>` 替换为实际构建产物路径：
 
-The first import uses the source filename stem as its ID. If that ID exists,
-later imports use `stem1`, `stem2`, and so on.
-The command prints the assigned ID. Meshes must be imported before use; runtime
-loading reads their generated geometry.
+```text
+<RenderLab.exe> --import-mesh <model>
+<RenderLab.exe> --import-texture <image>
+<RenderLab.exe> --import-environmentmap <image>
+```
 
-`--import-texture` stores decoded images as 2D textures, preserving the channel
-count of 8-bit images. EXR channel storage
-determines whether the result uses `RGBA16F` or `RGBA32F`. EXR defaults to
-linear color space; ordinary images default to sRGB. Callers may override
-`importTexture` color space for linear data maps.
-`--import-environmentmap` converts an image to a Cubemap texture as radiance, then creates
-an `EnvironmentMapAsset` that references radiance, irradiance, and a GGX
-prefiltered specular Cubemap. Radiance and prefiltered specular each have a
-complete mip chain; prefiltered roughness runs from 0 at mip 0 to 1 at the last
-mip. Radiance mips average linear pixels before encoding. Irradiance and GGX
-prefilter samples select a continuous radiance LOD from their PDF-derived solid
-angle divided by the average base-level cubemap texel solid angle, using log4.
-The configured GGX sample count applies to prefilter mip 1 and doubles at each
-higher mip.
-Environment and material texture fields use `TextureBinding` objects with
-`textureID` and `samplerID`, each stored as `{"value": "..."}`. Builtin `linearRepeat` suits tiling material UVs;
-`linearClamp` suits cubemaps and LUTs. `nearestRepeat` suits tiling pixel art,
-while `nearestClamp` suits discrete lookup or mask textures.
-Environment imports inspect EXR channel storage. HALF RGB channels produce
-`RGBA16F`; FLOAT RGB channels produce `RGBA32F`. The importer converts
-a 2:1 latitude-longitude EXR into six square cubemap faces. For an EXR marked
-`CUBE`, its six vertically stacked faces are reordered to Vulkan face axes.
-Pixels are stored mip first, largest to smallest. Within each mip, faces are
-stored in +X, -X, +Y, -Y, +Z, -Z order, each face row major with no padding.
-The importer writes linear RGBA32F for irradiance and prefiltered specular.
-`grasslands_sunset_4k.exr` has no `envmap` attribute, so its 2:1 dimensions
-identify it as latitude-longitude when imported as an environment map.
+CLI 相对源路径以仓库为基准；默认 ID 为文件名去掉扩展名。完整场景导入使用编辑器 / API，没有独立的 import-scene 命令。
+
+普通贴图生成完整 Mipmap；sRGB 颜色在线性空间过滤，数据贴图保持 Linear。环境导入生成 Radiance、Irradiance 和 GGX Prefiltered Cubemap。
+
+## 场景与配置
+
+- [config/config.json](../config/config.json) 指定资产根目录、初始场景及其他配置路径。
+- 资产根目录相对配置目录解析；资产中的数据路径相对资产根目录。
+- Shader 二进制由 CMake 生成，描述中的路径相对运行工作目录。
+- 场景保存 Actor / Component、材质覆盖、独立编辑器相机与环境图。
+- 切换场景丢弃未保存修改；关闭时记录默认场景选择，不自动保存场景内容。
+
+模型源文件与生成的 `assets/` 数据未完整提交。文档中的场景名用于说明本地展示资源，不保证全新检出后已具备全部模型与缓存；使用前应准备资产并设置有效的初始场景。
+
+## 来源与许可
+
+外部模型和纹理的许可随源文件保留。Sibenik 来自 [McGuire Computer Graphics Archive](https://casual-effects.com/g3d/data10/index.html)，采用 CC BY-NC；Khronos 示例资产的来源见 [材质示例](../docs/material_samples.md)。内置 Sheen LUT 的来源与许可证见 [LUT 说明](../docs/sheen_lut.md)。

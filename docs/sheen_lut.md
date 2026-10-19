@@ -1,17 +1,23 @@
 # Sheen 方向反照率 LUT
 
-- 官方来源：[Khronos glTF Sample Renderer / lut_sheen_E.png](https://github.com/KhronosGroup/glTF-Sample-Renderer/blob/506f05c3ff6deaa202a5384ba1ab9891b3c7f210/assets/images/lut_sheen_E.png)。
+[Sheen 着色](sheen.md) · [资产模块](../src/asset/README.md)
+
+该 LUT 保存 Charlie Sheen 的方向反照率，用于材质分层时缩放底层能量。它不是环境光颜色，也不能替代 Sheen IBL 的积分。
+
+## 来源与许可
+
+- 来源：[Khronos glTF Sample Renderer / lut_sheen_E.png](https://github.com/KhronosGroup/glTF-Sample-Renderer/blob/506f05c3ff6deaa202a5384ba1ab9891b3c7f210/assets/images/lut_sheen_E.png)。
 - 固定版本：`506f05c3ff6deaa202a5384ba1ab9891b3c7f210`。
-- 源文件：[lut_sheen_E.png](../src/asset/builtin/data/lut_sheen_E.png)，1024×1024、RGB、每通道 16 位整数；编译时嵌入程序。
-- 源文件 SHA-256：`7f21d7754dd3a2a972d9d1298ee3e67e20c5b2f21969095d322a1bc20f8b2f04`。
-- 许可证：[Apache-2.0 原文](../src/asset/builtin/data/lut_sheen_E.LICENSE.md)，随源文件保留。
+- 原图：[lut_sheen_E.png](../src/asset/builtin/data/lut_sheen_E.png)，1024 × 1024、RGB 16-bit。
+- 许可证：[Apache-2.0](../src/asset/builtin/data/lut_sheen_E.LICENSE.md)。
+- SHA-256：`7f21d7754dd3a2a972d9d1298ee3e67e20c5b2f21969095d322a1bc20f8b2f04`。
 
-## 内置资产
+## 使用方式
 
-- 类型化 ID：`BuiltinAssets::Texture::kSheenLut`。
-- 描述与像素由 [BuiltinTexture.cpp](../src/asset/builtin/BuiltinTexture.cpp) 按需提供，不依赖资产目录中的 JSON 或二进制缓存。
-- 格式：`RGBA32F`、`Linear`、2D、单级 mip。16 位整数直接除以 65535 转为浮点，不经 8 位中间格式或 sRGB 解码；保留 RGB，Alpha 为 1，像素行不翻转。
-- 采样使用现有 `linearClamp`，UV 为 `(NdotV, sheenRoughness)`，读取 R 通道；粗糙度不在采样前平方。坐标约定见官方 [albedoSheenScalingLUT](https://github.com/KhronosGroup/glTF-Sample-Renderer/blob/506f05c3ff6deaa202a5384ba1ab9891b3c7f210/source/Renderer/shaders/material_info.glsl#L388)。参数空间 LUT 不生成普通贴图的 mip 链。
-- 用途是 Sheen 层的方向反照率及底层能量缩放；不是 `lut_charlie.png` 的 Sheen IBL 积分表，两者不能互换。官方用法见 [pbr.frag](https://github.com/KhronosGroup/glTF-Sample-Renderer/blob/506f05c3ff6deaa202a5384ba1ab9891b3c7f210/source/Renderer/shaders/pbr.frag#L238)。
+- 作为内置纹理 `BuiltinAssets::Texture::kSheenLut` 获取，无配置路径或单独导入步骤。
+- PNG 编译时嵌入，按需解码为 Linear RGBA32F，保留 16-bit 精度，不进行 sRGB 转换。
+- 单级 Mip，Linear Clamp 采样；UV 为 `(NdotV, sheenRoughness)`，读取 R 通道。
+- LUT 坐标使用原始 Roughness，不预先平方；与 BRDF 内部的 alpha 参数区分。
+- 与 `lut_charlie.png` 一类 Sheen IBL 积分表用途不同，不可互换。
 
-SceneBindings 通过现有 AssetManager / RenderResourceManager 链路绑定内置 LUT，用于 Sheen 分层的底层能量缩放；不再提供渲染配置入口或单独导入工具。完整链路见 [sheen.md](sheen.md)。
+实现入口：[BuiltinTexture.cpp](../src/asset/builtin/BuiltinTexture.cpp)、[SceneBindings.cpp](../src/render/feature/SceneBindings.cpp)、[scene_lighting.slang](../shaders/scene_lighting.slang)。
