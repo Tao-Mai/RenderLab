@@ -14,6 +14,12 @@
 
 ![Sibenik 实时光追：多光源、间接光照与历史重投影](docs/images/sibenik-realtime.png)
 
+### 实时光追 · Sponza
+
+中庭场景使用一盏方向光，展示直接光阴影与间接照明。同样为 **1 spp / 帧**，启用历史重投影，截图取第 32 帧。
+
+![Sponza 实时光追：中庭光照与阴影](docs/images/sponza-realtime.png)
+
 ### 光栅化 · PBR 与稳定 CSM
 
 | Metallic / Roughness · IBL                               | 稳定 CSM · PCF                             |
@@ -68,5 +74,7 @@ Shader；未指定构建类型时默认使用 Release。光追路线需要支持
 
 Sibenik 来自 [McGuire Computer Graphics Archive](https://casual-effects.com/g3d/data10/index.html)：Marko Dabrovic
 建模、Kenzie Lamar 修复几何、Morgan McGuire 制作高分辨率纹理，采用 CC BY-NC 许可。展示中的灯光由本项目布置；其他外部资产遵循各自许可。
+
+Sponza 来自 [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Sponza)，原模型由 Crytek / Frank Meinl 制作，PBR 纹理由 Alexandre Pestana 转换，遵循原资产许可。
 
 RenderLab 是持续开发中的个人项目；离线路线并非完整 PBRT 实现。

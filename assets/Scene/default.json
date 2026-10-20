@@ -11,29 +11,29 @@
                                 -0.5428085923194885
                             ],
                             "rotation": [
-                                0,
-                                0,
-                                0,
-                                1
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
                             ],
                             "scale": [
-                                1,
-                                1,
-                                1
+                                1.0,
+                                1.0,
+                                1.0
                             ]
                         }
                     },
                     {
-"PointLightComponent": {
+                        "PointLightComponent": {
                             "castShadow": false,
                             "color": [
-                                1,
-                                1,
-                                1
+                                1.0,
+                                1.0,
+                                1.0
                             ],
                             "enabled": true,
-                            "luminousIntensity": 8,
-                            "range": 15
+                            "luminousIntensity": 8.0,
+                            "range": 15.0
                         }
                     }
                 ],
@@ -47,19 +47,19 @@
                         "TransformComponent": {
                             "position": [
                                 -1.74592924118042,
-                                0,
+                                0.0,
                                 -1.743619441986084
                             ],
                             "rotation": [
-                                0,
-                                0,
-                                0,
-                                1
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
                             ],
                             "scale": [
-                                1,
-                                1,
-                                1
+                                1.0,
+                                1.0,
+                                1.0
                             ]
                         }
                     },
@@ -82,19 +82,19 @@
                         "TransformComponent": {
                             "position": [
                                 -0.6581555604934692,
-                                0,
+                                0.0,
                                 0.39836451411247253
                             ],
                             "rotation": [
-                                0,
-                                0,
-                                0,
-                                1
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
                             ],
                             "scale": [
-                                20,
-                                1,
-                                20
+                                20.0,
+                                1.0,
+                                20.0
                             ]
                         }
                     },
@@ -104,40 +104,40 @@
                                 "0": {
                                     "alphaCutoff": null,
                                     "alphaMode": null,
+                                    "anisotropy": null,
                                     "ao": null,
                                     "aoTexture": null,
                                     "baseColorFactor": [
-                                        0.16602319478988647,
-                                        0.10897275060415268,
-                                        0.10897275060415268,
-                                        1
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0
                                     ],
                                     "baseColorTexture": null,
                                     "clearcoat": null,
+                                    "diffuseTransmission": null,
+                                    "dispersion": null,
                                     "doubleSided": null,
                                     "emissive": null,
+                                    "emissiveStrength": null,
                                     "emissiveTexture": null,
                                     "id": {
                                         "value": ""
                                     },
+                                    "ior": null,
+                                    "iridescence": null,
                                     "metallic": null,
                                     "metallicTexture": null,
                                     "normalScale": null,
                                     "normalTexture": null,
-                                    "roughness": 0.5099999904632568,
+                                    "roughness": 0.30000001192092896,
                                     "roughnessTexture": null,
                                     "shaderId": null,
                                     "sheen": null,
-                                    "anisotropy": null,
-                                    "transmission": null,
-                                    "volume": null,
-                                    "ior": null,
                                     "specular": null,
-                                    "iridescence": null,
-                                    "dispersion": null,
-                                    "emissiveStrength": null,
+                                    "transmission": null,
                                     "unlit": null,
-                                    "diffuseTransmission": null
+                                    "volume": null
                                 }
                             },
                             "meshId": {
@@ -166,22 +166,22 @@
                                 0.921292245388031
                             ],
                             "scale": [
-                                1,
+                                1.0,
                                 0.9999999403953552,
-                                1
+                                1.0
                             ]
                         }
                     },
                     {
-"DirectionalLightComponent": {
+                        "DirectionalLightComponent": {
                             "castShadow": false,
                             "color": [
-                                1,
-                                1,
-                                1
+                                1.0,
+                                1.0,
+                                1.0
                             ],
                             "enabled": false,
-                            "illuminance": 5
+                            "illuminance": 5.0
                         }
                     }
                 ],
@@ -195,19 +195,19 @@
                         "TransformComponent": {
                             "position": [
                                 -4.196488380432129,
-                                0,
-                                0.03359827399253845
+                                0.0,
+                                -1.0693179368972778
                             ],
                             "rotation": [
-                                0,
-                                0,
-                                0,
-                                1
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
                             ],
                             "scale": [
-                                1,
-                                1,
-                                1
+                                1.0,
+                                1.0,
+                                1.0
                             ]
                         }
                     },
@@ -247,20 +247,20 @@
                         }
                     },
                     {
-"RectAreaLightComponent": {
+                        "RectAreaLightComponent": {
                             "areaSize": [
                                 0.5,
                                 0.5
                             ],
                             "castShadow": true,
                             "color": [
-                                1,
-                                1,
-                                1
+                                1.0,
+                                1.0,
+                                1.0
                             ],
                             "enabled": true,
-                            "luminousIntensity": 8,
-                            "range": 10
+                            "luminousIntensity": 8.0,
+                            "range": 10.0
                         }
                     }
                 ],
@@ -275,18 +275,18 @@
                             "position": [
                                 -2.5,
                                 0.05101335048675537,
-                                0
+                                0.0
                             ],
                             "rotation": [
-                                0,
-                                0,
-                                0,
-                                1
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
                             ],
                             "scale": [
-                                1,
-                                1,
-                                1
+                                1.0,
+                                1.0,
+                                1.0
                             ]
                         }
                     },
@@ -304,25 +304,25 @@
         }
     ],
     "editorCamera": {
-        "farPlane": 100,
-        "fieldOfView": 45,
+        "farPlane": 100.0,
+        "fieldOfView": 45.0,
         "mouseSensitivity": 0.11999999731779099,
         "nearPlane": 0.10000000149011612,
-        "pitch": -26.84028434753418,
+        "pitch": -13.88032054901123,
         "position": [
-            -5.10483455657959,
-            4.184476375579834,
-            -5.084680557250977
+            2.381535291671753,
+            3.6128644943237305,
+            4.848781108856201
         ],
-        "speed": 5,
-        "sprintMultiplier": 3,
-        "yaw": 418.9184875488281
+        "speed": 5.0,
+        "sprintMultiplier": 3.0,
+        "yaw": 581.7545166015625
     },
     "environment": {
         "up": [
-            0,
-            1,
-            0
+            0.0,
+            1.0,
+            0.0
         ]
     },
     "environmentMap": {
