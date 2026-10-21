@@ -345,7 +345,7 @@ RenderResourceManager::prepare(const SceneRenderData& scene, const PreparedScene
 {
     DCHECK(frameIndex < frameResources.size());
     DCHECK(scene.objects.size() == prepared.objects.size());
-    auto& frame          = frameResources[frameIndex];
+    auto& frame = frameResources[frameIndex];
     frame.materials.begin(*this);
     auto& draws          = frame.draws;
     draws.environmentMap = scene.environmentMap;
@@ -402,6 +402,6 @@ RenderResourceManager::prepare(const SceneRenderData& scene, const PreparedScene
     std::erase_if(frame.instances, [](const auto& entry) { return !entry.second.used; });
     std::ranges::sort(draws.transparentDrawItems, std::greater{}, &DrawItem::distanceSquared);
     frame.materials.upload(*vulkan, *device);
-    draws.materialSet = frame.materials.descriptorSetHandle();
+    draws.materialDescriptorSet = frame.materials.descriptorSetHandle();
     return draws;
 }

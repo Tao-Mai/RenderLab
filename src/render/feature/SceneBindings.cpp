@@ -148,42 +148,42 @@ void SceneBindings::prepare(RenderGraph& graph, const PassSetup& setup) const
         };
         const std::array writes = {
             vk::WriteDescriptorSet{
-                .dstSet          = setup.frameData[frameIndex].sceneSetHandle(),
+                .dstSet          = setup.frameData[frameIndex].lightingSetHandle(),
                 .dstBinding      = RenderInterface::kPointShadowImageBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &shadowImage,
             },
             vk::WriteDescriptorSet{
-                .dstSet          = setup.frameData[frameIndex].sceneSetHandle(),
+                .dstSet          = setup.frameData[frameIndex].lightingSetHandle(),
                 .dstBinding      = RenderInterface::kSpotShadowImageBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &spotShadowImage,
             },
             vk::WriteDescriptorSet{
-                .dstSet          = setup.frameData[frameIndex].sceneSetHandle(),
+                .dstSet          = setup.frameData[frameIndex].lightingSetHandle(),
                 .dstBinding      = RenderInterface::kRectAreaShadowImageBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &rectAreaShadowImage
             },
             vk::WriteDescriptorSet{
-                .dstSet          = setup.frameData[frameIndex].sceneSetHandle(),
+                .dstSet          = setup.frameData[frameIndex].lightingSetHandle(),
                 .dstBinding      = RenderInterface::kDirectionalShadowImageBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &directionalShadowImage,
             },
             vk::WriteDescriptorSet{
-                .dstSet          = setup.frameData[frameIndex].sceneSetHandle(),
+                .dstSet          = setup.frameData[frameIndex].lightingSetHandle(),
                 .dstBinding      = RenderInterface::kShadowComparisonSamplerBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampler,
                 .pImageInfo      = &shadowSamplerInfo
             },
             vk::WriteDescriptorSet{
-                .dstSet          = setup.frameData[frameIndex].sceneSetHandle(),
+                .dstSet          = setup.frameData[frameIndex].lightingSetHandle(),
                 .dstBinding      = RenderInterface::kLinearSamplerBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampler,
@@ -275,70 +275,70 @@ void SceneBindings::bindEnvironmentTextures()
         FrameData&       frame  = frameData[index];
         const std::array writes = {
             vk::WriteDescriptorSet{
-                .dstSet          = frame.sceneSetHandle(),
+                .dstSet          = frame.lightingSetHandle(),
                 .dstBinding      = RenderInterface::kIrradianceImageBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &irradianceImage,
             },
             vk::WriteDescriptorSet{
-                .dstSet          = frame.sceneSetHandle(),
+                .dstSet          = frame.lightingSetHandle(),
                 .dstBinding      = RenderInterface::kIrradianceSamplerBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampler,
                 .pImageInfo      = &irradianceSampler,
             },
             vk::WriteDescriptorSet{
-                .dstSet          = frame.sceneSetHandle(),
+                .dstSet          = frame.lightingSetHandle(),
                 .dstBinding      = RenderInterface::kPrefilteredSpecularImageBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &prefilteredImage,
             },
             vk::WriteDescriptorSet{
-                .dstSet          = frame.sceneSetHandle(),
+                .dstSet          = frame.lightingSetHandle(),
                 .dstBinding      = RenderInterface::kPrefilteredSpecularSamplerBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampler,
                 .pImageInfo      = &prefilteredSampler,
             },
             vk::WriteDescriptorSet{
-                .dstSet          = frame.sceneSetHandle(),
+                .dstSet          = frame.lightingSetHandle(),
                 .dstBinding      = RenderInterface::kBrdfLutImageBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &lutImage,
             },
             vk::WriteDescriptorSet{
-                .dstSet          = frame.sceneSetHandle(),
+                .dstSet          = frame.lightingSetHandle(),
                 .dstBinding      = RenderInterface::kBrdfLutSamplerBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampler,
                 .pImageInfo      = &lutSampler,
             },
             vk::WriteDescriptorSet{
-                .dstSet          = frame.sceneSetHandle(),
+                .dstSet          = frame.lightingSetHandle(),
                 .dstBinding      = RenderInterface::kSheenLutImageBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &sheenImage
             },
             vk::WriteDescriptorSet{
-                .dstSet          = frame.sceneSetHandle(),
+                .dstSet          = frame.lightingSetHandle(),
                 .dstBinding      = RenderInterface::kSheenLutSamplerBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampler,
                 .pImageInfo      = &lutSampler
             },
             vk::WriteDescriptorSet{
-                .dstSet          = frame.sceneSetHandle(),
+                .dstSet          = frame.lightingSetHandle(),
                 .dstBinding      = RenderInterface::kRadianceImageBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &radianceImage
             },
             vk::WriteDescriptorSet{
-                .dstSet          = frame.sceneSetHandle(),
+                .dstSet          = frame.lightingSetHandle(),
                 .dstBinding      = RenderInterface::kRadianceSamplerBinding,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampler,
@@ -349,7 +349,7 @@ void SceneBindings::bindEnvironmentTextures()
     }
 }
 
-void SceneBindings::updateFrame(FrameData& frame, const ViewUniforms& view, const ShadowFrameData& prepared) const
+void SceneBindings::updateFrame(FrameData& frame, const SceneUniforms& view, const ShadowFrameData& prepared) const
 {
     const auto&   feature = context().config->rendererConfig().feature;
     const auto&   shadow  = feature.shadow;

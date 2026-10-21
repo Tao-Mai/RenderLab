@@ -101,7 +101,7 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
     emptyDescriptorSetLayout = device.createDescriptorSetLayout(std::span<const vk::DescriptorSetLayoutBinding>{});
     const std::array sets{
         &device.sceneDescriptorSetLayout,
-        &emptyDescriptorSetLayout,
+        &device.lightingDescriptorSetLayout,
         &emptyDescriptorSetLayout,
         &descriptorSetLayout
     };
@@ -201,12 +201,12 @@ void DeferredLightingPass::execute(
     );
     commands.setScissor(0, vk::Rect2D{{0, 0}, extent});
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sceneSets{execution.data.sceneSetHandle()};
+    const std::array sharedSets{execution.data.sceneSetHandle(), execution.data.lightingSetHandle()};
     commands.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         *pipelineLayout,
         RenderInterface::kSceneSet,
-        sceneSets,
+        sharedSets,
         {}
     );
     const std::array passSets{*descriptorSets[execution.frameIndex]};

@@ -13,7 +13,7 @@
 
 `Renderer::init()` 初始化 Device 时，由 `Device::createSharedLayouts()` 统一预创建共享 Layout：
 
-- 场景、材质与编辑器共用三份 Descriptor Set Layout 和两份 Pipeline Layout。
+- 场景、光照、材质与编辑器共用四份 Descriptor Set Layout 和两份 Pipeline Layout。
 - Device 直接创建 Layout，不做 Layout 缓存；共享 Layout 由 Device 以 RAII 持有，私有 Layout 由 Pass 在 `setup()` 中创建并持有。
 
 这些 Layout 在渲染器生命周期内固定，运行时通过 RenderContext 直接读取：
@@ -26,7 +26,7 @@ const auto& layout = renderContext().device->meshPipelineLayout;
 
 ## Descriptor Set Layout
 
-表中 UBO 对应 Uniform Buffer，SSBO 对应 Storage Buffer；Image 与 Sampler 分开绑定。场景布局各 Binding 均为单个 Descriptor，阶段为 Vertex | Fragment；材质布局供光栅与光追共用，阶段为 All。
+表中 UBO 对应 Uniform Buffer，SSBO 对应 Storage Buffer；Image 与 Sampler 分开绑定。场景与光照布局各 Binding 均为单个 Descriptor，阶段为 Vertex | Fragment；材质布局供光栅与光追共用，阶段为 All。
 
 Binding 编号定义于 [ShaderData.h](../src/render/resource/ShaderData.h)。
 
@@ -34,30 +34,37 @@ Binding 编号定义于 [ShaderData.h](../src/render/resource/ShaderData.h)。
 
 | Binding | Descriptor 类型 | 内容 |
 | --- | --- | --- |
-| 0 | UBO | `ViewUniforms`：相机矩阵、相机位置 |
-| 1 | UBO | `LightUniforms`：光源分组范围、环境光及阴影参数 |
-| 2 | SSBO | `LightData` 光源数组 |
-| 3 | SSBO | 点光源阴影数据 |
-| 4 | SSBO | 聚光灯阴影数据 |
-| 5 | SSBO | 矩形面光源阴影数据 |
-| 6 | SSBO | 方向光 Cascade 阴影数据 |
-| 7 | Sampled Image | 点光源阴影 Cube Array |
-| 8 | Sampled Image | 聚光灯阴影 2D Array |
-| 9 | Sampled Image | 矩形面光源阴影 2D Array |
-| 10 | Sampled Image | 方向光 Cascade 阴影 2D Array |
-| 11 | Sampler | 阴影深度比较采样器 |
-| 12 | Sampler | 普通线性采样器 |
-| 13 / 14 | Sampled Image / Sampler | Irradiance 环境图 |
-| 15 / 16 | Sampled Image / Sampler | 预过滤镜面反射环境图 |
-| 17 / 18 | Sampled Image / Sampler | BRDF LUT |
-| 19 / 20 | Sampled Image / Sampler | 原始 Radiance 环境图，供天空盒及 Sheen IBL 使用 |
-| 21 / 22 | Sampled Image / Sampler | Sheen 方向反照率 LUT |
+| 0 | UBO | `SceneUniforms`：相机矩阵、相机位置 |
 
-由共享的 `meshPipelineLayout`，以及 `ShadowPass`、`SkyboxPass`、`DeferredLightingPass` 各自的 Pipeline Layout 引用，作为 Set 0。
+仅包含这一个 Binding。Shader 声明：[scene_data.slang](../shaders/scene_data.slang)、[scene_uniforms.slang](../shaders/scene_uniforms.slang)。
 
-Shader 声明：[scene_data.slang](../shaders/scene_data.slang)、[scene_lighting.slang](../shaders/scene_lighting.slang)、[skybox.slang](../shaders/skybox.slang)。
+### lightingDescriptorSetLayout：光照资源，Set 1
 
-### materialDescriptorSetLayout：材质资源，Set 1
+| Binding | Descriptor 类型 | 内容 |
+| --- | --- | --- |
+| 0 | UBO | `LightUniforms`：光源分组范围、环境光及阴影参数 |
+| 1 | SSBO | `LightData` 光源数组 |
+| 2 | SSBO | 点光源阴影数据 |
+| 3 | SSBO | 聚光灯阴影数据 |
+| 4 | SSBO | 矩形面光源阴影数据 |
+| 5 | SSBO | 方向光 Cascade 阴影数据 |
+| 6 | Sampled Image | 点光源阴影 Cube Array |
+| 7 | Sampled Image | 聚光灯阴影 2D Array |
+| 8 | Sampled Image | 矩形面光源阴影 2D Array |
+| 9 | Sampled Image | 方向光 Cascade 阴影 2D Array |
+| 10 | Sampler | 阴影深度比较采样器 |
+| 11 | Sampler | 普通线性采样器 |
+| 12 / 13 | Sampled Image / Sampler | Irradiance 环境图 |
+| 14 / 15 | Sampled Image / Sampler | 预过滤镜面反射环境图 |
+| 16 / 17 | Sampled Image / Sampler | BRDF LUT |
+| 18 / 19 | Sampled Image / Sampler | 原始 Radiance 环境图，供天空盒及 Sheen IBL 使用 |
+| 20 / 21 | Sampled Image / Sampler | Sheen 方向反照率 LUT |
+
+由 `meshPipelineLayout`，以及 `ShadowPass`、`SkyboxPass`、`DeferredLightingPass` 各自的 Pipeline Layout 引用，作为 Set 1。
+
+Shader 声明：[lighting_data.slang](../shaders/lighting_data.slang)、[scene_lighting.slang](../shaders/scene_lighting.slang)、[skybox.slang](../shaders/skybox.slang)。
+
+### materialDescriptorSetLayout：材质资源，Set 2
 
 | Binding | Descriptor 类型 | 内容 |
 | --- | --- | --- |
@@ -65,7 +72,7 @@ Shader 声明：[scene_data.slang](../shaders/scene_data.slang)、[scene_lightin
 | 1 | Sampled Image [128] | 全局材质纹理数组 |
 | 2 | Sampler [32] | 全局材质采样器数组，与纹理独立索引 |
 
-由 `meshPipelineLayout`、`RayTracingPass` 和 `OfflinePathTracingPass` 的 Pipeline Layout 引用，统一作为 Set 1。所有材质分支使用固定的 192 B SSBO 元素布局；光栅通过 Push Constant 传入材质索引，光追从命中数据取得材质索引。
+由 `meshPipelineLayout`、`RayTracingPass` 和 `OfflinePathTracingPass` 的 Pipeline Layout 引用，统一作为 Set 2。所有材质分支使用固定的 192 B SSBO 元素布局；光栅通过 Push Constant 传入材质索引，光追从命中数据取得材质索引。
 
 Shader 声明：[material_data.slang](../shaders/material_data.slang)。
 
@@ -75,9 +82,10 @@ Shader 声明：[material_data.slang](../shaders/material_data.slang)。
 
 | Layout | Set 排列 | Push Constants | 使用它的 Pass |
 | --- | --- | --- | --- |
-| `meshPipelineLayout` | Set 0：`sceneDescriptorSetLayout`；Set 1：`materialDescriptorSetLayout` | `MeshPushConstants`，80 B：Model 矩阵、材质索引及对齐填充 | `DepthPrepass`；`ScenePass`、`GBufferPass`、`TransparentPass` 通过 `SceneDraw::recordMeshes()` 使用 |
-| `ShadowPass::pipelineLayout` | Set 0：`sceneDescriptorSetLayout` | `ShadowPushConstants`，80 B：Model 矩阵、光源索引、Cascade 索引及对齐填充 | `ShadowPass`，点光源、聚光灯、矩形面光源与方向光共用 |
-| `SkyboxPass::pipelineLayout` | Set 0：`sceneDescriptorSetLayout` | `SkyboxPushConstants`，16 B：Viewport | `SkyboxPass` |
+| `meshPipelineLayout` | Set 0：Scene；Set 1：Lighting；Set 2：Material | `MeshPushConstants`，80 B：Model 矩阵、材质索引及对齐填充 | `DepthPrepass`；`ScenePass`、`GBufferPass`、`TransparentPass` 通过 `SceneDraw::recordMeshes()` 使用 |
+| `ShadowPass::pipelineLayout` | Set 0：Scene；Set 1：Lighting，仅绑定 Lighting | `ShadowPushConstants`，80 B：Model 矩阵、光源索引、Cascade 索引及对齐填充 | `ShadowPass`，点光源、聚光灯、矩形面光源与方向光共用 |
+| `SkyboxPass::pipelineLayout` | Set 0：Scene；Set 1：Lighting | `SkyboxPushConstants`，16 B：Viewport | `SkyboxPass` |
+| `DeferredLightingPass::pipelineLayout` | Set 0：Scene；Set 1：Lighting；Set 2：空；Set 3：GBuffer | `DeferredLightingPushConstants`，16 B：Viewport | `DeferredLightingPass` |
 
 实现：[DepthPrepass.cpp](../src/render/feature/DepthPrepass.cpp)、[SceneDraw.cpp](../src/render/feature/SceneDraw.cpp)、[ShadowPass.cpp](../src/render/feature/shadow/ShadowPass.cpp)、[SkyboxPass.cpp](../src/render/feature/SkyboxPass.cpp)。
 

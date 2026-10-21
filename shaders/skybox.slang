@@ -13,10 +13,10 @@ struct SkyboxPushConstants
 [[vk::push_constant]]
 ConstantBuffer<SkyboxPushConstants> pushConstants;
 
-[[vk::binding(19, 0)]]
+[[vk::binding(18, 1)]]
 TextureCube<float4> radianceMap;
 
-[[vk::binding(20, 0)]]
+[[vk::binding(19, 1)]]
 SamplerState radianceSampler;
 
 [shader("vertex")]
@@ -36,10 +36,10 @@ float4 fragMain(VertexOutput input) : SV_Target
     const float2 ndc =
         (input.position.xy - pushConstants.viewport.xy) /
         pushConstants.viewport.zw * 2.0 - 1.0;
-    const float4 world = mul(viewUniforms.inverseViewProjection,
+    const float4 world = mul(sceneUniforms.inverseViewProjection,
         float4(ndc, 1.0, 1.0));
     const float3 direction = normalize(
-        world.xyz / world.w - viewUniforms.cameraPosition.xyz);
+        world.xyz / world.w - sceneUniforms.cameraPosition.xyz);
 
     return float4(radianceMap.SampleLevel(radianceSampler, direction, 0.0).rgb, 1.0);
 }

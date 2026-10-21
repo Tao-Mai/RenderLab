@@ -98,7 +98,8 @@ set(SHADER_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 include(cmake/Shaders.cmake)
 set(SCENE_SHADER_INCLUDES
         "${SHADER_SOURCE_DIR}/scene_data.slang"
-        "${SHADER_SOURCE_DIR}/view_data.slang"
+        "${SHADER_SOURCE_DIR}/lighting_data.slang"
+        "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
         "${SHADER_SOURCE_DIR}/light_data.slang"
         "${SHADER_SOURCE_DIR}/mesh_vertex.slang"
         "${SHADER_SOURCE_DIR}/mesh_surface.slang"
@@ -162,7 +163,7 @@ endforeach()
 renderlab_shader(raytracing raytracing/raytracing.slang raytracing
     ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
     DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0
-    INCLUDES "${SHADER_SOURCE_DIR}/view_data.slang"
+    INCLUDES "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
         "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
         "${SHADER_SOURCE_DIR}/random.slang" "${SHADER_SOURCE_DIR}/point_light_sampling.slang"
         "${SHADER_SOURCE_DIR}/rect_area_light_sampling.slang"
@@ -180,7 +181,7 @@ renderlab_shader(offline_pathtracing offline/pathtracing.slang offline_pathtraci
         "${SHADER_SOURCE_DIR}/normal_mapping.slang" "${SHADER_SOURCE_DIR}/pbr_brdf.slang"
         "${SHADER_SOURCE_DIR}/brdf.slang")
 renderlab_shader(temporal_reprojection raytracing/temporal_reprojection.slang temporal_reprojection
-    ENTRIES computeMain INCLUDES "${SHADER_SOURCE_DIR}/view_data.slang")
+    ENTRIES computeMain INCLUDES "${SHADER_SOURCE_DIR}/scene_uniforms.slang")
 renderlab_shader_manifests()
 
 add_library(RenderLabRuntime STATIC

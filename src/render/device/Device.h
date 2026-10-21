@@ -79,6 +79,7 @@ public:
     [[nodiscard]] vk::Pipeline            getOrCreatePipeline(const GraphicsPipelineInfo& info);
 
     DescriptorSetLayout sceneDescriptorSetLayout;
+    DescriptorSetLayout lightingDescriptorSetLayout;
     DescriptorSetLayout materialDescriptorSetLayout;
     DescriptorSetLayout editorViewDescriptorSetLayout;
     PipelineLayout      meshPipelineLayout;

@@ -43,6 +43,7 @@ void Device::shutdown() noexcept
     meshPipelineLayout            = {};
     editorViewDescriptorSetLayout = {};
     materialDescriptorSetLayout   = {};
+    lightingDescriptorSetLayout   = {};
     sceneDescriptorSetLayout      = {};
     pipelineCache                 = nullptr;
     descriptorPool                = nullptr;

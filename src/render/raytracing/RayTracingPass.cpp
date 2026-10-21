@@ -175,6 +175,7 @@ void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursio
         };
         const std::array descriptorSetLayouts{
             *descriptorSetLayout,
+            *renderContext().device->lightingDescriptorSetLayout,
             *renderContext().device->materialDescriptorSetLayout
         };
         pipelineLayout = vkCheck(device.createPipelineLayout(
@@ -407,7 +408,7 @@ void RayTracingPass::prepareBindings(RenderGraph& graph, const PassFrame& execut
     };
     const auto depthInfo = gBufferInfo(depth);
     const auto normalInfo = gBufferInfo(worldNormal);
-    const auto& viewBuffer = execution.data.viewUniformBuffer();
+    const auto&                    viewBuffer = execution.data.sceneUniformBuffer();
     const vk::DescriptorBufferInfo viewInfo{.buffer = viewBuffer.handle(), .range = viewBuffer.size()};
     const vk::DescriptorBufferInfo hitInfo{.buffer = frame.hitData.handle(), .range = frame.hitData.size()};
     const vk::DescriptorBufferInfo lightInfo{.buffer = frame.lightData.handle(), .range = frame.lightData.size()};
@@ -467,9 +468,9 @@ void RayTracingPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& comman
         prepareBindings(graph, execution, frame);
     }
     commands.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
-    const std::array sets = {*frame.set, execution.renderData.materialSet};
+    const std::array sets = {*frame.set, execution.data.lightingSetHandle(), execution.renderData.materialSetHandle()};
     commands.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, *pipelineLayout, 0, sets, {});
-    const auto& view     = execution.data.viewUniforms();
+    const auto& view     = execution.data.sceneUniforms();
     const auto& viewport = execution.view.viewport;
     commands.pushConstants<RayTracingParameters>(
         *pipelineLayout,

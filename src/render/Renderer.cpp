@@ -355,7 +355,7 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
             activeSceneBindings->updateFrame(data, view.uniforms, prepared.lighting);
         }
         else
-            data.updateView(view.uniforms);
+            data.updateSceneUniforms(view.uniforms);
     }
     return renderData;
 }

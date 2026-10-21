@@ -1,8 +1,8 @@
-#ifndef RENDERLAB_VIEW_DATA_SLANG
-#define RENDERLAB_VIEW_DATA_SLANG
+#ifndef RENDERLAB_SCENE_UNIFORMS_SLANG
+#define RENDERLAB_SCENE_UNIFORMS_SLANG
 
-// Must match ViewUniforms in ShaderData.h; column-major storage.
-struct ViewUniforms
+// Must match SceneUniforms in ShaderData.h; column-major storage.
+struct SceneUniforms
 {
     float4x4 viewProjection;
     float4x4 inverseViewProjection;
@@ -21,7 +21,7 @@ float linearViewDepth(float3 position, float4x4 view)
     return -mul(view, float4(position, 1.0)).z;
 }
 
-float3 reconstructWorldPositionFromLinearDepth(float2 ndc, float depth, ViewUniforms view)
+float3 reconstructWorldPositionFromLinearDepth(float2 ndc, float depth, SceneUniforms view)
 {
     float3 nearPosition = reconstructWorldPosition(ndc, 0.0, view.inverseViewProjection);
     float3 farPosition = reconstructWorldPosition(ndc, 1.0, view.inverseViewProjection);

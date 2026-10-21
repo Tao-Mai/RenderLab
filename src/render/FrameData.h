@@ -17,11 +17,11 @@ class FrameData
 public:
     void init(const VulkanContext& vulkan, Device& device);
     void reset() noexcept;
-    void updateView(const ViewUniforms& view);
+    void updateSceneUniforms(const SceneUniforms& view);
     // Update only after the owning frame's fence completes.
-    void update(const ViewUniforms& view, const LightUniforms& lighting, ShadowFrameData prepared);
+    void update(const SceneUniforms& view, const LightUniforms& lighting, ShadowFrameData prepared);
 
-    [[nodiscard]] const ViewUniforms&                 viewUniforms() const { return viewData; }
+    [[nodiscard]] const SceneUniforms&                sceneUniforms() const { return sceneData; }
     [[nodiscard]] const LightUniforms&                lightUniforms() const { return lightMetadata; }
     [[nodiscard]] std::span<const LightData>          lightData() const { return shadowData.lights; }
     [[nodiscard]] std::span<const PointShadowData>    pointShadowData() const { return shadowData.pointShadows; }
@@ -32,23 +32,25 @@ public:
         return shadowData.directionalShadows;
     }
     [[nodiscard]] vk::DescriptorSet sceneSetHandle() const { return *sceneSet; }
+    [[nodiscard]] vk::DescriptorSet lightingSetHandle() const { return *lightingSet; }
     [[nodiscard]] vk::DescriptorSet viewSetHandle() const { return *viewSet; }
-    [[nodiscard]] const Buffer&     viewUniformBuffer() const { return viewBuffer; }
+    [[nodiscard]] const Buffer&     sceneUniformBuffer() const { return sceneBuffer; }
 
 private:
     const VulkanContext*    vulkan = nullptr;
     ShadowFrameData         shadowData;
-    ViewUniforms            viewData;
+    SceneUniforms           sceneData;
     LightUniforms           lightMetadata;
-    Buffer                  viewBuffer;
+    Buffer                  sceneBuffer;
     Buffer                  lightUniformBuffer;
     Buffer                  lightBuffer;
     Buffer                  pointShadowBuffer;
     Buffer                  spotShadowBuffer;
     Buffer                  rectAreaShadowBuffer;
     Buffer                  directionalShadowBuffer;
-    vk::raii::DescriptorSet sceneSet = nullptr;
-    vk::raii::DescriptorSet viewSet  = nullptr;
+    vk::raii::DescriptorSet sceneSet    = nullptr;
+    vk::raii::DescriptorSet lightingSet = nullptr;
+    vk::raii::DescriptorSet viewSet     = nullptr;
 
     void bindBuffers();
 };

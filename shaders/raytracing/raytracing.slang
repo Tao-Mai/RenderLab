@@ -6,7 +6,7 @@
 #include "../material_data.slang"
 #include "../pbr_brdf.slang"
 #include "../normal_mapping.slang"
-#include "../view_data.slang"
+#include "../scene_uniforms.slang"
 
 
 static const uint kVertexStrideFloats = 12;
@@ -313,7 +313,7 @@ struct RayTracingParameters
 [[vk::binding(2, 0)]] StructuredBuffer<HitData> objects;
 [[vk::binding(7, 0)]] [[vk::image_format("r32f")]] RWTexture2D<float> depthImage;
 [[vk::binding(8, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> normalImage;
-[[vk::binding(9, 0)]] ConstantBuffer<ViewUniforms> viewUniforms;
+[[vk::binding(9, 0)]] ConstantBuffer<SceneUniforms> sceneUniforms;
 
 [shader("raygeneration")]
 void raygenMain()
@@ -351,7 +351,7 @@ void closestHitMain(inout Payload payload, BuiltInTriangleIntersectionAttributes
     Surface surface = hit.surfaceAt(PrimitiveIndex(), attributes.barycentrics);
     if (payload.depth == 1)
     {
-        payload.primaryDepth = linearViewDepth(surface.position, viewUniforms.view);
+        payload.primaryDepth = linearViewDepth(surface.position, sceneUniforms.view);
         payload.primaryNormal = surface.geometricNormal;
     }
     payload.color = surface.emissive;

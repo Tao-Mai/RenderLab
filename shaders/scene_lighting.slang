@@ -3,6 +3,7 @@
 
 #include "brdf.slang"
 #include "scene_data.slang"
+#include "lighting_data.slang"
 #include "sampling.slang"
 #include "surface.slang"
 
@@ -10,50 +11,50 @@
 #error ENABLE_IBL must be specified when compiling scene lighting
 #endif
 
-// Scene shadow resources (bindings 7..12).
-[[vk::binding(7, 0)]]
+// Lighting shadow resources (bindings 6..11).
+[[vk::binding(6, 1)]]
 TextureCubeArray<float> pointShadowMap;
 
-[[vk::binding(8, 0)]]
+[[vk::binding(7, 1)]]
 Texture2DArray<float> spotShadowMap;
 
-[[vk::binding(9, 0)]]
+[[vk::binding(8, 1)]]
 Texture2DArray<float> rectAreaShadowMap;
 
-[[vk::binding(10, 0)]]
+[[vk::binding(9, 1)]]
 Texture2DArray<float> cascadeShadowMap;
 
-[[vk::binding(11, 0)]]
+[[vk::binding(10, 1)]]
 SamplerComparisonState shadowSampler;
 
-[[vk::binding(12, 0)]]
+[[vk::binding(11, 1)]]
 SamplerState linearSampler;
 
-// Scene environment image / sampler pairs (bindings 13..20).
-[[vk::binding(13, 0)]]
+// Lighting environment image / sampler pairs (bindings 12..19).
+[[vk::binding(12, 1)]]
 TextureCube<float4> irradianceMap;
 
-[[vk::binding(14, 0)]]
+[[vk::binding(13, 1)]]
 SamplerState irradianceMapSampler;
 
-[[vk::binding(15, 0)]]
+[[vk::binding(14, 1)]]
 TextureCube<float4> prefilteredSpecularMap;
 
-[[vk::binding(16, 0)]]
+[[vk::binding(15, 1)]]
 SamplerState prefilteredSpecularMapSampler;
 
-[[vk::binding(17, 0)]]
+[[vk::binding(16, 1)]]
 Texture2D<float4> brdfLUT;
 
-[[vk::binding(18, 0)]]
+[[vk::binding(17, 1)]]
 SamplerState brdfLUTSampler;
 
 #if ENABLE_SHEEN
-[[vk::binding(21, 0)]] Texture2D<float4> sheenLUT;
-[[vk::binding(22, 0)]] SamplerState sheenLUTSampler;
+[[vk::binding(20, 1)]] Texture2D<float4> sheenLUT;
+[[vk::binding(21, 1)]] SamplerState sheenLUTSampler;
 #if ENABLE_IBL
-[[vk::binding(19, 0)]] TextureCube<float4> radianceMap;
-[[vk::binding(20, 0)]] SamplerState radianceSampler;
+[[vk::binding(18, 1)]] TextureCube<float4> radianceMap;
+[[vk::binding(19, 1)]] SamplerState radianceSampler;
 
 // Integrate Charlie against the original radiance, not the GGX-prefiltered environment.
 // Cosine-weighted sampling cancels NdotL / PDF to PI. No extra Fresnel or E normalization.
@@ -159,7 +160,7 @@ float sampleDirectionalCascade(LightData light, uint cascadeIndex, float3 worldP
 
 float directionalShadowVisibility(LightData light, float3 worldPosition, float2 rotation)
 {
-    float viewDepth = -mul(viewUniforms.view, float4(worldPosition, 1.0)).z;
+    float viewDepth = -mul(sceneUniforms.view, float4(worldPosition, 1.0)).z;
     if (viewDepth <= 0.0)
         return 1.0;
 
@@ -314,7 +315,7 @@ float3 evaluateDirectContribution(
 
 float3 evaluateLighting(Surface surface, uint2 pixel)
 {
-    float3 V = normalize(viewUniforms.cameraPosition.xyz - surface.worldPosition);
+    float3 V = normalize(sceneUniforms.cameraPosition.xyz - surface.worldPosition);
     float NdotV = saturate(dot(surface.normal, V));
     float3 f0 = lerp(0.04, surface.baseColor.rgb, float3(surface.metallic));
 #if ENABLE_SHEEN

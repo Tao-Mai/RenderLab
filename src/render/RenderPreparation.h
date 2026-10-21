@@ -22,7 +22,7 @@ struct PreparedScene
 
 PreparedScene prepareRenderScene(
     const SceneRenderData&       scene,
-    const ViewUniforms&          view,
+    const SceneUniforms&         view,
     const RenderFeature::Shadow& shadows,
     AssetManager&                assets,
     Profiler*                    profiler

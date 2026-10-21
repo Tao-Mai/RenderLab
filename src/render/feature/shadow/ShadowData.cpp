@@ -144,7 +144,7 @@ std::array<FrustumSlice, kMaxDirectionalShadowCascades> splitFrustum(
 }
 
 DirectionalShadowData
-makeDirectionalShadow(const ViewUniforms& view, const LightData& light, const RenderFeature::Shadow::Cascade& config)
+makeDirectionalShadow(const SceneUniforms& view, const LightData& light, const RenderFeature::Shadow::Cascade& config)
 {
     CHECK(config.shadowMapSize > 1);
 
@@ -214,8 +214,9 @@ makeDirectionalShadow(const ViewUniforms& view, const LightData& light, const Re
 }  // namespace
 
 
-ShadowFrameData
-prepareShadows(const ViewUniforms& view, std::span<const RenderLight> frameLights, const RenderFeature::Shadow& shadows)
+ShadowFrameData prepareShadows(
+    const SceneUniforms& view, std::span<const RenderLight> frameLights, const RenderFeature::Shadow& shadows
+)
 {
     ShadowFrameData result;
     CHECK(shadows.cascade.count > 0 && shadows.cascade.count <= kMaxDirectionalShadowCascades);

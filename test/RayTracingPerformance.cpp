@@ -111,7 +111,7 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
                 draws.lightRanges.pointEnd - draws.lightRanges.directionalEnd,
                 draws.lightRanges.rectAreaEnd - draws.lightRanges.pointEnd
             );
-        data[index].updateView(view.uniforms);
+        data[index].updateSceneUniforms(view.uniforms);
         auto& commands = frames[index].commandBufferHandle();
         vkCheck(commands.reset());
         vkCheck(commands.begin({}));

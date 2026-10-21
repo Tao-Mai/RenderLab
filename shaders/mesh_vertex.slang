@@ -34,7 +34,7 @@ ConstantBuffer<PushConstants> pushConstants;
 float4 transformMeshPosition(float3 position, out float4 worldPosition)
 {
     precise float4 world = mul(pushConstants.model, float4(position, 1.0));
-    precise float4 clip = mul(viewUniforms.viewProjection, world);
+    precise float4 clip = mul(sceneUniforms.viewProjection, world);
     worldPosition = world;
     return clip;
 }

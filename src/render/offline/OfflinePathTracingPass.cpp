@@ -179,6 +179,7 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
         };
         const std::array descriptorSetLayouts{
             *descriptorSetLayout,
+            *renderContext().device->lightingDescriptorSetLayout,
             *renderContext().device->materialDescriptorSetLayout
         };
         pipelineLayout = vkCheck(device.createPipelineLayout(
@@ -454,9 +455,9 @@ void OfflinePathTracingPass::execute(
     prepareLights(execution, frame);
     prepareBindings(graph, execution, frame);
     commands.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
-    const std::array sets = {*frame.set, execution.renderData.materialSet};
+    const std::array sets = {*frame.set, execution.data.lightingSetHandle(), execution.renderData.materialSetHandle()};
     commands.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, *pipelineLayout, 0, sets, {});
-    const auto& view     = execution.data.viewUniforms();
+    const auto& view     = execution.data.sceneUniforms();
     const auto& viewport = execution.view.viewport;
     commands.pushConstants<OfflineParameters>(
         *pipelineLayout,

@@ -22,7 +22,7 @@ SkyboxPass::Output SkyboxPass::setup(
     SceneDraw::useAttachments(graph, std::array{color}, depth);
 
     auto&            device = *renderContext().device;
-    const std::array descriptorSetLayouts{&device.sceneDescriptorSetLayout};
+    const std::array descriptorSetLayouts{&device.sceneDescriptorSetLayout, &device.lightingDescriptorSetLayout};
     const std::array pushConstantRanges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(SkyboxPushConstants),
@@ -58,12 +58,12 @@ void SkyboxPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
         vk::AttachmentLoadOp::eLoad
     );
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sceneSets = {execution.data.sceneSetHandle()};
+    const std::array descriptorSets = {execution.data.sceneSetHandle(), execution.data.lightingSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         *pipelineLayout,
         RenderInterface::kSceneSet,
-        sceneSets,
+        descriptorSets,
         {}
     );
     const SkyboxPushConstants parameters{

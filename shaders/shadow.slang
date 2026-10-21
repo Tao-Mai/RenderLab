@@ -1,4 +1,4 @@
-#include "scene_data.slang"
+#include "lighting_data.slang"
 
 #ifndef SHADOW_TYPE
 #error SHADOW_TYPE must be specified when compiling the shadow shader

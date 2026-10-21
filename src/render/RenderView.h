@@ -7,8 +7,8 @@
 
 struct RenderView
 {
-    ViewUniforms uniforms;
-    ViewportRect viewport;
+    SceneUniforms uniforms;
+    ViewportRect  viewport;
 };
 
 struct RenderFrameResult

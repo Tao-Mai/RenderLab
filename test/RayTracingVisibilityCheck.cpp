@@ -121,7 +121,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
             context().profiler
         );
         const auto& data = renderContext().resources->prepare(sceneData, prepared, 0);
-        frameData[0].updateView(view.uniforms);
+        frameData[0].updateSceneUniforms(view.uniforms);
         auto& recording = frames[0].commandBufferHandle();
         vkCheck(recording.reset());
         vkCheck(recording.begin({}));

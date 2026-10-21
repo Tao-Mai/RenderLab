@@ -1,4 +1,4 @@
-#include "../view_data.slang"
+#include "../scene_uniforms.slang"
 
 [[vk::binding(0, 0)]] Texture2D<float4> currentColor;
 [[vk::binding(1, 0)]] Texture2D<float> currentDepth; // Unnormalized positive view-space depth.
@@ -8,7 +8,7 @@
 [[vk::binding(5, 0)]] [[vk::image_format("rgba16f")]] RWTexture2DArray<float4> historyNormal;
 [[vk::binding(6, 0)]] [[vk::image_format("rg32f")]] RWTexture2DArray<float2> historyMoments;
 [[vk::binding(7, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> outputColor;
-[[vk::binding(8, 0)]] ConstantBuffer<ViewUniforms> viewUniforms;
+[[vk::binding(8, 0)]] ConstantBuffer<SceneUniforms> sceneUniforms;
 
 struct ReprojectionParameters
 {
@@ -83,7 +83,7 @@ void computeMain(uint3 thread : SV_DispatchThreadID)
     float depth = currentDepth.Load(int3(pixel, 0));
     bool valid = depth > 0.0;
     float2 ndc = (float2(pixel) + 0.5 - parameters.viewport.xy) / parameters.viewport.zw * 2.0 - 1.0;
-    float3 position = valid ? reconstructWorldPositionFromLinearDepth(ndc, depth, viewUniforms) : float3(0.0);
+    float3 position = valid ? reconstructWorldPositionFromLinearDepth(ndc, depth, sceneUniforms) : float3(0.0);
     float3 normal = currentNormal.Load(int3(pixel, 0)).xyz;
     float3 mean = sample;
     float2 moments = sampleMoments;

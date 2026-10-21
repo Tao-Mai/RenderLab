@@ -67,9 +67,9 @@ int main(int, char** argv)
 
     FrameData upload;
     upload.init(renderer.vulkanContext(), *renderContext().device);
-    const auto&        camera         = scenesCamera;
-    const auto         viewProjection = camera.projectionMatrix(1.0f) * camera.viewMatrix();
-    const ViewUniforms view{
+    const auto&         camera         = scenesCamera;
+    const auto          viewProjection = camera.projectionMatrix(1.0f) * camera.viewMatrix();
+    const SceneUniforms view{
         .viewProjection        = viewProjection,
         .inverseViewProjection = glm::inverse(viewProjection),
         .cameraPosition        = glm::vec4{camera.worldPosition(), 1.0f},

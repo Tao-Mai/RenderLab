@@ -17,11 +17,15 @@ void Device::createSharedDescriptorSetLayouts()
 {
     constexpr std::array sceneBindings = {
         vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kViewUniformBinding,
+            .binding         = RenderInterface::kSceneUniformBinding,
             .descriptorType  = vk::DescriptorType::eUniformBuffer,
             .descriptorCount = 1,
             .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
         },
+    };
+    sceneDescriptorSetLayout = createDescriptorSetLayout(sceneBindings);
+
+    constexpr std::array lightingBindings = {
         vk::DescriptorSetLayoutBinding{
             .binding         = RenderInterface::kLightUniformBinding,
             .descriptorType  = vk::DescriptorType::eUniformBuffer,
@@ -157,7 +161,7 @@ void Device::createSharedDescriptorSetLayouts()
             .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
         },
     };
-    sceneDescriptorSetLayout = createDescriptorSetLayout(sceneBindings);
+    lightingDescriptorSetLayout = createDescriptorSetLayout(lightingBindings);
 
     constexpr std::array materialBindings = {
         vk::DescriptorSetLayoutBinding{
@@ -192,7 +196,7 @@ void Device::createSharedDescriptorSetLayouts()
 
 void Device::createSharedPipelineLayouts()
 {
-    const std::array     meshSets{&sceneDescriptorSetLayout, &materialDescriptorSetLayout};
+    const std::array meshSets{&sceneDescriptorSetLayout, &lightingDescriptorSetLayout, &materialDescriptorSetLayout};
     constexpr std::array meshRanges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(MeshPushConstants)

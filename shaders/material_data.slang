@@ -46,9 +46,9 @@ struct MaterialData
     uint2 texturePadding;
 };
 
-[[vk::binding(0, 1)]] StructuredBuffer<MaterialData> materials;
-[[vk::binding(1, 1)]] Texture2D<float4> textures[kMaxMaterialTextures];
-[[vk::binding(2, 1)]] SamplerState samplers[kMaxMaterialSamplers];
+[[vk::binding(0, 2)]] StructuredBuffer<MaterialData> materials;
+[[vk::binding(1, 2)]] Texture2D<float4> textures[kMaxMaterialTextures];
+[[vk::binding(2, 2)]] SamplerState samplers[kMaxMaterialSamplers];
 
 float4 sampleTexture(TextureRef texture, float2 uv)
 {

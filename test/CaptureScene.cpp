@@ -182,7 +182,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     if (offline || realtime)
     {
         for (auto& data : frameData)
-            data.updateView(view.uniforms);
+            data.updateSceneUniforms(view.uniforms);
         if (offline)
             tracing.updateScene(view, snapshot, context().assetManager->contentRevision());
     }

@@ -58,7 +58,7 @@ TEST(Visibility, DirectionalCascadeCubesContainBlendedFrustum)
     constexpr float kFov        = glm::radians(60.0f);
     constexpr float kAspect     = 1.5f;
     constexpr float kTolerance  = 1e-4f;
-    ViewUniforms    view;
+    SceneUniforms   view;
     view.view                  = glm::lookAt(glm::vec3{17, 8, 23}, glm::vec3{12, 4, -1}, glm::vec3{0, 1, 0});
     view.viewProjection        = glm::perspective(kFov, kAspect, kCameraNear, kCameraFar) * view.view;
     view.inverseViewProjection = glm::inverse(view.viewProjection);
@@ -123,7 +123,7 @@ TEST(Visibility, DirectionalShadowRetainsUpstreamCasters)
     light.data.shadowEnabled = 1;
     scene.lights.push_back(light);
 
-    ViewUniforms view;
+    SceneUniforms view;
     view.viewProjection        = glm::perspective(glm::radians(60.0f), 1.0f, 0.1f, 20.0f);
     view.inverseViewProjection = glm::inverse(view.viewProjection);
     RenderFeature::Shadow shadows;
@@ -147,7 +147,7 @@ TEST(Visibility, CascadeTexelSnappingKeepsSubTexelMotionStable)
     config.cascade     = {.count = 1, .shadowMapSize = 256, .maxDistance = 20.0f, .sampleRadius = 0.0f};
     const auto prepare = [&](float cameraX)
     {
-        ViewUniforms view;
+        SceneUniforms view;
         view.view                  = glm::translate(glm::mat4{1}, glm::vec3{-cameraX, 0, 0});
         view.viewProjection        = projection * view.view;
         view.inverseViewProjection = glm::inverse(view.viewProjection);
@@ -180,7 +180,7 @@ TEST(Visibility, CascadeTexelSnappingKeepsSubTexelMotionStable)
 
 TEST(Visibility, UniformCascadeSplitsIgnoreLambdaAndPracticalKeepsNearResolution)
 {
-    ViewUniforms view;
+    SceneUniforms view;
     view.viewProjection        = glm::perspective(glm::radians(55.0f), 1.0f, 0.1f, 120.0f);
     view.inverseViewProjection = glm::inverse(view.viewProjection);
     RenderLight light;
@@ -241,7 +241,7 @@ TEST(Visibility, MainAndShadowBitsAreIndependentAndDisabledLightsHaveNoBit)
     sun->init();
     scene.actors.push_back(std::move(sun));
 
-    ViewUniforms view;
+    SceneUniforms view;
     view.viewProjection        = glm::perspective(glm::radians(60.0f), 1.0f, 0.1f, 20.0f);
     view.inverseViewProjection = glm::inverse(view.viewProjection);
     RenderSystem system;

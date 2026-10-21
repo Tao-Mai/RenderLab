@@ -2,7 +2,6 @@
 
 #include "render/device/Device.h"
 
-#include "render/ShaderManager.h"
 #include "render/feature/RenderGraph.h"
 
 class DepthPrepass
@@ -18,6 +17,7 @@ public:
 
 private:
     RenderGraph::ImageHandle depth;
-    ShaderHandle             shader;
+    vk::Pipeline             singleSidedPipeline;
+    vk::Pipeline             doubleSidedPipeline;
     const PipelineLayout*    pipelineLayout = nullptr;
 };

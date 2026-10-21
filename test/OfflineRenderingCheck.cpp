@@ -95,7 +95,7 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
             prepareRenderScene(snapshot, view.uniforms, {.enable = false}, *context().assetManager, context().profiler);
         const auto& draws = renderContext().resources->prepare(snapshot, prepared, 0);
         pass.updateScene(view, snapshot, context().assetManager->contentRevision());
-        data.updateView(view.uniforms);
+        data.updateSceneUniforms(view.uniforms);
         auto& recording = frame.commandBufferHandle();
         vkCheck(recording.reset());
         vkCheck(recording.begin({}));

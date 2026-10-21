@@ -5,6 +5,7 @@
 #include "render/device/Device.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
+#include "render/feature/editor/EditorShaderData.h"
 
 #include <algorithm>
 #include <array>
@@ -15,10 +16,10 @@ void FrameData::init(const VulkanContext& targetVulkan, Device& device)
 {
     vulkan                = &targetVulkan;
     const auto hostMemory = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
-    viewBuffer            = Buffer(
+    sceneBuffer           = Buffer(
         vulkan->physicalDeviceHandle(),
         vulkan->deviceHandle(),
-        sizeof(ViewUniforms),
+        sizeof(SceneUniforms),
         vk::BufferUsageFlagBits::eUniformBuffer,
         hostMemory
     );
@@ -65,15 +66,16 @@ void FrameData::init(const VulkanContext& targetVulkan, Device& device)
         vk::BufferUsageFlagBits::eStorageBuffer,
         hostMemory
     );
-    sceneSet = device.allocateDescriptorSet(device.sceneDescriptorSetLayout);
-    viewSet  = device.allocateDescriptorSet(device.editorViewDescriptorSetLayout);
+    sceneSet    = device.allocateDescriptorSet(device.sceneDescriptorSetLayout);
+    lightingSet = device.allocateDescriptorSet(device.lightingDescriptorSetLayout);
+    viewSet     = device.allocateDescriptorSet(device.editorViewDescriptorSetLayout);
     bindBuffers();
 }
 
 void FrameData::bindBuffers()
 {
     const std::array infos = {
-        vk::DescriptorBufferInfo{.buffer = viewBuffer.handle(), .range = viewBuffer.size()},
+        vk::DescriptorBufferInfo{.buffer = sceneBuffer.handle(), .range = sceneBuffer.size()},
         vk::DescriptorBufferInfo{.buffer = lightUniformBuffer.handle(), .range = lightUniformBuffer.size()},
         vk::DescriptorBufferInfo{.buffer = lightBuffer.handle(), .range = lightBuffer.size()},
         vk::DescriptorBufferInfo{.buffer = pointShadowBuffer.handle(), .range = pointShadowBuffer.size()},
@@ -84,55 +86,55 @@ void FrameData::bindBuffers()
     const std::array writes = {
         vk::WriteDescriptorSet{
             .dstSet          = *viewSet,
-            .dstBinding      = RenderInterface::kViewUniformBinding,
+            .dstBinding      = EditorInterface::kViewUniformBinding,
             .descriptorCount = 1,
             .descriptorType  = vk::DescriptorType::eUniformBuffer,
             .pBufferInfo     = &infos[0]
         },
         vk::WriteDescriptorSet{
             .dstSet          = *sceneSet,
-            .dstBinding      = RenderInterface::kViewUniformBinding,
+            .dstBinding      = RenderInterface::kSceneUniformBinding,
             .descriptorCount = 1,
             .descriptorType  = vk::DescriptorType::eUniformBuffer,
             .pBufferInfo     = &infos[0]
         },
         vk::WriteDescriptorSet{
-            .dstSet          = *sceneSet,
+            .dstSet          = *lightingSet,
             .dstBinding      = RenderInterface::kLightUniformBinding,
             .descriptorCount = 1,
             .descriptorType  = vk::DescriptorType::eUniformBuffer,
             .pBufferInfo     = &infos[1]
         },
         vk::WriteDescriptorSet{
-            .dstSet          = *sceneSet,
+            .dstSet          = *lightingSet,
             .dstBinding      = RenderInterface::kLightBufferBinding,
             .descriptorCount = 1,
             .descriptorType  = vk::DescriptorType::eStorageBuffer,
             .pBufferInfo     = &infos[2]
         },
         vk::WriteDescriptorSet{
-            .dstSet          = *sceneSet,
+            .dstSet          = *lightingSet,
             .dstBinding      = RenderInterface::kPointShadowBufferBinding,
             .descriptorCount = 1,
             .descriptorType  = vk::DescriptorType::eStorageBuffer,
             .pBufferInfo     = &infos[3]
         },
         vk::WriteDescriptorSet{
-            .dstSet          = *sceneSet,
+            .dstSet          = *lightingSet,
             .dstBinding      = RenderInterface::kSpotShadowBufferBinding,
             .descriptorCount = 1,
             .descriptorType  = vk::DescriptorType::eStorageBuffer,
             .pBufferInfo     = &infos[4]
         },
         vk::WriteDescriptorSet{
-            .dstSet          = *sceneSet,
+            .dstSet          = *lightingSet,
             .dstBinding      = RenderInterface::kRectAreaShadowBufferBinding,
             .descriptorCount = 1,
             .descriptorType  = vk::DescriptorType::eStorageBuffer,
             .pBufferInfo     = &infos[5]
         },
         vk::WriteDescriptorSet{
-            .dstSet          = *sceneSet,
+            .dstSet          = *lightingSet,
             .dstBinding      = RenderInterface::kDirectionalShadowBufferBinding,
             .descriptorCount = 1,
             .descriptorType  = vk::DescriptorType::eStorageBuffer,
@@ -144,9 +146,10 @@ void FrameData::bindBuffers()
 
 void FrameData::reset() noexcept
 {
-    sceneSet = nullptr;
-    viewSet  = nullptr;
-    viewBuffer.reset();
+    sceneSet    = nullptr;
+    lightingSet = nullptr;
+    viewSet     = nullptr;
+    sceneBuffer.reset();
     lightUniformBuffer.reset();
     lightBuffer.reset();
     pointShadowBuffer.reset();
@@ -154,20 +157,20 @@ void FrameData::reset() noexcept
     rectAreaShadowBuffer.reset();
     directionalShadowBuffer.reset();
 
-    viewData      = {};
+    sceneData     = {};
     lightMetadata = {};
     shadowData    = {};
     vulkan        = nullptr;
 }
 
-void FrameData::updateView(const ViewUniforms& view)
+void FrameData::updateSceneUniforms(const SceneUniforms& view)
 {
     DCHECK(vulkan);
-    viewData = view;
-    viewBuffer.upload(&viewData, sizeof(viewData));
+    sceneData = view;
+    sceneBuffer.upload(&sceneData, sizeof(sceneData));
 }
 
-void FrameData::update(const ViewUniforms& view, const LightUniforms& lighting, ShadowFrameData prepared)
+void FrameData::update(const SceneUniforms& view, const LightUniforms& lighting, ShadowFrameData prepared)
 {
     DCHECK(vulkan && lighting.lightRanges.spotEnd == prepared.lights.size());
     DCHECK(lighting.lightRanges == prepared.lightRanges);
@@ -193,7 +196,7 @@ void FrameData::update(const ViewUniforms& view, const LightUniforms& lighting, 
     if (ensureStorage(lightBuffer, std::max<size_t>(shadowData.lights.size(), 1) * sizeof(LightData)))
         bindBuffers();  // 有多少上传多少，而不是固定按最大数量
 
-    updateView(view);
+    updateSceneUniforms(view);
     lightMetadata = lighting;
     lightUniformBuffer.upload(&lightMetadata, sizeof(lightMetadata));
     if (!shadowData.lights.empty())

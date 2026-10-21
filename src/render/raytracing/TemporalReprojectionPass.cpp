@@ -191,7 +191,7 @@ void TemporalReprojectionPass::prepare(RenderGraph& graph, const PassSetup& setu
                 .pImageInfo = &images[binding],
             };
         }
-        const auto& buffer = setup.frameData[frameIndex].viewUniformBuffer();
+        const auto& buffer = setup.frameData[frameIndex].sceneUniformBuffer();
         const vk::DescriptorBufferInfo viewInfo{.buffer = buffer.handle(), .range = buffer.size()};
         writes[8] = {
             .dstSet = *sets[frameIndex], .dstBinding = 8, .descriptorCount = 1,

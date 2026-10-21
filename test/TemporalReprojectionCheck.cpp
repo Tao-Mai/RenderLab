@@ -146,7 +146,7 @@ void check(Renderer& renderer)
         source.value     = value;
         const auto index = frameNumber++ % maxFramesInFlight;
         frames[index].wait();
-        data[index].updateView(view.uniforms);
+        data[index].updateSceneUniforms(view.uniforms);
         auto& commands = frames[index].commandBufferHandle();
         vkCheck(commands.reset());
         vkCheck(commands.begin({}));

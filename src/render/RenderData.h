@@ -30,11 +30,13 @@ struct DrawItem
 
 struct RenderData
 {
-    vk::DescriptorSet                           materialSet;
+    vk::DescriptorSet                           materialDescriptorSet;
     std::optional<AssetID<EnvironmentMapAsset>> environmentMap;
     std::vector<DrawItem>                       drawItems;
     std::vector<DrawItem>                       opaqueDrawItems;
     std::vector<DrawItem>                       transparentDrawItems;
     std::vector<LightData>                      lights;
     LightRanges                                 lightRanges;
+
+    [[nodiscard]] vk::DescriptorSet materialSetHandle() const { return materialDescriptorSet; }
 };

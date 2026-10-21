@@ -12,8 +12,8 @@
 namespace RenderInterface
 {
 inline constexpr uint32_t kSceneSet    = 0;
-inline constexpr uint32_t kMaterialSet = 1;
-inline constexpr uint32_t kObjectSet   = 2;
+inline constexpr uint32_t kLightingSet = 1;
+inline constexpr uint32_t kMaterialSet = 2;
 inline constexpr uint32_t kPassSet     = 3;
 
 inline constexpr uint32_t kGBufferAlbedoBinding   = 0;
@@ -22,34 +22,36 @@ inline constexpr uint32_t kGBufferEmissiveBinding = 2;
 inline constexpr uint32_t kGBufferDepthBinding    = 3;
 inline constexpr uint32_t kGBufferSheenBinding    = 4;
 
-// Scene data: UBOs, then SSBOs.
-inline constexpr uint32_t kViewUniformBinding             = 0;
-inline constexpr uint32_t kLightUniformBinding            = 1;
-inline constexpr uint32_t kLightBufferBinding             = 2;
-inline constexpr uint32_t kPointShadowBufferBinding       = 3;
-inline constexpr uint32_t kSpotShadowBufferBinding        = 4;
-inline constexpr uint32_t kRectAreaShadowBufferBinding    = 5;
-inline constexpr uint32_t kDirectionalShadowBufferBinding = 6;
+// Scene set: camera data only.
+inline constexpr uint32_t kSceneUniformBinding = 0;
+
+// Lighting data: UBO, then SSBOs.
+inline constexpr uint32_t kLightUniformBinding            = 0;
+inline constexpr uint32_t kLightBufferBinding             = 1;
+inline constexpr uint32_t kPointShadowBufferBinding       = 2;
+inline constexpr uint32_t kSpotShadowBufferBinding        = 3;
+inline constexpr uint32_t kRectAreaShadowBufferBinding    = 4;
+inline constexpr uint32_t kDirectionalShadowBufferBinding = 5;
 
 // Shadow images, then comparison and regular samplers.
-inline constexpr uint32_t kPointShadowImageBinding        = 7;
-inline constexpr uint32_t kSpotShadowImageBinding         = 8;
-inline constexpr uint32_t kRectAreaShadowImageBinding     = 9;
-inline constexpr uint32_t kDirectionalShadowImageBinding  = 10;
-inline constexpr uint32_t kShadowComparisonSamplerBinding = 11;
-inline constexpr uint32_t kLinearSamplerBinding           = 12;
+inline constexpr uint32_t kPointShadowImageBinding        = 6;
+inline constexpr uint32_t kSpotShadowImageBinding         = 7;
+inline constexpr uint32_t kRectAreaShadowImageBinding     = 8;
+inline constexpr uint32_t kDirectionalShadowImageBinding  = 9;
+inline constexpr uint32_t kShadowComparisonSamplerBinding = 10;
+inline constexpr uint32_t kLinearSamplerBinding           = 11;
 
 // Environment textures: adjacent image / sampler pairs.
-inline constexpr uint32_t kIrradianceImageBinding            = 13;
-inline constexpr uint32_t kIrradianceSamplerBinding          = 14;
-inline constexpr uint32_t kPrefilteredSpecularImageBinding   = 15;
-inline constexpr uint32_t kPrefilteredSpecularSamplerBinding = 16;
-inline constexpr uint32_t kBrdfLutImageBinding               = 17;
-inline constexpr uint32_t kBrdfLutSamplerBinding             = 18;
-inline constexpr uint32_t kRadianceImageBinding              = 19;
-inline constexpr uint32_t kRadianceSamplerBinding            = 20;
-inline constexpr uint32_t kSheenLutImageBinding              = 21;
-inline constexpr uint32_t kSheenLutSamplerBinding            = 22;
+inline constexpr uint32_t kIrradianceImageBinding            = 12;
+inline constexpr uint32_t kIrradianceSamplerBinding          = 13;
+inline constexpr uint32_t kPrefilteredSpecularImageBinding   = 14;
+inline constexpr uint32_t kPrefilteredSpecularSamplerBinding = 15;
+inline constexpr uint32_t kBrdfLutImageBinding               = 16;
+inline constexpr uint32_t kBrdfLutSamplerBinding             = 17;
+inline constexpr uint32_t kRadianceImageBinding              = 18;
+inline constexpr uint32_t kRadianceSamplerBinding            = 19;
+inline constexpr uint32_t kSheenLutImageBinding              = 20;
+inline constexpr uint32_t kSheenLutSamplerBinding            = 21;
 
 // Global material set, shared by rasterization and ray tracing.
 inline constexpr uint32_t kMaterialBufferBinding   = 0;
@@ -61,8 +63,8 @@ inline constexpr uint32_t kToneMappingImageBinding   = 0;
 inline constexpr uint32_t kToneMappingSamplerBinding = 1;
 }  // namespace RenderInterface
 
-// Matches the std140 ViewUniforms block in shaders/scene_data.slang.
-struct alignas(16) ViewUniforms
+// Matches the std140 SceneUniforms block in shaders/scene_data.slang.
+struct alignas(16) SceneUniforms
 {
     glm::mat4 viewProjection{1.0f};
     glm::mat4 inverseViewProjection{1.0f};
@@ -171,10 +173,10 @@ struct alignas(16) DirectionalShadowData
     std::array<CascadeShadowData, kMaxDirectionalShadowCascades> cascades;
 };
 
-static_assert(sizeof(ViewUniforms) == 208);
-static_assert(offsetof(ViewUniforms, inverseViewProjection) == 64);
-static_assert(offsetof(ViewUniforms, cameraPosition) == 128);
-static_assert(offsetof(ViewUniforms, view) == 144);
+static_assert(sizeof(SceneUniforms) == 208);
+static_assert(offsetof(SceneUniforms, inverseViewProjection) == 64);
+static_assert(offsetof(SceneUniforms, cameraPosition) == 128);
+static_assert(offsetof(SceneUniforms, view) == 144);
 static_assert(sizeof(LightUniforms) == 64);
 static_assert(offsetof(LightUniforms, lightRanges) == 0);
 static_assert(offsetof(LightUniforms, directionalShadowSampleRadius) == 24);
