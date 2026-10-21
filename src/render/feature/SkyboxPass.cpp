@@ -1,5 +1,4 @@
 #include "render/feature/SkyboxPass.h"
-#include "render/feature/SceneInterface.h"
 
 #include "core/Context.h"
 #include "render/FrameData.h"
@@ -22,19 +21,25 @@ SkyboxPass::Output SkyboxPass::setup(
     depth = depthHandle;
     SceneDraw::useAttachments(graph, std::array{color}, depth);
 
-    auto& device   = *renderContext().device;
-    pipelineLayout = &renderContext().sceneInterface->skyboxLayout;
-    pipeline       = device.getOrCreatePipeline({
-              .shader = renderContext().shaderManager->getOrLoad("skybox"),
-              .layout = pipelineLayout,
-              .state =
+    auto&            device = *renderContext().device;
+    const std::array descriptorSetLayouts{&device.sceneDescriptorSetLayout};
+    const std::array pushConstantRanges{vk::PushConstantRange{
+        .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+        .size       = sizeof(SkyboxPushConstants),
+    }};
+    pipelineLayout = device.createPipelineLayout(descriptorSetLayouts, pushConstantRanges);
+
+    pipeline = device.getOrCreatePipeline({
+        .shader = renderContext().shaderManager->getOrLoad("skybox"),
+        .layout = &pipelineLayout,
+        .state =
             PipelineState{
-                      .vertexLayout = VertexLayoutPreset::None,
-                      .depthCompare = vk::CompareOp::eLessOrEqual,
-                      .depthWrite   = false
+                .vertexLayout = VertexLayoutPreset::None,
+                .depthCompare = vk::CompareOp::eLessOrEqual,
+                .depthWrite   = false
             },
-              .colorFormats = {graph.imageInfo(color).format},
-              .depthFormat  = vk::Format::eD32Sfloat,
+        .colorFormats = {graph.imageInfo(color).format},
+        .depthFormat  = vk::Format::eD32Sfloat,
     });
     return {color};
 }
@@ -56,7 +61,7 @@ void SkyboxPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
     const std::array sceneSets = {execution.data.sceneSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        **pipelineLayout,
+        *pipelineLayout,
         RenderInterface::kSceneSet,
         sceneSets,
         {}
@@ -70,7 +75,7 @@ void SkyboxPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
         },
     };
     commandBuffer.pushConstants<SkyboxPushConstants>(
-        **pipelineLayout,
+        *pipelineLayout,
         vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         0,
         parameters

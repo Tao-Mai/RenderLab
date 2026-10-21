@@ -1,5 +1,4 @@
 #include "render/feature/deferred/DeferredLightingPass.h"
-#include "render/feature/SceneInterface.h"
 
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -98,9 +97,14 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
         },
     };
     auto& device     = *renderContext().device;
-    descriptorLayout = device.createDescriptorSetLayout(gBufferBindings);
-    emptyLayout      = device.createDescriptorSetLayout(std::span<const vk::DescriptorSetLayoutBinding>{});
-    const std::array sets{&renderContext().sceneInterface->sceneLayout, &emptyLayout, &emptyLayout, &descriptorLayout};
+    descriptorSetLayout      = device.createDescriptorSetLayout(gBufferBindings);
+    emptyDescriptorSetLayout = device.createDescriptorSetLayout(std::span<const vk::DescriptorSetLayoutBinding>{});
+    const std::array sets{
+        &device.sceneDescriptorSetLayout,
+        &emptyDescriptorSetLayout,
+        &emptyDescriptorSetLayout,
+        &descriptorSetLayout
+    };
     const std::array ranges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(DeferredLightingPushConstants)
@@ -121,7 +125,7 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
     });
     descriptorSets.clear();
     for (uint32_t index = 0; index < maxFramesInFlight; ++index)
-        descriptorSets.push_back(device.allocateDescriptorSet(descriptorLayout));
+        descriptorSets.push_back(device.allocateDescriptorSet(descriptorSetLayout));
     return {color, gBuffer.depth, resolvedShadow};
 }
 

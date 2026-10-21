@@ -177,7 +177,7 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
                 .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR,
             },
         };
-        descriptorLayout           = vkCheck(device.createDescriptorSetLayout(
+        descriptorSetLayout        = vkCheck(device.createDescriptorSetLayout(
             {.bindingCount = static_cast<uint32_t>(bindings.size()), .pBindings = bindings.data()}
         ));
         const std::array poolSizes = {
@@ -193,12 +193,12 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
              .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
              .pPoolSizes    = poolSizes.data()}
         ));
-        frame.set      = std::move(
-            vkCheck(device.allocateDescriptorSets(
-                        {.descriptorPool = *descriptorPool, .descriptorSetCount = 1, .pSetLayouts = &*descriptorLayout}
-                    ))
-                .front()
-        );
+        frame.set      = std::move(vkCheck(device.allocateDescriptorSets(
+                                          {.descriptorPool     = *descriptorPool,
+                                                .descriptorSetCount = 1,
+                                                .pSetLayouts        = &*descriptorSetLayout}
+                                      ))
+                                  .front());
 
         const vk::PushConstantRange parameterRange{
             .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR,
@@ -206,7 +206,7 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
         };
         pipelineLayout = vkCheck(device.createPipelineLayout(
             {.setLayoutCount         = 1,
-             .pSetLayouts            = &*descriptorLayout,
+             .pSetLayouts            = &*descriptorSetLayout,
              .pushConstantRangeCount = 1,
              .pPushConstantRanges    = &parameterRange}
         ));

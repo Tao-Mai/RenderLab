@@ -10,9 +10,7 @@
 #include "render/device/FrameContext.h"
 #include "render/device/VulkanContext.h"
 #include "render/feature/RenderGraph.h"
-#include "render/feature/SceneInterface.h"
 #include "render/feature/editor/EditorFrameInput.h"
-#include "render/feature/editor/EditorLayouts.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/RenderResourceManager.h"
 
@@ -56,8 +54,6 @@ private:
     ShaderManager                               shaders;
     Device                                      device;
     RenderResourceManager                       resources;
-    SceneInterface                              sceneInterface;
-    EditorLayouts                               editorLayouts;
     std::array<FrameContext, maxFramesInFlight> frames;
     std::array<FrameData, maxFramesInFlight>    frameStorage;
     SceneBindings*                              activeSceneBindings = nullptr;

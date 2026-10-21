@@ -63,8 +63,8 @@ ToneMappingPass::Output ToneMappingPass::setup(
         },
     };
     auto& device     = *renderContext().device;
-    descriptorLayout = device.createDescriptorSetLayout(toneMappingBindings);
-    const std::array sets{&descriptorLayout};
+    descriptorSetLayout = device.createDescriptorSetLayout(toneMappingBindings);
+    const std::array sets{&descriptorSetLayout};
     const std::array ranges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(ToneMappingPushConstants)
@@ -84,7 +84,7 @@ ToneMappingPass::Output ToneMappingPass::setup(
     descriptorSets.clear();
     descriptorSets.reserve(maxFramesInFlight);
     for (uint32_t index = 0; index < maxFramesInFlight; ++index)
-        descriptorSets.push_back(device.allocateDescriptorSet(descriptorLayout));
+        descriptorSets.push_back(device.allocateDescriptorSet(descriptorSetLayout));
 
     return {color};
 }

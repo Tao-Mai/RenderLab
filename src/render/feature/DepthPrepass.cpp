@@ -1,6 +1,5 @@
 #include "render/feature/DepthPrepass.h"
 #include "core/Context.h"
-#include "render/feature/SceneInterface.h"
 
 #include "render/FrameData.h"
 #include "render/RenderContext.h"
@@ -37,7 +36,7 @@ DepthPrepass::Output DepthPrepass::setup(RenderGraph& graph, const PassSetup& se
     );
 
     shader         = renderContext().shaderManager->getOrLoad("depth");
-    pipelineLayout = &renderContext().sceneInterface->meshLayout;
+    pipelineLayout = &renderContext().device->meshPipelineLayout;
     return {depth};
 }
 

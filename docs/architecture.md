@@ -47,7 +47,7 @@ Engine：场景 / 编辑器 Tick
 
 - `VulkanContext` 管理设备与队列，`Swapchain` 管理呈现资源。
 - `FrameContext` 管理命令与同步；`FrameData` 管理逐帧上传数据。
-- `RenderContext` 聚合 Device、Shader、GPU 资产管理器与共享布局；Device 负责对象创建、Descriptor 分配和 Pipeline 缓存，场景与编辑器的共享 Layout 在 Renderer 初始化时预创建。
+- `RenderContext` 聚合 Device、Shader 和 GPU 资产管理器；Device 负责对象创建、Descriptor 分配和 Pipeline 缓存，并在初始化时统一创建和持有场景、材质与编辑器的共享 Layout。
 - Pass 直接使用 Vulkan API；共享场景绘制函数位于 `SceneDraw`，它不是额外的资源管理层。
 - Graph 默认共享阴影图、深度和颜色中间结果；跨帧访问由同一队列上的 Barrier 同步。
 - CPU 回读缓冲显式按帧分配；时域历史使用独立的双层 Ping-pong 资源。

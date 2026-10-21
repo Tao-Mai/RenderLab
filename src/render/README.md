@@ -49,7 +49,7 @@
 - 同一队列上追踪资源最后访问，下一帧首次使用前插入 Barrier；不意味着前后帧可无约束并行写同一资源。
 - 回读缓冲使用 PerFrame；交换链图像按获取到的 Image Index 选择。
 - 历史重投影资源由 Pass 持有，颜色 / 深度 / 法线 / 亮度矩各使用双层 Ping-pong。
-- Device、ShaderManager、RenderResourceManager 与共享布局通过 RenderContext 聚合；共享 Layout 初始化时预创建，私有 Layout 由 Pass 在 setup 时直接创建并持有，不缓存 Layout。Device 保留 Pipeline 变体缓存。
+- Device、ShaderManager、RenderResourceManager 通过 RenderContext 聚合；共享 Layout 由 Device 在初始化时统一创建并持有，私有 Layout 由 Pass 在 setup 时直接创建并持有，不缓存 Layout。Device 保留 Pipeline 变体缓存。
 
 ## 代码导航
 

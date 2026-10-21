@@ -1,7 +1,6 @@
 #include "render/feature/editor/EditorPickingPass.h"
 #include "core/Context.h"
 #include "render/Visibility.h"
-#include "render/feature/editor/EditorLayouts.h"
 
 #include "core/Logger.h"
 #include "render/FrameData.h"
@@ -47,7 +46,7 @@ EditorPickingPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph
         }
     );
 
-    pipelineLayout = &renderContext().editorLayouts->pipelineLayout;
+    pipelineLayout = &renderContext().device->editorPipelineLayout;
     auto state     = PipelineState{
             .vertexLayout = VertexLayoutPreset::PositionOnly,
             .depthCompare = vk::CompareOp::eLessOrEqual,

@@ -1,5 +1,4 @@
 #include "render/feature/shadow/ShadowPass.h"
-#include "render/feature/SceneInterface.h"
 
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -35,8 +34,14 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup)
         setup.vulkan.physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures;
     CHECK((features & kRequiredFeatures) == kRequiredFeatures);
 
-    auto& device   = *renderContext().device;
-    pipelineLayout = &renderContext().sceneInterface->shadowLayout;
+    auto&            device = *renderContext().device;
+    const std::array descriptorSetLayouts{&device.sceneDescriptorSetLayout};
+    const std::array pushConstantRanges{vk::PushConstantRange{
+        .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+        .size       = sizeof(ShadowPushConstants),
+    }};
+    pipelineLayout = device.createPipelineLayout(descriptorSetLayouts, pushConstantRanges);
+
     const auto createTarget =
         [&](RenderGraph::ImageCreateInfo info, int shadowType, uint32_t viewMask = 0, uint32_t viewLayerCount = 1)
     {
@@ -51,7 +56,7 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup)
         const auto shader   = renderContext().shaderManager->getOrLoad("shadow", {{"SHADOW_TYPE", shadowType}});
         const auto pipeline = device.getOrCreatePipeline({
             .shader = shader,
-            .layout = pipelineLayout,
+            .layout = &pipelineLayout,
             .state =
                 PipelineState{
                     .vertexLayout = VertexLayoutPreset::PositionOnly,
@@ -222,7 +227,7 @@ void ShadowPass::recordShadow(
     const std::array sceneSets = {execution.data.sceneSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        **pipelineLayout,
+        *pipelineLayout,
         RenderInterface::kSceneSet,
         sceneSets,
         {}
@@ -242,7 +247,7 @@ void ShadowPass::recordShadow(
 
         const ShadowPushConstants push{.model = item.model, .lightIdx = lightIndex, .cascadeIndex = cascadeIndex};
         commandBuffer.pushConstants<ShadowPushConstants>(
-            **pipelineLayout,
+            *pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0,
             push

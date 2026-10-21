@@ -1,7 +1,6 @@
 #include "render/feature/editor/EditorDepthPass.h"
 #include "core/Context.h"
 #include "render/Visibility.h"
-#include "render/feature/editor/EditorLayouts.h"
 
 #include "render/FrameData.h"
 #include "render/RenderContext.h"
@@ -36,7 +35,7 @@ EditorDepthPass::Output EditorDepthPass::setup(RenderGraph& graph, const PassSet
     );
 
     auto& device   = *renderContext().device;
-    pipelineLayout = &renderContext().editorLayouts->pipelineLayout;
+    pipelineLayout = &renderContext().device->editorPipelineLayout;
     pipeline       = device.getOrCreatePipeline({
               .shader      = renderContext().shaderManager->getOrLoad("editor_depth"),
               .layout      = pipelineLayout,

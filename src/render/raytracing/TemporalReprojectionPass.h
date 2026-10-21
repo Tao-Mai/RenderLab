@@ -30,7 +30,7 @@ private:
     RenderGraph::ImageHandle color;
     std::array<std::unique_ptr<HistoryImage>, 4> history;
     vk::Extent3D extent{};
-    vk::raii::DescriptorSetLayout descriptorLayout = nullptr;
+    vk::raii::DescriptorSetLayout                descriptorSetLayout = nullptr;
     vk::raii::PipelineLayout pipelineLayout = nullptr;
     vk::raii::Pipeline pipeline = nullptr;
     vk::raii::DescriptorPool descriptorPool = nullptr;

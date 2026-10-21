@@ -131,14 +131,17 @@ void TemporalReprojectionPass::createPipeline(const VulkanContext& vulkan)
                 : binding < 3 ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute,
         };
-    descriptorLayout = vkCheck(device.createDescriptorSetLayout({
-        .bindingCount = static_cast<uint32_t>(bindings.size()), .pBindings = bindings.data(),
+    descriptorSetLayout = vkCheck(device.createDescriptorSetLayout({
+        .bindingCount = static_cast<uint32_t>(bindings.size()),
+        .pBindings    = bindings.data(),
     }));
     const vk::PushConstantRange range{.stageFlags = vk::ShaderStageFlagBits::eCompute,
         .size = sizeof(ReprojectionParameters)};
     pipelineLayout = vkCheck(device.createPipelineLayout({
-        .setLayoutCount = 1, .pSetLayouts = &*descriptorLayout,
-        .pushConstantRangeCount = 1, .pPushConstantRanges = &range,
+        .setLayoutCount         = 1,
+        .pSetLayouts            = &*descriptorSetLayout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges    = &range,
     }));
     GpuShader shader{device, "shaders/temporal_reprojection.spv"};
     const vk::raii::PipelineCache cache{nullptr};
@@ -156,9 +159,14 @@ void TemporalReprojectionPass::createPipeline(const VulkanContext& vulkan)
         .poolSizeCount = static_cast<uint32_t>(poolSizes.size()), .pPoolSizes = poolSizes.data(),
     }));
     for (uint32_t index = 0; index < maxFramesInFlight; ++index)
-        sets.push_back(std::move(vkCheck(device.allocateDescriptorSets({
-            .descriptorPool = *descriptorPool, .descriptorSetCount = 1, .pSetLayouts = &*descriptorLayout,
-        })).front()));
+        sets.push_back(
+            std::move(vkCheck(device.allocateDescriptorSets({
+                                  .descriptorPool     = *descriptorPool,
+                                  .descriptorSetCount = 1,
+                                  .pSetLayouts        = &*descriptorSetLayout,
+                              }))
+                          .front())
+        );
 }
 
 void TemporalReprojectionPass::prepare(RenderGraph& graph, const PassSetup& setup) const

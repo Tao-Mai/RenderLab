@@ -1,6 +1,5 @@
 #include "render/feature/SceneDraw.h"
 #include "core/Context.h"
-#include "render/feature/SceneInterface.h"
 
 #include "render/FrameData.h"
 #include "render/RenderContext.h"
@@ -121,7 +120,7 @@ void SceneDraw::recordMeshes(
 {
     auto&            device         = *renderContext().device;
     auto&            shaders        = *renderContext().shaderManager;
-    const auto&      pipelineLayout = renderContext().sceneInterface->meshLayout;
+    const auto&      pipelineLayout = renderContext().device->meshPipelineLayout;
     const std::array sceneSets      = {execution.data.sceneSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,

@@ -1,10 +1,7 @@
 #include "render/FrameData.h"
-#include "render/feature/SceneInterface.h"
-#include "render/feature/editor/EditorLayouts.h"
 
 #include "core/Logger.h"
 #include "render/RenderConfig.h"
-#include "render/RenderContext.h"
 #include "render/device/Device.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
@@ -68,8 +65,8 @@ void FrameData::init(const VulkanContext& targetVulkan, Device& device)
         vk::BufferUsageFlagBits::eStorageBuffer,
         hostMemory
     );
-    sceneSet = device.allocateDescriptorSet(renderContext().sceneInterface->sceneLayout);
-    viewSet  = device.allocateDescriptorSet(renderContext().editorLayouts->viewLayout);
+    sceneSet = device.allocateDescriptorSet(device.sceneDescriptorSetLayout);
+    viewSet  = device.allocateDescriptorSet(device.editorViewDescriptorSetLayout);
     bindBuffers();
 }
 

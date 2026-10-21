@@ -193,8 +193,7 @@ add_library(RenderLabRuntime STATIC
     src/editor/SceneHierarchy.cpp
     src/editor/RendererSettings.cpp
     src/render/feature/shadow/ShadowData.cpp
-    src/render/feature/SceneInterface.cpp
-    src/render/feature/editor/EditorLayouts.cpp
+    src/render/device/DeviceLayouts.cpp
         src/Engine.cpp
         src/Engine.h
         src/core/ConfigManager.cpp
@@ -290,7 +289,6 @@ add_library(RenderLabRuntime STATIC
         src/render/ShaderManager.h
         src/render/device/Device.cpp
         src/render/device/Device.h
-        src/render/feature/editor/EditorLayouts.h
         src/render/device/Memory.h
         src/render/device/VkCheck.h
         src/render/device/VulkanContext.cpp

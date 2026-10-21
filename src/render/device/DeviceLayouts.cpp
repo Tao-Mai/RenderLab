@@ -1,18 +1,20 @@
-#include "render/feature/SceneInterface.h"
+#include "render/device/Device.h"
 
 #include "core/Logger.h"
-#include "render/RenderContext.h"
-#include "render/device/Device.h"
+#include "render/feature/editor/EditorShaderData.h"
 #include "render/resource/ShaderData.h"
 
 #include <array>
 
-void SceneInterface::init()
+void Device::createSharedLayouts()
 {
-    DCHECK(!sceneLayout);
-    auto& device = *renderContext().device;
+    createSharedDescriptorSetLayouts();
+    createSharedPipelineLayouts();
+}
 
-    const std::array sceneBindings = {
+void Device::createSharedDescriptorSetLayouts()
+{
+    constexpr std::array sceneBindings = {
         vk::DescriptorSetLayoutBinding{
             .binding         = RenderInterface::kViewUniformBinding,
             .descriptorType  = vk::DescriptorType::eUniformBuffer,
@@ -154,9 +156,9 @@ void SceneInterface::init()
             .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
         },
     };
-    sceneLayout = device.createDescriptorSetLayout(sceneBindings);
+    sceneDescriptorSetLayout = createDescriptorSetLayout(sceneBindings);
 
-    const std::array materialBindings = {
+    constexpr std::array materialBindings = {
         vk::DescriptorSetLayoutBinding{
             .binding         = RenderInterface::kMaterialImageBinding,
             .descriptorType  = vk::DescriptorType::eSampledImage,
@@ -296,25 +298,30 @@ void SceneInterface::init()
             .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
         },
     };
-    materialLayout = device.createDescriptorSetLayout(materialBindings);
+    materialDescriptorSetLayout = createDescriptorSetLayout(materialBindings);
 
-    const std::array meshSets{&sceneLayout, &materialLayout};
-    const std::array meshRanges{vk::PushConstantRange{
+    constexpr std::array editorBindings{vk::DescriptorSetLayoutBinding{
+        .binding         = EditorInterface::kViewUniformBinding,
+        .descriptorType  = vk::DescriptorType::eUniformBuffer,
+        .descriptorCount = 1,
+        .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+    }};
+    editorViewDescriptorSetLayout = createDescriptorSetLayout(editorBindings);
+}
+
+void Device::createSharedPipelineLayouts()
+{
+    const std::array     meshSets{&sceneDescriptorSetLayout, &materialDescriptorSetLayout};
+    constexpr std::array meshRanges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(MeshPushConstants)
     }};
-    meshLayout = device.createPipelineLayout(meshSets, meshRanges);
+    meshPipelineLayout = createPipelineLayout(meshSets, meshRanges);
 
-    const std::array sceneSets{&sceneLayout};
-    const std::array shadowRanges{vk::PushConstantRange{
+    const std::array     editorSets{&editorViewDescriptorSetLayout};
+    constexpr std::array editorRanges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        .size       = sizeof(ShadowPushConstants)
+        .size       = sizeof(EditorLightMarkerPushConstants),
     }};
-    shadowLayout = device.createPipelineLayout(sceneSets, shadowRanges);
-
-    const std::array skyboxRanges{vk::PushConstantRange{
-        .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        .size       = sizeof(SkyboxPushConstants)
-    }};
-    skyboxLayout = device.createPipelineLayout(sceneSets, skyboxRanges);
+    editorPipelineLayout = createPipelineLayout(editorSets, editorRanges);
 }

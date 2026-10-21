@@ -27,8 +27,8 @@ private:
     SceneBindings                        bindings;
     GBufferPass::Output                  gBuffer;
     RenderGraph::ImageHandle             color;
-    DescriptorSetLayout                  descriptorLayout;
-    DescriptorSetLayout                  emptyLayout;
+    DescriptorSetLayout                  descriptorSetLayout;
+    DescriptorSetLayout                  emptyDescriptorSetLayout;
     std::vector<vk::raii::DescriptorSet> descriptorSets;
     vk::Pipeline                         pipeline;
     PipelineLayout                       pipelineLayout;

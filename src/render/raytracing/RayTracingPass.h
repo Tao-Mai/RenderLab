@@ -48,7 +48,7 @@ private:
     RenderGraph::ImageHandle                 depth;
     RenderGraph::ImageHandle                 worldNormal;
     uint32_t                                 sampleIndex            = 0;
-    vk::raii::DescriptorSetLayout            descriptorLayout       = nullptr;
+    vk::raii::DescriptorSetLayout            descriptorSetLayout    = nullptr;
     vk::raii::DescriptorPool                 descriptorPool         = nullptr;
     vk::raii::PipelineLayout                 pipelineLayout         = nullptr;
     vk::raii::Pipeline                       pipeline               = nullptr;

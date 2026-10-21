@@ -129,8 +129,8 @@ BloomPass::Output BloomPass::FilterPass::setup(
     };
     auto& ctx        = renderContext();
     auto& device     = *ctx.device;
-    descriptorLayout = device.createDescriptorSetLayout(bindings);
-    const std::array layouts{&descriptorLayout};
+    descriptorSetLayout = device.createDescriptorSetLayout(bindings);
+    const std::array layouts{&descriptorSetLayout};
     const std::array ranges{vk::PushConstantRange{.stageFlags = kShaderStages, .size = sizeof(BloomParameters)}};
     pipelineLayout    = device.createPipelineLayout(layouts, ranges);
     const auto shader = ctx.shaderManager->getOrLoad("bloom", {{"BLOOM_STAGE", static_cast<int>(stage)}});
@@ -143,7 +143,7 @@ BloomPass::Output BloomPass::FilterPass::setup(
     sampler           = ctx.resources->sampler(BuiltinAssets::Sampler::linearClamp);
     descriptorSets.clear();
     for (uint32_t index = 0; index < maxFramesInFlight; ++index)
-        descriptorSets.push_back(device.allocateDescriptorSet(descriptorLayout));
+        descriptorSets.push_back(device.allocateDescriptorSet(descriptorSetLayout));
     return {color};
 }
 

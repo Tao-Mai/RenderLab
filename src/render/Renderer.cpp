@@ -84,7 +84,7 @@ void Renderer::init()
     DCHECK(!inited);
 
     auto& ctx = renderContext();
-    DCHECK(!ctx.shaderManager && !ctx.device && !ctx.resources && !ctx.sceneInterface && !ctx.editorLayouts);
+    DCHECK(!ctx.shaderManager && !ctx.device && !ctx.resources);
     DCHECK(context().window);
 
     auto& window = *context().window;
@@ -95,14 +95,10 @@ void Renderer::init()
     device.init(vulkan.deviceHandle(), shaders);
 
     ctx = {
-        .shaderManager  = &shaders,
-        .device         = &device,
-        .resources      = &resources,
-        .sceneInterface = &sceneInterface,
-        .editorLayouts  = &editorLayouts,
+        .shaderManager = &shaders,
+        .device        = &device,
+        .resources     = &resources,
     };
-    sceneInterface.init();
-    editorLayouts.init();
 
     for (auto& frame : frames)
     {
@@ -137,8 +133,6 @@ void Renderer::shutdown() noexcept
     passes.reset();
     pickingReadback = {};
     resources.shutdown();
-    sceneInterface = {};
-    editorLayouts  = {};
     for (FrameContext& frame : frames)
     {
         frame.reset();

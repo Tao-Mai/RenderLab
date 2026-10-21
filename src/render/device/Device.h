@@ -78,7 +78,17 @@ public:
     [[nodiscard]] vk::raii::DescriptorSet allocateDescriptorSet(const DescriptorSetLayout& layout) const;
     [[nodiscard]] vk::Pipeline            getOrCreatePipeline(const GraphicsPipelineInfo& info);
 
+    DescriptorSetLayout sceneDescriptorSetLayout;
+    DescriptorSetLayout materialDescriptorSetLayout;
+    DescriptorSetLayout editorViewDescriptorSetLayout;
+    PipelineLayout      meshPipelineLayout;
+    PipelineLayout      editorPipelineLayout;
+
 private:
+    void createSharedLayouts();
+    void createSharedPipelineLayouts();
+    void createSharedDescriptorSetLayouts();
+
     struct PipelineKey
     {
         ShaderHandle            shader;

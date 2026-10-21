@@ -23,7 +23,7 @@ public:
 private:
     RenderGraph::ImageHandle             hdrColor;
     RenderGraph::ImageHandle             color;
-    DescriptorSetLayout                  descriptorLayout;
+    DescriptorSetLayout                  descriptorSetLayout;
     std::vector<vk::raii::DescriptorSet> descriptorSets;
     vk::Sampler                          sampler;
     vk::Pipeline                         pipeline;

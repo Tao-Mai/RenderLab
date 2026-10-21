@@ -165,7 +165,7 @@ void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursio
                 .stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR
             },
         };
-        descriptorLayout           = vkCheck(device.createDescriptorSetLayout(
+        descriptorSetLayout        = vkCheck(device.createDescriptorSetLayout(
             {.bindingCount = static_cast<uint32_t>(bindings.size()), .pBindings = bindings.data()}
         ));
         const std::array poolSizes = {
@@ -198,7 +198,7 @@ void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursio
             frame.set = std::move(vkCheck(device.allocateDescriptorSets(
                                               {.descriptorPool     = *descriptorPool,
                                                .descriptorSetCount = 1,
-                                               .pSetLayouts        = &*descriptorLayout}
+                                               .pSetLayouts        = &*descriptorSetLayout}
                                           ))
                                       .front());
 
@@ -208,7 +208,7 @@ void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursio
         };
         pipelineLayout = vkCheck(device.createPipelineLayout(
             {.setLayoutCount         = 1,
-             .pSetLayouts            = &*descriptorLayout,
+             .pSetLayouts            = &*descriptorSetLayout,
              .pushConstantRangeCount = 1,
              .pPushConstantRanges    = &parameterRange}
         ));

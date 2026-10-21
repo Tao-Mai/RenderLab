@@ -11,19 +11,18 @@
 
 ## 初始化时预创建
 
-`Renderer::init()` 在 ShaderManager、Device 初始化后调用 `SceneInterface::init()` 和 `EditorLayouts::init()`：
+`Renderer::init()` 初始化 Device 时，由 `Device::createSharedLayouts()` 统一预创建共享 Layout：
 
-- `SceneInterface` 预创建两份 Descriptor Set Layout 和三份 Pipeline Layout。
-- `EditorLayouts` 预创建一份 Descriptor Set Layout 和一份 Pipeline Layout。
-- Device 直接创建 Layout，不做 Layout 缓存；共享 Layout 由上述对象以 RAII 持有，私有 Layout 由 Pass 在 `setup()` 中创建并持有。
+- 场景、材质与编辑器共用三份 Descriptor Set Layout 和两份 Pipeline Layout。
+- Device 直接创建 Layout，不做 Layout 缓存；共享 Layout 由 Device 以 RAII 持有，私有 Layout 由 Pass 在 `setup()` 中创建并持有。
 
 这些 Layout 在渲染器生命周期内固定，运行时通过 RenderContext 直接读取：
 
 ```cpp
-const auto& layout = renderContext().sceneInterface->meshLayout;
+const auto& layout = renderContext().device->meshPipelineLayout;
 ```
 
-实现：[Renderer.cpp](../src/render/Renderer.cpp)、[SceneInterface.h](../src/render/feature/SceneInterface.h)、[SceneInterface.cpp](../src/render/feature/SceneInterface.cpp)。
+实现：[Device.h](../src/render/device/Device.h)、[DeviceLayouts.cpp](../src/render/device/DeviceLayouts.cpp)。
 
 ## Descriptor Set Layout
 
@@ -31,7 +30,7 @@ const auto& layout = renderContext().sceneInterface->meshLayout;
 
 Binding 编号定义于 [ShaderData.h](../src/render/resource/ShaderData.h)。
 
-### sceneLayout：场景资源，Set 0
+### sceneDescriptorSetLayout：场景资源，Set 0
 
 | Binding | Descriptor 类型 | 内容 |
 | --- | --- | --- |
@@ -54,11 +53,11 @@ Binding 编号定义于 [ShaderData.h](../src/render/resource/ShaderData.h)。
 | 19 / 20 | Sampled Image / Sampler | 原始 Radiance 环境图，供天空盒及 Sheen IBL 使用 |
 | 21 / 22 | Sampled Image / Sampler | Sheen 方向反照率 LUT |
 
-由 `meshLayout`、`shadowLayout`、`skyboxLayout` 引用；`DeferredLightingPass` 也将它用作自身 Pipeline Layout 的 Set 0。
+由共享的 `meshPipelineLayout`，以及 `ShadowPass`、`SkyboxPass`、`DeferredLightingPass` 各自的 Pipeline Layout 引用，作为 Set 0。
 
 Shader 声明：[scene_data.slang](../shaders/scene_data.slang)、[scene_lighting.slang](../shaders/scene_lighting.slang)、[skybox.slang](../shaders/skybox.slang)。
 
-### materialLayout：材质资源，Set 1
+### materialDescriptorSetLayout：材质资源，Set 1
 
 | Binding | Descriptor 类型 | 内容 |
 | --- | --- | --- |
@@ -75,19 +74,19 @@ Shader 声明：[scene_data.slang](../shaders/scene_data.slang)、[scene_lightin
 | 19 / 20 | Sampled Image / Sampler | Sheen Color |
 | 21 / 22 | Sampled Image / Sampler | Sheen Roughness |
 
-由 `meshLayout` 引用，作为 Set 1。Clearcoat、Sheen 等 Shader 分支共用这份固定布局。
+由 `meshPipelineLayout` 引用，作为 Set 1。Clearcoat、Sheen 等 Shader 分支共用这份固定布局。
 
 Shader 声明：[material_data.slang](../shaders/material_data.slang)。
 
 ## Pipeline Layout 与 Pass 对应关系
 
-这三份布局均在 `SceneInterface::init()` 中预创建。Push Constant 都从偏移 0 开始，阶段均为 Vertex | Fragment。
+`meshPipelineLayout` 在 `Device::createSharedLayouts()` 中预创建；Shadow、Skybox 的 `pipelineLayout` 只供各自的 Pass 使用，在其 `setup()` 中创建并持有。Push Constant 都从偏移 0 开始，阶段均为 Vertex | Fragment。
 
 | Layout | Set 排列 | Push Constants | 使用它的 Pass |
 | --- | --- | --- | --- |
-| `meshLayout` | Set 0：`sceneLayout`；Set 1：`materialLayout` | `MeshPushConstants`，64 B：Model 矩阵 | `DepthPrepass`；`ScenePass`、`GBufferPass`、`TransparentPass` 通过 `SceneDraw::recordMeshes()` 使用 |
-| `shadowLayout` | Set 0：`sceneLayout` | `ShadowPushConstants`，80 B：Model 矩阵、光源索引、Cascade 索引及对齐填充 | `ShadowPass`，点光源、聚光灯、矩形面光源与方向光共用 |
-| `skyboxLayout` | Set 0：`sceneLayout` | `SkyboxPushConstants`，16 B：Viewport | `SkyboxPass` |
+| `meshPipelineLayout` | Set 0：`sceneDescriptorSetLayout`；Set 1：`materialDescriptorSetLayout` | `MeshPushConstants`，64 B：Model 矩阵 | `DepthPrepass`；`ScenePass`、`GBufferPass`、`TransparentPass` 通过 `SceneDraw::recordMeshes()` 使用 |
+| `ShadowPass::pipelineLayout` | Set 0：`sceneDescriptorSetLayout` | `ShadowPushConstants`，80 B：Model 矩阵、光源索引、Cascade 索引及对齐填充 | `ShadowPass`，点光源、聚光灯、矩形面光源与方向光共用 |
+| `SkyboxPass::pipelineLayout` | Set 0：`sceneDescriptorSetLayout` | `SkyboxPushConstants`，16 B：Viewport | `SkyboxPass` |
 
 实现：[DepthPrepass.cpp](../src/render/feature/DepthPrepass.cpp)、[SceneDraw.cpp](../src/render/feature/SceneDraw.cpp)、[ShadowPass.cpp](../src/render/feature/shadow/ShadowPass.cpp)、[SkyboxPass.cpp](../src/render/feature/SkyboxPass.cpp)。
 
@@ -95,7 +94,7 @@ Shader 声明：[material_data.slang](../shaders/material_data.slang)。
 
 | Layout | 描述 | 使用它的 Pass |
 | --- | --- | --- |
-| `EditorLayouts::viewLayout` | Binding 0：View UBO，数量 1，阶段 Vertex、Fragment | 作为编辑器 Pipeline Layout 的 Set 0 |
-| `EditorLayouts::pipelineLayout` | Set 0：`viewLayout`；Push Constant 从偏移 0 开始，80 B，阶段 Vertex、Fragment | `LightMarkerPass`、`EditorPickingPass`、`EditorDepthPass` |
+| `editorViewDescriptorSetLayout` | Binding 0：View UBO，数量 1，阶段 Vertex、Fragment | 作为编辑器 Pipeline Layout 的 Set 0 |
+| `editorPipelineLayout` | Set 0：`editorViewDescriptorSetLayout`；Push Constant 从偏移 0 开始，80 B，阶段 Vertex、Fragment | `LightMarkerPass`、`EditorPickingPass`、`EditorDepthPass` |
 
-实现：[EditorLayouts.cpp](../src/render/feature/editor/EditorLayouts.cpp)。
+实现：[DeviceLayouts.cpp](../src/render/device/DeviceLayouts.cpp)。

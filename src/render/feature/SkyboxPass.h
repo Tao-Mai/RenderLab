@@ -24,5 +24,5 @@ private:
     RenderGraph::ImageHandle color;
     RenderGraph::ImageHandle depth;
     vk::Pipeline             pipeline;
-    const PipelineLayout*    pipelineLayout = nullptr;
+    PipelineLayout           pipelineLayout;
 };

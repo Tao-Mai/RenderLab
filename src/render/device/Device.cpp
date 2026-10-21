@@ -31,6 +31,7 @@ void Device::init(const vk::raii::Device& targetDevice, ShaderManager& targetSha
         .pPoolSizes    = kPoolSizes.data(),
     }));
     pipelineCache  = vkCheck(device->createPipelineCache(vk::PipelineCacheCreateInfo{}));
+    createSharedLayouts();
     DEBUG_EXEC(initialized = true);
 }
 
@@ -38,10 +39,15 @@ void Device::shutdown() noexcept
 {
     DCHECK(initialized);
     pipelines.clear();
-    pipelineCache  = nullptr;
-    descriptorPool = nullptr;
-    shaders        = nullptr;
-    device         = nullptr;
+    editorPipelineLayout          = {};
+    meshPipelineLayout            = {};
+    editorViewDescriptorSetLayout = {};
+    materialDescriptorSetLayout   = {};
+    sceneDescriptorSetLayout      = {};
+    pipelineCache                 = nullptr;
+    descriptorPool                = nullptr;
+    shaders                       = nullptr;
+    device                        = nullptr;
     DEBUG_EXEC(initialized = false);
 }
 

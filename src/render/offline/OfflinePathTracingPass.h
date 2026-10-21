@@ -48,7 +48,7 @@ private:
     static_assert(offsetof(OfflineParameters, sampleIndex) == 116);
 
     RenderGraph::ImageHandle                 rayImage;
-    vk::raii::DescriptorSetLayout            descriptorLayout       = nullptr;
+    vk::raii::DescriptorSetLayout            descriptorSetLayout    = nullptr;
     vk::raii::DescriptorPool                 descriptorPool         = nullptr;
     vk::raii::PipelineLayout                 pipelineLayout         = nullptr;
     vk::raii::Pipeline                       pipeline               = nullptr;

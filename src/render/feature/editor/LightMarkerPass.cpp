@@ -1,6 +1,5 @@
 #include "render/feature/editor/LightMarkerPass.h"
 #include "core/Context.h"
-#include "render/feature/editor/EditorLayouts.h"
 
 #include "render/FrameData.h"
 #include "render/RenderContext.h"
@@ -44,7 +43,7 @@ LightMarkerPass::Output LightMarkerPass::setup(
 
     shader         = renderContext().shaderManager->getOrLoad("editor_light_marker");
     auto& device   = *renderContext().device;
-    pipelineLayout = &renderContext().editorLayouts->pipelineLayout;
+    pipelineLayout = &renderContext().device->editorPipelineLayout;
     pipeline       = device.getOrCreatePipeline({
               .shader       = shader,
               .layout       = pipelineLayout,
