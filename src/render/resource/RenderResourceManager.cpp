@@ -5,10 +5,10 @@
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
 #include "core/Logger.h"
-#include "render/DescriptorManager.h"
 #include "render/RenderPreparation.h"
 #include "render/ShaderManager.h"
 #include "render/Visibility.h"
+#include "render/device/Device.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/resource/GpuMaterial.h"
@@ -116,18 +116,18 @@ GpuUploadContext RenderResourceManager::uploadContext() const
 }
 
 void RenderResourceManager::init(
-    VulkanContext&     targetVulkan,
-    DescriptorManager& targetDescriptors,
-    ShaderManager&     targetShaders,
-    AssetManager&      targetAssets,
-    AssetDataManager&  targetData
+    VulkanContext&    targetVulkan,
+    Device&           targetDevice,
+    ShaderManager&    targetShaders,
+    AssetManager&     targetAssets,
+    AssetDataManager& targetData
 )
 {
-    assets      = &targetAssets;
-    data        = &targetData;
-    vulkan      = &targetVulkan;
-    descriptors = &targetDescriptors;
-    shaders     = &targetShaders;
+    assets  = &targetAssets;
+    data    = &targetData;
+    vulkan  = &targetVulkan;
+    device  = &targetDevice;
+    shaders = &targetShaders;
     const vk::CommandPoolCreateInfo poolInfo{
         .flags            = vk::CommandPoolCreateFlagBits::eTransient,
         .queueFamilyIndex = vulkan->graphicsQueueFamilyIndex(),
@@ -143,12 +143,12 @@ void RenderResourceManager::shutdown() noexcept
     materials.clear();
     textures.clear();
     samplers.clear();
-    uploadPool  = nullptr;
-    descriptors = nullptr;
-    shaders     = nullptr;
-    vulkan      = nullptr;
-    assets      = nullptr;
-    data        = nullptr;
+    uploadPool = nullptr;
+    device     = nullptr;
+    shaders    = nullptr;
+    vulkan     = nullptr;
+    assets     = nullptr;
+    data       = nullptr;
 }
 
 GpuMesh& RenderResourceManager::mesh(const MeshAsset::ID& id)
@@ -190,7 +190,7 @@ std::shared_ptr<GpuMaterial> RenderResourceManager::material(const MaterialAsset
 
 std::shared_ptr<GpuMaterial> RenderResourceManager::createMaterial(const PbrMaterialAsset& asset)
 {
-    DCHECK(descriptors);
+    DCHECK(device);
     const auto loadTexture = [&](const std::optional<TextureBinding>& source,
                                  const TextureAsset::ID&              fallback,
                                  std::optional<ColorSpace>            colorSpace = std::nullopt)
@@ -238,7 +238,7 @@ std::shared_ptr<GpuMaterial> RenderResourceManager::createMaterial(const PbrMate
     gpu->create(
         vulkan->physicalDeviceHandle(),
         vulkan->deviceHandle(),
-        *descriptors,
+        *device,
         shaders->getOrLoad(
             asset.shaderId.value_or("scene"),
             {{"ENABLE_IBL", 1}, {"ENABLE_CLEARCOAT", asset.clearcoat ? 1 : 0}, {"ENABLE_SHEEN", asset.sheen ? 1 : 0}}

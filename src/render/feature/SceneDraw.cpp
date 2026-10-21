@@ -3,10 +3,10 @@
 #include "render/feature/SceneInterface.h"
 
 #include "render/FrameData.h"
-#include "render/PipelineManager.h"
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
 #include "render/RenderView.h"
+#include "render/device/Device.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMaterial.h"
 #include "render/resource/GpuMesh.h"
@@ -119,13 +119,13 @@ void SceneDraw::recordMeshes(
     SceneShaderOptions          options
 )
 {
-    auto&      pipelines = *renderContext().pipelineManager;
-    auto&      shaders   = *renderContext().shaderManager;
-    const auto pipelineLayout = renderContext().sceneInterface->meshLayout;
-    const std::array sceneSets = {execution.data.sceneSetHandle()};
+    auto&            device         = *renderContext().device;
+    auto&            shaders        = *renderContext().shaderManager;
+    const auto&      pipelineLayout = renderContext().sceneInterface->meshLayout;
+    const std::array sceneSets      = {execution.data.sceneSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        pipelineLayout,
+        *pipelineLayout,
         RenderInterface::kSceneSet,
         sceneSets,
         {}
@@ -134,8 +134,8 @@ void SceneDraw::recordMeshes(
     vk::Pipeline boundPipeline;
     for (const DrawItem& item : items)
     {
-        PipelineKey key      = item.material->pipelineKey(colorFormats, vk::Format::eD32Sfloat, pipelineLayout);
-        key.state.depthWrite = false;
+        GraphicsPipelineInfo key = item.material->pipelineInfo(colorFormats, vk::Format::eD32Sfloat, pipelineLayout);
+        key.state.depthWrite     = false;
         if (item.material->alphaMode() != MaterialAlphaMode::Blend)
             key.state.depthCompare = vk::CompareOp::eEqual;
         if (shader.index)
@@ -154,7 +154,7 @@ void SceneDraw::recordMeshes(
                  {"ENABLE_SHEEN", metadata.defines.at("ENABLE_SHEEN")}}
             );
         }
-        const vk::Pipeline pipeline = pipelines.getOrCreate(key);
+        const vk::Pipeline pipeline = device.getOrCreatePipeline(key);
         if (pipeline != boundPipeline)
         {
             commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
@@ -164,7 +164,7 @@ void SceneDraw::recordMeshes(
         item.mesh->bind(commandBuffer);
         const MeshPushConstants pushConstants{.model = item.model};
         commandBuffer.pushConstants<MeshPushConstants>(
-            pipelineLayout,
+            *pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0,
             pushConstants
@@ -172,7 +172,7 @@ void SceneDraw::recordMeshes(
         const std::array materialSets = {item.material->descriptorSetHandle()};
         commandBuffer.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics,
-            pipelineLayout,
+            *pipelineLayout,
             RenderInterface::kMaterialSet,
             materialSets,
             {}

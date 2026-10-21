@@ -1,4 +1,3 @@
-#include "editor/LightMarkers.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
@@ -11,6 +10,7 @@
 #include "core/profiling/Profiler.h"
 #include "editor/Editor.h"
 #include "editor/EditorCamera.h"
+#include "editor/LightMarkers.h"
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
 #include "scene/SceneManager.h"
@@ -31,21 +31,19 @@ namespace
 {
 void checkPointShadowUpload(const VulkanContext& vulkan)
 {
-    DescriptorManager descriptors;
-    descriptors.init(vulkan.deviceHandle());
     FrameData frame;
-    frame.init(vulkan, descriptors);
+    frame.init(vulkan, *renderContext().device);
     std::array<RenderLight, 5> lights;
     for (auto& light : lights)
     {
         light.data.positionRange = {2.0f, 3.0f, 4.0f, 16.0f};
-        light.data.lightType = GpuLightType::Point;
+        light.data.lightType     = GpuLightType::Point;
         light.data.shadowEnabled = 1;
     }
-    lights[0].enabled = false;
-    lights[1].data.lightType = GpuLightType::Spot;
+    lights[0].enabled            = false;
+    lights[1].data.lightType     = GpuLightType::Spot;
     lights[2].data.shadowEnabled = 0;
-    const auto upload = [&](bool enabled)
+    const auto upload            = [&](bool enabled)
     {
         auto prepared = prepareShadows({}, lights, {.enable = enabled});
         frame.update({}, {.lightRanges = prepared.lightRanges}, std::move(prepared));
@@ -54,9 +52,7 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
     CHECK(frame.pointShadowData().size() == 2);
     CHECK(frame.lightData().size() == 4);
     CHECK(frame.lightData()[1].shadowidx == 0 && frame.lightData()[2].shadowidx == 1);
-    CHECK(
-        frame.lightData()[0].shadowidx == ~0u && frame.lightData()[3].shadowidx == 0
-    );
+    CHECK(frame.lightData()[0].shadowidx == ~0u && frame.lightData()[3].shadowidx == 0);
     CHECK(frame.spotShadowData().size() == 1);
 
     const std::array directions = {
@@ -77,7 +73,7 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
         );
     }
 
-    lights[0].enabled = true;
+    lights[0].enabled            = true;
     lights[2].data.shadowEnabled = 1;
     upload(true);
     CHECK(frame.pointShadowData().size() == 4);
@@ -94,7 +90,6 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
     frame.update({}, {}, prepareShadows({}, {}, {.enable = true}));
     CHECK(frame.pointShadowData().empty() && frame.lightData().empty());
     frame.reset();
-    descriptors.shutdown();
 }
 
 void checkMovement(const SceneAsset& original, Window& window, SceneManager& manager)
@@ -395,9 +390,9 @@ int main(int argc, char** argv)
     {
         std::unique_ptr<AActor> actor;
         Deserialize(templateActor, actor);
-        actor->name                 = "smoke-light-" + std::to_string(index);
-        auto& light                 = *actor->getComponent<LightComponent>();
-        light.castShadow            = index < 2;
+        actor->name      = "smoke-light-" + std::to_string(index);
+        auto& light      = *actor->getComponent<LightComponent>();
+        light.castShadow = index < 2;
         if (auto* local = actor->getComponent<LocalLightComponent>())
             local->luminousIntensity = 0.25f;
         else

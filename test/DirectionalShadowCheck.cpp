@@ -1,5 +1,5 @@
-#include "editor/LightMarkers.h"
 #include "editor/EditorCamera.h"
+#include "editor/LightMarkers.h"
 // Short manual check, linked against the application's existing objects.
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
@@ -65,10 +65,8 @@ int main(int, char** argv)
     renderer.init();
     renderer.rebuildGraph();
 
-    DescriptorManager descriptors;
-    descriptors.init(renderer.vulkanContext().deviceHandle());
     FrameData upload;
-    upload.init(renderer.vulkanContext(), descriptors);
+    upload.init(renderer.vulkanContext(), *renderContext().device);
     const auto&        camera         = scenesCamera;
     const auto         viewProjection = camera.projectionMatrix(1.0f) * camera.viewMatrix();
     const ViewUniforms view{
@@ -78,12 +76,15 @@ int main(int, char** argv)
         .view                  = camera.viewMatrix(),
     };
     RenderLight source;
-    source.data.direction = {0.0f, -1.0f, 0.0f, 0.0f};
-    source.data.lightType = GpuLightType::Directional;
+    source.data.direction     = {0.0f, -1.0f, 0.0f, 0.0f};
+    source.data.lightType     = GpuLightType::Directional;
     source.data.shadowEnabled = 1;
-    auto prepared = prepareShadows(view, {&source, 1}, feature.shadow);
-    upload.update(view, {.lightRanges = prepared.lightRanges, .cascadeCount = feature.shadow.cascade.count},
-                  std::move(prepared));
+    auto prepared             = prepareShadows(view, {&source, 1}, feature.shadow);
+    upload.update(
+        view,
+        {.lightRanges = prepared.lightRanges, .cascadeCount = feature.shadow.cascade.count},
+        std::move(prepared)
+    );
     CHECK(upload.directionalShadowData().size() == 1 && upload.lightData()[0].shadowidx == 0);
     CHECK(upload.lightUniforms().cascadeCount == 4);
     float previousDepth = camera.config().nearPlane;
@@ -98,7 +99,6 @@ int main(int, char** argv)
     }
     CHECK(std::abs(previousDepth - feature.shadow.cascade.maxDistance) < 0.001f);
     upload.reset();
-    descriptors.shutdown();
 
     const auto extent = renderer.swapchainHandle().extent();
     for (int frame = 0; frame < 8; ++frame)

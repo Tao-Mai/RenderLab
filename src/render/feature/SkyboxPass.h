@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/device/Device.h"
+
 #include "render/feature/RenderGraph.h"
 
 class SkyboxPass
@@ -22,5 +24,5 @@ private:
     RenderGraph::ImageHandle color;
     RenderGraph::ImageHandle depth;
     vk::Pipeline             pipeline;
-    vk::PipelineLayout       pipelineLayout;
+    const PipelineLayout*    pipelineLayout = nullptr;
 };

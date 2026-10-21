@@ -84,7 +84,7 @@ void Renderer::init()
     DCHECK(!inited);
 
     auto& ctx = renderContext();
-    DCHECK(!ctx.shaderManager && !ctx.descriptors && !ctx.pipelineManager && !ctx.resources && !ctx.sceneInterface);
+    DCHECK(!ctx.shaderManager && !ctx.device && !ctx.resources && !ctx.sceneInterface && !ctx.editorLayouts);
     DCHECK(context().window);
 
     auto& window = *context().window;
@@ -92,17 +92,17 @@ void Renderer::init()
     swapchain.init(vulkan, window);
 
     shaders.init(vulkan.deviceHandle(), *context().assetManager);
-    descriptors.init(vulkan.deviceHandle());
-    pipelines.init(vulkan.deviceHandle(), descriptors, shaders);
+    device.init(vulkan.deviceHandle(), shaders);
 
     ctx = {
-        .shaderManager   = &shaders,
-        .descriptors     = &descriptors,
-        .pipelineManager = &pipelines,
-        .resources       = &resources,
-        .sceneInterface  = &sceneInterface,
+        .shaderManager  = &shaders,
+        .device         = &device,
+        .resources      = &resources,
+        .sceneInterface = &sceneInterface,
+        .editorLayouts  = &editorLayouts,
     };
     sceneInterface.init();
+    editorLayouts.init();
 
     for (auto& frame : frames)
     {
@@ -110,9 +110,9 @@ void Renderer::init()
     }
 
     for (auto& data : frameStorage)
-        data.init(vulkan, descriptors);
+        data.init(vulkan, device);
 
-    resources.init(vulkan, descriptors, shaders, *context().assetManager, *context().assetDataManager);
+    resources.init(vulkan, device, shaders, *context().assetManager, *context().assetDataManager);
     graph.init(vulkan, swapchain);
     passes = std::make_unique<Passes>();
 
@@ -138,14 +138,14 @@ void Renderer::shutdown() noexcept
     pickingReadback = {};
     resources.shutdown();
     sceneInterface = {};
-    pipelines.shutdown();
+    editorLayouts  = {};
     for (FrameContext& frame : frames)
     {
         frame.reset();
     }
     for (auto& data : frameStorage)
         data.reset();
-    descriptors.shutdown();
+    device.shutdown();
     shaders.shutdown();
     renderContext() = {};
     swapchain.reset();

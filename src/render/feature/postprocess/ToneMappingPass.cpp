@@ -3,10 +3,9 @@
 #include "asset/BuiltinAssets.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
-#include "render/DescriptorManager.h"
-#include "render/PipelineManager.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
+#include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/RenderResourceManager.h"
@@ -63,21 +62,20 @@ ToneMappingPass::Output ToneMappingPass::setup(
             .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
         },
     };
-    auto&            descriptors = *renderContext().descriptors;
-    auto&            pipelines   = *renderContext().pipelineManager;
-    const auto       passLayout  = descriptors.getOrCreateLayout(toneMappingBindings);
-    const std::array sets{passLayout};
+    auto& device     = *renderContext().device;
+    descriptorLayout = device.createDescriptorSetLayout(toneMappingBindings);
+    const std::array sets{&descriptorLayout};
     const std::array ranges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(ToneMappingPushConstants)
     }};
-    pipelineLayout = pipelines.getOrCreateLayout(sets, ranges);
+    pipelineLayout = device.createPipelineLayout(sets, ranges);
 
     auto&      ctx    = renderContext();
     const auto shader = ctx.shaderManager->getOrLoad("tonemapping");
-    pipeline          = ctx.pipelineManager->getOrCreate({
+    pipeline          = device.getOrCreatePipeline({
                  .shader = shader,
-                 .layout = pipelineLayout,
+                 .layout = &pipelineLayout,
                  .state  = PipelineState{.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
                  .colorFormats = {surfaceFormat.format},
     });
@@ -86,7 +84,7 @@ ToneMappingPass::Output ToneMappingPass::setup(
     descriptorSets.clear();
     descriptorSets.reserve(maxFramesInFlight);
     for (uint32_t index = 0; index < maxFramesInFlight; ++index)
-        descriptorSets.push_back(descriptors.allocate(passLayout));
+        descriptorSets.push_back(device.allocateDescriptorSet(descriptorLayout));
 
     return {color};
 }
@@ -159,7 +157,7 @@ void ToneMappingPass::execute(
     commands.setScissor(0, vk::Rect2D({0, 0}, extent));
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     const std::array sets = {*descriptorSets[execution.frameIndex]};
-    commands.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, sets, {});
+    commands.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0, sets, {});
 
     const auto&                    settings = context().config->rendererConfig().feature.toneMapping;
     const ToneMappingPushConstants parameters{
@@ -168,7 +166,7 @@ void ToneMappingPass::execute(
         .encodeSrgb    = encodeSrgb ? 1u : 0u,
     };
     commands.pushConstants<ToneMappingPushConstants>(
-        pipelineLayout,
+        *pipelineLayout,
         vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         0,
         parameters

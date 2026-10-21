@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/device/Device.h"
+
 #include "render/feature/RenderGraph.h"
 
 class EditorDepthPass
@@ -16,5 +18,5 @@ public:
 private:
     RenderGraph::ImageHandle depth;
     vk::Pipeline             pipeline;
-    vk::PipelineLayout       pipelineLayout;
+    const PipelineLayout*    pipelineLayout = nullptr;
 };

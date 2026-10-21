@@ -10,12 +10,12 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class VulkanContext;
-class DescriptorManager;
+class Device;
 
 class FrameData
 {
 public:
-    void init(const VulkanContext& vulkan, DescriptorManager& descriptors);
+    void init(const VulkanContext& vulkan, Device& device);
     void reset() noexcept;
     void updateView(const ViewUniforms& view);
     // Update only after the owning frame's fence completes.
@@ -33,7 +33,7 @@ public:
     }
     [[nodiscard]] vk::DescriptorSet sceneSetHandle() const { return *sceneSet; }
     [[nodiscard]] vk::DescriptorSet viewSetHandle() const { return *viewSet; }
-    [[nodiscard]] const Buffer& viewUniformBuffer() const { return viewBuffer; }
+    [[nodiscard]] const Buffer&     viewUniformBuffer() const { return viewBuffer; }
 
 private:
     const VulkanContext*    vulkan = nullptr;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/device/Device.h"
+
 #include "render/feature/RenderGraph.h"
 
 class ShadowPass
@@ -29,12 +31,12 @@ private:
         uint32_t                 viewLayerCount = 1;
     };
 
-    ShadowTarget       point;
-    ShadowTarget       spot;
-    ShadowTarget       rectArea;
-    ShadowTarget       directional;
-    uint32_t           cascadeCount   = 0;
-    vk::PipelineLayout pipelineLayout = nullptr;
+    ShadowTarget          point;
+    ShadowTarget          spot;
+    ShadowTarget          rectArea;
+    ShadowTarget          directional;
+    uint32_t              cascadeCount   = 0;
+    const PipelineLayout* pipelineLayout = nullptr;
 
     void recordShadow(
         RenderGraph&             graph,

@@ -1,9 +1,8 @@
 #include "render/feature/SceneInterface.h"
 
 #include "core/Logger.h"
-#include "render/DescriptorManager.h"
-#include "render/PipelineManager.h"
 #include "render/RenderContext.h"
+#include "render/device/Device.h"
 #include "render/resource/ShaderData.h"
 
 #include <array>
@@ -11,8 +10,7 @@
 void SceneInterface::init()
 {
     DCHECK(!sceneLayout);
-    auto& descriptors = *renderContext().descriptors;
-    auto& pipelines   = *renderContext().pipelineManager;
+    auto& device = *renderContext().device;
 
     const std::array sceneBindings = {
         vk::DescriptorSetLayoutBinding{
@@ -156,7 +154,7 @@ void SceneInterface::init()
             .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
         },
     };
-    sceneLayout = descriptors.getOrCreateLayout(sceneBindings);
+    sceneLayout = device.createDescriptorSetLayout(sceneBindings);
 
     const std::array materialBindings = {
         vk::DescriptorSetLayoutBinding{
@@ -298,25 +296,25 @@ void SceneInterface::init()
             .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
         },
     };
-    materialLayout = descriptors.getOrCreateLayout(materialBindings);
+    materialLayout = device.createDescriptorSetLayout(materialBindings);
 
-    const std::array meshSets{sceneLayout, materialLayout};
+    const std::array meshSets{&sceneLayout, &materialLayout};
     const std::array meshRanges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(MeshPushConstants)
     }};
-    meshLayout = pipelines.getOrCreateLayout(meshSets, meshRanges);
+    meshLayout = device.createPipelineLayout(meshSets, meshRanges);
 
-    const std::array sceneSets{sceneLayout};
+    const std::array sceneSets{&sceneLayout};
     const std::array shadowRanges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(ShadowPushConstants)
     }};
-    shadowLayout = pipelines.getOrCreateLayout(sceneSets, shadowRanges);
+    shadowLayout = device.createPipelineLayout(sceneSets, shadowRanges);
 
     const std::array skyboxRanges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(SkyboxPushConstants)
     }};
-    skyboxLayout = pipelines.getOrCreateLayout(sceneSets, skyboxRanges);
+    skyboxLayout = device.createPipelineLayout(sceneSets, skyboxRanges);
 }

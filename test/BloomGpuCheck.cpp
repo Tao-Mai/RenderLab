@@ -155,7 +155,7 @@ int main(int argc, char** argv)
     for (auto& frame : frames)
         frame.init(vulkan);
     for (auto& frame : frameData)
-        frame.init(vulkan, *renderContext().descriptors);
+        frame.init(vulkan, *renderContext().device);
     RenderGraph graph;
     graph.init(vulkan, renderer.swapchainHandle());
     const PassSetup setup{vulkan, renderer.swapchainHandle(), frameData};

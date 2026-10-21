@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/device/Device.h"
+
 #include "render/feature/SceneBindings.h"
 #include "render/feature/deferred/GBufferPass.h"
 
@@ -25,7 +27,9 @@ private:
     SceneBindings                        bindings;
     GBufferPass::Output                  gBuffer;
     RenderGraph::ImageHandle             color;
+    DescriptorSetLayout                  descriptorLayout;
+    DescriptorSetLayout                  emptyLayout;
     std::vector<vk::raii::DescriptorSet> descriptorSets;
     vk::Pipeline                         pipeline;
-    vk::PipelineLayout                   pipelineLayout;
+    PipelineLayout                       pipelineLayout;
 };

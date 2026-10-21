@@ -102,7 +102,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         frame.init(vulkan);
     std::array<FrameData, maxFramesInFlight> frameData;
     for (auto& data : frameData)
-        data.init(vulkan, *renderContext().descriptors);
+        data.init(vulkan, *renderContext().device);
     const PassSetup setup{vulkan, renderer.swapchainHandle(), frameData};
     RenderGraph     graph;
     graph.init(vulkan, renderer.swapchainHandle());

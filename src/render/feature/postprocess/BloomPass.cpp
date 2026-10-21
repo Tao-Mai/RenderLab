@@ -3,11 +3,10 @@
 #include "asset/BuiltinAssets.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
-#include "render/DescriptorManager.h"
-#include "render/PipelineManager.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
+#include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/RenderResourceManager.h"
@@ -128,22 +127,23 @@ BloomPass::Output BloomPass::FilterPass::setup(
             .stageFlags      = kShaderStages
         },
     };
-    auto&            ctx    = renderContext();
-    const auto       layout = ctx.descriptors->getOrCreateLayout(bindings);
-    const std::array layouts{layout};
+    auto& ctx        = renderContext();
+    auto& device     = *ctx.device;
+    descriptorLayout = device.createDescriptorSetLayout(bindings);
+    const std::array layouts{&descriptorLayout};
     const std::array ranges{vk::PushConstantRange{.stageFlags = kShaderStages, .size = sizeof(BloomParameters)}};
-    pipelineLayout    = ctx.pipelineManager->getOrCreateLayout(layouts, ranges);
+    pipelineLayout    = device.createPipelineLayout(layouts, ranges);
     const auto shader = ctx.shaderManager->getOrLoad("bloom", {{"BLOOM_STAGE", static_cast<int>(stage)}});
-    pipeline          = ctx.pipelineManager->getOrCreate({
+    pipeline          = device.getOrCreatePipeline({
                  .shader       = shader,
-                 .layout       = pipelineLayout,
+                 .layout       = &pipelineLayout,
                  .state        = {.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
                  .colorFormats = {kHdrColorFormat},
     });
     sampler           = ctx.resources->sampler(BuiltinAssets::Sampler::linearClamp);
     descriptorSets.clear();
     for (uint32_t index = 0; index < maxFramesInFlight; ++index)
-        descriptorSets.push_back(ctx.descriptors->allocate(layout));
+        descriptorSets.push_back(device.allocateDescriptorSet(descriptorLayout));
     return {color};
 }
 
@@ -214,7 +214,7 @@ void BloomPass::FilterPass::execute(
     commands.setScissor(0, vk::Rect2D({0, 0}, {extent.width, extent.height}));
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     const std::array sets{*descriptorSets[execution.frameIndex]};
-    commands.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, sets, {});
+    commands.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0, sets, {});
 
     const auto            sourceExtent = graph.imageInfo(source).extent;
     const auto            frameExtent  = execution.setup.swapchain.extent();
@@ -231,7 +231,7 @@ void BloomPass::FilterPass::execute(
         .intensity    = settings.intensity,
         .scatter      = settings.scatter,
     };
-    commands.pushConstants<BloomParameters>(pipelineLayout, kShaderStages, 0, parameters);
+    commands.pushConstants<BloomParameters>(*pipelineLayout, kShaderStages, 0, parameters);
     commands.draw(3, 1, 0, 0);
     recordDraw(context().profiler, 3);
     commands.endRendering();

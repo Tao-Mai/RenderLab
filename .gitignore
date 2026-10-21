@@ -10,3 +10,7 @@ resource/
 .cursor
 test/model_import/
 test/performance/*.csv
+
+# Personal TODO / note documents stay local.
+*[Tt][Oo][Dd][Oo]*.[Mm][Dd]
+*[Nn][Oo][Tt][Ee]*.[Mm][Dd]

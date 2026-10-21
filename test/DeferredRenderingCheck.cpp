@@ -80,7 +80,7 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
         frame.init(vulkan);
     std::array<FrameData, maxFramesInFlight> frameData;
     for (auto& data : frameData)
-        data.init(vulkan, *renderContext().descriptors);
+        data.init(vulkan, *renderContext().device);
 
     RenderGraph          graph;
     ShadowPass           shadow;
@@ -125,8 +125,11 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
         graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
         graph.compile(setup);
         if (shadows)
-            for (const auto image : {shadowOutput.pointLightShadowMap, shadowOutput.spotLightShadowMap,
-                     shadowOutput.rectAreaLightShadowMap, shadowOutput.cascadeShadowMap})
+            for (const auto image :
+                 {shadowOutput.pointLightShadowMap,
+                  shadowOutput.spotLightShadowMap,
+                  shadowOutput.rectAreaLightShadowMap,
+                  shadowOutput.cascadeShadowMap})
                 CHECK(graph.getImage(image, 0).handle() == graph.getImage(image, 1).handle());
         const auto& sceneData = renderSystem.prepare(scenes.scene());
         const auto  prepared  = prepareRenderScene(
@@ -252,7 +255,7 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
     scenes.deleteActor(upstreamBlocker.selectionId());
     replaceLightComponent(*lamp.getComponent<LightComponent>(), std::make_unique<PointLightComponent>());
     lamp.getComponent<LocalLightComponent>()->luminousIntensity = originalIntensity;
-    lamp.transform().rotation                      = originalRotation;
+    lamp.transform().rotation                                   = originalRotation;
 
     auto& material     = scenes.scene().actors[0]->getComponent<RenderComponent>()->materialOverrides[0];
     material.clearcoat = PbrMaterialAsset::Clearcoat{.factor = 1.0f, .roughnessFactor = 0.2f};
@@ -260,7 +263,7 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
     LOG_INFO("Deferred uses the base PBR material when clearcoat is present.");
 
     material.clearcoat.reset();
-    material.sheen = PbrMaterialAsset::Sheen{.colorFactor = glm::vec3{0.0f}, .roughnessFactor = 0.5f};
+    material.sheen       = PbrMaterialAsset::Sheen{.colorFactor = glm::vec3{0.0f}, .roughnessFactor = 0.5f};
     const auto zeroSheen = sample(false, true, false);
     material.sheen.reset();
     compare(zeroSheen, sample(false, true, false));
@@ -275,7 +278,7 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
     for (const float roughness : {0.0f, 1.0f})
     {
         material.sheen->roughnessFactor = roughness;
-        const auto sheen = sample(false, true, false);
+        const auto sheen                = sample(false, true, false);
         compare(sheen, sample(true, true, false));
         CHECK(std::isfinite(sheen.x) && std::isfinite(sheen.y) && std::isfinite(sheen.z));
     }
@@ -327,10 +330,10 @@ int main(int, char** argv)
     material.ao                 = 0.65f;
     material.emissive           = glm::vec3{0.04f, 0.02f, 0.01f};
     scene.actors.push_back(std::move(cube));
-    auto light                                        = std::make_unique<ALight>();
-    light->transform().position                       = {2, 0, 3};
-    light->getComponent<LocalLightComponent>()->luminousIntensity  = 30.0f;
-    light->getComponent<LightComponent>()->castShadow = true;
+    auto light                                                    = std::make_unique<ALight>();
+    light->transform().position                                   = {2, 0, 3};
+    light->getComponent<LocalLightComponent>()->luminousIntensity = 30.0f;
+    light->getComponent<LightComponent>()->castShadow             = true;
     scene.actors.push_back(std::move(light));
     scenes.load(scene);
     renderer.init();

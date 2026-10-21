@@ -3,11 +3,10 @@
 
 #include "core/ConfigManager.h"
 #include "core/Context.h"
-#include "render/DescriptorManager.h"
 #include "render/FrameData.h"
-#include "render/PipelineManager.h"
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
+#include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/ShaderData.h"
@@ -98,16 +97,15 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
             .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
         },
     };
-    auto&            descriptors = *renderContext().descriptors;
-    auto&            pipelines   = *renderContext().pipelineManager;
-    const auto       passLayout  = descriptors.getOrCreateLayout(gBufferBindings);
-    const auto       emptySet    = descriptors.getOrCreateLayout(std::span<const vk::DescriptorSetLayoutBinding>{});
-    const std::array sets{renderContext().sceneInterface->sceneLayout, emptySet, emptySet, passLayout};
+    auto& device     = *renderContext().device;
+    descriptorLayout = device.createDescriptorSetLayout(gBufferBindings);
+    emptyLayout      = device.createDescriptorSetLayout(std::span<const vk::DescriptorSetLayoutBinding>{});
+    const std::array sets{&renderContext().sceneInterface->sceneLayout, &emptyLayout, &emptyLayout, &descriptorLayout};
     const std::array ranges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(DeferredLightingPushConstants)
     }};
-    pipelineLayout = pipelines.getOrCreateLayout(sets, ranges);
+    pipelineLayout = device.createPipelineLayout(sets, ranges);
 
     auto&               ctx = renderContext();
     const ShaderDefines variant{
@@ -115,15 +113,15 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
         {"ENABLE_CLEARCOAT", 0},
         {"ENABLE_SHEEN", 1}
     };
-    pipeline = ctx.pipelineManager->getOrCreate({
+    pipeline = device.getOrCreatePipeline({
         .shader = ctx.shaderManager->getOrLoad(kDeferredLightingShader, variant),
-        .layout = pipelineLayout,
+        .layout = &pipelineLayout,
         .state  = PipelineState{.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
         .colorFormats = {graph.imageInfo(color).format},
     });
     descriptorSets.clear();
     for (uint32_t index = 0; index < maxFramesInFlight; ++index)
-        descriptorSets.push_back(descriptors.allocate(passLayout));
+        descriptorSets.push_back(device.allocateDescriptorSet(descriptorLayout));
     return {color, gBuffer.depth, resolvedShadow};
 }
 
@@ -206,20 +204,20 @@ void DeferredLightingPass::execute(
     const std::array sceneSets{execution.data.sceneSetHandle()};
     commands.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        pipelineLayout,
+        *pipelineLayout,
         RenderInterface::kSceneSet,
         sceneSets,
         {}
     );
     const std::array passSets{*descriptorSets[execution.frameIndex]};
     commands
-        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, RenderInterface::kPassSet, passSets, {});
+        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayout, RenderInterface::kPassSet, passSets, {});
     const auto&                         viewport = execution.view.viewport;
     const DeferredLightingPushConstants parameters{
         .viewport = {viewport.x, viewport.y, viewport.width, viewport.height}
     };
     commands.pushConstants<DeferredLightingPushConstants>(
-        pipelineLayout,
+        *pipelineLayout,
         vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         0,
         parameters

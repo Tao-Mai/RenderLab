@@ -3,10 +3,10 @@
 #include "render/feature/SceneInterface.h"
 
 #include "render/FrameData.h"
-#include "render/PipelineManager.h"
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
 #include "render/RenderView.h"
+#include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMaterial.h"
@@ -37,14 +37,14 @@ DepthPrepass::Output DepthPrepass::setup(RenderGraph& graph, const PassSetup& se
     );
 
     shader         = renderContext().shaderManager->getOrLoad("depth");
-    pipelineLayout = renderContext().sceneInterface->meshLayout;
+    pipelineLayout = &renderContext().sceneInterface->meshLayout;
     return {depth};
 }
 
 void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
 {
-    auto&      pipelines = *renderContext().pipelineManager;
-    const auto extent    = execution.setup.swapchain.extent();
+    auto&      device = *renderContext().device;
+    const auto extent = execution.setup.swapchain.extent();
 
     const vk::RenderingAttachmentInfo depthAttachment{
         .imageView = graph.getImage(depth, execution.frameIndex)
@@ -94,7 +94,7 @@ void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandB
     const std::array sceneSets = {execution.data.sceneSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        pipelineLayout,
+        **pipelineLayout,
         RenderInterface::kSceneSet,
         sceneSets,
         {}
@@ -103,13 +103,13 @@ void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandB
     vk::Pipeline boundPipeline;
     for (const DrawItem& item : execution.renderData.opaqueDrawItems)
     {
-        PipelineKey key        = item.material->pipelineKey({}, vk::Format::eD32Sfloat, pipelineLayout);
-        key.shader             = shader;
-        key.state.vertexLayout = VertexLayoutPreset::PositionUv;
-        key.state.depthCompare = vk::CompareOp::eLess;
-        key.state.depthWrite   = true;
-        key.state.blend        = false;
-        const auto pipeline    = pipelines.getOrCreate(key);
+        GraphicsPipelineInfo key = item.material->pipelineInfo({}, vk::Format::eD32Sfloat, *pipelineLayout);
+        key.shader               = shader;
+        key.state.vertexLayout   = VertexLayoutPreset::PositionUv;
+        key.state.depthCompare   = vk::CompareOp::eLess;
+        key.state.depthWrite     = true;
+        key.state.blend          = false;
+        const auto pipeline      = device.getOrCreatePipeline(key);
         if (pipeline != boundPipeline)
         {
             commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
@@ -119,7 +119,7 @@ void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandB
         item.mesh->bind(commandBuffer);
         const MeshPushConstants pushConstants{.model = item.model};
         commandBuffer.pushConstants<MeshPushConstants>(
-            pipelineLayout,
+            **pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0,
             pushConstants
@@ -127,7 +127,7 @@ void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandB
         const std::array materialSets = {item.material->descriptorSetHandle()};
         commandBuffer.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics,
-            pipelineLayout,
+            **pipelineLayout,
             RenderInterface::kMaterialSet,
             materialSets,
             {}

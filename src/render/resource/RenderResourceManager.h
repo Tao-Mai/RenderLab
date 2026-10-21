@@ -22,7 +22,7 @@ struct SceneRenderData;
 struct PreparedScene;
 class AssetManager;
 class AssetDataManager;
-class DescriptorManager;
+class Device;
 class ShaderManager;
 class VulkanContext;
 
@@ -31,13 +31,8 @@ class RenderResourceManager
 public:
     ~RenderResourceManager();
 
-    void init(
-        VulkanContext&     vulkan,
-        DescriptorManager& descriptors,
-        ShaderManager&     shaders,
-        AssetManager&      assets,
-        AssetDataManager&  data
-    );
+    void
+    init(VulkanContext& vulkan, Device& device, ShaderManager& shaders, AssetManager& assets, AssetDataManager& data);
     void shutdown() noexcept;
 
     GpuMesh&                     mesh(const MeshAsset::ID& id);
@@ -48,12 +43,12 @@ public:
     [[nodiscard]] vk::Sampler   sampler(const SamplerAsset::ID& id);
 
 private:
-    AssetManager*                                               assets      = nullptr;
-    AssetDataManager*                                           data        = nullptr;
-    VulkanContext*                                              vulkan      = nullptr;
-    DescriptorManager*                                          descriptors = nullptr;
-    ShaderManager*                                              shaders     = nullptr;
-    vk::raii::CommandPool                                       uploadPool  = nullptr;
+    AssetManager*                                               assets     = nullptr;
+    AssetDataManager*                                           data       = nullptr;
+    VulkanContext*                                              vulkan     = nullptr;
+    Device*                                                     device     = nullptr;
+    ShaderManager*                                              shaders    = nullptr;
+    vk::raii::CommandPool                                       uploadPool = nullptr;
     std::unordered_map<MeshAsset::ID, std::unique_ptr<GpuMesh>> meshes;
     struct SharedMaterial
     {

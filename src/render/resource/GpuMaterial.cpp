@@ -2,8 +2,8 @@
 #include "render/feature/SceneInterface.h"
 
 #include "core/Logger.h"
-#include "render/DescriptorManager.h"
 #include "render/RenderContext.h"
+#include "render/device/Device.h"
 #include "render/resource/ShaderData.h"
 
 #include <cmath>
@@ -13,7 +13,7 @@
 void GpuMaterial::create(
     const vk::raii::PhysicalDevice& physicalDevice,
     const vk::raii::Device&         device,
-    DescriptorManager&              descriptors,
+    Device&                         renderDevice,
     ShaderHandle                    targetShader,
     const PbrMaterialAsset&         material,
     Textures                        materialTextures
@@ -32,7 +32,7 @@ void GpuMaterial::create(
     );
     updateParameters(material);
 
-    descriptorSet = descriptors.allocate(renderContext().sceneInterface->materialLayout);
+    descriptorSet = renderDevice.allocateDescriptorSet(renderContext().sceneInterface->materialLayout);
 
     const vk::DescriptorBufferInfo materialBufferInfo{
         .buffer = materialBuffer->handle(),
@@ -143,13 +143,13 @@ void GpuMaterial::create(
     device.updateDescriptorSets(writes, {});
 }
 
-PipelineKey GpuMaterial::pipelineKey(
-    std::span<const vk::Format> colorFormats, vk::Format depthFormat, vk::PipelineLayout layout
+GraphicsPipelineInfo GpuMaterial::pipelineInfo(
+    std::span<const vk::Format> colorFormats, vk::Format depthFormat, const PipelineLayout& layout
 ) const
 {
     return {
         .shader       = shaderHandle,
-        .layout       = layout,
+        .layout       = &layout,
         .state        = pipelineState,
         .colorFormats = std::vector<vk::Format>(colorFormats.begin(), colorFormats.end()),
         .depthFormat  = depthFormat,

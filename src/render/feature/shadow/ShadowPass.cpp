@@ -4,12 +4,12 @@
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "render/FrameData.h"
-#include "render/PipelineManager.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
 #include "render/ShaderManager.h"
 #include "render/Visibility.h"
+#include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/ShaderData.h"
@@ -35,8 +35,8 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup)
         setup.vulkan.physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures;
     CHECK((features & kRequiredFeatures) == kRequiredFeatures);
 
-    auto& pipelines = *renderContext().pipelineManager;
-    pipelineLayout  = renderContext().sceneInterface->shadowLayout;
+    auto& device   = *renderContext().device;
+    pipelineLayout = &renderContext().sceneInterface->shadowLayout;
     const auto createTarget =
         [&](RenderGraph::ImageCreateInfo info, int shadowType, uint32_t viewMask = 0, uint32_t viewLayerCount = 1)
     {
@@ -49,7 +49,7 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup)
         if (info.flags & vk::ImageCreateFlagBits::eCubeCompatible)
             CHECK(info.extent.width <= limits.maxImageDimensionCube);
         const auto shader   = renderContext().shaderManager->getOrLoad("shadow", {{"SHADOW_TYPE", shadowType}});
-        const auto pipeline = pipelines.getOrCreate({
+        const auto pipeline = device.getOrCreatePipeline({
             .shader = shader,
             .layout = pipelineLayout,
             .state =
@@ -124,8 +124,8 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup)
 
 void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
 {
-    const auto& frame = execution.data;
-    const auto lights = frame.lightData();
+    const auto& frame  = execution.data;
+    const auto  lights = frame.lightData();
     const auto& ranges = frame.lightUniforms().lightRanges;
 
     for (uint32_t index = 0; index < ranges.directionalEnd; ++index)
@@ -137,8 +137,15 @@ void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
         DCHECK(light.shadowidx < frame.directionalShadowData().size());
         DCHECK(cascadeCount == frame.lightUniforms().cascadeCount);
         for (uint32_t cascadeIndex = 0; cascadeIndex < cascadeCount; ++cascadeIndex)
-            recordShadow(graph, commandBuffer, execution, directional, index,
-                         light.shadowidx * cascadeCount + cascadeIndex, cascadeIndex);
+            recordShadow(
+                graph,
+                commandBuffer,
+                execution,
+                directional,
+                index,
+                light.shadowidx * cascadeCount + cascadeIndex,
+                cascadeIndex
+            );
     }
 
     for (uint32_t index = ranges.directionalEnd; index < ranges.pointEnd; ++index)
@@ -215,7 +222,7 @@ void ShadowPass::recordShadow(
     const std::array sceneSets = {execution.data.sceneSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        pipelineLayout,
+        **pipelineLayout,
         RenderInterface::kSceneSet,
         sceneSets,
         {}
@@ -235,7 +242,7 @@ void ShadowPass::recordShadow(
 
         const ShadowPushConstants push{.model = item.model, .lightIdx = lightIndex, .cascadeIndex = cascadeIndex};
         commandBuffer.pushConstants<ShadowPushConstants>(
-            pipelineLayout,
+            **pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0,
             push

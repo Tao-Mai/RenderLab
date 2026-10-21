@@ -1,11 +1,11 @@
 #include "render/feature/editor/LightMarkerPass.h"
 #include "core/Context.h"
-#include "render/feature/editor/EditorInterface.h"
+#include "render/feature/editor/EditorLayouts.h"
 
 #include "render/FrameData.h"
-#include "render/PipelineManager.h"
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
+#include "render/device/Device.h"
 #include "render/feature/editor/EditorFrameInput.h"
 #include "render/feature/editor/EditorShaderData.h"
 #include "render/present/Swapchain.h"
@@ -42,15 +42,15 @@ LightMarkerPass::Output LightMarkerPass::setup(
         }
     );
 
-    shader          = renderContext().shaderManager->getOrLoad("editor_light_marker");
-    auto& pipelines = *renderContext().pipelineManager;
-    pipelineLayout  = EditorInterface::pipelineLayout(*renderContext().descriptors, *renderContext().pipelineManager);
-    pipeline        = pipelines.getOrCreate({
-               .shader       = shader,
-               .layout       = pipelineLayout,
-               .state        = PipelineState{.vertexLayout = VertexLayoutPreset::PositionOnly},
-               .colorFormats = {graph.imageInfo(color).format},
-               .depthFormat  = vk::Format::eD32Sfloat,
+    shader         = renderContext().shaderManager->getOrLoad("editor_light_marker");
+    auto& device   = *renderContext().device;
+    pipelineLayout = &renderContext().editorLayouts->pipelineLayout;
+    pipeline       = device.getOrCreatePipeline({
+              .shader       = shader,
+              .layout       = pipelineLayout,
+              .state        = PipelineState{.vertexLayout = VertexLayoutPreset::PositionOnly},
+              .colorFormats = {graph.imageInfo(color).format},
+              .depthFormat  = vk::Format::eD32Sfloat,
     });
 
     return {color, depth};
@@ -125,8 +125,13 @@ void LightMarkerPass::execute(
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     const std::array viewSets = {execution.data.viewSetHandle()};
-    commandBuffer
-        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, EditorInterface::kViewSet, viewSets, {});
+    commandBuffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        **pipelineLayout,
+        EditorInterface::kViewSet,
+        viewSets,
+        {}
+    );
     for (const auto& item : lightDrawItems)
     {
         const EditorLightMarkerPushConstants push{
@@ -134,7 +139,7 @@ void LightMarkerPass::execute(
             .color = glm::vec4{item.color, 1.0f},
         };
         commandBuffer.pushConstants<EditorLightMarkerPushConstants>(
-            pipelineLayout,
+            **pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0,
             push

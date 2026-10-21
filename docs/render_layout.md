@@ -2,7 +2,7 @@
 
 [渲染模块](../src/render/README.md) · [项目架构](architecture.md)
 
-本文记录 `SceneInterface` 中的 Layout 描述、初始化预创建时机和使用它们的 Pass。
+本文记录共享 Layout 的描述、初始化预创建时机和使用它们的 Pass。
 
 ## 两种 Layout 的职责
 
@@ -11,12 +11,16 @@
 
 ## 初始化时预创建
 
-`Renderer::init()` 在 Manager 初始化后调用 `SceneInterface::init()`，一次性预创建两份 Descriptor Set Layout 和三份 Pipeline Layout，保存到 `SceneInterface`。
+`Renderer::init()` 在 ShaderManager、Device 初始化后调用 `SceneInterface::init()` 和 `EditorLayouts::init()`：
+
+- `SceneInterface` 预创建两份 Descriptor Set Layout 和三份 Pipeline Layout。
+- `EditorLayouts` 预创建一份 Descriptor Set Layout 和一份 Pipeline Layout。
+- Device 直接创建 Layout，不做 Layout 缓存；共享 Layout 由上述对象以 RAII 持有，私有 Layout 由 Pass 在 `setup()` 中创建并持有。
 
 这些 Layout 在渲染器生命周期内固定，运行时通过 RenderContext 直接读取：
 
 ```cpp
-const auto layout = renderContext().sceneInterface->meshLayout;
+const auto& layout = renderContext().sceneInterface->meshLayout;
 ```
 
 实现：[Renderer.cpp](../src/render/Renderer.cpp)、[SceneInterface.h](../src/render/feature/SceneInterface.h)、[SceneInterface.cpp](../src/render/feature/SceneInterface.cpp)。
@@ -86,3 +90,12 @@ Shader 声明：[material_data.slang](../shaders/material_data.slang)。
 | `skyboxLayout` | Set 0：`sceneLayout` | `SkyboxPushConstants`，16 B：Viewport | `SkyboxPass` |
 
 实现：[DepthPrepass.cpp](../src/render/feature/DepthPrepass.cpp)、[SceneDraw.cpp](../src/render/feature/SceneDraw.cpp)、[ShadowPass.cpp](../src/render/feature/shadow/ShadowPass.cpp)、[SkyboxPass.cpp](../src/render/feature/SkyboxPass.cpp)。
+
+## 编辑器共享 Layout
+
+| Layout | 描述 | 使用它的 Pass |
+| --- | --- | --- |
+| `EditorLayouts::viewLayout` | Binding 0：View UBO，数量 1，阶段 Vertex、Fragment | 作为编辑器 Pipeline Layout 的 Set 0 |
+| `EditorLayouts::pipelineLayout` | Set 0：`viewLayout`；Push Constant 从偏移 0 开始，80 B，阶段 Vertex、Fragment | `LightMarkerPass`、`EditorPickingPass`、`EditorDepthPass` |
+
+实现：[EditorLayouts.cpp](../src/render/feature/editor/EditorLayouts.cpp)。

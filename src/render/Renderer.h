@@ -2,17 +2,17 @@
 
 #include "core/Debug.h"
 
-#include "render/DescriptorManager.h"
 #include "render/FrameData.h"
-#include "render/PipelineManager.h"
 #include "render/RenderConfig.h"
 #include "render/RenderView.h"
 #include "render/ShaderManager.h"
+#include "render/device/Device.h"
 #include "render/device/FrameContext.h"
 #include "render/device/VulkanContext.h"
 #include "render/feature/RenderGraph.h"
 #include "render/feature/SceneInterface.h"
 #include "render/feature/editor/EditorFrameInput.h"
+#include "render/feature/editor/EditorLayouts.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/RenderResourceManager.h"
 
@@ -54,10 +54,10 @@ private:
     VulkanContext                               vulkan;
     Swapchain                                   swapchain;
     ShaderManager                               shaders;
-    DescriptorManager                           descriptors;
-    PipelineManager                             pipelines;
+    Device                                      device;
     RenderResourceManager                       resources;
     SceneInterface                              sceneInterface;
+    EditorLayouts                               editorLayouts;
     std::array<FrameContext, maxFramesInFlight> frames;
     std::array<FrameData, maxFramesInFlight>    frameStorage;
     SceneBindings*                              activeSceneBindings = nullptr;

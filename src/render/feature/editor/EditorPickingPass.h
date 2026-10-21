@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/device/Device.h"
+
 #include "render/ShaderManager.h"
 #include "render/feature/RenderGraph.h"
 
@@ -10,7 +12,7 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class GpuMesh;
-class PipelineManager;
+class Device;
 class RenderGraph;
 struct DrawItem;
 
@@ -29,8 +31,7 @@ private:
     void                     draw(vk::raii::CommandBuffer& commandBuffer, const DrawItem& item) const;
     RenderGraph::ImageHandle depth;
     RenderGraph::ImageHandle pickingImage;
-    PipelineManager*         pipelines = nullptr;
     ShaderHandle             shader;
-    vk::PipelineLayout       pipelineLayout;
+    const PipelineLayout*    pipelineLayout = nullptr;
     vk::Pipeline             pipeline;
 };

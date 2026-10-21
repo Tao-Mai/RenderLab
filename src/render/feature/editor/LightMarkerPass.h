@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/device/Device.h"
+
 #include "render/ShaderManager.h"
 #include "render/feature/RenderGraph.h"
 
@@ -25,5 +27,5 @@ private:
     RenderGraph::ImageHandle depth;
     ShaderHandle             shader;
     vk::Pipeline             pipeline;
-    vk::PipelineLayout       pipelineLayout;
+    const PipelineLayout*    pipelineLayout = nullptr;
 };

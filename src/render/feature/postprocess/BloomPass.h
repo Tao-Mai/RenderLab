@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/device/Device.h"
+
 #include "render/feature/RenderGraph.h"
 
 #include <memory>
@@ -43,10 +45,11 @@ private:
         RenderGraph::ImageHandle             source;
         RenderGraph::ImageHandle             base;
         RenderGraph::ImageHandle             color;
+        DescriptorSetLayout                  descriptorLayout;
         std::vector<vk::raii::DescriptorSet> descriptorSets;
         vk::Sampler                          sampler;
         vk::Pipeline                         pipeline;
-        vk::PipelineLayout                   pipelineLayout;
+        PipelineLayout                       pipelineLayout;
     };
 
     std::vector<std::unique_ptr<FilterPass>> filters;

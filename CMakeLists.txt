@@ -194,7 +194,7 @@ add_library(RenderLabRuntime STATIC
     src/editor/RendererSettings.cpp
     src/render/feature/shadow/ShadowData.cpp
     src/render/feature/SceneInterface.cpp
-    src/render/feature/editor/EditorInterface.cpp
+    src/render/feature/editor/EditorLayouts.cpp
         src/Engine.cpp
         src/Engine.h
         src/core/ConfigManager.cpp
@@ -288,8 +288,9 @@ add_library(RenderLabRuntime STATIC
         src/render/RenderConfig.h
         src/render/ShaderManager.cpp
         src/render/ShaderManager.h
-        src/render/DescriptorManager.cpp
-        src/render/DescriptorManager.h
+        src/render/device/Device.cpp
+        src/render/device/Device.h
+        src/render/feature/editor/EditorLayouts.h
         src/render/device/Memory.h
         src/render/device/VkCheck.h
         src/render/device/VulkanContext.cpp
@@ -371,8 +372,6 @@ add_library(RenderLabRuntime STATIC
         src/render/feature/editor/EditorPickingPass.h
         src/render/feature/editor/EditorPickingCopyPass.cpp
         src/render/feature/editor/EditorPickingCopyPass.h
-        src/render/PipelineManager.cpp
-        src/render/PipelineManager.h
         src/asset/AssetImporter.h
         src/asset/AssetDataManager.cpp
         src/asset/AssetDataManager.h

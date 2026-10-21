@@ -1,15 +1,15 @@
 #pragma once
 
-#include <vulkan/vulkan.hpp>
+#include "render/device/Device.h"
 
-// Fixed scene interfaces; the managers retain ownership of the Vulkan layouts.
+// Shared layouts are created once and owned here.
 struct SceneInterface
 {
     void init();
 
-    vk::DescriptorSetLayout sceneLayout    = nullptr;
-    vk::DescriptorSetLayout materialLayout = nullptr;
-    vk::PipelineLayout      meshLayout     = nullptr;
-    vk::PipelineLayout      shadowLayout   = nullptr;
-    vk::PipelineLayout      skyboxLayout   = nullptr;
+    DescriptorSetLayout sceneLayout;
+    DescriptorSetLayout materialLayout;
+    PipelineLayout      meshLayout;
+    PipelineLayout      shadowLayout;
+    PipelineLayout      skyboxLayout;
 };

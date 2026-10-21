@@ -11,8 +11,8 @@
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/feature/EndPass.h"
-#include "render/raytracing/RayTracingPass.h"
 #include "render/raytracing/BlasBuildPass.h"
+#include "render/raytracing/RayTracingPass.h"
 #include "scene/SceneManager.h"
 #include "scene/SceneTypes.h"
 #include "scene/system/RenderSystem.h"
@@ -80,7 +80,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         frame.init(vulkan);
     std::array<FrameData, maxFramesInFlight> frameData;
     for (auto& data : frameData)
-        data.init(vulkan, *renderContext().descriptors);
+        data.init(vulkan, *renderContext().device);
 
     RenderGraph       graph;
     BlasBuildPass     blasBuild;
@@ -146,17 +146,17 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     CHECK(clear > 1.0f, "HDR surface luminance is unexpectedly clipped or dark: {}", clear);
 
     {
-        auto& receiver         = *scenes.scene().actors.front()->getComponent<RenderComponent>();
-        auto originalOverrides = receiver.materialOverrides;
-        auto& material         = receiver.materialOverrides[0];
+        auto& receiver           = *scenes.scene().actors.front()->getComponent<RenderComponent>();
+        auto  originalOverrides  = receiver.materialOverrides;
+        auto& material           = receiver.materialOverrides[0];
         material.baseColorFactor = glm::vec4{0.8f, 0.2f, 0.1f, 1.0f};
         material.metallic        = 0.0f;
         material.roughness       = 0.12f;
-        const auto dielectric = sample();
-        material.metallic = 1.0f;
-        const auto smoothMetal = sample();
-        material.roughness = 0.8f;
-        const auto roughMetal = sample();
+        const auto dielectric    = sample();
+        material.metallic        = 1.0f;
+        const auto smoothMetal   = sample();
+        material.roughness       = 0.8f;
+        const auto roughMetal    = sample();
         CHECK(std::isfinite(dielectric) && dielectric > 0);
         CHECK(std::isfinite(smoothMetal) && smoothMetal > 0);
         CHECK(std::isfinite(roughMetal) && roughMetal > 0);
@@ -165,15 +165,15 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         material.metallic = 0.0f;
         material.normalTexture =
             TextureBinding{BuiltinAssets::Texture::kWhiteLinear, BuiltinAssets::Sampler::linearRepeat};
-        material.normalScale = 0.0f;
+        material.normalScale   = 0.0f;
         const auto unperturbed = sample();
-        material.normalScale = 1.0f;
-        const auto perturbed = sample();
+        material.normalScale   = 1.0f;
+        const auto perturbed   = sample();
         CHECK(std::isfinite(perturbed) && perturbed >= 0 && perturbed != unperturbed);
 
-        auto& point = *scenes.scene().actors[1]->getComponent<PointLightComponent>();
-        point.enabled = false;
-        material.emissive = glm::vec3{0.5f, 0.125f, 0.025f};
+        auto& point               = *scenes.scene().actors[1]->getComponent<PointLightComponent>();
+        point.enabled             = false;
+        material.emissive         = glm::vec3{0.5f, 0.125f, 0.025f};
         material.emissiveStrength = 4.0f;
         CHECK(sample() == 2.0f);
         material.emissiveStrength = 2.0f;
@@ -182,34 +182,38 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         CHECK(sample() == 0.0f);
         material.emissiveStrength.reset();
         CHECK(sample() == 0.5f);
-        point.enabled = true;
+        point.enabled              = true;
         receiver.materialOverrides = std::move(originalOverrides);
         CHECK(sample() == clear);
         LOG_INFO(
             "PBR passed: dielectric {}, smooth metal {}, rough metal {}, normal {} -> {}, emission 2",
-            dielectric, smoothMetal, roughMetal, unperturbed, perturbed
+            dielectric,
+            smoothMetal,
+            roughMetal,
+            unperturbed,
+            perturbed
         );
     }
 
     // Proportional, colocated point lights yield the same compensated estimate whichever is selected.
-    const auto& pointActor = *scenes.scene().actors[1];
-    const auto& point = *pointActor.getComponent<PointLightComponent>();
-    auto& secondPoint = scenes.createActor("ALight");
-    secondPoint.transform().position = pointActor.transform().position;
-    auto& second = *secondPoint.getComponent<PointLightComponent>();
-    second.color = point.color;
-    second.luminousIntensity = point.luminousIntensity * 3.0f;
-    auto& ignoredPoint = scenes.createActor("ALight");
+    const auto& pointActor            = *scenes.scene().actors[1];
+    const auto& point                 = *pointActor.getComponent<PointLightComponent>();
+    auto&       secondPoint           = scenes.createActor("ALight");
+    secondPoint.transform().position  = pointActor.transform().position;
+    auto& second                      = *secondPoint.getComponent<PointLightComponent>();
+    second.color                      = point.color;
+    second.luminousIntensity          = point.luminousIntensity * 3.0f;
+    auto& ignoredPoint                = scenes.createActor("ALight");
     ignoredPoint.transform().position = pointActor.transform().position;
-    auto& ignored = *ignoredPoint.getComponent<PointLightComponent>();
-    ignored.luminousIntensity = point.luminousIntensity * 100.0f;
-    ignored.color = glm::vec3{0.0f};
+    auto& ignored                     = *ignoredPoint.getComponent<PointLightComponent>();
+    ignored.luminousIntensity         = point.luminousIntensity * 100.0f;
+    ignored.color                     = glm::vec3{0.0f};
 
     constexpr float kSamplingRelativeTolerance = 0.005f;
     for (int index = 0; index < 8; ++index)
     {
         CHECK(std::abs(sample() - clear * 4.0f) <= clear * 4.0f * kSamplingRelativeTolerance);
-        ignored.color = point.color;
+        ignored.color   = point.color;
         ignored.enabled = false;
     }
     scenes.deleteActor(secondPoint.selectionId());
@@ -246,7 +250,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     auto&       sun            = *scenes.scene().actors[1];
     const float pointIntensity = sun.getComponent<LocalLightComponent>()->luminousIntensity;
     replaceLightComponent(*sun.getComponent<LightComponent>(), std::make_unique<DirectionalLightComponent>());
-    auto& sunData = *sun.getComponent<DirectionalLightComponent>();
+    auto& sunData       = *sun.getComponent<DirectionalLightComponent>();
     sunData.illuminance = 100;
     sun.transform().setRotationEulerDegrees({0, 45, 0});
     blocker.transform().position = {4, 3, 5};
@@ -315,11 +319,11 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     areaLight->transform().position = {0, 0, 7};
     auto& lightData                 = *areaLight->getComponent<RectAreaLightComponent>();
     lightData.areaSize              = {20, 20};
-    lightData.luminousIntensity             = 8.0f * 20.0f * 20.0f;
+    lightData.luminousIntensity     = 8.0f * 20.0f * 20.0f;
     areaScene.actors.push_back(std::move(areaLight));
     auto disabledSun = std::make_unique<ALight>(std::make_unique<DirectionalLightComponent>());
     disabledSun->getComponent<DirectionalLightComponent>()->enabled = false;
-    areaScene.actors.push_back(std::move(disabledSun)); // Rect TLAS IDs must include preceding light groups.
+    areaScene.actors.push_back(std::move(disabledSun));  // Rect TLAS IDs must include preceding light groups.
     scenes.load(areaScene);
     rebuildGraph();
 
@@ -357,8 +361,8 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     auto& farLight                = scenes.createActor("ALight");
     farLight.transform().position = {0, 0, 9};
     replaceLightComponent(*farLight.getComponent<LightComponent>(), std::make_unique<RectAreaLightComponent>());
-    auto& farData     = *farLight.getComponent<RectAreaLightComponent>();
-    farData.areaSize  = {20, 20};
+    auto& farData             = *farLight.getComponent<RectAreaLightComponent>();
+    farData.areaSize          = {20, 20};
     farData.luminousIntensity = 100.0f * 20.0f * 20.0f;
     // The near emitter still occludes the farther lamp when its emitted luminance is zero.
     light.luminousIntensity = 0;
@@ -419,8 +423,8 @@ int main(int, char** argv)
     auto sphere                                     = std::make_unique<AStaticMesh>();
     sphere->getComponent<RenderComponent>()->meshId = BuiltinAssets::Mesh::sphere;
     scene.actors.push_back(std::move(sphere));
-    auto light                                       = std::make_unique<ALight>();
-    light->transform().position                      = {2, 0, 3};
+    auto light                                                    = std::make_unique<ALight>();
+    light->transform().position                                   = {2, 0, 3};
     light->getComponent<LocalLightComponent>()->luminousIntensity = 100.0f;
     scene.actors.push_back(std::move(light));
     scenes.load(scene);

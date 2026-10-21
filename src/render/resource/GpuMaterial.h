@@ -1,7 +1,7 @@
 #pragma once
 
 #include "asset/PbrMaterialAsset.h"
-#include "render/PipelineManager.h"
+#include "render/device/Device.h"
 #include "render/resource/Buffer.h"
 #include "render/resource/GpuTexture.h"
 #include "render/resource/ShaderData.h"
@@ -11,7 +11,7 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
-class DescriptorManager;
+class Device;
 enum class MaterialAlphaMode
 {
     Opaque,
@@ -53,7 +53,7 @@ public:
     void create(
         const vk::raii::PhysicalDevice& physicalDevice,
         const vk::raii::Device&         device,
-        DescriptorManager&              descriptors,
+        Device&                         renderDevice,
         ShaderHandle                    shader,
         const PbrMaterialAsset&         material,
         Textures                        textures
@@ -61,8 +61,8 @@ public:
 
     void                            updateParameters(const PbrMaterialAsset& material);
     [[nodiscard]] vk::DescriptorSet descriptorSetHandle() const { return *descriptorSet; }
-    [[nodiscard]] PipelineKey
-    pipelineKey(std::span<const vk::Format> colorFormats, vk::Format depthFormat, vk::PipelineLayout layout) const;
+    [[nodiscard]] GraphicsPipelineInfo
+    pipelineInfo(std::span<const vk::Format> colorFormats, vk::Format depthFormat, const PipelineLayout& layout) const;
     [[nodiscard]] MaterialAlphaMode       alphaMode() const { return mode; }
     [[nodiscard]] vk::ImageView           baseColorView() const { return textures.baseColor.image->imageView(); }
     [[nodiscard]] vk::Sampler             baseColorSampler() const { return textures.baseColor.sampler; }

@@ -1,11 +1,11 @@
 #include "render/FrameData.h"
 #include "render/feature/SceneInterface.h"
-#include "render/feature/editor/EditorInterface.h"
+#include "render/feature/editor/EditorLayouts.h"
 
 #include "core/Logger.h"
-#include "render/DescriptorManager.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
+#include "render/device/Device.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 
@@ -14,7 +14,7 @@
 #include <cmath>
 
 
-void FrameData::init(const VulkanContext& targetVulkan, DescriptorManager& descriptors)
+void FrameData::init(const VulkanContext& targetVulkan, Device& device)
 {
     vulkan                = &targetVulkan;
     const auto hostMemory = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
@@ -68,8 +68,8 @@ void FrameData::init(const VulkanContext& targetVulkan, DescriptorManager& descr
         vk::BufferUsageFlagBits::eStorageBuffer,
         hostMemory
     );
-    sceneSet = descriptors.allocate(renderContext().sceneInterface->sceneLayout);
-    viewSet  = descriptors.allocate(EditorInterface::viewLayout(descriptors));
+    sceneSet = device.allocateDescriptorSet(renderContext().sceneInterface->sceneLayout);
+    viewSet  = device.allocateDescriptorSet(renderContext().editorLayouts->viewLayout);
     bindBuffers();
 }
 

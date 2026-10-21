@@ -1,5 +1,5 @@
-#include "editor/LightMarkers.h"
 #include "editor/EditorCamera.h"
+#include "editor/LightMarkers.h"
 // Standalone, short GPU check. Uses test configuration and never saves a scene.
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
@@ -69,17 +69,15 @@ int main(int, char** argv)
     renderer.init();
     renderer.rebuildGraph();
 
-    DescriptorManager descriptors;
-    descriptors.init(renderer.vulkanContext().deviceHandle());
     FrameData upload;
-    upload.init(renderer.vulkanContext(), descriptors);
+    upload.init(renderer.vulkanContext(), *renderContext().device);
     RenderLight source;
     source.data.positionRange = {0.0f, 0.0f, 4.0f, 16.0f};
     source.data.direction     = {0.0f, 0.0f, -1.0f, 0.0f};
     source.data.areaRightData = {0.0f, 1.0f, 0.0f, 0.0f};
-    source.data.lightType = GpuLightType::RectArea;
+    source.data.lightType     = GpuLightType::RectArea;
     source.data.shadowEnabled = 1;
-    auto prepared = prepareShadows({}, {&source, 1}, {.enable = true});
+    auto prepared             = prepareShadows({}, {&source, 1}, {.enable = true});
     upload.update({}, {.lightRanges = prepared.lightRanges}, std::move(prepared));
     CHECK(upload.rectAreaShadowData().size() == 1 && upload.lightData()[0].shadowidx == 0);
     CHECK(upload.pointShadowData().empty());
@@ -92,7 +90,6 @@ int main(int, char** argv)
     upload.update({}, {.lightRanges = prepared.lightRanges}, std::move(prepared));
     CHECK(upload.rectAreaShadowData().empty() && upload.lightData()[0].shadowidx == ~0u);
     upload.reset();
-    descriptors.shutdown();
 
     auto&      sceneLight = *scenes.scene().actors.back()->getComponent<LightComponent>();
     const auto extent     = renderer.swapchainHandle().extent();

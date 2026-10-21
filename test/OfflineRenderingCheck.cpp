@@ -70,7 +70,7 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
     FrameContext frame;
     FrameData    data;
     frame.init(vulkan);
-    data.init(vulkan, *renderContext().descriptors);
+    data.init(vulkan, *renderContext().device);
     RenderGraph            graph;
     OfflinePathTracingPass pass;
     BlasBuildPass          blasBuild;
@@ -114,9 +114,9 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
     const auto averaged = sample();
     CHECK(std::isfinite(averaged) && averaged > 0);
     CHECK(pass.sampleCount() == 2);
-    auto&       light     = *scenes.scene().actors[1]->getComponent<RectAreaLightComponent>();
-    const float intensity = light.luminousIntensity;
-    light.luminousIntensity       = 0;
+    auto&       light       = *scenes.scene().actors[1]->getComponent<RectAreaLightComponent>();
+    const float intensity   = light.luminousIntensity;
+    light.luminousIntensity = 0;
     CHECK(sample() == 0);
     CHECK(pass.sampleCount() == 1);
     light.luminousIntensity = intensity;
@@ -128,34 +128,33 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
         averaged
     );
 
-    auto& receiver         = *scenes.scene().actors.front()->getComponent<RenderComponent>();
-    auto originalOverrides = receiver.materialOverrides;
-    auto& material         = receiver.materialOverrides[0];
+    auto& receiver           = *scenes.scene().actors.front()->getComponent<RenderComponent>();
+    auto  originalOverrides  = receiver.materialOverrides;
+    auto& material           = receiver.materialOverrides[0];
     material.baseColorFactor = glm::vec4{0.8f, 0.2f, 0.1f, 1.0f};
     material.metallic        = 0.0f;
     material.roughness       = 0.12f;
-    const auto dielectric   = sample();
+    const auto dielectric    = sample();
     CHECK(pass.sampleCount() == 1);
-    material.metallic = 1.0f;
+    material.metallic      = 1.0f;
     const auto smoothMetal = sample();
-    material.roughness = 0.8f;
-    const auto roughMetal = sample();
+    material.roughness     = 0.8f;
+    const auto roughMetal  = sample();
     CHECK(std::isfinite(dielectric) && dielectric > 0);
     CHECK(std::isfinite(smoothMetal) && smoothMetal > 0);
     CHECK(std::isfinite(roughMetal) && roughMetal > 0);
     CHECK(dielectric != smoothMetal && smoothMetal != roughMetal);
 
-    material.metallic = 0.0f;
-    material.normalTexture =
-        TextureBinding{BuiltinAssets::Texture::kWhiteLinear, BuiltinAssets::Sampler::linearRepeat};
-    material.normalScale = 0.0f;
+    material.metallic      = 0.0f;
+    material.normalTexture = TextureBinding{BuiltinAssets::Texture::kWhiteLinear, BuiltinAssets::Sampler::linearRepeat};
+    material.normalScale   = 0.0f;
     const auto unperturbed = sample();
-    material.normalScale = 1.0f;
-    const auto perturbed = sample();
+    material.normalScale   = 1.0f;
+    const auto perturbed   = sample();
     CHECK(std::isfinite(perturbed) && perturbed >= 0 && perturbed != unperturbed);
 
-    light.luminousIntensity = 0;
-    material.emissive = glm::vec3{0.5f, 0.125f, 0.025f};
+    light.luminousIntensity   = 0;
+    material.emissive         = glm::vec3{0.5f, 0.125f, 0.025f};
     material.emissiveStrength = 4.0f;
     CHECK(sample() == 2.0f && pass.sampleCount() == 1);
     CHECK(sample() == 2.0f && pass.sampleCount() == 2);
@@ -164,11 +163,15 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
     material.emissiveStrength.reset();
     CHECK(sample() == 0.5f && pass.sampleCount() == 1);
     receiver.materialOverrides = std::move(originalOverrides);
-    light.luminousIntensity = intensity;
+    light.luminousIntensity    = intensity;
     CHECK(sample() == first && pass.sampleCount() == 1);
     LOG_INFO(
         "Offline PBR passed: dielectric {}, smooth metal {}, rough metal {}, normal {} -> {}, accumulated emission 2",
-        dielectric, smoothMetal, roughMetal, unperturbed, perturbed
+        dielectric,
+        smoothMetal,
+        roughMetal,
+        unperturbed,
+        perturbed
     );
 
     graph.reset();

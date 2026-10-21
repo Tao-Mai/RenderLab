@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/device/Device.h"
+
 #include "render/feature/RenderGraph.h"
 
 #include <vector>
@@ -21,9 +23,10 @@ public:
 private:
     RenderGraph::ImageHandle             hdrColor;
     RenderGraph::ImageHandle             color;
+    DescriptorSetLayout                  descriptorLayout;
     std::vector<vk::raii::DescriptorSet> descriptorSets;
     vk::Sampler                          sampler;
     vk::Pipeline                         pipeline;
-    vk::PipelineLayout                   pipelineLayout;
+    PipelineLayout                       pipelineLayout;
     bool                                 encodeSrgb = false;
 };

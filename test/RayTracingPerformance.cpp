@@ -10,8 +10,8 @@
 #include "render/RenderPreparation.h"
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
-#include "render/raytracing/RayTracingPass.h"
 #include "render/raytracing/BlasBuildPass.h"
+#include "render/raytracing/RayTracingPass.h"
 #include "scene/SceneManager.h"
 #include "scene/component/LightComponent.h"
 #include "scene/system/RenderSystem.h"
@@ -23,17 +23,23 @@
 
 namespace
 {
-constexpr uint32_t kWarmupFrames = 24;
+constexpr uint32_t kWarmupFrames   = 24;
 constexpr uint32_t kMeasuredFrames = 64;
 
 struct SinkPass
 {
-    struct Output {};
+    struct Output
+    {
+    };
     Output setup(RenderGraph& graph, const PassSetup&, RayTracingPass::Output source)
     {
         for (auto image : {source.rayImage, source.depth, source.worldNormal})
-            graph.use(image, {.stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
-                .access = vk::AccessFlagBits2::eShaderStorageRead, .layout = vk::ImageLayout::eGeneral});
+            graph.use(
+                image,
+                {.stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
+                 .access = vk::AccessFlagBits2::eShaderStorageRead,
+                 .layout = vk::ImageLayout::eGeneral}
+            );
         return {};
     }
     void execute(RenderGraph&, vk::raii::CommandBuffer&, const PassFrame&) const {}
@@ -44,9 +50,11 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
     auto& vulkan = renderer.vulkanContext();
     CHECK(vulkan.supportsRayTracing());
     std::array<FrameContext, maxFramesInFlight> frames;
-    std::array<FrameData, maxFramesInFlight> data;
-    for (auto& frame : frames) frame.init(vulkan);
-    for (auto& frame : data) frame.init(vulkan, *renderContext().descriptors);
+    std::array<FrameData, maxFramesInFlight>    data;
+    for (auto& frame : frames)
+        frame.init(vulkan);
+    for (auto& frame : data)
+        frame.init(vulkan, *renderContext().device);
     RenderGraph graph;
     graph.init(vulkan, renderer.swapchainHandle());
     RayTracingPass  trace;
@@ -62,14 +70,24 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
 
     RenderSystem system;
     EditorCamera camera{scenes.scene().editorCamera};
-    const auto extent = renderer.swapchainHandle().extent();
-    const float side = static_cast<float>(std::min(extent.width, extent.height));
-    const auto view = camera.renderView({std::floor((extent.width - side) * 0.5f),
-        std::floor((extent.height - side) * 0.5f), side, side});
+    const auto   extent = renderer.swapchainHandle().extent();
+    const float  side   = static_cast<float>(std::min(extent.width, extent.height));
+    const auto   view   = camera.renderView(
+        {std::floor((extent.width - side) * 0.5f), std::floor((extent.height - side) * 0.5f), side, side}
+    );
     std::map<std::string, std::vector<double>> samples;
-    LOG_INFO("RT benchmark: GPU '{}', scene '{}', extent {}x{}, viewport {}x{}, recursion {}, warmup {}, samples {}",
-        vulkan.properties().deviceName.data(), scenes.scene().id.value, extent.width, extent.height, side, side,
-        context().config->rendererConfig().feature.rayTracing.maxRecursionDepth, kWarmupFrames, kMeasuredFrames);
+    LOG_INFO(
+        "RT benchmark: GPU '{}', scene '{}', extent {}x{}, viewport {}x{}, recursion {}, warmup {}, samples {}",
+        vulkan.properties().deviceName.data(),
+        scenes.scene().id.value,
+        extent.width,
+        extent.height,
+        side,
+        side,
+        context().config->rendererConfig().feature.rayTracing.maxRecursionDepth,
+        kWarmupFrames,
+        kMeasuredFrames
+    );
     const auto memory = vulkan.physicalDeviceHandle().getMemoryProperties();
     for (uint32_t index = 0; index < memory.memoryTypeCount; ++index)
         LOG_INFO("Memory type {}: {}", index, vk::to_string(memory.memoryTypes[index].propertyFlags));
@@ -79,27 +97,33 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
         if (iteration == kWarmupFrames)
             profiler.startLogging(logPath);
         profiler.beginFrame();
-        Timer timer;
+        Timer          timer;
         const uint32_t index = iteration % maxFramesInFlight;
         frames[index].wait();
         const auto& snapshot = system.prepare(scenes.scene());
-        const auto prepared = prepareRenderScene(snapshot, view.uniforms, {.enable = false},
-            *context().assetManager, &profiler);
+        const auto  prepared =
+            prepareRenderScene(snapshot, view.uniforms, {.enable = false}, *context().assetManager, &profiler);
         const auto& draws = renderContext().resources->prepare(snapshot, prepared, index);
         if (iteration == 0)
-            LOG_INFO("Submitted meshes {}, point lights {}, area lights {}", draws.drawItems.size(),
+            LOG_INFO(
+                "Submitted meshes {}, point lights {}, area lights {}",
+                draws.drawItems.size(),
                 draws.lightRanges.pointEnd - draws.lightRanges.directionalEnd,
-                draws.lightRanges.rectAreaEnd - draws.lightRanges.pointEnd);
+                draws.lightRanges.rectAreaEnd - draws.lightRanges.pointEnd
+            );
         data[index].updateView(view.uniforms);
         auto& commands = frames[index].commandBufferHandle();
         vkCheck(commands.reset());
         vkCheck(commands.begin({}));
-        graph.execute(commands, {setup, data[index], view, draws, {}, index}, 0, frames[index].gpuProfiler(), &profiler);
+        graph
+            .execute(commands, {setup, data[index], view, draws, {}, index}, 0, frames[index].gpuProfiler(), &profiler);
         vkCheck(commands.end());
         const auto command = *commands;
         vkCheck(vulkan.deviceHandle().resetFences(frames[index].drawFenceHandle()));
-        vkCheck(vulkan.queueHandle().submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &command},
-            frames[index].drawFenceHandle()));
+        vkCheck(vulkan.queueHandle().submit(
+            vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &command},
+            frames[index].drawFenceHandle()
+        ));
         frames[index].wait();
         profiler.endFrame(timer.elapsedMilliseconds());
         if (iteration >= kWarmupFrames)
@@ -110,36 +134,50 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
     for (auto& [name, values] : samples)
     {
         std::ranges::sort(values);
-        LOG_INFO("{}: mean {:.3f} ms, median {:.3f} ms, p95 {:.3f} ms", name,
+        LOG_INFO(
+            "{}: mean {:.3f} ms, median {:.3f} ms, p95 {:.3f} ms",
+            name,
             std::accumulate(values.begin(), values.end(), 0.0) / values.size(),
-            values[values.size() / 2], values[static_cast<size_t>(std::ceil(values.size() * 0.95)) - 1]);
+            values[values.size() / 2],
+            values[static_cast<size_t>(std::ceil(values.size() * 0.95)) - 1]
+        );
     }
     graph.reset();
-    for (auto& frame : data) frame.reset();
-    for (auto& frame : frames) frame.reset();
+    for (auto& frame : data)
+        frame.reset();
+    for (auto& frame : frames)
+        frame.reset();
 }
-} // namespace
+}  // namespace
 
 int main(int argc, char** argv)
 {
     logger::init(argv[0]);
     CHECK(argc >= 2 && argc <= 4, "usage: RayTracingPerformance <csv> [recursion depth] [all-lights]");
-    ConfigManager config;
-    AssetManager assets;
+    ConfigManager    config;
+    AssetManager     assets;
     AssetDataManager data;
-    SceneManager scenes;
-    Window window;
-    Renderer renderer;
-    Profiler profiler;
-    context() = {.config = &config, .window = &window, .assetManager = &assets,
-        .assetDataManager = &data, .sceneManager = &scenes, .renderer = &renderer, .profiler = &profiler};
+    SceneManager     scenes;
+    Window           window;
+    Renderer         renderer;
+    Profiler         profiler;
+    context() = {
+        .config           = &config,
+        .window           = &window,
+        .assetManager     = &assets,
+        .assetDataManager = &data,
+        .sceneManager     = &scenes,
+        .renderer         = &renderer,
+        .profiler         = &profiler
+    };
     config.init();
     const auto original = config.rendererConfig();
     if (argc >= 3)
     {
-        auto feature = original.feature;
-        const std::string_view text = argv[2];
-        const auto result = std::from_chars(text.data(), text.data() + text.size(), feature.rayTracing.maxRecursionDepth);
+        auto                   feature = original.feature;
+        const std::string_view text    = argv[2];
+        const auto             result =
+            std::from_chars(text.data(), text.data() + text.size(), feature.rayTracing.maxRecursionDepth);
         CHECK(result.ec == std::errc{} && result.ptr == text.data() + text.size());
         config.setRenderFeature(feature);
     }
