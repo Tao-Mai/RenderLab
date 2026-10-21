@@ -49,7 +49,7 @@ void EditorPickingCopyPass::execute(
         .imageExtent      = {1, 1, 1},
     };
     commandBuffer.copyImageToBuffer(
-        graph.getImage(pickingImage, execution.frameIndex).handle(),
+        graph.getImage(pickingImage).handle(),
         vk::ImageLayout::eTransferSrcOptimal,
         graph.getBuffer(readback, execution.frameIndex).handle(),
         copyRegion

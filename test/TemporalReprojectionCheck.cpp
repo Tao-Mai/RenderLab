@@ -53,7 +53,7 @@ struct SourcePass
         };
         for (size_t index = 0; index < handles.size(); ++index)
             commands.clearColorImage(
-                graph.getImage(handles[index], frame.frameIndex).handle(),
+                graph.getImage(handles[index]).handle(),
                 vk::ImageLayout::eTransferDstOptimal,
                 vk::ClearColorValue{values[index].x, values[index].y, values[index].z, values[index].w},
                 range
@@ -94,7 +94,7 @@ struct ReadbackPass
             .imageExtent      = {1, 1, 1},
         };
         commands.copyImageToBuffer(
-            graph.getImage(image, frame.frameIndex).handle(),
+            graph.getImage(image).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
             graph.getBuffer(buffer, frame.frameIndex).handle(),
             copy
@@ -134,8 +134,6 @@ void check(Renderer& renderer)
         buffer           = graph.addPass(readback, setup, color);
         graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
         graph.compile(setup);
-        for (const auto image : {source.output.rayImage, source.output.depth, source.output.worldNormal})
-            CHECK(graph.getImage(image, 0).handle() == graph.getImage(image, 1).handle());
         CHECK(graph.getBuffer(buffer, 0).handle() != graph.getBuffer(buffer, 1).handle());
     };
     build();

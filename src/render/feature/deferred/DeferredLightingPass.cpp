@@ -153,17 +153,15 @@ void DeferredLightingPass::prepare(RenderGraph& graph, const PassSetup& setup) c
             const auto                    image  = images[index];
             const auto                    format = graph.imageInfo(image).format;
             const vk::DescriptorImageInfo imageInfo{
-                .imageView =
-                    graph.getImage(image, frame)
-                        .getOrCreateImageView({
-                            .viewType = vk::ImageViewType::e2D,
-                            .format   = format,
-                            .subresourceRange =
-                                {.aspectMask = format == vk::Format::eD32Sfloat ? vk::ImageAspectFlagBits::eDepth
-                                                                                : vk::ImageAspectFlagBits::eColor,
-                                 .levelCount = 1,
-                                 .layerCount = 1},
-                        }),
+                .imageView   = graph.getImage(image).getOrCreateImageView({
+                      .viewType = vk::ImageViewType::e2D,
+                      .format   = format,
+                      .subresourceRange =
+                        {.aspectMask = format == vk::Format::eD32Sfloat ? vk::ImageAspectFlagBits::eDepth
+                                                                          : vk::ImageAspectFlagBits::eColor,
+                           .levelCount = 1,
+                           .layerCount = 1},
+                }),
                 .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
             };
             const vk::WriteDescriptorSet write{
@@ -184,13 +182,11 @@ void DeferredLightingPass::execute(
 {
     const auto                        extent = execution.setup.swapchain.extent();
     const vk::RenderingAttachmentInfo attachment{
-        .imageView = graph.getImage(color, execution.frameIndex)
-                         .getOrCreateImageView({
-                             .viewType = vk::ImageViewType::e2D,
-                             .format   = graph.imageInfo(color).format,
-                             .subresourceRange =
-                                 {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-                         }),
+        .imageView   = graph.getImage(color).getOrCreateImageView({
+              .viewType         = vk::ImageViewType::e2D,
+              .format           = graph.imageInfo(color).format,
+              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+        }),
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
         .loadOp      = vk::AttachmentLoadOp::eDontCare,
         .storeOp     = vk::AttachmentStoreOp::eStore,

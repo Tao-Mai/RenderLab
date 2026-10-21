@@ -95,13 +95,11 @@ void ToneMappingPass::prepare(RenderGraph& graph, const PassSetup& setup) const
     for (uint32_t index = 0; index < maxFramesInFlight; ++index)
     {
         const vk::DescriptorImageInfo imageInfo{
-            .imageView = graph.getImage(hdrColor, index)
-                             .getOrCreateImageView({
-                                 .viewType = vk::ImageViewType::e2D,
-                                 .format   = graph.imageInfo(hdrColor).format,
-                                 .subresourceRange =
-                                     {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-                             }),
+            .imageView   = graph.getImage(hdrColor).getOrCreateImageView({
+                  .viewType         = vk::ImageViewType::e2D,
+                  .format           = graph.imageInfo(hdrColor).format,
+                  .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+            }),
             .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
         };
         const vk::DescriptorImageInfo samplerInfo{.sampler = sampler};
@@ -131,13 +129,11 @@ void ToneMappingPass::execute(
 {
     const auto                        extent = execution.setup.swapchain.extent();
     const vk::RenderingAttachmentInfo attachment{
-        .imageView = graph.getImage(color, execution.frameIndex)
-                         .getOrCreateImageView({
-                             .viewType = vk::ImageViewType::e2D,
-                             .format   = graph.imageInfo(color).format,
-                             .subresourceRange =
-                                 {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-                         }),
+        .imageView   = graph.getImage(color).getOrCreateImageView({
+              .viewType         = vk::ImageViewType::e2D,
+              .format           = graph.imageInfo(color).format,
+              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+        }),
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
         .loadOp      = vk::AttachmentLoadOp::eDontCare,
         .storeOp     = vk::AttachmentStoreOp::eStore,

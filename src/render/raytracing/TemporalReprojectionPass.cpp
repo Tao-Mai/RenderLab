@@ -43,14 +43,16 @@ glm::vec4 linearDepthRow(const glm::mat4& view)
     return -glm::vec4{view[0][2], view[1][2], view[2][2], view[3][2]};
 }
 
-vk::ImageView imageView(RenderGraph& graph, RenderGraph::ImageHandle image, uint32_t frameIndex)
+vk::ImageView imageView(RenderGraph& graph, RenderGraph::ImageHandle image)
 {
     const auto& info = graph.imageInfo(image);
-    return graph.getImage(image, frameIndex).getOrCreateImageView({
-        .viewType = info.arrayLayers == 1 ? vk::ImageViewType::e2D : vk::ImageViewType::e2DArray,
-        .format = info.format,
+    return graph.getImage(image).getOrCreateImageView({
+        .viewType         = info.arrayLayers == 1 ? vk::ImageViewType::e2D : vk::ImageViewType::e2DArray,
+        .format           = info.format,
         .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = info.arrayLayers,
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .levelCount = 1,
+            .layerCount = info.arrayLayers,
         },
     });
 }
@@ -180,7 +182,7 @@ void TemporalReprojectionPass::prepare(RenderGraph& graph, const PassSetup& setu
         for (uint32_t binding = 0; binding < handles.size(); ++binding)
         {
             images[binding] = {
-                .imageView = imageView(graph, handles[binding], frameIndex),
+                .imageView   = imageView(graph, handles[binding]),
                 .imageLayout = binding < 3 ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eGeneral,
             };
             writes[binding] = {
@@ -217,7 +219,7 @@ void TemporalReprojectionPass::execute(RenderGraph& graph, vk::raii::CommandBuff
     commands.dispatch((extent.width + kWorkgroupSize - 1) / kWorkgroupSize,
         (extent.height + kWorkgroupSize - 1) / kWorkgroupSize, 1);
     for (auto& image : history)
-        image->state = graph.imageState(image->handle, frame.frameIndex);
+        image->state = graph.imageState(image->handle);
     previousViewProjection = frame.view.uniforms.viewProjection;
     previousViewport = currentViewport;
     previousDepthRow = currentDepthRow;

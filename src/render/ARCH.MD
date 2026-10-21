@@ -33,7 +33,7 @@ Renderer 决定加入哪些 Pass，Pass 声明资源访问，Graph 负责依赖�
 
 | 资源 | 管理方式 |
 | --- | --- |
-| 深度、阴影图、G-buffer、HDR 中间结果 | Graph 持有，默认 Shared，全局一份 |
+| 深度、阴影图、G-buffer、HDR 中间结果 | Graph 持有，全局一份，通过 `getImage(handle)` 访问 |
 | CPU 回读缓冲 | 显式 PerFrame，按在途槽位分配 |
 | 交换链图像 | Graph 借用，按获取的交换链图像选择 |
 | 时域历史 | Pass 持有并导入 Graph，双层 Ping-pong |

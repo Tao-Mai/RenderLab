@@ -196,7 +196,7 @@ void ShadowPass::recordShadow(
 {
     // TODO 提前算
     const auto imageView =
-        graph.getImage(target.image, execution.frameIndex)
+        graph.getImage(target.image)
             .getOrCreateImageView({
                 .viewType         = target.viewLayerCount > 1 ? vk::ImageViewType::e2DArray : vk::ImageViewType::e2D,
                 .format           = vk::Format::eD32Sfloat,

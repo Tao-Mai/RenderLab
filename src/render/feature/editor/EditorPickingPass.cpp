@@ -97,7 +97,7 @@ void EditorPickingPass::execute(
     const uint32_t y = editor.pickY;
 
     const vk::RenderingAttachmentInfo colorAttachment{
-        .imageView = graph.getImage(pickingImage, execution.frameIndex)
+        .imageView = graph.getImage(pickingImage)
                          .getOrCreateImageView({
                              .viewType = vk::ImageViewType::e2D,
                              .format   = vk::Format::eR32Uint,
@@ -110,13 +110,11 @@ void EditorPickingPass::execute(
         .clearValue  = vk::ClearColorValue(std::array<uint32_t, 4>{0u, 0u, 0u, 0u}),
     };
     const vk::RenderingAttachmentInfo depthAttachment{
-        .imageView = graph.getImage(depth, execution.frameIndex)
-                         .getOrCreateImageView({
-                             .viewType = vk::ImageViewType::e2D,
-                             .format   = vk::Format::eD32Sfloat,
-                             .subresourceRange =
-                                 {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
-                         }),
+        .imageView   = graph.getImage(depth).getOrCreateImageView({
+              .viewType         = vk::ImageViewType::e2D,
+              .format           = vk::Format::eD32Sfloat,
+              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
+        }),
         .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
         .loadOp      = vk::AttachmentLoadOp::eLoad,
         .storeOp     = vk::AttachmentStoreOp::eNone,

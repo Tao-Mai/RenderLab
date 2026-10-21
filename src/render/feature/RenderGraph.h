@@ -55,7 +55,6 @@ public:
         vk::Extent3D         extent{0, 0, 1};
         uint32_t             mipLevels   = 1;
         uint32_t             arrayLayers = 1;
-        ResourceScope        scope       = ResourceScope::Shared;
     };
 
     struct BufferCreateInfo
@@ -97,7 +96,7 @@ public:
     // Owners provide the initial access; graph preserves state between executions.
     ImageHandle importImage(Image& image, ImageCreateInfo info, ImageAccess initial);
     BufferHandle importBuffer(Buffer& buffer, MemoryAccess initial);
-    [[nodiscard]] ImageAccess imageState(ImageHandle image, uint32_t frameIndex) const;
+    [[nodiscard]] ImageAccess imageState(ImageHandle image) const;
     [[nodiscard]] MemoryAccess bufferState(BufferHandle buffer, uint32_t frameIndex) const;
 
     ImageHandle write(ImageHandle image);
@@ -108,7 +107,7 @@ public:
     void use(BufferHandle buffer, MemoryAccess access);
     void use(AccelerationStructureHandle structure, MemoryAccess access);
 
-    [[nodiscard]] Image&                 getImage(ImageHandle image, uint32_t frameIndex);
+    [[nodiscard]] Image&                 getImage(ImageHandle image);
     [[nodiscard]] Buffer&                getBuffer(BufferHandle buffer, uint32_t frameIndex);
     // Bind pass-owned objects for downstream lookup; the pass retains ownership.
     void bindAccelerationStructures(

@@ -45,13 +45,11 @@ struct HdrSourcePass
     {
         const auto                        extent = execution.setup.swapchain.extent();
         const vk::RenderingAttachmentInfo attachment{
-            .imageView = graph.getImage(color, execution.frameIndex)
-                             .getOrCreateImageView(
-                                 {.viewType = vk::ImageViewType::e2D,
-                                  .format   = kHdrColorFormat,
-                                  .subresourceRange =
-                                      {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1}}
-                             ),
+            .imageView = graph.getImage(color).getOrCreateImageView(
+                {.viewType         = vk::ImageViewType::e2D,
+                 .format           = kHdrColorFormat,
+                 .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1}}
+            ),
             .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
             .loadOp      = vk::AttachmentLoadOp::eClear,
             .storeOp     = vk::AttachmentStoreOp::eStore,
@@ -112,7 +110,7 @@ struct ReadPixelPass
             .imageExtent      = {1, 1, 1}
         };
         commandBuffer.copyImageToBuffer(
-            graph.getImage(source, execution.frameIndex).handle(),
+            graph.getImage(source).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
             graph.getBuffer(buffer, execution.frameIndex).handle(),
             copy

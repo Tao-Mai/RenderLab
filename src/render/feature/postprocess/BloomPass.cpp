@@ -31,14 +31,13 @@ struct alignas(16) BloomParameters
 };
 static_assert(sizeof(BloomParameters) == 48);
 
-vk::ImageView imageView(RenderGraph& graph, RenderGraph::ImageHandle image, uint32_t frameIndex)
+vk::ImageView imageView(RenderGraph& graph, RenderGraph::ImageHandle image)
 {
-    return graph.getImage(image, frameIndex)
-        .getOrCreateImageView({
-            .viewType         = vk::ImageViewType::e2D,
-            .format           = graph.imageInfo(image).format,
-            .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        });
+    return graph.getImage(image).getOrCreateImageView({
+        .viewType         = vk::ImageViewType::e2D,
+        .format           = graph.imageInfo(image).format,
+        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+    });
 }
 }  // namespace
 
@@ -153,12 +152,12 @@ void BloomPass::FilterPass::prepare(RenderGraph& graph, const PassSetup& setup) 
     {
         const std::array images{
             vk::DescriptorImageInfo{
-                .imageView   = imageView(graph, source, frameIndex),
+                .imageView   = imageView(graph, source),
                 .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
             },
             vk::DescriptorImageInfo{.sampler = sampler},
             vk::DescriptorImageInfo{
-                .imageView   = imageView(graph, base, frameIndex),
+                .imageView   = imageView(graph, base),
                 .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
             },
         };
@@ -195,7 +194,7 @@ void BloomPass::FilterPass::execute(
 {
     const auto                        extent = graph.imageInfo(color).extent;
     const vk::RenderingAttachmentInfo attachment{
-        .imageView   = imageView(graph, color, execution.frameIndex),
+        .imageView   = imageView(graph, color),
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
         .loadOp      = vk::AttachmentLoadOp::eDontCare,
         .storeOp     = vk::AttachmentStoreOp::eStore,

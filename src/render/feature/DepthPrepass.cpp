@@ -46,13 +46,11 @@ void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandB
     const auto extent = execution.setup.swapchain.extent();
 
     const vk::RenderingAttachmentInfo depthAttachment{
-        .imageView = graph.getImage(depth, execution.frameIndex)
-                         .getOrCreateImageView({
-                             .viewType = vk::ImageViewType::e2D,
-                             .format   = vk::Format::eD32Sfloat,
-                             .subresourceRange =
-                                 {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
-                         }),
+        .imageView   = graph.getImage(depth).getOrCreateImageView({
+              .viewType         = vk::ImageViewType::e2D,
+              .format           = vk::Format::eD32Sfloat,
+              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
+        }),
         .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
         .loadOp      = vk::AttachmentLoadOp::eClear,
         .storeOp     = vk::AttachmentStoreOp::eStore,

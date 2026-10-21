@@ -63,7 +63,7 @@ struct PixelReadbackPass
             .imageExtent      = {1, 1, 1},
         };
         commandBuffer.copyImageToBuffer(
-            graph.getImage(image, execution.frameIndex).handle(),
+            graph.getImage(image).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
             graph.getBuffer(buffer, execution.frameIndex).handle(),
             region
@@ -124,13 +124,6 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
         const auto buffer = graph.addPass(readback, setup, color);
         graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
         graph.compile(setup);
-        if (shadows)
-            for (const auto image :
-                 {shadowOutput.pointLightShadowMap,
-                  shadowOutput.spotLightShadowMap,
-                  shadowOutput.rectAreaLightShadowMap,
-                  shadowOutput.cascadeShadowMap})
-                CHECK(graph.getImage(image, 0).handle() == graph.getImage(image, 1).handle());
         const auto& sceneData = renderSystem.prepare(scenes.scene());
         const auto  prepared  = prepareRenderScene(
             sceneData,

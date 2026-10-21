@@ -45,7 +45,7 @@
 ## 帧与资源
 
 - 默认两帧在途，每个槽位有独立 FrameContext、FrameData；复用前等待对应 Fence。
-- Graph 创建的图像与缓冲默认跨帧共享，阴影图不按 Frames-in-flight 复制。
+- Graph 创建的图像跨帧共享，直接通过 `getImage(handle)` 访问；缓冲默认跨帧共享，阴影图不按 Frames-in-flight 复制。
 - 同一队列上追踪资源最后访问，下一帧首次使用前插入 Barrier；不意味着前后帧可无约束并行写同一资源。
 - 回读缓冲使用 PerFrame；交换链图像按获取到的 Image Index 选择。
 - 历史重投影资源由 Pass 持有，颜色 / 深度 / 法线 / 亮度矩各使用双层 Ping-pong。

@@ -96,7 +96,7 @@ void SceneBindings::prepare(RenderGraph& graph, const PassSetup& setup) const
     for (uint32_t frameIndex = 0; frameIndex < maxFramesInFlight; ++frameIndex)
     {
         const vk::DescriptorImageInfo shadowImage{
-            .imageView = graph.getImage(pointShadowMap, frameIndex)
+            .imageView = graph.getImage(pointShadowMap)
                              .getOrCreateImageView({
                                  .viewType = vk::ImageViewType::eCubeArray,
                                  .format   = vk::Format::eD32Sfloat,
@@ -108,7 +108,7 @@ void SceneBindings::prepare(RenderGraph& graph, const PassSetup& setup) const
             .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
         };
         const vk::DescriptorImageInfo spotShadowImage{
-            .imageView = graph.getImage(spotShadowMap, frameIndex)
+            .imageView = graph.getImage(spotShadowMap)
                              .getOrCreateImageView({
                                  .viewType = vk::ImageViewType::e2DArray,
                                  .format   = vk::Format::eD32Sfloat,
@@ -120,7 +120,7 @@ void SceneBindings::prepare(RenderGraph& graph, const PassSetup& setup) const
             .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
         };
         const vk::DescriptorImageInfo rectAreaShadowImage{
-            .imageView = graph.getImage(rectAreaShadowMap, frameIndex)
+            .imageView = graph.getImage(rectAreaShadowMap)
                              .getOrCreateImageView({
                                  .viewType = vk::ImageViewType::e2DArray,
                                  .format   = vk::Format::eD32Sfloat,
@@ -133,7 +133,7 @@ void SceneBindings::prepare(RenderGraph& graph, const PassSetup& setup) const
         };
         const vk::DescriptorImageInfo shadowSamplerInfo{.sampler = *shadowSampler};
         const vk::DescriptorImageInfo directionalShadowImage{
-            .imageView = graph.getImage(cascadeShadowMap, frameIndex)
+            .imageView = graph.getImage(cascadeShadowMap)
                              .getOrCreateImageView({
                                  .viewType = vk::ImageViewType::e2DArray,
                                  .format   = vk::Format::eD32Sfloat,

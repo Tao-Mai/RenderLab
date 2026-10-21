@@ -79,9 +79,11 @@ void RenderGraph::allocateResources()
         resource.allocation = std::make_shared<Allocation>();
         const bool imported = resource.importedImage || resource.importedBuffer ||
             resource.type == ResourceType::AccelerationStructure;
-        const auto scope = resource.type == ResourceType::Buffer ? resource.bufferInfo.scope : resource.imageInfo.scope;
+        const bool perFrame =
+            resource.type == ResourceType::Buffer && resource.bufferInfo.scope == ResourceScope::PerFrame;
         const size_t count = resource.swapchainIndexed ? resource.externalImages.size()
-            : !imported && scope == ResourceScope::PerFrame ? maxFramesInFlight : 1;
+            : !imported && perFrame                    ? maxFramesInFlight
+                                                       : 1;
         resource.allocation->instances.resize(count);
         for (size_t i = 0; i < count; ++i)
         {
@@ -171,13 +173,13 @@ const RenderGraph::ImageCreateInfo& RenderGraph::imageInfo(ImageHandle image)
     return resource.imageInfo;
 }
 
-Image& RenderGraph::getImage(ImageHandle image, uint32_t frameIndex)
+Image& RenderGraph::getImage(ImageHandle image)
 {
     const auto& resource = resolveResource(image.id);
     DCHECK(resource.type == ResourceType::Image && resource.allocation);
     if (resource.importedImage)
         return *resource.importedImage;
-    return *resource.allocation->instances.at(instanceIndex(resource, frameIndex)).image;
+    return *resource.allocation->instances.at(resource.swapchainIndexed ? currentImage : 0).image;
 }
 
 Buffer& RenderGraph::getBuffer(BufferHandle buffer, uint32_t frameIndex)
@@ -356,11 +358,11 @@ RenderGraph::BufferHandle RenderGraph::importBuffer(Buffer& buffer, MemoryAccess
     return handle;
 }
 
-RenderGraph::ImageAccess RenderGraph::imageState(ImageHandle image, uint32_t frameIndex) const
+RenderGraph::ImageAccess RenderGraph::imageState(ImageHandle image) const
 {
     const auto& resource = resolveResource(image.id);
     DCHECK(resource.type == ResourceType::Image && resource.allocation);
-    return resource.allocation->instances.at(instanceIndex(resource, frameIndex)).state;
+    return resource.allocation->instances.at(resource.swapchainIndexed ? currentImage : 0).state;
 }
 
 RenderGraph::MemoryAccess RenderGraph::bufferState(BufferHandle buffer, uint32_t frameIndex) const

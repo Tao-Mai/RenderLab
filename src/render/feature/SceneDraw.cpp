@@ -51,26 +51,22 @@ vk::Rect2D SceneDraw::beginRendering(
     colorAttachments.reserve(colors.size());
     for (const auto color : colors)
         colorAttachments.push_back({
-            .imageView = graph.getImage(color, execution.frameIndex)
-                             .getOrCreateImageView({
-                                 .viewType = vk::ImageViewType::e2D,
-                                 .format   = graph.imageInfo(color).format,
-                                 .subresourceRange =
-                                     {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-                             }),
+            .imageView   = graph.getImage(color).getOrCreateImageView({
+                  .viewType         = vk::ImageViewType::e2D,
+                  .format           = graph.imageInfo(color).format,
+                  .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+            }),
             .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
             .loadOp      = colorLoadOp,
             .storeOp     = vk::AttachmentStoreOp::eStore,
             .clearValue  = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f),
         });
     const vk::RenderingAttachmentInfo depthAttachment{
-        .imageView = graph.getImage(depth, execution.frameIndex)
-                         .getOrCreateImageView({
-                             .viewType = vk::ImageViewType::e2D,
-                             .format   = vk::Format::eD32Sfloat,
-                             .subresourceRange =
-                                 {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
-                         }),
+        .imageView   = graph.getImage(depth).getOrCreateImageView({
+              .viewType         = vk::ImageViewType::e2D,
+              .format           = vk::Format::eD32Sfloat,
+              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
+        }),
         .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
         .loadOp      = vk::AttachmentLoadOp::eLoad,
         .storeOp     = vk::AttachmentStoreOp::eNone,

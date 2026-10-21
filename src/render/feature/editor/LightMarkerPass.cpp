@@ -65,25 +65,21 @@ void LightMarkerPass::execute(
 
     const auto                        extent = execution.setup.swapchain.extent();
     const vk::RenderingAttachmentInfo colorAttachment{
-        .imageView = graph.getImage(color, execution.frameIndex)
-                         .getOrCreateImageView({
-                             .viewType = vk::ImageViewType::e2D,
-                             .format   = graph.imageInfo(color).format,
-                             .subresourceRange =
-                                 {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-                         }),
+        .imageView   = graph.getImage(color).getOrCreateImageView({
+              .viewType         = vk::ImageViewType::e2D,
+              .format           = graph.imageInfo(color).format,
+              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+        }),
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
         .loadOp      = vk::AttachmentLoadOp::eLoad,
         .storeOp     = vk::AttachmentStoreOp::eStore,
     };
     const vk::RenderingAttachmentInfo depthAttachment{
-        .imageView = graph.getImage(depth, execution.frameIndex)
-                         .getOrCreateImageView({
-                             .viewType = vk::ImageViewType::e2D,
-                             .format   = vk::Format::eD32Sfloat,
-                             .subresourceRange =
-                                 {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
-                         }),
+        .imageView   = graph.getImage(depth).getOrCreateImageView({
+              .viewType         = vk::ImageViewType::e2D,
+              .format           = vk::Format::eD32Sfloat,
+              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
+        }),
         .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
         .loadOp      = vk::AttachmentLoadOp::eLoad,
         .storeOp     = vk::AttachmentStoreOp::eStore,

@@ -72,9 +72,9 @@ void RayTracingBlitPass::execute(
         },
     };
     commandBuffer.blitImage(
-        graph.getImage(rayImage, execution.frameIndex).handle(),
+        graph.getImage(rayImage).handle(),
         vk::ImageLayout::eTransferSrcOptimal,
-        graph.getImage(color, execution.frameIndex).handle(),
+        graph.getImage(color).handle(),
         vk::ImageLayout::eTransferDstOptimal,
         region,
         vk::Filter::eNearest

@@ -416,13 +416,11 @@ void OfflinePathTracingPass::prepareBindings(RenderGraph& graph, const PassFrame
         .pAccelerationStructures    = &tlas
     };
     const vk::DescriptorImageInfo output{
-        .imageView = graph.getImage(rayImage, execution.frameIndex)
-                         .getOrCreateImageView({
-                             .viewType = vk::ImageViewType::e2D,
-                             .format   = graph.imageInfo(rayImage).format,
-                             .subresourceRange =
-                                 {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-                         }),
+        .imageView   = graph.getImage(rayImage).getOrCreateImageView({
+              .viewType         = vk::ImageViewType::e2D,
+              .format           = graph.imageInfo(rayImage).format,
+              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+        }),
         .imageLayout = vk::ImageLayout::eGeneral
     };
     const vk::DescriptorBufferInfo hitInfo{.buffer = frame.hitData.handle(), .range = frame.hitData.size()};

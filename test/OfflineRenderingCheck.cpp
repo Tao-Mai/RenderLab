@@ -56,7 +56,7 @@ struct PixelReadbackPass
             .imageExtent      = {1, 1, 1},
         };
         commandBuffer.copyImageToBuffer(
-            graph.getImage(image, execution.frameIndex).handle(),
+            graph.getImage(image).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
             graph.getBuffer(buffer, execution.frameIndex).handle(),
             region

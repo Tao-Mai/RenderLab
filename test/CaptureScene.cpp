@@ -79,7 +79,7 @@ struct ImageReadbackPass
             .imageExtent      = graph.imageInfo(image).extent,
         };
         commands.copyImageToBuffer(
-            graph.getImage(image, frame.frameIndex).handle(),
+            graph.getImage(image).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
             graph.getBuffer(buffer, frame.frameIndex).handle(),
             copy
