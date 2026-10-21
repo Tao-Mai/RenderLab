@@ -102,7 +102,7 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
     auto&            pipelines   = *renderContext().pipelineManager;
     const auto       passLayout  = descriptors.getOrCreateLayout(gBufferBindings);
     const auto       emptySet    = descriptors.getOrCreateLayout(std::span<const vk::DescriptorSetLayoutBinding>{});
-    const std::array sets{SceneInterface::sceneLayout(descriptors), emptySet, emptySet, passLayout};
+    const std::array sets{renderContext().sceneInterface->sceneLayout, emptySet, emptySet, passLayout};
     const std::array ranges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(DeferredLightingPushConstants)

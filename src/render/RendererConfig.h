@@ -74,7 +74,8 @@ struct RenderFeature
     {
         bool     enable       = true;
         float    intensity    = 0.04f;
-        float    filterRadius = 1.0f;  // Texels of each downsampled level.
+        float    scatter      = 0.7f;  // Low-resolution contribution when reconstructing the pyramid.
+        float    filterRadius = 1.0f;  // Scale of the Gaussian sampling offsets.
         uint32_t levels       = 5;
     } bloom;
 

@@ -5,6 +5,7 @@
 #include "core/Logger.h"
 #include "render/DescriptorManager.h"
 #include "render/RenderConfig.h"
+#include "render/RenderContext.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 
@@ -67,7 +68,7 @@ void FrameData::init(const VulkanContext& targetVulkan, DescriptorManager& descr
         vk::BufferUsageFlagBits::eStorageBuffer,
         hostMemory
     );
-    sceneSet = descriptors.allocate(SceneInterface::sceneLayout(descriptors));
+    sceneSet = descriptors.allocate(renderContext().sceneInterface->sceneLayout);
     viewSet  = descriptors.allocate(EditorInterface::viewLayout(descriptors));
     bindBuffers();
 }

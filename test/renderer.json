@@ -5,7 +5,8 @@
             "enable": true,
             "filterRadius": 1.0,
             "intensity": 0.03999999910593033,
-            "levels": 5
+            "levels": 5,
+            "scatter": 0.7
         },
         "hdr": true,
         "ibl": true,

@@ -171,11 +171,13 @@ int main(int argc, char** argv)
     source.lightCenter = vk::Offset2D{centerX, centerY};
     readback.pixel     = vk::Offset3D{centerX + 8, centerY, 0};
 
-    const auto sample = [&](bool enabled, float intensity = 0.04f, uint32_t levels = 5, bool hdr = true)
+    const auto sample =
+        [&](bool enabled, float intensity = 0.04f, uint32_t levels = 5, bool hdr = true, float scatter = 0.7f)
     {
-        auto feature  = original;
-        feature.hdr   = hdr;
-        feature.bloom = {.enable = enabled, .intensity = intensity, .filterRadius = 1, .levels = levels};
+        auto feature = original;
+        feature.hdr  = hdr;
+        feature.bloom =
+            {.enable = enabled, .intensity = intensity, .scatter = scatter, .filterRadius = 1, .levels = levels};
         config.setRenderFeature(feature);
         graph.releaseResources();
         auto color = graph.addPass(source, setup).color;
@@ -199,14 +201,21 @@ int main(int argc, char** argv)
         profiler.endFrame(1.0);
 
         DrawStatistics counts;
+        uint32_t       bloomPassCount = 0;
         for (const auto& pass : profiler.display().passes)
         {
+            if (pass.name == "FilterPass")
+            {
+                ++bloomPassCount;
+                CHECK(pass.draws.drawCalls == 1);
+            }
             counts.drawCalls += pass.draws.drawCalls;
             counts.triangles += pass.draws.triangles;
         }
-        const uint64_t expectedDraws = ctx.profiler && hdr && enabled ? 2 * levels : 0;
+        const uint64_t expectedDraws = ctx.profiler && hdr && enabled ? 3 * levels : 0;
         CHECK(counts.drawCalls == expectedDraws);
         CHECK(counts.triangles == expectedDraws);
+        CHECK(bloomPassCount == expectedDraws);
 
         std::array<uint16_t, 4> pixel;
         graph.getBuffer(buffer, 0).download(pixel.data(), sizeof(pixel));
@@ -227,7 +236,10 @@ int main(int argc, char** argv)
     CHECK(sample(true, 0.04f, 1).x > 0);
     readback.pixel.x = centerX + 8;
     CHECK(sample(true, 0.04f, 5, false).x == 0);
-    source.uniform = true;
+    readback.pixel.x = centerX + 16;
+    CHECK(sample(true, 0.04f, 5, true, 0.95f).x > sample(true, 0.04f, 5, true, 0.05f).x);
+    readback.pixel.x = centerX + 8;
+    source.uniform   = true;
     CHECK(glm::length(sample(true) - glm::vec3{4, 2, 1}) < 0.01f);
     source.uniform       = false;
     source.lightCenter.x = centerX - 4;

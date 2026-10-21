@@ -44,7 +44,7 @@ RendererConfig sampleRendererConfig()
                 .spotShadowMapSize = 512, .bias = 0.0025f,
                 .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.03f, .spotSampleRadius = 2.5f},
             .toneMapping = {.ev100 = 5.0f, .exposureCompensation = 1.5f, .mode = ToneMappingOperator::Reinhard},
-            .bloom = {.enable = false, .intensity = 0.15f, .filterRadius = 2.0f, .levels = 3},
+            .bloom = {.enable = false, .intensity = 0.15f, .scatter = 0.6f, .filterRadius = 2.0f, .levels = 3},
             .rayTracing = {.maxRecursionDepth = 3, .svgf = false, .emaStartSampleCount = 16, .emaAlpha = 0.25f}},
     };
 }

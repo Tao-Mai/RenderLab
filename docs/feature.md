@@ -60,7 +60,7 @@
 - RGBA16F HDR 颜色缓冲。
 - 手动 EV100 曝光与曝光补偿。
 - 可切换 Tone Mapping。
-- 多级降采样 / 升采样 Bloom，可调强度、半径与层数。
+- Scattering Bloom：分离式高斯降采样、逐级散射混合，可调强度、Scatter、高斯半径与层数。
 - HDR、Bloom 等渲染选项可运行时切换并持久化。
 
 ## 资产与场景

@@ -24,6 +24,7 @@ Renderer 决定加入哪些 Pass，Pass 声明资源访问，Graph 负责依赖�
 ### Execute：录制命令
 
 - 按编译顺序处理资源访问、插入 Barrier，再执行 Pass 回调。
+- Bloom 由多个滤波节点组成：高斯横向降采样、纵向滤波、逐级上采样和最终合成。中间图由 Graph 统一分配，状态转换与跨帧同步也由 Graph 处理，Bloom 内部不插入 Barrier。
 - EndPass 应用 Present / HostRead 等出口状态。
 - 场景绘制和计算使用原生 Vulkan 调用；Graph 不包装每一次 Draw。
 - 拾取结果由 Renderer / Editor 消费，Graph 只处理图像、回读缓冲与同步。

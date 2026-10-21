@@ -47,12 +47,12 @@ Engine：场景 / 编辑器 Tick
 
 - `VulkanContext` 管理设备与队列，`Swapchain` 管理呈现资源。
 - `FrameContext` 管理命令与同步；`FrameData` 管理逐帧上传数据。
-- `RenderContext` 聚合 Shader、Descriptor、Pipeline 与 GPU 资产管理器。
+- `RenderContext` 聚合 Shader、Descriptor、Pipeline、GPU 资产管理器与固定的 SceneInterface；场景布局在 Renderer 初始化时创建，绘制时直接读取句柄。
 - Pass 直接使用 Vulkan API；共享场景绘制函数位于 `SceneDraw`，它不是额外的资源管理层。
 - Graph 默认共享阴影图、深度和颜色中间结果；跨帧访问由同一队列上的 Barrier 同步。
 - CPU 回读缓冲显式按帧分配；时域历史使用独立的双层 Ping-pong 资源。
 
-详见 [RenderGraph](../src/render/ARCH.MD)。
+详见 [RenderGraph](../src/render/ARCH.MD) 与 [Descriptor / Pipeline Layout](render_layout.md)。
 
 ## 配置与编辑器
 
@@ -61,5 +61,6 @@ Engine：场景 / 编辑器 Tick
 - UI 修改配置，正常关闭时统一持久化；场景内容只在显式保存时写入。
 - EditorBackend 负责平台 / Vulkan backend；场景树、Inspector、RendererSettings 和导入面板各自处理业务。
 - 光源标记、拾取与 Gizmo 使用编辑器独立逻辑，不混入场景材质 Shader。
+- 光源标记使用各类型光源的线性强度，在 Bloom / Tone Mapping 之前绘制；UI 不参与后处理。
 
 新增渲染功能通常只需实现对应 Pass、声明资源访问，并在 Renderer 的路线中串接；无需给底层管理器加入特定场景或材质的分支。

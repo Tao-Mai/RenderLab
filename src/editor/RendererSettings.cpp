@@ -201,11 +201,14 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
     ImGui::BeginDisabled(!feature.hdr);
     if (ImGui::Checkbox("Enable bloom", &feature.bloom.enable))
         config.setRenderFeature(feature);
-    ImGui::SetItemTooltip("HDR lens glow; editor markers and gizmos are excluded. Requires HDR.");
+    ImGui::SetItemTooltip("HDR scattering bloom; light markers are included, editor UI is excluded. Requires HDR.");
     ImGui::BeginDisabled(!feature.bloom.enable);
     bool bloomEdited = ImGui::SliderFloat("Bloom intensity", &feature.bloom.intensity, 0.0f, 1.0f, "%.3f");
-    bloomEdited      = ImGui::DragFloat(
-                      "Bloom radius",
+    ImGui::SetItemTooltip("Fraction of scene light redistributed by bloom, not additive brightness.");
+    bloomEdited = ImGui::SliderFloat("Bloom scatter", &feature.bloom.scatter, 0.05f, 0.95f, "%.2f") || bloomEdited;
+    ImGui::SetItemTooltip("Higher values give coarser pyramid levels more weight and produce a wider glow.");
+    bloomEdited = ImGui::DragFloat(
+                      "Gaussian radius",
                       &feature.bloom.filterRadius,
                       0.05f,
                       0.1f,

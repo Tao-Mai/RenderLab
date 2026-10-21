@@ -2,6 +2,9 @@
 
 #include "render/feature/RenderGraph.h"
 
+#include <memory>
+#include <vector>
+
 class BloomPass
 {
 public:
@@ -18,7 +21,8 @@ private:
     public:
         enum class Stage : uint32_t
         {
-            Downsample,
+            DownsampleHorizontal,
+            DownsampleVertical,
             Upsample,
             Composite
         };

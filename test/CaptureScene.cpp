@@ -152,16 +152,16 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
             color = graph.addPass(skybox, setup, color, sceneOutput.depth).color;
         color = graph.addPass(transparent, setup, color, sceneOutput.depth, sceneOutput.shadow).color;
     }
-    if (config.feature.bloom.enable)
-        color = graph.addPass(bloom, setup, color).color;
-    const auto target = graph.createImage({.format = format, .extent = {extent.width, extent.height, 1}});
-    color             = graph.addPass(toneMapping, setup, color, target).color;
     if (!offline)
     {
         if (depthImage.id == RenderGraph::kInvalidHandle)
             depthImage = graph.addPass(editorDepth, setup).depth;
         color = graph.addPass(lightMarker, setup, color, depthImage).color;
     }
+    if (config.feature.bloom.enable)
+        color = graph.addPass(bloom, setup, color).color;
+    const auto target = graph.createImage({.format = format, .extent = {extent.width, extent.height, 1}});
+    color             = graph.addPass(toneMapping, setup, color, target).color;
     const auto buffer = graph.addPass(readback, setup, color);
     graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
     graph.compile(setup);

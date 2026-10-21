@@ -23,7 +23,7 @@ SkyboxPass::Output SkyboxPass::setup(
     SceneDraw::useAttachments(graph, std::array{color}, depth);
 
     auto& pipelines = *renderContext().pipelineManager;
-    pipelineLayout  = SceneInterface::skyboxLayout(*renderContext().descriptors, *renderContext().pipelineManager);
+    pipelineLayout  = renderContext().sceneInterface->skyboxLayout;
     pipeline        = pipelines.getOrCreate({
                .shader = renderContext().shaderManager->getOrLoad("skybox"),
                .layout = pipelineLayout,

@@ -1,12 +1,15 @@
 #pragma once
+
 #include <vulkan/vulkan.hpp>
-class DescriptorManager;
-class PipelineManager;
-namespace SceneInterface
+
+// Fixed scene interfaces; the managers retain ownership of the Vulkan layouts.
+struct SceneInterface
 {
-vk::DescriptorSetLayout sceneLayout(DescriptorManager& descriptors);
-vk::DescriptorSetLayout materialLayout(DescriptorManager& descriptors);
-vk::PipelineLayout      meshLayout(DescriptorManager& descriptors, PipelineManager& pipelines);
-vk::PipelineLayout      shadowLayout(DescriptorManager& descriptors, PipelineManager& pipelines);
-vk::PipelineLayout      skyboxLayout(DescriptorManager& descriptors, PipelineManager& pipelines);
-}  // namespace SceneInterface
+    void init();
+
+    vk::DescriptorSetLayout sceneLayout    = nullptr;
+    vk::DescriptorSetLayout materialLayout = nullptr;
+    vk::PipelineLayout      meshLayout     = nullptr;
+    vk::PipelineLayout      shadowLayout   = nullptr;
+    vk::PipelineLayout      skyboxLayout   = nullptr;
+};

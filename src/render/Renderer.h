@@ -11,6 +11,7 @@
 #include "render/device/FrameContext.h"
 #include "render/device/VulkanContext.h"
 #include "render/feature/RenderGraph.h"
+#include "render/feature/SceneInterface.h"
 #include "render/feature/editor/EditorFrameInput.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/RenderResourceManager.h"
@@ -56,6 +57,7 @@ private:
     DescriptorManager                           descriptors;
     PipelineManager                             pipelines;
     RenderResourceManager                       resources;
+    SceneInterface                              sceneInterface;
     std::array<FrameContext, maxFramesInFlight> frames;
     std::array<FrameData, maxFramesInFlight>    frameStorage;
     SceneBindings*                              activeSceneBindings = nullptr;
@@ -68,6 +70,7 @@ private:
     SceneOutput               setupRasterization();
     SceneOutput               setupRayTracing();
     SceneOutput               setupOffline();
+    SceneOutput               setupLightMarkers(SceneOutput scene);
     RenderGraph::ImageHandle  setupPostProcess(RenderGraph::ImageHandle color);
     void                      setupEditor(SceneOutput scene);
     void                      applyConfiguration();

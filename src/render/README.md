@@ -1,6 +1,6 @@
 # 渲染模块
 
-[项目首页](../../README.md) · [架构](../../docs/architecture.md) · [RenderGraph](ARCH.MD)
+[项目首页](../../README.md) · [架构](../../docs/architecture.md) · [RenderGraph](ARCH.MD) · [Descriptor / Pipeline Layout](../../docs/render_layout.md)
 
 渲染模块接收场景快照和编辑器输入，准备 GPU 数据，再通过 RenderGraph 调度完整的渲染 Pass。Renderer 负责流程，Pass 负责 Vulkan 绘制细节。
 
@@ -13,7 +13,7 @@
 | Ray Tracing | BLAS / TLAS 构建 → RayTracing → 可选历史重投影 | 每帧随机采样与时域累积 |
 | Offline | BLAS / TLAS 构建 → OfflinePathTracing | 独立渐进式路径追踪与高采样参考图 |
 
-光栅路线在需要时加入 ShadowPass。HDR 路线的结果经过 Bloom（可选）与 ToneMapping；光追关闭 HDR 时通过 Blit 输出。编辑器光源标记、UI 与按需拾取在独立阶段完成。
+光栅路线在需要时加入 ShadowPass。光源标记在线性场景颜色上绘制，随后一起经过 Bloom（可选）与 ToneMapping；光追关闭 HDR 时通过 Blit 输出。UI 在后处理之后绘制，拾取仍使用独立阶段。
 
 ### 光栅化
 
@@ -49,7 +49,7 @@
 - 同一队列上追踪资源最后访问，下一帧首次使用前插入 Barrier；不意味着前后帧可无约束并行写同一资源。
 - 回读缓冲使用 PerFrame；交换链图像按获取到的 Image Index 选择。
 - 历史重投影资源由 Pass 持有，颜色 / 深度 / 法线 / 亮度矩各使用双层 Ping-pong。
-- Shader、Descriptor、Pipeline、RenderResourceManager 通过 RenderContext 聚合；GPU 资产与图中间资源分开管理。
+- Shader、Descriptor、Pipeline、RenderResourceManager 与固定的 SceneInterface 通过 RenderContext 聚合；场景布局初始化时创建、运行时直接读取，GPU 资产与图中间资源分开管理。
 
 ## 代码导航
 

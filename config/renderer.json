@@ -5,7 +5,8 @@
             "enable": true,
             "filterRadius": 1.100000023841858,
             "intensity": 0.041999999433755875,
-            "levels": 5
+            "levels": 5,
+            "scatter": 0.699999988079071
         },
         "hdr": true,
         "ibl": false,
@@ -44,5 +45,5 @@
             "mode": "Neutral"
         }
     },
-    "renderPath": "RayTracing"
+    "renderPath": "Rasterization"
 }

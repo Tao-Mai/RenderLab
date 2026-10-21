@@ -1,10 +1,19 @@
 #include "render/feature/SceneInterface.h"
-#include <array>
+
+#include "core/Logger.h"
 #include "render/DescriptorManager.h"
 #include "render/PipelineManager.h"
+#include "render/RenderContext.h"
 #include "render/resource/ShaderData.h"
-vk::DescriptorSetLayout SceneInterface::sceneLayout(DescriptorManager& descriptors)
+
+#include <array>
+
+void SceneInterface::init()
 {
+    DCHECK(!sceneLayout);
+    auto& descriptors = *renderContext().descriptors;
+    auto& pipelines   = *renderContext().pipelineManager;
+
     const std::array sceneBindings = {
         vk::DescriptorSetLayoutBinding{
             .binding         = RenderInterface::kViewUniformBinding,
@@ -147,10 +156,8 @@ vk::DescriptorSetLayout SceneInterface::sceneLayout(DescriptorManager& descripto
             .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
         },
     };
-    return descriptors.getOrCreateLayout(sceneBindings);
-}
-vk::DescriptorSetLayout SceneInterface::materialLayout(DescriptorManager& descriptors)
-{
+    sceneLayout = descriptors.getOrCreateLayout(sceneBindings);
+
     const std::array materialBindings = {
         vk::DescriptorSetLayoutBinding{
             .binding         = RenderInterface::kMaterialImageBinding,
@@ -291,32 +298,25 @@ vk::DescriptorSetLayout SceneInterface::materialLayout(DescriptorManager& descri
             .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
         },
     };
-    return descriptors.getOrCreateLayout(materialBindings);
-}
-vk::PipelineLayout SceneInterface::meshLayout(DescriptorManager& descriptors, PipelineManager& pipelines)
-{
-    const std::array sets{sceneLayout(descriptors), materialLayout(descriptors)};
-    const std::array ranges{vk::PushConstantRange{
+    materialLayout = descriptors.getOrCreateLayout(materialBindings);
+
+    const std::array meshSets{sceneLayout, materialLayout};
+    const std::array meshRanges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(MeshPushConstants)
     }};
-    return pipelines.getOrCreateLayout(sets, ranges);
-}
-vk::PipelineLayout SceneInterface::shadowLayout(DescriptorManager& descriptors, PipelineManager& pipelines)
-{
-    const std::array sets{sceneLayout(descriptors)};
-    const std::array ranges{vk::PushConstantRange{
+    meshLayout = pipelines.getOrCreateLayout(meshSets, meshRanges);
+
+    const std::array sceneSets{sceneLayout};
+    const std::array shadowRanges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(ShadowPushConstants)
     }};
-    return pipelines.getOrCreateLayout(sets, ranges);
-}
-vk::PipelineLayout SceneInterface::skyboxLayout(DescriptorManager& descriptors, PipelineManager& pipelines)
-{
-    const std::array sets{sceneLayout(descriptors)};
-    const std::array ranges{vk::PushConstantRange{
+    shadowLayout = pipelines.getOrCreateLayout(sceneSets, shadowRanges);
+
+    const std::array skyboxRanges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(SkyboxPushConstants)
     }};
-    return pipelines.getOrCreateLayout(sets, ranges);
+    skyboxLayout = pipelines.getOrCreateLayout(sceneSets, skyboxRanges);
 }

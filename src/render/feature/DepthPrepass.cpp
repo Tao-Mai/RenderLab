@@ -37,7 +37,7 @@ DepthPrepass::Output DepthPrepass::setup(RenderGraph& graph, const PassSetup& se
     );
 
     shader         = renderContext().shaderManager->getOrLoad("depth");
-    pipelineLayout = SceneInterface::meshLayout(*renderContext().descriptors, *renderContext().pipelineManager);
+    pipelineLayout = renderContext().sceneInterface->meshLayout;
     return {depth};
 }
 

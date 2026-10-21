@@ -36,7 +36,7 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup)
     CHECK((features & kRequiredFeatures) == kRequiredFeatures);
 
     auto& pipelines = *renderContext().pipelineManager;
-    pipelineLayout  = SceneInterface::shadowLayout(*renderContext().descriptors, *renderContext().pipelineManager);
+    pipelineLayout  = renderContext().sceneInterface->shadowLayout;
     const auto createTarget =
         [&](RenderGraph::ImageCreateInfo info, int shadowType, uint32_t viewMask = 0, uint32_t viewLayerCount = 1)
     {

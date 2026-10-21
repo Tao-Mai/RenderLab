@@ -3,6 +3,7 @@
 
 #include "core/Logger.h"
 #include "render/DescriptorManager.h"
+#include "render/RenderContext.h"
 #include "render/resource/ShaderData.h"
 
 #include <cmath>
@@ -31,7 +32,7 @@ void GpuMaterial::create(
     );
     updateParameters(material);
 
-    descriptorSet = descriptors.allocate(SceneInterface::materialLayout(descriptors));
+    descriptorSet = descriptors.allocate(renderContext().sceneInterface->materialLayout);
 
     const vk::DescriptorBufferInfo materialBufferInfo{
         .buffer = materialBuffer->handle(),

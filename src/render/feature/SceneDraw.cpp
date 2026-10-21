@@ -121,8 +121,7 @@ void SceneDraw::recordMeshes(
 {
     auto&      pipelines = *renderContext().pipelineManager;
     auto&      shaders   = *renderContext().shaderManager;
-    const auto pipelineLayout =
-        SceneInterface::meshLayout(*renderContext().descriptors, *renderContext().pipelineManager);
+    const auto pipelineLayout = renderContext().sceneInterface->meshLayout;
     const std::array sceneSets = {execution.data.sceneSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,

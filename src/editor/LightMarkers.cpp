@@ -59,7 +59,7 @@ std::vector<LightMarkerDrawItem> LightMarkers::buildDrawItems(
 ) const
 {
     std::vector<LightMarkerDrawItem> result;
-    const glm::vec3                  markerColor = light.enabled ? light.color : light.color * 0.15f;
+    const glm::vec3                  markerColor = light.enabled ? light.emissionColor() : light.color * 0.15f;
 
     if (const auto* area = dynamic_cast<const RectAreaLightComponent*>(&light))
     {

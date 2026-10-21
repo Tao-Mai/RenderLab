@@ -33,5 +33,6 @@ VertexOutput vertMain(VertexInput input)
 [shader("fragment")]
 float4 fragMain(VertexOutput input) : SV_Target
 {
+    // Linear emission; exposure, Bloom and tone mapping are applied afterwards.
     return pushConstants.color;
 }

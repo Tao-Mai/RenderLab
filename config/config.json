@@ -1,6 +1,6 @@
 {
     "initialScene": {
-        "value": "sponza"
+        "value": "bloom_test"
     },
     "paths": {
         "assets": "../assets",

@@ -52,6 +52,14 @@ int main(int argc, char** argv)
     scene.actors.back()->getComponent<LightComponent>()->enabled = false;
     scenes.load(scene);
     renderer.init();
+
+    auto& markerLight = *scenes.scene().actors.back()->getComponent<LightComponent>();
+    markerLight.enabled = true;
+    lightMarkers.prepare(scenes.scene(), *renderContext().resources);
+    CHECK(lightMarkers.drawItems().size() == 1);
+    CHECK(lightMarkers.drawItems().front().color == markerLight.emissionColor());
+    markerLight.enabled = false;
+
     const auto extent = renderer.swapchainHandle().extent();
     const auto view =
         scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});

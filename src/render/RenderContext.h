@@ -4,6 +4,7 @@ class ShaderManager;
 class DescriptorManager;
 class PipelineManager;
 class RenderResourceManager;
+struct SceneInterface;
 
 // Renderer owns these objects and manages their lifetime.
 struct RenderContext
@@ -12,6 +13,7 @@ struct RenderContext
     DescriptorManager*     descriptors     = nullptr;
     PipelineManager*       pipelineManager = nullptr;
     RenderResourceManager* resources       = nullptr;
+    SceneInterface*        sceneInterface  = nullptr;
 };
 
 [[nodiscard]] RenderContext& renderContext();

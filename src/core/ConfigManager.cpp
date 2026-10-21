@@ -33,6 +33,7 @@ void validateToneMapping(const RenderFeature::ToneMapping& toneMapping)
 void validateBloom(const RenderFeature::Bloom& bloom)
 {
     CHECK(std::isfinite(bloom.intensity) && bloom.intensity >= 0.0f && bloom.intensity <= 1.0f);
+    CHECK(std::isfinite(bloom.scatter) && bloom.scatter >= 0.05f && bloom.scatter <= 0.95f);
     CHECK(std::isfinite(bloom.filterRadius) && bloom.filterRadius > 0.0f);
     CHECK(bloom.levels > 0 && bloom.levels <= kMaxBloomLevels);
 }

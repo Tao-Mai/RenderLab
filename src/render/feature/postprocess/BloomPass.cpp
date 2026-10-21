@@ -22,14 +22,15 @@ constexpr uint32_t kSamplerBinding     = 1;
 constexpr uint32_t kBaseImageBinding   = 2;
 constexpr auto     kShaderStages       = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
 
-struct BloomParameters
+struct alignas(16) BloomParameters
 {
     glm::vec4 viewport;  // Normalized min/max, identical across the image pyramid.
     glm::vec2 texelSize;
     float     filterRadius;
     float     intensity;
+    float     scatter;
 };
-static_assert(sizeof(BloomParameters) == 32);
+static_assert(sizeof(BloomParameters) == 48);
 
 vk::ImageView imageView(RenderGraph& graph, RenderGraph::ImageHandle image, uint32_t frameIndex)
 {
@@ -56,12 +57,14 @@ BloomPass::Output BloomPass::setup(RenderGraph& graph, const PassSetup& setup, R
         auto& pass = *filters.emplace_back(std::make_unique<FilterPass>(stage));
         return graph.addPass(pass, setup, source, base).color;
     };
+
     std::vector<RenderGraph::ImageHandle> pyramid;
     auto                                  source = hdrColor;
     const auto                            levels = context().config->rendererConfig().feature.bloom.levels;
     for (uint32_t level = 0; level < levels; ++level)
     {
-        source = add(Stage::Downsample, source);
+        const auto horizontal = add(Stage::DownsampleHorizontal, source);
+        source                = add(Stage::DownsampleVertical, horizontal);
         pyramid.push_back(source);
         const auto extent = graph.imageInfo(source).extent;
         if (extent.width == 1 && extent.height == 1)
@@ -90,7 +93,7 @@ BloomPass::Output BloomPass::FilterPass::setup(
         graph.use(base, sampled);
 
     auto extent = graph.imageInfo(stage == Stage::Upsample ? base : source).extent;
-    if (stage == Stage::Downsample)
+    if (stage == Stage::DownsampleHorizontal)
     {
         extent.width  = std::max(1u, extent.width / 2);
         extent.height = std::max(1u, extent.height / 2);
@@ -226,6 +229,7 @@ void BloomPass::FilterPass::execute(
         .texelSize    = {1.0f / sourceExtent.width, 1.0f / sourceExtent.height},
         .filterRadius = settings.filterRadius,
         .intensity    = settings.intensity,
+        .scatter      = settings.scatter,
     };
     commands.pushConstants<BloomParameters>(pipelineLayout, kShaderStages, 0, parameters);
     commands.draw(3, 1, 0, 0);

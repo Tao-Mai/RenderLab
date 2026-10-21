@@ -84,7 +84,7 @@ void Renderer::init()
     DCHECK(!inited);
 
     auto& ctx = renderContext();
-    DCHECK(!ctx.shaderManager && !ctx.descriptors && !ctx.pipelineManager && !ctx.resources);
+    DCHECK(!ctx.shaderManager && !ctx.descriptors && !ctx.pipelineManager && !ctx.resources && !ctx.sceneInterface);
     DCHECK(context().window);
 
     auto& window = *context().window;
@@ -94,6 +94,15 @@ void Renderer::init()
     shaders.init(vulkan.deviceHandle(), *context().assetManager);
     descriptors.init(vulkan.deviceHandle());
     pipelines.init(vulkan.deviceHandle(), descriptors, shaders);
+
+    ctx = {
+        .shaderManager   = &shaders,
+        .descriptors     = &descriptors,
+        .pipelineManager = &pipelines,
+        .resources       = &resources,
+        .sceneInterface  = &sceneInterface,
+    };
+    sceneInterface.init();
 
     for (auto& frame : frames)
     {
@@ -107,12 +116,6 @@ void Renderer::init()
     graph.init(vulkan, swapchain);
     passes = std::make_unique<Passes>();
 
-    ctx = {
-        .shaderManager   = &shaders,
-        .descriptors     = &descriptors,
-        .pipelineManager = &pipelines,
-        .resources       = &resources,
-    };
     DEBUG_EXEC(inited = true);
 }
 
@@ -134,6 +137,7 @@ void Renderer::shutdown() noexcept
     passes.reset();
     pickingReadback = {};
     resources.shutdown();
+    sceneInterface = {};
     pipelines.shutdown();
     for (FrameContext& frame : frames)
     {
@@ -187,6 +191,7 @@ void Renderer::setupRenderGraph()
             scene = setupRasterization();
             break;
     }
+    scene       = setupLightMarkers(scene);
     scene.color = setupPostProcess(scene.color);
     setupEditor(scene);
     graph.compile({vulkan, swapchain, frameStorage});
@@ -246,6 +251,15 @@ Renderer::SceneOutput Renderer::setupRasterization()
     return output;
 }
 
+Renderer::SceneOutput Renderer::setupLightMarkers(SceneOutput scene)
+{
+    if (scene.depth.id == RenderGraph::kInvalidHandle)
+        scene.depth = setupPass<EditorDepthPass>().depth;
+
+    const auto markers = setupPass<LightMarkerPass>(scene.color, scene.depth);
+    return {markers.color, markers.depth};
+}
+
 RenderGraph::ImageHandle Renderer::setupPostProcess(RenderGraph::ImageHandle color)
 {
     const auto& config = context().config->rendererConfig();
@@ -262,13 +276,9 @@ RenderGraph::ImageHandle Renderer::setupPostProcess(RenderGraph::ImageHandle col
 
 void Renderer::setupEditor(SceneOutput scene)
 {
-    if (scene.depth.id == RenderGraph::kInvalidHandle)
-        scene.depth = setupPass<EditorDepthPass>().depth;
-
-    const auto markers        = setupPass<LightMarkerPass>(scene.color, scene.depth);
-    const auto [pickingImage] = setupPass<EditorPickingPass>(markers.depth);
+    const auto [pickingImage] = setupPass<EditorPickingPass>(scene.depth);
     const auto [readback]     = setupPass<EditorPickingCopyPass>(pickingImage);
-    const auto [finalColor]   = setupPass<EditorUiPass>(markers.color);
+    const auto [finalColor]   = setupPass<EditorUiPass>(scene.color);
     setupPass<EndPass>(finalColor, readback);
     pickingReadback = readback;
 }
