@@ -14,7 +14,6 @@
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
 
-#include <algorithm>
 #include <array>
 
 EditorPickingPass::Output
@@ -132,22 +131,8 @@ void EditorPickingPass::execute(
         .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, **pipelineLayout, EditorInterface::kViewSet, sets, {});
 
     // Match ScenePass's viewport; only the clicked pixel needs rasterization.
-    const auto&    viewport  = execution.view.viewport;
-    const uint32_t viewportX = std::min(static_cast<uint32_t>(std::max(viewport.x, 0.0f)), extent.width - 1);
-    const uint32_t viewportY = std::min(static_cast<uint32_t>(std::max(viewport.y, 0.0f)), extent.height - 1);
-    const uint32_t width     = std::max(1u, std::min(static_cast<uint32_t>(viewport.width), extent.width - viewportX));
-    const uint32_t height = std::max(1u, std::min(static_cast<uint32_t>(viewport.height), extent.height - viewportY));
-    commandBuffer.setViewport(
-        0,
-        vk::Viewport(
-            static_cast<float>(viewportX),
-            static_cast<float>(viewportY),
-            static_cast<float>(width),
-            static_cast<float>(height),
-            0.0f,
-            1.0f
-        )
-    );
+    const auto viewport = execution.view.viewport.clamped(extent);
+    commandBuffer.setViewport(0, viewport.toViewport());
     commandBuffer.setScissor(0, vk::Rect2D({static_cast<int32_t>(x), static_cast<int32_t>(y)}, {1, 1}));
 
     for (const DrawItem& item : execution.renderData.drawItems)

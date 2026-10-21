@@ -2,6 +2,7 @@
 
 #include "core/Logger.h"
 #include "render/feature/editor/EditorShaderData.h"
+#include "render/resource/MaterialData.h"
 #include "render/resource/ShaderData.h"
 
 #include <array>
@@ -160,142 +161,22 @@ void Device::createSharedDescriptorSetLayouts()
 
     constexpr std::array materialBindings = {
         vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialImageBinding,
+            .binding         = RenderInterface::kMaterialBufferBinding,
+            .descriptorType  = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount = 1,
+            .stageFlags      = vk::ShaderStageFlagBits::eAll,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding         = RenderInterface::kMaterialTexturesBinding,
             .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+            .descriptorCount = kMaxMaterialTextures,
+            .stageFlags      = vk::ShaderStageFlagBits::eAll,
         },
         vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialSamplerBinding,
+            .binding         = RenderInterface::kMaterialSamplersBinding,
             .descriptorType  = vk::DescriptorType::eSampler,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialUniformBinding,
-            .descriptorType  = vk::DescriptorType::eUniformBuffer,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialNormalImageBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialNormalSamplerBinding,
-            .descriptorType  = vk::DescriptorType::eSampler,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialMetallicImageBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialMetallicSamplerBinding,
-            .descriptorType  = vk::DescriptorType::eSampler,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialRoughnessImageBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialRoughnessSamplerBinding,
-            .descriptorType  = vk::DescriptorType::eSampler,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialEmissiveImageBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialEmissiveSamplerBinding,
-            .descriptorType  = vk::DescriptorType::eSampler,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialOcclusionImageBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialOcclusionSamplerBinding,
-            .descriptorType  = vk::DescriptorType::eSampler,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialClearcoatImageBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialClearcoatSamplerBinding,
-            .descriptorType  = vk::DescriptorType::eSampler,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialClearcoatRoughnessImageBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialClearcoatRoughnessSamplerBinding,
-            .descriptorType  = vk::DescriptorType::eSampler,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialClearcoatNormalImageBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialClearcoatNormalSamplerBinding,
-            .descriptorType  = vk::DescriptorType::eSampler,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialSheenColorImageBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialSheenColorSamplerBinding,
-            .descriptorType  = vk::DescriptorType::eSampler,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialSheenRoughnessImageBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kMaterialSheenRoughnessSamplerBinding,
-            .descriptorType  = vk::DescriptorType::eSampler,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+            .descriptorCount = kMaxMaterialSamplers,
+            .stageFlags      = vk::ShaderStageFlagBits::eAll,
         },
     };
     materialDescriptorSetLayout = createDescriptorSetLayout(materialBindings);

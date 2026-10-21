@@ -12,7 +12,6 @@
 #include "render/resource/GpuMesh.h"
 #include "render/resource/ShaderData.h"
 
-#include <algorithm>
 #include <array>
 
 DepthPrepass::Output DepthPrepass::setup(RenderGraph& graph, const PassSetup& setup)
@@ -62,33 +61,11 @@ void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandB
         .pDepthAttachment = &depthAttachment,
     });
 
-    const auto&    editorViewport = execution.view.viewport;
-    const uint32_t viewportX      = std::min(static_cast<uint32_t>(std::max(editorViewport.x, 0.0f)), extent.width - 1);
-    const uint32_t viewportY = std::min(static_cast<uint32_t>(std::max(editorViewport.y, 0.0f)), extent.height - 1);
-    const uint32_t viewportWidth =
-        std::max(1u, std::min(static_cast<uint32_t>(editorViewport.width), extent.width - viewportX));
-    const uint32_t viewportHeight =
-        std::max(1u, std::min(static_cast<uint32_t>(editorViewport.height), extent.height - viewportY));
-    commandBuffer.setViewport(
-        0,
-        vk::Viewport(
-            static_cast<float>(viewportX),
-            static_cast<float>(viewportY),
-            static_cast<float>(viewportWidth),
-            static_cast<float>(viewportHeight),
-            0.0f,
-            1.0f
-        )
-    );
-    commandBuffer.setScissor(
-        0,
-        vk::Rect2D(
-            vk::Offset2D(static_cast<int32_t>(viewportX), static_cast<int32_t>(viewportY)),
-            vk::Extent2D(viewportWidth, viewportHeight)
-        )
-    );
+    const auto viewport = execution.view.viewport.clamped(extent);
+    commandBuffer.setViewport(0, viewport.toViewport());
+    commandBuffer.setScissor(0, viewport.toScissor());
 
-    const std::array sceneSets = {execution.data.sceneSetHandle()};
+    const std::array sceneSets = {execution.data.sceneSetHandle(), execution.renderData.materialSet};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         **pipelineLayout,
@@ -114,20 +91,12 @@ void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandB
         }
 
         item.mesh->bind(commandBuffer);
-        const MeshPushConstants pushConstants{.model = item.model};
+        const MeshPushConstants pushConstants{.model = item.model, .materialIndex = item.materialIndex};
         commandBuffer.pushConstants<MeshPushConstants>(
             **pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0,
             pushConstants
-        );
-        const std::array materialSets = {item.material->descriptorSetHandle()};
-        commandBuffer.bindDescriptorSets(
-            vk::PipelineBindPoint::eGraphics,
-            **pipelineLayout,
-            RenderInterface::kMaterialSet,
-            materialSets,
-            {}
         );
         commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
         recordDraw(context().profiler, item.indexCount);

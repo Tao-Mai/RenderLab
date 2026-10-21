@@ -212,7 +212,8 @@ std::shared_ptr<GpuMaterial> RenderResourceManager::createMaterial(const PbrMate
         }
         return GpuMaterial::Texture{texture(binding.textureID), sampler(binding.samplerID)};
     };
-    const auto            sheen = asset.sheen.value_or(PbrMaterialAsset::Sheen{});
+    const auto            sheen     = asset.sheen.value_or(PbrMaterialAsset::Sheen{});
+    const auto            clearcoat = asset.clearcoat.value_or(PbrMaterialAsset::Clearcoat{});
     GpuMaterial::Textures textures{
         .baseColor      = loadTexture(asset.baseColorTexture, BuiltinAssets::Texture::white),
         .normal         = loadTexture(asset.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear),
@@ -222,23 +223,16 @@ std::shared_ptr<GpuMaterial> RenderResourceManager::createMaterial(const PbrMate
         .occlusion      = loadTexture(asset.aoTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
         .sheenColor     = loadTexture(sheen.colorTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb),
         .sheenRoughness = loadTexture(sheen.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
-    };
-    if (asset.clearcoat)
-    {
-        const auto& clearcoat = *asset.clearcoat;
-        textures.clearcoat    = GpuMaterial::Textures::Clearcoat{
-               .factor = loadTexture(clearcoat.texture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
-               .roughness =
+        .clearcoat      = {
+                 .factor = loadTexture(clearcoat.texture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+                 .roughness =
                 loadTexture(clearcoat.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
-               .normal = loadTexture(clearcoat.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear),
-        };
-    }
+                 .normal = loadTexture(clearcoat.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear),
+        },
+    };
 
     auto gpu = std::make_shared<GpuMaterial>();
     gpu->create(
-        vulkan->physicalDeviceHandle(),
-        vulkan->deviceHandle(),
-        *device,
         shaders->getOrLoad(
             asset.shaderId.value_or("scene"),
             {{"ENABLE_IBL", 1}, {"ENABLE_CLEARCOAT", asset.clearcoat ? 1 : 0}, {"ENABLE_SHEEN", asset.sheen ? 1 : 0}}
@@ -352,6 +346,7 @@ RenderResourceManager::prepare(const SceneRenderData& scene, const PreparedScene
     DCHECK(frameIndex < frameResources.size());
     DCHECK(scene.objects.size() == prepared.objects.size());
     auto& frame          = frameResources[frameIndex];
+    frame.materials.begin(*this);
     auto& draws          = frame.draws;
     draws.environmentMap = scene.environmentMap;
     draws.drawItems.clear();
@@ -394,7 +389,8 @@ RenderResourceManager::prepare(const SceneRenderData& scene, const PreparedScene
                 submesh.indexCount,
                 object.selectionId,
                 visibility.distanceSquared,
-                visibility.visibilityMask
+                visibility.visibilityMask,
+                frame.materials.add(*gpuMaterial)
             };
             draws.drawItems.push_back(draw);
             if (visibility.visibilityMask & RenderVisibility::kMainView)
@@ -405,5 +401,7 @@ RenderResourceManager::prepare(const SceneRenderData& scene, const PreparedScene
     }
     std::erase_if(frame.instances, [](const auto& entry) { return !entry.second.used; });
     std::ranges::sort(draws.transparentDrawItems, std::greater{}, &DrawItem::distanceSquared);
+    frame.materials.upload(*vulkan, *device);
+    draws.materialSet = frame.materials.descriptorSetHandle();
     return draws;
 }

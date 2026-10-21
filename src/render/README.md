@@ -45,6 +45,7 @@
 ## 帧与资源
 
 - 默认两帧在途，每个槽位有独立 FrameContext、FrameData；复用前等待对应 Fence。
+- 光栅、实时与离线光追共用全局材质 SSBO、纹理数组和独立索引的采样器数组；每个在途槽位持有一套材质快照，等待 Fence 后更新。
 - Graph 创建的图像跨帧共享，直接通过 `getImage(handle)` 访问；缓冲默认跨帧共享，阴影图不按 Frames-in-flight 复制。
 - 同一队列上追踪资源最后访问，下一帧首次使用前插入 Barrier；不意味着前后帧可无约束并行写同一资源。
 - 回读缓冲使用 PerFrame；交换链图像按获取到的 Image Index 选择。

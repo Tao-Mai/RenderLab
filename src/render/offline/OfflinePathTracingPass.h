@@ -29,7 +29,6 @@ private:
     {
         Buffer                  hitData;
         Buffer                  lightData;
-        Buffer                  materialData;
         vk::raii::DescriptorSet set = nullptr;
     };
     struct OfflineParameters

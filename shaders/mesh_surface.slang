@@ -37,29 +37,30 @@ VertexOutput vertMain(VertexInput input)
 
 Surface sampleSurface(VertexOutput input, bool isFrontFace)
 {
+    MaterialData material = materials[pushConstants.materialIndex];
     float3 geometricNormal = normalize(input.worldNormal);
     Surface surface;
     surface.worldPosition = input.worldPosition;
     surface.normal = applyNormalMap(geometricNormal, input.worldTangent,
-        normalTexture.Sample(normalSampler, input.uv).xyz, material.normalScale);
+        sampleTexture(material.normalTexture, input.uv).xyz, material.normalScale);
     surface.normal = isFrontFace ? surface.normal : -surface.normal;
-    surface.baseColor = baseColorTexture.Sample(baseColorSampler, input.uv) * material.baseColorFactor;
-    applyAlphaTest(surface.baseColor.a);
-    surface.roughness = saturate(material.roughness * roughnessTexture.Sample(roughnessSampler, input.uv).g);
-    surface.metallic = saturate(material.metallic * metallicTexture.Sample(metallicSampler, input.uv).b);
-    surface.occlusion = lerp(1.0, occlusionTexture.Sample(occlusionSampler, input.uv).r, material.occlusionStrength);
-    surface.emissive = emissiveTexture.Sample(emissiveSampler, input.uv).rgb * material.emissiveFactor.rgb;
+    surface.baseColor = sampleTexture(material.baseColorTexture, input.uv) * material.baseColorFactor;
+    applyAlphaTest(material, surface.baseColor.a);
+    surface.roughness = saturate(material.roughness * sampleTexture(material.roughnessTexture, input.uv).g);
+    surface.metallic = saturate(material.metallic * sampleTexture(material.metallicTexture, input.uv).b);
+    surface.occlusion = lerp(1.0, sampleTexture(material.occlusionTexture, input.uv).r, material.occlusionStrength);
+    surface.emissive = sampleTexture(material.emissiveTexture, input.uv).rgb * material.emissiveFactor.rgb;
 #if ENABLE_SHEEN
-    surface.sheenColor = sheenColorTexture.Sample(sheenColorSampler, input.uv).rgb * material.sheenColorFactor;
-    surface.sheenRoughness = saturate(sheenRoughnessTexture.Sample(sheenRoughnessSampler, input.uv).a
+    surface.sheenColor = sampleTexture(material.sheenColorTexture, input.uv).rgb * material.sheenColorFactor;
+    surface.sheenRoughness = saturate(sampleTexture(material.sheenRoughnessTexture, input.uv).a
         * material.sheenRoughnessFactor);
 #endif
 #if ENABLE_CLEARCOAT
     surface.clearcoatNormal = applyNormalMap(geometricNormal, input.worldTangent,
-        clearcoatNormalTexture.Sample(clearcoatNormalSampler, input.uv).xyz, material.clearcoatNormalScale);
+        sampleTexture(material.clearcoatNormalTexture, input.uv).xyz, material.clearcoatNormalScale);
     surface.clearcoatNormal = isFrontFace ? surface.clearcoatNormal : -surface.clearcoatNormal;
-    surface.clearcoatFactor = saturate(material.clearcoatFactor * clearcoatTexture.Sample(clearcoatSampler, input.uv).r);
-    surface.clearcoatRoughness = saturate(material.clearcoatRoughnessFactor * clearcoatRoughnessTexture.Sample(clearcoatRoughnessSampler, input.uv).g);
+    surface.clearcoatFactor = saturate(material.clearcoatFactor * sampleTexture(material.clearcoatTexture, input.uv).r);
+    surface.clearcoatRoughness = saturate(material.clearcoatRoughnessFactor * sampleTexture(material.clearcoatRoughnessTexture, input.uv).g);
 #endif
     return surface;
 }

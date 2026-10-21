@@ -20,9 +20,10 @@ DepthVertexOutput vertMain(VertexInput input)
 [shader("fragment")]
 void fragMain(DepthVertexOutput input)
 {
-    if (material.alphaMode == 1)
+    MaterialData material = materials[pushConstants.materialIndex];
+    if (material.alphaMode == kAlphaModeMask)
     {
-        float alpha = baseColorTexture.Sample(baseColorSampler, input.uv).a * material.baseColorFactor.a;
-        applyAlphaTest(alpha);
+        float alpha = sampleTexture(material.baseColorTexture, input.uv).a * material.baseColorFactor.a;
+        applyAlphaTest(material, alpha);
     }
 }

@@ -2,16 +2,14 @@
 
 #include "asset/PbrMaterialAsset.h"
 #include "render/device/Device.h"
-#include "render/resource/Buffer.h"
 #include "render/resource/GpuTexture.h"
-#include "render/resource/ShaderData.h"
+#include "render/resource/MaterialData.h"
 
 #include <memory>
 #include <span>
 
 #include <vulkan/vulkan_raii.hpp>
 
-class Device;
 enum class MaterialAlphaMode
 {
     Opaque,
@@ -39,44 +37,30 @@ public:
             Texture normal;
         };
 
-        Texture                  baseColor;
-        Texture                  normal;
-        Texture                  metallic;
-        Texture                  roughness;
-        Texture                  emissive;
-        Texture                  occlusion;
-        Texture                  sheenColor;
-        Texture                  sheenRoughness;
-        std::optional<Clearcoat> clearcoat;
+        Texture   baseColor;
+        Texture   normal;
+        Texture   metallic;
+        Texture   roughness;
+        Texture   emissive;
+        Texture   occlusion;
+        Texture   sheenColor;
+        Texture   sheenRoughness;
+        Clearcoat clearcoat;
     };
 
-    void create(
-        const vk::raii::PhysicalDevice& physicalDevice,
-        const vk::raii::Device&         device,
-        Device&                         renderDevice,
-        ShaderHandle                    shader,
-        const PbrMaterialAsset&         material,
-        Textures                        textures
-    );
+    void create(ShaderHandle shader, const PbrMaterialAsset& material, Textures textures);
 
-    void                            updateParameters(const PbrMaterialAsset& material);
-    [[nodiscard]] vk::DescriptorSet descriptorSetHandle() const { return *descriptorSet; }
+    void updateParameters(const PbrMaterialAsset& material);
     [[nodiscard]] GraphicsPipelineInfo
     pipelineInfo(std::span<const vk::Format> colorFormats, vk::Format depthFormat, const PipelineLayout& layout) const;
-    [[nodiscard]] MaterialAlphaMode       alphaMode() const { return mode; }
-    [[nodiscard]] vk::ImageView           baseColorView() const { return textures.baseColor.image->imageView(); }
-    [[nodiscard]] vk::Sampler             baseColorSampler() const { return textures.baseColor.sampler; }
-    [[nodiscard]] const glm::vec4&        baseColorFactor() const { return parameterData.baseColorFactor; }
-    [[nodiscard]] const MaterialUniforms& parameters() const { return parameterData; }
-    [[nodiscard]] const Textures&         textureBindings() const { return textures; }
-    [[nodiscard]] bool                    doubleSided() const;
+    [[nodiscard]] MaterialAlphaMode   alphaMode() const { return mode; }
+    [[nodiscard]] const MaterialData& parameters() const { return parameterData; }
+    [[nodiscard]] const Textures&     textureBindings() const { return textures; }
 
 private:
-    Textures                textures;
-    std::shared_ptr<Buffer> materialBuffer;
-    vk::raii::DescriptorSet descriptorSet = nullptr;
-    ShaderHandle            shaderHandle;
-    PipelineState           pipelineState;
-    MaterialAlphaMode       mode = MaterialAlphaMode::Opaque;
-    MaterialUniforms        parameterData;
+    Textures          textures;
+    ShaderHandle      shaderHandle;
+    PipelineState     pipelineState;
+    MaterialAlphaMode mode = MaterialAlphaMode::Opaque;
+    MaterialData      parameterData;
 };

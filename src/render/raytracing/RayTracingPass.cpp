@@ -8,12 +8,12 @@
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
 #include "render/RenderView.h"
+#include "render/device/Device.h"
 #include "render/device/GpuProfiler.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/feature/RenderGraph.h"
 #include "render/present/Swapchain.h"
-#include "render/raytracing/RayTracingMaterials.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/GpuShader.h"
 
@@ -99,13 +99,6 @@ void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursio
         maxRecursionDepth,
         limits.maxRayRecursionDepth
     );
-    CHECK(
-        vulkan.properties().limits.maxPerStageDescriptorSamplers >= kMaxRayTracingSamplers &&
-            vulkan.properties().limits.maxPerStageDescriptorSampledImages >= kMaxRayTracingTextures,
-        "ray tracing requires {} texture and {} sampler descriptors",
-        kMaxRayTracingTextures,
-        kMaxRayTracingSamplers
-    );
 
     if (!*pipelineLayout)
     {
@@ -129,25 +122,7 @@ void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursio
                 .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
             },
             vk::DescriptorSetLayoutBinding{
-                .binding         = 3,
-                .descriptorType  = vk::DescriptorType::eSampledImage,
-                .descriptorCount = kMaxRayTracingTextures,
-                .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
-            },
-            vk::DescriptorSetLayoutBinding{
-                .binding         = 4,
-                .descriptorType  = vk::DescriptorType::eSampler,
-                .descriptorCount = kMaxRayTracingSamplers,
-                .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
-            },
-            vk::DescriptorSetLayoutBinding{
                 .binding         = 5,
-                .descriptorType  = vk::DescriptorType::eStorageBuffer,
-                .descriptorCount = 1,
-                .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
-            },
-            vk::DescriptorSetLayoutBinding{
-                .binding         = 6,
                 .descriptorType  = vk::DescriptorType::eStorageBuffer,
                 .descriptorCount = 1,
                 .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
@@ -177,15 +152,7 @@ void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursio
             vk::DescriptorPoolSize{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxFramesInFlight},
             vk::DescriptorPoolSize{
                 .type            = vk::DescriptorType::eStorageBuffer,
-                .descriptorCount = maxFramesInFlight * 3
-            },
-            vk::DescriptorPoolSize{
-                .type            = vk::DescriptorType::eSampledImage,
-                .descriptorCount = maxFramesInFlight * kMaxRayTracingTextures
-            },
-            vk::DescriptorPoolSize{
-                .type            = vk::DescriptorType::eSampler,
-                .descriptorCount = maxFramesInFlight * kMaxRayTracingSamplers
+                .descriptorCount = maxFramesInFlight * 2
             },
         };
         descriptorPool = vkCheck(device.createDescriptorPool(
@@ -206,9 +173,13 @@ void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursio
             .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR,
             .size       = sizeof(RayTracingParameters),
         };
+        const std::array descriptorSetLayouts{
+            *descriptorSetLayout,
+            *renderContext().device->materialDescriptorSetLayout
+        };
         pipelineLayout = vkCheck(device.createPipelineLayout(
-            {.setLayoutCount         = 1,
-             .pSetLayouts            = &*descriptorSetLayout,
+            {.setLayoutCount         = static_cast<uint32_t>(descriptorSetLayouts.size()),
+             .pSetLayouts            = descriptorSetLayouts.data(),
              .pushConstantRangeCount = 1,
              .pPushConstantRanges    = &parameterRange}
         ));
@@ -381,7 +352,6 @@ void RayTracingPass::prepareBindings(RenderGraph& graph, const PassFrame& execut
     const auto& items  = execution.renderData.drawItems;
     static_assert(sizeof(Vertex) == 48 && offsetof(Vertex, normal) == 12 && offsetof(Vertex, texcoord) == 24);
 
-    RayTracingMaterials materials{*renderContext().resources};
     std::vector<RayTracingHitData> hits;
     hits.reserve(items.size());
     for (const auto& item : items)
@@ -389,7 +359,7 @@ void RayTracingPass::prepareBindings(RenderGraph& graph, const PassFrame& execut
             item.mesh->vertices().address(device),
             item.mesh->indices().address(device),
             item.firstIndex,
-            materials.add(*item.material),
+            item.materialIndex,
         });
 
     const vk::DeviceSize bytes = std::max<size_t>(hits.size(), 1) * sizeof(RayTracingHitData);
@@ -410,7 +380,6 @@ void RayTracingPass::prepareBindings(RenderGraph& graph, const PassFrame& execut
     }
     if (!hits.empty())
         frame.hitData.upload(hits.data(), hits.size() * sizeof(hits.front()));
-    materials.upload(frame.materialData, vulkan);
 
     const vk::AccelerationStructureKHR                   tlas = graph.getAccelerationStructure(sceneTlas).handle();
     const vk::WriteDescriptorSetAccelerationStructureKHR accelerationInfo{
@@ -442,10 +411,6 @@ void RayTracingPass::prepareBindings(RenderGraph& graph, const PassFrame& execut
     const vk::DescriptorBufferInfo viewInfo{.buffer = viewBuffer.handle(), .range = viewBuffer.size()};
     const vk::DescriptorBufferInfo hitInfo{.buffer = frame.hitData.handle(), .range = frame.hitData.size()};
     const vk::DescriptorBufferInfo lightInfo{.buffer = frame.lightData.handle(), .range = frame.lightData.size()};
-    const vk::DescriptorBufferInfo materialInfo{
-        .buffer = frame.materialData.handle(),
-        .range  = frame.materialData.size()
-    };
     const std::array writes = {
         vk::WriteDescriptorSet{
             .pNext           = &accelerationInfo,
@@ -470,31 +435,10 @@ void RayTracingPass::prepareBindings(RenderGraph& graph, const PassFrame& execut
         },
         vk::WriteDescriptorSet{
             .dstSet          = *frame.set,
-            .dstBinding      = 3,
-            .descriptorCount = kMaxRayTracingTextures,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .pImageInfo      = materials.images.data()
-        },
-        vk::WriteDescriptorSet{
-            .dstSet          = *frame.set,
-            .dstBinding      = 4,
-            .descriptorCount = kMaxRayTracingSamplers,
-            .descriptorType  = vk::DescriptorType::eSampler,
-            .pImageInfo      = materials.samplers.data()
-        },
-        vk::WriteDescriptorSet{
-            .dstSet          = *frame.set,
             .dstBinding      = 5,
             .descriptorCount = 1,
             .descriptorType  = vk::DescriptorType::eStorageBuffer,
             .pBufferInfo     = &lightInfo
-        },
-        vk::WriteDescriptorSet{
-            .dstSet          = *frame.set,
-            .dstBinding      = 6,
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eStorageBuffer,
-            .pBufferInfo     = &materialInfo
         },
         vk::WriteDescriptorSet{
             .dstSet = *frame.set, .dstBinding = 7, .descriptorCount = 1,
@@ -523,7 +467,7 @@ void RayTracingPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& comman
         prepareBindings(graph, execution, frame);
     }
     commands.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
-    const std::array sets = {*frame.set};
+    const std::array sets = {*frame.set, execution.renderData.materialSet};
     commands.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, *pipelineLayout, 0, sets, {});
     const auto& view     = execution.data.viewUniforms();
     const auto& viewport = execution.view.viewport;

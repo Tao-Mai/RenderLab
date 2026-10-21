@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <glm/mat4x4.hpp>
+#include <vulkan/vulkan.hpp>
 
 class GpuMaterial;
 class GpuMesh;
@@ -24,10 +25,12 @@ struct DrawItem
     uint32_t                           selectionId;
     float                              distanceSquared;
     uint32_t                           visibilityMask = 0;
+    uint32_t                           materialIndex  = 0;
 };
 
 struct RenderData
 {
+    vk::DescriptorSet                           materialSet;
     std::optional<AssetID<EnvironmentMapAsset>> environmentMap;
     std::vector<DrawItem>                       drawItems;
     std::vector<DrawItem>                       opaqueDrawItems;

@@ -166,7 +166,7 @@ renderlab_shader(raytracing raytracing/raytracing.slang raytracing
         "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
         "${SHADER_SOURCE_DIR}/random.slang" "${SHADER_SOURCE_DIR}/point_light_sampling.slang"
         "${SHADER_SOURCE_DIR}/rect_area_light_sampling.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/material_data.slang"
+        "${SHADER_SOURCE_DIR}/material_data.slang"
         "${SHADER_SOURCE_DIR}/normal_mapping.slang" "${SHADER_SOURCE_DIR}/pbr_brdf.slang"
         "${SHADER_SOURCE_DIR}/brdf.slang")
 renderlab_shader(offline_pathtracing offline/pathtracing.slang offline_pathtracing
@@ -176,7 +176,7 @@ renderlab_shader(offline_pathtracing offline/pathtracing.slang offline_pathtraci
         "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
         "${SHADER_SOURCE_DIR}/random.slang" "${SHADER_SOURCE_DIR}/point_light_sampling.slang"
         "${SHADER_SOURCE_DIR}/rect_area_light_sampling.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/material_data.slang"
+        "${SHADER_SOURCE_DIR}/material_data.slang"
         "${SHADER_SOURCE_DIR}/normal_mapping.slang" "${SHADER_SOURCE_DIR}/pbr_brdf.slang"
         "${SHADER_SOURCE_DIR}/brdf.slang")
 renderlab_shader(temporal_reprojection raytracing/temporal_reprojection.slang temporal_reprojection
@@ -251,6 +251,7 @@ add_library(RenderLabRuntime STATIC
         src/editor/MeshImportPreview.h
         src/render/ViewportRect.h
         src/render/RenderView.h
+        src/render/ViewportRect.cpp
         src/render/feature/editor/EditorFrameInput.h
         src/asset/AssetManager.cpp
         src/asset/Asset.h
@@ -351,8 +352,9 @@ add_library(RenderLabRuntime STATIC
         src/render/raytracing/RayTracingPass.cpp
         src/render/raytracing/RayTracingPass.h
         src/render/raytracing/RayTracingData.h
-        src/render/raytracing/RayTracingMaterials.h
-        src/render/raytracing/RayTracingMaterials.cpp
+        src/render/resource/MaterialData.h
+        src/render/resource/MaterialTable.h
+        src/render/resource/MaterialTable.cpp
         src/render/raytracing/TemporalReprojectionPass.h
         src/render/raytracing/TemporalReprojectionPass.cpp
         src/render/raytracing/RayTracingBlitPass.cpp

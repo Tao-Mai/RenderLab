@@ -3,7 +3,7 @@
 #include "../random.slang"
 #include "../point_light_sampling.slang"
 #include "../rect_area_light_sampling.slang"
-#include "material_data.slang"
+#include "../material_data.slang"
 #include "../pbr_brdf.slang"
 #include "../normal_mapping.slang"
 #include "../view_data.slang"
@@ -260,17 +260,17 @@ struct HitData
         surface.position = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
         surface.viewDirection = -normalize(WorldRayDirection());
         surface.normal = applyNormalMap(worldNormal, worldTangent,
-            sampleTexture(material.normalTexture, uv).xyz, material.normalScale);
+            sampleTextureLevel(material.normalTexture, uv).xyz, material.normalScale);
         float facing = dot(geometricNormal, surface.viewDirection) < 0.0 ? -1.0 : 1.0;
         surface.geometricNormal = geometricNormal * facing;
         surface.normal *= facing;
         if (dot(surface.normal, surface.viewDirection) <= 0.0)
             surface.normal = surface.geometricNormal;
 
-        surface.brdf.baseColor = sampleTexture(material.baseColorTexture, uv).rgb * material.baseColorFactor.rgb;
-        surface.brdf.metallic = saturate(material.metallic * sampleTexture(material.metallicTexture, uv).b);
-        surface.brdf.roughness = saturate(material.roughness * sampleTexture(material.roughnessTexture, uv).g);
-        surface.emissive = sampleTexture(material.emissiveTexture, uv).rgb * material.emissiveFactor.rgb;
+        surface.brdf.baseColor = sampleTextureLevel(material.baseColorTexture, uv).rgb * material.baseColorFactor.rgb;
+        surface.brdf.metallic = saturate(material.metallic * sampleTextureLevel(material.metallicTexture, uv).b);
+        surface.brdf.roughness = saturate(material.roughness * sampleTextureLevel(material.roughnessTexture, uv).g);
+        surface.emissive = sampleTextureLevel(material.emissiveTexture, uv).rgb * material.emissiveFactor.rgb;
         return surface;
     }
 };

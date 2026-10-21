@@ -26,7 +26,7 @@ const auto& layout = renderContext().device->meshPipelineLayout;
 
 ## Descriptor Set Layout
 
-以下两份布局的每个 Binding 均为单个 Descriptor，阶段均为 Vertex | Fragment。表中 UBO 对应 Uniform Buffer，SSBO 对应 Storage Buffer；Image 与 Sampler 分开绑定。
+表中 UBO 对应 Uniform Buffer，SSBO 对应 Storage Buffer；Image 与 Sampler 分开绑定。场景布局各 Binding 均为单个 Descriptor，阶段为 Vertex | Fragment；材质布局供光栅与光追共用，阶段为 All。
 
 Binding 编号定义于 [ShaderData.h](../src/render/resource/ShaderData.h)。
 
@@ -61,20 +61,11 @@ Shader 声明：[scene_data.slang](../shaders/scene_data.slang)、[scene_lightin
 
 | Binding | Descriptor 类型 | 内容 |
 | --- | --- | --- |
-| 0 / 1 | Sampled Image / Sampler | Base Color |
-| 2 | UBO | 材质参数，对应 C++ `MaterialUniforms` / Shader `MaterialData` |
-| 3 / 4 | Sampled Image / Sampler | Normal |
-| 5 / 6 | Sampled Image / Sampler | Metallic |
-| 7 / 8 | Sampled Image / Sampler | Roughness |
-| 9 / 10 | Sampled Image / Sampler | Emissive |
-| 11 / 12 | Sampled Image / Sampler | Occlusion |
-| 13 / 14 | Sampled Image / Sampler | Clearcoat |
-| 15 / 16 | Sampled Image / Sampler | Clearcoat Roughness |
-| 17 / 18 | Sampled Image / Sampler | Clearcoat Normal |
-| 19 / 20 | Sampled Image / Sampler | Sheen Color |
-| 21 / 22 | Sampled Image / Sampler | Sheen Roughness |
+| 0 | SSBO | 全局 `MaterialData` 数组，包含 PBR、Clearcoat、Sheen 参数及贴图索引 |
+| 1 | Sampled Image [128] | 全局材质纹理数组 |
+| 2 | Sampler [32] | 全局材质采样器数组，与纹理独立索引 |
 
-由 `meshPipelineLayout` 引用，作为 Set 1。Clearcoat、Sheen 等 Shader 分支共用这份固定布局。
+由 `meshPipelineLayout`、`RayTracingPass` 和 `OfflinePathTracingPass` 的 Pipeline Layout 引用，统一作为 Set 1。所有材质分支使用固定的 192 B SSBO 元素布局；光栅通过 Push Constant 传入材质索引，光追从命中数据取得材质索引。
 
 Shader 声明：[material_data.slang](../shaders/material_data.slang)。
 
@@ -84,7 +75,7 @@ Shader 声明：[material_data.slang](../shaders/material_data.slang)。
 
 | Layout | Set 排列 | Push Constants | 使用它的 Pass |
 | --- | --- | --- | --- |
-| `meshPipelineLayout` | Set 0：`sceneDescriptorSetLayout`；Set 1：`materialDescriptorSetLayout` | `MeshPushConstants`，64 B：Model 矩阵 | `DepthPrepass`；`ScenePass`、`GBufferPass`、`TransparentPass` 通过 `SceneDraw::recordMeshes()` 使用 |
+| `meshPipelineLayout` | Set 0：`sceneDescriptorSetLayout`；Set 1：`materialDescriptorSetLayout` | `MeshPushConstants`，80 B：Model 矩阵、材质索引及对齐填充 | `DepthPrepass`；`ScenePass`、`GBufferPass`、`TransparentPass` 通过 `SceneDraw::recordMeshes()` 使用 |
 | `ShadowPass::pipelineLayout` | Set 0：`sceneDescriptorSetLayout` | `ShadowPushConstants`，80 B：Model 矩阵、光源索引、Cascade 索引及对齐填充 | `ShadowPass`，点光源、聚光灯、矩形面光源与方向光共用 |
 | `SkyboxPass::pipelineLayout` | Set 0：`sceneDescriptorSetLayout` | `SkyboxPushConstants`，16 B：Viewport | `SkyboxPass` |
 

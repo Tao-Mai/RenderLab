@@ -12,6 +12,7 @@
 #include "render/resource/GpuMaterial.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/GpuTexture.h"
+#include "render/resource/MaterialTable.h"
 
 #include <memory>
 #include <unordered_map>
@@ -65,6 +66,7 @@ private:
     {
         RenderData                                                           draws;
         std::map<std::tuple<uint32_t, uint32_t, uint32_t>, MaterialInstance> instances;
+        MaterialTable                                                        materials;
     };
     std::array<FrameResources, maxFramesInFlight>                     frameResources;
     std::unordered_map<MaterialAsset::ID, SharedMaterial>             materials;

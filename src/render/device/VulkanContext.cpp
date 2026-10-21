@@ -210,21 +210,20 @@ bool VulkanContext::isDeviceSuitable(vk::raii::PhysicalDevice const& physicalDev
                             });
 
     // Check if the physicalDevice supports the required features
-    auto features = physicalDevice.template getFeatures2<vk::PhysicalDeviceFeatures2,
-                                                         vk::PhysicalDeviceVulkan11Features
-                                                         ,
-                                                         vk::PhysicalDeviceVulkan13Features
-                                                         ,
-                                                         vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
-    bool supportsRequiredFeatures = features.template get<
-            vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters &&
+    auto features = physicalDevice.template getFeatures2<
+        vk::PhysicalDeviceFeatures2,
+        vk::PhysicalDeviceVulkan11Features,
+        vk::PhysicalDeviceVulkan12Features,
+        vk::PhysicalDeviceVulkan13Features,
+        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
+    bool supportsRequiredFeatures = features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters &&
         features.template get<vk::PhysicalDeviceVulkan11Features>().multiview &&
         features.template get<vk::PhysicalDeviceFeatures2>().features.imageCubeArray &&
         features.template get<vk::PhysicalDeviceFeatures2>().features.depthClamp &&
+        features.template get<vk::PhysicalDeviceVulkan12Features>().shaderSampledImageArrayNonUniformIndexing &&
         features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
         features.template get<vk::PhysicalDeviceVulkan13Features>().synchronization2 &&
-        features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().
-                 extendedDynamicState;
+        features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState;
 
     const auto properties = physicalDevice.getProperties2<vk::PhysicalDeviceProperties2,
         vk::PhysicalDeviceVulkan11Properties>();
@@ -266,7 +265,6 @@ void VulkanContext::pickPhysicalDevice()
             vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
         rayTracingSupported = deviceFeatures.shaderInt64 &&
             features.get<vk::PhysicalDeviceVulkan12Features>().bufferDeviceAddress &&
-            features.get<vk::PhysicalDeviceVulkan12Features>().shaderSampledImageArrayNonUniformIndexing &&
             features.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>().accelerationStructure &&
             features.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>().rayTracingPipeline;
     }
@@ -293,18 +291,18 @@ void VulkanContext::createLogicalDevice()
           "Could not find a queue for graphics and present -> terminating");
 
     // query for Vulkan 1.3 features
-    vk::StructureChain<vk::PhysicalDeviceFeatures2,
-                       vk::PhysicalDeviceVulkan11Features,
-                       vk::PhysicalDeviceVulkan12Features,
-                       vk::PhysicalDeviceVulkan13Features,
-                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT,
-                       vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
-                       vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>
-                       featureChain = {
-            {}, // vk::PhysicalDeviceFeatures2
-            {.multiview = true, .shaderDrawParameters = true}, // vk::PhysicalDeviceVulkan11Features
-            {.shaderSampledImageArrayNonUniformIndexing = rayTracingSupported,
-             .bufferDeviceAddress = rayTracingSupported},
+    vk::StructureChain<
+        vk::PhysicalDeviceFeatures2,
+        vk::PhysicalDeviceVulkan11Features,
+        vk::PhysicalDeviceVulkan12Features,
+        vk::PhysicalDeviceVulkan13Features,
+        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT,
+        vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+        vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>
+        featureChain = {
+            {},                                                 // vk::PhysicalDeviceFeatures2
+            {.multiview = true, .shaderDrawParameters = true},  // vk::PhysicalDeviceVulkan11Features
+            {.shaderSampledImageArrayNonUniformIndexing = true, .bufferDeviceAddress = rayTracingSupported},
             {.synchronization2 = true, .dynamicRendering = true},
             // vk::PhysicalDeviceVulkan13Features
             {.extendedDynamicState = true},

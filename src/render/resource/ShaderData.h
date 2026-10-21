@@ -51,30 +51,10 @@ inline constexpr uint32_t kRadianceSamplerBinding            = 20;
 inline constexpr uint32_t kSheenLutImageBinding              = 21;
 inline constexpr uint32_t kSheenLutSamplerBinding            = 22;
 
-// Material set.
-inline constexpr uint32_t kMaterialImageBinding                     = 0;
-inline constexpr uint32_t kMaterialSamplerBinding                   = 1;
-inline constexpr uint32_t kMaterialUniformBinding                   = 2;
-inline constexpr uint32_t kMaterialNormalImageBinding               = 3;
-inline constexpr uint32_t kMaterialNormalSamplerBinding             = 4;
-inline constexpr uint32_t kMaterialMetallicImageBinding             = 5;
-inline constexpr uint32_t kMaterialMetallicSamplerBinding           = 6;
-inline constexpr uint32_t kMaterialRoughnessImageBinding            = 7;
-inline constexpr uint32_t kMaterialRoughnessSamplerBinding          = 8;
-inline constexpr uint32_t kMaterialEmissiveImageBinding             = 9;
-inline constexpr uint32_t kMaterialEmissiveSamplerBinding           = 10;
-inline constexpr uint32_t kMaterialOcclusionImageBinding            = 11;
-inline constexpr uint32_t kMaterialOcclusionSamplerBinding          = 12;
-inline constexpr uint32_t kMaterialClearcoatImageBinding            = 13;
-inline constexpr uint32_t kMaterialClearcoatSamplerBinding          = 14;
-inline constexpr uint32_t kMaterialClearcoatRoughnessImageBinding   = 15;
-inline constexpr uint32_t kMaterialClearcoatRoughnessSamplerBinding = 16;
-inline constexpr uint32_t kMaterialClearcoatNormalImageBinding      = 17;
-inline constexpr uint32_t kMaterialClearcoatNormalSamplerBinding    = 18;
-inline constexpr uint32_t kMaterialSheenColorImageBinding           = 19;
-inline constexpr uint32_t kMaterialSheenColorSamplerBinding         = 20;
-inline constexpr uint32_t kMaterialSheenRoughnessImageBinding       = 21;
-inline constexpr uint32_t kMaterialSheenRoughnessSamplerBinding     = 22;
+// Global material set, shared by rasterization and ray tracing.
+inline constexpr uint32_t kMaterialBufferBinding   = 0;
+inline constexpr uint32_t kMaterialTexturesBinding = 1;
+inline constexpr uint32_t kMaterialSamplersBinding = 2;
 
 // Tone mapping uses its own set 0, not the scene layout.
 inline constexpr uint32_t kToneMappingImageBinding   = 0;
@@ -191,27 +171,6 @@ struct alignas(16) DirectionalShadowData
     std::array<CascadeShadowData, kMaxDirectionalShadowCascades> cascades;
 };
 
-struct alignas(16) MaterialUniforms
-{
-    glm::vec4 baseColorFactor{1.0f};
-    float     roughness         = 1.0f;
-    float     metallic          = 1.0f;
-    float     alphaCutoff       = 0.5f;
-    uint32_t  alphaMode         = 0;
-    float     normalScale       = 1.0f;
-    float     occlusionStrength = 1.0f;
-    float     padding1          = 0.0f;
-    float     padding2          = 0.0f;
-    glm::vec4 emissiveFactor{0.0f};
-    glm::vec3 sheenColorFactor{0.0f};
-    float     sheenRoughnessFactor = 0.0f;
-    // Optional shader-variant tail; ordinary materials only upload the prefix.
-    float clearcoatFactor          = 0.0f;
-    float clearcoatRoughnessFactor = 0.0f;
-    float clearcoatNormalScale     = 1.0f;
-    float clearcoatPadding         = 0.0f;
-};
-
 static_assert(sizeof(ViewUniforms) == 208);
 static_assert(offsetof(ViewUniforms, inverseViewProjection) == 64);
 static_assert(offsetof(ViewUniforms, cameraPosition) == 128);
@@ -246,23 +205,12 @@ static_assert(sizeof(CascadeShadowData) == 80);
 static_assert(offsetof(CascadeShadowData, depthUpperBound) == 64);
 static_assert(offsetof(CascadeShadowData, blendStartDepth) == 68);
 static_assert(sizeof(DirectionalShadowData) == kMaxDirectionalShadowCascades * sizeof(CascadeShadowData));
-static_assert(sizeof(MaterialUniforms) == 96);
-static_assert(offsetof(MaterialUniforms, sheenColorFactor) == 64);
-static_assert(offsetof(MaterialUniforms, sheenRoughnessFactor) == 76);
-static_assert(offsetof(MaterialUniforms, clearcoatFactor) == 80);
-static_assert(offsetof(MaterialUniforms, clearcoatRoughnessFactor) == 84);
-static_assert(offsetof(MaterialUniforms, clearcoatNormalScale) == 88);
-static_assert(offsetof(MaterialUniforms, roughness) == 16);
-static_assert(offsetof(MaterialUniforms, metallic) == 20);
-static_assert(offsetof(MaterialUniforms, alphaCutoff) == 24);
-static_assert(offsetof(MaterialUniforms, alphaMode) == 28);
-static_assert(offsetof(MaterialUniforms, normalScale) == 32);
-static_assert(offsetof(MaterialUniforms, occlusionStrength) == 36);
-static_assert(offsetof(MaterialUniforms, emissiveFactor) == 48);
 
 struct MeshPushConstants
 {
     glm::mat4 model{1.0f};
+    uint32_t  materialIndex = 0;
+    uint32_t  padding[3]{};
 };
 
 struct ShadowPushConstants
@@ -292,7 +240,8 @@ struct ToneMappingPushConstants
     uint32_t padding       = 0;
 };
 
-static_assert(sizeof(MeshPushConstants) == 64);
+static_assert(sizeof(MeshPushConstants) == 80);
+static_assert(offsetof(MeshPushConstants, materialIndex) == 64);
 static_assert(sizeof(ShadowPushConstants) == 80);
 static_assert(offsetof(ShadowPushConstants, lightIdx) == 64);
 static_assert(offsetof(ShadowPushConstants, cascadeIndex) == 68);

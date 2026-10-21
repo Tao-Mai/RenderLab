@@ -2,8 +2,9 @@
 
 #include "core/Logger.h"
 #include "render/feature/editor/EditorShaderData.h"
-#include "render/resource/ShaderData.h"
 #include "render/raytracing/RayTracingData.h"
+#include "render/resource/MaterialData.h"
+#include "render/resource/ShaderData.h"
 
 #include <array>
 #include <filesystem>
@@ -204,7 +205,7 @@ TEST(ShaderDataLayout, RectAreaShadowStorageMatchesCompiledShaders)
     }
 }
 
-TEST(ShaderDataLayout, TextureAndSamplerBindingsMatchCompiledShaders)
+TEST(ShaderDataLayout, SceneTextureAndSamplerBindingsMatchCompiledShaders)
 {
     const std::array bindings = {
         std::pair{"pointShadowMap", RenderInterface::kPointShadowImageBinding},
@@ -219,19 +220,6 @@ TEST(ShaderDataLayout, TextureAndSamplerBindingsMatchCompiledShaders)
         std::pair{"prefilteredSpecularMapSampler", RenderInterface::kPrefilteredSpecularSamplerBinding},
         std::pair{"brdfLUT", RenderInterface::kBrdfLutImageBinding},
         std::pair{"brdfLUTSampler", RenderInterface::kBrdfLutSamplerBinding},
-        std::pair{"baseColorTexture", RenderInterface::kMaterialImageBinding},
-        std::pair{"baseColorSampler", RenderInterface::kMaterialSamplerBinding},
-        std::pair{"material", RenderInterface::kMaterialUniformBinding},
-        std::pair{"normalTexture", RenderInterface::kMaterialNormalImageBinding},
-        std::pair{"normalSampler", RenderInterface::kMaterialNormalSamplerBinding},
-        std::pair{"metallicTexture", RenderInterface::kMaterialMetallicImageBinding},
-        std::pair{"metallicSampler", RenderInterface::kMaterialMetallicSamplerBinding},
-        std::pair{"roughnessTexture", RenderInterface::kMaterialRoughnessImageBinding},
-        std::pair{"roughnessSampler", RenderInterface::kMaterialRoughnessSamplerBinding},
-        std::pair{"emissiveTexture", RenderInterface::kMaterialEmissiveImageBinding},
-        std::pair{"emissiveSampler", RenderInterface::kMaterialEmissiveSamplerBinding},
-        std::pair{"occlusionTexture", RenderInterface::kMaterialOcclusionImageBinding},
-        std::pair{"occlusionSampler", RenderInterface::kMaterialOcclusionSamplerBinding},
     };
     for (const auto* shader : {"slang", "slang.no_ibl", "slang.clearcoat", "slang.clearcoat.no_ibl"})
     {
@@ -252,38 +240,72 @@ TEST(ShaderDataLayout, TextureAndSamplerBindingsMatchCompiledShaders)
     );
 }
 
-TEST(ShaderDataLayout, MaterialUniformsMatchCompiledShaders)
+TEST(ShaderDataLayout, MaterialDataMatchesCompiledShaders)
 {
-    const std::array expected = {
-        Field{"baseColorFactor", offsetof(MaterialUniforms, baseColorFactor), sizeof(glm::vec4)},
-        Field{"roughness", offsetof(MaterialUniforms, roughness), sizeof(float)},
-        Field{"metallic", offsetof(MaterialUniforms, metallic), sizeof(float)},
-        Field{"alphaCutoff", offsetof(MaterialUniforms, alphaCutoff), sizeof(float)},
-        Field{"alphaMode", offsetof(MaterialUniforms, alphaMode), sizeof(uint32_t)},
-        Field{"normalScale", offsetof(MaterialUniforms, normalScale), sizeof(float)},
-        Field{"occlusionStrength", offsetof(MaterialUniforms, occlusionStrength), sizeof(float)},
-        Field{"padding1", offsetof(MaterialUniforms, padding1), sizeof(float)},
-        Field{"padding2", offsetof(MaterialUniforms, padding2), sizeof(float)},
-        Field{"emissiveFactor", offsetof(MaterialUniforms, emissiveFactor), sizeof(glm::vec4)},
-        Field{"sheenColorFactor", offsetof(MaterialUniforms, sheenColorFactor), sizeof(glm::vec3)},
-        Field{"sheenRoughnessFactor", offsetof(MaterialUniforms, sheenRoughnessFactor), sizeof(float)},
-        Field{"clearcoatFactor", offsetof(MaterialUniforms, clearcoatFactor), sizeof(float)},
-        Field{"clearcoatRoughnessFactor", offsetof(MaterialUniforms, clearcoatRoughnessFactor), sizeof(float)},
-        Field{"clearcoatNormalScale", offsetof(MaterialUniforms, clearcoatNormalScale), sizeof(float)},
-        Field{"clearcoatPadding", offsetof(MaterialUniforms, clearcoatPadding), sizeof(float)},
+    const std::array fields = {
+        Field{"baseColorFactor", offsetof(MaterialData, baseColorFactor), sizeof(glm::vec4)},
+        Field{"roughness", offsetof(MaterialData, roughness), sizeof(float)},
+        Field{"metallic", offsetof(MaterialData, metallic), sizeof(float)},
+        Field{"alphaCutoff", offsetof(MaterialData, alphaCutoff), sizeof(float)},
+        Field{"alphaMode", offsetof(MaterialData, alphaMode), sizeof(uint32_t)},
+        Field{"normalScale", offsetof(MaterialData, normalScale), sizeof(float)},
+        Field{"occlusionStrength", offsetof(MaterialData, occlusionStrength), sizeof(float)},
+        Field{"doubleSided", offsetof(MaterialData, doubleSided), sizeof(uint32_t)},
+        Field{"padding", offsetof(MaterialData, padding), sizeof(uint32_t)},
+        Field{"emissiveFactor", offsetof(MaterialData, emissiveFactor), sizeof(glm::vec4)},
+        Field{"sheenColorFactor", offsetof(MaterialData, sheenColorFactor), sizeof(glm::vec3)},
+        Field{"sheenRoughnessFactor", offsetof(MaterialData, sheenRoughnessFactor), sizeof(float)},
+        Field{"clearcoatFactor", offsetof(MaterialData, clearcoatFactor), sizeof(float)},
+        Field{"clearcoatRoughnessFactor", offsetof(MaterialData, clearcoatRoughnessFactor), sizeof(float)},
+        Field{"clearcoatNormalScale", offsetof(MaterialData, clearcoatNormalScale), sizeof(float)},
+        Field{"clearcoatPadding", offsetof(MaterialData, clearcoatPadding), sizeof(float)},
+        Field{"baseColorTexture", offsetof(MaterialData, baseColorTexture), sizeof(TextureRef)},
+        Field{"normalTexture", offsetof(MaterialData, normalTexture), sizeof(TextureRef)},
+        Field{"metallicTexture", offsetof(MaterialData, metallicTexture), sizeof(TextureRef)},
+        Field{"roughnessTexture", offsetof(MaterialData, roughnessTexture), sizeof(TextureRef)},
+        Field{"emissiveTexture", offsetof(MaterialData, emissiveTexture), sizeof(TextureRef)},
+        Field{"occlusionTexture", offsetof(MaterialData, occlusionTexture), sizeof(TextureRef)},
+        Field{"sheenColorTexture", offsetof(MaterialData, sheenColorTexture), sizeof(TextureRef)},
+        Field{"sheenRoughnessTexture", offsetof(MaterialData, sheenRoughnessTexture), sizeof(TextureRef)},
+        Field{"clearcoatTexture", offsetof(MaterialData, clearcoatTexture), sizeof(TextureRef)},
+        Field{"clearcoatRoughnessTexture", offsetof(MaterialData, clearcoatRoughnessTexture), sizeof(TextureRef)},
+        Field{"clearcoatNormalTexture", offsetof(MaterialData, clearcoatNormalTexture), sizeof(TextureRef)},
+        Field{"texturePadding", offsetof(MaterialData, texturePadding), sizeof(MaterialData::texturePadding)},
     };
-    for (const auto* shader : {"slang", "slang.no_ibl", "depth", "slang.clearcoat", "slang.clearcoat.no_ibl",
-                              "slang.sheen", "slang.sheen.no_ibl", "slang.clearcoat.sheen", "slang.clearcoat.sheen.no_ibl",
-                              "gbuffer"})
+    const std::array indices = {
+        Field{"textureIndex", offsetof(TextureRef, textureIndex), sizeof(uint32_t)},
+        Field{"samplerIndex", offsetof(TextureRef, samplerIndex), sizeof(uint32_t)},
+    };
+    for (const auto* shader :
+         {"slang",
+          "slang.no_ibl",
+          "depth",
+          "slang.clearcoat",
+          "slang.clearcoat.no_ibl",
+          "slang.sheen",
+          "slang.sheen.no_ibl",
+          "slang.clearcoat.sheen",
+          "slang.clearcoat.sheen.no_ibl",
+          "gbuffer",
+          "raytracing",
+          "offline_pathtracing"})
     {
         SCOPED_TRACE(shader);
-        const bool   clearcoat   = std::string_view(shader).contains(".clearcoat");
-        const size_t fieldCount  = clearcoat ? expected.size() : expected.size() - 4;
-        const size_t uniformSize = clearcoat ? sizeof(MaterialUniforms) : offsetof(MaterialUniforms, clearcoatFactor);
-        const auto   material    = parameter(shader, "material");
-        checkFields(material.at("type").at("elementType"), std::span(expected).first(fieldCount));
-        EXPECT_EQ(material.at("type").at("elementVarLayout").at("binding").at("size"), uniformSize);
+        const auto material = parameter(shader, "materials");
+        EXPECT_EQ(material.at("binding").at("index"), RenderInterface::kMaterialBufferBinding);
+        EXPECT_EQ(material.at("binding").at("space"), RenderInterface::kMaterialSet);
+        checkFields(material.at("type").at("resultType"), fields);
+        checkFields(material.at("type").at("resultType").at("fields").at(16).at("type"), indices);
+        const auto textures = parameter(shader, "textures");
+        const auto samplers = parameter(shader, "samplers");
+        EXPECT_EQ(textures.at("binding").at("index"), RenderInterface::kMaterialTexturesBinding);
+        EXPECT_EQ(samplers.at("binding").at("index"), RenderInterface::kMaterialSamplersBinding);
+        EXPECT_EQ(textures.at("binding").at("space"), RenderInterface::kMaterialSet);
+        EXPECT_EQ(samplers.at("binding").at("space"), RenderInterface::kMaterialSet);
+        EXPECT_EQ(textures.at("type").at("elementCount"), kMaxMaterialTextures);
+        EXPECT_EQ(samplers.at("type").at("elementCount"), kMaxMaterialSamplers);
     }
+    EXPECT_EQ(fields.back().offset + fields.back().size, sizeof(MaterialData));
 }
 
 TEST(ShaderDataLayout, SheenBindingsMatchCompiledShaders)
@@ -295,82 +317,19 @@ TEST(ShaderDataLayout, SheenBindingsMatchCompiledShaders)
         EXPECT_EQ(parameter(shader, "sheenLUT").at("binding").at("index"), RenderInterface::kSheenLutImageBinding);
         EXPECT_EQ(parameter(shader, "sheenLUTSampler").at("binding").at("index"), RenderInterface::kSheenLutSamplerBinding);
     }
-    for (const auto* shader : {"slang.sheen", "slang.clearcoat.sheen", "gbuffer"})
-    {
-        SCOPED_TRACE(shader);
-        EXPECT_EQ(parameter(shader, "sheenColorTexture").at("binding").at("index"),
-                  RenderInterface::kMaterialSheenColorImageBinding);
-        EXPECT_EQ(parameter(shader, "sheenRoughnessTexture").at("binding").at("index"),
-                  RenderInterface::kMaterialSheenRoughnessImageBinding);
-    }
 }
 
-TEST(ShaderDataLayout, RayTracingMaterialAndIndependentResourceIndices)
+TEST(ShaderDataLayout, RayTracingHitDataMatchesCompiledShaders)
 {
     const std::array fields = {
-        Field{"baseColorFactor", offsetof(RayTracingMaterialData, baseColorFactor), sizeof(glm::vec4)},
-        Field{"emissiveFactor", offsetof(RayTracingMaterialData, emissiveFactor), sizeof(glm::vec4)},
-        Field{"metallic", offsetof(RayTracingMaterialData, metallic), sizeof(float)},
-        Field{"roughness", offsetof(RayTracingMaterialData, roughness), sizeof(float)},
-        Field{"normalScale", offsetof(RayTracingMaterialData, normalScale), sizeof(float)},
-        Field{"occlusionStrength", offsetof(RayTracingMaterialData, occlusionStrength), sizeof(float)},
-        Field{"alphaCutoff", offsetof(RayTracingMaterialData, alphaCutoff), sizeof(float)},
-        Field{"alphaMode", offsetof(RayTracingMaterialData, alphaMode), sizeof(uint32_t)},
-        Field{"doubleSided", offsetof(RayTracingMaterialData, doubleSided), sizeof(uint32_t)},
-        Field{"padding", offsetof(RayTracingMaterialData, padding), sizeof(uint32_t)},
-        Field{"baseColorTexture", offsetof(RayTracingMaterialData, baseColorTexture), sizeof(RayTracingTextureRef)},
-        Field{"normalTexture", offsetof(RayTracingMaterialData, normalTexture), sizeof(RayTracingTextureRef)},
-        Field{"metallicTexture", offsetof(RayTracingMaterialData, metallicTexture), sizeof(RayTracingTextureRef)},
-        Field{"roughnessTexture", offsetof(RayTracingMaterialData, roughnessTexture), sizeof(RayTracingTextureRef)},
-        Field{"emissiveTexture", offsetof(RayTracingMaterialData, emissiveTexture), sizeof(RayTracingTextureRef)},
-        Field{"occlusionTexture", offsetof(RayTracingMaterialData, occlusionTexture), sizeof(RayTracingTextureRef)},
-    };
-    const auto material = parameter("raytracing", "materials");
-    EXPECT_EQ(material.at("binding").at("index"), 6);
-    checkFields(material.at("type").at("resultType"), fields);
-    EXPECT_EQ(fields.back().offset + fields.back().size, sizeof(RayTracingMaterialData));
-    const auto& textureType = material.at("type").at("resultType").at("fields").at(10).at("type");
-    const std::array indices = {
-        Field{"textureIndex", offsetof(RayTracingTextureRef, textureIndex), sizeof(uint32_t)},
-        Field{"samplerIndex", offsetof(RayTracingTextureRef, samplerIndex), sizeof(uint32_t)},
-    };
-    checkFields(textureType, indices);
-    const std::array hitFields = {
         Field{"vertexAddress", offsetof(RayTracingHitData, vertexAddress), sizeof(uint64_t)},
         Field{"indexAddress", offsetof(RayTracingHitData, indexAddress), sizeof(uint64_t)},
         Field{"firstIndex", offsetof(RayTracingHitData, firstIndex), sizeof(uint32_t)},
         Field{"materialIndex", offsetof(RayTracingHitData, materialIndex), sizeof(uint32_t)},
         Field{"padding", offsetof(RayTracingHitData, padding), sizeof(RayTracingHitData::padding)},
     };
-    checkFields(parameter("raytracing", "objects").at("type").at("resultType"), hitFields);
-    const auto textures = parameter("raytracing", "textures");
-    const auto samplers = parameter("raytracing", "samplers");
-    EXPECT_EQ(textures.at("binding").at("index"), 3);
-    EXPECT_EQ(samplers.at("binding").at("index"), 4);
-    EXPECT_EQ(textures.at("type").at("elementCount"), kMaxRayTracingTextures);
-    EXPECT_EQ(samplers.at("type").at("elementCount"), kMaxRayTracingSamplers);
-}
-
-TEST(ShaderDataLayout, ClearcoatBindingsMatchCompiledShaders)
-{
-    const std::array bindings = {
-        std::pair{"clearcoatTexture", RenderInterface::kMaterialClearcoatImageBinding},
-        std::pair{"clearcoatSampler", RenderInterface::kMaterialClearcoatSamplerBinding},
-        std::pair{"clearcoatRoughnessTexture", RenderInterface::kMaterialClearcoatRoughnessImageBinding},
-        std::pair{"clearcoatRoughnessSampler", RenderInterface::kMaterialClearcoatRoughnessSamplerBinding},
-        std::pair{"clearcoatNormalTexture", RenderInterface::kMaterialClearcoatNormalImageBinding},
-        std::pair{"clearcoatNormalSampler", RenderInterface::kMaterialClearcoatNormalSamplerBinding},
-    };
-    for (const auto* shader : {"slang.clearcoat", "slang.clearcoat.no_ibl"})
-    {
-        SCOPED_TRACE(shader);
-        for (const auto& [name, binding] : bindings)
-        {
-            const auto value = parameter(shader, name);
-            EXPECT_EQ(value.at("binding").at("space").get<uint32_t>(), RenderInterface::kMaterialSet);
-            EXPECT_EQ(value.at("binding").at("index").get<uint32_t>(), binding);
-        }
-    }
+    for (const auto* shader : {"raytracing", "offline_pathtracing"})
+        checkFields(parameter(shader, "objects").at("type").at("resultType"), fields);
 }
 
 TEST(ShaderDataLayout, ToneMappingMatchesCompiledShader)

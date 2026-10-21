@@ -12,7 +12,6 @@
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
 
-#include <algorithm>
 #include <array>
 
 EditorDepthPass::Output EditorDepthPass::setup(RenderGraph& graph, const PassSetup& setup)
@@ -67,28 +66,9 @@ void EditorDepthPass::execute(
         .pDepthAttachment = &depthAttachment,
     });
 
-    const auto&    editorViewport = execution.view.viewport;
-    const uint32_t viewportX      = std::min(static_cast<uint32_t>(std::max(editorViewport.x, 0.0f)), extent.width - 1);
-    const uint32_t viewportY = std::min(static_cast<uint32_t>(std::max(editorViewport.y, 0.0f)), extent.height - 1);
-    const uint32_t viewportWidth =
-        std::max(1u, std::min(static_cast<uint32_t>(editorViewport.width), extent.width - viewportX));
-    const uint32_t viewportHeight =
-        std::max(1u, std::min(static_cast<uint32_t>(editorViewport.height), extent.height - viewportY));
-    commandBuffer.setViewport(
-        0,
-        vk::Viewport(
-            static_cast<float>(viewportX),
-            static_cast<float>(viewportY),
-            static_cast<float>(viewportWidth),
-            static_cast<float>(viewportHeight),
-            0.0f,
-            1.0f
-        )
-    );
-    commandBuffer.setScissor(
-        0,
-        vk::Rect2D({static_cast<int32_t>(viewportX), static_cast<int32_t>(viewportY)}, {viewportWidth, viewportHeight})
-    );
+    const auto viewport = execution.view.viewport.clamped(extent);
+    commandBuffer.setViewport(0, viewport.toViewport());
+    commandBuffer.setScissor(0, viewport.toScissor());
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     const std::array viewSets = {execution.data.viewSetHandle()};

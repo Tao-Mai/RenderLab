@@ -21,6 +21,10 @@ struct VertexInput
 struct PushConstants
 {
     float4x4 model;
+    uint materialIndex;
+    uint padding0;
+    uint padding1;
+    uint padding2;
 };
 
 [[vk::push_constant]]
