@@ -118,7 +118,7 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
         limits.maxRayRecursionDepth
     );
 
-    if (!*pipelineLayout)
+    if (!pipelineLayout)
     {
         const std::array bindings = {
             vk::DescriptorSetLayoutBinding{
@@ -152,42 +152,21 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
                 .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR,
             },
         };
-        descriptorSetLayout        = vkCheck(device.createDescriptorSetLayout(
-            {.bindingCount = static_cast<uint32_t>(bindings.size()), .pBindings = bindings.data()}
-        ));
-        const std::array poolSizes = {
-            vk::DescriptorPoolSize{.type = vk::DescriptorType::eAccelerationStructureKHR, .descriptorCount = 1},
-            vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = 1},
-            vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = 3},
-        };
-        descriptorPool = vkCheck(device.createDescriptorPool(
-            {.flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-             .maxSets       = 1,
-             .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
-             .pPoolSizes    = poolSizes.data()}
-        ));
-        frame.set      = std::move(vkCheck(device.allocateDescriptorSets(
-                                          {.descriptorPool     = *descriptorPool,
-                                                .descriptorSetCount = 1,
-                                                .pSetLayouts        = &*descriptorSetLayout}
-                                      ))
-                                  .front());
+        auto& renderDevice = *renderContext().device;
+        descriptorSetLayout = renderDevice.createDescriptorSetLayout(bindings);
+        frame.set = renderDevice.allocateDescriptorSet(descriptorSetLayout);
 
         const vk::PushConstantRange parameterRange{
             .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR,
             .size       = sizeof(OfflineParameters),
         };
         const std::array descriptorSetLayouts{
-            *descriptorSetLayout,
-            *renderContext().device->lightingDescriptorSetLayout,
-            *renderContext().device->materialDescriptorSetLayout
+            &renderDevice.sceneDescriptorSetLayout,
+            &renderDevice.lightingDescriptorSetLayout,
+            &renderDevice.materialDescriptorSetLayout,
+            &descriptorSetLayout
         };
-        pipelineLayout = vkCheck(device.createPipelineLayout(
-            {.setLayoutCount         = static_cast<uint32_t>(descriptorSetLayouts.size()),
-             .pSetLayouts            = descriptorSetLayouts.data(),
-             .pushConstantRangeCount = 1,
-             .pPushConstantRanges    = &parameterRange}
-        ));
+        pipelineLayout = renderDevice.getOrCreatePipelineLayout(descriptorSetLayouts, std::array{parameterRange});
     }
 
     GpuShader        shader(device, "shaders/offline_pathtracing.spv");
@@ -261,7 +240,7 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
         .groupCount                   = static_cast<uint32_t>(groups.size()),
         .pGroups                      = groups.data(),
         .maxPipelineRayRecursionDepth = maxRecursionDepth,
-        .layout                       = *pipelineLayout,
+        .layout                       = pipelineLayout,
     };
     VkPipeline rawPipeline = VK_NULL_HANDLE;
     vkCheck(
@@ -455,17 +434,17 @@ void OfflinePathTracingPass::execute(
     prepareLights(execution, frame);
     prepareBindings(graph, execution, frame);
     commands.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
-    const std::array sets = {*frame.set, execution.data.lightingSetHandle(), execution.renderData.materialSetHandle()};
-    commands.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, *pipelineLayout, 0, sets, {});
-    const auto& view     = execution.data.sceneUniforms();
+    const std::array sets{
+        execution.data.sceneSetHandle(), execution.data.lightingSetHandle(),
+        execution.renderData.materialSetHandle(), *frame.set
+    };
+    commands.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 0, sets, {});
     const auto& viewport = execution.view.viewport;
     commands.pushConstants<OfflineParameters>(
-        *pipelineLayout,
+        pipelineLayout,
         vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR,
         0,
         OfflineParameters{
-            .inverseViewProjection = view.inverseViewProjection,
-            .cameraPosition        = view.cameraPosition,
             .viewport              = {viewport.x, viewport.y, viewport.width, viewport.height},
             .lightRanges           = execution.renderData.lightRanges,
             .maxRecursionDepth     = pipelineRecursionDepth,

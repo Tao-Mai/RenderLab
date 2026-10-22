@@ -45,7 +45,7 @@ EditorPickingPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph
         }
     );
 
-    pipelineLayout = &renderContext().device->editorPipelineLayout;
+    pipelineLayout = renderContext().device->editorPipelineLayout;
     auto state     = PipelineState{
             .vertexLayout = VertexLayoutPreset::PositionOnly,
             .depthCompare = vk::CompareOp::eLessOrEqual,
@@ -68,7 +68,7 @@ void EditorPickingPass::draw(vk::raii::CommandBuffer& commandBuffer, const DrawI
         .selectionId = item.selectionId,
     };
     commandBuffer.pushConstants<EditorPickingPushConstants>(
-        **pipelineLayout,
+        pipelineLayout,
         vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         0,
         parameters
@@ -128,7 +128,7 @@ void EditorPickingPass::execute(
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     const std::array sets = {execution.data.viewSetHandle()};
     commandBuffer
-        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, **pipelineLayout, EditorInterface::kViewSet, sets, {});
+        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, EditorInterface::kViewSet, sets, {});
 
     // Match ScenePass's viewport; only the clicked pixel needs rasterization.
     const auto viewport = execution.view.viewport.clamped(extent);
@@ -149,7 +149,7 @@ void EditorPickingPass::execute(
             .selectionId = item.selectionId,
         };
         commandBuffer.pushConstants<EditorPickingPushConstants>(
-            **pipelineLayout,
+            pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0,
             push

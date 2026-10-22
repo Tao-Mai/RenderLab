@@ -14,7 +14,9 @@
 `Renderer::init()` 初始化 Device 时，由 `Device::createSharedLayouts()` 统一预创建共享 Layout：
 
 - 场景、光照、材质与编辑器共用四份 Descriptor Set Layout 和两份 Pipeline Layout。
-- Device 直接创建 Layout，不做 Layout 缓存；共享 Layout 由 Device 以 RAII 持有，私有 Layout 由 Pass 在 `setup()` 中创建并持有。
+- Descriptor Set Layout 直接创建：共享布局由 Device 持有，私有布局由 Pass 持有。
+- Pipeline Layout 统一通过 `Device::getOrCreatePipelineLayout()` 获取，按 Set 布局内容和 Push Constant 范围缓存。Device 以 RAII 持有，Pass 只保存 `vk::PipelineLayout` 句柄。
+- Device shutdown 时先清理 Pipeline，再清理 Pipeline Layout；布局匹配检查交给 Vulkan 验证层。
 
 这些 Layout 在渲染器生命周期内固定，运行时通过 RenderContext 直接读取：
 
@@ -26,7 +28,7 @@ const auto& layout = renderContext().device->meshPipelineLayout;
 
 ## Descriptor Set Layout
 
-表中 UBO 对应 Uniform Buffer，SSBO 对应 Storage Buffer；Image 与 Sampler 分开绑定。场景与光照布局各 Binding 均为单个 Descriptor，阶段为 Vertex | Fragment；材质布局供光栅与光追共用，阶段为 All。
+表中 UBO 对应 Uniform Buffer，SSBO 对应 Storage Buffer；Image 与 Sampler 分开绑定。场景与光照布局各 Binding 均为单个 Descriptor；Scene 与 Material 的阶段为 All，Lighting 为 Vertex | Fragment。
 
 Binding 编号定义于 [ShaderData.h](../src/render/resource/ShaderData.h)。
 
@@ -36,7 +38,7 @@ Binding 编号定义于 [ShaderData.h](../src/render/resource/ShaderData.h)。
 | --- | --- | --- |
 | 0 | UBO | `SceneUniforms`：相机矩阵、相机位置 |
 
-仅包含这一个 Binding。Shader 声明：[scene_data.slang](../shaders/scene_data.slang)、[scene_uniforms.slang](../shaders/scene_uniforms.slang)。
+仅包含这一个 Binding，光栅、实时光追、离线光追与重投影统一使用。Shader 声明：[scene_data.slang](../shaders/scene_data.slang)、[scene_uniforms.slang](../shaders/scene_uniforms.slang)。
 
 ### lightingDescriptorSetLayout：光照资源，Set 1
 
@@ -78,7 +80,7 @@ Shader 声明：[material_data.slang](../shaders/material_data.slang)。
 
 ## Pipeline Layout 与 Pass 对应关系
 
-`meshPipelineLayout` 在 `Device::createSharedLayouts()` 中预创建；Shadow、Skybox 的 `pipelineLayout` 只供各自的 Pass 使用，在其 `setup()` 中创建并持有。Push Constant 都从偏移 0 开始，阶段均为 Vertex | Fragment。
+`meshPipelineLayout` 在 `Device::createSharedLayouts()` 中预创建；Shadow、Skybox 等 Pass 在 `setup()` 中获取所需的缓存句柄，不负责销毁 Pipeline Layout。表中 Push Constant 都从偏移 0 开始，阶段均为 Vertex | Fragment。
 
 | Layout | Set 排列 | Push Constants | 使用它的 Pass |
 | --- | --- | --- | --- |
@@ -88,6 +90,8 @@ Shader 声明：[material_data.slang](../shaders/material_data.slang)。
 | `DeferredLightingPass::pipelineLayout` | Set 0：Scene；Set 1：Lighting；Set 2：空；Set 3：GBuffer | `DeferredLightingPushConstants`，16 B：Viewport | `DeferredLightingPass` |
 
 实现：[DepthPrepass.cpp](../src/render/feature/DepthPrepass.cpp)、[SceneDraw.cpp](../src/render/feature/SceneDraw.cpp)、[ShadowPass.cpp](../src/render/feature/shadow/ShadowPass.cpp)、[SkyboxPass.cpp](../src/render/feature/SkyboxPass.cpp)。
+
+实时与离线光追的 Pipeline Layout 依次为 Scene、Lighting、Material、私有 Set；Push Constants 为 48 B，仅保留 Viewport、光源分组和采样参数，阶段为 Raygen | ClosestHit。重投影布局为 Scene、私有 Set，Push Constants 为 128 B，阶段为 Compute。
 
 ## 编辑器共享 Layout
 

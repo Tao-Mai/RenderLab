@@ -100,7 +100,7 @@ void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursio
         limits.maxRayRecursionDepth
     );
 
-    if (!*pipelineLayout)
+    if (!pipelineLayout)
     {
         const std::array bindings = {
             vk::DescriptorSetLayoutBinding{
@@ -135,55 +135,23 @@ void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursio
                 .binding = 8, .descriptorType = vk::DescriptorType::eStorageImage, .descriptorCount = 1,
                 .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR
             },
-            vk::DescriptorSetLayoutBinding{
-                .binding = 9, .descriptorType = vk::DescriptorType::eUniformBuffer, .descriptorCount = 1,
-                .stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR
-            },
         };
-        descriptorSetLayout        = vkCheck(device.createDescriptorSetLayout(
-            {.bindingCount = static_cast<uint32_t>(bindings.size()), .pBindings = bindings.data()}
-        ));
-        const std::array poolSizes = {
-            vk::DescriptorPoolSize{
-                .type            = vk::DescriptorType::eAccelerationStructureKHR,
-                .descriptorCount = maxFramesInFlight
-            },
-            vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = maxFramesInFlight * 3},
-            vk::DescriptorPoolSize{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxFramesInFlight},
-            vk::DescriptorPoolSize{
-                .type            = vk::DescriptorType::eStorageBuffer,
-                .descriptorCount = maxFramesInFlight * 2
-            },
-        };
-        descriptorPool = vkCheck(device.createDescriptorPool(
-            {.flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-             .maxSets       = maxFramesInFlight,
-             .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
-             .pPoolSizes    = poolSizes.data()}
-        ));
+        auto& renderDevice = *renderContext().device;
+        descriptorSetLayout = renderDevice.createDescriptorSetLayout(bindings);
         for (auto& frame : frames)
-            frame.set = std::move(vkCheck(device.allocateDescriptorSets(
-                                              {.descriptorPool     = *descriptorPool,
-                                               .descriptorSetCount = 1,
-                                               .pSetLayouts        = &*descriptorSetLayout}
-                                          ))
-                                      .front());
+            frame.set = renderDevice.allocateDescriptorSet(descriptorSetLayout);
 
         const vk::PushConstantRange parameterRange{
             .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR,
             .size       = sizeof(RayTracingParameters),
         };
         const std::array descriptorSetLayouts{
-            *descriptorSetLayout,
-            *renderContext().device->lightingDescriptorSetLayout,
-            *renderContext().device->materialDescriptorSetLayout
+            &renderDevice.sceneDescriptorSetLayout,
+            &renderDevice.lightingDescriptorSetLayout,
+            &renderDevice.materialDescriptorSetLayout,
+            &descriptorSetLayout
         };
-        pipelineLayout = vkCheck(device.createPipelineLayout(
-            {.setLayoutCount         = static_cast<uint32_t>(descriptorSetLayouts.size()),
-             .pSetLayouts            = descriptorSetLayouts.data(),
-             .pushConstantRangeCount = 1,
-             .pPushConstantRanges    = &parameterRange}
-        ));
+        pipelineLayout = renderDevice.getOrCreatePipelineLayout(descriptorSetLayouts, std::array{parameterRange});
     }
 
     GpuShader        shader(device, "shaders/raytracing.spv");
@@ -257,7 +225,7 @@ void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursio
         .groupCount                   = static_cast<uint32_t>(groups.size()),
         .pGroups                      = groups.data(),
         .maxPipelineRayRecursionDepth = maxRecursionDepth,
-        .layout                       = *pipelineLayout,
+        .layout                       = pipelineLayout,
     };
     VkPipeline rawPipeline = VK_NULL_HANDLE;
     vkCheck(
@@ -408,8 +376,6 @@ void RayTracingPass::prepareBindings(RenderGraph& graph, const PassFrame& execut
     };
     const auto depthInfo = gBufferInfo(depth);
     const auto normalInfo = gBufferInfo(worldNormal);
-    const auto&                    viewBuffer = execution.data.sceneUniformBuffer();
-    const vk::DescriptorBufferInfo viewInfo{.buffer = viewBuffer.handle(), .range = viewBuffer.size()};
     const vk::DescriptorBufferInfo hitInfo{.buffer = frame.hitData.handle(), .range = frame.hitData.size()};
     const vk::DescriptorBufferInfo lightInfo{.buffer = frame.lightData.handle(), .range = frame.lightData.size()};
     const std::array writes = {
@@ -449,10 +415,6 @@ void RayTracingPass::prepareBindings(RenderGraph& graph, const PassFrame& execut
             .dstSet = *frame.set, .dstBinding = 8, .descriptorCount = 1,
             .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &normalInfo,
         },
-        vk::WriteDescriptorSet{
-            .dstSet = *frame.set, .dstBinding = 9, .descriptorCount = 1,
-            .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &viewInfo,
-        },
     };
     device.updateDescriptorSets(writes, {});
 }
@@ -468,17 +430,17 @@ void RayTracingPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& comman
         prepareBindings(graph, execution, frame);
     }
     commands.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
-    const std::array sets = {*frame.set, execution.data.lightingSetHandle(), execution.renderData.materialSetHandle()};
-    commands.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, *pipelineLayout, 0, sets, {});
-    const auto& view     = execution.data.sceneUniforms();
+    const std::array sets{
+        execution.data.sceneSetHandle(), execution.data.lightingSetHandle(),
+        execution.renderData.materialSetHandle(), *frame.set
+    };
+    commands.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 0, sets, {});
     const auto& viewport = execution.view.viewport;
     commands.pushConstants<RayTracingParameters>(
-        *pipelineLayout,
+        pipelineLayout,
         vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR,
         0,
         RayTracingParameters{
-            .inverseViewProjection = view.inverseViewProjection,
-            .cameraPosition        = view.cameraPosition,
             .viewport              = {viewport.x, viewport.y, viewport.width, viewport.height},
             .lightRanges           = execution.renderData.lightRanges,
             .maxRecursionDepth     = pipelineRecursionDepth,

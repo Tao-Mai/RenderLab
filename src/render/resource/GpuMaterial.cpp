@@ -15,12 +15,12 @@ void GpuMaterial::create(ShaderHandle targetShader, const PbrMaterialAsset& mate
 }
 
 GraphicsPipelineInfo GpuMaterial::pipelineInfo(
-    std::span<const vk::Format> colorFormats, vk::Format depthFormat, const PipelineLayout& layout
+    std::span<const vk::Format> colorFormats, vk::Format depthFormat, vk::PipelineLayout layout
 ) const
 {
     return {
         .shader       = shaderHandle,
-        .layout       = &layout,
+        .layout       = layout,
         .state        = pipelineState,
         .colorFormats = std::vector<vk::Format>(colorFormats.begin(), colorFormats.end()),
         .depthFormat  = depthFormat,

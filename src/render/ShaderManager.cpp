@@ -7,8 +7,6 @@
 
 #include <algorithm>
 #include <fstream>
-#include <limits>
-#include <tuple>
 
 #include <nlohmann/json.hpp>
 
@@ -18,122 +16,19 @@ namespace
 {
 const json& requiredField(const json& value, const std::string& name)
 {
-    CHECK(value.is_object(), "shader reflection expected an object");
+    CHECK(value.is_object(), "shader manifest expected an object");
     const auto field = value.find(name);
-    CHECK(field != value.end(), "shader reflection missing '{}'", name);
+    CHECK(field != value.end(), "shader manifest missing '{}'", name);
     return *field;
 }
 
 std::string requiredString(const json& value, const std::string& name)
 {
     const auto& string = requiredField(value, name);
-    CHECK(string.is_string(), "shader reflection field '{}' is not a string", name);
+    CHECK(string.is_string(), "shader manifest field '{}' is not a string", name);
     return string.get<std::string>();
 }
 
-uint32_t requiredIndex(const json& value, const std::string& name)
-{
-    const auto& number = requiredField(value, name);
-    CHECK(
-        number.is_number_unsigned() || (number.is_number_integer() && number.get<int64_t>() >= 0),
-        "shader reflection field '{}' is not an index",
-        name
-    );
-
-    const auto index = number.get<uint64_t>();
-    CHECK(index <= std::numeric_limits<uint32_t>::max(), "shader reflection field '{}' exceeds uint32_t", name);
-    return static_cast<uint32_t>(index);
-}
-
-void readReflection(std::filesystem::path path, ShaderMetadata& metadata)
-{
-    path.replace_extension(".reflection.json");
-    std::ifstream input{path, std::ios::binary};
-    CHECK(input.is_open(), "failed to open shader reflection '{}'", path.string());
-    const auto reflection = json::parse(input, nullptr, false);
-    CHECK(!reflection.is_discarded(), "invalid shader reflection JSON '{}'", path.string());
-
-    const auto& parameters = requiredField(reflection, "parameters");
-    CHECK(parameters.is_array(), "shader reflection '{}' has no parameters array", path.string());
-    auto& bindings = metadata.bindings;
-    for (const auto& parameter : parameters)
-    {
-        const auto& binding = requiredField(parameter, "binding");
-        if (requiredString(binding, "kind") == "pushConstantBuffer")
-        {
-            const auto& layout =
-                requiredField(requiredField(requiredField(parameter, "type"), "elementVarLayout"), "binding");
-            metadata.pushConstantSize = requiredIndex(layout, "offset") + requiredIndex(layout, "size");
-        }
-        if (requiredString(binding, "kind") != "descriptorTableSlot")
-        {
-            continue;
-        }
-        const json* reflectedType = &requiredField(parameter, "type");
-        uint32_t    count         = 1;
-        while (requiredString(*reflectedType, "kind") == "array")
-        {
-            count *= requiredIndex(*reflectedType, "elementCount");
-            reflectedType = &requiredField(*reflectedType, "elementType");
-        }
-        const auto&        type = *reflectedType;
-        const std::string  kind = requiredString(type, "kind");
-        vk::DescriptorType descriptorType;
-        if (kind == "constantBuffer")
-        {
-            descriptorType = vk::DescriptorType::eUniformBuffer;
-        }
-        else if (kind == "samplerState")
-        {
-            descriptorType = vk::DescriptorType::eSampler;
-        }
-        else if (kind == "resource")
-        {
-            const std::string shape = requiredString(type, "baseShape");
-            if (shape == "structuredBuffer")
-            {
-                descriptorType = vk::DescriptorType::eStorageBuffer;
-            }
-            else
-            {
-                CHECK(
-                    shape == "texture2D" || shape == "textureCube",
-                    "unsupported reflected resource shape '{}' in '{}'",
-                    shape,
-                    path.string()
-                );
-                descriptorType = vk::DescriptorType::eSampledImage;
-            }
-        }
-        else
-        {
-            LOG_FATAL("unsupported reflected descriptor type '{}' in '{}'", kind, path.string());
-        }
-        const uint32_t set = binding.contains("space") ? requiredIndex(binding, "space") : 0;
-        bindings.push_back({
-            set,
-            requiredIndex(binding, "index"),
-            descriptorType,
-            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            count,
-        });
-    }
-    std::sort(
-        bindings.begin(),
-        bindings.end(),
-        [](const auto& left, const auto& right)
-        { return std::tie(left.set, left.binding) < std::tie(right.set, right.binding); }
-    );
-    CHECK(
-        std::adjacent_find(
-            bindings.begin(),
-            bindings.end(),
-            [](const auto& left, const auto& right) { return left.set == right.set && left.binding == right.binding; }
-        ) == bindings.end(),
-        "duplicate shader reflection bindings in '{}'",
-        path.string()
-    );
-}
 }  // namespace
 
 ShaderManager::~ShaderManager() { DCHECK(!device); }
@@ -193,7 +88,6 @@ ShaderHandle ShaderManager::getOrLoad(const ShaderAsset::ID& id, const ShaderDef
         .defines = selected->at("defines").get<ShaderDefines>(),
         .entries = selected->at("entries").get<std::vector<std::string>>()
     };
-    readReflection(binary, metadata);
     const ShaderHandle handle{static_cast<uint32_t>(shaders.size() + 1)};
     shaders.push_back(std::move(shader));
     shaderMetadata.push_back(std::move(metadata));

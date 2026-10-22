@@ -4,8 +4,6 @@
 
 #include "render/feature/RenderGraph.h"
 
-#include <vector>
-
 class ToneMappingPass
 {
 public:
@@ -17,16 +15,16 @@ public:
     Output setup(
         RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle hdrColor, RenderGraph::ImageHandle target
     );
-    void prepare(RenderGraph& graph, const PassSetup& setup) const;
+    void writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
     void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
 private:
-    RenderGraph::ImageHandle             hdrColor;
-    RenderGraph::ImageHandle             color;
-    DescriptorSetLayout                  descriptorSetLayout;
-    std::vector<vk::raii::DescriptorSet> descriptorSets;
-    vk::Sampler                          sampler;
-    vk::Pipeline                         pipeline;
-    PipelineLayout                       pipelineLayout;
-    bool                                 encodeSrgb = false;
+    RenderGraph::ImageHandle hdrColor;
+    RenderGraph::ImageHandle color;
+    DescriptorSetLayout      descriptorSetLayout;
+    vk::raii::DescriptorSet  descriptorSet = nullptr;
+    vk::Sampler              sampler;
+    vk::Pipeline             pipeline;
+    vk::PipelineLayout       pipelineLayout;
+    bool                     encodeSrgb = false;
 };

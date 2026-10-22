@@ -100,7 +100,7 @@ void SceneDraw::recordMeshes(
         {execution.data.sceneSetHandle(), execution.data.lightingSetHandle(), execution.renderData.materialSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        *pipelineLayout,
+        pipelineLayout,
         RenderInterface::kSceneSet,
         descriptorSets,
         {}
@@ -139,7 +139,7 @@ void SceneDraw::recordMeshes(
         item.mesh->bind(commandBuffer);
         const MeshPushConstants pushConstants{.model = item.model, .materialIndex = item.materialIndex};
         commandBuffer.pushConstants<MeshPushConstants>(
-            *pipelineLayout,
+            pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0,
             pushConstants

@@ -96,7 +96,7 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
             .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
         },
     };
-    auto& device     = *renderContext().device;
+    auto& device             = *renderContext().device;
     descriptorSetLayout      = device.createDescriptorSetLayout(gBufferBindings);
     emptyDescriptorSetLayout = device.createDescriptorSetLayout(std::span<const vk::DescriptorSetLayoutBinding>{});
     const std::array sets{
@@ -109,7 +109,7 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(DeferredLightingPushConstants)
     }};
-    pipelineLayout = device.createPipelineLayout(sets, ranges);
+    pipelineLayout = device.getOrCreatePipelineLayout(sets, ranges);
 
     auto&               ctx = renderContext();
     const ShaderDefines variant{
@@ -117,21 +117,19 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
         {"ENABLE_CLEARCOAT", 0},
         {"ENABLE_SHEEN", 1}
     };
-    pipeline = device.getOrCreatePipeline({
-        .shader = ctx.shaderManager->getOrLoad(kDeferredLightingShader, variant),
-        .layout = &pipelineLayout,
-        .state  = PipelineState{.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
-        .colorFormats = {graph.imageInfo(color).format},
+    pipeline      = device.getOrCreatePipeline({
+             .shader = ctx.shaderManager->getOrLoad(kDeferredLightingShader, variant),
+             .layout = pipelineLayout,
+             .state  = PipelineState{.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
+             .colorFormats = {graph.imageInfo(color).format},
     });
-    descriptorSets.clear();
-    for (uint32_t index = 0; index < maxFramesInFlight; ++index)
-        descriptorSets.push_back(device.allocateDescriptorSet(descriptorSetLayout));
+    descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
     return {color, gBuffer.depth, resolvedShadow};
 }
 
-void DeferredLightingPass::prepare(RenderGraph& graph, const PassSetup& setup) const
+void DeferredLightingPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
 {
-    bindings.prepare(graph, setup);
+    bindings.writeDescriptorSet(graph, setup);
     const std::array images{
         gBuffer.albedoOcclusion,
         gBuffer.normalRoughness,
@@ -146,33 +144,30 @@ void DeferredLightingPass::prepare(RenderGraph& graph, const PassSetup& setup) c
         RenderInterface::kGBufferDepthBinding,
         RenderInterface::kGBufferSheenBinding
     };
-    for (uint32_t frame = 0; frame < maxFramesInFlight; ++frame)
+    for (size_t index = 0; index < images.size(); ++index)
     {
-        for (size_t index = 0; index < images.size(); ++index)
-        {
-            const auto                    image  = images[index];
-            const auto                    format = graph.imageInfo(image).format;
-            const vk::DescriptorImageInfo imageInfo{
-                .imageView   = graph.getImage(image).getOrCreateImageView({
-                      .viewType = vk::ImageViewType::e2D,
-                      .format   = format,
-                      .subresourceRange =
-                        {.aspectMask = format == vk::Format::eD32Sfloat ? vk::ImageAspectFlagBits::eDepth
-                                                                          : vk::ImageAspectFlagBits::eColor,
-                           .levelCount = 1,
-                           .layerCount = 1},
-                }),
-                .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-            };
-            const vk::WriteDescriptorSet write{
-                .dstSet          = *descriptorSets[frame],
-                .dstBinding      = kBindings[index],
-                .descriptorCount = 1,
-                .descriptorType  = vk::DescriptorType::eSampledImage,
-                .pImageInfo      = &imageInfo,
-            };
-            setup.vulkan.deviceHandle().updateDescriptorSets(write, {});
-        }
+        const auto                    image  = images[index];
+        const auto                    format = graph.imageInfo(image).format;
+        const vk::DescriptorImageInfo imageInfo{
+            .imageView   = graph.getImage(image).getOrCreateImageView({
+                  .viewType = vk::ImageViewType::e2D,
+                  .format   = format,
+                  .subresourceRange =
+                    {.aspectMask = format == vk::Format::eD32Sfloat ? vk::ImageAspectFlagBits::eDepth
+                                                                      : vk::ImageAspectFlagBits::eColor,
+                       .levelCount = 1,
+                       .layerCount = 1},
+            }),
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+        };
+        const vk::WriteDescriptorSet write{
+            .dstSet          = *descriptorSet,
+            .dstBinding      = kBindings[index],
+            .descriptorCount = 1,
+            .descriptorType  = vk::DescriptorType::eSampledImage,
+            .pImageInfo      = &imageInfo,
+        };
+        setup.vulkan.deviceHandle().updateDescriptorSets(write, {});
     }
 }
 
@@ -204,20 +199,20 @@ void DeferredLightingPass::execute(
     const std::array sharedSets{execution.data.sceneSetHandle(), execution.data.lightingSetHandle()};
     commands.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        *pipelineLayout,
+        pipelineLayout,
         RenderInterface::kSceneSet,
         sharedSets,
         {}
     );
-    const std::array passSets{*descriptorSets[execution.frameIndex]};
+    const std::array passSets{*descriptorSet};
     commands
-        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayout, RenderInterface::kPassSet, passSets, {});
+        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, RenderInterface::kPassSet, passSets, {});
     const auto&                         viewport = execution.view.viewport;
     const DeferredLightingPushConstants parameters{
         .viewport = {viewport.x, viewport.y, viewport.width, viewport.height}
     };
     commands.pushConstants<DeferredLightingPushConstants>(
-        *pipelineLayout,
+        pipelineLayout,
         vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         0,
         parameters

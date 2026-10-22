@@ -6,7 +6,7 @@
 #include "../material_data.slang"
 #include "../pbr_brdf.slang"
 #include "../normal_mapping.slang"
-#include "../scene_uniforms.slang"
+#include "../scene_data.slang"
 
 
 static const uint kVertexStrideFloats = 12;
@@ -18,8 +18,8 @@ static const float kMaxRayDistance = 3.402823466e+38;
 static const uint kSceneMask = 0x01;
 static const uint kLightMask = 0x02;
 
-[[vk::binding(0, 0)]] RaytracingAccelerationStructure scene;
-[[vk::binding(5, 0)]] StructuredBuffer<LightData> lights;
+[[vk::binding(0, 3)]] RaytracingAccelerationStructure scene;
+[[vk::binding(5, 3)]] StructuredBuffer<LightData> lights;
 
 struct Payload
 {
@@ -277,8 +277,6 @@ struct HitData
 
 struct RayTracingParameters
 {
-    float4x4 inverseViewProjection;
-    float4 cameraPosition;
     float4 viewport;
     LightRanges lightRanges;
     uint maxRecursionDepth;
@@ -296,11 +294,11 @@ struct RayTracingParameters
     {
         float2 local = float2(pixel) + 0.5 - viewport.xy;
         float2 ndc = local / viewport.zw * 2.0 - 1.0;
-        float4 farPoint = mul(inverseViewProjection, float4(ndc, 1.0, 1.0));
-        float3 toFar = farPoint.xyz / farPoint.w - cameraPosition.xyz;
+        float4 farPoint = mul(sceneUniforms.inverseViewProjection, float4(ndc, 1.0, 1.0));
+        float3 toFar = farPoint.xyz / farPoint.w - sceneUniforms.cameraPosition.xyz;
 
         RayDesc ray;
-        ray.Origin = cameraPosition.xyz;
+        ray.Origin = sceneUniforms.cameraPosition.xyz;
         ray.Direction = normalize(toFar);
         ray.TMin = kRayEpsilon;
         ray.TMax = length(toFar);
@@ -309,11 +307,10 @@ struct RayTracingParameters
 };
 
 [[vk::push_constant]] ConstantBuffer<RayTracingParameters> parameters;
-[[vk::binding(1, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> outputImage;
-[[vk::binding(2, 0)]] StructuredBuffer<HitData> objects;
-[[vk::binding(7, 0)]] [[vk::image_format("r32f")]] RWTexture2D<float> depthImage;
-[[vk::binding(8, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> normalImage;
-[[vk::binding(9, 0)]] ConstantBuffer<SceneUniforms> sceneUniforms;
+[[vk::binding(1, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> outputImage;
+[[vk::binding(2, 3)]] StructuredBuffer<HitData> objects;
+[[vk::binding(7, 3)]] [[vk::image_format("r32f")]] RWTexture2D<float> depthImage;
+[[vk::binding(8, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> normalImage;
 
 [shader("raygeneration")]
 void raygenMain()

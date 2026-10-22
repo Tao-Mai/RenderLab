@@ -62,8 +62,8 @@ void RenderGraph::compile(const PassSetup& setup)
     compileNodes();
     allocateResources();
     for (auto* node : sortedNodes)
-        if (node->prepare)
-            node->prepare(*this, setup);
+        if (node->writeDescriptorSet)
+            node->writeDescriptorSet(*this, setup);
 }
 
 void RenderGraph::allocateResources()

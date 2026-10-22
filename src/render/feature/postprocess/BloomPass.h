@@ -37,19 +37,19 @@ private:
             RenderGraph::ImageHandle source,
             RenderGraph::ImageHandle base = {}
         );
-        void prepare(RenderGraph& graph, const PassSetup& setup) const;
+        void writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
         void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
     private:
-        Stage                                stage;
-        RenderGraph::ImageHandle             source;
-        RenderGraph::ImageHandle             base;
-        RenderGraph::ImageHandle             color;
-        DescriptorSetLayout                  descriptorSetLayout;
-        std::vector<vk::raii::DescriptorSet> descriptorSets;
-        vk::Sampler                          sampler;
-        vk::Pipeline                         pipeline;
-        PipelineLayout                       pipelineLayout;
+        Stage                    stage;
+        RenderGraph::ImageHandle source;
+        RenderGraph::ImageHandle base;
+        RenderGraph::ImageHandle color;
+        DescriptorSetLayout      descriptorSetLayout;
+        vk::raii::DescriptorSet  descriptorSet = nullptr;
+        vk::Sampler              sampler;
+        vk::Pipeline             pipeline;
+        vk::PipelineLayout       pipelineLayout;
     };
 
     std::vector<std::unique_ptr<FilterPass>> filters;

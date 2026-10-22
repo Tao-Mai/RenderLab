@@ -9,6 +9,9 @@
 #include <vector>
 #include <vulkan/vulkan_raii.hpp>
 
+class VulkanContext;
+
+// TODO 之后优化相关管理
 struct DescriptorSetLayout
 {
     vk::raii::DescriptorSetLayout               handle = nullptr;
@@ -16,16 +19,6 @@ struct DescriptorSetLayout
 
     [[nodiscard]] vk::DescriptorSetLayout operator*() const { return *handle; }
     explicit                              operator bool() const { return static_cast<bool>(*handle); }
-};
-
-struct PipelineLayout
-{
-    vk::raii::PipelineLayout             handle = nullptr;
-    std::vector<ShaderMetadata::Binding> bindings;
-    std::vector<vk::PushConstantRange>   ranges;
-    uint64_t                             id = 0;
-
-    [[nodiscard]] vk::PipelineLayout operator*() const { return *handle; }
 };
 
 enum class VertexLayoutPreset
@@ -56,7 +49,7 @@ struct PipelineState
 struct GraphicsPipelineInfo
 {
     ShaderHandle            shader;
-    const PipelineLayout*   layout = nullptr;
+    vk::PipelineLayout      layout;
     PipelineState           state;
     std::vector<vk::Format> colorFormats;
     vk::Format              depthFormat = vk::Format::eUndefined;
@@ -67,12 +60,12 @@ class Device
 {
 public:
     ~Device();
-    void init(const vk::raii::Device& device, ShaderManager& shaders);
+    void init(const VulkanContext& vulkan, ShaderManager& shaders);
     void shutdown() noexcept;
 
     [[nodiscard]] DescriptorSetLayout
     createDescriptorSetLayout(std::span<const vk::DescriptorSetLayoutBinding> bindings) const;
-    [[nodiscard]] PipelineLayout createPipelineLayout(
+    [[nodiscard]] vk::PipelineLayout getOrCreatePipelineLayout(
         std::span<const DescriptorSetLayout* const> sets, std::span<const vk::PushConstantRange> ranges
     );
     [[nodiscard]] vk::raii::DescriptorSet allocateDescriptorSet(const DescriptorSetLayout& layout) const;
@@ -82,18 +75,30 @@ public:
     DescriptorSetLayout lightingDescriptorSetLayout;
     DescriptorSetLayout materialDescriptorSetLayout;
     DescriptorSetLayout editorViewDescriptorSetLayout;
-    PipelineLayout      meshPipelineLayout;
-    PipelineLayout      editorPipelineLayout;
+    vk::PipelineLayout  meshPipelineLayout;
+    vk::PipelineLayout  editorPipelineLayout;
 
 private:
     void createSharedLayouts();
     void createSharedPipelineLayouts();
     void createSharedDescriptorSetLayouts();
 
+    struct PipelineLayoutKey
+    {
+        std::vector<std::vector<vk::DescriptorSetLayoutBinding>> sets;
+        std::vector<vk::PushConstantRange>                       ranges;
+
+        [[nodiscard]] bool operator==(const PipelineLayoutKey&) const = default;
+    };
+    struct PipelineLayoutKeyHash
+    {
+        [[nodiscard]] size_t operator()(const PipelineLayoutKey& key) const noexcept;
+    };
+
     struct PipelineKey
     {
         ShaderHandle            shader;
-        uint64_t                layoutId;
+        vk::PipelineLayout      layout;
         PipelineState           state;
         std::vector<vk::Format> colorFormats;
         vk::Format              depthFormat;
@@ -107,10 +112,10 @@ private:
     };
 
     DEBUG_ONLY(bool initialized = false;)
-    const vk::raii::Device*                                              device         = nullptr;
-    ShaderManager*                                                       shaders        = nullptr;
-    vk::raii::DescriptorPool                                             descriptorPool = nullptr;
-    vk::raii::PipelineCache                                              pipelineCache  = nullptr;
-    std::unordered_map<PipelineKey, vk::raii::Pipeline, PipelineKeyHash> pipelines;
-    uint64_t                                                             nextLayoutId = 1;
+    const vk::raii::Device*                                                                device         = nullptr;
+    ShaderManager*                                                                         shaders        = nullptr;
+    vk::raii::DescriptorPool                                                               descriptorPool = nullptr;
+    vk::raii::PipelineCache                                                                pipelineCache  = nullptr;
+    std::unordered_map<PipelineKey, vk::raii::Pipeline, PipelineKeyHash>                   pipelines;
+    std::unordered_map<PipelineLayoutKey, vk::raii::PipelineLayout, PipelineLayoutKeyHash> pipelineLayouts;
 };

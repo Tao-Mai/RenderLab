@@ -52,7 +52,7 @@ public:
 
     void updateParameters(const PbrMaterialAsset& material);
     [[nodiscard]] GraphicsPipelineInfo
-    pipelineInfo(std::span<const vk::Format> colorFormats, vk::Format depthFormat, const PipelineLayout& layout) const;
+    pipelineInfo(std::span<const vk::Format> colorFormats, vk::Format depthFormat, vk::PipelineLayout layout) const;
     [[nodiscard]] MaterialAlphaMode   alphaMode() const { return mode; }
     [[nodiscard]] const MaterialData& parameters() const { return parameterData; }
     [[nodiscard]] const Textures&     textureBindings() const { return textures; }

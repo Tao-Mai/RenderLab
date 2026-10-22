@@ -87,7 +87,7 @@ ShadowPass::Output SceneBindings::setup(RenderGraph& targetGraph, const PassSetu
     return {pointShadowMap, spotShadowMap, rectAreaShadowMap, cascadeShadowMap};
 }
 
-void SceneBindings::prepare(RenderGraph& graph, const PassSetup& setup) const
+void SceneBindings::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
 {
     const vk::DescriptorImageInfo linearSamplerInfo{
         .sampler = resources->sampler(BuiltinAssets::Sampler::linearClamp),

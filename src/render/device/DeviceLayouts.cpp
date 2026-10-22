@@ -20,7 +20,7 @@ void Device::createSharedDescriptorSetLayouts()
             .binding         = RenderInterface::kSceneUniformBinding,
             .descriptorType  = vk::DescriptorType::eUniformBuffer,
             .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+            .stageFlags      = vk::ShaderStageFlagBits::eAll
         },
     };
     sceneDescriptorSetLayout = createDescriptorSetLayout(sceneBindings);
@@ -201,12 +201,12 @@ void Device::createSharedPipelineLayouts()
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(MeshPushConstants)
     }};
-    meshPipelineLayout = createPipelineLayout(meshSets, meshRanges);
+    meshPipelineLayout = getOrCreatePipelineLayout(meshSets, meshRanges);
 
     const std::array     editorSets{&editorViewDescriptorSetLayout};
     constexpr std::array editorRanges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(EditorLightMarkerPushConstants),
     }};
-    editorPipelineLayout = createPipelineLayout(editorSets, editorRanges);
+    editorPipelineLayout = getOrCreatePipelineLayout(editorSets, editorRanges);
 }

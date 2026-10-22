@@ -3,6 +3,7 @@
 #include <optional>
 #include "render/RenderConfig.h"
 #include "render/RenderView.h"
+#include "render/device/Device.h"
 #include "render/feature/RenderGraph.h"
 #include "render/raytracing/RayTracingData.h"
 #include "render/raytracing/TlasBuildPass.h"
@@ -33,23 +34,20 @@ private:
     };
     struct OfflineParameters
     {
-        glm::mat4   inverseViewProjection;
-        glm::vec4   cameraPosition;
         glm::vec4   viewport;
         LightRanges lightRanges;
         uint32_t    maxRecursionDepth;
         uint32_t    sampleIndex;
         uint32_t    padding[2]{};
     };
-    static_assert(sizeof(OfflineParameters) == 128);
-    static_assert(offsetof(OfflineParameters, lightRanges) == 96);
-    static_assert(offsetof(OfflineParameters, maxRecursionDepth) == 112);
-    static_assert(offsetof(OfflineParameters, sampleIndex) == 116);
+    static_assert(sizeof(OfflineParameters) == 48);
+    static_assert(offsetof(OfflineParameters, lightRanges) == 16);
+    static_assert(offsetof(OfflineParameters, maxRecursionDepth) == 32);
+    static_assert(offsetof(OfflineParameters, sampleIndex) == 36);
 
     RenderGraph::ImageHandle                 rayImage;
-    vk::raii::DescriptorSetLayout            descriptorSetLayout    = nullptr;
-    vk::raii::DescriptorPool                 descriptorPool         = nullptr;
-    vk::raii::PipelineLayout                 pipelineLayout         = nullptr;
+    DescriptorSetLayout                     descriptorSetLayout;
+    vk::PipelineLayout pipelineLayout;
     vk::raii::Pipeline                       pipeline               = nullptr;
     uint32_t                                 pipelineRecursionDepth = 0;
     Buffer                                   bindingTable;

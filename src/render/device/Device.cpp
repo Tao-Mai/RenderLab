@@ -2,6 +2,7 @@
 
 #include "core/Logger.h"
 #include "render/device/VkCheck.h"
+#include "render/device/VulkanContext.h"
 #include "render/resource/VertexLayout.h"
 
 #include <algorithm>
@@ -10,25 +11,48 @@
 #include <utility>
 #include <vulkan/vulkan_hash.hpp>
 
+namespace
+{
+void hashCombine(size_t& seed, size_t value)
+{
+    constexpr size_t kHashGoldenRatio = 0x9e3779b97f4a7c15ULL;
+    seed ^= value + kHashGoldenRatio + (seed << 6) + (seed >> 2);
+}
+}  // namespace
+
 Device::~Device() { DCHECK(!initialized); }
 
-void Device::init(const vk::raii::Device& targetDevice, ShaderManager& targetShaders)
+void Device::init(const VulkanContext& vulkan, ShaderManager& targetShaders)
 {
     DCHECK(!initialized);
-    device                                   = &targetDevice;
-    shaders                                  = &targetShaders;
-    constexpr uint32_t   kDescriptorCapacity = 4096;
-    constexpr std::array kPoolSizes{
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eSampledImage, .descriptorCount = kDescriptorCapacity},
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eSampler, .descriptorCount = kDescriptorCapacity},
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = kDescriptorCapacity},
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = kDescriptorCapacity},
+    device  = &vulkan.deviceHandle();
+    shaders = &targetShaders;
+
+    // Global material arrays plus shared/pass sets, with room for graph rebuilds.
+    constexpr uint32_t kMaxDescriptorSets             = 128;
+    constexpr uint32_t kSampledImageCapacity          = 512;
+    constexpr uint32_t kSamplerCapacity               = 128;
+    constexpr uint32_t kUniformBufferCapacity         = 32;
+    constexpr uint32_t kStorageBufferCapacity         = 64;
+    constexpr uint32_t kStorageImageCapacity          = 32;
+    constexpr uint32_t kAccelerationStructureCapacity = 8;
+    std::vector        poolSizes{
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eSampledImage, .descriptorCount = kSampledImageCapacity},
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eSampler, .descriptorCount = kSamplerCapacity},
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = kUniformBufferCapacity},
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = kStorageBufferCapacity},
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = kStorageImageCapacity},
     };
+    if (vulkan.supportsRayTracing())
+        poolSizes.push_back({
+            .type            = vk::DescriptorType::eAccelerationStructureKHR,
+            .descriptorCount = kAccelerationStructureCapacity,
+        });
     descriptorPool = vkCheck(device->createDescriptorPool({
         .flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        .maxSets       = kDescriptorCapacity,
-        .poolSizeCount = static_cast<uint32_t>(kPoolSizes.size()),
-        .pPoolSizes    = kPoolSizes.data(),
+        .maxSets       = kMaxDescriptorSets,
+        .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
+        .pPoolSizes    = poolSizes.data(),
     }));
     pipelineCache  = vkCheck(device->createPipelineCache(vk::PipelineCacheCreateInfo{}));
     createSharedLayouts();
@@ -39,8 +63,9 @@ void Device::shutdown() noexcept
 {
     DCHECK(initialized);
     pipelines.clear();
-    editorPipelineLayout          = {};
-    meshPipelineLayout            = {};
+    editorPipelineLayout = nullptr;
+    meshPipelineLayout   = nullptr;
+    pipelineLayouts.clear();
     editorViewDescriptorSetLayout = {};
     materialDescriptorSetLayout   = {};
     lightingDescriptorSetLayout   = {};
@@ -64,35 +89,47 @@ DescriptorSetLayout Device::createDescriptorSetLayout(std::span<const vk::Descri
     return result;
 }
 
-PipelineLayout Device::createPipelineLayout(
+vk::PipelineLayout Device::getOrCreatePipelineLayout(
     std::span<const DescriptorSetLayout* const> sets, std::span<const vk::PushConstantRange> ranges
 )
 {
-    DCHECK(device);
-    PipelineLayout result;
-    result.id = nextLayoutId++;
-    result.ranges.assign(ranges.begin(), ranges.end());
+    PipelineLayoutKey key;
+    key.ranges.assign(ranges.begin(), ranges.end());
     std::vector<vk::DescriptorSetLayout> handles;
-    for (uint32_t index = 0; index < sets.size(); ++index)
+    for (const auto* set : sets)
     {
-        DCHECK(sets[index]);
-        handles.push_back(**sets[index]);
-        for (const auto& binding : sets[index]->bindings)
-            result.bindings.push_back({
-                .set     = index,
-                .binding = binding.binding,
-                .type    = binding.descriptorType,
-                .stages  = binding.stageFlags,
-                .count   = binding.descriptorCount,
-            });
+        handles.push_back(**set);
+        auto& bindings = key.sets.emplace_back(set->bindings);
+        std::ranges::sort(bindings, {}, &vk::DescriptorSetLayoutBinding::binding);
     }
-    result.handle = vkCheck(device->createPipelineLayout({
-        .setLayoutCount         = static_cast<uint32_t>(handles.size()),
-        .pSetLayouts            = handles.data(),
-        .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
-        .pPushConstantRanges    = ranges.data(),
+    if (const auto found = pipelineLayouts.find(key); found != pipelineLayouts.end())
+        return *found->second;
+
+    auto                     layout = vkCheck(device->createPipelineLayout({
+                            .setLayoutCount         = static_cast<uint32_t>(handles.size()),
+                            .pSetLayouts            = handles.data(),
+                            .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
+                            .pPushConstantRanges    = ranges.data(),
     }));
-    return result;
+    const vk::PipelineLayout handle = *layout;
+    pipelineLayouts.emplace(std::move(key), std::move(layout));
+    return handle;
+}
+
+size_t Device::PipelineLayoutKeyHash::operator()(const PipelineLayoutKey& key) const noexcept
+{
+    size_t seed = 0;
+    hashCombine(seed, key.sets.size());
+    for (const auto& set : key.sets)
+    {
+        hashCombine(seed, set.size());
+        for (const auto& binding : set)
+            hashCombine(seed, std::hash<vk::DescriptorSetLayoutBinding>{}(binding));
+    }
+    hashCombine(seed, key.ranges.size());
+    for (const auto& range : key.ranges)
+        hashCombine(seed, std::hash<vk::PushConstantRange>{}(range));
+    return seed;
 }
 
 vk::raii::DescriptorSet Device::allocateDescriptorSet(const DescriptorSetLayout& layout) const
@@ -110,10 +147,9 @@ vk::raii::DescriptorSet Device::allocateDescriptorSet(const DescriptorSetLayout&
 std::size_t Device::PipelineKeyHash::operator()(const PipelineKey& key) const noexcept
 {
     std::size_t seed    = 0;
-    const auto  combine = [&seed](uint64_t value)
-    { seed ^= std::hash<uint64_t>{}(value) + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2); };
+    const auto  combine = [&seed](uint64_t value) { hashCombine(seed, std::hash<uint64_t>{}(value)); };
     combine(key.shader.index);
-    combine(key.layoutId);
+    hashCombine(seed, std::hash<vk::PipelineLayout>{}(key.layout));
     combine(static_cast<uint32_t>(key.state.vertexLayout));
     combine(static_cast<uint32_t>(key.state.topology));
     combine(static_cast<uint32_t>(key.state.polygonMode));
@@ -135,12 +171,9 @@ std::size_t Device::PipelineKeyHash::operator()(const PipelineKey& key) const no
 
 vk::Pipeline Device::getOrCreatePipeline(const GraphicsPipelineInfo& info)
 {
-    DCHECK(device && shaders && info.layout);
-    const auto& layout = *info.layout;
-    DCHECK(layout.id && *layout);
     const PipelineKey key{
         .shader       = info.shader,
-        .layoutId     = layout.id,
+        .layout       = info.layout,
         .state        = info.state,
         .colorFormats = info.colorFormats,
         .depthFormat  = info.depthFormat,
@@ -150,36 +183,6 @@ vk::Pipeline Device::getOrCreatePipeline(const GraphicsPipelineInfo& info)
         return *found->second;
 
     const ShaderMetadata& metadata = shaders->metadata(info.shader);
-    for (const auto& binding : metadata.bindings)
-        CHECK(
-            std::ranges::any_of(
-                layout.bindings,
-                [&](const auto& declared)
-                {
-                    return declared.set == binding.set && declared.binding == binding.binding &&
-                        declared.type == binding.type && declared.count >= binding.count &&
-                        (declared.stages & binding.stages) == binding.stages;
-                }
-            ),
-            "shader '{}' set {} binding {} does not match pipeline layout",
-            metadata.id,
-            binding.set,
-            binding.binding
-        );
-    if (metadata.pushConstantSize)
-        CHECK(
-            std::ranges::any_of(
-                layout.ranges,
-                [&](const auto& range)
-                {
-                    return range.offset == 0 && range.size >= metadata.pushConstantSize &&
-                        (range.stageFlags & (vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)) ==
-                        (vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
-                }
-            ),
-            "shader '{}' push constants do not fit pipeline layout",
-            metadata.id
-        );
     CHECK(metadata.entries.size() == 2);
     const std::array shaderStages = {
         vk::PipelineShaderStageCreateInfo{
@@ -220,7 +223,7 @@ vk::Pipeline Device::getOrCreatePipeline(const GraphicsPipelineInfo& info)
         .pVertexAttributeDescriptions    = attributes.data(),
     };
     const vk::PipelineInputAssemblyStateCreateInfo inputAssembly{.topology = key.state.topology};
-    const vk::PipelineViewportStateCreateInfo      viewport{.viewportCount = 1, .scissorCount = 1};
+    constexpr vk::PipelineViewportStateCreateInfo  viewport{.viewportCount = 1, .scissorCount = 1};
     const vk::PipelineRasterizationStateCreateInfo raster{
         .depthClampEnable = key.state.depthClamp,
         .polygonMode      = key.state.polygonMode,
@@ -268,7 +271,7 @@ vk::Pipeline Device::getOrCreatePipeline(const GraphicsPipelineInfo& info)
          .pDepthStencilState  = key.depthFormat == vk::Format::eUndefined ? nullptr : &depth,
          .pColorBlendState    = &colorBlend,
          .pDynamicState       = &dynamic,
-         .layout              = *layout},
+         .layout              = key.layout},
         {.viewMask                = key.viewMask,
          .colorAttachmentCount    = static_cast<uint32_t>(key.colorFormats.size()),
          .pColorAttachmentFormats = key.colorFormats.data(),

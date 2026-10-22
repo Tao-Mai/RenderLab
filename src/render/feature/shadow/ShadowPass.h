@@ -36,7 +36,7 @@ private:
     ShadowTarget          rectArea;
     ShadowTarget          directional;
     uint32_t              cascadeCount   = 0;
-    PipelineLayout        pipelineLayout;
+    vk::PipelineLayout        pipelineLayout;
 
     void recordShadow(
         RenderGraph&             graph,

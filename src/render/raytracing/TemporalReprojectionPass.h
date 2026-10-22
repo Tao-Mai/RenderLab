@@ -13,7 +13,7 @@ public:
     };
 
     Output setup(RenderGraph& graph, const PassSetup& setup, RayTracingPass::Output input);
-    void prepare(RenderGraph& graph, const PassSetup& setup) const;
+    void writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
     void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame);
 
 private:
@@ -30,11 +30,10 @@ private:
     RenderGraph::ImageHandle color;
     std::array<std::unique_ptr<HistoryImage>, 4> history;
     vk::Extent3D extent{};
-    vk::raii::DescriptorSetLayout                descriptorSetLayout = nullptr;
-    vk::raii::PipelineLayout pipelineLayout = nullptr;
+    DescriptorSetLayout descriptorSetLayout;
+    vk::PipelineLayout pipelineLayout;
     vk::raii::Pipeline pipeline = nullptr;
-    vk::raii::DescriptorPool descriptorPool = nullptr;
-    std::vector<vk::raii::DescriptorSet> sets;
+    vk::raii::DescriptorSet descriptorSet = nullptr;
     glm::mat4 previousViewProjection{1.0f};
     glm::vec4 previousViewport{};
     glm::vec4 previousDepthRow{};

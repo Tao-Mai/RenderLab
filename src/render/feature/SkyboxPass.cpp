@@ -27,11 +27,11 @@ SkyboxPass::Output SkyboxPass::setup(
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(SkyboxPushConstants),
     }};
-    pipelineLayout = device.createPipelineLayout(descriptorSetLayouts, pushConstantRanges);
+    pipelineLayout = device.getOrCreatePipelineLayout(descriptorSetLayouts, pushConstantRanges);
 
     pipeline = device.getOrCreatePipeline({
         .shader = renderContext().shaderManager->getOrLoad("skybox"),
-        .layout = &pipelineLayout,
+        .layout = pipelineLayout,
         .state =
             PipelineState{
                 .vertexLayout = VertexLayoutPreset::None,
@@ -61,7 +61,7 @@ void SkyboxPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
     const std::array descriptorSets = {execution.data.sceneSetHandle(), execution.data.lightingSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        *pipelineLayout,
+        pipelineLayout,
         RenderInterface::kSceneSet,
         descriptorSets,
         {}
@@ -75,7 +75,7 @@ void SkyboxPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
         },
     };
     commandBuffer.pushConstants<SkyboxPushConstants>(
-        *pipelineLayout,
+        pipelineLayout,
         vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         0,
         parameters

@@ -42,7 +42,7 @@ LightMarkerPass::Output LightMarkerPass::setup(
 
     shader         = renderContext().shaderManager->getOrLoad("editor_light_marker");
     auto& device   = *renderContext().device;
-    pipelineLayout = &renderContext().device->editorPipelineLayout;
+    pipelineLayout = renderContext().device->editorPipelineLayout;
     pipeline       = device.getOrCreatePipeline({
               .shader       = shader,
               .layout       = pipelineLayout,
@@ -99,7 +99,7 @@ void LightMarkerPass::execute(
     const std::array viewSets = {execution.data.viewSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        **pipelineLayout,
+        pipelineLayout,
         EditorInterface::kViewSet,
         viewSets,
         {}
@@ -111,7 +111,7 @@ void LightMarkerPass::execute(
             .color = glm::vec4{item.color, 1.0f},
         };
         commandBuffer.pushConstants<EditorLightMarkerPushConstants>(
-            **pipelineLayout,
+            pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0,
             push

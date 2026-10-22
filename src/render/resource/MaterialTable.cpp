@@ -101,7 +101,8 @@ void MaterialTable::upload(const VulkanContext& vulkan, Device& device)
     );
     const vk::DeviceSize bytes = std::max<size_t>(materials.size(), 1) * sizeof(MaterialData);
     CHECK(bytes <= limits.maxStorageBufferRange, "material data exceeds maxStorageBufferRange");
-    if (bytes > materialBuffer.size())
+    const bool bufferChanged = bytes > materialBuffer.size();
+    if (bufferChanged)
         materialBuffer = Buffer(
             vulkan.physicalDeviceHandle(),
             vulkan.deviceHandle(),
@@ -118,31 +119,43 @@ void MaterialTable::upload(const VulkanContext& vulkan, Device& device)
     else
         materialBuffer.upload(materials.data(), materials.size() * sizeof(MaterialData));
 
-    if (!*descriptorSet)
+    const bool newSet = !*descriptorSet;
+    if (newSet)
         descriptorSet = device.allocateDescriptorSet(device.materialDescriptorSetLayout);
-    const vk::DescriptorBufferInfo bufferInfo{.buffer = materialBuffer.handle(), .range = materialBuffer.size()};
-    const std::array               writes{
-        vk::WriteDescriptorSet{
-                          .dstSet          = *descriptorSet,
-                          .dstBinding      = RenderInterface::kMaterialBufferBinding,
-                          .descriptorCount = 1,
-                          .descriptorType  = vk::DescriptorType::eStorageBuffer,
-                          .pBufferInfo     = &bufferInfo,
-        },
-        vk::WriteDescriptorSet{
-                          .dstSet          = *descriptorSet,
-                          .dstBinding      = RenderInterface::kMaterialTexturesBinding,
-                          .descriptorCount = kMaxMaterialTextures,
-                          .descriptorType  = vk::DescriptorType::eSampledImage,
-                          .pImageInfo      = images.data(),
-        },
-        vk::WriteDescriptorSet{
-                          .dstSet          = *descriptorSet,
-                          .dstBinding      = RenderInterface::kMaterialSamplersBinding,
-                          .descriptorCount = kMaxMaterialSamplers,
-                          .descriptorType  = vk::DescriptorType::eSampler,
-                          .pImageInfo      = samplers.data(),
-        },
-    };
-    vulkan.deviceHandle().updateDescriptorSets(writes, {});
+
+    const vk::DescriptorBufferInfo        bufferInfo{.buffer = materialBuffer.handle(), .range = materialBuffer.size()};
+    std::array<vk::WriteDescriptorSet, 3> writes;
+    uint32_t                              writeCount = 0;
+    if (newSet || bufferChanged)
+        writes[writeCount++] = {
+            .dstSet          = *descriptorSet,
+            .dstBinding      = RenderInterface::kMaterialBufferBinding,
+            .descriptorCount = 1,
+            .descriptorType  = vk::DescriptorType::eStorageBuffer,
+            .pBufferInfo     = &bufferInfo,
+        };
+    if (newSet || images != boundImages)
+    {
+        writes[writeCount++] = {
+            .dstSet          = *descriptorSet,
+            .dstBinding      = RenderInterface::kMaterialTexturesBinding,
+            .descriptorCount = kMaxMaterialTextures,
+            .descriptorType  = vk::DescriptorType::eSampledImage,
+            .pImageInfo      = images.data(),
+        };
+        boundImages = images;
+    }
+    if (newSet || samplers != boundSamplers)
+    {
+        writes[writeCount++] = {
+            .dstSet          = *descriptorSet,
+            .dstBinding      = RenderInterface::kMaterialSamplersBinding,
+            .descriptorCount = kMaxMaterialSamplers,
+            .descriptorType  = vk::DescriptorType::eSampler,
+            .pImageInfo      = samplers.data(),
+        };
+        boundSamplers = samplers;
+    }
+    if (writeCount)
+        vulkan.deviceHandle().updateDescriptorSets(std::span{writes.data(), writeCount}, {});
 }

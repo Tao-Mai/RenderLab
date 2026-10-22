@@ -30,4 +30,6 @@ private:
     std::vector<vk::Sampler>                                  samplerHandles;
     std::array<vk::DescriptorImageInfo, kMaxMaterialTextures> images;
     std::array<vk::DescriptorImageInfo, kMaxMaterialSamplers> samplers;
+    std::array<vk::DescriptorImageInfo, kMaxMaterialTextures> boundImages{};
+    std::array<vk::DescriptorImageInfo, kMaxMaterialSamplers> boundSamplers{};
 };

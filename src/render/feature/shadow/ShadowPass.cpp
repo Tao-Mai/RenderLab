@@ -34,29 +34,24 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup)
         setup.vulkan.physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures;
     CHECK((features & kRequiredFeatures) == kRequiredFeatures);
 
+    // pipeline layout
     auto&            device = *renderContext().device;
     const std::array descriptorSetLayouts{&device.sceneDescriptorSetLayout, &device.lightingDescriptorSetLayout};
     const std::array pushConstantRanges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(ShadowPushConstants),
     }};
-    pipelineLayout = device.createPipelineLayout(descriptorSetLayouts, pushConstantRanges);
+    pipelineLayout = device.getOrCreatePipelineLayout(descriptorSetLayouts, pushConstantRanges);
 
-    const auto createTarget =
-        [&](RenderGraph::ImageCreateInfo info, int shadowType, uint32_t viewMask = 0, uint32_t viewLayerCount = 1)
+    const auto createTarget = [&](const RenderGraph::ImageCreateInfo& info,
+                                  int                                 shadowType,
+                                  uint32_t                            viewMask       = 0,
+                                  uint32_t                            viewLayerCount = 1)
     {
-        CHECK(info.extent.width > 0 && info.extent.height > 0);
-        CHECK(
-            info.extent.width <= limits.maxImageDimension2D && info.extent.height <= limits.maxImageDimension2D &&
-            info.extent.width <= limits.maxFramebufferWidth && info.extent.height <= limits.maxFramebufferHeight &&
-            info.arrayLayers <= limits.maxImageArrayLayers
-        );
-        if (info.flags & vk::ImageCreateFlagBits::eCubeCompatible)
-            CHECK(info.extent.width <= limits.maxImageDimensionCube);
         const auto shader   = renderContext().shaderManager->getOrLoad("shadow", {{"SHADOW_TYPE", shadowType}});
         const auto pipeline = device.getOrCreatePipeline({
             .shader = shader,
-            .layout = &pipelineLayout,
+            .layout = pipelineLayout,
             .state =
                 PipelineState{
                     .vertexLayout = VertexLayoutPreset::PositionOnly,
@@ -227,7 +222,7 @@ void ShadowPass::recordShadow(
     const std::array lightingSets = {execution.data.lightingSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        *pipelineLayout,
+        pipelineLayout,
         RenderInterface::kLightingSet,
         lightingSets,
         {}
@@ -247,7 +242,7 @@ void ShadowPass::recordShadow(
 
         const ShadowPushConstants push{.model = item.model, .lightIdx = lightIndex, .cascadeIndex = cascadeIndex};
         commandBuffer.pushConstants<ShadowPushConstants>(
-            *pipelineLayout,
+            pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0,
             push

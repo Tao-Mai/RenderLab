@@ -171,7 +171,7 @@ private:
         std::vector<PassNode*>            prev;
         std::vector<PassNode*>            next;
         std::vector<ResourceUse>          uses;
-        std::function<void(RenderGraph&, const PassSetup&)>                  prepare;
+        std::function<void(RenderGraph&, const PassSetup&)>                  writeDescriptorSet;
         std::function<void(RenderGraph&, vk::raii::CommandBuffer&, const PassFrame&)> execute;
     };
 
@@ -216,8 +216,9 @@ auto RenderGraph::addPass(T& pass, const PassSetup& setup, Args&&... args)
         {
             pass->execute(graph, commandBuffer, frame);
         };
-        if constexpr (requires { pass.prepare(*this, setup); })
-            node.prepare = [pass = &pass](RenderGraph& graph, const PassSetup& setup) { pass->prepare(graph, setup); };
+        if constexpr (requires { pass.writeDescriptorSet(*this, setup); })
+            node.writeDescriptorSet = [pass = &pass](RenderGraph& graph, const PassSetup& setup)
+            { pass->writeDescriptorSet(graph, setup); };
         (collectDependencies(node, args), ...);
         nodes.push_back(&node);
 

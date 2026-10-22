@@ -92,7 +92,7 @@ void Renderer::init()
     swapchain.init(vulkan, window);
 
     shaders.init(vulkan.deviceHandle(), *context().assetManager);
-    device.init(vulkan.deviceHandle(), shaders);
+    device.init(vulkan, shaders);
 
     ctx = {
         .shaderManager = &shaders,
@@ -311,7 +311,7 @@ void Renderer::applyConfiguration()
         if (activeSceneBindings)
         {
             activeSceneBindings->refreshBindings();
-            activeSceneBindings->prepare(graph, {vulkan, swapchain, frameStorage});
+            activeSceneBindings->writeDescriptorSet(graph, {vulkan, swapchain, frameStorage});
         }
     }
     appliedConfig = config;

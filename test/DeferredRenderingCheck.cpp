@@ -9,6 +9,7 @@
 #include "render/RenderContext.h"
 #include "render/RenderPreparation.h"
 #include "render/Renderer.h"
+#include "render/device/Device.h"
 #include "render/device/VkCheck.h"
 #include "render/feature/DepthPrepass.h"
 #include "render/feature/EndPass.h"
@@ -25,6 +26,28 @@
 
 namespace
 {
+void checkPipelineLayoutCache()
+{
+    auto& device = *renderContext().device;
+    std::array ranges{vk::PushConstantRange{
+        .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+        .size = sizeof(MeshPushConstants),
+    }};
+    {
+        auto sceneLayout = device.createDescriptorSetLayout(device.sceneDescriptorSetLayout.bindings);
+        const auto layout = device.getOrCreatePipelineLayout(
+            std::array{&sceneLayout, &device.lightingDescriptorSetLayout, &device.materialDescriptorSetLayout}, ranges
+        );
+        CHECK(layout == device.meshPipelineLayout);
+    }
+    const std::array sets{
+        &device.sceneDescriptorSetLayout, &device.lightingDescriptorSetLayout, &device.materialDescriptorSetLayout
+    };
+    CHECK(device.getOrCreatePipelineLayout(sets, ranges) == device.meshPipelineLayout);
+    ranges[0].size -= sizeof(glm::vec4);
+    CHECK(device.getOrCreatePipelineLayout(sets, ranges) != device.meshPipelineLayout);
+}
+
 struct PixelReadbackPass
 {
     RenderGraph::ImageHandle  image;
@@ -330,6 +353,7 @@ int main(int, char** argv)
     scene.actors.push_back(std::move(light));
     scenes.load(scene);
     renderer.init();
+    checkPipelineLayoutCache();
     checkDeferred(renderer, scenes);
     renderer.shutdown();
     scenes.shutdown();

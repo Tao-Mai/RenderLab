@@ -19,5 +19,5 @@ private:
     RenderGraph::ImageHandle depth;
     vk::Pipeline             singleSidedPipeline;
     vk::Pipeline             doubleSidedPipeline;
-    const PipelineLayout*    pipelineLayout = nullptr;
+    vk::PipelineLayout pipelineLayout;
 };

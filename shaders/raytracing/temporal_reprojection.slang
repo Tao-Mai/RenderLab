@@ -1,14 +1,13 @@
-#include "../scene_uniforms.slang"
+#include "../scene_data.slang"
 
-[[vk::binding(0, 0)]] Texture2D<float4> currentColor;
-[[vk::binding(1, 0)]] Texture2D<float> currentDepth; // Unnormalized positive view-space depth.
-[[vk::binding(2, 0)]] Texture2D<float4> currentNormal;
-[[vk::binding(3, 0)]] [[vk::image_format("rgba32f")]] RWTexture2DArray<float4> historyColor;
-[[vk::binding(4, 0)]] [[vk::image_format("r32f")]] RWTexture2DArray<float> historyDepth;
-[[vk::binding(5, 0)]] [[vk::image_format("rgba16f")]] RWTexture2DArray<float4> historyNormal;
-[[vk::binding(6, 0)]] [[vk::image_format("rg32f")]] RWTexture2DArray<float2> historyMoments;
-[[vk::binding(7, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> outputColor;
-[[vk::binding(8, 0)]] ConstantBuffer<SceneUniforms> sceneUniforms;
+[[vk::binding(0, 1)]] Texture2D<float4> currentColor;
+[[vk::binding(1, 1)]] Texture2D<float> currentDepth; // Unnormalized positive view-space depth.
+[[vk::binding(2, 1)]] Texture2D<float4> currentNormal;
+[[vk::binding(3, 1)]] [[vk::image_format("rgba32f")]] RWTexture2DArray<float4> historyColor;
+[[vk::binding(4, 1)]] [[vk::image_format("r32f")]] RWTexture2DArray<float> historyDepth;
+[[vk::binding(5, 1)]] [[vk::image_format("rgba16f")]] RWTexture2DArray<float4> historyNormal;
+[[vk::binding(6, 1)]] [[vk::image_format("rg32f")]] RWTexture2DArray<float2> historyMoments;
+[[vk::binding(7, 1)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> outputColor;
 
 struct ReprojectionParameters
 {

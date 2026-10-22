@@ -5,8 +5,6 @@
 #include "render/feature/SceneBindings.h"
 #include "render/feature/deferred/GBufferPass.h"
 
-#include <vector>
-
 class DeferredLightingPass
 {
 public:
@@ -18,18 +16,18 @@ public:
     };
 
     Output setup(RenderGraph& graph, const PassSetup& setup, GBufferPass::Output gBuffer, ShadowPass::Output shadow);
-    void   prepare(RenderGraph& graph, const PassSetup& setup) const;
+    void   writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
     void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
     SceneBindings& sceneBindings() { return bindings; }
 
 private:
-    SceneBindings                        bindings;
-    GBufferPass::Output                  gBuffer;
-    RenderGraph::ImageHandle             color;
-    DescriptorSetLayout                  descriptorSetLayout;
-    DescriptorSetLayout                  emptyDescriptorSetLayout;
-    std::vector<vk::raii::DescriptorSet> descriptorSets;
-    vk::Pipeline                         pipeline;
-    PipelineLayout                       pipelineLayout;
+    SceneBindings            bindings;
+    GBufferPass::Output      gBuffer;
+    RenderGraph::ImageHandle color;
+    DescriptorSetLayout      descriptorSetLayout;
+    DescriptorSetLayout      emptyDescriptorSetLayout;
+    vk::raii::DescriptorSet  descriptorSet = nullptr;
+    vk::Pipeline             pipeline;
+    vk::PipelineLayout       pipelineLayout;
 };

@@ -12,8 +12,6 @@
 #include "render/resource/GpuMesh.h"
 #include "render/resource/ShaderData.h"
 
-#include <array>
-
 DepthPrepass::Output DepthPrepass::setup(RenderGraph& graph, const PassSetup& setup)
 {
     CHECK(
@@ -37,7 +35,7 @@ DepthPrepass::Output DepthPrepass::setup(RenderGraph& graph, const PassSetup& se
     // 由于双面材质需要修改pipeline的cullMode，所以即使用了全局材质数组也需要两份pipeline
     // 这里直接缓存两个pipeline，执行时调用
     auto& device   = *renderContext().device;
-    pipelineLayout = &device.meshPipelineLayout;
+    pipelineLayout = device.meshPipelineLayout;
     GraphicsPipelineInfo pipelineInfo{
         .shader = renderContext().shaderManager->getOrLoad("depth"),
         .layout = pipelineLayout,
@@ -82,13 +80,18 @@ void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandB
     commandBuffer.setViewport(0, viewport.toViewport());
     commandBuffer.setScissor(0, viewport.toScissor());
 
-    const std::array descriptorSets =
-        {execution.data.sceneSetHandle(), execution.data.lightingSetHandle(), execution.renderData.materialSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        **pipelineLayout,
-        RenderInterface::kSceneSet,  // first set
-        descriptorSets,
+        pipelineLayout,
+        RenderInterface::kSceneSet,
+        execution.data.sceneSetHandle(),
+        {}
+    );
+    commandBuffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        pipelineLayout,
+        RenderInterface::kMaterialSet,
+        execution.renderData.materialSetHandle(),
         {}
     );
 
@@ -105,7 +108,7 @@ void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandB
         item.mesh->bind(commandBuffer);
         const MeshPushConstants pushConstants{.model = item.model, .materialIndex = item.materialIndex};
         commandBuffer.pushConstants<MeshPushConstants>(
-            **pipelineLayout,
+            pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0,
             pushConstants

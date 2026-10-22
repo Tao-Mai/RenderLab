@@ -40,7 +40,10 @@ ScenePass::Output ScenePass::setup(
     return {color, depth, resolvedShadow};
 }
 
-void ScenePass::prepare(RenderGraph& graph, const PassSetup& setup) const { bindings.prepare(graph, setup); }
+void ScenePass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
+{
+    bindings.writeDescriptorSet(graph, setup);
+}
 
 void ScenePass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
 {

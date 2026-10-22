@@ -4,6 +4,7 @@
 
 #include "core/ConfigManager.h"
 #include "core/Context.h"
+#include "render/RenderContext.h"
 #include "render/device/Memory.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
@@ -125,80 +126,47 @@ void TemporalReprojectionPass::createPipeline(const VulkanContext& vulkan)
     CHECK(vulkan.physicalDeviceHandle().getQueueFamilyProperties()[vulkan.graphicsQueueFamilyIndex()].queueFlags &
         vk::QueueFlagBits::eCompute);
     const auto& device = vulkan.deviceHandle();
-    std::array<vk::DescriptorSetLayoutBinding, 9> bindings;
+    std::array<vk::DescriptorSetLayoutBinding, 8> bindings;
     for (uint32_t binding = 0; binding < bindings.size(); ++binding)
         bindings[binding] = {
             .binding = binding,
-            .descriptorType = binding == 8 ? vk::DescriptorType::eUniformBuffer
-                : binding < 3 ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage,
+            .descriptorType = binding < 3 ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage,
             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute,
         };
-    descriptorSetLayout = vkCheck(device.createDescriptorSetLayout({
-        .bindingCount = static_cast<uint32_t>(bindings.size()),
-        .pBindings    = bindings.data(),
-    }));
+    auto& renderDevice = *renderContext().device;
+    descriptorSetLayout = renderDevice.createDescriptorSetLayout(bindings);
     const vk::PushConstantRange range{.stageFlags = vk::ShaderStageFlagBits::eCompute,
         .size = sizeof(ReprojectionParameters)};
-    pipelineLayout = vkCheck(device.createPipelineLayout({
-        .setLayoutCount         = 1,
-        .pSetLayouts            = &*descriptorSetLayout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges    = &range,
-    }));
+    const std::array layouts{&renderDevice.sceneDescriptorSetLayout, &descriptorSetLayout};
+    pipelineLayout = renderDevice.getOrCreatePipelineLayout(layouts, std::array{range});
     GpuShader shader{device, "shaders/temporal_reprojection.spv"};
     const vk::raii::PipelineCache cache{nullptr};
     pipeline = vkCheck(device.createComputePipeline(cache, {
         .stage = {.stage = vk::ShaderStageFlagBits::eCompute, .module = shader.handle(), .pName = "computeMain"},
-        .layout = *pipelineLayout,
+        .layout = pipelineLayout,
     }));
-    const std::array poolSizes{
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eSampledImage, .descriptorCount = maxFramesInFlight * 3},
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = maxFramesInFlight * 5},
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxFramesInFlight},
-    };
-    descriptorPool = vkCheck(device.createDescriptorPool({
-        .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, .maxSets = maxFramesInFlight,
-        .poolSizeCount = static_cast<uint32_t>(poolSizes.size()), .pPoolSizes = poolSizes.data(),
-    }));
-    for (uint32_t index = 0; index < maxFramesInFlight; ++index)
-        sets.push_back(
-            std::move(vkCheck(device.allocateDescriptorSets({
-                                  .descriptorPool     = *descriptorPool,
-                                  .descriptorSetCount = 1,
-                                  .pSetLayouts        = &*descriptorSetLayout,
-                              }))
-                          .front())
-        );
+    descriptorSet = renderDevice.allocateDescriptorSet(descriptorSetLayout);
 }
 
-void TemporalReprojectionPass::prepare(RenderGraph& graph, const PassSetup& setup) const
+void TemporalReprojectionPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
 {
-    for (uint32_t frameIndex = 0; frameIndex < maxFramesInFlight; ++frameIndex)
+    const std::array handles{input.rayImage, input.depth, input.worldNormal,
+        history[0]->handle, history[1]->handle, history[2]->handle, history[3]->handle, color};
+    std::array<vk::DescriptorImageInfo, 8> images;
+    std::array<vk::WriteDescriptorSet, 8> writes;
+    for (uint32_t binding = 0; binding < handles.size(); ++binding)
     {
-        const std::array handles{input.rayImage, input.depth, input.worldNormal,
-            history[0]->handle, history[1]->handle, history[2]->handle, history[3]->handle, color};
-        std::array<vk::DescriptorImageInfo, 8> images;
-        std::array<vk::WriteDescriptorSet, 9> writes;
-        for (uint32_t binding = 0; binding < handles.size(); ++binding)
-        {
-            images[binding] = {
-                .imageView   = imageView(graph, handles[binding]),
-                .imageLayout = binding < 3 ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eGeneral,
-            };
-            writes[binding] = {
-                .dstSet = *sets[frameIndex], .dstBinding = binding, .descriptorCount = 1,
-                .descriptorType = binding < 3 ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage,
-                .pImageInfo = &images[binding],
-            };
-        }
-        const auto& buffer = setup.frameData[frameIndex].sceneUniformBuffer();
-        const vk::DescriptorBufferInfo viewInfo{.buffer = buffer.handle(), .range = buffer.size()};
-        writes[8] = {
-            .dstSet = *sets[frameIndex], .dstBinding = 8, .descriptorCount = 1,
-            .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &viewInfo,
+        images[binding] = {
+            .imageView   = imageView(graph, handles[binding]),
+            .imageLayout = binding < 3 ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eGeneral,
         };
-        setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});
+        writes[binding] = {
+            .dstSet = *descriptorSet, .dstBinding = binding, .descriptorCount = 1,
+            .descriptorType = binding < 3 ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage,
+            .pImageInfo = &images[binding],
+        };
     }
+    setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});
 }
 
 void TemporalReprojectionPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame)
@@ -208,9 +176,9 @@ void TemporalReprojectionPass::execute(RenderGraph& graph, vk::raii::CommandBuff
     const glm::vec4 currentViewport{viewport.x, viewport.y, viewport.width, viewport.height};
     const auto currentDepthRow = linearDepthRow(frame.view.uniforms.view);
     commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
-    const std::array descriptorSets{*sets[frame.frameIndex]};
-    commands.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *pipelineLayout, 0, descriptorSets, {});
-    commands.pushConstants<ReprojectionParameters>(*pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, ReprojectionParameters{
+    const std::array descriptorSets{frame.data.sceneSetHandle(), *descriptorSet};
+    commands.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelineLayout, 0, descriptorSets, {});
+    commands.pushConstants<ReprojectionParameters>(pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, ReprojectionParameters{
         .previousViewProjection = previousViewProjection, .previousViewport = previousViewport,
         .previousDepthRow = previousDepthRow, .viewport = currentViewport,
         .writeLayer = writeLayer, .historyValid = hasHistory ? 1u : 0u,

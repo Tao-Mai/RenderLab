@@ -34,7 +34,7 @@ EditorDepthPass::Output EditorDepthPass::setup(RenderGraph& graph, const PassSet
     );
 
     auto& device   = *renderContext().device;
-    pipelineLayout = &renderContext().device->editorPipelineLayout;
+    pipelineLayout = renderContext().device->editorPipelineLayout;
     pipeline       = device.getOrCreatePipeline({
               .shader      = renderContext().shaderManager->getOrLoad("editor_depth"),
               .layout      = pipelineLayout,
@@ -74,7 +74,7 @@ void EditorDepthPass::execute(
     const std::array viewSets = {execution.data.viewSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        **pipelineLayout,
+        pipelineLayout,
         EditorInterface::kViewSet,
         viewSets,
         {}
@@ -86,7 +86,7 @@ void EditorDepthPass::execute(
 
         const EditorDepthPushConstants parameters{.model = item.model};
         commandBuffer.pushConstants<EditorDepthPushConstants>(
-            **pipelineLayout,
+            pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0,
             parameters

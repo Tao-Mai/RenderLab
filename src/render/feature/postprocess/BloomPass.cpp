@@ -126,66 +126,61 @@ BloomPass::Output BloomPass::FilterPass::setup(
             .stageFlags      = kShaderStages
         },
     };
-    auto& ctx        = renderContext();
-    auto& device     = *ctx.device;
+    auto& ctx           = renderContext();
+    auto& device        = *ctx.device;
     descriptorSetLayout = device.createDescriptorSetLayout(bindings);
     const std::array layouts{&descriptorSetLayout};
     const std::array ranges{vk::PushConstantRange{.stageFlags = kShaderStages, .size = sizeof(BloomParameters)}};
-    pipelineLayout    = device.createPipelineLayout(layouts, ranges);
+    pipelineLayout    = device.getOrCreatePipelineLayout(layouts, ranges);
     const auto shader = ctx.shaderManager->getOrLoad("bloom", {{"BLOOM_STAGE", static_cast<int>(stage)}});
     pipeline          = device.getOrCreatePipeline({
                  .shader       = shader,
-                 .layout       = &pipelineLayout,
+                 .layout       = pipelineLayout,
                  .state        = {.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
                  .colorFormats = {kHdrColorFormat},
     });
     sampler           = ctx.resources->sampler(BuiltinAssets::Sampler::linearClamp);
-    descriptorSets.clear();
-    for (uint32_t index = 0; index < maxFramesInFlight; ++index)
-        descriptorSets.push_back(device.allocateDescriptorSet(descriptorSetLayout));
+    descriptorSet     = device.allocateDescriptorSet(descriptorSetLayout);
     return {color};
 }
 
-void BloomPass::FilterPass::prepare(RenderGraph& graph, const PassSetup& setup) const
+void BloomPass::FilterPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
 {
-    for (uint32_t frameIndex = 0; frameIndex < maxFramesInFlight; ++frameIndex)
-    {
-        const std::array images{
-            vk::DescriptorImageInfo{
-                .imageView   = imageView(graph, source),
-                .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-            },
-            vk::DescriptorImageInfo{.sampler = sampler},
-            vk::DescriptorImageInfo{
-                .imageView   = imageView(graph, base),
-                .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-            },
-        };
-        const std::array writes{
-            vk::WriteDescriptorSet{
-                .dstSet          = *descriptorSets[frameIndex],
-                .dstBinding      = kSourceImageBinding,
-                .descriptorCount = 1,
-                .descriptorType  = vk::DescriptorType::eSampledImage,
-                .pImageInfo      = &images[0]
-            },
-            vk::WriteDescriptorSet{
-                .dstSet          = *descriptorSets[frameIndex],
-                .dstBinding      = kSamplerBinding,
-                .descriptorCount = 1,
-                .descriptorType  = vk::DescriptorType::eSampler,
-                .pImageInfo      = &images[1]
-            },
-            vk::WriteDescriptorSet{
-                .dstSet          = *descriptorSets[frameIndex],
-                .dstBinding      = kBaseImageBinding,
-                .descriptorCount = 1,
-                .descriptorType  = vk::DescriptorType::eSampledImage,
-                .pImageInfo      = &images[2]
-            },
-        };
-        setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});
-    }
+    const std::array images{
+        vk::DescriptorImageInfo{
+            .imageView   = imageView(graph, source),
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+        },
+        vk::DescriptorImageInfo{.sampler = sampler},
+        vk::DescriptorImageInfo{
+            .imageView   = imageView(graph, base),
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+        },
+    };
+    const std::array writes{
+        vk::WriteDescriptorSet{
+            .dstSet          = *descriptorSet,
+            .dstBinding      = kSourceImageBinding,
+            .descriptorCount = 1,
+            .descriptorType  = vk::DescriptorType::eSampledImage,
+            .pImageInfo      = &images[0]
+        },
+        vk::WriteDescriptorSet{
+            .dstSet          = *descriptorSet,
+            .dstBinding      = kSamplerBinding,
+            .descriptorCount = 1,
+            .descriptorType  = vk::DescriptorType::eSampler,
+            .pImageInfo      = &images[1]
+        },
+        vk::WriteDescriptorSet{
+            .dstSet          = *descriptorSet,
+            .dstBinding      = kBaseImageBinding,
+            .descriptorCount = 1,
+            .descriptorType  = vk::DescriptorType::eSampledImage,
+            .pImageInfo      = &images[2]
+        },
+    };
+    setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});
 }
 
 void BloomPass::FilterPass::execute(
@@ -212,8 +207,8 @@ void BloomPass::FilterPass::execute(
     );
     commands.setScissor(0, vk::Rect2D({0, 0}, {extent.width, extent.height}));
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sets{*descriptorSets[execution.frameIndex]};
-    commands.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0, sets, {});
+    const std::array sets{*descriptorSet};
+    commands.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, sets, {});
 
     const auto            sourceExtent = graph.imageInfo(source).extent;
     const auto            frameExtent  = execution.setup.swapchain.extent();
@@ -230,7 +225,7 @@ void BloomPass::FilterPass::execute(
         .intensity    = settings.intensity,
         .scatter      = settings.scatter,
     };
-    commands.pushConstants<BloomParameters>(*pipelineLayout, kShaderStages, 0, parameters);
+    commands.pushConstants<BloomParameters>(pipelineLayout, kShaderStages, 0, parameters);
     commands.draw(3, 1, 0, 0);
     recordDraw(context().profiler, 3);
     commands.endRendering();

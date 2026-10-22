@@ -15,7 +15,7 @@ public:
 
     Output
     setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle depthHandle, ShadowPass::Output shadow);
-    void prepare(RenderGraph& graph, const PassSetup& setup) const;
+    void writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
     void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
     SceneBindings& sceneBindings() { return bindings; }
