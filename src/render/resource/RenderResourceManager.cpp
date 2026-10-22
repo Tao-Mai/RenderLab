@@ -1,20 +1,13 @@
 #include "render/resource/RenderResourceManager.h"
 
-#include "asset/ApplyOptionalFields.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
-#include "asset/BuiltinAssets.h"
 #include "core/Logger.h"
-#include "render/RenderPreparation.h"
-#include "render/ShaderManager.h"
-#include "render/Visibility.h"
-#include "render/device/Device.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/resource/GpuMaterial.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/GpuTexture.h"
-#include "scene/system/SceneRenderData.h"
 
 #include <cmath>
 #include <utility>
@@ -116,17 +109,12 @@ GpuUploadContext RenderResourceManager::uploadContext() const
 }
 
 void RenderResourceManager::init(
-    VulkanContext&    targetVulkan,
-    Device&           targetDevice,
-    ShaderManager&    targetShaders,
-    AssetManager&     targetAssets,
-    AssetDataManager& targetData
+    VulkanContext& targetVulkan, ShaderManager& targetShaders, AssetManager& targetAssets, AssetDataManager& targetData
 )
 {
     assets  = &targetAssets;
     data    = &targetData;
     vulkan  = &targetVulkan;
-    device  = &targetDevice;
     shaders = &targetShaders;
     const vk::CommandPoolCreateInfo poolInfo{
         .flags            = vk::CommandPoolCreateFlagBits::eTransient,
@@ -137,14 +125,11 @@ void RenderResourceManager::init(
 
 void RenderResourceManager::shutdown() noexcept
 {
-    for (auto& frame : frameResources)
-        frame = {};
     meshes.clear();
     materials.clear();
     textures.clear();
     samplers.clear();
     uploadPool = nullptr;
-    device     = nullptr;
     shaders    = nullptr;
     vulkan     = nullptr;
     assets     = nullptr;
@@ -182,65 +167,11 @@ std::shared_ptr<GpuMaterial> RenderResourceManager::material(const MaterialAsset
     const auto revision = assets->revision<MaterialAsset>(id);
     if (!entry.gpu || entry.revision != revision)
     {
-        entry.gpu      = createMaterial(assets->get<MaterialAsset>(id).as<PbrMaterialAsset>());
+        entry.gpu = std::make_shared<GpuMaterial>();
+        entry.gpu->create(assets->get<MaterialAsset>(id).as<PbrMaterialAsset>(), *shaders, *assets);
         entry.revision = revision;
     }
     return entry.gpu;
-}
-
-std::shared_ptr<GpuMaterial> RenderResourceManager::createMaterial(const PbrMaterialAsset& asset)
-{
-    DCHECK(device);
-    const auto loadTexture = [&](const std::optional<TextureBinding>& source,
-                                 const TextureAsset::ID&              fallback,
-                                 std::optional<ColorSpace>            colorSpace = std::nullopt)
-    {
-        const TextureBinding binding = source.value_or(TextureBinding{fallback, BuiltinAssets::Sampler::linearRepeat});
-        CHECK(
-            !binding.textureID.empty() && !binding.samplerID.empty(),
-            "material '{}' has an invalid texture binding",
-            asset.id
-        );
-        if (colorSpace)
-        {
-            CHECK(
-                assets->get<TextureAsset>(binding.textureID).colorSpace == *colorSpace,
-                "material '{}' texture '{}' has an invalid color space",
-                asset.id,
-                binding.textureID
-            );
-        }
-        return GpuMaterial::Texture{texture(binding.textureID), sampler(binding.samplerID)};
-    };
-    const auto            sheen     = asset.sheen.value_or(PbrMaterialAsset::Sheen{});
-    const auto            clearcoat = asset.clearcoat.value_or(PbrMaterialAsset::Clearcoat{});
-    GpuMaterial::Textures textures{
-        .baseColor      = loadTexture(asset.baseColorTexture, BuiltinAssets::Texture::white),
-        .normal         = loadTexture(asset.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear),
-        .metallic       = loadTexture(asset.metallicTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
-        .roughness      = loadTexture(asset.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
-        .emissive       = loadTexture(asset.emissiveTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb),
-        .occlusion      = loadTexture(asset.aoTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
-        .sheenColor     = loadTexture(sheen.colorTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb),
-        .sheenRoughness = loadTexture(sheen.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
-        .clearcoat      = {
-                 .factor = loadTexture(clearcoat.texture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
-                 .roughness =
-                loadTexture(clearcoat.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
-                 .normal = loadTexture(clearcoat.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear),
-        },
-    };
-
-    auto gpu = std::make_shared<GpuMaterial>();
-    gpu->create(
-        shaders->getOrLoad(
-            asset.shaderId.value_or("scene"),
-            {{"ENABLE_IBL", 1}, {"ENABLE_CLEARCOAT", asset.clearcoat ? 1 : 0}, {"ENABLE_SHEEN", asset.sheen ? 1 : 0}}
-        ),
-        asset,
-        std::move(textures)
-    );
-    return gpu;
 }
 
 std::shared_ptr<GpuTexture> RenderResourceManager::texture(const TextureAsset::ID& id)
@@ -317,91 +248,4 @@ vk::Sampler RenderResourceManager::sampler(const SamplerAsset::ID& id)
     };
     auto gpu = vkCheck(vulkan->deviceHandle().createSampler(info));
     return *samplers.emplace(id, std::move(gpu)).first->second;
-}
-
-namespace
-{
-bool sameMaterialResources(const PbrMaterialAsset& a, const PbrMaterialAsset& b)
-{
-    if (a.shaderId != b.shaderId || a.clearcoat.has_value() != b.clearcoat.has_value() ||
-        a.sheen.has_value() != b.sheen.has_value())
-        return false;
-    if (a.clearcoat &&
-        (a.clearcoat->texture != b.clearcoat->texture ||
-         a.clearcoat->roughnessTexture != b.clearcoat->roughnessTexture ||
-         a.clearcoat->normalTexture != b.clearcoat->normalTexture))
-        return false;
-    if (a.sheen &&
-        (a.sheen->colorTexture != b.sheen->colorTexture || a.sheen->roughnessTexture != b.sheen->roughnessTexture))
-        return false;
-    return a.baseColorTexture == b.baseColorTexture && a.normalTexture == b.normalTexture &&
-        a.metallicTexture == b.metallicTexture && a.roughnessTexture == b.roughnessTexture &&
-        a.emissiveTexture == b.emissiveTexture && a.aoTexture == b.aoTexture;
-}
-}  // namespace
-
-const RenderData&
-RenderResourceManager::prepare(const SceneRenderData& scene, const PreparedScene& prepared, uint32_t frameIndex)
-{
-    DCHECK(frameIndex < frameResources.size());
-    DCHECK(scene.objects.size() == prepared.objects.size());
-    auto& frame = frameResources[frameIndex];
-    frame.materials.begin(*this);
-    auto& draws          = frame.draws;
-    draws.environmentMap = scene.environmentMap;
-    draws.drawItems.clear();
-    draws.opaqueDrawItems.clear();
-    draws.transparentDrawItems.clear();
-    draws.lights      = prepared.lighting.lights;
-    draws.lightRanges = prepared.lighting.lightRanges;
-    for (auto& [key, instance] : frame.instances)
-        instance.used = false;
-
-    for (size_t objectIndex = 0; objectIndex < scene.objects.size(); ++objectIndex)
-    {
-        const auto& object     = scene.objects[objectIndex];
-        const auto& visibility = prepared.objects[objectIndex];
-        auto&       gpuMesh    = mesh(object.mesh);
-        const auto& meshAsset  = assets->get<MeshAsset>(object.mesh);
-        for (uint32_t index = 0; index < meshAsset.submeshes.size(); ++index)
-        {
-            const auto& submesh     = meshAsset.submeshes[index];
-            auto        gpuMaterial = material(submesh.materialId);
-            if (const auto override = object.materialOverrides.find(static_cast<int>(index));
-                override != object.materialOverrides.end())
-            {
-                auto asset = assets->get<MaterialAsset>(submesh.materialId).as<PbrMaterialAsset>();
-                applyOptionalFields(asset, override->second);
-                auto& instance = frame.instances[{object.selectionId, object.instanceIndex, index}];
-                if (!instance.gpu || !sameMaterialResources(instance.asset, asset))
-                    instance.gpu = createMaterial(asset);
-                else if (instance.asset != asset)
-                    instance.gpu->updateParameters(asset);
-                instance.asset = std::move(asset);
-                instance.used  = true;
-                gpuMaterial    = instance.gpu;
-            }
-            const DrawItem draw{
-                &gpuMesh,
-                gpuMaterial,
-                object.model,
-                submesh.firstIndex,
-                submesh.indexCount,
-                object.selectionId,
-                visibility.distanceSquared,
-                visibility.visibilityMask,
-                frame.materials.add(*gpuMaterial)
-            };
-            draws.drawItems.push_back(draw);
-            if (visibility.visibilityMask & RenderVisibility::kMainView)
-                (gpuMaterial->alphaMode() == MaterialAlphaMode::Blend ? draws.transparentDrawItems
-                                                                      : draws.opaqueDrawItems)
-                    .push_back(draw);
-        }
-    }
-    std::erase_if(frame.instances, [](const auto& entry) { return !entry.second.used; });
-    std::ranges::sort(draws.transparentDrawItems, std::greater{}, &DrawItem::distanceSquared);
-    frame.materials.upload(*vulkan, *device);
-    draws.materialDescriptorSet = frame.materials.descriptorSetHandle();
-    return draws;
 }

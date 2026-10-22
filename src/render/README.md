@@ -1,6 +1,6 @@
 # 渲染模块
 
-[项目首页](../../README.md) · [架构](../../docs/architecture.md) · [RenderGraph](ARCH.MD) · [Descriptor / Pipeline Layout](../../docs/render_layout.md)
+[项目首页](../../README.md) · [架构](../../docs/Architecture.md) · [RenderGraph](Arch.md) · [Descriptor / Pipeline Layout](../../docs/RenderLayout.md)
 
 渲染模块接收场景快照和编辑器输入，准备 GPU 数据，再通过 RenderGraph 调度完整的渲染 Pass。Renderer 负责流程，Pass 负责 Vulkan 绘制细节。
 
@@ -21,7 +21,7 @@
 - 延迟 G-buffer 保存 Albedo / AO、Normal / Roughness、Emissive / Metallic、Sheen / Roughness，并从深度重建位置。
 - Forward / Deferred 复用基础 BRDF、灯光、阴影和 IBL；Clearcoat 当前仅在 Forward 计算。
 - 透明材质仍走前向混合，不等同于物理折射或透射。
-- 阴影由统一 [ShadowPass](feature/shadow/ShadowPass.cpp) 处理，算法见 [阴影文档](../../docs/shadow.md)。
+- 阴影由统一 [ShadowPass](feature/shadow/ShadowPass.cpp) 处理，算法见 [阴影文档](../../docs/Shadow.md)。
 
 ### 实时光追
 
@@ -56,7 +56,8 @@
 
 | 位置 | 内容 |
 | --- | --- |
-| [Renderer.cpp](Renderer.cpp) / [RenderPreparation.cpp](RenderPreparation.cpp) | 路线调度、帧准备、主视图与阴影剔除 |
+| [Renderer.cpp](Renderer.cpp) | 路线调度、全局帧准备、光栅化主视图剔除 |
+| [ShadowPass](feature/shadow/ShadowPass.cpp) / [TransparentPass](feature/TransparentPass.cpp) | 每帧 prepare 中准备阴影数据与阴影剔除、排序透明物体 |
 | [RenderGraph](feature/RenderGraph.h) | 类型化登记、依赖编译、资源状态与执行 |
 | [SceneDraw](feature/SceneDraw.cpp) / [SceneBindings](feature/SceneBindings.cpp) | 共享场景绘制函数与绑定 |
 | [feature/](feature/) | 光栅、阴影、后处理与编辑器 Pass |

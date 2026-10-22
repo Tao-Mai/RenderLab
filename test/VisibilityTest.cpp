@@ -4,8 +4,8 @@
 #include "core/Context.h"
 #include "core/Serializer.h"
 #include "core/math/Bounds.h"
-#include "render/RenderPreparation.h"
 #include "render/Visibility.h"
+#include "render/feature/shadow/ShadowData.h"
 #include "scene/actor/ALight.h"
 #include "scene/actor/AStaticMesh.h"
 #include "scene/component/LightTypes.h"
@@ -70,7 +70,7 @@ TEST(Visibility, DirectionalCascadeCubesContainBlendedFrustum)
     light.data.direction      = glm::vec4{direction, 0.0f};
     light.data.lightType = GpuLightType::Directional;
     light.data.shadowEnabled = 1;
-    const auto shadows   = prepareShadows(view, {&light, 1}, config);
+    const auto shadows   = prepareShadows(view, {&light.data, 1}, config);
     ASSERT_EQ(shadows.directionalShadows.size(), 1u);
 
     const auto inverseView    = glm::inverse(view.view);
@@ -128,12 +128,12 @@ TEST(Visibility, DirectionalShadowRetainsUpstreamCasters)
     view.inverseViewProjection = glm::inverse(view.viewProjection);
     RenderFeature::Shadow shadows;
     shadows.cascade     = {.count = 1, .maxDistance = 10.0f};
-    const auto prepared = prepareRenderScene(scene, view, shadows, assets, nullptr);
-    const auto mask     = RenderVisibility::shadowMask(GpuLightType::Directional, 0, 0);
-    ASSERT_EQ(prepared.objects.size(), 3u);
-    EXPECT_EQ(prepared.objects[0].visibilityMask, mask);
-    EXPECT_FALSE(prepared.objects[1].visibilityMask & mask);
-    EXPECT_FALSE(prepared.objects[2].visibilityMask & mask);
+    const auto lighting = prepareShadows(view, {&light.data, 1}, shadows);
+    const Frustum frustum{lighting.directionalShadows[0].cascades[0].vp, Frustum::NearPlane::Exclude};
+    const auto& bounds = assets.get<MeshAsset>(BuiltinAssets::Mesh::cube).bounds;
+    EXPECT_TRUE(frustum.intersects(bounds.transformed(scene.objects[0].model)));
+    EXPECT_FALSE(frustum.intersects(bounds.transformed(scene.objects[1].model)));
+    EXPECT_FALSE(frustum.intersects(bounds.transformed(scene.objects[2].model)));
 }
 
 TEST(Visibility, CascadeTexelSnappingKeepsSubTexelMotionStable)
@@ -151,7 +151,7 @@ TEST(Visibility, CascadeTexelSnappingKeepsSubTexelMotionStable)
         view.view                  = glm::translate(glm::mat4{1}, glm::vec3{-cameraX, 0, 0});
         view.viewProjection        = projection * view.view;
         view.inverseViewProjection = glm::inverse(view.viewProjection);
-        return prepareShadows(view, {&light, 1}, config).directionalShadows[0].cascades[0].vp;
+        return prepareShadows(view, {&light.data, 1}, config).directionalShadows[0].cascades[0].vp;
     };
     const auto  reference          = prepare(0.0f);
     const float worldUnitsPerTexel = 2.0f / (reference[0][0] * config.cascade.shadowMapSize);
@@ -188,11 +188,11 @@ TEST(Visibility, UniformCascadeSplitsIgnoreLambdaAndPracticalKeepsNearResolution
     light.data.lightType = GpuLightType::Directional;
     light.data.shadowEnabled = 1;
     RenderFeature::Shadow config;
-    const auto            practical       = prepareShadows(view, {&light, 1}, config);
+    const auto            practical       = prepareShadows(view, {&light.data, 1}, config);
     config.cascade.splitStrategy          = CascadeSplitStrategy::Uniform;
-    const auto uniform                    = prepareShadows(view, {&light, 1}, config);
+    const auto uniform                    = prepareShadows(view, {&light.data, 1}, config);
     config.cascade.splitLambda            = 1.0f;
-    const auto uniformWithDifferentLambda = prepareShadows(view, {&light, 1}, config);
+    const auto uniformWithDifferentLambda = prepareShadows(view, {&light.data, 1}, config);
     for (uint32_t index = 0; index < config.cascade.count; ++index)
     {
         const float expected = 0.1f + (50.0f - 0.1f) * (index + 1) / config.cascade.count;
@@ -208,12 +208,12 @@ TEST(Visibility, UniformCascadeSplitsIgnoreLambdaAndPracticalKeepsNearResolution
         uniform.directionalShadows[0].cascades[0].depthUpperBound
     );
     config.cascade.blendRatio  = 0.0f;
-    const auto withoutBlending = prepareShadows(view, {&light, 1}, config);
+    const auto withoutBlending = prepareShadows(view, {&light.data, 1}, config);
     for (const auto& cascade : withoutBlending.directionalShadows[0].cascades)
         EXPECT_FLOAT_EQ(cascade.blendStartDepth, cascade.depthUpperBound);
 }
 
-TEST(Visibility, MainAndShadowBitsAreIndependentAndDisabledLightsHaveNoBit)
+TEST(Visibility, SceneSubmissionRetainsOffscreenObjectsAndDisabledLights)
 {
     AssetManager assets;
     SceneAsset   scene;
@@ -248,32 +248,12 @@ TEST(Visibility, MainAndShadowBitsAreIndependentAndDisabledLightsHaveNoBit)
     const auto&  snapshot = system.prepare(scene);
     ASSERT_EQ(snapshot.objects.size(), 1u);  // Never remove geometry needed by RT.
     ASSERT_EQ(snapshot.lights.size(), 4u);
-    const auto prepare = [&](const RenderFeature::Shadow& shadows = RenderFeature::Shadow{})
-    { return prepareRenderScene(system.prepare(scene), view, shadows, assets, nullptr); };
-    const auto mask = prepare().objects.front().visibilityMask;
-    EXPECT_FALSE(mask & RenderVisibility::kMainView);
-    EXPECT_TRUE(mask & RenderVisibility::shadowMask(GpuLightType::Point, 0));
-    EXPECT_TRUE(mask & RenderVisibility::shadowMask(GpuLightType::Spot, 0));
-    EXPECT_TRUE(mask & RenderVisibility::shadowMask(GpuLightType::RectArea, 0));
-    EXPECT_TRUE(mask & RenderVisibility::shadowMask(GpuLightType::Directional, 0, 0));
-
     scene.actors.front()->transform().position.z             = -3;
     scene.actors[1]->getComponent<LightComponent>()->enabled = false;
     const auto& disabledSnapshot = system.prepare(scene);
     ASSERT_EQ(disabledSnapshot.lights.size(), 4u); // Scene submission still includes disabled components.
     EXPECT_FALSE(disabledSnapshot.lights[0].enabled);
-    const auto filtered = prepare();
-    EXPECT_EQ(filtered.lighting.lights.size(), 3u);
-    EXPECT_EQ(filtered.lighting.lightRanges.directionalEnd, filtered.lighting.lightRanges.pointEnd);
-    const auto visible                                       = prepare().objects.front().visibilityMask;
-    EXPECT_TRUE(visible & RenderVisibility::kMainView);
-    EXPECT_FALSE(visible & RenderVisibility::shadowMask(GpuLightType::Point, 0));
-    EXPECT_FALSE(visible & RenderVisibility::shadowMask(GpuLightType::Spot, 0));
-    EXPECT_FALSE(visible & RenderVisibility::shadowMask(GpuLightType::RectArea, 0));
-    EXPECT_EQ(prepare({.enable = false}).objects.front().visibilityMask, RenderVisibility::kMainView);
-
     scene.actors.front()->transform().position = {1000, 0, -3};
-    EXPECT_EQ(prepare().objects.front().visibilityMask, 0u);
     EXPECT_EQ(system.prepare(scene).objects.size(), 1u);
 
     const auto& builtin = assets.get<MeshAsset>(BuiltinAssets::Mesh::cube);

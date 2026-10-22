@@ -5,12 +5,11 @@
 
 #include <span>
 
-struct DrawItem;
-
-struct SceneShaderOptions
+struct SceneDrawOptions
 {
-    bool ibl       = true;
-    bool clearcoat = true;
+    bool ibl         = true;
+    bool clearcoat   = true;
+    bool transparent = false;
 };
 
 namespace SceneDraw
@@ -29,9 +28,9 @@ vk::Rect2D beginRendering(
 void recordMeshes(
     vk::raii::CommandBuffer&    commandBuffer,
     const PassFrame&            execution,
-    std::span<const DrawItem>   items,
     std::span<const vk::Format> colorFormats,
-    ShaderHandle                shader  = {},
-    SceneShaderOptions          options = {}
+    ShaderHandle                shader      = {},
+    SceneDrawOptions            options     = {},
+    std::span<const uint32_t>   objectOrder = {}
 );
 }  // namespace SceneDraw

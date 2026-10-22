@@ -13,6 +13,7 @@
 #include "render/feature/editor/EditorShaderData.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
+#include "render/resource/RenderResourceManager.h"
 
 #include <array>
 
@@ -61,11 +62,11 @@ EditorPickingPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph
     return {pickingImage};
 }
 
-void EditorPickingPass::draw(vk::raii::CommandBuffer& commandBuffer, const DrawItem& item) const
+void EditorPickingPass::draw(vk::raii::CommandBuffer& commandBuffer, const RenderObject& object) const
 {
     const EditorPickingPushConstants parameters{
-        .model       = item.model,
-        .selectionId = item.selectionId,
+        .model       = object.model,
+        .selectionId = object.selectionId,
     };
     commandBuffer.pushConstants<EditorPickingPushConstants>(
         pipelineLayout,
@@ -73,9 +74,13 @@ void EditorPickingPass::draw(vk::raii::CommandBuffer& commandBuffer, const DrawI
         0,
         parameters
     );
-    item.mesh->bind(commandBuffer);
-    commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
-    recordDraw(context().profiler, item.indexCount);
+    auto& mesh = renderContext().resources->mesh(object.mesh);
+    mesh.bind(commandBuffer);
+    for (const auto& submesh : mesh.submeshes())
+    {
+        commandBuffer.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);
+        recordDraw(context().profiler, submesh.indexCount);
+    }
 }
 
 void EditorPickingPass::execute(
@@ -135,12 +140,12 @@ void EditorPickingPass::execute(
     commandBuffer.setViewport(0, viewport.toViewport());
     commandBuffer.setScissor(0, vk::Rect2D({static_cast<int32_t>(x), static_cast<int32_t>(y)}, {1, 1}));
 
-    for (const DrawItem& item : execution.renderData.drawItems)
+    for (uint32_t index = 0; index < execution.renderData.objects.size(); ++index)
     {
-        if (!(item.visibilityMask & RenderVisibility::kMainView))
+        if (!execution.renderData.isVisible(index))
             continue;
 
-        draw(commandBuffer, item);
+        draw(commandBuffer, execution.renderData.objects[index]);
     }
     for (const auto& item : editor.lightDrawItems)
     {

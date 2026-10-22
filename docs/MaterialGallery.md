@@ -1,6 +1,6 @@
 # 材质展示场景
 
-[项目首页](../README.md) · [示例资产](material_samples.md) · [Sheen](sheen.md)
+[项目首页](../README.md) · [示例资产](MaterialSamples.md) · [Sheen](Sheen.md)
 
 选择 `material_gallery`，可在同一光照下比较材质。16 个展示物按 4 × 4 排列，点击对象后在右侧 Materials 调节参数。
 

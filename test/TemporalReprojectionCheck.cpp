@@ -147,10 +147,12 @@ void check(Renderer& renderer)
         const auto index = frameNumber++ % maxFramesInFlight;
         frames[index].wait();
         data[index].updateSceneUniforms(view.uniforms);
+        const PassFrame execution{setup, data[index], view, {}, {}, index};
+        graph.prepare(execution);
         auto& commands = frames[index].commandBufferHandle();
         vkCheck(commands.reset());
         vkCheck(commands.begin({}));
-        graph.execute(commands, {setup, data[index], view, {}, {}, index}, 0, frames[index].gpuProfiler(), nullptr);
+        graph.execute(commands, execution, 0, frames[index].gpuProfiler(), nullptr);
         vkCheck(commands.end());
         const auto command = *commands;
         vkCheck(vulkan.deviceHandle().resetFences(frames[index].drawFenceHandle()));

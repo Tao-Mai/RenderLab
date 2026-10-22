@@ -1,42 +1,48 @@
 #pragma once
 
-#include "asset/AssetID.h"
-#include "render/resource/ShaderData.h"
+#include "core/math/Bounds.h"
+#include "render/Visibility.h"
+#include "scene/system/SceneRenderData.h"
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
+#include <span>
+#include <tuple>
 #include <vector>
 
 #include <glm/mat4x4.hpp>
 #include <vulkan/vulkan.hpp>
 
 class GpuMaterial;
-class GpuMesh;
-struct EnvironmentMapAsset;
-
-struct DrawItem
-{
-    GpuMesh*                           mesh;
-    std::shared_ptr<const GpuMaterial> material;
-    glm::mat4                          model;
-    uint32_t                           firstIndex;
-    uint32_t                           indexCount;
-    uint32_t                           selectionId;
-    float                              distanceSquared;
-    uint32_t                           visibilityMask = 0;
-    uint32_t                           materialIndex  = 0;
-};
 
 struct RenderData
 {
-    vk::DescriptorSet                           materialDescriptorSet;
-    std::optional<AssetID<EnvironmentMapAsset>> environmentMap;
-    std::vector<DrawItem>                       drawItems;
-    std::vector<DrawItem>                       opaqueDrawItems;
-    std::vector<DrawItem>                       transparentDrawItems;
-    std::vector<LightData>                      lights;
-    LightRanges                                 lightRanges;
+    struct MaterialBinding
+    {
+        std::shared_ptr<GpuMaterial> material;
+        uint32_t                     materialIndex = 0;
+    };
 
-    [[nodiscard]] vk::DescriptorSet materialSetHandle() const { return materialDescriptorSet; }
+    std::map<std::tuple<uint32_t, uint32_t, uint32_t>, MaterialBinding> materials;
+    vk::DescriptorSet                                                   materialDescriptorSet;
+    std::optional<AssetID<EnvironmentMapAsset>>                         environmentMap;
+    std::span<const RenderObject>                                       objects;
+    uint32_t                                                            submeshCount = 0;
+    std::vector<Aabb>                                                   objectBounds;
+    // Empty when this path does not perform main-view culling.
+    std::vector<uint32_t>  visibilityMasks;
+    std::vector<LightData> lights;
+    LightRanges            lightRanges;
+
+    [[nodiscard]] vk::DescriptorSet      materialSetHandle() const { return materialDescriptorSet; }
+    [[nodiscard]] const MaterialBinding& material(const RenderObject& object, uint32_t submeshIndex) const
+    {
+        return materials.find({object.selectionId, object.instanceIndex, submeshIndex})->second;
+    }
+    [[nodiscard]] bool isVisible(uint32_t objectIndex) const
+    {
+        return visibilityMasks.empty() || (visibilityMasks[objectIndex] & RenderVisibility::kMainView);
+    }
 };

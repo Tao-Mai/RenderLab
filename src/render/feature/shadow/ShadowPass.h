@@ -16,6 +16,7 @@ public:
     };
 
     Output setup(RenderGraph& graph, const PassSetup& setup);
+    void   prepare(RenderGraph& graph, const PassFrame& frame);
     void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
 private:
@@ -35,8 +36,9 @@ private:
     ShadowTarget          spot;
     ShadowTarget          rectArea;
     ShadowTarget          directional;
-    uint32_t              cascadeCount   = 0;
-    vk::PipelineLayout        pipelineLayout;
+    uint32_t              cascadeCount = 0;
+    vk::PipelineLayout    pipelineLayout;
+    std::vector<uint32_t> visibilityMasks;
 
     void recordShadow(
         RenderGraph&             graph,

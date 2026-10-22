@@ -46,7 +46,7 @@ int main(int, char** argv)
     feature.shadow.rectAreaShadowMapSize = 256;
     feature.shadow.cascade               = {.count = 4, .shadowMapSize = 256, .maxDistance = 40.0f};
     config.setRenderFeature(feature);
-    config.setRenderPath(RenderPath::Rasterization);
+    config.setRenderPath(RenderPath::Forward);
     data.init(config.paths().assets);
     scenes.init();
     assets.init(config.paths().assets);
@@ -79,12 +79,12 @@ int main(int, char** argv)
     source.data.direction     = {0.0f, -1.0f, 0.0f, 0.0f};
     source.data.lightType     = GpuLightType::Directional;
     source.data.shadowEnabled = 1;
-    auto prepared             = prepareShadows(view, {&source, 1}, feature.shadow);
-    upload.update(
-        view,
-        {.lightRanges = prepared.lightRanges, .cascadeCount = feature.shadow.cascade.count},
-        std::move(prepared)
+    auto prepared             = prepareShadows(view, {&source.data, 1}, feature.shadow);
+    upload.updateSceneUniforms(view);
+    upload.updateLighting(
+        {.lightRanges = {1, 1, 1, 1}, .cascadeCount = feature.shadow.cascade.count}, {&source.data, 1}
     );
+    upload.updateShadows(std::move(prepared));
     CHECK(upload.directionalShadowData().size() == 1 && upload.lightData()[0].shadowidx == 0);
     CHECK(upload.lightUniforms().cascadeCount == 4);
     float previousDepth = camera.config().nearPlane;

@@ -44,6 +44,6 @@ GBufferPass::Output GBufferPass::setup(RenderGraph& graph, const PassSetup& setu
 void GBufferPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
 {
     SceneDraw::beginRendering(graph, commandBuffer, execution, colors, depth, vk::AttachmentLoadOp::eClear);
-    SceneDraw::recordMeshes(commandBuffer, execution, execution.renderData.opaqueDrawItems, kColorFormats, shader);
+    SceneDraw::recordMeshes(commandBuffer, execution, kColorFormats, shader);
     commandBuffer.endRendering();
 }

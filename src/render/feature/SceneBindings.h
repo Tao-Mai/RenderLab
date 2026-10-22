@@ -14,8 +14,6 @@ class VulkanContext;
 class RenderGraph;
 class FrameData;
 struct RenderData;
-struct SceneUniforms;
-struct ShadowFrameData;
 
 class SceneBindings
 {
@@ -23,7 +21,7 @@ public:
     ShadowPass::Output setup(RenderGraph& graph, const PassSetup& setup, ShadowPass::Output shadow);
     void               refreshBindings();
     void               writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
-    void               updateFrame(FrameData& frame, const SceneUniforms& view, const ShadowFrameData& lighting) const;
+    void               updateFrame(FrameData& frame, const RenderData& scene) const;
     void               updateEnvironmentMap(const std::optional<EnvironmentMapAsset::ID>& id);
 
 private:

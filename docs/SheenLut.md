@@ -1,6 +1,6 @@
 # Sheen 方向反照率 LUT
 
-[Sheen 着色](sheen.md) · [资产模块](../src/asset/README.md)
+[Sheen 着色](Sheen.md) · [资产模块](../src/asset/README.md)
 
 该 LUT 保存 Charlie Sheen 的方向反照率，用于材质分层时缩放底层能量。它不是环境光颜色，也不能替代 Sheen IBL 的积分。
 

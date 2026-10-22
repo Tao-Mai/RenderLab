@@ -8,7 +8,6 @@
 #include "core/Context.h"
 #include "core/Window.h"
 #include "render/RenderContext.h"
-#include "render/RenderPreparation.h"
 #include "render/Renderer.h"
 #include "scene/SceneManager.h"
 #include "scene/system/RenderSystem.h"
@@ -88,16 +87,16 @@ int main(int argc, char** argv)
             }
         );
         renderer.waitIdle();
-        const auto prepared = prepareRenderScene(
-            renderData,
-            view.uniforms,
-            config.rendererConfig().feature.shadow,
-            assets,
-            context().profiler
-        );
-        const auto& gpuData = renderContext().resources->prepare(renderData, prepared, 0);
-        for (const auto& item : gpuData.transparentDrawItems)
-            renderedTransparentMaterial |= item.material == importedMaterial;
+        const auto& gpuData = renderer.prepare(view, renderData, 0);
+        for (uint32_t objectIndex = 0; objectIndex < gpuData.objects.size(); ++objectIndex)
+        {
+            if (!gpuData.isVisible(objectIndex))
+                continue;
+            const auto& object = gpuData.objects[objectIndex];
+            const auto& mesh   = renderContext().resources->mesh(object.mesh);
+            for (uint32_t index = 0; index < mesh.submeshes().size(); ++index)
+                renderedTransparentMaterial |= gpuData.material(object, index).material == importedMaterial;
+        }
     }
     CHECK(renderedTransparentMaterial);
 

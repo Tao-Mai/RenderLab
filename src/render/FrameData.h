@@ -19,7 +19,8 @@ public:
     void reset() noexcept;
     void updateSceneUniforms(const SceneUniforms& view);
     // Update only after the owning frame's fence completes.
-    void update(const SceneUniforms& view, const LightUniforms& lighting, ShadowFrameData prepared);
+    void updateLighting(const LightUniforms& lighting, std::span<const LightData> lights);
+    void updateShadows(ShadowFrameData prepared);
 
     [[nodiscard]] const SceneUniforms&                sceneUniforms() const { return sceneData; }
     [[nodiscard]] const LightUniforms&                lightUniforms() const { return lightMetadata; }
@@ -52,5 +53,8 @@ private:
     vk::raii::DescriptorSet lightingSet = nullptr;
     vk::raii::DescriptorSet viewSet     = nullptr;
 
-    void bindBuffers();
+    void writeSceneDescriptorSet();
+    void writeEditorViewDescriptorSet();
+    void writeLightingBufferDescriptors();
+    void uploadLights();
 };

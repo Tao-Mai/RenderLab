@@ -15,6 +15,7 @@ public:
 
     [[nodiscard]] vk::AccelerationStructureKHR handle() const { return *structure; }
     [[nodiscard]] vk::DeviceAddress address() const { return deviceAddress; }
+    [[nodiscard]] uint64_t revision() const { return resourceRevision; }
 
 private:
     Buffer storage;
@@ -23,4 +24,5 @@ private:
     VkAccelerationStructureTypeKHR type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
     vk::DeviceAddress deviceAddress = 0;
     vk::DeviceAddress scratchAddress = 0;
+    uint64_t resourceRevision = 0;
 };

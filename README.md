@@ -2,7 +2,7 @@
 
 基于 **Vulkan / C++26 / Slang** 的个人渲染器，围绕实时渲染、材质与光传输持续演进。提供前向、延迟、实时光追与离线路径追踪四条路线，使用同一套场景与资产进行对比。
 
-[功能清单](docs/feature.md) · [项目架构](docs/architecture.md) · [阴影](docs/shadow.md) · [材质展示](docs/material_gallery.md)
+[功能清单](docs/Feature.md) · [项目架构](docs/Architecture.md) · [阴影](docs/Shadow.md) · [材质展示](docs/MaterialGallery.md)
 
 ## 渲染展示
 
@@ -65,12 +65,12 @@ Shader；未指定构建类型时默认使用 Release。光追路线需要支持
 
 | 主题                                                                        | 内容                                |
 |-----------------------------------------------------------------------------|-------------------------------------|
-| [功能清单](docs/feature.md)                                                 | 已实现功能与当前边界                |
-| [项目架构](docs/architecture.md)                                            | 场景、资产、Renderer 与编辑器的职责 |
-| [渲染模块](src/render/README.md) / [RenderGraph](src/render/ARCH.MD)        | 四条路线、资源与帧同步              |
-| [阴影](docs/shadow.md) / [稳定 CSM](docs/shadow/csm.md)                     | 阴影算法、稳定化与测试场景          |
-| [材质展示](docs/material_gallery.md) / [示例资产](docs/material_samples.md) | 材质比较与扩展支持情况              |
-| [Sheen](docs/sheen.md) / [方向反照率 LUT](docs/sheen_lut.md)                | 分层着色与环境光处理                |
+| [功能清单](docs/Feature.md)                                                 | 已实现功能与当前边界                |
+| [项目架构](docs/Architecture.md)                                            | 场景、资产、Renderer 与编辑器的职责 |
+| [渲染模块](src/render/README.md) / [RenderGraph](src/render/Arch.md)        | 四条路线、资源与帧同步              |
+| [阴影](docs/Shadow.md) / [稳定 CSM](docs/shadow/Csm.md)                     | 阴影算法、稳定化与测试场景          |
+| [材质展示](docs/MaterialGallery.md) / [示例资产](docs/MaterialSamples.md) | 材质比较与扩展支持情况              |
+| [Sheen](docs/Sheen.md) / [方向反照率 LUT](docs/SheenLut.md)                | 分层着色与环境光处理                |
 
 Sibenik 来自 [McGuire Computer Graphics Archive](https://casual-effects.com/g3d/data10/index.html)：Marko Dabrovic
 建模、Kenzie Lamar 修复几何、Morgan McGuire 制作高分辨率纹理，采用 CC BY-NC 许可。展示中的灯光由本项目布置；其他外部资产遵循各自许可。

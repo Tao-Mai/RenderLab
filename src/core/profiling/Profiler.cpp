@@ -92,7 +92,8 @@ void Profiler::recordDraw(uint32_t vertexCount, uint32_t instanceCount)
 void Profiler::recordCulling(uint32_t totalObjects, std::vector<ViewCullingStatistics> views)
 {
     current.totalObjects = totalObjects;
-    current.views        = std::move(views);
+    for (auto& view : views)
+        current.views.push_back(std::move(view));
 }
 
 void Profiler::clearGpu()

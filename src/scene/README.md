@@ -1,6 +1,6 @@
 # 场景模块
 
-[项目首页](../../README.md) · [项目架构](../../docs/architecture.md)
+[项目首页](../../README.md) · [项目架构](../../docs/Architecture.md)
 
 场景使用 Actor 持有 Component 的对象模型。SceneManager 管理运行时场景；编辑器相机独立于 Actor / Component。
 

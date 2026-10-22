@@ -1,9 +1,10 @@
 #include "render/Renderer.h"
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
-#include "render/RenderPreparation.h"
+#include "render/Visibility.h"
 #include "scene/system/SceneRenderData.h"
 
+#include "asset/ApplyOptionalFields.h"
 #include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -33,9 +34,53 @@
 #include "render/raytracing/TemporalReprojectionPass.h"
 #include "render/raytracing/TlasBuildPass.h"
 #include "render/resource/Buffer.h"
+#include "render/resource/GpuMaterial.h"
 
+#include <glm/geometric.hpp>
+#include <limits>
 #include <tuple>
 #include <utility>
+
+namespace
+{
+bool sameMaterialResources(const PbrMaterialAsset& a, const PbrMaterialAsset& b)
+{
+    if (a.shaderId != b.shaderId || a.clearcoat.has_value() != b.clearcoat.has_value() ||
+        a.sheen.has_value() != b.sheen.has_value())
+        return false;
+    if (a.clearcoat &&
+        (a.clearcoat->texture != b.clearcoat->texture ||
+         a.clearcoat->roughnessTexture != b.clearcoat->roughnessTexture ||
+         a.clearcoat->normalTexture != b.clearcoat->normalTexture))
+        return false;
+    if (a.sheen &&
+        (a.sheen->colorTexture != b.sheen->colorTexture || a.sheen->roughnessTexture != b.sheen->roughnessTexture))
+        return false;
+    return a.baseColorTexture == b.baseColorTexture && a.normalTexture == b.normalTexture &&
+        a.metallicTexture == b.metallicTexture && a.roughnessTexture == b.roughnessTexture &&
+        a.emissiveTexture == b.emissiveTexture && a.aoTexture == b.aoTexture;
+}
+
+LightRanges groupLights(std::span<const RenderLight> source, std::vector<LightData>& grouped)
+{
+    grouped.clear();
+    grouped.reserve(source.size());
+    const auto append = [&](GpuLightType type)
+    {
+        for (const auto& light : source)
+            if (light.enabled && light.data.type() == type)
+                grouped.push_back(light.data);
+        return static_cast<uint32_t>(grouped.size());
+    };
+
+    LightRanges ranges;
+    ranges.directionalEnd = append(GpuLightType::Directional);
+    ranges.pointEnd       = append(GpuLightType::Point);
+    ranges.rectAreaEnd    = append(GpuLightType::RectArea);
+    ranges.spotEnd        = append(GpuLightType::Spot);
+    return ranges;
+}
+}  // namespace
 
 struct Renderer::Passes
 {
@@ -108,7 +153,8 @@ void Renderer::init()
     for (auto& data : frameStorage)
         data.init(vulkan, device);
 
-    resources.init(vulkan, device, shaders, *context().assetManager, *context().assetDataManager);
+    resources.init(vulkan, shaders, *context().assetManager, *context().assetDataManager);
+    materialTable.init(resources, vulkan, device);
     graph.init(vulkan, swapchain);
     passes = std::make_unique<Passes>();
 
@@ -132,6 +178,10 @@ void Renderer::shutdown() noexcept
     graph.reset();
     passes.reset();
     pickingReadback = {};
+    renderStorage = {};
+    for (auto& overrides : materialOverrides)
+        overrides.clear();
+    materialTable = {};
     resources.shutdown();
     for (FrameContext& frame : frames)
     {
@@ -180,7 +230,7 @@ void Renderer::setupRenderGraph()
         case RenderPath::RayTracing:
             scene = setupRayTracing();
             break;
-        case RenderPath::Rasterization:
+        case RenderPath::Forward:
         case RenderPath::Deferred:
             scene = setupRasterization();
             break;
@@ -330,32 +380,100 @@ void Renderer::recreateSwapchain()
     setupRenderGraph();
 }
 
-const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderData& scene)
+const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderData& scene, uint32_t targetFrameIndex)
 {
-    const auto& config  = context().config->rendererConfig();
-    auto        shadows = config.feature.shadow;
-    if (config.renderPath == RenderPath::RayTracing || config.renderPath == RenderPath::OfflinePathTracing)
-        shadows.enable = false;
-
-    auto* assets = context().assetManager;
-    DCHECK(assets);
-    const auto  prepared   = prepareRenderScene(scene, view.uniforms, shadows, *assets, context().profiler);
-    const auto& renderData = [&]() -> const RenderData&
+    const auto& config        = context().config->rendererConfig();
+    auto&       assets        = *context().assetManager;
+    auto*       profiler      = context().profiler;
+    auto&       renderData    = renderStorage[targetFrameIndex];
+    renderData.objects        = scene.objects;
+    renderData.environmentMap = scene.environmentMap;
+    renderData.submeshCount   = 0;
+    renderData.materials.clear();
     {
-        CpuProfileScope timing{context().profiler, "Render resources"};
-        return resources.prepare(scene, prepared, frameIndex);
-    }();
+        CpuProfileScope timing{profiler, "Render resources"};
+        auto&           overrides = materialOverrides[targetFrameIndex];
+        for (auto& [key, instance] : overrides)
+            instance.used = false;
+
+        for (const auto& object : scene.objects)
+        {
+            resources.mesh(object.mesh);
+            const auto& meshAsset = assets.get<MeshAsset>(object.mesh);
+            renderData.submeshCount += static_cast<uint32_t>(meshAsset.submeshes.size());
+            for (uint32_t index = 0; index < meshAsset.submeshes.size(); ++index)
+            {
+                const auto&                id      = meshAsset.submeshes[index].materialId;
+                const auto                 owner   = std::tuple{object.selectionId, object.instanceIndex, index};
+                auto&                      binding = renderData.materials[owner];
+                MaterialTable::MaterialKey key{.assetId = id};
+                if (const auto override = object.materialOverrides.find(static_cast<int>(index));
+                    override != object.materialOverrides.end())
+                {
+                    auto asset = assets.get<MaterialAsset>(id).as<PbrMaterialAsset>();
+                    applyOptionalFields(asset, override->second);
+                    auto& instance = overrides[owner];
+                    if (!instance.material || !sameMaterialResources(instance.asset, asset))
+                    {
+                        instance.material = std::make_shared<GpuMaterial>();
+                        instance.material->create(asset, shaders, assets);
+                    }
+                    else if (instance.asset != asset)
+                        instance.material->updateParameters(asset);
+                    instance.asset    = std::move(asset);
+                    instance.used     = true;
+                    binding.material  = instance.material;
+                    key.overrideOwner = {object.selectionId, object.instanceIndex, index};
+                }
+                else
+                    binding.material = resources.material(id);
+
+                binding.materialIndex = materialTable.update(key, *binding.material, resources);
+            }
+        }
+        std::erase_if(overrides, [](const auto& entry) { return !entry.second.used; });
+        materialTable.upload(vulkan, targetFrameIndex);
+        renderData.materialDescriptorSet = materialTable.descriptorSetHandle(targetFrameIndex);
+    }
+
+    renderData.lightRanges = groupLights(scene.lights, renderData.lights);
+    renderData.objectBounds.clear();
+    renderData.visibilityMasks.clear();
+
+    if (profiler)
+        profiler->recordCulling(static_cast<uint32_t>(scene.objects.size()), {});
+
+    if (config.renderPath == RenderPath::Forward || config.renderPath == RenderPath::Deferred)
+    {
+        CpuProfileScope timing{profiler, "Main view preparation"};
+        const Frustum   mainFrustum{view.uniforms.viewProjection};
+
+        renderData.objectBounds.reserve(scene.objects.size());
+        renderData.visibilityMasks.reserve(scene.objects.size());
+        uint32_t mainVisible = 0;
+        for (const auto& object : scene.objects)
+        {
+            const auto& meshAsset   = assets.get<MeshAsset>(object.mesh);
+            const auto  worldBounds = meshAsset.bounds.transformed(object.model);
+            const bool  visible     = mainFrustum.intersects(worldBounds);
+            renderData.objectBounds.push_back(worldBounds);
+            renderData.visibilityMasks.push_back(visible ? RenderVisibility::kMainView : 0);
+            if (visible)
+                ++mainVisible;
+        }
+        if (profiler)
+            profiler->recordCulling(static_cast<uint32_t>(scene.objects.size()), {{"Main view", mainVisible}});
+    }
 
     {
         CpuProfileScope timing{context().profiler, "Frame upload"};
-        auto&           data = frameStorage[frameIndex];
+        auto&           data = frameStorage[targetFrameIndex];
+        data.updateSceneUniforms(view.uniforms);
         if (activeSceneBindings)
         {
             activeSceneBindings->updateEnvironmentMap(renderData.environmentMap);
-            activeSceneBindings->updateFrame(data, view.uniforms, prepared.lighting);
+            activeSceneBindings->updateFrame(data, renderData);
         }
-        else
-            data.updateSceneUniforms(view.uniforms);
     }
     return renderData;
 }
@@ -378,15 +496,17 @@ RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData
     if (acquireResult == vk::Result::eErrorOutOfDateKHR)
         return {.swapchainNeedsRebuild = true};
 
-    const auto& renderData = prepare(view, scene);
+    const auto& renderData = prepare(view, scene, frameIndex);
     const auto  renderPath = context().config->rendererConfig().renderPath;
     if (renderPath == RenderPath::OfflinePathTracing)
         passes->get<OfflinePathTracingPass>().updateScene(view, scene, context().assetManager->contentRevision());
     auto& data = frameStorage[frameIndex];
+    const PassSetup setup{vulkan, swapchain, frameStorage};
+    const PassFrame execution{setup, data, view, renderData, editor, frameIndex};
+    graph.prepare(execution);
+
     {
         CpuProfileScope timing{context().profiler, "Command recording"};
-        const PassSetup setup{vulkan, swapchain, frameStorage};
-        const PassFrame execution{setup, data, view, renderData, editor, frameIndex};
         auto&           commandBuffer = frame.commandBufferHandle();
         vkCheck(commandBuffer.reset());
         vkCheck(commandBuffer.begin({}));

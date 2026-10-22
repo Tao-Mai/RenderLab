@@ -29,10 +29,10 @@
 
 namespace
 {
-void checkPointShadowUpload(const VulkanContext& vulkan)
+void checkPointShadowUpload(Renderer& renderer)
 {
     FrameData frame;
-    frame.init(vulkan, *renderContext().device);
+    frame.init(renderer.vulkanContext(), *renderContext().device);
     std::array<RenderLight, 5> lights;
     for (auto& light : lights)
     {
@@ -45,8 +45,13 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
     lights[2].data.shadowEnabled = 0;
     const auto upload            = [&](bool enabled)
     {
-        auto prepared = prepareShadows({}, lights, {.enable = enabled});
-        frame.update({}, {.lightRanges = prepared.lightRanges}, std::move(prepared));
+        SceneRenderData scene;
+        scene.lights.assign(lights.begin(), lights.end());
+        const auto& prepared = renderer.prepare({}, scene, 0);
+        frame.updateSceneUniforms({});
+        frame.updateLighting({.lightRanges = prepared.lightRanges}, prepared.lights);
+        if (enabled)
+            frame.updateShadows(prepareShadows({}, prepared.lights, {}));
     };
     upload(true);
     CHECK(frame.pointShadowData().size() == 2);
@@ -87,7 +92,7 @@ void checkPointShadowUpload(const VulkanContext& vulkan)
         CHECK(!light.castShadow() && light.shadowidx == ~0u);
     CHECK(lights[0].data.castShadow());
 
-    frame.update({}, {}, prepareShadows({}, {}, {.enable = true}));
+    frame.updateLighting({}, {});
     CHECK(frame.pointShadowData().empty() && frame.lightData().empty());
     frame.reset();
 }
@@ -314,7 +319,7 @@ int main(int argc, char** argv)
 
     sceneManager.load(scene);
     renderer.init();
-    checkPointShadowUpload(renderer.vulkanContext());
+    checkPointShadowUpload(renderer);
     renderer.rebuildGraph();
 
     const auto renderActor = [&]() -> AActor*

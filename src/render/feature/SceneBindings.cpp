@@ -349,12 +349,12 @@ void SceneBindings::bindEnvironmentTextures()
     }
 }
 
-void SceneBindings::updateFrame(FrameData& frame, const SceneUniforms& view, const ShadowFrameData& prepared) const
+void SceneBindings::updateFrame(FrameData& frame, const RenderData& scene) const
 {
     const auto&   feature = context().config->rendererConfig().feature;
     const auto&   shadow  = feature.shadow;
     LightUniforms lighting{
-        .lightRanges                   = prepared.lightRanges,
+        .lightRanges                   = scene.lightRanges,
         .ambientCoefficient            = feature.ambientCoefficient,
         .directionalShadowSampleRadius = shadow.cascade.sampleRadius,
         .iblParameters                 = {prefilteredMaxLod, 0.0f, 0.0f, 0.0f},
@@ -362,7 +362,7 @@ void SceneBindings::updateFrame(FrameData& frame, const SceneUniforms& view, con
             {shadow.bias, shadow.sampleRadius, shadow.pixelRotation ? 1.0f : 0.0f, shadow.spotSampleRadius},
     };
     lighting.cascadeCount = shadow.cascade.count;
-    frame.update(view, lighting, prepared);
+    frame.updateLighting(lighting, scene.lights);
 }
 
 void SceneBindings::refreshBindings()

@@ -1,6 +1,6 @@
 # 资产与运行数据
 
-[项目首页](../README.md) · [资产模块](../src/asset/README.md) · [材质示例](../docs/material_samples.md)
+[项目首页](../README.md) · [资产模块](../src/asset/README.md) · [材质示例](../docs/MaterialSamples.md)
 
 资产描述、导入后的二进制与源模型分开保存。运行时读取处理好的资产，不在每帧解析 glTF / OBJ。
 
@@ -51,4 +51,4 @@ CLI 相对源路径以仓库为基准；默认 ID 为文件名去掉扩展名。
 
 ## 来源与许可
 
-外部模型和纹理的许可随源文件保留。Sibenik 来自 [McGuire Computer Graphics Archive](https://casual-effects.com/g3d/data10/index.html)，采用 CC BY-NC；Khronos 示例资产的来源见 [材质示例](../docs/material_samples.md)。内置 Sheen LUT 的来源与许可证见 [LUT 说明](../docs/sheen_lut.md)。
+外部模型和纹理的许可随源文件保留。Sibenik 来自 [McGuire Computer Graphics Archive](https://casual-effects.com/g3d/data10/index.html)，采用 CC BY-NC；Khronos 示例资产的来源见 [材质示例](../docs/MaterialSamples.md)。内置 Sheen LUT 的来源与许可证见 [LUT 说明](../docs/SheenLut.md)。

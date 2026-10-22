@@ -15,6 +15,7 @@
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/GpuShader.h"
+#include "render/resource/RenderResourceManager.h"
 
 #include <algorithm>
 #include <cstring>
@@ -324,6 +325,16 @@ void OfflinePathTracingPass::prepareLights(const PassFrame& execution, Frame& fr
             vk::BufferUsageFlagBits::eStorageBuffer,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
         );
+
+        const vk::DescriptorBufferInfo info{.buffer = frame.lightData.handle(), .range = frame.lightData.size()};
+        const vk::WriteDescriptorSet   write{
+              .dstSet          = *frame.set,
+              .dstBinding      = 5,
+              .descriptorCount = 1,
+              .descriptorType  = vk::DescriptorType::eStorageBuffer,
+              .pBufferInfo     = &info,
+        };
+        vulkan.deviceHandle().updateDescriptorSets(write, {});
     }
     if (!lights.empty())
         frame.lightData.upload(lights.data(), lights.size() * sizeof(LightData));
@@ -331,20 +342,27 @@ void OfflinePathTracingPass::prepareLights(const PassFrame& execution, Frame& fr
 
 void OfflinePathTracingPass::prepareBindings(RenderGraph& graph, const PassFrame& execution, Frame& frame)
 {
-    const auto& vulkan = execution.setup.vulkan;
-    const auto& device = vulkan.deviceHandle();
-    const auto& items  = execution.renderData.drawItems;
+    const auto& vulkan    = execution.setup.vulkan;
+    const auto& device    = vulkan.deviceHandle();
+    auto&       resources = *renderContext().resources;
     static_assert(sizeof(Vertex) == 48 && offsetof(Vertex, normal) == 12 && offsetof(Vertex, texcoord) == 24);
 
     std::vector<RayTracingHitData> hits;
-    hits.reserve(items.size());
-    for (const auto& item : items)
-        hits.push_back({
-            item.mesh->vertices().address(device),
-            item.mesh->indices().address(device),
-            item.firstIndex,
-            item.materialIndex,
-        });
+    hits.reserve(execution.renderData.submeshCount);
+    for (const auto& object : execution.renderData.objects)
+    {
+        const auto& mesh = resources.mesh(object.mesh);
+        for (uint32_t index = 0; index < mesh.submeshes().size(); ++index)
+        {
+            const auto& binding = execution.renderData.material(object, index);
+            hits.push_back({
+                mesh.vertices().address(device),
+                mesh.indices().address(device),
+                mesh.submeshes()[index].firstIndex,
+                binding.materialIndex,
+            });
+        }
+    }
 
     const vk::DeviceSize bytes = std::max<size_t>(hits.size(), 1) * sizeof(RayTracingHitData);
     CHECK(
@@ -361,67 +379,72 @@ void OfflinePathTracingPass::prepareBindings(RenderGraph& graph, const PassFrame
             vk::BufferUsageFlagBits::eStorageBuffer,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
         );
+
+        const vk::DescriptorBufferInfo info{.buffer = frame.hitData.handle(), .range = frame.hitData.size()};
+        const vk::WriteDescriptorSet   write{
+              .dstSet          = *frame.set,
+              .dstBinding      = 2,
+              .descriptorCount = 1,
+              .descriptorType  = vk::DescriptorType::eStorageBuffer,
+              .pBufferInfo     = &info,
+        };
+        device.updateDescriptorSets(write, {});
     }
     if (!hits.empty())
         frame.hitData.upload(hits.data(), hits.size() * sizeof(hits.front()));
 
-    const vk::AccelerationStructureKHR                   tlas = graph.getAccelerationStructure(sceneTlas).handle();
-    const vk::WriteDescriptorSetAccelerationStructureKHR accelerationInfo{
-        .accelerationStructureCount = 1,
-        .pAccelerationStructures    = &tlas
+    const auto& structure = graph.getAccelerationStructure(sceneTlas);
+    if (frame.tlasRevision != structure.revision())
+    {
+        const auto                                           tlas = structure.handle();
+        const vk::WriteDescriptorSetAccelerationStructureKHR accelerationInfo{
+            .accelerationStructureCount = 1,
+            .pAccelerationStructures    = &tlas,
+        };
+        const vk::WriteDescriptorSet write{
+            .pNext           = &accelerationInfo,
+            .dstSet          = *frame.set,
+            .dstBinding      = 0,
+            .descriptorCount = 1,
+            .descriptorType  = vk::DescriptorType::eAccelerationStructureKHR,
+        };
+        device.updateDescriptorSets(write, {});
+        frame.tlasRevision = structure.revision();
+    }
+}
+
+void OfflinePathTracingPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup)
+{
+    const auto imageInfo = [&](RenderGraph::ImageHandle image)
+    {
+        return vk::DescriptorImageInfo{
+            .imageView   = graph.getImage(image).getOrCreateImageView({
+                  .viewType         = vk::ImageViewType::e2D,
+                  .format           = graph.imageInfo(image).format,
+                  .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+            }),
+            .imageLayout = vk::ImageLayout::eGeneral,
+        };
     };
-    const vk::DescriptorImageInfo output{
-        .imageView   = graph.getImage(rayImage).getOrCreateImageView({
-              .viewType         = vk::ImageViewType::e2D,
-              .format           = graph.imageInfo(rayImage).format,
-              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        }),
-        .imageLayout = vk::ImageLayout::eGeneral
-    };
-    const vk::DescriptorBufferInfo hitInfo{.buffer = frame.hitData.handle(), .range = frame.hitData.size()};
-    const vk::DescriptorBufferInfo lightInfo{.buffer = frame.lightData.handle(), .range = frame.lightData.size()};
+    const auto                     outputInfo = imageInfo(rayImage);
     const vk::DescriptorBufferInfo accumulationInfo{.buffer = accumulation.handle(), .range = accumulation.size()};
-    const std::array               writes = {
-        vk::WriteDescriptorSet{
-                          .pNext           = &accelerationInfo,
-                          .dstSet          = *frame.set,
-                          .dstBinding      = 0,
-                          .descriptorCount = 1,
-                          .descriptorType  = vk::DescriptorType::eAccelerationStructureKHR
-        },
+    const std::array               writes{
         vk::WriteDescriptorSet{
                           .dstSet          = *frame.set,
                           .dstBinding      = 1,
                           .descriptorCount = 1,
                           .descriptorType  = vk::DescriptorType::eStorageImage,
-                          .pImageInfo      = &output
+                          .pImageInfo      = &outputInfo,
         },
         vk::WriteDescriptorSet{
                           .dstSet          = *frame.set,
-                          .dstBinding      = 2,
+                          .dstBinding      = 7,
                           .descriptorCount = 1,
                           .descriptorType  = vk::DescriptorType::eStorageBuffer,
-                          .pBufferInfo     = &hitInfo
-        },
-        vk::WriteDescriptorSet{
-                          .dstSet          = *frame.set,
-                          .dstBinding      = 5,
-                          .descriptorCount = 1,
-                          .descriptorType  = vk::DescriptorType::eStorageBuffer,
-                          .pBufferInfo     = &lightInfo
+                          .pBufferInfo     = &accumulationInfo,
         },
     };
-    device.updateDescriptorSets(writes, {});
-    device.updateDescriptorSets(
-        vk::WriteDescriptorSet{
-            .dstSet          = *frame.set,
-            .dstBinding      = 7,
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eStorageBuffer,
-            .pBufferInfo     = &accumulationInfo
-        },
-        {}
-    );
+    setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});
 }
 
 void OfflinePathTracingPass::execute(

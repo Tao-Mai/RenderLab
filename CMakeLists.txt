@@ -321,8 +321,6 @@ add_library(RenderLabRuntime STATIC
         src/scene/system/RenderSystem.cpp
         src/scene/system/RenderSystem.h
         src/render/RenderData.h
-        src/render/RenderPreparation.h
-        src/render/RenderPreparation.cpp
         src/render/Visibility.h
         src/render/feature/ScenePass.cpp
         src/render/feature/ScenePass.h

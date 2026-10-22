@@ -36,7 +36,7 @@ int main(int argc, char** argv)
     config.init();
     const auto originalPath    = config.rendererConfig().renderPath;
     const auto originalFeature = config.rendererConfig().feature;
-    config.setRenderPath(RenderPath::Rasterization);
+    config.setRenderPath(RenderPath::Forward);
     scenes.init();
     assets.init(config.paths().assets);
     data.init(config.paths().assets);

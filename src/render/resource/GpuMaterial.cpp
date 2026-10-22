@@ -1,17 +1,62 @@
 #include "render/resource/GpuMaterial.h"
 
+#include "asset/AssetManager.h"
+#include "asset/BuiltinAssets.h"
 #include "core/Logger.h"
+#include "render/ShaderManager.h"
 #include "render/device/Device.h"
 
 #include <cmath>
 #include <utility>
 #include <vector>
 
-void GpuMaterial::create(ShaderHandle targetShader, const PbrMaterialAsset& material, Textures materialTextures)
+void GpuMaterial::create(const PbrMaterialAsset& asset, ShaderManager& shaders, AssetManager& assets)
 {
-    shaderHandle = targetShader;
-    textures     = std::move(materialTextures);
-    updateParameters(material);
+    const auto loadTexture = [&](const std::optional<TextureBinding>& source,
+                                 const TextureAsset::ID&              fallback,
+                                 std::optional<ColorSpace>            colorSpace = std::nullopt)
+    {
+        const TextureBinding binding = source.value_or(TextureBinding{fallback, BuiltinAssets::Sampler::linearRepeat});
+        CHECK(
+            !binding.textureID.empty() && !binding.samplerID.empty(),
+            "material '{}' has an invalid texture binding",
+            asset.id
+        );
+        if (colorSpace)
+        {
+            CHECK(
+                assets.get<TextureAsset>(binding.textureID).colorSpace == *colorSpace,
+                "material '{}' texture '{}' has an invalid color space",
+                asset.id,
+                binding.textureID
+            );
+        }
+        return binding;
+    };
+    const auto sheen     = asset.sheen.value_or(PbrMaterialAsset::Sheen{});
+    const auto clearcoat = asset.clearcoat.value_or(PbrMaterialAsset::Clearcoat{});
+    textures             = Textures{
+                    .baseColor      = loadTexture(asset.baseColorTexture, BuiltinAssets::Texture::white),
+                    .normal         = loadTexture(asset.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear),
+                    .metallic       = loadTexture(asset.metallicTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+                    .roughness      = loadTexture(asset.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+                    .emissive       = loadTexture(asset.emissiveTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb),
+                    .occlusion      = loadTexture(asset.aoTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+                    .sheenColor     = loadTexture(sheen.colorTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb),
+                    .sheenRoughness = loadTexture(sheen.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+                    .clearcoat      = {
+                             .factor = loadTexture(clearcoat.texture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+                             .roughness =
+                loadTexture(clearcoat.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear),
+                             .normal = loadTexture(clearcoat.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear),
+        },
+    };
+
+    shaderHandle = shaders.getOrLoad(
+        asset.shaderId.value_or("scene"),
+        {{"ENABLE_IBL", 1}, {"ENABLE_CLEARCOAT", asset.clearcoat ? 1 : 0}, {"ENABLE_SHEEN", asset.sheen ? 1 : 0}}
+    );
+    updateParameters(asset);
 }
 
 GraphicsPipelineInfo GpuMaterial::pipelineInfo(

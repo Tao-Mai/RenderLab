@@ -45,5 +45,5 @@
             "mode": "Neutral"
         }
     },
-    "renderPath": "Rasterization"
+    "renderPath": "Forward"
 }

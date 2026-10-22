@@ -4,6 +4,7 @@
 
 #include "render/FrameData.h"
 #include "render/RenderConfig.h"
+#include "render/RenderData.h"
 #include "render/RenderView.h"
 #include "render/ShaderManager.h"
 #include "render/device/Device.h"
@@ -12,6 +13,7 @@
 #include "render/feature/RenderGraph.h"
 #include "render/feature/editor/EditorFrameInput.h"
 #include "render/present/Swapchain.h"
+#include "render/resource/MaterialTable.h"
 #include "render/resource/RenderResourceManager.h"
 
 #include <array>
@@ -24,6 +26,7 @@
 
 struct SceneRenderData;
 class SceneBindings;
+class Profiler;
 
 class Renderer
 {
@@ -41,6 +44,8 @@ public:
     void              waitIdle();
     void              shutdown() noexcept;
 
+    const RenderData& prepare(const RenderView& view, const SceneRenderData& scene, uint32_t targetFrameIndex);
+
     [[nodiscard]] VulkanContext& vulkanContext() { return vulkan; }
     [[nodiscard]] Swapchain&     swapchainHandle() { return swapchain; }
     [[nodiscard]] uint32_t       offlineSampleCount() const;
@@ -54,8 +59,18 @@ private:
     ShaderManager                               shaders;
     Device                                      device;
     RenderResourceManager                       resources;
+    MaterialTable                               materialTable;
+    struct MaterialOverrideInstance
+    {
+        PbrMaterialAsset             asset;
+        std::shared_ptr<GpuMaterial> material;
+        bool                         used = false;
+    };
+    std::array<std::map<std::tuple<uint32_t, uint32_t, uint32_t>, MaterialOverrideInstance>, maxFramesInFlight>
+                                                materialOverrides;
     std::array<FrameContext, maxFramesInFlight> frames;
     std::array<FrameData, maxFramesInFlight>    frameStorage;
+    std::array<RenderData, maxFramesInFlight>   renderStorage;
     SceneBindings*                              activeSceneBindings = nullptr;
     std::optional<RendererConfig>               appliedConfig;
     struct SceneOutput
@@ -70,7 +85,6 @@ private:
     RenderGraph::ImageHandle  setupPostProcess(RenderGraph::ImageHandle color);
     void                      setupEditor(SceneOutput scene);
     void                      applyConfiguration();
-    const RenderData&         prepare(const RenderView& view, const SceneRenderData& scene);
     uint32_t                  frameIndex           = 0;
     uint32_t                  activeFramesInFlight = maxFramesInFlight;
     RenderGraph               graph;

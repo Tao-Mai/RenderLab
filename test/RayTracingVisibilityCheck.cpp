@@ -7,8 +7,8 @@
 #include "core/Context.h"
 #include "core/Window.h"
 #include "render/RenderContext.h"
-#include "render/RenderPreparation.h"
 #include "render/Renderer.h"
+#include "render/Visibility.h"
 #include "render/device/VkCheck.h"
 #include "render/feature/EndPass.h"
 #include "render/raytracing/BlasBuildPass.h"
@@ -20,6 +20,7 @@
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cmath>
+#include <unordered_map>
 #include <glm/gtc/packing.hpp>
 
 namespace
@@ -108,30 +109,29 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     const auto extent = renderer.swapchainHandle().extent();
     const auto view =
         scenesCamera.renderView({0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height)});
-    const auto sample = [&]
+    std::unordered_map<uint32_t, uint32_t> materialIndices;
+    const auto                             sample = [&]
     {
         // Independent lighting checks use the same initial random sample.
         rebuildGraph();
         const auto& sceneData = renderSystem.prepare(scenes.scene());
-        const auto  prepared  = prepareRenderScene(
-            sceneData,
-            view.uniforms,
-            {.enable = false},
-            *context().assetManager,
-            context().profiler
-        );
-        const auto& data = renderContext().resources->prepare(sceneData, prepared, 0);
+        const auto& data      = renderer.prepare(view, sceneData, 0);
+        CHECK(data.objectBounds.empty());
+        CHECK(data.visibilityMasks.empty());
+        materialIndices.clear();
+        for (const auto& object : data.objects)
+        {
+            const auto& mesh = renderContext().resources->mesh(object.mesh);
+            for (uint32_t index = 0; index < mesh.submeshes().size(); ++index)
+                materialIndices[object.selectionId] = data.material(object, index).materialIndex;
+        }
         frameData[0].updateSceneUniforms(view.uniforms);
+        const PassFrame execution{setup, frameData[0], view, data, {}, 0};
+        graph.prepare(execution);
         auto& recording = frames[0].commandBufferHandle();
         vkCheck(recording.reset());
         vkCheck(recording.begin({}));
-        graph.execute(
-            recording,
-            {setup, frameData[0], view, data, {}, 0},
-            0,
-            frames[0].gpuProfiler(),
-            context().profiler
-        );
+        graph.execute(recording, execution, 0, frames[0].gpuProfiler(), context().profiler);
         vkCheck(recording.end());
         const auto           commandBuffer = *frames[0].commandBufferHandle();
         const vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &commandBuffer};
@@ -143,6 +143,9 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     };
 
     const auto clear = sample();
+    const auto receiverId = scenes.scene().actors.front()->selectionId();
+    const auto sharedMaterialIndex = materialIndices.at(receiverId);
+    uint32_t overrideMaterialIndex = 0;
     CHECK(clear > 1.0f, "HDR surface luminance is unexpectedly clipped or dark: {}", clear);
 
     {
@@ -153,10 +156,13 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         material.metallic        = 0.0f;
         material.roughness       = 0.12f;
         const auto dielectric    = sample();
+        overrideMaterialIndex = materialIndices.at(receiverId);
+        CHECK(overrideMaterialIndex != sharedMaterialIndex);
         material.metallic        = 1.0f;
         const auto smoothMetal   = sample();
         material.roughness       = 0.8f;
         const auto roughMetal    = sample();
+        CHECK(materialIndices.at(receiverId) == overrideMaterialIndex);
         CHECK(std::isfinite(dielectric) && dielectric > 0);
         CHECK(std::isfinite(smoothMetal) && smoothMetal > 0);
         CHECK(std::isfinite(roughMetal) && roughMetal > 0);
@@ -185,6 +191,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         point.enabled              = true;
         receiver.materialOverrides = std::move(originalOverrides);
         CHECK(sample() == clear);
+        CHECK(materialIndices.at(receiverId) == sharedMaterialIndex);
         LOG_INFO(
             "PBR passed: dielectric {}, smooth metal {}, rough metal {}, normal {} -> {}, emission 2",
             dielectric,
@@ -244,6 +251,8 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     auto& actors                        = scenes.scene().actors;
     std::rotate(actors.begin(), actors.end() - 1, actors.end());
     CHECK(sample() == beyondLight, "independent texture/sampler indices changed base color");
+    CHECK(materialIndices.at(receiverId) == overrideMaterialIndex);
+    CHECK(materialIndices.at(carrierId) == sharedMaterialIndex);
     scenes.deleteActor(carrierId);
     receiver.materialOverrides = std::move(originalOverrides);
 
@@ -405,6 +414,8 @@ int main(int, char** argv)
     context().window           = &window;
     context().renderer         = &renderer;
     config.init();
+    const auto originalPath = config.rendererConfig().renderPath;
+    config.setRenderPath(RenderPath::RayTracing);
     const auto originalFeature           = config.rendererConfig().feature;
     auto       feature                   = originalFeature;
     feature.rayTracing.maxRecursionDepth = kMinRayRecursionDepth;
@@ -436,6 +447,7 @@ int main(int, char** argv)
     data.shutdown();
     window.shutdown();
     config.setRenderFeature(originalFeature);
+    config.setRenderPath(originalPath);
     config.shutdown();
     context() = {};
 }

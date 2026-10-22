@@ -279,6 +279,13 @@ void RenderGraph::transitionResources(
         useResource(commandBuffer, use, frameIndex);
 }
 
+void RenderGraph::prepare(const PassFrame& frame)
+{
+    for (auto* node : sortedNodes)
+        if (node->prepare)
+            node->prepare(*this, frame);
+}
+
 void RenderGraph::execute(
     vk::raii::CommandBuffer& commandBuffer,
     const PassFrame&         frame,

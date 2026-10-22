@@ -2,10 +2,8 @@
 
 #include "asset/PbrMaterialAsset.h"
 #include "render/device/Device.h"
-#include "render/resource/GpuTexture.h"
 #include "render/resource/MaterialData.h"
 
-#include <memory>
 #include <span>
 
 #include <vulkan/vulkan_raii.hpp>
@@ -17,38 +15,35 @@ enum class MaterialAlphaMode
     Blend
 };
 
+class AssetManager;
+class ShaderManager;
+
 class GpuMaterial
 {
 public:
     GpuMaterial() = default;
 
-    struct Texture
-    {
-        std::shared_ptr<GpuTexture> image;
-        vk::Sampler                 sampler;
-    };
-
     struct Textures
     {
         struct Clearcoat
         {
-            Texture factor;
-            Texture roughness;
-            Texture normal;
+            TextureBinding factor;
+            TextureBinding roughness;
+            TextureBinding normal;
         };
 
-        Texture   baseColor;
-        Texture   normal;
-        Texture   metallic;
-        Texture   roughness;
-        Texture   emissive;
-        Texture   occlusion;
-        Texture   sheenColor;
-        Texture   sheenRoughness;
-        Clearcoat clearcoat;
+        TextureBinding baseColor;
+        TextureBinding normal;
+        TextureBinding metallic;
+        TextureBinding roughness;
+        TextureBinding emissive;
+        TextureBinding occlusion;
+        TextureBinding sheenColor;
+        TextureBinding sheenRoughness;
+        Clearcoat      clearcoat;
     };
 
-    void create(ShaderHandle shader, const PbrMaterialAsset& material, Textures textures);
+    void create(const PbrMaterialAsset& material, ShaderManager& shaders, AssetManager& assets);
 
     void updateParameters(const PbrMaterialAsset& material);
     [[nodiscard]] GraphicsPipelineInfo

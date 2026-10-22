@@ -7,7 +7,6 @@
 #include "core/Context.h"
 #include "core/Window.h"
 #include "render/RenderContext.h"
-#include "render/RenderPreparation.h"
 #include "render/Renderer.h"
 #include "render/device/Device.h"
 #include "render/device/VkCheck.h"
@@ -131,7 +130,7 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
         feature.ambientCoefficient = 0.1f;
         feature.shadow.enable      = shadows;
         context().config->setRenderFeature(feature);
-        context().config->setRenderPath(deferred ? RenderPath::Deferred : RenderPath::Rasterization);
+        context().config->setRenderPath(deferred ? RenderPath::Deferred : RenderPath::Forward);
         ShadowPass::Output shadowOutput;
         if (shadows)
             shadowOutput = graph.addPass(shadow, setup);
@@ -147,31 +146,34 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
         const auto buffer = graph.addPass(readback, setup, color);
         graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
         graph.compile(setup);
-        const auto& sceneData = renderSystem.prepare(scenes.scene());
-        const auto  prepared  = prepareRenderScene(
-            sceneData,
-            view.uniforms,
-            context().config->rendererConfig().feature.shadow,
-            *context().assetManager,
-            context().profiler
-        );
+        const auto&           sceneData = renderSystem.prepare(scenes.scene());
+        std::vector<uint32_t> materialIndices;
         for (uint32_t index = 0; index < maxFramesInFlight; ++index)
         {
-            const auto& data = renderContext().resources->prepare(sceneData, prepared, index);
+            const auto& data             = renderer.prepare(view, sceneData, index);
+            size_t      materialPosition = 0;
+            for (const auto& object : data.objects)
+                for (uint32_t submesh = 0; submesh < renderContext().resources->mesh(object.mesh).submeshes().size();
+                     ++submesh)
+                {
+                    const auto materialIndex = data.material(object, submesh).materialIndex;
+                    if (index == 0)
+                        materialIndices.push_back(materialIndex);
+                    else
+                        CHECK(materialIndices[materialPosition] == materialIndex);
+                    ++materialPosition;
+                }
+            frameData[index].updateSceneUniforms(view.uniforms);
             if (deferred)
-                lighting.sceneBindings().updateFrame(frameData[index], view.uniforms, prepared.lighting);
+                lighting.sceneBindings().updateFrame(frameData[index], data);
             else
-                forward.sceneBindings().updateFrame(frameData[index], view.uniforms, prepared.lighting);
+                forward.sceneBindings().updateFrame(frameData[index], data);
+            const PassFrame execution{setup, frameData[index], view, data, {}, index};
+            graph.prepare(execution);
             auto& recording = frames[index].commandBufferHandle();
             vkCheck(recording.reset());
             vkCheck(recording.begin({}));
-            graph.execute(
-                recording,
-                {setup, frameData[index], view, data, {}, index},
-                0,
-                frames[index].gpuProfiler(),
-                context().profiler
-            );
+            graph.execute(recording, execution, 0, frames[index].gpuProfiler(), context().profiler);
             vkCheck(recording.end());
             const auto           commandBuffer = *recording;
             const vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &commandBuffer};

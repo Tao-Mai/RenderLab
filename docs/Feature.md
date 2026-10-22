@@ -1,6 +1,6 @@
 # 功能清单
 
-[项目首页](../README.md) · [项目架构](architecture.md)
+[项目首页](../README.md) · [项目架构](Architecture.md)
 
 ## 渲染路线
 
@@ -19,7 +19,7 @@
 - Sheen：Charlie BRDF、方向反照率能量缩放、环境光积分；前向 / 延迟支持。
 - 材质覆盖、参数编辑、缺失纹理的统一 fallback。
 
-各向异性、Transmission、Volume、IOR、Specular、Iridescence、Dispersion、Unlit、Diffuse Transmission 已支持描述、导入与编辑，尚未实现对应着色。详见 [材质展示](material_gallery.md)。
+各向异性、Transmission、Volume、IOR、Specular、Iridescence、Dispersion、Unlit、Diffuse Transmission 已支持描述、导入与编辑，尚未实现对应着色。详见 [材质展示](MaterialGallery.md)。
 
 ## 光照与环境
 
@@ -39,7 +39,7 @@
 - CSM 稳定化：包围球、Texel Snapping、Depth Clamp、匹配的五平面遮挡物剔除。
 - 可调阴影分辨率、Bias、采样半径、Nearest / Linear 与逐像素旋转。
 
-详见 [阴影概览](shadow.md) 与 [CSM](shadow/csm.md)。
+详见 [阴影概览](Shadow.md) 与 [CSM](shadow/Csm.md)。
 
 ## 光追采样与累积
 

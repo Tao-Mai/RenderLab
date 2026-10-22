@@ -6,14 +6,56 @@
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
+#include "render/RenderView.h"
 #include "render/ShaderManager.h"
 #include "render/Visibility.h"
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
 #include "render/resource/GpuMesh.h"
+#include "render/resource/RenderResourceManager.h"
 #include "render/resource/ShaderData.h"
 
+#include <algorithm>
 #include <array>
+
+namespace
+{
+struct ShadowVolume
+{
+    uint32_t             mask;
+    std::vector<Frustum> frusta;
+    uint32_t             visibleObjects = 0;
+};
+
+std::vector<ShadowVolume> shadowVolumes(const ShadowFrameData& lighting, uint32_t cascadeCount)
+{
+    std::vector<ShadowVolume> volumes;
+    for (uint32_t index = 0; index < lighting.pointShadows.size(); ++index)
+    {
+        ShadowVolume volume{RenderVisibility::shadowMask(GpuLightType::Point, index), {}};
+        for (const auto& vp : lighting.pointShadows[index].vp)
+            volume.frusta.emplace_back(vp);
+        volumes.push_back(std::move(volume));
+    }
+    for (uint32_t index = 0; index < lighting.spotShadows.size(); ++index)
+        volumes.push_back(
+            {RenderVisibility::shadowMask(GpuLightType::Spot, index), {Frustum{lighting.spotShadows[index].vp}}}
+        );
+    for (uint32_t index = 0; index < lighting.rectAreaShadows.size(); ++index)
+        volumes.push_back(
+            {RenderVisibility::shadowMask(GpuLightType::RectArea, index), {Frustum{lighting.rectAreaShadows[index].vp}}}
+        );
+    // Cascades depth-clamp upstream casters; the far plane still bounds relevant geometry.
+    for (uint32_t index = 0; index < lighting.directionalShadows.size(); ++index)
+        for (uint32_t cascade = 0; cascade < cascadeCount; ++cascade)
+            volumes.push_back(
+                {RenderVisibility::shadowMask(GpuLightType::Directional, index, cascade),
+                 {Frustum{lighting.directionalShadows[index].cascades[cascade].vp, Frustum::NearPlane::Exclude}}}
+            );
+    return volumes;
+}
+
+}  // namespace
 
 ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup)
 {
@@ -120,6 +162,39 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup)
     );
 
     return {point.image, spot.image, rectArea.image, directional.image};
+}
+
+void ShadowPass::prepare(RenderGraph&, const PassFrame& frame)
+{
+    CpuProfileScope timing{context().profiler, "Shadow preparation"};
+    auto            prepared =
+        prepareShadows(frame.view.uniforms, frame.renderData.lights, context().config->rendererConfig().feature.shadow);
+    auto volumes = shadowVolumes(prepared, cascadeCount);
+    visibilityMasks.clear();
+    visibilityMasks.reserve(frame.renderData.objectBounds.size());
+
+    for (const auto& object : frame.renderData.objectBounds)
+    {
+        uint32_t mask = 0;
+        for (auto& volume : volumes)
+        {
+            if (!std::ranges::any_of(volume.frusta, [&](const Frustum& frustum) { return frustum.intersects(object); }))
+                continue;
+
+            mask |= volume.mask;
+            ++volume.visibleObjects;
+        }
+        visibilityMasks.push_back(mask);
+    }
+
+    if (auto* profiler = context().profiler)
+    {
+        std::vector<ViewCullingStatistics> views;
+        for (const auto& volume : volumes)
+            views.push_back({RenderVisibility::viewName(volume.mask), volume.visibleObjects});
+        profiler->recordCulling(static_cast<uint32_t>(frame.renderData.objectBounds.size()), std::move(views));
+    }
+    frame.data.updateShadows(std::move(prepared));
 }
 
 void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
@@ -235,21 +310,26 @@ void ShadowPass::recordShadow(
 
     const auto& light      = execution.data.lightData()[lightIndex];
     const auto  visibility = RenderVisibility::shadowMask(light.type(), light.shadowidx, cascadeIndex);
-    for (const DrawItem& item : execution.renderData.drawItems)
+    for (size_t index = 0; index < execution.renderData.objects.size(); ++index)
     {
-        if (!(item.visibilityMask & visibility))
+        if (!(visibilityMasks[index] & visibility))
             continue;
 
-        const ShadowPushConstants push{.model = item.model, .lightIdx = lightIndex, .cascadeIndex = cascadeIndex};
+        const auto&               object = execution.renderData.objects[index];
+        const ShadowPushConstants push{.model = object.model, .lightIdx = lightIndex, .cascadeIndex = cascadeIndex};
         commandBuffer.pushConstants<ShadowPushConstants>(
             pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0,
             push
         );
-        item.mesh->bind(commandBuffer);
-        commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
-        recordDraw(context().profiler, item.indexCount);
+        auto& mesh = renderContext().resources->mesh(object.mesh);
+        mesh.bind(commandBuffer);
+        for (const auto& submesh : mesh.submeshes())
+        {
+            commandBuffer.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);
+            recordDraw(context().profiler, submesh.indexCount);
+        }
     }
 
     commandBuffer.endRendering();

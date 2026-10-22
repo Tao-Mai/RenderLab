@@ -1,6 +1,6 @@
 # Sheen：绒布反射与材质分层
 
-[材质展示](material_gallery.md) · [方向反照率 LUT](sheen_lut.md)
+[材质展示](MaterialGallery.md) · [方向反照率 LUT](SheenLut.md)
 
 光栅路线实现 glTF Sheen：使用 Charlie BRDF 表现布料等材质的掠射反射，并衰减底层能量。Forward / Deferred 共用着色函数；实时 / 离线光追暂未加入该扩展。
 

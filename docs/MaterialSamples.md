@@ -1,6 +1,6 @@
 # 材质示例资产
 
-[材质展示](material_gallery.md) · [资产说明](../assets/README.md)
+[材质展示](MaterialGallery.md) · [资产说明](../assets/README.md)
 
 示例来自 [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets)，用于导入验证和材质对比。源文件与各模型许可保存在本地 `resource/material_samples/<模型名>/`。
 

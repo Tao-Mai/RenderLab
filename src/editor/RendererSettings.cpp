@@ -100,7 +100,7 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
     }
     const RenderPath     path = config.rendererConfig().renderPath;
     constexpr std::array kRenderPaths{
-        std::pair{RenderPath::Rasterization, "Forward"},
+        std::pair{RenderPath::Forward, "Forward"},
         std::pair{RenderPath::Deferred, "Deferred"},
         std::pair{RenderPath::RayTracing, "Real-time ray tracing"},
         std::pair{RenderPath::OfflinePathTracing, "Offline path tracing"},

@@ -6,7 +6,7 @@
 
 enum class RenderPath
 {
-    Rasterization,
+    Forward,
     Deferred,
     RayTracing,
     OfflinePathTracing
@@ -95,6 +95,6 @@ struct RenderFeature
 
 struct RendererConfig
 {
-    RenderPath    renderPath = RenderPath::Rasterization;
+    RenderPath    renderPath = RenderPath::Forward;
     RenderFeature feature;
 };

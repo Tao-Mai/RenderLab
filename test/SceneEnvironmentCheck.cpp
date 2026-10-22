@@ -71,7 +71,7 @@ int main(int, char** argv)
 
         return std::ranges::any_of(stats.cpuTimings, [](const auto& timing) { return timing.name == "Graph rebuild"; });
     };
-    for (const auto path : {RenderPath::Rasterization, RenderPath::Deferred})
+    for (const auto path : {RenderPath::Forward, RenderPath::Deferred})
     {
         config.setRenderPath(path);
         scenes.scene().environmentMap = environments.front();

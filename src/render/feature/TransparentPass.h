@@ -1,6 +1,7 @@
 #pragma once
 #include "render/feature/SceneDraw.h"
 
+#include "render/RenderData.h"
 #include "render/feature/RenderGraph.h"
 #include "render/feature/shadow/ShadowPass.h"
 
@@ -19,10 +20,12 @@ public:
         RenderGraph::ImageHandle depthHandle,
         ShadowPass::Output       shadow
     );
+    void prepare(RenderGraph& graph, const PassFrame& frame);
     void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
 private:
-    SceneShaderOptions       shaderOptions;
+    std::vector<uint32_t>    sortedObjects;
+    SceneDrawOptions         shaderOptions;
     RenderGraph::ImageHandle color;
     RenderGraph::ImageHandle depth;
 };

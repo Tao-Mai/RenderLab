@@ -21,7 +21,7 @@ public:
     SceneBindings& sceneBindings() { return bindings; }
 
 private:
-    SceneShaderOptions       shaderOptions;
+    SceneDrawOptions         shaderOptions;
     SceneBindings            bindings;
     RenderGraph::ImageHandle color;
     RenderGraph::ImageHandle depth;

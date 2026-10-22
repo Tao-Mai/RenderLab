@@ -1,6 +1,6 @@
 # RenderGraph
 
-[渲染模块](README.md) · [项目架构](../../docs/architecture.md)
+[渲染模块](README.md) · [项目架构](../../docs/Architecture.md)
 
 Renderer 决定加入哪些 Pass，Pass 声明资源访问，Graph 负责依赖、分配、状态转换与执行。它不解释场景、材质或拾取结果。
 

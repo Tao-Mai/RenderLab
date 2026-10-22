@@ -14,7 +14,7 @@
 class GpuMesh;
 class Device;
 class RenderGraph;
-struct DrawItem;
+struct RenderObject;
 
 class EditorPickingPass
 {
@@ -28,10 +28,10 @@ public:
     void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
 private:
-    void                     draw(vk::raii::CommandBuffer& commandBuffer, const DrawItem& item) const;
+    void                     draw(vk::raii::CommandBuffer& commandBuffer, const RenderObject& object) const;
     RenderGraph::ImageHandle depth;
     RenderGraph::ImageHandle pickingImage;
     ShaderHandle             shader;
-    vk::PipelineLayout pipelineLayout;
+    vk::PipelineLayout       pipelineLayout;
     vk::Pipeline             pipeline;
 };

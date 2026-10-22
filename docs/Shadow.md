@@ -1,6 +1,6 @@
 # 阴影
 
-[项目首页](../README.md) · [稳定 CSM](shadow/csm.md)
+[项目首页](../README.md) · [稳定 CSM](shadow/Csm.md)
 
 Forward / Deferred 共用 ShadowPass 与阴影采样函数。不同光源使用适合其投影的深度图；实时 / 离线光追则通过可见性射线求遮挡，不依赖这些 Shadow Map。
 

@@ -21,6 +21,7 @@ public:
     };
 
     Output setup(RenderGraph& graph, const PassSetup& setup, TlasBuildPass::Output scene);
+    void   writeDescriptorSet(RenderGraph& graph, const PassSetup& setup);
     void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution);
 
 private:
@@ -28,7 +29,8 @@ private:
     {
         Buffer                  hitData;
         Buffer                  lightData;
-        vk::raii::DescriptorSet set = nullptr;
+        vk::raii::DescriptorSet set          = nullptr;
+        uint64_t                tlasRevision = 0;
     };
     struct RayTracingParameters
     {
@@ -45,9 +47,9 @@ private:
     RenderGraph::ImageHandle                 rayImage;
     RenderGraph::ImageHandle                 depth;
     RenderGraph::ImageHandle                 worldNormal;
-    uint32_t                                 sampleIndex            = 0;
-    DescriptorSetLayout                     descriptorSetLayout;
-    vk::PipelineLayout pipelineLayout;
+    uint32_t                                 sampleIndex = 0;
+    DescriptorSetLayout                      descriptorSetLayout;
+    vk::PipelineLayout                       pipelineLayout;
     vk::raii::Pipeline                       pipeline               = nullptr;
     uint32_t                                 pipelineRecursionDepth = 0;
     Buffer                                   bindingTable;

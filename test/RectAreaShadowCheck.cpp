@@ -46,7 +46,7 @@ int main(int, char** argv)
     feature.shadow.pointShadowMapSize    = 256;
     feature.shadow.rectAreaShadowMapSize = 256;
     config.setRenderFeature(feature);
-    config.setRenderPath(RenderPath::Rasterization);
+    config.setRenderPath(RenderPath::Forward);
     data.init(config.paths().assets);
     scenes.init();
     assets.init(config.paths().assets);
@@ -77,8 +77,10 @@ int main(int, char** argv)
     source.data.areaRightData = {0.0f, 1.0f, 0.0f, 0.0f};
     source.data.lightType     = GpuLightType::RectArea;
     source.data.shadowEnabled = 1;
-    auto prepared             = prepareShadows({}, {&source, 1}, {.enable = true});
-    upload.update({}, {.lightRanges = prepared.lightRanges}, std::move(prepared));
+    auto prepared = prepareShadows({}, {&source.data, 1}, {});
+    upload.updateSceneUniforms({});
+    upload.updateLighting({.lightRanges = {0, 0, 1, 1}}, {&source.data, 1});
+    upload.updateShadows(std::move(prepared));
     CHECK(upload.rectAreaShadowData().size() == 1 && upload.lightData()[0].shadowidx == 0);
     CHECK(upload.pointShadowData().empty());
     const auto& shadow = upload.rectAreaShadowData()[0];
@@ -86,8 +88,8 @@ int main(int, char** argv)
     CHECK(glm::length(shadow.worldToUvScale - glm::vec2{0.41954982f}) < 1e-5f);
     const auto clip = upload.rectAreaShadowData()[0].vp * glm::vec4{0.0f, 0.0f, 3.0f, 1.0f};
     CHECK(std::abs(clip.x) < 1e-5f && std::abs(clip.y) < 1e-5f && clip.z > 0.0f && clip.z < clip.w);
-    prepared = prepareShadows({}, {&source, 1}, {.enable = false});
-    upload.update({}, {.lightRanges = prepared.lightRanges}, std::move(prepared));
+    // Without ShadowPass::prepare, lighting upload disables shadow sampling.
+    upload.updateLighting({.lightRanges = {0, 0, 1, 1}}, {&source.data, 1});
     CHECK(upload.rectAreaShadowData().empty() && upload.lightData()[0].shadowidx == ~0u);
     upload.reset();
 

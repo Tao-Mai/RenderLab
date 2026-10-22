@@ -20,9 +20,10 @@ public:
         RenderGraph::ImageHandle rayImage;
     };
 
-    Output                 setup(RenderGraph& graph, const PassSetup& setup, TlasBuildPass::Output scene);
-    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution);
-    void                   updateScene(const RenderView& view, const SceneRenderData& scene, uint64_t assetRevision);
+    Output setup(RenderGraph& graph, const PassSetup& setup, TlasBuildPass::Output scene);
+    void   writeDescriptorSet(RenderGraph& graph, const PassSetup& setup);
+    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution);
+    void   updateScene(const RenderView& view, const SceneRenderData& scene, uint64_t assetRevision);
     [[nodiscard]] uint32_t sampleCount() const { return accumulatedSamples; }
 
 private:
@@ -30,7 +31,8 @@ private:
     {
         Buffer                  hitData;
         Buffer                  lightData;
-        vk::raii::DescriptorSet set = nullptr;
+        vk::raii::DescriptorSet set          = nullptr;
+        uint64_t                tlasRevision = 0;
     };
     struct OfflineParameters
     {
@@ -46,8 +48,8 @@ private:
     static_assert(offsetof(OfflineParameters, sampleIndex) == 36);
 
     RenderGraph::ImageHandle                 rayImage;
-    DescriptorSetLayout                     descriptorSetLayout;
-    vk::PipelineLayout pipelineLayout;
+    DescriptorSetLayout                      descriptorSetLayout;
+    vk::PipelineLayout                       pipelineLayout;
     vk::raii::Pipeline                       pipeline               = nullptr;
     uint32_t                                 pipelineRecursionDepth = 0;
     Buffer                                   bindingTable;

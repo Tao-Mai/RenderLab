@@ -1,9 +1,11 @@
 #include "render/raytracing/BlasBuildPass.h"
 
 #include "core/Vertex.h"
+#include "render/RenderContext.h"
 #include "render/RenderData.h"
 #include "render/device/VulkanContext.h"
 #include "render/resource/GpuMesh.h"
+#include "render/resource/RenderResourceManager.h"
 
 #include <array>
 
@@ -33,32 +35,36 @@ void BlasBuildPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& command
     const auto&                         vulkan = frame.setup.vulkan;
     const auto&                         device = vulkan.deviceHandle();
     std::vector<AccelerationStructure*> structures;
-    structures.reserve(frame.renderData.drawItems.size() + 1);
-    for (const auto& item : frame.renderData.drawItems)
+    structures.reserve(frame.renderData.submeshCount + 1);
+    for (const auto& object : frame.renderData.objects)
     {
-        CHECK(item.indexCount % 3 == 0, "ray tracing submesh requires triangle indices");
-        const auto [entry, created] = meshes.try_emplace({item.mesh, item.firstIndex, item.indexCount});
-        structures.push_back(&entry->second);
-        if (!created)
-            continue;
+        auto& mesh = renderContext().resources->mesh(object.mesh);
+        for (const auto& submesh : mesh.submeshes())
+        {
+            CHECK(submesh.indexCount % 3 == 0, "ray tracing submesh requires triangle indices");
+            const auto [entry, created] = meshes.try_emplace({&mesh, submesh.firstIndex, submesh.indexCount});
+            structures.push_back(&entry->second);
+            if (!created)
+                continue;
 
-        VkAccelerationStructureGeometryKHR geometry{
-            .sType        = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
-            .geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR,
-            .flags        = VK_GEOMETRY_OPAQUE_BIT_KHR,
-        };
-        geometry.geometry.triangles = {
-            .sType        = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
-            .vertexFormat = VK_FORMAT_R32G32B32_SFLOAT,
-            .vertexData   = {.deviceAddress = item.mesh->vertices().address(device)},
-            .vertexStride = sizeof(Vertex),
-            .maxVertex    = item.mesh->vertexCount() - 1,
-            .indexType    = VK_INDEX_TYPE_UINT32,
-            .indexData = {.deviceAddress = item.mesh->indices().address(device) + item.firstIndex * sizeof(uint32_t)},
-        };
-        auto& blas = entry->second;
-        blas.create(vulkan, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, geometry, item.indexCount / 3);
-        blas.build(vulkan, commands, geometry, item.indexCount / 3);
+            VkAccelerationStructureGeometryKHR geometry{
+                .sType        = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
+                .geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR,
+                .flags        = VK_GEOMETRY_OPAQUE_BIT_KHR,
+            };
+            geometry.geometry.triangles = {
+                .sType        = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
+                .vertexFormat = VK_FORMAT_R32G32B32_SFLOAT,
+                .vertexData   = {.deviceAddress = mesh.vertices().address(device)},
+                .vertexStride = sizeof(Vertex),
+                .maxVertex    = mesh.vertexCount() - 1,
+                .indexType    = VK_INDEX_TYPE_UINT32,
+                .indexData = {.deviceAddress = mesh.indices().address(device) + submesh.firstIndex * sizeof(uint32_t)},
+            };
+            auto& blas = entry->second;
+            blas.create(vulkan, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, geometry, submesh.indexCount / 3);
+            blas.build(vulkan, commands, geometry, submesh.indexCount / 3);
+        }
     }
 
     const auto& ranges = frame.renderData.lightRanges;

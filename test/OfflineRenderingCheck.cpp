@@ -9,7 +9,6 @@
 #include "core/Window.h"
 #include "editor/EditorCamera.h"
 #include "render/RenderContext.h"
-#include "render/RenderPreparation.h"
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/feature/EndPass.h"
@@ -91,15 +90,15 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
     {
         const auto  view     = camera.renderView({0, 0, float(extent.width), float(extent.height)});
         const auto& snapshot = system.prepare(scenes.scene());
-        const auto  prepared =
-            prepareRenderScene(snapshot, view.uniforms, {.enable = false}, *context().assetManager, context().profiler);
-        const auto& draws = renderContext().resources->prepare(snapshot, prepared, 0);
+        const auto& draws = renderer.prepare(view, snapshot, 0);
         pass.updateScene(view, snapshot, context().assetManager->contentRevision());
         data.updateSceneUniforms(view.uniforms);
+        const PassFrame execution{setup, data, view, draws, {}, 0};
+        graph.prepare(execution);
         auto& recording = frame.commandBufferHandle();
         vkCheck(recording.reset());
         vkCheck(recording.begin({}));
-        graph.execute(recording, {setup, data, view, draws, {}, 0}, 0, frame.gpuProfiler(), context().profiler);
+        graph.execute(recording, execution, 0, frame.gpuProfiler(), context().profiler);
         vkCheck(recording.end());
         const auto           commandBuffer = *frame.commandBufferHandle();
         const vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &commandBuffer};

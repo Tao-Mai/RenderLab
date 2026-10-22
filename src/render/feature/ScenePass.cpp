@@ -51,7 +51,6 @@ void ScenePass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuff
     SceneDraw::recordMeshes(
         commandBuffer,
         execution,
-        execution.renderData.opaqueDrawItems,
         std::array{graph.imageInfo(color).format},
         {},
         shaderOptions

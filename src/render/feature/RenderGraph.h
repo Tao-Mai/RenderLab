@@ -80,6 +80,7 @@ public:
     void init(VulkanContext& vulkan, Swapchain& swapchain);
     void reset() noexcept;
     void compile(const PassSetup& setup);
+    void prepare(const PassFrame& frame);
     void releaseResources() noexcept;
 
     template <class T, class... Args>
@@ -172,6 +173,7 @@ private:
         std::vector<PassNode*>            next;
         std::vector<ResourceUse>          uses;
         std::function<void(RenderGraph&, const PassSetup&)>                  writeDescriptorSet;
+        std::function<void(RenderGraph&, const PassFrame&)> prepare;
         std::function<void(RenderGraph&, vk::raii::CommandBuffer&, const PassFrame&)> execute;
     };
 
@@ -219,6 +221,9 @@ auto RenderGraph::addPass(T& pass, const PassSetup& setup, Args&&... args)
         if constexpr (requires { pass.writeDescriptorSet(*this, setup); })
             node.writeDescriptorSet = [pass = &pass](RenderGraph& graph, const PassSetup& setup)
             { pass->writeDescriptorSet(graph, setup); };
+        if constexpr (requires(const PassFrame& frame) { pass.prepare(*this, frame); })
+            node.prepare = [pass = &pass](RenderGraph& graph, const PassFrame& frame)
+            { pass->prepare(graph, frame); };
         (collectDependencies(node, args), ...);
         nodes.push_back(&node);
 

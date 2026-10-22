@@ -9,6 +9,7 @@
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMaterial.h"
 #include "render/resource/GpuMesh.h"
+#include "render/resource/RenderResourceManager.h"
 #include "render/resource/ShaderData.h"
 
 #include <array>
@@ -87,14 +88,15 @@ vk::Rect2D SceneDraw::beginRendering(
 void SceneDraw::recordMeshes(
     vk::raii::CommandBuffer&    commandBuffer,
     const PassFrame&            execution,
-    std::span<const DrawItem>   items,
     std::span<const vk::Format> colorFormats,
     ShaderHandle                shader,
-    SceneShaderOptions          options
+    SceneDrawOptions            options,
+    std::span<const uint32_t>   objectOrder
 )
 {
     auto&            device         = *renderContext().device;
     auto&            shaders        = *renderContext().shaderManager;
+    auto&            resources      = *renderContext().resources;
     const auto&      pipelineLayout = renderContext().device->meshPipelineLayout;
     const std::array descriptorSets =
         {execution.data.sceneSetHandle(), execution.data.lightingSetHandle(), execution.renderData.materialSetHandle()};
@@ -107,44 +109,60 @@ void SceneDraw::recordMeshes(
     );
 
     vk::Pipeline boundPipeline;
-    for (const DrawItem& item : items)
+    const auto   objectCount = options.transparent ? objectOrder.size() : execution.renderData.objects.size();
+    for (uint32_t orderIndex = 0; orderIndex < objectCount; ++orderIndex)
     {
-        GraphicsPipelineInfo key = item.material->pipelineInfo(colorFormats, vk::Format::eD32Sfloat, pipelineLayout);
-        key.state.depthWrite     = false;
-        if (item.material->alphaMode() != MaterialAlphaMode::Blend)
-            key.state.depthCompare = vk::CompareOp::eEqual;
-        if (shader.index)
-        {
-            key.shader = shader;
-        }
-        else
-        {
-            const auto& metadata  = shaders.metadata(key.shader);
-            const bool  clearcoat = metadata.defines.contains("ENABLE_CLEARCOAT") &&
-                metadata.defines.at("ENABLE_CLEARCOAT") && options.clearcoat;
-            key.shader = shaders.getOrLoad(
-                metadata.id,
-                {{"ENABLE_IBL", options.ibl ? 1 : 0},
-                 {"ENABLE_CLEARCOAT", clearcoat ? 1 : 0},
-                 {"ENABLE_SHEEN", metadata.defines.at("ENABLE_SHEEN")}}
-            );
-        }
-        const vk::Pipeline pipeline = device.getOrCreatePipeline(key);
-        if (pipeline != boundPipeline)
-        {
-            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-            boundPipeline = pipeline;
-        }
+        const uint32_t objectIndex = options.transparent ? objectOrder[orderIndex] : orderIndex;
+        if (!execution.renderData.isVisible(objectIndex))
+            continue;
 
-        item.mesh->bind(commandBuffer);
-        const MeshPushConstants pushConstants{.model = item.model, .materialIndex = item.materialIndex};
-        commandBuffer.pushConstants<MeshPushConstants>(
-            pipelineLayout,
-            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            0,
-            pushConstants
-        );
-        commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
-        recordDraw(context().profiler, item.indexCount);
+        const auto& object = execution.renderData.objects[objectIndex];
+        auto&       mesh   = resources.mesh(object.mesh);
+        mesh.bind(commandBuffer);
+        for (uint32_t index = 0; index < mesh.submeshes().size(); ++index)
+        {
+            const auto& submesh = mesh.submeshes()[index];
+            const auto& binding = execution.renderData.material(object, index);
+            const auto& material = *binding.material;
+            if ((material.alphaMode() == MaterialAlphaMode::Blend) != options.transparent)
+                continue;
+
+            GraphicsPipelineInfo key = material.pipelineInfo(colorFormats, vk::Format::eD32Sfloat, pipelineLayout);
+            key.state.depthWrite     = false;
+            if (material.alphaMode() != MaterialAlphaMode::Blend)
+                key.state.depthCompare = vk::CompareOp::eEqual;
+            if (shader.index)
+            {
+                key.shader = shader;
+            }
+            else
+            {
+                const auto& metadata  = shaders.metadata(key.shader);
+                const bool  clearcoat = metadata.defines.contains("ENABLE_CLEARCOAT") &&
+                    metadata.defines.at("ENABLE_CLEARCOAT") && options.clearcoat;
+                key.shader = shaders.getOrLoad(
+                    metadata.id,
+                    {{"ENABLE_IBL", options.ibl ? 1 : 0},
+                     {"ENABLE_CLEARCOAT", clearcoat ? 1 : 0},
+                     {"ENABLE_SHEEN", metadata.defines.at("ENABLE_SHEEN")}}
+                );
+            }
+            const vk::Pipeline pipeline = device.getOrCreatePipeline(key);
+            if (pipeline != boundPipeline)
+            {
+                commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+                boundPipeline = pipeline;
+            }
+
+            const MeshPushConstants pushConstants{.model = object.model, .materialIndex = binding.materialIndex};
+            commandBuffer.pushConstants<MeshPushConstants>(
+                pipelineLayout,
+                vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+                0,
+                pushConstants
+            );
+            commandBuffer.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);
+            recordDraw(context().profiler, submesh.indexCount);
+        }
     }
 }

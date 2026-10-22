@@ -7,7 +7,6 @@
 #include "core/profiling/Profiler.h"
 #include "editor/EditorCamera.h"
 #include "render/RenderContext.h"
-#include "render/RenderPreparation.h"
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/raytracing/BlasBuildPass.h"
@@ -101,22 +100,22 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
         const uint32_t index = iteration % maxFramesInFlight;
         frames[index].wait();
         const auto& snapshot = system.prepare(scenes.scene());
-        const auto  prepared =
-            prepareRenderScene(snapshot, view.uniforms, {.enable = false}, *context().assetManager, &profiler);
-        const auto& draws = renderContext().resources->prepare(snapshot, prepared, index);
+        const auto& draws = renderer.prepare(view, snapshot, index);
         if (iteration == 0)
             LOG_INFO(
-                "Submitted meshes {}, point lights {}, area lights {}",
-                draws.drawItems.size(),
+                "Submitted objects {}, point lights {}, area lights {}",
+                draws.objects.size(),
                 draws.lightRanges.pointEnd - draws.lightRanges.directionalEnd,
                 draws.lightRanges.rectAreaEnd - draws.lightRanges.pointEnd
             );
         data[index].updateSceneUniforms(view.uniforms);
+        const PassFrame execution{setup, data[index], view, draws, {}, index};
+        graph.prepare(execution);
         auto& commands = frames[index].commandBufferHandle();
         vkCheck(commands.reset());
         vkCheck(commands.begin({}));
         graph
-            .execute(commands, {setup, data[index], view, draws, {}, index}, 0, frames[index].gpuProfiler(), &profiler);
+            .execute(commands, execution, 0, frames[index].gpuProfiler(), &profiler);
         vkCheck(commands.end());
         const auto command = *commands;
         vkCheck(vulkan.deviceHandle().resetFences(frames[index].drawFenceHandle()));
@@ -172,6 +171,7 @@ int main(int argc, char** argv)
     };
     config.init();
     const auto original = config.rendererConfig();
+    config.setRenderPath(RenderPath::RayTracing);
     if (argc >= 3)
     {
         auto                   feature = original.feature;

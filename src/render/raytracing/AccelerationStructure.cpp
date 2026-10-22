@@ -37,6 +37,7 @@ void AccelerationStructure::create(const VulkanContext& vulkan, VkAccelerationSt
         .buffer = storage.handle(), .size = storage.size(),
         .type = static_cast<vk::AccelerationStructureTypeKHR>(type),
     }));
+    ++resourceRevision;
     deviceAddress = device.getAccelerationStructureAddressKHR({.accelerationStructure = *structure});
 
     const vk::DeviceSize alignment = limits.minAccelerationStructureScratchOffsetAlignment;

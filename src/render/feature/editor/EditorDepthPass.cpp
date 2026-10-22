@@ -11,6 +11,7 @@
 #include "render/feature/editor/EditorShaderData.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
+#include "render/resource/RenderResourceManager.h"
 
 #include <array>
 
@@ -72,28 +73,28 @@ void EditorDepthPass::execute(
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     const std::array viewSets = {execution.data.viewSetHandle()};
-    commandBuffer.bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics,
-        pipelineLayout,
-        EditorInterface::kViewSet,
-        viewSets,
-        {}
-    );
-    for (const DrawItem& item : execution.renderData.drawItems)
+    commandBuffer
+        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, EditorInterface::kViewSet, viewSets, {});
+    for (uint32_t index = 0; index < execution.renderData.objects.size(); ++index)
     {
-        if (!(item.visibilityMask & RenderVisibility::kMainView))
+        if (!execution.renderData.isVisible(index))
             continue;
 
-        const EditorDepthPushConstants parameters{.model = item.model};
+        const auto&                    object = execution.renderData.objects[index];
+        const EditorDepthPushConstants parameters{.model = object.model};
         commandBuffer.pushConstants<EditorDepthPushConstants>(
             pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0,
             parameters
         );
-        item.mesh->bind(commandBuffer);
-        commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
-        recordDraw(context().profiler, item.indexCount);
+        auto& mesh = renderContext().resources->mesh(object.mesh);
+        mesh.bind(commandBuffer);
+        for (const auto& submesh : mesh.submeshes())
+        {
+            commandBuffer.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);
+            recordDraw(context().profiler, submesh.indexCount);
+        }
     }
     commandBuffer.endRendering();
 }

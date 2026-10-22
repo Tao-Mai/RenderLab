@@ -1,7 +1,9 @@
 #include "render/raytracing/TlasBuildPass.h"
 
+#include "render/RenderContext.h"
 #include "render/RenderData.h"
 #include "render/device/VulkanContext.h"
+#include "render/resource/RenderResourceManager.h"
 
 #include <algorithm>
 #include <cmath>
@@ -56,25 +58,29 @@ TlasBuildPass::setup(RenderGraph& graph, const PassSetup&, RenderGraph::Accelera
 
 void TlasBuildPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& execution)
 {
-    const auto& vulkan = execution.setup.vulkan;
-    const auto& device = vulkan.deviceHandle();
-    const auto& items  = execution.renderData.drawItems;
-    CHECK(items.size() < kInstanceIndexLimit, "ray tracing instance count exceeds the custom-index limit");
+    const auto& vulkan       = execution.setup.vulkan;
+    const auto& device       = vulkan.deviceHandle();
+    const auto  submeshCount = execution.renderData.submeshCount;
+    CHECK(submeshCount < kInstanceIndexLimit, "ray tracing instance count exceeds the custom-index limit");
 
     std::vector<VkAccelerationStructureInstanceKHR> instances;
     instances.reserve(
-        items.size() + execution.renderData.lightRanges.rectAreaEnd - execution.renderData.lightRanges.pointEnd
+        submeshCount + execution.renderData.lightRanges.rectAreaEnd - execution.renderData.lightRanges.pointEnd
     );
-    for (const auto& item : items)
+    for (const auto& object : execution.renderData.objects)
     {
-        VkAccelerationStructureInstanceKHR instance{};
-        instance.transform           = instanceTransform(item.model);
-        instance.instanceCustomIndex = static_cast<uint32_t>(instances.size());
-        instance.mask                = kSceneMask;
-        instance.flags               = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-        instance.accelerationStructureReference =
-            graph.getAccelerationStructure(structures.blas, instances.size()).address();
-        instances.push_back(instance);
+        const auto& mesh = renderContext().resources->mesh(object.mesh);
+        for (size_t index = 0; index < mesh.submeshes().size(); ++index)
+        {
+            VkAccelerationStructureInstanceKHR instance{};
+            instance.transform           = instanceTransform(object.model);
+            instance.instanceCustomIndex = static_cast<uint32_t>(instances.size());
+            instance.mask                = kSceneMask;
+            instance.flags               = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+            instance.accelerationStructureReference =
+                graph.getAccelerationStructure(structures.blas, instances.size()).address();
+            instances.push_back(instance);
+        }
     }
 
     const auto& lights = execution.renderData.lights;
@@ -106,7 +112,7 @@ void TlasBuildPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& command
         instance.instanceShaderBindingTableRecordOffset = kLightHitRecord;
         // One-sided emission retains facing culling, unlike scene geometry.
         instance.accelerationStructureReference =
-            graph.getAccelerationStructure(structures.blas, items.size()).address();
+            graph.getAccelerationStructure(structures.blas, submeshCount).address();
         instances.push_back(instance);
     }
 

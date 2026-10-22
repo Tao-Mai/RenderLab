@@ -10,6 +10,7 @@
 #include "render/present/Swapchain.h"
 #include "render/resource/GpuMaterial.h"
 #include "render/resource/GpuMesh.h"
+#include "render/resource/RenderResourceManager.h"
 #include "render/resource/ShaderData.h"
 
 DepthPrepass::Output DepthPrepass::setup(RenderGraph& graph, const PassSetup& setup)
@@ -96,25 +97,38 @@ void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandB
     );
 
     vk::Pipeline boundPipeline;
-    for (const DrawItem& item : execution.renderData.opaqueDrawItems)
+    auto&        resources = *renderContext().resources;
+    for (uint32_t objectIndex = 0; objectIndex < execution.renderData.objects.size(); ++objectIndex)
     {
-        const auto pipeline = item.material->parameters().doubleSided ? doubleSidedPipeline : singleSidedPipeline;
-        if (pipeline != boundPipeline)
+        if (!execution.renderData.isVisible(objectIndex))
+            continue;
+        const auto& object = execution.renderData.objects[objectIndex];
+        auto&       mesh   = resources.mesh(object.mesh);
+        mesh.bind(commandBuffer);
+        for (uint32_t index = 0; index < mesh.submeshes().size(); ++index)
         {
-            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-            boundPipeline = pipeline;
-        }
+            const auto& submesh = mesh.submeshes()[index];
+            const auto& binding = execution.renderData.material(object, index);
+            if (binding.material->alphaMode() == MaterialAlphaMode::Blend)
+                continue;
+            const auto pipeline =
+                binding.material->parameters().doubleSided ? doubleSidedPipeline : singleSidedPipeline;
+            if (pipeline != boundPipeline)
+            {
+                commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+                boundPipeline = pipeline;
+            }
 
-        item.mesh->bind(commandBuffer);
-        const MeshPushConstants pushConstants{.model = item.model, .materialIndex = item.materialIndex};
-        commandBuffer.pushConstants<MeshPushConstants>(
-            pipelineLayout,
-            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            0,
-            pushConstants
-        );
-        commandBuffer.drawIndexed(item.indexCount, 1, item.firstIndex, 0, 0);
-        recordDraw(context().profiler, item.indexCount);
+            const MeshPushConstants pushConstants{.model = object.model, .materialIndex = binding.materialIndex};
+            commandBuffer.pushConstants<MeshPushConstants>(
+                pipelineLayout,
+                vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+                0,
+                pushConstants
+            );
+            commandBuffer.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);
+            recordDraw(context().profiler, submesh.indexCount);
+        }
     }
 
     commandBuffer.endRendering();

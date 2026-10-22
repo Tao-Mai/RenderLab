@@ -9,10 +9,11 @@ RenderLab 将场景逻辑、资产数据和 GPU 执行分开：上层描述“�
 ```text
 Engine：场景 / 编辑器 Tick
   → RenderSystem：提取 SceneRenderData
-  → Renderer：阴影准备、可见性剔除
-  → RenderResourceManager：解析资产，生成 RenderData
-  → FrameData：上传相机、材质、灯光与阴影数据
-  → RenderGraph：执行已编译的 Pass
+  → Renderer 全局 prepare：光源分组、光栅化主视图剔除
+  → RenderResourceManager：缓存、更新 GPU 资源
+  → 上传相机、材质与灯光数据
+  → RenderGraph.prepare：ShadowPass 准备阴影数据与剔除，TransparentPass 排序
+  → RenderGraph.execute：执行已编译的 Pass
   → Submit / Present
 ```
 
@@ -26,12 +27,12 @@ Engine：场景 / 编辑器 Tick
 | SceneManager | 反射注册、场景读写、默认场景与场景切换 |
 | RenderSystem | 提取资产 ID、Transform、材质覆盖和灯光，不剔除、不创建 GPU 资源 |
 | AssetManager / AssetDataManager | CPU 资产描述、缓存与二进制读写，不反向依赖场景和 Renderer |
-| RenderResourceManager | 递归获取资产并缓存 GPU 表示，准备 DrawItem 与透明排序 |
-| Renderer / RenderPreparation | 渲染路线组装、阴影与可见性准备、帧提交 |
-| RenderGraph / Pass | Graph 处理依赖、资源和同步；Pass 负责布局、绑定与具体绘制 |
+| RenderResourceManager | 通过资产 ID 获取并缓存 GPU 网格、材质、纹理和采样器 |
+| Renderer | 渲染路线组装、材质覆盖解析与材质表更新、光栅化主视图剔除与帧提交 |
+| RenderGraph / Pass | Graph 处理依赖、资源和同步，先统一调用可选的 prepare，再执行；Pass 负责自身准备、绑定与绘制 |
 | Editor | 相机导航、选择、属性编辑和编辑器绘制输入 |
 
-渲染层不访问 Component。传入 Renderer 的数据是独立快照，GPU DrawItem 不保留 Actor / Component 指针。
+渲染层不访问 Component。Renderer 直接引用上层提交的对象，记录逐对象可见性；各 Pass 遍历对象及其 Submesh 绘制。
 
 ## 场景与资产
 
@@ -52,7 +53,7 @@ Engine：场景 / 编辑器 Tick
 - Graph 默认共享阴影图、深度和颜色中间结果；跨帧访问由同一队列上的 Barrier 同步。
 - CPU 回读缓冲显式按帧分配；时域历史使用独立的双层 Ping-pong 资源。
 
-详见 [RenderGraph](../src/render/ARCH.MD) 与 [Descriptor / Pipeline Layout](render_layout.md)。
+详见 [RenderGraph](../src/render/Arch.md) 与 [Descriptor / Pipeline Layout](RenderLayout.md)。
 
 ## 配置与编辑器
 

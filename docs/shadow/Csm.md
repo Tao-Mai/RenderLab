@@ -1,6 +1,6 @@
 # 稳定 CSM：精度、稳定性与接缝
 
-[阴影概览](../shadow.md) · [项目首页](../../README.md)
+[阴影概览](../Shadow.md) · [项目首页](../../README.md)
 
 Forward / Deferred 共用方向光级联阴影，支持 1～4 级。目标是在有限分辨率下把精度优先给近处，并减少相机移动引起的阴影闪烁。
 
@@ -49,7 +49,7 @@ Forward / Deferred 共用方向光级联阴影，支持 1～4 级。目标是在
 
 方向光阴影启用 Depth Clamp，CPU 对应忽略光源 Near Plane，仅使用四个侧面和 Far Plane。投影与剔除均包含级联重叠区和滤波边界；主相机与其他阴影仍使用正常六面剔除。
 
-代码：[ShadowPass.cpp](../../src/render/feature/shadow/ShadowPass.cpp)、[RenderPreparation.cpp](../../src/render/RenderPreparation.cpp)、[Bounds.cpp](../../src/core/math/Bounds.cpp)。
+代码：[ShadowPass.cpp](../../src/render/feature/shadow/ShadowPass.cpp)、[Bounds.cpp](../../src/core/math/Bounds.cpp)。
 
 ## 边缘与接缝：PCF 和 Cascade Blending
 

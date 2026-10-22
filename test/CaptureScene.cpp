@@ -6,7 +6,6 @@
 #include "editor/EditorCamera.h"
 #include "editor/LightMarkers.h"
 #include "render/RenderContext.h"
-#include "render/RenderPreparation.h"
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/feature/DepthPrepass.h"
@@ -170,11 +169,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     const auto   view = camera.renderView({0, 0, float(extent.width), float(extent.height)});
     RenderSystem system;
     const auto&  snapshot = system.prepare(scenes.scene());
-    auto         shadows  = config.feature.shadow;
-    if (offline || realtime)
-        shadows.enable = false;
-    const auto   prepared   = prepareRenderScene(snapshot, view.uniforms, shadows, *context().assetManager, nullptr);
-    const auto&  renderData = renderContext().resources->prepare(snapshot, prepared, 0);
+    const auto& renderData = renderer.prepare(view, snapshot, 0);
     LightMarkers lightMarkers;
     if (!offline)
         lightMarkers.prepare(scenes.scene(), *renderContext().resources);
@@ -190,7 +185,10 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     {
         scene.sceneBindings().updateEnvironmentMap(renderData.environmentMap);
         for (auto& data : frameData)
-            scene.sceneBindings().updateFrame(data, view.uniforms, prepared.lighting);
+        {
+            data.updateSceneUniforms(view.uniforms);
+            scene.sceneBindings().updateFrame(data, renderData);
+        }
     }
 
     const auto activeFrameCount = offline ? 1u : maxFramesInFlight;
@@ -199,12 +197,14 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         const auto index = frameNumber % activeFrameCount;
         auto&      frame = frames[index];
         frame.wait();
+        const PassFrame execution{setup, frameData[index], view, renderData, editor, index};
+        graph.prepare(execution);
         auto& commands = frame.commandBufferHandle();
         vkCheck(commands.reset());
         vkCheck(commands.begin({}));
         graph.execute(
             commands,
-            {setup, frameData[index], view, renderData, editor, index},
+            execution,
             0,
             frame.gpuProfiler(),
             nullptr
@@ -294,7 +294,7 @@ int main(int argc, char** argv)
     config.setRenderPath(
         route == "offline"        ? RenderPath::OfflinePathTracing
             : route == "realtime" ? RenderPath::RayTracing
-                                  : RenderPath::Rasterization
+                                  : RenderPath::Forward
     );
     config.setEditorSize(side, side);
     CHECK(glfwInit());
