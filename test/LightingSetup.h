@@ -12,7 +12,24 @@
 #include "render/feature/shadow/ShadowPass.h"
 #include "render/resource/RenderResourceManager.h"
 
-#include <memory>
+#include <cstring>
+#include <span>
+
+inline void bindTestLightBuffer(RenderGraph& graph, const PassSetup& setup, RenderGraph::BufferHandle lights)
+{
+    for (auto& frame : setup.frameData)
+        frame.writeLightBufferDescriptor(graph.getBuffer(lights));
+}
+
+inline void uploadTestLights(RenderGraph& graph, RenderGraph::BufferHandle buffer, std::span<const LightData> lights)
+{
+    if (lights.empty())
+        return;
+
+    const auto bytes  = lights.size_bytes();
+    const auto upload = graph.allocateUpload(buffer, bytes);
+    std::memcpy(upload.data.data(), lights.data(), bytes);
+}
 
 inline float writeTestEnvironment(const PassSetup& setup, const std::optional<EnvironmentMapAsset::ID>& id)
 {
@@ -44,13 +61,8 @@ inline float writeTestEnvironment(const PassSetup& setup, const std::optional<En
 }
 
 // Manual-graph checks own their FrameData and therefore write its shared bindings explicitly.
-inline vk::raii::Sampler writeTestLighting(
-    RenderGraph&              graph,
-    const PassSetup&          setup,
-    ShadowPass::Output        shadow,
-    const RenderData&         scene,
-    RenderGraph::BufferHandle lights
-)
+inline vk::raii::Sampler
+writeTestLighting(RenderGraph& graph, const PassSetup& setup, ShadowPass::Output shadow, const RenderData& scene)
 {
     auto&       resources = *renderContext().resources;
     const auto& feature   = setup.config.feature;
@@ -94,18 +106,7 @@ inline vk::raii::Sampler writeTestLighting(
         },
     };
     const auto linearSampler = resources.sampler(BuiltinAssets::Sampler::linearClamp);
-    if (!scene.lights.empty())
-    {
-        const auto upload      = graph.allocateUpload(lights, scene.lights.size() * sizeof(LightData));
-        auto*      destination = reinterpret_cast<LightData*>(upload.data.data());
-        for (auto light : scene.lights)
-        {
-            light.shadowEnabled = 0;
-            light.shadowidx     = ~0u;
-            std::construct_at(destination++, light);
-        }
-    }
-    const auto bufferInfo = [&](RenderGraph::BufferHandle handle)
+    const auto bufferInfo    = [&](RenderGraph::BufferHandle handle)
     {
         const auto& buffer = graph.getBuffer(handle);
         return vk::DescriptorBufferInfo{.buffer = buffer.handle(), .range = buffer.size()};
@@ -118,7 +119,6 @@ inline vk::raii::Sampler writeTestLighting(
     };
     for (auto& frame : setup.frameData)
     {
-        frame.writeLightBufferDescriptor(graph.getBuffer(lights), graph.bufferRevision(lights));
         frame.writeShadowBufferDescriptors(shadowBuffers);
         frame.writeShadowDescriptors(
             view(shadow.pointLightShadowMap, vk::ImageViewType::eCubeArray),

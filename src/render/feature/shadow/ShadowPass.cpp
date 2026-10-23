@@ -60,12 +60,11 @@ std::vector<ShadowVolume> shadowVolumes(const ShadowFrameData& lighting, uint32_
 
 ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::BufferHandle lights)
 {
-    lightBuffer = lights;
     const RenderGraph::MemoryAccess shaderRead{
         .stages = vk::PipelineStageFlagBits2::eVertexShader | vk::PipelineStageFlagBits2::eFragmentShader,
         .access = vk::AccessFlagBits2::eShaderStorageRead,
     };
-    graph.use(lightBuffer, shaderRead);
+    graph.use(lights, shaderRead);
     const auto& shadow = setup.config.feature.shadow;
     cascadeCount       = shadow.cascade.count;
 
@@ -231,7 +230,6 @@ void ShadowPass::prepare(RenderGraph& graph, const PassFrame& frame)
         const auto allocation = graph.allocateUpload(buffer, bytes);
         std::memcpy(allocation.data.data(), values.data(), bytes);
     };
-    upload(lightBuffer, shadowData.lights);
     upload(point.buffer, shadowData.pointShadows);
     upload(spot.buffer, shadowData.spotShadows);
     upload(rectArea.buffer, shadowData.rectAreaShadows);
@@ -240,7 +238,7 @@ void ShadowPass::prepare(RenderGraph& graph, const PassFrame& frame)
 
 void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
 {
-    const auto& lights = shadowData.lights;
+    const auto& lights = execution.renderData.lights;
     const auto& ranges = execution.renderData.lightRanges;
 
     for (uint32_t index = 0; index < ranges.directionalEnd; ++index)
@@ -249,7 +247,7 @@ void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
         if (!light.castShadow())
             continue;
 
-        DCHECK(light.shadowidx < shadowData.directionalShadows.size());
+        DCHECK(light.shadowIdx < shadowData.directionalShadows.size());
         for (uint32_t cascadeIndex = 0; cascadeIndex < cascadeCount; ++cascadeIndex)
             recordShadow(
                 graph,
@@ -257,7 +255,7 @@ void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
                 execution,
                 directional,
                 index,
-                light.shadowidx * cascadeCount + cascadeIndex,
+                light.shadowIdx * cascadeCount + cascadeIndex,
                 cascadeIndex
             );
     }
@@ -268,8 +266,8 @@ void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
         if (!light.castShadow())
             continue;
 
-        DCHECK(light.shadowidx < shadowData.pointShadows.size());
-        recordShadow(graph, commandBuffer, execution, point, index, light.shadowidx * kPointFaceCount);
+        DCHECK(light.shadowIdx < shadowData.pointShadows.size());
+        recordShadow(graph, commandBuffer, execution, point, index, light.shadowIdx * kPointFaceCount);
     }
 
     for (uint32_t index = ranges.pointEnd; index < ranges.rectAreaEnd; ++index)
@@ -278,8 +276,8 @@ void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
         if (!light.castShadow())
             continue;
 
-        DCHECK(light.shadowidx < shadowData.rectAreaShadows.size());
-        recordShadow(graph, commandBuffer, execution, rectArea, index, light.shadowidx);
+        DCHECK(light.shadowIdx < shadowData.rectAreaShadows.size());
+        recordShadow(graph, commandBuffer, execution, rectArea, index, light.shadowIdx);
     }
 
     for (uint32_t index = ranges.rectAreaEnd; index < ranges.spotEnd; ++index)
@@ -288,8 +286,8 @@ void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
         if (!light.castShadow())
             continue;
 
-        DCHECK(light.shadowidx < shadowData.spotShadows.size());
-        recordShadow(graph, commandBuffer, execution, spot, index, light.shadowidx);
+        DCHECK(light.shadowIdx < shadowData.spotShadows.size());
+        recordShadow(graph, commandBuffer, execution, spot, index, light.shadowIdx);
     }
 }
 
@@ -347,8 +345,8 @@ void ShadowPass::recordShadow(
     );
     commandBuffer.setScissor(0, vk::Rect2D({0, 0}, {target.mapSize, target.mapSize}));
 
-    const auto& light      = shadowData.lights[lightIndex];
-    const auto  visibility = RenderVisibility::shadowMask(light.type(), light.shadowidx, cascadeIndex);
+    const auto& light      = execution.renderData.lights[lightIndex];
+    const auto  visibility = RenderVisibility::shadowMask(light.type(), light.shadowIdx, cascadeIndex);
     for (size_t index = 0; index < execution.renderData.drawItems.size(); ++index)
     {
         if (!(visibilityMasks[index] & visibility))

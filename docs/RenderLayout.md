@@ -28,7 +28,7 @@ const auto& layout = renderContext().device->meshPipelineLayout;
 
 ## Descriptor Set Layout
 
-表中 UBO 对应 Uniform Buffer，SSBO 对应 Storage Buffer；Image 与 Sampler 分开绑定。场景与光照布局各 Binding 均为单个 Descriptor；Scene 与 Material 的阶段为 All，Lighting 为 Vertex | Fragment，其中 Radiance 图像与 sampler 为 All，供光追 Miss 阶段复用。
+表中 UBO 对应 Uniform Buffer，SSBO 对应 Storage Buffer；Image 与 Sampler 分开绑定。场景与光照布局各 Binding 均为单个 Descriptor；Scene 与 Material 的阶段为 All，Lighting 默认为 Vertex | Fragment，其中 Light Data SSBO 还支持 ClosestHit，Radiance 图像与 sampler 为 All，供光追 Miss 阶段复用。
 
 Binding 编号定义于 [ShaderData.h](../src/render/resource/ShaderData.h)。
 
@@ -45,7 +45,7 @@ Binding 编号定义于 [ShaderData.h](../src/render/resource/ShaderData.h)。
 | Binding | Descriptor 类型 | 内容 |
 | --- | --- | --- |
 | 0 | UBO | `LightUniforms`：光源分组范围、环境光及阴影参数 |
-| 1 | SSBO | `LightData` 光源数组 |
+| 1 | SSBO | `LightData` 光源数组，固定容量 `kMaxLights`（65536） |
 | 2 | SSBO | 点光源阴影数据 |
 | 3 | SSBO | 聚光灯阴影数据 |
 | 4 | SSBO | 矩形面光源阴影数据 |
@@ -61,6 +61,8 @@ Binding 编号定义于 [ShaderData.h](../src/render/resource/ShaderData.h)。
 | 16 / 17 | Sampled Image / Sampler | BRDF LUT |
 | 18 / 19 | Sampled Image / Sampler | 原始 Radiance 环境图，供天空盒、Sheen IBL 及实时 / 离线光追 Miss 使用 |
 | 20 / 21 | Sampled Image / Sampler | Sheen 方向反照率 LUT |
+
+Light Data SSBO 由 `Renderer` 按 `kMaxLights * sizeof(LightData)` 一次分配（6 MiB），光栅化、实时光追与离线路径追踪共用 Set 1 / Binding 1。每帧统一写入 `shadowIdx` 并上传启用的光源；阴影 Pass 直接读取这些光源及其索引，仅生成和上传各类阴影数据，不复制光源或重新编号。启用光源总数超过上限时明确报错；光源数量或内容变化不再触发 descriptor 更新，绑定仅在渲染图创建或重建时写入。
 
 由 `meshPipelineLayout`，以及 `ShadowPass`、`SkyboxPass`、`DeferredLightingPass`、`RayTracingPass`、`OfflinePathTracingPass` 各自的 Pipeline Layout 引用，作为 Set 1。
 

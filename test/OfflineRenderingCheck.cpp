@@ -82,12 +82,17 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
     renderContext().materialTable->setup(graph);
     const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), {&data, 1}, context().config->rendererConfig()};
     writeTestEnvironment(setup, scenes.scene().environmentMap);
-    const auto blas       = graph.addPass(blasBuild, setup);
-    const auto structures = graph.addPass(tlasBuild, setup, blas);
-    const auto image      = graph.addPass(pass, setup, structures).rayImage;
-    const auto buffer     = graph.addPass(readback, setup, image);
+    const auto blas        = graph.addPass(blasBuild, setup);
+    const auto structures  = graph.addPass(tlasBuild, setup, blas);
+    const auto lightBuffer = graph.createBuffer({
+        .size  = kMaxLights * sizeof(LightData),
+        .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+    });
+    const auto image       = graph.addPass(pass, setup, structures, lightBuffer).rayImage;
+    const auto buffer      = graph.addPass(readback, setup, image);
     graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
     graph.compile(setup);
+    bindTestLightBuffer(graph, setup, lightBuffer);
     const auto extent = renderer.swapchainHandle().extent();
     const auto sample = [&]
     {
@@ -95,6 +100,7 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
         const auto& snapshot = system.prepare(scenes.scene());
         graph.beginFrame(0);
         const auto& draws = renderer.prepare(view, snapshot, 0);
+        uploadTestLights(graph, lightBuffer, draws.lights);
         data.uploadSceneUniforms(view.uniforms);
         const PassFrame execution{setup, data, view, draws, {}, 0};
         graph.prepare(execution);

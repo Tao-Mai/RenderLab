@@ -195,24 +195,21 @@ makeDirectionalShadow(const SceneUniforms& view, const LightData& light, const R
 }  // namespace
 
 
-ShadowFrameData prepareShadows(
-    const SceneUniforms& view, std::span<const LightData> frameLights, const RenderFeature::Shadow& shadows
-)
+ShadowFrameData
+prepareShadows(const SceneUniforms& view, std::span<const LightData> frameLights, const RenderFeature::Shadow& shadows)
 {
     ShadowFrameData result;
     CHECK(shadows.cascade.count > 0 && shadows.cascade.count <= kMaxDirectionalShadowCascades);
-    result.lights.assign(frameLights.begin(), frameLights.end());
-    for (LightData& light : result.lights)
+    for (const auto& light : frameLights)
     {
-        light.shadowidx = ~0u;
         if (!light.castShadow())
             continue;
 
         if (light.type() == GpuLightType::Directional)
         {
-            light.shadowidx = static_cast<uint32_t>(result.directionalShadows.size());
+            DCHECK(light.shadowIdx == result.directionalShadows.size());
             CHECK(
-                light.shadowidx < kMaxDirectionalLightShadow,
+                light.shadowIdx < kMaxDirectionalLightShadow,
                 "enabled shadow-casting directional lights exceed capacity {}",
                 kMaxDirectionalLightShadow
             );
@@ -229,9 +226,9 @@ ShadowFrameData prepareShadows(
 
         if (light.type() == GpuLightType::Point)
         {
-            light.shadowidx = static_cast<uint32_t>(result.pointShadows.size());
+            DCHECK(light.shadowIdx == result.pointShadows.size());
             CHECK(
-                light.shadowidx < kMaxPointLightShadow,
+                light.shadowIdx < kMaxPointLightShadow,
                 "enabled shadow-casting point lights exceed capacity {}",
                 kMaxPointLightShadow
             );
@@ -244,9 +241,9 @@ ShadowFrameData prepareShadows(
         }
         else if (light.type() == GpuLightType::Spot)
         {
-            light.shadowidx = static_cast<uint32_t>(result.spotShadows.size());
+            DCHECK(light.shadowIdx == result.spotShadows.size());
             CHECK(
-                light.shadowidx < kMaxSpotLightShadow,
+                light.shadowIdx < kMaxSpotLightShadow,
                 "enabled shadow-casting spot lights exceed capacity {}",
                 kMaxSpotLightShadow
             );
@@ -265,9 +262,9 @@ ShadowFrameData prepareShadows(
         }
         else
         {
-            light.shadowidx = static_cast<uint32_t>(result.rectAreaShadows.size());
+            DCHECK(light.shadowIdx == result.rectAreaShadows.size());
             CHECK(
-                light.shadowidx < kMaxRectAreaLightShadow,
+                light.shadowIdx < kMaxRectAreaLightShadow,
                 "enabled shadow-casting rect area lights exceed capacity {}",
                 kMaxRectAreaLightShadow
             );

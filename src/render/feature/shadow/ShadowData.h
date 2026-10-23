@@ -8,11 +8,12 @@
 struct ShadowFrameData
 {
     bool                               operator==(const ShadowFrameData&) const = default;
-    std::vector<LightData>             lights;
     std::vector<PointShadowData>       pointShadows;
     std::vector<SpotShadowData>        spotShadows;
     std::vector<RectAreaShadowData>    rectAreaShadows;
     std::vector<DirectionalShadowData> directionalShadows;
 };
+
+// Lights already carry per-type shadow indices assigned by Renderer.
 ShadowFrameData
 prepareShadows(const SceneUniforms& view, std::span<const LightData> lights, const RenderFeature::Shadow& settings);

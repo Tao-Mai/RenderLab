@@ -78,8 +78,9 @@ int main(int, char** argv)
     source.data.direction     = {0.0f, -1.0f, 0.0f, 0.0f};
     source.data.lightType     = GpuLightType::Directional;
     source.data.shadowEnabled = 1;
+    source.data.shadowIdx     = 0;
     const auto prepared       = prepareShadows(view, {&source.data, 1}, feature.shadow);
-    CHECK(prepared.directionalShadows.size() == 1 && prepared.lights[0].shadowidx == 0);
+    CHECK(prepared.directionalShadows.size() == 1);
     float previousDepth = camera.config().nearPlane;
     for (const auto& cascade : prepared.directionalShadows[0].cascades)
     {

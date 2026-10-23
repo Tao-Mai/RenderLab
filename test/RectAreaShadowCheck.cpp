@@ -76,8 +76,9 @@ int main(int, char** argv)
     source.data.areaRightData = {0.0f, 1.0f, 0.0f, 0.0f};
     source.data.lightType     = GpuLightType::RectArea;
     source.data.shadowEnabled = 1;
+    source.data.shadowIdx     = 0;
     const auto prepared       = prepareShadows({}, {&source.data, 1}, {});
-    CHECK(prepared.rectAreaShadows.size() == 1 && prepared.lights[0].shadowidx == 0);
+    CHECK(prepared.rectAreaShadows.size() == 1);
     CHECK(prepared.pointShadows.empty());
     const auto& shadow = prepared.rectAreaShadows[0];
     CHECK(std::abs(shadow.nearPlane - 0.5f) < 1e-5f && shadow.farPlane == 16.0f);

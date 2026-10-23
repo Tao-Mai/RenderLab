@@ -127,11 +127,21 @@ TEST(ShaderDataLayout, LightStorageElementsMatchCompiledShaders)
         Field{"areaSizeCone", offsetof(LightData, areaSizeCone), sizeof(glm::vec4)},
         Field{"lightType", offsetof(LightData, lightType), sizeof(GpuLightType)},
         Field{"shadowEnabled", offsetof(LightData, shadowEnabled), sizeof(uint32_t)},
-        Field{"shadowIdx", offsetof(LightData, shadowidx), sizeof(uint32_t)},
+        Field{"shadowIdx", offsetof(LightData, shadowIdx), sizeof(uint32_t)},
         Field{"padding0", offsetof(LightData, padding0), sizeof(uint32_t)},
         Field{"areaRightData", offsetof(LightData, areaRightData), sizeof(glm::vec4)},
     };
-    for (const auto* shader : lightingShaders)
+    for (const auto* shader :
+         {"slang",
+          "slang.no_ibl",
+          "slang.clearcoat",
+          "slang.clearcoat.no_ibl",
+          "shadow",
+          "shadow.rect_area",
+          "shadow.directional",
+          "shadow.spot",
+          "raytracing",
+          "offline_pathtracing"})
     {
         SCOPED_TRACE(shader);
         const auto value = parameter(shader, "lights");

@@ -12,18 +12,19 @@ TEST(SpotShadow, PreparesActiveLayersAndConeProjection)
     LightData source;
     source.lightType      = GpuLightType::Spot;
     source.shadowEnabled  = 1;
+    source.shadowIdx      = 0;
     source.positionRange  = {0, 0, 3, 10};
     source.direction      = {0, 0, -1, 0};
     source.areaSizeCone.z = std::cos(glm::radians(15.0f));
     source.areaSizeCone.w = std::cos(glm::radians(30.0f));
     std::array lights{source, source, source};
-    lights[1].shadowEnabled = 0;
-    const auto prepared          = prepareShadows({}, lights, {});
+    lights[1].shadowEnabled   = 0;
+    lights[1].shadowIdx       = ~0u;
+    lights[2].shadowIdx       = 1;
+    const auto originalLights = lights;
+    const auto prepared       = prepareShadows({}, lights, {});
     ASSERT_EQ(prepared.spotShadows.size(), 2u);
-    ASSERT_EQ(prepared.lights.size(), 3u);
-    EXPECT_EQ(prepared.lights[0].shadowidx, 0u);
-    EXPECT_EQ(prepared.lights[1].shadowidx, ~0u);
-    EXPECT_EQ(prepared.lights[2].shadowidx, 1u);
+    EXPECT_EQ(lights, originalLights);
     const auto center = prepared.spotShadows[0].vp * glm::vec4(0, 0, 1, 1);
     EXPECT_NEAR(center.x, 0.0f, 0.0001f);
     EXPECT_NEAR(center.y, 0.0f, 0.0001f);
@@ -35,17 +36,17 @@ TEST(SpotShadow, PreparesActiveLayersAndConeProjection)
         light.shadowEnabled = 0;
     const auto disabled = prepareShadows({}, lights, {});
     EXPECT_TRUE(disabled.spotShadows.empty());
-    for (const auto& light : disabled.lights)
-        EXPECT_FALSE(light.castShadow());
 }
 
 TEST(SpotShadow, RejectsCapacityOverflow)
 {
     std::array<LightData, kMaxSpotLightShadow + 1> lights;
+    uint32_t                                       shadowIndex = 0;
     for (auto& light : lights)
     {
         light.lightType     = GpuLightType::Spot;
         light.shadowEnabled = 1;
+        light.shadowIdx     = shadowIndex++;
         light.direction     = {0, 0, -1, 0};
     }
     EXPECT_DEATH(prepareShadows({}, lights, {}), "");

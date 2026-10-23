@@ -65,11 +65,16 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
     SinkPass        sink;
     const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), data, context().config->rendererConfig()};
     writeTestEnvironment(setup, scenes.scene().environmentMap);
-    const auto blas       = graph.addPass(blasBuild, setup);
-    const auto structures = graph.addPass(tlasBuild, setup, blas);
-    const auto source     = graph.addPass(trace, setup, structures);
+    const auto blas        = graph.addPass(blasBuild, setup);
+    const auto structures  = graph.addPass(tlasBuild, setup, blas);
+    const auto lightBuffer = graph.createBuffer({
+        .size  = kMaxLights * sizeof(LightData),
+        .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+    });
+    const auto source      = graph.addPass(trace, setup, structures, lightBuffer);
     graph.addPass(sink, setup, source);
     graph.compile(setup);
+    bindTestLightBuffer(graph, setup, lightBuffer);
 
     RenderSystem system;
     EditorCamera camera{scenes.scene().editorCamera};
@@ -106,6 +111,7 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
         const auto& snapshot = system.prepare(scenes.scene());
         graph.beginFrame(index);
         const auto& draws = renderer.prepare(view, snapshot, index);
+        uploadTestLights(graph, lightBuffer, draws.lights);
         if (iteration == 0)
             LOG_INFO(
                 "Submitted draw items {}, point lights {}, area lights {}",

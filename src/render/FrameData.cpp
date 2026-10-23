@@ -72,7 +72,7 @@ void FrameData::writeLightUniformDescriptorSet()
     vulkan->deviceHandle().updateDescriptorSets(write, {});
 }
 
-void FrameData::writeLightBufferDescriptor(const Buffer& buffer, uint64_t revision)
+void FrameData::writeLightBufferDescriptor(const Buffer& buffer)
 {
     const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.size()};
     const vk::WriteDescriptorSet   write{
@@ -83,7 +83,6 @@ void FrameData::writeLightBufferDescriptor(const Buffer& buffer, uint64_t revisi
           .pBufferInfo     = &info,
     };
     vulkan->deviceHandle().updateDescriptorSets(write, {});
-    boundLightBufferRevision = revision;
 }
 
 void FrameData::writeShadowBufferDescriptors(std::span<const vk::DescriptorBufferInfo, 4> buffers)
@@ -245,8 +244,7 @@ void FrameData::reset() noexcept
     viewSet     = nullptr;
     sceneBuffer.reset();
     lightUniformBuffer.reset();
-    boundLightBufferRevision = 0;
-    vulkan                   = nullptr;
+    vulkan = nullptr;
 }
 
 void FrameData::uploadSceneUniforms(const SceneUniforms& view)

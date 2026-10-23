@@ -36,6 +36,7 @@
 #include "render/raytracing/TlasBuildPass.h"
 #include "render/resource/Buffer.h"
 
+#include <cstring>
 #include <glm/geometric.hpp>
 #include <limits>
 #include <span>
@@ -61,6 +62,7 @@ LightRanges groupLights(std::span<const RenderLight> source, std::vector<LightDa
     ranges.pointEnd       = append(GpuLightType::Point);
     ranges.rectAreaEnd    = append(GpuLightType::RectArea);
     ranges.spotEnd        = append(GpuLightType::Spot);
+    CHECK(grouped.size() <= kMaxLights, "scene has {} enabled lights; maximum is {}", grouped.size(), kMaxLights);
     return ranges;
 }
 }  // namespace
@@ -354,7 +356,10 @@ void Renderer::setupRenderGraph()
     frameIndex           = 0;
 
     materialTable.setup(graph);
-    lightBuffer       = {};
+    lightBuffer       = graph.createBuffer({
+              .size  = kMaxLights * sizeof(LightData),
+              .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+    });
     const auto extent = swapchain.extent();
     presentTarget     = graph.createExternalImage({
             .format = swapchain.surfaceFormat().format,
@@ -378,12 +383,13 @@ void Renderer::setupRenderGraph()
     scene.color = setupPostProcess(scene.color, presentTarget);
     setupEditor(scene);
     graph.compile({vulkan, swapchain.extent(), frameStorage, config});
+    for (auto& data : frameStorage)
+        data.writeLightBufferDescriptor(graph.getBuffer(lightBuffer));
+
     if (config.renderPath == RenderPath::Forward || config.renderPath == RenderPath::Deferred)
     {
         createShadowSampler();
         writeShadowDescriptors(scene.shadow);
-        for (auto& data : frameStorage)
-            data.writeLightBufferDescriptor(graph.getBuffer(lightBuffer), graph.bufferRevision(lightBuffer));
     }
     appliedConfig = config;
 }
@@ -392,7 +398,7 @@ Renderer::SceneOutput Renderer::setupRayTracing()
 {
     const auto blas       = setupPass<BlasBuildPass>();
     const auto structures = setupPass<TlasBuildPass>(blas);
-    const auto traced     = setupPass<RayTracingPass>(structures);
+    const auto traced     = setupPass<RayTracingPass>(structures, lightBuffer);
     auto       color      = traced.rayImage;
     if (rendererConfig->feature.rayTracing.svgf)
         color = setupPass<TemporalReprojectionPass>(traced).color;
@@ -403,7 +409,7 @@ Renderer::SceneOutput Renderer::setupOffline()
 {
     const auto blas       = setupPass<BlasBuildPass>();
     const auto structures = setupPass<TlasBuildPass>(blas);
-    return {.color = setupPass<OfflinePathTracingPass>(structures).rayImage};
+    return {.color = setupPass<OfflinePathTracingPass>(structures, lightBuffer).rayImage};
 }
 
 uint32_t Renderer::offlineSampleCount() const
@@ -413,10 +419,6 @@ uint32_t Renderer::offlineSampleCount() const
 
 Renderer::SceneOutput Renderer::setupRasterization(RenderGraph::ImageHandle target)
 {
-    lightBuffer               = graph.createBuffer({
-                      .size  = sizeof(LightData),
-                      .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
-    });
     const auto&        config = *rendererConfig;
     ShadowPass::Output shadow;
     if (config.feature.shadow.enable)
@@ -576,6 +578,20 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
     }
 
     renderData.lightRanges = groupLights(scene.lights, renderData.lights);
+
+    // 写入shadowIdx
+    GpuLightType lightType   = GpuLightType::Point;
+    uint32_t     shadowIndex = 0;
+    for (auto& light : renderData.lights)
+    {
+        if (light.type() != lightType)
+        {
+            lightType   = light.type();
+            shadowIndex = 0;
+        }
+        light.shadowIdx = light.castShadow() ? shadowIndex++ : ~0u;
+    }
+
     renderData.drawBounds.clear();
     renderData.visibilityMasks.clear();
 
@@ -625,20 +641,14 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
                     {shadow.bias, shadow.sampleRadius, shadow.pixelRotation ? 1.0f : 0.0f, shadow.spotSampleRadius},
             };
             data.uploadLightUniforms(lighting);
+        }
 
-            if (!renderData.lights.empty())
-            {
-                const auto upload = graph.allocateUpload(lightBuffer, renderData.lights.size() * sizeof(LightData));
-                auto*      destination = reinterpret_cast<LightData*>(upload.data.data());
-                for (auto light : renderData.lights)
-                {
-                    light.shadowEnabled = 0;
-                    light.shadowidx     = ~0u;
-                    std::construct_at(destination++, light);
-                }
-            }
-            if (data.lightBufferRevision() != graph.bufferRevision(lightBuffer))
-                data.writeLightBufferDescriptor(graph.getBuffer(lightBuffer), graph.bufferRevision(lightBuffer));
+        // 上传lightData
+        if (!renderData.lights.empty())
+        {
+            const auto bytes  = renderData.lights.size() * sizeof(LightData);
+            const auto upload = graph.allocateUpload(lightBuffer, bytes);
+            std::memcpy(upload.data.data(), renderData.lights.data(), bytes);
         }
     }
     return renderData;
@@ -658,10 +668,10 @@ RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData
     if (acquireResult == vk::Result::eErrorOutOfDateKHR)
         return {.swapchainNeedsRebuild = true};
 
+    graph.bindImage(presentTarget, swapchain.image(imageIndex));
+
     // 全局prepare：更新场景数据
     const auto& renderData = prepare(view, scene, frameIndex);
-
-    graph.bindImage(presentTarget, swapchain.image(imageIndex));
 
     auto&           data = frameStorage[frameIndex];
     const PassSetup setup{vulkan, swapchain.extent(), frameStorage, *rendererConfig};

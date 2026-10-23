@@ -94,6 +94,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     graph.init(vulkan);
     const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), frameData, context().config->rendererConfig()};
     RenderGraph::BufferHandle buffer;
+    RenderGraph::BufferHandle lightBuffer;
     const auto                rebuildGraph = [&]
     {
         graph.releaseResources();
@@ -101,11 +102,16 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         renderContext().materialTable->setup(graph);
         const auto blas       = graph.addPass(blasBuild, setup);
         const auto structures = graph.addPass(tlasBuild, setup, blas);
-        const auto output     = graph.addPass(trace, setup, structures);
+        lightBuffer           = graph.createBuffer({
+                      .size  = kMaxLights * sizeof(LightData),
+                      .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+        });
+        const auto output     = graph.addPass(trace, setup, structures, lightBuffer);
         CHECK(graph.imageInfo(output.rayImage).format == kHdrColorFormat);
         buffer = graph.addPass(readback, setup, output.rayImage);
         graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
         graph.compile(setup);
+        bindTestLightBuffer(graph, setup, lightBuffer);
     };
     rebuildGraph();
 
@@ -120,6 +126,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         const auto& sceneData = renderSystem.prepare(scenes.scene());
         graph.beginFrame(0);
         const auto& data = renderer.prepare(view, sceneData, 0);
+        uploadTestLights(graph, lightBuffer, data.lights);
         CHECK(data.drawBounds.empty());
         CHECK(data.visibilityMasks.empty());
         materialIndices.clear();

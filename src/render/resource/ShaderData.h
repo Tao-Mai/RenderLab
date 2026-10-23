@@ -76,11 +76,11 @@ struct alignas(16) SceneUniforms
 // Only enabled lights are uploaded; an empty group has equal begin/end indices.
 struct LightRanges
 {
-    bool operator==(const LightRanges&) const = default;
-    uint32_t directionalEnd = 0;
-    uint32_t pointEnd       = 0;
-    uint32_t rectAreaEnd    = 0;
-    uint32_t spotEnd        = 0;
+    bool     operator==(const LightRanges&) const = default;
+    uint32_t directionalEnd                       = 0;
+    uint32_t pointEnd                             = 0;
+    uint32_t rectAreaEnd                          = 0;
+    uint32_t spotEnd                              = 0;
 };
 static_assert(sizeof(LightRanges) == 16);
 
@@ -91,12 +91,12 @@ static_assert(sizeof(LightRanges) == 16);
 struct alignas(16) LightUniforms
 {
     LightRanges lightRanges;
-    float     ambientCoefficient            = 0.1f;
-    uint32_t  cascadeCount                  = 0;
-    float     directionalShadowSampleRadius = 0.0f;  // Shadow-map texels.
-    float     padding = 0.0f;
-    glm::vec4 iblParameters{0.0f};
-    glm::vec4 shadowParameters{0.0f};
+    float       ambientCoefficient            = 0.1f;
+    uint32_t    cascadeCount                  = 0;
+    float       directionalShadowSampleRadius = 0.0f;  // Shadow-map texels.
+    float       padding                       = 0.0f;
+    glm::vec4   iblParameters{0.0f};
+    glm::vec4   shadowParameters{0.0f};
 };
 
 // GPU discriminator; values match shaders/light_data.slang.
@@ -113,16 +113,16 @@ struct alignas(16) LightData
 {
     bool operator==(const LightData&) const = default;
     // Photometric-scaled RGB: Point/Spot intensity, Directional irradiance, RectArea radiance.
-    glm::vec3  color{0.0f};
-    float      padding3 = 0.0f;
-    glm::vec4  positionRange{0.0f, 0.0f, 0.0f, 1.0f};
-    glm::vec4  direction{0.0f, -1.0f, 0.0f, 0.0f};
-    glm::vec4  areaSizeCone{1.0f, 1.0f, 0.9396926f, 0.8660254f};
-    GpuLightType lightType = GpuLightType::Point;
-    uint32_t   shadowEnabled = 0;
-    uint32_t   shadowidx = ~0u;
-    uint32_t   padding0  = 0;
-    glm::vec4  areaRightData{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3    color{0.0f};
+    float        padding3 = 0.0f;
+    glm::vec4    positionRange{0.0f, 0.0f, 0.0f, 1.0f};
+    glm::vec4    direction{0.0f, -1.0f, 0.0f, 0.0f};
+    glm::vec4    areaSizeCone{1.0f, 1.0f, 0.9396926f, 0.8660254f};
+    GpuLightType lightType     = GpuLightType::Point;
+    uint32_t     shadowEnabled = 0;
+    uint32_t     shadowIdx     = ~0u;
+    uint32_t     padding0      = 0;
+    glm::vec4    areaRightData{1.0f, 0.0f, 0.0f, 0.0f};
 
     [[nodiscard]] glm::vec3 areaRight() const { return xyz(areaRightData); }
 
@@ -193,7 +193,7 @@ static_assert(offsetof(LightData, direction) == 32);
 static_assert(offsetof(LightData, areaSizeCone) == 48);
 static_assert(offsetof(LightData, lightType) == 64);
 static_assert(offsetof(LightData, shadowEnabled) == 68);
-static_assert(offsetof(LightData, shadowidx) == 72);
+static_assert(offsetof(LightData, shadowIdx) == 72);
 static_assert(offsetof(LightData, areaRightData) == 80);
 static_assert(sizeof(PointShadowData) == 384);
 static_assert(offsetof(PointShadowData, vp) == 0);

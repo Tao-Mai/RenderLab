@@ -42,7 +42,6 @@ private:
     ShadowTarget              spot;
     ShadowTarget              rectArea;
     ShadowTarget              directional;
-    RenderGraph::BufferHandle lightBuffer;
     ShadowFrameData           shadowData;
     uint32_t                  cascadeCount = 0;
     vk::PipelineLayout        pipelineLayout;

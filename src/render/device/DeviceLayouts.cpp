@@ -36,7 +36,8 @@ void Device::createSharedDescriptorSetLayouts()
             .binding         = RenderInterface::kLightBufferBinding,
             .descriptorType  = vk::DescriptorType::eStorageBuffer,
             .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment |
+                vk::ShaderStageFlagBits::eClosestHitKHR
         },
         vk::DescriptorSetLayoutBinding{
             .binding         = RenderInterface::kPointShadowBufferBinding,

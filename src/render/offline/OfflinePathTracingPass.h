@@ -23,19 +23,19 @@ public:
         RenderGraph::ImageHandle rayImage;
     };
 
-    Output setup(RenderGraph& graph, const PassSetup& setup, TlasBuildPass::Output scene);
-    void   writeDescriptorSet(RenderGraph& graph, const PassSetup& setup);
-    void   prepare(RenderGraph& graph, const PassFrame& execution);
-    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution);
+    Output
+    setup(RenderGraph& graph, const PassSetup& setup, TlasBuildPass::Output scene, RenderGraph::BufferHandle lights);
+    void writeDescriptorSet(RenderGraph& graph, const PassSetup& setup);
+    void prepare(RenderGraph& graph, const PassFrame& execution);
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution);
     [[nodiscard]] uint32_t sampleCount() const { return accumulatedSamples; }
 
 private:
     struct Frame
     {
-        uint64_t                hitBufferRevision   = 0;
-        uint64_t                lightBufferRevision = 0;
-        vk::raii::DescriptorSet set                 = nullptr;
-        uint64_t                tlasRevision        = 0;
+        uint64_t                hitBufferRevision = 0;
+        vk::raii::DescriptorSet set               = nullptr;
+        uint64_t                tlasRevision      = 0;
     };
     struct OfflineParameters
     {
@@ -62,7 +62,6 @@ private:
     RenderGraph::AccelerationStructureHandle sceneTlas;
     Frame                                    frame;
     RenderGraph::BufferHandle                hitData;
-    RenderGraph::BufferHandle                lightData;
     RenderGraph::BufferHandle                accumulationHandle;
     uint32_t                                 accumulatedSamples = 0;
     std::vector<DrawItem>                    previousDrawItems;
@@ -72,7 +71,6 @@ private:
     uint64_t                                 previousAssetRevision = 0;
 
     void createPipeline(const PassSetup& setup, uint32_t maxRecursionDepth);
-    void prepareLights(RenderGraph& graph, const PassFrame& execution, Frame& frame) const;
     void prepareHits(RenderGraph& graph, const PassFrame& execution, Frame& frame);
     void updateTlasDescriptor(RenderGraph& graph, const PassFrame& execution, Frame& frame);
 };

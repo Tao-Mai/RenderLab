@@ -42,18 +42,18 @@ void checkPointShadowData(Renderer& renderer)
     lights[0].enabled            = false;
     lights[1].data.lightType     = GpuLightType::Spot;
     lights[2].data.shadowEnabled = 0;
-    const auto prepare           = [&]
+    const auto prepare           = [&]() -> const RenderData&
     {
         SceneRenderData scene;
         scene.lights.assign(lights.begin(), lights.end());
-        const auto& prepared = renderer.prepare({}, scene, 0);
-        return prepareShadows({}, prepared.lights, {});
+        return renderer.prepare({}, scene, 0);
     };
-    auto prepared = prepare();
+    const auto& frame    = prepare();
+    auto        prepared = prepareShadows({}, frame.lights, {});
     CHECK(prepared.pointShadows.size() == 2);
-    CHECK(prepared.lights.size() == 4);
-    CHECK(prepared.lights[1].shadowidx == 0 && prepared.lights[2].shadowidx == 1);
-    CHECK(prepared.lights[0].shadowidx == ~0u && prepared.lights[3].shadowidx == 0);
+    CHECK(frame.lights.size() == 4);
+    CHECK(frame.lights[1].shadowIdx == 0 && frame.lights[2].shadowIdx == 1);
+    CHECK(frame.lights[0].shadowIdx == ~0u && frame.lights[3].shadowIdx == 0);
     CHECK(prepared.spotShadows.size() == 1);
 
     const std::array directions = {
@@ -76,11 +76,12 @@ void checkPointShadowData(Renderer& renderer)
 
     lights[0].enabled            = true;
     lights[2].data.shadowEnabled = 1;
-    prepared                     = prepare();
+    const auto& updated          = prepare();
+    prepared                     = prepareShadows({}, updated.lights, {});
     CHECK(prepared.pointShadows.size() == 4);
     CHECK(
-        prepared.lights[0].shadowidx == 0 && prepared.lights[1].shadowidx == 1 && prepared.lights[2].shadowidx == 2 &&
-        prepared.lights[3].shadowidx == 3
+        updated.lights[0].shadowIdx == 0 && updated.lights[1].shadowIdx == 1 && updated.lights[2].shadowIdx == 2 &&
+        updated.lights[3].shadowIdx == 3
     );
     CHECK(lights[0].data.castShadow());
 }
@@ -371,7 +372,7 @@ int main(int argc, char** argv)
     };
     renderFrames();
 
-    // Grow both frames' SSBOs; place markers outside the picking ray.
+    // Change the active light count across frames; place markers outside the picking ray.
     renderer.waitIdle();
     const auto lightTemplate = std::ranges::find_if(
         scene.actors,
@@ -555,5 +556,5 @@ int main(int argc, char** argv)
     ctx = {};
     std::cout << "GPU smoke passed: actor/component ticks, right-mouse/V navigation, free-fly and character movement, "
                  "shadow draws/clear, skybox/fallback, picking, material/texture updates, multiple/disabled/zero "
-                 "lights, SSBO growth, graph rebuild, editor UI/gizmo, shutdown.\n";
+                 "lights, fixed-capacity light SSBOs, graph rebuild, editor UI/gizmo, shutdown.\n";
 }

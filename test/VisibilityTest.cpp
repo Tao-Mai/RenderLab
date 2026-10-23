@@ -70,6 +70,7 @@ TEST(Visibility, DirectionalCascadeCubesContainBlendedFrustum)
     light.data.direction     = glm::vec4{direction, 0.0f};
     light.data.lightType     = GpuLightType::Directional;
     light.data.shadowEnabled = 1;
+    light.data.shadowIdx     = 0;
     const auto shadows       = prepareShadows(view, {&light.data, 1}, config);
     ASSERT_EQ(shadows.directionalShadows.size(), 1u);
 
@@ -121,6 +122,7 @@ TEST(Visibility, DirectionalShadowRetainsUpstreamCasters)
     light.data.direction     = {0, -1, 0, 0};
     light.data.lightType     = GpuLightType::Directional;
     light.data.shadowEnabled = 1;
+    light.data.shadowIdx     = 0;
     scene.lights.push_back(light);
 
     SceneUniforms view;
@@ -143,6 +145,7 @@ TEST(Visibility, CascadeTexelSnappingKeepsSubTexelMotionStable)
     light.data.direction     = {0, 0, -1, 0};
     light.data.lightType     = GpuLightType::Directional;
     light.data.shadowEnabled = 1;
+    light.data.shadowIdx     = 0;
     RenderFeature::Shadow config;
     config.cascade     = {.count = 1, .shadowMapSize = 256, .maxDistance = 20.0f, .sampleRadius = 0.0f};
     const auto prepare = [&](float cameraX)
@@ -187,8 +190,9 @@ TEST(Visibility, UniformCascadeSplitsIgnoreLambdaAndPracticalKeepsNearResolution
     light.data.direction     = {0, -1, 0, 0};
     light.data.lightType     = GpuLightType::Directional;
     light.data.shadowEnabled = 1;
+    light.data.shadowIdx     = 0;
     RenderFeature::Shadow config;
-    const auto            practical       = prepareShadows(view, {&light.data, 1}, config);
+    const auto practical                  = prepareShadows(view, {&light.data, 1}, config);
     config.cascade.splitStrategy          = CascadeSplitStrategy::Uniform;
     const auto uniform                    = prepareShadows(view, {&light.data, 1}, config);
     config.cascade.splitLambda            = 1.0f;

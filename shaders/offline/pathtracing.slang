@@ -21,7 +21,7 @@ static const uint kLightMask = 0x02;
 
 [[vk::binding(0, 3)]] RaytracingAccelerationStructure scene;
 
-[[vk::binding(5, 3)]] StructuredBuffer<LightData> lights;
+[[vk::binding(1, 1)]] StructuredBuffer<LightData> lights;
 [[vk::binding(18, 1)]] TextureCube<float4> radianceMap;
 [[vk::binding(19, 1)]] SamplerState radianceSampler;
 

@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.hpp>
 
 inline constexpr uint32_t   maxFramesInFlight             = 2;
+inline constexpr uint32_t   kMaxLights                    = 65536;
 inline constexpr uint32_t   kMaxDirectionalLightShadow    = 1;
 inline constexpr uint32_t   kMaxDirectionalShadowCascades = 4;
 inline constexpr uint32_t   kMaxPointLightShadow          = 4;

@@ -132,7 +132,7 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
     {
         graph.releaseResources();
         const auto lightBuffer = graph.createBuffer({
-            .size  = sizeof(LightData),
+            .size  = kMaxLights * sizeof(LightData),
             .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
         });
         renderContext().materialTable->setup(graph);
@@ -166,6 +166,7 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
         const auto buffer = graph.addPass(readback, setup, color);
         graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
         graph.compile(setup);
+        bindTestLightBuffer(graph, setup, lightBuffer);
         const auto&           sceneData = renderSystem.prepare(scenes.scene());
         std::vector<uint32_t> materialIndices;
         vk::raii::Sampler     lightingSampler = nullptr;
@@ -173,8 +174,9 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
         {
             graph.beginFrame(index);
             const auto& data = renderer.prepare(view, sceneData, index);
+            uploadTestLights(graph, lightBuffer, data.lights);
             if (index == 0)
-                lightingSampler = writeTestLighting(graph, setup, shadowOutput, data, lightBuffer);
+                lightingSampler = writeTestLighting(graph, setup, shadowOutput, data);
             if (index == 0)
                 materialIndices = data.materialIndices;
             else

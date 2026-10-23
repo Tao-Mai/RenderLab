@@ -129,16 +129,19 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     RenderGraph::ImageHandle color;
     RenderGraph::ImageHandle depthImage;
     ShadowPass::Output       lightingShadow;
-    RenderGraph::BufferHandle lightBuffer;
+    const auto               lightBuffer = graph.createBuffer({
+                      .size  = kMaxLights * sizeof(LightData),
+                      .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+    });
     if (offline || realtime)
     {
         const auto meshes     = graph.addPass(blas, setup);
         const auto structures = graph.addPass(tlas, setup, meshes);
         if (offline)
-            color = graph.addPass(tracing, setup, structures).rayImage;
+            color = graph.addPass(tracing, setup, structures, lightBuffer).rayImage;
         else
         {
-            const auto traced = graph.addPass(realtimeTracing, setup, structures);
+            const auto traced = graph.addPass(realtimeTracing, setup, structures, lightBuffer);
             color             = traced.rayImage;
             if (config.feature.rayTracing.svgf)
                 color = graph.addPass(reprojection, setup, traced).color;
@@ -146,10 +149,6 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     }
     else
     {
-        lightBuffer = graph.createBuffer({
-            .size  = sizeof(LightData),
-            .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
-        });
         ShadowPass::Output shadows;
         if (config.feature.shadow.enable)
             shadows = graph.addPass(shadow, setup, lightBuffer);
@@ -174,6 +173,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     const auto buffer = graph.addPass(readback, setup, color);
     graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
     graph.compile(setup);
+    bindTestLightBuffer(graph, setup, lightBuffer);
 
     EditorCamera camera{scenes.scene().editorCamera};
     const auto   view = camera.renderView({0, 0, float(extent.width), float(extent.height)});
@@ -194,7 +194,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     }
     else
     {
-        lightingSampler = writeTestLighting(graph, setup, lightingShadow, renderData, lightBuffer);
+        lightingSampler = writeTestLighting(graph, setup, lightingShadow, renderData);
         for (auto& data : frameData)
         {
             data.uploadSceneUniforms(view.uniforms);
@@ -209,6 +209,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         frame.wait();
         if (frameNumber != 0)
             graph.beginFrame(index);
+        uploadTestLights(graph, lightBuffer, renderData.lights);
         const PassFrame execution{setup, frameData[index], view, renderData, editor, index};
         graph.prepare(execution);
         auto& commands = frame.commandBufferHandle();
