@@ -5,7 +5,6 @@
 #include "core/Logger.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
-#include "render/resource/GpuMaterial.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/GpuTexture.h"
 
@@ -108,14 +107,11 @@ GpuUploadContext RenderResourceManager::uploadContext() const
     return {vulkan->physicalDeviceHandle(), vulkan->deviceHandle(), uploadPool, vulkan->queueHandle()};
 }
 
-void RenderResourceManager::init(
-    VulkanContext& targetVulkan, ShaderManager& targetShaders, AssetManager& targetAssets, AssetDataManager& targetData
-)
+void RenderResourceManager::init(VulkanContext& targetVulkan, AssetManager& targetAssets, AssetDataManager& targetData)
 {
-    assets  = &targetAssets;
-    data    = &targetData;
-    vulkan  = &targetVulkan;
-    shaders = &targetShaders;
+    assets = &targetAssets;
+    data   = &targetData;
+    vulkan = &targetVulkan;
     const vk::CommandPoolCreateInfo poolInfo{
         .flags            = vk::CommandPoolCreateFlagBits::eTransient,
         .queueFamilyIndex = vulkan->graphicsQueueFamilyIndex(),
@@ -126,11 +122,9 @@ void RenderResourceManager::init(
 void RenderResourceManager::shutdown() noexcept
 {
     meshes.clear();
-    materials.clear();
     textures.clear();
     samplers.clear();
     uploadPool = nullptr;
-    shaders    = nullptr;
     vulkan     = nullptr;
     assets     = nullptr;
     data       = nullptr;
@@ -143,35 +137,15 @@ GpuMesh& RenderResourceManager::mesh(const MeshAsset::ID& id)
         return *found->second;
     }
 
-    const MeshAsset&     meshAsset = assets->get<MeshAsset>(id);
-    MeshGeometry         geometry  = data->readGeometry(meshAsset);
-    std::vector<Submesh> parts;
-    parts.reserve(meshAsset.submeshes.size());
-    for (const MeshAsset::Submesh& submesh : meshAsset.submeshes)
-    {
-        parts.push_back({
-            .firstIndex = submesh.firstIndex,
-            .indexCount = submesh.indexCount,
-            .material   = material(submesh.materialId),
-        });
-    }
-
-    auto gpu =
-        std::make_unique<GpuMesh>(uploadContext(), std::move(geometry), std::move(parts), vulkan->supportsRayTracing());
+    const MeshAsset& meshAsset = assets->get<MeshAsset>(id);
+    MeshGeometry     geometry  = data->readGeometry(meshAsset);
+    auto             gpu       = std::make_unique<GpuMesh>(
+        uploadContext(),
+        std::move(geometry),
+        meshAsset.submeshes,
+        vulkan->supportsRayTracing()
+    );
     return *meshes.emplace(id, std::move(gpu)).first->second;
-}
-
-std::shared_ptr<GpuMaterial> RenderResourceManager::material(const MaterialAsset::ID& id)
-{
-    auto&      entry    = materials[id];
-    const auto revision = assets->revision<MaterialAsset>(id);
-    if (!entry.gpu || entry.revision != revision)
-    {
-        entry.gpu = std::make_shared<GpuMaterial>();
-        entry.gpu->create(assets->get<MaterialAsset>(id).as<PbrMaterialAsset>(), *shaders, *assets);
-        entry.revision = revision;
-    }
-    return entry.gpu;
 }
 
 std::shared_ptr<GpuTexture> RenderResourceManager::texture(const TextureAsset::ID& id)

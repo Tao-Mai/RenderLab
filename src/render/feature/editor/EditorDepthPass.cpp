@@ -75,26 +75,24 @@ void EditorDepthPass::execute(
     const std::array viewSets = {execution.data.viewSetHandle()};
     commandBuffer
         .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, EditorInterface::kViewSet, viewSets, {});
-    for (uint32_t index = 0; index < execution.renderData.objects.size(); ++index)
+    for (uint32_t index = 0; index < execution.renderData.drawItems.size(); ++index)
     {
         if (!execution.renderData.isVisible(index))
             continue;
 
-        const auto&                    object = execution.renderData.objects[index];
-        const EditorDepthPushConstants parameters{.model = object.model};
+        const auto&                    item = execution.renderData.drawItems[index];
+        const EditorDepthPushConstants parameters{.model = item.model};
         commandBuffer.pushConstants<EditorDepthPushConstants>(
             pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0,
             parameters
         );
-        auto& mesh = renderContext().resources->mesh(object.mesh);
+        auto&       mesh    = renderContext().resources->mesh(item.mesh);
+        const auto& submesh = mesh.submeshes()[item.submeshIndex];
         mesh.bind(commandBuffer);
-        for (const auto& submesh : mesh.submeshes())
-        {
-            commandBuffer.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);
-            recordDraw(context().profiler, submesh.indexCount);
-        }
+        commandBuffer.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);
+        recordDraw(context().profiler, submesh.indexCount);
     }
     commandBuffer.endRendering();
 }

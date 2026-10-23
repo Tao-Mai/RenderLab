@@ -1,47 +1,38 @@
 #pragma once
 
+#include "asset/MeshAsset.h"
 #include "asset/MeshGeometry.h"
 #include "render/device/GpuUploadContext.h"
 #include "render/resource/Buffer.h"
 
 #include <cstdint>
-#include <memory>
 #include <vector>
 
 #include <vulkan/vulkan_raii.hpp>
 
-class GpuMaterial;
-
-struct Submesh
-{
-    uint32_t                     firstIndex = 0;
-    uint32_t                     indexCount = 0;
-    std::shared_ptr<GpuMaterial> material;
-};
-
 class GpuMesh
 {
 public:
-    GpuMesh(GpuUploadContext upload, MeshGeometry geometry, std::vector<Submesh> submeshes, bool rayTracing);
+    GpuMesh(GpuUploadContext upload, MeshGeometry geometry, std::vector<MeshAsset::Submesh> submeshes, bool rayTracing);
 
     GpuMesh(const GpuMesh&)                = delete;
     GpuMesh& operator=(const GpuMesh&)     = delete;
     GpuMesh(GpuMesh&&) noexcept            = default;
     GpuMesh& operator=(GpuMesh&&) noexcept = default;
 
-    void                                      bind(vk::raii::CommandBuffer& commandBuffer) const;
-    [[nodiscard]] uint32_t                    indexCount() const;
-    [[nodiscard]] const std::vector<Submesh>& submeshes() const;
-    [[nodiscard]] const Buffer&               vertices() const { return vertexBuffer; }
-    [[nodiscard]] const Buffer&               indices() const { return indexBuffer; }
-    [[nodiscard]] uint32_t                    vertexCount() const { return vertexTotal; }
+    void                                                 bind(vk::raii::CommandBuffer& commandBuffer) const;
+    [[nodiscard]] uint32_t                               indexCount() const;
+    [[nodiscard]] const std::vector<MeshAsset::Submesh>& submeshes() const { return parts; }
+    [[nodiscard]] const Buffer&                          vertices() const { return vertexBuffer; }
+    [[nodiscard]] const Buffer&                          indices() const { return indexBuffer; }
+    [[nodiscard]] uint32_t                               vertexCount() const { return vertexTotal; }
 
 private:
-    uint32_t             indexTotal  = 0;
-    uint32_t             vertexTotal = 0;
-    std::vector<Submesh> parts;
-    Buffer               vertexBuffer;
-    Buffer               indexBuffer;
+    uint32_t                        indexTotal  = 0;
+    uint32_t                        vertexTotal = 0;
+    std::vector<MeshAsset::Submesh> parts;
+    Buffer                          vertexBuffer;
+    Buffer                          indexBuffer;
 
     static void copyBuffer(
         const vk::raii::Device&      device,

@@ -1,12 +1,12 @@
 #include "render/feature/shadow/ShadowPass.h"
 
-#include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "render/FrameData.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
 #include "render/RenderView.h"
+#include "render/RendererConfig.h"
 #include "render/ShaderManager.h"
 #include "render/Visibility.h"
 #include "render/device/Device.h"
@@ -24,7 +24,7 @@ struct ShadowVolume
 {
     uint32_t             mask;
     std::vector<Frustum> frusta;
-    uint32_t             visibleObjects = 0;
+    uint32_t             visibleDrawItems = 0;
 };
 
 std::vector<ShadowVolume> shadowVolumes(const ShadowFrameData& lighting, uint32_t cascadeCount)
@@ -59,7 +59,7 @@ std::vector<ShadowVolume> shadowVolumes(const ShadowFrameData& lighting, uint32_
 
 ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup)
 {
-    const auto& shadow = context().config->rendererConfig().feature.shadow;
+    const auto& shadow = setup.config.feature.shadow;
     cascadeCount       = shadow.cascade.count;
 
     CHECK(cascadeCount > 0 && cascadeCount <= kMaxDirectionalShadowCascades);
@@ -167,22 +167,21 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup)
 void ShadowPass::prepare(RenderGraph&, const PassFrame& frame)
 {
     CpuProfileScope timing{context().profiler, "Shadow preparation"};
-    auto            prepared =
-        prepareShadows(frame.view.uniforms, frame.renderData.lights, context().config->rendererConfig().feature.shadow);
-    auto volumes = shadowVolumes(prepared, cascadeCount);
+    auto prepared = prepareShadows(frame.view.uniforms, frame.renderData.lights, frame.setup.config.feature.shadow);
+    auto volumes  = shadowVolumes(prepared, cascadeCount);
     visibilityMasks.clear();
-    visibilityMasks.reserve(frame.renderData.objectBounds.size());
+    visibilityMasks.reserve(frame.renderData.drawBounds.size());
 
-    for (const auto& object : frame.renderData.objectBounds)
+    for (const auto& bounds : frame.renderData.drawBounds)
     {
         uint32_t mask = 0;
         for (auto& volume : volumes)
         {
-            if (!std::ranges::any_of(volume.frusta, [&](const Frustum& frustum) { return frustum.intersects(object); }))
+            if (!std::ranges::any_of(volume.frusta, [&](const Frustum& frustum) { return frustum.intersects(bounds); }))
                 continue;
 
             mask |= volume.mask;
-            ++volume.visibleObjects;
+            ++volume.visibleDrawItems;
         }
         visibilityMasks.push_back(mask);
     }
@@ -191,8 +190,8 @@ void ShadowPass::prepare(RenderGraph&, const PassFrame& frame)
     {
         std::vector<ViewCullingStatistics> views;
         for (const auto& volume : volumes)
-            views.push_back({RenderVisibility::viewName(volume.mask), volume.visibleObjects});
-        profiler->recordCulling(static_cast<uint32_t>(frame.renderData.objectBounds.size()), std::move(views));
+            views.push_back({RenderVisibility::viewName(volume.mask), volume.visibleDrawItems});
+        profiler->recordCulling(static_cast<uint32_t>(frame.renderData.drawBounds.size()), std::move(views));
     }
     frame.data.updateShadows(std::move(prepared));
 }
@@ -310,26 +309,24 @@ void ShadowPass::recordShadow(
 
     const auto& light      = execution.data.lightData()[lightIndex];
     const auto  visibility = RenderVisibility::shadowMask(light.type(), light.shadowidx, cascadeIndex);
-    for (size_t index = 0; index < execution.renderData.objects.size(); ++index)
+    for (size_t index = 0; index < execution.renderData.drawItems.size(); ++index)
     {
         if (!(visibilityMasks[index] & visibility))
             continue;
 
-        const auto&               object = execution.renderData.objects[index];
-        const ShadowPushConstants push{.model = object.model, .lightIdx = lightIndex, .cascadeIndex = cascadeIndex};
+        const auto&               item = execution.renderData.drawItems[index];
+        const ShadowPushConstants push{.model = item.model, .lightIdx = lightIndex, .cascadeIndex = cascadeIndex};
         commandBuffer.pushConstants<ShadowPushConstants>(
             pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0,
             push
         );
-        auto& mesh = renderContext().resources->mesh(object.mesh);
+        auto&       mesh    = renderContext().resources->mesh(item.mesh);
+        const auto& submesh = mesh.submeshes()[item.submeshIndex];
         mesh.bind(commandBuffer);
-        for (const auto& submesh : mesh.submeshes())
-        {
-            commandBuffer.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);
-            recordDraw(context().profiler, submesh.indexCount);
-        }
+        commandBuffer.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);
+        recordDraw(context().profiler, submesh.indexCount);
     }
 
     commandBuffer.endRendering();

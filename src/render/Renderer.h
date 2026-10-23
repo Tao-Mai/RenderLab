@@ -6,6 +6,7 @@
 #include "render/RenderConfig.h"
 #include "render/RenderData.h"
 #include "render/RenderView.h"
+#include "render/RendererConfig.h"
 #include "render/ShaderManager.h"
 #include "render/device/Device.h"
 #include "render/device/FrameContext.h"
@@ -60,18 +61,11 @@ private:
     Device                                      device;
     RenderResourceManager                       resources;
     MaterialTable                               materialTable;
-    struct MaterialOverrideInstance
-    {
-        PbrMaterialAsset             asset;
-        std::shared_ptr<GpuMaterial> material;
-        bool                         used = false;
-    };
-    std::array<std::map<std::tuple<uint32_t, uint32_t, uint32_t>, MaterialOverrideInstance>, maxFramesInFlight>
-                                                materialOverrides;
     std::array<FrameContext, maxFramesInFlight> frames;
     std::array<FrameData, maxFramesInFlight>    frameStorage;
     std::array<RenderData, maxFramesInFlight>   renderStorage;
     SceneBindings*                              activeSceneBindings = nullptr;
+    const RendererConfig*                       rendererConfig      = nullptr;
     std::optional<RendererConfig>               appliedConfig;
     struct SceneOutput
     {

@@ -104,7 +104,7 @@ void drawPerformance(const Profiler* profiler)
     }
     if (ImGui::TreeNode("Frustum culling"))
     {
-        ImGui::Text("Render objects: %u", stats.totalObjects);
+        ImGui::Text("Draw items: %u", stats.totalDrawItems);
         if (ImGui::BeginTable("Culling counts", 3, ImGuiTableFlags_RowBg))
         {
             ImGui::TableSetupColumn("View");
@@ -117,9 +117,9 @@ void drawPerformance(const Profiler* profiler)
                 ImGui::TableNextColumn();
                 ImGui::TextUnformatted(view.name.c_str());
                 ImGui::TableNextColumn();
-                ImGui::Text("%u", view.visibleObjects);
+                ImGui::Text("%u", view.visibleDrawItems);
                 ImGui::TableNextColumn();
-                ImGui::Text("%u", stats.totalObjects - view.visibleObjects);
+                ImGui::Text("%u", stats.totalDrawItems - view.visibleDrawItems);
             }
             ImGui::EndTable();
         }

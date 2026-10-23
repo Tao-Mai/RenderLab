@@ -33,8 +33,8 @@ TEST(Profiler, CapturesCpuGpuDrawsAndCulling)
     EXPECT_EQ(stats.passes[0].draws.triangles, 24u);
     EXPECT_EQ(stats.passes[1].draws.drawCalls, 3u);
     EXPECT_EQ(stats.passes[1].draws.triangles, 15u);
-    EXPECT_EQ(stats.totalObjects, 10u);
-    EXPECT_EQ(stats.views[0].visibleObjects, 4u);
+    EXPECT_EQ(stats.totalDrawItems, 10u);
+    EXPECT_EQ(stats.views[0].visibleDrawItems, 4u);
     profiler.clearGpu();
     EXPECT_FALSE(profiler.display().hasGpuTimings);
     EXPECT_TRUE(profiler.display().passes.empty());

@@ -27,9 +27,9 @@ SceneManager 初始化时注册 [SceneTypes.h](SceneTypes.h) 中的类型；Engi
 
 ## 向渲染层提交
 
-Engine 调用 RenderSystem 遍历逻辑上需要渲染的对象，提取资产 ID、变换、材质覆盖与灯光，生成 SceneRenderData。
+Engine 调用 RenderSystem 遍历逻辑上需要渲染的对象，读取 CPU MeshAsset，按 Submesh 生成 DrawItem，携带资产 ID、变换、材质引用与覆盖；灯光单独记录在 SceneRenderData 中。
 
-RenderSystem 不做视锥剔除，不加载 GPU 资源。Renderer 根据主相机与阴影配置计算可见性，RenderResourceManager 再将快照转换为 GPU 渲染表示。下层不接触 Component，新增渲染路线无需修改场景对象体系。
+RenderSystem 不做视锥剔除，不加载 GPU 资源。Renderer 只读引用 DrawItem 列表，用独立数组记录材质索引，并执行光栅化主视图剔除；ShadowPass 准备阴影视图剔除，RenderResourceManager 按资产 ID 缓存 GPU 资源。光栅化与光追共用同一种 DrawItem，下层不接触 Component。
 
 编辑器的组件属性控件、Transform Gizmo 与材质覆盖 UI 留在 editor 模块。
 

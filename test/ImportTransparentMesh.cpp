@@ -1,5 +1,5 @@
-#include "editor/LightMarkers.h"
 #include "editor/EditorCamera.h"
+#include "editor/LightMarkers.h"
 // One-time import and short rendering check using the configured default scene.
 #include "asset/AssetDataManager.h"
 #include "asset/AssetImporter.h"
@@ -9,6 +9,7 @@
 #include "core/Window.h"
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
+#include "render/resource/MaterialTable.h"
 #include "scene/SceneManager.h"
 #include "scene/system/RenderSystem.h"
 
@@ -69,7 +70,6 @@ int main(int argc, char** argv)
     glfwHideWindow(window.nativeHandle());
     renderer.init();
     renderer.rebuildGraph();
-    const auto importedMaterial            = renderContext().resources->material(transparentMaterial);
     const auto extent                      = renderer.swapchainHandle().extent();
     bool       renderedTransparentMaterial = false;
     for (int frame = 0; frame < 4; ++frame)
@@ -88,14 +88,13 @@ int main(int argc, char** argv)
         );
         renderer.waitIdle();
         const auto& gpuData = renderer.prepare(view, renderData, 0);
-        for (uint32_t objectIndex = 0; objectIndex < gpuData.objects.size(); ++objectIndex)
+        for (uint32_t itemIndex = 0; itemIndex < gpuData.drawItems.size(); ++itemIndex)
         {
-            if (!gpuData.isVisible(objectIndex))
+            if (!gpuData.isVisible(itemIndex))
                 continue;
-            const auto& object = gpuData.objects[objectIndex];
-            const auto& mesh   = renderContext().resources->mesh(object.mesh);
-            for (uint32_t index = 0; index < mesh.submeshes().size(); ++index)
-                renderedTransparentMaterial |= gpuData.material(object, index).material == importedMaterial;
+            const auto& item = gpuData.drawItems[itemIndex];
+            renderedTransparentMaterial |= item.materialId == transparentMaterial &&
+                renderContext().materialTable->info(gpuData.materialIndices[itemIndex]).alphaMode == kAlphaModeBlend;
         }
     }
     CHECK(renderedTransparentMaterial);

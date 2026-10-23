@@ -19,9 +19,9 @@ class SceneBindings
 {
 public:
     ShadowPass::Output setup(RenderGraph& graph, const PassSetup& setup, ShadowPass::Output shadow);
-    void               refreshBindings();
+    void               refreshBindings(const RendererConfig& config);
     void               writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
-    void               updateFrame(FrameData& frame, const RenderData& scene) const;
+    void               updateFrame(FrameData& frame, const RenderData& scene, const RendererConfig& config) const;
     void               updateEnvironmentMap(const std::optional<EnvironmentMapAsset::ID>& id);
 
 private:

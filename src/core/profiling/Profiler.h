@@ -32,7 +32,7 @@ struct PassDrawStatistics
 struct ViewCullingStatistics
 {
     std::string name;
-    uint32_t    visibleObjects = 0;
+    uint32_t    visibleDrawItems = 0;
 };
 
 struct PerformanceSnapshot
@@ -43,7 +43,7 @@ struct PerformanceSnapshot
     double                             p95Milliseconds   = 0.0;
     double                             p99Milliseconds   = 0.0;
     bool                               hasGpuTimings     = false;
-    uint32_t                           totalObjects      = 0;
+    uint32_t                           totalDrawItems    = 0;
     std::vector<float>                 frameHistory;
     std::vector<ProfileTiming>         cpuTimings;
     std::vector<ProfileTiming>         gpuTimings;
@@ -63,7 +63,7 @@ public:
     void recordGpu(uint64_t frame, double milliseconds, std::vector<ProfileTiming> timings);
     void beginPass(std::string_view name);
     void recordDraw(uint32_t vertexCount, uint32_t instanceCount = 1);
-    void recordCulling(uint32_t totalObjects, std::vector<ViewCullingStatistics> views);
+    void recordCulling(uint32_t totalDrawItems, std::vector<ViewCullingStatistics> views);
     void clearGpu();
     [[nodiscard]] const PerformanceSnapshot&        display() const { return displayed; }
     [[nodiscard]] const std::vector<ProfileTiming>& gpuTimings() const { return current.gpuTimings; }

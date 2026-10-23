@@ -102,7 +102,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     std::array<FrameData, maxFramesInFlight> frameData;
     for (auto& data : frameData)
         data.init(vulkan, *renderContext().device);
-    const PassSetup setup{vulkan, renderer.swapchainHandle(), frameData};
+    const PassSetup setup{vulkan, renderer.swapchainHandle(), frameData, context().config->rendererConfig()};
     RenderGraph     graph;
     graph.init(vulkan, renderer.swapchainHandle());
     ShadowPass               shadow;
@@ -168,8 +168,8 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     EditorCamera camera{scenes.scene().editorCamera};
     const auto   view = camera.renderView({0, 0, float(extent.width), float(extent.height)});
     RenderSystem system;
-    const auto&  snapshot = system.prepare(scenes.scene());
-    const auto& renderData = renderer.prepare(view, snapshot, 0);
+    const auto&  snapshot   = system.prepare(scenes.scene());
+    const auto&  renderData = renderer.prepare(view, snapshot, 0);
     LightMarkers lightMarkers;
     if (!offline)
         lightMarkers.prepare(scenes.scene(), *renderContext().resources);
@@ -187,7 +187,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         for (auto& data : frameData)
         {
             data.updateSceneUniforms(view.uniforms);
-            scene.sceneBindings().updateFrame(data, renderData);
+            scene.sceneBindings().updateFrame(data, renderData, setup.config);
         }
     }
 
@@ -202,13 +202,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         auto& commands = frame.commandBufferHandle();
         vkCheck(commands.reset());
         vkCheck(commands.begin({}));
-        graph.execute(
-            commands,
-            execution,
-            0,
-            frame.gpuProfiler(),
-            nullptr
-        );
+        graph.execute(commands, execution, 0, frame.gpuProfiler(), nullptr);
         vkCheck(commands.end());
         const auto command = *commands;
         vkCheck(vulkan.deviceHandle().resetFences(frame.drawFenceHandle()));

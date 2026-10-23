@@ -29,8 +29,8 @@ void recordMeshes(
     vk::raii::CommandBuffer&    commandBuffer,
     const PassFrame&            execution,
     std::span<const vk::Format> colorFormats,
-    ShaderHandle                shader      = {},
-    SceneDrawOptions            options     = {},
-    std::span<const uint32_t>   objectOrder = {}
+    ShaderHandle                shader    = {},
+    SceneDrawOptions            options   = {},
+    std::span<const uint32_t>   drawOrder = {}
 );
 }  // namespace SceneDraw

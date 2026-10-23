@@ -20,8 +20,8 @@
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cmath>
-#include <unordered_map>
 #include <glm/gtc/packing.hpp>
+#include <unordered_map>
 
 namespace
 {
@@ -91,7 +91,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     EndPass           end;
     RenderSystem      renderSystem;
     graph.init(vulkan, renderer.swapchainHandle());
-    const PassSetup           setup{vulkan, renderer.swapchainHandle(), frameData};
+    const PassSetup           setup{vulkan, renderer.swapchainHandle(), frameData, context().config->rendererConfig()};
     RenderGraph::BufferHandle buffer;
     const auto                rebuildGraph = [&]
     {
@@ -116,15 +116,11 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         rebuildGraph();
         const auto& sceneData = renderSystem.prepare(scenes.scene());
         const auto& data      = renderer.prepare(view, sceneData, 0);
-        CHECK(data.objectBounds.empty());
+        CHECK(data.drawBounds.empty());
         CHECK(data.visibilityMasks.empty());
         materialIndices.clear();
-        for (const auto& object : data.objects)
-        {
-            const auto& mesh = renderContext().resources->mesh(object.mesh);
-            for (uint32_t index = 0; index < mesh.submeshes().size(); ++index)
-                materialIndices[object.selectionId] = data.material(object, index).materialIndex;
-        }
+        for (uint32_t itemIndex = 0; itemIndex < data.drawItems.size(); ++itemIndex)
+            materialIndices[data.drawItems[itemIndex].selectionId] = data.materialIndices[itemIndex];
         frameData[0].updateSceneUniforms(view.uniforms);
         const PassFrame execution{setup, frameData[0], view, data, {}, 0};
         graph.prepare(execution);
@@ -142,10 +138,10 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         return glm::unpackHalf1x16(pixel[0]);
     };
 
-    const auto clear = sample();
-    const auto receiverId = scenes.scene().actors.front()->selectionId();
-    const auto sharedMaterialIndex = materialIndices.at(receiverId);
-    uint32_t overrideMaterialIndex = 0;
+    const auto clear                 = sample();
+    const auto receiverId            = scenes.scene().actors.front()->selectionId();
+    const auto sharedMaterialIndex   = materialIndices.at(receiverId);
+    uint32_t   overrideMaterialIndex = 0;
     CHECK(clear > 1.0f, "HDR surface luminance is unexpectedly clipped or dark: {}", clear);
 
     {
@@ -156,12 +152,12 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         material.metallic        = 0.0f;
         material.roughness       = 0.12f;
         const auto dielectric    = sample();
-        overrideMaterialIndex = materialIndices.at(receiverId);
+        overrideMaterialIndex    = materialIndices.at(receiverId);
         CHECK(overrideMaterialIndex != sharedMaterialIndex);
-        material.metallic        = 1.0f;
-        const auto smoothMetal   = sample();
-        material.roughness       = 0.8f;
-        const auto roughMetal    = sample();
+        material.metallic      = 1.0f;
+        const auto smoothMetal = sample();
+        material.roughness     = 0.8f;
+        const auto roughMetal  = sample();
         CHECK(materialIndices.at(receiverId) == overrideMaterialIndex);
         CHECK(std::isfinite(dielectric) && dielectric > 0);
         CHECK(std::isfinite(smoothMetal) && smoothMetal > 0);

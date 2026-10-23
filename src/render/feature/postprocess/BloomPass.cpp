@@ -1,11 +1,11 @@
 #include "render/feature/postprocess/BloomPass.h"
 
 #include "asset/BuiltinAssets.h"
-#include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
+#include "render/RendererConfig.h"
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
 #include "render/present/Swapchain.h"
@@ -58,7 +58,7 @@ BloomPass::Output BloomPass::setup(RenderGraph& graph, const PassSetup& setup, R
 
     std::vector<RenderGraph::ImageHandle> pyramid;
     auto                                  source = hdrColor;
-    const auto                            levels = context().config->rendererConfig().feature.bloom.levels;
+    const auto                            levels = setup.config.feature.bloom.levels;
     for (uint32_t level = 0; level < levels; ++level)
     {
         const auto horizontal = add(Stage::DownsampleHorizontal, source);
@@ -213,7 +213,7 @@ void BloomPass::FilterPass::execute(
     const auto            sourceExtent = graph.imageInfo(source).extent;
     const auto            frameExtent  = execution.setup.swapchain.extent();
     const auto&           viewport     = execution.view.viewport;
-    const auto&           settings     = context().config->rendererConfig().feature.bloom;
+    const auto&           settings     = execution.setup.config.feature.bloom;
     const BloomParameters parameters{
         .viewport =
             {viewport.x / frameExtent.width,

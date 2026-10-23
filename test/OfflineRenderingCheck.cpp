@@ -78,7 +78,7 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
     EndPass                end;
     RenderSystem           system;
     graph.init(vulkan, renderer.swapchainHandle());
-    const PassSetup setup{vulkan, renderer.swapchainHandle(), {&data, 1}};
+    const PassSetup setup{vulkan, renderer.swapchainHandle(), {&data, 1}, context().config->rendererConfig()};
     const auto      blas       = graph.addPass(blasBuild, setup);
     const auto      structures = graph.addPass(tlasBuild, setup, blas);
     const auto      image      = graph.addPass(pass, setup, structures).rayImage;
@@ -90,7 +90,7 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
     {
         const auto  view     = camera.renderView({0, 0, float(extent.width), float(extent.height)});
         const auto& snapshot = system.prepare(scenes.scene());
-        const auto& draws = renderer.prepare(view, snapshot, 0);
+        const auto& draws    = renderer.prepare(view, snapshot, 0);
         pass.updateScene(view, snapshot, context().assetManager->contentRevision());
         data.updateSceneUniforms(view.uniforms);
         const PassFrame execution{setup, data, view, draws, {}, 0};

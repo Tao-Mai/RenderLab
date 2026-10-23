@@ -24,7 +24,7 @@ public:
     void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
 private:
-    std::vector<uint32_t>    sortedObjects;
+    std::vector<uint32_t>    sortedDrawItems;
     SceneDrawOptions         shaderOptions;
     RenderGraph::ImageHandle color;
     RenderGraph::ImageHandle depth;

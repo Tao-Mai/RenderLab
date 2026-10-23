@@ -3,6 +3,7 @@
 //
 
 #include "scene/system/RenderSystem.h"
+#include "asset/AssetManager.h"
 #include "asset/SceneAsset.h"
 #include "core/Context.h"
 #include "core/profiling/Profiler.h"
@@ -14,12 +15,14 @@
 
 
 #include <glm/geometric.hpp>
+#include <utility>
 
 
 const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
 {
     CpuProfileScope timing{context().profiler, "RenderSystem"};
-    data.objects.clear();
+    const auto&     assets = *context().assetManager;
+    data.drawItems.clear();
     data.lights.clear();
     data.sceneId        = scene.id;
     data.environmentMap = scene.environmentMap;
@@ -30,13 +33,24 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
         uint32_t instanceIndex = 0;
         for (const auto* render : actor->getComponents<RenderComponent>())
         {
-            data.objects.push_back({
-                .mesh              = render->meshId,
-                .materialOverrides = render->materialOverrides,
-                .model             = transform->matrix(),
-                .selectionId       = actor->selectionId(),
-                .instanceIndex     = instanceIndex++,
-            });
+            const auto& mesh  = assets.get<MeshAsset>(render->meshId);
+            const auto  model = transform->matrix();
+            for (uint32_t submeshIndex = 0; submeshIndex < mesh.submeshes.size(); ++submeshIndex)
+            {
+                DrawItem item{
+                    .mesh          = render->meshId,
+                    .submeshIndex  = submeshIndex,
+                    .materialId    = mesh.submeshes[submeshIndex].materialId,
+                    .model         = model,
+                    .selectionId   = actor->selectionId(),
+                    .instanceIndex = instanceIndex,
+                };
+                if (const auto override = render->materialOverrides.find(static_cast<int>(submeshIndex));
+                    override != render->materialOverrides.end())
+                    item.materialOverride = override->second;
+                data.drawItems.push_back(std::move(item));
+            }
+            ++instanceIndex;
         }
     }
 

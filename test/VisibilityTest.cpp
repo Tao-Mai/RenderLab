@@ -65,12 +65,12 @@ TEST(Visibility, DirectionalCascadeCubesContainBlendedFrustum)
 
     RenderFeature::Shadow config;
     config.cascade = {.count = 4, .maxDistance = 12.0f};
-    RenderLight  light;
-    const auto direction = glm::normalize(glm::vec3{0.4f, -1.0f, -0.3f});
-    light.data.direction      = glm::vec4{direction, 0.0f};
-    light.data.lightType = GpuLightType::Directional;
+    RenderLight light;
+    const auto  direction    = glm::normalize(glm::vec3{0.4f, -1.0f, -0.3f});
+    light.data.direction     = glm::vec4{direction, 0.0f};
+    light.data.lightType     = GpuLightType::Directional;
     light.data.shadowEnabled = 1;
-    const auto shadows   = prepareShadows(view, {&light.data, 1}, config);
+    const auto shadows       = prepareShadows(view, {&light.data, 1}, config);
     ASSERT_EQ(shadows.directionalShadows.size(), 1u);
 
     const auto inverseView    = glm::inverse(view.view);
@@ -113,13 +113,13 @@ TEST(Visibility, DirectionalShadowRetainsUpstreamCasters)
     AssetManager    assets;
     SceneRenderData scene;
     for (const auto position : {glm::vec3{0, 100, -1}, glm::vec3{0, -100, -1}, glm::vec3{100, 100, -1}})
-        scene.objects.push_back({
+        scene.drawItems.push_back({
             .mesh  = BuiltinAssets::Mesh::cube,
             .model = glm::translate(glm::mat4{1}, position),
         });
     RenderLight light;
-    light.data.direction = {0, -1, 0, 0};
-    light.data.lightType = GpuLightType::Directional;
+    light.data.direction     = {0, -1, 0, 0};
+    light.data.lightType     = GpuLightType::Directional;
     light.data.shadowEnabled = 1;
     scene.lights.push_back(light);
 
@@ -127,21 +127,21 @@ TEST(Visibility, DirectionalShadowRetainsUpstreamCasters)
     view.viewProjection        = glm::perspective(glm::radians(60.0f), 1.0f, 0.1f, 20.0f);
     view.inverseViewProjection = glm::inverse(view.viewProjection);
     RenderFeature::Shadow shadows;
-    shadows.cascade     = {.count = 1, .maxDistance = 10.0f};
-    const auto lighting = prepareShadows(view, {&light.data, 1}, shadows);
+    shadows.cascade        = {.count = 1, .maxDistance = 10.0f};
+    const auto    lighting = prepareShadows(view, {&light.data, 1}, shadows);
     const Frustum frustum{lighting.directionalShadows[0].cascades[0].vp, Frustum::NearPlane::Exclude};
-    const auto& bounds = assets.get<MeshAsset>(BuiltinAssets::Mesh::cube).bounds;
-    EXPECT_TRUE(frustum.intersects(bounds.transformed(scene.objects[0].model)));
-    EXPECT_FALSE(frustum.intersects(bounds.transformed(scene.objects[1].model)));
-    EXPECT_FALSE(frustum.intersects(bounds.transformed(scene.objects[2].model)));
+    const auto&   bounds = assets.get<MeshAsset>(BuiltinAssets::Mesh::cube).bounds;
+    EXPECT_TRUE(frustum.intersects(bounds.transformed(scene.drawItems[0].model)));
+    EXPECT_FALSE(frustum.intersects(bounds.transformed(scene.drawItems[1].model)));
+    EXPECT_FALSE(frustum.intersects(bounds.transformed(scene.drawItems[2].model)));
 }
 
 TEST(Visibility, CascadeTexelSnappingKeepsSubTexelMotionStable)
 {
-    const auto projection = glm::perspective(glm::radians(60.0f), 1.0f, 0.1f, 40.0f);
-    RenderLight  light;
-    light.data.direction = {0, 0, -1, 0};
-    light.data.lightType = GpuLightType::Directional;
+    const auto  projection = glm::perspective(glm::radians(60.0f), 1.0f, 0.1f, 40.0f);
+    RenderLight light;
+    light.data.direction     = {0, 0, -1, 0};
+    light.data.lightType     = GpuLightType::Directional;
     light.data.shadowEnabled = 1;
     RenderFeature::Shadow config;
     config.cascade     = {.count = 1, .shadowMapSize = 256, .maxDistance = 20.0f, .sampleRadius = 0.0f};
@@ -184,8 +184,8 @@ TEST(Visibility, UniformCascadeSplitsIgnoreLambdaAndPracticalKeepsNearResolution
     view.viewProjection        = glm::perspective(glm::radians(55.0f), 1.0f, 0.1f, 120.0f);
     view.inverseViewProjection = glm::inverse(view.viewProjection);
     RenderLight light;
-    light.data.direction = {0, -1, 0, 0};
-    light.data.lightType = GpuLightType::Directional;
+    light.data.direction     = {0, -1, 0, 0};
+    light.data.lightType     = GpuLightType::Directional;
     light.data.shadowEnabled = 1;
     RenderFeature::Shadow config;
     const auto            practical       = prepareShadows(view, {&light.data, 1}, config);
@@ -216,8 +216,9 @@ TEST(Visibility, UniformCascadeSplitsIgnoreLambdaAndPracticalKeepsNearResolution
 TEST(Visibility, SceneSubmissionRetainsOffscreenObjectsAndDisabledLights)
 {
     AssetManager assets;
-    SceneAsset   scene;
-    auto         object                             = std::make_unique<AStaticMesh>();
+    context().assetManager = &assets;
+    SceneAsset scene;
+    auto       object                               = std::make_unique<AStaticMesh>();
     object->getComponent<RenderComponent>()->meshId = BuiltinAssets::Mesh::cube;
     object->transform().position                    = {0, 0, 3};  // Behind camera, in front of the test lights.
     object->init();
@@ -246,19 +247,20 @@ TEST(Visibility, SceneSubmissionRetainsOffscreenObjectsAndDisabledLights)
     view.inverseViewProjection = glm::inverse(view.viewProjection);
     RenderSystem system;
     const auto&  snapshot = system.prepare(scene);
-    ASSERT_EQ(snapshot.objects.size(), 1u);  // Never remove geometry needed by RT.
+    const auto&  builtin  = assets.get<MeshAsset>(BuiltinAssets::Mesh::cube);
+    ASSERT_EQ(snapshot.drawItems.size(), builtin.submeshes.size());  // Never remove geometry needed by RT.
     ASSERT_EQ(snapshot.lights.size(), 4u);
     scene.actors.front()->transform().position.z             = -3;
     scene.actors[1]->getComponent<LightComponent>()->enabled = false;
-    const auto& disabledSnapshot = system.prepare(scene);
-    ASSERT_EQ(disabledSnapshot.lights.size(), 4u); // Scene submission still includes disabled components.
+    const auto& disabledSnapshot                             = system.prepare(scene);
+    ASSERT_EQ(disabledSnapshot.lights.size(), 4u);  // Scene submission still includes disabled components.
     EXPECT_FALSE(disabledSnapshot.lights[0].enabled);
     scene.actors.front()->transform().position = {1000, 0, -3};
-    EXPECT_EQ(system.prepare(scene).objects.size(), 1u);
+    EXPECT_EQ(system.prepare(scene).drawItems.size(), builtin.submeshes.size());
 
-    const auto& builtin = assets.get<MeshAsset>(BuiltinAssets::Mesh::cube);
-    MeshAsset   restored;
+    MeshAsset restored;
     Deserialize(Serialize(builtin), restored);
     EXPECT_EQ(restored.bounds, builtin.bounds);
     system.reset();
+    context().assetManager = nullptr;
 }

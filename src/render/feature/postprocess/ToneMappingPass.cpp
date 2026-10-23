@@ -1,10 +1,10 @@
 #include "render/feature/postprocess/ToneMappingPass.h"
 
 #include "asset/BuiltinAssets.h"
-#include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
+#include "render/RendererConfig.h"
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
 #include "render/present/Swapchain.h"
@@ -149,7 +149,7 @@ void ToneMappingPass::execute(
     const std::array sets = {*descriptorSet};
     commands.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, sets, {});
 
-    const auto&                    settings = context().config->rendererConfig().feature.toneMapping;
+    const auto&                    settings = execution.setup.config.feature.toneMapping;
     const ToneMappingPushConstants parameters{
         .exposureScale = settings.exposureScale(),
         .mode          = static_cast<uint32_t>(settings.mode),

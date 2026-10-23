@@ -1,12 +1,12 @@
 #include "render/feature/TransparentPass.h"
-#include "core/ConfigManager.h"
 #include "core/Context.h"
+#include "render/RendererConfig.h"
 
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
 #include "render/RenderView.h"
 #include "render/feature/SceneDraw.h"
-#include "render/resource/RenderResourceManager.h"
+#include "render/resource/MaterialTable.h"
 
 #include <algorithm>
 #include <array>
@@ -20,7 +20,7 @@ TransparentPass::Output TransparentPass::setup(
     ShadowPass::Output       shadow
 )
 {
-    const auto& config = context().config->rendererConfig();
+    const auto& config = setup.config;
     shaderOptions =
         {.ibl = config.feature.ibl, .clearcoat = config.renderPath != RenderPath::Deferred, .transparent = true};
 
@@ -48,30 +48,22 @@ TransparentPass::Output TransparentPass::setup(
 void TransparentPass::prepare(RenderGraph&, const PassFrame& frame)
 {
     CpuProfileScope timing{context().profiler, "Transparent sorting"};
-    sortedObjects.clear();
-    auto& resources = *renderContext().resources;
-    for (uint32_t objectIndex = 0; objectIndex < frame.renderData.objects.size(); ++objectIndex)
+    sortedDrawItems.clear();
+    const auto& materials = *renderContext().materialTable;
+    for (uint32_t itemIndex = 0; itemIndex < frame.renderData.drawItems.size(); ++itemIndex)
     {
-        if (!frame.renderData.isVisible(objectIndex))
+        if (!frame.renderData.isVisible(itemIndex))
             continue;
-        const auto& object = frame.renderData.objects[objectIndex];
-        const auto& mesh   = resources.mesh(object.mesh);
-        for (uint32_t index = 0; index < mesh.submeshes().size(); ++index)
-        {
-            const auto& binding = frame.renderData.material(object, index);
-            if (binding.material->alphaMode() == MaterialAlphaMode::Blend)
-            {
-                sortedObjects.push_back(objectIndex);
-                break;
-            }
-        }
+        const auto materialIndex = frame.renderData.materialIndices[itemIndex];
+        if (materials.info(materialIndex).alphaMode == kAlphaModeBlend)
+            sortedDrawItems.push_back(itemIndex);
     }
-    std::ranges::sort(
-        sortedObjects,
+    std::ranges::stable_sort(
+        sortedDrawItems,
         std::greater{},
-        [&](uint32_t objectIndex)
+        [&](uint32_t itemIndex)
         {
-            const auto offset = glm::vec3{frame.renderData.objects[objectIndex].model[3]} -
+            const auto offset = glm::vec3{frame.renderData.drawItems[itemIndex].model[3]} -
                 glm::vec3{frame.view.uniforms.cameraPosition};
             return glm::dot(offset, offset);
         }
@@ -82,7 +74,7 @@ void TransparentPass::execute(
     RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
 ) const
 {
-    if (sortedObjects.empty())
+    if (sortedDrawItems.empty())
         return;
 
     SceneDraw::beginRendering(graph, commandBuffer, execution, std::array{color}, depth, vk::AttachmentLoadOp::eLoad);
@@ -92,7 +84,7 @@ void TransparentPass::execute(
         std::array{graph.imageInfo(color).format},
         {},
         shaderOptions,
-        sortedObjects
+        sortedDrawItems
     );
     commandBuffer.endRendering();
 }

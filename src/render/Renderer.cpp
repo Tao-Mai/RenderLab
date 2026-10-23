@@ -34,33 +34,15 @@
 #include "render/raytracing/TemporalReprojectionPass.h"
 #include "render/raytracing/TlasBuildPass.h"
 #include "render/resource/Buffer.h"
-#include "render/resource/GpuMaterial.h"
 
 #include <glm/geometric.hpp>
 #include <limits>
+#include <span>
 #include <tuple>
 #include <utility>
 
 namespace
 {
-bool sameMaterialResources(const PbrMaterialAsset& a, const PbrMaterialAsset& b)
-{
-    if (a.shaderId != b.shaderId || a.clearcoat.has_value() != b.clearcoat.has_value() ||
-        a.sheen.has_value() != b.sheen.has_value())
-        return false;
-    if (a.clearcoat &&
-        (a.clearcoat->texture != b.clearcoat->texture ||
-         a.clearcoat->roughnessTexture != b.clearcoat->roughnessTexture ||
-         a.clearcoat->normalTexture != b.clearcoat->normalTexture))
-        return false;
-    if (a.sheen &&
-        (a.sheen->colorTexture != b.sheen->colorTexture || a.sheen->roughnessTexture != b.sheen->roughnessTexture))
-        return false;
-    return a.baseColorTexture == b.baseColorTexture && a.normalTexture == b.normalTexture &&
-        a.metallicTexture == b.metallicTexture && a.roughnessTexture == b.roughnessTexture &&
-        a.emissiveTexture == b.emissiveTexture && a.aoTexture == b.aoTexture;
-}
-
 LightRanges groupLights(std::span<const RenderLight> source, std::vector<LightData>& grouped)
 {
     grouped.clear();
@@ -118,7 +100,11 @@ struct Renderer::Passes
 template <class T, class... Args>
 auto Renderer::setupPass(Args&&... args)
 {
-    return graph.addPass(passes->get<T>(), PassSetup{vulkan, swapchain, frameStorage}, std::forward<Args>(args)...);
+    return graph.addPass(
+        passes->get<T>(),
+        PassSetup{vulkan, swapchain, frameStorage, *rendererConfig},
+        std::forward<Args>(args)...
+    );
 }
 
 Renderer::Renderer() = default;
@@ -127,9 +113,10 @@ Renderer::~Renderer() { DCHECK(!inited); }
 void Renderer::init()
 {
     DCHECK(!inited);
+    rendererConfig = &context().config->rendererConfig();
 
     auto& ctx = renderContext();
-    DCHECK(!ctx.shaderManager && !ctx.device && !ctx.resources);
+    DCHECK(!ctx.shaderManager && !ctx.device && !ctx.resources && !ctx.materialTable);
     DCHECK(context().window);
 
     auto& window = *context().window;
@@ -143,6 +130,7 @@ void Renderer::init()
         .shaderManager = &shaders,
         .device        = &device,
         .resources     = &resources,
+        .materialTable = &materialTable,
     };
 
     for (auto& frame : frames)
@@ -153,7 +141,7 @@ void Renderer::init()
     for (auto& data : frameStorage)
         data.init(vulkan, device);
 
-    resources.init(vulkan, shaders, *context().assetManager, *context().assetDataManager);
+    resources.init(vulkan, *context().assetManager, *context().assetDataManager);
     materialTable.init(resources, vulkan, device);
     graph.init(vulkan, swapchain);
     passes = std::make_unique<Passes>();
@@ -178,10 +166,8 @@ void Renderer::shutdown() noexcept
     graph.reset();
     passes.reset();
     pickingReadback = {};
-    renderStorage = {};
-    for (auto& overrides : materialOverrides)
-        overrides.clear();
-    materialTable = {};
+    renderStorage   = {};
+    materialTable   = {};
     resources.shutdown();
     for (FrameContext& frame : frames)
     {
@@ -197,6 +183,7 @@ void Renderer::shutdown() noexcept
     frameIndex           = 0;
     activeFramesInFlight = maxFramesInFlight;
     appliedConfig.reset();
+    rendererConfig = nullptr;
     DEBUG_EXEC(inited = false);
 }
 
@@ -217,7 +204,7 @@ void Renderer::setupRenderGraph()
         frame.gpuProfiler().discard();
     DCHECK(passes);
     activeSceneBindings  = nullptr;
-    const auto& config   = context().config->rendererConfig();
+    const auto& config   = *rendererConfig;
     activeFramesInFlight = config.renderPath == RenderPath::OfflinePathTracing ? 1u : maxFramesInFlight;
     frameIndex           = 0;
 
@@ -238,7 +225,7 @@ void Renderer::setupRenderGraph()
     scene       = setupLightMarkers(scene);
     scene.color = setupPostProcess(scene.color);
     setupEditor(scene);
-    graph.compile({vulkan, swapchain, frameStorage});
+    graph.compile({vulkan, swapchain, frameStorage, config});
     appliedConfig = config;
 }
 
@@ -248,7 +235,7 @@ Renderer::SceneOutput Renderer::setupRayTracing()
     const auto structures = setupPass<TlasBuildPass>(blas);
     const auto traced     = setupPass<RayTracingPass>(structures);
     auto       color      = traced.rayImage;
-    if (context().config->rendererConfig().feature.rayTracing.svgf)
+    if (rendererConfig->feature.rayTracing.svgf)
         color = setupPass<TemporalReprojectionPass>(traced).color;
     return {.color = color};
 }
@@ -267,7 +254,7 @@ uint32_t Renderer::offlineSampleCount() const
 
 Renderer::SceneOutput Renderer::setupRasterization()
 {
-    const auto&        config = context().config->rendererConfig();
+    const auto&        config = *rendererConfig;
     ShadowPass::Output shadow;
     if (config.feature.shadow.enable)
         shadow = setupPass<ShadowPass>();
@@ -306,7 +293,7 @@ Renderer::SceneOutput Renderer::setupLightMarkers(SceneOutput scene)
 
 RenderGraph::ImageHandle Renderer::setupPostProcess(RenderGraph::ImageHandle color)
 {
-    const auto& config = context().config->rendererConfig();
+    const auto& config = *rendererConfig;
     if (config.feature.hdr)
     {
         if (config.feature.bloom.enable)
@@ -329,7 +316,7 @@ void Renderer::setupEditor(SceneOutput scene)
 
 void Renderer::applyConfiguration()
 {
-    const auto& config   = context().config->rendererConfig();
+    const auto& config   = *rendererConfig;
     const auto  graphKey = [](const RendererConfig& value)
     {
         const auto& shadow = value.feature.shadow;
@@ -360,8 +347,8 @@ void Renderer::applyConfiguration()
         waitIdle();
         if (activeSceneBindings)
         {
-            activeSceneBindings->refreshBindings();
-            activeSceneBindings->writeDescriptorSet(graph, {vulkan, swapchain, frameStorage});
+            activeSceneBindings->refreshBindings(config);
+            activeSceneBindings->writeDescriptorSet(graph, {vulkan, swapchain, frameStorage, config});
         }
     }
     appliedConfig = config;
@@ -382,87 +369,66 @@ void Renderer::recreateSwapchain()
 
 const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderData& scene, uint32_t targetFrameIndex)
 {
-    const auto& config        = context().config->rendererConfig();
+    const auto& config        = *rendererConfig;
     auto&       assets        = *context().assetManager;
     auto*       profiler      = context().profiler;
     auto&       renderData    = renderStorage[targetFrameIndex];
-    renderData.objects        = scene.objects;
+    renderData.drawItems      = std::span{scene.drawItems};
     renderData.environmentMap = scene.environmentMap;
-    renderData.submeshCount   = 0;
-    renderData.materials.clear();
+    renderData.materialIndices.resize(renderData.drawItems.size());
     {
         CpuProfileScope timing{profiler, "Render resources"};
-        auto&           overrides = materialOverrides[targetFrameIndex];
-        for (auto& [key, instance] : overrides)
-            instance.used = false;
-
-        for (const auto& object : scene.objects)
+        for (uint32_t itemIndex = 0; itemIndex < renderData.drawItems.size(); ++itemIndex)
         {
-            resources.mesh(object.mesh);
-            const auto& meshAsset = assets.get<MeshAsset>(object.mesh);
-            renderData.submeshCount += static_cast<uint32_t>(meshAsset.submeshes.size());
-            for (uint32_t index = 0; index < meshAsset.submeshes.size(); ++index)
-            {
-                const auto&                id      = meshAsset.submeshes[index].materialId;
-                const auto                 owner   = std::tuple{object.selectionId, object.instanceIndex, index};
-                auto&                      binding = renderData.materials[owner];
-                MaterialTable::MaterialKey key{.assetId = id};
-                if (const auto override = object.materialOverrides.find(static_cast<int>(index));
-                    override != object.materialOverrides.end())
-                {
-                    auto asset = assets.get<MaterialAsset>(id).as<PbrMaterialAsset>();
-                    applyOptionalFields(asset, override->second);
-                    auto& instance = overrides[owner];
-                    if (!instance.material || !sameMaterialResources(instance.asset, asset))
-                    {
-                        instance.material = std::make_shared<GpuMaterial>();
-                        instance.material->create(asset, shaders, assets);
-                    }
-                    else if (instance.asset != asset)
-                        instance.material->updateParameters(asset);
-                    instance.asset    = std::move(asset);
-                    instance.used     = true;
-                    binding.material  = instance.material;
-                    key.overrideOwner = {object.selectionId, object.instanceIndex, index};
-                }
-                else
-                    binding.material = resources.material(id);
+            const auto& item = renderData.drawItems[itemIndex];
+            // mesh数据读进GPU
+            resources.mesh(item.mesh);
 
-                binding.materialIndex = materialTable.update(key, *binding.material, resources);
+            // 记录material在SSBO的idx
+            auto                       material = assets.get<MaterialAsset>(item.materialId).as<PbrMaterialAsset>();
+            MaterialTable::MaterialKey materialKey{.assetId = item.materialId};
+            if (item.materialOverride)
+            {
+                applyOptionalFields(material, *item.materialOverride);
+                materialKey.overrideOwner = {item.selectionId, item.instanceIndex, item.submeshIndex};
             }
+
+            renderData.materialIndices[itemIndex] = materialTable.update(materialKey, material, resources, assets);
         }
-        std::erase_if(overrides, [](const auto& entry) { return !entry.second.used; });
+
+        // 如果有新纹理或SSBO需要扩容，则更新descriptor set
         materialTable.upload(vulkan, targetFrameIndex);
         renderData.materialDescriptorSet = materialTable.descriptorSetHandle(targetFrameIndex);
     }
 
     renderData.lightRanges = groupLights(scene.lights, renderData.lights);
-    renderData.objectBounds.clear();
+    renderData.drawBounds.clear();
     renderData.visibilityMasks.clear();
 
     if (profiler)
-        profiler->recordCulling(static_cast<uint32_t>(scene.objects.size()), {});
+        profiler->recordCulling(static_cast<uint32_t>(renderData.drawItems.size()), {});
 
+    // 光栅化视锥剔除
     if (config.renderPath == RenderPath::Forward || config.renderPath == RenderPath::Deferred)
     {
         CpuProfileScope timing{profiler, "Main view preparation"};
         const Frustum   mainFrustum{view.uniforms.viewProjection};
 
-        renderData.objectBounds.reserve(scene.objects.size());
-        renderData.visibilityMasks.reserve(scene.objects.size());
+        renderData.drawBounds.reserve(renderData.drawItems.size());
+        renderData.visibilityMasks.reserve(renderData.drawItems.size());
         uint32_t mainVisible = 0;
-        for (const auto& object : scene.objects)
+        for (const auto& item : renderData.drawItems)
         {
-            const auto& meshAsset   = assets.get<MeshAsset>(object.mesh);
-            const auto  worldBounds = meshAsset.bounds.transformed(object.model);
+            const auto& meshAsset   = assets.get<MeshAsset>(item.mesh);
+            const auto  worldBounds = meshAsset.bounds.transformed(item.model);
             const bool  visible     = mainFrustum.intersects(worldBounds);
-            renderData.objectBounds.push_back(worldBounds);
+            renderData.drawBounds.push_back(worldBounds);
             renderData.visibilityMasks.push_back(visible ? RenderVisibility::kMainView : 0);
             if (visible)
                 ++mainVisible;
         }
         if (profiler)
-            profiler->recordCulling(static_cast<uint32_t>(scene.objects.size()), {{"Main view", mainVisible}});
+            profiler->recordCulling(static_cast<uint32_t>(renderData.drawItems.size()), {{"Main view", mainVisible}});
     }
 
     {
@@ -472,7 +438,7 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
         if (activeSceneBindings)
         {
             activeSceneBindings->updateEnvironmentMap(renderData.environmentMap);
-            activeSceneBindings->updateFrame(data, renderData);
+            activeSceneBindings->updateFrame(data, renderData, config);
         }
     }
     return renderData;
@@ -497,11 +463,11 @@ RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData
         return {.swapchainNeedsRebuild = true};
 
     const auto& renderData = prepare(view, scene, frameIndex);
-    const auto  renderPath = context().config->rendererConfig().renderPath;
+    const auto  renderPath = rendererConfig->renderPath;
     if (renderPath == RenderPath::OfflinePathTracing)
         passes->get<OfflinePathTracingPass>().updateScene(view, scene, context().assetManager->contentRevision());
-    auto& data = frameStorage[frameIndex];
-    const PassSetup setup{vulkan, swapchain, frameStorage};
+    auto&           data = frameStorage[frameIndex];
+    const PassSetup setup{vulkan, swapchain, frameStorage, *rendererConfig};
     const PassFrame execution{setup, data, view, renderData, editor, frameIndex};
     graph.prepare(execution);
 
@@ -515,7 +481,7 @@ RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData
     }
 
     const bool directBlit = (renderPath == RenderPath::RayTracing || renderPath == RenderPath::OfflinePathTracing) &&
-        !context().config->rendererConfig().feature.hdr;
+        !rendererConfig->feature.hdr;
     const vk::PipelineStageFlags waitStages =
         directBlit ? vk::PipelineStageFlagBits::eTransfer : vk::PipelineStageFlagBits::eColorAttachmentOutput;
     {

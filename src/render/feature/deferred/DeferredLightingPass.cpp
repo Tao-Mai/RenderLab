@@ -1,10 +1,10 @@
 #include "render/feature/deferred/DeferredLightingPass.h"
 
-#include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "render/FrameData.h"
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
+#include "render/RendererConfig.h"
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
 #include "render/present/Swapchain.h"
@@ -38,7 +38,7 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
             }
         );
 
-    const bool hdr = context().config->rendererConfig().feature.hdr;
+    const bool hdr = setup.config.feature.hdr;
     if (hdr)
     {
         constexpr auto kRequiredFeatures = vk::FormatFeatureFlagBits::eColorAttachment |
@@ -113,7 +113,7 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
 
     auto&               ctx = renderContext();
     const ShaderDefines variant{
-        {"ENABLE_IBL", context().config->rendererConfig().feature.ibl ? 1 : 0},
+        {"ENABLE_IBL", setup.config.feature.ibl ? 1 : 0},
         {"ENABLE_CLEARCOAT", 0},
         {"ENABLE_SHEEN", 1}
     };

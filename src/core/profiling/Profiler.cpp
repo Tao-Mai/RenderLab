@@ -16,7 +16,7 @@ void Profiler::beginFrame()
     current.cpuTimings.clear();
     current.passes.clear();
     current.views.clear();
-    current.totalObjects = 0;
+    current.totalDrawItems = 0;
     frameTimer.reset();
 }
 
@@ -89,9 +89,9 @@ void Profiler::recordDraw(uint32_t vertexCount, uint32_t instanceCount)
     draws.triangles += static_cast<uint64_t>(vertexCount / 3) * instanceCount;
 }
 
-void Profiler::recordCulling(uint32_t totalObjects, std::vector<ViewCullingStatistics> views)
+void Profiler::recordCulling(uint32_t totalDrawItems, std::vector<ViewCullingStatistics> views)
 {
-    current.totalObjects = totalObjects;
+    current.totalDrawItems = totalDrawItems;
     for (auto& view : views)
         current.views.push_back(std::move(view));
 }

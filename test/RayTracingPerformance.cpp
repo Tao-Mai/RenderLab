@@ -60,7 +60,7 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
     BlasBuildPass   blasBuild;
     TlasBuildPass   tlasBuild;
     SinkPass        sink;
-    const PassSetup setup{vulkan, renderer.swapchainHandle(), data};
+    const PassSetup setup{vulkan, renderer.swapchainHandle(), data, context().config->rendererConfig()};
     const auto      blas       = graph.addPass(blasBuild, setup);
     const auto      structures = graph.addPass(tlasBuild, setup, blas);
     const auto      source     = graph.addPass(trace, setup, structures);
@@ -100,11 +100,11 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
         const uint32_t index = iteration % maxFramesInFlight;
         frames[index].wait();
         const auto& snapshot = system.prepare(scenes.scene());
-        const auto& draws = renderer.prepare(view, snapshot, index);
+        const auto& draws    = renderer.prepare(view, snapshot, index);
         if (iteration == 0)
             LOG_INFO(
-                "Submitted objects {}, point lights {}, area lights {}",
-                draws.objects.size(),
+                "Submitted draw items {}, point lights {}, area lights {}",
+                draws.drawItems.size(),
                 draws.lightRanges.pointEnd - draws.lightRanges.directionalEnd,
                 draws.lightRanges.rectAreaEnd - draws.lightRanges.pointEnd
             );
@@ -114,8 +114,7 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
         auto& commands = frames[index].commandBufferHandle();
         vkCheck(commands.reset());
         vkCheck(commands.begin({}));
-        graph
-            .execute(commands, execution, 0, frames[index].gpuProfiler(), &profiler);
+        graph.execute(commands, execution, 0, frames[index].gpuProfiler(), &profiler);
         vkCheck(commands.end());
         const auto command = *commands;
         vkCheck(vulkan.deviceHandle().resetFences(frames[index].drawFenceHandle()));

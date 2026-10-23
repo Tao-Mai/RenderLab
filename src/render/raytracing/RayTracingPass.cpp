@@ -1,6 +1,5 @@
 #include "render/raytracing/RayTracingPass.h"
 
-#include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "core/Vertex.h"
@@ -8,6 +7,7 @@
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
 #include "render/RenderView.h"
+#include "render/RendererConfig.h"
 #include "render/device/Device.h"
 #include "render/device/GpuProfiler.h"
 #include "render/device/VkCheck.h"
@@ -25,7 +25,7 @@ namespace
 {
 constexpr uint32_t kMissShaderCount = 2;
 constexpr uint32_t kHitShaderCount  = 2;
-vk::DeviceSize alignUp(vk::DeviceSize value, vk::DeviceSize alignment)
+vk::DeviceSize     alignUp(vk::DeviceSize value, vk::DeviceSize alignment)
 {
     return (value + alignment - 1) & ~(alignment - 1);
 }
@@ -69,17 +69,20 @@ RayTracingPass::Output RayTracingPass::setup(RenderGraph& graph, const PassSetup
     {
         CHECK(device.getFormatProperties(format).optimalTilingFeatures & vk::FormatFeatureFlagBits::eStorageImage);
         auto image = graph.write(graph.createImage({.format = format, .extent = {extent.width, extent.height, 1}}));
-        graph.use(image, {
-            .stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
-            .access = vk::AccessFlagBits2::eShaderStorageWrite,
-            .layout = vk::ImageLayout::eGeneral,
-        });
+        graph.use(
+            image,
+            {
+                .stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
+                .access = vk::AccessFlagBits2::eShaderStorageWrite,
+                .layout = vk::ImageLayout::eGeneral,
+            }
+        );
         return image;
     };
-    depth = createGBuffer(vk::Format::eR32Sfloat);
-    worldNormal = createGBuffer(vk::Format::eR16G16B16A16Sfloat);
-    sampleIndex = 0;
-    const auto maxRecursionDepth = context().config->rendererConfig().feature.rayTracing.maxRecursionDepth;
+    depth                        = createGBuffer(vk::Format::eR32Sfloat);
+    worldNormal                  = createGBuffer(vk::Format::eR16G16B16A16Sfloat);
+    sampleIndex                  = 0;
+    const auto maxRecursionDepth = setup.config.feature.rayTracing.maxRecursionDepth;
     if (!*pipeline || pipelineRecursionDepth != maxRecursionDepth)
         createPipeline(setup, maxRecursionDepth);
     return {rayImage, depth, worldNormal};
@@ -129,15 +132,19 @@ void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursio
                 .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
             },
             vk::DescriptorSetLayoutBinding{
-                .binding = 7, .descriptorType = vk::DescriptorType::eStorageImage, .descriptorCount = 1,
-                .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR
+                .binding         = 7,
+                .descriptorType  = vk::DescriptorType::eStorageImage,
+                .descriptorCount = 1,
+                .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
             },
             vk::DescriptorSetLayoutBinding{
-                .binding = 8, .descriptorType = vk::DescriptorType::eStorageImage, .descriptorCount = 1,
-                .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR
+                .binding         = 8,
+                .descriptorType  = vk::DescriptorType::eStorageImage,
+                .descriptorCount = 1,
+                .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
             },
         };
-        auto& renderDevice = *renderContext().device;
+        auto& renderDevice  = *renderContext().device;
         descriptorSetLayout = renderDevice.createDescriptorSetLayout(bindings);
         for (auto& frame : frames)
             frame.set = renderDevice.allocateDescriptorSet(descriptorSetLayout);
@@ -333,20 +340,17 @@ void RayTracingPass::prepareBindings(RenderGraph& graph, const PassFrame& execut
     static_assert(sizeof(Vertex) == 48 && offsetof(Vertex, normal) == 12 && offsetof(Vertex, texcoord) == 24);
 
     std::vector<RayTracingHitData> hits;
-    hits.reserve(execution.renderData.submeshCount);
-    for (const auto& object : execution.renderData.objects)
+    hits.reserve(execution.renderData.drawItems.size());
+    for (uint32_t itemIndex = 0; itemIndex < execution.renderData.drawItems.size(); ++itemIndex)
     {
-        const auto& mesh = resources.mesh(object.mesh);
-        for (uint32_t index = 0; index < mesh.submeshes().size(); ++index)
-        {
-            const auto& binding = execution.renderData.material(object, index);
-            hits.push_back({
-                mesh.vertices().address(device),
-                mesh.indices().address(device),
-                mesh.submeshes()[index].firstIndex,
-                binding.materialIndex,
-            });
-        }
+        const auto& item = execution.renderData.drawItems[itemIndex];
+        const auto& mesh = resources.mesh(item.mesh);
+        hits.push_back({
+            mesh.vertices().address(device),
+            mesh.indices().address(device),
+            mesh.submeshes()[item.submeshIndex].firstIndex,
+            execution.renderData.materialIndices[itemIndex],
+        });
     }
 
     const vk::DeviceSize bytes = std::max<size_t>(hits.size(), 1) * sizeof(RayTracingHitData);
@@ -455,8 +459,10 @@ void RayTracingPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& comman
     }
     commands.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
     const std::array sets{
-        execution.data.sceneSetHandle(), execution.data.lightingSetHandle(),
-        execution.renderData.materialSetHandle(), *frame.set
+        execution.data.sceneSetHandle(),
+        execution.data.lightingSetHandle(),
+        execution.renderData.materialSetHandle(),
+        *frame.set
     };
     commands.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 0, sets, {});
     const auto& viewport = execution.view.viewport;
@@ -465,13 +471,13 @@ void RayTracingPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& comman
         vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR,
         0,
         RayTracingParameters{
-            .viewport              = {viewport.x, viewport.y, viewport.width, viewport.height},
-            .lightRanges           = execution.renderData.lightRanges,
-            .maxRecursionDepth     = pipelineRecursionDepth,
-            .sampleIndex           = sampleIndex++,
+            .viewport          = {viewport.x, viewport.y, viewport.width, viewport.height},
+            .lightRanges       = execution.renderData.lightRanges,
+            .maxRecursionDepth = pipelineRecursionDepth,
+            .sampleIndex       = sampleIndex++,
         }
     );
-    const auto extent = execution.setup.swapchain.extent();
+    const auto      extent = execution.setup.swapchain.extent();
     GpuProfileScope timing{execution.gpuProfiler, commands, "RT.Trace rays"};
     commands.traceRaysKHR(raygenRegion, missRegion, hitRegion, {}, extent.width, extent.height, 1);
 }

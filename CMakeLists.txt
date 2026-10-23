@@ -312,8 +312,6 @@ add_library(RenderLabRuntime STATIC
         src/render/resource/GpuShader.h
         src/render/resource/GpuMesh.cpp
         src/render/resource/GpuMesh.h
-        src/render/resource/GpuMaterial.cpp
-        src/render/resource/GpuMaterial.h
         src/render/resource/RenderResourceManager.cpp
         src/render/resource/RenderResourceManager.h
         src/render/resource/VertexLayout.h
@@ -321,6 +319,7 @@ add_library(RenderLabRuntime STATIC
         src/scene/system/RenderSystem.cpp
         src/scene/system/RenderSystem.h
         src/render/RenderData.h
+        src/render/DrawItem.h
         src/render/Visibility.h
         src/render/feature/ScenePass.cpp
         src/render/feature/ScenePass.h

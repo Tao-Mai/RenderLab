@@ -156,7 +156,7 @@ int main(int argc, char** argv)
         frame.init(vulkan, *renderContext().device);
     RenderGraph graph;
     graph.init(vulkan, renderer.swapchainHandle());
-    const PassSetup setup{vulkan, renderer.swapchainHandle(), frameData};
+    const PassSetup setup{vulkan, renderer.swapchainHandle(), frameData, context().config->rendererConfig()};
     HdrSourcePass   source;
     ReadPixelPass   readback;
     EndPass         end;

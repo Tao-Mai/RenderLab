@@ -7,6 +7,9 @@
 
 inline constexpr uint32_t kMaxMaterialTextures = 128;
 inline constexpr uint32_t kMaxMaterialSamplers = 32;
+inline constexpr uint32_t kAlphaModeOpaque     = 0;
+inline constexpr uint32_t kAlphaModeMask       = 1;
+inline constexpr uint32_t kAlphaModeBlend      = 2;
 
 struct TextureRef
 {
@@ -21,7 +24,7 @@ struct alignas(16) MaterialData
     float                   roughness         = 1.0f;
     float                   metallic          = 1.0f;
     float                   alphaCutoff       = 0.5f;
-    uint32_t                alphaMode         = 0;
+    uint32_t                alphaMode         = kAlphaModeOpaque;
     float                   normalScale       = 1.0f;
     float                   occlusionStrength = 1.0f;
     uint32_t                doubleSided       = 0;

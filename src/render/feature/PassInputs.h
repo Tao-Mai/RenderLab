@@ -9,14 +9,16 @@ class FrameData;
 class GpuProfiler;
 struct RenderView;
 struct RenderData;
+struct RendererConfig;
 struct EditorFrameInput;
 
 // Borrowed inputs supplied by Renderer, not stored or exposed by RenderGraph.
 struct PassSetup
 {
-    VulkanContext&       vulkan;
-    Swapchain&           swapchain;
-    std::span<FrameData> frameData;
+    VulkanContext&        vulkan;
+    Swapchain&            swapchain;
+    std::span<FrameData>  frameData;
+    const RendererConfig& config;
 };
 
 struct PassFrame

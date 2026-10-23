@@ -62,11 +62,11 @@ EditorPickingPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph
     return {pickingImage};
 }
 
-void EditorPickingPass::draw(vk::raii::CommandBuffer& commandBuffer, const RenderObject& object) const
+void EditorPickingPass::draw(vk::raii::CommandBuffer& commandBuffer, const DrawItem& item) const
 {
     const EditorPickingPushConstants parameters{
-        .model       = object.model,
-        .selectionId = object.selectionId,
+        .model       = item.model,
+        .selectionId = item.selectionId,
     };
     commandBuffer.pushConstants<EditorPickingPushConstants>(
         pipelineLayout,
@@ -74,13 +74,11 @@ void EditorPickingPass::draw(vk::raii::CommandBuffer& commandBuffer, const Rende
         0,
         parameters
     );
-    auto& mesh = renderContext().resources->mesh(object.mesh);
+    auto&       mesh    = renderContext().resources->mesh(item.mesh);
+    const auto& submesh = mesh.submeshes()[item.submeshIndex];
     mesh.bind(commandBuffer);
-    for (const auto& submesh : mesh.submeshes())
-    {
-        commandBuffer.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);
-        recordDraw(context().profiler, submesh.indexCount);
-    }
+    commandBuffer.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);
+    recordDraw(context().profiler, submesh.indexCount);
 }
 
 void EditorPickingPass::execute(
@@ -140,12 +138,12 @@ void EditorPickingPass::execute(
     commandBuffer.setViewport(0, viewport.toViewport());
     commandBuffer.setScissor(0, vk::Rect2D({static_cast<int32_t>(x), static_cast<int32_t>(y)}, {1, 1}));
 
-    for (uint32_t index = 0; index < execution.renderData.objects.size(); ++index)
+    for (uint32_t index = 0; index < execution.renderData.drawItems.size(); ++index)
     {
         if (!execution.renderData.isVisible(index))
             continue;
 
-        draw(commandBuffer, execution.renderData.objects[index]);
+        draw(commandBuffer, execution.renderData.drawItems[index]);
     }
     for (const auto& item : editor.lightDrawItems)
     {

@@ -27,20 +27,23 @@ namespace
 {
 void checkPipelineLayoutCache()
 {
-    auto& device = *renderContext().device;
+    auto&      device = *renderContext().device;
     std::array ranges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        .size = sizeof(MeshPushConstants),
+        .size       = sizeof(MeshPushConstants),
     }};
     {
-        auto sceneLayout = device.createDescriptorSetLayout(device.sceneDescriptorSetLayout.bindings);
-        const auto layout = device.getOrCreatePipelineLayout(
-            std::array{&sceneLayout, &device.lightingDescriptorSetLayout, &device.materialDescriptorSetLayout}, ranges
+        auto       sceneLayout = device.createDescriptorSetLayout(device.sceneDescriptorSetLayout.bindings);
+        const auto layout      = device.getOrCreatePipelineLayout(
+            std::array{&sceneLayout, &device.lightingDescriptorSetLayout, &device.materialDescriptorSetLayout},
+            ranges
         );
         CHECK(layout == device.meshPipelineLayout);
     }
     const std::array sets{
-        &device.sceneDescriptorSetLayout, &device.lightingDescriptorSetLayout, &device.materialDescriptorSetLayout
+        &device.sceneDescriptorSetLayout,
+        &device.lightingDescriptorSetLayout,
+        &device.materialDescriptorSetLayout
     };
     CHECK(device.getOrCreatePipelineLayout(sets, ranges) == device.meshPipelineLayout);
     ranges[0].size -= sizeof(glm::vec4);
@@ -114,7 +117,7 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
     EndPass              end;
     RenderSystem         renderSystem;
     graph.init(vulkan, renderer.swapchainHandle());
-    const PassSetup setup{vulkan, renderer.swapchainHandle(), frameData};
+    const PassSetup setup{vulkan, renderer.swapchainHandle(), frameData, context().config->rendererConfig()};
     const auto      originalFeature = context().config->rendererConfig().feature;
     const auto      originalPath    = context().config->rendererConfig().renderPath;
     const auto      extent          = renderer.swapchainHandle().extent();
@@ -150,24 +153,16 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
         std::vector<uint32_t> materialIndices;
         for (uint32_t index = 0; index < maxFramesInFlight; ++index)
         {
-            const auto& data             = renderer.prepare(view, sceneData, index);
-            size_t      materialPosition = 0;
-            for (const auto& object : data.objects)
-                for (uint32_t submesh = 0; submesh < renderContext().resources->mesh(object.mesh).submeshes().size();
-                     ++submesh)
-                {
-                    const auto materialIndex = data.material(object, submesh).materialIndex;
-                    if (index == 0)
-                        materialIndices.push_back(materialIndex);
-                    else
-                        CHECK(materialIndices[materialPosition] == materialIndex);
-                    ++materialPosition;
-                }
+            const auto& data = renderer.prepare(view, sceneData, index);
+            if (index == 0)
+                materialIndices = data.materialIndices;
+            else
+                CHECK(materialIndices == data.materialIndices);
             frameData[index].updateSceneUniforms(view.uniforms);
             if (deferred)
-                lighting.sceneBindings().updateFrame(frameData[index], data);
+                lighting.sceneBindings().updateFrame(frameData[index], data, setup.config);
             else
-                forward.sceneBindings().updateFrame(frameData[index], data);
+                forward.sceneBindings().updateFrame(frameData[index], data, setup.config);
             const PassFrame execution{setup, frameData[index], view, data, {}, index};
             graph.prepare(execution);
             auto& recording = frames[index].commandBufferHandle();

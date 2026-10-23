@@ -1,14 +1,16 @@
 #include "render/resource/MaterialTable.h"
 
+#include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
+#include "asset/PbrMaterialAsset.h"
 #include "core/Logger.h"
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
-#include "render/resource/GpuMaterial.h"
 #include "render/resource/RenderResourceManager.h"
 #include "render/resource/ShaderData.h"
 
 #include <algorithm>
+#include <cmath>
 
 void MaterialTable::init(RenderResourceManager& resources, const VulkanContext& vulkan, Device& device)
 {
@@ -122,29 +124,85 @@ size_t MaterialTable::MaterialKeyHash::operator()(const MaterialKey& key) const 
     return hash;
 }
 
-uint32_t MaterialTable::update(const MaterialKey& key, const GpuMaterial& material, RenderResourceManager& resources)
+uint32_t MaterialTable::update(
+    const MaterialKey& key, const PbrMaterialAsset& material, RenderResourceManager& resources, AssetManager& assets
+)
 {
+    const auto alphaMode = material.alphaMode.value_or("OPAQUE");
+    CHECK(
+        alphaMode == "OPAQUE" || alphaMode == "MASK" || alphaMode == "BLEND",
+        "material '{}' has an unknown alpha mode '{}'",
+        material.id,
+        alphaMode
+    );
+    const float emissiveStrength = material.emissiveStrength.value_or(1.0f);
+    CHECK(std::isfinite(emissiveStrength) && emissiveStrength >= 0.0f);
+
+    const auto   clearcoat = material.clearcoat.value_or(PbrMaterialAsset::Clearcoat{});
+    const auto   sheen     = material.sheen.value_or(PbrMaterialAsset::Sheen{});
+    MaterialData data{
+        .baseColorFactor          = material.baseColorFactor.value_or(glm::vec4{1.0f}),
+        .roughness                = material.roughness.value_or(1.0f),
+        .metallic                 = material.metallic.value_or(1.0f),
+        .alphaCutoff              = material.alphaCutoff.value_or(0.5f),
+        .alphaMode                = alphaMode == "MASK" ? kAlphaModeMask
+                           : alphaMode == "BLEND"       ? kAlphaModeBlend
+                                                        : kAlphaModeOpaque,
+        .normalScale              = material.normalScale.value_or(1.0f),
+        .occlusionStrength        = material.ao.value_or(1.0f),
+        .doubleSided              = material.doubleSided.value_or(true) ? 1u : 0u,
+        .emissiveFactor           = glm::vec4(material.emissive.value_or(glm::vec3{0.0f}) * emissiveStrength, 0.0f),
+        .sheenColorFactor         = sheen.colorFactor,
+        .sheenRoughnessFactor     = sheen.roughnessFactor,
+        .clearcoatFactor          = clearcoat.factor,
+        .clearcoatRoughnessFactor = clearcoat.roughnessFactor,
+        .clearcoatNormalScale     = clearcoat.normalScale,
+    };
+
+    const auto resolveTexture = [&](const std::optional<TextureBinding>& source,
+                                    const TextureAsset::ID&              fallback,
+                                    std::optional<ColorSpace>            colorSpace = std::nullopt)
+    {
+        const auto binding = source.value_or(TextureBinding{fallback, BuiltinAssets::Sampler::linearRepeat});
+        return texture(binding, resources);
+    };
+
+    data.baseColorTexture = resolveTexture(material.baseColorTexture, BuiltinAssets::Texture::white);
+    data.normalTexture = resolveTexture(material.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear);
+    data.metallicTexture =
+        resolveTexture(material.metallicTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear);
+    data.roughnessTexture =
+        resolveTexture(material.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear);
+    data.emissiveTexture = resolveTexture(material.emissiveTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb);
+    data.occlusionTexture =
+        resolveTexture(material.aoTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear);
+    data.sheenColorTexture = resolveTexture(sheen.colorTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb);
+    data.sheenRoughnessTexture =
+        resolveTexture(sheen.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear);
+    data.clearcoatTexture = resolveTexture(clearcoat.texture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear);
+    data.clearcoatRoughnessTexture =
+        resolveTexture(clearcoat.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear);
+    data.clearcoatNormalTexture =
+        resolveTexture(clearcoat.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear);
+
     const auto [found, added] = materialIndices.try_emplace(key, static_cast<uint32_t>(materials.size()));
     if (added)
+    {
         materials.emplace_back();
-
-    auto        data               = material.parameters();
-    const auto& textures           = material.textureBindings();
-    data.baseColorTexture          = texture(textures.baseColor, resources);
-    data.normalTexture             = texture(textures.normal, resources);
-    data.metallicTexture           = texture(textures.metallic, resources);
-    data.roughnessTexture          = texture(textures.roughness, resources);
-    data.emissiveTexture           = texture(textures.emissive, resources);
-    data.occlusionTexture          = texture(textures.occlusion, resources);
-    data.sheenColorTexture         = texture(textures.sheenColor, resources);
-    data.sheenRoughnessTexture     = texture(textures.sheenRoughness, resources);
-    data.clearcoatTexture          = texture(textures.clearcoat.factor, resources);
-    data.clearcoatRoughnessTexture = texture(textures.clearcoat.roughness, resources);
-    data.clearcoatNormalTexture    = texture(textures.clearcoat.normal, resources);
-    materials[found->second]       = data;
+        materialInfos.emplace_back();
+    }
+    materials[found->second]     = data;
+    materialInfos[found->second] = {
+        .shaderId    = material.shaderId.value_or("scene"),
+        .alphaMode   = data.alphaMode,
+        .doubleSided = data.doubleSided != 0,
+        .clearcoat   = material.clearcoat.has_value(),
+        .sheen       = material.sheen.has_value(),
+    };
     return found->second;
 }
 
+// 更新material descriptor set
 void MaterialTable::upload(const VulkanContext& vulkan, uint32_t frameIndex)
 {
     auto&                frame = frames[frameIndex];

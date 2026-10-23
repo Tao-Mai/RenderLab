@@ -8,8 +8,8 @@
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
 #include "render/present/Swapchain.h"
-#include "render/resource/GpuMaterial.h"
 #include "render/resource/GpuMesh.h"
+#include "render/resource/MaterialTable.h"
 #include "render/resource/RenderResourceManager.h"
 #include "render/resource/ShaderData.h"
 
@@ -98,37 +98,36 @@ void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandB
 
     vk::Pipeline boundPipeline;
     auto&        resources = *renderContext().resources;
-    for (uint32_t objectIndex = 0; objectIndex < execution.renderData.objects.size(); ++objectIndex)
+    const auto&  materials = *renderContext().materialTable;
+    for (uint32_t itemIndex = 0; itemIndex < execution.renderData.drawItems.size(); ++itemIndex)
     {
-        if (!execution.renderData.isVisible(objectIndex))
+        if (!execution.renderData.isVisible(itemIndex))
             continue;
-        const auto& object = execution.renderData.objects[objectIndex];
-        auto&       mesh   = resources.mesh(object.mesh);
-        mesh.bind(commandBuffer);
-        for (uint32_t index = 0; index < mesh.submeshes().size(); ++index)
-        {
-            const auto& submesh = mesh.submeshes()[index];
-            const auto& binding = execution.renderData.material(object, index);
-            if (binding.material->alphaMode() == MaterialAlphaMode::Blend)
-                continue;
-            const auto pipeline =
-                binding.material->parameters().doubleSided ? doubleSidedPipeline : singleSidedPipeline;
-            if (pipeline != boundPipeline)
-            {
-                commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-                boundPipeline = pipeline;
-            }
+        const auto& item          = execution.renderData.drawItems[itemIndex];
+        const auto  materialIndex = execution.renderData.materialIndices[itemIndex];
+        const auto& material      = materials.info(materialIndex);
+        if (material.alphaMode == kAlphaModeBlend)
+            continue;
 
-            const MeshPushConstants pushConstants{.model = object.model, .materialIndex = binding.materialIndex};
-            commandBuffer.pushConstants<MeshPushConstants>(
-                pipelineLayout,
-                vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-                0,
-                pushConstants
-            );
-            commandBuffer.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);
-            recordDraw(context().profiler, submesh.indexCount);
+        const auto pipeline = material.doubleSided ? doubleSidedPipeline : singleSidedPipeline;
+        if (pipeline != boundPipeline)
+        {
+            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+            boundPipeline = pipeline;
         }
+
+        auto&       mesh    = resources.mesh(item.mesh);
+        const auto& submesh = mesh.submeshes()[item.submeshIndex];
+        mesh.bind(commandBuffer);
+        const MeshPushConstants pushConstants{.model = item.model, .materialIndex = materialIndex};
+        commandBuffer.pushConstants<MeshPushConstants>(
+            pipelineLayout,
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            0,
+            pushConstants
+        );
+        commandBuffer.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);
+        recordDraw(context().profiler, submesh.indexCount);
     }
 
     commandBuffer.endRendering();

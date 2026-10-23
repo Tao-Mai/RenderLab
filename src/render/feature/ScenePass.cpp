@@ -1,8 +1,7 @@
 #include "render/feature/ScenePass.h"
 
-#include "core/ConfigManager.h"
-#include "core/Context.h"
 #include "render/RenderData.h"
+#include "render/RendererConfig.h"
 #include "render/device/VulkanContext.h"
 #include "render/feature/SceneDraw.h"
 #include "render/present/Swapchain.h"
@@ -13,11 +12,11 @@ ScenePass::Output ScenePass::setup(
     RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle depthHandle, ShadowPass::Output shadow
 )
 {
-    const auto& config = context().config->rendererConfig();
+    const auto& config = setup.config;
     shaderOptions      = {.ibl = config.feature.ibl, .clearcoat = config.renderPath != RenderPath::Deferred};
 
     const auto resolvedShadow = bindings.setup(graph, setup, shadow);
-    const bool hdr            = context().config->rendererConfig().feature.hdr;
+    const bool hdr            = config.feature.hdr;
     if (hdr)
     {
         const auto features =
@@ -48,12 +47,6 @@ void ScenePass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) c
 void ScenePass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
 {
     SceneDraw::beginRendering(graph, commandBuffer, execution, std::array{color}, depth, vk::AttachmentLoadOp::eClear);
-    SceneDraw::recordMeshes(
-        commandBuffer,
-        execution,
-        std::array{graph.imageInfo(color).format},
-        {},
-        shaderOptions
-    );
+    SceneDraw::recordMeshes(commandBuffer, execution, std::array{graph.imageInfo(color).format}, {}, shaderOptions);
     commandBuffer.endRendering();
 }

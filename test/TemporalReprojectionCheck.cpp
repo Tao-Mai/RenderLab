@@ -124,7 +124,7 @@ void check(Renderer& renderer)
     TemporalReprojectionPass  temporal;
     ReadbackPass              readback;
     EndPass                   end;
-    const PassSetup           setup{vulkan, renderer.swapchainHandle(), data};
+    const PassSetup           setup{vulkan, renderer.swapchainHandle(), data, context().config->rendererConfig()};
     RenderGraph::BufferHandle buffer;
     const auto                build = [&]
     {

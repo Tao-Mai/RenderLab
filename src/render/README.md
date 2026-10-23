@@ -4,6 +4,8 @@
 
 渲染模块接收场景快照和编辑器输入，准备 GPU 数据，再通过 RenderGraph 调度完整的渲染 Pass。Renderer 负责流程，Pass 负责 Vulkan 绘制细节。
 
+场景以 Submesh 粒度的 DrawItem 提交，光栅化直接绘制，光追用同一批条目关联 BLAS、生成 TLAS 实例与命中数据。Renderer 只读引用 DrawItem 列表，材质索引按条目顺序单独保存在数组中。
+
 ## 四条路线
 
 | 路线 | 主流程 | 用途 |
@@ -50,7 +52,7 @@
 - 同一队列上追踪资源最后访问，下一帧首次使用前插入 Barrier；不意味着前后帧可无约束并行写同一资源。
 - 回读缓冲使用 PerFrame；交换链图像按获取到的 Image Index 选择。
 - 历史重投影资源由 Pass 持有，颜色 / 深度 / 法线 / 亮度矩各使用双层 Ping-pong。
-- Device、ShaderManager、RenderResourceManager 通过 RenderContext 聚合；共享 Layout 在初始化时预创建。Device 缓存并持有全部 Pipeline Layout 和光栅 Pipeline，Pass 只保存 Pipeline Layout 句柄；私有 Descriptor Set Layout 仍由各 Pass 持有。布局匹配交给 Vulkan 验证层检查。
+- Device、ShaderManager、RenderResourceManager、MaterialTable 通过 RenderContext 聚合；共享 Layout 在初始化时预创建。Device 缓存并持有全部 Pipeline Layout 和光栅 Pipeline，Pass 只保存 Pipeline Layout 句柄；私有 Descriptor Set Layout 仍由各 Pass 持有。布局匹配交给 Vulkan 验证层检查。
 
 ## 代码导航
 

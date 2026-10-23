@@ -6,11 +6,11 @@
 #include "asset/SamplerAsset.h"
 #include "asset/TextureAsset.h"
 #include "asset/TextureBinding.h"
-#include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "render/FrameData.h"
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
+#include "render/RendererConfig.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/resource/GpuTexture.h"
@@ -49,7 +49,7 @@ ShadowPass::Output SceneBindings::setup(RenderGraph& targetGraph, const PassSetu
     rectAreaShadowMap = resolveShadowMap(shadow.rectAreaLightShadowMap);
     cascadeShadowMap  = resolveShadowMap(shadow.cascadeShadowMap);
 
-    refreshBindings();
+    refreshBindings(setup.config);
 
     graph.use(
         pointShadowMap,
@@ -349,9 +349,9 @@ void SceneBindings::bindEnvironmentTextures()
     }
 }
 
-void SceneBindings::updateFrame(FrameData& frame, const RenderData& scene) const
+void SceneBindings::updateFrame(FrameData& frame, const RenderData& scene, const RendererConfig& config) const
 {
-    const auto&   feature = context().config->rendererConfig().feature;
+    const auto&   feature = config.feature;
     const auto&   shadow  = feature.shadow;
     LightUniforms lighting{
         .lightRanges                   = scene.lightRanges,
@@ -365,15 +365,14 @@ void SceneBindings::updateFrame(FrameData& frame, const RenderData& scene) const
     frame.updateLighting(lighting, scene.lights);
 }
 
-void SceneBindings::refreshBindings()
+void SceneBindings::refreshBindings(const RendererConfig& config)
 {
-    brdfLutTexture = resources->texture(BuiltinAssets::Texture::kBrdfLut);
+    brdfLutTexture  = resources->texture(BuiltinAssets::Texture::kBrdfLut);
     sheenLutTexture = resources->texture(BuiltinAssets::Texture::kSheenLut);
     bindEnvironmentTextures();
 
-    const vk::Filter filter = context().config->rendererConfig().feature.shadow.filter == SamplerAsset::Filter::Linear
-        ? vk::Filter::eLinear
-        : vk::Filter::eNearest;
+    const vk::Filter filter =
+        config.feature.shadow.filter == SamplerAsset::Filter::Linear ? vk::Filter::eLinear : vk::Filter::eNearest;
     if (!*shadowSampler || shadowFilter != filter)
     {
         shadowSampler = vkCheck(vulkan->deviceHandle().createSampler(

@@ -49,4 +49,6 @@
 
 材质 SSBO 索引同样持久缓存：普通材质以 AssetID 为键；override 材质以原始 AssetID 和 Object ID 为键，并保留组件与 submesh 序号以区分独立 override。参数变化时更新原槽位，各 FIF 使用相同索引。
 
+`RenderData.materialIndices` 按 DrawItem 顺序记录对应的 SSBO 索引；`MaterialTable` 按该索引提供 CPU 绘制信息（透明模式、双面、Shader 及材质扩展开关）。DrawItem 列表通过只读 span 引用上层提交。
+
 各 FIF 的 Material Set 在自身 Fence 完成后补写新增槽位；材质参数、相机和光源参数通过 Buffer 内容更新。
