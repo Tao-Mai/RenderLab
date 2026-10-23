@@ -145,7 +145,7 @@ void Renderer::init()
     resources.init(vulkan, *context().assetManager, *context().assetDataManager);
     initLightingResources();
     materialTable.init(resources, vulkan, device);
-    graph.init(vulkan, swapchain);
+    graph.init(vulkan);
     passes = std::make_unique<Passes>();
 
     DEBUG_EXEC(inited = true);
@@ -200,7 +200,7 @@ void Renderer::writeShadowDescriptors(ShadowPass::Output shadow)
     const auto linearSampler = resources.sampler(BuiltinAssets::Sampler::linearClamp);
     const auto bufferInfo    = [&](RenderGraph::BufferHandle handle)
     {
-        const auto& buffer = graph.getBuffer(handle, 0);
+        const auto& buffer = graph.getBuffer(handle);
         return vk::DescriptorBufferInfo{.buffer = buffer.handle(), .range = buffer.size()};
     };
     const std::array shadowBuffers{
@@ -303,6 +303,7 @@ void Renderer::shutdown() noexcept
     passes.reset();
     pickingReadback = {};
     lightBuffer     = {};
+    presentTarget   = {};
     renderStorage   = {};
     materialTable   = {};
     for (FrameContext& frame : frames)
@@ -353,8 +354,12 @@ void Renderer::setupRenderGraph()
     frameIndex           = 0;
 
     materialTable.setup(graph);
-    lightBuffer        = {};
-    const auto  target = graph.importSwapchain();
+    lightBuffer       = {};
+    const auto extent = swapchain.extent();
+    presentTarget     = graph.createExternalImage({
+            .format = swapchain.surfaceFormat().format,
+            .extent = {extent.width, extent.height, 1},
+    });
     SceneOutput scene;
     switch (config.renderPath)
     {
@@ -366,11 +371,11 @@ void Renderer::setupRenderGraph()
             break;
         case RenderPath::Forward:
         case RenderPath::Deferred:
-            scene = setupRasterization(target);
+            scene = setupRasterization(presentTarget);
             break;
     }
     scene       = setupLightMarkers(scene);
-    scene.color = setupPostProcess(scene.color, target);
+    scene.color = setupPostProcess(scene.color, presentTarget);
     setupEditor(scene);
     graph.compile({vulkan, swapchain.extent(), frameStorage, config});
     if (config.renderPath == RenderPath::Forward || config.renderPath == RenderPath::Deferred)
@@ -378,7 +383,7 @@ void Renderer::setupRenderGraph()
         createShadowSampler();
         writeShadowDescriptors(scene.shadow);
         for (auto& data : frameStorage)
-            data.writeLightBufferDescriptor(graph.getBuffer(lightBuffer, 0), graph.bufferRevision(lightBuffer));
+            data.writeLightBufferDescriptor(graph.getBuffer(lightBuffer), graph.bufferRevision(lightBuffer));
     }
     appliedConfig = config;
 }
@@ -634,7 +639,7 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
                 }
             }
             if (data.lightBufferRevision() != graph.bufferRevision(lightBuffer))
-                data.writeLightBufferDescriptor(graph.getBuffer(lightBuffer, 0), graph.bufferRevision(lightBuffer));
+                data.writeLightBufferDescriptor(graph.getBuffer(lightBuffer), graph.bufferRevision(lightBuffer));
         }
     }
     return renderData;
@@ -654,49 +659,48 @@ RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData
     if (acquireResult == vk::Result::eErrorOutOfDateKHR)
         return {.swapchainNeedsRebuild = true};
 
-    const auto&     renderData = prepare(view, scene, frameIndex);
-    const auto      renderPath = rendererConfig->renderPath;
-    auto&           data       = frameStorage[frameIndex];
+    // 全局prepare：更新场景数据
+    const auto& renderData = prepare(view, scene, frameIndex);
+
+    graph.bindImage(presentTarget, swapchain.image(imageIndex));
+
+    auto&           data = frameStorage[frameIndex];
     const PassSetup setup{vulkan, swapchain.extent(), frameStorage, *rendererConfig};
     const PassFrame execution{setup, data, view, renderData, editor, frameIndex};
+
+    // 逐pass prepare
     graph.prepare(execution);
 
+    // pass执行
     {
         CpuProfileScope timing{context().profiler, "Command recording"};
         auto&           commandBuffer = frame.commandBufferHandle();
         vkCheck(commandBuffer.reset());
         vkCheck(commandBuffer.begin({}));
-        graph.execute(commandBuffer, execution, imageIndex, frame.gpuProfiler(), context().profiler);
+        graph.execute(commandBuffer, execution, frame.gpuProfiler(), context().profiler);
         vkCheck(commandBuffer.end());
     }
 
-    const bool directBlit = (renderPath == RenderPath::RayTracing || renderPath == RenderPath::OfflinePathTracing) &&
-        !rendererConfig->feature.hdr;
-    const vk::PipelineStageFlags waitStages =
-        directBlit ? vk::PipelineStageFlagBits::eTransfer : vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    {
-        CpuProfileScope timing{context().profiler, "Queue submit"};
-        frame.submit(swapchain.renderFinishedSemaphore(imageIndex), waitStages);
-    }
-    const auto presentResult = [&]
-    {
-        CpuProfileScope timing{context().profiler, "Present"};
-        return swapchain.present(imageIndex);
-    }();
+
+    frame.submit(swapchain.renderFinishedSemaphore(imageIndex), graph.firstUseStages(presentTarget));
+    const auto presentResult = swapchain.present(imageIndex);
 
     RenderFrameResult frameResult{
         .swapchainNeedsRebuild = acquireResult == vk::Result::eSuboptimalKHR ||
             presentResult == vk::Result::eSuboptimalKHR || presentResult == vk::Result::eErrorOutOfDateKHR,
     };
+
+    // 直接同步等待，获取点击结果
     if (editor.requestPick)
     {
         CpuProfileScope timing{context().profiler, "Picking wait/readback"};
         frame.wait();
 
-        graph.getBuffer(pickingReadback, frameIndex)
+        graph.getBuffer(pickingReadback)
             .download(&frameResult.pickedSelectionId, sizeof(frameResult.pickedSelectionId));
         frameResult.hasPickResult = true;
     }
+
     frameIndex = (frameIndex + 1) % activeFramesInFlight;
     return frameResult;
 }

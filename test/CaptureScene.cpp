@@ -82,7 +82,7 @@ struct ImageReadbackPass
         commands.copyImageToBuffer(
             graph.getImage(image).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
-            graph.getBuffer(buffer, frame.frameIndex).handle(),
+            graph.getBuffer(buffer).handle(),
             copy
         );
     }
@@ -106,7 +106,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         data.init(vulkan, *renderContext().device);
     const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), frameData, context().config->rendererConfig()};
     RenderGraph     graph;
-    graph.init(vulkan, renderer.swapchainHandle());
+    graph.init(vulkan);
     renderContext().materialTable->setup(graph);
     ShadowPass               shadow;
     DepthPrepass             depth;
@@ -213,7 +213,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         auto& commands = frame.commandBufferHandle();
         vkCheck(commands.reset());
         vkCheck(commands.begin({}));
-        graph.execute(commands, execution, 0, frame.gpuProfiler(), nullptr);
+        graph.execute(commands, execution, frame.gpuProfiler(), nullptr);
         vkCheck(commands.end());
         const auto command = *commands;
         vkCheck(vulkan.deviceHandle().resetFences(frame.drawFenceHandle()));
@@ -228,7 +228,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         frame.wait();
 
     std::vector<uint8_t> pixels(size_t(extent.width) * extent.height * 4);
-    graph.getBuffer(buffer, 0).download(pixels.data(), pixels.size());
+    graph.getBuffer(buffer).download(pixels.data(), pixels.size());
     if (format == vk::Format::eB8G8R8A8Srgb || format == vk::Format::eB8G8R8A8Unorm)
         for (size_t offset = 0; offset < pixels.size(); offset += 4)
             std::swap(pixels[offset], pixels[offset + 2]);

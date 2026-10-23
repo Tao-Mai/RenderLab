@@ -12,7 +12,7 @@ public:
     void init(VulkanContext& vulkan);
     void reset() noexcept;
     void wait();
-    void submit(vk::Semaphore renderFinished, vk::PipelineStageFlags waitStages) const;
+    void submit(vk::Semaphore renderFinished, vk::PipelineStageFlags2 waitStages) const;
     [[nodiscard]] const vk::raii::CommandPool& commandPoolHandle() const { return graphicsCommandPool; }
     [[nodiscard]] vk::raii::CommandBuffer&     commandBufferHandle() { return graphicsCommandBuffer; }
     [[nodiscard]] vk::Semaphore                imageAvailableSemaphore() const { return *imageAvailable; }

@@ -215,7 +215,7 @@ void MaterialTable::upload(const VulkanContext& vulkan, uint32_t frameIndex)
     else
         std::memcpy(upload.data.data(), materials.data(), materials.size() * sizeof(MaterialData));
 
-    const auto&                           buffer        = graph->getBuffer(materialBuffer, 0);
+    const auto&                           buffer        = graph->getBuffer(materialBuffer);
     const bool                            bufferChanged = frame.bufferRevision != graph->bufferRevision(materialBuffer);
     const vk::DescriptorBufferInfo        bufferInfo{.buffer = buffer.handle(), .range = buffer.size()};
     std::array<vk::WriteDescriptorSet, 3> writes;

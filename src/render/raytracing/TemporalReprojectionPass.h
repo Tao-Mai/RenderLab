@@ -13,32 +13,23 @@ public:
     };
 
     Output setup(RenderGraph& graph, const PassSetup& setup, RayTracingPass::Output input);
-    void writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
+    void   writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
     void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame);
 
 private:
-    struct HistoryImage
-    {
-        vk::raii::DeviceMemory memory = nullptr;
-        vk::raii::Image image = nullptr;
-        std::unique_ptr<Image> views;
-        RenderGraph::ImageHandle handle;
-        RenderGraph::ImageAccess state;
-    };
-
-    RayTracingPass::Output input;
-    RenderGraph::ImageHandle color;
-    std::array<std::unique_ptr<HistoryImage>, 4> history;
-    vk::Extent3D extent{};
-    DescriptorSetLayout descriptorSetLayout;
-    vk::PipelineLayout pipelineLayout;
-    vk::raii::Pipeline pipeline = nullptr;
-    vk::raii::DescriptorSet descriptorSet = nullptr;
-    glm::mat4 previousViewProjection{1.0f};
-    glm::vec4 previousViewport{};
-    glm::vec4 previousDepthRow{};
-    uint32_t writeLayer = 0;
-    bool hasHistory = false;
+    RayTracingPass::Output                  input;
+    RenderGraph::ImageHandle                color;
+    std::array<RenderGraph::ImageHandle, 4> history;
+    vk::Extent3D                            extent{};
+    DescriptorSetLayout                     descriptorSetLayout;
+    vk::PipelineLayout                      pipelineLayout;
+    vk::raii::Pipeline                      pipeline      = nullptr;
+    vk::raii::DescriptorSet                 descriptorSet = nullptr;
+    glm::mat4                               previousViewProjection{1.0f};
+    glm::vec4                               previousViewport{};
+    glm::vec4                               previousDepthRow{};
+    uint32_t                                writeLayer = 0;
+    bool                                    hasHistory = false;
 
     void createPipeline(const VulkanContext& vulkan);
 };

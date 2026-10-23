@@ -2,10 +2,8 @@
 #include "render/FrameData.h"
 #include "render/RenderView.h"
 
-#include "core/Context.h"
 #include "render/RenderContext.h"
 #include "render/RendererConfig.h"
-#include "render/device/Memory.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/resource/GpuShader.h"
@@ -62,55 +60,23 @@ vk::ImageView imageView(RenderGraph& graph, RenderGraph::ImageHandle image)
 TemporalReprojectionPass::Output
 TemporalReprojectionPass::setup(RenderGraph& graph, const PassSetup& setup, RayTracingPass::Output source)
 {
-    input                 = source;
-    const auto  newExtent = graph.imageInfo(input.rayImage).extent;
-    const auto& vulkan    = setup.vulkan;
-    const auto& device    = vulkan.deviceHandle();
+    input              = source;
+    extent             = graph.imageInfo(input.rayImage).extent;
+    const auto& vulkan = setup.vulkan;
     CHECK(vulkan.supportedFeatures().shaderStorageImageExtendedFormats);
     for (size_t index = 0; index < history.size(); ++index)
     {
-        RenderGraph::ImageCreateInfo info{
+        CHECK(
+            vulkan.physicalDeviceHandle().getFormatProperties(kHistoryFormats[index]).optimalTilingFeatures &
+            vk::FormatFeatureFlagBits::eStorageImage
+        );
+        history[index] = graph.write(graph.createImage({
             .format      = kHistoryFormats[index],
-            .extent      = newExtent,
+            .extent      = extent,
             .arrayLayers = 2,
-        };
-        if (!history[index] || newExtent != extent)
-        {
-            CHECK(
-                vulkan.physicalDeviceHandle().getFormatProperties(info.format).optimalTilingFeatures &
-                vk::FormatFeatureFlagBits::eStorageImage
-            );
-            auto image              = std::make_unique<HistoryImage>();
-            image->image            = vkCheck(device.createImage({
-                           .imageType     = vk::ImageType::e2D,
-                           .format        = info.format,
-                           .extent        = newExtent,
-                           .mipLevels     = 1,
-                           .arrayLayers   = 2,
-                           .samples       = vk::SampleCountFlagBits::e1,
-                           .tiling        = vk::ImageTiling::eOptimal,
-                           .usage         = vk::ImageUsageFlagBits::eStorage,
-                           .sharingMode   = vk::SharingMode::eExclusive,
-                           .initialLayout = vk::ImageLayout::eUndefined,
-            }));
-            const auto requirements = image->image.getMemoryRequirements();
-            image->memory           = vkCheck(device.allocateMemory({
-                          .allocationSize  = requirements.size,
-                          .memoryTypeIndex = vulkan_memory::findType(
-                    vulkan.physicalDeviceHandle(),
-                    requirements.memoryTypeBits,
-                    vk::MemoryPropertyFlagBits::eDeviceLocal
-                ),
-            }));
-            vkCheck(image->image.bindMemory(*image->memory, 0));
-            image->views   = std::make_unique<Image>(device, *image->image);
-            history[index] = std::move(image);
-        }
-        auto& image  = *history[index];
-        image.handle = graph.write(graph.importImage(*image.views, info, image.state));
-        graph.use(image.handle, kHistoryAccess);
+        }));
+        graph.use(history[index], kHistoryAccess);
     }
-    extent     = newExtent;
     hasHistory = false;
     writeLayer = 0;
 
@@ -133,7 +99,7 @@ TemporalReprojectionPass::setup(RenderGraph& graph, const PassSetup& setup, RayT
     );
     if (!*pipeline)
         createPipeline(vulkan);
-    return {color, history[3]->handle};
+    return {color, history[3]};
 }
 
 void TemporalReprojectionPass::createPipeline(const VulkanContext& vulkan)
@@ -173,16 +139,8 @@ void TemporalReprojectionPass::createPipeline(const VulkanContext& vulkan)
 
 void TemporalReprojectionPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
 {
-    const std::array handles{
-        input.rayImage,
-        input.depth,
-        input.worldNormal,
-        history[0]->handle,
-        history[1]->handle,
-        history[2]->handle,
-        history[3]->handle,
-        color
-    };
+    const std::array
+        handles{input.rayImage, input.depth, input.worldNormal, history[0], history[1], history[2], history[3], color};
     std::array<vk::DescriptorImageInfo, 8> images;
     std::array<vk::WriteDescriptorSet, 8>  writes;
     for (uint32_t binding = 0; binding < handles.size(); ++binding)
@@ -202,7 +160,7 @@ void TemporalReprojectionPass::writeDescriptorSet(RenderGraph& graph, const Pass
     setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});
 }
 
-void TemporalReprojectionPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame)
+void TemporalReprojectionPass::execute(RenderGraph&, vk::raii::CommandBuffer& commands, const PassFrame& frame)
 {
     const auto&     settings = frame.setup.config.feature.rayTracing;
     const auto&     viewport = frame.view.viewport;
@@ -231,8 +189,6 @@ void TemporalReprojectionPass::execute(RenderGraph& graph, vk::raii::CommandBuff
         (extent.height + kWorkgroupSize - 1) / kWorkgroupSize,
         1
     );
-    for (auto& image : history)
-        image->state = graph.imageState(image->handle);
     previousViewProjection = frame.view.uniforms.viewProjection;
     previousViewport       = currentViewport;
     previousDepthRow       = currentDepthRow;

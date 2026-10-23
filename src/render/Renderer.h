@@ -93,6 +93,7 @@ private:
     std::unique_ptr<Passes>   passes;
     RenderGraph::BufferHandle pickingReadback;
     RenderGraph::BufferHandle lightBuffer;
+    RenderGraph::ImageHandle  presentTarget;
     void                      setupRenderGraph();
     void                      initLightingResources();
     void                      createShadowSampler();

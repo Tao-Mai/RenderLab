@@ -22,7 +22,6 @@
 
 class AccelerationStructure;
 class GpuProfiler;
-class Swapchain;
 class VulkanContext;
 
 class RenderGraph
@@ -44,12 +43,6 @@ public:
         ResourceHandle id = kInvalidHandle;
     };
 
-    enum class ResourceScope
-    {
-        Shared,
-        PerFrame
-    };
-
     struct ImageCreateInfo
     {
         vk::ImageCreateFlags flags;
@@ -65,7 +58,6 @@ public:
         vk::DeviceSize          size             = 0;
         vk::BufferUsageFlags    usage;
         vk::MemoryPropertyFlags memoryProperties = vk::MemoryPropertyFlagBits::eDeviceLocal;
-        ResourceScope           scope            = ResourceScope::Shared;
     };
 
     struct ImageAccess
@@ -81,7 +73,7 @@ public:
         vk::AccessFlags2        access;
     };
 
-    void init(VulkanContext& vulkan, Swapchain& swapchain);
+    void init(VulkanContext& vulkan);
     void reset() noexcept;
     void compile(const PassSetup& setup);
     // Call after the frame fence completes, before global/pass preparation.
@@ -93,6 +85,9 @@ public:
     auto addPass(T& pass, const PassSetup& setup, Args&&... args);
 
     ImageHandle createImage(ImageCreateInfo info);
+    // Declare the format and extent at setup; bind the actual image before execution.
+    ImageHandle createExternalImage(ImageCreateInfo info);
+    void bindImage(ImageHandle handle, Image& image);
     BufferHandle createBuffer(BufferCreateInfo info);
 
     struct BufferUpload
@@ -106,14 +101,7 @@ public:
 
     // Tracks a pass-owned AS or BLAS collection; allocation remains with the owner.
     AccelerationStructureHandle createAccelerationStructure(MemoryAccess initial);
-    ImageHandle importSwapchain();
 
-    // Borrowed resources must outlive the graph and all submitted frames.
-    // Owners provide the initial access; graph preserves state between executions.
-    ImageHandle importImage(Image& image, ImageCreateInfo info, ImageAccess initial);
-    BufferHandle importBuffer(Buffer& buffer, MemoryAccess initial);
-    [[nodiscard]] ImageAccess imageState(ImageHandle image) const;
-    [[nodiscard]] MemoryAccess bufferState(BufferHandle buffer, uint32_t frameIndex) const;
     [[nodiscard]] uint64_t bufferRevision(BufferHandle buffer) const;
 
     ImageHandle write(ImageHandle image);
@@ -125,7 +113,7 @@ public:
     void use(AccelerationStructureHandle structure, MemoryAccess access);
 
     [[nodiscard]] Image&                 getImage(ImageHandle image);
-    [[nodiscard]] Buffer&                getBuffer(BufferHandle buffer, uint32_t frameIndex);
+    [[nodiscard]] Buffer&                getBuffer(BufferHandle buffer);
     // Bind pass-owned objects for downstream lookup; the pass retains ownership.
     void bindAccelerationStructures(
         AccelerationStructureHandle handle, std::span<AccelerationStructure* const> structures
@@ -134,11 +122,11 @@ public:
     getAccelerationStructure(AccelerationStructureHandle handle, size_t index = 0);
     [[nodiscard]] const ImageCreateInfo& imageInfo(ImageHandle image);
     [[nodiscard]] vk::Extent2D imageExtent(ImageHandle image);
+    [[nodiscard]] vk::PipelineStageFlags2 firstUseStages(ImageHandle image) const;
 
     void execute(
         vk::raii::CommandBuffer& commandBuffer,
         const PassFrame& frame,
-        uint32_t         imageIndex,
         GpuProfiler&     gpuProfiler,
         Profiler*        profiler
     );
@@ -183,12 +171,10 @@ private:
         BufferCreateInfo            bufferInfo;
         vk::ImageUsageFlags         imageUsage;
         vk::BufferUsageFlags        bufferUsage;
-        std::vector<vk::Image>       externalImages;
-        Image*                      importedImage = nullptr;
-        Buffer*                     importedBuffer = nullptr;
         std::vector<AccelerationStructure*> accelerationStructures;
         ImageAccess                 initialState;
-        bool                        swapchainIndexed = false;
+        vk::PipelineStageFlags2     firstUseStages;
+        bool                        externalImage = false;
         std::shared_ptr<Allocation> allocation;
     };
     struct Resource
@@ -213,14 +199,11 @@ private:
     };
 
     VulkanContext*                       deviceContext   = nullptr;
-    Swapchain*                           targetSwapchain = nullptr;
     std::vector<std::unique_ptr<PassNode>> nodeStorage;
     std::vector<PassNode*>                nodes;
     std::vector<PassNode*>                sortedNodes;
     PassNode*                            setupNode       = nullptr;
     std::vector<Resource>                resources;
-    uint32_t                             currentImage    = 0;
-    ImageHandle                          swapchainImage;
     std::array<StagingPool, maxFramesInFlight> stagingPools;
     uint32_t currentFrameIndex = 0;
 
@@ -232,11 +215,10 @@ private:
     void recordUploads(vk::raii::CommandBuffer& commandBuffer);
     ResourceData&       resolveResource(ResourceHandle handle);
     const ResourceData& resolveResource(ResourceHandle handle) const;
-    void useResource(vk::raii::CommandBuffer& commandBuffer, const ResourceUse& use, uint32_t frameIndex);
+    void useResource(vk::raii::CommandBuffer& commandBuffer, const ResourceUse& use);
     void transitionResources(
-        vk::raii::CommandBuffer& commandBuffer, const std::vector<ResourceUse>& uses, uint32_t frameIndex
+        vk::raii::CommandBuffer& commandBuffer, const std::vector<ResourceUse>& uses
     );
-    [[nodiscard]] uint32_t instanceIndex(const ResourceData& resource, uint32_t frameIndex) const;
 };
 
 template <class T, class... Args>

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/Image.h"
+
 #include <cstdint>
 #include <vector>
 
@@ -11,14 +13,13 @@ class Window;
 class Swapchain
 {
 public:
-    void init(VulkanContext& vulkan, Window& window);
-    void reset() noexcept;
+    void                                    init(VulkanContext& vulkan, Window& window);
+    void                                    reset() noexcept;
     [[nodiscard]] vk::ResultValue<uint32_t> acquire(vk::Semaphore imageAvailable) const;
     [[nodiscard]] vk::Result                present(uint32_t imageIndex) const;
 
     [[nodiscard]] const vk::raii::SwapchainKHR& handle() const { return swapChain; }
-    [[nodiscard]] vk::Image                     image(uint32_t index) const;
-    [[nodiscard]] vk::ImageView                 imageView(uint32_t index) const;
+    [[nodiscard]] Image&                        image(uint32_t index) { return swapChainImages[index]; }
     [[nodiscard]] vk::Semaphore                 renderFinishedSemaphore(uint32_t index) const;
     [[nodiscard]] vk::SurfaceFormatKHR          surfaceFormat() const { return swapChainSurfaceFormat; }
     [[nodiscard]] vk::Extent2D                  extent() const { return swapChainExtent; }
@@ -29,20 +30,15 @@ private:
     VulkanContext*                   vulkan    = nullptr;
     Window*                          window    = nullptr;
     vk::raii::SwapchainKHR           swapChain = nullptr;
-    std::vector<vk::Image>           swapChainImages;
+    std::vector<Image>               swapChainImages;
     vk::SurfaceFormatKHR             swapChainSurfaceFormat;
     vk::Extent2D                     swapChainExtent;
-    std::vector<vk::raii::ImageView> swapChainImageViews;
     std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
     uint32_t                         swapChainMinImageCount = 0;
 
-    void            createSwapChain();
-    void            createImageViews();
-    static uint32_t chooseSwapMinImageCount(
-        const vk::SurfaceCapabilitiesKHR& capabilities);
-    static vk::SurfaceFormatKHR chooseSwapSurfaceFormat(
-        const std::vector<vk::SurfaceFormatKHR>& formats);
-    static vk::PresentModeKHR chooseSwapPresentMode(
-        const std::vector<vk::PresentModeKHR>& modes);
-    vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities);
+    void                        createSwapChain();
+    static uint32_t             chooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR& capabilities);
+    static vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& formats);
+    static vk::PresentModeKHR   chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& modes);
+    vk::Extent2D                chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities);
 };

@@ -34,6 +34,13 @@ RenderGraph::BufferHandle RenderGraph::createBuffer(BufferCreateInfo info)
     return {id};
 }
 
+RenderGraph::ImageHandle RenderGraph::createExternalImage(ImageCreateInfo info)
+{
+    const auto image                        = createImage(info);
+    resolveResource(image.id).externalImage = true;
+    return image;
+}
+
 RenderGraph::AccelerationStructureHandle RenderGraph::createAccelerationStructure(MemoryAccess initial)
 {
     const auto id = static_cast<ResourceHandle>(resources.size());
@@ -269,20 +276,17 @@ void RenderGraph::compileNodes()
     for (const auto& [node, count] : remaining)
         CHECK(node->prev.empty() && node->next.empty());
 
-    // Seed swapchain synchronization from its first retained use.
     for (auto& entry : resources)
-        if (entry.data && entry.data->swapchainIndexed)
-            entry.data->initialState.stages = {};
+        if (entry.data && entry.data->externalImage)
+            entry.data->firstUseStages = {};
 
-    for (auto* node : sortedNodes)
-    {
+    for (const auto* node : sortedNodes)
         for (const auto& use : node->uses)
         {
             auto& resource = resolveResource(use.resource);
-            if (resource.swapchainIndexed && !resource.initialState.stages)
-                resource.initialState.stages = use.access.stages;
+            if (resource.externalImage && !resource.firstUseStages)
+                resource.firstUseStages = use.access.stages;
         }
-    }
 }
 
 const RenderGraph::ResourceData& RenderGraph::resolveResource(ResourceHandle handle) const

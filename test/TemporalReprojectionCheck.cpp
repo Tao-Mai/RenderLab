@@ -17,6 +17,8 @@
 
 namespace
 {
+using Pixel = std::array<uint16_t, 4>;
+
 struct SourcePass
 {
     RayTracingPass::Output output;
@@ -69,9 +71,8 @@ struct ReadbackPass
     {
         image  = source;
         buffer = graph.write(graph.createBuffer(
-            {.size             = sizeof(uint16_t) * 4,
-             .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-             .scope            = RenderGraph::ResourceScope::PerFrame}
+            {.size             = sizeof(Pixel) * maxFramesInFlight,
+             .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent}
         ));
         graph.use(
             image,
@@ -89,6 +90,7 @@ struct ReadbackPass
     {
         const auto                extent = graph.imageInfo(image).extent;
         const vk::BufferImageCopy copy{
+            .bufferOffset     = sizeof(Pixel) * frame.frameIndex,
             .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
             .imageOffset      = {static_cast<int>(extent.width / 2), static_cast<int>(extent.height / 2), 0},
             .imageExtent      = {1, 1, 1},
@@ -96,7 +98,7 @@ struct ReadbackPass
         commands.copyImageToBuffer(
             graph.getImage(image).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
-            graph.getBuffer(buffer, frame.frameIndex).handle(),
+            graph.getBuffer(buffer).handle(),
             copy
         );
     }
@@ -119,7 +121,7 @@ void check(Renderer& renderer)
     for (auto& frame : data)
         frame.init(vulkan, *renderContext().device);
     RenderGraph graph;
-    graph.init(vulkan, renderer.swapchainHandle());
+    graph.init(vulkan);
     SourcePass               source;
     TemporalReprojectionPass temporal;
     ReadbackPass             readback;
@@ -134,7 +136,6 @@ void check(Renderer& renderer)
         buffer           = graph.addPass(readback, setup, color);
         graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
         graph.compile(setup);
-        CHECK(graph.getBuffer(buffer, 0).handle() != graph.getBuffer(buffer, 1).handle());
     };
     build();
     const auto extent = renderer.swapchainHandle().extent();
@@ -152,7 +153,7 @@ void check(Renderer& renderer)
         auto& commands = frames[index].commandBufferHandle();
         vkCheck(commands.reset());
         vkCheck(commands.begin({}));
-        graph.execute(commands, execution, 0, frames[index].gpuProfiler(), nullptr);
+        graph.execute(commands, execution, frames[index].gpuProfiler(), nullptr);
         vkCheck(commands.end());
         const auto command = *commands;
         vkCheck(vulkan.deviceHandle().resetFences(frames[index].drawFenceHandle()));
@@ -164,10 +165,12 @@ void check(Renderer& renderer)
     };
     const auto read = [&](uint32_t index)
     {
-        frames[index].wait();
-        std::array<uint16_t, 4> pixel;
-        graph.getBuffer(buffer, index).download(pixel.data(), sizeof(pixel));
-        return glm::unpackHalf1x16(pixel[0]);
+        // Download all test-owned slots after every pending writer has completed.
+        for (auto& frame : frames)
+            frame.wait();
+        std::array<Pixel, maxFramesInFlight> pixels;
+        graph.getBuffer(buffer).download(pixels.data(), sizeof(pixels));
+        return glm::unpackHalf1x16(pixels[index][0]);
     };
     const auto sample = [&](float value) { return read(submit(value)); };
     for (int count = 1; count <= 10; ++count)

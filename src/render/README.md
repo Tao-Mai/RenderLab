@@ -52,8 +52,8 @@
 - 每个在途槽位有一个持久映射的 staging pool；Fence 完成后重置分配游标，prepare 取得 offset 后写入数据，Graph 执行时复制到 SSBO。
 - Graph 创建的图像跨帧共享，直接通过 `getImage(handle)` 访问；缓冲默认跨帧共享，阴影图不按 Frames-in-flight 复制。
 - 同一队列上追踪资源最后访问，下一帧首次使用前插入 Barrier；不意味着前后帧可无约束并行写同一资源。
-- 回读缓冲使用 PerFrame；交换链图像按获取到的 Image Index 选择。
-- 历史重投影资源由 Pass 持有，颜色 / 深度 / 法线 / 亮度矩各使用双层 Ping-pong。
+- Graph Buffer 统一跨帧共享，通过 `getBuffer(handle)` 访问；拾取等待提交完成后立即回读。Renderer 根据 acquire 结果选择交换链 Image 并绑定外部目标，Graph 不感知 imageIndex；ImageView 缓存由 Swapchain 中的 Image 持有。
+- 历史重投影资源由 Graph 创建并持有，Pass 保存 handle；颜色 / 深度 / 法线 / 亮度矩各使用双层 Ping-pong，图重建时重置历史。
 - Device、ShaderManager、RenderResourceManager、MaterialTable 通过 RenderContext 聚合；共享 Layout 在初始化时预创建。Device 缓存并持有全部 Pipeline Layout 和光栅 Pipeline，Pass 只保存 Pipeline Layout 句柄；私有 Descriptor Set Layout 仍由各 Pass 持有。布局匹配交给 Vulkan 验证层检查。
 
 ## 代码导航

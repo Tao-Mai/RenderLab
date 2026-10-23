@@ -48,7 +48,7 @@ Engine：场景 / 编辑器 Tick
 ## 渲染与资源
 
 - `VulkanContext` 管理设备与队列，`Swapchain` 管理呈现资源。
-- Renderer 导入交换链并将普通 ImageHandle 传给 Pass。PassSetup 提供独立的 renderExtent，Pass 从图像描述获取目标尺寸和格式。
+- Renderer 声明外部呈现目标的 ImageHandle，acquire 后只绑定本帧 Image；图像选择和呈现由 Renderer / Swapchain 管理。Graph 执行时初始化外部目标的同步状态，不接收 imageIndex。PassSetup 提供独立的 renderExtent，Pass 从图像描述获取目标尺寸和格式。
 - `FrameContext` 管理命令与同步；`FrameData` 仅持有逐帧 UBO、公共 Descriptor Set 和绑定版本。
 - Renderer 管理共享光源 Buffer handle；ShadowPass 管理阴影 CPU 数据与阴影 Buffer handle，底层 SSBO 由 Graph 分配和同步。
 - Renderer 持有环境纹理、LUT 引用和阴影 sampler；图编译后将阴影视图交给 FrameData 写入，场景环境图改变时更新环境绑定。
@@ -56,7 +56,7 @@ Engine：场景 / 编辑器 Tick
 - Pass 直接使用 Vulkan API；共享场景绘制函数位于 `SceneDraw`，它不是额外的资源管理层。
 - Graph 默认共享阴影图、深度和颜色中间结果；跨帧访问由同一队列上的 Barrier 同步。
 - 材质、灯光、阴影与光追命中 SSBO 在 setup 申请，跨帧共用；prepare 从各 FIF 的 staging pool 线性分配并写入，execute 录制复制与前后 Barrier。容量增长时等待 GPU 完成后重新分配，并刷新受影响的 Buffer 绑定。
-- CPU 回读缓冲显式按帧分配；时域历史使用独立的双层 Ping-pong 资源。
+- Graph Buffer 统一跨帧共享；拾取在等待本次提交完成后立即回读。时域历史由 Graph 创建并持有，使用双层 Ping-pong 资源，图重建时重置历史。
 
 详见 [RenderGraph](../src/render/Arch.md) 与 [Descriptor / Pipeline Layout](RenderLayout.md)。
 

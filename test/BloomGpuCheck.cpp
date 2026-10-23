@@ -86,8 +86,7 @@ struct ReadPixelPass
         source = image;
         buffer = graph.write(graph.createBuffer(
             {.size             = sizeof(uint16_t) * 4,
-             .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-             .scope            = RenderGraph::ResourceScope::PerFrame}
+             .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent}
         ));
         graph.use(
             source,
@@ -112,7 +111,7 @@ struct ReadPixelPass
         commandBuffer.copyImageToBuffer(
             graph.getImage(source).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
-            graph.getBuffer(buffer, execution.frameIndex).handle(),
+            graph.getBuffer(buffer).handle(),
             copy
         );
     }
@@ -155,7 +154,7 @@ int main(int argc, char** argv)
     for (auto& frame : frameData)
         frame.init(vulkan, *renderContext().device);
     RenderGraph graph;
-    graph.init(vulkan, renderer.swapchainHandle());
+    graph.init(vulkan);
     const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), frameData, context().config->rendererConfig()};
     HdrSourcePass   source;
     ReadPixelPass   readback;
@@ -189,8 +188,7 @@ int main(int argc, char** argv)
         auto& recording = frames[0].commandBufferHandle();
         vkCheck(recording.reset());
         vkCheck(recording.begin({}));
-        graph
-            .execute(recording, {setup, frameData[0], view, {}, {}, 0}, 0, frames[0].gpuProfiler(), context().profiler);
+        graph.execute(recording, {setup, frameData[0], view, {}, {}, 0}, frames[0].gpuProfiler(), context().profiler);
         vkCheck(recording.end());
         const auto command = *frames[0].commandBufferHandle();
         vkCheck(vulkan.queueHandle().submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &command}));
@@ -216,7 +214,7 @@ int main(int argc, char** argv)
         CHECK(bloomPassCount == expectedDraws);
 
         std::array<uint16_t, 4> pixel;
-        graph.getBuffer(buffer, 0).download(pixel.data(), sizeof(pixel));
+        graph.getBuffer(buffer).download(pixel.data(), sizeof(pixel));
         const glm::vec3 result{
             glm::unpackHalf1x16(pixel[0]),
             glm::unpackHalf1x16(pixel[1]),

@@ -27,6 +27,8 @@
 
 namespace
 {
+using Pixel = std::array<uint16_t, 4>;
+
 void checkPipelineLayoutCache()
 {
     auto&      device = *renderContext().device;
@@ -61,9 +63,8 @@ struct PixelReadbackPass
     {
         image  = source;
         buffer = graph.createBuffer({
-            .size             = sizeof(uint16_t) * 4,
+            .size             = sizeof(Pixel) * maxFramesInFlight,
             .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            .scope            = RenderGraph::ResourceScope::PerFrame,
         });
         buffer = graph.write(buffer);
         graph.use(
@@ -85,6 +86,7 @@ struct PixelReadbackPass
     {
         const auto                extent = graph.imageInfo(image).extent;
         const vk::BufferImageCopy region{
+            .bufferOffset     = sizeof(Pixel) * execution.frameIndex,
             .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
             .imageOffset      = {static_cast<int32_t>(extent.width / 2), static_cast<int32_t>(extent.height / 2), 0},
             .imageExtent      = {1, 1, 1},
@@ -92,7 +94,7 @@ struct PixelReadbackPass
         commandBuffer.copyImageToBuffer(
             graph.getImage(image).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
-            graph.getBuffer(buffer, execution.frameIndex).handle(),
+            graph.getBuffer(buffer).handle(),
             region
         );
     }
@@ -118,7 +120,7 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
     PixelReadbackPass    readback;
     EndPass              end;
     RenderSystem         renderSystem;
-    graph.init(vulkan, renderer.swapchainHandle());
+    graph.init(vulkan);
     const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), frameData, context().config->rendererConfig()};
     const auto      originalFeature = context().config->rendererConfig().feature;
     const auto      originalPath    = context().config->rendererConfig().renderPath;
@@ -183,18 +185,17 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
             auto& recording = frames[index].commandBufferHandle();
             vkCheck(recording.reset());
             vkCheck(recording.begin({}));
-            graph.execute(recording, execution, 0, frames[index].gpuProfiler(), context().profiler);
+            graph.execute(recording, execution, frames[index].gpuProfiler(), context().profiler);
             vkCheck(recording.end());
             const auto           commandBuffer = *recording;
             const vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &commandBuffer};
             vkCheck(vulkan.queueHandle().submit(submitInfo));
         }
         vkCheck(vulkan.queueHandle().waitIdle());
-        std::array<uint16_t, 4> pixel;
-        graph.getBuffer(buffer, 0).download(pixel.data(), sizeof(pixel));
-        std::array<uint16_t, 4> nextPixel;
-        graph.getBuffer(buffer, 1).download(nextPixel.data(), sizeof(nextPixel));
-        CHECK(pixel == nextPixel);
+        std::array<Pixel, maxFramesInFlight> pixels;
+        graph.getBuffer(buffer).download(pixels.data(), sizeof(pixels));
+        CHECK(pixels[0] == pixels[1]);
+        const auto& pixel = pixels[0];
         return glm::vec3{glm::unpackHalf1x16(pixel[0]), glm::unpackHalf1x16(pixel[1]), glm::unpackHalf1x16(pixel[2])};
     };
     const auto compare = [](glm::vec3 a, glm::vec3 b)

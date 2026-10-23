@@ -96,7 +96,7 @@ inline vk::raii::Sampler writeTestLighting(
     }
     const auto bufferInfo = [&](RenderGraph::BufferHandle handle)
     {
-        const auto& buffer = graph.getBuffer(handle, 0);
+        const auto& buffer = graph.getBuffer(handle);
         return vk::DescriptorBufferInfo{.buffer = buffer.handle(), .range = buffer.size()};
     };
     const std::array shadowBuffers{
@@ -107,7 +107,7 @@ inline vk::raii::Sampler writeTestLighting(
     };
     for (auto& frame : setup.frameData)
     {
-        frame.writeLightBufferDescriptor(graph.getBuffer(lights, 0), graph.bufferRevision(lights));
+        frame.writeLightBufferDescriptor(graph.getBuffer(lights), graph.bufferRevision(lights));
         frame.writeShadowBufferDescriptors(shadowBuffers);
         frame.writeShadowDescriptors(
             view(shadow.pointLightShadowMap, vk::ImageViewType::eCubeArray),

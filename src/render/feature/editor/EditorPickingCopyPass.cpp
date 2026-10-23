@@ -19,7 +19,6 @@ EditorPickingCopyPass::setup(RenderGraph& graph, const PassSetup& setup, RenderG
     readback = graph.createBuffer({
         .size             = sizeof(uint32_t),
         .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        .scope            = RenderGraph::ResourceScope::PerFrame,
     });
     readback = graph.write(readback);
     graph.use(
@@ -50,7 +49,7 @@ void EditorPickingCopyPass::execute(
     commandBuffer.copyImageToBuffer(
         graph.getImage(pickingImage).handle(),
         vk::ImageLayout::eTransferSrcOptimal,
-        graph.getBuffer(readback, execution.frameIndex).handle(),
+        graph.getBuffer(readback).handle(),
         copyRegion
     );
 }

@@ -325,7 +325,7 @@ void OfflinePathTracingPass::prepareLights(RenderGraph& graph, const PassFrame& 
         std::memcpy(upload.data.data(), lights.data(), bytes);
     }
 
-    const auto& buffer = graph.getBuffer(lightData, 0);
+    const auto& buffer = graph.getBuffer(lightData);
     if (frame.lightBufferRevision != graph.bufferRevision(lightData))
     {
         const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.size()};
@@ -367,7 +367,7 @@ void OfflinePathTracingPass::prepareHits(RenderGraph& graph, const PassFrame& ex
     if (items.empty())
         std::construct_at(hits, RayTracingHitData{});
 
-    const auto& buffer = graph.getBuffer(hitData, 0);
+    const auto& buffer = graph.getBuffer(hitData);
     if (frame.hitBufferRevision != graph.bufferRevision(hitData))
     {
         const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.size()};
@@ -420,7 +420,7 @@ void OfflinePathTracingPass::writeDescriptorSet(RenderGraph& graph, const PassSe
         };
     };
     const auto                     outputInfo   = imageInfo(rayImage);
-    const auto&                    accumulation = graph.getBuffer(accumulationHandle, 0);
+    const auto&                    accumulation = graph.getBuffer(accumulationHandle);
     const vk::DescriptorBufferInfo accumulationInfo{.buffer = accumulation.handle(), .range = accumulation.size()};
     const std::array               writes{
         vk::WriteDescriptorSet{

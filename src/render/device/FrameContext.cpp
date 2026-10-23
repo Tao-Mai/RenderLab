@@ -48,18 +48,26 @@ void FrameContext::wait()
     profiling.collect(context().profiler);
 }
 
-void FrameContext::submit(vk::Semaphore renderFinished, vk::PipelineStageFlags waitStages) const
+void FrameContext::submit(vk::Semaphore renderFinished, vk::PipelineStageFlags2 waitStages) const
 {
     DCHECK(vulkan);
     vkCheck(vulkan->deviceHandle().resetFences(*drawFence));
-    const vk::SubmitInfo submitInfo{
-        .waitSemaphoreCount   = 1,
-        .pWaitSemaphores      = &*imageAvailable,
-        .pWaitDstStageMask    = &waitStages,
-        .commandBufferCount   = 1,
-        .pCommandBuffers      = &*graphicsCommandBuffer,
-        .signalSemaphoreCount = 1,
-        .pSignalSemaphores    = &renderFinished,
+    const vk::SemaphoreSubmitInfo wait{
+        .semaphore = *imageAvailable,
+        .stageMask = waitStages,
     };
-    vkCheck(vulkan->queueHandle().submit(submitInfo, *drawFence));
+    const vk::CommandBufferSubmitInfo commands{.commandBuffer = *graphicsCommandBuffer};
+    const vk::SemaphoreSubmitInfo     signal{
+            .semaphore = renderFinished,
+            .stageMask = vk::PipelineStageFlagBits2::eAllCommands,
+    };
+    const vk::SubmitInfo2 submitInfo{
+        .waitSemaphoreInfoCount   = 1,
+        .pWaitSemaphoreInfos      = &wait,
+        .commandBufferInfoCount   = 1,
+        .pCommandBufferInfos      = &commands,
+        .signalSemaphoreInfoCount = 1,
+        .pSignalSemaphoreInfos    = &signal,
+    };
+    vkCheck(vulkan->queueHandle().submit2(submitInfo, *drawFence));
 }

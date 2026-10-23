@@ -32,7 +32,6 @@ struct PixelReadbackPass
         buffer = graph.write(graph.createBuffer({
             .size             = sizeof(uint16_t) * 4,
             .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            .scope            = RenderGraph::ResourceScope::PerFrame,
         }));
         graph.use(
             image,
@@ -58,7 +57,7 @@ struct PixelReadbackPass
         commandBuffer.copyImageToBuffer(
             graph.getImage(image).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
-            graph.getBuffer(buffer, execution.frameIndex).handle(),
+            graph.getBuffer(buffer).handle(),
             region
         );
     }
@@ -78,7 +77,7 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
     PixelReadbackPass      readback;
     EndPass                end;
     RenderSystem           system;
-    graph.init(vulkan, renderer.swapchainHandle());
+    graph.init(vulkan);
     renderContext().materialTable->setup(graph);
     const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), {&data, 1}, context().config->rendererConfig()};
     const auto      blas       = graph.addPass(blasBuild, setup);
@@ -100,14 +99,14 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
         auto& recording = frame.commandBufferHandle();
         vkCheck(recording.reset());
         vkCheck(recording.begin({}));
-        graph.execute(recording, execution, 0, frame.gpuProfiler(), context().profiler);
+        graph.execute(recording, execution, frame.gpuProfiler(), context().profiler);
         vkCheck(recording.end());
         const auto           commandBuffer = *frame.commandBufferHandle();
         const vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &commandBuffer};
         vkCheck(vulkan.queueHandle().submit(submitInfo));
         vkCheck(vulkan.queueHandle().waitIdle());
         std::array<uint16_t, 4> pixel;
-        graph.getBuffer(buffer, 0).download(pixel.data(), sizeof(pixel));
+        graph.getBuffer(buffer).download(pixel.data(), sizeof(pixel));
         return glm::unpackHalf1x16(pixel[0]);
     };
     const auto first = sample();

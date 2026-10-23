@@ -56,7 +56,7 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
     for (auto& frame : data)
         frame.init(vulkan, *renderContext().device);
     RenderGraph graph;
-    graph.init(vulkan, renderer.swapchainHandle());
+    graph.init(vulkan);
     renderContext().materialTable->setup(graph);
     RayTracingPass  trace;
     BlasBuildPass   blasBuild;
@@ -117,7 +117,7 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
         auto& commands = frames[index].commandBufferHandle();
         vkCheck(commands.reset());
         vkCheck(commands.begin({}));
-        graph.execute(commands, execution, 0, frames[index].gpuProfiler(), &profiler);
+        graph.execute(commands, execution, frames[index].gpuProfiler(), &profiler);
         vkCheck(commands.end());
         const auto command = *commands;
         vkCheck(vulkan.deviceHandle().resetFences(frames[index].drawFenceHandle()));

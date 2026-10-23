@@ -37,7 +37,6 @@ struct PixelReadbackPass
         buffer = graph.createBuffer({
             .size             = sizeof(uint16_t) * 4,
             .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            .scope            = RenderGraph::ResourceScope::PerFrame,
         });
         buffer = graph.write(buffer);
         graph.use(
@@ -66,7 +65,7 @@ struct PixelReadbackPass
         commandBuffer.copyImageToBuffer(
             graph.getImage(image).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
-            graph.getBuffer(buffer, execution.frameIndex).handle(),
+            graph.getBuffer(buffer).handle(),
             region
         );
     }
@@ -91,7 +90,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     PixelReadbackPass readback;
     EndPass           end;
     RenderSystem      renderSystem;
-    graph.init(vulkan, renderer.swapchainHandle());
+    graph.init(vulkan);
     const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), frameData, context().config->rendererConfig()};
     RenderGraph::BufferHandle buffer;
     const auto                rebuildGraph = [&]
@@ -130,14 +129,14 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         auto& recording = frames[0].commandBufferHandle();
         vkCheck(recording.reset());
         vkCheck(recording.begin({}));
-        graph.execute(recording, execution, 0, frames[0].gpuProfiler(), context().profiler);
+        graph.execute(recording, execution, frames[0].gpuProfiler(), context().profiler);
         vkCheck(recording.end());
         const auto           commandBuffer = *frames[0].commandBufferHandle();
         const vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &commandBuffer};
         vkCheck(vulkan.queueHandle().submit(submitInfo));
         vkCheck(vulkan.queueHandle().waitIdle());
         std::array<uint16_t, 4> pixel;
-        graph.getBuffer(buffer, 0).download(pixel.data(), sizeof(pixel));
+        graph.getBuffer(buffer).download(pixel.data(), sizeof(pixel));
         return glm::unpackHalf1x16(pixel[0]);
     };
 
