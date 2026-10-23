@@ -28,7 +28,7 @@ const auto& layout = renderContext().device->meshPipelineLayout;
 
 ## Descriptor Set Layout
 
-表中 UBO 对应 Uniform Buffer，SSBO 对应 Storage Buffer；Image 与 Sampler 分开绑定。场景与光照布局各 Binding 均为单个 Descriptor；Scene 与 Material 的阶段为 All，Lighting 为 Vertex | Fragment。
+表中 UBO 对应 Uniform Buffer，SSBO 对应 Storage Buffer；Image 与 Sampler 分开绑定。场景与光照布局各 Binding 均为单个 Descriptor；Scene 与 Material 的阶段为 All，Lighting 为 Vertex | Fragment，其中 Radiance 图像与 sampler 为 All，供光追 Miss 阶段复用。
 
 Binding 编号定义于 [ShaderData.h](../src/render/resource/ShaderData.h)。
 
@@ -59,10 +59,10 @@ Binding 编号定义于 [ShaderData.h](../src/render/resource/ShaderData.h)。
 | 12 / 13 | Sampled Image / Sampler | Irradiance 环境图 |
 | 14 / 15 | Sampled Image / Sampler | 预过滤镜面反射环境图 |
 | 16 / 17 | Sampled Image / Sampler | BRDF LUT |
-| 18 / 19 | Sampled Image / Sampler | 原始 Radiance 环境图，供天空盒及 Sheen IBL 使用 |
+| 18 / 19 | Sampled Image / Sampler | 原始 Radiance 环境图，供天空盒、Sheen IBL 及实时 / 离线光追 Miss 使用 |
 | 20 / 21 | Sampled Image / Sampler | Sheen 方向反照率 LUT |
 
-由 `meshPipelineLayout`，以及 `ShadowPass`、`SkyboxPass`、`DeferredLightingPass` 各自的 Pipeline Layout 引用，作为 Set 1。
+由 `meshPipelineLayout`，以及 `ShadowPass`、`SkyboxPass`、`DeferredLightingPass`、`RayTracingPass`、`OfflinePathTracingPass` 各自的 Pipeline Layout 引用，作为 Set 1。
 
 Shader 声明：[lighting_data.slang](../shaders/lighting_data.slang)、[scene_lighting.slang](../shaders/scene_lighting.slang)、[skybox.slang](../shaders/skybox.slang)。
 
@@ -91,7 +91,7 @@ Shader 声明：[material_data.slang](../shaders/material_data.slang)。
 
 实现：[DepthPrepass.cpp](../src/render/feature/DepthPrepass.cpp)、[SceneDraw.cpp](../src/render/feature/SceneDraw.cpp)、[ShadowPass.cpp](../src/render/feature/shadow/ShadowPass.cpp)、[SkyboxPass.cpp](../src/render/feature/SkyboxPass.cpp)。
 
-实时与离线光追的 Pipeline Layout 依次为 Scene、Lighting、Material、私有 Set；Push Constants 为 48 B，仅保留 Viewport、光源分组和采样参数，阶段为 Raygen | ClosestHit。重投影布局为 Scene、私有 Set，Push Constants 为 128 B，阶段为 Compute。
+实时与离线光追的 Pipeline Layout 依次为 Scene、Lighting、Material、私有 Set；Push Constants 为 48 B，包含 Viewport、光源分组、采样参数和 IBL 开关，阶段为 Raygen | ClosestHit | Miss。重投影布局为 Scene、私有 Set，Push Constants 为 128 B，阶段为 Compute。
 
 ## 编辑器共享 Layout
 

@@ -14,6 +14,35 @@
 
 #include <memory>
 
+inline float writeTestEnvironment(const PassSetup& setup, const std::optional<EnvironmentMapAsset::ID>& id)
+{
+    auto&          resources = *renderContext().resources;
+    TextureBinding irradiance{BuiltinAssets::Texture::kBlackCube, BuiltinAssets::Sampler::linearClamp};
+    auto           prefiltered = irradiance;
+    auto           radiance    = irradiance;
+    if (id)
+    {
+        const auto& environment = context().assetManager->get<EnvironmentMapAsset>(*id);
+        irradiance              = environment.irradiance;
+        prefiltered             = environment.prefilteredSpecular;
+        radiance                = environment.radiance;
+    }
+    const auto image = [&](const TextureBinding& binding)
+    {
+        return vk::DescriptorImageInfo{
+            .sampler     = resources.sampler(binding.samplerID),
+            .imageView   = resources.texture(binding.textureID)->imageView(),
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+        };
+    };
+    const auto irradianceInfo  = image(irradiance);
+    const auto prefilteredInfo = image(prefiltered);
+    const auto radianceInfo    = image(radiance);
+    for (auto& frame : setup.frameData)
+        frame.writeEnvironmentDescriptors(irradianceInfo, prefilteredInfo, radianceInfo);
+    return static_cast<float>(resources.texture(prefiltered.textureID)->imageInfo().mipLevels - 1);
+}
+
 // Manual-graph checks own their FrameData and therefore write its shared bindings explicitly.
 inline vk::raii::Sampler writeTestLighting(
     RenderGraph&              graph,
@@ -49,33 +78,15 @@ inline vk::raii::Sampler writeTestLighting(
             },
         });
     };
-    TextureBinding irradiance{BuiltinAssets::Texture::whiteCube, BuiltinAssets::Sampler::linearClamp};
-    auto           prefiltered = irradiance;
-    auto           radiance    = irradiance;
-    if (scene.environmentMap)
-    {
-        const auto& environment = context().assetManager->get<EnvironmentMapAsset>(*scene.environmentMap);
-        irradiance              = environment.irradiance;
-        prefiltered             = environment.prefilteredSpecular;
-        radiance                = environment.radiance;
-    }
-    const auto image = [&](const TextureBinding& binding)
-    {
-        return vk::DescriptorImageInfo{
-            .sampler     = resources.sampler(binding.samplerID),
-            .imageView   = resources.texture(binding.textureID)->imageView(),
-            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        };
-    };
-    const auto&         shadowConfig = feature.shadow;
+    const float         prefilteredMaxLod = writeTestEnvironment(setup, scene.environmentMap);
+    const auto&         shadowConfig      = feature.shadow;
     const LightUniforms lighting{
         .lightRanges                   = scene.lightRanges,
         .ambientCoefficient            = feature.ambientCoefficient,
         .cascadeCount                  = shadowConfig.cascade.count,
         .directionalShadowSampleRadius = shadowConfig.cascade.sampleRadius,
-        .iblParameters =
-            {static_cast<float>(resources.texture(prefiltered.textureID)->imageInfo().mipLevels - 1), 0, 0, 0},
-        .shadowParameters = {
+        .iblParameters                 = {prefilteredMaxLod, 0, 0, 0},
+        .shadowParameters              = {
             shadowConfig.bias,
             shadowConfig.sampleRadius,
             shadowConfig.pixelRotation ? 1.0f : 0.0f,
@@ -117,7 +128,6 @@ inline vk::raii::Sampler writeTestLighting(
             *sampler,
             linearSampler
         );
-        frame.writeEnvironmentDescriptors(image(irradiance), image(prefiltered), image(radiance));
         frame.writeLutDescriptors(
             resources.texture(BuiltinAssets::Texture::kBrdfLut)->imageView(),
             resources.texture(BuiltinAssets::Texture::kSheenLut)->imageView(),

@@ -165,8 +165,9 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
         frame.set           = renderDevice.allocateDescriptorSet(descriptorSetLayout);
 
         const vk::PushConstantRange parameterRange{
-            .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR,
-            .size       = sizeof(OfflineParameters),
+            .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR |
+                vk::ShaderStageFlagBits::eMissKHR,
+            .size = sizeof(OfflineParameters),
         };
         const std::array descriptorSetLayouts{
             &renderDevice.sceneDescriptorSetLayout,
@@ -460,13 +461,15 @@ void OfflinePathTracingPass::execute(
     const auto& viewport = execution.view.viewport;
     commands.pushConstants<OfflineParameters>(
         pipelineLayout,
-        vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR,
+        vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR |
+            vk::ShaderStageFlagBits::eMissKHR,
         0,
         OfflineParameters{
             .viewport          = {viewport.x, viewport.y, viewport.width, viewport.height},
             .lightRanges       = execution.renderData.lightRanges,
             .maxRecursionDepth = pipelineRecursionDepth,
             .sampleIndex       = accumulatedSamples,
+            .iblEnabled        = execution.setup.config.feature.ibl && execution.renderData.environmentMap ? 1u : 0u,
         }
     );
     const auto extent = graph.imageExtent(rayImage);

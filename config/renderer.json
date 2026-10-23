@@ -45,5 +45,5 @@
             "mode": "Neutral"
         }
     },
-    "renderPath": "Forward"
+    "renderPath": "RayTracing"
 }

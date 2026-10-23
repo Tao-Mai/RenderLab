@@ -1,4 +1,5 @@
 // Fixed-camera, offscreen timing of the configured scene. Does not save the scene.
+#include "LightingSetup.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
@@ -63,9 +64,10 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
     TlasBuildPass   tlasBuild;
     SinkPass        sink;
     const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), data, context().config->rendererConfig()};
-    const auto      blas       = graph.addPass(blasBuild, setup);
-    const auto      structures = graph.addPass(tlasBuild, setup, blas);
-    const auto      source     = graph.addPass(trace, setup, structures);
+    writeTestEnvironment(setup, scenes.scene().environmentMap);
+    const auto blas       = graph.addPass(blasBuild, setup);
+    const auto structures = graph.addPass(tlasBuild, setup, blas);
+    const auto source     = graph.addPass(trace, setup, structures);
     graph.addPass(sink, setup, source);
     graph.compile(setup);
 

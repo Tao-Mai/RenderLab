@@ -174,8 +174,9 @@ void RayTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursio
             frame.set = renderDevice.allocateDescriptorSet(descriptorSetLayout);
 
         const vk::PushConstantRange parameterRange{
-            .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR,
-            .size       = sizeof(RayTracingParameters),
+            .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR |
+                vk::ShaderStageFlagBits::eMissKHR,
+            .size = sizeof(RayTracingParameters),
         };
         const std::array descriptorSetLayouts{
             &renderDevice.sceneDescriptorSetLayout,
@@ -488,13 +489,15 @@ void RayTracingPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& comman
     const auto& viewport = execution.view.viewport;
     commands.pushConstants<RayTracingParameters>(
         pipelineLayout,
-        vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR,
+        vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR |
+            vk::ShaderStageFlagBits::eMissKHR,
         0,
         RayTracingParameters{
             .viewport          = {viewport.x, viewport.y, viewport.width, viewport.height},
             .lightRanges       = execution.renderData.lightRanges,
             .maxRecursionDepth = pipelineRecursionDepth,
             .sampleIndex       = sampleIndex++,
+            .iblEnabled        = execution.setup.config.feature.ibl && execution.renderData.environmentMap ? 1u : 0u,
         }
     );
     const auto      extent = graph.imageExtent(rayImage);

@@ -188,6 +188,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     vk::raii::Sampler      lightingSampler = nullptr;
     if (offline || realtime)
     {
+        writeTestEnvironment(setup, renderData.environmentMap);
         for (auto& data : frameData)
             data.uploadSceneUniforms(view.uniforms);
     }
@@ -292,7 +293,7 @@ int main(int argc, char** argv)
     scenes.load(SceneAsset::ID{argv[1]});
     auto feature = originalConfig.feature;
     feature.hdr  = true;
-    feature.ibl  = route == "forward" && scenes.scene().environmentMap.has_value();
+    feature.ibl  = scenes.scene().environmentMap.has_value();
     if (argc > 6)
         feature.toneMapping.ev100 = parseNumber<float>(argv[6]);
     config.setRenderFeature(feature);

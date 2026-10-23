@@ -1,6 +1,7 @@
 #include <GLFW/glfw3.h>
 #include <cmath>
 #include <glm/gtc/packing.hpp>
+#include "LightingSetup.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
@@ -80,10 +81,11 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
     graph.init(vulkan);
     renderContext().materialTable->setup(graph);
     const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), {&data, 1}, context().config->rendererConfig()};
-    const auto      blas       = graph.addPass(blasBuild, setup);
-    const auto      structures = graph.addPass(tlasBuild, setup, blas);
-    const auto      image      = graph.addPass(pass, setup, structures).rayImage;
-    const auto      buffer     = graph.addPass(readback, setup, image);
+    writeTestEnvironment(setup, scenes.scene().environmentMap);
+    const auto blas       = graph.addPass(blasBuild, setup);
+    const auto structures = graph.addPass(tlasBuild, setup, blas);
+    const auto image      = graph.addPass(pass, setup, structures).rayImage;
+    const auto buffer     = graph.addPass(readback, setup, image);
     graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
     graph.compile(setup);
     const auto extent = renderer.swapchainHandle().extent();

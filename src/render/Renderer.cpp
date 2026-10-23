@@ -228,7 +228,7 @@ void Renderer::updateEnvironmentBindings(const std::optional<EnvironmentMapAsset
 
 void Renderer::bindEnvironmentTextures()
 {
-    TextureBinding irradianceBinding{BuiltinAssets::Texture::whiteCube, BuiltinAssets::Sampler::linearClamp};
+    TextureBinding irradianceBinding{BuiltinAssets::Texture::kBlackCube, BuiltinAssets::Sampler::linearClamp};
     TextureBinding prefilteredBinding = irradianceBinding;
     TextureBinding radianceBinding    = irradianceBinding;
     if (environmentMap)
@@ -605,8 +605,7 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
             profiler->recordCulling(static_cast<uint32_t>(renderData.drawItems.size()), {{"Main view", mainVisible}});
     }
 
-    if (rasterization)
-        updateEnvironmentBindings(renderData.environmentMap);
+    updateEnvironmentBindings(renderData.environmentMap);
 
     {
         CpuProfileScope timing{context().profiler, "Frame upload"};

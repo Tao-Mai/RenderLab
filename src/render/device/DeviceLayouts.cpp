@@ -140,13 +140,13 @@ void Device::createSharedDescriptorSetLayouts()
             .binding         = RenderInterface::kRadianceImageBinding,
             .descriptorType  = vk::DescriptorType::eSampledImage,
             .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+            .stageFlags      = vk::ShaderStageFlagBits::eAll
         },
         vk::DescriptorSetLayoutBinding{
             .binding         = RenderInterface::kRadianceSamplerBinding,
             .descriptorType  = vk::DescriptorType::eSampler,
             .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+            .stageFlags      = vk::ShaderStageFlagBits::eAll
         },
         vk::DescriptorSetLayoutBinding{
             .binding         = RenderInterface::kSheenLutImageBinding,

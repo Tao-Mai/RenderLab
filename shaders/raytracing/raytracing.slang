@@ -20,6 +20,8 @@ static const uint kLightMask = 0x02;
 
 [[vk::binding(0, 3)]] RaytracingAccelerationStructure scene;
 [[vk::binding(5, 3)]] StructuredBuffer<LightData> lights;
+[[vk::binding(18, 1)]] TextureCube<float4> radianceMap;
+[[vk::binding(19, 1)]] SamplerState radianceSampler;
 
 struct Payload
 {
@@ -281,7 +283,7 @@ struct RayTracingParameters
     LightRanges lightRanges;
     uint maxRecursionDepth;
     uint sampleIndex;
-    uint padding1;
+    uint iblEnabled;
     uint padding2;
 
     bool containsPixel(uint2 pixel)
@@ -332,7 +334,9 @@ void raygenMain()
 [shader("miss")]
 void missMain(inout Payload payload)
 {
-    payload.color = float3(0.0);
+    payload.color = parameters.iblEnabled != 0
+        ? radianceMap.SampleLevel(radianceSampler, WorldRayDirection(), 0.0).rgb
+        : float3(0.0);
 }
 
 [shader("miss")]

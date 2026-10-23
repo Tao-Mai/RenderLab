@@ -30,7 +30,7 @@ public:
     struct Texture
     {
         static inline const ::TextureAsset::ID white        = "white";
-        static inline const ::TextureAsset::ID whiteCube    = "whiteCube";
+        static inline const ::TextureAsset::ID kBlackCube   = "blackCube";
         static inline const ::TextureAsset::ID flatNormal   = "flatNormal";
         static inline const ::TextureAsset::ID kWhiteLinear = "whiteLinear";
         static inline const ::TextureAsset::ID kBrdfLut     = "brdfLut";

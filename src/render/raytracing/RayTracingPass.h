@@ -39,11 +39,13 @@ private:
         LightRanges lightRanges;
         uint32_t    maxRecursionDepth;
         uint32_t    sampleIndex;
-        uint32_t    padding[2]{};
+        uint32_t    iblEnabled;
+        uint32_t    padding = 0;
     };
     static_assert(sizeof(RayTracingParameters) == 48);
     static_assert(offsetof(RayTracingParameters, lightRanges) == 16);
     static_assert(offsetof(RayTracingParameters, maxRecursionDepth) == 32);
+    static_assert(offsetof(RayTracingParameters, iblEnabled) == 40);
 
     RenderGraph::ImageHandle                 rayImage;
     RenderGraph::ImageHandle                 depth;

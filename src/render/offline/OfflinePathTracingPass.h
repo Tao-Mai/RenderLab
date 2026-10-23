@@ -43,12 +43,14 @@ private:
         LightRanges lightRanges;
         uint32_t    maxRecursionDepth;
         uint32_t    sampleIndex;
-        uint32_t    padding[2]{};
+        uint32_t    iblEnabled;
+        uint32_t    padding = 0;
     };
     static_assert(sizeof(OfflineParameters) == 48);
     static_assert(offsetof(OfflineParameters, lightRanges) == 16);
     static_assert(offsetof(OfflineParameters, maxRecursionDepth) == 32);
     static_assert(offsetof(OfflineParameters, sampleIndex) == 36);
+    static_assert(offsetof(OfflineParameters, iblEnabled) == 40);
 
     RenderGraph::ImageHandle                 rayImage;
     DescriptorSetLayout                      descriptorSetLayout;

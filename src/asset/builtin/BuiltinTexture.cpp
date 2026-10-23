@@ -116,7 +116,7 @@ const ::TextureAsset* BuiltinAssets::textureAsset(const ::TextureAsset::ID& id)
 
     static const ::TextureAsset assets[] = {
         makeTexture(Texture::white, ImageLayout::Image2D),
-        makeTexture(Texture::whiteCube, ImageLayout::Cubemap),
+        makeTexture(Texture::kBlackCube, ImageLayout::Cubemap, ColorSpace::Linear),
         makeTexture(Texture::flatNormal, ImageLayout::Image2D, ColorSpace::Linear),
         makeTexture(Texture::kWhiteLinear, ImageLayout::Image2D, ColorSpace::Linear),
     };
@@ -144,7 +144,7 @@ const std::vector<uint8_t>* BuiltinAssets::textureData(const ::TextureAsset::ID&
 
     static const Entry entries[] = {
         {Texture::white, std::vector<uint8_t>(4, 255)},
-        {Texture::whiteCube, std::vector<uint8_t>(6 * 4, 255)},
+        {Texture::kBlackCube, {0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255}},
         {Texture::flatNormal, {128, 128, 255, 255}},
         {Texture::kWhiteLinear, std::vector<uint8_t>(4, 255)},
     };

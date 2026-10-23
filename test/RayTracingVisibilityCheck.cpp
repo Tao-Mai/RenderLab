@@ -1,3 +1,4 @@
+#include "LightingSetup.h"
 #include "editor/EditorCamera.h"
 // Manual GPU check: PBR materials, visibility, BRDF bounces, and triangle light emission.
 #include "asset/AssetDataManager.h"
@@ -96,6 +97,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     const auto                rebuildGraph = [&]
     {
         graph.releaseResources();
+        writeTestEnvironment(setup, scenes.scene().environmentMap);
         renderContext().materialTable->setup(graph);
         const auto blas       = graph.addPass(blasBuild, setup);
         const auto structures = graph.addPass(tlasBuild, setup, blas);
