@@ -2,6 +2,7 @@
 
 #include "render/ShaderManager.h"
 #include "render/feature/RenderGraph.h"
+#include "render/feature/shadow/ShadowPass.h"
 
 #include <span>
 
@@ -14,6 +15,8 @@ struct SceneDrawOptions
 
 namespace SceneDraw
 {
+ShadowPass::Output
+     useLightingResources(RenderGraph& graph, RenderGraph::BufferHandle lights, ShadowPass::Output shadow);
 void useAttachments(
     RenderGraph& graph, std::span<const RenderGraph::ImageHandle> colors, RenderGraph::ImageHandle depth
 );

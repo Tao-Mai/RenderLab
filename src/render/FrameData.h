@@ -1,11 +1,9 @@
 #pragma once
 
-#include "render/feature/shadow/ShadowData.h"
 #include "render/resource/Buffer.h"
 #include "render/resource/ShaderData.h"
 
 #include <span>
-#include <vector>
 
 #include <vulkan/vulkan_raii.hpp>
 
@@ -17,44 +15,42 @@ class FrameData
 public:
     void init(const VulkanContext& vulkan, Device& device);
     void reset() noexcept;
-    void updateSceneUniforms(const SceneUniforms& view);
-    // Update only after the owning frame's fence completes.
-    void updateLighting(const LightUniforms& lighting, std::span<const LightData> lights);
-    void updateShadows(ShadowFrameData prepared);
+    // UBO writes follow the owning frame's fence.
+    void uploadSceneUniforms(const SceneUniforms& view);
+    void uploadLightUniforms(const LightUniforms& lighting);
+    void writeLightBufferDescriptor(const Buffer& buffer, uint64_t revision);
+    void writeShadowBufferDescriptors(std::span<const vk::DescriptorBufferInfo, 4> buffers);
+    void writeShadowDescriptors(
+        vk::ImageView pointShadow,
+        vk::ImageView spotShadow,
+        vk::ImageView rectAreaShadow,
+        vk::ImageView directionalShadow,
+        vk::Sampler   comparisonSampler,
+        vk::Sampler   linearSampler
+    );
+    void writeShadowSampler(vk::Sampler sampler);
+    void writeEnvironmentDescriptors(
+        const vk::DescriptorImageInfo& irradiance,
+        const vk::DescriptorImageInfo& prefilteredSpecular,
+        const vk::DescriptorImageInfo& radiance
+    );
+    void writeLutDescriptors(vk::ImageView brdfLut, vk::ImageView sheenLut, vk::Sampler sampler);
 
-    [[nodiscard]] const SceneUniforms&                sceneUniforms() const { return sceneData; }
-    [[nodiscard]] const LightUniforms&                lightUniforms() const { return lightMetadata; }
-    [[nodiscard]] std::span<const LightData>          lightData() const { return shadowData.lights; }
-    [[nodiscard]] std::span<const PointShadowData>    pointShadowData() const { return shadowData.pointShadows; }
-    [[nodiscard]] std::span<const SpotShadowData>     spotShadowData() const { return shadowData.spotShadows; }
-    [[nodiscard]] std::span<const RectAreaShadowData> rectAreaShadowData() const { return shadowData.rectAreaShadows; }
-    [[nodiscard]] std::span<const DirectionalShadowData> directionalShadowData() const
-    {
-        return shadowData.directionalShadows;
-    }
+    [[nodiscard]] uint64_t          lightBufferRevision() const { return boundLightBufferRevision; }
     [[nodiscard]] vk::DescriptorSet sceneSetHandle() const { return *sceneSet; }
     [[nodiscard]] vk::DescriptorSet lightingSetHandle() const { return *lightingSet; }
     [[nodiscard]] vk::DescriptorSet viewSetHandle() const { return *viewSet; }
-    [[nodiscard]] const Buffer&     sceneUniformBuffer() const { return sceneBuffer; }
 
 private:
     const VulkanContext*    vulkan = nullptr;
-    ShadowFrameData         shadowData;
-    SceneUniforms           sceneData;
-    LightUniforms           lightMetadata;
     Buffer                  sceneBuffer;
     Buffer                  lightUniformBuffer;
-    Buffer                  lightBuffer;
-    Buffer                  pointShadowBuffer;
-    Buffer                  spotShadowBuffer;
-    Buffer                  rectAreaShadowBuffer;
-    Buffer                  directionalShadowBuffer;
-    vk::raii::DescriptorSet sceneSet    = nullptr;
-    vk::raii::DescriptorSet lightingSet = nullptr;
-    vk::raii::DescriptorSet viewSet     = nullptr;
+    uint64_t                boundLightBufferRevision = 0;
+    vk::raii::DescriptorSet sceneSet                 = nullptr;
+    vk::raii::DescriptorSet lightingSet              = nullptr;
+    vk::raii::DescriptorSet viewSet                  = nullptr;
 
     void writeSceneDescriptorSet();
+    void writeLightUniformDescriptorSet();
     void writeEditorViewDescriptorSet();
-    void writeLightingBufferDescriptors();
-    void uploadLights();
 };

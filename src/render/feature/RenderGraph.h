@@ -4,8 +4,12 @@
 #include "core/profiling/Profiler.h"
 #include "render/Image.h"
 #include "render/feature/PassInputs.h"
+#include "render/RenderConfig.h"
+#include "render/resource/Buffer.h"
 
 #include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -16,7 +20,6 @@
 #include <vector>
 #include <vulkan/vulkan_raii.hpp>
 
-class Buffer;
 class AccelerationStructure;
 class GpuProfiler;
 class Swapchain;
@@ -60,6 +63,7 @@ public:
     struct BufferCreateInfo
     {
         vk::DeviceSize          size             = 0;
+        vk::BufferUsageFlags    usage;
         vk::MemoryPropertyFlags memoryProperties = vk::MemoryPropertyFlagBits::eDeviceLocal;
         ResourceScope           scope            = ResourceScope::Shared;
     };
@@ -80,6 +84,8 @@ public:
     void init(VulkanContext& vulkan, Swapchain& swapchain);
     void reset() noexcept;
     void compile(const PassSetup& setup);
+    // Call after the frame fence completes, before global/pass preparation.
+    void beginFrame(uint32_t frameIndex);
     void prepare(const PassFrame& frame);
     void releaseResources() noexcept;
 
@@ -88,6 +94,15 @@ public:
 
     ImageHandle createImage(ImageCreateInfo info);
     BufferHandle createBuffer(BufferCreateInfo info);
+
+    struct BufferUpload
+    {
+        vk::DeviceSize       offset;
+        std::span<std::byte> data;
+    };
+    // Writable staging storage; the matching GPU copy is recorded during execute.
+    [[nodiscard]] BufferUpload
+    allocateUpload(BufferHandle buffer, vk::DeviceSize size, vk::DeviceSize destinationOffset = 0);
 
     // Tracks a pass-owned AS or BLAS collection; allocation remains with the owner.
     AccelerationStructureHandle createAccelerationStructure(MemoryAccess initial);
@@ -99,6 +114,7 @@ public:
     BufferHandle importBuffer(Buffer& buffer, MemoryAccess initial);
     [[nodiscard]] ImageAccess imageState(ImageHandle image) const;
     [[nodiscard]] MemoryAccess bufferState(BufferHandle buffer, uint32_t frameIndex) const;
+    [[nodiscard]] uint64_t bufferRevision(BufferHandle buffer) const;
 
     ImageHandle write(ImageHandle image);
     BufferHandle write(BufferHandle buffer);
@@ -117,6 +133,7 @@ public:
     [[nodiscard]] AccelerationStructure&
     getAccelerationStructure(AccelerationStructureHandle handle, size_t index = 0);
     [[nodiscard]] const ImageCreateInfo& imageInfo(ImageHandle image);
+    [[nodiscard]] vk::Extent2D imageExtent(ImageHandle image);
 
     void execute(
         vk::raii::CommandBuffer& commandBuffer,
@@ -136,6 +153,24 @@ private:
     };
     struct PassNode;
     struct Allocation;
+    struct StagingBlock
+    {
+        Buffer         buffer;
+        std::byte*     mapped = nullptr;
+        vk::DeviceSize used   = 0;
+    };
+    struct BufferCopy
+    {
+        BufferHandle   destination;
+        size_t         blockIndex;
+        vk::BufferCopy region;
+    };
+    struct StagingPool
+    {
+        std::vector<StagingBlock> blocks;
+        size_t                   blockIndex = 0;
+        std::vector<BufferCopy> copies;
+    };
     struct ResourceUse
     {
         ResourceHandle resource;
@@ -186,12 +221,15 @@ private:
     std::vector<Resource>                resources;
     uint32_t                             currentImage    = 0;
     ImageHandle                          swapchainImage;
+    std::array<StagingPool, maxFramesInFlight> stagingPools;
+    uint32_t currentFrameIndex = 0;
 
     template <class T>
     void collectDependencies(PassNode& node, const T& value);
 
     void                compileNodes();
     void                allocateResources();
+    void recordUploads(vk::raii::CommandBuffer& commandBuffer);
     ResourceData&       resolveResource(ResourceHandle handle);
     const ResourceData& resolveResource(ResourceHandle handle) const;
     void useResource(vk::raii::CommandBuffer& commandBuffer, const ResourceUse& use, uint32_t frameIndex);

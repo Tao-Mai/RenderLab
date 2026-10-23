@@ -1,16 +1,11 @@
 #include "render/FrameData.h"
 
 #include "core/Logger.h"
-#include "render/RenderConfig.h"
 #include "render/device/Device.h"
-#include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/feature/editor/EditorShaderData.h"
 
-#include <algorithm>
 #include <array>
-#include <cmath>
-
 
 void FrameData::init(const VulkanContext& targetVulkan, Device& device)
 {
@@ -30,48 +25,12 @@ void FrameData::init(const VulkanContext& targetVulkan, Device& device)
         vk::BufferUsageFlagBits::eUniformBuffer,
         hostMemory
     );
-    // Even a scene without lights needs a nonempty, valid storage descriptor.
-    lightBuffer = Buffer(
-        vulkan->physicalDeviceHandle(),
-        vulkan->deviceHandle(),
-        sizeof(LightData),
-        vk::BufferUsageFlagBits::eStorageBuffer,
-        hostMemory
-    );
-    pointShadowBuffer = Buffer(
-        vulkan->physicalDeviceHandle(),
-        vulkan->deviceHandle(),
-        kMaxPointLightShadow * sizeof(PointShadowData),
-        vk::BufferUsageFlagBits::eStorageBuffer,
-        hostMemory
-    );
-    spotShadowBuffer = Buffer(
-        vulkan->physicalDeviceHandle(),
-        vulkan->deviceHandle(),
-        kMaxSpotLightShadow * sizeof(SpotShadowData),
-        vk::BufferUsageFlagBits::eStorageBuffer,
-        hostMemory
-    );
-    rectAreaShadowBuffer = Buffer(
-        vulkan->physicalDeviceHandle(),
-        vulkan->deviceHandle(),
-        kMaxRectAreaLightShadow * sizeof(RectAreaShadowData),
-        vk::BufferUsageFlagBits::eStorageBuffer,
-        hostMemory
-    );
-    directionalShadowBuffer = Buffer(
-        vulkan->physicalDeviceHandle(),
-        vulkan->deviceHandle(),
-        kMaxDirectionalLightShadow * sizeof(DirectionalShadowData),
-        vk::BufferUsageFlagBits::eStorageBuffer,
-        hostMemory
-    );
     sceneSet    = device.allocateDescriptorSet(device.sceneDescriptorSetLayout);
     lightingSet = device.allocateDescriptorSet(device.lightingDescriptorSetLayout);
     viewSet     = device.allocateDescriptorSet(device.editorViewDescriptorSetLayout);
     writeSceneDescriptorSet();
+    writeLightUniformDescriptorSet();
     writeEditorViewDescriptorSet();
-    writeLightingBufferDescriptors();
 }
 
 void FrameData::writeSceneDescriptorSet()
@@ -100,61 +59,183 @@ void FrameData::writeEditorViewDescriptorSet()
     vulkan->deviceHandle().updateDescriptorSets(write, {});
 }
 
-void FrameData::writeLightingBufferDescriptors()
+void FrameData::writeLightUniformDescriptorSet()
 {
-    const std::array infos = {
-        vk::DescriptorBufferInfo{.buffer = lightUniformBuffer.handle(), .range = lightUniformBuffer.size()},
-        vk::DescriptorBufferInfo{.buffer = lightBuffer.handle(), .range = lightBuffer.size()},
-        vk::DescriptorBufferInfo{.buffer = pointShadowBuffer.handle(), .range = pointShadowBuffer.size()},
-        vk::DescriptorBufferInfo{.buffer = spotShadowBuffer.handle(), .range = spotShadowBuffer.size()},
-        vk::DescriptorBufferInfo{.buffer = rectAreaShadowBuffer.handle(), .range = rectAreaShadowBuffer.size()},
-        vk::DescriptorBufferInfo{.buffer = directionalShadowBuffer.handle(), .range = directionalShadowBuffer.size()},
+    const vk::DescriptorBufferInfo info{.buffer = lightUniformBuffer.handle(), .range = lightUniformBuffer.size()};
+    const vk::WriteDescriptorSet   write{
+          .dstSet          = *lightingSet,
+          .dstBinding      = RenderInterface::kLightUniformBinding,
+          .descriptorCount = 1,
+          .descriptorType  = vk::DescriptorType::eUniformBuffer,
+          .pBufferInfo     = &info,
     };
-    const std::array writes = {
-        vk::WriteDescriptorSet{
-            .dstSet          = *lightingSet,
-            .dstBinding      = RenderInterface::kLightUniformBinding,
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eUniformBuffer,
-            .pBufferInfo     = &infos[0]
-        },
-        vk::WriteDescriptorSet{
-            .dstSet          = *lightingSet,
-            .dstBinding      = RenderInterface::kLightBufferBinding,
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eStorageBuffer,
-            .pBufferInfo     = &infos[1]
-        },
-        vk::WriteDescriptorSet{
-            .dstSet          = *lightingSet,
-            .dstBinding      = RenderInterface::kPointShadowBufferBinding,
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eStorageBuffer,
-            .pBufferInfo     = &infos[2]
-        },
-        vk::WriteDescriptorSet{
-            .dstSet          = *lightingSet,
-            .dstBinding      = RenderInterface::kSpotShadowBufferBinding,
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eStorageBuffer,
-            .pBufferInfo     = &infos[3]
-        },
-        vk::WriteDescriptorSet{
-            .dstSet          = *lightingSet,
-            .dstBinding      = RenderInterface::kRectAreaShadowBufferBinding,
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eStorageBuffer,
-            .pBufferInfo     = &infos[4]
-        },
-        vk::WriteDescriptorSet{
-            .dstSet          = *lightingSet,
-            .dstBinding      = RenderInterface::kDirectionalShadowBufferBinding,
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eStorageBuffer,
-            .pBufferInfo     = &infos[5]
-        },
+    vulkan->deviceHandle().updateDescriptorSets(write, {});
+}
+
+void FrameData::writeLightBufferDescriptor(const Buffer& buffer, uint64_t revision)
+{
+    const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.size()};
+    const vk::WriteDescriptorSet   write{
+          .dstSet          = *lightingSet,
+          .dstBinding      = RenderInterface::kLightBufferBinding,
+          .descriptorCount = 1,
+          .descriptorType  = vk::DescriptorType::eStorageBuffer,
+          .pBufferInfo     = &info,
     };
+    vulkan->deviceHandle().updateDescriptorSets(write, {});
+    boundLightBufferRevision = revision;
+}
+
+void FrameData::writeShadowBufferDescriptors(std::span<const vk::DescriptorBufferInfo, 4> buffers)
+{
+    constexpr std::array kBindings{
+        RenderInterface::kPointShadowBufferBinding,
+        RenderInterface::kSpotShadowBufferBinding,
+        RenderInterface::kRectAreaShadowBufferBinding,
+        RenderInterface::kDirectionalShadowBufferBinding,
+    };
+    std::array<vk::WriteDescriptorSet, kBindings.size()> writes;
+    for (size_t index = 0; index < writes.size(); ++index)
+        writes[index] = {
+            .dstSet          = *lightingSet,
+            .dstBinding      = kBindings[index],
+            .descriptorCount = 1,
+            .descriptorType  = vk::DescriptorType::eStorageBuffer,
+            .pBufferInfo     = &buffers[index],
+        };
     vulkan->deviceHandle().updateDescriptorSets(writes, {});
+}
+
+void FrameData::writeShadowDescriptors(
+    vk::ImageView pointShadow,
+    vk::ImageView spotShadow,
+    vk::ImageView rectAreaShadow,
+    vk::ImageView directionalShadow,
+    vk::Sampler   comparisonSampler,
+    vk::Sampler   linearSampler
+)
+{
+    const std::array infos{
+        vk::DescriptorImageInfo{.imageView = pointShadow, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal},
+        vk::DescriptorImageInfo{.imageView = spotShadow, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal},
+        vk::DescriptorImageInfo{.imageView = rectAreaShadow, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal},
+        vk::DescriptorImageInfo{.imageView = directionalShadow, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal},
+        vk::DescriptorImageInfo{.sampler = comparisonSampler},
+        vk::DescriptorImageInfo{.sampler = linearSampler},
+    };
+    constexpr std::array kBindings{
+        RenderInterface::kPointShadowImageBinding,
+        RenderInterface::kSpotShadowImageBinding,
+        RenderInterface::kRectAreaShadowImageBinding,
+        RenderInterface::kDirectionalShadowImageBinding,
+        RenderInterface::kShadowComparisonSamplerBinding,
+        RenderInterface::kLinearSamplerBinding,
+    };
+    constexpr size_t                                     kShadowImageCount = 4;
+    std::array<vk::WriteDescriptorSet, kBindings.size()> writes;
+    for (size_t index = 0; index < writes.size(); ++index)
+        writes[index] = {
+            .dstSet          = *lightingSet,
+            .dstBinding      = kBindings[index],
+            .descriptorCount = 1,
+            .descriptorType =
+                index < kShadowImageCount ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eSampler,
+            .pImageInfo = &infos[index],
+        };
+    vulkan->deviceHandle().updateDescriptorSets(writes, {});
+}
+
+void FrameData::writeShadowSampler(vk::Sampler sampler)
+{
+    const vk::DescriptorImageInfo info{.sampler = sampler};
+    const vk::WriteDescriptorSet  write{
+         .dstSet          = *lightingSet,
+         .dstBinding      = RenderInterface::kShadowComparisonSamplerBinding,
+         .descriptorCount = 1,
+         .descriptorType  = vk::DescriptorType::eSampler,
+         .pImageInfo      = &info,
+    };
+    vulkan->deviceHandle().updateDescriptorSets(write, {});
+}
+
+void FrameData::writeEnvironmentDescriptors(
+    const vk::DescriptorImageInfo& irradiance,
+    const vk::DescriptorImageInfo& prefilteredSpecular,
+    const vk::DescriptorImageInfo& radiance
+)
+{
+    const std::array     infos{irradiance, prefilteredSpecular, radiance};
+    constexpr std::array kImageBindings{
+        RenderInterface::kIrradianceImageBinding,
+        RenderInterface::kPrefilteredSpecularImageBinding,
+        RenderInterface::kRadianceImageBinding,
+    };
+    constexpr std::array kSamplerBindings{
+        RenderInterface::kIrradianceSamplerBinding,
+        RenderInterface::kPrefilteredSpecularSamplerBinding,
+        RenderInterface::kRadianceSamplerBinding,
+    };
+    for (size_t index = 0; index < infos.size(); ++index)
+    {
+        const std::array writes{
+            vk::WriteDescriptorSet{
+                .dstSet          = *lightingSet,
+                .dstBinding      = kImageBindings[index],
+                .descriptorCount = 1,
+                .descriptorType  = vk::DescriptorType::eSampledImage,
+                .pImageInfo      = &infos[index],
+            },
+            vk::WriteDescriptorSet{
+                .dstSet          = *lightingSet,
+                .dstBinding      = kSamplerBindings[index],
+                .descriptorCount = 1,
+                .descriptorType  = vk::DescriptorType::eSampler,
+                .pImageInfo      = &infos[index],
+            },
+        };
+        vulkan->deviceHandle().updateDescriptorSets(writes, {});
+    }
+}
+
+void FrameData::writeLutDescriptors(vk::ImageView brdfLut, vk::ImageView sheenLut, vk::Sampler sampler)
+{
+    const std::array infos{
+        vk::DescriptorImageInfo{
+            .sampler     = sampler,
+            .imageView   = brdfLut,
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+        },
+        vk::DescriptorImageInfo{
+            .sampler     = sampler,
+            .imageView   = sheenLut,
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+        },
+    };
+    constexpr std::array kImageBindings{RenderInterface::kBrdfLutImageBinding, RenderInterface::kSheenLutImageBinding};
+    constexpr std::array kSamplerBindings{
+        RenderInterface::kBrdfLutSamplerBinding,
+        RenderInterface::kSheenLutSamplerBinding
+    };
+    for (size_t index = 0; index < infos.size(); ++index)
+    {
+        const std::array writes{
+            vk::WriteDescriptorSet{
+                .dstSet          = *lightingSet,
+                .dstBinding      = kImageBindings[index],
+                .descriptorCount = 1,
+                .descriptorType  = vk::DescriptorType::eSampledImage,
+                .pImageInfo      = &infos[index],
+            },
+            vk::WriteDescriptorSet{
+                .dstSet          = *lightingSet,
+                .dstBinding      = kSamplerBindings[index],
+                .descriptorCount = 1,
+                .descriptorType  = vk::DescriptorType::eSampler,
+                .pImageInfo      = &infos[index],
+            },
+        };
+        vulkan->deviceHandle().updateDescriptorSets(writes, {});
+    }
 }
 
 void FrameData::reset() noexcept
@@ -164,99 +245,18 @@ void FrameData::reset() noexcept
     viewSet     = nullptr;
     sceneBuffer.reset();
     lightUniformBuffer.reset();
-    lightBuffer.reset();
-    pointShadowBuffer.reset();
-    spotShadowBuffer.reset();
-    rectAreaShadowBuffer.reset();
-    directionalShadowBuffer.reset();
-
-    sceneData     = {};
-    lightMetadata = {};
-    shadowData    = {};
-    vulkan        = nullptr;
+    boundLightBufferRevision = 0;
+    vulkan                   = nullptr;
 }
 
-void FrameData::updateSceneUniforms(const SceneUniforms& view)
+void FrameData::uploadSceneUniforms(const SceneUniforms& view)
 {
     DCHECK(vulkan);
-    sceneData = view;
-    sceneBuffer.upload(&sceneData, sizeof(sceneData));
+    sceneBuffer.upload(&view, sizeof(view));
 }
 
-void FrameData::updateLighting(const LightUniforms& lighting, std::span<const LightData> lights)
+void FrameData::uploadLightUniforms(const LightUniforms& lighting)
 {
-    DCHECK(vulkan && lighting.lightRanges.spotEnd == lights.size());
-    lightMetadata = lighting;
-    lightUniformBuffer.upload(&lightMetadata, sizeof(lightMetadata));
-
-    shadowData = {};
-    shadowData.lights.assign(lights.begin(), lights.end());
-    for (auto& light : shadowData.lights)
-    {
-        light.shadowEnabled = 0;
-        light.shadowidx     = ~0u;
-    }
-    uploadLights();
-}
-
-void FrameData::uploadLights()
-{
-    const auto ensureStorage = [&](Buffer& buffer, vk::DeviceSize bytes)
-    {
-        CHECK(bytes <= vulkan->properties().limits.maxStorageBufferRange, "frame SSBO exceeds maxStorageBufferRange");
-        if (bytes <= buffer.size())
-            return false;
-
-        // The current frame's fence is complete; other frames keep their buffers.
-        buffer.reset();
-        buffer = Buffer(
-            vulkan->physicalDeviceHandle(),
-            vulkan->deviceHandle(),
-            bytes,
-            vk::BufferUsageFlagBits::eStorageBuffer,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-        );
-        return true;
-    };
-    if (ensureStorage(lightBuffer, std::max<size_t>(shadowData.lights.size(), 1) * sizeof(LightData)))
-    {
-        const vk::DescriptorBufferInfo bufferInfo{.buffer = lightBuffer.handle(), .range = lightBuffer.size()};
-        const vk::WriteDescriptorSet   write{
-              .dstSet          = *lightingSet,
-              .dstBinding      = RenderInterface::kLightBufferBinding,
-              .descriptorCount = 1,
-              .descriptorType  = vk::DescriptorType::eStorageBuffer,
-              .pBufferInfo     = &bufferInfo,
-        };
-        vulkan->deviceHandle().updateDescriptorSets(write, {});
-    }
-
-    if (!shadowData.lights.empty())
-        lightBuffer.upload(shadowData.lights.data(), shadowData.lights.size() * sizeof(LightData));
-}
-
-void FrameData::updateShadows(ShadowFrameData prepared)
-{
-    DCHECK(vulkan && lightMetadata.lightRanges.spotEnd == prepared.lights.size());
-    shadowData = std::move(prepared);
-    uploadLights();
-
-    if (!shadowData.pointShadows.empty())
-        pointShadowBuffer.upload(
-            shadowData.pointShadows.data(),
-            shadowData.pointShadows.size() * sizeof(PointShadowData)
-        );
-    if (!shadowData.spotShadows.empty())
-        spotShadowBuffer.upload(shadowData.spotShadows.data(), shadowData.spotShadows.size() * sizeof(SpotShadowData));
-    if (!shadowData.rectAreaShadows.empty())
-        rectAreaShadowBuffer.upload(
-            shadowData.rectAreaShadows.data(),
-            shadowData.rectAreaShadows.size() * sizeof(RectAreaShadowData)
-        );
-    if (!shadowData.directionalShadows.empty())
-        directionalShadowBuffer.upload(
-            shadowData.directionalShadows.data(),
-            shadowData.directionalShadows.size() * sizeof(DirectionalShadowData)
-        );
-    // Host-coherent writes become available to device reads at queue submission.
+    DCHECK(vulkan);
+    lightUniformBuffer.upload(&lighting, sizeof(lighting));
 }

@@ -13,7 +13,9 @@
 
 namespace
 {
-vk::ImageAspectFlags imageAspect(vk::Format format)
+constexpr vk::DeviceSize kStagingBlockSize = 1024 * 1024;
+constexpr vk::DeviceSize kUploadAlignment  = 16;
+vk::ImageAspectFlags     imageAspect(vk::Format format)
 {
     return format == vk::Format::eD32Sfloat ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor;
 }
@@ -28,6 +30,7 @@ struct RenderGraph::Allocation
         std::unique_ptr<Buffer> buffer;
         std::unique_ptr<Image>  image;
         ImageAccess             state;
+        uint64_t                revision = 1;
     };
     std::vector<Instance> instances;
 };
@@ -41,6 +44,8 @@ void RenderGraph::init(VulkanContext& vulkan, Swapchain& swapchain)
 
 void RenderGraph::releaseResources() noexcept
 {
+    for (auto& pool : stagingPools)
+        pool.copies.clear();
     resources.clear();
     nodes.clear();
     sortedNodes.clear();
@@ -53,6 +58,7 @@ void RenderGraph::releaseResources() noexcept
 void RenderGraph::reset() noexcept
 {
     releaseResources();
+    stagingPools    = {};
     deviceContext   = nullptr;
     targetSwapchain = nullptr;
 }
@@ -66,6 +72,98 @@ void RenderGraph::compile(const PassSetup& setup)
             node->writeDescriptorSet(*this, setup);
 }
 
+void RenderGraph::beginFrame(uint32_t frameIndex)
+{
+    currentFrameIndex = frameIndex;
+    auto& pool        = stagingPools[frameIndex];
+    pool.blockIndex   = 0;
+    pool.copies.clear();
+    for (auto& block : pool.blocks)
+        block.used = 0;
+}
+
+RenderGraph::BufferUpload
+RenderGraph::allocateUpload(BufferHandle buffer, vk::DeviceSize size, vk::DeviceSize destinationOffset)
+{
+    auto& resource = resolveResource(buffer.id);
+    DCHECK(resource.type == ResourceType::Buffer && !resource.importedBuffer);
+    DCHECK(resource.bufferInfo.scope == ResourceScope::Shared);
+    DCHECK(resource.bufferUsage & vk::BufferUsageFlagBits::eTransferDst);
+    DCHECK(size && size % 4 == 0 && destinationOffset % 4 == 0);
+
+    const auto requiredSize = destinationOffset + size;
+    const auto limit        = deviceContext->properties().limits.maxStorageBufferRange;
+    CHECK(requiredSize <= limit, "buffer upload requires {} bytes; maxStorageBufferRange is {}", requiredSize, limit);
+    if (requiredSize > resource.bufferInfo.size)
+    {
+        // A shared buffer can still be referenced by any frame in flight.
+        vkCheck(deviceContext->deviceHandle().waitIdle());
+        resource.bufferInfo.size =
+            std::min<vk::DeviceSize>(std::max(requiredSize, resource.bufferInfo.size * 2), limit);
+        auto& instance  = resource.allocation->instances[0];
+        instance.buffer = std::make_unique<Buffer>(
+            deviceContext->physicalDeviceHandle(),
+            deviceContext->deviceHandle(),
+            resource.bufferInfo.size,
+            resource.bufferUsage,
+            resource.bufferInfo.memoryProperties
+        );
+        instance.state = {};
+        ++instance.revision;
+    }
+
+    auto& pool = stagingPools[currentFrameIndex];
+    while (pool.blockIndex < pool.blocks.size())
+    {
+        const auto& block  = pool.blocks[pool.blockIndex];
+        const auto  offset = (block.used + kUploadAlignment - 1) & ~(kUploadAlignment - 1);
+        if (offset + size <= block.buffer.size())
+            break;
+        ++pool.blockIndex;
+    }
+    if (pool.blockIndex == pool.blocks.size())
+    {
+        auto& block  = pool.blocks.emplace_back();
+        block.buffer = Buffer(
+            deviceContext->physicalDeviceHandle(),
+            deviceContext->deviceHandle(),
+            std::max(kStagingBlockSize, size),
+            vk::BufferUsageFlagBits::eTransferSrc,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+        );
+        block.mapped = static_cast<std::byte*>(block.buffer.map());
+    }
+    auto&      block  = pool.blocks[pool.blockIndex];
+    const auto offset = (block.used + kUploadAlignment - 1) & ~(kUploadAlignment - 1);
+    block.used        = offset + size;
+    pool.copies.push_back(
+        {buffer, pool.blockIndex, {.srcOffset = offset, .dstOffset = destinationOffset, .size = size}}
+    );
+    return {offset, {block.mapped + offset, static_cast<size_t>(size)}};
+}
+
+void RenderGraph::recordUploads(vk::raii::CommandBuffer& commandBuffer)
+{
+    const auto& pool = stagingPools[currentFrameIndex];
+    for (const auto& copy : pool.copies)
+    {
+        useResource(
+            commandBuffer,
+            {copy.destination.id,
+             {
+                 .stages = vk::PipelineStageFlagBits2::eCopy,
+                 .access = vk::AccessFlagBits2::eTransferWrite,
+             }},
+            currentFrameIndex
+        );
+        commandBuffer.copyBuffer(
+            pool.blocks[copy.blockIndex].buffer.handle(),
+            getBuffer(copy.destination, currentFrameIndex).handle(),
+            copy.region
+        );
+    }
+}
+
 void RenderGraph::allocateResources()
 {
     const auto& device         = deviceContext->deviceHandle();
@@ -77,8 +175,8 @@ void RenderGraph::allocateResources()
 
         auto& resource      = *entry.data;
         resource.allocation = std::make_shared<Allocation>();
-        const bool imported = resource.importedImage || resource.importedBuffer ||
-            resource.type == ResourceType::AccelerationStructure;
+        const bool imported =
+            resource.importedImage || resource.importedBuffer || resource.type == ResourceType::AccelerationStructure;
         const bool perFrame =
             resource.type == ResourceType::Buffer && resource.bufferInfo.scope == ResourceScope::PerFrame;
         const size_t count = resource.swapchainIndexed ? resource.externalImages.size()
@@ -173,6 +271,12 @@ const RenderGraph::ImageCreateInfo& RenderGraph::imageInfo(ImageHandle image)
     return resource.imageInfo;
 }
 
+vk::Extent2D RenderGraph::imageExtent(ImageHandle image)
+{
+    const auto& extent = imageInfo(image).extent;
+    return {extent.width, extent.height};
+}
+
 Image& RenderGraph::getImage(ImageHandle image)
 {
     const auto& resource = resolveResource(image.id);
@@ -211,8 +315,8 @@ AccelerationStructure& RenderGraph::getAccelerationStructure(AccelerationStructu
 
 void RenderGraph::useResource(vk::raii::CommandBuffer& commandBuffer, const ResourceUse& use, uint32_t frameIndex)
 {
-    auto&      resource = resolveResource(use.resource);
-    auto&      instance = resource.allocation->instances.at(instanceIndex(resource, frameIndex));
+    auto& resource = resolveResource(use.resource);
+    auto& instance = resource.allocation->instances.at(instanceIndex(resource, frameIndex));
     // Shared instances retain the previous submission's access, including all trailing readers.
     // Their first use in this frame therefore also synchronizes across frame boundaries.
     const auto previous = instance.state;
@@ -319,9 +423,10 @@ void RenderGraph::execute(
             names.push_back(node->name);
     }
     gpuProfiler.beginFrame(commandBuffer, names, profiler);
-    auto execution = frame;
+    recordUploads(commandBuffer);
+    auto execution        = frame;
     execution.gpuProfiler = profiler ? &gpuProfiler : nullptr;
-    uint32_t passIndex = 0;
+    uint32_t passIndex    = 0;
     for (auto* node : sortedNodes)
     {
         CpuProfileScope timing{profiler, node->name};
@@ -378,4 +483,10 @@ RenderGraph::MemoryAccess RenderGraph::bufferState(BufferHandle buffer, uint32_t
     DCHECK(resource.type == ResourceType::Buffer && resource.allocation);
     const auto& state = resource.allocation->instances.at(instanceIndex(resource, frameIndex)).state;
     return {state.stages, state.access};
+}
+
+uint64_t RenderGraph::bufferRevision(BufferHandle buffer) const
+{
+    const auto& resource = resolveResource(buffer.id);
+    return resource.allocation->instances[0].revision;
 }

@@ -6,6 +6,7 @@
 
 #include "asset/ApplyOptionalFields.h"
 #include "asset/AssetManager.h"
+#include "asset/BuiltinAssets.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -102,7 +103,7 @@ auto Renderer::setupPass(Args&&... args)
 {
     return graph.addPass(
         passes->get<T>(),
-        PassSetup{vulkan, swapchain, frameStorage, *rendererConfig},
+        PassSetup{vulkan, swapchain.extent(), frameStorage, *rendererConfig},
         std::forward<Args>(args)...
     );
 }
@@ -142,11 +143,146 @@ void Renderer::init()
         data.init(vulkan, device);
 
     resources.init(vulkan, *context().assetManager, *context().assetDataManager);
+    initLightingResources();
     materialTable.init(resources, vulkan, device);
     graph.init(vulkan, swapchain);
     passes = std::make_unique<Passes>();
 
     DEBUG_EXEC(inited = true);
+}
+
+void Renderer::initLightingResources()
+{
+    brdfLutTexture     = resources.texture(BuiltinAssets::Texture::kBrdfLut);
+    sheenLutTexture    = resources.texture(BuiltinAssets::Texture::kSheenLut);
+    const auto sampler = resources.sampler(BuiltinAssets::Sampler::linearClamp);
+    for (auto& data : frameStorage)
+        data.writeLutDescriptors(brdfLutTexture->imageView(), sheenLutTexture->imageView(), sampler);
+
+    bindEnvironmentTextures();
+}
+
+void Renderer::createShadowSampler()
+{
+    const auto filter = rendererConfig->feature.shadow.filter == SamplerAsset::Filter::Linear ? vk::Filter::eLinear
+                                                                                              : vk::Filter::eNearest;
+    shadowSampler     = vkCheck(vulkan.deviceHandle().createSampler({
+            .magFilter     = filter,
+            .minFilter     = filter,
+            .mipmapMode    = vk::SamplerMipmapMode::eNearest,
+            .addressModeU  = vk::SamplerAddressMode::eClampToEdge,
+            .addressModeV  = vk::SamplerAddressMode::eClampToEdge,
+            .addressModeW  = vk::SamplerAddressMode::eClampToEdge,
+            .compareEnable = true,
+            .compareOp     = vk::CompareOp::eLessOrEqual,
+            .maxLod        = 0.0f,
+    }));
+}
+
+void Renderer::writeShadowDescriptors(ShadowPass::Output shadow)
+{
+    const auto view = [&](RenderGraph::ImageHandle image, vk::ImageViewType type)
+    {
+        return graph.getImage(image).getOrCreateImageView({
+            .viewType         = type,
+            .format           = vk::Format::eD32Sfloat,
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eDepth,
+                .levelCount = 1,
+                .layerCount = graph.imageInfo(image).arrayLayers,
+            },
+        });
+    };
+    const auto point         = view(shadow.pointLightShadowMap, vk::ImageViewType::eCubeArray);
+    const auto spot          = view(shadow.spotLightShadowMap, vk::ImageViewType::e2DArray);
+    const auto rectArea      = view(shadow.rectAreaLightShadowMap, vk::ImageViewType::e2DArray);
+    const auto directional   = view(shadow.cascadeShadowMap, vk::ImageViewType::e2DArray);
+    const auto linearSampler = resources.sampler(BuiltinAssets::Sampler::linearClamp);
+    const auto bufferInfo    = [&](RenderGraph::BufferHandle handle)
+    {
+        const auto& buffer = graph.getBuffer(handle, 0);
+        return vk::DescriptorBufferInfo{.buffer = buffer.handle(), .range = buffer.size()};
+    };
+    const std::array shadowBuffers{
+        bufferInfo(shadow.pointShadowBuffer),
+        bufferInfo(shadow.spotShadowBuffer),
+        bufferInfo(shadow.rectAreaShadowBuffer),
+        bufferInfo(shadow.directionalShadowBuffer),
+    };
+    for (auto& data : frameStorage)
+    {
+        data.writeShadowBufferDescriptors(shadowBuffers);
+        data.writeShadowDescriptors(point, spot, rectArea, directional, *shadowSampler, linearSampler);
+    }
+}
+
+void Renderer::updateEnvironmentBindings(const std::optional<EnvironmentMapAsset::ID>& id)
+{
+    if (environmentMap == id)
+        return;
+
+    waitIdle();
+    environmentMap = id;
+    bindEnvironmentTextures();
+}
+
+void Renderer::bindEnvironmentTextures()
+{
+    TextureBinding irradianceBinding{BuiltinAssets::Texture::whiteCube, BuiltinAssets::Sampler::linearClamp};
+    TextureBinding prefilteredBinding = irradianceBinding;
+    TextureBinding radianceBinding    = irradianceBinding;
+    if (environmentMap)
+    {
+        const auto& assets      = *context().assetManager;
+        const auto& environment = assets.get<EnvironmentMapAsset>(*environmentMap);
+        CHECK(
+            !environment.irradiance.textureID.empty() && !environment.irradiance.samplerID.empty() &&
+                !environment.prefilteredSpecular.textureID.empty() &&
+                !environment.prefilteredSpecular.samplerID.empty(),
+            "environment '{}' requires irradiance and prefiltered specular textures",
+            environment.id
+        );
+        radianceBinding      = environment.radiance;
+        irradianceBinding    = environment.irradiance;
+        prefilteredBinding   = environment.prefilteredSpecular;
+        const auto& radiance = assets.get<TextureAsset>(radianceBinding.textureID);
+        CHECK(
+            radiance.layout == ImageLayout::Cubemap && radiance.colorSpace == ColorSpace::Linear,
+            "environment '{}' requires a linear radiance cubemap",
+            environment.id
+        );
+        const auto& irradiance  = assets.get<TextureAsset>(irradianceBinding.textureID);
+        const auto& prefiltered = assets.get<TextureAsset>(prefilteredBinding.textureID);
+        CHECK(
+            irradiance.layout == ImageLayout::Cubemap && irradiance.colorSpace == ColorSpace::Linear &&
+                prefiltered.layout == ImageLayout::Cubemap && prefiltered.colorSpace == ColorSpace::Linear &&
+                prefiltered.mipLevels > 0,
+            "environment '{}' requires linear irradiance and prefiltered cubemaps",
+            environment.id
+        );
+    }
+
+    radianceTexture            = resources.texture(radianceBinding.textureID);
+    irradianceTexture          = resources.texture(irradianceBinding.textureID);
+    prefilteredSpecularTexture = resources.texture(prefilteredBinding.textureID);
+    prefilteredMaxLod          = static_cast<float>(prefilteredSpecularTexture->imageInfo().mipLevels - 1);
+    const vk::DescriptorImageInfo irradiance{
+        .sampler     = resources.sampler(irradianceBinding.samplerID),
+        .imageView   = irradianceTexture->imageView(),
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+    };
+    const vk::DescriptorImageInfo prefiltered{
+        .sampler     = resources.sampler(prefilteredBinding.samplerID),
+        .imageView   = prefilteredSpecularTexture->imageView(),
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+    };
+    const vk::DescriptorImageInfo radiance{
+        .sampler     = resources.sampler(radianceBinding.samplerID),
+        .imageView   = radianceTexture->imageView(),
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+    };
+    for (auto& data : frameStorage)
+        data.writeEnvironmentDescriptors(irradiance, prefiltered, radiance);
 }
 
 void Renderer::waitIdle()
@@ -166,15 +302,24 @@ void Renderer::shutdown() noexcept
     graph.reset();
     passes.reset();
     pickingReadback = {};
+    lightBuffer     = {};
     renderStorage   = {};
     materialTable   = {};
-    resources.shutdown();
     for (FrameContext& frame : frames)
     {
         frame.reset();
     }
     for (auto& data : frameStorage)
         data.reset();
+    shadowSampler = nullptr;
+    radianceTexture.reset();
+    irradianceTexture.reset();
+    prefilteredSpecularTexture.reset();
+    brdfLutTexture.reset();
+    sheenLutTexture.reset();
+    environmentMap.reset();
+    prefilteredMaxLod = 0.0f;
+    resources.shutdown();
     device.shutdown();
     shaders.shutdown();
     renderContext() = {};
@@ -203,11 +348,13 @@ void Renderer::setupRenderGraph()
     for (auto& frame : frames)
         frame.gpuProfiler().discard();
     DCHECK(passes);
-    activeSceneBindings  = nullptr;
     const auto& config   = *rendererConfig;
     activeFramesInFlight = config.renderPath == RenderPath::OfflinePathTracing ? 1u : maxFramesInFlight;
     frameIndex           = 0;
 
+    materialTable.setup(graph);
+    lightBuffer        = {};
+    const auto  target = graph.importSwapchain();
     SceneOutput scene;
     switch (config.renderPath)
     {
@@ -219,13 +366,20 @@ void Renderer::setupRenderGraph()
             break;
         case RenderPath::Forward:
         case RenderPath::Deferred:
-            scene = setupRasterization();
+            scene = setupRasterization(target);
             break;
     }
     scene       = setupLightMarkers(scene);
-    scene.color = setupPostProcess(scene.color);
+    scene.color = setupPostProcess(scene.color, target);
     setupEditor(scene);
-    graph.compile({vulkan, swapchain, frameStorage, config});
+    graph.compile({vulkan, swapchain.extent(), frameStorage, config});
+    if (config.renderPath == RenderPath::Forward || config.renderPath == RenderPath::Deferred)
+    {
+        createShadowSampler();
+        writeShadowDescriptors(scene.shadow);
+        for (auto& data : frameStorage)
+            data.writeLightBufferDescriptor(graph.getBuffer(lightBuffer, 0), graph.bufferRevision(lightBuffer));
+    }
     appliedConfig = config;
 }
 
@@ -252,33 +406,36 @@ uint32_t Renderer::offlineSampleCount() const
     return passes ? passes->get<OfflinePathTracingPass>().sampleCount() : 0;
 }
 
-Renderer::SceneOutput Renderer::setupRasterization()
+Renderer::SceneOutput Renderer::setupRasterization(RenderGraph::ImageHandle target)
 {
+    lightBuffer               = graph.createBuffer({
+                      .size  = sizeof(LightData),
+                      .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+    });
     const auto&        config = *rendererConfig;
     ShadowPass::Output shadow;
     if (config.feature.shadow.enable)
-        shadow = setupPass<ShadowPass>();
+        shadow = setupPass<ShadowPass>(lightBuffer);
     const auto depth = setupPass<DepthPrepass>().depth;
 
     SceneOutput output;
     if (config.renderPath == RenderPath::Deferred)
     {
         const auto gBuffer  = setupPass<GBufferPass>(depth);
-        const auto lighting = setupPass<DeferredLightingPass>(gBuffer, shadow);
+        const auto lighting = setupPass<DeferredLightingPass>(target, gBuffer, shadow, lightBuffer);
         output              = {lighting.color, lighting.depth};
         shadow              = lighting.shadow;
-        activeSceneBindings = &passes->get<DeferredLightingPass>().sceneBindings();
     }
     else
     {
-        const auto scene    = setupPass<ScenePass>(depth, shadow);
-        output              = {scene.color, scene.depth};
-        shadow              = scene.shadow;
-        activeSceneBindings = &passes->get<ScenePass>().sceneBindings();
+        const auto scene = setupPass<ScenePass>(target, depth, shadow, lightBuffer);
+        output           = {scene.color, scene.depth};
+        shadow           = scene.shadow;
     }
     if (config.feature.ibl)
         output.color = setupPass<SkyboxPass>(output.color, output.depth).color;
-    output.color = setupPass<TransparentPass>(output.color, output.depth, shadow).color;
+    output.color  = setupPass<TransparentPass>(output.color, output.depth, shadow, lightBuffer).color;
+    output.shadow = shadow;
     return output;
 }
 
@@ -288,20 +445,29 @@ Renderer::SceneOutput Renderer::setupLightMarkers(SceneOutput scene)
         scene.depth = setupPass<EditorDepthPass>().depth;
 
     const auto markers = setupPass<LightMarkerPass>(scene.color, scene.depth);
-    return {markers.color, markers.depth};
+    return {markers.color, markers.depth, scene.shadow};
 }
 
-RenderGraph::ImageHandle Renderer::setupPostProcess(RenderGraph::ImageHandle color)
+RenderGraph::ImageHandle Renderer::setupPostProcess(RenderGraph::ImageHandle color, RenderGraph::ImageHandle target)
 {
     const auto& config = *rendererConfig;
     if (config.feature.hdr)
     {
+        CHECK(swapchain.surfaceFormat().colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear);
         if (config.feature.bloom.enable)
             color = setupPass<BloomPass>(color).color;
-        return setupPass<ToneMappingPass>(color, graph.importSwapchain()).color;
+        return setupPass<ToneMappingPass>(color, target).color;
     }
     if (config.renderPath == RenderPath::RayTracing || config.renderPath == RenderPath::OfflinePathTracing)
-        return setupPass<RayTracingBlitPass>(color, graph.importSwapchain()).color;
+    {
+        const auto capabilities =
+            vkCheck(vulkan.physicalDeviceHandle().getSurfaceCapabilitiesKHR(vulkan.surfaceHandle()));
+        CHECK(
+            capabilities.supportedUsageFlags & vk::ImageUsageFlagBits::eTransferDst,
+            "ray tracing requires transfer-destination swapchain images"
+        );
+        return setupPass<RayTracingBlitPass>(color, target).color;
+    }
     return color;
 }
 
@@ -345,10 +511,11 @@ void Renderer::applyConfiguration()
     if (appliedConfig->feature.shadow.filter != config.feature.shadow.filter)
     {
         waitIdle();
-        if (activeSceneBindings)
+        if (config.renderPath == RenderPath::Forward || config.renderPath == RenderPath::Deferred)
         {
-            activeSceneBindings->refreshBindings(config);
-            activeSceneBindings->writeDescriptorSet(graph, {vulkan, swapchain, frameStorage, config});
+            createShadowSampler();
+            for (auto& data : frameStorage)
+                data.writeShadowSampler(*shadowSampler);
         }
     }
     appliedConfig = config;
@@ -369,7 +536,9 @@ void Renderer::recreateSwapchain()
 
 const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderData& scene, uint32_t targetFrameIndex)
 {
+    graph.beginFrame(targetFrameIndex);
     const auto& config        = *rendererConfig;
+    const bool  rasterization = config.renderPath == RenderPath::Forward || config.renderPath == RenderPath::Deferred;
     auto&       assets        = *context().assetManager;
     auto*       profiler      = context().profiler;
     auto&       renderData    = renderStorage[targetFrameIndex];
@@ -396,7 +565,7 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
             renderData.materialIndices[itemIndex] = materialTable.update(materialKey, material, resources, assets);
         }
 
-        // 如果有新纹理或SSBO需要扩容，则更新descriptor set
+        // 如果有新纹理或SSBO需要扩容，则更新material descriptor set
         materialTable.upload(vulkan, targetFrameIndex);
         renderData.materialDescriptorSet = materialTable.descriptorSetHandle(targetFrameIndex);
     }
@@ -409,7 +578,7 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
         profiler->recordCulling(static_cast<uint32_t>(renderData.drawItems.size()), {});
 
     // 光栅化视锥剔除
-    if (config.renderPath == RenderPath::Forward || config.renderPath == RenderPath::Deferred)
+    if (rasterization)
     {
         CpuProfileScope timing{profiler, "Main view preparation"};
         const Frustum   mainFrustum{view.uniforms.viewProjection};
@@ -431,14 +600,41 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
             profiler->recordCulling(static_cast<uint32_t>(renderData.drawItems.size()), {{"Main view", mainVisible}});
     }
 
+    if (rasterization)
+        updateEnvironmentBindings(renderData.environmentMap);
+
     {
         CpuProfileScope timing{context().profiler, "Frame upload"};
         auto&           data = frameStorage[targetFrameIndex];
-        data.updateSceneUniforms(view.uniforms);
-        if (activeSceneBindings)
+        data.uploadSceneUniforms(view.uniforms);
+        if (rasterization)
         {
-            activeSceneBindings->updateEnvironmentMap(renderData.environmentMap);
-            activeSceneBindings->updateFrame(data, renderData, config);
+            const auto&         feature = config.feature;
+            const auto&         shadow  = feature.shadow;
+            const LightUniforms lighting{
+                .lightRanges                   = renderData.lightRanges,
+                .ambientCoefficient            = feature.ambientCoefficient,
+                .cascadeCount                  = shadow.cascade.count,
+                .directionalShadowSampleRadius = shadow.cascade.sampleRadius,
+                .iblParameters                 = {prefilteredMaxLod, 0.0f, 0.0f, 0.0f},
+                .shadowParameters =
+                    {shadow.bias, shadow.sampleRadius, shadow.pixelRotation ? 1.0f : 0.0f, shadow.spotSampleRadius},
+            };
+            data.uploadLightUniforms(lighting);
+
+            if (!renderData.lights.empty())
+            {
+                const auto upload = graph.allocateUpload(lightBuffer, renderData.lights.size() * sizeof(LightData));
+                auto*      destination = reinterpret_cast<LightData*>(upload.data.data());
+                for (auto light : renderData.lights)
+                {
+                    light.shadowEnabled = 0;
+                    light.shadowidx     = ~0u;
+                    std::construct_at(destination++, light);
+                }
+            }
+            if (data.lightBufferRevision() != graph.bufferRevision(lightBuffer))
+                data.writeLightBufferDescriptor(graph.getBuffer(lightBuffer, 0), graph.bufferRevision(lightBuffer));
         }
     }
     return renderData;
@@ -446,28 +642,22 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
 
 RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData& scene, const EditorFrameInput& editor)
 {
-    DCHECK(inited);
+    // 获取最新渲染配置
     applyConfiguration();
-    auto& frame = currentFrame();
-    {
-        CpuProfileScope timing{context().profiler, "Fence wait"};
-        frame.wait();
-    }
 
-    const auto [acquireResult, imageIndex] = [&]
-    {
-        CpuProfileScope timing{context().profiler, "Swapchain acquire"};
-        return swapchain.acquire(frame.imageAvailableSemaphore());
-    }();
+    // wait fence
+    auto& frame = currentFrame();
+    frame.wait();
+
+    // 从swapchain取image
+    const auto [acquireResult, imageIndex] = swapchain.acquire(frame.imageAvailableSemaphore());
     if (acquireResult == vk::Result::eErrorOutOfDateKHR)
         return {.swapchainNeedsRebuild = true};
 
-    const auto& renderData = prepare(view, scene, frameIndex);
-    const auto  renderPath = rendererConfig->renderPath;
-    if (renderPath == RenderPath::OfflinePathTracing)
-        passes->get<OfflinePathTracingPass>().updateScene(view, scene, context().assetManager->contentRevision());
-    auto&           data = frameStorage[frameIndex];
-    const PassSetup setup{vulkan, swapchain, frameStorage, *rendererConfig};
+    const auto&     renderData = prepare(view, scene, frameIndex);
+    const auto      renderPath = rendererConfig->renderPath;
+    auto&           data       = frameStorage[frameIndex];
+    const PassSetup setup{vulkan, swapchain.extent(), frameStorage, *rendererConfig};
     const PassFrame execution{setup, data, view, renderData, editor, frameIndex};
     graph.prepare(execution);
 

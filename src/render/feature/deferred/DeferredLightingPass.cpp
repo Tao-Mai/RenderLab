@@ -7,7 +7,7 @@
 #include "render/RendererConfig.h"
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
-#include "render/present/Swapchain.h"
+#include "render/feature/SceneDraw.h"
 #include "render/resource/ShaderData.h"
 
 #include <array>
@@ -18,11 +18,16 @@ const ShaderAsset::ID kDeferredLightingShader = "deferred_lighting";
 }
 
 DeferredLightingPass::Output DeferredLightingPass::setup(
-    RenderGraph& graph, const PassSetup& setup, GBufferPass::Output input, ShadowPass::Output shadow
+    RenderGraph&              graph,
+    const PassSetup&          setup,
+    RenderGraph::ImageHandle  target,
+    GBufferPass::Output       input,
+    ShadowPass::Output        shadow,
+    RenderGraph::BufferHandle lights
 )
 {
     gBuffer                   = input;
-    const auto resolvedShadow = bindings.setup(graph, setup, shadow);
+    const auto resolvedShadow = SceneDraw::useLightingResources(graph, lights, shadow);
     for (const auto image :
          {gBuffer.albedoOcclusion,
           gBuffer.normalRoughness,
@@ -51,10 +56,9 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
             "GPU does not support an RGBA16F HDR color attachment with blending and sampling"
         );
     }
-    const auto extent = setup.swapchain.extent();
-    color             = hdr ? graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}})
-                            : graph.importSwapchain();
-    color             = graph.write(color);
+    const auto extent = graph.imageExtent(gBuffer.depth);
+    color = hdr ? graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}}) : target;
+    color = graph.write(color);
     graph.use(
         color,
         {
@@ -129,7 +133,6 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
 
 void DeferredLightingPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
 {
-    bindings.writeDescriptorSet(graph, setup);
     const std::array images{
         gBuffer.albedoOcclusion,
         gBuffer.normalRoughness,
@@ -175,7 +178,7 @@ void DeferredLightingPass::execute(
     RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
 ) const
 {
-    const auto                        extent = execution.setup.swapchain.extent();
+    const auto                        extent = graph.imageExtent(color);
     const vk::RenderingAttachmentInfo attachment{
         .imageView   = graph.getImage(color).getOrCreateImageView({
               .viewType         = vk::ImageViewType::e2D,

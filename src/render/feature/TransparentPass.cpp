@@ -13,13 +13,15 @@
 #include <glm/geometric.hpp>
 
 TransparentPass::Output TransparentPass::setup(
-    RenderGraph&             graph,
-    const PassSetup&         setup,
-    RenderGraph::ImageHandle colorHandle,
-    RenderGraph::ImageHandle depthHandle,
-    ShadowPass::Output       shadow
+    RenderGraph&              graph,
+    const PassSetup&          setup,
+    RenderGraph::ImageHandle  colorHandle,
+    RenderGraph::ImageHandle  depthHandle,
+    ShadowPass::Output        shadow,
+    RenderGraph::BufferHandle lights
 )
 {
+    renderContext().materialTable->use(graph, vk::PipelineStageFlagBits2::eFragmentShader);
     const auto& config = setup.config;
     shaderOptions =
         {.ibl = config.feature.ibl, .clearcoat = config.renderPath != RenderPath::Deferred, .transparent = true};
@@ -27,21 +29,7 @@ TransparentPass::Output TransparentPass::setup(
     color = graph.write(colorHandle);
     depth = depthHandle;
     SceneDraw::useAttachments(graph, std::array{color}, depth);
-    for (const auto image :
-         {shadow.pointLightShadowMap,
-          shadow.spotLightShadowMap,
-          shadow.rectAreaLightShadowMap,
-          shadow.cascadeShadowMap})
-    {
-        graph.use(
-            image,
-            {
-                .stages = vk::PipelineStageFlagBits2::eFragmentShader,
-                .access = vk::AccessFlagBits2::eShaderSampledRead,
-                .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
-            }
-        );
-    }
+    SceneDraw::useLightingResources(graph, lights, shadow);
     return {color};
 }
 

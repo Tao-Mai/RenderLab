@@ -11,7 +11,6 @@
 #include "render/feature/RenderGraph.h"
 #include "render/feature/editor/EditorFrameInput.h"
 #include "render/feature/editor/EditorShaderData.h"
-#include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/RenderResourceManager.h"
 
@@ -24,7 +23,7 @@ EditorPickingPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph
 
     shader = renderContext().shaderManager->getOrLoad("picking");
 
-    const auto extent = setup.swapchain.extent();
+    const auto extent = graph.imageExtent(depthHandle);
     depth             = depthHandle;
     graph.use(
         depth,
@@ -90,7 +89,7 @@ void EditorPickingPass::execute(
     {
         return;
     }
-    const auto extent = execution.setup.swapchain.extent();
+    const auto extent = graph.imageExtent(pickingImage);
     DCHECK(
         editor.pickX < extent.width && editor.pickY < extent.height,
         "picking coordinate is outside the render target"

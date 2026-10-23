@@ -30,7 +30,7 @@ struct HdrSourcePass
 
     Output setup(RenderGraph& graph, const PassSetup& setup)
     {
-        const auto extent = setup.swapchain.extent();
+        const auto extent = setup.renderExtent;
         color = graph.write(graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}}));
         graph.use(
             color,
@@ -43,7 +43,7 @@ struct HdrSourcePass
 
     void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
     {
-        const auto                        extent = execution.setup.swapchain.extent();
+        const auto                        extent = graph.imageExtent(color);
         const vk::RenderingAttachmentInfo attachment{
             .imageView = graph.getImage(color).getOrCreateImageView(
                 {.viewType         = vk::ImageViewType::e2D,
@@ -156,7 +156,7 @@ int main(int argc, char** argv)
         frame.init(vulkan, *renderContext().device);
     RenderGraph graph;
     graph.init(vulkan, renderer.swapchainHandle());
-    const PassSetup setup{vulkan, renderer.swapchainHandle(), frameData, context().config->rendererConfig()};
+    const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), frameData, context().config->rendererConfig()};
     HdrSourcePass   source;
     ReadPixelPass   readback;
     EndPass         end;

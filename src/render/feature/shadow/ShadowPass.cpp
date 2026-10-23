@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstring>
 
 namespace
 {
@@ -57,8 +58,14 @@ std::vector<ShadowVolume> shadowVolumes(const ShadowFrameData& lighting, uint32_
 
 }  // namespace
 
-ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup)
+ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::BufferHandle lights)
 {
+    lightBuffer = lights;
+    const RenderGraph::MemoryAccess shaderRead{
+        .stages = vk::PipelineStageFlagBits2::eVertexShader | vk::PipelineStageFlagBits2::eFragmentShader,
+        .access = vk::AccessFlagBits2::eShaderStorageRead,
+    };
+    graph.use(lightBuffer, shaderRead);
     const auto& shadow = setup.config.feature.shadow;
     cascadeCount       = shadow.cascade.count;
 
@@ -161,14 +168,36 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup)
         1
     );
 
-    return {point.image, spot.image, rectArea.image, directional.image};
+    const auto createBuffer = [&](vk::DeviceSize size)
+    {
+        const auto buffer = graph.write(graph.createBuffer({
+            .size  = size,
+            .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+        }));
+        graph.use(buffer, shaderRead);
+        return buffer;
+    };
+    point.buffer       = createBuffer(kMaxPointLightShadow * sizeof(PointShadowData));
+    spot.buffer        = createBuffer(kMaxSpotLightShadow * sizeof(SpotShadowData));
+    rectArea.buffer    = createBuffer(kMaxRectAreaLightShadow * sizeof(RectAreaShadowData));
+    directional.buffer = createBuffer(kMaxDirectionalLightShadow * sizeof(DirectionalShadowData));
+    return {
+        point.image,
+        spot.image,
+        rectArea.image,
+        directional.image,
+        point.buffer,
+        spot.buffer,
+        rectArea.buffer,
+        directional.buffer,
+    };
 }
 
-void ShadowPass::prepare(RenderGraph&, const PassFrame& frame)
+void ShadowPass::prepare(RenderGraph& graph, const PassFrame& frame)
 {
     CpuProfileScope timing{context().profiler, "Shadow preparation"};
-    auto prepared = prepareShadows(frame.view.uniforms, frame.renderData.lights, frame.setup.config.feature.shadow);
-    auto volumes  = shadowVolumes(prepared, cascadeCount);
+    shadowData   = prepareShadows(frame.view.uniforms, frame.renderData.lights, frame.setup.config.feature.shadow);
+    auto volumes = shadowVolumes(shadowData, cascadeCount);
     visibilityMasks.clear();
     visibilityMasks.reserve(frame.renderData.drawBounds.size());
 
@@ -193,14 +222,26 @@ void ShadowPass::prepare(RenderGraph&, const PassFrame& frame)
             views.push_back({RenderVisibility::viewName(volume.mask), volume.visibleDrawItems});
         profiler->recordCulling(static_cast<uint32_t>(frame.renderData.drawBounds.size()), std::move(views));
     }
-    frame.data.updateShadows(std::move(prepared));
+
+    const auto upload = [&](RenderGraph::BufferHandle buffer, const auto& values)
+    {
+        if (values.empty())
+            return;
+        const auto bytes      = values.size() * sizeof(values.front());
+        const auto allocation = graph.allocateUpload(buffer, bytes);
+        std::memcpy(allocation.data.data(), values.data(), bytes);
+    };
+    upload(lightBuffer, shadowData.lights);
+    upload(point.buffer, shadowData.pointShadows);
+    upload(spot.buffer, shadowData.spotShadows);
+    upload(rectArea.buffer, shadowData.rectAreaShadows);
+    upload(directional.buffer, shadowData.directionalShadows);
 }
 
 void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
 {
-    const auto& frame  = execution.data;
-    const auto  lights = frame.lightData();
-    const auto& ranges = frame.lightUniforms().lightRanges;
+    const auto& lights = shadowData.lights;
+    const auto& ranges = execution.renderData.lightRanges;
 
     for (uint32_t index = 0; index < ranges.directionalEnd; ++index)
     {
@@ -208,8 +249,7 @@ void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
         if (!light.castShadow())
             continue;
 
-        DCHECK(light.shadowidx < frame.directionalShadowData().size());
-        DCHECK(cascadeCount == frame.lightUniforms().cascadeCount);
+        DCHECK(light.shadowidx < shadowData.directionalShadows.size());
         for (uint32_t cascadeIndex = 0; cascadeIndex < cascadeCount; ++cascadeIndex)
             recordShadow(
                 graph,
@@ -228,7 +268,7 @@ void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
         if (!light.castShadow())
             continue;
 
-        DCHECK(light.shadowidx < frame.pointShadowData().size());
+        DCHECK(light.shadowidx < shadowData.pointShadows.size());
         recordShadow(graph, commandBuffer, execution, point, index, light.shadowidx * kPointFaceCount);
     }
 
@@ -238,7 +278,7 @@ void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
         if (!light.castShadow())
             continue;
 
-        DCHECK(light.shadowidx < frame.rectAreaShadowData().size());
+        DCHECK(light.shadowidx < shadowData.rectAreaShadows.size());
         recordShadow(graph, commandBuffer, execution, rectArea, index, light.shadowidx);
     }
 
@@ -248,7 +288,7 @@ void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
         if (!light.castShadow())
             continue;
 
-        DCHECK(light.shadowidx < frame.spotShadowData().size());
+        DCHECK(light.shadowidx < shadowData.spotShadows.size());
         recordShadow(graph, commandBuffer, execution, spot, index, light.shadowidx);
     }
 }
@@ -307,7 +347,7 @@ void ShadowPass::recordShadow(
     );
     commandBuffer.setScissor(0, vk::Rect2D({0, 0}, {target.mapSize, target.mapSize}));
 
-    const auto& light      = execution.data.lightData()[lightIndex];
+    const auto& light      = shadowData.lights[lightIndex];
     const auto  visibility = RenderVisibility::shadowMask(light.type(), light.shadowidx, cascadeIndex);
     for (size_t index = 0; index < execution.renderData.drawItems.size(); ++index)
     {

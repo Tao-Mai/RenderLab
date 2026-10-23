@@ -47,7 +47,9 @@
 ## 帧与资源
 
 - 默认两帧在途，每个槽位有独立 FrameContext、FrameData；复用前等待对应 Fence。
-- 光栅、实时与离线光追共用全局材质 SSBO、纹理数组和独立索引的采样器数组；每个在途槽位持有一套材质快照，等待 Fence 后更新。
+- FrameData 仅持有逐帧 UBO、公共 Set 和绑定版本；共享光源 Buffer handle 归 Renderer，阴影 CPU 数据与 Buffer handle 归 ShadowPass。
+- 光栅、实时与离线光追共用全局材质 SSBO、纹理数组和独立索引的采样器数组；SSBO 由 Graph 持有，所有在途帧共用一份，上传与读取通过 Barrier 排序。
+- 每个在途槽位有一个持久映射的 staging pool；Fence 完成后重置分配游标，prepare 取得 offset 后写入数据，Graph 执行时复制到 SSBO。
 - Graph 创建的图像跨帧共享，直接通过 `getImage(handle)` 访问；缓冲默认跨帧共享，阴影图不按 Frames-in-flight 复制。
 - 同一队列上追踪资源最后访问，下一帧首次使用前插入 Barrier；不意味着前后帧可无约束并行写同一资源。
 - 回读缓冲使用 PerFrame；交换链图像按获取到的 Image Index 选择。
@@ -61,7 +63,7 @@
 | [Renderer.cpp](Renderer.cpp) | 路线调度、全局帧准备、光栅化主视图剔除 |
 | [ShadowPass](feature/shadow/ShadowPass.cpp) / [TransparentPass](feature/TransparentPass.cpp) | 每帧 prepare 中准备阴影数据与阴影剔除、排序透明物体 |
 | [RenderGraph](feature/RenderGraph.h) | 类型化登记、依赖编译、资源状态与执行 |
-| [SceneDraw](feature/SceneDraw.cpp) / [SceneBindings](feature/SceneBindings.cpp) | 共享场景绘制函数与绑定 |
+| [SceneDraw](feature/SceneDraw.cpp) / [FrameData](FrameData.cpp) | 共享绘制与资源依赖函数、逐帧数据和公共 Set 写入 |
 | [feature/](feature/) | 光栅、阴影、后处理与编辑器 Pass |
 | [raytracing/](raytracing/) / [offline/](offline/) | 实时光追、历史重投影与离线路径 |
 | [device/](device/) / [present/](present/) | Vulkan、帧同步、计时与呈现 |

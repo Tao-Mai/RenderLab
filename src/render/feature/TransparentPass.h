@@ -14,11 +14,12 @@ public:
     };
 
     Output setup(
-        RenderGraph&             graph,
-        const PassSetup&         setup,
-        RenderGraph::ImageHandle colorHandle,
-        RenderGraph::ImageHandle depthHandle,
-        ShadowPass::Output       shadow
+        RenderGraph&              graph,
+        const PassSetup&          setup,
+        RenderGraph::ImageHandle  colorHandle,
+        RenderGraph::ImageHandle  depthHandle,
+        ShadowPass::Output        shadow,
+        RenderGraph::BufferHandle lights
     );
     void prepare(RenderGraph& graph, const PassFrame& frame);
     void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;

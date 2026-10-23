@@ -8,7 +8,6 @@
 #include "render/RendererConfig.h"
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
-#include "render/present/Swapchain.h"
 #include "render/resource/RenderResourceManager.h"
 
 #include <array>
@@ -211,7 +210,7 @@ void BloomPass::FilterPass::execute(
     commands.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, sets, {});
 
     const auto            sourceExtent = graph.imageInfo(source).extent;
-    const auto            frameExtent  = execution.setup.swapchain.extent();
+    const auto            frameExtent  = execution.setup.renderExtent;
     const auto&           viewport     = execution.view.viewport;
     const auto&           settings     = execution.setup.config.feature.bloom;
     const BloomParameters parameters{

@@ -1,8 +1,6 @@
 #pragma once
 #include "render/feature/SceneDraw.h"
 
-#include "render/feature/SceneBindings.h"
-
 class ScenePass
 {
 public:
@@ -13,16 +11,18 @@ public:
         ShadowPass::Output       shadow;
     };
 
-    Output
-    setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle depthHandle, ShadowPass::Output shadow);
-    void writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
+    Output setup(
+        RenderGraph&              graph,
+        const PassSetup&          setup,
+        RenderGraph::ImageHandle  target,
+        RenderGraph::ImageHandle  depthHandle,
+        ShadowPass::Output        shadow,
+        RenderGraph::BufferHandle lights
+    );
     void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
-
-    SceneBindings& sceneBindings() { return bindings; }
 
 private:
     SceneDrawOptions         shaderOptions;
-    SceneBindings            bindings;
     RenderGraph::ImageHandle color;
     RenderGraph::ImageHandle depth;
 };

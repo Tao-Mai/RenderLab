@@ -8,6 +8,7 @@
 #include "core/Window.h"
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
+#include "render/feature/shadow/ShadowData.h"
 #include "scene/SceneManager.h"
 #include "scene/actor/ALight.h"
 #include "scene/actor/AStaticMesh.h"
@@ -69,29 +70,20 @@ int main(int, char** argv)
     renderer.init();
     renderer.rebuildGraph();
 
-    FrameData upload;
-    upload.init(renderer.vulkanContext(), *renderContext().device);
     RenderLight source;
     source.data.positionRange = {0.0f, 0.0f, 4.0f, 16.0f};
     source.data.direction     = {0.0f, 0.0f, -1.0f, 0.0f};
     source.data.areaRightData = {0.0f, 1.0f, 0.0f, 0.0f};
     source.data.lightType     = GpuLightType::RectArea;
     source.data.shadowEnabled = 1;
-    auto prepared = prepareShadows({}, {&source.data, 1}, {});
-    upload.updateSceneUniforms({});
-    upload.updateLighting({.lightRanges = {0, 0, 1, 1}}, {&source.data, 1});
-    upload.updateShadows(std::move(prepared));
-    CHECK(upload.rectAreaShadowData().size() == 1 && upload.lightData()[0].shadowidx == 0);
-    CHECK(upload.pointShadowData().empty());
-    const auto& shadow = upload.rectAreaShadowData()[0];
+    const auto prepared       = prepareShadows({}, {&source.data, 1}, {});
+    CHECK(prepared.rectAreaShadows.size() == 1 && prepared.lights[0].shadowidx == 0);
+    CHECK(prepared.pointShadows.empty());
+    const auto& shadow = prepared.rectAreaShadows[0];
     CHECK(std::abs(shadow.nearPlane - 0.5f) < 1e-5f && shadow.farPlane == 16.0f);
     CHECK(glm::length(shadow.worldToUvScale - glm::vec2{0.41954982f}) < 1e-5f);
-    const auto clip = upload.rectAreaShadowData()[0].vp * glm::vec4{0.0f, 0.0f, 3.0f, 1.0f};
+    const auto clip = shadow.vp * glm::vec4{0.0f, 0.0f, 3.0f, 1.0f};
     CHECK(std::abs(clip.x) < 1e-5f && std::abs(clip.y) < 1e-5f && clip.z > 0.0f && clip.z < clip.w);
-    // Without ShadowPass::prepare, lighting upload disables shadow sampling.
-    upload.updateLighting({.lightRanges = {0, 0, 1, 1}}, {&source.data, 1});
-    CHECK(upload.rectAreaShadowData().empty() && upload.lightData()[0].shadowidx == ~0u);
-    upload.reset();
 
     auto&      sceneLight = *scenes.scene().actors.back()->getComponent<LightComponent>();
     const auto extent     = renderer.swapchainHandle().extent();

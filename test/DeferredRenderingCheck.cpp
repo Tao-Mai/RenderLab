@@ -1,3 +1,4 @@
+#include "LightingSetup.h"
 #include "editor/EditorCamera.h"
 // Small pixel comparison: shared forward/deferred lighting and base-material clearcoat behavior.
 #include "asset/AssetDataManager.h"
@@ -14,6 +15,7 @@
 #include "render/feature/EndPass.h"
 #include "render/feature/ScenePass.h"
 #include "render/feature/deferred/DeferredLightingPass.h"
+#include "render/resource/MaterialTable.h"
 #include "scene/SceneManager.h"
 #include "scene/SceneTypes.h"
 #include "scene/system/RenderSystem.h"
@@ -117,7 +119,7 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
     EndPass              end;
     RenderSystem         renderSystem;
     graph.init(vulkan, renderer.swapchainHandle());
-    const PassSetup setup{vulkan, renderer.swapchainHandle(), frameData, context().config->rendererConfig()};
+    const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), frameData, context().config->rendererConfig()};
     const auto      originalFeature = context().config->rendererConfig().feature;
     const auto      originalPath    = context().config->rendererConfig().renderPath;
     const auto      extent          = renderer.swapchainHandle().extent();
@@ -127,6 +129,11 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
     const auto sample = [&](bool deferred, bool ibl, bool shadows)
     {
         graph.releaseResources();
+        const auto lightBuffer = graph.createBuffer({
+            .size  = sizeof(LightData),
+            .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+        });
+        renderContext().materialTable->setup(graph);
         auto feature               = originalFeature;
         feature.hdr                = true;
         feature.ibl                = ibl;
@@ -136,33 +143,41 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
         context().config->setRenderPath(deferred ? RenderPath::Deferred : RenderPath::Forward);
         ShadowPass::Output shadowOutput;
         if (shadows)
-            shadowOutput = graph.addPass(shadow, setup);
+            shadowOutput = graph.addPass(shadow, setup, lightBuffer);
         const auto               depthOutput = graph.addPass(depth, setup);
         RenderGraph::ImageHandle color;
         if (deferred)
         {
             const auto geometry = graph.addPass(gBuffer, setup, depthOutput.depth);
-            color               = graph.addPass(lighting, setup, geometry, shadowOutput).color;
+            const auto output =
+                graph.addPass(lighting, setup, RenderGraph::ImageHandle{}, geometry, shadowOutput, lightBuffer);
+            color        = output.color;
+            shadowOutput = output.shadow;
         }
         else
-            color = graph.addPass(forward, setup, depthOutput.depth, shadowOutput).color;
+        {
+            const auto output =
+                graph.addPass(forward, setup, RenderGraph::ImageHandle{}, depthOutput.depth, shadowOutput, lightBuffer);
+            color        = output.color;
+            shadowOutput = output.shadow;
+        }
         const auto buffer = graph.addPass(readback, setup, color);
         graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
         graph.compile(setup);
         const auto&           sceneData = renderSystem.prepare(scenes.scene());
         std::vector<uint32_t> materialIndices;
+        vk::raii::Sampler     lightingSampler = nullptr;
         for (uint32_t index = 0; index < maxFramesInFlight; ++index)
         {
+            graph.beginFrame(index);
             const auto& data = renderer.prepare(view, sceneData, index);
+            if (index == 0)
+                lightingSampler = writeTestLighting(graph, setup, shadowOutput, data, lightBuffer);
             if (index == 0)
                 materialIndices = data.materialIndices;
             else
                 CHECK(materialIndices == data.materialIndices);
-            frameData[index].updateSceneUniforms(view.uniforms);
-            if (deferred)
-                lighting.sceneBindings().updateFrame(frameData[index], data, setup.config);
-            else
-                forward.sceneBindings().updateFrame(frameData[index], data, setup.config);
+            frameData[index].uploadSceneUniforms(view.uniforms);
             const PassFrame execution{setup, frameData[index], view, data, {}, index};
             graph.prepare(execution);
             auto& recording = frames[index].commandBufferHandle();
@@ -350,6 +365,7 @@ int main(int, char** argv)
     scene.actors.push_back(std::move(light));
     scenes.load(scene);
     renderer.init();
+    renderer.rebuildGraph();
     checkPipelineLayoutCache();
     checkDeferred(renderer, scenes);
     renderer.shutdown();

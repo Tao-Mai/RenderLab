@@ -1,10 +1,8 @@
 #include "render/raytracing/RayTracingBlitPass.h"
 
 #include "core/Logger.h"
-#include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/feature/RenderGraph.h"
-#include "render/present/Swapchain.h"
 
 #include <array>
 
@@ -15,16 +13,11 @@ RayTracingBlitPass::Output RayTracingBlitPass::setup(
     RenderGraph::ImageHandle colorHandle
 )
 {
-    const auto& device       = setup.vulkan.physicalDeviceHandle();
-    const auto  capabilities = vkCheck(device.getSurfaceCapabilitiesKHR(setup.vulkan.surfaceHandle()));
+    const auto& device = setup.vulkan.physicalDeviceHandle();
     CHECK(
-        capabilities.supportedUsageFlags & vk::ImageUsageFlagBits::eTransferDst,
-        "ray tracing requires transfer-destination swapchain images"
-    );
-    CHECK(
-        device.getFormatProperties(setup.swapchain.surfaceFormat().format).optimalTilingFeatures &
+        device.getFormatProperties(graph.imageInfo(colorHandle).format).optimalTilingFeatures &
             vk::FormatFeatureFlagBits::eBlitDst,
-        "swapchain format does not support blit destinations"
+        "target format does not support blit destinations"
     );
     CHECK(
         device.getFormatProperties(graph.imageInfo(rayImageHandle).format).optimalTilingFeatures &
@@ -57,18 +50,19 @@ void RayTracingBlitPass::execute(
     RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
 ) const
 {
-    const auto          extent = execution.setup.swapchain.extent();
+    const auto          sourceExtent = graph.imageExtent(rayImage);
+    const auto          targetExtent = graph.imageExtent(color);
     const vk::ImageBlit region{
         .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
         .srcOffsets =
             std::array{
                 vk::Offset3D{0, 0, 0},
-                vk::Offset3D{static_cast<int32_t>(extent.width), static_cast<int32_t>(extent.height), 1}
+                vk::Offset3D{static_cast<int32_t>(sourceExtent.width), static_cast<int32_t>(sourceExtent.height), 1}
             },
         .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
         .dstOffsets     = std::array{
             vk::Offset3D{0, 0, 0},
-            vk::Offset3D{static_cast<int32_t>(extent.width), static_cast<int32_t>(extent.height), 1}
+            vk::Offset3D{static_cast<int32_t>(targetExtent.width), static_cast<int32_t>(targetExtent.height), 1}
         },
     };
     commandBuffer.blitImage(

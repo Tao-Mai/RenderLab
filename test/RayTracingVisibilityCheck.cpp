@@ -13,6 +13,7 @@
 #include "render/feature/EndPass.h"
 #include "render/raytracing/BlasBuildPass.h"
 #include "render/raytracing/RayTracingPass.h"
+#include "render/resource/MaterialTable.h"
 #include "scene/SceneManager.h"
 #include "scene/SceneTypes.h"
 #include "scene/system/RenderSystem.h"
@@ -91,11 +92,12 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     EndPass           end;
     RenderSystem      renderSystem;
     graph.init(vulkan, renderer.swapchainHandle());
-    const PassSetup           setup{vulkan, renderer.swapchainHandle(), frameData, context().config->rendererConfig()};
+    const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), frameData, context().config->rendererConfig()};
     RenderGraph::BufferHandle buffer;
     const auto                rebuildGraph = [&]
     {
         graph.releaseResources();
+        renderContext().materialTable->setup(graph);
         const auto blas       = graph.addPass(blasBuild, setup);
         const auto structures = graph.addPass(tlasBuild, setup, blas);
         const auto output     = graph.addPass(trace, setup, structures);
@@ -115,13 +117,14 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         // Independent lighting checks use the same initial random sample.
         rebuildGraph();
         const auto& sceneData = renderSystem.prepare(scenes.scene());
-        const auto& data      = renderer.prepare(view, sceneData, 0);
+        graph.beginFrame(0);
+        const auto& data = renderer.prepare(view, sceneData, 0);
         CHECK(data.drawBounds.empty());
         CHECK(data.visibilityMasks.empty());
         materialIndices.clear();
         for (uint32_t itemIndex = 0; itemIndex < data.drawItems.size(); ++itemIndex)
             materialIndices[data.drawItems[itemIndex].selectionId] = data.materialIndices[itemIndex];
-        frameData[0].updateSceneUniforms(view.uniforms);
+        frameData[0].uploadSceneUniforms(view.uniforms);
         const PassFrame execution{setup, frameData[0], view, data, {}, 0};
         graph.prepare(execution);
         auto& recording = frames[0].commandBufferHandle();
@@ -436,6 +439,7 @@ int main(int, char** argv)
     scene.actors.push_back(std::move(light));
     scenes.load(scene);
     renderer.init();
+    renderer.rebuildGraph();
     checkVisibility(renderer, scenes);
     renderer.shutdown();
     scenes.shutdown();

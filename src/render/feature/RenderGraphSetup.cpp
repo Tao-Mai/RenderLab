@@ -27,7 +27,9 @@ RenderGraph::BufferHandle RenderGraph::createBuffer(BufferCreateInfo info)
     DCHECK(info.size);
     const auto id = static_cast<ResourceHandle>(resources.size());
     resources.push_back(
-        {.data = std::make_unique<ResourceData>(ResourceData{.type = ResourceType::Buffer, .bufferInfo = info})}
+        {.data = std::make_unique<ResourceData>(
+             ResourceData{.type = ResourceType::Buffer, .bufferInfo = info, .bufferUsage = info.usage}
+         )}
     );
     return {id};
 }

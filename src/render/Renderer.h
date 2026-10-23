@@ -13,6 +13,7 @@
 #include "render/device/VulkanContext.h"
 #include "render/feature/RenderGraph.h"
 #include "render/feature/editor/EditorFrameInput.h"
+#include "render/feature/shadow/ShadowPass.h"
 #include "render/present/Swapchain.h"
 #include "render/resource/MaterialTable.h"
 #include "render/resource/RenderResourceManager.h"
@@ -26,7 +27,6 @@
 #include <vulkan/vulkan_raii.hpp>
 
 struct SceneRenderData;
-class SceneBindings;
 class Profiler;
 
 class Renderer
@@ -64,19 +64,27 @@ private:
     std::array<FrameContext, maxFramesInFlight> frames;
     std::array<FrameData, maxFramesInFlight>    frameStorage;
     std::array<RenderData, maxFramesInFlight>   renderStorage;
-    SceneBindings*                              activeSceneBindings = nullptr;
-    const RendererConfig*                       rendererConfig      = nullptr;
+    std::optional<EnvironmentMapAsset::ID>      environmentMap;
+    std::shared_ptr<GpuTexture>                 radianceTexture;
+    std::shared_ptr<GpuTexture>                 irradianceTexture;
+    std::shared_ptr<GpuTexture>                 prefilteredSpecularTexture;
+    std::shared_ptr<GpuTexture>                 brdfLutTexture;
+    std::shared_ptr<GpuTexture>                 sheenLutTexture;
+    vk::raii::Sampler                           shadowSampler     = nullptr;
+    float                                       prefilteredMaxLod = 0.0f;
+    const RendererConfig*                       rendererConfig    = nullptr;
     std::optional<RendererConfig>               appliedConfig;
     struct SceneOutput
     {
         RenderGraph::ImageHandle color;
         RenderGraph::ImageHandle depth;
+        ShadowPass::Output       shadow;
     };
-    SceneOutput               setupRasterization();
+    SceneOutput               setupRasterization(RenderGraph::ImageHandle target);
     SceneOutput               setupRayTracing();
     SceneOutput               setupOffline();
     SceneOutput               setupLightMarkers(SceneOutput scene);
-    RenderGraph::ImageHandle  setupPostProcess(RenderGraph::ImageHandle color);
+    RenderGraph::ImageHandle  setupPostProcess(RenderGraph::ImageHandle color, RenderGraph::ImageHandle target);
     void                      setupEditor(SceneOutput scene);
     void                      applyConfiguration();
     uint32_t                  frameIndex           = 0;
@@ -84,7 +92,13 @@ private:
     RenderGraph               graph;
     std::unique_ptr<Passes>   passes;
     RenderGraph::BufferHandle pickingReadback;
+    RenderGraph::BufferHandle lightBuffer;
     void                      setupRenderGraph();
+    void                      initLightingResources();
+    void                      createShadowSampler();
+    void                      writeShadowDescriptors(ShadowPass::Output shadow);
+    void                      updateEnvironmentBindings(const std::optional<EnvironmentMapAsset::ID>& id);
+    void                      bindEnvironmentTextures();
 
     template <class T, class... Args>
     auto setupPass(Args&&... args);

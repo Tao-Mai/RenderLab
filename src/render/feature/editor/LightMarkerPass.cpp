@@ -7,7 +7,6 @@
 #include "render/device/Device.h"
 #include "render/feature/editor/EditorFrameInput.h"
 #include "render/feature/editor/EditorShaderData.h"
-#include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
 
 #include <array>
@@ -62,7 +61,7 @@ void LightMarkerPass::execute(
     if (lightDrawItems.empty())
         return;
 
-    const auto                        extent = execution.setup.swapchain.extent();
+    const auto                        extent = graph.imageExtent(color);
     const vk::RenderingAttachmentInfo colorAttachment{
         .imageView   = graph.getImage(color).getOrCreateImageView({
               .viewType         = vk::ImageViewType::e2D,
@@ -97,13 +96,8 @@ void LightMarkerPass::execute(
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     const std::array viewSets = {execution.data.viewSetHandle()};
-    commandBuffer.bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics,
-        pipelineLayout,
-        EditorInterface::kViewSet,
-        viewSets,
-        {}
-    );
+    commandBuffer
+        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, EditorInterface::kViewSet, viewSets, {});
     for (const auto& item : lightDrawItems)
     {
         const EditorLightMarkerPushConstants push{

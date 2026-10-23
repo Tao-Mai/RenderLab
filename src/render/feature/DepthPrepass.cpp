@@ -7,7 +7,6 @@
 #include "render/RenderView.h"
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
-#include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/MaterialTable.h"
 #include "render/resource/RenderResourceManager.h"
@@ -15,12 +14,13 @@
 
 DepthPrepass::Output DepthPrepass::setup(RenderGraph& graph, const PassSetup& setup)
 {
+    renderContext().materialTable->use(graph, vk::PipelineStageFlagBits2::eFragmentShader);
     CHECK(
         setup.vulkan.physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures &
         vk::FormatFeatureFlagBits::eDepthStencilAttachment
     );
 
-    const auto extent = setup.swapchain.extent();
+    const auto extent = setup.renderExtent;
     depth = graph.createImage({.format = vk::Format::eD32Sfloat, .extent = {extent.width, extent.height, 1}});
     depth = graph.write(depth);
     graph.use(
@@ -58,7 +58,7 @@ DepthPrepass::Output DepthPrepass::setup(RenderGraph& graph, const PassSetup& se
 
 void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
 {
-    const auto extent = execution.setup.swapchain.extent();
+    const auto extent = graph.imageExtent(depth);
 
     const vk::RenderingAttachmentInfo depthAttachment{
         .imageView   = graph.getImage(depth).getOrCreateImageView({

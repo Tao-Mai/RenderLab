@@ -36,11 +36,13 @@
 
 私有 Set 由各 Pass 持有
 
+Scene、Lighting、Editor View Set 由 FrameData 持有并写入，FrameData 只保留逐帧 UBO 和绑定状态。Renderer 管理光源 Buffer handle、环境纹理、LUT 引用和阴影 sampler；ShadowPass 管理阴影 CPU 数据和 Buffer handle。图编译后写入共享 Buffer 与阴影视图绑定，环境图切换时更新纹理绑定。
+
 ## Descriptor Set 写入时机
 
 | 时机              | 写入内容                                                                                                                                                                  |
 |-------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 初始化            | Scene、Editor View、Lighting 的固定 Buffer 绑定，以及 Material 的初始 Buffer 和 fallback 数组；私有 Set 在 Graph compile 完成资源分配后调用 `writeDescriptorSet()` 写入。 |
+| 初始化            | Scene、Lighting、Editor View 的 UBO 与 Material 的 fallback 数组；Graph compile 分配共享 SSBO 后写入 Lighting Buffer 绑定，私有 Set 调用 `writeDescriptorSet()` 写入。 |
 | 渲染 Feature 改变 | 阴影尺寸、过滤模式、渲染路线等配置改变时，更新受影响的 Binding；Graph 重建后重新写入私有 Set。窗口尺寸引起的资源重建同样处理。                                            |
 | 准备场景          | 新纹理或 sampler 加入材质数组、环境图切换、Buffer 扩容、TLAS 替换时，更新对应 Binding。                                                                                   |
 
@@ -52,3 +54,5 @@
 `RenderData.materialIndices` 按 DrawItem 顺序记录对应的 SSBO 索引；`MaterialTable` 按该索引提供 CPU 绘制信息（透明模式、双面、Shader 及材质扩展开关）。DrawItem 列表通过只读 span 引用上层提交。
 
 各 FIF 的 Material Set 在自身 Fence 完成后补写新增槽位；材质参数、相机和光源参数通过 Buffer 内容更新。
+
+材质、灯光、阴影与光追命中 SSBO 由 Graph 跨帧共享，内容经各 FIF 的 staging pool 上传。普通内容更新保持 Descriptor 不变；容量增长后，各 Set 根据 Buffer 的资源版本更新绑定。

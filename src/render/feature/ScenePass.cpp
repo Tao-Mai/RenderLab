@@ -1,21 +1,28 @@
 #include "render/feature/ScenePass.h"
 
+#include "render/RenderContext.h"
 #include "render/RenderData.h"
 #include "render/RendererConfig.h"
 #include "render/device/VulkanContext.h"
 #include "render/feature/SceneDraw.h"
-#include "render/present/Swapchain.h"
+#include "render/resource/MaterialTable.h"
 
 #include <array>
 
 ScenePass::Output ScenePass::setup(
-    RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle depthHandle, ShadowPass::Output shadow
+    RenderGraph&              graph,
+    const PassSetup&          setup,
+    RenderGraph::ImageHandle  target,
+    RenderGraph::ImageHandle  depthHandle,
+    ShadowPass::Output        shadow,
+    RenderGraph::BufferHandle lights
 )
 {
+    renderContext().materialTable->use(graph, vk::PipelineStageFlagBits2::eFragmentShader);
     const auto& config = setup.config;
     shaderOptions      = {.ibl = config.feature.ibl, .clearcoat = config.renderPath != RenderPath::Deferred};
 
-    const auto resolvedShadow = bindings.setup(graph, setup, shadow);
+    const auto resolvedShadow = SceneDraw::useLightingResources(graph, lights, shadow);
     const bool hdr            = config.feature.hdr;
     if (hdr)
     {
@@ -30,18 +37,12 @@ ScenePass::Output ScenePass::setup(
         );
     }
 
-    const auto extent = setup.swapchain.extent();
-    color             = hdr ? graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}})
-                            : graph.importSwapchain();
-    color             = graph.write(color);
-    depth             = depthHandle;
+    const auto extent = graph.imageExtent(depthHandle);
+    color = hdr ? graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}}) : target;
+    color = graph.write(color);
+    depth = depthHandle;
     SceneDraw::useAttachments(graph, std::array{color}, depth);
     return {color, depth, resolvedShadow};
-}
-
-void ScenePass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
-{
-    bindings.writeDescriptorSet(graph, setup);
 }
 
 void ScenePass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const

@@ -6,13 +6,80 @@
 #include "render/RenderData.h"
 #include "render/RenderView.h"
 #include "render/device/Device.h"
-#include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/MaterialTable.h"
 #include "render/resource/RenderResourceManager.h"
 #include "render/resource/ShaderData.h"
 
+#include <algorithm>
 #include <array>
+
+ShadowPass::Output
+SceneDraw::useLightingResources(RenderGraph& graph, RenderGraph::BufferHandle lights, ShadowPass::Output shadow)
+{
+    const RenderGraph::MemoryAccess storageRead{
+        .stages = vk::PipelineStageFlagBits2::eFragmentShader,
+        .access = vk::AccessFlagBits2::eShaderStorageRead,
+    };
+    graph.use(lights, storageRead);
+
+    RenderGraph::ImageHandle fallback;
+    const auto               use = [&](RenderGraph::ImageHandle image)
+    {
+        if (image.id == RenderGraph::kInvalidHandle)
+        {
+            if (fallback.id == RenderGraph::kInvalidHandle)
+            {
+                constexpr uint32_t kCubeFaceCount = 6;
+                fallback                          = graph.createImage({
+                                             .flags       = vk::ImageCreateFlagBits::eCubeCompatible,
+                                             .format      = vk::Format::eD32Sfloat,
+                                             .extent      = {1, 1, 1},
+                                             .arrayLayers = kCubeFaceCount,
+                });
+            }
+            image = fallback;
+        }
+        graph.use(
+            image,
+            {
+                .stages = vk::PipelineStageFlagBits2::eFragmentShader,
+                .access = vk::AccessFlagBits2::eShaderSampledRead,
+                .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
+            }
+        );
+        return image;
+    };
+    RenderGraph::BufferHandle fallbackBuffer;
+    const auto                useBuffer = [&](RenderGraph::BufferHandle buffer)
+    {
+        if (buffer.id == RenderGraph::kInvalidHandle)
+        {
+            if (fallbackBuffer.id == RenderGraph::kInvalidHandle)
+                fallbackBuffer = graph.createBuffer({
+                    .size = std::max(
+                        {sizeof(PointShadowData),
+                         sizeof(SpotShadowData),
+                         sizeof(RectAreaShadowData),
+                         sizeof(DirectionalShadowData)}
+                    ),
+                });
+            buffer = fallbackBuffer;
+        }
+        graph.use(buffer, storageRead);
+        return buffer;
+    };
+    return {
+        use(shadow.pointLightShadowMap),
+        use(shadow.spotLightShadowMap),
+        use(shadow.rectAreaLightShadowMap),
+        use(shadow.cascadeShadowMap),
+        useBuffer(shadow.pointShadowBuffer),
+        useBuffer(shadow.spotShadowBuffer),
+        useBuffer(shadow.rectAreaShadowBuffer),
+        useBuffer(shadow.directionalShadowBuffer),
+    };
+}
 
 void SceneDraw::useAttachments(
     RenderGraph& graph, std::span<const RenderGraph::ImageHandle> colors, RenderGraph::ImageHandle depth
@@ -46,7 +113,7 @@ vk::Rect2D SceneDraw::beginRendering(
     vk::AttachmentLoadOp                      colorLoadOp
 )
 {
-    const auto                               extent = execution.setup.swapchain.extent();
+    const auto                               extent = graph.imageExtent(colors.front());
     std::vector<vk::RenderingAttachmentInfo> colorAttachments;
     colorAttachments.reserve(colors.size());
     for (const auto color : colors)

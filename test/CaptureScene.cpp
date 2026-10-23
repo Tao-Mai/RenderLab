@@ -1,3 +1,4 @@
+#include "LightingSetup.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
@@ -21,6 +22,7 @@
 #include "render/raytracing/BlasBuildPass.h"
 #include "render/raytracing/TemporalReprojectionPass.h"
 #include "render/raytracing/TlasBuildPass.h"
+#include "render/resource/MaterialTable.h"
 #include "scene/SceneManager.h"
 #include "scene/system/RenderSystem.h"
 
@@ -102,9 +104,10 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     std::array<FrameData, maxFramesInFlight> frameData;
     for (auto& data : frameData)
         data.init(vulkan, *renderContext().device);
-    const PassSetup setup{vulkan, renderer.swapchainHandle(), frameData, context().config->rendererConfig()};
+    const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), frameData, context().config->rendererConfig()};
     RenderGraph     graph;
     graph.init(vulkan, renderer.swapchainHandle());
+    renderContext().materialTable->setup(graph);
     ShadowPass               shadow;
     DepthPrepass             depth;
     ScenePass                scene;
@@ -122,8 +125,11 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     ImageReadbackPass        readback;
     EndPass                  end;
 
+    const auto               target = graph.createImage({.format = format, .extent = {extent.width, extent.height, 1}});
     RenderGraph::ImageHandle color;
     RenderGraph::ImageHandle depthImage;
+    ShadowPass::Output       lightingShadow;
+    RenderGraph::BufferHandle lightBuffer;
     if (offline || realtime)
     {
         const auto meshes     = graph.addPass(blas, setup);
@@ -140,16 +146,21 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     }
     else
     {
+        lightBuffer = graph.createBuffer({
+            .size  = sizeof(LightData),
+            .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+        });
         ShadowPass::Output shadows;
         if (config.feature.shadow.enable)
-            shadows = graph.addPass(shadow, setup);
+            shadows = graph.addPass(shadow, setup, lightBuffer);
         const auto depthOutput = graph.addPass(depth, setup);
-        const auto sceneOutput = graph.addPass(scene, setup, depthOutput.depth, shadows);
+        const auto sceneOutput = graph.addPass(scene, setup, target, depthOutput.depth, shadows, lightBuffer);
         color                  = sceneOutput.color;
         depthImage             = sceneOutput.depth;
+        lightingShadow         = sceneOutput.shadow;
         if (config.feature.ibl)
             color = graph.addPass(skybox, setup, color, sceneOutput.depth).color;
-        color = graph.addPass(transparent, setup, color, sceneOutput.depth, sceneOutput.shadow).color;
+        color = graph.addPass(transparent, setup, color, sceneOutput.depth, sceneOutput.shadow, lightBuffer).color;
     }
     if (!offline)
     {
@@ -159,7 +170,6 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     }
     if (config.feature.bloom.enable)
         color = graph.addPass(bloom, setup, color).color;
-    const auto target = graph.createImage({.format = format, .extent = {extent.width, extent.height, 1}});
     color             = graph.addPass(toneMapping, setup, color, target).color;
     const auto buffer = graph.addPass(readback, setup, color);
     graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
@@ -168,26 +178,25 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     EditorCamera camera{scenes.scene().editorCamera};
     const auto   view = camera.renderView({0, 0, float(extent.width), float(extent.height)});
     RenderSystem system;
-    const auto&  snapshot   = system.prepare(scenes.scene());
+    const auto&  snapshot = system.prepare(scenes.scene());
+    graph.beginFrame(0);
     const auto&  renderData = renderer.prepare(view, snapshot, 0);
     LightMarkers lightMarkers;
     if (!offline)
         lightMarkers.prepare(scenes.scene(), *renderContext().resources);
     const EditorFrameInput editor{.lightDrawItems = lightMarkers.drawItems()};
+    vk::raii::Sampler      lightingSampler = nullptr;
     if (offline || realtime)
     {
         for (auto& data : frameData)
-            data.updateSceneUniforms(view.uniforms);
-        if (offline)
-            tracing.updateScene(view, snapshot, context().assetManager->contentRevision());
+            data.uploadSceneUniforms(view.uniforms);
     }
     else
     {
-        scene.sceneBindings().updateEnvironmentMap(renderData.environmentMap);
+        lightingSampler = writeTestLighting(graph, setup, lightingShadow, renderData, lightBuffer);
         for (auto& data : frameData)
         {
-            data.updateSceneUniforms(view.uniforms);
-            scene.sceneBindings().updateFrame(data, renderData, setup.config);
+            data.uploadSceneUniforms(view.uniforms);
         }
     }
 
@@ -197,6 +206,8 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         const auto index = frameNumber % activeFrameCount;
         auto&      frame = frames[index];
         frame.wait();
+        if (frameNumber != 0)
+            graph.beginFrame(index);
         const PassFrame execution{setup, frameData[index], view, renderData, editor, index};
         graph.prepare(execution);
         auto& commands = frame.commandBufferHandle();
@@ -295,6 +306,7 @@ int main(int argc, char** argv)
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     window.init();
     renderer.init();
+    renderer.rebuildGraph();
     capture(renderer, scenes, std::filesystem::path{argv[3]}, frameCount);
     renderer.shutdown();
     scenes.shutdown();

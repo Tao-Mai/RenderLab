@@ -4,7 +4,7 @@
 #include "render/RenderData.h"
 #include "render/device/VulkanContext.h"
 #include "render/feature/SceneDraw.h"
-#include "render/present/Swapchain.h"
+#include "render/resource/MaterialTable.h"
 
 namespace
 {
@@ -13,11 +13,12 @@ const ShaderAsset::ID kGBufferShader = "gbuffer";
 
 GBufferPass::Output GBufferPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle depthHandle)
 {
+    renderContext().materialTable->use(graph, vk::PipelineStageFlagBits2::eFragmentShader);
     const auto& device = setup.vulkan.physicalDeviceHandle();
     CHECK(kColorFormats.size() <= setup.vulkan.properties().limits.maxColorAttachments);
     constexpr auto kRequiredFeatures =
         vk::FormatFeatureFlagBits::eColorAttachment | vk::FormatFeatureFlagBits::eSampledImage;
-    const auto extent = setup.swapchain.extent();
+    const auto extent = graph.imageExtent(depthHandle);
     for (size_t index = 0; index < colors.size(); ++index)
     {
         const auto features = device.getFormatProperties(kColorFormats[index]).optimalTilingFeatures;

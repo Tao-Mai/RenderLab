@@ -7,7 +7,6 @@
 #include "render/RendererConfig.h"
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
-#include "render/present/Swapchain.h"
 #include "render/resource/RenderResourceManager.h"
 #include "render/resource/ShaderData.h"
 
@@ -36,15 +35,12 @@ ToneMappingPass::Output ToneMappingPass::setup(
         }
     );
 
-    const auto surfaceFormat = setup.swapchain.surfaceFormat();
-    CHECK(surfaceFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear);
-    const bool srgbAttachment =
-        surfaceFormat.format == vk::Format::eB8G8R8A8Srgb || surfaceFormat.format == vk::Format::eR8G8B8A8Srgb;
+    const auto targetFormat   = graph.imageInfo(target).format;
+    const bool srgbAttachment = targetFormat == vk::Format::eB8G8R8A8Srgb || targetFormat == vk::Format::eR8G8B8A8Srgb;
     CHECK(
-        srgbAttachment || surfaceFormat.format == vk::Format::eB8G8R8A8Unorm ||
-            surfaceFormat.format == vk::Format::eR8G8B8A8Unorm,
+        srgbAttachment || targetFormat == vk::Format::eB8G8R8A8Unorm || targetFormat == vk::Format::eR8G8B8A8Unorm,
         "unsupported tone mapping output format: {}",
-        vk::to_string(surfaceFormat.format)
+        vk::to_string(targetFormat)
     );
     encodeSrgb = !srgbAttachment;
 
@@ -77,7 +73,7 @@ ToneMappingPass::Output ToneMappingPass::setup(
                  .shader = shader,
                  .layout = pipelineLayout,
                  .state  = PipelineState{.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
-                 .colorFormats = {surfaceFormat.format},
+                 .colorFormats = {targetFormat},
     });
     sampler           = ctx.resources->sampler(BuiltinAssets::Sampler::linearClamp);
 
@@ -121,7 +117,7 @@ void ToneMappingPass::execute(
     RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
 ) const
 {
-    const auto                        extent = execution.setup.swapchain.extent();
+    const auto                        extent = graph.imageExtent(color);
     const vk::RenderingAttachmentInfo attachment{
         .imageView   = graph.getImage(color).getOrCreateImageView({
               .viewType         = vk::ImageViewType::e2D,

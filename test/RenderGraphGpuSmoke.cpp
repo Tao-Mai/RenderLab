@@ -13,6 +13,7 @@
 #include "editor/LightMarkers.h"
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
+#include "render/feature/shadow/ShadowData.h"
 #include "scene/SceneManager.h"
 #include "scene/actor/ALight.h"
 #include "scene/actor/AStaticMesh.h"
@@ -29,10 +30,8 @@
 
 namespace
 {
-void checkPointShadowUpload(Renderer& renderer)
+void checkPointShadowData(Renderer& renderer)
 {
-    FrameData frame;
-    frame.init(renderer.vulkanContext(), *renderContext().device);
     std::array<RenderLight, 5> lights;
     for (auto& light : lights)
     {
@@ -43,22 +42,19 @@ void checkPointShadowUpload(Renderer& renderer)
     lights[0].enabled            = false;
     lights[1].data.lightType     = GpuLightType::Spot;
     lights[2].data.shadowEnabled = 0;
-    const auto upload            = [&](bool enabled)
+    const auto prepare           = [&]
     {
         SceneRenderData scene;
         scene.lights.assign(lights.begin(), lights.end());
         const auto& prepared = renderer.prepare({}, scene, 0);
-        frame.updateSceneUniforms({});
-        frame.updateLighting({.lightRanges = prepared.lightRanges}, prepared.lights);
-        if (enabled)
-            frame.updateShadows(prepareShadows({}, prepared.lights, {}));
+        return prepareShadows({}, prepared.lights, {});
     };
-    upload(true);
-    CHECK(frame.pointShadowData().size() == 2);
-    CHECK(frame.lightData().size() == 4);
-    CHECK(frame.lightData()[1].shadowidx == 0 && frame.lightData()[2].shadowidx == 1);
-    CHECK(frame.lightData()[0].shadowidx == ~0u && frame.lightData()[3].shadowidx == 0);
-    CHECK(frame.spotShadowData().size() == 1);
+    auto prepared = prepare();
+    CHECK(prepared.pointShadows.size() == 2);
+    CHECK(prepared.lights.size() == 4);
+    CHECK(prepared.lights[1].shadowidx == 0 && prepared.lights[2].shadowidx == 1);
+    CHECK(prepared.lights[0].shadowidx == ~0u && prepared.lights[3].shadowidx == 0);
+    CHECK(prepared.spotShadows.size() == 1);
 
     const std::array directions = {
         glm::vec3{1, 0, 0},
@@ -71,7 +67,7 @@ void checkPointShadowUpload(Renderer& renderer)
     for (size_t face = 0; face < directions.size(); ++face)
     {
         const glm::vec4 clip =
-            frame.pointShadowData()[0].vp[face] * glm::vec4{lights[3].data.position() + directions[face], 1.0f};
+            prepared.pointShadows[0].vp[face] * glm::vec4{lights[3].data.position() + directions[face], 1.0f};
         CHECK(
             std::abs(clip.x) < 1.0e-5f && std::abs(clip.y) < 1.0e-5f && clip.w > 0.0f,
             "point shadow VP must face its corresponding cubemap direction"
@@ -80,21 +76,13 @@ void checkPointShadowUpload(Renderer& renderer)
 
     lights[0].enabled            = true;
     lights[2].data.shadowEnabled = 1;
-    upload(true);
-    CHECK(frame.pointShadowData().size() == 4);
+    prepared                     = prepare();
+    CHECK(prepared.pointShadows.size() == 4);
     CHECK(
-        frame.lightData()[0].shadowidx == 0 && frame.lightData()[1].shadowidx == 1 &&
-        frame.lightData()[2].shadowidx == 2 && frame.lightData()[3].shadowidx == 3
+        prepared.lights[0].shadowidx == 0 && prepared.lights[1].shadowidx == 1 && prepared.lights[2].shadowidx == 2 &&
+        prepared.lights[3].shadowidx == 3
     );
-    upload(false);
-    CHECK(frame.pointShadowData().empty());
-    for (const auto& light : frame.lightData())
-        CHECK(!light.castShadow() && light.shadowidx == ~0u);
     CHECK(lights[0].data.castShadow());
-
-    frame.updateLighting({}, {});
-    CHECK(frame.pointShadowData().empty() && frame.lightData().empty());
-    frame.reset();
 }
 
 void checkMovement(const SceneAsset& original, Window& window, SceneManager& manager)
@@ -319,8 +307,8 @@ int main(int argc, char** argv)
 
     sceneManager.load(scene);
     renderer.init();
-    checkPointShadowUpload(renderer);
     renderer.rebuildGraph();
+    checkPointShadowData(renderer);
 
     const auto renderActor = [&]() -> AActor*
     {

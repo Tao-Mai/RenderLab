@@ -26,7 +26,7 @@ struct SourcePass
 
     RayTracingPass::Output setup(RenderGraph& graph, const PassSetup& setup)
     {
-        const auto extent = setup.swapchain.extent();
+        const auto extent = setup.renderExtent;
         const auto create = [&](vk::Format format)
         {
             auto image = graph.write(graph.createImage({.format = format, .extent = {extent.width, extent.height, 1}}));
@@ -120,11 +120,11 @@ void check(Renderer& renderer)
         frame.init(vulkan, *renderContext().device);
     RenderGraph graph;
     graph.init(vulkan, renderer.swapchainHandle());
-    SourcePass                source;
-    TemporalReprojectionPass  temporal;
-    ReadbackPass              readback;
-    EndPass                   end;
-    const PassSetup           setup{vulkan, renderer.swapchainHandle(), data, context().config->rendererConfig()};
+    SourcePass               source;
+    TemporalReprojectionPass temporal;
+    ReadbackPass             readback;
+    EndPass                  end;
+    const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), data, context().config->rendererConfig()};
     RenderGraph::BufferHandle buffer;
     const auto                build = [&]
     {
@@ -146,7 +146,7 @@ void check(Renderer& renderer)
         source.value     = value;
         const auto index = frameNumber++ % maxFramesInFlight;
         frames[index].wait();
-        data[index].updateSceneUniforms(view.uniforms);
+        data[index].uploadSceneUniforms(view.uniforms);
         const PassFrame execution{setup, data[index], view, {}, {}, index};
         graph.prepare(execution);
         auto& commands = frames[index].commandBufferHandle();

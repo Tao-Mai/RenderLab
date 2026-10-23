@@ -2,7 +2,6 @@
 
 #include "core/Logger.h"
 #include "render/feature/editor/EditorFrameInput.h"
-#include "render/present/Swapchain.h"
 #include "render/resource/Buffer.h"
 
 EditorPickingCopyPass::Output
@@ -41,7 +40,7 @@ void EditorPickingCopyPass::execute(
     if (!editor.requestPick)
         return;
 
-    const auto extent = execution.setup.swapchain.extent();
+    const auto extent = graph.imageExtent(pickingImage);
     DCHECK(editor.pickX < extent.width && editor.pickY < extent.height);
     const vk::BufferImageCopy copyRegion{
         .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},

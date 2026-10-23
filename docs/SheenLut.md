@@ -20,4 +20,4 @@
 - LUT 坐标使用原始 Roughness，不预先平方；与 BRDF 内部的 alpha 参数区分。
 - 与 `lut_charlie.png` 一类 Sheen IBL 积分表用途不同，不可互换。
 
-实现入口：[BuiltinTexture.cpp](../src/asset/builtin/BuiltinTexture.cpp)、[SceneBindings.cpp](../src/render/feature/SceneBindings.cpp)、[scene_lighting.slang](../shaders/scene_lighting.slang)。
+实现入口：[BuiltinTexture.cpp](../src/asset/builtin/BuiltinTexture.cpp)、[Renderer.cpp](../src/render/Renderer.cpp)、[FrameData.cpp](../src/render/FrameData.cpp)、[scene_lighting.slang](../shaders/scene_lighting.slang)。

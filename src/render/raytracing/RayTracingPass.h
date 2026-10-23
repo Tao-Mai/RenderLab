@@ -22,15 +22,16 @@ public:
 
     Output setup(RenderGraph& graph, const PassSetup& setup, TlasBuildPass::Output scene);
     void   writeDescriptorSet(RenderGraph& graph, const PassSetup& setup);
+    void   prepare(RenderGraph& graph, const PassFrame& execution);
     void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution);
 
 private:
     struct Frame
     {
-        Buffer                  hitData;
-        Buffer                  lightData;
-        vk::raii::DescriptorSet set          = nullptr;
-        uint64_t                tlasRevision = 0;
+        uint64_t                hitBufferRevision   = 0;
+        uint64_t                lightBufferRevision = 0;
+        vk::raii::DescriptorSet set                 = nullptr;
+        uint64_t                tlasRevision        = 0;
     };
     struct RayTracingParameters
     {
@@ -55,9 +56,12 @@ private:
     Buffer                                   bindingTable;
     vk::StridedDeviceAddressRegionKHR        raygenRegion, missRegion, hitRegion;
     RenderGraph::AccelerationStructureHandle sceneTlas;
+    RenderGraph::BufferHandle                hitData;
+    RenderGraph::BufferHandle                lightData;
     std::array<Frame, maxFramesInFlight>     frames;
 
     void createPipeline(const PassSetup& setup, uint32_t maxRecursionDepth);
-    void prepareLights(const PassFrame& execution, Frame& frame) const;
-    void prepareBindings(RenderGraph& graph, const PassFrame& execution, Frame& frame);
+    void prepareLights(RenderGraph& graph, const PassFrame& execution, Frame& frame) const;
+    void prepareHits(RenderGraph& graph, const PassFrame& execution, Frame& frame);
+    void updateTlasDescriptor(RenderGraph& graph, const PassFrame& execution, Frame& frame);
 };

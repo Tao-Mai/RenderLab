@@ -2,9 +2,9 @@
 
 #include <cstdint>
 #include <span>
+#include <vulkan/vulkan.hpp>
 
 class VulkanContext;
-class Swapchain;
 class FrameData;
 class GpuProfiler;
 struct RenderView;
@@ -16,7 +16,7 @@ struct EditorFrameInput;
 struct PassSetup
 {
     VulkanContext&        vulkan;
-    Swapchain&            swapchain;
+    vk::Extent2D          renderExtent;
     std::span<FrameData>  frameData;
     const RendererConfig& config;
 };

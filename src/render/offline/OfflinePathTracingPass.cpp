@@ -1,5 +1,6 @@
 #include "render/offline/OfflinePathTracingPass.h"
 
+#include "asset/AssetManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "core/Vertex.h"
@@ -12,9 +13,9 @@
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/feature/RenderGraph.h"
-#include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/GpuShader.h"
+#include "render/resource/MaterialTable.h"
 #include "render/resource/RenderResourceManager.h"
 
 #include <algorithm>
@@ -45,7 +46,25 @@ OfflinePathTracingPass::setup(RenderGraph& graph, const PassSetup& setup, TlasBu
         "GPU does not support RGBA16F ray tracing output with storage writes and linear sampling"
     );
 
-    sceneTlas = scene.tlas;
+    sceneTlas                = scene.tlas;
+    const auto createStorage = [&](vk::DeviceSize size)
+    {
+        const auto buffer = graph.createBuffer({
+            .size  = size,
+            .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+        });
+        graph.use(
+            buffer,
+            {
+                .stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
+                .access = vk::AccessFlagBits2::eShaderStorageRead,
+            }
+        );
+        return buffer;
+    };
+    hitData   = createStorage(sizeof(RayTracingHitData));
+    lightData = createStorage(sizeof(LightData));
+    renderContext().materialTable->use(graph, vk::PipelineStageFlagBits2::eRayTracingShaderKHR);
     for (const auto structure : {scene.blas, scene.tlas})
         graph.use(
             structure,
@@ -55,7 +74,7 @@ OfflinePathTracingPass::setup(RenderGraph& graph, const PassSetup& setup, TlasBu
             }
         );
 
-    const auto extent = setup.swapchain.extent();
+    const auto extent = setup.renderExtent;
     rayImage          = graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}});
     rayImage          = graph.write(rayImage);
     graph.use(
@@ -72,21 +91,7 @@ OfflinePathTracingPass::setup(RenderGraph& graph, const PassSetup& setup, TlasBu
         "offline accumulation buffer exceeds maxStorageBufferRange: {} bytes",
         accumulationBytes
     );
-    if (accumulation.size() != accumulationBytes)
-    {
-        accumulation = Buffer(
-            setup.vulkan.physicalDeviceHandle(),
-            setup.vulkan.deviceHandle(),
-            accumulationBytes,
-            vk::BufferUsageFlagBits::eStorageBuffer,
-            vk::MemoryPropertyFlagBits::eDeviceLocal
-        );
-    }
-    accumulationHandle = graph.importBuffer(
-        accumulation,
-        {.stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
-         .access = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite}
-    );
+    accumulationHandle = graph.createBuffer({.size = accumulationBytes});
     accumulationHandle = graph.write(accumulationHandle);
     graph.use(
         accumulationHandle,
@@ -97,9 +102,11 @@ OfflinePathTracingPass::setup(RenderGraph& graph, const PassSetup& setup, TlasBu
     const auto maxRecursionDepth = setup.config.feature.offline.maxRecursionDepth;
     if (!*pipeline || pipelineRecursionDepth != maxRecursionDepth)
         createPipeline(setup, maxRecursionDepth);
+    frame.hitBufferRevision   = 0;
+    frame.lightBufferRevision = 0;
+    frame.tlasRevision        = 0;
 
     accumulatedSamples = 0;
-    previousScene.reset();
     return {rayImage};
 }
 
@@ -308,25 +315,20 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
     };
 }
 
-void OfflinePathTracingPass::prepareLights(const PassFrame& execution, Frame& frame) const
+void OfflinePathTracingPass::prepareLights(RenderGraph& graph, const PassFrame& execution, Frame& frame) const
 {
-    const auto&          vulkan = execution.setup.vulkan;
-    const auto&          lights = execution.renderData.lights;
-    const vk::DeviceSize bytes  = std::max<size_t>(lights.size(), 1) * sizeof(LightData);
-    CHECK(bytes <= vulkan.properties().limits.maxStorageBufferRange, "ray tracing lights exceed maxStorageBufferRange");
-
-    if (frame.lightData.size() < bytes)
+    const auto& lights = execution.renderData.lights;
+    if (!lights.empty())
     {
-        frame.lightData.reset();
-        frame.lightData = Buffer(
-            vulkan.physicalDeviceHandle(),
-            vulkan.deviceHandle(),
-            bytes,
-            vk::BufferUsageFlagBits::eStorageBuffer,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-        );
+        const auto bytes  = lights.size() * sizeof(LightData);
+        const auto upload = graph.allocateUpload(lightData, bytes);
+        std::memcpy(upload.data.data(), lights.data(), bytes);
+    }
 
-        const vk::DescriptorBufferInfo info{.buffer = frame.lightData.handle(), .range = frame.lightData.size()};
+    const auto& buffer = graph.getBuffer(lightData, 0);
+    if (frame.lightBufferRevision != graph.bufferRevision(lightData))
+    {
+        const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.size()};
         const vk::WriteDescriptorSet   write{
               .dstSet          = *frame.set,
               .dstBinding      = 5,
@@ -334,50 +336,41 @@ void OfflinePathTracingPass::prepareLights(const PassFrame& execution, Frame& fr
               .descriptorType  = vk::DescriptorType::eStorageBuffer,
               .pBufferInfo     = &info,
         };
-        vulkan.deviceHandle().updateDescriptorSets(write, {});
+        execution.setup.vulkan.deviceHandle().updateDescriptorSets(write, {});
+        frame.lightBufferRevision = graph.bufferRevision(lightData);
     }
-    if (!lights.empty())
-        frame.lightData.upload(lights.data(), lights.size() * sizeof(LightData));
 }
 
-void OfflinePathTracingPass::prepareBindings(RenderGraph& graph, const PassFrame& execution, Frame& frame)
+void OfflinePathTracingPass::prepareHits(RenderGraph& graph, const PassFrame& execution, Frame& frame)
 {
-    const auto& vulkan    = execution.setup.vulkan;
-    const auto& device    = vulkan.deviceHandle();
+    const auto& device    = execution.setup.vulkan.deviceHandle();
     auto&       resources = *renderContext().resources;
     static_assert(sizeof(Vertex) == 48 && offsetof(Vertex, normal) == 12 && offsetof(Vertex, texcoord) == 24);
-
-    std::vector<RayTracingHitData> hits;
-    hits.reserve(execution.renderData.drawItems.size());
-    for (uint32_t itemIndex = 0; itemIndex < execution.renderData.drawItems.size(); ++itemIndex)
+    const auto& items  = execution.renderData.drawItems;
+    const auto  bytes  = std::max<size_t>(items.size(), 1) * sizeof(RayTracingHitData);
+    const auto  upload = graph.allocateUpload(hitData, bytes);
+    auto*       hits   = reinterpret_cast<RayTracingHitData*>(upload.data.data());
+    for (uint32_t index = 0; index < items.size(); ++index)
     {
-        const auto& item = execution.renderData.drawItems[itemIndex];
+        const auto& item = items[index];
         const auto& mesh = resources.mesh(item.mesh);
-        hits.push_back({
-            mesh.vertices().address(device),
-            mesh.indices().address(device),
-            mesh.submeshes()[item.submeshIndex].firstIndex,
-            execution.renderData.materialIndices[itemIndex],
-        });
-    }
-
-    const vk::DeviceSize bytes = std::max<size_t>(hits.size(), 1) * sizeof(RayTracingHitData);
-    CHECK(
-        bytes <= vulkan.properties().limits.maxStorageBufferRange,
-        "ray tracing hit data exceeds maxStorageBufferRange"
-    );
-    if (frame.hitData.size() < bytes)
-    {
-        frame.hitData.reset();
-        frame.hitData = Buffer(
-            vulkan.physicalDeviceHandle(),
-            device,
-            bytes,
-            vk::BufferUsageFlagBits::eStorageBuffer,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+        std::construct_at(
+            hits + index,
+            RayTracingHitData{
+                mesh.vertices().address(device),
+                mesh.indices().address(device),
+                mesh.submeshes()[item.submeshIndex].firstIndex,
+                execution.renderData.materialIndices[index],
+            }
         );
+    }
+    if (items.empty())
+        std::construct_at(hits, RayTracingHitData{});
 
-        const vk::DescriptorBufferInfo info{.buffer = frame.hitData.handle(), .range = frame.hitData.size()};
+    const auto& buffer = graph.getBuffer(hitData, 0);
+    if (frame.hitBufferRevision != graph.bufferRevision(hitData))
+    {
+        const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.size()};
         const vk::WriteDescriptorSet   write{
               .dstSet          = *frame.set,
               .dstBinding      = 2,
@@ -386,10 +379,13 @@ void OfflinePathTracingPass::prepareBindings(RenderGraph& graph, const PassFrame
               .pBufferInfo     = &info,
         };
         device.updateDescriptorSets(write, {});
+        frame.hitBufferRevision = graph.bufferRevision(hitData);
     }
-    if (!hits.empty())
-        frame.hitData.upload(hits.data(), hits.size() * sizeof(hits.front()));
+}
 
+void OfflinePathTracingPass::updateTlasDescriptor(RenderGraph& graph, const PassFrame& execution, Frame& frame)
+{
+    const auto& device    = execution.setup.vulkan.deviceHandle();
     const auto& structure = graph.getAccelerationStructure(sceneTlas);
     if (frame.tlasRevision != structure.revision())
     {
@@ -423,7 +419,8 @@ void OfflinePathTracingPass::writeDescriptorSet(RenderGraph& graph, const PassSe
             .imageLayout = vk::ImageLayout::eGeneral,
         };
     };
-    const auto                     outputInfo = imageInfo(rayImage);
+    const auto                     outputInfo   = imageInfo(rayImage);
+    const auto&                    accumulation = graph.getBuffer(accumulationHandle, 0);
     const vk::DescriptorBufferInfo accumulationInfo{.buffer = accumulation.handle(), .range = accumulation.size()};
     const std::array               writes{
         vk::WriteDescriptorSet{
@@ -451,8 +448,7 @@ void OfflinePathTracingPass::execute(
     auto& commands = commandBuffer;
     DCHECK(execution.frameIndex == 0);
     CHECK(accumulatedSamples < std::numeric_limits<uint32_t>::max());
-    prepareLights(execution, frame);
-    prepareBindings(graph, execution, frame);
+    updateTlasDescriptor(graph, execution, frame);
     commands.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
     const std::array sets{
         execution.data.sceneSetHandle(),
@@ -473,20 +469,30 @@ void OfflinePathTracingPass::execute(
             .sampleIndex       = accumulatedSamples,
         }
     );
-    const auto extent = execution.setup.swapchain.extent();
+    const auto extent = graph.imageExtent(rayImage);
     commands.traceRaysKHR(raygenRegion, missRegion, hitRegion, {}, extent.width, extent.height, 1);
     ++accumulatedSamples;
 }
 
-void OfflinePathTracingPass::updateScene(const RenderView& view, const SceneRenderData& scene, uint64_t assetRevision)
+void OfflinePathTracingPass::prepare(RenderGraph& graph, const PassFrame& execution)
 {
-    const bool cameraChanged = view.uniforms.inverseViewProjection != previousView.uniforms.inverseViewProjection ||
+    prepareLights(graph, execution, frame);
+    prepareHits(graph, execution, frame);
+    const auto& view          = execution.view;
+    const auto& scene         = execution.renderData;
+    const auto  assetRevision = context().assetManager->contentRevision();
+    const bool  cameraChanged = view.uniforms.inverseViewProjection != previousView.uniforms.inverseViewProjection ||
         view.uniforms.cameraPosition != previousView.uniforms.cameraPosition ||
         view.viewport.x != previousView.viewport.x || view.viewport.y != previousView.viewport.y ||
         view.viewport.width != previousView.viewport.width || view.viewport.height != previousView.viewport.height;
-    if (!previousScene || *previousScene != scene || cameraChanged || previousAssetRevision != assetRevision)
+    const bool sceneChanged = !std::ranges::equal(previousDrawItems, scene.drawItems) ||
+        previousLights != scene.lights || previousEnvironmentMap != scene.environmentMap;
+    if (sceneChanged || cameraChanged || previousAssetRevision != assetRevision)
         accumulatedSamples = 0;
-    previousScene         = scene;
-    previousView          = view;
-    previousAssetRevision = assetRevision;
+
+    previousDrawItems.assign(scene.drawItems.begin(), scene.drawItems.end());
+    previousLights         = scene.lights;
+    previousEnvironmentMap = scene.environmentMap;
+    previousView           = view;
+    previousAssetRevision  = assetRevision;
 }

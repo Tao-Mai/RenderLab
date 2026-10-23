@@ -8,6 +8,7 @@
 #include "core/Window.h"
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
+#include "render/feature/shadow/ShadowData.h"
 #include "scene/SceneManager.h"
 #include "scene/actor/ALight.h"
 #include "scene/actor/AStaticMesh.h"
@@ -65,8 +66,6 @@ int main(int, char** argv)
     renderer.init();
     renderer.rebuildGraph();
 
-    FrameData upload;
-    upload.init(renderer.vulkanContext(), *renderContext().device);
     const auto&         camera         = scenesCamera;
     const auto          viewProjection = camera.projectionMatrix(1.0f) * camera.viewMatrix();
     const SceneUniforms view{
@@ -79,16 +78,10 @@ int main(int, char** argv)
     source.data.direction     = {0.0f, -1.0f, 0.0f, 0.0f};
     source.data.lightType     = GpuLightType::Directional;
     source.data.shadowEnabled = 1;
-    auto prepared             = prepareShadows(view, {&source.data, 1}, feature.shadow);
-    upload.updateSceneUniforms(view);
-    upload.updateLighting(
-        {.lightRanges = {1, 1, 1, 1}, .cascadeCount = feature.shadow.cascade.count}, {&source.data, 1}
-    );
-    upload.updateShadows(std::move(prepared));
-    CHECK(upload.directionalShadowData().size() == 1 && upload.lightData()[0].shadowidx == 0);
-    CHECK(upload.lightUniforms().cascadeCount == 4);
+    const auto prepared       = prepareShadows(view, {&source.data, 1}, feature.shadow);
+    CHECK(prepared.directionalShadows.size() == 1 && prepared.lights[0].shadowidx == 0);
     float previousDepth = camera.config().nearPlane;
-    for (const auto& cascade : upload.directionalShadowData()[0].cascades)
+    for (const auto& cascade : prepared.directionalShadows[0].cascades)
     {
         CHECK(cascade.depthUpperBound > previousDepth);
         const auto worldCenter =
@@ -98,7 +91,6 @@ int main(int, char** argv)
         previousDepth = cascade.depthUpperBound;
     }
     CHECK(std::abs(previousDepth - feature.shadow.cascade.maxDistance) < 0.001f);
-    upload.reset();
 
     const auto extent = renderer.swapchainHandle().extent();
     for (int frame = 0; frame < 8; ++frame)

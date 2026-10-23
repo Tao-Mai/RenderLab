@@ -323,8 +323,6 @@ add_library(RenderLabRuntime STATIC
         src/render/Visibility.h
         src/render/feature/ScenePass.cpp
         src/render/feature/ScenePass.h
-        src/render/feature/SceneBindings.cpp
-        src/render/feature/SceneBindings.h
         src/render/feature/deferred/GBufferPass.cpp
         src/render/feature/deferred/GBufferPass.h
         src/render/feature/deferred/DeferredLightingPass.cpp

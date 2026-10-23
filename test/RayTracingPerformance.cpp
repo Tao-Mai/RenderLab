@@ -11,6 +11,7 @@
 #include "render/device/VkCheck.h"
 #include "render/raytracing/BlasBuildPass.h"
 #include "render/raytracing/RayTracingPass.h"
+#include "render/resource/MaterialTable.h"
 #include "scene/SceneManager.h"
 #include "scene/component/LightComponent.h"
 #include "scene/system/RenderSystem.h"
@@ -56,11 +57,12 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
         frame.init(vulkan, *renderContext().device);
     RenderGraph graph;
     graph.init(vulkan, renderer.swapchainHandle());
+    renderContext().materialTable->setup(graph);
     RayTracingPass  trace;
     BlasBuildPass   blasBuild;
     TlasBuildPass   tlasBuild;
     SinkPass        sink;
-    const PassSetup setup{vulkan, renderer.swapchainHandle(), data, context().config->rendererConfig()};
+    const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), data, context().config->rendererConfig()};
     const auto      blas       = graph.addPass(blasBuild, setup);
     const auto      structures = graph.addPass(tlasBuild, setup, blas);
     const auto      source     = graph.addPass(trace, setup, structures);
@@ -100,7 +102,8 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
         const uint32_t index = iteration % maxFramesInFlight;
         frames[index].wait();
         const auto& snapshot = system.prepare(scenes.scene());
-        const auto& draws    = renderer.prepare(view, snapshot, index);
+        graph.beginFrame(index);
+        const auto& draws = renderer.prepare(view, snapshot, index);
         if (iteration == 0)
             LOG_INFO(
                 "Submitted draw items {}, point lights {}, area lights {}",
@@ -108,7 +111,7 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
                 draws.lightRanges.pointEnd - draws.lightRanges.directionalEnd,
                 draws.lightRanges.rectAreaEnd - draws.lightRanges.pointEnd
             );
-        data[index].updateSceneUniforms(view.uniforms);
+        data[index].uploadSceneUniforms(view.uniforms);
         const PassFrame execution{setup, data[index], view, draws, {}, index};
         graph.prepare(execution);
         auto& commands = frames[index].commandBufferHandle();
@@ -195,6 +198,7 @@ int main(int argc, char** argv)
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     window.init();
     renderer.init();
+    renderer.rebuildGraph();
     measure(renderer, scenes, profiler, argv[1]);
     renderer.shutdown();
     scenes.shutdown();

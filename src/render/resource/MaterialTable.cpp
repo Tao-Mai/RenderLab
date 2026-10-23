@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 void MaterialTable::init(RenderResourceManager& resources, const VulkanContext& vulkan, Device& device)
 {
@@ -31,27 +32,9 @@ void MaterialTable::init(RenderResourceManager& resources, const VulkanContext& 
 
     for (auto& frame : frames)
     {
-        frame.materialBuffer = Buffer(
-            vulkan.physicalDeviceHandle(),
-            vulkan.deviceHandle(),
-            sizeof(MaterialData),
-            vk::BufferUsageFlagBits::eStorageBuffer,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-        );
         frame.descriptorSet = device.allocateDescriptorSet(device.materialDescriptorSetLayout);
 
-        const vk::DescriptorBufferInfo bufferInfo{
-            .buffer = frame.materialBuffer.handle(),
-            .range  = frame.materialBuffer.size()
-        };
         const std::array writes{
-            vk::WriteDescriptorSet{
-                .dstSet          = *frame.descriptorSet,
-                .dstBinding      = RenderInterface::kMaterialBufferBinding,
-                .descriptorCount = 1,
-                .descriptorType  = vk::DescriptorType::eStorageBuffer,
-                .pBufferInfo     = &bufferInfo,
-            },
             vk::WriteDescriptorSet{
                 .dstSet          = *frame.descriptorSet,
                 .dstBinding      = RenderInterface::kMaterialTexturesBinding,
@@ -71,6 +54,22 @@ void MaterialTable::init(RenderResourceManager& resources, const VulkanContext& 
         frame.textureCount = static_cast<uint32_t>(textureIndices.size());
         frame.samplerCount = static_cast<uint32_t>(samplerIndices.size());
     }
+}
+
+void MaterialTable::setup(RenderGraph& targetGraph)
+{
+    graph          = &targetGraph;
+    materialBuffer = graph->createBuffer({
+        .size  = sizeof(MaterialData),
+        .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+    });
+    for (auto& frame : frames)
+        frame.bufferRevision = 0;
+}
+
+void MaterialTable::use(RenderGraph& graph, vk::PipelineStageFlags2 stages) const
+{
+    graph.use(materialBuffer, {.stages = stages, .access = vk::AccessFlagBits2::eShaderStorageRead});
 }
 
 TextureRef MaterialTable::texture(const TextureBinding& binding, RenderResourceManager& resources)
@@ -205,31 +204,20 @@ uint32_t MaterialTable::update(
 // 更新material descriptor set
 void MaterialTable::upload(const VulkanContext& vulkan, uint32_t frameIndex)
 {
-    auto&                frame = frames[frameIndex];
-    const vk::DeviceSize bytes = std::max<size_t>(materials.size(), 1) * sizeof(MaterialData);
-    CHECK(bytes <= vulkan.properties().limits.maxStorageBufferRange, "material data exceeds maxStorageBufferRange");
-    const bool bufferChanged = bytes > frame.materialBuffer.size();
-    if (bufferChanged)
-        frame.materialBuffer = Buffer(
-            vulkan.physicalDeviceHandle(),
-            vulkan.deviceHandle(),
-            bytes,
-            vk::BufferUsageFlagBits::eStorageBuffer,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-        );
-
+    auto&                frame  = frames[frameIndex];
+    const vk::DeviceSize bytes  = std::max<size_t>(materials.size(), 1) * sizeof(MaterialData);
+    const auto           upload = graph->allocateUpload(materialBuffer, bytes);
     if (materials.empty())
     {
         const MaterialData empty{};
-        frame.materialBuffer.upload(&empty, sizeof(empty));
+        std::memcpy(upload.data.data(), &empty, sizeof(empty));
     }
     else
-        frame.materialBuffer.upload(materials.data(), materials.size() * sizeof(MaterialData));
+        std::memcpy(upload.data.data(), materials.data(), materials.size() * sizeof(MaterialData));
 
-    const vk::DescriptorBufferInfo bufferInfo{
-        .buffer = frame.materialBuffer.handle(),
-        .range  = frame.materialBuffer.size()
-    };
+    const auto&                           buffer        = graph->getBuffer(materialBuffer, 0);
+    const bool                            bufferChanged = frame.bufferRevision != graph->bufferRevision(materialBuffer);
+    const vk::DescriptorBufferInfo        bufferInfo{.buffer = buffer.handle(), .range = buffer.size()};
     std::array<vk::WriteDescriptorSet, 3> writes;
     uint32_t                              writeCount = 0;
     if (bufferChanged)
@@ -269,4 +257,5 @@ void MaterialTable::upload(const VulkanContext& vulkan, uint32_t frameIndex)
     }
     if (writeCount)
         vulkan.deviceHandle().updateDescriptorSets(std::span{writes.data(), writeCount}, {});
+    frame.bufferRevision = graph->bufferRevision(materialBuffer);
 }

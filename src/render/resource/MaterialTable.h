@@ -2,7 +2,7 @@
 
 #include "asset/AssetID.h"
 #include "render/RenderConfig.h"
-#include "render/resource/Buffer.h"
+#include "render/feature/RenderGraph.h"
 #include "render/resource/MaterialData.h"
 
 #include <array>
@@ -21,7 +21,7 @@ struct PbrMaterialAsset;
 struct ShaderAsset;
 struct TextureBinding;
 
-// Stable asset indices shared by all frames; descriptor sets are updated after their frame fence completes.
+// Stable asset indices and a graph-owned shared SSBO; descriptor sets remain per frame in flight.
 class MaterialTable
 {
 public:
@@ -51,6 +51,8 @@ public:
     };
 
     void     init(RenderResourceManager& resources, const VulkanContext& vulkan, Device& device);
+    void     setup(RenderGraph& graph);
+    void     use(RenderGraph& graph, vk::PipelineStageFlags2 stages) const;
     uint32_t update(
         const MaterialKey& key, const PbrMaterialAsset& material, RenderResourceManager& resources, AssetManager& assets
     );
@@ -70,12 +72,14 @@ private:
     };
     struct Frame
     {
-        Buffer                  materialBuffer;
-        vk::raii::DescriptorSet descriptorSet = nullptr;
-        uint32_t                textureCount  = 0;
-        uint32_t                samplerCount  = 0;
+        uint64_t                bufferRevision = 0;
+        vk::raii::DescriptorSet descriptorSet  = nullptr;
+        uint32_t                textureCount   = 0;
+        uint32_t                samplerCount   = 0;
     };
     std::array<Frame, maxFramesInFlight>                       frames;
+    RenderGraph*                                               graph = nullptr;
+    RenderGraph::BufferHandle                                  materialBuffer;
     std::vector<MaterialData>                                  materials;
     std::vector<MaterialInfo>                                  materialInfos;
     std::unordered_map<MaterialKey, uint32_t, MaterialKeyHash> materialIndices;

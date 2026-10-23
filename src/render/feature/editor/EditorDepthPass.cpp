@@ -9,7 +9,6 @@
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
 #include "render/feature/editor/EditorShaderData.h"
-#include "render/present/Swapchain.h"
 #include "render/resource/GpuMesh.h"
 #include "render/resource/RenderResourceManager.h"
 
@@ -21,7 +20,7 @@ EditorDepthPass::Output EditorDepthPass::setup(RenderGraph& graph, const PassSet
         setup.vulkan.physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures &
         vk::FormatFeatureFlagBits::eDepthStencilAttachment
     );
-    const auto extent = setup.swapchain.extent();
+    const auto extent = setup.renderExtent;
     depth = graph.createImage({.format = vk::Format::eD32Sfloat, .extent = {extent.width, extent.height, 1}});
     depth = graph.write(depth);
     graph.use(
@@ -49,7 +48,7 @@ void EditorDepthPass::execute(
     RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
 ) const
 {
-    const auto                        extent = execution.setup.swapchain.extent();
+    const auto                        extent = graph.imageExtent(depth);
     const vk::RenderingAttachmentInfo depthAttachment{
         .imageView   = graph.getImage(depth).getOrCreateImageView({
               .viewType         = vk::ImageViewType::e2D,

@@ -11,9 +11,9 @@ Engine：场景 / 编辑器 Tick
   → RenderSystem：按 Submesh 提交 DrawItem，提取灯光
   → Renderer 全局 prepare：光源分组、光栅化主视图剔除
   → RenderResourceManager：缓存、更新 GPU 资源
-  → 上传相机、材质与灯光数据
+  → 更新相机 UBO，材质与灯光数据写入本帧 staging pool
   → RenderGraph.prepare：ShadowPass 准备阴影数据与剔除，TransparentPass 排序
-  → RenderGraph.execute：执行已编译的 Pass
+  → RenderGraph.execute：同步并复制 SSBO，执行已编译的 Pass
   → Submit / Present
 ```
 
@@ -29,7 +29,7 @@ Engine：场景 / 编辑器 Tick
 | AssetManager / AssetDataManager | CPU 资产描述、缓存与二进制读写，不反向依赖场景和 Renderer |
 | RenderResourceManager | 通过资产 ID 获取并缓存 GPU 网格、纹理和采样器 |
 | Renderer | 渲染路线组装、材质覆盖解析与材质表更新、光栅化主视图剔除与帧提交 |
-| MaterialTable | 将材质描述转换为全局 MaterialData，按同一索引提供 CPU 绘制信息，维护纹理绑定与逐帧 SSBO |
+| MaterialTable | 将材质描述转换为全局 MaterialData，按同一索引提供 CPU 绘制信息，维护纹理索引与材质 Set |
 | RenderGraph / Pass | Graph 处理依赖、资源和同步，先统一调用可选的 prepare，再执行；Pass 负责自身准备、绑定与绘制 |
 | Editor | 相机导航、选择、属性编辑和编辑器绘制输入 |
 
@@ -48,10 +48,14 @@ Engine：场景 / 编辑器 Tick
 ## 渲染与资源
 
 - `VulkanContext` 管理设备与队列，`Swapchain` 管理呈现资源。
-- `FrameContext` 管理命令与同步；`FrameData` 管理逐帧上传数据。
+- Renderer 导入交换链并将普通 ImageHandle 传给 Pass。PassSetup 提供独立的 renderExtent，Pass 从图像描述获取目标尺寸和格式。
+- `FrameContext` 管理命令与同步；`FrameData` 仅持有逐帧 UBO、公共 Descriptor Set 和绑定版本。
+- Renderer 管理共享光源 Buffer handle；ShadowPass 管理阴影 CPU 数据与阴影 Buffer handle，底层 SSBO 由 Graph 分配和同步。
+- Renderer 持有环境纹理、LUT 引用和阴影 sampler；图编译后将阴影视图交给 FrameData 写入，场景环境图改变时更新环境绑定。
 - `RenderContext` 聚合 Device、Shader、GPU 资产管理器和 MaterialTable；Device 负责对象创建、Descriptor 分配和 Pipeline 缓存，并在初始化时统一创建和持有场景、材质与编辑器的共享 Layout。
 - Pass 直接使用 Vulkan API；共享场景绘制函数位于 `SceneDraw`，它不是额外的资源管理层。
 - Graph 默认共享阴影图、深度和颜色中间结果；跨帧访问由同一队列上的 Barrier 同步。
+- 材质、灯光、阴影与光追命中 SSBO 在 setup 申请，跨帧共用；prepare 从各 FIF 的 staging pool 线性分配并写入，execute 录制复制与前后 Barrier。容量增长时等待 GPU 完成后重新分配，并刷新受影响的 Buffer 绑定。
 - CPU 回读缓冲显式按帧分配；时域历史使用独立的双层 Ping-pong 资源。
 
 详见 [RenderGraph](../src/render/Arch.md) 与 [Descriptor / Pipeline Layout](RenderLayout.md)。
