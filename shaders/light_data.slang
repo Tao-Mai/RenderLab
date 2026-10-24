@@ -60,4 +60,14 @@ struct LightData
     }
 };
 
+float spotAngularAttenuation(LightData light, float3 lightToSurfaceDirection)
+{
+    float cosine = dot(light.direction.xyz, lightToSurfaceDirection);
+    // Equal inner/outer angles describe a hard-edged cone.
+    if (light.cosInner <= light.cosOuter)
+        return cosine >= light.cosOuter ? 1.0 : 0.0;
+    float attenuation = saturate((cosine - light.cosOuter) / (light.cosInner - light.cosOuter));
+    return attenuation * attenuation;
+}
+
 #endif

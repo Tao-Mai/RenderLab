@@ -4,7 +4,7 @@
         "bloom": {
             "enable": true,
             "filterRadius": 1.100000023841858,
-            "intensity": 0.041999999433755875,
+            "intensity": 0.03999999910593033,
             "levels": 5,
             "scatter": 0.699999988079071
         },

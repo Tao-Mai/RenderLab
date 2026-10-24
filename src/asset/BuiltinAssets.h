@@ -20,6 +20,7 @@ public:
         static inline const ::MeshAsset::ID sphere = "sphere";
         static inline const ::MeshAsset::ID plane  = "plane";
         static inline const ::MeshAsset::ID arrow  = "arrow";
+        static inline const ::MeshAsset::ID kCone  = "cone";
     };
 
     struct Material

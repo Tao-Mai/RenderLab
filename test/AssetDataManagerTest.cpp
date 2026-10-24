@@ -200,6 +200,42 @@ TEST(AssetDataManagerTest, BuiltinSphereWindingMatchesOutwardNormals)
     EXPECT_GT(checkedTriangles, 0u);
 }
 
+TEST(AssetDataManagerTest, BuiltinConeHasOutwardWindingAndUsableTangents)
+{
+    AssetManager     assets;
+    AssetDataManager data;
+    const auto&      asset = assets.get<MeshAsset>(BuiltinAssets::Mesh::kCone);
+    const auto       mesh  = data.readGeometry(asset);
+    ASSERT_FALSE(mesh.indices.empty());
+    ASSERT_EQ(mesh.indices.size() % 3, 0u);
+    EXPECT_EQ(asset.bounds.min, glm::vec3(-1.0f));
+    EXPECT_EQ(asset.bounds.max, glm::vec3(1.0f, 1.0f, 0.0f));
+    ASSERT_EQ(asset.submeshes.size(), 2u);
+    EXPECT_EQ(asset.submeshes[0].firstIndex, 0u);
+    EXPECT_EQ(asset.submeshes[1].firstIndex, asset.submeshes[0].indexCount);
+    EXPECT_EQ(asset.submeshes[0].indexCount + asset.submeshes[1].indexCount, mesh.indices.size());
+    for (uint32_t index = 0; index < asset.submeshes[0].indexCount; index += 3)
+        EXPECT_FLOAT_EQ(mesh.vertices[mesh.indices[index]].position.z, 0.0f);
+    for (uint32_t index = asset.submeshes[1].firstIndex; index < mesh.indices.size(); ++index)
+        EXPECT_FLOAT_EQ(mesh.vertices[mesh.indices[index]].position.z, -1.0f);
+
+    for (size_t index = 0; index < mesh.indices.size(); index += 3)
+    {
+        const auto& a               = mesh.vertices[mesh.indices[index]];
+        const auto& b               = mesh.vertices[mesh.indices[index + 1]];
+        const auto& c               = mesh.vertices[mesh.indices[index + 2]];
+        const auto  geometricNormal = glm::cross(b.position - a.position, c.position - a.position);
+        EXPECT_GT(glm::dot(geometricNormal, a.normal + b.normal + c.normal), 0.0f) << index / 3;
+    }
+    for (const auto& vertex : mesh.vertices)
+    {
+        EXPECT_NEAR(glm::length(vertex.normal), 1.0f, 1e-5f);
+        EXPECT_NEAR(glm::length(glm::vec3(vertex.tangent)), 1.0f, 1e-5f);
+        EXPECT_NEAR(glm::dot(vertex.normal, glm::vec3(vertex.tangent)), 0.0f, 1e-5f);
+        EXPECT_TRUE(vertex.tangent.w == 1.0f || vertex.tangent.w == -1.0f);
+    }
+}
+
 TEST(AssetDataManagerTest, PreservesMeshGeometry)
 {
     ConfiguredData          assets;

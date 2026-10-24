@@ -2,8 +2,10 @@
 
 #include "core/Logger.h"
 
+#include <array>
 #include <cmath>
 #include <numbers>
+#include <span>
 
 #include <glm/geometric.hpp>
 
@@ -152,6 +154,56 @@ constexpr uint32_t kSphereIndexCount  = kSphereSegments * kSphereRings * 6;
     return mesh;
 }
 
+constexpr uint32_t kConeSegments = 64;
+constexpr uint32_t kConeSideIndexCount = kConeSegments * 3;
+constexpr uint32_t kConeBaseIndexCount = kConeSegments * 3;
+
+[[nodiscard]] MeshGeometry makeCone()
+{
+    constexpr uint32_t kVerticesPerSegment = 6;
+
+    // Unit radius and height; the apex is at the origin and the base is at Z = -1.
+    MeshGeometry mesh;
+    mesh.vertices.reserve(kConeSegments * kVerticesPerSegment);
+    mesh.indices.reserve(kConeSideIndexCount + kConeBaseIndexCount);
+    std::vector<uint32_t> baseIndices;
+    baseIndices.reserve(kConeBaseIndexCount);
+    for (uint32_t segment = 0; segment < kConeSegments; ++segment)
+    {
+        const float u0          = static_cast<float>(segment) / kConeSegments;
+        const float u1          = static_cast<float>(segment + 1) / kConeSegments;
+        const float angle0      = u0 * 2.0f * std::numbers::pi_v<float>;
+        const float angle1      = u1 * 2.0f * std::numbers::pi_v<float>;
+        const float middleAngle = (angle0 + angle1) * 0.5f;
+        const glm::vec3 base0{std::cos(angle0), std::sin(angle0), -1.0f};
+        const glm::vec3 base1{std::cos(angle1), std::sin(angle1), -1.0f};
+        const glm::vec3 apexNormal = glm::normalize(glm::vec3{std::cos(middleAngle), std::sin(middleAngle), 1.0f});
+
+        const auto first = static_cast<uint32_t>(mesh.vertices.size());
+        mesh.vertices.insert(
+            mesh.vertices.end(),
+            {
+                {.position = {0.0f, 0.0f, 0.0f}, .normal = apexNormal, .texcoord = {(u0 + u1) * 0.5f, 0.0f}},
+                {.position = base0,
+                 .normal   = glm::normalize(glm::vec3{base0.x, base0.y, 1.0f}),
+                 .texcoord = {u0, 1.0f}},
+                {.position = base1,
+                 .normal   = glm::normalize(glm::vec3{base1.x, base1.y, 1.0f}),
+                 .texcoord = {u1, 1.0f}},
+                {.position = {0.0f, 0.0f, -1.0f}, .normal = {0.0f, 0.0f, -1.0f}, .texcoord = {0.5f, 0.5f}},
+                {.position = base1, .normal = {0.0f, 0.0f, -1.0f}, .texcoord = glm::vec2{base1} * 0.5f + 0.5f},
+                {.position = base0, .normal = {0.0f, 0.0f, -1.0f}, .texcoord = glm::vec2{base0} * 0.5f + 0.5f},
+            }
+        );
+        mesh.indices.insert(mesh.indices.end(), {first, first + 1, first + 2});
+        baseIndices.insert(baseIndices.end(), {first + 3, first + 4, first + 5});
+    }
+    mesh.indices.insert(mesh.indices.end(), baseIndices.begin(), baseIndices.end());
+
+    generateTangents(mesh, 0, static_cast<uint32_t>(mesh.indices.size()));
+    return mesh;
+}
+
 constexpr uint32_t kPlaneIndexCount = 6;
 
 [[nodiscard]] MeshGeometry makePlane()
@@ -253,17 +305,25 @@ constexpr uint32_t kArrowIndexCount = 48;
     return mesh;
 }
 
-[[nodiscard]] ::MeshAsset makeMeshAsset(const ::MeshAsset::ID& id, const MeshGeometry& geometry)
+[[nodiscard]] ::MeshAsset makeMeshAsset(
+    const ::MeshAsset::ID& id, const MeshGeometry& geometry, std::span<const uint32_t> submeshIndexCounts
+)
 {
     ::MeshAsset asset{};
     asset.id     = id;
     asset.source = Source::Builtin;
     asset.bounds = calculateBounds(geometry);
-    asset.submeshes.push_back({
-        .firstIndex = 0,
-        .indexCount = static_cast<uint32_t>(geometry.indices.size()),
-        .materialId = BuiltinAssets::Material::white,
-    });
+    uint32_t firstIndex = 0;
+    for (const auto indexCount : submeshIndexCounts)
+    {
+        asset.submeshes.push_back({
+            .firstIndex = firstIndex,
+            .indexCount = indexCount,
+            .materialId = BuiltinAssets::Material::white,
+        });
+        firstIndex += indexCount;
+    }
+    DCHECK(firstIndex == geometry.indices.size());
     return asset;
 }
 }
@@ -271,10 +331,11 @@ constexpr uint32_t kArrowIndexCount = 48;
 const ::MeshAsset* BuiltinAssets::meshAsset(const ::MeshAsset::ID& id)
 {
     static const ::MeshAsset assets[] = {
-        makeMeshAsset(Mesh::cube, *meshGeometry(Mesh::cube)),
-        makeMeshAsset(Mesh::sphere, *meshGeometry(Mesh::sphere)),
-        makeMeshAsset(Mesh::plane, *meshGeometry(Mesh::plane)),
-        makeMeshAsset(Mesh::arrow, *meshGeometry(Mesh::arrow)),
+        makeMeshAsset(Mesh::cube, *meshGeometry(Mesh::cube), std::array{kCubeIndexCount}),
+        makeMeshAsset(Mesh::sphere, *meshGeometry(Mesh::sphere), std::array{kSphereIndexCount}),
+        makeMeshAsset(Mesh::kCone, *meshGeometry(Mesh::kCone), std::array{kConeSideIndexCount, kConeBaseIndexCount}),
+        makeMeshAsset(Mesh::plane, *meshGeometry(Mesh::plane), std::array{kPlaneIndexCount}),
+        makeMeshAsset(Mesh::arrow, *meshGeometry(Mesh::arrow), std::array{kArrowIndexCount}),
     };
 
     for (const ::MeshAsset& asset : assets)
@@ -298,6 +359,7 @@ const MeshGeometry* BuiltinAssets::meshGeometry(const ::MeshAsset::ID& id)
     static const Entry entries[] = {
         {Mesh::cube, makeCube()},
         {Mesh::sphere, makeSphere()},
+        {Mesh::kCone, makeCone()},
         {Mesh::plane, makePlane()},
         {Mesh::arrow, makeArrow()},
     };

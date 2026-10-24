@@ -83,16 +83,6 @@ float3 evaluateSheenIbl(Surface surface, float3 V)
 #endif
 #endif
 
-float spotAngularAttenuation(LightData light, float3 lightToSurfaceDirection)
-{
-    float cosine = dot(light.direction.xyz, lightToSurfaceDirection);
-    // Equal inner/outer angles describe a hard-edged cone.
-    if (light.cosInner <= light.cosOuter)
-        return cosine >= light.cosOuter ? 1.0 : 0.0;
-    float attenuation = saturate((cosine - light.cosOuter) / (light.cosInner - light.cosOuter));
-    return attenuation * attenuation;
-}
-
 float spotShadowVisibility(LightData light, float3 worldPosition, float2 rotation)
 {
     float4 clip = mul(spotShadowData[light.shadowIdx].vp, float4(worldPosition, 1.0));

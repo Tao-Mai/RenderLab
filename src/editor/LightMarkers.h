@@ -32,4 +32,5 @@ private:
     GpuMesh* sphere = nullptr;
     GpuMesh* cube   = nullptr;
     GpuMesh* arrow  = nullptr;
+    GpuMesh* cone   = nullptr;
 };

@@ -8,11 +8,15 @@
 #include "core/Window.h"
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
+#include "render/resource/RenderResourceManager.h"
 #include "scene/SceneManager.h"
 #include "scene/SceneTypes.h"
 #include "scene/system/RenderSystem.h"
 
 #include <GLFW/glfw3.h>
+#include <cmath>
+#include <glm/geometric.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 int main(int argc, char** argv)
 {
@@ -48,17 +52,40 @@ int main(int argc, char** argv)
     scene.editorCamera.yaw      = -90;
     scene.editorCamera.pitch    = 0;
     scene.actors.push_back(std::make_unique<AStaticMesh>());
-    scene.actors.push_back(std::make_unique<ALight>());
+    scene.actors.push_back(std::make_unique<ALight>(std::make_unique<SpotLightComponent>()));
     scene.actors.back()->getComponent<LightComponent>()->enabled = false;
     scenes.load(scene);
     renderer.init();
 
-    auto& markerLight = *scenes.scene().actors.back()->getComponent<LightComponent>();
+    auto& markerActor   = *scenes.scene().actors.back();
+    auto& markerLight   = *markerActor.getComponent<SpotLightComponent>();
     markerLight.enabled = true;
     lightMarkers.prepare(scenes.scene(), *renderContext().resources);
-    CHECK(lightMarkers.drawItems().size() == 1);
-    CHECK(lightMarkers.drawItems().front().color == markerLight.emissionColor());
-    markerLight.enabled = false;
+    CHECK(lightMarkers.drawItems().size() == 2);
+    CHECK(lightMarkers.drawItems()[0].color == glm::vec3{0.28f});
+    CHECK(lightMarkers.drawItems()[1].color == markerLight.emissionColor());
+    const auto checkCone = [&]
+    {
+        lightMarkers.prepare(scenes.scene(), *renderContext().resources);
+        const auto& marker = lightMarkers.drawItems().front();
+        CHECK(marker.mesh == &renderContext().resources->mesh(BuiltinAssets::Mesh::kCone));
+        CHECK(marker.selectionId == markerActor.selectionId());
+        CHECK(lightMarkers.drawItems()[1].selectionId == markerActor.selectionId());
+        const auto axis         = glm::normalize(glm::vec3{marker.model * glm::vec4{0, 0, -1, 0}});
+        const auto edge         = glm::normalize(glm::vec3{marker.model * glm::vec4{1, 0, -1, 0}});
+        const auto expectedAxis = markerActor.transform().rotation * glm::vec3{0, 0, -1};
+        CHECK(glm::length(axis - expectedAxis) < 1e-5f);
+        CHECK(std::abs(glm::dot(axis, edge) - markerLight.cosOuter) < 1e-5f);
+    };
+    checkCone();
+    markerActor.transform().rotation = glm::angleAxis(glm::radians(60.0f), glm::vec3{0, 1, 0});
+    markerLight.cosOuter             = std::cos(glm::radians(45.0f));
+    checkCone();
+    markerActor.transform().rotation = glm::quat{1, 0, 0, 0};
+    markerLight.enabled              = false;
+    lightMarkers.prepare(scenes.scene(), *renderContext().resources);
+    CHECK(lightMarkers.drawItems()[0].color == glm::vec3{0.12f});
+    CHECK(lightMarkers.drawItems()[1].color == markerLight.color * 0.15f);
 
     const auto extent = renderer.swapchainHandle().extent();
     const auto view =
@@ -104,7 +131,7 @@ int main(int argc, char** argv)
                 );
             }
         }
-        LOG_INFO("Disabled light marker visibility and picking passed for render path {}", static_cast<int>(path));
+        LOG_INFO("Spot cone marker visibility and picking passed for render path {}", static_cast<int>(path));
     }
 
     renderer.waitIdle();

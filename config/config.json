@@ -1,6 +1,6 @@
 {
     "initialScene": {
-        "value": "sibenik"
+        "value": "default"
     },
     "paths": {
         "assets": "../assets",

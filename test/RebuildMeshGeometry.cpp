@@ -66,7 +66,8 @@ int main(int argc, char** argv)
          {BuiltinAssets::Mesh::plane,
           BuiltinAssets::Mesh::cube,
           BuiltinAssets::Mesh::sphere,
-          BuiltinAssets::Mesh::arrow})
+          BuiltinAssets::Mesh::arrow,
+          BuiltinAssets::Mesh::kCone})
     {
         const auto geometry = data.readGeometry(assets.get<MeshAsset>(id));
         for (const auto& vertex : geometry.vertices)

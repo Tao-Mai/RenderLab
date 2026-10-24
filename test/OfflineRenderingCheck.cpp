@@ -2,6 +2,7 @@
 #include <cmath>
 #include <glm/gtc/packing.hpp>
 #include "LightingSetup.h"
+#include "LocalLightSamplingCheck.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
@@ -181,6 +182,10 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
         unperturbed,
         perturbed
     );
+
+    auto& pointActor = *scenes.scene().actors[1];
+    replaceLightComponent(*pointActor.getComponent<LightComponent>(), std::make_unique<PointLightComponent>());
+    checkLocalLightSampling(scenes, pointActor, sample);
 
     graph.reset();
     data.reset();

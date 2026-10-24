@@ -216,9 +216,6 @@ prepareShadows(const SceneUniforms& view, std::span<const LightData> frameLights
             result.directionalShadows.push_back(makeDirectionalShadow(view, light, shadows.cascade));
             continue;
         }
-        if (light.type() != GpuLightType::Point && light.type() != GpuLightType::RectArea &&
-            light.type() != GpuLightType::Spot)
-            continue;
 
         const float range = light.range();
         CHECK(std::isfinite(range) && range > 0.0f);
@@ -260,7 +257,7 @@ prepareShadows(const SceneUniforms& view, std::span<const LightData> frameLights
             projection[1][1] *= -1.0f;
             result.spotShadows.push_back({.vp = projection * glm::lookAt(position, position + direction, up)});
         }
-        else
+        else if (light.type() == GpuLightType::RectArea)
         {
             DCHECK(light.shadowIdx == result.rectAreaShadows.size());
             CHECK(
@@ -282,6 +279,9 @@ prepareShadows(const SceneUniforms& view, std::span<const LightData> frameLights
                 .farPlane       = range,
                 .worldToUvScale = {0.5f * std::abs(projection[0][0]), 0.5f * std::abs(projection[1][1])},
             });
+        } else
+        {
+            CHECK(0);
         }
     }
 

@@ -1,4 +1,5 @@
 #include "LightingSetup.h"
+#include "LocalLightSamplingCheck.h"
 #include "editor/EditorCamera.h"
 // Manual GPU check: PBR materials, visibility, BRDF bounces, and triangle light emission.
 #include "asset/AssetDataManager.h"
@@ -234,6 +235,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     scenes.deleteActor(ignoredPoint.selectionId());
     CHECK(sample() == clear);
     LOG_INFO("Streaming point-light selection passed: 1:3 weights, inverse-PMF compensation, black/disabled lights");
+    checkLocalLightSampling(scenes, *scenes.scene().actors[1], sample);
 
     auto& blocker                = scenes.createActor("AStaticMesh");
     blocker.transform().position = {1, 0, 2};

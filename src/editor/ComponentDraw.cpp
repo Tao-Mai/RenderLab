@@ -176,7 +176,7 @@ bool drawMeshSelection(RenderComponent& render, const AssetManager& assets)
 {
     auto ids = assets.loadedIds<MeshAsset>();
     ids.insert(ids.end(), {BuiltinAssets::Mesh::cube, BuiltinAssets::Mesh::sphere,
-                          BuiltinAssets::Mesh::plane, BuiltinAssets::Mesh::arrow});
+                          BuiltinAssets::Mesh::plane, BuiltinAssets::Mesh::arrow, BuiltinAssets::Mesh::kCone});
     std::ranges::sort(ids, {}, &MeshAsset::ID::value);
     ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
 

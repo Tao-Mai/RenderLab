@@ -14,6 +14,7 @@
 #include <glm/geometric.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <cmath>
 
 namespace
 {
@@ -37,6 +38,7 @@ void LightMarkers::prepare(const SceneAsset& scene, RenderResourceManager& resou
             sphere = &resources.mesh(BuiltinAssets::Mesh::sphere);
             cube   = &resources.mesh(BuiltinAssets::Mesh::cube);
             arrow  = &resources.mesh(BuiltinAssets::Mesh::arrow);
+            cone   = &resources.mesh(BuiltinAssets::Mesh::kCone);
         }
 
         const auto* transform = actor->getComponent<TransformComponent>();
@@ -52,6 +54,7 @@ void LightMarkers::reset() noexcept
     sphere = nullptr;
     cube   = nullptr;
     arrow  = nullptr;
+    cone   = nullptr;
 }
 
 std::vector<LightMarkerDrawItem> LightMarkers::buildDrawItems(
@@ -60,6 +63,7 @@ std::vector<LightMarkerDrawItem> LightMarkers::buildDrawItems(
 {
     std::vector<LightMarkerDrawItem> result;
     const glm::vec3                  markerColor = light.enabled ? light.emissionColor() : light.color * 0.15f;
+    const glm::vec3                  housingColor = light.enabled ? glm::vec3{0.28f} : glm::vec3{0.12f};
 
     if (const auto* area = dynamic_cast<const RectAreaLightComponent*>(&light))
     {
@@ -70,7 +74,6 @@ std::vector<LightMarkerDrawItem> LightMarkers::buildDrawItems(
             constexpr uint32_t kEmittingFace   = 1;
             const glm::mat4    model =
                 markerTransform(transform) * glm::scale(glm::mat4{1.0f}, glm::vec3{area->areaSize, kThickness});
-            const glm::vec3 housingColor = light.enabled ? glm::vec3{0.28f} : glm::vec3{0.12f};
             result.reserve(6);
             for (uint32_t face = 0; face < 6; ++face)
             {
@@ -97,7 +100,27 @@ std::vector<LightMarkerDrawItem> LightMarkers::buildDrawItems(
             });
         }
     }
-    else if (dynamic_cast<const PointLightComponent*>(&light) || dynamic_cast<const SpotLightComponent*>(&light))
+    else if (const auto* spot = dynamic_cast<const SpotLightComponent*>(&light))
+    {
+        DCHECK(cone);
+        // Keep the slant length fixed while matching the outer half-angle.
+        constexpr float kSpotMarkerSize = 0.3f;
+        const float     radius          = kSpotMarkerSize * std::sqrt(1.0f - spot->cosOuter * spot->cosOuter);
+        const float     height          = kSpotMarkerSize * spot->cosOuter;
+        const auto model = markerTransform(transform) * glm::scale(glm::mat4{1.0f}, glm::vec3{radius, radius, height});
+        constexpr size_t kEmittingSubmesh = 1;
+        const auto& submeshes = cone->submeshes();
+        result.reserve(submeshes.size());
+        for (size_t index = 0; index < submeshes.size(); ++index)
+            result.push_back({
+                cone,
+                model,
+                index == kEmittingSubmesh ? markerColor : housingColor,
+                submeshes[index].firstIndex,
+                submeshes[index].indexCount,
+            });
+    }
+    else if (dynamic_cast<const PointLightComponent*>(&light))
     {
         if (sphere)
         {

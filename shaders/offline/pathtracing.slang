@@ -2,7 +2,7 @@
 #include "../constant.slang"
 #include "../random.slang"
 #include "../low_discrepancy.slang"
-#include "../point_light_sampling.slang"
+#include "../local_light_sampling.slang"
 #include "../rect_area_light_sampling.slang"
 #include "../material_data.slang"
 #include "../pbr_brdf.slang"
@@ -129,17 +129,14 @@ struct Surface
         return sampled.weight * bounce.color / survivalProbability;
     }
 
-    float3 samplePointLightRadiance(LightRanges ranges, inout uint state)
+    float3 sampleLocalLightRadiance(LightRanges ranges, inout uint state)
     {
-        PointLightSample selected = samplePointLight(lights, ranges.directionalEnd, ranges.pointEnd, position, state);
+        LocalLightSample selected = sampleLocalLight(lights, ranges, position, state);
         if (selected.probability == 0.0)
             return float3(0.0);
 
         LightData light = lights[selected.index];
-        float3 toLight = light.position - position;
-        float distanceSquared = dot(toLight, toLight);
-        float3 lightDirection = toLight * rsqrt(distanceSquared);
-        float nDotL = saturate(dot(normal, lightDirection));
+        float nDotL = saturate(dot(normal, selected.direction));
         if (nDotL == 0.0)
             return float3(0.0);
 
@@ -148,9 +145,8 @@ struct Surface
         if (!isVisible(normalize(shadowOffset), shadowDistance))
             return float3(0.0);
 
-        // Delta point lights do not compete with the BRDF's continuous direction sampling.
-        float3 incidentIrradiance = light.color / distanceSquared;
-        return evaluateLight(lightDirection, incidentIrradiance) / selected.probability;
+        // Delta point and spot lights do not compete with continuous BRDF direction sampling.
+        return evaluateLight(selected.direction, selected.incidentIrradiance) / selected.probability;
     }
 
     float3 sampleRectAreaLightRadiance(RectAreaLightSample selected, inout uint state)
@@ -181,7 +177,7 @@ struct Surface
 
     float3 shade(LightRanges ranges, uint depth, float3 throughput, inout uint state)
     {
-        float3 radiance = samplePointLightRadiance(ranges, state);
+        float3 radiance = sampleLocalLightRadiance(ranges, state);
         for (uint index = 0; index < ranges.directionalEnd; ++index)
         {
             LightData light = lights[index];
