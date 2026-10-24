@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_RECT_AREA_LIGHT_SAMPLING_SLANG
 #define RENDERLAB_RECT_AREA_LIGHT_SAMPLING_SLANG
 
-#include "light_data.slang"
+#include "../light_data.slang"
 #include "random.slang"
 
 // Sampling is analytic; the emitter's two TLAS triangles handle intersection.

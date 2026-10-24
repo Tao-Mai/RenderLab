@@ -160,25 +160,25 @@ foreach(type IN ITEMS 0 1 2 3)
     renderlab_shader(shadow shadow.slang "${binary}" DEFINES SHADOW_TYPE=${type}
         INCLUDES ${SCENE_SHADER_INCLUDES})
 endforeach()
-renderlab_shader(raytracing raytracing/raytracing.slang raytracing
+renderlab_shader(raytracing raytracing/realtime.slang raytracing
     ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
     DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0
     INCLUDES "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
         "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
-        "${SHADER_SOURCE_DIR}/random.slang" "${SHADER_SOURCE_DIR}/local_light_sampling.slang"
-        "${SHADER_SOURCE_DIR}/rect_area_light_sampling.slang"
+        "${SHADER_SOURCE_DIR}/raytracing/random.slang" "${SHADER_SOURCE_DIR}/raytracing/local_light_sampling.slang"
+        "${SHADER_SOURCE_DIR}/raytracing/rect_area_light_sampling.slang"
         "${SHADER_SOURCE_DIR}/material_data.slang"
-        "${SHADER_SOURCE_DIR}/normal_mapping.slang" "${SHADER_SOURCE_DIR}/pbr_brdf.slang"
+        "${SHADER_SOURCE_DIR}/normal_mapping.slang" "${SHADER_SOURCE_DIR}/raytracing/pbr_brdf.slang"
         "${SHADER_SOURCE_DIR}/brdf.slang")
-renderlab_shader(offline_pathtracing offline/pathtracing.slang offline_pathtracing
+renderlab_shader(offline_pathtracing raytracing/offline.slang offline_pathtracing
     ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
     DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0
-    INCLUDES "${SHADER_SOURCE_DIR}/low_discrepancy.slang"
+    INCLUDES "${SHADER_SOURCE_DIR}/raytracing/low_discrepancy.slang"
         "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
-        "${SHADER_SOURCE_DIR}/random.slang" "${SHADER_SOURCE_DIR}/local_light_sampling.slang"
-        "${SHADER_SOURCE_DIR}/rect_area_light_sampling.slang"
+        "${SHADER_SOURCE_DIR}/raytracing/random.slang" "${SHADER_SOURCE_DIR}/raytracing/local_light_sampling.slang"
+        "${SHADER_SOURCE_DIR}/raytracing/rect_area_light_sampling.slang"
         "${SHADER_SOURCE_DIR}/material_data.slang"
-        "${SHADER_SOURCE_DIR}/normal_mapping.slang" "${SHADER_SOURCE_DIR}/pbr_brdf.slang"
+        "${SHADER_SOURCE_DIR}/normal_mapping.slang" "${SHADER_SOURCE_DIR}/raytracing/pbr_brdf.slang"
         "${SHADER_SOURCE_DIR}/brdf.slang")
 renderlab_shader(temporal_reprojection raytracing/temporal_reprojection.slang temporal_reprojection
     ENTRIES computeMain INCLUDES "${SHADER_SOURCE_DIR}/scene_uniforms.slang")

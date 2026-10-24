@@ -27,6 +27,8 @@
 
 ### 实时光追
 
+Shader 入口：[raytracing/realtime.slang](../../shaders/raytracing/realtime.slang)。光追专用的随机数、光源采样和 BRDF 采样文件统一放在同一目录。
+
 - 基础 PBR 复用漫反射与 GGX 函数，使用 VNDF 和完整混合 PDF 生成反弹方向。
 - 点光源与聚光灯共用一次加权选择，合计只选一个；权重为最大 RGB 强度乘锥角衰减再除以距离平方，超出 range 或聚光锥的光源跳过，并补偿选择概率。面光源独立加权选择，采样与 BRDF 命中使用 MIS。
 - 方向光通过可见性射线计算直接照明；矩形发光面以三角形参与求交。
@@ -36,6 +38,8 @@
 可选的历史重投影根据深度重建世界位置，投影到上一帧并用深度 / 法线判断历史有效性。前期计算算术平均，之后使用可调 EMA；同时记录样本数和亮度一阶 / 二阶矩。当前没有方差引导的空间滤波，不能视为完整 SVGF。
 
 ### 离线路径追踪
+
+Shader 入口：[raytracing/offline.slang](../../shaders/raytracing/offline.slang)，复用同目录下的光追采样代码。
 
 - 使用独立 Pass 和 Shader，不覆盖实时光追实现；活动 Frames-in-flight 为 1。
 - Owen 扰乱 Sobol 序列用于像素内采样，FP32 缓冲保存颜色总和，再除以样本数。
