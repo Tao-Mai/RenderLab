@@ -11,12 +11,12 @@
         "hdr": true,
         "ibl": false,
         "offline": {
-            "maxRecursionDepth": 5
+            "maxBounces": 4
         },
         "rayTracing": {
             "emaAlpha": 0.10499999672174454,
             "emaStartSampleCount": 10,
-            "maxRecursionDepth": 6,
+            "maxBounces": 4,
             "svgf": true
         },
         "shadow": {

@@ -45,7 +45,7 @@ RendererConfig sampleRendererConfig()
                 .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.03f, .spotSampleRadius = 2.5f},
             .toneMapping = {.ev100 = 5.0f, .exposureCompensation = 1.5f, .mode = ToneMappingOperator::Reinhard},
             .bloom = {.enable = false, .intensity = 0.15f, .scatter = 0.6f, .filterRadius = 2.0f, .levels = 3},
-            .rayTracing = {.maxRecursionDepth = 3, .svgf = false, .emaStartSampleCount = 16, .emaAlpha = 0.25f}},
+            .rayTracing = {.maxBounces = 3, .svgf = false, .emaStartSampleCount = 16, .emaAlpha = 0.25f}},
     };
 }
 }
@@ -101,11 +101,11 @@ TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
     EXPECT_FLOAT_EQ(serialized.at("feature").at("toneMapping").at("ev100").get<float>(), 5.0f);
     EXPECT_FLOAT_EQ(serialized.at("feature").at("toneMapping").at("exposureCompensation").get<float>(), 1.5f);
     EXPECT_EQ(serialized.at("feature").at("toneMapping").at("mode"), "Reinhard");
-    EXPECT_EQ(serialized.at("feature").at("rayTracing").at("maxRecursionDepth"), 3);
+    EXPECT_EQ(serialized.at("feature").at("rayTracing").at("maxBounces"), 3);
     EXPECT_EQ(serialized.at("feature").at("rayTracing").at("svgf"), false);
     EXPECT_EQ(serialized.at("feature").at("rayTracing").at("emaStartSampleCount"), 16);
     EXPECT_FLOAT_EQ(serialized.at("feature").at("rayTracing").at("emaAlpha").get<float>(), 0.25f);
-    EXPECT_EQ(serialized.at("feature").at("offline").at("maxRecursionDepth"), 6);
+    EXPECT_EQ(serialized.at("feature").at("offline").at("maxBounces"), 5);
 
     RendererConfig restored;
     Deserialize(serialized, restored);
@@ -131,11 +131,11 @@ TEST(ConfigSerialization, OfflineRouteAndSettingsRoundTripIndependently)
 {
     auto config = sampleRendererConfig();
     config.renderPath = RenderPath::OfflinePathTracing;
-    config.feature.offline.maxRecursionDepth = 8;
+    config.feature.offline.maxBounces = 8;
     const auto serialized = Serialize(config);
     EXPECT_EQ(serialized.at("renderPath"), "OfflinePathTracing");
-    EXPECT_EQ(serialized.at("feature").at("rayTracing").at("maxRecursionDepth"), 3);
-    EXPECT_EQ(serialized.at("feature").at("offline").at("maxRecursionDepth"), 8);
+    EXPECT_EQ(serialized.at("feature").at("rayTracing").at("maxBounces"), 3);
+    EXPECT_EQ(serialized.at("feature").at("offline").at("maxBounces"), 8);
     RendererConfig restored;
     Deserialize(serialized, restored);
     EXPECT_EQ(Serialize(restored), serialized);
@@ -186,7 +186,7 @@ TEST(ConfigSerialization, MissingFieldsFailInsteadOfUsingDefaults)
     EXPECT_DEATH(Deserialize(serialized, restoredRenderer), "");
 
     serialized = Serialize(sampleRendererConfig());
-    serialized.at("feature").at("rayTracing").erase("maxRecursionDepth");
+    serialized.at("feature").at("rayTracing").erase("maxBounces");
     EXPECT_DEATH(Deserialize(serialized, restoredRenderer), "");
 }
 
@@ -218,14 +218,14 @@ TEST(ConfigSerialization, ConfigManagerResolvesPathsAndLoadsCommands)
     manager.setRenderFeature({.ibl = false, .ambientCoefficient = 0.3f,
         .shadow = {.enable = false, .pointShadowMapSize = 512, .bias = 0.005f,
             .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.04f},
-        .rayTracing = {.maxRecursionDepth = 3}});
+        .rayTracing = {.maxBounces = 3}});
     EXPECT_FALSE(manager.rendererConfig().feature.ibl);
     EXPECT_FLOAT_EQ(manager.rendererConfig().feature.ambientCoefficient, 0.3f);
     EXPECT_FLOAT_EQ(manager.rendererConfig().feature.shadow.bias, 0.005f);
     EXPECT_EQ(manager.rendererConfig().feature.shadow.filter, SamplerAsset::Filter::Nearest);
     EXPECT_FALSE(manager.rendererConfig().feature.shadow.pixelRotation);
     EXPECT_FLOAT_EQ(manager.rendererConfig().feature.shadow.sampleRadius, 0.04f);
-    EXPECT_EQ(manager.rendererConfig().feature.rayTracing.maxRecursionDepth, 3);
+    EXPECT_EQ(manager.rendererConfig().feature.rayTracing.maxBounces, 3);
     EXPECT_EQ(Serialize(asset_json::load<RendererConfig>(rendererFile)), Serialize(originalRenderer));
     const auto editor = asset_json::load<EditorConfig>(manager.paths().editor);
     EXPECT_EQ(manager.editorConfig().width, editor.width);

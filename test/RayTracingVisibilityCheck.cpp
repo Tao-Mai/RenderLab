@@ -309,23 +309,23 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     }
 
     auto feature = context().config->rendererConfig().feature;
-    for (uint32_t depth : {3u, 4u, 2u})
+    for (uint32_t bounces : {2u, 3u, kMinPathBounces, kMaxPathBounces})
     {
-        feature.rayTracing.maxRecursionDepth = depth;
+        feature.rayTracing.maxBounces = bounces;
         context().config->setRenderFeature(feature);
         rebuildGraph();
         const auto luminance = sample();
         CHECK(
             std::isfinite(luminance) && luminance > 0,
-            "invalid luminance {} at recursion depth {}",
+            "invalid luminance {} at path bounces {}",
             luminance,
-            depth
+            bounces
         );
-        if (depth > kMinRayRecursionDepth)
-            CHECK(luminance > clear, "secondary ray contributed no indirect light at depth {}: {}", depth, luminance);
+        if (bounces > kMinPathBounces)
+            CHECK(luminance > clear, "secondary ray contributed no indirect light at bounces {}: {}", bounces, luminance);
         else
             CHECK(luminance == clear);
-        LOG_INFO("Ray tracing recursion depth {} passed: luminance {}", depth, luminance);
+        LOG_INFO("Ray tracing path bounces {} passed: luminance {}", bounces, luminance);
     }
 
     SceneAsset areaScene;
@@ -356,11 +356,11 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     scenes.scene().actors[1]->transform().setRotationEulerDegrees({0, 0, 0});
 
     // No other surface can receive this outgoing ray: terminal emission and full tracing must agree.
-    feature.rayTracing.maxRecursionDepth = 3;
+    feature.rayTracing.maxBounces = 2;
     context().config->setRenderFeature(feature);
     rebuildGraph();
     CHECK(sample() == areaClear);
-    feature.rayTracing.maxRecursionDepth = kMinRayRecursionDepth;
+    feature.rayTracing.maxBounces = kMinPathBounces;
     context().config->setRenderFeature(feature);
     rebuildGraph();
 
@@ -427,7 +427,7 @@ int main(int, char** argv)
     config.setRenderPath(RenderPath::RayTracing);
     const auto originalFeature           = config.rendererConfig().feature;
     auto       feature                   = originalFeature;
-    feature.rayTracing.maxRecursionDepth = kMinRayRecursionDepth;
+    feature.rayTracing.maxBounces = kMinPathBounces;
     config.setRenderFeature(feature);
     data.init(config.paths().assets);
     scenes.init();

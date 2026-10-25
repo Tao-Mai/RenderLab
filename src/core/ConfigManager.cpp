@@ -38,9 +38,14 @@ void validateBloom(const RenderFeature::Bloom& bloom)
     CHECK(bloom.levels > 0 && bloom.levels <= kMaxBloomLevels);
 }
 
+void validatePathBounces(uint32_t maxBounces)
+{
+    CHECK(maxBounces >= kMinPathBounces && maxBounces <= kMaxPathBounces);
+}
+
 void validateRayTracing(const RenderFeature::RayTracing& rayTracing)
 {
-    CHECK(rayTracing.maxRecursionDepth >= kMinRayRecursionDepth);
+    validatePathBounces(rayTracing.maxBounces);
     CHECK(rayTracing.emaStartSampleCount > 0 && rayTracing.emaStartSampleCount <= kMaxEmaStartSampleCount);
     CHECK(std::isfinite(rayTracing.emaAlpha) && rayTracing.emaAlpha >= 0.0f && rayTracing.emaAlpha <= 1.0f);
 }
@@ -138,7 +143,7 @@ void ConfigManager::setRenderFeature(const RenderFeature& feature)
     validateBloom(feature.bloom);
     validateCascade(feature.shadow.cascade);
     validateRayTracing(feature.rayTracing);
-    CHECK(feature.offline.maxRecursionDepth >= kMinRayRecursionDepth);
+    validatePathBounces(feature.offline.maxBounces);
 
     renderer.feature = feature;
 }
@@ -205,7 +210,7 @@ void ConfigManager::loadRenderer()
     validateBloom(renderer.feature.bloom);
     validateCascade(renderer.feature.shadow.cascade);
     validateRayTracing(renderer.feature.rayTracing);
-    CHECK(renderer.feature.offline.maxRecursionDepth >= kMinRayRecursionDepth);
+    validatePathBounces(renderer.feature.offline.maxBounces);
 
     CHECK(renderer.feature.shadow.pointShadowMapSize > 0);
     CHECK(renderer.feature.shadow.rectAreaShadowMapSize > 0);

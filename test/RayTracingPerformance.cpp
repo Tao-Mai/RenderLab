@@ -85,14 +85,14 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
     );
     std::map<std::string, std::vector<double>> samples;
     LOG_INFO(
-        "RT benchmark: GPU '{}', scene '{}', extent {}x{}, viewport {}x{}, recursion {}, warmup {}, samples {}",
+        "RT benchmark: GPU '{}', scene '{}', extent {}x{}, viewport {}x{}, bounces {}, warmup {}, samples {}",
         vulkan.properties().deviceName.data(),
         scenes.scene().id.value,
         extent.width,
         extent.height,
         side,
         side,
-        context().config->rendererConfig().feature.rayTracing.maxRecursionDepth,
+        context().config->rendererConfig().feature.rayTracing.maxBounces,
         kWarmupFrames,
         kMeasuredFrames
     );
@@ -162,7 +162,7 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
 int main(int argc, char** argv)
 {
     logger::init(argv[0]);
-    CHECK(argc >= 2 && argc <= 4, "usage: RayTracingPerformance <csv> [recursion depth] [all-lights]");
+    CHECK(argc >= 2 && argc <= 4, "usage: RayTracingPerformance <csv> [max bounces] [all-lights]");
     ConfigManager    config;
     AssetManager     assets;
     AssetDataManager data;
@@ -187,7 +187,7 @@ int main(int argc, char** argv)
         auto                   feature = original.feature;
         const std::string_view text    = argv[2];
         const auto             result =
-            std::from_chars(text.data(), text.data() + text.size(), feature.rayTracing.maxRecursionDepth);
+            std::from_chars(text.data(), text.data() + text.size(), feature.rayTracing.maxBounces);
         CHECK(result.ec == std::errc{} && result.ptr == text.data() + text.size());
         config.setRenderFeature(feature);
     }

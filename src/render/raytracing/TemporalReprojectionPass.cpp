@@ -179,7 +179,7 @@ void TemporalReprojectionPass::execute(RenderGraph&, vk::raii::CommandBuffer& co
             .previousDepthRow       = previousDepthRow,
             .viewport               = currentViewport,
             .writeLayer             = writeLayer,
-            .historyValid           = hasHistory ? 1u : 0u,
+            .historyValid           = hasHistory && previousMaxBounces == settings.maxBounces ? 1u : 0u,
             .emaStartSampleCount    = settings.emaStartSampleCount,
             .emaAlpha               = settings.emaAlpha,
         }
@@ -192,6 +192,7 @@ void TemporalReprojectionPass::execute(RenderGraph&, vk::raii::CommandBuffer& co
     previousViewProjection = frame.view.uniforms.viewProjection;
     previousViewport       = currentViewport;
     previousDepthRow       = currentDepthRow;
+    previousMaxBounces     = settings.maxBounces;
     writeLayer ^= 1u;
     hasHistory = true;
 }

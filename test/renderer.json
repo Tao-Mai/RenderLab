@@ -6,17 +6,17 @@
             "filterRadius": 1.0,
             "intensity": 0.03999999910593033,
             "levels": 5,
-            "scatter": 0.7
+            "scatter": 0.699999988079071
         },
         "hdr": true,
         "ibl": true,
         "offline": {
-            "maxRecursionDepth": 6
+            "maxBounces": 5
         },
         "rayTracing": {
             "emaAlpha": 0.10000000149011612,
             "emaStartSampleCount": 10,
-            "maxRecursionDepth": 4,
+            "maxBounces": 3,
             "svgf": true
         },
         "shadow": {

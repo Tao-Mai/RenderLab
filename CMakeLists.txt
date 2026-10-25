@@ -163,7 +163,8 @@ endforeach()
 renderlab_shader(raytracing raytracing/realtime.slang raytracing
     ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
     DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0
-    INCLUDES "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
+    INCLUDES "${SHADER_SOURCE_DIR}/raytracing/path_tracing.slang"
+        "${SHADER_SOURCE_DIR}/scene_data.slang" "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
         "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
         "${SHADER_SOURCE_DIR}/raytracing/random.slang" "${SHADER_SOURCE_DIR}/raytracing/local_light_sampling.slang"
         "${SHADER_SOURCE_DIR}/raytracing/rect_area_light_sampling.slang"
@@ -173,7 +174,9 @@ renderlab_shader(raytracing raytracing/realtime.slang raytracing
 renderlab_shader(offline_pathtracing raytracing/offline.slang offline_pathtracing
     ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
     DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0
-    INCLUDES "${SHADER_SOURCE_DIR}/raytracing/low_discrepancy.slang"
+    INCLUDES "${SHADER_SOURCE_DIR}/raytracing/path_tracing.slang"
+        "${SHADER_SOURCE_DIR}/scene_data.slang" "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
+        "${SHADER_SOURCE_DIR}/raytracing/low_discrepancy.slang"
         "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
         "${SHADER_SOURCE_DIR}/raytracing/random.slang" "${SHADER_SOURCE_DIR}/raytracing/local_light_sampling.slang"
         "${SHADER_SOURCE_DIR}/raytracing/rect_area_light_sampling.slang"

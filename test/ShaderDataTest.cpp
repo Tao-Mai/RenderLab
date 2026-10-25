@@ -341,6 +341,24 @@ TEST(ShaderDataLayout, SheenBindingsMatchCompiledShaders)
     }
 }
 
+TEST(ShaderDataLayout, PathTracingParametersMatchCompiledShaders)
+{
+    const std::array fields = {
+        Field{"viewport", offsetof(PathTracingParameters, viewport), sizeof(glm::vec4)},
+        Field{"lightRanges", offsetof(PathTracingParameters, lightRanges), sizeof(LightRanges)},
+        Field{"maxBounces", offsetof(PathTracingParameters, maxBounces), sizeof(uint32_t)},
+        Field{"sampleIndex", offsetof(PathTracingParameters, sampleIndex), sizeof(uint32_t)},
+        Field{"iblEnabled", offsetof(PathTracingParameters, iblEnabled), sizeof(uint32_t)},
+        Field{"padding", offsetof(PathTracingParameters, padding), sizeof(uint32_t)},
+    };
+    for (const auto* shader : {"raytracing", "offline_pathtracing"})
+    {
+        const auto parameters = parameter(shader, "parameters");
+        checkFields(parameters.at("type").at("elementType"), fields);
+        EXPECT_EQ(parameters.at("type").at("elementVarLayout").at("binding").at("size"), sizeof(PathTracingParameters));
+    }
+}
+
 TEST(ShaderDataLayout, RayTracingHitDataMatchesCompiledShaders)
 {
     const std::array fields = {

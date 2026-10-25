@@ -30,6 +30,7 @@ private:
     glm::vec4                               previousDepthRow{};
     uint32_t                                writeLayer = 0;
     bool                                    hasHistory = false;
+    uint32_t                                previousMaxBounces = 0;
 
     void createPipeline(const VulkanContext& vulkan);
 };

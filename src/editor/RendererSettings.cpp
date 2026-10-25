@@ -230,65 +230,51 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
 
     if (config.rendererConfig().renderPath == RenderPath::OfflinePathTracing)
     {
-        const auto properties =
-            vulkan.physicalDeviceHandle()
-                .getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
-        const int maxDepth =
-            static_cast<int>(properties.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>().maxRayRecursionDepth);
         if (drawSettingsHeader("Offline path tracing"))
         {
             feature.offline = {};
-            feature.offline.maxRecursionDepth =
-                std::min(feature.offline.maxRecursionDepth, static_cast<uint32_t>(maxDepth));
             config.setRenderFeature(feature);
         }
         ImGui::Text("Samples per pixel: %u", context().renderer->offlineSampleCount());
-        int depth = static_cast<int>(feature.offline.maxRecursionDepth);
+        int maxBounces = static_cast<int>(feature.offline.maxBounces);
         if (ImGui::SliderInt(
-                "Max recursion depth",
-                &depth,
-                static_cast<int>(kMinRayRecursionDepth),
-                maxDepth,
+                "Max bounces",
+                &maxBounces,
+                static_cast<int>(kMinPathBounces),
+                static_cast<int>(kMaxPathBounces),
                 "%d",
                 ImGuiSliderFlags_AlwaysClamp
             ))
         {
-            feature.offline.maxRecursionDepth = static_cast<uint32_t>(depth);
+            feature.offline.maxBounces = static_cast<uint32_t>(maxBounces);
             config.setRenderFeature(feature);
         }
-        ImGui::TextUnformatted("1 sample/pixel per frame; scene/camera changes reset accumulation.");
+        ImGui::SetItemTooltip("Maximum surface scattering events. 1 gives direct lighting plus terminal emission.");
+        ImGui::TextUnformatted("1 sample/pixel per frame; scene/camera/bounce changes reset accumulation.");
         return sceneEdited;
     }
 
     if (config.rendererConfig().renderPath == RenderPath::RayTracing)
     {
-        const auto properties =
-            vulkan.physicalDeviceHandle()
-                .getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
-        const auto maxDepth = properties.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>().maxRayRecursionDepth;
         if (drawSettingsHeader("Ray tracing"))
         {
-            feature.rayTracing                   = {};
-            feature.rayTracing.maxRecursionDepth = std::min(feature.rayTracing.maxRecursionDepth, maxDepth);
+            feature.rayTracing = {};
             config.setRenderFeature(feature);
         }
-        int recursionDepth = static_cast<int>(feature.rayTracing.maxRecursionDepth);
+        int maxBounces = static_cast<int>(feature.rayTracing.maxBounces);
         if (ImGui::SliderInt(
-                "Max recursion depth",
-                &recursionDepth,
-                static_cast<int>(kMinRayRecursionDepth),
-                static_cast<int>(maxDepth),
+                "Max bounces",
+                &maxBounces,
+                static_cast<int>(kMinPathBounces),
+                static_cast<int>(kMaxPathBounces),
                 "%d",
                 ImGuiSliderFlags_AlwaysClamp
             ))
         {
-            feature.rayTracing.maxRecursionDepth = static_cast<uint32_t>(recursionDepth);
+            feature.rayTracing.maxBounces = static_cast<uint32_t>(maxBounces);
             config.setRenderFeature(feature);
         }
-        ImGui::SetItemTooltip(
-            "Includes the primary ray and one level reserved for visibility queries.\n"
-            "Depth 2: direct lighting only; depth 4: up to two diffuse bounces."
-        );
+        ImGui::SetItemTooltip("Maximum surface scattering events. 1 gives direct lighting plus terminal emission.");
 
         if (ImGui::Checkbox("Enable SVGF", &feature.rayTracing.svgf))
             config.setRenderFeature(feature);

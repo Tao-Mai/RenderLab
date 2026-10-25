@@ -213,7 +213,7 @@ int main(int, char** argv)
     const auto originalPath           = config.rendererConfig().renderPath;
     const auto originalFeature        = config.rendererConfig().feature;
     auto       feature                = originalFeature;
-    feature.offline.maxRecursionDepth = 4;
+    feature.offline.maxBounces = 3;
     feature.ibl                       = false;
     feature.shadow.enable             = false;
     config.setRenderFeature(feature);
@@ -282,7 +282,7 @@ int main(int, char** argv)
     scenes.scene().actors[1]->getComponent<LocalLightComponent>()->luminousIntensity *= 2;
     draw();
     CHECK(renderer.offlineSampleCount() == 1);
-    feature.offline.maxRecursionDepth = 3;
+    feature.offline.maxBounces = 2;
     config.setRenderFeature(feature);
     draw();
     CHECK(renderer.offlineSampleCount() == 1);

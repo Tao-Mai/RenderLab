@@ -95,9 +95,8 @@ OfflinePathTracingPass::Output OfflinePathTracingPass::setup(
          .access = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite}
     );
 
-    const auto maxRecursionDepth = setup.config.feature.offline.maxRecursionDepth;
-    if (!*pipeline || pipelineRecursionDepth != maxRecursionDepth)
-        createPipeline(setup, maxRecursionDepth);
+    if (!*pipeline)
+        createPipeline(setup);
     frame.hitBufferRevision = 0;
     frame.tlasRevision      = 0;
 
@@ -105,7 +104,7 @@ OfflinePathTracingPass::Output OfflinePathTracingPass::setup(
     return {rayImage};
 }
 
-void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t maxRecursionDepth)
+void OfflinePathTracingPass::createPipeline(const PassSetup& setup)
 {
     const auto& vulkan = setup.vulkan;
     const auto& device = vulkan.deviceHandle();
@@ -113,11 +112,10 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
         vulkan.physicalDeviceHandle()
             .getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
     const auto& limits = properties.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
-    CHECK(maxRecursionDepth >= kMinRayRecursionDepth);
     CHECK(
-        maxRecursionDepth <= limits.maxRayRecursionDepth,
+        kRayPipelineRecursionDepth <= limits.maxRayRecursionDepth,
         "ray tracing requests recursion depth {}, GPU supports {}",
-        maxRecursionDepth,
+        kRayPipelineRecursionDepth,
         limits.maxRayRecursionDepth
     );
 
@@ -128,7 +126,7 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
                 .binding         = 0,
                 .descriptorType  = vk::DescriptorType::eAccelerationStructureKHR,
                 .descriptorCount = 1,
-                .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR
+                .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
             },
             vk::DescriptorSetLayoutBinding{
                 .binding         = 1,
@@ -154,9 +152,8 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
         frame.set           = renderDevice.allocateDescriptorSet(descriptorSetLayout);
 
         const vk::PushConstantRange parameterRange{
-            .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR |
-                vk::ShaderStageFlagBits::eMissKHR,
-            .size = sizeof(OfflineParameters),
+            .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR,
+            .size       = sizeof(PathTracingParameters),
         };
         const std::array descriptorSetLayouts{
             &renderDevice.sceneDescriptorSetLayout,
@@ -237,7 +234,7 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
         .pStages                      = stages.data(),
         .groupCount                   = static_cast<uint32_t>(groups.size()),
         .pGroups                      = groups.data(),
-        .maxPipelineRayRecursionDepth = maxRecursionDepth,
+        .maxPipelineRayRecursionDepth = kRayPipelineRecursionDepth,
         .layout                       = pipelineLayout,
     };
     VkPipeline rawPipeline = VK_NULL_HANDLE;
@@ -252,8 +249,7 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup, uint32_t max
             &rawPipeline
         ))
     );
-    pipeline               = vk::raii::Pipeline(device, rawPipeline);
-    pipelineRecursionDepth = maxRecursionDepth;
+    pipeline = vk::raii::Pipeline(device, rawPipeline);
 
     const vk::DeviceSize stride     = alignUp(limits.shaderGroupHandleSize, limits.shaderGroupHandleAlignment);
     const vk::DeviceSize missOffset = alignUp(stride, limits.shaderGroupBaseAlignment);
@@ -422,17 +418,16 @@ void OfflinePathTracingPass::execute(
     };
     commands.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 0, sets, {});
     const auto& viewport = execution.view.viewport;
-    commands.pushConstants<OfflineParameters>(
+    commands.pushConstants<PathTracingParameters>(
         pipelineLayout,
-        vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR |
-            vk::ShaderStageFlagBits::eMissKHR,
+        vk::ShaderStageFlagBits::eRaygenKHR,
         0,
-        OfflineParameters{
-            .viewport          = {viewport.x, viewport.y, viewport.width, viewport.height},
-            .lightRanges       = execution.renderData.lightRanges,
-            .maxRecursionDepth = pipelineRecursionDepth,
-            .sampleIndex       = accumulatedSamples,
-            .iblEnabled        = execution.setup.config.feature.ibl && execution.renderData.environmentMap ? 1u : 0u,
+        PathTracingParameters{
+            .viewport    = {viewport.x, viewport.y, viewport.width, viewport.height},
+            .lightRanges = execution.renderData.lightRanges,
+            .maxBounces  = execution.setup.config.feature.offline.maxBounces,
+            .sampleIndex = accumulatedSamples,
+            .iblEnabled  = execution.setup.config.feature.ibl && execution.renderData.environmentMap ? 1u : 0u,
         }
     );
     const auto extent = graph.imageExtent(rayImage);
@@ -452,7 +447,8 @@ void OfflinePathTracingPass::prepare(RenderGraph& graph, const PassFrame& execut
         view.viewport.width != previousView.viewport.width || view.viewport.height != previousView.viewport.height;
     const bool sceneChanged = !std::ranges::equal(previousDrawItems, scene.drawItems) ||
         previousLights != scene.lights || previousEnvironmentMap != scene.environmentMap;
-    if (sceneChanged || cameraChanged || previousAssetRevision != assetRevision)
+    const auto maxBounces = execution.setup.config.feature.offline.maxBounces;
+    if (sceneChanged || cameraChanged || previousAssetRevision != assetRevision || previousMaxBounces != maxBounces)
         accumulatedSamples = 0;
 
     previousDrawItems.assign(scene.drawItems.begin(), scene.drawItems.end());
@@ -460,4 +456,5 @@ void OfflinePathTracingPass::prepare(RenderGraph& graph, const PassFrame& execut
     previousEnvironmentMap = scene.environmentMap;
     previousView           = view;
     previousAssetRevision  = assetRevision;
+    previousMaxBounces     = maxBounces;
 }

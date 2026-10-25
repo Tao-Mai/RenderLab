@@ -37,26 +37,10 @@ private:
         vk::raii::DescriptorSet set               = nullptr;
         uint64_t                tlasRevision      = 0;
     };
-    struct OfflineParameters
-    {
-        glm::vec4   viewport;
-        LightRanges lightRanges;
-        uint32_t    maxRecursionDepth;
-        uint32_t    sampleIndex;
-        uint32_t    iblEnabled;
-        uint32_t    padding = 0;
-    };
-    static_assert(sizeof(OfflineParameters) == 48);
-    static_assert(offsetof(OfflineParameters, lightRanges) == 16);
-    static_assert(offsetof(OfflineParameters, maxRecursionDepth) == 32);
-    static_assert(offsetof(OfflineParameters, sampleIndex) == 36);
-    static_assert(offsetof(OfflineParameters, iblEnabled) == 40);
-
     RenderGraph::ImageHandle                 rayImage;
     DescriptorSetLayout                      descriptorSetLayout;
     vk::PipelineLayout                       pipelineLayout;
-    vk::raii::Pipeline                       pipeline               = nullptr;
-    uint32_t                                 pipelineRecursionDepth = 0;
+    vk::raii::Pipeline                       pipeline = nullptr;
     Buffer                                   bindingTable;
     vk::StridedDeviceAddressRegionKHR        raygenRegion, missRegion, hitRegion;
     RenderGraph::AccelerationStructureHandle sceneTlas;
@@ -64,13 +48,14 @@ private:
     RenderGraph::BufferHandle                hitData;
     RenderGraph::BufferHandle                accumulationHandle;
     uint32_t                                 accumulatedSamples = 0;
+    uint32_t                                 previousMaxBounces = 0;
     std::vector<DrawItem>                    previousDrawItems;
     std::vector<LightData>                   previousLights;
     std::optional<EnvironmentMapAsset::ID>   previousEnvironmentMap;
     RenderView                               previousView{};
     uint64_t                                 previousAssetRevision = 0;
 
-    void createPipeline(const PassSetup& setup, uint32_t maxRecursionDepth);
+    void createPipeline(const PassSetup& setup);
     void prepareHits(RenderGraph& graph, const PassFrame& execution, Frame& frame);
     void updateTlasDescriptor(RenderGraph& graph, const PassFrame& execution, Frame& frame);
 };

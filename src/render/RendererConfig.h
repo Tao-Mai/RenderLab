@@ -24,8 +24,9 @@ enum class CascadeSplitStrategy
     Uniform,
 };
 
-// The primary ray and its visibility query each consume one recursion level.
-inline constexpr uint32_t kMinRayRecursionDepth   = 2;
+// Maximum surface scattering events; terminal emission is evaluated after the last bounce.
+inline constexpr uint32_t kMinPathBounces         = 1;
+inline constexpr uint32_t kMaxPathBounces         = 64;
 inline constexpr float    kExposureCalibration    = 1.2f;
 inline constexpr uint32_t kMaxBloomLevels         = 6;
 inline constexpr uint32_t kMaxEmaStartSampleCount = 1024;
@@ -81,7 +82,7 @@ struct RenderFeature
 
     struct RayTracing
     {
-        uint32_t maxRecursionDepth   = 4;
+        uint32_t maxBounces          = 3;
         bool     svgf                = true;
         uint32_t emaStartSampleCount = 10;
         float    emaAlpha            = 0.1f;  // Weight of the current sample after the arithmetic-mean warmup.
@@ -89,7 +90,7 @@ struct RenderFeature
 
     struct Offline
     {
-        uint32_t maxRecursionDepth = 6;
+        uint32_t maxBounces = 5;
     } offline;
 };
 

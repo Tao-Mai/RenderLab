@@ -109,6 +109,7 @@ void check(Renderer& renderer)
     auto&      config                      = *context().config;
     const auto originalFeature             = config.rendererConfig().feature;
     auto       feature                     = originalFeature;
+    feature.rayTracing.maxBounces          = kMinPathBounces + 1;
     feature.rayTracing.emaStartSampleCount = 10;
     feature.rayTracing.emaAlpha            = 0.1f;
     config.setRenderFeature(feature);
@@ -208,6 +209,10 @@ void check(Renderer& renderer)
     feature.rayTracing.emaAlpha = 0.5f;
     config.setRenderFeature(feature);
     CHECK(sample(10) == 7.375f);  // Weight changes apply without rebuilding the graph.
+    feature.rayTracing.maxBounces = kMinPathBounces;
+    config.setRenderFeature(feature);
+    CHECK(sample(20) == 20);  // A bounce-budget change rejects the previous illumination history.
+    CHECK(sample(40) == 30);
 
     view.uniforms.view = glm::mat4{1};
     view.uniforms.viewProjection =
@@ -228,7 +233,7 @@ void check(Renderer& renderer)
     config.setRenderFeature(originalFeature);
     LOG_INFO(
         "Temporal reprojection passed: raw linear depth, mean/EMA, equal-depth tangential motion, "
-        "normal/depth/viewport/miss rejection, graph reset"
+        "normal/depth/viewport/miss rejection, bounce-budget reset, graph reset"
     );
     graph.reset();
     for (auto& frame : data)
