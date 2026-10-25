@@ -1,6 +1,6 @@
 # 资产与运行数据
 
-[项目首页](../README.md) · [资产模块](../src/asset/README.md) · [材质示例](../docs/MaterialSamples.md)
+[项目首页](../README.md) · [资产模块](../docs/asset/README.md) · [材质示例](../docs/MaterialSamples.md)
 
 资产描述、导入后的二进制与源模型分开保存。运行时读取处理好的资产，不在每帧解析 glTF / OBJ。
 

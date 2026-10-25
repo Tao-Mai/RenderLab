@@ -44,12 +44,12 @@ PBR 材质支持基础参数与 glTF 扩展描述。OfflineMaterialAsset 为 Dif
 - 缺失切线时生成 MikkTSpace 切线；普通图像生成完整 Mipmap。
 - 环境图导入生成辐照度与 GGX 预过滤结果，可异步准备并取消。
 
-JSON 读写复用 [Serializer.h](../core/Serializer.h) 的 C++26 静态反射。多态类型使用稳定的注册名称，不使用 RTTI 名称；完整描述要求字段明确，空 optional 保存为 null，不保留旧格式解析。
+JSON 读写复用 [Serializer.h](../../src/core/Serializer.h) 的 C++26 静态反射。多态类型使用稳定的注册名称，不使用 RTTI 名称；完整描述要求字段明确，空 optional 保存为 null，不保留旧格式解析。
 
 材质覆盖复用 PbrMaterialAsset 的 optional 字段，合并逻辑使用静态反射；仅覆盖有值字段，不重复编写字段复制。
 
 ## 内置资源
 
-BRDF / Sheen LUT 与 fallback 纹理同样通过类型化资产 ID 获取。原始 PNG 位于 [builtin/data/](builtin/data/)，编译时嵌入，按需解码；无需配置路径或导入后的 JSON / bin。
+BRDF / Sheen LUT 与 fallback 纹理同样通过类型化资产 ID 获取。原始 PNG 位于 [builtin/data/](../../src/asset/builtin/data/)，编译时嵌入，按需解码；无需配置路径或导入后的 JSON / bin。
 
-实现入口：[AssetManager](AssetManager.h)、[AssetDataManager](AssetDataManager.h)、[AssetImporter](AssetImporter.h)、[BuiltinAssets](BuiltinAssets.h)。
+实现入口：[AssetManager](../../src/asset/AssetManager.h)、[AssetDataManager](../../src/asset/AssetDataManager.h)、[AssetImporter](../../src/asset/AssetImporter.h)、[BuiltinAssets](../../src/asset/BuiltinAssets.h)。

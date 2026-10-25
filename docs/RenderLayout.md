@@ -1,6 +1,6 @@
 # Descriptor Set Layout 与 Pipeline Layout
 
-[渲染模块](../src/render/README.md) · [项目架构](Architecture.md)
+[渲染模块](render/README.md) · [项目架构](Architecture.md)
 
 本文记录共享 Layout 的描述、初始化预创建时机和使用它们的 Pass。
 

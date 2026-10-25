@@ -1,6 +1,6 @@
 # 场景模块
 
-[项目首页](../../README.md) · [项目架构](../../docs/Architecture.md)
+[项目首页](../../README.md) · [项目架构](../Architecture.md)
 
 场景使用 Actor 持有 Component 的对象模型。SceneManager 管理运行时场景；编辑器相机独立于 Actor / Component。
 
@@ -17,7 +17,7 @@
 
 ## 反射与持久化
 
-SceneManager 初始化时注册 [SceneTypes.h](SceneTypes.h) 中的类型；Engine 进入 Run 时，由 SceneManager 读取配置中的默认场景 ID 并加载。
+SceneManager 初始化时注册 [SceneTypes.h](../../src/scene/SceneTypes.h) 中的类型；Engine 进入 Run 时，由 SceneManager 读取配置中的默认场景 ID 并加载。
 
 - Actor / Component 通过 `ReflectField` 标记持久化字段，继承类沿用该字段选择策略。
 - 多态指针保存为 `{"TypeName": {...}}`，空指针为 null；不保存内存地址或编译器 RTTI 名称。
@@ -33,4 +33,4 @@ RenderSystem 不做视锥剔除，不加载 GPU 资源。Renderer 只读引用 D
 
 编辑器的组件属性控件、Transform Gizmo 与材质覆盖 UI 留在 editor 模块。
 
-实现入口：[SceneManager](SceneManager.cpp)、[AActor](AActor.h)、[Component](Component.h)、[RenderSystem](system/RenderSystem.cpp)。
+实现入口：[SceneManager](../../src/scene/SceneManager.cpp)、[AActor](../../src/scene/AActor.h)、[Component](../../src/scene/Component.h)、[RenderSystem](../../src/scene/system/RenderSystem.cpp)。

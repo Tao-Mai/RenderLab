@@ -8,17 +8,13 @@
 
 以下图片均由 RenderLab 直接输出，分辨率为 960 × 960，使用项目内的 Bloom 与 Tone Mapping；不含编辑器侧栏，保留必要的光源标记。
 
-### 实时光追 · Sibenik Cathedral
+### 实时光追 · SVGF 开关对比
 
-**1 spp / 帧**，最多 5 次表面散射，两帧在途。启用历史重投影与时域累积，截图取第 32 帧；没有使用离线路径的高采样累积或额外空间降噪。图中的小球和矩形是编辑器光源标记。
+Sibenik Cathedral，**1 spp / 帧**，最多 6 次表面散射，两帧在途。两图使用相同的场景、视角、光照与后处理设置，均截取第 32 帧，仅切换 SVGF。关闭时显示当前帧采样；开启时使用 albedo 解调、历史重投影、亮度方差估计与五级 à-trous 滤波。图中的小球和矩形是编辑器光源标记。
 
-![Sibenik 实时光追：多光源、间接光照与历史重投影](docs/images/sibenik-realtime.png)
-
-### 实时光追 · Sponza
-
-中庭场景使用一盏方向光，展示直接光阴影与间接照明。同样为 **1 spp / 帧**，启用历史重投影，截图取第 32 帧。
-
-![Sponza 实时光追：中庭光照与阴影](docs/images/sponza-realtime.png)
+| SVGF 关闭 | SVGF 开启 |
+|-----------|-----------|
+| ![Sibenik 实时光追，SVGF 关闭，第 32 帧](docs/images/sibenik-svgf-off.png) | ![Sibenik 实时光追，SVGF 开启，第 32 帧](docs/images/sibenik-svgf-on.png) |
 
 ### 光栅化 · PBR 与稳定 CSM
 
@@ -40,7 +36,7 @@
 - **阴影**：稳定 CSM、Texel Snapping、级联混合与 PCF；点光源 / 聚光灯 PCF、矩形面光源 PCSS。
 - **材质与 IBL**：Metallic-Roughness PBR、MikkTSpace 法线映射、Clearcoat、Charlie Sheen；漫反射辐照度与 GGX 预过滤环境光。
 - **光传输**：GGX VNDF 与漫反射混合采样、多光源加权选择、NEE / BRDF 多重重要性采样、俄罗斯轮盘终止。
-- **时域累积**：基于线性深度与法线的历史重投影，样本均值与亮度矩记录；
+- **SVGF 降噪**：albedo 解调、基于深度与法线的历史重投影、直接光 / 间接光分别累积、亮度方差估计与五级 à-trous 滤波。
 - **后处理**：RGBA16F HDR、EV100 曝光、可切换 Tone Mapping、多级 Bloom。
 - **工具链**：glTF / Assimp 场景导入、纹理 Mipmap、ImGui 编辑器、GPU 拾取、CPU / GPU 分阶段计时；C++26 静态反射驱动序列化。
 
@@ -67,7 +63,7 @@ Shader；未指定构建类型时默认使用 Release。光追路线需要支持
 |-----------------------------------------------------------------------------|-------------------------------------|
 | [功能清单](docs/Feature.md)                                                 | 已实现功能与当前边界                |
 | [项目架构](docs/Architecture.md)                                            | 场景、资产、Renderer 与编辑器的职责 |
-| [渲染模块](src/render/README.md) / [RenderGraph](src/render/Arch.md)        | 四条路线、资源与帧同步              |
+| [渲染模块](docs/render/README.md) / [RenderGraph](docs/render/Arch.md)        | 四条路线、资源与帧同步              |
 | [阴影](docs/Shadow.md) / [稳定 CSM](docs/shadow/Csm.md)                     | 阴影算法、稳定化与测试场景          |
 | [材质展示](docs/MaterialGallery.md) / [示例资产](docs/MaterialSamples.md) | 材质比较与扩展支持情况              |
 | [Sheen](docs/Sheen.md) / [方向反照率 LUT](docs/SheenLut.md)                | 分层着色与环境光处理                |

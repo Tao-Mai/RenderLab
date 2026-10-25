@@ -283,6 +283,7 @@ float3 evaluateDirectContribution(
     float3 brdf = evaluateDirectBrdf(
         surface.baseColor.rgb, surface.metallic, surface.roughness, surface.normal, V, lightDirection);
     float3 response = brdf * nDotL;
+
 #if ENABLE_SHEEN
     float sheenStrength = max(surface.sheenColor.x, max(surface.sheenColor.y, surface.sheenColor.z));
     float nDotV = saturate(dot(surface.normal, V));
@@ -292,6 +293,7 @@ float3 evaluateDirectContribution(
     response = response * baseScale + surface.sheenColor
         * evaluateSheenBrdf(surface.sheenRoughness, surface.normal, V, lightDirection) * nDotL;
 #endif
+
 #if ENABLE_CLEARCOAT
     float clearcoatNdotV = saturate(dot(surface.clearcoatNormal, V));
     float clearcoatWeight = surface.clearcoatFactor * fresnelSchlick(float3(kClearcoatF0), clearcoatNdotV).x;
@@ -300,6 +302,7 @@ float3 evaluateDirectContribution(
         surface.clearcoatRoughness, surface.clearcoatNormal, V, lightDirection) * clearcoatNdotL;
     response = lerp(response, float3(clearcoatResponse), clearcoatWeight);
 #endif
+
     return incidentIrradiance * response * visibility;
 }
 

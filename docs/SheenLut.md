@@ -1,6 +1,6 @@
 # Sheen 方向反照率 LUT
 
-[Sheen 着色](Sheen.md) · [资产模块](../src/asset/README.md)
+[Sheen 着色](Sheen.md) · [资产模块](asset/README.md)
 
 该 LUT 保存 Charlie Sheen 的方向反照率，用于材质分层时缩放底层能量。它不是环境光颜色，也不能替代 Sheen IBL 的积分。
 
@@ -9,7 +9,7 @@
 - 来源：[Khronos glTF Sample Renderer / lut_sheen_E.png](https://github.com/KhronosGroup/glTF-Sample-Renderer/blob/506f05c3ff6deaa202a5384ba1ab9891b3c7f210/assets/images/lut_sheen_E.png)。
 - 固定版本：`506f05c3ff6deaa202a5384ba1ab9891b3c7f210`。
 - 原图：[lut_sheen_E.png](../src/asset/builtin/data/lut_sheen_E.png)，1024 × 1024、RGB 16-bit。
-- 许可证：[Apache-2.0](../src/asset/builtin/data/lut_sheen_E.LICENSE.md)。
+- 许可证：[Apache-2.0](licenses/lut_sheen_E.LICENSE.md)。
 - SHA-256：`7f21d7754dd3a2a972d9d1298ee3e67e20c5b2f21969095d322a1bc20f8b2f04`。
 
 ## 使用方式

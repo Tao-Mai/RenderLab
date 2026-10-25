@@ -1,6 +1,6 @@
 # 渲染模块
 
-[项目首页](../../README.md) · [架构](../../docs/Architecture.md) · [RenderGraph](Arch.md) · [Descriptor / Pipeline Layout](../../docs/RenderLayout.md)
+[项目首页](../../README.md) · [架构](../Architecture.md) · [RenderGraph](Arch.md) · [Descriptor / Pipeline Layout](../RenderLayout.md)
 
 渲染模块接收场景快照和编辑器输入，准备 GPU 数据，再通过 RenderGraph 调度完整的渲染 Pass。Renderer 负责流程，Pass 负责 Vulkan 绘制细节。
 
@@ -23,7 +23,7 @@
 - 延迟 G-buffer 保存 Albedo / AO、Normal / Roughness、Emissive / Metallic、Sheen / Roughness，并从深度重建位置。
 - Forward / Deferred 复用基础 BRDF、灯光、阴影和 IBL；Clearcoat 当前仅在 Forward 计算。
 - 透明材质仍走前向混合，不等同于物理折射或透射。
-- 阴影由统一 [ShadowPass](feature/shadow/ShadowPass.cpp) 处理，算法见 [阴影文档](../../docs/Shadow.md)。
+- 阴影由统一 [ShadowPass](../../src/render/feature/shadow/ShadowPass.cpp) 处理，算法见 [阴影文档](../Shadow.md)。
 
 ### 实时光追
 
@@ -37,7 +37,7 @@ Shader 入口：[raytracing/realtime.slang](../../shaders/raytracing/realtime.sl
 - 关闭 SVGF 时输出 RGBA16F 合并颜色；开启时分别输出直接光、间接光、`emission` 与主命中材质的线性 albedo。两种模式均输出原始线性深度与法线。当前主射线不做像素内 Jitter。
 - `emission` 保存相机直接可见的发光表面、面光源与环境。直接光包含主表面的光源采样、一次 BRDF 采样命中发光面 / 环境的贡献；更深层路径归入间接光。直接光保留面光源 MIS 的两部分，合并颜色为三路之和。
 
-仅在开启 SVGF 时执行 [SVGFReprojection](raytracing/SVGFReprojection.h) 和 [SVGFFilter](raytracing/SVGFFilter.h)。直接光与间接光先除以各自像素的 albedo，在解调后的空间中累积颜色、亮度矩并估计方差。有效样本数不超过 `historyLength` 时使用算术平均，超过后使用 `emaAlpha`；首个样本或历史失效时权重为 1。历史不足 4 帧时使用 7×7 空间方差，五级 à-trous 按深度、法线、亮度与方差滤波。第一级回写解调后的颜色历史，最后一级乘回当前像素的 albedo 并添加当前帧 `emission`。除法和乘回统一使用 `max(albedo, 0.01)`，避免黑色通道除零。算法与限制见 [SVGF 文档](../../docs/SVGF.md)。
+仅在开启 SVGF 时执行 [SVGFReprojection](../../src/render/raytracing/SVGFReprojection.h) 和 [SVGFFilter](../../src/render/raytracing/SVGFFilter.h)。直接光与间接光先除以各自像素的 albedo，在解调后的空间中累积颜色、亮度矩并估计方差。有效样本数不超过 `historyLength` 时使用算术平均，超过后使用 `emaAlpha`；首个样本或历史失效时权重为 1。历史不足 4 帧时使用 7×7 空间方差，五级 à-trous 按深度、法线、亮度与方差滤波。第一级回写解调后的颜色历史，最后一级乘回当前像素的 albedo 并添加当前帧 `emission`。除法和乘回统一使用 `max(albedo, 0.01)`，避免黑色通道除零。算法与限制见 [SVGF 文档](../SVGF.md)。
 
 ### 离线路径追踪
 
@@ -66,12 +66,12 @@ Shader 入口：[raytracing/offline.slang](../../shaders/raytracing/offline.slan
 
 | 位置 | 内容 |
 | --- | --- |
-| [Renderer.cpp](Renderer.cpp) | 路线调度、全局帧准备、光栅化主视图剔除 |
-| [ShadowPass](feature/shadow/ShadowPass.cpp) / [TransparentPass](feature/TransparentPass.cpp) | 每帧 prepare 中准备阴影数据与阴影剔除、排序透明物体 |
-| [RenderGraph](feature/RenderGraph.h) | 类型化登记、依赖编译、资源状态与执行 |
-| [SceneDraw](feature/SceneDraw.cpp) / [FrameData](FrameData.cpp) | 共享绘制与资源依赖函数、逐帧数据和公共 Set 写入 |
-| [feature/](feature/) | 光栅、阴影、后处理与编辑器 Pass |
-| [raytracing/](raytracing/) / [offline/](offline/) | 实时光追、历史重投影与离线路径 |
-| [device/](device/) / [present/](present/) | Vulkan、帧同步、计时与呈现 |
+| [Renderer.cpp](../../src/render/Renderer.cpp) | 路线调度、全局帧准备、光栅化主视图剔除 |
+| [ShadowPass](../../src/render/feature/shadow/ShadowPass.cpp) / [TransparentPass](../../src/render/feature/TransparentPass.cpp) | 每帧 prepare 中准备阴影数据与阴影剔除、排序透明物体 |
+| [RenderGraph](../../src/render/feature/RenderGraph.h) | 类型化登记、依赖编译、资源状态与执行 |
+| [SceneDraw](../../src/render/feature/SceneDraw.cpp) / [FrameData](../../src/render/FrameData.cpp) | 共享绘制与资源依赖函数、逐帧数据和公共 Set 写入 |
+| [feature/](../../src/render/feature/) | 光栅、阴影、后处理与编辑器 Pass |
+| [raytracing/](../../src/render/raytracing/) / [offline/](../../src/render/offline/) | 实时光追、历史重投影与离线路径 |
+| [device/](../../src/render/device/) / [present/](../../src/render/present/) | Vulkan、帧同步、计时与呈现 |
 
 CPU Scope、GPU Timestamp、Draw / 三角形计数用于观察各阶段成本；不把这些统计等同于跨硬件的性能基准。

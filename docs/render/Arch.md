@@ -1,6 +1,6 @@
 # RenderGraph
 
-[渲染模块](README.md) · [项目架构](../../docs/Architecture.md)
+[渲染模块](README.md) · [项目架构](../Architecture.md)
 
 Renderer 决定加入哪些 Pass，Pass 声明资源访问，Graph 负责依赖、分配、状态转换与执行。它不解释场景、材质或拾取结果。
 
@@ -56,4 +56,4 @@ Image 自己缓存 ImageView，Pass 获取 Image 后创建所需 View；Graph �
 - 场景环境图是资源绑定，不是拓扑条件；IBL 开关才决定是否登记 SkyboxPass。
 - Resize 时释放旧图资源与 View，重建交换链，再 Setup / Compile。
 
-当前不实现临时资源别名复用、多队列调度或异步 Compute。实现入口：[RenderGraph.h](feature/RenderGraph.h)、[RenderGraph.cpp](feature/RenderGraph.cpp)。
+当前不实现临时资源别名复用、多队列调度或异步 Compute。实现入口：[RenderGraph.h](../../src/render/feature/RenderGraph.h)、[RenderGraph.cpp](../../src/render/feature/RenderGraph.cpp)。

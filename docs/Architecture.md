@@ -1,6 +1,6 @@
 # 项目架构
 
-[项目首页](../README.md) · [渲染模块](../src/render/README.md)
+[项目首页](../README.md) · [渲染模块](render/README.md)
 
 RenderLab 将场景逻辑、资产数据和 GPU 执行分开：上层描述“渲染什么”，Renderer 准备可见数据，各 Pass 决定“如何渲染”。
 
@@ -43,7 +43,7 @@ Engine：场景 / 编辑器 Tick
 - Renderer 合并材质描述与 override；MaterialTable 统一生成 GPU 数据，按材质 ID 与覆盖对象维护稳定索引，各 FIF 安全更新。
 - 场景保存编辑器相机和环境图，Renderer 配置只保存渲染行为。
 
-详见 [场景模块](../src/scene/README.md) 与 [资产模块](../src/asset/README.md)。
+详见 [场景模块](scene/README.md) 与 [资产模块](asset/README.md)。
 
 ## 渲染与资源
 
@@ -58,7 +58,7 @@ Engine：场景 / 编辑器 Tick
 - 材质、灯光、阴影与光追命中 SSBO 在 setup 申请，跨帧共用；prepare 从各 FIF 的 staging pool 线性分配并写入，execute 录制复制与前后 Barrier。容量增长时等待 GPU 完成后重新分配，并刷新受影响的 Buffer 绑定。
 - Graph Buffer 统一跨帧共享；拾取在等待本次提交完成后立即回读。时域历史由 Graph 创建并持有，使用双层 Ping-pong 资源，图重建时重置历史。
 
-详见 [RenderGraph](../src/render/Arch.md) 与 [Descriptor / Pipeline Layout](RenderLayout.md)。
+详见 [RenderGraph](render/Arch.md) 与 [Descriptor / Pipeline Layout](RenderLayout.md)。
 
 ## 配置与编辑器
 
