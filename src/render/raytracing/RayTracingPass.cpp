@@ -70,17 +70,7 @@ RayTracingPass::Output RayTracingPass::setup(
         );
 
     const auto extent = setup.renderExtent;
-    rayImage          = graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}});
-    rayImage          = graph.write(rayImage);
-    graph.use(
-        rayImage,
-        {
-            .stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
-            .access = vk::AccessFlagBits2::eShaderStorageWrite,
-            .layout = vk::ImageLayout::eGeneral,
-        }
-    );
-    const auto createGBuffer = [&](vk::Format format)
+    const auto createOutput = [&](vk::Format format)
     {
         CHECK(device.getFormatProperties(format).optimalTilingFeatures & vk::FormatFeatureFlagBits::eStorageImage);
         auto image = graph.write(graph.createImage({.format = format, .extent = {extent.width, extent.height, 1}}));
@@ -94,17 +84,31 @@ RayTracingPass::Output RayTracingPass::setup(
         );
         return image;
     };
-    depth       = createGBuffer(vk::Format::eR32Sfloat);
-    worldNormal = createGBuffer(vk::Format::eR16G16B16A16Sfloat);
+    output = {};
+    const bool enableSvgf = setup.config.feature.rayTracing.svgf;
+    if (enableSvgf)
+    {
+        output.direct   = createOutput(kHdrColorFormat);
+        output.indirect = createOutput(kHdrColorFormat);
+        output.emission = createOutput(kHdrColorFormat);
+        output.albedo   = createOutput(kHdrColorFormat);
+    }
+    else
+        output.rayImage = createOutput(kHdrColorFormat);
+    output.depth       = createOutput(vk::Format::eR32Sfloat);
+    output.worldNormal = createOutput(vk::Format::eR16G16B16A16Sfloat);
     sampleIndex = 0;
-    if (!*pipeline)
+    if (!*pipeline || svgfEnabled != enableSvgf)
+    {
+        svgfEnabled = enableSvgf;
         createPipeline(setup);
+    }
     for (auto& frame : frames)
     {
         frame.hitBufferRevision = 0;
         frame.tlasRevision      = 0;
     }
-    return {rayImage, depth, worldNormal};
+    return output;
 }
 
 void RayTracingPass::createPipeline(const PassSetup& setup)
@@ -155,6 +159,24 @@ void RayTracingPass::createPipeline(const PassSetup& setup)
                 .descriptorCount = 1,
                 .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
             },
+            vk::DescriptorSetLayoutBinding{
+                .binding         = 9,
+                .descriptorType  = vk::DescriptorType::eStorageImage,
+                .descriptorCount = 1,
+                .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
+            },
+            vk::DescriptorSetLayoutBinding{
+                .binding         = 10,
+                .descriptorType  = vk::DescriptorType::eStorageImage,
+                .descriptorCount = 1,
+                .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
+            },
+            vk::DescriptorSetLayoutBinding{
+                .binding         = 11,
+                .descriptorType  = vk::DescriptorType::eStorageImage,
+                .descriptorCount = 1,
+                .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
+            },
         };
         auto& renderDevice  = *renderContext().device;
         descriptorSetLayout = renderDevice.createDescriptorSetLayout(bindings);
@@ -174,7 +196,7 @@ void RayTracingPass::createPipeline(const PassSetup& setup)
         pipelineLayout = renderDevice.getOrCreatePipelineLayout(descriptorSetLayouts, std::array{parameterRange});
     }
 
-    GpuShader        shader(device, "shaders/raytracing.spv");
+    GpuShader        shader(device, svgfEnabled ? "shaders/raytracing.svgf.spv" : "shaders/raytracing.spv");
     const std::array stages = {
         vk::PipelineShaderStageCreateInfo{
             .stage  = vk::ShaderStageFlagBits::eRaygenKHR,
@@ -389,9 +411,9 @@ void RayTracingPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& set
             .imageLayout = vk::ImageLayout::eGeneral,
         };
     };
-    const auto outputInfo = imageInfo(rayImage);
-    const auto depthInfo  = imageInfo(depth);
-    const auto normalInfo = imageInfo(worldNormal);
+    const auto outputInfo = imageInfo(svgfEnabled ? output.direct : output.rayImage);
+    const auto depthInfo  = imageInfo(output.depth);
+    const auto normalInfo = imageInfo(output.worldNormal);
     for (const auto& frame : frames)
     {
         const std::array writes{
@@ -418,6 +440,39 @@ void RayTracingPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& set
             },
         };
         setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});
+    }
+    if (svgfEnabled)
+    {
+        const auto indirectInfo = imageInfo(output.indirect);
+        const auto emissionInfo = imageInfo(output.emission);
+        const auto albedoInfo   = imageInfo(output.albedo);
+        for (const auto& frame : frames)
+        {
+            const std::array writes{
+                vk::WriteDescriptorSet{
+                    .dstSet          = *frame.set,
+                    .dstBinding      = 9,
+                    .descriptorCount = 1,
+                    .descriptorType  = vk::DescriptorType::eStorageImage,
+                    .pImageInfo      = &indirectInfo,
+                },
+                vk::WriteDescriptorSet{
+                    .dstSet          = *frame.set,
+                    .dstBinding      = 10,
+                    .descriptorCount = 1,
+                    .descriptorType  = vk::DescriptorType::eStorageImage,
+                    .pImageInfo      = &emissionInfo,
+                },
+                vk::WriteDescriptorSet{
+                    .dstSet          = *frame.set,
+                    .dstBinding      = 11,
+                    .descriptorCount = 1,
+                    .descriptorType  = vk::DescriptorType::eStorageImage,
+                    .pImageInfo      = &albedoInfo,
+                },
+            };
+            setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});
+        }
     }
 }
 
@@ -458,7 +513,7 @@ void RayTracingPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& comman
             .iblEnabled  = execution.setup.config.feature.ibl && execution.renderData.environmentMap ? 1u : 0u,
         }
     );
-    const auto      extent = graph.imageExtent(rayImage);
+    const auto      extent = graph.imageExtent(svgfEnabled ? output.direct : output.rayImage);
     GpuProfileScope timing{execution.gpuProfiler, commands, "RT.Trace rays"};
     commands.traceRaysKHR(raygenRegion, missRegion, hitRegion, {}, extent.width, extent.height, 1);
 }

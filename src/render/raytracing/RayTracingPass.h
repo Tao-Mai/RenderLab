@@ -15,9 +15,13 @@ class RayTracingPass
 public:
     struct Output
     {
-        RenderGraph::ImageHandle rayImage;
+        RenderGraph::ImageHandle rayImage;  // Combined lighting; valid when SVGF is disabled.
         RenderGraph::ImageHandle depth;
         RenderGraph::ImageHandle worldNormal;
+        RenderGraph::ImageHandle direct;  // Separated lighting; valid when SVGF is enabled.
+        RenderGraph::ImageHandle indirect;
+        RenderGraph::ImageHandle emission;
+        RenderGraph::ImageHandle albedo;  // Primary material base color in linear space, including its texture.
     };
 
     Output
@@ -33,9 +37,8 @@ private:
         vk::raii::DescriptorSet set               = nullptr;
         uint64_t                tlasRevision      = 0;
     };
-    RenderGraph::ImageHandle                 rayImage;
-    RenderGraph::ImageHandle                 depth;
-    RenderGraph::ImageHandle                 worldNormal;
+    Output                                  output;
+    bool                                    svgfEnabled = false;
     uint32_t                                 sampleIndex = 0;
     DescriptorSetLayout                      descriptorSetLayout;
     vk::PipelineLayout                       pipelineLayout;

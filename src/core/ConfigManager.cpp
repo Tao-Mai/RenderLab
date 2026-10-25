@@ -46,7 +46,7 @@ void validatePathBounces(uint32_t maxBounces)
 void validateRayTracing(const RenderFeature::RayTracing& rayTracing)
 {
     validatePathBounces(rayTracing.maxBounces);
-    CHECK(rayTracing.emaStartSampleCount > 0 && rayTracing.emaStartSampleCount <= kMaxEmaStartSampleCount);
+    CHECK(rayTracing.historyLength >= 1 && rayTracing.historyLength <= kMaxSvgfHistoryLength);
     CHECK(std::isfinite(rayTracing.emaAlpha) && rayTracing.emaAlpha >= 0.0f && rayTracing.emaAlpha <= 1.0f);
 }
 

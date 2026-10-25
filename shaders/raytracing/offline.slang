@@ -18,7 +18,7 @@ void raygenMain()
         RayDesc ray = parameters.createRay(pixel, pixelSample);
         PathResult result = tracePath(ray, kSceneMask | kLightMask,
             RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES, state);
-        float3 sum = result.radiance;
+        float3 sum = result.directRadiance + result.indirectRadiance + result.emission;
         if (parameters.sampleIndex != 0)
             sum += accumulation[pixelIndex].rgb;
         accumulation[pixelIndex] = float4(sum, 0.0);

@@ -45,7 +45,7 @@ RendererConfig sampleRendererConfig()
                 .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.03f, .spotSampleRadius = 2.5f},
             .toneMapping = {.ev100 = 5.0f, .exposureCompensation = 1.5f, .mode = ToneMappingOperator::Reinhard},
             .bloom = {.enable = false, .intensity = 0.15f, .scatter = 0.6f, .filterRadius = 2.0f, .levels = 3},
-            .rayTracing = {.maxBounces = 3, .svgf = false, .emaStartSampleCount = 16, .emaAlpha = 0.25f}},
+            .rayTracing = {.maxBounces = 3, .svgf = false, .historyLength = 4, .emaAlpha = 0.25f}},
     };
 }
 }
@@ -103,7 +103,7 @@ TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
     EXPECT_EQ(serialized.at("feature").at("toneMapping").at("mode"), "Reinhard");
     EXPECT_EQ(serialized.at("feature").at("rayTracing").at("maxBounces"), 3);
     EXPECT_EQ(serialized.at("feature").at("rayTracing").at("svgf"), false);
-    EXPECT_EQ(serialized.at("feature").at("rayTracing").at("emaStartSampleCount"), 16);
+    EXPECT_EQ(serialized.at("feature").at("rayTracing").at("historyLength"), 4);
     EXPECT_FLOAT_EQ(serialized.at("feature").at("rayTracing").at("emaAlpha").get<float>(), 0.25f);
     EXPECT_EQ(serialized.at("feature").at("offline").at("maxBounces"), 5);
 
@@ -155,6 +155,11 @@ TEST(ConfigSerialization, PhysicalExposureUsesEv100AndCompensation)
 
 TEST(ConfigSerialization, MissingFieldsFailInsteadOfUsingDefaults)
 {
+    auto missingHistory = Serialize(sampleRendererConfig());
+    missingHistory.at("feature").at("rayTracing").erase("historyLength");
+    RendererConfig rendererWithoutHistory;
+    EXPECT_DEATH(Deserialize(missingHistory, rendererWithoutHistory), "");
+
     json serialized = Serialize(sampleConfig());
     serialized.at("paths").erase("commands");
     AppConfig restored;

@@ -1,4 +1,4 @@
-// Fixed-camera, offscreen timing of the configured scene. Does not save the scene.
+// Fixed-camera, offscreen timing of the configured scene, including SVGF when enabled. Does not save the scene.
 #include "LightingSetup.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
@@ -12,6 +12,7 @@
 #include "render/device/VkCheck.h"
 #include "render/raytracing/BlasBuildPass.h"
 #include "render/raytracing/RayTracingPass.h"
+#include "render/raytracing/SVGFFilter.h"
 #include "render/resource/MaterialTable.h"
 #include "scene/SceneManager.h"
 #include "scene/component/LightComponent.h"
@@ -32,15 +33,14 @@ struct SinkPass
     struct Output
     {
     };
-    Output setup(RenderGraph& graph, const PassSetup&, RayTracingPass::Output source)
+    Output setup(RenderGraph& graph, const PassSetup&, RenderGraph::ImageHandle color)
     {
-        for (auto image : {source.rayImage, source.depth, source.worldNormal})
-            graph.use(
-                image,
-                {.stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
-                 .access = vk::AccessFlagBits2::eShaderStorageRead,
-                 .layout = vk::ImageLayout::eGeneral}
-            );
+        graph.use(
+            color,
+            {.stages = vk::PipelineStageFlagBits2::eComputeShader,
+             .access = vk::AccessFlagBits2::eShaderStorageRead,
+             .layout = vk::ImageLayout::eGeneral}
+        );
         return {};
     }
     void execute(RenderGraph&, vk::raii::CommandBuffer&, const PassFrame&) const {}
@@ -59,11 +59,13 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
     RenderGraph graph;
     graph.init(vulkan);
     renderContext().materialTable->setup(graph);
-    RayTracingPass  trace;
-    BlasBuildPass   blasBuild;
-    TlasBuildPass   tlasBuild;
-    SinkPass        sink;
-    const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), data, context().config->rendererConfig()};
+    RayTracingPass   trace;
+    BlasBuildPass    blasBuild;
+    TlasBuildPass    tlasBuild;
+    SinkPass         sink;
+    SVGFReprojection reprojection;
+    SVGFFilter       filter;
+    const PassSetup  setup{vulkan, renderer.swapchainHandle().extent(), data, context().config->rendererConfig()};
     writeTestEnvironment(setup, scenes.scene().environmentMap);
     const auto blas        = graph.addPass(blasBuild, setup);
     const auto structures  = graph.addPass(tlasBuild, setup, blas);
@@ -72,7 +74,13 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
         .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
     });
     const auto source      = graph.addPass(trace, setup, structures, lightBuffer);
-    graph.addPass(sink, setup, source);
+    auto       color       = source.rayImage;
+    if (setup.config.feature.rayTracing.svgf)
+    {
+        const auto lighting = graph.addPass(reprojection, setup, source);
+        color               = graph.addPass(filter, setup, source, lighting, reprojection).color;
+    }
+    graph.addPass(sink, setup, color);
     graph.compile(setup);
     bindTestLightBuffer(graph, setup, lightBuffer);
 
@@ -85,7 +93,7 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
     );
     std::map<std::string, std::vector<double>> samples;
     LOG_INFO(
-        "RT benchmark: GPU '{}', scene '{}', extent {}x{}, viewport {}x{}, bounces {}, warmup {}, samples {}",
+        "RT benchmark: GPU '{}', scene '{}', extent {}x{}, viewport {}x{}, bounces {}, SVGF {}, warmup {}, samples {}",
         vulkan.properties().deviceName.data(),
         scenes.scene().id.value,
         extent.width,
@@ -93,6 +101,7 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
         side,
         side,
         context().config->rendererConfig().feature.rayTracing.maxBounces,
+        setup.config.feature.rayTracing.svgf,
         kWarmupFrames,
         kMeasuredFrames
     );
@@ -136,8 +145,15 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
         frames[index].wait();
         profiler.endFrame(timer.elapsedMilliseconds());
         if (iteration >= kWarmupFrames)
+        {
+            std::map<std::string, double> frameTimings;
             for (const auto& timing : profiler.gpuTimings())
-                samples[timing.name].push_back(timing.milliseconds);
+                frameTimings[timing.name] += timing.milliseconds;
+            for (const auto& [name, milliseconds] : frameTimings)
+                samples[name].push_back(milliseconds);
+            if (setup.config.feature.rayTracing.svgf)
+                samples["SVGF total"].push_back(frameTimings["SVGFReprojection"] + frameTimings["FilterPass"]);
+        }
     }
     profiler.stopLogging();
     for (auto& [name, values] : samples)
@@ -186,8 +202,7 @@ int main(int argc, char** argv)
     {
         auto                   feature = original.feature;
         const std::string_view text    = argv[2];
-        const auto             result =
-            std::from_chars(text.data(), text.data() + text.size(), feature.rayTracing.maxBounces);
+        const auto result = std::from_chars(text.data(), text.data() + text.size(), feature.rayTracing.maxBounces);
         CHECK(result.ec == std::errc{} && result.ptr == text.data() + text.size());
         config.setRenderFeature(feature);
     }

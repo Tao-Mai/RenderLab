@@ -28,6 +28,14 @@
 
 namespace
 {
+enum class LightingOutput
+{
+    Direct,
+    Indirect,
+    Emission,
+    Albedo,
+};
+
 struct PixelReadbackPass
 {
     RenderGraph::ImageHandle  image;
@@ -96,6 +104,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), frameData, context().config->rendererConfig()};
     RenderGraph::BufferHandle buffer;
     RenderGraph::BufferHandle lightBuffer;
+    auto                      lightingOutput = LightingOutput::Direct;
     const auto                rebuildGraph = [&]
     {
         graph.releaseResources();
@@ -108,8 +117,33 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
                       .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
         });
         const auto output     = graph.addPass(trace, setup, structures, lightBuffer);
-        CHECK(graph.imageInfo(output.rayImage).format == kHdrColorFormat);
-        buffer = graph.addPass(readback, setup, output.rayImage);
+        const bool separated = setup.config.feature.rayTracing.svgf;
+        CHECK((output.rayImage.id != RenderGraph::kInvalidHandle) == !separated);
+        CHECK((output.direct.id != RenderGraph::kInvalidHandle) == separated);
+        CHECK((output.indirect.id != RenderGraph::kInvalidHandle) == separated);
+        CHECK((output.emission.id != RenderGraph::kInvalidHandle) == separated);
+        CHECK((output.albedo.id != RenderGraph::kInvalidHandle) == separated);
+        auto image = output.rayImage;
+        if (separated)
+        {
+            switch (lightingOutput)
+            {
+            case LightingOutput::Direct:
+                image = output.direct;
+                break;
+            case LightingOutput::Indirect:
+                image = output.indirect;
+                break;
+            case LightingOutput::Emission:
+                image = output.emission;
+                break;
+            case LightingOutput::Albedo:
+                image = output.albedo;
+                break;
+            }
+        }
+        CHECK(graph.imageInfo(image).format == kHdrColorFormat);
+        buffer = graph.addPass(readback, setup, image);
         graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
         graph.compile(setup);
         bindTestLightBuffer(graph, setup, lightBuffer);
@@ -160,6 +194,7 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         auto& receiver           = *scenes.scene().actors.front()->getComponent<RenderComponent>();
         auto  originalOverrides  = receiver.materialOverrides;
         auto& material           = receiver.materialOverrides[0];
+        material.baseColorTexture = TextureBinding{BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat};
         material.baseColorFactor = glm::vec4{0.8f, 0.2f, 0.1f, 1.0f};
         material.metallic        = 0.0f;
         material.roughness       = 0.12f;
@@ -190,6 +225,19 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         material.emissive         = glm::vec3{0.5f, 0.125f, 0.025f};
         material.emissiveStrength = 4.0f;
         CHECK(sample() == 2.0f);
+        auto emissionFeature = context().config->rendererConfig().feature;
+        emissionFeature.rayTracing.svgf = true;
+        context().config->setRenderFeature(emissionFeature);
+        CHECK(sample() == 0);
+        lightingOutput = LightingOutput::Emission;
+        CHECK(sample() == 2.0f);
+        lightingOutput = LightingOutput::Indirect;
+        CHECK(sample() == 0);
+        lightingOutput = LightingOutput::Albedo;
+        CHECK(std::abs(sample() - 0.8f) < 0.001f);
+        lightingOutput = LightingOutput::Direct;
+        emissionFeature.rayTracing.svgf = false;
+        context().config->setRenderFeature(emissionFeature);
         material.emissiveStrength = 2.0f;
         CHECK(sample() == 1.0f);
         material.emissiveStrength = 0.0f;
@@ -328,6 +376,25 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
         LOG_INFO("Ray tracing path bounces {} passed: luminance {}", bounces, luminance);
     }
 
+    feature.rayTracing.maxBounces = 3;
+    context().config->setRenderFeature(feature);
+    const auto combined = sample();
+    feature.rayTracing.svgf = true;
+    context().config->setRenderFeature(feature);
+    const auto direct = sample();
+    lightingOutput = LightingOutput::Indirect;
+    const auto indirect = sample();
+    CHECK(direct == clear);
+    CHECK(indirect > 0);
+    lightingOutput = LightingOutput::Emission;
+    const auto emission = sample();
+    CHECK(emission == 0);
+    CHECK(std::abs(combined - direct - indirect - emission) <= combined * kSamplingRelativeTolerance);
+    LOG_INFO("Separated lighting passed: combined {}, direct {}, indirect {}, emission {}", combined, direct, indirect, emission);
+    lightingOutput = LightingOutput::Direct;
+    feature.rayTracing.svgf = false;
+    context().config->setRenderFeature(feature);
+
     SceneAsset areaScene;
     areaScene.editorCamera                          = scenes.scene().editorCamera;
     auto sphere                                     = std::make_unique<AStaticMesh>();
@@ -360,6 +427,15 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     context().config->setRenderFeature(feature);
     rebuildGraph();
     CHECK(sample() == areaClear);
+    feature.rayTracing.svgf = true;
+    context().config->setRenderFeature(feature);
+    CHECK(sample() == areaClear);  // Include both NEE and BRDF emitter hits in direct lighting.
+    lightingOutput = LightingOutput::Indirect;
+    CHECK(sample() == 0);
+    lightingOutput = LightingOutput::Emission;
+    CHECK(sample() == 0);
+    lightingOutput = LightingOutput::Direct;
+    feature.rayTracing.svgf = false;
     feature.rayTracing.maxBounces = kMinPathBounces;
     context().config->setRenderFeature(feature);
     rebuildGraph();
@@ -392,11 +468,39 @@ void checkVisibility(Renderer& renderer, SceneManager& scenes)
     onlyLights.editorCamera    = areaScene.editorCamera;
     auto lamp                  = std::make_unique<ALight>(std::make_unique<RectAreaLightComponent>());
     lamp->transform().position = {0, 0, 3};
+    lamp->transform().setRotationEulerDegrees({0, 180, 0});
     onlyLights.actors.push_back(std::move(lamp));
     scenes.load(onlyLights);
-    // Light geometry is excluded from primary rays, including scenes with no mesh HitData.
+    const auto cameraEmission = sample();
+    CHECK(cameraEmission > 0);
+    feature.rayTracing.svgf = true;
+    context().config->setRenderFeature(feature);
     CHECK(sample() == 0);
-    LOG_INFO("Triangle lights passed: nearest emitter, disabled index mapping, and camera mask without scene meshes");
+    lightingOutput = LightingOutput::Indirect;
+    CHECK(sample() == 0);
+    lightingOutput = LightingOutput::Emission;
+    CHECK(sample() == cameraEmission);
+    LOG_INFO("Camera-visible area light emission passed: {}", cameraEmission);
+
+    const auto environments = context().assetManager->loadedIds<EnvironmentMapAsset>();
+    CHECK(!environments.empty());
+    SceneAsset environmentScene;
+    environmentScene.editorCamera = areaScene.editorCamera;
+    environmentScene.environmentMap = environments.front();
+    scenes.load(environmentScene);
+    feature.ibl = true;
+    feature.rayTracing.svgf = false;
+    context().config->setRenderFeature(feature);
+    const auto background = sample();
+    CHECK(std::isfinite(background) && background > 0);
+    feature.rayTracing.svgf = true;
+    context().config->setRenderFeature(feature);
+    CHECK(sample() == background);
+    lightingOutput = LightingOutput::Direct;
+    CHECK(sample() == 0);
+    lightingOutput = LightingOutput::Indirect;
+    CHECK(sample() == 0);
+    LOG_INFO("Camera-visible environment emission passed: {}", background);
 
     graph.reset();
     for (auto& data : frameData)
@@ -428,6 +532,7 @@ int main(int, char** argv)
     const auto originalFeature           = config.rendererConfig().feature;
     auto       feature                   = originalFeature;
     feature.rayTracing.maxBounces = kMinPathBounces;
+    feature.rayTracing.svgf = false;
     config.setRenderFeature(feature);
     data.init(config.paths().assets);
     scenes.init();

@@ -160,17 +160,23 @@ foreach(type IN ITEMS 0 1 2 3)
     renderlab_shader(shadow shadow.slang "${binary}" DEFINES SHADOW_TYPE=${type}
         INCLUDES ${SCENE_SHADER_INCLUDES})
 endforeach()
-renderlab_shader(raytracing raytracing/realtime.slang raytracing
-    ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
-    DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0
-    INCLUDES "${SHADER_SOURCE_DIR}/raytracing/path_tracing.slang"
-        "${SHADER_SOURCE_DIR}/scene_data.slang" "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
-        "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/random.slang" "${SHADER_SOURCE_DIR}/raytracing/local_light_sampling.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/rect_area_light_sampling.slang"
-        "${SHADER_SOURCE_DIR}/material_data.slang"
-        "${SHADER_SOURCE_DIR}/normal_mapping.slang" "${SHADER_SOURCE_DIR}/raytracing/pbr_brdf.slang"
-        "${SHADER_SOURCE_DIR}/brdf.slang")
+foreach(svgf IN ITEMS 0 1)
+    set(binary raytracing)
+    if(svgf)
+        string(APPEND binary ".svgf")
+    endif()
+    renderlab_shader(raytracing raytracing/realtime.slang "${binary}"
+        ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
+        DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 SVGF=${svgf}
+        INCLUDES "${SHADER_SOURCE_DIR}/raytracing/path_tracing.slang"
+            "${SHADER_SOURCE_DIR}/scene_data.slang" "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
+            "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
+            "${SHADER_SOURCE_DIR}/raytracing/random.slang" "${SHADER_SOURCE_DIR}/raytracing/local_light_sampling.slang"
+            "${SHADER_SOURCE_DIR}/raytracing/rect_area_light_sampling.slang"
+            "${SHADER_SOURCE_DIR}/material_data.slang"
+            "${SHADER_SOURCE_DIR}/normal_mapping.slang" "${SHADER_SOURCE_DIR}/raytracing/pbr_brdf.slang"
+            "${SHADER_SOURCE_DIR}/brdf.slang")
+endforeach()
 renderlab_shader(offline_pathtracing raytracing/offline.slang offline_pathtracing
     ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
     DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0
@@ -183,8 +189,19 @@ renderlab_shader(offline_pathtracing raytracing/offline.slang offline_pathtracin
         "${SHADER_SOURCE_DIR}/material_data.slang"
         "${SHADER_SOURCE_DIR}/normal_mapping.slang" "${SHADER_SOURCE_DIR}/raytracing/pbr_brdf.slang"
         "${SHADER_SOURCE_DIR}/brdf.slang")
-renderlab_shader(temporal_reprojection raytracing/temporal_reprojection.slang temporal_reprojection
-    ENTRIES computeMain INCLUDES "${SHADER_SOURCE_DIR}/scene_uniforms.slang")
+renderlab_shader(svgf_reprojection raytracing/svgf_reprojection.slang svgf_reprojection
+    ENTRIES computeMain INCLUDES "${SHADER_SOURCE_DIR}/scene_data.slang" "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
+        "${SHADER_SOURCE_DIR}/raytracing/svgf_common.slang")
+foreach(stage IN ITEMS 0 1 2)
+    set(binary svgf_filter)
+    if(stage EQUAL 0)
+        string(APPEND binary ".first")
+    elseif(stage EQUAL 2)
+        string(APPEND binary ".final")
+    endif()
+    renderlab_shader(svgf_filter raytracing/svgf_filter.slang "${binary}" ENTRIES computeMain
+        DEFINES SVGF_STAGE=${stage} INCLUDES "${SHADER_SOURCE_DIR}/raytracing/svgf_common.slang")
+endforeach()
 renderlab_shader_manifests()
 
 add_library(RenderLabRuntime STATIC
@@ -354,8 +371,10 @@ add_library(RenderLabRuntime STATIC
         src/render/resource/MaterialData.h
         src/render/resource/MaterialTable.h
         src/render/resource/MaterialTable.cpp
-        src/render/raytracing/TemporalReprojectionPass.h
-        src/render/raytracing/TemporalReprojectionPass.cpp
+        src/render/raytracing/SVGFReprojection.h
+        src/render/raytracing/SVGFReprojection.cpp
+        src/render/raytracing/SVGFFilter.h
+        src/render/raytracing/SVGFFilter.cpp
         src/render/raytracing/RayTracingBlitPass.cpp
         src/render/raytracing/RayTracingBlitPass.h
         src/render/feature/shadow/ShadowPass.cpp

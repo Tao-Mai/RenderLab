@@ -29,7 +29,7 @@ inline constexpr uint32_t kMinPathBounces         = 1;
 inline constexpr uint32_t kMaxPathBounces         = 64;
 inline constexpr float    kExposureCalibration    = 1.2f;
 inline constexpr uint32_t kMaxBloomLevels         = 6;
-inline constexpr uint32_t kMaxEmaStartSampleCount = 1024;
+inline constexpr uint32_t kMaxSvgfHistoryLength   = 1024;
 
 struct RenderFeature
 {
@@ -84,8 +84,8 @@ struct RenderFeature
     {
         uint32_t maxBounces          = 3;
         bool     svgf                = true;
-        uint32_t emaStartSampleCount = 10;
-        float    emaAlpha            = 0.1f;  // Weight of the current sample after the arithmetic-mean warmup.
+        uint32_t historyLength       = 32;  // Arithmetic averaging through this sample count.
+        float    emaAlpha            = 0.1f;  // Current-sample weight after historyLength samples.
     } rayTracing;
 
     struct Offline

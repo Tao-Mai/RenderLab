@@ -20,7 +20,9 @@
 #include "render/feature/postprocess/ToneMappingPass.h"
 #include "render/offline/OfflinePathTracingPass.h"
 #include "render/raytracing/BlasBuildPass.h"
-#include "render/raytracing/TemporalReprojectionPass.h"
+#include "render/raytracing/RayTracingPass.h"
+#include "render/raytracing/SVGFReprojection.h"
+#include "render/raytracing/SVGFFilter.h"
 #include "render/raytracing/TlasBuildPass.h"
 #include "render/resource/MaterialTable.h"
 #include "scene/SceneManager.h"
@@ -117,7 +119,8 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     TlasBuildPass            tlas;
     OfflinePathTracingPass   tracing;
     RayTracingPass           realtimeTracing;
-    TemporalReprojectionPass reprojection;
+    SVGFReprojection         reprojection;
+    SVGFFilter               filter;
     BloomPass                bloom;
     ToneMappingPass          toneMapping;
     EditorDepthPass          editorDepth;
@@ -142,9 +145,13 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         else
         {
             const auto traced = graph.addPass(realtimeTracing, setup, structures, lightBuffer);
-            color             = traced.rayImage;
             if (config.feature.rayTracing.svgf)
-                color = graph.addPass(reprojection, setup, traced).color;
+            {
+                const auto accumulated = graph.addPass(reprojection, setup, traced);
+                color = graph.addPass(filter, setup, traced, accumulated, reprojection).color;
+            }
+            else
+                color = traced.rayImage;
         }
     }
     else

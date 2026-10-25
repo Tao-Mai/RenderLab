@@ -99,7 +99,7 @@ target_link_libraries(RenderGraphTests PRIVATE
 add_test(NAME RenderGraphTests COMMAND RenderGraphTests)
 
 # Manual checks; GPU variants require Vulkan and the project's configured assets.
-foreach(check IN ITEMS RenderGraphGpuSmoke EditorOverlayGpuCheck DeferredRenderingCheck RayTracingVisibilityCheck TemporalReprojectionCheck RayTracingPerformance EditorLayoutCheck SceneImportCheck SceneEnvironmentCheck OfflineRenderingCheck ImportMaterialSamples BloomGpuCheck ModelImportCheck CaptureScene)
+foreach(check IN ITEMS RenderGraphGpuSmoke EditorOverlayGpuCheck DeferredRenderingCheck RayTracingVisibilityCheck SVGFReprojectionCheck RayTracingPerformance EditorLayoutCheck SceneImportCheck SceneEnvironmentCheck OfflineRenderingCheck ImportMaterialSamples BloomGpuCheck ModelImportCheck CaptureScene)
     add_executable(${check} EXCLUDE_FROM_ALL ${check}.cpp)
     target_link_libraries(${check} PRIVATE RenderLabRuntime)
     renderlab_copy_compiler_runtime(${check})

@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | Forward | DepthPrepass → ScenePass → Skybox → Transparent | 基础 PBR、Clearcoat、Sheen 与透明物体 |
 | Deferred | DepthPrepass → GBuffer → DeferredLighting → Skybox → Transparent | 统一材质缓冲与全屏光照 |
-| Ray Tracing | BLAS / TLAS 构建 → RayTracing → 可选历史重投影 | 每帧随机采样与时域累积 |
+| Ray Tracing | BLAS / TLAS 构建 → RayTracing → 可选 SVGFReprojection → 五级 SVGFFilter | 分路累积、方差估计与多尺度滤波；末级直接合成 |
 | Offline | BLAS / TLAS 构建 → OfflinePathTracing | 独立渐进式路径追踪与高采样参考图 |
 
 光栅路线在需要时加入 ShadowPass。光源标记在线性场景颜色上绘制，随后一起经过 Bloom（可选）与 ToneMapping；光追关闭 HDR 时通过 Blit 输出。UI 在后处理之后绘制，拾取仍使用独立阶段。
@@ -34,9 +34,10 @@ Shader 入口：[raytracing/realtime.slang](../../shaders/raytracing/realtime.sl
 - 方向光通过可见性射线计算直接照明；矩形发光面以三角形参与求交。
 - 实时与离线共用 [RayGen 路径循环](../../shaders/raytracing/path_tracing.slang)，ClosestHit 只返回命中与材质信息，所有续射线和阴影射线均由 RayGen 发出。Vulkan 管线递归深度固定为 1。
 - `maxBounces` 控制最多 1–64 次表面散射，结束后仍计算终点发光；1 对应直接照明与终点发光。使用俄罗斯轮盘终止。修改反弹次数不重建渲染图或 Pipeline，但会清空对应的时域历史 / 离线累积。BLAS 按几何缓存，TLAS 按提交帧更新。
-- 输出 RGBA16F 颜色、原始线性深度与法线。当前主射线不做像素内 Jitter。
+- 关闭 SVGF 时输出 RGBA16F 合并颜色；开启时分别输出直接光、间接光、`emission` 与主命中材质的线性 albedo。两种模式均输出原始线性深度与法线。当前主射线不做像素内 Jitter。
+- `emission` 保存相机直接可见的发光表面、面光源与环境。直接光包含主表面的光源采样、一次 BRDF 采样命中发光面 / 环境的贡献；更深层路径归入间接光。直接光保留面光源 MIS 的两部分，合并颜色为三路之和。
 
-可选的历史重投影根据深度重建世界位置，投影到上一帧并用深度 / 法线判断历史有效性。前期计算算术平均，之后使用可调 EMA；同时记录样本数和亮度一阶 / 二阶矩。当前没有方差引导的空间滤波，不能视为完整 SVGF。
+仅在开启 SVGF 时执行 [SVGFReprojection](raytracing/SVGFReprojection.h) 和 [SVGFFilter](raytracing/SVGFFilter.h)。直接光与间接光先除以各自像素的 albedo，在解调后的空间中累积颜色、亮度矩并估计方差。有效样本数不超过 `historyLength` 时使用算术平均，超过后使用 `emaAlpha`；首个样本或历史失效时权重为 1。历史不足 4 帧时使用 7×7 空间方差，五级 à-trous 按深度、法线、亮度与方差滤波。第一级回写解调后的颜色历史，最后一级乘回当前像素的 albedo 并添加当前帧 `emission`。除法和乘回统一使用 `max(albedo, 0.01)`，避免黑色通道除零。算法与限制见 [SVGF 文档](../../docs/SVGF.md)。
 
 ### 离线路径追踪
 
@@ -58,7 +59,7 @@ Shader 入口：[raytracing/offline.slang](../../shaders/raytracing/offline.slan
 - Graph 创建的图像跨帧共享，直接通过 `getImage(handle)` 访问；缓冲默认跨帧共享，阴影图不按 Frames-in-flight 复制。
 - 同一队列上追踪资源最后访问，下一帧首次使用前插入 Barrier；不意味着前后帧可无约束并行写同一资源。
 - Graph Buffer 统一跨帧共享，通过 `getBuffer(handle)` 访问；拾取等待提交完成后立即回读。Renderer 根据 acquire 结果选择交换链 Image 并绑定外部目标，Graph 不感知 imageIndex；ImageView 缓存由 Swapchain 中的 Image 持有。
-- 历史重投影资源由 Graph 创建并持有，Pass 保存 handle；颜色 / 深度 / 法线 / 亮度矩各使用双层 Ping-pong，图重建时重置历史。
+- SVGF 历史资源由 Graph 创建并持有，Pass 保存 handle；两路颜色与亮度矩各自使用双层 Ping-pong，深度 / 法线历史共享，图重建时重置历史。
 - Device、ShaderManager、RenderResourceManager、MaterialTable 通过 RenderContext 聚合；共享 Layout 在初始化时预创建。Device 缓存并持有全部 Pipeline Layout 和光栅 Pipeline，Pass 只保存 Pipeline Layout 句柄；私有 Descriptor Set Layout 仍由各 Pass 持有。布局匹配交给 Vulkan 验证层检查。
 
 ## 代码导航

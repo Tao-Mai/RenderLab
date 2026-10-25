@@ -273,14 +273,37 @@ struct PathHit
 
 struct PathResult
 {
-    float3 radiance;
+    float3 directRadiance;
+    float3 indirectRadiance;
+    float3 emission;
     float primaryDepth;
     float3 primaryNormal;
+    float3 primaryAlbedo;
+
+    [mutating]
+    void addRadiance(float3 radiance, bool direct)
+    {
+        if (direct)
+            directRadiance += radiance;
+        else
+            indirectRadiance += radiance;
+    }
+
+    [mutating]
+    void addEmission(float3 radiance, uint bounce)
+    {
+        if (bounce == 0)
+            emission += radiance;
+        else
+            addRadiance(radiance, bounce == 1);
+    }
 };
 
 PathResult tracePath(RayDesc ray, uint primaryMask, uint primaryFlags, inout uint state)
 {
-    PathResult result = {float3(0.0), -1.0, float3(0.0)};
+    PathResult result = {};
+    result.primaryDepth = -1.0;
+    result.primaryAlbedo = float3(1.0);
     float3 throughput = float3(1.0);
     float previousBrdfPdf = 0.0;
     float previousRectAreaWeightSum = 0.0;
@@ -295,7 +318,8 @@ PathResult tracePath(RayDesc ray, uint primaryMask, uint primaryFlags, inout uin
         if (hit.event == PathEvent::Miss)
         {
             if (parameters.iblEnabled != 0)
-                result.radiance += throughput * radianceMap.SampleLevel(radianceSampler, ray.Direction, 0.0).rgb;
+                result.addEmission(throughput * radianceMap.SampleLevel(radianceSampler, ray.Direction, 0.0).rgb,
+                    bounce);
             break;
         }
         if (hit.event == PathEvent::Emitter)
@@ -312,7 +336,7 @@ PathResult tracePath(RayDesc ray, uint primaryMask, uint primaryFlags, inout uin
                         ? emitter.selectionWeight(ray.Origin) / previousRectAreaWeightSum : 0.0;
                     weight = balanceHeuristic(previousBrdfPdf, lightPdf * selectionProbability);
                 }
-                result.radiance += throughput * emitter.data.color * weight;
+                result.addEmission(throughput * emitter.data.color * weight, bounce);
             }
             break;
         }
@@ -322,14 +346,17 @@ PathResult tracePath(RayDesc ray, uint primaryMask, uint primaryFlags, inout uin
         {
             result.primaryDepth = linearViewDepth(surface.position, sceneUniforms.view);
             result.primaryNormal = surface.geometricNormal;
+            result.primaryAlbedo = surface.brdf.baseColor;
         }
-        result.radiance += throughput * surface.emissive;
+        // Emission reached after one BRDF sample completes a direct-light path, including its MIS pair.
+        result.addEmission(throughput * surface.emissive, bounce);
         // After the last scattering event, retain terminal emission without another visibility query.
         if (bounce == parameters.maxBounces)
             break;
 
         float rectAreaWeightSum;
-        result.radiance += throughput * surface.sampleDirectRadiance(parameters.lightRanges, state, rectAreaWeightSum);
+        result.addRadiance(throughput * surface.sampleDirectRadiance(parameters.lightRanges, state, rectAreaWeightSum),
+            bounce == 0);
         float3 randomSample;
         randomSample.x = randomFloat(state);
         randomSample.y = randomFloat(state);

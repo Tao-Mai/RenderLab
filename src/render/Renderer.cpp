@@ -32,7 +32,8 @@
 #include "render/raytracing/BlasBuildPass.h"
 #include "render/raytracing/RayTracingBlitPass.h"
 #include "render/raytracing/RayTracingPass.h"
-#include "render/raytracing/TemporalReprojectionPass.h"
+#include "render/raytracing/SVGFReprojection.h"
+#include "render/raytracing/SVGFFilter.h"
 #include "render/raytracing/TlasBuildPass.h"
 #include "render/resource/Buffer.h"
 
@@ -83,7 +84,8 @@ struct Renderer::Passes
         BlasBuildPass,
         TlasBuildPass,
         RayTracingPass,
-        TemporalReprojectionPass,
+        SVGFReprojection,
+        SVGFFilter,
         OfflinePathTracingPass,
         RayTracingBlitPass,
         EditorDepthPass,
@@ -399,10 +401,12 @@ Renderer::SceneOutput Renderer::setupRayTracing()
     const auto blas       = setupPass<BlasBuildPass>();
     const auto structures = setupPass<TlasBuildPass>(blas);
     const auto traced     = setupPass<RayTracingPass>(structures, lightBuffer);
-    auto       color      = traced.rayImage;
     if (rendererConfig->feature.rayTracing.svgf)
-        color = setupPass<TemporalReprojectionPass>(traced).color;
-    return {.color = color};
+    {
+        const auto reprojected = setupPass<SVGFReprojection>(traced);
+        return {.color = setupPass<SVGFFilter>(traced, reprojected, passes->get<SVGFReprojection>()).color};
+    }
+    return {.color = traced.rayImage};
 }
 
 Renderer::SceneOutput Renderer::setupOffline()
@@ -487,6 +491,7 @@ void Renderer::setupEditor(SceneOutput scene)
     pickingReadback = readback;
 }
 
+// 现在是硬编码 TODO 之后让各个feature决定是否重建图
 void Renderer::applyConfiguration()
 {
     const auto& config   = *rendererConfig;

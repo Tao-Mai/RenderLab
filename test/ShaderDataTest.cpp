@@ -57,7 +57,7 @@ void checkFields(const json& type, std::span<const Field> expected)
 
 constexpr std::array sceneShaders = {
     "slang", "slang.no_ibl", "slang.clearcoat", "slang.clearcoat.no_ibl", "depth", "skybox",
-    "raytracing", "offline_pathtracing", "temporal_reprojection"
+    "raytracing", "raytracing.svgf", "offline_pathtracing", "svgf_reprojection"
 };
 
 constexpr std::array lightingShaders = {

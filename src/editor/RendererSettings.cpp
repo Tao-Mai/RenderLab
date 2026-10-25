@@ -278,23 +278,19 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
 
         if (ImGui::Checkbox("Enable SVGF", &feature.rayTracing.svgf))
             config.setRenderFeature(feature);
-        ImGui::SetItemTooltip("Currently implements temporal reprojection and accumulation only.");
+        ImGui::SetItemTooltip("Temporally accumulates direct and indirect lighting, estimates variance and applies\n"
+                              "five edge-aware wavelet levels. The final level combines the result with emission.");
 
         ImGui::BeginDisabled(!feature.rayTracing.svgf);
-        int emaStartSampleCount = static_cast<int>(feature.rayTracing.emaStartSampleCount);
-        if (ImGui::SliderInt(
-                "EMA start samples",
-                &emaStartSampleCount,
-                1,
-                static_cast<int>(kMaxEmaStartSampleCount),
-                "%d",
-                ImGuiSliderFlags_AlwaysClamp
-            ))
+        int historyLength = static_cast<int>(feature.rayTracing.historyLength);
+        if (ImGui::SliderInt("History length", &historyLength, 1, static_cast<int>(kMaxSvgfHistoryLength),
+                             "%d", ImGuiSliderFlags_AlwaysClamp))
         {
-            feature.rayTracing.emaStartSampleCount = static_cast<uint32_t>(emaStartSampleCount);
+            feature.rayTracing.historyLength = static_cast<uint32_t>(historyLength);
             config.setRenderFeature(feature);
         }
-        ImGui::SetItemTooltip("Average the first N samples arithmetically; use EMA for subsequent samples.");
+        ImGui::SetItemTooltip("Average the first N samples arithmetically; use EMA when the sample count exceeds N.\n"
+                              "Applies to color and both luminance moments for direct and indirect lighting.");
         if (ImGui::SliderFloat(
                 "EMA sample weight",
                 &feature.rayTracing.emaAlpha,
@@ -304,7 +300,8 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
                 ImGuiSliderFlags_AlwaysClamp
             ))
             config.setRenderFeature(feature);
-        ImGui::SetItemTooltip("New mean = history * (1 - weight) + current sample * weight.");
+        ImGui::SetItemTooltip("After history length: new mean = history * (1 - weight) + current sample * weight.\n"
+                              "The first sample, or a sample with rejected history, has weight 1.");
         ImGui::EndDisabled();
         return sceneEdited;
     }
