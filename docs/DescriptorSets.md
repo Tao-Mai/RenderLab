@@ -55,4 +55,4 @@ Scene、Lighting、Editor View Set 由 FrameData 持有并写入，FrameData 只
 
 各 FIF 的 Material Set 在自身 Fence 完成后补写新增槽位；材质参数、相机和光源参数通过 Buffer 内容更新。
 
-材质、灯光、阴影与光追命中 SSBO 由 Graph 跨帧共享，内容经各 FIF 的 staging pool 上传。普通内容更新保持 Descriptor 不变；容量增长后，各 Set 根据 Buffer 的资源版本更新绑定。
+材质、灯光、阴影与光追命中 SSBO 由 Graph 跨帧共享，内容经各 FIF 的 staging pool 上传。普通内容更新复用现有 Descriptor；容量增长后，各 Set 根据 Buffer 的资源版本更新绑定。

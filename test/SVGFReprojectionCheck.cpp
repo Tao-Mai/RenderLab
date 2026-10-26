@@ -274,7 +274,7 @@ void check(Renderer& renderer)
             setup,
             ReadbackImages{lighting.direct, lighting.indirect, lighting.directMoments, lighting.indirectMoments}
         );
-        const auto color = graph.addPass(filter, setup, input, lighting, reprojection).color;
+        const auto color = filter.setup(graph, setup, input, lighting, reprojection).color;
         buffer           = graph.addPass(finalReadback, setup, color, rawResults);
         graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
         graph.compile(setup);

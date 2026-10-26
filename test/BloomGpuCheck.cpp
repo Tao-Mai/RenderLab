@@ -8,7 +8,7 @@
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/feature/EndPass.h"
-#include "render/feature/postprocess/BloomPass.h"
+#include "render/feature/postprocess/Bloom.h"
 #include "render/resource/Buffer.h"
 #include "scene/SceneManager.h"
 
@@ -159,7 +159,7 @@ int main(int argc, char** argv)
     HdrSourcePass   source;
     ReadPixelPass   readback;
     EndPass         end;
-    BloomPass       bloom;
+    Bloom           bloom;
     const auto      extent = renderer.swapchainHandle().extent();
     CHECK(extent.width > 32 && extent.height > 32);
     const int  centerX = static_cast<int>(extent.width / 2);
@@ -179,7 +179,7 @@ int main(int argc, char** argv)
         graph.releaseResources();
         auto color = graph.addPass(source, setup).color;
         if (feature.hdr && feature.bloom.enable)
-            color = graph.addPass(bloom, setup, color).color;
+            color = bloom.setup(graph, setup, color).color;
         const auto buffer = graph.addPass(readback, setup, color);
         graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
         graph.compile(setup);

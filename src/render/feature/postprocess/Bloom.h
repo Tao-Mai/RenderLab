@@ -7,7 +7,8 @@
 #include <memory>
 #include <vector>
 
-class BloomPass
+// Owns and connects the filter passes; only those passes enter the graph.
+class Bloom
 {
 public:
     struct Output

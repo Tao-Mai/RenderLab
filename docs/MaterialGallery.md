@@ -13,11 +13,11 @@
 | 第 3 行 | Specular * | Iridescence * | Dispersion * | Emissive Strength |
 | 第 4 行 | Unlit * | Diffuse Transmission * | Alpha Blend | Alpha Mask |
 
-带 * 的扩展当前仅支持数据、导入与编辑，仍按基础材质渲染；属性栏显示 `Data only - shading not implemented`，不将它们视为已完成的着色功能。
+带 * 的扩展支持数据、导入与编辑，画面使用基础 PBR 着色；属性栏显示 `Data only - shading not implemented`。
 
 - 基础 PBR、Normal、AO、自发光已实现。
 - Clearcoat 使用 Forward；Sheen 支持 Forward / Deferred。
-- Alpha Blend / Mask 是光栅透明与遮罩，不是光追介质或物理透射。
+- Alpha Blend / Mask 用于光栅透明混合与遮罩。
 
 ## 如何比较
 
@@ -25,13 +25,13 @@
 
 - 改变 Metallic / Roughness：比较高光颜色、宽度及漫反射变化。
 - 改变 Clearcoat：观察独立涂层高光与底层材质的叠加。
-- 改变 Sheen Color / Roughness：观察褶皱与掠射区域；颜色为黑时不改变底层。
-- 调整 Alpha 与 Cutoff：检查混合和遮罩判定。Mask 球没有透明纹理，可能整球通过或被丢弃。
+- 改变 Sheen Color / Roughness：观察褶皱与掠射区域；黑色对应零贡献。
+- 调整 Alpha 与 Cutoff：检查混合和遮罩判定。Mask 球使用统一 Alpha，可能整球通过或被丢弃。
 
-场景使用点光源、方向光与 Newport Loft 环境图。切换到该场景不会自动改写路线、IBL、曝光等全局配置；建议先用 Forward 比较完整的已实现效果。
+场景使用点光源、方向光与 Newport Loft 环境图，建议先用 Forward 比较已实现的材质效果。
 
 ## 几何与保存
 
-Sheen 网格来自 [Khronos SheenCloth](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/SheenCloth)，约 2.2 m，开启双面。这里只复用静态褶皱几何，不进行布料模拟，也不使用原资产依赖纹理变换的织物贴图。
+Sheen 网格采用 [Khronos SheenCloth](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/SheenCloth) 的静态褶皱几何，约 2.2 m，开启双面。
 
-材质参数使用现有 Override 流程，需显式保存场景；切换场景会丢弃未保存修改。排列、参数和相机均在场景资产中定义，无专用运行时代码分支。资产准备说明见 [assets/README.md](../assets/README.md)。
+材质参数使用 Override 流程，需显式保存场景；切换场景会丢弃未保存修改。排列、参数和相机均在场景资产中定义。资产准备说明见 [assets/README.md](../assets/README.md)。

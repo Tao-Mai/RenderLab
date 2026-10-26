@@ -224,40 +224,31 @@ private:
 template <class T, class... Args>
 auto RenderGraph::addPass(T& pass, const PassSetup& setup, Args&&... args)
 {
-    if constexpr (!requires(vk::raii::CommandBuffer& commandBuffer, const PassFrame& frame)
-                  { pass.execute(*this, commandBuffer, frame); })
+    auto& node   = *nodeStorage.emplace_back(std::make_unique<PassNode>());
+    node.name    = std::define_static_string(std::meta::identifier_of(^^T));
+    node.execute = [pass = &pass](RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& frame)
     {
-        // Setup-only passes register their executable nodes internally.
-        return pass.setup(*this, setup, std::forward<Args>(args)...);
-    }
-    else
-    {
-        auto& node   = *nodeStorage.emplace_back(std::make_unique<PassNode>());
-        node.name    = std::define_static_string(std::meta::identifier_of(^^T));
-        node.execute = [pass = &pass](RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& frame)
-        {
-            pass->execute(graph, commandBuffer, frame);
-        };
-        if constexpr (requires { pass.writeDescriptorSet(*this, setup); })
-            node.writeDescriptorSet = [pass = &pass](RenderGraph& graph, const PassSetup& setup)
-            { pass->writeDescriptorSet(graph, setup); };
-        if constexpr (requires(const PassFrame& frame) { pass.prepare(*this, frame); })
-            node.prepare = [pass = &pass](RenderGraph& graph, const PassFrame& frame)
-            { pass->prepare(graph, frame); };
-        (collectDependencies(node, args), ...);
-        nodes.push_back(&node);
+        pass->execute(graph, commandBuffer, frame);
+    };
+    if constexpr (requires { pass.writeDescriptorSet(*this, setup); })
+        node.writeDescriptorSet = [pass = &pass](RenderGraph& graph, const PassSetup& setup)
+        { pass->writeDescriptorSet(graph, setup); };
+    if constexpr (requires(const PassFrame& frame) { pass.prepare(*this, frame); })
+        node.prepare = [pass = &pass](RenderGraph& graph, const PassFrame& frame)
+        { pass->prepare(graph, frame); };
+    (collectDependencies(node, args), ...);
+    nodes.push_back(&node);
 
-        auto* previousNode = setupNode;
-        setupNode          = &node;
-        auto output        = pass.setup(*this, setup, std::forward<Args>(args)...);
-        setupNode          = previousNode;
+    auto* previousNode = setupNode;
+    setupNode          = &node;
+    auto output        = pass.setup(*this, setup, std::forward<Args>(args)...);
+    setupNode          = previousNode;
 
-        for (ResourceHandle source : node.writeSrc)
-            if (std::ranges::find(node.dependency, source) == node.dependency.end())
-                node.dependency.push_back(source);
+    for (ResourceHandle source : node.writeSrc)
+        if (std::ranges::find(node.dependency, source) == node.dependency.end())
+            node.dependency.push_back(source);
 
-        return output;
-    }
+    return output;
 }
 
 template <class T>

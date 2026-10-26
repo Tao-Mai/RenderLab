@@ -25,7 +25,7 @@
 #include "render/feature/editor/EditorPickingPass.h"
 #include "render/feature/editor/EditorUiPass.h"
 #include "render/feature/editor/LightMarkerPass.h"
-#include "render/feature/postprocess/BloomPass.h"
+#include "render/feature/postprocess/Bloom.h"
 #include "render/feature/postprocess/ToneMappingPass.h"
 #include "render/feature/shadow/ShadowPass.h"
 #include "render/offline/OfflinePathTracingPass.h"
@@ -79,13 +79,11 @@ struct Renderer::Passes
         SkyboxPass,
         TransparentPass,
         LightMarkerPass,
-        BloomPass,
         ToneMappingPass,
         BlasBuildPass,
         TlasBuildPass,
         RayTracingPass,
         SVGFReprojection,
-        SVGFFilter,
         OfflinePathTracingPass,
         RayTracingBlitPass,
         EditorDepthPass,
@@ -94,6 +92,9 @@ struct Renderer::Passes
         EditorUiPass,
         EndPass>
         data;
+
+    Bloom      bloom;
+    SVGFFilter svgfFilter;
 
     template <class T>
     T& get()
@@ -403,8 +404,10 @@ Renderer::SceneOutput Renderer::setupRayTracing()
     const auto traced     = setupPass<RayTracingPass>(structures, lightBuffer);
     if (rendererConfig->feature.rayTracing.svgf)
     {
-        const auto reprojected = setupPass<SVGFReprojection>(traced);
-        return {.color = setupPass<SVGFFilter>(traced, reprojected, passes->get<SVGFReprojection>()).color};
+        const PassSetup setup{vulkan, swapchain.extent(), frameStorage, *rendererConfig};
+        const auto      reprojected = setupPass<SVGFReprojection>(traced);
+        const auto      filtered = passes->svgfFilter.setup(graph, setup, traced, reprojected, passes->get<SVGFReprojection>());
+        return {.color = filtered.color};
     }
     return {.color = traced.rayImage};
 }
@@ -466,7 +469,7 @@ RenderGraph::ImageHandle Renderer::setupPostProcess(RenderGraph::ImageHandle col
     {
         CHECK(swapchain.surfaceFormat().colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear);
         if (config.feature.bloom.enable)
-            color = setupPass<BloomPass>(color).color;
+            color = passes->bloom.setup(graph, PassSetup{vulkan, swapchain.extent(), frameStorage, config}, color).color;
         return setupPass<ToneMappingPass>(color, target).color;
     }
     if (config.renderPath == RenderPath::RayTracing || config.renderPath == RenderPath::OfflinePathTracing)

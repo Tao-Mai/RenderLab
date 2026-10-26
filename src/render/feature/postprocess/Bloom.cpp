@@ -1,4 +1,4 @@
-#include "render/feature/postprocess/BloomPass.h"
+#include "render/feature/postprocess/Bloom.h"
 
 #include "asset/BuiltinAssets.h"
 #include "core/Context.h"
@@ -40,7 +40,7 @@ vk::ImageView imageView(RenderGraph& graph, RenderGraph::ImageHandle image)
 }
 }  // namespace
 
-BloomPass::Output BloomPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle hdrColor)
+Bloom::Output Bloom::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle hdrColor)
 {
     DCHECK(graph.imageInfo(hdrColor).format == kHdrColorFormat);
     const auto features =
@@ -74,7 +74,7 @@ BloomPass::Output BloomPass::setup(RenderGraph& graph, const PassSetup& setup, R
     return {add(Stage::Composite, hdrColor, blurred)};
 }
 
-BloomPass::Output BloomPass::FilterPass::setup(
+Bloom::Output Bloom::FilterPass::setup(
     RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle input, RenderGraph::ImageHandle baseInput
 )
 {
@@ -143,7 +143,7 @@ BloomPass::Output BloomPass::FilterPass::setup(
     return {color};
 }
 
-void BloomPass::FilterPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
+void Bloom::FilterPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
 {
     const std::array images{
         vk::DescriptorImageInfo{
@@ -182,7 +182,7 @@ void BloomPass::FilterPass::writeDescriptorSet(RenderGraph& graph, const PassSet
     setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});
 }
 
-void BloomPass::FilterPass::execute(
+void Bloom::FilterPass::execute(
     RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
 ) const
 {

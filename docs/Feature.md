@@ -19,15 +19,15 @@
 - Sheen：Charlie BRDF、方向反照率能量缩放、环境光积分；前向 / 延迟支持。
 - 材质覆盖、参数编辑、缺失纹理的统一 fallback。
 
-各向异性、Transmission、Volume、IOR、Specular、Iridescence、Dispersion、Unlit、Diffuse Transmission 已支持描述、导入与编辑，尚未实现对应着色。详见 [材质展示](MaterialGallery.md)。
+各向异性、Transmission、Volume、IOR、Specular、Iridescence、Dispersion、Unlit、Diffuse Transmission 支持描述、导入与编辑，画面使用基础 PBR 着色。详见 [材质展示](MaterialGallery.md)。
 
 ## 光照与环境
 
 - 方向光、点光源、矩形面光源、聚光灯；按类型分组上传。
-- 禁用光源不参与照明上传，编辑器仍保留其标记。
+- 照明上传启用的光源，编辑器显示所有光源的标记。
 - 局部光源使用发光强度，方向光使用照度；矩形面积改变时保持整体法向发光强度。
 - HDR / EXR 环境图导入、Cubemap 转换、漫反射辐照度与 GGX 预过滤。
-- IBL 独立开关；关闭后使用可调环境系数，且不绘制天空盒。
+- IBL 开启时采样环境图并绘制天空盒，关闭时使用可调环境系数。
 - 环境图保存在场景中，BRDF / Sheen LUT 为内置资产。
 
 ## 阴影
@@ -39,7 +39,7 @@
 - CSM 稳定化：包围球、Texel Snapping、Depth Clamp、匹配的五平面遮挡物剔除。
 - 可调阴影分辨率、Bias、采样半径、Nearest / Linear 与逐像素旋转。
 
-详见 [阴影概览](Shadow.md) 与 [CSM](shadow/Csm.md)。
+详见 [阴影概览](Shadow.md) 与 [CSM](Csm.md)。
 
 ## 光追采样与累积
 
@@ -53,7 +53,7 @@
 - 离线：Owen 扰乱 Sobol 像素内采样、FP32 总和缓冲、按样本数平均。
 - 离线场景、相机、材质或光源变化时重新累积。
 
-SVGF 目前按静态场景重建位置，支持相机运动；运动物体尚无历史运动向量。光追材质扩展尚未完整支持。
+SVGF 按静态场景重建位置，支持相机运动；光追着色使用基础 PBR。
 
 ## 后处理
 

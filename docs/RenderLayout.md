@@ -1,6 +1,6 @@
 # Descriptor Set Layout 与 Pipeline Layout
 
-[渲染模块](render/README.md) · [项目架构](Architecture.md)
+[渲染模块](Render.md) · [项目架构](Architecture.md)
 
 本文记录共享 Layout 的描述、初始化预创建时机和使用它们的 Pass。
 
@@ -62,7 +62,7 @@ Binding 编号定义于 [ShaderData.h](../src/render/resource/ShaderData.h)。
 | 18 / 19 | Sampled Image / Sampler | 原始 Radiance 环境图，供天空盒、Sheen IBL 及实时 / 离线光追 Miss 使用 |
 | 20 / 21 | Sampled Image / Sampler | Sheen 方向反照率 LUT |
 
-Light Data SSBO 由 `Renderer` 按 `kMaxLights * sizeof(LightData)` 一次分配（6 MiB），光栅化、实时光追与离线路径追踪共用 Set 1 / Binding 1。每帧统一写入 `shadowIdx` 并上传启用的光源；阴影 Pass 直接读取这些光源及其索引，仅生成和上传各类阴影数据，不复制光源或重新编号。启用光源总数超过上限时明确报错；光源数量或内容变化不再触发 descriptor 更新，绑定仅在渲染图创建或重建时写入。
+Light Data SSBO 由 `Renderer` 按 `kMaxLights * sizeof(LightData)` 一次分配（6 MiB），光栅化、实时光追与离线路径追踪共用 Set 1 / Binding 1。每帧统一写入 `shadowIdx` 并上传启用的光源，阴影 Pass 据此生成和上传阴影数据。启用光源总数超过上限时明确报错，描述符绑定在渲染图创建或重建时写入。
 
 由 `meshPipelineLayout`，以及 `ShadowPass`、`SkyboxPass`、`DeferredLightingPass`、`RayTracingPass`、`OfflinePathTracingPass` 各自的 Pipeline Layout 引用，作为 Set 1。
 
@@ -82,7 +82,7 @@ Shader 声明：[material_data.slang](../shaders/material_data.slang)。
 
 ## Pipeline Layout 与 Pass 对应关系
 
-`meshPipelineLayout` 在 `Device::createSharedLayouts()` 中预创建；Shadow、Skybox 等 Pass 在 `setup()` 中获取所需的缓存句柄，不负责销毁 Pipeline Layout。表中 Push Constant 都从偏移 0 开始，阶段均为 Vertex | Fragment。
+`meshPipelineLayout` 在 `Device::createSharedLayouts()` 中预创建；Shadow、Skybox 等 Pass 在 `setup()` 中获取缓存句柄，Pipeline Layout 统一由 Device 持有。表中 Push Constant 都从偏移 0 开始，阶段均为 Vertex | Fragment。
 
 | Layout | Set 排列 | Push Constants | 使用它的 Pass |
 | --- | --- | --- | --- |
@@ -97,11 +97,11 @@ Shader 声明：[material_data.slang](../shaders/material_data.slang)。
 
 实时光追私有 Set 3 的 Binding 1 在关闭 SVGF 时写合并颜色，开启时写直接光；Binding 9 / 10 / 11 仅由 SVGF Shader 使用，分别写间接光 / 相机直接可见的 `emission` / 主命中材质的线性 albedo（RGBA16F）。Binding 7 / 8 始终写线性深度 / 世界法线。SVGF 开关重建图并选择匹配的 Shader。
 
-`SVGFReprojection` 私有 Set 1 的 Binding 0–4 为当前帧 direct / indirect / depth / normal / albedo；5–10 为两路颜色、共享深度 / 法线、两路亮度矩 / 样本数的双层历史；11 / 12 为两路 RGBA32F 颜色 / 方差输出。亮度矩输出直接引用历史数组（RG 为一阶 / 二阶矩，B 为样本数），没有额外的二维副本。颜色及亮度统计均已除以 albedo，颜色历史在本阶段只读，由第一级滤波回写。
+`SVGFReprojection` 私有 Set 1 的 Binding 0–4 为当前帧 direct / indirect / depth / normal / albedo；5–10 为两路颜色、共享深度 / 法线、两路亮度矩 / 样本数的双层历史；11 / 12 为两路 RGBA32F 颜色 / 方差输出。亮度矩输出引用历史数组（RG 为一阶 / 二阶矩，B 为样本数）。颜色及亮度统计均已除以 albedo，颜色历史在本阶段只读，由第一级滤波回写。
 
 `SVGFFilter` 注册五个 Compute Pass，每级拥有独立实例和 descriptor。私有 Set 0 的 Binding 0–3 读取两路解调后的颜色 / 方差、深度与法线。前四级的 Binding 4 / 5 写两路滤波结果，第一级额外通过 Binding 6 / 7 写颜色历史；最后一级的 Binding 4 写合并颜色，Binding 5 / 6 读取当前帧 emission / albedo，乘回 albedo 后添加 emission。Push Constants 为 24 B：viewport、步长和本帧历史层。全部仅在 SVGF 开启时加入图。
 
-前四级在重投影输出与另一组 RGBA32F 贴图间交替读写，覆盖时创建新的 Graph handle 版本；各级 descriptor 仍指向对应的固定图像，不需要逐帧重写 descriptor。
+前四级在重投影输出与另一组 RGBA32F 贴图间交替读写，通过 Graph Handle 版本表达覆盖依赖，各级描述符绑定对应的固定图像并跨帧复用。
 
 ## 编辑器共享 Layout
 

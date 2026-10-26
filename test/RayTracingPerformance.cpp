@@ -78,7 +78,7 @@ void measure(Renderer& renderer, SceneManager& scenes, Profiler& profiler, const
     if (setup.config.feature.rayTracing.svgf)
     {
         const auto lighting = graph.addPass(reprojection, setup, source);
-        color               = graph.addPass(filter, setup, source, lighting, reprojection).color;
+        color               = filter.setup(graph, setup, source, lighting, reprojection).color;
     }
     graph.addPass(sink, setup, color);
     graph.compile(setup);

@@ -356,8 +356,8 @@ add_library(RenderLabRuntime STATIC
         src/render/feature/DepthPrepass.cpp
         src/render/feature/DepthPrepass.h
         src/render/feature/postprocess/ToneMappingPass.cpp
-        src/render/feature/postprocess/BloomPass.h
-        src/render/feature/postprocess/BloomPass.cpp
+        src/render/feature/postprocess/Bloom.h
+        src/render/feature/postprocess/Bloom.cpp
         src/render/feature/postprocess/ToneMappingPass.h
         src/render/raytracing/AccelerationStructure.cpp
         src/render/raytracing/AccelerationStructure.h

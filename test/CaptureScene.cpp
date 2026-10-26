@@ -16,7 +16,7 @@
 #include "render/feature/TransparentPass.h"
 #include "render/feature/editor/EditorDepthPass.h"
 #include "render/feature/editor/LightMarkerPass.h"
-#include "render/feature/postprocess/BloomPass.h"
+#include "render/feature/postprocess/Bloom.h"
 #include "render/feature/postprocess/ToneMappingPass.h"
 #include "render/offline/OfflinePathTracingPass.h"
 #include "render/raytracing/BlasBuildPass.h"
@@ -121,7 +121,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     RayTracingPass           realtimeTracing;
     SVGFReprojection         reprojection;
     SVGFFilter               filter;
-    BloomPass                bloom;
+    Bloom                    bloom;
     ToneMappingPass          toneMapping;
     EditorDepthPass          editorDepth;
     LightMarkerPass          lightMarker;
@@ -148,7 +148,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
             if (config.feature.rayTracing.svgf)
             {
                 const auto accumulated = graph.addPass(reprojection, setup, traced);
-                color = graph.addPass(filter, setup, traced, accumulated, reprojection).color;
+                color = filter.setup(graph, setup, traced, accumulated, reprojection).color;
             }
             else
                 color = traced.rayImage;
@@ -175,7 +175,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         color = graph.addPass(lightMarker, setup, color, depthImage).color;
     }
     if (config.feature.bloom.enable)
-        color = graph.addPass(bloom, setup, color).color;
+        color = bloom.setup(graph, setup, color).color;
     color             = graph.addPass(toneMapping, setup, color, target).color;
     const auto buffer = graph.addPass(readback, setup, color);
     graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);

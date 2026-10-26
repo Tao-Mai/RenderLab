@@ -7,7 +7,7 @@
 
 inline constexpr uint32_t kSvgfFilterIterations = 5;
 
-// Registers one RenderGraph compute pass per wavelet iteration.
+// Owns and connects one RenderGraph compute pass per wavelet iteration.
 class SVGFFilter
 {
 public:
