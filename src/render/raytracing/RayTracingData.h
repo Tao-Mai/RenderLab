@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/resource/ShaderData.h"
+#include "render/resources/ShaderData.h"
 
 #include <cstddef>
 #include <cstdint>

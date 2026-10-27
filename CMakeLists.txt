@@ -205,21 +205,16 @@ endforeach()
 renderlab_shader_manifests()
 
 add_library(RenderLabRuntime STATIC
-    src/render/offline/OfflinePathTracingPass.cpp
-    src/render/offline/OfflinePathTracingPass.h
     src/editor/Inspector.cpp
     src/editor/EditorBackend.cpp
     src/editor/EnvironmentImportTask.cpp
     src/editor/AssetImportPanel.cpp
     src/editor/SceneHierarchy.cpp
     src/editor/RendererSettings.cpp
-    src/render/feature/shadow/ShadowData.cpp
-    src/render/device/DeviceLayouts.cpp
         src/Engine.cpp
         src/Engine.h
         src/core/ConfigManager.cpp
         src/core/ConfigManager.h
-        src/render/RendererConfig.h
         src/core/Annotations.h
         src/core/Context.cpp
         src/core/Context.h
@@ -270,10 +265,6 @@ add_library(RenderLabRuntime STATIC
         src/editor/EditorUi.h
         src/editor/MeshImportPreview.cpp
         src/editor/MeshImportPreview.h
-        src/render/ViewportRect.h
-        src/render/RenderView.h
-        src/render/ViewportRect.cpp
-        src/render/feature/editor/EditorFrameInput.h
         src/asset/AssetManager.cpp
         src/asset/Asset.h
         src/asset/AssetID.h
@@ -304,92 +295,10 @@ add_library(RenderLabRuntime STATIC
         src/core/Vertex.h
         src/platform/InputMethod.cpp
         src/platform/InputMethod.h
-        src/render/Renderer.cpp
-        src/render/Renderer.h
-        src/render/RenderConfig.h
-        src/render/ShaderManager.cpp
-        src/render/ShaderManager.h
-        src/render/device/Device.cpp
-        src/render/device/Device.h
-        src/render/device/Memory.h
-        src/render/device/VkCheck.h
-        src/render/device/VulkanContext.cpp
-        src/render/device/VulkanContext.h
-        src/render/device/FrameContext.cpp
-        src/render/device/FrameContext.h
-        src/render/FrameData.cpp
-        src/render/FrameData.h
-        src/render/RenderContext.cpp
-        src/render/RenderContext.h
-        src/render/device/GpuUploadContext.h
-        src/render/present/Swapchain.cpp
-        src/render/present/Swapchain.h
-        src/render/resource/Buffer.cpp
-        src/render/resource/Buffer.h
-        src/render/resource/GpuTexture.cpp
-        src/render/resource/GpuTexture.h
-        src/render/resource/GpuShader.cpp
-        src/render/resource/GpuShader.h
-        src/render/resource/GpuMesh.cpp
-        src/render/resource/GpuMesh.h
-        src/render/resource/RenderResourceManager.cpp
-        src/render/resource/RenderResourceManager.h
-        src/render/resource/VertexLayout.h
-        src/render/resource/ShaderData.h
         src/scene/system/RenderSystem.cpp
         src/scene/system/RenderSystem.h
-        src/render/RenderData.h
-        src/render/DrawItem.h
-        src/render/Visibility.h
-        src/render/feature/ScenePass.cpp
-        src/render/feature/ScenePass.h
-        src/render/feature/deferred/GBufferPass.cpp
-        src/render/feature/deferred/GBufferPass.h
-        src/render/feature/deferred/DeferredLightingPass.cpp
-        src/render/feature/deferred/DeferredLightingPass.h
-        src/render/feature/SceneDraw.cpp
-        src/render/feature/SceneDraw.h
-        src/render/feature/SkyboxPass.cpp
-        src/render/feature/SkyboxPass.h
-        src/render/feature/TransparentPass.cpp
-        src/render/feature/TransparentPass.h
-        src/render/feature/DepthPrepass.cpp
-        src/render/feature/DepthPrepass.h
-        src/render/feature/postprocess/ToneMappingPass.cpp
-        src/render/feature/postprocess/Bloom.h
-        src/render/feature/postprocess/Bloom.cpp
-        src/render/feature/postprocess/ToneMappingPass.h
-        src/render/raytracing/AccelerationStructure.cpp
-        src/render/raytracing/AccelerationStructure.h
-        src/render/raytracing/BlasBuildPass.cpp
-        src/render/raytracing/BlasBuildPass.h
-        src/render/raytracing/TlasBuildPass.cpp
-        src/render/raytracing/TlasBuildPass.h
-        src/render/raytracing/RayTracingPass.cpp
-        src/render/raytracing/RayTracingPass.h
-        src/render/raytracing/RayTracingData.h
-        src/render/resource/MaterialData.h
-        src/render/resource/MaterialTable.h
-        src/render/resource/MaterialTable.cpp
-        src/render/raytracing/SVGFReprojection.h
-        src/render/raytracing/SVGFReprojection.cpp
-        src/render/raytracing/SVGFFilter.h
-        src/render/raytracing/SVGFFilter.cpp
-        src/render/raytracing/RayTracingBlitPass.cpp
-        src/render/raytracing/RayTracingBlitPass.h
-        src/render/feature/shadow/ShadowPass.cpp
-        src/render/feature/shadow/ShadowPass.h
         src/editor/LightMarkers.cpp
         src/editor/LightMarkers.h
-        src/render/feature/editor/EditorShaderData.h
-        src/render/feature/editor/EditorDepthPass.cpp
-        src/render/feature/editor/EditorDepthPass.h
-        src/render/feature/editor/LightMarkerPass.cpp
-        src/render/feature/editor/LightMarkerPass.h
-        src/render/feature/editor/EditorPickingPass.cpp
-        src/render/feature/editor/EditorPickingPass.h
-        src/render/feature/editor/EditorPickingCopyPass.cpp
-        src/render/feature/editor/EditorPickingCopyPass.h
         src/asset/AssetImporter.h
         src/asset/AssetDataManager.cpp
         src/asset/AssetDataManager.h
@@ -400,18 +309,119 @@ add_library(RenderLabRuntime STATIC
         src/core/time/Timer.cpp
         src/core/profiling/Profiler.cpp
         src/editor/PerformancePanel.cpp
-        src/render/device/GpuProfiler.cpp
         src/core/math/Sampler.h
-        src/render/feature/RenderGraph.cpp
-        src/render/feature/RenderGraph.h
-        src/render/feature/PassInputs.h
-        src/render/feature/RenderGraphSetup.cpp
-        src/render/feature/EndPass.cpp
-        src/render/feature/EndPass.h
-        src/render/feature/editor/EditorUiPass.cpp
-        src/render/feature/editor/EditorUiPass.h
-        src/render/Image.cpp
-        src/render/Image.h
+
+        src/render/DrawItem.h
+        src/render/FrameData.cpp
+        src/render/FrameData.h
+        src/render/RenderConfig.h
+        src/render/RenderContext.cpp
+        src/render/RenderContext.h
+        src/render/RenderData.h
+        src/render/Renderer.cpp
+        src/render/Renderer.h
+        src/render/RendererConfig.h
+        src/render/RenderView.h
+        src/render/ViewportRect.cpp
+        src/render/ViewportRect.h
+        src/render/Visibility.h
+
+        src/render/device/Device.cpp
+        src/render/device/Device.h
+        src/render/device/DeviceLayouts.cpp
+        src/render/device/FrameContext.cpp
+        src/render/device/FrameContext.h
+        src/render/device/GpuProfiler.cpp
+        src/render/device/GpuProfiler.h
+        src/render/device/GpuUploadContext.h
+        src/render/device/Memory.h
+        src/render/device/Swapchain.cpp
+        src/render/device/Swapchain.h
+        src/render/device/VkCheck.h
+        src/render/device/VulkanContext.cpp
+        src/render/device/VulkanContext.h
+
+        src/render/resources/Buffer.cpp
+        src/render/resources/Buffer.h
+        src/render/resources/GpuMesh.cpp
+        src/render/resources/GpuMesh.h
+        src/render/resources/GpuShader.cpp
+        src/render/resources/GpuShader.h
+        src/render/resources/GpuTexture.cpp
+        src/render/resources/GpuTexture.h
+        src/render/resources/Image.cpp
+        src/render/resources/Image.h
+        src/render/resources/MaterialData.h
+        src/render/resources/MaterialTable.cpp
+        src/render/resources/MaterialTable.h
+        src/render/resources/RenderResourceManager.cpp
+        src/render/resources/RenderResourceManager.h
+        src/render/resources/ShaderData.h
+        src/render/resources/ShaderManager.cpp
+        src/render/resources/ShaderManager.h
+        src/render/resources/VertexLayout.h
+
+        src/render/graph/EndPass.cpp
+        src/render/graph/EndPass.h
+        src/render/graph/PassInputs.h
+        src/render/graph/RenderGraph.cpp
+        src/render/graph/RenderGraph.h
+        src/render/graph/RenderGraphSetup.cpp
+
+        src/render/raster/DeferredLightingPass.cpp
+        src/render/raster/DeferredLightingPass.h
+        src/render/raster/DepthPrepass.cpp
+        src/render/raster/DepthPrepass.h
+        src/render/raster/GBufferPass.cpp
+        src/render/raster/GBufferPass.h
+        src/render/raster/SceneDraw.cpp
+        src/render/raster/SceneDraw.h
+        src/render/raster/ScenePass.cpp
+        src/render/raster/ScenePass.h
+        src/render/raster/ShadowData.cpp
+        src/render/raster/ShadowData.h
+        src/render/raster/ShadowPass.cpp
+        src/render/raster/ShadowPass.h
+        src/render/raster/SkyboxPass.cpp
+        src/render/raster/SkyboxPass.h
+        src/render/raster/TransparentPass.cpp
+        src/render/raster/TransparentPass.h
+
+        src/render/raytracing/AccelerationStructure.cpp
+        src/render/raytracing/AccelerationStructure.h
+        src/render/raytracing/BlasBuildPass.cpp
+        src/render/raytracing/BlasBuildPass.h
+        src/render/raytracing/OfflinePathTracingPass.cpp
+        src/render/raytracing/OfflinePathTracingPass.h
+        src/render/raytracing/RayTracingBlitPass.cpp
+        src/render/raytracing/RayTracingBlitPass.h
+        src/render/raytracing/RayTracingData.h
+        src/render/raytracing/RayTracingPass.cpp
+        src/render/raytracing/RayTracingPass.h
+        src/render/raytracing/SVGFFilter.cpp
+        src/render/raytracing/SVGFFilter.h
+        src/render/raytracing/SVGFReprojection.cpp
+        src/render/raytracing/SVGFReprojection.h
+        src/render/raytracing/TlasBuildPass.cpp
+        src/render/raytracing/TlasBuildPass.h
+
+        src/render/postprocess/Bloom.cpp
+        src/render/postprocess/Bloom.h
+        src/render/postprocess/ToneMappingPass.cpp
+        src/render/postprocess/ToneMappingPass.h
+
+        src/render/editor/EditorDepthPass.cpp
+        src/render/editor/EditorDepthPass.h
+        src/render/editor/EditorFrameInput.h
+        src/render/editor/EditorPickingCopyPass.cpp
+        src/render/editor/EditorPickingCopyPass.h
+        src/render/editor/EditorPickingPass.cpp
+        src/render/editor/EditorPickingPass.h
+        src/render/editor/EditorShaderData.h
+        src/render/editor/EditorUiPass.cpp
+        src/render/editor/EditorUiPass.h
+        src/render/editor/LightMarkerPass.cpp
+        src/render/editor/LightMarkerPass.h
 )
 add_dependencies(RenderLabRuntime RenderLabShaders)
 

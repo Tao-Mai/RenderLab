@@ -1,10 +1,10 @@
 #include <vulkan/vulkan.hpp>
 
 #include "core/Logger.h"
-#include "render/feature/editor/EditorShaderData.h"
+#include "render/editor/EditorShaderData.h"
 #include "render/raytracing/RayTracingData.h"
-#include "render/resource/MaterialData.h"
-#include "render/resource/ShaderData.h"
+#include "render/resources/MaterialData.h"
+#include "render/resources/ShaderData.h"
 
 #include <array>
 #include <filesystem>

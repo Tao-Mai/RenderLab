@@ -2,9 +2,9 @@
 
 namespace
 {
-[[nodiscard]] PbrMaterialAsset makeWhiteMaterial()
+[[nodiscard]] GltfMaterial makeWhiteMaterial()
 {
-    ::PbrMaterialAsset asset{};
+    ::GltfMaterial asset{};
     asset.id               = BuiltinAssets::Material::white;
     asset.metallic         = 0.0f;
     asset.roughness        = 0.4f;
@@ -16,7 +16,7 @@ namespace
 
 const ::MaterialAsset* BuiltinAssets::materialAsset(const ::MaterialAsset::ID& id)
 {
-    static const ::PbrMaterialAsset assets[] = {
+    static const ::GltfMaterial assets[] = {
         makeWhiteMaterial(),
     };
 

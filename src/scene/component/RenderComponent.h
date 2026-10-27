@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset/PbrMaterialAsset.h"
+#include "asset/GltfMaterial.h"
 #include "asset/MeshAsset.h"
 #include "scene/Component.h"
 

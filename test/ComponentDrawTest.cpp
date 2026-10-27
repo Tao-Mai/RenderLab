@@ -379,11 +379,11 @@ TEST_F(ComponentDrawTest, ResetOverridesOnlyChangesTheChosenSubmesh)
 
 TEST(ComponentMaterialEdit, DiffRetainsEveryOptionalOverrideIncludingTexturesAndShader)
 {
-    PbrMaterialAsset stock;
+    GltfMaterial stock;
     stock.id = MaterialAsset::ID{"white"};
     stock.roughness = 0.8f;
     stock.baseColorTexture = TextureBinding{TextureAsset::ID{"white"}, SamplerAsset::ID{"linearRepeat"}};
-    PbrMaterialAsset preview = stock;
+    GltfMaterial preview = stock;
     preview.roughness = 0.3f;
     preview.shaderId = ShaderAsset::ID{"custom"};
     preview.baseColorTexture = TextureBinding{TextureAsset::ID{"albedo"}, SamplerAsset::ID{"linearClamp"}};
@@ -410,7 +410,7 @@ TEST(ComponentMaterialEdit, DiffRetainsEveryOptionalOverrideIncludingTexturesAnd
 
 TEST(ComponentMaterialEdit, MergeIgnoresNonOptionalAndEmptyFields)
 {
-    PbrMaterialAsset stock;
+    GltfMaterial stock;
     stock.id = MaterialAsset::ID{"stock"};
     stock.roughness = 0.8f;
     stock.doubleSided = true;
@@ -433,7 +433,7 @@ TEST(ComponentMaterialEdit, MergeIgnoresNonOptionalAndEmptyFields)
 
 TEST_F(ComponentDrawTest, MaterialExtensionInspectorShowsParametersWithoutChangingIdleValues)
 {
-    PbrMaterialAsset material;
+    GltfMaterial material;
     material.clearcoat.emplace();
     material.sheen.emplace();
     material.anisotropy.emplace();
@@ -459,7 +459,7 @@ TEST_F(ComponentDrawTest, MaterialExtensionInspectorShowsParametersWithoutChangi
 
 TEST_F(ComponentDrawTest, AnisotropyInspectorClampsStrengthAndStoresRotationInRadians)
 {
-    PbrMaterialAsset material;
+    GltfMaterial material;
     material.anisotropy.emplace();
     const auto draw = [&] { return ComponentDrawResult{drawMaterialExtensions(material)}; };
     const auto extensionField = [](const char* label)
@@ -474,9 +474,9 @@ TEST_F(ComponentDrawTest, AnisotropyInspectorClampsStrengthAndStoresRotationInRa
     EXPECT_TRUE(enterScalar(draw, [&] { return extensionField("Rotation"); }, "90").edited);
     EXPECT_NEAR(material.anisotropy->rotation, glm::radians(90.0f), 0.0001f);
 
-    const PbrMaterialAsset stock;
+    const GltfMaterial stock;
     const auto patch = component_draw::materialOverrideDiff(stock, material);
-    PbrMaterialAsset restored;
+    GltfMaterial restored;
     Deserialize(Serialize(patch), restored);
     EXPECT_EQ(restored.anisotropy, material.anisotropy);
 }

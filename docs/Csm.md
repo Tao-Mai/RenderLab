@@ -15,7 +15,7 @@ Forward / Deferred 共用方向光级联阴影，支持 1～4 级。目标是在
 
 深度采用相机前向轴上的距离，方向光阴影覆盖到配置的最大阴影距离。
 
-代码：[ShadowData.cpp](../src/render/feature/shadow/ShadowData.cpp)、[ShadowPass.cpp](../src/render/feature/shadow/ShadowPass.cpp)、[scene_lighting.slang](../shaders/scene_lighting.slang)。
+代码：[ShadowData.cpp](../src/render/raster/ShadowData.cpp)、[ShadowPass.cpp](../src/render/raster/ShadowPass.cpp)、[scene_lighting.slang](../shaders/scene_lighting.slang)。
 
 ## 精度分配：Uniform 与 Practical
 
@@ -29,7 +29,7 @@ Forward / Deferred 共用方向光级联阴影，支持 1～4 级。目标是在
 
 编辑器可切换 Uniform / Practical。分界由相机深度范围、级联数和划分参数确定。
 
-代码：[splitFrustum / ShadowData.cpp](../src/render/feature/shadow/ShadowData.cpp)。原理参考：[Microsoft CSM](https://learn.microsoft.com/en-us/windows/win32/dxtecharts/cascaded-shadow-maps)。
+代码：[splitFrustum / ShadowData.cpp](../src/render/raster/ShadowData.cpp)。原理参考：[Microsoft CSM](https://learn.microsoft.com/en-us/windows/win32/dxtecharts/cascaded-shadow-maps)。
 
 ## 稳定投影：包围球与 Texel Snapping
 
@@ -41,7 +41,7 @@ Forward / Deferred 共用方向光级联阴影，支持 1～4 级。目标是在
 
 跨过对齐阈值，或改变 FOV、光源方向、分辨率时，投影会更新。
 
-代码：[boundFrustumCorners / makeDirectionalShadow](../src/render/feature/shadow/ShadowData.cpp)。原理参考：[以 Texel 为单位移动投影](https://learn.microsoft.com/en-us/windows/win32/dxtecharts/common-techniques-to-improve-shadow-depth-maps#moving-the-light-in-texel-sized-increments)。
+代码：[boundFrustumCorners / makeDirectionalShadow](../src/render/raster/ShadowData.cpp)。原理参考：[以 Texel 为单位移动投影](https://learn.microsoft.com/en-us/windows/win32/dxtecharts/common-techniques-to-improve-shadow-depth-maps#moving-the-light-in-texel-sized-increments)。
 
 ## 遮挡物覆盖：Depth Clamp 与五平面剔除
 
@@ -49,7 +49,7 @@ Forward / Deferred 共用方向光级联阴影，支持 1～4 级。目标是在
 
 方向光阴影启用 Depth Clamp，CPU 对应忽略光源 Near Plane，仅使用四个侧面和 Far Plane。投影与剔除均包含级联重叠区和滤波边界；主相机与其他阴影仍使用正常六面剔除。
 
-代码：[ShadowPass.cpp](../src/render/feature/shadow/ShadowPass.cpp)、[Bounds.cpp](../src/core/math/Bounds.cpp)。
+代码：[ShadowPass.cpp](../src/render/raster/ShadowPass.cpp)、[Bounds.cpp](../src/core/math/Bounds.cpp)。
 
 ## 边缘与接缝：PCF 和 Cascade Blending
 

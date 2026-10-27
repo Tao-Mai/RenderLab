@@ -7,7 +7,7 @@
 #include "editor/EditorCamera.h"
 #include "editor/EditorUi.h"
 #include "render/RenderView.h"
-#include "render/feature/editor/EditorFrameInput.h"
+#include "render/editor/EditorFrameInput.h"
 
 class EditorCamera;
 

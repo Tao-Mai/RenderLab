@@ -2,8 +2,8 @@
 
 #include "asset/BuiltinAssets.h"
 #include "asset/SceneAsset.h"
-#include "render/resource/GpuMesh.h"
-#include "render/resource/RenderResourceManager.h"
+#include "render/resources/GpuMesh.h"
+#include "render/resources/RenderResourceManager.h"
 #include "scene/AActor.h"
 #include "scene/component/DirectionalLightComponent.h"
 #include "scene/component/PointLightComponent.h"

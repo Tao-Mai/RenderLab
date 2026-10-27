@@ -7,16 +7,16 @@
 #include "render/RenderData.h"
 #include "render/RenderView.h"
 #include "render/RendererConfig.h"
-#include "render/ShaderManager.h"
+#include "render/resources/ShaderManager.h"
 #include "render/device/Device.h"
 #include "render/device/FrameContext.h"
 #include "render/device/VulkanContext.h"
-#include "render/feature/RenderGraph.h"
-#include "render/feature/editor/EditorFrameInput.h"
-#include "render/feature/shadow/ShadowPass.h"
-#include "render/present/Swapchain.h"
-#include "render/resource/MaterialTable.h"
-#include "render/resource/RenderResourceManager.h"
+#include "render/graph/RenderGraph.h"
+#include "render/editor/EditorFrameInput.h"
+#include "render/raster/ShadowPass.h"
+#include "render/device/Swapchain.h"
+#include "render/resources/MaterialTable.h"
+#include "render/resources/RenderResourceManager.h"
 
 #include <array>
 #include <cstdint>

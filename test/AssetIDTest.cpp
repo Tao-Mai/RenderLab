@@ -29,7 +29,7 @@ static_assert(AssetType<SceneAsset>);
 static_assert(AssetType<EnvironmentMapAsset>);
 static_assert(AssetType<SamplerAsset>);
 static_assert(!AssetType<Asset>);
-static_assert(std::same_as<MaterialOverride, PbrMaterialAsset>);
+static_assert(std::same_as<MaterialOverride, GltfMaterial>);
 static_assert(!std::is_convertible_v<TextureAsset::ID, MeshAsset::ID>);
 
 TEST(AssetIDTest, AssetsExposePersistentFieldsDirectly)
@@ -135,13 +135,13 @@ TEST(AssetIDTest, RoundTripsSamplerAndTextureBinding)
     EXPECT_EQ(parsedSampler.maxLod, 0.0f);
     EXPECT_EQ(Serialize(parsedSampler), samplerJson);
 
-    PbrMaterialAsset material;
+    GltfMaterial material;
     material.id               = MaterialAsset::ID{"white"};
     material.baseColorTexture = TextureBinding{TextureAsset::ID{"white"}, SamplerAsset::ID{"linearRepeat"}};
     const json materialJson   = Serialize(material);
     EXPECT_TRUE(materialJson.at("roughness").is_null());
     EXPECT_EQ(materialJson.at("baseColorTexture").at("textureID").at("value"), "white");
-    PbrMaterialAsset parsedMaterial;
+    GltfMaterial parsedMaterial;
     Deserialize(materialJson, parsedMaterial);
     ASSERT_TRUE(parsedMaterial.baseColorTexture);
     EXPECT_EQ(parsedMaterial.baseColorTexture->textureID, TextureAsset::ID{"white"});
@@ -151,11 +151,11 @@ TEST(AssetIDTest, RoundTripsSamplerAndTextureBinding)
 
 TEST(AssetIDTest, RejectsMissingAndUnknownAssetFields)
 {
-    PbrMaterialAsset material;
+    GltfMaterial material;
     material.id               = MaterialAsset::ID{"strict-material"};
     material.baseColorTexture = TextureBinding{TextureAsset::ID{"white"}, SamplerAsset::ID{"linearRepeat"}};
     const json    stored      = Serialize(material);
-    PbrMaterialAsset parsed;
+    GltfMaterial parsed;
 
     json invalid = stored;
     invalid.erase("roughness");
@@ -177,12 +177,12 @@ TEST(AssetIDTest, RejectsMissingAndUnknownAssetFields)
 
 TEST(AssetIDTest, MaterialEqualityDetectsParameterAndBindingChanges)
 {
-    PbrMaterialAsset material;
+    GltfMaterial material;
     material.id               = MaterialAsset::ID{"white"};
     material.roughness        = 0.5f;
     material.baseColorTexture = TextureBinding{TextureAsset::ID{"white"}, SamplerAsset::ID{"linearRepeat"}};
 
-    PbrMaterialAsset copy;
+    GltfMaterial copy;
     Deserialize(Serialize(material), copy);
     EXPECT_EQ(copy, material);
     copy.roughness.reset();
@@ -215,19 +215,20 @@ TEST(AssetIDTest, JsonIoSavesAndReplacesAssetsInTheUnifiedFormat)
 
     AssetManager assets;
     assets.init(temporary.directory);
-    PbrMaterialAsset material;
+    GltfMaterial material;
     material.id              = MaterialAsset::ID{"persisted"};
     material.baseColorFactor = glm::vec4{0.2f, 0.4f, 0.6f, 1.0f};
     material.normalTexture   = TextureBinding{TextureAsset::ID{"normal"}, SamplerAsset::ID{"linearRepeat"}};
     assets.save(material);
     auto restored = asset_json::load<std::unique_ptr<MaterialAsset>>(temporary.file);
-    EXPECT_EQ(restored->as<PbrMaterialAsset>(), material);
+    EXPECT_TRUE(Serialize(restored).contains("GltfMaterial"));
+    EXPECT_EQ(restored->as<GltfMaterial>(), material);
 
     material.roughness   = 0.3f;
     material.doubleSided = false;
     assets.save(material);
     restored = asset_json::load<std::unique_ptr<MaterialAsset>>(temporary.file);
-    EXPECT_EQ(restored->as<PbrMaterialAsset>(), material);
+    EXPECT_EQ(restored->as<GltfMaterial>(), material);
     EXPECT_FALSE(std::filesystem::exists(temporary.file.string() + ".tmp"));
 
     std::ifstream input{temporary.file};

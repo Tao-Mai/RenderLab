@@ -72,7 +72,7 @@ int main(int argc, char** argv)
     CHECK(mesh.bounds.max == glm::vec3(6, 6, 0));
     CHECK(data.readGeometry(mesh).indices.size() == 6);
     const auto* material =
-        dynamic_cast<const PbrMaterialAsset*>(&assets.get<MaterialAsset>(mesh.submeshes.front().materialId));
+        dynamic_cast<const GltfMaterial*>(&assets.get<MaterialAsset>(mesh.submeshes.front().materialId));
     CHECK(material && material->normalTexture && material->metallicTexture && material->roughnessTexture);
     CHECK(std::abs(*material->metallic - 0.6f) < 1e-5f);
     CHECK(std::abs(*material->roughness - 0.4f) < 1e-5f);

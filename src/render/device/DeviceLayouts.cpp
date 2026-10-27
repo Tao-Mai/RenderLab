@@ -1,9 +1,9 @@
 #include "render/device/Device.h"
 
 #include "core/Logger.h"
-#include "render/feature/editor/EditorShaderData.h"
-#include "render/resource/MaterialData.h"
-#include "render/resource/ShaderData.h"
+#include "render/editor/EditorShaderData.h"
+#include "render/resources/MaterialData.h"
+#include "render/resources/ShaderData.h"
 
 #include <array>
 

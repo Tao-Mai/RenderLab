@@ -4,7 +4,7 @@
 #include "core/math/Bounds.h"
 #include "render/DrawItem.h"
 #include "render/Visibility.h"
-#include "render/resource/ShaderData.h"
+#include "render/resources/ShaderData.h"
 
 #include <cstdint>
 #include <optional>

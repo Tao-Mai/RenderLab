@@ -83,8 +83,8 @@ int main(int argc, char** argv)
             const auto persisted = asset_json::load<std::unique_ptr<MaterialAsset>>(
                 config.paths().assets / MaterialAsset::dir / (submesh.materialId.value + ".json")
             );
-            const auto& material = persisted->as<PbrMaterialAsset>();
-            CHECK(material == assets.get<MaterialAsset>(submesh.materialId).as<PbrMaterialAsset>());
+            const auto& material = persisted->as<GltfMaterial>();
+            CHECK(material == assets.get<MaterialAsset>(submesh.materialId).as<GltfMaterial>());
             const auto description = Serialize(material);
             if (!description.at(field).is_null())
                 ++matchingMaterials;

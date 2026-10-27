@@ -1,7 +1,7 @@
 #pragma once
 
-#include "render/resource/Buffer.h"
-#include "render/resource/ShaderData.h"
+#include "render/resources/Buffer.h"
+#include "render/resources/ShaderData.h"
 
 #include <span>
 

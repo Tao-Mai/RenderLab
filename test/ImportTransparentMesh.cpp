@@ -9,7 +9,7 @@
 #include "core/Window.h"
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
-#include "render/resource/MaterialTable.h"
+#include "render/resources/MaterialTable.h"
 #include "scene/SceneManager.h"
 #include "scene/system/RenderSystem.h"
 
@@ -57,7 +57,7 @@ int main(int argc, char** argv)
     MaterialAsset::ID transparentMaterial;
     for (const auto& submesh : mesh.submeshes)
     {
-        const auto& material = assets.get<MaterialAsset>(submesh.materialId).as<PbrMaterialAsset>();
+        const auto& material = assets.get<MaterialAsset>(submesh.materialId).as<GltfMaterial>();
         if (material.alphaMode != "BLEND")
             continue;
         CHECK(material.baseColorFactor && material.baseColorFactor->a > 0.0f && material.baseColorFactor->a < 1.0f);

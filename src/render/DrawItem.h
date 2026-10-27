@@ -1,7 +1,7 @@
 #pragma once
 
 #include "asset/MeshAsset.h"
-#include "asset/PbrMaterialAsset.h"
+#include "asset/GltfMaterial.h"
 
 #include <cstdint>
 #include <optional>

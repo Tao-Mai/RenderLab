@@ -5,7 +5,7 @@
 #include "core/Serializer.h"
 #include "core/math/Bounds.h"
 #include "render/Visibility.h"
-#include "render/feature/shadow/ShadowData.h"
+#include "render/raster/ShadowData.h"
 #include "scene/actor/ALight.h"
 #include "scene/actor/AStaticMesh.h"
 #include "scene/component/LightTypes.h"

@@ -9,7 +9,7 @@
 #include "core/Context.h"
 #include "render/Renderer.h"
 #include "render/device/VulkanContext.h"
-#include "render/resource/ShaderData.h"
+#include "render/resources/ShaderData.h"
 namespace
 {
 bool drawSettingsHeader(const char* label)

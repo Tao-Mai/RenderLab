@@ -12,11 +12,11 @@
 #include "render/device/GpuProfiler.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
-#include "render/feature/RenderGraph.h"
-#include "render/resource/GpuMesh.h"
-#include "render/resource/GpuShader.h"
-#include "render/resource/MaterialTable.h"
-#include "render/resource/RenderResourceManager.h"
+#include "render/graph/RenderGraph.h"
+#include "render/resources/GpuMesh.h"
+#include "render/resources/GpuShader.h"
+#include "render/resources/MaterialTable.h"
+#include "render/resources/RenderResourceManager.h"
 
 #include <algorithm>
 #include <cstring>

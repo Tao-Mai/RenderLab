@@ -37,4 +37,4 @@ Forward / Deferred 共用 ShadowPass 与阴影采样函数，各类光源使用�
 - 固定预留点 / 矩形 / 聚光阴影各 4 盏、方向光 1 盏；超出容量明确报错。
 - 深度图跨在途帧共享，由 Graph 同步上一帧最后访问与下一帧首次访问。
 
-代码：[ShadowData](../src/render/feature/shadow/ShadowData.cpp)、[ShadowPass](../src/render/feature/shadow/ShadowPass.cpp)、[采样与比较](../shaders/scene_lighting.slang)、[采样分布](../shaders/sampling.slang)。
+代码：[ShadowData](../src/render/raster/ShadowData.cpp)、[ShadowPass](../src/render/raster/ShadowPass.cpp)、[采样与比较](../shaders/scene_lighting.slang)、[采样分布](../shaders/sampling.slang)。

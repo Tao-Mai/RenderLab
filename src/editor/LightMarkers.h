@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/feature/editor/EditorFrameInput.h"
+#include "render/editor/EditorFrameInput.h"
 
 #include <cstdint>
 #include <span>

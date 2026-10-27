@@ -4,8 +4,8 @@
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
 #include "render/device/VulkanContext.h"
-#include "render/resource/GpuMesh.h"
-#include "render/resource/RenderResourceManager.h"
+#include "render/resources/GpuMesh.h"
+#include "render/resources/RenderResourceManager.h"
 
 #include <array>
 

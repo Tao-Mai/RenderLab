@@ -26,7 +26,7 @@
 ## 导入约定
 
 - 每份示例模型导入为一个 MeshAsset，保留各 Submesh 的材质关联，最长轴统一为 3 m。
-- PbrMaterialAsset 保存扩展参数与纹理引用；按用途区分 sRGB / Linear，并生成 Mipmap。
+- GltfMaterial 保存扩展参数与纹理引用；按用途区分 sRGB / Linear，并生成 Mipmap。
 - 当前使用 TEXCOORD_0，导入时检查 UV 通道及纹理变换要求。
 - Volume 的无限衰减距离保存为 null。
 

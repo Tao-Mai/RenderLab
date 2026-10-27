@@ -1,6 +1,6 @@
 #include "editor/MaterialExtensionsDraw.h"
 
-#include "asset/PbrMaterialAsset.h"
+#include "asset/GltfMaterial.h"
 
 #include <cmath>
 #include <glm/gtc/type_ptr.hpp>
@@ -49,7 +49,7 @@ bool drawExtension(const char* label, std::optional<T>& extension, F&& draw, boo
 }
 }  // namespace
 
-bool drawMaterialExtensions(PbrMaterialAsset& material)
+bool drawMaterialExtensions(GltfMaterial& material)
 {
     bool edited = false;
     edited |= drawExtension(

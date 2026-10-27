@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/Debug.h"
-#include "render/ShaderManager.h"
+#include "render/resources/ShaderManager.h"
 
 #include <cstdint>
 #include <span>

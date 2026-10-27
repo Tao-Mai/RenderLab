@@ -103,4 +103,4 @@ Compile 完成后，执行顺序、资源及绑定可以持续复用。具体 Ba
 
 普通物体变换、材质参数和灯光数据变化只更新帧数据。环境图变化更新资源绑定，IBL 开关则决定天空盒等节点是否加入图，因此会触发重建。
 
-实现入口：[RenderGraph.h](../src/render/feature/RenderGraph.h)（节点登记与反射）、[RenderGraphSetup.cpp](../src/render/feature/RenderGraphSetup.cpp)（资源声明与依赖编译）、[RenderGraph.cpp](../src/render/feature/RenderGraph.cpp)（分配、上传与执行）。
+实现入口：[RenderGraph.h](../src/render/graph/RenderGraph.h)（节点登记与反射）、[RenderGraphSetup.cpp](../src/render/graph/RenderGraphSetup.cpp)（资源声明与依赖编译）、[RenderGraph.cpp](../src/render/graph/RenderGraph.cpp)（分配、上传与执行）。

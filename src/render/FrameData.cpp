@@ -3,7 +3,7 @@
 #include "core/Logger.h"
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
-#include "render/feature/editor/EditorShaderData.h"
+#include "render/editor/EditorShaderData.h"
 
 #include <array>
 

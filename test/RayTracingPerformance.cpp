@@ -13,7 +13,7 @@
 #include "render/raytracing/BlasBuildPass.h"
 #include "render/raytracing/RayTracingPass.h"
 #include "render/raytracing/SVGFFilter.h"
-#include "render/resource/MaterialTable.h"
+#include "render/resources/MaterialTable.h"
 #include "scene/SceneManager.h"
 #include "scene/component/LightComponent.h"
 #include "scene/system/RenderSystem.h"

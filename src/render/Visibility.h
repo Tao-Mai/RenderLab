@@ -3,7 +3,7 @@
 #include <bit>
 #include <format>
 #include "core/Logger.h"
-#include "render/resource/ShaderData.h"
+#include "render/resources/ShaderData.h"
 
 namespace RenderVisibility
 {

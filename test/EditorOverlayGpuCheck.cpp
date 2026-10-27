@@ -8,7 +8,7 @@
 #include "core/Window.h"
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
-#include "render/resource/RenderResourceManager.h"
+#include "render/resources/RenderResourceManager.h"
 #include "scene/SceneManager.h"
 #include "scene/SceneTypes.h"
 #include "scene/system/RenderSystem.h"

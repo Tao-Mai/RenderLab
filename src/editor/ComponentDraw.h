@@ -3,7 +3,7 @@
 struct Component;
 struct TransformComponent;
 
-#include "asset/PbrMaterialAsset.h"
+#include "asset/GltfMaterial.h"
 #include "core/Reflect.h"
 
 #include <bit>
@@ -85,7 +85,7 @@ ComponentDrawResult drawFields(SpotLightComponent& value);
 ComponentDrawResult drawFields(RenderComponent& value);
 
 // Produce a complete optional-field patch, retaining texture/shader overrides.
-MaterialOverride materialOverrideDiff(const PbrMaterialAsset& stock, const PbrMaterialAsset& preview);
+MaterialOverride materialOverrideDiff(const GltfMaterial& stock, const GltfMaterial& preview);
 bool hasMaterialOverrides(const MaterialOverride& patch);
 
 template<class T>

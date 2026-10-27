@@ -1,7 +1,7 @@
 #pragma once
 
 #include "render/RenderConfig.h"
-#include "render/feature/RenderGraph.h"
+#include "render/graph/RenderGraph.h"
 #include "render/raytracing/AccelerationStructure.h"
 
 #include <array>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/resource/Buffer.h"
+#include "render/resources/Buffer.h"
 
 class VulkanContext;
 

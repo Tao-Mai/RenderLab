@@ -46,7 +46,7 @@ int main(int argc, char** argv)
     bool hasClearcoat = false;
     for (const auto& submesh : assets.get<MeshAsset>(id).submeshes)
     {
-        const auto& material = assets.get<MaterialAsset>(submesh.materialId).as<PbrMaterialAsset>();
+        const auto& material = assets.get<MaterialAsset>(submesh.materialId).as<GltfMaterial>();
         if (!material.clearcoat)
             continue;
         const auto& clearcoat = *material.clearcoat;

@@ -143,7 +143,7 @@ ComponentDrawResult drawFields(SpotLightComponent& light)
     return result;
 }
 
-MaterialOverride materialOverrideDiff(const PbrMaterialAsset& stock, const PbrMaterialAsset& preview)
+MaterialOverride materialOverrideDiff(const GltfMaterial& stock, const GltfMaterial& preview)
 {
     MaterialOverride patch;
     constexpr auto ctx = std::meta::access_context::current();
@@ -197,7 +197,7 @@ bool drawMeshSelection(RenderComponent& render, const AssetManager& assets)
     return edited;
 }
 
-bool drawMaterialFields(PbrMaterialAsset& material)
+bool drawMaterialFields(GltfMaterial& material)
 {
     bool edited = false;
     glm::vec4 baseColor = material.baseColorFactor.value_or(glm::vec4{1.0f});
@@ -302,7 +302,7 @@ ComponentDrawResult drawFields(RenderComponent& render)
         {
             const auto& materialId = mesh->submeshes[index].materialId;
             const auto* asset = assets->find<MaterialAsset>(materialId);
-            const auto* stock = dynamic_cast<const PbrMaterialAsset*>(asset);
+            const auto* stock = dynamic_cast<const GltfMaterial*>(asset);
             ImGui::Text("Id: %s", materialId.c_str());
             if (stock)
             {
@@ -316,7 +316,7 @@ ComponentDrawResult drawFields(RenderComponent& render)
                 }
                 ImGui::EndDisabled();
 
-                PbrMaterialAsset preview = *stock;
+                GltfMaterial preview = *stock;
                 if (const auto found = render.materialOverrides.find(submeshIndex);
                     found != render.materialOverrides.end())
                     applyOptionalFields(preview, found->second);

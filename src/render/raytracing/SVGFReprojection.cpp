@@ -6,7 +6,7 @@
 #include "render/RendererConfig.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
-#include "render/resource/GpuShader.h"
+#include "render/resources/GpuShader.h"
 
 namespace
 {

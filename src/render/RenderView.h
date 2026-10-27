@@ -1,7 +1,7 @@
 #pragma once
 
 #include "render/ViewportRect.h"
-#include "render/resource/ShaderData.h"
+#include "render/resources/ShaderData.h"
 
 #include <cstdint>
 

@@ -4,7 +4,7 @@
 #include <vector>
 #include "asset/EnvironmentMapAsset.h"
 #include "render/DrawItem.h"
-#include "render/resource/ShaderData.h"
+#include "render/resources/ShaderData.h"
 
 struct RenderLight
 {

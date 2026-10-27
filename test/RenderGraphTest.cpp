@@ -1,6 +1,6 @@
 #include "render/device/Device.h"
-#include "render/feature/RenderGraph.h"
-#include "render/feature/shadow/ShadowData.h"
+#include "render/graph/RenderGraph.h"
+#include "render/raster/ShadowData.h"
 #include "scene/system/SceneRenderData.h"
 
 #include <glm/gtc/matrix_transform.hpp>

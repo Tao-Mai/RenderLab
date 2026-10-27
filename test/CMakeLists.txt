@@ -15,7 +15,7 @@ add_executable(RenderLabTests
         ${PROJECT_SOURCE_DIR}/src/core/profiling/Profiler.cpp
         ${PROJECT_SOURCE_DIR}/src/core/math/Bounds.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/system/RenderSystem.cpp
-        ${PROJECT_SOURCE_DIR}/src/render/feature/shadow/ShadowData.cpp
+        ${PROJECT_SOURCE_DIR}/src/render/raster/ShadowData.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/SceneManager.cpp
         ${PROJECT_SOURCE_DIR}/src/editor/EditorCamera.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/AActor.cpp
@@ -75,8 +75,8 @@ add_test(NAME RenderLabTests COMMAND RenderLabTests)
 add_executable(RenderGraphTests
         RenderGraphTest.cpp
         ShaderDataTest.cpp
-        ${PROJECT_SOURCE_DIR}/src/render/feature/RenderGraphSetup.cpp
-        ${PROJECT_SOURCE_DIR}/src/render/feature/shadow/ShadowData.cpp
+        ${PROJECT_SOURCE_DIR}/src/render/graph/RenderGraphSetup.cpp
+        ${PROJECT_SOURCE_DIR}/src/render/raster/ShadowData.cpp
 )
 target_include_directories(RenderGraphTests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_dependencies(RenderGraphTests RenderLabShaders)

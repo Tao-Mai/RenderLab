@@ -13,29 +13,29 @@
 #include "core/Window.h"
 #include "core/profiling/Profiler.h"
 #include "render/device/VkCheck.h"
-#include "render/feature/DepthPrepass.h"
-#include "render/feature/EndPass.h"
-#include "render/feature/ScenePass.h"
-#include "render/feature/SkyboxPass.h"
-#include "render/feature/TransparentPass.h"
-#include "render/feature/deferred/DeferredLightingPass.h"
-#include "render/feature/deferred/GBufferPass.h"
-#include "render/feature/editor/EditorDepthPass.h"
-#include "render/feature/editor/EditorPickingCopyPass.h"
-#include "render/feature/editor/EditorPickingPass.h"
-#include "render/feature/editor/EditorUiPass.h"
-#include "render/feature/editor/LightMarkerPass.h"
-#include "render/feature/postprocess/Bloom.h"
-#include "render/feature/postprocess/ToneMappingPass.h"
-#include "render/feature/shadow/ShadowPass.h"
-#include "render/offline/OfflinePathTracingPass.h"
+#include "render/raster/DepthPrepass.h"
+#include "render/graph/EndPass.h"
+#include "render/raster/ScenePass.h"
+#include "render/raster/SkyboxPass.h"
+#include "render/raster/TransparentPass.h"
+#include "render/raster/DeferredLightingPass.h"
+#include "render/raster/GBufferPass.h"
+#include "render/editor/EditorDepthPass.h"
+#include "render/editor/EditorPickingCopyPass.h"
+#include "render/editor/EditorPickingPass.h"
+#include "render/editor/EditorUiPass.h"
+#include "render/editor/LightMarkerPass.h"
+#include "render/postprocess/Bloom.h"
+#include "render/postprocess/ToneMappingPass.h"
+#include "render/raster/ShadowPass.h"
+#include "render/raytracing/OfflinePathTracingPass.h"
 #include "render/raytracing/BlasBuildPass.h"
 #include "render/raytracing/RayTracingBlitPass.h"
 #include "render/raytracing/RayTracingPass.h"
 #include "render/raytracing/SVGFReprojection.h"
 #include "render/raytracing/SVGFFilter.h"
 #include "render/raytracing/TlasBuildPass.h"
-#include "render/resource/Buffer.h"
+#include "render/resources/Buffer.h"
 
 #include <cstring>
 #include <glm/geometric.hpp>
@@ -567,7 +567,7 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
             resources.mesh(item.mesh);
 
             // 记录material在SSBO的idx
-            auto                       material = assets.get<MaterialAsset>(item.materialId).as<PbrMaterialAsset>();
+            auto                       material = assets.get<MaterialAsset>(item.materialId).as<GltfMaterial>();
             MaterialTable::MaterialKey materialKey{.assetId = item.materialId};
             if (item.materialOverride)
             {

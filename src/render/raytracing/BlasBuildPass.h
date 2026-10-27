@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/feature/RenderGraph.h"
+#include "render/graph/RenderGraph.h"
 #include "render/raytracing/AccelerationStructure.h"
 
 #include <map>

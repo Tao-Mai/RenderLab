@@ -1,5 +1,5 @@
 #pragma once
 
-struct PbrMaterialAsset;
+struct GltfMaterial;
 
-[[nodiscard]] bool drawMaterialExtensions(PbrMaterialAsset& material);
+[[nodiscard]] bool drawMaterialExtensions(GltfMaterial& material);

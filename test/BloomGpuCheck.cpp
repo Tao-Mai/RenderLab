@@ -7,9 +7,9 @@
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
-#include "render/feature/EndPass.h"
-#include "render/feature/postprocess/Bloom.h"
-#include "render/resource/Buffer.h"
+#include "render/graph/EndPass.h"
+#include "render/postprocess/Bloom.h"
+#include "render/resources/Buffer.h"
 #include "scene/SceneManager.h"
 
 #include <array>

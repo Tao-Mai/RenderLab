@@ -2,10 +2,10 @@
 
 #include "render/RenderConfig.h"
 #include "render/device/Device.h"
-#include "render/feature/RenderGraph.h"
+#include "render/graph/RenderGraph.h"
 #include "render/raytracing/RayTracingData.h"
 #include "render/raytracing/TlasBuildPass.h"
-#include "render/resource/ShaderData.h"
+#include "render/resources/ShaderData.h"
 
 #include <array>
 #include <glm/vec4.hpp>

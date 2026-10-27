@@ -23,7 +23,7 @@
 - 延迟 G-buffer 保存 Albedo / AO、Normal / Roughness、Emissive / Metallic、Sheen / Roughness，并从深度重建位置。
 - Forward / Deferred 复用基础 BRDF、灯光、阴影和 IBL；Clearcoat 当前仅在 Forward 计算。
 - 透明材质采用前向混合。
-- 阴影由统一 [ShadowPass](../src/render/feature/shadow/ShadowPass.cpp) 处理，算法见 [阴影文档](Shadow.md)。
+- 阴影由统一 [ShadowPass](../src/render/raster/ShadowPass.cpp) 处理，算法见 [阴影文档](Shadow.md)。
 
 ### 实时光追
 
@@ -65,11 +65,12 @@ Shader 入口：[raytracing/offline.slang](../shaders/raytracing/offline.slang)�
 | 位置 | 内容 |
 | --- | --- |
 | [Renderer.cpp](../src/render/Renderer.cpp) | 路线调度、全局帧准备、光栅化主视图剔除 |
-| [ShadowPass](../src/render/feature/shadow/ShadowPass.cpp) / [TransparentPass](../src/render/feature/TransparentPass.cpp) | 每帧 prepare 中准备阴影数据与阴影剔除、排序透明物体 |
-| [RenderGraph](../src/render/feature/RenderGraph.h) | 类型化登记、依赖编译、资源状态与执行 |
-| [SceneDraw](../src/render/feature/SceneDraw.cpp) / [FrameData](../src/render/FrameData.cpp) | 共享绘制与资源依赖函数、逐帧数据和公共 Set 写入 |
-| [feature/](../src/render/feature/) | 光栅、阴影、后处理与编辑器 Pass |
-| [raytracing/](../src/render/raytracing/) / [offline/](../src/render/offline/) | 实时光追、历史重投影与离线路径 |
-| [device/](../src/render/device/) / [present/](../src/render/present/) | Vulkan、帧同步、计时与呈现 |
+| [graph/](../src/render/graph/) | RenderGraph、Pass 输入接口与最终出口 |
+| [raster/](../src/render/raster/) | 前向、延迟、透明、阴影与共享场景绘制 |
+| [raytracing/](../src/render/raytracing/) | 加速结构、实时与离线路径追踪、SVGF |
+| [postprocess/](../src/render/postprocess/) | Bloom 与 Tone Mapping |
+| [editor/](../src/render/editor/) | 光源标记、拾取、编辑器深度与 UI 绘制 |
+| [resources/](../src/render/resources/) | GPU 资源、缓存、材质表与 Shader 管理 |
+| [device/](../src/render/device/) | Vulkan、Pipeline 与 Layout、帧同步、计时与交换链 |
 
 CPU Scope、GPU Timestamp、Draw / 三角形计数用于观察各阶段成本。

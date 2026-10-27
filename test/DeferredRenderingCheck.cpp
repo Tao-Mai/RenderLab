@@ -11,11 +11,11 @@
 #include "render/Renderer.h"
 #include "render/device/Device.h"
 #include "render/device/VkCheck.h"
-#include "render/feature/DepthPrepass.h"
-#include "render/feature/EndPass.h"
-#include "render/feature/ScenePass.h"
-#include "render/feature/deferred/DeferredLightingPass.h"
-#include "render/resource/MaterialTable.h"
+#include "render/raster/DepthPrepass.h"
+#include "render/graph/EndPass.h"
+#include "render/raster/ScenePass.h"
+#include "render/raster/DeferredLightingPass.h"
+#include "render/resources/MaterialTable.h"
 #include "scene/SceneManager.h"
 #include "scene/SceneTypes.h"
 #include "scene/system/RenderSystem.h"
@@ -289,16 +289,16 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
     lamp.transform().rotation                                   = originalRotation;
 
     auto& material     = scenes.scene().actors[0]->getComponent<RenderComponent>()->materialOverrides[0];
-    material.clearcoat = PbrMaterialAsset::Clearcoat{.factor = 1.0f, .roughnessFactor = 0.2f};
+    material.clearcoat = GltfMaterial::Clearcoat{.factor = 1.0f, .roughnessFactor = 0.2f};
     compare(lastDeferred, sample(true, true, true));
     LOG_INFO("Deferred uses the base PBR material when clearcoat is present.");
 
     material.clearcoat.reset();
-    material.sheen       = PbrMaterialAsset::Sheen{.colorFactor = glm::vec3{0.0f}, .roughnessFactor = 0.5f};
+    material.sheen       = GltfMaterial::Sheen{.colorFactor = glm::vec3{0.0f}, .roughnessFactor = 0.5f};
     const auto zeroSheen = sample(false, true, false);
     material.sheen.reset();
     compare(zeroSheen, sample(false, true, false));
-    material.sheen = PbrMaterialAsset::Sheen{.colorFactor = {0.7f, 0.4f, 0.2f}, .roughnessFactor = 0.5f};
+    material.sheen = GltfMaterial::Sheen{.colorFactor = {0.7f, 0.4f, 0.2f}, .roughnessFactor = 0.5f};
     for (const bool ibl : {false, true})
     {
         const auto sheen = sample(false, ibl, false);

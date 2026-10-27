@@ -268,9 +268,9 @@ struct MaterialImport
         return TextureBinding{importTexture(path, colorSpace, scalar), sampler};
     }
 
-    PbrMaterialAsset material(const aiMaterial& sourceMaterial)
+    GltfMaterial material(const aiMaterial& sourceMaterial)
     {
-        PbrMaterialAsset result;
+        GltfMaterial result;
         aiColor4D        baseColor{1, 1, 1, 1};
         if (sourceMaterial.Get(AI_MATKEY_BASE_COLOR, baseColor) != AI_SUCCESS)
             sourceMaterial.Get(AI_MATKEY_COLOR_DIFFUSE, baseColor);

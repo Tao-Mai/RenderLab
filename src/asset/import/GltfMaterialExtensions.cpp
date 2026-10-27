@@ -85,7 +85,7 @@ struct ExtensionReader
 }  // namespace
 
 void importMaterialExtensions(
-    PbrMaterialAsset&            material,
+    GltfMaterial&            material,
     const tinygltf::Material&    source,
     const std::filesystem::path& sourcePath,
     const GltfTextureLoader&     loadTexture

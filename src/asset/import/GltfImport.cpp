@@ -102,7 +102,7 @@ void registerMaterials(
     const std::filesystem::path& modelDirectory,
     const std::filesystem::path& meshSource)
 {
-    PbrMaterialAsset defaultMaterial;
+    GltfMaterial defaultMaterial;
     defaultMaterial.id               = asset_import::nextId<MaterialAsset>(meshSource.stem().string());
     defaultMaterial.baseColorTexture = TextureBinding{
         BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat};
@@ -112,7 +112,7 @@ void registerMaterials(
     for (size_t index = 0; index < model.materials.size(); ++index)
     {
         const tinygltf::Material& source = model.materials[index];
-        PbrMaterialAsset              material;
+        GltfMaterial              material;
         material.id = asset_import::nextId<MaterialAsset>(meshSource.stem().string());
 
         const auto& pbr = source.pbrMetallicRoughness;

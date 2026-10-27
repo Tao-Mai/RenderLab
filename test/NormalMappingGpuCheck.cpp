@@ -83,7 +83,7 @@ int main(int argc, char** argv)
                 material.metallic          = frame % 2 == 0 ? 1.0f : 0.0f;
                 material.roughness         = frame % 2 == 0 ? 0.2f : 1.0f;
                 const auto& submesh        = assets.get<MeshAsset>(meshId).submeshes[index];
-                const auto& sourceMaterial = assets.get<MaterialAsset>(submesh.materialId).as<PbrMaterialAsset>();
+                const auto& sourceMaterial = assets.get<MaterialAsset>(submesh.materialId).as<GltfMaterial>();
                 if (sourceMaterial.clearcoat)
                 {
                     auto clearcoat            = *sourceMaterial.clearcoat;

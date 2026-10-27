@@ -3,7 +3,7 @@
 #include "core/Logger.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
-#include "render/resource/VertexLayout.h"
+#include "render/resources/VertexLayout.h"
 
 #include <algorithm>
 #include <array>

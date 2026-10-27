@@ -8,7 +8,7 @@
 #include "core/Window.h"
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
-#include "render/feature/shadow/ShadowData.h"
+#include "render/raster/ShadowData.h"
 #include "scene/SceneManager.h"
 #include "scene/actor/ALight.h"
 #include "scene/actor/AStaticMesh.h"

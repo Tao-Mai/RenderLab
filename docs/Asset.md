@@ -9,7 +9,7 @@
 | 类型                        | 内容                                                               |
 |-----------------------------|--------------------------------------------------------------------|
 | MeshAsset                   | 几何二进制引用、Submesh 材质、局部 AABB、导入来源与比例            |
-| MaterialAsset               | 多态材质基类，PbrMaterialAsset / OfflineMaterialAsset 共用 ID 空间 |
+| MaterialAsset               | 多态材质基类，GltfMaterial / OfflineMaterialAsset 共用 ID 空间 |
 | TextureAsset / SamplerAsset | 像素、Mipmap、色彩空间与采样参数                                   |
 | ShaderAsset                 | Shader 程序与构建产物描述                                          |
 | SceneAsset                  | Actor / Component、编辑器相机、环境图                              |
@@ -45,7 +45,7 @@ PBR 材质支持基础参数与 glTF 扩展描述。OfflineMaterialAsset 为 Dif
 
 JSON 读写复用 [Serializer.h](../src/core/Serializer.h) 的 C++26 静态反射。多态类型使用稳定的注册名称，完整描述要求字段明确，空 optional 保存为 null。
 
-材质覆盖复用 PbrMaterialAsset 的 optional 字段，通过静态反射合并有值字段。
+材质覆盖复用 GltfMaterial 的 optional 字段，通过静态反射合并有值字段。
 
 ## 内置资源
 
