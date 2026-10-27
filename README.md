@@ -1,12 +1,12 @@
 # RenderLab
 
-RenderLab 是一个以学习和实验为目的的个人渲染器项目，基于 **Vulkan / C++26 / Slang**，涵盖实时渲染与离线渲染，目前仍在持续开发和探索中。项目的主要目标是通过亲自实现不同的渲染算法，深入理解其原理和实际执行流程，而非构建生产级渲染引擎。
+RenderLab 是一个以学习和实验为目的的个人渲染器项目，基于 **Vulkan / C++26 / Slang**
+，涵盖实时渲染与离线渲染，目前仍在持续开发和探索中。项目的主要目标是通过亲自实现不同的渲染算法，深入理解其原理和实际执行流程，而非构建生产级渲染引擎。
 
-论文和教材通常着重介绍算法的核心思想，而将其落实到渲染器中，还需要处理数据组织、GPU 资源与同步、各渲染阶段之间的协作等具体问题。通过实际编码、调试、可视化和性能观察，项目希望把理论与执行过程联系起来，理解不同方法的适用场景、局限，以及画质与性能之间的取舍。
+论文和教材通常着重介绍算法的核心思想，而将其落实到渲染器中，还需要处理数据组织、GPU
+资源与同步、各渲染阶段之间的协作等具体问题。通过实际编码、调试、可视化和性能观察，项目希望把理论与执行过程联系起来，理解不同方法的适用场景、局限，以及画质与性能之间的取舍。
 
 项目也会参考现有渲染器的架构设计，尝试将不同算法整合到统一的场景、资产与渲染框架中，并随着学习和实验需求不断调整实现与抽象。
-
-[功能清单](docs/Feature.md) · [项目架构](docs/Architecture.md) · [阴影](docs/Shadow.md) · [材质展示](docs/MaterialGallery.md)
 
 ## 渲染展示
 
@@ -14,10 +14,11 @@ RenderLab 是一个以学习和实验为目的的个人渲染器项目，基于 
 
 ### 实时光追 · SVGF 开关对比
 
-Sibenik Cathedral，**1 spp / 帧**，最多 6 次表面散射，两帧在途。两图使用相同的场景、视角、光照与后处理设置，均截取第 32 帧，仅切换 SVGF。关闭时显示当前帧采样；开启时使用 albedo 解调、历史重投影、亮度方差估计与五级 à-trous 滤波。图中的小球和矩形是编辑器光源标记。
+Sibenik Cathedral， **1 spp / 帧**，最多 6 次表面散射，两帧在途。两图使用相同的场景、视角、光照与后处理设置，均截取第 32 帧，仅切换
+SVGF。关闭时显示当前帧采样；开启时使用 albedo 解调、历史重投影、亮度方差估计与五级 à-trous 滤波。图中的小球和矩形是编辑器光源标记。
 
-| SVGF 关闭 | SVGF 开启 |
-|-----------|-----------|
+| SVGF 关闭                                                                  | SVGF 开启                                                                 |
+|----------------------------------------------------------------------------|---------------------------------------------------------------------------|
 | ![Sibenik 实时光追，SVGF 关闭，第 32 帧](docs/images/sibenik-svgf-off.png) | ![Sibenik 实时光追，SVGF 开启，第 32 帧](docs/images/sibenik-svgf-on.png) |
 
 ### 光栅化 · PBR 与稳定 CSM
@@ -63,16 +64,17 @@ Shader；未指定构建类型时默认使用 Release。光追路线需要支持
 
 ## 文档导航
 
-| 主题                                                                        | 内容                                |
-|-----------------------------------------------------------------------------|-------------------------------------|
-| [功能清单](docs/Feature.md)                                                 | 已实现功能与当前边界                |
-| [项目架构](docs/Architecture.md)                                            | 场景、资产、Renderer 与编辑器的职责 |
-| [渲染模块](docs/Render.md) / [RenderGraph](docs/RenderGraph.md)        | 四条路线、资源与帧同步              |
-| [阴影](docs/Shadow.md) / [稳定 CSM](docs/Csm.md)                     | 阴影算法、稳定化与测试场景          |
+| 主题                                                                      | 内容                                |
+|---------------------------------------------------------------------------|-------------------------------------|
+| [功能清单](docs/Feature.md)                                               | 已实现功能与当前边界                |
+| [项目架构](docs/Architecture.md)                                          | 场景、资产、Renderer 与编辑器的职责 |
+| [渲染模块](docs/Render.md) / [RenderGraph](docs/RenderGraph.md)           | 四条路线、资源与帧同步              |
+| [阴影](docs/Shadow.md) / [稳定 CSM](docs/Csm.md)                          | 阴影算法、稳定化与测试场景          |
 | [材质展示](docs/MaterialGallery.md) / [示例资产](docs/MaterialSamples.md) | 材质比较与扩展支持情况              |
-| [Sheen](docs/Sheen.md) / [方向反照率 LUT](docs/SheenLut.md)                | 分层着色与环境光处理                |
+| [Sheen](docs/Sheen.md) / [方向反照率 LUT](docs/SheenLut.md)               | 分层着色与环境光处理                |
 
 Sibenik 来自 [McGuire Computer Graphics Archive](https://casual-effects.com/g3d/data10/index.html)：Marko Dabrovic
 建模、Kenzie Lamar 修复几何、Morgan McGuire 制作高分辨率纹理，采用 CC BY-NC 许可。展示中的灯光由本项目布置；其他外部资产遵循各自许可。
 
-Sponza 来自 [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Sponza)，原模型由 Crytek / Frank Meinl 制作，PBR 纹理由 Alexandre Pestana 转换，遵循原资产许可。
+Sponza 来自 [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Sponza)
+，原模型由 Crytek / Frank Meinl 制作，PBR 纹理由 Alexandre Pestana 转换，遵循原资产许可。
