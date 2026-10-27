@@ -1,0 +1,845 @@
+// pbrt is Copyright(c) 1998-2020 Matt Pharr, Wenzel Jakob, and Greg Humphreys.
+// The pbrt source code is licensed under the Apache License, Version 2.0.
+// SPDX-License-Identifier: Apache-2.0
+// Derived from pbrt-v4 parser.cpp; RenderLab modifications are listed in UPSTREAM.md.
+#include "Parser.h"
+#include "Scene.h"
+#include <double-conversion/string-to-double.h>
+
+namespace pbrt {
+
+///////////////////////////////////////////////////////////////////////////
+// ParsedParameter
+
+void ParsedParameter::AddFloat(Float v) {
+    CHECK(ints.empty() && strings.empty() && bools.empty());
+    floats.push_back(v);
+}
+
+void ParsedParameter::AddInt(int i) {
+    CHECK(floats.empty() && strings.empty() && bools.empty());
+    ints.push_back(i);
+}
+
+void ParsedParameter::AddString(std::string_view str) {
+    CHECK(floats.empty() && ints.empty() && bools.empty());
+    strings.push_back({str.begin(), str.end()});
+}
+
+void ParsedParameter::AddBool(bool v) {
+    CHECK(floats.empty() && ints.empty() && strings.empty());
+    bools.push_back(v);
+}
+
+std::string ParsedParameter::ToString() const {
+    std::string str;
+    str += std::string("\"") + type + " " + name + std::string("\" [ ");
+    if (!floats.empty())
+        for (Float d : floats)
+            str += StringPrintf("%f ", d);
+    else if (!ints.empty())
+        for (int i : ints)
+            str += StringPrintf("%d ", i);
+    else if (!strings.empty())
+        for (const auto &s : strings)
+            str += '\"' + s + "\" ";
+    else if (!bools.empty())
+        for (bool b : bools)
+            str += b ? "true " : "false ";
+    str += "] ";
+
+    return str;
+}
+
+ParserTarget::~ParserTarget() {}
+
+static std::string toString(std::string_view s) {
+    return std::string(s.data(), s.size());
+}
+
+std::string Token::ToString() const {
+    return StringPrintf("[ Token token: %s loc: %s ]", toString(token), loc);
+}
+
+STAT_MEMORY_COUNTER("Memory/Tokenizer buffers", tokenizerMemory);
+
+// Tokenizer Implementation
+static char decodeEscaped(int ch, const FileLoc &loc) {
+    switch (ch) {
+    case EOF:
+        ErrorExit(&loc, "premature EOF after character escape '\\'");
+    case 'b':
+        return '\b';
+    case 'f':
+        return '\f';
+    case 'n':
+        return '\n';
+    case 'r':
+        return '\r';
+    case 't':
+        return '\t';
+    case '\\':
+        return '\\';
+    case '\'':
+        return '\'';
+    case '\"':
+        return '\"';
+    default:
+        ErrorExit(&loc, "unexpected escaped character \"%c\"", ch);
+    }
+    return 0;  // NOTREACHED
+}
+
+static double_conversion::StringToDoubleConverter floatParser(
+    double_conversion::StringToDoubleConverter::ALLOW_HEX, 0. /* empty string value */,
+    0. /* junk string value */, nullptr /* infinity symbol */, nullptr /* NaN symbol */);
+
+std::unique_ptr<Tokenizer> Tokenizer::CreateFromFile(
+    const std::string &filename,
+    std::function<void(const char *, const FileLoc *)> errorCallback) {
+    if (filename == "-") {
+        // Handle stdin by slurping everything into a string.
+        std::string str;
+        int ch;
+        while ((ch = getchar()) != EOF)
+            str.push_back((char)ch);
+        return std::make_unique<Tokenizer>(std::move(str), "<stdin>",
+                                           std::move(errorCallback));
+    }
+
+    if (HasExtension(filename, ".gz")) {
+        std::string str = ReadDecompressedFileContents(filename);
+        return std::make_unique<Tokenizer>(std::move(str), filename,
+                                           std::move(errorCallback));
+    }
+
+    std::string str = ReadFileContents(filename);
+    return std::make_unique<Tokenizer>(std::move(str), filename,
+                                       std::move(errorCallback));
+
+}
+
+std::unique_ptr<Tokenizer> Tokenizer::CreateFromString(
+    std::string str, std::function<void(const char *, const FileLoc *)> errorCallback) {
+    return std::make_unique<Tokenizer>(std::move(str), "<stdin>",
+                                       std::move(errorCallback));
+}
+
+Tokenizer::Tokenizer(std::string str, std::string filename,
+                     std::function<void(const char *, const FileLoc *)> errorCallback)
+    : errorCallback(std::move(errorCallback)), contents(std::move(str)) {
+    loc = FileLoc(filename);
+    pos = contents.data();
+    end = pos + contents.size();
+    tokenizerMemory += contents.size();
+    CheckUTF(contents.data(), contents.size());
+}
+
+
+Tokenizer::~Tokenizer() = default;
+
+void Tokenizer::CheckUTF(const void *ptr, int len) const {
+    const unsigned char *c = (const unsigned char *)ptr;
+    // https://en.wikipedia.org/wiki/Byte_order_mark
+    if (len >= 2 && ((c[0] == 0xfe && c[1] == 0xff) || (c[0] == 0xff && c[1] == 0xfe)))
+        errorCallback("File is encoded with UTF-16, which is not currently "
+                      "supported by pbrt (https://github.com/mmp/pbrt-v4/issues/136).",
+                      &loc);
+}
+
+pstd::optional<Token> Tokenizer::Next() {
+    while (true) {
+        const char *tokenStart = pos;
+        FileLoc startLoc = loc;
+
+        int ch = getChar();
+        if (ch == EOF)
+            return {};
+        else if (ch == ' ' || ch == '\n' || ch == '\t' || ch == '\r') {
+            // nothing
+        } else if (ch == '"') {
+            // scan to closing quote
+            bool haveEscaped = false;
+            while ((ch = getChar()) != '"') {
+                if (ch == EOF) {
+                    errorCallback("premature EOF", &startLoc);
+                    return {};
+                } else if (ch == '\n') {
+                    errorCallback("unterminated string", &startLoc);
+                    return {};
+                } else if (ch == '\\') {
+                    haveEscaped = true;
+                    // Grab the next character
+                    if ((ch = getChar()) == EOF) {
+                        errorCallback("premature EOF", &startLoc);
+                        return {};
+                    }
+                }
+            }
+
+            if (!haveEscaped)
+                return Token({tokenStart, size_t(pos - tokenStart)}, startLoc);
+            else {
+                sEscaped.clear();
+                for (const char *p = tokenStart; p < pos; ++p) {
+                    if (*p != '\\')
+                        sEscaped.push_back(*p);
+                    else {
+                        ++p;
+                        CHECK_LT(p, pos);
+                        sEscaped.push_back(decodeEscaped(*p, startLoc));
+                    }
+                }
+                return Token({sEscaped.data(), sEscaped.size()}, startLoc);
+            }
+        } else if (ch == '[' || ch == ']') {
+            return Token({tokenStart, size_t(1)}, startLoc);
+        } else if (ch == '#') {
+            // comment: scan to EOL (or EOF)
+            while ((ch = getChar()) != EOF) {
+                if (ch == '\n' || ch == '\r') {
+                    ungetChar();
+                    break;
+                }
+            }
+
+            return Token({tokenStart, size_t(pos - tokenStart)}, startLoc);
+        } else {
+            // Regular statement or numeric token; scan until we hit a
+            // space, opening quote, or bracket.
+            while ((ch = getChar()) != EOF) {
+                if (ch == ' ' || ch == '\n' || ch == '\t' || ch == '\r' || ch == '"' ||
+                    ch == '[' || ch == ']') {
+                    ungetChar();
+                    break;
+                }
+            }
+            return Token({tokenStart, size_t(pos - tokenStart)}, startLoc);
+        }
+    }
+}
+
+static int parseInt(const Token &t) {
+    bool negate = t.token[0] == '-';
+
+    int index = 0;
+    if (t.token[0] == '+' || t.token[0] == '-')
+        ++index;
+
+    if (index == t.token.size())
+        ErrorExit(&t.loc, "expected an integer after sign");
+    const int64_t limit = int64_t(std::numeric_limits<int>::max()) + (negate ? 1 : 0);
+    int64_t value = 0;
+    while (index < t.token.size()) {
+        if (!(t.token[index] >= '0' && t.token[index] <= '9'))
+            ErrorExit(&t.loc, "\"%c\": expected a number", t.token[index]);
+        value = 10 * value + (t.token[index] - '0');
+        ++index;
+
+        if (value > limit)
+            ErrorExit(&t.loc,
+                      "Numeric value too large to represent as a 32-bit integer.");
+        else if (value < std::numeric_limits<int>::lowest())
+            Warning(&t.loc, "Numeric value %d too low to represent as a 32-bit integer.");
+    }
+
+    return negate ? -value : value;
+}
+
+static double parseFloat(const Token &t) {
+    // Fast path for a single digit
+    if (t.token.size() == 1) {
+        if (!(t.token[0] >= '0' && t.token[0] <= '9'))
+            ErrorExit(&t.loc, "\"%c\": expected a number", t.token[0]);
+        return t.token[0] - '0';
+    }
+
+    // Copy to a buffer so we can NUL-terminate it, as strto[idf]() expect.
+    char buf[64];
+    char *bufp = buf;
+    std::unique_ptr<char[]> allocBuf;
+    CHECK_RARE(1e-5, t.token.size() + 1 >= sizeof(buf));
+    if (t.token.size() + 1 >= sizeof(buf)) {
+        // This should be very unusual, but is necessary in case we get a
+        // goofball number with lots of leading zeros, for example.
+        allocBuf = std::make_unique<char[]>(t.token.size() + 1);
+        bufp = allocBuf.get();
+    }
+
+    std::copy(t.token.begin(), t.token.end(), bufp);
+    bufp[t.token.size()] = '\0';
+
+    // Can we just use strtol?
+    auto isInteger = [](std::string_view str) {
+        for (char ch : str)
+            if (!(ch >= '0' && ch <= '9'))
+                return false;
+        return true;
+    };
+
+    int length = 0;
+    double val;
+    // Windows long is 32 bits; only use strtol when the value is known to fit.
+    if (isInteger(t.token) && t.token.size() <= 9) {
+        char *endptr;
+        val = double(strtol(bufp, &endptr, 10));
+        length = endptr - bufp;
+    } else if (sizeof(Float) == sizeof(float))
+        val = floatParser.StringToFloat(bufp, t.token.size(), &length);
+    else
+        val = floatParser.StringToDouble(bufp, t.token.size(), &length);
+
+    if (length != t.token.size() || !std::isfinite(val))
+        ErrorExit(&t.loc, "%s: expected a number", toString(t.token));
+
+    return val;
+}
+
+inline bool isQuotedString(std::string_view str) {
+    return str.size() >= 2 && str[0] == '"' && str.back() == '"';
+}
+
+static std::string_view dequoteString(const Token &t) {
+    if (!isQuotedString(t.token))
+        ErrorExit(&t.loc, "\"%s\": expected quoted string", toString(t.token));
+
+    std::string_view str = t.token;
+    str.remove_prefix(1);
+    str.remove_suffix(1);
+    return str;
+}
+
+constexpr int TokenOptional = 0;
+constexpr int TokenRequired = 1;
+
+template <typename Next, typename Unget>
+static ParsedParameterVector parseParameters(
+    Next nextToken, Unget ungetToken,
+    const std::function<void(const Token &token, const char *)> &errorCallback) {
+    ParsedParameterVector parameterVector;
+
+    while (true) {
+        pstd::optional<Token> t = nextToken(TokenOptional);
+        if (!t.has_value())
+            return parameterVector;
+
+        if (!isQuotedString(t->token)) {
+            ungetToken(*t);
+            return parameterVector;
+        }
+
+        ParsedParameter *param = new ParsedParameter(t->loc);
+
+        std::string_view decl = dequoteString(*t);
+
+        auto skipSpace = [&decl](std::string_view::const_iterator iter) {
+            while (iter != decl.end() && (*iter == ' ' || *iter == '\t'))
+                ++iter;
+            return iter;
+        };
+        // Skip to the next whitespace character (or the end of the string).
+        auto skipToSpace = [&decl](std::string_view::const_iterator iter) {
+            while (iter != decl.end() && *iter != ' ' && *iter != '\t')
+                ++iter;
+            return iter;
+        };
+
+        auto typeBegin = skipSpace(decl.begin());
+        if (typeBegin == decl.end())
+            ErrorExit(&t->loc, "Parameter \"%s\" doesn't have a type declaration?!",
+                      std::string(decl.begin(), decl.end()));
+
+        // Find end of type declaration
+        auto typeEnd = skipToSpace(typeBegin);
+        param->type.assign(typeBegin, typeEnd);
+
+
+
+        auto nameBegin = skipSpace(typeEnd);
+        if (nameBegin == decl.end())
+            ErrorExit(&t->loc, "Unable to find parameter name from \"%s\"",
+                      std::string(decl.begin(), decl.end()));
+
+        auto nameEnd = skipToSpace(nameBegin);
+        param->name.assign(nameBegin, nameEnd);
+
+        enum ValType { Unknown, String, Bool, Float, Int } valType = Unknown;
+
+        if (param->type == "integer")
+            valType = Int;
+
+        auto addVal = [&](const Token &t) {
+            if (isQuotedString(t.token)) {
+                switch (valType) {
+                case Unknown:
+                    valType = String;
+                    break;
+                case String:
+                    break;
+                case Float:
+                    errorCallback(t, "expected floating-point value");
+                case Int:
+                    errorCallback(t, "expected integer value");
+                case Bool:
+                    errorCallback(t, "expected Boolean value");
+                }
+
+                param->AddString(dequoteString(t));
+            } else if (t.token[0] == 't' && t.token == "true") {
+                switch (valType) {
+                case Unknown:
+                    valType = Bool;
+                    break;
+                case String:
+                    errorCallback(t, "expected string value");
+                case Float:
+                    errorCallback(t, "expected floating-point value");
+                case Int:
+                    errorCallback(t, "expected integer value");
+                case Bool:
+                    break;
+                }
+
+                param->AddBool(true);
+            } else if (t.token[0] == 'f' && t.token == "false") {
+                switch (valType) {
+                case Unknown:
+                    valType = Bool;
+                    break;
+                case String:
+                    errorCallback(t, "expected string value");
+                case Float:
+                    errorCallback(t, "expected floating-point value");
+                case Int:
+                    errorCallback(t, "expected integer value");
+                case Bool:
+                    break;
+                }
+
+                param->AddBool(false);
+            } else {
+                switch (valType) {
+                case Unknown:
+                    valType = Float;
+                    break;
+                case String:
+                    errorCallback(t, "expected string value");
+                case Float:
+                    break;
+                case Int:
+                    break;
+                case Bool:
+                    errorCallback(t, "expected Boolean value");
+                }
+
+                if (valType == Int)
+                    param->AddInt(parseInt(t));
+                else
+                    param->AddFloat(parseFloat(t));
+            }
+        };
+
+        Token val = *nextToken(TokenRequired);
+
+        if (val.token == "[") {
+            while (true) {
+                val = *nextToken(TokenRequired);
+                if (val.token == "]")
+                    break;
+                addVal(val);
+            }
+        } else {
+            addVal(val);
+        }
+
+
+
+        parameterVector.push_back(param);
+    }
+
+    return parameterVector;
+}
+
+void parse(ParserTarget *target, std::unique_ptr<Tokenizer> t) {
+
+
+
+
+    LOG_VERBOSE("Started parsing %s",
+                std::string(t->loc.filename.begin(), t->loc.filename.end()));
+    std::vector<std::unique_ptr<Tokenizer>> fileStack;
+    fileStack.push_back(std::move(t));
+
+    pstd::optional<Token> ungetToken;
+
+    auto parseError = [&](const char *msg, const FileLoc *loc) {
+        ErrorExit(loc, "%s", msg);
+    };
+
+    // nextToken is a little helper function that handles the file stack,
+    // returning the next token from the current file until reaching EOF,
+    // at which point it switches to the next file (if any).
+    std::function<pstd::optional<Token>(int)> nextToken;
+    nextToken = [&](int flags) -> pstd::optional<Token> {
+        if (ungetToken.has_value())
+            return std::exchange(ungetToken, {});
+
+        if (fileStack.empty()) {
+            if ((flags & TokenRequired) != 0) {
+                ErrorExit("premature end of file");
+            }
+            return {};
+        }
+
+        pstd::optional<Token> tok = fileStack.back()->Next();
+
+        if (!tok) {
+            // We've reached EOF in the current file. Anything more to parse?
+            LOG_VERBOSE("Finished parsing %s",
+                        std::string(fileStack.back()->loc.filename.begin(),
+                                    fileStack.back()->loc.filename.end()));
+            fileStack.pop_back();
+            return nextToken(flags);
+        } else if (tok->token[0] == '#') {
+            // Swallow comments, unless --format or --toply was given, in
+            // which case they're printed to stdout.
+
+            return nextToken(flags);
+        } else
+            // Regular token; success.
+            return tok;
+    };
+
+    auto unget = [&](Token t) {
+        CHECK(!ungetToken.has_value());
+        ungetToken = t;
+    };
+
+    // Helper function for pbrt API entrypoints that take a single string
+    // parameter and a ParameterVector (e.g. pbrtShape()).
+    auto basicParamListEntrypoint =
+        [&](void (ParserTarget::*apiFunc)(const std::string &, ParsedParameterVector,
+                                          FileLoc),
+            FileLoc loc) {
+            Token t = *nextToken(TokenRequired);
+            std::string_view dequoted = dequoteString(t);
+            std::string n = toString(dequoted);
+            ParsedParameterVector parameterVector = parseParameters(
+                nextToken, unget, [&](const Token &t, const char *msg) {
+                    std::string token = toString(t.token);
+                    std::string str = StringPrintf("%s: %s", token, msg);
+                    parseError(str.c_str(), &t.loc);
+                });
+            (target->*apiFunc)(n, std::move(parameterVector), loc);
+        };
+
+    auto syntaxError = [&](const Token &t) {
+        ErrorExit(&t.loc, "Unknown directive: %s", toString(t.token));
+    };
+
+    pstd::optional<Token> tok;
+
+    while (true) {
+        tok = nextToken(TokenOptional);
+        if (!tok.has_value())
+            break;
+
+        switch (tok->token[0]) {
+        case 'A':
+            if (tok->token == "AttributeBegin")
+                target->AttributeBegin(tok->loc);
+            else if (tok->token == "AttributeEnd")
+                target->AttributeEnd(tok->loc);
+            else if (tok->token == "Attribute")
+                basicParamListEntrypoint(&ParserTarget::Attribute, tok->loc);
+            else if (tok->token == "ActiveTransform") {
+                Token a = *nextToken(TokenRequired);
+                if (a.token == "All")
+                    target->ActiveTransformAll(tok->loc);
+                else if (a.token == "EndTime")
+                    target->ActiveTransformEndTime(tok->loc);
+                else if (a.token == "StartTime")
+                    target->ActiveTransformStartTime(tok->loc);
+                else
+                    syntaxError(*tok);
+            } else if (tok->token == "AreaLightSource")
+                basicParamListEntrypoint(&ParserTarget::AreaLightSource, tok->loc);
+            else if (tok->token == "Accelerator")
+                basicParamListEntrypoint(&ParserTarget::Accelerator, tok->loc);
+            else
+                syntaxError(*tok);
+            break;
+
+        case 'C':
+            if (tok->token == "ConcatTransform") {
+                if (nextToken(TokenRequired)->token != "[")
+                    syntaxError(*tok);
+                Float m[16];
+                for (int i = 0; i < 16; ++i)
+                    m[i] = parseFloat(*nextToken(TokenRequired));
+                if (nextToken(TokenRequired)->token != "]")
+                    syntaxError(*tok);
+                target->ConcatTransform(m, tok->loc);
+            } else if (tok->token == "CoordinateSystem") {
+                std::string_view n = dequoteString(*nextToken(TokenRequired));
+                target->CoordinateSystem(toString(n), tok->loc);
+            } else if (tok->token == "CoordSysTransform") {
+                std::string_view n = dequoteString(*nextToken(TokenRequired));
+                target->CoordSysTransform(toString(n), tok->loc);
+            } else if (tok->token == "ColorSpace") {
+                std::string_view n = dequoteString(*nextToken(TokenRequired));
+                target->ColorSpace(toString(n), tok->loc);
+            } else if (tok->token == "Camera")
+                basicParamListEntrypoint(&ParserTarget::Camera, tok->loc);
+            else
+                syntaxError(*tok);
+            break;
+
+        case 'F':
+            if (tok->token == "Film")
+                basicParamListEntrypoint(&ParserTarget::Film, tok->loc);
+            else
+                syntaxError(*tok);
+            break;
+
+        case 'I':
+            if (tok->token == "Integrator")
+                basicParamListEntrypoint(&ParserTarget::Integrator, tok->loc);
+            else if (tok->token == "Include") {
+                Token filenameToken = *nextToken(TokenRequired);
+                std::string filename = toString(dequoteString(filenameToken));
+                {
+                    filename = ResolveFilename(filename);
+                    std::unique_ptr<Tokenizer> tinc =
+                        Tokenizer::CreateFromFile(filename, parseError);
+                    if (tinc) {
+                        LOG_VERBOSE("Started parsing %s",
+                                    std::string(tinc->loc.filename.begin(),
+                                                tinc->loc.filename.end()));
+                        fileStack.push_back(std::move(tinc));
+                    }
+                }
+            } else if (tok->token == "Import") {
+                Token filenameToken = *nextToken(TokenRequired);
+                std::string filename = toString(dequoteString(filenameToken));
+                {
+                    BasicSceneBuilder *builder =
+                        dynamic_cast<BasicSceneBuilder *>(target);
+                    CHECK(builder);
+
+                    if (builder->currentBlock !=
+                        BasicSceneBuilder::BlockState::WorldBlock)
+                        ErrorExit(&tok->loc, "Import statement only allowed inside world "
+                                             "definition block.");
+
+                    filename = ResolveFilename(filename);
+                    BasicSceneBuilder *importBuilder = builder->CopyForImport();
+
+                    std::unique_ptr<Tokenizer> timport =
+                        Tokenizer::CreateFromFile(filename, parseError);
+                    if (timport)
+                        parse(importBuilder, std::move(timport));
+                    builder->MergeImported(importBuilder);
+                }
+            } else if (tok->token == "Identity")
+                target->Identity(tok->loc);
+            else
+                syntaxError(*tok);
+            break;
+
+        case 'L':
+            if (tok->token == "LightSource")
+                basicParamListEntrypoint(&ParserTarget::LightSource, tok->loc);
+            else if (tok->token == "LookAt") {
+                Float v[9];
+                for (int i = 0; i < 9; ++i)
+                    v[i] = parseFloat(*nextToken(TokenRequired));
+                target->LookAt(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8],
+                               tok->loc);
+            } else
+                syntaxError(*tok);
+            break;
+
+        case 'M':
+            if (tok->token == "MakeNamedMaterial")
+                basicParamListEntrypoint(&ParserTarget::MakeNamedMaterial, tok->loc);
+            else if (tok->token == "MakeNamedMedium")
+                basicParamListEntrypoint(&ParserTarget::MakeNamedMedium, tok->loc);
+            else if (tok->token == "Material")
+                basicParamListEntrypoint(&ParserTarget::Material, tok->loc);
+            else if (tok->token == "MediumInterface") {
+                std::string_view n = dequoteString(*nextToken(TokenRequired));
+                std::string names[2];
+                names[0] = toString(n);
+
+                // Check for optional second parameter
+                pstd::optional<Token> second = nextToken(TokenOptional);
+                if (second.has_value()) {
+                    if (isQuotedString(second->token))
+                        names[1] = toString(dequoteString(*second));
+                    else {
+                        unget(*second);
+                        names[1] = names[0];
+                    }
+                } else
+                    names[1] = names[0];
+
+                target->MediumInterface(names[0], names[1], tok->loc);
+            } else
+                syntaxError(*tok);
+            break;
+
+        case 'N':
+            if (tok->token == "NamedMaterial") {
+                std::string_view n = dequoteString(*nextToken(TokenRequired));
+                target->NamedMaterial(toString(n), tok->loc);
+            } else
+                syntaxError(*tok);
+            break;
+
+        case 'O':
+            if (tok->token == "ObjectBegin") {
+                std::string_view n = dequoteString(*nextToken(TokenRequired));
+                target->ObjectBegin(toString(n), tok->loc);
+            } else if (tok->token == "ObjectEnd")
+                target->ObjectEnd(tok->loc);
+            else if (tok->token == "ObjectInstance") {
+                std::string_view n = dequoteString(*nextToken(TokenRequired));
+                target->ObjectInstance(toString(n), tok->loc);
+            } else if (tok->token == "Option") {
+                std::string name = toString(dequoteString(*nextToken(TokenRequired)));
+                std::string value = toString(nextToken(TokenRequired)->token);
+                target->Option(name, value, tok->loc);
+            } else
+                syntaxError(*tok);
+            break;
+
+        case 'P':
+            if (tok->token == "PixelFilter")
+                basicParamListEntrypoint(&ParserTarget::PixelFilter, tok->loc);
+            else
+                syntaxError(*tok);
+            break;
+
+        case 'R':
+            if (tok->token == "ReverseOrientation")
+                target->ReverseOrientation(tok->loc);
+            else if (tok->token == "Rotate") {
+                Float v[4];
+                for (int i = 0; i < 4; ++i)
+                    v[i] = parseFloat(*nextToken(TokenRequired));
+                target->Rotate(v[0], v[1], v[2], v[3], tok->loc);
+            } else
+                syntaxError(*tok);
+            break;
+
+        case 'S':
+            if (tok->token == "Shape")
+                basicParamListEntrypoint(&ParserTarget::Shape, tok->loc);
+            else if (tok->token == "Sampler")
+                basicParamListEntrypoint(&ParserTarget::Sampler, tok->loc);
+            else if (tok->token == "Scale") {
+                Float v[3];
+                for (int i = 0; i < 3; ++i)
+                    v[i] = parseFloat(*nextToken(TokenRequired));
+                target->Scale(v[0], v[1], v[2], tok->loc);
+            } else
+                syntaxError(*tok);
+            break;
+
+        case 'T':
+            if (tok->token == "Transform") {
+                if (nextToken(TokenRequired)->token != "[")
+                    syntaxError(*tok);
+                Float m[16];
+                for (int i = 0; i < 16; ++i)
+                    m[i] = parseFloat(*nextToken(TokenRequired));
+                if (nextToken(TokenRequired)->token != "]")
+                    syntaxError(*tok);
+                target->Transform(m, tok->loc);
+            } else if (tok->token == "Translate") {
+                Float v[3];
+                for (int i = 0; i < 3; ++i)
+                    v[i] = parseFloat(*nextToken(TokenRequired));
+                target->Translate(v[0], v[1], v[2], tok->loc);
+            } else if (tok->token == "TransformTimes") {
+                Float v[2];
+                for (int i = 0; i < 2; ++i)
+                    v[i] = parseFloat(*nextToken(TokenRequired));
+                target->TransformTimes(v[0], v[1], tok->loc);
+            } else if (tok->token == "Texture") {
+                std::string_view n = dequoteString(*nextToken(TokenRequired));
+                std::string name = toString(n);
+                n = dequoteString(*nextToken(TokenRequired));
+                std::string type = toString(n);
+
+                Token t = *nextToken(TokenRequired);
+                std::string_view dequoted = dequoteString(t);
+                std::string texName = toString(dequoted);
+                ParsedParameterVector params = parseParameters(
+                    nextToken, unget, [&](const Token &t, const char *msg) {
+                        std::string token = toString(t.token);
+                        std::string str = StringPrintf("%s: %s", token, msg);
+                        parseError(str.c_str(), &t.loc);
+                    });
+
+                target->Texture(name, type, texName, std::move(params), tok->loc);
+            } else
+                syntaxError(*tok);
+            break;
+
+        case 'W':
+            if (tok->token == "WorldBegin")
+                target->WorldBegin(tok->loc);
+            else
+                syntaxError(*tok);
+            break;
+
+        default:
+            syntaxError(*tok);
+        }
+    }
+
+
+}
+
+void ParseFiles(ParserTarget *target, pstd::span<const std::string> filenames) {
+    auto tokError = [](const char *msg, const FileLoc *loc) {
+        ErrorExit(loc, "%s", msg);
+    };
+
+    // Process scene description
+    if (filenames.empty()) {
+        // Parse scene from standard input
+        std::unique_ptr<Tokenizer> t = Tokenizer::CreateFromFile("-", tokError);
+        if (t)
+            parse(target, std::move(t));
+    } else {
+        // Parse scene from input files
+        for (const std::string &fn : filenames) {
+            if (fn != "-")
+                SetSearchDirectory(fn);
+
+            std::unique_ptr<Tokenizer> t = Tokenizer::CreateFromFile(fn, tokError);
+            if (t)
+                parse(target, std::move(t));
+        }
+    }
+
+    target->EndOfFiles();
+}
+
+void ParseString(ParserTarget *target, std::string str) {
+    auto tokError = [](const char *msg, const FileLoc *loc) {
+        ErrorExit(loc, "%s", msg);
+    };
+    std::unique_ptr<Tokenizer> t = Tokenizer::CreateFromString(std::move(str), tokError);
+    if (!t)
+        return;
+    parse(target, std::move(t));
+
+    target->EndOfFiles();
+}
+
+
+} // namespace pbrt

@@ -102,6 +102,46 @@ void validateTexture(const TextureAsset& asset, std::span<const uint8_t> bytes, 
 
 AssetDataManager::~AssetDataManager() { DCHECK(assetsRoot.empty()); }
 
+void AssetDataManager::writeBlob(const std::filesystem::path& relative, std::span<const uint8_t> bytes) const
+{
+    for (const auto& component : relative)
+        CHECK(component != "..", "asset data path leaves its root: {}", relative.string());
+    const auto file = resolve(relative);
+    std::error_code error;
+    std::filesystem::create_directories(file.parent_path(), error);
+    CHECK(!error, "cannot create asset data directory '{}': {}", file.parent_path().string(), error.message());
+
+    auto temporary = file;
+    temporary += ".tmp";
+    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+    CHECK(output, "cannot write asset data: {}", temporary.string());
+    output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    output.close();
+    CHECK(output, "cannot complete asset data: {}", temporary.string());
+    std::filesystem::rename(temporary, file, error);
+    CHECK(!error, "cannot publish asset data '{}': {}", file.string(), error.message());
+}
+
+std::vector<uint8_t> AssetDataManager::readBlob(
+    const std::filesystem::path& relative, uint64_t offset, std::optional<uint64_t> byteCount) const
+{
+    for (const auto& component : relative)
+        CHECK(component != "..", "asset data path leaves its root: {}", relative.string());
+    const auto file = resolve(relative);
+    std::ifstream input(file, std::ios::binary | std::ios::ate);
+    CHECK(input, "cannot read asset data: {}", file.string());
+    const auto size = input.tellg();
+    CHECK(size >= 0, "cannot determine asset data size: {}", file.string());
+    CHECK(offset <= static_cast<uint64_t>(size), "invalid asset data offset: {}", file.string());
+    const auto count = byteCount.value_or(static_cast<uint64_t>(size) - offset);
+    CHECK(count <= static_cast<uint64_t>(size) - offset, "invalid asset data range: {}", file.string());
+    std::vector<uint8_t> bytes(static_cast<size_t>(count));
+    input.seekg(static_cast<std::streamoff>(offset));
+    input.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    CHECK(input, "cannot read complete asset data: {}", file.string());
+    return bytes;
+}
+
 void AssetDataManager::shutdown() noexcept { assetsRoot.clear(); }
 
 void AssetDataManager::init(std::filesystem::path root)

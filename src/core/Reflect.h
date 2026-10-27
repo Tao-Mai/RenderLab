@@ -48,6 +48,11 @@ template <glm::length_t N, class T, glm::qualifier Q>
 inline constexpr bool IsGlmVector<glm::vec<N, T, Q>> = true;
 
 template <class T>
+inline constexpr bool kIsGlmMatrix = false;
+template <glm::length_t C, glm::length_t R, class T, glm::qualifier Q>
+inline constexpr bool kIsGlmMatrix<glm::mat<C, R, T, Q>> = true;
+
+template <class T>
 concept FlagEnum = std::is_enum_v<T> &&
     (!std::meta::annotations_of_with_type(std::meta::dealias(^^T), ^^Flags).empty());
 

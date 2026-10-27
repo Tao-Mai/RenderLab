@@ -4,6 +4,7 @@
 #include "asset/MeshAsset.h"
 #include "asset/MeshGeometry.h"
 #include "asset/TextureAsset.h"
+#include "asset/pbrt/PbrtSceneAsset.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -53,6 +54,12 @@ struct ImportEnvironmentMapSetting
     uint32_t prefilteredSpecularMaxSampleCount = 65536;
 };
 
+struct ImportPbrtSceneSetting
+{
+    std::filesystem::path source;
+    PbrtSceneAsset::ID id;
+};
+
 class AssetImporter
 {
 public:
@@ -99,6 +106,7 @@ public:
     prepareMesh(const std::filesystem::path& source, std::optional<uint32_t> meshIndex = std::nullopt);
     static MeshAsset::ID       saveMesh(PreparedMesh&& prepared, const ImportMeshSetting& setting);
     static AssetID<SceneAsset> importScene(const ImportSceneSetting& setting);
+    static PbrtSceneAsset::ID importPbrtScene(const ImportPbrtSceneSetting& setting);
 
 private:
     struct LoadedImage

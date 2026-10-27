@@ -72,6 +72,15 @@ target_link_libraries(RenderLabTests PRIVATE
 
 add_test(NAME RenderLabTests COMMAND RenderLabTests)
 
+add_executable(PbrtImportTests PbrtImportTest.cpp)
+find_package(ZLIB REQUIRED)
+target_link_libraries(PbrtImportTests PRIVATE RenderLabRuntime GTest::gtest_main ZLIB::ZLIB)
+target_compile_definitions(PbrtImportTests PRIVATE RENDERLAB_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+add_test(NAME PbrtImportTests COMMAND PbrtImportTests)
+set_tests_properties(PbrtImportTests PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${RENDERLAB_COMPILER_BIN_DIR}")
+renderlab_copy_compiler_runtime(PbrtImportTests)
+
 add_executable(RenderGraphTests
         RenderGraphTest.cpp
         ShaderDataTest.cpp

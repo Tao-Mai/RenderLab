@@ -1,7 +1,7 @@
 #include "asset/AssetManager.h"
 #include "asset/AssetTypes.h"
 #include "asset/BuiltinAssets.h"
-#include "asset/OfflineMaterialAsset.h"
+#include "asset/pbrt/PbrtMaterial.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Serializer.h"
@@ -235,40 +235,45 @@ TEST(AssetIDTest, JsonIoSavesAndReplacesAssetsInTheUnifiedFormat)
     EXPECT_EQ(json::parse(input), Serialize(restored));
     input.close();
 
-    OfflineMaterialAsset offline;
-    offline.id = material.id;
-    offline.parameters = OfflineMaterialAsset::Dielectric{.eta = 1.6f, .roughness = {0.2f, 0.3f}};
+    PbrtMaterial offline;
+    offline.id          = material.id;
+    offline.entity.type = "dielectric";
+    offline.entity.parameters.push_back({.type = "float", .name = "eta", .value = PbrtFloatValues{{1.6}}});
     assets.save(offline);
-    EXPECT_EQ(assets.get(offline.id).as<OfflineMaterialAsset>(), offline);
+    EXPECT_EQ(assets.get(offline.id).as<PbrtMaterial>(), offline);
     EXPECT_EQ(assets.loadedIds<MaterialAsset>().size(), 1u);
     restored = asset_json::load<std::unique_ptr<MaterialAsset>>(temporary.file);
-    EXPECT_EQ(restored->as<OfflineMaterialAsset>(), offline);
-    EXPECT_TRUE(Serialize(restored).at("OfflineMaterialAsset").at("parameters").contains("Dielectric"));
+    EXPECT_EQ(restored->as<PbrtMaterial>(), offline);
+    EXPECT_EQ(Serialize(restored).at("PbrtMaterial").at("entity").at("type"), "dielectric");
 
     assets.shutdown();
     AssetManager reloaded;
     reloaded.init(temporary.directory);
-    EXPECT_EQ(reloaded.get(offline.id).as<OfflineMaterialAsset>(), offline);
+    EXPECT_EQ(reloaded.get(offline.id).as<PbrtMaterial>(), offline);
     reloaded.shutdown();
 }
 
-TEST(AssetIDTest, OfflineMaterialParametersUseNamedAlternatives)
+TEST(AssetIDTest, PbrtMaterialPreservesTypedParameterAlternatives)
 {
-    OfflineMaterialAsset material;
-    material.id = MaterialAsset::ID{"offline"};
-    material.parameters = OfflineMaterialAsset::Diffuse{.reflectance = {0.2f, 0.3f, 0.4f}};
+    PbrtMaterial material;
+    material.id          = MaterialAsset::ID{"offline"};
+    material.entity.type = "diffuse";
+    material.entity.parameters.push_back(
+        {.type = "rgb", .name = "reflectance", .colorSpace = "srgb", .value = PbrtFloatValues{{0.2, 0.3, 0.4}}}
+    );
     auto stored = Serialize(material);
-    EXPECT_TRUE(stored.at("parameters").contains("Diffuse"));
-    OfflineMaterialAsset restored;
+    EXPECT_EQ(stored.at("entity").at("type"), "diffuse");
+    PbrtMaterial restored;
     Deserialize(stored, restored);
     EXPECT_EQ(restored, material);
 
-    material.parameters = OfflineMaterialAsset::Conductor{.eta = {0.2f, 0.4f, 0.6f}, .k = {3, 4, 5}};
-    stored = Serialize(material);
-    EXPECT_TRUE(stored.at("parameters").contains("Conductor"));
+    material.entity.type       = "conductor";
+    material.entity.parameters = {{.type = "spectrum", .name = "eta", .value = PbrtStringValues{{"metal-Cu-eta"}}}};
+    stored                     = Serialize(material);
+    EXPECT_EQ(stored.at("entity").at("type"), "conductor");
     Deserialize(stored, restored);
     EXPECT_EQ(restored, material);
-    EXPECT_DEATH(Deserialize(json{{"UnknownModel", json::object()}}, restored.parameters), "");
+    EXPECT_DEATH(Deserialize(json{{"UnknownValues", json::object()}}, restored.entity.parameters.front().value), "");
 }
 
 TEST(AssetIDTest, AllPersistedAssetsRoundTrip)

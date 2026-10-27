@@ -204,6 +204,8 @@ foreach(stage IN ITEMS 0 1 2)
 endforeach()
 renderlab_shader_manifests()
 
+add_subdirectory(src/asset/pbrt)
+
 add_library(RenderLabRuntime STATIC
     src/editor/Inspector.cpp
     src/editor/EditorBackend.cpp
@@ -424,6 +426,10 @@ add_library(RenderLabRuntime STATIC
         src/render/editor/LightMarkerPass.h
 )
 add_dependencies(RenderLabRuntime RenderLabShaders)
+target_sources(RenderLabRuntime PRIVATE
+    src/asset/pbrt/PbrtImport.cpp
+    src/asset/pbrt/PbrtData.cpp
+)
 
 add_executable(RenderLab src/Main.cpp)
 target_link_libraries(RenderLab PRIVATE RenderLabRuntime)
@@ -444,6 +450,7 @@ target_compile_definitions(RenderLabRuntime PUBLIC
 )
 
 target_link_libraries(RenderLabRuntime PUBLIC
+        RenderLabPbrtFrontend
         mikktspace::mikktspace
         assimp::assimp
         RenderLabBuildOptions

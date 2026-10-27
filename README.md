@@ -1,6 +1,10 @@
 # RenderLab
 
-基于 **Vulkan / C++26 / Slang** 的个人渲染器，围绕实时渲染、材质与光传输持续演进。提供前向、延迟、实时光追与离线路径追踪四条路线，使用同一套场景与资产进行对比。
+RenderLab 是一个以学习和实验为目的的个人渲染器项目，基于 **Vulkan / C++26 / Slang**，涵盖实时渲染与离线渲染，目前仍在持续开发和探索中。项目的主要目标是通过亲自实现不同的渲染算法，深入理解其原理和实际执行流程，而非构建生产级渲染引擎。
+
+论文和教材通常着重介绍算法的核心思想，而将其落实到渲染器中，还需要处理数据组织、GPU 资源与同步、各渲染阶段之间的协作等具体问题。通过实际编码、调试、可视化和性能观察，项目希望把理论与执行过程联系起来，理解不同方法的适用场景、局限，以及画质与性能之间的取舍。
+
+项目也会参考现有渲染器的架构设计，尝试将不同算法整合到统一的场景、资产与渲染框架中，并随着学习和实验需求不断调整实现与抽象。
 
 [功能清单](docs/Feature.md) · [项目架构](docs/Architecture.md) · [阴影](docs/Shadow.md) · [材质展示](docs/MaterialGallery.md)
 
@@ -47,7 +51,7 @@ Sibenik Cathedral，**1 spp / 帧**，最多 6 次表面散射，两帧在途。
 - GCC 16.2+，支持 C++26 静态反射与 `-freflection`。
 - CMake 4.2+、Ninja、Vulkan SDK 1.4+、Slang 编译器。
 - vcpkg：`x64-mingw-dynamic`。主要依赖 GLFW、GLM、ImGui（Docking 与 GLFW / Vulkan
-  backend）、ImGuizmo、TinyGLTF、Assimp、TinyEXR、MikkTSpace、nlohmann-json、glog。
+  backend）、ImGuizmo、TinyGLTF、Assimp、TinyEXR、MikkTSpace、nlohmann-json、glog、zlib。
 
 在 CLion 中选择 GCC 和 vcpkg 工具链，构建 `RenderLab`，运行工作目录设为构建目录。CMake 会检查反射支持并编译
 Shader；未指定构建类型时默认使用 Release。光追路线需要支持 Vulkan 硬件光追的显卡。

@@ -22,6 +22,7 @@ public:
     void init(std::filesystem::path root);
     void shutdown() noexcept;
     [[nodiscard]] uint64_t contentRevision() const { return nextRevision; }
+    [[nodiscard]] const std::filesystem::path& rootPath() const { return root; }
 
     template <AssetType T>
     [[nodiscard]] const T& get(const AssetID<T>& id) const

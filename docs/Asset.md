@@ -9,15 +9,16 @@
 | 类型                        | 内容                                                               |
 |-----------------------------|--------------------------------------------------------------------|
 | MeshAsset                   | 几何二进制引用、Submesh 材质、局部 AABB、导入来源与比例            |
-| MaterialAsset               | 多态材质基类，GltfMaterial / OfflineMaterialAsset 共用 ID 空间 |
+| MaterialAsset               | 多态材质基类，GltfMaterial / PbrtMaterial 共用 ID 空间 |
 | TextureAsset / SamplerAsset | 像素、Mipmap、色彩空间与采样参数                                   |
 | ShaderAsset                 | Shader 程序与构建产物描述                                          |
 | SceneAsset                  | Actor / Component、编辑器相机、环境图                              |
 | EnvironmentMapAsset         | Radiance、Irradiance、GGX Prefiltered 纹理引用                     |
+| PbrtSceneAsset / PbrtTextureAsset | PBRT 场景语义、纹理图、运动变换、设置与输入依赖 |
 
 `AssetID<T>` 用类型区分引用，以字符串作为持久化 ID。每个 Submesh 持有自己的 Material ID。
 
-PBR 材质支持基础参数与 glTF 扩展描述。OfflineMaterialAsset 为 Diffuse / Conductor / Dielectric 等独立离线模型预留数据表达，现有路线使用 PBR 着色。
+GltfMaterial 保存 PBR 参数与 glTF 扩展。PbrtMaterial 保存 PBRT 模型、声明类型、光谱、色彩空间及材质和纹理引用，配合独立的 PBRT 场景资产供后续离线渲染使用。
 
 ## 数据流
 
@@ -42,6 +43,7 @@ PBR 材质支持基础参数与 glTF 扩展描述。OfflineMaterialAsset 为 Dif
 - 场景导入展开节点世界变换、复用共享网格、保留材质并生成编辑器相机。
 - 缺失切线时生成 MikkTSpace 切线；普通图像生成完整 Mipmap。
 - 环境图导入生成辐照度与 GGX 预过滤结果，可异步准备并取消。
+- `importPbrtScene` 复用固定版本的官方读取前端，保存场景描述并打包原始依赖；详见 [PBRT 导入](Pbrt.md)。
 
 JSON 读写复用 [Serializer.h](../src/core/Serializer.h) 的 C++26 静态反射。多态类型使用稳定的注册名称，完整描述要求字段明确，空 optional 保存为 null。
 

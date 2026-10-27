@@ -9,9 +9,11 @@
 ```text
 assets/
   Mesh/ Material/ Texture/ Shader/ Scene/ EnvironmentMap/ Sampler/
+  PbrtScene/ PbrtTexture/
   binary/
     geometry/     网格顶点与索引
     texture/      像素、Cubemap 与 Mipmap
+    pbrt/         按场景打包的原始依赖与大型参数数组
 resource/         模型、纹理与来源许可
 ```
 
@@ -33,11 +35,14 @@ resource/         模型、纹理与来源许可
 <RenderLab.exe> --import-mesh <model>
 <RenderLab.exe> --import-texture <image>
 <RenderLab.exe> --import-environmentmap <image>
+<RenderLab.exe> --import-pbrt-scene <source>
 ```
 
 CLI 相对源路径以仓库为基准，默认 ID 为文件名去掉扩展名；完整场景通过编辑器或 API 导入。
 
 普通贴图生成完整 Mipmap；sRGB 颜色在线性空间过滤，数据贴图保持 Linear。环境导入生成 Radiance、Irradiance 和 GGX Prefiltered Cubemap。
+
+PBRT 导入保存独立场景、共享材质与纹理图，并将所有输入依赖复制到资产目录，详见 [PBRT 导入](../docs/Pbrt.md)。
 
 ## 场景与配置
 

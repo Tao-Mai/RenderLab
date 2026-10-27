@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -21,6 +22,10 @@ public:
 
     [[nodiscard]] std::filesystem::path writeTexture(const TextureAsset& asset, std::span<const uint8_t> bytes) const;
     [[nodiscard]] std::vector<uint8_t>  readTexture(const TextureAsset& asset) const;
+
+    void writeBlob(const std::filesystem::path& relative, std::span<const uint8_t> bytes) const;
+    [[nodiscard]] std::vector<uint8_t> readBlob(
+        const std::filesystem::path& relative, uint64_t offset = 0, std::optional<uint64_t> byteCount = {}) const;
 
     [[nodiscard]] static uint32_t bytesPerPixel(ImageFormat format);
 

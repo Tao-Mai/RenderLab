@@ -113,6 +113,13 @@ json Serialize(const T& value)
 
         return result;
     }
+    else if constexpr (kIsGlmMatrix<U>)
+    {
+        json result = json::array();
+        for (glm::length_t column = 0; column < U::length(); ++column)
+            result.push_back(Serialize(value[column]));
+        return result;
+    }
     else if constexpr (std::is_same_v<U, glm::quat>)
     {
         return json::array({value.x, value.y, value.z, value.w});
@@ -254,6 +261,12 @@ void Deserialize(const json& j, T& value)
             Deserialize(j, item);
             value = std::move(item);
         }
+    }
+    else if constexpr (kIsGlmMatrix<U>)
+    {
+        CHECK(j.is_array() && j.size() == static_cast<size_t>(U::length()));
+        for (glm::length_t column = 0; column < U::length(); ++column)
+            Deserialize(j[column], value[column]);
     }
     else if constexpr (IsGlmVector<U> || std::is_same_v<U, glm::quat>)
     {

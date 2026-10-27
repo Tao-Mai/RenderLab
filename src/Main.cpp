@@ -16,7 +16,7 @@ int main(int argc, char** argv)
     logger::init(argv[0]);
     if (argc > 1)
     {
-        CHECK(argc == 3, "usage: RenderLab --import-texture|--import-environmentmap|--import-mesh <source>");
+        CHECK(argc == 3, "usage: RenderLab --import-texture|--import-environmentmap|--import-mesh|--import-pbrt-scene <source>");
         ConfigManager    config;
         AssetManager     assets;
         AssetDataManager assetData;
@@ -46,6 +46,10 @@ int main(int argc, char** argv)
         else if (command == "--import-mesh")
         {
             importedId = AssetImporter::importMesh({.source = source}).value;
+        }
+        else if (command == "--import-pbrt-scene")
+        {
+            importedId = AssetImporter::importPbrtScene({.source = source}).value;
         }
         else
         {
