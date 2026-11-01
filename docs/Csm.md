@@ -15,7 +15,7 @@ Forward / Deferred 共用方向光级联阴影，支持 1～4 级。目标是在
 
 深度采用相机前向轴上的距离，方向光阴影覆盖到配置的最大阴影距离。
 
-代码：[ShadowData.cpp](../src/render/raster/ShadowData.cpp)、[ShadowPass.cpp](../src/render/raster/ShadowPass.cpp)、[scene_lighting.slang](../shaders/scene_lighting.slang)。
+代码：[ShadowData.cpp](../src/render/raster/ShadowData.cpp)、[ShadowPass.cpp](../src/render/raster/ShadowPass.cpp)、[scene_lighting.slang](../shaders/raster/scene_lighting.slang)。
 
 ## 精度分配：Uniform 与 Practical
 
@@ -58,7 +58,7 @@ Forward / Deferred 共用方向光级联阴影，支持 1～4 级。目标是在
 - **级联混合**：每级末端建立过渡区，默认占深度区间的 10%；后一级投影向前扩展以覆盖该区域。
 - **混合方式**：过渡区内分别采样相邻两级，再按深度线性插值 Visibility；最后一级在最大阴影距离处直接截止。
 
-代码：[directionalShadowVisibility / scene_lighting.slang](../shaders/scene_lighting.slang)、[sampling.slang](../shaders/sampling.slang)。
+代码：[directionalShadowVisibility / scene_lighting.slang](../shaders/raster/scene_lighting.slang)、[sampling.slang](../shaders/common/sampling.slang)。
 
 ## 测试场景
 

@@ -2,9 +2,9 @@
 #define RENDERLAB_MESH_SURFACE_SLANG
 
 #include "mesh_vertex.slang"
-#include "material_data.slang"
-#include "surface.slang"
-#include "normal_mapping.slang"
+#include "../common/material_data.slang"
+#include "../common/surface.slang"
+#include "../common/normal_mapping.slang"
 
 struct VertexOutput
 {

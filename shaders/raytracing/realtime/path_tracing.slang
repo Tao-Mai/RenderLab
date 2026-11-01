@@ -1,15 +1,15 @@
 #ifndef RENDERLAB_PATH_TRACING_SLANG
 #define RENDERLAB_PATH_TRACING_SLANG
 
-#include "../../light_data.slang"
-#include "../../constant.slang"
-#include "../random.slang"
-#include "local_light_sampling.slang"
-#include "rect_area_light_sampling.slang"
-#include "../../material_data.slang"
-#include "pbr_brdf.slang"
-#include "../../normal_mapping.slang"
-#include "../../scene_data.slang"
+#include "../../common/light_data.slang"
+#include "../../common/constant.slang"
+#include "../../common/random.slang"
+#include "../../common/local_light_sampling.slang"
+#include "../../common/rect_area_light_sampling.slang"
+#include "../../common/material_data.slang"
+#include "../../common/pbr_brdf.slang"
+#include "../../common/normal_mapping.slang"
+#include "../../common/scene_data.slang"
 
 static const uint kVertexStrideFloats = 12;
 static const uint kRussianRouletteStartBounce = 3;

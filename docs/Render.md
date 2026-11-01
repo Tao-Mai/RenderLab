@@ -4,6 +4,8 @@
 
 渲染模块接收场景快照和编辑器输入，准备 GPU 数据，再通过 RenderGraph 调度完整的渲染 Pass。Renderer 负责流程，Pass 负责 Vulkan 绘制细节。
 
+Shader 的 [common 目录](../shaders/common/) 保存通用计算、采样与数据接口，[raster 目录](../shaders/raster/) 保存光栅化实现。光追按实时和离线分组，后处理与编辑器各自独立。
+
 场景以 Submesh 粒度的 DrawItem 提交，光栅化直接绘制，光追用同一批条目关联 BLAS、生成 TLAS 实例与命中数据。Renderer 只读引用 DrawItem 列表，材质索引按条目顺序单独保存在数组中。
 
 ## 四条路线
@@ -19,6 +21,8 @@
 
 ### 光栅化
 
+Shader 入口为 [forward.slang](../shaders/raster/forward.slang)、[gbuffer.slang](../shaders/raster/gbuffer.slang) 和 [deferred_lighting.slang](../shaders/raster/deferred_lighting.slang)。深度、阴影、天空盒与网格顶点处理也位于 `shaders/raster`。
+
 - 深度使用 D32Sfloat，主场景支持不透明、Alpha Mask、双面与排序透明绘制。
 - 延迟 G-buffer 保存 Albedo / AO、Normal / Roughness、Emissive / Metallic、Sheen / Roughness，并从深度重建位置。
 - Forward / Deferred 复用基础 BRDF、灯光、阴影和 IBL；Clearcoat 当前仅在 Forward 计算。
@@ -27,7 +31,7 @@
 
 ### 实时光追
 
-Shader 入口：[realtime.slang](../shaders/raytracing/realtime/realtime.slang)。实时路径循环、光源采样、BRDF 采样与 SVGF 位于 `raytracing/realtime`，随机数代码位于光追公共目录。
+Shader 入口：[realtime.slang](../shaders/raytracing/realtime/realtime.slang)。实时路径循环与 SVGF 位于 `raytracing/realtime`，光源采样、BRDF 计算与采样、随机数等通用代码位于 `shaders/common`。
 
 - 基础 PBR 复用漫反射与 GGX 函数，使用 VNDF 和完整混合 PDF 生成反弹方向。
 - 点光源与聚光灯共用一次加权选择，合计只选一个；权重为最大 RGB 强度乘锥角衰减再除以距离平方，超出 range 或聚光锥的光源跳过，并补偿选择概率。面光源独立加权选择，采样与 BRDF 命中使用 MIS。
@@ -41,7 +45,7 @@ Shader 入口：[realtime.slang](../shaders/raytracing/realtime/realtime.slang)�
 
 ### 离线路径追踪
 
-Shader 入口：[offline.slang](../shaders/raytracing/offline/offline.slang)。材质预览和纹理求值位于 `raytracing/offline`，Sobol 采样位于光追公共目录，转换规则见 [PBRT 转换文档](PbrtConversion.md)。
+Shader 入口：[offline.slang](../shaders/raytracing/offline/offline.slang)。材质预览和纹理求值位于 `raytracing/offline`，Sobol 采样位于 `shaders/common`，转换规则见 [PBRT 转换文档](PbrtConversion.md)。
 
 - 使用独立 Pass 和 Shader，活动 Frames-in-flight 为 1。
 - Owen 扰乱 Sobol 序列用于像素内采样，FP32 缓冲保存颜色总和，再除以样本数。

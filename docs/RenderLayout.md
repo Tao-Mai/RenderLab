@@ -35,7 +35,7 @@ Binding 0 为 `SceneUniforms` UBO，保存 viewProjection、inverseViewProjectio
 
 LightData Buffer 由 Renderer 按 `kMaxLights * sizeof(LightData)` 创建，启用光源每帧统一上传，`shadowIdx` 使用相同的写入规则。描述符在图创建或重建时写入。LightData 支持 Vertex、Fragment 和 Raygen 读取，Radiance 图像与采样器对所有阶段可见，其余资源用于光栅阶段。
 
-Shader 声明：[lighting_data.slang](../shaders/lighting_data.slang)、[scene_lighting.slang](../shaders/scene_lighting.slang)。
+Shader 声明：[lighting_data.slang](../shaders/common/lighting_data.slang)、[scene_lighting.slang](../shaders/raster/scene_lighting.slang)。
 
 ### ShadowSet
 
@@ -49,7 +49,7 @@ Shader 声明：[lighting_data.slang](../shaders/lighting_data.slang)、[scene_l
 
 阴影资源对 Vertex 和 Fragment 可见。FrameData 持有独立的 ShadowSet 与 ShadowUniforms Buffer；阴影矩阵、贴图或采样器变化时更新 ShadowSet，光栅帧准备阶段上传 ShadowUniforms。
 
-Shader 声明：[shadow_data.slang](../shaders/shadow_data.slang)。
+Shader 声明：[shadow_data.slang](../shaders/raster/shadow_data.slang)。
 
 ### MaterialSet
 

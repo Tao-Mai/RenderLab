@@ -26,7 +26,7 @@ Sheen BRDF 由 Charlie 分布与配套 Visibility 构成，使用 `alpha = sheen
 
 方向反照率来自内置 LUT。Clearcoat 在 Forward 计算，AO 作用于环境项。
 
-代码：[brdf.slang](../shaders/brdf.slang)、[mesh_surface.slang](../shaders/mesh_surface.slang)、[scene_lighting.slang](../shaders/scene_lighting.slang)。
+代码：[brdf.slang](../shaders/common/brdf.slang)、[mesh_surface.slang](../shaders/raster/mesh_surface.slang)、[scene_lighting.slang](../shaders/raster/scene_lighting.slang)。
 
 ## IBL 的处理
 

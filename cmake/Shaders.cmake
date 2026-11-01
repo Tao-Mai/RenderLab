@@ -28,7 +28,7 @@ function(renderlab_shader program source binary)
             ${arguments} -target spirv -profile spirv_1_4 -matrix-layout-column-major
             -emit-spirv-directly -fvk-use-entrypoint-name
             -reflection-json "${reflection}" -o "${output}"
-        DEPENDS "${SHADER_SOURCE_DIR}/${source}" "${SHADER_SOURCE_DIR}/texture_data.slang" ${S_INCLUDES}
+        DEPENDS "${SHADER_SOURCE_DIR}/${source}" "${SHADER_SOURCE_DIR}/common/texture_data.slang" ${S_INCLUDES}
         COMMENT "Compiling ${binary}" VERBATIM)
     set_property(GLOBAL APPEND PROPERTY renderlab_shader_outputs "${output}" "${reflection}")
     set_property(GLOBAL APPEND PROPERTY renderlab_shader_programs "${program}")

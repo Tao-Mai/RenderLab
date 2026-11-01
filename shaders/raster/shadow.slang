@@ -1,4 +1,4 @@
-#include "lighting_data.slang"
+#include "../common/lighting_data.slang"
 #include "shadow_data.slang"
 
 #ifndef SHADOW_TYPE

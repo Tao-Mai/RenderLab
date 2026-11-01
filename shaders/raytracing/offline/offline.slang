@@ -1,6 +1,6 @@
-#include "../../scene_data.slang"
+#include "../../common/scene_data.slang"
 #include "offline_material.slang"
-#include "../low_discrepancy.slang"
+#include "../../common/low_discrepancy.slang"
 
 static const float kOfflineRayEpsilon = 0.001;
 static const float kOfflineMaxRayDistance = 3.402823466e+38;

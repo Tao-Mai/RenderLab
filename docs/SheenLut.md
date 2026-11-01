@@ -19,4 +19,4 @@
 - 单级 Mip，Linear Clamp 采样；UV 为 `(NdotV, sheenRoughness)`，读取 R 通道。
 - LUT 坐标使用原始 Roughness。
 
-实现入口：[BuiltinTexture.cpp](../src/asset/builtin/BuiltinTexture.cpp)、[Renderer.cpp](../src/render/Renderer.cpp)、[FrameData.cpp](../src/render/FrameData.cpp)、[scene_lighting.slang](../shaders/scene_lighting.slang)。
+实现入口：[BuiltinTexture.cpp](../src/asset/builtin/BuiltinTexture.cpp)、[Renderer.cpp](../src/render/Renderer.cpp)、[FrameData.cpp](../src/render/FrameData.cpp)、[scene_lighting.slang](../shaders/raster/scene_lighting.slang)。

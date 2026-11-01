@@ -97,20 +97,20 @@ set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 set(SHADER_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 include(cmake/Shaders.cmake)
 set(SCENE_SHADER_INCLUDES
-        "${SHADER_SOURCE_DIR}/scene_data.slang"
-        "${SHADER_SOURCE_DIR}/lighting_data.slang"
-        "${SHADER_SOURCE_DIR}/shadow_data.slang"
-        "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
-        "${SHADER_SOURCE_DIR}/light_data.slang"
-        "${SHADER_SOURCE_DIR}/mesh_vertex.slang"
-        "${SHADER_SOURCE_DIR}/mesh_surface.slang"
-        "${SHADER_SOURCE_DIR}/normal_mapping.slang"
-        "${SHADER_SOURCE_DIR}/surface.slang"
-        "${SHADER_SOURCE_DIR}/material_data.slang"
-        "${SHADER_SOURCE_DIR}/scene_lighting.slang"
-        "${SHADER_SOURCE_DIR}/sampling.slang"
-        "${SHADER_SOURCE_DIR}/brdf.slang"
-        "${SHADER_SOURCE_DIR}/constant.slang"
+        "${SHADER_SOURCE_DIR}/common/scene_data.slang"
+        "${SHADER_SOURCE_DIR}/common/lighting_data.slang"
+        "${SHADER_SOURCE_DIR}/raster/shadow_data.slang"
+        "${SHADER_SOURCE_DIR}/common/scene_uniforms.slang"
+        "${SHADER_SOURCE_DIR}/common/light_data.slang"
+        "${SHADER_SOURCE_DIR}/raster/mesh_vertex.slang"
+        "${SHADER_SOURCE_DIR}/raster/mesh_surface.slang"
+        "${SHADER_SOURCE_DIR}/common/normal_mapping.slang"
+        "${SHADER_SOURCE_DIR}/common/surface.slang"
+        "${SHADER_SOURCE_DIR}/common/material_data.slang"
+        "${SHADER_SOURCE_DIR}/raster/scene_lighting.slang"
+        "${SHADER_SOURCE_DIR}/common/sampling.slang"
+        "${SHADER_SOURCE_DIR}/common/brdf.slang"
+        "${SHADER_SOURCE_DIR}/common/constant.slang"
 )
 foreach(enable_clearcoat IN ITEMS 0 1)
     foreach(enable_sheen IN ITEMS 0 1)
@@ -125,24 +125,24 @@ foreach(enable_clearcoat IN ITEMS 0 1)
             if(NOT enable_ibl)
                 string(APPEND binary ".no_ibl")
             endif()
-            renderlab_shader(slang shader.slang "${binary}"
+            renderlab_shader(slang raster/forward.slang "${binary}"
                 DEFINES ENABLE_IBL=${enable_ibl} ENABLE_CLEARCOAT=${enable_clearcoat} ENABLE_SHEEN=${enable_sheen}
                 INCLUDES ${SCENE_SHADER_INCLUDES})
         endforeach()
     endforeach()
 endforeach()
-renderlab_shader(gbuffer deferred/gbuffer.slang gbuffer DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=1
+renderlab_shader(gbuffer raster/gbuffer.slang gbuffer DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=1
     INCLUDES ${SCENE_SHADER_INCLUDES})
 foreach(enable_ibl IN ITEMS 1 0)
     set(binary deferred_lighting)
     if(NOT enable_ibl)
         string(APPEND binary ".no_ibl")
     endif()
-    renderlab_shader(deferred_lighting deferred/lighting.slang "${binary}"
+    renderlab_shader(deferred_lighting raster/deferred_lighting.slang "${binary}"
         DEFINES ENABLE_IBL=${enable_ibl} ENABLE_CLEARCOAT=0 ENABLE_SHEEN=1 INCLUDES ${SCENE_SHADER_INCLUDES})
 endforeach()
-renderlab_shader(depth depth.slang depth DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 INCLUDES ${SCENE_SHADER_INCLUDES})
-renderlab_shader(skybox skybox.slang skybox INCLUDES ${SCENE_SHADER_INCLUDES})
+renderlab_shader(depth raster/depth.slang depth DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 INCLUDES ${SCENE_SHADER_INCLUDES})
+renderlab_shader(skybox raster/skybox.slang skybox INCLUDES ${SCENE_SHADER_INCLUDES})
 renderlab_shader(tonemapping postprocess/tonemapping.slang tonemapping)
 foreach(stage IN ITEMS 0 1 2 3)
     set(binary bloom)
@@ -158,7 +158,7 @@ endforeach()
 foreach(type IN ITEMS 0 1 2 3)
     set(names shadow shadow.directional shadow.rect_area shadow.spot)
     list(GET names ${type} binary)
-    renderlab_shader(shadow shadow.slang "${binary}" DEFINES SHADOW_TYPE=${type}
+    renderlab_shader(shadow raster/shadow.slang "${binary}" DEFINES SHADOW_TYPE=${type}
         INCLUDES ${SCENE_SHADER_INCLUDES})
 endforeach()
 foreach(svgf IN ITEMS 0 1)
@@ -170,23 +170,23 @@ foreach(svgf IN ITEMS 0 1)
         ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
         DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 SVGF=${svgf}
         INCLUDES "${SHADER_SOURCE_DIR}/raytracing/realtime/path_tracing.slang"
-            "${SHADER_SOURCE_DIR}/scene_data.slang" "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
-            "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
-            "${SHADER_SOURCE_DIR}/raytracing/random.slang" "${SHADER_SOURCE_DIR}/raytracing/realtime/local_light_sampling.slang"
-            "${SHADER_SOURCE_DIR}/raytracing/realtime/rect_area_light_sampling.slang"
-            "${SHADER_SOURCE_DIR}/material_data.slang"
-            "${SHADER_SOURCE_DIR}/normal_mapping.slang" "${SHADER_SOURCE_DIR}/raytracing/realtime/pbr_brdf.slang"
-            "${SHADER_SOURCE_DIR}/brdf.slang")
+            "${SHADER_SOURCE_DIR}/common/scene_data.slang" "${SHADER_SOURCE_DIR}/common/scene_uniforms.slang"
+            "${SHADER_SOURCE_DIR}/common/light_data.slang" "${SHADER_SOURCE_DIR}/common/constant.slang"
+            "${SHADER_SOURCE_DIR}/common/random.slang" "${SHADER_SOURCE_DIR}/common/local_light_sampling.slang"
+            "${SHADER_SOURCE_DIR}/common/rect_area_light_sampling.slang"
+            "${SHADER_SOURCE_DIR}/common/material_data.slang"
+            "${SHADER_SOURCE_DIR}/common/normal_mapping.slang" "${SHADER_SOURCE_DIR}/common/pbr_brdf.slang"
+            "${SHADER_SOURCE_DIR}/common/brdf.slang")
 endforeach()
 renderlab_shader(offline_pathtracing raytracing/offline/offline.slang offline_pathtracing
     ENTRIES raygenMain missMain closestHitMain
     INCLUDES "${SHADER_SOURCE_DIR}/raytracing/offline/offline_texture.slang" "${SHADER_SOURCE_DIR}/raytracing/offline/offline_material.slang"
-        "${PROJECT_SOURCE_DIR}/src/render/raytracing/offline/OfflineShaderTypes.h" "${SHADER_SOURCE_DIR}/texture_data.slang"
-        "${SHADER_SOURCE_DIR}/scene_data.slang" "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/low_discrepancy.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/random.slang")
+        "${PROJECT_SOURCE_DIR}/src/render/raytracing/offline/OfflineShaderTypes.h" "${SHADER_SOURCE_DIR}/common/texture_data.slang"
+        "${SHADER_SOURCE_DIR}/common/scene_data.slang" "${SHADER_SOURCE_DIR}/common/scene_uniforms.slang"
+        "${SHADER_SOURCE_DIR}/common/low_discrepancy.slang"
+        "${SHADER_SOURCE_DIR}/common/random.slang")
 renderlab_shader(svgf_reprojection raytracing/realtime/svgf_reprojection.slang svgf_reprojection
-    ENTRIES computeMain INCLUDES "${SHADER_SOURCE_DIR}/scene_data.slang" "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
+    ENTRIES computeMain INCLUDES "${SHADER_SOURCE_DIR}/common/scene_data.slang" "${SHADER_SOURCE_DIR}/common/scene_uniforms.slang"
         "${SHADER_SOURCE_DIR}/raytracing/realtime/svgf_common.slang")
 foreach(stage IN ITEMS 0 1 2)
     set(binary svgf_filter)

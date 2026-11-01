@@ -1,12 +1,12 @@
 #ifndef RENDERLAB_SCENE_LIGHTING_SLANG
 #define RENDERLAB_SCENE_LIGHTING_SLANG
 
-#include "brdf.slang"
-#include "scene_data.slang"
-#include "lighting_data.slang"
+#include "../common/brdf.slang"
+#include "../common/scene_data.slang"
+#include "../common/lighting_data.slang"
 #include "shadow_data.slang"
-#include "sampling.slang"
-#include "surface.slang"
+#include "../common/sampling.slang"
+#include "../common/surface.slang"
 
 #ifndef ENABLE_IBL
 #error ENABLE_IBL must be specified when compiling scene lighting

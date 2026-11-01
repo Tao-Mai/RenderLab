@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_OFFLINE_TEXTURE_SLANG
 #define RENDERLAB_OFFLINE_TEXTURE_SLANG
 
-#include "../../texture_data.slang"
+#include "../../common/texture_data.slang"
 #include "../../../src/render/raytracing/offline/OfflineShaderTypes.h"
 
 static const float kOfflinePi = 3.14159265359;

@@ -1,4 +1,4 @@
-#include "../../scene_data.slang"
+#include "../../common/scene_data.slang"
 #include "svgf_common.slang"
 
 [[vk::binding(0, 1)]] Texture2D<float4> currentDirect;

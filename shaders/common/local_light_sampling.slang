@@ -1,8 +1,8 @@
 #ifndef RENDERLAB_LOCAL_LIGHT_SAMPLING_SLANG
 #define RENDERLAB_LOCAL_LIGHT_SAMPLING_SLANG
 
-#include "../../light_data.slang"
-#include "../random.slang"
+#include "light_data.slang"
+#include "random.slang"
 
 struct LocalLightSample
 {

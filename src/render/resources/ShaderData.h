@@ -64,7 +64,7 @@ inline constexpr uint32_t kToneMappingImageBinding   = 0;
 inline constexpr uint32_t kToneMappingSamplerBinding = 1;
 }  // namespace RenderInterface
 
-// Matches the std140 SceneUniforms block in shaders/scene_data.slang.
+// Matches the std140 SceneUniforms block in shaders/common/scene_data.slang.
 struct alignas(16) SceneUniforms
 {
     glm::mat4 viewProjection{1.0f};
@@ -105,7 +105,7 @@ struct alignas(16) ShadowUniforms
     uint32_t padding = 0;
 };
 
-// GPU discriminator; values match shaders/light_data.slang.
+// GPU discriminator; values match shaders/common/light_data.slang.
 enum class GpuLightType : uint32_t
 {
     Point       = 0,

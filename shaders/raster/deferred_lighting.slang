@@ -1,4 +1,4 @@
-#include "../scene_lighting.slang"
+#include "scene_lighting.slang"
 
 // Pass set 2; bindings match RenderInterface's G-buffer bindings.
 [[vk::binding(0, 2)]] Texture2D<float4> albedoOcclusion;
