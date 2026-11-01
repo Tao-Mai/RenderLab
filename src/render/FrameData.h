@@ -18,6 +18,7 @@ public:
     // UBO writes follow the owning frame's fence.
     void uploadSceneUniforms(const SceneUniforms& view);
     void uploadLightUniforms(const LightUniforms& lighting);
+    void uploadShadowUniforms(const ShadowUniforms& shadows);
     void writeLightBufferDescriptor(const Buffer& buffer);
     void writeShadowBufferDescriptors(std::span<const vk::DescriptorBufferInfo, 4> buffers);
     void writeShadowDescriptors(
@@ -37,18 +38,22 @@ public:
     void writeLutDescriptors(vk::ImageView brdfLut, vk::ImageView sheenLut, vk::Sampler sampler);
 
     [[nodiscard]] vk::DescriptorSet sceneSetHandle() const { return *sceneSet; }
-    [[nodiscard]] vk::DescriptorSet lightingSetHandle() const { return *lightingSet; }
+    [[nodiscard]] vk::DescriptorSet lightSetHandle() const { return *lightSet; }
+    [[nodiscard]] vk::DescriptorSet shadowSetHandle() const { return *shadowSet; }
     [[nodiscard]] vk::DescriptorSet viewSetHandle() const { return *viewSet; }
 
 private:
     const VulkanContext*    vulkan = nullptr;
     Buffer                  sceneBuffer;
     Buffer                  lightUniformBuffer;
+    Buffer                  shadowUniformBuffer;
     vk::raii::DescriptorSet sceneSet    = nullptr;
-    vk::raii::DescriptorSet lightingSet = nullptr;
+    vk::raii::DescriptorSet lightSet = nullptr;
+    vk::raii::DescriptorSet shadowSet = nullptr;
     vk::raii::DescriptorSet viewSet     = nullptr;
 
     void writeSceneDescriptorSet();
     void writeLightUniformDescriptorSet();
+    void writeShadowUniformDescriptorSet();
     void writeEditorViewDescriptorSet();
 };

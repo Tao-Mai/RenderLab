@@ -1,11 +1,17 @@
 #include "asset/AssetDataManager.h"
 #include "asset/AssetImporter.h"
 #include "asset/AssetManager.h"
+#include "asset/SceneAsset.h"
 #include "asset/pbrt/PbrtData.h"
 #include "asset/pbrt/PbrtMaterial.h"
 #include "core/Context.h"
+#include "scene/SceneManager.h"
+#include "scene/SceneTypes.h"
+#include "scene/system/RenderSystem.h"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <iomanip>
@@ -22,6 +28,34 @@ const PbrtParameter& parameter(const PbrtEntity& entity, std::string_view name)
     return *found;
 }
 
+std::string testPng()
+{
+    std::string png("\x89PNG\r\n\x1a\n", 8);
+    const auto integer = [](std::string& out, uint32_t value)
+    {
+        for (int shift = 24; shift >= 0; shift -= 8) out.push_back(static_cast<char>(value >> shift));
+    };
+    const auto chunk = [&](const char* type, const std::string& bytes)
+    {
+        integer(png, static_cast<uint32_t>(bytes.size()));
+        std::string contents(type, 4);
+        contents += bytes;
+        png += contents;
+        integer(png, static_cast<uint32_t>(crc32(0, reinterpret_cast<const Bytef*>(contents.data()), contents.size())));
+    };
+    std::string header;
+    integer(header, 1); integer(header, 1);
+    header.append("\x08\x02\0\0\0", 5);
+    chunk("IHDR", header);
+    constexpr std::array<Bytef, 4> kRow{0, 255, 255, 255};
+    uLongf size = compressBound(kRow.size());
+    std::string compressed(size, '\0');
+    CHECK(compress2(reinterpret_cast<Bytef*>(compressed.data()), &size, kRow.data(), kRow.size(), Z_BEST_SPEED) == Z_OK);
+    compressed.resize(size);
+    chunk("IDAT", compressed); chunk("IEND", {});
+    return png;
+}
+
 class PbrtImportTest : public testing::Test
 {
 protected:
@@ -30,6 +64,7 @@ protected:
     std::filesystem::path assetsRoot;
     AssetManager          assets;
     AssetDataManager      data;
+    SceneManager          scenes;
     Context               previous;
 
     void SetUp() override
@@ -43,12 +78,14 @@ protected:
         previous                   = context();
         context().assetManager     = &assets;
         context().assetDataManager = &data;
+        scenes.init();
         assets.init(assetsRoot);
         data.init(assetsRoot);
     }
 
     void TearDown() override
     {
+        scenes.shutdown();
         assets.shutdown();
         data.shutdown();
         context() = previous;
@@ -85,6 +122,27 @@ protected:
     }
 };
 
+TEST_F(PbrtImportTest, PreservesOfficialNormalParameters)
+{
+    const auto id = import(R"pbrt(
+WorldBegin
+Shape "trianglemesh"
+    "point3 P" [0 0 0 1 0 0 0 1 0]
+    "normal N" [0 0 1 0 0 1 0 0 1]
+    "integer indices" [0 1 2]
+)pbrt");
+    reload();
+    const auto& normal = parameter(assets.get(id).shapes[0].entity, "N");
+    EXPECT_EQ(normal.type, "normal");
+    EXPECT_EQ(std::get<PbrtFloatValues>(normal.value).values, (std::vector<double>{0, 0, 1, 0, 0, 1, 0, 0, 1}));
+    const auto& shape = assets.get(id).shapes[0];
+    ASSERT_TRUE(shape.mesh);
+    const auto geometry = data.readGeometry(assets.get(*shape.mesh));
+    EXPECT_EQ(geometry.indices.size(), 3);
+    EXPECT_EQ(geometry.vertices[geometry.indices[0]].normal, glm::vec3(0, 0, 1));
+    EXPECT_DEATH(import("WorldBegin\nShape \"trianglemesh\" \"normal N\" [0 1]\n"), "invalid parameter array size");
+}
+
 TEST_F(PbrtImportTest, PreservesSceneSemanticsAndNativeRoundTrip)
 {
     const auto id       = import(R"pbrt(
@@ -94,7 +152,7 @@ MediumInterface "" "fog"
 ColorSpace "dci-p3"
 TransformTimes 0.25 0.75
 Translate 0 0 -8
-Camera "perspective" "float fov" 37
+Camera "perspective" "float fov" 37 "float lensradius" 0.1 "float focaldistance" 8
 Film "rgb" "integer xresolution" 320 "string filename" "output.exr"
 Sampler "independent" "integer pixelsamples" 11
 Integrator "path" "integer maxdepth" 9
@@ -130,7 +188,7 @@ AttributeBegin
     Shape "disk" "float radius" 3
 AttributeEnd
 MediumInterface "fog" "fog"
-LightSource "spot" "rgb I" [1 2 3] "float coneangle" 25
+LightSource "spot" "rgb I" [1 2 3] "float coneangle" 25 "float power" 120
 )pbrt");
     const auto original = assets.get(id);
     EXPECT_EQ(original.readerRevision, "b4ce9687e6c695f5582997c61b0c66cf064bdb4a");
@@ -138,6 +196,11 @@ LightSource "spot" "rgb I" [1 2 3] "float coneangle" 25
     EXPECT_EQ(original.renderFromWorld, glm::dmat4(1));
     EXPECT_DOUBLE_EQ(original.worldFromCamera.start[3].z, 8);
     EXPECT_EQ(original.camera.type, "perspective");
+    const auto& nativeScene = assets.get(original.scene);
+    EXPECT_EQ(nativeScene.renderMode, SceneRenderMode::Offline);
+    EXPECT_EQ(nativeScene.editorCamera.position, glm::vec3(0, 0, -8));
+    EXPECT_FLOAT_EQ(nativeScene.editorCamera.lensRadius, 0.1f);
+    EXPECT_FLOAT_EQ(nativeScene.editorCamera.focalDistance, 8.0f);
     EXPECT_EQ(original.film.type, "rgb");
     EXPECT_EQ(original.film.colorSpace, "dci-p3");
     EXPECT_EQ(original.sampler.type, "independent");
@@ -145,7 +208,7 @@ LightSource "spot" "rgb I" [1 2 3] "float coneangle" 25
     EXPECT_EQ(original.pixelFilter.type, "mitchell");
     EXPECT_EQ(original.accelerator.type, "bvh");
     ASSERT_TRUE(original.cameraMedium);
-    EXPECT_EQ(original.media[*original.cameraMedium].name, "fog");
+    EXPECT_EQ(assets.get(original.media[*original.cameraMedium]).name, "fog");
     ASSERT_EQ(original.lights.size(), 1);
     ASSERT_TRUE(original.lights[0].medium);
     EXPECT_EQ(*original.lights[0].medium, *original.cameraMedium);
@@ -153,9 +216,14 @@ LightSource "spot" "rgb I" [1 2 3] "float coneangle" 25
     ASSERT_EQ(original.instances.size(), 2);
     EXPECT_EQ(original.instances[0].definition, original.instances[1].definition);
     const auto& shape = original.shapes[original.objects[0].shapes[0]];
+    ASSERT_TRUE(shape.mesh);
+    const auto& mesh = assets.get(*shape.mesh);
+    ASSERT_TRUE(mesh.primitive);
+    EXPECT_DOUBLE_EQ(std::get<MeshAsset::Sphere>(*mesh.primitive).radius, 2.0);
+    EXPECT_EQ(mesh.submeshes[0].materialId, *shape.material);
     EXPECT_TRUE(shape.reverseOrientation);
     ASSERT_TRUE(shape.insideMedium);
-    EXPECT_EQ(original.media[*shape.insideMedium].name, "fog");
+    EXPECT_EQ(assets.get(original.media[*shape.insideMedium]).name, "fog");
     ASSERT_TRUE(shape.areaLight);
     EXPECT_EQ(parameter(original.areaLights[*shape.areaLight], "L").type, "blackbody");
     EXPECT_DOUBLE_EQ(shape.renderFromObject.start[1][0], 0.25);
@@ -167,24 +235,45 @@ LightSource "spot" "rgb I" [1 2 3] "float coneangle" 25
     EXPECT_DOUBLE_EQ(animated.renderFromObject.endTime, 0.75);
     EXPECT_DOUBLE_EQ(std::get<PbrtFloatValues>(parameter(animated.entity, "alpha").value).values[0], 0.8);
     const auto& blend = assets.get(*shape.material).as<PbrtMaterial>();
-    ASSERT_EQ(blend.entity.type, "mix");
-    const auto& references = parameter(blend.entity, "materials").references;
-    ASSERT_EQ(references.size(), 2);
-    const auto& painted = assets.get(std::get<PbrtMaterialReference>(references[0].target).id).as<PbrtMaterial>();
-    const auto& metal   = assets.get(std::get<PbrtMaterialReference>(references[1].target).id).as<PbrtMaterial>();
-    EXPECT_EQ(
-        std::get<PbrtBoolValues>(parameter(metal.entity, "remaproughness").value).values,
-        std::vector<uint8_t>{0}
-    );
-    EXPECT_TRUE(parameter(metal.entity, "eta").references.empty());
-    const auto& reflectance = parameter(painted.entity, "reflectance");
-    EXPECT_EQ(reflectance.colorSpace, "rec2020");
-    const auto textureId = std::get<PbrtTextureReference>(reflectance.references[0].target).id;
-    EXPECT_EQ(assets.get(textureId).entity.type, "scale");
-    EXPECT_EQ(parameter(assets.get(textureId).entity, "scale").references.size(), 1);
+    const auto& mix = std::get<PbrtMaterial::Mix>(blend.model);
+    const auto& painted = assets.get(mix.first).as<PbrtMaterial>();
+    const auto& metal = std::get<PbrtMaterial::Conductor>(assets.get(mix.second).as<PbrtMaterial>().model);
+    EXPECT_FALSE(metal.remapRoughness);
+    const auto& optics = std::get<PbrtMaterial::OpticalConstants>(metal.optics);
+    EXPECT_EQ(std::get<PbrtNamedSpectrum>(optics.eta).name, "metal-Cu-eta");
+    EXPECT_EQ(std::get<PbrtFloatValues>(std::get<PbrtSampledSpectrum>(optics.k).samples).values,
+              (std::vector<double>{400, 2, 700, 3}));
+    EXPECT_EQ(painted.colorSpace, "rec2020");
+    const auto& reflectance = std::get<PbrtMaterial::Diffuse>(painted.model).reflectance;
+    const auto textureId = std::get<PbrtTextureReference>(reflectance).id;
+    EXPECT_TRUE(std::holds_alternative<PbrtTextureAsset::Scale>(assets.get(textureId).model));
+    EXPECT_TRUE(std::holds_alternative<PbrtTextureReference>(std::get<PbrtTextureAsset::Scale>(assets.get(textureId).model).scale));
+    ASSERT_EQ(nativeScene.actors.size(), 4);
+    const auto* firstArea = nativeScene.actors[1]->getComponent<MeshAreaLightComponent>();
+    const auto* secondArea = nativeScene.actors[2]->getComponent<MeshAreaLightComponent>();
+    ASSERT_TRUE(firstArea && secondArea);
+    EXPECT_TRUE(nativeScene.actors[1]->getComponent<RenderComponent>()->offlineSurface->reverseOrientation);
+    EXPECT_DOUBLE_EQ(std::get<PbrtBlackbodySpectrum>(firstArea->emission.spectrum).temperature, 6500.0);
+    EXPECT_EQ(nativeScene.actors[1]->getComponent<RenderComponent>()->meshId,
+              nativeScene.actors[2]->getComponent<RenderComponent>()->meshId);
+    EXPECT_EQ(nativeScene.actors[1]->transform().position, glm::vec3(6, 3, -4));
+    const auto nativeSnapshot = Serialize(nativeScene);
     reload();
     EXPECT_EQ(Serialize(assets.get(id)), Serialize(original));
-    EXPECT_EQ(assets.get(textureId).entity.type, "scale");
+    EXPECT_TRUE(std::holds_alternative<PbrtTextureAsset::Scale>(assets.get(textureId).model));
+    EXPECT_EQ(Serialize(assets.get(original.scene)), nativeSnapshot);
+    scenes.load(original.scene);
+    RenderSystem renderSystem;
+    const auto& render = renderSystem.prepare(scenes.scene());
+    EXPECT_EQ(render.drawItems.size(), 3);
+    EXPECT_TRUE(render.lights.empty());
+    ASSERT_EQ(render.offlineLights.size(), 3);
+    EXPECT_EQ(std::get<OfflineLightData::MeshArea>(render.offlineLights[0].model).drawItemIndex, 1);
+    EXPECT_EQ(std::get<OfflineLightData::MeshArea>(render.offlineLights[1].model).drawItemIndex, 2);
+    const auto& spot = render.offlineLights[2];
+    EXPECT_FLOAT_EQ(std::get<OfflineLightData::Spot>(spot.model).cosInner, std::cos(glm::radians(20.0f)));
+    ASSERT_TRUE(spot.emission.power);
+    EXPECT_DOUBLE_EQ(*spot.emission.power, 120);
 }
 
 TEST_F(PbrtImportTest, IncludesImportsAndGzipKeepOfficialStateRules)
@@ -223,37 +312,37 @@ ObjectInstance "part"
     EXPECT_EQ(scene.accelerator.type, "bvh");
 }
 
-TEST_F(PbrtImportTest, PacksEveryInputRoleAndReloadsFromMovedAssetDirectory)
+TEST_F(PbrtImportTest, PacksInputDependenciesAndReloadsFromMovedAssetDirectory)
 {
     const std::map<std::string, std::string> inputs{
-        {"image.exr", std::string("image\0bytes", 11)},
-        {"model.ply", "ply bytes"},
+        {"image.png", testPng()},
+        {"model.ply", "ply\nformat ascii 1.0\nelement vertex 3\nproperty float x\nproperty float y\n"
+                      "property float z\nelement face 1\nproperty list uchar int vertex_indices\nend_header\n"
+                      "0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n"},
         {"spectrum.spd", "400 1\n700 2\n"},
         {"surface.ptx", "ptex bytes"},
         {"measured.bsdf", "brdf bytes"},
-        {"lens.dat", "lens bytes"},
         {"density.nvdb", "volume bytes"},
-        {"normal.png", "normal bytes"},
-        {"reference.exr", "reference bytes"},
-        {"aperture.png", "aperture bytes"}
+        {"normal.png", testPng()},
+        {"reference.exr", "reference bytes"}
     };
     for (const auto& [name, bytes] : inputs)
         write(name, bytes);
     write("sub/resources.pbrt", R"pbrt(
-Texture "image" "spectrum" "imagemap" "string filename" "image.exr"
+Texture "image" "spectrum" "imagemap" "string filename" "image.png"
 Texture "surface" "float" "ptex" "string filename" "surface.ptx"
 MakeNamedMaterial "measured" "string type" "measured" "string filename" "measured.bsdf" "string normalmap" "normal.png"
 MakeNamedMedium "volume" "string type" "nanovdb" "string filename" "density.nvdb"
-LightSource "infinite" "string filename" "image.exr"
+LightSource "infinite" "string filename" "image.png"
 LightSource "point" "spectrum I" "spectrum.spd"
-AreaLightSource "diffuse" "string filename" "image.exr"
+AreaLightSource "diffuse" "string filename" "image.png"
 NamedMaterial "measured"
 Shape "plymesh" "string filename" "model.ply" "texture alpha" "surface"
 )pbrt");
     const auto id       = import(R"pbrt(
 Option "msereferenceimage" "reference.exr"
 Option "msereferenceout" "not-an-input.txt"
-Camera "realistic" "string lensfile" "lens.dat" "string aperture" "aperture.png"
+Camera "perspective"
 Film "rgb" "string filename" "not-an-input.exr"
 WorldBegin
 Include "sub/resources.pbrt"
@@ -277,8 +366,10 @@ Include "sub/resources.pbrt"
     EXPECT_EQ(Serialize(assets.get(id)), Serialize(original));
     for (const auto& file : assets.get(id).files)
         EXPECT_EQ(data.readBlob(file.path).size(), file.size);
+    const auto geometry = data.readGeometry(assets.get(*assets.get(id).shapes[0].mesh));
+    EXPECT_EQ(geometry.indices.size(), 3);
     const auto& material  = assets.get(*original.shapes[0].material).as<PbrtMaterial>();
-    const auto& reference = std::get<PbrtFileReference>(parameter(material.entity, "filename").references[0].target);
+    const auto& reference = std::get<PbrtMaterial::Measured>(material.model).brdf;
     EXPECT_EQ(data.readBlob(reference.path), std::vector<uint8_t>({'b', 'r', 'd', 'f', ' ', 'b', 'y', 't', 'e', 's'}));
 }
 
@@ -290,8 +381,12 @@ TEST_F(PbrtImportTest, LargeTypedArraysAndDoubleMatricesRoundTrip)
     std::vector<double> expectedPoints;
     for (int index = 0; index < 9000; ++index)
     {
-        expectedPoints.push_back(index * 0.125);
-        text << index * 0.125 << ' ';
+        const int vertexIndex = index / 3;
+        const int axis = index % 3;
+        const double value = axis == 0 ? (vertexIndex / 3) * 0.125
+            : axis == 1 ? double(vertexIndex % 3 == 1) : double(vertexIndex % 3 == 2);
+        expectedPoints.push_back(value);
+        text << value << ' ';
     }
     text << "] \"integer indices\" [";
     std::vector<int32_t> expectedIndices;
@@ -333,21 +428,22 @@ Shape "sphere" "float radius" 1234567890123 "integer faceIndices" [-2147483648 2
     const auto& scene    = assets.get(id);
     const auto& shape    = scene.shapes[0];
     const auto& material = assets.get(*shape.material).as<PbrtMaterial>();
-    const auto& scalar   = parameter(material.entity, "conductor.roughness");
-    const auto& spectrum = parameter(material.entity, "conductor.eta");
+    const auto& coated = std::get<PbrtMaterial::CoatedConductor>(material.model);
+    const auto& scalar = coated.conductorRoughness.u;
+    const auto& spectrum = std::get<PbrtMaterial::OpticalConstants>(coated.optics).eta;
     const auto  scaled   = std::ranges::find_if(
         scene.textures,
         [&](const auto& textureId) { return assets.get(textureId).name == "scaled"; }
     );
     ASSERT_NE(scaled, scene.textures.end());
-    const auto& normalized = parameter(assets.get(*scaled).entity, "tex");
-    EXPECT_EQ(assets.get(std::get<PbrtTextureReference>(normalized.references[0].target).id).name, "café");
+    const auto& normalized = std::get<PbrtTextureAsset::Scale>(assets.get(*scaled).model).texture;
+    EXPECT_EQ(assets.get(std::get<PbrtTextureReference>(normalized).id).name, "café");
     EXPECT_EQ(
-        assets.get(std::get<PbrtTextureReference>(scalar.references[0].target).id).valueType,
+        assets.get(std::get<PbrtTextureReference>(scalar).id).valueType,
         PbrtTextureType::Float
     );
     EXPECT_EQ(
-        assets.get(std::get<PbrtTextureReference>(spectrum.references[0].target).id).valueType,
+        assets.get(std::get<PbrtTextureReference>(spectrum).id).valueType,
         PbrtTextureType::Spectrum
     );
     EXPECT_DOUBLE_EQ(std::get<PbrtFloatValues>(parameter(shape.entity, "radius").value).values[0], 1234567890123.0);
@@ -369,7 +465,7 @@ ActiveTransform EndTime
 Translate 0 0 -6
 Rotate 90 0 0 1
 ActiveTransform All
-Camera "orthographic"
+Camera "perspective"
 Film "rgb"
 WorldBegin
 Translate 1 2 3
@@ -395,11 +491,12 @@ Shape "sphere"
     EXPECT_EQ(scene.film.colorSpace, "srgb");
     EXPECT_EQ(scene.renderFromWorld, glm::dmat4(1));
     EXPECT_TRUE(scene.options.empty());
-    EXPECT_EQ(assets.get(*scene.shapes[0].material).as<PbrtMaterial>().entity.type, "diffuse");
+    EXPECT_TRUE(std::holds_alternative<PbrtMaterial::Diffuse>(assets.get(*scene.shapes[0].material).as<PbrtMaterial>().model));
 }
 
 TEST_F(PbrtImportTest, RejectsMissingDependenciesAndBrokenResourceGraphs)
 {
+    EXPECT_DEATH(import("Camera \"orthographic\"\nWorldBegin\n"), "unsupported PBRT camera");
     EXPECT_DEATH(
         import("WorldBegin\nTexture \"a\" \"spectrum\" \"imagemap\" \"string filename\" \"missing.exr\"\n"),
         "PBRT dependency"

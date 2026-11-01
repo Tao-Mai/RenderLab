@@ -15,6 +15,7 @@ struct TextureAsset : Asset
     Source                               source = Source::File;
     ImageFormat                          format;
     ColorSpace                           colorSpace;
+    std::optional<RgbChromaticities>      chromaticities;
     ImageLayout                          layout;
     uint32_t                             width{};
     uint32_t                             height{};

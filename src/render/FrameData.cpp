@@ -25,11 +25,17 @@ void FrameData::init(const VulkanContext& targetVulkan, Device& device)
         vk::BufferUsageFlagBits::eUniformBuffer,
         hostMemory
     );
+    shadowUniformBuffer = Buffer(
+        vulkan->physicalDeviceHandle(), vulkan->deviceHandle(), sizeof(ShadowUniforms),
+        vk::BufferUsageFlagBits::eUniformBuffer, hostMemory
+    );
     sceneSet    = device.allocateDescriptorSet(device.sceneDescriptorSetLayout);
-    lightingSet = device.allocateDescriptorSet(device.lightingDescriptorSetLayout);
+    lightSet = device.allocateDescriptorSet(device.lightDescriptorSetLayout);
+    shadowSet = device.allocateDescriptorSet(device.shadowDescriptorSetLayout);
     viewSet     = device.allocateDescriptorSet(device.editorViewDescriptorSetLayout);
     writeSceneDescriptorSet();
     writeLightUniformDescriptorSet();
+    writeShadowUniformDescriptorSet();
     writeEditorViewDescriptorSet();
 }
 
@@ -63,7 +69,7 @@ void FrameData::writeLightUniformDescriptorSet()
 {
     const vk::DescriptorBufferInfo info{.buffer = lightUniformBuffer.handle(), .range = lightUniformBuffer.size()};
     const vk::WriteDescriptorSet   write{
-          .dstSet          = *lightingSet,
+          .dstSet          = *lightSet,
           .dstBinding      = RenderInterface::kLightUniformBinding,
           .descriptorCount = 1,
           .descriptorType  = vk::DescriptorType::eUniformBuffer,
@@ -76,11 +82,24 @@ void FrameData::writeLightBufferDescriptor(const Buffer& buffer)
 {
     const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.size()};
     const vk::WriteDescriptorSet   write{
-          .dstSet          = *lightingSet,
+          .dstSet          = *lightSet,
           .dstBinding      = RenderInterface::kLightBufferBinding,
           .descriptorCount = 1,
           .descriptorType  = vk::DescriptorType::eStorageBuffer,
           .pBufferInfo     = &info,
+    };
+    vulkan->deviceHandle().updateDescriptorSets(write, {});
+}
+
+void FrameData::writeShadowUniformDescriptorSet()
+{
+    const vk::DescriptorBufferInfo info{.buffer = shadowUniformBuffer.handle(), .range = shadowUniformBuffer.size()};
+    const vk::WriteDescriptorSet write{
+        .dstSet = *shadowSet,
+        .dstBinding = RenderInterface::kShadowUniformBinding,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
+        .pBufferInfo = &info,
     };
     vulkan->deviceHandle().updateDescriptorSets(write, {});
 }
@@ -96,7 +115,7 @@ void FrameData::writeShadowBufferDescriptors(std::span<const vk::DescriptorBuffe
     std::array<vk::WriteDescriptorSet, kBindings.size()> writes;
     for (size_t index = 0; index < writes.size(); ++index)
         writes[index] = {
-            .dstSet          = *lightingSet,
+            .dstSet          = *shadowSet,
             .dstBinding      = kBindings[index],
             .descriptorCount = 1,
             .descriptorType  = vk::DescriptorType::eStorageBuffer,
@@ -128,13 +147,13 @@ void FrameData::writeShadowDescriptors(
         RenderInterface::kRectAreaShadowImageBinding,
         RenderInterface::kDirectionalShadowImageBinding,
         RenderInterface::kShadowComparisonSamplerBinding,
-        RenderInterface::kLinearSamplerBinding,
+        RenderInterface::kShadowLinearSamplerBinding,
     };
     constexpr size_t                                     kShadowImageCount = 4;
     std::array<vk::WriteDescriptorSet, kBindings.size()> writes;
     for (size_t index = 0; index < writes.size(); ++index)
         writes[index] = {
-            .dstSet          = *lightingSet,
+            .dstSet          = *shadowSet,
             .dstBinding      = kBindings[index],
             .descriptorCount = 1,
             .descriptorType =
@@ -148,7 +167,7 @@ void FrameData::writeShadowSampler(vk::Sampler sampler)
 {
     const vk::DescriptorImageInfo info{.sampler = sampler};
     const vk::WriteDescriptorSet  write{
-         .dstSet          = *lightingSet,
+         .dstSet          = *shadowSet,
          .dstBinding      = RenderInterface::kShadowComparisonSamplerBinding,
          .descriptorCount = 1,
          .descriptorType  = vk::DescriptorType::eSampler,
@@ -178,14 +197,14 @@ void FrameData::writeEnvironmentDescriptors(
     {
         const std::array writes{
             vk::WriteDescriptorSet{
-                .dstSet          = *lightingSet,
+                .dstSet          = *lightSet,
                 .dstBinding      = kImageBindings[index],
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &infos[index],
             },
             vk::WriteDescriptorSet{
-                .dstSet          = *lightingSet,
+                .dstSet          = *lightSet,
                 .dstBinding      = kSamplerBindings[index],
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampler,
@@ -219,14 +238,14 @@ void FrameData::writeLutDescriptors(vk::ImageView brdfLut, vk::ImageView sheenLu
     {
         const std::array writes{
             vk::WriteDescriptorSet{
-                .dstSet          = *lightingSet,
+                .dstSet          = *lightSet,
                 .dstBinding      = kImageBindings[index],
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampledImage,
                 .pImageInfo      = &infos[index],
             },
             vk::WriteDescriptorSet{
-                .dstSet          = *lightingSet,
+                .dstSet          = *lightSet,
                 .dstBinding      = kSamplerBindings[index],
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eSampler,
@@ -240,10 +259,12 @@ void FrameData::writeLutDescriptors(vk::ImageView brdfLut, vk::ImageView sheenLu
 void FrameData::reset() noexcept
 {
     sceneSet    = nullptr;
-    lightingSet = nullptr;
+    lightSet = nullptr;
+    shadowSet = nullptr;
     viewSet     = nullptr;
     sceneBuffer.reset();
     lightUniformBuffer.reset();
+    shadowUniformBuffer.reset();
     vulkan = nullptr;
 }
 
@@ -257,4 +278,10 @@ void FrameData::uploadLightUniforms(const LightUniforms& lighting)
 {
     DCHECK(vulkan);
     lightUniformBuffer.upload(&lighting, sizeof(lighting));
+}
+
+void FrameData::uploadShadowUniforms(const ShadowUniforms& shadows)
+{
+    DCHECK(vulkan);
+    shadowUniformBuffer.upload(&shadows, sizeof(shadows));
 }

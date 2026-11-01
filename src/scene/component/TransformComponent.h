@@ -14,8 +14,11 @@ struct TransformComponent : Component
     [[=ReflectField{}]] glm::vec3 position{0.0f};
     [[=ReflectField{}]] glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     [[=ReflectField{}]] glm::vec3 scale{1.0f};
+    [[=ReflectField{}]] glm::mat4 base{1.0f};
 
     [[nodiscard]] glm::vec3 rotationEulerDegrees() const;
     void setRotationEulerDegrees(const glm::vec3& eulerDegrees);
+    [[nodiscard]] bool setMatrix(const glm::mat4& matrix);
+    [[nodiscard]] glm::mat4 trsMatrix() const;
     [[nodiscard]] glm::mat4 matrix() const;
 };

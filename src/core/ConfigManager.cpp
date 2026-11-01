@@ -86,11 +86,13 @@ void ConfigManager::shutdown() noexcept
     asset_json::save(resolvedPaths.renderer, renderer);
     asset_json::save(resolvedPaths.editor, editor);
 
-    data          = {};
-    resolvedPaths = {};
-    commands      = {};
-    editor        = {};
-    renderer      = {};
+    data               = {};
+    resolvedPaths      = {};
+    commands           = {};
+    editor             = {};
+    renderer           = {};
+    sceneRenderMode    = SceneRenderMode::Realtime;
+    realtimeRenderPath = RenderPath::Forward;
     file.clear();
     configDir.clear();
     DEBUG_EXEC(inited = false);
@@ -124,7 +126,17 @@ void ConfigManager::setInitialScene(SceneAsset::ID id)
 void ConfigManager::setRenderPath(RenderPath path)
 {
     DCHECK(inited);
+    DCHECK(sceneRenderMode == SceneRenderMode::Realtime);
+    DCHECK(path != RenderPath::OfflinePathTracing);
     renderer.renderPath = path;
+    realtimeRenderPath  = path;
+}
+
+void ConfigManager::setSceneRenderMode(SceneRenderMode mode)
+{
+    DCHECK(inited);
+    sceneRenderMode     = mode;
+    renderer.renderPath = mode == SceneRenderMode::Offline ? RenderPath::OfflinePathTracing : realtimeRenderPath;
 }
 
 void ConfigManager::setRenderFeature(const RenderFeature& feature)
@@ -206,6 +218,7 @@ void ConfigManager::loadEditor()
 void ConfigManager::loadRenderer()
 {
     renderer = asset_json::load<RendererConfig>(resolvedPaths.renderer);
+    realtimeRenderPath = renderer.renderPath == RenderPath::OfflinePathTracing ? RenderPath::Forward : renderer.renderPath;
     validateToneMapping(renderer.feature.toneMapping);
     validateBloom(renderer.feature.bloom);
     validateCascade(renderer.feature.shadow.cascade);

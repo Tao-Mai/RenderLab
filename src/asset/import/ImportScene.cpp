@@ -1,4 +1,3 @@
-#define GLM_ENABLE_EXPERIMENTAL
 #include "asset/AssetImporter.h"
 
 #include "asset/AssetManager.h"
@@ -11,13 +10,10 @@
 #include <algorithm>
 #include <cmath>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/matrix_decompose.hpp>
-#include <glm/vector_relational.hpp>
 #include <unordered_map>
 
 namespace
 {
-constexpr float kTransformTolerance = 1e-4f;
 constexpr float kCameraFitMargin    = 1.05f;
 constexpr float kMinimumSceneRadius = 0.01f;
 
@@ -27,28 +23,6 @@ struct ImportedMesh
     glm::vec3                    boundsMin{0.0f};
     glm::vec3                    boundsMax{0.0f};
 };
-
-void setTransform(TransformComponent& transform, const glm::mat4& world, uint32_t nodeIndex)
-{
-    glm::vec3 skew;
-    glm::vec4 perspective;
-    CHECK(
-        glm::decompose(world, transform.scale, transform.rotation, transform.position, skew, perspective),
-        "cannot decompose model node {} transform",
-        nodeIndex
-    );
-    CHECK(
-        glm::all(glm::lessThanEqual(glm::abs(skew), glm::vec3{kTransformTolerance})),
-        "model node {} has shear, which the current actor Transform cannot represent",
-        nodeIndex
-    );
-    CHECK(
-        glm::all(glm::lessThanEqual(glm::abs(perspective - glm::vec4{0, 0, 0, 1}), glm::vec4{kTransformTolerance})),
-        "model node {} has a perspective transform",
-        nodeIndex
-    );
-    transform.rotation = glm::normalize(transform.rotation);
-}
 
 void fitCamera(EditorCameraConfig& camera, glm::vec3 boundsMin, glm::vec3 boundsMax)
 {
@@ -118,7 +92,8 @@ AssetID<SceneAsset> AssetImporter::importScene(const ImportSceneSetting& setting
                 actor->name = node.name.empty() ? "AStaticMesh" + std::to_string(node.index) : node.name;
                 if (node.meshes.size() > 1)
                     actor->name += "_" + std::to_string(meshIndex);
-                setTransform(actor->transform(), node.world, node.index);
+                CHECK(actor->transform().setMatrix(node.world), "invalid model node {} transform: {}",
+                      node.index, source.string());
                 actor->getComponent<RenderComponent>()->meshId = *mesh.id;
                 scene.actors.push_back(std::move(actor));
 

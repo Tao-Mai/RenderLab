@@ -11,7 +11,8 @@
         "hdr": true,
         "ibl": false,
         "offline": {
-            "maxBounces": 10
+            "maxBounces": 10,
+            "pixelJitter": true
         },
         "rayTracing": {
             "emaAlpha": 0.1979999989271164,
@@ -45,5 +46,5 @@
             "mode": "Neutral"
         }
     },
-    "renderPath": "RayTracing"
+    "renderPath": "OfflinePathTracing"
 }

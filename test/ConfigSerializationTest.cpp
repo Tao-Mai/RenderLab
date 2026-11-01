@@ -106,6 +106,7 @@ TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
     EXPECT_EQ(serialized.at("feature").at("rayTracing").at("historyLength"), 4);
     EXPECT_FLOAT_EQ(serialized.at("feature").at("rayTracing").at("emaAlpha").get<float>(), 0.25f);
     EXPECT_EQ(serialized.at("feature").at("offline").at("maxBounces"), 5);
+    EXPECT_EQ(serialized.at("feature").at("offline").at("pixelJitter"), true);
 
     RendererConfig restored;
     Deserialize(serialized, restored);
@@ -132,10 +133,12 @@ TEST(ConfigSerialization, OfflineRouteAndSettingsRoundTripIndependently)
     auto config = sampleRendererConfig();
     config.renderPath = RenderPath::OfflinePathTracing;
     config.feature.offline.maxBounces = 8;
+    config.feature.offline.pixelJitter = false;
     const auto serialized = Serialize(config);
     EXPECT_EQ(serialized.at("renderPath"), "OfflinePathTracing");
     EXPECT_EQ(serialized.at("feature").at("rayTracing").at("maxBounces"), 3);
     EXPECT_EQ(serialized.at("feature").at("offline").at("maxBounces"), 8);
+    EXPECT_EQ(serialized.at("feature").at("offline").at("pixelJitter"), false);
     RendererConfig restored;
     Deserialize(serialized, restored);
     EXPECT_EQ(Serialize(restored), serialized);
@@ -220,6 +223,10 @@ TEST(ConfigSerialization, ConfigManagerResolvesPathsAndLoadsCommands)
     const auto rendererFile = manager.paths().renderer;
     const auto originalRenderer = manager.rendererConfig();
     manager.setRenderPath(RenderPath::RayTracing);
+    manager.setSceneRenderMode(SceneRenderMode::Offline);
+    EXPECT_EQ(manager.rendererConfig().renderPath, RenderPath::OfflinePathTracing);
+    manager.setSceneRenderMode(SceneRenderMode::Realtime);
+    EXPECT_EQ(manager.rendererConfig().renderPath, RenderPath::RayTracing);
     manager.setRenderFeature({.ibl = false, .ambientCoefficient = 0.3f,
         .shadow = {.enable = false, .pointShadowMapSize = 512, .bias = 0.005f,
             .filter = SamplerAsset::Filter::Nearest, .pixelRotation = false, .sampleRadius = 0.04f},

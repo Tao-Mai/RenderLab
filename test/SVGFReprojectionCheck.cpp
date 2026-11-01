@@ -8,8 +8,8 @@
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/graph/EndPass.h"
-#include "render/raytracing/SVGFFilter.h"
-#include "render/raytracing/SVGFReprojection.h"
+#include "render/raytracing/realtime/SVGFFilter.h"
+#include "render/raytracing/realtime/SVGFReprojection.h"
 #include "scene/SceneManager.h"
 
 #include <bit>

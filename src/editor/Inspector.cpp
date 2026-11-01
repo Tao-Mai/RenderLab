@@ -31,6 +31,25 @@ bool drawCameraInspector(EditorCameraConfig& camera)
             ImGuiSliderFlags_AlwaysClamp
         );
         edited |= ImGui::DragFloat(
+            "Lens radius",
+            &camera.lensRadius,
+            0.001f,
+            0.0f,
+            1000.0f,
+            "%.3f",
+            ImGuiSliderFlags_AlwaysClamp
+        );
+        edited |= ImGui::DragFloat(
+            "Focal distance",
+            &camera.focalDistance,
+            0.1f,
+            0.001f,
+            1e6f,
+            "%.3f",
+            ImGuiSliderFlags_AlwaysClamp
+        );
+        ImGui::SetItemTooltip("Depth-of-field settings are saved; rendering support is pending.");
+        edited |= ImGui::DragFloat(
             "Camera near",
             &camera.nearPlane,
             0.01f,

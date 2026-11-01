@@ -11,6 +11,7 @@
 
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -52,6 +53,19 @@ TextureAsset::ID AssetImporter::importTexture(const ImportTextureSetting& settin
     asset.source     = Source::File;
     asset.format     = image.format;
     asset.colorSpace = setting.colorSpace.value_or(defaultColorSpace(image.fileFormat));
+    asset.chromaticities = image.chromaticities;
+    if (image.fileFormat == LoadedImage::FileFormat::Integer16)
+    {
+        if (asset.colorSpace == ColorSpace::Srgb)
+        {
+            auto& pixels = std::get<std::vector<float>>(image.pixels);
+            for (size_t index = 0; index < pixels.size(); ++index)
+                if (index % 4 != 3)
+                    pixels[index] = pixels[index] <= 0.04045f ? pixels[index] / 12.92f
+                        : std::pow((pixels[index] + 0.055f) / 1.055f, 2.4f);
+        }
+        asset.colorSpace = ColorSpace::Linear;
+    }
     CHECK(
         (image.format == ImageFormat::RGBA16F || image.format == ImageFormat::RGBA32F)
             ? asset.colorSpace == ColorSpace::Linear

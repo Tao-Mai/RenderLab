@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <variant>
 #include <vector>
 #include "asset/Asset.h"
 #include "core/math/Bounds.h"
@@ -20,6 +21,36 @@ struct MeshAsset : Asset
         AssetID<MaterialAsset> materialId;
     };
 
+    struct Sphere
+    {
+        double   radius   = 1.0;
+        double   zMin     = -1.0;
+        double   zMax     = 1.0;
+        double   phiMax   = 360.0;
+        uint32_t segments = 128;
+        uint32_t rings    = 64;
+    };
+
+    struct Cylinder
+    {
+        double   radius   = 1.0;
+        double   zMin     = -1.0;
+        double   zMax     = 1.0;
+        double   phiMax   = 360.0;
+        uint32_t segments = 128;
+    };
+
+    struct Disk
+    {
+        double   height      = 0.0;
+        double   radius      = 1.0;
+        double   innerRadius = 0.0;
+        double   phiMax      = 360.0;
+        uint32_t segments    = 128;
+    };
+
+    using Primitive = std::variant<Sphere, Cylinder, Disk>;
+
     ID                                   id;
     Source                               source;
     std::optional<std::filesystem::path> path;
@@ -27,6 +58,7 @@ struct MeshAsset : Asset
     std::optional<uint32_t>              meshIndex;
     float                                importScale = 1.0f;
     std::filesystem::path                geometry;
+    std::optional<Primitive>             primitive;
     Aabb                                 bounds;
     std::vector<Submesh>                 submeshes;
 };

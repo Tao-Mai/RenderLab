@@ -102,12 +102,11 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
     };
     auto& device             = *renderContext().device;
     descriptorSetLayout      = device.createDescriptorSetLayout(gBufferBindings);
-    emptyDescriptorSetLayout = device.createDescriptorSetLayout(std::span<const vk::DescriptorSetLayoutBinding>{});
     const std::array sets{
         &device.sceneDescriptorSetLayout,
-        &device.lightingDescriptorSetLayout,
-        &emptyDescriptorSetLayout,
-        &descriptorSetLayout
+        &device.lightDescriptorSetLayout,
+        &descriptorSetLayout,
+        &device.shadowDescriptorSetLayout
     };
     const std::array ranges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
@@ -199,7 +198,7 @@ void DeferredLightingPass::execute(
     );
     commands.setScissor(0, vk::Rect2D{{0, 0}, extent});
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sharedSets{execution.data.sceneSetHandle(), execution.data.lightingSetHandle()};
+    const std::array sharedSets{execution.data.sceneSetHandle(), execution.data.lightSetHandle()};
     commands.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         pipelineLayout,
@@ -207,9 +206,9 @@ void DeferredLightingPass::execute(
         sharedSets,
         {}
     );
-    const std::array passSets{*descriptorSet};
+    const std::array passSets{*descriptorSet, execution.data.shadowSetHandle()};
     commands
-        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, RenderInterface::kPassSet, passSets, {});
+        .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, RenderInterface::kDeferredPassSet, passSets, {});
     const auto&                         viewport = execution.view.viewport;
     const DeferredLightingPushConstants parameters{
         .viewport = {viewport.x, viewport.y, viewport.width, viewport.height}

@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <glm/gtc/matrix_transform.hpp>
 #include <type_traits>
 
 namespace
@@ -61,6 +62,47 @@ struct TestTickComponent : Component
     }
 };
 }  // namespace
+
+TEST(TransformComponentTest, ShearSeparatesTranslationAndSurvivesTrsEdits)
+{
+    TransformComponent transform;
+    EXPECT_EQ(transform.base, glm::mat4{1});
+    glm::mat4 imported{1};
+    imported[1][0] = 0.5f;
+    imported[3] = {3, 4, 5, 1};
+    ASSERT_TRUE(transform.setMatrix(imported));
+    EXPECT_EQ(transform.position, glm::vec3(3, 4, 5));
+    EXPECT_EQ(transform.rotation, glm::quat(1, 0, 0, 0));
+    EXPECT_EQ(transform.scale, glm::vec3(1));
+    EXPECT_EQ(transform.base[3], glm::vec4(0, 0, 0, 1));
+    EXPECT_EQ(transform.matrix(), imported);
+
+    transform.scale = {2, 3, 4};
+    transform.setRotationEulerDegrees({0, 0, 90});
+    const glm::vec3 point = glm::vec3(transform.matrix() * glm::vec4{2, 2, 1, 1});
+    EXPECT_NEAR(glm::length(point - glm::vec3{-3, 10, 9}), 0.0f, 1e-5f);
+
+    auto stored = Serialize(transform);
+    TransformComponent restored;
+    Deserialize(stored, restored);
+    EXPECT_EQ(restored.base, transform.base);
+    EXPECT_EQ(restored.matrix(), transform.matrix());
+    stored.erase("base");
+    EXPECT_DEATH(Deserialize(stored, restored), "");
+}
+
+TEST(TransformComponentTest, OrdinaryTrsUsesIdentityBaseAndPreservesReflection)
+{
+    TransformComponent transform;
+    transform.base[1][0] = 0.5f;
+    const auto imported = glm::translate(glm::mat4{1}, glm::vec3{3, 4, 5}) *
+        glm::mat4_cast(glm::angleAxis(glm::radians(45.0f), glm::vec3{0, 0, 1})) *
+        glm::scale(glm::mat4{1}, glm::vec3{-2, 3, 4});
+    ASSERT_TRUE(transform.setMatrix(imported));
+    EXPECT_EQ(transform.base, glm::mat4{1});
+    for (glm::length_t column = 0; column < 4; ++column)
+        EXPECT_NEAR(glm::length(transform.matrix()[column] - imported[column]), 0.0f, 1e-5f);
+}
 
 TEST(SceneManagerTest, ActorsOwnComponentsAndRestoreTheirOwner)
 {
@@ -643,12 +685,12 @@ TEST(SceneManagerTest, ALightRequiresLightComponent)
     EXPECT_DEATH(actor.init(), "");
 }
 
-TEST(SceneManagerTest, BaseTypesAreNotRegistered)
+TEST(SceneManagerTest, RegistersConcreteActorAndKeepsComponentBaseAbstract)
 {
     SceneManager registration;
     registration.init();
     registration.shutdown();
-    EXPECT_FALSE(BaseTypeInfo<AActor>::baseTypeInfoMap.contains("AActor"));
+    EXPECT_TRUE(BaseTypeInfo<AActor>::baseTypeInfoMap.contains("AActor"));
     EXPECT_FALSE(BaseTypeInfo<Component>::baseTypeInfoMap.contains("Component"));
 }
 
@@ -731,7 +773,7 @@ TEST(SceneManagerTest, LightTypeUsesConcreteComponentTag)
     SceneManager registration;
     registration.init();
     registration.shutdown();
-    forEachLightComponentType([]<class T>(const char* name)
+    forEachRealtimeLightComponentType([]<class T>(const char* name)
     {
         std::unique_ptr<Component> component = std::make_unique<T>();
         const json stored = Serialize(component);

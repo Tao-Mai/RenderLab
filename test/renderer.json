@@ -11,7 +11,8 @@
         "hdr": true,
         "ibl": true,
         "offline": {
-            "maxBounces": 5
+            "maxBounces": 5,
+            "pixelJitter": true
         },
         "rayTracing": {
             "emaAlpha": 0.10000000149011612,

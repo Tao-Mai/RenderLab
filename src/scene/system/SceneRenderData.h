@@ -5,6 +5,7 @@
 #include "asset/EnvironmentMapAsset.h"
 #include "render/DrawItem.h"
 #include "render/resources/ShaderData.h"
+#include "render/raytracing/offline/OfflineLightData.h"
 
 struct RenderLight
 {
@@ -21,4 +22,5 @@ struct SceneRenderData
     std::optional<EnvironmentMapAsset::ID> environmentMap;
     std::vector<DrawItem>                  drawItems;
     std::vector<RenderLight>               lights;
+    std::vector<OfflineLightData>          offlineLights;
 };

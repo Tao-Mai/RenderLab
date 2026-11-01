@@ -28,12 +28,12 @@
 #include "render/postprocess/Bloom.h"
 #include "render/postprocess/ToneMappingPass.h"
 #include "render/raster/ShadowPass.h"
-#include "render/raytracing/OfflinePathTracingPass.h"
+#include "render/raytracing/offline/OfflinePathTracingPass.h"
 #include "render/raytracing/BlasBuildPass.h"
 #include "render/raytracing/RayTracingBlitPass.h"
-#include "render/raytracing/RayTracingPass.h"
-#include "render/raytracing/SVGFReprojection.h"
-#include "render/raytracing/SVGFFilter.h"
+#include "render/raytracing/realtime/RayTracingPass.h"
+#include "render/raytracing/realtime/SVGFReprojection.h"
+#include "render/raytracing/realtime/SVGFFilter.h"
 #include "render/raytracing/TlasBuildPass.h"
 #include "render/resources/Buffer.h"
 
@@ -311,6 +311,7 @@ void Renderer::shutdown() noexcept
     presentTarget   = {};
     renderStorage   = {};
     materialTable   = {};
+    offlineScene    = {};
     for (FrameContext& frame : frames)
     {
         frame.reset();
@@ -416,7 +417,7 @@ Renderer::SceneOutput Renderer::setupOffline()
 {
     const auto blas       = setupPass<BlasBuildPass>();
     const auto structures = setupPass<TlasBuildPass>(blas);
-    return {.color = setupPass<OfflinePathTracingPass>(structures, lightBuffer).rayImage};
+    return {.color = setupPass<OfflinePathTracingPass>(structures).rayImage};
 }
 
 uint32_t Renderer::offlineSampleCount() const
@@ -552,6 +553,7 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
     graph.beginFrame(targetFrameIndex);
     const auto& config        = *rendererConfig;
     const bool  rasterization = config.renderPath == RenderPath::Forward || config.renderPath == RenderPath::Deferred;
+    const bool  offline = config.renderPath == RenderPath::OfflinePathTracing;
     auto&       assets        = *context().assetManager;
     auto*       profiler      = context().profiler;
     auto&       renderData    = renderStorage[targetFrameIndex];
@@ -565,6 +567,8 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
             const auto& item = renderData.drawItems[itemIndex];
             // mesh数据读进GPU
             resources.mesh(item.mesh);
+            if (offline)
+                continue;
 
             // 记录material在SSBO的idx
             auto                       material = assets.get<MaterialAsset>(item.materialId).as<GltfMaterial>();
@@ -576,6 +580,14 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
             }
 
             renderData.materialIndices[itemIndex] = materialTable.update(materialKey, material, resources, assets);
+        }
+
+        renderData.offlineScene = nullptr;
+        if (offline)
+        {
+            renderData.offlineScene = &offlineScene.prepare(scene.drawItems, assets, resources, materialTable);
+            for (uint32_t index = 0; index < renderData.drawItems.size(); ++index)
+                renderData.materialIndices[index] = renderData.offlineScene->draws[index].materialIndex;
         }
 
         // 如果有新纹理或SSBO需要扩容，则更新material descriptor set
@@ -638,15 +650,21 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
             const auto&         feature = config.feature;
             const auto&         shadow  = feature.shadow;
             const LightUniforms lighting{
-                .lightRanges                   = renderData.lightRanges,
-                .ambientCoefficient            = feature.ambientCoefficient,
-                .cascadeCount                  = shadow.cascade.count,
-                .directionalShadowSampleRadius = shadow.cascade.sampleRadius,
-                .iblParameters                 = {prefilteredMaxLod, 0.0f, 0.0f, 0.0f},
-                .shadowParameters =
-                    {shadow.bias, shadow.sampleRadius, shadow.pixelRotation ? 1.0f : 0.0f, shadow.spotSampleRadius},
+                .lightRanges = renderData.lightRanges,
+                .ambientCoefficient = feature.ambientCoefficient,
+                .prefilteredMaxLod = prefilteredMaxLod,
+            };
+            const ShadowUniforms shadows{
+                .cascadeCount = shadow.cascade.count,
+                .directionalSampleRadius = shadow.cascade.sampleRadius,
+                .bias = shadow.bias,
+                .sampleRadius = shadow.sampleRadius,
+                .spotSampleRadius = shadow.spotSampleRadius,
+                .pixelRotation = shadow.pixelRotation ? 1u : 0u,
+                .enabled = shadow.enable ? 1u : 0u,
             };
             data.uploadLightUniforms(lighting);
+            data.uploadShadowUniforms(shadows);
         }
 
         // 上传lightData

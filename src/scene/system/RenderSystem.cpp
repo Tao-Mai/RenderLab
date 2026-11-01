@@ -12,11 +12,34 @@
 #include "scene/component/LightTypes.h"
 #include "scene/component/RenderComponent.h"
 #include "scene/component/TransformComponent.h"
+#include "scene/component/MeshAreaLightComponent.h"
+#include "scene/component/EnvironmentLightComponent.h"
+#include "scene/component/ProjectionLightComponent.h"
+#include "scene/component/GoniometricLightComponent.h"
 
 
 #include <glm/geometric.hpp>
 #include <utility>
 
+namespace
+{
+OfflineLightData::Model offlineLightModel(const LightComponent& light)
+{
+    if (const auto* spot = dynamic_cast<const SpotLightComponent*>(&light))
+        return OfflineLightData::Spot{spot->cosInner, spot->cosOuter};
+    if (dynamic_cast<const PointLightComponent*>(&light))
+        return OfflineLightData::Point{};
+    if (dynamic_cast<const DirectionalLightComponent*>(&light))
+        return OfflineLightData::Directional{};
+    if (const auto* projection = dynamic_cast<const ProjectionLightComponent*>(&light))
+        return OfflineLightData::Projection{projection->fieldOfView};
+    if (dynamic_cast<const GoniometricLightComponent*>(&light))
+        return OfflineLightData::Goniometric{};
+
+    CHECK(false, "unsupported offline light component on '{}'", light.actor().name);
+    std::unreachable();
+}
+}
 
 const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
 {
@@ -24,6 +47,7 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
     const auto&     assets = *context().assetManager;
     data.drawItems.clear();
     data.lights.clear();
+    data.offlineLights.clear();
     data.sceneId        = scene.id;
     data.environmentMap = scene.environmentMap;
     for (const auto& actor : scene.actors)
@@ -31,8 +55,12 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
         const auto* transform = actor->getComponent<TransformComponent>();
         DCHECK(transform);
         uint32_t instanceIndex = 0;
-        for (const auto* render : actor->getComponents<RenderComponent>())
+        std::vector<uint32_t> renderDrawBegins;
+        const auto renders = actor->getComponents<RenderComponent>();
+        for (const auto* render : renders)
         {
+            if (scene.renderMode == SceneRenderMode::Offline)
+                renderDrawBegins.push_back(static_cast<uint32_t>(data.drawItems.size()));
             const auto& mesh  = assets.get<MeshAsset>(render->meshId);
             const auto  model = transform->matrix();
             for (uint32_t submeshIndex = 0; submeshIndex < mesh.submeshes.size(); ++submeshIndex)
@@ -41,6 +69,7 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
                     .mesh          = render->meshId,
                     .submeshIndex  = submeshIndex,
                     .materialId    = mesh.submeshes[submeshIndex].materialId,
+                    .offlineSurface = render->offlineSurface,
                     .model         = model,
                     .selectionId   = actor->selectionId(),
                     .instanceIndex = instanceIndex,
@@ -52,6 +81,32 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
             }
             ++instanceIndex;
         }
+
+        if (scene.renderMode == SceneRenderMode::Offline)
+        {
+            for (const auto* light : actor->getComponents<MeshAreaLightComponent>())
+            {
+                if (!light->enabled)
+                    continue;
+                DCHECK(light->renderComponentIndex < renders.size());
+                DEBUG_ONLY(const auto& mesh = assets.get(renders[light->renderComponentIndex]->meshId);)
+                DCHECK(light->submeshIndex < mesh.submeshes.size());
+                const auto drawItemIndex = renderDrawBegins[light->renderComponentIndex] + light->submeshIndex;
+                data.offlineLights.push_back({
+                    .worldFromLight = transform->matrix(),
+                    .emission = light->emission,
+                    .model = OfflineLightData::MeshArea{drawItemIndex, light->twoSided,
+                        data.drawItems[drawItemIndex].offlineSurface->reverseOrientation},
+                });
+            }
+            for (const auto* light : actor->getComponents<EnvironmentLightComponent>())
+                if (light->enabled)
+                    data.offlineLights.push_back({
+                        .worldFromLight = transform->matrix(),
+                        .emission = light->emission,
+                        .model = OfflineLightData::Environment{light->portal},
+                    });
+        }
     }
 
     for (const auto& actor : scene.actors)
@@ -62,6 +117,20 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
 
         const auto* transform = actor->getComponent<TransformComponent>();
         DCHECK(transform);
+
+        if (scene.renderMode == SceneRenderMode::Offline)
+        {
+            if (light->enabled)
+            {
+                CHECK(light->offlineEmission, "offline light emission is missing on '{}'", actor->name);
+                data.offlineLights.push_back({
+                    .worldFromLight = transform->matrix(),
+                    .emission = *light->offlineEmission,
+                    .model = offlineLightModel(*light),
+                });
+            }
+            continue;
+        }
 
         const glm::vec3 direction = glm::normalize(transform->rotation * glm::vec3{0.0f, 0.0f, -1.0f});
         GpuLightType    lightType;

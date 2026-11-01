@@ -30,7 +30,6 @@ private:
     GBufferPass::Output      gBuffer;
     RenderGraph::ImageHandle color;
     DescriptorSetLayout      descriptorSetLayout;
-    DescriptorSetLayout      emptyDescriptorSetLayout;
     vk::raii::DescriptorSet  descriptorSet = nullptr;
     vk::Pipeline             pipeline;
     vk::PipelineLayout       pipelineLayout;

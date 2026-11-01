@@ -167,7 +167,8 @@ void SceneDraw::recordMeshes(
     const auto&      materials      = *renderContext().materialTable;
     const auto&      pipelineLayout = renderContext().device->meshPipelineLayout;
     const std::array descriptorSets =
-        {execution.data.sceneSetHandle(), execution.data.lightingSetHandle(), execution.renderData.materialSetHandle()};
+        {execution.data.sceneSetHandle(), execution.data.lightSetHandle(), execution.renderData.materialSetHandle(),
+         execution.data.shadowSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         pipelineLayout,

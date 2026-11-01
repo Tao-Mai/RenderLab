@@ -17,7 +17,7 @@ struct TextureRef
     uint32_t samplerIndex = 0;
 };
 
-// Shared SSBO element layout for rasterization, realtime and offline ray tracing.
+// glTF material SSBO used by rasterization and realtime ray tracing.
 struct alignas(16) MaterialData
 {
     glm::vec4               baseColorFactor{1.0f};

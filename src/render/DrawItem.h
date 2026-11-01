@@ -2,6 +2,7 @@
 
 #include "asset/MeshAsset.h"
 #include "asset/GltfMaterial.h"
+#include "asset/pbrt/PbrtSurface.h"
 
 #include <cstdint>
 #include <optional>
@@ -17,6 +18,7 @@ struct DrawItem
     uint32_t                        submeshIndex = 0;
     MaterialAsset::ID               materialId;
     std::optional<MaterialOverride> materialOverride;
+    std::optional<PbrtSurface>      offlineSurface;
     glm::mat4                       model{1.0f};
     uint32_t                        selectionId   = 0;
     uint32_t                        instanceIndex = 0;

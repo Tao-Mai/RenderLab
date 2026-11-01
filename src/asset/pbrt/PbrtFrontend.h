@@ -16,9 +16,24 @@ struct MaterialDescription
 };
 struct ReadResult
 {
+    struct MediumDescription
+    {
+        std::string name;
+        PbrtEntity entity;
+        PbrtTransform renderFromMedium;
+    };
     PbrtSceneAsset                       scene;
     std::vector<MaterialDescription>     materials;
-    std::vector<PbrtTextureAsset>        textures;
+    struct TextureDescription
+    {
+        PbrtTextureAsset::ID id;
+        std::string name;
+        PbrtTextureType valueType = PbrtTextureType::Float;
+        PbrtEntity entity;
+        PbrtTransform renderFromTexture;
+    };
+    std::vector<TextureDescription>      textures;
+    std::vector<MediumDescription>       media;
     std::vector<std::optional<uint32_t>> shapeMaterialIndices;
     std::vector<std::filesystem::path>   sourceFiles;
 };

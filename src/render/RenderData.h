@@ -5,6 +5,7 @@
 #include "render/DrawItem.h"
 #include "render/Visibility.h"
 #include "render/resources/ShaderData.h"
+#include "render/raytracing/offline/OfflineLightData.h"
 
 #include <cstdint>
 #include <optional>
@@ -13,6 +14,8 @@
 
 #include <glm/mat4x4.hpp>
 #include <vulkan/vulkan.hpp>
+
+struct OfflineSceneData;
 
 struct RenderData
 {
@@ -26,6 +29,7 @@ struct RenderData
     // Empty when this path does not perform main-view culling.
     std::vector<uint32_t>  visibilityMasks;
     std::vector<LightData> lights;
+    const OfflineSceneData* offlineScene = nullptr;
     LightRanges            lightRanges;
 
     [[nodiscard]] vk::DescriptorSet materialSetHandle() const { return materialDescriptorSet; }

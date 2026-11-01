@@ -1,5 +1,3 @@
-find_package(ZLIB REQUIRED)
-
 add_library(RenderLabPbrtFrontend STATIC
     PbrtFrontend.cpp
     upstream/Parser.cpp

@@ -93,17 +93,18 @@ writeTestLighting(RenderGraph& graph, const PassSetup& setup, ShadowPass::Output
     const float         prefilteredMaxLod = writeTestEnvironment(setup, scene.environmentMap);
     const auto&         shadowConfig      = feature.shadow;
     const LightUniforms lighting{
-        .lightRanges                   = scene.lightRanges,
-        .ambientCoefficient            = feature.ambientCoefficient,
-        .cascadeCount                  = shadowConfig.cascade.count,
-        .directionalShadowSampleRadius = shadowConfig.cascade.sampleRadius,
-        .iblParameters                 = {prefilteredMaxLod, 0, 0, 0},
-        .shadowParameters              = {
-            shadowConfig.bias,
-            shadowConfig.sampleRadius,
-            shadowConfig.pixelRotation ? 1.0f : 0.0f,
-            shadowConfig.spotSampleRadius
-        },
+        .lightRanges = scene.lightRanges,
+        .ambientCoefficient = feature.ambientCoefficient,
+        .prefilteredMaxLod = prefilteredMaxLod,
+    };
+    const ShadowUniforms shadows{
+        .cascadeCount = shadowConfig.cascade.count,
+        .directionalSampleRadius = shadowConfig.cascade.sampleRadius,
+        .bias = shadowConfig.bias,
+        .sampleRadius = shadowConfig.sampleRadius,
+        .spotSampleRadius = shadowConfig.spotSampleRadius,
+        .pixelRotation = shadowConfig.pixelRotation ? 1u : 0u,
+        .enabled = shadowConfig.enable ? 1u : 0u,
     };
     const auto linearSampler = resources.sampler(BuiltinAssets::Sampler::linearClamp);
     const auto bufferInfo    = [&](RenderGraph::BufferHandle handle)
@@ -134,6 +135,7 @@ writeTestLighting(RenderGraph& graph, const PassSetup& setup, ShadowPass::Output
             linearSampler
         );
         frame.uploadLightUniforms(lighting);
+        frame.uploadShadowUniforms(shadows);
     }
     return sampler;
 }

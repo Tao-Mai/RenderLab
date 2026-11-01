@@ -4,6 +4,7 @@
 #include "brdf.slang"
 #include "scene_data.slang"
 #include "lighting_data.slang"
+#include "shadow_data.slang"
 #include "sampling.slang"
 #include "surface.slang"
 
@@ -11,50 +12,31 @@
 #error ENABLE_IBL must be specified when compiling scene lighting
 #endif
 
-// Lighting shadow resources (bindings 6..11).
-[[vk::binding(6, 1)]]
-TextureCubeArray<float> pointShadowMap;
-
-[[vk::binding(7, 1)]]
-Texture2DArray<float> spotShadowMap;
-
-[[vk::binding(8, 1)]]
-Texture2DArray<float> rectAreaShadowMap;
-
-[[vk::binding(9, 1)]]
-Texture2DArray<float> cascadeShadowMap;
-
-[[vk::binding(10, 1)]]
-SamplerComparisonState shadowSampler;
-
-[[vk::binding(11, 1)]]
-SamplerState linearSampler;
-
-// Lighting environment image / sampler pairs (bindings 12..19).
-[[vk::binding(12, 1)]]
+// Light-set environment images and samplers.
+[[vk::binding(2, 1)]]
 TextureCube<float4> irradianceMap;
 
-[[vk::binding(13, 1)]]
+[[vk::binding(3, 1)]]
 SamplerState irradianceMapSampler;
 
-[[vk::binding(14, 1)]]
+[[vk::binding(4, 1)]]
 TextureCube<float4> prefilteredSpecularMap;
 
-[[vk::binding(15, 1)]]
+[[vk::binding(5, 1)]]
 SamplerState prefilteredSpecularMapSampler;
 
-[[vk::binding(16, 1)]]
+[[vk::binding(6, 1)]]
 Texture2D<float4> brdfLUT;
 
-[[vk::binding(17, 1)]]
+[[vk::binding(7, 1)]]
 SamplerState brdfLUTSampler;
 
 #if ENABLE_SHEEN
-[[vk::binding(20, 1)]] Texture2D<float4> sheenLUT;
-[[vk::binding(21, 1)]] SamplerState sheenLUTSampler;
+[[vk::binding(10, 1)]] Texture2D<float4> sheenLUT;
+[[vk::binding(11, 1)]] SamplerState sheenLUTSampler;
 #if ENABLE_IBL
-[[vk::binding(18, 1)]] TextureCube<float4> radianceMap;
-[[vk::binding(19, 1)]] SamplerState radianceSampler;
+[[vk::binding(8, 1)]] TextureCube<float4> radianceMap;
+[[vk::binding(9, 1)]] SamplerState radianceSampler;
 
 // Integrate Charlie against the original radiance, not the GGX-prefiltered environment.
 // Cosine-weighted sampling cancels NdotL / PDF to PI. No extra Fresnel or E normalization.
@@ -97,8 +79,8 @@ float spotShadowVisibility(LightData light, float3 worldPosition, float2 rotatio
     uint height;
     uint layers;
     spotShadowMap.GetDimensions(width, height, layers);
-    float2 radiusUv = lightUniforms.spotShadowSampleRadius / float2(width, height);
-    float depth = projected.z - lightUniforms.shadowBias;
+    float2 radiusUv = shadowUniforms.spotSampleRadius / float2(width, height);
+    float depth = projected.z - shadowUniforms.bias;
     float visibility = 0.0;
     [unroll]
     for (uint sampleIndex = 0; sampleIndex < kPoissonDisk16SampleCount; ++sampleIndex)
@@ -121,16 +103,16 @@ float sampleDirectionalCascade(LightData light, uint cascadeIndex, float3 worldP
     if (any(uv < 0.0) || any(uv > 1.0) || projected.z < 0.0 || projected.z > 1.0)
         return 1.0;
 
-    uint layer = light.shadowIdx * lightUniforms.cascadeCount + cascadeIndex;
-    float depth = projected.z - lightUniforms.shadowBias;
-    if (lightUniforms.directionalShadowSampleRadius <= 0.0)
+    uint layer = light.shadowIdx * shadowUniforms.cascadeCount + cascadeIndex;
+    float depth = projected.z - shadowUniforms.bias;
+    if (shadowUniforms.directionalSampleRadius <= 0.0)
         return cascadeShadowMap.SampleCmpLevelZero(shadowSampler, float3(uv, layer), depth);
 
     uint width;
     uint height;
     uint layers;
     cascadeShadowMap.GetDimensions(width, height, layers);
-    float2 radiusUv = lightUniforms.directionalShadowSampleRadius / float2(width, height);
+    float2 radiusUv = shadowUniforms.directionalSampleRadius / float2(width, height);
     float visibility = 0.0;
     [unroll]
     for (uint sampleIndex = 0; sampleIndex < kPoissonDisk8SampleCount; ++sampleIndex)
@@ -155,7 +137,7 @@ float directionalShadowVisibility(LightData light, float3 worldPosition, float2 
         return 1.0;
 
     [loop]
-    for (uint cascadeIndex = 0; cascadeIndex < lightUniforms.cascadeCount; ++cascadeIndex)
+    for (uint cascadeIndex = 0; cascadeIndex < shadowUniforms.cascadeCount; ++cascadeIndex)
     {
         CascadeShadowData cascade = directionalShadowData[light.shadowIdx].cascades[cascadeIndex];
         if (viewDepth > cascade.depthUpperBound)
@@ -163,7 +145,7 @@ float directionalShadowVisibility(LightData light, float3 worldPosition, float2 
 
         float visibility = sampleDirectionalCascade(light, cascadeIndex, worldPosition, rotation);
         float blendWidth = cascade.depthUpperBound - cascade.blendStartDepth;
-        if (cascadeIndex + 1 < lightUniforms.cascadeCount && blendWidth > 0.0 &&
+        if (cascadeIndex + 1 < shadowUniforms.cascadeCount && blendWidth > 0.0 &&
             viewDepth > cascade.blendStartDepth)
         {
             float nextVisibility = sampleDirectionalCascade(light, cascadeIndex + 1, worldPosition, rotation);
@@ -192,11 +174,11 @@ float pcf(float3 dir, uint shadowIndex, float depth, float2 rotation)
     [unroll]
     for (uint sampleIndex = 0; sampleIndex < kPoissonDisk16SampleCount; ++sampleIndex)
     {
-        float2 offset = kPoissonDisk16[sampleIndex] * lightUniforms.shadowSampleRadius;
+        float2 offset = kPoissonDisk16[sampleIndex] * shadowUniforms.sampleRadius;
         float3 sampleDirection = normalize(
             direction + rotatedTangent * offset.x + rotatedBitangent * offset.y);
         totalVisibility += pointShadowMap.SampleCmpLevelZero(
-            shadowSampler, float4(sampleDirection, shadowIndex), depth - lightUniforms.shadowBias);
+            shadowSampler, float4(sampleDirection, shadowIndex), depth - shadowUniforms.bias);
     }
 
     return totalVisibility / kPoissonDisk16SampleCount;
@@ -218,7 +200,7 @@ float rectAreaShadowPCSS(LightData light, float3 worldPos, uint2 pixel)
 
     // clip.w is the positive, linear depth along the light's viewing direction.
     float receiverLinearDepth = pos.w;
-    float receiverDepth = max(projected.z - lightUniforms.shadowBias, 0.0);
+    float receiverDepth = max(projected.z - shadowUniforms.bias, 0.0);
     float2 lightHalfSize = light.areaSize * 0.5;
 
     // The blocker depth is unknown: project the search footprint onto the near plane.
@@ -230,13 +212,13 @@ float rectAreaShadowPCSS(LightData light, float3 worldPos, uint2 pixel)
     [unroll]
     for (uint sampleIndex = 0; sampleIndex < kRectangle16SampleCount; ++sampleIndex)
     {
-        float2 offset = rectangleSample16(sampleIndex, pixel, lightUniforms.shadowPixelRotation);
+        float2 offset = rectangleSample16(sampleIndex, pixel, (shadowUniforms.pixelRotation != 0));
         float2 sampleUv = uv + offset * searchRadiusUv;
         if (any(sampleUv < 0.0) || any(sampleUv > 1.0))
             continue;
 
         float blockerDepth = rectAreaShadowMap.SampleLevel(
-            linearSampler, float3(sampleUv, shadowIndex), 0.0);
+            shadowLinearSampler, float3(sampleUv, shadowIndex), 0.0);
         // Keep bias and comparison in the same non-linear 0..1 depth space as PCF.
         if (blockerDepth < receiverDepth)
         {
@@ -259,7 +241,7 @@ float rectAreaShadowPCSS(LightData light, float3 worldPos, uint2 pixel)
     [unroll]
     for (uint sampleIndex = 0; sampleIndex < kRectangle16SampleCount; ++sampleIndex)
     {
-        float2 offset = rectangleSample16(sampleIndex, pixel, lightUniforms.shadowPixelRotation);
+        float2 offset = rectangleSample16(sampleIndex, pixel, (shadowUniforms.pixelRotation != 0));
         float2 sampleUv = uv + offset * filterRadiusUv;
         if (any(sampleUv < 0.0) || any(sampleUv > 1.0))
         {
@@ -323,7 +305,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
     float clearcoatWeight = surface.clearcoatFactor * fresnelSchlick(float3(kClearcoatF0), clearcoatNdotV).x;
 #endif
 
-    float2 shadowRotation = lightUniforms.shadowPixelRotation
+    float2 shadowRotation = (shadowUniforms.pixelRotation != 0)
         ? pixelSampleRotation(pixel)
         : float2(1.0, 0.0);
     LightRanges ranges = lightUniforms.lightRanges;
@@ -334,7 +316,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
 
         float3 lightDirection = -light.direction.xyz;
         float visibility = 1.0;
-        if (light.castShadow)
+        if (light.castShadow && shadowUniforms.enabled != 0)
             visibility = directionalShadowVisibility(light, surface.worldPosition, shadowRotation);
         direct += evaluateDirectContribution(surface, V, lightDirection, light.color, visibility);
     }
@@ -350,7 +332,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
         float3 lightDirection = (light.position - surface.worldPosition) / distanceToLight;
         float3 incidentIrradiance = light.color / (distanceToLight * distanceToLight);
         float visibility = 1.0;
-        if (light.castShadow)
+        if (light.castShadow && shadowUniforms.enabled != 0)
             visibility = pcf(-lightDirection, light.shadowIdx, distanceToLight / light.range, shadowRotation);
         direct += evaluateDirectContribution(surface, V, lightDirection, incidentIrradiance, visibility);
     }
@@ -370,7 +352,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
         float solidAngle = projectedArea / (distanceToLight * distanceToLight);
         float3 incidentIrradiance = light.color * solidAngle;
         float visibility = 1.0;
-        if (light.castShadow)
+        if (light.castShadow && shadowUniforms.enabled != 0)
             visibility = rectAreaShadowPCSS(light, surface.worldPosition, pixel);
         direct += evaluateDirectContribution(surface, V, lightDirection, incidentIrradiance, visibility);
     }
@@ -390,7 +372,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
 
         float3 incidentIrradiance = light.color * attenuation / (distanceToLight * distanceToLight);
         float visibility = 1.0;
-        if (light.castShadow)
+        if (light.castShadow && shadowUniforms.enabled != 0)
             visibility = spotShadowVisibility(light, surface.worldPosition, shadowRotation);
         direct += evaluateDirectContribution(surface, V, lightDirection, incidentIrradiance, visibility);
     }
@@ -402,7 +384,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
 
     // 镜面反射环境光照 Split Sum Approximation
     float3 environmentTerm = prefilteredSpecularMap.SampleLevel(
-        prefilteredSpecularMapSampler, R, surface.roughness * lightUniforms.iblPrefilteredMaxMipLevel).rgb;
+        prefilteredSpecularMapSampler, R, surface.roughness * lightUniforms.prefilteredMaxLod).rgb;
     float2 scaleBias = brdfLUT.Sample(brdfLUTSampler, float2(NdotV, surface.roughness)).rg;
     float3 brdfTerm = scaleBias.x * f0 + scaleBias.y;
     float3 ambientSpecular = environmentTerm * brdfTerm;
@@ -429,7 +411,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
     float3 clearcoatEnvironment = prefilteredSpecularMap.SampleLevel(
         prefilteredSpecularMapSampler,
         clearcoatReflection,
-        clearcoatRoughness * lightUniforms.iblPrefilteredMaxMipLevel).rgb;
+        clearcoatRoughness * lightUniforms.prefilteredMaxLod).rgb;
     float2 clearcoatScaleBias = brdfLUT.Sample(brdfLUTSampler, float2(clearcoatNdotV, clearcoatRoughness)).rg;
     // The layer weight already includes Fresnel. Use the LUT's unit-Fresnel
     // response (scale + bias), avoiding a second Fresnel multiplication.

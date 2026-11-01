@@ -25,24 +25,17 @@ namespace
 {
 constexpr float kEditorWidthRatio = 0.24f;
 constexpr float kHierarchyWidthRatio = 0.23f;
+constexpr float kMinimumEditableScale = 0.001f;
 
 void applyModelMatrix(TransformComponent& transform, const glm::mat4& model)
 {
-    transform.position = glm::vec3{model[3]};
-
-    glm::vec3 scale{
-        glm::length(glm::vec3{model[0]}),
-        glm::length(glm::vec3{model[1]}),
-        glm::length(glm::vec3{model[2]}),
-    };
-    scale = glm::max(scale, glm::vec3{0.001f});
-
-    glm::mat3 rotationMatrix{
-        glm::vec3{model[0]} / scale.x,
-        glm::vec3{model[1]} / scale.y,
-        glm::vec3{model[2]} / scale.z,
-    };
-    glm::quat rotation = glm::normalize(glm::quat_cast(rotationMatrix));
+    TransformComponent edited;
+    CHECK(edited.setMatrix(model));
+    DCHECK(edited.base == glm::mat4{1});
+    for (glm::length_t axis = 0; axis < 3; ++axis)
+        edited.scale[axis] = std::copysign(std::max(std::abs(edited.scale[axis]), kMinimumEditableScale),
+                                         edited.scale[axis]);
+    glm::quat rotation = edited.rotation;
 
     // q and -q are the same rotation. Keeping the closest representation
     // prevents the editor value from flipping sign during a gizmo drag.
@@ -51,8 +44,9 @@ void applyModelMatrix(TransformComponent& transform, const glm::mat4& model)
         rotation = -rotation;
     }
 
+    transform.position = edited.position;
     transform.rotation = rotation;
-    transform.scale    = scale;
+    transform.scale    = edited.scale;
 }
 }  // namespace
 void EditorUI::beginFrame(float)
@@ -181,7 +175,7 @@ bool EditorUI::drawGizmo(
     ImGuizmo::SetDrawlist(drawList);
     ImGuizmo::SetRect(scenePosition.x, scenePosition.y, sceneSize.x, sceneSize.y);
 
-    glm::mat4                     model        = transform.matrix();
+    glm::mat4                     model        = transform.trsMatrix();
     constexpr ImGuizmo::OPERATION operations[] = {
         ImGuizmo::TRANSLATE,
         ImGuizmo::ROTATE,

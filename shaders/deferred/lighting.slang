@@ -1,11 +1,11 @@
 #include "../scene_lighting.slang"
 
-// Pass set 3; bindings match RenderInterface's G-buffer bindings.
-[[vk::binding(0, 3)]] Texture2D<float4> albedoOcclusion;
-[[vk::binding(1, 3)]] Texture2D<float4> normalRoughness;
-[[vk::binding(2, 3)]] Texture2D<float4> emissiveMetallic;
-[[vk::binding(3, 3)]] Texture2D<float> sceneDepth;
-[[vk::binding(4, 3)]] Texture2D<float4> sheenColorRoughness;
+// Pass set 2; bindings match RenderInterface's G-buffer bindings.
+[[vk::binding(0, 2)]] Texture2D<float4> albedoOcclusion;
+[[vk::binding(1, 2)]] Texture2D<float4> normalRoughness;
+[[vk::binding(2, 2)]] Texture2D<float4> emissiveMetallic;
+[[vk::binding(3, 2)]] Texture2D<float> sceneDepth;
+[[vk::binding(4, 2)]] Texture2D<float4> sheenColorRoughness;
 
 struct DeferredLightingParameters
 {

@@ -79,6 +79,8 @@ void Engine::init()
     ctx.inputManager->init();
     ctx.sceneManager->init();
     ctx.assetManager->init(ctx.config->paths().assets);
+    ctx.sceneManager->loadDefaultScene();
+    ctx.config->setSceneRenderMode(ctx.sceneManager->scene().renderMode);
     inputMethod.activateEnglish();
     ctx.renderer->init();
     ctx.editor->init();
@@ -88,8 +90,6 @@ void Engine::init()
 void Engine::run()
 {
     DCHECK(inited);
-
-    sceneManager->loadDefaultScene();
 
     mainLoop();
 }
@@ -135,6 +135,7 @@ void Engine::mainLoop()
         {
             CpuProfileScope timing{&profiler, "Scene actions"};
             ctx.editor->applySceneActions();
+            ctx.config->setSceneRenderMode(ctx.sceneManager->scene().renderMode);
         }
         auto& camera = ctx.editor->camera();
         {

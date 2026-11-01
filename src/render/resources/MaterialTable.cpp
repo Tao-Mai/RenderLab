@@ -26,7 +26,7 @@ void MaterialTable::init(RenderResourceManager& resources, const VulkanContext& 
         limits.maxPerStageDescriptorSamplers
     );
 
-    texture({BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat}, resources);
+    static_cast<void>(textureReference({BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat}, resources));
     images.fill(images[0]);
     samplers.fill(samplers[0]);
 
@@ -72,7 +72,7 @@ void MaterialTable::use(RenderGraph& graph, vk::PipelineStageFlags2 stages) cons
     graph.use(materialBuffer, {.stages = stages, .access = vk::AccessFlagBits2::eShaderStorageRead});
 }
 
-TextureRef MaterialTable::texture(const TextureBinding& binding, RenderResourceManager& resources)
+TextureRef MaterialTable::textureReference(const TextureBinding& binding, RenderResourceManager& resources)
 {
     const auto [image, newImage] =
         textureIndices.try_emplace(binding.textureID, static_cast<uint32_t>(textureIndices.size()));
@@ -163,7 +163,7 @@ uint32_t MaterialTable::update(
                                     std::optional<ColorSpace>            colorSpace = std::nullopt)
     {
         const auto binding = source.value_or(TextureBinding{fallback, BuiltinAssets::Sampler::linearRepeat});
-        return texture(binding, resources);
+        return textureReference(binding, resources);
     };
 
     data.baseColorTexture = resolveTexture(material.baseColorTexture, BuiltinAssets::Texture::white);

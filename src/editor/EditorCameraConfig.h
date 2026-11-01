@@ -8,6 +8,8 @@ struct EditorCameraConfig
     float     yaw              = -90.0f;
     float     pitch            = 0.0f;
     float     fieldOfView      = 45.0f;
+    float     lensRadius       = 0.0f;
+    float     focalDistance    = 1e6f;
     float     nearPlane        = 0.1f;
     float     farPlane         = 100.0f;
     float     mouseSensitivity = 0.12f;

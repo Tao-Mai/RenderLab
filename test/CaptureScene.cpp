@@ -18,11 +18,11 @@
 #include "render/editor/LightMarkerPass.h"
 #include "render/postprocess/Bloom.h"
 #include "render/postprocess/ToneMappingPass.h"
-#include "render/raytracing/OfflinePathTracingPass.h"
+#include "render/raytracing/offline/OfflinePathTracingPass.h"
 #include "render/raytracing/BlasBuildPass.h"
-#include "render/raytracing/RayTracingPass.h"
-#include "render/raytracing/SVGFReprojection.h"
-#include "render/raytracing/SVGFFilter.h"
+#include "render/raytracing/realtime/RayTracingPass.h"
+#include "render/raytracing/realtime/SVGFReprojection.h"
+#include "render/raytracing/realtime/SVGFFilter.h"
 #include "render/raytracing/TlasBuildPass.h"
 #include "render/resources/MaterialTable.h"
 #include "scene/SceneManager.h"
@@ -141,7 +141,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         const auto meshes     = graph.addPass(blas, setup);
         const auto structures = graph.addPass(tlas, setup, meshes);
         if (offline)
-            color = graph.addPass(tracing, setup, structures, lightBuffer).rayImage;
+            color = graph.addPass(tracing, setup, structures).rayImage;
         else
         {
             const auto traced = graph.addPass(realtimeTracing, setup, structures, lightBuffer);
@@ -305,11 +305,11 @@ int main(int argc, char** argv)
     if (argc > 6)
         feature.toneMapping.ev100 = parseNumber<float>(argv[6]);
     config.setRenderFeature(feature);
-    config.setRenderPath(
-        route == "offline"        ? RenderPath::OfflinePathTracing
-            : route == "realtime" ? RenderPath::RayTracing
-                                  : RenderPath::Forward
-    );
+    CHECK((route == "offline") == (scenes.scene().renderMode == SceneRenderMode::Offline),
+          "capture route does not match scene render mode");
+    config.setSceneRenderMode(scenes.scene().renderMode);
+    if (route != "offline")
+        config.setRenderPath(route == "realtime" ? RenderPath::RayTracing : RenderPath::Forward);
     config.setEditorSize(side, side);
     CHECK(glfwInit());
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
@@ -322,7 +322,9 @@ int main(int argc, char** argv)
     assets.shutdown();
     data.shutdown();
     window.shutdown();
-    config.setRenderPath(originalConfig.renderPath);
+    config.setSceneRenderMode(originalConfig.renderPath == RenderPath::OfflinePathTracing ? SceneRenderMode::Offline : SceneRenderMode::Realtime);
+    if (originalConfig.renderPath != RenderPath::OfflinePathTracing)
+        config.setRenderPath(originalConfig.renderPath);
     config.setRenderFeature(originalConfig.feature);
     config.setEditorSize(originalEditor.width, originalEditor.height);
     config.shutdown();

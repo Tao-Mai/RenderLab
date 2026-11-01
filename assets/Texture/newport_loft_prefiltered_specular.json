@@ -4,6 +4,7 @@
     },
     "source": "File",
     "format": "RGBA32F",
+    "chromaticities": null,
     "colorSpace": "Linear",
     "layout": "Cubemap",
     "width": 400,

@@ -9,12 +9,22 @@
 #include "editor/EditorCameraConfig.h"
 #include "scene/AActor.h"
 
+struct PbrtMediumAsset;
+
+enum class SceneRenderMode
+{
+    Realtime,
+    Offline,
+};
+
 struct SceneAsset : Asset
 {
     using ID                              = AssetID<SceneAsset>;
     static constexpr std::string_view dir = "Scene";
 
     ID                                   id;
+    SceneRenderMode                      renderMode = SceneRenderMode::Realtime;
+    std::optional<AssetID<PbrtMediumAsset>> cameraMedium;
     std::vector<std::unique_ptr<AActor>> actors;
     EditorCameraConfig                   editorCamera;
     std::optional<EnvironmentMapAsset::ID> environmentMap;

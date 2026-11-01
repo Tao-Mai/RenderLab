@@ -2,6 +2,8 @@
 
 [资产模块](Asset.md) · [上游版本与修改记录](../src/asset/pbrt/upstream/UPSTREAM.md)
 
+[资产转换与离线 RGB 路径](PbrtConversion.md) 记录内部数据结构、转换规则、预览近似和优化点。
+
 导入经过“官方读取前端 → RenderLab 资产转换 → 自包含持久化”。读取目标独立编译，使用双精度和串行解析；Tokenizer、参数语法、Include / Import 与场景状态处理取自固定版本的 pbrt-v4。
 
 入口为 `AssetImporter::importPbrtScene`，输入源路径和可选 ID，返回 `PbrtSceneAsset::ID`。CLI 示例：
@@ -12,11 +14,25 @@ RenderLab --import-pbrt-scene <source>
 
 ## 保存内容
 
+导入同时生成 `SceneAsset`，其 ID 记录在 `PbrtSceneAsset.scene`。内部场景标记为 `Offline`，载入后自动使用离线路线；实时场景的路线选择包含 Forward、Deferred 和实时光追。
+
+当前转换透视相机的位置、yaw/pitch 和垂直 FOV，保存镜头半径与对焦距离；景深暂未参与渲染。PBRT 世界坐标转换时翻转 Z 轴，移动相机采用起始姿态，原始运动数据继续保存在描述资产中。源画幅比例仅用于 FOV 换算，显示比例使用引擎窗口，取景范围使用引擎投影。
+
+形状和对象实例在导入时生成 `AStaticMesh`，同一对象的实例共享 MeshAsset。当前采用起始变换，交给 `TransformComponent` 分解为 TRS 与 base，运动端点继续保存在描述资产中。
+
+面积光使用静态网格上的 `MeshAreaLightComponent` 绑定子网格，保存双面发光与朝向标记；点光、聚光、方向光使用现有组件，另有环境光、投影光和配光组件。`PbrtLightEmission` 保存光谱、scale、power / illuminance 和包内图像引用。环境图保留 PBRT 等面积映射，portal 顶点转换到引擎世界坐标。
+
+场景提取将离线光源写入独立的 `OfflineLightData`，面积光引用已有 DrawItem，使用完整的 TRS × base。当前离线渲染准备 PBRT 材质颜色与纹理指令，shader 发出主射线，命中后显示材质 RGB，未命中时显示黑色，并按独立配置进行像素抖动与渐进累积。
+
 `PbrtSceneAsset` 保存相机、Film、Sampler、Integrator、PixelFilter、Accelerator、Option，以及形状、光源、介质、对象定义和实例。变换保留双精度完整矩阵、运动端点与时间区间，并保存 PBRT 的渲染坐标空间和 renderFromWorld。
 
-`PbrtMaterial` 沿用 MaterialAsset 的 ID 与多态存储；`PbrtTextureAsset` 保存 Float / Spectrum 纹理节点和映射变换。实体保存有效色彩空间，模型参数保留原始声明类型、值、各自的色彩空间和源位置。纹理及混合材质引用解析为资产 ID，介质和实例引用解析为场景内索引。省略参数的默认语义由资产中的 readerRevision 指定。
+`PbrtMaterial` 沿用 MaterialAsset 的 ID 与多态存储，使用按材质模型区分的字段保存反射、透射、折射率、各向异性粗糙度、涂层、次表面与毛发参数，以及混合材质、实测 BRDF、法线贴图和位移引用。浮点输入区分常量和纹理；光谱区分常量、带色彩空间的 RGB、波长采样、黑体、命名光谱和文件引用。导入时完成字段转换并落实固定版本的默认参数。
 
-几何与纹理以数据描述保存：包括解析曲面、网格属性、光谱、程序纹理、Ptex 和环境图投影参数。面积光通过形状记录绑定。后续离线渲染可据此构建计算资源。
+`PbrtTextureAsset` 保存结构化的 Float / Spectrum 纹理节点和静态映射矩阵。图像转换为 TextureAsset，节点保留编码与过滤参数。纹理、混合材质和介质关联解析为资产 ID，实例引用对象定义。原始来源保存在打包源文件中。
+
+`trianglemesh` 和 `plymesh` 在导入时转换为现有 `MeshGeometry`，通过 `MeshAsset` 和 geometry 二进制文件保存；形状的 `mesh` 引用对应资产。sphere、cylinder、disk 转成原生内置几何参数，保存尺寸、裁剪范围与细分参数，读取时由通用内置生成器生成 `MeshGeometry`。网格保持形状的局部坐标，世界坐标转换在实例落入内部场景时处理。
+
+原始几何、纹理与光谱描述继续保存，包含程序纹理、Ptex 和环境图投影参数。面积光通过形状记录绑定。
 
 ## 文件布局
 

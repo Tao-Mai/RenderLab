@@ -18,6 +18,10 @@ struct PointLightComponent;
 struct DirectionalLightComponent;
 struct RectAreaLightComponent;
 struct SpotLightComponent;
+struct MeshAreaLightComponent;
+struct EnvironmentLightComponent;
+struct ProjectionLightComponent;
+struct GoniometricLightComponent;
 struct RenderComponent;
 
 struct ComponentDrawResult
@@ -82,6 +86,10 @@ ComponentDrawResult drawFields(PointLightComponent& value);
 ComponentDrawResult drawFields(DirectionalLightComponent& value);
 ComponentDrawResult drawFields(RectAreaLightComponent& value);
 ComponentDrawResult drawFields(SpotLightComponent& value);
+ComponentDrawResult drawFields(MeshAreaLightComponent& value);
+ComponentDrawResult drawFields(EnvironmentLightComponent& value);
+ComponentDrawResult drawFields(ProjectionLightComponent& value);
+ComponentDrawResult drawFields(GoniometricLightComponent& value);
 ComponentDrawResult drawFields(RenderComponent& value);
 
 // Produce a complete optional-field patch, retaining texture/shader overrides.

@@ -5,6 +5,12 @@
                 "components": [
                     {
                         "TransformComponent": {
+                            "base": [
+                                [1.0, 0.0, 0.0, 0.0],
+                                [0.0, 1.0, 0.0, 0.0],
+                                [0.0, 0.0, 1.0, 0.0],
+                                [0.0, 0.0, 0.0, 1.0]
+                            ],
                             "position": [
                                 -4.04360818862915,
                                 3.7037534713745117,
@@ -26,6 +32,7 @@
                     {
                         "SpotLightComponent": {
                             "castShadow": false,
+                            "offlineEmission": null,
                             "color": [
                                 1.0,
                                 1.0,
@@ -47,6 +54,12 @@
                 "components": [
                     {
                         "TransformComponent": {
+                            "base": [
+                                [1.0, 0.0, 0.0, 0.0],
+                                [0.0, 1.0, 0.0, 0.0],
+                                [0.0, 0.0, 1.0, 0.0],
+                                [0.0, 0.0, 0.0, 1.0]
+                            ],
                             "position": [
                                 -1.74592924118042,
                                 0.0,
@@ -67,6 +80,7 @@
                     },
                     {
                         "RenderComponent": {
+                            "offlineSurface": null,
                             "materialOverrides": {},
                             "meshId": {
                                 "value": "FlightHelmet"
@@ -82,6 +96,12 @@
                 "components": [
                     {
                         "TransformComponent": {
+                            "base": [
+                                [1.0, 0.0, 0.0, 0.0],
+                                [0.0, 1.0, 0.0, 0.0],
+                                [0.0, 0.0, 1.0, 0.0],
+                                [0.0, 0.0, 0.0, 1.0]
+                            ],
                             "position": [
                                 -0.6581555604934692,
                                 0.0,
@@ -102,6 +122,7 @@
                     },
                     {
                         "RenderComponent": {
+                            "offlineSurface": null,
                             "materialOverrides": {
                                 "0": {
                                     "alphaCutoff": null,
@@ -156,6 +177,12 @@
                 "components": [
                     {
                         "TransformComponent": {
+                            "base": [
+                                [1.0, 0.0, 0.0, 0.0],
+                                [0.0, 1.0, 0.0, 0.0],
+                                [0.0, 0.0, 1.0, 0.0],
+                                [0.0, 0.0, 0.0, 1.0]
+                            ],
                             "position": [
                                 -2.3006832599639893,
                                 2.670793294906616,
@@ -177,6 +204,7 @@
                     {
                         "DirectionalLightComponent": {
                             "castShadow": false,
+                            "offlineEmission": null,
                             "color": [
                                 1.0,
                                 1.0,
@@ -195,6 +223,12 @@
                 "components": [
                     {
                         "TransformComponent": {
+                            "base": [
+                                [1.0, 0.0, 0.0, 0.0],
+                                [0.0, 1.0, 0.0, 0.0],
+                                [0.0, 0.0, 1.0, 0.0],
+                                [0.0, 0.0, 0.0, 1.0]
+                            ],
                             "position": [
                                 -4.196488380432129,
                                 0.0,
@@ -215,6 +249,7 @@
                     },
                     {
                         "RenderComponent": {
+                            "offlineSurface": null,
                             "materialOverrides": {},
                             "meshId": {
                                 "value": "scene"
@@ -230,6 +265,12 @@
                 "components": [
                     {
                         "TransformComponent": {
+                            "base": [
+                                [1.0, 0.0, 0.0, 0.0],
+                                [0.0, 1.0, 0.0, 0.0],
+                                [0.0, 0.0, 1.0, 0.0],
+                                [0.0, 0.0, 0.0, 1.0]
+                            ],
                             "position": [
                                 -2.903564929962158,
                                 2.1680526733398438,
@@ -255,6 +296,7 @@
                                 0.5
                             ],
                             "castShadow": true,
+                            "offlineEmission": null,
                             "color": [
                                 1.0,
                                 1.0,
@@ -274,6 +316,12 @@
                 "components": [
                     {
                         "TransformComponent": {
+                            "base": [
+                                [1.0, 0.0, 0.0, 0.0],
+                                [0.0, 1.0, 0.0, 0.0],
+                                [0.0, 0.0, 1.0, 0.0],
+                                [0.0, 0.0, 0.0, 1.0]
+                            ],
                             "position": [
                                 -2.5,
                                 0.05101335048675537,
@@ -294,6 +342,7 @@
                     },
                     {
                         "RenderComponent": {
+                            "offlineSurface": null,
                             "materialOverrides": {},
                             "meshId": {
                                 "value": "GlassVaseFlowersAlpha"
@@ -305,9 +354,13 @@
             }
         }
     ],
+    "renderMode": "Realtime",
+    "cameraMedium": null,
     "editorCamera": {
         "farPlane": 100.0,
         "fieldOfView": 45.0,
+        "focalDistance": 1000000.0,
+        "lensRadius": 0.0,
         "mouseSensitivity": 0.11999999731779099,
         "nearPlane": 0.10000000149011612,
         "pitch": -2.960322141647339,

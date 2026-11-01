@@ -18,8 +18,10 @@ void LightComponent::init(AActor* actor)
 void SpotLightComponent::init(AActor* actor)
 {
     LightComponent::init(actor);
-    CHECK(std::isfinite(range) && range > 0.0f);
-    CHECK(std::isfinite(cosOuter) && cosOuter > 0.0f && cosOuter < 1.0f);
+    if (!offlineEmission)
+        CHECK(std::isfinite(range) && range > 0.0f);
+    const float minimumOuterCosine = offlineEmission ? -1.0f : 0.0f;
+    CHECK(std::isfinite(cosOuter) && cosOuter > minimumOuterCosine && cosOuter < 1.0f);
     CHECK(std::isfinite(cosInner) && cosInner >= cosOuter && cosInner <= 1.0f);
 }
 
@@ -70,6 +72,7 @@ LightComponent& replaceLightComponent(LightComponent& light, std::unique_ptr<Lig
     replacement->color      = light.color;
     replacement->enabled    = light.enabled;
     replacement->castShadow = light.castShadow;
+    replacement->offlineEmission = light.offlineEmission;
 
     const auto* sourceLocal = dynamic_cast<const LocalLightComponent*>(&light);
     const auto* sourceDirectional = dynamic_cast<const DirectionalLightComponent*>(&light);

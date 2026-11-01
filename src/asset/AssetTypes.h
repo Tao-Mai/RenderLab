@@ -9,7 +9,8 @@
 #include "asset/TextureAsset.h"
 #include "asset/pbrt/PbrtSceneAsset.h"
 #include "asset/pbrt/PbrtTextureAsset.h"
+#include "asset/pbrt/PbrtMediumAsset.h"
 
 using AssetTypes =
     AssetTypeList<TextureAsset, MeshAsset, MaterialAsset, ShaderAsset, SceneAsset, EnvironmentMapAsset, SamplerAsset,
-                  PbrtSceneAsset, PbrtTextureAsset>;
+                  PbrtSceneAsset, PbrtTextureAsset, PbrtMediumAsset>;

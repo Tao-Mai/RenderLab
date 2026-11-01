@@ -69,7 +69,7 @@ PbrtEntity entity(const pbrt::SceneEntity& source)
                 "vector2",
                 "point3",
                 "vector3",
-                "normal3",
+                "normal",
                 "rgb",
                 "spectrum",
                 "blackbody"
@@ -80,12 +80,16 @@ PbrtEntity entity(const pbrt::SceneEntity& source)
                 if (!std::isfinite(value))
                     pbrt::ErrorExit(&input->loc, "non-finite parameter: %s", input->name);
             size_t width = (input->type == "point2" || input->type == "vector2" || input->type == "spectrum") ? 2
-                : (input->type == "point3" || input->type == "vector3" || input->type == "normal3" ||
+                : (input->type == "point3" || input->type == "vector3" || input->type == "normal" ||
                    input->type == "rgb")
                 ? 3
                 : 1;
             if (input->floats.size() % width)
                 pbrt::ErrorExit(&input->loc, "invalid parameter array size: %s", input->name);
+            if (input->type == "spectrum")
+                for (size_t index = 2; index < input->floats.size(); index += 2)
+                    if (input->floats[index] <= input->floats[index - 2])
+                        pbrt::ErrorExit(&input->loc, "spectrum wavelengths must increase: %s", input->name);
             parameter.value = PbrtFloatValues{input->floats};
         }
         result.parameters.push_back(std::move(parameter));
@@ -158,9 +162,9 @@ ReadResult readScene(const std::filesystem::path& source, const Diagnostic& diag
         {
             auto data = entity(input);
             data.type = stringParameter(data, "type");
-            if (!media.emplace(input.name, static_cast<uint32_t>(scene.media.size())).second)
+            if (!media.emplace(input.name, static_cast<uint32_t>(result.media.size())).second)
                 pbrt::ErrorExit(&input.loc, "duplicate medium: %s", input.name);
-            scene.media.push_back({input.name, std::move(data), transform(input.renderFromObject, input.loc)});
+            result.media.push_back({input.name, std::move(data), transform(input.renderFromObject, input.loc)});
         }
         const auto mediumIndex = [&](const std::string& name, const pbrt::FileLoc& location) -> std::optional<uint32_t>
         {
@@ -247,7 +251,7 @@ ReadResult readScene(const std::filesystem::path& source, const Diagnostic& diag
         {
             for (const auto& [name, input] : inputs)
             {
-                PbrtTextureAsset texture;
+                ReadResult::TextureDescription texture;
                 texture.name              = name;
                 texture.valueType         = type;
                 texture.entity            = entity(input);

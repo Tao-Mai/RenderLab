@@ -1,4 +1,5 @@
 #include "asset/AssetDataManager.h"
+#include "asset/builtin/PrimitiveMesh.h"
 
 #include "asset/BuiltinAssets.h"
 #include "asset/TextureMip.h"
@@ -241,6 +242,9 @@ MeshGeometry AssetDataManager::readGeometry(const MeshAsset& asset) const
 {
     if (asset.source == Source::Builtin)
     {
+        if (asset.primitive)
+            return generatePrimitiveMesh(*asset.primitive);
+
         const MeshGeometry* geometry = BuiltinAssets::meshGeometry(asset.id);
         CHECK(geometry != nullptr, "unknown builtin mesh: {}", asset.id);
         return *geometry;

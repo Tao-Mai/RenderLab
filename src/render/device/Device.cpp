@@ -68,7 +68,8 @@ void Device::shutdown() noexcept
     pipelineLayouts.clear();
     editorViewDescriptorSetLayout = {};
     materialDescriptorSetLayout   = {};
-    lightingDescriptorSetLayout   = {};
+    lightDescriptorSetLayout   = {};
+    shadowDescriptorSetLayout  = {};
     sceneDescriptorSetLayout      = {};
     pipelineCache                 = nullptr;
     descriptorPool                = nullptr;

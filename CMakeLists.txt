@@ -99,6 +99,7 @@ include(cmake/Shaders.cmake)
 set(SCENE_SHADER_INCLUDES
         "${SHADER_SOURCE_DIR}/scene_data.slang"
         "${SHADER_SOURCE_DIR}/lighting_data.slang"
+        "${SHADER_SOURCE_DIR}/shadow_data.slang"
         "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
         "${SHADER_SOURCE_DIR}/light_data.slang"
         "${SHADER_SOURCE_DIR}/mesh_vertex.slang"
@@ -165,33 +166,28 @@ foreach(svgf IN ITEMS 0 1)
     if(svgf)
         string(APPEND binary ".svgf")
     endif()
-    renderlab_shader(raytracing raytracing/realtime.slang "${binary}"
+    renderlab_shader(raytracing raytracing/realtime/realtime.slang "${binary}"
         ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
         DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 SVGF=${svgf}
-        INCLUDES "${SHADER_SOURCE_DIR}/raytracing/path_tracing.slang"
+        INCLUDES "${SHADER_SOURCE_DIR}/raytracing/realtime/path_tracing.slang"
             "${SHADER_SOURCE_DIR}/scene_data.slang" "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
             "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
-            "${SHADER_SOURCE_DIR}/raytracing/random.slang" "${SHADER_SOURCE_DIR}/raytracing/local_light_sampling.slang"
-            "${SHADER_SOURCE_DIR}/raytracing/rect_area_light_sampling.slang"
+            "${SHADER_SOURCE_DIR}/raytracing/random.slang" "${SHADER_SOURCE_DIR}/raytracing/realtime/local_light_sampling.slang"
+            "${SHADER_SOURCE_DIR}/raytracing/realtime/rect_area_light_sampling.slang"
             "${SHADER_SOURCE_DIR}/material_data.slang"
-            "${SHADER_SOURCE_DIR}/normal_mapping.slang" "${SHADER_SOURCE_DIR}/raytracing/pbr_brdf.slang"
+            "${SHADER_SOURCE_DIR}/normal_mapping.slang" "${SHADER_SOURCE_DIR}/raytracing/realtime/pbr_brdf.slang"
             "${SHADER_SOURCE_DIR}/brdf.slang")
 endforeach()
-renderlab_shader(offline_pathtracing raytracing/offline.slang offline_pathtracing
-    ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
-    DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0
-    INCLUDES "${SHADER_SOURCE_DIR}/raytracing/path_tracing.slang"
+renderlab_shader(offline_pathtracing raytracing/offline/offline.slang offline_pathtracing
+    ENTRIES raygenMain missMain closestHitMain
+    INCLUDES "${SHADER_SOURCE_DIR}/raytracing/offline/offline_texture.slang" "${SHADER_SOURCE_DIR}/raytracing/offline/offline_material.slang"
+        "${PROJECT_SOURCE_DIR}/src/render/raytracing/offline/OfflineShaderTypes.h" "${SHADER_SOURCE_DIR}/texture_data.slang"
         "${SHADER_SOURCE_DIR}/scene_data.slang" "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
         "${SHADER_SOURCE_DIR}/raytracing/low_discrepancy.slang"
-        "${SHADER_SOURCE_DIR}/light_data.slang" "${SHADER_SOURCE_DIR}/constant.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/random.slang" "${SHADER_SOURCE_DIR}/raytracing/local_light_sampling.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/rect_area_light_sampling.slang"
-        "${SHADER_SOURCE_DIR}/material_data.slang"
-        "${SHADER_SOURCE_DIR}/normal_mapping.slang" "${SHADER_SOURCE_DIR}/raytracing/pbr_brdf.slang"
-        "${SHADER_SOURCE_DIR}/brdf.slang")
-renderlab_shader(svgf_reprojection raytracing/svgf_reprojection.slang svgf_reprojection
+        "${SHADER_SOURCE_DIR}/raytracing/random.slang")
+renderlab_shader(svgf_reprojection raytracing/realtime/svgf_reprojection.slang svgf_reprojection
     ENTRIES computeMain INCLUDES "${SHADER_SOURCE_DIR}/scene_data.slang" "${SHADER_SOURCE_DIR}/scene_uniforms.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/svgf_common.slang")
+        "${SHADER_SOURCE_DIR}/raytracing/realtime/svgf_common.slang")
 foreach(stage IN ITEMS 0 1 2)
     set(binary svgf_filter)
     if(stage EQUAL 0)
@@ -199,11 +195,12 @@ foreach(stage IN ITEMS 0 1 2)
     elseif(stage EQUAL 2)
         string(APPEND binary ".final")
     endif()
-    renderlab_shader(svgf_filter raytracing/svgf_filter.slang "${binary}" ENTRIES computeMain
-        DEFINES SVGF_STAGE=${stage} INCLUDES "${SHADER_SOURCE_DIR}/raytracing/svgf_common.slang")
+    renderlab_shader(svgf_filter raytracing/realtime/svgf_filter.slang "${binary}" ENTRIES computeMain
+        DEFINES SVGF_STAGE=${stage} INCLUDES "${SHADER_SOURCE_DIR}/raytracing/realtime/svgf_common.slang")
 endforeach()
 renderlab_shader_manifests()
 
+find_package(ZLIB REQUIRED)
 add_subdirectory(src/asset/pbrt)
 
 add_library(RenderLabRuntime STATIC
@@ -234,6 +231,7 @@ add_library(RenderLabRuntime STATIC
         src/scene/component/CameraComponent.h
         src/scene/component/LightComponent.h
         src/scene/component/LightComponent.cpp
+        src/scene/component/OfflineLightComponents.cpp
         src/scene/component/RenderComponent.h
         src/scene/component/RenderComponent.cpp
         src/scene/component/TransformComponent.cpp
@@ -393,19 +391,25 @@ add_library(RenderLabRuntime STATIC
         src/render/raytracing/AccelerationStructure.h
         src/render/raytracing/BlasBuildPass.cpp
         src/render/raytracing/BlasBuildPass.h
-        src/render/raytracing/OfflinePathTracingPass.cpp
-        src/render/raytracing/OfflinePathTracingPass.h
         src/render/raytracing/RayTracingBlitPass.cpp
         src/render/raytracing/RayTracingBlitPass.h
-        src/render/raytracing/RayTracingData.h
-        src/render/raytracing/RayTracingPass.cpp
-        src/render/raytracing/RayTracingPass.h
-        src/render/raytracing/SVGFFilter.cpp
-        src/render/raytracing/SVGFFilter.h
-        src/render/raytracing/SVGFReprojection.cpp
-        src/render/raytracing/SVGFReprojection.h
         src/render/raytracing/TlasBuildPass.cpp
         src/render/raytracing/TlasBuildPass.h
+
+        src/render/raytracing/realtime/RayTracingData.h
+        src/render/raytracing/realtime/RayTracingPass.cpp
+        src/render/raytracing/realtime/RayTracingPass.h
+        src/render/raytracing/realtime/SVGFFilter.cpp
+        src/render/raytracing/realtime/SVGFFilter.h
+        src/render/raytracing/realtime/SVGFReprojection.cpp
+        src/render/raytracing/realtime/SVGFReprojection.h
+
+        src/render/raytracing/offline/OfflineLightData.h
+        src/render/raytracing/offline/OfflinePathTracingPass.cpp
+        src/render/raytracing/offline/OfflinePathTracingPass.h
+        src/render/raytracing/offline/OfflineScene.cpp
+        src/render/raytracing/offline/OfflineScene.h
+        src/render/raytracing/offline/OfflineShaderTypes.h
 
         src/render/postprocess/Bloom.cpp
         src/render/postprocess/Bloom.h
@@ -429,7 +433,20 @@ add_dependencies(RenderLabRuntime RenderLabShaders)
 target_sources(RenderLabRuntime PRIVATE
     src/asset/pbrt/PbrtImport.cpp
     src/asset/pbrt/PbrtData.cpp
+    src/asset/pbrt/PbrtMaterial.cpp
+    src/asset/pbrt/PbrtSpectrum.cpp
+    src/asset/pbrt/PbrtLight.cpp
+    src/asset/pbrt/PbrtImage.cpp
+    src/asset/pbrt/PbrtTexture.cpp
+    src/asset/pbrt/PbrtMedium.cpp
+    src/asset/pbrt/PbrtSceneConversion.cpp
+    src/asset/pbrt/PbrtMesh.cpp
+    src/asset/builtin/PrimitiveMesh.cpp
+    src/asset/pbrt/upstream/PlyReader.cpp
+    src/asset/pbrt/upstream/PfmReader.cpp
+    src/asset/pbrt/upstream/rply/rply.cpp
 )
+target_link_libraries(RenderLabRuntime PRIVATE ZLIB::ZLIB)
 
 add_executable(RenderLab src/Main.cpp)
 target_link_libraries(RenderLab PRIVATE RenderLabRuntime)

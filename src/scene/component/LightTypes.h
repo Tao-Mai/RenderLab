@@ -8,7 +8,7 @@
 #include <memory>
 
 template <class F>
-void forEachLightComponentType(F&& visitor)
+void forEachRealtimeLightComponentType(F&& visitor)
 {
     visitor.template operator()<PointLightComponent>("PointLightComponent");
     visitor.template operator()<DirectionalLightComponent>("DirectionalLightComponent");

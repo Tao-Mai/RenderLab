@@ -1,0 +1,26 @@
+# RGB pipeline fixture: image lookup and a procedural texture graph, without lights.
+LookAt 0 0 6  0 0 0  0 1 0
+Camera "perspective" "float fov" 50
+Film "rgb" "integer xresolution" 640 "integer yresolution" 640
+WorldBegin
+
+Texture "pixels" "spectrum" "imagemap"
+    "string filename" "pixels.pnm" "string encoding" "linear"
+    "string filter" "point" "string wrap" "clamp"
+Texture "tint" "spectrum" "scale" "texture tex" "pixels" "float scale" 0.75
+Material "diffuse" "texture reflectance" "tint"
+Shape "trianglemesh"
+    "point3 P" [-2.6 -1.8 0  -0.1 -1.8 0  -0.1 1.8 0  -2.6 1.8 0]
+    "point2 uv" [0 0  1 0  1 1  0 1]
+    "integer indices" [0 1 2  0 2 3]
+
+Texture "grid" "spectrum" "checkerboard"
+    "float uscale" 6 "float vscale" 8
+    "rgb tex1" [0.05 0.7 0.8] "rgb tex2" [0.8 0.2 0.05]
+Texture "mixed" "spectrum" "mix"
+    "texture tex1" "grid" "rgb tex2" [0.9 0.9 0.9] "float amount" 0.1
+Material "diffuse" "texture reflectance" "mixed"
+Shape "trianglemesh"
+    "point3 P" [0.1 -1.8 0  2.6 -1.8 0  2.6 1.8 0  0.1 1.8 0]
+    "point2 uv" [0 0  1 0  1 1  0 1]
+    "integer indices" [0 1 2  0 2 3]

@@ -90,7 +90,8 @@ struct RenderFeature
 
     struct Offline
     {
-        uint32_t maxBounces = 5;
+        uint32_t maxBounces  = 5;
+        bool     pixelJitter = true;
     } offline;
 };
 

@@ -25,6 +25,7 @@ add_executable(RenderLabTests
         ${PROJECT_SOURCE_DIR}/src/scene/component/TransformComponent.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/Component.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/component/LightComponent.cpp
+        ${PROJECT_SOURCE_DIR}/src/scene/component/OfflineLightComponents.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/component/RenderComponent.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/component/CameraComponent.cpp
         ${PROJECT_SOURCE_DIR}/src/scene/component/FreeFlyMoveComponent.cpp
@@ -38,10 +39,12 @@ add_executable(RenderLabTests
         ${PROJECT_SOURCE_DIR}/src/asset/MeshGeometry.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/AssetManager.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinMesh.cpp
+        ${PROJECT_SOURCE_DIR}/src/asset/builtin/PrimitiveMesh.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinMaterial.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinTexture.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/builtin/BuiltinSampler.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/import/ImportImage.cpp
+        ${PROJECT_SOURCE_DIR}/src/asset/pbrt/upstream/PfmReader.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/import/EnvironmentMapUtils.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/import/EnvironmentMapBake.cpp
         ${PROJECT_SOURCE_DIR}/src/asset/import/ImportTexture.cpp

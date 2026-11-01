@@ -14,7 +14,7 @@
 #include "render/device/VkCheck.h"
 #include "render/graph/EndPass.h"
 #include "render/raytracing/BlasBuildPass.h"
-#include "render/raytracing/RayTracingPass.h"
+#include "render/raytracing/realtime/RayTracingPass.h"
 #include "render/resources/MaterialTable.h"
 #include "scene/SceneManager.h"
 #include "scene/SceneTypes.h"
@@ -562,7 +562,9 @@ int main(int, char** argv)
     data.shutdown();
     window.shutdown();
     config.setRenderFeature(originalFeature);
-    config.setRenderPath(originalPath);
+    config.setSceneRenderMode(originalPath == RenderPath::OfflinePathTracing ? SceneRenderMode::Offline : SceneRenderMode::Realtime);
+    if (originalPath != RenderPath::OfflinePathTracing)
+        config.setRenderPath(originalPath);
     config.shutdown();
     context() = {};
 }

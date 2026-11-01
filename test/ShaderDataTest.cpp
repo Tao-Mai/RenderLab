@@ -2,7 +2,8 @@
 
 #include "core/Logger.h"
 #include "render/editor/EditorShaderData.h"
-#include "render/raytracing/RayTracingData.h"
+#include "render/raytracing/realtime/RayTracingData.h"
+#include "render/raytracing/offline/OfflineScene.h"
 #include "render/resources/MaterialData.h"
 #include "render/resources/ShaderData.h"
 
@@ -12,6 +13,7 @@
 #include <span>
 #include <string_view>
 #include <utility>
+#include <tuple>
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -98,22 +100,42 @@ TEST(ShaderDataLayout, LightUniformsMatchCompiledShaders)
     const std::array expected = {
         Field{"lightRanges", offsetof(LightUniforms, lightRanges), sizeof(LightRanges)},
         Field{"ambientCoefficient", offsetof(LightUniforms, ambientCoefficient), sizeof(float)},
-        Field{"cascadeCount", offsetof(LightUniforms, cascadeCount), sizeof(uint32_t)},
-        Field{"directionalShadowSampleRadius", offsetof(LightUniforms, directionalShadowSampleRadius), sizeof(float)},
-        Field{"padding", offsetof(LightUniforms, padding), sizeof(float)},
-        Field{"iblParameters", offsetof(LightUniforms, iblParameters), sizeof(glm::vec4)},
-        Field{"shadowParameters", offsetof(LightUniforms, shadowParameters), sizeof(glm::vec4)},
+        Field{"prefilteredMaxLod", offsetof(LightUniforms, prefilteredMaxLod), sizeof(float)},
+        Field{"padding", offsetof(LightUniforms, padding), sizeof(glm::vec2)},
     };
     for (const auto* shader : lightingShaders)
     {
         SCOPED_TRACE(shader);
         const auto value = parameter(shader, "lightUniforms");
-        EXPECT_EQ(value.at("binding").at("space"), RenderInterface::kLightingSet);
+        EXPECT_EQ(value.at("binding").at("space"), RenderInterface::kLightSet);
         EXPECT_EQ(value.at("binding").at("index").get<uint32_t>(), RenderInterface::kLightUniformBinding);
         const auto& type = value.at("type");
         EXPECT_EQ(type.at("kind"), "constantBuffer");
         checkFields(type.at("elementType"), expected);
         EXPECT_EQ(type.at("elementVarLayout").at("binding").at("size").get<size_t>(), sizeof(LightUniforms));
+    }
+}
+
+TEST(ShaderDataLayout, ShadowUniformsMatchCompiledShaders)
+{
+    const std::array expected = {
+        Field{"cascadeCount", offsetof(ShadowUniforms, cascadeCount), sizeof(uint32_t)},
+        Field{"directionalSampleRadius", offsetof(ShadowUniforms, directionalSampleRadius), sizeof(float)},
+        Field{"bias", offsetof(ShadowUniforms, bias), sizeof(float)},
+        Field{"sampleRadius", offsetof(ShadowUniforms, sampleRadius), sizeof(float)},
+        Field{"spotSampleRadius", offsetof(ShadowUniforms, spotSampleRadius), sizeof(float)},
+        Field{"pixelRotation", offsetof(ShadowUniforms, pixelRotation), sizeof(uint32_t)},
+        Field{"enabled", offsetof(ShadowUniforms, enabled), sizeof(uint32_t)},
+        Field{"padding", offsetof(ShadowUniforms, padding), sizeof(uint32_t)},
+    };
+    for (const auto* shader : lightingShaders)
+    {
+        SCOPED_TRACE(shader);
+        const auto value = parameter(shader, "shadowUniforms");
+        EXPECT_EQ(value.at("binding").at("space"), RenderInterface::kShadowSet);
+        EXPECT_EQ(value.at("binding").at("index"), RenderInterface::kShadowUniformBinding);
+        checkFields(value.at("type").at("elementType"), expected);
+        EXPECT_EQ(value.at("type").at("elementVarLayout").at("binding").at("size"), sizeof(ShadowUniforms));
     }
 }
 
@@ -140,12 +162,11 @@ TEST(ShaderDataLayout, LightStorageElementsMatchCompiledShaders)
           "shadow.rect_area",
           "shadow.directional",
           "shadow.spot",
-          "raytracing",
-          "offline_pathtracing"})
+          "raytracing"})
     {
         SCOPED_TRACE(shader);
         const auto value = parameter(shader, "lights");
-        EXPECT_EQ(value.at("binding").at("space"), RenderInterface::kLightingSet);
+        EXPECT_EQ(value.at("binding").at("space"), RenderInterface::kLightSet);
         EXPECT_EQ(value.at("binding").at("index").get<uint32_t>(), RenderInterface::kLightBufferBinding);
         const auto& type = value.at("type");
         EXPECT_EQ(type.at("baseShape"), "structuredBuffer");
@@ -157,7 +178,7 @@ TEST(ShaderDataLayout, LightStorageElementsMatchCompiledShaders)
 TEST(ShaderDataLayout, PointShadowStorageAndPushConstantsMatchCompiledShader)
 {
     const auto shadow = parameter("shadow", "pointShadowData");
-    EXPECT_EQ(shadow.at("binding").at("space"), RenderInterface::kLightingSet);
+    EXPECT_EQ(shadow.at("binding").at("space"), RenderInterface::kShadowSet);
     EXPECT_EQ(shadow.at("binding").at("index").get<uint32_t>(), RenderInterface::kPointShadowBufferBinding);
     const std::array expected = {Field{"vp", offsetof(PointShadowData, vp), sizeof(PointShadowData::vp)}};
     checkFields(shadow.at("type").at("resultType"), expected);
@@ -185,7 +206,7 @@ TEST(ShaderDataLayout, DirectionalShadowStorageMatchesCompiledShaders)
     for (const auto* shader : {"shadow.directional", "slang", "slang.no_ibl"})
     {
         const auto shadow = parameter(shader, "directionalShadowData");
-        EXPECT_EQ(shadow.at("binding").at("space"), RenderInterface::kLightingSet);
+        EXPECT_EQ(shadow.at("binding").at("space"), RenderInterface::kShadowSet);
         EXPECT_EQ(shadow.at("binding").at("index"), RenderInterface::kDirectionalShadowBufferBinding);
         const auto& cascades = shadow.at("type").at("resultType").at("fields").at(0);
         EXPECT_EQ(cascades.at("type").at("elementCount"), kMaxDirectionalShadowCascades);
@@ -201,7 +222,7 @@ TEST(ShaderDataLayout, SpotShadowStorageMatchesCompiledShaders)
     {
         SCOPED_TRACE(shader);
         const auto shadow = parameter(shader, "spotShadowData");
-        EXPECT_EQ(shadow.at("binding").at("space"), RenderInterface::kLightingSet);
+        EXPECT_EQ(shadow.at("binding").at("space"), RenderInterface::kShadowSet);
         EXPECT_EQ(shadow.at("binding").at("index"), RenderInterface::kSpotShadowBufferBinding);
         checkFields(shadow.at("type").at("resultType"), expected);
     }
@@ -219,7 +240,7 @@ TEST(ShaderDataLayout, RectAreaShadowStorageMatchesCompiledShaders)
     {
         SCOPED_TRACE(shader);
         const auto shadow = parameter(shader, "rectAreaShadowData");
-        EXPECT_EQ(shadow.at("binding").at("space"), RenderInterface::kLightingSet);
+        EXPECT_EQ(shadow.at("binding").at("space"), RenderInterface::kShadowSet);
         EXPECT_EQ(shadow.at("binding").at("index").get<uint32_t>(), RenderInterface::kRectAreaShadowBufferBinding);
         checkFields(shadow.at("type").at("resultType"), expected);
     }
@@ -228,26 +249,26 @@ TEST(ShaderDataLayout, RectAreaShadowStorageMatchesCompiledShaders)
 TEST(ShaderDataLayout, LightingTextureAndSamplerBindingsMatchCompiledShaders)
 {
     const std::array bindings = {
-        std::pair{"pointShadowMap", RenderInterface::kPointShadowImageBinding},
-        std::pair{"spotShadowMap", RenderInterface::kSpotShadowImageBinding},
-        std::pair{"rectAreaShadowMap", RenderInterface::kRectAreaShadowImageBinding},
-        std::pair{"cascadeShadowMap", RenderInterface::kDirectionalShadowImageBinding},
-        std::pair{"shadowSampler", RenderInterface::kShadowComparisonSamplerBinding},
-        std::pair{"linearSampler", RenderInterface::kLinearSamplerBinding},
-        std::pair{"irradianceMap", RenderInterface::kIrradianceImageBinding},
-        std::pair{"irradianceMapSampler", RenderInterface::kIrradianceSamplerBinding},
-        std::pair{"prefilteredSpecularMap", RenderInterface::kPrefilteredSpecularImageBinding},
-        std::pair{"prefilteredSpecularMapSampler", RenderInterface::kPrefilteredSpecularSamplerBinding},
-        std::pair{"brdfLUT", RenderInterface::kBrdfLutImageBinding},
-        std::pair{"brdfLUTSampler", RenderInterface::kBrdfLutSamplerBinding},
+        std::tuple{"pointShadowMap", RenderInterface::kShadowSet, RenderInterface::kPointShadowImageBinding},
+        std::tuple{"spotShadowMap", RenderInterface::kShadowSet, RenderInterface::kSpotShadowImageBinding},
+        std::tuple{"rectAreaShadowMap", RenderInterface::kShadowSet, RenderInterface::kRectAreaShadowImageBinding},
+        std::tuple{"cascadeShadowMap", RenderInterface::kShadowSet, RenderInterface::kDirectionalShadowImageBinding},
+        std::tuple{"shadowSampler", RenderInterface::kShadowSet, RenderInterface::kShadowComparisonSamplerBinding},
+        std::tuple{"shadowLinearSampler", RenderInterface::kShadowSet, RenderInterface::kShadowLinearSamplerBinding},
+        std::tuple{"irradianceMap", RenderInterface::kLightSet, RenderInterface::kIrradianceImageBinding},
+        std::tuple{"irradianceMapSampler", RenderInterface::kLightSet, RenderInterface::kIrradianceSamplerBinding},
+        std::tuple{"prefilteredSpecularMap", RenderInterface::kLightSet, RenderInterface::kPrefilteredSpecularImageBinding},
+        std::tuple{"prefilteredSpecularMapSampler", RenderInterface::kLightSet, RenderInterface::kPrefilteredSpecularSamplerBinding},
+        std::tuple{"brdfLUT", RenderInterface::kLightSet, RenderInterface::kBrdfLutImageBinding},
+        std::tuple{"brdfLUTSampler", RenderInterface::kLightSet, RenderInterface::kBrdfLutSamplerBinding},
     };
     for (const auto* shader : {"slang", "slang.no_ibl", "slang.clearcoat", "slang.clearcoat.no_ibl"})
     {
         SCOPED_TRACE(shader);
-        for (const auto& [name, binding] : bindings)
+        for (const auto& [name, set, binding] : bindings)
         {
             SCOPED_TRACE(name);
-            EXPECT_EQ(parameter(shader, name).at("binding").at("space"), RenderInterface::kLightingSet);
+            EXPECT_EQ(parameter(shader, name).at("binding").at("space"), set);
             EXPECT_EQ(parameter(shader, name).at("binding").at("index").get<uint32_t>(), binding);
         }
     }
@@ -255,7 +276,7 @@ TEST(ShaderDataLayout, LightingTextureAndSamplerBindingsMatchCompiledShaders)
         parameter("skybox", "radianceMap").at("binding").at("index").get<uint32_t>(),
         RenderInterface::kRadianceImageBinding
     );
-    EXPECT_EQ(parameter("skybox", "radianceMap").at("binding").at("space"), RenderInterface::kLightingSet);
+    EXPECT_EQ(parameter("skybox", "radianceMap").at("binding").at("space"), RenderInterface::kLightSet);
     EXPECT_EQ(
         parameter("skybox", "radianceSampler").at("binding").at("index").get<uint32_t>(),
         RenderInterface::kRadianceSamplerBinding
@@ -309,8 +330,7 @@ TEST(ShaderDataLayout, MaterialDataMatchesCompiledShaders)
           "slang.clearcoat.sheen",
           "slang.clearcoat.sheen.no_ibl",
           "gbuffer",
-          "raytracing",
-          "offline_pathtracing"})
+          "raytracing"})
     {
         SCOPED_TRACE(shader);
         const auto material = parameter(shader, "materials");
@@ -349,9 +369,9 @@ TEST(ShaderDataLayout, PathTracingParametersMatchCompiledShaders)
         Field{"maxBounces", offsetof(PathTracingParameters, maxBounces), sizeof(uint32_t)},
         Field{"sampleIndex", offsetof(PathTracingParameters, sampleIndex), sizeof(uint32_t)},
         Field{"iblEnabled", offsetof(PathTracingParameters, iblEnabled), sizeof(uint32_t)},
-        Field{"padding", offsetof(PathTracingParameters, padding), sizeof(uint32_t)},
+        Field{"pixelJitterEnabled", offsetof(PathTracingParameters, pixelJitterEnabled), sizeof(uint32_t)},
     };
-    for (const auto* shader : {"raytracing", "offline_pathtracing"})
+    for (const auto* shader : {"raytracing"})
     {
         const auto parameters = parameter(shader, "parameters");
         checkFields(parameters.at("type").at("elementType"), fields);
@@ -368,7 +388,7 @@ TEST(ShaderDataLayout, RayTracingHitDataMatchesCompiledShaders)
         Field{"materialIndex", offsetof(RayTracingHitData, materialIndex), sizeof(uint32_t)},
         Field{"padding", offsetof(RayTracingHitData, padding), sizeof(RayTracingHitData::padding)},
     };
-    for (const auto* shader : {"raytracing", "offline_pathtracing"})
+    for (const auto* shader : {"raytracing"})
         checkFields(parameter(shader, "objects").at("type").at("resultType"), fields);
 }
 
@@ -389,6 +409,47 @@ TEST(ShaderDataLayout, ToneMappingMatchesCompiledShader)
         parameter("tonemapping", "hdrSampler").at("binding").at("index"),
         RenderInterface::kToneMappingSamplerBinding
     );
+}
+
+TEST(ShaderDataLayout, OfflineSceneUsesItsOwnBufferLayouts)
+{
+    const auto push = parameter("offline_pathtracing", "parameters");
+    const std::array parameters = {
+        Field{"viewport", offsetof(OfflinePathParameters, viewport), sizeof(glm::vec4)},
+        Field{"samples", offsetof(OfflinePathParameters, samples), sizeof(glm::uvec4)},
+    };
+    checkFields(push.at("type").at("elementType"), parameters);
+    const auto check = [&](const char* name, uint32_t binding, std::span<const Field> fields)
+    {
+        const auto buffer = parameter("offline_pathtracing", name);
+        EXPECT_EQ(buffer.at("binding").at("space"), RenderInterface::kRayTracingPassSet);
+        EXPECT_EQ(buffer.at("binding").at("index"), binding);
+        checkFields(buffer.at("type").at("resultType"), fields);
+    };
+    const std::array hit = {
+        Field{"vertexAddress", offsetof(OfflineHitData, vertexAddress), sizeof(uint64_t)},
+        Field{"indexAddress", offsetof(OfflineHitData, indexAddress), sizeof(uint64_t)},
+        Field{"material", offsetof(OfflineHitData, material), sizeof(glm::uvec4)},
+    };
+    check("objects", 2, hit);
+    const std::array material = {
+        Field{"model", offsetof(OfflineMaterialPreview, model), sizeof(OfflineMaterialPreviewModel)},
+        Field{"firstTexture", offsetof(OfflineMaterialPreview, firstTexture), sizeof(uint32_t)},
+        Field{"secondTexture", offsetof(OfflineMaterialPreview, secondTexture), sizeof(uint32_t)},
+        Field{"instructionCount", offsetof(OfflineMaterialPreview, instructionCount), sizeof(uint32_t)},
+        Field{"parameters", offsetof(OfflineMaterialPreview, parameters), sizeof(glm::vec4)},
+    };
+    check("materialInstructions", 8, material);
+    const std::array texture = {
+        Field{"metadata", offsetof(OfflineTextureInstruction, metadata), sizeof(glm::uvec4)},
+        Field{"value", offsetof(OfflineTextureInstruction, value), sizeof(glm::vec4)},
+        Field{"uvScaleOffset", offsetof(OfflineTextureInstruction, uvScaleOffset), sizeof(glm::vec4)},
+        Field{"uAxisKind", offsetof(OfflineTextureInstruction, uAxisKind), sizeof(glm::vec4)},
+        Field{"vAxis", offsetof(OfflineTextureInstruction, vAxis), sizeof(glm::vec4)},
+        Field{"settings", offsetof(OfflineTextureInstruction, settings), sizeof(glm::vec4)},
+        Field{"textureFromWorld", offsetof(OfflineTextureInstruction, textureFromWorld), sizeof(glm::mat4)},
+    };
+    check("textureInstructions", 9, texture);
 }
 
 TEST(ShaderDataLayout, EditorShadersUseOnlyViewData)

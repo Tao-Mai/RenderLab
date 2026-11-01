@@ -57,6 +57,7 @@ public:
         const MaterialKey& key, const GltfMaterial& material, RenderResourceManager& resources, AssetManager& assets
     );
     void                              upload(const VulkanContext& vulkan, uint32_t frameIndex);
+    [[nodiscard]] TextureRef textureReference(const TextureBinding& binding, RenderResourceManager& resources);
     [[nodiscard]] const MaterialInfo& info(uint32_t materialIndex) const { return materialInfos[materialIndex]; }
     [[nodiscard]] vk::DescriptorSet   descriptorSetHandle(uint32_t frameIndex) const
     {
@@ -64,7 +65,6 @@ public:
     }
 
 private:
-    TextureRef texture(const TextureBinding& binding, RenderResourceManager& resources);
 
     struct MaterialKeyHash
     {

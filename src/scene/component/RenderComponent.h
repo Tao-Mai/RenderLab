@@ -3,6 +3,7 @@
 #include "asset/GltfMaterial.h"
 #include "asset/MeshAsset.h"
 #include "scene/Component.h"
+#include "asset/pbrt/PbrtSurface.h"
 
 #include <unordered_map>
 
@@ -13,4 +14,5 @@ struct RenderComponent : Component
 
     [[=ReflectField{}]] MeshAsset::ID meshId;
     [[=ReflectField{}]] std::unordered_map<int, MaterialOverride> materialOverrides;
+    [[=ReflectField{}]] std::optional<PbrtSurface> offlineSurface;
 };

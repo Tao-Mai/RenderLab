@@ -93,7 +93,8 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
     if (drawSettingsHeader("Renderer"))
     {
         const RendererConfig defaults;
-        config.setRenderPath(defaults.renderPath);
+        if (scene.renderMode == SceneRenderMode::Realtime)
+            config.setRenderPath(defaults.renderPath);
         feature.ibl                = defaults.feature.ibl;
         feature.ambientCoefficient = defaults.feature.ambientCoefficient;
         config.setRenderFeature(feature);
@@ -103,28 +104,28 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
         std::pair{RenderPath::Forward, "Forward"},
         std::pair{RenderPath::Deferred, "Deferred"},
         std::pair{RenderPath::RayTracing, "Real-time ray tracing"},
-        std::pair{RenderPath::OfflinePathTracing, "Offline path tracing"},
     };
-    const auto selected =
-        std::ranges::find_if(kRenderPaths, [path](const auto& option) { return option.first == path; });
-    DCHECK(selected != kRenderPaths.end());
-    if (ImGui::BeginCombo("Render path", selected->second))
+    if (scene.renderMode == SceneRenderMode::Offline)
+        ImGui::TextUnformatted("Render path: Offline path tracing");
+    else
     {
-        const bool supported = vulkan.supportsRayTracing();
-        for (const auto& [candidate, label] : kRenderPaths)
+        const auto selected =
+            std::ranges::find_if(kRenderPaths, [path](const auto& option) { return option.first == path; });
+        DCHECK(selected != kRenderPaths.end());
+        if (ImGui::BeginCombo("Render path", selected->second))
         {
-            ImGui::BeginDisabled(
-                (candidate == RenderPath::RayTracing || candidate == RenderPath::OfflinePathTracing) && !supported
-            );
-            if (ImGui::Selectable(label, path == candidate) && path != candidate)
+            const bool supported = vulkan.supportsRayTracing();
+            for (const auto& [candidate, label] : kRenderPaths)
             {
-                config.setRenderPath(candidate);
+                ImGui::BeginDisabled(candidate == RenderPath::RayTracing && !supported);
+                if (ImGui::Selectable(label, path == candidate) && path != candidate)
+                    config.setRenderPath(candidate);
+                ImGui::EndDisabled();
             }
-            ImGui::EndDisabled();
+            if (!supported)
+                ImGui::TextUnformatted("Ray tracing is not supported by this GPU");
+            ImGui::EndCombo();
         }
-        if (!supported)
-            ImGui::TextUnformatted("Ray tracing is not supported by this GPU");
-        ImGui::EndCombo();
     }
     ImGui::Spacing();
 
@@ -250,7 +251,9 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
             config.setRenderFeature(feature);
         }
         ImGui::SetItemTooltip("Maximum surface scattering events. 1 gives direct lighting plus terminal emission.");
-        ImGui::TextUnformatted("1 sample/pixel per frame; scene/camera/bounce changes reset accumulation.");
+        if (ImGui::Checkbox("Pixel jitter", &feature.offline.pixelJitter))
+            config.setRenderFeature(feature);
+        ImGui::TextUnformatted("1 sample/pixel per frame; scene, camera or sampling changes reset accumulation.");
         return sceneEdited;
     }
 

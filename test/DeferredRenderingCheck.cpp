@@ -39,15 +39,17 @@ void checkPipelineLayoutCache()
     {
         auto       sceneLayout = device.createDescriptorSetLayout(device.sceneDescriptorSetLayout.bindings);
         const auto layout      = device.getOrCreatePipelineLayout(
-            std::array{&sceneLayout, &device.lightingDescriptorSetLayout, &device.materialDescriptorSetLayout},
+            std::array{&sceneLayout, &device.lightDescriptorSetLayout, &device.materialDescriptorSetLayout,
+                &device.shadowDescriptorSetLayout},
             ranges
         );
         CHECK(layout == device.meshPipelineLayout);
     }
     const std::array sets{
         &device.sceneDescriptorSetLayout,
-        &device.lightingDescriptorSetLayout,
-        &device.materialDescriptorSetLayout
+        &device.lightDescriptorSetLayout,
+        &device.materialDescriptorSetLayout,
+        &device.shadowDescriptorSetLayout
     };
     CHECK(device.getOrCreatePipelineLayout(sets, ranges) == device.meshPipelineLayout);
     ranges[0].size -= sizeof(glm::vec4);
@@ -218,7 +220,8 @@ void checkDeferred(Renderer& renderer, SceneManager& scenes)
         {
             const auto forwardPixel = sample(false, ibl, shadows);
             lastDeferred            = sample(true, ibl, shadows);
-            CHECK(glm::length(lastDeferred) > 0.05f);
+            CHECK(glm::length(lastDeferred) > 0.05f, "IBL {}, shadows {}: RGB {}, {}, {}",
+                ibl, shadows, lastDeferred.r, lastDeferred.g, lastDeferred.b);
             compare(forwardPixel, lastDeferred);
             LOG_INFO(
                 "Deferred lighting matches forward: IBL {}, shadows {}, RGB {}, {}, {}",
@@ -348,7 +351,10 @@ int main(int, char** argv)
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     window.init();
 
+    const auto environments = assets.loadedIds<EnvironmentMapAsset>();
+    CHECK(!environments.empty());
     SceneAsset scene;
+    scene.environmentMap = environments.front();
     scene.editorCamera.position = {0, 0, 5};
     scene.editorCamera.yaw      = -90;
     scene.editorCamera.pitch    = 0;

@@ -52,6 +52,7 @@ public:
     void                                setEditorSize(int width, int height);
     void                                setInitialScene(SceneAsset::ID id);
     void                                setRenderPath(RenderPath path);
+    void                                setSceneRenderMode(SceneRenderMode mode);
     void                                setRenderFeature(const RenderFeature& feature);
 
 private:
@@ -63,6 +64,8 @@ private:
     CommandConfig         commands;
     EditorConfig          editor;
     RendererConfig        renderer;
+    SceneRenderMode       sceneRenderMode    = SceneRenderMode::Realtime;
+    RenderPath            realtimeRenderPath = RenderPath::Forward;
 
     void load();
     void loadCommands();

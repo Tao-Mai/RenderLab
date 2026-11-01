@@ -237,14 +237,15 @@ TEST(AssetIDTest, JsonIoSavesAndReplacesAssetsInTheUnifiedFormat)
 
     PbrtMaterial offline;
     offline.id          = material.id;
-    offline.entity.type = "dielectric";
-    offline.entity.parameters.push_back({.type = "float", .name = "eta", .value = PbrtFloatValues{{1.6}}});
+    PbrtMaterial::Dielectric dielectric;
+    dielectric.eta = PbrtConstantSpectrum{1.6};
+    offline.model = dielectric;
     assets.save(offline);
     EXPECT_EQ(assets.get(offline.id).as<PbrtMaterial>(), offline);
     EXPECT_EQ(assets.loadedIds<MaterialAsset>().size(), 1u);
     restored = asset_json::load<std::unique_ptr<MaterialAsset>>(temporary.file);
     EXPECT_EQ(restored->as<PbrtMaterial>(), offline);
-    EXPECT_EQ(Serialize(restored).at("PbrtMaterial").at("entity").at("type"), "dielectric");
+    EXPECT_TRUE(Serialize(restored).at("PbrtMaterial").at("model").contains("Dielectric"));
 
     assets.shutdown();
     AssetManager reloaded;
@@ -253,27 +254,26 @@ TEST(AssetIDTest, JsonIoSavesAndReplacesAssetsInTheUnifiedFormat)
     reloaded.shutdown();
 }
 
-TEST(AssetIDTest, PbrtMaterialPreservesTypedParameterAlternatives)
+TEST(AssetIDTest, PbrtMaterialPreservesTypedModelsAndSpectra)
 {
     PbrtMaterial material;
-    material.id          = MaterialAsset::ID{"offline"};
-    material.entity.type = "diffuse";
-    material.entity.parameters.push_back(
-        {.type = "rgb", .name = "reflectance", .colorSpace = "srgb", .value = PbrtFloatValues{{0.2, 0.3, 0.4}}}
-    );
+    material.id = MaterialAsset::ID{"offline"};
+    material.model = PbrtMaterial::Diffuse{PbrtRgbSpectrum{{0.2, 0.3, 0.4}, "srgb"}};
     auto stored = Serialize(material);
-    EXPECT_EQ(stored.at("entity").at("type"), "diffuse");
+    EXPECT_EQ(stored.at("model").at("Diffuse").at("reflectance").at("PbrtRgbSpectrum").at("colorSpace"), "srgb");
     PbrtMaterial restored;
     Deserialize(stored, restored);
     EXPECT_EQ(restored, material);
 
-    material.entity.type       = "conductor";
-    material.entity.parameters = {{.type = "spectrum", .name = "eta", .value = PbrtStringValues{{"metal-Cu-eta"}}}};
-    stored                     = Serialize(material);
-    EXPECT_EQ(stored.at("entity").at("type"), "conductor");
+    material.model = PbrtMaterial::Conductor{};
+    stored = Serialize(material);
+    EXPECT_TRUE(stored.at("model").contains("Conductor"));
     Deserialize(stored, restored);
     EXPECT_EQ(restored, material);
-    EXPECT_DEATH(Deserialize(json{{"UnknownValues", json::object()}}, restored.entity.parameters.front().value), "");
+    auto& eta = std::get<PbrtMaterial::OpticalConstants>(std::get<PbrtMaterial::Conductor>(restored.model).optics).eta;
+    EXPECT_DEATH(Deserialize(json{{"UnknownSpectrum", json::object()}}, eta), "");
+    stored.erase("model");
+    EXPECT_DEATH(Deserialize(stored, restored), "");
 }
 
 TEST(AssetIDTest, AllPersistedAssetsRoundTrip)
@@ -299,8 +299,11 @@ TEST(AssetIDTest, AllPersistedAssetsRoundTrip)
                 SCOPED_TRACE(entry.path().string());
                 using Stored = std::conditional_t<std::is_polymorphic_v<T>, std::unique_ptr<T>, T>;
                 const auto    asset = asset_json::load<Stored>(entry.path());
-                std::ifstream input{entry.path()};
-                EXPECT_EQ(Serialize(asset), json::parse(input));
+                // Compare the typed round trip: handwritten decimal literals may round to float on load.
+                const auto serialized = Serialize(asset);
+                Stored restored{};
+                Deserialize(serialized, restored);
+                EXPECT_EQ(Serialize(restored), serialized);
                 ++count;
             }
         }

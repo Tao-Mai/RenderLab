@@ -190,7 +190,7 @@ TEST_F(ComponentDrawTest, GenericDrawingSupportsFlagsOptionalContainersAndNested
 
 TEST_F(ComponentDrawTest, LightEditorShowsOnlyTypeSpecificFields)
 {
-    forEachLightComponentType([&]<class T>(const char*)
+    forEachRealtimeLightComponentType([&]<class T>(const char*)
     {
         T light;
         ComponentDrawResult result;
@@ -255,9 +255,11 @@ TEST_F(ComponentDrawTest, TransformUsesEulerAnglesAndDoesNotModifyIdleQuaternion
     EXPECT_EQ(transform.rotation, rotation);
 }
 
-TEST_F(ComponentDrawTest, TransformEditsEulerRotationAndClampsScale)
+TEST_F(ComponentDrawTest, TransformEditsTrsAndPreservesBase)
 {
     TransformComponent transform;
+    transform.base[1][0] = 0.5f;
+    const auto base = transform.base;
     const auto draw = [&] { return component_draw::drawFields(transform); };
     const auto rotation = enterScalar(draw, [] { return vectorElementId("Rotation", 0); }, "60");
     EXPECT_TRUE(rotation.edited);
@@ -266,7 +268,10 @@ TEST_F(ComponentDrawTest, TransformEditsEulerRotationAndClampsScale)
 
     const auto scale = enterScalar(draw, [] { return vectorElementId("Scale", 0); }, "-5");
     EXPECT_TRUE(scale.edited);
+    EXPECT_FLOAT_EQ(transform.scale.x, -5.0f);
+    EXPECT_TRUE(enterScalar(draw, [] { return vectorElementId("Scale", 0); }, "0").edited);
     EXPECT_FLOAT_EQ(transform.scale.x, 0.001f);
+    EXPECT_EQ(transform.base, base);
 }
 
 TEST_F(ComponentDrawTest, RotationRetainsEnteredAnglesAcrossEulerBoundaries)

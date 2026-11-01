@@ -14,11 +14,11 @@
 | ShaderAsset                 | Shader 程序与构建产物描述                                          |
 | SceneAsset                  | Actor / Component、编辑器相机、环境图                              |
 | EnvironmentMapAsset         | Radiance、Irradiance、GGX Prefiltered 纹理引用                     |
-| PbrtSceneAsset / PbrtTextureAsset | PBRT 场景语义、纹理图、运动变换、设置与输入依赖 |
+| PbrtSceneAsset / PbrtTextureAsset / PbrtMediumAsset | PBRT 场景、纹理节点、介质模型、设置与输入依赖 |
 
 `AssetID<T>` 用类型区分引用，以字符串作为持久化 ID。每个 Submesh 持有自己的 Material ID。
 
-GltfMaterial 保存 PBR 参数与 glTF 扩展。PbrtMaterial 保存 PBRT 模型、声明类型、光谱、色彩空间及材质和纹理引用，配合独立的 PBRT 场景资产供后续离线渲染使用。
+GltfMaterial 保存 PBR 参数与 glTF 扩展。PbrtMaterial 按离线材质模型保存明确字段，输入保留光谱、色彩空间及材质和纹理引用，导入时转换并保存为内部资产。
 
 ## 数据流
 

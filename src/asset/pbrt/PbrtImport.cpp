@@ -1,23 +1,79 @@
 #include "asset/AssetDataManager.h"
 #include "asset/AssetImporter.h"
 #include "asset/AssetManager.h"
+#include "asset/SceneAsset.h"
 #include "asset/import/ImportId.h"
 #include "asset/pbrt/PbrtFrontend.h"
 #include "asset/pbrt/PbrtMaterial.h"
+#include "asset/pbrt/PbrtMesh.h"
+#include "asset/pbrt/PbrtParameters.h"
+#include "asset/pbrt/PbrtSceneConversion.h"
+#include "asset/pbrt/PbrtTexture.h"
+#include "asset/pbrt/PbrtMediumAsset.h"
 #include "core/Context.h"
 
 #include <algorithm>
 #include <bit>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <fstream>
+#include <glm/geometric.hpp>
+#include <glm/trigonometric.hpp>
+#include <limits>
 #include <set>
 #include <unordered_map>
 
 namespace
 {
-constexpr size_t kInlineArrayLimit = 64 * 1024;
-constexpr size_t kArrayAlignment   = 8;
+constexpr size_t kInlineArrayLimit   = 64 * 1024;
+constexpr size_t kArrayAlignment     = 8;
+constexpr double kDefaultCameraFov   = 90.0;
+constexpr double kDefaultFilmWidth   = 1280.0;
+constexpr double kDefaultFilmHeight = 720.0;
+using pbrt_import::kEngineFromPbrtWorld;
+
+using pbrt_import::scalarParameter;
+
+EditorCameraConfig importCamera(const PbrtSceneAsset& source)
+{
+    const auto& camera = source.camera;
+    CHECK(camera.type == "perspective", "unsupported PBRT camera '{}' at {}:{}",
+          camera.type, camera.location.file.string(), camera.location.line);
+
+    const auto pose = kEngineFromPbrtWorld * source.worldFromCamera.start;
+    const auto direction = glm::normalize(glm::dvec3(pose[2]));
+    const auto position = glm::vec3(pose[3]);
+    CHECK(std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z),
+          "PBRT camera position exceeds engine precision at {}:{}", camera.location.file.string(), camera.location.line);
+
+    const double fov = scalarParameter<PbrtFloatValues>(camera, "fov", "float", kDefaultCameraFov);
+    const double width = scalarParameter<PbrtIntegerValues>(source.film, "xresolution", "integer", kDefaultFilmWidth);
+    const double height = scalarParameter<PbrtIntegerValues>(source.film, "yresolution", "integer", kDefaultFilmHeight);
+    const double aspect = scalarParameter<PbrtFloatValues>(camera, "frameaspectratio", "float", width / height);
+    CHECK(fov > 0.0 && fov < 180.0 && width > 0.0 && height > 0.0 && std::isfinite(aspect) && aspect > 0.0,
+          "invalid PBRT camera field of view at {}:{}", camera.location.file.string(), camera.location.line);
+
+    EditorCameraConfig result;
+    const double lensRadius = scalarParameter<PbrtFloatValues>(camera, "lensradius", "float", result.lensRadius);
+    const double focalDistance = scalarParameter<PbrtFloatValues>(camera, "focaldistance", "float", result.focalDistance);
+    CHECK(std::isfinite(lensRadius) && lensRadius >= 0.0 && lensRadius <= std::numeric_limits<float>::max() &&
+          std::isfinite(focalDistance) && focalDistance > 0.0 && focalDistance <= std::numeric_limits<float>::max(),
+          "invalid PBRT camera lens parameters at {}:{}", camera.location.file.string(), camera.location.line);
+
+    result.position      = position;
+    result.yaw           = static_cast<float>(glm::degrees(std::atan2(direction.z, direction.x)));
+    result.pitch         = static_cast<float>(glm::degrees(std::asin(std::clamp(direction.y, -1.0, 1.0))));
+    result.fieldOfView   = static_cast<float>(aspect >= 1.0 ? fov :
+        glm::degrees(2.0 * std::atan(std::tan(glm::radians(fov) * 0.5) / aspect)));
+    result.lensRadius    = static_cast<float>(lensRadius);
+    result.focalDistance = static_cast<float>(focalDistance);
+    CHECK(result.fieldOfView > 0.0f && result.fieldOfView < 180.0f,
+          "PBRT camera field of view exceeds engine precision at {}:{}", camera.location.file.string(), camera.location.line);
+
+    return result;
+}
+
 enum class EntityKind
 {
     Camera,
@@ -45,7 +101,7 @@ void visitEntities(pbrt_import::ReadResult& result, Visitor&& visitor)
         visitor(light.entity, EntityKind::Light, PbrtTextureType::Spectrum);
     for (auto& light : scene.areaLights)
         visitor(light, EntityKind::AreaLight, PbrtTextureType::Spectrum);
-    for (auto& medium : scene.media)
+    for (auto& medium : result.media)
         visitor(medium.entity, EntityKind::Medium, PbrtTextureType::Spectrum);
     for (auto& material : result.materials)
         visitor(material.entity, EntityKind::Material, PbrtTextureType::Spectrum);
@@ -70,9 +126,16 @@ class ImportSession
 {
 public:
     ImportSession(pbrt_import::ReadResult& result, PbrtSceneAsset::ID id, std::filesystem::path source) :
-        result(result), sourceRoot(source.parent_path()), package(std::filesystem::path("binary/pbrt") / id.value)
+        result(result), sourceRoot(source.parent_path()), package(std::filesystem::path("binary/pbrt") / id.value),
+        images(id.value, source.parent_path())
     {
         result.scene.id = std::move(id);
+        for (size_t index = 0; index < result.media.size(); ++index)
+        {
+            PbrtMediumAsset::ID mediumId = result.scene.id.value + "_medium" + std::to_string(index);
+            CHECK(!context().assetManager->find(mediumId), "PBRT medium ID already exists: {}", mediumId);
+            result.scene.media.push_back(std::move(mediumId));
+        }
         for (size_t index = 0; index < result.materials.size(); ++index)
         {
             MaterialAsset::ID materialId = result.scene.id.value + "_material" + std::to_string(index);
@@ -104,6 +167,7 @@ public:
         for (const auto& file : result.sourceFiles)
             addFile(file.string(), PbrtFileKind::Source);
         result.scene.source = addFile(source.string(), PbrtFileKind::Source).path;
+        meshes = pbrt_import::prepareMeshes(result.scene, sourceRoot);
         visitEntities(
             result,
             [&](PbrtEntity& entity, EntityKind kind, PbrtTextureType outputType)
@@ -199,11 +263,33 @@ public:
         );
         for (auto& object : result.scene.objects)
             relocate(object.location);
+        for (auto& shape : result.scene.shapes)
+            if (shape.faceIndices)
+                if (const auto* values = std::get_if<PbrtIntegerValues>(&*shape.faceIndices);
+                    values && !values->values.empty())
+                {
+                    const auto offset = (arrayBytes.size() + kArrayAlignment - 1) & ~(kArrayAlignment - 1);
+                    const auto size = values->values.size() * sizeof(int32_t);
+                    arrayBytes.resize(offset + size);
+                    std::memcpy(arrayBytes.data() + offset, values->values.data(), size);
+                    shape.faceIndices = PbrtArrayReference{package / "arrays.bin", offset, values->values.size(), PbrtArrayType::Int32};
+                }
         for (auto& instance : result.scene.instances)
             relocate(instance.location);
         for (auto& option : result.scene.options)
             relocate(option.location);
+        for (size_t index = 0; index < result.materials.size(); ++index)
+            materials.push_back(pbrt_import::convertMaterial(result.scene.materials[index],
+                result.materials[index].name, result.materials[index].entity, images));
+        const auto engineFromRender = kEngineFromPbrtWorld * glm::inverse(result.scene.renderFromWorld);
+        for (size_t index = 0; index < result.media.size(); ++index)
+            media.push_back(pbrt_import::convertMedium(result.scene.media[index], result.media[index].name,
+                result.media[index].entity, engineFromRender * result.media[index].renderFromMedium.start));
+        for (const auto& texture : result.textures)
+            textures.push_back(pbrt_import::convertTexture(texture, engineFromRender, images));
     }
+
+    pbrt_import::ImageImporter& imageImporter() { return images; }
 
     void save()
     {
@@ -222,16 +308,19 @@ public:
         if (!arrayBytes.empty())
             data.writeBlob(package / "arrays.bin", arrayBytes);
         auto& assets = *context().assetManager;
-        for (size_t index = 0; index < result.materials.size(); ++index)
-        {
-            PbrtMaterial material;
-            material.id     = result.scene.materials[index];
-            material.name   = std::move(result.materials[index].name);
-            material.entity = std::move(result.materials[index].entity);
+        images.save();
+        for (auto& medium : media)
+            assets.save(std::move(medium));
+        for (auto& material : materials)
             assets.save(std::move(material));
-        }
-        for (auto& texture : result.textures)
+        for (auto& texture : textures)
             assets.save(std::move(texture));
+        for (auto& mesh : meshes)
+        {
+            if (mesh.asset.source == Source::File)
+                mesh.asset.geometry = data.writeGeometry(mesh.asset.id, mesh.geometry);
+            assets.save(std::move(mesh.asset));
+        }
         assets.save(std::move(result.scene));
     }
 
@@ -244,6 +333,11 @@ private:
     std::map<std::filesystem::path, PbrtFileReference>               files;
     std::vector<std::pair<std::filesystem::path, PbrtFileReference>> pendingFiles;
     std::vector<uint8_t>                                             arrayBytes;
+    std::vector<pbrt_import::PreparedMesh>                            meshes;
+    std::vector<PbrtMaterial>                                        materials;
+    std::vector<PbrtTextureAsset>                                    textures;
+    std::vector<PbrtMediumAsset>                                     media;
+    pbrt_import::ImageImporter                                      images;
 
     PbrtFileReference addFile(const std::string& name, PbrtFileKind kind, const PbrtSourceLocation& location = {})
     {
@@ -432,9 +526,18 @@ PbrtSceneAsset::ID AssetImporter::importPbrtScene(const ImportPbrtSceneSetting& 
             LOG_WARNING("PBRT {}:{}: {}", location.file.string(), location.line, message);
         }
     );
+    SceneAsset scene;
+    scene.id           = asset_import::nextId<SceneAsset>(id.value);
+    scene.renderMode   = SceneRenderMode::Offline;
+    scene.editorCamera = importCamera(result.scene);
+    result.scene.scene = scene.id;
+
     ImportSession session(result, id, source);
     session.prepare(source);
+    pbrt_import::populateScene(scene, result.scene, session.imageImporter());
     session.save();
-    LOG_INFO("Imported PBRT scene '{}'", id);
+    const auto sceneId = scene.id;
+    context().assetManager->save(std::move(scene));
+    LOG_INFO("Imported PBRT scene '{}' as offline scene '{}'", id, sceneId);
     return id;
 }

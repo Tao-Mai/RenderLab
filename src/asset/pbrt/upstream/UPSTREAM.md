@@ -8,6 +8,8 @@
 - `Scene.h/.cpp` 来自 `src/pbrt/scene.h/.cpp`：场景实体与 BasicSceneBuilder，保留属性作用域、变换、资源命名、实例和 Import 的状态处理。
 - `Support.h/.cpp` 提供 CPU 宿主绑定：双精度 GLM 变换、参数容器、文件读取、gzip、UTF-8 名称与诊断。参数优先级遵循 `paramdict.h`；相机中间时刻的变换计算遵循 `cameras.cpp` 和 `util/transform.cpp`。
 - `NamedSpectra.inc` 提取自同版本 `src/pbrt/util/spectrum.cpp` 的 `namedSpectra` 表。
+- `PlyReader.cpp` 提取自同版本 `src/pbrt/util/mesh.cpp` 的 PLY 读取回调、`ReadPLY` 与四边形三角化；RPly 源码来自同版本 `src/ext/rply`，MIT 许可证保留在源码末尾。
+- `PfmReader.cpp` 改编自同版本 `src/pbrt/util/image.cpp` 的 PFM 读取，实现绑定到项目图像数据和 CHECK；保留原作者说明。
 
 ## RenderLab 修改记录
 
@@ -20,6 +22,8 @@
 - 修正 Windows 32 位 long 对大整数形式浮点数的截断；允许完整 int32 负数范围；拒绝未完整解析或非有限的数值。
 - 变换缓存按矩阵位模式复用对象；导出时检查有限矩阵、可逆性和运动时间顺序。资源引用名称按 NFC 规范化，参数值保留原始字符串。
 - 诊断经回调交给 RenderLab CHECK / 日志。上游宏和类型仅在独立 CPU 目标内部使用。
+- PLY 读取端使用本项目拥有的数组结构，错误交给项目日志；保留双精度属性值，并检查外部索引和多边形边数。三角网格转换与参数化几何生成在 RenderLab 转换层完成。
+- PLY 的逐面属性按原始面号重排，四边形拆分及退化三角形移除时同步维护来源面映射。
 
 ## 随附依赖
 

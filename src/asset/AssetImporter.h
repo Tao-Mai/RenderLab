@@ -108,7 +108,6 @@ public:
     static AssetID<SceneAsset> importScene(const ImportSceneSetting& setting);
     static PbrtSceneAsset::ID importPbrtScene(const ImportPbrtSceneSetting& setting);
 
-private:
     struct LoadedImage
     {
         enum class Projection
@@ -122,6 +121,8 @@ private:
             Exr,
             Hdr,
             JPEG,  // Other 8-bit formats decoded by stb use the same color-space default.
+            Integer16,
+            Pfm,
         };
 
         ImageFormat                                            format;
@@ -129,16 +130,19 @@ private:
         uint32_t                                               width  = 0;
         uint32_t                                               height = 0;
         std::optional<Projection>                              projection;
+        std::optional<RgbChromaticities>                        chromaticities;
         std::variant<std::vector<uint8_t>, std::vector<float>> pixels;
     };
 
+    [[nodiscard]] static LoadedImage loadImage(const std::filesystem::path& source);
+
+private:
     struct CubemapPixels
     {
         std::vector<float>   linear;
         std::vector<uint8_t> encoded;
     };
 
-    [[nodiscard]] static LoadedImage loadImage(const std::filesystem::path& source);
     [[nodiscard]] static ColorSpace  defaultColorSpace(LoadedImage::FileFormat format);
     [[nodiscard]] static LoadedImage::Projection
     environmentProjection(const LoadedImage& image, const std::filesystem::path& source);

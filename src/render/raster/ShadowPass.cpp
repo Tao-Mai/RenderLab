@@ -84,7 +84,8 @@ ShadowPass::Output ShadowPass::setup(RenderGraph& graph, const PassSetup& setup,
 
     // pipeline layout
     auto&            device = *renderContext().device;
-    const std::array descriptorSetLayouts{&device.sceneDescriptorSetLayout, &device.lightingDescriptorSetLayout};
+    const std::array descriptorSetLayouts{&device.sceneDescriptorSetLayout, &device.lightDescriptorSetLayout,
+        &device.materialDescriptorSetLayout, &device.shadowDescriptorSetLayout};
     const std::array pushConstantRanges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         .size       = sizeof(ShadowPushConstants),
@@ -331,13 +332,17 @@ void ShadowPass::recordShadow(
 
     // Multiview resets graphics state at the beginning of each rendering instance.
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, target.pipeline);
-    const std::array lightingSets = {execution.data.lightingSetHandle()};
+    const std::array lightSets = {execution.data.lightSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         pipelineLayout,
-        RenderInterface::kLightingSet,
-        lightingSets,
+        RenderInterface::kLightSet,
+        lightSets,
         {}
+    );
+    commandBuffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics, pipelineLayout, RenderInterface::kShadowSet,
+        execution.data.shadowSetHandle(), {}
     );
     commandBuffer.setViewport(
         0,

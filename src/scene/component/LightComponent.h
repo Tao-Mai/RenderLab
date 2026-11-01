@@ -1,6 +1,7 @@
 #pragma once
 
 #include "scene/Component.h"
+#include "asset/pbrt/PbrtLight.h"
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
@@ -16,6 +17,7 @@ struct LightComponent : Component
     [[=ReflectField{}]] glm::vec3 color{1.0f};
     [[=ReflectField{}]] bool enabled = true;
     [[=ReflectField{}]] bool castShadow = false;
+    [[=ReflectField{}]] std::optional<PbrtLightEmission> offlineEmission;
 
 protected:
     [[nodiscard]] glm::vec3 coloredEmission(float strength) const;

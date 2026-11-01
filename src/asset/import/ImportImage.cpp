@@ -6,7 +6,9 @@
 #include "core/Logger.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <cstring>
 #include <cstdlib>
 #include <limits>
 #include <memory>
@@ -15,6 +17,8 @@
 #include <utility>
 
 #include <tinyexr.h>
+
+AssetImporter::LoadedImage readPbrtPfm(const std::filesystem::path& path);
 
 namespace
 {
@@ -57,6 +61,7 @@ AssetImporter::LoadedImage AssetImporter::loadImage(const std::filesystem::path&
                                return static_cast<char>(std::tolower(value));
                            });
     const std::string filename = source.string();
+    if (extension == ".pfm") return readPbrtPfm(source);
 
     if (extension == ".exr")
     {
@@ -87,7 +92,7 @@ AssetImporter::LoadedImage AssetImporter::loadImage(const std::filesystem::path&
         for (int index = 0; index < header.num_channels; ++index)
         {
             const EXRChannelInfo& channel = header.channels[index];
-            if (!isColorChannel(channel.name))
+            if (!isColorChannel(channel.name) && header.num_channels != 1)
             {
                 continue;
             }
@@ -98,14 +103,25 @@ AssetImporter::LoadedImage AssetImporter::loadImage(const std::filesystem::path&
             hasFloat |= channel.pixel_type == TINYEXR_PIXELTYPE_FLOAT;
             ++colorChannels;
         }
-        CHECK(colorChannels >= 3, "EXR has no RGB channels: {}", filename);
+        CHECK(colorChannels >= 3 || header.num_channels == 1, "EXR has no RGB or scalar channel: {}", filename);
         LOG_INFO("EXR header ready: {} color channels, {} precision",
                  colorChannels, hasFloat ? "float" : "half");
 
         std::optional<LoadedImage::Projection> projection;
+        std::optional<RgbChromaticities> chromaticities;
         for (int index = 0; index < header.num_custom_attributes; ++index)
         {
             const EXRAttribute& attribute = header.custom_attributes[index];
+            if (std::string_view{attribute.name} == "chromaticities")
+            {
+                CHECK(std::string_view{attribute.type} == "chromaticities" && attribute.size == 8 * sizeof(float),
+                      "invalid EXR chromaticities: {}", filename);
+                std::array<float, 8> values;
+                std::memcpy(values.data(), attribute.value, sizeof(values));
+                chromaticities = RgbChromaticities{{values[0], values[1]}, {values[2], values[3]},
+                    {values[4], values[5]}, {values[6], values[7]}};
+                continue;
+            }
             if (std::string_view{attribute.name} != "envmap")
             {
                 continue;
@@ -125,7 +141,6 @@ AssetImporter::LoadedImage AssetImporter::loadImage(const std::filesystem::path&
                       filename);
                 projection = LoadedImage::Projection::Cube;
             }
-            break;
         }
 
         float* raw = nullptr;
@@ -151,6 +166,7 @@ AssetImporter::LoadedImage AssetImporter::loadImage(const std::filesystem::path&
             .width = static_cast<uint32_t>(width),
             .height = static_cast<uint32_t>(height),
             .projection = projection,
+            .chromaticities = chromaticities,
             .pixels = std::move(pixels),
         };
     }
@@ -187,9 +203,19 @@ AssetImporter::LoadedImage AssetImporter::loadImage(const std::filesystem::path&
           extension == ".psd" || extension == ".pic" || extension == ".pnm",
           "unsupported image format: {}",
           filename);
-    CHECK(!stbi_is_16_bit(filename.c_str()),
-          "16-bit integer images are not supported: {}",
-          filename);
+    if (stbi_is_16_bit(filename.c_str()))
+    {
+        int width = 0, height = 0, channels = 0;
+        std::unique_ptr<stbi_us, StbiDeleter> decoded(stbi_load_16(filename.c_str(), &width, &height, &channels, 4));
+        CHECK(decoded && width > 0 && height > 0, "failed to read 16-bit image '{}': {}", filename, stbi_failure_reason());
+        const size_t count = size_t(width) * height * 4;
+        std::vector<float> pixels(count);
+        constexpr float kMaxInteger16 = 65535.0f;
+        for (size_t index = 0; index < count; ++index)
+            pixels[index] = decoded.get()[index] / kMaxInteger16;
+        return {.format = ImageFormat::RGBA32F, .fileFormat = LoadedImage::FileFormat::Integer16,
+            .width = static_cast<uint32_t>(width), .height = static_cast<uint32_t>(height), .pixels = std::move(pixels)};
+    }
     int                                   width    = 0;
     int                                   height   = 0;
     int                                   channels = 0;
@@ -226,8 +252,10 @@ ColorSpace AssetImporter::defaultColorSpace(LoadedImage::FileFormat format)
     {
         case LoadedImage::FileFormat::Exr:
         case LoadedImage::FileFormat::Hdr:
+        case LoadedImage::FileFormat::Pfm:
             return ColorSpace::Linear;
         case LoadedImage::FileFormat::JPEG:
+        case LoadedImage::FileFormat::Integer16:
             return ColorSpace::Srgb;
     }
     LOG_FATAL("invalid image file format");

@@ -76,7 +76,10 @@ ComponentDrawResult drawFields(TransformComponent& transform)
 
     if (ImGui::DragFloat3("Scale", glm::value_ptr(transform.scale), 0.01f))
     {
-        transform.scale = glm::max(transform.scale, glm::vec3{0.001f});
+        constexpr float kMinimumEditableScale = 0.001f;
+        for (glm::length_t axis = 0; axis < 3; ++axis)
+            transform.scale[axis] = std::copysign(std::max(std::abs(transform.scale[axis]), kMinimumEditableScale),
+                                                transform.scale[axis]);
         result.edited = true;
     }
     return result;
@@ -84,8 +87,46 @@ ComponentDrawResult drawFields(TransformComponent& transform)
 
 namespace
 {
+ComponentDrawResult drawOfflineEmission(PbrtLightEmission& emission)
+{
+    ComponentDrawResult result;
+    std::visit([&]<class Spectrum>(Spectrum& spectrum)
+    {
+        if constexpr (std::same_as<Spectrum, PbrtRgbSpectrum>)
+        {
+            ImGui::Text("Color space: %s", spectrum.colorSpace.c_str());
+            result.edited |= ImGui::DragScalarN("Spectrum RGB", ImGuiDataType_Double,
+                glm::value_ptr(spectrum.value), 3, 0.01f);
+        }
+        else if constexpr (std::same_as<Spectrum, PbrtConstantSpectrum>)
+            result.edited |= drawField("Spectrum value", spectrum.value);
+        else if constexpr (std::same_as<Spectrum, PbrtBlackbodySpectrum>)
+            result.edited |= drawField("Temperature (K)", spectrum.temperature);
+        else if constexpr (std::same_as<Spectrum, PbrtNamedSpectrum>)
+            ImGui::Text("Spectrum: %s", spectrum.name.c_str());
+        else if constexpr (std::same_as<Spectrum, PbrtSpectrumFile>)
+            ImGui::Text("Spectrum: %s", spectrum.file.path.string().c_str());
+        else
+            ImGui::TextUnformatted("Sampled spectrum");
+    }, emission.spectrum);
+    result.edited |= drawField("Emission scale", emission.scale);
+    if (emission.power)
+        result.edited |= drawField("Power (lm)", *emission.power);
+    if (emission.illuminance)
+        result.edited |= drawField("Illuminance (lux)", *emission.illuminance);
+    if (emission.image)
+        ImGui::Text("Emission image: %s", emission.image->source.path.string().c_str());
+    return result;
+}
+
 ComponentDrawResult drawLightFields(LightComponent& light, float& strength, const char* intensityLabel)
 {
+    if (light.offlineEmission)
+    {
+        auto result = drawOfflineEmission(*light.offlineEmission);
+        result.edited |= drawField("Enabled", light.enabled);
+        return result;
+    }
     ComponentDrawResult result;
     result.edited = ImGui::ColorEdit3("Color", glm::value_ptr(light.color));
     result.edited = ImGui::DragFloat(intensityLabel, &strength, 1.0f, 0.0f,
@@ -98,8 +139,9 @@ ComponentDrawResult drawLightFields(LightComponent& light, float& strength, cons
 ComponentDrawResult drawLocalLightFields(LocalLightComponent& light)
 {
     auto result = drawLightFields(light, light.luminousIntensity, "Luminous intensity (cd)");
-    result.edited = ImGui::DragFloat("Range (m)", &light.range, 0.1f, 0.01f, 100000.0f,
-        "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
+    if (!light.offlineEmission)
+        result.edited = ImGui::DragFloat("Range (m)", &light.range, 0.1f, 0.01f, 100000.0f,
+            "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
     return result;
 }
 }
@@ -134,13 +176,43 @@ ComponentDrawResult drawFields(SpotLightComponent& light)
         result.edited = true;
     }
     constexpr float kMinimumOuterAngle = 0.1f;
-    if (ImGui::DragFloat("Outer Angle", &outer, 0.25f, std::max(inner, kMinimumOuterAngle), 89.0f,
+    const float maximumOuterAngle = light.offlineEmission ? 179.0f : 89.0f;
+    if (ImGui::DragFloat("Outer Angle", &outer, 0.25f, std::max(inner, kMinimumOuterAngle), maximumOuterAngle,
         "%.1f deg", ImGuiSliderFlags_AlwaysClamp))
     {
         light.cosOuter = std::cos(glm::radians(outer));
         result.edited = true;
     }
     return result;
+}
+
+ComponentDrawResult drawFields(MeshAreaLightComponent& light)
+{
+    ImGui::Text("Render component: %u, submesh: %u", light.renderComponentIndex, light.submeshIndex);
+    auto result = drawOfflineEmission(light.emission);
+    result.edited |= drawField("Two sided", light.twoSided);
+    result.edited |= drawField("Enabled", light.enabled);
+    return result;
+}
+
+ComponentDrawResult drawFields(EnvironmentLightComponent& light)
+{
+    auto result = drawOfflineEmission(light.emission);
+    ImGui::Text("Portal vertices: %zu", light.portal.size());
+    result.edited |= drawField("Enabled", light.enabled);
+    return result;
+}
+
+ComponentDrawResult drawFields(ProjectionLightComponent& light)
+{
+    auto result = drawLocalLightFields(light);
+    result.edited |= drawField("Field of view", light.fieldOfView);
+    return result;
+}
+
+ComponentDrawResult drawFields(GoniometricLightComponent& light)
+{
+    return drawLocalLightFields(light);
 }
 
 MaterialOverride materialOverrideDiff(const GltfMaterial& stock, const GltfMaterial& preview)
@@ -287,6 +359,17 @@ ComponentDrawResult drawFields(RenderComponent& render)
     }
 
     result.edited    = drawMeshSelection(render, *assets);
+    if (render.offlineSurface)
+    {
+        auto& surface = *render.offlineSurface;
+        result.edited |= drawField("Reverse orientation", surface.reverseOrientation);
+        if (auto* alpha = std::get_if<PbrtFloatConstant>(&surface.alpha))
+            result.edited |= drawField("Alpha", alpha->value);
+        else
+            ImGui::Text("Alpha texture: %s", std::get<PbrtTextureReference>(surface.alpha).id.c_str());
+        if (surface.insideMedium) ImGui::Text("Inside medium: %s", surface.insideMedium->c_str());
+        if (surface.outsideMedium) ImGui::Text("Outside medium: %s", surface.outsideMedium->c_str());
+    }
     const auto* mesh = assets->find<MeshAsset>(render.meshId);
     if (!mesh)
     {
@@ -372,7 +455,7 @@ ComponentDrawResult drawComponent(Component& component)
     ImGui::PushID(&component);
     if (ImGui::CollapsingHeader(found->second.name, ImGuiTreeNodeFlags_DefaultOpen))
     {
-        if (light)
+        if (light && !light->offlineEmission)
         {
             // The registered class name is also the inspector's type label.
             const auto label = [](std::string_view name)
@@ -382,7 +465,7 @@ ComponentDrawResult drawComponent(Component& component)
             const std::string preview{label(found->second.name)};
             if (ImGui::BeginCombo("Type", preview.c_str()))
             {
-                forEachLightComponentType([&]<class T>(const char* name)
+                forEachRealtimeLightComponentType([&]<class T>(const char* name)
                 {
                     const bool selected = typeid(component) == typeid(T);
                     const std::string itemLabel{label(name)};

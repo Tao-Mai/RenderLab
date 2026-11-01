@@ -12,9 +12,11 @@
 namespace RenderInterface
 {
 inline constexpr uint32_t kSceneSet    = 0;
-inline constexpr uint32_t kLightingSet = 1;
+inline constexpr uint32_t kLightSet    = 1;
 inline constexpr uint32_t kMaterialSet = 2;
-inline constexpr uint32_t kPassSet     = 3;
+inline constexpr uint32_t kShadowSet   = 3;
+inline constexpr uint32_t kRayTracingPassSet = 3;
+inline constexpr uint32_t kDeferredPassSet   = 2;
 
 inline constexpr uint32_t kGBufferAlbedoBinding   = 0;
 inline constexpr uint32_t kGBufferNormalBinding   = 1;
@@ -25,33 +27,32 @@ inline constexpr uint32_t kGBufferSheenBinding    = 4;
 // Scene set: camera data only.
 inline constexpr uint32_t kSceneUniformBinding = 0;
 
-// Lighting data: UBO, then SSBOs.
+// Light set: general lighting and environment resources.
 inline constexpr uint32_t kLightUniformBinding            = 0;
 inline constexpr uint32_t kLightBufferBinding             = 1;
-inline constexpr uint32_t kPointShadowBufferBinding       = 2;
-inline constexpr uint32_t kSpotShadowBufferBinding        = 3;
-inline constexpr uint32_t kRectAreaShadowBufferBinding    = 4;
-inline constexpr uint32_t kDirectionalShadowBufferBinding = 5;
+inline constexpr uint32_t kIrradianceImageBinding            = 2;
+inline constexpr uint32_t kIrradianceSamplerBinding          = 3;
+inline constexpr uint32_t kPrefilteredSpecularImageBinding   = 4;
+inline constexpr uint32_t kPrefilteredSpecularSamplerBinding = 5;
+inline constexpr uint32_t kBrdfLutImageBinding               = 6;
+inline constexpr uint32_t kBrdfLutSamplerBinding             = 7;
+inline constexpr uint32_t kRadianceImageBinding              = 8;
+inline constexpr uint32_t kRadianceSamplerBinding            = 9;
+inline constexpr uint32_t kSheenLutImageBinding              = 10;
+inline constexpr uint32_t kSheenLutSamplerBinding            = 11;
 
-// Shadow images, then comparison and regular samplers.
-inline constexpr uint32_t kPointShadowImageBinding        = 6;
-inline constexpr uint32_t kSpotShadowImageBinding         = 7;
-inline constexpr uint32_t kRectAreaShadowImageBinding     = 8;
-inline constexpr uint32_t kDirectionalShadowImageBinding  = 9;
-inline constexpr uint32_t kShadowComparisonSamplerBinding = 10;
-inline constexpr uint32_t kLinearSamplerBinding           = 11;
-
-// Environment textures: adjacent image / sampler pairs.
-inline constexpr uint32_t kIrradianceImageBinding            = 12;
-inline constexpr uint32_t kIrradianceSamplerBinding          = 13;
-inline constexpr uint32_t kPrefilteredSpecularImageBinding   = 14;
-inline constexpr uint32_t kPrefilteredSpecularSamplerBinding = 15;
-inline constexpr uint32_t kBrdfLutImageBinding               = 16;
-inline constexpr uint32_t kBrdfLutSamplerBinding             = 17;
-inline constexpr uint32_t kRadianceImageBinding              = 18;
-inline constexpr uint32_t kRadianceSamplerBinding            = 19;
-inline constexpr uint32_t kSheenLutImageBinding              = 20;
-inline constexpr uint32_t kSheenLutSamplerBinding            = 21;
+// Shadow set: raster shadow parameters, transforms and depth maps.
+inline constexpr uint32_t kShadowUniformBinding           = 0;
+inline constexpr uint32_t kPointShadowBufferBinding       = 1;
+inline constexpr uint32_t kSpotShadowBufferBinding        = 2;
+inline constexpr uint32_t kRectAreaShadowBufferBinding    = 3;
+inline constexpr uint32_t kDirectionalShadowBufferBinding = 4;
+inline constexpr uint32_t kPointShadowImageBinding        = 5;
+inline constexpr uint32_t kSpotShadowImageBinding         = 6;
+inline constexpr uint32_t kRectAreaShadowImageBinding     = 7;
+inline constexpr uint32_t kDirectionalShadowImageBinding  = 8;
+inline constexpr uint32_t kShadowComparisonSamplerBinding = 9;
+inline constexpr uint32_t kShadowLinearSamplerBinding     = 10;
 
 // Global material set, shared by rasterization and ray tracing.
 inline constexpr uint32_t kMaterialBufferBinding   = 0;
@@ -84,19 +85,24 @@ struct LightRanges
 };
 static_assert(sizeof(LightRanges) == 16);
 
-// The SSBO contains lightRanges.spotEnd active entries. IBL.x is
-// the maximum LOD of the scene's prefiltered specular cubemap. shadowParameters.x
-// is the normalized shadow depth bias, y is the point-shadow direction-space PCF radius,
-// z enables per-pixel rotation (0/1), and w is the spot-shadow PCF radius in texels.
 struct alignas(16) LightUniforms
 {
     LightRanges lightRanges;
-    float       ambientCoefficient            = 0.1f;
-    uint32_t    cascadeCount                  = 0;
-    float       directionalShadowSampleRadius = 0.0f;  // Shadow-map texels.
-    float       padding                       = 0.0f;
-    glm::vec4   iblParameters{0.0f};
-    glm::vec4   shadowParameters{0.0f};
+    float ambientCoefficient = 0.1f;
+    float prefilteredMaxLod = 0.0f;
+    glm::vec2 padding{};
+};
+
+struct alignas(16) ShadowUniforms
+{
+    uint32_t cascadeCount = 0;
+    float directionalSampleRadius = 0.0f;
+    float bias = 0.0f;
+    float sampleRadius = 0.0f;
+    float spotSampleRadius = 0.0f;
+    uint32_t pixelRotation = 0;
+    uint32_t enabled = 0;
+    uint32_t padding = 0;
 };
 
 // GPU discriminator; values match shaders/light_data.slang.
@@ -177,14 +183,20 @@ static_assert(sizeof(SceneUniforms) == 208);
 static_assert(offsetof(SceneUniforms, inverseViewProjection) == 64);
 static_assert(offsetof(SceneUniforms, cameraPosition) == 128);
 static_assert(offsetof(SceneUniforms, view) == 144);
-static_assert(sizeof(LightUniforms) == 64);
+static_assert(sizeof(LightUniforms) == 32);
 static_assert(offsetof(LightUniforms, lightRanges) == 0);
-static_assert(offsetof(LightUniforms, directionalShadowSampleRadius) == 24);
 static_assert(offsetof(LightUniforms, ambientCoefficient) == 16);
-static_assert(offsetof(LightUniforms, cascadeCount) == 20);
-static_assert(offsetof(LightUniforms, padding) == 28);
-static_assert(offsetof(LightUniforms, iblParameters) == 32);
-static_assert(offsetof(LightUniforms, shadowParameters) == 48);
+static_assert(offsetof(LightUniforms, prefilteredMaxLod) == 20);
+static_assert(offsetof(LightUniforms, padding) == 24);
+static_assert(sizeof(ShadowUniforms) == 32);
+static_assert(offsetof(ShadowUniforms, cascadeCount) == 0);
+static_assert(offsetof(ShadowUniforms, directionalSampleRadius) == 4);
+static_assert(offsetof(ShadowUniforms, bias) == 8);
+static_assert(offsetof(ShadowUniforms, sampleRadius) == 12);
+static_assert(offsetof(ShadowUniforms, spotSampleRadius) == 16);
+static_assert(offsetof(ShadowUniforms, pixelRotation) == 20);
+static_assert(offsetof(ShadowUniforms, enabled) == 24);
+static_assert(offsetof(ShadowUniforms, padding) == 28);
 static_assert(sizeof(LightData) == 96);
 static_assert(offsetof(LightData, color) == 0);
 static_assert(offsetof(LightData, padding3) == 12);

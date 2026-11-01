@@ -49,7 +49,8 @@ int main(int argc, char** argv)
         }
         else if (command == "--import-pbrt-scene")
         {
-            importedId = AssetImporter::importPbrtScene({.source = source}).value;
+            const auto description = AssetImporter::importPbrtScene({.source = source});
+            importedId = assets.get(description).scene.value;
         }
         else
         {

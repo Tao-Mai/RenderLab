@@ -11,7 +11,9 @@
 #include <vector>
 
 struct MaterialAsset;
+struct MeshAsset;
 struct PbrtTextureAsset;
+struct PbrtMediumAsset;
 
 struct PbrtSourceLocation
 {
@@ -145,16 +147,10 @@ struct PbrtShape
     std::optional<uint32_t>               areaLight;
     std::optional<uint32_t>               insideMedium;
     std::optional<uint32_t>               outsideMedium;
+    std::optional<AssetID<MeshAsset>>     mesh;
+    std::optional<std::variant<PbrtIntegerValues, PbrtArrayReference>> faceIndices;
 
     bool operator==(const PbrtShape&) const = default;
-};
-struct PbrtMedium
-{
-    std::string   name;
-    PbrtEntity    entity;
-    PbrtTransform renderFromMedium;
-
-    bool operator==(const PbrtMedium&) const = default;
 };
 struct PbrtLight
 {
