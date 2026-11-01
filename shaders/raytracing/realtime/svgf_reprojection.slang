@@ -1,5 +1,5 @@
-#include "../../common/scene_data.slang"
-#include "svgf_common.slang"
+#include "common/scene_data.slang"
+#include "raytracing/realtime/svgf_common.slang"
 
 [[vk::binding(0, 1)]] Texture2D<float4> currentDirect;
 [[vk::binding(1, 1)]] Texture2D<float4> currentIndirect;
@@ -45,17 +45,23 @@ bool gatherHistory(int2 pixel, float projectedDepth, float tolerance, float3 nor
 {
     if (any(float2(pixel) + 0.5 < parameters.previousViewport.xy)
         || any(float2(pixel) + 0.5 >= parameters.previousViewport.xy + parameters.previousViewport.zw))
+    {
         return false;
+    }
 
     int3 location = int3(pixel, parameters.writeLayer ^ 1u);
     float previousDepth = historyDepth[location];
     float3 previousNormal = historyNormal[location].xyz;
     if (previousDepth <= 0.0 || dot(normal, previousNormal) < kNormalCosineThreshold)
+    {
         return false;
+    }
 
     // Compare both depths in the previous camera's view space, not current-camera or NDC depth.
     if (abs(projectedDepth - previousDepth) > tolerance)
+    {
         return false;
+    }
 
     history.direct += historyDirect[location].rgb * weight;
     history.indirect += historyIndirect[location].rgb * weight;
@@ -69,17 +75,25 @@ bool reproject(float3 position, float3 normal, out HistorySample history)
     // Current world position is also the previous position only for static geometry.
     history = {};
     if (parameters.historyValid == 0)
+    {
         return false;
+    }
     float4 clip = mul(parameters.previousViewProjection, float4(position, 1.0));
     if (clip.w <= 0.0)
+    {
         return false;
+    }
     float3 ndc = clip.xyz / clip.w;
     if (any(abs(ndc.xy) > 1.0) || ndc.z < 0.0 || ndc.z > 1.0)
+    {
         return false;
+    }
 
     float projectedDepth = dot(parameters.previousDepthRow, float4(position, 1.0));
     if (projectedDepth <= 0.0)
+    {
         return false;
+    }
     float tolerance = max(kMinimumDepthTolerance, kRelativeDepthTolerance * projectedDepth);
 
     float2 previousPixel = parameters.previousViewport.xy
@@ -93,9 +107,13 @@ bool reproject(float3 position, float3 normal, out HistorySample history)
             float weight = (x == 0 ? 1.0 - fraction.x : fraction.x)
                 * (y == 0 ? 1.0 - fraction.y : fraction.y);
             if (weight == 0.0)
+            {
                 continue;
+            }
             if (gatherHistory(base + int2(x, y), projectedDepth, tolerance, normal, weight, history))
+            {
                 weightSum += weight;
+            }
         }
     // A disoccluded bilinear footprint can still have a matching thin surface nearby.
     if (weightSum == 0.0)
@@ -104,10 +122,14 @@ bool reproject(float3 position, float3 normal, out HistorySample history)
         for (int y = -1; y <= 1; ++y)
             for (int x = -1; x <= 1; ++x)
                 if (gatherHistory(nearest + int2(x, y), projectedDepth, tolerance, normal, 1.0, history))
+                {
                     weightSum += 1.0;
+                }
     }
     if (weightSum == 0.0)
+    {
         return false;
+    }
     history.direct /= weightSum;
     history.indirect /= weightSum;
     history.directMoments /= weightSum;
@@ -138,7 +160,9 @@ float2 spatialVariance(int2 pixel, uint2 extent, float depth, float3 normal, flo
             int2 offset = int2(x, y);
             int2 neighbor = pixel + offset;
             if (!svgfContainsPixel(neighbor, extent, parameters.viewport))
+            {
                 continue;
+            }
             float weight = svgfGeometryWeight(depth, currentDepth.Load(int3(neighbor, 0)), gradient, offset,
                 normal, currentNormal.Load(int3(neighbor, 0)).xyz);
             weight *= exp(-float(x * x + y * y) / 18.0);
@@ -163,7 +187,9 @@ void computeMain(uint3 thread : SV_DispatchThreadID)
     outputDirect.GetDimensions(width, height);
     uint2 pixel = thread.xy;
     if (pixel.x >= width || pixel.y >= height)
+    {
         return;
+    }
 
     float depth = currentDepth.Load(int3(pixel, 0));
     bool valid = depth > 0.0 && svgfContainsPixel(int2(pixel), uint2(width, height), parameters.viewport);
@@ -190,9 +216,13 @@ void computeMain(uint3 thread : SV_DispatchThreadID)
         float2 spatial = spatialVariance(int2(pixel), uint2(width, height), depth, normal,
             float2(svgfLuminance(sampleDirect), svgfLuminance(sampleIndirect)));
         if (directMoments.z < kSvgfMinimumVarianceHistory)
+        {
             variance.x = spatial.x * kSvgfMinimumVarianceHistory / directMoments.z;
+        }
         if (indirectMoments.z < kSvgfMinimumVarianceHistory)
+        {
             variance.y = spatial.y * kSvgfMinimumVarianceHistory / indirectMoments.z;
+        }
     }
 
     uint3 location = uint3(pixel, parameters.writeLayer);

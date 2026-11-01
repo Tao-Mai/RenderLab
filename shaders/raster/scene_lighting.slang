@@ -1,12 +1,12 @@
 #ifndef RENDERLAB_SCENE_LIGHTING_SLANG
 #define RENDERLAB_SCENE_LIGHTING_SLANG
 
-#include "../common/brdf.slang"
-#include "../common/scene_data.slang"
-#include "../common/lighting_data.slang"
-#include "shadow_data.slang"
-#include "../common/sampling.slang"
-#include "../common/surface.slang"
+#include "common/brdf.slang"
+#include "common/scene_data.slang"
+#include "common/lighting_data.slang"
+#include "raster/shadow_data.slang"
+#include "common/sampling.slang"
+#include "common/surface.slang"
 
 #ifndef ENABLE_IBL
 #error ENABLE_IBL must be specified when compiling scene lighting
@@ -44,7 +44,9 @@ static const uint kSheenIblSampleCount = 64;
 float3 evaluateSheenIbl(Surface surface, float3 V)
 {
     if (!any(surface.sheenColor > 0.0))
+    {
         return float3(0.0);
+    }
     float3 N = surface.normal;
     float3 axis = abs(N.z) < 0.999 ? float3(0.0, 0.0, 1.0) : float3(0.0, 1.0, 0.0);
     float3 T = normalize(cross(axis, N));
@@ -69,11 +71,15 @@ float spotShadowVisibility(LightData light, float3 worldPosition, float2 rotatio
 {
     float4 clip = mul(spotShadowData[light.shadowIdx].vp, float4(worldPosition, 1.0));
     if (clip.w <= 0.0)
+    {
         return 1.0;
+    }
     float3 projected = clip.xyz / clip.w;
     float2 uv = projected.xy * 0.5 + 0.5;
     if (any(uv < 0.0) || any(uv > 1.0) || projected.z < 0.0 || projected.z > 1.0)
+    {
         return 1.0;
+    }
 
     uint width;
     uint height;
@@ -101,12 +107,16 @@ float sampleDirectionalCascade(LightData light, uint cascadeIndex, float3 worldP
     float3 projected = clip.xyz / clip.w;
     float2 uv = projected.xy * 0.5 + 0.5;
     if (any(uv < 0.0) || any(uv > 1.0) || projected.z < 0.0 || projected.z > 1.0)
+    {
         return 1.0;
+    }
 
     uint layer = light.shadowIdx * shadowUniforms.cascadeCount + cascadeIndex;
     float depth = projected.z - shadowUniforms.bias;
     if (shadowUniforms.directionalSampleRadius <= 0.0)
+    {
         return cascadeShadowMap.SampleCmpLevelZero(shadowSampler, float3(uv, layer), depth);
+    }
 
     uint width;
     uint height;
@@ -123,9 +133,13 @@ float sampleDirectionalCascade(LightData light, uint cascadeIndex, float3 worldP
         float2 sampleUv = uv + offset * radiusUv;
         // Outside the shadow map there is no recorded occluder; don't repeat the edge texel.
         if (any(sampleUv < 0.0) || any(sampleUv > 1.0))
+        {
             visibility += 1.0;
+        }
         else
+        {
             visibility += cascadeShadowMap.SampleCmpLevelZero(shadowSampler, float3(sampleUv, layer), depth);
+        }
     }
     return visibility / kPoissonDisk8SampleCount;
 }
@@ -134,14 +148,18 @@ float directionalShadowVisibility(LightData light, float3 worldPosition, float2 
 {
     float viewDepth = -mul(sceneUniforms.view, float4(worldPosition, 1.0)).z;
     if (viewDepth <= 0.0)
+    {
         return 1.0;
+    }
 
     [loop]
     for (uint cascadeIndex = 0; cascadeIndex < shadowUniforms.cascadeCount; ++cascadeIndex)
     {
         CascadeShadowData cascade = directionalShadowData[light.shadowIdx].cascades[cascadeIndex];
         if (viewDepth > cascade.depthUpperBound)
+        {
             continue;
+        }
 
         float visibility = sampleDirectionalCascade(light, cascadeIndex, worldPosition, rotation);
         float blendWidth = cascade.depthUpperBound - cascade.blendStartDepth;
@@ -191,12 +209,16 @@ float rectAreaShadowPCSS(LightData light, float3 worldPos, uint2 pixel)
     RectAreaShadowData shadow = rectAreaShadowData[shadowIndex];
     float4 pos = mul(shadow.vp, float4(worldPos, 1.0));
     if (pos.w <= 0.0)
+    {
         return 1.0;
+    }
 
     float3 projected = pos.xyz / pos.w;
     float2 uv = projected.xy * 0.5 + 0.5;
     if (any(uv < 0.0) || any(uv > 1.0) || projected.z < 0.0 || projected.z > 1.0)
+    {
         return 1.0;
+    }
 
     // clip.w is the positive, linear depth along the light's viewing direction.
     float receiverLinearDepth = pos.w;
@@ -215,7 +237,9 @@ float rectAreaShadowPCSS(LightData light, float3 worldPos, uint2 pixel)
         float2 offset = rectangleSample16(sampleIndex, pixel, (shadowUniforms.pixelRotation != 0));
         float2 sampleUv = uv + offset * searchRadiusUv;
         if (any(sampleUv < 0.0) || any(sampleUv > 1.0))
+        {
             continue;
+        }
 
         float blockerDepth = rectAreaShadowMap.SampleLevel(
             shadowLinearSampler, float3(sampleUv, shadowIndex), 0.0);
@@ -230,7 +254,9 @@ float rectAreaShadowPCSS(LightData light, float3 worldPos, uint2 pixel)
     }
 
     if (blockerCount == 0)
+    {
         return 1.0;
+    }
     avgBlockerLinearDepth /= blockerCount;
 
     // Small-triangle footprint on the blocker plane; convert using blocker depth.
@@ -259,7 +285,9 @@ float3 evaluateDirectContribution(
     Surface surface, float3 V, float3 lightDirection, float3 incidentIrradiance, float visibility)
 {
     if (visibility <= 0.0)
+    {
         return float3(0.0);
+    }
 
     float nDotL = saturate(dot(surface.normal, lightDirection));
     float3 brdf = evaluateDirectBrdf(
@@ -317,7 +345,9 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
         float3 lightDirection = -light.direction.xyz;
         float visibility = 1.0;
         if (light.castShadow && shadowUniforms.enabled != 0)
+        {
             visibility = directionalShadowVisibility(light, surface.worldPosition, shadowRotation);
+        }
         direct += evaluateDirectContribution(surface, V, lightDirection, light.color, visibility);
     }
 
@@ -327,13 +357,17 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
 
         float distanceToLight = length(light.position - surface.worldPosition);
         if (distanceToLight <= 0.0 || distanceToLight > light.range)
+        {
             continue;
+        }
 
         float3 lightDirection = (light.position - surface.worldPosition) / distanceToLight;
         float3 incidentIrradiance = light.color / (distanceToLight * distanceToLight);
         float visibility = 1.0;
         if (light.castShadow && shadowUniforms.enabled != 0)
+        {
             visibility = pcf(-lightDirection, light.shadowIdx, distanceToLight / light.range, shadowRotation);
+        }
         direct += evaluateDirectContribution(surface, V, lightDirection, incidentIrradiance, visibility);
     }
 
@@ -343,7 +377,9 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
 
         float distanceToLight = length(light.position - surface.worldPosition);
         if (distanceToLight <= 0.0)
+        {
             continue;
+        }
 
         // Center-direction approximation; finite-area specular integration is not included.
         float3 lightDirection = (light.position - surface.worldPosition) / distanceToLight;
@@ -353,7 +389,9 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
         float3 incidentIrradiance = light.color * solidAngle;
         float visibility = 1.0;
         if (light.castShadow && shadowUniforms.enabled != 0)
+        {
             visibility = rectAreaShadowPCSS(light, surface.worldPosition, pixel);
+        }
         direct += evaluateDirectContribution(surface, V, lightDirection, incidentIrradiance, visibility);
     }
 
@@ -363,17 +401,23 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
 
         float distanceToLight = length(light.position - surface.worldPosition);
         if (distanceToLight <= 0.0 || distanceToLight > light.range)
+        {
             continue;
+        }
 
         float3 lightDirection = (light.position - surface.worldPosition) / distanceToLight;
         float attenuation = spotAngularAttenuation(light, -lightDirection);
         if (attenuation <= 0.0)
+        {
             continue;
+        }
 
         float3 incidentIrradiance = light.color * attenuation / (distanceToLight * distanceToLight);
         float visibility = 1.0;
         if (light.castShadow && shadowUniforms.enabled != 0)
+        {
             visibility = spotShadowVisibility(light, surface.worldPosition, shadowRotation);
+        }
         direct += evaluateDirectContribution(surface, V, lightDirection, incidentIrradiance, visibility);
     }
 

@@ -19,22 +19,24 @@
 
 
 #include <glm/geometric.hpp>
+#include <glm/matrix.hpp>
 #include <utility>
 
 namespace
 {
-OfflineLightData::Model offlineLightModel(const LightComponent& light)
+OfflineLightData::Model offlineLightModel(const LightComponent& light, const glm::mat4& worldFromLight)
 {
+    const glm::vec3 position{worldFromLight[3]};
     if (const auto* spot = dynamic_cast<const SpotLightComponent*>(&light))
-        return OfflineLightData::Spot{spot->cosInner, spot->cosOuter};
+        return OfflineLightData::Spot{position, glm::normalize(-glm::vec3{worldFromLight[2]}), spot->cosInner, spot->cosOuter};
     if (dynamic_cast<const PointLightComponent*>(&light))
-        return OfflineLightData::Point{};
+        return OfflineLightData::Point{position};
     if (dynamic_cast<const DirectionalLightComponent*>(&light))
-        return OfflineLightData::Directional{};
+        return OfflineLightData::Directional{glm::normalize(-glm::vec3{worldFromLight[2]})};
     if (const auto* projection = dynamic_cast<const ProjectionLightComponent*>(&light))
-        return OfflineLightData::Projection{projection->fieldOfView};
+        return OfflineLightData::Projection{position, glm::inverse(worldFromLight), projection->fieldOfView};
     if (dynamic_cast<const GoniometricLightComponent*>(&light))
-        return OfflineLightData::Goniometric{};
+        return OfflineLightData::Goniometric{position, glm::inverse(worldFromLight)};
 
     CHECK(false, "unsupported offline light component on '{}'", light.actor().name);
     std::unreachable();
@@ -93,7 +95,6 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
                 DCHECK(light->submeshIndex < mesh.submeshes.size());
                 const auto drawItemIndex = renderDrawBegins[light->renderComponentIndex] + light->submeshIndex;
                 data.offlineLights.push_back({
-                    .worldFromLight = transform->matrix(),
                     .emission = light->emission,
                     .model = OfflineLightData::MeshArea{drawItemIndex, light->twoSided,
                         data.drawItems[drawItemIndex].offlineSurface->reverseOrientation},
@@ -102,9 +103,8 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
             for (const auto* light : actor->getComponents<EnvironmentLightComponent>())
                 if (light->enabled)
                     data.offlineLights.push_back({
-                        .worldFromLight = transform->matrix(),
                         .emission = light->emission,
-                        .model = OfflineLightData::Environment{light->portal},
+                        .model = OfflineLightData::Environment{glm::inverse(transform->matrix()), light->portal},
                     });
         }
     }
@@ -124,9 +124,8 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
             {
                 CHECK(light->offlineEmission, "offline light emission is missing on '{}'", actor->name);
                 data.offlineLights.push_back({
-                    .worldFromLight = transform->matrix(),
                     .emission = *light->offlineEmission,
-                    .model = offlineLightModel(*light),
+                    .model = offlineLightModel(*light, transform->matrix()),
                 });
             }
             continue;

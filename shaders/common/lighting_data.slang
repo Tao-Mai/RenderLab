@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_LIGHTING_DATA_SLANG
 #define RENDERLAB_LIGHTING_DATA_SLANG
 
-#include "light_data.slang"
+#include "common/light_data.slang"
 
 struct LightUniforms
 {

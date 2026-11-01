@@ -6,6 +6,8 @@
 
 Shader 的 [common 目录](../shaders/common/) 保存通用计算、采样与数据接口，[raster 目录](../shaders/raster/) 保存光栅化实现。光追按实时和离线分组，后处理与编辑器各自独立。
 
+Shader 编译统一将 `shaders` 和 `src` 加入 include 搜索目录。Shader 文件按 `shaders` 根目录引用，例如 `#include "common/random.slang"`；CPU / shader 共享头文件按 `src` 根目录引用，例如 `#include "render/raytracing/RayTracingBindings.h"`。
+
 场景以 Submesh 粒度的 DrawItem 提交，光栅化直接绘制，光追用同一批条目关联 BLAS、生成 TLAS 实例与命中数据。Renderer 只读引用 DrawItem 列表，材质索引按条目顺序单独保存在数组中。
 
 ## 四条路线
@@ -48,9 +50,9 @@ Shader 入口：[realtime.slang](../shaders/raytracing/realtime/realtime.slang)�
 Shader 入口：[offline.slang](../shaders/raytracing/offline/offline.slang)。材质预览和纹理求值位于 `raytracing/offline`，Sobol 采样位于 `shaders/common`，转换规则见 [PBRT 转换文档](PbrtConversion.md)。
 
 - 使用独立 Pass 和 Shader，活动 Frames-in-flight 为 1。
-- Owen 扰乱 Sobol 序列用于像素内采样，FP32 缓冲保存颜色总和，再除以样本数。
-- 几何、相机、材质、像素抖动或图重建变化时重新累积，曝光等显示参数调整时保留累积。
-- 主射线命中后显示材质和纹理 RGB，输出接入同一套 HDR 后处理。
+- 每个样本始终使用 Owen 扰乱 Sobol 序列进行像素内抖动，FP32 缓冲保存颜色总和，再除以样本数。
+- 几何、相机、材质、光源、反弹次数或图重建变化时重新累积，曝光等显示参数调整时保留累积。
+- 默认最多两次表面散射，使用 diffuse BRDF。point / spot、distant、area 分别执行蓄水池采样，area 与 BRDF 采样做 MIS，输出接入 HDR 后处理。光源和限制见 [PBRT 光源](pbrt/光源.md)。
 
 ## 帧与资源
 

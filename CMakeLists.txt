@@ -169,7 +169,8 @@ foreach(svgf IN ITEMS 0 1)
     renderlab_shader(raytracing raytracing/realtime/realtime.slang "${binary}"
         ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
         DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 SVGF=${svgf}
-        INCLUDES "${SHADER_SOURCE_DIR}/raytracing/realtime/path_tracing.slang"
+        INCLUDES "${PROJECT_SOURCE_DIR}/src/render/raytracing/RayTracingBindings.h"
+            "${SHADER_SOURCE_DIR}/raytracing/realtime/path_tracing.slang"
             "${SHADER_SOURCE_DIR}/common/scene_data.slang" "${SHADER_SOURCE_DIR}/common/scene_uniforms.slang"
             "${SHADER_SOURCE_DIR}/common/light_data.slang" "${SHADER_SOURCE_DIR}/common/constant.slang"
             "${SHADER_SOURCE_DIR}/common/random.slang" "${SHADER_SOURCE_DIR}/common/local_light_sampling.slang"
@@ -179,8 +180,14 @@ foreach(svgf IN ITEMS 0 1)
             "${SHADER_SOURCE_DIR}/common/brdf.slang")
 endforeach()
 renderlab_shader(offline_pathtracing raytracing/offline/offline.slang offline_pathtracing
-    ENTRIES raygenMain missMain closestHitMain
-    INCLUDES "${SHADER_SOURCE_DIR}/raytracing/offline/offline_texture.slang" "${SHADER_SOURCE_DIR}/raytracing/offline/offline_material.slang"
+    ENTRIES raygenMain missMain visibilityMissMain closestHitMain
+    INCLUDES "${PROJECT_SOURCE_DIR}/src/render/raytracing/RayTracingBindings.h"
+        "${SHADER_SOURCE_DIR}/raytracing/offline/offline_texture.slang" "${SHADER_SOURCE_DIR}/raytracing/offline/offline_material.slang"
+        "${SHADER_SOURCE_DIR}/raytracing/offline/offline_light.slang"
+        "${SHADER_SOURCE_DIR}/raytracing/offline/offline_light_sampling.slang"
+        "${SHADER_SOURCE_DIR}/raytracing/offline/offline_brdf.slang"
+        "${SHADER_SOURCE_DIR}/raytracing/offline/offline_path_tracing.slang"
+        "${SHADER_SOURCE_DIR}/common/constant.slang"
         "${PROJECT_SOURCE_DIR}/src/render/raytracing/offline/OfflineShaderTypes.h" "${SHADER_SOURCE_DIR}/common/texture_data.slang"
         "${SHADER_SOURCE_DIR}/common/scene_data.slang" "${SHADER_SOURCE_DIR}/common/scene_uniforms.slang"
         "${SHADER_SOURCE_DIR}/common/low_discrepancy.slang"

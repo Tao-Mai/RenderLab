@@ -585,7 +585,7 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
         renderData.offlineScene = nullptr;
         if (offline)
         {
-            renderData.offlineScene = &offlineScene.prepare(scene.drawItems, assets, resources, materialTable);
+            renderData.offlineScene = &offlineScene.prepare(scene.drawItems, scene.offlineLights, assets, resources, materialTable);
             for (uint32_t index = 0; index < renderData.drawItems.size(); ++index)
                 renderData.materialIndices[index] = renderData.offlineScene->draws[index].materialIndex;
         }

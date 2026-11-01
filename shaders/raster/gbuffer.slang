@@ -1,4 +1,4 @@
-#include "mesh_surface.slang"
+#include "raster/mesh_surface.slang"
 
 // One material layout for every opaque/masked surface. Clearcoat is intentionally omitted.
 struct GBufferOutput

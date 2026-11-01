@@ -1,12 +1,12 @@
-#include "path_tracing.slang"
+#include "raytracing/realtime/path_tracing.slang"
 
-[[vk::binding(1, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> outputImage;
-[[vk::binding(7, 3)]] [[vk::image_format("r32f")]] RWTexture2D<float> depthImage;
-[[vk::binding(8, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> normalImage;
+[[vk::binding(RealtimeRayTracingBinding::kColor, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> outputImage;
+[[vk::binding(RealtimeRayTracingBinding::kDepth, 3)]] [[vk::image_format("r32f")]] RWTexture2D<float> depthImage;
+[[vk::binding(RealtimeRayTracingBinding::kNormal, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> normalImage;
 #if SVGF
-[[vk::binding(9, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> indirectImage;
-[[vk::binding(10, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> emissionImage;
-[[vk::binding(11, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> albedoImage;
+[[vk::binding(RealtimeRayTracingBinding::kIndirect, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> indirectImage;
+[[vk::binding(RealtimeRayTracingBinding::kEmission, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> emissionImage;
+[[vk::binding(RealtimeRayTracingBinding::kAlbedo, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> albedoImage;
 #endif
 
 [shader("raygeneration")]

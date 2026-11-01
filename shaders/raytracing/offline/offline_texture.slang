@@ -1,8 +1,8 @@
 #ifndef RENDERLAB_OFFLINE_TEXTURE_SLANG
 #define RENDERLAB_OFFLINE_TEXTURE_SLANG
 
-#include "../../common/texture_data.slang"
-#include "../../../src/render/raytracing/offline/OfflineShaderTypes.h"
+#include "common/texture_data.slang"
+#include "render/raytracing/offline/OfflineShaderTypes.h"
 
 static const float kOfflinePi = 3.14159265359;
 
@@ -17,7 +17,7 @@ struct OfflineTextureInstruction
     float4x4 textureFromWorld;
 };
 
-[[vk::binding(9, 3)]] StructuredBuffer<OfflineTextureInstruction> textureInstructions;
+[[vk::binding(OfflineRayTracingBinding::kTextures, 3)]] StructuredBuffer<OfflineTextureInstruction> textureInstructions;
 
 float noiseHash(float3 p) { return frac(sin(dot(p, float3(127.1, 311.7, 74.7))) * 43758.5453); }
 float valueNoise(float3 p)
@@ -34,12 +34,18 @@ float valueNoise(float3 p)
 float2 textureUv(OfflineTextureInstruction node, float2 uv, float3 p)
 {
     OfflineTextureMapping mapping = OfflineTextureMapping(uint(node.uAxisKind.w));
-    if (mapping == OfflineTextureMapping::Uv) return uv * node.uvScaleOffset.xy + node.uvScaleOffset.zw;
+    if (mapping == OfflineTextureMapping::Uv)
+    {
+        return uv * node.uvScaleOffset.xy + node.uvScaleOffset.zw;
+    }
     float3 local = mul(node.textureFromWorld, float4(p, 1.0)).xyz;
     if (mapping == OfflineTextureMapping::Spherical || mapping == OfflineTextureMapping::Cylindrical)
     {
         float phi = atan2(local.y, local.x);
-        if (phi < 0.0) phi += 2.0 * kOfflinePi;
+        if (phi < 0.0)
+        {
+            phi += 2.0 * kOfflinePi;
+        }
         return float2(phi / (2.0 * kOfflinePi), mapping == OfflineTextureMapping::Spherical
             ? acos(clamp(normalize(local).z, -1.0, 1.0)) / kOfflinePi : local.z);
     }
@@ -67,7 +73,10 @@ float3 evaluateTexture(uint program, float2 uv, float3 position, float3 normal, 
                 TextureRef image = {node.metadata.z, node.metadata.w};
                 value = sampleTextureLevel(image, float2(st.x, 1.0 - st.y)).rgb;
                 value *= node.value.x;
-                if (node.value.y != 0.0) value = 1.0 - value;
+                if (node.value.y != 0.0)
+                {
+                    value = 1.0 - value;
+                }
                 break;
             }
             case OfflineTextureOp::Multiply:
@@ -125,7 +134,10 @@ float3 evaluateTexture(uint program, float2 uv, float3 position, float3 normal, 
             case OfflineTextureOp::Marble:
             {
                 float3 p = mul(node.textureFromWorld, float4(position, 1.0)).xyz;
-                if (op == OfflineTextureOp::Marble) p *= node.value.x;
+                if (op == OfflineTextureOp::Marble)
+                {
+                    p *= node.value.x;
+                }
                 float result = 0.0, amplitude = 1.0;
                 for (uint octave = 0; octave < uint(node.settings.y); ++octave)
                 {
@@ -134,7 +146,10 @@ float3 evaluateTexture(uint program, float2 uv, float3 position, float3 normal, 
                     p *= 1.99;
                     amplitude *= node.settings.x;
                 }
-                if (op == OfflineTextureOp::Windy) result = abs(valueNoise(p * 0.1)) * abs(valueNoise(p));
+                if (op == OfflineTextureOp::Windy)
+                {
+                    result = abs(valueNoise(p * 0.1)) * abs(valueNoise(p));
+                }
                 value = float3(result);
                 if (op == OfflineTextureOp::Marble)
                 {
@@ -149,7 +164,10 @@ float3 evaluateTexture(uint program, float2 uv, float3 position, float3 normal, 
                     ? float3(0.7) : float3(0.3));
                 break;
         }
-        if (node.metadata.y != 0) value = float3(dot(value, float3(1.0 / 3.0)));
+        if (node.metadata.y != 0)
+        {
+            value = float3(dot(value, float3(1.0 / 3.0)));
+        }
         values[depth++] = value;
     }
     return values[0];

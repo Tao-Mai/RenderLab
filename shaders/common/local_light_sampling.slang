@@ -1,8 +1,8 @@
 #ifndef RENDERLAB_LOCAL_LIGHT_SAMPLING_SLANG
 #define RENDERLAB_LOCAL_LIGHT_SAMPLING_SLANG
 
-#include "light_data.slang"
-#include "random.slang"
+#include "common/light_data.slang"
+#include "common/random.slang"
 
 struct LocalLightSample
 {
@@ -31,21 +31,29 @@ LocalLightSample sampleLocalLight(
         float3 offset = light.position - position;
         float distanceSquared = dot(offset, offset);
         if (distanceSquared == 0.0)
+        {
             continue;
+        }
 
         float distanceToLight = sqrt(distanceSquared);
         if (distanceToLight > light.range)
+        {
             continue;
+        }
 
         float3 lightDirection = offset / distanceToLight;
         float attenuation = light.type == LightType::Spot ? spotAngularAttenuation(light, -lightDirection) : 1.0;
         if (attenuation <= 0.0)
+        {
             continue;
+        }
 
         float3 incidentIrradiance = light.color * (attenuation / distanceSquared);
         float weight = max(incidentIrradiance.r, max(incidentIrradiance.g, incidentIrradiance.b));
         if (weight <= 0.0)
+        {
             continue;
+        }
 
         weightSum += weight;
         if (randomFloat(state) < weight / weightSum)
@@ -58,7 +66,9 @@ LocalLightSample sampleLocalLight(
     }
 
     if (selectedWeight > 0.0)
+    {
         selected.probability = selectedWeight / weightSum;
+    }
     return selected;
 }
 

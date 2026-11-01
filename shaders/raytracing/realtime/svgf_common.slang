@@ -42,9 +42,13 @@ float svgfDepthDerivative(Texture2D<float> depths, int2 pixel, int2 axis, float 
     float forward = after - depth;
     // Prefer the one-sided derivative with the smaller jump at a silhouette.
     if (hasBefore && hasAfter)
+    {
         return abs(backward) < abs(forward) ? backward : forward;
+    }
     if (hasBefore)
+    {
         return backward;
+    }
     return hasAfter ? forward : 0.0;
 }
 
@@ -58,7 +62,9 @@ float svgfGeometryWeight(float depth, float sampleDepth, float2 gradient, int2 o
     float3 normal, float3 sampleNormal)
 {
     if (sampleDepth <= 0.0)
+    {
         return 0.0;
+    }
     float normalWeight = pow(saturate(dot(normal, sampleNormal)), kSvgfPhiNormal);
     float depthTolerance = kSvgfPhiDepth * abs(dot(gradient, float2(offset)))
         + max(kSvgfMinimumDepthTolerance, abs(depth) * kSvgfEpsilon);

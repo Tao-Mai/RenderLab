@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_OFFLINE_MATERIAL_SLANG
 #define RENDERLAB_OFFLINE_MATERIAL_SLANG
 
-#include "offline_texture.slang"
+#include "raytracing/offline/offline_texture.slang"
 
 struct OfflineMaterialPreview
 {
@@ -12,7 +12,7 @@ struct OfflineMaterialPreview
     float4 parameters;
 };
 
-[[vk::binding(8, 3)]] StructuredBuffer<OfflineMaterialPreview> materialInstructions;
+[[vk::binding(OfflineRayTracingBinding::kMaterials, 3)]] StructuredBuffer<OfflineMaterialPreview> materialInstructions;
 
 float3 evaluateMaterialColor(OfflineMaterialPreview material, float2 uv, float3 position, float3 normal, uint primitiveIndex)
 {
@@ -64,7 +64,10 @@ float3 evaluateMaterial(uint program, float2 uv, float3 position, float3 normal,
             float3 first = colors[--depth];
             color = lerp(first, second, amount);
         }
-        else color = evaluateMaterialColor(material, uv, position, normal, primitiveIndex);
+        else
+        {
+            color = evaluateMaterialColor(material, uv, position, normal, primitiveIndex);
+        }
         colors[depth++] = color;
     }
     return colors[0];

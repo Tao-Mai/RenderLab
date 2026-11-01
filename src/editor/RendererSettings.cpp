@@ -150,84 +150,87 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
         config.setRenderFeature(feature);
     }
 
-    if (drawSettingsHeader("HDR"))
+    if (ImGui::CollapsingHeader("Post Process"))
     {
-        feature.hdr         = RenderFeature{}.hdr;
-        feature.toneMapping = {};
-        config.setRenderFeature(feature);
-    }
-    if (ImGui::Checkbox("Enable HDR", &feature.hdr))
-    {
-        config.setRenderFeature(feature);
-    }
-    ImGui::BeginDisabled(!feature.hdr);
-    int toneMappingMode = static_cast<int>(feature.toneMapping.mode);
-    if (ImGui::Combo("Operator", &toneMappingMode, "Khronos PBR Neutral\0Reinhard\0"))
-    {
-        feature.toneMapping.mode = static_cast<ToneMappingOperator>(toneMappingMode);
-        config.setRenderFeature(feature);
-    }
-    if (ImGui::DragFloat(
-            "EV100",
-            &feature.toneMapping.ev100,
-            0.05f,
-            -10.0f,
-            30.0f,
-            "%.2f",
-            ImGuiSliderFlags_AlwaysClamp
-        ))
-    {
-        config.setRenderFeature(feature);
-    }
-    ImGui::SetItemTooltip("Higher EV100 darkens the image; +1 halves linear brightness.");
-    if (ImGui::DragFloat(
-            "Exposure compensation (stops)",
-            &feature.toneMapping.exposureCompensation,
-            0.05f,
-            -10.0f,
-            10.0f,
-            "%.2f",
-            ImGuiSliderFlags_AlwaysClamp
-        ))
-    {
-        config.setRenderFeature(feature);
-    }
-    ImGui::EndDisabled();
+        if (drawSettingsHeader("HDR"))
+        {
+            feature.hdr         = RenderFeature{}.hdr;
+            feature.toneMapping = {};
+            config.setRenderFeature(feature);
+        }
+        if (ImGui::Checkbox("Enable HDR", &feature.hdr))
+        {
+            config.setRenderFeature(feature);
+        }
+        ImGui::BeginDisabled(!feature.hdr);
+        int toneMappingMode = static_cast<int>(feature.toneMapping.mode);
+        if (ImGui::Combo("Operator", &toneMappingMode, "Khronos PBR Neutral\0Reinhard\0"))
+        {
+            feature.toneMapping.mode = static_cast<ToneMappingOperator>(toneMappingMode);
+            config.setRenderFeature(feature);
+        }
+        if (ImGui::DragFloat(
+                "EV100",
+                &feature.toneMapping.ev100,
+                0.05f,
+                -10.0f,
+                30.0f,
+                "%.2f",
+                ImGuiSliderFlags_AlwaysClamp
+            ))
+        {
+            config.setRenderFeature(feature);
+        }
+        ImGui::SetItemTooltip("Higher EV100 darkens the image; +1 halves linear brightness.");
+        if (ImGui::DragFloat(
+                "Exposure compensation (stops)",
+                &feature.toneMapping.exposureCompensation,
+                0.05f,
+                -10.0f,
+                10.0f,
+                "%.2f",
+                ImGuiSliderFlags_AlwaysClamp
+            ))
+        {
+            config.setRenderFeature(feature);
+        }
+        ImGui::EndDisabled();
 
-    if (drawSettingsHeader("Bloom"))
-    {
-        feature.bloom = {};
-        config.setRenderFeature(feature);
+        if (drawSettingsHeader("Bloom"))
+        {
+            feature.bloom = {};
+            config.setRenderFeature(feature);
+        }
+        ImGui::BeginDisabled(!feature.hdr);
+        if (ImGui::Checkbox("Enable bloom", &feature.bloom.enable))
+            config.setRenderFeature(feature);
+        ImGui::SetItemTooltip("HDR scattering bloom; light markers are included, editor UI is excluded. Requires HDR.");
+        ImGui::BeginDisabled(!feature.bloom.enable);
+        bool bloomEdited = ImGui::SliderFloat("Bloom intensity", &feature.bloom.intensity, 0.0f, 1.0f, "%.3f");
+        ImGui::SetItemTooltip("Fraction of scene light redistributed by bloom, not additive brightness.");
+        bloomEdited = ImGui::SliderFloat("Bloom scatter", &feature.bloom.scatter, 0.05f, 0.95f, "%.2f") || bloomEdited;
+        ImGui::SetItemTooltip("Higher values give coarser pyramid levels more weight and produce a wider glow.");
+        bloomEdited = ImGui::DragFloat(
+                          "Gaussian radius",
+                          &feature.bloom.filterRadius,
+                          0.05f,
+                          0.1f,
+                          5.0f,
+                          "%.2f",
+                          ImGuiSliderFlags_AlwaysClamp
+                      ) ||
+            bloomEdited;
+        int bloomLevels = static_cast<int>(feature.bloom.levels);
+        if (ImGui::SliderInt("Bloom levels", &bloomLevels, 1, static_cast<int>(kMaxBloomLevels)))
+        {
+            feature.bloom.levels = static_cast<uint32_t>(bloomLevels);
+            bloomEdited          = true;
+        }
+        if (bloomEdited)
+            config.setRenderFeature(feature);
+        ImGui::EndDisabled();
+        ImGui::EndDisabled();
     }
-    ImGui::BeginDisabled(!feature.hdr);
-    if (ImGui::Checkbox("Enable bloom", &feature.bloom.enable))
-        config.setRenderFeature(feature);
-    ImGui::SetItemTooltip("HDR scattering bloom; light markers are included, editor UI is excluded. Requires HDR.");
-    ImGui::BeginDisabled(!feature.bloom.enable);
-    bool bloomEdited = ImGui::SliderFloat("Bloom intensity", &feature.bloom.intensity, 0.0f, 1.0f, "%.3f");
-    ImGui::SetItemTooltip("Fraction of scene light redistributed by bloom, not additive brightness.");
-    bloomEdited = ImGui::SliderFloat("Bloom scatter", &feature.bloom.scatter, 0.05f, 0.95f, "%.2f") || bloomEdited;
-    ImGui::SetItemTooltip("Higher values give coarser pyramid levels more weight and produce a wider glow.");
-    bloomEdited = ImGui::DragFloat(
-                      "Gaussian radius",
-                      &feature.bloom.filterRadius,
-                      0.05f,
-                      0.1f,
-                      5.0f,
-                      "%.2f",
-                      ImGuiSliderFlags_AlwaysClamp
-                  ) ||
-        bloomEdited;
-    int bloomLevels = static_cast<int>(feature.bloom.levels);
-    if (ImGui::SliderInt("Bloom levels", &bloomLevels, 1, static_cast<int>(kMaxBloomLevels)))
-    {
-        feature.bloom.levels = static_cast<uint32_t>(bloomLevels);
-        bloomEdited          = true;
-    }
-    if (bloomEdited)
-        config.setRenderFeature(feature);
-    ImGui::EndDisabled();
-    ImGui::EndDisabled();
 
     if (config.rendererConfig().renderPath == RenderPath::OfflinePathTracing)
     {
@@ -251,8 +254,6 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
             config.setRenderFeature(feature);
         }
         ImGui::SetItemTooltip("Maximum surface scattering events. 1 gives direct lighting plus terminal emission.");
-        if (ImGui::Checkbox("Pixel jitter", &feature.offline.pixelJitter))
-            config.setRenderFeature(feature);
         ImGui::TextUnformatted("1 sample/pixel per frame; scene, camera or sampling changes reset accumulation.");
         return sceneEdited;
     }

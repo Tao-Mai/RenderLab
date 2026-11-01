@@ -1,4 +1,4 @@
-#include "svgf_common.slang"
+#include "raytracing/realtime/svgf_common.slang"
 
 [[vk::binding(0, 0)]] Texture2D<float4> inputDirect;   // RGB color, A luminance variance.
 [[vk::binding(1, 0)]] Texture2D<float4> inputIndirect;
@@ -38,7 +38,9 @@ float2 localVariance(int2 pixel, uint2 extent)
             int2 offset = int2(x, y);
             int2 neighbor = pixel + offset;
             if (!svgfContainsPixel(neighbor, extent, parameters.viewport))
+            {
                 continue;
+            }
             float weight = kVarianceKernel[abs(x)] * kVarianceKernel[abs(y)];
             variance += weight * float2(inputDirect.Load(int3(neighbor, 0)).a, inputIndirect.Load(int3(neighbor, 0)).a);
             weightSum += weight;
@@ -52,7 +54,9 @@ void filter(int2 pixel, uint2 extent, out float4 direct, out float4 indirect)
     indirect = inputIndirect.Load(int3(pixel, 0));
     float depth = depthImage.Load(int3(pixel, 0));
     if (depth <= 0.0 || !svgfContainsPixel(pixel, extent, parameters.viewport))
+    {
         return;
+    }
     float3 normal = normalImage.Load(int3(pixel, 0)).xyz;
     float2 gradient = svgfDepthGradient(depthImage, pixel, depth, extent, parameters.viewport);
     // This Gaussian smoothing only guides the weights; propagate the original variance with squared weights.
@@ -68,7 +72,9 @@ void filter(int2 pixel, uint2 extent, out float4 direct, out float4 indirect)
             int2 offset = int2(x, y) * int(parameters.stepSize);
             int2 neighbor = pixel + offset;
             if (!svgfContainsPixel(neighbor, extent, parameters.viewport))
+            {
                 continue;
+            }
             float geometryWeight = svgfGeometryWeight(depth, depthImage.Load(int3(neighbor, 0)), gradient, offset,
                 normal, normalImage.Load(int3(neighbor, 0)).xyz);
             float4 sampleDirect = inputDirect.Load(int3(neighbor, 0));
@@ -93,7 +99,9 @@ void computeMain(uint3 thread : SV_DispatchThreadID)
     inputDirect.GetDimensions(width, height);
     uint2 pixel = thread.xy;
     if (pixel.x >= width || pixel.y >= height)
+    {
         return;
+    }
     float4 direct, indirect;
     filter(int2(pixel), uint2(width, height), direct, indirect);
 #if SVGF_STAGE == 2

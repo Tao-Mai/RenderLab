@@ -64,11 +64,18 @@ Binding 0 为全局 `MaterialData` SSBO，Binding 1 为 128 项纹理数组，Bi
 | Skybox | Scene、Light | `SkyboxPushConstants`，16 B |
 | DeferredLighting | Scene、Light、G-buffer、Shadow | `DeferredLightingPushConstants`，16 B |
 | Realtime RayTracing | Scene、Light、Material、光追私有资源 | `PathTracingParameters`，48 B |
-| OfflinePathTracing | Scene、Light、Material、离线私有资源 | `OfflinePathParameters`，32 B |
+| OfflinePathTracing | Scene、Light、Material、离线私有资源 | `OfflinePathParameters`，64 B |
 
 光栅 Push Constant 用于 Vertex / Fragment，光追 Push Constant 用于 Raygen。SVGFReprojection 使用 Scene 和自己的 Set 1；SVGFFilter 使用自己的 Set 0。
 
-实时光追私有 Set 3 的 Binding 1 在关闭 SVGF 时写合并颜色，开启时写直接光；Binding 9 / 10 / 11 仅由 SVGF Shader 使用，分别写间接光 / 相机直接可见的 `emission` / 主命中材质的线性 albedo（RGBA16F）。Binding 7 / 8 始终写线性深度 / 世界法线。SVGF 开关重建图并选择匹配的 Shader。
+光追私有 Set 3 的编号由 [RayTracingBindings.h](../src/render/raytracing/RayTracingBindings.h) 统一定义，CPU 与 shader 共用。
+
+| 路线 | Binding 排列 |
+| --- | --- |
+| 实时 | 0：TLAS；1：命中数据；2：合并颜色或直接光；3：深度；4：法线；5：间接光；6：emission；7：albedo |
+| 离线 | 0：TLAS；1：命中数据；2：材质预览；3：纹理指令；4：发光网格共享参数；5–11：point / spot / distant / 三角形 / infinite / projection / goniometric；12：portal 顶点；13：累积缓冲；14：颜色输出 |
+
+实时光追的 Binding 5–7 用于 SVGF，SVGF 开关重建图并选择匹配的 Shader。
 
 `SVGFReprojection` 私有 Set 1 的 Binding 0–4 为当前帧 direct / indirect / depth / normal / albedo；5–10 为两路颜色、共享深度 / 法线、两路亮度矩 / 样本数的双层历史；11 / 12 为两路 RGBA32F 颜色 / 方差输出。亮度矩输出引用历史数组（RG 为一阶 / 二阶矩，B 为样本数）。颜色及亮度统计均已除以 albedo，颜色历史在本阶段只读，由第一级滤波回写。
 

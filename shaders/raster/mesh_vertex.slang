@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_MESH_VERTEX_SLANG
 #define RENDERLAB_MESH_VERTEX_SLANG
 
-#include "../common/scene_data.slang"
+#include "common/scene_data.slang"
 
 struct VertexInput
 {

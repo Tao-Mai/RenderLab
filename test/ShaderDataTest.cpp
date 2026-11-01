@@ -392,6 +392,44 @@ TEST(ShaderDataLayout, RayTracingHitDataMatchesCompiledShaders)
         checkFields(parameter(shader, "objects").at("type").at("resultType"), fields);
 }
 
+TEST(ShaderDataLayout, RayTracingBindingsMatchSharedDefinitions)
+{
+    const auto check = [](const char* shader, const char* name, uint32_t binding)
+    {
+        SCOPED_TRACE(shader);
+        SCOPED_TRACE(name);
+        const auto value = parameter(shader, name).at("binding");
+        EXPECT_EQ(value.at("space"), RenderInterface::kRayTracingPassSet);
+        EXPECT_EQ(value.at("index"), binding);
+    };
+    for (const auto* shader : {"raytracing", "raytracing.svgf"})
+    {
+        check(shader, "scene", RealtimeRayTracingBinding::kTlas);
+        check(shader, "objects", RealtimeRayTracingBinding::kObjects);
+        check(shader, "outputImage", RealtimeRayTracingBinding::kColor);
+        check(shader, "depthImage", RealtimeRayTracingBinding::kDepth);
+        check(shader, "normalImage", RealtimeRayTracingBinding::kNormal);
+    }
+    check("raytracing.svgf", "indirectImage", RealtimeRayTracingBinding::kIndirect);
+    check("raytracing.svgf", "emissionImage", RealtimeRayTracingBinding::kEmission);
+    check("raytracing.svgf", "albedoImage", RealtimeRayTracingBinding::kAlbedo);
+    check("offline_pathtracing", "scene", OfflineRayTracingBinding::kTlas);
+    check("offline_pathtracing", "objects", OfflineRayTracingBinding::kObjects);
+    check("offline_pathtracing", "materialInstructions", OfflineRayTracingBinding::kMaterials);
+    check("offline_pathtracing", "textureInstructions", OfflineRayTracingBinding::kTextures);
+    check("offline_pathtracing", "areaEmissions", OfflineRayTracingBinding::kAreaEmissions);
+    check("offline_pathtracing", "pointLights", OfflineRayTracingBinding::kPoints);
+    check("offline_pathtracing", "spotLights", OfflineRayTracingBinding::kSpots);
+    check("offline_pathtracing", "directionalLights", OfflineRayTracingBinding::kDirectionals);
+    check("offline_pathtracing", "environmentLights", OfflineRayTracingBinding::kEnvironments);
+    check("offline_pathtracing", "projectionLights", OfflineRayTracingBinding::kProjections);
+    check("offline_pathtracing", "goniometricLights", OfflineRayTracingBinding::kGoniometrics);
+    check("offline_pathtracing", "lightTriangles", OfflineRayTracingBinding::kTriangles);
+    check("offline_pathtracing", "lightPortals", OfflineRayTracingBinding::kPortals);
+    check("offline_pathtracing", "accumulation", OfflineRayTracingBinding::kAccumulation);
+    check("offline_pathtracing", "outputImage", OfflineRayTracingBinding::kColor);
+}
+
 TEST(ShaderDataLayout, ToneMappingMatchesCompiledShader)
 {
     const std::array expected = {
@@ -417,8 +455,11 @@ TEST(ShaderDataLayout, OfflineSceneUsesItsOwnBufferLayouts)
     const std::array parameters = {
         Field{"viewport", offsetof(OfflinePathParameters, viewport), sizeof(glm::vec4)},
         Field{"samples", offsetof(OfflinePathParameters, samples), sizeof(glm::uvec4)},
+        Field{"lightCounts", offsetof(OfflinePathParameters, lightCounts), sizeof(glm::uvec4)},
+        Field{"mappedLightCounts", offsetof(OfflinePathParameters, mappedLightCounts), sizeof(glm::uvec4)},
     };
     checkFields(push.at("type").at("elementType"), parameters);
+    EXPECT_EQ(push.at("type").at("elementVarLayout").at("binding").at("size"), sizeof(OfflinePathParameters));
     const auto check = [&](const char* name, uint32_t binding, std::span<const Field> fields)
     {
         const auto buffer = parameter("offline_pathtracing", name);
@@ -431,7 +472,7 @@ TEST(ShaderDataLayout, OfflineSceneUsesItsOwnBufferLayouts)
         Field{"indexAddress", offsetof(OfflineHitData, indexAddress), sizeof(uint64_t)},
         Field{"material", offsetof(OfflineHitData, material), sizeof(glm::uvec4)},
     };
-    check("objects", 2, hit);
+    check("objects", OfflineRayTracingBinding::kObjects, hit);
     const std::array material = {
         Field{"model", offsetof(OfflineMaterialPreview, model), sizeof(OfflineMaterialPreviewModel)},
         Field{"firstTexture", offsetof(OfflineMaterialPreview, firstTexture), sizeof(uint32_t)},
@@ -439,7 +480,7 @@ TEST(ShaderDataLayout, OfflineSceneUsesItsOwnBufferLayouts)
         Field{"instructionCount", offsetof(OfflineMaterialPreview, instructionCount), sizeof(uint32_t)},
         Field{"parameters", offsetof(OfflineMaterialPreview, parameters), sizeof(glm::vec4)},
     };
-    check("materialInstructions", 8, material);
+    check("materialInstructions", OfflineRayTracingBinding::kMaterials, material);
     const std::array texture = {
         Field{"metadata", offsetof(OfflineTextureInstruction, metadata), sizeof(glm::uvec4)},
         Field{"value", offsetof(OfflineTextureInstruction, value), sizeof(glm::vec4)},
@@ -449,7 +490,67 @@ TEST(ShaderDataLayout, OfflineSceneUsesItsOwnBufferLayouts)
         Field{"settings", offsetof(OfflineTextureInstruction, settings), sizeof(glm::vec4)},
         Field{"textureFromWorld", offsetof(OfflineTextureInstruction, textureFromWorld), sizeof(glm::mat4)},
     };
-    check("textureInstructions", 9, texture);
+    check("textureInstructions", OfflineRayTracingBinding::kTextures, texture);
+    const std::array emission = {
+        Field{"colorScale", offsetof(OfflineLightEmission, colorScale), sizeof(glm::vec4)},
+        Field{"normalization", offsetof(OfflineLightEmission, normalization), sizeof(glm::vec4)},
+        Field{"resources", offsetof(OfflineLightEmission, resources), sizeof(glm::uvec4)},
+    };
+    check("areaEmissions", OfflineRayTracingBinding::kAreaEmissions, emission);
+    const std::array point = {
+        Field{"position", offsetof(OfflinePointLight, position), sizeof(glm::vec3)},
+        Field{"padding", offsetof(OfflinePointLight, padding), sizeof(uint32_t)},
+        Field{"emission", offsetof(OfflinePointLight, emission), sizeof(OfflineLightEmission)},
+    };
+    check("pointLights", OfflineRayTracingBinding::kPoints, point);
+    const std::array spot = {
+        Field{"position", offsetof(OfflineSpotLight, position), sizeof(glm::vec3)},
+        Field{"cosInner", offsetof(OfflineSpotLight, cosInner), sizeof(float)},
+        Field{"direction", offsetof(OfflineSpotLight, direction), sizeof(glm::vec3)},
+        Field{"cosOuter", offsetof(OfflineSpotLight, cosOuter), sizeof(float)},
+        Field{"emission", offsetof(OfflineSpotLight, emission), sizeof(OfflineLightEmission)},
+    };
+    check("spotLights", OfflineRayTracingBinding::kSpots, spot);
+    const std::array directional = {
+        Field{"direction", offsetof(OfflineDirectionalLight, direction), sizeof(glm::vec3)},
+        Field{"padding", offsetof(OfflineDirectionalLight, padding), sizeof(uint32_t)},
+        Field{"emission", offsetof(OfflineDirectionalLight, emission), sizeof(OfflineLightEmission)},
+    };
+    check("directionalLights", OfflineRayTracingBinding::kDirectionals, directional);
+    const std::array triangle = {
+        Field{"p0Area", offsetof(OfflineLightTriangle, p0Area), sizeof(glm::vec4)},
+        Field{"p1", offsetof(OfflineLightTriangle, p1), sizeof(glm::vec4)},
+        Field{"p2", offsetof(OfflineLightTriangle, p2), sizeof(glm::vec4)},
+        Field{"normal", offsetof(OfflineLightTriangle, normal), sizeof(glm::vec4)},
+        Field{"uv01", offsetof(OfflineLightTriangle, uv01), sizeof(glm::vec4)},
+        Field{"uv2", offsetof(OfflineLightTriangle, uv2), sizeof(glm::vec2)},
+        Field{"emissionIndex", offsetof(OfflineLightTriangle, emissionIndex), sizeof(uint32_t)},
+        Field{"twoSided", offsetof(OfflineLightTriangle, twoSided), sizeof(uint32_t)},
+    };
+    check("lightTriangles", OfflineRayTracingBinding::kTriangles, triangle);
+    const std::array environment = {
+        Field{"lightFromWorld", offsetof(OfflineEnvironmentLight, lightFromWorld), sizeof(glm::mat4)},
+        Field{"firstPortal", offsetof(OfflineEnvironmentLight, firstPortal), sizeof(uint32_t)},
+        Field{"portalCount", offsetof(OfflineEnvironmentLight, portalCount), sizeof(uint32_t)},
+        Field{"padding0", offsetof(OfflineEnvironmentLight, padding0), sizeof(uint32_t)},
+        Field{"padding1", offsetof(OfflineEnvironmentLight, padding1), sizeof(uint32_t)},
+        Field{"emission", offsetof(OfflineEnvironmentLight, emission), sizeof(OfflineLightEmission)},
+    };
+    check("environmentLights", OfflineRayTracingBinding::kEnvironments, environment);
+    const std::array projection = {
+        Field{"lightFromWorld", offsetof(OfflineProjectionLight, lightFromWorld), sizeof(glm::mat4)},
+        Field{"position", offsetof(OfflineProjectionLight, position), sizeof(glm::vec3)},
+        Field{"fieldOfView", offsetof(OfflineProjectionLight, fieldOfView), sizeof(float)},
+        Field{"emission", offsetof(OfflineProjectionLight, emission), sizeof(OfflineLightEmission)},
+    };
+    check("projectionLights", OfflineRayTracingBinding::kProjections, projection);
+    const std::array goniometric = {
+        Field{"lightFromWorld", offsetof(OfflineGoniometricLight, lightFromWorld), sizeof(glm::mat4)},
+        Field{"position", offsetof(OfflineGoniometricLight, position), sizeof(glm::vec3)},
+        Field{"padding", offsetof(OfflineGoniometricLight, padding), sizeof(uint32_t)},
+        Field{"emission", offsetof(OfflineGoniometricLight, emission), sizeof(OfflineLightEmission)},
+    };
+    check("goniometricLights", OfflineRayTracingBinding::kGoniometrics, goniometric);
 }
 
 TEST(ShaderDataLayout, EditorShadersUseOnlyViewData)

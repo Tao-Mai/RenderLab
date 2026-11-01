@@ -45,7 +45,9 @@ float3 neutralToneMapping(float3 color)
 
     float peak = max(color.r, max(color.g, color.b));
     if (peak < kStartCompression)
+    {
         return color;
+    }
 
     float d = 1.0 - kStartCompression;
     float newPeak = 1.0 - d * d / (peak + d - kStartCompression);
@@ -70,7 +72,9 @@ float4 fragMain(VertexOutput input) : SV_Target
 
     // sRGB attachments encode automatically; UNORM swapchains need explicit encoding.
     if (parameters.encodeSrgb != 0)
+    {
         color = float3(linearToSrgb(color.r), linearToSrgb(color.g), linearToSrgb(color.b));
+    }
 
     return float4(color, 1.0);
 }

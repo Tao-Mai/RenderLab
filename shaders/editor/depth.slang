@@ -1,4 +1,4 @@
-#include "view.slang"
+#include "editor/view.slang"
 
 struct VertexInput
 {

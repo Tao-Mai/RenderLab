@@ -1,15 +1,17 @@
 #ifndef RENDERLAB_PATH_TRACING_SLANG
 #define RENDERLAB_PATH_TRACING_SLANG
 
-#include "../../common/light_data.slang"
-#include "../../common/constant.slang"
-#include "../../common/random.slang"
-#include "../../common/local_light_sampling.slang"
-#include "../../common/rect_area_light_sampling.slang"
-#include "../../common/material_data.slang"
-#include "../../common/pbr_brdf.slang"
-#include "../../common/normal_mapping.slang"
-#include "../../common/scene_data.slang"
+#include "render/raytracing/RayTracingBindings.h"
+
+#include "common/light_data.slang"
+#include "common/constant.slang"
+#include "common/random.slang"
+#include "common/local_light_sampling.slang"
+#include "common/rect_area_light_sampling.slang"
+#include "common/material_data.slang"
+#include "common/pbr_brdf.slang"
+#include "common/normal_mapping.slang"
+#include "common/scene_data.slang"
 
 static const uint kVertexStrideFloats = 12;
 static const uint kRussianRouletteStartBounce = 3;
@@ -20,7 +22,7 @@ static const float kMaxRayDistance = 3.402823466e+38;
 static const uint kSceneMask = 0x01;
 static const uint kLightMask = 0x02;
 
-[[vk::binding(0, 3)]] RaytracingAccelerationStructure scene;
+[[vk::binding(RealtimeRayTracingBinding::kTlas, 3)]] RaytracingAccelerationStructure scene;
 [[vk::binding(1, 1)]] StructuredBuffer<LightData> lights;
 [[vk::binding(8, 1)]] TextureCube<float4> radianceMap;
 [[vk::binding(9, 1)]] SamplerState radianceSampler;
@@ -52,7 +54,9 @@ struct Surface
     float3 evaluateLight(float3 direction, float3 incidentLight)
     {
         if (dot(geometricNormal, direction) <= 0.0)
+        {
             return float3(0.0);
+        }
         return brdf.evaluate(normal, viewDirection, direction)
             * saturate(dot(normal, direction)) * incidentLight;
     }
@@ -60,7 +64,9 @@ struct Surface
     bool isVisible(float3 direction, float distance)
     {
         if (distance <= 2.0 * kRayEpsilon)
+        {
             return true;
+        }
 
         RayDesc ray;
         ray.Origin = rayOrigin();
@@ -82,17 +88,23 @@ struct Surface
     {
         LocalLightSample selected = sampleLocalLight(lights, ranges, position, state);
         if (selected.probability == 0.0)
+        {
             return float3(0.0);
+        }
 
         LightData light = lights[selected.index];
         float nDotL = saturate(dot(normal, selected.direction));
         if (nDotL == 0.0)
+        {
             return float3(0.0);
+        }
 
         float3 shadowOffset = light.position - rayOrigin();
         float shadowDistance = length(shadowOffset);
         if (!isVisible(normalize(shadowOffset), shadowDistance))
+        {
             return float3(0.0);
+        }
 
         // Delta point and spot lights do not compete with continuous BRDF direction sampling.
         return evaluateLight(selected.direction, selected.incidentIrradiance) / selected.probability;
@@ -101,7 +113,9 @@ struct Surface
     float3 sampleRectAreaLightRadiance(RectAreaLightSample selected, inout uint state)
     {
         if (selected.probability == 0.0)
+        {
             return float3(0.0);
+        }
 
         float3 origin = rayOrigin();
         RectAreaLight emitter = {lights[selected.index]};
@@ -109,13 +123,17 @@ struct Surface
         float3 toLight = sampleLightPosition - origin;
         float distanceSquared = dot(toLight, toLight);
         if (distanceSquared == 0.0)
+        {
             return float3(0.0);
+        }
 
         float3 lightDirection = toLight * rsqrt(distanceSquared);
         float nDotL = saturate(dot(normal, lightDirection));
         float lightPdf = selected.probability * emitter.pdf(origin, sampleLightPosition);
         if (nDotL == 0.0 || lightPdf == 0.0 || !isVisible(lightDirection, sqrt(distanceSquared)))
+        {
             return float3(0.0);
+        }
 
         // The full NEE PDF includes discrete light selection and conditional surface sampling.
         float brdfPdf = dot(geometricNormal, lightDirection) > 0.0
@@ -135,7 +153,9 @@ struct Surface
             float3 lightDirection = -normalize(light.direction.xyz);
             float nDotL = saturate(dot(normal, lightDirection));
             if (nDotL == 0.0 || !isVisible(lightDirection, kMaxRayDistance))
+            {
                 continue;
+            }
 
             // A delta light has no competing BRDF-sampling path or distance attenuation.
             radiance += evaluateLight(lightDirection, light.color);
@@ -200,7 +220,9 @@ struct HitData
         float3 geometricNormal = normalize(cross(mul(model, v1.position - v0.position),
             mul(model, v2.position - v0.position)));
         if (dot(geometricNormal, worldNormal) < 0.0)
+        {
             geometricNormal = -geometricNormal;
+        }
 
         Surface surface;
         surface.position = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
@@ -211,7 +233,9 @@ struct HitData
         surface.geometricNormal = geometricNormal * facing;
         surface.normal *= facing;
         if (dot(surface.normal, surface.viewDirection) <= 0.0)
+        {
             surface.normal = surface.geometricNormal;
+        }
 
         surface.brdf.baseColor = sampleTextureLevel(material.baseColorTexture, uv).rgb * material.baseColorFactor.rgb;
         surface.brdf.metallic = saturate(material.metallic * sampleTextureLevel(material.metallicTexture, uv).b);
@@ -253,7 +277,7 @@ struct PathTracingParameters
 };
 
 [[vk::push_constant]] ConstantBuffer<PathTracingParameters> parameters;
-[[vk::binding(2, 3)]] StructuredBuffer<HitData> objects;
+[[vk::binding(RealtimeRayTracingBinding::kObjects, 3)]] StructuredBuffer<HitData> objects;
 
 enum class PathEvent : uint
 {
@@ -284,18 +308,26 @@ struct PathResult
     void addRadiance(float3 radiance, bool direct)
     {
         if (direct)
+        {
             directRadiance += radiance;
+        }
         else
+        {
             indirectRadiance += radiance;
+        }
     }
 
     [mutating]
     void addEmission(float3 radiance, uint bounce)
     {
         if (bounce == 0)
+        {
             emission += radiance;
+        }
         else
+        {
             addRadiance(radiance, bounce == 1);
+        }
     }
 };
 
@@ -318,8 +350,10 @@ PathResult tracePath(RayDesc ray, uint primaryMask, uint primaryFlags, inout uin
         if (hit.event == PathEvent::Miss)
         {
             if (parameters.iblEnabled != 0)
+            {
                 result.addEmission(throughput * radianceMap.SampleLevel(radianceSampler, ray.Direction, 0.0).rgb,
                     bounce);
+            }
             break;
         }
         if (hit.event == PathEvent::Emitter)
@@ -352,7 +386,9 @@ PathResult tracePath(RayDesc ray, uint primaryMask, uint primaryFlags, inout uin
         result.addEmission(throughput * surface.emissive, bounce);
         // After the last scattering event, retain terminal emission without another visibility query.
         if (bounce == parameters.maxBounces)
+        {
             break;
+        }
 
         float rectAreaWeightSum;
         result.addRadiance(throughput * surface.sampleDirectRadiance(parameters.lightRanges, state, rectAreaWeightSum),
@@ -363,16 +399,22 @@ PathResult tracePath(RayDesc ray, uint primaryMask, uint primaryFlags, inout uin
         randomSample.z = randomFloat(state);
         BrdfSample sampled = surface.brdf.sample(surface.normal, surface.viewDirection, randomSample);
         if (sampled.pdf <= 0.0 || dot(surface.geometricNormal, sampled.direction) <= 0.0 || !any(sampled.weight > 0.0))
+        {
             break;
+        }
 
         throughput *= sampled.weight;
         if (bounce + 1 >= kRussianRouletteStartBounce)
         {
             float survivalProbability = saturate(max(throughput.x, max(throughput.y, throughput.z)));
             if (survivalProbability == 0.0)
+            {
                 break;
+            }
             if (survivalProbability < 1.0 && randomFloat(state) >= survivalProbability)
+            {
                 break;
+            }
             throughput /= survivalProbability;
         }
 

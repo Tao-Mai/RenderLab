@@ -31,6 +31,8 @@ public:
     [[nodiscard]] uint32_t sampleCount() const { return accumulatedSamples; }
 
 private:
+    static constexpr size_t kSceneBufferCount = OfflineRayTracingBinding::kPortals - OfflineRayTracingBinding::kMaterials + 1;
+
     struct Frame
     {
         uint64_t                hitBufferRevision = 0;
@@ -46,12 +48,12 @@ private:
     RenderGraph::AccelerationStructureHandle sceneTlas;
     Frame                                    frame;
     RenderGraph::BufferHandle                hitData;
-    std::array<RenderGraph::BufferHandle, 2> sceneBuffers;
-    std::array<uint64_t, 2>                 sceneBufferRevisions{};
+    std::array<RenderGraph::BufferHandle, kSceneBufferCount> sceneBuffers;
+    std::array<uint64_t, kSceneBufferCount>                 sceneBufferRevisions{};
     uint64_t                               uploadedSceneRevision = 0;
     RenderGraph::BufferHandle                accumulationHandle;
     uint32_t                                 accumulatedSamples  = 0;
-    bool                                     previousPixelJitter = true;
+    uint32_t                                 previousMaxBounces = 0;
     std::vector<DrawItem>                    previousDrawItems;
     RenderView                               previousView{};
     uint64_t                                 previousAssetRevision = 0;

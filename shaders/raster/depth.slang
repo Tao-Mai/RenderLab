@@ -1,5 +1,5 @@
-#include "mesh_vertex.slang"
-#include "../common/material_data.slang"
+#include "raster/mesh_vertex.slang"
+#include "common/material_data.slang"
 
 struct DepthVertexOutput
 {

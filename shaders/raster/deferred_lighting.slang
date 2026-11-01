@@ -1,4 +1,4 @@
-#include "scene_lighting.slang"
+#include "raster/scene_lighting.slang"
 
 // Pass set 2; bindings match RenderInterface's G-buffer bindings.
 [[vk::binding(0, 2)]] Texture2D<float4> albedoOcclusion;
@@ -31,7 +31,9 @@ float4 fragMain(VertexOutput input) : SV_Target
     uint2 pixel = uint2(input.position.xy);
     float depth = sceneDepth.Load(int3(pixel, 0));
     if (depth >= 1.0)
+    {
         return float4(0.0, 0.0, 0.0, 1.0);
+    }
 
     float2 ndc = (input.position.xy - parameters.viewport.xy) / parameters.viewport.zw * 2.0 - 1.0;
     float4 worldPosition = mul(sceneUniforms.inverseViewProjection, float4(ndc, depth, 1.0));

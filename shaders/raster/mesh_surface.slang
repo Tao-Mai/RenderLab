@@ -1,10 +1,10 @@
 #ifndef RENDERLAB_MESH_SURFACE_SLANG
 #define RENDERLAB_MESH_SURFACE_SLANG
 
-#include "mesh_vertex.slang"
-#include "../common/material_data.slang"
-#include "../common/surface.slang"
-#include "../common/normal_mapping.slang"
+#include "raster/mesh_vertex.slang"
+#include "common/material_data.slang"
+#include "common/surface.slang"
+#include "common/normal_mapping.slang"
 
 struct VertexOutput
 {

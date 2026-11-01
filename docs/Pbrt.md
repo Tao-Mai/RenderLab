@@ -22,7 +22,7 @@ RenderLab --import-pbrt-scene <source>
 
 面积光使用静态网格上的 `MeshAreaLightComponent` 绑定子网格，保存双面发光与朝向标记；点光、聚光、方向光使用现有组件，另有环境光、投影光和配光组件。`PbrtLightEmission` 保存光谱、scale、power / illuminance 和包内图像引用。环境图保留 PBRT 等面积映射，portal 顶点转换到引擎世界坐标。
 
-场景提取将离线光源写入独立的 `OfflineLightData`，面积光引用已有 DrawItem，使用完整的 TRS × base。当前离线渲染准备 PBRT 材质颜色与纹理指令，shader 发出主射线，命中后显示材质 RGB，未命中时显示黑色，并按独立配置进行像素抖动与渐进累积。
+场景提取将离线光源写入独立的 `OfflineLightData`，面积光引用已有 DrawItem，使用完整的 TRS × base。当前离线渲染将 PBRT 材质与纹理颜色用于 diffuse 反照率，默认追踪两次散射。point / spot、distant、area 分别使用蓄水池，area 与 BRDF 采样做 MIS；路径未命中时显示环境光。每个样本始终进行像素内抖动，并做渐进累积，详见 [光源](pbrt/光源.md)。
 
 `PbrtSceneAsset` 保存相机、Film、Sampler、Integrator、PixelFilter、Accelerator、Option，以及形状、光源、介质、对象定义和实例。变换保留双精度完整矩阵、运动端点与时间区间，并保存 PBRT 的渲染坐标空间和 renderFromWorld。
 

@@ -1,33 +1,11 @@
-#include "../../common/scene_data.slang"
-#include "offline_material.slang"
-#include "../../common/low_discrepancy.slang"
+#include "raytracing/offline/offline_path_tracing.slang"
+#include "common/low_discrepancy.slang"
+#include "common/random.slang"
 
-static const float kOfflineRayEpsilon = 0.001;
-static const float kOfflineMaxRayDistance = 3.402823466e+38;
-
-struct OfflineHitData
-{
-    uint64_t vertexAddress;
-    uint64_t indexAddress;
-    uint4 material; // First index, material index, reverse orientation, reserved.
-};
-struct OfflinePathParameters { float4 viewport; uint4 samples; };
 struct OfflineVertex { float3 position; float3 normal; float2 uv; };
-struct OfflineHit
-{
-    uint hit;
-    uint objectIndex;
-    uint primitiveIndex;
-    float2 uv;
-    float3 position;
-    float3 normal;
-};
 
-[[vk::push_constant]] ConstantBuffer<OfflinePathParameters> parameters;
-[[vk::binding(0, 3)]] RaytracingAccelerationStructure scene;
-[[vk::binding(1, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> outputImage;
-[[vk::binding(2, 3)]] StructuredBuffer<OfflineHitData> objects;
-[[vk::binding(7, 3)]] RWStructuredBuffer<float4> accumulation;
+[[vk::binding(OfflineRayTracingBinding::kColor, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> outputImage;
+[[vk::binding(OfflineRayTracingBinding::kAccumulation, 3)]] RWStructuredBuffer<float4> accumulation;
 
 OfflineVertex loadVertex(OfflineHitData object, uint index)
 {
@@ -49,9 +27,12 @@ void raygenMain()
         return;
     }
 
-    float2 pixelSample;
-    if (parameters.samples.y != 0) pixelSample = sampleSobol2D(parameters.samples.x, pixelIndex);
-    else pixelSample = float2(0.5);
+    // 低差异化序列+随机数 作为像素内抖动采样点
+    uint scrambleState = pixelIndex;
+    uint2 scrambleSeeds;
+    scrambleSeeds.x = randomUint(scrambleState);
+    scrambleSeeds.y = randomUint(scrambleState);
+    float2 pixelSample = sampleSobol2D(parameters.samples.x, scrambleSeeds);
     float2 ndc = (float2(pixel) + pixelSample - parameters.viewport.xy) / parameters.viewport.zw * 2.0 - 1.0;
     float4 farPoint = mul(sceneUniforms.inverseViewProjection, float4(ndc, 1.0, 1.0));
     RayDesc ray;
@@ -60,22 +41,26 @@ void raygenMain()
     ray.TMin = kOfflineRayEpsilon;
     ray.TMax = kOfflineMaxRayDistance;
 
-    OfflineHit hit = {};
-    TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0x01, 0, 0, 0, ray, hit);
-    float3 color = float3(0.0);
-    if (hit.hit != 0)
-    {
-        uint materialIndex = objects[hit.objectIndex].material.y;
-        color = max(evaluateMaterial(materialIndex, hit.uv, hit.position, hit.normal, hit.primitiveIndex), float3(0.0));
-    }
+    uint sampleState = parameters.samples.x;
+    uint pathState = scrambleSeeds.y ^ randomUint(sampleState);
+    float3 color = traceOfflinePath(ray, pathState);
+
     float3 sum = color;
-    if (parameters.samples.x != 0) sum += accumulation[pixelIndex].rgb;
+
+    if (parameters.samples.x != 0)
+    {
+        sum += accumulation[pixelIndex].rgb;
+    }
+
     accumulation[pixelIndex] = float4(sum, 0.0);
     outputImage[pixel] = float4(sum / (float(parameters.samples.x) + 1.0), 1.0);
 }
 
 [shader("miss")]
 void missMain(inout OfflineHit hit) { hit.hit = 0; }
+
+[shader("miss")]
+void visibilityMissMain(inout OfflineVisibility visibility) { visibility.visible = 1; }
 
 [shader("closesthit")]
 void closestHitMain(inout OfflineHit hit, BuiltInTriangleIntersectionAttributes attributes)
@@ -94,5 +79,11 @@ void closestHitMain(inout OfflineHit hit, BuiltInTriangleIntersectionAttributes 
     hit.position = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
     hit.uv = v0.uv * weights.x + v1.uv * weights.y + v2.uv * weights.z;
     hit.normal = normalize(mul(objectNormal, (float3x3)WorldToObject3x4()));
-    if (object.material.z != 0) hit.normal = -hit.normal;
+    float3 objectGeometricNormal = cross(v1.position - v0.position, v2.position - v0.position);
+    hit.geometricNormal = normalize(mul(objectGeometricNormal, (float3x3)WorldToObject3x4()));
+    if (object.material.z != 0)
+    {
+        hit.normal = -hit.normal;
+        hit.geometricNormal = -hit.geometricNormal;
+    }
 }

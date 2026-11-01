@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/raytracing/RayTracingBindings.h"
+
 #include "render/resources/ShaderData.h"
 
 #include <cstddef>

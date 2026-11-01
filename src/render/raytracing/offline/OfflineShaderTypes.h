@@ -1,6 +1,8 @@
 #ifndef RENDERLAB_OFFLINE_SHADER_TYPES_H
 #define RENDERLAB_OFFLINE_SHADER_TYPES_H
 
+#include "render/raytracing/RayTracingBindings.h"
+
 #ifdef __cplusplus
 #include <cstdint>
 #define RENDERLAB_OFFLINE_UINT uint32_t
@@ -13,6 +15,10 @@
 // Shared by the CPU compiler and Slang evaluators.
 RENDERLAB_OFFLINE_CONSTANT kOfflineTextureStackSize = 64;
 RENDERLAB_OFFLINE_CONSTANT kOfflineMaterialStackSize = 64;
+RENDERLAB_OFFLINE_CONSTANT kOfflineInvalidIndex = 0xffffffffu;
+RENDERLAB_OFFLINE_CONSTANT kOfflineLightHasImage = 1u << 0;
+RENDERLAB_OFFLINE_CONSTANT kOfflineLightHasPower = 1u << 1;
+RENDERLAB_OFFLINE_CONSTANT kOfflineLightHasIlluminance = 1u << 2;
 
 enum class OfflineTextureOp : RENDERLAB_OFFLINE_UINT
 {

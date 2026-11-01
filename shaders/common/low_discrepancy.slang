@@ -1,8 +1,6 @@
 #ifndef RENDERLAB_LOW_DISCREPANCY_SLANG
 #define RENDERLAB_LOW_DISCREPANCY_SLANG
 
-#include "random.slang"
-
 // Fast Owen scrambling, as described in PBRT's Sobol sampler.
 // https://www.pbr-book.org/4ed/Sampling_and_Reconstruction/Sobol_Samplers
 uint fastOwenScramble(uint value, uint seed)
@@ -20,7 +18,7 @@ uint fastOwenScramble(uint value, uint seed)
     return reversebits(value);
 }
 
-float2 sampleSobol2D(uint sampleIndex, uint scrambleSeed)
+float2 sampleSobol2D(uint sampleIndex, uint2 scrambleSeeds)
 {
     static const uint kLeadingBit = 0x80000000u;
     static const float kUint24ToFloat = 1.0 / 16777216.0;
@@ -31,15 +29,15 @@ float2 sampleSobol2D(uint sampleIndex, uint scrambleSeed)
     for (uint bits = sampleIndex; bits != 0u; bits >>= 1u)
     {
         if ((bits & 1u) != 0u)
+        {
             value.y ^= direction;
+        }
         direction ^= direction >> 1u;
     }
 
-    // The scramble is fixed for this pixel across all sample indices.
-    uint seedX = randomUint(scrambleSeed);
-    uint seedY = randomUint(scrambleSeed);
-    value.x = fastOwenScramble(value.x, seedX);
-    value.y = fastOwenScramble(value.y, seedY);
+    // The caller keeps both dimension seeds fixed across sample indices.
+    value.x = fastOwenScramble(value.x, scrambleSeeds.x);
+    value.y = fastOwenScramble(value.y, scrambleSeeds.y);
     return float2(value >> 8u) * kUint24ToFloat;
 }
 

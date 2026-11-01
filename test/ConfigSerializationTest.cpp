@@ -105,8 +105,7 @@ TEST(ConfigSerialization, RendererConfigRoundTripsExplicitFeatures)
     EXPECT_EQ(serialized.at("feature").at("rayTracing").at("svgf"), false);
     EXPECT_EQ(serialized.at("feature").at("rayTracing").at("historyLength"), 4);
     EXPECT_FLOAT_EQ(serialized.at("feature").at("rayTracing").at("emaAlpha").get<float>(), 0.25f);
-    EXPECT_EQ(serialized.at("feature").at("offline").at("maxBounces"), 5);
-    EXPECT_EQ(serialized.at("feature").at("offline").at("pixelJitter"), true);
+    EXPECT_EQ(serialized.at("feature").at("offline").at("maxBounces"), 2);
 
     RendererConfig restored;
     Deserialize(serialized, restored);
@@ -133,12 +132,10 @@ TEST(ConfigSerialization, OfflineRouteAndSettingsRoundTripIndependently)
     auto config = sampleRendererConfig();
     config.renderPath = RenderPath::OfflinePathTracing;
     config.feature.offline.maxBounces = 8;
-    config.feature.offline.pixelJitter = false;
     const auto serialized = Serialize(config);
     EXPECT_EQ(serialized.at("renderPath"), "OfflinePathTracing");
     EXPECT_EQ(serialized.at("feature").at("rayTracing").at("maxBounces"), 3);
     EXPECT_EQ(serialized.at("feature").at("offline").at("maxBounces"), 8);
-    EXPECT_EQ(serialized.at("feature").at("offline").at("pixelJitter"), false);
     RendererConfig restored;
     Deserialize(serialized, restored);
     EXPECT_EQ(Serialize(restored), serialized);

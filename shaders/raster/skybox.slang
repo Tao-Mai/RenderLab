@@ -1,4 +1,4 @@
-#include "../common/scene_data.slang"
+#include "common/scene_data.slang"
 
 struct VertexOutput
 {

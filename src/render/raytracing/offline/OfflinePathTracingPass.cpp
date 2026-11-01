@@ -24,8 +24,19 @@
 
 namespace
 {
-constexpr uint32_t kMissShaderCount = 1;
+constexpr uint32_t kMissShaderCount = 2;
 constexpr uint32_t kHitShaderCount  = 1;
+constexpr std::array kSceneBufferBindings{
+    OfflineRayTracingBinding::kMaterials, OfflineRayTracingBinding::kTextures, OfflineRayTracingBinding::kAreaEmissions,
+    OfflineRayTracingBinding::kPoints, OfflineRayTracingBinding::kSpots, OfflineRayTracingBinding::kDirectionals,
+    OfflineRayTracingBinding::kTriangles, OfflineRayTracingBinding::kEnvironments, OfflineRayTracingBinding::kProjections,
+    OfflineRayTracingBinding::kGoniometrics, OfflineRayTracingBinding::kPortals,
+};
+constexpr std::array kSceneBufferSizes{
+    sizeof(OfflineMaterialPreview), sizeof(OfflineTextureInstruction), sizeof(OfflineLightEmission),
+    sizeof(OfflinePointLight), sizeof(OfflineSpotLight), sizeof(OfflineDirectionalLight), sizeof(OfflineLightTriangle),
+    sizeof(OfflineEnvironmentLight), sizeof(OfflineProjectionLight), sizeof(OfflineGoniometricLight), sizeof(glm::vec4),
+};
 constexpr auto kSceneBufferUsage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst;
 vk::DeviceSize     alignUp(vk::DeviceSize value, vk::DeviceSize alignment)
 {
@@ -53,11 +64,13 @@ OfflinePathTracingPass::Output OfflinePathTracingPass::setup(
           .size  = sizeof(OfflineHitData),
           .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
     });
-    sceneBuffers[0] = graph.createBuffer({.size = sizeof(OfflineMaterialPreview), .usage = kSceneBufferUsage});
-    sceneBuffers[1] = graph.createBuffer({.size = sizeof(OfflineTextureInstruction), .usage = kSceneBufferUsage});
+    for (size_t index = 0; index < sceneBuffers.size(); ++index)
+        sceneBuffers[index] = graph.createBuffer({.size = kSceneBufferSizes[index], .usage = kSceneBufferUsage});
     sceneBufferRevisions.fill(0);
     uploadedSceneRevision = 0;
-    for (const auto buffer : {hitData, sceneBuffers[0], sceneBuffers[1]})
+    graph.use(hitData, {.stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
+                       .access = vk::AccessFlagBits2::eShaderStorageRead});
+    for (const auto buffer : sceneBuffers)
         graph.use(
             buffer,
             {
@@ -126,36 +139,23 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup)
 
     if (!pipelineLayout)
     {
-        const std::array bindings = {
-            vk::DescriptorSetLayoutBinding{
-                .binding         = 0,
-                .descriptorType  = vk::DescriptorType::eAccelerationStructureKHR,
-                .descriptorCount = 1,
-                .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
-            },
-            vk::DescriptorSetLayoutBinding{
-                .binding         = 1,
-                .descriptorType  = vk::DescriptorType::eStorageImage,
-                .descriptorCount = 1,
-                .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
-            },
-            vk::DescriptorSetLayoutBinding{
-                .binding         = 2,
-                .descriptorType  = vk::DescriptorType::eStorageBuffer,
-                .descriptorCount = 1,
-                .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eRaygenKHR
-            },
-            vk::DescriptorSetLayoutBinding{
-                .binding         = 7,
-                .descriptorType  = vk::DescriptorType::eStorageBuffer,
-                .descriptorCount = 1,
-                .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR,
-            },
-            vk::DescriptorSetLayoutBinding{.binding = 8, .descriptorType = vk::DescriptorType::eStorageBuffer,
-                .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR},
-            vk::DescriptorSetLayoutBinding{.binding = 9, .descriptorType = vk::DescriptorType::eStorageBuffer,
-                .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR},
+        std::vector<vk::DescriptorSetLayoutBinding> bindings{
+            {.binding = OfflineRayTracingBinding::kTlas,
+             .descriptorType = vk::DescriptorType::eAccelerationStructureKHR, .descriptorCount = 1,
+             .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR},
+            {.binding = OfflineRayTracingBinding::kObjects,
+             .descriptorType = vk::DescriptorType::eStorageBuffer, .descriptorCount = 1,
+             .stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eRaygenKHR},
         };
+        for (const auto binding : kSceneBufferBindings)
+            bindings.push_back({.binding = binding, .descriptorType = vk::DescriptorType::eStorageBuffer,
+                .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR});
+        bindings.push_back({.binding = OfflineRayTracingBinding::kAccumulation,
+            .descriptorType = vk::DescriptorType::eStorageBuffer, .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR});
+        bindings.push_back({.binding = OfflineRayTracingBinding::kColor,
+            .descriptorType = vk::DescriptorType::eStorageImage, .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR});
         auto& renderDevice  = *renderContext().device;
         descriptorSetLayout = renderDevice.createDescriptorSetLayout(bindings);
         frame.set           = renderDevice.allocateDescriptorSet(descriptorSetLayout);
@@ -186,6 +186,11 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup)
             .pName  = "missMain"
         },
         vk::PipelineShaderStageCreateInfo{
+            .stage  = vk::ShaderStageFlagBits::eMissKHR,
+            .module = shader.handle(),
+            .pName  = "visibilityMissMain"
+        },
+        vk::PipelineShaderStageCreateInfo{
             .stage  = vk::ShaderStageFlagBits::eClosestHitKHR,
             .module = shader.handle(),
             .pName  = "closestHitMain"
@@ -207,9 +212,16 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup)
             .intersectionShader = VK_SHADER_UNUSED_KHR
         },
         vk::RayTracingShaderGroupCreateInfoKHR{
+            .type               = vk::RayTracingShaderGroupTypeKHR::eGeneral,
+            .generalShader      = 2,
+            .closestHitShader   = VK_SHADER_UNUSED_KHR,
+            .anyHitShader       = VK_SHADER_UNUSED_KHR,
+            .intersectionShader = VK_SHADER_UNUSED_KHR
+        },
+        vk::RayTracingShaderGroupCreateInfoKHR{
             .type               = vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
             .generalShader      = VK_SHADER_UNUSED_KHR,
-            .closestHitShader   = 2,
+            .closestHitShader   = 3,
             .anyHitShader       = VK_SHADER_UNUSED_KHR,
             .intersectionShader = VK_SHADER_UNUSED_KHR
         },
@@ -263,8 +275,8 @@ void OfflinePathTracingPass::createPipeline(const PassSetup& setup)
         ))
     );
     std::vector<uint8_t> records(bindingTable.size());
-    // Group order: raygen, miss, surface hit.
-    const std::array<vk::DeviceSize, 3> recordOffsets{0, missOffset, hitOffset};
+    // Group order: raygen, path miss, visibility miss, surface hit.
+    const std::array<vk::DeviceSize, 4> recordOffsets{0, missOffset, missOffset + stride, hitOffset};
     for (uint32_t group = 0; group < kGroupCount; ++group)
         std::memcpy(
             records.data() + base - address + recordOffsets[group],
@@ -305,7 +317,7 @@ void OfflinePathTracingPass::prepareHits(RenderGraph& graph, const PassFrame& ex
             OfflineHitData{
                 .vertexAddress = mesh.vertices().address(device),
                 .indexAddress = mesh.indices().address(device),
-                .material = {part.firstIndex, draw.materialIndex, draw.reverseOrientation, 0},
+                .material = {part.firstIndex, draw.materialIndex, draw.reverseOrientation, draw.firstAreaLight},
             }
         );
     }
@@ -318,7 +330,7 @@ void OfflinePathTracingPass::prepareHits(RenderGraph& graph, const PassFrame& ex
         const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.size()};
         const vk::WriteDescriptorSet   write{
               .dstSet          = *frame.set,
-              .dstBinding      = 2,
+              .dstBinding      = OfflineRayTracingBinding::kObjects,
               .descriptorCount = 1,
               .descriptorType  = vk::DescriptorType::eStorageBuffer,
               .pBufferInfo     = &info,
@@ -342,7 +354,7 @@ void OfflinePathTracingPass::updateTlasDescriptor(RenderGraph& graph, const Pass
         const vk::WriteDescriptorSet write{
             .pNext           = &accelerationInfo,
             .dstSet          = *frame.set,
-            .dstBinding      = 0,
+            .dstBinding      = OfflineRayTracingBinding::kTlas,
             .descriptorCount = 1,
             .descriptorType  = vk::DescriptorType::eAccelerationStructureKHR,
         };
@@ -370,14 +382,14 @@ void OfflinePathTracingPass::writeDescriptorSet(RenderGraph& graph, const PassSe
     const std::array               writes{
         vk::WriteDescriptorSet{
                           .dstSet          = *frame.set,
-                          .dstBinding      = 1,
+                          .dstBinding      = OfflineRayTracingBinding::kColor,
                           .descriptorCount = 1,
                           .descriptorType  = vk::DescriptorType::eStorageImage,
                           .pImageInfo      = &outputInfo,
         },
         vk::WriteDescriptorSet{
                           .dstSet          = *frame.set,
-                          .dstBinding      = 7,
+                          .dstBinding      = OfflineRayTracingBinding::kAccumulation,
                           .descriptorCount = 1,
                           .descriptorType  = vk::DescriptorType::eStorageBuffer,
                           .pBufferInfo     = &accumulationInfo,
@@ -403,13 +415,18 @@ void OfflinePathTracingPass::execute(
     };
     commands.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 0, sets, {});
     const auto& viewport = execution.view.viewport;
+    const auto& offline = *execution.renderData.offlineScene;
     commands.pushConstants<OfflinePathParameters>(
         pipelineLayout,
         vk::ShaderStageFlagBits::eRaygenKHR,
         0,
         OfflinePathParameters{
             .viewport           = {viewport.x, viewport.y, viewport.width, viewport.height},
-            .samples = {accumulatedSamples, execution.setup.config.feature.offline.pixelJitter ? 1u : 0u, 0, 0},
+            .samples = {accumulatedSamples, execution.setup.config.feature.offline.maxBounces, 0, 0},
+            .lightCounts = {offline.pointLights.size(), offline.spotLights.size(),
+                offline.directionalLights.size(), offline.lightTriangles.size()},
+            .mappedLightCounts = {offline.environmentLights.size(), offline.projectionLights.size(),
+                offline.goniometricLights.size(), offline.lightPortals.size()},
         }
     );
     const auto extent = graph.imageExtent(rayImage);
@@ -421,7 +438,8 @@ void OfflinePathTracingPass::prepare(RenderGraph& graph, const PassFrame& execut
 {
     prepareHits(graph, execution, frame);
     const auto& offline = *execution.renderData.offlineScene;
-    if (uploadedSceneRevision != offline.revision)
+    const bool offlineChanged = uploadedSceneRevision != offline.revision;
+    if (offlineChanged)
     {
         const auto upload = [&](uint32_t index, const auto& values)
         {
@@ -436,7 +454,7 @@ void OfflinePathTracingPass::prepare(RenderGraph& graph, const PassFrame& execut
             {
                 const auto& buffer = graph.getBuffer(sceneBuffers[index]);
                 const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.size()};
-                const vk::WriteDescriptorSet write{.dstSet = *frame.set, .dstBinding = 8 + index,
+                const vk::WriteDescriptorSet write{.dstSet = *frame.set, .dstBinding = kSceneBufferBindings[index],
                     .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &info};
                 execution.setup.vulkan.deviceHandle().updateDescriptorSets(write, {});
                 sceneBufferRevisions[index] = graph.bufferRevision(sceneBuffers[index]);
@@ -444,6 +462,15 @@ void OfflinePathTracingPass::prepare(RenderGraph& graph, const PassFrame& execut
         };
         upload(0, offline.materials);
         upload(1, offline.textures);
+        upload(2, offline.areaEmissions);
+        upload(3, offline.pointLights);
+        upload(4, offline.spotLights);
+        upload(5, offline.directionalLights);
+        upload(6, offline.lightTriangles);
+        upload(7, offline.environmentLights);
+        upload(8, offline.projectionLights);
+        upload(9, offline.goniometricLights);
+        upload(10, offline.lightPortals);
         uploadedSceneRevision = offline.revision;
     }
     const auto& view          = execution.view;
@@ -454,13 +481,13 @@ void OfflinePathTracingPass::prepare(RenderGraph& graph, const PassFrame& execut
         view.viewport.x != previousView.viewport.x || view.viewport.y != previousView.viewport.y ||
         view.viewport.width != previousView.viewport.width || view.viewport.height != previousView.viewport.height;
     const bool sceneChanged = !std::ranges::equal(previousDrawItems, scene.drawItems);
-    const auto& settings = execution.setup.config.feature.offline;
-    const bool settingsChanged = previousPixelJitter != settings.pixelJitter;
-    if (sceneChanged || cameraChanged || previousAssetRevision != assetRevision || settingsChanged)
+    const auto maxBounces = execution.setup.config.feature.offline.maxBounces;
+    if (offlineChanged || sceneChanged || cameraChanged || previousAssetRevision != assetRevision ||
+        previousMaxBounces != maxBounces)
         accumulatedSamples = 0;
 
     previousDrawItems.assign(scene.drawItems.begin(), scene.drawItems.end());
     previousView           = view;
     previousAssetRevision  = assetRevision;
-    previousPixelJitter    = settings.pixelJitter;
+    previousMaxBounces     = maxBounces;
 }

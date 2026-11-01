@@ -130,49 +130,49 @@ void RayTracingPass::createPipeline(const PassSetup& setup)
     {
         const std::array bindings = {
             vk::DescriptorSetLayoutBinding{
-                .binding         = 0,
+                .binding         = RealtimeRayTracingBinding::kTlas,
                 .descriptorType  = vk::DescriptorType::eAccelerationStructureKHR,
                 .descriptorCount = 1,
                 .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
             },
             vk::DescriptorSetLayoutBinding{
-                .binding         = 1,
-                .descriptorType  = vk::DescriptorType::eStorageImage,
-                .descriptorCount = 1,
-                .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
-            },
-            vk::DescriptorSetLayoutBinding{
-                .binding         = 2,
+                .binding         = RealtimeRayTracingBinding::kObjects,
                 .descriptorType  = vk::DescriptorType::eStorageBuffer,
                 .descriptorCount = 1,
                 .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
             },
             vk::DescriptorSetLayoutBinding{
-                .binding         = 7,
+                .binding         = RealtimeRayTracingBinding::kColor,
                 .descriptorType  = vk::DescriptorType::eStorageImage,
                 .descriptorCount = 1,
                 .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
             },
             vk::DescriptorSetLayoutBinding{
-                .binding         = 8,
+                .binding         = RealtimeRayTracingBinding::kDepth,
                 .descriptorType  = vk::DescriptorType::eStorageImage,
                 .descriptorCount = 1,
                 .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
             },
             vk::DescriptorSetLayoutBinding{
-                .binding         = 9,
+                .binding         = RealtimeRayTracingBinding::kNormal,
                 .descriptorType  = vk::DescriptorType::eStorageImage,
                 .descriptorCount = 1,
                 .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
             },
             vk::DescriptorSetLayoutBinding{
-                .binding         = 10,
+                .binding         = RealtimeRayTracingBinding::kIndirect,
                 .descriptorType  = vk::DescriptorType::eStorageImage,
                 .descriptorCount = 1,
                 .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
             },
             vk::DescriptorSetLayoutBinding{
-                .binding         = 11,
+                .binding         = RealtimeRayTracingBinding::kEmission,
+                .descriptorType  = vk::DescriptorType::eStorageImage,
+                .descriptorCount = 1,
+                .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
+            },
+            vk::DescriptorSetLayoutBinding{
+                .binding         = RealtimeRayTracingBinding::kAlbedo,
                 .descriptorType  = vk::DescriptorType::eStorageImage,
                 .descriptorCount = 1,
                 .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
@@ -365,7 +365,7 @@ void RayTracingPass::prepareHits(RenderGraph& graph, const PassFrame& execution,
         const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.size()};
         const vk::WriteDescriptorSet   write{
               .dstSet          = *frame.set,
-              .dstBinding      = 2,
+              .dstBinding      = RealtimeRayTracingBinding::kObjects,
               .descriptorCount = 1,
               .descriptorType  = vk::DescriptorType::eStorageBuffer,
               .pBufferInfo     = &info,
@@ -389,7 +389,7 @@ void RayTracingPass::updateTlasDescriptor(RenderGraph& graph, const PassFrame& e
         const vk::WriteDescriptorSet write{
             .pNext           = &accelerationInfo,
             .dstSet          = *frame.set,
-            .dstBinding      = 0,
+            .dstBinding      = RealtimeRayTracingBinding::kTlas,
             .descriptorCount = 1,
             .descriptorType  = vk::DescriptorType::eAccelerationStructureKHR,
         };
@@ -419,21 +419,21 @@ void RayTracingPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& set
         const std::array writes{
             vk::WriteDescriptorSet{
                 .dstSet          = *frame.set,
-                .dstBinding      = 1,
+                .dstBinding      = RealtimeRayTracingBinding::kColor,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eStorageImage,
                 .pImageInfo      = &outputInfo,
             },
             vk::WriteDescriptorSet{
                 .dstSet          = *frame.set,
-                .dstBinding      = 7,
+                .dstBinding      = RealtimeRayTracingBinding::kDepth,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eStorageImage,
                 .pImageInfo      = &depthInfo,
             },
             vk::WriteDescriptorSet{
                 .dstSet          = *frame.set,
-                .dstBinding      = 8,
+                .dstBinding      = RealtimeRayTracingBinding::kNormal,
                 .descriptorCount = 1,
                 .descriptorType  = vk::DescriptorType::eStorageImage,
                 .pImageInfo      = &normalInfo,
@@ -451,21 +451,21 @@ void RayTracingPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& set
             const std::array writes{
                 vk::WriteDescriptorSet{
                     .dstSet          = *frame.set,
-                    .dstBinding      = 9,
+                    .dstBinding      = RealtimeRayTracingBinding::kIndirect,
                     .descriptorCount = 1,
                     .descriptorType  = vk::DescriptorType::eStorageImage,
                     .pImageInfo      = &indirectInfo,
                 },
                 vk::WriteDescriptorSet{
                     .dstSet          = *frame.set,
-                    .dstBinding      = 10,
+                    .dstBinding      = RealtimeRayTracingBinding::kEmission,
                     .descriptorCount = 1,
                     .descriptorType  = vk::DescriptorType::eStorageImage,
                     .pImageInfo      = &emissionInfo,
                 },
                 vk::WriteDescriptorSet{
                     .dstSet          = *frame.set,
-                    .dstBinding      = 11,
+                    .dstBinding      = RealtimeRayTracingBinding::kAlbedo,
                     .descriptorCount = 1,
                     .descriptorType  = vk::DescriptorType::eStorageImage,
                     .pImageInfo      = &albedoInfo,

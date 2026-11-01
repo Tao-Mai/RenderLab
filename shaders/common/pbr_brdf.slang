@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_PBR_BRDF_SLANG
 #define RENDERLAB_PBR_BRDF_SLANG
 
-#include "brdf.slang"
+#include "common/brdf.slang"
 
 struct BrdfSample
 {
@@ -58,7 +58,9 @@ struct PbrBrdf
         float nDotV = saturate(dot(normal, viewDirection));
         float nDotL = saturate(dot(normal, lightDirection));
         if (nDotV <= 0.0 || nDotL <= 0.0)
+        {
             return 0.0;
+        }
 
         float3 halfDirection = normalize(viewDirection + lightDirection);
         float samplingRoughness = max(roughness, kMinDirectRoughness);
@@ -75,7 +77,9 @@ struct PbrBrdf
         BrdfSample result = {float3(0.0), float3(0.0), 0.0};
         float nDotV = dot(normal, viewDirection);
         if (nDotV <= 0.0)
+        {
             return result;
+        }
 
         float3 axis = abs(normal.z) < 0.999 ? float3(0.0, 0.0, 1.0) : float3(0.0, 1.0, 0.0);
         float3 tangent = normalize(cross(axis, normal));
@@ -97,14 +101,18 @@ struct PbrBrdf
 
         // Do not resample below-surface GGX reflections: they are zero-contribution samples.
         if (localDirection.z <= 0.0)
+        {
             return result;
+        }
 
         result.direction = normalize(tangent * localDirection.x + bitangent * localDirection.y
             + normal * localDirection.z);
         result.pdf = pdf(normal, viewDirection, result.direction);
         if (result.pdf > 0.0)
+        {
             result.weight = evaluate(normal, viewDirection, result.direction)
                 * saturate(dot(normal, result.direction)) / result.pdf;
+        }
         return result;
     }
 };

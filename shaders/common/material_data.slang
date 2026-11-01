@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_MATERIAL_DATA_SLANG
 #define RENDERLAB_MATERIAL_DATA_SLANG
 
-#include "texture_data.slang"
+#include "common/texture_data.slang"
 
 static const uint kAlphaModeOpaque = 0;
 static const uint kAlphaModeMask = 1;
@@ -46,7 +46,9 @@ struct MaterialData
 void applyAlphaTest(MaterialData material, float alpha)
 {
     if (material.alphaMode == kAlphaModeMask && alpha < material.alphaCutoff)
+    {
         discard;
+    }
 }
 
 #endif

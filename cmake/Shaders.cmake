@@ -25,6 +25,7 @@ function(renderlab_shader program source binary)
     add_custom_command(OUTPUT "${output}" "${reflection}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
         COMMAND ${SLANGC_EXECUTABLE} "${SHADER_SOURCE_DIR}/${source}"
+            -I "${SHADER_SOURCE_DIR}" -I "${PROJECT_SOURCE_DIR}/src"
             ${arguments} -target spirv -profile spirv_1_4 -matrix-layout-column-major
             -emit-spirv-directly -fvk-use-entrypoint-name
             -reflection-json "${reflection}" -o "${output}"

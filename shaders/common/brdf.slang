@@ -1,4 +1,4 @@
-#include "constant.slang"
+#include "common/constant.slang"
 
 #ifndef ENABLE_CLEARCOAT
 #error ENABLE_CLEARCOAT must be specified when compiling the scene shader
@@ -49,7 +49,9 @@ float3 evaluateDirectBrdf(
     float nDotV = saturate(dot(N, V));
     float nDotL = saturate(dot(N, L));
     if (nDotV <= 0.0 || nDotL <= 0.0)
+    {
         return float3(0.0);
+    }
 
     roughness = max(roughness, kMinDirectRoughness);
     float3 H = normalize(V + L);
@@ -79,7 +81,9 @@ float kelemenVisibility(float lDotH)
 float evaluateClearcoatBrdf(float roughness, float3 normal, float3 V, float3 L)
 {
     if (dot(normal, V) <= 0.0 || dot(normal, L) <= 0.0)
+    {
         return 0.0;
+    }
 
     roughness = max(roughness, kMinDirectRoughness);
     float3 H = normalize(V + L);
@@ -132,7 +136,9 @@ float evaluateSheenBrdf(float roughness, float3 normal, float3 V, float3 L)
     float nDotL = saturate(dot(normal, L));
     float nDotV = saturate(dot(normal, V));
     if (nDotL <= 0.0 || nDotV <= 0.0)
+    {
         return 0.0;
+    }
 
     float3 H = normalize(V + L);
     return normalDistributionCharlie(roughness, saturate(dot(normal, H)))

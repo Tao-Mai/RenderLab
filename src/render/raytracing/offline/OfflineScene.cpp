@@ -1,6 +1,7 @@
 #include "render/raytracing/offline/OfflineScene.h"
 
 #include "asset/AssetManager.h"
+#include "asset/AssetDataManager.h"
 #include "asset/pbrt/PbrtData.h"
 #include "asset/pbrt/PbrtMaterial.h"
 #include "core/Context.h"
@@ -336,12 +337,109 @@ private:
         activeMaterials.erase(source.id.value);
     }
 };
+
+void prepareLights(OfflineSceneData& data, std::span<const DrawItem> items,
+    std::span<const OfflineLightData> lights, AssetManager& assets,
+    RenderResourceManager& resources, MaterialTable& materialTable)
+{
+    std::unordered_map<MeshAsset::ID, MeshGeometry> geometries;
+    CHECK(lights.size() < kOfflineInvalidIndex);
+    for (const auto& source : lights)
+    {
+        OfflineLightEmission emission;
+        emission.colorScale = {previewRgb(source.emission.spectrum), static_cast<float>(source.emission.scale)};
+        if (source.emission.image)
+        {
+            const auto image = materialTable.textureReference(source.emission.image->image, resources);
+            emission.resources.w |= kOfflineLightHasImage;
+            emission.resources.x = image.textureIndex;
+            emission.resources.y = image.samplerIndex;
+        }
+        if (source.emission.power)
+        {
+            emission.resources.w |= kOfflineLightHasPower;
+            emission.normalization.x = static_cast<float>(*source.emission.power);
+        }
+        if (source.emission.illuminance)
+        {
+            emission.resources.w |= kOfflineLightHasIlluminance;
+            emission.normalization.y = static_cast<float>(*source.emission.illuminance);
+        }
+        if (source.emission.medium)
+        {
+            const auto found = std::ranges::find(data.lightMedia, *source.emission.medium);
+            emission.resources.z = static_cast<uint32_t>(found - data.lightMedia.begin());
+            if (found == data.lightMedia.end()) data.lightMedia.push_back(*source.emission.medium);
+        }
+
+        std::visit([&]<class T>(const T& model)
+        {
+            if constexpr (std::same_as<T, OfflineLightData::MeshArea>)
+            {
+                const auto emissionIndex = static_cast<uint32_t>(data.areaEmissions.size());
+                auto& draw = data.draws[model.drawItemIndex];
+                DCHECK(draw.firstAreaLight == kOfflineInvalidIndex);
+                draw.firstAreaLight = static_cast<uint32_t>(data.lightTriangles.size());
+                const auto& item = items[model.drawItemIndex];
+                const auto& mesh = assets.get(item.mesh);
+                auto [geometry, inserted] = geometries.try_emplace(item.mesh);
+                if (inserted) geometry->second = context().assetDataManager->readGeometry(mesh);
+                const auto& vertices = geometry->second.vertices;
+                const auto& indices = geometry->second.indices;
+                const auto& submesh = mesh.submeshes[item.submeshIndex];
+                const bool flipNormal = (glm::determinant(glm::mat3{item.model}) < 0.0f) != model.reverseOrientation;
+                CHECK(data.lightTriangles.size() + submesh.indexCount / 3 < kOfflineInvalidIndex);
+                for (uint32_t offset = 0; offset < submesh.indexCount; offset += 3)
+                {
+                    const auto& v0 = vertices[indices[submesh.firstIndex + offset]];
+                    const auto& v1 = vertices[indices[submesh.firstIndex + offset + 1]];
+                    const auto& v2 = vertices[indices[submesh.firstIndex + offset + 2]];
+                    const glm::vec3 p0{item.model * glm::vec4{v0.position, 1}};
+                    const glm::vec3 p1{item.model * glm::vec4{v1.position, 1}};
+                    const glm::vec3 p2{item.model * glm::vec4{v2.position, 1}};
+                    const auto cross = glm::cross(p1 - p0, p2 - p0);
+                    const auto length = glm::length(cross);
+                    const auto normal = length > 0.0f ? cross * ((flipNormal ? -1.0f : 1.0f) / length) : glm::vec3{0};
+                    data.lightTriangles.push_back({
+                        .p0Area = {p0, length * 0.5f}, .p1 = {p1, 0}, .p2 = {p2, 0},
+                        .normal = {normal, 0}, .uv01 = {v0.texcoord, v1.texcoord}, .uv2 = v2.texcoord,
+                        .emissionIndex = emissionIndex, .twoSided = model.twoSided ? 1u : 0u,
+                    });
+                    emission.normalization.z += length * 0.5f;
+                }
+                data.areaEmissions.push_back(emission);
+            }
+            else if constexpr (std::same_as<T, OfflineLightData::Point>)
+                data.pointLights.push_back({.position = model.position, .emission = emission});
+            else if constexpr (std::same_as<T, OfflineLightData::Spot>)
+                data.spotLights.push_back({.position = model.position, .cosInner = model.cosInner,
+                    .direction = model.direction, .cosOuter = model.cosOuter, .emission = emission});
+            else if constexpr (std::same_as<T, OfflineLightData::Directional>)
+                data.directionalLights.push_back({.direction = model.direction, .emission = emission});
+            else if constexpr (std::same_as<T, OfflineLightData::Projection>)
+                data.projectionLights.push_back({.lightFromWorld = model.lightFromWorld, .position = model.position,
+                    .fieldOfView = model.fieldOfView, .emission = emission});
+            else if constexpr (std::same_as<T, OfflineLightData::Goniometric>)
+                data.goniometricLights.push_back({.lightFromWorld = model.lightFromWorld, .position = model.position,
+                    .emission = emission});
+            else if constexpr (std::same_as<T, OfflineLightData::Environment>)
+            {
+                CHECK(data.lightPortals.size() + model.portal.size() < kOfflineInvalidIndex);
+                data.environmentLights.push_back({.lightFromWorld = model.lightFromWorld,
+                    .firstPortal = static_cast<uint32_t>(data.lightPortals.size()),
+                    .portalCount = static_cast<uint32_t>(model.portal.size()), .emission = emission});
+                for (const auto vertex : model.portal) data.lightPortals.emplace_back(vertex, 1);
+            }
+        }, source.model);
+    }
+}
 }
 
-const OfflineSceneData& OfflineScene::prepare(std::span<const DrawItem> items,
+const OfflineSceneData& OfflineScene::prepare(std::span<const DrawItem> items, std::span<const OfflineLightData> lights,
     AssetManager& assets, RenderResourceManager& resources, MaterialTable& materialTable)
 {
-    if (previousAssetRevision == assets.contentRevision() && std::ranges::equal(previousItems, items)) return data;
+    if (previousAssetRevision == assets.contentRevision() && std::ranges::equal(previousItems, items) &&
+        std::ranges::equal(previousLights, lights)) return data;
     const auto nextRevision = data.revision + 1;
     data = {};
     data.revision = nextRevision;
@@ -351,7 +449,9 @@ const OfflineSceneData& OfflineScene::prepare(std::span<const DrawItem> items,
         CHECK(item.offlineSurface, "offline surface data missing for mesh '{}'", item.mesh);
         data.draws.push_back({compiler.compile(item.materialId), item.offlineSurface->reverseOrientation ? 1u : 0u});
     }
+    prepareLights(data, items, lights, assets, resources, materialTable);
     previousItems.assign(items.begin(), items.end());
+    previousLights.assign(lights.begin(), lights.end());
     previousAssetRevision = assets.contentRevision();
     return data;
 }

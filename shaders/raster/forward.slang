@@ -1,5 +1,5 @@
-#include "mesh_surface.slang"
-#include "scene_lighting.slang"
+#include "raster/mesh_surface.slang"
+#include "raster/scene_lighting.slang"
 
 [shader("fragment")]
 float4 fragMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target

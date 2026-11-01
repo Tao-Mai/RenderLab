@@ -1,5 +1,5 @@
-#include "../common/lighting_data.slang"
-#include "shadow_data.slang"
+#include "common/lighting_data.slang"
+#include "raster/shadow_data.slang"
 
 #ifndef SHADOW_TYPE
 #error SHADOW_TYPE must be specified when compiling the shadow shader
