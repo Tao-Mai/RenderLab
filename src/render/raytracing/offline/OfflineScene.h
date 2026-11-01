@@ -24,7 +24,7 @@ static_assert(sizeof(OfflineTextureInstruction) == 160);
 
 struct alignas(16) OfflineMaterialPreview
 {
-    OfflineMaterialPreviewModel model = OfflineMaterialPreviewModel::Program;
+    OfflineMaterialPreviewModel model = OfflineMaterialPreviewModel::Diffuse;
     uint32_t firstTexture = 0;
     uint32_t secondTexture = 0;
     uint32_t instructionCount = 0;

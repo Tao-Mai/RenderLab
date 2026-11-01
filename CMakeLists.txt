@@ -179,14 +179,13 @@ foreach(svgf IN ITEMS 0 1)
             "${SHADER_SOURCE_DIR}/common/normal_mapping.slang" "${SHADER_SOURCE_DIR}/common/pbr_brdf.slang"
             "${SHADER_SOURCE_DIR}/common/brdf.slang")
 endforeach()
-renderlab_shader(offline_pathtracing raytracing/offline/offline.slang offline_pathtracing
+renderlab_shader(offline_pathtracing raytracing/offline/path_tracing.slang offline_pathtracing
     ENTRIES raygenMain missMain visibilityMissMain closestHitMain
     INCLUDES "${PROJECT_SOURCE_DIR}/src/render/raytracing/RayTracingBindings.h"
-        "${SHADER_SOURCE_DIR}/raytracing/offline/offline_texture.slang" "${SHADER_SOURCE_DIR}/raytracing/offline/offline_material.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/offline/offline_light.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/offline/offline_light_sampling.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/offline/offline_brdf.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/offline/offline_path_tracing.slang"
+        "${SHADER_SOURCE_DIR}/raytracing/offline/texture.slang" "${SHADER_SOURCE_DIR}/raytracing/offline/material.slang"
+        "${SHADER_SOURCE_DIR}/raytracing/offline/light.slang"
+        "${SHADER_SOURCE_DIR}/raytracing/offline/light_sampling.slang"
+        "${SHADER_SOURCE_DIR}/raytracing/offline/brdf.slang"
         "${SHADER_SOURCE_DIR}/common/constant.slang"
         "${PROJECT_SOURCE_DIR}/src/render/raytracing/offline/OfflineShaderTypes.h" "${SHADER_SOURCE_DIR}/common/texture_data.slang"
         "${SHADER_SOURCE_DIR}/common/scene_data.slang" "${SHADER_SOURCE_DIR}/common/scene_uniforms.slang"

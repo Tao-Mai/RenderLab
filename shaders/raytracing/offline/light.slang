@@ -1,0 +1,136 @@
+#ifndef RENDERLAB_OFFLINE_LIGHT_SLANG
+#define RENDERLAB_OFFLINE_LIGHT_SLANG
+
+#include "raytracing/offline/texture.slang"
+
+struct LightEmission
+{
+    float4 colorScale;
+    float4 normalization;
+    uint4 resources;
+};
+
+struct PointLight
+{
+    float3 position;
+    uint padding;
+    LightEmission emission;
+};
+
+struct SpotLight
+{
+    float3 position;
+    float cosInner;
+    float3 direction;
+    float cosOuter;
+    LightEmission emission;
+};
+
+struct DirectionalLight
+{
+    float3 direction;
+    uint padding;
+    LightEmission emission;
+};
+
+struct LightTriangle
+{
+    float4 p0Area;
+    float4 p1;
+    float4 p2;
+    float4 normal;
+    float4 uv01;
+    float2 uv2;
+    uint emissionIndex;
+    uint twoSided;
+};
+
+struct EnvironmentLight
+{
+    float4x4 lightFromWorld;
+    uint firstPortal;
+    uint portalCount;
+    uint padding0, padding1;
+    LightEmission emission;
+};
+
+struct ProjectionLight
+{
+    float4x4 lightFromWorld;
+    float3 position;
+    float fieldOfView;
+    LightEmission emission;
+};
+
+struct GoniometricLight
+{
+    float4x4 lightFromWorld;
+    float3 position;
+    uint padding;
+    LightEmission emission;
+};
+
+[[vk::binding(OfflineRayTracingBinding::kAreaEmissions, 3)]] StructuredBuffer<LightEmission> areaEmissions;
+[[vk::binding(OfflineRayTracingBinding::kPoints, 3)]] StructuredBuffer<PointLight> pointLights;
+[[vk::binding(OfflineRayTracingBinding::kSpots, 3)]] StructuredBuffer<SpotLight> spotLights;
+[[vk::binding(OfflineRayTracingBinding::kDirectionals, 3)]] StructuredBuffer<DirectionalLight> directionalLights;
+[[vk::binding(OfflineRayTracingBinding::kTriangles, 3)]] StructuredBuffer<LightTriangle> lightTriangles;
+[[vk::binding(OfflineRayTracingBinding::kEnvironments, 3)]] StructuredBuffer<EnvironmentLight> environmentLights;
+[[vk::binding(OfflineRayTracingBinding::kProjections, 3)]] StructuredBuffer<ProjectionLight> projectionLights;
+[[vk::binding(OfflineRayTracingBinding::kGoniometrics, 3)]] StructuredBuffer<GoniometricLight> goniometricLights;
+[[vk::binding(OfflineRayTracingBinding::kPortals, 3)]] StructuredBuffer<float4> lightPortals;
+
+// PBRT-v4's equal-area square projection, with an exact atan instead of its polynomial approximation.
+float2 equalAreaUv(float3 direction)
+{
+    float3 d = normalize(direction);
+    float2 a = abs(d.xy);
+    float radius = sqrt(max(0.0, 1.0 - abs(d.z)));
+    float phi = max(a.x, a.y) > 0.0 ? atan2(a.y, a.x) * (2.0 / PI) : 0.0;
+    float2 uv = radius * float2(1.0 - phi, phi);
+    if (d.z < 0.0)
+    {
+        uv = 1.0 - uv.yx;
+    }
+    uv *= float2(d.x < 0.0 ? -1.0 : 1.0, d.y < 0.0 ? -1.0 : 1.0);
+    return uv * 0.5 + 0.5;
+}
+
+float3 emissionRgb(LightEmission source, float2 imageUv)
+{
+    float3 emission = source.colorScale.rgb;
+    if ((source.resources.w & kOfflineLightHasImage) != 0)
+    {
+        TextureRef image = {source.resources.x, source.resources.y};
+        emission = sampleTextureLevel(image, imageUv).rgb;
+    }
+    return emission * source.colorScale.w;
+}
+
+float3 areaEmission(uint lightIndex, float2 uv, float3 outgoing)
+{
+    LightTriangle triangle = lightTriangles[lightIndex];
+    if (triangle.p0Area.w == 0.0)
+    {
+        return float3(0.0);
+    }
+    if (triangle.twoSided == 0 && dot(triangle.normal.xyz, outgoing) <= 0.0)
+    {
+        return float3(0.0);
+    }
+    return emissionRgb(areaEmissions[triangle.emissionIndex], float2(uv.x, 1.0 - uv.y));
+}
+
+float3 environmentEmission(uint lightCount, float3 direction)
+{
+    float3 emission = float3(0.0);
+    for (uint index = 0; index < lightCount; ++index)
+    {
+        EnvironmentLight light = environmentLights[index];
+        float3 local = mul(light.lightFromWorld, float4(direction, 0.0)).xyz;
+        emission += emissionRgb(light.emission, equalAreaUv(local));
+    }
+    return emission;
+}
+
+#endif

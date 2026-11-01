@@ -8,8 +8,7 @@ scripts/
 assets/*
 resource/
 .cursor
-test/model_import/
-test/performance/*.csv
+test/
 
 # Personal TODO / note documents stay local.
 *[Tt][Oo][Dd][Oo]*.[Mm][Dd]

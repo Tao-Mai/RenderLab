@@ -1,9 +1,9 @@
 #ifndef RENDERLAB_OFFLINE_MATERIAL_SLANG
 #define RENDERLAB_OFFLINE_MATERIAL_SLANG
 
-#include "raytracing/offline/offline_texture.slang"
+#include "raytracing/offline/texture.slang"
 
-struct OfflineMaterialPreview
+struct MaterialPreview
 {
     OfflineMaterialPreviewModel model;
     uint firstTexture;
@@ -12,9 +12,9 @@ struct OfflineMaterialPreview
     float4 parameters;
 };
 
-[[vk::binding(OfflineRayTracingBinding::kMaterials, 3)]] StructuredBuffer<OfflineMaterialPreview> materialInstructions;
+[[vk::binding(OfflineRayTracingBinding::kMaterials, 3)]] StructuredBuffer<MaterialPreview> materialInstructions;
 
-float3 evaluateMaterialColor(OfflineMaterialPreview material, float2 uv, float3 position, float3 normal, uint primitiveIndex)
+float3 evaluateMaterialColor(MaterialPreview material, float2 uv, float3 position, float3 normal, uint primitiveIndex)
 {
     float3 first = evaluateTexture(material.firstTexture, uv, position, normal, primitiveIndex);
     switch (material.model)
@@ -55,7 +55,7 @@ float3 evaluateMaterial(uint program, float2 uv, float3 position, float3 normal,
     uint count = materialInstructions[program].instructionCount;
     for (uint index = 1; index <= count; ++index)
     {
-        OfflineMaterialPreview material = materialInstructions[program + index];
+        MaterialPreview material = materialInstructions[program + index];
         float3 color;
         if (material.model == OfflineMaterialPreviewModel::Mix)
         {

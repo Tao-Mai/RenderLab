@@ -2,11 +2,11 @@
 #define RENDERLAB_OFFLINE_TEXTURE_SLANG
 
 #include "common/texture_data.slang"
+#include "common/constant.slang"
 #include "render/raytracing/offline/OfflineShaderTypes.h"
 
-static const float kOfflinePi = 3.14159265359;
 
-struct OfflineTextureInstruction
+struct TextureInstruction
 {
     uint4 metadata;
     float4 value;
@@ -17,7 +17,7 @@ struct OfflineTextureInstruction
     float4x4 textureFromWorld;
 };
 
-[[vk::binding(OfflineRayTracingBinding::kTextures, 3)]] StructuredBuffer<OfflineTextureInstruction> textureInstructions;
+[[vk::binding(OfflineRayTracingBinding::kTextures, 3)]] StructuredBuffer<TextureInstruction> textureInstructions;
 
 float noiseHash(float3 p) { return frac(sin(dot(p, float3(127.1, 311.7, 74.7))) * 43758.5453); }
 float valueNoise(float3 p)
@@ -31,7 +31,7 @@ float valueNoise(float3 p)
     return lerp(lerp(a, b, f.y), lerp(c, d, f.y), f.z) * 2.0 - 1.0;
 }
 
-float2 textureUv(OfflineTextureInstruction node, float2 uv, float3 p)
+float2 textureUv(TextureInstruction node, float2 uv, float3 p)
 {
     OfflineTextureMapping mapping = OfflineTextureMapping(uint(node.uAxisKind.w));
     if (mapping == OfflineTextureMapping::Uv)
@@ -44,10 +44,10 @@ float2 textureUv(OfflineTextureInstruction node, float2 uv, float3 p)
         float phi = atan2(local.y, local.x);
         if (phi < 0.0)
         {
-            phi += 2.0 * kOfflinePi;
+            phi += 2.0 * PI;
         }
-        return float2(phi / (2.0 * kOfflinePi), mapping == OfflineTextureMapping::Spherical
-            ? acos(clamp(normalize(local).z, -1.0, 1.0)) / kOfflinePi : local.z);
+        return float2(phi / (2.0 * PI), mapping == OfflineTextureMapping::Spherical
+            ? acos(clamp(normalize(local).z, -1.0, 1.0)) / PI : local.z);
     }
     return float2(dot(local, node.uAxisKind.xyz), dot(local, node.vAxis.xyz)) + node.uvScaleOffset.zw;
 }
@@ -59,7 +59,7 @@ float3 evaluateTexture(uint program, float2 uv, float3 position, float3 normal, 
     uint count = textureInstructions[program].metadata.y;
     for (uint index = 1; index <= count; ++index)
     {
-        OfflineTextureInstruction node = textureInstructions[program + index];
+        TextureInstruction node = textureInstructions[program + index];
         OfflineTextureOp op = OfflineTextureOp(node.metadata.x);
         float3 value = float3(0.0);
         switch (op)

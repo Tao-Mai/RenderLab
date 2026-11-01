@@ -33,7 +33,15 @@ enum class OfflineTextureMapping : RENDERLAB_OFFLINE_UINT
 
 enum class OfflineMaterialPreviewModel : RENDERLAB_OFFLINE_UINT
 {
-    Program, Color, Conductor, DiffuseTransmission, Subsurface, HairAbsorption, HairPigments, Mix,
+    Diffuse,
+    SmoothDielectric,
+    Color,
+    Conductor,
+    DiffuseTransmission,
+    Subsurface,
+    HairAbsorption,
+    HairPigments,
+    Mix,
 };
 
 #undef RENDERLAB_OFFLINE_UINT

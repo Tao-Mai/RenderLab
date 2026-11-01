@@ -38,7 +38,7 @@ RenderLab --import-pbrt-scene <source>
 
 ## 离线路径
 
-Renderer 读取 PbrtMaterial，复用网格、图像、采样器和全局图像描述符。OfflineScene 分别准备纹理表达式与材质预览数据。纹理编译为后缀指令，由 offline_texture 求值；金属、次表面、毛发等颜色近似由 offline_material 处理，混合材质按子材质在前的顺序求值。纹理与材质混合各使用 64 项值栈，指令、映射类型与栈容量由 CPU 和 shader 共享定义。当前全局图像表上限为 128，采样器表上限为 32。材质与纹理表在内容变化时重新准备与上传。
+Renderer 读取 PbrtMaterial，复用网格、图像、采样器和全局图像描述符。OfflineScene 分别准备纹理表达式与材质预览数据。纹理编译为后缀指令，由 `texture.slang` 求值；金属、次表面、毛发等颜色近似由 `material.slang` 处理，混合材质按子材质在前的顺序求值。纹理与材质混合各使用 64 项值栈，指令、映射类型与栈容量由 CPU 和 shader 共享定义。当前全局图像表上限为 128，采样器表上限为 32。材质与纹理表在内容变化时重新准备与上传。
 
 shader 每个样本循环追踪多次反弹，统一使用 diffuse BRDF，材质 RGB 求值结果作为反照率。point / spot、distant 和 area 分别使用蓄水池，area 与 BRDF 采样执行 MIS；路径未命中时读取环境光。独立反弹配置默认 2 次，修改时重新累积。网格实例共享 BLAS，TLAS 保持每帧完整构建。每个样本始终使用 Sobol 序列进行像素内抖动；每帧样本做算术平均，修改相机、几何、材质或光源时重新累积。各类 PBRT 光源已进入按类型划分的离线 GPU 数组，发光几何体按三角形展开，详见 [光源](pbrt/光源.md)。
 

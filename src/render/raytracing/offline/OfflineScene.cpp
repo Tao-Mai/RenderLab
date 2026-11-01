@@ -236,12 +236,22 @@ public:
         if (const auto found = materialIndices.find(id.value); found != materialIndices.end()) return found->second;
         CHECK(output.size() < std::numeric_limits<uint32_t>::max());
         const auto begin = static_cast<uint32_t>(output.size());
-        output.emplace_back();
+        headerIndex = begin;
+        output.push_back({.model = OfflineMaterialPreviewModel::Diffuse});
         stackDepth = 0;
         append(assets.get(id).as<PbrtMaterial>());
-        DCHECK(stackDepth == 1);
-        CHECK(output.size() - begin - 1 < std::numeric_limits<uint32_t>::max());
-        output[begin].instructionCount = static_cast<uint32_t>(output.size() - begin - 1);
+        if (output[begin].model == OfflineMaterialPreviewModel::SmoothDielectric)
+        {
+            DCHECK(stackDepth == 0);
+            output[begin].instructionCount = 0;
+        }
+        else
+        {
+            DCHECK(stackDepth == 1);
+            output[begin].model = OfflineMaterialPreviewModel::Diffuse;
+            CHECK(output.size() - begin - 1 < std::numeric_limits<uint32_t>::max());
+            output[begin].instructionCount = static_cast<uint32_t>(output.size() - begin - 1);
+        }
         materialIndices.emplace(id.value, begin);
         return begin;
     }
@@ -253,9 +263,25 @@ private:
     std::unordered_map<std::string, uint32_t> materialIndices;
     std::unordered_set<std::string> activeMaterials;
     uint32_t stackDepth = 0;
+    uint32_t headerIndex = 0;
 
     uint32_t spectrum(const PbrtSpectrumInput& value) { return textures.compile(value, PbrtTextureType::Spectrum); }
+    uint32_t spectrum(const PbrtSpectrum& value)
+    {
+        return std::visit([&](const auto& spectrumValue) { return spectrum(PbrtSpectrumInput{spectrumValue}); }, value);
+    }
     uint32_t scalar(const PbrtFloatInput& value) { return textures.compile(value, PbrtTextureType::Float); }
+
+    static bool constantZero(const PbrtFloatInput& value)
+    {
+        const auto* constant = std::get_if<PbrtFloatConstant>(&value);
+        return constant && constant->value == 0.0;
+    }
+
+    static bool smoothRoughness(const PbrtMaterial::Roughness& roughness)
+    {
+        return constantZero(roughness.u) && constantZero(roughness.v);
+    }
 
     void emit(const OfflineMaterialPreview& material, uint32_t operands = 0)
     {
@@ -291,6 +317,16 @@ private:
         {
             if constexpr (std::same_as<T, PbrtMaterial::Diffuse> || std::same_as<T, PbrtMaterial::CoatedDiffuse>)
                 color(model.reflectance);
+            else if constexpr (std::same_as<T, PbrtMaterial::Dielectric>)
+            {
+                if (smoothRoughness(model.roughness) && activeMaterials.size() == 1)
+                {
+                    output[headerIndex].model = OfflineMaterialPreviewModel::SmoothDielectric;
+                    output[headerIndex].firstTexture = spectrum(model.eta);
+                }
+                else
+                    color(PbrtConstantSpectrum{1.0});
+            }
             else if constexpr (std::same_as<T, PbrtMaterial::Conductor> || std::same_as<T, PbrtMaterial::CoatedConductor>)
                 conductor(model.optics);
             else if constexpr (std::same_as<T, PbrtMaterial::DiffuseTransmission>)

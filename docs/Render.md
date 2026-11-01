@@ -47,7 +47,7 @@ Shader 入口：[realtime.slang](../shaders/raytracing/realtime/realtime.slang)�
 
 ### 离线路径追踪
 
-Shader 入口：[offline.slang](../shaders/raytracing/offline/offline.slang)。材质预览和纹理求值位于 `raytracing/offline`，Sobol 采样位于 `shaders/common`，转换规则见 [PBRT 转换文档](PbrtConversion.md)。
+Shader 入口：[path_tracing.slang](../shaders/raytracing/offline/path_tracing.slang)。材质预览和纹理求值位于 `raytracing/offline`，Sobol 采样位于 `shaders/common`，转换规则见 [PBRT 转换文档](PbrtConversion.md)。
 
 - 使用独立 Pass 和 Shader，活动 Frames-in-flight 为 1。
 - 每个样本始终使用 Owen 扰乱 Sobol 序列进行像素内抖动，FP32 缓冲保存颜色总和，再除以样本数。

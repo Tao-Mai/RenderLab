@@ -1,17 +1,17 @@
 #ifndef RENDERLAB_OFFLINE_LIGHT_SAMPLING_SLANG
 #define RENDERLAB_OFFLINE_LIGHT_SAMPLING_SLANG
 
-#include "raytracing/offline/offline_light.slang"
+#include "raytracing/offline/light.slang"
 #include "common/random.slang"
 
-static const float kOfflineMaxRayDistance = 3.402823466e+38;
+static const float kMaxRayDistance = 3.402823466e+38;
 
-float offlineLightWeight(float3 value)
+float lightWeight(float3 value)
 {
     return max(0.0, max(value.x, max(value.y, value.z)));
 }
 
-struct OfflineDeltaLightSample
+struct DeltaLightSample
 {
     float3 direction;
     float3 incidentIrradiance;
@@ -20,24 +20,24 @@ struct OfflineDeltaLightSample
 };
 
 // Point and spot lights share one weighted reservoir. Their emission is intensity I.
-OfflineDeltaLightSample sampleOfflineLocalLight(uint pointCount, uint spotCount, float3 origin, inout uint state)
+DeltaLightSample sampleLocalLight(uint pointCount, uint spotCount, float3 origin, inout uint state)
 {
-    OfflineDeltaLightSample selected = {};
+    DeltaLightSample selected = {};
     float selectedWeight = 0.0;
     float weightSum = 0.0;
     for (uint candidate = 0; candidate < pointCount + spotCount; ++candidate)
     {
         float3 position;
-        OfflineLightEmission emission;
+        LightEmission emission;
         if (candidate < pointCount)
         {
-            OfflinePointLight light = pointLights[candidate];
+            PointLight light = pointLights[candidate];
             position = light.position;
             emission = light.emission;
         }
         else
         {
-            OfflineSpotLight light = spotLights[candidate - pointCount];
+            SpotLight light = spotLights[candidate - pointCount];
             position = light.position;
             emission = light.emission;
         }
@@ -53,7 +53,7 @@ OfflineDeltaLightSample sampleOfflineLocalLight(uint pointCount, uint spotCount,
         float attenuation = 1.0;
         if (candidate >= pointCount)
         {
-            OfflineSpotLight light = spotLights[candidate - pointCount];
+            SpotLight light = spotLights[candidate - pointCount];
             float cosine = dot(light.direction, -direction);
             if (light.cosInner <= light.cosOuter)
             {
@@ -66,8 +66,8 @@ OfflineDeltaLightSample sampleOfflineLocalLight(uint pointCount, uint spotCount,
             }
         }
 
-        float3 incident = offlineEmissionRgb(emission, float2(0.0)) * (attenuation / distanceSquared);
-        float weight = offlineLightWeight(incident);
+        float3 incident = emissionRgb(emission, float2(0.0)) * (attenuation / distanceSquared);
+        float weight = lightWeight(incident);
         if (weight <= 0.0)
         {
             continue;
@@ -88,16 +88,16 @@ OfflineDeltaLightSample sampleOfflineLocalLight(uint pointCount, uint spotCount,
     return selected;
 }
 
-OfflineDeltaLightSample sampleOfflineDistantLight(uint lightCount, inout uint state)
+DeltaLightSample sampleDistantLight(uint lightCount, inout uint state)
 {
-    OfflineDeltaLightSample selected = {};
+    DeltaLightSample selected = {};
     float selectedWeight = 0.0;
     float weightSum = 0.0;
     for (uint index = 0; index < lightCount; ++index)
     {
-        OfflineDirectionalLight light = directionalLights[index];
-        float3 incident = offlineEmissionRgb(light.emission, float2(0.0));
-        float weight = offlineLightWeight(incident);
+        DirectionalLight light = directionalLights[index];
+        float3 incident = emissionRgb(light.emission, float2(0.0));
+        float weight = lightWeight(incident);
         if (weight <= 0.0)
         {
             continue;
@@ -107,7 +107,7 @@ OfflineDeltaLightSample sampleOfflineDistantLight(uint lightCount, inout uint st
         {
             selected.direction = -light.direction;
             selected.incidentIrradiance = incident;
-            selected.distance = kOfflineMaxRayDistance;
+            selected.distance = kMaxRayDistance;
             selectedWeight = weight;
         }
     }
@@ -118,9 +118,9 @@ OfflineDeltaLightSample sampleOfflineDistantLight(uint lightCount, inout uint st
     return selected;
 }
 
-float offlineAreaSelectionWeight(uint lightIndex, float3 origin)
+float areaSelectionWeight(uint lightIndex, float3 origin)
 {
-    OfflineLightTriangle triangle = lightTriangles[lightIndex];
+    LightTriangle triangle = lightTriangles[lightIndex];
     float3 center = (triangle.p0Area.xyz + triangle.p1.xyz + triangle.p2.xyz) / 3.0;
     float3 offset = origin - center;
     float distanceSquared = dot(offset, offset);
@@ -130,27 +130,27 @@ float offlineAreaSelectionWeight(uint lightIndex, float3 origin)
     }
     float cosine = dot(triangle.normal.xyz, offset * rsqrt(distanceSquared));
     float projectedCosine = triangle.twoSided != 0 ? abs(cosine) : max(0.0, cosine);
-    OfflineLightEmission emission = areaEmissions[triangle.emissionIndex];
+    LightEmission emission = areaEmissions[triangle.emissionIndex];
     // A texture can be bright away from its centroid. Keep support over the whole triangle.
     float intensity = (emission.resources.w & kOfflineLightHasImage) != 0
-        ? emission.colorScale.w : offlineLightWeight(emission.colorScale.rgb * emission.colorScale.w);
+        ? emission.colorScale.w : lightWeight(emission.colorScale.rgb * emission.colorScale.w);
     return triangle.p0Area.w * projectedCosine * intensity / distanceSquared;
 }
 
-struct OfflineAreaLightSample
+struct AreaLightSample
 {
     uint index;
     float probability;
     float weightSum;
 };
 
-OfflineAreaLightSample sampleOfflineAreaLight(uint lightCount, float3 origin, inout uint state)
+AreaLightSample sampleAreaLight(uint lightCount, float3 origin, inout uint state)
 {
-    OfflineAreaLightSample selected = {};
+    AreaLightSample selected = {};
     float selectedWeight = 0.0;
     for (uint index = 0; index < lightCount; ++index)
     {
-        float weight = offlineAreaSelectionWeight(index, origin);
+        float weight = areaSelectionWeight(index, origin);
         if (weight <= 0.0)
         {
             continue;
@@ -169,9 +169,9 @@ OfflineAreaLightSample sampleOfflineAreaLight(uint lightCount, float3 origin, in
     return selected;
 }
 
-float3 offlineSampleTriangle(uint lightIndex, float2 sampleValue, out float2 uv)
+float3 sampleTriangle(uint lightIndex, float2 sampleValue, out float2 uv)
 {
-    OfflineLightTriangle triangle = lightTriangles[lightIndex];
+    LightTriangle triangle = lightTriangles[lightIndex];
     float root = sqrt(sampleValue.x);
     float3 barycentrics = float3(1.0 - root, root * (1.0 - sampleValue.y), root * sampleValue.y);
     uv = triangle.uv01.xy * barycentrics.x + triangle.uv01.zw * barycentrics.y + triangle.uv2 * barycentrics.z;
@@ -179,9 +179,9 @@ float3 offlineSampleTriangle(uint lightIndex, float2 sampleValue, out float2 uv)
 }
 
 // Conditional PDF in solid angle; discrete triangle selection is applied by the caller.
-float offlineAreaPdf(uint lightIndex, float3 origin, float3 target)
+float areaPdf(uint lightIndex, float3 origin, float3 target)
 {
-    OfflineLightTriangle triangle = lightTriangles[lightIndex];
+    LightTriangle triangle = lightTriangles[lightIndex];
     float3 offset = target - origin;
     float distanceSquared = dot(offset, offset);
     if (triangle.p0Area.w == 0.0 || distanceSquared == 0.0)
