@@ -421,7 +421,7 @@ TEST(ShaderDataLayout, RayTracingBindingsMatchSharedDefinitions)
     check("offline_pathtracing", "pointLights", OfflineRayTracingBinding::kPoints);
     check("offline_pathtracing", "spotLights", OfflineRayTracingBinding::kSpots);
     check("offline_pathtracing", "directionalLights", OfflineRayTracingBinding::kDirectionals);
-    check("offline_pathtracing", "environmentLights", OfflineRayTracingBinding::kEnvironments);
+    check("offline_pathtracing", "environmentLight", OfflineRayTracingBinding::kEnvironments);
     check("offline_pathtracing", "projectionLights", OfflineRayTracingBinding::kProjections);
     check("offline_pathtracing", "goniometricLights", OfflineRayTracingBinding::kGoniometrics);
     check("offline_pathtracing", "lightTriangles", OfflineRayTracingBinding::kTriangles);
@@ -536,7 +536,7 @@ TEST(ShaderDataLayout, OfflineSceneUsesItsOwnBufferLayouts)
         Field{"padding1", offsetof(OfflineEnvironmentLight, padding1), sizeof(uint32_t)},
         Field{"emission", offsetof(OfflineEnvironmentLight, emission), sizeof(OfflineLightEmission)},
     };
-    check("environmentLights", OfflineRayTracingBinding::kEnvironments, environment);
+    check("environmentLight", OfflineRayTracingBinding::kEnvironments, environment);
     const std::array projection = {
         Field{"lightFromWorld", offsetof(OfflineProjectionLight, lightFromWorld), sizeof(glm::mat4)},
         Field{"position", offsetof(OfflineProjectionLight, position), sizeof(glm::vec3)},

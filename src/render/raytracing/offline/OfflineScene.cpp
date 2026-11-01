@@ -460,10 +460,12 @@ void prepareLights(OfflineSceneData& data, std::span<const DrawItem> items,
                     .emission = emission});
             else if constexpr (std::same_as<T, OfflineLightData::Environment>)
             {
+                CHECK(!data.hasEnvironmentLight, "offline path tracing supports one environment light");
                 CHECK(data.lightPortals.size() + model.portal.size() < kOfflineInvalidIndex);
-                data.environmentLights.push_back({.lightFromWorld = model.lightFromWorld,
+                data.environmentLight = {.lightFromWorld = model.lightFromWorld,
                     .firstPortal = static_cast<uint32_t>(data.lightPortals.size()),
-                    .portalCount = static_cast<uint32_t>(model.portal.size()), .emission = emission});
+                    .portalCount = static_cast<uint32_t>(model.portal.size()), .emission = emission};
+                data.hasEnvironmentLight = true;
                 for (const auto vertex : model.portal) data.lightPortals.emplace_back(vertex, 1);
             }
         }, source.model);

@@ -33,7 +33,7 @@ struct PathParameters
     float4 viewport;
     uint4 samples; // Accumulated samples, max bounces, reserved, reserved.
     uint4 lightCounts; // Points, spots, directionals, triangles.
-    uint4 mappedLightCounts; // Environments, projections, goniometrics, portal vertices.
+    uint4 mappedLightCounts; // Has environment (0/1), projections, goniometrics, portal vertices.
 
     property viewportOffset : float2 {
         get { return viewport.xy; }
@@ -59,24 +59,26 @@ struct PathParameters
     property triangleLightCount : uint {
         get { return lightCounts.w; }
     }
-    property environmentLightCount : uint {
-        get { return mappedLightCounts.x; }
+    property hasEnvironmentLight : bool {
+        get { return mappedLightCounts.x != 0; }
     }
 };
 struct Hit
 {
-    uint hit;
-    uint objectIndex;
-    uint primitiveIndex;
-    float2 uv;
-    float3 position;
-    float3 normal;
-    float3 geometricNormal;
+    uint hit;               // 是否命中
+    uint objectIndex;       // 命中物体的索引
+    uint primitiveIndex;    // 命中物体的三角形索引，用内置函数得到
+    float2 uv;              // 命中物体的纹理坐标
+    float3 position;        // 命中物体的世界空间位置
+    float3 normal;          // 着色法线，插值得到
+    float3 geometricNormal; // 三角形真实法线，叉乘得到
 };
+
 struct Visibility
 {
     uint visible;
 };
+
 struct Vertex
 {
     float3 position;
@@ -179,17 +181,23 @@ float3 tracePath(RayDesc ray, inout uint state)
     float previousBrdfPdf = 0.0;
     float previousAreaWeightSum = 0.0;
     uint previousDelta = 0;
+
     for (uint bounce = 0; bounce <= parameters.maxBounces; ++bounce)
     {
         Hit hit = {};
         TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, kSceneMask, 0, 0, 0, ray, hit);
+
+        // 未命中，直接返回环境光
         if (hit.hit == 0)
         {
-            radiance += throughput * environmentEmission(parameters.environmentLightCount, ray.Direction);
+            radiance += throughput * environmentEmission(parameters.hasEnvironmentLight, ray.Direction);
             break;
         }
 
         HitData object = objects[hit.objectIndex];
+
+        // 命中发光几何体，如果直接命中那权重为1，如果间接命中则根据上个表面对该面的选择概率来计算权重
+        // 发光几何体本身也可以有材质，所以继续往下追踪
         if (object.firstAreaLight != kOfflineInvalidIndex)
         {
             uint lightIndex = object.firstAreaLight + hit.primitiveIndex;
@@ -203,6 +211,7 @@ float3 tracePath(RayDesc ray, inout uint state)
             }
             radiance += throughput * areaEmission(lightIndex, hit.uv, -ray.Direction) * weight;
         }
+
         if (bounce == parameters.maxBounces)
         {
             break;
@@ -255,12 +264,19 @@ float3 tracePath(RayDesc ray, inout uint state)
         else
         {
             Surface surface;
+
+            // 光追没有背面剔除，只要命中了就要给个颜色，所以需要自适应调整法线方向
+            // 先将着色法线调到几何法线一致的半球，再考虑和光线的交互
             surface.geometricNormal = dot(hit.geometricNormal, wo) >= 0.0 ? hit.geometricNormal : -hit.geometricNormal;
             surface.normal = dot(hit.normal, surface.geometricNormal) >= 0.0 ? hit.normal : -hit.normal;
+
+            // 法线插值后的平滑法线和真实几何不一致，所以着色法线和光线大于90度时仍然会命中，但不能直接变黑，所以用三角形法线替代
             if (dot(surface.normal, wo) <= 0.0)
             {
                 surface.normal = surface.geometricNormal;
             }
+
+            // 用几何法线向外偏移一点，避免自相交
             surface.origin = hit.position + surface.geometricNormal * kRayEpsilon;
             surface.brdf.albedo = saturate(evaluateMaterial(object.materialIndex, hit.uv, hit.position, hit.normal,
                 hit.primitiveIndex));
@@ -269,6 +285,7 @@ float3 tracePath(RayDesc ray, inout uint state)
                 break;
             }
 
+            // 采样光源，面光源用MIS
             DeltaLightSample local = sampleLocalLight(parameters.pointLightCount, parameters.spotLightCount,
                 surface.origin, state);
             DeltaLightSample distant = sampleDistantLight(parameters.directionalLightCount, state);

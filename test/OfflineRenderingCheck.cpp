@@ -154,7 +154,7 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
         }
         CHECK(preparedScene->pointLights.size() + preparedScene->spotLights.size() +
             preparedScene->directionalLights.size() + preparedScene->lightTriangles.size() +
-            preparedScene->environmentLights.size() + preparedScene->projectionLights.size() +
+            (preparedScene->hasEnvironmentLight ? 1u : 0u) + preparedScene->projectionLights.size() +
             preparedScene->goniometricLights.size() == expectedLights);
         CHECK(preparedScene->areaEmissions.size() == expectedAreaEmissions);
         CHECK(preparedScene->lightTriangles.size() == expectedTriangles);
@@ -204,8 +204,9 @@ void checkAccumulatedPixels(Renderer& renderer, SceneManager& scenes, EditorCame
     CHECK(preparedScene->projectionLights.back().fieldOfView == 47.0f);
     CHECK(!preparedScene->directionalLights.empty());
     CHECK(!preparedScene->goniometricLights.empty());
-    CHECK(preparedScene->environmentLights.back().emission.normalization.y == 8.0f);
-    CHECK(preparedScene->environmentLights.back().portalCount == 4);
+    CHECK(preparedScene->hasEnvironmentLight);
+    CHECK(preparedScene->environmentLight.emission.normalization.y == 8.0f);
+    CHECK(preparedScene->environmentLight.portalCount == 4);
     CHECK(preparedScene->lightPortals.size() >= 4);
     CHECK(std::abs(sample(true) - 0.5f) < 0.001f);
     CHECK(pass.sampleCount() == 1);

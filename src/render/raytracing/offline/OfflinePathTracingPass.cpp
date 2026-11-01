@@ -19,6 +19,7 @@
 #include "render/resources/RenderResourceManager.h"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <limits>
 
@@ -425,7 +426,7 @@ void OfflinePathTracingPass::execute(
             .samples = {accumulatedSamples, execution.setup.config.feature.offline.maxBounces, 0, 0},
             .lightCounts = {offline.pointLights.size(), offline.spotLights.size(),
                 offline.directionalLights.size(), offline.lightTriangles.size()},
-            .mappedLightCounts = {offline.environmentLights.size(), offline.projectionLights.size(),
+            .mappedLightCounts = {offline.hasEnvironmentLight ? 1u : 0u, offline.projectionLights.size(),
                 offline.goniometricLights.size(), offline.lightPortals.size()},
         }
     );
@@ -467,7 +468,7 @@ void OfflinePathTracingPass::prepare(RenderGraph& graph, const PassFrame& execut
         upload(4, offline.spotLights);
         upload(5, offline.directionalLights);
         upload(6, offline.lightTriangles);
-        upload(7, offline.environmentLights);
+        upload(7, std::array{offline.environmentLight});
         upload(8, offline.projectionLights);
         upload(9, offline.goniometricLights);
         upload(10, offline.lightPortals);

@@ -107,7 +107,7 @@ struct GoniometricLight
 [[vk::binding(OfflineRayTracingBinding::kSpots, 3)]] StructuredBuffer<SpotLight> spotLights;
 [[vk::binding(OfflineRayTracingBinding::kDirectionals, 3)]] StructuredBuffer<DirectionalLight> directionalLights;
 [[vk::binding(OfflineRayTracingBinding::kTriangles, 3)]] StructuredBuffer<LightTriangle> lightTriangles;
-[[vk::binding(OfflineRayTracingBinding::kEnvironments, 3)]] StructuredBuffer<EnvironmentLight> environmentLights;
+[[vk::binding(OfflineRayTracingBinding::kEnvironments, 3)]] StructuredBuffer<EnvironmentLight> environmentLight;
 [[vk::binding(OfflineRayTracingBinding::kProjections, 3)]] StructuredBuffer<ProjectionLight> projectionLights;
 [[vk::binding(OfflineRayTracingBinding::kGoniometrics, 3)]] StructuredBuffer<GoniometricLight> goniometricLights;
 [[vk::binding(OfflineRayTracingBinding::kPortals, 3)]] StructuredBuffer<float4> lightPortals;
@@ -153,16 +153,15 @@ float3 areaEmission(uint lightIndex, float2 uv, float3 outgoing)
     return emissionRgb(areaEmissions[triangle.emissionIndex], float2(uv.x, 1.0 - uv.y));
 }
 
-float3 environmentEmission(uint lightCount, float3 direction)
+float3 environmentEmission(bool enabled, float3 direction)
 {
-    float3 emission = float3(0.0);
-    for (uint index = 0; index < lightCount; ++index)
+    if (!enabled)
     {
-        EnvironmentLight light = environmentLights[index];
-        float3 local = mul(light.lightFromWorld, float4(direction, 0.0)).xyz;
-        emission += emissionRgb(light.emission, equalAreaUv(local));
+        return float3(0.0);
     }
-    return emission;
+    EnvironmentLight light = environmentLight[0];
+    float3 local = mul(light.lightFromWorld, float4(direction, 0.0)).xyz;
+    return emissionRgb(light.emission, equalAreaUv(local));
 }
 
 #endif

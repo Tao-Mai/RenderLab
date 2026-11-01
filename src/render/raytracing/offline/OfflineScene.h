@@ -44,7 +44,7 @@ struct alignas(16) OfflinePathParameters
     glm::vec4 viewport{};
     glm::uvec4 samples{}; // accumulated samples, max bounces, reserved, reserved.
     glm::uvec4 lightCounts{}; // points, spots, directionals, triangles.
-    glm::uvec4 mappedLightCounts{}; // environments, projections, goniometrics, portal vertices.
+    glm::uvec4 mappedLightCounts{}; // hasEnvironment (0/1), projections, goniometrics, portal vertices.
 };
 static_assert(sizeof(OfflinePathParameters) == 64);
 
@@ -141,7 +141,8 @@ struct OfflineSceneData
     std::vector<OfflineSpotLight> spotLights;
     std::vector<OfflineDirectionalLight> directionalLights;
     std::vector<OfflineLightTriangle> lightTriangles;
-    std::vector<OfflineEnvironmentLight> environmentLights;
+    OfflineEnvironmentLight environmentLight{};
+    bool hasEnvironmentLight = false;
     std::vector<OfflineProjectionLight> projectionLights;
     std::vector<OfflineGoniometricLight> goniometricLights;
     std::vector<glm::vec4> lightPortals;
