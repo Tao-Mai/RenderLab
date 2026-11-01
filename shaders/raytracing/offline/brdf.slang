@@ -8,7 +8,7 @@ struct BrdfSample
     float3 direction;
     float3 weight;
     float pdf;
-    uint delta;
+    uint delta; // 是否镜面散射
 };
 
 struct DiffuseBrdf

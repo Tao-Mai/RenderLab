@@ -20,6 +20,7 @@ struct TextureInstruction
 [[vk::binding(OfflineRayTracingBinding::kTextures, 3)]] StructuredBuffer<TextureInstruction> textureInstructions;
 
 float noiseHash(float3 p) { return frac(sin(dot(p, float3(127.1, 311.7, 74.7))) * 43758.5453); }
+
 float valueNoise(float3 p)
 {
     float3 cell = floor(p), f = frac(p);

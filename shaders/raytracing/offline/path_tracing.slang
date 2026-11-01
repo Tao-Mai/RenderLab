@@ -14,13 +14,54 @@ struct HitData
     uint64_t vertexAddress;
     uint64_t indexAddress;
     uint4 material; // First index, material index, reverse orientation, first area light.
+
+    property firstIndex : uint {
+        get { return material.x; }
+    }
+    property materialIndex : uint {
+        get { return material.y; }
+    }
+    property reverseOrientation : bool {
+        get { return material.z != 0; }
+    }
+    property firstAreaLight : uint {
+        get { return material.w; }
+    }
 };
 struct PathParameters
 {
     float4 viewport;
     uint4 samples; // Accumulated samples, max bounces, reserved, reserved.
-    uint4 lightCounts;
-    uint4 mappedLightCounts;
+    uint4 lightCounts; // Points, spots, directionals, triangles.
+    uint4 mappedLightCounts; // Environments, projections, goniometrics, portal vertices.
+
+    property viewportOffset : float2 {
+        get { return viewport.xy; }
+    }
+    property viewportSize : float2 {
+        get { return viewport.zw; }
+    }
+    property accumulatedSamples : uint {
+        get { return samples.x; }
+    }
+    property maxBounces : uint {
+        get { return samples.y; }
+    }
+    property pointLightCount : uint {
+        get { return lightCounts.x; }
+    }
+    property spotLightCount : uint {
+        get { return lightCounts.y; }
+    }
+    property directionalLightCount : uint {
+        get { return lightCounts.z; }
+    }
+    property triangleLightCount : uint {
+        get { return lightCounts.w; }
+    }
+    property environmentLightCount : uint {
+        get { return mappedLightCounts.x; }
+    }
 };
 struct Hit
 {
@@ -138,20 +179,20 @@ float3 tracePath(RayDesc ray, inout uint state)
     float previousBrdfPdf = 0.0;
     float previousAreaWeightSum = 0.0;
     uint previousDelta = 0;
-    for (uint bounce = 0; bounce <= parameters.samples.y; ++bounce)
+    for (uint bounce = 0; bounce <= parameters.maxBounces; ++bounce)
     {
         Hit hit = {};
         TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, kSceneMask, 0, 0, 0, ray, hit);
         if (hit.hit == 0)
         {
-            radiance += throughput * environmentEmission(parameters.mappedLightCounts.x, ray.Direction);
+            radiance += throughput * environmentEmission(parameters.environmentLightCount, ray.Direction);
             break;
         }
 
         HitData object = objects[hit.objectIndex];
-        if (object.material.w != kOfflineInvalidIndex)
+        if (object.firstAreaLight != kOfflineInvalidIndex)
         {
-            uint lightIndex = object.material.w + hit.primitiveIndex;
+            uint lightIndex = object.firstAreaLight + hit.primitiveIndex;
             float weight = 1.0;
             if (bounce != 0 && previousDelta == 0)
             {
@@ -162,13 +203,13 @@ float3 tracePath(RayDesc ray, inout uint state)
             }
             radiance += throughput * areaEmission(lightIndex, hit.uv, -ray.Direction) * weight;
         }
-        if (bounce == parameters.samples.y)
+        if (bounce == parameters.maxBounces)
         {
             break;
         }
 
         float3 wo = -ray.Direction;
-        MaterialPreview header = materialInstructions[object.material.y];
+        MaterialPreview header = materialInstructions[object.materialIndex];
         BrdfSample sampled;
         sampled.direction = float3(0.0);
         sampled.weight = float3(0.0);
@@ -221,17 +262,17 @@ float3 tracePath(RayDesc ray, inout uint state)
                 surface.normal = surface.geometricNormal;
             }
             surface.origin = hit.position + surface.geometricNormal * kRayEpsilon;
-            surface.brdf.albedo = saturate(evaluateMaterial(object.material.y, hit.uv, hit.position, hit.normal,
+            surface.brdf.albedo = saturate(evaluateMaterial(object.materialIndex, hit.uv, hit.position, hit.normal,
                 hit.primitiveIndex));
             if (!any(surface.brdf.albedo > 0.0))
             {
                 break;
             }
 
-            DeltaLightSample local = sampleLocalLight(parameters.lightCounts.x, parameters.lightCounts.y,
+            DeltaLightSample local = sampleLocalLight(parameters.pointLightCount, parameters.spotLightCount,
                 surface.origin, state);
-            DeltaLightSample distant = sampleDistantLight(parameters.lightCounts.z, state);
-            AreaLightSample area = sampleAreaLight(parameters.lightCounts.w, surface.origin, state);
+            DeltaLightSample distant = sampleDistantLight(parameters.directionalLightCount, state);
+            AreaLightSample area = sampleAreaLight(parameters.triangleLightCount, surface.origin, state);
             float2 areaSample;
             areaSample.x = randomFloat(state);
             areaSample.y = randomFloat(state);
@@ -272,10 +313,11 @@ Vertex loadVertex(HitData object, uint index)
 [shader("raygeneration")]
 void raygenMain()
 {
+    // 获取像素索引
     uint2 pixel = DispatchRaysIndex().xy;
     uint pixelIndex = pixel.x + pixel.y * DispatchRaysDimensions().x;
-    float2 localPixel = float2(pixel) + 0.5 - parameters.viewport.xy;
-    if (any(localPixel < 0.0) || any(localPixel >= parameters.viewport.zw))
+    float2 localPixel = float2(pixel) + 0.5 - parameters.viewportOffset;
+    if (any(localPixel < 0.0) || any(localPixel >= parameters.viewportSize))
     {
         accumulation[pixelIndex] = float4(0.0);
         outputImage[pixel] = float4(0.0, 0.0, 0.0, 1.0);
@@ -287,28 +329,32 @@ void raygenMain()
     uint2 scrambleSeeds;
     scrambleSeeds.x = randomUint(scrambleState);
     scrambleSeeds.y = randomUint(scrambleState);
-    float2 pixelSample = sampleSobol2D(parameters.samples.x, scrambleSeeds);
-    float2 ndc = (float2(pixel) + pixelSample - parameters.viewport.xy) / parameters.viewport.zw * 2.0 - 1.0;
+    float2 pixelSample = sampleSobol2D(parameters.accumulatedSamples, scrambleSeeds);
+    float2 ndc = (float2(pixel) + pixelSample - parameters.viewportOffset) / parameters.viewportSize * 2.0 - 1.0;
     float4 farPoint = mul(sceneUniforms.inverseViewProjection, float4(ndc, 1.0, 1.0));
+
+    // 构建光线
     RayDesc ray;
     ray.Origin = sceneUniforms.cameraPosition.xyz;
     ray.Direction = normalize(farPoint.xyz / farPoint.w - ray.Origin);
     ray.TMin = kRayEpsilon;
     ray.TMax = kMaxRayDistance;
 
-    uint sampleState = parameters.samples.x;
+    // 路径追踪
+    uint sampleState = parameters.accumulatedSamples;
     uint pathState = scrambleSeeds.y ^ randomUint(sampleState);
     float3 color = tracePath(ray, pathState);
 
+    // 累加颜色，并计算平均值
     float3 sum = color;
 
-    if (parameters.samples.x != 0)
+    if (parameters.accumulatedSamples != 0)
     {
         sum += accumulation[pixelIndex].rgb;
     }
 
     accumulation[pixelIndex] = float4(sum, 0.0);
-    outputImage[pixel] = float4(sum / (float(parameters.samples.x) + 1.0), 1.0);
+    outputImage[pixel] = float4(sum / (float(parameters.accumulatedSamples) + 1.0), 1.0);
 }
 
 [shader("miss")]
@@ -322,7 +368,7 @@ void closestHitMain(inout Hit hit, BuiltInTriangleIntersectionAttributes attribu
 {
     HitData object = objects[InstanceID()];
     uint* indices = (uint*)object.indexAddress;
-    uint first = object.material.x + PrimitiveIndex() * 3;
+    uint first = object.firstIndex + PrimitiveIndex() * 3;
     Vertex v0 = loadVertex(object, indices[first]);
     Vertex v1 = loadVertex(object, indices[first + 1]);
     Vertex v2 = loadVertex(object, indices[first + 2]);
@@ -336,7 +382,7 @@ void closestHitMain(inout Hit hit, BuiltInTriangleIntersectionAttributes attribu
     hit.normal = normalize(mul(objectNormal, (float3x3)WorldToObject3x4()));
     float3 objectGeometricNormal = cross(v1.position - v0.position, v2.position - v0.position);
     hit.geometricNormal = normalize(mul(objectGeometricNormal, (float3x3)WorldToObject3x4()));
-    if (object.material.z != 0)
+    if (object.reverseOrientation)
     {
         hit.normal = -hit.normal;
         hit.geometricNormal = -hit.geometricNormal;

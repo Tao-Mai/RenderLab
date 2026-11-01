@@ -121,20 +121,20 @@ DeltaLightSample sampleDistantLight(uint lightCount, inout uint state)
 float areaSelectionWeight(uint lightIndex, float3 origin)
 {
     LightTriangle triangle = lightTriangles[lightIndex];
-    float3 center = (triangle.p0Area.xyz + triangle.p1.xyz + triangle.p2.xyz) / 3.0;
+    float3 center = (triangle.p0 + triangle.p1.xyz + triangle.p2.xyz) / 3.0;
     float3 offset = origin - center;
     float distanceSquared = dot(offset, offset);
-    if (distanceSquared == 0.0 || triangle.p0Area.w == 0.0)
+    if (distanceSquared == 0.0 || triangle.area == 0.0)
     {
         return 0.0;
     }
-    float cosine = dot(triangle.normal.xyz, offset * rsqrt(distanceSquared));
+    float cosine = dot(triangle.geometricNormal, offset * rsqrt(distanceSquared));
     float projectedCosine = triangle.twoSided != 0 ? abs(cosine) : max(0.0, cosine);
     LightEmission emission = areaEmissions[triangle.emissionIndex];
     // A texture can be bright away from its centroid. Keep support over the whole triangle.
-    float intensity = (emission.resources.w & kOfflineLightHasImage) != 0
-        ? emission.colorScale.w : lightWeight(emission.colorScale.rgb * emission.colorScale.w);
-    return triangle.p0Area.w * projectedCosine * intensity / distanceSquared;
+    float intensity = emission.hasImage
+        ? emission.scale : lightWeight(emission.rgb * emission.scale);
+    return triangle.area * projectedCosine * intensity / distanceSquared;
 }
 
 struct AreaLightSample
@@ -175,7 +175,7 @@ float3 sampleTriangle(uint lightIndex, float2 sampleValue, out float2 uv)
     float root = sqrt(sampleValue.x);
     float3 barycentrics = float3(1.0 - root, root * (1.0 - sampleValue.y), root * sampleValue.y);
     uv = triangle.uv01.xy * barycentrics.x + triangle.uv01.zw * barycentrics.y + triangle.uv2 * barycentrics.z;
-    return triangle.p0Area.xyz * barycentrics.x + triangle.p1.xyz * barycentrics.y + triangle.p2.xyz * barycentrics.z;
+    return triangle.p0 * barycentrics.x + triangle.p1.xyz * barycentrics.y + triangle.p2.xyz * barycentrics.z;
 }
 
 // Conditional PDF in solid angle; discrete triangle selection is applied by the caller.
@@ -184,17 +184,17 @@ float areaPdf(uint lightIndex, float3 origin, float3 target)
     LightTriangle triangle = lightTriangles[lightIndex];
     float3 offset = target - origin;
     float distanceSquared = dot(offset, offset);
-    if (triangle.p0Area.w == 0.0 || distanceSquared == 0.0)
+    if (triangle.area == 0.0 || distanceSquared == 0.0)
     {
         return 0.0;
     }
-    float cosine = dot(triangle.normal.xyz, -offset * rsqrt(distanceSquared));
+    float cosine = dot(triangle.geometricNormal, -offset * rsqrt(distanceSquared));
     float projectedCosine = triangle.twoSided != 0 ? abs(cosine) : max(0.0, cosine);
     if (projectedCosine == 0.0)
     {
         return 0.0;
     }
-    return distanceSquared / (triangle.p0Area.w * projectedCosine);
+    return distanceSquared / (triangle.area * projectedCosine);
 }
 
 #endif

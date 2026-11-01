@@ -5,9 +5,31 @@
 
 struct LightEmission
 {
-    float4 colorScale;
-    float4 normalization;
-    uint4 resources;
+    float4 colorScale; // RGB preview, scale.
+    float4 normalization; // Source power in lm, illuminance in lx, total source area, reserved.
+    uint4 resources; // Texture, sampler, medium, flags.
+
+    property rgb : float3 {
+        get { return colorScale.rgb; }
+    }
+    property scale : float {
+        get { return colorScale.w; }
+    }
+    property textureIndex : uint {
+        get { return resources.x; }
+    }
+    property samplerIndex : uint {
+        get { return resources.y; }
+    }
+    property mediumIndex : uint {
+        get { return resources.z; }
+    }
+    property flags : uint {
+        get { return resources.w; }
+    }
+    property hasImage : bool {
+        get { return (flags & kOfflineLightHasImage) != 0; }
+    }
 };
 
 struct PointLight
@@ -43,6 +65,16 @@ struct LightTriangle
     float2 uv2;
     uint emissionIndex;
     uint twoSided;
+
+    property p0 : float3 {
+        get { return p0Area.xyz; }
+    }
+    property area : float {
+        get { return p0Area.w; }
+    }
+    property geometricNormal : float3 {
+        get { return normal.xyz; }
+    }
 };
 
 struct EnvironmentLight
@@ -98,23 +130,23 @@ float2 equalAreaUv(float3 direction)
 
 float3 emissionRgb(LightEmission source, float2 imageUv)
 {
-    float3 emission = source.colorScale.rgb;
-    if ((source.resources.w & kOfflineLightHasImage) != 0)
+    float3 emission = source.rgb;
+    if (source.hasImage)
     {
-        TextureRef image = {source.resources.x, source.resources.y};
+        TextureRef image = {source.textureIndex, source.samplerIndex};
         emission = sampleTextureLevel(image, imageUv).rgb;
     }
-    return emission * source.colorScale.w;
+    return emission * source.scale;
 }
 
 float3 areaEmission(uint lightIndex, float2 uv, float3 outgoing)
 {
     LightTriangle triangle = lightTriangles[lightIndex];
-    if (triangle.p0Area.w == 0.0)
+    if (triangle.area == 0.0)
     {
         return float3(0.0);
     }
-    if (triangle.twoSided == 0 && dot(triangle.normal.xyz, outgoing) <= 0.0)
+    if (triangle.twoSided == 0 && dot(triangle.geometricNormal, outgoing) <= 0.0)
     {
         return float3(0.0);
     }
