@@ -12,21 +12,27 @@ struct LightEmission
     property rgb : float3 {
         get { return colorScale.rgb; }
     }
+
     property scale : float {
         get { return colorScale.w; }
     }
+
     property textureIndex : uint {
         get { return resources.x; }
     }
+
     property samplerIndex : uint {
         get { return resources.y; }
     }
+
     property mediumIndex : uint {
         get { return resources.z; }
     }
+
     property flags : uint {
         get { return resources.w; }
     }
+
     property hasImage : bool {
         get { return (flags & kOfflineLightHasImage) != 0; }
     }
@@ -69,9 +75,11 @@ struct LightTriangle
     property p0 : float3 {
         get { return p0Area.xyz; }
     }
+
     property area : float {
         get { return p0Area.w; }
     }
+
     property geometricNormal : float3 {
         get { return normal.xyz; }
     }
@@ -125,6 +133,7 @@ float2 equalAreaUv(float3 direction)
         uv = 1.0 - uv.yx;
     }
     uv *= float2(d.x < 0.0 ? -1.0 : 1.0, d.y < 0.0 ? -1.0 : 1.0);
+
     return uv * 0.5 + 0.5;
 }
 
@@ -136,6 +145,7 @@ float3 emissionRgb(LightEmission source, float2 imageUv)
         TextureRef image = {source.textureIndex, source.samplerIndex};
         emission = sampleTextureLevel(image, imageUv).rgb;
     }
+
     return emission * source.scale;
 }
 
@@ -150,6 +160,7 @@ float3 areaEmission(uint lightIndex, float2 uv, float3 outgoing)
     {
         return float3(0.0);
     }
+
     return emissionRgb(areaEmissions[triangle.emissionIndex], float2(uv.x, 1.0 - uv.y));
 }
 
@@ -159,8 +170,10 @@ float3 environmentEmission(bool enabled, float3 direction)
     {
         return float3(0.0);
     }
+
     EnvironmentLight light = environmentLight[0];
     float3 local = mul(light.lightFromWorld, float4(direction, 0.0)).xyz;
+
     return emissionRgb(light.emission, equalAreaUv(local));
 }
 

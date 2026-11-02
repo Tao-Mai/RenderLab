@@ -13,11 +13,23 @@
 #include <array>
 
 ToneMappingPass::Output ToneMappingPass::setup(
-    RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle hdrColorHandle, RenderGraph::ImageHandle target
+    RenderGraph&              graph,
+    const PassSetup&          setup,
+    RenderGraph::ImageHandle  hdrColorHandle,
+    RenderGraph::ImageHandle  target,
+    RenderGraph::BufferHandle exposureHandle
 )
 {
     hdrColor = hdrColorHandle;
     color    = graph.write(target);
+    exposure = exposureHandle;
+    graph.use(
+        exposure,
+        {
+            .stages = vk::PipelineStageFlagBits2::eFragmentShader,
+            .access = vk::AccessFlagBits2::eShaderStorageRead,
+        }
+    );
     graph.use(
         hdrColor,
         {
@@ -57,6 +69,12 @@ ToneMappingPass::Output ToneMappingPass::setup(
             .descriptorCount = 1,
             .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
         },
+        vk::DescriptorSetLayoutBinding{
+            .binding         = RenderInterface::kToneMappingExposureBinding,
+            .descriptorType  = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount = 1,
+            .stageFlags      = vk::ShaderStageFlagBits::eFragment,
+        },
     };
     auto& device        = *renderContext().device;
     descriptorSetLayout = device.createDescriptorSetLayout(toneMappingBindings);
@@ -93,21 +111,32 @@ void ToneMappingPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& se
         }),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
-    const vk::DescriptorImageInfo samplerInfo{.sampler = sampler};
-    const std::array              writes = {
+    const vk::DescriptorImageInfo  samplerInfo{.sampler = sampler};
+    const vk::DescriptorBufferInfo exposureInfo{
+        .buffer = graph.getBuffer(exposure).handle(),
+        .range  = graph.getBuffer(exposure).size(),
+    };
+    const std::array writes = {
         vk::WriteDescriptorSet{
-                         .dstSet          = *descriptorSet,
-                         .dstBinding      = RenderInterface::kToneMappingImageBinding,
-                         .descriptorCount = 1,
-                         .descriptorType  = vk::DescriptorType::eSampledImage,
-                         .pImageInfo      = &imageInfo,
+            .dstSet          = *descriptorSet,
+            .dstBinding      = RenderInterface::kToneMappingImageBinding,
+            .descriptorCount = 1,
+            .descriptorType  = vk::DescriptorType::eSampledImage,
+            .pImageInfo      = &imageInfo,
         },
         vk::WriteDescriptorSet{
-                         .dstSet          = *descriptorSet,
-                         .dstBinding      = RenderInterface::kToneMappingSamplerBinding,
-                         .descriptorCount = 1,
-                         .descriptorType  = vk::DescriptorType::eSampler,
-                         .pImageInfo      = &samplerInfo,
+            .dstSet          = *descriptorSet,
+            .dstBinding      = RenderInterface::kToneMappingSamplerBinding,
+            .descriptorCount = 1,
+            .descriptorType  = vk::DescriptorType::eSampler,
+            .pImageInfo      = &samplerInfo,
+        },
+        vk::WriteDescriptorSet{
+            .dstSet          = *descriptorSet,
+            .dstBinding      = RenderInterface::kToneMappingExposureBinding,
+            .descriptorCount = 1,
+            .descriptorType  = vk::DescriptorType::eStorageBuffer,
+            .pBufferInfo     = &exposureInfo,
         },
     };
     device.updateDescriptorSets(writes, {});
@@ -147,9 +176,8 @@ void ToneMappingPass::execute(
 
     const auto&                    settings = execution.setup.config.feature.toneMapping;
     const ToneMappingPushConstants parameters{
-        .exposureScale = settings.exposureScale(),
-        .mode          = static_cast<uint32_t>(settings.mode),
-        .encodeSrgb    = encodeSrgb ? 1u : 0u,
+        .mode       = static_cast<uint32_t>(settings.mode),
+        .encodeSrgb = encodeSrgb ? 1u : 0u,
     };
     commands.pushConstants<ToneMappingPushConstants>(
         pipelineLayout,

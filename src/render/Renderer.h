@@ -42,7 +42,9 @@ public:
     void              init();
     void              rebuildGraph();
     void              recreateSwapchain();
-    RenderFrameResult render(const RenderView& view, const SceneRenderData& scene, const EditorFrameInput& editor);
+    RenderFrameResult render(
+        const RenderView& view, const SceneRenderData& scene, const EditorFrameInput& editor, float deltaSeconds
+    );
     void              waitIdle();
     void              shutdown() noexcept;
 
@@ -51,6 +53,8 @@ public:
     [[nodiscard]] VulkanContext& vulkanContext() { return vulkan; }
     [[nodiscard]] Swapchain&     swapchainHandle() { return swapchain; }
     [[nodiscard]] uint32_t       offlineSampleCount() const;
+    [[nodiscard]] float          offlineSampleProgress() const;
+    [[nodiscard]] bool           offlinePreparingPipeline() const;
     [[nodiscard]] uint32_t       framesInFlight() const { return activeFramesInFlight; }
 
 private:
@@ -86,7 +90,9 @@ private:
     SceneOutput               setupRayTracing();
     SceneOutput               setupOffline();
     SceneOutput               setupLightMarkers(SceneOutput scene);
-    RenderGraph::ImageHandle  setupPostProcess(RenderGraph::ImageHandle color, RenderGraph::ImageHandle target);
+    RenderGraph::ImageHandle setupPostProcess(
+        RenderGraph::ImageHandle color, RenderGraph::ImageHandle target, RenderGraph::BufferHandle exposure
+    );
     void                      setupEditor(SceneOutput scene);
     void                      applyConfiguration();
     uint32_t                  frameIndex           = 0;

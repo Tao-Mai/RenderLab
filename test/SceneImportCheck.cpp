@@ -9,6 +9,7 @@
 #include "scene/SceneManager.h"
 #include "scene/actor/AStaticMesh.h"
 #include "scene/component/RenderComponent.h"
+#include "scene/component/LightComponent.h"
 #include "scene/system/RenderSystem.h"
 
 #include <algorithm>
@@ -76,8 +77,13 @@ int main(int argc, char** argv)
     std::unordered_set<MeshAsset::ID> meshes;
     for (const auto& actor : scenes.scene().actors)
     {
-        CHECK(dynamic_cast<const AStaticMesh*>(actor.get()));
         const auto* component = actor->getComponent<RenderComponent>();
+        if (!component)
+        {
+            CHECK(actor->getComponent<LightComponent>());
+            continue;
+        }
+        CHECK(dynamic_cast<const AStaticMesh*>(actor.get()));
         CHECK(component && &component->actor() == actor.get());
         const auto& mesh = assets.get<MeshAsset>(component->meshId);
         CHECK(mesh.meshIndex);
@@ -111,7 +117,7 @@ int main(int argc, char** argv)
         const float  side   = static_cast<float>(std::min(extent.width, extent.height));
         const auto   view =
             editorCamera.renderView({(extent.width - side) * 0.5f, (extent.height - side) * 0.5f, side, side});
-        renderer.render(view, system.prepare(scenes.scene()), {});
+        renderer.render(view, system.prepare(scenes.scene()), {}, 0.0f);
         renderer.waitIdle();
         renderer.shutdown();
         window.shutdown();

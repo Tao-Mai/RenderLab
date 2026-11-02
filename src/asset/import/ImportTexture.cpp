@@ -5,7 +5,6 @@
 #include "asset/TextureAsset.h"
 #include "asset/TextureMip.h"
 #include "asset/import/ImportId.h"
-#include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 

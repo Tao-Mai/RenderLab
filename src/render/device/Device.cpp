@@ -1,9 +1,11 @@
 #include "render/device/Device.h"
 
 #include "core/Logger.h"
+#include "render/RenderConfig.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/resources/VertexLayout.h"
+#include "render/resources/MaterialData.h"
 
 #include <algorithm>
 #include <array>
@@ -30,7 +32,7 @@ void Device::init(const VulkanContext& vulkan, ShaderManager& targetShaders)
 
     // Global material arrays plus shared/pass sets, with room for graph rebuilds.
     constexpr uint32_t kMaxDescriptorSets             = 128;
-    constexpr uint32_t kSampledImageCapacity          = 512;
+    constexpr uint32_t kSampledImageCapacity          = kMaxMaterialTextures * maxFramesInFlight + 512;
     constexpr uint32_t kSamplerCapacity               = 128;
     constexpr uint32_t kUniformBufferCapacity         = 32;
     constexpr uint32_t kStorageBufferCapacity         = 64;

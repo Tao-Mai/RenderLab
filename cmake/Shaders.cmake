@@ -1,6 +1,6 @@
 # Compile declarations also generate runtime manifests; filenames have no runtime policy.
 function(renderlab_shader program source binary)
-    cmake_parse_arguments(S "" "" "DEFINES;ENTRIES;INCLUDES" ${ARGN})
+    cmake_parse_arguments(S "" "" "DEFINES;ENTRIES" ${ARGN})
     if(NOT S_ENTRIES)
         set(S_ENTRIES vertMain fragMain)
     endif()
@@ -22,14 +22,16 @@ function(renderlab_shader program source binary)
     endforeach()
     set(output "${SHADER_BINARY_DIR}/${binary}.spv")
     set(reflection "${SHADER_BINARY_DIR}/${binary}.reflection.json")
+    set(depfile "${SHADER_BINARY_DIR}/${binary}.d")
     add_custom_command(OUTPUT "${output}" "${reflection}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
         COMMAND ${SLANGC_EXECUTABLE} "${SHADER_SOURCE_DIR}/${source}"
             -I "${SHADER_SOURCE_DIR}" -I "${PROJECT_SOURCE_DIR}/src"
             ${arguments} -target spirv -profile spirv_1_4 -matrix-layout-column-major
             -emit-spirv-directly -fvk-use-entrypoint-name
-            -reflection-json "${reflection}" -o "${output}"
-        DEPENDS "${SHADER_SOURCE_DIR}/${source}" "${SHADER_SOURCE_DIR}/common/texture_data.slang" ${S_INCLUDES}
+            -reflection-json "${reflection}" -depfile "${depfile}" -o "${output}"
+        DEPENDS "${SHADER_SOURCE_DIR}/${source}" "${SLANGC_EXECUTABLE}"
+        DEPFILE "${depfile}"
         COMMENT "Compiling ${binary}" VERBATIM)
     set_property(GLOBAL APPEND PROPERTY renderlab_shader_outputs "${output}" "${reflection}")
     set_property(GLOBAL APPEND PROPERTY renderlab_shader_programs "${program}")

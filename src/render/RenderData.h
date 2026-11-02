@@ -3,6 +3,7 @@
 #include "asset/EnvironmentMapAsset.h"
 #include "core/math/Bounds.h"
 #include "render/DrawItem.h"
+#include "render/ExposureConfig.h"
 #include "render/Visibility.h"
 #include "render/resources/ShaderData.h"
 #include "render/raytracing/offline/OfflineLightData.h"
@@ -19,8 +20,10 @@ struct OfflineSceneData;
 
 struct RenderData
 {
+    AssetID<struct SceneAsset>                  sceneId;
     vk::DescriptorSet                           materialDescriptorSet;
     std::optional<AssetID<EnvironmentMapAsset>> environmentMap;
+    ExposureConfig                             exposure;
     // Borrowed for preparation and command recording; the submission outlives both.
     std::span<const DrawItem> drawItems;
     // Aligned with drawItems; values are indices into the global material SSBO.

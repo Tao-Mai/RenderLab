@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <glm/vec4.hpp>
 
-inline constexpr uint32_t kMaxMaterialTextures = 128;
+inline constexpr uint32_t kMaxMaterialTextures = 1024;
 inline constexpr uint32_t kMaxMaterialSamplers = 32;
 inline constexpr uint32_t kAlphaModeOpaque     = 0;
 inline constexpr uint32_t kAlphaModeMask       = 1;

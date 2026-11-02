@@ -27,6 +27,7 @@
 #include "render/editor/LightMarkerPass.h"
 #include "render/postprocess/Bloom.h"
 #include "render/postprocess/ToneMappingPass.h"
+#include "render/postprocess/ExposurePass.h"
 #include "render/raster/ShadowPass.h"
 #include "render/raytracing/offline/OfflinePathTracingPass.h"
 #include "render/raytracing/BlasBuildPass.h"
@@ -80,6 +81,7 @@ struct Renderer::Passes
         TransparentPass,
         LightMarkerPass,
         ToneMappingPass,
+        ExposurePass,
         BlasBuildPass,
         TlasBuildPass,
         RayTracingPass,
@@ -383,8 +385,12 @@ void Renderer::setupRenderGraph()
             scene = setupRasterization(presentTarget);
             break;
     }
+    RenderGraph::BufferHandle exposure;
+    if (config.feature.hdr)
+        exposure = setupPass<ExposurePass>(scene.color).state;
+
     scene       = setupLightMarkers(scene);
-    scene.color = setupPostProcess(scene.color, presentTarget);
+    scene.color = setupPostProcess(scene.color, presentTarget, exposure);
     setupEditor(scene);
     graph.compile({vulkan, swapchain.extent(), frameStorage, config});
     for (auto& data : frameStorage)
@@ -425,6 +431,16 @@ uint32_t Renderer::offlineSampleCount() const
     return passes ? passes->get<OfflinePathTracingPass>().sampleCount() : 0;
 }
 
+float Renderer::offlineSampleProgress() const
+{
+    return passes ? passes->get<OfflinePathTracingPass>().sampleProgress() : 0;
+}
+
+bool Renderer::offlinePreparingPipeline() const
+{
+    return passes && passes->get<OfflinePathTracingPass>().preparingPipeline();
+}
+
 Renderer::SceneOutput Renderer::setupRasterization(RenderGraph::ImageHandle target)
 {
     const auto&        config = *rendererConfig;
@@ -463,7 +479,9 @@ Renderer::SceneOutput Renderer::setupLightMarkers(SceneOutput scene)
     return {markers.color, markers.depth, scene.shadow};
 }
 
-RenderGraph::ImageHandle Renderer::setupPostProcess(RenderGraph::ImageHandle color, RenderGraph::ImageHandle target)
+RenderGraph::ImageHandle Renderer::setupPostProcess(
+    RenderGraph::ImageHandle color, RenderGraph::ImageHandle target, RenderGraph::BufferHandle exposure
+)
 {
     const auto& config = *rendererConfig;
     if (config.feature.hdr)
@@ -471,7 +489,7 @@ RenderGraph::ImageHandle Renderer::setupPostProcess(RenderGraph::ImageHandle col
         CHECK(swapchain.surfaceFormat().colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear);
         if (config.feature.bloom.enable)
             color = passes->bloom.setup(graph, PassSetup{vulkan, swapchain.extent(), frameStorage, config}, color).color;
-        return setupPass<ToneMappingPass>(color, target).color;
+        return setupPass<ToneMappingPass>(color, target, exposure).color;
     }
     if (config.renderPath == RenderPath::RayTracing || config.renderPath == RenderPath::OfflinePathTracing)
     {
@@ -509,6 +527,7 @@ void Renderer::applyConfiguration()
             value.feature.bloom.enable,
             value.feature.bloom.levels,
             value.feature.rayTracing.svgf,
+            value.feature.offline.algorithm,
             shadow.enable,
             shadow.pointShadowMapSize,
             shadow.rectAreaShadowMapSize,
@@ -557,8 +576,10 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
     auto&       assets        = *context().assetManager;
     auto*       profiler      = context().profiler;
     auto&       renderData    = renderStorage[targetFrameIndex];
+    renderData.sceneId        = scene.sceneId;
     renderData.drawItems      = std::span{scene.drawItems};
     renderData.environmentMap = scene.environmentMap;
+    renderData.exposure       = scene.exposure.value_or(config.feature.toneMapping.exposure);
     renderData.materialIndices.resize(renderData.drawItems.size());
     {
         CpuProfileScope timing{profiler, "Render resources"};
@@ -678,7 +699,9 @@ const RenderData& Renderer::prepare(const RenderView& view, const SceneRenderDat
     return renderData;
 }
 
-RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData& scene, const EditorFrameInput& editor)
+RenderFrameResult Renderer::render(
+    const RenderView& view, const SceneRenderData& scene, const EditorFrameInput& editor, float deltaSeconds
+)
 {
     // 获取最新渲染配置
     applyConfiguration();
@@ -699,7 +722,7 @@ RenderFrameResult Renderer::render(const RenderView& view, const SceneRenderData
 
     auto&           data = frameStorage[frameIndex];
     const PassSetup setup{vulkan, swapchain.extent(), frameStorage, *rendererConfig};
-    const PassFrame execution{setup, data, view, renderData, editor, frameIndex};
+    const PassFrame execution{setup, data, view, renderData, editor, frameIndex, deltaSeconds};
 
     // 逐pass prepare
     graph.prepare(execution);

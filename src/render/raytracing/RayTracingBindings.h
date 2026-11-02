@@ -37,6 +37,8 @@ RENDERLAB_BINDING kGoniometrics = 11;
 RENDERLAB_BINDING kPortals      = 12;
 RENDERLAB_BINDING kAccumulation = 13;
 RENDERLAB_BINDING kColor        = 14;
+RENDERLAB_BINDING kSplats       = 15;
+RENDERLAB_BINDING kLightDistribution = 16;
 }
 
 #undef RENDERLAB_BINDING

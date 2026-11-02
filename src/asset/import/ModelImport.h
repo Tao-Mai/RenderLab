@@ -20,6 +20,23 @@ public:
         float     farPlane;  // Zero denotes an infinite source projection.
     };
 
+    struct Light
+    {
+        enum class Type
+        {
+            Directional,
+            Point,
+            Spot,
+        };
+
+        Type      type;
+        glm::vec3 color;
+        float     intensity;
+        float     range;
+        float     cosInner;
+        float     cosOuter;
+    };
+
     struct Node
     {
         uint32_t              index;
@@ -27,6 +44,7 @@ public:
         glm::mat4             world;
         std::vector<uint32_t> meshes;
         std::optional<Camera> camera;
+        std::optional<Light>  light;
     };
 
     virtual ~ModelImport() = default;

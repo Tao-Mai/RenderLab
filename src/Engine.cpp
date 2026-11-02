@@ -155,7 +155,7 @@ void Engine::mainLoop()
         }();
 
         const auto& renderData   = renderSystem.prepare(ctx.sceneManager->scene());
-        const auto  editorResult = ctx.renderer->render(editorFrame.view, renderData, editorFrame.input);
+        const auto  editorResult = ctx.renderer->render(editorFrame.view, renderData, editorFrame.input, deltaTime);
         swapchainNeedsRebuild    = editorResult.swapchainNeedsRebuild;
         ctx.editor->applyPickResult(editorResult);
         profiler.endFrame(deltaTime * 1000.0);

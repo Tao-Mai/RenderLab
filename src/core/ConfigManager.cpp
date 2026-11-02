@@ -1,5 +1,6 @@
 #include "core/ConfigManager.h"
 
+#include "asset/SceneAsset.h"
 #include "core/Logger.h"
 #include "core/Serializer.h"
 #include "render/RenderConfig.h"
@@ -24,8 +25,7 @@ void validateCascade(const RenderFeature::Shadow::Cascade& cascade)
 
 void validateToneMapping(const RenderFeature::ToneMapping& toneMapping)
 {
-    CHECK(std::isfinite(toneMapping.ev100) && std::isfinite(toneMapping.exposureCompensation));
-    CHECK(std::isfinite(toneMapping.exposureScale()) && toneMapping.exposureScale() > 0.0f);
+    CHECK(toneMapping.exposure.isValid());
     CHECK(toneMapping.mode == ToneMappingOperator::Neutral ||
           toneMapping.mode == ToneMappingOperator::Reinhard);
 }
@@ -50,6 +50,17 @@ void validateRayTracing(const RenderFeature::RayTracing& rayTracing)
     CHECK(std::isfinite(rayTracing.emaAlpha) && rayTracing.emaAlpha >= 0.0f && rayTracing.emaAlpha <= 1.0f);
 }
 
+void validateOffline(const RenderFeature::Offline& offline)
+{
+    CHECK(offline.algorithm == OfflineAlgorithm::PT || offline.algorithm == OfflineAlgorithm::BDPT);
+    validatePathBounces(offline.pt.maxBounces);
+    validatePathBounces(offline.bdpt.maxBounces);
+    CHECK(offline.bdpt.lightSelection == BdptLightSelection::Uniform ||
+          offline.bdpt.lightSelection == BdptLightSelection::Power);
+    CHECK(offline.bdpt.misHeuristic == BdptMisHeuristic::Balance ||
+          offline.bdpt.misHeuristic == BdptMisHeuristic::Power);
+}
+
 std::filesystem::path resolveAgainst(const std::filesystem::path& baseDir, std::filesystem::path value)
 {
     if (value.empty())
@@ -63,6 +74,8 @@ std::filesystem::path resolveAgainst(const std::filesystem::path& baseDir, std::
     return (baseDir / value).lexically_normal();
 }
 }  // namespace
+
+ConfigManager::ConfigManager() : sceneRenderMode(SceneRenderMode::Realtime) {}
 
 ConfigManager::~ConfigManager() { DCHECK(!inited); }
 
@@ -100,7 +113,7 @@ void ConfigManager::shutdown() noexcept
 
 const CommandConfig& ConfigManager::commandConfig() const noexcept { return commands; }
 
-const SceneAsset::ID& ConfigManager::initialScene() const noexcept { return data.initialScene; }
+const AssetID<SceneAsset>& ConfigManager::initialScene() const noexcept { return data.initialScene; }
 
 const RendererConfig& ConfigManager::rendererConfig() const noexcept { return renderer; }
 
@@ -115,7 +128,13 @@ void ConfigManager::setEditorSize(int width, int height)
     editor.height = height;
 }
 
-void ConfigManager::setInitialScene(SceneAsset::ID id)
+void ConfigManager::setLightMarkersAndPicking(bool enabled)
+{
+    DCHECK(inited);
+    editor.lightMarkersAndPicking = enabled;
+}
+
+void ConfigManager::setInitialScene(AssetID<SceneAsset> id)
 {
     DCHECK(inited);
     CHECK(!id.empty());
@@ -155,7 +174,7 @@ void ConfigManager::setRenderFeature(const RenderFeature& feature)
     validateBloom(feature.bloom);
     validateCascade(feature.shadow.cascade);
     validateRayTracing(feature.rayTracing);
-    validatePathBounces(feature.offline.maxBounces);
+    validateOffline(feature.offline);
 
     renderer.feature = feature;
 }
@@ -223,7 +242,7 @@ void ConfigManager::loadRenderer()
     validateBloom(renderer.feature.bloom);
     validateCascade(renderer.feature.shadow.cascade);
     validateRayTracing(renderer.feature.rayTracing);
-    validatePathBounces(renderer.feature.offline.maxBounces);
+    validateOffline(renderer.feature.offline);
 
     CHECK(renderer.feature.shadow.pointShadowMapSize > 0);
     CHECK(renderer.feature.shadow.rectAreaShadowMapSize > 0);

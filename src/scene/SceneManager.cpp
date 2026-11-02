@@ -49,6 +49,8 @@ void SceneManager::load(const SceneAsset& scene)
     SceneAsset loaded;
     Deserialize(Serialize(scene), loaded);
     CHECK(!loaded.environmentMap || !loaded.environmentMap->empty());
+    CHECK(!loaded.editorCamera.exposure || loaded.editorCamera.exposure->isValid(),
+          "invalid camera exposure in scene '{}'", loaded.id);
     for (const auto& actor : loaded.actors)
     {
         CHECK(actor);

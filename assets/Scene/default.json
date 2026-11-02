@@ -357,6 +357,7 @@
     "renderMode": "Realtime",
     "cameraMedium": null,
     "editorCamera": {
+        "exposure": null,
         "farPlane": 100.0,
         "fieldOfView": 45.0,
         "focalDistance": 1000000.0,

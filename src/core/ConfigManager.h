@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset/SceneAsset.h"
+#include "asset/AssetID.h"
 #include "core/Debug.h"
 #include "core/Input.h"
 #include "render/RendererConfig.h"
@@ -8,6 +8,9 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+
+struct SceneAsset;
+enum class SceneRenderMode;
 
 struct AppPaths
 {
@@ -27,33 +30,35 @@ struct EditorConfig
     int         width;
     int         height;
     std::string title;
+    bool        lightMarkersAndPicking = false;
 };
 
 struct AppConfig
 {
-    AppPaths       paths;
-    SceneAsset::ID initialScene;
+    AppPaths            paths;
+    AssetID<SceneAsset> initialScene;
 };
 
 class ConfigManager
 {
 public:
-    ConfigManager() = default;
+    ConfigManager();
     ~ConfigManager();
 
     void init();
     void shutdown() noexcept;
 
-    [[nodiscard]] const AppPaths&       paths() const noexcept { return resolvedPaths; }
-    [[nodiscard]] const CommandConfig&  commandConfig() const noexcept;
-    [[nodiscard]] const SceneAsset::ID& initialScene() const noexcept;
-    [[nodiscard]] const RendererConfig& rendererConfig() const noexcept;
-    [[nodiscard]] const EditorConfig&   editorConfig() const noexcept;
-    void                                setEditorSize(int width, int height);
-    void                                setInitialScene(SceneAsset::ID id);
-    void                                setRenderPath(RenderPath path);
-    void                                setSceneRenderMode(SceneRenderMode mode);
-    void                                setRenderFeature(const RenderFeature& feature);
+    [[nodiscard]] const AppPaths&            paths() const noexcept { return resolvedPaths; }
+    [[nodiscard]] const CommandConfig&       commandConfig() const noexcept;
+    [[nodiscard]] const AssetID<SceneAsset>& initialScene() const noexcept;
+    [[nodiscard]] const RendererConfig&      rendererConfig() const noexcept;
+    [[nodiscard]] const EditorConfig&        editorConfig() const noexcept;
+    void                                     setEditorSize(int width, int height);
+    void                                     setLightMarkersAndPicking(bool enabled);
+    void                                     setInitialScene(AssetID<SceneAsset> id);
+    void                                     setRenderPath(RenderPath path);
+    void                                     setSceneRenderMode(SceneRenderMode mode);
+    void                                     setRenderFeature(const RenderFeature& feature);
 
 private:
     DEBUG_ONLY(bool inited = false;)
@@ -64,7 +69,7 @@ private:
     CommandConfig         commands;
     EditorConfig          editor;
     RendererConfig        renderer;
-    SceneRenderMode       sceneRenderMode    = SceneRenderMode::Realtime;
+    SceneRenderMode       sceneRenderMode;
     RenderPath            realtimeRenderPath = RenderPath::Forward;
 
     void load();

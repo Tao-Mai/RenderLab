@@ -1,5 +1,6 @@
 #include "asset/AssetManager.h"
 #include "asset/MaterialTypes.h"
+#include "core/Serializer.h"
 #include <cmath>
 
 

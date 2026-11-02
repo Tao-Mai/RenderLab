@@ -48,6 +48,7 @@ DeltaLightSample sampleLocalLight(uint pointCount, uint spotCount, float3 origin
         {
             continue;
         }
+
         float distance = sqrt(distanceSquared);
         float3 direction = offset / distance;
         float attenuation = 1.0;
@@ -85,6 +86,7 @@ DeltaLightSample sampleLocalLight(uint pointCount, uint spotCount, float3 origin
     {
         selected.probability = selectedWeight / weightSum;
     }
+
     return selected;
 }
 
@@ -115,6 +117,7 @@ DeltaLightSample sampleDistantLight(uint lightCount, inout uint state)
     {
         selected.probability = selectedWeight / weightSum;
     }
+
     return selected;
 }
 
@@ -128,12 +131,14 @@ float areaSelectionWeight(uint lightIndex, float3 origin)
     {
         return 0.0;
     }
+
     float cosine = dot(triangle.geometricNormal, offset * rsqrt(distanceSquared));
     float projectedCosine = triangle.twoSided != 0 ? abs(cosine) : max(0.0, cosine);
     LightEmission emission = areaEmissions[triangle.emissionIndex];
     // A texture can be bright away from its centroid. Keep support over the whole triangle.
     float intensity = emission.hasImage
         ? emission.scale : lightWeight(emission.rgb * emission.scale);
+
     return triangle.area * projectedCosine * intensity / distanceSquared;
 }
 
@@ -166,6 +171,7 @@ AreaLightSample sampleAreaLight(uint lightCount, float3 origin, inout uint state
     {
         selected.probability = selectedWeight / selected.weightSum;
     }
+
     return selected;
 }
 
@@ -175,6 +181,7 @@ float3 sampleTriangle(uint lightIndex, float2 sampleValue, out float2 uv)
     float root = sqrt(sampleValue.x);
     float3 barycentrics = float3(1.0 - root, root * (1.0 - sampleValue.y), root * sampleValue.y);
     uv = triangle.uv01.xy * barycentrics.x + triangle.uv01.zw * barycentrics.y + triangle.uv2 * barycentrics.z;
+
     return triangle.p0 * barycentrics.x + triangle.p1.xyz * barycentrics.y + triangle.p2.xyz * barycentrics.z;
 }
 
@@ -188,12 +195,14 @@ float areaPdf(uint lightIndex, float3 origin, float3 target)
     {
         return 0.0;
     }
+
     float cosine = dot(triangle.geometricNormal, -offset * rsqrt(distanceSquared));
     float projectedCosine = triangle.twoSided != 0 ? abs(cosine) : max(0.0, cosine);
     if (projectedCosine == 0.0)
     {
         return 0.0;
     }
+
     return distanceSquared / (triangle.area * projectedCosine);
 }
 

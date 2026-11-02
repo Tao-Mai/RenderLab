@@ -96,22 +96,6 @@ find_program(SLANGC_EXECUTABLE
 set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 set(SHADER_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 include(cmake/Shaders.cmake)
-set(SCENE_SHADER_INCLUDES
-        "${SHADER_SOURCE_DIR}/common/scene_data.slang"
-        "${SHADER_SOURCE_DIR}/common/lighting_data.slang"
-        "${SHADER_SOURCE_DIR}/raster/shadow_data.slang"
-        "${SHADER_SOURCE_DIR}/common/scene_uniforms.slang"
-        "${SHADER_SOURCE_DIR}/common/light_data.slang"
-        "${SHADER_SOURCE_DIR}/raster/mesh_vertex.slang"
-        "${SHADER_SOURCE_DIR}/raster/mesh_surface.slang"
-        "${SHADER_SOURCE_DIR}/common/normal_mapping.slang"
-        "${SHADER_SOURCE_DIR}/common/surface.slang"
-        "${SHADER_SOURCE_DIR}/common/material_data.slang"
-        "${SHADER_SOURCE_DIR}/raster/scene_lighting.slang"
-        "${SHADER_SOURCE_DIR}/common/sampling.slang"
-        "${SHADER_SOURCE_DIR}/common/brdf.slang"
-        "${SHADER_SOURCE_DIR}/common/constant.slang"
-)
 foreach(enable_clearcoat IN ITEMS 0 1)
     foreach(enable_sheen IN ITEMS 0 1)
         foreach(enable_ibl IN ITEMS 1 0)
@@ -126,24 +110,28 @@ foreach(enable_clearcoat IN ITEMS 0 1)
                 string(APPEND binary ".no_ibl")
             endif()
             renderlab_shader(slang raster/forward.slang "${binary}"
-                DEFINES ENABLE_IBL=${enable_ibl} ENABLE_CLEARCOAT=${enable_clearcoat} ENABLE_SHEEN=${enable_sheen}
-                INCLUDES ${SCENE_SHADER_INCLUDES})
+                DEFINES ENABLE_IBL=${enable_ibl} ENABLE_CLEARCOAT=${enable_clearcoat} ENABLE_SHEEN=${enable_sheen})
         endforeach()
     endforeach()
 endforeach()
-renderlab_shader(gbuffer raster/gbuffer.slang gbuffer DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=1
-    INCLUDES ${SCENE_SHADER_INCLUDES})
+renderlab_shader(gbuffer raster/gbuffer.slang gbuffer DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=1)
 foreach(enable_ibl IN ITEMS 1 0)
     set(binary deferred_lighting)
     if(NOT enable_ibl)
         string(APPEND binary ".no_ibl")
     endif()
     renderlab_shader(deferred_lighting raster/deferred_lighting.slang "${binary}"
-        DEFINES ENABLE_IBL=${enable_ibl} ENABLE_CLEARCOAT=0 ENABLE_SHEEN=1 INCLUDES ${SCENE_SHADER_INCLUDES})
+        DEFINES ENABLE_IBL=${enable_ibl} ENABLE_CLEARCOAT=0 ENABLE_SHEEN=1)
 endforeach()
-renderlab_shader(depth raster/depth.slang depth DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 INCLUDES ${SCENE_SHADER_INCLUDES})
-renderlab_shader(skybox raster/skybox.slang skybox INCLUDES ${SCENE_SHADER_INCLUDES})
+renderlab_shader(depth raster/depth.slang depth DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0)
+renderlab_shader(skybox raster/skybox.slang skybox)
 renderlab_shader(tonemapping postprocess/tonemapping.slang tonemapping)
+foreach(stage IN ITEMS 0 1)
+    set(exposure_binaries exposure.histogram exposure.resolve)
+    list(GET exposure_binaries ${stage} binary)
+    renderlab_shader(exposure postprocess/exposure.slang "${binary}" ENTRIES computeMain
+        DEFINES EXPOSURE_STAGE=${stage})
+endforeach()
 foreach(stage IN ITEMS 0 1 2 3)
     set(binary bloom)
     if(NOT stage EQUAL 0)
@@ -152,14 +140,12 @@ foreach(stage IN ITEMS 0 1 2 3)
     renderlab_shader(bloom postprocess/bloom.slang "${binary}" DEFINES BLOOM_STAGE=${stage})
 endforeach()
 foreach(name IN ITEMS light_marker depth picking)
-    renderlab_shader(editor_${name} editor/${name}.slang editor_${name}
-        INCLUDES "${SHADER_SOURCE_DIR}/editor/view.slang")
+    renderlab_shader(editor_${name} editor/${name}.slang editor_${name})
 endforeach()
 foreach(type IN ITEMS 0 1 2 3)
     set(names shadow shadow.directional shadow.rect_area shadow.spot)
     list(GET names ${type} binary)
-    renderlab_shader(shadow raster/shadow.slang "${binary}" DEFINES SHADOW_TYPE=${type}
-        INCLUDES ${SCENE_SHADER_INCLUDES})
+    renderlab_shader(shadow raster/shadow.slang "${binary}" DEFINES SHADOW_TYPE=${type})
 endforeach()
 foreach(svgf IN ITEMS 0 1)
     set(binary raytracing)
@@ -168,32 +154,20 @@ foreach(svgf IN ITEMS 0 1)
     endif()
     renderlab_shader(raytracing raytracing/realtime/realtime.slang "${binary}"
         ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
-        DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 SVGF=${svgf}
-        INCLUDES "${PROJECT_SOURCE_DIR}/src/render/raytracing/RayTracingBindings.h"
-            "${SHADER_SOURCE_DIR}/raytracing/realtime/path_tracing.slang"
-            "${SHADER_SOURCE_DIR}/common/scene_data.slang" "${SHADER_SOURCE_DIR}/common/scene_uniforms.slang"
-            "${SHADER_SOURCE_DIR}/common/light_data.slang" "${SHADER_SOURCE_DIR}/common/constant.slang"
-            "${SHADER_SOURCE_DIR}/common/random.slang" "${SHADER_SOURCE_DIR}/common/local_light_sampling.slang"
-            "${SHADER_SOURCE_DIR}/common/rect_area_light_sampling.slang"
-            "${SHADER_SOURCE_DIR}/common/material_data.slang"
-            "${SHADER_SOURCE_DIR}/common/normal_mapping.slang" "${SHADER_SOURCE_DIR}/common/pbr_brdf.slang"
-            "${SHADER_SOURCE_DIR}/common/brdf.slang")
+        DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 SVGF=${svgf})
 endforeach()
-renderlab_shader(offline_pathtracing raytracing/offline/path_tracing.slang offline_pathtracing
-    ENTRIES raygenMain missMain visibilityMissMain closestHitMain
-    INCLUDES "${PROJECT_SOURCE_DIR}/src/render/raytracing/RayTracingBindings.h"
-        "${SHADER_SOURCE_DIR}/raytracing/offline/texture.slang" "${SHADER_SOURCE_DIR}/raytracing/offline/material.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/offline/light.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/offline/light_sampling.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/offline/brdf.slang"
-        "${SHADER_SOURCE_DIR}/common/constant.slang"
-        "${PROJECT_SOURCE_DIR}/src/render/raytracing/offline/OfflineShaderTypes.h" "${SHADER_SOURCE_DIR}/common/texture_data.slang"
-        "${SHADER_SOURCE_DIR}/common/scene_data.slang" "${SHADER_SOURCE_DIR}/common/scene_uniforms.slang"
-        "${SHADER_SOURCE_DIR}/common/low_discrepancy.slang"
-        "${SHADER_SOURCE_DIR}/common/random.slang")
+renderlab_shader(offline_pathtracing raytracing/offline/main.slang offline_pathtracing
+    DEFINES BDPT=0 ENTRIES raygenMain missMain visibilityMissMain closestHitMain)
+foreach(depth IN ITEMS 4 8 16 32 64)
+    renderlab_shader(offline_bdpt raytracing/offline/main.slang "offline_bdpt.depth${depth}"
+        DEFINES BDPT=1 BDPT_MAX_DEPTH=${depth} ENTRIES raygenMain missMain visibilityMissMain closestHitMain)
+endforeach()
+foreach(bdpt IN ITEMS 0 1)
+    renderlab_shader(offline_resolve raytracing/offline/resolve.slang "offline_resolve.${bdpt}"
+        DEFINES BDPT=${bdpt} ENTRIES computeMain)
+endforeach()
 renderlab_shader(svgf_reprojection raytracing/realtime/svgf_reprojection.slang svgf_reprojection
-    ENTRIES computeMain INCLUDES "${SHADER_SOURCE_DIR}/common/scene_data.slang" "${SHADER_SOURCE_DIR}/common/scene_uniforms.slang"
-        "${SHADER_SOURCE_DIR}/raytracing/realtime/svgf_common.slang")
+    ENTRIES computeMain)
 foreach(stage IN ITEMS 0 1 2)
     set(binary svgf_filter)
     if(stage EQUAL 0)
@@ -202,7 +176,7 @@ foreach(stage IN ITEMS 0 1 2)
         string(APPEND binary ".final")
     endif()
     renderlab_shader(svgf_filter raytracing/realtime/svgf_filter.slang "${binary}" ENTRIES computeMain
-        DEFINES SVGF_STAGE=${stage} INCLUDES "${SHADER_SOURCE_DIR}/raytracing/realtime/svgf_common.slang")
+        DEFINES SVGF_STAGE=${stage})
 endforeach()
 renderlab_shader_manifests()
 
@@ -272,6 +246,7 @@ add_library(RenderLabRuntime STATIC
         src/editor/MeshImportPreview.cpp
         src/editor/MeshImportPreview.h
         src/asset/AssetManager.cpp
+        src/asset/AssetPersistence.cpp
         src/asset/Asset.h
         src/asset/AssetID.h
         src/asset/ImageFormat.h
@@ -293,6 +268,7 @@ add_library(RenderLabRuntime STATIC
         src/asset/import/ImportScene.cpp
         src/asset/import/GltfImport.h
         src/asset/import/GltfImport.cpp
+        src/asset/import/GltfLoader.cpp
         src/asset/import/AssimpImport.h
         src/asset/import/AssimpImport.cpp
         src/asset/import/ModelImport.h
@@ -327,6 +303,9 @@ add_library(RenderLabRuntime STATIC
         src/render/Renderer.cpp
         src/render/Renderer.h
         src/render/RendererConfig.h
+        src/render/ExposureConfig.h
+        src/render/postprocess/ExposurePass.h
+        src/render/postprocess/ExposurePass.cpp
         src/render/RenderView.h
         src/render/ViewportRect.cpp
         src/render/ViewportRect.h
@@ -506,10 +485,10 @@ target_precompile_headers(RenderLabRuntime PRIVATE
         <nlohmann/json.hpp>
         <vulkan/vulkan_raii.hpp>
 )
+target_precompile_headers(RenderLab REUSE_FROM RenderLabRuntime)
 
-include(CTest)
+option(BUILD_TESTING "Enable manual validation tools" OFF)
 renderlab_copy_compiler_runtime(RenderLab)
 if (BUILD_TESTING)
-    find_package(GTest CONFIG REQUIRED)
-    add_subdirectory(test)
+    add_subdirectory(test EXCLUDE_FROM_ALL)
 endif ()

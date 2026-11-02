@@ -1,8 +1,7 @@
 #pragma once
 
-#include <cmath>
-
 #include "asset/SamplerAsset.h"
+#include "render/ExposureConfig.h"
 
 enum class RenderPath
 {
@@ -24,12 +23,29 @@ enum class CascadeSplitStrategy
     Uniform,
 };
 
+enum class OfflineAlgorithm
+{
+    PT,
+    BDPT,
+};
+
+enum class BdptLightSelection
+{
+    Uniform,
+    Power,
+};
+
+enum class BdptMisHeuristic
+{
+    Balance,
+    Power,
+};
+
 // Maximum surface scattering events; terminal emission is evaluated after the last bounce.
-inline constexpr uint32_t kMinPathBounces         = 1;
-inline constexpr uint32_t kMaxPathBounces         = 64;
-inline constexpr float    kExposureCalibration    = 1.2f;
-inline constexpr uint32_t kMaxBloomLevels         = 6;
-inline constexpr uint32_t kMaxSvgfHistoryLength   = 1024;
+inline constexpr uint32_t kMinPathBounces       = 1;
+inline constexpr uint32_t kMaxPathBounces       = 64;
+inline constexpr uint32_t kMaxBloomLevels       = 6;
+inline constexpr uint32_t kMaxSvgfHistoryLength = 1024;
 
 struct RenderFeature
 {
@@ -61,14 +77,8 @@ struct RenderFeature
 
     struct ToneMapping
     {
-        float               ev100                = 0.0f;
-        float               exposureCompensation = 0.0f;  // Stops: +1 doubles brightness.
+        ExposureConfig      exposure;
         ToneMappingOperator mode                 = ToneMappingOperator::Neutral;
-
-        [[nodiscard]] float exposureScale() const
-        {
-            return std::exp2(exposureCompensation - ev100) / kExposureCalibration;
-        }
     } toneMapping;
 
     struct Bloom
@@ -82,15 +92,39 @@ struct RenderFeature
 
     struct RayTracing
     {
-        uint32_t maxBounces          = 3;
-        bool     svgf                = true;
-        uint32_t historyLength       = 32;  // Arithmetic averaging through this sample count.
-        float    emaAlpha            = 0.1f;  // Current-sample weight after historyLength samples.
+        uint32_t maxBounces    = 3;
+        bool     svgf          = true;
+        uint32_t historyLength = 32;    // Arithmetic averaging through this sample count.
+        float    emaAlpha      = 0.1f;  // Current-sample weight after historyLength samples.
     } rayTracing;
 
     struct Offline
     {
-        uint32_t maxBounces = 2;
+        OfflineAlgorithm algorithm = OfflineAlgorithm::PT;
+
+        struct PathTracing
+        {
+            uint32_t maxBounces = 2;
+
+            bool operator==(const PathTracing&) const = default;
+        } pt;
+
+        struct Bidirectional
+        {
+            uint32_t           maxBounces     = 6;
+            bool               lightTracing   = true;
+            BdptLightSelection lightSelection = BdptLightSelection::Power;
+            BdptMisHeuristic   misHeuristic   = BdptMisHeuristic::Balance;
+
+            bool operator==(const Bidirectional&) const = default;
+        } bdpt;
+
+        [[nodiscard]] uint32_t maxBounces() const
+        {
+            return algorithm == OfflineAlgorithm::PT ? pt.maxBounces : bdpt.maxBounces;
+        }
+
+        bool operator==(const Offline&) const = default;
     } offline;
 };
 

@@ -1,6 +1,9 @@
 #pragma once
 
+#include "render/ExposureConfig.h"
+
 #include <glm/vec3.hpp>
+#include <optional>
 
 struct EditorCameraConfig
 {
@@ -15,4 +18,6 @@ struct EditorCameraConfig
     float     mouseSensitivity = 0.12f;
     float     speed            = 3.0f;
     float     sprintMultiplier = 3.0f;
+
+    std::optional<ExposureConfig> exposure;
 };

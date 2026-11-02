@@ -1,13 +1,13 @@
 # PBRT 资产转换与离线渐进渲染
 
-导入阶段通过固定版本的 PBRT 前端读取场景，转换为 RenderLab 资产，并生成标记为 Offline 的 SceneAsset。运行时读取转换结果，准备独立的离线材质与纹理指令，再进行渐进式 diffuse 路径追踪。
+导入阶段通过固定版本的 PBRT 前端读取场景，转换为 RenderLab 资产，并生成标记为 Offline 的 SceneAsset。运行时读取转换结果，准备独立的离线材质与纹理指令，再进行渐进式路径追踪。
 
 ## 数据组织
 
 | 数据 | 内部表示 |
 | --- | --- |
 | 场景与实例 | SceneAsset、AStaticMesh、共享 MeshAsset，变换保存为 TRS × base |
-| 材质 | PbrtMaterial 按模型保存参数，标量与光谱输入通过 ID 引用纹理节点 |
+| 材质 | [PbrtMaterial](pbrt/材质.md)，按模型保存参数并引用纹理节点 |
 | 纹理函数 | PbrtTextureAsset 保存模型 variant、输入引用和坐标映射 |
 | 图像 | TextureAsset 保存线性 RGBA32F 与 mip，SamplerAsset 保存基础采样设置 |
 | 光源 | 解析光源组件、环境光组件，以及绑定子网格的 MeshAreaLightComponent |
@@ -38,23 +38,16 @@ RenderLab --import-pbrt-scene <source>
 
 ## 离线路径
 
-Renderer 读取 PbrtMaterial，复用网格、图像、采样器和全局图像描述符。OfflineScene 分别准备纹理表达式与材质预览数据。纹理编译为后缀指令，由 `texture.slang` 求值；金属、次表面、毛发等颜色近似由 `material.slang` 处理，混合材质按子材质在前的顺序求值。纹理与材质混合各使用 64 项值栈，指令、映射类型与栈容量由 CPU 和 shader 共享定义。当前全局图像表上限为 128，采样器表上限为 32。材质与纹理表在内容变化时重新准备与上传。
+Renderer 复用网格、图像、采样器和全局图像描述符，OfflineScene 准备材质与纹理数据。散射模型、参数传递和颜色近似见 [材质](pbrt/材质.md)。
 
-shader 每个样本循环追踪多次反弹，统一使用 diffuse BRDF，材质 RGB 求值结果作为反照率。point / spot、distant 和 area 分别使用蓄水池，area 与 BRDF 采样执行 MIS；路径未命中时读取环境光。独立反弹配置默认 2 次，修改时重新累积。网格实例共享 BLAS，TLAS 保持每帧完整构建。每个样本始终使用 Sobol 序列进行像素内抖动；每帧样本做算术平均，修改相机、几何、材质或光源时重新累积。各类 PBRT 光源已进入按类型划分的离线 GPU 数组，发光几何体按三角形展开，详见 [光源](pbrt/光源.md)。
+离线算法在编辑器中选择 PT / BDPT，各自保存反弹配置。PT 默认 2 次散射，point / spot、distant 和 area 分别使用蓄水池，area 与 BRDF 采样执行 MIS；路径未命中时读取环境光。[BDPT](pbrt/BDPT.md) 默认 6 次散射，生成双向子路径并连接，包含光路到相机的 splat 和全路径 MIS。修改算法或采样参数时重新累积。网格实例共享 BLAS，TLAS 保持每帧完整构建。每个样本始终使用 Sobol 序列进行像素内抖动；每帧样本做算术平均，修改相机、几何、材质或光源时重新累积。各类 PBRT 光源已进入按类型划分的离线 GPU 数组，发光几何体按三角形展开，详见 [光源](pbrt/光源.md)。
 
 | 内容 | 当前预览处理 |
 | --- | --- |
-| RGB 光谱 | 直接使用 RGB 数值，色域信息保存在资产中 |
-| 采样光谱、黑体 | 在 610、550、460 nm 取样或计算相对值 |
-| 命名光谱、外部光谱文件 | 中性白色占位 |
 | 程序纹理 | 简化图案和噪声，噪声最多执行 12 个 octave |
 | Ptex | 逐三角形检查格占位，完整资源保存在资产中 |
-| 实测 BRDF、具名散射 | 中性表面颜色占位 |
-| 次表面、毛发 | 从现有参数生成表面颜色近似 |
-| 光源 | point / spot / distant / area 参与直接光，环境光通过路径未命中求值，projection / goniometric 继续保存并上传 |
-| 介质、alpha、法线图 | 保存资产数据，待后续渲染接入 |
+| 光源 | point / spot / distant / area 参与光照，环境光支持路径命中及 BDPT 发射 / 直接采样，projection / goniometric 继续保存并上传 |
+| 介质 | 保存资产数据，待后续渲染接入 |
 | 过滤 | 从基础 mip 求值，完整过滤参数继续保存 |
-
-当前路径使用材质颜色近似进行 diffuse 光照。后续可逐步接入完整 PBRT 材质散射、精确光谱求值、纹理足迹、Ptex 解码和体积传播。
 
 优化点包括纹理图公共子表达式复用、表的增量更新，以及图像存储精度和过滤实现。

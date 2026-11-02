@@ -64,16 +64,16 @@ Binding 0 为全局 `MaterialData` SSBO，Binding 1 为 128 项纹理数组，Bi
 | Skybox | Scene、Light | `SkyboxPushConstants`，16 B |
 | DeferredLighting | Scene、Light、G-buffer、Shadow | `DeferredLightingPushConstants`，16 B |
 | Realtime RayTracing | Scene、Light、Material、光追私有资源 | `PathTracingParameters`，48 B |
-| OfflinePathTracing | Scene、Light、Material、离线私有资源 | `OfflinePathParameters`，64 B |
+| OfflinePathTracing | Scene、空 Set、Material、离线私有资源 | `OfflinePathParameters`，112 B |
 
-光栅 Push Constant 用于 Vertex / Fragment，光追 Push Constant 用于 Raygen。SVGFReprojection 使用 Scene 和自己的 Set 1；SVGFFilter 使用自己的 Set 0。
+光栅 Push Constant 用于 Vertex / Fragment，实时光追用于 Raygen，离线参数用于 Raygen / Compute。离线 Set 1 留空，光源由私有 Set 提供。SVGFReprojection 使用 Scene 和自己的 Set 1；SVGFFilter 使用自己的 Set 0。
 
 光追私有 Set 3 的编号由 [RayTracingBindings.h](../src/render/raytracing/RayTracingBindings.h) 统一定义，CPU 与 shader 共用。
 
 | 路线 | Binding 排列 |
 | --- | --- |
 | 实时 | 0：TLAS；1：命中数据；2：合并颜色或直接光；3：深度；4：法线；5：间接光；6：emission；7：albedo |
-| 离线 | 0：TLAS；1：命中数据；2：材质预览；3：纹理指令；4：发光网格共享参数；5–11：point / spot / distant / 三角形 / infinite / projection / goniometric；12：portal 顶点；13：累积缓冲；14：颜色输出 |
+| 离线 | 0：TLAS；1：命中数据；2：材质预览；3：纹理指令；4：发光网格共享参数；5–11：point / spot / distant / 三角形 / infinite / projection / goniometric；12：portal 顶点；13：累积缓冲；14：颜色输出；15：BDPT splat；16：BDPT 光源 alias table |
 
 实时光追的 Binding 5–7 用于 SVGF，SVGF 开关重建图并选择匹配的 Shader。
 

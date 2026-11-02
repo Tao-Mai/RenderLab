@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_TEXTURE_DATA_SLANG
 #define RENDERLAB_TEXTURE_DATA_SLANG
 
-static const uint kMaxMaterialTextures = 128;
+static const uint kMaxMaterialTextures = 1024;
 static const uint kMaxMaterialSamplers = 32;
 struct TextureRef { uint textureIndex; uint samplerIndex; };
 

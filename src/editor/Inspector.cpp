@@ -5,7 +5,92 @@
 #include "editor/EditorCameraConfig.h"
 #include "scene/AActor.h"
 
-bool drawCameraInspector(EditorCameraConfig& camera)
+bool drawExposureSettings(ExposureConfig& exposure)
+{
+    int  mode   = static_cast<int>(exposure.mode);
+    bool edited = ImGui::Combo("Exposure mode", &mode, "Manual\0Automatic\0");
+    if (edited)
+    {
+        exposure.mode = static_cast<ExposureMode>(mode);
+    }
+
+    if (exposure.mode == ExposureMode::Manual)
+    {
+        edited =
+            ImGui::DragFloat("EV100", &exposure.ev100, 0.05f, -10.0f, 30.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp) ||
+            edited;
+        ImGui::SetItemTooltip("Higher EV100 darkens the image; +1 halves linear brightness.");
+    }
+    else
+    {
+        auto& automatic = exposure.automatic;
+        edited          = ImGui::DragFloatRange2(
+                     "EV100 range",
+                     &automatic.minEv100,
+                     &automatic.maxEv100,
+                     0.05f,
+                     -16.0f,
+                     24.0f,
+                     "%.2f",
+                     "%.2f",
+                     ImGuiSliderFlags_AlwaysClamp
+                 ) ||
+            edited;
+
+        edited = ImGui::DragFloat(
+                     "Adapt to bright",
+                     &automatic.brightAdaptationSpeed,
+                     0.05f,
+                     0.01f,
+                     20.0f,
+                     "%.2f /s",
+                     ImGuiSliderFlags_AlwaysClamp
+                 ) ||
+            edited;
+        edited = ImGui::DragFloat(
+                     "Adapt to dark",
+                     &automatic.darkAdaptationSpeed,
+                     0.05f,
+                     0.01f,
+                     20.0f,
+                     "%.2f /s",
+                     ImGuiSliderFlags_AlwaysClamp
+                 ) ||
+            edited;
+
+        edited = ImGui::SliderFloat(
+                     "Low percentile",
+                     &automatic.lowPercentile,
+                     0.0f,
+                     automatic.highPercentile - 0.001f,
+                     "%.3f"
+                 ) ||
+            edited;
+        edited = ImGui::SliderFloat(
+                     "High percentile",
+                     &automatic.highPercentile,
+                     automatic.lowPercentile + 0.001f,
+                     1.0f,
+                     "%.3f"
+                 ) ||
+            edited;
+    }
+
+    edited = ImGui::DragFloat(
+                 "Exposure compensation (stops)",
+                 &exposure.exposureCompensation,
+                 0.05f,
+                 -10.0f,
+                 10.0f,
+                 "%.2f",
+                 ImGuiSliderFlags_AlwaysClamp
+             ) ||
+        edited;
+
+    return edited;
+}
+
+bool drawCameraInspector(EditorCameraConfig& camera, const ExposureConfig& globalExposure)
 {
     bool edited = false;
     if (ImGui::CollapsingHeader("Editor camera"))
@@ -67,6 +152,30 @@ bool drawCameraInspector(EditorCameraConfig& camera)
             "%.1f",
             ImGuiSliderFlags_AlwaysClamp
         );
+
+        ImGui::SeparatorText("Exposure");
+        ImGui::PushID("CameraExposure");
+        bool overrideExposure = camera.exposure.has_value();
+        if (ImGui::Checkbox("Override global exposure", &overrideExposure))
+        {
+            if (overrideExposure)
+            {
+                camera.exposure = globalExposure;
+            }
+            else
+            {
+                camera.exposure.reset();
+            }
+            edited = true;
+        }
+
+        if (camera.exposure)
+        {
+            edited = drawExposureSettings(*camera.exposure) || edited;
+        }
+        ImGui::PopID();
+
+        ImGui::SeparatorText("Navigation");
         edited |= ImGui::DragFloat(
             "Camera sensitivity",
             &camera.mouseSensitivity,

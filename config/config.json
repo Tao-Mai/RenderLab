@@ -1,6 +1,6 @@
 {
     "initialScene": {
-        "value": "veach_bidir"
+        "value": "bistro"
     },
     "paths": {
         "assets": "../assets",

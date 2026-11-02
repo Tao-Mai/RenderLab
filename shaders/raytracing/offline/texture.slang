@@ -5,7 +5,6 @@
 #include "common/constant.slang"
 #include "render/raytracing/offline/OfflineShaderTypes.h"
 
-
 struct TextureInstruction
 {
     uint4 metadata;
@@ -29,6 +28,7 @@ float valueNoise(float3 p)
     float b = lerp(noiseHash(cell + float3(0, 1, 0)), noiseHash(cell + float3(1, 1, 0)), f.x);
     float c = lerp(noiseHash(cell + float3(0, 0, 1)), noiseHash(cell + float3(1, 0, 1)), f.x);
     float d = lerp(noiseHash(cell + float3(0, 1, 1)), noiseHash(cell + float3(1, 1, 1)), f.x);
+
     return lerp(lerp(a, b, f.y), lerp(c, d, f.y), f.z) * 2.0 - 1.0;
 }
 
@@ -39,6 +39,7 @@ float2 textureUv(TextureInstruction node, float2 uv, float3 p)
     {
         return uv * node.uvScaleOffset.xy + node.uvScaleOffset.zw;
     }
+
     float3 local = mul(node.textureFromWorld, float4(p, 1.0)).xyz;
     if (mapping == OfflineTextureMapping::Spherical || mapping == OfflineTextureMapping::Cylindrical)
     {
@@ -47,9 +48,11 @@ float2 textureUv(TextureInstruction node, float2 uv, float3 p)
         {
             phi += 2.0 * PI;
         }
+
         return float2(phi / (2.0 * PI), mapping == OfflineTextureMapping::Spherical
             ? acos(clamp(normalize(local).z, -1.0, 1.0)) / PI : local.z);
     }
+
     return float2(dot(local, node.uAxisKind.xyz), dot(local, node.vAxis.xyz)) + node.uvScaleOffset.zw;
 }
 
@@ -139,6 +142,7 @@ float3 evaluateTexture(uint program, float2 uv, float3 position, float3 normal, 
                 {
                     p *= node.value.x;
                 }
+
                 float result = 0.0, amplitude = 1.0;
                 for (uint octave = 0; octave < uint(node.settings.y); ++octave)
                 {
@@ -171,6 +175,7 @@ float3 evaluateTexture(uint program, float2 uv, float3 position, float3 normal, 
         }
         values[depth++] = value;
     }
+
     return values[0];
 }
 #endif

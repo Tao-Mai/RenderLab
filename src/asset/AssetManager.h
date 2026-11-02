@@ -3,7 +3,6 @@
 #include "asset/AssetTypes.h"
 #include "asset/BuiltinAssets.h"
 #include "core/Logger.h"
-#include "core/Serializer.h"
 
 #include <filesystem>
 #include <memory>
@@ -55,18 +54,8 @@ public:
         using Base = typename T::ID::AssetClass;
         static_assert(AssetType<Base> && std::derived_from<T, Base>);
         static_assert(!std::is_polymorphic_v<Base> || !std::same_as<T, Base>, "save a concrete derived asset");
-        CHECK(!asset.id.empty(), "asset has empty id");
-        const typename T::ID id = asset.id;
-        const auto file = root / Base::dir / (id.value + ".json");
-        std::unique_ptr<Base> owned = std::make_unique<T>(std::move(asset));
-        if constexpr (std::is_polymorphic_v<Base>)
-            asset_json::save(file, owned);
-        else
-            asset_json::save(file, *owned);
 
-        assetMap<Base>().insert_or_assign(id, std::move(owned));
-        std::get<RevisionMap<Base>>(revisions)[id] = ++nextRevision;
-        return id;
+        return saveAsset<Base>(std::make_unique<T>(std::move(asset)));
     }
 
     template <AssetType T>
@@ -106,6 +95,9 @@ private:
 
     void loadAll();
     void clear();
+
+    template <AssetType T>
+    typename T::ID saveAsset(std::unique_ptr<T> asset);
 
     template <AssetType T>
     [[nodiscard]] AssetMap<T>& assetMap()

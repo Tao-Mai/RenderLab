@@ -62,6 +62,7 @@ inline constexpr uint32_t kMaterialSamplersBinding = 2;
 // Tone mapping uses its own set 0, not the scene layout.
 inline constexpr uint32_t kToneMappingImageBinding   = 0;
 inline constexpr uint32_t kToneMappingSamplerBinding = 1;
+inline constexpr uint32_t kToneMappingExposureBinding = 2;
 }  // namespace RenderInterface
 
 // Matches the std140 SceneUniforms block in shaders/common/scene_data.slang.
@@ -248,10 +249,9 @@ struct DeferredLightingPushConstants
 
 struct ToneMappingPushConstants
 {
-    float    exposureScale = 1.0f;
     uint32_t mode          = 0;
     uint32_t encodeSrgb    = 0;
-    uint32_t padding       = 0;
+    uint32_t padding[2]{};
 };
 
 static_assert(sizeof(MeshPushConstants) == 80);
@@ -262,5 +262,5 @@ static_assert(offsetof(ShadowPushConstants, cascadeIndex) == 68);
 static_assert(sizeof(SkyboxPushConstants) == 16);
 static_assert(sizeof(DeferredLightingPushConstants) == 16);
 static_assert(sizeof(ToneMappingPushConstants) == 16);
-static_assert(offsetof(ToneMappingPushConstants, mode) == 4);
-static_assert(offsetof(ToneMappingPushConstants, encodeSrgb) == 8);
+static_assert(offsetof(ToneMappingPushConstants, mode) == 0);
+static_assert(offsetof(ToneMappingPushConstants, encodeSrgb) == 4);

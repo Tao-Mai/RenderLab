@@ -17,7 +17,7 @@ Shader 编译统一将 `shaders` 和 `src` 加入 include 搜索目录。Shader 
 | Forward | DepthPrepass → ScenePass → Skybox → Transparent | 基础 PBR、Clearcoat、Sheen 与透明物体 |
 | Deferred | DepthPrepass → GBuffer → DeferredLighting → Skybox → Transparent | 统一材质缓冲与全屏光照 |
 | Ray Tracing | BLAS / TLAS 构建 → RayTracing → 可选 SVGFReprojection → 五级 SVGFFilter | 分路累积、方差估计与多尺度滤波；末级直接合成 |
-| Offline | BLAS / TLAS 构建 → OfflinePathTracing | PBRT 材质与纹理的渐进式 RGB 预览 |
+| Offline | BLAS / TLAS 构建 → OfflinePathTracing（PT / BDPT）→ Resolve | PBRT 场景的渐进式离线渲染 |
 
 光栅路线在需要时加入 ShadowPass。光源标记在线性场景颜色上绘制，随后一起经过 Bloom（可选）与 ToneMapping；光追关闭 HDR 时通过 Blit 输出。UI 在后处理之后绘制，拾取仍使用独立阶段。
 
@@ -47,14 +47,23 @@ Shader 入口：[realtime.slang](../shaders/raytracing/realtime/realtime.slang)�
 
 ### 离线路径追踪
 
-Shader 入口：[path_tracing.slang](../shaders/raytracing/offline/path_tracing.slang)。材质预览和纹理求值位于 `raytracing/offline`，Sobol 采样位于 `shaders/common`，转换规则见 [PBRT 转换文档](PbrtConversion.md)。
+Shader 入口：[main.slang](../shaders/raytracing/offline/main.slang)。材质预览和纹理求值位于 `raytracing/offline`，Sobol 采样位于 `shaders/common`，转换规则见 [PBRT 转换文档](PbrtConversion.md)。
+
+入口通过条件编译选择 [pt.slang](../shaders/raytracing/offline/pt.slang) 或 [bdpt.slang](../shaders/raytracing/offline/bdpt.slang)，两者提供相同的 `tracePath` 调用接口。入口负责相机主射线、交点回传和累计写入，具体路径算法由各自头文件实现。
 
 - 使用独立 Pass 和 Shader，活动 Frames-in-flight 为 1。
-- 每个样本始终使用 Owen 扰乱 Sobol 序列进行像素内抖动，FP32 缓冲保存颜色总和，再除以样本数。
+- 每个样本始终使用 Owen 扰乱 Sobol 序列进行像素内抖动，FP32 缓冲保存颜色总和并记录各像素样本数。BDPT 分块推进，按实际完成的相机样本与发射路径数量分别归一化，持续刷新预览。
 - 几何、相机、材质、光源、反弹次数或图重建变化时重新累积，曝光等显示参数调整时保留累积。
-- 默认最多两次表面散射，使用 diffuse BRDF。point / spot、distant、area 分别执行蓄水池采样，area 与 BRDF 采样做 MIS，输出接入 HDR 后处理。光源和限制见 [PBRT 光源](pbrt/光源.md)。
+- 编辑器通过互斥的 Algorithm 选择 PT / BDPT，并显示各自参数。PT 默认两次表面散射，point / spot、distant、area 分别执行蓄水池采样，area 与 BRDF 做 MIS。BDPT 默认六次散射，连接相机和光源子路径，包含光路投影到相机的 splat 与完整路径 MIS，见 [BDPT](pbrt/BDPT.md)。
+- 散射实现见 [PBRT 材质](pbrt/材质.md)，光源和限制见 [PBRT 光源](pbrt/光源.md)。两种算法均通过 Compute Resolve 输出颜色，再接入 HDR 后处理。
 
 ## 帧与资源
+
+曝光在逐帧准备时选择配置：`editorCamera.exposure` 优先，否则使用全局 `toneMapping.exposure`。两处均支持手动和自动模式，色调映射算法由全局配置选择。
+
+[ExposurePass](../src/render/postprocess/ExposurePass.h) 在灯光标记和 Bloom 之前处理曝光。自动模式每隔两个像素测光，将线性 HDR 亮度映射到 256 档对数直方图，按配置裁掉两端百分位后计算代表亮度，并换算为目标 EV100。目标值限制在 EV 范围内，依据帧时间和明暗适应速度进行指数平滑；首次有效测光、切换场景和图重建时直接初始化。全黑画面保留已有曝光，等待首次有效测光。手动模式直接使用配置值。
+
+曝光状态保存在 GPU 缓冲中，由 ToneMappingPass 直接读取并作用于线性 HDR 结果。曝光补偿同时适用于两种模式，曝光调整保留离线光照累计。
 
 - 默认两帧在途，每个槽位有独立 FrameContext、FrameData；复用前等待对应 Fence。
 - FrameData 持有逐帧 Scene / Light / Shadow UBO、独立的公共 Set 和绑定版本；共享光源 Buffer handle 归 Renderer，阴影 CPU 数据与 Buffer handle 归 ShadowPass。

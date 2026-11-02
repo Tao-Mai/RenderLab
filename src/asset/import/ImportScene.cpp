@@ -5,6 +5,8 @@
 #include "asset/import/ModelImport.h"
 #include "core/Context.h"
 #include "scene/actor/AStaticMesh.h"
+#include "scene/actor/ALight.h"
+#include "scene/component/LightTypes.h"
 #include "scene/component/RenderComponent.h"
 
 #include <algorithm>
@@ -52,6 +54,52 @@ void importCamera(EditorCameraConfig& camera, const ModelImport::Camera& source)
         camera.farPlane = source.farPlane;
     CHECK(camera.farPlane > camera.nearPlane);
 }
+
+std::unique_ptr<ALight> importLight(const ModelImport::Node& node)
+{
+    const auto&                     source = *node.light;
+    std::unique_ptr<LightComponent> component;
+    if (source.type == ModelImport::Light::Type::Directional)
+    {
+        auto light         = std::make_unique<DirectionalLightComponent>();
+        light->illuminance = source.intensity;
+        component          = std::move(light);
+    }
+    else
+    {
+        std::unique_ptr<LocalLightComponent> light;
+        if (source.type == ModelImport::Light::Type::Spot)
+        {
+            auto spot      = std::make_unique<SpotLightComponent>();
+            spot->cosInner = source.cosInner;
+            spot->cosOuter = source.cosOuter;
+            light          = std::move(spot);
+        }
+        else
+        {
+            light = std::make_unique<PointLightComponent>();
+        }
+        light->luminousIntensity = source.intensity;
+        light->range             = source.range;
+        component                = std::move(light);
+    }
+    component->color = source.color;
+
+    // Light ranges and intensity ignore node scale; its transformed -Z axis supplies the direction.
+    CHECK(
+        glm::length(glm::vec3{node.world[2]}) > 0.0f &&
+            glm::length(glm::cross(glm::vec3{node.world[0]}, glm::vec3{node.world[2]})) > 0.0f,
+        "degenerate light transform on node {}",
+        node.index
+    );
+    const glm::vec3 forward     = glm::normalize(-glm::vec3{node.world[2]});
+    const glm::vec3 up          = glm::normalize(glm::cross(glm::vec3{node.world[0]}, forward));
+    auto            actor       = std::make_unique<ALight>(std::move(component));
+    actor->name                 = node.name.empty() ? "ALight" + std::to_string(node.index) : node.name;
+    actor->transform().position = glm::vec3{node.world[3]};
+    actor->transform().rotation = glm::quatLookAtRH(forward, up);
+    return actor;
+}
 }  // namespace
 
 AssetID<SceneAsset> AssetImporter::importScene(const ImportSceneSetting& setting)
@@ -71,6 +119,10 @@ AssetID<SceneAsset> AssetImporter::importScene(const ImportSceneSetting& setting
         {
             if (node.camera && !camera)
                 camera = node.camera;
+
+            if (node.light)
+                scene.actors.push_back(importLight(node));
+
             for (uint32_t meshIndex : node.meshes)
             {
                 auto& mesh = meshes[meshIndex];
@@ -92,8 +144,12 @@ AssetID<SceneAsset> AssetImporter::importScene(const ImportSceneSetting& setting
                 actor->name = node.name.empty() ? "AStaticMesh" + std::to_string(node.index) : node.name;
                 if (node.meshes.size() > 1)
                     actor->name += "_" + std::to_string(meshIndex);
-                CHECK(actor->transform().setMatrix(node.world), "invalid model node {} transform: {}",
-                      node.index, source.string());
+                CHECK(
+                    actor->transform().setMatrix(node.world),
+                    "invalid model node {} transform: {}",
+                    node.index,
+                    source.string()
+                );
                 actor->getComponent<RenderComponent>()->meshId = *mesh.id;
                 scene.actors.push_back(std::move(actor));
 

@@ -221,8 +221,18 @@ EditorUI::InspectorResult EditorUI::drawInspector(SceneAsset& scene, AActor* obj
         ImGui::TextUnformatted(sceneName.data(), sceneName.data() + sceneName.size());
     }
 
+    auto& config                 = *context().config;
+    bool  lightMarkersAndPicking = config.editorConfig().lightMarkersAndPicking;
+    if (ImGui::Checkbox("Light markers and picking", &lightMarkersAndPicking))
+    {
+        config.setLightMarkersAndPicking(lightMarkersAndPicking);
+    }
+
     InspectorResult result;
-    result.edited |= drawCameraInspector(scene.editorCamera);
+    result.edited |= drawCameraInspector(
+        scene.editorCamera,
+        context().config->rendererConfig().feature.toneMapping.exposure
+    );
 
     result.edited |= drawRendererSettings(
         *context().config,

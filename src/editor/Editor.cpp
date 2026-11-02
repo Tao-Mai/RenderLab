@@ -1,6 +1,7 @@
 #include "editor/Editor.h"
 
 #include "asset/Asset.h"
+#include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "core/Window.h"
@@ -132,11 +133,18 @@ Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapcha
         }
     }
 
-    Frame frame;
-    auto& input    = frame.input;
+    EditorUI::InspectorResult inspector = ui.drawInspector(context().sceneManager->scene(), selectedActor, dirty);
+    if (inspector.edited)
+    {
+        dirty = true;
+    }
+
+    const bool lightMarkersAndPicking = context().config->editorConfig().lightMarkersAndPicking;
+    Frame      frame;
+    auto&      input = frame.input;
     input.recordUi = [this](VkCommandBuffer commandBuffer) { backend.render(commandBuffer); };
 
-    if (!camera.isNavigationActive())
+    if (lightMarkersAndPicking && !camera.isNavigationActive())
     {
         glm::vec2 clickNdc;
         if (ui.sceneClicked(clickNdc))
@@ -156,14 +164,13 @@ Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapcha
         }
     }
 
-    EditorUI::InspectorResult inspector = ui.drawInspector(context().sceneManager->scene(), selectedActor, dirty);
-    if (inspector.edited)
-    {
-        dirty = true;
-    }
     frame.view = camera.renderView(ui.sceneViewportPixels());
-    lightMarkers.prepare(context().sceneManager->scene(), *renderContext().resources);
-    input.lightDrawItems = lightMarkers.drawItems();
+    if (lightMarkersAndPicking)
+    {
+        lightMarkers.prepare(context().sceneManager->scene(), *renderContext().resources);
+        input.lightDrawItems = lightMarkers.drawItems();
+    }
+
     ui.endFrame();
     return frame;
 }

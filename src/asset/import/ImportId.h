@@ -1,7 +1,6 @@
 #pragma once
 
 #include "asset/AssetManager.h"
-#include "core/ConfigManager.h"
 #include "core/Context.h"
 
 #include <cstdint>
@@ -16,7 +15,7 @@ namespace asset_import
 [[nodiscard]] inline std::filesystem::path sourcePathForAsset(
     const std::filesystem::path& source)
 {
-    const auto assetsRoot = context().config->paths().assets;
+    const auto& assetsRoot = context().assetManager->rootPath();
     const auto projectRoot = assetsRoot.parent_path();
     const auto absoluteSource = std::filesystem::absolute(source).lexically_normal();
     std::error_code error;

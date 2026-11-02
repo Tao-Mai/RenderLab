@@ -52,6 +52,7 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
     data.offlineLights.clear();
     data.sceneId        = scene.id;
     data.environmentMap = scene.environmentMap;
+    data.exposure       = scene.editorCamera.exposure;
     for (const auto& actor : scene.actors)
     {
         const auto* transform = actor->getComponent<TransformComponent>();

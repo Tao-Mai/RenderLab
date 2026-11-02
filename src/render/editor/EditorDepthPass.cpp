@@ -8,6 +8,7 @@
 #include "render/RenderView.h"
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
+#include "render/editor/EditorFrameInput.h"
 #include "render/editor/EditorShaderData.h"
 #include "render/resources/GpuMesh.h"
 #include "render/resources/RenderResourceManager.h"
@@ -48,6 +49,11 @@ void EditorDepthPass::execute(
     RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
 ) const
 {
+    if (execution.editor.lightDrawItems.empty() && !execution.editor.requestPick)
+    {
+        return;
+    }
+
     const auto                        extent = graph.imageExtent(depth);
     const vk::RenderingAttachmentInfo depthAttachment{
         .imageView   = graph.getImage(depth).getOrCreateImageView({

@@ -1,4 +1,5 @@
 #include "editor/RendererSettings.h"
+#include "editor/Inspector.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -85,6 +86,7 @@ bool drawEnvironmentSelection(SceneAsset& scene, AssetManager& assets)
         ImGui::TextUnformatted("Using fallback environment lighting");
     return edited;
 }
+
 }  // namespace
 bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const VulkanContext& vulkan, SceneAsset& scene)
 {
@@ -133,21 +135,10 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
     {
         config.setRenderFeature(feature);
     }
+
     if (feature.ibl)
     {
         sceneEdited = drawEnvironmentSelection(scene, assets);
-    }
-    else if (ImGui::DragFloat(
-                 "Ambient coefficient",
-                 &feature.ambientCoefficient,
-                 0.01f,
-                 0.0f,
-                 1.0f,
-                 "%.3f",
-                 ImGuiSliderFlags_AlwaysClamp
-             ))
-    {
-        config.setRenderFeature(feature);
     }
 
     if (ImGui::CollapsingHeader("Post Process"))
@@ -169,31 +160,20 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
             feature.toneMapping.mode = static_cast<ToneMappingOperator>(toneMappingMode);
             config.setRenderFeature(feature);
         }
-        if (ImGui::DragFloat(
-                "EV100",
-                &feature.toneMapping.ev100,
-                0.05f,
-                -10.0f,
-                30.0f,
-                "%.2f",
-                ImGuiSliderFlags_AlwaysClamp
-            ))
+
+        ImGui::TextUnformatted("Global exposure");
+        ImGui::PushID("GlobalExposure");
+        if (drawExposureSettings(feature.toneMapping.exposure))
         {
             config.setRenderFeature(feature);
         }
-        ImGui::SetItemTooltip("Higher EV100 darkens the image; +1 halves linear brightness.");
-        if (ImGui::DragFloat(
-                "Exposure compensation (stops)",
-                &feature.toneMapping.exposureCompensation,
-                0.05f,
-                -10.0f,
-                10.0f,
-                "%.2f",
-                ImGuiSliderFlags_AlwaysClamp
-            ))
+        ImGui::PopID();
+
+        if (scene.editorCamera.exposure)
         {
-            config.setRenderFeature(feature);
+            ImGui::TextDisabled("Exposure overridden by Editor camera");
         }
+
         ImGui::EndDisabled();
 
         if (drawSettingsHeader("Bloom"))
@@ -234,13 +214,26 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
 
     if (config.rendererConfig().renderPath == RenderPath::OfflinePathTracing)
     {
-        if (drawSettingsHeader("Offline path tracing"))
+        if (drawSettingsHeader("Offline rendering"))
         {
             feature.offline = {};
             config.setRenderFeature(feature);
         }
-        ImGui::Text("Samples per pixel: %u", context().renderer->offlineSampleCount());
-        int maxBounces = static_cast<int>(feature.offline.maxBounces);
+
+        ImGui::Text("Samples per pixel: %.2f", context().renderer->offlineSampleProgress());
+        if (context().renderer->offlinePreparingPipeline())
+            ImGui::TextUnformatted("Preparing renderer...");
+
+        int algorithm = static_cast<int>(feature.offline.algorithm);
+        if (ImGui::Combo("Algorithm", &algorithm, "PT\0BDPT\0"))
+        {
+            feature.offline.algorithm = static_cast<OfflineAlgorithm>(algorithm);
+            config.setRenderFeature(feature);
+        }
+
+        auto& bounceSetting = feature.offline.algorithm == OfflineAlgorithm::PT ? feature.offline.pt.maxBounces
+                                                                                : feature.offline.bdpt.maxBounces;
+        int   maxBounces    = static_cast<int>(bounceSetting);
         if (ImGui::SliderInt(
                 "Max bounces",
                 &maxBounces,
@@ -250,11 +243,37 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
                 ImGuiSliderFlags_AlwaysClamp
             ))
         {
-            feature.offline.maxBounces = static_cast<uint32_t>(maxBounces);
+            bounceSetting = static_cast<uint32_t>(maxBounces);
             config.setRenderFeature(feature);
         }
         ImGui::SetItemTooltip("Maximum surface scattering events. 1 gives direct lighting plus terminal emission.");
-        ImGui::TextUnformatted("1 sample/pixel per frame; scene, camera or sampling changes reset accumulation.");
+
+        if (feature.offline.algorithm == OfflineAlgorithm::BDPT)
+        {
+            auto& bdpt   = feature.offline.bdpt;
+            bool  edited = ImGui::Checkbox("Light tracing", &bdpt.lightTracing);
+            ImGui::SetItemTooltip("Connect light subpaths to the camera, including specular caustics.");
+
+            int selection = static_cast<int>(bdpt.lightSelection);
+            if (ImGui::Combo("Light selection", &selection, "Uniform\0Power\0"))
+            {
+                bdpt.lightSelection = static_cast<BdptLightSelection>(selection);
+                edited              = true;
+            }
+
+            int heuristic = static_cast<int>(bdpt.misHeuristic);
+            if (ImGui::Combo("MIS heuristic", &heuristic, "Balance\0Power (2)\0"))
+            {
+                bdpt.misHeuristic = static_cast<BdptMisHeuristic>(heuristic);
+                edited            = true;
+            }
+
+            if (edited)
+                config.setRenderFeature(feature);
+        }
+
+        ImGui::TextUnformatted("Scene, camera or sampling changes reset accumulation.");
+
         return sceneEdited;
     }
 

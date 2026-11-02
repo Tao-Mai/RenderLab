@@ -1,9 +1,10 @@
+#include "postprocess/exposure_common.slang"
+
 struct ToneMappingParameters
 {
-    float exposureScale;
     uint mode;
     uint encodeSrgb;
-    uint padding;
+    uint2 padding;
 };
 
 [[vk::push_constant]]
@@ -14,6 +15,8 @@ Texture2D<float4> hdrColor;
 
 [[vk::binding(1, 0)]]
 SamplerState hdrSampler;
+
+[[vk::binding(2, 0)]] StructuredBuffer<ExposureState> exposureState;
 
 struct VertexOutput
 {
@@ -66,7 +69,7 @@ float linearToSrgb(float value)
 float4 fragMain(VertexOutput input) : SV_Target
 {
     float3 color = max(hdrColor.Sample(hdrSampler, input.uv).rgb, float3(0.0));
-    color *= parameters.exposureScale;
+    color *= exposureState[0].exposureScale;
     color = parameters.mode == 0 ? neutralToneMapping(color) : color / (1.0 + color);
     color = saturate(color);
 

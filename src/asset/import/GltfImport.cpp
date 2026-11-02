@@ -1,5 +1,3 @@
-#define TINYGLTF_IMPLEMENTATION
-#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <tiny_gltf.h>
 
 #include "asset/AssetImporter.h"
@@ -20,6 +18,7 @@
 #include <cstring>
 #include <functional>
 #include <map>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -587,6 +586,56 @@ void GltfImport::visitNodes(const std::function<void(const Node&)>& visitor, flo
                 .farPlane = static_cast<float>(projection.zfar) * importScale,
             };
         }
+
+        if (const auto found = node.extensions.find("KHR_lights_punctual"); found != node.extensions.end())
+        {
+            const auto& extension = found->second;
+            CHECK(extension.IsObject() && extension.Has("light") && extension.Get("light").IsInt(),
+                  "invalid glTF light on node {}: {}", nodeIndex, source.string());
+            const int index = extension.Get("light").GetNumberAsInt();
+            CHECK(index >= 0 && static_cast<size_t>(index) < model->lights.size(),
+                  "invalid glTF light index {}: {}", index, source.string());
+
+            const auto& light = model->lights[index];
+            CHECK(light.type == "directional" || light.type == "point" || light.type == "spot",
+                  "unsupported glTF light type '{}': {}", light.type, source.string());
+            CHECK(std::isfinite(light.intensity) && light.intensity >= 0.0 &&
+                      light.intensity <= std::numeric_limits<float>::max(),
+                  "invalid glTF light intensity on node {}: {}", nodeIndex, source.string());
+            CHECK(std::isfinite(light.range) && light.range >= 0.0 &&
+                      light.range * importScale <= std::numeric_limits<float>::max(),
+                  "invalid glTF light range on node {}: {}", nodeIndex, source.string());
+            CHECK(light.color.empty() || light.color.size() == 3,
+                  "invalid glTF light color on node {}: {}", nodeIndex, source.string());
+
+            glm::vec3 color{1.0f};
+            for (size_t channel = 0; channel < light.color.size(); ++channel)
+            {
+                CHECK(std::isfinite(light.color[channel]) && light.color[channel] >= 0.0 && light.color[channel] <= 1.0,
+                      "invalid glTF light color on node {}: {}", nodeIndex, source.string());
+                color[channel] = static_cast<float>(light.color[channel]);
+            }
+
+            if (light.type == "spot")
+            {
+                CHECK(std::isfinite(light.spot.innerConeAngle) && std::isfinite(light.spot.outerConeAngle) &&
+                          light.spot.innerConeAngle >= 0.0 && light.spot.innerConeAngle < light.spot.outerConeAngle &&
+                          light.spot.outerConeAngle <= glm::half_pi<double>(),
+                      "invalid glTF spot cone on node {}: {}", nodeIndex, source.string());
+            }
+
+            imported.light = Light{
+                .type = light.type == "directional" ? Light::Type::Directional :
+                    light.type == "point" ? Light::Type::Point : Light::Type::Spot,
+                .color = color,
+                .intensity = static_cast<float>(light.intensity),
+                .range = light.range > 0.0 ? static_cast<float>(light.range * importScale) :
+                    std::numeric_limits<float>::max(),
+                .cosInner = static_cast<float>(std::cos(light.spot.innerConeAngle)),
+                .cosOuter = static_cast<float>(std::cos(light.spot.outerConeAngle)),
+            };
+        }
+
         visitor(imported);
     }, importScale);
 }

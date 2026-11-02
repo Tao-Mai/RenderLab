@@ -6,7 +6,6 @@
 #include <imgui.h>
 #include <imgui_stdlib.h>
 #include "asset/import/ImportId.h"
-#include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 #ifndef WIN32_LEAN_AND_MEAN
@@ -27,7 +26,7 @@ void drawSourcePath(std::filesystem::path& source, const wchar_t* filter)
     if (ImGui::Button("Source file..."))
     {
         std::array<wchar_t, 32768> selectedFile{};
-        const std::wstring         initialDirectory = context().config->paths().assets.parent_path().wstring();
+        const std::wstring         initialDirectory = context().assetManager->rootPath().parent_path().wstring();
 
         OPENFILENAMEW dialog{};
         dialog.lStructSize     = sizeof(dialog);

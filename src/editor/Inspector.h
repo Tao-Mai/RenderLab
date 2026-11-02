@@ -1,5 +1,8 @@
 #pragma once
 class AActor;
 struct EditorCameraConfig;
-bool drawCameraInspector(EditorCameraConfig& camera);
+struct ExposureConfig;
+
+bool drawExposureSettings(ExposureConfig& exposure);
+bool drawCameraInspector(EditorCameraConfig& camera, const ExposureConfig& globalExposure);
 bool drawObjectInspector(AActor* object);

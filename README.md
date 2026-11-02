@@ -55,7 +55,12 @@ SVGF。关闭时显示当前帧采样；开启时使用 albedo 解调、历史�
   backend）、ImGuizmo、TinyGLTF、Assimp、TinyEXR、MikkTSpace、nlohmann-json、glog、zlib。
 
 在 CLion 中选择 GCC 和 vcpkg 工具链，构建 `RenderLab`，运行工作目录设为构建目录。CMake 会检查反射支持并编译
-Shader；未指定构建类型时默认使用 Release。光追路线需要支持 Vulkan 硬件光追的显卡。
+Shader；未指定构建类型时默认使用 Release。同一构建目录使用同一套 CMake / Ninja 工具链。
+光追路线需要支持 Vulkan 硬件光追的显卡。
+
+主程序与手动验证工具共用 Runtime 的预编译头。TinyGLTF 的实现和资产保存的序列化集中在独立源文件中；
+Shader 使用 Slang 生成的依赖文件跟踪实际 include，增量构建只重编受影响的变体。`BUILD_TESTING` 默认关闭，
+手动验证时开启并单独构建所需工具即可。
 
 入口配置为 [config/config.json](config/config.json)，渲染与编辑器参数分别位于 [renderer.json](config/renderer.json)
 和 [editor.json](config/editor.json)。环境图属于场景，IBL 开关属于渲染配置。

@@ -4,6 +4,7 @@
 #include <vector>
 #include "asset/EnvironmentMapAsset.h"
 #include "render/DrawItem.h"
+#include "render/ExposureConfig.h"
 #include "render/resources/ShaderData.h"
 #include "render/raytracing/offline/OfflineLightData.h"
 
@@ -20,6 +21,7 @@ struct SceneRenderData
     bool                                   operator==(const SceneRenderData&) const = default;
     AssetID<struct SceneAsset>             sceneId;
     std::optional<EnvironmentMapAsset::ID> environmentMap;
+    std::optional<ExposureConfig>         exposure;
     std::vector<DrawItem>                  drawItems;
     std::vector<RenderLight>               lights;
     std::vector<OfflineLightData>          offlineLights;

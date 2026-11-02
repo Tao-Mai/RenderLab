@@ -19,6 +19,8 @@ RENDERLAB_OFFLINE_CONSTANT kOfflineInvalidIndex = 0xffffffffu;
 RENDERLAB_OFFLINE_CONSTANT kOfflineLightHasImage = 1u << 0;
 RENDERLAB_OFFLINE_CONSTANT kOfflineLightHasPower = 1u << 1;
 RENDERLAB_OFFLINE_CONSTANT kOfflineLightHasIlluminance = 1u << 2;
+RENDERLAB_OFFLINE_CONSTANT kOfflineBdptLightTracing = 1u << 0;
+RENDERLAB_OFFLINE_CONSTANT kOfflineBdptPowerHeuristic = 1u << 1;
 
 enum class OfflineTextureOp : RENDERLAB_OFFLINE_UINT
 {
@@ -42,6 +44,7 @@ enum class OfflineMaterialPreviewModel : RENDERLAB_OFFLINE_UINT
     HairAbsorption,
     HairPigments,
     Mix,
+    ConductorColor,
 };
 
 #undef RENDERLAB_OFFLINE_UINT

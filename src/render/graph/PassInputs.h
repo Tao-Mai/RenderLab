@@ -29,5 +29,6 @@ struct PassFrame
     const RenderData&       renderData;
     const EditorFrameInput& editor;
     uint32_t                frameIndex;
+    float                   deltaSeconds;
     GpuProfiler*            gpuProfiler = nullptr;
 };

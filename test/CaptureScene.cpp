@@ -18,6 +18,7 @@
 #include "render/editor/LightMarkerPass.h"
 #include "render/postprocess/Bloom.h"
 #include "render/postprocess/ToneMappingPass.h"
+#include "render/postprocess/ExposurePass.h"
 #include "render/raytracing/offline/OfflinePathTracingPass.h"
 #include "render/raytracing/BlasBuildPass.h"
 #include "render/raytracing/realtime/RayTracingPass.h"
@@ -30,6 +31,8 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
+#include <cstring>
 #include <stb_image_write.h>
 #include <string_view>
 
@@ -48,13 +51,19 @@ struct ImageReadbackPass
 {
     RenderGraph::ImageHandle  image;
     RenderGraph::BufferHandle buffer;
+    RenderGraph::BufferHandle exposure;
+    vk::DeviceSize imageBytes;
 
-    RenderGraph::BufferHandle setup(RenderGraph& graph, const PassSetup&, RenderGraph::ImageHandle source)
+    RenderGraph::BufferHandle setup(
+        RenderGraph& graph, const PassSetup&, RenderGraph::ImageHandle source, RenderGraph::BufferHandle exposureState
+    )
     {
         image             = source;
         const auto extent = graph.imageInfo(image).extent;
+        exposure = exposureState;
+        imageBytes = vk::DeviceSize(extent.width) * extent.height * 4;
         buffer            = graph.write(graph.createBuffer({
-                       .size             = vk::DeviceSize(extent.width) * extent.height * 4,
+                       .size             = imageBytes + sizeof(ExposurePass::State),
                        .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
         }));
         graph.use(
@@ -72,6 +81,10 @@ struct ImageReadbackPass
                 .access = vk::AccessFlagBits2::eTransferWrite,
             }
         );
+        graph.use(exposure, {
+            .stages = vk::PipelineStageFlagBits2::eTransfer,
+            .access = vk::AccessFlagBits2::eTransferRead,
+        });
         return buffer;
     }
 
@@ -87,6 +100,8 @@ struct ImageReadbackPass
             graph.getBuffer(buffer).handle(),
             copy
         );
+        commands.copyBuffer(graph.getBuffer(exposure).handle(), graph.getBuffer(buffer).handle(),
+                            vk::BufferCopy{.dstOffset = imageBytes, .size = sizeof(ExposurePass::State)});
     }
 };
 
@@ -99,6 +114,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     const auto& config    = context().config->rendererConfig();
     const bool  offline   = config.renderPath == RenderPath::OfflinePathTracing;
     const bool  realtime  = config.renderPath == RenderPath::RayTracing;
+    const bool  lightMarkersAndPicking = context().config->editorConfig().lightMarkersAndPicking;
 
     std::array<FrameContext, maxFramesInFlight> frames;
     for (auto& frame : frames)
@@ -123,6 +139,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     SVGFFilter               filter;
     Bloom                    bloom;
     ToneMappingPass          toneMapping;
+    ExposurePass             exposure;
     EditorDepthPass          editorDepth;
     LightMarkerPass          lightMarker;
     ImageReadbackPass        readback;
@@ -168,7 +185,8 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
             color = graph.addPass(skybox, setup, color, sceneOutput.depth).color;
         color = graph.addPass(transparent, setup, color, sceneOutput.depth, sceneOutput.shadow, lightBuffer).color;
     }
-    if (!offline)
+    const auto exposureOutput = graph.addPass(exposure, setup, color);
+    if (!offline && lightMarkersAndPicking)
     {
         if (depthImage.id == RenderGraph::kInvalidHandle)
             depthImage = graph.addPass(editorDepth, setup).depth;
@@ -176,8 +194,8 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     }
     if (config.feature.bloom.enable)
         color = bloom.setup(graph, setup, color).color;
-    color             = graph.addPass(toneMapping, setup, color, target).color;
-    const auto buffer = graph.addPass(readback, setup, color);
+    color             = graph.addPass(toneMapping, setup, color, target, exposureOutput.state).color;
+    const auto buffer = graph.addPass(readback, setup, color, exposureOutput.state);
     graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
     graph.compile(setup);
     bindTestLightBuffer(graph, setup, lightBuffer);
@@ -189,7 +207,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     graph.beginFrame(0);
     const auto&  renderData = renderer.prepare(view, snapshot, 0);
     LightMarkers lightMarkers;
-    if (!offline)
+    if (!offline && lightMarkersAndPicking)
         lightMarkers.prepare(scenes.scene(), *renderContext().resources);
     const EditorFrameInput editor{.lightDrawItems = lightMarkers.drawItems()};
     vk::raii::Sampler      lightingSampler = nullptr;
@@ -209,15 +227,15 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     }
 
     const auto activeFrameCount = offline ? 1u : maxFramesInFlight;
-    for (uint32_t frameNumber = 0; frameNumber < frameCount; ++frameNumber)
+    for (uint32_t submitted = 0, frameNumber = 0; frameNumber < frameCount; ++submitted)
     {
-        const auto index = frameNumber % activeFrameCount;
+        const auto index = submitted % activeFrameCount;
         auto&      frame = frames[index];
         frame.wait();
-        if (frameNumber != 0)
+        if (submitted != 0)
             graph.beginFrame(index);
         uploadTestLights(graph, lightBuffer, renderData.lights);
-        const PassFrame execution{setup, frameData[index], view, renderData, editor, index};
+        const PassFrame execution{setup, frameData[index], view, renderData, editor, index, 1.0f / 60.0f};
         graph.prepare(execution);
         auto& commands = frame.commandBufferHandle();
         vkCheck(commands.reset());
@@ -230,14 +248,26 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
             vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &command},
             frame.drawFenceHandle()
         ));
-        if ((frameNumber + 1) % 64 == 0 || frameNumber + 1 == frameCount)
-            LOG_INFO("{}: frame {}/{}", scenes.scene().id, frameNumber + 1, frameCount);
+        const auto completed = offline ? tracing.sampleCount() : frameNumber + 1;
+        if (completed != frameNumber)
+        {
+            frameNumber = completed;
+            if (frameNumber % 64 == 0 || frameNumber == frameCount)
+                LOG_INFO("{}: sample {}/{}", scenes.scene().id, frameNumber, frameCount);
+        }
     }
     for (auto& frame : frames)
         frame.wait();
 
-    std::vector<uint8_t> pixels(size_t(extent.width) * extent.height * 4);
+    const auto imageBytes = size_t(extent.width) * extent.height * 4;
+    std::vector<uint8_t> pixels(imageBytes + sizeof(ExposurePass::State));
     graph.getBuffer(buffer).download(pixels.data(), pixels.size());
+    ExposurePass::State exposureState;
+    std::memcpy(&exposureState, pixels.data() + imageBytes, sizeof(exposureState));
+    CHECK(std::isfinite(exposureState.ev100) && std::isfinite(exposureState.exposureScale) && exposureState.exposureScale > 0.0f);
+    LOG_INFO("Exposure: EV100={}, scale={}, automaticValid={}",
+             exposureState.ev100, exposureState.exposureScale, exposureState.automaticValid);
+    pixels.resize(imageBytes);
     if (format == vk::Format::eB8G8R8A8Srgb || format == vk::Format::eB8G8R8A8Unorm)
         for (size_t offset = 0; offset < pixels.size(); offset += 4)
             std::swap(pixels[offset], pixels[offset + 2]);
@@ -272,7 +302,7 @@ int main(int argc, char** argv)
     logger::init(argv[0]);
     CHECK(
         argc >= 4 && argc <= 7,
-        "usage: CaptureScene <scene-id> <forward|realtime|offline> <output.png> [frames=1] [size=960] [ev100]"
+        "usage: CaptureScene <scene-id> <forward|realtime|offline> <output.png> [frames=1] [size=960] [ev100|auto]"
     );
     const std::string_view route{argv[2]};
     CHECK(route == "forward" || route == "realtime" || route == "offline", "unsupported capture route: {}", route);
@@ -303,7 +333,20 @@ int main(int argc, char** argv)
     feature.hdr  = true;
     feature.ibl  = scenes.scene().environmentMap.has_value();
     if (argc > 6)
-        feature.toneMapping.ev100 = parseNumber<float>(argv[6]);
+    {
+        auto& exposure = scenes.scene().editorCamera.exposure;
+        exposure = exposure.value_or(feature.toneMapping.exposure);
+        if (std::string_view{argv[6]} == "auto")
+        {
+            exposure->mode = ExposureMode::Automatic;
+        }
+        else
+        {
+            exposure->mode = ExposureMode::Manual;
+            exposure->ev100 = parseNumber<float>(argv[6]);
+        }
+        CHECK(exposure->isValid());
+    }
     config.setRenderFeature(feature);
     CHECK((route == "offline") == (scenes.scene().renderMode == SceneRenderMode::Offline),
           "capture route does not match scene render mode");
