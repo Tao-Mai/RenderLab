@@ -1,11 +1,13 @@
 #include "raster/scene_lighting.slang"
+#include "raster/gbuffer_data.slang"
 
 // Pass set 2; bindings match RenderInterface's G-buffer bindings.
-[[vk::binding(0, 2)]] Texture2D<float4> albedoOcclusion;
+[[vk::binding(0, 2)]] Texture2D<float4> diffuseOcclusion;
 [[vk::binding(1, 2)]] Texture2D<float4> normalRoughness;
-[[vk::binding(2, 2)]] Texture2D<float4> emissiveMetallic;
-[[vk::binding(3, 2)]] Texture2D<float> sceneDepth;
+[[vk::binding(2, 2)]] Texture2D<float4> emissiveSpecularF90;
+[[vk::binding(3, 2)]] Texture2D<float4> specularF0DiffuseFresnel;
 [[vk::binding(4, 2)]] Texture2D<float4> sheenColorRoughness;
+[[vk::binding(5, 2)]] Texture2D<float> sceneDepth;
 
 struct DeferredLightingParameters
 {
@@ -37,20 +39,22 @@ float4 fragMain(VertexOutput input) : SV_Target
 
     float2 ndc = (input.position.xy - parameters.viewport.xy) / parameters.viewport.zw * 2.0 - 1.0;
     float4 worldPosition = mul(sceneUniforms.inverseViewProjection, float4(ndc, depth, 1.0));
-    float4 albedo = albedoOcclusion.Load(int3(pixel, 0));
-    float4 normal = normalRoughness.Load(int3(pixel, 0));
-    float4 emissive = emissiveMetallic.Load(int3(pixel, 0));
+    GBufferData data = {
+        diffuseOcclusion.Load(int3(pixel, 0)),
+        normalRoughness.Load(int3(pixel, 0)),
+        emissiveSpecularF90.Load(int3(pixel, 0)),
+        specularF0DiffuseFresnel.Load(int3(pixel, 0)),
+        sheenColorRoughness.Load(int3(pixel, 0)),
+    };
 
     Surface surface;
     surface.worldPosition = worldPosition.xyz / worldPosition.w;
-    surface.normal = normalize(normal.xyz);
-    surface.baseColor = float4(albedo.rgb, 1.0);
-    surface.occlusion = albedo.a;
-    surface.roughness = normal.a;
-    surface.metallic = emissive.a;
-    surface.emissive = emissive.rgb;
-    float4 sheen = sheenColorRoughness.Load(int3(pixel, 0));
-    surface.sheenColor = sheen.rgb;
-    surface.sheenRoughness = sheen.a;
+    surface.normal = normalize(data.normal);
+    surface.brdf = data.brdf;
+    surface.opacity = 1.0;
+    surface.occlusion = data.occlusion;
+    surface.emissive = data.emissive;
+    surface.sheenColor = data.sheenColor;
+    surface.sheenRoughness = data.sheenRoughness;
     return float4(evaluateLighting(surface, pixel), 1.0);
 }

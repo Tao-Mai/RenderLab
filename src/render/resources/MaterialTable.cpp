@@ -127,6 +127,16 @@ uint32_t MaterialTable::update(
     const MaterialKey& key, const GltfMaterial& material, RenderResourceManager& resources, AssetManager& assets
 )
 {
+    CHECK(material.workflow.has_value(), "material '{}' requires a workflow", material.id);
+    CHECK(
+        *material.workflow == MaterialWorkflow::MetallicRoughness ||
+            *material.workflow == MaterialWorkflow::SpecularGlossiness,
+        "invalid material workflow: {}",
+        material.id
+    );
+    const bool sgWorkflow = *material.workflow == MaterialWorkflow::SpecularGlossiness;
+    CHECK(!sgWorkflow || material.specularGlossiness.has_value(), "SG parameters missing: {}", material.id);
+
     const auto alphaMode = material.alphaMode.value_or("OPAQUE");
     CHECK(
         alphaMode == "OPAQUE" || alphaMode == "MASK" || alphaMode == "BLEND",
@@ -139,8 +149,26 @@ uint32_t MaterialTable::update(
 
     const auto   clearcoat = material.clearcoat.value_or(GltfMaterial::Clearcoat{});
     const auto   sheen     = material.sheen.value_or(GltfMaterial::Sheen{});
+    const auto   specular  = material.specular.value_or(GltfMaterial::Specular{});
+    const float  ior       = material.ior.value_or(1.5f);
+    CHECK(std::isfinite(ior) && (ior == 0.0f || ior >= 1.0f), "invalid IOR in material '{}'", material.id);
+    CHECK(
+        std::isfinite(specular.factor) && specular.factor >= 0.0f && specular.factor <= 1.0f,
+        "invalid specular factor in material '{}'",
+        material.id
+    );
+    for (glm::length_t channel = 0; channel < 3; ++channel)
+    {
+        CHECK(
+            std::isfinite(specular.colorFactor[channel]) && specular.colorFactor[channel] >= 0.0f,
+            "invalid specular color in material '{}'",
+            material.id
+        );
+    }
+    const float iorRatio = ior == 0.0f ? 1.0f : (ior - 1.0f) / (ior + 1.0f);
+
     MaterialData data{
-        .baseColorFactor          = material.baseColorFactor.value_or(glm::vec4{1.0f}),
+        .colorFactor              = material.baseColorFactor.value_or(glm::vec4{1.0f}),
         .roughness                = material.roughness.value_or(1.0f),
         .metallic                 = material.metallic.value_or(1.0f),
         .alphaCutoff              = material.alphaCutoff.value_or(0.5f),
@@ -150,12 +178,16 @@ uint32_t MaterialTable::update(
         .normalScale              = material.normalScale.value_or(1.0f),
         .occlusionStrength        = material.ao.value_or(1.0f),
         .doubleSided              = material.doubleSided.value_or(true) ? 1u : 0u,
+        .workflow                 = static_cast<uint32_t>(*material.workflow),
         .emissiveFactor           = glm::vec4(material.emissive.value_or(glm::vec3{0.0f}) * emissiveStrength, 0.0f),
         .sheenColorFactor         = sheen.colorFactor,
         .sheenRoughnessFactor     = sheen.roughnessFactor,
         .clearcoatFactor          = clearcoat.factor,
         .clearcoatRoughnessFactor = clearcoat.roughnessFactor,
         .clearcoatNormalScale     = clearcoat.normalScale,
+        .specularColorFactor      = specular.colorFactor,
+        .specularFactor           = specular.factor,
+        .dielectricF0             = iorRatio * iorRatio,
     };
 
     const auto resolveTexture = [&](const std::optional<TextureBinding>& source,
@@ -166,12 +198,49 @@ uint32_t MaterialTable::update(
         return textureReference(binding, resources);
     };
 
-    data.baseColorTexture = resolveTexture(material.baseColorTexture, BuiltinAssets::Texture::white);
+    if (sgWorkflow)
+    {
+        const auto& sg = *material.specularGlossiness;
+        CHECK(
+            std::isfinite(sg.glossinessFactor) && sg.glossinessFactor >= 0.0f && sg.glossinessFactor <= 1.0f,
+            "invalid glossiness in material '{}'",
+            material.id
+        );
+        for (glm::length_t channel = 0; channel < 4; ++channel)
+        {
+            CHECK(
+                std::isfinite(sg.diffuseFactor[channel]) && sg.diffuseFactor[channel] >= 0.0f &&
+                    sg.diffuseFactor[channel] <= 1.0f,
+                "invalid SG diffuse color in material '{}'",
+                material.id
+            );
+        }
+        for (glm::length_t channel = 0; channel < 3; ++channel)
+        {
+            CHECK(
+                std::isfinite(sg.specularFactor[channel]) && sg.specularFactor[channel] >= 0.0f &&
+                    sg.specularFactor[channel] <= 1.0f,
+                "invalid SG specular color in material '{}'",
+                material.id
+            );
+        }
+
+        data.colorFactor          = sg.diffuseFactor;
+        data.specularColorFactor  = sg.specularFactor;
+        data.glossinessFactor     = sg.glossinessFactor;
+        data.colorTexture         = resolveTexture(sg.diffuseTexture, BuiltinAssets::Texture::white);
+        data.specularColorTexture = resolveTexture(sg.specularGlossinessTexture, BuiltinAssets::Texture::white);
+    }
+    else
+    {
+        data.colorTexture         = resolveTexture(material.baseColorTexture, BuiltinAssets::Texture::white);
+        data.metallicTexture      = resolveTexture(material.metallicTexture, BuiltinAssets::Texture::kWhiteLinear);
+        data.roughnessTexture     = resolveTexture(material.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear);
+        data.specularColorTexture = resolveTexture(specular.colorTexture, BuiltinAssets::Texture::white);
+        data.specularTexture      = resolveTexture(specular.texture, BuiltinAssets::Texture::kWhiteLinear);
+    }
+
     data.normalTexture = resolveTexture(material.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear);
-    data.metallicTexture =
-        resolveTexture(material.metallicTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear);
-    data.roughnessTexture =
-        resolveTexture(material.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear);
     data.emissiveTexture = resolveTexture(material.emissiveTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb);
     data.occlusionTexture =
         resolveTexture(material.aoTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear);
@@ -197,6 +266,7 @@ uint32_t MaterialTable::update(
         .doubleSided = data.doubleSided != 0,
         .clearcoat   = material.clearcoat.has_value(),
         .sheen       = material.sheen.has_value(),
+        .emissive    = glm::any(glm::greaterThan(glm::vec3{data.emissiveFactor}, glm::vec3{0.0f})),
     };
     return found->second;
 }

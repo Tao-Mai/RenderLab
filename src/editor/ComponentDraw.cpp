@@ -272,11 +272,38 @@ bool drawMeshSelection(RenderComponent& render, const AssetManager& assets)
 bool drawMaterialFields(GltfMaterial& material)
 {
     bool edited = false;
-    glm::vec4 baseColor = material.baseColorFactor.value_or(glm::vec4{1.0f});
-    if (ImGui::ColorEdit4("Base Color", glm::value_ptr(baseColor)))
+    DCHECK(material.workflow.has_value());
+    const bool sgWorkflow = *material.workflow == MaterialWorkflow::SpecularGlossiness;
+    ImGui::Text("Workflow: %s", sgWorkflow ? "Specular / Glossiness" : "Metallic / Roughness");
+    if (sgWorkflow)
     {
-        material.baseColorFactor = baseColor;
-        edited = true;
+        DCHECK(material.specularGlossiness.has_value());
+        auto& sg = *material.specularGlossiness;
+        edited |= ImGui::ColorEdit4("Diffuse", glm::value_ptr(sg.diffuseFactor));
+        edited |= ImGui::ColorEdit3("Specular", glm::value_ptr(sg.specularFactor));
+        edited |= ImGui::DragFloat(
+            "Glossiness",
+            &sg.glossinessFactor,
+            0.01f,
+            0.0f,
+            1.0f,
+            "%.3f",
+            ImGuiSliderFlags_AlwaysClamp
+        );
+        ImGui::Text("Diffuse: %s", sg.diffuseTexture ? sg.diffuseTexture->textureID.c_str() : "None");
+        ImGui::Text(
+            "Specular / glossiness: %s",
+            sg.specularGlossinessTexture ? sg.specularGlossinessTexture->textureID.c_str() : "None"
+        );
+    }
+    else
+    {
+        glm::vec4 baseColor = material.baseColorFactor.value_or(glm::vec4{1.0f});
+        if (ImGui::ColorEdit4("Base Color", glm::value_ptr(baseColor)))
+        {
+            material.baseColorFactor = baseColor;
+            edited                   = true;
+        }
     }
 
     bool doubleSided = material.doubleSided.value_or(true);
@@ -295,8 +322,11 @@ bool drawMaterialFields(GltfMaterial& material)
         field = value;
         return true;
     };
-    edited = drawFactor("Metallic", material.metallic, 0.0f) || edited;
-    edited = drawFactor("Roughness", material.roughness, 1.0f) || edited;
+    if (!sgWorkflow)
+    {
+        edited = drawFactor("Metallic", material.metallic, 0.0f) || edited;
+        edited = drawFactor("Roughness", material.roughness, 1.0f) || edited;
+    }
     edited = drawFactor("AO", material.ao, 1.0f) || edited;
 
     constexpr const char* kAlphaModes[] = {"OPAQUE", "MASK", "BLEND"};
@@ -332,14 +362,17 @@ bool drawMaterialFields(GltfMaterial& material)
                          std::numeric_limits<float>::max(), "%.3f", ImGuiSliderFlags_AlwaysClamp))
     {
         material.normalScale = normalScale;
-        edited = true;
+        edited               = true;
     }
     ImGui::EndDisabled();
 
-    ImGui::Text("Albedo: %s", material.baseColorTexture ? material.baseColorTexture->textureID.c_str() : "");
+    if (!sgWorkflow)
+    {
+        ImGui::Text("Albedo: %s", material.baseColorTexture ? material.baseColorTexture->textureID.c_str() : "None");
+        ImGui::Text("Metallic: %s", material.metallicTexture ? material.metallicTexture->textureID.c_str() : "None");
+        ImGui::Text("Roughness: %s", material.roughnessTexture ? material.roughnessTexture->textureID.c_str() : "None");
+    }
     ImGui::Text("Normal: %s", material.normalTexture ? material.normalTexture->textureID.c_str() : "None");
-    ImGui::Text("Metallic: %s", material.metallicTexture ? material.metallicTexture->textureID.c_str() : "None");
-    ImGui::Text("Roughness: %s", material.roughnessTexture ? material.roughnessTexture->textureID.c_str() : "None");
     ImGui::Text("Emissive: %s", material.emissiveTexture ? material.emissiveTexture->textureID.c_str() : "None");
     ImGui::Text("AO: %s", material.aoTexture ? material.aoTexture->textureID.c_str() : "None");
 

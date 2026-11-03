@@ -20,7 +20,7 @@ struct TextureRef
 // glTF material SSBO used by rasterization and realtime ray tracing.
 struct alignas(16) MaterialData
 {
-    glm::vec4               baseColorFactor{1.0f};
+    glm::vec4               colorFactor{1.0f};
     float                   roughness         = 1.0f;
     float                   metallic          = 1.0f;
     float                   alphaCutoff       = 0.5f;
@@ -28,7 +28,7 @@ struct alignas(16) MaterialData
     float                   normalScale       = 1.0f;
     float                   occlusionStrength = 1.0f;
     uint32_t                doubleSided       = 0;
-    uint32_t                padding           = 0;
+    uint32_t                workflow          = 0;
     glm::vec4               emissiveFactor{0.0f};
     glm::vec3               sheenColorFactor{0.0f};
     float                   sheenRoughnessFactor     = 0.0f;
@@ -36,7 +36,12 @@ struct alignas(16) MaterialData
     float                   clearcoatRoughnessFactor = 0.0f;
     float                   clearcoatNormalScale     = 1.0f;
     float                   clearcoatPadding         = 0.0f;
-    TextureRef              baseColorTexture;
+    glm::vec3               specularColorFactor{1.0f};
+    float                   specularFactor   = 1.0f;
+    float                   dielectricF0     = 0.04f;
+    float                   glossinessFactor = 1.0f;
+    std::array<uint32_t, 2> scalarPadding{};
+    TextureRef              colorTexture;
     TextureRef              normalTexture;
     TextureRef              metallicTexture;
     TextureRef              roughnessTexture;
@@ -47,15 +52,19 @@ struct alignas(16) MaterialData
     TextureRef              clearcoatTexture;
     TextureRef              clearcoatRoughnessTexture;
     TextureRef              clearcoatNormalTexture;
+    TextureRef              specularColorTexture;
+    TextureRef              specularTexture;
     std::array<uint32_t, 2> texturePadding{};
 };
 
 static_assert(sizeof(TextureRef) == 8);
-static_assert(sizeof(MaterialData) == 192);
+static_assert(sizeof(MaterialData) == 240);
 static_assert(offsetof(MaterialData, roughness) == 16);
 static_assert(offsetof(MaterialData, emissiveFactor) == 48);
 static_assert(offsetof(MaterialData, sheenColorFactor) == 64);
 static_assert(offsetof(MaterialData, clearcoatFactor) == 80);
-static_assert(offsetof(MaterialData, baseColorTexture) == 96);
-static_assert(offsetof(MaterialData, clearcoatNormalTexture) == 176);
-static_assert(offsetof(MaterialData, texturePadding) == 184);
+static_assert(offsetof(MaterialData, specularColorFactor) == 96);
+static_assert(offsetof(MaterialData, dielectricF0) == 112);
+static_assert(offsetof(MaterialData, colorTexture) == 128);
+static_assert(offsetof(MaterialData, specularTexture) == 224);
+static_assert(offsetof(MaterialData, texturePadding) == 232);

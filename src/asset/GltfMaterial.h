@@ -6,11 +6,29 @@
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 #include <optional>
+#include <cstdint>
 
 struct ShaderAsset;
 
+enum class MaterialWorkflow : uint32_t
+{
+    MetallicRoughness,
+    SpecularGlossiness,
+};
+
 struct GltfMaterial : MaterialAsset
 {
+    struct SpecularGlossiness
+    {
+        glm::vec4                     diffuseFactor{1.0f};
+        glm::vec3                     specularFactor{1.0f};
+        float                         glossinessFactor = 1.0f;
+        std::optional<TextureBinding> diffuseTexture;
+        std::optional<TextureBinding> specularGlossinessTexture;
+
+        bool operator==(const SpecularGlossiness&) const = default;
+    };
+
     struct Clearcoat
     {
         float                         factor          = 0.0f;
@@ -95,6 +113,8 @@ struct GltfMaterial : MaterialAsset
     bool operator==(const GltfMaterial&) const = default;
 
     std::optional<AssetID<ShaderAsset>> shaderId;
+    std::optional<MaterialWorkflow>     workflow;
+    std::optional<SpecularGlossiness>   specularGlossiness;
     std::optional<glm::vec4>            baseColorFactor;
     std::optional<float>                metallic;
     std::optional<float>                roughness;

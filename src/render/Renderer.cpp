@@ -84,6 +84,7 @@ struct Renderer::Passes
         ExposurePass,
         BlasBuildPass,
         TlasBuildPass,
+        RayTracingScenePass,
         RayTracingPass,
         SVGFReprojection,
         OfflinePathTracingPass,
@@ -408,7 +409,8 @@ Renderer::SceneOutput Renderer::setupRayTracing()
 {
     const auto blas       = setupPass<BlasBuildPass>();
     const auto structures = setupPass<TlasBuildPass>(blas);
-    const auto traced     = setupPass<RayTracingPass>(structures, lightBuffer);
+    const auto geometry   = setupPass<RayTracingScenePass>();
+    const auto traced     = setupPass<RayTracingPass>(structures, geometry, lightBuffer);
     if (rendererConfig->feature.rayTracing.svgf)
     {
         const PassSetup setup{vulkan, swapchain.extent(), frameStorage, *rendererConfig};

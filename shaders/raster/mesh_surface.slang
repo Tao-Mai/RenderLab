@@ -2,7 +2,7 @@
 #define RENDERLAB_MESH_SURFACE_SLANG
 
 #include "raster/mesh_vertex.slang"
-#include "common/material_data.slang"
+#include "common/material_evaluation.slang"
 #include "common/surface.slang"
 #include "common/normal_mapping.slang"
 
@@ -44,12 +44,12 @@ Surface sampleSurface(VertexOutput input, bool isFrontFace)
     surface.normal = applyNormalMap(geometricNormal, input.worldTangent,
         sampleTexture(material.normalTexture, input.uv).xyz, material.normalScale);
     surface.normal = isFrontFace ? surface.normal : -surface.normal;
-    surface.baseColor = sampleTexture(material.baseColorTexture, input.uv) * material.baseColorFactor;
-    applyAlphaTest(material, surface.baseColor.a);
-    surface.roughness = saturate(material.roughness * sampleTexture(material.roughnessTexture, input.uv).g);
-    surface.metallic = saturate(material.metallic * sampleTexture(material.metallicTexture, input.uv).b);
+    EvaluatedPbrMaterial evaluated = evaluatePbrMaterial(material, input.uv, RasterMaterialSampler());
+    surface.brdf = evaluated.brdf;
+    surface.opacity = evaluated.opacity;
+    applyAlphaTest(material, surface.opacity);
     surface.occlusion = lerp(1.0, sampleTexture(material.occlusionTexture, input.uv).r, material.occlusionStrength);
-    surface.emissive = sampleTexture(material.emissiveTexture, input.uv).rgb * material.emissiveFactor.rgb;
+    surface.emissive = sampleTexture(material.emissiveTexture, input.uv).rgb * material.emission;
 #if ENABLE_SHEEN
     surface.sheenColor = sampleTexture(material.sheenColorTexture, input.uv).rgb * material.sheenColorFactor;
     surface.sheenRoughness = saturate(sampleTexture(material.sheenRoughnessTexture, input.uv).a

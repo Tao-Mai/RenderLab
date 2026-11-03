@@ -156,6 +156,8 @@ foreach(svgf IN ITEMS 0 1)
         ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
         DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 SVGF=${svgf})
 endforeach()
+renderlab_shader(prepare_emissive_triangles raytracing/realtime/prepare_lights.slang prepare_emissive_triangles
+    ENTRIES computeMain)
 renderlab_shader(offline_pathtracing raytracing/offline/main.slang offline_pathtracing
     DEFINES BDPT=0 ENTRIES raygenMain missMain visibilityMissMain closestHitMain)
 foreach(depth IN ITEMS 4 8 16 32 64)
@@ -384,6 +386,8 @@ add_library(RenderLabRuntime STATIC
         src/render/raytracing/realtime/RayTracingData.h
         src/render/raytracing/realtime/RayTracingPass.cpp
         src/render/raytracing/realtime/RayTracingPass.h
+        src/render/raytracing/realtime/RayTracingScenePass.cpp
+        src/render/raytracing/realtime/RayTracingScenePass.h
         src/render/raytracing/realtime/SVGFFilter.cpp
         src/render/raytracing/realtime/SVGFFilter.h
         src/render/raytracing/realtime/SVGFReprojection.cpp

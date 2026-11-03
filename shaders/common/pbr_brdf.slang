@@ -33,21 +33,51 @@ float3 sampleGgxVisibleNormal(float3 viewDirection, float roughness, float2 samp
 
 struct PbrBrdf
 {
-    float3 baseColor;
-    float metallic;
+    float3 diffuseColor;
+    float3 specularF0;
+    float specularF90;
     float roughness;
+    float diffuseFresnelWeight;
+
+    float3 fresnel(float cosine)
+    {
+        float weight = pow(1.0 - saturate(abs(cosine)), 5.0);
+        return lerp(specularF0, float3(specularF90), weight);
+    }
+
+    float3 diffuseReflectance(float cosine)
+    {
+        float weight = pow(1.0 - saturate(abs(cosine)), 5.0);
+        return diffuseColor * (1.0 - diffuseFresnelWeight * weight);
+    }
+
+    float3 albedo()
+    {
+        return saturate(diffuseColor + specularF0);
+    }
 
     float3 evaluate(float3 normal, float3 viewDirection, float3 lightDirection)
     {
-        return evaluateDirectBrdf(baseColor, metallic, roughness, normal, viewDirection, lightDirection);
+        float nDotV = saturate(dot(normal, viewDirection));
+        float nDotL = saturate(dot(normal, lightDirection));
+        if (nDotV <= 0.0 || nDotL <= 0.0)
+        {
+            return float3(0.0);
+        }
+
+        float3 halfDirection = normalize(viewDirection + lightDirection);
+        float vDotH = saturate(dot(viewDirection, halfDirection));
+        float evaluatedRoughness = max(roughness, kMinDirectRoughness);
+        float distribution = normalDistributionGgx(evaluatedRoughness, saturate(dot(normal, halfDirection)));
+        float visibility = smithGgxVisibility(evaluatedRoughness, nDotV, nDotL);
+        return diffuseReflectance(vDotH) * INV_PI + fresnel(vDotH) * distribution * visibility;
     }
 
     float specularProbability(float nDotV)
     {
-        float3 f0 = lerp(float3(0.04), baseColor, metallic);
-        float3 fresnel = fresnelSchlick(f0, nDotV);
-        float specularWeight = max(fresnel.x, max(fresnel.y, fresnel.z));
-        float3 diffuse = (1.0 - fresnel) * (1.0 - metallic) * baseColor;
+        float3 specular = fresnel(nDotV);
+        float specularWeight = max(specular.x, max(specular.y, specular.z));
+        float3 diffuse = diffuseReflectance(nDotV);
         float diffuseWeight = max(diffuse.x, max(diffuse.y, diffuse.z));
         float total = specularWeight + diffuseWeight;
         return total > 0.0 ? specularWeight / total : 1.0;

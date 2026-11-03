@@ -23,7 +23,7 @@ void fragMain(DepthVertexOutput input)
     MaterialData material = materials[pushConstants.materialIndex];
     if (material.alphaMode == kAlphaModeMask)
     {
-        float alpha = sampleTexture(material.baseColorTexture, input.uv).a * material.baseColorFactor.a;
+        float alpha = sampleTexture(material.colorTexture, input.uv).a * material.opacityFactor;
         applyAlphaTest(material, alpha);
     }
 }

@@ -152,7 +152,8 @@ bool drawMaterialExtensions(GltfMaterial& material)
             if (!infinite)
                 changed |= dragFloat("IOR", ior, 1.0f);
             return changed;
-        }
+        },
+        true
     );
 
     edited |= drawExtension(
@@ -169,7 +170,8 @@ bool drawMaterialExtensions(GltfMaterial& material)
             drawTexture("Factor texture", layer.texture);
             drawTexture("Color texture", layer.colorTexture);
             return changed;
-        }
+        },
+        true
     );
 
     edited |= drawExtension(

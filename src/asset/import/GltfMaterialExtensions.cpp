@@ -101,6 +101,45 @@ void importMaterialExtensions(
     };
 
     read(
+        "KHR_materials_pbrSpecularGlossiness",
+        [&](const ExtensionReader& reader)
+        {
+            CHECK(
+                !source.extensions.contains("KHR_materials_specular") &&
+                    !source.extensions.contains("KHR_materials_ior"),
+                "SG cannot be combined with Specular or IOR in '{}'",
+                sourcePath.string()
+            );
+            auto& layer = material.specularGlossiness.emplace();
+            if (reader.value.Has("diffuseFactor"))
+            {
+                const auto& factor = reader.value.Get("diffuseFactor");
+                CHECK(
+                    factor.IsArray() && factor.ArrayLen() == 4,
+                    "invalid SG diffuseFactor in '{}'",
+                    sourcePath.string()
+                );
+                for (int channel = 0; channel < 4; ++channel)
+                {
+                    CHECK(factor.Get(channel).IsNumber(), "invalid SG diffuseFactor in '{}'", sourcePath.string());
+                    layer.diffuseFactor[channel] = static_cast<float>(factor.Get(channel).GetNumberAsDouble());
+                    CHECK(
+                        std::isfinite(layer.diffuseFactor[channel]) && layer.diffuseFactor[channel] >= 0.0f &&
+                            layer.diffuseFactor[channel] <= 1.0f,
+                        "invalid SG diffuseFactor in '{}'",
+                        sourcePath.string()
+                    );
+                }
+            }
+
+            layer.specularFactor            = reader.color("specularFactor", layer.specularFactor);
+            layer.glossinessFactor          = reader.number("glossinessFactor", layer.glossinessFactor, 0.0f, 1.0f);
+            layer.diffuseTexture            = reader.texture("diffuseTexture", ColorSpace::Srgb);
+            layer.specularGlossinessTexture = reader.texture("specularGlossinessTexture", ColorSpace::Srgb);
+        }
+    );
+
+    read(
         "KHR_materials_clearcoat",
         [&](const ExtensionReader& reader)
         {

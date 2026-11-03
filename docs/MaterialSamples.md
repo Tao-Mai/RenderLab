@@ -13,8 +13,8 @@
 | Anisotropy | [AnisotropyBarnLamp](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/AnisotropyBarnLamp) | 仅数据 |
 | Transmission | [TransmissionRoughnessTest](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/TransmissionRoughnessTest) | 仅数据 |
 | Volume | [AttenuationTest](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/AttenuationTest) | 仅数据 |
-| IOR | [IORTestGrid](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/IORTestGrid) | 仅数据 |
-| Specular | [SpecularTest](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/SpecularTest) | 仅数据 |
+| IOR | [IORTestGrid](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/IORTestGrid) | 前向 / 延迟 / 实时光追 |
+| Specular | [SpecularTest](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/SpecularTest) | 前向 / 延迟 / 实时光追 |
 | Iridescence | [IridescenceLamp](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/IridescenceLamp) | 仅数据 |
 | Dispersion | [DispersionTest](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/DispersionTest) | 仅数据 |
 | Emissive Strength | [EmissiveStrengthTest](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/EmissiveStrengthTest) | 光栅 / 实时光追 / 离线 |

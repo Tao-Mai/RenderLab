@@ -32,6 +32,7 @@ public:
         bool                 doubleSided;
         bool                 clearcoat;
         bool                 sheen;
+        bool                 emissive;
     };
 
     struct OverrideOwner

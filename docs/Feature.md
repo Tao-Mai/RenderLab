@@ -11,7 +11,7 @@
 
 ## 材质
 
-- Metallic-Roughness PBR：Lambert、GGX、Smith、Schlick Fresnel。
+- Metallic-Roughness 与 Specular-Glossiness 工作流：统一漫反射、GGX、Smith、Schlick Fresnel；支持 Specular 与 IOR。
 - Base Color、Metallic、Roughness、Normal、AO、Emissive 贴图。
 - MikkTSpace 切线空间法线映射、可调 Normal Scale。
 - 自发光强度、Alpha Mask / Blend、双面材质。
@@ -19,7 +19,7 @@
 - Sheen：Charlie BRDF、方向反照率能量缩放、环境光积分；前向 / 延迟支持。
 - 材质覆盖、参数编辑、缺失纹理的统一 fallback。
 
-各向异性、Transmission、Volume、IOR、Specular、Iridescence、Dispersion、Unlit、Diffuse Transmission 支持描述、导入与编辑，画面使用基础 PBR 着色。详见 [材质展示](MaterialGallery.md)。
+各向异性、Transmission、Volume、Iridescence、Dispersion、Unlit、Diffuse Transmission 支持描述、导入与编辑，画面使用基础 PBR 着色。详见 [材质展示](MaterialGallery.md)。
 
 ## 光照与环境
 
@@ -45,7 +45,7 @@
 
 - 漫反射 / GGX 混合 PDF、GGX VNDF 方向采样。
 - 点光源与聚光灯：共用一次加权选择，合计选一个光源；按强度、距离及内外锥角衰减加权，跳过 range 或聚光锥以外的光源，并补偿选择概率。
-- 面光源：投影面积、强度、距离加权选择，再进行面内采样。
+- 矩形面光源按投影面积、强度、距离加权选择；实时发光网格按实例展开成三角形，均匀选三角形并进行面内面积采样。
 - NEE 与 BRDF 命中面光源的 MIS，三角形发光面参与光追求交。
 - 方向光可见性射线，俄罗斯轮盘终止。两条光追路线共用 RayGen 路径循环，管线递归深度固定为 1；`maxBounces` 独立控制 1–64 次表面散射，修改后重置时域历史 / 离线累积。
 - 实时：SVGF 开启时，光追输出 albedo，重投影先解调 direct / indirect，再累积颜色与亮度矩、估计时域 / 7×7 空间方差并执行五级 à-trous 滤波。第一级回写解调后的颜色历史，最后一级乘回 albedo 后添加当前帧 `emission`。样本数不超过 `historyLength` 时算术平均，超过后使用 `emaAlpha`，首次及历史失效时权重为 1。

@@ -5,5 +5,5 @@
 float4 fragMain(VertexOutput input, bool isFrontFace : SV_IsFrontFace) : SV_Target
 {
     Surface surface = sampleSurface(input, isFrontFace);
-    return float4(evaluateLighting(surface, uint2(input.position.xy)), surface.baseColor.a);
+    return float4(evaluateLighting(surface, uint2(input.position.xy)), surface.opacity);
 }

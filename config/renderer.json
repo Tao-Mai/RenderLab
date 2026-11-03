@@ -16,7 +16,7 @@
                 "lightSelection": "Power",
                 "lightTracing": true,
                 "maxBounces": 6,
-                "misHeuristic": "Balance"
+                "misHeuristic": "Power"
             },
             "pt": {
                 "maxBounces": 10
@@ -25,8 +25,8 @@
         "rayTracing": {
             "emaAlpha": 0.20200000703334808,
             "historyLength": 31,
-            "maxBounces": 6,
-            "svgf": true
+            "maxBounces": 7,
+            "svgf": false
         },
         "shadow": {
             "bias": 0.004399999976158142,

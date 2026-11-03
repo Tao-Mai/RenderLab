@@ -10,6 +10,8 @@
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/raster/DepthPrepass.h"
+#include "render/raster/GBufferPass.h"
+#include "render/raster/DeferredLightingPass.h"
 #include "render/graph/EndPass.h"
 #include "render/raster/ScenePass.h"
 #include "render/raster/SkyboxPass.h"
@@ -33,6 +35,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstring>
+#include <fstream>
 #include <stb_image_write.h>
 #include <string_view>
 
@@ -52,16 +55,23 @@ struct ImageReadbackPass
     RenderGraph::ImageHandle  image;
     RenderGraph::BufferHandle buffer;
     RenderGraph::BufferHandle exposure;
-    vk::DeviceSize imageBytes;
+    RenderGraph::BufferHandle triangles;
+    vk::DeviceSize            imageBytes;
+    vk::DeviceSize            triangleBytes = 0;
 
     RenderGraph::BufferHandle setup(
-        RenderGraph& graph, const PassSetup&, RenderGraph::ImageHandle source, RenderGraph::BufferHandle exposureState
+        RenderGraph& graph,
+        const PassSetup&,
+        RenderGraph::ImageHandle  source,
+        RenderGraph::BufferHandle exposureState,
+        RenderGraph::BufferHandle triangleLights
     )
     {
         image             = source;
         const auto extent = graph.imageInfo(image).extent;
-        exposure = exposureState;
-        imageBytes = vk::DeviceSize(extent.width) * extent.height * 4;
+        exposure          = exposureState;
+        triangles         = triangleLights;
+        imageBytes        = vk::DeviceSize(extent.width) * extent.height * 4;
         buffer            = graph.write(graph.createBuffer({
                        .size             = imageBytes + sizeof(ExposurePass::State),
                        .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
@@ -81,11 +91,30 @@ struct ImageReadbackPass
                 .access = vk::AccessFlagBits2::eTransferWrite,
             }
         );
-        graph.use(exposure, {
-            .stages = vk::PipelineStageFlagBits2::eTransfer,
-            .access = vk::AccessFlagBits2::eTransferRead,
-        });
+        graph.use(
+            exposure,
+            {
+                .stages = vk::PipelineStageFlagBits2::eTransfer,
+                .access = vk::AccessFlagBits2::eTransferRead,
+            }
+        );
+        if (triangles.id != RenderGraph::kInvalidHandle)
+        {
+            graph.use(
+                triangles,
+                {
+                    .stages = vk::PipelineStageFlagBits2::eTransfer,
+                    .access = vk::AccessFlagBits2::eTransferRead,
+                }
+            );
+        }
         return buffer;
+    }
+
+    void prepare(RenderGraph& graph, const PassFrame&)
+    {
+        triangleBytes = triangles.id == RenderGraph::kInvalidHandle ? 0 : graph.getBuffer(triangles).size();
+        graph.ensureBufferCapacity(buffer, imageBytes + sizeof(ExposurePass::State) + triangleBytes);
     }
 
     void execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame) const
@@ -100,18 +129,29 @@ struct ImageReadbackPass
             graph.getBuffer(buffer).handle(),
             copy
         );
-        commands.copyBuffer(graph.getBuffer(exposure).handle(), graph.getBuffer(buffer).handle(),
-                            vk::BufferCopy{.dstOffset = imageBytes, .size = sizeof(ExposurePass::State)});
+        commands.copyBuffer(
+            graph.getBuffer(exposure).handle(),
+            graph.getBuffer(buffer).handle(),
+            vk::BufferCopy{.dstOffset = imageBytes, .size = sizeof(ExposurePass::State)}
+        );
+        if (triangleBytes > 0)
+        {
+            commands.copyBuffer(
+                graph.getBuffer(triangles).handle(),
+                graph.getBuffer(buffer).handle(),
+                vk::BufferCopy{.dstOffset = imageBytes + sizeof(ExposurePass::State), .size = triangleBytes}
+            );
+        }
     }
 };
 
 void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::path& output, uint32_t frameCount)
 {
-    auto&       vulkan    = renderer.vulkanContext();
-    const auto& swapchain = renderer.swapchainHandle();
-    const auto  extent    = swapchain.extent();
-    const auto  format    = swapchain.surfaceFormat().format;
-    const auto& config    = context().config->rendererConfig();
+    auto&       vulkan                 = renderer.vulkanContext();
+    const auto& swapchain              = renderer.swapchainHandle();
+    const auto  extent                 = swapchain.extent();
+    const auto  format                 = swapchain.surfaceFormat().format;
+    const auto& config                 = context().config->rendererConfig();
     const bool  offline   = config.renderPath == RenderPath::OfflinePathTracing;
     const bool  realtime  = config.renderPath == RenderPath::RayTracing;
     const bool  lightMarkersAndPicking = context().config->editorConfig().lightMarkersAndPicking;
@@ -129,12 +169,15 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     ShadowPass               shadow;
     DepthPrepass             depth;
     ScenePass                scene;
+    GBufferPass              gBuffer;
+    DeferredLightingPass     deferredLighting;
     SkyboxPass               skybox;
     TransparentPass          transparent;
     BlasBuildPass            blas;
     TlasBuildPass            tlas;
     OfflinePathTracingPass   tracing;
     RayTracingPass           realtimeTracing;
+    RayTracingScenePass      realtimeScene;
     SVGFReprojection         reprojection;
     SVGFFilter               filter;
     Bloom                    bloom;
@@ -148,6 +191,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     const auto               target = graph.createImage({.format = format, .extent = {extent.width, extent.height, 1}});
     RenderGraph::ImageHandle color;
     RenderGraph::ImageHandle depthImage;
+    RenderGraph::BufferHandle triangleLights;
     ShadowPass::Output       lightingShadow;
     const auto               lightBuffer = graph.createBuffer({
                       .size  = kMaxLights * sizeof(LightData),
@@ -161,7 +205,9 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
             color = graph.addPass(tracing, setup, structures).rayImage;
         else
         {
-            const auto traced = graph.addPass(realtimeTracing, setup, structures, lightBuffer);
+            const auto geometry = graph.addPass(realtimeScene, setup);
+            triangleLights = geometry.triangles;
+            const auto traced = graph.addPass(realtimeTracing, setup, structures, geometry, lightBuffer);
             if (config.feature.rayTracing.svgf)
             {
                 const auto accumulated = graph.addPass(reprojection, setup, traced);
@@ -177,13 +223,24 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         if (config.feature.shadow.enable)
             shadows = graph.addPass(shadow, setup, lightBuffer);
         const auto depthOutput = graph.addPass(depth, setup);
-        const auto sceneOutput = graph.addPass(scene, setup, target, depthOutput.depth, shadows, lightBuffer);
-        color                  = sceneOutput.color;
-        depthImage             = sceneOutput.depth;
-        lightingShadow         = sceneOutput.shadow;
+        if (config.renderPath == RenderPath::Deferred)
+        {
+            const auto geometry = graph.addPass(gBuffer, setup, depthOutput.depth);
+            const auto lit      = graph.addPass(deferredLighting, setup, target, geometry, shadows, lightBuffer);
+            color               = lit.color;
+            depthImage          = lit.depth;
+            lightingShadow      = lit.shadow;
+        }
+        else
+        {
+            const auto lit = graph.addPass(scene, setup, target, depthOutput.depth, shadows, lightBuffer);
+            color          = lit.color;
+            depthImage     = lit.depth;
+            lightingShadow = lit.shadow;
+        }
         if (config.feature.ibl)
-            color = graph.addPass(skybox, setup, color, sceneOutput.depth).color;
-        color = graph.addPass(transparent, setup, color, sceneOutput.depth, sceneOutput.shadow, lightBuffer).color;
+            color = graph.addPass(skybox, setup, color, depthImage).color;
+        color = graph.addPass(transparent, setup, color, depthImage, lightingShadow, lightBuffer).color;
     }
     const auto exposureOutput = graph.addPass(exposure, setup, color);
     if (!offline && lightMarkersAndPicking)
@@ -195,9 +252,11 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     if (config.feature.bloom.enable)
         color = bloom.setup(graph, setup, color).color;
     color             = graph.addPass(toneMapping, setup, color, target, exposureOutput.state).color;
-    const auto buffer = graph.addPass(readback, setup, color, exposureOutput.state);
+    const auto buffer = graph.addPass(readback, setup, color, exposureOutput.state, triangleLights);
     graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
     graph.compile(setup);
+    if (config.renderPath == RenderPath::Deferred)
+        deferredLighting.writeDescriptorSet(graph, setup);
     bindTestLightBuffer(graph, setup, lightBuffer);
 
     EditorCamera camera{scenes.scene().editorCamera};
@@ -259,22 +318,47 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     for (auto& frame : frames)
         frame.wait();
 
-    const auto imageBytes = size_t(extent.width) * extent.height * 4;
-    std::vector<uint8_t> pixels(imageBytes + sizeof(ExposurePass::State));
-    graph.getBuffer(buffer).download(pixels.data(), pixels.size());
-    ExposurePass::State exposureState;
-    std::memcpy(&exposureState, pixels.data() + imageBytes, sizeof(exposureState));
-    CHECK(std::isfinite(exposureState.ev100) && std::isfinite(exposureState.exposureScale) && exposureState.exposureScale > 0.0f);
-    LOG_INFO("Exposure: EV100={}, scale={}, automaticValid={}",
-             exposureState.ev100, exposureState.exposureScale, exposureState.automaticValid);
-    pixels.resize(imageBytes);
-    if (format == vk::Format::eB8G8R8A8Srgb || format == vk::Format::eB8G8R8A8Unorm)
-        for (size_t offset = 0; offset < pixels.size(); offset += 4)
-            std::swap(pixels[offset], pixels[offset + 2]);
     std::error_code error;
     if (!output.parent_path().empty())
         std::filesystem::create_directories(output.parent_path(), error);
     CHECK(!error, "cannot create output directory '{}': {}", output.string(), error.message());
+
+    const auto           imageBytes = size_t(extent.width) * extent.height * 4;
+    std::vector<uint8_t> pixels(imageBytes + sizeof(ExposurePass::State) + readback.triangleBytes);
+    graph.getBuffer(buffer).download(pixels.data(), pixels.size());
+    ExposurePass::State exposureState;
+    std::memcpy(&exposureState, pixels.data() + imageBytes, sizeof(exposureState));
+    CHECK(
+        std::isfinite(exposureState.ev100) && std::isfinite(exposureState.exposureScale) &&
+        exposureState.exposureScale > 0.0f
+    );
+    LOG_INFO(
+        "Exposure: EV100={}, scale={}, automaticValid={}",
+        exposureState.ev100,
+        exposureState.exposureScale,
+        exposureState.automaticValid
+    );
+    if (realtime)
+    {
+        const auto             offset = imageBytes + sizeof(ExposurePass::State);
+        EmissiveTriangleHeader header;
+        std::memcpy(&header, pixels.data() + offset, sizeof(header));
+        CHECK(header.triangleCount == realtimeScene.triangleCount());
+        auto path = output;
+        path.replace_extension(".lights.bin");
+        std::ofstream stream(path, std::ios::binary);
+        CHECK(stream, "cannot write triangle light capture: {}", path.string());
+        stream.write(
+            reinterpret_cast<const char*>(pixels.data() + offset),
+            sizeof(header) + size_t(header.triangleCount) * sizeof(EmissiveTriangle)
+        );
+        CHECK(stream);
+        LOG_INFO("Emissive triangle lights: {}", header.triangleCount);
+    }
+    pixels.resize(imageBytes);
+    if (format == vk::Format::eB8G8R8A8Srgb || format == vk::Format::eB8G8R8A8Unorm)
+        for (size_t offset = 0; offset < pixels.size(); offset += 4)
+            std::swap(pixels[offset], pixels[offset + 2]);
     CHECK(
         stbi_write_png(
             output.string().c_str(),
@@ -302,10 +386,14 @@ int main(int argc, char** argv)
     logger::init(argv[0]);
     CHECK(
         argc >= 4 && argc <= 7,
-        "usage: CaptureScene <scene-id> <forward|realtime|offline> <output.png> [frames=1] [size=960] [ev100|auto]"
+        "usage: CaptureScene <scene-id> <forward|deferred|realtime|offline> <output.png> [frames=1] [size=960] [ev100|auto]"
     );
     const std::string_view route{argv[2]};
-    CHECK(route == "forward" || route == "realtime" || route == "offline", "unsupported capture route: {}", route);
+    CHECK(
+        route == "forward" || route == "deferred" || route == "realtime" || route == "offline",
+        "unsupported capture route: {}",
+        route
+    );
     const auto frameCount = argc > 4 ? parseNumber<uint32_t>(argv[4]) : 1u;
     const auto side       = argc > 5 ? parseNumber<int>(argv[5]) : 960;
     CHECK(frameCount > 0 && side > 0);
@@ -352,7 +440,11 @@ int main(int argc, char** argv)
           "capture route does not match scene render mode");
     config.setSceneRenderMode(scenes.scene().renderMode);
     if (route != "offline")
-        config.setRenderPath(route == "realtime" ? RenderPath::RayTracing : RenderPath::Forward);
+        config.setRenderPath(
+            route == "realtime"       ? RenderPath::RayTracing
+                : route == "deferred" ? RenderPath::Deferred
+                                      : RenderPath::Forward
+        );
     config.setEditorSize(side, side);
     CHECK(glfwInit());
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);

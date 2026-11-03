@@ -89,6 +89,8 @@ public:
     ImageHandle createExternalImage(ImageCreateInfo info);
     void bindImage(ImageHandle handle, Image& image);
     BufferHandle createBuffer(BufferCreateInfo info);
+    // Growth discards the old contents; call during preparation before updating descriptors.
+    void ensureBufferCapacity(BufferHandle buffer, vk::DeviceSize size);
 
     struct BufferUpload
     {

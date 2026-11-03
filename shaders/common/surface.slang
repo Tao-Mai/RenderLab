@@ -1,13 +1,14 @@
 #ifndef RENDERLAB_SURFACE_SLANG
 #define RENDERLAB_SURFACE_SLANG
 
+#include "common/pbr_brdf.slang"
+
 struct Surface
 {
     float3 worldPosition;
     float3 normal;
-    float4 baseColor;
-    float roughness;
-    float metallic;
+    PbrBrdf brdf;
+    float opacity;
     float occlusion;
     float3 emissive;
 #if ENABLE_SHEEN

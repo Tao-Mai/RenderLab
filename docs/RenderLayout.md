@@ -72,10 +72,12 @@ Binding 0 为全局 `MaterialData` SSBO，Binding 1 为 128 项纹理数组，Bi
 
 | 路线 | Binding 排列 |
 | --- | --- |
-| 实时 | 0：TLAS；1：命中数据；2：合并颜色或直接光；3：深度；4：法线；5：间接光；6：emission；7：albedo |
+| 实时 | 0：TLAS；1：命中数据；2：发光三角形；3：合并颜色或直接光；4：深度；5：法线；6：间接光；7：emission；8：albedo |
 | 离线 | 0：TLAS；1：命中数据；2：材质预览；3：纹理指令；4：发光网格共享参数；5–11：point / spot / distant / 三角形 / infinite / projection / goniometric；12：portal 顶点；13：累积缓冲；14：颜色输出；15：BDPT splat；16：BDPT 光源 alias table |
 
-实时光追的 Binding 5–7 用于 SVGF，SVGF 开关重建图并选择匹配的 Shader。
+实时光追的 Binding 6–8 用于 SVGF，SVGF 开关重建图并选择匹配的 Shader。Binding 2 的 SSBO 保存 16 B 数量头及每个实例展开后的 80 B 三角形记录，发光系数和纹理通过材质索引共享 MaterialSet。
+
+`RayTracingScenePass` 使用独立 Compute 布局：Set 0 的 Binding 0 / 1 / 2 分别为命中记录、发光实例任务和输出三角形缓冲。8 B Push Constant 保存本次三角形数量和任务数量。Graph 同步 Compute 写入与后续光追读取。
 
 `SVGFReprojection` 私有 Set 1 的 Binding 0–4 为当前帧 direct / indirect / depth / normal / albedo；5–10 为两路颜色、共享深度 / 法线、两路亮度矩 / 样本数的双层历史；11 / 12 为两路 RGBA32F 颜色 / 方差输出。亮度矩输出引用历史数组（RG 为一阶 / 二阶矩，B 为样本数）。颜色及亮度统计均已除以 albedo，颜色历史在本阶段只读，由第一级滤波回写。
 

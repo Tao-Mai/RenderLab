@@ -4,6 +4,7 @@
 #include "render/device/Device.h"
 #include "render/graph/RenderGraph.h"
 #include "render/raytracing/realtime/RayTracingData.h"
+#include "render/raytracing/realtime/RayTracingScenePass.h"
 #include "render/raytracing/TlasBuildPass.h"
 #include "render/resources/ShaderData.h"
 
@@ -24,8 +25,13 @@ public:
         RenderGraph::ImageHandle albedo;  // Primary material base color in linear space, including its texture.
     };
 
-    Output
-    setup(RenderGraph& graph, const PassSetup& setup, TlasBuildPass::Output scene, RenderGraph::BufferHandle lights);
+    Output setup(
+        RenderGraph&                graph,
+        const PassSetup&            setup,
+        TlasBuildPass::Output       scene,
+        RayTracingScenePass::Output geometry,
+        RenderGraph::BufferHandle   lights
+    );
     void writeDescriptorSet(RenderGraph& graph, const PassSetup& setup);
     void prepare(RenderGraph& graph, const PassFrame& execution);
     void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution);
@@ -33,12 +39,13 @@ public:
 private:
     struct Frame
     {
-        uint64_t                hitBufferRevision = 0;
-        vk::raii::DescriptorSet set               = nullptr;
-        uint64_t                tlasRevision      = 0;
+        uint64_t                hitBufferRevision      = 0;
+        uint64_t                triangleBufferRevision = 0;
+        vk::raii::DescriptorSet set                    = nullptr;
+        uint64_t                tlasRevision           = 0;
     };
-    Output                                  output;
-    bool                                    svgfEnabled = false;
+    Output                                   output;
+    bool                                     svgfEnabled = false;
     uint32_t                                 sampleIndex = 0;
     DescriptorSetLayout                      descriptorSetLayout;
     vk::PipelineLayout                       pipelineLayout;
@@ -46,10 +53,10 @@ private:
     Buffer                                   bindingTable;
     vk::StridedDeviceAddressRegionKHR        raygenRegion, missRegion, hitRegion;
     RenderGraph::AccelerationStructureHandle sceneTlas;
-    RenderGraph::BufferHandle                hitData;
+    RayTracingScenePass::Output              geometry;
     std::array<Frame, maxFramesInFlight>     frames;
 
     void createPipeline(const PassSetup& setup);
-    void prepareHits(RenderGraph& graph, const PassFrame& execution, Frame& frame);
+    void updateBufferDescriptors(RenderGraph& graph, const PassFrame& execution, Frame& frame);
     void updateTlasDescriptor(RenderGraph& graph, const PassFrame& execution, Frame& frame);
 };

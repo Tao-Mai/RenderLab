@@ -2,7 +2,6 @@
 
 #include "core/Context.h"
 #include "core/Logger.h"
-#include "core/Vertex.h"
 #include "render/FrameData.h"
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
@@ -13,10 +12,8 @@
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/graph/RenderGraph.h"
-#include "render/resources/GpuMesh.h"
 #include "render/resources/GpuShader.h"
 #include "render/resources/MaterialTable.h"
-#include "render/resources/RenderResourceManager.h"
 
 #include <algorithm>
 #include <cstring>
@@ -33,7 +30,11 @@ vk::DeviceSize     alignUp(vk::DeviceSize value, vk::DeviceSize alignment)
 }  // namespace
 
 RayTracingPass::Output RayTracingPass::setup(
-    RenderGraph& graph, const PassSetup& setup, TlasBuildPass::Output scene, RenderGraph::BufferHandle lights
+    RenderGraph&                graph,
+    const PassSetup&            setup,
+    TlasBuildPass::Output       scene,
+    RayTracingScenePass::Output preparedGeometry,
+    RenderGraph::BufferHandle   lights
 )
 {
     CHECK(setup.vulkan.supportsRayTracing(), "selected GPU does not support the ray tracing route");
@@ -47,11 +48,8 @@ RayTracingPass::Output RayTracingPass::setup(
     );
 
     sceneTlas = scene.tlas;
-    hitData   = graph.createBuffer({
-          .size  = sizeof(RayTracingHitData),
-          .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
-    });
-    for (const auto buffer : {hitData, lights})
+    geometry  = preparedGeometry;
+    for (const auto buffer : {geometry.objects, geometry.triangles, lights})
         graph.use(
             buffer,
             {
@@ -105,8 +103,9 @@ RayTracingPass::Output RayTracingPass::setup(
     }
     for (auto& frame : frames)
     {
-        frame.hitBufferRevision = 0;
-        frame.tlasRevision      = 0;
+        frame.hitBufferRevision      = 0;
+        frame.triangleBufferRevision = 0;
+        frame.tlasRevision           = 0;
     }
     return output;
 }
@@ -140,6 +139,12 @@ void RayTracingPass::createPipeline(const PassSetup& setup)
                 .descriptorType  = vk::DescriptorType::eStorageBuffer,
                 .descriptorCount = 1,
                 .stageFlags      = vk::ShaderStageFlagBits::eClosestHitKHR
+            },
+            vk::DescriptorSetLayoutBinding{
+                .binding         = RealtimeRayTracingBinding::kTriangles,
+                .descriptorType  = vk::DescriptorType::eStorageBuffer,
+                .descriptorCount = 1,
+                .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
             },
             vk::DescriptorSetLayoutBinding{
                 .binding         = RealtimeRayTracingBinding::kColor,
@@ -333,46 +338,33 @@ void RayTracingPass::createPipeline(const PassSetup& setup)
     };
 }
 
-void RayTracingPass::prepareHits(RenderGraph& graph, const PassFrame& execution, Frame& frame)
+void RayTracingPass::updateBufferDescriptors(RenderGraph& graph, const PassFrame& execution, Frame& frame)
 {
-    const auto& device    = execution.setup.vulkan.deviceHandle();
-    auto&       resources = *renderContext().resources;
-    static_assert(sizeof(Vertex) == 48 && offsetof(Vertex, normal) == 12 && offsetof(Vertex, texcoord) == 24);
-    const auto& items  = execution.renderData.drawItems;
-    const auto  bytes  = std::max<size_t>(items.size(), 1) * sizeof(RayTracingHitData);
-    const auto  upload = graph.allocateUpload(hitData, bytes);
-    auto*       hits   = reinterpret_cast<RayTracingHitData*>(upload.data.data());
-    for (uint32_t index = 0; index < items.size(); ++index)
+    const std::array handles{geometry.objects, geometry.triangles};
+    const std::array bindings{RealtimeRayTracingBinding::kObjects, RealtimeRayTracingBinding::kTriangles};
+    const std::array revisions{&frame.hitBufferRevision, &frame.triangleBufferRevision};
+    std::array<vk::DescriptorBufferInfo, 2> infos;
+    std::array<vk::WriteDescriptorSet, 2>   writes;
+    uint32_t                                writeCount = 0;
+    for (uint32_t index = 0; index < handles.size(); ++index)
     {
-        const auto& item = items[index];
-        const auto& mesh = resources.mesh(item.mesh);
-        std::construct_at(
-            hits + index,
-            RayTracingHitData{
-                mesh.vertices().address(device),
-                mesh.indices().address(device),
-                mesh.submeshes()[item.submeshIndex].firstIndex,
-                execution.renderData.materialIndices[index],
-            }
-        );
-    }
-    if (items.empty())
-        std::construct_at(hits, RayTracingHitData{});
-
-    const auto& buffer = graph.getBuffer(hitData);
-    if (frame.hitBufferRevision != graph.bufferRevision(hitData))
-    {
-        const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.size()};
-        const vk::WriteDescriptorSet   write{
-              .dstSet          = *frame.set,
-              .dstBinding      = RealtimeRayTracingBinding::kObjects,
-              .descriptorCount = 1,
-              .descriptorType  = vk::DescriptorType::eStorageBuffer,
-              .pBufferInfo     = &info,
+        const auto revision = graph.bufferRevision(handles[index]);
+        if (*revisions[index] == revision)
+        {
+            continue;
+        }
+        const auto& buffer   = graph.getBuffer(handles[index]);
+        infos[index]         = vk::DescriptorBufferInfo{.buffer = buffer.handle(), .range = buffer.size()};
+        writes[writeCount++] = {
+            .dstSet          = *frame.set,
+            .dstBinding      = bindings[index],
+            .descriptorCount = 1,
+            .descriptorType  = vk::DescriptorType::eStorageBuffer,
+            .pBufferInfo     = &infos[index],
         };
-        device.updateDescriptorSets(write, {});
-        frame.hitBufferRevision = graph.bufferRevision(hitData);
+        *revisions[index] = revision;
     }
+    execution.setup.vulkan.deviceHandle().updateDescriptorSets(std::span{writes.data(), writeCount}, {});
 }
 
 void RayTracingPass::updateTlasDescriptor(RenderGraph& graph, const PassFrame& execution, Frame& frame)
@@ -480,7 +472,7 @@ void RayTracingPass::prepare(RenderGraph& graph, const PassFrame& execution)
 {
     CpuProfileScope timing{context().profiler, "RT.Buffer preparation"};
     auto&           frame = frames[execution.frameIndex];
-    prepareHits(graph, execution, frame);
+    updateBufferDescriptors(graph, execution, frame);
 }
 
 void RayTracingPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution)

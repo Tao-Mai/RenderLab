@@ -3,6 +3,7 @@
 #include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
+#include "core/Serializer.h"
 #include "core/Window.h"
 #include "editor/EditorCamera.h"
 #include "render/Renderer.h"

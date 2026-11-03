@@ -8,12 +8,13 @@
 #include "common/random.slang"
 #include "common/local_light_sampling.slang"
 #include "common/rect_area_light_sampling.slang"
-#include "common/material_data.slang"
+#include "common/material_evaluation.slang"
 #include "common/pbr_brdf.slang"
 #include "common/normal_mapping.slang"
 #include "common/scene_data.slang"
+#include "raytracing/realtime/geometry.slang"
+#include "raytracing/realtime/triangle_light.slang"
 
-static const uint kVertexStrideFloats = 12;
 static const uint kRussianRouletteStartBounce = 3;
 static const float kRayEpsilon = 0.001;
 static const uint kVisibilityMissIndex = 1;
@@ -26,6 +27,12 @@ static const uint kLightMask = 0x02;
 [[vk::binding(1, 1)]] StructuredBuffer<LightData> lights;
 [[vk::binding(8, 1)]] TextureCube<float4> radianceMap;
 [[vk::binding(9, 1)]] SamplerState radianceSampler;
+[[vk::binding(RealtimeRayTracingBinding::kTriangles, 3)]] ByteAddressBuffer emissiveTriangles;
+
+EmissiveTriangle loadEmissiveTriangle(uint index)
+{
+    return emissiveTriangles.Load<EmissiveTriangle>(kEmissiveTriangleHeaderSize + index * kEmissiveTriangleStride);
+}
 
 struct VisibilityPayload
 {
@@ -45,6 +52,7 @@ struct Surface
     float3 viewDirection; // World-space direction toward the previous ray vertex (wo).
     PbrBrdf brdf;
     float3 emissive;
+    uint emissiveTriangleIndex;
 
     float3 rayOrigin()
     {
@@ -142,7 +150,43 @@ struct Surface
         return evaluateLight(lightDirection, emitter.data.color) * weight / lightPdf;
     }
 
-    float3 sampleDirectRadiance(LightRanges ranges, inout uint state, out float rectAreaLightWeightSum)
+    float3 sampleEmissiveTriangleRadiance(uint triangleCount, inout uint state)
+    {
+        if (triangleCount == 0)
+        {
+            return float3(0.0);
+        }
+
+        uint index = sampleEmissiveTriangleIndex(triangleCount, state);
+        EmissiveTriangle light = loadEmissiveTriangle(index);
+        float3 barycentrics = sampleTriangleBarycentrics(state);
+        float3 target = light.position + light.edge1 * barycentrics.y + light.edge2 * barycentrics.z;
+        float3 origin = rayOrigin();
+        float lightPdf = triangleLightPdf(light, origin, target, triangleCount);
+        if (lightPdf <= 0.0)
+        {
+            return float3(0.0);
+        }
+        float3 offset = target - origin;
+        float distance = length(offset);
+        float3 direction = offset / distance;
+        if (dot(geometricNormal, direction) <= 0.0 || dot(normal, direction) <= 0.0)
+        {
+            return float3(0.0);
+        }
+
+        float3 emission = triangleLightEmission(light, barycentrics);
+        if (!any(emission > 0.0) || !isVisible(direction, distance))
+        {
+            return float3(0.0);
+        }
+        float brdfPdf = brdf.pdf(normal, viewDirection, direction);
+        float weight = balanceHeuristic(lightPdf, brdfPdf);
+        return evaluateLight(direction, emission) * weight / lightPdf;
+    }
+
+    float3 sampleDirectRadiance(LightRanges ranges, uint triangleCount, inout uint state,
+        out float rectAreaLightWeightSum)
     {
         float3 radiance = sampleLocalLightRadiance(ranges, state);
         for (uint index = 0; index < ranges.directionalEnd; ++index)
@@ -165,85 +209,62 @@ struct Surface
         float3 origin = rayOrigin();
         RectAreaLightSample selected = sampleRectAreaLight(lights, ranges.pointEnd, ranges.rectAreaEnd, origin, state);
         radiance += sampleRectAreaLightRadiance(selected, state);
+        radiance += sampleEmissiveTriangleRadiance(triangleCount, state);
 
         rectAreaLightWeightSum = selected.weightSum;
         return radiance;
     }
 };
 
-struct VertexAttributes
+Surface surfaceAt(RayTracingHitData hit, uint primitiveIndex, float2 barycentrics)
 {
-    float3 position;
-    float3 normal;
-    float2 uv;
-    float4 tangent;
-};
+    uint* indices = (uint*)hit.indexAddress;
+    uint first = hit.firstIndex + primitiveIndex * 3;
+    VertexAttributes v0 = hit.loadVertex(indices[first]);
+    VertexAttributes v1 = hit.loadVertex(indices[first + 1]);
+    VertexAttributes v2 = hit.loadVertex(indices[first + 2]);
+    float3 weights = float3(1.0 - barycentrics.x - barycentrics.y, barycentrics);
+    float2 uv = v0.uv * weights.x + v1.uv * weights.y + v2.uv * weights.z;
+    float3 objectNormal = v0.normal * weights.x + v1.normal * weights.y + v2.normal * weights.z;
+    float4 objectTangent = v0.tangent * weights.x + v1.tangent * weights.y + v2.tangent * weights.z;
+    MaterialData material = materials[hit.materialIndex];
 
-struct HitData
-{
-    uint64_t vertexAddress;
-    uint64_t indexAddress;
-    uint firstIndex;
-    uint materialIndex;
-    uint2 padding;
-
-    VertexAttributes loadVertex(uint index)
+    // Row-vector multiplication applies the inverse transpose, including nonuniform scale.
+    float3 worldNormal = normalize(mul(objectNormal, (float3x3)WorldToObject3x4()));
+    float3x3 model = (float3x3)ObjectToWorld3x4();
+    float handedness = determinant(model) < 0.0 ? -1.0 : 1.0;
+    float4 worldTangent = float4(mul(model, objectTangent.xyz), sign(objectTangent.w) * handedness);
+    float3 geometricNormal = normalize(cross(mul(model, v1.position - v0.position),
+        mul(model, v2.position - v0.position)));
+    float3 emissionNormal = geometricNormal;
+    if (dot(geometricNormal, worldNormal) < 0.0)
     {
-        // Matches the packed 48-byte C++ Vertex; do not apply std430 float3 alignment.
-        float* vertex = (float*)vertexAddress + index * kVertexStrideFloats;
-        return {
-            float3(vertex[0], vertex[1], vertex[2]),
-            float3(vertex[3], vertex[4], vertex[5]),
-            float2(vertex[6], vertex[7]),
-            float4(vertex[8], vertex[9], vertex[10], vertex[11]),
-        };
+        geometricNormal = -geometricNormal;
     }
 
-    Surface surfaceAt(uint primitiveIndex, float2 barycentrics)
+    Surface surface;
+    surface.position = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
+    surface.viewDirection = -normalize(WorldRayDirection());
+    surface.normal = applyNormalMap(worldNormal, worldTangent,
+        sampleTextureLevel(material.normalTexture, uv).xyz, material.normalScale);
+    float facing = dot(geometricNormal, surface.viewDirection) < 0.0 ? -1.0 : 1.0;
+    surface.geometricNormal = geometricNormal * facing;
+    surface.normal *= facing;
+    if (dot(surface.normal, surface.viewDirection) <= 0.0)
     {
-        uint* indices = (uint*)indexAddress;
-        uint first = firstIndex + primitiveIndex * 3;
-        VertexAttributes v0 = loadVertex(indices[first]);
-        VertexAttributes v1 = loadVertex(indices[first + 1]);
-        VertexAttributes v2 = loadVertex(indices[first + 2]);
-        float3 weights = float3(1.0 - barycentrics.x - barycentrics.y, barycentrics);
-        float2 uv = v0.uv * weights.x + v1.uv * weights.y + v2.uv * weights.z;
-        float3 objectNormal = v0.normal * weights.x + v1.normal * weights.y + v2.normal * weights.z;
-        float4 objectTangent = v0.tangent * weights.x + v1.tangent * weights.y + v2.tangent * weights.z;
-        MaterialData material = materials[materialIndex];
-
-        // Row-vector multiplication applies the inverse transpose, including nonuniform scale.
-        float3 worldNormal = normalize(mul(objectNormal, (float3x3)WorldToObject3x4()));
-        float3x3 model = (float3x3)ObjectToWorld3x4();
-        float handedness = determinant(model) < 0.0 ? -1.0 : 1.0;
-        float4 worldTangent = float4(mul(model, objectTangent.xyz), sign(objectTangent.w) * handedness);
-        float3 geometricNormal = normalize(cross(mul(model, v1.position - v0.position),
-            mul(model, v2.position - v0.position)));
-        if (dot(geometricNormal, worldNormal) < 0.0)
-        {
-            geometricNormal = -geometricNormal;
-        }
-
-        Surface surface;
-        surface.position = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
-        surface.viewDirection = -normalize(WorldRayDirection());
-        surface.normal = applyNormalMap(worldNormal, worldTangent,
-            sampleTextureLevel(material.normalTexture, uv).xyz, material.normalScale);
-        float facing = dot(geometricNormal, surface.viewDirection) < 0.0 ? -1.0 : 1.0;
-        surface.geometricNormal = geometricNormal * facing;
-        surface.normal *= facing;
-        if (dot(surface.normal, surface.viewDirection) <= 0.0)
-        {
-            surface.normal = surface.geometricNormal;
-        }
-
-        surface.brdf.baseColor = sampleTextureLevel(material.baseColorTexture, uv).rgb * material.baseColorFactor.rgb;
-        surface.brdf.metallic = saturate(material.metallic * sampleTextureLevel(material.metallicTexture, uv).b);
-        surface.brdf.roughness = saturate(material.roughness * sampleTextureLevel(material.roughnessTexture, uv).g);
-        surface.emissive = sampleTextureLevel(material.emissiveTexture, uv).rgb * material.emissiveFactor.rgb;
-        return surface;
+        surface.normal = surface.geometricNormal;
     }
-};
+
+    surface.brdf = evaluatePbrMaterial(material, uv, RayMaterialSampler()).brdf;
+    surface.emissive = sampleTextureLevel(material.emissiveTexture, uv).rgb * material.emission;
+    if (material.doubleSided == 0 && dot(emissionNormal, surface.viewDirection) <= 0.0)
+    {
+        surface.emissive = float3(0.0);
+    }
+    surface.emissiveTriangleIndex = hit.firstEmissiveTriangle == kInvalidEmissiveTriangle
+        ? kInvalidEmissiveTriangle : hit.firstEmissiveTriangle + primitiveIndex;
+    return surface;
+}
 
 struct PathTracingParameters
 {
@@ -252,18 +273,21 @@ struct PathTracingParameters
     uint maxBounces;
     uint sampleIndex;
     uint iblEnabled;
-    uint pixelJitterEnabled;
+    uint padding;
+
+    property float2 viewportOffset { get { return viewport.xy; } }
+    property float2 viewportExtent { get { return viewport.zw; } }
 
     bool containsPixel(uint2 pixel)
     {
-        float2 local = float2(pixel) + 0.5 - viewport.xy;
-        return all(local >= 0.0) && all(local < viewport.zw);
+        float2 local = float2(pixel) + 0.5 - viewportOffset;
+        return all(local >= 0.0) && all(local < viewportExtent);
     }
 
     RayDesc createRay(uint2 pixel, float2 pixelSample)
     {
-        float2 local = float2(pixel) + pixelSample - viewport.xy;
-        float2 ndc = local / viewport.zw * 2.0 - 1.0;
+        float2 local = float2(pixel) + pixelSample - viewportOffset;
+        float2 ndc = local / viewportExtent * 2.0 - 1.0;
         float4 farPoint = mul(sceneUniforms.inverseViewProjection, float4(ndc, 1.0, 1.0));
         float3 toFar = farPoint.xyz / farPoint.w - sceneUniforms.cameraPosition.xyz;
 
@@ -277,7 +301,7 @@ struct PathTracingParameters
 };
 
 [[vk::push_constant]] ConstantBuffer<PathTracingParameters> parameters;
-[[vk::binding(RealtimeRayTracingBinding::kObjects, 3)]] StructuredBuffer<HitData> objects;
+[[vk::binding(RealtimeRayTracingBinding::kObjects, 3)]] StructuredBuffer<RayTracingHitData> objects;
 
 enum class PathEvent : uint
 {
@@ -339,6 +363,7 @@ PathResult tracePath(RayDesc ray, uint primaryMask, uint primaryFlags, inout uin
     float3 throughput = float3(1.0);
     float previousBrdfPdf = 0.0;
     float previousRectAreaWeightSum = 0.0;
+    uint triangleCount = emissiveTriangles.Load(0);
 
     for (uint bounce = 0; bounce <= parameters.maxBounces; ++bounce)
     {
@@ -380,10 +405,17 @@ PathResult tracePath(RayDesc ray, uint primaryMask, uint primaryFlags, inout uin
         {
             result.primaryDepth = linearViewDepth(surface.position, sceneUniforms.view);
             result.primaryNormal = surface.geometricNormal;
-            result.primaryAlbedo = surface.brdf.baseColor;
+            result.primaryAlbedo = surface.brdf.albedo();
         }
         // Emission reached after one BRDF sample completes a direct-light path, including its MIS pair.
-        result.addEmission(throughput * surface.emissive, bounce);
+        float emissionWeight = 1.0;
+        if (bounce != 0 && surface.emissiveTriangleIndex != kInvalidEmissiveTriangle)
+        {
+            EmissiveTriangle light = loadEmissiveTriangle(surface.emissiveTriangleIndex);
+            float lightPdf = triangleLightPdf(light, ray.Origin, surface.position, triangleCount);
+            emissionWeight = balanceHeuristic(previousBrdfPdf, lightPdf);
+        }
+        result.addEmission(throughput * surface.emissive * emissionWeight, bounce);
         // After the last scattering event, retain terminal emission without another visibility query.
         if (bounce == parameters.maxBounces)
         {
@@ -391,7 +423,8 @@ PathResult tracePath(RayDesc ray, uint primaryMask, uint primaryFlags, inout uin
         }
 
         float rectAreaWeightSum;
-        result.addRadiance(throughput * surface.sampleDirectRadiance(parameters.lightRanges, state, rectAreaWeightSum),
+        result.addRadiance(throughput * surface.sampleDirectRadiance(parameters.lightRanges,
+            triangleCount, state, rectAreaWeightSum),
             bounce == 0);
         float3 randomSample;
         randomSample.x = randomFloat(state);
@@ -444,8 +477,8 @@ void visibilityMissMain(inout VisibilityPayload payload)
 void closestHitMain(inout PathHit payload, BuiltInTriangleIntersectionAttributes attributes)
 {
     payload.event = PathEvent::Surface;
-    HitData hit = objects[InstanceID()];
-    payload.surface = hit.surfaceAt(PrimitiveIndex(), attributes.barycentrics);
+    RayTracingHitData hit = objects[InstanceID()];
+    payload.surface = surfaceAt(hit, PrimitiveIndex(), attributes.barycentrics);
 }
 
 [shader("closesthit")]

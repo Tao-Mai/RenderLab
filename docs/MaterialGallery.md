@@ -9,13 +9,14 @@
 | | 第 1 列 | 第 2 列 | 第 3 列 | 第 4 列 |
 | --- | --- | --- | --- | --- |
 | 第 1 行 | PBR 非金属 | PBR 金属 | Clearcoat | Anisotropy * |
-| 第 2 行 | Sheen 布料 | Transmission * | Volume * | IOR * |
-| 第 3 行 | Specular * | Iridescence * | Dispersion * | Emissive Strength |
+| 第 2 行 | Sheen 布料 | Transmission * | Volume * | IOR |
+| 第 3 行 | Specular | Iridescence * | Dispersion * | Emissive Strength |
 | 第 4 行 | Unlit * | Diffuse Transmission * | Alpha Blend | Alpha Mask |
 
 带 * 的扩展支持数据、导入与编辑，画面使用基础 PBR 着色；属性栏显示 `Data only - shading not implemented`。
 
 - 基础 PBR、Normal、AO、自发光已实现。
+- MR / SG 的统一参数、Specular 与 IOR 处理见[材质工作流](Material.md)。
 - Clearcoat 使用 Forward；Sheen 支持 Forward / Deferred。
 - Alpha Blend / Mask 用于光栅透明混合与遮罩。
 

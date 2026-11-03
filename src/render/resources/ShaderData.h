@@ -18,11 +18,12 @@ inline constexpr uint32_t kShadowSet   = 3;
 inline constexpr uint32_t kRayTracingPassSet = 3;
 inline constexpr uint32_t kDeferredPassSet   = 2;
 
-inline constexpr uint32_t kGBufferAlbedoBinding   = 0;
+inline constexpr uint32_t kGBufferDiffuseBinding  = 0;
 inline constexpr uint32_t kGBufferNormalBinding   = 1;
 inline constexpr uint32_t kGBufferEmissiveBinding = 2;
-inline constexpr uint32_t kGBufferDepthBinding    = 3;
+inline constexpr uint32_t kGBufferSpecularBinding = 3;
 inline constexpr uint32_t kGBufferSheenBinding    = 4;
+inline constexpr uint32_t kGBufferDepthBinding    = 5;
 
 // Scene set: camera data only.
 inline constexpr uint32_t kSceneUniformBinding = 0;

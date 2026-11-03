@@ -271,6 +271,7 @@ struct MaterialImport
     GltfMaterial material(const aiMaterial& sourceMaterial)
     {
         GltfMaterial result;
+        result.workflow = MaterialWorkflow::MetallicRoughness;
         aiColor4D        baseColor{1, 1, 1, 1};
         if (sourceMaterial.Get(AI_MATKEY_BASE_COLOR, baseColor) != AI_SUCCESS)
             sourceMaterial.Get(AI_MATKEY_COLOR_DIFFUSE, baseColor);

@@ -290,8 +290,7 @@ float3 evaluateDirectContribution(
     }
 
     float nDotL = saturate(dot(surface.normal, lightDirection));
-    float3 brdf = evaluateDirectBrdf(
-        surface.baseColor.rgb, surface.metallic, surface.roughness, surface.normal, V, lightDirection);
+    float3 brdf = surface.brdf.evaluate(surface.normal, V, lightDirection);
     float3 response = brdf * nDotL;
 
 #if ENABLE_SHEEN
@@ -320,7 +319,6 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
 {
     float3 V = normalize(sceneUniforms.cameraPosition.xyz - surface.worldPosition);
     float NdotV = saturate(dot(surface.normal, V));
-    float3 f0 = lerp(0.04, surface.baseColor.rgb, float3(surface.metallic));
 #if ENABLE_SHEEN
     float sheenStrength = max(surface.sheenColor.x, max(surface.sheenColor.y, surface.sheenColor.z));
     float sheenViewAlbedo = sheenLUT.SampleLevel(sheenLUTSampler, float2(NdotV, surface.sheenRoughness), 0.0).r;
@@ -428,19 +426,17 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
 
     // 镜面反射环境光照 Split Sum Approximation
     float3 environmentTerm = prefilteredSpecularMap.SampleLevel(
-        prefilteredSpecularMapSampler, R, surface.roughness * lightUniforms.prefilteredMaxLod).rgb;
-    float2 scaleBias = brdfLUT.Sample(brdfLUTSampler, float2(NdotV, surface.roughness)).rg;
-    float3 brdfTerm = scaleBias.x * f0 + scaleBias.y;
+        prefilteredSpecularMapSampler, R, surface.brdf.roughness * lightUniforms.prefilteredMaxLod).rgb;
+    float2 scaleBias = brdfLUT.Sample(brdfLUTSampler, float2(NdotV, surface.brdf.roughness)).rg;
+    float3 brdfTerm = scaleBias.x * surface.brdf.specularF0 + scaleBias.y * surface.brdf.specularF90;
     float3 ambientSpecular = environmentTerm * brdfTerm;
 
-    // The LUT integrates Fresnel and visibility; allocate the remaining energy to diffuse.
-    float3 diffuseWeight = (1.0 - saturate(brdfTerm)) * (1.0 - surface.metallic);
     float3 irradiance = irradianceMap.Sample(irradianceMapSampler, surface.normal).rgb;
-    float3 ambientDiffuse = irradiance * surface.baseColor.rgb * INV_PI * diffuseWeight;
+    float3 ambientDiffuse = irradiance * surface.brdf.diffuseReflectance(NdotV) * INV_PI;
 
     ambient = ambientDiffuse + ambientSpecular;
 #else
-    ambient = lightUniforms.ambientCoefficient * surface.baseColor.rgb;
+    ambient = lightUniforms.ambientCoefficient * surface.brdf.albedo();
 #endif
 #if ENABLE_SHEEN
     ambient *= sheenAmbientScale;

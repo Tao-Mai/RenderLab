@@ -102,6 +102,7 @@ void registerMaterials(
     const std::filesystem::path& meshSource)
 {
     GltfMaterial defaultMaterial;
+    defaultMaterial.workflow         = MaterialWorkflow::MetallicRoughness;
     defaultMaterial.id               = asset_import::nextId<MaterialAsset>(meshSource.stem().string());
     defaultMaterial.baseColorTexture = TextureBinding{
         BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat};
@@ -114,18 +115,40 @@ void registerMaterials(
         GltfMaterial              material;
         material.id = asset_import::nextId<MaterialAsset>(meshSource.stem().string());
 
-        const auto& pbr = source.pbrMetallicRoughness;
-        if (pbr.baseColorFactor.size() == 4)
+        material.workflow = source.extensions.contains("KHR_materials_pbrSpecularGlossiness")
+            ? MaterialWorkflow::SpecularGlossiness
+            : MaterialWorkflow::MetallicRoughness;
+        if (*material.workflow == MaterialWorkflow::MetallicRoughness)
         {
-            material.baseColorFactor = {
-                static_cast<float>(pbr.baseColorFactor[0]),
-                static_cast<float>(pbr.baseColorFactor[1]),
-                static_cast<float>(pbr.baseColorFactor[2]),
-                static_cast<float>(pbr.baseColorFactor[3]),
+            const auto& pbr = source.pbrMetallicRoughness;
+            if (pbr.baseColorFactor.size() == 4)
+            {
+                material.baseColorFactor = {
+                    static_cast<float>(pbr.baseColorFactor[0]),
+                    static_cast<float>(pbr.baseColorFactor[1]),
+                    static_cast<float>(pbr.baseColorFactor[2]),
+                    static_cast<float>(pbr.baseColorFactor[3]),
+                };
+            }
+            material.metallic  = static_cast<float>(pbr.metallicFactor);
+            material.roughness = static_cast<float>(pbr.roughnessFactor);
+
+            material.baseColorTexture = TextureBinding{
+                textureIdFor(build, model, pbr.baseColorTexture.index, modelDirectory, ColorSpace::Srgb)
+                    .value_or(BuiltinAssets::Texture::white),
+                BuiltinAssets::Sampler::linearRepeat
             };
+            CHECK(
+                pbr.metallicRoughnessTexture.index < 0 || pbr.metallicRoughnessTexture.texCoord == 0,
+                "metallic-roughness textures require TEXCOORD_0: {}",
+                meshSource.string()
+            );
+            material.metallicTexture = bindTexture(
+                textureIdFor(build, model, pbr.metallicRoughnessTexture.index, modelDirectory, ColorSpace::Linear)
+            );
+            material.roughnessTexture = material.metallicTexture;
         }
-        material.metallic  = static_cast<float>(pbr.metallicFactor);
-        material.roughness = static_cast<float>(pbr.roughnessFactor);
+
         if (source.emissiveFactor.size() == 3)
         {
             material.emissive = {
@@ -136,20 +159,9 @@ void registerMaterials(
         }
         material.ao               = static_cast<float>(source.occlusionTexture.strength);
         material.normalScale      = static_cast<float>(source.normalTexture.scale);
-        material.baseColorTexture = TextureBinding{
-            textureIdFor(build, model, pbr.baseColorTexture.index,
-                         modelDirectory, ColorSpace::Srgb)
-                .value_or(BuiltinAssets::Texture::white),
-            BuiltinAssets::Sampler::linearRepeat};
         material.normalTexture = bindTexture(textureIdFor(
             build, model, source.normalTexture.index,
             modelDirectory, ColorSpace::Linear));
-        CHECK(pbr.metallicRoughnessTexture.index < 0 || pbr.metallicRoughnessTexture.texCoord == 0,
-              "metallic-roughness textures require TEXCOORD_0: {}", meshSource.string());
-        material.metallicTexture = bindTexture(textureIdFor(
-            build, model, pbr.metallicRoughnessTexture.index,
-            modelDirectory, ColorSpace::Linear));
-        material.roughnessTexture = material.metallicTexture;
         material.aoTexture = bindTexture(textureIdFor(
             build, model, source.occlusionTexture.index,
             modelDirectory, ColorSpace::Linear));

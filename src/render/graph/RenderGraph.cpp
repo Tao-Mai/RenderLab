@@ -78,31 +78,12 @@ void RenderGraph::beginFrame(uint32_t frameIndex)
 RenderGraph::BufferUpload
 RenderGraph::allocateUpload(BufferHandle buffer, vk::DeviceSize size, vk::DeviceSize destinationOffset)
 {
-    auto& resource = resolveResource(buffer.id);
+    DEBUG_ONLY(const auto& resource = resolveResource(buffer.id);)
     DCHECK(resource.type == ResourceType::Buffer);
     DCHECK(resource.bufferUsage & vk::BufferUsageFlagBits::eTransferDst);
     DCHECK(size && size % 4 == 0 && destinationOffset % 4 == 0);
 
-    const auto requiredSize = destinationOffset + size;
-    const auto limit        = deviceContext->properties().limits.maxStorageBufferRange;
-    CHECK(requiredSize <= limit, "buffer upload requires {} bytes; maxStorageBufferRange is {}", requiredSize, limit);
-    if (requiredSize > resource.bufferInfo.size)
-    {
-        // A shared buffer can still be referenced by any frame in flight.
-        vkCheck(deviceContext->deviceHandle().waitIdle());
-        resource.bufferInfo.size =
-            std::min<vk::DeviceSize>(std::max(requiredSize, resource.bufferInfo.size * 2), limit);
-        auto& allocation  = *resource.allocation;
-        allocation.buffer = std::make_unique<Buffer>(
-            deviceContext->physicalDeviceHandle(),
-            deviceContext->deviceHandle(),
-            resource.bufferInfo.size,
-            resource.bufferUsage,
-            resource.bufferInfo.memoryProperties
-        );
-        allocation.state = {};
-        ++allocation.revision;
-    }
+    ensureBufferCapacity(buffer, destinationOffset + size);
 
     auto& pool = stagingPools[currentFrameIndex];
     while (pool.blockIndex < pool.blocks.size())
@@ -132,6 +113,33 @@ RenderGraph::allocateUpload(BufferHandle buffer, vk::DeviceSize size, vk::Device
         {buffer, pool.blockIndex, {.srcOffset = offset, .dstOffset = destinationOffset, .size = size}}
     );
     return {offset, {block.mapped + offset, static_cast<size_t>(size)}};
+}
+
+void RenderGraph::ensureBufferCapacity(BufferHandle buffer, vk::DeviceSize requiredSize)
+{
+    auto& resource = resolveResource(buffer.id);
+    DCHECK(resource.type == ResourceType::Buffer);
+    DCHECK(requiredSize > 0);
+
+    const auto limit        = deviceContext->properties().limits.maxStorageBufferRange;
+    CHECK(requiredSize <= limit, "buffer requires {} bytes; maxStorageBufferRange is {}", requiredSize, limit);
+    if (requiredSize > resource.bufferInfo.size)
+    {
+        // A shared buffer can still be referenced by any frame in flight.
+        vkCheck(deviceContext->deviceHandle().waitIdle());
+        resource.bufferInfo.size =
+            std::min<vk::DeviceSize>(std::max(requiredSize, resource.bufferInfo.size * 2), limit);
+        auto& allocation  = *resource.allocation;
+        allocation.buffer = std::make_unique<Buffer>(
+            deviceContext->physicalDeviceHandle(),
+            deviceContext->deviceHandle(),
+            resource.bufferInfo.size,
+            resource.bufferUsage,
+            resource.bufferInfo.memoryProperties
+        );
+        allocation.state = {};
+        ++allocation.revision;
+    }
 }
 
 void RenderGraph::recordUploads(vk::raii::CommandBuffer& commandBuffer)

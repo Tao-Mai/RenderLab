@@ -130,6 +130,8 @@
                                     "anisotropy": null,
                                     "ao": null,
                                     "aoTexture": null,
+                                    "workflow": null,
+                                    "specularGlossiness": null,
                                     "baseColorFactor": [
                                         1.0,
                                         1.0,

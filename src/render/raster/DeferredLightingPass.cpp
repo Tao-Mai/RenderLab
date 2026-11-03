@@ -29,9 +29,10 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
     gBuffer                   = input;
     const auto resolvedShadow = SceneDraw::useLightingResources(graph, lights, shadow);
     for (const auto image :
-         {gBuffer.albedoOcclusion,
+         {gBuffer.diffuseOcclusion,
           gBuffer.normalRoughness,
-          gBuffer.emissiveMetallic,
+          gBuffer.emissiveSpecularF90,
+          gBuffer.specularF0DiffuseFresnel,
           gBuffer.sheenColorRoughness,
           gBuffer.depth})
         graph.use(
@@ -68,38 +69,24 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
         }
     );
 
-    const std::array gBufferBindings = {
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kGBufferAlbedoBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kGBufferNormalBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kGBufferEmissiveBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kGBufferDepthBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = RenderInterface::kGBufferSheenBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        },
+    constexpr std::array kBindings{
+        RenderInterface::kGBufferDiffuseBinding,
+        RenderInterface::kGBufferNormalBinding,
+        RenderInterface::kGBufferEmissiveBinding,
+        RenderInterface::kGBufferSpecularBinding,
+        RenderInterface::kGBufferSheenBinding,
+        RenderInterface::kGBufferDepthBinding,
     };
+    std::array<vk::DescriptorSetLayoutBinding, kBindings.size()> gBufferBindings;
+    for (size_t index = 0; index < kBindings.size(); ++index)
+    {
+        gBufferBindings[index] = {
+            .binding         = kBindings[index],
+            .descriptorType  = vk::DescriptorType::eSampledImage,
+            .descriptorCount = 1,
+            .stageFlags      = vk::ShaderStageFlagBits::eFragment,
+        };
+    }
     auto& device             = *renderContext().device;
     descriptorSetLayout      = device.createDescriptorSetLayout(gBufferBindings);
     const std::array sets{
@@ -133,18 +120,20 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
 void DeferredLightingPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
 {
     const std::array images{
-        gBuffer.albedoOcclusion,
+        gBuffer.diffuseOcclusion,
         gBuffer.normalRoughness,
-        gBuffer.emissiveMetallic,
-        gBuffer.depth,
-        gBuffer.sheenColorRoughness
+        gBuffer.emissiveSpecularF90,
+        gBuffer.specularF0DiffuseFresnel,
+        gBuffer.sheenColorRoughness,
+        gBuffer.depth
     };
     constexpr std::array kBindings{
-        RenderInterface::kGBufferAlbedoBinding,
+        RenderInterface::kGBufferDiffuseBinding,
         RenderInterface::kGBufferNormalBinding,
         RenderInterface::kGBufferEmissiveBinding,
-        RenderInterface::kGBufferDepthBinding,
-        RenderInterface::kGBufferSheenBinding
+        RenderInterface::kGBufferSpecularBinding,
+        RenderInterface::kGBufferSheenBinding,
+        RenderInterface::kGBufferDepthBinding
     };
     for (size_t index = 0; index < images.size(); ++index)
     {

@@ -39,7 +39,7 @@ GBufferPass::Output GBufferPass::setup(RenderGraph& graph, const PassSetup& setu
     depth = depthHandle;
     SceneDraw::useAttachments(graph, colors, depth);
     shader = renderContext().shaderManager->getOrLoad(kGBufferShader);
-    return {colors[0], colors[1], colors[2], colors[3], depth};
+    return {colors[0], colors[1], colors[2], colors[3], colors[4], depth};
 }
 
 void GBufferPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const

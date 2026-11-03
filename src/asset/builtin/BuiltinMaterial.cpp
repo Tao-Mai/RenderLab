@@ -6,6 +6,7 @@ namespace
 {
     ::GltfMaterial asset{};
     asset.id               = BuiltinAssets::Material::white;
+    asset.workflow         = MaterialWorkflow::MetallicRoughness;
     asset.metallic         = 0.0f;
     asset.roughness        = 0.4f;
     asset.baseColorTexture = TextureBinding{

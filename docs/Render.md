@@ -16,7 +16,7 @@ Shader 编译统一将 `shaders` 和 `src` 加入 include 搜索目录。Shader 
 | --- | --- | --- |
 | Forward | DepthPrepass → ScenePass → Skybox → Transparent | 基础 PBR、Clearcoat、Sheen 与透明物体 |
 | Deferred | DepthPrepass → GBuffer → DeferredLighting → Skybox → Transparent | 统一材质缓冲与全屏光照 |
-| Ray Tracing | BLAS / TLAS 构建 → RayTracing → 可选 SVGFReprojection → 五级 SVGFFilter | 分路累积、方差估计与多尺度滤波；末级直接合成 |
+| Ray Tracing | BLAS / TLAS 构建、RayTracingScene → RayTracing → 可选 SVGFReprojection → 五级 SVGFFilter | 发光三角形准备、分路累积、方差估计与多尺度滤波；末级直接合成 |
 | Offline | BLAS / TLAS 构建 → OfflinePathTracing（PT / BDPT）→ Resolve | PBRT 场景的渐进式离线渲染 |
 
 光栅路线在需要时加入 ShadowPass。光源标记在线性场景颜色上绘制，随后一起经过 Bloom（可选）与 ToneMapping；光追关闭 HDR 时通过 Blit 输出。UI 在后处理之后绘制，拾取仍使用独立阶段。
@@ -26,7 +26,7 @@ Shader 编译统一将 `shaders` 和 `src` 加入 include 搜索目录。Shader 
 Shader 入口为 [forward.slang](../shaders/raster/forward.slang)、[gbuffer.slang](../shaders/raster/gbuffer.slang) 和 [deferred_lighting.slang](../shaders/raster/deferred_lighting.slang)。深度、阴影、天空盒与网格顶点处理也位于 `shaders/raster`。
 
 - 深度使用 D32Sfloat，主场景支持不透明、Alpha Mask、双面与排序透明绘制。
-- 延迟 G-buffer 保存 Albedo / AO、Normal / Roughness、Emissive / Metallic、Sheen / Roughness，并从深度重建位置。
+- 延迟 G-buffer 保存 Diffuse / AO、Normal / Roughness、Emissive / F90、F0 / Diffuse Fresnel Weight、Sheen / Roughness，并从深度重建位置。
 - Forward / Deferred 复用基础 BRDF、灯光、阴影和 IBL；Clearcoat 当前仅在 Forward 计算。
 - 透明材质采用前向混合。
 - 阴影由统一 [ShadowPass](../src/render/raster/ShadowPass.cpp) 处理，算法见 [阴影文档](Shadow.md)。
@@ -36,12 +36,16 @@ Shader 入口为 [forward.slang](../shaders/raster/forward.slang)、[gbuffer.sla
 Shader 入口：[realtime.slang](../shaders/raytracing/realtime/realtime.slang)。实时路径循环与 SVGF 位于 `raytracing/realtime`，光源采样、BRDF 计算与采样、随机数等通用代码位于 `shaders/common`。
 
 - 基础 PBR 复用漫反射与 GGX 函数，使用 VNDF 和完整混合 PDF 生成反弹方向。
-- 点光源与聚光灯共用一次加权选择，合计只选一个；权重为最大 RGB 强度乘锥角衰减再除以距离平方，超出 range 或聚光锥的光源跳过，并补偿选择概率。面光源独立加权选择，采样与 BRDF 命中使用 MIS。
+- 点光源与聚光灯共用一次加权选择，合计只选一个；权重为最大 RGB 强度乘锥角衰减再除以距离平方，超出 range 或聚光锥的光源跳过，并补偿选择概率。矩形光源独立加权选择，发光网格的三角形独立均匀选择，两类面积光均与 BRDF 命中使用 MIS。
 - 方向光通过可见性射线计算直接照明；矩形发光面以三角形参与求交。
 - 实时光追的 [RayGen 路径循环](../shaders/raytracing/realtime/path_tracing.slang) 负责续射线和阴影射线，ClosestHit 返回命中与材质信息。Vulkan 管线递归深度固定为 1。
 - `maxBounces` 控制最多 1–64 次表面散射，结束后仍计算终点发光；1 对应直接照明与终点发光。使用俄罗斯轮盘终止。修改反弹次数后复用渲染图和 Pipeline，并重置时域历史。BLAS 按几何缓存，TLAS 按提交帧更新。
-- 关闭 SVGF 时输出 RGBA16F 合并颜色；开启时分别输出直接光、间接光、`emission` 与主命中材质的线性 albedo。两种模式均输出原始线性深度与法线，主射线使用固定的像素内采样位置。
+- 关闭 SVGF 时输出 RGBA16F 合并颜色；开启时分别输出直接光、间接光、`emission` 与主命中材质的反射率 `saturate(diffuseColor + F0)`。两种模式均输出原始线性深度与法线，主射线使用固定的像素内采样位置。
 - `emission` 保存相机直接可见的发光表面、面光源与环境。直接光包含主表面的光源采样、一次 BRDF 采样命中发光面 / 环境的贡献；更深层路径归入间接光。直接光保留面光源 MIS 的两部分，合并颜色为三路之和。
+
+[RayTracingScenePass](../src/render/raytracing/realtime/RayTracingScenePass.cpp) 按有效材质的非零发光系数筛选子网格实例，准备命中记录及每个实例的三角形任务。GPU 为每个发光三角形生成一条 80 B 记录，保存世界空间顶点与边、实际面积、三个顶点的 UV 和共享材质索引；非均匀缩放、剪切及实例变换均在此应用。缓冲开头的 16 B header 保存有效三角形数量，容量增长由 Graph 管理，描述符按资源版本更新。该组织沿用 [RTXDI 的发光网格展开方式](https://github.com/NVIDIA-RTX/RTXDI/blob/main/Doc/Integration.md#mesh-light-processing)。
+
+每次表面散射从全部 N 个三角形中等概率选一个，再在其内部均匀面积采样，通过 UV 从现有材质与纹理数组求发光。完整立体角 PDF 为 `距离平方 / (N × 三角形面积 × 发光面余弦)`，双面材质使用余弦绝对值，单面材质只向正面发光。NEE 和 BRDF 命中使用同一个 PDF 做 balance MIS，相机直接可见的发光保持完整贡献。零面积或采样位置发光为零时本次贡献为零，三角形编号保持稳定。选择分布后续可用于 ReSTIR；当前每个着色点只访问一个候选三角形。
 
 仅在开启 SVGF 时执行 [SVGFReprojection](../src/render/raytracing/realtime/SVGFReprojection.h) 和 [SVGFFilter](../src/render/raytracing/realtime/SVGFFilter.h)。直接光与间接光先除以各自像素的 albedo，在解调后的空间中累积颜色、亮度矩并估计方差。有效样本数不超过 `historyLength` 时使用算术平均，超过后使用 `emaAlpha`；首个样本或历史失效时权重为 1。历史不足 4 帧时使用 7×7 空间方差，五级 à-trous 按深度、法线、亮度与方差滤波。第一级回写解调后的颜色历史，最后一级乘回当前像素的 albedo 并添加当前帧 `emission`。除法和乘回统一使用 `max(albedo, 0.01)`，避免黑色通道除零。算法与限制见 [SVGF 文档](SVGF.md)。
 

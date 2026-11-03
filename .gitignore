@@ -8,7 +8,9 @@ scripts/
 assets/*
 resource/
 .cursor
-test/
+test/*
+!test/MaterialWorkflowCheck.cpp
+!test/MaterialWorkflowCheck.slang
 
 # Personal TODO / note documents stay local.
 *[Tt][Oo][Dd][Oo]*.[Mm][Dd]
