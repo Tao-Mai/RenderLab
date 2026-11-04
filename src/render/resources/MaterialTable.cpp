@@ -259,7 +259,11 @@ uint32_t MaterialTable::update(
         materials.emplace_back();
         materialInfos.emplace_back();
     }
-    materials[found->second]     = data;
+    if (added || materials[found->second] != data)
+    {
+        ++materialRevision;
+        materials[found->second] = data;
+    }
     materialInfos[found->second] = {
         .shaderId    = material.shaderId.value_or("scene"),
         .alphaMode   = data.alphaMode,

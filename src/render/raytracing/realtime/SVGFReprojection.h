@@ -40,6 +40,7 @@ private:
     uint32_t                                writeLayer         = 0;
     bool                                    hasHistory         = false;
     uint32_t                                previousMaxBounces = 0;
+    RenderFeature::Restir                   previousRestir;
 
     void createPipeline(const VulkanContext& vulkan);
 };

@@ -326,6 +326,70 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
         ImGui::SetItemTooltip("After history length: new mean = history * (1 - weight) + current sample * weight.\n"
                               "The first sample, or a sample with rejected history, has weight 1.");
         ImGui::EndDisabled();
+
+        if (drawSettingsHeader("ReSTIR"))
+        {
+            feature.restir = {};
+            config.setRenderFeature(feature);
+        }
+        int candidateCount = static_cast<int>(feature.restir.candidateCount);
+        if (ImGui::SliderInt(
+                "Light candidates (M)",
+                &candidateCount,
+                1,
+                static_cast<int>(kMaxRestirCandidateCount),
+                "%d",
+                ImGuiSliderFlags_AlwaysClamp
+            ))
+        {
+            feature.restir.candidateCount = static_cast<uint32_t>(candidateCount);
+            config.setRenderFeature(feature);
+        }
+        ImGui::SetItemTooltip(
+            "Light candidates plus one BRDF candidate per surface. Primary direct lighting uses ReSTIR DI."
+        );
+        bool restirEdited = ImGui::Checkbox("Temporal reuse", &feature.restir.temporalReuse);
+        restirEdited      = ImGui::Checkbox("Spatial reuse", &feature.restir.spatialReuse) || restirEdited;
+
+        int historyLimit = static_cast<int>(feature.restir.maxHistoryLength);
+        if (ImGui::SliderInt(
+                "Reservoir history length",
+                &historyLimit,
+                1,
+                static_cast<int>(kMaxRestirHistoryLength),
+                "%d",
+                ImGuiSliderFlags_AlwaysClamp
+            ))
+        {
+            feature.restir.maxHistoryLength = static_cast<uint32_t>(historyLimit);
+            restirEdited                    = true;
+        }
+        int spatialSamples = static_cast<int>(feature.restir.spatialSampleCount);
+        if (ImGui::SliderInt(
+                "Spatial neighbors",
+                &spatialSamples,
+                1,
+                static_cast<int>(kMaxRestirSpatialSamples),
+                "%d",
+                ImGuiSliderFlags_AlwaysClamp
+            ))
+        {
+            feature.restir.spatialSampleCount = static_cast<uint32_t>(spatialSamples);
+            restirEdited                      = true;
+        }
+        restirEdited = ImGui::SliderFloat(
+                           "Spatial radius",
+                           &feature.restir.spatialRadius,
+                           1.0f,
+                           kMaxRestirSpatialRadius,
+                           "%.1f px",
+                           ImGuiSliderFlags_AlwaysClamp
+                       ) ||
+            restirEdited;
+        if (restirEdited)
+        {
+            config.setRenderFeature(feature);
+        }
         return sceneEdited;
     }
 

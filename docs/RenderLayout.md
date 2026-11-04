@@ -68,14 +68,20 @@ Binding 0 为全局 `MaterialData` SSBO，Binding 1 为 128 项纹理数组，Bi
 
 光栅 Push Constant 用于 Vertex / Fragment，实时光追用于 Raygen，离线参数用于 Raygen / Compute。离线 Set 1 留空，光源由私有 Set 提供。SVGFReprojection 使用 Scene 和自己的 Set 1；SVGFFilter 使用自己的 Set 0。
 
+实时光追的 48 B 参数包含 viewport、LightRanges、最大反弹次数、样本序号、IBL 开关及初始光源候选数量 M。M 来自 `feature.restir.candidateCount`，运行时调整直接更新 Push Constant。
+
 光追私有 Set 3 的编号由 [RayTracingBindings.h](../src/render/raytracing/RayTracingBindings.h) 统一定义，CPU 与 shader 共用。
 
 | 路线 | Binding 排列 |
 | --- | --- |
-| 实时 | 0：TLAS；1：命中数据；2：发光三角形；3：合并颜色或直接光；4：深度；5：法线；6：间接光；7：emission；8：albedo |
+| 实时 | 0：TLAS；1：命中数据；2：发光三角形；3：合并颜色或直接光；4：深度；5：法线；6：间接光；7：emission；8：albedo；9 / 10：当前 / 上一帧表面；11：初始 / 时域 reservoir；12：双层 reservoir 历史；13：ReSTIR 帧参数 |
 | 离线 | 0：TLAS；1：命中数据；2：材质预览；3：纹理指令；4：发光网格共享参数；5–11：point / spot / distant / 三角形 / infinite / projection / goniometric；12：portal 顶点；13：累积缓冲；14：颜色输出；15：BDPT splat；16：BDPT 光源 alias table |
 
 实时光追的 Binding 6–8 用于 SVGF，SVGF 开关重建图并选择匹配的 Shader。Binding 2 的 SSBO 保存 16 B 数量头及每个实例展开后的 80 B 三角形记录，发光系数和纹理通过材质索引共享 MaterialSet。
+
+SVGF 的两种模式分别缓存 Pipeline、私有 Layout 与 SBT；关闭模式的 Layout 省略 Binding 6–8。图重建时重新分配当前模式的私有描述符集，并绑定新图像和缓冲。
+
+Binding 9 / 10 分别绑定两份 64 B / 像素的表面缓冲，按历史层交换。Binding 11 使用 32 B / 像素，初始阶段写入、时域阶段更新、空间阶段只读；Binding 12 包含两层 32 B / 像素 reservoir。Binding 13 的 144 B UBO 保存上一帧矩阵、视口、深度行、图像尺寸、历史状态与复用参数。三个阶段共用 Pipeline Layout 和 SBT，阶段间显式同步存储读写。完整流程见 [ReSTIR](ReSTIR.md)。
 
 `RayTracingScenePass` 使用独立 Compute 布局：Set 0 的 Binding 0 / 1 / 2 分别为命中记录、发光实例任务和输出三角形缓冲。8 B Push Constant 保存本次三角形数量和任务数量。Graph 同步 Compute 写入与后续光追读取。
 

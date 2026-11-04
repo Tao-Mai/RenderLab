@@ -50,6 +50,17 @@ void validateRayTracing(const RenderFeature::RayTracing& rayTracing)
     CHECK(std::isfinite(rayTracing.emaAlpha) && rayTracing.emaAlpha >= 0.0f && rayTracing.emaAlpha <= 1.0f);
 }
 
+void validateRestir(const RenderFeature::Restir& restir)
+{
+    CHECK(restir.candidateCount >= 1 && restir.candidateCount <= kMaxRestirCandidateCount);
+    CHECK(restir.maxHistoryLength >= 1 && restir.maxHistoryLength <= kMaxRestirHistoryLength);
+    CHECK(restir.spatialSampleCount >= 1 && restir.spatialSampleCount <= kMaxRestirSpatialSamples);
+    CHECK(
+        std::isfinite(restir.spatialRadius) && restir.spatialRadius >= 1.0f &&
+        restir.spatialRadius <= kMaxRestirSpatialRadius
+    );
+}
+
 void validateOffline(const RenderFeature::Offline& offline)
 {
     CHECK(offline.algorithm == OfflineAlgorithm::PT || offline.algorithm == OfflineAlgorithm::BDPT);
@@ -174,6 +185,7 @@ void ConfigManager::setRenderFeature(const RenderFeature& feature)
     validateBloom(feature.bloom);
     validateCascade(feature.shadow.cascade);
     validateRayTracing(feature.rayTracing);
+    validateRestir(feature.restir);
     validateOffline(feature.offline);
 
     renderer.feature = feature;
@@ -242,6 +254,7 @@ void ConfigManager::loadRenderer()
     validateBloom(renderer.feature.bloom);
     validateCascade(renderer.feature.shadow.cascade);
     validateRayTracing(renderer.feature.rayTracing);
+    validateRestir(renderer.feature.restir);
     validateOffline(renderer.feature.offline);
 
     CHECK(renderer.feature.shadow.pointShadowMapSize > 0);

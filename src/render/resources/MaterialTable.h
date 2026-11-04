@@ -60,6 +60,7 @@ public:
     void                              upload(const VulkanContext& vulkan, uint32_t frameIndex);
     [[nodiscard]] TextureRef textureReference(const TextureBinding& binding, RenderResourceManager& resources);
     [[nodiscard]] const MaterialInfo& info(uint32_t materialIndex) const { return materialInfos[materialIndex]; }
+    [[nodiscard]] uint64_t            revision() const { return materialRevision; }
     [[nodiscard]] vk::DescriptorSet   descriptorSetHandle(uint32_t frameIndex) const
     {
         return *frames[frameIndex].descriptorSet;
@@ -82,6 +83,7 @@ private:
     RenderGraph*                                               graph = nullptr;
     RenderGraph::BufferHandle                                  materialBuffer;
     std::vector<MaterialData>                                  materials;
+    uint64_t                                                   materialRevision = 0;
     std::vector<MaterialInfo>                                  materialInfos;
     std::unordered_map<MaterialKey, uint32_t, MaterialKeyHash> materialIndices;
     std::unordered_map<AssetID<TextureAsset>, uint32_t>        textureIndices;

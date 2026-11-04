@@ -18,19 +18,26 @@ void raygenMain()
     PathResult result = {};
     result.primaryDepth = -1.0;
     result.primaryAlbedo = float3(1.0);
+    RestirSurfaceData primarySurface = {};
+    RestirReservoir primaryReservoir = {};
     if (parameters.containsPixel(pixel))
     {
         RayDesc ray = parameters.createRay(pixel, float2(0.5));
-        result = tracePath(ray, kSceneMask | kLightMask, RAY_FLAG_FORCE_OPAQUE, state);
+        result = tracePath(ray, kSceneMask | kLightMask, RAY_FLAG_FORCE_OPAQUE, state, primarySurface, primaryReservoir);
     }
+    uint index = pixel.y * restirFrame.width + pixel.x;
+    restirSurfaces[index] = primarySurface;
+    restirInitialReservoirs[index] = primaryReservoir;
 #if SVGF
-    outputImage[pixel] = float4(result.directRadiance, 1.0);
+    outputImage[pixel] = float4(0.0, 0.0, 0.0, 1.0);
     indirectImage[pixel] = float4(result.indirectRadiance, 1.0);
     emissionImage[pixel] = float4(result.emission, 1.0);
     albedoImage[pixel] = float4(result.primaryAlbedo, 1.0);
 #else
-    outputImage[pixel] = float4(result.directRadiance + result.indirectRadiance + result.emission, 1.0);
+    outputImage[pixel] = float4(result.indirectRadiance + result.emission, 1.0);
 #endif
     depthImage[pixel] = result.primaryDepth;
     normalImage[pixel] = float4(result.primaryNormal, 0.0);
 }
+
+#include "raytracing/realtime/restir_reuse.slang"

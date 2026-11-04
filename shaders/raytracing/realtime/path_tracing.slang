@@ -6,8 +6,6 @@
 #include "common/light_data.slang"
 #include "common/constant.slang"
 #include "common/random.slang"
-#include "common/local_light_sampling.slang"
-#include "common/rect_area_light_sampling.slang"
 #include "common/material_evaluation.slang"
 #include "common/pbr_brdf.slang"
 #include "common/normal_mapping.slang"
@@ -39,11 +37,6 @@ struct VisibilityPayload
     uint visible;
 };
 
-float balanceHeuristic(float samplePdf, float otherPdf)
-{
-    return samplePdf / (samplePdf + otherPdf);
-}
-
 struct Surface
 {
     float3 position;
@@ -53,6 +46,8 @@ struct Surface
     PbrBrdf brdf;
     float3 emissive;
     uint emissiveTriangleIndex;
+    uint materialIndex;
+    uint objectIndex;
 
     float3 rayOrigin()
     {
@@ -90,129 +85,6 @@ struct Surface
             kSceneMask | kLightMask, 0, 0, kVisibilityMissIndex, ray, payload
         );
         return payload.visible != 0;
-    }
-
-    float3 sampleLocalLightRadiance(LightRanges ranges, inout uint state)
-    {
-        LocalLightSample selected = sampleLocalLight(lights, ranges, position, state);
-        if (selected.probability == 0.0)
-        {
-            return float3(0.0);
-        }
-
-        LightData light = lights[selected.index];
-        float nDotL = saturate(dot(normal, selected.direction));
-        if (nDotL == 0.0)
-        {
-            return float3(0.0);
-        }
-
-        float3 shadowOffset = light.position - rayOrigin();
-        float shadowDistance = length(shadowOffset);
-        if (!isVisible(normalize(shadowOffset), shadowDistance))
-        {
-            return float3(0.0);
-        }
-
-        // Delta point and spot lights do not compete with continuous BRDF direction sampling.
-        return evaluateLight(selected.direction, selected.incidentIrradiance) / selected.probability;
-    }
-
-    float3 sampleRectAreaLightRadiance(RectAreaLightSample selected, inout uint state)
-    {
-        if (selected.probability == 0.0)
-        {
-            return float3(0.0);
-        }
-
-        float3 origin = rayOrigin();
-        RectAreaLight emitter = {lights[selected.index]};
-        float3 sampleLightPosition = emitter.samplePosition(state);
-        float3 toLight = sampleLightPosition - origin;
-        float distanceSquared = dot(toLight, toLight);
-        if (distanceSquared == 0.0)
-        {
-            return float3(0.0);
-        }
-
-        float3 lightDirection = toLight * rsqrt(distanceSquared);
-        float nDotL = saturate(dot(normal, lightDirection));
-        float lightPdf = selected.probability * emitter.pdf(origin, sampleLightPosition);
-        if (nDotL == 0.0 || lightPdf == 0.0 || !isVisible(lightDirection, sqrt(distanceSquared)))
-        {
-            return float3(0.0);
-        }
-
-        // The full NEE PDF includes discrete light selection and conditional surface sampling.
-        float brdfPdf = dot(geometricNormal, lightDirection) > 0.0
-            ? brdf.pdf(normal, viewDirection, lightDirection) : 0.0;
-        float weight = balanceHeuristic(lightPdf, brdfPdf);
-        return evaluateLight(lightDirection, emitter.data.color) * weight / lightPdf;
-    }
-
-    float3 sampleEmissiveTriangleRadiance(uint triangleCount, inout uint state)
-    {
-        if (triangleCount == 0)
-        {
-            return float3(0.0);
-        }
-
-        uint index = sampleEmissiveTriangleIndex(triangleCount, state);
-        EmissiveTriangle light = loadEmissiveTriangle(index);
-        float3 barycentrics = sampleTriangleBarycentrics(state);
-        float3 target = light.position + light.edge1 * barycentrics.y + light.edge2 * barycentrics.z;
-        float3 origin = rayOrigin();
-        float lightPdf = triangleLightPdf(light, origin, target, triangleCount);
-        if (lightPdf <= 0.0)
-        {
-            return float3(0.0);
-        }
-        float3 offset = target - origin;
-        float distance = length(offset);
-        float3 direction = offset / distance;
-        if (dot(geometricNormal, direction) <= 0.0 || dot(normal, direction) <= 0.0)
-        {
-            return float3(0.0);
-        }
-
-        float3 emission = triangleLightEmission(light, barycentrics);
-        if (!any(emission > 0.0) || !isVisible(direction, distance))
-        {
-            return float3(0.0);
-        }
-        float brdfPdf = brdf.pdf(normal, viewDirection, direction);
-        float weight = balanceHeuristic(lightPdf, brdfPdf);
-        return evaluateLight(direction, emission) * weight / lightPdf;
-    }
-
-    float3 sampleDirectRadiance(LightRanges ranges, uint triangleCount, inout uint state,
-        out float rectAreaLightWeightSum)
-    {
-        float3 radiance = sampleLocalLightRadiance(ranges, state);
-        for (uint index = 0; index < ranges.directionalEnd; ++index)
-        {
-            LightData light = lights[index];
-
-            // Stored direction is light propagation; visibility points toward the source at infinity.
-            float3 lightDirection = -normalize(light.direction.xyz);
-            float nDotL = saturate(dot(normal, lightDirection));
-            if (nDotL == 0.0 || !isVisible(lightDirection, kMaxRayDistance))
-            {
-                continue;
-            }
-
-            // A delta light has no competing BRDF-sampling path or distance attenuation.
-            radiance += evaluateLight(lightDirection, light.color);
-        }
-
-        // NEE and the BRDF bounce share the selection distribution at the same ray origin.
-        float3 origin = rayOrigin();
-        RectAreaLightSample selected = sampleRectAreaLight(lights, ranges.pointEnd, ranges.rectAreaEnd, origin, state);
-        radiance += sampleRectAreaLightRadiance(selected, state);
-        radiance += sampleEmissiveTriangleRadiance(triangleCount, state);
-
-        rectAreaLightWeightSum = selected.weightSum;
-        return radiance;
     }
 };
 
@@ -261,6 +133,8 @@ Surface surfaceAt(RayTracingHitData hit, uint primitiveIndex, float2 barycentric
     {
         surface.emissive = float3(0.0);
     }
+    surface.materialIndex = hit.materialIndex;
+    surface.objectIndex = InstanceID();
     surface.emissiveTriangleIndex = hit.firstEmissiveTriangle == kInvalidEmissiveTriangle
         ? kInvalidEmissiveTriangle : hit.firstEmissiveTriangle + primitiveIndex;
     return surface;
@@ -273,7 +147,7 @@ struct PathTracingParameters
     uint maxBounces;
     uint sampleIndex;
     uint iblEnabled;
-    uint padding;
+    uint candidateCount;
 
     property float2 viewportOffset { get { return viewport.xy; } }
     property float2 viewportExtent { get { return viewport.zw; } }
@@ -317,55 +191,31 @@ struct PathHit
     uint lightIndex;
     float distance;
     Surface surface;
+    float2 barycentrics;
 };
 
 struct PathResult
 {
-    float3 directRadiance;
     float3 indirectRadiance;
     float3 emission;
     float primaryDepth;
     float3 primaryNormal;
     float3 primaryAlbedo;
-
-    [mutating]
-    void addRadiance(float3 radiance, bool direct)
-    {
-        if (direct)
-        {
-            directRadiance += radiance;
-        }
-        else
-        {
-            indirectRadiance += radiance;
-        }
-    }
-
-    [mutating]
-    void addEmission(float3 radiance, uint bounce)
-    {
-        if (bounce == 0)
-        {
-            emission += radiance;
-        }
-        else
-        {
-            addRadiance(radiance, bounce == 1);
-        }
-    }
 };
 
-PathResult tracePath(RayDesc ray, uint primaryMask, uint primaryFlags, inout uint state)
+#include "raytracing/realtime/restir.slang"
+
+PathResult tracePath(RayDesc ray, uint primaryMask, uint primaryFlags, inout uint state,
+    out RestirSurfaceData primarySurface, out RestirReservoir primaryReservoir)
 {
     PathResult result = {};
     result.primaryDepth = -1.0;
     result.primaryAlbedo = float3(1.0);
+    primarySurface = {};
+    primaryReservoir = {};
     float3 throughput = float3(1.0);
-    float previousBrdfPdf = 0.0;
-    float previousRectAreaWeightSum = 0.0;
-    uint triangleCount = emissiveTriangles.Load(0);
 
-    for (uint bounce = 0; bounce <= parameters.maxBounces; ++bounce)
+    for (uint bounce = 0; bounce < parameters.maxBounces; ++bounce)
     {
         PathHit hit = {};
         uint mask = bounce == 0 ? primaryMask : kSceneMask | kLightMask;
@@ -374,28 +224,17 @@ PathResult tracePath(RayDesc ray, uint primaryMask, uint primaryFlags, inout uin
 
         if (hit.event == PathEvent::Miss)
         {
-            if (parameters.iblEnabled != 0)
+            if (bounce == 0 && parameters.iblEnabled != 0)
             {
-                result.addEmission(throughput * radianceMap.SampleLevel(radianceSampler, ray.Direction, 0.0).rgb,
-                    bounce);
+                result.emission = radianceMap.SampleLevel(radianceSampler, ray.Direction, 0.0).rgb;
             }
             break;
         }
         if (hit.event == PathEvent::Emitter)
         {
-            RectAreaLight emitter = {lights[hit.lightIndex]};
-            float3 target = ray.Origin + ray.Direction * hit.distance;
-            float lightPdf = emitter.pdf(ray.Origin, target);
-            if (lightPdf > 0.0)
+            if (bounce == 0 && dot(lights[hit.lightIndex].direction.xyz, -ray.Direction) > 0.0)
             {
-                float weight = 1.0;
-                if (bounce != 0)
-                {
-                    float selectionProbability = previousRectAreaWeightSum > 0.0
-                        ? emitter.selectionWeight(ray.Origin) / previousRectAreaWeightSum : 0.0;
-                    weight = balanceHeuristic(previousBrdfPdf, lightPdf * selectionProbability);
-                }
-                result.addEmission(throughput * emitter.data.color * weight, bounce);
+                result.emission = lights[hit.lightIndex].color;
             }
             break;
         }
@@ -406,26 +245,21 @@ PathResult tracePath(RayDesc ray, uint primaryMask, uint primaryFlags, inout uin
             result.primaryDepth = linearViewDepth(surface.position, sceneUniforms.view);
             result.primaryNormal = surface.geometricNormal;
             result.primaryAlbedo = surface.brdf.albedo();
+            result.emission = surface.emissive;
+            primarySurface = restirPackSurface(surface, result.primaryDepth);
+            // Use the stored material and directions consistently in initial and reuse target functions.
+            primaryReservoir = restirGenerateInitial(restirUnpackSurface(primarySurface), state);
         }
-        // Emission reached after one BRDF sample completes a direct-light path, including its MIS pair.
-        float emissionWeight = 1.0;
-        if (bounce != 0 && surface.emissiveTriangleIndex != kInvalidEmissiveTriangle)
+        else
         {
-            EmissiveTriangle light = loadEmissiveTriangle(surface.emissiveTriangleIndex);
-            float lightPdf = triangleLightPdf(light, ray.Origin, surface.position, triangleCount);
-            emissionWeight = balanceHeuristic(previousBrdfPdf, lightPdf);
+            RestirReservoir reservoir = restirGenerateInitial(surface, state);
+            result.indirectRadiance += throughput * restirShade(surface, reservoir);
         }
-        result.addEmission(throughput * surface.emissive * emissionWeight, bounce);
-        // After the last scattering event, retain terminal emission without another visibility query.
-        if (bounce == parameters.maxBounces)
+        if (bounce + 1 == parameters.maxBounces)
         {
             break;
         }
 
-        float rectAreaWeightSum;
-        result.addRadiance(throughput * surface.sampleDirectRadiance(parameters.lightRanges,
-            triangleCount, state, rectAreaWeightSum),
-            bounce == 0);
         float3 randomSample;
         randomSample.x = randomFloat(state);
         randomSample.y = randomFloat(state);
@@ -440,19 +274,12 @@ PathResult tracePath(RayDesc ray, uint primaryMask, uint primaryFlags, inout uin
         if (bounce + 1 >= kRussianRouletteStartBounce)
         {
             float survivalProbability = saturate(max(throughput.x, max(throughput.y, throughput.z)));
-            if (survivalProbability == 0.0)
-            {
-                break;
-            }
-            if (survivalProbability < 1.0 && randomFloat(state) >= survivalProbability)
+            if (survivalProbability == 0.0 || randomFloat(state) >= survivalProbability)
             {
                 break;
             }
             throughput /= survivalProbability;
         }
-
-        previousBrdfPdf = sampled.pdf;
-        previousRectAreaWeightSum = rectAreaWeightSum;
         ray.Origin = surface.rayOrigin();
         ray.Direction = sampled.direction;
         ray.TMin = kRayEpsilon;
@@ -479,6 +306,7 @@ void closestHitMain(inout PathHit payload, BuiltInTriangleIntersectionAttributes
     payload.event = PathEvent::Surface;
     RayTracingHitData hit = objects[InstanceID()];
     payload.surface = surfaceAt(hit, PrimitiveIndex(), attributes.barycentrics);
+    payload.barycentrics = attributes.barycentrics;
 }
 
 [shader("closesthit")]

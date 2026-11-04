@@ -153,7 +153,7 @@ foreach(svgf IN ITEMS 0 1)
         string(APPEND binary ".svgf")
     endif()
     renderlab_shader(raytracing raytracing/realtime/realtime.slang "${binary}"
-        ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
+        ENTRIES raygenMain temporalMain spatialMain missMain visibilityMissMain closestHitMain lightClosestHitMain
         DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 SVGF=${svgf})
 endforeach()
 renderlab_shader(prepare_emissive_triangles raytracing/realtime/prepare_lights.slang prepare_emissive_triangles

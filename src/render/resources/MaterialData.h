@@ -15,11 +15,15 @@ struct TextureRef
 {
     uint32_t textureIndex = 0;
     uint32_t samplerIndex = 0;
+
+    bool operator==(const TextureRef&) const = default;
 };
 
 // glTF material SSBO used by rasterization and realtime ray tracing.
 struct alignas(16) MaterialData
 {
+    bool operator==(const MaterialData&) const = default;
+
     glm::vec4               colorFactor{1.0f};
     float                   roughness         = 1.0f;
     float                   metallic          = 1.0f;

@@ -45,7 +45,11 @@ enum class BdptMisHeuristic
 inline constexpr uint32_t kMinPathBounces       = 1;
 inline constexpr uint32_t kMaxPathBounces       = 64;
 inline constexpr uint32_t kMaxBloomLevels       = 6;
-inline constexpr uint32_t kMaxSvgfHistoryLength = 1024;
+inline constexpr uint32_t kMaxSvgfHistoryLength    = 1024;
+inline constexpr uint32_t kMaxRestirCandidateCount = 256;
+inline constexpr uint32_t kMaxRestirSpatialSamples = 32;
+inline constexpr uint32_t kMaxRestirHistoryLength  = 64;
+inline constexpr float    kMaxRestirSpatialRadius  = 128.0f;
 
 struct RenderFeature
 {
@@ -97,6 +101,18 @@ struct RenderFeature
         uint32_t historyLength = 32;    // Arithmetic averaging through this sample count.
         float    emaAlpha      = 0.1f;  // Current-sample weight after historyLength samples.
     } rayTracing;
+
+    struct Restir
+    {
+        uint32_t candidateCount     = 32;
+        bool     temporalReuse      = true;
+        bool     spatialReuse       = true;
+        uint32_t maxHistoryLength   = 20;
+        uint32_t spatialSampleCount = 3;
+        float    spatialRadius      = 30.0f;
+
+        bool operator==(const Restir&) const = default;
+    } restir;
 
     struct Offline
     {

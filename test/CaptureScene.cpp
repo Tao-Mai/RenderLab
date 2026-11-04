@@ -53,25 +53,35 @@ T parseNumber(std::string_view text)
 struct ImageReadbackPass
 {
     RenderGraph::ImageHandle  image;
+    RenderGraph::ImageHandle  hdrImage;
     RenderGraph::BufferHandle buffer;
     RenderGraph::BufferHandle exposure;
     RenderGraph::BufferHandle triangles;
+    RenderGraph::BufferHandle reservoirs;
     vk::DeviceSize            imageBytes;
+    vk::DeviceSize            hdrBytes;
     vk::DeviceSize            triangleBytes = 0;
+    vk::DeviceSize            reservoirBytes = 0;
 
     RenderGraph::BufferHandle setup(
         RenderGraph& graph,
         const PassSetup&,
         RenderGraph::ImageHandle  source,
+        RenderGraph::ImageHandle  sourceHdr,
         RenderGraph::BufferHandle exposureState,
-        RenderGraph::BufferHandle triangleLights
+        RenderGraph::BufferHandle triangleLights,
+        RenderGraph::BufferHandle reservoirHistory
     )
     {
         image             = source;
+        hdrImage          = sourceHdr;
         const auto extent = graph.imageInfo(image).extent;
         exposure          = exposureState;
         triangles         = triangleLights;
+        reservoirs        = reservoirHistory;
         imageBytes        = vk::DeviceSize(extent.width) * extent.height * 4;
+        CHECK(graph.imageInfo(hdrImage).format == vk::Format::eR16G16B16A16Sfloat);
+        hdrBytes          = vk::DeviceSize(extent.width) * extent.height * 8;
         buffer            = graph.write(graph.createBuffer({
                        .size             = imageBytes + sizeof(ExposurePass::State),
                        .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
@@ -92,16 +102,28 @@ struct ImageReadbackPass
             }
         );
         graph.use(
+            hdrImage,
+            {
+                .stages = vk::PipelineStageFlagBits2::eTransfer,
+                .access = vk::AccessFlagBits2::eTransferRead,
+                .layout = vk::ImageLayout::eTransferSrcOptimal,
+            }
+        );
+        graph.use(
             exposure,
             {
                 .stages = vk::PipelineStageFlagBits2::eTransfer,
                 .access = vk::AccessFlagBits2::eTransferRead,
             }
         );
-        if (triangles.id != RenderGraph::kInvalidHandle)
+        for (const auto source : {triangles, reservoirs})
         {
+            if (source.id == RenderGraph::kInvalidHandle)
+            {
+                continue;
+            }
             graph.use(
-                triangles,
+                source,
                 {
                     .stages = vk::PipelineStageFlagBits2::eTransfer,
                     .access = vk::AccessFlagBits2::eTransferRead,
@@ -114,7 +136,11 @@ struct ImageReadbackPass
     void prepare(RenderGraph& graph, const PassFrame&)
     {
         triangleBytes = triangles.id == RenderGraph::kInvalidHandle ? 0 : graph.getBuffer(triangles).size();
-        graph.ensureBufferCapacity(buffer, imageBytes + sizeof(ExposurePass::State) + triangleBytes);
+        reservoirBytes = reservoirs.id == RenderGraph::kInvalidHandle ? 0 : graph.getBuffer(reservoirs).size();
+        graph.ensureBufferCapacity(
+            buffer,
+            imageBytes + sizeof(ExposurePass::State) + triangleBytes + reservoirBytes + hdrBytes
+        );
     }
 
     void execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame) const
@@ -129,6 +155,14 @@ struct ImageReadbackPass
             graph.getBuffer(buffer).handle(),
             copy
         );
+        auto hdrCopy         = copy;
+        hdrCopy.bufferOffset = imageBytes + sizeof(ExposurePass::State) + triangleBytes + reservoirBytes;
+        commands.copyImageToBuffer(
+            graph.getImage(hdrImage).handle(),
+            vk::ImageLayout::eTransferSrcOptimal,
+            graph.getBuffer(buffer).handle(),
+            hdrCopy
+        );
         commands.copyBuffer(
             graph.getBuffer(exposure).handle(),
             graph.getBuffer(buffer).handle(),
@@ -142,10 +176,28 @@ struct ImageReadbackPass
                 vk::BufferCopy{.dstOffset = imageBytes + sizeof(ExposurePass::State), .size = triangleBytes}
             );
         }
+        if (reservoirBytes > 0)
+        {
+            commands.copyBuffer(
+                graph.getBuffer(reservoirs).handle(),
+                graph.getBuffer(buffer).handle(),
+                vk::BufferCopy{
+                    .dstOffset = imageBytes + sizeof(ExposurePass::State) + triangleBytes,
+                    .size      = reservoirBytes
+                }
+            );
+        }
     }
 };
 
-void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::path& output, uint32_t frameCount)
+void capture(
+    Renderer&                    renderer,
+    SceneManager&                scenes,
+    const std::filesystem::path& output,
+    uint32_t                     frameCount,
+    const std::filesystem::path& sequenceDirectory,
+    float                        yawStep
+)
 {
     auto&       vulkan                 = renderer.vulkanContext();
     const auto& swapchain              = renderer.swapchainHandle();
@@ -242,6 +294,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
             color = graph.addPass(skybox, setup, color, depthImage).color;
         color = graph.addPass(transparent, setup, color, depthImage, lightingShadow, lightBuffer).color;
     }
+    const auto hdrColor       = color;
     const auto exposureOutput = graph.addPass(exposure, setup, color);
     if (!offline && lightMarkersAndPicking)
     {
@@ -252,7 +305,15 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     if (config.feature.bloom.enable)
         color = bloom.setup(graph, setup, color).color;
     color             = graph.addPass(toneMapping, setup, color, target, exposureOutput.state).color;
-    const auto buffer = graph.addPass(readback, setup, color, exposureOutput.state, triangleLights);
+    const auto buffer = graph.addPass(
+        readback,
+        setup,
+        color,
+        hdrColor,
+        exposureOutput.state,
+        triangleLights,
+        realtime ? realtimeTracing.reservoirs() : RenderGraph::BufferHandle{}
+    );
     graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
     graph.compile(setup);
     if (config.renderPath == RenderPath::Deferred)
@@ -260,7 +321,7 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     bindTestLightBuffer(graph, setup, lightBuffer);
 
     EditorCamera camera{scenes.scene().editorCamera};
-    const auto   view = camera.renderView({0, 0, float(extent.width), float(extent.height)});
+    auto         view = camera.renderView({0, 0, float(extent.width), float(extent.height)});
     RenderSystem system;
     const auto&  snapshot = system.prepare(scenes.scene());
     graph.beginFrame(0);
@@ -286,11 +347,23 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     }
 
     const auto activeFrameCount = offline ? 1u : maxFramesInFlight;
+    if (!sequenceDirectory.empty())
+    {
+        std::error_code error;
+        std::filesystem::create_directories(sequenceDirectory, error);
+        CHECK(!error, "cannot create sequence directory '{}': {}", sequenceDirectory.string(), error.message());
+    }
     for (uint32_t submitted = 0, frameNumber = 0; frameNumber < frameCount; ++submitted)
     {
         const auto index = submitted % activeFrameCount;
         auto&      frame = frames[index];
         frame.wait();
+        if (yawStep != 0.0f)
+        {
+            camera.config().yaw += yawStep;
+            view = camera.renderView({0, 0, float(extent.width), float(extent.height)});
+            frameData[index].uploadSceneUniforms(view.uniforms);
+        }
         if (submitted != 0)
             graph.beginFrame(index);
         uploadTestLights(graph, lightBuffer, renderData.lights);
@@ -307,6 +380,40 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
             vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &command},
             frame.drawFenceHandle()
         ));
+        if (!sequenceDirectory.empty())
+        {
+            frame.wait();
+            std::vector<uint8_t> pixels(
+                readback.imageBytes + sizeof(ExposurePass::State) + readback.triangleBytes + readback.reservoirBytes +
+                readback.hdrBytes
+            );
+            graph.getBuffer(buffer).download(pixels.data(), pixels.size());
+            const auto    hdrPath = sequenceDirectory / (std::to_string(submitted) + ".hdr.bin");
+            std::ofstream hdrStream(hdrPath, std::ios::binary);
+            CHECK(hdrStream);
+            hdrStream.write(
+                reinterpret_cast<const char*>(pixels.data() + pixels.size() - readback.hdrBytes),
+                readback.hdrBytes
+            );
+            CHECK(hdrStream);
+            pixels.resize(size_t(extent.width) * extent.height * 4);
+            if (format == vk::Format::eB8G8R8A8Srgb || format == vk::Format::eB8G8R8A8Unorm)
+            {
+                for (size_t offset = 0; offset < pixels.size(); offset += 4)
+                {
+                    std::swap(pixels[offset], pixels[offset + 2]);
+                }
+            }
+            const auto path = sequenceDirectory / (std::to_string(submitted) + ".png");
+            CHECK(stbi_write_png(
+                path.string().c_str(),
+                int(extent.width),
+                int(extent.height),
+                4,
+                pixels.data(),
+                int(extent.width * 4)
+            ));
+        }
         const auto completed = offline ? tracing.sampleCount() : frameNumber + 1;
         if (completed != frameNumber)
         {
@@ -324,7 +431,9 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
     CHECK(!error, "cannot create output directory '{}': {}", output.string(), error.message());
 
     const auto           imageBytes = size_t(extent.width) * extent.height * 4;
-    std::vector<uint8_t> pixels(imageBytes + sizeof(ExposurePass::State) + readback.triangleBytes);
+    std::vector<uint8_t> pixels(
+        imageBytes + sizeof(ExposurePass::State) + readback.triangleBytes + readback.reservoirBytes
+    );
     graph.getBuffer(buffer).download(pixels.data(), pixels.size());
     ExposurePass::State exposureState;
     std::memcpy(&exposureState, pixels.data() + imageBytes, sizeof(exposureState));
@@ -354,6 +463,15 @@ void capture(Renderer& renderer, SceneManager& scenes, const std::filesystem::pa
         );
         CHECK(stream);
         LOG_INFO("Emissive triangle lights: {}", header.triangleCount);
+        path = output;
+        path.replace_extension(".restir.bin");
+        std::ofstream reservoirStream(path, std::ios::binary);
+        CHECK(reservoirStream);
+        reservoirStream.write(
+            reinterpret_cast<const char*>(pixels.data() + offset + readback.triangleBytes),
+            readback.reservoirBytes
+        );
+        CHECK(reservoirStream);
     }
     pixels.resize(imageBytes);
     if (format == vk::Format::eB8G8R8A8Srgb || format == vk::Format::eB8G8R8A8Unorm)
@@ -385,8 +503,8 @@ int main(int argc, char** argv)
 {
     logger::init(argv[0]);
     CHECK(
-        argc >= 4 && argc <= 7,
-        "usage: CaptureScene <scene-id> <forward|deferred|realtime|offline> <output.png> [frames=1] [size=960] [ev100|auto]"
+        argc >= 4 && argc <= 9,
+        "usage: CaptureScene <scene-id> <forward|deferred|realtime|offline> <output.png> [frames=1] [size=960] [ev100|auto] [sequence-directory] [yaw-step=0]"
     );
     const std::string_view route{argv[2]};
     CHECK(
@@ -451,7 +569,14 @@ int main(int argc, char** argv)
     window.init();
     renderer.init();
     renderer.rebuildGraph();
-    capture(renderer, scenes, std::filesystem::path{argv[3]}, frameCount);
+    capture(
+        renderer,
+        scenes,
+        std::filesystem::path{argv[3]},
+        frameCount,
+        argc > 7 ? std::filesystem::path{argv[7]} : std::filesystem::path{},
+        argc > 8 ? parseNumber<float>(argv[8]) : 0.0f
+    );
     renderer.shutdown();
     scenes.shutdown();
     assets.shutdown();

@@ -2,9 +2,9 @@
     "feature": {
         "ambientCoefficient": 0.0,
         "bloom": {
-            "enable": true,
+            "enable": false,
             "filterRadius": 1.100000023841858,
-            "intensity": 0.03999999910593033,
+            "intensity": 0.020999999716877937,
             "levels": 5,
             "scatter": 0.699999988079071
         },
@@ -25,8 +25,16 @@
         "rayTracing": {
             "emaAlpha": 0.20200000703334808,
             "historyLength": 31,
-            "maxBounces": 7,
+            "maxBounces": 1,
             "svgf": false
+        },
+        "restir": {
+            "candidateCount": 32,
+            "maxHistoryLength": 20,
+            "spatialRadius": 30.0,
+            "spatialReuse": true,
+            "spatialSampleCount": 3,
+            "temporalReuse": true
         },
         "shadow": {
             "bias": 0.004399999976158142,

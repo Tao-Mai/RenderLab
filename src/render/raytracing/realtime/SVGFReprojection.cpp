@@ -201,6 +201,7 @@ void SVGFReprojection::writeDescriptorSet(RenderGraph& graph, const PassSetup& s
 void SVGFReprojection::execute(RenderGraph&, vk::raii::CommandBuffer& commands, const PassFrame& frame)
 {
     const auto&     settings = frame.setup.config.feature.rayTracing;
+    const auto&     restir   = frame.setup.config.feature.restir;
     const auto&     viewport = frame.view.viewport;
     const glm::vec4 currentViewport{viewport.x, viewport.y, viewport.width, viewport.height};
     const auto      currentDepthRow = linearDepthRow(frame.view.uniforms.view);
@@ -217,9 +218,10 @@ void SVGFReprojection::execute(RenderGraph&, vk::raii::CommandBuffer& commands, 
             .previousDepthRow       = previousDepthRow,
             .viewport               = currentViewport,
             .writeLayer             = writeLayer,
-            .historyValid           = hasHistory && previousMaxBounces == settings.maxBounces ? 1u : 0u,
-            .historyLength          = settings.historyLength,
-            .emaAlpha               = settings.emaAlpha,
+            .historyValid =
+                hasHistory && previousMaxBounces == settings.maxBounces && previousRestir == restir ? 1u : 0u,
+            .historyLength = settings.historyLength,
+            .emaAlpha      = settings.emaAlpha,
         }
     );
     commands.dispatch(
@@ -231,6 +233,7 @@ void SVGFReprojection::execute(RenderGraph&, vk::raii::CommandBuffer& commands, 
     previousViewport       = currentViewport;
     previousDepthRow       = currentDepthRow;
     previousMaxBounces     = settings.maxBounces;
+    previousRestir         = restir;
     writeLayer ^= 1u;
     hasHistory = true;
 }

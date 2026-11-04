@@ -1,16 +1,19 @@
 
 build
 cmake-build-default
+cmake-build-debug-gcc-16.2
+cmake-build-default-gcc-16.2
 .vscode
 scripts/
 .cache
 .idea
 assets/*
-resource/
+resource/*
 .cursor
 test/*
 !test/MaterialWorkflowCheck.cpp
 !test/MaterialWorkflowCheck.slang
+!test/SvgfToggleCheck.cpp
 
 # Personal TODO / note documents stay local.
 *[Tt][Oo][Dd][Oo]*.[Mm][Dd]

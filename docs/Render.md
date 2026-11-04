@@ -33,19 +33,21 @@ Shader 入口为 [forward.slang](../shaders/raster/forward.slang)、[gbuffer.sla
 
 ### 实时光追
 
-Shader 入口：[realtime.slang](../shaders/raytracing/realtime/realtime.slang)。实时路径循环与 SVGF 位于 `raytracing/realtime`，光源采样、BRDF 计算与采样、随机数等通用代码位于 `shaders/common`。
+Shader 入口：[realtime.slang](../shaders/raytracing/realtime/realtime.slang)。实时路径循环、ReSTIR 与 SVGF 位于 `raytracing/realtime`，材质、BRDF 和随机数等通用代码位于 `shaders/common`。
 
 - 基础 PBR 复用漫反射与 GGX 函数，使用 VNDF 和完整混合 PDF 生成反弹方向。
-- 点光源与聚光灯共用一次加权选择，合计只选一个；权重为最大 RGB 强度乘锥角衰减再除以距离平方，超出 range 或聚光锥的光源跳过，并补偿选择概率。矩形光源独立加权选择，发光网格的三角形独立均匀选择，两类面积光均与 BRDF 命中使用 MIS。
-- 方向光通过可见性射线计算直接照明；矩形发光面以三角形参与求交。
+- 主命中的直接光使用原版 ReSTIR DI：完整光源样本的初始 RIS → 时域复用 → 一轮空间复用 → 可见性着色。点光、聚光、方向光、矩形、发光三角形和启用的环境共同参与采样。
+- 光源候选先确定光源和面内位置，再用实际位置的发光、BRDF 与几何项生成权重；一个 BRDF 方向候选通过 balance MIS 一起进入初始 reservoir。
 - 实时光追的 [RayGen 路径循环](../shaders/raytracing/realtime/path_tracing.slang) 负责续射线和阴影射线，ClosestHit 返回命中与材质信息。Vulkan 管线递归深度固定为 1。
-- `maxBounces` 控制最多 1–64 次表面散射，结束后仍计算终点发光；1 对应直接照明与终点发光。使用俄罗斯轮盘终止。修改反弹次数后复用渲染图和 Pipeline，并重置时域历史。BLAS 按几何缓存，TLAS 按提交帧更新。
+- `maxBounces` 控制最多 1–64 次表面散射。更深层顶点使用初始 RIS 估计直接光并计入间接光，路径使用俄罗斯轮盘终止。修改反弹次数后复用渲染图和 Pipeline，并重置时域历史。BLAS 按几何缓存，TLAS 按提交帧更新。
 - 关闭 SVGF 时输出 RGBA16F 合并颜色；开启时分别输出直接光、间接光、`emission` 与主命中材质的反射率 `saturate(diffuseColor + F0)`。两种模式均输出原始线性深度与法线，主射线使用固定的像素内采样位置。
-- `emission` 保存相机直接可见的发光表面、面光源与环境。直接光包含主表面的光源采样、一次 BRDF 采样命中发光面 / 环境的贡献；更深层路径归入间接光。直接光保留面光源 MIS 的两部分，合并颜色为三路之和。
+- `emission` 保存相机直接可见的发光表面、面光源与环境。主表面的直接光由 ReSTIR 最后阶段写入，更深层路径归入间接光，合并颜色为三路之和。
 
 [RayTracingScenePass](../src/render/raytracing/realtime/RayTracingScenePass.cpp) 按有效材质的非零发光系数筛选子网格实例，准备命中记录及每个实例的三角形任务。GPU 为每个发光三角形生成一条 80 B 记录，保存世界空间顶点与边、实际面积、三个顶点的 UV 和共享材质索引；非均匀缩放、剪切及实例变换均在此应用。缓冲开头的 16 B header 保存有效三角形数量，容量增长由 Graph 管理，描述符按资源版本更新。该组织沿用 [RTXDI 的发光网格展开方式](https://github.com/NVIDIA-RTX/RTXDI/blob/main/Doc/Integration.md#mesh-light-processing)。
 
-每次表面散射从全部 N 个三角形中等概率选一个，再在其内部均匀面积采样，通过 UV 从现有材质与纹理数组求发光。完整立体角 PDF 为 `距离平方 / (N × 三角形面积 × 发光面余弦)`，双面材质使用余弦绝对值，单面材质只向正面发光。NEE 和 BRDF 命中使用同一个 PDF 做 balance MIS，相机直接可见的发光保持完整贡献。零面积或采样位置发光为零时本次贡献为零，三角形编号保持稳定。选择分布后续可用于 ReSTIR；当前每个着色点只访问一个候选三角形。
+ReSTIR 参数位于 `feature.restir`：默认生成 32 个光源候选和一个 BRDF 候选，启用时域复用及 3 邻居、30 像素半径的一轮空间复用。历史计数限制为当前初始计数的 20 倍。合并时在当前表面重算目标值，按原论文 Algorithm 6 检查来源表面的支持域与可见性并归一化；各阶段使用独立随机流和明确的缓冲读写顺序。公式、数据与资源生命周期见 [ReSTIR](ReSTIR.md)。
+
+相机运动通过上一帧矩阵重投影，检查对象、法线和深度匹配；场景几何、变换、材质、光源、环境或相关配置变化时重置 reservoir 历史。ReSTIR 的采样历史与 SVGF 的颜色历史各自维护，关闭 SVGF 时仍可复用光源样本。
 
 仅在开启 SVGF 时执行 [SVGFReprojection](../src/render/raytracing/realtime/SVGFReprojection.h) 和 [SVGFFilter](../src/render/raytracing/realtime/SVGFFilter.h)。直接光与间接光先除以各自像素的 albedo，在解调后的空间中累积颜色、亮度矩并估计方差。有效样本数不超过 `historyLength` 时使用算术平均，超过后使用 `emaAlpha`；首个样本或历史失效时权重为 1。历史不足 4 帧时使用 7×7 空间方差，五级 à-trous 按深度、法线、亮度与方差滤波。第一级回写解调后的颜色历史，最后一级乘回当前像素的 albedo 并添加当前帧 `emission`。除法和乘回统一使用 `max(albedo, 0.01)`，避免黑色通道除零。算法与限制见 [SVGF 文档](SVGF.md)。
 

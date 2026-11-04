@@ -19,6 +19,11 @@ RENDERLAB_BINDING kNormal    = 5;
 RENDERLAB_BINDING kIndirect  = 6;
 RENDERLAB_BINDING kEmission  = 7;
 RENDERLAB_BINDING kAlbedo    = 8;
+RENDERLAB_BINDING kSurfaces          = 9;
+RENDERLAB_BINDING kPreviousSurfaces  = 10;
+RENDERLAB_BINDING kInitialReservoirs = 11;
+RENDERLAB_BINDING kReservoirHistory  = 12;
+RENDERLAB_BINDING kRestirFrame       = 13;
 }
 
 namespace OfflineRayTracingBinding
