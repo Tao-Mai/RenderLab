@@ -35,7 +35,8 @@ struct MaterialData
     float specularFactor;
     float dielectricF0;
     float glossinessFactor;
-    uint2 scalarPadding;
+    uint normalEncoding;
+    uint clearcoatNormalEncoding;
     TextureRef colorTexture;
     TextureRef normalTexture;
     TextureRef metallicTexture;

@@ -57,36 +57,35 @@ struct GltfBuild
     {
         return std::nullopt;
     }
-    const int imageIndex = model.textures[textureIndex].source;
-    if (imageIndex < 0 || imageIndex >= static_cast<int>(model.images.size()))
+    const auto& texture = model.textures[textureIndex];
+    int imageIndex = texture.source;
+    if (const auto dds = texture.extensions.find("MSFT_texture_dds"); dds != texture.extensions.end())
+    {
+        const auto& extension = dds->second;
+        CHECK(extension.IsObject() && extension.Has("source") && extension.Get("source").IsInt(),
+              "invalid MSFT_texture_dds source on texture {} in '{}'", textureIndex, modelDirectory.string());
+        imageIndex = extension.Get("source").GetNumberAsInt();
+        CHECK(imageIndex >= 0 && static_cast<size_t>(imageIndex) < model.images.size(),
+              "MSFT_texture_dds image index {} is out of range in '{}'", imageIndex, modelDirectory.string());
+    }
+    else if (imageIndex < 0 || static_cast<size_t>(imageIndex) >= model.images.size())
     {
         return std::nullopt;
     }
 
-    const tinygltf::Image& image = model.images[imageIndex];
-    std::string            sourcePath;
-    if (image.uri.empty())
-    {
-        sourcePath = "embedded://image/" + std::to_string(imageIndex);
-    }
-    else if (image.uri.starts_with("data:"))
-    {
-        sourcePath = image.uri;
-    }
-    else
-    {
-        sourcePath = (modelDirectory / image.uri).lexically_normal().string();
-    }
+    const auto& image = model.images[imageIndex];
+    CHECK(!image.uri.empty() && !image.uri.starts_with("data:"),
+          "glTF image {} in '{}' requires an external file", imageIndex, modelDirectory.string());
+    std::string decodedUri;
+    CHECK(tinygltf::URIDecode(image.uri, &decodedUri, nullptr), "invalid glTF image URI '{}'", image.uri);
+    const auto sourcePath = (modelDirectory / decodedUri).lexically_normal();
 
-    const auto key = std::pair{sourcePath, colorSpace};
+    const auto key = std::pair{sourcePath.string(), colorSpace};
     if (const auto found = build.textureCache.find(key); found != build.textureCache.end())
     {
         return found->second;
     }
 
-    CHECK(!sourcePath.starts_with("data:") && !sourcePath.starts_with("embedded:"),
-          "embedded glTF textures require external files: {}",
-          sourcePath);
     const TextureAsset::ID id = AssetImporter::importTexture({
         .source = std::filesystem::absolute(sourcePath),
         .colorSpace = colorSpace,

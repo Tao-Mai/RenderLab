@@ -13,6 +13,27 @@
 #include <cmath>
 #include <cstring>
 
+namespace
+{
+[[nodiscard]] NormalEncoding normalEncoding(
+    const std::optional<TextureBinding>& binding, const AssetManager& assets)
+{
+    if (binding)
+    {
+        const ImageFormat format = assets.get<TextureAsset>(binding->textureID).format;
+        if (format == ImageFormat::BC5Unorm)
+        {
+            return NormalEncoding::RgUnorm;
+        }
+        if (format == ImageFormat::BC5Snorm)
+        {
+            return NormalEncoding::RgSnorm;
+        }
+    }
+    return NormalEncoding::Rgb;
+}
+}
+
 void MaterialTable::init(RenderResourceManager& resources, const VulkanContext& vulkan, Device& device)
 {
     const auto& limits = vulkan.properties().limits;
@@ -241,6 +262,7 @@ uint32_t MaterialTable::update(
     }
 
     data.normalTexture = resolveTexture(material.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear);
+    data.normalEncoding = normalEncoding(material.normalTexture, assets);
     data.emissiveTexture = resolveTexture(material.emissiveTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb);
     data.occlusionTexture =
         resolveTexture(material.aoTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear);
@@ -252,6 +274,7 @@ uint32_t MaterialTable::update(
         resolveTexture(clearcoat.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear);
     data.clearcoatNormalTexture =
         resolveTexture(clearcoat.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear);
+    data.clearcoatNormalEncoding = normalEncoding(clearcoat.normalTexture, assets);
 
     const auto [found, added] = materialIndices.try_emplace(key, static_cast<uint32_t>(materials.size()));
     if (added)

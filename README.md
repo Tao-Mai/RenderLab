@@ -52,7 +52,7 @@ SVGF。关闭时显示当前帧采样；开启时使用 albedo 解调、历史�
 - GCC 16.2+，支持 C++26 静态反射与 `-freflection`。
 - CMake 4.2+、Ninja、Vulkan SDK 1.4+、Slang 编译器。
 - vcpkg：`x64-mingw-dynamic`。主要依赖 GLFW、GLM、ImGui（Docking 与 GLFW / Vulkan
-  backend）、ImGuizmo、TinyGLTF、Assimp、TinyEXR、MikkTSpace、nlohmann-json、glog、zlib。
+  backend）、ImGuizmo、TinyGLTF、Assimp、TinyEXR、DirectXTex（`directxtex[core]`）、MikkTSpace、nlohmann-json、glog、zlib。
 
 在 CLion 中选择 GCC 和 vcpkg 工具链，构建 `RenderLab`，运行工作目录设为构建目录。CMake 会检查反射支持并编译
 Shader；未指定构建类型时默认使用 Release。同一构建目录使用同一套 CMake / Ninja 工具链。

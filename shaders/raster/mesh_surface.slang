@@ -42,7 +42,7 @@ Surface sampleSurface(VertexOutput input, bool isFrontFace)
     Surface surface;
     surface.worldPosition = input.worldPosition;
     surface.normal = applyNormalMap(geometricNormal, input.worldTangent,
-        sampleTexture(material.normalTexture, input.uv).xyz, material.normalScale);
+        sampleTexture(material.normalTexture, input.uv).xyz, material.normalScale, material.normalEncoding);
     surface.normal = isFrontFace ? surface.normal : -surface.normal;
     EvaluatedPbrMaterial evaluated = evaluatePbrMaterial(material, input.uv, RasterMaterialSampler());
     surface.brdf = evaluated.brdf;
@@ -57,7 +57,8 @@ Surface sampleSurface(VertexOutput input, bool isFrontFace)
 #endif
 #if ENABLE_CLEARCOAT
     surface.clearcoatNormal = applyNormalMap(geometricNormal, input.worldTangent,
-        sampleTexture(material.clearcoatNormalTexture, input.uv).xyz, material.clearcoatNormalScale);
+        sampleTexture(material.clearcoatNormalTexture, input.uv).xyz,
+        material.clearcoatNormalScale, material.clearcoatNormalEncoding);
     surface.clearcoatNormal = isFrontFace ? surface.clearcoatNormal : -surface.clearcoatNormal;
     surface.clearcoatFactor = saturate(material.clearcoatFactor * sampleTexture(material.clearcoatTexture, input.uv).r);
     surface.clearcoatRoughness = saturate(material.clearcoatRoughnessFactor * sampleTexture(material.clearcoatRoughnessTexture, input.uv).g);

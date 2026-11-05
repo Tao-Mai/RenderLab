@@ -156,6 +156,9 @@ std::shared_ptr<GpuTexture> RenderResourceManager::texture(const TextureAsset::I
     }
 
     const TextureAsset&        asset = assets->get<TextureAsset>(id);
+    CHECK(imageBlock(asset.format).extent == 1 || vulkan->supportedFeatures().textureCompressionBC,
+          "texture '{}' requires Vulkan textureCompressionBC", id);
+
     const std::vector<uint8_t> bytes = data->readTexture(asset);
     auto                       gpu   = std::make_shared<GpuTexture>(uploadContext(), asset, bytes);
 

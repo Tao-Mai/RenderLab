@@ -11,6 +11,13 @@ inline constexpr uint32_t kAlphaModeOpaque     = 0;
 inline constexpr uint32_t kAlphaModeMask       = 1;
 inline constexpr uint32_t kAlphaModeBlend      = 2;
 
+enum class NormalEncoding : uint32_t
+{
+    Rgb,
+    RgUnorm,
+    RgSnorm,
+};
+
 struct TextureRef
 {
     uint32_t textureIndex = 0;
@@ -44,7 +51,8 @@ struct alignas(16) MaterialData
     float                   specularFactor   = 1.0f;
     float                   dielectricF0     = 0.04f;
     float                   glossinessFactor = 1.0f;
-    std::array<uint32_t, 2> scalarPadding{};
+    NormalEncoding          normalEncoding = NormalEncoding::Rgb;
+    NormalEncoding          clearcoatNormalEncoding = NormalEncoding::Rgb;
     TextureRef              colorTexture;
     TextureRef              normalTexture;
     TextureRef              metallicTexture;
@@ -69,6 +77,7 @@ static_assert(offsetof(MaterialData, sheenColorFactor) == 64);
 static_assert(offsetof(MaterialData, clearcoatFactor) == 80);
 static_assert(offsetof(MaterialData, specularColorFactor) == 96);
 static_assert(offsetof(MaterialData, dielectricF0) == 112);
+static_assert(offsetof(MaterialData, normalEncoding) == 120);
 static_assert(offsetof(MaterialData, colorTexture) == 128);
 static_assert(offsetof(MaterialData, specularTexture) == 224);
 static_assert(offsetof(MaterialData, texturePadding) == 232);

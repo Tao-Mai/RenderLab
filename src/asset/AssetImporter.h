@@ -137,6 +137,8 @@ public:
     [[nodiscard]] static LoadedImage loadImage(const std::filesystem::path& source);
 
 private:
+    static TextureAsset::ID importDdsTexture(const ImportTextureSetting& setting);
+
     struct CubemapPixels
     {
         std::vector<float>   linear;

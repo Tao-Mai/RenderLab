@@ -3,7 +3,6 @@
 
 #include "asset/TextureMip.h"
 
-#include "asset/AssetDataManager.h"
 #include "asset/TextureAsset.h"
 #include "core/Logger.h"
 
@@ -18,9 +17,10 @@ std::vector<uint8_t> generateChain(const TextureAsset& asset, std::span<const ui
     CHECK(asset.width <= std::numeric_limits<int>::max() && asset.height <= std::numeric_limits<int>::max());
     CHECK(asset.mipLevels == maxLevels(asset.width, asset.height));
 
-    const uint32_t pixelBytes = AssetDataManager::bytesPerPixel(asset.format);
-    CHECK(basePixels.size() == levelBytes(asset.width, asset.height, 1, pixelBytes, 0));
-    const uint64_t byteCount = totalBytes(asset.width, asset.height, 1, pixelBytes, asset.mipLevels);
+    const ImageBlock block = imageBlock(asset.format);
+    DCHECK(block.extent == 1);
+    CHECK(basePixels.size() == levelBytes(asset.width, asset.height, 1, block, 0));
+    const uint64_t byteCount = totalBytes(asset.width, asset.height, 1, block, asset.mipLevels);
     CHECK(byteCount <= std::numeric_limits<uint32_t>::max(), "texture mip chain is too large: {}", asset.id);
 
     stbir_pixel_layout layout;
@@ -54,8 +54,8 @@ std::vector<uint8_t> generateChain(const TextureAsset& asset, std::span<const ui
     std::memcpy(pixels.data(), basePixels.data(), basePixels.size());
     for (uint32_t mip = 1; mip < asset.mipLevels; ++mip)
     {
-        const auto* previous    = pixels.data() + offset(asset.width, asset.height, 1, pixelBytes, mip - 1);
-        auto*       destination = pixels.data() + offset(asset.width, asset.height, 1, pixelBytes, mip);
+        const auto* previous    = pixels.data() + offset(asset.width, asset.height, 1, block, mip - 1);
+        auto*       destination = pixels.data() + offset(asset.width, asset.height, 1, block, mip);
         CHECK(
             stbir_resize(
                 previous,

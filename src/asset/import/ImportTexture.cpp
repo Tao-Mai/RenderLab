@@ -8,7 +8,9 @@
 #include "core/Context.h"
 #include "core/Logger.h"
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -42,6 +44,17 @@ TextureAsset::ID AssetImporter::importTexture(const ImportTextureSetting& settin
 {
     const std::filesystem::path& source = setting.source;
     CHECK(!source.empty(), "texture source path is empty");
+
+    std::string extension = source.extension().string();
+    std::ranges::transform(extension, extension.begin(), [](unsigned char character)
+    {
+        return static_cast<char>(std::tolower(character));
+    });
+    if (extension == ".dds")
+    {
+        return importDdsTexture(setting);
+    }
+
     const auto start = std::chrono::steady_clock::now();
     LOG_INFO("Import texture '{}' started", source.string());
     LoadedImage image = loadImage(source);

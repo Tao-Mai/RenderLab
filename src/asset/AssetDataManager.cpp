@@ -84,18 +84,23 @@ void validateTexture(const TextureAsset& asset, std::span<const uint8_t> bytes, 
         file.string()
     );
 
-    const uint64_t maxPayload = std::numeric_limits<uint32_t>::max();
-    const uint32_t pixelBytes = AssetDataManager::bytesPerPixel(asset.format);
+    CHECK(asset.colorSpace == ColorSpace::Linear || supportsSrgb(asset.format),
+          "texture format does not support sRGB: {}", file.string());
+
+    constexpr uint64_t kMaxPayload = std::numeric_limits<uint32_t>::max();
+    const ImageBlock block = imageBlock(asset.format);
+    const uint32_t layers = layerCount(asset.layout);
+    const uint32_t blocksWide = texture_mip::blockCount(asset.width, block.extent);
+    const uint32_t blocksHigh = texture_mip::blockCount(asset.height, block.extent);
     CHECK(
-        asset.width <= maxPayload / asset.height / layerCount(asset.layout) / pixelBytes,
+        blocksWide <= kMaxPayload / blocksHigh / layers / block.bytes,
         "texture payload is too large: {}",
         file.string()
     );
 
-    const uint64_t expected =
-        texture_mip::totalBytes(asset.width, asset.height, layerCount(asset.layout), pixelBytes, asset.mipLevels);
+    const uint64_t expected = texture_mip::totalBytes(asset.width, asset.height, layers, block, asset.mipLevels);
 
-    CHECK(expected <= maxPayload, "texture payload is too large: {}", file.string());
+    CHECK(expected <= kMaxPayload, "texture payload is too large: {}", file.string());
 
     CHECK(expected == bytes.size(), "invalid texture payload size: {}", file.string());
 }
@@ -161,23 +166,9 @@ std::filesystem::path AssetDataManager::resolve(const std::filesystem::path& rel
 
 uint32_t AssetDataManager::bytesPerPixel(ImageFormat format)
 {
-    switch (format)
-    {
-        case ImageFormat::R8:
-            return 1;
-        case ImageFormat::RG8:
-            return 2;
-        case ImageFormat::RGB8:
-            return 3;
-        case ImageFormat::RGBA8:
-            return 4;
-        case ImageFormat::RGBA16F:
-            return 8;
-        case ImageFormat::RGBA32F:
-            return 16;
-    }
-
-    LOG_FATAL("invalid texture data format");
+    const ImageBlock block = imageBlock(format);
+    DCHECK(block.extent == 1);
+    return block.bytes;
 }
 
 std::filesystem::path AssetDataManager::writeGeometry(const MeshAsset::ID& id, const MeshGeometry& mesh) const

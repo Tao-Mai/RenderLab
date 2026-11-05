@@ -44,6 +44,8 @@ GltfMaterial 保存 PBR 参数与 glTF 扩展。PbrtMaterial 按离线材质模�
 - glTF 场景保留 `KHR_lights_punctual` 的方向光、点光源和 Spot，导入颜色、照度 / 光强、范围及锥角。节点缩放影响灯的位置，导入比例同时缩放有限范围，光强保持源值。
 - 场景相机的可选 `editorCamera.exposure` 保存手动 / 自动模式、EV100、曝光补偿和自动测光参数；设为 `null` 时使用全局曝光，设置后覆盖全局配置，并随场景保存和切换。
 - 缺失切线时生成 MikkTSpace 切线；普通图像生成完整 Mipmap。
+- DirectXTex 读取单张二维 BC1–BC7 DDS。纹理资产保存源压缩块和全部 Mipmap，Vulkan 按块上传，采样时由 GPU 解码。单独导入时默认采用 DDS 标记的色彩空间，glTF 通过 `MSFT_texture_dds` 选择外部 DDS，并按材质槽位选择线性或 sRGB 采样。
+- BC5 法线贴图保存 X、Y 两个分量，材质求值从这两个分量重建正半球的 Z。
 - 环境图导入生成辐照度与 GGX 预过滤结果，可异步准备并取消。
 - `importPbrtScene` 复用固定版本的官方读取前端，保存场景描述并打包原始依赖；详见 [PBRT 导入](Pbrt.md)。
 

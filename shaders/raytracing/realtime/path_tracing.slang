@@ -118,7 +118,7 @@ Surface surfaceAt(RayTracingHitData hit, uint primitiveIndex, float2 barycentric
     surface.position = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
     surface.viewDirection = -normalize(WorldRayDirection());
     surface.normal = applyNormalMap(worldNormal, worldTangent,
-        sampleTextureLevel(material.normalTexture, uv).xyz, material.normalScale);
+        sampleTextureLevel(material.normalTexture, uv).xyz, material.normalScale, material.normalEncoding);
     float facing = dot(geometricNormal, surface.viewDirection) < 0.0 ? -1.0 : 1.0;
     surface.geometricNormal = geometricNormal * facing;
     surface.normal *= facing;

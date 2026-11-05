@@ -174,9 +174,9 @@ namespace asset_import::environment_map
           "invalid radiance cubemap dimensions or mip count: {}",
           radiance.id);
 
-    constexpr uint32_t pixelBytes = 4 * sizeof(float);
+    constexpr ImageBlock kBlock = imageBlock(ImageFormat::RGBA32F);
     const uint64_t expectedBytes = texture_mip::totalBytes(
-        radiance.width, radiance.height, 6, pixelBytes, radiance.mipLevels);
+        radiance.width, radiance.height, 6, kBlock, radiance.mipLevels);
     CHECK(radiancePixels.size() == expectedBytes / sizeof(float),
           "invalid radiance cubemap mip pixels: {}",
           radiance.id);
@@ -188,7 +188,7 @@ namespace asset_import::environment_map
     for (uint32_t mip = 0; mip < view.mipLevels; ++mip)
     {
         const size_t offset = static_cast<size_t>(texture_mip::offset(
-            view.side, view.side, 6, pixelBytes, mip) / sizeof(float));
+            view.side, view.side, 6, kBlock, mip) / sizeof(float));
         view.levels[mip] = radiancePixels.data() + offset;
     }
     return view;

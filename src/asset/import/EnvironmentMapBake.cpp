@@ -98,15 +98,16 @@ void AssetImporter::buildMipmapChain(CubemapPixels& cubemap, const TextureAsset&
           radiance.id);
 
     const uint32_t side              = radiance.width;
-    const uint32_t encodedPixelBytes = AssetDataManager::bytesPerPixel(radiance.format);
+    const ImageBlock encodedBlock = imageBlock(radiance.format);
+    const uint32_t encodedPixelBytes = encodedBlock.bytes;
     const uint64_t basePixels        = static_cast<uint64_t>(side) * side * 6;
     CHECK(cubemap.linear.size() == basePixels * 4 && cubemap.encoded.size() == basePixels * encodedPixelBytes,
           "invalid radiance base pixels: {}",
           radiance.id);
 
-    constexpr uint32_t linearPixelBytes = 4 * sizeof(float);
-    const uint64_t     linearBytes      = texture_mip::totalBytes(side, side, 6, linearPixelBytes, radiance.mipLevels);
-    const uint64_t     encodedBytes     = texture_mip::totalBytes(side, side, 6, encodedPixelBytes, radiance.mipLevels);
+    constexpr ImageBlock kLinearBlock = imageBlock(ImageFormat::RGBA32F);
+    const uint64_t linearBytes  = texture_mip::totalBytes(side, side, 6, kLinearBlock, radiance.mipLevels);
+    const uint64_t encodedBytes = texture_mip::totalBytes(side, side, 6, encodedBlock, radiance.mipLevels);
     CHECK(encodedBytes <= std::numeric_limits<uint32_t>::max() &&
               linearBytes / sizeof(float) <= std::numeric_limits<size_t>::max(),
           "radiance mip chain is too large: {}",
@@ -125,10 +126,10 @@ void AssetImporter::buildMipmapChain(CubemapPixels& cubemap, const TextureAsset&
         const uint32_t previousSide = texture_mip::extent(side, mip - 1);
         const uint32_t mipSide      = texture_mip::extent(side, mip);
         const size_t   previousOffset =
-            static_cast<size_t>(texture_mip::offset(side, side, 6, linearPixelBytes, mip - 1) / sizeof(float));
+            static_cast<size_t>(texture_mip::offset(side, side, 6, kLinearBlock, mip - 1) / sizeof(float));
         const size_t linearOffset =
-            static_cast<size_t>(texture_mip::offset(side, side, 6, linearPixelBytes, mip) / sizeof(float));
-        const size_t encodedOffset = static_cast<size_t>(texture_mip::offset(side, side, 6, encodedPixelBytes, mip));
+            static_cast<size_t>(texture_mip::offset(side, side, 6, kLinearBlock, mip) / sizeof(float));
+        const size_t encodedOffset = static_cast<size_t>(texture_mip::offset(side, side, 6, encodedBlock, mip));
 
         parallelFaceRows(
             "Radiance",
@@ -287,8 +288,8 @@ std::vector<uint8_t> AssetImporter::prefilterSpecularMap(const TextureAsset&   r
     const uint32_t          mipLevels    = texture_mip::maxLevels(side, side);
     const uint64_t          baseChannels = static_cast<uint64_t>(side) * side * 6 * 4;
 
-    constexpr uint32_t pixelBytes = 4 * sizeof(float);
-    const uint64_t     byteCount  = texture_mip::totalBytes(side, side, 6, pixelBytes, mipLevels);
+    constexpr ImageBlock kBlock = imageBlock(ImageFormat::RGBA32F);
+    const uint64_t byteCount = texture_mip::totalBytes(side, side, 6, kBlock, mipLevels);
     CHECK(byteCount <= std::numeric_limits<uint32_t>::max(), "prefiltered cubemap is too large: {}", radiance.id);
 
     std::vector<uint8_t> bytes(static_cast<size_t>(byteCount));
@@ -307,7 +308,7 @@ std::vector<uint8_t> AssetImporter::prefilterSpecularMap(const TextureAsset&   r
         const float    roughness    = static_cast<float>(mip) / (mipLevels - 1);
         const float    alpha        = roughness * roughness;
         const float    alphaSquared = alpha * alpha;
-        const size_t   levelOffset  = static_cast<size_t>(texture_mip::offset(side, side, 6, pixelBytes, mip));
+        const size_t   levelOffset  = static_cast<size_t>(texture_mip::offset(side, side, 6, kBlock, mip));
         LOG_INFO("Prefilter mip {}/{} started: {}x{}x6, {} candidate samples per pixel",
                  mip,
                  mipLevels - 1,
@@ -393,7 +394,7 @@ std::vector<uint8_t> AssetImporter::prefilterSpecularMap(const TextureAsset&   r
                                  }
 
                                  const size_t pixel = (static_cast<size_t>(face) * mipSide + y) * mipSide + x;
-                                 writePixel(bytes.data() + levelOffset + pixel * pixelBytes,
+                                 writePixel(bytes.data() + levelOffset + pixel * kBlock.bytes,
                                             color,
                                             ImageFormat::RGBA32F,
                                             ColorSpace::Linear);

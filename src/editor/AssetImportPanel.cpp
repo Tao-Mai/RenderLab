@@ -3,6 +3,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <string_view>
 #include <imgui.h>
 #include <imgui_stdlib.h>
 #include "asset/import/ImportId.h"
@@ -19,6 +20,19 @@ namespace
 {
     const std::u8string utf8 = path.u8string();
     return {reinterpret_cast<const char*>(utf8.data()), utf8.size()};
+}
+
+[[nodiscard]] std::wstring makeFileFilter(std::wstring_view label, std::wstring_view extensions)
+{
+    std::wstring filter{label};
+    filter += L'\0';
+    filter += extensions;
+    filter += L'\0';
+    filter += L"All files (*.*)";
+    filter += L'\0';
+    filter += L"*.*";
+    filter.append(2, L'\0');
+    return filter;
 }
 
 void drawSourcePath(std::filesystem::path& source, const wchar_t* filter)
@@ -67,6 +81,10 @@ void drawSourcePath(std::filesystem::path& source, const wchar_t* filter)
     if (assetType == 2 || assetType == 3)
     {
         return AssetImporter::supportsModel(source);
+    }
+    if (extension == ".dds")
+    {
+        return assetType == 0;
     }
     return extension == ".exr" || extension == ".png" || extension == ".jpg" || extension == ".jpeg" ||
         extension == ".hdr" || extension == ".bmp" || extension == ".tga" || extension == ".gif" ||
@@ -134,22 +152,14 @@ void AssetImportPanel::drawDialog()
         return;
     }
 
-    static constexpr wchar_t imageFilter[] =
-        L"Image files (*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.gif;*.psd;*.pic;*.pnm;*.exr;*.hdr)\0"
-        L"*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.gif;*.psd;*.pic;*.pnm;*.exr;*.hdr\0"
-        L"All files (*.*)\0*.*\0";
+    constexpr std::wstring_view kImageExtensions = L"*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.gif;*.psd;*.pic;*.pnm;*.exr;*.hdr";
+    static const std::wstring kImageFilter = makeFileFilter(L"Image files", kImageExtensions);
+    static const std::wstring kTextureFilter =
+        makeFileFilter(L"Texture files", std::wstring{kImageExtensions} + L";*.dds");
     static const std::wstring kModelFilter = []
     {
         const auto extensions = AssetImporter::modelExtensions();
-        std::wstring filter = L"Model files";
-        filter += L'\0';
-        filter.append(extensions.begin(), extensions.end());
-        filter += L'\0';
-        filter += L"All files (*.*)";
-        filter += L'\0';
-        filter += L"*.*";
-        filter.append(2, L'\0');
-        return filter;
+        return makeFileFilter(L"Model files", std::wstring{extensions.begin(), extensions.end()});
     }();
 
     std::filesystem::path* source = nullptr;
@@ -157,12 +167,12 @@ void AssetImportPanel::drawDialog()
     {
         case 0:
             source = &textureSetting.source;
-            drawSourcePath(*source, imageFilter);
+            drawSourcePath(*source, kTextureFilter.c_str());
             drawColorSpace(textureSetting.colorSpace);
             break;
         case 1:
             source = &environmentSetting.source;
-            drawSourcePath(*source, imageFilter);
+            drawSourcePath(*source, kImageFilter.c_str());
             drawColorSpace(environmentSetting.colorSpace);
             drawPositiveUint("Irradiance face size", environmentSetting.irradianceSize);
             drawPositiveUint("Irradiance samples", environmentSetting.irradianceSampleCount);

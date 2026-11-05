@@ -1,6 +1,5 @@
 #include "render/resources/GpuTexture.h"
 
-#include "asset/AssetDataManager.h"
 #include "asset/TextureAsset.h"
 #include "asset/TextureMip.h"
 #include "render/device/Memory.h"
@@ -19,21 +18,40 @@ namespace
 {
 [[nodiscard]] vk::Format vulkanFormat(ImageFormat format, ColorSpace colorSpace)
 {
+    const bool srgb = colorSpace == ColorSpace::Srgb;
     switch (format)
     {
         case ImageFormat::R8:
-            return colorSpace == ColorSpace::Srgb ? vk::Format::eR8Srgb : vk::Format::eR8Unorm;
+            return srgb ? vk::Format::eR8Srgb : vk::Format::eR8Unorm;
         case ImageFormat::RG8:
-            return colorSpace == ColorSpace::Srgb ? vk::Format::eR8G8Srgb : vk::Format::eR8G8Unorm;
+            return srgb ? vk::Format::eR8G8Srgb : vk::Format::eR8G8Unorm;
         case ImageFormat::RGB8:
         case ImageFormat::RGBA8:
-            return colorSpace == ColorSpace::Srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
+            return srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
         case ImageFormat::RGBA16F:
-            CHECK(colorSpace == ColorSpace::Linear, "floating-point textures require linear color space");
             return vk::Format::eR16G16B16A16Sfloat;
         case ImageFormat::RGBA32F:
-            CHECK(colorSpace == ColorSpace::Linear, "floating-point textures require linear color space");
             return vk::Format::eR32G32B32A32Sfloat;
+        case ImageFormat::BC1:
+            return srgb ? vk::Format::eBc1RgbaSrgbBlock : vk::Format::eBc1RgbaUnormBlock;
+        case ImageFormat::BC2:
+            return srgb ? vk::Format::eBc2SrgbBlock : vk::Format::eBc2UnormBlock;
+        case ImageFormat::BC3:
+            return srgb ? vk::Format::eBc3SrgbBlock : vk::Format::eBc3UnormBlock;
+        case ImageFormat::BC4Unorm:
+            return vk::Format::eBc4UnormBlock;
+        case ImageFormat::BC4Snorm:
+            return vk::Format::eBc4SnormBlock;
+        case ImageFormat::BC5Unorm:
+            return vk::Format::eBc5UnormBlock;
+        case ImageFormat::BC5Snorm:
+            return vk::Format::eBc5SnormBlock;
+        case ImageFormat::BC6HUfloat:
+            return vk::Format::eBc6HUfloatBlock;
+        case ImageFormat::BC6HSfloat:
+            return vk::Format::eBc6HSfloatBlock;
+        case ImageFormat::BC7:
+            return srgb ? vk::Format::eBc7SrgbBlock : vk::Format::eBc7UnormBlock;
     }
     LOG_FATAL("invalid texture data format");
 }
@@ -51,36 +69,21 @@ const vk::ImageCreateInfo& GpuTexture::imageInfo() const { return creationInfo; 
 
 void GpuTexture::create(GpuUploadContext upload, std::span<const uint8_t> bytes, const TextureAsset& asset)
 {
-    const uint32_t   layers           = asset.layout == ImageLayout::Cubemap ? 6 : 1;
-    const uint32_t   sourcePixelBytes = AssetDataManager::bytesPerPixel(asset.format);
-    const uint32_t   pixelBytes       = asset.format == ImageFormat::RGB8 ? 4 : sourcePixelBytes;
-    const vk::Format format           = vulkanFormat(asset.format, asset.colorSpace);
-    const auto&      physicalDevice   = upload.physicalDevice;
-    const auto&      device           = upload.device;
-    const auto&      commandPool      = upload.commandPool;
-    auto&            queue            = upload.queue;
+    const uint32_t layers = asset.layout == ImageLayout::Cubemap ? 6 : 1;
+    const ImageFormat uploadFormat = asset.format == ImageFormat::RGB8 ? ImageFormat::RGBA8 : asset.format;
+    const ImageBlock block = imageBlock(uploadFormat);
+    const vk::Format format = vulkanFormat(uploadFormat, asset.colorSpace);
+    const auto& physicalDevice = upload.physicalDevice;
+    const auto& device = upload.device;
+    const auto& commandPool = upload.commandPool;
+    auto& queue = upload.queue;
 
-    CHECK(
-        asset.width > 0 && asset.height > 0 && asset.mipLevels > 0 &&
-            asset.mipLevels <= texture_mip::maxLevels(asset.width, asset.height),
-        "invalid texture mip levels: {}",
-        asset.id
-    );
-    CHECK(
-        asset.width <= std::numeric_limits<uint32_t>::max() / asset.height / layers / pixelBytes,
-        "texture payload is too large: {}",
-        asset.id
-    );
-
-    const vk::DeviceSize sourceByteSize =
-        texture_mip::totalBytes(asset.width, asset.height, layers, sourcePixelBytes, asset.mipLevels);
-    CHECK(bytes.size() == sourceByteSize, "invalid texture payload size: {}", asset.id);
-
-    const vk::DeviceSize byteSize =
-        texture_mip::totalBytes(asset.width, asset.height, layers, pixelBytes, asset.mipLevels);
     std::vector<uint8_t> rgbaPixels;
     if (asset.format == ImageFormat::RGB8)
     {
+        const auto byteSize = texture_mip::totalBytes(asset.width, asset.height, layers, block, asset.mipLevels);
+        CHECK(byteSize <= std::numeric_limits<uint32_t>::max(), "texture payload is too large: {}", asset.id);
+
         // The payload packs all mip levels and cube faces consecutively.
         // Expand every RGB texel; GPU copies then use a four-byte pixel stride.
         rgbaPixels.resize(static_cast<size_t>(byteSize));
@@ -96,8 +99,8 @@ void GpuTexture::create(GpuUploadContext upload, std::span<const uint8_t> bytes,
     }
 
     // Packed asset mips can start at odd offsets for R8/RG8 NPOT images.
-    // Keep the persistent payload compact and align only the GPU staging copies.
-    constexpr vk::DeviceSize         kCopyOffsetAlignment = 4;
+    // BC offsets are aligned to the size of a whole compressed block.
+    const vk::DeviceSize             copyOffsetAlignment = std::max(4u, block.bytes);
     vk::DeviceSize                   stagingSize          = 0;
     std::vector<vk::BufferImageCopy> copyRegions;
     copyRegions.reserve(static_cast<size_t>(layers) * asset.mipLevels);
@@ -105,10 +108,10 @@ void GpuTexture::create(GpuUploadContext upload, std::span<const uint8_t> bytes,
     {
         const uint32_t       mipWidth   = texture_mip::extent(asset.width, mip);
         const uint32_t       mipHeight  = texture_mip::extent(asset.height, mip);
-        const vk::DeviceSize layerBytes = static_cast<vk::DeviceSize>(mipWidth) * mipHeight * pixelBytes;
+        const vk::DeviceSize layerBytes = texture_mip::levelBytes(asset.width, asset.height, 1, block, mip);
         for (uint32_t layer = 0; layer < layers; ++layer)
         {
-            stagingSize = (stagingSize + kCopyOffsetAlignment - 1) & ~(kCopyOffsetAlignment - 1);
+            stagingSize = (stagingSize + copyOffsetAlignment - 1) & ~(copyOffsetAlignment - 1);
             copyRegions.push_back({
                 .bufferOffset = stagingSize,
                 .imageSubresource =
@@ -128,14 +131,13 @@ void GpuTexture::create(GpuUploadContext upload, std::span<const uint8_t> bytes,
     if (stagingSize != bytes.size())
     {
         alignedPixels.resize(static_cast<size_t>(stagingSize));
+        vk::DeviceSize sourceOffset = 0;
         for (const auto& region : copyRegions)
         {
-            const vk::DeviceSize layerBytes =
-                static_cast<vk::DeviceSize>(region.imageExtent.width) * region.imageExtent.height * pixelBytes;
-            const auto sourceOffset =
-                texture_mip::offset(asset.width, asset.height, layers, pixelBytes, region.imageSubresource.mipLevel) +
-                region.imageSubresource.baseArrayLayer * layerBytes;
+            const auto layerBytes = texture_mip::levelBytes(
+                asset.width, asset.height, 1, block, region.imageSubresource.mipLevel);
             std::memcpy(alignedPixels.data() + region.bufferOffset, bytes.data() + sourceOffset, layerBytes);
+            sourceOffset += layerBytes;
         }
         bytes = alignedPixels;
     }

@@ -83,6 +83,7 @@ find_package(imguizmo CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(glog CONFIG REQUIRED)
 find_package(tinyexr CONFIG REQUIRED)
+find_package(directxtex CONFIG REQUIRED)
 find_package(mikktspace CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
 find_path(TINYGLTF_INCLUDE_DIR NAMES tiny_gltf.h REQUIRED)
@@ -435,7 +436,11 @@ target_sources(RenderLabRuntime PRIVATE
     src/asset/pbrt/upstream/PfmReader.cpp
     src/asset/pbrt/upstream/rply/rply.cpp
 )
-target_link_libraries(RenderLabRuntime PRIVATE ZLIB::ZLIB)
+add_library(RenderLabDds OBJECT src/asset/import/ImportDds.cpp)
+target_include_directories(RenderLabDds PRIVATE src)
+target_compile_definitions(RenderLabDds PRIVATE GLM_FORCE_DEPTH_ZERO_TO_ONE GLOG_NO_ABBREVIATED_SEVERITIES)
+target_link_libraries(RenderLabDds PRIVATE RenderLabBuildOptions glm::glm glog::glog Microsoft::DirectXTex)
+target_link_libraries(RenderLabRuntime PRIVATE ZLIB::ZLIB RenderLabDds)
 
 add_executable(RenderLab src/Main.cpp)
 target_link_libraries(RenderLab PRIVATE RenderLabRuntime)
