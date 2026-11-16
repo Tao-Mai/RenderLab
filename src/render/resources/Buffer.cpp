@@ -61,10 +61,6 @@ void Buffer::reset() noexcept
     byteSize = 0;
 }
 
-vk::Buffer Buffer::handle() const { return *buffer; }
-
-vk::DeviceSize Buffer::size() const { return byteSize; }
-
 vk::DeviceAddress Buffer::address(const vk::raii::Device& device) const
 {
     return device.getBufferAddress({.buffer = *buffer});

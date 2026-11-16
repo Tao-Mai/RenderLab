@@ -16,7 +16,7 @@ class GpuShader
     GpuShader(GpuShader &&) noexcept        = default;
     GpuShader &operator=(GpuShader &&) noexcept = default;
 
-    [[nodiscard]] vk::ShaderModule handle() const;
+    [[nodiscard]] vk::ShaderModule handle() const { return *module; }
 
   private:
     vk::raii::ShaderModule module = nullptr;

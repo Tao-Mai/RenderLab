@@ -1,14 +1,14 @@
 #pragma once
 
+#include "asset/EnvironmentMapAsset.h"
 #include "render/RenderConfig.h"
+#include "render/RendererConfig.h"
 #include "render/device/Device.h"
 #include "render/graph/RenderGraph.h"
+#include "render/raytracing/TlasBuildPass.h"
 #include "render/raytracing/realtime/RayTracingData.h"
 #include "render/raytracing/realtime/RayTracingScenePass.h"
-#include "render/raytracing/TlasBuildPass.h"
 #include "render/resources/ShaderData.h"
-#include "render/RendererConfig.h"
-#include "asset/EnvironmentMapAsset.h"
 
 #include <array>
 #include <glm/vec4.hpp>
@@ -55,34 +55,36 @@ private:
         Buffer                                           bindingTable;
         std::array<vk::StridedDeviceAddressRegionKHR, 3> raygenRegions;
         vk::StridedDeviceAddressRegionKHR                missRegion, hitRegion;
+        uint32_t                                         raygenCount = 0;
     };
 
-    Output                                           output;
-    bool                                             svgfEnabled = false;
-    uint32_t                                         sampleIndex = 0;
-    std::array<PipelineVariant, 2>                   variants;
-    RenderGraph::AccelerationStructureHandle         sceneTlas;
-    RayTracingScenePass::Output                      geometry;
-    std::array<Frame, maxFramesInFlight>             frames;
-    std::array<RenderGraph::BufferHandle, 2>         restirSurfaces;
-    RenderGraph::BufferHandle                        initialReservoirs;
-    RenderGraph::BufferHandle                        reservoirHistory;
-    RenderGraph::BufferHandle                        restirParameters;
-    vk::Extent2D                                     extent;
-    uint32_t                                         writeLayer       = 0;
-    bool                                             hasRestirHistory = false;
-    glm::mat4                                        previousViewProjection{1.0f};
-    glm::vec4                                        previousViewport{};
-    glm::vec4                                        previousDepthRow{};
-    uint64_t                                         previousSceneSignature   = 0;
-    uint64_t                                         previousMaterialRevision = 0;
-    RenderFeature::Restir                            previousRestir;
-    uint32_t                                         previousMaxBounces = 0;
-    bool                                             previousIbl        = false;
-    std::vector<LightData>                           previousLights;
-    std::optional<EnvironmentMapAsset::ID>           previousEnvironment;
+    Output                                        output;
+    bool                                          svgfEnabled = false;
+    RealtimeAlgorithm                             algorithm   = RealtimeAlgorithm::ReSTIR;
+    uint32_t                                      sampleIndex = 0;
+    std::array<std::array<PipelineVariant, 2>, 2> variants;
+    RenderGraph::AccelerationStructureHandle      sceneTlas;
+    RayTracingScenePass::Output                   geometry;
+    std::array<Frame, maxFramesInFlight>          frames;
+    std::array<RenderGraph::BufferHandle, 2>      restirSurfaces;
+    RenderGraph::BufferHandle                     initialReservoirs;
+    RenderGraph::BufferHandle                     reservoirHistory;
+    RenderGraph::BufferHandle                     restirParameters;
+    vk::Extent2D                                  extent;
+    uint32_t                                      writeLayer       = 0;
+    bool                                          hasRestirHistory = false;
+    glm::mat4                                     previousViewProjection{1.0f};
+    glm::vec4                                     previousViewport{};
+    glm::vec4                                     previousDepthRow{};
+    uint64_t                                      previousSceneSignature   = 0;
+    uint64_t                                      previousMaterialRevision = 0;
+    RenderFeature::Restir                         previousRestir;
+    uint32_t                                      previousMaxBounces = 0;
+    bool                                          previousIbl        = false;
+    std::vector<LightData>                        previousLights;
+    std::optional<EnvironmentMapAsset::ID>        previousEnvironment;
 
-    void createPipeline(const PassSetup& setup, bool enableSvgf);
+    void createPipeline(const PassSetup& setup, RealtimeAlgorithm algorithm, bool enableSvgf);
     void updateBufferDescriptors(RenderGraph& graph, const PassFrame& execution, Frame& frame);
     void updateTlasDescriptor(RenderGraph& graph, const PassFrame& execution, Frame& frame);
     void prepareRestir(RenderGraph& graph, const PassFrame& execution);

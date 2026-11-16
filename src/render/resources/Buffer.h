@@ -24,8 +24,8 @@ public:
     void  download(void* data, vk::DeviceSize byteCount);
     void  reset() noexcept;
 
-    [[nodiscard]] vk::Buffer        handle() const;
-    [[nodiscard]] vk::DeviceSize    size() const;
+    [[nodiscard]] vk::Buffer        handle() const { return *buffer; }
+    [[nodiscard]] vk::DeviceSize    size() const { return byteSize; }
     [[nodiscard]] vk::DeviceAddress address(const vk::raii::Device& device) const;
 
 private:

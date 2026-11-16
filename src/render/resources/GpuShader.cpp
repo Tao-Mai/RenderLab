@@ -15,11 +15,6 @@ GpuShader::GpuShader(const vk::raii::Device &device, const std::string &filename
     module = vkCheck(device.createShaderModule(createInfo));
 }
 
-vk::ShaderModule GpuShader::handle() const
-{
-    return *module;
-}
-
 std::vector<uint32_t> GpuShader::readSpirv(const std::string &filename)
 {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);

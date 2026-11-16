@@ -15,8 +15,6 @@ Image::Image(const vk::raii::Device& device, vk::Image image) : device(&device),
     DCHECK(image);
 }
 
-vk::Image Image::handle() const { return image; }
-
 vk::ImageView Image::getOrCreateImageView(const vk::ImageViewCreateInfo& viewInfo)
 {
     DCHECK(device && **device);

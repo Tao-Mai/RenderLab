@@ -96,6 +96,12 @@ private:
         [[nodiscard]] size_t operator()(const PipelineLayoutKey& key) const noexcept;
     };
 
+    struct CachedPipelineLayout
+    {
+        std::vector<vk::raii::DescriptorSetLayout> setLayouts;
+        vk::raii::PipelineLayout handle = nullptr;
+    };
+
     struct PipelineKey
     {
         ShaderHandle            shader;
@@ -118,5 +124,5 @@ private:
     vk::raii::DescriptorPool                                                               descriptorPool = nullptr;
     vk::raii::PipelineCache                                                                pipelineCache  = nullptr;
     std::unordered_map<PipelineKey, vk::raii::Pipeline, PipelineKeyHash>                   pipelines;
-    std::unordered_map<PipelineLayoutKey, vk::raii::PipelineLayout, PipelineLayoutKeyHash> pipelineLayouts;
+    std::unordered_map<PipelineLayoutKey, CachedPipelineLayout, PipelineLayoutKeyHash> pipelineLayouts;
 };

@@ -62,11 +62,6 @@ GpuTexture::GpuTexture(GpuUploadContext upload, const TextureAsset& asset, std::
     create(upload, bytes, asset);
 }
 
-vk::ImageView GpuTexture::imageView() const { return *view; }
-
-vk::Image                  GpuTexture::imageHandle() const { return *image; }
-const vk::ImageCreateInfo& GpuTexture::imageInfo() const { return creationInfo; }
-
 void GpuTexture::create(GpuUploadContext upload, std::span<const uint8_t> bytes, const TextureAsset& asset)
 {
     const uint32_t layers = asset.layout == ImageLayout::Cubemap ? 6 : 1;

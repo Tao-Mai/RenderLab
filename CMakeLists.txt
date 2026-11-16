@@ -127,6 +127,24 @@ endforeach()
 renderlab_shader(depth raster/depth.slang depth DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0)
 renderlab_shader(skybox raster/skybox.slang skybox)
 renderlab_shader(tonemapping postprocess/tonemapping.slang tonemapping)
+foreach(stage IN ITEMS 0 1 2)
+    set(binary falcor_simple_post_fx)
+    if(NOT stage EQUAL 0)
+        string(APPEND binary ".${stage}")
+    endif()
+    renderlab_shader(falcor_simple_post_fx postprocess/falcor/simple_post_fx.slang "${binary}"
+        ENTRIES computeMain DEFINES FALCOR_POST_FX_STAGE=${stage})
+endforeach()
+foreach(stage IN ITEMS 0 1)
+    set(binary falcor_luminance)
+    if(NOT stage EQUAL 0)
+        string(APPEND binary ".${stage}")
+    endif()
+    renderlab_shader(falcor_luminance postprocess/falcor/luminance.slang "${binary}"
+        DEFINES FALCOR_LUMINANCE_STAGE=${stage})
+endforeach()
+renderlab_shader(falcor_tonemapping postprocess/falcor/tonemapping.slang falcor_tonemapping)
+renderlab_shader(falcor_present postprocess/falcor/present.slang falcor_present)
 foreach(stage IN ITEMS 0 1)
     set(exposure_binaries exposure.histogram exposure.resolve)
     list(GET exposure_binaries ${stage} binary)
@@ -153,8 +171,15 @@ foreach(svgf IN ITEMS 0 1)
     if(svgf)
         string(APPEND binary ".svgf")
     endif()
-    renderlab_shader(raytracing raytracing/realtime/realtime.slang "${binary}"
+    renderlab_shader(raytracing raytracing/realtime/restir/path_tracing.slang "${binary}"
         ENTRIES raygenMain temporalMain spatialMain missMain visibilityMissMain closestHitMain lightClosestHitMain
+        DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 SVGF=${svgf})
+    set(binary raytracing_simple)
+    if(svgf)
+        string(APPEND binary ".svgf")
+    endif()
+    renderlab_shader(raytracing_simple raytracing/realtime/simple/path_tracing.slang "${binary}"
+        ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
         DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 SVGF=${svgf})
 endforeach()
 renderlab_shader(prepare_emissive_triangles raytracing/realtime/prepare_lights.slang prepare_emissive_triangles
@@ -347,7 +372,6 @@ add_library(RenderLabRuntime STATIC
         src/render/resources/ShaderData.h
         src/render/resources/ShaderManager.cpp
         src/render/resources/ShaderManager.h
-        src/render/resources/VertexLayout.h
 
         src/render/graph/EndPass.cpp
         src/render/graph/EndPass.h
@@ -366,8 +390,6 @@ add_library(RenderLabRuntime STATIC
         src/render/raster/SceneDraw.h
         src/render/raster/ScenePass.cpp
         src/render/raster/ScenePass.h
-        src/render/raster/ShadowData.cpp
-        src/render/raster/ShadowData.h
         src/render/raster/ShadowPass.cpp
         src/render/raster/ShadowPass.h
         src/render/raster/SkyboxPass.cpp
@@ -405,6 +427,10 @@ add_library(RenderLabRuntime STATIC
         src/render/postprocess/Bloom.h
         src/render/postprocess/ToneMappingPass.cpp
         src/render/postprocess/ToneMappingPass.h
+        src/render/postprocess/FalcorPostProcess.cpp
+        src/render/postprocess/FalcorPostProcess.h
+        src/render/postprocess/FalcorPostProcessConfig.cpp
+        src/render/postprocess/FalcorPostProcessConfig.h
 
         src/render/editor/EditorDepthPass.cpp
         src/render/editor/EditorDepthPass.h

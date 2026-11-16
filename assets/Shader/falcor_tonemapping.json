@@ -1,0 +1,4 @@
+{
+    "id": {"value": "falcor_tonemapping"},
+    "binary": "shaders/falcor_tonemapping.spv"
+}

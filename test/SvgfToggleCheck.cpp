@@ -41,6 +41,8 @@ int main(int argc, char** argv)
     context().window           = &window;
     context().renderer         = &renderer;
     config.init();
+    const auto originalConfig = config.rendererConfig();
+    const auto originalEditor = config.editorConfig();
     data.init(config.paths().assets);
     scenes.init();
     assets.init(config.paths().assets);
@@ -63,10 +65,18 @@ int main(int argc, char** argv)
     constexpr uint32_t kFramesPerPhase = 7;
     for (uint32_t phase = 0; phase < kPhaseCount; ++phase)
     {
-        auto feature            = config.rendererConfig().feature;
-        feature.rayTracing.svgf = phase % 2 == 0;
+        auto feature                  = config.rendererConfig().feature;
+        feature.rayTracing.svgf       = phase % 2 == 0;
+        feature.rayTracing.algorithm  = (phase / 2) % 2 == 0 ? RealtimeAlgorithm::ReSTIR : RealtimeAlgorithm::Simple;
+        feature.rayTracing.maxBounces = phase % 3 + 1;
         config.setRenderFeature(feature);
-        LOG_INFO("SVGF phase {}: {}", phase, feature.rayTracing.svgf);
+        LOG_INFO(
+            "RT phase {}: algorithm={}, SVGF={}, maxBounces={}",
+            phase,
+            feature.rayTracing.algorithm == RealtimeAlgorithm::Simple ? "Simple" : "ReSTIR",
+            feature.rayTracing.svgf,
+            feature.rayTracing.maxBounces
+        );
         const auto begin = std::chrono::steady_clock::now();
         for (uint32_t frame = 0; frame < kFramesPerPhase; ++frame)
         {
@@ -86,6 +96,14 @@ int main(int argc, char** argv)
     assets.shutdown();
     data.shutdown();
     window.shutdown();
+    config.setSceneRenderMode(
+        originalConfig.renderPath == RenderPath::OfflinePathTracing ? SceneRenderMode::Offline
+                                                                    : SceneRenderMode::Realtime
+    );
+    if (originalConfig.renderPath != RenderPath::OfflinePathTracing)
+        config.setRenderPath(originalConfig.renderPath);
+    config.setRenderFeature(originalConfig.feature);
+    config.setEditorSize(originalEditor.width, originalEditor.height);
     config.shutdown();
     profiler.reset();
     context() = {};

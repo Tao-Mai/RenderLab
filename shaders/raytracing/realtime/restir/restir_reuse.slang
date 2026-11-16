@@ -1,10 +1,7 @@
 #ifndef RENDERLAB_RESTIR_REUSE_SLANG
 #define RENDERLAB_RESTIR_REUSE_SLANG
 
-uint restirIndex(uint2 pixel)
-{
-    return pixel.y * restirFrame.width + pixel.x;
-}
+uint restirIndex(uint2 pixel) { return pixel.y * restirFrame.width + pixel.x; }
 
 uint restirRandomState(uint2 pixel, uint stageSalt)
 {
@@ -24,20 +21,21 @@ bool restirContainsPixel(int2 pixel, bool previous)
     }
 
     float2 center = float2(pixel) + 0.5;
-    return all(center >= restirFrame.previousViewportOffset)
-        && all(center < restirFrame.previousViewportOffset + restirFrame.previousViewportExtent);
+    return all(center >= restirFrame.previousViewportOffset) &&
+        all(center < restirFrame.previousViewportOffset + restirFrame.previousViewportExtent);
 }
 
 bool restirSimilar(RestirSurfaceData center, RestirSurfaceData neighbor, float expectedDepth)
 {
-    return neighbor.valid && dot(center.geometricNormal, neighbor.geometricNormal) >= kRestirNormalThreshold
-        && abs(neighbor.depth - expectedDepth) <= max(kRestirAbsoluteDepthThreshold, kRestirRelativeDepthThreshold * expectedDepth);
+    return neighbor.valid && dot(center.geometricNormal, neighbor.geometricNormal) >= kRestirNormalThreshold &&
+        abs(neighbor.depth - expectedDepth) <=
+        max(kRestirAbsoluteDepthThreshold, kRestirRelativeDepthThreshold * expectedDepth);
 }
 
 bool restirReproject(RestirSurfaceData surface, out uint previousIndex)
 {
     previousIndex = 0;
-    float4 clip = mul(restirFrame.previousViewProjection, float4(surface.position, 1.0));
+    float4 clip   = mul(restirFrame.previousViewProjection, float4(surface.position, 1.0));
     if (clip.w <= 0.0)
     {
         return false;
@@ -47,11 +45,11 @@ bool restirReproject(RestirSurfaceData surface, out uint previousIndex)
     {
         return false;
     }
-    float depth = dot(restirFrame.previousDepthRow, float4(surface.position, 1.0));
+    float  depth     = dot(restirFrame.previousDepthRow, float4(surface.position, 1.0));
     float2 projected = restirFrame.previousViewportOffset + (ndc.xy * 0.5 + 0.5) * restirFrame.previousViewportExtent;
-    int2 nearest = int2(floor(projected));
-    float bestError = kMaxRayDistance;
-    bool found = false;
+    int2   nearest   = int2(floor(projected));
+    float  bestError = kMaxRayDistance;
+    bool   found     = false;
 
     for (int y = -1; y <= 1; ++y)
     {
@@ -62,19 +60,19 @@ bool restirReproject(RestirSurfaceData surface, out uint previousIndex)
             {
                 continue;
             }
-            uint index = restirIndex(uint2(pixel));
+            uint              index    = restirIndex(uint2(pixel));
             RestirSurfaceData previous = restirPreviousSurfaces[index];
             if (!restirSimilar(surface, previous, depth) || previous.objectIndex != surface.objectIndex)
             {
                 continue;
             }
             float2 offset = float2(pixel) + 0.5 - projected;
-            float error = dot(offset, offset);
+            float  error  = dot(offset, offset);
             if (error < bestError)
             {
-                bestError = error;
+                bestError     = error;
                 previousIndex = index;
-                found = true;
+                found         = true;
             }
         }
     }
@@ -84,18 +82,24 @@ bool restirReproject(RestirSurfaceData surface, out uint previousIndex)
 
 void restirMerge(inout RestirReservoir result, Surface surface, RestirReservoir source, inout uint state)
 {
-    float target = source.valid ? restirEvaluate(surface, source.sample).target : 0.0;
-    result.stream(source.sample, target, target * source.weightSum * float(source.sampleCount), source.sampleCount, state);
+    float target = source.valid ? evaluateLightSample(surface, source.sample).target : 0.0;
+    result.stream(
+        source.sample,
+        target,
+        target * source.weightSum * float(source.sampleCount),
+        source.sampleCount,
+        state
+    );
 }
 
-float restirSupportedCount(Surface surface, RestirLightSample sample, uint count)
+float restirSupportedCount(Surface surface, RealtimeLightSample sample, uint count)
 {
-    if (count == 0 || sample.kind == kRestirInvalidLight)
+    if (count == 0 || sample.kind == kInvalidLightSample)
     {
         return 0.0;
     }
 
-    RestirLightEvaluation evaluated = restirEvaluate(surface, sample);
+    RealtimeLightEvaluation evaluated = evaluateLightSample(surface, sample);
     if (evaluated.target <= 0.0 || !surface.isVisible(evaluated.direction, evaluated.distance))
     {
         return 0.0;
@@ -104,11 +108,10 @@ float restirSupportedCount(Surface surface, RestirLightSample sample, uint count
     return float(count);
 }
 
-[shader("raygeneration")]
-void temporalMain()
+[shader("raygeneration")] void temporalMain()
 {
-    uint2 pixel = DispatchRaysIndex().xy;
-    uint index = restirIndex(pixel);
+    uint2             pixel   = DispatchRaysIndex().xy;
+    uint              index   = restirIndex(pixel);
     RestirSurfaceData current = restirSurfaces[index];
     if (!current.valid || restirFrame.temporalReuse == 0 || restirFrame.historyValid == 0)
     {
@@ -122,11 +125,11 @@ void temporalMain()
     }
 
     static const uint kTemporalSeedSalt = 0x8da6b343u;
-    uint state = restirRandomState(pixel, kTemporalSeedSalt);
-    Surface surface = restirUnpackSurface(current);
-    RestirReservoir initial = restirInitialReservoirs[index];
-    RestirReservoir previous = restirHistory[(restirFrame.writeLayer ^ 1u) * restirFrame.pixelCount + previousIndex];
-    previous.sampleCount = min(previous.sampleCount, initial.sampleCount * restirFrame.maxHistoryLength);
+    uint              state             = restirRandomState(pixel, kTemporalSeedSalt);
+    Surface           surface           = restirUnpackSurface(current);
+    RestirReservoir   initial           = restirInitialReservoirs[index];
+    RestirReservoir   previous = restirHistory[(restirFrame.writeLayer ^ 1u) * restirFrame.pixelCount + previousIndex];
+    previous.sampleCount       = min(previous.sampleCount, initial.sampleCount * restirFrame.maxHistoryLength);
 
     RestirReservoir combined = {};
     restirMerge(combined, surface, initial, state);
@@ -134,44 +137,46 @@ void temporalMain()
 
     // Original ReSTIR, Algorithm 6: count only source domains supporting the selected sample.
     float normalization = restirSupportedCount(surface, combined.sample, initial.sampleCount);
-    normalization += restirSupportedCount(restirUnpackSurface(restirPreviousSurfaces[previousIndex]),
-        combined.sample, previous.sampleCount);
+    normalization += restirSupportedCount(
+        restirUnpackSurface(restirPreviousSurfaces[previousIndex]),
+        combined.sample,
+        previous.sampleCount
+    );
     combined.finalize(normalization);
     restirDiscardOccluded(surface, combined);
     restirInitialReservoirs[index] = combined;
 }
 
-[shader("raygeneration")]
-void spatialMain()
+    [shader("raygeneration")] void spatialMain()
 {
-    uint2 pixel = DispatchRaysIndex().xy;
-    uint index = restirIndex(pixel);
+    uint2             pixel  = DispatchRaysIndex().xy;
+    uint              index  = restirIndex(pixel);
     RestirSurfaceData center = restirSurfaces[index];
-    RestirReservoir result = restirInitialReservoirs[index];
-    float3 direct = float3(0.0);
+    RestirReservoir   result = restirInitialReservoirs[index];
+    float3            direct = float3(0.0);
     if (center.valid)
     {
         Surface surface = restirUnpackSurface(center);
         if (restirFrame.spatialReuse != 0)
         {
             static const uint kSpatialSeedSalt = 0xd8163841u;
-            uint state = restirRandomState(pixel, kSpatialSeedSalt);
-            uint neighbors[kRestirMaxSpatialSamples];
-            uint count = 0;
-            RestirReservoir combined = {};
+            uint              state            = restirRandomState(pixel, kSpatialSeedSalt);
+            uint              neighbors[kRestirMaxSpatialSamples];
+            uint              count    = 0;
+            RestirReservoir   combined = {};
             restirMerge(combined, surface, result, state);
 
             for (uint candidate = 0; candidate < restirFrame.spatialSampleCount; ++candidate)
             {
-                float radius = sqrt(randomFloat(state)) * restirFrame.spatialRadius;
-                float angle = randomFloat(state) * 2.0 * PI;
-                int2 neighborPixel = int2(pixel) + int2(round(radius * float2(cos(angle), sin(angle))));
+                float radius        = sqrt(randomFloat(state)) * restirFrame.spatialRadius;
+                float angle         = randomFloat(state) * 2.0 * PI;
+                int2  neighborPixel = int2(pixel) + int2(round(radius * float2(cos(angle), sin(angle))));
                 if (!restirContainsPixel(neighborPixel, false) || all(neighborPixel == int2(pixel)))
                 {
                     continue;
                 }
-                uint neighborIndex = restirIndex(uint2(neighborPixel));
-                RestirSurfaceData neighbor = restirSurfaces[neighborIndex];
+                uint              neighborIndex = restirIndex(uint2(neighborPixel));
+                RestirSurfaceData neighbor      = restirSurfaces[neighborIndex];
                 if (!restirSimilar(center, neighbor, center.depth))
                 {
                     continue;
@@ -184,8 +189,11 @@ void spatialMain()
             for (uint neighbor = 0; neighbor < count; ++neighbor)
             {
                 uint neighborIndex = neighbors[neighbor];
-                normalization += restirSupportedCount(restirUnpackSurface(restirSurfaces[neighborIndex]),
-                    combined.sample, restirInitialReservoirs[neighborIndex].sampleCount);
+                normalization += restirSupportedCount(
+                    restirUnpackSurface(restirSurfaces[neighborIndex]),
+                    combined.sample,
+                    restirInitialReservoirs[neighborIndex].sampleCount
+                );
             }
             combined.finalize(normalization);
             result = combined;
@@ -195,8 +203,8 @@ void spatialMain()
     }
 
     restirHistory[restirFrame.writeLayer * restirFrame.pixelCount + index] = result;
-    float4 color = outputImage[pixel];
-    outputImage[pixel] = float4(color.rgb + direct, color.a);
+    float4 color                                                           = outputImage[pixel];
+    outputImage[pixel]                                                     = float4(color.rgb + direct, color.a);
 }
 
 #endif

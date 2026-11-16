@@ -1,0 +1,4 @@
+{
+    "id": {"value": "falcor_simple_post_fx"},
+    "binary": "shaders/falcor_simple_post_fx.spv"
+}

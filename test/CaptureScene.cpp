@@ -20,6 +20,7 @@
 #include "render/editor/LightMarkerPass.h"
 #include "render/postprocess/Bloom.h"
 #include "render/postprocess/ToneMappingPass.h"
+#include "render/postprocess/FalcorPostProcess.h"
 #include "render/postprocess/ExposurePass.h"
 #include "render/raytracing/offline/OfflinePathTracingPass.h"
 #include "render/raytracing/BlasBuildPass.h"
@@ -59,6 +60,7 @@ struct ImageReadbackPass
     RenderGraph::BufferHandle triangles;
     RenderGraph::BufferHandle reservoirs;
     vk::DeviceSize            imageBytes;
+    vk::DeviceSize            exposureBytes = 0;
     vk::DeviceSize            hdrBytes;
     vk::DeviceSize            triangleBytes = 0;
     vk::DeviceSize            reservoirBytes = 0;
@@ -77,13 +79,14 @@ struct ImageReadbackPass
         hdrImage          = sourceHdr;
         const auto extent = graph.imageInfo(image).extent;
         exposure          = exposureState;
+        exposureBytes     = exposure.id == RenderGraph::kInvalidHandle ? 0 : sizeof(ExposurePass::State);
         triangles         = triangleLights;
         reservoirs        = reservoirHistory;
         imageBytes        = vk::DeviceSize(extent.width) * extent.height * 4;
         CHECK(graph.imageInfo(hdrImage).format == vk::Format::eR16G16B16A16Sfloat);
         hdrBytes          = vk::DeviceSize(extent.width) * extent.height * 8;
         buffer            = graph.write(graph.createBuffer({
-                       .size             = imageBytes + sizeof(ExposurePass::State),
+                       .size             = imageBytes + exposureBytes,
                        .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
         }));
         graph.use(
@@ -109,13 +112,14 @@ struct ImageReadbackPass
                 .layout = vk::ImageLayout::eTransferSrcOptimal,
             }
         );
-        graph.use(
-            exposure,
-            {
-                .stages = vk::PipelineStageFlagBits2::eTransfer,
-                .access = vk::AccessFlagBits2::eTransferRead,
-            }
-        );
+        if (exposureBytes > 0)
+            graph.use(
+                exposure,
+                {
+                    .stages = vk::PipelineStageFlagBits2::eTransfer,
+                    .access = vk::AccessFlagBits2::eTransferRead,
+                }
+            );
         for (const auto source : {triangles, reservoirs})
         {
             if (source.id == RenderGraph::kInvalidHandle)
@@ -139,7 +143,7 @@ struct ImageReadbackPass
         reservoirBytes = reservoirs.id == RenderGraph::kInvalidHandle ? 0 : graph.getBuffer(reservoirs).size();
         graph.ensureBufferCapacity(
             buffer,
-            imageBytes + sizeof(ExposurePass::State) + triangleBytes + reservoirBytes + hdrBytes
+            imageBytes + exposureBytes + triangleBytes + reservoirBytes + hdrBytes
         );
     }
 
@@ -156,24 +160,25 @@ struct ImageReadbackPass
             copy
         );
         auto hdrCopy         = copy;
-        hdrCopy.bufferOffset = imageBytes + sizeof(ExposurePass::State) + triangleBytes + reservoirBytes;
+        hdrCopy.bufferOffset = imageBytes + exposureBytes + triangleBytes + reservoirBytes;
         commands.copyImageToBuffer(
             graph.getImage(hdrImage).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
             graph.getBuffer(buffer).handle(),
             hdrCopy
         );
-        commands.copyBuffer(
-            graph.getBuffer(exposure).handle(),
-            graph.getBuffer(buffer).handle(),
-            vk::BufferCopy{.dstOffset = imageBytes, .size = sizeof(ExposurePass::State)}
-        );
+        if (exposureBytes > 0)
+            commands.copyBuffer(
+                graph.getBuffer(exposure).handle(),
+                graph.getBuffer(buffer).handle(),
+                vk::BufferCopy{.dstOffset = imageBytes, .size = exposureBytes}
+            );
         if (triangleBytes > 0)
         {
             commands.copyBuffer(
                 graph.getBuffer(triangles).handle(),
                 graph.getBuffer(buffer).handle(),
-                vk::BufferCopy{.dstOffset = imageBytes + sizeof(ExposurePass::State), .size = triangleBytes}
+                vk::BufferCopy{.dstOffset = imageBytes + exposureBytes, .size = triangleBytes}
             );
         }
         if (reservoirBytes > 0)
@@ -182,7 +187,7 @@ struct ImageReadbackPass
                 graph.getBuffer(reservoirs).handle(),
                 graph.getBuffer(buffer).handle(),
                 vk::BufferCopy{
-                    .dstOffset = imageBytes + sizeof(ExposurePass::State) + triangleBytes,
+                    .dstOffset = imageBytes + exposureBytes + triangleBytes,
                     .size      = reservoirBytes
                 }
             );
@@ -235,6 +240,7 @@ void capture(
     Bloom                    bloom;
     ToneMappingPass          toneMapping;
     ExposurePass             exposure;
+    FalcorPostProcess        falcorPostProcess;
     EditorDepthPass          editorDepth;
     LightMarkerPass          lightMarker;
     ImageReadbackPass        readback;
@@ -295,22 +301,29 @@ void capture(
         color = graph.addPass(transparent, setup, color, depthImage, lightingShadow, lightBuffer).color;
     }
     const auto hdrColor       = color;
-    const auto exposureOutput = graph.addPass(exposure, setup, color);
+    RenderGraph::BufferHandle exposureState;
+    if (config.feature.postProcess == PostProcessMode::RenderLab)
+        exposureState = graph.addPass(exposure, setup, color).state;
     if (!offline && lightMarkersAndPicking)
     {
         if (depthImage.id == RenderGraph::kInvalidHandle)
             depthImage = graph.addPass(editorDepth, setup).depth;
         color = graph.addPass(lightMarker, setup, color, depthImage).color;
     }
-    if (config.feature.bloom.enable)
-        color = bloom.setup(graph, setup, color).color;
-    color             = graph.addPass(toneMapping, setup, color, target, exposureOutput.state).color;
+    if (config.feature.postProcess == PostProcessMode::Falcor)
+        color = falcorPostProcess.setup(graph, setup, color, target).color;
+    else
+    {
+        if (config.feature.bloom.enable)
+            color = bloom.setup(graph, setup, color).color;
+        color = graph.addPass(toneMapping, setup, color, target, exposureState).color;
+    }
     const auto buffer = graph.addPass(
         readback,
         setup,
         color,
         hdrColor,
-        exposureOutput.state,
+        exposureState,
         triangleLights,
         realtime ? realtimeTracing.reservoirs() : RenderGraph::BufferHandle{}
     );
@@ -384,7 +397,7 @@ void capture(
         {
             frame.wait();
             std::vector<uint8_t> pixels(
-                readback.imageBytes + sizeof(ExposurePass::State) + readback.triangleBytes + readback.reservoirBytes +
+                readback.imageBytes + readback.exposureBytes + readback.triangleBytes + readback.reservoirBytes +
                 readback.hdrBytes
             );
             graph.getBuffer(buffer).download(pixels.data(), pixels.size());
@@ -432,24 +445,27 @@ void capture(
 
     const auto           imageBytes = size_t(extent.width) * extent.height * 4;
     std::vector<uint8_t> pixels(
-        imageBytes + sizeof(ExposurePass::State) + readback.triangleBytes + readback.reservoirBytes
+        imageBytes + readback.exposureBytes + readback.triangleBytes + readback.reservoirBytes
     );
     graph.getBuffer(buffer).download(pixels.data(), pixels.size());
-    ExposurePass::State exposureState;
-    std::memcpy(&exposureState, pixels.data() + imageBytes, sizeof(exposureState));
-    CHECK(
-        std::isfinite(exposureState.ev100) && std::isfinite(exposureState.exposureScale) &&
-        exposureState.exposureScale > 0.0f
-    );
-    LOG_INFO(
-        "Exposure: EV100={}, scale={}, automaticValid={}",
-        exposureState.ev100,
-        exposureState.exposureScale,
-        exposureState.automaticValid
-    );
+    if (readback.exposureBytes > 0)
+    {
+        ExposurePass::State exposureState;
+        std::memcpy(&exposureState, pixels.data() + imageBytes, sizeof(exposureState));
+        CHECK(
+            std::isfinite(exposureState.ev100) && std::isfinite(exposureState.exposureScale) &&
+            exposureState.exposureScale > 0.0f
+        );
+        LOG_INFO(
+            "Exposure: EV100={}, scale={}, automaticValid={}",
+            exposureState.ev100,
+            exposureState.exposureScale,
+            exposureState.automaticValid
+        );
+    }
     if (realtime)
     {
-        const auto             offset = imageBytes + sizeof(ExposurePass::State);
+        const auto             offset = imageBytes + readback.exposureBytes;
         EmissiveTriangleHeader header;
         std::memcpy(&header, pixels.data() + offset, sizeof(header));
         CHECK(header.triangleCount == realtimeScene.triangleCount());
@@ -463,15 +479,18 @@ void capture(
         );
         CHECK(stream);
         LOG_INFO("Emissive triangle lights: {}", header.triangleCount);
-        path = output;
-        path.replace_extension(".restir.bin");
-        std::ofstream reservoirStream(path, std::ios::binary);
-        CHECK(reservoirStream);
-        reservoirStream.write(
-            reinterpret_cast<const char*>(pixels.data() + offset + readback.triangleBytes),
-            readback.reservoirBytes
-        );
-        CHECK(reservoirStream);
+        if (readback.reservoirBytes > 0)
+        {
+            path = output;
+            path.replace_extension(".restir.bin");
+            std::ofstream reservoirStream(path, std::ios::binary);
+            CHECK(reservoirStream);
+            reservoirStream.write(
+                reinterpret_cast<const char*>(pixels.data() + offset + readback.triangleBytes),
+                readback.reservoirBytes
+            );
+            CHECK(reservoirStream);
+        }
     }
     pixels.resize(imageBytes);
     if (format == vk::Format::eB8G8R8A8Srgb || format == vk::Format::eB8G8R8A8Unorm)
@@ -503,8 +522,8 @@ int main(int argc, char** argv)
 {
     logger::init(argv[0]);
     CHECK(
-        argc >= 4 && argc <= 9,
-        "usage: CaptureScene <scene-id> <forward|deferred|realtime|offline> <output.png> [frames=1] [size=960] [ev100|auto] [sequence-directory] [yaw-step=0]"
+        argc >= 4 && argc <= 12,
+        "usage: CaptureScene <scene-id> <forward|deferred|realtime|offline> <output.png> [frames=1] [size=960] [ev100|auto] [sequence-directory] [yaw-step=0] [renderlab|falcor] [restir|simple] [max-bounces]"
     );
     const std::string_view route{argv[2]};
     CHECK(
@@ -538,7 +557,32 @@ int main(int argc, char** argv)
     auto feature = originalConfig.feature;
     feature.hdr  = true;
     feature.ibl  = scenes.scene().environmentMap.has_value();
-    if (argc > 6)
+    if (argc > 9)
+    {
+        const std::string_view postProcess{argv[9]};
+        CHECK(postProcess == "renderlab" || postProcess == "falcor");
+        feature.postProcess = postProcess == "falcor" ? PostProcessMode::Falcor : PostProcessMode::RenderLab;
+    }
+    if (argc > 10)
+    {
+        CHECK(route == "realtime");
+        const std::string_view algorithm{argv[10]};
+        CHECK(algorithm == "restir" || algorithm == "simple");
+        feature.rayTracing.algorithm = algorithm == "simple" ? RealtimeAlgorithm::Simple : RealtimeAlgorithm::ReSTIR;
+    }
+    if (argc > 11)
+    {
+        CHECK(route == "realtime");
+        feature.rayTracing.maxBounces = parseNumber<uint32_t>(argv[11]);
+    }
+    if (argc > 6 && feature.postProcess == PostProcessMode::Falcor)
+    {
+        auto& toneMapper = feature.falcorPostProcess.toneMapper;
+        toneMapper.autoExposure = std::string_view{argv[6]} == "auto";
+        if (!toneMapper.autoExposure)
+            toneMapper.setExposureValue(parseNumber<float>(argv[6]));
+    }
+    else if (argc > 6)
     {
         auto& exposure = scenes.scene().editorCamera.exposure;
         exposure = exposure.value_or(feature.toneMapping.exposure);

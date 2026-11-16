@@ -16,7 +16,7 @@ class Image
 public:
     Image(const vk::raii::Device& device, vk::Image image);
 
-    [[nodiscard]] vk::Image     handle() const;
+    [[nodiscard]] vk::Image     handle() const { return image; }
     [[nodiscard]] vk::ImageView getOrCreateImageView(const vk::ImageViewCreateInfo& viewInfo);
 
 private:

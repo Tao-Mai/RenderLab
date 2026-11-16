@@ -2,6 +2,7 @@
 
 #include "asset/SamplerAsset.h"
 #include "render/ExposureConfig.h"
+#include "render/postprocess/FalcorPostProcessConfig.h"
 
 enum class RenderPath
 {
@@ -15,6 +16,12 @@ enum class ToneMappingOperator
 {
     Neutral,
     Reinhard,
+};
+
+enum class RealtimeAlgorithm
+{
+    ReSTIR,
+    Simple,
 };
 
 enum class CascadeSplitStrategy
@@ -42,9 +49,9 @@ enum class BdptMisHeuristic
 };
 
 // Maximum surface scattering events; terminal emission is evaluated after the last bounce.
-inline constexpr uint32_t kMinPathBounces       = 1;
-inline constexpr uint32_t kMaxPathBounces       = 64;
-inline constexpr uint32_t kMaxBloomLevels       = 6;
+inline constexpr uint32_t kMinPathBounces          = 1;
+inline constexpr uint32_t kMaxPathBounces          = 64;
+inline constexpr uint32_t kMaxBloomLevels          = 6;
 inline constexpr uint32_t kMaxSvgfHistoryLength    = 1024;
 inline constexpr uint32_t kMaxRestirCandidateCount = 256;
 inline constexpr uint32_t kMaxRestirSpatialSamples = 32;
@@ -53,9 +60,11 @@ inline constexpr float    kMaxRestirSpatialRadius  = 128.0f;
 
 struct RenderFeature
 {
-    bool  ibl                = true;
-    float ambientCoefficient = 0.1f;
-    bool  hdr                = true;
+    bool                    ibl                = true;
+    float                   ambientCoefficient = 0.1f;
+    bool                    hdr                = true;
+    PostProcessMode         postProcess        = PostProcessMode::RenderLab;
+    FalcorPostProcessConfig falcorPostProcess;
     struct Shadow
     {
         bool enable = true;
@@ -82,7 +91,7 @@ struct RenderFeature
     struct ToneMapping
     {
         ExposureConfig      exposure;
-        ToneMappingOperator mode                 = ToneMappingOperator::Neutral;
+        ToneMappingOperator mode = ToneMappingOperator::Neutral;
     } toneMapping;
 
     struct Bloom
@@ -96,10 +105,11 @@ struct RenderFeature
 
     struct RayTracing
     {
-        uint32_t maxBounces    = 3;
-        bool     svgf          = true;
-        uint32_t historyLength = 32;    // Arithmetic averaging through this sample count.
-        float    emaAlpha      = 0.1f;  // Current-sample weight after historyLength samples.
+        RealtimeAlgorithm algorithm     = RealtimeAlgorithm::ReSTIR;
+        uint32_t          maxBounces    = 3;
+        bool              svgf          = true;
+        uint32_t          historyLength = 32;    // Arithmetic averaging through this sample count.
+        float             emaAlpha      = 0.1f;  // Current-sample weight after historyLength samples.
     } rayTracing;
 
     struct Restir

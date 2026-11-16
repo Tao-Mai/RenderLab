@@ -1,20 +1,54 @@
 #include "render/device/Device.h"
 
 #include "core/Logger.h"
+#include "core/Vertex.h"
 #include "render/RenderConfig.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
-#include "render/resources/VertexLayout.h"
 #include "render/resources/MaterialData.h"
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <functional>
 #include <utility>
 #include <vulkan/vulkan_hash.hpp>
 
 namespace
 {
+constexpr vk::VertexInputBindingDescription kVertexBinding{
+    .binding   = 0,
+    .stride    = sizeof(Vertex),
+    .inputRate = vk::VertexInputRate::eVertex,
+};
+
+constexpr std::array kVertexAttributes{
+    vk::VertexInputAttributeDescription{
+        .location = 0,
+        .binding  = 0,
+        .format   = vk::Format::eR32G32B32Sfloat,
+        .offset   = static_cast<uint32_t>(offsetof(Vertex, position)),
+    },
+    vk::VertexInputAttributeDescription{
+        .location = 1,
+        .binding  = 0,
+        .format   = vk::Format::eR32G32B32Sfloat,
+        .offset   = static_cast<uint32_t>(offsetof(Vertex, normal)),
+    },
+    vk::VertexInputAttributeDescription{
+        .location = 2,
+        .binding  = 0,
+        .format   = vk::Format::eR32G32Sfloat,
+        .offset   = static_cast<uint32_t>(offsetof(Vertex, texcoord)),
+    },
+    vk::VertexInputAttributeDescription{
+        .location = 3,
+        .binding  = 0,
+        .format   = vk::Format::eR32G32B32A32Sfloat,
+        .offset   = static_cast<uint32_t>(offsetof(Vertex, tangent)),
+    },
+};
+
 void hashCombine(size_t& seed, size_t value)
 {
     constexpr size_t kHashGoldenRatio = 0x9e3779b97f4a7c15ULL;
@@ -98,24 +132,33 @@ vk::PipelineLayout Device::getOrCreatePipelineLayout(
 {
     PipelineLayoutKey key;
     key.ranges.assign(ranges.begin(), ranges.end());
-    std::vector<vk::DescriptorSetLayout> handles;
     for (const auto* set : sets)
     {
-        handles.push_back(**set);
         auto& bindings = key.sets.emplace_back(set->bindings);
         std::ranges::sort(bindings, {}, &vk::DescriptorSetLayoutBinding::binding);
     }
     if (const auto found = pipelineLayouts.find(key); found != pipelineLayouts.end())
-        return *found->second;
+        return *found->second.handle;
 
-    auto                     layout = vkCheck(device->createPipelineLayout({
-                            .setLayoutCount         = static_cast<uint32_t>(handles.size()),
-                            .pSetLayouts            = handles.data(),
-                            .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
-                            .pPushConstantRanges    = ranges.data(),
+    // Cached layouts can create pipelines after the pass that supplied a set layout has been rebuilt.
+    CachedPipelineLayout                 cached;
+    std::vector<vk::DescriptorSetLayout> handles;
+    for (const auto& bindings : key.sets)
+    {
+        auto& layout = cached.setLayouts.emplace_back(vkCheck(device->createDescriptorSetLayout({
+            .bindingCount = static_cast<uint32_t>(bindings.size()),
+            .pBindings    = bindings.data(),
+        })));
+        handles.push_back(*layout);
+    }
+    cached.handle                   = vkCheck(device->createPipelineLayout({
+                          .setLayoutCount         = static_cast<uint32_t>(handles.size()),
+                          .pSetLayouts            = handles.data(),
+                          .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
+                          .pPushConstantRanges    = ranges.data(),
     }));
-    const vk::PipelineLayout handle = *layout;
-    pipelineLayouts.emplace(std::move(key), std::move(layout));
+    const vk::PipelineLayout handle = *cached.handle;
+    pipelineLayouts.emplace(std::move(key), std::move(cached));
     return handle;
 }
 
@@ -199,21 +242,18 @@ vk::Pipeline Device::getOrCreatePipeline(const GraphicsPipelineInfo& info)
             .pName  = metadata.entries[1].c_str()
         },
     };
-    const vk::VertexInputBindingDescription binding              = VertexLayout::bindingDescription();
-    const auto                              meshAttributes       = VertexLayout::attributeDescriptions();
-    const auto                              positionAttributes   = VertexLayout::positionAttributeDescription();
-    const std::array                        positionUvAttributes = {meshAttributes[0], meshAttributes[2]};
+    constexpr std::array kPositionUvAttributes{kVertexAttributes[0], kVertexAttributes[2]};
     std::span<const vk::VertexInputAttributeDescription> attributes;
     switch (key.state.vertexLayout)
     {
         case VertexLayoutPreset::Mesh:
-            attributes = meshAttributes;
+            attributes = kVertexAttributes;
             break;
         case VertexLayoutPreset::PositionOnly:
-            attributes = positionAttributes;
+            attributes = std::span{kVertexAttributes}.first<1>();
             break;
         case VertexLayoutPreset::PositionUv:
-            attributes = positionUvAttributes;
+            attributes = kPositionUvAttributes;
             break;
         case VertexLayoutPreset::None:
             break;
@@ -221,7 +261,7 @@ vk::Pipeline Device::getOrCreatePipeline(const GraphicsPipelineInfo& info)
     const bool                                   hasVertexInput = !attributes.empty();
     const vk::PipelineVertexInputStateCreateInfo vertexInput{
         .vertexBindingDescriptionCount   = hasVertexInput ? 1u : 0u,
-        .pVertexBindingDescriptions      = hasVertexInput ? &binding : nullptr,
+        .pVertexBindingDescriptions      = hasVertexInput ? &kVertexBinding : nullptr,
         .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes.size()),
         .pVertexAttributeDescriptions    = attributes.data(),
     };

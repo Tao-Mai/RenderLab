@@ -82,8 +82,6 @@ void GpuMesh::bind(vk::raii::CommandBuffer& commandBuffer) const
     commandBuffer.bindIndexBuffer(indexBuffer.handle(), 0, vk::IndexType::eUint32);
 }
 
-uint32_t GpuMesh::indexCount() const { return indexTotal; }
-
 void GpuMesh::copyBuffer(
     const vk::raii::Device&      device,
     const vk::raii::CommandPool& commandPool,

@@ -26,6 +26,7 @@
 #include "render/editor/EditorUiPass.h"
 #include "render/editor/LightMarkerPass.h"
 #include "render/postprocess/Bloom.h"
+#include "render/postprocess/FalcorPostProcess.h"
 #include "render/postprocess/ToneMappingPass.h"
 #include "render/postprocess/ExposurePass.h"
 #include "render/raster/ShadowPass.h"
@@ -97,6 +98,7 @@ struct Renderer::Passes
         data;
 
     Bloom      bloom;
+    FalcorPostProcess falcorPostProcess;
     SVGFFilter svgfFilter;
 
     template <class T>
@@ -387,7 +389,7 @@ void Renderer::setupRenderGraph()
             break;
     }
     RenderGraph::BufferHandle exposure;
-    if (config.feature.hdr)
+    if (config.feature.hdr && config.feature.postProcess == PostProcessMode::RenderLab)
         exposure = setupPass<ExposurePass>(scene.color).state;
 
     scene       = setupLightMarkers(scene);
@@ -489,6 +491,10 @@ RenderGraph::ImageHandle Renderer::setupPostProcess(
     if (config.feature.hdr)
     {
         CHECK(swapchain.surfaceFormat().colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear);
+        if (config.feature.postProcess == PostProcessMode::Falcor)
+            return passes->falcorPostProcess.setup(
+                graph, PassSetup{vulkan, swapchain.extent(), frameStorage, config}, color, target
+            ).color;
         if (config.feature.bloom.enable)
             color = passes->bloom.setup(graph, PassSetup{vulkan, swapchain.extent(), frameStorage, config}, color).color;
         return setupPass<ToneMappingPass>(color, target, exposure).color;
@@ -526,9 +532,13 @@ void Renderer::applyConfiguration()
             value.renderPath,
             value.feature.ibl,
             value.feature.hdr,
+            value.feature.postProcess,
+            value.feature.falcorPostProcess.simplePostFx.usesBloom(),
+            value.feature.falcorPostProcess.toneMapper.autoExposure,
             value.feature.bloom.enable,
             value.feature.bloom.levels,
             value.feature.rayTracing.svgf,
+            value.feature.rayTracing.algorithm,
             value.feature.offline.algorithm,
             shadow.enable,
             shadow.pointShadowMapSize,

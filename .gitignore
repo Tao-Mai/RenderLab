@@ -8,12 +8,17 @@ scripts/
 .cache
 .idea
 assets/*
+!assets/Shader/
+assets/Shader/*
+!assets/Shader/falcor_*.json
 resource/*
 .cursor
 test/*
 !test/MaterialWorkflowCheck.cpp
 !test/MaterialWorkflowCheck.slang
 !test/SvgfToggleCheck.cpp
+!test/FalcorPostProcessCheck.cpp
+!test/FalcorPostProcessSourceCheck.py
 
 # Personal TODO / note documents stay local.
 *[Tt][Oo][Dd][Oo]*.[Mm][Dd]

@@ -2,7 +2,7 @@
 
 [渲染模块](Render.md) · [资源布局](RenderLayout.md)
 
-实时光追使用 2020 年的 [Spatiotemporal Reservoir Resampling](https://research.nvidia.com/labs/rtr/publication/bitterli2020spatiotemporal/)。初始 RIS、时域复用、空间复用分别对应原论文的 Algorithm 3、5、6，采用带支持域和可见性校正的归一化。实现参考了 [RTXDI 的 reservoir](https://github.com/NVIDIA-RTX/RTXDI-Library/blob/main/Include/Rtxdi/DI/Reservoir.hlsli) 与 [初始采样](https://github.com/NVIDIA-RTX/RTXDI-Library/blob/main/Include/Rtxdi/DI/InitialSampling.hlsli) 接口。
+实时光追的 ReSTIR 子路线使用 2020 年的 [Spatiotemporal Reservoir Resampling](https://research.nvidia.com/labs/rtr/publication/bitterli2020spatiotemporal/)。初始 RIS、时域复用、空间复用分别对应原论文的 Algorithm 3、5、6，采用带支持域和可见性校正的归一化。实现参考了 [RTXDI 的 reservoir](https://github.com/NVIDIA-RTX/RTXDI-Library/blob/main/Include/Rtxdi/DI/Reservoir.hlsli) 与 [初始采样](https://github.com/NVIDIA-RTX/RTXDI-Library/blob/main/Include/Rtxdi/DI/InitialSampling.hlsli) 接口。
 
 ## 执行流程
 
@@ -103,7 +103,7 @@ SVGF 开启 / 关闭各自持有匹配的 Pipeline、Descriptor Set Layout 和 S
 
 关闭两种复用时保留初始 RIS，可用于比较。SVGF 单独控制颜色的时域累积与滤波；ReSTIR 历史保存采样结果，两者各自维护自己的资源。
 
-实现入口：[初始采样与求值](../shaders/raytracing/realtime/restir.slang)、[时空复用](../shaders/raytracing/realtime/restir_reuse.slang)、[GPU 数据](../shaders/raytracing/realtime/restir_data.slang)、[CPU 调度](../src/render/raytracing/realtime/RayTracingPass.cpp)。
+实现入口：[初始采样与求值](../shaders/raytracing/realtime/restir/restir.slang)、[时空复用](../shaders/raytracing/realtime/restir/restir_reuse.slang)、[GPU 数据](../shaders/raytracing/realtime/restir/restir_data.slang)、[共享光源采样](../shaders/raytracing/realtime/light_sampling.slang)、[CPU 调度](../src/render/raytracing/realtime/RayTracingPass.cpp)。
 
 ## 验证
 

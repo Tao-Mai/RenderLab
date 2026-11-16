@@ -2,11 +2,60 @@
     "feature": {
         "ambientCoefficient": 0.0,
         "bloom": {
-            "enable": false,
+            "enable": true,
             "filterRadius": 1.100000023841858,
             "intensity": 0.020999999716877937,
             "levels": 5,
             "scatter": 0.699999988079071
+        },
+        "falcorPostProcess": {
+            "simplePostFx": {
+                "barrelDistortAmount": 0.0,
+                "bloomAmount": 0.0,
+                "chromaticAberrationAmount": 0.0,
+                "colorOffset": [
+                    0.5,
+                    0.5,
+                    0.5
+                ],
+                "colorOffsetScalar": 0.0,
+                "colorPower": [
+                    0.5,
+                    0.5,
+                    0.5
+                ],
+                "colorPowerScalar": 0.0,
+                "colorScale": [
+                    0.5,
+                    0.5,
+                    0.5
+                ],
+                "colorScaleScalar": 0.0,
+                "enabled": true,
+                "saturationCurve": [
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "starAmount": 0.0,
+                "starAngle": 0.10000000149011612,
+                "vignetteAmount": 0.0,
+                "wipe": 0.0
+            },
+            "toneMapper": {
+                "autoExposure": false,
+                "clampOutput": true,
+                "exposureCompensation": 0.0,
+                "exposureMode": "AperturePriority",
+                "fNumber": 1.0,
+                "filmSpeed": 100.0,
+                "mode": "Aces",
+                "shutter": 1.0,
+                "whiteBalance": false,
+                "whiteMaxLuminance": 1.0,
+                "whitePoint": 6500.0,
+                "whiteScale": 11.199999809265137
+            }
         },
         "hdr": true,
         "ibl": false,
@@ -22,10 +71,12 @@
                 "maxBounces": 10
             }
         },
+        "postProcess": "Falcor",
         "rayTracing": {
+            "algorithm": "Simple",
             "emaAlpha": 0.20200000703334808,
             "historyLength": 31,
-            "maxBounces": 1,
+            "maxBounces": 4,
             "svgf": false
         },
         "restir": {

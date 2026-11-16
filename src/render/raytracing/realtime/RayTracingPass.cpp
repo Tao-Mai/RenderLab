@@ -16,15 +16,16 @@
 #include "render/resources/MaterialTable.h"
 
 #include <algorithm>
-#include <cstring>
 #include <bit>
+#include <cstring>
 #include <functional>
+#include <span>
 
 namespace
 {
-constexpr uint32_t kRaygenShaderCount = 3;
-constexpr uint32_t kMissShaderCount   = 2;
-constexpr uint32_t kHitShaderCount    = 2;
+constexpr uint32_t kRestirRaygenShaderCount = 3;
+constexpr uint32_t kMissShaderCount         = 2;
+constexpr uint32_t kHitShaderCount          = 2;
 vk::DeviceSize     alignUp(vk::DeviceSize value, vk::DeviceSize alignment)
 {
     return (value + alignment - 1) & ~(alignment - 1);
@@ -50,6 +51,7 @@ RayTracingPass::Output RayTracingPass::setup(
         "GPU does not support RGBA16F ray tracing output with storage writes and linear sampling"
     );
 
+    algorithm = setup.config.feature.rayTracing.algorithm;
     sceneTlas = scene.tlas;
     geometry  = preparedGeometry;
     for (const auto buffer : {geometry.objects, geometry.triangles, lights})
@@ -90,23 +92,30 @@ RayTracingPass::Output RayTracingPass::setup(
         );
         return buffer;
     };
-    for (auto& buffer : restirSurfaces)
+    restirSurfaces    = {};
+    initialReservoirs = {};
+    reservoirHistory  = {};
+    restirParameters  = {};
+    if (algorithm == RealtimeAlgorithm::ReSTIR)
     {
-        buffer = createBuffer(pixelCount * sizeof(RestirSurfaceData));
-    }
-    initialReservoirs = createBuffer(pixelCount * sizeof(RestirReservoirData));
-    reservoirHistory  = createBuffer(pixelCount * sizeof(RestirReservoirData) * 2);
-    restirParameters  = graph.createBuffer({
-         .size  = sizeof(RestirFrameParameters),
-         .usage = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst,
-    });
-    graph.use(
-        restirParameters,
+        for (auto& buffer : restirSurfaces)
         {
-            .stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
-            .access = vk::AccessFlagBits2::eUniformRead,
+            buffer = createBuffer(pixelCount * sizeof(RestirSurfaceData));
         }
-    );
+        initialReservoirs = createBuffer(pixelCount * sizeof(RestirReservoirData));
+        reservoirHistory  = createBuffer(pixelCount * sizeof(RestirReservoirData) * 2);
+        restirParameters  = graph.createBuffer({
+             .size  = sizeof(RestirFrameParameters),
+             .usage = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst,
+        });
+        graph.use(
+            restirParameters,
+            {
+                .stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
+                .access = vk::AccessFlagBits2::eUniformRead,
+            }
+        );
+    }
     writeLayer       = 0;
     hasRestirHistory = false;
 
@@ -141,9 +150,9 @@ RayTracingPass::Output RayTracingPass::setup(
     svgfEnabled        = enableSvgf;
     for (const bool variantSvgf : {false, true})
     {
-        if (!*variants[variantSvgf].pipeline)
+        if (!*variants[static_cast<size_t>(algorithm)][variantSvgf].pipeline)
         {
-            createPipeline(setup, variantSvgf);
+            createPipeline(setup, algorithm, variantSvgf);
         }
     }
 
@@ -151,7 +160,9 @@ RayTracingPass::Output RayTracingPass::setup(
     for (auto& frame : frames)
     {
         frame.set = nullptr;
-        frame.set = renderContext().device->allocateDescriptorSet(variants[svgfEnabled].descriptorSetLayout);
+        frame.set = renderContext().device->allocateDescriptorSet(
+            variants[static_cast<size_t>(algorithm)][svgfEnabled].descriptorSetLayout
+        );
         frame.bufferRevisions = {};
         frame.surfaceLayer    = ~0u;
         frame.tlasRevision    = 0;
@@ -159,9 +170,9 @@ RayTracingPass::Output RayTracingPass::setup(
     return output;
 }
 
-void RayTracingPass::createPipeline(const PassSetup& setup, bool enableSvgf)
+void RayTracingPass::createPipeline(const PassSetup& setup, RealtimeAlgorithm algorithm, bool enableSvgf)
 {
-    auto&       variant = variants[enableSvgf];
+    auto&       variant = variants[static_cast<size_t>(algorithm)][enableSvgf];
     const auto& vulkan  = setup.vulkan;
     const auto& device  = vulkan.deviceHandle();
     const auto  properties =
@@ -232,18 +243,21 @@ void RayTracingPass::createPipeline(const PassSetup& setup, bool enableSvgf)
                 .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR
             },
         };
-        for (uint32_t binding = RealtimeRayTracingBinding::kSurfaces;
-             binding <= RealtimeRayTracingBinding::kRestirFrame;
-             ++binding)
+        if (algorithm == RealtimeAlgorithm::ReSTIR)
         {
-            bindings.push_back({
-                .binding         = binding,
-                .descriptorType  = binding == RealtimeRayTracingBinding::kRestirFrame
-                     ? vk::DescriptorType::eUniformBuffer
-                     : vk::DescriptorType::eStorageBuffer,
-                .descriptorCount = 1,
-                .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR,
-            });
+            for (uint32_t binding = RealtimeRayTracingBinding::kSurfaces;
+                 binding <= RealtimeRayTracingBinding::kRestirFrame;
+                 ++binding)
+            {
+                bindings.push_back({
+                    .binding         = binding,
+                    .descriptorType  = binding == RealtimeRayTracingBinding::kRestirFrame
+                         ? vk::DescriptorType::eUniformBuffer
+                         : vk::DescriptorType::eStorageBuffer,
+                    .descriptorCount = 1,
+                    .stageFlags      = vk::ShaderStageFlagBits::eRaygenKHR,
+                });
+            }
         }
         if (!enableSvgf)
         {
@@ -272,8 +286,13 @@ void RayTracingPass::createPipeline(const PassSetup& setup, bool enableSvgf)
         variant.layout = renderDevice.getOrCreatePipelineLayout(descriptorSetLayouts, std::array{parameterRange});
     }
 
-    GpuShader            shader(device, enableSvgf ? "shaders/raytracing.svgf.spv" : "shaders/raytracing.spv");
-    constexpr std::array kEntryPoints{
+    const bool           restir = algorithm == RealtimeAlgorithm::ReSTIR;
+    constexpr std::array kShaderPaths{
+        std::array{"shaders/raytracing.spv", "shaders/raytracing.svgf.spv"},
+        std::array{"shaders/raytracing_simple.spv", "shaders/raytracing_simple.svgf.spv"},
+    };
+    GpuShader            shader(device, kShaderPaths[static_cast<size_t>(algorithm)][enableSvgf]);
+    constexpr std::array kRestirEntries{
         "raygenMain",
         "temporalMain",
         "spatialMain",
@@ -282,19 +301,24 @@ void RayTracingPass::createPipeline(const PassSetup& setup, bool enableSvgf)
         "closestHitMain",
         "lightClosestHitMain"
     };
-    std::array<vk::PipelineShaderStageCreateInfo, kEntryPoints.size()>      stages;
-    std::array<vk::RayTracingShaderGroupCreateInfoKHR, kEntryPoints.size()> groups;
-    for (uint32_t index = 0; index < kEntryPoints.size(); ++index)
+    constexpr std::array
+        kSimpleEntries{"raygenMain", "missMain", "visibilityMissMain", "closestHitMain", "lightClosestHitMain"};
+    const std::span<const char* const> entries =
+        restir ? std::span<const char* const>{kRestirEntries} : std::span<const char* const>{kSimpleEntries};
+    variant.raygenCount = restir ? kRestirRaygenShaderCount : 1u;
+    std::vector<vk::PipelineShaderStageCreateInfo>      stages(entries.size());
+    std::vector<vk::RayTracingShaderGroupCreateInfoKHR> groups(entries.size());
+    for (uint32_t index = 0; index < entries.size(); ++index)
     {
-        const bool hit = index >= kRaygenShaderCount + kMissShaderCount;
-        stages[index]  = vk::PipelineShaderStageCreateInfo{
-             .stage  = hit                     ? vk::ShaderStageFlagBits::eClosestHitKHR
-                  : index < kRaygenShaderCount ? vk::ShaderStageFlagBits::eRaygenKHR
-                                               : vk::ShaderStageFlagBits::eMissKHR,
+        const bool hit = index >= variant.raygenCount + kMissShaderCount;
+        stages[index]  = {
+             .stage  = hit                      ? vk::ShaderStageFlagBits::eClosestHitKHR
+                  : index < variant.raygenCount ? vk::ShaderStageFlagBits::eRaygenKHR
+                                                : vk::ShaderStageFlagBits::eMissKHR,
              .module = shader.handle(),
-             .pName  = kEntryPoints[index],
+             .pName  = entries[index],
         };
-        groups[index] = vk::RayTracingShaderGroupCreateInfoKHR{
+        groups[index] = {
             .type =
                 hit ? vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup : vk::RayTracingShaderGroupTypeKHR::eGeneral,
             .generalShader      = hit ? VK_SHADER_UNUSED_KHR : index,
@@ -327,7 +351,7 @@ void RayTracingPass::createPipeline(const PassSetup& setup, bool enableSvgf)
 
     const vk::DeviceSize stride       = alignUp(limits.shaderGroupHandleSize, limits.shaderGroupHandleAlignment);
     const vk::DeviceSize raygenStride = alignUp(stride, limits.shaderGroupBaseAlignment);
-    const vk::DeviceSize missOffset   = raygenStride * kRaygenShaderCount;
+    const vk::DeviceSize missOffset   = raygenStride * variant.raygenCount;
     const vk::DeviceSize hitOffset = alignUp(missOffset + stride * kMissShaderCount, limits.shaderGroupBaseAlignment);
     CHECK(stride <= limits.maxShaderGroupStride, "shader binding table stride exceeds the device limit");
     variant.bindingTable = Buffer(
@@ -337,39 +361,36 @@ void RayTracingPass::createPipeline(const PassSetup& setup, bool enableSvgf)
         vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
     );
-    const vk::DeviceAddress address     = variant.bindingTable.address(device);
-    const vk::DeviceAddress base        = alignUp(address, limits.shaderGroupBaseAlignment);
-    const uint32_t          kGroupCount = static_cast<uint32_t>(groups.size());
-    std::vector<uint8_t>    handles(limits.shaderGroupHandleSize * kGroupCount);
+    const vk::DeviceAddress address    = variant.bindingTable.address(device);
+    const vk::DeviceAddress base       = alignUp(address, limits.shaderGroupBaseAlignment);
+    const uint32_t          groupCount = static_cast<uint32_t>(groups.size());
+    std::vector<uint8_t>    handles(limits.shaderGroupHandleSize * groupCount);
     vkCheck(
         static_cast<vk::Result>(device.getDispatcher()->vkGetRayTracingShaderGroupHandlesKHR(
             static_cast<VkDevice>(*device),
             static_cast<VkPipeline>(*variant.pipeline),
             0,
-            kGroupCount,
+            groupCount,
             handles.size(),
             handles.data()
         ))
     );
-    std::vector<uint8_t> records(variant.bindingTable.size());
-    // Three raygen records, two miss records, then the surface and rectangle hit records.
-    const std::array<vk::DeviceSize, 7> recordOffsets{
-        0,
-        raygenStride,
-        raygenStride * 2,
-        missOffset,
-        missOffset + stride,
-        hitOffset,
-        hitOffset + stride
-    };
-    for (uint32_t group = 0; group < kGroupCount; ++group)
+    std::vector<uint8_t>        records(variant.bindingTable.size());
+    std::vector<vk::DeviceSize> recordOffsets;
+    for (uint32_t index = 0; index < variant.raygenCount; ++index)
+        recordOffsets.push_back(raygenStride * index);
+    for (uint32_t index = 0; index < kMissShaderCount; ++index)
+        recordOffsets.push_back(missOffset + stride * index);
+    for (uint32_t index = 0; index < kHitShaderCount; ++index)
+        recordOffsets.push_back(hitOffset + stride * index);
+    for (uint32_t group = 0; group < groupCount; ++group)
         std::memcpy(
             records.data() + base - address + recordOffsets[group],
             handles.data() + limits.shaderGroupHandleSize * group,
             limits.shaderGroupHandleSize
         );
     variant.bindingTable.upload(records.data(), records.size());
-    for (uint32_t index = 0; index < kRaygenShaderCount; ++index)
+    for (uint32_t index = 0; index < variant.raygenCount; ++index)
     {
         variant.raygenRegions[index] = vk::StridedDeviceAddressRegionKHR{
             .deviceAddress = base + raygenStride * index,
@@ -409,10 +430,11 @@ void RayTracingPass::updateBufferDescriptors(RenderGraph& graph, const PassFrame
         RealtimeRayTracingBinding::kReservoirHistory,
         RealtimeRayTracingBinding::kRestirFrame
     };
+    const uint32_t                          bufferCount = algorithm == RealtimeAlgorithm::ReSTIR ? handles.size() : 2u;
     std::array<vk::DescriptorBufferInfo, 7> infos;
     std::array<vk::WriteDescriptorSet, 7>   writes;
     uint32_t                                writeCount = 0;
-    for (uint32_t index = 0; index < handles.size(); ++index)
+    for (uint32_t index = 0; index < bufferCount; ++index)
     {
         const auto revision     = graph.bufferRevision(handles[index]);
         const bool changedLayer = (index == 2 || index == 3) && frame.surfaceLayer != writeLayer;
@@ -541,15 +563,16 @@ void RayTracingPass::prepare(RenderGraph& graph, const PassFrame& execution)
 {
     CpuProfileScope timing{context().profiler, "RT.Buffer preparation"};
     auto&           frame = frames[execution.frameIndex];
-    prepareRestir(graph, execution);
+    if (algorithm == RealtimeAlgorithm::ReSTIR)
+        prepareRestir(graph, execution);
     updateBufferDescriptors(graph, execution, frame);
 }
 
 void RayTracingPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution)
 {
-    const auto& variant = variants[svgfEnabled];
-    auto&  commands = commandBuffer;
-    Frame& frame    = frames[execution.frameIndex];
+    const auto& variant  = variants[static_cast<size_t>(algorithm)][svgfEnabled];
+    auto&       commands = commandBuffer;
+    Frame&      frame    = frames[execution.frameIndex];
     {
         CpuProfileScope timing{context().profiler, "RT.Binding preparation"};
         GpuProfileScope gpuTiming{execution.gpuProfiler, commands, "RT.Binding preparation"};
@@ -569,16 +592,15 @@ void RayTracingPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& comman
         vk::ShaderStageFlagBits::eRaygenKHR,
         0,
         PathTracingParameters{
-            .viewport       = {viewport.x, viewport.y, viewport.width, viewport.height},
-            .lightRanges    = execution.renderData.lightRanges,
-            .maxBounces     = execution.setup.config.feature.rayTracing.maxBounces,
-            .sampleIndex    = sampleIndex++,
-            .iblEnabled     = execution.setup.config.feature.ibl && execution.renderData.environmentMap ? 1u : 0u,
-            .candidateCount = execution.setup.config.feature.restir.candidateCount,
+            .viewport    = {viewport.x, viewport.y, viewport.width, viewport.height},
+            .lightRanges = execution.renderData.lightRanges,
+            .maxBounces  = execution.setup.config.feature.rayTracing.maxBounces,
+            .sampleIndex = sampleIndex++,
+            .iblEnabled  = execution.setup.config.feature.ibl && execution.renderData.environmentMap ? 1u : 0u,
         }
     );
     constexpr std::array kStageNames{"RT.Initial RIS and paths", "ReSTIR.Temporal", "ReSTIR.Spatial and shading"};
-    for (uint32_t stage = 0; stage < kRaygenShaderCount; ++stage)
+    for (uint32_t stage = 0; stage < variant.raygenCount; ++stage)
     {
         if (stage > 0)
         {
@@ -590,7 +612,11 @@ void RayTracingPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& comman
             };
             commands.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &barrier});
         }
-        GpuProfileScope timing{execution.gpuProfiler, commands, kStageNames[stage]};
+        GpuProfileScope timing{
+            execution.gpuProfiler,
+            commands,
+            algorithm == RealtimeAlgorithm::Simple ? "RT.Simple paths" : kStageNames[stage]
+        };
         commands.traceRaysKHR(
             variant.raygenRegions[stage],
             variant.missRegion,
@@ -601,8 +627,11 @@ void RayTracingPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& comman
             1
         );
     }
-    writeLayer ^= 1u;
-    hasRestirHistory = true;
+    if (algorithm == RealtimeAlgorithm::ReSTIR)
+    {
+        writeLayer ^= 1u;
+        hasRestirHistory = true;
+    }
 }
 
 void RayTracingPass::prepareRestir(RenderGraph& graph, const PassFrame& execution)
@@ -651,6 +680,7 @@ void RayTracingPass::prepareRestir(RenderGraph& graph, const PassFrame& executio
         .spatialRadius          = config.restir.spatialRadius,
         .temporalReuse          = config.restir.temporalReuse ? 1u : 0u,
         .spatialReuse           = config.restir.spatialReuse ? 1u : 0u,
+        .candidateCount         = config.restir.candidateCount,
     };
     const auto upload = graph.allocateUpload(restirParameters, sizeof(parameters));
     std::memcpy(upload.data.data(), &parameters, sizeof(parameters));

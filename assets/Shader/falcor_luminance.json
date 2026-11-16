@@ -1,0 +1,4 @@
+{
+    "id": {"value": "falcor_luminance"},
+    "binary": "shaders/falcor_luminance.spv"
+}

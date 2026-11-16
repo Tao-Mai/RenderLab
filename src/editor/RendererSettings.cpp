@@ -1,13 +1,15 @@
 #include "editor/RendererSettings.h"
-#include "editor/Inspector.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <glm/matrix.hpp>
 #include <imgui.h>
+#include <limits>
 #include <numbers>
 #include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
+#include "editor/Inspector.h"
 #include "render/Renderer.h"
 #include "render/device/VulkanContext.h"
 #include "render/resources/ShaderData.h"
@@ -87,6 +89,189 @@ bool drawEnvironmentSelection(SceneAsset& scene, AssetManager& assets)
     return edited;
 }
 
+bool drawFalcorPostProcessSettings(FalcorPostProcessConfig& settings)
+{
+    using namespace falcorPostProcess;
+    bool  edited     = false;
+    auto& toneMapper = settings.toneMapper;
+    if (drawSettingsHeader("Falcor ToneMapper"))
+    {
+        toneMapper = {};
+        edited     = true;
+    }
+    ImGui::TextDisabled("Falcor exposure is independent of camera exposure.");
+    edited |= ImGui::SliderFloat(
+        "Exposure Compensation",
+        &toneMapper.exposureCompensation,
+        kExposureCompensationMin,
+        kExposureCompensationMax,
+        "%.1f"
+    );
+    edited |= ImGui::Checkbox("Auto Exposure", &toneMapper.autoExposure);
+    if (!toneMapper.autoExposure)
+    {
+        int exposureMode = static_cast<int>(toneMapper.exposureMode);
+        if (ImGui::Combo("Exposure mode", &exposureMode, "Aperture priority\0Shutter priority\0"))
+        {
+            toneMapper.exposureMode = static_cast<FalcorExposureMode>(exposureMode);
+            edited                  = true;
+        }
+        float       ev    = toneMapper.exposureValue();
+        const float minEv = std::log2(kShutterMin * kFNumberMin * kFNumberMin);
+        const float maxEv = std::log2(kShutterMax * kFNumberMax * kFNumberMax);
+        if (ImGui::SliderFloat("Exposure Value (EV)", &ev, minEv, maxEv, "%.1f"))
+        {
+            toneMapper.setExposureValue(ev);
+            edited = true;
+        }
+        edited |= ImGui::DragFloat(
+            "Film Speed (ISO)",
+            &toneMapper.filmSpeed,
+            1.0f,
+            kFilmSpeedMin,
+            kFilmSpeedMax,
+            "%.1f",
+            ImGuiSliderFlags_AlwaysClamp
+        );
+        edited |= ImGui::DragFloat(
+            "f-Number",
+            &toneMapper.fNumber,
+            0.1f,
+            kFNumberMin,
+            kFNumberMax,
+            "%.1f",
+            ImGuiSliderFlags_AlwaysClamp
+        );
+        edited |= ImGui::DragFloat(
+            "Shutter",
+            &toneMapper.shutter,
+            0.1f,
+            kShutterMin,
+            kShutterMax,
+            "%.1f",
+            ImGuiSliderFlags_AlwaysClamp
+        );
+        ImGui::SetItemTooltip("Reciprocal shutter time (1/seconds), matching Falcor.");
+    }
+    edited |= ImGui::Checkbox("White Balance", &toneMapper.whiteBalance);
+    if (toneMapper.whiteBalance)
+    {
+        edited |= ImGui::DragFloat(
+            "White Point (K)",
+            &toneMapper.whitePoint,
+            5.0f,
+            kWhitePointMin,
+            kWhitePointMax,
+            "%.0f",
+            ImGuiSliderFlags_AlwaysClamp
+        );
+        auto white = glm::inverse(toneMapper.whiteBalanceTransform()) * glm::vec3{1.0f};
+        white /= std::max({white.r, white.g, white.b});
+        ImGui::ColorButton("Source white", ImVec4{white.r, white.g, white.b, 1.0f});
+    }
+    int mode = static_cast<int>(toneMapper.mode);
+    if (ImGui::Combo("Operator", &mode, "Linear\0Reinhard\0Reinhard Modified\0Heji Hable ALU\0Hable UC2\0ACES\0"))
+    {
+        toneMapper.mode = static_cast<FalcorToneMappingOperator>(mode);
+        edited          = true;
+    }
+    if (toneMapper.mode == FalcorToneMappingOperator::ReinhardModified)
+        edited |= ImGui::DragFloat(
+            "White Luminance",
+            &toneMapper.whiteMaxLuminance,
+            0.2f,
+            0.1f,
+            std::numeric_limits<float>::max(),
+            "%.2f",
+            ImGuiSliderFlags_AlwaysClamp
+        );
+    if (toneMapper.mode == FalcorToneMappingOperator::HableUc2)
+        edited |= ImGui::DragFloat(
+            "Linear White",
+            &toneMapper.whiteScale,
+            0.01f,
+            0.001f,
+            100.0f,
+            "%.2f",
+            ImGuiSliderFlags_AlwaysClamp
+        );
+    edited |= ImGui::Checkbox("Clamp Output", &toneMapper.clampOutput);
+
+    auto& postFx = settings.simplePostFx;
+    ImGui::PushID("FalcorSimplePostFX");
+    if (drawSettingsHeader("Falcor SimplePostFX"))
+    {
+        postFx = {};
+        edited = true;
+    }
+    edited |= ImGui::Checkbox("Enable post fx", &postFx.enabled);
+    edited |= ImGui::SliderFloat("Wipe", &postFx.wipe, 0.0f, 1.0f);
+    if (ImGui::TreeNodeEx("Lens FX", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        edited |= ImGui::SliderFloat("Bloom", &postFx.bloomAmount, 0.0f, 1.0f);
+        edited |= ImGui::SliderFloat("Bloom Star", &postFx.starAmount, 0.0f, 1.0f);
+        edited |= ImGui::SliderFloat("Star Angle", &postFx.starAngle, 0.0f, 1.0f);
+        edited |= ImGui::SliderFloat("Vignette", &postFx.vignetteAmount, 0.0f, 1.0f);
+        edited |= ImGui::SliderFloat("Chromatic Aberration", &postFx.chromaticAberrationAmount, 0.0f, 1.0f);
+        edited |= ImGui::SliderFloat("Barrel Distortion", &postFx.barrelDistortAmount, 0.0f, 1.0f);
+        if (ImGui::Button("Reset lens FX"))
+        {
+            const FalcorPostFxConfig defaults;
+            postFx.bloomAmount               = defaults.bloomAmount;
+            postFx.starAmount                = defaults.starAmount;
+            postFx.starAngle                 = defaults.starAngle;
+            postFx.vignetteAmount            = defaults.vignetteAmount;
+            postFx.chromaticAberrationAmount = defaults.chromaticAberrationAmount;
+            postFx.barrelDistortAmount       = defaults.barrelDistortAmount;
+            edited                           = true;
+        }
+        ImGui::TreePop();
+    }
+    if (ImGui::TreeNode("Saturation"))
+    {
+        edited |= ImGui::SliderFloat("Shadow Saturation", &postFx.saturationCurve.x, 0.0f, 2.0f);
+        edited |= ImGui::SliderFloat("Midtone Saturation", &postFx.saturationCurve.y, 0.0f, 2.0f);
+        edited |= ImGui::SliderFloat("Highlight Saturation", &postFx.saturationCurve.z, 0.0f, 2.0f);
+        if (ImGui::Button("Reset saturation"))
+        {
+            postFx.saturationCurve = FalcorPostFxConfig{}.saturationCurve;
+            edited                 = true;
+        }
+        ImGui::TreePop();
+    }
+    if (ImGui::TreeNode("Offset/Power/Scale (luma)"))
+    {
+        edited |= ImGui::SliderFloat("Luma Offset (Shadows)", &postFx.colorOffsetScalar, -1.0f, 1.0f);
+        edited |= ImGui::SliderFloat("Luma Power (Midtones)", &postFx.colorPowerScalar, -1.0f, 1.0f);
+        edited |= ImGui::SliderFloat("Luma Scale (Highlights)", &postFx.colorScaleScalar, -1.0f, 1.0f);
+        if (ImGui::Button("Reset luma"))
+        {
+            postFx.colorOffsetScalar = 0.0f;
+            postFx.colorScaleScalar  = 0.0f;
+            postFx.colorPowerScalar  = 0.0f;
+            edited                   = true;
+        }
+        ImGui::TreePop();
+    }
+    if (ImGui::TreeNode("Offset/Power/Scale (color)"))
+    {
+        edited |= ImGui::ColorEdit3("Color Offset (Shadows)", &postFx.colorOffset.x);
+        edited |= ImGui::ColorEdit3("Color Power (Midtones)", &postFx.colorPower.x);
+        edited |= ImGui::ColorEdit3("Color Scale (Highlights)", &postFx.colorScale.x);
+        if (ImGui::Button("Reset color"))
+        {
+            const FalcorPostFxConfig defaults;
+            postFx.colorOffset = defaults.colorOffset;
+            postFx.colorScale  = defaults.colorScale;
+            postFx.colorPower  = defaults.colorPower;
+            edited             = true;
+        }
+        ImGui::TreePop();
+    }
+    ImGui::PopID();
+    return edited;
+}
+
 }  // namespace
 bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const VulkanContext& vulkan, SceneAsset& scene)
 {
@@ -143,73 +328,95 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
 
     if (ImGui::CollapsingHeader("Post Process"))
     {
+        int postProcessMode = static_cast<int>(feature.postProcess);
+        if (ImGui::Combo("Post process", &postProcessMode, "RenderLab\0Falcor\0"))
+        {
+            feature.postProcess = static_cast<PostProcessMode>(postProcessMode);
+            config.setRenderFeature(feature);
+        }
         if (drawSettingsHeader("HDR"))
         {
-            feature.hdr         = RenderFeature{}.hdr;
-            feature.toneMapping = {};
+            feature.hdr = RenderFeature{}.hdr;
+            if (feature.postProcess == PostProcessMode::RenderLab)
+                feature.toneMapping = {};
+            else
+                feature.falcorPostProcess.toneMapper = {};
             config.setRenderFeature(feature);
         }
         if (ImGui::Checkbox("Enable HDR", &feature.hdr))
         {
             config.setRenderFeature(feature);
         }
-        ImGui::BeginDisabled(!feature.hdr);
-        int toneMappingMode = static_cast<int>(feature.toneMapping.mode);
-        if (ImGui::Combo("Operator", &toneMappingMode, "Khronos PBR Neutral\0Reinhard\0"))
+        if (feature.postProcess == PostProcessMode::Falcor)
         {
-            feature.toneMapping.mode = static_cast<ToneMappingOperator>(toneMappingMode);
-            config.setRenderFeature(feature);
+            ImGui::BeginDisabled(!feature.hdr);
+            if (drawFalcorPostProcessSettings(feature.falcorPostProcess))
+                config.setRenderFeature(feature);
+            ImGui::EndDisabled();
         }
+        else
+        {
+            ImGui::BeginDisabled(!feature.hdr);
+            int toneMappingMode = static_cast<int>(feature.toneMapping.mode);
+            if (ImGui::Combo("Operator", &toneMappingMode, "Khronos PBR Neutral\0Reinhard\0"))
+            {
+                feature.toneMapping.mode = static_cast<ToneMappingOperator>(toneMappingMode);
+                config.setRenderFeature(feature);
+            }
 
-        ImGui::TextUnformatted("Global exposure");
-        ImGui::PushID("GlobalExposure");
-        if (drawExposureSettings(feature.toneMapping.exposure))
-        {
-            config.setRenderFeature(feature);
-        }
-        ImGui::PopID();
+            ImGui::TextUnformatted("Global exposure");
+            ImGui::PushID("GlobalExposure");
+            if (drawExposureSettings(feature.toneMapping.exposure))
+            {
+                config.setRenderFeature(feature);
+            }
+            ImGui::PopID();
 
-        if (scene.editorCamera.exposure)
-        {
-            ImGui::TextDisabled("Exposure overridden by Editor camera");
-        }
+            if (scene.editorCamera.exposure)
+            {
+                ImGui::TextDisabled("Exposure overridden by Editor camera");
+            }
 
-        ImGui::EndDisabled();
+            ImGui::EndDisabled();
 
-        if (drawSettingsHeader("Bloom"))
-        {
-            feature.bloom = {};
-            config.setRenderFeature(feature);
+            if (drawSettingsHeader("Bloom"))
+            {
+                feature.bloom = {};
+                config.setRenderFeature(feature);
+            }
+            ImGui::BeginDisabled(!feature.hdr);
+            if (ImGui::Checkbox("Enable bloom", &feature.bloom.enable))
+                config.setRenderFeature(feature);
+            ImGui::SetItemTooltip(
+                "HDR scattering bloom; light markers are included, editor UI is excluded. Requires HDR."
+            );
+            ImGui::BeginDisabled(!feature.bloom.enable);
+            bool bloomEdited = ImGui::SliderFloat("Bloom intensity", &feature.bloom.intensity, 0.0f, 1.0f, "%.3f");
+            ImGui::SetItemTooltip("Fraction of scene light redistributed by bloom, not additive brightness.");
+            bloomEdited =
+                ImGui::SliderFloat("Bloom scatter", &feature.bloom.scatter, 0.05f, 0.95f, "%.2f") || bloomEdited;
+            ImGui::SetItemTooltip("Higher values give coarser pyramid levels more weight and produce a wider glow.");
+            bloomEdited = ImGui::DragFloat(
+                              "Gaussian radius",
+                              &feature.bloom.filterRadius,
+                              0.05f,
+                              0.1f,
+                              5.0f,
+                              "%.2f",
+                              ImGuiSliderFlags_AlwaysClamp
+                          ) ||
+                bloomEdited;
+            int bloomLevels = static_cast<int>(feature.bloom.levels);
+            if (ImGui::SliderInt("Bloom levels", &bloomLevels, 1, static_cast<int>(kMaxBloomLevels)))
+            {
+                feature.bloom.levels = static_cast<uint32_t>(bloomLevels);
+                bloomEdited          = true;
+            }
+            if (bloomEdited)
+                config.setRenderFeature(feature);
+            ImGui::EndDisabled();
+            ImGui::EndDisabled();
         }
-        ImGui::BeginDisabled(!feature.hdr);
-        if (ImGui::Checkbox("Enable bloom", &feature.bloom.enable))
-            config.setRenderFeature(feature);
-        ImGui::SetItemTooltip("HDR scattering bloom; light markers are included, editor UI is excluded. Requires HDR.");
-        ImGui::BeginDisabled(!feature.bloom.enable);
-        bool bloomEdited = ImGui::SliderFloat("Bloom intensity", &feature.bloom.intensity, 0.0f, 1.0f, "%.3f");
-        ImGui::SetItemTooltip("Fraction of scene light redistributed by bloom, not additive brightness.");
-        bloomEdited = ImGui::SliderFloat("Bloom scatter", &feature.bloom.scatter, 0.05f, 0.95f, "%.2f") || bloomEdited;
-        ImGui::SetItemTooltip("Higher values give coarser pyramid levels more weight and produce a wider glow.");
-        bloomEdited = ImGui::DragFloat(
-                          "Gaussian radius",
-                          &feature.bloom.filterRadius,
-                          0.05f,
-                          0.1f,
-                          5.0f,
-                          "%.2f",
-                          ImGuiSliderFlags_AlwaysClamp
-                      ) ||
-            bloomEdited;
-        int bloomLevels = static_cast<int>(feature.bloom.levels);
-        if (ImGui::SliderInt("Bloom levels", &bloomLevels, 1, static_cast<int>(kMaxBloomLevels)))
-        {
-            feature.bloom.levels = static_cast<uint32_t>(bloomLevels);
-            bloomEdited          = true;
-        }
-        if (bloomEdited)
-            config.setRenderFeature(feature);
-        ImGui::EndDisabled();
-        ImGui::EndDisabled();
     }
 
     if (config.rendererConfig().renderPath == RenderPath::OfflinePathTracing)
@@ -284,6 +491,15 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
             feature.rayTracing = {};
             config.setRenderFeature(feature);
         }
+        int algorithm = static_cast<int>(feature.rayTracing.algorithm);
+        if (ImGui::Combo("Tracing algorithm", &algorithm, "ReSTIR\0Simple\0"))
+        {
+            feature.rayTracing.algorithm = static_cast<RealtimeAlgorithm>(algorithm);
+            config.setRenderFeature(feature);
+        }
+        ImGui::SetItemTooltip(
+            "Simple: ordinary light sampling and BRDF bounces. ReSTIR: reservoir-based direct lighting and reuse."
+        );
         int maxBounces = static_cast<int>(feature.rayTracing.maxBounces);
         if (ImGui::SliderInt(
                 "Max bounces",
@@ -301,19 +517,29 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
 
         if (ImGui::Checkbox("Enable SVGF", &feature.rayTracing.svgf))
             config.setRenderFeature(feature);
-        ImGui::SetItemTooltip("Temporally accumulates direct and indirect lighting, estimates variance and applies\n"
-                              "five edge-aware wavelet levels. The final level combines the result with emission.");
+        ImGui::SetItemTooltip(
+            "Temporally accumulates direct and indirect lighting, estimates variance and applies\n"
+            "five edge-aware wavelet levels. The final level combines the result with emission."
+        );
 
         ImGui::BeginDisabled(!feature.rayTracing.svgf);
         int historyLength = static_cast<int>(feature.rayTracing.historyLength);
-        if (ImGui::SliderInt("History length", &historyLength, 1, static_cast<int>(kMaxSvgfHistoryLength),
-                             "%d", ImGuiSliderFlags_AlwaysClamp))
+        if (ImGui::SliderInt(
+                "History length",
+                &historyLength,
+                1,
+                static_cast<int>(kMaxSvgfHistoryLength),
+                "%d",
+                ImGuiSliderFlags_AlwaysClamp
+            ))
         {
             feature.rayTracing.historyLength = static_cast<uint32_t>(historyLength);
             config.setRenderFeature(feature);
         }
-        ImGui::SetItemTooltip("Average the first N samples arithmetically; use EMA when the sample count exceeds N.\n"
-                              "Applies to color and both luminance moments for direct and indirect lighting.");
+        ImGui::SetItemTooltip(
+            "Average the first N samples arithmetically; use EMA when the sample count exceeds N.\n"
+            "Applies to color and both luminance moments for direct and indirect lighting."
+        );
         if (ImGui::SliderFloat(
                 "EMA sample weight",
                 &feature.rayTracing.emaAlpha,
@@ -323,9 +549,14 @@ bool drawRendererSettings(ConfigManager& config, AssetManager& assets, const Vul
                 ImGuiSliderFlags_AlwaysClamp
             ))
             config.setRenderFeature(feature);
-        ImGui::SetItemTooltip("After history length: new mean = history * (1 - weight) + current sample * weight.\n"
-                              "The first sample, or a sample with rejected history, has weight 1.");
+        ImGui::SetItemTooltip(
+            "After history length: new mean = history * (1 - weight) + current sample * weight.\n"
+            "The first sample, or a sample with rejected history, has weight 1."
+        );
         ImGui::EndDisabled();
+
+        if (feature.rayTracing.algorithm == RealtimeAlgorithm::Simple)
+            return sceneEdited;
 
         if (drawSettingsHeader("ReSTIR"))
         {

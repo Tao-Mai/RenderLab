@@ -38,6 +38,45 @@ void validateBloom(const RenderFeature::Bloom& bloom)
     CHECK(bloom.levels > 0 && bloom.levels <= kMaxBloomLevels);
 }
 
+void validatePostProcess(const RenderFeature& feature)
+{
+    using namespace falcorPostProcess;
+    CHECK(feature.postProcess == PostProcessMode::RenderLab || feature.postProcess == PostProcessMode::Falcor);
+    const auto inRange = [](float value, float minValue, float maxValue)
+    { return std::isfinite(value) && value >= minValue && value <= maxValue; };
+
+    const auto& toneMapper = feature.falcorPostProcess.toneMapper;
+    CHECK(inRange(toneMapper.exposureCompensation, kExposureCompensationMin, kExposureCompensationMax));
+    CHECK(inRange(toneMapper.filmSpeed, kFilmSpeedMin, kFilmSpeedMax));
+    CHECK(inRange(toneMapper.fNumber, kFNumberMin, kFNumberMax));
+    CHECK(inRange(toneMapper.shutter, kShutterMin, kShutterMax));
+    CHECK(inRange(toneMapper.whitePoint, kWhitePointMin, kWhitePointMax));
+    CHECK(std::isfinite(toneMapper.whiteMaxLuminance) && toneMapper.whiteMaxLuminance > 0.0f);
+    CHECK(std::isfinite(toneMapper.whiteScale) && toneMapper.whiteScale >= 0.001f);
+    CHECK(toneMapper.exposureMode == FalcorExposureMode::AperturePriority ||
+          toneMapper.exposureMode == FalcorExposureMode::ShutterPriority);
+    CHECK(toneMapper.mode >= FalcorToneMappingOperator::Linear && toneMapper.mode <= FalcorToneMappingOperator::Aces);
+
+    const auto& postFx = feature.falcorPostProcess.simplePostFx;
+    CHECK(inRange(postFx.wipe, 0.0f, 1.0f));
+    CHECK(inRange(postFx.bloomAmount, 0.0f, 1.0f));
+    CHECK(inRange(postFx.starAmount, 0.0f, 1.0f));
+    CHECK(inRange(postFx.starAngle, 0.0f, 1.0f));
+    CHECK(inRange(postFx.vignetteAmount, 0.0f, 1.0f));
+    CHECK(inRange(postFx.chromaticAberrationAmount, 0.0f, 1.0f));
+    CHECK(inRange(postFx.barrelDistortAmount, 0.0f, 1.0f));
+    CHECK(inRange(postFx.colorOffsetScalar, -1.0f, 1.0f));
+    CHECK(inRange(postFx.colorScaleScalar, -1.0f, 1.0f));
+    CHECK(inRange(postFx.colorPowerScalar, -1.0f, 1.0f));
+    for (glm::length_t index = 0; index < 3; ++index)
+    {
+        CHECK(inRange(postFx.saturationCurve[index], 0.0f, 2.0f));
+        CHECK(inRange(postFx.colorOffset[index], 0.0f, 1.0f));
+        CHECK(inRange(postFx.colorScale[index], 0.0f, 1.0f));
+        CHECK(inRange(postFx.colorPower[index], 0.0f, 1.0f));
+    }
+}
+
 void validatePathBounces(uint32_t maxBounces)
 {
     CHECK(maxBounces >= kMinPathBounces && maxBounces <= kMaxPathBounces);
@@ -45,6 +84,7 @@ void validatePathBounces(uint32_t maxBounces)
 
 void validateRayTracing(const RenderFeature::RayTracing& rayTracing)
 {
+    CHECK(rayTracing.algorithm == RealtimeAlgorithm::ReSTIR || rayTracing.algorithm == RealtimeAlgorithm::Simple);
     validatePathBounces(rayTracing.maxBounces);
     CHECK(rayTracing.historyLength >= 1 && rayTracing.historyLength <= kMaxSvgfHistoryLength);
     CHECK(std::isfinite(rayTracing.emaAlpha) && rayTracing.emaAlpha >= 0.0f && rayTracing.emaAlpha <= 1.0f);
@@ -183,6 +223,7 @@ void ConfigManager::setRenderFeature(const RenderFeature& feature)
           feature.shadow.filter == SamplerAsset::Filter::Linear);
     validateToneMapping(feature.toneMapping);
     validateBloom(feature.bloom);
+    validatePostProcess(feature);
     validateCascade(feature.shadow.cascade);
     validateRayTracing(feature.rayTracing);
     validateRestir(feature.restir);
@@ -252,6 +293,7 @@ void ConfigManager::loadRenderer()
     realtimeRenderPath = renderer.renderPath == RenderPath::OfflinePathTracing ? RenderPath::Forward : renderer.renderPath;
     validateToneMapping(renderer.feature.toneMapping);
     validateBloom(renderer.feature.bloom);
+    validatePostProcess(renderer.feature);
     validateCascade(renderer.feature.shadow.cascade);
     validateRayTracing(renderer.feature.rayTracing);
     validateRestir(renderer.feature.restir);

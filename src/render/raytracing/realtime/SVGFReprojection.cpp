@@ -218,10 +218,12 @@ void SVGFReprojection::execute(RenderGraph&, vk::raii::CommandBuffer& commands, 
             .previousDepthRow       = previousDepthRow,
             .viewport               = currentViewport,
             .writeLayer             = writeLayer,
-            .historyValid =
-                hasHistory && previousMaxBounces == settings.maxBounces && previousRestir == restir ? 1u : 0u,
-            .historyLength = settings.historyLength,
-            .emaAlpha      = settings.emaAlpha,
+            .historyValid           = hasHistory && previousMaxBounces == settings.maxBounces &&
+                    (settings.algorithm == RealtimeAlgorithm::Simple || previousRestir == restir)
+                          ? 1u
+                          : 0u,
+            .historyLength          = settings.historyLength,
+            .emaAlpha               = settings.emaAlpha,
         }
     );
     commands.dispatch(

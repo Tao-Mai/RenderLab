@@ -33,19 +33,22 @@ Shader 入口为 [forward.slang](../shaders/raster/forward.slang)、[gbuffer.sla
 
 ### 实时光追
 
-Shader 入口：[realtime.slang](../shaders/raytracing/realtime/realtime.slang)。实时路径循环、ReSTIR 与 SVGF 位于 `raytracing/realtime`，材质、BRDF 和随机数等通用代码位于 `shaders/common`。
+实时光追下可通过 `Tracing algorithm` 选择 `ReSTIR` 或 [Simple](SimpleRayTracing.md)，默认保留 ReSTIR。
+Shader 入口分别是 [restir/path_tracing.slang](../shaders/raytracing/realtime/restir/path_tracing.slang) 与
+[simple/path_tracing.slang](../shaders/raytracing/realtime/simple/path_tracing.slang)。两条子路线共用
+`raytracing/realtime` 根目录的命中处理、路径续射线、光源求值、输出与 SVGF，通用材质、BRDF 和随机数仍位于 `shaders/common`。
 
 - 基础 PBR 复用漫反射与 GGX 函数，使用 VNDF 和完整混合 PDF 生成反弹方向。
-- 主命中的直接光使用原版 ReSTIR DI：完整光源样本的初始 RIS → 时域复用 → 一轮空间复用 → 可见性着色。点光、聚光、方向光、矩形、发光三角形和启用的环境共同参与采样。
-- 光源候选先确定光源和面内位置，再用实际位置的发光、BRDF 与几何项生成权重；一个 BRDF 方向候选通过 balance MIS 一起进入初始 reservoir。
-- 实时光追的 [RayGen 路径循环](../shaders/raytracing/realtime/path_tracing.slang) 负责续射线和阴影射线，ClosestHit 返回命中与材质信息。Vulkan 管线递归深度固定为 1。
-- `maxBounces` 控制最多 1–64 次表面散射。更深层顶点使用初始 RIS 估计直接光并计入间接光，路径使用俄罗斯轮盘终止。修改反弹次数后复用渲染图和 Pipeline，并重置时域历史。BLAS 按几何缓存，TLAS 按提交帧更新。
+- ReSTIR 子路线主命中的直接光使用原版 ReSTIR DI：完整光源样本的初始 RIS → 时域复用 → 一轮空间复用 → 可见性着色。点光、聚光、方向光、矩形、发光三角形和启用的环境共同参与采样。
+- ReSTIR 光源候选先确定光源和面内位置，再用实际位置的发光、BRDF 与几何项生成权重；一个 BRDF 方向候选通过 balance MIS 一起进入初始 reservoir。
+- 两条子路线都在 RayGen 中循环追踪续射线和阴影射线，ClosestHit 共用 [ray_tracing.slang](../shaders/raytracing/realtime/ray_tracing.slang) 返回命中与材质信息。Vulkan 管线递归深度固定为 1。
+- `maxBounces` 控制最多 1–64 次表面散射。ReSTIR 更深层顶点使用初始 RIS 估计直接光，Simple 每个顶点使用一次普通光源采样及 BRDF 续射线；两者均计入间接光，并使用俄罗斯轮盘终止。修改反弹次数后复用渲染图和 Pipeline，并重置时域历史。BLAS 按几何缓存，TLAS 按提交帧更新。
 - 关闭 SVGF 时输出 RGBA16F 合并颜色；开启时分别输出直接光、间接光、`emission` 与主命中材质的反射率 `saturate(diffuseColor + F0)`。两种模式均输出原始线性深度与法线，主射线使用固定的像素内采样位置。
-- `emission` 保存相机直接可见的发光表面、面光源与环境。主表面的直接光由 ReSTIR 最后阶段写入，更深层路径归入间接光，合并颜色为三路之和。
+- `emission` 保存相机直接可见的发光表面、面光源与环境。ReSTIR 主表面的直接光由最后的复用阶段写入；Simple 将主表面的光源采样与一次散射后命中光源的贡献归入直接光。更深层路径归入间接光，合并颜色为三路之和。
 
 [RayTracingScenePass](../src/render/raytracing/realtime/RayTracingScenePass.cpp) 按有效材质的非零发光系数筛选子网格实例，准备命中记录及每个实例的三角形任务。GPU 为每个发光三角形生成一条 80 B 记录，保存世界空间顶点与边、实际面积、三个顶点的 UV 和共享材质索引；非均匀缩放、剪切及实例变换均在此应用。缓冲开头的 16 B header 保存有效三角形数量，容量增长由 Graph 管理，描述符按资源版本更新。该组织沿用 [RTXDI 的发光网格展开方式](https://github.com/NVIDIA-RTX/RTXDI/blob/main/Doc/Integration.md#mesh-light-processing)。
 
-ReSTIR 参数位于 `feature.restir`：默认生成 32 个光源候选和一个 BRDF 候选，启用时域复用及 3 邻居、30 像素半径的一轮空间复用。历史计数限制为当前初始计数的 20 倍。合并时在当前表面重算目标值，按原论文 Algorithm 6 检查来源表面的支持域与可见性并归一化；各阶段使用独立随机流和明确的缓冲读写顺序。公式、数据与资源生命周期见 [ReSTIR](ReSTIR.md)。
+ReSTIR 子路线的参数位于 `feature.restir`，Simple 不使用这些参数，也不分配 reservoir 缓冲。ReSTIR 默认生成 32 个光源候选和一个 BRDF 候选，启用时域复用及 3 邻居、30 像素半径的一轮空间复用。历史计数限制为当前初始计数的 20 倍。合并时在当前表面重算目标值，按原论文 Algorithm 6 检查来源表面的支持域与可见性并归一化；各阶段使用独立随机流和明确的缓冲读写顺序。公式、数据与资源生命周期见 [ReSTIR](ReSTIR.md)。
 
 相机运动通过上一帧矩阵重投影，检查对象、法线和深度匹配；场景几何、变换、材质、光源、环境或相关配置变化时重置 reservoir 历史。ReSTIR 的采样历史与 SVGF 的颜色历史各自维护，关闭 SVGF 时仍可复用光源样本。
 
@@ -64,6 +67,8 @@ Shader 入口：[main.slang](../shaders/raytracing/offline/main.slang)。材质�
 - 散射实现见 [PBRT 材质](pbrt/材质.md)，光源和限制见 [PBRT 光源](pbrt/光源.md)。两种算法均通过 Compute Resolve 输出颜色，再接入 HDR 后处理。
 
 ## 帧与资源
+
+下述曝光流程对应 `Post process = RenderLab`；`Falcor` 选项使用独立的 [Falcor 后处理](PostProcess.md)。
 
 曝光在逐帧准备时选择配置：`editorCamera.exposure` 优先，否则使用全局 `toneMapping.exposure`。两处均支持手动和自动模式，色调映射算法由全局配置选择。
 

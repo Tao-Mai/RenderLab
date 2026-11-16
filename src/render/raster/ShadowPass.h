@@ -3,7 +3,11 @@
 #include "render/device/Device.h"
 
 #include "render/graph/RenderGraph.h"
-#include "render/raster/ShadowData.h"
+#include "render/RendererConfig.h"
+#include "render/resources/ShaderData.h"
+
+#include <span>
+#include <vector>
 
 class ShadowPass
 {
@@ -38,14 +42,26 @@ private:
         uint32_t                  viewLayerCount = 1;
     };
 
+    struct ShadowData
+    {
+        std::vector<PointShadowData>       pointShadows;
+        std::vector<SpotShadowData>        spotShadows;
+        std::vector<RectAreaShadowData>    rectAreaShadows;
+        std::vector<DirectionalShadowData> directionalShadows;
+    };
+
     ShadowTarget              point;
     ShadowTarget              spot;
     ShadowTarget              rectArea;
     ShadowTarget              directional;
-    ShadowFrameData           shadowData;
+    ShadowData                shadowData;
     uint32_t                  cascadeCount = 0;
     vk::PipelineLayout        pipelineLayout;
     std::vector<uint32_t>     visibilityMasks;
+
+    void prepareShadowData(
+        const SceneUniforms& view, std::span<const LightData> frameLights, const RenderFeature::Shadow& shadows
+    );
 
     void recordShadow(
         RenderGraph&             graph,

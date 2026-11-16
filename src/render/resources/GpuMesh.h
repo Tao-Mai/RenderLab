@@ -21,7 +21,7 @@ public:
     GpuMesh& operator=(GpuMesh&&) noexcept = default;
 
     void                                                 bind(vk::raii::CommandBuffer& commandBuffer) const;
-    [[nodiscard]] uint32_t                               indexCount() const;
+    [[nodiscard]] uint32_t                               indexCount() const { return indexTotal; }
     [[nodiscard]] const std::vector<MeshAsset::Submesh>& submeshes() const { return parts; }
     [[nodiscard]] const Buffer&                          vertices() const { return vertexBuffer; }
     [[nodiscard]] const Buffer&                          indices() const { return indexBuffer; }

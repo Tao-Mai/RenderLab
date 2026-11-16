@@ -1,6 +1,6 @@
 {
     "initialScene": {
-        "value": "bistro"
+        "value": "bistro_rtxdi"
     },
     "paths": {
         "assets": "../assets",

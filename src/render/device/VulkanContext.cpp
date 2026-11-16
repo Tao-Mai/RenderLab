@@ -47,27 +47,6 @@ void VulkanContext::reset() noexcept
     window                    = nullptr;
 }
 
-const vk::raii::Instance& VulkanContext::instanceHandle() const { return instance; }
-
-const vk::raii::PhysicalDevice& VulkanContext::physicalDeviceHandle() const
-{
-    return physicalDevice;
-}
-
-const vk::raii::Device& VulkanContext::deviceHandle() const { return device; }
-vk::raii::Queue& VulkanContext::queueHandle() { return queue; }
-vk::SurfaceKHR VulkanContext::surfaceHandle() const { return *surface; }
-uint32_t VulkanContext::graphicsQueueFamilyIndex() const { return graphicsQueueFamilyIndex_; }
-const vk::PhysicalDeviceProperties& VulkanContext::properties() const
-{
-    return deviceProperties;
-}
-
-const vk::PhysicalDeviceFeatures& VulkanContext::supportedFeatures() const
-{
-    return deviceFeatures;
-}
-
 void VulkanContext::createInstance()
 {
     constexpr vk::ApplicationInfo appInfo{.pApplicationName = "Hello Triangle",

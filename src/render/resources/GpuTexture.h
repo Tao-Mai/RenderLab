@@ -19,9 +19,9 @@ public:
     GpuTexture(const GpuTexture&)            = delete;
     GpuTexture& operator=(const GpuTexture&) = delete;
 
-    [[nodiscard]] vk::ImageView imageView() const;
-    [[nodiscard]] vk::Image imageHandle() const;
-    [[nodiscard]] const vk::ImageCreateInfo& imageInfo() const;
+    [[nodiscard]] vk::ImageView             imageView() const { return *view; }
+    [[nodiscard]] vk::Image                 imageHandle() const { return *image; }
+    [[nodiscard]] const vk::ImageCreateInfo& imageInfo() const { return creationInfo; }
 
 private:
     vk::raii::DeviceMemory imageMemory  = nullptr;

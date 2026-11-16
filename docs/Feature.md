@@ -44,7 +44,8 @@
 ## 光追采样与累积
 
 - 漫反射 / GGX 混合 PDF、GGX VNDF 方向采样。
-- 实时主命中使用原版 [ReSTIR DI](ReSTIR.md)：完整光源样本初始 RIS、时域复用、一轮空间复用、来源支持域与可见性归一化。
+- 实时光追可切换 ReSTIR / [Simple](SimpleRayTracing.md) 两条子路线，共用多次弹射与可选 SVGF。
+- ReSTIR 主命中使用原版 [ReSTIR DI](ReSTIR.md)：完整光源样本初始 RIS、时域复用、一轮空间复用、来源支持域与可见性归一化。
 - 点光、聚光、方向光、矩形、实例展开的发光三角形和启用的环境共同采样；初始光源与 BRDF 候选通过 balance MIS 进入 reservoir。
 - 可调候选数、时域 / 空间复用、历史计数上限、邻居数量和半径。更深层路径使用初始 RIS 估计光照。
 - 可见性射线、俄罗斯轮盘终止。两条光追路线分别使用 RayGen 路径循环，管线递归深度固定为 1；`maxBounces` 独立控制 1–64 次表面散射，修改后重置时域历史 / 离线累积。
@@ -60,6 +61,7 @@ SVGF 按静态场景重建位置，支持相机运动；光追着色使用基础
 - RGBA16F HDR 颜色缓冲。
 - 手动 EV100 / 亮度直方图自动曝光、明暗适应和曝光补偿，支持场景相机覆盖全局配置。
 - 可切换 Tone Mapping。
+- [Falcor 后处理](PostProcess.md)：独立可选的 ToneMapper 与 SimplePostFX，含白平衡、星芒、镜头效果和调色。
 - Scattering Bloom：分离式高斯降采样、逐级散射混合，可调强度、Scatter、高斯半径与层数。
 - HDR、Bloom 等渲染选项可运行时切换并持久化。
 

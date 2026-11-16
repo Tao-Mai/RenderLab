@@ -13,15 +13,15 @@ public:
     void init(Window& window);
     void reset() noexcept;
 
-    [[nodiscard]] const vk::raii::Instance&       instanceHandle() const;
-    [[nodiscard]] const vk::raii::PhysicalDevice& physicalDeviceHandle() const;
-    [[nodiscard]] const vk::raii::Device&         deviceHandle() const;
-    [[nodiscard]] vk::raii::Queue&                queueHandle();
-    [[nodiscard]] vk::SurfaceKHR                  surfaceHandle() const;
-    [[nodiscard]] uint32_t                        graphicsQueueFamilyIndex() const;
-    [[nodiscard]] const vk::PhysicalDeviceProperties& properties() const;
-    [[nodiscard]] const vk::PhysicalDeviceFeatures& supportedFeatures() const;
-    [[nodiscard]] bool supportsRayTracing() const { return rayTracingSupported; }
+    [[nodiscard]] const vk::raii::Instance&       instanceHandle() const { return instance; }
+    [[nodiscard]] const vk::raii::PhysicalDevice& physicalDeviceHandle() const { return physicalDevice; }
+    [[nodiscard]] const vk::raii::Device&         deviceHandle() const { return device; }
+    [[nodiscard]] vk::raii::Queue&                queueHandle() { return queue; }
+    [[nodiscard]] vk::SurfaceKHR                  surfaceHandle() const { return *surface; }
+    [[nodiscard]] uint32_t                        graphicsQueueFamilyIndex() const { return graphicsQueueFamilyIndex_; }
+    [[nodiscard]] const vk::PhysicalDeviceProperties& properties() const { return deviceProperties; }
+    [[nodiscard]] const vk::PhysicalDeviceFeatures&   supportedFeatures() const { return deviceFeatures; }
+    [[nodiscard]] bool                                supportsRayTracing() const { return rayTracingSupported; }
 
 private:
     Window*                          window = nullptr;
