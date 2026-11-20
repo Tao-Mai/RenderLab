@@ -1,1 +1,2 @@
-target_sources(RenderLabPasses PRIVATE TransparentPass.cpp)
+renderlab_add_plugin(TransparentPass TransparentPass.cpp)
+target_link_libraries(TransparentPass PRIVATE RenderLabForwardPbr)

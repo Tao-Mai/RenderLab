@@ -4,12 +4,21 @@
 
 #include <array>
 #include <vector>
+#include <glm/vec3.hpp>
 
 class Window;
 
 class InputManager
 {
 public:
+    struct NavigationBasis
+    {
+        glm::vec3 forward{};
+        glm::vec3 right{};
+        glm::vec3 up{};
+        bool      active = false;
+    };
+
     InputManager() = default;
     ~InputManager();
     InputManager(const InputManager&) = delete;
@@ -20,6 +29,8 @@ public:
     // Process queued Press / Release events, then generate Hold commands from Press states.
     void tick();
     [[nodiscard]] bool get(Command command) const;
+    void setNavigation(const NavigationBasis& basis) { navigationBasis = basis; }
+    [[nodiscard]] const NavigationBasis& navigation() const { return navigationBasis; }
 
 private:
     static constexpr size_t commandCount = static_cast<size_t>(Command::GizmoScale) + 1;
@@ -34,6 +45,7 @@ private:
     };
 
     Window* window = nullptr;
+    NavigationBasis navigationBasis;
     std::vector<CommandBinding> bindings;
     std::vector<InputEvent> inputEvents;
     // Latest input action: Press means currently down; Release means up.

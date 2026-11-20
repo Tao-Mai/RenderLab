@@ -14,12 +14,13 @@
 #include "render/graph/EndPass.h"
 #include "render/graph/PythonGraph.h"
 #include "render/graph/RenderGraph.h"
-#include "render/graph/RenderPassRegistry.h"
+#include "render/graph/RenderGraphCompiler.h"
+#include "render/plugins/PluginManager.h"
 #include "render/editor/EditorFrameInput.h"
 #include "render/raytracing/SceneAccelerationStructures.h"
 #include "render/device/Swapchain.h"
 #include "render/resources/MaterialTable.h"
-#include "passes/OfflinePathTracingPass/OfflineScene.h"
+#include "render/raytracing/offline/OfflineScene.h"
 #include "render/resources/RenderResourceManager.h"
 
 #include <array>
@@ -45,7 +46,7 @@ public:
     Renderer(const Renderer&)            = delete;
     Renderer& operator=(const Renderer&) = delete;
 
-    void              init(RenderPassRegistry registry);
+    void              init();
     void              rebuildGraph();
     void              recreateSwapchain();
     RenderFrameResult render(
@@ -58,7 +59,8 @@ public:
 
     [[nodiscard]] VulkanContext& vulkanContext() { return vulkan; }
     [[nodiscard]] Swapchain&     swapchainHandle() { return swapchain; }
-    [[nodiscard]] const RenderPassRegistry& renderPasses() const { return passes; }
+    [[nodiscard]] const PluginManager& plugins() const { return pluginManager; }
+    [[nodiscard]] const RenderGraphCompiler& graphPasses() const { return graphCompiler; }
     [[nodiscard]] const RenderGraphDefinition* activeRenderGraph() const { return graphDefinition; }
     [[nodiscard]] bool showObjectList() const { return graphShowsObjectList; }
     [[nodiscard]] bool supportsObjectPicking() const { return pickingReadback.id != RenderGraph::kInvalidHandle; }
@@ -95,7 +97,8 @@ private:
     std::vector<GraphParameterControl> editorControls;
     uint32_t                     frameIndex           = 0;
     uint32_t                     activeFramesInFlight = maxFramesInFlight;
-    RenderPassRegistry           passes;
+    PluginManager                pluginManager;
+    RenderGraphCompiler          graphCompiler;
     EndPass                      endPass;
     RenderGraph                  graph;
     RenderGraph::BufferHandle    pickingReadback;

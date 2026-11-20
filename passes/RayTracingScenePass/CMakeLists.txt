@@ -1,3 +1,3 @@
-target_sources(RenderLabPasses PRIVATE RayTracingScenePass.cpp)
+renderlab_add_plugin(RayTracingScenePass RayTracingScenePass.cpp)
 
 renderlab_shader(prepare_emissive_triangles prepare_lights.slang prepare_emissive_triangles ENTRIES computeMain)

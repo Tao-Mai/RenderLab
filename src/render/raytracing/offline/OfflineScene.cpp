@@ -1,4 +1,4 @@
-#include "passes/OfflinePathTracingPass/OfflineScene.h"
+#include "render/raytracing/offline/OfflineScene.h"
 
 #include "asset/AssetManager.h"
 #include "asset/AssetDataManager.h"

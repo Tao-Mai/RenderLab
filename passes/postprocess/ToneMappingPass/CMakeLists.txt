@@ -1,3 +1,3 @@
-target_sources(RenderLabPasses PRIVATE ToneMappingPass.cpp)
+renderlab_add_plugin(ToneMappingPass ToneMappingPass.cpp)
 
 renderlab_shader(tonemapping tonemapping.slang tonemapping)

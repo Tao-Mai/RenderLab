@@ -1,5 +1,4 @@
-target_sources(RenderLabPasses PRIVATE ShadowPass.cpp)
-target_sources(RenderLabPassEditors PRIVATE ShadowPassUi.cpp)
+renderlab_add_plugin(ShadowPass ShadowPass.cpp ShadowPassUi.cpp)
 
 foreach(type IN ITEMS 0 1 2 3)
     set(names shadow shadow.directional shadow.rect_area shadow.spot)

@@ -5,11 +5,10 @@
 class SVGF : public ConfigurablePass<SvgfSettings>
 {
 public:
-    SVGFFilter::Output setup(RenderGraph& graph, const PassSetup& setup, RayTracingPass::Output traced)
-    {
-        const auto lighting = graph.addPass(reprojection, setup, traced);
-        return filter.setup(graph, setup, traced, lighting, reprojection);
-    }
+    SVGF() : ConfigurablePass(PassExecution::Composite) {}
+
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
 
 private:
     SVGFReprojection reprojection{parameters};

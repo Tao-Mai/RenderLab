@@ -1,5 +1,4 @@
-target_sources(RenderLabPasses PRIVATE OfflinePathTracingPass.cpp OfflineScene.cpp)
-target_sources(RenderLabPassEditors PRIVATE OfflinePathTracingPassUi.cpp)
+renderlab_add_plugin(OfflinePathTracingPass OfflinePathTracingPass.cpp OfflinePathTracingPassUi.cpp)
 
 renderlab_shader(offline_pathtracing main.slang offline_pathtracing
     DEFINES BDPT=0 ENTRIES raygenMain missMain visibilityMissMain closestHitMain)

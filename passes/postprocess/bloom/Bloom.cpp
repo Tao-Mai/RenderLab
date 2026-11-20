@@ -48,8 +48,18 @@ void BloomSettings::validate() const
     CHECK(levels > 0 && levels <= kMaxBloomLevels);
 }
 
-Bloom::Output Bloom::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle hdrColor)
+RenderPassReflection Bloom::reflect(const PassSetup&) const
 {
+    RenderPassReflection reflection;
+    reflection.input("hdrColor", PortKind::Image);
+    reflection.output("color", PortKind::Image);
+    return reflection;
+}
+
+void Bloom::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+{
+    const auto hdrColor = ports.image("hdrColor");
+
     DCHECK(graph.imageInfo(hdrColor).format == kHdrColorFormat);
     const auto features =
         setup.vulkan.physicalDeviceHandle().getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
@@ -60,7 +70,7 @@ Bloom::Output Bloom::setup(RenderGraph& graph, const PassSetup& setup, RenderGra
     const auto add = [&](Stage stage, RenderGraph::ImageHandle source, RenderGraph::ImageHandle base = {})
     {
         auto& pass = *filters.emplace_back(std::make_unique<FilterPass>(stage, parameters));
-        return graph.addPass(pass, setup, source, base).color;
+        return graph.addStage("Bloom stage", pass, setup, source, base).color;
     };
 
     std::vector<RenderGraph::ImageHandle> pyramid;
@@ -79,10 +89,10 @@ Bloom::Output Bloom::setup(RenderGraph& graph, const PassSetup& setup, RenderGra
     auto blurred = pyramid.back();
     for (size_t level = pyramid.size() - 1; level > 0; --level)
         blurred = add(Stage::Upsample, blurred, pyramid[level - 1]);
-    return {add(Stage::Composite, hdrColor, blurred)};
+    ports.setOutput("color", add(Stage::Composite, hdrColor, blurred));
 }
 
-Bloom::Output Bloom::FilterPass::setup(
+Bloom::Output Bloom::FilterPass::compile(
     RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle input, RenderGraph::ImageHandle baseInput
 )
 {
@@ -151,7 +161,7 @@ Bloom::Output Bloom::FilterPass::setup(
     return {color};
 }
 
-void Bloom::FilterPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
+void Bloom::FilterPass::bindResources(RenderGraph& graph, const PassSetup& setup) const
 {
     const std::array images{
         vk::DescriptorImageInfo{

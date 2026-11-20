@@ -1,5 +1,4 @@
-target_sources(RenderLabPasses PRIVATE FalcorPostProcess.cpp FalcorPostProcessConfig.cpp)
-target_sources(RenderLabPassEditors PRIVATE FalcorPostProcessUi.cpp)
+renderlab_add_plugin(FalcorPostProcess FalcorPostProcess.cpp FalcorPostProcessConfig.cpp FalcorPostProcessUi.cpp)
 
 foreach(stage IN ITEMS 0 1 2)
     set(binary falcor_simple_post_fx)

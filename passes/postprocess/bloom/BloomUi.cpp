@@ -1,6 +1,6 @@
 #include "passes/postprocess/Bloom/Bloom.h"
 
-#include "editor/PassEditorRegistry.h"
+#include "editor/PassEditor.h"
 #include "editor/SettingsWidgets.h"
 
 namespace
@@ -26,7 +26,7 @@ bool drawSettings(BloomSettings& bloom, const Bloom&, const PassEditorContext&)
 }
 }
 
-void registerBloomEditor(PassEditorRegistry& editors)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    editors.add<Bloom, drawSettings>("Bloom");
+    registry.registerClass<Bloom>(makePassEditor<Bloom, drawSettings>("Bloom"));
 }

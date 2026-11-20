@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/graph/RenderPass.h"
+
 #include "passes/OfflinePathTracingPass/OfflinePathTracingSettings.h"
 #include "render/graph/PassSettings.h"
 
@@ -9,7 +11,7 @@
 #include "render/RenderView.h"
 #include "render/device/Device.h"
 #include "render/graph/RenderGraph.h"
-#include "passes/OfflinePathTracingPass/OfflineScene.h"
+#include "render/raytracing/offline/OfflineScene.h"
 #include "render/resources/ShaderData.h"
 
 #include <array>
@@ -22,15 +24,18 @@
 class OfflinePathTracingPass : public ConfigurablePass<OfflinePathTracingSettings>
 {
 public:
-    struct Output
+    [[nodiscard]] nlohmann::json statistics() const override
     {
-        RenderGraph::ImageHandle rayImage;
-    };
+        return {{"sampleCount", sampleCount()}, {"sampleProgress", sampleProgress()},
+                {"preparingPipeline", preparingPipeline()}};
+    }
 
-    Output setup(RenderGraph& graph, const PassSetup& setup);
-    void   writeDescriptorSet(RenderGraph& graph, const PassSetup& setup);
-    void   prepare(RenderGraph& graph, const PassFrame& execution);
-    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution);
+
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
+    void   bindResources(RenderGraph& graph, const PassSetup& setup) override;
+    void   prepare(RenderGraph& graph, const PassFrame& execution) override;
+    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) override;
 
     [[nodiscard]] uint32_t sampleCount() const { return accumulatedSamples; }
     [[nodiscard]] float    sampleProgress() const { return accumulatedProgress; }

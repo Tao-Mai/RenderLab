@@ -94,8 +94,14 @@ void OfflinePathTracingSettings::validate() const
           bdpt.misHeuristic == BdptMisHeuristic::Power);
 }
 
-OfflinePathTracingPass::Output
-OfflinePathTracingPass::setup(RenderGraph& graph, const PassSetup& setup)
+RenderPassReflection OfflinePathTracingPass::reflect(const PassSetup&) const
+{
+    RenderPassReflection reflection;
+    reflection.output("rayImage", PortKind::Image);
+    return reflection;
+}
+
+void OfflinePathTracingPass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
 {
     CHECK(setup.vulkan.supportsRayTracing(), "selected GPU does not support the ray tracing route");
 
@@ -207,7 +213,7 @@ OfflinePathTracingPass::setup(RenderGraph& graph, const PassSetup& setup)
     tileIndex           = 0;
     processedPixels     = 0;
     resetAccumulation   = true;
-    return {rayImage};
+    ports.setOutput("rayImage", rayImage);
 }
 
 void OfflinePathTracingPass::preparePipeline(const PassSetup& setup)
@@ -544,7 +550,7 @@ void OfflinePathTracingPass::updateTlasDescriptor(const PassFrame& execution, Fr
     }
 }
 
-void OfflinePathTracingPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup)
+void OfflinePathTracingPass::bindResources(RenderGraph& graph, const PassSetup& setup)
 {
     const auto imageInfo = [&](RenderGraph::ImageHandle image)
     {

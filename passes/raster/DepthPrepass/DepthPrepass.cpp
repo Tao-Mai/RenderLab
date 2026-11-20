@@ -1,8 +1,16 @@
 #include "passes/raster/DepthPrepass/DepthPrepass.h"
+#include "render/plugins/PluginManager.h"
 #include "render/RenderView.h"
 #include "render/device/VulkanContext.h"
 
-DepthPrepass::Output DepthPrepass::setup(RenderGraph& graph, const PassSetup& setup)
+RenderPassReflection DepthPrepass::reflect(const PassSetup&) const
+{
+    RenderPassReflection reflection;
+    reflection.output("depth", PortKind::Image, false, vk::Format::eD32Sfloat);
+    return reflection;
+}
+
+void DepthPrepass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
 {
     renderContext().materialTable->use(graph, vk::PipelineStageFlagBits2::eFragmentShader);
     CHECK(
@@ -27,14 +35,19 @@ DepthPrepass::Output DepthPrepass::setup(RenderGraph& graph, const PassSetup& se
             .depthFormat = vk::Format::eD32Sfloat,
         }
     );
-    return {depth};
+    ports.setOutput("depth", depth);
 }
 
-void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
+void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution)
 {
     attachments.begin(graph, commandBuffer, execution.view.viewport);
     bindMeshGeometry(commandBuffer, execution);
     MeshDrawRecorder recorder{commandBuffer, execution};
     recorder.drawOpaque([&](const auto& material) { return pipelines.get(material); });
     commandBuffer.endRendering();
+}
+
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+{
+    registry.registerClass<DepthPrepass>();
 }

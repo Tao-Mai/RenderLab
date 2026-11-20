@@ -1,25 +1,19 @@
 #pragma once
 
+#include "render/graph/RenderPass.h"
+
 #include "render/raster/MeshDraw.h"
 #include "render/raster/RasterAttachments.h"
 
 #include <array>
 
-class GBufferPass
+class GBufferPass : public RenderPass
 {
 public:
-    struct Output
-    {
-        RenderGraph::ImageHandle diffuseOcclusion;
-        RenderGraph::ImageHandle normalRoughness;
-        RenderGraph::ImageHandle emissiveSpecularF90;
-        RenderGraph::ImageHandle specularF0DiffuseFresnel;
-        RenderGraph::ImageHandle sheenColorRoughness;
-        RenderGraph::ImageHandle depth;
-    };
 
-    Output setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle depthHandle);
-    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
+    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) override;
 
 private:
     static constexpr std::array kColorFormats{

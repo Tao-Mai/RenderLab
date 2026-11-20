@@ -1,7 +1,6 @@
 #pragma once
 
 #include "asset/SceneAsset.h"
-#include "editor/PassEditorRegistry.h"
 #include "editor/SceneHierarchy.h"
 #include "render/ViewportRect.h"
 
@@ -33,7 +32,6 @@ public:
 
     void beginFrame(bool showObjectList);
     [[nodiscard]] int objectListInset(int windowWidth);
-    void setPassEditors(PassEditorRegistry editors) { passEditors = std::move(editors); }
     SceneObjectActions drawHierarchy(SceneAsset& scene, uint32_t& selectedId)
     {
         return hierarchyDockId ? hierarchy.draw(scene, selectedId, hierarchyDockId) : SceneObjectActions{};
@@ -61,5 +59,4 @@ private:
     glm::vec2        sceneSize{1.0f};
     ViewportRect     scenePixels;
     SceneHierarchy   hierarchy;
-    PassEditorRegistry passEditors;
 };

@@ -1,4 +1,6 @@
 #include "passes/raster/ScenePass/ScenePass.h"
+#include "render/plugins/PluginManager.h"
+#include "render/graph/PassPorts.h"
 
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
@@ -8,15 +10,24 @@
 #include "render/raster/MeshDraw.h"
 #include "render/resources/MaterialTable.h"
 
-ScenePass::Output ScenePass::setup(
-    RenderGraph&              graph,
-    const PassSetup&          setup,
-    RenderGraph::ImageHandle  target,
-    RenderGraph::ImageHandle  depthHandle,
-    ShadowResources           shadow,
-    RenderGraph::BufferHandle lights
-)
+RenderPassReflection ScenePass::reflect(const PassSetup&) const
 {
+    RenderPassReflection reflection;
+    reflection.input("target", PortKind::Image);
+    reflection.input("depth", PortKind::Image, false, vk::Format::eD32Sfloat);
+    reflection.input("lights", PortKind::Buffer);
+    pass_ports::inputs<ShadowResources>(reflection);
+    reflection.output("color", PortKind::Image);
+    return reflection;
+}
+
+void ScenePass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+{
+    const auto target = ports.image("target");
+    const auto depthHandle = ports.image("depth");
+    const auto lights = ports.buffer("lights");
+    const auto shadow = pass_ports::read<ShadowResources>(ports);
+
     renderContext().materialTable->use(graph, vk::PipelineStageFlagBits2::eFragmentShader);
     useRasterLighting(graph, lights, shadow);
 
@@ -47,7 +58,7 @@ ScenePass::Output ScenePass::setup(
         graph.imageInfo(color).format, {.depthCompare = vk::CompareOp::eEqual, .depthWrite = false},
         config.feature.ibl, config.renderPath != RenderPath::Deferred
     );
-    return {color};
+    ports.setOutput("color", color);
 }
 
 void ScenePass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution)
@@ -57,4 +68,9 @@ void ScenePass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuff
     MeshDrawRecorder recorder{commandBuffer, execution};
     recorder.drawOpaque([&](const auto& material) { return pipelines.get(material); });
     commandBuffer.endRendering();
+}
+
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+{
+    registry.registerClass<ScenePass>();
 }

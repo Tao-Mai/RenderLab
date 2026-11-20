@@ -1,1 +1,1 @@
-target_sources(RenderLabPasses PRIVATE EditorPickingCopyPass.cpp)
+renderlab_add_plugin(EditorPickingCopyPass EditorPickingCopyPass.cpp)

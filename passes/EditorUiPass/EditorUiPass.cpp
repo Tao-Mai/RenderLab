@@ -1,10 +1,20 @@
 #include "passes/EditorUiPass/EditorUiPass.h"
+#include "render/plugins/PluginManager.h"
 
 #include "render/editor/EditorFrameInput.h"
 
-EditorUiPass::Output
-EditorUiPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle colorHandle)
+RenderPassReflection EditorUiPass::reflect(const PassSetup&) const
 {
+    RenderPassReflection reflection;
+    reflection.input("color", PortKind::Image);
+    reflection.output("color", PortKind::Image);
+    return reflection;
+}
+
+void EditorUiPass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+{
+    const auto colorHandle = ports.image("color");
+
     color = graph.write(colorHandle);
     graph.use(
         color,
@@ -14,10 +24,10 @@ EditorUiPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::Ima
             .layout = vk::ImageLayout::eColorAttachmentOptimal,
         }
     );
-    return {color};
+    ports.setOutput("color", color);
 }
 
-void EditorUiPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
+void EditorUiPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution)
 {
     const auto& editor = execution.editor;
     if (!editor.recordUi)
@@ -41,4 +51,9 @@ void EditorUiPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandB
     });
     editor.recordUi(*commandBuffer);
     commandBuffer.endRendering();
+}
+
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+{
+    registry.registerClass<EditorUiPass>();
 }

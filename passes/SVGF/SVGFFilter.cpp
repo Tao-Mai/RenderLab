@@ -33,10 +33,10 @@ struct FilterParameters
 static_assert(sizeof(FilterParameters) == 24);
 }  // namespace
 
-SVGFFilter::Output SVGFFilter::setup(
+SVGFFilter::Output SVGFFilter::compile(
     RenderGraph&             graph,
     const PassSetup&         setup,
-    RayTracingPass::Output   traced,
+    DenoiserInputs   traced,
     SVGFReprojection::Output lighting,
     const SVGFReprojection&  reprojection
 )
@@ -64,7 +64,7 @@ SVGFFilter::Output SVGFFilter::setup(
         const bool last       = iteration + 1 == kSvgfFilterIterations;
         const auto readIndex  = iteration % signals.size();
         const auto writeIndex = (iteration + 1) % signals.size();
-        const auto filtered   = graph.addPass(
+        const auto filtered   = graph.addStage("SVGF filter",
             pass,
             setup,
             FilterInput{
@@ -87,7 +87,7 @@ SVGFFilter::Output SVGFFilter::setup(
     std::unreachable();
 }
 
-SVGFFilter::FilterOutput SVGFFilter::FilterPass::setup(RenderGraph& graph, const PassSetup& setup, FilterInput source)
+SVGFFilter::FilterOutput SVGFFilter::FilterPass::compile(RenderGraph& graph, const PassSetup& setup, FilterInput source)
 {
     input  = source;
     output = {};
@@ -156,7 +156,7 @@ void SVGFFilter::FilterPass::createPipeline(const VulkanContext& vulkan)
     descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
 }
 
-void SVGFFilter::FilterPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
+void SVGFFilter::FilterPass::bindResources(RenderGraph& graph, const PassSetup& setup) const
 {
     const std::array handles{
         input.direct,

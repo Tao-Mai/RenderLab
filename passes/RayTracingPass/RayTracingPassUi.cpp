@@ -1,6 +1,6 @@
 #include "passes/RayTracingPass/RayTracingPass.h"
 
-#include "editor/PassEditorRegistry.h"
+#include "editor/PassEditor.h"
 #include "editor/SettingsWidgets.h"
 
 namespace
@@ -67,7 +67,7 @@ bool drawSettings(RayTracingSettings& rayTracing, const RayTracingPass&, const P
 }
 }
 
-void registerRayTracingPassEditor(PassEditorRegistry& editors)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    editors.add<RayTracingPass, drawSettings>("Ray tracing");
+    registry.registerClass<RayTracingPass>(makePassEditor<RayTracingPass, drawSettings>("Ray tracing"));
 }

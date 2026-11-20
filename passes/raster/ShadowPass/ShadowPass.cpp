@@ -1,4 +1,5 @@
 #include "passes/raster/ShadowPass/ShadowPass.h"
+#include "render/graph/PassPorts.h"
 
 #include "asset/BuiltinAssets.h"
 #include "core/Context.h"
@@ -249,8 +250,18 @@ bool ShadowSettings::requiresGraphRebuild(const ShadowSettings& current) const
         rectAreaShadowMapSize != current.rectAreaShadowMapSize;
 }
 
-ShadowResources ShadowPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::BufferHandle lights)
+RenderPassReflection ShadowPass::reflect(const PassSetup&) const
 {
+    RenderPassReflection reflection;
+    reflection.input("lights", PortKind::Buffer);
+    pass_ports::outputs<ShadowResources>(reflection);
+    return reflection;
+}
+
+void ShadowPass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+{
+    const auto lights = ports.buffer("lights");
+
     const RenderGraph::MemoryAccess shaderRead{
         .stages = vk::PipelineStageFlagBits2::eVertexShader | vk::PipelineStageFlagBits2::eFragmentShader,
         .access = vk::AccessFlagBits2::eShaderStorageRead,
@@ -375,7 +386,7 @@ ShadowResources ShadowPass::setup(RenderGraph& graph, const PassSetup& setup, Re
     spot.buffer        = createBuffer(kMaxSpotLightShadow * sizeof(SpotShadowData));
     rectArea.buffer    = createBuffer(kMaxRectAreaLightShadow * sizeof(RectAreaShadowData));
     directional.buffer = createBuffer(kMaxDirectionalLightShadow * sizeof(DirectionalShadowData));
-    return {
+    pass_ports::write(ports, ShadowResources{
         point.image,
         spot.image,
         rectArea.image,
@@ -384,7 +395,7 @@ ShadowResources ShadowPass::setup(RenderGraph& graph, const PassSetup& setup, Re
         spot.buffer,
         rectArea.buffer,
         directional.buffer,
-    };
+    });
 }
 
 void ShadowPass::prepareShadowData(
@@ -566,7 +577,7 @@ void ShadowPass::prepare(RenderGraph& graph, const PassFrame& frame)
     upload(directional.buffer, shadowData.directionalShadows);
 }
 
-void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
+void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution)
 {
     const auto& lights = execution.renderData.lights;
     const auto& ranges = execution.renderData.lightRanges;

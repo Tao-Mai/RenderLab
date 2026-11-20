@@ -45,6 +45,7 @@ void RenderGraph::releaseResources() noexcept
     nodes.clear();
     sortedNodes.clear();
     nodeStorage.clear();
+    outputResources.clear();
 
     setupNode = nullptr;
 }
@@ -61,8 +62,8 @@ void RenderGraph::compile(const PassSetup& setup)
     compileNodes();
     allocateResources();
     for (auto* node : sortedNodes)
-        if (node->writeDescriptorSet)
-            node->writeDescriptorSet(*this, setup);
+        if (node->bindResources)
+            node->bindResources(*this, setup);
 }
 
 void RenderGraph::beginFrame(uint32_t frameIndex)

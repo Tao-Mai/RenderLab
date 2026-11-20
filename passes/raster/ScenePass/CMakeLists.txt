@@ -1,1 +1,2 @@
-target_sources(RenderLabPasses PRIVATE ScenePass.cpp)
+renderlab_add_plugin(ScenePass ScenePass.cpp)
+target_link_libraries(ScenePass PRIVATE RenderLabForwardPbr)

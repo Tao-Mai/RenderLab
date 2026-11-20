@@ -2,14 +2,19 @@
 foreach(check IN ITEMS CaptureScene SceneImportCheck OfflineRenderingCheck MaterialWorkflowCheck SvgfToggleCheck FalcorPostProcessCheck)
     add_executable(${check} EXCLUDE_FROM_ALL ${check}.cpp)
     target_link_libraries(${check} PRIVATE RenderLabRuntime)
+    target_include_directories(${check} PRIVATE "${RenderLab_SOURCE_DIR}")
     target_precompile_headers(${check} REUSE_FROM RenderLabCore)
-    renderlab_copy_runtime_libraries(${check})
+    add_dependencies(${check} RenderLabPassPlugins)
+endforeach()
+
+foreach(check IN ITEMS CaptureScene FalcorPostProcessCheck)
+    target_sources(${check} PRIVATE ../passes/postprocess/FalcorPostProcess/FalcorPostProcessConfig.cpp)
 endforeach()
 
 add_executable(PassSettingsCheck EXCLUDE_FROM_ALL PassSettingsCheck.cpp)
 target_link_libraries(PassSettingsCheck PRIVATE RenderLabCore)
 target_precompile_headers(PassSettingsCheck REUSE_FROM RenderLabCore)
-renderlab_copy_runtime_libraries(PassSettingsCheck)
+add_dependencies(PassSettingsCheck RenderLabPassPlugins)
 
 set(material_check_shader "${CMAKE_CURRENT_BINARY_DIR}/material-workflow.spv")
 add_custom_command(OUTPUT "${material_check_shader}"

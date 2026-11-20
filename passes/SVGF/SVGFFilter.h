@@ -16,10 +16,10 @@ public:
         RenderGraph::ImageHandle color;
     };
 
-    Output setup(
+    Output compile(
         RenderGraph&             graph,
         const PassSetup&         setup,
-        RayTracingPass::Output   traced,
+        DenoiserInputs   traced,
         SVGFReprojection::Output lighting,
         const SVGFReprojection&  reprojection
     );
@@ -54,8 +54,8 @@ private:
         {
         }
 
-        FilterOutput setup(RenderGraph& graph, const PassSetup& setup, FilterInput input);
-        void         writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
+        FilterOutput compile(RenderGraph& graph, const PassSetup& setup, FilterInput input);
+        void         bindResources(RenderGraph& graph, const PassSetup& setup) const;
         void         execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame) const;
 
     private:

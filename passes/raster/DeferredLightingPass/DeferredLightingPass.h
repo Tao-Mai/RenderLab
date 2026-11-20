@@ -1,32 +1,24 @@
 #pragma once
 
+#include "render/graph/RenderPass.h"
+
 #include "render/device/Device.h"
 
-#include "passes/raster/GBufferPass/GBufferPass.h"
+#include "render/raster/GBufferResources.h"
 #include "render/raster/RasterAttachments.h"
 #include "render/raster/ShadowResources.h"
 
-class DeferredLightingPass
+class DeferredLightingPass : public RenderPass
 {
 public:
-    struct Output
-    {
-        RenderGraph::ImageHandle color;
-    };
 
-    Output setup(
-        RenderGraph&              graph,
-        const PassSetup&          setup,
-        RenderGraph::ImageHandle  target,
-        GBufferPass::Output       gBuffer,
-        ShadowResources           shadow,
-        RenderGraph::BufferHandle lights
-    );
-    void writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
-    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
+    void bindResources(RenderGraph& graph, const PassSetup& setup) override;
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) override;
 
 private:
-    GBufferPass::Output      gBuffer;
+    GBufferResources      gBuffer;
     RasterAttachments<1>     attachments;
     DescriptorSetLayout      descriptorSetLayout;
     vk::raii::DescriptorSet  descriptorSet = nullptr;

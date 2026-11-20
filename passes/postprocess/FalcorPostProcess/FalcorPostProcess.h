@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/graph/RenderPass.h"
+
 #include "passes/postprocess/FalcorPostProcess/FalcorPostProcessConfig.h"
 #include "render/graph/PassSettings.h"
 
@@ -14,13 +16,15 @@
 class FalcorPostProcess : public ConfigurablePass<FalcorPostProcessConfig>
 {
 public:
+    FalcorPostProcess() : ConfigurablePass(PassExecution::Composite) {}
+
     struct Output
     {
         RenderGraph::ImageHandle color;
     };
 
-    Output
-    setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle source, RenderGraph::ImageHandle target);
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
 
 private:
     enum class Stage
@@ -38,14 +42,14 @@ private:
     {
     public:
         ImagePass(FalcorPostProcess& owner, Stage stage, uint32_t level) : owner(owner), stage(stage), level(level) {}
-        Output setup(
+        Output compile(
             RenderGraph&             graph,
             const PassSetup&         setup,
             RenderGraph::ImageHandle source,
             RenderGraph::ImageHandle filtered,
             RenderGraph::ImageHandle target
         );
-        void writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
+        void bindResources(RenderGraph& graph, const PassSetup& setup) const;
         void execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame) const;
 
     private:

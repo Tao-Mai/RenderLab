@@ -1,8 +1,11 @@
 #pragma once
 
+#include "render/graph/RenderPass.h"
+
 #include "asset/Asset.h"
 #include "core/Logger.h"
 #include "render/ExposureConfig.h"
+#include "render/postprocess/ExposureState.h"
 #include "render/graph/PassSettings.h"
 #include "render/device/Device.h"
 #include "render/graph/RenderGraph.h"
@@ -14,31 +17,21 @@ struct ExposurePassSettings : ExposureConfig
     void validate() const { CHECK(isValid()); }
 };
 
-class ExposurePass : public ConfigurablePass<ExposurePassSettings>
+class ExposurePass : public ConfigurablePass<ExposurePassSettings>, public ExposureProvider
 {
 public:
-    struct State
-    {
-        float    ev100;
-        float    exposureScale;
-        uint32_t automaticValid;
-        uint32_t padding;
-    };
-    static_assert(sizeof(State) == 16);
+    [[nodiscard]] const ExposureConfig& exposureDefaults() const override { return parameters; }
 
-    struct Output
-    {
-        RenderGraph::BufferHandle state;
-    };
 
-    Output setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle hdrColor);
-    void   writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
-    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame);
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
+    void   bindResources(RenderGraph& graph, const PassSetup& setup) override;
+    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame) override;
 
 private:
     RenderGraph::ImageHandle          source;
     RenderGraph::BufferHandle         histogram;
-    Output                            output;
+    RenderGraph::BufferHandle                            exposureState;
     DescriptorSetLayout               descriptorSetLayout;
     vk::PipelineLayout                pipelineLayout;
     std::array<vk::raii::Pipeline, 2> pipelines{nullptr, nullptr};

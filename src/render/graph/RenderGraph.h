@@ -13,8 +13,9 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <meta>
 #include <span>
+#include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -76,8 +77,12 @@ public:
     void prepare(const PassFrame& frame);
     void releaseResources() noexcept;
 
-    template <class T, class... Args>
-    auto addPass(T& pass, const PassSetup& setup, Args&&... args);
+    template <class Stage, class... Args>
+    auto addStage(std::string_view name, Stage& stage, const PassSetup& setup, Args&&... args);
+
+    void markOutput(ImageHandle image) { outputResources.push_back(image.id); }
+    void markOutput(BufferHandle buffer) { outputResources.push_back(buffer.id); }
+    void retainStage();
 
     ImageHandle createImage(ImageCreateInfo info);
     // Declare the format and extent at setup; bind the actual image before execution.
@@ -178,13 +183,14 @@ private:
 
     struct PassNode
     {
-        std::string_view                  name;
+        std::string                       name;
+        bool                              retained = false;
         std::vector<ResourceHandle>       dependency;
         std::vector<ResourceHandle>       writeSrc;
         std::vector<PassNode*>            prev;
         std::vector<PassNode*>            next;
         std::vector<ResourceUse>          uses;
-        std::function<void(RenderGraph&, const PassSetup&)>                  writeDescriptorSet;
+        std::function<void(RenderGraph&, const PassSetup&)> bindResources;
         std::function<void(RenderGraph&, const PassFrame&)> prepare;
         std::function<void(RenderGraph&, vk::raii::CommandBuffer&, const PassFrame&)> execute;
     };
@@ -195,11 +201,11 @@ private:
     std::vector<PassNode*>                sortedNodes;
     PassNode*                            setupNode       = nullptr;
     std::vector<Resource>                resources;
+    std::vector<ResourceHandle>          outputResources;
     std::array<StagingPool, maxFramesInFlight> stagingPools;
     uint32_t currentFrameIndex = 0;
 
-    template <class T>
-    void collectDependencies(PassNode& node, const T& value);
+    void finishStage(PassNode& node, PassNode* previousNode);
 
     void                compileNodes();
     void                allocateResources();
@@ -212,56 +218,34 @@ private:
     );
 };
 
-template <class T, class... Args>
-auto RenderGraph::addPass(T& pass, const PassSetup& setup, Args&&... args)
+template <class Stage, class... Args>
+auto RenderGraph::addStage(std::string_view name, Stage& stage, const PassSetup& setup, Args&&... args)
 {
     auto& node   = *nodeStorage.emplace_back(std::make_unique<PassNode>());
-    node.name    = std::define_static_string(std::meta::identifier_of(^^T));
-    node.execute = [pass = &pass](RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& frame)
+    node.name    = name;
+    node.execute = [pass = &stage](RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& frame)
     {
         pass->execute(graph, commandBuffer, frame);
     };
-    if constexpr (requires { pass.writeDescriptorSet(*this, setup); })
-        node.writeDescriptorSet = [pass = &pass](RenderGraph& graph, const PassSetup& setup)
-        { pass->writeDescriptorSet(graph, setup); };
-    if constexpr (requires(const PassFrame& frame) { pass.prepare(*this, frame); })
-        node.prepare = [pass = &pass](RenderGraph& graph, const PassFrame& frame)
+    if constexpr (requires { stage.bindResources(*this, setup); })
+        node.bindResources = [pass = &stage](RenderGraph& graph, const PassSetup& setup)
+        { pass->bindResources(graph, setup); };
+    if constexpr (requires(const PassFrame& frame) { stage.prepare(*this, frame); })
+        node.prepare = [pass = &stage](RenderGraph& graph, const PassFrame& frame)
         { pass->prepare(graph, frame); };
-    (collectDependencies(node, args), ...);
     nodes.push_back(&node);
 
     auto* previousNode = setupNode;
     setupNode          = &node;
-    auto output        = pass.setup(*this, setup, std::forward<Args>(args)...);
-    setupNode          = previousNode;
-
-    for (ResourceHandle source : node.writeSrc)
-        if (std::ranges::find(node.dependency, source) == node.dependency.end())
-            node.dependency.push_back(source);
-
-    return output;
-}
-
-template <class T>
-void RenderGraph::collectDependencies(PassNode& node, const T& value)
-{
-    using U = std::remove_cvref_t<T>;
-    if constexpr (std::is_same_v<U, ImageHandle> || std::is_same_v<U, BufferHandle>)
+    if constexpr (std::is_void_v<decltype(stage.compile(*this, setup, std::forward<Args>(args)...))>)
     {
-        if (value.id == kInvalidHandle)
-            return;
-
-        DCHECK(value.id >= 0 && value.id < resources.size());
-        if (std::ranges::find(node.dependency, value.id) == node.dependency.end())
-            node.dependency.push_back(value.id);
+        stage.compile(*this, setup, std::forward<Args>(args)...);
+        finishStage(node, previousNode);
     }
     else
     {
-        static_assert(std::is_aggregate_v<U>, "pass arguments must be handles or aggregates of handles");
-        constexpr auto ctx = std::meta::access_context::current();
-        template for (constexpr auto member : std::define_static_array(std::meta::nonstatic_data_members_of(^^U, ctx)))
-        {
-            collectDependencies(node, value.[:member:]);
-        }
+        auto output = stage.compile(*this, setup, std::forward<Args>(args)...);
+        finishStage(node, previousNode);
+        return output;
     }
 }

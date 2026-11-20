@@ -1,18 +1,17 @@
 #pragma once
 
+#include "render/graph/RenderPass.h"
+
 #include "render/raster/MeshDraw.h"
 #include "render/raster/RasterAttachments.h"
 
-class DepthPrepass
+class DepthPrepass : public RenderPass
 {
 public:
-    struct Output
-    {
-        RenderGraph::ImageHandle depth;
-    };
 
-    Output setup(RenderGraph& graph, const PassSetup& setup);
-    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
+    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) override;
 
 private:
     RasterAttachments<0> attachments;

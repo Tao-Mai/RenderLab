@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/graph/RenderPass.h"
+
 #include "passes/postprocess/Bloom/BloomSettings.h"
 #include "render/graph/PassSettings.h"
 
@@ -14,12 +16,15 @@
 class Bloom : public ConfigurablePass<BloomSettings>
 {
 public:
+    Bloom() : ConfigurablePass(PassExecution::Composite) {}
+
     struct Output
     {
         RenderGraph::ImageHandle color;
     };
 
-    Output setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle hdrColor);
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
 
 private:
     class FilterPass
@@ -35,13 +40,13 @@ private:
 
         FilterPass(Stage stage, const BloomSettings& settings) : stage(stage), settings(settings) {}
 
-        Output setup(
+        Output compile(
             RenderGraph&             graph,
             const PassSetup&         setup,
             RenderGraph::ImageHandle source,
             RenderGraph::ImageHandle base = {}
         );
-        void writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
+        void bindResources(RenderGraph& graph, const PassSetup& setup) const;
         void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
 
     private:

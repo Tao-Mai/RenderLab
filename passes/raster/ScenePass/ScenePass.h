@@ -1,26 +1,18 @@
 #pragma once
 
+#include "render/graph/RenderPass.h"
+
 #include "passes/raster/ForwardPbr.h"
 #include "render/raster/RasterAttachments.h"
 #include "render/raster/ShadowResources.h"
 
-class ScenePass
+class ScenePass : public RenderPass
 {
 public:
-    struct Output
-    {
-        RenderGraph::ImageHandle color;
-    };
 
-    Output setup(
-        RenderGraph&              graph,
-        const PassSetup&          setup,
-        RenderGraph::ImageHandle  target,
-        RenderGraph::ImageHandle  depthHandle,
-        ShadowResources           shadow,
-        RenderGraph::BufferHandle lights
-    );
-    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution);
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) override;
 
 private:
     RasterAttachments<1> attachments;

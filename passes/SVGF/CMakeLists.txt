@@ -1,4 +1,4 @@
-target_sources(RenderLabPasses PRIVATE SVGFFilter.cpp SVGFReprojection.cpp)
+renderlab_add_plugin(SVGF SVGF.cpp SVGFFilter.cpp SVGFReprojection.cpp)
 
 renderlab_shader(svgf_reprojection svgf_reprojection.slang svgf_reprojection ENTRIES computeMain)
 foreach(stage IN ITEMS 0 1 2)

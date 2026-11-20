@@ -1,1 +1,1 @@
-target_sources(RenderLabPasses PRIVATE PresentColorPass.cpp)
+renderlab_add_plugin(PresentColorPass PresentColorPass.cpp)

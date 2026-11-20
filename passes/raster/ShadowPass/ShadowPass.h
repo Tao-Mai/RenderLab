@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/graph/RenderPass.h"
+
 #include "passes/raster/ShadowPass/ShadowSettings.h"
 #include "render/graph/PassSettings.h"
 
@@ -15,9 +17,10 @@
 class ShadowPass : public ConfigurablePass<ShadowSettings>
 {
 public:
-    ShadowResources setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::BufferHandle lights);
-    void   prepare(RenderGraph& graph, const PassFrame& frame);
-    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
+    void   prepare(RenderGraph& graph, const PassFrame& frame) override;
+    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) override;
 
 private:
     static constexpr uint32_t kPointFaceCount = 6;

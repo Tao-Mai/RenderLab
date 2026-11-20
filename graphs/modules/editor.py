@@ -1,11 +1,14 @@
-from renderlab_graph import RenderGraph, ResourceReference
+from renderlab_graph import RenderGraph
 
 
-def add_editor_output(graph: RenderGraph, color: ResourceReference, depth: ResourceReference | None = None) -> None:
+def add_editor_output(graph: RenderGraph, color: str, depth: str | None = None) -> None:
     if depth is not None:
-        picking = graph.add_pass("EditorPickingPass", "picking", depth).pickingImage
-        readback = graph.add_pass("EditorPickingCopyPass", "pickingCopy", picking).readback
-        graph.mark_output("pickingReadback", readback)
+        graph.create_pass("picking", "EditorPickingPass")
+        graph.create_pass("pickingCopy", "EditorPickingCopyPass")
+        graph.add_edge(depth, "picking.depth")
+        graph.add_edge("picking.pickingImage", "pickingCopy.pickingImage")
+        graph.mark_output("pickingCopy.readback", name="pickingReadback")
 
-    finalColor = graph.add_pass("EditorUiPass", "editorUi", color).color
-    graph.mark_output("color", finalColor)
+    graph.create_pass("editorUi", "EditorUiPass")
+    graph.add_edge(color, "editorUi.color")
+    graph.mark_output("editorUi.color", name="color")

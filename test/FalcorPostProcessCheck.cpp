@@ -10,16 +10,13 @@
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
 #include "render/RenderView.h"
-#include "passes/StandardPasses.h"
 #include "render/Renderer.h"
 #include "render/device/FrameContext.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/editor/EditorFrameInput.h"
 #include "render/graph/EndPass.h"
-#include "passes/postprocess/ExposurePass/ExposurePass.h"
-#include "passes/postprocess/FalcorPostProcess/FalcorPostProcess.h"
-#include "passes/postprocess/ToneMappingPass/ToneMappingPass.h"
+#include "passes/postprocess/FalcorPostProcess/FalcorPostProcessConfig.h"
 #include "render/resources/RenderResourceManager.h"
 #include "scene/SceneManager.h"
 #include "scene/system/SceneRenderData.h"
@@ -39,7 +36,7 @@ using Pixel = std::array<uint8_t, 4>;
 struct SourcePass
 {
     RenderGraph::ImageHandle color;
-    RenderGraph::ImageHandle setup(RenderGraph& graph, const PassSetup&)
+    RenderGraph::ImageHandle compile(RenderGraph& graph, const PassSetup&)
     {
         color = graph.write(graph.createImage({.format = kHdrColorFormat, .extent = kExtent}));
         graph.use(
@@ -64,7 +61,7 @@ struct ReadbackPass
 {
     RenderGraph::ImageHandle  color;
     RenderGraph::BufferHandle buffer;
-    RenderGraph::BufferHandle setup(RenderGraph& graph, const PassSetup&, RenderGraph::ImageHandle input)
+    RenderGraph::BufferHandle compile(RenderGraph& graph, const PassSetup&, RenderGraph::ImageHandle input)
     {
         color  = input;
         buffer = graph.write(graph.createBuffer({
@@ -98,7 +95,7 @@ struct ReadbackPass
 };
 
 std::vector<Pixel> run(
-    VulkanContext& vulkan, const FalcorPostProcessConfig& settings, vk::Format format,
+    const PluginManager& plugins, VulkanContext& vulkan, const FalcorPostProcessConfig& settings, vk::Format format,
     PostProcessMode mode = PostProcessMode::Falcor
 )
 {
@@ -113,23 +110,32 @@ std::vector<Pixel> run(
     SourcePass        sourcePass;
     ReadbackPass      readback;
     EndPass           end;
-    FalcorPostProcess falcor;
-    ExposurePass      exposure;
-    ToneMappingPass   native;
-    auto              color  = graph.addPass(sourcePass, setup);
-    const auto        target = graph.createImage({.format = format, .extent = kExtent});
+    RenderGraphCompiler compiler;
+    const auto source = graph.addStage("Fixture input", sourcePass, setup);
+    const auto target = graph.createImage({.format = format, .extent = kExtent});
+    nlohmann::json description{
+        {"nodes", nlohmann::json::array()}, {"edges", nlohmann::json::array()}, {"outputs", {{"color", "tone.color"}}}
+    };
+    auto& nodes = description["nodes"];
+    auto& edges = description["edges"];
     if (mode == PostProcessMode::Falcor)
     {
-        falcor.setSettings(settings);
-        color = falcor.setup(graph, setup, color, target).color;
+        nodes.push_back({{"name", "tone"}, {"type", "FalcorPostProcess"}, {"properties", Serialize(settings)}, {"ui", false}});
+        edges.push_back({"$inputs.source", "tone.source"});
     }
     else
     {
-        const auto state = graph.addPass(exposure, setup, color).state;
-        color            = graph.addPass(native, setup, color, target, state).color;
+        nodes.push_back({{"name", "exposure"}, {"type", "ExposurePass"}, {"properties", nlohmann::json::object()}, {"ui", false}});
+        nodes.push_back({{"name", "tone"}, {"type", "ToneMappingPass"}, {"properties", nlohmann::json::object()}, {"ui", false}});
+        edges.push_back({"$inputs.source", "exposure.hdrColor"});
+        edges.push_back({"$inputs.source", "tone.hdrColor"});
+        edges.push_back({"exposure.state", "tone.exposure"});
     }
-    const auto buffer = graph.addPass(readback, setup, color);
-    graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
+    edges.push_back({"$inputs.target", "tone.target"});
+    const auto outputs = compiler.compile(graph, setup, description, {{"source", source}, {"target", target}}, plugins, {});
+    const auto color = std::get<RenderGraph::ImageHandle>(outputs.at("color"));
+    const auto buffer = graph.addStage("Read tone mapping", readback, setup, color);
+    graph.addStage("Read results", end, setup, RenderGraph::ImageHandle{}, buffer);
     graph.compile(setup);
     const RenderView       view;
     const RenderData       renderData;
@@ -176,6 +182,8 @@ void near(Pixel actual, Pixel expected)
 
 void check(VulkanContext& vulkan)
 {
+    PluginManager plugins;
+    plugins.loadAllPlugins();
     FalcorPostProcessConfig settings;
     // Independently evaluated from the original Falcor equations, including sRGB presentation.
     constexpr std::array<Pixel, 6> kExpected{
@@ -190,13 +198,13 @@ void check(VulkanContext& vulkan)
     {
         settings.toneMapper.mode = static_cast<FalcorToneMappingOperator>(mode);
         for (const auto format : {vk::Format::eR8G8B8A8Srgb, vk::Format::eR8G8B8A8Unorm})
-            for (const auto pixel : run(vulkan, settings, format))
+            for (const auto pixel : run(plugins, vulkan, settings, format))
                 near(pixel, kExpected[mode]);
         LOG_INFO("Falcor tone operator {} passed for sRGB and UNORM", mode);
     }
     settings.toneMapper              = {};
     settings.toneMapper.autoExposure = true;
-    for (const auto pixel : run(vulkan, settings, vk::Format::eR8G8B8A8Srgb))
+    for (const auto pixel : run(plugins, vulkan, settings, vk::Format::eR8G8B8A8Srgb))
         near(pixel, {6, 30, 93, 128});
     LOG_INFO("Falcor logarithmic luminance / auto exposure passed");
 
@@ -207,7 +215,7 @@ void check(VulkanContext& vulkan)
     toneMapper.fNumber              = 2;
     toneMapper.shutter              = 4;
     toneMapper.exposureCompensation = 1;
-    for (const auto pixel : run(vulkan, settings, vk::Format::eR8G8B8A8Unorm))
+    for (const auto pixel : run(plugins, vulkan, settings, vk::Format::eR8G8B8A8Unorm))
         near(pixel, {71, 137, 255, 128});
     toneMapper.exposureMode = FalcorExposureMode::AperturePriority;
     toneMapper.setExposureValue(5);
@@ -222,7 +230,7 @@ void check(VulkanContext& vulkan)
         for (glm::length_t column = 0; column < 3; ++column)
             CHECK(std::abs(identity[column][row] - (row == column ? 1.0f : 0.0f)) < 0.00001f);
     toneMapper.whitePoint = 10000.0f;
-    for (const auto pixel : run(vulkan, settings, vk::Format::eR8G8B8A8Srgb))
+    for (const auto pixel : run(plugins, vulkan, settings, vk::Format::eR8G8B8A8Srgb))
         near(pixel, {161, 214, 244, 128});
     LOG_INFO("Falcor physical exposure and 6500 K white balance passed");
 
@@ -238,7 +246,7 @@ void check(VulkanContext& vulkan)
     effects.colorScaleScalar          = -0.1f;
     effects.colorPowerScalar          = 0.2f;
     effects.wipe                      = 0.5f;
-    const auto pixels                 = run(vulkan, settings, vk::Format::eR8G8B8A8Srgb);
+    const auto pixels                 = run(plugins, vulkan, settings, vk::Format::eR8G8B8A8Srgb);
     CHECK(pixels.front() != pixels.back());
     for (uint32_t y = 0; y < kExtent.height; ++y)
         for (uint32_t x = 0; x < kExtent.width; ++x)
@@ -247,12 +255,12 @@ void check(VulkanContext& vulkan)
             else
                 CHECK(pixels[y * kExtent.width + x][3] == 255);
     effects.enabled = false;
-    for (const auto pixel : run(vulkan, settings, vk::Format::eR8G8B8A8Srgb))
+    for (const auto pixel : run(plugins, vulkan, settings, vk::Format::eR8G8B8A8Srgb))
         near(pixel, kExpected[5]);
     LOG_INFO("Falcor 8-level bloom, stars, lens/color effects, wipe and bypass passed");
 
-    const auto native = run(vulkan, settings, vk::Format::eR8G8B8A8Srgb, PostProcessMode::RenderLab);
-    const auto restored          = run(vulkan, settings, vk::Format::eR8G8B8A8Srgb);
+    const auto native = run(plugins, vulkan, settings, vk::Format::eR8G8B8A8Srgb, PostProcessMode::RenderLab);
+    const auto restored          = run(plugins, vulkan, settings, vk::Format::eR8G8B8A8Srgb);
     CHECK(native.front() != restored.front());
     for (const auto pixel : restored)
         near(pixel, kExpected[5]);
@@ -272,7 +280,7 @@ void checkRendererSwitches(ConfigManager& config)
     config.setGraphParameterOverrides(parameters);
     Renderer renderer;
     context().renderer = &renderer;
-    renderer.init(standardRenderPasses());
+    renderer.init();
     const auto            extent = renderer.swapchainHandle().extent();
     EditorCameraConfig    cameraConfig;
     EditorCamera          camera{cameraConfig};
@@ -289,7 +297,7 @@ void checkRendererSwitches(ConfigManager& config)
         renderer.setPassOverrides("FalcorPostProcess", "falcor", Serialize(settings));
         for (uint32_t frame = 0; frame < 4; ++frame)
             CHECK(!renderer.render(view, scene, {}, 1.0f / 60.0f).swapchainNeedsRebuild);
-        CHECK((renderer.renderPasses().activePass<FalcorPostProcess>() != nullptr) == (mode == PostProcessMode::Falcor));
+        CHECK((renderer.graphPasses().findPass("falcor") != nullptr) == (mode == PostProcessMode::Falcor));
     }
     const auto forwardOverrides = config.passOverrides();
     selectGraphForPath(config, RenderPath::Deferred);

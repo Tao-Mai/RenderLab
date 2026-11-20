@@ -1,6 +1,6 @@
 #include "render/graph/EndPass.h"
 
-EndPass::Output EndPass::setup(
+void EndPass::compile(
     RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle color, RenderGraph::BufferHandle readback
 )
 {
@@ -10,5 +10,5 @@ EndPass::Output EndPass::setup(
     if (readback.id != RenderGraph::kInvalidHandle)
         graph.use(readback, {.stages = vk::PipelineStageFlagBits2::eHost, .access = vk::AccessFlagBits2::eHostRead});
 
-    return {};
+    graph.retainStage();
 }

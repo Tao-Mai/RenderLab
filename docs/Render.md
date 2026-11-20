@@ -4,7 +4,7 @@
 
 渲染模块接收场景快照和编辑器输入。Python 定义 Pass 和资源连接，Renderer 准备 GPU 数据并交由 RenderGraph 调度。
 
-`RenderLabCore` 提供资产、GPU 设备和 RenderGraph。应用将 [passes](../passes/) 里的实现编译为 `RenderLabPasses` 并注册。
+`RenderLabCore` 提供共享的资产系统、GPU 设备和 RenderGraph。[passes](../passes/) 中的实现各自编译成插件，由宿主按构建生成的清单加载。
 每个 Pass 的 C++、专用 Slang 和构建声明放在以注册名命名的目录中。光栅化 Pass 位于 [passes/raster/](../passes/raster/)，后处理 Pass 位于 [passes/postprocess/](../passes/postprocess/)，其余 Pass 直接位于 `passes/` 下。
 [shaders](../shaders/) 存放可独立复用的算法、跨 Pass 使用的数据布局和共享着色阶段。Pass 可以引用共享代码，共享代码只依赖核心接口及其他共享模块。
 `material/` 包含材质求值、各具体散射模型、纹理与法线映射，`math/` 包含颜色计算、常量、随机数与采样，`scene/` 包含场景和光源数据。

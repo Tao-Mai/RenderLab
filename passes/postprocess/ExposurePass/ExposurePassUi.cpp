@@ -1,6 +1,6 @@
 #include "passes/postprocess/ExposurePass/ExposurePass.h"
 
-#include "editor/PassEditorRegistry.h"
+#include "editor/PassEditor.h"
 
 #include "editor/EditorCameraConfig.h"
 #include "editor/Inspector.h"
@@ -16,7 +16,7 @@ bool drawSettings(ExposurePassSettings& settings, const ExposurePass&, const Pas
 }
 }
 
-void registerExposurePassEditor(PassEditorRegistry& editors)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    editors.add<ExposurePass, drawSettings>("Exposure");
+    registry.registerClass<ExposurePass>(makePassEditor<ExposurePass, drawSettings>("Exposure"));
 }

@@ -1,4 +1,6 @@
 #include "passes/RayTracingScenePass/RayTracingScenePass.h"
+#include "render/plugins/PluginManager.h"
+#include "render/graph/PassPorts.h"
 
 #include "core/Vertex.h"
 #include "render/FrameData.h"
@@ -26,7 +28,14 @@ struct PrepareParameters
 static_assert(sizeof(PrepareParameters) == 8);
 }
 
-RayTracingScenePass::Output RayTracingScenePass::setup(RenderGraph& graph, const PassSetup& setup)
+RenderPassReflection RayTracingScenePass::reflect(const PassSetup&) const
+{
+    RenderPassReflection reflection;
+    pass_ports::outputs<RayTracingGeometry>(reflection);
+    return reflection;
+}
+
+void RayTracingScenePass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
 {
     const auto createInput = [&](vk::DeviceSize size)
     {
@@ -67,7 +76,7 @@ RayTracingScenePass::Output RayTracingScenePass::setup(RenderGraph& graph, const
     {
         frame.revisions = {};
     }
-    return output;
+    pass_ports::write(ports, output);
 }
 
 void RayTracingScenePass::createPipeline(const PassSetup& setup)
@@ -196,7 +205,7 @@ void RayTracingScenePass::updateDescriptors(RenderGraph& graph, const PassFrame&
     execution.setup.vulkan.deviceHandle().updateDescriptorSets(std::span{writes.data(), writeCount}, {});
 }
 
-void RayTracingScenePass::execute(RenderGraph&, vk::raii::CommandBuffer& commands, const PassFrame& frame) const
+void RayTracingScenePass::execute(RenderGraph&, vk::raii::CommandBuffer& commands, const PassFrame& frame)
 {
     if (emissiveTriangleCount == 0)
     {
@@ -224,4 +233,9 @@ void RayTracingScenePass::execute(RenderGraph&, vk::raii::CommandBuffer& command
         PrepareParameters{emissiveTriangleCount, taskCount}
     );
     commands.dispatch(groups, 1, 1);
+}
+
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+{
+    registry.registerClass<RayTracingScenePass>();
 }

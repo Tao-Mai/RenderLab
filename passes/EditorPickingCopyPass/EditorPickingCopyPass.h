@@ -1,17 +1,16 @@
 #pragma once
 
+#include "render/graph/RenderPass.h"
+
 #include "render/graph/RenderGraph.h"
 
-class EditorPickingCopyPass
+class EditorPickingCopyPass : public RenderPass
 {
 public:
-    struct Output
-    {
-        RenderGraph::BufferHandle readback;
-    };
 
-    Output setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle pickingImageHandle);
-    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
+    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) override;
 
 private:
     RenderGraph::ImageHandle  pickingImage;

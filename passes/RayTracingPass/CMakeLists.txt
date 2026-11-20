@@ -1,5 +1,4 @@
-target_sources(RenderLabPasses PRIVATE RayTracingPass.cpp)
-target_sources(RenderLabPassEditors PRIVATE RayTracingPassUi.cpp)
+renderlab_add_plugin(RayTracingPass RayTracingPass.cpp RayTracingPassUi.cpp)
 
 foreach(svgf IN ITEMS 0 1)
     set(suffix "")

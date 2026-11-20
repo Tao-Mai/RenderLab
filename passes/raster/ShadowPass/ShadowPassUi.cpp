@@ -1,6 +1,6 @@
 #include "passes/raster/ShadowPass/ShadowPass.h"
 
-#include "editor/PassEditorRegistry.h"
+#include "editor/PassEditor.h"
 #include "editor/SettingsWidgets.h"
 
 #include "editor/EditorCameraConfig.h"
@@ -99,7 +99,7 @@ bool drawSettings(ShadowSettings& shadow, const ShadowPass&, const PassEditorCon
 }
 }
 
-void registerShadowPassEditor(PassEditorRegistry& editors)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    editors.add<ShadowPass, drawSettings>("Shadows");
+    registry.registerClass<ShadowPass>(makePassEditor<ShadowPass, drawSettings>("Shadows"));
 }

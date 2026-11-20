@@ -1,4 +1,6 @@
 #include "passes/raster/DeferredLightingPass/DeferredLightingPass.h"
+#include "render/plugins/PluginManager.h"
+#include "render/graph/PassPorts.h"
 
 #include "core/Context.h"
 #include "render/FrameData.h"
@@ -16,15 +18,24 @@ namespace
 constexpr std::string_view kDeferredLightingShader = "deferred_lighting";
 }
 
-DeferredLightingPass::Output DeferredLightingPass::setup(
-    RenderGraph&              graph,
-    const PassSetup&          setup,
-    RenderGraph::ImageHandle  target,
-    GBufferPass::Output       input,
-    ShadowResources           shadow,
-    RenderGraph::BufferHandle lights
-)
+RenderPassReflection DeferredLightingPass::reflect(const PassSetup&) const
 {
+    RenderPassReflection reflection;
+    reflection.input("target", PortKind::Image);
+    reflection.input("lights", PortKind::Buffer);
+    pass_ports::inputs<GBufferResources>(reflection);
+    pass_ports::inputs<ShadowResources>(reflection);
+    reflection.output("color", PortKind::Image);
+    return reflection;
+}
+
+void DeferredLightingPass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+{
+    const auto target = ports.image("target");
+    const auto lights = ports.buffer("lights");
+    const auto input = pass_ports::read<GBufferResources>(ports);
+    const auto shadow = pass_ports::read<ShadowResources>(ports);
+
     gBuffer = input;
     useRasterLighting(graph, lights, shadow);
     for (const auto image :
@@ -108,10 +119,10 @@ DeferredLightingPass::Output DeferredLightingPass::setup(
              .colorFormats = {graph.imageInfo(color).format},
     });
     descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
-    return {color};
+    ports.setOutput("color", color);
 }
 
-void DeferredLightingPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
+void DeferredLightingPass::bindResources(RenderGraph& graph, const PassSetup& setup)
 {
     const std::array images{
         gBuffer.diffuseOcclusion,
@@ -158,7 +169,7 @@ void DeferredLightingPass::writeDescriptorSet(RenderGraph& graph, const PassSetu
 
 void DeferredLightingPass::execute(
     RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
-) const
+)
 {
     auto& commands = commandBuffer;
     attachments.begin(graph, commands);
@@ -187,4 +198,9 @@ void DeferredLightingPass::execute(
     commands.draw(3, 1, 0, 0);
     recordDraw(context().profiler, 3);
     commands.endRendering();
+}
+
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+{
+    registry.registerClass<DeferredLightingPass>();
 }

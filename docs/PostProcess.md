@@ -64,7 +64,7 @@ ToneMapper、sRGB/UNORM 输出、Alpha、自动曝光、手动曝光、白平衡
 cmake --build cmake-build-debug-gcc-16.2 --target FalcorPostProcessCheck
 # 沿用项目的依赖 DLL 环境。
 Push-Location cmake-build-debug-gcc-16.2
-.\test\FalcorPostProcessCheck.exe
+.\FalcorPostProcessCheck.exe
 Pop-Location
 python test/FalcorPostProcessSourceCheck.py <Falcor源码目录>
 ```

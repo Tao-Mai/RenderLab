@@ -1,6 +1,6 @@
 #include "passes/OfflinePathTracingPass/OfflinePathTracingPass.h"
 
-#include "editor/PassEditorRegistry.h"
+#include "editor/PassEditor.h"
 #include "editor/SettingsWidgets.h"
 
 namespace
@@ -32,7 +32,7 @@ bool drawSettings(
 }
 }
 
-void registerOfflinePathTracingPassEditor(PassEditorRegistry& editors)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    editors.add<OfflinePathTracingPass, drawSettings>("Offline rendering");
+    registry.registerClass<OfflinePathTracingPass>(makePassEditor<OfflinePathTracingPass, drawSettings>("Offline rendering"));
 }

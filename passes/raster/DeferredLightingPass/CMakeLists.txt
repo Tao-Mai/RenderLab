@@ -1,4 +1,4 @@
-target_sources(RenderLabPasses PRIVATE DeferredLightingPass.cpp)
+renderlab_add_plugin(DeferredLightingPass DeferredLightingPass.cpp)
 
 foreach(enable_ibl IN ITEMS 1 0)
     set(binary deferred_lighting)

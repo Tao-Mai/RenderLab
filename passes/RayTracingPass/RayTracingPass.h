@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/graph/RenderPass.h"
+
 #include "passes/RayTracingPass/RayTracingSettings.h"
 #include "render/graph/PassSettings.h"
 
@@ -8,7 +10,7 @@
 #include "render/device/Device.h"
 #include "render/graph/RenderGraph.h"
 #include "passes/RayTracingPass/RayTracingData.h"
-#include "passes/RayTracingScenePass/RayTracingScenePass.h"
+#include "render/raytracing/RayTracingResources.h"
 #include "render/resources/ShaderData.h"
 
 #include <array>
@@ -17,29 +19,20 @@
 class RayTracingPass : public ConfigurablePass<RayTracingSettings>
 {
 public:
-    struct Output
-    {
-        RenderGraph::ImageHandle rayImage;  // Combined lighting; valid when SVGF is disabled.
-        RenderGraph::ImageHandle depth;
-        RenderGraph::ImageHandle worldNormal;
-        RenderGraph::ImageHandle direct;  // Separated lighting; valid when SVGF is enabled.
-        RenderGraph::ImageHandle indirect;
-        RenderGraph::ImageHandle emission;
-        RenderGraph::ImageHandle albedo;  // Primary reflectance: saturate(diffuseColor + specularF0).
-    };
 
-    Output setup(
-        RenderGraph&                graph,
-        const PassSetup&            setup,
-        RayTracingScenePass::Output geometry,
-        RenderGraph::BufferHandle   lights
-    );
-    void writeDescriptorSet(RenderGraph& graph, const PassSetup& setup);
-    void prepare(RenderGraph& graph, const PassFrame& execution);
-    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution);
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
+    void bindResources(RenderGraph& graph, const PassSetup& setup) override;
+    void prepare(RenderGraph& graph, const PassFrame& execution) override;
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) override;
     [[nodiscard]] RenderGraph::BufferHandle reservoirs() const { return reservoirHistory; }
 
 private:
+    struct Targets : DenoiserInputs
+    {
+        RenderGraph::ImageHandle rayImage;
+    };
+
     struct Frame
     {
         std::array<uint64_t, 7> bufferRevisions{};
@@ -58,12 +51,12 @@ private:
         uint32_t                                         raygenCount = 0;
     };
 
-    Output                                        output;
+    Targets                                        output;
     bool                                          svgfEnabled = false;
     RealtimeAlgorithm                             algorithm   = RealtimeAlgorithm::ReSTIR;
     uint32_t                                      sampleIndex = 0;
     std::array<std::array<PipelineVariant, 2>, 2> variants;
-    RayTracingScenePass::Output                   geometry;
+    RayTracingGeometry                   geometry;
     std::array<Frame, maxFramesInFlight>          frames;
     std::array<RenderGraph::BufferHandle, 2>      restirSurfaces;
     RenderGraph::BufferHandle                     initialReservoirs;

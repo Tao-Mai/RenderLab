@@ -1,5 +1,4 @@
-target_sources(RenderLabPasses PRIVATE ExposurePass.cpp)
-target_sources(RenderLabPassEditors PRIVATE ExposurePassUi.cpp)
+renderlab_add_plugin(ExposurePass ExposurePass.cpp ExposurePassUi.cpp)
 
 foreach(stage IN ITEMS 0 1)
     set(exposure_binaries exposure.histogram exposure.resolve)

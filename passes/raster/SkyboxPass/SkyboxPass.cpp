@@ -1,4 +1,5 @@
 #include "passes/raster/SkyboxPass/SkyboxPass.h"
+#include "render/plugins/PluginManager.h"
 
 #include "core/Context.h"
 #include "render/FrameData.h"
@@ -10,13 +11,20 @@
 
 #include <array>
 
-SkyboxPass::Output SkyboxPass::setup(
-    RenderGraph&             graph,
-    const PassSetup&         setup,
-    RenderGraph::ImageHandle colorHandle,
-    RenderGraph::ImageHandle depthHandle
-)
+RenderPassReflection SkyboxPass::reflect(const PassSetup&) const
 {
+    RenderPassReflection reflection;
+    reflection.input("color", PortKind::Image);
+    reflection.input("depth", PortKind::Image, false, vk::Format::eD32Sfloat);
+    reflection.output("color", PortKind::Image);
+    return reflection;
+}
+
+void SkyboxPass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+{
+    const auto colorHandle = ports.image("color");
+    const auto depthHandle = ports.image("depth");
+
     const auto color      = graph.write(colorHandle);
     attachments.colors[0] = {color, vk::AttachmentLoadOp::eLoad};
     attachments.depth     = RasterDepthAttachment{depthHandle};
@@ -42,10 +50,10 @@ SkyboxPass::Output SkyboxPass::setup(
         .colorFormats = {graph.imageInfo(color).format},
         .depthFormat  = vk::Format::eD32Sfloat,
     });
-    return {color};
+    ports.setOutput("color", color);
 }
 
-void SkyboxPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
+void SkyboxPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution)
 {
     if (!execution.renderData.environmentMap)
         return;
@@ -77,4 +85,9 @@ void SkyboxPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
     commandBuffer.draw(3, 1, 0, 0);
     recordDraw(context().profiler, 3);
     commandBuffer.endRendering();
+}
+
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+{
+    registry.registerClass<SkyboxPass>();
 }

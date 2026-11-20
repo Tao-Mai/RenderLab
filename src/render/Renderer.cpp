@@ -15,7 +15,7 @@
 #include "core/profiling/Profiler.h"
 #include "render/device/GpuProfiler.h"
 #include "render/device/VkCheck.h"
-#include "passes/postprocess/ExposurePass/ExposurePass.h"
+#include "render/graph/PassPorts.h"
 #include "render/graph/PythonGraph.h"
 #include "render/raster/ShadowResources.h"
 #include "render/resources/Buffer.h"
@@ -53,7 +53,7 @@ LightRanges groupLights(std::span<const RenderLight> source, std::vector<LightDa
 Renderer::Renderer() = default;
 Renderer::~Renderer() { DCHECK(!inited); }
 
-void Renderer::init(RenderPassRegistry registry)
+void Renderer::init()
 {
     DCHECK(!inited);
     rendererConfig = &context().config->rendererConfig();
@@ -88,7 +88,7 @@ void Renderer::init(RenderPassRegistry registry)
     initLightingResources();
     materialTable.init(resources, vulkan, device);
     graph.init(vulkan);
-    passes = std::move(registry);
+    pluginManager.loadAllPlugins();
 
     DEBUG_EXEC(inited = true);
 }
@@ -188,7 +188,8 @@ void Renderer::shutdown() noexcept
     waitIdle();
 
     graph.reset();
-    passes.clearInstances();
+    graphCompiler.clear();
+    pluginManager.clear();
     sceneAccelerationStructures.reset();
     pickingReadback = {};
     lightBuffer     = {};
@@ -260,7 +261,7 @@ void Renderer::setupRenderGraph()
     Deserialize(*controls, editorControls);
     graphShowsObjectList = objectList->get<bool>();
     if (graphDefinition != &definition)
-        passes.clearInstances();
+        graphCompiler.clear();
 
     activeFramesInFlight = config.renderPath == RenderPath::OfflinePathTracing ? 1u : maxFramesInFlight;
     frameIndex           = 0;
@@ -279,16 +280,18 @@ void Renderer::setupRenderGraph()
         CHECK(swapchain.surfaceFormat().colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear);
 
     const PassSetup setup{vulkan, extent, frameStorage, config};
-    nlohmann::json inputs{
-        {"presentTarget", graph_value::pack(presentTarget)},
-        {"lightBuffer", graph_value::pack(lightBuffer)},
+    GraphResources inputs{
+        {"presentTarget", presentTarget},
+        {"lightBuffer", lightBuffer},
     };
-    if (graphUsesInput(description, "emptyShadow"))
-        inputs["emptyShadow"] = graph_value::pack(createUnshadowedResources(graph));
-    const auto outputs = passes.build(graph, setup, description, std::move(inputs), configManager.passOverrides());
+    if (graphUsesInputPrefix(description, "emptyShadow_"))
+        pass_ports::insert(inputs, "emptyShadow_", createUnshadowedResources(graph));
+    const auto outputs = graphCompiler.compile(graph, setup, description, inputs, pluginManager,
+                                               configManager.passOverrides());
     const auto finalColor = outputs.find("color");
     CHECK(finalColor != outputs.end(), "render graph '{}' must mark a color output", script.string());
-    const auto color = graph_value::unpack<RenderGraph::ImageHandle>(*finalColor);
+    CHECK(std::holds_alternative<RenderGraph::ImageHandle>(finalColor->second), "graph color output must be an image");
+    const auto color = std::get<RenderGraph::ImageHandle>(finalColor->second);
     CHECK(
         color.id != presentTarget.id && graph.sharesImage(color, presentTarget),
         "render graph '{}' must write its color output to presentTarget",
@@ -303,9 +306,11 @@ void Renderer::setupRenderGraph()
     );
 
     const auto readback = outputs.find("pickingReadback");
+    CHECK(readback == outputs.end() || std::holds_alternative<RenderGraph::BufferHandle>(readback->second),
+          "picking readback output must be a buffer");
     pickingReadback = readback == outputs.end() ? RenderGraph::BufferHandle{} :
-        graph_value::unpack<RenderGraph::BufferHandle>(*readback);
-    graph.addPass(endPass, setup, color, pickingReadback);
+        std::get<RenderGraph::BufferHandle>(readback->second);
+    graph.addStage("Present", endPass, setup, color, pickingReadback);
     graph.compile(setup);
     for (auto& data : frameStorage)
     {
@@ -313,8 +318,8 @@ void Renderer::setupRenderGraph()
         data.uploadShadowUniforms({.enabled = 0u});
     }
 
-    if (const auto shadow = outputs.find("shadow"); shadow != outputs.end())
-        bindShadowResources(graph, graph_value::unpack<ShadowResources>(*shadow), frameStorage, resources);
+    if (outputs.contains("pointLightShadowMap"))
+        bindShadowResources(graph, pass_ports::read<ShadowResources>(outputs), frameStorage, resources);
 
     graphDefinition      = &definition;
     appliedParameterRevision = configManager.graphParameterRevision();
@@ -323,8 +328,9 @@ void Renderer::setupRenderGraph()
 
 ExposureConfig Renderer::defaultExposure() const
 {
-    if (const auto* exposure = passes.activePass<ExposurePass>())
-        return exposure->settings();
+    for (const auto* instance : graphCompiler.activePasses())
+        if (const auto* exposure = dynamic_cast<const ExposureProvider*>(instance->pass.get()))
+            return exposure->exposureDefaults();
     return {};
 }
 
@@ -351,7 +357,7 @@ void Renderer::applyConfiguration()
 {
     auto& config = *context().config;
     if (graphDefinition != &config.renderGraph() || appliedParameterRevision != config.graphParameterRevision() ||
-        (passOverridesChanged && passes.applyOverrides(config.passOverrides())))
+        (passOverridesChanged && graphCompiler.applyOverrides(config.passOverrides())))
         rebuildGraph();
     passOverridesChanged = false;
 }

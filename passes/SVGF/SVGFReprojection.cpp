@@ -61,7 +61,7 @@ vk::ImageView imageView(RenderGraph& graph, RenderGraph::ImageHandle image)
 }  // namespace
 
 SVGFReprojection::Output
-SVGFReprojection::setup(RenderGraph& graph, const PassSetup& setup, RayTracingPass::Output source)
+SVGFReprojection::compile(RenderGraph& graph, const PassSetup& setup, DenoiserInputs source)
 {
     input              = source;
     extent             = graph.imageInfo(input.direct).extent;
@@ -160,7 +160,7 @@ void SVGFReprojection::createPipeline(const VulkanContext& vulkan)
     descriptorSet = renderDevice.allocateDescriptorSet(descriptorSetLayout);
 }
 
-void SVGFReprojection::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
+void SVGFReprojection::bindResources(RenderGraph& graph, const PassSetup& setup) const
 {
     const std::array handles{
         input.direct,

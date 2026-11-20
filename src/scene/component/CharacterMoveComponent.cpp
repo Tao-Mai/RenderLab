@@ -3,7 +3,6 @@
 #include "core/Context.h"
 #include "core/InputManager.h"
 #include "core/Logger.h"
-#include "editor/Editor.h"
 #include "scene/SceneManager.h"
 #include "scene/component/CameraComponent.h"
 #include "scene/component/FreeFlyMoveComponent.h"
@@ -31,12 +30,11 @@ void CharacterMoveComponent::tick(float deltaTime)
     if (const auto* ownCamera = actor().getComponent<CameraComponent>(); ownCamera && !ownCamera->isNavigationActive())
         return;
 
-    DCHECK(context().editor);
-    const auto& camera = context().editor->camera();
-    if (!camera.isNavigationActive())
+    const auto& input  = *context().inputManager;
+    const auto& camera = input.navigation();
+    if (!camera.active)
         return;
 
-    const auto& input           = *context().inputManager;
     glm::vec3   up              = context().sceneManager->scene().environment.up;
     const float upLengthSquared = glm::dot(up, up);
     CHECK(
@@ -45,7 +43,7 @@ void CharacterMoveComponent::tick(float deltaTime)
     );
     up /= std::sqrt(upLengthSquared);
 
-    const glm::vec3 cameraFront                    = camera.forward();
+    const glm::vec3 cameraFront                    = camera.forward;
     glm::vec3       front                          = cameraFront - up * glm::dot(cameraFront, up);
     constexpr float minimumProjectionLengthSquared = 1.0e-8f;
     if (glm::dot(front, front) > minimumProjectionLengthSquared)
@@ -55,7 +53,7 @@ void CharacterMoveComponent::tick(float deltaTime)
     else
     {
         // Looking along Up has no planar forward; preserve heading using the camera's right axis.
-        const glm::vec3 cameraRight = camera.right();
+        const glm::vec3 cameraRight = camera.right;
         const glm::vec3 right       = glm::normalize(cameraRight - up * glm::dot(cameraRight, up));
         front                       = glm::normalize(glm::cross(up, right));
     }

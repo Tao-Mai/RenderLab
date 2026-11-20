@@ -1,23 +1,31 @@
 #include "passes/postprocess/PresentColorPass/PresentColorPass.h"
+#include "render/plugins/PluginManager.h"
 
 #include "core/Logger.h"
 #include "render/device/VulkanContext.h"
 
 #include <array>
 
-PresentColorPass::Output PresentColorPass::setup(
-    RenderGraph&             graph,
-    const PassSetup&         setup,
-    RenderGraph::ImageHandle source,
-    RenderGraph::ImageHandle target
-)
+RenderPassReflection PresentColorPass::reflect(const PassSetup&) const
 {
-    if (graph.sharesImage(source, target))
-        return {source};
-    return graph.addPass(blit, setup, source, target);
+    RenderPassReflection reflection;
+    reflection.input("source", PortKind::Image);
+    reflection.input("target", PortKind::Image);
+    reflection.output("color", PortKind::Image);
+    return reflection;
 }
 
-PresentColorPass::Output PresentColorPass::BlitPass::setup(
+void PresentColorPass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+{
+    const auto source = ports.image("source");
+    const auto target = ports.image("target");
+
+    const auto color = graph.sharesImage(source, target) ? source :
+        graph.addStage("Present blit", blit, setup, source, target).color;
+    ports.setOutput("color", color);
+}
+
+PresentColorPass::Output PresentColorPass::BlitPass::compile(
     RenderGraph&             graph,
     const PassSetup&         setup,
     RenderGraph::ImageHandle sourceHandle,
@@ -84,4 +92,9 @@ void PresentColorPass::BlitPass::execute(
         region,
         vk::Filter::eNearest
     );
+}
+
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+{
+    registry.registerClass<PresentColorPass>();
 }

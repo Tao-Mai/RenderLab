@@ -1,0 +1,28 @@
+set(RENDERLAB_PLUGIN_DIRECTORY "${RENDERLAB_RUNTIME_DIRECTORY}/plugins")
+set(RENDERLAB_PLUGIN_ABI "1-${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION}-$<CONFIG>")
+
+function(renderlab_add_plugin target)
+    add_library(${target} SHARED ${ARGN})
+    target_include_directories(${target} PRIVATE "${RenderLab_SOURCE_DIR}")
+    target_link_libraries(${target} PRIVATE RenderLabCore RenderLabPluginAbi imgui::imgui)
+    target_precompile_headers(${target} REUSE_FROM RenderLabCore)
+    set_target_properties(${target} PROPERTIES
+        PREFIX ""
+        RUNTIME_OUTPUT_DIRECTORY "${RENDERLAB_PLUGIN_DIRECTORY}"
+        LIBRARY_OUTPUT_DIRECTORY "${RENDERLAB_PLUGIN_DIRECTORY}"
+        INSTALL_RPATH "$ORIGIN/.."
+    )
+    set_property(GLOBAL APPEND PROPERTY RENDERLAB_PLUGIN_TARGETS ${target})
+endfunction()
+
+function(renderlab_build_plugins)
+    get_property(plugins GLOBAL PROPERTY RENDERLAB_PLUGIN_TARGETS)
+    set(filenames)
+    foreach(plugin IN LISTS plugins)
+        list(APPEND filenames "\"$<TARGET_FILE_NAME:${plugin}>\"")
+        add_dependencies(${plugin} RenderLabShaders)
+    endforeach()
+    list(JOIN filenames ",\n    " manifest)
+    file(GENERATE OUTPUT "${RENDERLAB_PLUGIN_DIRECTORY}/plugins.json" CONTENT "[\n    ${manifest}\n]\n")
+    add_custom_target(RenderLabPassPlugins DEPENDS ${plugins})
+endfunction()

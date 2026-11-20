@@ -42,7 +42,7 @@ Engine::~Engine()
     );
 }
 
-void Engine::init(RenderPassRegistry passes, PassEditorRegistry passEditors)
+void Engine::init()
 {
     DCHECK(!inited);
 
@@ -84,8 +84,8 @@ void Engine::init(RenderPassRegistry passes, PassEditorRegistry passEditors)
     ctx.sceneManager->loadDefaultScene();
     ctx.config->setSceneRenderMode(ctx.sceneManager->scene().renderMode);
     inputMethod.activateEnglish();
-    ctx.renderer->init(std::move(passes));
-    ctx.editor->init(std::move(passEditors));
+    ctx.renderer->init();
+    ctx.editor->init();
     DEBUG_EXEC(inited = true);
 }
 
@@ -148,6 +148,10 @@ void Engine::mainLoop()
         }
         {
             CpuProfileScope timing{&profiler, "Scene tick"};
+            ctx.inputManager->setNavigation({
+                .forward = camera.forward(), .right = camera.right(), .up = camera.up(),
+                .active = camera.isNavigationActive(),
+            });
             ctx.sceneManager->tick(deltaTime);
         }
 

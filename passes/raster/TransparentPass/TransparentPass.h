@@ -1,29 +1,21 @@
 #pragma once
 
+#include "render/graph/RenderPass.h"
+
 #include "passes/raster/ForwardPbr.h"
 #include "render/raster/RasterAttachments.h"
 #include "render/raster/ShadowResources.h"
 
 #include <vector>
 
-class TransparentPass
+class TransparentPass : public RenderPass
 {
 public:
-    struct Output
-    {
-        RenderGraph::ImageHandle color;
-    };
 
-    Output setup(
-        RenderGraph&              graph,
-        const PassSetup&          setup,
-        RenderGraph::ImageHandle  colorHandle,
-        RenderGraph::ImageHandle  depthHandle,
-        ShadowResources           shadow,
-        RenderGraph::BufferHandle lights
-    );
-    void prepare(RenderGraph& graph, const PassFrame& frame);
-    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution);
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
+    void prepare(RenderGraph& graph, const PassFrame& frame) override;
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) override;
 
 private:
     std::vector<uint32_t> sortedDrawItems;

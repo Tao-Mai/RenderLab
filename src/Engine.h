@@ -8,9 +8,6 @@
 
 #include <memory>
 
-class RenderPassRegistry;
-class PassEditorRegistry;
-
 class Engine
 {
 public:
@@ -20,7 +17,7 @@ public:
     Engine(const Engine&)            = delete;
     Engine& operator=(const Engine&) = delete;
 
-    void init(RenderPassRegistry passes, PassEditorRegistry passEditors);
+    void init();
     void run();
     void shutdown() noexcept;
 

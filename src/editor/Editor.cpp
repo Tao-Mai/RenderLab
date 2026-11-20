@@ -19,14 +19,13 @@
 
 Editor::~Editor() { DCHECK(!inited); }
 
-void Editor::init(PassEditorRegistry passEditors)
+void Editor::init()
 {
     DCHECK(context().window);
     DCHECK(context().renderer);
 
     editorCamera    = std::make_unique<EditorCamera>(context().sceneManager->scene().editorCamera);
     sceneGeneration = context().sceneManager->sceneGeneration();
-    ui.setPassEditors(std::move(passEditors));
     initBackend();
     DEBUG_EXEC(inited = true);
 }

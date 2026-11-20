@@ -1,5 +1,4 @@
-target_sources(RenderLabPasses PRIVATE Bloom.cpp)
-target_sources(RenderLabPassEditors PRIVATE BloomUi.cpp)
+renderlab_add_plugin(Bloom Bloom.cpp BloomUi.cpp)
 
 foreach(stage IN ITEMS 0 1 2 3)
     set(binary bloom)

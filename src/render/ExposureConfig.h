@@ -48,3 +48,10 @@ struct ExposureConfig
             automatic.highPercentile <= 1.0f && std::isfinite(brightestScale) && darkestScale > 0.0f;
     }
 };
+
+class ExposureProvider
+{
+public:
+    virtual ~ExposureProvider() = default;
+    [[nodiscard]] virtual const ExposureConfig& exposureDefaults() const = 0;
+};

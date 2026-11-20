@@ -1,4 +1,5 @@
 #include "passes/postprocess/ToneMappingPass/ToneMappingPass.h"
+#include "editor/PassEditor.h"
 
 #include "asset/BuiltinAssets.h"
 #include "core/Context.h"
@@ -11,14 +12,22 @@
 
 #include <array>
 
-ToneMappingPass::Output ToneMappingPass::setup(
-    RenderGraph&              graph,
-    const PassSetup&          setup,
-    RenderGraph::ImageHandle  hdrColorHandle,
-    RenderGraph::ImageHandle  target,
-    RenderGraph::BufferHandle exposureHandle
-)
+RenderPassReflection ToneMappingPass::reflect(const PassSetup&) const
 {
+    RenderPassReflection reflection;
+    reflection.input("hdrColor", PortKind::Image);
+    reflection.input("target", PortKind::Image);
+    reflection.input("exposure", PortKind::Buffer);
+    reflection.output("color", PortKind::Image);
+    return reflection;
+}
+
+void ToneMappingPass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+{
+    const auto hdrColor = ports.image("hdrColor");
+    const auto target = ports.image("target");
+    const auto exposure = ports.buffer("exposure");
+
     hdrColor = hdrColorHandle;
     color    = graph.write(target);
     exposure = exposureHandle;
@@ -96,10 +105,10 @@ ToneMappingPass::Output ToneMappingPass::setup(
 
     descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
 
-    return {color};
+    ports.setOutput("color", color);
 }
 
-void ToneMappingPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
+void ToneMappingPass::bindResources(RenderGraph& graph, const PassSetup& setup)
 {
     const auto&                   device = setup.vulkan.deviceHandle();
     const vk::DescriptorImageInfo imageInfo{
@@ -143,7 +152,7 @@ void ToneMappingPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& se
 
 void ToneMappingPass::execute(
     RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
-) const
+)
 {
     const auto                        extent = graph.imageExtent(color);
     const vk::RenderingAttachmentInfo attachment{
@@ -187,4 +196,9 @@ void ToneMappingPass::execute(
     commands.draw(3, 1, 0, 0);
     recordDraw(context().profiler, 3);
     commands.endRendering();
+}
+
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+{
+    registry.registerClass<ToneMappingPass>(makePassEditor<ToneMappingPass>("Tone mapping"));
 }

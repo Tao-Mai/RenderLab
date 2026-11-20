@@ -22,6 +22,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+set(RENDERLAB_RUNTIME_DIRECTORY "${CMAKE_BINARY_DIR}")
+if(CMAKE_CONFIGURATION_TYPES)
+    string(APPEND RENDERLAB_RUNTIME_DIRECTORY "/$<CONFIG>")
+endif()
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${RENDERLAB_RUNTIME_DIRECTORY}")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${RENDERLAB_RUNTIME_DIRECTORY}")
 
 if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16.2)
     message(FATAL_ERROR "RenderLab requires GCC 16.2 or newer with C++26 reflection. Select that compiler in your toolchain.")
@@ -107,15 +115,14 @@ find_program(SLANGC_EXECUTABLE
 )
 
 set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
-set(SHADER_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
-set_property(SOURCE src/render/resources/GpuShader.cpp APPEND PROPERTY
-    COMPILE_DEFINITIONS RENDERLAB_BUILD_DIRECTORY="${CMAKE_CURRENT_BINARY_DIR}")
+set(SHADER_BINARY_DIR "${RENDERLAB_RUNTIME_DIRECTORY}/shaders")
 include(cmake/Shaders.cmake)
+include(cmake/Plugins.cmake)
 
 find_package(ZLIB REQUIRED)
 add_subdirectory(src/asset/pbrt)
 
-add_library(RenderLabCore STATIC
+add_library(RenderLabCore SHARED
     src/core/ConfigManager.cpp
     src/core/ConfigManager.h
     src/core/Annotations.h
@@ -263,9 +270,19 @@ add_library(RenderLabCore STATIC
     src/render/raytracing/offline/OfflineShaderTypes.h
     src/render/editor/EditorFrameInput.h
     src/render/editor/EditorShaderData.h
-    src/render/graph/RenderPassRegistry.cpp
-    src/render/graph/RenderPassRegistry.h
+    src/render/graph/RenderPass.cpp
+    src/render/graph/RenderGraphCompiler.cpp
+    src/render/plugins/PluginManager.cpp
+    src/core/RuntimeDirectory.cpp
+    src/render/raytracing/offline/OfflineScene.cpp
+    src/editor/SettingsWidgets.cpp
 )
+set_target_properties(RenderLabCore PROPERTIES PREFIX "")
+if(MINGW)
+    target_link_options(RenderLabCore PRIVATE "LINKER:--export-all-symbols")
+endif()
+target_compile_definitions(RenderLabCore PRIVATE RENDERLAB_PLUGIN_ABI="${RENDERLAB_PLUGIN_ABI}")
+target_link_libraries(RenderLabCore PRIVATE imgui::imgui ${CMAKE_DL_LIBS})
 target_sources(RenderLabCore PRIVATE
     src/asset/pbrt/PbrtImport.cpp
     src/asset/pbrt/PbrtData.cpp
@@ -334,17 +351,20 @@ target_precompile_headers(RenderLabCore PRIVATE
         <nlohmann/json.hpp>
         <vulkan/vulkan_raii.hpp>
 )
+add_library(RenderLabPluginAbi OBJECT src/render/plugins/PluginAbi.cpp)
+target_link_libraries(RenderLabPluginAbi PRIVATE RenderLabCore)
+target_compile_definitions(RenderLabPluginAbi PRIVATE RENDERLAB_PLUGIN_ABI="${RENDERLAB_PLUGIN_ABI}")
+target_precompile_headers(RenderLabPluginAbi REUSE_FROM RenderLabCore)
 add_subdirectory(passes)
 renderlab_build_shaders()
-add_dependencies(RenderLabPasses RenderLabShaders)
+renderlab_build_plugins()
 
 add_library(RenderLabRuntime STATIC
     src/editor/Inspector.cpp
     src/editor/EditorBackend.cpp
     src/editor/SceneHierarchy.cpp
     src/editor/GraphSettingsUi.cpp
-    src/editor/PassEditorRegistry.cpp
-    src/editor/SettingsWidgets.cpp
+    src/editor/PassEditor.cpp
     src/Engine.cpp
     src/Engine.h
     src/editor/Editor.cpp
@@ -366,19 +386,19 @@ add_library(RenderLabRuntime STATIC
     src/render/graph/PythonGraph.cpp
     src/render/graph/PythonGraph.h
 )
-target_link_libraries(RenderLabRuntime PUBLIC RenderLabCore RenderLabPasses PRIVATE
-    RenderLabPassEditors imgui::imgui imguizmo::imguizmo Python3::Python)
+target_link_libraries(RenderLabRuntime PUBLIC RenderLabCore PRIVATE imgui::imgui imguizmo::imguizmo Python3::Python)
 set_property(SOURCE src/render/graph/PythonGraph.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     RENDERLAB_PYTHON_HOME=L"${RENDERLAB_PYTHON_HOME}"
     RENDERLAB_GRAPH_LIBRARY_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/graphs")
 target_precompile_headers(RenderLabRuntime REUSE_FROM RenderLabCore)
 
 add_executable(RenderLab src/Main.cpp)
+add_dependencies(RenderLab RenderLabPassPlugins)
 target_link_libraries(RenderLab PRIVATE RenderLabRuntime imgui::imgui)
 target_precompile_headers(RenderLab REUSE_FROM RenderLabCore)
 
 option(BUILD_TESTING "Enable manual validation tools" OFF)
-renderlab_copy_runtime_libraries(RenderLab)
+renderlab_copy_runtime_libraries(RenderLabCore)
 if (BUILD_TESTING)
     add_subdirectory(test EXCLUDE_FROM_ALL)
 endif ()

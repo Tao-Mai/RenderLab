@@ -1,4 +1,5 @@
 #include "passes/EditorPickingPass/EditorPickingPass.h"
+#include "render/plugins/PluginManager.h"
 #include "core/Context.h"
 #include "render/Visibility.h"
 
@@ -16,9 +17,18 @@
 
 #include <array>
 
-EditorPickingPass::Output
-EditorPickingPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle depthHandle)
+RenderPassReflection EditorPickingPass::reflect(const PassSetup&) const
 {
+    RenderPassReflection reflection;
+    reflection.input("depth", PortKind::Image, false, vk::Format::eD32Sfloat);
+    reflection.output("pickingImage", PortKind::Image, false, vk::Format::eR32Uint);
+    return reflection;
+}
+
+void EditorPickingPass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+{
+    const auto depthHandle = ports.image("depth");
+
     DCHECK(depthHandle.id != RenderGraph::kInvalidHandle);
 
     shader = renderContext().shaderManager->getOrLoad("editor_picking");
@@ -58,7 +68,7 @@ EditorPickingPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph
         .colorFormats = {vk::Format::eR32Uint},
         .depthFormat  = vk::Format::eD32Sfloat,
     });
-    return {pickingImage};
+    ports.setOutput("pickingImage", pickingImage);
 }
 
 void EditorPickingPass::draw(vk::raii::CommandBuffer& commandBuffer, const DrawItem& item) const
@@ -82,7 +92,7 @@ void EditorPickingPass::draw(vk::raii::CommandBuffer& commandBuffer, const DrawI
 
 void EditorPickingPass::execute(
     RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
-) const
+)
 {
     const auto& editor = execution.editor;
     if (!editor.requestPick)
@@ -145,4 +155,9 @@ void EditorPickingPass::execute(
         draw(commandBuffer, execution.renderData.drawItems[index]);
     }
     commandBuffer.endRendering();
+}
+
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+{
+    registry.registerClass<EditorPickingPass>();
 }

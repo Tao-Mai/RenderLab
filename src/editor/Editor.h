@@ -26,7 +26,7 @@ public:
     Editor(const Editor&)            = delete;
     Editor& operator=(const Editor&) = delete;
 
-    void                init(PassEditorRegistry passEditors);
+    void                init();
     void                refreshUi();
     [[nodiscard]] bool  resizeWindowForLayout();
     void                tick(float deltaTime);

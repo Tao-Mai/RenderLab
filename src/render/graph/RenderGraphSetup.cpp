@@ -138,10 +138,30 @@ bool RenderGraph::needsBarrier(const ImageAccess& previous, const ImageAccess& n
     return previous.layout != next.layout || static_cast<bool>((previous.access | next.access) & kWriteAccess);
 }
 
+void RenderGraph::retainStage()
+{
+    DCHECK(setupNode);
+    setupNode->retained = true;
+}
+
+void RenderGraph::finishStage(PassNode& node, PassNode* previousNode)
+{
+    setupNode = previousNode;
+    const auto dependsOn = [&](ResourceHandle handle)
+    {
+        if (resources[handle].owner != &node &&
+            std::ranges::find(node.dependency, handle) == node.dependency.end())
+            node.dependency.push_back(handle);
+    };
+    for (const auto& use : node.uses)
+        dependsOn(use.resource);
+    for (const auto source : node.writeSrc)
+        dependsOn(source);
+}
+
 void RenderGraph::compileNodes()
 {
     DCHECK(!setupNode);
-    CHECK(!nodes.empty());
     sortedNodes.clear();
 
     std::vector<bool> written(resources.size());
@@ -169,13 +189,23 @@ void RenderGraph::compileNodes()
         consumer->prev.push_back(producer);
     };
 
-    // Follow resource producers backwards from the endpoint; unused nodes remain disconnected.
+    // Follow producers backwards from marked outputs and stages with external effects.
     std::vector<std::vector<PassNode*>>   consumers(resources.size());
     std::unordered_map<PassNode*, size_t> remaining;
     std::queue<PassNode*>                 pending;
-    auto*                                 end = nodes.back();
-    remaining.emplace(end, 0);
-    pending.push(end);
+    const auto visit = [&](PassNode* node)
+    {
+        if (node && remaining.emplace(node, 0).second)
+            pending.push(node);
+    };
+    for (const auto handle : outputResources)
+    {
+        DCHECK(handle >= 0 && handle < resources.size());
+        visit(resources[handle].owner);
+    }
+    for (auto* node : nodes)
+        if (node->retained)
+            visit(node);
 
     while (!pending.empty())
     {
@@ -188,8 +218,7 @@ void RenderGraph::compileNodes()
             consumers[handle].push_back(node);
             auto* producer = resources[handle].owner;
             connect(producer, node);
-            if (producer && remaining.emplace(producer, 0).second)
-                pending.push(producer);
+            visit(producer);
         }
     }
 
@@ -206,14 +235,14 @@ void RenderGraph::compileNodes()
         }
     }
 
-    // Kahn's algorithm keeps the graph connections intact; isolated non-end nodes are culled.
+    // Only sort nodes reachable from the graph's outputs.
     for (auto* node : nodes)
     {
-        if (node != end && node->next.empty())
-            CHECK(node->prev.empty());
-
-        remaining[node] = node->prev.size();
-        if (node->prev.empty() && (node == end || !node->next.empty()))
+        const auto entry = remaining.find(node);
+        if (entry == remaining.end())
+            continue;
+        entry->second = node->prev.size();
+        if (node->prev.empty())
             pending.push(node);
     }
 
@@ -233,9 +262,7 @@ void RenderGraph::compileNodes()
         }
     }
 
-    // Any connected node left unsorted belongs to, or is blocked by, a cycle.
-    for (const auto& [node, count] : remaining)
-        CHECK(node->prev.empty() && node->next.empty());
+    CHECK(remaining.empty(), "render graph contains a resource dependency cycle");
 
     for (auto& entry : resources)
         if (entry.data && entry.data->externalImage)

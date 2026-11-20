@@ -1,4 +1,5 @@
 #include "passes/RayTracingPass/RayTracingPass.h"
+#include "render/graph/PassPorts.h"
 
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -47,13 +48,22 @@ void RayTracingSettings::validate() const
     );
 }
 
-RayTracingPass::Output RayTracingPass::setup(
-    RenderGraph&                graph,
-    const PassSetup&            setup,
-    RayTracingScenePass::Output preparedGeometry,
-    RenderGraph::BufferHandle   lights
-)
+RenderPassReflection RayTracingPass::reflect(const PassSetup&) const
 {
+    RenderPassReflection reflection;
+    reflection.input("lights", PortKind::Buffer);
+    pass_ports::inputs<RayTracingGeometry>(reflection);
+    reflection.output("rayImage", PortKind::Image, true);
+    reflection.output("reservoirHistory", PortKind::Buffer, true);
+    pass_ports::outputs<DenoiserInputs>(reflection, true);
+    return reflection;
+}
+
+void RayTracingPass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+{
+    const auto lights = ports.buffer("lights");
+    const auto preparedGeometry = pass_ports::read<RayTracingGeometry>(ports);
+
     CHECK(setup.vulkan.supportsRayTracing(), "selected GPU does not support the ray tracing route");
     const auto&    device            = setup.vulkan.physicalDeviceHandle();
     const auto     features          = device.getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
@@ -171,7 +181,9 @@ RayTracingPass::Output RayTracingPass::setup(
         frame.surfaceLayer    = ~0u;
         frame.tlasRevision    = 0;
     }
-    return output;
+    ports.setOutput("rayImage", output.rayImage);
+    ports.setOutput("reservoirHistory", reservoirHistory);
+    pass_ports::write(ports, static_cast<const DenoiserInputs&>(output));
 }
 
 void RayTracingPass::createPipeline(const PassSetup& setup, RealtimeAlgorithm algorithm, bool enableSvgf)
@@ -487,7 +499,7 @@ void RayTracingPass::updateTlasDescriptor(const PassFrame& execution, Frame& fra
     }
 }
 
-void RayTracingPass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup)
+void RayTracingPass::bindResources(RenderGraph& graph, const PassSetup& setup)
 {
     const auto imageInfo = [&](RenderGraph::ImageHandle image)
     {

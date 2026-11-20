@@ -37,8 +37,18 @@ struct ExposureParameters
 static_assert(sizeof(ExposureParameters) == 64);
 }  // namespace
 
-ExposurePass::Output ExposurePass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle hdrColor)
+RenderPassReflection ExposurePass::reflect(const PassSetup&) const
 {
+    RenderPassReflection reflection;
+    reflection.input("hdrColor", PortKind::Image);
+    reflection.output("state", PortKind::Buffer);
+    return reflection;
+}
+
+void ExposurePass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+{
+    const auto hdrColor = ports.image("hdrColor");
+
     source        = hdrColor;
     extent        = graph.imageInfo(source).extent;
     hasHistory    = false;
@@ -64,9 +74,9 @@ ExposurePass::Output ExposurePass::setup(RenderGraph& graph, const PassSetup& se
                 vk::AccessFlagBits2::eShaderStorageWrite,
         }
     );
-    output.state = graph.write(graph.createBuffer({.size = sizeof(State)}));
+    exposureState = graph.write(graph.createBuffer({.size = sizeof(ExposureState)}));
     graph.use(
-        output.state,
+        exposureState,
         {
             .stages = vk::PipelineStageFlagBits2::eComputeShader,
             .access = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
@@ -120,10 +130,10 @@ ExposurePass::Output ExposurePass::setup(RenderGraph& graph, const PassSetup& se
     }
 
     descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
-    return output;
+    ports.setOutput("state", exposureState);
 }
 
-void ExposurePass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
+void ExposurePass::bindResources(RenderGraph& graph, const PassSetup& setup)
 {
     const vk::DescriptorImageInfo image{
         .imageView   = graph.getImage(source).getOrCreateImageView({
@@ -138,7 +148,7 @@ void ExposurePass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup
             .buffer = graph.getBuffer(histogram).handle(),
             .range  = graph.getBuffer(histogram).size()
         },
-        vk::DescriptorBufferInfo{.buffer = graph.getBuffer(output.state).handle(), .range = sizeof(State)},
+        vk::DescriptorBufferInfo{.buffer = graph.getBuffer(exposureState).handle(), .range = sizeof(ExposureState)},
     };
     const std::array writes{
         vk::WriteDescriptorSet{

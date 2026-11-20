@@ -1,6 +1,6 @@
 #include "passes/postprocess/FalcorPostProcess/FalcorPostProcess.h"
 
-#include "editor/PassEditorRegistry.h"
+#include "editor/PassEditor.h"
 #include "editor/SettingsWidgets.h"
 
 #include <algorithm>
@@ -194,7 +194,7 @@ bool drawSettings(FalcorPostProcessConfig& settings, const FalcorPostProcess&, c
 }
 }
 
-void registerFalcorPostProcessEditor(PassEditorRegistry& editors)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    editors.add<FalcorPostProcess, drawSettings>("Falcor Post Process");
+    registry.registerClass<FalcorPostProcess>(makePassEditor<FalcorPostProcess, drawSettings>("Falcor Post Process"));
 }

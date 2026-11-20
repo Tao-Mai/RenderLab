@@ -195,10 +195,20 @@ void FalcorPostProcess::initialize(const PassSetup& setup)
     }
 }
 
-FalcorPostProcess::Output FalcorPostProcess::setup(
-    RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle source, RenderGraph::ImageHandle target
-)
+RenderPassReflection FalcorPostProcess::reflect(const PassSetup&) const
 {
+    RenderPassReflection reflection;
+    reflection.input("source", PortKind::Image);
+    reflection.input("target", PortKind::Image);
+    reflection.output("color", PortKind::Image);
+    return reflection;
+}
+
+void FalcorPostProcess::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+{
+    const auto source = ports.image("source");
+    const auto target = ports.image("target");
+
     imagePasses.clear();
     if (!computeDescriptorSetLayout)
         initialize(setup);
@@ -218,7 +228,7 @@ FalcorPostProcess::Output FalcorPostProcess::setup(
                          uint32_t                 level = 0)
     {
         auto& pass = *imagePasses.emplace_back(std::make_unique<ImagePass>(*this, stage, level));
-        return graph.addPass(pass, setup, input, filtered, output).color;
+        return graph.addStage("FalcorPostProcess stage", pass, setup, input, filtered, output).color;
     };
     const auto createImage = [&](vk::Format format, vk::Extent3D extent)
     { return graph.createImage({.format = format, .extent = extent}); };
@@ -256,10 +266,10 @@ FalcorPostProcess::Output FalcorPostProcess::setup(
         }
     }
     const auto toneMapped = add(Stage::ToneMapping, postFx, luminance, createImage(kOutputFormat, extent));
-    return {add(Stage::Present, toneMapped, toneMapped, target)};
+    ports.setOutput("color", add(Stage::Present, toneMapped, toneMapped, target));
 }
 
-FalcorPostProcess::Output FalcorPostProcess::ImagePass::setup(
+FalcorPostProcess::Output FalcorPostProcess::ImagePass::compile(
     RenderGraph&             graph,
     const PassSetup&         setup,
     RenderGraph::ImageHandle input,
@@ -323,7 +333,7 @@ FalcorPostProcess::Output FalcorPostProcess::ImagePass::setup(
     return {color};
 }
 
-void FalcorPostProcess::ImagePass::writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const
+void FalcorPostProcess::ImagePass::bindResources(RenderGraph& graph, const PassSetup& setup) const
 {
     std::array images{
         vk::DescriptorImageInfo{

@@ -1,4 +1,5 @@
 #include "editor/EditorUi.h"
+#include "editor/PassEditor.h"
 #include "editor/PerformancePanel.h"
 
 #include <imgui.h>
@@ -312,7 +313,7 @@ EditorUI::InspectorResult EditorUI::drawInspector(SceneAsset& scene, AActor* obj
                 config.setObjectPicking(objectPicking);
         }
         drawGraphSettings(config, renderer.graphEditorControls());
-        passEditors.draw(renderer, {renderer.vulkanContext(), scene.editorCamera});
+        drawPassEditors(renderer, {renderer.vulkanContext(), scene.editorCamera});
     }
     result.edited |= drawObjectInspector(object);
 

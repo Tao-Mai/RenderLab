@@ -7,8 +7,7 @@
 #include "core/Window.h"
 #include "core/profiling/Profiler.h"
 #include "editor/EditorCamera.h"
-#include "passes/StandardPasses.h"
-#include "passes/RayTracingPass/RayTracingPass.h"
+#include "passes/RayTracingPass/RayTracingSettings.h"
 #include "render/Renderer.h"
 #include "scene/SceneManager.h"
 #include "scene/system/RenderSystem.h"
@@ -59,7 +58,7 @@ int main(int argc, char** argv)
     CHECK(glfwInit());
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     window.init();
-    renderer.init(standardRenderPasses());
+    renderer.init();
     const auto   extent = renderer.swapchainHandle().extent();
     EditorCamera camera{scenes.scene().editorCamera};
     const auto   view = camera.renderView({0, 0, float(extent.width), float(extent.height)});

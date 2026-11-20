@@ -1,1 +1,1 @@
-target_sources(RenderLabPasses PRIVATE EditorUiPass.cpp)
+renderlab_add_plugin(EditorUiPass EditorUiPass.cpp)

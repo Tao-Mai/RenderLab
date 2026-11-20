@@ -1,5 +1,8 @@
 #pragma once
 
+#include "render/graph/RenderPass.h"
+#include "render/raytracing/RayTracingResources.h"
+
 #include "render/device/Device.h"
 #include "render/graph/RenderGraph.h"
 #include "passes/RayTracingPass/RayTracingData.h"
@@ -7,18 +10,14 @@
 #include <array>
 
 // Prepares shared hit records and expands emissive instances into world-space triangle lights.
-class RayTracingScenePass
+class RayTracingScenePass : public RenderPass
 {
 public:
-    struct Output
-    {
-        RenderGraph::BufferHandle objects;
-        RenderGraph::BufferHandle triangles;
-    };
 
-    Output setup(RenderGraph& graph, const PassSetup& setup);
-    void   prepare(RenderGraph& graph, const PassFrame& frame);
-    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame) const;
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
+    void   prepare(RenderGraph& graph, const PassFrame& frame) override;
+    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame) override;
 
     [[nodiscard]] uint32_t triangleCount() const { return emissiveTriangleCount; }
 
@@ -29,7 +28,7 @@ private:
         std::array<uint64_t, 3> revisions{};
     };
 
-    Output                               output;
+    RayTracingGeometry                               output;
     RenderGraph::BufferHandle            tasks;
     uint32_t                             emissiveTriangleCount = 0;
     uint32_t                             taskCount             = 0;

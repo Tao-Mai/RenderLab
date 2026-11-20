@@ -1,27 +1,27 @@
 #pragma once
 
+#include "render/graph/RenderPass.h"
+
 #include "render/graph/RenderGraph.h"
 
-class PresentColorPass
+class PresentColorPass : public RenderPass
 {
 public:
+    PresentColorPass() : RenderPass(PassExecution::Composite) {}
+
     struct Output
     {
         RenderGraph::ImageHandle color;
     };
 
-    Output setup(
-        RenderGraph&             graph,
-        const PassSetup&         setup,
-        RenderGraph::ImageHandle source,
-        RenderGraph::ImageHandle target
-    );
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
 
 private:
     class BlitPass
     {
     public:
-        Output setup(
+        Output compile(
             RenderGraph& graph, const PassSetup& setup,
             RenderGraph::ImageHandle sourceHandle, RenderGraph::ImageHandle targetHandle
         );

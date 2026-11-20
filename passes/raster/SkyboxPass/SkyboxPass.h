@@ -1,24 +1,18 @@
 #pragma once
 
+#include "render/graph/RenderPass.h"
+
 #include "render/device/Device.h"
 
 #include "render/raster/RasterAttachments.h"
 
-class SkyboxPass
+class SkyboxPass : public RenderPass
 {
 public:
-    struct Output
-    {
-        RenderGraph::ImageHandle color;
-    };
 
-    Output setup(
-        RenderGraph&             graph,
-        const PassSetup&         setup,
-        RenderGraph::ImageHandle colorHandle,
-        RenderGraph::ImageHandle depthHandle
-    );
-    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) override;
 
 private:
     RasterAttachments<1> attachments;

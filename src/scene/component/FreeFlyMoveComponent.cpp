@@ -3,7 +3,6 @@
 #include "core/Context.h"
 #include "core/InputManager.h"
 #include "core/Logger.h"
-#include "editor/Editor.h"
 #include "scene/SceneManager.h"
 #include "scene/component/CameraComponent.h"
 #include "scene/component/CharacterMoveComponent.h"
@@ -30,15 +29,14 @@ void FreeFlyMoveComponent::tick(float deltaTime)
     if (const auto* ownCamera = actor().getComponent<CameraComponent>(); ownCamera && !ownCamera->isNavigationActive())
         return;
 
-    DCHECK(context().editor);
-    const auto& camera = context().editor->camera();
-    if (!camera.isNavigationActive())
+    const auto& input  = *context().inputManager;
+    const auto& camera = input.navigation();
+    if (!camera.active)
         return;
 
-    const auto&     input = *context().inputManager;
-    const glm::vec3 front = camera.forward();
-    const glm::vec3 right = camera.right();
-    const glm::vec3 up    = camera.up();
+    const glm::vec3 front = camera.forward;
+    const glm::vec3 right = camera.right;
+    const glm::vec3 up    = camera.up;
 
     glm::vec3 direction{0.0f};
     if (input.get(Command::MoveForward))

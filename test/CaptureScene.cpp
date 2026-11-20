@@ -7,24 +7,12 @@
 #include "core/Window.h"
 #include "editor/EditorCamera.h"
 #include "render/RenderContext.h"
-#include "passes/StandardPasses.h"
 #include "render/Renderer.h"
+#include "render/graph/PassPorts.h"
+#include "render/postprocess/ExposureState.h"
+#include "passes/postprocess/FalcorPostProcess/FalcorPostProcessConfig.h"
 #include "render/device/VkCheck.h"
-#include "passes/raster/DepthPrepass/DepthPrepass.h"
-#include "passes/raster/GBufferPass/GBufferPass.h"
-#include "passes/raster/DeferredLightingPass/DeferredLightingPass.h"
 #include "render/graph/EndPass.h"
-#include "passes/raster/ScenePass/ScenePass.h"
-#include "passes/raster/ShadowPass/ShadowPass.h"
-#include "passes/raster/SkyboxPass/SkyboxPass.h"
-#include "passes/raster/TransparentPass/TransparentPass.h"
-#include "passes/postprocess/Bloom/Bloom.h"
-#include "passes/postprocess/ToneMappingPass/ToneMappingPass.h"
-#include "passes/postprocess/FalcorPostProcess/FalcorPostProcess.h"
-#include "passes/postprocess/ExposurePass/ExposurePass.h"
-#include "passes/OfflinePathTracingPass/OfflinePathTracingPass.h"
-#include "passes/RayTracingPass/RayTracingPass.h"
-#include "passes/SVGF/SVGF.h"
 #include "render/raytracing/SceneAccelerationStructures.h"
 #include "render/resources/MaterialTable.h"
 #include "render/editor/EditorFrameInput.h"
@@ -64,7 +52,7 @@ struct ImageReadbackPass
     vk::DeviceSize            triangleBytes = 0;
     vk::DeviceSize            reservoirBytes = 0;
 
-    RenderGraph::BufferHandle setup(
+    RenderGraph::BufferHandle compile(
         RenderGraph& graph,
         const PassSetup&,
         RenderGraph::ImageHandle  source,
@@ -78,7 +66,7 @@ struct ImageReadbackPass
         hdrImage          = sourceHdr;
         const auto extent = graph.imageInfo(image).extent;
         exposure          = exposureState;
-        exposureBytes     = exposure.id == RenderGraph::kInvalidHandle ? 0 : sizeof(ExposurePass::State);
+        exposureBytes     = exposure.id == RenderGraph::kInvalidHandle ? 0 : sizeof(ExposureState);
         triangles         = triangleLights;
         reservoirs        = reservoirHistory;
         imageBytes        = vk::DeviceSize(extent.width) * extent.height * 4;
@@ -222,104 +210,58 @@ void capture(
     SceneAccelerationStructures accelerationStructures;
     graph.init(vulkan);
     renderContext().materialTable->setup(graph);
-    ShadowPass               shadow;
-    DepthPrepass             depth;
-    ScenePass                scene;
-    GBufferPass              gBuffer;
-    DeferredLightingPass     deferredLighting;
-    SkyboxPass               skybox;
-    TransparentPass          transparent;
-    OfflinePathTracingPass   tracing;
-    RayTracingPass           realtimeTracing;
-    RayTracingScenePass      realtimeScene;
-    SVGF                     svgf;
-    Bloom                    bloom;
-    ToneMappingPass          toneMapping;
-    ExposurePass             exposure;
-    FalcorPostProcess        falcorPostProcess;
-    ImageReadbackPass        readback;
-    EndPass                  end;
+    RenderGraphCompiler captureGraph;
+    ImageReadbackPass readback;
+    EndPass end;
 
-    const auto copySettings = [&]<class Pass>(Pass& pass)
-    {
-        if (const auto* active = renderer.renderPasses().activePass<Pass>())
-            pass.setSettings(active->settings());
-    };
-    copySettings(shadow);
-    copySettings(tracing);
-    copySettings(realtimeTracing);
-    copySettings(svgf);
-    copySettings(bloom);
-    copySettings(toneMapping);
-    copySettings(exposure);
-    copySettings(falcorPostProcess);
-
-    const auto               target = graph.createImage({.format = format, .extent = {extent.width, extent.height, 1}});
-    RenderGraph::ImageHandle color;
-    RenderGraph::BufferHandle triangleLights;
-    ShadowResources          lightingShadow;
-    const auto               lightBuffer = graph.createBuffer({
-                      .size  = kMaxLights * sizeof(LightData),
-                      .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+    const auto target = graph.createImage({.format = format, .extent = {extent.width, extent.height, 1}});
+    const auto lightBuffer = graph.createBuffer({
+        .size = kMaxLights * sizeof(LightData),
+        .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
     });
-    if (offline || realtime)
+    const auto& configManager = *context().config;
+    auto description = loadRenderGraph(configManager.renderGraphScript(), configManager.graphParameterOverrides());
+    const auto sourceOf = [&](std::string_view input) -> const nlohmann::json&
     {
-        if (offline)
-            color = graph.addPass(tracing, setup).rayImage;
-        else
-        {
-            const auto geometry = graph.addPass(realtimeScene, setup);
-            triangleLights = geometry.triangles;
-            const auto traced = graph.addPass(realtimeTracing, setup, geometry, lightBuffer);
-            if (config.feature.svgf)
-                color = svgf.setup(graph, setup, traced).color;
-            else
-                color = traced.rayImage;
-        }
-    }
-    else
-    {
-        lightingShadow = config.feature.shadows ? graph.addPass(shadow, setup, lightBuffer)
-                                                : createUnshadowedResources(graph);
-        const auto depthImage = graph.addPass(depth, setup).depth;
-        if (config.renderPath == RenderPath::Deferred)
-        {
-            const auto geometry = graph.addPass(gBuffer, setup, depthImage);
-            color = graph.addPass(deferredLighting, setup, target, geometry, lightingShadow, lightBuffer).color;
-        }
-        else
-        {
-            color = graph.addPass(scene, setup, target, depthImage, lightingShadow, lightBuffer).color;
-        }
-        if (config.feature.ibl)
-            color = graph.addPass(skybox, setup, color, depthImage).color;
-        color = graph.addPass(transparent, setup, color, depthImage, lightingShadow, lightBuffer).color;
-    }
-    const auto hdrColor       = color;
-    RenderGraph::BufferHandle exposureState;
+        const auto& edges = description.at("edges");
+        const auto edge = std::ranges::find_if(edges, [&](const auto& value) { return value[1] == input; });
+        CHECK(edge != edges.end(), "capture graph is missing '{}'", input);
+        return (*edge)[0];
+    };
+
+    auto& marked = description["outputs"];
+    marked["color"] = sourceOf("editorUi.color");
+    marked.erase("pickingReadback");
+    marked["hdr"] = sourceOf(config.feature.postProcess == PostProcessMode::Falcor ? "falcor.source"
+                                                                                 : "exposure.hdrColor");
     if (config.feature.postProcess == PostProcessMode::RenderLab)
-        exposureState = graph.addPass(exposure, setup, color).state;
-    if (config.feature.postProcess == PostProcessMode::Falcor)
-        color = falcorPostProcess.setup(graph, setup, color, target).color;
-    else
+        marked["exposure"] = "exposure.state";
+    if (realtime)
     {
-        if (config.feature.bloom)
-            color = bloom.setup(graph, setup, color).color;
-        color = graph.addPass(toneMapping, setup, color, target, exposureState).color;
+        marked["triangleLights"] = "rayTracingScene.triangles";
+        const auto* trace = renderer.graphPasses().findPass("rayTracing");
+        CHECK(trace);
+        if (trace->pass->properties().at("algorithm") == "ReSTIR")
+            marked["reservoirs"] = "rayTracing.reservoirHistory";
     }
-    const auto buffer = graph.addPass(
-        readback,
-        setup,
-        color,
-        hdrColor,
-        exposureState,
-        triangleLights,
-        realtime ? realtimeTracing.reservoirs() : RenderGraph::BufferHandle{}
+    GraphResources inputs{{"presentTarget", target}, {"lightBuffer", lightBuffer}};
+    if (graphUsesInputPrefix(description, "emptyShadow_"))
+        pass_ports::insert(inputs, "emptyShadow_", createUnshadowedResources(graph));
+    const auto outputs = captureGraph.compile(graph, setup, description, inputs, renderer.plugins(),
+                                              configManager.passOverrides());
+    const auto optionalBuffer = [&](std::string_view name)
+    {
+        const auto found = outputs.find(name);
+        return found == outputs.end() ? RenderGraph::BufferHandle{} : std::get<RenderGraph::BufferHandle>(found->second);
+    };
+    const auto buffer = graph.addStage(
+        "Capture readback", readback, setup,
+        std::get<RenderGraph::ImageHandle>(outputs.at("color")),
+        std::get<RenderGraph::ImageHandle>(outputs.at("hdr")),
+        optionalBuffer("exposure"), optionalBuffer("triangleLights"), optionalBuffer("reservoirs")
     );
-    graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
+    graph.addStage("Capture host read", end, setup, RenderGraph::ImageHandle{}, buffer);
     graph.compile(setup);
-    if (config.renderPath == RenderPath::Deferred)
-        deferredLighting.writeDescriptorSet(graph, setup);
     bindTestLightBuffer(graph, setup, lightBuffer);
 
     EditorCamera camera{scenes.scene().editorCamera};
@@ -337,7 +279,7 @@ void capture(
     }
     else
     {
-        writeTestLighting(graph, setup, lightingShadow, renderData);
+        writeTestLighting(graph, setup, pass_ports::read<ShadowResources>(outputs), renderData);
         for (auto& data : frameData)
         {
             data.uploadSceneUniforms(view.uniforms);
@@ -421,7 +363,9 @@ void capture(
                 int(extent.width * 4)
             ));
         }
-        const auto completed = offline ? tracing.sampleCount() : frameNumber + 1;
+        const auto completed = offline
+            ? captureGraph.findPass("offline")->pass->statistics().at("sampleCount").get<uint32_t>()
+            : frameNumber + 1;
         if (completed != frameNumber)
         {
             frameNumber = completed;
@@ -444,7 +388,7 @@ void capture(
     graph.getBuffer(buffer).download(pixels.data(), pixels.size());
     if (readback.exposureBytes > 0)
     {
-        ExposurePass::State exposureState;
+        ExposureState exposureState;
         std::memcpy(&exposureState, pixels.data() + imageBytes, sizeof(exposureState));
         CHECK(
             std::isfinite(exposureState.ev100) && std::isfinite(exposureState.exposureScale) &&
@@ -577,7 +521,7 @@ int main(int argc, char** argv)
     CHECK(glfwInit());
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     window.init();
-    renderer.init(standardRenderPasses());
+    renderer.init();
     renderer.rebuildGraph();
     const auto mode = config.rendererConfig().feature.postProcess;
 
@@ -586,16 +530,16 @@ int main(int argc, char** argv)
         CHECK(route == "realtime");
         const std::string_view algorithm{argv[10]};
         CHECK(algorithm == "restir" || algorithm == "minimalpathtracer");
-        auto settings = renderer.renderPasses().activePass<RayTracingPass>()->settings();
-        settings.algorithm =
-            algorithm == "minimalpathtracer" ? RealtimeAlgorithm::MinimalPathTracer : RealtimeAlgorithm::ReSTIR;
+        auto settings = renderer.graphPasses().findPass("rayTracing")->pass->properties();
+        settings["algorithm"] = algorithm == "minimalpathtracer" ? "MinimalPathTracer" : "ReSTIR";
         if (argc > 11)
-            settings.maxBounces = parseNumber<uint32_t>(argv[11]);
-        renderer.setPassOverrides("RayTracingPass", "rayTracing", Serialize(settings));
+            settings["maxBounces"] = parseNumber<uint32_t>(argv[11]);
+        renderer.setPassOverrides("RayTracingPass", "rayTracing", std::move(settings));
     }
     if (argc > 6 && mode == PostProcessMode::Falcor)
     {
-        auto settings = renderer.renderPasses().activePass<FalcorPostProcess>()->settings();
+        FalcorPostProcessConfig settings;
+        Deserialize(renderer.graphPasses().findPass("falcor")->pass->properties(), settings);
         settings.toneMapper.autoExposure = std::string_view{argv[6]} == "auto";
         if (!settings.toneMapper.autoExposure)
             settings.toneMapper.setExposureValue(parseNumber<float>(argv[6]));

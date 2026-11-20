@@ -27,14 +27,6 @@ def _parameter_value(name, value, valueType):
     return value
 
 
-class ResourceReference:
-    def __init__(self, path: tuple[str, ...]) -> None:
-        self._path = path
-
-    def __getattr__(self, field: str) -> ResourceReference:
-        return ResourceReference((*self._path, field))
-
-
 class RenderGraph:
     def __init__(
         self, parameterOverrides: Mapping[str, object], parameterChoices: Mapping[str, Iterable[str]]
@@ -45,10 +37,11 @@ class RenderGraph:
         self._parameters = {}
         self._editorControls = []
         self._nodes = []
+        self._edges = []
         self._outputs = {}
 
-    def input(self, name: str) -> ResourceReference:
-        return ResourceReference(("inputs", name))
+    def input(self, name: str) -> str:
+        return f"$inputs.{name}"
 
     def param(
         self,
@@ -127,25 +120,26 @@ class RenderGraph:
             })
         return cast(_ParameterT, resolvedValue)
 
-    def add_pass(
+    def create_pass(
         self,
-        passType: str,
         name: str,
-        *inputs: ResourceReference,
+        passType: str,
         properties: dict[str, object] | None = None,
+        *,
         ui: bool = False,
-    ) -> ResourceReference:
+    ) -> None:
         self._nodes.append({
             "type": passType,
             "name": name,
-            "inputs": [resource._path for resource in inputs],
             "properties": {} if properties is None else properties,
             "ui": ui,
         })
-        return ResourceReference(("passes", name))
 
-    def mark_output(self, name: str, resource: ResourceReference) -> None:
-        self._outputs[name] = resource._path
+    def add_edge(self, source: str, target: str) -> None:
+        self._edges.append((source, target))
+
+    def mark_output(self, resource: str, *, name: str) -> None:
+        self._outputs[name] = resource
 
 
 def build_description(script: str | Path, config: str) -> str:
@@ -159,6 +153,7 @@ def build_description(script: str | Path, config: str) -> str:
         definition["build_graph"](graph)
         return json.dumps({
             "nodes": graph._nodes,
+            "edges": graph._edges,
             "outputs": graph._outputs,
             "showObjectList": graph.showObjectList,
             "parameters": graph._parameters,

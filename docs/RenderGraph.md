@@ -4,25 +4,26 @@
 
 Python 选择 Pass 并连接资源。C++ Pass 声明资源访问，RenderGraph 据此安排执行顺序、分配资源并处理同步。
 
+## Pass 插件
+
+每个 Pass 目录用 `renderlab_add_plugin()` 构建共享库，在自己的 `registerPlugin(PluginRegistry&)` 入口登记类型和可选的编辑器回调。CMake 生成 `plugins/plugins.json`，宿主启动时按清单加载插件并校验 ABI。插件实例持有动态库的生命周期，宿主和插件共用 `RenderLabCore`。
+
 ## Python 构图
 
-应用用 `RenderPassRegistry::add<MyPass>()` 注册 C++ Pass，再将 Pass 和编辑器注册表传给 `Engine::init()`。
 `config/config.json` 的 `renderGraphs` 登记每张图的 `id`、显示名 `label`、C++ 渲染类型 `renderPath` 和
 相对于配置文件的 `script` 路径。应用按场景模式和设备能力提供 Graph 选择。默认入口为 [Forward](../graphs/forward.py)、
 [Deferred](../graphs/deferred.py)、[Realtime](../graphs/realtime.py) 和 [Offline](../graphs/offline.py)。
 `renderer.json` 的 `realtimeGraph` 与 `offlineGraph` 分别记录两种场景模式选择的 Graph ID。
 
-脚本提供 `build_graph(graph)`。`graph.input(name)` 引用宿主输入，
-`graph.add_pass(type, name, *inputs)` 按 C++ `setup()` 的参数顺序接线。输入可以引用上游完整输出，或通过属性选择其中一个字段。
-带有 `Settings` 的 Pass 可以接收 `properties={...}`。例如光追 Pass 可以通过 `properties={"maxBounces": 6}` 指定初始反弹次数。
+脚本提供 `build_graph(graph)`。`graph.create_pass(name, type, properties)` 声明实例，`graph.add_edge(source, target)` 以 `"实例.端口"` 连接资源。`graph.input(name)` 返回宿主输入端口。C++ 通过插件工厂创建实例，并验证端口方向、类型、格式约束和必需连线。
 
 `graph.param()` 同时声明默认值和编辑器控件，返回应用当前图实例覆盖后的值。把声明写在使用该参数的分支里。
 
 ```python
 if graph.param("bloom", True):
-    color = graph.add_pass(
-        "Bloom", "bloom", color, properties={"intensity": 0.04}, ui=True
-    ).color
+    graph.create_pass("bloom", "Bloom", {"intensity": 0.04}, ui=True)
+    graph.add_edge(color, "bloom.hdrColor")
+    color = "bloom.color"
 ```
 
 布尔参数显示复选框，枚举或带 `choices=(...)` 的字符串参数显示下拉框。数值默认显示输入框，有
@@ -39,8 +40,7 @@ if graph.param("bloom", True):
 组装后处理。模块将 Pass 登记到当前图，由 RenderGraph 统一编译。随后 [编辑器输出模块](../graphs/modules/editor.py)
 仅在 Forward 和 Deferred 中使用场景深度做物体拾取。编辑器 UI 叠加在后处理的颜色结果上。
 
-`graph.mark_output("color", result.color)` 指定交换链目标 `presentTarget` 的写入版本。两张光栅图还声明阴影输出 `shadow`
-和拾取回读 `pickingReadback`。Python 仅在建图和重建时运行，逐帧调度和 Vulkan 命令录制由 C++ 执行。
+`graph.mark_output("editorUi.color", name="color")` 指定交换链目标 `presentTarget` 的写入版本。两张光栅图还声明各阴影资源端口和拾取回读 `pickingReadback`。Python 在建图和重建时运行，逐帧调度和 Vulkan 命令录制由 C++ 执行。
 
 `graph.showObjectList` 控制编辑器左侧的 Scene Objects 面板，默认值为 `False`。在 `build_graph()` 中将其
 设为 `True` 即可显示列表。切换时窗口按左栏宽度调整并在当前屏幕居中。编辑器配置中的宽度以收起左栏时的宽度保存。
@@ -51,26 +51,20 @@ if graph.param("bloom", True):
 Pass 通过 `ConfigurablePass<Settings>` 持有类型化参数。`Settings` 声明可设置字段和默认值，可以提供
 `validate()` 校验值，并通过 `requiresGraphRebuild(current)` 指出资源或管线改动是否需要重建图。
 
-应用用 `PassEditorRegistry::add<MyPass>()` 生成布尔、枚举及标注了 `PassSliderRange` 的数值控件。
-复杂界面可以在 Pass 旁边编写 `*Ui.cpp`，再用 `add<MyPass, drawSettings>()` 注册。
-图通过 `graph.add_pass(..., ui=True)` 展示当前实例的已注册控件，专用控件编译进 `RenderLabPassEditors`。
+插件用 `makePassEditor<MyPass>()` 生成布尔、枚举及标注了 `PassSliderRange` 的数值控件。
+复杂界面可以在 Pass 旁边编写 `*Ui.cpp`，再用 `makePassEditor<MyPass, drawSettings>()` 生成回调。
+回调通过 `PluginRegistry::registerClass()` 与工厂一起发布，图通过 `graph.create_pass(..., ui=True)` 展示当前实例的控件。
 
 生效顺序为 Pass 默认值、Python `properties`、实例覆盖值。`renderer.json` 中的 `graphOverrides` 按 Graph ID 保存用户设置。
 `parameters` 保存图参数，
 `passes` 按 Pass 类型与实例名保存 Pass 参数。编辑器的 Reset settings 恢复该实例的脚本初值。
 普通修改在下一帧应用，Pass 可以在准备阶段重置受影响的历史。需要改变资源或连线时重建图。
 
-## Setup：声明工作与资源
+## Pass 编译与执行
 
-Setup 在组图或重建图时执行，确定有哪些 Pass、它们如何传递结果，以及各自使用哪些资源。Graph 此时记录资源规格，等到 Compile 再创建实际的 Image / Buffer；因此下游 Pass 可以提前查询输入的尺寸、格式，准备对应的管线和布局。
+`reflect()` 声明命名输入输出，`compile()` 读取已连接的端口、声明 GPU 资源并发布输出。图编译器按连线排序，从标记输出追溯活跃节点。GPU 资源分配后执行 `bindResources()`。逐帧依次执行 `prepare()` 和 `execute()`。图按类型和实例名持有 Pass，重建时可以复用 Pipeline 和异步任务。
 
-### 登记和连接 Pass
-
-Renderer 按配置选择渲染路线，将需要的 Pass 交给 addPass 登记。PassSetup 提供 Vulkan 上下文、渲染尺寸、帧数据和配置，输入 Handle 或上游 Output 则用于连接资源。Pass 的 setup 返回 Output，后续 Pass 通过其中的 Handle 使用结果。
-
-Graph 会记录每个 Pass 的资源声明，以及 prepare、writeDescriptorSet 和 execute 回调，分别用于每帧准备数据、资源分配后绑定描述符，以及录制命令。注册表按类型和实例名保存 Pass，重建时可以复用 Pipeline 和异步任务。
-
-多个 Pass 可以组成一个注册类型。在其 `setup()` 中调用 `graph.addPass()` 登记内部节点，各节点分别参与依赖分析、同步和执行。
+Bloom、SVGF 等复合 Pass 在 `compile()` 中用 `graph.addStage()` 展开内部命令阶段，各阶段独立声明资源访问。
 
 ### 资源声明与版本
 
@@ -82,13 +76,11 @@ createImage、createBuffer 声明资源的尺寸、格式、大小和内存要�
 
 ### 依赖与访问声明
 
-Graph 从 addPass 的输入参数收集资源依赖。输入可以是单个 Handle，也可以是包含 Handle 的聚合结构，例如上游 Output；C++26 静态反射用于收集结构内部的有效 Handle。
-
-Pass 在 setup 中的 write 和 use 都会被 Graph 记录。write 除了标记生产者，还会让当前 Pass 依赖被覆盖的旧版本，保证旧内容的生产者先执行。
+图编译器从命名端口连线确定 Pass 的编译依赖。底层执行图从 `use()` 和 `write()` 产生的资源访问与版本关系确定命令依赖。`write()` 同时记录生产者和被覆盖的旧版本，保证旧内容的读写顺序。
 
 use 描述资源在哪个流水线阶段、以什么方式访问；图像还需要指定布局。例如，同一张图可以先作为颜色附件写入，再作为纹理采样。Graph 根据这些声明生成同步，并汇总创建资源所需的 Usage，包括附件、采样、Storage 和传输等用途。缓冲的 Usage 还包含创建时显式指定的用途。
 
-资源依赖与访问状态分别服务于调度和同步：上游结果通过输入参数传递，write 补充覆盖依赖，use 声明执行时的访问要求。同一 Pass 对同一 Handle 的多次 use 会合并访问阶段和权限，图像布局需保持一致。
+上游结果通过命名端口传递。`write()` 声明覆盖依赖，`use()` 声明执行时的访问要求。同一阶段对同一 Handle 的多次 `use()` 会合并访问阶段和权限，图像布局需保持一致。
 
 ### 声明最终出口
 

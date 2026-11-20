@@ -2,7 +2,7 @@
 
 #include "passes/SVGF/SvgfSettings.h"
 
-#include "passes/RayTracingPass/RayTracingPass.h"
+#include "render/raytracing/RayTracingResources.h"
 
 class SVGFReprojection
 {
@@ -22,15 +22,15 @@ public:
         RenderGraph::ImageHandle indirectHistory;
     };
 
-    Output setup(RenderGraph& graph, const PassSetup& setup, RayTracingPass::Output input);
-    void   writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
+    Output compile(RenderGraph& graph, const PassSetup& setup, DenoiserInputs input);
+    void   bindResources(RenderGraph& graph, const PassSetup& setup) const;
     void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame);
 
     // Layer belonging to the frame most recently executed by this pass.
     [[nodiscard]] uint32_t colorHistoryLayer() const { return writeLayer ^ 1u; }
 
 private:
-    RayTracingPass::Output                  input;
+    DenoiserInputs                  input;
     Output                                  output;
     std::array<RenderGraph::ImageHandle, 6> history;
     vk::Extent3D                            extent{};

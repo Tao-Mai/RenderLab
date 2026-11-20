@@ -1,12 +1,22 @@
 #include "passes/EditorPickingCopyPass/EditorPickingCopyPass.h"
+#include "render/plugins/PluginManager.h"
 
 #include "core/Logger.h"
 #include "render/editor/EditorFrameInput.h"
 #include "render/resources/Buffer.h"
 
-EditorPickingCopyPass::Output
-EditorPickingCopyPass::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle pickingImageHandle)
+RenderPassReflection EditorPickingCopyPass::reflect(const PassSetup&) const
 {
+    RenderPassReflection reflection;
+    reflection.input("pickingImage", PortKind::Image, false, vk::Format::eR32Uint);
+    reflection.output("readback", PortKind::Buffer);
+    return reflection;
+}
+
+void EditorPickingCopyPass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+{
+    const auto pickingImageHandle = ports.image("pickingImage");
+
     pickingImage = pickingImageHandle;
     graph.use(
         pickingImage,
@@ -28,12 +38,12 @@ EditorPickingCopyPass::setup(RenderGraph& graph, const PassSetup& setup, RenderG
             .access = vk::AccessFlagBits2::eTransferWrite,
         }
     );
-    return {readback};
+    ports.setOutput("readback", readback);
 }
 
 void EditorPickingCopyPass::execute(
     RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
-) const
+)
 {
     const auto& editor = execution.editor;
     if (!editor.requestPick)
@@ -52,4 +62,9 @@ void EditorPickingCopyPass::execute(
         graph.getBuffer(readback).handle(),
         copyRegion
     );
+}
+
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+{
+    registry.registerClass<EditorPickingCopyPass>();
 }

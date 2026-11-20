@@ -1,6 +1,7 @@
 #include "render/resources/GpuShader.h"
 
 #include "render/resources/CompiledShaderPath.h"
+#include "core/RuntimeDirectory.h"
 #include "render/device/VkCheck.h"
 
 #include <fstream>
@@ -8,7 +9,7 @@
 
 std::filesystem::path compiledShaderPath(const std::filesystem::path& path)
 {
-    return std::filesystem::path{RENDERLAB_BUILD_DIRECTORY} / path;
+    return runtimeDirectory() / path;
 }
 
 GpuShader::GpuShader(const vk::raii::Device &device, const std::string &filename)

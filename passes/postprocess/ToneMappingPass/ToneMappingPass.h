@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/graph/RenderPass.h"
+
 #include "passes/postprocess/ToneMappingPass/ToneMappingSettings.h"
 #include "render/graph/PassSettings.h"
 
@@ -10,20 +12,11 @@
 class ToneMappingPass : public ConfigurablePass<ToneMappingSettings>
 {
 public:
-    struct Output
-    {
-        RenderGraph::ImageHandle color;
-    };
 
-    Output setup(
-        RenderGraph&              graph,
-        const PassSetup&          setup,
-        RenderGraph::ImageHandle  hdrColor,
-        RenderGraph::ImageHandle  target,
-        RenderGraph::BufferHandle exposure
-    );
-    void writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
-    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
+    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
+    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
+    void bindResources(RenderGraph& graph, const PassSetup& setup) override;
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) override;
 
 private:
     RenderGraph::ImageHandle  hdrColor;

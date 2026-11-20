@@ -1,6 +1,7 @@
 #include "render/plugins/PluginManager.h"
 
 #include "core/Logger.h"
+#include "core/RuntimeDirectory.h"
 
 #include <filesystem>
 #include <fstream>
@@ -16,35 +17,6 @@
 
 namespace
 {
-std::filesystem::path runtimeDirectory()
-{
-#ifdef _WIN32
-    HMODULE module = nullptr;
-    const bool found = GetModuleHandleExW(
-        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-        reinterpret_cast<LPCWSTR>(&runtimeDirectory), &module
-    );
-    CHECK(found, "cannot locate RenderLabCore: {}", GetLastError());
-    std::wstring path(512, L'\0');
-    for (;;)
-    {
-        const auto length = GetModuleFileNameW(module, path.data(), static_cast<DWORD>(path.size()));
-        CHECK(length, "cannot resolve the RenderLabCore path: {}", GetLastError());
-        if (length < path.size())
-        {
-            path.resize(length);
-            return std::filesystem::path{path}.parent_path();
-        }
-        path.resize(path.size() * 2);
-    }
-#else
-    Dl_info info{};
-    const auto found = dladdr(reinterpret_cast<const void*>(&runtimeDirectory), &info);
-    CHECK(found && info.dli_fname, "cannot locate RenderLabCore");
-    return std::filesystem::path{info.dli_fname}.parent_path();
-#endif
-}
-
 std::shared_ptr<void> loadLibrary(const std::filesystem::path& path)
 {
 #ifdef _WIN32
@@ -90,10 +62,11 @@ void PluginManager::loadAllPlugins()
         const std::filesystem::path file{*filename};
         CHECK(file == file.filename(), "plugin index entry must be a filename: '{}'", *filename);
 
-        const auto path = std::filesystem::absolute(directory / file);
+        const auto path = directory / file;
         const auto& library = libraries.emplace_back(loadLibrary(path));
         const auto abi = pluginSymbol<const char* (*)()>(library, path, "renderLabPluginAbi");
-        CHECK(std::string_view{abi()} == RENDERLAB_PLUGIN_ABI, "render plugin '{}' uses a different ABI", path.string());
+        const auto* tag = abi();
+        CHECK(tag && std::string_view{tag} == RENDERLAB_PLUGIN_ABI, "render plugin '{}' uses a different ABI", path.string());
 
         PluginRegistry registry{*this, library};
         pluginSymbol<void (*)(PluginRegistry&)>(library, path, "registerPlugin")(registry);
