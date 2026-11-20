@@ -11,6 +11,7 @@
 
 #include <array>
 #include <cmath>
+#include <filesystem>
 
 namespace
 {
@@ -26,7 +27,7 @@ void near(float actual, float expected)
     );
 }
 
-void check(VulkanContext& vulkan, const char* shaderPath)
+void check(VulkanContext& vulkan, const std::filesystem::path& shaderPath)
 {
     std::array<MaterialData, kCaseCount> cases;
     for (auto& item : cases)
@@ -113,7 +114,7 @@ void check(VulkanContext& vulkan, const char* shaderPath)
     }
 
     auto      pipelineLayout = vkCheck(device.createPipelineLayout({.setLayoutCount = 1, .pSetLayouts = &rawLayout}));
-    GpuShader shader{device, shaderPath};
+    GpuShader shader{device, shaderPath.string()};
     auto      pipeline = vkCheck(device.createComputePipeline(
         vk::raii::PipelineCache{nullptr},
         {
@@ -198,6 +199,10 @@ int main(int argc, char** argv)
 {
     logger::init(argv[0]);
     CHECK(argc == 2);
+    std::error_code error;
+    const auto shaderPath = std::filesystem::absolute(argv[1], error);
+    CHECK(!error, "failed to resolve shader path '{}': {}", argv[1], error.message());
+
     ConfigManager config;
     context().config = &config;
     config.init();
@@ -209,7 +214,7 @@ int main(int argc, char** argv)
     window.init();
     VulkanContext vulkan;
     vulkan.init(window);
-    check(vulkan, argv[1]);
+    check(vulkan, shaderPath);
     vulkan.reset();
     window.shutdown();
     config.setEditorSize(original.width, original.height);

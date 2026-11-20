@@ -8,7 +8,6 @@
 #include <optional>
 #include <cstdint>
 
-struct ShaderAsset;
 
 enum class MaterialWorkflow : uint32_t
 {
@@ -112,7 +111,6 @@ struct GltfMaterial : MaterialAsset
 
     bool operator==(const GltfMaterial&) const = default;
 
-    std::optional<AssetID<ShaderAsset>> shaderId;
     std::optional<MaterialWorkflow>     workflow;
     std::optional<SpecularGlossiness>   specularGlossiness;
     std::optional<glm::vec4>            baseColorFactor;

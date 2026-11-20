@@ -100,8 +100,6 @@ public:
     static EnvironmentMapAsset::ID saveEnvironmentMap(PreparedEnvironmentMap&& prepared);
 
     static MeshAsset::ID             importMesh(const ImportMeshSetting& setting);
-    [[nodiscard]] static bool        supportsModel(const std::filesystem::path& source);
-    [[nodiscard]] static std::string modelExtensions();
     [[nodiscard]] static PreparedMesh
     prepareMesh(const std::filesystem::path& source, std::optional<uint32_t> meshIndex = std::nullopt);
     static MeshAsset::ID       saveMesh(PreparedMesh&& prepared, const ImportMeshSetting& setting);

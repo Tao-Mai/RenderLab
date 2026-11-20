@@ -1,4 +1,0 @@
-{
-    "id": {"value": "falcor_present"},
-    "binary": "shaders/falcor_present.spv"
-}

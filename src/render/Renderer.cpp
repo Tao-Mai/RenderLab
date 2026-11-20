@@ -13,30 +13,8 @@
 #include "core/Window.h"
 #include "core/profiling/Profiler.h"
 #include "render/device/VkCheck.h"
-#include "render/raster/DepthPrepass.h"
-#include "render/graph/EndPass.h"
-#include "render/raster/ScenePass.h"
-#include "render/raster/SkyboxPass.h"
-#include "render/raster/TransparentPass.h"
-#include "render/raster/DeferredLightingPass.h"
-#include "render/raster/GBufferPass.h"
-#include "render/editor/EditorDepthPass.h"
-#include "render/editor/EditorPickingCopyPass.h"
-#include "render/editor/EditorPickingPass.h"
-#include "render/editor/EditorUiPass.h"
-#include "render/editor/LightMarkerPass.h"
-#include "render/postprocess/Bloom.h"
-#include "render/postprocess/FalcorPostProcess.h"
-#include "render/postprocess/ToneMappingPass.h"
-#include "render/postprocess/ExposurePass.h"
-#include "render/raster/ShadowPass.h"
-#include "render/raytracing/offline/OfflinePathTracingPass.h"
-#include "render/raytracing/BlasBuildPass.h"
-#include "render/raytracing/RayTracingBlitPass.h"
-#include "render/raytracing/realtime/RayTracingPass.h"
-#include "render/raytracing/realtime/SVGFReprojection.h"
-#include "render/raytracing/realtime/SVGFFilter.h"
-#include "render/raytracing/TlasBuildPass.h"
+#include "passes/raytracing/offline/OfflinePathTracingPass.h"
+#include "render/graph/PythonGraph.h"
 #include "render/resources/Buffer.h"
 
 #include <cstring>
@@ -70,58 +48,10 @@ LightRanges groupLights(std::span<const RenderLight> source, std::vector<LightDa
 }
 }  // namespace
 
-struct Renderer::Passes
-{
-    std::tuple<
-        ShadowPass,
-        DepthPrepass,
-        ScenePass,
-        GBufferPass,
-        DeferredLightingPass,
-        SkyboxPass,
-        TransparentPass,
-        LightMarkerPass,
-        ToneMappingPass,
-        ExposurePass,
-        BlasBuildPass,
-        TlasBuildPass,
-        RayTracingScenePass,
-        RayTracingPass,
-        SVGFReprojection,
-        OfflinePathTracingPass,
-        RayTracingBlitPass,
-        EditorDepthPass,
-        EditorPickingPass,
-        EditorPickingCopyPass,
-        EditorUiPass,
-        EndPass>
-        data;
-
-    Bloom      bloom;
-    FalcorPostProcess falcorPostProcess;
-    SVGFFilter svgfFilter;
-
-    template <class T>
-    T& get()
-    {
-        return std::get<T>(data);
-    }
-};
-
-template <class T, class... Args>
-auto Renderer::setupPass(Args&&... args)
-{
-    return graph.addPass(
-        passes->get<T>(),
-        PassSetup{vulkan, swapchain.extent(), frameStorage, *rendererConfig},
-        std::forward<Args>(args)...
-    );
-}
-
 Renderer::Renderer() = default;
 Renderer::~Renderer() { DCHECK(!inited); }
 
-void Renderer::init()
+void Renderer::init(RenderPassRegistry registry)
 {
     DCHECK(!inited);
     rendererConfig = &context().config->rendererConfig();
@@ -134,7 +64,7 @@ void Renderer::init()
     vulkan.init(window);
     swapchain.init(vulkan, window);
 
-    shaders.init(vulkan.deviceHandle(), *context().assetManager);
+    shaders.init(vulkan.deviceHandle());
     device.init(vulkan, shaders);
 
     ctx = {
@@ -156,7 +86,7 @@ void Renderer::init()
     initLightingResources();
     materialTable.init(resources, vulkan, device);
     graph.init(vulkan);
-    passes = std::make_unique<Passes>();
+    passes = std::move(registry);
 
     DEBUG_EXEC(inited = true);
 }
@@ -310,7 +240,8 @@ void Renderer::shutdown() noexcept
     waitIdle();
 
     graph.reset();
-    passes.reset();
+    passes.clearInstances();
+    offlinePass     = nullptr;
     pickingReadback = {};
     lightBuffer     = {};
     presentTarget   = {};
@@ -359,7 +290,6 @@ void Renderer::setupRenderGraph()
         context().profiler->clearGpu();
     for (auto& frame : frames)
         frame.gpuProfiler().discard();
-    DCHECK(passes);
     const auto& config   = *rendererConfig;
     activeFramesInFlight = config.renderPath == RenderPath::OfflinePathTracing ? 1u : maxFramesInFlight;
     frameIndex           = 0;
@@ -374,151 +304,71 @@ void Renderer::setupRenderGraph()
             .format = swapchain.surfaceFormat().format,
             .extent = {extent.width, extent.height, 1},
     });
-    SceneOutput scene;
-    switch (config.renderPath)
-    {
-        case RenderPath::OfflinePathTracing:
-            scene = setupOffline();
-            break;
-        case RenderPath::RayTracing:
-            scene = setupRayTracing();
-            break;
-        case RenderPath::Forward:
-        case RenderPath::Deferred:
-            scene = setupRasterization(presentTarget);
-            break;
-    }
-    RenderGraph::BufferHandle exposure;
-    if (config.feature.hdr && config.feature.postProcess == PostProcessMode::RenderLab)
-        exposure = setupPass<ExposurePass>(scene.color).state;
+    if (config.feature.hdr)
+        CHECK(swapchain.surfaceFormat().colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear);
 
-    scene       = setupLightMarkers(scene);
-    scene.color = setupPostProcess(scene.color, presentTarget, exposure);
-    setupEditor(scene);
-    graph.compile({vulkan, swapchain.extent(), frameStorage, config});
+    const PassSetup setup{vulkan, extent, frameStorage, config};
+    const auto&     script  = context().config->paths().renderGraph;
+    const auto      outputs = passes.build(
+        graph,
+        setup,
+        loadRenderGraph(script, config),
+        {
+            {"presentTarget", graph_value::pack(presentTarget)},
+            {"lightBuffer", graph_value::pack(lightBuffer)},
+            {"emptyShadow", graph_value::pack(ShadowPass::Output{})},
+        }
+    );
+    const auto finalColor = outputs.find("color");
+    CHECK(finalColor != outputs.end(), "render graph '{}' must mark a color output", script.string());
+    const auto color = graph_value::unpack<RenderGraph::ImageHandle>(*finalColor);
+    CHECK(
+        color.id != presentTarget.id && graph.sharesImage(color, presentTarget),
+        "render graph '{}' must write its color output to presentTarget",
+        script.string()
+    );
+    const auto unsupportedUsage = graph.imageUsage(presentTarget) & ~swapchain.imageUsage();
+    CHECK(
+        !unsupportedUsage,
+        "render graph '{}' requests unsupported swapchain usage {}",
+        script.string(),
+        vk::to_string(unsupportedUsage)
+    );
+
+    const auto readback = outputs.find("pickingReadback");
+    pickingReadback = readback == outputs.end() ? RenderGraph::BufferHandle{} :
+        graph_value::unpack<RenderGraph::BufferHandle>(*readback);
+    graph.addPass(endPass, setup, color, pickingReadback);
+    graph.compile(setup);
     for (auto& data : frameStorage)
         data.writeLightBufferDescriptor(graph.getBuffer(lightBuffer));
 
-    if (config.renderPath == RenderPath::Forward || config.renderPath == RenderPath::Deferred)
+    const auto shadow = outputs.find("shadow");
+    if (shadow != outputs.end())
     {
         createShadowSampler();
-        writeShadowDescriptors(scene.shadow);
+        writeShadowDescriptors(graph_value::unpack<ShadowPass::Output>(*shadow));
     }
+    else
+        shadowSampler = nullptr;
+
+    offlinePass   = passes.activePass<OfflinePathTracingPass>();
     appliedConfig = config;
-}
-
-Renderer::SceneOutput Renderer::setupRayTracing()
-{
-    const auto blas       = setupPass<BlasBuildPass>();
-    const auto structures = setupPass<TlasBuildPass>(blas);
-    const auto geometry   = setupPass<RayTracingScenePass>();
-    const auto traced     = setupPass<RayTracingPass>(structures, geometry, lightBuffer);
-    if (rendererConfig->feature.rayTracing.svgf)
-    {
-        const PassSetup setup{vulkan, swapchain.extent(), frameStorage, *rendererConfig};
-        const auto      reprojected = setupPass<SVGFReprojection>(traced);
-        const auto      filtered = passes->svgfFilter.setup(graph, setup, traced, reprojected, passes->get<SVGFReprojection>());
-        return {.color = filtered.color};
-    }
-    return {.color = traced.rayImage};
-}
-
-Renderer::SceneOutput Renderer::setupOffline()
-{
-    const auto blas       = setupPass<BlasBuildPass>();
-    const auto structures = setupPass<TlasBuildPass>(blas);
-    return {.color = setupPass<OfflinePathTracingPass>(structures).rayImage};
 }
 
 uint32_t Renderer::offlineSampleCount() const
 {
-    return passes ? passes->get<OfflinePathTracingPass>().sampleCount() : 0;
+    return offlinePass ? offlinePass->sampleCount() : 0;
 }
 
 float Renderer::offlineSampleProgress() const
 {
-    return passes ? passes->get<OfflinePathTracingPass>().sampleProgress() : 0;
+    return offlinePass ? offlinePass->sampleProgress() : 0;
 }
 
 bool Renderer::offlinePreparingPipeline() const
 {
-    return passes && passes->get<OfflinePathTracingPass>().preparingPipeline();
-}
-
-Renderer::SceneOutput Renderer::setupRasterization(RenderGraph::ImageHandle target)
-{
-    const auto&        config = *rendererConfig;
-    ShadowPass::Output shadow;
-    if (config.feature.shadow.enable)
-        shadow = setupPass<ShadowPass>(lightBuffer);
-    const auto depth = setupPass<DepthPrepass>().depth;
-
-    SceneOutput output;
-    if (config.renderPath == RenderPath::Deferred)
-    {
-        const auto gBuffer  = setupPass<GBufferPass>(depth);
-        const auto lighting = setupPass<DeferredLightingPass>(target, gBuffer, shadow, lightBuffer);
-        output              = {lighting.color, lighting.depth};
-        shadow              = lighting.shadow;
-    }
-    else
-    {
-        const auto scene = setupPass<ScenePass>(target, depth, shadow, lightBuffer);
-        output           = {scene.color, scene.depth};
-        shadow           = scene.shadow;
-    }
-    if (config.feature.ibl)
-        output.color = setupPass<SkyboxPass>(output.color, output.depth).color;
-    output.color  = setupPass<TransparentPass>(output.color, output.depth, shadow, lightBuffer).color;
-    output.shadow = shadow;
-    return output;
-}
-
-Renderer::SceneOutput Renderer::setupLightMarkers(SceneOutput scene)
-{
-    if (scene.depth.id == RenderGraph::kInvalidHandle)
-        scene.depth = setupPass<EditorDepthPass>().depth;
-
-    const auto markers = setupPass<LightMarkerPass>(scene.color, scene.depth);
-    return {markers.color, markers.depth, scene.shadow};
-}
-
-RenderGraph::ImageHandle Renderer::setupPostProcess(
-    RenderGraph::ImageHandle color, RenderGraph::ImageHandle target, RenderGraph::BufferHandle exposure
-)
-{
-    const auto& config = *rendererConfig;
-    if (config.feature.hdr)
-    {
-        CHECK(swapchain.surfaceFormat().colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear);
-        if (config.feature.postProcess == PostProcessMode::Falcor)
-            return passes->falcorPostProcess.setup(
-                graph, PassSetup{vulkan, swapchain.extent(), frameStorage, config}, color, target
-            ).color;
-        if (config.feature.bloom.enable)
-            color = passes->bloom.setup(graph, PassSetup{vulkan, swapchain.extent(), frameStorage, config}, color).color;
-        return setupPass<ToneMappingPass>(color, target, exposure).color;
-    }
-    if (config.renderPath == RenderPath::RayTracing || config.renderPath == RenderPath::OfflinePathTracing)
-    {
-        const auto capabilities =
-            vkCheck(vulkan.physicalDeviceHandle().getSurfaceCapabilitiesKHR(vulkan.surfaceHandle()));
-        CHECK(
-            capabilities.supportedUsageFlags & vk::ImageUsageFlagBits::eTransferDst,
-            "ray tracing requires transfer-destination swapchain images"
-        );
-        return setupPass<RayTracingBlitPass>(color, target).color;
-    }
-    return color;
-}
-
-void Renderer::setupEditor(SceneOutput scene)
-{
-    const auto [pickingImage] = setupPass<EditorPickingPass>(scene.depth);
-    const auto [readback]     = setupPass<EditorPickingCopyPass>(pickingImage);
-    const auto [finalColor]   = setupPass<EditorUiPass>(scene.color);
-    setupPass<EndPass>(finalColor, readback);
-    pickingReadback = readback;
+    return offlinePass && offlinePass->preparingPipeline();
 }
 
 // 现在是硬编码 TODO 之后让各个feature决定是否重建图
@@ -553,15 +403,12 @@ void Renderer::applyConfiguration()
         rebuildGraph();
         return;
     }
-    if (appliedConfig->feature.shadow.filter != config.feature.shadow.filter)
+    if (*shadowSampler && appliedConfig->feature.shadow.filter != config.feature.shadow.filter)
     {
         waitIdle();
-        if (config.renderPath == RenderPath::Forward || config.renderPath == RenderPath::Deferred)
-        {
-            createShadowSampler();
-            for (auto& data : frameStorage)
-                data.writeShadowSampler(*shadowSampler);
-        }
+        createShadowSampler();
+        for (auto& data : frameStorage)
+            data.writeShadowSampler(*shadowSampler);
     }
     appliedConfig = config;
 }
@@ -759,7 +606,7 @@ RenderFrameResult Renderer::render(
     };
 
     // 直接同步等待，获取点击结果
-    if (editor.requestPick)
+    if (editor.requestPick && pickingReadback.id != RenderGraph::kInvalidHandle)
     {
         CpuProfileScope timing{context().profiler, "Picking wait/readback"};
         frame.wait();

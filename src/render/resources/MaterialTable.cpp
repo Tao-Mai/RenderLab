@@ -288,7 +288,6 @@ uint32_t MaterialTable::update(
         materials[found->second] = data;
     }
     materialInfos[found->second] = {
-        .shaderId    = material.shaderId.value_or("scene"),
         .alphaMode   = data.alphaMode,
         .doubleSided = data.doubleSided != 0,
         .clearcoat   = material.clearcoat.has_value(),

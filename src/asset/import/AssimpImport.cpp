@@ -332,14 +332,6 @@ bool AssimpImport::supports(const std::filesystem::path& source)
     return kImporter.IsExtensionSupported(source.extension().string());
 }
 
-std::string AssimpImport::extensions()
-{
-    Assimp::Importer importer;
-    aiString         extensions;
-    importer.GetExtensionList(extensions);
-    return extensions.C_Str();
-}
-
 void AssimpImport::visitNodes(const std::function<void(const Node&)>& visitor, float importScale) const
 {
     CHECK(std::isfinite(importScale) && importScale > 0);

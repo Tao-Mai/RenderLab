@@ -9,7 +9,7 @@
 #include "render/RendererConfig.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
-#include "render/raster/ShadowPass.h"
+#include "passes/raster/shadow/ShadowPass.h"
 #include "render/resources/RenderResourceManager.h"
 
 #include <cstring>

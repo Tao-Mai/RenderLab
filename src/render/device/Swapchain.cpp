@@ -84,10 +84,10 @@ void Swapchain::createSwapChain()
 
     std::vector<vk::PresentModeKHR> availablePresentModes =
         vkCheck(vulkan->physicalDeviceHandle().getSurfacePresentModesKHR(vulkan->surfaceHandle()));
-    vk::PresentModeKHR  presentMode = chooseSwapPresentMode(availablePresentModes);
-    vk::ImageUsageFlags usage       = vk::ImageUsageFlagBits::eColorAttachment;
+    const auto presentMode = chooseSwapPresentMode(availablePresentModes);
+    swapChainImageUsage    = vk::ImageUsageFlagBits::eColorAttachment;
     if (surfaceCapabilities.supportedUsageFlags & vk::ImageUsageFlagBits::eTransferDst)
-        usage |= vk::ImageUsageFlagBits::eTransferDst;
+        swapChainImageUsage |= vk::ImageUsageFlagBits::eTransferDst;
 
     vk::SwapchainCreateInfoKHR swapChainCreateInfo{
         .surface          = vulkan->surfaceHandle(),
@@ -96,7 +96,7 @@ void Swapchain::createSwapChain()
         .imageColorSpace  = swapChainSurfaceFormat.colorSpace,
         .imageExtent      = swapChainExtent,
         .imageArrayLayers = 1,
-        .imageUsage       = usage,
+        .imageUsage       = swapChainImageUsage,
         .imageSharingMode = vk::SharingMode::eExclusive,
         .preTransform     = surfaceCapabilities.currentTransform,
         .compositeAlpha   = vk::CompositeAlphaFlagBitsKHR::eOpaque,

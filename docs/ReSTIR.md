@@ -103,7 +103,7 @@ SVGF 开启 / 关闭各自持有匹配的 Pipeline、Descriptor Set Layout 和 S
 
 关闭两种复用时保留初始 RIS，可用于比较。SVGF 单独控制颜色的时域累积与滤波；ReSTIR 历史保存采样结果，两者各自维护自己的资源。
 
-实现入口：[初始采样与求值](../shaders/raytracing/realtime/restir/restir.slang)、[时空复用](../shaders/raytracing/realtime/restir/restir_reuse.slang)、[GPU 数据](../shaders/raytracing/realtime/restir/restir_data.slang)、[共享光源采样](../shaders/raytracing/realtime/light_sampling.slang)、[CPU 调度](../src/render/raytracing/realtime/RayTracingPass.cpp)。
+实现入口：[初始采样与求值](../passes/raytracing/realtime/trace/restir/restir.slang)、[时空复用](../passes/raytracing/realtime/trace/restir/restir_reuse.slang)、[GPU 数据](../passes/raytracing/realtime/trace/restir/restir_data.slang)、[共享光源采样](../passes/raytracing/realtime/trace/light_sampling.slang)、[CPU 调度](../passes/raytracing/realtime/trace/RayTracingPass.cpp)。
 
 ## 验证
 

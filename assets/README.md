@@ -8,7 +8,7 @@
 
 ```text
 assets/
-  Mesh/ Material/ Texture/ Shader/ Scene/ EnvironmentMap/ Sampler/
+  Mesh/ Material/ Texture/ Scene/ EnvironmentMap/ Sampler/
   PbrtScene/ PbrtTexture/
   binary/
     geometry/     网格顶点与索引
@@ -25,20 +25,28 @@ resource/         模型、纹理与来源许可
 
 ## 导入
 
-编辑器提供模型预览、尺寸 / 缩放与 ID 调整；确认时才查重并自动追加序号。完整场景导入将模型节点转换为静态物体，保留实例变换、共享网格和子网格材质，并设置编辑器相机。
+完整场景导入将模型节点转换为静态物体，保留实例变换、共享网格和子网格材质，并设置编辑器相机。
 
-底层统一使用 AssetImporter：glTF / GLB 由 TinyGLTF 解析，其余受支持模型格式由 Assimp 解析，导入内容为静态几何、材质和纹理。
+导入统一使用 AssetImporter。glTF / GLB 由 TinyGLTF 解析，其余受支持模型格式由 Assimp 解析，导入内容为静态几何、材质和纹理。
 
-也可使用以下命令，`<RenderLab.exe>` 替换为实际构建产物路径：
+通过命令行导入时，将 `<RenderLab.exe>` 替换为实际构建产物路径。
 
 ```text
 <RenderLab.exe> --import-mesh <model>
+<RenderLab.exe> --import-scene <model>
 <RenderLab.exe> --import-texture <image>
 <RenderLab.exe> --import-environmentmap <image>
 <RenderLab.exe> --import-pbrt-scene <source>
 ```
 
-CLI 相对源路径以仓库为基准，默认 ID 为文件名去掉扩展名；完整场景通过编辑器或 API 导入。
+相对源路径以资产根目录的上一级为基准，默认 ID 为去掉扩展名的文件名。已占用的 ID 会自动追加序号。
+
+可选参数写在源路径之后。
+
+- 网格、普通场景和 PBRT 场景可通过 `--id <id>` 指定 ID。
+- 网格和普通场景支持 `--scale <factor>`。网格也可单独用 `--longest-side <meters>` 指定导入后最长边。
+- 纹理和环境图支持 `--color-space auto|linear|srgb`。
+- 环境图支持 `--irradiance-size <pixels>`、`--irradiance-samples <count>`、`--prefilter-samples <count>` 和 `--prefilter-max-samples <count>`。`--prefilter-samples` 设置 GGX 预过滤首级样本数。
 
 普通贴图生成完整 Mipmap；sRGB 颜色在线性空间过滤，数据贴图保持 Linear。环境导入生成 Radiance、Irradiance 和 GGX Prefiltered Cubemap。
 
@@ -48,7 +56,7 @@ PBRT 导入保存独立场景、共享材质与纹理图，并将所有输入依
 
 - [config/config.json](../config/config.json) 指定资产根目录、初始场景及其他配置路径。
 - 资产根目录相对配置目录解析；资产中的数据路径相对资产根目录。
-- Shader 二进制由 CMake 生成，描述中的路径相对运行工作目录。
+- CMake 将 Shader 二进制和变体清单写入构建目录的 `shaders/`。
 - 场景保存 Actor / Component、材质覆盖、独立编辑器相机与环境图。
 - 场景内容通过显式保存写入；切换场景会丢弃未保存修改，关闭时记录默认场景选择。
 

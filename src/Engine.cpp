@@ -14,6 +14,7 @@
 #include "scene/SceneManager.h"
 
 #include <cstdlib>
+#include <utility>
 
 namespace
 {
@@ -40,7 +41,7 @@ Engine::~Engine()
     );
 }
 
-void Engine::init()
+void Engine::init(RenderPassRegistry passes)
 {
     DCHECK(!inited);
 
@@ -82,7 +83,7 @@ void Engine::init()
     ctx.sceneManager->loadDefaultScene();
     ctx.config->setSceneRenderMode(ctx.sceneManager->scene().renderMode);
     inputMethod.activateEnglish();
-    ctx.renderer->init();
+    ctx.renderer->init(std::move(passes));
     ctx.editor->init();
     DEBUG_EXEC(inited = true);
 }

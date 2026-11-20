@@ -23,6 +23,7 @@ public:
     [[nodiscard]] vk::Semaphore                 renderFinishedSemaphore(uint32_t index) const;
     [[nodiscard]] vk::SurfaceFormatKHR          surfaceFormat() const { return swapChainSurfaceFormat; }
     [[nodiscard]] vk::Extent2D                  extent() const { return swapChainExtent; }
+    [[nodiscard]] vk::ImageUsageFlags           imageUsage() const { return swapChainImageUsage; }
     [[nodiscard]] uint32_t                      minImageCount() const { return swapChainMinImageCount; }
     [[nodiscard]] uint32_t imageCount() const { return static_cast<uint32_t>(swapChainImages.size()); }
 
@@ -33,6 +34,7 @@ private:
     std::vector<Image>               swapChainImages;
     vk::SurfaceFormatKHR             swapChainSurfaceFormat;
     vk::Extent2D                     swapChainExtent;
+    vk::ImageUsageFlags              swapChainImageUsage;
     std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
     uint32_t                         swapChainMinImageCount = 0;
 

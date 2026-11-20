@@ -11,7 +11,6 @@
 | MeshAsset                   | 几何二进制引用、Submesh 材质、局部 AABB、导入来源与比例            |
 | MaterialAsset               | 多态材质基类，GltfMaterial / PbrtMaterial 共用 ID 空间 |
 | TextureAsset / SamplerAsset | 像素、Mipmap、色彩空间与采样参数                                   |
-| ShaderAsset                 | Shader 程序与构建产物描述                                          |
 | SceneAsset                  | Actor / Component、编辑器相机、环境图                              |
 | EnvironmentMapAsset         | Radiance、Irradiance、GGX Prefiltered 纹理引用                     |
 | PbrtSceneAsset / PbrtTextureAsset / PbrtMediumAsset | PBRT 场景、纹理节点、介质模型、设置与输入依赖 |
@@ -39,7 +38,7 @@ GltfMaterial 保存 PBR 参数与 glTF 扩展。PbrtMaterial 按离线材质模�
 ## 导入与持久化
 
 - 统一 `importMesh` / `importScene`，按格式选择 TinyGLTF 或 Assimp。
-- Mesh 预览与保存分离，导入比例烘焙进几何；运行时 Transform 只表示实例变换。
+- 网格准备阶段读取几何并计算包围盒，保存阶段将导入比例烘焙进几何。运行时 Transform 表示实例变换。
 - 场景导入展开节点世界变换、复用共享网格、保留材质并生成编辑器相机。
 - glTF 场景保留 `KHR_lights_punctual` 的方向光、点光源和 Spot，导入颜色、照度 / 光强、范围及锥角。节点缩放影响灯的位置，导入比例同时缩放有限范围，光强保持源值。
 - 场景相机的可选 `editorCamera.exposure` 保存手动 / 自动模式、EV100、曝光补偿和自动测光参数；设为 `null` 时使用全局曝光，设置后覆盖全局配置，并随场景保存和切换。

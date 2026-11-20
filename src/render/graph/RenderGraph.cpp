@@ -242,6 +242,16 @@ vk::Extent2D RenderGraph::imageExtent(ImageHandle image)
     return {extent.width, extent.height};
 }
 
+bool RenderGraph::sharesImage(ImageHandle lhs, ImageHandle rhs) const
+{
+    return &resolveResource(lhs.id) == &resolveResource(rhs.id);
+}
+
+vk::ImageUsageFlags RenderGraph::imageUsage(ImageHandle image) const
+{
+    return resolveResource(image.id).imageUsage;
+}
+
 vk::PipelineStageFlags2 RenderGraph::firstUseStages(ImageHandle image) const
 {
     const auto& resource = resolveResource(image.id);

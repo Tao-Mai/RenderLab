@@ -51,19 +51,22 @@ SVGF。关闭时显示当前帧采样；开启时使用 albedo 解调、历史�
 
 - GCC 16.2+，支持 C++26 静态反射与 `-freflection`。
 - CMake 4.2+、Ninja、Vulkan SDK 1.4+、Slang 编译器。
+- CPython 3.10+，包含解释器、标准库和用于嵌入的开发库。
 - vcpkg：`x64-mingw-dynamic`。主要依赖 GLFW、GLM、ImGui（Docking 与 GLFW / Vulkan
   backend）、ImGuizmo、TinyGLTF、Assimp、TinyEXR、DirectXTex（`directxtex[core]`）、MikkTSpace、nlohmann-json、glog、zlib。
 
-在 CLion 中选择 GCC 和 vcpkg 工具链，构建 `RenderLab`，运行工作目录设为构建目录。CMake 会检查反射支持并编译
-Shader；未指定构建类型时默认使用 Release。同一构建目录使用同一套 CMake / Ninja 工具链。
+在 CLion 中选择 GCC 和 vcpkg 工具链，构建 `RenderLab`。CMake 会检查反射支持并编译 Shader，
+程序从对应的构建目录读取 Shader。未指定构建类型时默认使用 Release。同一构建目录使用同一套 CMake / Ninja 工具链。
 光追路线需要支持 Vulkan 硬件光追的显卡。
+Windows 构建会复制 Python DLL，运行时从构建所选的 CPython 安装中加载标准库。
 
-主程序与手动验证工具共用 Runtime 的预编译头。TinyGLTF 的实现和资产保存的序列化集中在独立源文件中；
+主程序与手动验证工具共用 `RenderLabCore` 的预编译头。TinyGLTF 的实现和资产保存的序列化集中在独立源文件中。
 Shader 使用 Slang 生成的依赖文件跟踪实际 include，增量构建只重编受影响的变体。`BUILD_TESTING` 默认关闭，
 手动验证时开启并单独构建所需工具即可。
 
 入口配置为 [config/config.json](config/config.json)，渲染与编辑器参数分别位于 [renderer.json](config/renderer.json)
-和 [editor.json](config/editor.json)。环境图属于场景，IBL 开关属于渲染配置。
+和 [editor.json](config/editor.json)。`paths.renderGraph` 指向构图脚本，默认使用 [standard.py](graphs/standard.py)。
+环境图属于场景，IBL 开关属于渲染配置。
 
 模型源文件与生成资产未完整随仓库提交，运行前需要准备资产并指定初始场景，参见 [资产说明](assets/README.md)。
 

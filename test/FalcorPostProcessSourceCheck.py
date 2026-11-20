@@ -35,7 +35,7 @@ def main():
     falcor = Path(sys.argv[1])
     root = Path(__file__).resolve().parents[1]
     original = (falcor / "Source/RenderPasses/SimplePostFX/SimplePostFX.cs.slang").read_text()
-    port = (root / "shaders/postprocess/falcor/simple_post_fx.slang").read_text()
+    port = (root / "passes/postprocess/falcor/simple_post_fx.slang").read_text()
     names = {
         "gSrc": "sourceImage", "gBloomed": "bloomedImage", "gDst": "destinationImage",
         "gLinearSampler": "linearSampler", "uv_circular": "circularUv",
@@ -63,7 +63,7 @@ def main():
         actual = re.sub(r"if\s*\(parameters.bypass != 0\)\s*\{[^}]*\}", "", actual)
         assert tokens(expected) == tokens(actual), name
     original = (falcor / "Source/RenderPasses/ToneMapper/ToneMapping.ps.slang").read_text()
-    port = (root / "shaders/postprocess/falcor/tonemapping.slang").read_text()
+    port = (root / "passes/postprocess/falcor/tonemapping.slang").read_text()
     names = {"gParams": "parameters"}
     names.update({name: "k" + name for name in "ABCDEF"})
     original = rename(original, names)
@@ -74,7 +74,7 @@ def main():
         assert tokens(function(original, name)) == tokens(function(port, name)), name
     assert "kExposureKey=0.042" in tokens(port) and "kLuminanceLod=16.0" in tokens(port)
     assert "float3(0.2126f,0.7152f,0.0722f)" in tokens(
-        (root / "shaders/postprocess/falcor/simple_post_fx.slang").read_text()
+        (root / "passes/postprocess/falcor/simple_post_fx.slang").read_text()
     )
     print("Falcor source parity passed: 3 blur filters, 3 effect kernels, 8 tone mapping functions.")
 

@@ -124,6 +124,8 @@ public:
     getAccelerationStructure(AccelerationStructureHandle handle, size_t index = 0);
     [[nodiscard]] const ImageCreateInfo& imageInfo(ImageHandle image);
     [[nodiscard]] vk::Extent2D imageExtent(ImageHandle image);
+    [[nodiscard]] bool sharesImage(ImageHandle lhs, ImageHandle rhs) const;
+    [[nodiscard]] vk::ImageUsageFlags imageUsage(ImageHandle image) const;
     [[nodiscard]] vk::PipelineStageFlags2 firstUseStages(ImageHandle image) const;
 
     void execute(

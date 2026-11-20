@@ -9,15 +9,16 @@
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
 #include "render/RenderView.h"
+#include "passes/StandardPasses.h"
 #include "render/Renderer.h"
 #include "render/device/FrameContext.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/editor/EditorFrameInput.h"
 #include "render/graph/EndPass.h"
-#include "render/postprocess/ExposurePass.h"
-#include "render/postprocess/FalcorPostProcess.h"
-#include "render/postprocess/ToneMappingPass.h"
+#include "passes/postprocess/exposure/ExposurePass.h"
+#include "passes/postprocess/falcor/FalcorPostProcess.h"
+#include "passes/postprocess/tone_mapping/ToneMappingPass.h"
 #include "render/resources/RenderResourceManager.h"
 #include "scene/SceneManager.h"
 #include "scene/system/SceneRenderData.h"
@@ -265,7 +266,7 @@ void checkRendererSwitches(ConfigManager& config)
     config.setRenderFeature(feature);
     Renderer renderer;
     context().renderer = &renderer;
-    renderer.init();
+    renderer.init(standardRenderPasses());
     const auto            extent = renderer.swapchainHandle().extent();
     EditorCameraConfig    cameraConfig;
     EditorCamera          camera{cameraConfig};
@@ -315,7 +316,7 @@ int main(int, char** argv)
     AssetDataManager data;
     data.init(config.paths().assets);
     ShaderManager shaders;
-    shaders.init(vulkan.deviceHandle(), assets);
+    shaders.init(vulkan.deviceHandle());
     Device device;
     device.init(vulkan, shaders);
     RenderResourceManager resources;

@@ -4,6 +4,7 @@
 #include "asset/import/ImportId.h"
 #include "asset/import/ModelImport.h"
 #include "core/Context.h"
+#include "core/math/Bounds.h"
 #include "scene/actor/AStaticMesh.h"
 #include "scene/actor/ALight.h"
 #include "scene/component/LightTypes.h"
@@ -22,14 +23,13 @@ constexpr float kMinimumSceneRadius = 0.01f;
 struct ImportedMesh
 {
     std::optional<MeshAsset::ID> id;
-    glm::vec3                    boundsMin{0.0f};
-    glm::vec3                    boundsMax{0.0f};
+    Aabb                         bounds;
 };
 
-void fitCamera(EditorCameraConfig& camera, glm::vec3 boundsMin, glm::vec3 boundsMax)
+void fitCamera(EditorCameraConfig& camera, const Aabb& bounds)
 {
-    const glm::vec3 center   = (boundsMin + boundsMax) * 0.5f;
-    const float     radius   = std::max(glm::length(boundsMax - boundsMin) * 0.5f, kMinimumSceneRadius);
+    const glm::vec3 center   = (bounds.min + bounds.max) * 0.5f;
+    const float     radius   = std::max(glm::length(bounds.max - bounds.min) * 0.5f, kMinimumSceneRadius);
     const float     distance = radius / std::sin(glm::radians(camera.fieldOfView * 0.5f)) * kCameraFitMargin;
     camera.position          = center + glm::vec3{0, 0, distance};
     camera.yaw               = -90.0f;
@@ -111,9 +111,9 @@ AssetID<SceneAsset> AssetImporter::importScene(const ImportSceneSetting& setting
     scene.id = asset_import::nextId<SceneAsset>(setting.id.empty() ? source.stem().string() : setting.id.value);
 
     std::unordered_map<uint32_t, ImportedMesh> meshes;
-    glm::vec3                                  boundsMin{0.0f}, boundsMax{0.0f};
-    bool                                       hasBounds = false;
+    std::optional<Aabb>                        sceneBounds;
     std::optional<ModelImport::Camera>         camera;
+
     importer->visitNodes(
         [&](const ModelImport::Node& node)
         {
@@ -128,15 +128,11 @@ AssetID<SceneAsset> AssetImporter::importScene(const ImportSceneSetting& setting
                 auto& mesh = meshes[meshIndex];
                 if (!mesh.id)
                 {
-                    auto prepared  = importer->prepareMesh(meshIndex);
-                    mesh.boundsMin = prepared.boundsMin;
-                    mesh.boundsMax = prepared.boundsMax;
-                    mesh.id        = importer->saveMesh(
+                    auto prepared = importer->prepareMesh(meshIndex);
+                    mesh.bounds   = {prepared.boundsMin, prepared.boundsMax};
+                    mesh.id       = importer->saveMesh(
                         std::move(prepared),
-                        {
-                                   .source = source,
-                                   .id     = scene.id.value + "_mesh" + std::to_string(meshIndex),
-                        }
+                        {.source = source, .id = scene.id.value + "_mesh" + std::to_string(meshIndex)}
                     );
                 }
 
@@ -153,30 +149,32 @@ AssetID<SceneAsset> AssetImporter::importScene(const ImportSceneSetting& setting
                 actor->getComponent<RenderComponent>()->meshId = *mesh.id;
                 scene.actors.push_back(std::move(actor));
 
-                for (uint32_t corner = 0; corner < 8; ++corner)
+                const auto worldBounds = mesh.bounds.transformed(node.world);
+                for (glm::length_t axis = 0; axis < 3; ++axis)
                 {
-                    const glm::vec3 local{
-                        (corner & 1) ? mesh.boundsMax.x : mesh.boundsMin.x,
-                        (corner & 2) ? mesh.boundsMax.y : mesh.boundsMin.y,
-                        (corner & 4) ? mesh.boundsMax.z : mesh.boundsMin.z,
-                    };
-                    const glm::vec3 point{node.world * glm::vec4{local, 1.0f}};
-                    CHECK(std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z));
-                    if (!hasBounds)
-                    {
-                        boundsMin = boundsMax = point;
-                        hasBounds             = true;
-                    }
-                    boundsMin = glm::min(boundsMin, point);
-                    boundsMax = glm::max(boundsMax, point);
+                    CHECK(
+                        std::isfinite(worldBounds.min[axis]) && std::isfinite(worldBounds.max[axis]),
+                        "nonfinite bounds for model node {} in '{}'",
+                        node.index,
+                        source.string()
+                    );
                 }
+
+                if (sceneBounds)
+                {
+                    sceneBounds->min = glm::min(sceneBounds->min, worldBounds.min);
+                    sceneBounds->max = glm::max(sceneBounds->max, worldBounds.max);
+                }
+                else
+                    sceneBounds = worldBounds;
             }
         },
         setting.importScale
     );
 
-    CHECK(hasBounds, "scene has no static mesh instances: {}", source.string());
-    fitCamera(scene.editorCamera, boundsMin, boundsMax);
+    CHECK(sceneBounds, "scene has no static mesh instances: {}", source.string());
+    const auto& bounds = *sceneBounds;
+    fitCamera(scene.editorCamera, bounds);
     if (camera)
         importCamera(scene.editorCamera, *camera);
 
@@ -184,12 +182,12 @@ AssetID<SceneAsset> AssetImporter::importScene(const ImportSceneSetting& setting
         "Imported scene '{}': {} actors, bounds [{}, {}, {}] - [{}, {}, {}]",
         scene.id,
         scene.actors.size(),
-        boundsMin.x,
-        boundsMin.y,
-        boundsMin.z,
-        boundsMax.x,
-        boundsMax.y,
-        boundsMax.z
+        bounds.min.x,
+        bounds.min.y,
+        bounds.min.z,
+        bounds.max.x,
+        bounds.max.y,
+        bounds.max.z
     );
     return context().assetManager->save<SceneAsset>(std::move(scene));
 }

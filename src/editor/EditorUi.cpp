@@ -10,7 +10,6 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui_internal.h>
-#include <imgui_stdlib.h>
 #include <utility>
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -240,8 +239,6 @@ EditorUI::InspectorResult EditorUI::drawInspector(SceneAsset& scene, AActor* obj
         context().renderer->vulkanContext(),
         scene
     );
-    imports.draw();
-
     result.edited |= drawObjectInspector(object);
 
     ImGui::End();

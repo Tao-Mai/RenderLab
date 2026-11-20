@@ -25,11 +25,11 @@ Simple 不分配、上传或复用 ReSTIR 的表面、初始 reservoir、历史 
 
 | 位置 | 职责 |
 | --- | --- |
-| `shaders/raytracing/realtime/ray_tracing.slang` | Surface、材质求值、相机射线、命中 / Miss、BRDF 采样、路径续射线、俄罗斯轮盘 |
-| `shaders/raytracing/realtime/light_sampling.slang` | 光源选择、解析光源 / 发光三角形 / 环境的求值、光源 PDF、命中光源样本还原 |
-| `shaders/raytracing/realtime/output.slang` | 合并 HDR 或 SVGF 分离输出、主命中深度和法线 |
-| `shaders/raytracing/realtime/simple/` | Simple 路径积分与入口 |
-| `shaders/raytracing/realtime/restir/` | ReSTIR 初始 RIS、路径循环、时空复用与专用数据 |
+| `passes/raytracing/realtime/trace/ray_tracing.slang` | Surface、材质求值、相机射线、命中 / Miss、BRDF 采样、路径续射线、俄罗斯轮盘 |
+| `passes/raytracing/realtime/trace/light_sampling.slang` | 光源选择、解析光源 / 发光三角形 / 环境的求值、光源 PDF、命中光源样本还原 |
+| `passes/raytracing/realtime/trace/output.slang` | 合并 HDR 或 SVGF 分离输出、主命中深度和法线 |
+| `passes/raytracing/realtime/trace/simple/` | Simple 路径积分与入口 |
+| `passes/raytracing/realtime/trace/restir/` | ReSTIR 初始 RIS、路径循环、时空复用与专用数据 |
 
 两条子路线复用 `RayTracingScenePass`、BLAS / TLAS、`RayTracingPass` 的描述符和 SBT 构建逻辑，
 分别缓存算法 × SVGF 的 Pipeline 变体。切换算法重建渲染图，重置样本索引和 SVGF / ReSTIR 历史；

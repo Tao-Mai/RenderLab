@@ -61,13 +61,6 @@ std::shared_ptr<ModelImport> ModelImport::open(const std::filesystem::path& sour
     return std::make_shared<AssimpImport>(source);
 }
 
-bool AssetImporter::supportsModel(const std::filesystem::path& source)
-{
-    return isGltf(source) || AssimpImport::supports(source);
-}
-
-std::string AssetImporter::modelExtensions() { return AssimpImport::extensions() + ";*.gltf;*.glb"; }
-
 AssetImporter::PreparedMesh ModelImport::prepareMesh(std::optional<uint32_t> meshIndex)
 {
     const auto start    = std::chrono::steady_clock::now();
@@ -85,7 +78,7 @@ AssetImporter::PreparedMesh ModelImport::prepareMesh(std::optional<uint32_t> mes
     prepared.boundsMin = bounds.min;
     prepared.boundsMax = bounds.max;
     LOG_INFO(
-        "Mesh preview prepared: {} vertices, {} indices, {} submeshes in {:.1f}s",
+        "Mesh prepared: {} vertices, {} indices, {} submeshes in {:.1f}s",
         prepared.geometry.vertices.size(),
         prepared.geometry.indices.size(),
         prepared.submeshes.size(),

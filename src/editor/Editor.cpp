@@ -51,7 +51,7 @@ void Editor::shutdown() noexcept
 {
     editorCamera->resetNavigation();
     editorCamera.reset();
-    ui.shutdown();
+    ui.resetLayout();
     backend.shutdown();
     lightMarkers.reset();
     selectedId          = 0;

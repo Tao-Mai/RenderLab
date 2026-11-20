@@ -15,8 +15,7 @@ public:
     ~AssimpImport() override;
     void visitNodes(const std::function<void(const Node&)>& visitor, float importScale = 1.0f) const override;
 
-    [[nodiscard]] static bool        supports(const std::filesystem::path& source);
-    [[nodiscard]] static std::string extensions();
+    [[nodiscard]] static bool supports(const std::filesystem::path& source);
 
 private:
     [[nodiscard]] AssetImporter::PreparedMesh    readMesh(std::optional<uint32_t> meshIndex) const override;

@@ -17,11 +17,12 @@
 #include "core/Window.h"
 #include "editor/EditorCamera.h"
 #include "render/RenderContext.h"
+#include "passes/StandardPasses.h"
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/graph/EndPass.h"
-#include "render/raytracing/offline/OfflinePathTracingPass.h"
-#include "render/raytracing/BlasBuildPass.h"
+#include "passes/raytracing/offline/OfflinePathTracingPass.h"
+#include "passes/raytracing/blas/BlasBuildPass.h"
 #include "render/resources/MaterialTable.h"
 #include "scene/SceneManager.h"
 #include "scene/SceneTypes.h"
@@ -841,7 +842,7 @@ int main(int argc, char** argv)
     CHECK(scenes.scene().renderMode == SceneRenderMode::Offline);
     EditorCamera camera{scenes.scene().editorCamera};
     RenderSystem system;
-    renderer.init();
+    renderer.init(standardRenderPasses());
     CHECK(renderer.vulkanContext().supportsRayTracing());
     const auto extent    = renderer.swapchainHandle().extent();
     const auto drawFrame = [&]

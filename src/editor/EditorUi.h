@@ -1,7 +1,6 @@
 #pragma once
 
 #include "asset/SceneAsset.h"
-#include "editor/AssetImportPanel.h"
 #include "editor/SceneHierarchy.h"
 #include "render/ViewportRect.h"
 
@@ -38,12 +37,7 @@ public:
     drawGizmo(TransformComponent& transform, const glm::mat4& view, const glm::mat4& projection, bool enableShortcuts);
     [[nodiscard]] InspectorResult drawInspector(SceneAsset& scene, AActor* object, bool dirty);
     void                          endFrame();
-    void                          shutdown() noexcept
-    {
-        imports.shutdown();
-        resetLayout();
-    }
-    void resetLayout();
+    void                          resetLayout();
 
     [[nodiscard]] bool         sceneClicked(glm::vec2& mousePosition) const;
     [[nodiscard]] bool         wantsInput() const;
@@ -60,5 +54,4 @@ private:
     glm::vec2        sceneSize{1.0f};
     ViewportRect     scenePixels;
     SceneHierarchy   hierarchy;
-    AssetImportPanel imports;
 };

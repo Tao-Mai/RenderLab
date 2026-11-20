@@ -2,7 +2,19 @@
 
 [渲染模块](Render.md) · [项目架构](Architecture.md)
 
-Renderer 选择渲染流程，Pass 声明工作及资源访问，RenderGraph 据此安排执行顺序、分配资源并处理同步。
+Python 选择 Pass 并连接资源。C++ Pass 声明资源访问，RenderGraph 据此安排执行顺序、分配资源并处理同步。
+
+## Python 构图
+
+应用用 `RenderPassRegistry::add<MyPass>()` 注册 C++ Pass，再将注册表传给 `Engine::init()`。
+`config/config.json` 的 `paths.renderGraph` 指向脚本，路径相对于配置文件。默认流程见 [standard.py](../graphs/standard.py)。
+
+脚本提供 `build_graph(graph, config)`。`config` 是当前验证过的渲染设置。`graph.input(name)` 引用宿主输入，
+`graph.add_pass(type, name, *inputs)` 按 C++ `setup()` 的参数顺序接线。输入可以引用上游完整输出，或通过属性选择其中一个字段。
+支持 `configure(const nlohmann::json&)` 的 Pass 可接收 `properties={...}`。
+
+`graph.mark_output("color", result.color)` 指定交换链目标 `presentTarget` 的写入版本。默认图还声明光栅阴影输出 `shadow`
+与可选的 `pickingReadback`。Python 仅在建图和重建时运行，逐帧调度和 Vulkan 命令录制由 C++ 执行。
 
 ## Setup：声明工作与资源
 
@@ -12,9 +24,9 @@ Setup 在组图或重建图时执行，确定有哪些 Pass、它们如何传递
 
 Renderer 按配置选择渲染路线，将需要的 Pass 交给 addPass 登记。PassSetup 提供 Vulkan 上下文、渲染尺寸、帧数据和配置，输入 Handle 或上游 Output 则用于连接资源。Pass 的 setup 返回 Output，后续 Pass 通过其中的 Handle 使用结果。
 
-Graph 会记录每个 Pass 的资源声明，以及 prepare、writeDescriptorSet 和 execute 回调，分别用于每帧准备数据、资源分配后绑定描述符，以及录制命令。Pass 对象由 Renderer 或封装器持有，需要覆盖整张图的使用周期。
+Graph 会记录每个 Pass 的资源声明，以及 prepare、writeDescriptorSet 和 execute 回调，分别用于每帧准备数据、资源分配后绑定描述符，以及录制命令。注册表按类型和实例名保存 Pass，重建时可以复用 Pipeline 和异步任务。
 
-多个 Pass 可以由封装器统一持有和连接。Renderer 调用封装器的 setup，由封装器向 Graph 登记内部节点；这些节点仍分别参与依赖分析、同步和执行。
+多个 Pass 可以组成一个注册类型。在其 `setup()` 中调用 `graph.addPass()` 登记内部节点，各节点分别参与依赖分析、同步和执行。
 
 ### 资源声明与版本
 

@@ -1,11 +1,12 @@
 {
     "initialScene": {
-        "value": "bistro_rtxdi"
+        "value": "cornell_box"
     },
     "paths": {
         "assets": "../assets",
         "commands": "commands.json",
         "editor": "editor.json",
-        "renderer": "renderer.json"
+        "renderer": "renderer.json",
+        "renderGraph": "../graphs/standard.py"
     }
 }

@@ -1,5 +1,6 @@
 
 build
+cmake-build-debug
 cmake-build-default
 cmake-build-debug-gcc-16.2
 cmake-build-default-gcc-16.2
@@ -8,9 +9,6 @@ scripts/
 .cache
 .idea
 assets/*
-!assets/Shader/
-assets/Shader/*
-!assets/Shader/falcor_*.json
 resource/*
 .cursor
 test/*

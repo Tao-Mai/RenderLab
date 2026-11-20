@@ -2,8 +2,8 @@
 foreach(check IN ITEMS CaptureScene SceneImportCheck OfflineRenderingCheck MaterialWorkflowCheck SvgfToggleCheck FalcorPostProcessCheck)
     add_executable(${check} EXCLUDE_FROM_ALL ${check}.cpp)
     target_link_libraries(${check} PRIVATE RenderLabRuntime)
-    target_precompile_headers(${check} REUSE_FROM RenderLabRuntime)
-    renderlab_copy_compiler_runtime(${check})
+    target_precompile_headers(${check} REUSE_FROM RenderLabCore)
+    renderlab_copy_runtime_libraries(${check})
 endforeach()
 
 set(material_check_shader "${CMAKE_CURRENT_BINARY_DIR}/material-workflow.spv")

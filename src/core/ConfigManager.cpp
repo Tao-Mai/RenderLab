@@ -240,6 +240,7 @@ void ConfigManager::load()
     CHECK(!data.paths.commands.empty(), "config requires a paths.commands file path");
     CHECK(!data.paths.editor.empty(), "config requires a paths.editor file path");
     CHECK(!data.paths.renderer.empty());
+    CHECK(!data.paths.renderGraph.empty(), "config requires a paths.renderGraph script path");
     CHECK(!data.initialScene.empty(), "config '{}' missing initialScene", file.string());
     resolvePaths();
 }
@@ -260,10 +261,11 @@ void ConfigManager::loadCommands()
 
 void ConfigManager::resolvePaths()
 {
-    resolvedPaths.assets   = resolveAgainst(configDir, data.paths.assets);
-    resolvedPaths.commands = resolveAgainst(configDir, data.paths.commands);
-    resolvedPaths.editor   = resolveAgainst(configDir, data.paths.editor);
-    resolvedPaths.renderer = resolveAgainst(configDir, data.paths.renderer);
+    resolvedPaths.assets      = resolveAgainst(configDir, data.paths.assets);
+    resolvedPaths.commands    = resolveAgainst(configDir, data.paths.commands);
+    resolvedPaths.editor      = resolveAgainst(configDir, data.paths.editor);
+    resolvedPaths.renderer    = resolveAgainst(configDir, data.paths.renderer);
+    resolvedPaths.renderGraph = resolveAgainst(configDir, data.paths.renderGraph);
     CHECK(
         std::filesystem::is_regular_file(resolvedPaths.commands),
         "commands config is not a file: {}",

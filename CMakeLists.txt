@@ -59,8 +59,12 @@ target_compile_definitions(RenderLabBuildOptions INTERFACE JSON_NOEXCEPTION TINY
 
 get_filename_component(RENDERLAB_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
 
-function(renderlab_copy_compiler_runtime target)
+function(renderlab_copy_runtime_libraries target)
     if (WIN32)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:Python3::Python>" "$<TARGET_FILE_DIR:${target}>"
+            VERBATIM)
         foreach (runtime libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll)
             set(runtime_path "${RENDERLAB_COMPILER_BIN_DIR}/${runtime}")
             if (NOT EXISTS "${runtime_path}")
@@ -76,6 +80,14 @@ function(renderlab_copy_compiler_runtime target)
 endfunction()
 
 find_package(Vulkan 1.4 REQUIRED)
+find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter Development.Embed)
+execute_process(
+    COMMAND "${Python3_EXECUTABLE}" -I -X utf8 -c "from pathlib import Path; import sys; print(Path(sys.base_prefix).as_posix())"
+    OUTPUT_VARIABLE RENDERLAB_PYTHON_HOME
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ENCODING UTF-8
+    COMMAND_ERROR_IS_FATAL ANY
+)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
@@ -96,357 +108,159 @@ find_program(SLANGC_EXECUTABLE
 
 set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 set(SHADER_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+set_property(SOURCE src/render/resources/GpuShader.cpp APPEND PROPERTY
+    COMPILE_DEFINITIONS RENDERLAB_BUILD_DIRECTORY="${CMAKE_CURRENT_BINARY_DIR}")
 include(cmake/Shaders.cmake)
-foreach(enable_clearcoat IN ITEMS 0 1)
-    foreach(enable_sheen IN ITEMS 0 1)
-        foreach(enable_ibl IN ITEMS 1 0)
-            set(binary slang)
-            if(enable_clearcoat)
-                string(APPEND binary ".clearcoat")
-            endif()
-            if(enable_sheen)
-                string(APPEND binary ".sheen")
-            endif()
-            if(NOT enable_ibl)
-                string(APPEND binary ".no_ibl")
-            endif()
-            renderlab_shader(slang raster/forward.slang "${binary}"
-                DEFINES ENABLE_IBL=${enable_ibl} ENABLE_CLEARCOAT=${enable_clearcoat} ENABLE_SHEEN=${enable_sheen})
-        endforeach()
-    endforeach()
-endforeach()
-renderlab_shader(gbuffer raster/gbuffer.slang gbuffer DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=1)
-foreach(enable_ibl IN ITEMS 1 0)
-    set(binary deferred_lighting)
-    if(NOT enable_ibl)
-        string(APPEND binary ".no_ibl")
-    endif()
-    renderlab_shader(deferred_lighting raster/deferred_lighting.slang "${binary}"
-        DEFINES ENABLE_IBL=${enable_ibl} ENABLE_CLEARCOAT=0 ENABLE_SHEEN=1)
-endforeach()
-renderlab_shader(depth raster/depth.slang depth DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0)
-renderlab_shader(skybox raster/skybox.slang skybox)
-renderlab_shader(tonemapping postprocess/tonemapping.slang tonemapping)
-foreach(stage IN ITEMS 0 1 2)
-    set(binary falcor_simple_post_fx)
-    if(NOT stage EQUAL 0)
-        string(APPEND binary ".${stage}")
-    endif()
-    renderlab_shader(falcor_simple_post_fx postprocess/falcor/simple_post_fx.slang "${binary}"
-        ENTRIES computeMain DEFINES FALCOR_POST_FX_STAGE=${stage})
-endforeach()
-foreach(stage IN ITEMS 0 1)
-    set(binary falcor_luminance)
-    if(NOT stage EQUAL 0)
-        string(APPEND binary ".${stage}")
-    endif()
-    renderlab_shader(falcor_luminance postprocess/falcor/luminance.slang "${binary}"
-        DEFINES FALCOR_LUMINANCE_STAGE=${stage})
-endforeach()
-renderlab_shader(falcor_tonemapping postprocess/falcor/tonemapping.slang falcor_tonemapping)
-renderlab_shader(falcor_present postprocess/falcor/present.slang falcor_present)
-foreach(stage IN ITEMS 0 1)
-    set(exposure_binaries exposure.histogram exposure.resolve)
-    list(GET exposure_binaries ${stage} binary)
-    renderlab_shader(exposure postprocess/exposure.slang "${binary}" ENTRIES computeMain
-        DEFINES EXPOSURE_STAGE=${stage})
-endforeach()
-foreach(stage IN ITEMS 0 1 2 3)
-    set(binary bloom)
-    if(NOT stage EQUAL 0)
-        string(APPEND binary ".${stage}")
-    endif()
-    renderlab_shader(bloom postprocess/bloom.slang "${binary}" DEFINES BLOOM_STAGE=${stage})
-endforeach()
-foreach(name IN ITEMS light_marker depth picking)
-    renderlab_shader(editor_${name} editor/${name}.slang editor_${name})
-endforeach()
-foreach(type IN ITEMS 0 1 2 3)
-    set(names shadow shadow.directional shadow.rect_area shadow.spot)
-    list(GET names ${type} binary)
-    renderlab_shader(shadow raster/shadow.slang "${binary}" DEFINES SHADOW_TYPE=${type})
-endforeach()
-foreach(svgf IN ITEMS 0 1)
-    set(binary raytracing)
-    if(svgf)
-        string(APPEND binary ".svgf")
-    endif()
-    renderlab_shader(raytracing raytracing/realtime/restir/path_tracing.slang "${binary}"
-        ENTRIES raygenMain temporalMain spatialMain missMain visibilityMissMain closestHitMain lightClosestHitMain
-        DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 SVGF=${svgf})
-    set(binary raytracing_simple)
-    if(svgf)
-        string(APPEND binary ".svgf")
-    endif()
-    renderlab_shader(raytracing_simple raytracing/realtime/simple/path_tracing.slang "${binary}"
-        ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain
-        DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 SVGF=${svgf})
-endforeach()
-renderlab_shader(prepare_emissive_triangles raytracing/realtime/prepare_lights.slang prepare_emissive_triangles
-    ENTRIES computeMain)
-renderlab_shader(offline_pathtracing raytracing/offline/main.slang offline_pathtracing
-    DEFINES BDPT=0 ENTRIES raygenMain missMain visibilityMissMain closestHitMain)
-foreach(depth IN ITEMS 4 8 16 32 64)
-    renderlab_shader(offline_bdpt raytracing/offline/main.slang "offline_bdpt.depth${depth}"
-        DEFINES BDPT=1 BDPT_MAX_DEPTH=${depth} ENTRIES raygenMain missMain visibilityMissMain closestHitMain)
-endforeach()
-foreach(bdpt IN ITEMS 0 1)
-    renderlab_shader(offline_resolve raytracing/offline/resolve.slang "offline_resolve.${bdpt}"
-        DEFINES BDPT=${bdpt} ENTRIES computeMain)
-endforeach()
-renderlab_shader(svgf_reprojection raytracing/realtime/svgf_reprojection.slang svgf_reprojection
-    ENTRIES computeMain)
-foreach(stage IN ITEMS 0 1 2)
-    set(binary svgf_filter)
-    if(stage EQUAL 0)
-        string(APPEND binary ".first")
-    elseif(stage EQUAL 2)
-        string(APPEND binary ".final")
-    endif()
-    renderlab_shader(svgf_filter raytracing/realtime/svgf_filter.slang "${binary}" ENTRIES computeMain
-        DEFINES SVGF_STAGE=${stage})
-endforeach()
-renderlab_shader_manifests()
 
 find_package(ZLIB REQUIRED)
 add_subdirectory(src/asset/pbrt)
 
-add_library(RenderLabRuntime STATIC
-    src/editor/Inspector.cpp
-    src/editor/EditorBackend.cpp
-    src/editor/EnvironmentImportTask.cpp
-    src/editor/AssetImportPanel.cpp
-    src/editor/SceneHierarchy.cpp
-    src/editor/RendererSettings.cpp
-        src/Engine.cpp
-        src/Engine.h
-        src/core/ConfigManager.cpp
-        src/core/ConfigManager.h
-        src/core/Annotations.h
-        src/core/Context.cpp
-        src/core/Context.h
-        src/core/Logger.h
-        src/core/Debug.h
-        src/core/Reflect.h
-        src/core/Serializer.h
-        src/core/Window.cpp
-        src/core/Window.h
-        src/core/Input.h
-        src/core/InputManager.h
-        src/core/InputManager.cpp
-        src/scene/Component.h
-        src/scene/Component.cpp
-        src/scene/component/CameraComponent.h
-        src/scene/component/LightComponent.h
-        src/scene/component/LightComponent.cpp
-        src/scene/component/OfflineLightComponents.cpp
-        src/scene/component/RenderComponent.h
-        src/scene/component/RenderComponent.cpp
-        src/scene/component/TransformComponent.cpp
-        src/scene/component/TransformComponent.h
-        src/scene/component/FreeFlyMoveComponent.h
-        src/scene/component/CharacterMoveComponent.h
-        src/scene/SceneManager.cpp
-        src/scene/SceneManager.h
-        src/scene/SceneTypes.h
-        src/scene/AActor.cpp
-        src/scene/AActor.h
-        src/scene/actor/AFreeFlyCamera.cpp
-        src/scene/actor/AFreeFlyCamera.h
-        src/scene/actor/ALight.cpp
-        src/scene/actor/ALight.h
-        src/scene/actor/AStaticMesh.cpp
-        src/scene/actor/AStaticMesh.h
-        src/scene/component/FreeFlyMoveComponent.cpp
-        src/scene/component/CharacterMoveComponent.cpp
-        src/scene/component/CameraComponent.cpp
-        src/editor/Editor.cpp
-        src/editor/EditorCamera.cpp
-        src/editor/EditorCamera.h
-        src/editor/EditorCameraConfig.h
-        src/editor/Editor.h
-        src/editor/ComponentDraw.cpp
-        src/editor/ComponentDraw.h
-        src/editor/MaterialExtensionsDraw.cpp
-        src/editor/MaterialExtensionsDraw.h
-        src/editor/EditorUi.cpp
-        src/editor/EditorUi.h
-        src/editor/MeshImportPreview.cpp
-        src/editor/MeshImportPreview.h
-        src/asset/AssetManager.cpp
-        src/asset/AssetPersistence.cpp
-        src/asset/Asset.h
-        src/asset/AssetID.h
-        src/asset/ImageFormat.h
-        src/asset/import/ImportImage.cpp
-        src/asset/import/EnvironmentMapUtils.cpp
-        src/asset/import/EnvironmentMapUtils.h
-        src/asset/import/EnvironmentMapBake.cpp
-        src/asset/import/ImportTexture.cpp
-        src/asset/import/ImportEnvironmentMap.cpp
-        src/asset/import/ImportId.h
-        src/asset/MeshGeometry.h
-        src/asset/MeshGeometry.cpp
-        src/asset/BuiltinAssets.h
-        src/asset/builtin/BuiltinMesh.cpp
-        src/asset/builtin/BuiltinMaterial.cpp
-        src/asset/builtin/BuiltinTexture.cpp
-        src/asset/builtin/BuiltinSampler.cpp
-        src/asset/import/ImportMesh.cpp
-        src/asset/import/ImportScene.cpp
-        src/asset/import/GltfImport.h
-        src/asset/import/GltfImport.cpp
-        src/asset/import/GltfLoader.cpp
-        src/asset/import/AssimpImport.h
-        src/asset/import/AssimpImport.cpp
-        src/asset/import/ModelImport.h
-        src/asset/import/GltfMaterialExtensions.h
-        src/asset/import/GltfMaterialExtensions.cpp
-        src/core/Vertex.h
-        src/platform/InputMethod.cpp
-        src/platform/InputMethod.h
-        src/scene/system/RenderSystem.cpp
-        src/scene/system/RenderSystem.h
-        src/editor/LightMarkers.cpp
-        src/editor/LightMarkers.h
-        src/asset/AssetImporter.h
-        src/asset/AssetDataManager.cpp
-        src/asset/AssetDataManager.h
-        src/asset/TextureMip.h
-        src/asset/TextureMip.cpp
-        src/core/math/Sampler.cpp
-        src/core/math/Bounds.cpp
-        src/core/time/Timer.cpp
-        src/core/profiling/Profiler.cpp
-        src/editor/PerformancePanel.cpp
-        src/core/math/Sampler.h
-
-        src/render/DrawItem.h
-        src/render/FrameData.cpp
-        src/render/FrameData.h
-        src/render/RenderConfig.h
-        src/render/RenderContext.cpp
-        src/render/RenderContext.h
-        src/render/RenderData.h
-        src/render/Renderer.cpp
-        src/render/Renderer.h
-        src/render/RendererConfig.h
-        src/render/ExposureConfig.h
-        src/render/postprocess/ExposurePass.h
-        src/render/postprocess/ExposurePass.cpp
-        src/render/RenderView.h
-        src/render/ViewportRect.cpp
-        src/render/ViewportRect.h
-        src/render/Visibility.h
-
-        src/render/device/Device.cpp
-        src/render/device/Device.h
-        src/render/device/DeviceLayouts.cpp
-        src/render/device/FrameContext.cpp
-        src/render/device/FrameContext.h
-        src/render/device/GpuProfiler.cpp
-        src/render/device/GpuProfiler.h
-        src/render/device/GpuUploadContext.h
-        src/render/device/Memory.h
-        src/render/device/Swapchain.cpp
-        src/render/device/Swapchain.h
-        src/render/device/VkCheck.h
-        src/render/device/VulkanContext.cpp
-        src/render/device/VulkanContext.h
-
-        src/render/resources/Buffer.cpp
-        src/render/resources/Buffer.h
-        src/render/resources/GpuMesh.cpp
-        src/render/resources/GpuMesh.h
-        src/render/resources/GpuShader.cpp
-        src/render/resources/GpuShader.h
-        src/render/resources/GpuTexture.cpp
-        src/render/resources/GpuTexture.h
-        src/render/resources/Image.cpp
-        src/render/resources/Image.h
-        src/render/resources/MaterialData.h
-        src/render/resources/MaterialTable.cpp
-        src/render/resources/MaterialTable.h
-        src/render/resources/RenderResourceManager.cpp
-        src/render/resources/RenderResourceManager.h
-        src/render/resources/ShaderData.h
-        src/render/resources/ShaderManager.cpp
-        src/render/resources/ShaderManager.h
-
-        src/render/graph/EndPass.cpp
-        src/render/graph/EndPass.h
-        src/render/graph/PassInputs.h
-        src/render/graph/RenderGraph.cpp
-        src/render/graph/RenderGraph.h
-        src/render/graph/RenderGraphSetup.cpp
-
-        src/render/raster/DeferredLightingPass.cpp
-        src/render/raster/DeferredLightingPass.h
-        src/render/raster/DepthPrepass.cpp
-        src/render/raster/DepthPrepass.h
-        src/render/raster/GBufferPass.cpp
-        src/render/raster/GBufferPass.h
-        src/render/raster/SceneDraw.cpp
-        src/render/raster/SceneDraw.h
-        src/render/raster/ScenePass.cpp
-        src/render/raster/ScenePass.h
-        src/render/raster/ShadowPass.cpp
-        src/render/raster/ShadowPass.h
-        src/render/raster/SkyboxPass.cpp
-        src/render/raster/SkyboxPass.h
-        src/render/raster/TransparentPass.cpp
-        src/render/raster/TransparentPass.h
-
-        src/render/raytracing/AccelerationStructure.cpp
-        src/render/raytracing/AccelerationStructure.h
-        src/render/raytracing/BlasBuildPass.cpp
-        src/render/raytracing/BlasBuildPass.h
-        src/render/raytracing/RayTracingBlitPass.cpp
-        src/render/raytracing/RayTracingBlitPass.h
-        src/render/raytracing/TlasBuildPass.cpp
-        src/render/raytracing/TlasBuildPass.h
-
-        src/render/raytracing/realtime/RayTracingData.h
-        src/render/raytracing/realtime/RayTracingPass.cpp
-        src/render/raytracing/realtime/RayTracingPass.h
-        src/render/raytracing/realtime/RayTracingScenePass.cpp
-        src/render/raytracing/realtime/RayTracingScenePass.h
-        src/render/raytracing/realtime/SVGFFilter.cpp
-        src/render/raytracing/realtime/SVGFFilter.h
-        src/render/raytracing/realtime/SVGFReprojection.cpp
-        src/render/raytracing/realtime/SVGFReprojection.h
-
-        src/render/raytracing/offline/OfflineLightData.h
-        src/render/raytracing/offline/OfflinePathTracingPass.cpp
-        src/render/raytracing/offline/OfflinePathTracingPass.h
-        src/render/raytracing/offline/OfflineScene.cpp
-        src/render/raytracing/offline/OfflineScene.h
-        src/render/raytracing/offline/OfflineShaderTypes.h
-
-        src/render/postprocess/Bloom.cpp
-        src/render/postprocess/Bloom.h
-        src/render/postprocess/ToneMappingPass.cpp
-        src/render/postprocess/ToneMappingPass.h
-        src/render/postprocess/FalcorPostProcess.cpp
-        src/render/postprocess/FalcorPostProcess.h
-        src/render/postprocess/FalcorPostProcessConfig.cpp
-        src/render/postprocess/FalcorPostProcessConfig.h
-
-        src/render/editor/EditorDepthPass.cpp
-        src/render/editor/EditorDepthPass.h
-        src/render/editor/EditorFrameInput.h
-        src/render/editor/EditorPickingCopyPass.cpp
-        src/render/editor/EditorPickingCopyPass.h
-        src/render/editor/EditorPickingPass.cpp
-        src/render/editor/EditorPickingPass.h
-        src/render/editor/EditorShaderData.h
-        src/render/editor/EditorUiPass.cpp
-        src/render/editor/EditorUiPass.h
-        src/render/editor/LightMarkerPass.cpp
-        src/render/editor/LightMarkerPass.h
+add_library(RenderLabCore STATIC
+    src/core/ConfigManager.cpp
+    src/core/ConfigManager.h
+    src/core/Annotations.h
+    src/core/Context.cpp
+    src/core/Context.h
+    src/core/Logger.h
+    src/core/Debug.h
+    src/core/Reflect.h
+    src/core/Serializer.h
+    src/core/Window.cpp
+    src/core/Window.h
+    src/core/Input.h
+    src/core/InputManager.h
+    src/core/InputManager.cpp
+    src/scene/Component.h
+    src/scene/Component.cpp
+    src/scene/component/CameraComponent.h
+    src/scene/component/LightComponent.h
+    src/scene/component/LightComponent.cpp
+    src/scene/component/OfflineLightComponents.cpp
+    src/scene/component/RenderComponent.h
+    src/scene/component/RenderComponent.cpp
+    src/scene/component/TransformComponent.cpp
+    src/scene/component/TransformComponent.h
+    src/scene/component/FreeFlyMoveComponent.h
+    src/scene/component/CharacterMoveComponent.h
+    src/scene/SceneManager.cpp
+    src/scene/SceneManager.h
+    src/scene/SceneTypes.h
+    src/scene/AActor.cpp
+    src/scene/AActor.h
+    src/scene/actor/AFreeFlyCamera.cpp
+    src/scene/actor/AFreeFlyCamera.h
+    src/scene/actor/ALight.cpp
+    src/scene/actor/ALight.h
+    src/scene/actor/AStaticMesh.cpp
+    src/scene/actor/AStaticMesh.h
+    src/scene/component/FreeFlyMoveComponent.cpp
+    src/scene/component/CharacterMoveComponent.cpp
+    src/scene/component/CameraComponent.cpp
+    src/asset/AssetManager.cpp
+    src/asset/AssetPersistence.cpp
+    src/asset/Asset.h
+    src/asset/AssetID.h
+    src/asset/ImageFormat.h
+    src/asset/import/ImportImage.cpp
+    src/asset/import/EnvironmentMapUtils.cpp
+    src/asset/import/EnvironmentMapUtils.h
+    src/asset/import/EnvironmentMapBake.cpp
+    src/asset/import/ImportTexture.cpp
+    src/asset/import/ImportEnvironmentMap.cpp
+    src/asset/import/ImportId.h
+    src/asset/MeshGeometry.h
+    src/asset/MeshGeometry.cpp
+    src/asset/BuiltinAssets.h
+    src/asset/builtin/BuiltinMesh.cpp
+    src/asset/builtin/BuiltinMaterial.cpp
+    src/asset/builtin/BuiltinTexture.cpp
+    src/asset/builtin/BuiltinSampler.cpp
+    src/asset/import/ImportMesh.cpp
+    src/asset/import/ImportScene.cpp
+    src/asset/import/GltfImport.h
+    src/asset/import/GltfImport.cpp
+    src/asset/import/GltfLoader.cpp
+    src/asset/import/AssimpImport.h
+    src/asset/import/AssimpImport.cpp
+    src/asset/import/ModelImport.h
+    src/asset/import/GltfMaterialExtensions.h
+    src/asset/import/GltfMaterialExtensions.cpp
+    src/core/Vertex.h
+    src/scene/system/RenderSystem.cpp
+    src/scene/system/RenderSystem.h
+    src/asset/AssetImporter.h
+    src/asset/AssetDataManager.cpp
+    src/asset/AssetDataManager.h
+    src/asset/TextureMip.h
+    src/asset/TextureMip.cpp
+    src/core/math/Sampler.cpp
+    src/core/math/Bounds.cpp
+    src/core/time/Timer.cpp
+    src/core/profiling/Profiler.cpp
+    src/core/math/Sampler.h
+    src/render/DrawItem.h
+    src/render/FrameData.cpp
+    src/render/FrameData.h
+    src/render/RenderConfig.h
+    src/render/RenderContext.cpp
+    src/render/RenderContext.h
+    src/render/RenderData.h
+    src/render/RendererConfig.h
+    src/render/ExposureConfig.h
+    src/render/RenderView.h
+    src/render/ViewportRect.cpp
+    src/render/ViewportRect.h
+    src/render/Visibility.h
+    src/render/device/Device.cpp
+    src/render/device/Device.h
+    src/render/device/DeviceLayouts.cpp
+    src/render/device/FrameContext.cpp
+    src/render/device/FrameContext.h
+    src/render/device/GpuProfiler.cpp
+    src/render/device/GpuProfiler.h
+    src/render/device/GpuUploadContext.h
+    src/render/device/Memory.h
+    src/render/device/Swapchain.cpp
+    src/render/device/Swapchain.h
+    src/render/device/VkCheck.h
+    src/render/device/VulkanContext.cpp
+    src/render/device/VulkanContext.h
+    src/render/resources/Buffer.cpp
+    src/render/resources/Buffer.h
+    src/render/resources/GpuMesh.cpp
+    src/render/resources/GpuMesh.h
+    src/render/resources/GpuShader.cpp
+    src/render/resources/GpuShader.h
+    src/render/resources/GpuTexture.cpp
+    src/render/resources/GpuTexture.h
+    src/render/resources/Image.cpp
+    src/render/resources/Image.h
+    src/render/resources/MaterialData.h
+    src/render/resources/MaterialTable.cpp
+    src/render/resources/MaterialTable.h
+    src/render/resources/RenderResourceManager.cpp
+    src/render/resources/RenderResourceManager.h
+    src/render/resources/ShaderData.h
+    src/render/resources/ShaderManager.cpp
+    src/render/resources/ShaderManager.h
+    src/render/graph/EndPass.cpp
+    src/render/graph/EndPass.h
+    src/render/graph/PassInputs.h
+    src/render/graph/RenderGraph.cpp
+    src/render/graph/RenderGraph.h
+    src/render/graph/RenderGraphSetup.cpp
+    src/render/raytracing/AccelerationStructure.cpp
+    src/render/raytracing/AccelerationStructure.h
+    src/render/raytracing/offline/OfflineLightData.h
+    src/render/raytracing/offline/OfflineShaderTypes.h
+    src/render/postprocess/FalcorPostProcessConfig.cpp
+    src/render/postprocess/FalcorPostProcessConfig.h
+    src/render/editor/EditorFrameInput.h
+    src/render/editor/EditorShaderData.h
+    src/render/graph/RenderPassRegistry.cpp
+    src/render/graph/RenderPassRegistry.h
 )
-add_dependencies(RenderLabRuntime RenderLabShaders)
-target_sources(RenderLabRuntime PRIVATE
+target_sources(RenderLabCore PRIVATE
     src/asset/pbrt/PbrtImport.cpp
     src/asset/pbrt/PbrtData.cpp
     src/asset/pbrt/PbrtMaterial.cpp
@@ -466,17 +280,14 @@ add_library(RenderLabDds OBJECT src/asset/import/ImportDds.cpp)
 target_include_directories(RenderLabDds PRIVATE src)
 target_compile_definitions(RenderLabDds PRIVATE GLM_FORCE_DEPTH_ZERO_TO_ONE GLOG_NO_ABBREVIATED_SEVERITIES)
 target_link_libraries(RenderLabDds PRIVATE RenderLabBuildOptions glm::glm glog::glog Microsoft::DirectXTex)
-target_link_libraries(RenderLabRuntime PRIVATE ZLIB::ZLIB RenderLabDds)
+target_link_libraries(RenderLabCore PRIVATE ZLIB::ZLIB RenderLabDds)
 
-add_executable(RenderLab src/Main.cpp)
-target_link_libraries(RenderLab PRIVATE RenderLabRuntime)
-
-target_include_directories(RenderLabRuntime PUBLIC
+target_include_directories(RenderLabCore PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${TINYGLTF_INCLUDE_DIR}"
 )
 
-target_compile_definitions(RenderLabRuntime PUBLIC
+target_compile_definitions(RenderLabCore PUBLIC
         RENDERLAB_CONFIG_FILE="${CMAKE_CURRENT_SOURCE_DIR}/config/config.json"
         VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
         VULKAN_HPP_NO_STRUCT_CONSTRUCTORS=1
@@ -486,7 +297,7 @@ target_compile_definitions(RenderLabRuntime PUBLIC
         GLOG_NO_ABBREVIATED_SEVERITIES
 )
 
-target_link_libraries(RenderLabRuntime PUBLIC
+target_link_libraries(RenderLabCore PUBLIC
         RenderLabPbrtFrontend
         mikktspace::mikktspace
         assimp::assimp
@@ -494,16 +305,13 @@ target_link_libraries(RenderLabRuntime PUBLIC
         Vulkan::Vulkan
         glfw
         glm::glm
-        imgui::imgui
-        imguizmo::imguizmo
         nlohmann_json::nlohmann_json
         glog::glog
         unofficial::tinyexr::tinyexr
-        comdlg32
 )
 
 # Only stable dependency headers belong here; project headers stay outside the PCH.
-target_precompile_headers(RenderLabRuntime PRIVATE
+target_precompile_headers(RenderLabCore PRIVATE
         <algorithm>
         <array>
         <cstdint>
@@ -520,10 +328,51 @@ target_precompile_headers(RenderLabRuntime PRIVATE
         <nlohmann/json.hpp>
         <vulkan/vulkan_raii.hpp>
 )
-target_precompile_headers(RenderLab REUSE_FROM RenderLabRuntime)
+add_subdirectory(passes)
+renderlab_build_shaders()
+add_dependencies(RenderLabPasses RenderLabShaders)
+
+add_library(RenderLabRuntime STATIC
+    src/editor/Inspector.cpp
+    src/editor/EditorBackend.cpp
+    src/editor/SceneHierarchy.cpp
+    src/editor/RendererSettings.cpp
+    src/Engine.cpp
+    src/Engine.h
+    src/editor/Editor.cpp
+    src/editor/EditorCamera.cpp
+    src/editor/EditorCamera.h
+    src/editor/EditorCameraConfig.h
+    src/editor/Editor.h
+    src/editor/ComponentDraw.cpp
+    src/editor/ComponentDraw.h
+    src/editor/MaterialExtensionsDraw.cpp
+    src/editor/MaterialExtensionsDraw.h
+    src/editor/EditorUi.cpp
+    src/editor/EditorUi.h
+    src/platform/InputMethod.cpp
+    src/platform/InputMethod.h
+    src/editor/LightMarkers.cpp
+    src/editor/LightMarkers.h
+    src/editor/PerformancePanel.cpp
+    src/render/Renderer.cpp
+    src/render/Renderer.h
+    src/render/graph/PythonGraph.cpp
+    src/render/graph/PythonGraph.h
+)
+target_link_libraries(RenderLabRuntime PUBLIC RenderLabCore RenderLabPasses PRIVATE
+    imgui::imgui imguizmo::imguizmo Python3::Python)
+set_property(SOURCE src/render/graph/PythonGraph.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+    RENDERLAB_PYTHON_HOME=L"${RENDERLAB_PYTHON_HOME}"
+    RENDERLAB_GRAPH_LIBRARY_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/graphs")
+target_precompile_headers(RenderLabRuntime REUSE_FROM RenderLabCore)
+
+add_executable(RenderLab src/Main.cpp)
+target_link_libraries(RenderLab PRIVATE RenderLabRuntime)
+target_precompile_headers(RenderLab REUSE_FROM RenderLabCore)
 
 option(BUILD_TESTING "Enable manual validation tools" OFF)
-renderlab_copy_compiler_runtime(RenderLab)
+renderlab_copy_runtime_libraries(RenderLab)
 if (BUILD_TESTING)
     add_subdirectory(test EXCLUDE_FROM_ALL)
 endif ()

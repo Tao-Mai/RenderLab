@@ -1,6 +1,7 @@
 # Compile declarations also generate runtime manifests; filenames have no runtime policy.
 function(renderlab_shader program source binary)
     cmake_parse_arguments(S "" "" "DEFINES;ENTRIES" ${ARGN})
+    cmake_path(ABSOLUTE_PATH source BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" NORMALIZE)
     if(NOT S_ENTRIES)
         set(S_ENTRIES vertMain fragMain)
     endif()
@@ -20,25 +21,40 @@ function(renderlab_shader program source binary)
         string(JSON entries SET "${entries}" ${index} "\"${entry}\"")
         math(EXPR index "${index}+1")
     endforeach()
-    set(output "${SHADER_BINARY_DIR}/${binary}.spv")
-    set(reflection "${SHADER_BINARY_DIR}/${binary}.reflection.json")
-    set(depfile "${SHADER_BINARY_DIR}/${binary}.d")
-    add_custom_command(OUTPUT "${output}" "${reflection}"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
-        COMMAND ${SLANGC_EXECUTABLE} "${SHADER_SOURCE_DIR}/${source}"
-            -I "${SHADER_SOURCE_DIR}" -I "${PROJECT_SOURCE_DIR}/src"
-            ${arguments} -target spirv -profile spirv_1_4 -matrix-layout-column-major
-            -emit-spirv-directly -fvk-use-entrypoint-name
-            -reflection-json "${reflection}" -depfile "${depfile}" -o "${output}"
-        DEPENDS "${SHADER_SOURCE_DIR}/${source}" "${SLANGC_EXECUTABLE}"
-        DEPFILE "${depfile}"
-        COMMENT "Compiling ${binary}" VERBATIM)
-    set_property(GLOBAL APPEND PROPERTY renderlab_shader_outputs "${output}" "${reflection}")
+    get_property(registered GLOBAL PROPERTY "renderlab_shader_source_${binary}" SET)
+    if(registered)
+        message(FATAL_ERROR "Shader binary '${binary}' is already declared")
+    endif()
+    set_property(GLOBAL APPEND PROPERTY renderlab_shader_binaries "${binary}")
+    set_property(GLOBAL PROPERTY "renderlab_shader_source_${binary}" "${source}")
+    set_property(GLOBAL PROPERTY "renderlab_shader_arguments_${binary}" "${arguments}")
     set_property(GLOBAL APPEND PROPERTY renderlab_shader_programs "${program}")
     set_property(GLOBAL APPEND PROPERTY "renderlab_shader_${program}"
         "{\"defines\":${options},\"binary\":\"${binary}.spv\",\"entries\":${entries}}")
 endfunction()
-function(renderlab_shader_manifests)
+
+function(renderlab_build_shaders)
+    # Output rules and their consuming target must belong to the same CMake directory.
+    get_property(binaries GLOBAL PROPERTY renderlab_shader_binaries)
+    foreach(binary IN LISTS binaries)
+        get_property(source GLOBAL PROPERTY "renderlab_shader_source_${binary}")
+        get_property(arguments GLOBAL PROPERTY "renderlab_shader_arguments_${binary}")
+        set(output "${SHADER_BINARY_DIR}/${binary}.spv")
+        set(reflection "${SHADER_BINARY_DIR}/${binary}.reflection.json")
+        set(depfile "${SHADER_BINARY_DIR}/${binary}.d")
+        add_custom_command(OUTPUT "${output}" "${reflection}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
+            COMMAND ${SLANGC_EXECUTABLE} "${source}"
+                -I "${SHADER_SOURCE_DIR}" -I "${RenderLab_SOURCE_DIR}" -I "${RenderLab_SOURCE_DIR}/src"
+                ${arguments} -target spirv -profile spirv_1_4 -matrix-layout-column-major
+                -emit-spirv-directly -fvk-use-entrypoint-name
+                -reflection-json "${reflection}" -depfile "${depfile}" -o "${output}"
+            DEPENDS "${source}" "${SLANGC_EXECUTABLE}"
+            DEPFILE "${depfile}"
+            COMMENT "Compiling ${binary}" VERBATIM)
+        list(APPEND outputs "${output}" "${reflection}")
+    endforeach()
+
     get_property(programs GLOBAL PROPERTY renderlab_shader_programs)
     list(REMOVE_DUPLICATES programs)
     foreach(program IN LISTS programs)
@@ -47,6 +63,5 @@ function(renderlab_shader_manifests)
         file(GENERATE OUTPUT "${SHADER_BINARY_DIR}/${program}.variants.json"
             CONTENT "[\n${contents}\n]\n")
     endforeach()
-    get_property(outputs GLOBAL PROPERTY renderlab_shader_outputs)
     add_custom_target(RenderLabShaders DEPENDS ${outputs})
 endfunction()

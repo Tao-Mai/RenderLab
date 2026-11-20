@@ -27,9 +27,9 @@
 SimplePostFX 启用但各镜头效果强度为 0。切换到 Falcor 不会带入 RenderLab 的相机 EV100、
 直方图曝光、曝光时间适应或 Bloom 参数。
 
-Shader 均位于 [shaders/postprocess/falcor](../shaders/postprocess/falcor/)。C++ 的流程连接、资源和
-调度位于 [FalcorPostProcess](../src/render/postprocess/FalcorPostProcess.h)，参数与主机端计算位于
-[FalcorPostProcessConfig](../src/render/postprocess/FalcorPostProcessConfig.h)，没有新增 C++ 子目录。
+专用 Shader 与 [FalcorPostProcess](../passes/postprocess/falcor/FalcorPostProcess.h) 一起放在
+[passes/postprocess/falcor](../passes/postprocess/falcor/)。参数与主机端计算见
+[FalcorPostProcessConfig](../src/render/postprocess/FalcorPostProcessConfig.h)。
 
 ## 保留的源码行为
 

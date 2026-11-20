@@ -8,6 +8,8 @@
 
 #include <memory>
 
+class RenderPassRegistry;
+
 class Engine
 {
 public:
@@ -17,7 +19,7 @@ public:
     Engine(const Engine&)            = delete;
     Engine& operator=(const Engine&) = delete;
 
-    void init();
+    void init(RenderPassRegistry passes);
     void run();
     void shutdown() noexcept;
 

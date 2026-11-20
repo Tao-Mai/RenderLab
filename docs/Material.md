@@ -48,8 +48,12 @@ BRDF 使用 `t = (1−abs(V·H))⁵`：漫反射为 `diffuseColor × (1−diffus
 | 3 | specularF0 | diffuseFresnelWeight | RGBA16F |
 | 4 | sheenColor | sheenRoughness | RGBA16F |
 
-打包与具名访问集中在 [GBufferData](../shaders/raster/gbuffer_data.slang)。相较原布局增加 8 字节/像素。基础材质在三条路线共用；Clearcoat 沿用 Forward 的涂层计算，Sheen 沿用 Forward / Deferred 的计算。
+打包与具名访问集中在 [GBufferData](../shaders/common/raster/gbuffer_data.slang)。相较原布局增加 8 字节/像素。基础材质在三条路线共用；Clearcoat 沿用 Forward 的涂层计算，Sheen 沿用 Forward / Deferred 的计算。
 
 IBL 使用现有 Split Sum LUT，镜面项为 `F0×A + F90×B`，漫反射以 `N·V` 代入统一漫反射函数近似。SVGF 解调反射率为 `saturate(diffuseColor + F0)`，重投影和最终合成都使用同一反射率下限。
 
-PBRT 离线材质由独立的材质描述与 Shader 求值。
+## 材质模型支持
+
+子网格通过 `MaterialAsset::ID` 引用材质，资产管理器负责加载和缓存。`GltfMaterial` 和 `PbrtMaterial` 保存各自模型的参数，渲染路径按需生成 GPU 数据。
+
+光栅化只支持标准 PBR。实时光追的 Simple 和 ReSTIR 直接调用 PBR 表面的散射操作，离线 PT 和 BDPT 共用 PBRT 材质的求值、采样与 PDF。新增材质模型和论文材质实验面向光追路径。

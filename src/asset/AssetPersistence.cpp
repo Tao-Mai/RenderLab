@@ -25,7 +25,6 @@ typename T::ID AssetManager::saveAsset(std::unique_ptr<T> asset)
 template TextureAsset::ID        AssetManager::saveAsset(std::unique_ptr<TextureAsset>);
 template MeshAsset::ID           AssetManager::saveAsset(std::unique_ptr<MeshAsset>);
 template MaterialAsset::ID       AssetManager::saveAsset(std::unique_ptr<MaterialAsset>);
-template ShaderAsset::ID         AssetManager::saveAsset(std::unique_ptr<ShaderAsset>);
 template SceneAsset::ID          AssetManager::saveAsset(std::unique_ptr<SceneAsset>);
 template EnvironmentMapAsset::ID AssetManager::saveAsset(std::unique_ptr<EnvironmentMapAsset>);
 template SamplerAsset::ID        AssetManager::saveAsset(std::unique_ptr<SamplerAsset>);

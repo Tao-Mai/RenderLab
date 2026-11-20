@@ -18,7 +18,6 @@ struct TextureAsset;
 struct SamplerAsset;
 struct MaterialAsset;
 struct GltfMaterial;
-struct ShaderAsset;
 struct TextureBinding;
 
 // Stable asset indices and a graph-owned shared SSBO; descriptor sets remain per frame in flight.
@@ -27,7 +26,6 @@ class MaterialTable
 public:
     struct MaterialInfo
     {
-        AssetID<ShaderAsset> shaderId;
         uint32_t             alphaMode;
         bool                 doubleSided;
         bool                 clearcoat;

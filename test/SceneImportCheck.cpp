@@ -6,6 +6,7 @@
 #include "core/Serializer.h"
 #include "core/Window.h"
 #include "editor/EditorCamera.h"
+#include "passes/StandardPasses.h"
 #include "render/Renderer.h"
 #include "scene/SceneManager.h"
 #include "scene/actor/AStaticMesh.h"
@@ -110,7 +111,7 @@ int main(int argc, char** argv)
         CHECK(glfwInit());
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
         window.init();
-        renderer.init();
+        renderer.init(standardRenderPasses());
         EditorCamera editorCamera{scenes.scene().editorCamera};
         RenderSystem system;
         renderer.rebuildGraph();

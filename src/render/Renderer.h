@@ -11,12 +11,14 @@
 #include "render/device/Device.h"
 #include "render/device/FrameContext.h"
 #include "render/device/VulkanContext.h"
+#include "render/graph/EndPass.h"
 #include "render/graph/RenderGraph.h"
+#include "render/graph/RenderPassRegistry.h"
 #include "render/editor/EditorFrameInput.h"
-#include "render/raster/ShadowPass.h"
+#include "passes/raster/shadow/ShadowPass.h"
 #include "render/device/Swapchain.h"
 #include "render/resources/MaterialTable.h"
-#include "render/raytracing/offline/OfflineScene.h"
+#include "passes/raytracing/offline/OfflineScene.h"
 #include "render/resources/RenderResourceManager.h"
 
 #include <array>
@@ -29,6 +31,7 @@
 
 struct SceneRenderData;
 class Profiler;
+class OfflinePathTracingPass;
 
 class Renderer
 {
@@ -39,7 +42,7 @@ public:
     Renderer(const Renderer&)            = delete;
     Renderer& operator=(const Renderer&) = delete;
 
-    void              init();
+    void              init(RenderPassRegistry registry);
     void              rebuildGraph();
     void              recreateSwapchain();
     RenderFrameResult render(
@@ -58,7 +61,6 @@ public:
     [[nodiscard]] uint32_t       framesInFlight() const { return activeFramesInFlight; }
 
 private:
-    struct Passes;
     DEBUG_ONLY(bool inited = false;)
     VulkanContext                               vulkan;
     Swapchain                                   swapchain;
@@ -80,37 +82,23 @@ private:
     float                                       prefilteredMaxLod = 0.0f;
     const RendererConfig*                       rendererConfig    = nullptr;
     std::optional<RendererConfig>               appliedConfig;
-    struct SceneOutput
-    {
-        RenderGraph::ImageHandle color;
-        RenderGraph::ImageHandle depth;
-        ShadowPass::Output       shadow;
-    };
-    SceneOutput               setupRasterization(RenderGraph::ImageHandle target);
-    SceneOutput               setupRayTracing();
-    SceneOutput               setupOffline();
-    SceneOutput               setupLightMarkers(SceneOutput scene);
-    RenderGraph::ImageHandle setupPostProcess(
-        RenderGraph::ImageHandle color, RenderGraph::ImageHandle target, RenderGraph::BufferHandle exposure
-    );
-    void                      setupEditor(SceneOutput scene);
+    uint32_t                     frameIndex           = 0;
+    uint32_t                     activeFramesInFlight = maxFramesInFlight;
+    RenderPassRegistry           passes;
+    EndPass                      endPass;
+    RenderGraph                  graph;
+    const OfflinePathTracingPass* offlinePass = nullptr;
+    RenderGraph::BufferHandle    pickingReadback;
+    RenderGraph::BufferHandle    lightBuffer;
+    RenderGraph::ImageHandle     presentTarget;
+
     void                      applyConfiguration();
-    uint32_t                  frameIndex           = 0;
-    uint32_t                  activeFramesInFlight = maxFramesInFlight;
-    RenderGraph               graph;
-    std::unique_ptr<Passes>   passes;
-    RenderGraph::BufferHandle pickingReadback;
-    RenderGraph::BufferHandle lightBuffer;
-    RenderGraph::ImageHandle  presentTarget;
     void                      setupRenderGraph();
     void                      initLightingResources();
     void                      createShadowSampler();
     void                      writeShadowDescriptors(ShadowPass::Output shadow);
     void                      updateEnvironmentBindings(const std::optional<EnvironmentMapAsset::ID>& id);
     void                      bindEnvironmentTextures();
-
-    template <class T, class... Args>
-    auto setupPass(Args&&... args);
 
     [[nodiscard]] FrameContext& currentFrame() { return frames[frameIndex]; }
 };

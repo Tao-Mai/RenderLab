@@ -18,6 +18,7 @@ struct AppPaths
     std::filesystem::path commands;
     std::filesystem::path editor;
     std::filesystem::path renderer;
+    std::filesystem::path renderGraph;
 };
 
 struct CommandConfig
