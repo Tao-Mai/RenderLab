@@ -1,0 +1,207 @@
+#ifndef RENDERLAB_PBRT_TEXTURE_SLANG
+#define RENDERLAB_PBRT_TEXTURE_SLANG
+
+#include "material/texture_data.slang"
+#include "math/constant.slang"
+#include "render/resources/PbrtMaterialProgram.h"
+
+namespace pbrt
+{
+struct TextureInstruction
+{
+    uint4 metadata;
+    float4 value;
+    float4 uvScaleOffset;
+    float4 uAxisKind;
+    float4 vAxis;
+    float4 settings;
+    float4x4 textureFromWorld;
+
+    property TextureOp operation { get { return TextureOp(metadata.x); } }
+    // The program header stores its length in the scalar-output slot.
+    property uint instructionCount { get { return metadata.y; } }
+    property bool scalarOutput { get { return metadata.y != 0; } }
+    property TextureRef imageRef { get { return {metadata.z, metadata.w}; } }
+
+    property TextureMapping mapping { get { return TextureMapping(uint(uAxisKind.w)); } }
+    property float2 uvScale { get { return uvScaleOffset.xy; } }
+    property float2 uvOffset { get { return uvScaleOffset.zw; } }
+    property float3 projectionUAxis { get { return uAxisKind.xyz; } }
+    property float3 projectionVAxis { get { return vAxis.xyz; } }
+
+    property float3 constantValue { get { return value.rgb; } }
+    property float imageScale { get { return value.x; } }
+    property bool invertImage { get { return value.y != 0.0; } }
+    property float3 mixDirection { get { return value.xyz; } }
+    property float marbleScale { get { return value.x; } }
+    property float marbleVariation { get { return value.y; } }
+    property float ptexScale { get { return value.x; } }
+
+    property bool checkerboard3D { get { return settings.x == 3.0; } }
+    property float noiseRoughness { get { return settings.x; } }
+    property uint noiseOctaves { get { return uint(settings.y); } }
+};
+
+float noiseHash(float3 p) { return frac(sin(dot(p, float3(127.1, 311.7, 74.7))) * 43758.5453); }
+
+float valueNoise(float3 p)
+{
+    float3 cell = floor(p), f = frac(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = lerp(noiseHash(cell), noiseHash(cell + float3(1, 0, 0)), f.x);
+    float b = lerp(noiseHash(cell + float3(0, 1, 0)), noiseHash(cell + float3(1, 1, 0)), f.x);
+    float c = lerp(noiseHash(cell + float3(0, 0, 1)), noiseHash(cell + float3(1, 0, 1)), f.x);
+    float d = lerp(noiseHash(cell + float3(0, 1, 1)), noiseHash(cell + float3(1, 1, 1)), f.x);
+
+    return lerp(lerp(a, b, f.y), lerp(c, d, f.y), f.z) * 2.0 - 1.0;
+}
+
+float2 textureUv(TextureInstruction node, float2 uv, float3 p)
+{
+    TextureMapping mapping = node.mapping;
+    if (mapping == TextureMapping::Uv)
+    {
+        return uv * node.uvScale + node.uvOffset;
+    }
+
+    float3 local = mul(node.textureFromWorld, float4(p, 1.0)).xyz;
+    if (mapping == TextureMapping::Spherical || mapping == TextureMapping::Cylindrical)
+    {
+        float phi = atan2(local.y, local.x);
+        if (phi < 0.0)
+        {
+            phi += 2.0 * PI;
+        }
+
+        return float2(phi / (2.0 * PI), mapping == TextureMapping::Spherical
+            ? acos(clamp(normalize(local).z, -1.0, 1.0)) / PI : local.z);
+    }
+
+    return float2(dot(local, node.projectionUAxis), dot(local, node.projectionVAxis)) + node.uvOffset;
+}
+
+float3 evaluateTexture(StructuredBuffer<TextureInstruction> textureInstructions, uint program, float2 uv,
+    float3 position, float3 normal, uint primitiveIndex)
+{
+    float3 values[kTextureStackSize];
+    uint depth = 0;
+    uint count = textureInstructions[program].instructionCount;
+    for (uint index = 1; index <= count; ++index)
+    {
+        TextureInstruction node = textureInstructions[program + index];
+        TextureOp op = node.operation;
+        float3 value = float3(0.0);
+        switch (op)
+        {
+            case TextureOp::Constant:
+                value = node.constantValue;
+                break;
+            case TextureOp::Image:
+            {
+                float2 st = textureUv(node, uv, position);
+                value = sampleTextureLevel(node.imageRef, float2(st.x, 1.0 - st.y)).rgb;
+                value *= node.imageScale;
+                if (node.invertImage)
+                {
+                    value = 1.0 - value;
+                }
+                break;
+            }
+            case TextureOp::Multiply:
+            {
+                float3 second = values[--depth];
+                float3 first = values[--depth];
+                value = first * second;
+                break;
+            }
+            case TextureOp::Mix:
+            {
+                float amount = saturate(values[--depth].x);
+                float3 second = values[--depth];
+                float3 first = values[--depth];
+                value = lerp(first, second, amount);
+                break;
+            }
+            case TextureOp::Checkerboard:
+            {
+                float3 second = values[--depth];
+                float3 first = values[--depth];
+                float2 st = textureUv(node, uv, position);
+                float3 local = mul(node.textureFromWorld, float4(position, 1.0)).xyz;
+                float parity = node.checkerboard3D ? dot(floor(local), float3(1.0)) : dot(floor(st), float2(1.0));
+                value = (int(parity) & 1) == 0 ? first : second;
+                break;
+            }
+            case TextureOp::Dots:
+            {
+                float3 second = values[--depth];
+                float3 first = values[--depth];
+                float2 st = textureUv(node, uv, position);
+                float2 cell = floor(st + 0.5);
+                float2 center = cell + float2(noiseHash(float3(cell, 0)), noiseHash(float3(cell, 1))) * 0.5 - 0.25;
+                value = length(st - center) < 0.35 ? first : second;
+                break;
+            }
+            case TextureOp::DirectionMix:
+            {
+                float3 second = values[--depth];
+                float3 first = values[--depth];
+                value = lerp(first, second, saturate(abs(dot(normal, node.mixDirection))));
+                break;
+            }
+            case TextureOp::Bilerp:
+            {
+                float3 v11 = values[--depth], v10 = values[--depth], v01 = values[--depth], v00 = values[--depth];
+                float2 st = textureUv(node, uv, position);
+                value = lerp(lerp(v00, v01, st.y), lerp(v10, v11, st.y), st.x);
+                break;
+            }
+            case TextureOp::Fbm:
+            case TextureOp::Wrinkled:
+            case TextureOp::Windy:
+            case TextureOp::Marble:
+            {
+                float3 p = mul(node.textureFromWorld, float4(position, 1.0)).xyz;
+                if (op == TextureOp::Marble)
+                {
+                    p *= node.marbleScale;
+                }
+
+                float result = 0.0, amplitude = 1.0;
+                for (uint octave = 0; octave < node.noiseOctaves; ++octave)
+                {
+                    float noise = valueNoise(p);
+                    result += amplitude * (op == TextureOp::Wrinkled ? abs(noise) : noise);
+                    p *= 1.99;
+                    amplitude *= node.noiseRoughness;
+                }
+                if (op == TextureOp::Windy)
+                {
+                    result = abs(valueNoise(p * 0.1)) * abs(valueNoise(p));
+                }
+                value = float3(result);
+                if (op == TextureOp::Marble)
+                {
+                    float t = 0.5 + 0.5 * sin(mul(node.textureFromWorld, float4(position, 1.0)).y * node.marbleScale
+                        + node.marbleVariation * result);
+                    value = lerp(float3(0.18, 0.13, 0.1), float3(0.9, 0.9, 0.88), t);
+                }
+                break;
+            }
+            case TextureOp::PtexPreview:
+                value = node.ptexScale * (((primitiveIndex + uint(floor(uv.x * 8)) + uint(floor(uv.y * 8))) & 1) == 0
+                    ? float3(0.7) : float3(0.3));
+                break;
+        }
+        if (node.scalarOutput)
+        {
+            value = float3(dot(value, float3(1.0 / 3.0)));
+        }
+        values[depth++] = value;
+    }
+
+    return values[0];
+}
+}
+
+#endif

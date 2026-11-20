@@ -9,13 +9,12 @@ struct PassSliderRange
     double maximum;
 };
 
-template <class T>
-class ConfigurablePass : public RenderPass
+template <class T, class Pass = RenderPass>
+class ConfigurablePass : public Pass
 {
 public:
     using Settings = T;
 
-    using RenderPass::RenderPass;
     ConfigurablePass() = default;
     ConfigurablePass(const ConfigurablePass&) = delete;
     ConfigurablePass& operator=(const ConfigurablePass&) = delete;

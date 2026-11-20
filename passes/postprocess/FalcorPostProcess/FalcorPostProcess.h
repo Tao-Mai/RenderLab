@@ -13,11 +13,9 @@
 #include <vector>
 
 // Connects Falcor's SimplePostFX and ToneMapper, followed by swapchain presentation.
-class FalcorPostProcess : public ConfigurablePass<FalcorPostProcessConfig>
+class FalcorPostProcess : public ConfigurablePass<FalcorPostProcessConfig, CompositeRenderPass>
 {
 public:
-    FalcorPostProcess() : ConfigurablePass(PassExecution::Composite) {}
-
     struct Output
     {
         RenderGraph::ImageHandle color;

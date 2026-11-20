@@ -13,11 +13,9 @@
 #include <vector>
 
 // Owns and connects the filter passes; only those passes enter the graph.
-class Bloom : public ConfigurablePass<BloomSettings>
+class Bloom : public ConfigurablePass<BloomSettings, CompositeRenderPass>
 {
 public:
-    Bloom() : ConfigurablePass(PassExecution::Composite) {}
-
     struct Output
     {
         RenderGraph::ImageHandle color;

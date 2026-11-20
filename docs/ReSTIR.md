@@ -2,7 +2,7 @@
 
 [渲染模块](Render.md) · [资源布局](RenderLayout.md)
 
-实时光追的 ReSTIR 子路线使用 2020 年的 [Spatiotemporal Reservoir Resampling](https://research.nvidia.com/labs/rtr/publication/bitterli2020spatiotemporal/)。初始 RIS、时域复用、空间复用分别对应原论文的 Algorithm 3、5、6，采用带支持域和可见性校正的归一化。实现参考了 [RTXDI 的 reservoir](https://github.com/NVIDIA-RTX/RTXDI-Library/blob/main/Include/Rtxdi/DI/Reservoir.hlsli) 与 [初始采样](https://github.com/NVIDIA-RTX/RTXDI-Library/blob/main/Include/Rtxdi/DI/InitialSampling.hlsli) 接口。
+ReSTIR Graph 使用 2020 年提出的时空 reservoir 重采样。初始 RIS、时域复用、空间复用分别对应原论文的 Algorithm 3、5、6，采用带支持域和可见性校正的归一化。[原论文](https://research.nvidia.com/labs/rtr/publication/bitterli2020spatiotemporal/) · [RTXDI reservoir](https://github.com/NVIDIA-RTX/RTXDI-Library/blob/main/Include/Rtxdi/DI/Reservoir.hlsli) · [RTXDI 初始采样](https://github.com/NVIDIA-RTX/RTXDI-Library/blob/main/Include/Rtxdi/DI/InitialSampling.hlsli)
 
 ## 执行流程
 
@@ -28,7 +28,7 @@ reservoir 保存光源种类、索引和二维采样坐标。对于面积光，�
 | 方向光 | LightData 索引；使用固定入射方向 |
 | 环境 | 球面方向的二维坐标；读取 Radiance Cubemap，受 IBL 开关控制 |
 
-初始光源提议在非空的解析光源、发光三角形和启用的环境三组中等概率选组，再在组内均匀选光源。面积光在表面上均匀采样，环境在球面上均匀采样。三角形仍由 `RayTracingScenePass` 按实例展开，点光、聚光、方向光和矩形继续使用现有 LightData。
+初始光源提议在非空的解析光源、发光三角形和启用的环境三组中等概率选组，再在组内均匀选光源。面积光在表面上均匀采样，环境在球面上均匀采样。实时 Pass 的场景准备阶段按实例展开发光三角形。点光、聚光、方向光和矩形使用 LightData。
 
 一次表面求值生成配置指定的 M 个光源候选，以及一个 BRDF 方向候选。BRDF 射线命中发光三角形、矩形或环境时，将命中转换为相同的光源样本表示；命中普通表面则贡献零权重。两类候选采用 balance MIS 后一起进入初始 reservoir。
 
@@ -103,7 +103,7 @@ SVGF 开启 / 关闭各自持有匹配的 Pipeline、Descriptor Set Layout 和 S
 
 关闭两种复用时保留初始 RIS，可用于比较。SVGF 单独控制颜色的时域累积与滤波；ReSTIR 历史保存采样结果，两者各自维护自己的资源。
 
-实现入口：[初始采样与求值](../passes/RayTracingPass/restir.slang)、[时空复用](../passes/RayTracingPass/restir_reuse.slang)、[GPU 数据](../passes/RayTracingPass/restir_data.slang)、[共享光源采样](../passes/RayTracingPass/light_sampling.slang)、[CPU 调度](../passes/RayTracingPass/RayTracingPass.cpp)。
+实现入口见 [初始采样与求值](../passes/raytracing/realtime/restir.slang)、[时空复用](../passes/raytracing/realtime/restir_reuse.slang)、[GPU 数据](../passes/raytracing/realtime/restir_data.slang)、[共享光源采样](../shaders/raytracing/light_sampling.slang) 和 [CPU 调度](../passes/raytracing/realtime/RayTracingPass.cpp)。
 
 ## 验证
 

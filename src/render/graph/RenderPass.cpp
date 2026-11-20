@@ -13,6 +13,7 @@ void addPort(
 {
     DCHECK(!name.empty() && name.find('.') == std::string_view::npos);
     DCHECK(std::ranges::find(ports, name, &RenderPassPort::name) == ports.end());
+    DCHECK(kind == PortKind::Image || format == vk::Format::eUndefined);
     ports.push_back({std::string{name}, kind, optional, format});
 }
 }
@@ -49,8 +50,8 @@ RenderGraph::BufferHandle PassResources::buffer(std::string_view name) const
 
 void PassResources::setOutput(std::string_view name, GraphResource resource)
 {
-    const bool inserted = outputResources.emplace(name, resource).second;
-    DCHECK(inserted);
+    DCHECK(!outputResources.contains(name));
+    outputResources.emplace(name, resource);
 }
 
 RenderPass::~RenderPass() = default;

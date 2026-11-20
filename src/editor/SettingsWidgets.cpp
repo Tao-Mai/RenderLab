@@ -1,4 +1,5 @@
 #include "editor/SettingsWidgets.h"
+#include "render/ExposureConfig.h"
 
 #include <algorithm>
 #include <cmath>
@@ -45,4 +46,89 @@ bool drawSettingsHeader(const char* label)
     ImGui::PopStyleVar();
     ImGui::PopID();
     return reset;
+}
+
+bool drawExposureSettings(ExposureConfig& exposure)
+{
+    int  mode   = static_cast<int>(exposure.mode);
+    bool edited = ImGui::Combo("Exposure mode", &mode, "Manual\0Automatic\0");
+    if (edited)
+    {
+        exposure.mode = static_cast<ExposureMode>(mode);
+    }
+
+    if (exposure.mode == ExposureMode::Manual)
+    {
+        edited =
+            ImGui::DragFloat("EV100", &exposure.ev100, 0.05f, -10.0f, 30.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp) ||
+            edited;
+        ImGui::SetItemTooltip("Higher EV100 darkens the image; +1 halves linear brightness.");
+    }
+    else
+    {
+        auto& automatic = exposure.automatic;
+        edited          = ImGui::DragFloatRange2(
+                     "EV100 range",
+                     &automatic.minEv100,
+                     &automatic.maxEv100,
+                     0.05f,
+                     -16.0f,
+                     24.0f,
+                     "%.2f",
+                     "%.2f",
+                     ImGuiSliderFlags_AlwaysClamp
+                 ) ||
+            edited;
+
+        edited = ImGui::DragFloat(
+                     "Adapt to bright",
+                     &automatic.brightAdaptationSpeed,
+                     0.05f,
+                     0.01f,
+                     20.0f,
+                     "%.2f /s",
+                     ImGuiSliderFlags_AlwaysClamp
+                 ) ||
+            edited;
+        edited = ImGui::DragFloat(
+                     "Adapt to dark",
+                     &automatic.darkAdaptationSpeed,
+                     0.05f,
+                     0.01f,
+                     20.0f,
+                     "%.2f /s",
+                     ImGuiSliderFlags_AlwaysClamp
+                 ) ||
+            edited;
+
+        edited = ImGui::SliderFloat(
+                     "Low percentile",
+                     &automatic.lowPercentile,
+                     0.0f,
+                     automatic.highPercentile - 0.001f,
+                     "%.3f"
+                 ) ||
+            edited;
+        edited = ImGui::SliderFloat(
+                     "High percentile",
+                     &automatic.highPercentile,
+                     automatic.lowPercentile + 0.001f,
+                     1.0f,
+                     "%.3f"
+                 ) ||
+            edited;
+    }
+
+    edited = ImGui::DragFloat(
+                 "Exposure compensation (stops)",
+                 &exposure.exposureCompensation,
+                 0.05f,
+                 -10.0f,
+                 10.0f,
+                 "%.2f",
+                 ImGuiSliderFlags_AlwaysClamp
+             ) ||
+        edited;
+
+    return edited;
 }

@@ -4,6 +4,7 @@
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
+#include "core/Serializer.h"
 #include "core/Window.h"
 #include "editor/EditorCamera.h"
 #include "render/FrameData.h"

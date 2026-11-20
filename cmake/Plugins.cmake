@@ -4,10 +4,11 @@ set(RENDERLAB_PLUGIN_ABI "1-${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSIO
 function(renderlab_add_plugin target)
     add_library(${target} SHARED ${ARGN})
     target_include_directories(${target} PRIVATE "${RenderLab_SOURCE_DIR}")
-    target_link_libraries(${target} PRIVATE RenderLabCore RenderLabPluginAbi imgui::imgui)
+    target_link_libraries(${target} PRIVATE RenderLabCore RenderLabPluginAbi)
     target_precompile_headers(${target} REUSE_FROM RenderLabCore)
     set_target_properties(${target} PROPERTIES
         PREFIX ""
+        DEFINE_SYMBOL ""
         RUNTIME_OUTPUT_DIRECTORY "${RENDERLAB_PLUGIN_DIRECTORY}"
         LIBRARY_OUTPUT_DIRECTORY "${RENDERLAB_PLUGIN_DIRECTORY}"
         INSTALL_RPATH "$ORIGIN/.."

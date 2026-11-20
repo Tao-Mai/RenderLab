@@ -3,7 +3,6 @@
 #include "editor/PassEditor.h"
 
 #include "editor/EditorCameraConfig.h"
-#include "editor/Inspector.h"
 
 namespace
 {

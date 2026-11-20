@@ -14,13 +14,14 @@
 #include "asset/pbrt/PbrtMaterial.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
+#include "core/Serializer.h"
 #include "core/Window.h"
 #include "editor/EditorCamera.h"
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/graph/EndPass.h"
-#include "passes/OfflinePathTracingPass/OfflinePathTracingSettings.h"
+#include "passes/raytracing/bdpt/BdptSettings.h"
 #include "render/raytracing/SceneAccelerationStructures.h"
 #include "render/resources/MaterialTable.h"
 #include "scene/SceneManager.h"
@@ -97,14 +98,10 @@ struct PixelReadbackPass
 };
 
 void checkAccumulatedPixels(
-    Renderer& renderer, SceneManager& scenes, EditorCamera& camera, OfflineAlgorithm algorithm = OfflineAlgorithm::PT
+    Renderer& renderer, SceneManager& scenes, EditorCamera& camera, bool bidirectional = false
 )
 {
-    OfflinePathTracingSettings settings;
-    Deserialize(renderer.graphPasses().findPass("offline")->pass->properties(), settings);
-    settings.algorithm         = algorithm;
-    settings.bdpt.maxBounces   = 1;
-    settings.bdpt.lightTracing = false;
+    BdptSettings bdpt{.maxBounces = 1, .lightTracing = false};
     auto&        vulkan = renderer.vulkanContext();
     FrameContext frame;
     FrameData    data;
@@ -117,38 +114,51 @@ void checkAccumulatedPixels(
     EndPass                end;
     RenderSystem           system;
     graph.init(vulkan);
-    renderContext().materialTable->setup(graph);
     const auto extent =
-        algorithm == OfflineAlgorithm::BDPT ? vk::Extent2D{64, 64} : renderer.swapchainHandle().extent();
-    readback.regionSize = algorithm == OfflineAlgorithm::BDPT ? 16 : 1;
+        bidirectional ? vk::Extent2D{64, 64} : renderer.swapchainHandle().extent();
+    readback.regionSize = bidirectional ? 16 : 1;
     const PassSetup setup{vulkan, extent, {&data, 1}, context().config->rendererConfig()};
     writeTestEnvironment(setup, scenes.scene().environmentMap);
-    const auto lightBuffer = graph.createBuffer({
-        .size  = kMaxLights * sizeof(LightData),
-        .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
-    });
-    const nlohmann::json description{
-        {"nodes", nlohmann::json::array({
-            {{"name", "offline"}, {"type", "OfflinePathTracingPass"}, {"properties", Serialize(settings)}, {"ui", false}},
-        })},
-        {"edges", nlohmann::json::array()},
-        {"outputs", {{"rayImage", "offline.rayImage"}}},
+    RenderGraph::BufferHandle lightBuffer;
+    RenderGraph::BufferHandle buffer;
+    RenderPass* pass = nullptr;
+    const auto compileFixture = [&](std::string_view type, const nlohmann::json& properties)
+    {
+        graph.releaseResources();
+        compiler.clear();
+        renderContext().materialTable->setup(graph);
+        lightBuffer = graph.createBuffer({
+            .size  = kMaxLights * sizeof(LightData),
+            .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+        });
+        const nlohmann::json description{
+            {"nodes", nlohmann::json::array({
+                {{"name", "offline"}, {"type", type}, {"properties", properties}, {"ui", false}},
+            })},
+            {"edges", nlohmann::json::array()},
+            {"outputs", {{"rayImage", "offline.rayImage"}}},
+        };
+        const auto outputs = compiler.compile(graph, setup, description, {}, renderer.plugins(), {});
+        const auto image = std::get<RenderGraph::ImageHandle>(outputs.at("rayImage"));
+        pass = compiler.findPass("offline")->pass.get();
+        buffer = graph.addStage("Read pixels", readback, setup, image);
+        graph.addStage("Read results", end, setup, RenderGraph::ImageHandle{}, buffer);
+        graph.compile(setup);
+        bindTestLightBuffer(graph, setup, lightBuffer);
     };
-    const auto outputs = compiler.compile(graph, setup, description, {}, renderer.plugins(), {});
-    const auto image   = std::get<RenderGraph::ImageHandle>(outputs.at("rayImage"));
-    auto& pass         = *compiler.findPass("offline")->pass;
-    const auto sampleCount = [&] { return pass.statistics().at("sampleCount").get<uint32_t>(); };
-    const auto buffer      = graph.addStage("Read pixels", readback, setup, image);
-    graph.addStage("Read results", end, setup, RenderGraph::ImageHandle{}, buffer);
-    graph.compile(setup);
-    bindTestLightBuffer(graph, setup, lightBuffer);
+    if (bidirectional)
+        compileFixture("BDPT", Serialize(bdpt));
+    else
+        compileFixture("PathTracer", {{"maxBounces", 2}});
+
+    const auto sampleCount = [&] { return pass->statistics().at("sampleCount").get<uint32_t>(); };
     std::vector<OfflineLightData>          extraLights;
     const OfflineSceneData*                preparedScene = nullptr;
     std::optional<SceneRenderData>         fixtureScene;
     std::optional<RenderView>              fixtureView;
     OfflineSceneData                       fixtureData;
-    std::optional<OfflineMaterialPreview>  fixtureMaterial;
-    std::vector<OfflineTextureInstruction> fixtureTextures;
+    std::optional<pbrt::MaterialInstruction>  fixtureMaterial;
+    std::vector<pbrt::TextureInstruction> fixtureTextures;
     uint64_t                               fixtureRevision = 0, fixtureSourceRevision = ~uint64_t{0};
     glm::vec3                              lastPixel{};
     float                                  regionMean = 0;
@@ -183,11 +193,11 @@ void checkAccumulatedPixels(
                 fixtureData.revision  = kFixtureRevisionBit | fixtureRevision;
                 fixtureData.materials = {
                     {.instructionCount = 1},
-                    {.model = OfflineMaterialPreviewModel::Color, .firstTexture = 0}
+                    {.model = pbrt::MaterialModel::Color, .firstTexture = 0}
                 };
                 fixtureData.textures = {
-                    {.metadata = {std::to_underlying(OfflineTextureOp::Program), 1, 0, 0}},
-                    {.metadata = {std::to_underlying(OfflineTextureOp::Constant), 0, 0, 0},
+                    {.metadata = {std::to_underlying(pbrt::TextureOp::Program), 1, 0, 0}},
+                    {.metadata = {std::to_underlying(pbrt::TextureOp::Constant), 0, 0, 0},
                      .value    = {0.5f, 0.5f, 0.5f, 0}},
                 };
                 if (fixtureMaterial)
@@ -201,15 +211,15 @@ void checkAccumulatedPixels(
                 {
                     const auto etaTexture = uint32_t(fixtureData.textures.size());
                     fixtureData.textures.push_back(
-                        {.metadata = {std::to_underlying(OfflineTextureOp::Program), 1, 0, 0}}
+                        {.metadata = {std::to_underlying(pbrt::TextureOp::Program), 1, 0, 0}}
                     );
                     fixtureData.textures.push_back(
-                        {.metadata = {std::to_underlying(OfflineTextureOp::Constant), 0, 0, 0},
+                        {.metadata = {std::to_underlying(pbrt::TextureOp::Constant), 0, 0, 0},
                          .value    = {1.5f, 1.5f, 1.5f, 0}}
                     );
                     fixtureData.draws[*glassDraw].materialIndex = uint32_t(fixtureData.materials.size());
                     fixtureData.materials.push_back(
-                        {.model = OfflineMaterialPreviewModel::SmoothDielectric, .firstTexture = etaTexture}
+                        {.model = pbrt::MaterialModel::SmoothDielectric, .firstTexture = etaTexture}
                     );
                 }
                 draws.offlineScene = &fixtureData;
@@ -224,7 +234,7 @@ void checkAccumulatedPixels(
                     if (const auto* conductor = std::get_if<PbrtMaterial::Conductor>(&asset.model))
                     {
                         const auto& material = preparedScene->materials[preparedScene->draws[index].materialIndex];
-                        CHECK(material.model == OfflineMaterialPreviewModel::Conductor);
+                        CHECK(material.model == pbrt::MaterialModel::Conductor);
                         CHECK(material.inputs.z == (conductor->remapRoughness ? 1u : 0u));
                         CHECK(
                             material.inputs.w ==
@@ -389,14 +399,14 @@ void checkAccumulatedPixels(
                            .view                  = viewMatrix},
                       .viewport = {0, 0, float(extent.width), float(extent.height)}
     };
-    settings.pt.maxBounces = 1;
-    pass.setProperties(Serialize(settings));
+    if (!bidirectional)
+        pass->setProperties({{"maxBounces", 1}});
     constexpr float  kPi = 3.14159265358979323846f;
     OfflineLightData point{
         .emission = {.spectrum = PbrtConstantSpectrum{4.0 * kPi}},
         .model    = OfflineLightData::Point{{0, 2, 0}}
     };
-    if (algorithm == OfflineAlgorithm::BDPT)
+    if (bidirectional)
     {
         const auto average = [&](uint32_t count)
         {
@@ -431,8 +441,8 @@ void checkAccumulatedPixels(
         );
         const float pointNee = average(16);
         CHECK(std::abs(pointNee - expectedPoint) < 0.01f);
-        settings.bdpt.lightTracing = true;
-        pass.setProperties(Serialize(settings));
+        bdpt.lightTracing = true;
+        pass->setProperties(Serialize(bdpt));
         const float pointSplats = average(256);
         CHECK(
             std::abs(pointSplats - expectedPoint) < 0.04f,
@@ -440,21 +450,21 @@ void checkAccumulatedPixels(
             pointSplats,
             expectedPoint
         );
-        settings.bdpt.lightSelection = BdptLightSelection::Uniform;
-        settings.bdpt.misHeuristic   = BdptMisHeuristic::Power;
-        pass.setProperties(Serialize(settings));
+        bdpt.lightSelection = BdptLightSelection::Uniform;
+        bdpt.misHeuristic   = BdptMisHeuristic::Power;
+        pass->setProperties(Serialize(bdpt));
         const float pointPower = average(128);
         CHECK(std::abs(pointPower - expectedPoint) < 0.05f);
 
-        settings.bdpt.lightTracing = false;
-        pass.setProperties(Serialize(settings));
+        bdpt.lightTracing = false;
+        pass->setProperties(Serialize(bdpt));
         auto spot = point;
         spot.model =
             OfflineLightData::Spot{.position = {0, 2, 0}, .direction = {0, -1, 0}, .cosInner = 0.98f, .cosOuter = 0.8f};
         fixtureScene->offlineLights       = {spot};
         const float spotNee               = average(64);
-        settings.bdpt.lightTracing = true;
-        pass.setProperties(Serialize(settings));
+        bdpt.lightTracing = true;
+        pass->setProperties(Serialize(bdpt));
         const float spotSplats = average(256);
         CHECK(std::abs(spotNee - spotSplats) < 0.04f);
         OfflineLightData distant{
@@ -464,12 +474,12 @@ void checkAccumulatedPixels(
         auto strongerPoint                  = point;
         strongerPoint.emission.scale        = 2.0;
         fixtureScene->offlineLights         = {point, spot, distant, strongerPoint};
-        settings.bdpt.lightTracing   = false;
-        settings.bdpt.lightSelection = BdptLightSelection::Power;
-        pass.setProperties(Serialize(settings));
+        bdpt.lightTracing   = false;
+        bdpt.lightSelection = BdptLightSelection::Power;
+        pass->setProperties(Serialize(bdpt));
         const float mixedPower              = average(256);
-        settings.bdpt.lightSelection = BdptLightSelection::Uniform;
-        pass.setProperties(Serialize(settings));
+        bdpt.lightSelection = BdptLightSelection::Uniform;
+        pass->setProperties(Serialize(bdpt));
         const float mixedUniform  = average(256);
         const float expectedMixed = 3.0f * expectedPoint + spotNee + 0.5f;
         CHECK(
@@ -480,8 +490,8 @@ void checkAccumulatedPixels(
             expectedMixed
         );
         LOG_INFO("BDPT mixed lights: power {}, uniform {}, reference {}", mixedPower, mixedUniform, expectedMixed);
-        settings.bdpt.lightTracing = true;
-        pass.setProperties(Serialize(settings));
+        bdpt.lightTracing = true;
+        pass->setProperties(Serialize(bdpt));
         fixtureScene->offlineLights = {distant};
         const float distantValue    = average(256);
         CHECK(std::abs(distantValue - 0.5f) < 0.05f, "BDPT distant energy: {}", distantValue);
@@ -500,13 +510,13 @@ void checkAccumulatedPixels(
         fixtureScene->offlineLights = {
             {.emission = {.spectrum = PbrtConstantSpectrum{1.0}}, .model = OfflineLightData::MeshArea{1, false, false}}
         };
-        settings.bdpt.misHeuristic   = BdptMisHeuristic::Balance;
-        settings.bdpt.lightSelection = BdptLightSelection::Power;
-        settings.bdpt.lightTracing   = false;
-        pass.setProperties(Serialize(settings));
+        bdpt.misHeuristic   = BdptMisHeuristic::Balance;
+        bdpt.lightSelection = BdptLightSelection::Power;
+        bdpt.lightTracing   = false;
+        pass->setProperties(Serialize(bdpt));
         const float areaNee               = average(256);
-        settings.bdpt.lightTracing = true;
-        pass.setProperties(Serialize(settings));
+        bdpt.lightTracing = true;
+        pass->setProperties(Serialize(bdpt));
         const float areaSplats = average(256);
         CHECK(
             areaNee > 0.1f && std::abs(areaNee - areaSplats) < 0.03f,
@@ -521,13 +531,10 @@ void checkAccumulatedPixels(
             glm::vec3{4}
         );
         fixtureScene->drawItems.push_back(wall);
-        settings.algorithm     = OfflineAlgorithm::PT;
-        settings.pt.maxBounces = 2;
-        pass.setProperties(Serialize(settings));
-        const float indirectPt          = average(256);
-        settings.algorithm       = OfflineAlgorithm::BDPT;
-        settings.bdpt.maxBounces = 2;
-        pass.setProperties(Serialize(settings));
+        compileFixture("PathTracer", {{"maxBounces", 2}});
+        const float indirectPt = average(256);
+        bdpt.maxBounces = 2;
+        compileFixture("BDPT", Serialize(bdpt));
         const float indirectBdpt = average(256);
         CHECK(
             std::abs(indirectBdpt - indirectPt) < 0.04f,
@@ -549,11 +556,11 @@ void checkAccumulatedPixels(
         fixtureScene->offlineLights                 = {point};
         glassDraw                                   = 1;
         ++fixtureRevision;
-        settings.bdpt.lightTracing = false;
-        pass.setProperties(Serialize(settings));
+        bdpt.lightTracing = false;
+        pass->setProperties(Serialize(bdpt));
         CHECK(average(16) == 0.0f);
-        settings.bdpt.lightTracing = true;
-        pass.setProperties(Serialize(settings));
+        bdpt.lightTracing = true;
+        pass->setProperties(Serialize(bdpt));
         const float caustic     = average(512);
         const auto  floorBounds = context()
                                      .assetManager->get(fixtureScene->drawItems.front().mesh)
@@ -679,8 +686,7 @@ void checkAccumulatedPixels(
     };
     CHECK(sample() == 0.0f);
 
-    settings.pt.maxBounces = 2;
-    pass.setProperties(Serialize(settings));
+    pass->setProperties({{"maxBounces", 2}});
     float indirectValue = 0;
     for (uint32_t sampleIndex = 0; sampleIndex < 32; ++sampleIndex)
         indirectValue = sample();
@@ -706,14 +712,14 @@ void checkAccumulatedPixels(
         const auto constant = [&](glm::vec3 value)
         {
             const auto index = static_cast<uint32_t>(fixtureTextures.size());
-            fixtureTextures.push_back({.metadata = {std::to_underlying(OfflineTextureOp::Program), 1, 0, 0}});
+            fixtureTextures.push_back({.metadata = {std::to_underlying(pbrt::TextureOp::Program), 1, 0, 0}});
             fixtureTextures.push_back(
-                {.metadata = {std::to_underlying(OfflineTextureOp::Constant), 0, 0, 0}, .value = {value, 0}}
+                {.metadata = {std::to_underlying(pbrt::TextureOp::Constant), 0, 0, 0}, .value = {value, 0}}
             );
             return index;
         };
-        fixtureMaterial = OfflineMaterialPreview{
-            .model         = OfflineMaterialPreviewModel::Conductor,
+        fixtureMaterial = pbrt::MaterialInstruction{
+            .model         = pbrt::MaterialModel::Conductor,
             .firstTexture  = constant(opticalInput),
             .secondTexture = constant(k),
             .inputs        = {
@@ -732,8 +738,7 @@ void checkAccumulatedPixels(
     const auto toLocal   = [&](glm::dvec3 w) { return glm::dvec3{glm::dot(tangent, w), glm::dot(bitangent, w), w.y}; };
     const auto wo        = toLocal(glm::normalize(glm::dvec3{0, 1, 3}));
     fixtureScene->drawItems.resize(1);
-    settings.pt.maxBounces = 1;
-    pass.setProperties(Serialize(settings));
+    pass->setProperties({{"maxBounces", 1}});
     fixtureScene->offlineLights = {
         {.emission = {.spectrum = PbrtConstantSpectrum{1.0}}, .model = OfflineLightData::Environment{}}
     };
@@ -833,15 +838,20 @@ int main(int argc, char** argv)
     config.init();
 
     config.setSceneRenderMode(SceneRenderMode::Offline);
-    const auto originalParameters = config.graphParameterOverrides();
-    const auto originalOverrides = config.passOverrides();
-    OfflinePathTracingSettings offline;
-    offline.algorithm     = OfflineAlgorithm::PT;
-    offline.pt.maxBounces = 3;
+    const auto originalGraph = config.renderGraph().id;
+    constexpr std::array kRoutes{"pt", "bdpt"};
+    std::array<GraphOverrides, kRoutes.size()> originals;
+    for (size_t index = 0; index < kRoutes.size(); ++index)
+    {
+        config.setRenderGraph(kRoutes[index]);
+        originals[index] = {config.graphParameterOverrides(), config.passOverrides()};
+        auto parameters = originals[index].parameters;
+        parameters.update({{"hdr", true}, {"postProcess", Serialize(PostProcessMode::RenderLab)}});
+        config.setGraphParameterOverrides(std::move(parameters));
+    }
 
-    auto parameters = originalParameters;
-    parameters.update({{"hdr", true}, {"postProcess", Serialize(PostProcessMode::RenderLab)}});
-    config.setGraphParameterOverrides(std::move(parameters));
+    uint32_t ptBounces = 3;
+    BdptSettings bdpt;
 
     data.init(config.paths().assets);
     scenes.init();
@@ -855,9 +865,17 @@ int main(int argc, char** argv)
     EditorCamera camera{scenes.scene().editorCamera};
     RenderSystem system;
     renderer.init();
-    const auto applyOfflineSettings = [&]
-    { renderer.setPassOverrides("OfflinePathTracingPass", "offline", Serialize(offline)); };
-    applyOfflineSettings();
+    const auto usePt = [&]
+    {
+        config.setRenderGraph("pt");
+        renderer.setPassOverrides("PathTracer", "pt", {{"maxBounces", ptBounces}});
+    };
+    const auto useBdpt = [&]
+    {
+        config.setRenderGraph("bdpt");
+        renderer.setPassOverrides("BDPT", "bdpt", Serialize(bdpt));
+    };
+    usePt();
     struct OfflineProgress
     {
         uint32_t sampleCount;
@@ -866,7 +884,7 @@ int main(int argc, char** argv)
     };
     const auto activeOffline = [&]()
     {
-        const auto* instance = renderer.graphPasses().findPass("offline");
+        const auto* instance = renderer.graphPasses().findPass(config.renderGraph().id);
         CHECK(instance);
         OfflineProgress progress;
         Deserialize(instance->pass->statistics(), progress);
@@ -921,45 +939,37 @@ int main(int argc, char** argv)
     draw();
     CHECK(activeOffline().sampleCount == 1);
 
-    offline.pt.maxBounces = 2;
-
-    applyOfflineSettings();
+    ptBounces = 2;
+    usePt();
     draw();
     CHECK(activeOffline().sampleCount == 1);
     draw();
     CHECK(activeOffline().sampleCount == 2);
     LOG_INFO("Offline rendering passed: accumulation, camera/config reset and display changes");
     checkAccumulatedPixels(renderer, scenes, camera);
-    checkAccumulatedPixels(renderer, scenes, camera, OfflineAlgorithm::BDPT);
+    checkAccumulatedPixels(renderer, scenes, camera, true);
 
-    offline.algorithm       = OfflineAlgorithm::BDPT;
-    offline.bdpt.maxBounces = 2;
-
-    applyOfflineSettings();
+    bdpt.maxBounces = 2;
+    useBdpt();
     draw();
     CHECK(activeOffline().sampleCount == 1);
     draw();
     CHECK(activeOffline().sampleCount == 2);
 
-    offline.bdpt.misHeuristic = BdptMisHeuristic::Power;
-
-    applyOfflineSettings();
+    bdpt.misHeuristic = BdptMisHeuristic::Power;
+    useBdpt();
     draw();
     CHECK(activeOffline().sampleCount == 1);
 
-    offline.algorithm = OfflineAlgorithm::PT;
-
-    applyOfflineSettings();
+    usePt();
     draw();
     CHECK(activeOffline().sampleCount == 1);
 
-    LOG_INFO("PT / BDPT pipeline switching and BDPT parameter resets passed");
+    LOG_INFO("PT / BDPT graph switching and BDPT parameter resets passed");
 
     // The editor must keep producing frames during a cold build and a partial BDPT sample.
-    offline.algorithm       = OfflineAlgorithm::BDPT;
-    offline.bdpt.maxBounces = 6;
-
-    applyOfflineSettings();
+    bdpt.maxBounces = 6;
+    useBdpt();
 
     auto began = std::chrono::steady_clock::now();
     drawFrame();
@@ -969,9 +979,7 @@ int main(int argc, char** argv)
     CHECK(activeOffline().sampleCount == 0);
     CHECK(activeOffline().sampleProgress < 1.0f);
 
-    offline.algorithm = OfflineAlgorithm::PT;
-
-    applyOfflineSettings();
+    usePt();
     began = std::chrono::steady_clock::now();
     drawFrame();
     const auto cancelMilliseconds =
@@ -979,9 +987,7 @@ int main(int argc, char** argv)
     CHECK(cancelMilliseconds < 1000.0, "canceling BDPT blocked for {} ms", cancelMilliseconds);
     CHECK(activeOffline().sampleCount == 1);
 
-    offline.algorithm = OfflineAlgorithm::BDPT;
-
-    applyOfflineSettings();
+    useBdpt();
     began = std::chrono::steady_clock::now();
     do
     {
@@ -1009,8 +1015,13 @@ int main(int argc, char** argv)
     assets.shutdown();
     data.shutdown();
     window.shutdown();
-    config.setGraphParameterOverrides(originalParameters);
-    config.passOverrides() = originalOverrides;
+    for (size_t index = 0; index < kRoutes.size(); ++index)
+    {
+        config.setRenderGraph(kRoutes[index]);
+        config.setGraphParameterOverrides(originals[index].parameters);
+        config.passOverrides() = originals[index].passes;
+    }
+    config.setRenderGraph(originalGraph);
     config.shutdown();
     context() = {};
 }

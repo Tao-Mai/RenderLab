@@ -24,13 +24,11 @@ RenderPassReflection ToneMappingPass::reflect(const PassSetup&) const
 
 void ToneMappingPass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
 {
-    const auto hdrColor = ports.image("hdrColor");
     const auto target = ports.image("target");
-    const auto exposure = ports.buffer("exposure");
-
-    hdrColor = hdrColorHandle;
+    hdrColor = ports.image("hdrColor");
     color    = graph.write(target);
-    exposure = exposureHandle;
+    exposure = ports.buffer("exposure");
+
     graph.use(
         exposure,
         {

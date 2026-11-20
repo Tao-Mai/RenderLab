@@ -21,6 +21,7 @@
 #include "render/device/Swapchain.h"
 #include "render/resources/MaterialTable.h"
 #include "render/raytracing/offline/OfflineScene.h"
+#include "render/raytracing/offline/OfflineTracePipeline.h"
 #include "render/resources/RenderResourceManager.h"
 
 #include <array>
@@ -79,6 +80,7 @@ private:
     SceneAccelerationStructures                 sceneAccelerationStructures;
     MaterialTable                               materialTable;
     OfflineScene                                offlineScene;
+    OfflineTracePipelineCache                   offlinePipelines;
     std::array<FrameContext, maxFramesInFlight> frames;
     std::array<FrameData, maxFramesInFlight>    frameStorage;
     std::array<RenderData, maxFramesInFlight>   renderStorage;

@@ -64,18 +64,21 @@ Binding 0 为全局 `MaterialData` SSBO，Binding 1 为 128 项纹理数组，Bi
 | Skybox | Scene、Light | `SkyboxPushConstants`，16 B |
 | DeferredLighting | Scene、Light、G-buffer、Shadow | `DeferredLightingPushConstants`，16 B |
 | Realtime RayTracing | Scene、Light、Material、光追私有资源 | `PathTracingParameters`，48 B |
-| OfflinePathTracing | Scene、空 Set、Material、离线私有资源 | `OfflinePathParameters`，112 B |
+| PT | Scene、空 Set、Material、离线私有资源 | `OfflinePathParameters`，64 B |
+| BDPT | Scene、空 Set、Material、离线与 BDPT 私有资源 | `BdptParameters`，112 B |
 
 光栅 Push Constant 用于 Vertex / Fragment，实时光追用于 Raygen，离线参数用于 Raygen / Compute。离线 Set 1 留空，光源由私有 Set 提供。SVGFReprojection 使用 Scene 和自己的 Set 1；SVGFFilter 使用自己的 Set 0。
 
 实时光追使用 Push Constant 传入 viewport、LightRanges、最大反弹次数、样本序号和 IBL 开关。ReSTIR 的初始光源候选数量来自 `RayTracingPass` 的 `restir.candidateCount` 参数，通过帧参数缓冲传入。
 
-光追私有 Set 3 的编号由 [RayTracingBindings.h](../src/render/raytracing/RayTracingBindings.h) 统一定义，CPU 与 shader 共用。
+两个实时插件共用 Set 3 的基础绑定，ReSTIR 增加 reservoir 与帧参数绑定。两个离线插件共用离线基础绑定，BDPT 增加 splat 与光源分布绑定。[公共实时绑定](../src/render/raytracing/RealtimeRayTracingBindings.h) · [ReSTIR 绑定](../passes/raytracing/realtime/RestirBindings.h) · [公共离线绑定](../src/render/raytracing/offline/OfflineRayTracingBindings.h) · [BDPT 绑定](../passes/raytracing/bdpt/BdptBindings.h)
 
 | 路线 | Binding 排列 |
 | --- | --- |
-| 实时 | 0：TLAS；1：命中数据；2：发光三角形；3：合并颜色或直接光；4：深度；5：法线；6：间接光；7：emission；8：albedo；9 / 10：当前 / 上一帧表面；11：初始 / 时域 reservoir；12：双层 reservoir 历史；13：ReSTIR 帧参数 |
-| 离线 | 0：TLAS；1：命中数据；2：材质预览；3：纹理指令；4：发光网格共享参数；5–11：point / spot / distant / 三角形 / infinite / projection / goniometric；12：portal 顶点；13：累积缓冲；14：颜色输出；15：BDPT splat；16：BDPT 光源 alias table |
+| 实时公共 | 0：TLAS；1：命中数据；2：发光三角形；3：合并颜色或直接光；4：深度；5：法线；6：间接光；7：emission；8：albedo |
+| ReSTIR | 9 / 10：当前 / 上一帧表面；11：初始 / 时域 reservoir；12：双层 reservoir 历史；13：ReSTIR 帧参数 |
+| 离线公共 | 0：TLAS；1：命中数据；2：材质预览；3：纹理指令；4：发光网格共享参数；5–11：point / spot / distant / 三角形 / infinite / projection / goniometric；12：portal 顶点；13：累积缓冲；14：颜色输出 |
+| BDPT | 15：splat；16：光源 alias table |
 
 实时光追的 Binding 6–8 用于 SVGF，SVGF 开关重建图并选择匹配的 Shader。Binding 2 的 SSBO 保存 16 B 数量头及每个实例展开后的 80 B 三角形记录，发光系数和纹理通过材质索引共享 MaterialSet。
 
@@ -83,7 +86,7 @@ SVGF 的两种模式分别缓存 Pipeline、私有 Layout 与 SBT；关闭模式
 
 Binding 9 / 10 分别绑定两份 64 B / 像素的表面缓冲，按历史层交换。Binding 11 使用 32 B / 像素，初始阶段写入、时域阶段更新、空间阶段只读；Binding 12 包含两层 32 B / 像素 reservoir。Binding 13 的 144 B UBO 保存上一帧矩阵、视口、深度行、图像尺寸、历史状态与复用参数。三个阶段共用 Pipeline Layout 和 SBT，阶段间显式同步存储读写。完整流程见 [ReSTIR](ReSTIR.md)。
 
-`RayTracingScenePass` 使用独立 Compute 布局：Set 0 的 Binding 0 / 1 / 2 分别为命中记录、发光实例任务和输出三角形缓冲。8 B Push Constant 保存本次三角形数量和任务数量。Graph 同步 Compute 写入与后续光追读取。
+实时 Pass 的场景准备阶段使用独立的 Compute 布局。Set 0 的 Binding 0 / 1 / 2 分别为命中记录、发光实例任务和输出三角形缓冲。8 B Push Constant 保存三角形数量和任务数量。Graph 同步 Compute 写入与后续光追读取。
 
 `SVGFReprojection` 私有 Set 1 的 Binding 0–4 为当前帧 direct / indirect / depth / normal / albedo；5–10 为两路颜色、共享深度 / 法线、两路亮度矩 / 样本数的双层历史；11 / 12 为两路 RGBA32F 颜色 / 方差输出。亮度矩输出引用历史数组（RG 为一阶 / 二阶矩，B 为样本数）。颜色及亮度统计均已除以 albedo，颜色历史在本阶段只读，由第一级滤波回写。
 

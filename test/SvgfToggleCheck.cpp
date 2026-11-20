@@ -1,4 +1,3 @@
-#include "GraphSelection.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
@@ -7,11 +6,11 @@
 #include "core/Window.h"
 #include "core/profiling/Profiler.h"
 #include "editor/EditorCamera.h"
-#include "passes/RayTracingPass/RayTracingSettings.h"
 #include "render/Renderer.h"
 #include "scene/SceneManager.h"
 #include "scene/system/RenderSystem.h"
 
+#include <array>
 #include <charconv>
 #include <chrono>
 #include <string_view>
@@ -50,9 +49,24 @@ int main(int argc, char** argv)
     assets.init(config.paths().assets);
     scenes.load(SceneAsset::ID{argv[1]});
     config.setSceneRenderMode(scenes.scene().renderMode);
-    selectGraphForPath(config, RenderPath::RayTracing);
-    const auto originalParameters = config.graphParameterOverrides();
-    const auto originalOverrides = config.passOverrides();
+    struct Route
+    {
+        std::string_view graph;
+        std::string_view type;
+        std::string_view instance;
+        nlohmann::json parameters;
+        PassOverrides overrides;
+    };
+    std::array routes{
+        Route{"realtime", "RayTracingPass", "rayTracing"},
+        Route{"minimal_path_tracer", "MinimalPathTracer", "pathTracer"},
+    };
+    for (auto& route : routes)
+    {
+        config.setRenderGraph(route.graph);
+        route.parameters = config.graphParameterOverrides();
+        route.overrides = config.passOverrides();
+    }
     config.setEditorSize(side, side);
 
     CHECK(glfwInit());
@@ -67,25 +81,19 @@ int main(int argc, char** argv)
 
     constexpr uint32_t kPhaseCount     = 8;
     constexpr uint32_t kFramesPerPhase = 7;
-    auto               parameters     = originalParameters;
     for (uint32_t phase = 0; phase < kPhaseCount; ++phase)
     {
+        const auto& route = routes[(phase / 2) % routes.size()];
+        config.setRenderGraph(route.graph);
+        auto parameters = route.parameters;
         const bool enableSvgf = phase % 2 == 0;
         parameters["svgf"] = enableSvgf;
         parameters["hdr"] = (phase & 2u) == 0;
-        const auto algorithm =
-            (phase / 2) % 2 == 0 ? RealtimeAlgorithm::ReSTIR : RealtimeAlgorithm::MinimalPathTracer;
         const auto maxBounces = phase % 3 + 1;
-        config.setGraphParameterOverrides(parameters);
-        renderer.setPassOverrides(
-            "RayTracingPass", "rayTracing", {{"algorithm", Serialize(algorithm)}, {"maxBounces", maxBounces}}
-        );
+        config.setGraphParameterOverrides(std::move(parameters));
+        renderer.setPassOverrides(route.type, route.instance, {{"maxBounces", maxBounces}});
         LOG_INFO(
-            "RT phase {}: algorithm={}, SVGF={}, maxBounces={}",
-            phase,
-            algorithm == RealtimeAlgorithm::MinimalPathTracer ? "MinimalPathTracer" : "ReSTIR",
-            enableSvgf,
-            maxBounces
+            "RT phase {}: graph={}, SVGF={}, maxBounces={}", phase, route.graph, enableSvgf, maxBounces
         );
         const auto begin = std::chrono::steady_clock::now();
         for (uint32_t frame = 0; frame < kFramesPerPhase; ++frame)
@@ -94,6 +102,10 @@ int main(int argc, char** argv)
             const auto result = renderer.render(view, scene, {}, 1.0f / 60.0f);
             profiler.endFrame(1000.0 / 60.0);
             CHECK(!result.swapchainNeedsRebuild);
+            CHECK(renderer.activeRenderGraph()->id == route.graph);
+            const auto* trace = renderer.graphPasses().findPass(route.instance);
+            CHECK(trace && trace->type == route.type);
+            CHECK(trace->pass->properties().at("maxBounces") == maxBounces);
             CHECK(config.rendererConfig().feature.svgf == enableSvgf);
             LOG_INFO("Phase {} submitted frame {}", phase, frame);
         }
@@ -107,8 +119,12 @@ int main(int argc, char** argv)
     assets.shutdown();
     data.shutdown();
     window.shutdown();
-    config.setGraphParameterOverrides(originalParameters);
-    config.passOverrides() = originalOverrides;
+    for (const auto& route : routes)
+    {
+        config.setRenderGraph(route.graph);
+        config.setGraphParameterOverrides(route.parameters);
+        config.passOverrides() = route.overrides;
+    }
     config.setRenderGraph(originalGraph);
     config.setEditorSize(originalEditor.width, originalEditor.height);
     config.shutdown();

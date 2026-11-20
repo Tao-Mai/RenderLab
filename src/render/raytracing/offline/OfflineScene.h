@@ -4,6 +4,7 @@
 #include "render/DrawItem.h"
 #include "render/raytracing/offline/OfflineLightData.h"
 #include "render/raytracing/offline/OfflineShaderTypes.h"
+#include "render/resources/PbrtMaterialProgram.h"
 
 #include <span>
 
@@ -11,63 +12,12 @@ class AssetManager;
 class MaterialTable;
 class RenderResourceManager;
 
-struct alignas(16) OfflineTextureInstruction
-{
-    glm::uvec4 metadata{};  // operation, scalar output / program length, texture, sampler.
-    glm::vec4  value{};
-    glm::vec4  uvScaleOffset{1, 1, 0, 0};
-    glm::vec4  uAxisKind{1, 0, 0, 0};
-    glm::vec4  vAxis{0, 1, 0, 0};
-    glm::vec4  settings{};
-    glm::mat4  textureFromWorld{1};
-};
-static_assert(sizeof(OfflineTextureInstruction) == 160);
-
-struct alignas(16) OfflineMaterialPreview
-{
-    OfflineMaterialPreviewModel model            = OfflineMaterialPreviewModel::Diffuse;
-    uint32_t                    firstTexture     = 0;
-    uint32_t                    secondTexture    = 0;
-    uint32_t                    instructionCount = 0;
-    glm::uvec4 inputs{};  // roughness U / scale texture, roughness V texture, remap roughness, reflectance input.
-};
-static_assert(sizeof(OfflineMaterialPreview) == 32);
-
 struct alignas(16) OfflineHitData
 {
     uint64_t   vertexAddress = 0, indexAddress = 0;
     glm::uvec4 material{};  // first index, material index, reverse orientation, first area light.
 };
 static_assert(sizeof(OfflineHitData) == 32);
-
-struct alignas(16) OfflinePathParameters
-{
-    glm::vec4  viewport{};
-    glm::uvec3 samples{};            // completed samples, max bounces, BDPT flags.
-    float      lightSamples = 0;     // Emitted paths divided by viewport pixel count, including the current batch.
-    glm::uvec4 lightCounts{};        // points, spots, directionals, triangles.
-    glm::uvec4 mappedLightCounts{};  // hasEnvironment (0/1), projections, goniometrics, portal vertices.
-    glm::vec4  sceneSphere{};        // center, radius for emission from infinite lights.
-    glm::vec4  camera{};             // forward direction, image-plane area at unit distance.
-    glm::uvec4 dispatch{};           // tile origin, full image extent.
-};
-static_assert(sizeof(OfflinePathParameters) == 112);
-
-struct alignas(16) OfflineAccumulatedPixel
-{
-    glm::vec3 color{};
-    uint32_t  sampleCount = 0;
-};
-static_assert(sizeof(OfflineAccumulatedPixel) == 16);
-
-struct OfflineLightDistributionEntry
-{
-    uint32_t alias       = 0;
-    float    acceptance  = 0;
-    float    probability = 0;
-    uint32_t padding     = 0;
-};
-static_assert(sizeof(OfflineLightDistributionEntry) == 16);
 
 struct alignas(16) OfflineLightEmission
 {
@@ -154,8 +104,8 @@ struct OfflineDrawData
 struct OfflineSceneData
 {
     uint64_t                               revision = 0;
-    std::vector<OfflineMaterialPreview>    materials;
-    std::vector<OfflineTextureInstruction> textures;
+    std::vector<pbrt::MaterialInstruction>    materials;
+    std::vector<pbrt::TextureInstruction> textures;
     std::vector<OfflineDrawData>           draws;
     std::vector<OfflineLightEmission>      areaEmissions;
     std::vector<OfflinePointLight>         pointLights;

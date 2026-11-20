@@ -23,15 +23,27 @@
         },
         {
             "id": "realtime",
-            "label": "Real-time ray tracing",
+            "label": "ReSTIR",
             "renderPath": "RayTracing",
             "script": "../graphs/realtime.py"
         },
         {
-            "id": "offline",
-            "label": "Offline path tracing",
+            "id": "minimal_path_tracer",
+            "label": "MinimalPathTracer",
+            "renderPath": "RayTracing",
+            "script": "../graphs/minimal_path_tracer.py"
+        },
+        {
+            "id": "pt",
+            "label": "PT",
             "renderPath": "OfflinePathTracing",
-            "script": "../graphs/offline.py"
+            "script": "../graphs/pt.py"
+        },
+        {
+            "id": "bdpt",
+            "label": "BDPT",
+            "renderPath": "OfflinePathTracing",
+            "script": "../graphs/bdpt.py"
         }
     ]
 }

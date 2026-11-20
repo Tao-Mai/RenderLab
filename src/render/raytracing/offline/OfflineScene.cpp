@@ -88,20 +88,20 @@ glm::vec3 previewRgb(const PbrtSpectrum& spectrum)
     );
 }
 
-OfflineTextureMapping textureMapping(PbrtTextureMapping::Kind kind)
+pbrt::TextureMapping textureMapping(PbrtTextureMapping::Kind kind)
 {
     switch (kind)
     {
         case PbrtTextureMapping::Kind::Uv:
-            return OfflineTextureMapping::Uv;
+            return pbrt::TextureMapping::Uv;
         case PbrtTextureMapping::Kind::Spherical:
-            return OfflineTextureMapping::Spherical;
+            return pbrt::TextureMapping::Spherical;
         case PbrtTextureMapping::Kind::Cylindrical:
-            return OfflineTextureMapping::Cylindrical;
+            return pbrt::TextureMapping::Cylindrical;
         case PbrtTextureMapping::Kind::Planar:
-            return OfflineTextureMapping::Planar;
+            return pbrt::TextureMapping::Planar;
         case PbrtTextureMapping::Kind::Spatial:
-            return OfflineTextureMapping::Spatial;
+            return pbrt::TextureMapping::Spatial;
     }
     std::unreachable();
 }
@@ -110,7 +110,7 @@ class TextureCompiler
 {
 public:
     TextureCompiler(
-        std::vector<OfflineTextureInstruction>& output,
+        std::vector<pbrt::TextureInstruction>& output,
         AssetManager&                           assets,
         RenderResourceManager&                  resources,
         MaterialTable&                          materialTable
@@ -124,7 +124,7 @@ public:
     {
         CHECK(output.size() < std::numeric_limits<uint32_t>::max());
         const auto begin = static_cast<uint32_t>(output.size());
-        output.push_back(node(OfflineTextureOp::Program));
+        output.push_back(node(pbrt::TextureOp::Program));
         stackDepth = 0;
         input(source, type);
         DCHECK(stackDepth == 1);
@@ -134,16 +134,16 @@ public:
     }
 
 private:
-    std::vector<OfflineTextureInstruction>& output;
+    std::vector<pbrt::TextureInstruction>& output;
     AssetManager&                           assets;
     RenderResourceManager&                  resources;
     MaterialTable&                          materialTable;
     std::unordered_set<std::string>         activeTextures;
     uint32_t                                stackDepth = 0;
 
-    static OfflineTextureInstruction node(OfflineTextureOp op, const PbrtTextureMapping& mapping = {})
+    static pbrt::TextureInstruction node(pbrt::TextureOp op, const PbrtTextureMapping& mapping = {})
     {
-        OfflineTextureInstruction instruction;
+        pbrt::TextureInstruction instruction;
         instruction.metadata.x    = std::to_underlying(op);
         instruction.uvScaleOffset = glm::vec4{glm::vec2{mapping.scale}, glm::vec2{mapping.offset}};
         instruction.uAxisKind =
@@ -153,20 +153,20 @@ private:
         return instruction;
     }
 
-    void emit(const OfflineTextureInstruction& instruction, uint32_t operands)
+    void emit(const pbrt::TextureInstruction& instruction, uint32_t operands)
     {
         DCHECK(stackDepth >= operands);
         stackDepth = stackDepth - operands + 1;
         CHECK(
-            stackDepth <= kOfflineTextureStackSize,
+            stackDepth <= pbrt::kTextureStackSize,
             "offline RGB texture expression exceeds {} stack values",
-            kOfflineTextureStackSize
+            pbrt::kTextureStackSize
         );
         output.push_back(instruction);
     }
     void constant(glm::vec3 value)
     {
-        auto instruction  = node(OfflineTextureOp::Constant);
+        auto instruction  = node(pbrt::TextureOp::Constant);
         instruction.value = glm::vec4{value, 0};
         emit(instruction, 0);
     }
@@ -197,7 +197,7 @@ private:
         std::visit(
             [&]<class T>(const T& model)
             {
-                OfflineTextureInstruction instruction;
+                pbrt::TextureInstruction instruction;
                 uint32_t                  operands = 0;
                 if constexpr (std::same_as<T, PbrtTextureAsset::Constant>)
                 {
@@ -206,7 +206,7 @@ private:
                 }
                 else if constexpr (std::same_as<T, PbrtTextureAsset::ImageMap>)
                 {
-                    instruction            = node(OfflineTextureOp::Image, source.mapping);
+                    instruction            = node(pbrt::TextureOp::Image, source.mapping);
                     const auto image       = materialTable.textureReference(model.image, resources);
                     instruction.metadata.z = image.textureIndex;
                     instruction.metadata.w = image.samplerIndex;
@@ -216,7 +216,7 @@ private:
                 {
                     pushInput(model.texture);
                     input(model.scale, PbrtTextureType::Float);
-                    instruction = node(OfflineTextureOp::Multiply);
+                    instruction = node(pbrt::TextureOp::Multiply);
                     operands    = 2;
                 }
                 else if constexpr (std::same_as<T, PbrtTextureAsset::Mix>)
@@ -224,14 +224,14 @@ private:
                     pushInput(model.first);
                     pushInput(model.second);
                     input(model.amount, PbrtTextureType::Float);
-                    instruction = node(OfflineTextureOp::Mix);
+                    instruction = node(pbrt::TextureOp::Mix);
                     operands    = 3;
                 }
                 else if constexpr (std::same_as<T, PbrtTextureAsset::DirectionMix>)
                 {
                     pushInput(model.first);
                     pushInput(model.second);
-                    instruction       = node(OfflineTextureOp::DirectionMix);
+                    instruction       = node(pbrt::TextureOp::DirectionMix);
                     instruction.value = glm::vec4{glm::vec3{model.direction}, 0};
                     operands          = 2;
                 }
@@ -241,14 +241,14 @@ private:
                     pushInput(model.v01);
                     pushInput(model.v10);
                     pushInput(model.v11);
-                    instruction = node(OfflineTextureOp::Bilerp, source.mapping);
+                    instruction = node(pbrt::TextureOp::Bilerp, source.mapping);
                     operands    = 4;
                 }
                 else if constexpr (std::same_as<T, PbrtTextureAsset::Checkerboard>)
                 {
                     pushInput(model.first);
                     pushInput(model.second);
-                    instruction            = node(OfflineTextureOp::Checkerboard, source.mapping);
+                    instruction            = node(pbrt::TextureOp::Checkerboard, source.mapping);
                     instruction.settings.x = static_cast<float>(model.dimension);
                     operands               = 2;
                 }
@@ -256,15 +256,15 @@ private:
                 {
                     pushInput(model.inside);
                     pushInput(model.outside);
-                    instruction = node(OfflineTextureOp::Dots, source.mapping);
+                    instruction = node(pbrt::TextureOp::Dots, source.mapping);
                     operands    = 2;
                 }
                 else if constexpr (std::same_as<T, PbrtTextureAsset::Noise>)
                 {
                     instruction = node(
-                        model.kind == T::Kind::Fbm            ? OfflineTextureOp::Fbm
-                            : model.kind == T::Kind::Wrinkled ? OfflineTextureOp::Wrinkled
-                                                              : OfflineTextureOp::Windy,
+                        model.kind == T::Kind::Fbm            ? pbrt::TextureOp::Fbm
+                            : model.kind == T::Kind::Wrinkled ? pbrt::TextureOp::Wrinkled
+                                                              : pbrt::TextureOp::Windy,
                         source.mapping
                     );
                     constexpr int32_t kMaxPreviewNoiseOctaves = 12;
@@ -277,7 +277,7 @@ private:
                 }
                 else if constexpr (std::same_as<T, PbrtTextureAsset::Marble>)
                 {
-                    instruction                               = node(OfflineTextureOp::Marble, source.mapping);
+                    instruction                               = node(pbrt::TextureOp::Marble, source.mapping);
                     constexpr int32_t kMaxPreviewNoiseOctaves = 12;
                     instruction.settings                      = {
                         static_cast<float>(model.roughness),
@@ -289,7 +289,7 @@ private:
                 }
                 else if constexpr (std::same_as<T, PbrtTextureAsset::Ptex>)
                 {
-                    instruction         = node(OfflineTextureOp::PtexPreview);
+                    instruction         = node(pbrt::TextureOp::PtexPreview);
                     instruction.value.x = static_cast<float>(model.scale);
                 }
                 instruction.metadata.y = source.valueType == PbrtTextureType::Float ? 1u : 0u;
@@ -318,10 +318,10 @@ public:
         CHECK(output.size() < std::numeric_limits<uint32_t>::max());
         const auto begin = static_cast<uint32_t>(output.size());
         headerIndex      = begin;
-        output.push_back({.model = OfflineMaterialPreviewModel::Diffuse});
+        output.push_back({.model = pbrt::MaterialModel::Diffuse});
         stackDepth = 0;
         append(assets.get(id).as<PbrtMaterial>());
-        if (output[begin].model != OfflineMaterialPreviewModel::Diffuse)
+        if (output[begin].model != pbrt::MaterialModel::Diffuse)
         {
             DCHECK(stackDepth == 0);
             output[begin].instructionCount = 0;
@@ -329,7 +329,7 @@ public:
         else
         {
             DCHECK(stackDepth == 1);
-            output[begin].model = OfflineMaterialPreviewModel::Diffuse;
+            output[begin].model = pbrt::MaterialModel::Diffuse;
             CHECK(output.size() - begin - 1 < std::numeric_limits<uint32_t>::max());
             output[begin].instructionCount = static_cast<uint32_t>(output.size() - begin - 1);
         }
@@ -338,7 +338,7 @@ public:
     }
 
 private:
-    std::vector<OfflineMaterialPreview>&      output;
+    std::vector<pbrt::MaterialInstruction>&      output;
     AssetManager&                             assets;
     TextureCompiler                           textures;
     std::unordered_map<std::string, uint32_t> materialIndices;
@@ -364,21 +364,21 @@ private:
         return constantZero(roughness.u) && constantZero(roughness.v);
     }
 
-    void emit(const OfflineMaterialPreview& material, uint32_t operands = 0)
+    void emit(const pbrt::MaterialInstruction& material, uint32_t operands = 0)
     {
         DCHECK(stackDepth >= operands);
         stackDepth = stackDepth - operands + 1;
         CHECK(
-            stackDepth <= kOfflineMaterialStackSize,
+            stackDepth <= pbrt::kMaterialStackSize,
             "offline material mix exceeds {} stack values",
-            kOfflineMaterialStackSize
+            pbrt::kMaterialStackSize
         );
         output.push_back(material);
     }
 
     void color(const PbrtSpectrumInput& value)
     {
-        emit({.model = OfflineMaterialPreviewModel::Color, .firstTexture = spectrum(value)});
+        emit({.model = pbrt::MaterialModel::Color, .firstTexture = spectrum(value)});
     }
 
     void conductorColor(const PbrtMaterial::ConductorOptics& optics)
@@ -391,7 +391,7 @@ private:
                 else
                 {
                     emit(
-                        {.model         = OfflineMaterialPreviewModel::ConductorColor,
+                        {.model         = pbrt::MaterialModel::ConductorColor,
                          .firstTexture  = spectrum(value.eta),
                          .secondTexture = spectrum(value.k)}
                     );
@@ -403,8 +403,8 @@ private:
 
     void conductor(const PbrtMaterial::Conductor& source)
     {
-        OfflineMaterialPreview material{
-            .model  = OfflineMaterialPreviewModel::Conductor,
+        pbrt::MaterialInstruction material{
+            .model  = pbrt::MaterialModel::Conductor,
             .inputs = {scalar(source.roughness.u), scalar(source.roughness.v), source.remapRoughness ? 1u : 0u, 0},
         };
         std::visit(
@@ -438,7 +438,7 @@ private:
                 {
                     if (smoothRoughness(model.roughness) && activeMaterials.size() == 1)
                     {
-                        output[headerIndex].model        = OfflineMaterialPreviewModel::SmoothDielectric;
+                        output[headerIndex].model        = pbrt::MaterialModel::SmoothDielectric;
                         output[headerIndex].firstTexture = spectrum(model.eta);
                     }
                     else
@@ -456,7 +456,7 @@ private:
                 else if constexpr (std::same_as<T, PbrtMaterial::DiffuseTransmission>)
                 {
                     emit(
-                        {.model         = OfflineMaterialPreviewModel::DiffuseTransmission,
+                        {.model         = pbrt::MaterialModel::DiffuseTransmission,
                          .firstTexture  = spectrum(model.reflectance),
                          .secondTexture = spectrum(model.transmittance),
                          .inputs        = {scalar(PbrtFloatConstant{model.scale}), 0, 0, 0}}
@@ -466,7 +466,7 @@ private:
                 {
                     append(assets.get(model.first).template as<PbrtMaterial>());
                     append(assets.get(model.second).template as<PbrtMaterial>());
-                    emit({.model = OfflineMaterialPreviewModel::Mix, .firstTexture = scalar(model.amount)}, 2);
+                    emit({.model = pbrt::MaterialModel::Mix, .firstTexture = scalar(model.amount)}, 2);
                 }
                 else if constexpr (std::same_as<T, PbrtMaterial::Subsurface>)
                     std::visit(
@@ -477,7 +477,7 @@ private:
                             else if constexpr (std::same_as<S, PbrtMaterial::ScatteringCoefficients>)
                             {
                                 emit(
-                                    {.model         = OfflineMaterialPreviewModel::Subsurface,
+                                    {.model         = pbrt::MaterialModel::Subsurface,
                                      .firstTexture  = spectrum(scattering.sigmaA),
                                      .secondTexture = spectrum(scattering.sigmaS)}
                                 );
@@ -496,14 +496,14 @@ private:
                             else if constexpr (std::same_as<S, PbrtMaterial::HairAbsorption>)
                             {
                                 emit(
-                                    {.model        = OfflineMaterialPreviewModel::HairAbsorption,
+                                    {.model        = pbrt::MaterialModel::HairAbsorption,
                                      .firstTexture = spectrum(absorption.sigmaA)}
                                 );
                             }
                             else
                             {
                                 emit(
-                                    {.model         = OfflineMaterialPreviewModel::HairPigments,
+                                    {.model         = pbrt::MaterialModel::HairPigments,
                                      .firstTexture  = scalar(absorption.eumelanin),
                                      .secondTexture = scalar(absorption.pheomelanin)}
                                 );

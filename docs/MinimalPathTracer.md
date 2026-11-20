@@ -1,8 +1,7 @@
 # MinimalPathTracer 实时光追
 
-在 `Real-time ray tracing` 渲染路线下，通过 `Tracing algorithm` 下拉框切换 `ReSTIR / MinimalPathTracer`。
-算法由 `RayTracingPass` 实例的 `algorithm` 参数选择，Pass 默认使用 `ReSTIR`。两条子路线共用 `Max bounces` 和
-SVGF 参数，ReSTIR 的候选与时空复用设置仅在选择 ReSTIR 时显示。
+在编辑器的 Graph 下拉框选择 `MinimalPathTracer`。这张图加载独立的 `MinimalPathTracer` 插件，
+由实例的 `Max bounces` 控制弹射上限，图参数控制可选 SVGF 和后处理。[组图入口](../graphs/minimal_path_tracer.py) · [Falcor 的组图示例](https://github.com/NVIDIAGameWorks/Falcor/blob/759aad033ff610fb0d82c74f7e0a508d0096d5f2/scripts/MinimalPathTracer.py)
 
 ## 积分流程
 
@@ -18,28 +17,25 @@ MinimalPathTracer 每像素每帧生成一条主射线，并在 RayGen 中循环
 主射线使用固定的像素中心，后续光源和 BRDF 随机数随像素与帧样本变化。
 所有追踪都发生在 RayGen，ClosestHit 只返回命中信息，Vulkan 管线递归深度维持 1。
 
-MinimalPathTracer 不分配、上传或复用 ReSTIR 的表面、初始 reservoir、历史 reservoir 和帧参数缓冲，
-也不执行 Temporal / Spatial RayGen。每帧只调度一次 MinimalPathTracer RayGen。
+MinimalPathTracer 每帧只调度一次 RayGen。ReSTIR 的表面、reservoir 和时空复用由 ReSTIR 插件维护。
 
 ## 共用代码与输出
 
 | 位置 | 职责 |
 | --- | --- |
-| `passes/RayTracingPass/ray_tracing.slang` | Surface、材质求值、相机射线、命中 / Miss、BRDF 采样、路径续射线、俄罗斯轮盘 |
-| `passes/RayTracingPass/light_sampling.slang` | 光源选择、解析光源 / 发光三角形 / 环境的求值、光源 PDF、命中光源样本还原 |
-| `passes/RayTracingPass/output.slang` | 合并 HDR 或 SVGF 分离输出、主命中深度和法线 |
-| `passes/RayTracingPass/minimal_path_tracer.slang` | MinimalPathTracer 路径积分与入口 |
-| `passes/RayTracingPass/restir_*.slang` 和 `restir.slang` | ReSTIR 的路径循环、初始 RIS、时空复用与专用数据 |
+| [path_tracing.slang](../shaders/raytracing/path_tracing.slang) | Surface、材质求值、相机射线、命中 / Miss、BRDF 采样、路径续射线和俄罗斯轮盘 |
+| [light_sampling.slang](../shaders/raytracing/light_sampling.slang) | 光源选择、解析光源 / 发光三角形 / 环境的求值、光源 PDF 和命中光源样本还原 |
+| [path_output.slang](../shaders/raytracing/path_output.slang) | 合并 HDR 或 SVGF 分离输出、主命中深度和法线 |
+| [minimal_path_tracer.slang](../passes/raytracing/minimal/minimal_path_tracer.slang) | MinimalPathTracer 的路径积分和 RayGen |
 
-两条子路线复用 `RayTracingScenePass`、BLAS / TLAS、`RayTracingPass` 的描述符和 SBT 构建逻辑，
-分别缓存算法 × SVGF 的 Pipeline 变体。切换算法重建渲染图，重置样本索引和 SVGF / ReSTIR 历史；
-修改反弹上限复用现有 Pipeline，并使 SVGF 历史失效。
+两个插件各自缓存 Pipeline，并复用场景准备、BLAS / TLAS、基础描述符和 SBT 构建逻辑。切换 Graph
+时重新编译图，样本索引和时域历史重新开始。修改弹射上限复用当前 Pipeline，并重置 SVGF 历史。
 
 MinimalPathTracer 关闭 SVGF 时输出合并的 RGBA16F；开启时输出 direct、indirect、emission、albedo，
 随后复用现有 SVGF 重投影与五级 à-trous 滤波。直接光包括主顶点光源采样和一次散射后命中光源的贡献，
-更深层贡献归入间接光，相机直接可见的 emission 保持独立。MinimalPathTracer 不使用 ReSTIR 配置来判断 SVGF 历史。
+更深层贡献归入间接光，相机直接可见的 emission 单独输出。
 
 ## 验证入口
 
-`SvgfToggleCheck <scene-id> [size]` 覆盖两条子路线 × SVGF 开关的反复切换，并切换 1–3 次弹射。
-`CaptureScene` 的实时路线支持末尾两个参数 `[restir|minimalpathtracer] [max-bounces]`，可读取 HDR 结果作数值对照。
+`SvgfToggleCheck <scene-id> [size]` 覆盖两张图与 SVGF 开关的反复切换，并切换 1–3 次弹射。
+`CaptureScene` 通过 `realtime` 或 `minimal_path_tracer` 选择 Graph，两条路线可用末尾的 `[max-bounces]` 调节弹射上限。

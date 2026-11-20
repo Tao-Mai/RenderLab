@@ -248,6 +248,7 @@ add_library(RenderLabCore SHARED
     src/render/resources/RenderResourceManager.cpp
     src/render/resources/RenderResourceManager.h
     src/render/resources/ShaderData.h
+    src/render/resources/PbrtMaterialProgram.h
     src/render/resources/ShaderManager.cpp
     src/render/resources/ShaderManager.h
     src/render/graph/EndPass.cpp
@@ -266,8 +267,13 @@ add_library(RenderLabCore SHARED
     src/render/raytracing/AccelerationStructure.h
     src/render/raytracing/SceneAccelerationStructures.cpp
     src/render/raytracing/SceneAccelerationStructures.h
+    src/render/raytracing/RealtimePathTracing.cpp
+    src/render/raytracing/RealtimePathTracing.h
+    src/render/raytracing/RealtimeScene.cpp
+    src/render/raytracing/RealtimeScene.h
     src/render/raytracing/offline/OfflineLightData.h
     src/render/raytracing/offline/OfflineShaderTypes.h
+    src/render/denoise/DenoiserInputs.h
     src/render/editor/EditorFrameInput.h
     src/render/editor/EditorShaderData.h
     src/render/graph/RenderPass.cpp
@@ -275,14 +281,28 @@ add_library(RenderLabCore SHARED
     src/render/plugins/PluginManager.cpp
     src/core/RuntimeDirectory.cpp
     src/render/raytracing/offline/OfflineScene.cpp
+    src/render/raytracing/offline/OfflinePathTracing.cpp
+    src/render/raytracing/offline/OfflinePathTracing.h
+    src/render/raytracing/offline/OfflineRayTracingBindings.h
+    src/render/raytracing/offline/OfflineTracePipeline.cpp
+    src/render/raytracing/offline/OfflineTracePipeline.h
     src/editor/SettingsWidgets.cpp
 )
-set_target_properties(RenderLabCore PROPERTIES PREFIX "")
+set_target_properties(RenderLabCore PROPERTIES PREFIX "" DEFINE_SYMBOL "")
 if(MINGW)
     target_link_options(RenderLabCore PRIVATE "LINKER:--export-all-symbols")
 endif()
-target_compile_definitions(RenderLabCore PRIVATE RENDERLAB_PLUGIN_ABI="${RENDERLAB_PLUGIN_ABI}")
-target_link_libraries(RenderLabCore PRIVATE imgui::imgui ${CMAKE_DL_LIBS})
+set_property(SOURCE src/render/plugins/PluginManager.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+    RENDERLAB_PLUGIN_ABI="${RENDERLAB_PLUGIN_ABI}")
+# The editor and every plugin must use the same ImGui state and functions.
+target_link_libraries(RenderLabCore PRIVATE
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,imgui::imgui,imguizmo::imguizmo>"
+    ${CMAKE_DL_LIBS}
+)
+target_include_directories(RenderLabCore SYSTEM PUBLIC
+    $<TARGET_PROPERTY:imgui::imgui,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:imguizmo::imguizmo,INTERFACE_INCLUDE_DIRECTORIES>
+)
 target_sources(RenderLabCore PRIVATE
     src/asset/pbrt/PbrtImport.cpp
     src/asset/pbrt/PbrtData.cpp
@@ -356,6 +376,8 @@ target_link_libraries(RenderLabPluginAbi PRIVATE RenderLabCore)
 target_compile_definitions(RenderLabPluginAbi PRIVATE RENDERLAB_PLUGIN_ABI="${RENDERLAB_PLUGIN_ABI}")
 target_precompile_headers(RenderLabPluginAbi REUSE_FROM RenderLabCore)
 add_subdirectory(passes)
+renderlab_shader(prepare_emissive_triangles shaders/raytracing/prepare_emissive_triangles.slang
+    prepare_emissive_triangles ENTRIES computeMain)
 renderlab_build_shaders()
 renderlab_build_plugins()
 
@@ -386,7 +408,7 @@ add_library(RenderLabRuntime STATIC
     src/render/graph/PythonGraph.cpp
     src/render/graph/PythonGraph.h
 )
-target_link_libraries(RenderLabRuntime PUBLIC RenderLabCore PRIVATE imgui::imgui imguizmo::imguizmo Python3::Python)
+target_link_libraries(RenderLabRuntime PUBLIC RenderLabCore PRIVATE Python3::Python)
 set_property(SOURCE src/render/graph/PythonGraph.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     RENDERLAB_PYTHON_HOME=L"${RENDERLAB_PYTHON_HOME}"
     RENDERLAB_GRAPH_LIBRARY_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/graphs")
@@ -394,7 +416,7 @@ target_precompile_headers(RenderLabRuntime REUSE_FROM RenderLabCore)
 
 add_executable(RenderLab src/Main.cpp)
 add_dependencies(RenderLab RenderLabPassPlugins)
-target_link_libraries(RenderLab PRIVATE RenderLabRuntime imgui::imgui)
+target_link_libraries(RenderLab PRIVATE RenderLabRuntime)
 target_precompile_headers(RenderLab REUSE_FROM RenderLabCore)
 
 option(BUILD_TESTING "Enable manual validation tools" OFF)

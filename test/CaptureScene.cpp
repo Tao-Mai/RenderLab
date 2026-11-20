@@ -1,9 +1,9 @@
-#include "GraphSelection.h"
 #include "LightingSetup.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
+#include "core/Serializer.h"
 #include "core/Window.h"
 #include "editor/EditorCamera.h"
 #include "render/RenderContext.h"
@@ -13,6 +13,7 @@
 #include "passes/postprocess/FalcorPostProcess/FalcorPostProcessConfig.h"
 #include "render/device/VkCheck.h"
 #include "render/graph/EndPass.h"
+#include "render/raytracing/RealtimeSceneData.h"
 #include "render/raytracing/SceneAccelerationStructures.h"
 #include "render/resources/MaterialTable.h"
 #include "render/editor/EditorFrameInput.h"
@@ -198,6 +199,8 @@ void capture(
     const auto& config                 = context().config->rendererConfig();
     const bool  offline   = config.renderPath == RenderPath::OfflinePathTracing;
     const bool  realtime  = config.renderPath == RenderPath::RayTracing;
+    auto& configManager = *context().config;
+    const auto traceInstance = configManager.renderGraph().id == "realtime" ? "rayTracing" : "pathTracer";
 
     std::array<FrameContext, maxFramesInFlight> frames;
     for (auto& frame : frames)
@@ -219,7 +222,6 @@ void capture(
         .size = kMaxLights * sizeof(LightData),
         .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
     });
-    const auto& configManager = *context().config;
     auto description = loadRenderGraph(configManager.renderGraphScript(), configManager.graphParameterOverrides());
     const auto sourceOf = [&](std::string_view input) -> const nlohmann::json&
     {
@@ -238,11 +240,11 @@ void capture(
         marked["exposure"] = "exposure.state";
     if (realtime)
     {
-        marked["triangleLights"] = "rayTracingScene.triangles";
-        const auto* trace = renderer.graphPasses().findPass("rayTracing");
+        const auto* trace = renderer.graphPasses().findPass(traceInstance);
         CHECK(trace);
-        if (trace->pass->properties().at("algorithm") == "ReSTIR")
-            marked["reservoirs"] = "rayTracing.reservoirHistory";
+        marked["triangleLights"] = trace->name + ".triangleLights";
+        if (trace->type == "RayTracingPass")
+            marked["reservoirs"] = trace->name + ".reservoirHistory";
     }
     GraphResources inputs{{"presentTarget", target}, {"lightBuffer", lightBuffer}};
     if (graphUsesInputPrefix(description, "emptyShadow_"))
@@ -364,7 +366,7 @@ void capture(
             ));
         }
         const auto completed = offline
-            ? captureGraph.findPass("offline")->pass->statistics().at("sampleCount").get<uint32_t>()
+            ? captureGraph.findPass(configManager.renderGraph().id)->pass->statistics().at("sampleCount").get<uint32_t>()
             : frameNumber + 1;
         if (completed != frameNumber)
         {
@@ -406,7 +408,8 @@ void capture(
         const auto             offset = imageBytes + readback.exposureBytes;
         EmissiveTriangleHeader header;
         std::memcpy(&header, pixels.data() + offset, sizeof(header));
-        CHECK(header.triangleCount == realtimeScene.triangleCount());
+        const auto stats = captureGraph.findPass(traceInstance)->pass->statistics();
+        CHECK(header.triangleCount == stats.at("emissiveTriangleCount").get<uint32_t>());
         auto path = output;
         path.replace_extension(".lights.bin");
         std::ofstream stream(path, std::ios::binary);
@@ -460,13 +463,16 @@ int main(int argc, char** argv)
 {
     logger::init(argv[0]);
     CHECK(
-        argc >= 4 && argc <= 12,
-        "usage: CaptureScene <scene-id> <forward|deferred|realtime|offline> <output.png> [frames=1] [size=960] "
-        "[ev100|auto] [sequence-directory] [yaw-step=0] [renderlab|falcor] [restir|minimalpathtracer] [max-bounces]"
+        argc >= 4 && argc <= 11,
+        "usage: CaptureScene <scene-id> <forward|deferred|realtime|minimal_path_tracer|pt|bdpt> "
+        "<output.png> [frames=1] [size=960] [ev100|auto] [sequence-directory] [yaw-step=0] "
+        "[renderlab|falcor] [max-bounces]"
     );
     const std::string_view route{argv[2]};
+    const bool offline = route == "pt" || route == "bdpt";
     CHECK(
-        route == "forward" || route == "deferred" || route == "realtime" || route == "offline",
+        route == "forward" || route == "deferred" || route == "realtime" || route == "minimal_path_tracer" ||
+            offline,
         "unsupported capture route: {}",
         route
     );
@@ -487,22 +493,16 @@ int main(int argc, char** argv)
     context().window           = &window;
     context().renderer         = &renderer;
     config.init();
-    const auto originalGraph = config.renderGraph().id;
     const auto originalEditor = config.editorConfig();
     data.init(config.paths().assets);
     scenes.init();
     assets.init(config.paths().assets);
     scenes.load(SceneAsset::ID{argv[1]});
-    CHECK((route == "offline") == (scenes.scene().renderMode == SceneRenderMode::Offline),
+    CHECK(offline == (scenes.scene().renderMode == SceneRenderMode::Offline),
           "capture route does not match scene render mode");
     config.setSceneRenderMode(scenes.scene().renderMode);
-    if (route != "offline")
-        selectGraphForPath(
-            config,
-            route == "realtime"       ? RenderPath::RayTracing
-                : route == "deferred" ? RenderPath::Deferred
-                                      : RenderPath::Forward
-        );
+    const auto originalGraph = config.renderGraph().id;
+    config.setRenderGraph(route);
     const auto originalParameters = config.graphParameterOverrides();
     const auto originalOverrides = config.passOverrides();
 
@@ -527,14 +527,12 @@ int main(int argc, char** argv)
 
     if (argc > 10)
     {
-        CHECK(route == "realtime");
-        const std::string_view algorithm{argv[10]};
-        CHECK(algorithm == "restir" || algorithm == "minimalpathtracer");
-        auto settings = renderer.graphPasses().findPass("rayTracing")->pass->properties();
-        settings["algorithm"] = algorithm == "minimalpathtracer" ? "MinimalPathTracer" : "ReSTIR";
-        if (argc > 11)
-            settings["maxBounces"] = parseNumber<uint32_t>(argv[11]);
-        renderer.setPassOverrides("RayTracingPass", "rayTracing", std::move(settings));
+        CHECK(route == "realtime" || route == "minimal_path_tracer");
+        const auto* trace = renderer.graphPasses().findPass(route == "realtime" ? "rayTracing" : "pathTracer");
+        CHECK(trace);
+        auto settings = trace->pass->properties();
+        settings["maxBounces"] = parseNumber<uint32_t>(argv[10]);
+        renderer.setPassOverrides(trace->type, trace->name, std::move(settings));
     }
     if (argc > 6 && mode == PostProcessMode::Falcor)
     {
@@ -577,7 +575,6 @@ int main(int argc, char** argv)
     window.shutdown();
     config.setGraphParameterOverrides(originalParameters);
     config.passOverrides() = originalOverrides;
-    config.setSceneRenderMode(SceneRenderMode::Realtime);
     config.setRenderGraph(originalGraph);
     config.setEditorSize(originalEditor.width, originalEditor.height);
     config.shutdown();

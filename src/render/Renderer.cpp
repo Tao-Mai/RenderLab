@@ -59,7 +59,7 @@ void Renderer::init()
     rendererConfig = &context().config->rendererConfig();
 
     auto& ctx = renderContext();
-    DCHECK(!ctx.shaderManager && !ctx.device && !ctx.resources && !ctx.materialTable);
+    DCHECK(!ctx.shaderManager && !ctx.device && !ctx.resources && !ctx.materialTable && !ctx.offlinePipelines);
     DCHECK(context().window);
 
     auto& window = *context().window;
@@ -74,6 +74,7 @@ void Renderer::init()
         .device        = &device,
         .resources     = &resources,
         .materialTable = &materialTable,
+        .offlinePipelines = &offlinePipelines,
     };
 
     for (auto& frame : frames)
@@ -190,6 +191,7 @@ void Renderer::shutdown() noexcept
     graph.reset();
     graphCompiler.clear();
     pluginManager.clear();
+    offlinePipelines.clear();
     sceneAccelerationStructures.reset();
     pickingReadback = {};
     lightBuffer     = {};

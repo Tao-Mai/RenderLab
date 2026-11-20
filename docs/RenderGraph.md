@@ -12,7 +12,9 @@ Python 选择 Pass 并连接资源。C++ Pass 声明资源访问，RenderGraph �
 
 `config/config.json` 的 `renderGraphs` 登记每张图的 `id`、显示名 `label`、C++ 渲染类型 `renderPath` 和
 相对于配置文件的 `script` 路径。应用按场景模式和设备能力提供 Graph 选择。默认入口为 [Forward](../graphs/forward.py)、
-[Deferred](../graphs/deferred.py)、[Realtime](../graphs/realtime.py) 和 [Offline](../graphs/offline.py)。
+[Deferred](../graphs/deferred.py)、[ReSTIR](../graphs/realtime.py)、[MinimalPathTracer](../graphs/minimal_path_tracer.py)、
+[PT](../graphs/pt.py) 和 [BDPT](../graphs/bdpt.py)。
+四个光追积分器各有自己的插件和图参数，两张离线图用于离线场景。
 `renderer.json` 的 `realtimeGraph` 与 `offlineGraph` 分别记录两种场景模式选择的 Graph ID。
 
 脚本提供 `build_graph(graph)`。`graph.create_pass(name, type, properties)` 声明实例，`graph.add_edge(source, target)` 以 `"实例.端口"` 连接资源。`graph.input(name)` 返回宿主输入端口。C++ 通过插件工厂创建实例，并验证端口方向、类型、格式约束和必需连线。
@@ -36,11 +38,11 @@ if graph.param("bloom", True):
 
 环境图在 Editor 面板的 Environment 区选择，随场景保存。IBL 开关是当前图的参数。
 
-四张图调用同一个 [`add_post_process(graph, sceneColor, target)`](../graphs/modules/post_process.py)
+各图调用同一个 [`add_post_process(graph, sceneColor, target)`](../graphs/modules/post_process.py)
 组装后处理。模块将 Pass 登记到当前图，由 RenderGraph 统一编译。随后 [编辑器输出模块](../graphs/modules/editor.py)
 仅在 Forward 和 Deferred 中使用场景深度做物体拾取。编辑器 UI 叠加在后处理的颜色结果上。
 
-`graph.mark_output("editorUi.color", name="color")` 指定交换链目标 `presentTarget` 的写入版本。两张光栅图还声明各阴影资源端口和拾取回读 `pickingReadback`。Python 在建图和重建时运行，逐帧调度和 Vulkan 命令录制由 C++ 执行。
+`graph.mark_output("editorUi.color", name="color")` 指定交换链目标 `presentTarget` 的写入版本。两张光栅图还标记各阴影资源端口，可以选择加入拾取回读 `pickingReadback`。Python 在建图和重建时运行，逐帧调度和 Vulkan 命令录制由 C++ 执行。
 
 `graph.showObjectList` 控制编辑器左侧的 Scene Objects 面板，默认值为 `False`。在 `build_graph()` 中将其
 设为 `True` 即可显示列表。切换时窗口按左栏宽度调整并在当前屏幕居中。编辑器配置中的宽度以收起左栏时的宽度保存。
@@ -53,6 +55,7 @@ Pass 通过 `ConfigurablePass<Settings>` 持有类型化参数。`Settings` 声�
 
 插件用 `makePassEditor<MyPass>()` 生成布尔、枚举及标注了 `PassSliderRange` 的数值控件。
 复杂界面可以在 Pass 旁边编写 `*Ui.cpp`，再用 `makePassEditor<MyPass, drawSettings>()` 生成回调。
+弹射次数等具体参数的控件标签、范围和提示由 Pass 定义，编辑器提供通用的数值控件。
 回调通过 `PluginRegistry::registerClass()` 与工厂一起发布，图通过 `graph.create_pass(..., ui=True)` 展示当前实例的控件。
 
 生效顺序为 Pass 默认值、Python `properties`、实例覆盖值。`renderer.json` 中的 `graphOverrides` 按 Graph ID 保存用户设置。
@@ -64,7 +67,7 @@ Pass 通过 `ConfigurablePass<Settings>` 持有类型化参数。`Settings` 声�
 
 `reflect()` 声明命名输入输出，`compile()` 读取已连接的端口、声明 GPU 资源并发布输出。图编译器按连线排序，从标记输出追溯活跃节点。GPU 资源分配后执行 `bindResources()`。逐帧依次执行 `prepare()` 和 `execute()`。图按类型和实例名持有 Pass，重建时可以复用 Pipeline 和异步任务。
 
-Bloom、SVGF 等复合 Pass 在 `compile()` 中用 `graph.addStage()` 展开内部命令阶段，各阶段独立声明资源访问。
+Bloom、SVGF 等复合 Pass 继承 `CompositeRenderPass`，在 `compile()` 中用 `graph.addStage()` 展开内部命令阶段，各阶段独立声明资源访问。
 
 ### 资源声明与版本
 
@@ -84,19 +87,15 @@ use 描述资源在哪个流水线阶段、以什么方式访问；图像还需�
 
 ### 声明最终出口
 
-EndPass 接收最终颜色和回读缓冲，将呈现与 CPU 回读连接到同一个出口，并声明 Present 布局和 HostRead 访问。它决定哪些结果需要保留，也让 Graph 完成提交前的最终状态转换。
-
-当前 Graph 以最后登记的节点为终点，Renderer 因此在其他节点之后登记 EndPass。需要保留的分支都应通过资源依赖连接到这个出口。
+`graph.mark_output()` 保留指定的输出及其生产链。Renderer 添加 EndPass，为最终颜色声明 Present 布局，并为可选的拾取回读缓冲声明 HostRead 访问。EndPass 调用 `retainStage()` 保留提交前的状态转换。
 
 ## Compile：确定调度与资源绑定
 
-Compile 将 Setup 的声明变成可执行的图：保留最终结果需要的 Pass，建立完整的读写顺序，分配资源并写入描述符。编译结果供后续每帧复用。
+编译过程保留输出需要的 Pass，建立读写顺序，分配资源并写入描述符。编译结果供后续每帧复用。
 
 ### 保留有效节点
 
-Graph 从最终出口沿资源的生产关系向前追溯，保留出口依赖的全部 Pass，并建立生产者到消费者的执行约束。Renderer 统一上传的灯光缓冲等资源可直接作为输入。
-
-图仅保留通过资源依赖连接到出口的分支。所有节点都经历 Setup，保留的节点继续参与后续的描述符绑定、帧准备和执行。
+图编译器从标记输出沿连线追溯需要编译的 Pass。命令图再从这些输出和 `retainStage()` 标记的阶段追溯生产关系，找出参与资源绑定、帧准备和执行的阶段。Renderer 统一上传的灯光缓冲等资源可直接作为输入。
 
 ### 确定读取与覆盖顺序
 
@@ -116,9 +115,7 @@ Graph 使用拓扑排序安排执行顺序，确保每个 Pass 的前置依赖�
 
 Graph 按声明的规格和汇总后的 Usage 创建物理资源。普通图像使用 DeviceLocal 内存，缓冲使用各自声明的内存属性。同一资源的版本共用一次分配，不同资源各自分配。外部图像由所属对象提供。
 
-当前节点裁剪只减少后续回调和执行，资源分配仍包含 Setup 声明的全部资源，Usage 也保留全部访问声明的累计结果。
-
-资源创建完成后，Graph 调用保留节点的 writeDescriptorSet，由 Pass 获取实际图像、缓冲和所需 View，完成描述符绑定。这使管线和布局可以在 Setup 准备，依赖实际资源的绑定则统一放在分配之后。
+资源分配涵盖活跃 Pass 的 `compile()` 所声明的资源。资源创建完成后，Graph 调用保留阶段的 `bindResources()`，由 Pass 获取实际图像、缓冲和所需 View 并绑定描述符。
 
 Compile 完成后，执行顺序、资源及绑定可以持续复用。具体 Barrier 在每次 Execute 时根据资源当前状态生成，以适应逐帧上传和跨帧访问。
 
@@ -149,8 +146,8 @@ Compile 完成后，执行顺序、资源及绑定可以持续复用。具体 Ba
 
 ## 重建边界
 
-渲染路线、HDR、IBL、阴影开关或资源规格等改变时，需要重新 Setup 和 Compile。Resize 也会释放旧图资源与 View，重建交换链，再重建图。
+渲染路线、HDR、IBL、阴影开关或资源规格等改变时，Renderer 重新编译图。Resize 也会释放旧图资源与 View，重建交换链，再重建图。
 
 普通物体变换、材质参数和灯光数据变化只更新帧数据。环境图变化更新资源绑定，IBL 开关则决定天空盒等节点是否加入图，因此会触发重建。
 
-实现入口：[RenderGraph.h](../src/render/graph/RenderGraph.h)（节点登记与反射）、[RenderGraphSetup.cpp](../src/render/graph/RenderGraphSetup.cpp)（资源声明与依赖编译）、[RenderGraph.cpp](../src/render/graph/RenderGraph.cpp)（分配、上传与执行）。
+类型工厂、端口连接和活跃 Pass 由 [RenderGraphCompiler.cpp](../src/render/graph/RenderGraphCompiler.cpp) 处理。命令阶段的资源声明与依赖编译在 [RenderGraphSetup.cpp](../src/render/graph/RenderGraphSetup.cpp)，资源分配、上传与执行在 [RenderGraph.cpp](../src/render/graph/RenderGraph.cpp)。

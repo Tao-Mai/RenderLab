@@ -70,7 +70,6 @@ enum class PassExecution
 class RenderPass
 {
 public:
-    explicit RenderPass(PassExecution execution = PassExecution::Commands) : executionMode(execution) {}
     virtual ~RenderPass();
 
     [[nodiscard]] static std::shared_ptr<RenderPass> create(
@@ -82,12 +81,24 @@ public:
     virtual void compile(RenderGraph& graph, const PassSetup& setup, PassResources& resources) = 0;
     virtual void bindResources(RenderGraph&, const PassSetup&) {}
     virtual void prepare(RenderGraph&, const PassFrame&) {}
-    virtual void execute(RenderGraph&, vk::raii::CommandBuffer&, const PassFrame&) { DCHECK(false); }
+    virtual void execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame) = 0;
 
     [[nodiscard]] virtual nlohmann::json properties() const;
     virtual bool setProperties(const nlohmann::json& properties);
     [[nodiscard]] virtual nlohmann::json statistics() const;
 
+protected:
+    explicit RenderPass(PassExecution execution = PassExecution::Commands) : executionMode(execution) {}
+
 private:
     PassExecution executionMode;
+};
+
+class CompositeRenderPass : public RenderPass
+{
+protected:
+    CompositeRenderPass() : RenderPass(PassExecution::Composite) {}
+
+private:
+    void execute(RenderGraph&, vk::raii::CommandBuffer&, const PassFrame&) final { DCHECK(false); }
 };

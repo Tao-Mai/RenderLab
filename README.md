@@ -76,7 +76,7 @@ Shader 使用 Slang 生成的依赖文件跟踪实际 include，增量构建只�
 |---------------------------------------------------------------------------|-------------------------------------|
 | [功能清单](docs/Feature.md)                                               | 已实现功能与当前边界                |
 | [项目架构](docs/Architecture.md)                                          | 场景、资产、Renderer 与编辑器的职责 |
-| [渲染模块](docs/Render.md) / [RenderGraph](docs/RenderGraph.md)           | 四条路线、资源与帧同步              |
+| [渲染模块](docs/Render.md) / [RenderGraph](docs/RenderGraph.md)           | 渲染路线、资源与帧同步              |
 | [阴影](docs/Shadow.md) / [稳定 CSM](docs/Csm.md)                          | 阴影算法、稳定化与测试场景          |
 | [材质工作流](docs/Material.md) | MR / SG 材质求值、统一 BRDF 与 G-buffer |
 | [材质展示](docs/MaterialGallery.md) / [示例资产](docs/MaterialSamples.md) | 材质比较与扩展支持情况              |

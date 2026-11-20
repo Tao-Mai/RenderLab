@@ -1,14 +1,15 @@
 #pragma once
 
-#include "render/RenderConfig.h"
-
 #include <cstdint>
 #include <string_view>
 #include <type_traits>
 
 #include <imgui.h>
 
+struct ExposureConfig;
+
 bool drawSettingsHeader(const char* label);
+bool drawExposureSettings(ExposureConfig& exposure);
 
 template <class Choices>
 bool drawChoiceSetting(const char* label, const Choices& choices, size_t& selected)
@@ -88,12 +89,4 @@ inline bool drawUnsignedSlider(
 
     value = static_cast<uint32_t>(selected);
     return true;
-}
-
-inline bool drawMaxBounces(uint32_t& maxBounces)
-{
-    const bool edited =
-        drawUnsignedSlider("Max bounces", maxBounces, kMinPathBounces, kMaxPathBounces, ImGuiSliderFlags_AlwaysClamp);
-    ImGui::SetItemTooltip("Maximum surface scattering events. 1 gives direct lighting plus terminal emission.");
-    return edited;
 }

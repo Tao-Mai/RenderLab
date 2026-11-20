@@ -4,11 +4,9 @@
 
 #include "render/graph/RenderGraph.h"
 
-class PresentColorPass : public RenderPass
+class PresentColorPass : public CompositeRenderPass
 {
 public:
-    PresentColorPass() : RenderPass(PassExecution::Composite) {}
-
     struct Output
     {
         RenderGraph::ImageHandle color;

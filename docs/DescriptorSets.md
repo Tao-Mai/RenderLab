@@ -42,7 +42,7 @@ Scene、Lighting、Editor View Set 由 FrameData 持有并写入，FrameData 只
 
 | 时机              | 写入内容                                                                                                                                                                  |
 |-------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 初始化            | Scene、Lighting、Editor View 的 UBO 与 Material 的 fallback 数组；Graph compile 分配共享 SSBO 后写入 Lighting Buffer 绑定，私有 Set 调用 `writeDescriptorSet()` 写入。 |
+| 初始化            | 初始化 Scene、Lighting、Editor View 的 UBO 与 Material 的 fallback 数组。Graph compile 分配共享 SSBO 后写入 Lighting Buffer 绑定，Pass 通过 `bindResources()` 写入私有 Set。 |
 | 渲染 Feature 改变 | 阴影尺寸、过滤模式、渲染路线等配置改变时，更新受影响的 Binding；Graph 重建后重新写入私有 Set。窗口尺寸引起的资源重建同样处理。                                            |
 | 准备场景          | 新纹理或 sampler 加入材质数组、环境图切换、Buffer 扩容、TLAS 替换时，更新对应 Binding。                                                                                   |
 

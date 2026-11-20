@@ -6,7 +6,7 @@ BDPT 在相机和光源两端分别生成路径，再连接两条路径的不同
 
 ## 一次采样如何执行
 
-CPU 的 [OfflinePathTracingPass](../../passes/OfflinePathTracingPass/OfflinePathTracingPass.cpp) 准备材质、纹理、分类光源数组和光源选择表，并决定本帧处理哪个像素块。GPU 对块内每个像素执行以下流程：
+编辑器的 **BDPT** Graph 加载独立的 BDPT 插件。公共离线模块上传材质、纹理和分类光源数组，BDPT 创建光源选择表并决定本帧处理哪个像素块。GPU 按块追踪相机与光源子路径。[BDPT.cpp](../../passes/raytracing/bdpt/BDPT.cpp)
 
 1. 在像素内生成抖动位置，构造相机射线，生成相机子路径。
 2. 选择一个光源，采样发射位置和方向，生成光源子路径。
@@ -14,13 +14,13 @@ CPU 的 [OfflinePathTracingPass](../../passes/OfflinePathTracingPass/OfflinePath
 4. 对有效连接计算 BSDF、几何项、可见性和 MIS 权重。
 5. 将相机路径的结果累加到当前像素，将光路连接相机的结果累加到投影像素。
 
-随后 [resolve.slang](../../passes/OfflinePathTracingPass/resolve.slang) 归一化两类累计结果，合成为线性 HDR 图像，交给现有后处理。
+随后 Resolve 归一化两类累计结果，合成为线性 HDR 图像，交给后处理。[resolve.slang](../../passes/raytracing/bdpt/resolve.slang)
 
 路径延长和可见性查询都由 raygen 发起。Closest-hit 返回交点、法线、切线、UV 和物体索引，miss 区分路径逃逸与阴影射线可见。路径深度由循环控制，Vulkan 光追管线的递归深度保持为 1。
 
 ## 路径顶点保存什么
 
-[BdptVertex](../../passes/OfflinePathTracingPass/bdpt_bsdf.slang) 表示相机端点、光源端点或表面交点。它保存的是后续连接会复用的信息：
+[BdptVertex](../../passes/raytracing/bdpt/bdpt_bsdf.slang) 表示相机端点、光源端点或表面交点。它保存的是后续连接会复用的信息：
 
 | 数据 | 用途 |
 | --- | --- |
@@ -48,7 +48,7 @@ CPU 将权重归一化后构建 Vose alias table，每项保存阈值、替代�
 
 ### 发射位置与方向
 
-[bdptSampleLe](../../passes/OfflinePathTracingPass/bdpt_light.slang) 选择光源后，采样一条从光源出发的射线。不同光源对应的分布如下：
+[bdptSampleLe](../../passes/raytracing/bdpt/bdpt_light.slang) 选择光源后，采样一条从光源出发的射线。不同光源对应的分布如下：
 
 | 光源 | 发射位置 | 发射方向 |
 | --- | --- | --- |
@@ -109,7 +109,7 @@ $$
 
 ### Radiance 与 Importance
 
-相机子路径使用 Radiance 模式，光源子路径使用 Importance 模式。[BdptBsdf](../../passes/OfflinePathTracingPass/bdpt_bsdf.slang) 负责在采样和连接中维持这一区分。
+相机子路径使用 Radiance 模式，光源子路径使用 Importance 模式。[BdptBsdf](../../passes/raytracing/bdpt/bdpt_bsdf.slang) 负责在采样和连接中维持这一区分。
 
 光滑玻璃按 Fresnel 选择反射或透射分支。设相对折射率 $\eta_{\mathrm{rel}}=\eta_t/\eta_i$，相机侧透射权重包含 $1/\eta_{\mathrm{rel}}^2$；光源侧采用伴随传输的透射权重。进入和离开介质时，相对折射率由几何法线与入射方向决定。
 
@@ -264,19 +264,20 @@ $$
 
 构建时按 4 / 8 / 16 / 32 / 64 编译路径容量变体，运行时选择能够容纳当前深度的最小容量。容量控制局部路径数组大小，实际遍历仍遵守当前的最大深度。Pass 按算法和容量缓存管线与 SBT。
 
-首次使用某个 BDPT 变体时，后台任务创建光追管线与 SBT。主线程逐帧检查任务状态，准备期间保持编辑器与输出流程运行；结果完成后接入后续块的追踪。Resolve 管线独立准备，算法切换和深度变化由当前请求的变体决定，已完成的缓存可供后续复用。
+首次使用某个 BDPT 深度变体时，后台任务创建光追管线与 SBT。主线程逐帧检查结果，准备期间继续提交编辑器和输出。渲染器持有任务与缓存，切换 Graph 后仍可复用已准备的管线。[OfflineTracePipeline.cpp](../../src/render/raytracing/offline/OfflineTracePipeline.cpp)
 
 ## 实现入口与验证
 
 | 文件 | 主要职责 |
 | --- | --- |
-| [OfflinePathTracingPass.cpp](../../passes/OfflinePathTracingPass/OfflinePathTracingPass.cpp) | 资源准备、光源 alias table、管线任务、分块调度、累计状态与同步 |
-| [main.slang](../../passes/OfflinePathTracingPass/main.slang) | 相机主射线、PT / BDPT 条件入口、交点回传和相机累计写入 |
-| [pt.slang](../../passes/OfflinePathTracingPass/pt.slang) | PT 的表面求值、直接光采样、面积光 MIS 和路径循环 |
-| [bdpt.slang](../../passes/OfflinePathTracingPass/bdpt.slang) | 子路径生成、四类连接、相机 PDF、MIS 与 splat |
-| [bdpt_bsdf.slang](../../passes/OfflinePathTracingPass/bdpt_bsdf.slang) | 路径顶点、材质缓存、传输模式、BSDF 与密度转换 |
-| [bdpt_light.slang](../../passes/OfflinePathTracingPass/bdpt_light.slang) | 选灯、发射采样、入射光采样与光源端点 PDF |
-| [resolve.slang](../../passes/OfflinePathTracingPass/resolve.slang) | 相机项和 splat 分别归一化、合并输出 |
+| [BDPT.cpp](../../passes/raytracing/bdpt/BDPT.cpp) | 光源 alias table、深度变体、分块调度和累计进度 |
+| [main.slang](../../passes/raytracing/bdpt/main.slang) | BDPT 的 RayGen 入口和相机累计写入 |
+| [path_launch.slang](../../shaders/raytracing/offline/path_launch.slang) | 共用的相机采样和命中处理 |
+| [pt.slang](../../passes/raytracing/pt/pt.slang) | PT 的直接光采样、面积光 MIS 和路径循环 |
+| [bdpt.slang](../../passes/raytracing/bdpt/bdpt.slang) | 子路径生成、四类连接、相机 PDF、MIS 与 splat |
+| [bdpt_bsdf.slang](../../passes/raytracing/bdpt/bdpt_bsdf.slang) | 路径顶点、材质缓存、传输模式、BSDF 与密度转换 |
+| [bdpt_light.slang](../../passes/raytracing/bdpt/bdpt_light.slang) | 选灯、发射采样、入射光采样与光源端点 PDF |
+| [resolve.slang](../../passes/raytracing/bdpt/resolve.slang) | 相机项和 splat 分别归一化、合并输出 |
 
 当前实现面向透视针孔相机、静态表面和 RGB 散射，接入 diffuse、光滑 dielectric 与 conductor，以及 point、spot、distant、三角形 area 和一盏 infinite。更多材质的近似规则见 [材质](材质.md)，其他光源及介质的接入范围见 [光源](光源.md)。
 

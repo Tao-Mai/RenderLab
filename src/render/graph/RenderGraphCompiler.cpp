@@ -3,7 +3,6 @@
 #include "core/Logger.h"
 
 #include <algorithm>
-#include <queue>
 
 namespace
 {
@@ -121,7 +120,8 @@ GraphResources RenderGraphCompiler::compile(
     const auto& declarations = field(description, "nodes");
     const auto& edges = field(description, "edges");
     const auto& outputs = field(description, "outputs");
-    CHECK(declarations.is_array() && edges.is_array() && outputs.is_object(), "invalid render graph description");
+    CHECK(declarations.is_array() && edges.is_array() && outputs.is_object() && !outputs.empty(),
+          "invalid render graph description or no marked output");
 
     active.clear();
     std::vector<Node> nodes;
@@ -214,14 +214,21 @@ GraphResources RenderGraphCompiler::compile(
         for (size_t producer : nodes[live[entry]].producers)
             mark(producer);
 
-    std::queue<size_t> ready;
+    std::vector<size_t> order;
+    order.reserve(nodes.size());
     for (size_t index = 0; index < nodes.size(); ++index)
     {
         auto& node = nodes[index];
         node.remaining = node.producers.size();
         if (node.remaining == 0)
-            ready.push(index);
+            order.push_back(index);
     }
+    for (size_t position = 0; position < order.size(); ++position)
+        for (const auto consumer : nodes[order[position]].consumers)
+            if (--nodes[consumer].remaining == 0)
+                order.push_back(consumer);
+    CHECK(order.size() == nodes.size(), "render graph contains a cycle");
+
     const auto resolve = [&](Endpoint source) -> const GraphResource&
     {
         if (source.node == kExternalNode)
@@ -232,46 +239,38 @@ GraphResources RenderGraphCompiler::compile(
         return resource->second;
     };
 
-    size_t sorted = 0;
-    while (!ready.empty())
+    for (const auto index : order)
     {
-        const auto index = ready.front();
-        ready.pop();
         auto& node = nodes[index];
-        auto& instance = *node.instance;
-        if (node.live)
-        {
-            GraphResources inputs;
-            for (const auto& input : node.reflection.inputs())
-            {
-                const auto source = node.inputs.find(input.name);
-                auto resource = source != node.inputs.end() ? resolve(source->second) : emptyResource(input.kind);
-                validateResource(graph, resource, input, instance.name);
-                inputs.emplace(input.name, resource);
-            }
+        if (!node.live)
+            continue;
 
-            PassResources resources{std::move(inputs)};
-            if (instance.pass->execution() == PassExecution::Composite)
-                instance.pass->compile(graph, setup, resources);
-            else
-                graph.addStage(instance.name, *instance.pass, setup, resources);
-            node.outputs = resources.outputs();
-            for (const auto& output : node.reflection.outputs())
-            {
-                const auto resource = node.outputs.find(output.name);
-                validateResource(graph, resource != node.outputs.end() ? resource->second : emptyResource(output.kind),
-                                 output, instance.name);
-            }
-            for (const auto& [name, resource] : node.outputs)
-                port(node.reflection.outputs(), {instance.name, name});
-            active.push_back(&instance);
+        auto& instance = *node.instance;
+        GraphResources inputs;
+        for (const auto& input : node.reflection.inputs())
+        {
+            const auto source = node.inputs.find(input.name);
+            auto resource = source != node.inputs.end() ? resolve(source->second) : emptyResource(input.kind);
+            validateResource(graph, resource, input, instance.name);
+            inputs.emplace(input.name, resource);
         }
-        ++sorted;
-        for (const auto consumer : node.consumers)
-            if (--nodes[consumer].remaining == 0)
-                ready.push(consumer);
+
+        PassResources resources{std::move(inputs)};
+        if (instance.pass->execution() == PassExecution::Composite)
+            instance.pass->compile(graph, setup, resources);
+        else
+            graph.addStage(instance.name, *instance.pass, setup, resources);
+
+        node.outputs = resources.outputs();
+        for (const auto& output : node.reflection.outputs())
+        {
+            const auto resource = node.outputs.try_emplace(output.name, emptyResource(output.kind)).first;
+            validateResource(graph, resource->second, output, instance.name);
+        }
+        for (const auto& [name, resource] : node.outputs)
+            port(node.reflection.outputs(), {instance.name, name});
+        active.push_back(&instance);
     }
-    CHECK(sorted == nodes.size(), "render graph contains a cycle");
 
     GraphResources result;
     for (const auto& [name, output] : outputs.items())
