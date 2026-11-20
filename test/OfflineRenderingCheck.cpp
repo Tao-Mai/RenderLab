@@ -21,8 +21,8 @@
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
 #include "render/graph/EndPass.h"
-#include "passes/raytracing/offline/OfflinePathTracingPass.h"
-#include "passes/raytracing/blas/BlasBuildPass.h"
+#include "passes/OfflinePathTracingPass/OfflinePathTracingPass.h"
+#include "render/raytracing/SceneAccelerationStructures.h"
 #include "render/resources/MaterialTable.h"
 #include "scene/SceneManager.h"
 #include "scene/SceneTypes.h"
@@ -101,11 +101,10 @@ void checkAccumulatedPixels(
     Renderer& renderer, SceneManager& scenes, EditorCamera& camera, OfflineAlgorithm algorithm = OfflineAlgorithm::PT
 )
 {
-    auto settings                      = context().config->rendererConfig().feature;
-    settings.offline.algorithm         = algorithm;
-    settings.offline.bdpt.maxBounces   = 1;
-    settings.offline.bdpt.lightTracing = false;
-    context().config->setRenderFeature(settings);
+    auto settings = renderer.renderPasses().activePass<OfflinePathTracingPass>()->settings();
+    settings.algorithm         = algorithm;
+    settings.bdpt.maxBounces   = 1;
+    settings.bdpt.lightTracing = false;
     auto&        vulkan = renderer.vulkanContext();
     FrameContext frame;
     FrameData    data;
@@ -113,8 +112,8 @@ void checkAccumulatedPixels(
     data.init(vulkan, *renderContext().device);
     RenderGraph            graph;
     OfflinePathTracingPass pass;
-    BlasBuildPass          blasBuild;
-    TlasBuildPass          tlasBuild;
+    pass.setSettings(settings);
+    SceneAccelerationStructures accelerationStructures;
     PixelReadbackPass      readback;
     EndPass                end;
     RenderSystem           system;
@@ -125,13 +124,11 @@ void checkAccumulatedPixels(
     readback.regionSize = algorithm == OfflineAlgorithm::BDPT ? 16 : 1;
     const PassSetup setup{vulkan, extent, {&data, 1}, context().config->rendererConfig()};
     writeTestEnvironment(setup, scenes.scene().environmentMap);
-    const auto blas        = graph.addPass(blasBuild, setup);
-    const auto structures  = graph.addPass(tlasBuild, setup, blas);
     const auto lightBuffer = graph.createBuffer({
         .size  = kMaxLights * sizeof(LightData),
         .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
     });
-    const auto image       = graph.addPass(pass, setup, structures).rayImage;
+    const auto image       = graph.addPass(pass, setup).rayImage;
     const auto buffer      = graph.addPass(readback, setup, image);
     graph.addPass(end, setup, RenderGraph::ImageHandle{}, buffer);
     graph.compile(setup);
@@ -271,7 +268,7 @@ void checkAccumulatedPixels(
 
             uploadTestLights(graph, lightBuffer, draws.lights);
             data.uploadSceneUniforms(view.uniforms);
-            const PassFrame execution{setup, data, view, draws, {}, 0, 1.0f / 60.0f};
+            PassFrame execution{setup, data, view, draws, {}, 0, 1.0f / 60.0f};
             graph.prepare(execution);
             if (targetSamples == 0)
                 targetSamples = pass.sampleCount() + 1;
@@ -279,7 +276,14 @@ void checkAccumulatedPixels(
             auto& recording = frame.commandBufferHandle();
             vkCheck(recording.reset());
             vkCheck(recording.begin({}));
-            graph.execute(recording, execution, frame.gpuProfiler(), context().profiler);
+            auto& gpuProfiler = frame.gpuProfiler();
+            auto* profiler = context().profiler;
+            graph.beginGpuProfiling(recording, gpuProfiler, profiler);
+            execution.sceneTlas = &accelerationStructures.recordBuilds(
+                vulkan, recording, *renderContext().resources, draws, 0
+            );
+            graph.execute(recording, execution, gpuProfiler, profiler);
+            gpuProfiler.endFrame(recording);
             vkCheck(recording.end());
 
             const auto           commandBuffer = *frame.commandBufferHandle();
@@ -376,9 +380,8 @@ void checkAccumulatedPixels(
                            .view                  = viewMatrix},
                       .viewport = {0, 0, float(extent.width), float(extent.height)}
     };
-    auto feature                  = context().config->rendererConfig().feature;
-    feature.offline.pt.maxBounces = 1;
-    context().config->setRenderFeature(feature);
+    settings.pt.maxBounces = 1;
+    pass.setSettings(settings);
     constexpr float  kPi = 3.14159265358979323846f;
     OfflineLightData point{
         .emission = {.spectrum = PbrtConstantSpectrum{4.0 * kPi}},
@@ -419,8 +422,8 @@ void checkAccumulatedPixels(
         );
         const float pointNee = average(16);
         CHECK(std::abs(pointNee - expectedPoint) < 0.01f);
-        feature.offline.bdpt.lightTracing = true;
-        context().config->setRenderFeature(feature);
+        settings.bdpt.lightTracing = true;
+        pass.setSettings(settings);
         const float pointSplats = average(256);
         CHECK(
             std::abs(pointSplats - expectedPoint) < 0.04f,
@@ -428,21 +431,21 @@ void checkAccumulatedPixels(
             pointSplats,
             expectedPoint
         );
-        feature.offline.bdpt.lightSelection = BdptLightSelection::Uniform;
-        feature.offline.bdpt.misHeuristic   = BdptMisHeuristic::Power;
-        context().config->setRenderFeature(feature);
+        settings.bdpt.lightSelection = BdptLightSelection::Uniform;
+        settings.bdpt.misHeuristic   = BdptMisHeuristic::Power;
+        pass.setSettings(settings);
         const float pointPower = average(128);
         CHECK(std::abs(pointPower - expectedPoint) < 0.05f);
 
-        feature.offline.bdpt.lightTracing = false;
-        context().config->setRenderFeature(feature);
+        settings.bdpt.lightTracing = false;
+        pass.setSettings(settings);
         auto spot = point;
         spot.model =
             OfflineLightData::Spot{.position = {0, 2, 0}, .direction = {0, -1, 0}, .cosInner = 0.98f, .cosOuter = 0.8f};
         fixtureScene->offlineLights       = {spot};
         const float spotNee               = average(64);
-        feature.offline.bdpt.lightTracing = true;
-        context().config->setRenderFeature(feature);
+        settings.bdpt.lightTracing = true;
+        pass.setSettings(settings);
         const float spotSplats = average(256);
         CHECK(std::abs(spotNee - spotSplats) < 0.04f);
         OfflineLightData distant{
@@ -452,12 +455,12 @@ void checkAccumulatedPixels(
         auto strongerPoint                  = point;
         strongerPoint.emission.scale        = 2.0;
         fixtureScene->offlineLights         = {point, spot, distant, strongerPoint};
-        feature.offline.bdpt.lightTracing   = false;
-        feature.offline.bdpt.lightSelection = BdptLightSelection::Power;
-        context().config->setRenderFeature(feature);
+        settings.bdpt.lightTracing   = false;
+        settings.bdpt.lightSelection = BdptLightSelection::Power;
+        pass.setSettings(settings);
         const float mixedPower              = average(256);
-        feature.offline.bdpt.lightSelection = BdptLightSelection::Uniform;
-        context().config->setRenderFeature(feature);
+        settings.bdpt.lightSelection = BdptLightSelection::Uniform;
+        pass.setSettings(settings);
         const float mixedUniform  = average(256);
         const float expectedMixed = 3.0f * expectedPoint + spotNee + 0.5f;
         CHECK(
@@ -468,8 +471,8 @@ void checkAccumulatedPixels(
             expectedMixed
         );
         LOG_INFO("BDPT mixed lights: power {}, uniform {}, reference {}", mixedPower, mixedUniform, expectedMixed);
-        feature.offline.bdpt.lightTracing = true;
-        context().config->setRenderFeature(feature);
+        settings.bdpt.lightTracing = true;
+        pass.setSettings(settings);
         fixtureScene->offlineLights = {distant};
         const float distantValue    = average(256);
         CHECK(std::abs(distantValue - 0.5f) < 0.05f, "BDPT distant energy: {}", distantValue);
@@ -488,13 +491,13 @@ void checkAccumulatedPixels(
         fixtureScene->offlineLights = {
             {.emission = {.spectrum = PbrtConstantSpectrum{1.0}}, .model = OfflineLightData::MeshArea{1, false, false}}
         };
-        feature.offline.bdpt.misHeuristic   = BdptMisHeuristic::Balance;
-        feature.offline.bdpt.lightSelection = BdptLightSelection::Power;
-        feature.offline.bdpt.lightTracing   = false;
-        context().config->setRenderFeature(feature);
+        settings.bdpt.misHeuristic   = BdptMisHeuristic::Balance;
+        settings.bdpt.lightSelection = BdptLightSelection::Power;
+        settings.bdpt.lightTracing   = false;
+        pass.setSettings(settings);
         const float areaNee               = average(256);
-        feature.offline.bdpt.lightTracing = true;
-        context().config->setRenderFeature(feature);
+        settings.bdpt.lightTracing = true;
+        pass.setSettings(settings);
         const float areaSplats = average(256);
         CHECK(
             areaNee > 0.1f && std::abs(areaNee - areaSplats) < 0.03f,
@@ -509,13 +512,13 @@ void checkAccumulatedPixels(
             glm::vec3{4}
         );
         fixtureScene->drawItems.push_back(wall);
-        feature.offline.algorithm     = OfflineAlgorithm::PT;
-        feature.offline.pt.maxBounces = 2;
-        context().config->setRenderFeature(feature);
+        settings.algorithm     = OfflineAlgorithm::PT;
+        settings.pt.maxBounces = 2;
+        pass.setSettings(settings);
         const float indirectPt          = average(256);
-        feature.offline.algorithm       = OfflineAlgorithm::BDPT;
-        feature.offline.bdpt.maxBounces = 2;
-        context().config->setRenderFeature(feature);
+        settings.algorithm       = OfflineAlgorithm::BDPT;
+        settings.bdpt.maxBounces = 2;
+        pass.setSettings(settings);
         const float indirectBdpt = average(256);
         CHECK(
             std::abs(indirectBdpt - indirectPt) < 0.04f,
@@ -537,11 +540,11 @@ void checkAccumulatedPixels(
         fixtureScene->offlineLights                 = {point};
         glassDraw                                   = 1;
         ++fixtureRevision;
-        feature.offline.bdpt.lightTracing = false;
-        context().config->setRenderFeature(feature);
+        settings.bdpt.lightTracing = false;
+        pass.setSettings(settings);
         CHECK(average(16) == 0.0f);
-        feature.offline.bdpt.lightTracing = true;
-        context().config->setRenderFeature(feature);
+        settings.bdpt.lightTracing = true;
+        pass.setSettings(settings);
         const float caustic     = average(512);
         const auto  floorBounds = context()
                                      .assetManager->get(fixtureScene->drawItems.front().mesh)
@@ -667,8 +670,8 @@ void checkAccumulatedPixels(
     };
     CHECK(sample() == 0.0f);
 
-    feature.offline.pt.maxBounces = 2;
-    context().config->setRenderFeature(feature);
+    settings.pt.maxBounces = 2;
+    pass.setSettings(settings);
     float indirectValue = 0;
     for (uint32_t sampleIndex = 0; sampleIndex < 32; ++sampleIndex)
         indirectValue = sample();
@@ -720,8 +723,8 @@ void checkAccumulatedPixels(
     const auto toLocal   = [&](glm::dvec3 w) { return glm::dvec3{glm::dot(tangent, w), glm::dot(bitangent, w), w.y}; };
     const auto wo        = toLocal(glm::normalize(glm::dvec3{0, 1, 3}));
     fixtureScene->drawItems.resize(1);
-    feature.offline.pt.maxBounces = 1;
-    context().config->setRenderFeature(feature);
+    settings.pt.maxBounces = 1;
+    pass.setSettings(settings);
     fixtureScene->offlineLights = {
         {.emission = {.spectrum = PbrtConstantSpectrum{1.0}}, .model = OfflineLightData::Environment{}}
     };
@@ -820,16 +823,16 @@ int main(int argc, char** argv)
     ctx.renderer         = &renderer;
     config.init();
 
-    const auto originalPath       = config.rendererConfig().renderPath;
-    const auto originalFeature    = config.rendererConfig().feature;
-    auto       feature            = originalFeature;
-    feature.offline.algorithm     = OfflineAlgorithm::PT;
-    feature.offline.pt.maxBounces = 3;
-    feature.ibl                   = false;
-    feature.shadow.enable         = false;
-
-    config.setRenderFeature(feature);
     config.setSceneRenderMode(SceneRenderMode::Offline);
+    const auto originalParameters = config.graphParameterOverrides();
+    const auto originalOverrides = config.passOverrides();
+    OfflinePathTracingSettings offline;
+    offline.algorithm     = OfflineAlgorithm::PT;
+    offline.pt.maxBounces = 3;
+
+    auto parameters = originalParameters;
+    parameters.update({{"hdr", true}, {"postProcess", Serialize(PostProcessMode::RenderLab)}});
+    config.setGraphParameterOverrides(std::move(parameters));
 
     data.init(config.paths().assets);
     scenes.init();
@@ -843,6 +846,15 @@ int main(int argc, char** argv)
     EditorCamera camera{scenes.scene().editorCamera};
     RenderSystem system;
     renderer.init(standardRenderPasses());
+    const auto applyOfflineSettings = [&]
+    { renderer.setPassOverrides("OfflinePathTracingPass", "offline", Serialize(offline)); };
+    applyOfflineSettings();
+    const auto activeOffline = [&]() -> const OfflinePathTracingPass&
+    {
+        const auto* pass = renderer.renderPasses().activePass<OfflinePathTracingPass>();
+        CHECK(pass);
+        return *pass;
+    };
     CHECK(renderer.vulkanContext().supportsRayTracing());
     const auto extent    = renderer.swapchainHandle().extent();
     const auto drawFrame = [&]
@@ -861,11 +873,11 @@ int main(int argc, char** argv)
         // The first frame may apply settings and reset accumulation.
         drawFrame();
 
-        const auto target = renderer.offlineSampleCount() +
-            (renderer.offlineSampleProgress() > renderer.offlineSampleCount() || renderer.offlinePreparingPipeline()
+        const auto target = activeOffline().sampleCount() +
+            (activeOffline().sampleProgress() > activeOffline().sampleCount() || activeOffline().preparingPipeline()
                  ? 1u
                  : 0u);
-        while (renderer.offlinePreparingPipeline() || renderer.offlineSampleCount() < target)
+        while (activeOffline().preparingPipeline() || activeOffline().sampleCount() < target)
         {
 
             CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds{90});
@@ -877,102 +889,102 @@ int main(int argc, char** argv)
 
     draw();
     CHECK(renderer.framesInFlight() == 1);
-    CHECK(renderer.offlineSampleCount() == 1);
+    CHECK(activeOffline().sampleCount() == 1);
     draw();
-    CHECK(renderer.offlineSampleCount() == 2);
+    CHECK(activeOffline().sampleCount() == 2);
 
-    feature.toneMapping.exposure.exposureCompensation += 1;
-
-    config.setRenderFeature(feature);
+    auto exposure = renderer.defaultExposure();
+    exposure.exposureCompensation += 1;
+    renderer.setPassOverrides("ExposurePass", "exposure", Serialize(exposure));
     draw();
-    CHECK(renderer.offlineSampleCount() == 3);
+    CHECK(activeOffline().sampleCount() == 3);
     draw();
-    CHECK(renderer.offlineSampleCount() == 4);
+    CHECK(activeOffline().sampleCount() == 4);
     scenes.scene().editorCamera.position.x += 0.25f;
     draw();
-    CHECK(renderer.offlineSampleCount() == 1);
+    CHECK(activeOffline().sampleCount() == 1);
 
-    feature.offline.pt.maxBounces = 2;
+    offline.pt.maxBounces = 2;
 
-    config.setRenderFeature(feature);
+    applyOfflineSettings();
     draw();
-    CHECK(renderer.offlineSampleCount() == 1);
+    CHECK(activeOffline().sampleCount() == 1);
     draw();
-    CHECK(renderer.offlineSampleCount() == 2);
+    CHECK(activeOffline().sampleCount() == 2);
     LOG_INFO("Offline rendering passed: accumulation, camera/config reset and display changes");
     checkAccumulatedPixels(renderer, scenes, camera);
     checkAccumulatedPixels(renderer, scenes, camera, OfflineAlgorithm::BDPT);
 
-    feature.offline.algorithm       = OfflineAlgorithm::BDPT;
-    feature.offline.bdpt.maxBounces = 2;
+    offline.algorithm       = OfflineAlgorithm::BDPT;
+    offline.bdpt.maxBounces = 2;
 
-    config.setRenderFeature(feature);
+    applyOfflineSettings();
     draw();
-    CHECK(renderer.offlineSampleCount() == 1);
+    CHECK(activeOffline().sampleCount() == 1);
     draw();
-    CHECK(renderer.offlineSampleCount() == 2);
+    CHECK(activeOffline().sampleCount() == 2);
 
-    feature.offline.bdpt.misHeuristic = BdptMisHeuristic::Power;
+    offline.bdpt.misHeuristic = BdptMisHeuristic::Power;
 
-    config.setRenderFeature(feature);
+    applyOfflineSettings();
     draw();
-    CHECK(renderer.offlineSampleCount() == 1);
+    CHECK(activeOffline().sampleCount() == 1);
 
-    feature.offline.algorithm = OfflineAlgorithm::PT;
+    offline.algorithm = OfflineAlgorithm::PT;
 
-    config.setRenderFeature(feature);
+    applyOfflineSettings();
     draw();
-    CHECK(renderer.offlineSampleCount() == 1);
+    CHECK(activeOffline().sampleCount() == 1);
 
     LOG_INFO("PT / BDPT pipeline switching and BDPT parameter resets passed");
 
     // The editor must keep producing frames during a cold build and a partial BDPT sample.
-    feature.offline.algorithm       = OfflineAlgorithm::BDPT;
-    feature.offline.bdpt.maxBounces = 6;
+    offline.algorithm       = OfflineAlgorithm::BDPT;
+    offline.bdpt.maxBounces = 6;
 
-    config.setRenderFeature(feature);
+    applyOfflineSettings();
 
     auto began = std::chrono::steady_clock::now();
     drawFrame();
     const auto switchMilliseconds =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
     CHECK(switchMilliseconds < 1000.0, "BDPT switch blocked for {} ms", switchMilliseconds);
-    CHECK(renderer.offlineSampleCount() == 0);
-    CHECK(renderer.offlineSampleProgress() < 1.0f);
+    CHECK(activeOffline().sampleCount() == 0);
+    CHECK(activeOffline().sampleProgress() < 1.0f);
 
-    feature.offline.algorithm = OfflineAlgorithm::PT;
+    offline.algorithm = OfflineAlgorithm::PT;
 
-    config.setRenderFeature(feature);
+    applyOfflineSettings();
     began = std::chrono::steady_clock::now();
     drawFrame();
     const auto cancelMilliseconds =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
     CHECK(cancelMilliseconds < 1000.0, "canceling BDPT blocked for {} ms", cancelMilliseconds);
-    CHECK(renderer.offlineSampleCount() == 1);
+    CHECK(activeOffline().sampleCount() == 1);
 
-    feature.offline.algorithm = OfflineAlgorithm::BDPT;
+    offline.algorithm = OfflineAlgorithm::BDPT;
 
-    config.setRenderFeature(feature);
+    applyOfflineSettings();
     began = std::chrono::steady_clock::now();
     do
     {
         drawFrame();
         CHECK(std::chrono::steady_clock::now() - began < std::chrono::seconds{90});
     }
-    while (renderer.offlinePreparingPipeline());
+    while (activeOffline().preparingPipeline());
 
-    const auto partial = renderer.offlineSampleProgress();
+    const auto partial = activeOffline().sampleProgress();
     CHECK(partial > 0 && partial < 1);
     drawFrame();
-    CHECK(renderer.offlineSampleProgress() > partial);
-    CHECK(renderer.offlineSampleCount() == 0);
+    CHECK(activeOffline().sampleProgress() > partial);
+    CHECK(activeOffline().sampleCount() == 0);
 
     LOG_INFO(
         "BDPT responsiveness: switch {} ms, cancel {} ms, partial sample {} -> {}",
         switchMilliseconds,
         cancelMilliseconds,
         partial,
-        renderer.offlineSampleProgress()
+        activeOffline().sampleProgress()
     );
 
     renderer.shutdown();
@@ -980,12 +992,8 @@ int main(int argc, char** argv)
     assets.shutdown();
     data.shutdown();
     window.shutdown();
-    config.setSceneRenderMode(
-        originalPath == RenderPath::OfflinePathTracing ? SceneRenderMode::Offline : SceneRenderMode::Realtime
-    );
-    if (originalPath != RenderPath::OfflinePathTracing)
-        config.setRenderPath(originalPath);
-    config.setRenderFeature(originalFeature);
+    config.setGraphParameterOverrides(originalParameters);
+    config.passOverrides() = originalOverrides;
     config.shutdown();
     context() = {};
 }

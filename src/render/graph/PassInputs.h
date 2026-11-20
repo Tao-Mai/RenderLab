@@ -4,6 +4,7 @@
 #include <span>
 #include <vulkan/vulkan.hpp>
 
+class AccelerationStructure;
 class VulkanContext;
 class FrameData;
 class GpuProfiler;
@@ -30,5 +31,7 @@ struct PassFrame
     const EditorFrameInput& editor;
     uint32_t                frameIndex;
     float                   deltaSeconds;
+    // Renderer builds this before executing a ray tracing graph.
+    const AccelerationStructure* sceneTlas = nullptr;
     GpuProfiler*            gpuProfiler = nullptr;
 };

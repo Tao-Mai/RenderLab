@@ -1,5 +1,8 @@
 #pragma once
 
+#include "passes/postprocess/Bloom/BloomSettings.h"
+#include "render/graph/PassSettings.h"
+
 #include "render/device/Device.h"
 
 #include "render/graph/RenderGraph.h"
@@ -8,7 +11,7 @@
 #include <vector>
 
 // Owns and connects the filter passes; only those passes enter the graph.
-class Bloom
+class Bloom : public ConfigurablePass<BloomSettings>
 {
 public:
     struct Output
@@ -30,7 +33,7 @@ private:
             Composite
         };
 
-        explicit FilterPass(Stage stage) : stage(stage) {}
+        FilterPass(Stage stage, const BloomSettings& settings) : stage(stage), settings(settings) {}
 
         Output setup(
             RenderGraph&             graph,
@@ -43,6 +46,7 @@ private:
 
     private:
         Stage                    stage;
+        const BloomSettings&     settings;
         RenderGraph::ImageHandle source;
         RenderGraph::ImageHandle base;
         RenderGraph::ImageHandle color;

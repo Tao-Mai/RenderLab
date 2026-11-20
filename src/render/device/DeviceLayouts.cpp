@@ -216,7 +216,7 @@ void Device::createSharedPipelineLayouts()
     const std::array     editorSets{&editorViewDescriptorSetLayout};
     constexpr std::array editorRanges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        .size       = sizeof(EditorLightMarkerPushConstants),
+        .size       = sizeof(EditorPickingPushConstants),
     }};
     editorPipelineLayout = getOrCreatePipelineLayout(editorSets, editorRanges);
 }

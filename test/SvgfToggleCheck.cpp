@@ -1,3 +1,4 @@
+#include "GraphSelection.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
@@ -7,6 +8,7 @@
 #include "core/profiling/Profiler.h"
 #include "editor/EditorCamera.h"
 #include "passes/StandardPasses.h"
+#include "passes/RayTracingPass/RayTracingPass.h"
 #include "render/Renderer.h"
 #include "scene/SceneManager.h"
 #include "scene/system/RenderSystem.h"
@@ -42,14 +44,16 @@ int main(int argc, char** argv)
     context().window           = &window;
     context().renderer         = &renderer;
     config.init();
-    const auto originalConfig = config.rendererConfig();
+    const auto originalGraph = config.renderGraph().id;
     const auto originalEditor = config.editorConfig();
     data.init(config.paths().assets);
     scenes.init();
     assets.init(config.paths().assets);
     scenes.load(SceneAsset::ID{argv[1]});
     config.setSceneRenderMode(scenes.scene().renderMode);
-    config.setRenderPath(RenderPath::RayTracing);
+    selectGraphForPath(config, RenderPath::RayTracing);
+    const auto originalParameters = config.graphParameterOverrides();
+    const auto originalOverrides = config.passOverrides();
     config.setEditorSize(side, side);
 
     CHECK(glfwInit());
@@ -64,19 +68,25 @@ int main(int argc, char** argv)
 
     constexpr uint32_t kPhaseCount     = 8;
     constexpr uint32_t kFramesPerPhase = 7;
+    auto               parameters     = originalParameters;
     for (uint32_t phase = 0; phase < kPhaseCount; ++phase)
     {
-        auto feature                  = config.rendererConfig().feature;
-        feature.rayTracing.svgf       = phase % 2 == 0;
-        feature.rayTracing.algorithm  = (phase / 2) % 2 == 0 ? RealtimeAlgorithm::ReSTIR : RealtimeAlgorithm::Simple;
-        feature.rayTracing.maxBounces = phase % 3 + 1;
-        config.setRenderFeature(feature);
+        const bool enableSvgf = phase % 2 == 0;
+        parameters["svgf"] = enableSvgf;
+        parameters["hdr"] = (phase & 2u) == 0;
+        const auto algorithm =
+            (phase / 2) % 2 == 0 ? RealtimeAlgorithm::ReSTIR : RealtimeAlgorithm::MinimalPathTracer;
+        const auto maxBounces = phase % 3 + 1;
+        config.setGraphParameterOverrides(parameters);
+        renderer.setPassOverrides(
+            "RayTracingPass", "rayTracing", {{"algorithm", Serialize(algorithm)}, {"maxBounces", maxBounces}}
+        );
         LOG_INFO(
             "RT phase {}: algorithm={}, SVGF={}, maxBounces={}",
             phase,
-            feature.rayTracing.algorithm == RealtimeAlgorithm::Simple ? "Simple" : "ReSTIR",
-            feature.rayTracing.svgf,
-            feature.rayTracing.maxBounces
+            algorithm == RealtimeAlgorithm::MinimalPathTracer ? "MinimalPathTracer" : "ReSTIR",
+            enableSvgf,
+            maxBounces
         );
         const auto begin = std::chrono::steady_clock::now();
         for (uint32_t frame = 0; frame < kFramesPerPhase; ++frame)
@@ -85,6 +95,7 @@ int main(int argc, char** argv)
             const auto result = renderer.render(view, scene, {}, 1.0f / 60.0f);
             profiler.endFrame(1000.0 / 60.0);
             CHECK(!result.swapchainNeedsRebuild);
+            CHECK(config.rendererConfig().feature.svgf == enableSvgf);
             LOG_INFO("Phase {} submitted frame {}", phase, frame);
         }
         const auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
@@ -97,13 +108,9 @@ int main(int argc, char** argv)
     assets.shutdown();
     data.shutdown();
     window.shutdown();
-    config.setSceneRenderMode(
-        originalConfig.renderPath == RenderPath::OfflinePathTracing ? SceneRenderMode::Offline
-                                                                    : SceneRenderMode::Realtime
-    );
-    if (originalConfig.renderPath != RenderPath::OfflinePathTracing)
-        config.setRenderPath(originalConfig.renderPath);
-    config.setRenderFeature(originalConfig.feature);
+    config.setGraphParameterOverrides(originalParameters);
+    config.passOverrides() = originalOverrides;
+    config.setRenderGraph(originalGraph);
     config.setEditorSize(originalEditor.width, originalEditor.height);
     config.shutdown();
     profiler.reset();

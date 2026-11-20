@@ -6,6 +6,11 @@ foreach(check IN ITEMS CaptureScene SceneImportCheck OfflineRenderingCheck Mater
     renderlab_copy_runtime_libraries(${check})
 endforeach()
 
+add_executable(PassSettingsCheck EXCLUDE_FROM_ALL PassSettingsCheck.cpp)
+target_link_libraries(PassSettingsCheck PRIVATE RenderLabCore)
+target_precompile_headers(PassSettingsCheck REUSE_FROM RenderLabCore)
+renderlab_copy_runtime_libraries(PassSettingsCheck)
+
 set(material_check_shader "${CMAKE_CURRENT_BINARY_DIR}/material-workflow.spv")
 add_custom_command(OUTPUT "${material_check_shader}"
     COMMAND "${SLANGC_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/MaterialWorkflowCheck.slang"

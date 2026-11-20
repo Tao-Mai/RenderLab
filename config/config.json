@@ -6,7 +6,32 @@
         "assets": "../assets",
         "commands": "commands.json",
         "editor": "editor.json",
-        "renderer": "renderer.json",
-        "renderGraph": "../graphs/standard.py"
-    }
+        "renderer": "renderer.json"
+    },
+    "renderGraphs": [
+        {
+            "id": "forward",
+            "label": "Forward",
+            "renderPath": "Forward",
+            "script": "../graphs/forward.py"
+        },
+        {
+            "id": "deferred",
+            "label": "Deferred",
+            "renderPath": "Deferred",
+            "script": "../graphs/deferred.py"
+        },
+        {
+            "id": "realtime",
+            "label": "Real-time ray tracing",
+            "renderPath": "RayTracing",
+            "script": "../graphs/realtime.py"
+        },
+        {
+            "id": "offline",
+            "label": "Offline path tracing",
+            "renderPath": "OfflinePathTracing",
+            "script": "../graphs/offline.py"
+        }
+    ]
 }

@@ -9,7 +9,7 @@
 #include "render/RendererConfig.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
-#include "passes/raster/shadow/ShadowPass.h"
+#include "render/raster/ShadowResources.h"
 #include "render/resources/RenderResourceManager.h"
 
 #include <cstring>
@@ -61,81 +61,29 @@ inline float writeTestEnvironment(const PassSetup& setup, const std::optional<En
 }
 
 // Manual-graph checks own their FrameData and therefore write its shared bindings explicitly.
-inline vk::raii::Sampler
-writeTestLighting(RenderGraph& graph, const PassSetup& setup, ShadowPass::Output shadow, const RenderData& scene)
+inline void writeTestLighting(
+    RenderGraph& graph, const PassSetup& setup, const ShadowResources& shadows, const RenderData& scene
+)
 {
     auto&       resources = *renderContext().resources;
     const auto& feature   = setup.config.feature;
-    const auto  filter =
-        feature.shadow.filter == SamplerAsset::Filter::Linear ? vk::Filter::eLinear : vk::Filter::eNearest;
-    auto       sampler = vkCheck(setup.vulkan.deviceHandle().createSampler({
-              .magFilter     = filter,
-              .minFilter     = filter,
-              .mipmapMode    = vk::SamplerMipmapMode::eNearest,
-              .addressModeU  = vk::SamplerAddressMode::eClampToEdge,
-              .addressModeV  = vk::SamplerAddressMode::eClampToEdge,
-              .addressModeW  = vk::SamplerAddressMode::eClampToEdge,
-              .compareEnable = true,
-              .compareOp     = vk::CompareOp::eLessOrEqual,
-    }));
-    const auto view    = [&](RenderGraph::ImageHandle image, vk::ImageViewType type)
-    {
-        return graph.getImage(image).getOrCreateImageView({
-            .viewType         = type,
-            .format           = vk::Format::eD32Sfloat,
-            .subresourceRange = {
-                .aspectMask = vk::ImageAspectFlagBits::eDepth,
-                .levelCount = 1,
-                .layerCount = graph.imageInfo(image).arrayLayers,
-            },
-        });
-    };
+    bindShadowResources(graph, shadows, setup.frameData, resources);
     const float         prefilteredMaxLod = writeTestEnvironment(setup, scene.environmentMap);
-    const auto&         shadowConfig      = feature.shadow;
     const LightUniforms lighting{
         .lightRanges = scene.lightRanges,
         .ambientCoefficient = feature.ambientCoefficient,
         .prefilteredMaxLod = prefilteredMaxLod,
     };
-    const ShadowUniforms shadows{
-        .cascadeCount = shadowConfig.cascade.count,
-        .directionalSampleRadius = shadowConfig.cascade.sampleRadius,
-        .bias = shadowConfig.bias,
-        .sampleRadius = shadowConfig.sampleRadius,
-        .spotSampleRadius = shadowConfig.spotSampleRadius,
-        .pixelRotation = shadowConfig.pixelRotation ? 1u : 0u,
-        .enabled = shadowConfig.enable ? 1u : 0u,
-    };
     const auto linearSampler = resources.sampler(BuiltinAssets::Sampler::linearClamp);
-    const auto bufferInfo    = [&](RenderGraph::BufferHandle handle)
-    {
-        const auto& buffer = graph.getBuffer(handle);
-        return vk::DescriptorBufferInfo{.buffer = buffer.handle(), .range = buffer.size()};
-    };
-    const std::array shadowBuffers{
-        bufferInfo(shadow.pointShadowBuffer),
-        bufferInfo(shadow.spotShadowBuffer),
-        bufferInfo(shadow.rectAreaShadowBuffer),
-        bufferInfo(shadow.directionalShadowBuffer),
-    };
     for (auto& frame : setup.frameData)
     {
-        frame.writeShadowBufferDescriptors(shadowBuffers);
-        frame.writeShadowDescriptors(
-            view(shadow.pointLightShadowMap, vk::ImageViewType::eCubeArray),
-            view(shadow.spotLightShadowMap, vk::ImageViewType::e2DArray),
-            view(shadow.rectAreaLightShadowMap, vk::ImageViewType::e2DArray),
-            view(shadow.cascadeShadowMap, vk::ImageViewType::e2DArray),
-            *sampler,
-            linearSampler
-        );
         frame.writeLutDescriptors(
             resources.texture(BuiltinAssets::Texture::kBrdfLut)->imageView(),
             resources.texture(BuiltinAssets::Texture::kSheenLut)->imageView(),
             linearSampler
         );
         frame.uploadLightUniforms(lighting);
-        frame.uploadShadowUniforms(shadows);
+        if (!feature.shadows)
+            frame.uploadShadowUniforms({.enabled = 0u});
     }
-    return sampler;
 }

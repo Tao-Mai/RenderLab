@@ -11,4 +11,6 @@ inline constexpr uint32_t   kMaxPointLightShadow          = 4;
 inline constexpr uint32_t   kMaxSpotLightShadow           = 4;
 inline constexpr uint32_t   kMaxRectAreaLightShadow       = 4;
 inline constexpr uint32_t   kRayPipelineRecursionDepth    = 1;
+inline constexpr uint32_t   kMinPathBounces               = 1;
+inline constexpr uint32_t   kMaxPathBounces               = 64;
 inline constexpr vk::Format kHdrColorFormat               = vk::Format::eR16G16B16A16Sfloat;

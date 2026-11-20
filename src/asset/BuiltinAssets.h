@@ -51,6 +51,8 @@ public:
 
         // 掩码、索引或查找纹理，需要精确 texel 且不应在边缘重复。
         static inline const ::SamplerAsset::ID nearestClamp = "nearestClamp";
+        static inline const ::SamplerAsset::ID kShadowNearest = "shadowNearest";
+        static inline const ::SamplerAsset::ID kShadowLinear  = "shadowLinear";
     };
 
 private:

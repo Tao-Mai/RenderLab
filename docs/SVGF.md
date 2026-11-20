@@ -1,6 +1,6 @@
 # SVGF
 
-开启 `feature.rayTracing.svgf` 时执行下面的链路，关闭时直接使用光追合并颜色。
+默认图通过 `feature.svgf` 选择下面的去噪链路或光追合并颜色。
 
 `RayTracingPass → SVGFReprojection → SVGFFilter × 5（最后一级直接合成）`
 

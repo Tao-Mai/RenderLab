@@ -161,10 +161,14 @@ void FrameData::writeShadowDescriptors(
             .pImageInfo = &infos[index],
         };
     vulkan->deviceHandle().updateDescriptorSets(writes, {});
+    shadowComparisonSampler = comparisonSampler;
 }
 
 void FrameData::writeShadowSampler(vk::Sampler sampler)
 {
+    if (sampler == shadowComparisonSampler)
+        return;
+
     const vk::DescriptorImageInfo info{.sampler = sampler};
     const vk::WriteDescriptorSet  write{
          .dstSet          = *shadowSet,
@@ -174,6 +178,7 @@ void FrameData::writeShadowSampler(vk::Sampler sampler)
          .pImageInfo      = &info,
     };
     vulkan->deviceHandle().updateDescriptorSets(write, {});
+    shadowComparisonSampler = sampler;
 }
 
 void FrameData::writeEnvironmentDescriptors(
@@ -262,6 +267,7 @@ void FrameData::reset() noexcept
     lightSet = nullptr;
     shadowSet = nullptr;
     viewSet     = nullptr;
+    shadowComparisonSampler = nullptr;
     sceneBuffer.reset();
     lightUniformBuffer.reset();
     shadowUniformBuffer.reset();

@@ -175,8 +175,7 @@ void RenderGraph::allocateResources()
         auto& resource      = *entry.data;
         resource.allocation = std::make_shared<Allocation>();
         auto& allocation    = *resource.allocation;
-        allocation.state    = resource.initialState;
-        if (resource.externalImage || resource.type == ResourceType::AccelerationStructure)
+        if (resource.externalImage)
             continue;
 
         if (resource.type == ResourceType::Buffer)
@@ -252,6 +251,16 @@ vk::ImageUsageFlags RenderGraph::imageUsage(ImageHandle image) const
     return resolveResource(image.id).imageUsage;
 }
 
+void RenderGraph::invalidateImageHistory(ImageHandle image)
+{
+    ++resolveResource(image.id).historyRevision;
+}
+
+uint64_t RenderGraph::imageHistoryRevision(ImageHandle image) const
+{
+    return resolveResource(image.id).historyRevision;
+}
+
 vk::PipelineStageFlags2 RenderGraph::firstUseStages(ImageHandle image) const
 {
     const auto& resource = resolveResource(image.id);
@@ -273,24 +282,6 @@ Buffer& RenderGraph::getBuffer(BufferHandle buffer)
     return *resource.allocation->buffer;
 }
 
-void RenderGraph::bindAccelerationStructures(
-    AccelerationStructureHandle handle, std::span<AccelerationStructure* const> structures
-)
-{
-    auto& resource = resolveResource(handle.id);
-    DCHECK(resource.type == ResourceType::AccelerationStructure);
-    resource.accelerationStructures.assign(structures.begin(), structures.end());
-}
-
-AccelerationStructure& RenderGraph::getAccelerationStructure(AccelerationStructureHandle handle, size_t index)
-{
-    auto& resource = resolveResource(handle.id);
-    DCHECK(resource.type == ResourceType::AccelerationStructure);
-    DCHECK(index < resource.accelerationStructures.size());
-    DCHECK(resource.accelerationStructures[index]);
-    return *resource.accelerationStructures[index];
-}
-
 void RenderGraph::useResource(vk::raii::CommandBuffer& commandBuffer, const ResourceUse& use)
 {
     auto& resource   = resolveResource(use.resource);
@@ -306,17 +297,7 @@ void RenderGraph::useResource(vk::raii::CommandBuffer& commandBuffer, const Reso
         return;
     }
 
-    if (resource.type == ResourceType::AccelerationStructure)
-    {
-        const vk::MemoryBarrier2 barrier{
-            .srcStageMask  = previous.stages,
-            .srcAccessMask = previous.access,
-            .dstStageMask  = next.stages,
-            .dstAccessMask = next.access,
-        };
-        commandBuffer.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &barrier});
-    }
-    else if (resource.type == ResourceType::Buffer)
+    if (resource.type == ResourceType::Buffer)
     {
         const vk::BufferMemoryBarrier2 barrier{
             .srcStageMask        = previous.stages,
@@ -366,6 +347,20 @@ void RenderGraph::prepare(const PassFrame& frame)
             node->prepare(*this, frame);
 }
 
+void RenderGraph::beginGpuProfiling(
+    vk::raii::CommandBuffer& commandBuffer, GpuProfiler& gpuProfiler, Profiler* profiler
+) const
+{
+    std::vector<std::string_view> names;
+    if (profiler)
+    {
+        names.reserve(sortedNodes.size());
+        for (const auto* node : sortedNodes)
+            names.push_back(node->name);
+    }
+    gpuProfiler.beginFrame(commandBuffer, names, profiler);
+}
+
 void RenderGraph::execute(
     vk::raii::CommandBuffer& commandBuffer, const PassFrame& frame, GpuProfiler& gpuProfiler, Profiler* profiler
 )
@@ -377,13 +372,6 @@ void RenderGraph::execute(
         if (entry.data && entry.data->externalImage)
             entry.data->allocation->state = {.stages = entry.data->firstUseStages};
 
-    std::vector<std::string_view> names;
-    if (profiler)
-    {
-        for (const auto* node : sortedNodes)
-            names.push_back(node->name);
-    }
-    gpuProfiler.beginFrame(commandBuffer, names, profiler);
     recordUploads(commandBuffer);
     auto execution        = frame;
     execution.gpuProfiler = profiler ? &gpuProfiler : nullptr;
@@ -399,7 +387,6 @@ void RenderGraph::execute(
         gpuProfiler.endPass(commandBuffer, passIndex);
         ++passIndex;
     }
-    gpuProfiler.endFrame(commandBuffer);
 }
 
 uint64_t RenderGraph::bufferRevision(BufferHandle buffer) const

@@ -14,6 +14,7 @@
 #include "scene/SceneManager.h"
 
 #include <cstdlib>
+#include <tuple>
 #include <utility>
 
 namespace
@@ -41,7 +42,7 @@ Engine::~Engine()
     );
 }
 
-void Engine::init(RenderPassRegistry passes)
+void Engine::init(RenderPassRegistry passes, PassEditorRegistry passEditors)
 {
     DCHECK(!inited);
 
@@ -84,7 +85,7 @@ void Engine::init(RenderPassRegistry passes)
     ctx.config->setSceneRenderMode(ctx.sceneManager->scene().renderMode);
     inputMethod.activateEnglish();
     ctx.renderer->init(std::move(passes));
-    ctx.editor->init();
+    ctx.editor->init(std::move(passEditors));
     DEBUG_EXEC(inited = true);
 }
 
@@ -110,7 +111,9 @@ void Engine::mainLoop()
             break;
         }
 
-        const auto [framebufferWidth, framebufferHeight] = ctx.window->framebufferSize();
+        auto [framebufferWidth, framebufferHeight] = ctx.window->framebufferSize();
+        if (framebufferWidth > 0 && framebufferHeight > 0 && ctx.editor->resizeWindowForLayout())
+            std::tie(framebufferWidth, framebufferHeight) = ctx.window->framebufferSize();
         if (framebufferWidth == 0 || framebufferHeight == 0)
         {
             ctx.window->waitEvents();

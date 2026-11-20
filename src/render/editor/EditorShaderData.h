@@ -2,19 +2,12 @@
 
 #include <cstdint>
 #include <glm/mat4x4.hpp>
-#include <glm/vec4.hpp>
 
 namespace EditorInterface
 {
 inline constexpr uint32_t kViewSet            = 0;
 inline constexpr uint32_t kViewUniformBinding = 0;
 }  // namespace EditorInterface
-
-struct EditorLightMarkerPushConstants
-{
-    glm::mat4 model{1.0f};
-    glm::vec4 color{1.0f};
-};
 
 struct EditorPickingPushConstants
 {
@@ -25,11 +18,4 @@ struct EditorPickingPushConstants
     uint32_t  padding2    = 0;
 };
 
-struct EditorDepthPushConstants
-{
-    glm::mat4 model{1.0f};
-};
-
-static_assert(sizeof(EditorLightMarkerPushConstants) == 80);
 static_assert(sizeof(EditorPickingPushConstants) == 80);
-static_assert(sizeof(EditorDepthPushConstants) == 64);

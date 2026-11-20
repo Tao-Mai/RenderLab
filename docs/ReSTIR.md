@@ -90,7 +90,7 @@ SVGF 开启 / 关闭各自持有匹配的 Pipeline、Descriptor Set Layout 和 S
 
 ## 配置
 
-所有参数位于 `feature.restir`，编辑器实时光追的 ReSTIR 面板可以调整。参数修改复用已有 Pipeline，并重置 ReSTIR 与 SVGF 历史。
+编辑器可以调整当前 `RayTracingPass` 实例的 `restir` 参数。参数修改复用已有 Pipeline，并重置 ReSTIR 与相连的 SVGF 历史。
 
 | 参数 | 默认值 | 含义 |
 | --- | --- | --- |
@@ -103,7 +103,7 @@ SVGF 开启 / 关闭各自持有匹配的 Pipeline、Descriptor Set Layout 和 S
 
 关闭两种复用时保留初始 RIS，可用于比较。SVGF 单独控制颜色的时域累积与滤波；ReSTIR 历史保存采样结果，两者各自维护自己的资源。
 
-实现入口：[初始采样与求值](../passes/raytracing/realtime/trace/restir/restir.slang)、[时空复用](../passes/raytracing/realtime/trace/restir/restir_reuse.slang)、[GPU 数据](../passes/raytracing/realtime/trace/restir/restir_data.slang)、[共享光源采样](../passes/raytracing/realtime/trace/light_sampling.slang)、[CPU 调度](../passes/raytracing/realtime/trace/RayTracingPass.cpp)。
+实现入口：[初始采样与求值](../passes/RayTracingPass/restir.slang)、[时空复用](../passes/RayTracingPass/restir_reuse.slang)、[GPU 数据](../passes/RayTracingPass/restir_data.slang)、[共享光源采样](../passes/RayTracingPass/light_sampling.slang)、[CPU 调度](../passes/RayTracingPass/RayTracingPass.cpp)。
 
 ## 验证
 

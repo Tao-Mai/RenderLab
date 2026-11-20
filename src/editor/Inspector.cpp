@@ -1,8 +1,12 @@
 #include "editor/Inspector.h"
+#include <algorithm>
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
+#include "asset/AssetManager.h"
+#include "asset/SceneAsset.h"
 #include "editor/ComponentDraw.h"
 #include "editor/EditorCameraConfig.h"
+#include "editor/SettingsWidgets.h"
 #include "scene/AActor.h"
 
 bool drawExposureSettings(ExposureConfig& exposure)
@@ -199,6 +203,35 @@ bool drawCameraInspector(EditorCameraConfig& camera, const ExposureConfig& globa
     }
 
 
+    return edited;
+}
+
+bool drawEnvironmentInspector(SceneAsset& scene, const AssetManager& assets)
+{
+    auto& current = scene.environmentMap;
+    bool edited = false;
+    if (drawSettingsHeader("Environment") && current)
+    {
+        current.reset();
+        edited = true;
+    }
+
+    const char* preview = current ? current->c_str() : "Select environment map...";
+    if (!ImGui::BeginCombo("Environment map", preview))
+        return edited;
+
+    auto ids = assets.loadedIds<EnvironmentMapAsset>();
+    std::ranges::sort(ids, {}, &EnvironmentMapAsset::ID::value);
+    for (const auto& id : ids)
+    {
+        const bool selected = current && *current == id;
+        if (ImGui::Selectable(id.c_str(), selected) && !selected)
+        {
+            current = id;
+            edited = true;
+        }
+    }
+    ImGui::EndCombo();
     return edited;
 }
 

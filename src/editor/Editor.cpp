@@ -6,7 +6,6 @@
 #include "core/Logger.h"
 #include "core/Window.h"
 #include "editor/EditorCamera.h"
-#include "render/RenderContext.h"
 #include "render/Renderer.h"
 #include "render/device/VulkanContext.h"
 #include "render/device/Swapchain.h"
@@ -14,18 +13,20 @@
 #include "scene/component/TransformComponent.h"
 
 #include <algorithm>
+#include <utility>
 
 #include <glm/glm.hpp>
 
 Editor::~Editor() { DCHECK(!inited); }
 
-void Editor::init()
+void Editor::init(PassEditorRegistry passEditors)
 {
     DCHECK(context().window);
     DCHECK(context().renderer);
 
     editorCamera    = std::make_unique<EditorCamera>(context().sceneManager->scene().editorCamera);
     sceneGeneration = context().sceneManager->sceneGeneration();
+    ui.setPassEditors(std::move(passEditors));
     initBackend();
     DEBUG_EXEC(inited = true);
 }
@@ -49,14 +50,21 @@ void Editor::initBackend()
 
 void Editor::shutdown() noexcept
 {
+    if (windowHasObjectList)
+    {
+        auto& config = *context().config;
+        const auto& size = config.editorConfig();
+        config.setEditorSize(std::max(size.width - ui.objectListInset(size.width), 1), size.height);
+        windowHasObjectList = false;
+    }
     editorCamera->resetNavigation();
     editorCamera.reset();
     ui.resetLayout();
     backend.shutdown();
-    lightMarkers.reset();
-    selectedId          = 0;
-    dirty               = false;
-    pendingSceneActions = {};
+    selectedId           = 0;
+    dirty                = false;
+    pendingSceneId.reset();
+    pendingObjectActions = {};
     DEBUG_EXEC(inited = false);
 }
 
@@ -65,6 +73,22 @@ void Editor::refreshUi()
     backend.shutdown();
     ui.resetLayout();
     initBackend();
+}
+
+bool Editor::resizeWindowForLayout()
+{
+    Context& ctx = context();
+    const bool showObjectList = ctx.renderer->showObjectList();
+    if (showObjectList == windowHasObjectList)
+        return false;
+
+    auto& window = *ctx.window;
+    const auto [width, height] = window.size();
+    const int inset = ui.objectListInset(width);
+    const int nextWidth = std::max(width + (showObjectList ? inset : -inset), 1);
+    window.resizeCentered(nextWidth, height);
+    windowHasObjectList = showObjectList;
+    return true;
 }
 
 void Editor::saveScene()
@@ -77,46 +101,43 @@ void Editor::saveScene()
 
 void Editor::applySceneActions()
 {
-    if (!pendingSceneActions.sceneId && !pendingSceneActions.createType && !pendingSceneActions.deleteId)
+    if (!pendingSceneId && !pendingObjectActions.createType && !pendingObjectActions.deleteId)
         return;
 
     auto& scene = *context().sceneManager;
 
-    if (pendingSceneActions.sceneId)
+    if (pendingSceneId)
     {
-        scene.load(*pendingSceneActions.sceneId);
-        selectedId          = 0;
-        dirty               = false;
-        pendingSceneActions = {};
+        scene.load(*pendingSceneId);
+        selectedId           = 0;
+        dirty                = false;
+        pendingSceneId.reset();
+        pendingObjectActions = {};
         return;
     }
 
-    if (pendingSceneActions.deleteId)
+    if (pendingObjectActions.deleteId)
     {
-        scene.deleteActor(pendingSceneActions.deleteId);
-        if (selectedId == pendingSceneActions.deleteId)
+        scene.deleteActor(pendingObjectActions.deleteId);
+        if (selectedId == pendingObjectActions.deleteId)
             selectedId = 0;
     }
-    if (pendingSceneActions.createType)
-        selectedId = scene.createActor(*pendingSceneActions.createType).selectionId();
+    if (pendingObjectActions.createType)
+        selectedId = scene.createActor(*pendingObjectActions.createType).selectionId();
 
-    pendingSceneActions = {};
-    dirty               = true;
+    pendingObjectActions = {};
+    dirty                = true;
 }
 
 Editor::Frame
 Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapchainWidth, uint32_t swapchainHeight)
 {
     backend.beginFrame();
-    ui.beginFrame(deltaTime);
-    pendingSceneActions = ui.drawHierarchy(context().sceneManager->scene(), selectedId);
-    if (pendingSceneActions.renamed)
+    ui.beginFrame(context().renderer->showObjectList());
+    auto& scene = context().sceneManager->scene();
+    pendingObjectActions = ui.drawHierarchy(scene, selectedId);
+    if (pendingObjectActions.renamed)
         dirty = true;
-
-    if (!pendingSceneActions.sceneId && ui.saveRequested())
-    {
-        saveScene();
-    }
 
     const glm::mat4 view                 = camera.viewMatrix();
     const glm::mat4 projection           = camera.projectionMatrix(ui.sceneAspectRatio());
@@ -133,18 +154,21 @@ Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapcha
         }
     }
 
-    EditorUI::InspectorResult inspector = ui.drawInspector(context().sceneManager->scene(), selectedActor, dirty);
+    EditorUI::InspectorResult inspector = ui.drawInspector(scene, selectedActor, dirty);
+    pendingSceneId = std::move(inspector.sceneId);
     if (inspector.edited)
-    {
         dirty = true;
-    }
+    if (!pendingSceneId && ui.saveRequested())
+        saveScene();
 
-    const bool lightMarkersAndPicking = context().config->editorConfig().lightMarkersAndPicking;
     Frame      frame;
     auto&      input = frame.input;
     input.recordUi = [this](VkCommandBuffer commandBuffer) { backend.render(commandBuffer); };
 
-    if (lightMarkersAndPicking && !camera.isNavigationActive())
+    const auto& config = *context().config;
+    const auto& renderer = *context().renderer;
+    if (config.editorConfig().objectPicking && renderer.activeRenderGraph() == &config.renderGraph() &&
+        renderer.supportsObjectPicking() && !camera.isNavigationActive())
     {
         glm::vec2 clickNdc;
         if (ui.sceneClicked(clickNdc))
@@ -165,12 +189,6 @@ Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapcha
     }
 
     frame.view = camera.renderView(ui.sceneViewportPixels());
-    if (lightMarkersAndPicking)
-    {
-        lightMarkers.prepare(context().sceneManager->scene(), *renderContext().resources);
-        input.lightDrawItems = lightMarkers.drawItems();
-    }
-
     ui.endFrame();
     return frame;
 }

@@ -10,8 +10,7 @@ namespace
 {
 constexpr auto kWriteAccess = vk::AccessFlagBits2::eShaderWrite | vk::AccessFlagBits2::eShaderStorageWrite |
     vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentWrite |
-    vk::AccessFlagBits2::eTransferWrite | vk::AccessFlagBits2::eHostWrite | vk::AccessFlagBits2::eMemoryWrite |
-    vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
+    vk::AccessFlagBits2::eTransferWrite | vk::AccessFlagBits2::eHostWrite | vk::AccessFlagBits2::eMemoryWrite;
 }
 
 RenderGraph::ImageHandle RenderGraph::createImage(ImageCreateInfo info)
@@ -41,18 +40,6 @@ RenderGraph::ImageHandle RenderGraph::createExternalImage(ImageCreateInfo info)
     return image;
 }
 
-RenderGraph::AccelerationStructureHandle RenderGraph::createAccelerationStructure(MemoryAccess initial)
-{
-    const auto id = static_cast<ResourceHandle>(resources.size());
-    resources.push_back(
-        {.data = std::make_unique<ResourceData>(ResourceData{
-             .type         = ResourceType::AccelerationStructure,
-             .initialState = {.stages = initial.stages, .access = initial.access},
-         })}
-    );
-    return {id};
-}
-
 RenderGraph::ImageHandle RenderGraph::write(ImageHandle image)
 {
     DCHECK(setupNode);
@@ -73,17 +60,6 @@ RenderGraph::BufferHandle RenderGraph::write(BufferHandle buffer)
     const auto id = static_cast<ResourceHandle>(resources.size());
     resources.push_back({.previous = buffer.id, .owner = setupNode});
     setupNode->writeSrc.push_back(buffer.id);
-    return {id};
-}
-
-RenderGraph::AccelerationStructureHandle RenderGraph::write(AccelerationStructureHandle structure)
-{
-    DCHECK(setupNode);
-    DCHECK(resolveResource(structure.id).type == ResourceType::AccelerationStructure);
-
-    const auto id = static_cast<ResourceHandle>(resources.size());
-    resources.push_back({.previous = structure.id, .owner = setupNode});
-    setupNode->writeSrc.push_back(structure.id);
     return {id};
 }
 
@@ -155,21 +131,6 @@ void RenderGraph::use(BufferHandle buffer, MemoryAccess access)
     }
     else
         uses.push_back({buffer.id, {.stages = access.stages, .access = access.access}});
-}
-
-void RenderGraph::use(AccelerationStructureHandle structure, MemoryAccess access)
-{
-    DCHECK(setupNode);
-    DCHECK(resolveResource(structure.id).type == ResourceType::AccelerationStructure);
-    auto&      uses  = setupNode->uses;
-    const auto found = std::ranges::find(uses, structure.id, &ResourceUse::resource);
-    if (found != uses.end())
-    {
-        found->access.stages |= access.stages;
-        found->access.access |= access.access;
-    }
-    else
-        uses.push_back({structure.id, {.stages = access.stages, .access = access.access}});
 }
 
 bool RenderGraph::needsBarrier(const ImageAccess& previous, const ImageAccess& next)

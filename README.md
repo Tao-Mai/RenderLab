@@ -15,7 +15,7 @@ RenderLab 是一个以学习和实验为目的的个人渲染器项目，基于 
 ### 实时光追 · SVGF 开关对比
 
 Sibenik Cathedral， **1 spp / 帧**，最多 6 次表面散射，两帧在途。两图使用相同的场景、视角、光照与后处理设置，均截取第 32 帧，仅切换
-SVGF。关闭时显示当前帧采样；开启时使用 albedo 解调、历史重投影、亮度方差估计与五级 à-trous 滤波。图中的小球和矩形是编辑器光源标记。
+SVGF。关闭时显示当前帧采样，开启时使用 albedo 解调、历史重投影、亮度方差估计与五级 à-trous 滤波。早期截图中的小球和矩形来自当时的编辑器叠加。
 
 | SVGF 关闭                                                                  | SVGF 开启                                                                 |
 |----------------------------------------------------------------------------|---------------------------------------------------------------------------|
@@ -65,8 +65,8 @@ Shader 使用 Slang 生成的依赖文件跟踪实际 include，增量构建只�
 手动验证时开启并单独构建所需工具即可。
 
 入口配置为 [config/config.json](config/config.json)，渲染与编辑器参数分别位于 [renderer.json](config/renderer.json)
-和 [editor.json](config/editor.json)。`paths.renderGraph` 指向构图脚本，默认使用 [standard.py](graphs/standard.py)。
-环境图属于场景，IBL 开关属于渲染配置。
+和 [editor.json](config/editor.json)。`renderGraphs` 登记 Forward、Deferred、Realtime、Offline 四个独立的
+[Python Graph](graphs/)，渲染设置按 Graph ID 保存。环境图属于场景，IBL 开关属于当前 Graph。
 
 模型源文件与生成资产未完整随仓库提交，运行前需要准备资产并指定初始场景，参见 [资产说明](assets/README.md)。
 

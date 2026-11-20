@@ -2,9 +2,7 @@
 #include <algorithm>
 #include <imgui.h>
 #include <imgui_stdlib.h>
-#include "asset/AssetManager.h"
-#include "core/Context.h"
-#include "core/InputManager.h"
+#include "asset/SceneAsset.h"
 #include "core/Logger.h"
 #include "core/Reflect.h"
 namespace
@@ -41,39 +39,17 @@ void drawActorTypeTree(
     }
 }
 }  // namespace
-SceneActions SceneHierarchy::draw(SceneAsset& scene, uint32_t& selectedId, uint32_t hierarchyDockId)
+SceneObjectActions SceneHierarchy::draw(SceneAsset& scene, uint32_t& selectedId, uint32_t hierarchyDockId)
 {
-    SceneActions result;
+    SceneObjectActions result;
     ImGui::SetNextWindowDockID(hierarchyDockId, ImGuiCond_Always);
     constexpr ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
     ImGui::Begin("Scene Objects", nullptr, flags);
 
-    ImGui::SetNextItemWidth(-ImGui::GetFrameHeight() - ImGui::GetStyle().ItemSpacing.x);
-    if (ImGui::BeginCombo("##Scene", scene.id.c_str()))
-    {
-        DCHECK(context().assetManager);
-        auto sceneIds = context().assetManager->loadedIds<SceneAsset>();
-        std::ranges::sort(sceneIds, {}, &SceneAsset::ID::value);
-        for (const auto& id : sceneIds)
-        {
-            const bool selected = id == scene.id;
-            if (ImGui::Selectable(id.c_str(), selected) && !selected)
-            {
-                result.sceneId = id;
-                renameActorId  = 0;
-                focusRename    = false;
-                renameText.clear();
-            }
-            if (selected)
-                ImGui::SetItemDefaultFocus();
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::SetItemTooltip("Switch scenes and discard unsaved scene changes");
-    ImGui::SameLine();
     if (ImGui::Button("+"))
         ImGui::OpenPopup("New Actor");
+    ImGui::SetItemTooltip("Add an object");
     if (ImGui::BeginPopup("New Actor"))
     {
         ImGui::TextUnformatted("Choose an Actor class");

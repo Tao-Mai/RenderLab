@@ -32,7 +32,7 @@
 | Scene       |               0 | Binding 0：`SceneUniforms` UBO，包含相机矩阵和相机位置                                        |
 | Lighting    |               1 | 光照参数 UBO、光源 SSBO、ShadowData与ShadowMap、比较与线性采样器、环境图、BRDF LUT、Sheen LUT |
 | Material    |               2 | Binding 0：全局材质 SSBO；Binding 1：128 个纹理；Binding 2：32 个独立索引 sampler             |
-| Editor View | 0（编辑器布局） | Binding 0：View UBO，供光源标记、拾取和编辑器深度绘制使用。                                   |
+| Editor View | 0（编辑器布局） | Binding 0：View UBO，供光栅视口拾取使用。                                                       |
 
 私有 Set 由各 Pass 持有
 

@@ -1,3 +1,4 @@
+#include "GraphSelection.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
@@ -16,9 +17,9 @@
 #include "render/device/VulkanContext.h"
 #include "render/editor/EditorFrameInput.h"
 #include "render/graph/EndPass.h"
-#include "passes/postprocess/exposure/ExposurePass.h"
-#include "passes/postprocess/falcor/FalcorPostProcess.h"
-#include "passes/postprocess/tone_mapping/ToneMappingPass.h"
+#include "passes/postprocess/ExposurePass/ExposurePass.h"
+#include "passes/postprocess/FalcorPostProcess/FalcorPostProcess.h"
+#include "passes/postprocess/ToneMappingPass/ToneMappingPass.h"
 #include "render/resources/RenderResourceManager.h"
 #include "scene/SceneManager.h"
 #include "scene/system/SceneRenderData.h"
@@ -96,12 +97,17 @@ struct ReadbackPass
     }
 };
 
-std::vector<Pixel> run(VulkanContext& vulkan, RendererConfig settings, vk::Format format)
+std::vector<Pixel> run(
+    VulkanContext& vulkan, const FalcorPostProcessConfig& settings, vk::Format format,
+    PostProcessMode mode = PostProcessMode::Falcor
+)
 {
     FrameContext frame;
     frame.init(vulkan);
     FrameData       frameData;
-    const PassSetup setup{vulkan, {kExtent.width, kExtent.height}, {}, settings};
+    RendererConfig config;
+    config.feature.postProcess = mode;
+    const PassSetup setup{vulkan, {kExtent.width, kExtent.height}, {}, config};
     RenderGraph     graph;
     graph.init(vulkan);
     SourcePass        sourcePass;
@@ -112,8 +118,11 @@ std::vector<Pixel> run(VulkanContext& vulkan, RendererConfig settings, vk::Forma
     ToneMappingPass   native;
     auto              color  = graph.addPass(sourcePass, setup);
     const auto        target = graph.createImage({.format = format, .extent = kExtent});
-    if (settings.feature.postProcess == PostProcessMode::Falcor)
+    if (mode == PostProcessMode::Falcor)
+    {
+        falcor.setSettings(settings);
         color = falcor.setup(graph, setup, color, target).color;
+    }
     else
     {
         const auto state = graph.addPass(exposure, setup, color).state;
@@ -134,7 +143,9 @@ std::vector<Pixel> run(VulkanContext& vulkan, RendererConfig settings, vk::Forma
         auto& commands = frame.commandBufferHandle();
         vkCheck(commands.reset());
         vkCheck(commands.begin({}));
+        graph.beginGpuProfiling(commands, frame.gpuProfiler(), nullptr);
         graph.execute(commands, execution, frame.gpuProfiler(), nullptr);
+        frame.gpuProfiler().endFrame(commands);
         vkCheck(commands.end());
         const auto command = *commands;
         vkCheck(vulkan.deviceHandle().resetFences(frame.drawFenceHandle()));
@@ -165,8 +176,7 @@ void near(Pixel actual, Pixel expected)
 
 void check(VulkanContext& vulkan)
 {
-    RendererConfig settings;
-    settings.feature.postProcess = PostProcessMode::Falcor;
+    FalcorPostProcessConfig settings;
     // Independently evaluated from the original Falcor equations, including sRGB presentation.
     constexpr std::array<Pixel, 6> kExpected{
         Pixel{137, 255, 255, 128},
@@ -178,19 +188,19 @@ void check(VulkanContext& vulkan)
     };
     for (uint32_t mode = 0; mode < kExpected.size(); ++mode)
     {
-        settings.feature.falcorPostProcess.toneMapper.mode = static_cast<FalcorToneMappingOperator>(mode);
+        settings.toneMapper.mode = static_cast<FalcorToneMappingOperator>(mode);
         for (const auto format : {vk::Format::eR8G8B8A8Srgb, vk::Format::eR8G8B8A8Unorm})
             for (const auto pixel : run(vulkan, settings, format))
                 near(pixel, kExpected[mode]);
         LOG_INFO("Falcor tone operator {} passed for sRGB and UNORM", mode);
     }
-    settings.feature.falcorPostProcess.toneMapper              = {};
-    settings.feature.falcorPostProcess.toneMapper.autoExposure = true;
+    settings.toneMapper              = {};
+    settings.toneMapper.autoExposure = true;
     for (const auto pixel : run(vulkan, settings, vk::Format::eR8G8B8A8Srgb))
         near(pixel, {6, 30, 93, 128});
     LOG_INFO("Falcor logarithmic luminance / auto exposure passed");
 
-    auto& toneMapper                = settings.feature.falcorPostProcess.toneMapper;
+    auto& toneMapper                = settings.toneMapper;
     toneMapper                      = {};
     toneMapper.mode                 = FalcorToneMappingOperator::Linear;
     toneMapper.filmSpeed            = 200;
@@ -217,7 +227,7 @@ void check(VulkanContext& vulkan)
     LOG_INFO("Falcor physical exposure and 6500 K white balance passed");
 
     toneMapper                        = {};
-    auto& effects                     = settings.feature.falcorPostProcess.simplePostFx;
+    auto& effects                     = settings.simplePostFx;
     effects.bloomAmount               = 0.2f;
     effects.starAmount                = 0.3f;
     effects.vignetteAmount            = 0.3f;
@@ -241,9 +251,7 @@ void check(VulkanContext& vulkan)
         near(pixel, kExpected[5]);
     LOG_INFO("Falcor 8-level bloom, stars, lens/color effects, wipe and bypass passed");
 
-    settings.feature.postProcess = PostProcessMode::RenderLab;
-    const auto native            = run(vulkan, settings, vk::Format::eR8G8B8A8Srgb);
-    settings.feature.postProcess = PostProcessMode::Falcor;
+    const auto native = run(vulkan, settings, vk::Format::eR8G8B8A8Srgb, PostProcessMode::RenderLab);
     const auto restored          = run(vulkan, settings, vk::Format::eR8G8B8A8Srgb);
     CHECK(native.front() != restored.front());
     for (const auto pixel : restored)
@@ -253,17 +261,15 @@ void check(VulkanContext& vulkan)
 
 void checkRendererSwitches(ConfigManager& config)
 {
-    const auto original        = config.rendererConfig();
-    const bool originalMarkers = config.editorConfig().lightMarkersAndPicking;
-    config.setSceneRenderMode(SceneRenderMode::Realtime);
-    config.setRenderPath(RenderPath::Forward);
-    config.setLightMarkersAndPicking(false);
-    auto feature              = original.feature;
-    feature.ibl               = false;
-    feature.shadow.enable     = false;
-    feature.hdr               = true;
-    feature.falcorPostProcess = {};
-    config.setRenderFeature(feature);
+    const auto originalGraph = config.renderGraph().id;
+    selectGraphForPath(config, RenderPath::Forward);
+    const auto forwardGraph = config.renderGraph().id;
+    const auto originalParameters = config.graphParameterOverrides();
+    const auto originalOverrides = config.passOverrides();
+    auto parameters = originalParameters;
+    parameters.update({{"ibl", false}, {"shadows", false}, {"hdr", true}});
+    FalcorPostProcessConfig settings;
+    config.setGraphParameterOverrides(parameters);
     Renderer renderer;
     context().renderer = &renderer;
     renderer.init(standardRenderPasses());
@@ -274,23 +280,38 @@ void checkRendererSwitches(ConfigManager& config)
     const SceneRenderData scene;
     for (uint32_t phase = 0; phase < 10; ++phase)
     {
-        feature.postProcess = phase % 2 == 0 ? PostProcessMode::RenderLab : PostProcessMode::Falcor;
-        feature.falcorPostProcess.toneMapper.autoExposure  = (phase & 2u) != 0;
-        feature.falcorPostProcess.simplePostFx.bloomAmount = (phase & 4u) != 0 ? 0.2f : 0.0f;
-        feature.falcorPostProcess.simplePostFx.enabled     = phase != 9;
-        config.setRenderFeature(feature);
+        const auto mode = phase % 2 == 0 ? PostProcessMode::RenderLab : PostProcessMode::Falcor;
+        parameters["postProcess"] = Serialize(mode);
+        settings.toneMapper.autoExposure  = (phase & 2u) != 0;
+        settings.simplePostFx.bloomAmount = (phase & 4u) != 0 ? 0.2f : 0.0f;
+        settings.simplePostFx.enabled     = phase != 9;
+        config.setGraphParameterOverrides(parameters);
+        renderer.setPassOverrides("FalcorPostProcess", "falcor", Serialize(settings));
         for (uint32_t frame = 0; frame < 4; ++frame)
             CHECK(!renderer.render(view, scene, {}, 1.0f / 60.0f).swapchainNeedsRebuild);
+        CHECK((renderer.renderPasses().activePass<FalcorPostProcess>() != nullptr) == (mode == PostProcessMode::Falcor));
     }
+    const auto forwardOverrides = config.passOverrides();
+    selectGraphForPath(config, RenderPath::Deferred);
+    const auto deferredParameters = config.graphParameterOverrides();
+    auto ldrParameters = deferredParameters;
+    ldrParameters.update({{"hdr", false}, {"ibl", false}, {"shadows", false}});
+    config.setGraphParameterOverrides(std::move(ldrParameters));
+    CHECK(!renderer.render(view, scene, {}, 1.0f / 60.0f).swapchainNeedsRebuild);
+    CHECK(renderer.activeRenderGraph() == &config.renderGraph() && !config.rendererConfig().feature.hdr);
+    config.setGraphParameterOverrides(deferredParameters);
+
+    config.setRenderGraph(forwardGraph);
+    CHECK(config.graphParameterOverrides() == parameters && config.passOverrides() == forwardOverrides);
+    CHECK(!renderer.render(view, scene, {}, 1.0f / 60.0f).swapchainNeedsRebuild);
+    CHECK(renderer.activeRenderGraph() == &config.renderGraph() && config.rendererConfig().feature.hdr);
+    LOG_INFO("Graph selection and isolated overrides passed");
+
     renderer.shutdown();
     context().renderer = nullptr;
-    config.setSceneRenderMode(
-        original.renderPath == RenderPath::OfflinePathTracing ? SceneRenderMode::Offline : SceneRenderMode::Realtime
-    );
-    if (original.renderPath != RenderPath::OfflinePathTracing)
-        config.setRenderPath(original.renderPath);
-    config.setRenderFeature(original.feature);
-    config.setLightMarkersAndPicking(originalMarkers);
+    config.setGraphParameterOverrides(originalParameters);
+    config.passOverrides() = originalOverrides;
+    config.setRenderGraph(originalGraph);
     LOG_INFO("Renderer runtime post process switching passed (10 phases, 40 frames)");
 }
 }  // namespace

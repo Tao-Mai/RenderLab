@@ -1,3 +1,5 @@
+#include "raster/fullscreen.slang"
+
 #ifndef BLOOM_STAGE
 #error BLOOM_STAGE must be specified
 #endif
@@ -17,19 +19,6 @@ struct BloomParameters
 [[vk::binding(0, 0)]] Texture2D<float4> sourceColor;
 [[vk::binding(1, 0)]] SamplerState linearSampler;
 [[vk::binding(2, 0)]] Texture2D<float4> baseColor;
-
-struct VertexOutput
-{
-    float4 position : SV_Position;
-    float2 uv : TEXCOORD0;
-};
-
-[shader("vertex")]
-VertexOutput vertMain(uint vertexId : SV_VertexID)
-{
-    float2 corner = float2((vertexId << 1) & 2, vertexId & 2);
-    return {float4(corner * 2.0 - 1.0, 0.0, 1.0), corner};
-}
 
 float3 sampleSource(float2 uv)
 {
@@ -55,7 +44,7 @@ float3 downsampleGaussian(float2 uv, float2 step)
 }
 
 [shader("fragment")]
-float4 fragMain(VertexOutput input) : SV_Target
+float4 fragMain(FullscreenVertexOutput input) : SV_Target
 {
     bool insideViewport = all(input.uv >= parameters.viewportUvMin) && all(input.uv < parameters.viewportUvMax);
 #if BLOOM_STAGE == 0

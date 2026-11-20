@@ -1,16 +1,16 @@
-#include "passes/postprocess/bloom/Bloom.h"
+#include "passes/postprocess/Bloom/Bloom.h"
 
 #include "asset/BuiltinAssets.h"
 #include "core/Context.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
-#include "render/RendererConfig.h"
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
 #include "render/resources/RenderResourceManager.h"
 
 #include <array>
+#include <cmath>
 #include <glm/vec4.hpp>
 
 namespace
@@ -40,6 +40,14 @@ vk::ImageView imageView(RenderGraph& graph, RenderGraph::ImageHandle image)
 }
 }  // namespace
 
+void BloomSettings::validate() const
+{
+    CHECK(std::isfinite(intensity) && intensity >= 0.0f && intensity <= 1.0f);
+    CHECK(std::isfinite(scatter) && scatter >= 0.05f && scatter <= 0.95f);
+    CHECK(std::isfinite(filterRadius) && filterRadius > 0.0f);
+    CHECK(levels > 0 && levels <= kMaxBloomLevels);
+}
+
 Bloom::Output Bloom::setup(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle hdrColor)
 {
     DCHECK(graph.imageInfo(hdrColor).format == kHdrColorFormat);
@@ -51,13 +59,13 @@ Bloom::Output Bloom::setup(RenderGraph& graph, const PassSetup& setup, RenderGra
     using Stage    = FilterPass::Stage;
     const auto add = [&](Stage stage, RenderGraph::ImageHandle source, RenderGraph::ImageHandle base = {})
     {
-        auto& pass = *filters.emplace_back(std::make_unique<FilterPass>(stage));
+        auto& pass = *filters.emplace_back(std::make_unique<FilterPass>(stage, parameters));
         return graph.addPass(pass, setup, source, base).color;
     };
 
     std::vector<RenderGraph::ImageHandle> pyramid;
     auto                                  source = hdrColor;
-    const auto                            levels = setup.config.feature.bloom.levels;
+    const auto                            levels = parameters.levels;
     for (uint32_t level = 0; level < levels; ++level)
     {
         const auto horizontal = add(Stage::DownsampleHorizontal, source);
@@ -212,7 +220,6 @@ void Bloom::FilterPass::execute(
     const auto            sourceExtent = graph.imageInfo(source).extent;
     const auto            frameExtent  = execution.setup.renderExtent;
     const auto&           viewport     = execution.view.viewport;
-    const auto&           settings     = execution.setup.config.feature.bloom;
     const BloomParameters parameters{
         .viewport =
             {viewport.x / frameExtent.width,

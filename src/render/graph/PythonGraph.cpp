@@ -44,6 +44,24 @@ PythonObject pythonPath(const std::filesystem::path& path)
 #endif
 }
 
+nlohmann::json renderFeatureChoices()
+{
+    auto choices = nlohmann::json::object();
+    constexpr auto kAccess = std::meta::access_context::current();
+    template for (constexpr auto kMember : std::define_static_array(ReflectedDataMembers(^^RenderFeature, kAccess)))
+    {
+        using Field = [:std::meta::type_of(kMember):];
+        if constexpr (std::is_enum_v<Field>)
+        {
+            auto names = nlohmann::json::array();
+            template for (constexpr auto kEntry : std::define_static_array(std::meta::enumerators_of(^^Field)))
+                names.push_back(std::meta::identifier_of(kEntry));
+            choices[std::string{std::meta::identifier_of(kMember)}] = std::move(names);
+        }
+    }
+    return choices;
+}
+
 class PythonRuntime
 {
 public:
@@ -71,7 +89,9 @@ public:
 };
 }
 
-nlohmann::json loadRenderGraph(const std::filesystem::path& script, const RendererConfig& config)
+nlohmann::json loadRenderGraph(
+    const std::filesystem::path& script, const nlohmann::json& parameterOverrides
+)
 {
     static const PythonRuntime kRuntime;
 
@@ -80,7 +100,10 @@ nlohmann::json loadRenderGraph(const std::filesystem::path& script, const Render
     const PythonObject build{PyObject_GetAttrString(module.get(), "build_description")};
     CHECK(build, "failed to find the Python graph builder: {}", pythonError());
 
-    const auto configJson = Serialize(config).dump();
+    const auto configJson = nlohmann::json{
+        {"parameterChoices", renderFeatureChoices()},
+        {"parameterOverrides", parameterOverrides},
+    }.dump();
     const PythonObject pythonConfig{PyUnicode_FromStringAndSize(configJson.data(), static_cast<Py_ssize_t>(configJson.size()))};
     const auto path = pythonPath(script);
     CHECK(path && pythonConfig, "failed to prepare render graph '{}': {}", script.string(), pythonError());

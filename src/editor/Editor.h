@@ -1,7 +1,7 @@
 #pragma once
-#include "editor/LightMarkers.h"
 
 #include <memory>
+#include <optional>
 #include "core/Debug.h"
 #include "editor/EditorBackend.h"
 #include "editor/EditorCamera.h"
@@ -26,8 +26,9 @@ public:
     Editor(const Editor&)            = delete;
     Editor& operator=(const Editor&) = delete;
 
-    void                init();
+    void                init(PassEditorRegistry passEditors);
     void                refreshUi();
+    [[nodiscard]] bool  resizeWindowForLayout();
     void                tick(float deltaTime);
     EditorCamera&       camera() { return *editorCamera; }
     const EditorCamera& camera() const { return *editorCamera; }
@@ -47,10 +48,11 @@ private:
     uint64_t                      sceneGeneration = 0;
     EditorBackend                 backend;
     EditorUI                      ui;
-    LightMarkers                  lightMarkers;
     uint32_t                      selectedId = 0;
     bool                          dirty      = false;
-    SceneActions                  pendingSceneActions;
+    bool                          windowHasObjectList = false;
+    std::optional<SceneAsset::ID> pendingSceneId;
+    SceneObjectActions            pendingObjectActions;
 
     void saveScene();
     void initBackend();

@@ -4,6 +4,65 @@
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 
+#include <algorithm>
+#include <cstdint>
+
+namespace
+{
+struct WorkArea
+{
+    int x;
+    int y;
+    int width;
+    int height;
+};
+
+WorkArea monitorWorkArea(GLFWmonitor* monitor)
+{
+    WorkArea area{};
+    glfwGetMonitorWorkarea(monitor, &area.x, &area.y, &area.width, &area.height);
+    return area;
+}
+
+WorkArea windowWorkArea(GLFWwindow* window, int width, int height)
+{
+    int x = 0;
+    int y = 0;
+    glfwGetWindowPos(window, &x, &y);
+
+    auto* primary = glfwGetPrimaryMonitor();
+    CHECK(primary);
+    auto area = monitorWorkArea(primary);
+    int monitorCount = 0;
+    auto* monitors = glfwGetMonitors(&monitorCount);
+    int64_t largestOverlap = 0;
+    for (int index = 0; index < monitorCount; ++index)
+    {
+        const auto candidate = monitorWorkArea(monitors[index]);
+        const int overlapWidth = std::max(0, std::min(x + width, candidate.x + candidate.width) - std::max(x, candidate.x));
+        const int overlapHeight = std::max(0, std::min(y + height, candidate.y + candidate.height) - std::max(y, candidate.y));
+        const auto overlap = int64_t{overlapWidth} * overlapHeight;
+        if (overlap > largestOverlap)
+        {
+            area = candidate;
+            largestOverlap = overlap;
+        }
+    }
+    return area;
+}
+
+void centerWindow(GLFWwindow* window, const WorkArea& area, int width, int height)
+{
+    int left = 0, top = 0, right = 0, bottom = 0;
+    glfwGetWindowFrameSize(window, &left, &top, &right, &bottom);
+    glfwSetWindowPos(
+        window,
+        area.x + (area.width - width - left - right) / 2 + left,
+        area.y + (area.height - height - top - bottom) / 2 + top
+    );
+}
+}
+
 Window::~Window()
 {
     DCHECK(!handle && !glfwInitialized);
@@ -34,13 +93,9 @@ void Window::init()
 
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     CHECK(monitor);
-    int workX = 0, workY = 0, workWidth = 0, workHeight = 0;
-    glfwGetMonitorWorkarea(monitor, &workX, &workY, &workWidth, &workHeight);
-
-    int width = 0, height = 0;
-    glfwGetWindowSize(handle, &width, &height);
+    const auto [width, height] = size();
     context().config->setEditorSize(width, height);
-    glfwSetWindowPos(handle, workX + (workWidth - width) / 2, workY + (workHeight - height) / 2);
+    centerWindow(handle, monitorWorkArea(monitor), width, height);
 
     glfwSetInputMode(handle, GLFW_LOCK_KEY_MODS, GLFW_TRUE);
     glfwSetWindowUserPointer(handle, this);
@@ -145,6 +200,30 @@ std::vector<const char *> Window::requiredVulkanExtensions() const
     CHECK(extensions != nullptr, "GLFW did not provide Vulkan instance extensions");
 
     return {extensions, extensions + extensionCount};
+}
+
+std::pair<int, int> Window::size() const
+{
+    DCHECK(handle);
+
+    int width = 0;
+    int height = 0;
+    glfwGetWindowSize(handle, &width, &height);
+    return {width, height};
+}
+
+void Window::resizeCentered(int width, int height) const
+{
+    DCHECK(handle && width > 0 && height > 0);
+
+    const auto [oldWidth, oldHeight] = size();
+    const auto area = windowWorkArea(handle, oldWidth, oldHeight);
+    if (glfwGetWindowAttrib(handle, GLFW_MAXIMIZED))
+        glfwRestoreWindow(handle);
+    glfwSetWindowSize(handle, width, height);
+
+    const auto [actualWidth, actualHeight] = size();
+    centerWindow(handle, area, actualWidth, actualHeight);
 }
 
 std::pair<int, int> Window::framebufferSize() const

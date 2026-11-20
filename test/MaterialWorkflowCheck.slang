@@ -1,5 +1,5 @@
-#include "common/material_evaluation.slang"
-#include "common/random.slang"
+#include "material/material_evaluation.slang"
+#include "math/random.slang"
 
 [[vk::binding(0, 0)]] RWStructuredBuffer<float4> results;
 [[vk::binding(1, 0)]] StructuredBuffer<MaterialData> cases;

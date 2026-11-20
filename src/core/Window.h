@@ -34,7 +34,9 @@ class Window
     double consumeScrollOffset();
     [[nodiscard]] VkSurfaceKHR createVulkanSurface(VkInstance instance) const;
     [[nodiscard]] std::vector<const char *> requiredVulkanExtensions() const;
+    [[nodiscard]] std::pair<int, int> size() const;
     [[nodiscard]] std::pair<int, int> framebufferSize() const;
+    void resizeCentered(int width, int height) const;
     [[nodiscard]] GLFWwindow *nativeHandle() const;
     void shutdown() noexcept;
 

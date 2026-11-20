@@ -1,0 +1,6 @@
+#include "render/plugins/PluginManager.h"
+
+extern "C" RENDERLAB_PLUGIN_EXPORT const char* renderLabPluginAbi()
+{
+    return RENDERLAB_PLUGIN_ABI;
+}

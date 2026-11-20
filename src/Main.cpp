@@ -5,6 +5,8 @@
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
+#include "editor/PassEditorRegistry.h"
+#include "passes/StandardPassEditors.h"
 #include "passes/StandardPasses.h"
 #include "scene/SceneManager.h"
 
@@ -187,7 +189,7 @@ int main(int argc, char** argv)
         return 0;
     }
     Engine engine;
-    engine.init(standardRenderPasses());
+    engine.init(standardRenderPasses(), standardPassEditors());
     engine.run();
     engine.shutdown();
 }

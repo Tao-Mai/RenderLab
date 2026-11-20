@@ -1,3 +1,4 @@
+#include "GraphSelection.h"
 #include "LightingSetup.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
@@ -5,31 +6,28 @@
 #include "core/Context.h"
 #include "core/Window.h"
 #include "editor/EditorCamera.h"
-#include "editor/LightMarkers.h"
 #include "render/RenderContext.h"
 #include "passes/StandardPasses.h"
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
-#include "passes/raster/depth/DepthPrepass.h"
-#include "passes/raster/gbuffer/GBufferPass.h"
-#include "passes/raster/deferred/DeferredLightingPass.h"
+#include "passes/raster/DepthPrepass/DepthPrepass.h"
+#include "passes/raster/GBufferPass/GBufferPass.h"
+#include "passes/raster/DeferredLightingPass/DeferredLightingPass.h"
 #include "render/graph/EndPass.h"
-#include "passes/raster/forward/ScenePass.h"
-#include "passes/raster/skybox/SkyboxPass.h"
-#include "passes/raster/transparent/TransparentPass.h"
-#include "passes/editor/depth/EditorDepthPass.h"
-#include "passes/editor/light_marker/LightMarkerPass.h"
-#include "passes/postprocess/bloom/Bloom.h"
-#include "passes/postprocess/tone_mapping/ToneMappingPass.h"
-#include "passes/postprocess/falcor/FalcorPostProcess.h"
-#include "passes/postprocess/exposure/ExposurePass.h"
-#include "passes/raytracing/offline/OfflinePathTracingPass.h"
-#include "passes/raytracing/blas/BlasBuildPass.h"
-#include "passes/raytracing/realtime/trace/RayTracingPass.h"
-#include "passes/raytracing/realtime/svgf/SVGFReprojection.h"
-#include "passes/raytracing/realtime/svgf/SVGFFilter.h"
-#include "passes/raytracing/tlas/TlasBuildPass.h"
+#include "passes/raster/ScenePass/ScenePass.h"
+#include "passes/raster/ShadowPass/ShadowPass.h"
+#include "passes/raster/SkyboxPass/SkyboxPass.h"
+#include "passes/raster/TransparentPass/TransparentPass.h"
+#include "passes/postprocess/Bloom/Bloom.h"
+#include "passes/postprocess/ToneMappingPass/ToneMappingPass.h"
+#include "passes/postprocess/FalcorPostProcess/FalcorPostProcess.h"
+#include "passes/postprocess/ExposurePass/ExposurePass.h"
+#include "passes/OfflinePathTracingPass/OfflinePathTracingPass.h"
+#include "passes/RayTracingPass/RayTracingPass.h"
+#include "passes/SVGF/SVGF.h"
+#include "render/raytracing/SceneAccelerationStructures.h"
 #include "render/resources/MaterialTable.h"
+#include "render/editor/EditorFrameInput.h"
 #include "scene/SceneManager.h"
 #include "scene/system/RenderSystem.h"
 
@@ -212,7 +210,6 @@ void capture(
     const auto& config                 = context().config->rendererConfig();
     const bool  offline   = config.renderPath == RenderPath::OfflinePathTracing;
     const bool  realtime  = config.renderPath == RenderPath::RayTracing;
-    const bool  lightMarkersAndPicking = context().config->editorConfig().lightMarkersAndPicking;
 
     std::array<FrameContext, maxFramesInFlight> frames;
     for (auto& frame : frames)
@@ -221,7 +218,8 @@ void capture(
     for (auto& data : frameData)
         data.init(vulkan, *renderContext().device);
     const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), frameData, context().config->rendererConfig()};
-    RenderGraph     graph;
+    RenderGraph graph;
+    SceneAccelerationStructures accelerationStructures;
     graph.init(vulkan);
     renderContext().materialTable->setup(graph);
     ShadowPass               shadow;
@@ -231,71 +229,67 @@ void capture(
     DeferredLightingPass     deferredLighting;
     SkyboxPass               skybox;
     TransparentPass          transparent;
-    BlasBuildPass            blas;
-    TlasBuildPass            tlas;
     OfflinePathTracingPass   tracing;
     RayTracingPass           realtimeTracing;
     RayTracingScenePass      realtimeScene;
-    SVGFReprojection         reprojection;
-    SVGFFilter               filter;
+    SVGF                     svgf;
     Bloom                    bloom;
     ToneMappingPass          toneMapping;
     ExposurePass             exposure;
     FalcorPostProcess        falcorPostProcess;
-    EditorDepthPass          editorDepth;
-    LightMarkerPass          lightMarker;
     ImageReadbackPass        readback;
     EndPass                  end;
 
+    const auto copySettings = [&]<class Pass>(Pass& pass)
+    {
+        if (const auto* active = renderer.renderPasses().activePass<Pass>())
+            pass.setSettings(active->settings());
+    };
+    copySettings(shadow);
+    copySettings(tracing);
+    copySettings(realtimeTracing);
+    copySettings(svgf);
+    copySettings(bloom);
+    copySettings(toneMapping);
+    copySettings(exposure);
+    copySettings(falcorPostProcess);
+
     const auto               target = graph.createImage({.format = format, .extent = {extent.width, extent.height, 1}});
     RenderGraph::ImageHandle color;
-    RenderGraph::ImageHandle depthImage;
     RenderGraph::BufferHandle triangleLights;
-    ShadowPass::Output       lightingShadow;
+    ShadowResources          lightingShadow;
     const auto               lightBuffer = graph.createBuffer({
                       .size  = kMaxLights * sizeof(LightData),
                       .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
     });
     if (offline || realtime)
     {
-        const auto meshes     = graph.addPass(blas, setup);
-        const auto structures = graph.addPass(tlas, setup, meshes);
         if (offline)
-            color = graph.addPass(tracing, setup, structures).rayImage;
+            color = graph.addPass(tracing, setup).rayImage;
         else
         {
             const auto geometry = graph.addPass(realtimeScene, setup);
             triangleLights = geometry.triangles;
-            const auto traced = graph.addPass(realtimeTracing, setup, structures, geometry, lightBuffer);
-            if (config.feature.rayTracing.svgf)
-            {
-                const auto accumulated = graph.addPass(reprojection, setup, traced);
-                color = filter.setup(graph, setup, traced, accumulated, reprojection).color;
-            }
+            const auto traced = graph.addPass(realtimeTracing, setup, geometry, lightBuffer);
+            if (config.feature.svgf)
+                color = svgf.setup(graph, setup, traced).color;
             else
                 color = traced.rayImage;
         }
     }
     else
     {
-        ShadowPass::Output shadows;
-        if (config.feature.shadow.enable)
-            shadows = graph.addPass(shadow, setup, lightBuffer);
-        const auto depthOutput = graph.addPass(depth, setup);
+        lightingShadow = config.feature.shadows ? graph.addPass(shadow, setup, lightBuffer)
+                                                : createUnshadowedResources(graph);
+        const auto depthImage = graph.addPass(depth, setup).depth;
         if (config.renderPath == RenderPath::Deferred)
         {
-            const auto geometry = graph.addPass(gBuffer, setup, depthOutput.depth);
-            const auto lit      = graph.addPass(deferredLighting, setup, target, geometry, shadows, lightBuffer);
-            color               = lit.color;
-            depthImage          = lit.depth;
-            lightingShadow      = lit.shadow;
+            const auto geometry = graph.addPass(gBuffer, setup, depthImage);
+            color = graph.addPass(deferredLighting, setup, target, geometry, lightingShadow, lightBuffer).color;
         }
         else
         {
-            const auto lit = graph.addPass(scene, setup, target, depthOutput.depth, shadows, lightBuffer);
-            color          = lit.color;
-            depthImage     = lit.depth;
-            lightingShadow = lit.shadow;
+            color = graph.addPass(scene, setup, target, depthImage, lightingShadow, lightBuffer).color;
         }
         if (config.feature.ibl)
             color = graph.addPass(skybox, setup, color, depthImage).color;
@@ -305,17 +299,11 @@ void capture(
     RenderGraph::BufferHandle exposureState;
     if (config.feature.postProcess == PostProcessMode::RenderLab)
         exposureState = graph.addPass(exposure, setup, color).state;
-    if (!offline && lightMarkersAndPicking)
-    {
-        if (depthImage.id == RenderGraph::kInvalidHandle)
-            depthImage = graph.addPass(editorDepth, setup).depth;
-        color = graph.addPass(lightMarker, setup, color, depthImage).color;
-    }
     if (config.feature.postProcess == PostProcessMode::Falcor)
         color = falcorPostProcess.setup(graph, setup, color, target).color;
     else
     {
-        if (config.feature.bloom.enable)
+        if (config.feature.bloom)
             color = bloom.setup(graph, setup, color).color;
         color = graph.addPass(toneMapping, setup, color, target, exposureState).color;
     }
@@ -340,11 +328,7 @@ void capture(
     const auto&  snapshot = system.prepare(scenes.scene());
     graph.beginFrame(0);
     const auto&  renderData = renderer.prepare(view, snapshot, 0);
-    LightMarkers lightMarkers;
-    if (!offline && lightMarkersAndPicking)
-        lightMarkers.prepare(scenes.scene(), *renderContext().resources);
-    const EditorFrameInput editor{.lightDrawItems = lightMarkers.drawItems()};
-    vk::raii::Sampler      lightingSampler = nullptr;
+    const EditorFrameInput editor;
     if (offline || realtime)
     {
         writeTestEnvironment(setup, renderData.environmentMap);
@@ -353,7 +337,7 @@ void capture(
     }
     else
     {
-        lightingSampler = writeTestLighting(graph, setup, lightingShadow, renderData);
+        writeTestLighting(graph, setup, lightingShadow, renderData);
         for (auto& data : frameData)
         {
             data.uploadSceneUniforms(view.uniforms);
@@ -381,12 +365,21 @@ void capture(
         if (submitted != 0)
             graph.beginFrame(index);
         uploadTestLights(graph, lightBuffer, renderData.lights);
-        const PassFrame execution{setup, frameData[index], view, renderData, editor, index, 1.0f / 60.0f};
+        PassFrame execution{setup, frameData[index], view, renderData, editor, index, 1.0f / 60.0f};
         graph.prepare(execution);
         auto& commands = frame.commandBufferHandle();
         vkCheck(commands.reset());
         vkCheck(commands.begin({}));
-        graph.execute(commands, execution, frame.gpuProfiler(), nullptr);
+        auto& gpuProfiler = frame.gpuProfiler();
+        graph.beginGpuProfiling(commands, gpuProfiler, nullptr);
+        if (offline || realtime)
+        {
+            execution.sceneTlas = &accelerationStructures.recordBuilds(
+                vulkan, commands, *renderContext().resources, renderData, index
+            );
+        }
+        graph.execute(commands, execution, gpuProfiler, nullptr);
+        gpuProfiler.endFrame(commands);
         vkCheck(commands.end());
         const auto command = *commands;
         vkCheck(vulkan.deviceHandle().resetFences(frame.drawFenceHandle()));
@@ -524,7 +517,8 @@ int main(int argc, char** argv)
     logger::init(argv[0]);
     CHECK(
         argc >= 4 && argc <= 12,
-        "usage: CaptureScene <scene-id> <forward|deferred|realtime|offline> <output.png> [frames=1] [size=960] [ev100|auto] [sequence-directory] [yaw-step=0] [renderlab|falcor] [restir|simple] [max-bounces]"
+        "usage: CaptureScene <scene-id> <forward|deferred|realtime|offline> <output.png> [frames=1] [size=960] "
+        "[ev100|auto] [sequence-directory] [yaw-step=0] [renderlab|falcor] [restir|minimalpathtracer] [max-bounces]"
     );
     const std::string_view route{argv[2]};
     CHECK(
@@ -549,48 +543,70 @@ int main(int argc, char** argv)
     context().window           = &window;
     context().renderer         = &renderer;
     config.init();
-    const auto originalConfig = config.rendererConfig();
+    const auto originalGraph = config.renderGraph().id;
     const auto originalEditor = config.editorConfig();
     data.init(config.paths().assets);
     scenes.init();
     assets.init(config.paths().assets);
     scenes.load(SceneAsset::ID{argv[1]});
-    auto feature = originalConfig.feature;
-    feature.hdr  = true;
-    feature.ibl  = scenes.scene().environmentMap.has_value();
+    CHECK((route == "offline") == (scenes.scene().renderMode == SceneRenderMode::Offline),
+          "capture route does not match scene render mode");
+    config.setSceneRenderMode(scenes.scene().renderMode);
+    if (route != "offline")
+        selectGraphForPath(
+            config,
+            route == "realtime"       ? RenderPath::RayTracing
+                : route == "deferred" ? RenderPath::Deferred
+                                      : RenderPath::Forward
+        );
+    const auto originalParameters = config.graphParameterOverrides();
+    const auto originalOverrides = config.passOverrides();
+
+    auto parameters = originalParameters;
+    parameters["hdr"] = true;
+    parameters["ibl"] = scenes.scene().environmentMap.has_value();
     if (argc > 9)
     {
         const std::string_view postProcess{argv[9]};
         CHECK(postProcess == "renderlab" || postProcess == "falcor");
-        feature.postProcess = postProcess == "falcor" ? PostProcessMode::Falcor : PostProcessMode::RenderLab;
+        parameters["postProcess"] =
+            Serialize(postProcess == "falcor" ? PostProcessMode::Falcor : PostProcessMode::RenderLab);
     }
+    config.setGraphParameterOverrides(std::move(parameters));
+    config.setEditorSize(side, side);
+    CHECK(glfwInit());
+    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+    window.init();
+    renderer.init(standardRenderPasses());
+    renderer.rebuildGraph();
+    const auto mode = config.rendererConfig().feature.postProcess;
+
     if (argc > 10)
     {
         CHECK(route == "realtime");
         const std::string_view algorithm{argv[10]};
-        CHECK(algorithm == "restir" || algorithm == "simple");
-        feature.rayTracing.algorithm = algorithm == "simple" ? RealtimeAlgorithm::Simple : RealtimeAlgorithm::ReSTIR;
+        CHECK(algorithm == "restir" || algorithm == "minimalpathtracer");
+        auto settings = renderer.renderPasses().activePass<RayTracingPass>()->settings();
+        settings.algorithm =
+            algorithm == "minimalpathtracer" ? RealtimeAlgorithm::MinimalPathTracer : RealtimeAlgorithm::ReSTIR;
+        if (argc > 11)
+            settings.maxBounces = parseNumber<uint32_t>(argv[11]);
+        renderer.setPassOverrides("RayTracingPass", "rayTracing", Serialize(settings));
     }
-    if (argc > 11)
+    if (argc > 6 && mode == PostProcessMode::Falcor)
     {
-        CHECK(route == "realtime");
-        feature.rayTracing.maxBounces = parseNumber<uint32_t>(argv[11]);
-    }
-    if (argc > 6 && feature.postProcess == PostProcessMode::Falcor)
-    {
-        auto& toneMapper = feature.falcorPostProcess.toneMapper;
-        toneMapper.autoExposure = std::string_view{argv[6]} == "auto";
-        if (!toneMapper.autoExposure)
-            toneMapper.setExposureValue(parseNumber<float>(argv[6]));
+        auto settings = renderer.renderPasses().activePass<FalcorPostProcess>()->settings();
+        settings.toneMapper.autoExposure = std::string_view{argv[6]} == "auto";
+        if (!settings.toneMapper.autoExposure)
+            settings.toneMapper.setExposureValue(parseNumber<float>(argv[6]));
+        renderer.setPassOverrides("FalcorPostProcess", "falcor", Serialize(settings));
     }
     else if (argc > 6)
     {
         auto& exposure = scenes.scene().editorCamera.exposure;
-        exposure = exposure.value_or(feature.toneMapping.exposure);
+        exposure = exposure.value_or(renderer.defaultExposure());
         if (std::string_view{argv[6]} == "auto")
-        {
             exposure->mode = ExposureMode::Automatic;
-        }
         else
         {
             exposure->mode = ExposureMode::Manual;
@@ -598,22 +614,10 @@ int main(int argc, char** argv)
         }
         CHECK(exposure->isValid());
     }
-    config.setRenderFeature(feature);
-    CHECK((route == "offline") == (scenes.scene().renderMode == SceneRenderMode::Offline),
-          "capture route does not match scene render mode");
-    config.setSceneRenderMode(scenes.scene().renderMode);
-    if (route != "offline")
-        config.setRenderPath(
-            route == "realtime"       ? RenderPath::RayTracing
-                : route == "deferred" ? RenderPath::Deferred
-                                      : RenderPath::Forward
-        );
-    config.setEditorSize(side, side);
-    CHECK(glfwInit());
-    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-    window.init();
-    renderer.init(standardRenderPasses());
-    renderer.rebuildGraph();
+
+    if (argc > 10 || (argc > 6 && mode == PostProcessMode::Falcor))
+        renderer.rebuildGraph();
+
     capture(
         renderer,
         scenes,
@@ -627,10 +631,10 @@ int main(int argc, char** argv)
     assets.shutdown();
     data.shutdown();
     window.shutdown();
-    config.setSceneRenderMode(originalConfig.renderPath == RenderPath::OfflinePathTracing ? SceneRenderMode::Offline : SceneRenderMode::Realtime);
-    if (originalConfig.renderPath != RenderPath::OfflinePathTracing)
-        config.setRenderPath(originalConfig.renderPath);
-    config.setRenderFeature(originalConfig.feature);
+    config.setGraphParameterOverrides(originalParameters);
+    config.passOverrides() = originalOverrides;
+    config.setSceneRenderMode(SceneRenderMode::Realtime);
+    config.setRenderGraph(originalGraph);
     config.setEditorSize(originalEditor.width, originalEditor.height);
     config.shutdown();
     context() = {};

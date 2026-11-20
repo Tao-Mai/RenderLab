@@ -2,7 +2,7 @@
 
 在 `Post Process → Post process` 下拉框选择 `RenderLab` 或 `Falcor`。两套参数独立保存在
 `config/renderer.json`，默认仍选择 RenderLab；两套流程都由 `Enable HDR` 控制。
-后处理作用于包含光源标记的线性 HDR 图像，编辑器 UI 在后处理之后绘制。
+后处理读取场景的线性 HDR 颜色，编辑器 UI 在后处理之后绘制。
 
 ## Falcor 流程
 
@@ -27,9 +27,9 @@
 SimplePostFX 启用但各镜头效果强度为 0。切换到 Falcor 不会带入 RenderLab 的相机 EV100、
 直方图曝光、曝光时间适应或 Bloom 参数。
 
-专用 Shader 与 [FalcorPostProcess](../passes/postprocess/falcor/FalcorPostProcess.h) 一起放在
-[passes/postprocess/falcor](../passes/postprocess/falcor/)。参数与主机端计算见
-[FalcorPostProcessConfig](../src/render/postprocess/FalcorPostProcessConfig.h)。
+专用 Shader 与 [FalcorPostProcess](../passes/postprocess/FalcorPostProcess/FalcorPostProcess.h) 一起放在
+[passes/postprocess/FalcorPostProcess](../passes/postprocess/FalcorPostProcess/)。参数与主机端计算见
+[FalcorPostProcessConfig](../passes/postprocess/FalcorPostProcess/FalcorPostProcessConfig.h)。
 
 ## 保留的源码行为
 

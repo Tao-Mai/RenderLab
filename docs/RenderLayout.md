@@ -35,7 +35,7 @@ Binding 0 为 `SceneUniforms` UBO，保存 viewProjection、inverseViewProjectio
 
 LightData Buffer 由 Renderer 按 `kMaxLights * sizeof(LightData)` 创建，启用光源每帧统一上传，`shadowIdx` 使用相同的写入规则。描述符在图创建或重建时写入。LightData 支持 Vertex、Fragment 和 Raygen 读取，Radiance 图像与采样器对所有阶段可见，其余资源用于光栅阶段。
 
-Shader 声明：[lighting_data.slang](../shaders/common/lighting_data.slang)、[scene_lighting.slang](../shaders/common/raster/scene_lighting.slang)。
+Shader 声明：[lighting_data.slang](../shaders/raster/lighting_data.slang)、[scene_lighting.slang](../shaders/raster/scene_lighting.slang)。
 
 ### ShadowSet
 
@@ -49,7 +49,7 @@ Shader 声明：[lighting_data.slang](../shaders/common/lighting_data.slang)、[
 
 阴影资源对 Vertex 和 Fragment 可见。FrameData 持有独立的 ShadowSet 与 ShadowUniforms Buffer；阴影矩阵、贴图或采样器变化时更新 ShadowSet，光栅帧准备阶段上传 ShadowUniforms。
 
-Shader 声明：[shadow_data.slang](../shaders/common/raster/shadow_data.slang)。
+Shader 声明：[shadow_data.slang](../shaders/raster/shadow_data.slang)。
 
 ### MaterialSet
 
@@ -68,7 +68,7 @@ Binding 0 为全局 `MaterialData` SSBO，Binding 1 为 128 项纹理数组，Bi
 
 光栅 Push Constant 用于 Vertex / Fragment，实时光追用于 Raygen，离线参数用于 Raygen / Compute。离线 Set 1 留空，光源由私有 Set 提供。SVGFReprojection 使用 Scene 和自己的 Set 1；SVGFFilter 使用自己的 Set 0。
 
-实时光追的 48 B 参数包含 viewport、LightRanges、最大反弹次数、样本序号、IBL 开关及初始光源候选数量 M。M 来自 `feature.restir.candidateCount`，运行时调整直接更新 Push Constant。
+实时光追使用 Push Constant 传入 viewport、LightRanges、最大反弹次数、样本序号和 IBL 开关。ReSTIR 的初始光源候选数量来自 `RayTracingPass` 的 `restir.candidateCount` 参数，通过帧参数缓冲传入。
 
 光追私有 Set 3 的编号由 [RayTracingBindings.h](../src/render/raytracing/RayTracingBindings.h) 统一定义，CPU 与 shader 共用。
 
@@ -96,6 +96,6 @@ Binding 9 / 10 分别绑定两份 64 B / 像素的表面缓冲，按历史层交
 | Layout | 描述 | 使用它的 Pass |
 | --- | --- | --- |
 | `editorViewDescriptorSetLayout` | Binding 0：View UBO，数量 1，阶段 Vertex、Fragment | 作为编辑器 Pipeline Layout 的 Set 0 |
-| `editorPipelineLayout` | Set 0：`editorViewDescriptorSetLayout`；Push Constant 从偏移 0 开始，80 B，阶段 Vertex、Fragment | `LightMarkerPass`、`EditorPickingPass`、`EditorDepthPass` |
+| `editorPipelineLayout` | Set 0：`editorViewDescriptorSetLayout`；Push Constant 从偏移 0 开始，80 B，阶段 Vertex、Fragment | `EditorPickingPass` |
 
 实现：[DeviceLayouts.cpp](../src/render/device/DeviceLayouts.cpp)。

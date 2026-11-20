@@ -3,115 +3,14 @@
 #include "asset/SceneAsset.h"
 #include "core/Logger.h"
 #include "core/Serializer.h"
-#include "render/RenderConfig.h"
 
+#include <algorithm>
 #include <cmath>
+#include <unordered_set>
 #include <utility>
 
 namespace
 {
-void validateCascade(const RenderFeature::Shadow::Cascade& cascade)
-{
-    CHECK(cascade.count > 0 && cascade.count <= kMaxDirectionalShadowCascades);
-    CHECK(cascade.shadowMapSize > 1);
-    CHECK(std::isfinite(cascade.maxDistance) && cascade.maxDistance > 0.0f);
-    CHECK(cascade.splitStrategy == CascadeSplitStrategy::Practical ||
-          cascade.splitStrategy == CascadeSplitStrategy::Uniform);
-    CHECK(std::isfinite(cascade.splitLambda) && cascade.splitLambda >= 0.0f && cascade.splitLambda <= 1.0f);
-    CHECK(std::isfinite(cascade.blendRatio) && cascade.blendRatio >= 0.0f && cascade.blendRatio <= 0.5f);
-    CHECK(std::isfinite(cascade.sampleRadius) && cascade.sampleRadius >= 0.0f);
-    CHECK(cascade.shadowMapSize > 2.0f * (cascade.sampleRadius + 1.0f));
-}
-
-void validateToneMapping(const RenderFeature::ToneMapping& toneMapping)
-{
-    CHECK(toneMapping.exposure.isValid());
-    CHECK(toneMapping.mode == ToneMappingOperator::Neutral ||
-          toneMapping.mode == ToneMappingOperator::Reinhard);
-}
-
-void validateBloom(const RenderFeature::Bloom& bloom)
-{
-    CHECK(std::isfinite(bloom.intensity) && bloom.intensity >= 0.0f && bloom.intensity <= 1.0f);
-    CHECK(std::isfinite(bloom.scatter) && bloom.scatter >= 0.05f && bloom.scatter <= 0.95f);
-    CHECK(std::isfinite(bloom.filterRadius) && bloom.filterRadius > 0.0f);
-    CHECK(bloom.levels > 0 && bloom.levels <= kMaxBloomLevels);
-}
-
-void validatePostProcess(const RenderFeature& feature)
-{
-    using namespace falcorPostProcess;
-    CHECK(feature.postProcess == PostProcessMode::RenderLab || feature.postProcess == PostProcessMode::Falcor);
-    const auto inRange = [](float value, float minValue, float maxValue)
-    { return std::isfinite(value) && value >= minValue && value <= maxValue; };
-
-    const auto& toneMapper = feature.falcorPostProcess.toneMapper;
-    CHECK(inRange(toneMapper.exposureCompensation, kExposureCompensationMin, kExposureCompensationMax));
-    CHECK(inRange(toneMapper.filmSpeed, kFilmSpeedMin, kFilmSpeedMax));
-    CHECK(inRange(toneMapper.fNumber, kFNumberMin, kFNumberMax));
-    CHECK(inRange(toneMapper.shutter, kShutterMin, kShutterMax));
-    CHECK(inRange(toneMapper.whitePoint, kWhitePointMin, kWhitePointMax));
-    CHECK(std::isfinite(toneMapper.whiteMaxLuminance) && toneMapper.whiteMaxLuminance > 0.0f);
-    CHECK(std::isfinite(toneMapper.whiteScale) && toneMapper.whiteScale >= 0.001f);
-    CHECK(toneMapper.exposureMode == FalcorExposureMode::AperturePriority ||
-          toneMapper.exposureMode == FalcorExposureMode::ShutterPriority);
-    CHECK(toneMapper.mode >= FalcorToneMappingOperator::Linear && toneMapper.mode <= FalcorToneMappingOperator::Aces);
-
-    const auto& postFx = feature.falcorPostProcess.simplePostFx;
-    CHECK(inRange(postFx.wipe, 0.0f, 1.0f));
-    CHECK(inRange(postFx.bloomAmount, 0.0f, 1.0f));
-    CHECK(inRange(postFx.starAmount, 0.0f, 1.0f));
-    CHECK(inRange(postFx.starAngle, 0.0f, 1.0f));
-    CHECK(inRange(postFx.vignetteAmount, 0.0f, 1.0f));
-    CHECK(inRange(postFx.chromaticAberrationAmount, 0.0f, 1.0f));
-    CHECK(inRange(postFx.barrelDistortAmount, 0.0f, 1.0f));
-    CHECK(inRange(postFx.colorOffsetScalar, -1.0f, 1.0f));
-    CHECK(inRange(postFx.colorScaleScalar, -1.0f, 1.0f));
-    CHECK(inRange(postFx.colorPowerScalar, -1.0f, 1.0f));
-    for (glm::length_t index = 0; index < 3; ++index)
-    {
-        CHECK(inRange(postFx.saturationCurve[index], 0.0f, 2.0f));
-        CHECK(inRange(postFx.colorOffset[index], 0.0f, 1.0f));
-        CHECK(inRange(postFx.colorScale[index], 0.0f, 1.0f));
-        CHECK(inRange(postFx.colorPower[index], 0.0f, 1.0f));
-    }
-}
-
-void validatePathBounces(uint32_t maxBounces)
-{
-    CHECK(maxBounces >= kMinPathBounces && maxBounces <= kMaxPathBounces);
-}
-
-void validateRayTracing(const RenderFeature::RayTracing& rayTracing)
-{
-    CHECK(rayTracing.algorithm == RealtimeAlgorithm::ReSTIR || rayTracing.algorithm == RealtimeAlgorithm::Simple);
-    validatePathBounces(rayTracing.maxBounces);
-    CHECK(rayTracing.historyLength >= 1 && rayTracing.historyLength <= kMaxSvgfHistoryLength);
-    CHECK(std::isfinite(rayTracing.emaAlpha) && rayTracing.emaAlpha >= 0.0f && rayTracing.emaAlpha <= 1.0f);
-}
-
-void validateRestir(const RenderFeature::Restir& restir)
-{
-    CHECK(restir.candidateCount >= 1 && restir.candidateCount <= kMaxRestirCandidateCount);
-    CHECK(restir.maxHistoryLength >= 1 && restir.maxHistoryLength <= kMaxRestirHistoryLength);
-    CHECK(restir.spatialSampleCount >= 1 && restir.spatialSampleCount <= kMaxRestirSpatialSamples);
-    CHECK(
-        std::isfinite(restir.spatialRadius) && restir.spatialRadius >= 1.0f &&
-        restir.spatialRadius <= kMaxRestirSpatialRadius
-    );
-}
-
-void validateOffline(const RenderFeature::Offline& offline)
-{
-    CHECK(offline.algorithm == OfflineAlgorithm::PT || offline.algorithm == OfflineAlgorithm::BDPT);
-    validatePathBounces(offline.pt.maxBounces);
-    validatePathBounces(offline.bdpt.maxBounces);
-    CHECK(offline.bdpt.lightSelection == BdptLightSelection::Uniform ||
-          offline.bdpt.lightSelection == BdptLightSelection::Power);
-    CHECK(offline.bdpt.misHeuristic == BdptMisHeuristic::Balance ||
-          offline.bdpt.misHeuristic == BdptMisHeuristic::Power);
-}
-
 std::filesystem::path resolveAgainst(const std::filesystem::path& baseDir, std::filesystem::path value)
 {
     if (value.empty())
@@ -147,7 +46,7 @@ void ConfigManager::shutdown() noexcept
 {
     DCHECK(inited);
     asset_json::save(file, data);
-    asset_json::save(resolvedPaths.renderer, renderer);
+    asset_json::save(resolvedPaths.renderer, rendererSettings);
     asset_json::save(resolvedPaths.editor, editor);
 
     data               = {};
@@ -155,8 +54,11 @@ void ConfigManager::shutdown() noexcept
     commands           = {};
     editor             = {};
     renderer           = {};
+    rendererSettings   = {};
+    parameterRevision  = 0;
     sceneRenderMode    = SceneRenderMode::Realtime;
-    realtimeRenderPath = RenderPath::Forward;
+    realtimeGraph      = nullptr;
+    offlineGraph       = nullptr;
     file.clear();
     configDir.clear();
     DEBUG_EXEC(inited = false);
@@ -170,6 +72,59 @@ const RendererConfig& ConfigManager::rendererConfig() const noexcept { return re
 
 const EditorConfig& ConfigManager::editorConfig() const noexcept { return editor; }
 
+const RenderGraphDefinition& ConfigManager::renderGraph() const noexcept
+{
+    return *(sceneRenderMode == SceneRenderMode::Offline ? offlineGraph : realtimeGraph);
+}
+
+std::filesystem::path ConfigManager::renderGraphScript() const
+{
+    return resolveAgainst(configDir, renderGraph().script);
+}
+
+const RenderGraphDefinition& ConfigManager::findRenderGraph(std::string_view id) const
+{
+    const auto found = std::ranges::find(data.renderGraphs, id, &RenderGraphDefinition::id);
+    CHECK(found != data.renderGraphs.end(), "unknown render graph '{}'", id);
+    return *found;
+}
+
+PassOverrides& ConfigManager::passOverrides()
+{
+    return graphOverrides().passes;
+}
+
+GraphOverrides& ConfigManager::graphOverrides()
+{
+    return rendererSettings.graphOverrides[renderGraph().id];
+}
+
+void ConfigManager::setGraphParameterOverrides(nlohmann::json overrides)
+{
+    DCHECK(inited);
+    DCHECK(overrides.is_object());
+    auto& current = graphOverrides().parameters;
+    if (current != overrides)
+    {
+        current = std::move(overrides);
+        ++parameterRevision;
+    }
+}
+
+void ConfigManager::applyGraphParameters(const nlohmann::json& parameters)
+{
+    CHECK(parameters.is_object(), "graph parameters must be an object");
+    RenderFeature feature;
+    constexpr auto kAccess = std::meta::access_context::current();
+    template for (constexpr auto kMember : std::define_static_array(ReflectedDataMembers(^^RenderFeature, kAccess)))
+    {
+        if (const auto found = parameters.find(std::meta::identifier_of(kMember)); found != parameters.end())
+            Deserialize(*found, feature.[:kMember:]);
+    }
+    CHECK(std::isfinite(feature.ambientCoefficient) && feature.ambientCoefficient >= 0.0f);
+    renderer.feature = feature;
+}
+
 void ConfigManager::setEditorSize(int width, int height)
 {
     DCHECK(inited);
@@ -179,10 +134,10 @@ void ConfigManager::setEditorSize(int width, int height)
     editor.height = height;
 }
 
-void ConfigManager::setLightMarkersAndPicking(bool enabled)
+void ConfigManager::setObjectPicking(bool enabled)
 {
     DCHECK(inited);
-    editor.lightMarkersAndPicking = enabled;
+    editor.objectPicking = enabled;
 }
 
 void ConfigManager::setInitialScene(AssetID<SceneAsset> id)
@@ -193,43 +148,25 @@ void ConfigManager::setInitialScene(AssetID<SceneAsset> id)
     data.initialScene = std::move(id);
 }
 
-void ConfigManager::setRenderPath(RenderPath path)
+void ConfigManager::setRenderGraph(std::string_view id)
 {
     DCHECK(inited);
-    DCHECK(sceneRenderMode == SceneRenderMode::Realtime);
-    DCHECK(path != RenderPath::OfflinePathTracing);
-    renderer.renderPath = path;
-    realtimeRenderPath  = path;
+
+    const auto& graph = findRenderGraph(id);
+    const bool offline = sceneRenderMode == SceneRenderMode::Offline;
+    CHECK(graph.isOffline() == offline, "render graph '{}' does not match the scene render mode", id);
+    auto& selection = offline ? rendererSettings.offlineGraph : rendererSettings.realtimeGraph;
+    auto& active = offline ? offlineGraph : realtimeGraph;
+    selection = graph.id;
+    active = &graph;
+    renderer.renderPath = graph.renderPath;
 }
 
 void ConfigManager::setSceneRenderMode(SceneRenderMode mode)
 {
     DCHECK(inited);
     sceneRenderMode     = mode;
-    renderer.renderPath = mode == SceneRenderMode::Offline ? RenderPath::OfflinePathTracing : realtimeRenderPath;
-}
-
-void ConfigManager::setRenderFeature(const RenderFeature& feature)
-{
-    DCHECK(inited);
-    CHECK(std::isfinite(feature.ambientCoefficient) && feature.ambientCoefficient >= 0.0f);
-    CHECK(feature.shadow.pointShadowMapSize > 0);
-    CHECK(feature.shadow.rectAreaShadowMapSize > 0);
-    CHECK(feature.shadow.spotShadowMapSize > 0);
-    CHECK(std::isfinite(feature.shadow.bias) && feature.shadow.bias >= 0.0f);
-    CHECK(std::isfinite(feature.shadow.sampleRadius) && feature.shadow.sampleRadius >= 0.0f);
-    CHECK(std::isfinite(feature.shadow.spotSampleRadius) && feature.shadow.spotSampleRadius >= 0.0f);
-    CHECK(feature.shadow.filter == SamplerAsset::Filter::Nearest ||
-          feature.shadow.filter == SamplerAsset::Filter::Linear);
-    validateToneMapping(feature.toneMapping);
-    validateBloom(feature.bloom);
-    validatePostProcess(feature);
-    validateCascade(feature.shadow.cascade);
-    validateRayTracing(feature.rayTracing);
-    validateRestir(feature.restir);
-    validateOffline(feature.offline);
-
-    renderer.feature = feature;
+    renderer.renderPath = renderGraph().renderPath;
 }
 
 void ConfigManager::load()
@@ -240,8 +177,17 @@ void ConfigManager::load()
     CHECK(!data.paths.commands.empty(), "config requires a paths.commands file path");
     CHECK(!data.paths.editor.empty(), "config requires a paths.editor file path");
     CHECK(!data.paths.renderer.empty());
-    CHECK(!data.paths.renderGraph.empty(), "config requires a paths.renderGraph script path");
     CHECK(!data.initialScene.empty(), "config '{}' missing initialScene", file.string());
+
+    std::unordered_set<std::string_view> graphIds;
+    for (const auto& graph : data.renderGraphs)
+    {
+        CHECK(!graph.id.empty() && !graph.label.empty() && !graph.script.empty(), "incomplete render graph definition");
+        const bool added = graphIds.insert(graph.id).second;
+        CHECK(added, "duplicate render graph '{}'", graph.id);
+        const auto script = resolveAgainst(configDir, graph.script);
+        CHECK(std::filesystem::is_regular_file(script), "graph '{}' script is not a file: {}", graph.id, script.string());
+    }
     resolvePaths();
 }
 
@@ -265,7 +211,6 @@ void ConfigManager::resolvePaths()
     resolvedPaths.commands    = resolveAgainst(configDir, data.paths.commands);
     resolvedPaths.editor      = resolveAgainst(configDir, data.paths.editor);
     resolvedPaths.renderer    = resolveAgainst(configDir, data.paths.renderer);
-    resolvedPaths.renderGraph = resolveAgainst(configDir, data.paths.renderGraph);
     CHECK(
         std::filesystem::is_regular_file(resolvedPaths.commands),
         "commands config is not a file: {}",
@@ -291,26 +236,15 @@ void ConfigManager::loadEditor()
 
 void ConfigManager::loadRenderer()
 {
-    renderer = asset_json::load<RendererConfig>(resolvedPaths.renderer);
-    realtimeRenderPath = renderer.renderPath == RenderPath::OfflinePathTracing ? RenderPath::Forward : renderer.renderPath;
-    validateToneMapping(renderer.feature.toneMapping);
-    validateBloom(renderer.feature.bloom);
-    validatePostProcess(renderer.feature);
-    validateCascade(renderer.feature.shadow.cascade);
-    validateRayTracing(renderer.feature.rayTracing);
-    validateRestir(renderer.feature.restir);
-    validateOffline(renderer.feature.offline);
-
-    CHECK(renderer.feature.shadow.pointShadowMapSize > 0);
-    CHECK(renderer.feature.shadow.rectAreaShadowMapSize > 0);
-    CHECK(renderer.feature.shadow.spotShadowMapSize > 0);
-    CHECK(std::isfinite(renderer.feature.shadow.bias) && renderer.feature.shadow.bias >= 0.0f);
-    CHECK(std::isfinite(renderer.feature.shadow.sampleRadius) && renderer.feature.shadow.sampleRadius >= 0.0f);
-    CHECK(std::isfinite(renderer.feature.shadow.spotSampleRadius) && renderer.feature.shadow.spotSampleRadius >= 0.0f);
-
-    CHECK(
-        std::isfinite(renderer.feature.ambientCoefficient) && renderer.feature.ambientCoefficient >= 0.0f,
-        "renderer config '{}' requires a finite nonnegative ambientCoefficient",
-        resolvedPaths.renderer.string()
-    );
+    rendererSettings = asset_json::load<RendererSettings>(resolvedPaths.renderer);
+    realtimeGraph = &findRenderGraph(rendererSettings.realtimeGraph);
+    offlineGraph = &findRenderGraph(rendererSettings.offlineGraph);
+    CHECK(!realtimeGraph->isOffline(), "'{}' cannot be selected as the realtime graph", realtimeGraph->id);
+    CHECK(offlineGraph->isOffline(), "'{}' cannot be selected as the offline graph", offlineGraph->id);
+    for (const auto& [id, overrides] : rendererSettings.graphOverrides)
+    {
+        (void)findRenderGraph(id);
+        CHECK(overrides.parameters.is_object(), "graph '{}' parameter overrides must be an object", id);
+    }
+    renderer.renderPath = renderGraph().renderPath;
 }

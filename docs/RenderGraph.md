@@ -6,15 +6,59 @@ Python 选择 Pass 并连接资源。C++ Pass 声明资源访问，RenderGraph �
 
 ## Python 构图
 
-应用用 `RenderPassRegistry::add<MyPass>()` 注册 C++ Pass，再将注册表传给 `Engine::init()`。
-`config/config.json` 的 `paths.renderGraph` 指向脚本，路径相对于配置文件。默认流程见 [standard.py](../graphs/standard.py)。
+应用用 `RenderPassRegistry::add<MyPass>()` 注册 C++ Pass，再将 Pass 和编辑器注册表传给 `Engine::init()`。
+`config/config.json` 的 `renderGraphs` 登记每张图的 `id`、显示名 `label`、C++ 渲染类型 `renderPath` 和
+相对于配置文件的 `script` 路径。应用按场景模式和设备能力提供 Graph 选择。默认入口为 [Forward](../graphs/forward.py)、
+[Deferred](../graphs/deferred.py)、[Realtime](../graphs/realtime.py) 和 [Offline](../graphs/offline.py)。
+`renderer.json` 的 `realtimeGraph` 与 `offlineGraph` 分别记录两种场景模式选择的 Graph ID。
 
-脚本提供 `build_graph(graph, config)`。`config` 是当前验证过的渲染设置。`graph.input(name)` 引用宿主输入，
+脚本提供 `build_graph(graph)`。`graph.input(name)` 引用宿主输入，
 `graph.add_pass(type, name, *inputs)` 按 C++ `setup()` 的参数顺序接线。输入可以引用上游完整输出，或通过属性选择其中一个字段。
-支持 `configure(const nlohmann::json&)` 的 Pass 可接收 `properties={...}`。
+带有 `Settings` 的 Pass 可以接收 `properties={...}`。例如光追 Pass 可以通过 `properties={"maxBounces": 6}` 指定初始反弹次数。
 
-`graph.mark_output("color", result.color)` 指定交换链目标 `presentTarget` 的写入版本。默认图还声明光栅阴影输出 `shadow`
-与可选的 `pickingReadback`。Python 仅在建图和重建时运行，逐帧调度和 Vulkan 命令录制由 C++ 执行。
+`graph.param()` 同时声明默认值和编辑器控件，返回应用当前图实例覆盖后的值。把声明写在使用该参数的分支里。
+
+```python
+if graph.param("bloom", True):
+    color = graph.add_pass(
+        "Bloom", "bloom", color, properties={"intensity": 0.04}, ui=True
+    ).color
+```
+
+布尔参数显示复选框，枚举或带 `choices=(...)` 的字符串参数显示下拉框。数值默认显示输入框，有
+`bounds=(minimum, maximum)` 时显示滑块。标签由名字生成，可以通过 `label="IBL"` 指定，也可以用
+`ui=False` 声明隐藏参数。与 C++ `RenderFeature` 同名的参数会同步到原生渲染设置，原生枚举的选项由其类型提供。
+
+只有执行过的声明才会生成控件。隐藏的参数保留实例覆盖值，重新进入分支时恢复。修改图参数会在提交后重建图。
+
+`graphs/` 存放 Python 组图入口和共享模块。Editor 面板的 Graph 区由编辑器模块绘制。 [GraphSettingsUi.cpp](../src/editor/GraphSettingsUi.cpp)
+
+环境图在 Editor 面板的 Environment 区选择，随场景保存。IBL 开关是当前图的参数。
+
+四张图调用同一个 [`add_post_process(graph, sceneColor, target)`](../graphs/modules/post_process.py)
+组装后处理。模块将 Pass 登记到当前图，由 RenderGraph 统一编译。随后 [编辑器输出模块](../graphs/modules/editor.py)
+仅在 Forward 和 Deferred 中使用场景深度做物体拾取。编辑器 UI 叠加在后处理的颜色结果上。
+
+`graph.mark_output("color", result.color)` 指定交换链目标 `presentTarget` 的写入版本。两张光栅图还声明阴影输出 `shadow`
+和拾取回读 `pickingReadback`。Python 仅在建图和重建时运行，逐帧调度和 Vulkan 命令录制由 C++ 执行。
+
+`graph.showObjectList` 控制编辑器左侧的 Scene Objects 面板，默认值为 `False`。在 `build_graph()` 中将其
+设为 `True` 即可显示列表。切换时窗口按左栏宽度调整并在当前屏幕居中。编辑器配置中的宽度以收起左栏时的宽度保存。
+场景下拉框位于右侧编辑器顶部。
+
+## Pass 参数与编辑器
+
+Pass 通过 `ConfigurablePass<Settings>` 持有类型化参数。`Settings` 声明可设置字段和默认值，可以提供
+`validate()` 校验值，并通过 `requiresGraphRebuild(current)` 指出资源或管线改动是否需要重建图。
+
+应用用 `PassEditorRegistry::add<MyPass>()` 生成布尔、枚举及标注了 `PassSliderRange` 的数值控件。
+复杂界面可以在 Pass 旁边编写 `*Ui.cpp`，再用 `add<MyPass, drawSettings>()` 注册。
+图通过 `graph.add_pass(..., ui=True)` 展示当前实例的已注册控件，专用控件编译进 `RenderLabPassEditors`。
+
+生效顺序为 Pass 默认值、Python `properties`、实例覆盖值。`renderer.json` 中的 `graphOverrides` 按 Graph ID 保存用户设置。
+`parameters` 保存图参数，
+`passes` 按 Pass 类型与实例名保存 Pass 参数。编辑器的 Reset settings 恢复该实例的脚本初值。
+普通修改在下一帧应用，Pass 可以在准备阶段重置受影响的历史。需要改变资源或连线时重建图。
 
 ## Setup：声明工作与资源
 
@@ -34,7 +78,7 @@ createImage、createBuffer 声明资源的尺寸、格式、大小和内存要�
 
 同一资源的各个版本共享底层存储。版本用于区分不同 Pass 写入后的内容，让 Graph 确定生产、读取和覆盖的顺序。例如场景绘制、透明绘制和 UI 可以依次写入同一张颜色图，各自返回颜色的新版本，后续 Pass 使用对应版本作为输入。需要同时保存两份内容时，应分别创建资源。
 
-外部图像通过 createExternalImage 声明规格，由 Renderer 每帧 acquire 后通过 bindImage 绑定实际交换链图像。交换链负责图像的生命周期，Graph 负责本次执行的访问与状态转换。BLAS / TLAS 也通过 Handle 跟踪依赖和同步，底层对象由所属 Pass 创建和持有。
+外部图像通过 createExternalImage 声明规格，由 Renderer 每帧 acquire 后通过 bindImage 绑定实际交换链图像。交换链负责图像的生命周期，Graph 负责本次执行的访问与状态转换。
 
 ### 依赖与访问声明
 
@@ -78,7 +122,7 @@ Graph 使用拓扑排序安排执行顺序，确保每个 Pass 的前置依赖�
 
 ### 分配资源与写入描述符
 
-Graph 按声明的规格和汇总后的 Usage 创建物理资源。普通图像使用 DeviceLocal 内存，缓冲使用各自声明的内存属性。同一资源的版本共用一次分配，不同资源各自分配。外部图像与加速结构使用所属对象提供的实际资源。
+Graph 按声明的规格和汇总后的 Usage 创建物理资源。普通图像使用 DeviceLocal 内存，缓冲使用各自声明的内存属性。同一资源的版本共用一次分配，不同资源各自分配。外部图像由所属对象提供。
 
 当前节点裁剪只减少后续回调和执行，资源分配仍包含 Setup 声明的全部资源，Usage 也保留全部访问声明的累计结果。
 
@@ -89,6 +133,8 @@ Compile 完成后，执行顺序、资源及绑定可以持续复用。具体 Ba
 ## Execute：上传、同步与命令录制
 
 每帧先等待对应 FIF 的 Fence，再准备帧数据。Renderer 的全局数据准备和各 Pass 的 prepare 通过 staging pool 写入上传内容，Graph 在 Execute 开始时录制 Buffer Copy，并在消费者访问前完成上传后的同步。
+
+光追图执行前，Renderer 录制场景加速结构的构建与屏障，并通过 `PassFrame::sceneTlas` 将当前帧槽位的 TLAS 交给光追 Pass 读取。网格 BLAS 缓存归 Renderer 所有，可跨渲染图复用。
 
 随后 Graph 按编译顺序执行各节点：根据 use 声明处理资源状态转换和读写同步，再调用 Pass 的 execute 录制绘制、计算或复制命令。执行到 EndPass 时，最终图像转入 Present 布局，回读缓冲转入 HostRead 状态；提交完成后的读取由 Renderer / Editor 负责。
 

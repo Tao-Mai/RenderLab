@@ -53,7 +53,7 @@ Engine：场景 / 编辑器 Tick
 - Renderer 管理共享光源 Buffer handle；ShadowPass 管理阴影 CPU 数据与阴影 Buffer handle，底层 SSBO 由 Graph 分配和同步。
 - Renderer 持有环境纹理、LUT 引用和阴影 sampler；图编译后将阴影视图交给 FrameData 写入，场景环境图改变时更新环境绑定。
 - `RenderContext` 聚合 Device、Shader、GPU 资产管理器和 MaterialTable；Device 负责对象创建、Descriptor 分配和 Pipeline 缓存，并在初始化时统一创建和持有场景、材质与编辑器的共享 Layout。
-- Pass 直接使用 Vulkan API，共享场景绘制函数位于 `SceneDraw`。
+- 光栅化 Pass 决定 Shader、管线状态和附件。渲染核心提供共用的[网格命令录制](../src/render/raster/MeshDraw.h)、[附件声明与绑定](../src/render/raster/RasterAttachments.h)和[阴影资源布局](../src/render/raster/ShadowResources.h)。
 - Graph 默认共享阴影图、深度和颜色中间结果；跨帧访问由同一队列上的 Barrier 同步。
 - 材质、灯光、阴影与光追命中 SSBO 在 setup 申请，跨帧共用；prepare 从各 FIF 的 staging pool 线性分配并写入，execute 录制复制与前后 Barrier。容量增长时等待 GPU 完成后重新分配，并刷新受影响的 Buffer 绑定。
 - Graph Buffer 统一跨帧共享；拾取在等待本次提交完成后立即回读。时域历史由 Graph 创建并持有，使用双层 Ping-pong 资源，图重建时重置历史。
@@ -67,7 +67,7 @@ Engine：场景 / 编辑器 Tick
 - IBL 决定是否加入 SkyboxPass，场景环境图变化时刷新绑定。
 - UI 修改配置，正常关闭时统一持久化；场景内容只在显式保存时写入。
 - EditorBackend 负责平台 / Vulkan backend；场景树、Inspector、RendererSettings 和导入面板各自处理业务。
-- 光源标记、拾取与 Gizmo 由编辑器独立处理。
-- 光源标记使用各类型光源的线性强度，在 Bloom / Tone Mapping 之前绘制，UI 在后处理之后绘制。
+- 编辑器独立处理物体拾取与 Gizmo。灯光可通过场景树选中并编辑。
+- UI 在后处理之后叠加到场景输出。
 
 新增渲染功能时，实现对应 Pass、声明资源访问，并在 Renderer 的路线中串接。

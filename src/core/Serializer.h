@@ -86,7 +86,7 @@ json Serialize(const T& value)
 {
     using U = std::remove_cvref_t<T>;
 
-    if constexpr (std::is_arithmetic_v<U> || std::is_same_v<U, std::string>)
+    if constexpr (std::is_arithmetic_v<U> || std::is_same_v<U, std::string> || std::is_same_v<U, json>)
     {
         return value;
     }
@@ -217,7 +217,11 @@ void Deserialize(const json& j, T& value)
 {
     using U = std::remove_cvref_t<T>;
 
-    if constexpr (std::is_arithmetic_v<U> || std::is_same_v<U, std::string>)
+    if constexpr (std::is_same_v<U, json>)
+    {
+        value = j;
+    }
+    else if constexpr (std::is_arithmetic_v<U> || std::is_same_v<U, std::string>)
     {
         if constexpr (std::same_as<U, std::string>)
             CHECK(j.is_string(), "expected a string");

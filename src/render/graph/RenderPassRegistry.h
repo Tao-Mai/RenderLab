@@ -1,6 +1,8 @@
 #pragma once
 
 #include "core/Logger.h"
+#include "core/Serializer.h"
+#include "render/graph/PassOverrides.h"
 #include "render/graph/RenderGraph.h"
 
 #include <map>
@@ -12,14 +14,14 @@
 #include <typeindex>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
 namespace graph_value
 {
 template <class T>
-concept Handle = std::is_same_v<T, RenderGraph::ImageHandle> || std::is_same_v<T, RenderGraph::BufferHandle> ||
-    std::is_same_v<T, RenderGraph::AccelerationStructureHandle>;
+concept Handle = std::is_same_v<T, RenderGraph::ImageHandle> || std::is_same_v<T, RenderGraph::BufferHandle>;
 
 // Python only sees references to these values. All resource handles originate in C++.
 template <class T>
@@ -71,9 +73,22 @@ T unpack(const nlohmann::json& value)
 }
 }
 
+[[nodiscard]] nlohmann::json passSettingsOverrides(const nlohmann::json& baseline, const nlohmann::json& edited);
+[[nodiscard]] bool graphUsesInput(const nlohmann::json& description, std::string_view name);
+
 class RenderPassRegistry
 {
 public:
+    struct PassInstance
+    {
+        std::string_view      name;
+        std::string_view      type;
+        std::type_index       nativeType;
+        const void*           object;
+        const nlohmann::json* scriptedSettings;  // Pass defaults with Python properties applied.
+        bool                  exposeEditor;
+    };
+
     RenderPassRegistry() = default;
     RenderPassRegistry(RenderPassRegistry&&) noexcept = default;
     RenderPassRegistry& operator=(RenderPassRegistry&&) noexcept = default;
@@ -86,15 +101,21 @@ public:
     }
 
     [[nodiscard]] nlohmann::json build(
-        RenderGraph& graph, const PassSetup& setup, const nlohmann::json& description, nlohmann::json inputs
+        RenderGraph& graph,
+        const PassSetup& setup,
+        const nlohmann::json& description,
+        nlohmann::json inputs,
+        const PassOverrides& overrides
     );
+    [[nodiscard]] bool applyOverrides(const PassOverrides& overrides);
+    [[nodiscard]] std::span<const PassInstance> activeInstances() const { return active; }
     void clearInstances() noexcept;
 
     template <class Pass>
     [[nodiscard]] const Pass* activePass() const
     {
-        const auto found = active.find(typeid(Pass));
-        return found == active.end() ? nullptr : static_cast<const Pass*>(found->second);
+        const auto found = std::ranges::find(active, std::type_index{typeid(Pass)}, &PassInstance::nativeType);
+        return found == active.end() ? nullptr : static_cast<const Pass*>(found->object);
     }
 
 private:
@@ -104,17 +125,26 @@ private:
     {
         std::type_index type;
         std::shared_ptr<void> (*create)();
-        nlohmann::json (*setup)(void*, RenderGraph&, const PassSetup&, Arguments, const nlohmann::json&);
+        nlohmann::json (*setup)(void*, RenderGraph&, const PassSetup&, Arguments);
+        nlohmann::json defaults;
+        nlohmann::json (*normalizeSettings)(const nlohmann::json&) = nullptr;
+        bool (*configure)(void*, const nlohmann::json&) = nullptr;
+    };
+
+    struct Instance
+    {
+        std::shared_ptr<void> pass;
+        nlohmann::json scriptedSettings;
+        nlohmann::json currentSettings;
     };
 
     template <class Pass, class Output, class... Inputs>
     static Factory describe(Output (Pass::*)(RenderGraph&, const PassSetup&, Inputs...))
     {
-        return {
+        Factory factory{
             typeid(Pass),
             []() -> std::shared_ptr<void> { return std::make_shared<Pass>(); },
-            [](void* instance, RenderGraph& graph, const PassSetup& setup, Arguments arguments,
-               const nlohmann::json& properties)
+            [](void* instance, RenderGraph& graph, const PassSetup& setup, Arguments arguments)
             {
                 CHECK(
                     arguments.size() == sizeof...(Inputs),
@@ -124,10 +154,6 @@ private:
                     arguments.size()
                 );
                 auto& pass = *static_cast<Pass*>(instance);
-                if constexpr (requires { pass.configure(properties); })
-                    pass.configure(properties);
-                else
-                    CHECK(properties.empty(), "pass '{}' has no script properties", std::meta::identifier_of(^^Pass));
 
                 return [&]<size_t... Index>(std::index_sequence<Index...>)
                 {
@@ -147,10 +173,33 @@ private:
                 }(std::index_sequence_for<Inputs...>{});
             },
         };
+        if constexpr (requires { typename Pass::Settings; })
+        {
+            using Settings = typename Pass::Settings;
+            factory.defaults = Serialize(Settings{});
+            factory.normalizeSettings = [](const nlohmann::json& properties)
+            {
+                Settings settings{};
+                Deserialize(properties, settings);
+                return Serialize(settings);
+            };
+            factory.configure = [](void* instance, const nlohmann::json& properties)
+            {
+                Settings settings{};
+                Deserialize(properties, settings);
+                return static_cast<Pass*>(instance)->setSettings(settings);
+            };
+        }
+        return factory;
     }
+
+    static bool configureInstance(
+        Instance& instance, const Factory& factory, std::string_view type, std::string_view name,
+        const PassOverrides& overrides
+    );
 
     std::map<std::string, Factory, std::less<>> factories;
     // Preserve pass-owned pipelines and asynchronous work across graph rebuilds.
-    std::map<std::pair<std::string, std::string>, std::shared_ptr<void>> instances;
-    std::map<std::type_index, const void*> active;
+    std::map<std::pair<std::string, std::string>, Instance> instances;
+    std::vector<PassInstance> active;
 };

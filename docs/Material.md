@@ -8,11 +8,11 @@
 
 glTF 导入器读取 `KHR_materials_pbrSpecularGlossiness` 时直接保存 SG 参数。SG 扩展中的颜色覆盖来源文件的 MR 参数。现有 Bistro 资产采用 MR + Specular/IOR，也进入同一套 BRDF。
 
-[材质求值](../shaders/common/material_evaluation.slang)通过 Slang 泛型采样器接收纹理：光栅使用梯度采样，光追使用显式 LOD。SG 贴图的 RGB 按 sRGB 解码，Alpha 作为线性 glossiness，一次采样得到两者。MR 的 Metallic / Roughness 使用同一纹理和采样器时共用采样结果。来源工作流在属性栏只读显示，对应参数沿用材质覆盖与重置流程。
+[材质求值](../shaders/material/material_evaluation.slang)通过 Slang 泛型采样器接收纹理：光栅使用梯度采样，光追使用显式 LOD。SG 贴图的 RGB 按 sRGB 解码，Alpha 作为线性 glossiness，一次采样得到两者。MR 的 Metallic / Roughness 使用同一纹理和采样器时共用采样结果。来源工作流在属性栏只读显示，对应参数沿用材质覆盖与重置流程。
 
 ## 统一 BRDF
 
-[PbrBrdf](../shaders/common/pbr_brdf.slang)只保存数值，负责求值、方向采样与 PDF。
+[PbrBrdf](../shaders/material/pbr_brdf.slang)只保存数值，负责求值、方向采样与 PDF。
 
 | 参数 | 含义 |
 | --- | --- |
@@ -48,7 +48,7 @@ BRDF 使用 `t = (1−abs(V·H))⁵`：漫反射为 `diffuseColor × (1−diffus
 | 3 | specularF0 | diffuseFresnelWeight | RGBA16F |
 | 4 | sheenColor | sheenRoughness | RGBA16F |
 
-打包与具名访问集中在 [GBufferData](../shaders/common/raster/gbuffer_data.slang)。相较原布局增加 8 字节/像素。基础材质在三条路线共用；Clearcoat 沿用 Forward 的涂层计算，Sheen 沿用 Forward / Deferred 的计算。
+打包与具名访问集中在 [GBufferData](../shaders/raster/gbuffer_data.slang)。相较原布局增加 8 字节/像素。基础材质在三条路线共用；Clearcoat 沿用 Forward 的涂层计算，Sheen 沿用 Forward / Deferred 的计算。
 
 IBL 使用现有 Split Sum LUT，镜面项为 `F0×A + F90×B`，漫反射以 `N·V` 代入统一漫反射函数近似。SVGF 解调反射率为 `saturate(diffuseColor + F0)`，重投影和最终合成都使用同一反射率下限。
 
@@ -56,4 +56,4 @@ IBL 使用现有 Split Sum LUT，镜面项为 `F0×A + F90×B`，漫反射以 `N
 
 子网格通过 `MaterialAsset::ID` 引用材质，资产管理器负责加载和缓存。`GltfMaterial` 和 `PbrtMaterial` 保存各自模型的参数，渲染路径按需生成 GPU 数据。
 
-光栅化只支持标准 PBR。实时光追的 Simple 和 ReSTIR 直接调用 PBR 表面的散射操作，离线 PT 和 BDPT 共用 PBRT 材质的求值、采样与 PDF。新增材质模型和论文材质实验面向光追路径。
+光栅化只支持标准 PBR。实时光追的 MinimalPathTracer 和 ReSTIR 直接调用 PBR 表面的散射操作，离线 PT 和 BDPT 共用 PBRT 材质的求值、采样与 PDF。新增材质模型和论文材质实验面向光追路径。

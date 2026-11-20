@@ -12,26 +12,29 @@
 #include "render/device/FrameContext.h"
 #include "render/device/VulkanContext.h"
 #include "render/graph/EndPass.h"
+#include "render/graph/PythonGraph.h"
 #include "render/graph/RenderGraph.h"
 #include "render/graph/RenderPassRegistry.h"
 #include "render/editor/EditorFrameInput.h"
-#include "passes/raster/shadow/ShadowPass.h"
+#include "render/raytracing/SceneAccelerationStructures.h"
 #include "render/device/Swapchain.h"
 #include "render/resources/MaterialTable.h"
-#include "passes/raytracing/offline/OfflineScene.h"
+#include "passes/OfflinePathTracingPass/OfflineScene.h"
 #include "render/resources/RenderResourceManager.h"
 
 #include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
+#include <vector>
 
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_raii.hpp>
 
 struct SceneRenderData;
+struct RenderGraphDefinition;
 class Profiler;
-class OfflinePathTracingPass;
 
 class Renderer
 {
@@ -55,9 +58,13 @@ public:
 
     [[nodiscard]] VulkanContext& vulkanContext() { return vulkan; }
     [[nodiscard]] Swapchain&     swapchainHandle() { return swapchain; }
-    [[nodiscard]] uint32_t       offlineSampleCount() const;
-    [[nodiscard]] float          offlineSampleProgress() const;
-    [[nodiscard]] bool           offlinePreparingPipeline() const;
+    [[nodiscard]] const RenderPassRegistry& renderPasses() const { return passes; }
+    [[nodiscard]] const RenderGraphDefinition* activeRenderGraph() const { return graphDefinition; }
+    [[nodiscard]] bool showObjectList() const { return graphShowsObjectList; }
+    [[nodiscard]] bool supportsObjectPicking() const { return pickingReadback.id != RenderGraph::kInvalidHandle; }
+    [[nodiscard]] std::span<GraphParameterControl> graphEditorControls() { return editorControls; }
+    [[nodiscard]] ExposureConfig defaultExposure() const;
+    void setPassOverrides(std::string_view type, std::string_view instance, nlohmann::json properties);
     [[nodiscard]] uint32_t       framesInFlight() const { return activeFramesInFlight; }
 
 private:
@@ -67,6 +74,7 @@ private:
     ShaderManager                               shaders;
     Device                                      device;
     RenderResourceManager                       resources;
+    SceneAccelerationStructures                 sceneAccelerationStructures;
     MaterialTable                               materialTable;
     OfflineScene                                offlineScene;
     std::array<FrameContext, maxFramesInFlight> frames;
@@ -78,16 +86,18 @@ private:
     std::shared_ptr<GpuTexture>                 prefilteredSpecularTexture;
     std::shared_ptr<GpuTexture>                 brdfLutTexture;
     std::shared_ptr<GpuTexture>                 sheenLutTexture;
-    vk::raii::Sampler                           shadowSampler     = nullptr;
     float                                       prefilteredMaxLod = 0.0f;
     const RendererConfig*                       rendererConfig    = nullptr;
-    std::optional<RendererConfig>               appliedConfig;
+    const RenderGraphDefinition* graphDefinition = nullptr;
+    uint64_t appliedParameterRevision = 0;
+    bool passOverridesChanged = false;
+    bool graphShowsObjectList = false;
+    std::vector<GraphParameterControl> editorControls;
     uint32_t                     frameIndex           = 0;
     uint32_t                     activeFramesInFlight = maxFramesInFlight;
     RenderPassRegistry           passes;
     EndPass                      endPass;
     RenderGraph                  graph;
-    const OfflinePathTracingPass* offlinePass = nullptr;
     RenderGraph::BufferHandle    pickingReadback;
     RenderGraph::BufferHandle    lightBuffer;
     RenderGraph::ImageHandle     presentTarget;
@@ -95,8 +105,6 @@ private:
     void                      applyConfiguration();
     void                      setupRenderGraph();
     void                      initLightingResources();
-    void                      createShadowSampler();
-    void                      writeShadowDescriptors(ShadowPass::Output shadow);
     void                      updateEnvironmentBindings(const std::optional<EnvironmentMapAsset::ID>& id);
     void                      bindEnvironmentTextures();
 

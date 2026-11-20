@@ -1,0 +1,38 @@
+#pragma once
+
+#include "passes/postprocess/ToneMappingPass/ToneMappingSettings.h"
+#include "render/graph/PassSettings.h"
+
+#include "render/device/Device.h"
+
+#include "render/graph/RenderGraph.h"
+
+class ToneMappingPass : public ConfigurablePass<ToneMappingSettings>
+{
+public:
+    struct Output
+    {
+        RenderGraph::ImageHandle color;
+    };
+
+    Output setup(
+        RenderGraph&              graph,
+        const PassSetup&          setup,
+        RenderGraph::ImageHandle  hdrColor,
+        RenderGraph::ImageHandle  target,
+        RenderGraph::BufferHandle exposure
+    );
+    void writeDescriptorSet(RenderGraph& graph, const PassSetup& setup) const;
+    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
+
+private:
+    RenderGraph::ImageHandle  hdrColor;
+    RenderGraph::ImageHandle  color;
+    RenderGraph::BufferHandle exposure;
+    DescriptorSetLayout       descriptorSetLayout;
+    vk::raii::DescriptorSet   descriptorSet = nullptr;
+    vk::Sampler               sampler;
+    vk::Pipeline              pipeline;
+    vk::PipelineLayout        pipelineLayout;
+    bool                      encodeSrgb = false;
+};

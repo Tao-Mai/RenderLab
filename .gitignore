@@ -1,9 +1,15 @@
-
+# CMake and Ninja
 build
-cmake-build-debug
-cmake-build-default
-cmake-build-debug-gcc-16.2
-cmake-build-default-gcc-16.2
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+build.ninja
+.ninja_deps
+.ninja_log
+/CMakeUserPresets.json
+
 .vscode
 scripts/
 .cache
@@ -17,7 +23,17 @@ test/*
 !test/SvgfToggleCheck.cpp
 !test/FalcorPostProcessCheck.cpp
 !test/FalcorPostProcessSourceCheck.py
+!test/PassSettingsCheck.cpp
 
 # Personal TODO / note documents stay local.
 *[Tt][Oo][Dd][Oo]*.[Mm][Dd]
 *[Nn][Oo][Tt][Ee]*.[Mm][Dd]
+
+# Python
+__pycache__/
+*.py[co]
+.venv/
+
+# Windows Explorer
+Thumbs.db
+[Dd]esktop.ini

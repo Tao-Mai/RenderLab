@@ -20,7 +20,6 @@
 #include <vector>
 #include <vulkan/vulkan_raii.hpp>
 
-class AccelerationStructure;
 class GpuProfiler;
 class VulkanContext;
 
@@ -35,10 +34,6 @@ public:
         ResourceHandle id = kInvalidHandle;
     };
     struct BufferHandle
-    {
-        ResourceHandle id = kInvalidHandle;
-    };
-    struct AccelerationStructureHandle
     {
         ResourceHandle id = kInvalidHandle;
     };
@@ -101,33 +96,27 @@ public:
     [[nodiscard]] BufferUpload
     allocateUpload(BufferHandle buffer, vk::DeviceSize size, vk::DeviceSize destinationOffset = 0);
 
-    // Tracks a pass-owned AS or BLAS collection; allocation remains with the owner.
-    AccelerationStructureHandle createAccelerationStructure(MemoryAccess initial);
-
     [[nodiscard]] uint64_t bufferRevision(BufferHandle buffer) const;
 
     ImageHandle write(ImageHandle image);
     BufferHandle write(BufferHandle buffer);
-    AccelerationStructureHandle write(AccelerationStructureHandle structure);
 
     void use(ImageHandle image, ImageAccess access);
     void use(BufferHandle buffer, MemoryAccess access);
-    void use(AccelerationStructureHandle structure, MemoryAccess access);
 
     [[nodiscard]] Image&                 getImage(ImageHandle image);
     [[nodiscard]] Buffer&                getBuffer(BufferHandle buffer);
-    // Bind pass-owned objects for downstream lookup; the pass retains ownership.
-    void bindAccelerationStructures(
-        AccelerationStructureHandle handle, std::span<AccelerationStructure* const> structures
-    );
-    [[nodiscard]] AccelerationStructure&
-    getAccelerationStructure(AccelerationStructureHandle handle, size_t index = 0);
     [[nodiscard]] const ImageCreateInfo& imageInfo(ImageHandle image);
     [[nodiscard]] vk::Extent2D imageExtent(ImageHandle image);
     [[nodiscard]] bool sharesImage(ImageHandle lhs, ImageHandle rhs) const;
     [[nodiscard]] vk::ImageUsageFlags imageUsage(ImageHandle image) const;
+    void invalidateImageHistory(ImageHandle image);
+    [[nodiscard]] uint64_t imageHistoryRevision(ImageHandle image) const;
     [[nodiscard]] vk::PipelineStageFlags2 firstUseStages(ImageHandle image) const;
 
+    void beginGpuProfiling(
+        vk::raii::CommandBuffer& commandBuffer, GpuProfiler& gpuProfiler, Profiler* profiler
+    ) const;
     void execute(
         vk::raii::CommandBuffer& commandBuffer,
         const PassFrame& frame,
@@ -141,7 +130,6 @@ private:
     {
         Image,
         Buffer,
-        AccelerationStructure
     };
     struct PassNode;
     struct Allocation;
@@ -174,9 +162,8 @@ private:
         ImageCreateInfo             imageInfo;
         BufferCreateInfo            bufferInfo;
         vk::ImageUsageFlags         imageUsage;
+        uint64_t                    historyRevision = 0;
         vk::BufferUsageFlags        bufferUsage;
-        std::vector<AccelerationStructure*> accelerationStructures;
-        ImageAccess                 initialState;
         vk::PipelineStageFlags2     firstUseStages;
         bool                        externalImage = false;
         std::shared_ptr<Allocation> allocation;
@@ -259,8 +246,7 @@ template <class T>
 void RenderGraph::collectDependencies(PassNode& node, const T& value)
 {
     using U = std::remove_cvref_t<T>;
-    if constexpr (std::is_same_v<U, ImageHandle> || std::is_same_v<U, BufferHandle> ||
-                  std::is_same_v<U, AccelerationStructureHandle>)
+    if constexpr (std::is_same_v<U, ImageHandle> || std::is_same_v<U, BufferHandle>)
     {
         if (value.id == kInvalidHandle)
             return;

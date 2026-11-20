@@ -51,6 +51,7 @@ private:
     vk::raii::DescriptorSet lightSet = nullptr;
     vk::raii::DescriptorSet shadowSet = nullptr;
     vk::raii::DescriptorSet viewSet     = nullptr;
+    vk::Sampler             shadowComparisonSampler;
 
     void writeSceneDescriptorSet();
     void writeLightUniformDescriptorSet();

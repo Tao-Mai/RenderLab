@@ -35,11 +35,12 @@ def main():
     falcor = Path(sys.argv[1])
     root = Path(__file__).resolve().parents[1]
     original = (falcor / "Source/RenderPasses/SimplePostFX/SimplePostFX.cs.slang").read_text()
-    port = (root / "passes/postprocess/falcor/simple_post_fx.slang").read_text()
+    port = (root / "passes/postprocess/FalcorPostProcess/simple_post_fx.slang").read_text()
     names = {
         "gSrc": "sourceImage", "gBloomed": "bloomedImage", "gDst": "destinationImage",
         "gLinearSampler": "linearSampler", "uv_circular": "circularUv",
         "r_squared": "radiusSquared", "squashed_luma": "squashedLuma",
+        "luminance": "rec709Luminance",
     }
     for name in ["Resolution", "InvRes", "BloomAmount", "VignetteAmount", "ChromaticAberrationAmount",
                  "SaturationCurve", "ColorOffset", "ColorScale", "ColorPower", "Star", "StarDir1",
@@ -63,7 +64,7 @@ def main():
         actual = re.sub(r"if\s*\(parameters.bypass != 0\)\s*\{[^}]*\}", "", actual)
         assert tokens(expected) == tokens(actual), name
     original = (falcor / "Source/RenderPasses/ToneMapper/ToneMapping.ps.slang").read_text()
-    port = (root / "passes/postprocess/falcor/tonemapping.slang").read_text()
+    port = (root / "passes/postprocess/FalcorPostProcess/tonemapping.slang").read_text()
     names = {"gParams": "parameters"}
     names.update({name: "k" + name for name in "ABCDEF"})
     original = rename(original, names)
@@ -73,9 +74,11 @@ def main():
                  "toneMapHejiHableAlu", "applyUc2Curve", "toneMapHableUc2", "toneMapAces"]:
         assert tokens(function(original, name)) == tokens(function(port, name)), name
     assert "kExposureKey=0.042" in tokens(port) and "kLuminanceLod=16.0" in tokens(port)
-    assert "float3(0.2126f,0.7152f,0.0722f)" in tokens(
-        (root / "passes/postprocess/falcor/simple_post_fx.slang").read_text()
-    )
+    color_helpers = (falcor / "Source/Falcor/Utils/Color/ColorHelpers.slang").read_text()
+    shared_color = (root / "shaders/math/color.slang").read_text()
+    expected_luminance = rename(function(color_helpers, "luminance"), {"rgb": "color"})
+    expected_luminance = re.sub(r"(?<=\d)f\b", "", expected_luminance)
+    assert tokens(expected_luminance) == tokens(function(shared_color, "rec709Luminance")), "rec709Luminance"
     print("Falcor source parity passed: 3 blur filters, 3 effect kernels, 8 tone mapping functions.")
 
 

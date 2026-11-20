@@ -249,12 +249,18 @@ add_library(RenderLabCore STATIC
     src/render/graph/RenderGraph.cpp
     src/render/graph/RenderGraph.h
     src/render/graph/RenderGraphSetup.cpp
+    src/render/raster/MeshDraw.cpp
+    src/render/raster/MeshDraw.h
+    src/render/raster/RasterAttachments.cpp
+    src/render/raster/RasterAttachments.h
+    src/render/raster/ShadowResources.cpp
+    src/render/raster/ShadowResources.h
     src/render/raytracing/AccelerationStructure.cpp
     src/render/raytracing/AccelerationStructure.h
+    src/render/raytracing/SceneAccelerationStructures.cpp
+    src/render/raytracing/SceneAccelerationStructures.h
     src/render/raytracing/offline/OfflineLightData.h
     src/render/raytracing/offline/OfflineShaderTypes.h
-    src/render/postprocess/FalcorPostProcessConfig.cpp
-    src/render/postprocess/FalcorPostProcessConfig.h
     src/render/editor/EditorFrameInput.h
     src/render/editor/EditorShaderData.h
     src/render/graph/RenderPassRegistry.cpp
@@ -336,7 +342,9 @@ add_library(RenderLabRuntime STATIC
     src/editor/Inspector.cpp
     src/editor/EditorBackend.cpp
     src/editor/SceneHierarchy.cpp
-    src/editor/RendererSettings.cpp
+    src/editor/GraphSettingsUi.cpp
+    src/editor/PassEditorRegistry.cpp
+    src/editor/SettingsWidgets.cpp
     src/Engine.cpp
     src/Engine.h
     src/editor/Editor.cpp
@@ -352,8 +360,6 @@ add_library(RenderLabRuntime STATIC
     src/editor/EditorUi.h
     src/platform/InputMethod.cpp
     src/platform/InputMethod.h
-    src/editor/LightMarkers.cpp
-    src/editor/LightMarkers.h
     src/editor/PerformancePanel.cpp
     src/render/Renderer.cpp
     src/render/Renderer.h
@@ -361,14 +367,14 @@ add_library(RenderLabRuntime STATIC
     src/render/graph/PythonGraph.h
 )
 target_link_libraries(RenderLabRuntime PUBLIC RenderLabCore RenderLabPasses PRIVATE
-    imgui::imgui imguizmo::imguizmo Python3::Python)
+    RenderLabPassEditors imgui::imgui imguizmo::imguizmo Python3::Python)
 set_property(SOURCE src/render/graph/PythonGraph.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     RENDERLAB_PYTHON_HOME=L"${RENDERLAB_PYTHON_HOME}"
     RENDERLAB_GRAPH_LIBRARY_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/graphs")
 target_precompile_headers(RenderLabRuntime REUSE_FROM RenderLabCore)
 
 add_executable(RenderLab src/Main.cpp)
-target_link_libraries(RenderLab PRIVATE RenderLabRuntime)
+target_link_libraries(RenderLab PRIVATE RenderLabRuntime imgui::imgui)
 target_precompile_headers(RenderLab REUSE_FROM RenderLabCore)
 
 option(BUILD_TESTING "Enable manual validation tools" OFF)

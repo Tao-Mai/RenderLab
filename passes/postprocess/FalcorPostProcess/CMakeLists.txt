@@ -1,0 +1,21 @@
+target_sources(RenderLabPasses PRIVATE FalcorPostProcess.cpp FalcorPostProcessConfig.cpp)
+target_sources(RenderLabPassEditors PRIVATE FalcorPostProcessUi.cpp)
+
+foreach(stage IN ITEMS 0 1 2)
+    set(binary falcor_simple_post_fx)
+    if(NOT stage EQUAL 0)
+        string(APPEND binary ".${stage}")
+    endif()
+    renderlab_shader(falcor_simple_post_fx simple_post_fx.slang "${binary}"
+        ENTRIES computeMain DEFINES FALCOR_POST_FX_STAGE=${stage})
+endforeach()
+foreach(stage IN ITEMS 0 1)
+    set(binary falcor_luminance)
+    if(NOT stage EQUAL 0)
+        string(APPEND binary ".${stage}")
+    endif()
+    renderlab_shader(falcor_luminance luminance.slang "${binary}"
+        DEFINES FALCOR_LUMINANCE_STAGE=${stage})
+endforeach()
+renderlab_shader(falcor_tonemapping tonemapping.slang falcor_tonemapping)
+renderlab_shader(falcor_present present.slang falcor_present)
