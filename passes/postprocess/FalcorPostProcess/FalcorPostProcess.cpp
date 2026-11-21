@@ -31,8 +31,10 @@
 #include "render/RenderContext.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
+#include "render/resources/ShaderLayout.h"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstddef>
@@ -41,14 +43,21 @@
 #include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
 #include <numbers>
+#include <utility>
 
 namespace
 {
 constexpr auto     kPyramidFormat = vk::Format::eR16G16B16A16Sfloat;
 constexpr auto     kOutputFormat  = vk::Format::eR32G32B32A32Sfloat;
-constexpr uint32_t kWorkgroupSize = 16;
 constexpr auto     kComputeStage  = vk::ShaderStageFlagBits::eCompute;
 constexpr auto     kFragmentStage = vk::ShaderStageFlagBits::eFragment;
+
+enum class SimplePostFxVariant
+{
+    Downsample = 0,
+    Upsample = 1,
+    Composite = 2,
+};
 
 struct alignas(16) DownsampleParameters
 {
@@ -137,27 +146,25 @@ void FalcorPostProcess::initialize(const PassSetup& setup)
         binding(2, vk::DescriptorType::eSampler, kFragmentStage),
         binding(3, vk::DescriptorType::eSampler, kFragmentStage),
     };
-    computeDescriptorSetLayout  = device.createDescriptorSetLayout(computeBindings);
-    graphicsDescriptorSetLayout = device.createDescriptorSetLayout(graphicsBindings);
-    computePipelineLayout       = device.getOrCreatePipelineLayout(
-        std::array{&computeDescriptorSetLayout},
+    computeLayout.descriptorSet  = device.createDescriptorSetLayout(computeBindings);
+    graphicsLayout.descriptorSet = device.createDescriptorSetLayout(graphicsBindings);
+    computeLayout.pipeline = device.getOrCreatePipelineLayout(
+        std::array{&computeLayout.descriptorSet},
         std::array{vk::PushConstantRange{.stageFlags = kComputeStage, .size = sizeof(PostFxParameters)}}
     );
-    graphicsPipelineLayout = device.getOrCreatePipelineLayout(
-        std::array{&graphicsDescriptorSetLayout},
+    graphicsLayout.pipeline = device.getOrCreatePipelineLayout(
+        std::array{&graphicsLayout.descriptorSet},
         std::array{vk::PushConstantRange{.stageFlags = kFragmentStage, .size = sizeof(ToneMapperParameters)}}
     );
-    for (uint32_t index = 0; index < computePipelines.size(); ++index)
+    const auto createPostFxPipeline = [&](SimplePostFxVariant variant)
     {
-        const auto shader = ctx.shaderManager->getOrLoad("falcor_simple_post_fx", {{"FALCOR_POST_FX_STAGE", index}});
-        computePipelines[index] = vkCheck(nativeDevice.createComputePipeline(
-            vk::raii::PipelineCache{nullptr},
-            {
-                .stage  = {.stage = kComputeStage, .module = ctx.shaderManager->module(shader), .pName = "computeMain"},
-                .layout = computePipelineLayout,
-            }
-        ));
-    }
+        const auto shader =
+            ctx.shaderManager->getOrLoad("falcor_simple_post_fx", {{"FALCOR_POST_FX_STAGE", static_cast<int>(variant)}});
+        return device.createComputePipeline(shader, computeLayout.pipeline);
+    };
+    downsample = createPostFxPipeline(SimplePostFxVariant::Downsample);
+    upsample = createPostFxPipeline(SimplePostFxVariant::Upsample);
+    postFx = createPostFxPipeline(SimplePostFxVariant::Composite);
 
     vk::SamplerCreateInfo samplerInfo{
         .magFilter    = vk::Filter::eLinear,
@@ -210,7 +217,7 @@ void FalcorPostProcess::compile(RenderGraph& graph, const PassSetup& setup, Pass
     const auto target = ports.image("target");
 
     imagePasses.clear();
-    if (!computeDescriptorSetLayout)
+    if (!computeLayout.descriptorSet)
         initialize(setup);
     const auto targetFormat   = graph.imageInfo(target).format;
     const bool srgbAttachment = targetFormat == vk::Format::eB8G8R8A8Srgb || targetFormat == vk::Format::eR8G8B8A8Srgb;
@@ -221,57 +228,91 @@ void FalcorPostProcess::compile(RenderGraph& graph, const PassSetup& setup, Pass
     );
     encodeSrgb = !srgbAttachment;
 
-    const auto add = [&](Stage                    stage,
-                         RenderGraph::ImageHandle input,
-                         RenderGraph::ImageHandle filtered,
-                         RenderGraph::ImageHandle output,
-                         uint32_t                 level = 0)
-    {
-        auto& pass = *imagePasses.emplace_back(std::make_unique<ImagePass>(*this, stage, level));
-        return graph.addStage("FalcorPostProcess stage", pass, setup, input, filtered, output).color;
-    };
-    const auto createImage = [&](vk::Format format, vk::Extent3D extent)
-    { return graph.createImage({.format = format, .extent = extent}); };
-    const auto extent  = graph.imageInfo(source).extent;
-    auto       bloomed = source;
+    const auto effects = addSimplePostFx(graph, setup, source);
+    const auto toneMapped = addToneMapper(graph, setup, effects);
+    const auto presentShader = renderContext().shaderManager->getOrLoad("falcor_present");
+    ports.setOutput(
+        "color", addImagePass(graph, setup, {*this, Stage::Present, presentShader}, toneMapped, toneMapped, target)
+    );
+}
+
+RenderGraph::ImageHandle FalcorPostProcess::addSimplePostFx(
+    RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle source
+)
+{
+    const auto extent = graph.imageInfo(source).extent;
+    auto bloomed = source;
     if (parameters.simplePostFx.usesBloom())
     {
         std::array<RenderGraph::ImageHandle, falcorPostProcess::kBloomLevels + 1> pyramid;
         for (uint32_t level = 0; level < pyramid.size(); ++level)
-            pyramid[level] = createImage(
-                kPyramidFormat,
-                {std::max(1u, extent.width >> level), std::max(1u, extent.height >> level), 1}
-            );
+            pyramid[level] = graph.createImage({
+                .format = kPyramidFormat,
+                .extent = {std::max(1u, extent.width >> level), std::max(1u, extent.height >> level), 1},
+            });
         for (uint32_t level = 0; level < falcorPostProcess::kBloomLevels; ++level)
         {
-            const auto input   = level == 0 ? source : pyramid[level];
-            pyramid[level + 1] = add(Stage::Downsample, input, input, pyramid[level + 1]);
+            const auto input = level == 0 ? source : pyramid[level];
+            pyramid[level + 1] = addImagePass(
+                graph, setup, {*this, Stage::Downsample, downsample}, input, input, pyramid[level + 1]
+            );
         }
         for (uint32_t level = falcorPostProcess::kBloomLevels; level-- > 0;)
-            pyramid[level] = add(Stage::Upsample, source, pyramid[level + 1], pyramid[level], level);
+            pyramid[level] = addImagePass(
+                graph, setup, {*this, Stage::Upsample, upsample, level}, source, pyramid[level + 1], pyramid[level]
+            );
         bloomed = pyramid[0];
     }
-    const auto postFx    = add(Stage::PostFx, source, bloomed, createImage(kOutputFormat, extent));
-    auto       luminance = postFx;
+
+    const auto target = graph.createImage({.format = kOutputFormat, .extent = extent});
+    return addImagePass(graph, setup, {*this, Stage::PostFx, postFx}, source, bloomed, target);
+}
+
+RenderGraph::ImageHandle FalcorPostProcess::addToneMapper(
+    RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle source
+)
+{
+    constexpr int kLuminanceStage = 0;
+    constexpr int kLuminanceMipStage = 1;
+    auto& shaders = *renderContext().shaderManager;
+    const auto extent = graph.imageInfo(source).extent;
+    auto luminance = source;
     if (parameters.toneMapper.autoExposure)
     {
         vk::Extent3D mipExtent{std::bit_floor(extent.width), std::bit_floor(extent.height), 1};
-        luminance = add(Stage::Luminance, postFx, postFx, createImage(vk::Format::eR32Sfloat, mipExtent));
+        const auto shader = shaders.getOrLoad("falcor_luminance", {{"FALCOR_LUMINANCE_STAGE", kLuminanceStage}});
+        const auto target = graph.createImage({.format = vk::Format::eR32Sfloat, .extent = mipExtent});
+        luminance = addImagePass(graph, setup, {*this, Stage::Luminance, shader}, source, source, target);
+
         // Separate graph images retain the exact size, R32F quantization and linear filtering of each Falcor mip.
         while (mipExtent.width > 1 || mipExtent.height > 1)
         {
-            mipExtent.width  = std::max(1u, mipExtent.width / 2);
+            mipExtent.width = std::max(1u, mipExtent.width / 2);
             mipExtent.height = std::max(1u, mipExtent.height / 2);
-            luminance = add(Stage::LuminanceMip, luminance, luminance, createImage(vk::Format::eR32Sfloat, mipExtent));
+            const auto mipShader =
+                shaders.getOrLoad("falcor_luminance", {{"FALCOR_LUMINANCE_STAGE", kLuminanceMipStage}});
+            const auto mip = graph.createImage({.format = vk::Format::eR32Sfloat, .extent = mipExtent});
+            luminance = addImagePass(graph, setup, {*this, Stage::Luminance, mipShader}, luminance, luminance, mip);
         }
     }
-    const auto toneMapped = add(Stage::ToneMapping, postFx, luminance, createImage(kOutputFormat, extent));
-    ports.setOutput("color", add(Stage::Present, toneMapped, toneMapped, target));
+
+    const auto shader = shaders.getOrLoad("falcor_tonemapping");
+    const auto target = graph.createImage({.format = kOutputFormat, .extent = extent});
+    return addImagePass(graph, setup, {*this, Stage::ToneMapping, shader}, source, luminance, target);
 }
 
-FalcorPostProcess::Output FalcorPostProcess::ImagePass::compile(
+RenderGraph::ImageHandle FalcorPostProcess::addImagePass(
+    RenderGraph& graph, const PassSetup& setup, ImagePass pass, RenderGraph::ImageHandle source,
+    RenderGraph::ImageHandle filtered, RenderGraph::ImageHandle target
+)
+{
+    auto& node = *imagePasses.emplace_back(std::make_unique<ImagePass>(std::move(pass)));
+    return graph.addStage("FalcorPostProcess stage", node, setup, source, filtered, target);
+}
+
+RenderGraph::ImageHandle FalcorPostProcess::ImagePass::compile(
     RenderGraph&             graph,
-    const PassSetup&         setup,
+    const PassSetup&,
     RenderGraph::ImageHandle input,
     RenderGraph::ImageHandle filteredInput,
     RenderGraph::ImageHandle target
@@ -280,17 +321,18 @@ FalcorPostProcess::Output FalcorPostProcess::ImagePass::compile(
     source             = input;
     filtered           = filteredInput;
     const auto sampled = RenderGraph::ImageAccess{
-        .stages =
-            isCompute() ? vk::PipelineStageFlagBits2::eComputeShader : vk::PipelineStageFlagBits2::eFragmentShader,
+        .stages = compute ? vk::PipelineStageFlagBits2::eComputeShader : vk::PipelineStageFlagBits2::eFragmentShader,
         .access = vk::AccessFlagBits2::eShaderSampledRead,
         .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
     graph.use(source, sampled);
     if (filtered.id != source.id)
         graph.use(filtered, sampled);
-    color = graph.write(target);
-    if (isCompute())
+    auto& device = *renderContext().device;
+    const auto color = graph.write(target);
+    if (compute)
     {
+        storageTarget = color;
         graph.use(
             color,
             {
@@ -301,36 +343,21 @@ FalcorPostProcess::Output FalcorPostProcess::ImagePass::compile(
                 .layout = vk::ImageLayout::eGeneral,
             }
         );
-        pipeline = *owner.computePipelines[static_cast<uint32_t>(stage)];
+        pipeline = **compute;
     }
     else
     {
-        graph.use(
-            color,
-            {
-                .stages = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-                .access = vk::AccessFlagBits2::eColorAttachmentWrite,
-                .layout = vk::ImageLayout::eColorAttachmentOptimal,
-            }
-        );
-        auto&      ctx    = renderContext();
-        const auto shader = stage == Stage::ToneMapping ? ctx.shaderManager->getOrLoad("falcor_tonemapping")
-            : stage == Stage::Present                   ? ctx.shaderManager->getOrLoad("falcor_present")
-                                                        : ctx.shaderManager->getOrLoad(
-                                            "falcor_luminance",
-                                            {{"FALCOR_LUMINANCE_STAGE", stage == Stage::Luminance ? 0 : 1}}
-                                        );
-        pipeline          = ctx.device->getOrCreatePipeline({
-                     .shader       = shader,
-                     .layout       = owner.graphicsPipelineLayout,
-                     .state        = {.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
-                     .colorFormats = {graph.imageInfo(color).format},
+        attachments.colors.front() = {color, vk::AttachmentLoadOp::eDontCare};
+        attachments.declare(graph);
+        pipeline = device.getOrCreatePipeline({
+            .shader = shader,
+            .layout = layout.pipeline,
+            .state = {.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
+            .colorFormats = {graph.imageInfo(color).format},
         });
     }
-    descriptorSet = renderContext().device->allocateDescriptorSet(
-        isCompute() ? owner.computeDescriptorSetLayout : owner.graphicsDescriptorSetLayout
-    );
-    return {color};
+    descriptorSet = device.allocateDescriptorSet(layout.descriptorSet);
+    return color;
 }
 
 void FalcorPostProcess::ImagePass::bindResources(RenderGraph& graph, const PassSetup& setup) const
@@ -344,37 +371,31 @@ void FalcorPostProcess::ImagePass::bindResources(RenderGraph& graph, const PassS
             .imageView   = imageView(graph, filtered),
             .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
         },
-        isCompute()
-            ? vk::DescriptorImageInfo{.imageView = imageView(graph, color), .imageLayout = vk::ImageLayout::eGeneral}
+        compute
+            ? vk::DescriptorImageInfo{
+                .imageView = imageView(graph, storageTarget), .imageLayout = vk::ImageLayout::eGeneral}
             : vk::DescriptorImageInfo{.sampler = *owner.linearSampler},
-        vk::DescriptorImageInfo{.sampler = isCompute() ? *owner.borderSampler : *owner.pointSampler},
+        vk::DescriptorImageInfo{.sampler = compute ? *owner.borderSampler : *owner.pointSampler},
     };
     std::array<vk::WriteDescriptorSet, 4> writes;
     for (uint32_t index = 0; index < writes.size(); ++index)
-        writes[index] = {
-            .dstSet          = *descriptorSet,
-            .dstBinding      = index,
-            .descriptorCount = 1,
-            .descriptorType  = index < 2     ? vk::DescriptorType::eSampledImage
-                 : isCompute() && index == 2 ? vk::DescriptorType::eStorageImage
-                                             : vk::DescriptorType::eSampler,
-            .pImageInfo      = &images[index],
-        };
+    {
+        writes[index] = makeDescriptorWrite(*descriptorSet, layout.descriptorSet.bindings[index]);
+        writes[index].pImageInfo = &images[index];
+    }
     setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});
 }
 
-void FalcorPostProcess::ImagePass::dispatch(
-    RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame
-) const
+void FalcorPostProcess::ImagePass::dispatch(RenderGraph& graph, vk::raii::CommandBuffer& commands) const
 {
-    const auto       extent = graph.imageExtent(color);
+    const auto       extent = graph.imageExtent(storageTarget);
     const glm::uvec2 resolution{extent.width, extent.height};
     const glm::vec2  invRes{1.0f / extent.width, 1.0f / extent.height};
     const auto&      settings = owner.parameters.simplePostFx;
     if (stage == Stage::Downsample)
     {
         const DownsampleParameters parameters{resolution, invRes};
-        commands.pushConstants<DownsampleParameters>(owner.computePipelineLayout, kComputeStage, 0, parameters);
+        commands.pushConstants<DownsampleParameters>(layout.pipeline, kComputeStage, 0, parameters);
     }
     else if (stage == Stage::Upsample)
     {
@@ -395,7 +416,7 @@ void FalcorPostProcess::ImagePass::dispatch(
             .star        = wantStar ? settings.starAmount : 0.0f,
             .inPlace     = level > 0 ? 1u : 0u,
         };
-        commands.pushConstants<UpsampleParameters>(owner.computePipelineLayout, kComputeStage, 0, parameters);
+        commands.pushConstants<UpsampleParameters>(layout.pipeline, kComputeStage, 0, parameters);
     }
     else
     {
@@ -421,44 +442,25 @@ void FalcorPostProcess::ImagePass::dispatch(
             .wipe                      = settings.wipe * extent.width,
             .bypass                    = settings.bypass() ? 1u : 0u,
         };
-        commands.pushConstants<PostFxParameters>(owner.computePipelineLayout, kComputeStage, 0, parameters);
+        commands.pushConstants<PostFxParameters>(layout.pipeline, kComputeStage, 0, parameters);
     }
-    commands.dispatch(
-        (extent.width + kWorkgroupSize - 1) / kWorkgroupSize,
-        (extent.height + kWorkgroupSize - 1) / kWorkgroupSize,
-        1
-    );
+    compute->dispatch(commands, {extent.width, extent.height, 1});
 }
 
 void FalcorPostProcess::ImagePass::execute(
-    RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame
+    RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame&
 ) const
 {
-    const auto bindPoint = isCompute() ? vk::PipelineBindPoint::eCompute : vk::PipelineBindPoint::eGraphics;
-    const auto layout    = isCompute() ? owner.computePipelineLayout : owner.graphicsPipelineLayout;
+    const auto bindPoint = compute ? vk::PipelineBindPoint::eCompute : vk::PipelineBindPoint::eGraphics;
     commands.bindPipeline(bindPoint, pipeline);
-    commands.bindDescriptorSets(bindPoint, layout, 0, std::array{*descriptorSet}, {});
-    if (isCompute())
+    commands.bindDescriptorSets(bindPoint, layout.pipeline, 0, std::array{*descriptorSet}, {});
+    if (compute)
     {
-        dispatch(graph, commands, frame);
+        dispatch(graph, commands);
         return;
     }
 
-    const auto                        extent = graph.imageExtent(color);
-    const vk::RenderingAttachmentInfo attachment{
-        .imageView   = imageView(graph, color),
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp      = vk::AttachmentLoadOp::eDontCare,
-        .storeOp     = vk::AttachmentStoreOp::eStore,
-    };
-    commands.beginRendering({
-        .renderArea           = {{0, 0}, extent},
-        .layerCount           = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments    = &attachment,
-    });
-    commands.setViewport(0, vk::Viewport{0, 0, float(extent.width), float(extent.height), 0, 1});
-    commands.setScissor(0, vk::Rect2D{{0, 0}, extent});
+    attachments.begin(graph, commands);
     if (stage == Stage::ToneMapping)
     {
         const auto&                settings  = owner.parameters.toneMapper;
@@ -471,12 +473,12 @@ void FalcorPostProcess::ImagePass::execute(
             .autoExposure      = settings.autoExposure ? 1u : 0u,
             .clampOutput       = settings.clampOutput ? 1u : 0u,
         };
-        commands.pushConstants<ToneMapperParameters>(layout, kFragmentStage, 0, parameters);
+        commands.pushConstants<ToneMapperParameters>(layout.pipeline, kFragmentStage, 0, parameters);
     }
     else if (stage == Stage::Present)
     {
         const uint32_t encodeSrgb = owner.encodeSrgb ? 1u : 0u;
-        commands.pushConstants<uint32_t>(layout, kFragmentStage, 0, encodeSrgb);
+        commands.pushConstants<uint32_t>(layout.pipeline, kFragmentStage, 0, encodeSrgb);
     }
     commands.draw(3, 1, 0, 0);
     recordDraw(context().profiler, 3);

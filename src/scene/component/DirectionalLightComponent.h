@@ -1,10 +1,14 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "scene/component/LightComponent.h"
 
-struct DirectionalLightComponent : LightComponent
+struct RL_REGISTER_TYPE(Component, "DirectionalLightComponent") DirectionalLightComponent : LightComponent
 {
     [[nodiscard]] glm::vec3 emissionColor() const override;
 
-    [[=ReflectField{}]] float illuminance = 8.0f; // lux at perpendicular incidence.
+    RL_FIELD("illuminance") float illuminance = 8.0f; // lux at perpendicular incidence.
 };
+
+#include RL_METADATA_HEADER("metadata/src/scene/component/DirectionalLightComponent.generated.h")

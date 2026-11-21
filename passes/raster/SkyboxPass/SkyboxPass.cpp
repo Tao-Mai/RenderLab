@@ -89,5 +89,5 @@ void SkyboxPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<SkyboxPass>();
+    registry.registerClass<SkyboxPass>("SkyboxPass");
 }

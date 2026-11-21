@@ -66,5 +66,5 @@ void EditorPickingCopyPass::execute(
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<EditorPickingCopyPass>();
+    registry.registerClass<EditorPickingCopyPass>("EditorPickingCopyPass");
 }

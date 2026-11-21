@@ -6,8 +6,7 @@
 #include "render/graph/PassSettings.h"
 
 #include "render/device/Device.h"
-
-#include "render/graph/RenderGraph.h"
+#include "render/raster/RasterAttachments.h"
 
 #include <memory>
 #include <vector>
@@ -52,7 +51,7 @@ private:
         const BloomSettings&     settings;
         RenderGraph::ImageHandle source;
         RenderGraph::ImageHandle base;
-        RenderGraph::ImageHandle color;
+        RasterAttachments<1>     attachments;
         DescriptorSetLayout      descriptorSetLayout;
         vk::raii::DescriptorSet  descriptorSet = nullptr;
         vk::Sampler              sampler;

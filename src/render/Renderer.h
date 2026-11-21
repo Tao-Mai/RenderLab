@@ -21,7 +21,7 @@
 #include "render/device/Swapchain.h"
 #include "render/resources/MaterialTable.h"
 #include "render/raytracing/offline/OfflineScene.h"
-#include "render/raytracing/offline/OfflineTracePipeline.h"
+#include "render/raytracing/offline/OfflineTracePipelineCache.h"
 #include "render/resources/RenderResourceManager.h"
 
 #include <array>

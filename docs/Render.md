@@ -47,6 +47,8 @@ Renderer 持有 [SceneAccelerationStructures](../src/render/raytracing/SceneAcce
 
 编辑器的 Graph 下拉框可选择 ReSTIR 或 [MinimalPathTracer](MinimalPathTracer.md)。两张图各自声明路径追踪插件和参数，并可接入 [SVGF](../passes/denoise/SVGF/)。Shader 入口分别位于 [ReSTIR](../passes/raytracing/realtime/restir_path_tracer.slang) 和 [MinimalPathTracer](../passes/raytracing/minimal/minimal_path_tracer.slang)。[公共光追 Shader](../shaders/raytracing/) 提供命中处理、路径续射线和光源求值。
 
+各 Pass 选择 shader 入口和输出，并推进自己的采样状态。ReSTIR 的 [reservoir 资源和历史](../passes/raytracing/realtime/RestirResources.cpp) 由插件维护，三个 raygen 的提交顺序和同步写在 Pass 中。四条光追路线共用 [RayTracingPipeline](../src/render/raytracing/RayTracingPipeline.cpp) 创建 Vulkan 管线和 SBT。实时路线另用 [RealtimeSceneBindings](../src/render/raytracing/RealtimeSceneBindings.cpp) 更新场景描述符。
+
 - 基础 PBR 复用漫反射与 GGX 函数，使用 VNDF 和完整混合 PDF 生成反弹方向。
 - ReSTIR 主命中的直接光使用原版 ReSTIR DI：完整光源样本的初始 RIS → 时域复用 → 一轮空间复用 → 可见性着色。点光、聚光、方向光、矩形、发光三角形和启用的环境共同参与采样。
 - ReSTIR 光源候选先确定光源和面内位置，再用实际位置的发光、BRDF 与几何项生成权重；一个 BRDF 方向候选通过 balance MIS 一起进入初始 reservoir。

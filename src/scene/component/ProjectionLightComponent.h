@@ -1,8 +1,12 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "scene/component/LocalLightComponent.h"
 
-struct ProjectionLightComponent : LocalLightComponent
+struct RL_REGISTER_TYPE(Component, "ProjectionLightComponent") ProjectionLightComponent : LocalLightComponent
 {
-    [[=ReflectField{}]] float fieldOfView = 90.0f;
+    RL_FIELD("fieldOfView") float fieldOfView = 90.0f;
 };
+
+#include RL_METADATA_HEADER("metadata/src/scene/component/ProjectionLightComponent.generated.h")

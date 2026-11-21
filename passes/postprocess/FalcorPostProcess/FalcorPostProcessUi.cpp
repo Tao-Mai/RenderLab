@@ -1,7 +1,6 @@
 #include "passes/postprocess/FalcorPostProcess/FalcorPostProcess.h"
 
 #include "editor/PassEditor.h"
-#include "editor/SettingsWidgets.h"
 
 #include <algorithm>
 #include <cmath>
@@ -10,132 +9,83 @@
 
 namespace
 {
-bool drawSettings(FalcorPostProcessConfig& settings, const FalcorPostProcess&, const PassEditorContext&)
+bool drawSettings(Gui::Widgets& widgets, FalcorPostProcessConfig& settings, const FalcorPostProcess&,
+                  const PassEditorContext&)
 {
     using namespace falcorPostProcess;
     bool  edited     = false;
     auto& toneMapper = settings.toneMapper;
-    if (drawSettingsHeader("Falcor ToneMapper"))
+    if (widgets.resetHeader("Falcor ToneMapper"))
     {
         toneMapper = {};
         edited     = true;
     }
-    ImGui::TextDisabled("Falcor exposure is independent of camera exposure.");
-    edited |= ImGui::SliderFloat(
+    widgets.disabledText("Falcor exposure is independent of camera exposure.");
+    edited |= widgets.slider(
         "Exposure Compensation",
-        &toneMapper.exposureCompensation,
+        toneMapper.exposureCompensation,
         kExposureCompensationMin,
         kExposureCompensationMax,
         "%.1f"
     );
-    edited |= ImGui::Checkbox("Auto Exposure", &toneMapper.autoExposure);
+    edited |= widgets.checkbox("Auto Exposure", toneMapper.autoExposure);
     if (!toneMapper.autoExposure)
     {
-        int exposureMode = static_cast<int>(toneMapper.exposureMode);
-        if (ImGui::Combo("Exposure mode", &exposureMode, "Aperture priority\0Shutter priority\0"))
-        {
-            toneMapper.exposureMode = static_cast<FalcorExposureMode>(exposureMode);
-            edited                  = true;
-        }
+        edited |= widgets.dropdown("Exposure mode", toneMapper.exposureMode, {"Aperture priority", "Shutter priority"});
         float       ev    = toneMapper.exposureValue();
         const float minEv = std::log2(kShutterMin * kFNumberMin * kFNumberMin);
         const float maxEv = std::log2(kShutterMax * kFNumberMax * kFNumberMax);
-        if (ImGui::SliderFloat("Exposure Value (EV)", &ev, minEv, maxEv, "%.1f"))
+        if (widgets.slider("Exposure Value (EV)", ev, minEv, maxEv, "%.1f"))
         {
             toneMapper.setExposureValue(ev);
             edited = true;
         }
-        edited |= ImGui::DragFloat(
-            "Film Speed (ISO)",
-            &toneMapper.filmSpeed,
-            1.0f,
-            kFilmSpeedMin,
-            kFilmSpeedMax,
-            "%.1f",
-            ImGuiSliderFlags_AlwaysClamp
-        );
-        edited |= ImGui::DragFloat(
-            "f-Number",
-            &toneMapper.fNumber,
-            0.1f,
-            kFNumberMin,
-            kFNumberMax,
-            "%.1f",
-            ImGuiSliderFlags_AlwaysClamp
-        );
-        edited |= ImGui::DragFloat(
-            "Shutter",
-            &toneMapper.shutter,
-            0.1f,
-            kShutterMin,
-            kShutterMax,
-            "%.1f",
-            ImGuiSliderFlags_AlwaysClamp
-        );
-        ImGui::SetItemTooltip("Reciprocal shutter time (1/seconds), matching Falcor.");
+        edited |= widgets.drag("Film Speed (ISO)", toneMapper.filmSpeed, 1.0f, kFilmSpeedMin, kFilmSpeedMax, "%.1f");
+        edited |= widgets.drag("f-Number", toneMapper.fNumber, 0.1f, kFNumberMin, kFNumberMax, "%.1f");
+        edited |= widgets.drag("Shutter", toneMapper.shutter, 0.1f, kShutterMin, kShutterMax, "%.1f");
+        widgets.tooltip("Reciprocal shutter time (1/seconds), matching Falcor.");
     }
-    edited |= ImGui::Checkbox("White Balance", &toneMapper.whiteBalance);
+    edited |= widgets.checkbox("White Balance", toneMapper.whiteBalance);
     if (toneMapper.whiteBalance)
     {
-        edited |= ImGui::DragFloat(
-            "White Point (K)",
-            &toneMapper.whitePoint,
-            5.0f,
-            kWhitePointMin,
-            kWhitePointMax,
-            "%.0f",
-            ImGuiSliderFlags_AlwaysClamp
-        );
+        edited |= widgets.drag("White Point (K)", toneMapper.whitePoint, 5.0f, kWhitePointMin, kWhitePointMax, "%.0f");
         auto white = glm::inverse(toneMapper.whiteBalanceTransform()) * glm::vec3{1.0f};
         white /= std::max({white.r, white.g, white.b});
-        ImGui::ColorButton("Source white", ImVec4{white.r, white.g, white.b, 1.0f});
+        widgets.colorPreview("Source white", white);
     }
-    int mode = static_cast<int>(toneMapper.mode);
-    if (ImGui::Combo("Operator", &mode, "Linear\0Reinhard\0Reinhard Modified\0Heji Hable ALU\0Hable UC2\0ACES\0"))
-    {
-        toneMapper.mode = static_cast<FalcorToneMappingOperator>(mode);
-        edited          = true;
-    }
+    edited |= widgets.dropdown("Operator", toneMapper.mode,
+                               {"Linear", "Reinhard", "Reinhard Modified", "Heji Hable ALU", "Hable UC2", "ACES"});
     if (toneMapper.mode == FalcorToneMappingOperator::ReinhardModified)
-        edited |= ImGui::DragFloat(
+        edited |= widgets.drag(
             "White Luminance",
-            &toneMapper.whiteMaxLuminance,
+            toneMapper.whiteMaxLuminance,
             0.2f,
             0.1f,
             std::numeric_limits<float>::max(),
-            "%.2f",
-            ImGuiSliderFlags_AlwaysClamp
+            "%.2f"
         );
     if (toneMapper.mode == FalcorToneMappingOperator::HableUc2)
-        edited |= ImGui::DragFloat(
-            "Linear White",
-            &toneMapper.whiteScale,
-            0.01f,
-            0.001f,
-            100.0f,
-            "%.2f",
-            ImGuiSliderFlags_AlwaysClamp
-        );
-    edited |= ImGui::Checkbox("Clamp Output", &toneMapper.clampOutput);
+        edited |= widgets.drag("Linear White", toneMapper.whiteScale, 0.01f, 0.001f, 100.0f, "%.2f");
+    edited |= widgets.checkbox("Clamp Output", toneMapper.clampOutput);
 
     auto& postFx = settings.simplePostFx;
-    ImGui::PushID("FalcorSimplePostFX");
-    if (drawSettingsHeader("Falcor SimplePostFX"))
+    widgets.pushId("FalcorSimplePostFX");
+    if (widgets.resetHeader("Falcor SimplePostFX"))
     {
         postFx = {};
         edited = true;
     }
-    edited |= ImGui::Checkbox("Enable post fx", &postFx.enabled);
-    edited |= ImGui::SliderFloat("Wipe", &postFx.wipe, 0.0f, 1.0f);
-    if (ImGui::TreeNodeEx("Lens FX", ImGuiTreeNodeFlags_DefaultOpen))
+    edited |= widgets.checkbox("Enable post fx", postFx.enabled);
+    edited |= widgets.slider("Wipe", postFx.wipe, 0.0f, 1.0f);
+    if (auto group = widgets.group("Lens FX", true))
     {
-        edited |= ImGui::SliderFloat("Bloom", &postFx.bloomAmount, 0.0f, 1.0f);
-        edited |= ImGui::SliderFloat("Bloom Star", &postFx.starAmount, 0.0f, 1.0f);
-        edited |= ImGui::SliderFloat("Star Angle", &postFx.starAngle, 0.0f, 1.0f);
-        edited |= ImGui::SliderFloat("Vignette", &postFx.vignetteAmount, 0.0f, 1.0f);
-        edited |= ImGui::SliderFloat("Chromatic Aberration", &postFx.chromaticAberrationAmount, 0.0f, 1.0f);
-        edited |= ImGui::SliderFloat("Barrel Distortion", &postFx.barrelDistortAmount, 0.0f, 1.0f);
-        if (ImGui::Button("Reset lens FX"))
+        edited |= widgets.slider("Bloom", postFx.bloomAmount, 0.0f, 1.0f);
+        edited |= widgets.slider("Bloom Star", postFx.starAmount, 0.0f, 1.0f);
+        edited |= widgets.slider("Star Angle", postFx.starAngle, 0.0f, 1.0f);
+        edited |= widgets.slider("Vignette", postFx.vignetteAmount, 0.0f, 1.0f);
+        edited |= widgets.slider("Chromatic Aberration", postFx.chromaticAberrationAmount, 0.0f, 1.0f);
+        edited |= widgets.slider("Barrel Distortion", postFx.barrelDistortAmount, 0.0f, 1.0f);
+        if (widgets.button("Reset lens FX"))
         {
             const FalcorPostFxConfig defaults;
             postFx.bloomAmount               = defaults.bloomAmount;
@@ -146,40 +96,37 @@ bool drawSettings(FalcorPostProcessConfig& settings, const FalcorPostProcess&, c
             postFx.barrelDistortAmount       = defaults.barrelDistortAmount;
             edited                           = true;
         }
-        ImGui::TreePop();
     }
-    if (ImGui::TreeNode("Saturation"))
+    if (auto group = widgets.group("Saturation"))
     {
-        edited |= ImGui::SliderFloat("Shadow Saturation", &postFx.saturationCurve.x, 0.0f, 2.0f);
-        edited |= ImGui::SliderFloat("Midtone Saturation", &postFx.saturationCurve.y, 0.0f, 2.0f);
-        edited |= ImGui::SliderFloat("Highlight Saturation", &postFx.saturationCurve.z, 0.0f, 2.0f);
-        if (ImGui::Button("Reset saturation"))
+        edited |= widgets.slider("Shadow Saturation", postFx.saturationCurve.x, 0.0f, 2.0f);
+        edited |= widgets.slider("Midtone Saturation", postFx.saturationCurve.y, 0.0f, 2.0f);
+        edited |= widgets.slider("Highlight Saturation", postFx.saturationCurve.z, 0.0f, 2.0f);
+        if (widgets.button("Reset saturation"))
         {
             postFx.saturationCurve = FalcorPostFxConfig{}.saturationCurve;
             edited                 = true;
         }
-        ImGui::TreePop();
     }
-    if (ImGui::TreeNode("Offset/Power/Scale (luma)"))
+    if (auto group = widgets.group("Offset/Power/Scale (luma)"))
     {
-        edited |= ImGui::SliderFloat("Luma Offset (Shadows)", &postFx.colorOffsetScalar, -1.0f, 1.0f);
-        edited |= ImGui::SliderFloat("Luma Power (Midtones)", &postFx.colorPowerScalar, -1.0f, 1.0f);
-        edited |= ImGui::SliderFloat("Luma Scale (Highlights)", &postFx.colorScaleScalar, -1.0f, 1.0f);
-        if (ImGui::Button("Reset luma"))
+        edited |= widgets.slider("Luma Offset (Shadows)", postFx.colorOffsetScalar, -1.0f, 1.0f);
+        edited |= widgets.slider("Luma Power (Midtones)", postFx.colorPowerScalar, -1.0f, 1.0f);
+        edited |= widgets.slider("Luma Scale (Highlights)", postFx.colorScaleScalar, -1.0f, 1.0f);
+        if (widgets.button("Reset luma"))
         {
             postFx.colorOffsetScalar = 0.0f;
             postFx.colorScaleScalar  = 0.0f;
             postFx.colorPowerScalar  = 0.0f;
             edited                   = true;
         }
-        ImGui::TreePop();
     }
-    if (ImGui::TreeNode("Offset/Power/Scale (color)"))
+    if (auto group = widgets.group("Offset/Power/Scale (color)"))
     {
-        edited |= ImGui::ColorEdit3("Color Offset (Shadows)", &postFx.colorOffset.x);
-        edited |= ImGui::ColorEdit3("Color Power (Midtones)", &postFx.colorPower.x);
-        edited |= ImGui::ColorEdit3("Color Scale (Highlights)", &postFx.colorScale.x);
-        if (ImGui::Button("Reset color"))
+        edited |= widgets.colorEdit("Color Offset (Shadows)", postFx.colorOffset);
+        edited |= widgets.colorEdit("Color Power (Midtones)", postFx.colorPower);
+        edited |= widgets.colorEdit("Color Scale (Highlights)", postFx.colorScale);
+        if (widgets.button("Reset color"))
         {
             const FalcorPostFxConfig defaults;
             postFx.colorOffset = defaults.colorOffset;
@@ -187,14 +134,13 @@ bool drawSettings(FalcorPostProcessConfig& settings, const FalcorPostProcess&, c
             postFx.colorPower  = defaults.colorPower;
             edited             = true;
         }
-        ImGui::TreePop();
     }
-    ImGui::PopID();
+    widgets.popId();
     return edited;
 }
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<FalcorPostProcess>(makePassEditor<FalcorPostProcess, drawSettings>("Falcor Post Process"));
+    registry.registerClass<FalcorPostProcess>("FalcorPostProcess", makePassEditor<FalcorPostProcess, drawSettings>("Falcor Post Process"));
 }

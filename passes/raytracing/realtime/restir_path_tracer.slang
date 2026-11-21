@@ -76,7 +76,7 @@ PathResult tracePath(
     RestirReservoir   primaryReservoir = {};
     if (parameters.containsPixel(pixel))
     {
-        RayDesc ray = parameters.createRay(pixel, float2(0.5));
+        RayDesc ray = createPathRay(pixel, float2(0.5));
         result =
             tracePath(ray, kSceneMask | kLightMask, RAY_FLAG_FORCE_OPAQUE, state, primarySurface, primaryReservoir);
     }

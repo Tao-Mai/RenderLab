@@ -1,12 +1,47 @@
+#include "core/Input.h"
 #include "core/Logger.h"
+#include "core/Serializer.h"
 #include "editor/EditorCameraConfig.h"
 #include "editor/PassEditor.h"
 #include "render/device/VulkanContext.h"
 #include "render/graph/RenderGraphCompiler.h"
 #include "render/plugins/PluginManager.h"
+#include "scene/SceneManager.h"
+#include "scene/actor/ALight.h"
+#include "scene/component/SpotLightComponent.h"
+
+#include <imgui.h>
 
 namespace
 {
+void checkSceneMetadata()
+{
+    SceneManager scenes;
+    scenes.init();
+
+    SpotLightComponent spot;
+    const auto fields = Serialize(spot);
+    CHECK(fields.contains("color") && fields.contains("luminousIntensity") && fields.contains("cosOuter"));
+    CHECK(fields.at("offlineEmission").is_null());
+
+    SceneAsset scene;
+    scene.actors.push_back(std::make_unique<ALight>(std::make_unique<SpotLightComponent>()));
+    const auto saved = Serialize(scene);
+    SceneAsset loaded;
+    Deserialize(saved, loaded);
+    CHECK(loaded.actors.size() == 1);
+    CHECK(loaded.actors.front()->getComponent<SpotLightComponent>());
+    CHECK(Serialize(loaded) == saved);
+
+    const auto flags = Serialize(Modifier::Shift | Modifier::Alt);
+    CHECK(flags == nlohmann::json::array({"Shift", "Alt"}));
+    Modifier restored;
+    Deserialize(flags, restored);
+    CHECK(restored == (Modifier::Shift | Modifier::Alt));
+
+    scenes.shutdown();
+}
+
 void checkPluginEditor(const PluginManager& plugins)
 {
     const auto pass = RenderPass::create(plugins, "ToneMappingPass");
@@ -24,7 +59,8 @@ void checkPluginEditor(const PluginManager& plugins)
 
     ImGui::NewFrame();
     ImGui::Begin("Pass options");
-    CHECK(!editor.draw(*pass, context));
+    Gui::Widgets widgets;
+    CHECK(!editor.draw(widgets, *pass, context));
     ImGui::End();
     ImGui::Render();
     ImGui::DestroyContext();
@@ -34,6 +70,7 @@ void checkPluginEditor(const PluginManager& plugins)
 int main(int, char** argv)
 {
     logger::init(argv[0]);
+    checkSceneMetadata();
     PluginManager plugins;
     plugins.loadAllPlugins();
     const auto first = RenderPass::create(plugins, "RayTracingPass");

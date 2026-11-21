@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "scene/Component.h"
 #include "scene/component/TransformComponent.h"
 #include "core/Logger.h"
@@ -11,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-class [[=PartialSerialize{}]] AActor
+class RL_REGISTER_TYPE(AActor, "AActor") RL_ALLOW_UNKNOWN_FIELDS AActor
 {
 public:
     AActor();
@@ -19,8 +21,8 @@ public:
     AActor(const AActor&)            = delete;
     AActor& operator=(const AActor&) = delete;
 
-    [[=ReflectField{}]] std::string                             name;
-    [[=ReflectField{}]] std::vector<std::unique_ptr<Component>> components;
+    RL_FIELD("name") std::string                             name;
+    RL_FIELD("components") std::vector<std::unique_ptr<Component>> components;
 
     virtual void init();
     virtual void tick(float deltaTime);
@@ -91,3 +93,5 @@ private:
     friend class SceneManager;
     uint32_t id = 0;
 };
+
+#include RL_METADATA_HEADER("metadata/src/scene/AActor.generated.h")

@@ -3,12 +3,6 @@
 #include "core/Serializer.h"
 #include "render/graph/RenderPass.h"
 
-struct PassSliderRange
-{
-    double minimum;
-    double maximum;
-};
-
 template <class T, class Pass = RenderPass>
 class ConfigurablePass : public Pass
 {

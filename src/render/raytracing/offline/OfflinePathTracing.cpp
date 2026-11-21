@@ -6,12 +6,10 @@
 #include "render/FrameData.h"
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
-#include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/raytracing/AccelerationStructure.h"
+#include "render/raytracing/RayTracingPipeline.h"
 #include "render/raytracing/offline/OfflineScene.h"
-#include "render/raytracing/offline/OfflineTracePipeline.h"
-#include "render/resources/GpuShader.h"
 #include "render/resources/MaterialTable.h"
 #include "render/resources/RenderResourceManager.h"
 
@@ -23,7 +21,6 @@
 namespace
 {
 constexpr auto kParameterStages = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eCompute;
-constexpr uint32_t kResolveGroupSize = 8;
 
 struct alignas(16) AccumulatedPixel
 {
@@ -65,7 +62,7 @@ constexpr auto kSceneBufferUsage = vk::BufferUsageFlagBits::eStorageBuffer | vk:
 }  // namespace
 
 RenderGraph::ImageHandle OfflinePathTracing::compile(
-    RenderGraph& graph, const PassSetup& setup, std::string_view resolveShader, uint32_t parameterSize,
+    RenderGraph& graph, const PassSetup& setup, std::string_view resolveProgram, uint32_t parameterSize,
     std::span<const vk::DescriptorSetLayoutBinding> extraBindings
 )
 {
@@ -165,7 +162,8 @@ RenderGraph::ImageHandle OfflinePathTracing::compile(
             });
         bindings.insert(bindings.end(), extraBindings.begin(), extraBindings.end());
 
-        auto& renderDevice  = *renderContext().device;
+        auto& ctx = renderContext();
+        auto& renderDevice  = *ctx.device;
         descriptorSetLayout = renderDevice.createDescriptorSetLayout(bindings);
         descriptorSet       = renderDevice.allocateDescriptorSet(descriptorSetLayout);
 
@@ -182,15 +180,8 @@ RenderGraph::ImageHandle OfflinePathTracing::compile(
         };
         pipelineLayout = renderDevice.getOrCreatePipelineLayout(descriptorSetLayouts, std::array{parameterRange});
 
-        const auto& vkDevice = setup.vulkan.deviceHandle();
-        GpuShader shader(vkDevice, std::string{resolveShader});
-        resolvePipeline = vkCheck(vkDevice.createComputePipeline(
-            nullptr,
-            {
-                .stage = {.stage = vk::ShaderStageFlagBits::eCompute, .module = shader.handle(), .pName = "computeMain"},
-                .layout = pipelineLayout,
-            }
-        ));
+        const auto shader = ctx.shaderManager->getOrLoad(resolveProgram);
+        resolvePipeline = renderDevice.createComputePipeline(shader, pipelineLayout);
     }
 
     hitBufferRevision = 0;
@@ -424,7 +415,7 @@ void OfflinePathTracing::render(
     vk::raii::CommandBuffer& commands,
     const PassFrame& execution,
     std::span<const std::byte> constants,
-    const OfflineTracePipeline* pipeline,
+    const RayTracingPipeline* pipeline,
     vk::Extent2D rayExtent,
     std::span<const RenderGraph::BufferHandle> extraAccumulations
 )
@@ -464,10 +455,8 @@ void OfflinePathTracing::render(
             vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 2,
             std::array{execution.renderData.materialSetHandle(), *descriptorSet}, {}
         );
-        commands.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline->trace);
-        commands.traceRaysKHR(
-            pipeline->raygen, pipeline->miss, pipeline->hit, {}, rayExtent.width, rayExtent.height, 1
-        );
+        pipeline->bind(commands);
+        pipeline->dispatch(commands, 0, {rayExtent.width, rayExtent.height, 1});
 
         const vk::MemoryBarrier2 resolveBarrier{
             .srcStageMask  = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
@@ -480,8 +469,5 @@ void OfflinePathTracing::render(
 
     commands.bindPipeline(vk::PipelineBindPoint::eCompute, *resolvePipeline);
     commands.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelineLayout, 3, std::array{*descriptorSet}, {});
-    commands.dispatch(
-        (extent.width + kResolveGroupSize - 1) / kResolveGroupSize, (extent.height + kResolveGroupSize - 1) / kResolveGroupSize,
-        1
-    );
+    resolvePipeline.dispatch(commands, {extent.width, extent.height, 1});
 }

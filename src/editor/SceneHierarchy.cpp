@@ -4,36 +4,31 @@
 #include <imgui_stdlib.h>
 #include "asset/SceneAsset.h"
 #include "core/Logger.h"
-#include "core/Reflect.h"
+#include "core/TypeRegistry.h"
 namespace
 {
-void drawActorTypeTree(
-    std::type_index                                             parent,
-    const std::vector<std::pair<std::type_index, std::string>>& types,
-    std::optional<std::string>&                                 chosen
-)
+using ActorType = TypeRegistry<AActor>::Entry;
+
+void drawActorTypeTree(std::string_view parent, const std::vector<const ActorType*>& types,
+                       std::optional<std::string>& chosen)
 {
-    const auto& registry = BaseTypeInfo<AActor>::baseTypeInfoMap;
-    for (const auto& [type, name] : types)
+    for (const auto* type : types)
     {
-        const auto registered = registry.find(name);
-        DCHECK(registered != registry.end());
-        if (registered->second.parentType != parent)
+        if (type->parent != parent)
             continue;
 
-        const bool hasChildren =
-            std::ranges::any_of(registry, [&](const auto& entry) { return entry.second.parentType == type; });
+        const bool hasChildren = std::ranges::any_of(types, [&](const auto* other) { return other->parent == type->id; });
         ImGuiTreeNodeFlags flags =
             ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen;
         if (!hasChildren)
             flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
 
-        const bool open = ImGui::TreeNodeEx(name.c_str(), flags);
+        const bool open = ImGui::TreeNodeEx(type->id, flags);
         if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
-            chosen = name;
+            chosen = type->id;
         if (open && hasChildren)
         {
-            drawActorTypeTree(type, types, chosen);
+            drawActorTypeTree(type->id, types, chosen);
             ImGui::TreePop();
         }
     }
@@ -54,14 +49,15 @@ SceneObjectActions SceneHierarchy::draw(SceneAsset& scene, uint32_t& selectedId,
     {
         ImGui::TextUnformatted("Choose an Actor class");
         ImGui::Separator();
-        std::vector<std::pair<std::type_index, std::string>> types{
-            BaseTypeInfo<AActor>::typeNames.begin(),
-            BaseTypeInfo<AActor>::typeNames.end()
-        };
-        std::ranges::sort(types, {}, &std::pair<std::type_index, std::string>::second);
-        if (ImGui::TreeNodeEx("AActor", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth))
+        std::vector<const ActorType*> types;
+        for (const auto& [id, entry] : TypeRegistry<AActor>::get().entries)
+            types.push_back(&entry);
+        std::ranges::sort(types, {}, [](const auto* type) { return std::string_view{type->id}; });
+
+        constexpr auto kActorId = metadata::Schema<AActor>::kTypeId;
+        if (ImGui::TreeNodeEx(kActorId, ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth))
         {
-            drawActorTypeTree(typeid(AActor), types, result.createType);
+            drawActorTypeTree(kActorId, types, result.createType);
             ImGui::TreePop();
         }
         if (result.createType)

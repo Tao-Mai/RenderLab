@@ -17,9 +17,9 @@
 
 ## 反射与持久化
 
-SceneManager 初始化时注册 [SceneTypes.h](../src/scene/SceneTypes.h) 中的类型；Engine 进入 Run 时，由 SceneManager 读取配置中的默认场景 ID 并加载。
+SceneManager 初始化时注册生成目录中由 `RL_REGISTER_TYPE` 收集的类型。Engine 进入 Run 时，SceneManager 读取配置中的默认场景 ID 并加载。
 
-- Actor / Component 通过 `ReflectField` 标记持久化字段，继承类沿用该字段选择策略。
+- Actor / Component 通过 `RL_FIELD` 标记持久化字段，生成的描述包含基类字段。
 - 多态指针使用注册类型名，保存为 `{"TypeName": {...}}`，空指针为 null。
 - Owner、拾取 ID、导航状态在运行时建立。
 - 场景从资产快照恢复为独立对象。

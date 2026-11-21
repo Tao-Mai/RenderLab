@@ -5,30 +5,6 @@
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
 
-struct alignas(16) RestirFrameParameters
-{
-    glm::mat4 previousViewProjection{1.0f};
-    glm::vec4 previousViewport{};
-    glm::vec4 previousDepthRow{};
-    uint32_t  width;
-    uint32_t  height;
-    uint32_t  writeLayer;
-    uint32_t  historyValid;
-    uint32_t  maxHistoryLength;
-    uint32_t  spatialSampleCount;
-    float     spatialRadius;
-    uint32_t  temporalReuse;
-    uint32_t  spatialReuse;
-    uint32_t  candidateCount;
-    uint32_t  padding[2]{};
-};
-static_assert(sizeof(RestirFrameParameters) == 144);
-static_assert(offsetof(RestirFrameParameters, width) == 96);
-static_assert(offsetof(RestirFrameParameters, maxHistoryLength) == 112);
-static_assert(offsetof(RestirFrameParameters, spatialReuse) == 128);
-static_assert(offsetof(RestirFrameParameters, candidateCount) == 132);
-static_assert(offsetof(RestirFrameParameters, padding) == 136);
-
 // Explicit rows match the shader's structured-buffer layout.
 struct alignas(16) RestirSurfaceData
 {

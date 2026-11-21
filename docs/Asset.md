@@ -48,7 +48,7 @@ GltfMaterial 保存 PBR 参数与 glTF 扩展。PbrtMaterial 按离线材质模�
 - 环境图导入生成辐照度与 GGX 预过滤结果，可异步准备并取消。
 - `importPbrtScene` 复用固定版本的官方读取前端，保存场景描述并打包原始依赖；详见 [PBRT 导入](Pbrt.md)。
 
-JSON 读写复用 [Serializer.h](../src/core/Serializer.h) 的 C++26 静态反射。多态类型使用稳定的注册名称，完整描述要求字段明确，空 optional 保存为 null。
+JSON 读写通过 [Serializer.h](../src/core/Serializer.h) 消费生成的字段描述。多态类型使用稳定的注册名称，必填键由字段标注指定，空 optional 保存为 null。
 
 材质覆盖复用 GltfMaterial 的 optional 字段，通过静态反射合并有值字段。
 

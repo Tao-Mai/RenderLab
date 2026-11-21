@@ -38,12 +38,20 @@ Engine：场景 / 编辑器 Tick
 ## 场景与资产
 
 - Actor 持有 Component；SceneManager 根据注册类型创建和恢复对象。
-- C++26 静态反射配合 `ReflectField` 选择持久化字段，多态数据使用“类型名 → 数据”。
+- 构建期生成字段描述，多态数据使用“类型名 → 数据”。
 - 资产使用类型化 ID 引用，网格几何与纹理像素独立持久化。
 - Renderer 合并材质描述与 override；MaterialTable 统一生成 GPU 数据，按材质 ID 与覆盖对象维护稳定索引，各 FIF 安全更新。
 - 场景保存编辑器相机和环境图，Renderer 配置只保存渲染行为。
 
 详见 [场景模块](Scene.md) 与 [资产模块](Asset.md)。
+
+### 元数据生成
+
+在 C++ 类型声明上使用 `RL_RECORD`，在持久化字段上用 `RL_FIELD("key")` 固定 JSON 键。
+`RL_REGISTER_TYPE(Base, "id")` 声明多态子类型，`RL_TYPE("id")` 可为 `std::variant` 分支指定标签。
+枚举通过 `RL_ENUM` 或 `RL_FLAGS` 生成名称表，序列化键由 `RL_ENUM_VALUE` 提供。
+在类型定义之后引入对应的 `RL_METADATA_HEADER`。CMake 自动发现 `src/` 和各 Pass 自己的目录中使用该指令的 `.h` 文件。
+生成器按目标扫描 Clang AST，输出标准 C++ 字段描述和注册代码。依赖文件记录扫描时包含的头文件，生成结果按构建配置保存在构建目录下。
 
 ## 渲染与资源
 

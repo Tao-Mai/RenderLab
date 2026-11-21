@@ -10,10 +10,10 @@
 namespace
 {
 constexpr uint8_t kBrdfLutPng[] = {
-#embed "data/lut_ggx.png"
+#include "builtin/lut_ggx.inc"
 };
 constexpr uint8_t kSheenLutPng[] = {
-#embed "data/lut_sheen_E.png"
+#include "builtin/lut_sheen_E.inc"
 };
 
 [[nodiscard]] ::TextureAsset

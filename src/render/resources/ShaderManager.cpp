@@ -3,6 +3,7 @@
 #include "core/Logger.h"
 #include "render/resources/CompiledShaderPath.h"
 #include "render/resources/GpuShader.h"
+#include "render/resources/ShaderLayout.h"
 
 #include <algorithm>
 #include <fstream>
@@ -30,6 +31,7 @@ std::string requiredString(const json& value, const std::string& name)
 
 }  // namespace
 
+ShaderManager::ShaderManager() = default;
 ShaderManager::~ShaderManager() { DCHECK(!device); }
 
 void ShaderManager::init(const vk::raii::Device& targetDevice)
@@ -40,8 +42,7 @@ void ShaderManager::init(const vk::raii::Device& targetDevice)
 void ShaderManager::shutdown() noexcept
 {
     handles.clear();
-    shaders.clear();
-    shaderMetadata.clear();
+    variants.clear();
     device = nullptr;
 }
 
@@ -81,21 +82,33 @@ ShaderHandle ShaderManager::getOrLoad(std::string_view program, const ShaderDefi
         .defines = selected->at("defines").get<ShaderDefines>(),
         .entries = selected->at("entries").get<std::vector<std::string>>()
     };
-    const ShaderHandle handle{static_cast<uint32_t>(shaders.size() + 1)};
-    shaders.push_back(std::move(shader));
-    shaderMetadata.push_back(std::move(metadata));
+    const ShaderHandle handle{static_cast<uint32_t>(variants.size() + 1)};
+    variants.push_back({.shader = std::move(shader), .metadata = std::move(metadata)});
     handles.emplace(key, handle);
     return handle;
 }
 
 vk::ShaderModule ShaderManager::module(ShaderHandle handle) const
 {
-    DCHECK(handle.index > 0 && handle.index <= shaders.size(), "invalid ShaderHandle {}", handle.index);
-    return shaders[handle.index - 1]->handle();
+    DCHECK(handle.index > 0 && handle.index <= variants.size(), "invalid ShaderHandle {}", handle.index);
+    return variants[handle.index - 1].shader->handle();
 }
 
 const ShaderMetadata& ShaderManager::metadata(ShaderHandle handle) const
 {
-    DCHECK(handle.index > 0 && handle.index <= shaderMetadata.size(), "invalid ShaderHandle {}", handle.index);
-    return shaderMetadata[handle.index - 1];
+    DCHECK(handle.index > 0 && handle.index <= variants.size(), "invalid ShaderHandle {}", handle.index);
+    return variants[handle.index - 1].metadata;
+}
+
+const ShaderLayout& ShaderManager::layout(ShaderHandle handle)
+{
+    DCHECK(handle.index > 0 && handle.index <= variants.size(), "invalid ShaderHandle {}", handle.index);
+    auto& variant = variants[handle.index - 1];
+    if (!variant.layout)
+    {
+        auto reflection = variant.metadata.binary;
+        reflection.replace_extension(".reflection.json");
+        variant.layout = std::make_unique<ShaderLayout>(reflection);
+    }
+    return *variant.layout;
 }

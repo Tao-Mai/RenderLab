@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "asset/AssetID.h"
 
 #include <concepts>
@@ -33,8 +35,10 @@ struct AssetTypeList
     using wrapTypes = std::tuple<Wrapper<Assets>...>;
 };
 
-enum class Source
+enum class RL_ENUM Source
 {
-    File,
-    Builtin
+    File RL_ENUM_VALUE("File"),
+    Builtin RL_ENUM_VALUE("Builtin")
 };
+
+#include RL_METADATA_HEADER("metadata/src/asset/Asset.generated.h")

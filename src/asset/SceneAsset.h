@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include <glm/vec3.hpp>
 #include <memory>
 #include <optional>
@@ -11,26 +13,28 @@
 
 struct PbrtMediumAsset;
 
-enum class SceneRenderMode
+enum class RL_ENUM SceneRenderMode
 {
-    Realtime,
-    Offline,
+    Realtime RL_ENUM_VALUE("Realtime"),
+    Offline RL_ENUM_VALUE("Offline"),
 };
 
-struct SceneAsset : Asset
+struct RL_RECORD SceneAsset : Asset
 {
     using ID                              = AssetID<SceneAsset>;
     static constexpr std::string_view dir = "Scene";
 
-    ID                                   id;
-    SceneRenderMode                      renderMode = SceneRenderMode::Realtime;
-    std::optional<AssetID<PbrtMediumAsset>> cameraMedium;
-    std::vector<std::unique_ptr<AActor>> actors;
-    EditorCameraConfig                   editorCamera;
-    std::optional<EnvironmentMapAsset::ID> environmentMap;
+    RL_FIELD("id") ID                                   id;
+    RL_FIELD("renderMode") SceneRenderMode                      renderMode = SceneRenderMode::Realtime;
+    RL_FIELD("cameraMedium") std::optional<AssetID<PbrtMediumAsset>> cameraMedium;
+    RL_FIELD("actors") std::vector<std::unique_ptr<AActor>> actors;
+    RL_FIELD("editorCamera") EditorCameraConfig                   editorCamera;
+    RL_FIELD("environmentMap") std::optional<EnvironmentMapAsset::ID> environmentMap;
 
-    struct Environment
+    struct RL_RECORD Environment
     {
-        glm::vec3 up{0.0f, 1.0f, 0.0f};
-    } environment;
+        RL_FIELD("up") glm::vec3 up{0.0f, 1.0f, 0.0f};
+    } environment RL_FIELD("environment");
 };
+
+#include RL_METADATA_HEADER("metadata/src/asset/SceneAsset.generated.h")

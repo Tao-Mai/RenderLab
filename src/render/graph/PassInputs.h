@@ -1,12 +1,13 @@
 #pragma once
 
+#include "render/FrameData.h"
+
 #include <cstdint>
 #include <span>
 #include <vulkan/vulkan.hpp>
 
 class AccelerationStructure;
 class VulkanContext;
-class FrameData;
 class GpuProfiler;
 struct RenderView;
 struct RenderData;

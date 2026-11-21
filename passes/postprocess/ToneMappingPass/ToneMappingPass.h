@@ -6,8 +6,7 @@
 #include "render/graph/PassSettings.h"
 
 #include "render/device/Device.h"
-
-#include "render/graph/RenderGraph.h"
+#include "render/raster/RasterAttachments.h"
 
 class ToneMappingPass : public ConfigurablePass<ToneMappingSettings>
 {
@@ -20,7 +19,7 @@ public:
 
 private:
     RenderGraph::ImageHandle  hdrColor;
-    RenderGraph::ImageHandle  color;
+    RasterAttachments<1>      attachments;
     RenderGraph::BufferHandle exposure;
     DescriptorSetLayout       descriptorSetLayout;
     vk::raii::DescriptorSet   descriptorSet = nullptr;

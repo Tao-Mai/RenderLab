@@ -1,9 +1,11 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "asset/Asset.h"
 #include "core/Logger.h"
 
-struct MaterialAsset : Asset
+struct RL_TYPE("MaterialAsset") MaterialAsset : Asset
 {
     using ID                              = AssetID<MaterialAsset>;
     static constexpr std::string_view dir = "Material";
@@ -11,7 +13,7 @@ struct MaterialAsset : Asset
     virtual ~MaterialAsset()                    = default;
     bool operator==(const MaterialAsset&) const = default;
 
-    ID id;
+    RL_FIELD("id") ID id;
 
     template <std::derived_from<MaterialAsset> T>
     [[nodiscard]] const T& as() const
@@ -21,3 +23,5 @@ struct MaterialAsset : Asset
         return *material;
     }
 };
+
+#include RL_METADATA_HEADER("metadata/src/asset/MaterialAsset.generated.h")

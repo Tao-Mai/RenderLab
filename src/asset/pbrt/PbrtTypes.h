@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "asset/AssetID.h"
 
 #include <cstdint>
@@ -15,173 +17,175 @@ struct MeshAsset;
 struct PbrtTextureAsset;
 struct PbrtMediumAsset;
 
-struct PbrtSourceLocation
+struct RL_RECORD PbrtSourceLocation
 {
-    std::filesystem::path file;
-    int                   line   = 0;
-    int                   column = 0;
+    RL_FIELD("file") std::filesystem::path file;
+    RL_FIELD("line") int                   line   = 0;
+    RL_FIELD("column") int                   column = 0;
 
     bool operator==(const PbrtSourceLocation&) const = default;
 };
 
-enum class PbrtFileKind
+enum class RL_ENUM PbrtFileKind
 {
-    Source,
-    Image,
-    Geometry,
-    Spectrum,
-    Ptex,
-    MeasuredBrdf,
-    Lens,
-    Volume,
-    ReferenceImage
+    Source RL_ENUM_VALUE("Source"),
+    Image RL_ENUM_VALUE("Image"),
+    Geometry RL_ENUM_VALUE("Geometry"),
+    Spectrum RL_ENUM_VALUE("Spectrum"),
+    Ptex RL_ENUM_VALUE("Ptex"),
+    MeasuredBrdf RL_ENUM_VALUE("MeasuredBrdf"),
+    Lens RL_ENUM_VALUE("Lens"),
+    Volume RL_ENUM_VALUE("Volume"),
+    ReferenceImage RL_ENUM_VALUE("ReferenceImage")
 };
-struct PbrtFileReference
+struct RL_TYPE("PbrtFileReference") PbrtFileReference
 {
-    std::string           originalName;
-    std::filesystem::path path;
-    PbrtFileKind          kind = PbrtFileKind::Source;
-    uint64_t              size = 0;
+    RL_FIELD("originalName") std::string           originalName;
+    RL_FIELD("path") std::filesystem::path path;
+    RL_FIELD("kind") PbrtFileKind          kind = PbrtFileKind::Source;
+    RL_FIELD("size") uint64_t              size = 0;
 
     bool operator==(const PbrtFileReference&) const = default;
 };
 
-struct PbrtFloatValues
+struct RL_TYPE("PbrtFloatValues") PbrtFloatValues
 {
-    std::vector<double> values;
+    RL_FIELD("values") std::vector<double> values;
 
     bool operator==(const PbrtFloatValues&) const = default;
 };
-struct PbrtIntegerValues
+struct RL_TYPE("PbrtIntegerValues") PbrtIntegerValues
 {
-    std::vector<int32_t> values;
+    RL_FIELD("values") std::vector<int32_t> values;
 
     bool operator==(const PbrtIntegerValues&) const = default;
 };
-struct PbrtStringValues
+struct RL_TYPE("PbrtStringValues") PbrtStringValues
 {
-    std::vector<std::string> values;
+    RL_FIELD("values") std::vector<std::string> values;
 
     bool operator==(const PbrtStringValues&) const = default;
 };
-struct PbrtBoolValues
+struct RL_TYPE("PbrtBoolValues") PbrtBoolValues
 {
-    std::vector<uint8_t> values;
+    RL_FIELD("values") std::vector<uint8_t> values;
 
     bool operator==(const PbrtBoolValues&) const = default;
 };
-enum class PbrtArrayType
+enum class RL_ENUM PbrtArrayType
 {
-    Float64,
-    Int32,
-    Bool8
+    Float64 RL_ENUM_VALUE("Float64"),
+    Int32 RL_ENUM_VALUE("Int32"),
+    Bool8 RL_ENUM_VALUE("Bool8")
 };
-struct PbrtArrayReference
+struct RL_TYPE("PbrtArrayReference") PbrtArrayReference
 {
-    std::filesystem::path path;
-    uint64_t              offset = 0;
-    uint64_t              count  = 0;
-    PbrtArrayType         type   = PbrtArrayType::Float64;
+    RL_FIELD("path") std::filesystem::path path;
+    RL_FIELD("offset") uint64_t              offset = 0;
+    RL_FIELD("count") uint64_t              count  = 0;
+    RL_FIELD("type") PbrtArrayType         type   = PbrtArrayType::Float64;
 
     bool operator==(const PbrtArrayReference&) const = default;
 };
 using PbrtParameterValue =
     std::variant<PbrtFloatValues, PbrtIntegerValues, PbrtStringValues, PbrtBoolValues, PbrtArrayReference>;
 
-struct PbrtMaterialReference
+struct RL_TYPE("PbrtMaterialReference") PbrtMaterialReference
 {
-    AssetID<MaterialAsset> id;
+    RL_FIELD("id") AssetID<MaterialAsset> id;
 
     bool operator==(const PbrtMaterialReference&) const = default;
 };
-struct PbrtTextureReference
+struct RL_TYPE("PbrtTextureReference") PbrtTextureReference
 {
-    AssetID<PbrtTextureAsset> id;
+    RL_FIELD("id") AssetID<PbrtTextureAsset> id;
 
     bool operator==(const PbrtTextureReference&) const = default;
 };
-struct PbrtParameterReference
+struct RL_RECORD PbrtParameterReference
 {
     using Target = std::variant<PbrtFileReference, PbrtMaterialReference, PbrtTextureReference>;
 
-    uint32_t valueIndex = 0;
-    Target   target;
+    RL_FIELD("valueIndex") uint32_t valueIndex = 0;
+    RL_FIELD("target") Target   target;
 
     bool operator==(const PbrtParameterReference&) const = default;
 };
-struct PbrtParameter
+struct RL_RECORD PbrtParameter
 {
-    std::string                         type;
-    std::string                         name;
-    std::string                         colorSpace;
-    PbrtSourceLocation                  location;
-    PbrtParameterValue                  value;
-    std::vector<PbrtParameterReference> references;
+    RL_FIELD("type") std::string                         type;
+    RL_FIELD("name") std::string                         name;
+    RL_FIELD("colorSpace") std::string                         colorSpace;
+    RL_FIELD("location") PbrtSourceLocation                  location;
+    RL_FIELD("value") PbrtParameterValue                  value;
+    RL_FIELD("references") std::vector<PbrtParameterReference> references;
 
     bool operator==(const PbrtParameter&) const = default;
 };
-struct PbrtEntity
+struct RL_RECORD PbrtEntity
 {
-    std::string                type;
-    std::string                colorSpace;
-    std::vector<PbrtParameter> parameters;
-    PbrtSourceLocation         location;
+    RL_FIELD("type") std::string                type;
+    RL_FIELD("colorSpace") std::string                colorSpace;
+    RL_FIELD("parameters") std::vector<PbrtParameter> parameters;
+    RL_FIELD("location") PbrtSourceLocation         location;
 
     bool operator==(const PbrtEntity&) const = default;
 };
-struct PbrtTransform
+struct RL_RECORD PbrtTransform
 {
-    glm::dmat4 start{1.0};
-    glm::dmat4 end{1.0};
-    double     startTime = 0;
-    double     endTime   = 1;
+    RL_FIELD("start") glm::dmat4 start{1.0};
+    RL_FIELD("end") glm::dmat4 end{1.0};
+    RL_FIELD("startTime") double     startTime = 0;
+    RL_FIELD("endTime") double     endTime   = 1;
 
     bool operator==(const PbrtTransform&) const = default;
 };
-struct PbrtShape
+struct RL_RECORD PbrtShape
 {
-    PbrtEntity                            entity;
-    PbrtTransform                         renderFromObject;
-    bool                                  reverseOrientation = false;
-    std::optional<AssetID<MaterialAsset>> material;
-    std::optional<uint32_t>               areaLight;
-    std::optional<uint32_t>               insideMedium;
-    std::optional<uint32_t>               outsideMedium;
-    std::optional<AssetID<MeshAsset>>     mesh;
-    std::optional<std::variant<PbrtIntegerValues, PbrtArrayReference>> faceIndices;
+    RL_FIELD("entity") PbrtEntity                            entity;
+    RL_FIELD("renderFromObject") PbrtTransform                         renderFromObject;
+    RL_FIELD("reverseOrientation") bool                                  reverseOrientation = false;
+    RL_FIELD("material") std::optional<AssetID<MaterialAsset>> material;
+    RL_FIELD("areaLight") std::optional<uint32_t>               areaLight;
+    RL_FIELD("insideMedium") std::optional<uint32_t>               insideMedium;
+    RL_FIELD("outsideMedium") std::optional<uint32_t>               outsideMedium;
+    RL_FIELD("mesh") std::optional<AssetID<MeshAsset>>     mesh;
+    RL_FIELD("faceIndices") std::optional<std::variant<PbrtIntegerValues, PbrtArrayReference>> faceIndices;
 
     bool operator==(const PbrtShape&) const = default;
 };
-struct PbrtLight
+struct RL_RECORD PbrtLight
 {
-    PbrtEntity              entity;
-    PbrtTransform           renderFromLight;
-    std::optional<uint32_t> medium;
+    RL_FIELD("entity") PbrtEntity              entity;
+    RL_FIELD("renderFromLight") PbrtTransform           renderFromLight;
+    RL_FIELD("medium") std::optional<uint32_t> medium;
 
     bool operator==(const PbrtLight&) const = default;
 };
-struct PbrtObjectDefinition
+struct RL_RECORD PbrtObjectDefinition
 {
-    std::string           name;
-    PbrtSourceLocation    location;
-    std::vector<uint32_t> shapes;
+    RL_FIELD("name") std::string           name;
+    RL_FIELD("location") PbrtSourceLocation    location;
+    RL_FIELD("shapes") std::vector<uint32_t> shapes;
 
     bool operator==(const PbrtObjectDefinition&) const = default;
 };
-struct PbrtInstance
+struct RL_RECORD PbrtInstance
 {
-    uint32_t           definition = 0;
-    PbrtTransform      renderFromInstance;
-    PbrtSourceLocation location;
+    RL_FIELD("definition") uint32_t           definition = 0;
+    RL_FIELD("renderFromInstance") PbrtTransform      renderFromInstance;
+    RL_FIELD("location") PbrtSourceLocation location;
 
     bool operator==(const PbrtInstance&) const = default;
 };
-struct PbrtOption
+struct RL_RECORD PbrtOption
 {
-    std::string                      name;
-    std::string                      value;
-    PbrtSourceLocation               location;
-    std::optional<PbrtFileReference> inputFile;
+    RL_FIELD("name") std::string                      name;
+    RL_FIELD("value") std::string                      value;
+    RL_FIELD("location") PbrtSourceLocation               location;
+    RL_FIELD("inputFile") std::optional<PbrtFileReference> inputFile;
 
     bool operator==(const PbrtOption&) const = default;
 };
+
+#include RL_METADATA_HEADER("metadata/src/asset/pbrt/PbrtTypes.generated.h")

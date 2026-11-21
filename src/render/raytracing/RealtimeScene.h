@@ -34,9 +34,9 @@ private:
     uint32_t                             taskCount = 0;
     DescriptorSetLayout                  descriptorSetLayout;
     vk::PipelineLayout                   pipelineLayout;
-    vk::raii::Pipeline                   pipeline = nullptr;
+    ComputePipeline                     pipeline;
     std::array<Frame, maxFramesInFlight> frames;
 
-    void createPipeline(const PassSetup& setup);
+    void createPipeline();
     void updateDescriptors(RenderGraph& graph, const PassFrame& frame);
 };

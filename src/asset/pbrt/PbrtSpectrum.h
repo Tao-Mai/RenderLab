@@ -1,52 +1,54 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "asset/pbrt/PbrtTypes.h"
 
 #include <glm/vec3.hpp>
 
-struct PbrtFloatConstant
+struct RL_TYPE("PbrtFloatConstant") PbrtFloatConstant
 {
-    double value = 0.0;
+    RL_FIELD("value") double value = 0.0;
     bool operator==(const PbrtFloatConstant&) const = default;
 };
 
 using PbrtFloatInput = std::variant<PbrtFloatConstant, PbrtTextureReference>;
 
-struct PbrtConstantSpectrum
+struct RL_TYPE("PbrtConstantSpectrum") PbrtConstantSpectrum
 {
-    double value = 0.0;
+    RL_FIELD("value") double value = 0.0;
     bool operator==(const PbrtConstantSpectrum&) const = default;
 };
 
-struct PbrtRgbSpectrum
+struct RL_TYPE("PbrtRgbSpectrum") PbrtRgbSpectrum
 {
-    glm::dvec3 value{0.0};
-    std::string colorSpace = "srgb";
+    RL_FIELD("value") glm::dvec3 value{0.0};
+    RL_FIELD("colorSpace") std::string colorSpace = "srgb";
     bool operator==(const PbrtRgbSpectrum&) const = default;
 };
 
-struct PbrtSampledSpectrum
+struct RL_TYPE("PbrtSampledSpectrum") PbrtSampledSpectrum
 {
     // Interleaved wavelength (nm), value pairs.
-    std::variant<PbrtFloatValues, PbrtArrayReference> samples = PbrtFloatValues{};
+    RL_FIELD("samples") std::variant<PbrtFloatValues, PbrtArrayReference> samples = PbrtFloatValues{};
     bool operator==(const PbrtSampledSpectrum&) const = default;
 };
 
-struct PbrtBlackbodySpectrum
+struct RL_TYPE("PbrtBlackbodySpectrum") PbrtBlackbodySpectrum
 {
-    double temperature = 6500.0;
+    RL_FIELD("temperature") double temperature = 6500.0;
     bool operator==(const PbrtBlackbodySpectrum&) const = default;
 };
 
-struct PbrtNamedSpectrum
+struct RL_TYPE("PbrtNamedSpectrum") PbrtNamedSpectrum
 {
-    std::string name;
+    RL_FIELD("name") std::string name;
     bool operator==(const PbrtNamedSpectrum&) const = default;
 };
 
-struct PbrtSpectrumFile
+struct RL_TYPE("PbrtSpectrumFile") PbrtSpectrumFile
 {
-    PbrtFileReference file;
+    RL_FIELD("file") PbrtFileReference file;
     bool operator==(const PbrtSpectrumFile&) const = default;
 };
 
@@ -60,3 +62,5 @@ namespace pbrt_import
 {
 [[nodiscard]] PbrtSpectrum readSpectrum(const PbrtParameter& parameter, bool albedo, bool allowFloat);
 }
+
+#include RL_METADATA_HEADER("metadata/src/asset/pbrt/PbrtSpectrum.generated.h")

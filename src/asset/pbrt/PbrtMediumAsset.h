@@ -1,92 +1,101 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "asset/Asset.h"
 #include "asset/pbrt/PbrtSpectrum.h"
 
 using PbrtFloatArray = std::variant<PbrtFloatValues, PbrtArrayReference>;
 
-struct PbrtMediumAsset : Asset
+struct RL_RECORD PbrtMediumAsset : Asset
 {
     using ID = AssetID<PbrtMediumAsset>;
     static constexpr std::string_view dir = "PbrtMedium";
 
-    struct Scattering
+    struct RL_RECORD Scattering
     {
-        PbrtSpectrum sigmaA = PbrtConstantSpectrum{1.0};
-        PbrtSpectrum sigmaS = PbrtConstantSpectrum{1.0};
-        double scale = 1.0;
-        double g = 0.0;
+        RL_FIELD("sigmaA") PbrtSpectrum sigmaA = PbrtConstantSpectrum{1.0};
+        RL_FIELD("sigmaS") PbrtSpectrum sigmaS = PbrtConstantSpectrum{1.0};
+        RL_FIELD("scale") double scale = 1.0;
+        RL_FIELD("g") double g = 0.0;
         bool operator==(const Scattering&) const = default;
     };
-    struct Emission
+    struct RL_RECORD Emission
     {
-        PbrtSpectrum radiance = PbrtConstantSpectrum{0.0};
-        double scale = 1.0;
+        RL_FIELD("radiance") PbrtSpectrum radiance = PbrtConstantSpectrum{0.0};
+        RL_FIELD("scale") double scale = 1.0;
         bool operator==(const Emission&) const = default;
     };
-    struct Homogeneous
+    struct RL_TYPE("Homogeneous") Homogeneous
     {
-        std::string preset;
-        Scattering scattering;
-        Emission emission;
+        RL_FIELD("preset") std::string preset;
+        RL_FIELD("scattering") Scattering scattering;
+        RL_FIELD("emission") Emission emission;
         bool operator==(const Homogeneous&) const = default;
     };
-    struct Grid
+    struct RL_RECORD Grid
     {
-        glm::ivec3 dimensions{1};
-        glm::dvec3 pMin{0.0}, pMax{1.0};
+        RL_FIELD("dimensions") glm::ivec3 dimensions{1};
+        RL_FIELD("pMin") glm::dvec3 pMin{0.0};
+        RL_FIELD("pMax") glm::dvec3 pMax{1.0};
         bool operator==(const Grid&) const = default;
     };
-    struct Temperature
+    struct RL_RECORD Temperature
     {
-        double offset = 0.0;
-        double scale = 1.0;
+        RL_FIELD("offset") double offset = 0.0;
+        RL_FIELD("scale") double scale = 1.0;
         bool operator==(const Temperature&) const = default;
     };
-    struct UniformGrid
+    struct RL_TYPE("UniformGrid") UniformGrid
     {
-        Grid grid;
-        Scattering scattering;
-        Emission emission;
-        PbrtFloatArray density = PbrtFloatValues{};
-        PbrtFloatArray temperature = PbrtFloatValues{};
-        PbrtFloatArray emissionScale = PbrtFloatValues{};
-        Temperature temperatureTransform;
+        RL_FIELD("grid") Grid grid;
+        RL_FIELD("scattering") Scattering scattering;
+        RL_FIELD("emission") Emission emission;
+        RL_FIELD("density") PbrtFloatArray density = PbrtFloatValues{};
+        RL_FIELD("temperature") PbrtFloatArray temperature = PbrtFloatValues{};
+        RL_FIELD("emissionScale") PbrtFloatArray emissionScale = PbrtFloatValues{};
+        RL_FIELD("temperatureTransform") Temperature temperatureTransform;
         bool operator==(const UniformGrid&) const = default;
     };
-    struct RgbGrid
+    struct RL_TYPE("RgbGrid") RgbGrid
     {
-        Grid grid;
-        PbrtFloatArray sigmaA = PbrtFloatValues{};
-        PbrtFloatArray sigmaS = PbrtFloatValues{};
-        PbrtFloatArray radiance = PbrtFloatValues{};
-        double scale = 1.0, g = 0.0, emissionScale = 1.0;
+        RL_FIELD("grid") Grid grid;
+        RL_FIELD("sigmaA") PbrtFloatArray sigmaA = PbrtFloatValues{};
+        RL_FIELD("sigmaS") PbrtFloatArray sigmaS = PbrtFloatValues{};
+        RL_FIELD("radiance") PbrtFloatArray radiance = PbrtFloatValues{};
+        RL_FIELD("scale") double scale = 1.0;
+        RL_FIELD("g") double g = 0.0;
+        RL_FIELD("emissionScale") double emissionScale = 1.0;
         bool operator==(const RgbGrid&) const = default;
     };
-    struct Cloud
+    struct RL_TYPE("Cloud") Cloud
     {
-        Scattering scattering;
-        glm::dvec3 pMin{0.0}, pMax{1.0};
-        double density = 1.0, wispiness = 1.0, frequency = 5.0;
+        RL_FIELD("scattering") Scattering scattering;
+        RL_FIELD("pMin") glm::dvec3 pMin{0.0};
+        RL_FIELD("pMax") glm::dvec3 pMax{1.0};
+        RL_FIELD("density") double density = 1.0;
+        RL_FIELD("wispiness") double wispiness = 1.0;
+        RL_FIELD("frequency") double frequency = 5.0;
         bool operator==(const Cloud&) const = default;
     };
-    struct NanoVdb
+    struct RL_TYPE("NanoVdb") NanoVdb
     {
-        PbrtFileReference file;
-        std::string densityGrid = "density", temperatureGrid = "temperature";
-        Scattering scattering;
-        Temperature temperatureTransform;
-        double emissionScale = 1.0;
+        RL_FIELD("file") PbrtFileReference file;
+        RL_FIELD("densityGrid") std::string densityGrid = "density";
+        RL_FIELD("temperatureGrid") std::string temperatureGrid = "temperature";
+        RL_FIELD("scattering") Scattering scattering;
+        RL_FIELD("temperatureTransform") Temperature temperatureTransform;
+        RL_FIELD("emissionScale") double emissionScale = 1.0;
         bool operator==(const NanoVdb&) const = default;
     };
     using Model = std::variant<Homogeneous, UniformGrid, RgbGrid, Cloud, NanoVdb>;
 
-    ID id;
-    std::string name;
-    std::string colorSpace;
-    PbrtSourceLocation location;
-    glm::dmat4 worldFromMedium{1.0};
-    Model model = Homogeneous{};
+    RL_FIELD("id") ID id;
+    RL_FIELD("name") std::string name;
+    RL_FIELD("colorSpace") std::string colorSpace;
+    RL_FIELD("location") PbrtSourceLocation location;
+    RL_FIELD("worldFromMedium") glm::dmat4 worldFromMedium{1.0};
+    RL_FIELD("model") Model model = Homogeneous{};
     bool operator==(const PbrtMediumAsset&) const = default;
 };
 
@@ -95,3 +104,5 @@ namespace pbrt_import
 [[nodiscard]] PbrtMediumAsset convertMedium(PbrtMediumAsset::ID id, const std::string& name,
     const PbrtEntity& entity, const glm::dmat4& worldFromMedium);
 }
+
+#include RL_METADATA_HEADER("metadata/src/asset/pbrt/PbrtMediumAsset.generated.h")

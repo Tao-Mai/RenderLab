@@ -1,15 +1,17 @@
 #pragma once
 
-#include "passes/raytracing/realtime/RayTracingData.h"
 #include "passes/raytracing/realtime/RayTracingSettings.h"
+#include "passes/raytracing/realtime/RestirResources.h"
 
-#include "asset/EnvironmentMapAsset.h"
 #include "render/graph/PassSettings.h"
-#include "render/raytracing/RealtimePathTracing.h"
-#include "render/resources/ShaderData.h"
+#include "render/raytracing/PathTracingParameters.h"
+#include "render/raytracing/RayTracingPipeline.h"
+#include "render/raytracing/RayTracingStorageImages.h"
+#include "render/raytracing/RealtimeSceneBindings.h"
 
 #include <array>
-#include <glm/vec4.hpp>
+#include <optional>
+#include <vector>
 
 class RayTracingPass : public ConfigurablePass<RayTracingSettings, CompositeRenderPass>
 {
@@ -26,50 +28,36 @@ private:
 
         struct Output
         {
-            RealtimePathTracing::Output path;
+            RayTracingStorageImages::Outputs images;
             RenderGraph::BufferHandle reservoirHistory;
         };
 
         Output compile(
             RenderGraph& graph, const PassSetup& setup, RealtimeScene::Buffers scene, RenderGraph::BufferHandle lights
         );
-        void bindResources(RenderGraph& graph, const PassSetup& setup)
-        {
-            tracer.bindResources(graph, setup);
-        }
+        void bindResources(RenderGraph& graph, const PassSetup& setup);
         void prepare(RenderGraph& graph, const PassFrame& execution);
         void execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& execution);
 
     private:
-        struct Frame
+        struct Program
         {
-            std::array<uint64_t, 5> bufferRevisions{};
-            uint32_t surfaceLayer = ~0u;
+            DescriptorSetLayout descriptorLayout;
+            std::optional<RayTracingPipeline> pipeline;
         };
 
         const RayTracingSettings& settings;
-        RealtimePathTracing tracer;
-        std::array<Frame, maxFramesInFlight> frames;
-        std::array<RenderGraph::BufferHandle, 2> restirSurfaces;
-        RenderGraph::BufferHandle initialReservoirs;
-        RenderGraph::BufferHandle reservoirHistory;
-        RenderGraph::BufferHandle restirParameters;
-        vk::Extent2D                                   extent;
-        uint32_t                                       writeLayer = 0;
-        bool                                           hasRestirHistory = false;
-        glm::mat4                                      previousViewProjection{1.0f};
-        glm::vec4                                      previousViewport{};
-        glm::vec4                                      previousDepthRow{};
-        uint64_t                                       previousSceneSignature = 0;
-        uint64_t                                       previousMaterialRevision = 0;
-        RestirSettings                                 previousRestir;
-        uint32_t                                       previousMaxBounces = 0;
-        bool                                           previousIbl = false;
-        std::vector<LightData>                         previousLights;
-        std::optional<EnvironmentMapAsset::ID>         previousEnvironment;
-
-        void updateBufferDescriptors(RenderGraph& graph, const PassFrame& execution);
-        void prepareRestir(RenderGraph& graph, const PassFrame& execution);
+        RealtimeSceneBindings sceneBindings;
+        RayTracingStorageImages images;
+        RestirResources reservoirs;
+        std::array<Program, 2> programs;
+        ShaderPushConstants<PathTracingParameters> frameConstants;
+        std::vector<vk::raii::DescriptorSet> descriptorSets;
+        RenderGraph::ImageHandle historySource;
+        RestirSettings previousRestir;
+        uint32_t sampleIndex = 0;
+        uint32_t previousMaxBounces = 0;
+        bool splitLighting = false;
     };
 
     RealtimeScene scene;

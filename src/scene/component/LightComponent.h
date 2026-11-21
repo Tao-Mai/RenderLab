@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "scene/Component.h"
 #include "asset/pbrt/PbrtLight.h"
 
@@ -7,18 +9,20 @@
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
-struct LightComponent : Component
+struct RL_TYPE("LightComponent") LightComponent : Component
 {
     ~LightComponent() override = 0;
     void init(AActor* actor) override;
     void tick(float) override {}
     [[nodiscard]] virtual glm::vec3 emissionColor() const = 0;
 
-    [[=ReflectField{}]] glm::vec3 color{1.0f};
-    [[=ReflectField{}]] bool enabled = true;
-    [[=ReflectField{}]] bool castShadow = false;
-    [[=ReflectField{}]] std::optional<PbrtLightEmission> offlineEmission;
+    RL_FIELD("color") glm::vec3 color{1.0f};
+    RL_FIELD("enabled") bool enabled = true;
+    RL_FIELD("castShadow") bool castShadow = false;
+    RL_FIELD("offlineEmission") std::optional<PbrtLightEmission> offlineEmission;
 
 protected:
     [[nodiscard]] glm::vec3 coloredEmission(float strength) const;
 };
+
+#include RL_METADATA_HEADER("metadata/src/scene/component/LightComponent.generated.h")

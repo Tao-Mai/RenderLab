@@ -6,7 +6,8 @@
 #include "asset/SceneAsset.h"
 #include "editor/ComponentDraw.h"
 #include "editor/EditorCameraConfig.h"
-#include "editor/SettingsWidgets.h"
+#include "editor/ExposureUi.h"
+#include "editor/Gui.h"
 #include "scene/AActor.h"
 
 bool drawCameraInspector(EditorCameraConfig& camera, const ExposureConfig& globalExposure)
@@ -90,7 +91,8 @@ bool drawCameraInspector(EditorCameraConfig& camera, const ExposureConfig& globa
 
         if (camera.exposure)
         {
-            edited = drawExposureSettings(*camera.exposure) || edited;
+            Gui::Widgets widgets;
+            edited |= drawExposureSettings(widgets, *camera.exposure);
         }
         ImGui::PopID();
 
@@ -123,9 +125,10 @@ bool drawCameraInspector(EditorCameraConfig& camera, const ExposureConfig& globa
 
 bool drawEnvironmentInspector(SceneAsset& scene, const AssetManager& assets)
 {
+    Gui::Widgets widgets;
     auto& current = scene.environmentMap;
     bool edited = false;
-    if (drawSettingsHeader("Environment") && current)
+    if (widgets.resetHeader("Environment") && current)
     {
         current.reset();
         edited = true;

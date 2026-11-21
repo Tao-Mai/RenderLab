@@ -1,4 +1,4 @@
-renderlab_add_plugin(RayTracingPass RayTracingPass.cpp RayTracingPassUi.cpp)
+renderlab_add_plugin(RayTracingPass RayTracingPass.cpp RayTracingPassUi.cpp RestirResources.cpp)
 
 foreach(svgf IN ITEMS 0 1)
     set(suffix "")

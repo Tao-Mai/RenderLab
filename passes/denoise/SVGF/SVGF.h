@@ -1,6 +1,7 @@
 #pragma once
 
 #include "passes/denoise/SVGF/SVGFFilter.h"
+#include "render/graph/PassSettings.h"
 
 class SVGF : public ConfigurablePass<SvgfSettings, CompositeRenderPass>
 {

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "asset/GltfMaterial.h"
 #include "asset/MeshAsset.h"
 #include "scene/Component.h"
@@ -7,12 +9,14 @@
 
 #include <unordered_map>
 
-struct RenderComponent : Component
+struct RL_REGISTER_TYPE(Component, "RenderComponent") RenderComponent : Component
 {
     void init(AActor* actor) override;
     void tick(float) override {}
 
-    [[=ReflectField{}]] MeshAsset::ID meshId;
-    [[=ReflectField{}]] std::unordered_map<int, MaterialOverride> materialOverrides;
-    [[=ReflectField{}]] std::optional<PbrtSurface> offlineSurface;
+    RL_FIELD("meshId") MeshAsset::ID meshId;
+    RL_FIELD("materialOverrides") std::unordered_map<int, MaterialOverride> materialOverrides;
+    RL_FIELD("offlineSurface") std::optional<PbrtSurface> offlineSurface;
 };
+
+#include RL_METADATA_HEADER("metadata/src/scene/component/RenderComponent.generated.h")

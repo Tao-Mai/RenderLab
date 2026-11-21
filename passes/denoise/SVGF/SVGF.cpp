@@ -20,5 +20,5 @@ void SVGF::compile(RenderGraph& graph, const PassSetup& setup, PassResources& po
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<SVGF>(makePassEditor<SVGF>("SVGF"));
+    registry.registerClass<SVGF>("SVGF", makePassEditor<SVGF>("SVGF"));
 }

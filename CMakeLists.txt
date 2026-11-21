@@ -1,9 +1,5 @@
 cmake_minimum_required(VERSION 4.2)
 
-if (CMAKE_HOST_WIN32 AND NOT DEFINED VCPKG_TARGET_TRIPLET)
-    set(VCPKG_TARGET_TRIPLET "x64-mingw-dynamic" CACHE STRING "vcpkg target triplet")
-endif ()
-
 if (NOT DEFINED CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
     set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
             CACHE FILEPATH "vcpkg toolchain file")
@@ -17,7 +13,7 @@ if (NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
 endif ()
 
-set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
@@ -31,39 +27,33 @@ endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${RENDERLAB_RUNTIME_DIRECTORY}")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${RENDERLAB_RUNTIME_DIRECTORY}")
 
-if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16.2)
-    message(FATAL_ERROR "RenderLab requires GCC 16.2 or newer with C++26 reflection. Select that compiler in your toolchain.")
+if (WIN32)
+    if (MSVC)
+        set(renderlab_windows_triplet "x64-windows")
+    elseif (MINGW)
+        set(renderlab_windows_triplet "x64-mingw-dynamic")
+    endif ()
+    if (NOT DEFINED renderlab_windows_triplet OR NOT VCPKG_TARGET_TRIPLET STREQUAL renderlab_windows_triplet)
+        message(FATAL_ERROR
+            "Compiler ${CMAKE_CXX_COMPILER_ID} and vcpkg triplet '${VCPKG_TARGET_TRIPLET}' do not match. "
+            "Use '${renderlab_windows_triplet}' for this compiler in a fresh build directory.")
+    endif ()
 endif ()
 
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
-
-if (WIN32 AND NOT VCPKG_TARGET_TRIPLET STREQUAL "x64-mingw-dynamic")
-    message(FATAL_ERROR "Windows GCC builds require VCPKG_TARGET_TRIPLET=x64-mingw-dynamic. Use a fresh build directory when changing toolchains.")
-endif ()
-
-include(CheckCXXSourceCompiles)
-include(CMakePushCheckState)
-cmake_push_check_state(RESET)
-set(CMAKE_REQUIRED_FLAGS "-freflection")
-check_cxx_source_compiles([=[
-    #include <meta>
-    #if !defined(__cpp_impl_reflection) || __cpp_impl_reflection < 202506L
-    #error C++26 reflection is unavailable
-    #endif
-    static_assert(std::meta::is_type(^^int));
-    int main() {}
-]=] RENDERLAB_HAS_CXX26_REFLECTION)
-cmake_pop_check_state()
-if (NOT RENDERLAB_HAS_CXX26_REFLECTION)
-    message(FATAL_ERROR "The selected GCC/libstdc++ cannot compile C++26 reflection with -freflection.")
+if (MSVC)
+    set(renderlab_cxx_options /EHs-c- /utf-8 /Zc:preprocessor)
+    set(renderlab_cxx_definitions _HAS_EXCEPTIONS=0 NOMINMAX)
+else ()
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+    set(renderlab_cxx_options -fno-exceptions)
 endif ()
 
 add_library(RenderLabBuildOptions INTERFACE)
-target_compile_features(RenderLabBuildOptions INTERFACE cxx_std_26)
+target_compile_features(RenderLabBuildOptions INTERFACE cxx_std_23)
 target_compile_options(RenderLabBuildOptions INTERFACE
-        $<$<COMPILE_LANGUAGE:CXX>:-freflection>
-        $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>)
-target_compile_definitions(RenderLabBuildOptions INTERFACE JSON_NOEXCEPTION TINYGLTF_NOEXCEPTION)
+        "$<$<COMPILE_LANGUAGE:CXX>:${renderlab_cxx_options}>")
+target_compile_definitions(RenderLabBuildOptions INTERFACE
+        "$<$<COMPILE_LANGUAGE:CXX>:${renderlab_cxx_definitions}>" JSON_NOEXCEPTION TINYGLTF_NOEXCEPTION)
 
 get_filename_component(RENDERLAB_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
 
@@ -73,6 +63,8 @@ function(renderlab_copy_runtime_libraries target)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "$<TARGET_FILE:Python3::Python>" "$<TARGET_FILE_DIR:${target}>"
             VERBATIM)
+    endif ()
+    if (MINGW)
         foreach (runtime libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll)
             set(runtime_path "${RENDERLAB_COMPILER_BIN_DIR}/${runtime}")
             if (NOT EXISTS "${runtime_path}")
@@ -118,6 +110,8 @@ set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 set(SHADER_BINARY_DIR "${RENDERLAB_RUNTIME_DIRECTORY}/shaders")
 include(cmake/Shaders.cmake)
 include(cmake/Plugins.cmake)
+include(cmake/Metadata.cmake)
+target_include_directories(RenderLabBuildOptions INTERFACE "${RENDERLAB_GENERATED_DIRECTORY}")
 
 find_package(ZLIB REQUIRED)
 add_subdirectory(src/asset/pbrt)
@@ -125,12 +119,14 @@ add_subdirectory(src/asset/pbrt)
 add_library(RenderLabCore SHARED
     src/core/ConfigManager.cpp
     src/core/ConfigManager.h
-    src/core/Annotations.h
+    src/core/MetadataAnnotations.h
     src/core/Context.cpp
     src/core/Context.h
     src/core/Logger.h
     src/core/Debug.h
-    src/core/Reflect.h
+    src/core/Metadata.h
+    src/core/TypeRegistry.h
+    src/core/TypeTraits.h
     src/core/Serializer.h
     src/core/Window.cpp
     src/core/Window.h
@@ -151,7 +147,6 @@ add_library(RenderLabCore SHARED
     src/scene/component/CharacterMoveComponent.h
     src/scene/SceneManager.cpp
     src/scene/SceneManager.h
-    src/scene/SceneTypes.h
     src/scene/AActor.cpp
     src/scene/AActor.h
     src/scene/actor/AFreeFlyCamera.cpp
@@ -247,8 +242,11 @@ add_library(RenderLabCore SHARED
     src/render/resources/MaterialTable.h
     src/render/resources/RenderResourceManager.cpp
     src/render/resources/RenderResourceManager.h
+    src/render/resources/LightRanges.h
     src/render/resources/ShaderData.h
     src/render/resources/PbrtMaterialProgram.h
+    src/render/resources/ShaderLayout.cpp
+    src/render/resources/ShaderLayout.h
     src/render/resources/ShaderManager.cpp
     src/render/resources/ShaderManager.h
     src/render/graph/EndPass.cpp
@@ -267,10 +265,16 @@ add_library(RenderLabCore SHARED
     src/render/raytracing/AccelerationStructure.h
     src/render/raytracing/SceneAccelerationStructures.cpp
     src/render/raytracing/SceneAccelerationStructures.h
-    src/render/raytracing/RealtimePathTracing.cpp
-    src/render/raytracing/RealtimePathTracing.h
+    src/render/raytracing/PathTracingParameters.h
+    src/render/raytracing/PathTracingShader.h
+    src/render/raytracing/RayTracingPipeline.cpp
+    src/render/raytracing/RayTracingPipeline.h
+    src/render/raytracing/RayTracingStorageImages.cpp
+    src/render/raytracing/RayTracingStorageImages.h
     src/render/raytracing/RealtimeScene.cpp
     src/render/raytracing/RealtimeScene.h
+    src/render/raytracing/RealtimeSceneBindings.cpp
+    src/render/raytracing/RealtimeSceneBindings.h
     src/render/raytracing/offline/OfflineLightData.h
     src/render/raytracing/offline/OfflineShaderTypes.h
     src/render/denoise/DenoiserInputs.h
@@ -284,25 +288,55 @@ add_library(RenderLabCore SHARED
     src/render/raytracing/offline/OfflinePathTracing.cpp
     src/render/raytracing/offline/OfflinePathTracing.h
     src/render/raytracing/offline/OfflineRayTracingBindings.h
-    src/render/raytracing/offline/OfflineTracePipeline.cpp
-    src/render/raytracing/offline/OfflineTracePipeline.h
-    src/editor/SettingsWidgets.cpp
+    src/render/raytracing/offline/OfflineTracePipelineCache.cpp
+    src/render/raytracing/offline/OfflineTracePipelineCache.h
+    src/editor/Gui.cpp
+    src/editor/ExposureUi.cpp
 )
 set_target_properties(RenderLabCore PROPERTIES PREFIX "" DEFINE_SYMBOL "")
 if(MINGW)
     target_link_options(RenderLabCore PRIVATE "LINKER:--export-all-symbols")
+elseif(MSVC)
+    set_target_properties(RenderLabCore PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+    # Auto-export scans object files. Include the functions from the GUI archives as well.
+    set(renderlab_gui_exports "${RENDERLAB_GENERATED_DIRECTORY}/gui-exports.def")
+    add_custom_command(
+        OUTPUT "${renderlab_gui_exports}"
+        COMMAND "${CMAKE_COMMAND}"
+            "-Dnm=${RENDERLAB_LLVM_NM}"
+            "-Dimgui=$<TARGET_FILE:imgui::imgui>"
+            "-Dimguizmo=$<TARGET_FILE:imguizmo::imguizmo>"
+            "-Doutput=${renderlab_gui_exports}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GuiExports.cmake"
+        DEPENDS "$<TARGET_FILE:imgui::imgui>" "$<TARGET_FILE:imguizmo::imguizmo>"
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GuiExports.cmake"
+        VERBATIM
+    )
+    target_sources(RenderLabCore PRIVATE "${renderlab_gui_exports}")
 endif()
 set_property(SOURCE src/render/plugins/PluginManager.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     RENDERLAB_PLUGIN_ABI="${RENDERLAB_PLUGIN_ABI}")
-# The editor and every plugin must use the same ImGui state and functions.
+# Editor code and plugin widgets share one ImGui context.
 target_link_libraries(RenderLabCore PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,imgui::imgui,imguizmo::imguizmo>"
     ${CMAKE_DL_LIBS}
 )
-target_include_directories(RenderLabCore SYSTEM PUBLIC
+foreach(texture IN ITEMS lut_ggx lut_sheen_E)
+    set(input "${CMAKE_CURRENT_SOURCE_DIR}/src/asset/builtin/data/${texture}.png")
+    set(output "${RENDERLAB_GENERATED_DIRECTORY}/builtin/${texture}.inc")
+    set(embed_script "${CMAKE_CURRENT_SOURCE_DIR}/tools/EmbedBinary.py")
+    add_custom_command(OUTPUT "${output}"
+        COMMAND "${Python3_EXECUTABLE}" "${embed_script}" "${input}" "${output}"
+        DEPENDS "${input}" "${embed_script}"
+        VERBATIM
+    )
+    target_sources(RenderLabCore PRIVATE "${output}")
+endforeach()
+set(renderlab_gui_backend_includes
     $<TARGET_PROPERTY:imgui::imgui,INTERFACE_INCLUDE_DIRECTORIES>
     $<TARGET_PROPERTY:imguizmo::imguizmo,INTERFACE_INCLUDE_DIRECTORIES>
 )
+target_include_directories(RenderLabCore SYSTEM PRIVATE ${renderlab_gui_backend_includes})
 target_sources(RenderLabCore PRIVATE
     src/asset/pbrt/PbrtImport.cpp
     src/asset/pbrt/PbrtData.cpp
@@ -352,6 +386,11 @@ target_link_libraries(RenderLabCore PUBLIC
         glog::glog
         unofficial::tinyexr::tinyexr
 )
+
+renderlab_generate_metadata(RenderLabCore src REGISTRY RegisteredTypes.generated.h)
+add_dependencies(RenderLabDds RenderLabCoreMetadata)
+target_include_directories(RenderLabPbrtFrontend PRIVATE "${RENDERLAB_GENERATED_DIRECTORY}")
+add_dependencies(RenderLabPbrtFrontend RenderLabCoreMetadata)
 
 # Only stable dependency headers belong here; project headers stay outside the PCH.
 target_precompile_headers(RenderLabCore PRIVATE
@@ -409,6 +448,7 @@ add_library(RenderLabRuntime STATIC
     src/render/graph/PythonGraph.h
 )
 target_link_libraries(RenderLabRuntime PUBLIC RenderLabCore PRIVATE Python3::Python)
+target_include_directories(RenderLabRuntime SYSTEM PRIVATE ${renderlab_gui_backend_includes})
 set_property(SOURCE src/render/graph/PythonGraph.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     RENDERLAB_PYTHON_HOME=L"${RENDERLAB_PYTHON_HOME}"
     RENDERLAB_GRAPH_LIBRARY_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/graphs")

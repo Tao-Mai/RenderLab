@@ -1,8 +1,8 @@
 #pragma once
 
+#include "core/Metadata.h"
 #include "render/graph/RenderPass.h"
 
-#include <meta>
 #include <type_traits>
 
 namespace pass_ports
@@ -10,13 +10,10 @@ namespace pass_ports
 template <class T, class Visit>
 void fields(T& value, Visit&& visit)
 {
-    using Resources = std::remove_cv_t<T>;
-    constexpr auto kAccess = std::meta::access_context::current();
-    template for (constexpr auto kMember :
-        std::define_static_array(std::meta::nonstatic_data_members_of(^^Resources, kAccess)))
+    metadata::visitFields(value, [&](const auto& field, auto& handle)
     {
-        visit(std::meta::identifier_of(kMember), value.[:kMember:]);
-    }
+        visit(std::string_view{field.name}, handle);
+    });
 }
 
 template <class Handle>

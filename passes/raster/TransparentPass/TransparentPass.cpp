@@ -88,5 +88,5 @@ void TransparentPass::execute(
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<TransparentPass>();
+    registry.registerClass<TransparentPass>("TransparentPass");
 }

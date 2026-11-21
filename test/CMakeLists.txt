@@ -13,6 +13,7 @@ endforeach()
 
 add_executable(PassSettingsCheck EXCLUDE_FROM_ALL PassSettingsCheck.cpp)
 target_link_libraries(PassSettingsCheck PRIVATE RenderLabCore)
+target_include_directories(PassSettingsCheck SYSTEM PRIVATE $<TARGET_PROPERTY:imgui::imgui,INTERFACE_INCLUDE_DIRECTORIES>)
 target_precompile_headers(PassSettingsCheck REUSE_FROM RenderLabCore)
 add_dependencies(PassSettingsCheck RenderLabPassPlugins)
 

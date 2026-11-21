@@ -1,32 +1,22 @@
 #include "passes/postprocess/Bloom/Bloom.h"
 
 #include "editor/PassEditor.h"
-#include "editor/SettingsWidgets.h"
 
 namespace
 {
-bool drawSettings(BloomSettings& bloom, const Bloom&, const PassEditorContext&)
+bool drawSettings(Gui::Widgets& widgets, BloomSettings& bloom, const Bloom&, const PassEditorContext&)
 {
-    bool edited = false;
-    edited |= ImGui::SliderFloat("Bloom intensity", &bloom.intensity, 0.0f, 1.0f, "%.3f");
-    ImGui::SetItemTooltip("Fraction of scene light redistributed by bloom, not additive brightness.");
-    edited |= ImGui::SliderFloat("Bloom scatter", &bloom.scatter, 0.05f, 0.95f, "%.2f");
-    ImGui::SetItemTooltip("Higher values give coarser pyramid levels more weight and produce a wider glow.");
-    edited |= ImGui::DragFloat(
-        "Gaussian radius",
-        &bloom.filterRadius,
-        0.05f,
-        0.1f,
-        5.0f,
-        "%.2f",
-        ImGuiSliderFlags_AlwaysClamp
-    );
-    edited |= drawUnsignedSlider("Bloom levels", bloom.levels, 1, kMaxBloomLevels);
+    bool edited = widgets.slider("Bloom intensity", bloom.intensity, 0.0f, 1.0f, "%.3f");
+    widgets.tooltip("Fraction of scene light redistributed by bloom, not additive brightness.");
+    edited |= widgets.slider("Bloom scatter", bloom.scatter, 0.05f, 0.95f, "%.2f");
+    widgets.tooltip("Higher values give coarser pyramid levels more weight and produce a wider glow.");
+    edited |= widgets.drag("Gaussian radius", bloom.filterRadius, 0.05f, 0.1f, 5.0f, "%.2f");
+    edited |= widgets.slider("Bloom levels", bloom.levels, 1u, kMaxBloomLevels, false);
     return edited;
 }
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<Bloom>(makePassEditor<Bloom, drawSettings>("Bloom"));
+    registry.registerClass<Bloom>("Bloom", makePassEditor<Bloom, drawSettings>("Bloom"));
 }

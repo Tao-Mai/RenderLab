@@ -1,10 +1,12 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "scene/AActor.h"
 #include "scene/component/CameraComponent.h"
 #include "scene/component/FreeFlyMoveComponent.h"
 
-class AFreeFlyCamera : public AActor
+class RL_REGISTER_TYPE(AActor, "AFreeFlyCamera") AFreeFlyCamera : public AActor
 {
 public:
     AFreeFlyCamera();
@@ -13,3 +15,5 @@ public:
     [[nodiscard]] CameraComponent& camera();
     [[nodiscard]] const CameraComponent& camera() const;
 };
+
+#include RL_METADATA_HEADER("metadata/src/scene/actor/AFreeFlyCamera.generated.h")

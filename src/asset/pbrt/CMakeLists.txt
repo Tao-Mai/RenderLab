@@ -16,5 +16,6 @@ add_library(RenderLabPbrtFrontend STATIC
 set_target_properties(RenderLabPbrtFrontend PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 target_include_directories(RenderLabPbrtFrontend PRIVATE "${PROJECT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}/upstream")
 target_compile_definitions(RenderLabPbrtFrontend PRIVATE PBRT_FLOAT_AS_DOUBLE UTF8PROC_STATIC)
-target_compile_options(RenderLabPbrtFrontend PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>)
+target_compile_options(RenderLabPbrtFrontend PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${renderlab_cxx_options}>")
+target_compile_definitions(RenderLabPbrtFrontend PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${renderlab_cxx_definitions}>")
 target_link_libraries(RenderLabPbrtFrontend PRIVATE glm::glm ZLIB::ZLIB)

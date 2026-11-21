@@ -1,5 +1,5 @@
 set(RENDERLAB_PLUGIN_DIRECTORY "${RENDERLAB_RUNTIME_DIRECTORY}/plugins")
-set(RENDERLAB_PLUGIN_ABI "1-${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION}-$<CONFIG>")
+set(RENDERLAB_PLUGIN_ABI "4-${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION}-$<CONFIG>")
 
 function(renderlab_add_plugin target)
     add_library(${target} SHARED ${ARGN})
@@ -13,6 +13,7 @@ function(renderlab_add_plugin target)
         LIBRARY_OUTPUT_DIRECTORY "${RENDERLAB_PLUGIN_DIRECTORY}"
         INSTALL_RPATH "$ORIGIN/.."
     )
+    renderlab_generate_metadata(${target} "${CMAKE_CURRENT_SOURCE_DIR}")
     set_property(GLOBAL APPEND PROPERTY RENDERLAB_PLUGIN_TARGETS ${target})
 endfunction()
 

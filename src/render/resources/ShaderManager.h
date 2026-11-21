@@ -12,6 +12,8 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
+class ShaderLayout;
+
 using ShaderDefines = std::map<std::string, int>;
 
 struct ShaderHandle
@@ -31,6 +33,7 @@ struct ShaderMetadata
 class ShaderManager
 {
 public:
+    ShaderManager();
     ~ShaderManager();
 
     void init(const vk::raii::Device& device);
@@ -39,10 +42,17 @@ public:
     [[nodiscard]] ShaderHandle          getOrLoad(std::string_view program, const ShaderDefines& defines = {});
     [[nodiscard]] vk::ShaderModule      module(ShaderHandle handle) const;
     [[nodiscard]] const ShaderMetadata& metadata(ShaderHandle handle) const;
+    [[nodiscard]] const ShaderLayout&   layout(ShaderHandle handle);
 
 private:
+    struct Variant
+    {
+        std::unique_ptr<GpuShader> shader;
+        ShaderMetadata metadata;
+        std::unique_ptr<ShaderLayout> layout;
+    };
+
     const vk::raii::Device*                                       device = nullptr;
     std::map<std::pair<std::string, ShaderDefines>, ShaderHandle> handles;
-    std::vector<std::unique_ptr<GpuShader>>                       shaders;
-    std::vector<ShaderMetadata>                                   shaderMetadata;
+    std::vector<Variant> variants;
 };

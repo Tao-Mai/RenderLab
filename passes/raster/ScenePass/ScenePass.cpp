@@ -72,5 +72,5 @@ void ScenePass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuff
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<ScenePass>();
+    registry.registerClass<ScenePass>("ScenePass");
 }

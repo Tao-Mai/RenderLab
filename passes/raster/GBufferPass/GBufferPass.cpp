@@ -84,5 +84,5 @@ void GBufferPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBu
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<GBufferPass>();
+    registry.registerClass<GBufferPass>("GBufferPass");
 }

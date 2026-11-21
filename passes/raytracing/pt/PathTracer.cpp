@@ -1,18 +1,15 @@
+#include "PathTracerSettings.h"
+
 #include "editor/PassEditor.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/raytracing/offline/OfflinePathTracing.h"
-#include "render/raytracing/offline/OfflineTracePipeline.h"
+#include "render/raytracing/offline/OfflineTracePipelineCache.h"
+
+#include <format>
 
 namespace
 {
-struct PathTracerSettings
-{
-    uint32_t maxBounces = 2;
-
-    void validate() const { CHECK(maxBounces >= kMinPathBounces && maxBounces <= kMaxPathBounces); }
-};
-
 class PathTracer : public ConfigurablePass<PathTracerSettings>
 {
 public:
@@ -25,7 +22,7 @@ public:
 
     void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override
     {
-        const auto image = tracer.compile(graph, setup, "shaders/pt_resolve.spv", sizeof(OfflinePathParameters));
+        const auto image = tracer.compile(graph, setup, "pt_resolve", sizeof(OfflinePathParameters));
         pipeline = renderContext().offlinePipelines->get(setup.vulkan, tracer.layout(), "shaders/pt.spv", false);
         ports.setOutput("rayImage", image);
     }
@@ -62,20 +59,20 @@ public:
 
 private:
     OfflinePathTracing tracer;
-    const OfflineTracePipeline* pipeline = nullptr;
+    const RayTracingPipeline* pipeline = nullptr;
     uint32_t previousMaxBounces = 0;
 };
 
-bool drawSettings(PathTracerSettings& settings, const PathTracer& pass, const PassEditorContext&)
+bool drawSettings(Gui::Widgets& widgets, PathTracerSettings& settings, const PathTracer& pass, const PassEditorContext&)
 {
-    ImGui::Text("Samples per pixel: %u", pass.sampleCount());
-    const bool edited = drawNumericSlider("Max bounces", settings.maxBounces, kMinPathBounces, kMaxPathBounces);
-    ImGui::SetItemTooltip("Maximum surface scattering events. 1 gives direct lighting plus terminal emission.");
+    widgets.text(std::format("Samples per pixel: {}", pass.sampleCount()));
+    const bool edited = widgets.slider("Max bounces", settings.maxBounces, kMinPathBounces, kMaxPathBounces);
+    widgets.tooltip("Maximum surface scattering events. 1 gives direct lighting plus terminal emission.");
     return edited;
 }
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<PathTracer>(makePassEditor<PathTracer, drawSettings>("PT"));
+    registry.registerClass<PathTracer>("PathTracer", makePassEditor<PathTracer, drawSettings>("PT"));
 }

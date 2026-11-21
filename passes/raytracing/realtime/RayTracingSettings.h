@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include <cstdint>
 
 inline constexpr uint32_t kMaxRestirCandidateCount = 256;
@@ -7,22 +9,24 @@ inline constexpr uint32_t kMaxRestirSpatialSamples = 32;
 inline constexpr uint32_t kMaxRestirHistoryLength  = 64;
 inline constexpr float    kMaxRestirSpatialRadius  = 128.0f;
 
-struct RestirSettings
+struct RL_RECORD RestirSettings
 {
-    uint32_t candidateCount     = 32;
-    bool     temporalReuse      = true;
-    bool     spatialReuse       = true;
-    uint32_t maxHistoryLength   = 20;
-    uint32_t spatialSampleCount = 3;
-    float    spatialRadius      = 30.0f;
+    RL_FIELD("candidateCount") uint32_t candidateCount     = 32;
+    RL_FIELD("temporalReuse") bool     temporalReuse      = true;
+    RL_FIELD("spatialReuse") bool     spatialReuse       = true;
+    RL_FIELD("maxHistoryLength") uint32_t maxHistoryLength   = 20;
+    RL_FIELD("spatialSampleCount") uint32_t spatialSampleCount = 3;
+    RL_FIELD("spatialRadius") float    spatialRadius      = 30.0f;
 
     bool operator==(const RestirSettings&) const = default;
 };
 
-struct RayTracingSettings
+struct RL_RECORD RayTracingSettings
 {
-    uint32_t          maxBounces    = 3;
-    RestirSettings    restir;
+    RL_FIELD("maxBounces") uint32_t          maxBounces    = 3;
+    RL_FIELD("restir") RestirSettings    restir;
 
     void validate() const;
 };
+
+#include RL_METADATA_HEADER("metadata/passes/raytracing/realtime/RayTracingSettings.generated.h")

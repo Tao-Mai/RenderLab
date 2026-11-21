@@ -3,16 +3,14 @@
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
 #include "render/RenderView.h"
-#include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
-#include "render/resources/GpuShader.h"
 
+#include <array>
 #include <glm/vec4.hpp>
 
 namespace
 {
 constexpr uint32_t kHistogramBinCount      = 256;
-constexpr uint32_t kHistogramWorkgroupSize = 16;
 constexpr uint32_t kMeteringStride         = 2;
 constexpr uint32_t kSourceBinding          = 0;
 constexpr uint32_t kHistogramBinding       = 1;
@@ -45,7 +43,7 @@ RenderPassReflection ExposurePass::reflect(const PassSetup&) const
     return reflection;
 }
 
-void ExposurePass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+void ExposurePass::compile(RenderGraph& graph, const PassSetup&, PassResources& ports)
 {
     const auto hdrColor = ports.image("hdrColor");
 
@@ -83,8 +81,9 @@ void ExposurePass::compile(RenderGraph& graph, const PassSetup& setup, PassResou
         }
     );
 
-    auto& device = *renderContext().device;
-    if (!*pipelines[0])
+    auto& ctx = renderContext();
+    auto& device = *ctx.device;
+    if (!*histogramPipeline)
     {
         const std::array bindings{
             vk::DescriptorSetLayoutBinding{
@@ -114,19 +113,15 @@ void ExposurePass::compile(RenderGraph& graph, const PassSetup& setup, PassResou
         }};
         pipelineLayout = device.getOrCreatePipelineLayout(layouts, ranges);
 
-        constexpr std::array kShaderPaths{"shaders/exposure.histogram.spv", "shaders/exposure.resolve.spv"};
-        for (size_t index = 0; index < pipelines.size(); ++index)
-        {
-            GpuShader shader{setup.vulkan.deviceHandle(), kShaderPaths[index]};
-            pipelines[index] = vkCheck(setup.vulkan.deviceHandle().createComputePipeline(
-                vk::raii::PipelineCache{nullptr},
-                {
-                    .stage =
-                        {.stage = vk::ShaderStageFlagBits::eCompute, .module = shader.handle(), .pName = "computeMain"},
-                    .layout = pipelineLayout,
-                }
-            ));
-        }
+        constexpr int kHistogramStage = 0;
+        constexpr int kResolveStage = 1;
+        auto& shaders = *ctx.shaderManager;
+        histogramPipeline = device.createComputePipeline(
+            shaders.getOrLoad("exposure", {{"EXPOSURE_STAGE", kHistogramStage}}), pipelineLayout
+        );
+        resolvePipeline = device.createComputePipeline(
+            shaders.getOrLoad("exposure", {{"EXPOSURE_STAGE", kResolveStage}}), pipelineLayout
+        );
     }
 
     descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
@@ -214,13 +209,9 @@ void ExposurePass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commands
             .size                = VK_WHOLE_SIZE,
         };
         commands.pipelineBarrier2({.bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrier});
-        commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipelines[0]);
-        constexpr uint32_t kPixelsPerGroup = kHistogramWorkgroupSize * kMeteringStride;
-        commands.dispatch(
-            (extent.width + kPixelsPerGroup - 1) / kPixelsPerGroup,
-            (extent.height + kPixelsPerGroup - 1) / kPixelsPerGroup,
-            1
-        );
+        commands.bindPipeline(vk::PipelineBindPoint::eCompute, *histogramPipeline);
+        const auto meteringThreads = [](uint32_t pixels) { return (pixels + kMeteringStride - 1) / kMeteringStride; };
+        histogramPipeline.dispatch(commands, {meteringThreads(extent.width), meteringThreads(extent.height), 1});
 
         barrier.srcStageMask  = vk::PipelineStageFlagBits2::eComputeShader;
         barrier.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite;
@@ -228,7 +219,7 @@ void ExposurePass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commands
         commands.pipelineBarrier2({.bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrier});
     }
 
-    commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipelines[1]);
+    commands.bindPipeline(vk::PipelineBindPoint::eCompute, *resolvePipeline);
     commands.dispatch(1, 1, 1);
     hasHistory    = true;
     previousScene = frame.renderData.sceneId;

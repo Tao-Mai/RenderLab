@@ -4,7 +4,8 @@ struct Component;
 struct TransformComponent;
 
 #include "asset/GltfMaterial.h"
-#include "core/Reflect.h"
+#include "core/Metadata.h"
+#include "core/TypeTraits.h"
 
 #include <bit>
 #include <concepts>
@@ -100,15 +101,12 @@ template<class T>
 ComponentDrawResult drawFields(T& value)
 {
     ComponentDrawResult result;
-    constexpr auto ctx = std::meta::access_context::current();
-    template for (constexpr auto member :
-        std::define_static_array(ReflectedDataMembers(^^T, ctx)))
+    metadata::visitFields(value, [&](const auto& field, auto& member)
     {
-        const std::string name(std::meta::identifier_of(member));
-        ImGui::PushID(name.c_str());
-        result.edited = drawField(name.c_str(), value.[:member:]) || result.edited;
+        ImGui::PushID(field.name);
+        result.edited = drawField(field.name, member) || result.edited;
         ImGui::PopID();
-    }
+    });
 
     return result;
 }
@@ -116,26 +114,24 @@ ComponentDrawResult drawFields(T& value)
 template<class T>
 bool drawField(const char* label, T& value)
 {
-    if constexpr (FlagEnum<T>)
+    if constexpr (metadata::FlagEnum<T>)
     {
         using Bits = std::make_unsigned_t<std::underlying_type_t<T>>;
         bool edited = false;
         if (!ImGui::TreeNode(label)) return false;
 
-        template for (constexpr auto enumerator :
-            std::define_static_array(std::meta::enumerators_of(^^T)))
+        for (const auto& entry : metadata::Enum<T>::kValues)
         {
-            constexpr Bits bit = static_cast<Bits>(std::to_underlying([:enumerator:]));
-            if constexpr (std::has_single_bit(bit))
+            const auto bit = static_cast<Bits>(std::to_underlying(entry.value));
+            if (!std::has_single_bit(bit))
+                continue;
+
+            const auto bits = static_cast<Bits>(std::to_underlying(value));
+            bool checked = (bits & bit) != 0;
+            if (ImGui::Checkbox(entry.name, &checked))
             {
-                Bits bits = static_cast<Bits>(std::to_underlying(value));
-                bool checked = (bits & bit) != 0;
-                const std::string name(std::meta::identifier_of(enumerator));
-                if (ImGui::Checkbox(name.c_str(), &checked))
-                {
-                    value = static_cast<T>(checked ? bits | bit : bits & ~bit);
-                    edited = true;
-                }
+                value = static_cast<T>(checked ? bits | bit : bits & ~bit);
+                edited = true;
             }
         }
 
@@ -144,25 +140,20 @@ bool drawField(const char* label, T& value)
     }
     else if constexpr (std::is_enum_v<T>)
     {
-        std::string preview = "<invalid>";
-        template for (constexpr auto enumerator :
-            std::define_static_array(std::meta::enumerators_of(^^T)))
-        {
-            if (value == [:enumerator:])
-                preview = std::meta::identifier_of(enumerator);
-        }
+        const char* preview = "<invalid>";
+        for (const auto& entry : metadata::Enum<T>::kValues)
+            if (value == entry.value)
+                preview = entry.name;
 
         bool edited = false;
-        if (!ImGui::BeginCombo(label, preview.c_str())) return false;
+        if (!ImGui::BeginCombo(label, preview)) return false;
 
-        template for (constexpr auto enumerator :
-            std::define_static_array(std::meta::enumerators_of(^^T)))
+        for (const auto& entry : metadata::Enum<T>::kValues)
         {
-            const std::string name(std::meta::identifier_of(enumerator));
-            const bool selected = value == [:enumerator:];
-            if (ImGui::Selectable(name.c_str(), selected))
+            const bool selected = value == entry.value;
+            if (ImGui::Selectable(entry.name, selected))
             {
-                value = [:enumerator:];
+                value = entry.value;
                 edited = true;
             }
             if (selected) ImGui::SetItemDefaultFocus();

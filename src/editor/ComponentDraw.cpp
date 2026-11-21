@@ -4,12 +4,15 @@
 #include "asset/ApplyOptionalFields.h"
 #include "asset/AssetManager.h"
 #include "core/Context.h"
-#include "scene/SceneTypes.h"
+#include "metadata/RegisteredTypes.generated.h"
+#include "scene/component/LightTypes.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
+#include <typeindex>
+#include <unordered_map>
 
 #include <glm/common.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -218,28 +221,28 @@ ComponentDrawResult drawFields(GoniometricLightComponent& light)
 MaterialOverride materialOverrideDiff(const GltfMaterial& stock, const GltfMaterial& preview)
 {
     MaterialOverride patch;
-    constexpr auto ctx = std::meta::access_context::current();
-    template for (constexpr auto member :
-        std::define_static_array(ReflectedDataMembers(^^MaterialOverride, ctx)))
+    metadata::visitFields(patch, [&](const auto& field, auto& value)
     {
-        using Field = std::remove_cvref_t<decltype(patch.[:member:])>;
+        using Field = std::remove_cvref_t<decltype(value)>;
         if constexpr (IsOptional<Field>)
-            if (preview.[:member:] != stock.[:member:]) patch.[:member:] = preview.[:member:];
-    }
+        {
+            if (field.get(preview) != field.get(stock))
+                value = field.get(preview);
+        }
+    });
     return patch;
 }
 
 bool hasMaterialOverrides(const MaterialOverride& patch)
 {
-    constexpr auto ctx = std::meta::access_context::current();
-    template for (constexpr auto member :
-        std::define_static_array(ReflectedDataMembers(^^MaterialOverride, ctx)))
+    bool hasOverrides = false;
+    metadata::visitFields(patch, [&](const auto&, const auto& value)
     {
-        using Field = std::remove_cvref_t<decltype(patch.[:member:])>;
+        using Field = std::remove_cvref_t<decltype(value)>;
         if constexpr (IsOptional<Field>)
-            if (patch.[:member:]) return true;
-    }
-    return false;
+            hasOverrides |= value.has_value();
+    });
+    return hasOverrides;
 }
 
 namespace
@@ -465,7 +468,7 @@ ComponentDrawResult drawComponent(Component& component)
     static const auto drawers = []
     {
         std::unordered_map<std::type_index, Drawer> result;
-        forEachComponentType([&]<class T>(const char* name)
+        metadata::visitRegisteredTypes<Component>([&]<class T>(const char* name)
         {
             result.emplace(typeid(T), Drawer{name, [](Component& value)
             {
@@ -498,7 +501,7 @@ ComponentDrawResult drawComponent(Component& component)
             const std::string preview{label(found->second.name)};
             if (ImGui::BeginCombo("Type", preview.c_str()))
             {
-                forEachRealtimeLightComponentType([&]<class T>(const char* name)
+                metadata::visitTypes(RealtimeLightTypes{}, [&]<class T>(const char* name)
                 {
                     const bool selected = typeid(component) == typeid(T);
                     const std::string itemLabel{label(name)};

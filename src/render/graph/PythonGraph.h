@@ -1,21 +1,25 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include <filesystem>
 #include <string>
 #include <vector>
 
 #include <nlohmann/json.hpp>
 
-struct GraphParameterControl
+struct RL_RECORD GraphParameterControl
 {
-    std::string name;
-    std::string label;
-    nlohmann::json defaultValue;
-    nlohmann::json value;
-    std::vector<std::string> choices;
-    nlohmann::json bounds;
+    RL_FIELD("name") std::string name;
+    RL_FIELD("label") std::string label;
+    RL_FIELD("defaultValue") nlohmann::json defaultValue;
+    RL_FIELD("value") nlohmann::json value;
+    RL_FIELD("choices") std::vector<std::string> choices;
+    RL_FIELD("bounds") nlohmann::json bounds;
 };
 
 [[nodiscard]] nlohmann::json loadRenderGraph(
     const std::filesystem::path& script, const nlohmann::json& parameterOverrides
 );
+
+#include RL_METADATA_HEADER("metadata/src/render/graph/PythonGraph.generated.h")

@@ -53,10 +53,10 @@ if graph.param("bloom", True):
 Pass 通过 `ConfigurablePass<Settings>` 持有类型化参数。`Settings` 声明可设置字段和默认值，可以提供
 `validate()` 校验值，并通过 `requiresGraphRebuild(current)` 指出资源或管线改动是否需要重建图。
 
-插件用 `makePassEditor<MyPass>()` 生成布尔、枚举及标注了 `PassSliderRange` 的数值控件。
-复杂界面可以在 Pass 旁边编写 `*Ui.cpp`，再用 `makePassEditor<MyPass, drawSettings>()` 生成回调。
-弹射次数等具体参数的控件标签、范围和提示由 Pass 定义，编辑器提供通用的数值控件。
-回调通过 `PluginRegistry::registerClass()` 与工厂一起发布，图通过 `graph.create_pass(..., ui=True)` 展示当前实例的控件。
+插件用 `makePassEditor<MyPass>()` 生成布尔、枚举及标注了 `RL_SLIDER` 的数值控件。
+复杂界面可以在 Pass 旁边编写 `*Ui.cpp`，再用 `makePassEditor<MyPass, drawSettings>()` 注册回调。
+回调接收 `Gui::Widgets&`，Pass 定义具体参数的控件标签、范围和提示，编辑器负责实现通用控件及 ImGui 后端。
+回调通过 `PluginRegistry::registerClass()` 与工厂一起发布。注册时显式指定图使用的 Pass 类型名，图通过 `graph.create_pass(..., ui=True)` 展示当前实例的控件。
 
 生效顺序为 Pass 默认值、Python `properties`、实例覆盖值。`renderer.json` 中的 `graphOverrides` 按 Graph ID 保存用户设置。
 `parameters` 保存图参数，

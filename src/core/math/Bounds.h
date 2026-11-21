@@ -1,15 +1,17 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include <array>
 #include <cstddef>
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
-struct Aabb
+struct RL_RECORD Aabb
 {
-    glm::vec3 min{0.0f};
-    glm::vec3 max{0.0f};
+    RL_FIELD("min") glm::vec3 min{0.0f};
+    RL_FIELD("max") glm::vec3 max{0.0f};
 
     bool               operator==(const Aabb&) const = default;
     [[nodiscard]] Aabb transformed(const glm::mat4& model) const;
@@ -32,3 +34,5 @@ private:
     std::array<glm::vec4, 6> planes;
     size_t                   planeCount;
 };
+
+#include RL_METADATA_HEADER("metadata/src/core/math/Bounds.generated.h")

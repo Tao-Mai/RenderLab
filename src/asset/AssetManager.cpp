@@ -1,6 +1,6 @@
 #include "asset/AssetManager.h"
-#include "asset/MaterialTypes.h"
 #include "core/Serializer.h"
+#include "metadata/RegisteredTypes.generated.h"
 #include <cmath>
 
 
@@ -46,7 +46,7 @@ void AssetManager::init(std::filesystem::path assetRoot)
     DCHECK(!assetRoot.empty());
     static const bool kRegistered = []
     {
-        forEachMaterialType([]<class T>(std::string_view name) { RegisterBase<T, MaterialAsset>(name); });
+        metadata::visitRegisteredTypes<MaterialAsset>([]<class T>(const char*) { RegisterType<T, MaterialAsset>(); });
         return true;
     }();
 

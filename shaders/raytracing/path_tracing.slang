@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_REALTIME_RAY_TRACING_SLANG
 #define RENDERLAB_REALTIME_RAY_TRACING_SLANG
 
-#include "render/raytracing/RealtimeRayTracingBindings.h"
+#include "render/raytracing/PathTracingParameters.h"
 
 #include "math/constant.slang"
 #include "scene/light_data.slang"
@@ -21,11 +21,11 @@ static const float kMaxRayDistance             = 3.402823466e+38;
 static const uint kSceneMask = 0x01;
 static const uint kLightMask = 0x02;
 
-[[vk::binding(RealtimeRayTracingBinding::kTlas, 3)]] RaytracingAccelerationStructure scene;
+[[vk::binding(0, 3)]] RaytracingAccelerationStructure scene;
 [[vk::binding(1, 1)]] StructuredBuffer<LightData>                                    lights;
 [[vk::binding(8, 1)]] TextureCube<float4>                                            radianceMap;
 [[vk::binding(9, 1)]] SamplerState                                                   radianceSampler;
-[[vk::binding(RealtimeRayTracingBinding::kTriangles, 3)]] ByteAddressBuffer          emissiveTriangles;
+[[vk::binding(2, 3)]] ByteAddressBuffer                                               emissiveTriangles;
 
 EmissiveTriangle loadEmissiveTriangle(uint index)
 {
@@ -159,47 +159,23 @@ Surface surfaceAt(RayTracingHitData hit, uint primitiveIndex, float2 barycentric
     return surface;
 }
 
-struct PathTracingParameters
+[[vk::push_constant]] ConstantBuffer<PathTracingParameters> parameters;
+[[vk::binding(1, 3)]] StructuredBuffer<RayTracingHitData> objects;
+
+RayDesc createPathRay(uint2 pixel, float2 pixelSample)
 {
-    float4      viewport;
-    LightRanges lightRanges;
-    uint        maxBounces;
-    uint        sampleIndex;
-    uint        iblEnabled;
+    float2 local    = float2(pixel) + pixelSample - parameters.viewportOffset;
+    float2 ndc      = local / parameters.viewportExtent * 2.0 - 1.0;
+    float4 farPoint = mul(sceneUniforms.inverseViewProjection, float4(ndc, 1.0, 1.0));
+    float3 toFar    = farPoint.xyz / farPoint.w - sceneUniforms.cameraPosition.xyz;
 
-    property float2 viewportOffset
-    {
-        get { return viewport.xy; }
-    }
-    property float2 viewportExtent
-    {
-        get { return viewport.zw; }
-    }
-
-    bool containsPixel(uint2 pixel)
-    {
-        float2 local = float2(pixel) + 0.5 - viewportOffset;
-        return all(local >= 0.0) && all(local < viewportExtent);
-    }
-
-    RayDesc createRay(uint2 pixel, float2 pixelSample)
-    {
-        float2 local    = float2(pixel) + pixelSample - viewportOffset;
-        float2 ndc      = local / viewportExtent * 2.0 - 1.0;
-        float4 farPoint = mul(sceneUniforms.inverseViewProjection, float4(ndc, 1.0, 1.0));
-        float3 toFar    = farPoint.xyz / farPoint.w - sceneUniforms.cameraPosition.xyz;
-
-        RayDesc ray;
-        ray.Origin    = sceneUniforms.cameraPosition.xyz;
-        ray.Direction = normalize(toFar);
-        ray.TMin      = kRayEpsilon;
-        ray.TMax      = kMaxRayDistance;
-        return ray;
-    }
-};
-
-[[vk::push_constant]] ConstantBuffer<PathTracingParameters>                                 parameters;
-[[vk::binding(RealtimeRayTracingBinding::kObjects, 3)]] StructuredBuffer<RayTracingHitData> objects;
+    RayDesc ray;
+    ray.Origin    = sceneUniforms.cameraPosition.xyz;
+    ray.Direction = normalize(toFar);
+    ray.TMin      = kRayEpsilon;
+    ray.TMax      = kMaxRayDistance;
+    return ray;
+}
 
 enum class PathEvent : uint
 {

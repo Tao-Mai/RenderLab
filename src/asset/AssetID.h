@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include <cstddef>
 #include <format>
 #include <functional>
@@ -8,11 +10,11 @@
 #include <utility>
 
 template <class T>
-struct AssetID
+struct RL_RECORD AssetID
 {
     using AssetClass = T;
 
-    std::string value;
+    RL_FIELD("value") std::string value;
 
     AssetID() = default;
     AssetID(std::string text) : value(std::move(text)) {}
@@ -44,3 +46,5 @@ struct formatter<AssetID<T>, char> : formatter<string_view, char>
     }
 };
 }
+
+#include RL_METADATA_HEADER("metadata/src/asset/AssetID.generated.h")

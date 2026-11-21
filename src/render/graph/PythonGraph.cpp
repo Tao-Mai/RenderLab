@@ -47,18 +47,18 @@ PythonObject pythonPath(const std::filesystem::path& path)
 nlohmann::json renderFeatureChoices()
 {
     auto choices = nlohmann::json::object();
-    constexpr auto kAccess = std::meta::access_context::current();
-    template for (constexpr auto kMember : std::define_static_array(ReflectedDataMembers(^^RenderFeature, kAccess)))
+    const RenderFeature feature;
+    metadata::visitFields(feature, [&](const auto& field, const auto& value)
     {
-        using Field = [:std::meta::type_of(kMember):];
+        using Field = std::remove_cvref_t<decltype(value)>;
         if constexpr (std::is_enum_v<Field>)
         {
             auto names = nlohmann::json::array();
-            template for (constexpr auto kEntry : std::define_static_array(std::meta::enumerators_of(^^Field)))
-                names.push_back(std::meta::identifier_of(kEntry));
-            choices[std::string{std::meta::identifier_of(kMember)}] = std::move(names);
+            for (const auto& entry : metadata::Enum<Field>::kValues)
+                names.push_back(entry.name);
+            choices[field.name] = std::move(names);
         }
-    }
+    });
     return choices;
 }
 

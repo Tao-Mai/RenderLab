@@ -5,7 +5,7 @@
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "core/Serializer.h"
-#include "scene/SceneTypes.h"
+#include "metadata/RegisteredTypes.generated.h"
 
 #include <algorithm>
 #include <limits>
@@ -18,8 +18,8 @@ void SceneManager::init()
 
     static const bool registered = []
     {
-        forEachComponentType([]<class T>(std::string_view name) { RegisterBase<T, Component>(name); });
-        forEachActorType([]<class T>(std::string_view name) { RegisterBase<T, AActor>(name); });
+        metadata::visitRegisteredTypes<Component>([]<class T>(const char*) { RegisterType<T, Component>(); });
+        metadata::visitRegisteredTypes<AActor>([]<class T>(const char*) { RegisterType<T, AActor>(); });
         return true;
     }();
 
@@ -76,11 +76,11 @@ void SceneManager::save()
 AActor& SceneManager::createActor(std::string_view typeName)
 {
     DCHECK(inited);
-    const auto& types = BaseTypeInfo<AActor>::baseTypeInfoMap;
+    const auto& types = TypeRegistry<AActor>::get().entries;
     const auto  type  = types.find(std::string{typeName});
     CHECK(type != types.end(), "unknown actor type: {}", typeName);
 
-    auto     actor = type->second.Create();
+    auto     actor = type->second.create();
     uint64_t index = 1;
     do
     {

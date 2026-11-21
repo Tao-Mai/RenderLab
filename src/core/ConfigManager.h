@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "asset/AssetID.h"
 #include "core/Debug.h"
 #include "core/Input.h"
@@ -16,56 +18,56 @@
 struct SceneAsset;
 enum class SceneRenderMode;
 
-struct AppPaths
+struct RL_RECORD AppPaths
 {
-    std::filesystem::path assets;
-    std::filesystem::path commands;
-    std::filesystem::path editor;
-    std::filesystem::path renderer;
+    RL_FIELD("assets") std::filesystem::path assets;
+    RL_FIELD("commands") std::filesystem::path commands;
+    RL_FIELD("editor") std::filesystem::path editor;
+    RL_FIELD("renderer") std::filesystem::path renderer;
 };
 
-struct CommandConfig
+struct RL_RECORD CommandConfig
 {
-    std::vector<CommandBinding> bindings;
+    RL_FIELD("bindings") std::vector<CommandBinding> bindings;
 };
 
-struct EditorConfig
+struct RL_RECORD EditorConfig
 {
-    int         width;
-    int         height;
-    std::string title;
-    bool        objectPicking = false;
+    RL_FIELD("width") int         width;
+    RL_FIELD("height") int         height;
+    RL_FIELD("title") std::string title;
+    RL_FIELD("objectPicking") bool        objectPicking = false;
 };
 
-struct RenderGraphDefinition
+struct RL_RECORD RenderGraphDefinition
 {
-    std::string id;
-    std::string label;
-    RenderPath renderPath;
-    std::filesystem::path script;
+    RL_FIELD("id") std::string id;
+    RL_FIELD("label") std::string label;
+    RL_FIELD("renderPath") RenderPath renderPath;
+    RL_FIELD("script") std::filesystem::path script;
 
     [[nodiscard]] bool isOffline() const { return renderPath == RenderPath::OfflinePathTracing; }
     [[nodiscard]] bool requiresRayTracing() const { return renderPath == RenderPath::RayTracing || isOffline(); }
 };
 
-struct AppConfig
+struct RL_RECORD AppConfig
 {
-    AppPaths            paths;
-    AssetID<SceneAsset> initialScene;
-    std::vector<RenderGraphDefinition> renderGraphs;
+    RL_FIELD("paths") AppPaths            paths;
+    RL_FIELD("initialScene") AssetID<SceneAsset> initialScene;
+    RL_FIELD("renderGraphs") std::vector<RenderGraphDefinition> renderGraphs;
 };
 
-struct GraphOverrides
+struct RL_RECORD GraphOverrides
 {
-    nlohmann::json parameters = nlohmann::json::object();
-    PassOverrides passes;
+    RL_FIELD("parameters") nlohmann::json parameters = nlohmann::json::object();
+    RL_FIELD("passes") PassOverrides passes;
 };
 
-struct RendererSettings
+struct RL_RECORD RendererSettings
 {
-    std::string realtimeGraph;
-    std::string offlineGraph;
-    std::unordered_map<std::string, GraphOverrides> graphOverrides;
+    RL_FIELD("realtimeGraph") std::string realtimeGraph;
+    RL_FIELD("offlineGraph") std::string offlineGraph;
+    RL_FIELD("graphOverrides") std::unordered_map<std::string, GraphOverrides> graphOverrides;
 };
 
 class ConfigManager
@@ -119,3 +121,5 @@ private:
     [[nodiscard]] const RenderGraphDefinition& findRenderGraph(std::string_view id) const;
     GraphOverrides& graphOverrides();
 };
+
+#include RL_METADATA_HEADER("metadata/src/core/ConfigManager.generated.h")

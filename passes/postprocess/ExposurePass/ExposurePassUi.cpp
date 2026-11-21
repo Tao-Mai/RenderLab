@@ -1,21 +1,22 @@
 #include "passes/postprocess/ExposurePass/ExposurePass.h"
 
-#include "editor/PassEditor.h"
-
 #include "editor/EditorCameraConfig.h"
+#include "editor/ExposureUi.h"
+#include "editor/PassEditor.h"
 
 namespace
 {
-bool drawSettings(ExposurePassSettings& settings, const ExposurePass&, const PassEditorContext& context)
+bool drawSettings(Gui::Widgets& widgets, ExposurePassSettings& settings, const ExposurePass&,
+                  const PassEditorContext& context)
 {
-    const bool edited = drawExposureSettings(settings);
+    const bool edited = drawExposureSettings(widgets, settings);
     if (context.camera.exposure)
-        ImGui::TextDisabled("Exposure overridden by Editor camera");
+        widgets.disabledText("Exposure overridden by Editor camera");
     return edited;
 }
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<ExposurePass>(makePassEditor<ExposurePass, drawSettings>("Exposure"));
+    registry.registerClass<ExposurePass>("ExposurePass", makePassEditor<ExposurePass, drawSettings>("Exposure"));
 }

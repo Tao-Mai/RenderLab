@@ -2,22 +2,23 @@
 
 #include "core/ConfigManager.h"
 #include "core/Logger.h"
-#include "editor/SettingsWidgets.h"
+#include "editor/Gui.h"
 
 #include <algorithm>
 #include <cmath>
+#include <imgui.h>
 #include <optional>
 #include <utility>
 
 namespace
 {
 template <class T>
-bool drawGraphNumber(GraphParameterControl& parameter)
+bool drawGraphNumber(Gui::Widgets& widgets, GraphParameterControl& parameter)
 {
     auto value = parameter.value.get<T>();
     const char* label = parameter.label.c_str();
-    const bool changed = parameter.bounds.is_null() ? drawNumericInput(label, value) :
-        drawNumericSlider(label, value, parameter.bounds[0].get<T>(), parameter.bounds[1].get<T>());
+    const bool changed = parameter.bounds.is_null() ? widgets.input(label, value) :
+        widgets.slider(label, value, parameter.bounds[0].get<T>(), parameter.bounds[1].get<T>());
     if constexpr (std::is_floating_point_v<T>)
     {
         if (changed && std::isfinite(value))
@@ -29,13 +30,13 @@ bool drawGraphNumber(GraphParameterControl& parameter)
     return ImGui::IsItemDeactivatedAfterEdit();
 }
 
-bool drawGraphParameter(GraphParameterControl& parameter)
+bool drawGraphParameter(Gui::Widgets& widgets, GraphParameterControl& parameter)
 {
     const char* label = parameter.label.c_str();
     if (parameter.value.is_boolean())
     {
         auto value = parameter.value.get<bool>();
-        if (!ImGui::Checkbox(label, &value))
+        if (!widgets.checkbox(label, value))
             return false;
 
         parameter.value = value;
@@ -46,18 +47,17 @@ bool drawGraphParameter(GraphParameterControl& parameter)
         const auto& value = parameter.value.get_ref<const std::string&>();
         const auto& choices = parameter.choices;
         size_t selected = std::ranges::find(choices, value) - choices.begin();
-        DCHECK(selected < choices.size());
-        if (!drawChoiceSetting(label, choices, selected))
+        if (!widgets.dropdown(label, choices, selected))
             return false;
 
         parameter.value = choices[selected];
         return true;
     }
     if (parameter.value.is_number_integer())
-        return drawGraphNumber<int64_t>(parameter);
+        return drawGraphNumber<int64_t>(widgets, parameter);
 
     DCHECK(parameter.value.is_number_float());
-    return drawGraphNumber<double>(parameter);
+    return drawGraphNumber<double>(widgets, parameter);
 }
 }
 
@@ -66,16 +66,17 @@ void drawGraphSettings(ConfigManager& config, std::span<GraphParameterControl> c
     if (controls.empty())
         return;
 
-    const bool reset = drawSettingsHeader("Graph");
+    Gui::Widgets widgets;
+    const bool reset = widgets.resetHeader("Graph");
     std::optional<nlohmann::json> overrides;
     for (auto& parameter : controls)
     {
         if (reset)
             parameter.value = parameter.defaultValue;
 
-        ImGui::PushID(parameter.name.c_str());
-        const bool edited = drawGraphParameter(parameter);
-        ImGui::PopID();
+        widgets.pushId(parameter.name.c_str());
+        const bool edited = drawGraphParameter(widgets, parameter);
+        widgets.popId();
         if (!edited && !reset)
             continue;
 

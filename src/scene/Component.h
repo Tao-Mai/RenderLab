@@ -1,10 +1,10 @@
 #pragma once
 
-#include "core/Annotations.h"
+#include "core/MetadataAnnotations.h"
 
 class AActor;
 
-class [[=PartialSerialize{}]] Component
+class RL_TYPE("Component") RL_ALLOW_UNKNOWN_FIELDS Component
 {
 public:
     virtual ~Component() = default;
@@ -16,3 +16,5 @@ public:
 private:
     AActor* owner = nullptr;
 };
+
+#include RL_METADATA_HEADER("metadata/src/scene/Component.generated.h")

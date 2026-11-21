@@ -63,7 +63,7 @@ struct RasterAttachments
         });
 
         const auto viewport =
-            view.value_or(ViewportRect{0, 0, float(extent.width), float(extent.height)}).clamped(extent);
+            view ? view->clamped(extent) : ViewportRect{0, 0, float(extent.width), float(extent.height)};
         commands.setViewport(0, viewport.toViewport());
         commands.setScissor(0, viewport.toScissor());
         return viewport;

@@ -5,11 +5,10 @@
 #include "render/FrameData.h"
 #include "render/RenderContext.h"
 #include "render/RenderData.h"
-#include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
-#include "render/resources/GpuShader.h"
 #include "render/resources/MaterialTable.h"
 #include "render/resources/RenderResourceManager.h"
+#include "render/resources/ShaderLayout.h"
 
 #include <algorithm>
 #include <cstring>
@@ -17,8 +16,6 @@
 
 namespace
 {
-constexpr uint32_t kWorkgroupSize = 64;
-
 struct PrepareParameters
 {
     uint32_t triangleCount;
@@ -27,7 +24,7 @@ struct PrepareParameters
 static_assert(sizeof(PrepareParameters) == 8);
 }
 
-RealtimeScene::Buffers RealtimeScene::compile(RenderGraph& graph, const PassSetup& setup)
+RealtimeScene::Buffers RealtimeScene::compile(RenderGraph& graph, const PassSetup&)
 {
     const auto createUploadBuffer = [&](vk::DeviceSize size)
     {
@@ -60,7 +57,7 @@ RealtimeScene::Buffers RealtimeScene::compile(RenderGraph& graph, const PassSetu
     taskCount     = 0;
     if (!*pipeline)
     {
-        createPipeline(setup);
+        createPipeline();
     }
     for (auto& frame : frames)
     {
@@ -70,9 +67,10 @@ RealtimeScene::Buffers RealtimeScene::compile(RenderGraph& graph, const PassSetu
     return buffers;
 }
 
-void RealtimeScene::createPipeline(const PassSetup& setup)
+void RealtimeScene::createPipeline()
 {
-    auto&                                         device = *renderContext().device;
+    auto& ctx = renderContext();
+    auto& device = *ctx.device;
     std::array<vk::DescriptorSetLayoutBinding, 3> bindings;
     for (uint32_t binding = 0; binding < bindings.size(); ++binding)
     {
@@ -89,16 +87,8 @@ void RealtimeScene::createPipeline(const PassSetup& setup)
         .size       = sizeof(PrepareParameters),
     };
     pipelineLayout = device.getOrCreatePipelineLayout(std::array{&descriptorSetLayout}, std::array{range});
-    const auto&                   vulkan = setup.vulkan;
-    GpuShader                     shader{vulkan.deviceHandle(), "shaders/prepare_emissive_triangles.spv"};
-    const vk::raii::PipelineCache cache{nullptr};
-    pipeline = vkCheck(vulkan.deviceHandle().createComputePipeline(
-        cache,
-        {
-            .stage  = {.stage = vk::ShaderStageFlagBits::eCompute, .module = shader.handle(), .pName = "computeMain"},
-            .layout = pipelineLayout,
-        }
-    ));
+    const auto shader = ctx.shaderManager->getOrLoad("prepare_emissive_triangles");
+    pipeline = device.createComputePipeline(shader, pipelineLayout);
     for (auto& frame : frames)
     {
         frame.descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
@@ -184,13 +174,9 @@ void RealtimeScene::updateDescriptors(RenderGraph& graph, const PassFrame& execu
         }
         const auto& buffer   = graph.getBuffer(handles[binding]);
         infos[binding]       = vk::DescriptorBufferInfo{.buffer = buffer.handle(), .range = buffer.size()};
-        writes[writeCount++] = {
-            .dstSet          = *frame.descriptorSet,
-            .dstBinding      = binding,
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eStorageBuffer,
-            .pBufferInfo     = &infos[binding],
-        };
+        auto& write = writes[writeCount++];
+        write = makeDescriptorWrite(*frame.descriptorSet, descriptorSetLayout.bindings[binding]);
+        write.pBufferInfo = &infos[binding];
         frame.revisions[binding] = revision;
     }
     execution.setup.vulkan.deviceHandle().updateDescriptorSets(std::span{writes.data(), writeCount}, {});
@@ -202,11 +188,11 @@ void RealtimeScene::execute(RenderGraph&, vk::raii::CommandBuffer& commands, con
     {
         return;
     }
-    const auto groups = (triangleCount + kWorkgroupSize - 1) / kWorkgroupSize;
+    const auto groups = pipeline.groupCount({triangleCount, 1, 1});
     CHECK(
-        groups <= frame.setup.vulkan.properties().limits.maxComputeWorkGroupCount[0],
+        groups.width <= frame.setup.vulkan.properties().limits.maxComputeWorkGroupCount[0],
         "emissive triangle preparation requires {} compute groups",
-        groups
+        groups.width
     );
 
     commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
@@ -223,6 +209,6 @@ void RealtimeScene::execute(RenderGraph&, vk::raii::CommandBuffer& commands, con
         0,
         PrepareParameters{triangleCount, taskCount}
     );
-    commands.dispatch(groups, 1, 1);
+    commands.dispatch(groups.width, groups.height, groups.depth);
 }
 

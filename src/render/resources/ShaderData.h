@@ -8,6 +8,7 @@
 #include <glm/vec4.hpp>
 
 #include "render/RenderConfig.h"
+#include "render/resources/LightRanges.h"
 
 namespace RenderInterface
 {
@@ -74,18 +75,6 @@ struct alignas(16) SceneUniforms
     glm::vec4 cameraPosition{0.0f, 0.0f, 0.0f, 1.0f};
     glm::mat4 view{1.0f};
 };
-
-// Exclusive group ends in one SSBO: Directional, Point, RectArea, Spot.
-// Only enabled lights are uploaded; an empty group has equal begin/end indices.
-struct LightRanges
-{
-    bool     operator==(const LightRanges&) const = default;
-    uint32_t directionalEnd                       = 0;
-    uint32_t pointEnd                             = 0;
-    uint32_t rectAreaEnd                          = 0;
-    uint32_t spotEnd                              = 0;
-};
-static_assert(sizeof(LightRanges) == 16);
 
 struct alignas(16) LightUniforms
 {

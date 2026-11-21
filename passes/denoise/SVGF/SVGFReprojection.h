@@ -37,7 +37,7 @@ private:
     vk::Extent3D                            extent{};
     DescriptorSetLayout                     descriptorSetLayout;
     vk::PipelineLayout                      pipelineLayout;
-    vk::raii::Pipeline                      pipeline      = nullptr;
+    ComputePipeline                         pipeline;
     vk::raii::DescriptorSet                 descriptorSet = nullptr;
     glm::mat4                               previousViewProjection{1.0f};
     glm::vec4                               previousViewport{};

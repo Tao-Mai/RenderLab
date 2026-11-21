@@ -1,13 +1,17 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "render/graph/RenderGraph.h"
 
-struct DenoiserInputs
+struct RL_RECORD DenoiserInputs
 {
-    RenderGraph::ImageHandle depth;
-    RenderGraph::ImageHandle worldNormal;
-    RenderGraph::ImageHandle direct;
-    RenderGraph::ImageHandle indirect;
-    RenderGraph::ImageHandle emission;
-    RenderGraph::ImageHandle albedo;
+    RL_FIELD("depth") RenderGraph::ImageHandle depth;
+    RL_FIELD("worldNormal") RenderGraph::ImageHandle worldNormal;
+    RL_FIELD("direct") RenderGraph::ImageHandle direct;
+    RL_FIELD("indirect") RenderGraph::ImageHandle indirect;
+    RL_FIELD("emission") RenderGraph::ImageHandle emission;
+    RL_FIELD("albedo") RenderGraph::ImageHandle albedo;
 };
+
+#include RL_METADATA_HEADER("metadata/src/render/denoise/DenoiserInputs.generated.h")

@@ -1,15 +1,19 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "asset/Asset.h"
 #include "asset/TextureBinding.h"
 
-struct EnvironmentMapAsset : Asset
+struct RL_RECORD EnvironmentMapAsset : Asset
 {
     using ID                              = AssetID<EnvironmentMapAsset>;
     static constexpr std::string_view dir = "EnvironmentMap";
 
-    ID             id;
-    TextureBinding radiance;
-    TextureBinding irradiance;
-    TextureBinding prefilteredSpecular;
+    RL_FIELD("id") ID             id;
+    RL_FIELD("radiance") TextureBinding radiance;
+    RL_FIELD("irradiance") TextureBinding irradiance;
+    RL_FIELD("prefilteredSpecular") TextureBinding prefilteredSpecular;
 };
+
+#include RL_METADATA_HEADER("metadata/src/asset/EnvironmentMapAsset.generated.h")

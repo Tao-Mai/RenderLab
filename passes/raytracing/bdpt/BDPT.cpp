@@ -10,7 +10,7 @@
 #include "render/device/VulkanContext.h"
 #include "render/raytracing/offline/OfflinePathTracing.h"
 #include "render/raytracing/offline/OfflineScene.h"
-#include "render/raytracing/offline/OfflineTracePipeline.h"
+#include "render/raytracing/offline/OfflineTracePipelineCache.h"
 
 #include <algorithm>
 #include <bit>
@@ -99,7 +99,7 @@ private:
     RenderGraph::BufferHandle lightDistribution;
     uint64_t lightDistributionRevision = 0;
 
-    const OfflineTracePipeline* pipeline = nullptr;
+    const RayTracingPipeline* pipeline = nullptr;
     uint32_t shaderDepth = 0;
     std::string shaderPath;
     glm::vec4 sceneSphere{};
@@ -147,7 +147,7 @@ glm::vec4 cameraSampling(const RenderView& view)
 
 void BDPT::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
 {
-    const auto image = tracer.compile(graph, setup, "shaders/bdpt_resolve.spv", sizeof(BdptParameters), kExtraBindings);
+    const auto image = tracer.compile(graph, setup, "bdpt_resolve", sizeof(BdptParameters), kExtraBindings);
     const auto extent = setup.renderExtent;
     const auto splatBytes = vk::DeviceSize(extent.width) * extent.height * sizeof(glm::uvec4);
     CHECK(splatBytes <= setup.vulkan.properties().limits.maxStorageBufferRange);
@@ -364,23 +364,23 @@ void BDPT::prepareLightDistribution(RenderGraph& graph, const PassFrame& executi
     }
 }
 
-bool drawSettings(BdptSettings& settings, const BDPT& pass, const PassEditorContext&)
+bool drawSettings(Gui::Widgets& widgets, BdptSettings& settings, const BDPT& pass, const PassEditorContext&)
 {
-    ImGui::Text("Samples per pixel: %.2f", pass.sampleProgress());
+    widgets.text(std::format("Samples per pixel: {:.2f}", pass.sampleProgress()));
     if (pass.preparingPipeline())
-        ImGui::TextUnformatted("Preparing renderer...");
+        widgets.text("Preparing renderer...");
 
-    bool edited = drawNumericSlider("Max bounces", settings.maxBounces, kMinPathBounces, kMaxPathBounces);
-    ImGui::SetItemTooltip("Maximum surface scattering events across the camera and light subpaths.");
-    edited |= ImGui::Checkbox("Light tracing", &settings.lightTracing);
-    ImGui::SetItemTooltip("Connect light subpaths to the camera, including specular caustics.");
-    edited |= drawEnumCombo("Light selection", settings.lightSelection, "Uniform\0Power\0");
-    edited |= drawEnumCombo("MIS heuristic", settings.misHeuristic, "Balance\0Power (2)\0");
+    bool edited = widgets.slider("Max bounces", settings.maxBounces, kMinPathBounces, kMaxPathBounces);
+    widgets.tooltip("Maximum surface scattering events across the camera and light subpaths.");
+    edited |= widgets.checkbox("Light tracing", settings.lightTracing);
+    widgets.tooltip("Connect light subpaths to the camera, including specular caustics.");
+    edited |= widgets.dropdown("Light selection", settings.lightSelection, {"Uniform", "Power"});
+    edited |= widgets.dropdown("MIS heuristic", settings.misHeuristic, {"Balance", "Power (2)"});
     return edited;
 }
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<BDPT>(makePassEditor<BDPT, drawSettings>("BDPT"));
+    registry.registerClass<BDPT>("BDPT", makePassEditor<BDPT, drawSettings>("BDPT"));
 }

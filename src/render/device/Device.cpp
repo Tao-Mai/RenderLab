@@ -6,6 +6,7 @@
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/resources/MaterialData.h"
+#include "render/resources/ShaderLayout.h"
 
 #include <algorithm>
 #include <array>
@@ -188,6 +189,45 @@ vk::raii::DescriptorSet Device::allocateDescriptorSet(const DescriptorSetLayout&
                                  .pSetLayouts        = &handle,
                              }))
                          .front());
+}
+
+vk::Extent3D ComputePipeline::groupCount(vk::Extent3D threads) const
+{
+    const auto roundUp = [](uint32_t count, uint32_t size) { return count / size + (count % size != 0); };
+    return {
+        roundUp(threads.width, threadGroupSize.width),
+        roundUp(threads.height, threadGroupSize.height),
+        roundUp(threads.depth, threadGroupSize.depth),
+    };
+}
+
+void ComputePipeline::dispatch(vk::raii::CommandBuffer& commands, vk::Extent3D threads) const
+{
+    const auto groups = groupCount(threads);
+    commands.dispatch(groups.width, groups.height, groups.depth);
+}
+
+ComputePipeline Device::createComputePipeline(ShaderHandle shader, vk::PipelineLayout layout) const
+{
+    DCHECK(device && shaders);
+    const auto& metadata = shaders->metadata(shader);
+    CHECK(metadata.entries.size() == 1, "compute shader '{}' must have one entry point", metadata.binary.string());
+    const auto& entry = metadata.entries.front();
+    const auto threadGroupSize = shaders->layout(shader).threadGroupSize(entry);
+    return {
+        .handle = vkCheck(device->createComputePipeline(
+            nullptr,
+            {
+                .stage = {
+                    .stage = vk::ShaderStageFlagBits::eCompute,
+                    .module = shaders->module(shader),
+                    .pName = entry.c_str(),
+                },
+                .layout = layout,
+            }
+        )),
+        .threadGroupSize = threadGroupSize,
+    };
 }
 
 std::size_t Device::PipelineKeyHash::operator()(const PipelineKey& key) const noexcept

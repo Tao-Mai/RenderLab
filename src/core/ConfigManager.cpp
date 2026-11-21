@@ -115,12 +115,11 @@ void ConfigManager::applyGraphParameters(const nlohmann::json& parameters)
 {
     CHECK(parameters.is_object(), "graph parameters must be an object");
     RenderFeature feature;
-    constexpr auto kAccess = std::meta::access_context::current();
-    template for (constexpr auto kMember : std::define_static_array(ReflectedDataMembers(^^RenderFeature, kAccess)))
+    metadata::visitFields(feature, [&](const auto& field, auto& value)
     {
-        if (const auto found = parameters.find(std::meta::identifier_of(kMember)); found != parameters.end())
-            Deserialize(*found, feature.[:kMember:]);
-    }
+        if (const auto found = parameters.find(field.name); found != parameters.end())
+            Deserialize(*found, value);
+    });
     CHECK(std::isfinite(feature.ambientCoefficient) && feature.ambientCoefficient >= 0.0f);
     renderer.feature = feature;
 }

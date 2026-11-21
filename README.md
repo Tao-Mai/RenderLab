@@ -1,6 +1,6 @@
 # RenderLab
 
-RenderLab 是一个以学习和实验为目的的个人渲染器项目，基于 **Vulkan / C++26 / Slang**
+RenderLab 是一个以学习和实验为目的的个人渲染器项目，基于 **Vulkan / C++23 / Slang**
 ，涵盖实时渲染与离线渲染，目前仍在持续开发和探索中。项目的主要目标是通过亲自实现不同的渲染算法，深入理解其原理和实际执行流程，而非构建生产级渲染引擎。
 
 论文和教材通常着重介绍算法的核心思想，而将其落实到渲染器中，还需要处理数据组织、GPU
@@ -43,20 +43,36 @@ SVGF。关闭时显示当前帧采样，开启时使用 albedo 解调、历史�
 - **光传输**：GGX VNDF 与漫反射混合采样、多光源加权选择、NEE / BRDF 多重重要性采样、俄罗斯轮盘终止。
 - **SVGF 降噪**：albedo 解调、基于深度与法线的历史重投影、直接光 / 间接光分别累积、亮度方差估计与五级 à-trous 滤波。
 - **后处理**：RGBA16F HDR、EV100 曝光、可切换 Tone Mapping、多级 Bloom。
-- **工具链**：glTF / Assimp 场景导入、纹理 Mipmap、ImGui 编辑器、GPU 拾取、CPU / GPU 分阶段计时；C++26 静态反射驱动序列化。
+- **工具链**：glTF / Assimp 场景导入、纹理 Mipmap、ImGui 编辑器、GPU 拾取、CPU / GPU 分阶段计时；构建期生成序列化和编辑器的字段描述。
 
 ## 构建与运行
 
 当前主要开发环境为 Windows + CLion。
 
-- GCC 16.2+，支持 C++26 静态反射与 `-freflection`。
+- 支持 C++23 的编译器。Windows 的 MSVC 配合 `x64-windows`，MSYS2 UCRT64 的 GCC 配合 `x64-mingw-dynamic`。
+- Clang / LLVM 开发包用于编译和运行构建期的元数据生成器。
 - CMake 4.2+、Ninja、Vulkan SDK 1.4+、Slang 编译器。
 - CPython 3.10+，包含解释器、标准库和用于嵌入的开发库。
-- vcpkg：`x64-mingw-dynamic`。主要依赖 GLFW、GLM、ImGui（Docking 与 GLFW / Vulkan
+- vcpkg 主要依赖 GLFW、GLM、ImGui（Docking 与 GLFW / Vulkan
   backend）、ImGuizmo、TinyGLTF、Assimp、TinyEXR、DirectXTex（`directxtex[core]`）、MikkTSpace、nlohmann-json、glog、zlib。
 
-在 CLion 中选择 GCC 和 vcpkg 工具链，构建 `RenderLab`。CMake 会检查反射支持并编译 Shader，
-程序从对应的构建目录读取 Shader。未指定构建类型时默认使用 Release。同一构建目录使用同一套 CMake / Ninja 工具链。
+MSVC 使用 [LLVM 的 Windows MSVC 开发归档](https://github.com/llvm/llvm-project/releases)，将其安装前缀解包到
+`.cache/metadata-sdk-msvc`。生成器链接官方归档所需的静态 zstd。
+
+```sh
+vcpkg install zstd:x64-windows-static
+```
+
+MSYS2 UCRT64 可用以下命令安装对应的 LLVM 开发包。
+
+```sh
+pacman -S mingw-w64-ucrt-x86_64-clang mingw-w64-ucrt-x86_64-llvm mingw-w64-ucrt-x86_64-clang-tools-extra
+```
+
+在 CLion 中选择编译器和对应的 vcpkg triplet，构建 `RenderLab`。CMake 会在编译消费者之前生成元数据并编译 Shader。
+首次构建后，clangd 使用对应构建目录的 `compile_commands.json` 索引生成头文件。
+独立的 MSYS2 SDK 可解包到 `.cache/metadata-sdk`。也可用 `Clang_DIR` 指向与所选编译器匹配且包含 `ClangConfig.cmake` 的 SDK 目录。
+未指定构建类型时默认使用 Release。同一构建目录使用同一套 CMake / Ninja 工具链。
 光追路线需要支持 Vulkan 硬件光追的显卡。
 Windows 构建会复制 Python DLL，运行时从构建所选的 CPython 安装中加载标准库。
 

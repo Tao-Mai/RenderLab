@@ -56,6 +56,16 @@ struct GraphicsPipelineInfo
     uint32_t                viewMask    = 0;
 };
 
+struct ComputePipeline
+{
+    vk::raii::Pipeline handle = nullptr;
+    vk::Extent3D threadGroupSize;
+
+    [[nodiscard]] vk::Pipeline operator*() const { return *handle; }
+    [[nodiscard]] vk::Extent3D groupCount(vk::Extent3D threads) const;
+    void dispatch(vk::raii::CommandBuffer& commands, vk::Extent3D threads) const;
+};
+
 class Device
 {
 public:
@@ -70,6 +80,7 @@ public:
     );
     [[nodiscard]] vk::raii::DescriptorSet allocateDescriptorSet(const DescriptorSetLayout& layout) const;
     [[nodiscard]] vk::Pipeline            getOrCreatePipeline(const GraphicsPipelineInfo& info);
+    [[nodiscard]] ComputePipeline        createComputePipeline(ShaderHandle shader, vk::PipelineLayout layout) const;
 
     DescriptorSetLayout sceneDescriptorSetLayout;
     DescriptorSetLayout lightDescriptorSetLayout;

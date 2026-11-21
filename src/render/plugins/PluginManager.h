@@ -4,7 +4,6 @@
 
 #include <map>
 #include <memory>
-#include <meta>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -16,12 +15,17 @@
 #define RENDERLAB_PLUGIN_EXPORT __attribute__((visibility("default")))
 #endif
 
+namespace Gui
+{
+class Widgets;
+}
+
 struct PassEditorContext;
 
 struct PassEditor
 {
     std::string label;
-    std::optional<nlohmann::json> (*draw)(const RenderPass&, const PassEditorContext&) = nullptr;
+    std::optional<nlohmann::json> (*draw)(Gui::Widgets&, const RenderPass&, const PassEditorContext&) = nullptr;
 };
 
 class PluginRegistry;
@@ -60,7 +64,7 @@ class PluginRegistry
 {
 public:
     template <class Pass>
-    void registerClass(PassEditor editor = {}, std::string_view type = std::meta::identifier_of(^^Pass))
+    void registerClass(std::string_view type, PassEditor editor = {})
     {
         manager.addFactory(type, library, []() -> RenderPass* { return new Pass; }, std::move(editor));
     }

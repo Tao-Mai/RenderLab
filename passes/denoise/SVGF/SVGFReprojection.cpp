@@ -3,13 +3,10 @@
 #include "render/RenderView.h"
 
 #include "render/RenderContext.h"
-#include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
-#include "render/resources/GpuShader.h"
 
 namespace
 {
-constexpr uint32_t   kWorkgroupSize = 8;
 constexpr uint32_t   kInputCount    = 5;
 constexpr uint32_t   kBindingCount  = 13;
 constexpr std::array kHistoryFormats{
@@ -130,7 +127,6 @@ void SVGFReprojection::createPipeline(const VulkanContext& vulkan)
         vulkan.physicalDeviceHandle().getQueueFamilyProperties()[vulkan.graphicsQueueFamilyIndex()].queueFlags &
         vk::QueueFlagBits::eCompute
     );
-    const auto&                                               device = vulkan.deviceHandle();
     std::array<vk::DescriptorSetLayoutBinding, kBindingCount> bindings;
     for (uint32_t binding = 0; binding < bindings.size(); ++binding)
         bindings[binding] = {
@@ -140,24 +136,18 @@ void SVGFReprojection::createPipeline(const VulkanContext& vulkan)
             .descriptorCount = 1,
             .stageFlags      = vk::ShaderStageFlagBits::eCompute,
         };
-    auto& renderDevice  = *renderContext().device;
-    descriptorSetLayout = renderDevice.createDescriptorSetLayout(bindings);
+    auto& ctx           = renderContext();
+    auto& device        = *ctx.device;
+    descriptorSetLayout = device.createDescriptorSetLayout(bindings);
     const vk::PushConstantRange range{
         .stageFlags = vk::ShaderStageFlagBits::eCompute,
         .size       = sizeof(ReprojectionParameters)
     };
-    const std::array layouts{&renderDevice.sceneDescriptorSetLayout, &descriptorSetLayout};
-    pipelineLayout = renderDevice.getOrCreatePipelineLayout(layouts, std::array{range});
-    GpuShader                     shader{device, "shaders/svgf_reprojection.spv"};
-    const vk::raii::PipelineCache cache{nullptr};
-    pipeline      = vkCheck(device.createComputePipeline(
-        cache,
-        {
-                 .stage  = {.stage = vk::ShaderStageFlagBits::eCompute, .module = shader.handle(), .pName = "computeMain"},
-                 .layout = pipelineLayout,
-        }
-    ));
-    descriptorSet = renderDevice.allocateDescriptorSet(descriptorSetLayout);
+    const std::array layouts{&device.sceneDescriptorSetLayout, &descriptorSetLayout};
+    pipelineLayout = device.getOrCreatePipelineLayout(layouts, std::array{range});
+    const auto shader = ctx.shaderManager->getOrLoad("svgf_reprojection");
+    pipeline = device.createComputePipeline(shader, pipelineLayout);
+    descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
 }
 
 void SVGFReprojection::bindResources(RenderGraph& graph, const PassSetup& setup) const
@@ -221,11 +211,7 @@ void SVGFReprojection::execute(RenderGraph& graph, vk::raii::CommandBuffer& comm
             .emaAlpha               = settings.emaAlpha,
         }
     );
-    commands.dispatch(
-        (extent.width + kWorkgroupSize - 1) / kWorkgroupSize,
-        (extent.height + kWorkgroupSize - 1) / kWorkgroupSize,
-        1
-    );
+    pipeline.dispatch(commands, {extent.width, extent.height, 1});
     previousViewProjection = frame.view.uniforms.viewProjection;
     previousViewport       = currentViewport;
     previousDepthRow       = currentDepthRow;

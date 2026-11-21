@@ -264,7 +264,7 @@ $$
 
 构建时按 4 / 8 / 16 / 32 / 64 编译路径容量变体，运行时选择能够容纳当前深度的最小容量。容量控制局部路径数组大小，实际遍历仍遵守当前的最大深度。Pass 按算法和容量缓存管线与 SBT。
 
-首次使用某个 BDPT 深度变体时，后台任务创建光追管线与 SBT。主线程逐帧检查结果，准备期间继续提交编辑器和输出。渲染器持有任务与缓存，切换 Graph 后仍可复用已准备的管线。[OfflineTracePipeline.cpp](../../src/render/raytracing/offline/OfflineTracePipeline.cpp)
+首次使用某个 BDPT 深度变体时，后台任务创建光追管线与 SBT。主线程逐帧检查结果，准备期间继续提交编辑器和输出。渲染器持有任务与缓存，切换 Graph 后仍可复用已准备的管线。[OfflineTracePipelineCache.cpp](../../src/render/raytracing/offline/OfflineTracePipelineCache.cpp)
 
 ## 实现入口与验证
 

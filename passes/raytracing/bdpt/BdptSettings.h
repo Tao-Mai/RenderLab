@@ -1,26 +1,30 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include <cstdint>
 
-enum class BdptLightSelection
+enum class RL_ENUM BdptLightSelection
 {
-    Uniform,
-    Power,
+    Uniform RL_ENUM_VALUE("Uniform"),
+    Power RL_ENUM_VALUE("Power"),
 };
 
-enum class BdptMisHeuristic
+enum class RL_ENUM BdptMisHeuristic
 {
-    Balance,
-    Power,
+    Balance RL_ENUM_VALUE("Balance"),
+    Power RL_ENUM_VALUE("Power"),
 };
 
-struct BdptSettings
+struct RL_RECORD BdptSettings
 {
-    uint32_t           maxBounces     = 6;
-    bool               lightTracing   = true;
-    BdptLightSelection lightSelection = BdptLightSelection::Power;
-    BdptMisHeuristic   misHeuristic   = BdptMisHeuristic::Balance;
+    RL_FIELD("maxBounces") uint32_t           maxBounces     = 6;
+    RL_FIELD("lightTracing") bool               lightTracing   = true;
+    RL_FIELD("lightSelection") BdptLightSelection lightSelection = BdptLightSelection::Power;
+    RL_FIELD("misHeuristic") BdptMisHeuristic   misHeuristic   = BdptMisHeuristic::Balance;
 
     bool operator==(const BdptSettings&) const = default;
     void validate() const;
 };
+
+#include RL_METADATA_HEADER("metadata/passes/raytracing/bdpt/BdptSettings.generated.h")

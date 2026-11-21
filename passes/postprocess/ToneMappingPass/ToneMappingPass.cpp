@@ -26,8 +26,9 @@ void ToneMappingPass::compile(RenderGraph& graph, const PassSetup& setup, PassRe
 {
     const auto target = ports.image("target");
     hdrColor = ports.image("hdrColor");
-    color    = graph.write(target);
     exposure = ports.buffer("exposure");
+    const auto color = graph.write(target);
+    attachments.colors.front() = {color, vk::AttachmentLoadOp::eDontCare};
 
     graph.use(
         exposure,
@@ -44,14 +45,7 @@ void ToneMappingPass::compile(RenderGraph& graph, const PassSetup& setup, PassRe
             .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
         }
     );
-    graph.use(
-        color,
-        {
-            .stages = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-            .access = vk::AccessFlagBits2::eColorAttachmentWrite,
-            .layout = vk::ImageLayout::eColorAttachmentOptimal,
-        }
-    );
+    attachments.declare(graph);
 
     const auto targetFormat   = graph.imageInfo(target).format;
     const bool srgbAttachment = targetFormat == vk::Format::eB8G8R8A8Srgb || targetFormat == vk::Format::eR8G8B8A8Srgb;
@@ -149,33 +143,10 @@ void ToneMappingPass::bindResources(RenderGraph& graph, const PassSetup& setup)
 }
 
 void ToneMappingPass::execute(
-    RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
+    RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame&
 )
 {
-    const auto                        extent = graph.imageExtent(color);
-    const vk::RenderingAttachmentInfo attachment{
-        .imageView   = graph.getImage(color).getOrCreateImageView({
-              .viewType         = vk::ImageViewType::e2D,
-              .format           = graph.imageInfo(color).format,
-              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        }),
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp      = vk::AttachmentLoadOp::eDontCare,
-        .storeOp     = vk::AttachmentStoreOp::eStore,
-    };
-
-    auto& commands = commandBuffer;
-    commands.beginRendering({
-        .renderArea           = {{0, 0}, extent},
-        .layerCount           = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments    = &attachment,
-    });
-    commands.setViewport(
-        0,
-        vk::Viewport(0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height), 0.0f, 1.0f)
-    );
-    commands.setScissor(0, vk::Rect2D({0, 0}, extent));
+    attachments.begin(graph, commands);
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     const std::array sets = {*descriptorSet};
     commands.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, sets, {});
@@ -198,5 +169,5 @@ void ToneMappingPass::execute(
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<ToneMappingPass>(makePassEditor<ToneMappingPass>("Tone mapping"));
+    registry.registerClass<ToneMappingPass>("ToneMappingPass", makePassEditor<ToneMappingPass>("Tone mapping"));
 }

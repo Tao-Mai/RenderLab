@@ -49,5 +49,5 @@ void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandB
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<DepthPrepass>();
+    registry.registerClass<DepthPrepass>("DepthPrepass");
 }

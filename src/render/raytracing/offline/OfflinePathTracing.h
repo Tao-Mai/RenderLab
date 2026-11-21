@@ -12,7 +12,7 @@
 #include <string_view>
 #include <vector>
 
-struct OfflineTracePipeline;
+class RayTracingPipeline;
 
 struct alignas(16) OfflinePathParameters
 {
@@ -30,7 +30,7 @@ public:
     [[nodiscard]] RenderGraph::ImageHandle compile(
         RenderGraph& graph,
         const PassSetup& setup,
-        std::string_view resolveShader,
+        std::string_view resolveProgram,
         uint32_t parameterSize,
         std::span<const vk::DescriptorSetLayoutBinding> extraBindings = {}
     );
@@ -47,7 +47,7 @@ public:
         vk::raii::CommandBuffer& commands,
         const PassFrame& execution,
         std::span<const std::byte> constants,
-        const OfflineTracePipeline* pipeline,
+        const RayTracingPipeline* pipeline,
         vk::Extent2D rayExtent,
         std::span<const RenderGraph::BufferHandle> extraAccumulations = {}
     );
@@ -74,7 +74,7 @@ private:
     DescriptorSetLayout emptySetLayout;
     vk::PipelineLayout pipelineLayout;
     vk::raii::DescriptorSet descriptorSet = nullptr;
-    vk::raii::Pipeline resolvePipeline = nullptr;
+    ComputePipeline resolvePipeline;
     vk::Extent2D extent;
 
     uint32_t completedSamples = 0;

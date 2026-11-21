@@ -1,19 +1,21 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "scene/Component.h"
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
-class CameraComponent : public Component
+class RL_REGISTER_TYPE(Component, "CameraComponent") CameraComponent : public Component
 {
 public:
-    [[=ReflectField{}]] float yaw = -90.0f;
-    [[=ReflectField{}]] float pitch = 0.0f;
-    [[=ReflectField{}]] float fieldOfView = 45.0f;
-    [[=ReflectField{}]] float nearPlane = 0.1f;
-    [[=ReflectField{}]] float farPlane = 100.0f;
-    [[=ReflectField{}]] float mouseSensitivity = 0.12f;
+    RL_FIELD("yaw") float yaw = -90.0f;
+    RL_FIELD("pitch") float pitch = 0.0f;
+    RL_FIELD("fieldOfView") float fieldOfView = 45.0f;
+    RL_FIELD("nearPlane") float nearPlane = 0.1f;
+    RL_FIELD("farPlane") float farPlane = 100.0f;
+    RL_FIELD("mouseSensitivity") float mouseSensitivity = 0.12f;
 
     void init(AActor* actor) override;
     void tick(float deltaTime) override;
@@ -36,3 +38,5 @@ private:
     double previousMouseX = 0.0;
     double previousMouseY = 0.0;
 };
+
+#include RL_METADATA_HEADER("metadata/src/scene/component/CameraComponent.generated.h")

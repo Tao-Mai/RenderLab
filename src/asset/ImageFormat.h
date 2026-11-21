@@ -1,37 +1,39 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include <cstdint>
 #include <utility>
 
 #include <glm/vec2.hpp>
 
-struct RgbChromaticities
+struct RL_RECORD RgbChromaticities
 {
-    glm::dvec2 red{0.64, 0.33};
-    glm::dvec2 green{0.30, 0.60};
-    glm::dvec2 blue{0.15, 0.06};
-    glm::dvec2 white{0.3127, 0.3290};
+    RL_FIELD("red") glm::dvec2 red{0.64, 0.33};
+    RL_FIELD("green") glm::dvec2 green{0.30, 0.60};
+    RL_FIELD("blue") glm::dvec2 blue{0.15, 0.06};
+    RL_FIELD("white") glm::dvec2 white{0.3127, 0.3290};
     bool operator==(const RgbChromaticities&) const = default;
 };
 
-enum class ImageFormat
+enum class RL_ENUM ImageFormat
 {
-    R8,
-    RG8,
-    RGB8,
-    RGBA8,
-    RGBA16F,
-    RGBA32F,
-    BC1,
-    BC2,
-    BC3,
-    BC4Unorm,
-    BC4Snorm,
-    BC5Unorm,
-    BC5Snorm,
-    BC6HUfloat,
-    BC6HSfloat,
-    BC7,
+    R8 RL_ENUM_VALUE("R8"),
+    RG8 RL_ENUM_VALUE("RG8"),
+    RGB8 RL_ENUM_VALUE("RGB8"),
+    RGBA8 RL_ENUM_VALUE("RGBA8"),
+    RGBA16F RL_ENUM_VALUE("RGBA16F"),
+    RGBA32F RL_ENUM_VALUE("RGBA32F"),
+    BC1 RL_ENUM_VALUE("BC1"),
+    BC2 RL_ENUM_VALUE("BC2"),
+    BC3 RL_ENUM_VALUE("BC3"),
+    BC4Unorm RL_ENUM_VALUE("BC4Unorm"),
+    BC4Snorm RL_ENUM_VALUE("BC4Snorm"),
+    BC5Unorm RL_ENUM_VALUE("BC5Unorm"),
+    BC5Snorm RL_ENUM_VALUE("BC5Snorm"),
+    BC6HUfloat RL_ENUM_VALUE("BC6HUfloat"),
+    BC6HSfloat RL_ENUM_VALUE("BC6HSfloat"),
+    BC7 RL_ENUM_VALUE("BC7"),
 };
 
 struct ImageBlock
@@ -90,14 +92,16 @@ struct ImageBlock
     }
 }
 
-enum class ColorSpace
+enum class RL_ENUM ColorSpace
 {
-    Linear,
-    Srgb
+    Linear RL_ENUM_VALUE("Linear"),
+    Srgb RL_ENUM_VALUE("Srgb")
 };
 
-enum class ImageLayout
+enum class RL_ENUM ImageLayout
 {
-    Image2D,
-    Cubemap,
+    Image2D RL_ENUM_VALUE("Image2D"),
+    Cubemap RL_ENUM_VALUE("Cubemap"),
 };
+
+#include RL_METADATA_HEADER("metadata/src/asset/ImageFormat.generated.h")

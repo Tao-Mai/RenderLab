@@ -96,5 +96,5 @@ void PresentColorPass::BlitPass::execute(
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<PresentColorPass>();
+    registry.registerClass<PresentColorPass>("PresentColorPass");
 }

@@ -159,5 +159,5 @@ void EditorPickingPass::execute(
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<EditorPickingPass>();
+    registry.registerClass<EditorPickingPass>("EditorPickingPass");
 }

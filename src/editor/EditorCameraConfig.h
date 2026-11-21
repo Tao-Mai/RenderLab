@@ -1,23 +1,27 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "render/ExposureConfig.h"
 
 #include <glm/vec3.hpp>
 #include <optional>
 
-struct EditorCameraConfig
+struct RL_RECORD EditorCameraConfig
 {
-    glm::vec3 position{0.0f};
-    float     yaw              = -90.0f;
-    float     pitch            = 0.0f;
-    float     fieldOfView      = 45.0f;
-    float     lensRadius       = 0.0f;
-    float     focalDistance    = 1e6f;
-    float     nearPlane        = 0.1f;
-    float     farPlane         = 100.0f;
-    float     mouseSensitivity = 0.12f;
-    float     speed            = 3.0f;
-    float     sprintMultiplier = 3.0f;
+    RL_FIELD("position") glm::vec3 position{0.0f};
+    RL_FIELD("yaw") float     yaw              = -90.0f;
+    RL_FIELD("pitch") float     pitch            = 0.0f;
+    RL_FIELD("fieldOfView") float     fieldOfView      = 45.0f;
+    RL_FIELD("lensRadius") float     lensRadius       = 0.0f;
+    RL_FIELD("focalDistance") float     focalDistance    = 1e6f;
+    RL_FIELD("nearPlane") float     nearPlane        = 0.1f;
+    RL_FIELD("farPlane") float     farPlane         = 100.0f;
+    RL_FIELD("mouseSensitivity") float     mouseSensitivity = 0.12f;
+    RL_FIELD("speed") float     speed            = 3.0f;
+    RL_FIELD("sprintMultiplier") float     sprintMultiplier = 3.0f;
 
-    std::optional<ExposureConfig> exposure;
+    RL_FIELD("exposure") std::optional<ExposureConfig> exposure;
 };
+
+#include RL_METADATA_HEADER("metadata/src/editor/EditorCameraConfig.generated.h")

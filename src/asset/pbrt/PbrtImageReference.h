@@ -1,11 +1,15 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "asset/TextureBinding.h"
 #include "asset/pbrt/PbrtTypes.h"
 
-struct PbrtImageReference
+struct RL_RECORD PbrtImageReference
 {
-    PbrtFileReference source;
-    TextureBinding image;
+    RL_FIELD("source") PbrtFileReference source;
+    RL_FIELD("image") TextureBinding image;
     bool operator==(const PbrtImageReference&) const = default;
 };
+
+#include RL_METADATA_HEADER("metadata/src/asset/pbrt/PbrtImageReference.generated.h")

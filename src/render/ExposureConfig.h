@@ -1,32 +1,34 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include <cmath>
 
 inline constexpr float kExposureCalibration = 1.2f;
 
-enum class ExposureMode
+enum class RL_ENUM ExposureMode
 {
-    Manual,
-    Automatic,
+    Manual RL_ENUM_VALUE("Manual"),
+    Automatic RL_ENUM_VALUE("Automatic"),
 };
 
-struct ExposureConfig
+struct RL_RECORD ExposureConfig
 {
-    ExposureMode mode                 = ExposureMode::Manual;
-    float        ev100                = 0.0f;
-    float        exposureCompensation = 0.0f;  // Stops: +1 doubles brightness.
+    RL_FIELD("mode") ExposureMode mode                 = ExposureMode::Manual;
+    RL_FIELD("ev100") float        ev100                = 0.0f;
+    RL_FIELD("exposureCompensation") float        exposureCompensation = 0.0f;  // Stops: +1 doubles brightness.
 
-    struct Automatic
+    struct RL_RECORD Automatic
     {
-        float minEv100              = -6.0f;
-        float maxEv100              = 20.0f;
-        float brightAdaptationSpeed = 3.0f;
-        float darkAdaptationSpeed   = 1.0f;
-        float lowPercentile         = 0.02f;
-        float highPercentile        = 0.98f;
+        RL_FIELD("minEv100") float minEv100              = -6.0f;
+        RL_FIELD("maxEv100") float maxEv100              = 20.0f;
+        RL_FIELD("brightAdaptationSpeed") float brightAdaptationSpeed = 3.0f;
+        RL_FIELD("darkAdaptationSpeed") float darkAdaptationSpeed   = 1.0f;
+        RL_FIELD("lowPercentile") float lowPercentile         = 0.02f;
+        RL_FIELD("highPercentile") float highPercentile        = 0.98f;
 
         bool operator==(const Automatic&) const = default;
-    } automatic;
+    } automatic RL_FIELD("automatic");
 
     bool operator==(const ExposureConfig&) const = default;
 
@@ -55,3 +57,5 @@ public:
     virtual ~ExposureProvider() = default;
     [[nodiscard]] virtual const ExposureConfig& exposureDefaults() const = 0;
 };
+
+#include RL_METADATA_HEADER("metadata/src/render/ExposureConfig.generated.h")

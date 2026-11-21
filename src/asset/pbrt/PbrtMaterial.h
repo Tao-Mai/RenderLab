@@ -1,167 +1,169 @@
 #pragma once
 
+#include "core/MetadataAnnotations.h"
+
 #include "asset/MaterialAsset.h"
 #include "asset/pbrt/PbrtSpectrum.h"
 #include "asset/pbrt/PbrtImageReference.h"
 
-struct PbrtMaterial : MaterialAsset
+struct RL_REGISTER_TYPE(MaterialAsset, "PbrtMaterial") PbrtMaterial : MaterialAsset
 {
-    struct Roughness
+    struct RL_RECORD Roughness
     {
-        PbrtFloatInput u = PbrtFloatConstant{0.0};
-        PbrtFloatInput v = PbrtFloatConstant{0.0};
+        RL_FIELD("u") PbrtFloatInput u = PbrtFloatConstant{0.0};
+        RL_FIELD("v") PbrtFloatInput v = PbrtFloatConstant{0.0};
         bool operator==(const Roughness&) const = default;
     };
 
-    struct OpticalConstants
+    struct RL_TYPE("OpticalConstants") OpticalConstants
     {
-        PbrtSpectrumInput eta = PbrtNamedSpectrum{"metal-Cu-eta"};
-        PbrtSpectrumInput k = PbrtNamedSpectrum{"metal-Cu-k"};
+        RL_FIELD("eta") PbrtSpectrumInput eta = PbrtNamedSpectrum{"metal-Cu-eta"};
+        RL_FIELD("k") PbrtSpectrumInput k = PbrtNamedSpectrum{"metal-Cu-k"};
         bool operator==(const OpticalConstants&) const = default;
     };
 
-    struct Reflectance
+    struct RL_TYPE("Reflectance") Reflectance
     {
-        PbrtSpectrumInput value = PbrtConstantSpectrum{0.5};
+        RL_FIELD("value") PbrtSpectrumInput value = PbrtConstantSpectrum{0.5};
         bool operator==(const Reflectance&) const = default;
     };
     using ConductorOptics = std::variant<OpticalConstants, Reflectance>;
 
-    struct Coating
+    struct RL_RECORD Coating
     {
-        Roughness roughness;
-        PbrtSpectrum eta = PbrtConstantSpectrum{1.5};
-        PbrtFloatInput thickness = PbrtFloatConstant{0.01};
-        PbrtFloatInput g = PbrtFloatConstant{0.0};
-        PbrtSpectrumInput albedo = PbrtConstantSpectrum{0.0};
-        int32_t maxDepth = 10;
-        int32_t sampleCount = 1;
+        RL_FIELD("roughness") Roughness roughness;
+        RL_FIELD("eta") PbrtSpectrum eta = PbrtConstantSpectrum{1.5};
+        RL_FIELD("thickness") PbrtFloatInput thickness = PbrtFloatConstant{0.01};
+        RL_FIELD("g") PbrtFloatInput g = PbrtFloatConstant{0.0};
+        RL_FIELD("albedo") PbrtSpectrumInput albedo = PbrtConstantSpectrum{0.0};
+        RL_FIELD("maxDepth") int32_t maxDepth = 10;
+        RL_FIELD("sampleCount") int32_t sampleCount = 1;
         bool operator==(const Coating&) const = default;
     };
 
-    struct Diffuse
+    struct RL_TYPE("Diffuse") Diffuse
     {
-        PbrtSpectrumInput reflectance = PbrtConstantSpectrum{0.5};
+        RL_FIELD("reflectance") PbrtSpectrumInput reflectance = PbrtConstantSpectrum{0.5};
         bool operator==(const Diffuse&) const = default;
     };
 
-    struct Dielectric
+    struct RL_TYPE("Dielectric") Dielectric
     {
-        PbrtSpectrum eta = PbrtConstantSpectrum{1.5};
-        Roughness roughness;
-        bool remapRoughness = true;
+        RL_FIELD("eta") PbrtSpectrum eta = PbrtConstantSpectrum{1.5};
+        RL_FIELD("roughness") Roughness roughness;
+        RL_FIELD("remapRoughness") bool remapRoughness = true;
         bool operator==(const Dielectric&) const = default;
     };
 
-    struct ThinDielectric
+    struct RL_TYPE("ThinDielectric") ThinDielectric
     {
-        PbrtSpectrum eta = PbrtConstantSpectrum{1.5};
+        RL_FIELD("eta") PbrtSpectrum eta = PbrtConstantSpectrum{1.5};
         bool operator==(const ThinDielectric&) const = default;
     };
 
-    struct Conductor
+    struct RL_TYPE("Conductor") Conductor
     {
-        ConductorOptics optics = OpticalConstants{};
-        Roughness roughness;
-        bool remapRoughness = true;
+        RL_FIELD("optics") ConductorOptics optics = OpticalConstants{};
+        RL_FIELD("roughness") Roughness roughness;
+        RL_FIELD("remapRoughness") bool remapRoughness = true;
         bool operator==(const Conductor&) const = default;
     };
 
-    struct CoatedDiffuse
+    struct RL_TYPE("CoatedDiffuse") CoatedDiffuse
     {
-        PbrtSpectrumInput reflectance = PbrtConstantSpectrum{0.5};
-        Coating coating;
-        bool remapRoughness = true;
+        RL_FIELD("reflectance") PbrtSpectrumInput reflectance = PbrtConstantSpectrum{0.5};
+        RL_FIELD("coating") Coating coating;
+        RL_FIELD("remapRoughness") bool remapRoughness = true;
         bool operator==(const CoatedDiffuse&) const = default;
     };
 
-    struct CoatedConductor
+    struct RL_TYPE("CoatedConductor") CoatedConductor
     {
-        ConductorOptics optics = OpticalConstants{};
-        Roughness conductorRoughness;
-        Coating coating;
-        bool remapRoughness = true;
+        RL_FIELD("optics") ConductorOptics optics = OpticalConstants{};
+        RL_FIELD("conductorRoughness") Roughness conductorRoughness;
+        RL_FIELD("coating") Coating coating;
+        RL_FIELD("remapRoughness") bool remapRoughness = true;
         bool operator==(const CoatedConductor&) const = default;
     };
 
-    struct DiffuseTransmission
+    struct RL_TYPE("DiffuseTransmission") DiffuseTransmission
     {
-        PbrtSpectrumInput reflectance = PbrtConstantSpectrum{0.25};
-        PbrtSpectrumInput transmittance = PbrtConstantSpectrum{0.25};
-        double scale = 1.0;
+        RL_FIELD("reflectance") PbrtSpectrumInput reflectance = PbrtConstantSpectrum{0.25};
+        RL_FIELD("transmittance") PbrtSpectrumInput transmittance = PbrtConstantSpectrum{0.25};
+        RL_FIELD("scale") double scale = 1.0;
         bool operator==(const DiffuseTransmission&) const = default;
     };
 
-    struct ScatteringCoefficients
+    struct RL_TYPE("ScatteringCoefficients") ScatteringCoefficients
     {
-        PbrtSpectrumInput sigmaA = PbrtRgbSpectrum{{0.0011f, 0.0024f, 0.014f}, "srgb"};
-        PbrtSpectrumInput sigmaS = PbrtRgbSpectrum{{2.55f, 3.21f, 3.77f}, "srgb"};
+        RL_FIELD("sigmaA") PbrtSpectrumInput sigmaA = PbrtRgbSpectrum{{0.0011f, 0.0024f, 0.014f}, "srgb"};
+        RL_FIELD("sigmaS") PbrtSpectrumInput sigmaS = PbrtRgbSpectrum{{2.55f, 3.21f, 3.77f}, "srgb"};
         bool operator==(const ScatteringCoefficients&) const = default;
     };
 
-    struct ScatteringReflectance
+    struct RL_TYPE("ScatteringReflectance") ScatteringReflectance
     {
-        PbrtSpectrumInput reflectance = PbrtConstantSpectrum{0.5};
-        PbrtSpectrumInput meanFreePath = PbrtConstantSpectrum{1.0};
+        RL_FIELD("reflectance") PbrtSpectrumInput reflectance = PbrtConstantSpectrum{0.5};
+        RL_FIELD("meanFreePath") PbrtSpectrumInput meanFreePath = PbrtConstantSpectrum{1.0};
         bool operator==(const ScatteringReflectance&) const = default;
     };
 
-    struct NamedScattering
+    struct RL_TYPE("NamedScattering") NamedScattering
     {
-        std::string name;
+        RL_FIELD("name") std::string name;
         bool operator==(const NamedScattering&) const = default;
     };
 
-    struct Subsurface
+    struct RL_TYPE("Subsurface") Subsurface
     {
-        std::variant<ScatteringCoefficients, ScatteringReflectance, NamedScattering> scattering =
+        RL_FIELD("scattering") std::variant<ScatteringCoefficients, ScatteringReflectance, NamedScattering> scattering =
             ScatteringCoefficients{};
-        double scale = 1.0;
-        double eta = 1.33f;
-        double g = 0.0;
-        Roughness roughness;
-        bool remapRoughness = true;
+        RL_FIELD("scale") double scale = 1.0;
+        RL_FIELD("eta") double eta = 1.33f;
+        RL_FIELD("g") double g = 0.0;
+        RL_FIELD("roughness") Roughness roughness;
+        RL_FIELD("remapRoughness") bool remapRoughness = true;
         bool operator==(const Subsurface&) const = default;
     };
 
-    struct HairAbsorption
+    struct RL_TYPE("HairAbsorption") HairAbsorption
     {
-        PbrtSpectrumInput sigmaA = PbrtConstantSpectrum{0.0};
+        RL_FIELD("sigmaA") PbrtSpectrumInput sigmaA = PbrtConstantSpectrum{0.0};
         bool operator==(const HairAbsorption&) const = default;
     };
 
-    struct HairPigments
+    struct RL_TYPE("HairPigments") HairPigments
     {
-        PbrtFloatInput eumelanin = PbrtFloatConstant{1.3};
-        PbrtFloatInput pheomelanin = PbrtFloatConstant{0.0};
+        RL_FIELD("eumelanin") PbrtFloatInput eumelanin = PbrtFloatConstant{1.3};
+        RL_FIELD("pheomelanin") PbrtFloatInput pheomelanin = PbrtFloatConstant{0.0};
         bool operator==(const HairPigments&) const = default;
     };
 
-    struct Hair
+    struct RL_TYPE("Hair") Hair
     {
-        std::variant<HairAbsorption, Reflectance, HairPigments> absorption = HairPigments{};
-        PbrtFloatInput eta = PbrtFloatConstant{1.55f};
-        PbrtFloatInput betaM = PbrtFloatConstant{0.3f};
-        PbrtFloatInput betaN = PbrtFloatConstant{0.3f};
-        PbrtFloatInput alpha = PbrtFloatConstant{2.0};  // Degrees.
+        RL_FIELD("absorption") std::variant<HairAbsorption, Reflectance, HairPigments> absorption = HairPigments{};
+        RL_FIELD("eta") PbrtFloatInput eta = PbrtFloatConstant{1.55f};
+        RL_FIELD("betaM") PbrtFloatInput betaM = PbrtFloatConstant{0.3f};
+        RL_FIELD("betaN") PbrtFloatInput betaN = PbrtFloatConstant{0.3f};
+        RL_FIELD("alpha") PbrtFloatInput alpha = PbrtFloatConstant{2.0};  // Degrees.
         bool operator==(const Hair&) const = default;
     };
 
-    struct Measured
+    struct RL_TYPE("Measured") Measured
     {
-        PbrtFileReference brdf;
+        RL_FIELD("brdf") PbrtFileReference brdf;
         bool operator==(const Measured&) const = default;
     };
 
-    struct Mix
+    struct RL_TYPE("Mix") Mix
     {
-        MaterialAsset::ID first;
-        MaterialAsset::ID second;
-        PbrtFloatInput amount = PbrtFloatConstant{0.5};
+        RL_FIELD("first") MaterialAsset::ID first;
+        RL_FIELD("second") MaterialAsset::ID second;
+        RL_FIELD("amount") PbrtFloatInput amount = PbrtFloatConstant{0.5};
         bool operator==(const Mix&) const = default;
     };
 
-    struct Interface
+    struct RL_TYPE("Interface") Interface
     {
         bool operator==(const Interface&) const = default;
     };
@@ -169,12 +171,12 @@ struct PbrtMaterial : MaterialAsset
     using Model = std::variant<Diffuse, Dielectric, ThinDielectric, Conductor, CoatedDiffuse,
                                CoatedConductor, DiffuseTransmission, Subsurface, Hair, Measured, Mix, Interface>;
 
-    std::string name;
-    std::string colorSpace = "srgb";
-    PbrtSourceLocation location;
-    Model model = Diffuse{};
-    std::optional<PbrtFloatInput> displacement;
-    std::optional<PbrtImageReference> normalMap;
+    RL_FIELD("name") std::string name;
+    RL_FIELD("colorSpace") std::string colorSpace = "srgb";
+    RL_FIELD("location") PbrtSourceLocation location;
+    RL_FIELD("model") Model model = Diffuse{};
+    RL_FIELD("displacement") std::optional<PbrtFloatInput> displacement;
+    RL_FIELD("normalMap") std::optional<PbrtImageReference> normalMap;
 
     bool operator==(const PbrtMaterial&) const = default;
 };
@@ -185,3 +187,5 @@ class ImageImporter;
 [[nodiscard]] PbrtMaterial convertMaterial(MaterialAsset::ID id, const std::string& name,
     const PbrtEntity& entity, ImageImporter& images);
 }
+
+#include RL_METADATA_HEADER("metadata/src/asset/pbrt/PbrtMaterial.generated.h")

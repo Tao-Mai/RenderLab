@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_RESTIR_DATA_SLANG
 #define RENDERLAB_RESTIR_DATA_SLANG
 
-#include "RestirBindings.h"
+#include "RestirFrameParameters.h"
 #include "raytracing/light_sampling.slang"
 
 static const uint  kRestirMaxSpatialSamples      = 32;
@@ -138,46 +138,10 @@ struct RestirReservoir
 }
 ;
 
-struct RestirFrameParameters
-{
-    float4x4 previousViewProjection;
-    float4   previousViewport;
-    float4   previousDepthRow;
-    uint     width;
-    uint     height;
-    uint     writeLayer;
-    uint     historyValid;
-    uint     maxHistoryLength;
-    uint     spatialSampleCount;
-    float    spatialRadius;
-    uint     temporalReuse;
-    uint     spatialReuse;
-    uint     candidateCount;
-    uint     padding1;
-    uint     padding2;
-
-    property float2 previousViewportOffset
-    {
-        get { return previousViewport.xy; }
-    }
-    property float2 previousViewportExtent
-    {
-        get { return previousViewport.zw; }
-    }
-    property uint pixelCount
-    {
-        get { return width * height; }
-    }
-};
-
-[[vk::binding(RestirBinding::kSurfaces, 3)]] RWStructuredBuffer<RestirSurfaceData> restirSurfaces;
-[[vk::binding(
-    RestirBinding::kPreviousSurfaces, 3
-)]] StructuredBuffer<RestirSurfaceData>                                                        restirPreviousSurfaces;
-[[vk::binding(
-    RestirBinding::kInitialReservoirs, 3
-)]] RWStructuredBuffer<RestirReservoir>                                                        restirInitialReservoirs;
-[[vk::binding(RestirBinding::kReservoirHistory, 3)]] RWStructuredBuffer<RestirReservoir> restirHistory;
-[[vk::binding(RestirBinding::kRestirFrame, 3)]] ConstantBuffer<RestirFrameParameters>    restirFrame;
+[[vk::binding(9, 3)]] RWStructuredBuffer<RestirSurfaceData> restirSurfaces;
+[[vk::binding(10, 3)]] StructuredBuffer<RestirSurfaceData> restirPreviousSurfaces;
+[[vk::binding(11, 3)]] RWStructuredBuffer<RestirReservoir> restirInitialReservoirs;
+[[vk::binding(12, 3)]] RWStructuredBuffer<RestirReservoir> restirHistory;
+[[vk::binding(13, 3)]] ConstantBuffer<RestirFrameParameters> restirFrame;
 
 #endif

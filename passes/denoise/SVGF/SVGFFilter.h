@@ -66,12 +66,12 @@ private:
         vk::Extent3D            extent{};
         DescriptorSetLayout     descriptorSetLayout;
         vk::PipelineLayout      pipelineLayout;
-        vk::raii::Pipeline      pipeline      = nullptr;
+        ComputePipeline         pipeline;
         vk::raii::DescriptorSet descriptorSet = nullptr;
 
         [[nodiscard]] bool first() const { return iteration == 0; }
         [[nodiscard]] bool last() const { return iteration + 1 == kSvgfFilterIterations; }
-        void               createPipeline(const VulkanContext& vulkan);
+        void               createPipeline();
     };
 
     std::vector<std::unique_ptr<FilterPass>> filters;

@@ -113,15 +113,9 @@ Bloom::Output Bloom::FilterPass::compile(
         extent.width  = std::max(1u, extent.width / 2);
         extent.height = std::max(1u, extent.height / 2);
     }
-    color = graph.write(graph.createImage({.format = kHdrColorFormat, .extent = extent}));
-    graph.use(
-        color,
-        {
-            .stages = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-            .access = vk::AccessFlagBits2::eColorAttachmentWrite,
-            .layout = vk::ImageLayout::eColorAttachmentOptimal,
-        }
-    );
+    const auto color = graph.write(graph.createImage({.format = kHdrColorFormat, .extent = extent}));
+    attachments.colors.front() = {color, vk::AttachmentLoadOp::eDontCare};
+    attachments.declare(graph);
 
     const std::array bindings{
         vk::DescriptorSetLayoutBinding{
@@ -201,28 +195,10 @@ void Bloom::FilterPass::bindResources(RenderGraph& graph, const PassSetup& setup
 }
 
 void Bloom::FilterPass::execute(
-    RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
+    RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& execution
 ) const
 {
-    const auto                        extent = graph.imageInfo(color).extent;
-    const vk::RenderingAttachmentInfo attachment{
-        .imageView   = imageView(graph, color),
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp      = vk::AttachmentLoadOp::eDontCare,
-        .storeOp     = vk::AttachmentStoreOp::eStore,
-    };
-    auto& commands = commandBuffer;
-    commands.beginRendering({
-        .renderArea           = {{0, 0}, {extent.width, extent.height}},
-        .layerCount           = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments    = &attachment,
-    });
-    commands.setViewport(
-        0,
-        vk::Viewport(0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height), 0, 1)
-    );
-    commands.setScissor(0, vk::Rect2D({0, 0}, {extent.width, extent.height}));
+    attachments.begin(graph, commands);
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     const std::array sets{*descriptorSet};
     commands.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, sets, {});

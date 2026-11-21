@@ -3,9 +3,11 @@
 #include "render/Renderer.h"
 
 #include <format>
+#include <imgui.h>
 
 void drawPassEditors(Renderer& renderer, const PassEditorContext& context)
 {
+    Gui::Widgets widgets;
     for (const auto* instance : renderer.graphPasses().activePasses())
     {
         const auto& pass = *instance;
@@ -24,7 +26,7 @@ void drawPassEditors(Renderer& renderer, const PassEditorContext& context)
             ImGui::SetItemTooltip("Restore the values from the graph.");
             if (reset)
                 renderer.setPassOverrides(pass.type, pass.name, nlohmann::json::object());
-            else if (auto edited = editor.draw(*pass.pass, context))
+            else if (auto edited = editor.draw(widgets, *pass.pass, context))
                 renderer.setPassOverrides(pass.type, pass.name, passSettingsOverrides(pass.scriptedProperties, *edited));
         }
         ImGui::PopID();

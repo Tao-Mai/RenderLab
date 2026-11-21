@@ -15,6 +15,10 @@ class Image
 {
 public:
     Image(const vk::raii::Device& device, vk::Image image);
+    Image(const Image&) = delete;
+    Image& operator=(const Image&) = delete;
+    Image(Image&&) = default;
+    Image& operator=(Image&&) = default;
 
     [[nodiscard]] vk::Image     handle() const { return image; }
     [[nodiscard]] vk::ImageView getOrCreateImageView(const vk::ImageViewCreateInfo& viewInfo);

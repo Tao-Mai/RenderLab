@@ -2,13 +2,10 @@
 
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
-#include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
-#include "render/resources/GpuShader.h"
 
 namespace
 {
-constexpr uint32_t kWorkgroupSize        = 8;
 constexpr uint32_t kSignalInputCount     = 4;
 constexpr uint32_t kFilterBindingCount   = 6;
 constexpr uint32_t kFinalBindingCount    = 7;
@@ -31,6 +28,13 @@ struct FilterParameters
     uint32_t  historyLayer;
 };
 static_assert(sizeof(FilterParameters) == 24);
+
+enum class FilterVariant
+{
+    First = 0,
+    Filter = 1,
+    Final = 2,
+};
 }  // namespace
 
 SVGFFilter::Output SVGFFilter::compile(
@@ -87,7 +91,7 @@ SVGFFilter::Output SVGFFilter::compile(
     std::unreachable();
 }
 
-SVGFFilter::FilterOutput SVGFFilter::FilterPass::compile(RenderGraph& graph, const PassSetup& setup, FilterInput source)
+SVGFFilter::FilterOutput SVGFFilter::FilterPass::compile(RenderGraph& graph, const PassSetup&, FilterInput source)
 {
     input  = source;
     output = {};
@@ -116,11 +120,11 @@ SVGFFilter::FilterOutput SVGFFilter::FilterPass::compile(RenderGraph& graph, con
         graph.use(input.indirectHistory, kStorageWrite);
     }
     if (!*pipeline)
-        createPipeline(setup.vulkan);
+        createPipeline();
     return output;
 }
 
-void SVGFFilter::FilterPass::createPipeline(const VulkanContext& vulkan)
+void SVGFFilter::FilterPass::createPipeline()
 {
     const uint32_t bindingCount = first() ? kFeedbackBindingCount : last() ? kFinalBindingCount : kFilterBindingCount;
     std::vector<vk::DescriptorSetLayoutBinding> bindings(bindingCount);
@@ -134,25 +138,17 @@ void SVGFFilter::FilterPass::createPipeline(const VulkanContext& vulkan)
              .stageFlags      = vk::ShaderStageFlagBits::eCompute,
         };
     }
-    auto& device        = *renderContext().device;
+    auto& ctx           = renderContext();
+    auto& device        = *ctx.device;
     descriptorSetLayout = device.createDescriptorSetLayout(bindings);
     const vk::PushConstantRange range{
         .stageFlags = vk::ShaderStageFlagBits::eCompute,
         .size       = sizeof(FilterParameters)
     };
     pipelineLayout = device.getOrCreatePipelineLayout(std::array{&descriptorSetLayout}, std::array{range});
-    const char*                   shaderPath = first() ? "shaders/svgf_filter.first.spv"
-                          : last()                     ? "shaders/svgf_filter.final.spv"
-                                                       : "shaders/svgf_filter.spv";
-    GpuShader                     shader{vulkan.deviceHandle(), shaderPath};
-    const vk::raii::PipelineCache cache{nullptr};
-    pipeline      = vkCheck(vulkan.deviceHandle().createComputePipeline(
-        cache,
-        {
-                 .stage  = {.stage = vk::ShaderStageFlagBits::eCompute, .module = shader.handle(), .pName = "computeMain"},
-                 .layout = pipelineLayout,
-        }
-    ));
+    const auto variant = first() ? FilterVariant::First : last() ? FilterVariant::Final : FilterVariant::Filter;
+    const auto shader = ctx.shaderManager->getOrLoad("svgf_filter", {{"SVGF_STAGE", static_cast<int>(variant)}});
+    pipeline = device.createComputePipeline(shader, pipelineLayout);
     descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
 }
 
@@ -211,9 +207,5 @@ void SVGFFilter::FilterPass::execute(RenderGraph&, vk::raii::CommandBuffer& comm
             .historyLayer = reprojection.colorHistoryLayer(),
         }
     );
-    commands.dispatch(
-        (extent.width + kWorkgroupSize - 1) / kWorkgroupSize,
-        (extent.height + kWorkgroupSize - 1) / kWorkgroupSize,
-        1
-    );
+    pipeline.dispatch(commands, {extent.width, extent.height, 1});
 }

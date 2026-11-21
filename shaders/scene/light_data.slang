@@ -1,20 +1,13 @@
 #ifndef RENDERLAB_LIGHT_DATA_SLANG
 #define RENDERLAB_LIGHT_DATA_SLANG
 
+#include "render/resources/LightRanges.h"
+
 enum class LightType : uint {
     Point = 0,
     Directional = 1,
     RectArea = 2,
     Spot = 3,
-};
-
-// Exclusive group ends; matches LightRanges in ShaderData.h.
-struct LightRanges
-{
-    uint directionalEnd;
-    uint pointEnd;
-    uint rectAreaEnd;
-    uint spotEnd;
 };
 
 // Must match LightData in ShaderData.h. std430 array stride = 96 bytes; only enabled lights are uploaded.

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/resources/Buffer.h"
+#include "render/raytracing/RayTracingPipeline.h"
 
 #include <future>
 #include <map>
@@ -10,17 +10,10 @@
 
 class VulkanContext;
 
-struct OfflineTracePipeline
-{
-    vk::raii::Pipeline                trace = nullptr;
-    Buffer                            bindingTable;
-    vk::StridedDeviceAddressRegionKHR raygen, miss, hit;
-};
-
 class OfflineTracePipelineCache
 {
 public:
-    [[nodiscard]] const OfflineTracePipeline* get(
+    [[nodiscard]] const RayTracingPipeline* get(
         const VulkanContext& vulkan, vk::PipelineLayout layout, std::string_view shader, bool background
     );
     void clear() noexcept;
@@ -28,8 +21,8 @@ public:
 private:
     struct Build
     {
-        std::optional<OfflineTracePipeline> result;
-        std::future<OfflineTracePipeline> future;
+        std::optional<RayTracingPipeline> result;
+        std::future<RayTracingPipeline> future;
     };
 
     std::map<std::pair<vk::PipelineLayout, std::string>, Build> builds;

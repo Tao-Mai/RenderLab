@@ -53,7 +53,7 @@ Shader 声明：[shadow_data.slang](../shaders/raster/shadow_data.slang)。
 
 ### MaterialSet
 
-Binding 0 为全局 `MaterialData` SSBO，Binding 1 为 128 项纹理数组，Binding 2 为 32 项独立索引的采样器数组。光栅与实时光追读取 glTF 材质数据；离线 RGB 预览读取自身的 PBRT 材质与纹理指令缓冲，共用全局图像和采样器数组。
+Binding 0 为全局 `MaterialData` SSBO，Binding 1 为 1024 项纹理数组，Binding 2 为 32 项独立索引的采样器数组。光栅与实时光追读取 glTF 材质数据，离线 RGB 预览读取自身的 PBRT 材质与纹理指令缓冲。各路线共用全局图像和采样器数组。
 
 ## Pipeline 布局
 
@@ -71,7 +71,9 @@ Binding 0 为全局 `MaterialData` SSBO，Binding 1 为 128 项纹理数组，Bi
 
 实时光追使用 Push Constant 传入 viewport、LightRanges、最大反弹次数、样本序号和 IBL 开关。ReSTIR 的初始光源候选数量来自 `RayTracingPass` 的 `restir.candidateCount` 参数，通过帧参数缓冲传入。
 
-两个实时插件共用 Set 3 的基础绑定，ReSTIR 增加 reservoir 与帧参数绑定。两个离线插件共用离线基础绑定，BDPT 增加 splat 与光源分布绑定。[公共实时绑定](../src/render/raytracing/RealtimeRayTracingBindings.h) · [ReSTIR 绑定](../passes/raytracing/realtime/RestirBindings.h) · [公共离线绑定](../src/render/raytracing/offline/OfflineRayTracingBindings.h) · [BDPT 绑定](../passes/raytracing/bdpt/BdptBindings.h)
+实时插件在建图时通过 `ShaderManager` 选择变体并读取同次编译产出的 `.reflection.json`。Pass 按变量名绑定所需图像和缓冲，`ShaderLayout` 提供绑定编号与图像格式，并检查共享描述符集的兼容性。C++ 和 Slang 共用参数结构，建图时校验常量块和各字段的大小与偏移。执行阶段直接使用已解析的绑定。 [ShaderLayout.h](../src/render/resources/ShaderLayout.h)
+
+两个实时插件共用 Set 3 的基础绑定，ReSTIR 增加 reservoir 与帧参数绑定。两个离线插件共用离线基础绑定，BDPT 增加 splat 与光源分布绑定。 [实时场景资源](../shaders/raytracing/path_tracing.slang) · [实时输出](../shaders/raytracing/path_output.slang) · [ReSTIR 绑定](../passes/raytracing/realtime/restir_data.slang) · [公共离线绑定](../src/render/raytracing/offline/OfflineRayTracingBindings.h) · [BDPT 绑定](../passes/raytracing/bdpt/BdptBindings.h)
 
 | 路线 | Binding 排列 |
 | --- | --- |

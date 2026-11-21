@@ -87,6 +87,6 @@ void raygenMain()
     uint       state  = pathRandomState(pixel, DispatchRaysDimensions().x);
     PathResult result = createPathResult();
     if (parameters.containsPixel(pixel))
-        result = traceSimplePath(parameters.createRay(pixel, float2(0.5)), state);
+        result = traceSimplePath(createPathRay(pixel, float2(0.5)), state);
     writePathResult(pixel, result);
 }
