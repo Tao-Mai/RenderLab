@@ -4,6 +4,8 @@
 
 #include <cstdlib>
 #include <format>
+#include <string>
+#include <string_view>
 #include <utility>
 
 #include <glog/logging.h>
@@ -32,6 +34,8 @@ inline void init(const char* argv0)
 
 namespace detail
 {
+    void logMessage(google::LogSeverity severity, const char* file, int line, std::string_view message);
+
     template <class... Args>
     void log(
         google::LogSeverity         severity,
@@ -40,8 +44,7 @@ namespace detail
         std::format_string<Args...> fmt,
         Args&&...                   args)
     {
-        google::LogMessage(file, line, severity).stream()
-            << std::format(fmt, std::forward<Args>(args)...);
+        logMessage(severity, file, line, std::format(fmt, std::forward<Args>(args)...));
     }
 
     template <class... Args>
@@ -70,6 +73,22 @@ namespace detail
         std::abort();
     }
 }
+
+class ScopedErrorLog
+{
+public:
+    explicit ScopedErrorLog(std::string& log);
+    ~ScopedErrorLog();
+
+    ScopedErrorLog(const ScopedErrorLog&) = delete;
+    ScopedErrorLog& operator=(const ScopedErrorLog&) = delete;
+
+    [[nodiscard]] static bool isActive();
+    [[nodiscard]] static bool hasErrors();
+
+private:
+    std::string* previous;
+};
 }
 
 #define LOG_INFO(...) \

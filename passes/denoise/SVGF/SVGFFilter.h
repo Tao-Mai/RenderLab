@@ -1,49 +1,39 @@
 #pragma once
 
+#include "render/device/ResourceBarriers.h"
 #include "passes/denoise/SVGF/SVGFReprojection.h"
 
-#include <memory>
+#include <array>
 #include <vector>
 
 inline constexpr uint32_t kSvgfFilterIterations = 5;
 
-// Owns and connects one RenderGraph compute pass per wavelet iteration.
 class SVGFFilter
 {
 public:
-    struct Output
-    {
-        RenderGraph::ImageHandle color;
-    };
-
-    Output compile(
-        RenderGraph&             graph,
-        const PassSetup&         setup,
-        DenoiserInputs   traced,
-        SVGFReprojection::Output lighting,
-        const SVGFReprojection&  reprojection
+    void compile(
+        const Falcor::RenderContext& context,
+        const DenoiserInputs& traced,
+        const SVGFReprojection::Output& lighting,
+        const std::array<VulkanResources::ImageHandle, kLightingLayerCount>& scratch,
+        VulkanResources::ImageHandle color,
+        const SVGFReprojection& reprojection
     );
+    void execute(VulkanResources& cache, vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame) const;
 
 private:
-    struct FilterInput
+    struct FilterResources
     {
-        RenderGraph::ImageHandle direct;
-        RenderGraph::ImageHandle indirect;
-        RenderGraph::ImageHandle targetDirect;
-        RenderGraph::ImageHandle targetIndirect;
-        RenderGraph::ImageHandle depth;
-        RenderGraph::ImageHandle normal;
-        RenderGraph::ImageHandle emission;
-        RenderGraph::ImageHandle albedo;
-        RenderGraph::ImageHandle directHistory;
-        RenderGraph::ImageHandle indirectHistory;
-    };
-
-    struct FilterOutput
-    {
-        RenderGraph::ImageHandle direct;
-        RenderGraph::ImageHandle indirect;
-        RenderGraph::ImageHandle color;
+        VulkanResources::ImageHandle direct;
+        VulkanResources::ImageHandle indirect;
+        VulkanResources::ImageHandle targetDirect;
+        VulkanResources::ImageHandle targetIndirect;
+        VulkanResources::ImageHandle color;
+        VulkanResources::ImageHandle depth;
+        VulkanResources::ImageHandle normal;
+        VulkanResources::ImageHandle emission;
+        VulkanResources::ImageHandle albedo;
+        VulkanResources::ImageHandle lightingHistory;
     };
 
     class FilterPass
@@ -54,15 +44,13 @@ private:
         {
         }
 
-        FilterOutput compile(RenderGraph& graph, const PassSetup& setup, FilterInput input);
-        void         bindResources(RenderGraph& graph, const PassSetup& setup) const;
-        void         execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame) const;
+        void compile(const Falcor::RenderContext& context, const FilterResources& resources);
+        void execute(VulkanResources& cache, vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame) const;
 
     private:
         uint32_t                iteration;
         const SVGFReprojection& reprojection;
-        FilterInput             input;
-        FilterOutput            output;
+        ResourceBarriers    accesses;
         vk::Extent3D            extent{};
         DescriptorSetLayout     descriptorSetLayout;
         vk::PipelineLayout      pipelineLayout;
@@ -71,8 +59,8 @@ private:
 
         [[nodiscard]] bool first() const { return iteration == 0; }
         [[nodiscard]] bool last() const { return iteration + 1 == kSvgfFilterIterations; }
-        void               createPipeline();
+        void               createPipeline(const Falcor::RenderContext& context);
     };
 
-    std::vector<std::unique_ptr<FilterPass>> filters;
+    std::vector<FilterPass> filters;
 };

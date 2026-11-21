@@ -13,7 +13,7 @@
 class GpuMesh;
 class RenderResourceManager;
 class VulkanContext;
-struct RenderData;
+struct PreparedScene;
 
 class SceneAccelerationStructures
 {
@@ -21,7 +21,7 @@ public:
     // Mesh uploads and the frame slot's previous submission must be complete.
     [[nodiscard]] const AccelerationStructure& recordBuilds(
         const VulkanContext& vulkan, vk::raii::CommandBuffer& commands, RenderResourceManager& resources,
-        const RenderData& renderData, uint32_t frameIndex
+        const PreparedScene& renderData, uint32_t frameIndex
     );
     void reset() noexcept;
 
@@ -29,19 +29,19 @@ private:
     struct Frame
     {
         AccelerationStructure tlas;
-        Buffer                instances;
+        Falcor::Buffer                instances;
         uint32_t              instanceCount = 0;
     };
 
     std::map<std::tuple<const GpuMesh*, uint32_t, uint32_t>, AccelerationStructure> meshBlasCache;
-    Buffer                                                                        rectLightVertices;
-    Buffer                                                                        rectLightIndices;
+    Falcor::Buffer                                                                        rectLightVertices;
+    Falcor::Buffer                                                                        rectLightIndices;
     AccelerationStructure                                                         rectLightBlas;
     std::array<Frame, maxFramesInFlight>                                          frames;
 
     [[nodiscard]] std::vector<vk::DeviceAddress> recordBlasBuilds(
         const VulkanContext& vulkan, vk::raii::CommandBuffer& commands, RenderResourceManager& resources,
-        const RenderData& renderData
+        const PreparedScene& renderData
     );
     void recordRectLightBlasBuild(const VulkanContext& vulkan, vk::raii::CommandBuffer& commands);
     void recordTlasBuild(

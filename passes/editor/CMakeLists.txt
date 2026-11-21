@@ -1,3 +1,1 @@
-add_subdirectory(EditorPickingCopyPass)
 add_subdirectory(EditorPickingPass)
-add_subdirectory(EditorUiPass)

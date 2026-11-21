@@ -1,10 +1,7 @@
 #pragma once
 
-namespace Gui
-{
-class Widgets;
-}
+#include "editor/Gui.h"
 
 struct ExposureConfig;
 
-bool drawExposureSettings(Gui::Widgets& widgets, ExposureConfig& exposure);
+bool drawExposureSettings(Falcor::Gui::Widgets& widgets, ExposureConfig& exposure);

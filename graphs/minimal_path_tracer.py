@@ -1,16 +1,23 @@
-from modules.editor import add_editor_output
+from falcor import RenderGraph
+
 from modules.post_process import add_post_process
-from modules.raytracing import add_svgf
-from modules.scene import configure_ibl
-from renderlab_graph import RenderGraph
+
+def render_graph_MinimalPathTracer(
+    *,
+    hdr: bool = True,
+    ibl: bool = True,
+    ambientCoefficient: float = 0.1,
+    postProcess: str = "RenderLab",
+    bloom: bool = True,
+) -> RenderGraph:
+    graph = RenderGraph("MinimalPathTracer")
+
+    graph.create_pass("pathTracer", "MinimalPathTracer", {"maxBounces": 3})
+    add_post_process(graph, "pathTracer.color", hdr, postProcess, bloom)
+    return graph
 
 
-def build_graph(graph: RenderGraph) -> None:
-    target = graph.input("presentTarget")
-    lights = graph.input("lightBuffer")
-    configure_ibl(graph)
-
-    graph.create_pass("pathTracer", "MinimalPathTracer", {"maxBounces": 3}, ui=True)
-    graph.add_edge(lights, "pathTracer.lights")
-    color = add_svgf(graph, "pathTracer", enabled_by_default=False)
-    add_editor_output(graph, add_post_process(graph, color, target))
+if globals().get("__name__", "__main__") == "__main__":
+    MinimalPathTracer = render_graph_MinimalPathTracer()
+    if "m" in globals():
+        m.addGraph(MinimalPathTracer)

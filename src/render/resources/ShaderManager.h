@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/program/DefineList.h"
 #include "render/resources/GpuShader.h"
 
 #include <cstdint>
@@ -14,8 +15,6 @@
 
 class ShaderLayout;
 
-using ShaderDefines = std::map<std::string, int>;
-
 struct ShaderHandle
 {
     uint32_t index = 0;
@@ -26,7 +25,7 @@ struct ShaderHandle
 struct ShaderMetadata
 {
     std::filesystem::path    binary;
-    ShaderDefines            defines;
+    Falcor::DefineList               defines;
     std::vector<std::string> entries;
 };
 
@@ -39,7 +38,7 @@ public:
     void init(const vk::raii::Device& device);
     void shutdown() noexcept;
 
-    [[nodiscard]] ShaderHandle          getOrLoad(std::string_view program, const ShaderDefines& defines = {});
+    [[nodiscard]] ShaderHandle          getOrLoad(std::string_view program, const Falcor::DefineList& defines = {});
     [[nodiscard]] vk::ShaderModule      module(ShaderHandle handle) const;
     [[nodiscard]] const ShaderMetadata& metadata(ShaderHandle handle) const;
     [[nodiscard]] const ShaderLayout&   layout(ShaderHandle handle);
@@ -53,6 +52,6 @@ private:
     };
 
     const vk::raii::Device*                                       device = nullptr;
-    std::map<std::pair<std::string, ShaderDefines>, ShaderHandle> handles;
+    std::map<std::pair<std::string, Falcor::DefineList>, ShaderHandle> handles;
     std::vector<Variant> variants;
 };

@@ -194,24 +194,6 @@ struct PathHit
     float2    barycentrics;
 };
 
-struct PathResult
-{
-    float3 directRadiance;
-    float3 indirectRadiance;
-    float3 emission;
-    float  primaryDepth;
-    float3 primaryNormal;
-    float3 primaryAlbedo;
-};
-
-PathResult createPathResult()
-{
-    PathResult result    = {};
-    result.primaryDepth  = -1.0;
-    result.primaryAlbedo = float3(1.0);
-    return result;
-}
-
 bool advancePath(
     Surface       surface,
     BrdfSample    sampled,

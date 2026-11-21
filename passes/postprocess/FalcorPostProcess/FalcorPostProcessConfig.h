@@ -86,7 +86,6 @@ struct RL_RECORD FalcorPostProcessConfig
     RL_FIELD("simplePostFx") FalcorPostFxConfig     simplePostFx;
 
     void validate() const;
-    [[nodiscard]] bool requiresGraphRebuild(const FalcorPostProcessConfig& current) const;
 };
 
 #include RL_METADATA_HEADER("metadata/passes/postprocess/FalcorPostProcess/FalcorPostProcessConfig.generated.h")

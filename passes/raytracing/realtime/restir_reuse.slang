@@ -203,8 +203,13 @@ float restirSupportedCount(Surface surface, RealtimeLightSample sample, uint cou
     }
 
     restirHistory[restirFrame.writeLayer * restirFrame.pixelCount + index] = result;
-    float4 color                                                           = outputImage[pixel];
-    outputImage[pixel]                                                     = float4(color.rgb + direct, color.a);
+#if SVGF
+    const uint3 outputPixel = uint3(pixel, kDirectLightingLayer);
+#else
+    const uint2 outputPixel = pixel;
+#endif
+    float4 color = outputImage[outputPixel];
+    outputImage[outputPixel] = float4(color.rgb + direct, color.a);
 }
 
 #endif

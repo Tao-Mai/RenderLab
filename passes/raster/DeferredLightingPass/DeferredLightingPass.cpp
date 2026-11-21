@@ -1,6 +1,9 @@
+#include "render/device/ResourceBarriers.h"
 #include "passes/raster/DeferredLightingPass/DeferredLightingPass.h"
-#include "render/plugins/PluginManager.h"
-#include "render/graph/PassPorts.h"
+
+#include "core/Logger.h"
+#include "core/profiling/Profiler.h"
+#include "core/Plugin.h"
 
 #include "core/Context.h"
 #include "render/FrameData.h"
@@ -9,90 +12,78 @@
 #include "render/RendererConfig.h"
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
+#include "render/resources/NativeFormats.h"
 #include "render/resources/ShaderData.h"
 
 #include <array>
+#include <utility>
 
 namespace
 {
 constexpr std::string_view kDeferredLightingShader = "deferred_lighting";
+constexpr std::array kGBufferChannels{
+    std::pair{"diffuseOcclusion", RenderInterface::kGBufferDiffuseBinding},
+    std::pair{"normalRoughness", RenderInterface::kGBufferNormalBinding},
+    std::pair{"emissiveSpecularF90", RenderInterface::kGBufferEmissiveBinding},
+    std::pair{"specularF0DiffuseFresnel", RenderInterface::kGBufferSpecularBinding},
+    std::pair{"sheenColorRoughness", RenderInterface::kGBufferSheenBinding},
+    std::pair{"depth", RenderInterface::kGBufferDepthBinding},
+};
 }
 
-RenderPassReflection DeferredLightingPass::reflect(const PassSetup&) const
+DeferredLightingPass::DeferredLightingPass(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties) :
+    Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<RasterLightingSettings>(properties))
 {
-    RenderPassReflection reflection;
-    reflection.input("target", PortKind::Image);
-    reflection.input("lights", PortKind::Buffer);
-    pass_ports::inputs<GBufferResources>(reflection);
-    pass_ports::inputs<ShadowResources>(reflection);
-    reflection.output("color", PortKind::Image);
+}
+
+Falcor::Properties DeferredLightingPass::getProperties() const
+{
+    return Falcor::serializeToProperties(parameters);
+}
+
+void DeferredLightingPass::setProperties(const Falcor::Properties& properties)
+{
+    RasterLightingSettings next;
+    Deserialize(nlohmann::json(properties.toJson()), next);
+
+    const bool recompile = next.hdr != parameters.hdr;
+    parameters = std::move(next);
+    if (recompile)
+        requestRecompile();
+}
+
+Falcor::RenderPassReflection DeferredLightingPass::reflect(const CompileData& compileData)
+{
+    const auto* depth = compileData.connectedResources.getField("depth");
+    const auto extent = depth ? Falcor::uint2{depth->getWidth(), depth->getHeight()} : Falcor::uint2{};
+
+    Falcor::RenderPassReflection reflection;
+    for (const auto& channel : kGBufferChannels)
+        reflection.addInput(channel.first, "G-buffer texture")
+            .texture2D(0, 0, 1, 0, 0)
+            .bindFlags(Falcor::ResourceBindFlags::ShaderResource);
+    reflection.addOutput("color", "Raster lighting result")
+        .format(parameters.getColorFormat(compileData.defaultTexFormat))
+        .bindFlags(Falcor::ResourceBindFlags::RenderTarget)
+        .texture2D(extent.x, extent.y);
     return reflection;
 }
 
-void DeferredLightingPass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+void DeferredLightingPass::compile(Falcor::RenderContext* passContext, const CompileData& compileData)
 {
-    const auto target = ports.image("target");
-    const auto lights = ports.buffer("lights");
-    const auto input = pass_ports::read<GBufferResources>(ports);
-    const auto shadow = pass_ports::read<ShadowResources>(ports);
+    parameters.validateColorFormat(*passContext->vulkan);
 
-    gBuffer = input;
-    useRasterLighting(graph, lights, shadow);
-    for (const auto image :
-         {gBuffer.diffuseOcclusion,
-          gBuffer.normalRoughness,
-          gBuffer.emissiveSpecularF90,
-          gBuffer.specularF0DiffuseFresnel,
-          gBuffer.sheenColorRoughness,
-          gBuffer.depth})
-        graph.use(
-            image,
-            {
-                .stages = vk::PipelineStageFlagBits2::eFragmentShader,
-                .access = vk::AccessFlagBits2::eShaderSampledRead,
-                .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
-            }
-        );
-
-    const bool hdr = setup.config.feature.hdr;
-    if (hdr)
-    {
-        constexpr auto kRequiredFeatures = vk::FormatFeatureFlagBits::eColorAttachment |
-            vk::FormatFeatureFlagBits::eColorAttachmentBlend | vk::FormatFeatureFlagBits::eSampledImage |
-            vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
-        const auto features =
-            setup.vulkan.physicalDeviceHandle().getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
-        CHECK(
-            (features & kRequiredFeatures) == kRequiredFeatures,
-            "GPU does not support an RGBA16F HDR color attachment with blending and sampling"
-        );
-    }
-    const auto extent = graph.imageExtent(gBuffer.depth);
-    const auto color = graph.write(
-        hdr ? graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}}) : target
-    );
-    attachments.colors[0] = {color, vk::AttachmentLoadOp::eDontCare};
-    attachments.declare(graph);
-
-    constexpr std::array kBindings{
-        RenderInterface::kGBufferDiffuseBinding,
-        RenderInterface::kGBufferNormalBinding,
-        RenderInterface::kGBufferEmissiveBinding,
-        RenderInterface::kGBufferSpecularBinding,
-        RenderInterface::kGBufferSheenBinding,
-        RenderInterface::kGBufferDepthBinding,
-    };
-    std::array<vk::DescriptorSetLayoutBinding, kBindings.size()> gBufferBindings;
-    for (size_t index = 0; index < kBindings.size(); ++index)
+    std::array<vk::DescriptorSetLayoutBinding, kGBufferChannels.size()> gBufferBindings;
+    for (size_t index = 0; index < kGBufferChannels.size(); ++index)
     {
         gBufferBindings[index] = {
-            .binding         = kBindings[index],
+            .binding         = kGBufferChannels[index].second,
             .descriptorType  = vk::DescriptorType::eSampledImage,
             .descriptorCount = 1,
             .stageFlags      = vk::ShaderStageFlagBits::eFragment,
         };
     }
-    auto& device             = *renderContext().device;
+    auto& device             = *passContext->getDevice();
     descriptorSetLayout      = device.createDescriptorSetLayout(gBufferBindings);
     const std::array sets{
         &device.sceneDescriptorSetLayout,
@@ -106,75 +97,50 @@ void DeferredLightingPass::compile(RenderGraph& graph, const PassSetup& setup, P
     }};
     pipelineLayout = device.getOrCreatePipelineLayout(sets, ranges);
 
-    auto&               ctx = renderContext();
-    const ShaderDefines variant{
-        {"ENABLE_IBL", setup.config.feature.ibl ? 1 : 0},
-        {"ENABLE_CLEARCOAT", 0},
-        {"ENABLE_SHEEN", 1}
+    const Falcor::DefineList variant{
+        {"ENABLE_IBL", passContext->config->feature.ibl ? "1" : "0"},
+        {"ENABLE_CLEARCOAT", "0"},
+        {"ENABLE_SHEEN", "1"}
     };
     pipeline      = device.getOrCreatePipeline({
-             .shader = ctx.shaderManager->getOrLoad(kDeferredLightingShader, variant),
+             .shader = passContext->shaderManager->getOrLoad(kDeferredLightingShader, variant),
              .layout = pipelineLayout,
              .state  = PipelineState{.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
-             .colorFormats = {graph.imageInfo(color).format},
+             .colorFormats = {Falcor::getVulkanFormat(parameters.getColorFormat(compileData.defaultTexFormat))},
     });
     descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
-    ports.setOutput("color", color);
+
+    barriers.clear();
 }
 
-void DeferredLightingPass::bindResources(RenderGraph& graph, const PassSetup& setup)
+void DeferredLightingPass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
 {
-    const std::array images{
-        gBuffer.diffuseOcclusion,
-        gBuffer.normalRoughness,
-        gBuffer.emissiveSpecularF90,
-        gBuffer.specularF0DiffuseFresnel,
-        gBuffer.sheenColorRoughness,
-        gBuffer.depth
-    };
-    constexpr std::array kBindings{
-        RenderInterface::kGBufferDiffuseBinding,
-        RenderInterface::kGBufferNormalBinding,
-        RenderInterface::kGBufferEmissiveBinding,
-        RenderInterface::kGBufferSpecularBinding,
-        RenderInterface::kGBufferSheenBinding,
-        RenderInterface::kGBufferDepthBinding
-    };
-    for (size_t index = 0; index < images.size(); ++index)
+    auto&       cache         = *renderCommands->vulkanResources;
+    auto&       commandBuffer = *renderCommands->commands;
+    const auto& execution     = *renderCommands;
+
+    if (barriers.empty())
     {
-        const auto                    image  = images[index];
-        const auto                    format = graph.imageInfo(image).format;
-        const vk::DescriptorImageInfo imageInfo{
-            .imageView   = graph.getImage(image).getOrCreateImageView({
-                  .viewType = vk::ImageViewType::e2D,
-                  .format   = format,
-                  .subresourceRange =
-                    {.aspectMask = format == vk::Format::eD32Sfloat ? vk::ImageAspectFlagBits::eDepth
-                                                                      : vk::ImageAspectFlagBits::eColor,
-                       .levelCount = 1,
-                       .layerCount = 1},
-            }),
-            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        };
-        const vk::WriteDescriptorSet write{
-            .dstSet          = *descriptorSet,
-            .dstBinding      = kBindings[index],
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .pImageInfo      = &imageInfo,
-        };
-        setup.vulkan.deviceHandle().updateDescriptorSets(write, {});
+        constexpr auto kFragment = vk::PipelineStageFlagBits2::eFragmentShader;
+        for (const auto& [name, binding] : kGBufferChannels)
+        {
+            const auto image = cache.registerImage(renderData.getTexture(name));
+            cache.writeDescriptor(*descriptorSet, binding, image);
+            barriers.add(image, vulkan_access::sampled(kFragment));
+        }
+        barriers.add(execution.frameData->lightBufferHandle(), vulkan_access::storageRead(kFragment));
+        barriers.declare(cache);
     }
-}
 
-void DeferredLightingPass::execute(
-    RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution
-)
-{
+    barriers.transition(cache, commandBuffer);
+    const auto color = cache.registerImage(renderData.getTexture("color"));
+    attachments.colors.front() = {color, vk::AttachmentLoadOp::eDontCare};
+    cache.transition(commandBuffer, color, vulkan_access::kColorWrite);
+
     auto& commands = commandBuffer;
-    attachments.begin(graph, commands);
+    attachments.begin(cache, commands);
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sharedSets{execution.data.sceneSetHandle(), execution.data.lightSetHandle()};
+    const std::array sharedSets{execution.frameData->sceneSetHandle(), execution.frameData->lightSetHandle()};
     commands.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         pipelineLayout,
@@ -182,10 +148,10 @@ void DeferredLightingPass::execute(
         sharedSets,
         {}
     );
-    const std::array passSets{*descriptorSet, execution.data.shadowSetHandle()};
+    const std::array passSets{*descriptorSet, execution.frameData->shadowSetHandle()};
     commands
         .bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, RenderInterface::kDeferredPassSet, passSets, {});
-    const auto&                         viewport = execution.view.viewport;
+    const auto&                         viewport = execution.view->viewport;
     const DeferredLightingPushConstants parameters{
         .viewport = {viewport.x, viewport.y, viewport.width, viewport.height}
     };
@@ -200,7 +166,7 @@ void DeferredLightingPass::execute(
     commands.endRendering();
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
-    registry.registerClass<DeferredLightingPass>("DeferredLightingPass");
+    registry.registerClass<Falcor::RenderPass, DeferredLightingPass>();
 }

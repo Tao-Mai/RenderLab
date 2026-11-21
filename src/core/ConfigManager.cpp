@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 #include <unordered_set>
 #include <utility>
 
@@ -46,7 +47,10 @@ void ConfigManager::shutdown() noexcept
 {
     DCHECK(inited);
     asset_json::save(file, data);
-    asset_json::save(resolvedPaths.renderer, rendererSettings);
+    asset_json::save(
+        resolvedPaths.renderer,
+        RendererSettings{realtimeGraph, offlineGraph, nlohmann::json(settings.getOptions())}
+    );
     asset_json::save(resolvedPaths.editor, editor);
 
     data               = {};
@@ -54,11 +58,10 @@ void ConfigManager::shutdown() noexcept
     commands           = {};
     editor             = {};
     renderer           = {};
-    rendererSettings   = {};
-    parameterRevision  = 0;
+    settings.clearOptions();
     sceneRenderMode    = SceneRenderMode::Realtime;
-    realtimeGraph      = nullptr;
-    offlineGraph       = nullptr;
+    realtimeGraph.clear();
+    offlineGraph.clear();
     file.clear();
     configDir.clear();
     DEBUG_EXEC(inited = false);
@@ -72,43 +75,51 @@ const RendererConfig& ConfigManager::rendererConfig() const noexcept { return re
 
 const EditorConfig& ConfigManager::editorConfig() const noexcept { return editor; }
 
-const RenderGraphDefinition& ConfigManager::renderGraph() const noexcept
+const std::string& ConfigManager::renderGraphName() const noexcept
 {
-    return *(sceneRenderMode == SceneRenderMode::Offline ? offlineGraph : realtimeGraph);
+    return sceneRenderMode == SceneRenderMode::Offline ? offlineGraph : realtimeGraph;
 }
 
 std::filesystem::path ConfigManager::renderGraphScript() const
 {
-    return resolveAgainst(configDir, renderGraph().script);
+    return resolveAgainst(configDir, data.renderGraphs.at(renderer.renderPath).at(renderGraphName()));
 }
 
-const RenderGraphDefinition& ConfigManager::findRenderGraph(std::string_view id) const
+RenderPath ConfigManager::findRenderPath(std::string_view graphName) const
 {
-    const auto found = std::ranges::find(data.renderGraphs, id, &RenderGraphDefinition::id);
-    CHECK(found != data.renderGraphs.end(), "unknown render graph '{}'", id);
-    return *found;
+    const auto found = std::ranges::find_if(
+        data.renderGraphs, [graphName](const auto& group) { return group.second.contains(graphName); }
+    );
+    CHECK(found != data.renderGraphs.end(), "unknown render graph '{}'", graphName);
+    return found->first;
 }
 
-PassOverrides& ConfigManager::passOverrides()
+nlohmann::json ConfigManager::getOptions() const
 {
-    return graphOverrides().passes;
-}
-
-GraphOverrides& ConfigManager::graphOverrides()
-{
-    return rendererSettings.graphOverrides[renderGraph().id];
-}
-
-void ConfigManager::setGraphParameterOverrides(nlohmann::json overrides)
-{
-    DCHECK(inited);
-    DCHECK(overrides.is_object());
-    auto& current = graphOverrides().parameters;
-    if (current != overrides)
+    const auto prefix = kRenderGraphOptionsPrefix + settings::encodeName(renderGraphName()) + ':';
+    const auto options = nlohmann::json(settings.getOptions());
+    nlohmann::json result{{"parameters", nlohmann::json::object()}, {"passes", nlohmann::json::object()}};
+    for (const auto& [name, value] : options.items())
     {
-        current = std::move(overrides);
-        ++parameterRevision;
+        if (!name.starts_with(prefix) || value.is_null())
+            continue;
+
+        const auto key = std::string_view{name}.substr(prefix.size());
+        auto* field = &result;
+        for (const auto part : key | std::views::split(':'))
+        {
+            CHECK(field->is_null() || field->is_object(), "conflicting option '{}'", name);
+            field = &(*field)[settings::decodeName(std::string_view{part})];
+        }
+        *field = value;
     }
+
+    CHECK(
+        result.at("parameters").is_object() && result.at("passes").is_object(),
+        "invalid options for graph '{}'",
+        renderGraphName()
+    );
+    return result;
 }
 
 void ConfigManager::applyGraphParameters(const nlohmann::json& parameters)
@@ -147,25 +158,27 @@ void ConfigManager::setInitialScene(AssetID<SceneAsset> id)
     data.initialScene = std::move(id);
 }
 
-void ConfigManager::setRenderGraph(std::string_view id)
+void ConfigManager::setRenderGraph(std::string_view name)
 {
     DCHECK(inited);
 
-    const auto& graph = findRenderGraph(id);
+    const auto path = findRenderPath(name);
     const bool offline = sceneRenderMode == SceneRenderMode::Offline;
-    CHECK(graph.isOffline() == offline, "render graph '{}' does not match the scene render mode", id);
-    auto& selection = offline ? rendererSettings.offlineGraph : rendererSettings.realtimeGraph;
+    CHECK(
+        (path == RenderPath::OfflinePathTracing) == offline,
+        "render graph '{}' does not match the scene render mode",
+        name
+    );
     auto& active = offline ? offlineGraph : realtimeGraph;
-    selection = graph.id;
-    active = &graph;
-    renderer.renderPath = graph.renderPath;
+    active = name;
+    renderer.renderPath = path;
 }
 
 void ConfigManager::setSceneRenderMode(SceneRenderMode mode)
 {
     DCHECK(inited);
     sceneRenderMode     = mode;
-    renderer.renderPath = renderGraph().renderPath;
+    renderer.renderPath = findRenderPath(renderGraphName());
 }
 
 void ConfigManager::load()
@@ -178,14 +191,17 @@ void ConfigManager::load()
     CHECK(!data.paths.renderer.empty());
     CHECK(!data.initialScene.empty(), "config '{}' missing initialScene", file.string());
 
-    std::unordered_set<std::string_view> graphIds;
-    for (const auto& graph : data.renderGraphs)
+    std::unordered_set<std::string_view> graphNames;
+    for (const auto& [path, scripts] : data.renderGraphs)
     {
-        CHECK(!graph.id.empty() && !graph.label.empty() && !graph.script.empty(), "incomplete render graph definition");
-        const bool added = graphIds.insert(graph.id).second;
-        CHECK(added, "duplicate render graph '{}'", graph.id);
-        const auto script = resolveAgainst(configDir, graph.script);
-        CHECK(std::filesystem::is_regular_file(script), "graph '{}' script is not a file: {}", graph.id, script.string());
+        for (const auto& [name, scriptPath] : scripts)
+        {
+            CHECK(!name.empty() && !scriptPath.empty(), "render graph requires a name and a script path");
+            const bool added = graphNames.insert(name).second;
+            CHECK(added, "duplicate render graph '{}'", name);
+            const auto script = resolveAgainst(configDir, scriptPath);
+            CHECK(std::filesystem::is_regular_file(script), "graph '{}' script is not a file: {}", name, script.string());
+        }
     }
     resolvePaths();
 }
@@ -235,15 +251,26 @@ void ConfigManager::loadEditor()
 
 void ConfigManager::loadRenderer()
 {
-    rendererSettings = asset_json::load<RendererSettings>(resolvedPaths.renderer);
-    realtimeGraph = &findRenderGraph(rendererSettings.realtimeGraph);
-    offlineGraph = &findRenderGraph(rendererSettings.offlineGraph);
-    CHECK(!realtimeGraph->isOffline(), "'{}' cannot be selected as the realtime graph", realtimeGraph->id);
-    CHECK(offlineGraph->isOffline(), "'{}' cannot be selected as the offline graph", offlineGraph->id);
-    for (const auto& [id, overrides] : rendererSettings.graphOverrides)
+    const auto rendererSettings = asset_json::load<RendererSettings>(resolvedPaths.renderer);
+    realtimeGraph = rendererSettings.realtimeGraph;
+    offlineGraph = rendererSettings.offlineGraph;
+    const auto realtimePath = findRenderPath(realtimeGraph);
+    CHECK(realtimePath != RenderPath::OfflinePathTracing, "'{}' cannot be selected as the realtime graph", realtimeGraph);
+    CHECK(
+        findRenderPath(offlineGraph) == RenderPath::OfflinePathTracing,
+        "'{}' cannot be selected as the offline graph",
+        offlineGraph
+    );
+    settings.addOptions(rendererSettings.options);
+    const auto options = nlohmann::json(settings.getOptions());
+    constexpr std::string_view kPrefix = kRenderGraphOptionsPrefix;
+    for (const auto& [name, value] : options.items())
     {
-        (void)findRenderGraph(id);
-        CHECK(overrides.parameters.is_object(), "graph '{}' parameter overrides must be an object", id);
+        if (!name.starts_with(kPrefix))
+            continue;
+
+        const auto key = std::string_view{name}.substr(kPrefix.size());
+        (void)findRenderPath(settings::decodeName(key.substr(0, key.find(':'))));
     }
-    renderer.renderPath = renderGraph().renderPath;
+    renderer.renderPath = realtimePath;
 }

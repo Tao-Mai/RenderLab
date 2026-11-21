@@ -4,6 +4,7 @@
 #include "asset/TextureMip.h"
 #include "render/device/Memory.h"
 #include "render/device/VkCheck.h"
+#include "render/device/VulkanContext.h"
 #include "render/resources/Buffer.h"
 
 #include <cstring>
@@ -68,10 +69,11 @@ void GpuTexture::create(GpuUploadContext upload, std::span<const uint8_t> bytes,
     const ImageFormat uploadFormat = asset.format == ImageFormat::RGB8 ? ImageFormat::RGBA8 : asset.format;
     const ImageBlock block = imageBlock(uploadFormat);
     const vk::Format format = vulkanFormat(uploadFormat, asset.colorSpace);
-    const auto& physicalDevice = upload.physicalDevice;
-    const auto& device = upload.device;
+    auto& vulkan = upload.vulkan;
+    const auto& physicalDevice = vulkan.physicalDeviceHandle();
+    const auto& device = vulkan.deviceHandle();
     const auto& commandPool = upload.commandPool;
-    auto& queue = upload.queue;
+    auto& queue = vulkan.queueHandle();
 
     std::vector<uint8_t> rgbaPixels;
     if (asset.format == ImageFormat::RGB8)
@@ -137,14 +139,14 @@ void GpuTexture::create(GpuUploadContext upload, std::span<const uint8_t> bytes,
         bytes = alignedPixels;
     }
 
-    Buffer staging(
-        physicalDevice,
-        device,
+    Falcor::Buffer staging(
+        vulkan,
         stagingSize,
         vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+        Falcor::MemoryType::Upload,
+        Falcor::ResourceBindFlags::None
     );
-    staging.upload(bytes.data(), stagingSize);
+    staging.setBlob(bytes.data(), 0, stagingSize);
 
     const vk::ImageCreateInfo imageInfo{
         .flags = asset.layout == ImageLayout::Cubemap ? vk::ImageCreateFlags{vk::ImageCreateFlagBits::eCubeCompatible}

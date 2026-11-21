@@ -167,9 +167,3 @@ void FalcorPostProcessConfig::validate() const
         CHECK(inRange(postFx.colorPower[index], 0.0f, 1.0f));
     }
 }
-
-bool FalcorPostProcessConfig::requiresGraphRebuild(const FalcorPostProcessConfig& current) const
-{
-    return toneMapper.autoExposure != current.toneMapper.autoExposure ||
-        simplePostFx.usesBloom() != current.simplePostFx.usesBloom();
-}

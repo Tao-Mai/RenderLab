@@ -123,6 +123,8 @@ json Serialize(const T& value)
         {
             if constexpr (std::is_same_v<typename U::key_type, std::string>)
                 result[key] = Serialize(item);
+            else if constexpr (std::is_enum_v<typename U::key_type>)
+                result[Serialize(key).template get<std::string>()] = Serialize(item);
             else
                 result[std::to_string(key)] = Serialize(item);
         }
@@ -278,6 +280,8 @@ void Deserialize(const json& j, T& value)
             typename U::key_type key{};
             if constexpr (std::is_same_v<typename U::key_type, std::string>)
                 key = name;
+            else if constexpr (std::is_enum_v<typename U::key_type>)
+                Deserialize(json(name), key);
             else
             {
                 const auto [end, error] = std::from_chars(name.data(), name.data() + name.size(), key);

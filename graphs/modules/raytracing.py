@@ -1,11 +1,14 @@
-from renderlab_graph import RenderGraph
+from falcor import RenderGraph
 
 
-def add_svgf(graph: RenderGraph, trace: str, *, enabled_by_default: bool) -> str:
-    if not graph.param("svgf", enabled_by_default, label="Enable SVGF"):
-        return f"{trace}.rayImage"
-
-    graph.create_pass("svgf", "SVGF", {"historyLength": 32, "emaAlpha": 0.1}, ui=True)
-    for port in ("depth", "worldNormal", "direct", "indirect", "emission", "albedo"):
-        graph.add_edge(f"{trace}.{port}", f"svgf.{port}")
-    return "svgf.color"
+def add_svgf(graph: RenderGraph, trace: str) -> str:
+    graph.create_pass("svgf", "SVGFPass", {"historyLength": 32, "Alpha": 0.1})
+    for source, target in (
+        ("color", "Color"),
+        ("depth", "LinearZ"),
+        ("worldNormal", "WorldNormal"),
+        ("emission", "Emission"),
+        ("albedo", "Albedo"),
+    ):
+        graph.add_edge(f"{trace}.{source}", f"svgf.{target}")
+    return "svgf.Filtered image"

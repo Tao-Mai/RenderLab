@@ -2,10 +2,16 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
+class VulkanContext;
+namespace Falcor
+{
+class Buffer;
+}
+
 struct GpuUploadContext
 {
-    const vk::raii::PhysicalDevice& physicalDevice;
-    const vk::raii::Device& device;
+    VulkanContext& vulkan;
     const vk::raii::CommandPool& commandPool;
-    vk::raii::Queue& queue;
+
+    void copyBuffer(const Falcor::Buffer& source, const Falcor::Buffer& destination, const vk::BufferCopy& region) const;
 };

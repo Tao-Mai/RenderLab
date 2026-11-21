@@ -1,78 +1,54 @@
 #include "render/graph/RenderPass.h"
 
 #include "core/Logger.h"
-#include "render/plugins/PluginManager.h"
+#include "render/graph/ResourceCache.h"
 
-#include <algorithm>
+#include <utility>
 
-namespace
+namespace Falcor
 {
-void addPort(
-    std::vector<RenderPassPort>& ports, std::string_view name, PortKind kind, bool optional, vk::Format format
-)
+RenderData::RenderData(
+    const std::string& passName,
+    ResourceCache&     resources,
+    Dictionary&        dictionary,
+    const uint2&       defaultTexDims,
+    ResourceFormat     defaultTexFormat
+) :
+    mName(passName),
+    mResources(resources),
+    mDictionary(dictionary),
+    mDefaultTexDims(defaultTexDims),
+    mDefaultTexFormat(defaultTexFormat)
 {
-    DCHECK(!name.empty() && name.find('.') == std::string_view::npos);
-    DCHECK(std::ranges::find(ports, name, &RenderPassPort::name) == ports.end());
-    DCHECK(kind == PortKind::Image || format == vk::Format::eUndefined);
-    ports.push_back({std::string{name}, kind, optional, format});
-}
-}
-
-RenderPassReflection& RenderPassReflection::input(
-    std::string_view name, PortKind kind, bool optional, vk::Format format
-)
-{
-    addPort(inputPorts, name, kind, optional, format);
-    return *this;
 }
 
-RenderPassReflection& RenderPassReflection::output(
-    std::string_view name, PortKind kind, bool optional, vk::Format format
-)
+const ref<Resource>& RenderData::getResource(std::string_view fieldName) const
 {
-    addPort(outputPorts, name, kind, optional, format);
-    return *this;
+    std::string qualifiedName;
+    qualifiedName.reserve(mName.size() + 1 + fieldName.size());
+    qualifiedName.append(mName).append(".").append(fieldName);
+    return mResources.getResource(qualifiedName);
 }
 
-RenderGraph::ImageHandle PassResources::image(std::string_view name) const
+ref<Texture> RenderData::getTexture(std::string_view name) const
 {
-    const auto found = inputResources.find(name);
-    DCHECK(found != inputResources.end());
-    return std::get<RenderGraph::ImageHandle>(found->second);
+    const auto& resource = getResource(name);
+    return resource ? resource->asTexture() : nullptr;
 }
 
-RenderGraph::BufferHandle PassResources::buffer(std::string_view name) const
+ref<RenderPass>
+RenderPass::create(std::string_view type, ref<Device> device, const Properties& properties, PluginManager& plugins)
 {
-    const auto found = inputResources.find(name);
-    DCHECK(found != inputResources.end());
-    return std::get<RenderGraph::BufferHandle>(found->second);
+    if (!plugins.hasClass<RenderPass>(type))
+        plugins.loadPluginByName(type);
+
+    auto pass = plugins.createClass<RenderPass>(type, std::move(device), properties);
+    CHECK(pass, "cannot create render pass '{}'", type);
+    return pass;
 }
 
-void PassResources::setOutput(std::string_view name, GraphResource resource)
+void RenderPass::setProperties(const Properties& values)
 {
-    DCHECK(!outputResources.contains(name));
-    outputResources.emplace(name, resource);
+    CHECK(values.empty(), "pass has no configurable properties");
 }
-
-RenderPass::~RenderPass() = default;
-
-std::shared_ptr<RenderPass> RenderPass::create(const PluginManager& plugins, std::string_view type)
-{
-    return plugins.createPass(type);
-}
-
-nlohmann::json RenderPass::properties() const
-{
-    return nlohmann::json::object();
-}
-
-bool RenderPass::setProperties(const nlohmann::json& values)
-{
-    CHECK(values.is_object() && values.empty(), "pass has no configurable properties");
-    return false;
-}
-
-nlohmann::json RenderPass::statistics() const
-{
-    return nlohmann::json::object();
-}
+}  // namespace Falcor

@@ -2,6 +2,9 @@
 
 #include <cstdint>
 
+inline constexpr char kExposurePassType[] = "ExposurePass";
+inline constexpr char kExposureStateOutput[] = "state";
+
 struct ExposureState
 {
     float    ev100;

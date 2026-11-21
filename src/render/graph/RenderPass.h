@@ -1,104 +1,116 @@
 #pragma once
 
-#include "core/Debug.h"
-#include "render/graph/RenderGraph.h"
+#include "core/Macros.h"
+#include "core/Dictionary.h"
+#include "core/HotReloadFlags.h"
+#include "core/Object.h"
+#include "core/Plugin.h"
+#include "core/Properties.h"
+#include "core/math/Vector.h"
+#include "editor/Gui.h"
+#include "render/RenderContext.h"
+#include "render/graph/RenderPassReflection.h"
+#include "scene/IScene.h"
 
-#include <map>
-#include <memory>
-#include <span>
+#include <functional>
 #include <string>
 #include <string_view>
-#include <variant>
-#include <vector>
+#include <utility>
 
-#include <nlohmann/json.hpp>
-
-class PluginManager;
-
-enum class PortKind
+namespace Falcor
 {
-    Image,
-    Buffer,
-};
+class Scene;
+struct KeyboardEvent;
+struct MouseEvent;
 
-using GraphResource = std::variant<RenderGraph::ImageHandle, RenderGraph::BufferHandle>;
-using GraphResources = std::map<std::string, GraphResource, std::less<>>;
+class RenderGraphCompiler;
+class RenderGraphExe;
+class ResourceCache;
 
-struct RenderPassPort
-{
-    std::string name;
-    PortKind    kind;
-    bool        optional;
-    vk::Format  format;
-};
-
-class RenderPassReflection
+class FALCOR_API RenderData
 {
 public:
-    RenderPassReflection& input(std::string_view name, PortKind kind, bool optional = false,
-                                vk::Format format = vk::Format::eUndefined);
-    RenderPassReflection& output(std::string_view name, PortKind kind, bool optional = false,
-                                 vk::Format format = vk::Format::eUndefined);
-    [[nodiscard]] std::span<const RenderPassPort> inputs() const { return inputPorts; }
-    [[nodiscard]] std::span<const RenderPassPort> outputs() const { return outputPorts; }
+    [[nodiscard]] const ref<Resource>& getResource(std::string_view name) const;
+    [[nodiscard]] ref<Texture>         getTexture(std::string_view name) const;
+    [[nodiscard]] const ref<Resource>& operator[](std::string_view name) const { return getResource(name); }
+    [[nodiscard]] Dictionary&          getDictionary() const { return mDictionary; }
+    [[nodiscard]] const uint2&         getDefaultTextureDims() const { return mDefaultTexDims; }
+    [[nodiscard]] ResourceFormat       getDefaultTextureFormat() const { return mDefaultTexFormat; }
 
-private:
-    std::vector<RenderPassPort> inputPorts;
-    std::vector<RenderPassPort> outputPorts;
-};
-
-class PassResources
-{
-public:
-    explicit PassResources(GraphResources inputs) : inputResources(std::move(inputs)) {}
-    [[nodiscard]] RenderGraph::ImageHandle image(std::string_view name) const;
-    [[nodiscard]] RenderGraph::BufferHandle buffer(std::string_view name) const;
-    void setOutput(std::string_view name, GraphResource resource);
-    [[nodiscard]] const GraphResources& outputs() const { return outputResources; }
-
-private:
-    GraphResources inputResources;
-    GraphResources outputResources;
-};
-
-enum class PassExecution
-{
-    Commands,
-    Composite,
-};
-
-class RenderPass
-{
-public:
-    virtual ~RenderPass();
-
-    [[nodiscard]] static std::shared_ptr<RenderPass> create(
-        const PluginManager& plugins, std::string_view type
+protected:
+    friend class RenderGraphExe;
+    RenderData(
+        const std::string& passName,
+        ResourceCache&     resources,
+        Dictionary&        dictionary,
+        const uint2&       defaultTexDims,
+        ResourceFormat     defaultTexFormat
     );
-    [[nodiscard]] PassExecution execution() const { return executionMode; }
 
-    [[nodiscard]] virtual RenderPassReflection reflect(const PassSetup& setup) const = 0;
-    virtual void compile(RenderGraph& graph, const PassSetup& setup, PassResources& resources) = 0;
-    virtual void bindResources(RenderGraph&, const PassSetup&) {}
-    virtual void prepare(RenderGraph&, const PassFrame&) {}
-    virtual void execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame) = 0;
-
-    [[nodiscard]] virtual nlohmann::json properties() const;
-    virtual bool setProperties(const nlohmann::json& properties);
-    [[nodiscard]] virtual nlohmann::json statistics() const;
-
-protected:
-    explicit RenderPass(PassExecution execution = PassExecution::Commands) : executionMode(execution) {}
-
-private:
-    PassExecution executionMode;
+    const std::string& mName;
+    ResourceCache&     mResources;
+    Dictionary&        mDictionary;
+    uint2              mDefaultTexDims;
+    ResourceFormat     mDefaultTexFormat;
 };
 
-class CompositeRenderPass : public RenderPass
+class FALCOR_API RenderPass : public Object
 {
-protected:
-    CompositeRenderPass() : RenderPass(PassExecution::Composite) {}
+    FALCOR_OBJECT(RenderPass)
 
-private:
-    void execute(RenderGraph&, vk::raii::CommandBuffer&, const PassFrame&) final { DCHECK(false); }
+public:
+    using PluginCreate = std::function<ref<RenderPass>(ref<Device>, const Properties&)>;
+
+    struct PluginInfo
+    {
+        std::string desc;
+    };
+
+    FALCOR_PLUGIN_BASE_CLASS(RenderPass);
+
+    struct CompileData
+    {
+        uint2                defaultTexDims{0};
+        ResourceFormat       defaultTexFormat = ResourceFormat::Unknown;
+        RenderPassReflection connectedResources;
+    };
+
+    [[nodiscard]] static ref<RenderPass> create(
+        std::string_view  type,
+        ref<Device>       device,
+        const Properties& properties = {},
+        PluginManager&    plugins    = PluginManager::instance()
+    );
+    ~RenderPass() override = default;
+
+    [[nodiscard]] const std::string& getType() const { return getPluginType(); }
+    [[nodiscard]] const std::string& getDesc() const { return getPluginInfo().desc; }
+
+    [[nodiscard]] virtual RenderPassReflection reflect(const CompileData& compileData) = 0;
+    virtual void                               compile(RenderContext* context, const CompileData& compileData) {}
+    virtual void                               execute(RenderContext* context, const RenderData& renderData) = 0;
+
+    virtual void                     setProperties(const Properties& properties);
+    [[nodiscard]] virtual Properties getProperties() const { return {}; }
+    virtual void                     renderUI(Gui::Widgets& widget) {}
+    virtual void                     renderUI(RenderContext* context, Gui::Widgets& widget) { renderUI(widget); }
+    virtual void                     renderOverlayUI(RenderContext* context) {}
+    virtual void                     setScene(RenderContext* context, const ref<Scene>& scene) {}
+    virtual void                     onSceneUpdates(RenderContext* context, IScene::UpdateFlags updates) {}
+    virtual bool                     onMouseEvent(const MouseEvent& event) { return false; }
+    virtual bool                     onKeyEvent(const KeyboardEvent& event) { return false; }
+    virtual void                     onHotReload(HotReloadFlags reloaded) {}
+
+    [[nodiscard]] const std::string& getName() const { return mName; }
+
+protected:
+    explicit RenderPass(ref<Device> device) : mpDevice(std::move(device)) {}
+    void requestRecompile() { mPassChangedCB(); }
+
+    ref<Device>           mpDevice;
+    std::string           mName;
+    std::function<void()> mPassChangedCB = [] {};
+
+    friend class RenderGraph;
 };
+}  // namespace Falcor

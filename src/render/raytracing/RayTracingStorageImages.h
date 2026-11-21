@@ -1,40 +1,39 @@
 #pragma once
 
-#include "render/denoise/DenoiserInputs.h"
-#include "render/graph/RenderPass.h"
+#include "render/RenderContext.h"
+#include "render/device/VulkanResources.h"
 #include "render/resources/ShaderLayout.h"
 
 #include <span>
+#include <string_view>
 #include <vector>
+
+[[nodiscard]] ShaderBinding<vk::DescriptorType::eStorageImage> getRayTracingStorageImageBinding(
+    const VulkanContext& vulkan,
+    const ShaderLayout& shader,
+    std::string_view name,
+    vk::Format format,
+    vk::FormatFeatureFlags additionalFeatures = {}
+);
 
 class RayTracingStorageImages
 {
 public:
-    struct Outputs
-    {
-        RenderGraph::ImageHandle rayImage;
-        DenoiserInputs denoiser;
-
-        void publish(PassResources& ports) const;
-    };
-
-    static void reflect(RenderPassReflection& reflection);
-    [[nodiscard]] Outputs compile(
-        RenderGraph& graph, const PassSetup& setup, const ShaderLayout& shader, bool splitLighting
-    );
+    void
+         add(VulkanResources&             cache,
+             const VulkanContext&           vulkan,
+             const ShaderLayout&        shader,
+             std::string_view           name,
+             VulkanResources::ImageHandle image,
+             vk::FormatFeatureFlags     additionalFeatures = {});
     void appendLayoutBindings(std::vector<vk::DescriptorSetLayoutBinding>& bindings) const;
-    void writeDescriptors(RenderGraph& graph, const PassSetup& setup, std::span<const vk::raii::DescriptorSet> sets) const;
+    void writeDescriptors(VulkanResources& cache, std::span<const vk::raii::DescriptorSet> sets) const;
 
 private:
     struct Binding
     {
         ShaderBinding<vk::DescriptorType::eStorageImage> binding;
-        RenderGraph::ImageHandle image;
+        VulkanResources::ImageHandle                       image;
     };
     std::vector<Binding> images;
-
-    [[nodiscard]] RenderGraph::ImageHandle create(
-        RenderGraph& graph, const PassSetup& setup, const ShaderStorageImage& target,
-        vk::FormatFeatureFlags additionalFeatures
-    );
 };

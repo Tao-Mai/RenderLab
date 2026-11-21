@@ -6,7 +6,7 @@
 
 namespace
 {
-bool drawSettings(Gui::Widgets& widgets, ExposurePassSettings& settings, const ExposurePass&,
+bool drawSettings(Falcor::Gui::Widgets& widgets, ExposurePassSettings& settings, const ExposurePass&,
                   const PassEditorContext& context)
 {
     const bool edited = drawExposureSettings(widgets, settings);
@@ -16,7 +16,12 @@ bool drawSettings(Gui::Widgets& widgets, ExposurePassSettings& settings, const E
 }
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+void ExposurePass::renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget)
 {
-    registry.registerClass<ExposurePass>("ExposurePass", makePassEditor<ExposurePass, drawSettings>("Exposure"));
+    drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "Exposure");
+}
+
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+{
+    registry.registerClass<Falcor::RenderPass, ExposurePass>();
 }

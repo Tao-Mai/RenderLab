@@ -25,7 +25,12 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
+#include "render/device/ResourceBarriers.h"
+#include "render/resources/NativeFormats.h"
 #include "passes/postprocess/FalcorPostProcess/FalcorPostProcess.h"
+
+#include "core/Logger.h"
+#include "core/profiling/Profiler.h"
 
 #include "core/Context.h"
 #include "render/RenderContext.h"
@@ -38,6 +43,7 @@
 #include <bit>
 #include <cmath>
 #include <cstddef>
+#include <format>
 #include <glm/common.hpp>
 #include <glm/matrix.hpp>
 #include <glm/vec2.hpp>
@@ -47,10 +53,16 @@
 
 namespace
 {
+constexpr char     kPostFxColor[] = "postFxColor";
+constexpr char     kToneMapped[]  = "toneMapped";
 constexpr auto     kPyramidFormat = vk::Format::eR16G16B16A16Sfloat;
 constexpr auto     kOutputFormat  = vk::Format::eR32G32B32A32Sfloat;
 constexpr auto     kComputeStage  = vk::ShaderStageFlagBits::eCompute;
 constexpr auto     kFragmentStage = vk::ShaderStageFlagBits::eFragment;
+
+std::string bloomImageName(uint32_t level) { return std::format("bloom{}", level); }
+
+std::string luminanceImageName(uint32_t level) { return std::format("luminance{}", level); }
 
 enum class SimplePostFxVariant
 {
@@ -109,22 +121,13 @@ static_assert(offsetof(PostFxParameters, bypass) == 84);
 static_assert(sizeof(ToneMapperParameters) == 80);
 static_assert(offsetof(ToneMapperParameters, whiteScale) == 48);
 static_assert(offsetof(ToneMapperParameters, clampOutput) == 64);
-
-vk::ImageView imageView(RenderGraph& graph, RenderGraph::ImageHandle image)
-{
-    return graph.getImage(image).getOrCreateImageView({
-        .viewType         = vk::ImageViewType::e2D,
-        .format           = graph.imageInfo(image).format,
-        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-    });
-}
 }  // namespace
 
-void FalcorPostProcess::initialize(const PassSetup& setup)
+void FalcorPostProcess::initialize(const Falcor::RenderContext& context)
 {
-    auto&       ctx          = renderContext();
-    auto&       device       = *ctx.device;
-    const auto& nativeDevice = setup.vulkan.deviceHandle();
+    auto&       device       = *context.getDevice();
+    const auto& vulkan       = *context.vulkan;
+    const auto& nativeDevice = vulkan.deviceHandle();
     const auto  binding      = [](uint32_t index, vk::DescriptorType type, vk::ShaderStageFlags stages)
     {
         return vk::DescriptorSetLayoutBinding{
@@ -159,7 +162,9 @@ void FalcorPostProcess::initialize(const PassSetup& setup)
     const auto createPostFxPipeline = [&](SimplePostFxVariant variant)
     {
         const auto shader =
-            ctx.shaderManager->getOrLoad("falcor_simple_post_fx", {{"FALCOR_POST_FX_STAGE", static_cast<int>(variant)}});
+            context.shaderManager->getOrLoad(
+                "falcor_simple_post_fx", {{"FALCOR_POST_FX_STAGE", std::to_string(static_cast<int>(variant))}}
+            );
         return device.createComputePipeline(shader, computeLayout.pipeline);
     };
     downsample = createPostFxPipeline(SimplePostFxVariant::Downsample);
@@ -187,7 +192,7 @@ void FalcorPostProcess::initialize(const PassSetup& setup)
 
     for (const auto format : {kPyramidFormat, kOutputFormat, vk::Format::eR32Sfloat})
     {
-        const auto features = setup.vulkan.physicalDeviceHandle().getFormatProperties(format).optimalTilingFeatures;
+        const auto features = vulkan.physicalDeviceHandle().getFormatProperties(format).optimalTilingFeatures;
         auto       required = vk::FormatFeatureFlagBits::eSampledImageFilterLinear |
             (format == vk::Format::eR32Sfloat ? vk::FormatFeatureFlagBits::eColorAttachment
                                               : vk::FormatFeatureFlagBits::eStorageImage);
@@ -202,24 +207,85 @@ void FalcorPostProcess::initialize(const PassSetup& setup)
     }
 }
 
-RenderPassReflection FalcorPostProcess::reflect(const PassSetup&) const
+FalcorPostProcess::FalcorPostProcess(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties) :
+    Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<FalcorPostProcessConfig>(properties))
 {
-    RenderPassReflection reflection;
-    reflection.input("source", PortKind::Image);
-    reflection.input("target", PortKind::Image);
-    reflection.output("color", PortKind::Image);
+    parameters.validate();
+}
+
+Falcor::Properties FalcorPostProcess::getProperties() const
+{
+    return Falcor::serializeToProperties(parameters);
+}
+
+void FalcorPostProcess::setProperties(const Falcor::Properties& properties)
+{
+    FalcorPostProcessConfig next;
+    Deserialize(nlohmann::json(properties.toJson()), next);
+    next.validate();
+
+    const bool recompile =
+        next.toneMapper.autoExposure != parameters.toneMapper.autoExposure ||
+        next.simplePostFx.usesBloom() != parameters.simplePostFx.usesBloom();
+    parameters = std::move(next);
+    if (recompile)
+        requestRecompile();
+}
+
+Falcor::RenderPassReflection FalcorPostProcess::reflect(const CompileData& data)
+{
+    Falcor::RenderPassReflection reflection;
+    reflection.addInput("source", "Source color").bindFlags(Falcor::ResourceBindFlags::ShaderResource);
+    reflection.addOutput("color", "Post-processed output color")
+        .format(data.defaultTexFormat)
+        .bindFlags(Falcor::ResourceBindFlags::RenderTarget);
+
+    auto extent = data.defaultTexDims;
+    if (const auto* input = data.connectedResources.getField("source"))
+    {
+        extent.x = input->getWidth() ? input->getWidth() : extent.x;
+        extent.y = input->getHeight() ? input->getHeight() : extent.y;
+    }
+
+    constexpr auto kStorageSampled = Falcor::ResourceBindFlags::UnorderedAccess | Falcor::ResourceBindFlags::ShaderResource;
+    constexpr auto kColorSampled = Falcor::ResourceBindFlags::RenderTarget | Falcor::ResourceBindFlags::ShaderResource;
+    if (parameters.simplePostFx.usesBloom())
+    {
+        for (uint32_t level = 0; level <= falcorPostProcess::kBloomLevels; ++level)
+            reflection.addInternal(bloomImageName(level), "Bloom pyramid image")
+                .texture2D(std::max(1u, extent.x >> level), std::max(1u, extent.y >> level))
+                .format(Falcor::ResourceFormat::RGBA16Float)
+                .bindFlags(kStorageSampled);
+    }
+    reflection.addInternal(kPostFxColor, "Color after post effects")
+        .texture2D(extent.x, extent.y)
+        .format(Falcor::ResourceFormat::RGBA32Float)
+        .bindFlags(kStorageSampled);
+
+    if (parameters.toneMapper.autoExposure)
+    {
+        const auto width = std::bit_floor(std::max(1u, extent.x));
+        const auto height = std::bit_floor(std::max(1u, extent.y));
+        const auto levels = static_cast<uint32_t>(std::bit_width(std::max(width, height)));
+        for (uint32_t level = 0; level < levels; ++level)
+            reflection.addInternal(luminanceImageName(level), "Luminance pyramid image")
+                .texture2D(std::max(1u, width >> level), std::max(1u, height >> level))
+                .format(Falcor::ResourceFormat::R32Float)
+                .bindFlags(kColorSampled);
+    }
+    reflection.addInternal(kToneMapped, "Tone-mapped color")
+        .texture2D(extent.x, extent.y)
+        .format(Falcor::ResourceFormat::RGBA32Float)
+        .bindFlags(kColorSampled);
     return reflection;
 }
 
-void FalcorPostProcess::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+void FalcorPostProcess::compile(Falcor::RenderContext* passContext, const CompileData& compileData)
 {
-    const auto source = ports.image("source");
-    const auto target = ports.image("target");
-
-    imagePasses.clear();
+    imageStages.clear();
     if (!computeLayout.descriptorSet)
-        initialize(setup);
-    const auto targetFormat   = graph.imageInfo(target).format;
+        initialize(*passContext);
+    const auto targetFormat   = Falcor::getVulkanFormat(compileData.defaultTexFormat);
     const bool srgbAttachment = targetFormat == vk::Format::eB8G8R8A8Srgb || targetFormat == vk::Format::eR8G8B8A8Srgb;
     CHECK(
         srgbAttachment || targetFormat == vk::Format::eB8G8R8A8Unorm || targetFormat == vk::Format::eR8G8B8A8Unorm,
@@ -227,114 +293,114 @@ void FalcorPostProcess::compile(RenderGraph& graph, const PassSetup& setup, Pass
         vk::to_string(targetFormat)
     );
     encodeSrgb = !srgbAttachment;
-
-    const auto effects = addSimplePostFx(graph, setup, source);
-    const auto toneMapped = addToneMapper(graph, setup, effects);
-    const auto presentShader = renderContext().shaderManager->getOrLoad("falcor_present");
-    ports.setOutput(
-        "color", addImagePass(graph, setup, {*this, Stage::Present, presentShader}, toneMapped, toneMapped, target)
-    );
 }
 
-RenderGraph::ImageHandle FalcorPostProcess::addSimplePostFx(
-    RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle source
+void FalcorPostProcess::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
+{
+    auto&       cache    = *renderCommands->vulkanResources;
+    auto&       commands = *renderCommands->commands;
+    const auto target = cache.registerImage(renderData.getTexture("color"));
+    if (imageStages.empty())
+    {
+        const auto source = cache.registerImage(renderData.getTexture("source"));
+        const auto effects = addSimplePostFx(cache, renderData, source);
+        auto& shaders = *renderCommands->shaderManager;
+        const auto toneMapped = addToneMapper(shaders, cache, renderData, effects);
+        const auto presentShader = shaders.getOrLoad("falcor_present");
+        addImageStage(cache, {*this, Stage::Present, presentShader}, toneMapped, toneMapped, target);
+    }
+
+    for (auto& stage : imageStages)
+        stage.execute(cache, commands, target);
+}
+
+VulkanResources::ImageHandle FalcorPostProcess::addSimplePostFx(
+    VulkanResources& cache, const Falcor::RenderData& data, VulkanResources::ImageHandle source
 )
 {
-    const auto extent = graph.imageInfo(source).extent;
     auto bloomed = source;
     if (parameters.simplePostFx.usesBloom())
     {
-        std::array<RenderGraph::ImageHandle, falcorPostProcess::kBloomLevels + 1> pyramid;
+        std::array<VulkanResources::ImageHandle, falcorPostProcess::kBloomLevels + 1> pyramid;
         for (uint32_t level = 0; level < pyramid.size(); ++level)
-            pyramid[level] = graph.createImage({
-                .format = kPyramidFormat,
-                .extent = {std::max(1u, extent.width >> level), std::max(1u, extent.height >> level), 1},
-            });
+            pyramid[level] = cache.registerImage(data.getTexture(bloomImageName(level)));
         for (uint32_t level = 0; level < falcorPostProcess::kBloomLevels; ++level)
         {
             const auto input = level == 0 ? source : pyramid[level];
-            pyramid[level + 1] = addImagePass(
-                graph, setup, {*this, Stage::Downsample, downsample}, input, input, pyramid[level + 1]
-            );
+            addImageStage(cache, {*this, Stage::Downsample, downsample}, input, input, pyramid[level + 1]);
         }
         for (uint32_t level = falcorPostProcess::kBloomLevels; level-- > 0;)
-            pyramid[level] = addImagePass(
-                graph, setup, {*this, Stage::Upsample, upsample, level}, source, pyramid[level + 1], pyramid[level]
-            );
+            addImageStage(cache, {*this, Stage::Upsample, upsample, level}, source, pyramid[level + 1], pyramid[level]);
         bloomed = pyramid[0];
     }
 
-    const auto target = graph.createImage({.format = kOutputFormat, .extent = extent});
-    return addImagePass(graph, setup, {*this, Stage::PostFx, postFx}, source, bloomed, target);
+    const auto target = cache.registerImage(data.getTexture(kPostFxColor));
+    return addImageStage(cache, {*this, Stage::PostFx, postFx}, source, bloomed, target);
 }
 
-RenderGraph::ImageHandle FalcorPostProcess::addToneMapper(
-    RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle source
+VulkanResources::ImageHandle FalcorPostProcess::addToneMapper(
+    ShaderManager& shaders, VulkanResources& cache, const Falcor::RenderData& data, VulkanResources::ImageHandle source
 )
 {
-    constexpr int kLuminanceStage = 0;
-    constexpr int kLuminanceMipStage = 1;
-    auto& shaders = *renderContext().shaderManager;
-    const auto extent = graph.imageInfo(source).extent;
+    constexpr char kLuminanceStage[] = "0";
+    constexpr char kLuminanceMipStage[] = "1";
+    const auto    extent             = cache.imageInfo(source).extent;
     auto luminance = source;
     if (parameters.toneMapper.autoExposure)
     {
-        vk::Extent3D mipExtent{std::bit_floor(extent.width), std::bit_floor(extent.height), 1};
         const auto shader = shaders.getOrLoad("falcor_luminance", {{"FALCOR_LUMINANCE_STAGE", kLuminanceStage}});
-        const auto target = graph.createImage({.format = vk::Format::eR32Sfloat, .extent = mipExtent});
-        luminance = addImagePass(graph, setup, {*this, Stage::Luminance, shader}, source, source, target);
+        const auto target = cache.registerImage(data.getTexture(luminanceImageName(0)));
+        luminance = addImageStage(cache, {*this, Stage::Luminance, shader}, source, source, target);
 
-        // Separate graph images retain the exact size, R32F quantization and linear filtering of each Falcor mip.
-        while (mipExtent.width > 1 || mipExtent.height > 1)
+        // Separate images retain the exact size, R32F quantization and linear filtering of each Falcor mip.
+        const auto levels = static_cast<uint32_t>(std::bit_width(std::max(extent.width, extent.height)));
+        const auto mipShader =
+            shaders.getOrLoad("falcor_luminance", {{"FALCOR_LUMINANCE_STAGE", kLuminanceMipStage}});
+        for (uint32_t level = 1; level < levels; ++level)
         {
-            mipExtent.width = std::max(1u, mipExtent.width / 2);
-            mipExtent.height = std::max(1u, mipExtent.height / 2);
-            const auto mipShader =
-                shaders.getOrLoad("falcor_luminance", {{"FALCOR_LUMINANCE_STAGE", kLuminanceMipStage}});
-            const auto mip = graph.createImage({.format = vk::Format::eR32Sfloat, .extent = mipExtent});
-            luminance = addImagePass(graph, setup, {*this, Stage::Luminance, mipShader}, luminance, luminance, mip);
+            const auto mip = cache.registerImage(data.getTexture(luminanceImageName(level)));
+            luminance = addImageStage(cache, {*this, Stage::Luminance, mipShader}, luminance, luminance, mip);
         }
     }
 
     const auto shader = shaders.getOrLoad("falcor_tonemapping");
-    const auto target = graph.createImage({.format = kOutputFormat, .extent = extent});
-    return addImagePass(graph, setup, {*this, Stage::ToneMapping, shader}, source, luminance, target);
+    const auto target = cache.registerImage(data.getTexture(kToneMapped));
+    return addImageStage(cache, {*this, Stage::ToneMapping, shader}, source, luminance, target);
 }
 
-RenderGraph::ImageHandle FalcorPostProcess::addImagePass(
-    RenderGraph& graph, const PassSetup& setup, ImagePass pass, RenderGraph::ImageHandle source,
-    RenderGraph::ImageHandle filtered, RenderGraph::ImageHandle target
+VulkanResources::ImageHandle FalcorPostProcess::addImageStage(
+    VulkanResources&             cache,
+    ImageStage                 pass,
+    VulkanResources::ImageHandle source,
+    VulkanResources::ImageHandle filtered,
+    VulkanResources::ImageHandle target
 )
 {
-    auto& node = *imagePasses.emplace_back(std::make_unique<ImagePass>(std::move(pass)));
-    return graph.addStage("FalcorPostProcess stage", node, setup, source, filtered, target);
+    imageStages.emplace_back(std::move(pass)).compile(cache, source, filtered, target);
+    return target;
 }
 
-RenderGraph::ImageHandle FalcorPostProcess::ImagePass::compile(
-    RenderGraph&             graph,
-    const PassSetup&,
-    RenderGraph::ImageHandle input,
-    RenderGraph::ImageHandle filteredInput,
-    RenderGraph::ImageHandle target
+void FalcorPostProcess::ImageStage::compile(
+    VulkanResources&             cache,
+    VulkanResources::ImageHandle source,
+    VulkanResources::ImageHandle filtered,
+    VulkanResources::ImageHandle target
 )
 {
-    source             = input;
-    filtered           = filteredInput;
-    const auto sampled = RenderGraph::ImageAccess{
+    const auto sampled = VulkanResources::ImageAccess{
         .stages = compute ? vk::PipelineStageFlagBits2::eComputeShader : vk::PipelineStageFlagBits2::eFragmentShader,
         .access = vk::AccessFlagBits2::eShaderSampledRead,
         .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
-    graph.use(source, sampled);
-    if (filtered.id != source.id)
-        graph.use(filtered, sampled);
-    auto& device = *renderContext().device;
-    const auto color = graph.write(target);
+    accesses.add(source, sampled);
+    if (filtered != source)
+        accesses.add(filtered, sampled);
+    auto& device = *owner.mpDevice;
     if (compute)
     {
-        storageTarget = color;
-        graph.use(
-            color,
+        storageTarget = target;
+        accesses.add(
+            target,
             {
                 .stages = vk::PipelineStageFlagBits2::eComputeShader,
                 .access = vk::AccessFlagBits2::eShaderStorageWrite |
@@ -347,48 +413,32 @@ RenderGraph::ImageHandle FalcorPostProcess::ImagePass::compile(
     }
     else
     {
-        attachments.colors.front() = {color, vk::AttachmentLoadOp::eDontCare};
-        attachments.declare(graph);
+        attachments.colors.front() = {target, vk::AttachmentLoadOp::eDontCare};
+        if (stage != Stage::Present)
+            accesses.add(target, vulkan_access::kColorWrite);
         pipeline = device.getOrCreatePipeline({
-            .shader = shader,
-            .layout = layout.pipeline,
-            .state = {.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
-            .colorFormats = {graph.imageInfo(color).format},
+            .shader       = shader,
+            .layout       = layout.pipeline,
+            .state        = {.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
+            .colorFormats = {cache.imageInfo(target).format},
         });
     }
+    accesses.declare(cache);
     descriptorSet = device.allocateDescriptorSet(layout.descriptorSet);
-    return color;
+
+    const auto& bindings = layout.descriptorSet.bindings;
+    cache.writeDescriptor(*descriptorSet, bindings[0].binding, source);
+    cache.writeDescriptor(*descriptorSet, bindings[1].binding, filtered);
+    if (compute)
+        cache.writeDescriptor(*descriptorSet, bindings[2].binding, storageTarget, vk::DescriptorType::eStorageImage);
+    else
+        cache.writeDescriptor(*descriptorSet, bindings[2].binding, *owner.linearSampler);
+    cache.writeDescriptor(*descriptorSet, bindings[3].binding, compute ? *owner.borderSampler : *owner.pointSampler);
 }
 
-void FalcorPostProcess::ImagePass::bindResources(RenderGraph& graph, const PassSetup& setup) const
+void FalcorPostProcess::ImageStage::dispatch(VulkanResources& cache, vk::raii::CommandBuffer& commands) const
 {
-    std::array images{
-        vk::DescriptorImageInfo{
-            .imageView   = imageView(graph, source),
-            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-        },
-        vk::DescriptorImageInfo{
-            .imageView   = imageView(graph, filtered),
-            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-        },
-        compute
-            ? vk::DescriptorImageInfo{
-                .imageView = imageView(graph, storageTarget), .imageLayout = vk::ImageLayout::eGeneral}
-            : vk::DescriptorImageInfo{.sampler = *owner.linearSampler},
-        vk::DescriptorImageInfo{.sampler = compute ? *owner.borderSampler : *owner.pointSampler},
-    };
-    std::array<vk::WriteDescriptorSet, 4> writes;
-    for (uint32_t index = 0; index < writes.size(); ++index)
-    {
-        writes[index] = makeDescriptorWrite(*descriptorSet, layout.descriptorSet.bindings[index]);
-        writes[index].pImageInfo = &images[index];
-    }
-    setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});
-}
-
-void FalcorPostProcess::ImagePass::dispatch(RenderGraph& graph, vk::raii::CommandBuffer& commands) const
-{
-    const auto       extent = graph.imageExtent(storageTarget);
+    const auto       extent = cache.imageExtent(storageTarget);
     const glm::uvec2 resolution{extent.width, extent.height};
     const glm::vec2  invRes{1.0f / extent.width, 1.0f / extent.height};
     const auto&      settings = owner.parameters.simplePostFx;
@@ -447,20 +497,26 @@ void FalcorPostProcess::ImagePass::dispatch(RenderGraph& graph, vk::raii::Comman
     compute->dispatch(commands, {extent.width, extent.height, 1});
 }
 
-void FalcorPostProcess::ImagePass::execute(
-    RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame&
-) const
+void FalcorPostProcess::ImageStage::execute(
+    VulkanResources& cache, vk::raii::CommandBuffer& commands, VulkanResources::ImageHandle colorOutput
+)
 {
+    accesses.transition(cache, commands);
     const auto bindPoint = compute ? vk::PipelineBindPoint::eCompute : vk::PipelineBindPoint::eGraphics;
     commands.bindPipeline(bindPoint, pipeline);
     commands.bindDescriptorSets(bindPoint, layout.pipeline, 0, std::array{*descriptorSet}, {});
     if (compute)
     {
-        dispatch(graph, commands);
+        dispatch(cache, commands);
         return;
     }
 
-    attachments.begin(graph, commands);
+    if (stage == Stage::Present)
+    {
+        attachments.colors.front().image = colorOutput;
+        cache.transition(commands, colorOutput, vulkan_access::kColorWrite);
+    }
+    attachments.begin(cache, commands);
     if (stage == Stage::ToneMapping)
     {
         const auto&                settings  = owner.parameters.toneMapper;

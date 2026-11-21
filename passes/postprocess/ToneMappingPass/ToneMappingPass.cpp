@@ -1,4 +1,8 @@
+#include "render/device/ResourceBarriers.h"
 #include "passes/postprocess/ToneMappingPass/ToneMappingPass.h"
+
+#include "core/Logger.h"
+#include "core/profiling/Profiler.h"
 #include "editor/PassEditor.h"
 
 #include "asset/BuiltinAssets.h"
@@ -7,47 +11,46 @@
 #include "render/RenderContext.h"
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
+#include "render/resources/NativeFormats.h"
 #include "render/resources/RenderResourceManager.h"
 #include "render/resources/ShaderData.h"
 
 #include <array>
 
-RenderPassReflection ToneMappingPass::reflect(const PassSetup&) const
+ToneMappingPass::ToneMappingPass(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties) :
+    Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<ToneMappingSettings>(properties))
 {
-    RenderPassReflection reflection;
-    reflection.input("hdrColor", PortKind::Image);
-    reflection.input("target", PortKind::Image);
-    reflection.input("exposure", PortKind::Buffer);
-    reflection.output("color", PortKind::Image);
+    parameters.validate();
+}
+
+Falcor::Properties ToneMappingPass::getProperties() const
+{
+    return Falcor::serializeToProperties(parameters);
+}
+
+void ToneMappingPass::setProperties(const Falcor::Properties& properties)
+{
+    ToneMappingSettings next;
+    Deserialize(nlohmann::json(properties.toJson()), next);
+    next.validate();
+
+    parameters = std::move(next);
+}
+
+Falcor::RenderPassReflection ToneMappingPass::reflect(const CompileData& compileData)
+{
+    Falcor::RenderPassReflection reflection;
+    reflection.addInput("hdrColor", "HDR scene color").bindFlags(Falcor::ResourceBindFlags::ShaderResource);
+    reflection.addInput("exposure", "Exposure state").rawBuffer(0).bindFlags(Falcor::ResourceBindFlags::ShaderResource);
+    reflection.addOutput("color", "Tone-mapped color")
+        .format(compileData.defaultTexFormat)
+        .bindFlags(Falcor::ResourceBindFlags::RenderTarget);
     return reflection;
 }
 
-void ToneMappingPass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+void ToneMappingPass::compile(Falcor::RenderContext* passContext, const CompileData& compileData)
 {
-    const auto target = ports.image("target");
-    hdrColor = ports.image("hdrColor");
-    exposure = ports.buffer("exposure");
-    const auto color = graph.write(target);
-    attachments.colors.front() = {color, vk::AttachmentLoadOp::eDontCare};
-
-    graph.use(
-        exposure,
-        {
-            .stages = vk::PipelineStageFlagBits2::eFragmentShader,
-            .access = vk::AccessFlagBits2::eShaderStorageRead,
-        }
-    );
-    graph.use(
-        hdrColor,
-        {
-            .stages = vk::PipelineStageFlagBits2::eFragmentShader,
-            .access = vk::AccessFlagBits2::eShaderSampledRead,
-            .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        }
-    );
-    attachments.declare(graph);
-
-    const auto targetFormat   = graph.imageInfo(target).format;
+    const auto targetFormat   = Falcor::getVulkanFormat(compileData.defaultTexFormat);
     const bool srgbAttachment = targetFormat == vk::Format::eB8G8R8A8Srgb || targetFormat == vk::Format::eR8G8B8A8Srgb;
     CHECK(
         srgbAttachment || targetFormat == vk::Format::eB8G8R8A8Unorm || targetFormat == vk::Format::eR8G8B8A8Unorm,
@@ -76,7 +79,7 @@ void ToneMappingPass::compile(RenderGraph& graph, const PassSetup& setup, PassRe
             .stageFlags      = vk::ShaderStageFlagBits::eFragment,
         },
     };
-    auto& device        = *renderContext().device;
+    auto& device        = *passContext->getDevice();
     descriptorSetLayout = device.createDescriptorSetLayout(toneMappingBindings);
     const std::array sets{&descriptorSetLayout};
     const std::array ranges{vk::PushConstantRange{
@@ -85,68 +88,44 @@ void ToneMappingPass::compile(RenderGraph& graph, const PassSetup& setup, PassRe
     }};
     pipelineLayout = device.getOrCreatePipelineLayout(sets, ranges);
 
-    auto&      ctx    = renderContext();
-    const auto shader = ctx.shaderManager->getOrLoad("tonemapping");
+    const auto shader = passContext->shaderManager->getOrLoad("tonemapping");
     pipeline          = device.getOrCreatePipeline({
                  .shader = shader,
                  .layout = pipelineLayout,
                  .state  = PipelineState{.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
                  .colorFormats = {targetFormat},
     });
-    sampler           = ctx.resources->sampler(BuiltinAssets::Sampler::linearClamp);
+    const auto sampler = passContext->resources->sampler(BuiltinAssets::Sampler::linearClamp);
 
     descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
 
-    ports.setOutput("color", color);
+    passContext->vulkanResources->writeDescriptor(*descriptorSet, RenderInterface::kToneMappingSamplerBinding, sampler);
+    barriers.clear();
 }
 
-void ToneMappingPass::bindResources(RenderGraph& graph, const PassSetup& setup)
+void ToneMappingPass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
 {
-    const auto&                   device = setup.vulkan.deviceHandle();
-    const vk::DescriptorImageInfo imageInfo{
-        .imageView   = graph.getImage(hdrColor).getOrCreateImageView({
-              .viewType         = vk::ImageViewType::e2D,
-              .format           = graph.imageInfo(hdrColor).format,
-              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        }),
-        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-    };
-    const vk::DescriptorImageInfo  samplerInfo{.sampler = sampler};
-    const vk::DescriptorBufferInfo exposureInfo{
-        .buffer = graph.getBuffer(exposure).handle(),
-        .range  = graph.getBuffer(exposure).size(),
-    };
-    const std::array writes = {
-        vk::WriteDescriptorSet{
-            .dstSet          = *descriptorSet,
-            .dstBinding      = RenderInterface::kToneMappingImageBinding,
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .pImageInfo      = &imageInfo,
-        },
-        vk::WriteDescriptorSet{
-            .dstSet          = *descriptorSet,
-            .dstBinding      = RenderInterface::kToneMappingSamplerBinding,
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eSampler,
-            .pImageInfo      = &samplerInfo,
-        },
-        vk::WriteDescriptorSet{
-            .dstSet          = *descriptorSet,
-            .dstBinding      = RenderInterface::kToneMappingExposureBinding,
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eStorageBuffer,
-            .pBufferInfo     = &exposureInfo,
-        },
-    };
-    device.updateDescriptorSets(writes, {});
-}
+    auto& cache    = *renderCommands->vulkanResources;
+    auto& commands = *renderCommands->commands;
+    if (barriers.empty())
+    {
+        const auto hdrColor = cache.registerImage(renderData.getTexture("hdrColor"));
+        const auto exposure = cache.registerBuffer(renderData["exposure"]->asBuffer());
+        cache.writeDescriptor(*descriptorSet, RenderInterface::kToneMappingImageBinding, hdrColor);
+        cache.writeDescriptor(*descriptorSet, RenderInterface::kToneMappingExposureBinding, exposure);
 
-void ToneMappingPass::execute(
-    RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame&
-)
-{
-    attachments.begin(graph, commands);
+        constexpr auto kFragment = vk::PipelineStageFlagBits2::eFragmentShader;
+        barriers.add(hdrColor, vulkan_access::sampled(kFragment));
+        barriers.add(exposure, vulkan_access::storageRead(kFragment));
+        barriers.declare(cache);
+    }
+
+    barriers.transition(cache, commands);
+    const auto color = cache.registerImage(renderData.getTexture("color"));
+    attachments.colors.front() = {color, vk::AttachmentLoadOp::eDontCare};
+    cache.transition(commands, color, vulkan_access::kColorWrite);
+
+    attachments.begin(cache, commands);
     commands.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     const std::array sets = {*descriptorSet};
     commands.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, sets, {});
@@ -167,7 +146,12 @@ void ToneMappingPass::execute(
     commands.endRendering();
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+void ToneMappingPass::renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget)
 {
-    registry.registerClass<ToneMappingPass>("ToneMappingPass", makePassEditor<ToneMappingPass>("Tone mapping"));
+    drawPassEditor(widget, *this, parameters, context->passEditor, "Tone mapping");
+}
+
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+{
+    registry.registerClass<Falcor::RenderPass, ToneMappingPass>();
 }

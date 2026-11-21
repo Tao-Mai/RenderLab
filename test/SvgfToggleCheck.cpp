@@ -1,5 +1,6 @@
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
+#include "RendererOptions.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
@@ -42,7 +43,8 @@ int main(int argc, char** argv)
     context().window           = &window;
     context().renderer         = &renderer;
     config.init();
-    const auto originalGraph = config.renderGraph().id;
+    const auto originalGraph = config.renderGraphName();
+    const auto originalSettings = config.getSettings();
     const auto originalEditor = config.editorConfig();
     data.init(config.paths().assets);
     scenes.init();
@@ -54,18 +56,17 @@ int main(int argc, char** argv)
         std::string_view graph;
         std::string_view type;
         std::string_view instance;
+        bool             supportsSvgf;
         nlohmann::json parameters;
-        PassOverrides overrides;
     };
     std::array routes{
-        Route{"realtime", "RayTracingPass", "rayTracing"},
-        Route{"minimal_path_tracer", "MinimalPathTracer", "pathTracer"},
+        Route{"ReSTIR", "RayTracingPass", "rayTracing", true},
+        Route{"MinimalPathTracer", "MinimalPathTracer", "pathTracer", false},
     };
     for (auto& route : routes)
     {
         config.setRenderGraph(route.graph);
-        route.parameters = config.graphParameterOverrides();
-        route.overrides = config.passOverrides();
+        route.parameters = config.getOptions().at("parameters");
     }
     config.setEditorSize(side, side);
 
@@ -86,12 +87,13 @@ int main(int argc, char** argv)
         const auto& route = routes[(phase / 2) % routes.size()];
         config.setRenderGraph(route.graph);
         auto parameters = route.parameters;
-        const bool enableSvgf = phase % 2 == 0;
-        parameters["svgf"] = enableSvgf;
+        const bool enableSvgf = route.supportsSvgf && phase % 2 == 0;
+        if (route.supportsSvgf)
+            parameters["svgf"] = enableSvgf;
         parameters["hdr"] = (phase & 2u) == 0;
         const auto maxBounces = phase % 3 + 1;
-        config.setGraphParameterOverrides(std::move(parameters));
-        renderer.setPassOverrides(route.type, route.instance, {{"maxBounces", maxBounces}});
+        renderer_test::setParameters(renderer, config, parameters);
+        renderer_test::setPassProperties(renderer, config, route.type, route.instance, {{"maxBounces", maxBounces}});
         LOG_INFO(
             "RT phase {}: graph={}, SVGF={}, maxBounces={}", phase, route.graph, enableSvgf, maxBounces
         );
@@ -102,11 +104,44 @@ int main(int argc, char** argv)
             const auto result = renderer.render(view, scene, {}, 1.0f / 60.0f);
             profiler.endFrame(1000.0 / 60.0);
             CHECK(!result.swapchainNeedsRebuild);
-            CHECK(renderer.activeRenderGraph()->id == route.graph);
-            const auto* trace = renderer.graphPasses().findPass(route.instance);
-            CHECK(trace && trace->type == route.type);
-            CHECK(trace->pass->properties().at("maxBounces") == maxBounces);
-            CHECK(config.rendererConfig().feature.svgf == enableSvgf);
+            CHECK(renderer.getActiveGraph()->getName() == route.graph);
+            const auto& trace = renderer.getActiveGraph()->getPass(std::string{route.instance});
+            CHECK(trace && trace->getType() == route.type);
+            CHECK(trace->getProperties().get<uint32_t>("maxBounces") == maxBounces);
+            CHECK(renderer.getActiveGraph()->doesPassExist("svgf") == enableSvgf);
+            if (frame == 0)
+            {
+                Falcor::RenderPass::CompileData compileData;
+                compileData.defaultTexDims = {extent.width, extent.height};
+                using Field = Falcor::RenderPassReflection::Field;
+                const auto reflection = trace->reflect(compileData);
+                const auto* color = reflection.getField("color");
+                CHECK(
+                    color && color->getVisibility() == Field::Visibility::Output &&
+                    color->getType() == Field::Type::Texture2D && color->getArraySize() == (enableSvgf ? 2 : 1) &&
+                    !is_set(color->getFlags(), Field::Flags::Optional)
+                );
+                if (!route.supportsSvgf)
+                    CHECK(reflection.getFieldCount() == 1);
+                if (enableSvgf)
+                {
+                    const auto svgf = renderer.getActiveGraph()->getPass("svgf")->reflect(compileData);
+                    constexpr std::array kHistoryFields{
+                        std::pair{"Previous Linear Z and Packed Normal", Falcor::ResourceFormat::RGBA32Float},
+                        std::pair{"Previous Lighting", Falcor::ResourceFormat::RGBA32Float},
+                        std::pair{"Previous Moments", Falcor::ResourceFormat::RG32Float},
+                    };
+                    size_t internalCount = 0;
+                    for (size_t index = 0; index < svgf.getFieldCount(); ++index)
+                        internalCount += svgf.getField(index)->getVisibility() == Field::Visibility::Internal;
+                    CHECK(internalCount == kHistoryFields.size());
+                    for (const auto& [name, format] : kHistoryFields)
+                    {
+                        const auto* field = svgf.getField(name);
+                        CHECK(field && field->getVisibility() == Field::Visibility::Internal && field->getFormat() == format);
+                    }
+                }
+            }
             LOG_INFO("Phase {} submitted frame {}", phase, frame);
         }
         const auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
@@ -119,12 +154,7 @@ int main(int argc, char** argv)
     assets.shutdown();
     data.shutdown();
     window.shutdown();
-    for (const auto& route : routes)
-    {
-        config.setRenderGraph(route.graph);
-        config.setGraphParameterOverrides(route.parameters);
-        config.passOverrides() = route.overrides;
-    }
+    config.getSettings() = originalSettings;
     config.setRenderGraph(originalGraph);
     config.setEditorSize(originalEditor.width, originalEditor.height);
     config.shutdown();

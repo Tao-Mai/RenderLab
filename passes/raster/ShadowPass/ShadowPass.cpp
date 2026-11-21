@@ -1,5 +1,7 @@
+#include "render/device/ResourceBarriers.h"
 #include "passes/raster/ShadowPass/ShadowPass.h"
-#include "render/graph/PassPorts.h"
+
+#include "core/profiling/Profiler.h"
 
 #include "asset/BuiltinAssets.h"
 #include "core/Context.h"
@@ -7,13 +9,16 @@
 #include "render/FrameData.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
-#include "render/RenderData.h"
+#include "render/PreparedScene.h"
 #include "render/RenderView.h"
+#include "render/RendererConfig.h"
 #include "render/resources/ShaderManager.h"
 #include "render/Visibility.h"
 #include "render/device/Device.h"
 #include "render/device/VulkanContext.h"
+#include "render/raster/ShadowResources.h"
 #include "render/resources/GpuMesh.h"
+#include "render/resources/MaterialTable.h"
 #include "render/resources/RenderResourceManager.h"
 #include "render/resources/ShaderData.h"
 
@@ -27,6 +32,15 @@
 
 namespace
 {
+constexpr char kPointLightShadowMap[] = "pointLightShadowMap";
+constexpr char kSpotLightShadowMap[] = "spotLightShadowMap";
+constexpr char kRectAreaLightShadowMap[] = "rectAreaLightShadowMap";
+constexpr char kCascadeShadowMap[] = "cascadeShadowMap";
+constexpr char kPointShadowBuffer[] = "pointShadowBuffer";
+constexpr char kSpotShadowBuffer[] = "spotShadowBuffer";
+constexpr char kRectAreaShadowBuffer[] = "rectAreaShadowBuffer";
+constexpr char kDirectionalShadowBuffer[] = "directionalShadowBuffer";
+
 void validateCascade(const ShadowSettings::Cascade& cascade)
 {
     CHECK(cascade.count > 0 && cascade.count <= kMaxDirectionalShadowCascades);
@@ -243,38 +257,104 @@ void ShadowSettings::validate() const
     CHECK(filter == SamplerAsset::Filter::Nearest || filter == SamplerAsset::Filter::Linear);
 }
 
-bool ShadowSettings::requiresGraphRebuild(const ShadowSettings& current) const
+ShadowPass::ShadowPass(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties) :
+    Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<ShadowSettings>(properties))
 {
-    return cascade.count != current.cascade.count || cascade.shadowMapSize != current.cascade.shadowMapSize ||
-        pointShadowMapSize != current.pointShadowMapSize || spotShadowMapSize != current.spotShadowMapSize ||
-        rectAreaShadowMapSize != current.rectAreaShadowMapSize;
+    parameters.validate();
 }
 
-RenderPassReflection ShadowPass::reflect(const PassSetup&) const
+Falcor::Properties ShadowPass::getProperties() const
 {
-    RenderPassReflection reflection;
-    reflection.input("lights", PortKind::Buffer);
-    pass_ports::outputs<ShadowResources>(reflection);
+    return Falcor::serializeToProperties(parameters);
+}
+
+void ShadowPass::setProperties(const Falcor::Properties& properties)
+{
+    ShadowSettings next;
+    Deserialize(nlohmann::json(properties.toJson()), next);
+    next.validate();
+
+    const bool recompile =
+        next.enabled != parameters.enabled || next.cascade.count != parameters.cascade.count ||
+        next.cascade.shadowMapSize != parameters.cascade.shadowMapSize ||
+        next.pointShadowMapSize != parameters.pointShadowMapSize ||
+        next.spotShadowMapSize != parameters.spotShadowMapSize ||
+        next.rectAreaShadowMapSize != parameters.rectAreaShadowMapSize;
+    parameters = std::move(next);
+    if (recompile)
+        requestRecompile();
+}
+
+Falcor::RenderPassReflection ShadowPass::reflect(const CompileData&)
+{
+    constexpr auto kDepthSampled = Falcor::ResourceBindFlags::DepthStencil | Falcor::ResourceBindFlags::ShaderResource;
+    Falcor::RenderPassReflection reflection;
+    const auto pointSize = parameters.enabled ? parameters.pointShadowMapSize : 1u;
+    const auto pointLayers = parameters.enabled ? kMaxPointLightShadow : 1u;
+    reflection.addOutput(kPointLightShadowMap, "Point light shadow cube array")
+        .format(Falcor::ResourceFormat::D32Float)
+        .bindFlags(kDepthSampled)
+        .textureCube(pointSize, pointSize, 1, pointLayers);
+
+    if (!parameters.enabled)
+    {
+        reflection.addOutput(kPointShadowBuffer, "Point light shadow transforms")
+            .bindFlags(Falcor::ResourceBindFlags::ShaderResource)
+            .rawBuffer(std::max({
+                sizeof(PointShadowData),
+                sizeof(SpotShadowData),
+                sizeof(RectAreaShadowData),
+                sizeof(DirectionalShadowData),
+            }));
+        return reflection;
+    }
+
+    const auto addMap = [&](const std::string& name, uint32_t size, uint32_t layers)
+    {
+        reflection.addOutput(name, "Shadow depth array")
+            .format(Falcor::ResourceFormat::D32Float)
+            .bindFlags(kDepthSampled)
+            .texture2D(size, size, 1, 1, layers);
+    };
+    addMap(kSpotLightShadowMap, parameters.spotShadowMapSize, kMaxSpotLightShadow);
+    addMap(kRectAreaLightShadowMap, parameters.rectAreaShadowMapSize, kMaxRectAreaLightShadow);
+    addMap(kCascadeShadowMap, parameters.cascade.shadowMapSize, kMaxDirectionalLightShadow * parameters.cascade.count);
+
+    reflection.addOutput(kPointShadowBuffer, "Point light shadow transforms")
+        .bindFlags(Falcor::ResourceBindFlags::ShaderResource)
+        .rawBuffer(kMaxPointLightShadow * sizeof(PointShadowData));
+    reflection.addOutput(kSpotShadowBuffer, "Spot light shadow transforms")
+        .bindFlags(Falcor::ResourceBindFlags::ShaderResource)
+        .rawBuffer(kMaxSpotLightShadow * sizeof(SpotShadowData));
+    reflection.addOutput(kRectAreaShadowBuffer, "Rectangular light shadow transforms")
+        .bindFlags(Falcor::ResourceBindFlags::ShaderResource)
+        .rawBuffer(kMaxRectAreaLightShadow * sizeof(RectAreaShadowData));
+    reflection.addOutput(kDirectionalShadowBuffer, "Directional light cascade data")
+        .bindFlags(Falcor::ResourceBindFlags::ShaderResource)
+        .rawBuffer(kMaxDirectionalLightShadow * sizeof(DirectionalShadowData));
     return reflection;
 }
 
-void ShadowPass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+void ShadowPass::compile(Falcor::RenderContext* passContext, const CompileData&)
 {
-    const auto lights = ports.buffer("lights");
+    targetsBound = false;
+    shadowAccesses.clear();
+    barriers.clear();
+    lightingAccesses.clear();
+    for (auto& frame : passContext->frames)
+        frame.uploadShadowUniforms({.enabled = 0u});
 
-    const RenderGraph::MemoryAccess shaderRead{
-        .stages = vk::PipelineStageFlagBits2::eVertexShader | vk::PipelineStageFlagBits2::eFragmentShader,
-        .access = vk::AccessFlagBits2::eShaderStorageRead,
-    };
-    graph.use(lights, shaderRead);
+    if (!parameters.enabled)
+        return;
+
     const auto& shadow = parameters;
     cascadeCount       = shadow.cascade.count;
-    auto& resources = *renderContext().resources;
+    auto& resources = *passContext->resources;
     linearComparisonSampler  = resources.sampler(BuiltinAssets::Sampler::kShadowLinear);
     nearestComparisonSampler = resources.sampler(BuiltinAssets::Sampler::kShadowNearest);
 
     CHECK(cascadeCount > 0 && cascadeCount <= kMaxDirectionalShadowCascades);
-    const auto& limits = setup.vulkan.properties().limits;
+    const auto& limits = passContext->vulkan->properties().limits;
     CHECK(
         shadow.cascade.shadowMapSize <= limits.maxImageDimension2D &&
         shadow.cascade.shadowMapSize <= limits.maxFramebufferWidth &&
@@ -284,11 +364,11 @@ void ShadowPass::compile(RenderGraph& graph, const PassSetup& setup, PassResourc
     constexpr auto kRequiredFeatures = vk::FormatFeatureFlagBits::eDepthStencilAttachment |
         vk::FormatFeatureFlagBits::eSampledImage | vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
     const auto features =
-        setup.vulkan.physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures;
+        passContext->vulkan->physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures;
     CHECK((features & kRequiredFeatures) == kRequiredFeatures);
 
     // pipeline layout
-    auto&            device = *renderContext().device;
+    auto&            device = *passContext->getDevice();
     const std::array descriptorSetLayouts{&device.sceneDescriptorSetLayout, &device.lightDescriptorSetLayout,
         &device.materialDescriptorSetLayout, &device.shadowDescriptorSetLayout};
     const std::array pushConstantRanges{vk::PushConstantRange{
@@ -297,105 +377,97 @@ void ShadowPass::compile(RenderGraph& graph, const PassSetup& setup, PassResourc
     }};
     pipelineLayout = device.getOrCreatePipelineLayout(descriptorSetLayouts, pushConstantRanges);
 
-    const auto createTarget = [&](const RenderGraph::ImageCreateInfo& info,
-                                  int                                 shadowType,
-                                  uint32_t                            viewMask       = 0,
-                                  uint32_t                            viewLayerCount = 1)
+    const auto createTarget = [&](uint32_t mapSize,
+                                  GpuLightType                shadowType,
+                                  uint32_t                    viewMask       = 0,
+                                  uint32_t                    viewLayerCount = 1)
     {
-        const auto shader   = renderContext().shaderManager->getOrLoad("shadow", {{"SHADOW_TYPE", shadowType}});
+        const auto shader =
+            passContext->shaderManager->getOrLoad("shadow", {{"SHADOW_TYPE", std::to_string(static_cast<int>(shadowType))}});
         const auto pipeline = device.getOrCreatePipeline({
             .shader = shader,
             .layout = pipelineLayout,
             .state =
                 PipelineState{
                     .vertexLayout = VertexLayoutPreset::PositionOnly,
-                    .depthClamp   = shadowType == static_cast<int>(GpuLightType::Directional),
+                    .depthClamp   = shadowType == GpuLightType::Directional,
                 },
             .depthFormat = vk::Format::eD32Sfloat,
             .viewMask    = viewMask,
         });
 
-        auto image = graph.createImage(info);
-        image      = graph.write(image);
-        graph.use(
-            image,
-            {
-                .stages =
-                    vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-                .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead |
-                    vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-                .layout = vk::ImageLayout::eDepthAttachmentOptimal,
-            }
-        );
-
         return ShadowTarget{
-            .image          = image,
             .pipeline       = pipeline,
-            .mapSize        = info.extent.width,
+            .mapSize        = mapSize,
             .viewMask       = viewMask,
             .viewLayerCount = viewLayerCount,
         };
     };
 
-    point = createTarget(
-        {
-            .flags       = vk::ImageCreateFlagBits::eCubeCompatible,
-            .format      = vk::Format::eD32Sfloat,
-            .extent      = {shadow.pointShadowMapSize, shadow.pointShadowMapSize, 1},
-            .arrayLayers = kPointFaceCount * kMaxPointLightShadow,
-        },
-        0,
-        kPointViewMask,
-        kPointFaceCount
-    );
-    spot = createTarget(
-        {
-            .format      = vk::Format::eD32Sfloat,
-            .extent      = {shadow.spotShadowMapSize, shadow.spotShadowMapSize, 1},
-            .arrayLayers = kMaxSpotLightShadow,
-        },
-        static_cast<int>(GpuLightType::Spot)
-    );
-    rectArea = createTarget(
-        {
-            .format      = vk::Format::eD32Sfloat,
-            .extent      = {shadow.rectAreaShadowMapSize, shadow.rectAreaShadowMapSize, 1},
-            .arrayLayers = kMaxRectAreaLightShadow,
-        },
-        2
-    );
-    directional = createTarget(
-        {
-            .format      = vk::Format::eD32Sfloat,
-            .extent      = {shadow.cascade.shadowMapSize, shadow.cascade.shadowMapSize, 1},
-            .arrayLayers = kMaxDirectionalLightShadow * cascadeCount,
-        },
-        1
-    );
+    point = createTarget(shadow.pointShadowMapSize, GpuLightType::Point, kPointViewMask, kPointFaceCount);
+    spot = createTarget(shadow.spotShadowMapSize, GpuLightType::Spot);
+    rectArea = createTarget(shadow.rectAreaShadowMapSize, GpuLightType::RectArea);
+    directional = createTarget(shadow.cascade.shadowMapSize, GpuLightType::Directional);
+}
 
-    const auto createBuffer = [&](vk::DeviceSize size)
-    {
-        const auto buffer = graph.write(graph.createBuffer({
-            .size  = size,
-            .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
-        }));
-        graph.use(buffer, shaderRead);
-        return buffer;
+void ShadowPass::prepareTargets(VulkanResources& cache, const Falcor::RenderContext& frame, const Falcor::RenderData& renderData)
+{
+    const auto pointMap = cache.registerImage(renderData.getTexture(kPointLightShadowMap));
+    const auto pointBuffer = cache.registerBuffer(renderData[kPointShadowBuffer]->asBuffer());
+    ShadowResources outputs{
+        .pointLightShadowMap     = pointMap,
+        .spotLightShadowMap      = pointMap,
+        .rectAreaLightShadowMap  = pointMap,
+        .cascadeShadowMap        = pointMap,
+        .pointShadowBuffer       = pointBuffer,
+        .spotShadowBuffer        = pointBuffer,
+        .rectAreaShadowBuffer    = pointBuffer,
+        .directionalShadowBuffer = pointBuffer,
     };
-    point.buffer       = createBuffer(kMaxPointLightShadow * sizeof(PointShadowData));
-    spot.buffer        = createBuffer(kMaxSpotLightShadow * sizeof(SpotShadowData));
-    rectArea.buffer    = createBuffer(kMaxRectAreaLightShadow * sizeof(RectAreaShadowData));
-    directional.buffer = createBuffer(kMaxDirectionalLightShadow * sizeof(DirectionalShadowData));
-    pass_ports::write(ports, ShadowResources{
-        point.image,
-        spot.image,
-        rectArea.image,
-        directional.image,
-        point.buffer,
-        spot.buffer,
-        rectArea.buffer,
-        directional.buffer,
-    });
+    if (parameters.enabled)
+    {
+        outputs.spotLightShadowMap = cache.registerImage(renderData.getTexture(kSpotLightShadowMap));
+        outputs.rectAreaLightShadowMap = cache.registerImage(renderData.getTexture(kRectAreaLightShadowMap));
+        outputs.cascadeShadowMap = cache.registerImage(renderData.getTexture(kCascadeShadowMap));
+        outputs.spotShadowBuffer = cache.registerBuffer(renderData[kSpotShadowBuffer]->asBuffer());
+        outputs.rectAreaShadowBuffer = cache.registerBuffer(renderData[kRectAreaShadowBuffer]->asBuffer());
+        outputs.directionalShadowBuffer = cache.registerBuffer(renderData[kDirectionalShadowBuffer]->asBuffer());
+    }
+
+    bindShadowResources(cache, outputs, frame.frames, *frame.resources);
+
+    constexpr auto kFragment = vk::PipelineStageFlagBits2::eFragmentShader;
+    for (const auto image : {outputs.pointLightShadowMap, outputs.spotLightShadowMap,
+                             outputs.rectAreaLightShadowMap, outputs.cascadeShadowMap})
+        lightingAccesses.add(image, vulkan_access::sampled(kFragment));
+    for (const auto buffer : {outputs.pointShadowBuffer, outputs.spotShadowBuffer,
+                              outputs.rectAreaShadowBuffer, outputs.directionalShadowBuffer})
+        lightingAccesses.add(buffer, vulkan_access::storageRead(kFragment));
+    lightingAccesses.declare(cache);
+    targetsBound = true;
+
+    if (!parameters.enabled)
+        return;
+
+    point.image = outputs.pointLightShadowMap;
+    point.buffer = outputs.pointShadowBuffer;
+    spot.image = outputs.spotLightShadowMap;
+    spot.buffer = outputs.spotShadowBuffer;
+    rectArea.image = outputs.rectAreaLightShadowMap;
+    rectArea.buffer = outputs.rectAreaShadowBuffer;
+    directional.image = outputs.cascadeShadowMap;
+    directional.buffer = outputs.directionalShadowBuffer;
+
+    constexpr auto kShaderStages = vk::PipelineStageFlagBits2::eVertexShader | kFragment;
+    barriers.add(frame.frameData->lightBufferHandle(), vulkan_access::storageRead(kShaderStages));
+    barriers.add(frame.materialTable->bufferHandle(), vulkan_access::storageRead(kFragment));
+    for (const auto* target : {&point, &spot, &rectArea, &directional})
+    {
+        barriers.add(target->image, vulkan_access::kDepthWrite);
+        shadowAccesses.add(target->buffer, vulkan_access::storageRead(kShaderStages));
+    }
+    barriers.declare(cache);
+    shadowAccesses.declare(cache);
 }
 
 void ShadowPass::prepareShadowData(
@@ -496,9 +568,9 @@ void ShadowPass::prepareShadowData(
     }
 }
 
-void ShadowPass::prepare(RenderGraph& graph, const PassFrame& frame)
+void ShadowPass::updateShadowData(VulkanResources& cache, const Falcor::RenderContext& frame)
 {
-    frame.data.uploadShadowUniforms({
+    frame.frameData->uploadShadowUniforms({
         .cascadeCount          = parameters.cascade.count,
         .directionalSampleRadius = parameters.cascade.sampleRadius,
         .bias                  = parameters.bias,
@@ -507,12 +579,12 @@ void ShadowPass::prepare(RenderGraph& graph, const PassFrame& frame)
         .pixelRotation         = parameters.pixelRotation ? 1u : 0u,
         .enabled               = 1u,
     });
-    frame.data.writeShadowSampler(
+    frame.frameData->writeShadowSampler(
         parameters.filter == SamplerAsset::Filter::Linear ? linearComparisonSampler : nearestComparisonSampler
     );
 
     CpuProfileScope timing{context().profiler, "Shadow preparation"};
-    prepareShadowData(frame.view.uniforms, frame.renderData.lights, parameters);
+    prepareShadowData(frame.view->uniforms, frame.scene->lights, parameters);
 
     std::vector<ShadowVolume> volumes;
     for (uint32_t index = 0; index < shadowData.pointShadows.size(); ++index)
@@ -539,9 +611,9 @@ void ShadowPass::prepare(RenderGraph& graph, const PassFrame& frame)
             );
 
     visibilityMasks.clear();
-    visibilityMasks.reserve(frame.renderData.drawBounds.size());
+    visibilityMasks.reserve(frame.scene->drawBounds.size());
 
-    for (const auto& bounds : frame.renderData.drawBounds)
+    for (const auto& bounds : frame.scene->drawBounds)
     {
         uint32_t mask = 0;
         for (auto& volume : volumes)
@@ -560,15 +632,15 @@ void ShadowPass::prepare(RenderGraph& graph, const PassFrame& frame)
         std::vector<ViewCullingStatistics> views;
         for (const auto& volume : volumes)
             views.push_back({RenderVisibility::viewName(volume.mask), volume.visibleDrawItems});
-        profiler->recordCulling(static_cast<uint32_t>(frame.renderData.drawBounds.size()), std::move(views));
+        profiler->recordCulling(static_cast<uint32_t>(frame.scene->drawBounds.size()), std::move(views));
     }
 
-    const auto upload = [&](RenderGraph::BufferHandle buffer, const auto& values)
+    const auto upload = [&](VulkanResources::BufferHandle buffer, const auto& values)
     {
         if (values.empty())
             return;
         const auto bytes      = values.size() * sizeof(values.front());
-        const auto allocation = graph.allocateUpload(buffer, bytes);
+        const auto allocation = cache.allocateUpload(buffer, bytes);
         std::memcpy(allocation.data.data(), values.data(), bytes);
     };
     upload(point.buffer, shadowData.pointShadows);
@@ -577,10 +649,31 @@ void ShadowPass::prepare(RenderGraph& graph, const PassFrame& frame)
     upload(directional.buffer, shadowData.directionalShadows);
 }
 
-void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution)
+void ShadowPass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
 {
-    const auto& lights = execution.renderData.lights;
-    const auto& ranges = execution.renderData.lightRanges;
+    auto&       cache         = *renderCommands->vulkanResources;
+    auto&       commandBuffer = *renderCommands->commands;
+    const auto& execution     = *renderCommands;
+
+    if (!targetsBound)
+        prepareTargets(cache, execution, renderData);
+    if (parameters.enabled)
+        renderShadowMaps(cache, commandBuffer, execution);
+
+    lightingAccesses.transition(cache, commandBuffer);
+}
+
+void ShadowPass::renderShadowMaps(
+    VulkanResources& cache, vk::raii::CommandBuffer& commandBuffer, const Falcor::RenderContext& execution
+)
+{
+    barriers.transition(cache, commandBuffer);
+    updateShadowData(cache, execution);
+    cache.recordUploads(commandBuffer);
+    shadowAccesses.transition(cache, commandBuffer);
+
+    const auto& lights = execution.scene->lights;
+    const auto& ranges = execution.scene->lightRanges;
 
     for (uint32_t index = 0; index < ranges.directionalEnd; ++index)
     {
@@ -591,7 +684,7 @@ void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
         DCHECK(light.shadowIdx < shadowData.directionalShadows.size());
         for (uint32_t cascadeIndex = 0; cascadeIndex < cascadeCount; ++cascadeIndex)
             recordShadow(
-                graph,
+                cache,
                 commandBuffer,
                 execution,
                 directional,
@@ -608,7 +701,7 @@ void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
             continue;
 
         DCHECK(light.shadowIdx < shadowData.pointShadows.size());
-        recordShadow(graph, commandBuffer, execution, point, index, light.shadowIdx * kPointFaceCount);
+        recordShadow(cache, commandBuffer, execution, point, index, light.shadowIdx * kPointFaceCount);
     }
 
     for (uint32_t index = ranges.pointEnd; index < ranges.rectAreaEnd; ++index)
@@ -618,7 +711,7 @@ void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
             continue;
 
         DCHECK(light.shadowIdx < shadowData.rectAreaShadows.size());
-        recordShadow(graph, commandBuffer, execution, rectArea, index, light.shadowIdx);
+        recordShadow(cache, commandBuffer, execution, rectArea, index, light.shadowIdx);
     }
 
     for (uint32_t index = ranges.rectAreaEnd; index < ranges.spotEnd; ++index)
@@ -628,14 +721,14 @@ void ShadowPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
             continue;
 
         DCHECK(light.shadowIdx < shadowData.spotShadows.size());
-        recordShadow(graph, commandBuffer, execution, spot, index, light.shadowIdx);
+        recordShadow(cache, commandBuffer, execution, spot, index, light.shadowIdx);
     }
 }
 
 void ShadowPass::recordShadow(
-    RenderGraph&             graph,
+    VulkanResources&           cache,
     vk::raii::CommandBuffer& commandBuffer,
-    const PassFrame&         execution,
+    const Falcor::RenderContext&         execution,
     const ShadowTarget&      target,
     uint32_t                 lightIndex,
     uint32_t                 baseArrayLayer,
@@ -644,7 +737,7 @@ void ShadowPass::recordShadow(
 {
     // TODO 提前算
     const auto imageView =
-        graph.getImage(target.image)
+        cache.getImage(target.image)
             .getOrCreateImageView({
                 .viewType         = target.viewLayerCount > 1 ? vk::ImageViewType::e2DArray : vk::ImageViewType::e2D,
                 .format           = vk::Format::eD32Sfloat,
@@ -672,7 +765,7 @@ void ShadowPass::recordShadow(
 
     // Multiview resets graphics state at the beginning of each rendering instance.
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, target.pipeline);
-    const std::array lightSets = {execution.data.lightSetHandle()};
+    const std::array lightSets = {execution.frameData->lightSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         pipelineLayout,
@@ -682,7 +775,7 @@ void ShadowPass::recordShadow(
     );
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics, pipelineLayout, RenderInterface::kShadowSet,
-        execution.data.shadowSetHandle(), {}
+        execution.frameData->shadowSetHandle(), {}
     );
     commandBuffer.setViewport(
         0,
@@ -690,14 +783,14 @@ void ShadowPass::recordShadow(
     );
     commandBuffer.setScissor(0, vk::Rect2D({0, 0}, {target.mapSize, target.mapSize}));
 
-    const auto& light      = execution.renderData.lights[lightIndex];
+    const auto& light      = execution.scene->lights[lightIndex];
     const auto  visibility = RenderVisibility::shadowMask(light.type(), light.shadowIdx, cascadeIndex);
-    for (size_t index = 0; index < execution.renderData.drawItems.size(); ++index)
+    for (size_t index = 0; index < execution.scene->drawItems.size(); ++index)
     {
         if (!(visibilityMasks[index] & visibility))
             continue;
 
-        const auto&               item = execution.renderData.drawItems[index];
+        const auto&               item = execution.scene->drawItems[index];
         const ShadowPushConstants push{.model = item.model, .lightIdx = lightIndex, .cascadeIndex = cascadeIndex};
         commandBuffer.pushConstants<ShadowPushConstants>(
             pipelineLayout,
@@ -705,7 +798,7 @@ void ShadowPass::recordShadow(
             0,
             push
         );
-        auto&       mesh    = renderContext().resources->mesh(item.mesh);
+        auto&       mesh    = execution.resources->mesh(item.mesh);
         const auto& submesh = mesh.submeshes()[item.submeshIndex];
         mesh.bind(commandBuffer);
         commandBuffer.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);

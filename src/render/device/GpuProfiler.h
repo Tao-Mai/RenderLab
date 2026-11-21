@@ -2,7 +2,6 @@
 
 #include "core/profiling/Profiler.h"
 
-#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -16,32 +15,30 @@ public:
     void     init(const VulkanContext& vulkan);
     void     reset();
     void     discard();
-    void     beginFrame(vk::raii::CommandBuffer& commands, std::span<const std::string_view> names, Profiler* profiler);
-    void     beginPass(vk::raii::CommandBuffer& commands, uint32_t index);
-    void     endPass(vk::raii::CommandBuffer& commands, uint32_t index) const;
+    void     beginFrame(vk::raii::CommandBuffer& commands, Profiler* profiler);
     void     endFrame(vk::raii::CommandBuffer& commands);
     void     collect(Profiler* profiler);
-    uint32_t beginScope(vk::raii::CommandBuffer& commands, std::string_view name);
-    void     endScope(vk::raii::CommandBuffer& commands, uint32_t scope) const;
+    uint32_t beginScope(vk::raii::CommandBuffer& commands, std::string_view name, bool renderPass = false);
+    void     endScope(vk::raii::CommandBuffer& commands, uint32_t scope);
 
 private:
-    static constexpr uint32_t kMaxScopes = 64;
+    static constexpr uint32_t kQueriesPerPool = 128;
     struct Scope
     {
         std::string name;
-        uint32_t    begin;
-        uint32_t    end;
+        bool        renderPass;
     };
-    const vk::raii::Device*  device            = nullptr;
-    vk::raii::QueryPool      timestampPool     = nullptr;
-    uint32_t                 timestampCapacity = 0;
-    uint32_t                 validBits         = 0;
-    double                   timestampPeriod   = 0.0;
-    bool                     pending           = false;
-    std::vector<std::string> passNames;
-    Profiler*                recordingProfiler = nullptr;
-    uint64_t                 frameNumber       = 0;
-    std::vector<Scope>       scopes;
+    void writeTimestamp(vk::raii::CommandBuffer& commands, uint32_t query, vk::PipelineStageFlagBits2 stage);
+
+    const vk::raii::Device*          device = nullptr;
+    std::vector<vk::raii::QueryPool> timestampPools;
+    uint32_t                         usedPools         = 0;
+    uint32_t                         validBits         = 0;
+    double                           timestampPeriod   = 0.0;
+    bool                             pending           = false;
+    Profiler*                        recordingProfiler = nullptr;
+    uint64_t                         frameNumber       = 0;
+    std::vector<Scope>               scopes;
 };
 
 class GpuProfileScope

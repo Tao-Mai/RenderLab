@@ -18,8 +18,8 @@ public:
     [[nodiscard]] uint64_t revision() const { return resourceRevision; }
 
 private:
-    Buffer storage;
-    Buffer scratch;
+    Falcor::Buffer storage;
+    Falcor::Buffer scratch;
     vk::raii::AccelerationStructureKHR structure = nullptr;
     VkAccelerationStructureTypeKHR type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
     vk::DeviceAddress deviceAddress = 0;

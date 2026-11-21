@@ -8,9 +8,10 @@
 #include "editor/EditorCameraConfig.h"
 #include "editor/ExposureUi.h"
 #include "editor/Gui.h"
+#include "render/Renderer.h"
 #include "scene/AActor.h"
 
-bool drawCameraInspector(EditorCameraConfig& camera, const ExposureConfig& globalExposure)
+bool drawCameraInspector(EditorCameraConfig& camera, const Renderer& renderer)
 {
     bool edited = false;
     if (ImGui::CollapsingHeader("Editor camera"))
@@ -80,7 +81,7 @@ bool drawCameraInspector(EditorCameraConfig& camera, const ExposureConfig& globa
         {
             if (overrideExposure)
             {
-                camera.exposure = globalExposure;
+                camera.exposure = renderer.defaultExposure();
             }
             else
             {
@@ -91,7 +92,7 @@ bool drawCameraInspector(EditorCameraConfig& camera, const ExposureConfig& globa
 
         if (camera.exposure)
         {
-            Gui::Widgets widgets;
+            Falcor::Gui::Widgets widgets;
             edited |= drawExposureSettings(widgets, *camera.exposure);
         }
         ImGui::PopID();
@@ -125,7 +126,7 @@ bool drawCameraInspector(EditorCameraConfig& camera, const ExposureConfig& globa
 
 bool drawEnvironmentInspector(SceneAsset& scene, const AssetManager& assets)
 {
-    Gui::Widgets widgets;
+    Falcor::Gui::Widgets widgets;
     auto& current = scene.environmentMap;
     bool edited = false;
     if (widgets.resetHeader("Environment") && current)

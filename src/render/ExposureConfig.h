@@ -51,11 +51,4 @@ struct RL_RECORD ExposureConfig
     }
 };
 
-class ExposureProvider
-{
-public:
-    virtual ~ExposureProvider() = default;
-    [[nodiscard]] virtual const ExposureConfig& exposureDefaults() const = 0;
-};
-
 #include RL_METADATA_HEADER("metadata/src/render/ExposureConfig.generated.h")

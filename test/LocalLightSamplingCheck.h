@@ -2,7 +2,10 @@
 
 #include "core/Logger.h"
 #include "scene/SceneManager.h"
-#include "scene/SceneTypes.h"
+#include "scene/AActor.h"
+#include "scene/component/LightTypes.h"
+#include "scene/component/PointLightComponent.h"
+#include "scene/component/SpotLightComponent.h"
 
 #include <cmath>
 

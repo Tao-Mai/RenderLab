@@ -4,7 +4,7 @@
 
 namespace
 {
-bool drawSettings(Gui::Widgets& widgets, BloomSettings& bloom, const Bloom&, const PassEditorContext&)
+bool drawSettings(Falcor::Gui::Widgets& widgets, BloomSettings& bloom, const Bloom&, const PassEditorContext&)
 {
     bool edited = widgets.slider("Bloom intensity", bloom.intensity, 0.0f, 1.0f, "%.3f");
     widgets.tooltip("Fraction of scene light redistributed by bloom, not additive brightness.");
@@ -16,7 +16,12 @@ bool drawSettings(Gui::Widgets& widgets, BloomSettings& bloom, const Bloom&, con
 }
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+void Bloom::renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget)
 {
-    registry.registerClass<Bloom>("Bloom", makePassEditor<Bloom, drawSettings>("Bloom"));
+    drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "Bloom");
+}
+
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+{
+    registry.registerClass<Falcor::RenderPass, Bloom>();
 }

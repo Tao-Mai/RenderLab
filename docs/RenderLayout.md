@@ -71,30 +71,30 @@ Binding 0 为全局 `MaterialData` SSBO，Binding 1 为 1024 项纹理数组，B
 
 实时光追使用 Push Constant 传入 viewport、LightRanges、最大反弹次数、样本序号和 IBL 开关。ReSTIR 的初始光源候选数量来自 `RayTracingPass` 的 `restir.candidateCount` 参数，通过帧参数缓冲传入。
 
-实时插件在建图时通过 `ShaderManager` 选择变体并读取同次编译产出的 `.reflection.json`。Pass 按变量名绑定所需图像和缓冲，`ShaderLayout` 提供绑定编号与图像格式，并检查共享描述符集的兼容性。C++ 和 Slang 共用参数结构，建图时校验常量块和各字段的大小与偏移。执行阶段直接使用已解析的绑定。 [ShaderLayout.h](../src/render/resources/ShaderLayout.h)
+实时插件在建图时通过 `ShaderManager` 加载 Shader 并读取同次编译产出的 `.reflection.json`。Pass 按变量名绑定所需图像和缓冲，`ShaderLayout` 提供绑定编号与图像格式，并检查共享描述符集的兼容性。C++ 和 Slang 共用参数结构，建图时校验常量块和各字段的大小与偏移。执行阶段直接使用已解析的绑定。 [ShaderLayout.h](../src/render/resources/ShaderLayout.h)
 
-两个实时插件共用 Set 3 的基础绑定，ReSTIR 增加 reservoir 与帧参数绑定。两个离线插件共用离线基础绑定，BDPT 增加 splat 与光源分布绑定。 [实时场景资源](../shaders/raytracing/path_tracing.slang) · [实时输出](../shaders/raytracing/path_output.slang) · [ReSTIR 绑定](../passes/raytracing/realtime/restir_data.slang) · [公共离线绑定](../src/render/raytracing/offline/OfflineRayTracingBindings.h) · [BDPT 绑定](../passes/raytracing/bdpt/BdptBindings.h)
+两个实时插件共用 Set 3 的场景绑定，ReSTIR 额外绑定降噪输出、reservoir 与帧参数。两个离线插件共用离线基础绑定，BDPT 增加 splat 与光源分布绑定。 [实时场景资源](../shaders/raytracing/path_tracing.slang) · [ReSTIR 输出](../passes/raytracing/realtime/restir_path_tracer.slang) · [ReSTIR 绑定](../passes/raytracing/realtime/restir_data.slang) · [公共离线绑定](../src/render/raytracing/offline/OfflineRayTracingBindings.h) · [BDPT 绑定](../passes/raytracing/bdpt/BdptBindings.h)
 
 | 路线 | Binding 排列 |
 | --- | --- |
-| 实时公共 | 0：TLAS；1：命中数据；2：发光三角形；3：合并颜色或直接光；4：深度；5：法线；6：间接光；7：emission；8：albedo |
-| ReSTIR | 9 / 10：当前 / 上一帧表面；11：初始 / 时域 reservoir；12：双层 reservoir 历史；13：ReSTIR 帧参数 |
+| 实时公共 | 0 为 TLAS，1 为命中数据，2 为发光三角形，3 为颜色。ReSTIR 开启 SVGF 时分别写入直接光层和间接光层 |
+| ReSTIR | 4 为深度，5 为法线，7 / 8 分别为 emission 和 albedo，9 / 10 为当前 / 上一帧表面，11 为初始 / 时域 reservoir，12 为双层 reservoir 历史，13 为帧参数 |
 | 离线公共 | 0：TLAS；1：命中数据；2：材质预览；3：纹理指令；4：发光网格共享参数；5–11：point / spot / distant / 三角形 / infinite / projection / goniometric；12：portal 顶点；13：累积缓冲；14：颜色输出 |
 | BDPT | 15：splat；16：光源 alias table |
 
-实时光追的 Binding 6–8 用于 SVGF，SVGF 开关重建图并选择匹配的 Shader。Binding 2 的 SSBO 保存 16 B 数量头及每个实例展开后的 80 B 三角形记录，发光系数和纹理通过材质索引共享 MaterialSet。
+ReSTIR 的 Binding 7 / 8 用于 SVGF，SVGF 开关重建图并选择匹配的 Shader。Binding 2 的 SSBO 保存 16 B 数量头及每个实例展开后的 80 B 三角形记录，发光系数和纹理通过材质索引共享 MaterialSet。
 
-SVGF 的两种模式分别缓存 Pipeline、私有 Layout 与 SBT；关闭模式的 Layout 省略 Binding 6–8。图重建时重新分配当前模式的私有描述符集，并绑定新图像和缓冲。
+ReSTIR 为 SVGF 开启和关闭两种模式分别缓存 Pipeline、私有 Layout 与 SBT。关闭时省略 Binding 7 / 8。图重建时重新分配当前模式的私有描述符集，并绑定新图像和缓冲。
 
 Binding 9 / 10 分别绑定两份 64 B / 像素的表面缓冲，按历史层交换。Binding 11 使用 32 B / 像素，初始阶段写入、时域阶段更新、空间阶段只读；Binding 12 包含两层 32 B / 像素 reservoir。Binding 13 的 144 B UBO 保存上一帧矩阵、视口、深度行、图像尺寸、历史状态与复用参数。三个阶段共用 Pipeline Layout 和 SBT，阶段间显式同步存储读写。完整流程见 [ReSTIR](ReSTIR.md)。
 
-实时 Pass 的场景准备阶段使用独立的 Compute 布局。Set 0 的 Binding 0 / 1 / 2 分别为命中记录、发光实例任务和输出三角形缓冲。8 B Push Constant 保存三角形数量和任务数量。Graph 同步 Compute 写入与后续光追读取。
+实时 Pass 的场景准备阶段使用独立的 Compute 布局。Set 0 的 Binding 0 / 1 / 2 分别为命中记录、发光实例任务和输出三角形缓冲。8 B Push Constant 保存三角形数量和任务数量。实时 Pass 通过 VulkanResources 同步 Compute 写入与后续光追读取。
 
-`SVGFReprojection` 私有 Set 1 的 Binding 0–4 为当前帧 direct / indirect / depth / normal / albedo；5–10 为两路颜色、共享深度 / 法线、两路亮度矩 / 样本数的双层历史；11 / 12 为两路 RGBA32F 颜色 / 方差输出。亮度矩输出引用历史数组（RG 为一阶 / 二阶矩，B 为样本数）。颜色及亮度统计均已除以 albedo，颜色历史在本阶段只读，由第一级滤波回写。
+`SVGFReprojection` 私有 Set 1 的 Binding 0–3 读取当前帧的双层颜色、深度、法线和 albedo。Binding 4–7 依次绑定深度和法线历史、颜色历史、RG32F 亮度矩历史和两路共享的样本数历史。Binding 8 / 9 写两路 RGBA32F 颜色与方差。颜色及亮度统计均已除以 albedo，颜色历史由第一级滤波回写。
 
-`SVGFFilter` 注册五个 Compute Pass，每级拥有独立实例和 descriptor。私有 Set 0 的 Binding 0–3 读取两路解调后的颜色 / 方差、深度与法线。前四级的 Binding 4 / 5 写两路滤波结果，第一级额外通过 Binding 6 / 7 写颜色历史；最后一级的 Binding 4 写合并颜色，Binding 5 / 6 读取当前帧 emission / albedo，乘回 albedo 后添加 emission。Push Constants 为 24 B：viewport、步长和本帧历史层。全部仅在 SVGF 开启时加入图。
+`SVGFFilter` 在 `SVGFPass` 内执行五级计算，每级使用自己的描述符。私有 Set 0 的 Binding 0–3 读取两路解调后的颜色与方差、深度和法线。前四级的 Binding 4 / 5 写两路滤波结果，第一级额外通过 Binding 6 写颜色历史。最后一级的 Binding 4 写合并颜色，Binding 5 / 6 读取当前帧 emission 和 albedo。24 B Push Constants 保存 viewport、步长和本帧历史层。
 
-前四级在重投影输出与另一组 RGBA32F 贴图间交替读写，通过 Graph Handle 版本表达覆盖依赖，各级描述符绑定对应的固定图像并跨帧复用。
+前四级在重投影输出与另一组 RGBA32F 贴图间交替读写，SVGF 按顺序同步各级读写，各级描述符绑定对应的固定图像并跨帧复用。
 
 ## 编辑器共享 Layout
 

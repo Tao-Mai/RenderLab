@@ -2,9 +2,9 @@
 class AActor;
 class AssetManager;
 struct EditorCameraConfig;
-struct ExposureConfig;
+class Renderer;
 struct SceneAsset;
 
-bool drawCameraInspector(EditorCameraConfig& camera, const ExposureConfig& globalExposure);
+bool drawCameraInspector(EditorCameraConfig& camera, const Renderer& renderer);
 bool drawEnvironmentInspector(SceneAsset& scene, const AssetManager& assets);
 bool drawObjectInspector(AActor* object);

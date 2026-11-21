@@ -1,3 +1,4 @@
+#include "render/device/ResourceBarriers.h"
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cmath>
@@ -8,6 +9,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include "LightingSetup.h"
 #include "LocalLightSamplingCheck.h"
+#include "PathTracingStats.h"
+#include "RendererOptions.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
@@ -20,12 +23,10 @@
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
 #include "render/device/VkCheck.h"
-#include "render/graph/EndPass.h"
 #include "passes/raytracing/bdpt/BdptSettings.h"
 #include "render/raytracing/SceneAccelerationStructures.h"
 #include "render/resources/MaterialTable.h"
 #include "scene/SceneManager.h"
-#include "scene/SceneTypes.h"
 #include "scene/system/RenderSystem.h"
 
 namespace
@@ -54,44 +55,57 @@ double conductorBrdf(glm::dvec3 wo, glm::dvec3 wi, glm::dvec2 alpha, double eta,
         ((1.0 + lambda(wo) + lambda(wi)) * 4.0 * wo.z * wi.z);
 }
 
-struct PixelReadbackPass
+struct PixelReadbackPass : Falcor::RenderPass
 {
-    RenderGraph::ImageHandle  image;
-    RenderGraph::BufferHandle buffer;
+    FALCOR_PLUGIN_CLASS(PixelReadbackPass, "PixelReadbackPass", "Reads a rendered pixel for validation.");
+
+    explicit PixelReadbackPass(Falcor::ref<Falcor::Device> device) : Falcor::RenderPass(std::move(device)) {}
+
+    ResourceBarriers barriers;
+    VulkanResources::ImageHandle  image;
+    VulkanResources::BufferHandle buffer;
     uint32_t                  regionSize = 1;
 
-    RenderGraph::BufferHandle compile(RenderGraph& graph, const PassSetup& setup, RenderGraph::ImageHandle source)
+    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData&) override
     {
-        image  = source;
-        buffer = graph.write(graph.createBuffer({
-            .size             = sizeof(uint16_t) * 4 * regionSize * regionSize,
-            .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        }));
-        graph.use(
-            image,
-            {.stages = vk::PipelineStageFlagBits2::eTransfer,
-             .access = vk::AccessFlagBits2::eTransferRead,
-             .layout = vk::ImageLayout::eTransferSrcOptimal}
-        );
-        graph.use(
-            buffer,
-            {.stages = vk::PipelineStageFlagBits2::eTransfer, .access = vk::AccessFlagBits2::eTransferWrite}
-        );
-        return buffer;
+        Falcor::RenderPassReflection reflection;
+        reflection.addInput("source", "Source color").format(Falcor::ResourceFormat::RGBA16Float);
+        reflection.addInputOutput("pixels", "Host-visible pixel buffer").rawBuffer(sizeof(uint16_t) * 4 * regionSize * regionSize);
+        return reflection;
     }
 
-    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const
+    void compile(Falcor::RenderContext*, const CompileData&) override
     {
-        const auto                extent = graph.imageInfo(image).extent;
+        barriers.clear();
+    }
+
+    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override
+    {
+        auto& cache         = *renderCommands->vulkanResources;
+        auto& commandBuffer = *renderCommands->commands;
+
+        if (barriers.empty())
+        {
+            image  = cache.registerImage(renderData.getTexture("source"));
+            buffer = cache.registerBuffer(renderData["pixels"]->asBuffer());
+
+            barriers.add(image, vulkan_access::kTransferSource);
+            barriers.add(buffer, vulkan_access::kTransferWrite);
+            barriers.declare(cache);
+        }
+
+        barriers.transition(cache, commandBuffer);
+
+        const auto                extent = cache.imageInfo(image).extent;
         const vk::BufferImageCopy region{
             .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
             .imageOffset = {int32_t(extent.width / 2 - regionSize / 2), int32_t(extent.height / 2 - regionSize / 2), 0},
             .imageExtent = {regionSize, regionSize, 1},
         };
         commandBuffer.copyImageToBuffer(
-            graph.getImage(image).handle(),
+            cache.getImage(image).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
-            graph.getBuffer(buffer).handle(),
+            cache.getBuffer(buffer).handle(),
             region
         );
     }
@@ -103,55 +117,82 @@ void checkAccumulatedPixels(
 {
     BdptSettings bdpt{.maxBounces = 1, .lightTracing = false};
     auto&        vulkan = renderer.vulkanContext();
+    const auto device = renderer.getActiveGraph()->getDevice();
+    const auto& deviceContext = *device->getRenderContext();
     FrameContext frame;
     FrameData    data;
     frame.init(vulkan);
-    data.init(vulkan, *renderContext().device);
-    RenderGraph            graph;
-    RenderGraphCompiler compiler;
+    data.init(vulkan, *device);
+    auto graph = Falcor::RenderGraph::create(device);
     SceneAccelerationStructures accelerationStructures;
-    PixelReadbackPass      readback;
-    EndPass                end;
+    const auto                  readback = Falcor::make_ref<PixelReadbackPass>(graph->getDevice());
     RenderSystem           system;
-    graph.init(vulkan);
     const auto extent =
         bidirectional ? vk::Extent2D{64, 64} : renderer.swapchainHandle().extent();
-    readback.regionSize = bidirectional ? 16 : 1;
-    const PassSetup setup{vulkan, extent, {&data, 1}, context().config->rendererConfig()};
-    writeTestEnvironment(setup, scenes.scene().environmentMap);
-    RenderGraph::BufferHandle lightBuffer;
-    RenderGraph::BufferHandle buffer;
-    RenderPass* pass = nullptr;
-    const auto compileFixture = [&](std::string_view type, const nlohmann::json& properties)
+    Falcor::Fbo framebuffer;
+    framebuffer.attachColorTarget(
+        bidirectional
+            ? Falcor::make_ref<Falcor::Texture>(vulkan, vk::ImageCreateInfo{
+                  .imageType = vk::ImageType::e2D,
+                  .format = kHdrColorFormat,
+                  .extent = {extent.width, extent.height, 1},
+                  .mipLevels = 1,
+                  .arrayLayers = 1,
+                  .samples = vk::SampleCountFlagBits::e1,
+                  .usage = vk::ImageUsageFlagBits::eColorAttachment,
+              }, Falcor::ResourceBindFlags::RenderTarget)
+            : renderer.swapchainHandle().getFbo(0).getColorTexture(0),
+        0
+    );
+    readback->regionSize = bidirectional ? 16 : 1;
+    const std::span frameData{&data, 1};
+    writeTestEnvironment(*deviceContext.resources, frameData, scenes.scene().environmentMap);
+    VulkanResources::BufferHandle lightBuffer;
+    VulkanResources::BufferHandle readbackSlot;
+    Falcor::ref<Falcor::Buffer>                 buffer;
+    Falcor::RenderPass* pass = nullptr;
+    std::unique_ptr<VulkanResources> resources;
+    const auto                  compileFixture = [&](std::string_view type, const nlohmann::json& properties)
     {
-        graph.releaseResources();
-        compiler.clear();
-        renderContext().materialTable->setup(graph);
-        lightBuffer = graph.createBuffer({
-            .size  = kMaxLights * sizeof(LightData),
-            .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
-        });
-        const nlohmann::json description{
-            {"nodes", nlohmann::json::array({
-                {{"name", "offline"}, {"type", type}, {"properties", properties}, {"ui", false}},
-            })},
-            {"edges", nlohmann::json::array()},
-            {"outputs", {{"rayImage", "offline.rayImage"}}},
-        };
-        const auto outputs = compiler.compile(graph, setup, description, {}, renderer.plugins(), {});
-        const auto image = std::get<RenderGraph::ImageHandle>(outputs.at("rayImage"));
-        pass = compiler.findPass("offline")->pass.get();
-        buffer = graph.addStage("Read pixels", readback, setup, image);
-        graph.addStage("Read results", end, setup, RenderGraph::ImageHandle{}, buffer);
-        graph.compile(setup);
-        bindTestLightBuffer(graph, setup, lightBuffer);
+        graph = Falcor::RenderGraph::create(device);
+        auto tracer = Falcor::RenderPass::create(type, device, Falcor::Properties::json(properties));
+        graph->addPass(std::move(tracer), "offline");
+        graph->addPass(readback, "readback");
+        graph->addEdge("offline.color", "readback.source");
+        graph->setInput(
+            "readback.pixels",
+            device->createBuffer(
+                sizeof(uint16_t) * 4 * readback->regionSize * readback->regionSize,
+                Falcor::ResourceBindFlags::None, Falcor::MemoryType::ReadBack
+            )
+        );
+        graph->markOutput("readback.pixels");
+        const auto lights = createTestLightBuffer(*device);
+        graph->onResize(&framebuffer);
+        resources = std::make_unique<VulkanResources>(vulkan);
+        auto& cache = *resources;
+        auto compileContext = deviceContext;
+        compileContext.vulkanResources = &cache;
+        compileContext.frames = frameData;
+        CHECK(graph->compile(&compileContext));
+        lightBuffer        = cache.registerBuffer(lights);
+        buffer             = graph->getOutput("readback.pixels")->asBuffer();
+        readbackSlot       = cache.registerBuffer(buffer);
+        deviceContext.materialTable->setup(cache, vulkan);
+        bindTestLightBuffer(cache, frameData, lightBuffer);
+        pass = graph->getPass("offline").get();
     };
     if (bidirectional)
         compileFixture("BDPT", Serialize(bdpt));
     else
         compileFixture("PathTracer", {{"maxBounces", 2}});
 
-    const auto sampleCount = [&] { return pass->statistics().at("sampleCount").get<uint32_t>(); };
+    const auto progressKey = path_tracing_test::statsKey("offline");
+    const auto progress = [&]
+    {
+        return graph->getPassesDictionary().getValue<path_tracing_test::OfflineProgress>(progressKey);
+    };
+    const auto sampleCount = [&] { return progress().sampleCount; };
     std::vector<OfflineLightData>          extraLights;
     const OfflineSceneData*                preparedScene = nullptr;
     std::optional<SceneRenderData>         fixtureScene;
@@ -165,7 +206,6 @@ void checkAccumulatedPixels(
     std::optional<uint32_t>                glassDraw;
     const auto                             sample = [&](bool backgroundOnly = false)
     {
-        uint32_t   targetSamples = 0;
         const auto started       = std::chrono::steady_clock::now();
         for (;;)
         {
@@ -178,7 +218,8 @@ void checkAccumulatedPixels(
                 snapshot.offlineLights.clear();
             }
             snapshot.offlineLights.insert(snapshot.offlineLights.end(), extraLights.begin(), extraLights.end());
-            graph.beginFrame(0);
+            auto& cache = *resources;
+            cache.beginFrame(0);
             auto draws = renderer.prepare(view, snapshot, 0);
             if (fixtureScene)
             {
@@ -285,23 +326,31 @@ void checkAccumulatedPixels(
             CHECK(preparedScene->areaEmissions.size() == expectedAreaEmissions);
             CHECK(preparedScene->lightTriangles.size() == expectedTriangles);
 
-            uploadTestLights(graph, lightBuffer, draws.lights);
+            uploadTestLights(cache, lightBuffer, draws.lights);
             data.uploadSceneUniforms(view.uniforms);
-            PassFrame execution{setup, data, view, draws, {}, 0, 1.0f / 60.0f};
-            graph.prepare(execution);
-            if (targetSamples == 0)
-                targetSamples = sampleCount() + 1;
+            const EditorFrameInput editor;
 
             auto& recording = frame.commandBufferHandle();
             vkCheck(recording.reset());
             vkCheck(recording.begin({}));
             auto& gpuProfiler = frame.gpuProfiler();
             auto* profiler = context().profiler;
-            graph.beginGpuProfiling(recording, gpuProfiler, profiler);
-            execution.sceneTlas = &accelerationStructures.recordBuilds(
-                vulkan, recording, *renderContext().resources, draws, 0
+            auto renderCommands = deviceContext;
+            renderCommands.commands = &recording;
+            renderCommands.vulkanResources = &cache;
+            renderCommands.frameData = &data;
+            renderCommands.view = &view;
+            renderCommands.scene = &draws;
+            renderCommands.editor = &editor;
+            renderCommands.gpuProfiler = &gpuProfiler;
+            renderCommands.profiler = profiler;
+            renderCommands.deltaSeconds = 1.0f / 60.0f;
+            renderCommands.sceneTlas = &accelerationStructures.recordBuilds(
+                vulkan, recording, *renderCommands.resources, draws, 0
             );
-            graph.execute(recording, execution, gpuProfiler, profiler);
+            cache.recordUploads(recording);
+            graph->execute(&renderCommands);
+            cache.transition(recording, readbackSlot, vulkan_access::kHostRead);
             gpuProfiler.endFrame(recording);
             vkCheck(recording.end());
 
@@ -310,9 +359,9 @@ void checkAccumulatedPixels(
             vkCheck(vulkan.queueHandle().submit(submitInfo));
             vkCheck(vulkan.queueHandle().waitIdle());
 
-            std::vector<uint16_t> pixels(readback.regionSize * readback.regionSize * 4);
-            graph.getBuffer(buffer).download(pixels.data(), pixels.size() * sizeof(uint16_t));
-            const auto center = (readback.regionSize / 2 * readback.regionSize + readback.regionSize / 2) * 4;
+            std::vector<uint16_t> pixels(readback->regionSize * readback->regionSize * 4);
+            buffer->getBlob(pixels.data(), 0, pixels.size() * sizeof(uint16_t));
+            const auto center = (readback->regionSize / 2 * readback->regionSize + readback->regionSize / 2) * 4;
             lastPixel         = {
                 glm::unpackHalf1x16(pixels[center]),
                 glm::unpackHalf1x16(pixels[center + 1]),
@@ -322,9 +371,11 @@ void checkAccumulatedPixels(
             regionMean = 0;
             for (size_t index = 0; index < pixels.size(); index += 4)
                 regionMean += glm::unpackHalf1x16(pixels[index]);
-            regionMean /= readback.regionSize * readback.regionSize;
+            regionMean /= readback->regionSize * readback->regionSize;
 
-            if (sampleCount() >= targetSamples)
+            const auto statistics = progress();
+            if (statistics.sampleCount != 0 && !statistics.preparingPipeline &&
+                statistics.sampleProgress == float(statistics.sampleCount))
                 return lastPixel.x;
 
             CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds{90});
@@ -400,7 +451,7 @@ void checkAccumulatedPixels(
                       .viewport = {0, 0, float(extent.width), float(extent.height)}
     };
     if (!bidirectional)
-        pass->setProperties({{"maxBounces", 1}});
+        pass->setProperties(Falcor::Properties::json{{"maxBounces", 1}});
     constexpr float  kPi = 3.14159265358979323846f;
     OfflineLightData point{
         .emission = {.spectrum = PbrtConstantSpectrum{4.0 * kPi}},
@@ -442,7 +493,7 @@ void checkAccumulatedPixels(
         const float pointNee = average(16);
         CHECK(std::abs(pointNee - expectedPoint) < 0.01f);
         bdpt.lightTracing = true;
-        pass->setProperties(Serialize(bdpt));
+        pass->setProperties(Falcor::Properties::json(Serialize(bdpt)));
         const float pointSplats = average(256);
         CHECK(
             std::abs(pointSplats - expectedPoint) < 0.04f,
@@ -452,19 +503,19 @@ void checkAccumulatedPixels(
         );
         bdpt.lightSelection = BdptLightSelection::Uniform;
         bdpt.misHeuristic   = BdptMisHeuristic::Power;
-        pass->setProperties(Serialize(bdpt));
+        pass->setProperties(Falcor::Properties::json(Serialize(bdpt)));
         const float pointPower = average(128);
         CHECK(std::abs(pointPower - expectedPoint) < 0.05f);
 
         bdpt.lightTracing = false;
-        pass->setProperties(Serialize(bdpt));
+        pass->setProperties(Falcor::Properties::json(Serialize(bdpt)));
         auto spot = point;
         spot.model =
             OfflineLightData::Spot{.position = {0, 2, 0}, .direction = {0, -1, 0}, .cosInner = 0.98f, .cosOuter = 0.8f};
         fixtureScene->offlineLights       = {spot};
         const float spotNee               = average(64);
         bdpt.lightTracing = true;
-        pass->setProperties(Serialize(bdpt));
+        pass->setProperties(Falcor::Properties::json(Serialize(bdpt)));
         const float spotSplats = average(256);
         CHECK(std::abs(spotNee - spotSplats) < 0.04f);
         OfflineLightData distant{
@@ -476,10 +527,10 @@ void checkAccumulatedPixels(
         fixtureScene->offlineLights         = {point, spot, distant, strongerPoint};
         bdpt.lightTracing   = false;
         bdpt.lightSelection = BdptLightSelection::Power;
-        pass->setProperties(Serialize(bdpt));
+        pass->setProperties(Falcor::Properties::json(Serialize(bdpt)));
         const float mixedPower              = average(256);
         bdpt.lightSelection = BdptLightSelection::Uniform;
-        pass->setProperties(Serialize(bdpt));
+        pass->setProperties(Falcor::Properties::json(Serialize(bdpt)));
         const float mixedUniform  = average(256);
         const float expectedMixed = 3.0f * expectedPoint + spotNee + 0.5f;
         CHECK(
@@ -491,7 +542,7 @@ void checkAccumulatedPixels(
         );
         LOG_INFO("BDPT mixed lights: power {}, uniform {}, reference {}", mixedPower, mixedUniform, expectedMixed);
         bdpt.lightTracing = true;
-        pass->setProperties(Serialize(bdpt));
+        pass->setProperties(Falcor::Properties::json(Serialize(bdpt)));
         fixtureScene->offlineLights = {distant};
         const float distantValue    = average(256);
         CHECK(std::abs(distantValue - 0.5f) < 0.05f, "BDPT distant energy: {}", distantValue);
@@ -513,10 +564,10 @@ void checkAccumulatedPixels(
         bdpt.misHeuristic   = BdptMisHeuristic::Balance;
         bdpt.lightSelection = BdptLightSelection::Power;
         bdpt.lightTracing   = false;
-        pass->setProperties(Serialize(bdpt));
+        pass->setProperties(Falcor::Properties::json(Serialize(bdpt)));
         const float areaNee               = average(256);
         bdpt.lightTracing = true;
-        pass->setProperties(Serialize(bdpt));
+        pass->setProperties(Falcor::Properties::json(Serialize(bdpt)));
         const float areaSplats = average(256);
         CHECK(
             areaNee > 0.1f && std::abs(areaNee - areaSplats) < 0.03f,
@@ -557,10 +608,10 @@ void checkAccumulatedPixels(
         glassDraw                                   = 1;
         ++fixtureRevision;
         bdpt.lightTracing = false;
-        pass->setProperties(Serialize(bdpt));
+        pass->setProperties(Falcor::Properties::json(Serialize(bdpt)));
         CHECK(average(16) == 0.0f);
         bdpt.lightTracing = true;
-        pass->setProperties(Serialize(bdpt));
+        pass->setProperties(Falcor::Properties::json(Serialize(bdpt)));
         const float caustic     = average(512);
         const auto  floorBounds = context()
                                      .assetManager->get(fixtureScene->drawItems.front().mesh)
@@ -618,7 +669,7 @@ void checkAccumulatedPixels(
             caustic,
             expectedCaustic
         );
-        graph.reset();
+        graph = {};
         data.reset();
         frame.reset();
         return;
@@ -686,7 +737,7 @@ void checkAccumulatedPixels(
     };
     CHECK(sample() == 0.0f);
 
-    pass->setProperties({{"maxBounces", 2}});
+    pass->setProperties(Falcor::Properties::json{{"maxBounces", 2}});
     float indirectValue = 0;
     for (uint32_t sampleIndex = 0; sampleIndex < 32; ++sampleIndex)
         indirectValue = sample();
@@ -738,7 +789,7 @@ void checkAccumulatedPixels(
     const auto toLocal   = [&](glm::dvec3 w) { return glm::dvec3{glm::dot(tangent, w), glm::dot(bitangent, w), w.y}; };
     const auto wo        = toLocal(glm::normalize(glm::dvec3{0, 1, 3}));
     fixtureScene->drawItems.resize(1);
-    pass->setProperties({{"maxBounces", 1}});
+    pass->setProperties(Falcor::Properties::json{{"maxBounces", 1}});
     fixtureScene->offlineLights = {
         {.emission = {.spectrum = PbrtConstantSpectrum{1.0}}, .model = OfflineLightData::Environment{}}
     };
@@ -812,7 +863,7 @@ void checkAccumulatedPixels(
         metalAreaValue,
         referenceMetalArea
     );
-    graph.reset();
+    graph = {};
     data.reset();
     frame.reset();
 }
@@ -838,16 +889,15 @@ int main(int argc, char** argv)
     config.init();
 
     config.setSceneRenderMode(SceneRenderMode::Offline);
-    const auto originalGraph = config.renderGraph().id;
-    constexpr std::array kRoutes{"pt", "bdpt"};
-    std::array<GraphOverrides, kRoutes.size()> originals;
-    for (size_t index = 0; index < kRoutes.size(); ++index)
+    const auto originalGraph = config.renderGraphName();
+    const auto originalSettings = config.getSettings();
+    constexpr std::array kRoutes{"PT", "BDPT"};
+    for (auto route : kRoutes)
     {
-        config.setRenderGraph(kRoutes[index]);
-        originals[index] = {config.graphParameterOverrides(), config.passOverrides()};
-        auto parameters = originals[index].parameters;
+        config.setRenderGraph(route);
+        auto parameters = config.getOptions().at("parameters");
         parameters.update({{"hdr", true}, {"postProcess", Serialize(PostProcessMode::RenderLab)}});
-        config.setGraphParameterOverrides(std::move(parameters));
+        renderer_test::setParameters(renderer, config, parameters);
     }
 
     uint32_t ptBounces = 3;
@@ -864,31 +914,24 @@ int main(int argc, char** argv)
     CHECK(scenes.scene().renderMode == SceneRenderMode::Offline);
     EditorCamera camera{scenes.scene().editorCamera};
     RenderSystem system;
-    renderer.init();
     const auto usePt = [&]
     {
-        config.setRenderGraph("pt");
-        renderer.setPassOverrides("PathTracer", "pt", {{"maxBounces", ptBounces}});
+        config.setRenderGraph("PT");
+        renderer_test::setPassProperties(renderer, config, "PathTracer", "pt", {{"maxBounces", ptBounces}});
     };
     const auto useBdpt = [&]
     {
-        config.setRenderGraph("bdpt");
-        renderer.setPassOverrides("BDPT", "bdpt", Serialize(bdpt));
+        config.setRenderGraph("BDPT");
+        renderer_test::setPassProperties(renderer, config, "BDPT", "bdpt", Serialize(bdpt));
     };
     usePt();
-    struct OfflineProgress
-    {
-        uint32_t sampleCount;
-        float sampleProgress;
-        bool preparingPipeline;
-    };
+    renderer.init();
     const auto activeOffline = [&]()
     {
-        const auto* instance = renderer.graphPasses().findPass(config.renderGraph().id);
-        CHECK(instance);
-        OfflineProgress progress;
-        Deserialize(instance->pass->statistics(), progress);
-        return progress;
+        auto& graph = *renderer.getActiveGraph();
+        return graph.getPassesDictionary().getValue<path_tracing_test::OfflineProgress>(
+            path_tracing_test::statsKey(graph.doesPassExist("pt") ? "pt" : "bdpt")
+        );
     };
     CHECK(renderer.vulkanContext().supportsRayTracing());
     const auto extent    = renderer.swapchainHandle().extent();
@@ -930,7 +973,7 @@ int main(int argc, char** argv)
 
     auto exposure = renderer.defaultExposure();
     exposure.exposureCompensation += 1;
-    renderer.setPassOverrides("ExposurePass", "exposure", Serialize(exposure));
+    renderer_test::setPassProperties(renderer, config, "ExposurePass", "exposure", Serialize(exposure));
     draw();
     CHECK(activeOffline().sampleCount == 3);
     draw();
@@ -1015,12 +1058,7 @@ int main(int argc, char** argv)
     assets.shutdown();
     data.shutdown();
     window.shutdown();
-    for (size_t index = 0; index < kRoutes.size(); ++index)
-    {
-        config.setRenderGraph(kRoutes[index]);
-        config.setGraphParameterOverrides(originals[index].parameters);
-        config.passOverrides() = originals[index].passes;
-    }
+    config.getSettings() = originalSettings;
     config.setRenderGraph(originalGraph);
     config.shutdown();
     context() = {};

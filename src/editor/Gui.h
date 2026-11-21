@@ -1,5 +1,8 @@
 #pragma once
 
+#include "core/Macros.h"
+#include "core/math/Vector.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <glm/vec3.hpp>
@@ -9,9 +12,25 @@
 #include <string_view>
 #include <type_traits>
 
-namespace Gui
+namespace Falcor
 {
-class Widgets
+class FALCOR_API IDScope
+{
+public:
+    explicit IDScope(const void* id);
+    ~IDScope();
+    IDScope(const IDScope&) = delete;
+    IDScope& operator=(const IDScope&) = delete;
+};
+
+class FALCOR_API Gui
+{
+public:
+    class Widgets;
+    static float4 pickUniqueColor(const std::string& key);
+};
+
+class Gui::Widgets
 {
 public:
     class Group
@@ -71,4 +90,4 @@ public:
     void pushId(const char* id);
     void popId();
 };
-}
+}  // namespace Falcor

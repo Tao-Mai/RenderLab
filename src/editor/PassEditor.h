@@ -1,28 +1,36 @@
 #pragma once
 
+#include "core/Serializer.h"
 #include "editor/Gui.h"
-#include "render/graph/PassSettings.h"
-#include "render/plugins/PluginManager.h"
 
 #include <algorithm>
 #include <array>
+#include <functional>
+#include <optional>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
-class Renderer;
+namespace Falcor
+{
+class RenderPass;
+}
 class VulkanContext;
 struct EditorCameraConfig;
 
 struct PassEditorContext
 {
-    const VulkanContext&      vulkan;
-    const EditorCameraConfig& camera;
+    const VulkanContext&                                                  vulkan;
+    const EditorCameraConfig&                                             camera;
+    std::function<void(const Falcor::RenderPass&, std::optional<nlohmann::json>)> submit;
 };
 
 namespace pass_editor
 {
+bool begin(const Falcor::RenderPass& pass, const PassEditorContext& context, std::string_view label);
+
 template <class Field, class T>
-static bool drawField(Gui::Widgets& widgets, const Field& field, T& value)
+static bool drawField(Falcor::Gui::Widgets& widgets, const Field& field, T& value)
 {
     if constexpr (std::is_same_v<T, bool>)
         return widgets.checkbox(field.name, value);
@@ -30,8 +38,8 @@ static bool drawField(Gui::Widgets& widgets, const Field& field, T& value)
     {
         constexpr auto kOptions = []
         {
-            constexpr const auto& kEntries = metadata::Enum<T>::kValues;
-            std::array<T, kEntries.size()> values{};
+            constexpr const auto&                    kEntries = metadata::Enum<T>::kValues;
+            std::array<T, kEntries.size()>           values{};
             std::array<const char*, kEntries.size()> labels{};
             for (size_t index = 0; index < kEntries.size(); ++index)
             {
@@ -41,7 +49,7 @@ static bool drawField(Gui::Widgets& widgets, const Field& field, T& value)
             return std::pair{values, labels};
         }();
         const auto& [values, labels] = kOptions;
-        size_t selected = std::ranges::find(values, value) - values.begin();
+        size_t selected              = std::ranges::find(values, value) - values.begin();
         if (!widgets.dropdown(field.name, labels, selected))
             return false;
 
@@ -50,8 +58,10 @@ static bool drawField(Gui::Widgets& widgets, const Field& field, T& value)
     }
     else
     {
-        static_assert(std::is_same_v<T, float> || std::is_same_v<T, uint32_t> || std::is_same_v<T, int32_t>,
-                      "provide a custom editor for this settings type");
+        static_assert(
+            std::is_same_v<T, float> || std::is_same_v<T, uint32_t> || std::is_same_v<T, int32_t>,
+            "provide a custom editor for this settings type"
+        );
         static_assert(requires { field.range; }, "numeric settings require RL_SLIDER");
         const auto minimum = static_cast<T>(field.range.minimum);
         const auto maximum = static_cast<T>(field.range.maximum);
@@ -61,39 +71,34 @@ static bool drawField(Gui::Widgets& widgets, const Field& field, T& value)
             return widgets.slider(field.name, value, minimum, maximum);
     }
 }
-
 template <class T>
-static bool drawFields(Gui::Widgets& widgets, T& settings)
+static bool drawFields(Falcor::Gui::Widgets& widgets, T& settings)
 {
     bool changed = false;
-    metadata::visitFields(settings, [&](const auto& field, auto& value)
-    {
-        changed |= drawField(widgets, field, value);
-    });
+    metadata::visitFields(
+        settings,
+        [&](const auto& field, auto& value) { changed |= drawField(widgets, field, value); }
+    );
     return changed;
 }
-}
+}  // namespace pass_editor
 
-template <class Pass, auto Draw = nullptr>
-PassEditor makePassEditor(std::string label)
+template <auto Draw = nullptr, class Pass, class Settings>
+void drawPassEditor(
+    Falcor::Gui::Widgets& widgets, const Pass& pass, const Settings& parameters, const PassEditorContext* context,
+    std::string_view label
+)
 {
-    return {
-        std::move(label),
-        [](Gui::Widgets& widgets, const RenderPass& object, const PassEditorContext& context) -> std::optional<nlohmann::json>
-        {
-            const auto& pass = static_cast<const Pass&>(object);
-            auto settings = pass.settings();
-            bool changed;
-            if constexpr (Draw != nullptr)
-                changed = Draw(widgets, settings, pass, context);
-            else
-                changed = pass_editor::drawFields(widgets, settings);
+    if (!context || !pass_editor::begin(pass, *context, label))
+        return;
 
-            if (changed)
-                return Serialize(settings);
-            return std::nullopt;
-        },
-    };
+    auto settings = parameters;
+    bool changed;
+    if constexpr (Draw != nullptr)
+        changed = Draw(widgets, settings, pass, *context);
+    else
+        changed = pass_editor::drawFields(widgets, settings);
+
+    if (changed)
+        context->submit(pass, Serialize(settings));
 }
-
-void drawPassEditors(Renderer& renderer, const PassEditorContext& context);

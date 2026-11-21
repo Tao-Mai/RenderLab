@@ -1,14 +1,8 @@
-from renderlab_graph import RenderGraph
+from falcor import RenderGraph
 
 
-def add_editor_output(graph: RenderGraph, color: str, depth: str | None = None) -> None:
-    if depth is not None:
-        graph.create_pass("picking", "EditorPickingPass")
-        graph.create_pass("pickingCopy", "EditorPickingCopyPass")
-        graph.add_edge(depth, "picking.depth")
-        graph.add_edge("picking.pickingImage", "pickingCopy.pickingImage")
-        graph.mark_output("pickingCopy.readback", name="pickingReadback")
-
-    graph.create_pass("editorUi", "EditorUiPass")
-    graph.add_edge(color, "editorUi.color")
-    graph.mark_output("editorUi.color", name="color")
+def add_picking(graph: RenderGraph, depth: str, color: str) -> None:
+    graph.create_pass("picking", "EditorPickingPass")
+    graph.add_edge(depth, "picking.depth")
+    graph.add_edge(color.rsplit(".", 1)[0], "picking")
+    graph.mark_output("picking.pickingImage")

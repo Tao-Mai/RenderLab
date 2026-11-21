@@ -37,7 +37,7 @@ SVGF。关闭时显示当前帧采样，开启时使用 albedo 解调、历史�
 
 ## 核心技术
 
-- **渲染管线**：Forward / Deferred、深度预通道、透明绘制；RenderGraph 管理资源版本、依赖排序、剪枝与跨帧同步。
+- **渲染管线**：Forward / Deferred、深度预通道、透明绘制；RenderGraph 通过命名 Pass 和资源反射编译依赖，管理资源分配、裁剪与跨帧同步。
 - **阴影**：稳定 CSM、Texel Snapping、级联混合与 PCF；点光源 / 聚光灯 PCF、矩形面光源 PCSS。
 - **材质与 IBL**：Metallic-Roughness PBR、MikkTSpace 法线映射、Clearcoat、Charlie Sheen；漫反射辐照度与 GGX 预过滤环境光。
 - **光传输**：GGX VNDF 与漫反射混合采样、多光源加权选择、NEE / BRDF 多重重要性采样、俄罗斯轮盘终止。
@@ -81,8 +81,8 @@ Shader 使用 Slang 生成的依赖文件跟踪实际 include，增量构建只�
 手动验证时开启并单独构建所需工具即可。
 
 入口配置为 [config/config.json](config/config.json)，渲染与编辑器参数分别位于 [renderer.json](config/renderer.json)
-和 [editor.json](config/editor.json)。`renderGraphs` 登记 Forward、Deferred、Realtime、Offline 四个独立的
-[Python Graph](graphs/)，渲染设置按 Graph ID 保存。环境图属于场景，IBL 开关属于当前 Graph。
+和 [editor.json](config/editor.json)。`renderGraphs` 按 `RenderPath` 分组登记图名和脚本路径。
+渲染设置按 `RenderGraph::getName()` 返回的图名保存。环境图属于场景，IBL 开关属于当前图。 [Python 图脚本](graphs/)
 
 模型源文件与生成资产未完整随仓库提交，运行前需要准备资产并指定初始场景，参见 [资产说明](assets/README.md)。
 

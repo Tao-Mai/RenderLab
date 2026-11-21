@@ -1,7 +1,5 @@
 #include "render/resources/GpuMesh.h"
 
-#include "render/device/VkCheck.h"
-
 #include <array>
 #include <utility>
 #include "core/Logger.h"
@@ -29,49 +27,46 @@ GpuMesh::GpuMesh(
         );
     }
 
-    const auto&                physicalDevice = upload.physicalDevice;
-    const auto&                device         = upload.device;
-    const auto&                commandPool    = upload.commandPool;
-    auto&                      queue          = upload.queue;
+    auto&                      vulkan         = upload.vulkan;
     const vk::BufferUsageFlags rayUsage       = rayTracing ? vk::BufferUsageFlagBits::eShaderDeviceAddress |
             vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
                                                            : vk::BufferUsageFlags{};
 
     const vk::DeviceSize vertexBytes = sizeof(Vertex) * geometry.vertices.size();
-    Buffer               vertexStaging(
-        physicalDevice,
-        device,
+    Falcor::Buffer               vertexStaging(
+        vulkan,
         vertexBytes,
         vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+        Falcor::MemoryType::Upload,
+        Falcor::ResourceBindFlags::None
     );
-    vertexStaging.upload(geometry.vertices.data(), vertexBytes);
-    vertexBuffer = Buffer(
-        physicalDevice,
-        device,
+    vertexStaging.setBlob(geometry.vertices.data(), 0, vertexBytes);
+    vertexBuffer = Falcor::Buffer(
+        vulkan,
         vertexBytes,
         vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer | rayUsage,
-        vk::MemoryPropertyFlagBits::eDeviceLocal
+        Falcor::MemoryType::DeviceLocal,
+        Falcor::ResourceBindFlags::Vertex
     );
-    copyBuffer(device, commandPool, queue, vertexStaging, vertexBuffer);
+    upload.copyBuffer(vertexStaging, vertexBuffer, {.size = vertexBytes});
 
     const vk::DeviceSize indexBytes = sizeof(uint32_t) * geometry.indices.size();
-    Buffer               indexStaging(
-        physicalDevice,
-        device,
+    Falcor::Buffer               indexStaging(
+        vulkan,
         indexBytes,
         vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+        Falcor::MemoryType::Upload,
+        Falcor::ResourceBindFlags::None
     );
-    indexStaging.upload(geometry.indices.data(), indexBytes);
-    indexBuffer = Buffer(
-        physicalDevice,
-        device,
+    indexStaging.setBlob(geometry.indices.data(), 0, indexBytes);
+    indexBuffer = Falcor::Buffer(
+        vulkan,
         indexBytes,
         vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer | rayUsage,
-        vk::MemoryPropertyFlagBits::eDeviceLocal
+        Falcor::MemoryType::DeviceLocal,
+        Falcor::ResourceBindFlags::Index
     );
-    copyBuffer(device, commandPool, queue, indexStaging, indexBuffer);
+    upload.copyBuffer(indexStaging, indexBuffer, {.size = indexBytes});
 }
 
 void GpuMesh::bind(vk::raii::CommandBuffer& commandBuffer) const
@@ -80,44 +75,4 @@ void GpuMesh::bind(vk::raii::CommandBuffer& commandBuffer) const
     const std::array<vk::DeviceSize, 1> vertexOffsets{0};
     commandBuffer.bindVertexBuffers(0, vertexBuffers, vertexOffsets);
     commandBuffer.bindIndexBuffer(indexBuffer.handle(), 0, vk::IndexType::eUint32);
-}
-
-void GpuMesh::copyBuffer(
-    const vk::raii::Device&      device,
-    const vk::raii::CommandPool& commandPool,
-    vk::raii::Queue&             queue,
-    const Buffer&                source,
-    const Buffer&                destination
-)
-{
-    const vk::CommandBufferAllocateInfo allocationInfo{
-        .commandPool        = commandPool,
-        .level              = vk::CommandBufferLevel::ePrimary,
-        .commandBufferCount = 1,
-    };
-    vk::raii::CommandBuffer copyCommand = std::move(vkCheck(device.allocateCommandBuffers(allocationInfo)).front());
-    vkCheck(copyCommand.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit}));
-    copyCommand.copyBuffer(source.handle(), destination.handle(), vk::BufferCopy{.size = source.size()});
-
-    // Mesh buffers are ready for direct use by any pass after upload.
-    const vk::BufferMemoryBarrier2 barrier{
-        .srcStageMask        = vk::PipelineStageFlagBits2::eTransfer,
-        .srcAccessMask       = vk::AccessFlagBits2::eTransferWrite,
-        .dstStageMask        = vk::PipelineStageFlagBits2::eAllCommands,
-        .dstAccessMask       = vk::AccessFlagBits2::eMemoryRead,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .buffer              = destination.handle(),
-        .size                = destination.size(),
-    };
-    copyCommand.pipelineBarrier2({.bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrier});
-
-    vkCheck(copyCommand.end());
-    const vk::CommandBuffer command = *copyCommand;
-    const vk::SubmitInfo    submitInfo{
-           .commandBufferCount = 1,
-           .pCommandBuffers    = &command,
-    };
-    vkCheck(queue.submit(submitInfo, nullptr));
-    vkCheck(queue.waitIdle());
 }

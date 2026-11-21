@@ -1,11 +1,12 @@
 #include "render/raytracing/RealtimeScene.h"
+#include "render/device/ResourceBarriers.h"
 
 #include "core/Vertex.h"
-#include "render/raytracing/RealtimeSceneData.h"
 #include "render/FrameData.h"
+#include "render/PreparedScene.h"
 #include "render/RenderContext.h"
-#include "render/RenderData.h"
 #include "render/device/VulkanContext.h"
+#include "render/raytracing/RealtimeSceneData.h"
 #include "render/resources/MaterialTable.h"
 #include "render/resources/RenderResourceManager.h"
 #include "render/resources/ShaderLayout.h"
@@ -22,42 +23,39 @@ struct PrepareParameters
     uint32_t taskCount;
 };
 static_assert(sizeof(PrepareParameters) == 8);
-}
+}  // namespace
 
-RealtimeScene::Buffers RealtimeScene::compile(RenderGraph& graph, const PassSetup&)
+RealtimeScene::Buffers RealtimeScene::compile(const Falcor::RenderContext& context, VulkanResources::BufferHandle triangles)
 {
-    const auto createUploadBuffer = [&](vk::DeviceSize size)
+    auto& cache  = *context.vulkanResources;
+    auto& device = *context.getDevice();
+    constexpr auto kStorage = Falcor::ResourceBindFlags::UnorderedAccess;
+    objectBuffer = device.createBuffer(sizeof(RayTracingHitData), kStorage);
+    taskBuffer = device.createBuffer(sizeof(EmissiveTriangleTask), kStorage);
+    buffers.objects = cache.registerBuffer(objectBuffer);
+    tasks = cache.registerBuffer(taskBuffer);
+    if (triangles.id == VulkanResources::kInvalidHandle)
     {
-        return graph.createBuffer({
-            .size  = size,
-            .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
-        });
-    };
-    buffers.objects = graph.write(createUploadBuffer(sizeof(RayTracingHitData)));
-    tasks           = createUploadBuffer(sizeof(EmissiveTriangleTask));
-    for (const auto buffer : {buffers.objects, tasks})
-        graph.use(
-            buffer,
-            {
-                .stages = vk::PipelineStageFlagBits2::eComputeShader,
-                .access = vk::AccessFlagBits2::eShaderStorageRead,
-            }
-        );
+        triangleBuffer = device.createBuffer(sizeof(EmissiveTriangleHeader) + sizeof(EmissiveTriangle), kStorage);
+        triangles = cache.registerBuffer(triangleBuffer);
+    }
+    else
+        triangleBuffer.reset();
+    buffers.triangles = triangles;
 
-    buffers.triangles = graph.write(createUploadBuffer(sizeof(EmissiveTriangleHeader) + sizeof(EmissiveTriangle)));
-    graph.use(
-        buffers.triangles,
-        {
-            .stages = vk::PipelineStageFlagBits2::eComputeShader,
-            .access = vk::AccessFlagBits2::eShaderStorageWrite,
-        }
-    );
+    accesses.clear();
+    constexpr auto kCompute = vk::PipelineStageFlagBits2::eComputeShader;
+    accesses.add(buffers.objects, vulkan_access::storageRead(kCompute));
+    accesses.add(tasks, vulkan_access::storageRead(kCompute));
+    accesses.add(buffers.triangles, {kCompute, vk::AccessFlagBits2::eShaderStorageWrite});
+
+    accesses.declare(cache);
 
     triangleCount = 0;
     taskCount     = 0;
     if (!*pipeline)
     {
-        createPipeline();
+        createPipeline(device, *context.shaderManager);
     }
     for (auto& frame : frames)
     {
@@ -67,10 +65,8 @@ RealtimeScene::Buffers RealtimeScene::compile(RenderGraph& graph, const PassSetu
     return buffers;
 }
 
-void RealtimeScene::createPipeline()
+void RealtimeScene::createPipeline(Falcor::Device& device, ShaderManager& shaders)
 {
-    auto& ctx = renderContext();
-    auto& device = *ctx.device;
     std::array<vk::DescriptorSetLayoutBinding, 3> bindings;
     for (uint32_t binding = 0; binding < bindings.size(); ++binding)
     {
@@ -86,25 +82,24 @@ void RealtimeScene::createPipeline()
         .stageFlags = vk::ShaderStageFlagBits::eCompute,
         .size       = sizeof(PrepareParameters),
     };
-    pipelineLayout = device.getOrCreatePipelineLayout(std::array{&descriptorSetLayout}, std::array{range});
-    const auto shader = ctx.shaderManager->getOrLoad("prepare_emissive_triangles");
-    pipeline = device.createComputePipeline(shader, pipelineLayout);
+    pipelineLayout    = device.getOrCreatePipelineLayout(std::array{&descriptorSetLayout}, std::array{range});
+    const auto shader = shaders.getOrLoad("prepare_emissive_triangles");
+    pipeline          = device.createComputePipeline(shader, pipelineLayout);
     for (auto& frame : frames)
     {
         frame.descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
     }
 }
 
-void RealtimeScene::prepare(RenderGraph& graph, const PassFrame& frame)
+void RealtimeScene::prepare(VulkanResources& cache, const Falcor::RenderContext& frame)
 {
-    const auto& items     = frame.renderData.drawItems;
-    const auto& device    = frame.setup.vulkan.deviceHandle();
-    auto&       resources = *renderContext().resources;
-    const auto& materials = *renderContext().materialTable;
+    const auto& items     = frame.scene->drawItems;
+    auto&       resources = *frame.resources;
+    const auto& materials = *frame.materialTable;
     static_assert(sizeof(Vertex) == 48 && offsetof(Vertex, normal) == 12 && offsetof(Vertex, texcoord) == 24);
 
     const auto upload =
-        graph.allocateUpload(buffers.objects, std::max<size_t>(items.size(), 1) * sizeof(RayTracingHitData));
+        cache.allocateUpload(buffers.objects, std::max<size_t>(items.size(), 1) * sizeof(RayTracingHitData));
     auto*                             hits = reinterpret_cast<RayTracingHitData*>(upload.data.data());
     std::vector<EmissiveTriangleTask> lightTasks;
     triangleCount = 0;
@@ -113,10 +108,10 @@ void RealtimeScene::prepare(RenderGraph& graph, const PassFrame& frame)
         const auto&       item          = items[index];
         const auto&       mesh          = resources.mesh(item.mesh);
         const auto&       submesh       = mesh.submeshes()[item.submeshIndex];
-        const auto        materialIndex = frame.renderData.materialIndices[index];
+        const auto        materialIndex = frame.scene->materialIndices[index];
         RayTracingHitData hit{
-            .vertexAddress = mesh.vertices().address(device),
-            .indexAddress  = mesh.indices().address(device),
+            .vertexAddress = mesh.vertices().getGpuAddress(),
+            .indexAddress  = mesh.indices().getGpuAddress(),
             .firstIndex    = submesh.firstIndex,
             .materialIndex = materialIndex,
         };
@@ -138,27 +133,28 @@ void RealtimeScene::prepare(RenderGraph& graph, const PassFrame& frame)
         std::construct_at(hits, RayTracingHitData{});
     }
 
-    taskCount             = static_cast<uint32_t>(lightTasks.size());
-    const auto taskUpload = graph.allocateUpload(tasks, std::max<size_t>(taskCount, 1) * sizeof(EmissiveTriangleTask));
+    taskCount = static_cast<uint32_t>(lightTasks.size());
+    const auto taskStorageUpload =
+        cache.allocateUpload(tasks, std::max<size_t>(taskCount, 1) * sizeof(EmissiveTriangleTask));
     if (taskCount > 0)
     {
-        std::memcpy(taskUpload.data.data(), lightTasks.data(), lightTasks.size() * sizeof(EmissiveTriangleTask));
+        std::memcpy(taskStorageUpload.data.data(), lightTasks.data(), lightTasks.size() * sizeof(EmissiveTriangleTask));
     }
     else
     {
-        std::memset(taskUpload.data.data(), 0, sizeof(EmissiveTriangleTask));
+        std::memset(taskStorageUpload.data.data(), 0, sizeof(EmissiveTriangleTask));
     }
-    graph.ensureBufferCapacity(
+    cache.ensureBufferCapacity(
         buffers.triangles,
         sizeof(EmissiveTriangleHeader) + vk::DeviceSize(triangleCount) * sizeof(EmissiveTriangle)
     );
     const EmissiveTriangleHeader header{triangleCount};
-    const auto                   headerUpload = graph.allocateUpload(buffers.triangles, sizeof(header));
+    const auto                   headerUpload = cache.allocateUpload(buffers.triangles, sizeof(header));
     std::memcpy(headerUpload.data.data(), &header, sizeof(header));
-    updateDescriptors(graph, frame);
+    updateDescriptors(cache, frame);
 }
 
-void RealtimeScene::updateDescriptors(RenderGraph& graph, const PassFrame& execution)
+void RealtimeScene::updateDescriptors(VulkanResources& cache, const Falcor::RenderContext& execution)
 {
     auto&                                   frame = frames[execution.frameIndex];
     const std::array                        handles{buffers.objects, tasks, buffers.triangles};
@@ -167,30 +163,31 @@ void RealtimeScene::updateDescriptors(RenderGraph& graph, const PassFrame& execu
     uint32_t                                writeCount = 0;
     for (uint32_t binding = 0; binding < handles.size(); ++binding)
     {
-        const auto revision = graph.bufferRevision(handles[binding]);
+        const auto revision = cache.bufferRevision(handles[binding]);
         if (frame.revisions[binding] == revision)
         {
             continue;
         }
-        const auto& buffer   = graph.getBuffer(handles[binding]);
-        infos[binding]       = vk::DescriptorBufferInfo{.buffer = buffer.handle(), .range = buffer.size()};
-        auto& write = writes[writeCount++];
-        write = makeDescriptorWrite(*frame.descriptorSet, descriptorSetLayout.bindings[binding]);
-        write.pBufferInfo = &infos[binding];
+        const auto& buffer       = cache.getBuffer(handles[binding]);
+        infos[binding]           = vk::DescriptorBufferInfo{.buffer = buffer.handle(), .range = buffer.getSize()};
+        auto& write              = writes[writeCount++];
+        write                    = makeDescriptorWrite(*frame.descriptorSet, descriptorSetLayout.bindings[binding]);
+        write.pBufferInfo        = &infos[binding];
         frame.revisions[binding] = revision;
     }
-    execution.setup.vulkan.deviceHandle().updateDescriptorSets(std::span{writes.data(), writeCount}, {});
+    execution.vulkan->deviceHandle().updateDescriptorSets(std::span{writes.data(), writeCount}, {});
 }
 
-void RealtimeScene::execute(RenderGraph&, vk::raii::CommandBuffer& commands, const PassFrame& frame)
+void RealtimeScene::execute(VulkanResources& cache, vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame)
 {
     if (triangleCount == 0)
     {
         return;
     }
+    accesses.transition(cache, commands);
     const auto groups = pipeline.groupCount({triangleCount, 1, 1});
     CHECK(
-        groups.width <= frame.setup.vulkan.properties().limits.maxComputeWorkGroupCount[0],
+        groups.width <= frame.vulkan->properties().limits.maxComputeWorkGroupCount[0],
         "emissive triangle preparation requires {} compute groups",
         groups.width
     );
@@ -211,4 +208,3 @@ void RealtimeScene::execute(RenderGraph&, vk::raii::CommandBuffer& commands, con
     );
     commands.dispatch(groups.width, groups.height, groups.depth);
 }
-

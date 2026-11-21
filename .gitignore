@@ -24,6 +24,8 @@ test/*
 !test/FalcorPostProcessCheck.cpp
 !test/FalcorPostProcessSourceCheck.py
 !test/PassSettingsCheck.cpp
+!test/PathTracingStats.h
+!test/RendererOptions.h
 
 # Personal TODO / note documents stay local.
 *[Tt][Oo][Dd][Oo]*.[Mm][Dd]

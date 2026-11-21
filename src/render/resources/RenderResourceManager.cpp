@@ -104,7 +104,7 @@ RenderResourceManager::~RenderResourceManager() { DCHECK(!vulkan); }
 GpuUploadContext RenderResourceManager::uploadContext() const
 {
     DCHECK(vulkan && *uploadPool);
-    return {vulkan->physicalDeviceHandle(), vulkan->deviceHandle(), uploadPool, vulkan->queueHandle()};
+    return {*vulkan, uploadPool};
 }
 
 void RenderResourceManager::init(VulkanContext& targetVulkan, AssetManager& targetAssets, AssetDataManager& targetData)

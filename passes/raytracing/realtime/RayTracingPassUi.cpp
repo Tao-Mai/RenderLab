@@ -5,7 +5,7 @@
 
 namespace
 {
-bool drawRestirSettings(Gui::Widgets& widgets, RestirSettings& restir)
+bool drawRestirSettings(Falcor::Gui::Widgets& widgets, RestirSettings& restir)
 {
     bool edited = false;
     if (widgets.resetHeader("ReSTIR"))
@@ -27,7 +27,7 @@ bool drawRestirSettings(Gui::Widgets& widgets, RestirSettings& restir)
     return edited;
 }
 
-bool drawSettings(Gui::Widgets& widgets, RayTracingSettings& rayTracing, const RayTracingPass&, const PassEditorContext&)
+bool drawSettings(Falcor::Gui::Widgets& widgets, RayTracingSettings& rayTracing, const RayTracingPass&, const PassEditorContext&)
 {
     bool edited = widgets.slider("Max bounces", rayTracing.maxBounces, kMinPathBounces, kMaxPathBounces);
     widgets.tooltip("Maximum surface scattering events. 1 gives direct lighting plus terminal emission.");
@@ -36,7 +36,12 @@ bool drawSettings(Gui::Widgets& widgets, RayTracingSettings& rayTracing, const R
 }
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+void RayTracingPass::renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget)
 {
-    registry.registerClass<RayTracingPass>("RayTracingPass", makePassEditor<RayTracingPass, drawSettings>("ReSTIR"));
+    drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "ReSTIR");
+}
+
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+{
+    registry.registerClass<Falcor::RenderPass, RayTracingPass>();
 }

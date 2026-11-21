@@ -10,6 +10,11 @@ enum class RL_ENUM RenderPath
     OfflinePathTracing RL_ENUM_VALUE("OfflinePathTracing")
 };
 
+[[nodiscard]] constexpr bool requiresRayTracing(RenderPath path)
+{
+    return path == RenderPath::RayTracing || path == RenderPath::OfflinePathTracing;
+}
+
 enum class RL_ENUM PostProcessMode
 {
     RenderLab RL_ENUM_VALUE("RenderLab"),
@@ -22,9 +27,7 @@ struct RL_RECORD RenderFeature
     RL_FIELD("ambientCoefficient") float           ambientCoefficient = 0.1f;
     RL_FIELD("hdr") bool            hdr                = true;
     RL_FIELD("postProcess") PostProcessMode postProcess        = PostProcessMode::RenderLab;
-    RL_FIELD("shadows") bool            shadows            = true;
     RL_FIELD("bloom") bool            bloom              = true;
-    RL_FIELD("svgf") bool            svgf               = true;
 };
 
 struct RendererConfig

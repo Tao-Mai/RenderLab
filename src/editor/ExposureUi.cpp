@@ -3,7 +3,7 @@
 #include "editor/Gui.h"
 #include "render/ExposureConfig.h"
 
-bool drawExposureSettings(Gui::Widgets& widgets, ExposureConfig& exposure)
+bool drawExposureSettings(Falcor::Gui::Widgets& widgets, ExposureConfig& exposure)
 {
     bool edited = widgets.dropdown("Exposure mode", exposure.mode, {"Manual", "Automatic"});
     if (exposure.mode == ExposureMode::Manual)

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <imgui.h>
 #include <numbers>
 
@@ -39,89 +40,104 @@ bool drawDropdown(const char* label, std::span<const Choice> choices, std::size_
 }
 }
 
-namespace Gui
+namespace Falcor
 {
-bool Widgets::checkbox(const char* label, bool& value)
+IDScope::IDScope(const void* id) { ImGui::PushID(id); }
+
+IDScope::~IDScope() { ImGui::PopID(); }
+
+float4 Gui::pickUniqueColor(const std::string& key)
+{
+    constexpr auto kHueSteps = 360;
+    constexpr auto kSaturation = 0.55f;
+    constexpr auto kBrightness = 0.65f;
+    const auto hue = static_cast<float>(std::hash<std::string>{}(key) % kHueSteps) / kHueSteps;
+    float4 color{0.0f, 0.0f, 0.0f, 1.0f};
+    ImGui::ColorConvertHSVtoRGB(hue, kSaturation, kBrightness, color.x, color.y, color.z);
+    return color;
+}
+
+bool Gui::Widgets::checkbox(const char* label, bool& value)
 {
     return ImGui::Checkbox(label, &value);
 }
 
-bool Widgets::slider(const char* label, float& value, float minimum, float maximum,
+bool Gui::Widgets::slider(const char* label, float& value, float minimum, float maximum,
                      const char* format, bool clampInput)
 {
     return drawSlider(label, ImGuiDataType_Float, &value, &minimum, &maximum, format, clampInput);
 }
 
-bool Widgets::slider(const char* label, double& value, double minimum, double maximum)
+bool Gui::Widgets::slider(const char* label, double& value, double minimum, double maximum)
 {
     return drawSlider(label, ImGuiDataType_Double, &value, &minimum, &maximum);
 }
 
-bool Widgets::slider(const char* label, int32_t& value, int32_t minimum, int32_t maximum)
+bool Gui::Widgets::slider(const char* label, int32_t& value, int32_t minimum, int32_t maximum)
 {
     return drawSlider(label, ImGuiDataType_S32, &value, &minimum, &maximum);
 }
 
-bool Widgets::slider(const char* label, uint32_t& value, uint32_t minimum, uint32_t maximum, bool clampInput)
+bool Gui::Widgets::slider(const char* label, uint32_t& value, uint32_t minimum, uint32_t maximum, bool clampInput)
 {
     return drawSlider(label, ImGuiDataType_U32, &value, &minimum, &maximum, nullptr, clampInput);
 }
 
-bool Widgets::slider(const char* label, int64_t& value, int64_t minimum, int64_t maximum)
+bool Gui::Widgets::slider(const char* label, int64_t& value, int64_t minimum, int64_t maximum)
 {
     return drawSlider(label, ImGuiDataType_S64, &value, &minimum, &maximum);
 }
 
-bool Widgets::input(const char* label, double& value)
+bool Gui::Widgets::input(const char* label, double& value)
 {
     return ImGui::InputScalar(label, ImGuiDataType_Double, &value);
 }
 
-bool Widgets::input(const char* label, int64_t& value)
+bool Gui::Widgets::input(const char* label, int64_t& value)
 {
     return ImGui::InputScalar(label, ImGuiDataType_S64, &value);
 }
 
-bool Widgets::drag(const char* label, float& value, float speed, float minimum, float maximum, const char* format)
+bool Gui::Widgets::drag(const char* label, float& value, float speed, float minimum, float maximum, const char* format)
 {
     return ImGui::DragFloat(label, &value, speed, minimum, maximum, format, ImGuiSliderFlags_AlwaysClamp);
 }
 
-bool Widgets::dragRange(const char* label, float& low, float& high, float speed,
+bool Gui::Widgets::dragRange(const char* label, float& low, float& high, float speed,
                         float minimum, float maximum, const char* format)
 {
     return ImGui::DragFloatRange2(label, &low, &high, speed, minimum, maximum, format, format,
                                   ImGuiSliderFlags_AlwaysClamp);
 }
 
-bool Widgets::dropdown(const char* label, std::span<const char* const> choices, std::size_t& selected,
+bool Gui::Widgets::dropdown(const char* label, std::span<const char* const> choices, std::size_t& selected,
                        const char* preview)
 {
     return drawDropdown(label, choices, selected, preview);
 }
 
-bool Widgets::dropdown(const char* label, std::span<const std::string> choices, std::size_t& selected)
+bool Gui::Widgets::dropdown(const char* label, std::span<const std::string> choices, std::size_t& selected)
 {
     return drawDropdown(label, choices, selected, nullptr);
 }
 
-Widgets::Group::Group(const char* label, bool defaultOpen) :
+Gui::Widgets::Group::Group(const char* label, bool defaultOpen) :
     open(ImGui::TreeNodeEx(label, defaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None))
 {
 }
 
-Widgets::Group::~Group()
+Gui::Widgets::Group::~Group()
 {
     if (open)
         ImGui::TreePop();
 }
 
-Widgets::Group Widgets::group(const char* label, bool defaultOpen)
+Gui::Widgets::Group Gui::Widgets::group(const char* label, bool defaultOpen)
 {
     return Group(label, defaultOpen);
 }
 
-bool Widgets::resetHeader(const char* label)
+bool Gui::Widgets::resetHeader(const char* label)
 {
     bool        reset      = false;
     const float buttonSize = ImGui::GetFrameHeight();
@@ -164,43 +180,43 @@ bool Widgets::resetHeader(const char* label)
     return reset;
 }
 
-bool Widgets::button(const char* label)
+bool Gui::Widgets::button(const char* label)
 {
     return ImGui::Button(label);
 }
 
-bool Widgets::colorEdit(const char* label, glm::vec3& color)
+bool Gui::Widgets::colorEdit(const char* label, glm::vec3& color)
 {
     return ImGui::ColorEdit3(label, &color.x);
 }
 
-void Widgets::colorPreview(const char* label, const glm::vec3& color)
+void Gui::Widgets::colorPreview(const char* label, const glm::vec3& color)
 {
     ImGui::ColorButton(label, ImVec4{color.r, color.g, color.b, 1.0f});
 }
 
-void Widgets::text(std::string_view text)
+void Gui::Widgets::text(std::string_view text)
 {
     ImGui::TextUnformatted(text.data(), text.data() + text.size());
 }
 
-void Widgets::disabledText(const char* text)
+void Gui::Widgets::disabledText(const char* text)
 {
     ImGui::TextDisabled("%s", text);
 }
 
-void Widgets::tooltip(const char* text)
+void Gui::Widgets::tooltip(const char* text)
 {
     ImGui::SetItemTooltip("%s", text);
 }
 
-void Widgets::pushId(const char* id)
+void Gui::Widgets::pushId(const char* id)
 {
     ImGui::PushID(id);
 }
 
-void Widgets::popId()
+void Gui::Widgets::popId()
 {
     ImGui::PopID();
 }
-}
+}  // namespace Falcor

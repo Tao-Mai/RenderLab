@@ -5,6 +5,8 @@
 
 #include <vulkan/vulkan.h>
 
+inline constexpr char kPickingImageOutput[] = "pickingImage";
+
 struct EditorFrameInput
 {
     bool     requestPick = false;

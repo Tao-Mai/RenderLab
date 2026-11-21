@@ -1,4 +1,8 @@
+#include "render/device/ResourceBarriers.h"
 #include "passes/raytracing/bdpt/BdptBindings.h"
+#include "render/graph/RenderPass.h"
+
+#include "core/Logger.h"
 #include "passes/raytracing/bdpt/BdptSettings.h"
 
 #include "asset/AssetManager.h"
@@ -6,11 +10,16 @@
 #include "editor/PassEditor.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
-#include "render/RenderData.h"
+#include "render/PreparedScene.h"
 #include "render/device/VulkanContext.h"
+#include "render/graph/RenderPassStandardFlags.h"
 #include "render/raytracing/offline/OfflinePathTracing.h"
 #include "render/raytracing/offline/OfflineScene.h"
 #include "render/raytracing/offline/OfflineTracePipelineCache.h"
+
+#ifdef RENDERLAB_TEST_PATH_TRACING_STATS
+#include "test/PathTracingStats.h"
+#endif
 
 #include <algorithm>
 #include <bit>
@@ -27,6 +36,7 @@ void BdptSettings::validate() const
 
 namespace
 {
+constexpr char kOutputColor[] = "color";
 constexpr uint32_t kMinShaderDepth = 4;
 constexpr uint32_t kTileSize = 128;
 constexpr uint32_t kMinTileSize = 8;
@@ -69,34 +79,59 @@ struct LightDistributionEntry
 };
 static_assert(sizeof(LightDistributionEntry) == 16);
 
-class BDPT : public ConfigurablePass<BdptSettings>
+class BDPT : public Falcor::RenderPass
 {
-public:
-    [[nodiscard]] RenderPassReflection reflect(const PassSetup&) const override
+    FALCOR_PLUGIN_CLASS(BDPT, "BDPT", "Bidirectional path tracer.");
+
+    BDPT(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties) :
+        Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<BdptSettings>(properties))
     {
-        RenderPassReflection reflection;
-        reflection.output("rayImage", PortKind::Image);
+        parameters.validate();
+    }
+
+    [[nodiscard]] Falcor::Properties getProperties() const override { return Falcor::serializeToProperties(parameters); }
+
+    void setProperties(const Falcor::Properties& properties) override
+    {
+        BdptSettings next;
+        Deserialize(nlohmann::json(properties.toJson()), next);
+        next.validate();
+        parameters = std::move(next);
+    }
+
+    static Falcor::ref<BDPT> create(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties)
+    {
+        return Falcor::make_ref<BDPT>(std::move(device), properties);
+    }
+
+    void renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget) override;
+
+    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData&) override
+    {
+        Falcor::RenderPassReflection reflection;
+        reflection.addOutput(kOutputColor, "Path traced radiance")
+            .format(Falcor::ResourceFormat::RGBA16Float)
+            .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess);
         return reflection;
     }
 
-    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
-    void bindResources(RenderGraph& graph, const PassSetup& setup) override;
-    void prepare(RenderGraph& graph, const PassFrame& execution) override;
-    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& execution) override;
-
-    [[nodiscard]] nlohmann::json statistics() const override
-    {
-        return {{"sampleCount", tracer.sampleCount()}, {"sampleProgress", sampleProgress()},
-                {"preparingPipeline", preparingPipeline()}};
-    }
+    void compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
+    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
 
     [[nodiscard]] float sampleProgress() const { return accumulatedProgress; }
     [[nodiscard]] bool preparingPipeline() const { return pipeline == nullptr; }
 
 private:
+    BdptSettings parameters;
+
+    ResourceBarriers barriers;
     OfflinePathTracing tracer;
-    RenderGraph::BufferHandle splats;
-    RenderGraph::BufferHandle lightDistribution;
+    ResourceBarriers        lightAccesses;
+    void updateScene(VulkanResources& cache, const Falcor::RenderContext& execution, const Falcor::RenderData& renderData);
+    Falcor::ref<Falcor::Buffer> splatBuffer;
+    Falcor::ref<Falcor::Buffer> lightDistributionBuffer;
+    VulkanResources::BufferHandle splats;
+    VulkanResources::BufferHandle lightDistribution;
     uint64_t lightDistributionRevision = 0;
 
     const RayTracingPipeline* pipeline = nullptr;
@@ -108,16 +143,16 @@ private:
     uint32_t tileIndex = 0;
     uint64_t processedPixels = 0;
 
-    void selectPipeline(const VulkanContext& vulkan);
+    void selectPipeline(const Falcor::RenderContext& context);
     void resetAccumulation();
-    void prepareLightDistribution(RenderGraph& graph, const PassFrame& execution);
+    void prepareLightDistribution(VulkanResources& cache, const Falcor::RenderContext& execution);
 };
 
-glm::vec4 computeSceneSphere(const PassFrame& execution)
+glm::vec4 computeSceneSphere(const Falcor::RenderContext& execution)
 {
-    const auto& items = execution.renderData.drawItems;
+    const auto& items = execution.scene->drawItems;
     if (items.empty())
-        return {glm::vec3{execution.view.uniforms.cameraPosition}, kMinimumSceneRadius};
+        return {glm::vec3{execution.view->uniforms.cameraPosition}, kMinimumSceneRadius};
 
     auto minimum = glm::vec3{std::numeric_limits<float>::max()};
     auto maximum = -minimum;
@@ -145,47 +180,37 @@ glm::vec4 cameraSampling(const RenderView& view)
     return {forward, glm::length(glm::cross(onImagePlane({1, -1}) - corner, onImagePlane({-1, 1}) - corner))};
 }
 
-void BDPT::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+void BDPT::compile(Falcor::RenderContext* passContext, const CompileData& compileData)
 {
-    const auto image = tracer.compile(graph, setup, "bdpt_resolve", sizeof(BdptParameters), kExtraBindings);
-    const auto extent = setup.renderExtent;
-    const auto splatBytes = vk::DeviceSize(extent.width) * extent.height * sizeof(glm::uvec4);
-    CHECK(splatBytes <= setup.vulkan.properties().limits.maxStorageBufferRange);
-    splats = graph.write(graph.createBuffer({
-        .size = splatBytes,
-        .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
-    }));
-    graph.use(
-        splats,
-        {
-            .stages = vk::PipelineStageFlagBits2::eTransfer | vk::PipelineStageFlagBits2::eRayTracingShaderKHR |
-                vk::PipelineStageFlagBits2::eComputeShader,
-            .access = vk::AccessFlagBits2::eTransferWrite | vk::AccessFlagBits2::eShaderStorageRead |
-                vk::AccessFlagBits2::eShaderStorageWrite,
-        }
-    );
+    auto& cache = *passContext->vulkanResources;
+    const auto extent = compileData.defaultTexDims;
+    tracer.compile(*passContext, extent, "bdpt_resolve", sizeof(BdptParameters), kExtraBindings);
 
-    lightDistribution = graph.createBuffer({
-        .size = sizeof(LightDistributionEntry),
-        .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
-    });
-    graph.use(
-        lightDistribution,
-        {.stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR, .access = vk::AccessFlagBits2::eShaderStorageRead}
-    );
+    constexpr auto kStorage = Falcor::ResourceBindFlags::UnorderedAccess;
+    splatBuffer = mpDevice->createBuffer(size_t{extent.x} * extent.y * sizeof(glm::uvec4), kStorage);
+    splats = cache.registerBuffer(splatBuffer);
+    barriers.clear();
+    barriers.add(splats, VulkanResources::MemoryAccess{
+                    vk::PipelineStageFlagBits2::eTransfer | vk::PipelineStageFlagBits2::eRayTracingShaderKHR |
+                        vk::PipelineStageFlagBits2::eComputeShader,
+                    vk::AccessFlagBits2::eTransferWrite | vk::AccessFlagBits2::eShaderStorageRead |
+                        vk::AccessFlagBits2::eShaderStorageWrite,
+                });
+    barriers.declare(cache);
+    lightDistributionBuffer = mpDevice->createBuffer(sizeof(LightDistributionEntry), kStorage);
+    lightDistribution = cache.registerBuffer(lightDistributionBuffer);
     lightDistributionRevision = 0;
-    selectPipeline(setup.vulkan);
+    lightAccesses.clear();
+    lightAccesses.add(lightDistribution, vulkan_access::storageRead(vk::PipelineStageFlagBits2::eRayTracingShaderKHR));
+    lightAccesses.declare(cache);
+
+    selectPipeline(*passContext);
     resetAccumulation();
-    ports.setOutput("rayImage", image);
+
+    tracer.writeStorageBuffer(cache, splats, BdptBinding::kSplats);
 }
 
-void BDPT::bindResources(RenderGraph& graph, const PassSetup& setup)
-{
-    tracer.bindResources(graph, setup);
-    tracer.bindStorageBuffer(graph, setup.vulkan, splats, BdptBinding::kSplats);
-}
-
-void BDPT::selectPipeline(const VulkanContext& vulkan)
+void BDPT::selectPipeline(const Falcor::RenderContext& context)
 {
     const auto depth = std::bit_ceil(std::max(kMinShaderDepth, parameters.maxBounces));
     if (depth != shaderDepth)
@@ -195,7 +220,7 @@ void BDPT::selectPipeline(const VulkanContext& vulkan)
         pipeline = nullptr;
     }
     if (!pipeline)
-        pipeline = renderContext().offlinePipelines->get(vulkan, tracer.layout(), shaderPath, true);
+        pipeline = context.offlinePipelines->get(*context.vulkan, tracer.layout(), shaderPath, true);
 }
 
 void BDPT::resetAccumulation()
@@ -206,24 +231,40 @@ void BDPT::resetAccumulation()
     processedPixels = 0;
 }
 
-void BDPT::prepare(RenderGraph& graph, const PassFrame& execution)
+void BDPT::updateScene(VulkanResources& cache, const Falcor::RenderContext& execution, const Falcor::RenderData& renderData)
 {
-    const bool sceneChanged = tracer.prepareScene(graph, execution);
-    selectPipeline(execution.setup.vulkan);
-    if (sceneChanged || parameters != previousSettings)
+    const bool sceneChanged = tracer.prepareScene(cache, execution, renderData.getTexture(kOutputColor));
+    selectPipeline(execution);
+    const bool optionsChanged = parameters != previousSettings;
+    if (optionsChanged)
+    {
+        auto& dictionary = renderData.getDictionary();
+        const auto flags = dictionary.getValue(Falcor::kRenderPassRefreshFlags, Falcor::RenderPassRefreshFlags::None);
+        dictionary[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
+    }
+    if (sceneChanged || optionsChanged)
         resetAccumulation();
 
     if (sceneChanged || lightDistributionRevision == 0)
         sceneSphere = computeSceneSphere(execution);
     if (sceneChanged || lightDistributionRevision == 0 || parameters.lightSelection != previousSettings.lightSelection)
-        prepareLightDistribution(graph, execution);
+        prepareLightDistribution(cache, execution);
 
     previousSettings = parameters;
 }
 
-void BDPT::execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& execution)
+void BDPT::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
 {
-    const auto bounds = tracer.viewportBounds(execution.view);
+    auto&       cache     = *renderCommands->vulkanResources;
+    auto&       commands  = *renderCommands->commands;
+    const auto& execution = *renderCommands;
+
+    barriers.transition(cache, commands);
+    updateScene(cache, execution, renderData);
+    cache.recordUploads(commands);
+    lightAccesses.transition(cache, commands);
+
+    const auto bounds = tracer.viewportBounds(*execution.view);
     const uint64_t viewportPixels = uint64_t(bounds.extent.width) * bounds.extent.height;
     const bool trace = pipeline && viewportPixels > 0;
     glm::uvec2 tileOffset{0};
@@ -256,14 +297,19 @@ void BDPT::execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const 
     const BdptParameters constants{
         .path = tracer.pathParameters(execution, parameters.maxBounces),
         .sceneSphere = sceneSphere,
-        .camera = cameraSampling(execution.view),
+        .camera = cameraSampling(*execution.view),
         .tileOffset = tileOffset,
         .lightSamples = lightSamples,
         .flags = flags,
     };
     tracer.render(
-        graph, commands, execution, std::as_bytes(std::span{&constants, 1}),
-        trace ? pipeline : nullptr, batchExtent, std::array{splats}
+        cache,
+        commands,
+        execution,
+        std::as_bytes(std::span{&constants, 1}),
+        trace ? pipeline : nullptr,
+        batchExtent,
+        std::array{splats}
     );
 
     if (trace)
@@ -277,11 +323,16 @@ void BDPT::execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const 
             processedPixels = 0;
         }
     }
+
+#ifdef RENDERLAB_TEST_PATH_TRACING_STATS
+    renderData.getDictionary()[path_tracing_test::statsKey(getName())] =
+        path_tracing_test::OfflineProgress{tracer.sampleCount(), sampleProgress(), preparingPipeline()};
+#endif
 }
 
-void BDPT::prepareLightDistribution(RenderGraph& graph, const PassFrame& execution)
+void BDPT::prepareLightDistribution(VulkanResources& cache, const Falcor::RenderContext& execution)
 {
-    const auto&      scene    = *execution.renderData.offlineScene;
+    const auto&      scene    = *execution.scene->offlineScene;
     const bool       power    = parameters.lightSelection == BdptLightSelection::Power;
     constexpr double kPi      = 3.14159265358979323846;
     const double     diskArea = kPi * double(sceneSphere.w) * sceneSphere.w;
@@ -318,9 +369,9 @@ void BDPT::prepareLightDistribution(RenderGraph& graph, const PassFrame& executi
 
     const auto count = weights.size();
     const auto bytes = std::max<size_t>(count, 1) * sizeof(LightDistributionEntry);
-    CHECK(bytes <= execution.setup.vulkan.properties().limits.maxStorageBufferRange);
+    CHECK(bytes <= execution.vulkan->properties().limits.maxStorageBufferRange);
 
-    const auto upload  = graph.allocateUpload(lightDistribution, bytes);
+    const auto upload  = cache.allocateUpload(lightDistribution, bytes);
     auto*      entries = reinterpret_cast<LightDistributionEntry*>(upload.data.data());
 
     std::vector<uint32_t> small, large;
@@ -357,14 +408,14 @@ void BDPT::prepareLightDistribution(RenderGraph& graph, const PassFrame& executi
     if (count == 0)
         std::construct_at(entries);
 
-    if (lightDistributionRevision != graph.bufferRevision(lightDistribution))
+    if (lightDistributionRevision != cache.bufferRevision(lightDistribution))
     {
-        tracer.bindStorageBuffer(graph, execution.setup.vulkan, lightDistribution, BdptBinding::kLightDistribution);
-        lightDistributionRevision = graph.bufferRevision(lightDistribution);
+        tracer.bindStorageBuffer(cache, *execution.vulkan, lightDistribution, BdptBinding::kLightDistribution);
+        lightDistributionRevision = cache.bufferRevision(lightDistribution);
     }
 }
 
-bool drawSettings(Gui::Widgets& widgets, BdptSettings& settings, const BDPT& pass, const PassEditorContext&)
+bool drawSettings(Falcor::Gui::Widgets& widgets, BdptSettings& settings, const BDPT& pass, const PassEditorContext&)
 {
     widgets.text(std::format("Samples per pixel: {:.2f}", pass.sampleProgress()));
     if (pass.preparingPipeline())
@@ -380,7 +431,12 @@ bool drawSettings(Gui::Widgets& widgets, BdptSettings& settings, const BDPT& pas
 }
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+void BDPT::renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget)
 {
-    registry.registerClass<BDPT>("BDPT", makePassEditor<BDPT, drawSettings>("BDPT"));
+    drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "BDPT");
+}
+
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+{
+    registry.registerClass<Falcor::RenderPass, BDPT>();
 }

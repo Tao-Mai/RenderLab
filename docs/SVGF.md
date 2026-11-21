@@ -1,17 +1,15 @@
 # SVGF
 
-默认图通过 `feature.svgf` 选择下面的去噪链路或光追合并颜色。
+实时图的 `svgf` 参数控制 `RayTracingPass` 的 `splitLighting` 属性和 `SVGFPass` 的接入。`SVGFPass` 内部依次执行重投影和五级滤波，由最后一级合成 `Filtered image` 输出。
 
-`RayTracingPass → SVGFReprojection → SVGFFilter × 5（最后一级直接合成）`
-
-实时光追 Shader 使用 `SVGF=0/1` 选择合并输出或 SVGF 所需的分离输出。
+ReSTIR 的 `color` 连接到 `SVGFPass.Color`。启用 SVGF 时，两层纹理分别存储直接光和间接光。关闭 SVGF 时，`color` 使用单层纹理输出合并后的颜色。其余输入为 `LinearZ`、`WorldNormal`、`Emission` 和 `Albedo`。
 
 实现依据：[Schied et al., Spatiotemporal Variance-Guided Filtering, HPG 2017](https://research.nvidia.com/labs/rtr/publication/schied2017spatiotemporal/)
 。直接光与间接光独立处理，共享深度、法线与几何权重。
 
 ## Albedo 解调
 
-光追 Pass 在 SVGF 开启时输出主命中表面的线性 `baseColor`，包含材质纹理和颜色因子；背景与直接可见的面光源使用中性白色。重投影先将当前
+光追 Pass 在 SVGF 开启时输出主命中表面的 `saturate(diffuseColor + specularF0)`，背景与直接可见的面光源使用中性白色。重投影先将当前
 direct / indirect 除以该像素的 albedo，颜色累积、亮度一阶 / 二阶矩、时域 / 空间方差及后续五级滤波均在解调后的空间中计算。7×7
 空间方差使用每个邻域像素各自的 albedo。
 
@@ -24,8 +22,8 @@ direct / indirect 除以该像素的 albedo，颜色累积、亮度一阶 / 二�
 
 - 根据当前线性深度重建世界位置，投影至上一帧；每个双线性采样点单独校验深度、法线和 viewport，再对有效权重归一化。没有有效双线性采样点时，在
   3×3 邻域查找匹配表面；仍无匹配则丢弃历史。
-- 直接光、间接光分别累积颜色与亮度的一阶 / 二阶原始矩。样本数不超过 `historyLength` 时使用 `1 / sampleCount`，超过后使用
-  `emaAlpha`；首次或历史失效时使用权重 1。
+- 直接光、间接光分别累积颜色与亮度的一阶 / 二阶原始矩，共用几何判定和样本数。样本数不超过 `historyLength` 时使用 `1 / sampleCount`，超过后使用
+  `Alpha`，首次或历史失效时使用权重 1。
 - 时域方差为 `max(E[L²] - E[L]², 0)`。历史不足 4 帧时，改用当前帧 7×7 深度 / 法线双边邻域估计方差，并按 `4 / sampleCount`
   增强刚暴露区域的滤波。空间统计先减去中心亮度再计算矩，避免 HDR 近似常量区域的大数相减产生假方差。
 - 空间方差读取当前帧的原始输入，时域统计读取上一帧历史。
@@ -42,10 +40,9 @@ direct / indirect 除以该像素的 albedo，颜色累积、亮度一阶 / 二�
 
 ## 资源与限制
 
-两路颜色历史、两路亮度矩 / 样本数历史及共享深度 / 法线历史各使用双层 ping-pong。颜色与方差使用 RGBA32F（RGB 为颜色，A
-为方差），避免 HDR 方差超出半精度范围；最终合成输出 RGBA16F。
+图内的历史资源为 `Previous Linear Z and Packed Normal`、`Previous Lighting` 和 `Previous Moments`。深度使用 32 位浮点，法线沿用 16 位浮点量化。每帧的两路颜色与亮度矩各占一个数组层，时域历史在两组层之间交替写入。`Previous Moments` 使用 RG32F，颜色与方差使用 RGBA32F，最终合成输出 RGBA16F。
 
-中间颜色 / 方差交替复用两组贴图，其中一组为重投影输出，通过 RenderGraph 资源版本表达覆盖依赖。亮度矩输出直接引用双层历史。
+SVGF 在编译时创建样本数历史和中间纹理。滤波交替复用重投影结果与一组临时纹理，每轮计算前同步本轮读写。
 
 需要检查重投影原始输出时，在第二级覆盖该组贴图前读取。滤波总耗时由同一帧的五级计时相加得到。
 

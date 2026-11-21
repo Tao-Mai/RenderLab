@@ -1,34 +1,60 @@
 #pragma once
 
-#include "render/graph/PassOverrides.h"
+#include "core/Macros.h"
 #include "render/graph/RenderPass.h"
+#include "render/graph/ResourceCache.h"
 
-struct GraphPassInstance
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace Falcor
 {
-    std::string                 name;
-    std::string                 type;
-    std::shared_ptr<RenderPass> pass;
-    nlohmann::json              defaults;
-    nlohmann::json              scriptedProperties;
-    bool                        exposeEditor = false;
-};
+class RenderContext;
 
-class RenderGraphCompiler
+class RenderGraph;
+class RenderGraphExe;
+
+class FALCOR_API RenderGraphCompiler
 {
 public:
-    [[nodiscard]] GraphResources compile(
-        RenderGraph& graph, const PassSetup& setup, const nlohmann::json& description,
-        const GraphResources& external, const PluginManager& plugins, const PassOverrides& overrides
-    );
-    [[nodiscard]] bool applyOverrides(const PassOverrides& overrides);
-    [[nodiscard]] std::span<GraphPassInstance* const> activePasses() const { return active; }
-    [[nodiscard]] const GraphPassInstance* findPass(std::string_view name) const;
-    void clear() noexcept;
+    struct Dependencies
+    {
+        ResourceCache::DefaultProperties defaultResourceProps;
+        ResourceCache::ResourcesMap      externalResources;
+    };
+
+    [[nodiscard]] static std::unique_ptr<RenderGraphExe>
+    compile(RenderGraph& graph, RenderContext* context, const Dependencies& dependencies);
 
 private:
-    std::map<std::pair<std::string, std::string>, GraphPassInstance> instances;
-    std::vector<GraphPassInstance*> active;
-};
+    RenderGraphCompiler(RenderGraph& graph, const Dependencies& dependencies);
 
-[[nodiscard]] bool graphUsesInputPrefix(const nlohmann::json& description, std::string_view prefix);
-[[nodiscard]] nlohmann::json passSettingsOverrides(const nlohmann::json& baseline, const nlohmann::json& edited);
+    struct PassData
+    {
+        uint32_t             index;
+        ref<RenderPass>      pPass;
+        std::string          name;
+        RenderPassReflection reflector;
+    };
+
+    RenderGraph&          mGraph;
+    ref<Device>           mpDevice;
+    const Dependencies&   mDependencies;
+    std::vector<PassData> mExecutionList;
+    struct
+    {
+        std::vector<std::string>                         generatedPasses;
+        std::vector<std::pair<std::string, std::string>> removedEdges;
+    } mCompilationChanges;
+
+    void                    resolveExecutionOrder();
+    void                    compilePasses(RenderContext* context);
+    bool                    insertAutoPasses();
+    void                    allocateResources(ref<Device> device, ResourceCache* cache);
+    void                    validateGraph() const;
+    void                    restoreCompilationChanges();
+    RenderPass::CompileData prepPassCompilationData(const PassData& passData);
+};
+}  // namespace Falcor

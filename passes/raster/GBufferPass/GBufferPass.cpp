@@ -1,5 +1,9 @@
+#include "render/device/ResourceBarriers.h"
 #include "passes/raster/GBufferPass/GBufferPass.h"
-#include "render/plugins/PluginManager.h"
+
+#include "render/resources/NativeFormats.h"
+#include "core/Logger.h"
+#include "core/Plugin.h"
 
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
@@ -11,78 +15,86 @@ namespace
 constexpr std::string_view kGBufferShader = "gbuffer";
 }
 
-RenderPassReflection GBufferPass::reflect(const PassSetup&) const
+Falcor::RenderPassReflection GBufferPass::reflect(const CompileData& compileData)
 {
-    RenderPassReflection reflection;
-    reflection.input("depth", PortKind::Image, false, vk::Format::eD32Sfloat);
-    reflection.output("diffuseOcclusion", PortKind::Image, false, vk::Format::eR8G8B8A8Srgb);
-    reflection.output("normalRoughness", PortKind::Image, false, vk::Format::eR16G16B16A16Sfloat);
-    reflection.output("emissiveSpecularF90", PortKind::Image, false, vk::Format::eR16G16B16A16Sfloat);
-    reflection.output("specularF0DiffuseFresnel", PortKind::Image, false, vk::Format::eR16G16B16A16Sfloat);
-    reflection.output("sheenColorRoughness", PortKind::Image, false, vk::Format::eR16G16B16A16Sfloat);
+    const auto* input = compileData.connectedResources.getField("depth");
+    const auto extent = input ? Falcor::uint2{input->getWidth(), input->getHeight()} : Falcor::uint2{};
+
+    Falcor::RenderPassReflection reflection;
+    reflection.addInput("depth", "Scene depth").format(Falcor::ResourceFormat::D32Float).bindFlags(Falcor::ResourceBindFlags::DepthStencil);
+    for (size_t index = 0; index < kColorNames.size(); ++index)
+        reflection.addOutput(std::string{kColorNames[index]}, "G-buffer channel")
+            .format(Falcor::getResourceFormat(kColorFormats[index]))
+            .bindFlags(Falcor::ResourceBindFlags::RenderTarget)
+            .texture2D(extent.x, extent.y);
     return reflection;
 }
 
-void GBufferPass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+void GBufferPass::compile(Falcor::RenderContext* passContext, const CompileData&)
 {
-    const auto depthHandle = ports.image("depth");
-
-    renderContext().materialTable->use(graph, vk::PipelineStageFlagBits2::eFragmentShader);
-    const auto& device = setup.vulkan.physicalDeviceHandle();
-    CHECK(kColorFormats.size() <= setup.vulkan.properties().limits.maxColorAttachments);
+    const auto& physicalDevice = passContext->vulkan->physicalDeviceHandle();
+    CHECK(kColorFormats.size() <= passContext->vulkan->properties().limits.maxColorAttachments);
     constexpr auto kRequiredFeatures =
         vk::FormatFeatureFlagBits::eColorAttachment | vk::FormatFeatureFlagBits::eSampledImage;
-    const auto extent = graph.imageExtent(depthHandle);
-    std::array<RenderGraph::ImageHandle, kColorFormats.size()> colors;
-    for (size_t index = 0; index < colors.size(); ++index)
+    for (size_t index = 0; index < kColorNames.size(); ++index)
     {
-        const auto features = device.getFormatProperties(kColorFormats[index]).optimalTilingFeatures;
+        const auto features = physicalDevice.getFormatProperties(kColorFormats[index]).optimalTilingFeatures;
         CHECK(
             (features & kRequiredFeatures) == kRequiredFeatures,
             "GPU does not support G-buffer format {}",
             vk::to_string(kColorFormats[index])
         );
-        colors[index] = graph.write(graph.createImage({
-            .format = kColorFormats[index],
-            .extent = {extent.width, extent.height, 1},
-        }));
-        attachments.colors[index] = {colors[index]};
     }
     CHECK(
-        device.getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures &
+        physicalDevice.getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures &
         vk::FormatFeatureFlagBits::eSampledImage
     );
-    attachments.depth = RasterDepthAttachment{depthHandle};
-    attachments.declare(graph);
 
-    auto& ctx = renderContext();
+    auto& device = *passContext->getDevice();
     pipelines = createMeshCullPipelines(
-        *ctx.device,
+        device,
         {
-            .shader       = ctx.shaderManager->getOrLoad(kGBufferShader),
-            .layout       = ctx.device->meshPipelineLayout,
+            .shader       = passContext->shaderManager->getOrLoad(kGBufferShader),
+            .layout       = device.meshPipelineLayout,
             .state        = {.depthCompare = vk::CompareOp::eEqual, .depthWrite = false},
             .colorFormats = {kColorFormats.begin(), kColorFormats.end()},
             .depthFormat  = vk::Format::eD32Sfloat,
         }
     );
-    ports.setOutput("diffuseOcclusion", colors[0]);
-    ports.setOutput("normalRoughness", colors[1]);
-    ports.setOutput("emissiveSpecularF90", colors[2]);
-    ports.setOutput("specularF0DiffuseFresnel", colors[3]);
-    ports.setOutput("sheenColorRoughness", colors[4]);
+
+    barriers.clear();
 }
 
-void GBufferPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution)
+void GBufferPass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
 {
-    attachments.begin(graph, commandBuffer, execution.view.viewport);
+    auto&       cache         = *renderCommands->vulkanResources;
+    auto&       commandBuffer = *renderCommands->commands;
+    const auto& execution     = *renderCommands;
+
+    if (barriers.empty())
+    {
+        const auto depthHandle = cache.registerImage(renderData.getTexture("depth"));
+        attachments.depth = RasterDepthAttachment{depthHandle};
+        for (size_t index = 0; index < kColorNames.size(); ++index)
+            attachments.colors[index] = {cache.registerImage(renderData.getTexture(kColorNames[index]))};
+
+        barriers.add(depthHandle, vulkan_access::kDepthRead);
+        for (const auto& target : attachments.colors)
+            barriers.add(target.image, vulkan_access::kColorWrite);
+        barriers.add(execution.materialTable->bufferHandle(), vulkan_access::storageRead(vk::PipelineStageFlagBits2::eFragmentShader));
+        barriers.declare(cache);
+    }
+
+    barriers.transition(cache, commandBuffer);
+
+    attachments.begin(cache, commandBuffer, execution.view->viewport);
     bindMeshGeometry(commandBuffer, execution);
     MeshDrawRecorder recorder{commandBuffer, execution};
     recorder.drawOpaque([&](const auto& material) { return pipelines.get(material); });
     commandBuffer.endRendering();
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
-    registry.registerClass<GBufferPass>("GBufferPass");
+    registry.registerClass<Falcor::RenderPass, GBufferPass>();
 }

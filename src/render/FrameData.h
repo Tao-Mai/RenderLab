@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/resources/Buffer.h"
+#include "render/device/VulkanResources.h"
 #include "render/resources/ShaderData.h"
 
 #include <span>
@@ -8,27 +8,21 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class VulkanContext;
+namespace Falcor
+{
 class Device;
+}  // namespace Falcor
 
 class FrameData
 {
 public:
-    void init(const VulkanContext& vulkan, Device& device);
+    void init(const VulkanContext& vulkan, Falcor::Device& device);
     void reset() noexcept;
     // UBO writes follow the owning frame's fence.
     void uploadSceneUniforms(const SceneUniforms& view);
     void uploadLightUniforms(const LightUniforms& lighting);
     void uploadShadowUniforms(const ShadowUniforms& shadows);
-    void writeLightBufferDescriptor(const Buffer& buffer);
-    void writeShadowBufferDescriptors(std::span<const vk::DescriptorBufferInfo, 4> buffers);
-    void writeShadowDescriptors(
-        vk::ImageView pointShadow,
-        vk::ImageView spotShadow,
-        vk::ImageView rectAreaShadow,
-        vk::ImageView directionalShadow,
-        vk::Sampler   comparisonSampler,
-        vk::Sampler   linearSampler
-    );
+    void writeLightBufferDescriptor(VulkanResources& resources, VulkanResources::BufferHandle buffer);
     void writeShadowSampler(vk::Sampler sampler);
     void writeEnvironmentDescriptors(
         const vk::DescriptorImageInfo& irradiance,
@@ -41,12 +35,14 @@ public:
     [[nodiscard]] vk::DescriptorSet lightSetHandle() const { return *lightSet; }
     [[nodiscard]] vk::DescriptorSet shadowSetHandle() const { return *shadowSet; }
     [[nodiscard]] vk::DescriptorSet viewSetHandle() const { return *viewSet; }
+    [[nodiscard]] VulkanResources::BufferHandle lightBufferHandle() const { return lightBuffer; }
 
 private:
     const VulkanContext*    vulkan = nullptr;
-    Buffer                  sceneBuffer;
-    Buffer                  lightUniformBuffer;
-    Buffer                  shadowUniformBuffer;
+    Falcor::Buffer                  sceneBuffer;
+    Falcor::Buffer                  lightUniformBuffer;
+    VulkanResources::BufferHandle lightBuffer;
+    Falcor::Buffer                  shadowUniformBuffer;
     vk::raii::DescriptorSet sceneSet    = nullptr;
     vk::raii::DescriptorSet lightSet = nullptr;
     vk::raii::DescriptorSet shadowSet = nullptr;

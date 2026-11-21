@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <optional>
 #include <unordered_map>
 #include <variant>
@@ -27,6 +28,9 @@ inline constexpr bool IsOptional<std::optional<T>> = true;
 
 template <class T>
 inline constexpr bool IsMap = false;
+
+template <class Key, class Value, class Compare, class Allocator>
+inline constexpr bool IsMap<std::map<Key, Value, Compare, Allocator>> = true;
 
 template <class Key, class Value, class Hash, class Equal, class Allocator>
 inline constexpr bool IsMap<std::unordered_map<Key, Value, Hash, Equal, Allocator>> = true;

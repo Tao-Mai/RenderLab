@@ -12,8 +12,8 @@ Engine：场景 / 编辑器 Tick
   → Renderer 全局 prepare：光源分组、光栅化主视图剔除
   → RenderResourceManager：缓存、更新 GPU 资源
   → 更新相机 UBO，材质与灯光数据写入本帧 staging pool
-  → RenderGraph.prepare：ShadowPass 准备阴影数据与剔除，TransparentPass 排序
-  → RenderGraph.execute：同步并复制 SSBO，执行已编译的 Pass
+  → RenderGraph.execute：执行已编译的 Pass，同步并复制 SSBO
+  → Pass.execute：阴影数据与剔除、透明排序、绘制或计算
   → Submit / Present
 ```
 
@@ -30,7 +30,7 @@ Engine：场景 / 编辑器 Tick
 | RenderResourceManager | 通过资产 ID 获取并缓存 GPU 网格、纹理和采样器 |
 | Renderer | 渲染路线组装、材质覆盖解析与材质表更新、光栅化主视图剔除与帧提交 |
 | MaterialTable | 将材质描述转换为全局 MaterialData，按同一索引提供 CPU 绘制信息，维护纹理索引与材质 Set |
-| RenderGraph / Pass | Graph 处理依赖、资源和同步，先统一调用可选的 prepare，再执行；Pass 负责自身准备、绑定与绘制 |
+| RenderGraph / Pass | RenderGraphCompiler 解析依赖，ResourceCache 登记命名资源，RenderGraphExe 按序调用 Pass 的 execute |
 | Editor | 相机导航、选择、属性编辑和编辑器绘制输入 |
 
 光栅化与光追共用 Submesh 粒度的 DrawItem；Renderer 通过只读 span 引用提交列表，在独立数组中记录对应的材质索引和可见性，各 Pass 按相同的条目序号访问。提交列表在准备和命令录制期间保持有效。
@@ -56,7 +56,7 @@ Engine：场景 / 编辑器 Tick
 ## 渲染与资源
 
 - `VulkanContext` 管理设备与队列，`Swapchain` 管理呈现资源。
-- Renderer 声明外部呈现目标的 ImageHandle，acquire 后绑定本帧 Image；图像选择和呈现由 Renderer / Swapchain 管理。Graph 处理外部目标的同步。PassSetup 提供 renderExtent，Pass 从图像描述获取目标尺寸和格式。
+- Renderer 使用 `setInput()` 绑定实际的交换链纹理，acquire 后替换为当前帧的纹理。Renderer 和 Swapchain 管理图像选择与呈现。Pass 从 `CompileData` 取得默认纹理尺寸和格式，并从资源描述查找实际尺寸和格式。
 - `FrameContext` 管理命令与同步；`FrameData` 仅持有逐帧 UBO、公共 Descriptor Set 和绑定版本。
 - Renderer 管理共享光源 Buffer handle；ShadowPass 管理阴影 CPU 数据与阴影 Buffer handle，底层 SSBO 由 Graph 分配和同步。
 - Renderer 持有环境纹理、LUT 引用和阴影 sampler；图编译后将阴影视图交给 FrameData 写入，场景环境图改变时更新环境绑定。
@@ -64,13 +64,13 @@ Engine：场景 / 编辑器 Tick
 - 光栅化 Pass 决定 Shader、管线状态和附件。渲染核心提供共用的[网格命令录制](../src/render/raster/MeshDraw.h)、[附件声明与绑定](../src/render/raster/RasterAttachments.h)和[阴影资源布局](../src/render/raster/ShadowResources.h)。
 - Graph 默认共享阴影图、深度和颜色中间结果；跨帧访问由同一队列上的 Barrier 同步。
 - 材质、灯光、阴影与光追命中 SSBO 在 setup 申请，跨帧共用；prepare 从各 FIF 的 staging pool 线性分配并写入，execute 录制复制与前后 Barrier。容量增长时等待 GPU 完成后重新分配，并刷新受影响的 Buffer 绑定。
-- Graph Buffer 统一跨帧共享；拾取在等待本次提交完成后立即回读。时域历史由 Graph 创建并持有，使用双层 Ping-pong 资源，图重建时重置历史。
+- Graph Buffer 跨帧共享。拾取在本次提交完成后回读。图重建时重置时域历史。
 
 详见 [RenderGraph](RenderGraph.md) 与 [Descriptor / Pipeline Layout](RenderLayout.md)。
 
 ## 配置与编辑器
 
-- Renderer 初始化时取得渲染配置引用；Pass 通过 `PassSetup.config` 共享同一份配置，编辑器修改后直接读取最新值。
+- Renderer 初始化时取得渲染配置引用，并通过原生 `RenderContext` 提供给渲染代码。
 - 路线或图结构变化时重建 Graph；曝光等数值参数通过逐帧数据更新。
 - IBL 决定是否加入 SkyboxPass，场景环境图变化时刷新绑定。
 - UI 修改配置，正常关闭时统一持久化；场景内容只在显式保存时写入。

@@ -1,7 +1,7 @@
 # MinimalPathTracer 实时光追
 
 在编辑器的 Graph 下拉框选择 `MinimalPathTracer`。这张图加载独立的 `MinimalPathTracer` 插件，
-由实例的 `Max bounces` 控制弹射上限，图参数控制可选 SVGF 和后处理。[组图入口](../graphs/minimal_path_tracer.py) · [Falcor 的组图示例](https://github.com/NVIDIAGameWorks/Falcor/blob/759aad033ff610fb0d82c74f7e0a508d0096d5f2/scripts/MinimalPathTracer.py)
+由实例的 `Max bounces` 控制弹射上限，图把 `color` 直接接到后处理。[组图入口](../graphs/minimal_path_tracer.py) · [Falcor 的组图示例](https://github.com/NVIDIAGameWorks/Falcor/blob/759aad033ff610fb0d82c74f7e0a508d0096d5f2/scripts/MinimalPathTracer.py)
 
 ## 积分流程
 
@@ -25,17 +25,13 @@ MinimalPathTracer 每帧只调度一次 RayGen。ReSTIR 的表面、reservoir �
 | --- | --- |
 | [path_tracing.slang](../shaders/raytracing/path_tracing.slang) | Surface、材质求值、相机射线、命中 / Miss、BRDF 采样、路径续射线和俄罗斯轮盘 |
 | [light_sampling.slang](../shaders/raytracing/light_sampling.slang) | 光源选择、解析光源 / 发光三角形 / 环境的求值、光源 PDF 和命中光源样本还原 |
-| [path_output.slang](../shaders/raytracing/path_output.slang) | 合并 HDR 或 SVGF 分离输出、主命中深度和法线 |
-| [minimal_path_tracer.slang](../passes/raytracing/minimal/minimal_path_tracer.slang) | MinimalPathTracer 的路径积分和 RayGen |
+| [minimal_path_tracer.slang](../passes/raytracing/minimal/minimal_path_tracer.slang) | MinimalPathTracer 的路径积分和颜色输出 |
 
-两个插件各自缓存 Pipeline，并复用场景准备、BLAS / TLAS、基础描述符和 SBT 构建逻辑。切换 Graph
-时重新编译图，样本索引和时域历史重新开始。修改弹射上限复用当前 Pipeline，并重置 SVGF 历史。
+两个插件各自缓存 Pipeline，并复用场景准备、BLAS / TLAS、基础描述符和 SBT 构建逻辑。切换到 MinimalPathTracer 时重新编译图并重置样本索引。修改弹射上限复用当前 Pipeline。
 
-MinimalPathTracer 关闭 SVGF 时输出合并的 RGBA16F；开启时输出 direct、indirect、emission、albedo，
-随后复用现有 SVGF 重投影与五级 à-trous 滤波。直接光包括主顶点光源采样和一次散射后命中光源的贡献，
-更深层贡献归入间接光，相机直接可见的 emission 单独输出。
+`color` 是这个 Pass 唯一的图端口，格式为 RGBA16F。它合并直接光、间接光和相机直接可见的自发光。光源和材质通过渲染后端的共享描述符访问。
 
 ## 验证入口
 
-`SvgfToggleCheck <scene-id> [size]` 覆盖两张图与 SVGF 开关的反复切换，并切换 1–3 次弹射。
+`SvgfToggleCheck <scene-id> [size]` 验证两张图之间切换、ReSTIR 的 SVGF 开关，以及 MinimalPathTracer 的单个颜色端口。检查也覆盖 1–3 次弹射。
 `CaptureScene` 通过 `realtime` 或 `minimal_path_tracer` 选择 Graph，两条路线可用末尾的 `[max-bounces]` 调节弹射上限。

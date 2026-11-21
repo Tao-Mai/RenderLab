@@ -13,9 +13,15 @@
 #include "scene/component/TransformComponent.h"
 
 #include <algorithm>
+#include <string_view>
 #include <utility>
 
 #include <glm/glm.hpp>
+
+namespace
+{
+constexpr std::string_view kSceneObjectsEnabled = "SceneObjects:enabled";
+}
 
 Editor::~Editor() { DCHECK(!inited); }
 
@@ -77,7 +83,7 @@ void Editor::refreshUi()
 bool Editor::resizeWindowForLayout()
 {
     Context& ctx = context();
-    const bool showObjectList = ctx.renderer->showObjectList();
+    const bool showObjectList = ctx.config->getSettings().getOption(kSceneObjectsEnabled, false);
     if (showObjectList == windowHasObjectList)
         return false;
 
@@ -132,7 +138,7 @@ Editor::Frame
 Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapchainWidth, uint32_t swapchainHeight)
 {
     backend.beginFrame();
-    ui.beginFrame(context().renderer->showObjectList());
+    ui.beginFrame(windowHasObjectList);
     auto& scene = context().sceneManager->scene();
     pendingObjectActions = ui.drawHierarchy(scene, selectedId);
     if (pendingObjectActions.renamed)
@@ -166,7 +172,8 @@ Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapcha
 
     const auto& config = *context().config;
     const auto& renderer = *context().renderer;
-    if (config.editorConfig().objectPicking && renderer.activeRenderGraph() == &config.renderGraph() &&
+    const auto* graph = renderer.getActiveGraph();
+    if (config.editorConfig().objectPicking && graph && graph->getName() == config.renderGraphName() &&
         renderer.supportsObjectPicking() && !camera.isNavigationActive())
     {
         glm::vec2 clickNdc;

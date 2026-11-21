@@ -24,6 +24,7 @@ struct RL_RECORD ShadowSettings
         RL_FIELD("blendRatio") float                blendRatio    = 0.1f;  // Fraction of each slice's depth interval; 0 disables blending.
         RL_FIELD("sampleRadius") float                sampleRadius  = 2.0f;  // PCF radius in shadow-map texels.
     } cascade RL_FIELD("cascade");
+    RL_FIELD("enabled") bool                 enabled              = true;
     RL_FIELD("pointShadowMapSize") uint32_t             pointShadowMapSize    = 1024;
     RL_FIELD("rectAreaShadowMapSize") uint32_t             rectAreaShadowMapSize = 1024;
     RL_FIELD("spotShadowMapSize") uint32_t             spotShadowMapSize     = 1024;
@@ -34,7 +35,6 @@ struct RL_RECORD ShadowSettings
     RL_FIELD("spotSampleRadius") float                spotSampleRadius      = 1.5f;  // Texels, independent of shadow map resolution.
 
     void validate() const;
-    [[nodiscard]] bool requiresGraphRebuild(const ShadowSettings& current) const;
 };
 
 #include RL_METADATA_HEADER("metadata/passes/raster/ShadowPass/ShadowSettings.generated.h")

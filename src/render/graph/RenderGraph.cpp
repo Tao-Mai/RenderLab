@@ -1,397 +1,783 @@
 #include "render/graph/RenderGraph.h"
 
+#include "core/DirectedGraphTraversal.h"
+#include "core/GlobalState.h"
 #include "core/Logger.h"
-#include "render/RenderConfig.h"
-#include "render/device/GpuProfiler.h"
-#include "render/device/Memory.h"
-#include "render/device/VkCheck.h"
-#include "render/device/VulkanContext.h"
-#include "render/resources/Buffer.h"
+#include "core/ScriptBindings.h"
+#include "core/Scripting.h"
+#include "render/RenderContext.h"
+#include "render/device/Device.h"
+#include "render/device/Fbo.h"
 
 #include <algorithm>
+#include <functional>
+#include <type_traits>
+#include <utility>
+
+namespace Falcor
+{
+const FileDialogFilterVec RenderGraph::kFileExtensionFilters{{"py", "Render Graph Files"}};
 
 namespace
 {
-constexpr vk::DeviceSize kStagingBlockSize = 1024 * 1024;
-constexpr vk::DeviceSize kUploadAlignment  = 16;
-vk::ImageAspectFlags     imageAspect(vk::Format format)
+auto makePassChangedCB(const ref<RenderPass>& slot, bool& recompile)
 {
-    return format == vk::Format::eD32Sfloat ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor;
+    struct Callback
+    {
+        const ref<RenderPass>* slot;
+        bool* recompile;
+
+        void operator()() const { *recompile = true; }
+    };
+    return Callback{&slot, &recompile};
+}
+
+void clearPassChangedCB(std::function<void()>& callback, const ref<RenderPass>& slot)
+{
+    using Callback = decltype(makePassChangedCB(slot, std::declval<bool&>()));
+    // update() can attach the same Pass to another graph's node.
+    if (const auto* target = callback.target<Callback>(); target && target->slot == &slot)
+        callback = [] {};
 }
 }  // namespace
 
-struct RenderGraph::Allocation
+RenderGraph::RenderGraph(ref<Device> device, const std::string& name) :
+    mpDevice(std::move(device)), mName(name), mpGraph(std::make_unique<DirectedGraph>())
 {
-    vk::raii::DeviceMemory  memory     = nullptr;
-    vk::raii::Image         ownedImage = nullptr;
-    std::unique_ptr<Buffer> buffer;
-    std::unique_ptr<Image>  views;
-    Image*                  image = nullptr;
-    ImageAccess             state;
-    uint64_t                revision = 1;
+}
+
+RenderGraph::~RenderGraph()
+{
+    for (const auto& [index, node] : mNodeData)
+        clearPassChangedCB(node.pPass->mPassChangedCB, node.pPass);
+}
+
+ref<RenderGraph> RenderGraph::create(ref<Device> device, const std::string& name)
+{
+    return make_ref<RenderGraph>(std::move(device), name);
+}
+
+namespace
+{
+PyMethodDef kAddGraph{
+    "addGraph",
+    [](PyObject* result, PyObject* graph) -> PyObject*
+    {
+        if (!ScriptBindings::isInstance(graph, typeid(ref<RenderGraph>)))
+        {
+            PyErr_SetString(PyExc_TypeError, "m.addGraph expects a RenderGraph");
+            return nullptr;
+        }
+        if (PyList_SetItem(result, 0, Py_NewRef(graph)) != 0)
+            return nullptr;
+        Py_RETURN_NONE;
+    },
+    METH_O,
+    nullptr,
 };
 
-void RenderGraph::init(VulkanContext& vulkan)
+}  // namespace
+
+ref<RenderGraph> RenderGraph::createFromFile(ref<Device> device, const std::filesystem::path& path)
 {
-    DCHECK(!deviceContext);
-    deviceContext = &vulkan;
+    Scripting::Context context;
+    const PythonObject result{Py_BuildValue("[O]", Py_None)};
+    CHECK(result, "{}", pythonError());
+    const PythonObject addGraph{PyCFunction_New(&kAddGraph, result.get())};
+    const PythonObject types{PyImport_ImportModule("types")};
+    CHECK(addGraph && types, "{}", pythonError());
+    const PythonObject m{PyObject_CallMethod(types.get(), "SimpleNamespace", nullptr)};
+    CHECK(m && PyObject_SetAttrString(m.get(), "addGraph", addGraph.get()) == 0, "{}", pythonError());
+    context.setObject("m", m.get());
+
+    auto previous = getActivePythonRenderGraphDevice();
+    setActivePythonRenderGraphDevice(std::move(device));
+    Scripting::runScriptFromFile(path, context);
+    setActivePythonRenderGraphDevice(std::move(previous));
+
+    return ScriptBindings::fromPython<ref<RenderGraph>>(PyList_GET_ITEM(result.get(), 0)).value_or(ref<RenderGraph>{});
 }
 
-void RenderGraph::releaseResources() noexcept
+ref<RenderGraph> RenderGraph::createFromString(ref<Device> device, std::string_view script)
 {
-    for (auto& pool : stagingPools)
-        pool.copies.clear();
-    resources.clear();
-    nodes.clear();
-    sortedNodes.clear();
-    nodeStorage.clear();
-    outputResources.clear();
+    Scripting::Context context;
+    const PythonObject result{Py_BuildValue("[O]", Py_None)};
+    CHECK(result, "{}", pythonError());
+    const PythonObject addGraph{PyCFunction_New(&kAddGraph, result.get())};
+    const PythonObject types{PyImport_ImportModule("types")};
+    CHECK(addGraph && types, "{}", pythonError());
+    const PythonObject m{PyObject_CallMethod(types.get(), "SimpleNamespace", nullptr)};
+    CHECK(m && PyObject_SetAttrString(m.get(), "addGraph", addGraph.get()) == 0, "{}", pythonError());
+    context.setObject("m", m.get());
 
-    setupNode = nullptr;
+    auto previous = getActivePythonRenderGraphDevice();
+    setActivePythonRenderGraphDevice(std::move(device));
+    Scripting::runScript(script, context);
+    setActivePythonRenderGraphDevice(std::move(previous));
+
+    return ScriptBindings::fromPython<ref<RenderGraph>>(PyList_GET_ITEM(result.get(), 0)).value_or(ref<RenderGraph>{});
 }
 
-void RenderGraph::reset() noexcept
+void RenderGraph::setScene(const ref<Scene>& scene)
 {
-    releaseResources();
-    stagingPools  = {};
-    deviceContext = nullptr;
-}
-
-void RenderGraph::compile(const PassSetup& setup)
-{
-    compileNodes();
-    allocateResources();
-    for (auto* node : sortedNodes)
-        if (node->bindResources)
-            node->bindResources(*this, setup);
-}
-
-void RenderGraph::beginFrame(uint32_t frameIndex)
-{
-    currentFrameIndex = frameIndex;
-    auto& pool        = stagingPools[frameIndex];
-    pool.blockIndex   = 0;
-    pool.copies.clear();
-    for (auto& block : pool.blocks)
-        block.used = 0;
-}
-
-RenderGraph::BufferUpload
-RenderGraph::allocateUpload(BufferHandle buffer, vk::DeviceSize size, vk::DeviceSize destinationOffset)
-{
-    DEBUG_ONLY(const auto& resource = resolveResource(buffer.id);)
-    DCHECK(resource.type == ResourceType::Buffer);
-    DCHECK(resource.bufferUsage & vk::BufferUsageFlagBits::eTransferDst);
-    DCHECK(size && size % 4 == 0 && destinationOffset % 4 == 0);
-
-    ensureBufferCapacity(buffer, destinationOffset + size);
-
-    auto& pool = stagingPools[currentFrameIndex];
-    while (pool.blockIndex < pool.blocks.size())
-    {
-        const auto& block  = pool.blocks[pool.blockIndex];
-        const auto  offset = (block.used + kUploadAlignment - 1) & ~(kUploadAlignment - 1);
-        if (offset + size <= block.buffer.size())
-            break;
-        ++pool.blockIndex;
-    }
-    if (pool.blockIndex == pool.blocks.size())
-    {
-        auto& block  = pool.blocks.emplace_back();
-        block.buffer = Buffer(
-            deviceContext->physicalDeviceHandle(),
-            deviceContext->deviceHandle(),
-            std::max(kStagingBlockSize, size),
-            vk::BufferUsageFlagBits::eTransferSrc,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-        );
-        block.mapped = static_cast<std::byte*>(block.buffer.map());
-    }
-    auto&      block  = pool.blocks[pool.blockIndex];
-    const auto offset = (block.used + kUploadAlignment - 1) & ~(kUploadAlignment - 1);
-    block.used        = offset + size;
-    pool.copies.push_back(
-        {buffer, pool.blockIndex, {.srcOffset = offset, .dstOffset = destinationOffset, .size = size}}
-    );
-    return {offset, {block.mapped + offset, static_cast<size_t>(size)}};
-}
-
-void RenderGraph::ensureBufferCapacity(BufferHandle buffer, vk::DeviceSize requiredSize)
-{
-    auto& resource = resolveResource(buffer.id);
-    DCHECK(resource.type == ResourceType::Buffer);
-    DCHECK(requiredSize > 0);
-
-    const auto limit        = deviceContext->properties().limits.maxStorageBufferRange;
-    CHECK(requiredSize <= limit, "buffer requires {} bytes; maxStorageBufferRange is {}", requiredSize, limit);
-    if (requiredSize > resource.bufferInfo.size)
-    {
-        // A shared buffer can still be referenced by any frame in flight.
-        vkCheck(deviceContext->deviceHandle().waitIdle());
-        resource.bufferInfo.size =
-            std::min<vk::DeviceSize>(std::max(requiredSize, resource.bufferInfo.size * 2), limit);
-        auto& allocation  = *resource.allocation;
-        allocation.buffer = std::make_unique<Buffer>(
-            deviceContext->physicalDeviceHandle(),
-            deviceContext->deviceHandle(),
-            resource.bufferInfo.size,
-            resource.bufferUsage,
-            resource.bufferInfo.memoryProperties
-        );
-        allocation.state = {};
-        ++allocation.revision;
-    }
-}
-
-void RenderGraph::recordUploads(vk::raii::CommandBuffer& commandBuffer)
-{
-    const auto& pool = stagingPools[currentFrameIndex];
-    for (const auto& copy : pool.copies)
-    {
-        useResource(
-            commandBuffer,
-            {copy.destination.id,
-             {
-                 .stages = vk::PipelineStageFlagBits2::eCopy,
-                 .access = vk::AccessFlagBits2::eTransferWrite,
-             }}
-        );
-        commandBuffer.copyBuffer(
-            pool.blocks[copy.blockIndex].buffer.handle(),
-            getBuffer(copy.destination).handle(),
-            copy.region
-        );
-    }
-}
-
-void RenderGraph::allocateResources()
-{
-    const auto& device         = deviceContext->deviceHandle();
-    const auto& physicalDevice = deviceContext->physicalDeviceHandle();
-    for (Resource& entry : resources)
-    {
-        if (!entry.data)
-            continue;
-
-        auto& resource      = *entry.data;
-        resource.allocation = std::make_shared<Allocation>();
-        auto& allocation    = *resource.allocation;
-        if (resource.externalImage)
-            continue;
-
-        if (resource.type == ResourceType::Buffer)
-        {
-            DCHECK(resource.bufferUsage);
-            allocation.buffer = std::make_unique<Buffer>(
-                physicalDevice,
-                device,
-                resource.bufferInfo.size,
-                resource.bufferUsage,
-                resource.bufferInfo.memoryProperties
-            );
-            continue;
-        }
-
-        const auto& info = resource.imageInfo;
-        DCHECK(resource.imageUsage);
-        allocation.ownedImage   = vkCheck(device.createImage({
-              .flags         = info.flags,
-              .imageType     = info.imageType,
-              .format        = info.format,
-              .extent        = info.extent,
-              .mipLevels     = info.mipLevels,
-              .arrayLayers   = info.arrayLayers,
-              .samples       = vk::SampleCountFlagBits::e1,
-              .tiling        = vk::ImageTiling::eOptimal,
-              .usage         = resource.imageUsage,
-              .sharingMode   = vk::SharingMode::eExclusive,
-              .initialLayout = vk::ImageLayout::eUndefined,
-        }));
-        const auto requirements = allocation.ownedImage.getMemoryRequirements();
-        allocation.memory       = vkCheck(device.allocateMemory({
-                  .allocationSize  = requirements.size,
-                  .memoryTypeIndex = vulkan_memory::findType(
-                physicalDevice,
-                requirements.memoryTypeBits,
-                vk::MemoryPropertyFlagBits::eDeviceLocal
-            ),
-        }));
-        vkCheck(allocation.ownedImage.bindMemory(*allocation.memory, 0));
-        allocation.views = std::make_unique<Image>(device, *allocation.ownedImage);
-        allocation.image = allocation.views.get();
-    }
-}
-
-void RenderGraph::bindImage(ImageHandle handle, Image& image)
-{
-    auto& resource = resolveResource(handle.id);
-    DCHECK(resource.type == ResourceType::Image && resource.externalImage && resource.allocation);
-    resource.allocation->image = &image;
-}
-
-const RenderGraph::ImageCreateInfo& RenderGraph::imageInfo(ImageHandle image)
-{
-    const auto& resource = resolveResource(image.id);
-    DCHECK(resource.type == ResourceType::Image);
-    return resource.imageInfo;
-}
-
-vk::Extent2D RenderGraph::imageExtent(ImageHandle image)
-{
-    const auto& extent = imageInfo(image).extent;
-    return {extent.width, extent.height};
-}
-
-bool RenderGraph::sharesImage(ImageHandle lhs, ImageHandle rhs) const
-{
-    return &resolveResource(lhs.id) == &resolveResource(rhs.id);
-}
-
-vk::ImageUsageFlags RenderGraph::imageUsage(ImageHandle image) const
-{
-    return resolveResource(image.id).imageUsage;
-}
-
-void RenderGraph::invalidateImageHistory(ImageHandle image)
-{
-    ++resolveResource(image.id).historyRevision;
-}
-
-uint64_t RenderGraph::imageHistoryRevision(ImageHandle image) const
-{
-    return resolveResource(image.id).historyRevision;
-}
-
-vk::PipelineStageFlags2 RenderGraph::firstUseStages(ImageHandle image) const
-{
-    const auto& resource = resolveResource(image.id);
-    DCHECK(resource.externalImage);
-    return resource.firstUseStages;
-}
-
-Image& RenderGraph::getImage(ImageHandle image)
-{
-    const auto& resource = resolveResource(image.id);
-    DCHECK(resource.type == ResourceType::Image && resource.allocation && resource.allocation->image);
-    return *resource.allocation->image;
-}
-
-Buffer& RenderGraph::getBuffer(BufferHandle buffer)
-{
-    const auto& resource = resolveResource(buffer.id);
-    DCHECK(resource.type == ResourceType::Buffer && resource.allocation);
-    return *resource.allocation->buffer;
-}
-
-void RenderGraph::useResource(vk::raii::CommandBuffer& commandBuffer, const ResourceUse& use)
-{
-    auto& resource   = resolveResource(use.resource);
-    auto& allocation = *resource.allocation;
-    // Shared resources retain the previous submission's access, including all trailing readers.
-    // Their first use in this frame therefore also synchronizes across frame boundaries.
-    const auto previous = allocation.state;
-    const auto next     = use.access;
-    if (!needsBarrier(previous, next))
-    {
-        allocation.state.stages |= next.stages;
-        allocation.state.access |= next.access;
+    if (mpScene == scene)
         return;
-    }
 
-    if (resource.type == ResourceType::Buffer)
+    mpScene = scene;
+    for (auto& [index, node] : mNodeData)
+        node.pPass->setScene(mpDevice->getRenderContext(), mpScene);
+    mRecompile = true;
+}
+
+ref<RenderPass>
+RenderGraph::createPass(const std::string& passName, const std::string& passType, const Properties& properties)
+{
+    auto pass = RenderPass::create(passType, mpDevice, properties);
+    addPass(pass, passName);
+    return pass;
+}
+
+namespace
+{
+std::pair<std::string, std::string> parseFieldName(const std::string& name)
+{
+    const auto dot = name.rfind('.');
+    if (dot == std::string::npos)
+        return {name, {}};
+
+    CHECK(dot != 0 && dot + 1 < name.size(), "invalid resource endpoint '{}'", name);
+    return {name.substr(0, dot), name.substr(dot + 1)};
+}
+}  // namespace
+
+RenderPass* RenderGraph::getRenderPassAndNamePair(
+    bool input, const std::string& fullName, std::pair<std::string, std::string>& nameAndField
+) const
+{
+    nameAndField              = parseFieldName(fullName);
+    const auto& [name, field] = nameAndField;
+    auto* pass                = getPass(name).get();
+    if (!field.empty())
     {
-        const vk::BufferMemoryBarrier2 barrier{
-            .srcStageMask        = previous.stages,
-            .srcAccessMask       = previous.access,
-            .dstStageMask        = next.stages,
-            .dstAccessMask       = next.access,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer              = allocation.buffer->handle(),
-            .size                = resource.bufferInfo.size,
-        };
-        commandBuffer.pipelineBarrier2({.bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrier});
+        using Visibility       = RenderPassReflection::Field::Visibility;
+        const auto& defaults   = mCompilerDeps.defaultResourceProps;
+        const auto  reflection = pass->reflect({defaults.dims, defaults.format});
+        const auto* port       = reflection.getField(field);
+        CHECK(
+            port && is_set(port->getVisibility(), input ? Visibility::Input : Visibility::Output),
+            "unknown {} port '{}'",
+            input ? "input" : "output",
+            fullName
+        );
+    }
+    return pass;
+}
+
+uint32_t RenderGraph::getPassIndex(const std::string& name) const
+{
+    const auto found = mNameToIndex.find(name);
+    return found == mNameToIndex.end() ? kInvalidIndex : found->second;
+}
+
+uint32_t RenderGraph::addPass(const ref<RenderPass>& pass, const std::string& name)
+{
+    CHECK(pass);
+    CHECK(!name.empty(), "invalid render pass instance name '{}'", name);
+    CHECK(!doesPassExist(name), "duplicate render pass '{}'", name);
+
+    const auto index = mpGraph->addNode();
+    mNameToIndex.emplace(name, index);
+    const auto& node = mNodeData.emplace(index, NodeData{name, pass}).first->second;
+    pass->mName = name;
+    pass->mPassChangedCB = makePassChangedCB(node.pPass, mRecompile);
+    if (mpScene)
+        pass->setScene(mpDevice->getRenderContext(), mpScene);
+    mRecompile = true;
+    return index;
+}
+
+void RenderGraph::removePass(const std::string& name)
+{
+    const auto index = getPassIndex(name);
+    CHECK(index != kInvalidIndex, "unknown render pass '{}'", name);
+
+    mRecompile = true;
+    for (const auto edgeId : mpGraph->removeNode(index))
+        mEdgeData.erase(edgeId);
+    std::erase_if(mOutputs, [index](const auto& output) { return output.nodeId == index; });
+    const auto prefix = name + '.';
+    std::erase_if(
+        mCompilerDeps.externalResources,
+        [&](const auto& input) { return input.first.rfind('.') == name.size() && input.first.starts_with(prefix); }
+    );
+    const auto& node = mNodeData.at(index);
+    clearPassChangedCB(node.pPass->mPassChangedCB, node.pPass);
+    mNodeData.erase(index);
+    mNameToIndex.erase(name);
+}
+
+void RenderGraph::updatePass(const std::string& name, const Properties& properties)
+{
+    const auto index = getPassIndex(name);
+    CHECK(index != kInvalidIndex, "unknown render pass '{}'", name);
+    auto& node = mNodeData.at(index);
+    auto pass = RenderPass::create(node.pPass->getType(), mpDevice, properties);
+    clearPassChangedCB(node.pPass->mPassChangedCB, node.pPass);
+    const auto previous = std::exchange(node.pPass, pass);
+    pass->mName = name;
+    pass->mPassChangedCB = makePassChangedCB(node.pPass, mRecompile);
+    if (mpScene)
+        pass->setScene(mpDevice->getRenderContext(), mpScene);
+    mRecompile = true;
+}
+
+const ref<RenderPass>& RenderGraph::getPass(const std::string& name) const
+{
+    const auto index = getPassIndex(name);
+    CHECK(index != kInvalidIndex, "unknown render pass '{}'", name);
+    return mNodeData.at(index).pPass;
+}
+
+uint32_t RenderGraph::getEdge(const std::string& source, const std::string& target)
+{
+    const auto [srcPass, srcField] = parseFieldName(source);
+    const auto [dstPass, dstField] = parseFieldName(target);
+    const auto sourceId            = getPassIndex(srcPass);
+    const auto targetId            = getPassIndex(dstPass);
+    if (sourceId == kInvalidIndex || targetId == kInvalidIndex)
+        return kInvalidIndex;
+
+    const auto& node = *mpGraph->getNode(sourceId);
+    for (uint32_t index = 0; index < node.getOutgoingEdgeCount(); ++index)
+    {
+        const auto  edgeId = node.getOutgoingEdge(index);
+        const auto& data   = mEdgeData.at(edgeId);
+        if (mpGraph->getEdge(edgeId)->getDestNode() == targetId && data.srcField == srcField &&
+            data.dstField == dstField)
+            return edgeId;
+    }
+    return kInvalidIndex;
+}
+
+uint32_t RenderGraph::addEdge(const std::string& source, const std::string& target)
+{
+    std::pair<std::string, std::string> src;
+    std::pair<std::string, std::string> dst;
+    getRenderPassAndNamePair(false, source, src);
+    getRenderPassAndNamePair(true, target, dst);
+    auto& [srcPass, srcField] = src;
+    auto& [dstPass, dstField] = dst;
+    const auto sourceId       = getPassIndex(srcPass);
+    const auto targetId       = getPassIndex(dstPass);
+    CHECK(sourceId != targetId && (srcField.empty() == dstField.empty()), "invalid edge '{}' -> '{}'", source, target);
+    if (!dstField.empty())
+    {
+        const auto& node = *mpGraph->getNode(targetId);
+        for (uint32_t index = 0; index < node.getIncomingEdgeCount(); ++index)
+            CHECK(
+                mEdgeData.at(node.getIncomingEdge(index)).dstField != dstField,
+                "input '{}' already has an edge",
+                target
+            );
+    }
+    CHECK(
+        !DirectedGraphPathDetector::hasPath(*mpGraph, targetId, sourceId),
+        "edge '{}' -> '{}' introduces a cycle",
+        source,
+        target
+    );
+
+    const auto edgeId = mpGraph->addEdge(sourceId, targetId);
+    mEdgeData.emplace(edgeId, EdgeData{std::move(srcField), std::move(dstField)});
+    mRecompile = true;
+    return edgeId;
+}
+
+void RenderGraph::removeEdge(const std::string& source, const std::string& target)
+{
+    const auto edgeId = getEdge(source, target);
+    CHECK(edgeId != kInvalidIndex, "unknown edge '{}' -> '{}'", source, target);
+    removeEdge(edgeId);
+}
+
+void RenderGraph::removeEdge(uint32_t edgeId)
+{
+    CHECK(mpGraph->doesEdgeExist(edgeId), "unknown edge {}", edgeId);
+    mpGraph->removeEdge(edgeId);
+    mEdgeData.erase(edgeId);
+    mRecompile = true;
+}
+
+void RenderGraph::setInput(const std::string& name, const ref<Resource>& resource)
+{
+    auto&      inputs  = mCompilerDeps.externalResources;
+    const auto current = inputs.find(name);
+    if (!resource)
+    {
+        CHECK(current != inputs.end(), "input '{}' is not registered", name);
+        inputs.erase(current);
     }
     else
     {
-        const vk::ImageMemoryBarrier2 barrier{
-            .srcStageMask        = previous.stages,
-            .srcAccessMask       = previous.access,
-            .dstStageMask        = next.stages,
-            .dstAccessMask       = next.access,
-            .oldLayout           = previous.layout,
-            .newLayout           = next.layout,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image               = allocation.image->handle(),
-            .subresourceRange    = {
-                   .aspectMask = imageAspect(resource.imageInfo.format),
-                   .levelCount = resource.imageInfo.mipLevels,
-                   .layerCount = resource.imageInfo.arrayLayers
-            },
-        };
-        commandBuffer.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
+        if (current == inputs.end())
+        {
+            std::pair<std::string, std::string> input;
+            getRenderPassAndNamePair(true, name, input);
+            CHECK(!input.second.empty(), "invalid input '{}'", name);
+        }
+        inputs.insert_or_assign(name, resource);
     }
-    allocation.state = next;
+    if (mpExe)
+        mpExe->setInput(name, resource);
 }
 
-void RenderGraph::transitionResources(vk::raii::CommandBuffer& commandBuffer, const std::vector<ResourceUse>& uses)
+void RenderGraph::markOutput(const std::string& name, TextureChannelFlags mask)
 {
-    for (const ResourceUse& use : uses)
-        useResource(commandBuffer, use);
-}
-
-void RenderGraph::prepare(const PassFrame& frame)
-{
-    for (auto* node : sortedNodes)
-        if (node->prepare)
-            node->prepare(*this, frame);
-}
-
-void RenderGraph::beginGpuProfiling(
-    vk::raii::CommandBuffer& commandBuffer, GpuProfiler& gpuProfiler, Profiler* profiler
-) const
-{
-    std::vector<std::string_view> names;
-    if (profiler)
+    CHECK(mask != TextureChannelFlags::None);
+    if (name == "*")
     {
-        names.reserve(sortedNodes.size());
-        for (const auto* node : sortedNodes)
-            names.push_back(node->name);
+        for (const auto& output : getAvailableOutputs())
+            markOutput(output, mask);
+        return;
     }
-    gpuProfiler.beginFrame(commandBuffer, names, profiler);
-}
 
-void RenderGraph::execute(
-    vk::raii::CommandBuffer& commandBuffer, const PassFrame& frame, GpuProfiler& gpuProfiler, Profiler* profiler
-)
-{
-    DCHECK(!sortedNodes.empty());
-
-    // External targets discard old contents; their first barrier joins the acquire wait stage.
-    for (auto& entry : resources)
-        if (entry.data && entry.data->externalImage)
-            entry.data->allocation->state = {.stages = entry.data->firstUseStages};
-
-    recordUploads(commandBuffer);
-    auto execution        = frame;
-    execution.gpuProfiler = profiler ? &gpuProfiler : nullptr;
-    uint32_t passIndex    = 0;
-    for (auto* node : sortedNodes)
+    std::pair<std::string, std::string> endpoint;
+    getRenderPassAndNamePair(false, name, endpoint);
+    CHECK(!endpoint.second.empty(), "invalid render graph output '{}'", name);
+    GraphOut   output{getPassIndex(endpoint.first), std::move(endpoint.second), {mask}};
+    const auto found = std::ranges::find(mOutputs, output);
+    if (found == mOutputs.end())
     {
-        CpuProfileScope timing{profiler, node->name};
-        if (profiler)
-            profiler->beginPass(node->name);
-        gpuProfiler.beginPass(commandBuffer, passIndex);
-        transitionResources(commandBuffer, node->uses);
-        node->execute(*this, commandBuffer, execution);
-        gpuProfiler.endPass(commandBuffer, passIndex);
-        ++passIndex;
+        mOutputs.push_back(std::move(output));
+        mRecompile = true;
+    }
+    else
+        found->masks.insert(mask);
+}
+
+void RenderGraph::unmarkOutput(const std::string& name)
+{
+    const auto [pass, field] = parseFieldName(name);
+    const auto node          = getPassIndex(pass);
+    CHECK(node != kInvalidIndex && !field.empty(), "invalid render graph output '{}'", name);
+    const auto found = std::ranges::find(mOutputs, GraphOut{node, field});
+    if (found != mOutputs.end())
+    {
+        mOutputs.erase(found);
+        mRecompile = true;
     }
 }
 
-uint64_t RenderGraph::bufferRevision(BufferHandle buffer) const
+bool RenderGraph::isGraphOutput(const std::string& name) const
 {
-    const auto& resource = resolveResource(buffer.id);
-    return resource.allocation->revision;
+    const auto [pass, field] = parseFieldName(name);
+    return isGraphOutput(GraphOut{getPassIndex(pass), field});
 }
+
+bool RenderGraph::isGraphOutput(const GraphOut& output) const
+{
+    return std::ranges::find(mOutputs, output) != mOutputs.end();
+}
+
+ref<Resource> RenderGraph::getOutput(const std::string& name)
+{
+    CHECK(mpExe && !mRecompile, "compile the graph before fetching '{}'", name);
+    CHECK(isGraphOutput(name), "'{}' is not a marked graph output", name);
+    return mpExe->getResource(name);
+}
+
+ref<Resource> RenderGraph::getOutput(uint32_t index) { return getOutput(getOutputName(index)); }
+
+std::string RenderGraph::getOutputName(size_t index) const
+{
+    DCHECK(index < mOutputs.size());
+    const auto& output = mOutputs[index];
+    return mNodeData.at(output.nodeId).name + '.' + output.field;
+}
+
+std::unordered_set<TextureChannelFlags> RenderGraph::getOutputMasks(size_t index) const
+{
+    DCHECK(index < mOutputs.size());
+    return mOutputs[index].masks;
+}
+
+std::vector<std::string> RenderGraph::getAvailableOutputs() const
+{
+    std::vector<std::string> names;
+    const auto&              defaults = mCompilerDeps.defaultResourceProps;
+    for (uint32_t node = 0; node < mpGraph->getCurrentNodeId(); ++node)
+    {
+        if (!mpGraph->doesNodeExist(node))
+            continue;
+        const auto& data       = mNodeData.at(node);
+        const auto  reflection = data.pPass->reflect({defaults.dims, defaults.format});
+        for (size_t index = 0; index < reflection.getFieldCount(); ++index)
+        {
+            const auto& field = *reflection.getField(index);
+            if (is_set(field.getVisibility(), RenderPassReflection::Field::Visibility::Output))
+                names.push_back(data.name + '.' + field.getName());
+        }
+    }
+    return names;
+}
+
+std::vector<std::string> RenderGraph::getUnmarkedOutputs() const
+{
+    auto names = getAvailableOutputs();
+    std::erase_if(names, [&](const auto& name) { return isGraphOutput(name); });
+    return names;
+}
+
+void RenderGraph::onResize(const Fbo* target)
+{
+    CHECK(target);
+    const auto color = target->getColorTexture(0);
+    CHECK(color);
+    mCompilerDeps.defaultResourceProps = {{target->getWidth(), target->getHeight()}, color->getFormat()};
+    mRecompile = true;
+}
+
+bool RenderGraph::compile(RenderContext* context, std::string& log)
+{
+    DCHECK(context && context->getDevice() == mpDevice);
+    log.clear();
+    if (!mpExe || mRecompile)
+    {
+        if (mpExe && context->vulkan)
+            context->getDevice()->wait();
+        mpExe.reset();
+
+        const logger::ScopedErrorLog errors(log);
+        mpExe = RenderGraphCompiler::compile(*this, context, mCompilerDeps);
+        if (!mpExe)
+            return false;
+        mRecompile = false;
+    }
+    return true;
+}
+
+void RenderGraph::execute(RenderContext* context)
+{
+    std::string log;
+    CHECK(compile(context, log), "failed to compile render graph '{}': {}", mName, log);
+    const auto& properties = mCompilerDeps.defaultResourceProps;
+    mpExe->execute({context, mPassesDictionary, properties.dims, properties.format});
+}
+
+void RenderGraph::renderUI(RenderContext* context, Gui::Widgets& widget)
+{
+    if (mpExe)
+        mpExe->renderUI(context, widget);
+}
+
+void RenderGraph::renderOverlayUI(RenderContext* context)
+{
+    if (mpExe)
+        mpExe->renderOverlayUI(context);
+}
+
+void RenderGraph::onSceneUpdates(RenderContext* context, IScene::UpdateFlags updates)
+{
+    for (const auto& [index, node] : mNodeData)
+        node.pPass->onSceneUpdates(context, updates);
+}
+
+bool RenderGraph::onMouseEvent(const MouseEvent& event) { return mpExe && mpExe->onMouseEvent(event); }
+
+bool RenderGraph::onKeyEvent(const KeyboardEvent& event) { return mpExe && mpExe->onKeyEvent(event); }
+
+void RenderGraph::onHotReload(HotReloadFlags reloaded)
+{
+    if (mpExe)
+        mpExe->onHotReload(reloaded);
+}
+
+void RenderGraph::update(const ref<RenderGraph>& source)
+{
+    DCHECK(source.get() != this && source->getDevice() == mpDevice);
+    std::vector<std::string> removed;
+    for (const auto& [passName, index] : mNameToIndex)
+        if (!source->doesPassExist(passName))
+            removed.push_back(passName);
+    for (const auto& name : removed)
+        removePass(name);
+
+    for (uint32_t index = 0; index < source->mpGraph->getCurrentNodeId(); ++index)
+    {
+        if (!source->mpGraph->doesNodeExist(index))
+            continue;
+        const auto& node = source->mNodeData.at(index);
+        if (!doesPassExist(node.name))
+            addPass(node.pPass, node.name);
+    }
+
+    for (const auto& [edgeId, connection] : mEdgeData)
+        mpGraph->removeEdge(edgeId);
+    mEdgeData.clear();
+    for (uint32_t edgeId = 0; edgeId < source->mpGraph->getCurrentEdgeId(); ++edgeId)
+    {
+        if (!source->mpGraph->doesEdgeExist(edgeId))
+            continue;
+        const auto* edge       = source->mpGraph->getEdge(edgeId);
+        const auto& connection = source->mEdgeData.at(edgeId);
+        const auto& src        = source->mNodeData.at(edge->getSourceNode()).name;
+        const auto& dst        = source->mNodeData.at(edge->getDestNode()).name;
+        addEdge(
+            connection.srcField.empty() ? src : src + '.' + connection.srcField,
+            connection.dstField.empty() ? dst : dst + '.' + connection.dstField
+        );
+    }
+    for (size_t index = 0; index < source->getOutputCount(); ++index)
+    {
+        const auto name = source->getOutputName(index);
+        for (const auto mask : source->getOutputMasks(index))
+            markOutput(name, mask);
+    }
+    mRecompile = true;
+}
+
+namespace
+{
+using ScriptBindings::PythonValue;
+using ScriptBindings::destroyPythonValue;
+using ScriptBindings::makePythonValue;
+using ScriptBindings::valueOf;
+
+PyObject* createGraph(PyTypeObject* type, PyObject* args, PyObject* keywords)
+{
+    const char*              name = nullptr;
+    static const char* const kKeywords[]{"name", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, keywords, "s:RenderGraph", const_cast<char**>(kKeywords), &name))
+        return nullptr;
+    auto device = getActivePythonRenderGraphDevice();
+    if (!device)
+    {
+        PyErr_SetString(PyExc_RuntimeError, "RenderGraph requires an active device");
+        return nullptr;
+    }
+    return makePythonValue(type, RenderGraph::create(std::move(device), name));
+}
+
+PyObject* createPass(PyObject* object, PyObject* args, PyObject* keywords)
+{
+    const char*              name = nullptr;
+    const char*              type = nullptr;
+    PyObject*                dict = nullptr;
+    static const char* const kKeywords[]{"pass_name", "pass_type", "dict", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(
+            args,
+            keywords,
+            "ss|O!:create_pass",
+            const_cast<char**>(kKeywords),
+            &name,
+            &type,
+            &PyDict_Type,
+            &dict
+        ))
+        return nullptr;
+    const auto properties = dict ? Properties(dict) : Properties();
+    if (PyErr_Occurred())
+        return nullptr;
+    auto pass = valueOf<ref<RenderGraph>>(object)->createPass(name, type, properties);
+    return ScriptBindings::toPython(std::move(pass)).release();
+}
+
+PyObject* updatePass(PyObject* object, PyObject* args, PyObject* keywords)
+{
+    const char*              name = nullptr;
+    PyObject*                dict = nullptr;
+    static const char* const kKeywords[]{"name", "dict", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(
+            args,
+            keywords,
+            "sO!:update_pass",
+            const_cast<char**>(kKeywords),
+            &name,
+            &PyDict_Type,
+            &dict
+        ))
+        return nullptr;
+    const Properties properties(dict);
+    if (PyErr_Occurred())
+        return nullptr;
+    valueOf<ref<RenderGraph>>(object)->updatePass(name, properties);
+    Py_RETURN_NONE;
+}
+
+PyObject* addEdge(PyObject* object, PyObject* args, PyObject* keywords)
+{
+    const char*              source = nullptr;
+    const char*              target = nullptr;
+    static const char* const kKeywords[]{"src", "dst", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, keywords, "ss:add_edge", const_cast<char**>(kKeywords), &source, &target))
+        return nullptr;
+    return PyLong_FromUnsignedLong(valueOf<ref<RenderGraph>>(object)->addEdge(source, target));
+}
+
+PyObject* removeEdge(PyObject* object, PyObject* args, PyObject* keywords)
+{
+    const char*              source = nullptr;
+    const char*              target = nullptr;
+    static const char* const kKeywords[]{"src", "dst", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, keywords, "ss:remove_edge", const_cast<char**>(kKeywords), &source, &target))
+        return nullptr;
+    valueOf<ref<RenderGraph>>(object)->removeEdge(source, target);
+    Py_RETURN_NONE;
+}
+
+PyObject* markOutput(PyObject* object, PyObject* args, PyObject* keywords)
+{
+    const char*              name = nullptr;
+    PyObject*                mask = nullptr;
+    static const char* const kKeywords[]{"name", "mask", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, keywords, "s|O:mark_output", const_cast<char**>(kKeywords), &name, &mask))
+        return nullptr;
+
+    const auto flags = mask ? ScriptBindings::fromPython<TextureChannelFlags>(mask) : TextureChannelFlags::RGB;
+    if (!flags)
+    {
+        if (!PyErr_Occurred())
+            PyErr_SetString(PyExc_TypeError, "mark_output mask must be a TextureChannelFlags value");
+        return nullptr;
+    }
+    valueOf<ref<RenderGraph>>(object)->markOutput(name, *flags);
+    Py_RETURN_NONE;
+}
+
+PyObject* getGraphName(PyObject* object, void*)
+{
+    const auto& name = valueOf<ref<RenderGraph>>(object)->getName();
+    return PyUnicode_FromStringAndSize(name.data(), static_cast<Py_ssize_t>(name.size()));
+}
+
+int setGraphName(PyObject* object, PyObject* value, void*)
+{
+    if (!value || !PyUnicode_Check(value))
+    {
+        PyErr_SetString(PyExc_TypeError, "RenderGraph.name requires a string");
+        return -1;
+    }
+    const auto* name = PyUnicode_AsUTF8(value);
+    if (!name)
+        return -1;
+    valueOf<ref<RenderGraph>>(object)->setName(name);
+    return 0;
+}
+
+template <const std::string& (RenderPass::*getter)() const>
+PyObject* getPassString(PyObject* object, void*)
+{
+    const auto& value = ((*valueOf<ref<RenderPass>>(object)).*getter)();
+    return PyUnicode_FromStringAndSize(value.data(), static_cast<Py_ssize_t>(value.size()));
+}
+
+PyObject* getPassProperties(PyObject* object, void*)
+{
+    return valueOf<ref<RenderPass>>(object)->getProperties().toPython();
+}
+
+PyObject* setPassProperties(PyObject* object, PyObject* dict)
+{
+    const Properties properties(dict);
+    if (PyErr_Occurred())
+        return nullptr;
+    valueOf<ref<RenderPass>>(object)->setProperties(properties);
+    Py_RETURN_NONE;
+}
+
+}  // namespace
+
+FALCOR_SCRIPT_BINDING(RenderGraph)
+{
+    FALCOR_SCRIPT_BINDING_DEPENDENCY(Formats)
+    FALCOR_SCRIPT_BINDING_DEPENDENCY(Resource)
+
+    const auto bind = []<auto Method>() -> PyCFunction
+    {
+        return reinterpret_cast<PyCFunction>(
+            +[](PyObject* object, PyObject* args, PyObject* keywords) -> PyObject*
+            {
+                const char*              name = nullptr;
+                static const char* const kKeywords[]{"name", nullptr};
+                if (!PyArg_ParseTupleAndKeywords(args, keywords, "s", const_cast<char**>(kKeywords), &name))
+                    return nullptr;
+
+                auto& graph = *valueOf<ref<RenderGraph>>(object);
+                if constexpr (std::is_void_v<decltype(std::invoke(Method, graph, name))>)
+                {
+                    std::invoke(Method, graph, name);
+                    Py_RETURN_NONE;
+                }
+                else
+                    return ScriptBindings::toPython(std::invoke(Method, graph, name)).release();
+            }
+        );
+    };
+    constexpr auto kGetOutput =
+        static_cast<ref<Resource> (RenderGraph::*)(const std::string&)>(&RenderGraph::getOutput);
+
+    static PyMethodDef kGraphMethods[]{
+        {"create_pass", reinterpret_cast<PyCFunction>(createPass), METH_VARARGS | METH_KEYWORDS},
+        {"remove_pass", bind.operator()<&RenderGraph::removePass>(), METH_VARARGS | METH_KEYWORDS},
+        {"update_pass", reinterpret_cast<PyCFunction>(updatePass), METH_VARARGS | METH_KEYWORDS},
+        {"add_edge", reinterpret_cast<PyCFunction>(addEdge), METH_VARARGS | METH_KEYWORDS},
+        {"remove_edge", reinterpret_cast<PyCFunction>(removeEdge), METH_VARARGS | METH_KEYWORDS},
+        {"mark_output", reinterpret_cast<PyCFunction>(markOutput), METH_VARARGS | METH_KEYWORDS},
+        {"unmark_output", bind.operator()<&RenderGraph::unmarkOutput>(), METH_VARARGS | METH_KEYWORDS},
+        {"get_pass", bind.operator()<&RenderGraph::getPass>(), METH_VARARGS | METH_KEYWORDS},
+        {"get_output", bind.operator()<kGetOutput>(), METH_VARARGS | METH_KEYWORDS},
+        {},
+    };
+    static PyGetSetDef kGraphProperties[]{
+        {"name", getGraphName, setGraphName},
+        {},
+    };
+    static PyGetSetDef kPassProperties[]{
+        {"name", getPassString<&RenderPass::getName>},
+        {"type", getPassString<&RenderPass::getType>},
+        {"desc", getPassString<&RenderPass::getDesc>},
+        {"properties", getPassProperties},
+        {},
+    };
+    static PyMethodDef kPassMethods[]{
+        {"set_properties", setPassProperties, METH_O},
+        {},
+    };
+    static PyType_Slot kGraphSlots[]{
+        {Py_tp_new, reinterpret_cast<void*>(createGraph)},
+        {Py_tp_dealloc, reinterpret_cast<void*>(destroyPythonValue<ref<RenderGraph>>)},
+        {Py_tp_methods, kGraphMethods},
+        {Py_tp_getset, kGraphProperties},
+        {Py_mp_subscript,
+         reinterpret_cast<void*>(
+             +[](PyObject* object, PyObject* key) -> PyObject*
+             {
+                 const auto* name = PyUnicode_AsUTF8(key);
+                 return name ? ScriptBindings::toPython(valueOf<ref<RenderGraph>>(object)->getPass(name)).release()
+                             : nullptr;
+             }
+         )},
+        {},
+    };
+    static PyType_Slot kPassSlots[]{
+        {Py_tp_dealloc, reinterpret_cast<void*>(destroyPythonValue<ref<RenderPass>>)},
+        {Py_tp_methods, kPassMethods},
+        {Py_tp_getset, kPassProperties},
+        {},
+    };
+    static PyType_Spec
+        kGraphType{"falcor.RenderGraph", sizeof(PythonValue<ref<RenderGraph>>), 0, Py_TPFLAGS_DEFAULT, kGraphSlots};
+    static PyType_Spec kPassType{
+        "falcor.RenderPass",
+        sizeof(PythonValue<ref<RenderPass>>),
+        0,
+        Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION,
+        kPassSlots,
+    };
+    const auto passType = ScriptBindings::makePythonType<ref<RenderPass>>(m, kPassType);
+    const auto graphType = passType ? ScriptBindings::makePythonType<ref<RenderGraph>>(m, kGraphType) : nullptr;
+    if (!graphType || PyModule_AddObjectRef(m, "RenderPass", passType.get()) != 0)
+        return -1;
+    return PyModule_AddObjectRef(m, "RenderGraph", graphType.get());
+}
+}  // namespace Falcor

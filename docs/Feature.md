@@ -44,12 +44,12 @@
 ## 光追采样与累积
 
 - 漫反射 / GGX 混合 PDF、GGX VNDF 方向采样。
-- ReSTIR 和 [MinimalPathTracer](MinimalPathTracer.md) 是独立 Graph，均可接入 SVGF。
+- ReSTIR 可接入 SVGF。[MinimalPathTracer](MinimalPathTracer.md) 输出合并的 HDR 颜色。
 - ReSTIR 主命中使用原版 [ReSTIR DI](ReSTIR.md)：完整光源样本初始 RIS、时域复用、一轮空间复用、来源支持域与可见性归一化。
 - 点光、聚光、方向光、矩形、实例展开的发光三角形和启用的环境共同采样；初始光源与 BRDF 候选通过 balance MIS 进入 reservoir。
 - 可调候选数、时域 / 空间复用、历史计数上限、邻居数量和半径。更深层路径使用初始 RIS 估计光照。
 - 光追路线使用可见性射线和俄罗斯轮盘终止。各积分器采用 RayGen 路径循环，管线递归深度为 1。`maxBounces` 控制 1–64 次表面散射，修改后重置相关时域历史或离线累积。
-- 实时：SVGF 开启时，光追输出 albedo，重投影先解调 direct / indirect，再累积颜色与亮度矩、估计时域 / 7×7 空间方差并执行五级 à-trous 滤波。第一级回写解调后的颜色历史，最后一级乘回 albedo 后添加当前帧 `emission`。样本数不超过 `historyLength` 时算术平均，超过后使用 `emaAlpha`，首次及历史失效时权重为 1。
+- 启用 SVGF 后，重投影用 albedo 解调两路光照，随后累积颜色与亮度矩，估计时域及 7×7 空间方差，再执行五级 à-trous 滤波。第一级回写解调后的颜色历史，最后一级乘回 albedo 后添加当帧 `emission`。样本数不超过 `historyLength` 时使用算术平均，超过后使用 `Alpha`。首次或历史失效时权重为 1。
 - 历史资源：颜色均值 / 样本数、深度、法线、亮度一阶 / 二阶矩。
 - 离线：Owen 扰乱 Sobol 像素内采样、FP32 总和缓冲、按样本数平均。
 - 离线场景、相机、材质或光源变化时重新累积。

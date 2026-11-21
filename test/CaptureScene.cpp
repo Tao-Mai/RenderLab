@@ -1,18 +1,21 @@
+#include "render/device/ResourceBarriers.h"
 #include "LightingSetup.h"
+#include "PathTracingStats.h"
+#include "RendererOptions.h"
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
+#include "core/Scripting.h"
 #include "core/Serializer.h"
 #include "core/Window.h"
 #include "editor/EditorCamera.h"
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
-#include "render/graph/PassPorts.h"
+#include "render/graph/RenderGraphImportExport.h"
 #include "render/postprocess/ExposureState.h"
 #include "passes/postprocess/FalcorPostProcess/FalcorPostProcessConfig.h"
 #include "render/device/VkCheck.h"
-#include "render/graph/EndPass.h"
 #include "render/raytracing/RealtimeSceneData.h"
 #include "render/raytracing/SceneAccelerationStructures.h"
 #include "render/resources/MaterialTable.h"
@@ -39,145 +42,124 @@ T parseNumber(std::string_view text)
     return value;
 }
 
-struct ImageReadbackPass
+struct ImageReadbackPass : Falcor::RenderPass
 {
-    RenderGraph::ImageHandle  image;
-    RenderGraph::ImageHandle  hdrImage;
-    RenderGraph::BufferHandle buffer;
-    RenderGraph::BufferHandle exposure;
-    RenderGraph::BufferHandle triangles;
-    RenderGraph::BufferHandle reservoirs;
+    FALCOR_PLUGIN_CLASS(ImageReadbackPass, "ImageReadbackPass", "Copies a captured graph output.");
+
+    explicit ImageReadbackPass(Falcor::ref<Falcor::Device> device) : Falcor::RenderPass(std::move(device)) {}
+
+    ResourceBarriers barriers;
+    VulkanResources::ImageHandle  image;
+    VulkanResources::ImageHandle  hdrImage;
+    VulkanResources::BufferHandle buffer;
+    VulkanResources::BufferHandle exposure;
+    VulkanResources::BufferHandle triangles;
+    VulkanResources::BufferHandle reservoirs;
     vk::DeviceSize            imageBytes;
     vk::DeviceSize            exposureBytes = 0;
     vk::DeviceSize            hdrBytes;
     vk::DeviceSize            triangleBytes = 0;
     vk::DeviceSize            reservoirBytes = 0;
+    ResourceBarriers        copyAccesses;
 
-    RenderGraph::BufferHandle compile(
-        RenderGraph& graph,
-        const PassSetup&,
-        RenderGraph::ImageHandle  source,
-        RenderGraph::ImageHandle  sourceHdr,
-        RenderGraph::BufferHandle exposureState,
-        RenderGraph::BufferHandle triangleLights,
-        RenderGraph::BufferHandle reservoirHistory
-    )
+    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData&) override
     {
-        image             = source;
-        hdrImage          = sourceHdr;
-        const auto extent = graph.imageInfo(image).extent;
-        exposure          = exposureState;
-        exposureBytes     = exposure.id == RenderGraph::kInvalidHandle ? 0 : sizeof(ExposureState);
-        triangles         = triangleLights;
-        reservoirs        = reservoirHistory;
-        imageBytes        = vk::DeviceSize(extent.width) * extent.height * 4;
-        CHECK(graph.imageInfo(hdrImage).format == vk::Format::eR16G16B16A16Sfloat);
-        hdrBytes          = vk::DeviceSize(extent.width) * extent.height * 8;
-        buffer            = graph.write(graph.createBuffer({
-                       .size             = imageBytes + exposureBytes,
-                       .memoryProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        }));
-        graph.use(
-            image,
-            {
-                .stages = vk::PipelineStageFlagBits2::eTransfer,
-                .access = vk::AccessFlagBits2::eTransferRead,
-                .layout = vk::ImageLayout::eTransferSrcOptimal,
-            }
-        );
-        graph.use(
-            buffer,
-            {
-                .stages = vk::PipelineStageFlagBits2::eTransfer,
-                .access = vk::AccessFlagBits2::eTransferWrite,
-            }
-        );
-        graph.use(
-            hdrImage,
-            {
-                .stages = vk::PipelineStageFlagBits2::eTransfer,
-                .access = vk::AccessFlagBits2::eTransferRead,
-                .layout = vk::ImageLayout::eTransferSrcOptimal,
-            }
-        );
-        if (exposureBytes > 0)
-            graph.use(
-                exposure,
-                {
-                    .stages = vk::PipelineStageFlagBits2::eTransfer,
-                    .access = vk::AccessFlagBits2::eTransferRead,
-                }
-            );
-        for (const auto source : {triangles, reservoirs})
+        Falcor::RenderPassReflection reflection;
+        reflection.addInput("color", "Color target");
+        reflection.addInput("hdr", "Linear HDR radiance").format(Falcor::ResourceFormat::RGBA16Float);
+        for (const auto name : {"exposure", "triangleLights", "reservoirs"})
+            reflection.addInput(name, "Optional capture data").rawBuffer(0).flags(Falcor::RenderPassReflection::Field::Flags::Optional);
+        reflection.addInputOutput("capture", "Host-visible capture buffer").rawBuffer(0);
+        return reflection;
+    }
+
+    void compile(Falcor::RenderContext*, const CompileData&) override
+    {
+        copyAccesses.clear();
+    }
+
+    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override
+    {
+        auto& cache    = *renderCommands->vulkanResources;
+        auto& commands = *renderCommands->commands;
+
+        if (copyAccesses.empty())
         {
-            if (source.id == RenderGraph::kInvalidHandle)
+            image    = cache.registerImage(renderData.getTexture("color"));
+            hdrImage = cache.registerImage(renderData.getTexture("hdr"));
+            buffer   = cache.registerBuffer(renderData["capture"]->asBuffer());
+            copyAccesses.add(buffer, vulkan_access::kTransferWrite);
+            copyAccesses.declare(cache);
+            const auto optionalBuffer = [&](std::string_view name)
             {
-                continue;
-            }
-            graph.use(
-                source,
-                {
-                    .stages = vk::PipelineStageFlagBits2::eTransfer,
-                    .access = vk::AccessFlagBits2::eTransferRead,
-                }
-            );
+                const auto& resource = renderData[name];
+                return resource ? cache.registerBuffer(resource->asBuffer()) : VulkanResources::BufferHandle{};
+            };
+            exposure   = optionalBuffer("exposure");
+            triangles  = optionalBuffer("triangleLights");
+            reservoirs = optionalBuffer("reservoirs");
+
+            const auto extent    = cache.imageInfo(image).extent;
+            imageBytes           = vk::DeviceSize(extent.width) * extent.height * 4;
+            const auto hdrExtent = cache.imageInfo(hdrImage).extent;
+            hdrBytes             = vk::DeviceSize(hdrExtent.width) * hdrExtent.height * 8;
+            exposureBytes        = exposure.id == VulkanResources::kInvalidHandle ? 0 : sizeof(ExposureState);
+
+            barriers.add(image, vulkan_access::kTransferSource);
+            barriers.add(hdrImage, vulkan_access::kTransferSource);
+            constexpr VulkanResources::MemoryAccess kRead{vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferRead};
+            for (const auto input : {exposure, triangles, reservoirs})
+                if (input.id != VulkanResources::kInvalidHandle)
+                    barriers.add(input, kRead);
+            barriers.declare(cache);
         }
-        return buffer;
-    }
 
-    void prepare(RenderGraph& graph, const PassFrame&)
-    {
-        triangleBytes = triangles.id == RenderGraph::kInvalidHandle ? 0 : graph.getBuffer(triangles).size();
-        reservoirBytes = reservoirs.id == RenderGraph::kInvalidHandle ? 0 : graph.getBuffer(reservoirs).size();
-        graph.ensureBufferCapacity(
-            buffer,
-            imageBytes + exposureBytes + triangleBytes + reservoirBytes + hdrBytes
-        );
-    }
+        barriers.transition(cache, commands);
 
-    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame) const
-    {
+        triangleBytes  = triangles.id == VulkanResources::kInvalidHandle ? 0 : cache.getBuffer(triangles).getSize();
+        reservoirBytes = reservoirs.id == VulkanResources::kInvalidHandle ? 0 : cache.getBuffer(reservoirs).getSize();
+        cache.ensureBufferCapacity(buffer, imageBytes + exposureBytes + triangleBytes + reservoirBytes + hdrBytes);
+        copyAccesses.transition(cache, commands);
+
         const vk::BufferImageCopy copy{
             .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
-            .imageExtent      = graph.imageInfo(image).extent,
+            .imageExtent      = cache.imageInfo(image).extent,
         };
         commands.copyImageToBuffer(
-            graph.getImage(image).handle(),
+            cache.getImage(image).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
-            graph.getBuffer(buffer).handle(),
+            cache.getBuffer(buffer).handle(),
             copy
         );
         auto hdrCopy         = copy;
+        hdrCopy.imageExtent  = cache.imageInfo(hdrImage).extent;
         hdrCopy.bufferOffset = imageBytes + exposureBytes + triangleBytes + reservoirBytes;
         commands.copyImageToBuffer(
-            graph.getImage(hdrImage).handle(),
+            cache.getImage(hdrImage).handle(),
             vk::ImageLayout::eTransferSrcOptimal,
-            graph.getBuffer(buffer).handle(),
+            cache.getBuffer(buffer).handle(),
             hdrCopy
         );
         if (exposureBytes > 0)
             commands.copyBuffer(
-                graph.getBuffer(exposure).handle(),
-                graph.getBuffer(buffer).handle(),
+                cache.getBuffer(exposure).handle(),
+                cache.getBuffer(buffer).handle(),
                 vk::BufferCopy{.dstOffset = imageBytes, .size = exposureBytes}
             );
         if (triangleBytes > 0)
         {
             commands.copyBuffer(
-                graph.getBuffer(triangles).handle(),
-                graph.getBuffer(buffer).handle(),
+                cache.getBuffer(triangles).handle(),
+                cache.getBuffer(buffer).handle(),
                 vk::BufferCopy{.dstOffset = imageBytes + exposureBytes, .size = triangleBytes}
             );
         }
         if (reservoirBytes > 0)
         {
             commands.copyBuffer(
-                graph.getBuffer(reservoirs).handle(),
-                graph.getBuffer(buffer).handle(),
-                vk::BufferCopy{
-                    .dstOffset = imageBytes + exposureBytes + triangleBytes,
-                    .size      = reservoirBytes
-                }
+                cache.getBuffer(reservoirs).handle(),
+                cache.getBuffer(buffer).handle(),
+                vk::BufferCopy{.dstOffset = imageBytes + exposureBytes + triangleBytes, .size = reservoirBytes}
             );
         }
     }
@@ -199,89 +181,101 @@ void capture(
     const auto& config                 = context().config->rendererConfig();
     const bool  offline   = config.renderPath == RenderPath::OfflinePathTracing;
     const bool  realtime  = config.renderPath == RenderPath::RayTracing;
-    auto& configManager = *context().config;
-    const auto traceInstance = configManager.renderGraph().id == "realtime" ? "rayTracing" : "pathTracer";
+    const Falcor::ref<Falcor::RenderGraph> active{renderer.getActiveGraph()};
+    const auto device = active->getDevice();
+    const auto& deviceContext = *device->getRenderContext();
+    const auto traceInstance = active->doesPassExist("rayTracing") ? "rayTracing" : "pathTracer";
+    const auto progressKey = path_tracing_test::statsKey(active->doesPassExist("pt") ? "pt" : "bdpt");
 
     std::array<FrameContext, maxFramesInFlight> frames;
     for (auto& frame : frames)
         frame.init(vulkan);
     std::array<FrameData, maxFramesInFlight> frameData;
     for (auto& data : frameData)
-        data.init(vulkan, *renderContext().device);
-    const PassSetup setup{vulkan, renderer.swapchainHandle().extent(), frameData, context().config->rendererConfig()};
-    RenderGraph graph;
+        data.init(vulkan, *device);
     SceneAccelerationStructures accelerationStructures;
-    graph.init(vulkan);
-    renderContext().materialTable->setup(graph);
-    RenderGraphCompiler captureGraph;
-    ImageReadbackPass readback;
-    EndPass end;
 
-    const auto target = graph.createImage({.format = format, .extent = {extent.width, extent.height, 1}});
-    const auto lightBuffer = graph.createBuffer({
-        .size = kMaxLights * sizeof(LightData),
-        .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+    const auto graphIR = Falcor::RenderGraphExporter::getIR(active);
+    const auto functionName = Falcor::RenderGraphExporter::getFuncName(active->getName());
+    auto graph = Falcor::RenderGraph::createFromString(
+        device, graphIR + "\nm.addGraph(" + functionName + "())\n"
+    );
+    CHECK(graph);
+    const auto color = graph->getOutputName(0);
+
+    Falcor::Scripting::Context script;
+    script.setObject("graphIR", graphIR);
+    script.setObject("hdrInput", std::string{
+        config.feature.postProcess == PostProcessMode::Falcor ? "falcor.source" : "exposure.hdrColor"
     });
-    auto description = loadRenderGraph(configManager.renderGraphScript(), configManager.graphParameterOverrides());
-    const auto sourceOf = [&](std::string_view input) -> const nlohmann::json&
-    {
-        const auto& edges = description.at("edges");
-        const auto edge = std::ranges::find_if(edges, [&](const auto& value) { return value[1] == input; });
-        CHECK(edge != edges.end(), "capture graph is missing '{}'", input);
-        return (*edge)[0];
-    };
+    Falcor::Scripting::runScript(R"(
+import ast
+hdrOutput = next(
+    ast.literal_eval(call.args[0])
+    for call in ast.walk(ast.parse(graphIR))
+    if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+    and call.func.attr == 'add_edge' and ast.literal_eval(call.args[1]) == hdrInput
+)
+)", script);
+    const auto hdr = script.getObject<std::string>("hdrOutput");
 
-    auto& marked = description["outputs"];
-    marked["color"] = sourceOf("editorUi.color");
-    marked.erase("pickingReadback");
-    marked["hdr"] = sourceOf(config.feature.postProcess == PostProcessMode::Falcor ? "falcor.source"
-                                                                                 : "exposure.hdrColor");
+    graph->setScene(scenes.getScene());
+    while (graph->getOutputCount() != 0)
+        graph->unmarkOutput(graph->getOutputName(graph->getOutputCount() - 1));
+
+    const auto lights = createTestLightBuffer(*device);
+    const auto makeReadback = [&](vk::DeviceSize bytes)
+    {
+        return device->createBuffer(bytes, Falcor::ResourceBindFlags::None, Falcor::MemoryType::ReadBack);
+    };
+    const auto  readbackPass = Falcor::make_ref<ImageReadbackPass>(graph->getDevice());
+    const auto& readback     = *readbackPass;
+    graph->addPass(readbackPass, "capture");
+    graph->setInput("capture.capture", makeReadback(vk::DeviceSize(extent.width) * extent.height * 4));
+    graph->addEdge(color, "capture.color");
+    graph->addEdge(hdr, "capture.hdr");
     if (config.feature.postProcess == PostProcessMode::RenderLab)
-        marked["exposure"] = "exposure.state";
+        graph->addEdge("exposure.state", "capture.exposure");
     if (realtime)
     {
-        const auto* trace = renderer.graphPasses().findPass(traceInstance);
-        CHECK(trace);
-        marked["triangleLights"] = trace->name + ".triangleLights";
-        if (trace->type == "RayTracingPass")
-            marked["reservoirs"] = trace->name + ".reservoirHistory";
+        const auto trace = renderer.getActiveGraph()->getPass(traceInstance);
+        DCHECK(trace);
+        if (trace->getType() == "RayTracingPass")
+        {
+            graph->addEdge(std::string{trace->getName()} + ".triangleLights", "capture.triangleLights");
+            graph->addEdge(std::string{trace->getName()} + ".reservoirHistory", "capture.reservoirs");
+        }
     }
-    GraphResources inputs{{"presentTarget", target}, {"lightBuffer", lightBuffer}};
-    if (graphUsesInputPrefix(description, "emptyShadow_"))
-        pass_ports::insert(inputs, "emptyShadow_", createUnshadowedResources(graph));
-    const auto outputs = captureGraph.compile(graph, setup, description, inputs, renderer.plugins(),
-                                              configManager.passOverrides());
-    const auto optionalBuffer = [&](std::string_view name)
-    {
-        const auto found = outputs.find(name);
-        return found == outputs.end() ? RenderGraph::BufferHandle{} : std::get<RenderGraph::BufferHandle>(found->second);
-    };
-    const auto buffer = graph.addStage(
-        "Capture readback", readback, setup,
-        std::get<RenderGraph::ImageHandle>(outputs.at("color")),
-        std::get<RenderGraph::ImageHandle>(outputs.at("hdr")),
-        optionalBuffer("exposure"), optionalBuffer("triangleLights"), optionalBuffer("reservoirs")
-    );
-    graph.addStage("Capture host read", end, setup, RenderGraph::ImageHandle{}, buffer);
-    graph.compile(setup);
-    bindTestLightBuffer(graph, setup, lightBuffer);
+    graph->markOutput("capture.capture");
+
+    graph->onResize(&swapchain.getFbo(0));
+    VulkanResources cache{vulkan};
+    auto compileContext = deviceContext;
+    compileContext.vulkanResources = &cache;
+    compileContext.frames = frameData;
+    CHECK(graph->compile(&compileContext));
+    const auto lightBuffer = cache.registerBuffer(lights);
+    const auto buffer = graph->getOutput("capture.capture")->asBuffer();
+    const auto readbackSlot = cache.registerBuffer(buffer);
+    deviceContext.materialTable->setup(cache, vulkan);
+    bindTestLightBuffer(cache, frameData, lightBuffer);
 
     EditorCamera camera{scenes.scene().editorCamera};
     auto         view = camera.renderView({0, 0, float(extent.width), float(extent.height)});
     RenderSystem system;
     const auto&  snapshot = system.prepare(scenes.scene());
-    graph.beginFrame(0);
+    cache.beginFrame(0);
     const auto&  renderData = renderer.prepare(view, snapshot, 0);
     const EditorFrameInput editor;
     if (offline || realtime)
     {
-        writeTestEnvironment(setup, renderData.environmentMap);
+        writeTestEnvironment(*deviceContext.resources, frameData, renderData.environmentMap);
         for (auto& data : frameData)
             data.uploadSceneUniforms(view.uniforms);
     }
     else
     {
-        writeTestLighting(graph, setup, pass_ports::read<ShadowResources>(outputs), renderData);
+        writeTestLighting(*deviceContext.resources, frameData, config.feature, renderData);
         for (auto& data : frameData)
         {
             data.uploadSceneUniforms(view.uniforms);
@@ -307,22 +301,32 @@ void capture(
             frameData[index].uploadSceneUniforms(view.uniforms);
         }
         if (submitted != 0)
-            graph.beginFrame(index);
-        uploadTestLights(graph, lightBuffer, renderData.lights);
-        PassFrame execution{setup, frameData[index], view, renderData, editor, index, 1.0f / 60.0f};
-        graph.prepare(execution);
+            cache.beginFrame(index);
+        uploadTestLights(cache, lightBuffer, renderData.lights);
         auto& commands = frame.commandBufferHandle();
         vkCheck(commands.reset());
         vkCheck(commands.begin({}));
         auto& gpuProfiler = frame.gpuProfiler();
-        graph.beginGpuProfiling(commands, gpuProfiler, nullptr);
+        auto renderCommands = deviceContext;
+        renderCommands.commands = &commands;
+        renderCommands.vulkanResources = &cache;
+        renderCommands.frames = frameData;
+        renderCommands.frameData = &frameData[index];
+        renderCommands.view = &view;
+        renderCommands.scene = &renderData;
+        renderCommands.editor = &editor;
+        renderCommands.gpuProfiler = &gpuProfiler;
+        renderCommands.frameIndex = index;
+        renderCommands.deltaSeconds = 1.0f / 60.0f;
         if (offline || realtime)
         {
-            execution.sceneTlas = &accelerationStructures.recordBuilds(
-                vulkan, commands, *renderContext().resources, renderData, index
+            renderCommands.sceneTlas = &accelerationStructures.recordBuilds(
+                vulkan, commands, *renderCommands.resources, renderData, index
             );
         }
-        graph.execute(commands, execution, gpuProfiler, nullptr);
+        cache.recordUploads(commands);
+        graph->execute(&renderCommands);
+        cache.transition(commands, readbackSlot, vulkan_access::kHostRead);
         gpuProfiler.endFrame(commands);
         vkCheck(commands.end());
         const auto command = *commands;
@@ -338,7 +342,7 @@ void capture(
                 readback.imageBytes + readback.exposureBytes + readback.triangleBytes + readback.reservoirBytes +
                 readback.hdrBytes
             );
-            graph.getBuffer(buffer).download(pixels.data(), pixels.size());
+            buffer->getBlob(pixels.data(), 0, pixels.size());
             const auto    hdrPath = sequenceDirectory / (std::to_string(submitted) + ".hdr.bin");
             std::ofstream hdrStream(hdrPath, std::ios::binary);
             CHECK(hdrStream);
@@ -366,7 +370,7 @@ void capture(
             ));
         }
         const auto completed = offline
-            ? captureGraph.findPass(configManager.renderGraph().id)->pass->statistics().at("sampleCount").get<uint32_t>()
+            ? graph->getPassesDictionary().getValue<path_tracing_test::OfflineProgress>(progressKey).sampleCount
             : frameNumber + 1;
         if (completed != frameNumber)
         {
@@ -387,7 +391,7 @@ void capture(
     std::vector<uint8_t> pixels(
         imageBytes + readback.exposureBytes + readback.triangleBytes + readback.reservoirBytes
     );
-    graph.getBuffer(buffer).download(pixels.data(), pixels.size());
+    buffer->getBlob(pixels.data(), 0, pixels.size());
     if (readback.exposureBytes > 0)
     {
         ExposureState exposureState;
@@ -403,13 +407,15 @@ void capture(
             exposureState.automaticValid
         );
     }
-    if (realtime)
+    if (readback.triangleBytes > 0)
     {
         const auto             offset = imageBytes + readback.exposureBytes;
         EmissiveTriangleHeader header;
         std::memcpy(&header, pixels.data() + offset, sizeof(header));
-        const auto stats = captureGraph.findPass(traceInstance)->pass->statistics();
-        CHECK(header.triangleCount == stats.at("emissiveTriangleCount").get<uint32_t>());
+        const auto triangleCount = graph->getPassesDictionary().getValue<uint32_t>(
+            path_tracing_test::statsKey(traceInstance)
+        );
+        CHECK(header.triangleCount == triangleCount);
         auto path = output;
         path.replace_extension(".lights.bin");
         std::ofstream stream(path, std::ios::binary);
@@ -451,7 +457,7 @@ void capture(
     );
     LOG_INFO("Saved {} ({}x{}, {} frames)", output.string(), extent.width, extent.height, frameCount);
 
-    graph.reset();
+    graph = {};
     for (auto& data : frameData)
         data.reset();
     for (auto& frame : frames)
@@ -464,18 +470,11 @@ int main(int argc, char** argv)
     logger::init(argv[0]);
     CHECK(
         argc >= 4 && argc <= 11,
-        "usage: CaptureScene <scene-id> <forward|deferred|realtime|minimal_path_tracer|pt|bdpt> "
+        "usage: CaptureScene <scene-id> <graph-name> "
         "<output.png> [frames=1] [size=960] [ev100|auto] [sequence-directory] [yaw-step=0] "
         "[renderlab|falcor] [max-bounces]"
     );
-    const std::string_view route{argv[2]};
-    const bool offline = route == "pt" || route == "bdpt";
-    CHECK(
-        route == "forward" || route == "deferred" || route == "realtime" || route == "minimal_path_tracer" ||
-            offline,
-        "unsupported capture route: {}",
-        route
-    );
+    const std::string_view graphName{argv[2]};
     const auto frameCount = argc > 4 ? parseNumber<uint32_t>(argv[4]) : 1u;
     const auto side       = argc > 5 ? parseNumber<int>(argv[5]) : 960;
     CHECK(frameCount > 0 && side > 0);
@@ -498,15 +497,12 @@ int main(int argc, char** argv)
     scenes.init();
     assets.init(config.paths().assets);
     scenes.load(SceneAsset::ID{argv[1]});
-    CHECK(offline == (scenes.scene().renderMode == SceneRenderMode::Offline),
-          "capture route does not match scene render mode");
     config.setSceneRenderMode(scenes.scene().renderMode);
-    const auto originalGraph = config.renderGraph().id;
-    config.setRenderGraph(route);
-    const auto originalParameters = config.graphParameterOverrides();
-    const auto originalOverrides = config.passOverrides();
+    const auto originalGraph = config.renderGraphName();
+    config.setRenderGraph(graphName);
+    const auto originalSettings = config.getSettings();
 
-    auto parameters = originalParameters;
+    auto parameters = config.getOptions().at("parameters");
     parameters["hdr"] = true;
     parameters["ibl"] = scenes.scene().environmentMap.has_value();
     if (argc > 9)
@@ -516,32 +512,33 @@ int main(int argc, char** argv)
         parameters["postProcess"] =
             Serialize(postProcess == "falcor" ? PostProcessMode::Falcor : PostProcessMode::RenderLab);
     }
-    config.setGraphParameterOverrides(std::move(parameters));
+    renderer_test::setParameters(renderer, config, parameters);
     config.setEditorSize(side, side);
     CHECK(glfwInit());
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     window.init();
     renderer.init();
-    renderer.rebuildGraph();
+    const auto& graph = *renderer.getActiveGraph();
     const auto mode = config.rendererConfig().feature.postProcess;
 
     if (argc > 10)
     {
-        CHECK(route == "realtime" || route == "minimal_path_tracer");
-        const auto* trace = renderer.graphPasses().findPass(route == "realtime" ? "rayTracing" : "pathTracer");
+        CHECK(config.rendererConfig().renderPath == RenderPath::RayTracing);
+        const auto trace = graph.getPass(graph.doesPassExist("rayTracing") ? "rayTracing" : "pathTracer");
         CHECK(trace);
-        auto settings = trace->pass->properties();
+        auto settings          = nlohmann::json(trace->getProperties().toJson());
         settings["maxBounces"] = parseNumber<uint32_t>(argv[10]);
-        renderer.setPassOverrides(trace->type, trace->name, std::move(settings));
+        trace->setProperties(Falcor::Properties::json(std::move(settings)));
     }
     if (argc > 6 && mode == PostProcessMode::Falcor)
     {
+        auto& falcor = *graph.getPass("falcor");
         FalcorPostProcessConfig settings;
-        Deserialize(renderer.graphPasses().findPass("falcor")->pass->properties(), settings);
+        Deserialize(nlohmann::json(falcor.getProperties().toJson()), settings);
         settings.toneMapper.autoExposure = std::string_view{argv[6]} == "auto";
         if (!settings.toneMapper.autoExposure)
             settings.toneMapper.setExposureValue(parseNumber<float>(argv[6]));
-        renderer.setPassOverrides("FalcorPostProcess", "falcor", Serialize(settings));
+        falcor.setProperties(Falcor::Properties::json(Serialize(settings)));
     }
     else if (argc > 6)
     {
@@ -557,9 +554,6 @@ int main(int argc, char** argv)
         CHECK(exposure->isValid());
     }
 
-    if (argc > 10 || (argc > 6 && mode == PostProcessMode::Falcor))
-        renderer.rebuildGraph();
-
     capture(
         renderer,
         scenes,
@@ -573,8 +567,7 @@ int main(int argc, char** argv)
     assets.shutdown();
     data.shutdown();
     window.shutdown();
-    config.setGraphParameterOverrides(originalParameters);
-    config.passOverrides() = originalOverrides;
+    config.getSettings() = originalSettings;
     config.setRenderGraph(originalGraph);
     config.setEditorSize(originalEditor.width, originalEditor.height);
     config.shutdown();

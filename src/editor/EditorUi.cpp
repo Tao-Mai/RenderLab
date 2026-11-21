@@ -17,7 +17,6 @@
 #include "core/Context.h"
 #include "core/InputManager.h"
 #include "core/Logger.h"
-#include "editor/GraphSettingsUi.h"
 #include "editor/Inspector.h"
 #include "render/Renderer.h"
 #include "scene/component/TransformComponent.h"
@@ -58,24 +57,27 @@ std::optional<SceneAsset::ID> drawSceneSelector(const SceneAsset::ID& current, b
 
 void drawRenderGraphSelector(ConfigManager& config, bool supportsRayTracing)
 {
-    const auto& current = config.renderGraph();
-    if (!ImGui::BeginCombo("Render graph", current.label.c_str()))
+    const auto current = config.renderGraphName();
+    const bool currentOffline = config.rendererConfig().renderPath == RenderPath::OfflinePathTracing;
+    if (!ImGui::BeginCombo("Render graph", current.c_str()))
         return;
 
-    for (const auto& graph : config.renderGraphs())
+    for (const auto& [path, scripts] : config.renderGraphs())
     {
-        if (graph.isOffline() != current.isOffline())
+        const bool offline = path == RenderPath::OfflinePathTracing;
+        if (offline != currentOffline)
             continue;
 
-        const bool selected = &graph == &current;
-        ImGui::PushID(graph.id.c_str());
-        ImGui::BeginDisabled(graph.requiresRayTracing() && !supportsRayTracing);
-        if (ImGui::Selectable(graph.label.c_str(), selected) && !selected)
-            config.setRenderGraph(graph.id);
-        if (selected)
-            ImGui::SetItemDefaultFocus();
+        ImGui::BeginDisabled(requiresRayTracing(path) && !supportsRayTracing);
+        for (const auto& [name, script] : scripts)
+        {
+            const bool selected = name == current;
+            if (ImGui::Selectable(name.c_str(), selected) && !selected)
+                config.setRenderGraph(name);
+            if (selected)
+                ImGui::SetItemDefaultFocus();
+        }
         ImGui::EndDisabled();
-        ImGui::PopID();
     }
     ImGui::EndCombo();
 }
@@ -300,11 +302,11 @@ EditorUI::InspectorResult EditorUI::drawInspector(SceneAsset& scene, AActor* obj
     auto& renderer = *context().renderer;
     drawPerformance(context().profiler);
 
-    result.edited |= drawCameraInspector(scene.editorCamera, renderer.defaultExposure());
+    result.edited |= drawCameraInspector(scene.editorCamera, renderer);
     drawRenderGraphSelector(config, renderer.vulkanContext().supportsRayTracing());
     result.edited |= drawEnvironmentInspector(scene, *context().assetManager);
 
-    if (renderer.activeRenderGraph() == &config.renderGraph())
+    if (const auto* graph = renderer.getActiveGraph(); graph && graph->getName() == config.renderGraphName())
     {
         if (renderer.supportsObjectPicking())
         {
@@ -312,8 +314,7 @@ EditorUI::InspectorResult EditorUI::drawInspector(SceneAsset& scene, AActor* obj
             if (ImGui::Checkbox("Object picking", &objectPicking))
                 config.setObjectPicking(objectPicking);
         }
-        drawGraphSettings(config, renderer.graphEditorControls());
-        drawPassEditors(renderer, {renderer.vulkanContext(), scene.editorCamera});
+        renderer.renderUI({renderer.vulkanContext(), scene.editorCamera});
     }
     result.edited |= drawObjectInspector(object);
 

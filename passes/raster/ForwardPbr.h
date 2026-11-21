@@ -5,13 +5,16 @@
 
 #include <array>
 
-struct PassFrame;
+namespace Falcor
+{
+class RenderContext;
+}  // namespace Falcor
 
 class ForwardPbrPipelines
 {
 public:
-    void                       setup(vk::Format colorFormat, PipelineState state, bool ibl, bool clearcoat);
-    [[nodiscard]] vk::Pipeline get(const MaterialTable::MaterialInfo& material);
+    void setup(const Falcor::Device& device, vk::Format colorFormat, PipelineState state, bool ibl, bool clearcoat);
+    [[nodiscard]] vk::Pipeline get(const Falcor::RenderContext& context, const MaterialTable::MaterialInfo& material);
 
 private:
     GraphicsPipelineInfo                       pipelineInfo;
@@ -21,4 +24,4 @@ private:
     bool                                       clearcoatEnabled = false;
 };
 
-void bindForwardPbrResources(vk::raii::CommandBuffer& commands, const PassFrame& frame);
+void bindForwardPbrResources(vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame);

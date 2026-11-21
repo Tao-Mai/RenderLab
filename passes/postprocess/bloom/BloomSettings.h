@@ -14,7 +14,6 @@ struct RL_RECORD BloomSettings
     RL_FIELD("levels") uint32_t levels       = 5;
 
     void validate() const;
-    [[nodiscard]] bool requiresGraphRebuild(const BloomSettings& current) const { return levels != current.levels; }
 };
 
 #include RL_METADATA_HEADER("metadata/passes/postprocess/Bloom/BloomSettings.generated.h")

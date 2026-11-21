@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/Macros.h"
 #include "core/time/Timer.h"
 
 #include <cstdint>
@@ -103,3 +104,25 @@ private:
     std::string_view name;
     Timer            timer;
 };
+
+namespace Falcor
+{
+class RenderContext;
+
+class FALCOR_API ScopedProfilerEvent
+{
+public:
+    ScopedProfilerEvent(RenderContext* context, std::string_view name);
+    ~ScopedProfilerEvent();
+    ScopedProfilerEvent(const ScopedProfilerEvent&)            = delete;
+    ScopedProfilerEvent& operator=(const ScopedProfilerEvent&) = delete;
+
+private:
+    RenderContext*  mpRenderContext;
+    CpuProfileScope cpuTiming;
+    uint32_t        gpuScope = ~0u;
+};
+}  // namespace Falcor
+
+#define FALCOR_PROFILE(context, name) \
+    ::Falcor::ScopedProfilerEvent FALCOR_CONCAT_STRINGS(_profileEvent, __LINE__)(context, name)

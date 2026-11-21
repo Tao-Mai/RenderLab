@@ -24,18 +24,18 @@ Renderer 持有 [SceneAccelerationStructures](../src/render/raytracing/SceneAcce
 | Forward | DepthPrepass → ScenePass → Skybox → Transparent | 基础 PBR、Clearcoat、Sheen 与透明物体 |
 | Deferred | DepthPrepass → GBuffer → DeferredLighting → Skybox → Transparent | 统一材质缓冲与全屏光照 |
 | ReSTIR | RayTracingPass → 可选 SVGF | 初始 RIS、时域与空间 reservoir 复用 |
-| MinimalPathTracer | MinimalPathTracer → 可选 SVGF | 普通光源采样与 BRDF 路径追踪 |
+| MinimalPathTracer | MinimalPathTracer → 后处理 | 普通光源采样与 BRDF 路径追踪 |
 | PT | PathTracer → 后处理 | 相机路径与直接光采样 |
 | BDPT | BDPT → 后处理 | 相机和光源子路径连接、分块累积 |
 
-光栅路线在需要时加入 ShadowPass，物体拾取通过独立阶段使用场景深度。后处理读取场景颜色，光追关闭 HDR 时通过 Blit 输出。UI 在后处理之后绘制。
+光栅路线通过 ShadowPass 提供阴影资源，物体拾取通过独立 Pass 使用场景深度。后处理读取场景颜色，光追关闭 HDR 时通过 Blit 输出。UI 在后处理之后绘制。
 
 ### 光栅化
 
 不透明前向绘制和透明绘制共用 [forward.slang](../shaders/raster/forward.slang)。延迟路径的入口是 [gbuffer.slang](../passes/raster/GBufferPass/gbuffer.slang) 和 [deferred_lighting.slang](../passes/raster/DeferredLightingPass/deferred_lighting.slang)。网格顶点、表面和阴影的共享接口位于 [shaders/raster](../shaders/raster/)。
 
 深度预通道、GBuffer 和前向绘制通过 [MeshDrawRecorder](../src/render/raster/MeshDraw.h) 录制网格。Pass 提供管线，透明 Pass 提供排好序的绘制项。前向 Pass 缓存每种材质变体和单双面组合对应的管线。
-每个 Pass 使用同一份 [RasterAttachments](../src/render/raster/RasterAttachments.h) 同步声明 Graph 访问和配置 Vulkan 动态渲染。Graph 直接连接深度与阴影资源的生产者和消费者，关闭阴影的图共享一份 [ShadowResources](../src/render/raster/ShadowResources.h) 占位资源。
+Pass 通过反射声明附件的访问方式，执行时用 [RasterAttachments](../src/render/raster/RasterAttachments.h) 开始 Vulkan 动态渲染。Graph 连接深度与阴影资源的生产者和消费者。关闭阴影时，ShadowPass 将各输出连接到共享占位资源。
 
 - 深度使用 D32Sfloat，主场景支持不透明、Alpha Mask、双面与排序透明绘制。
 - 延迟 G-buffer 保存 Diffuse / AO、Normal / Roughness、Emissive / F90、F0 / Diffuse Fresnel Weight、Sheen / Roughness，并从深度重建位置。
@@ -45,7 +45,7 @@ Renderer 持有 [SceneAccelerationStructures](../src/render/raytracing/SceneAcce
 
 ### 实时光追
 
-编辑器的 Graph 下拉框可选择 ReSTIR 或 [MinimalPathTracer](MinimalPathTracer.md)。两张图各自声明路径追踪插件和参数，并可接入 [SVGF](../passes/denoise/SVGF/)。Shader 入口分别位于 [ReSTIR](../passes/raytracing/realtime/restir_path_tracer.slang) 和 [MinimalPathTracer](../passes/raytracing/minimal/minimal_path_tracer.slang)。[公共光追 Shader](../shaders/raytracing/) 提供命中处理、路径续射线和光源求值。
+编辑器的 Graph 下拉框可选择 ReSTIR 或 [MinimalPathTracer](MinimalPathTracer.md)。ReSTIR 可接入 [SVGF](../passes/denoise/SVGF/)，MinimalPathTracer 的 `color` 直接接入后处理。Shader 入口分别位于 [ReSTIR](../passes/raytracing/realtime/restir_path_tracer.slang) 和 [MinimalPathTracer](../passes/raytracing/minimal/minimal_path_tracer.slang)。[公共光追 Shader](../shaders/raytracing/) 提供命中处理、路径续射线和光源求值。
 
 各 Pass 选择 shader 入口和输出，并推进自己的采样状态。ReSTIR 的 [reservoir 资源和历史](../passes/raytracing/realtime/RestirResources.cpp) 由插件维护，三个 raygen 的提交顺序和同步写在 Pass 中。四条光追路线共用 [RayTracingPipeline](../src/render/raytracing/RayTracingPipeline.cpp) 创建 Vulkan 管线和 SBT。实时路线另用 [RealtimeSceneBindings](../src/render/raytracing/RealtimeSceneBindings.cpp) 更新场景描述符。
 
@@ -53,17 +53,17 @@ Renderer 持有 [SceneAccelerationStructures](../src/render/raytracing/SceneAcce
 - ReSTIR 主命中的直接光使用原版 ReSTIR DI：完整光源样本的初始 RIS → 时域复用 → 一轮空间复用 → 可见性着色。点光、聚光、方向光、矩形、发光三角形和启用的环境共同参与采样。
 - ReSTIR 光源候选先确定光源和面内位置，再用实际位置的发光、BRDF 与几何项生成权重；一个 BRDF 方向候选通过 balance MIS 一起进入初始 reservoir。
 - 两条实时路线都在 RayGen 中循环追踪续射线和阴影射线，ClosestHit 共用 [path_tracing.slang](../shaders/raytracing/path_tracing.slang) 返回命中与材质信息。Vulkan 管线递归深度固定为 1。
-- `maxBounces` 控制最多 1–64 次表面散射。ReSTIR 更深层顶点使用初始 RIS 估计直接光，MinimalPathTracer 每个顶点使用一次普通光源采样及 BRDF 续射线；两者均计入间接光，并使用俄罗斯轮盘终止。修改反弹次数后复用渲染图和 Pipeline，并重置时域历史。BLAS 按几何缓存，TLAS 按提交帧更新。
-- 关闭 SVGF 时输出 RGBA16F 合并颜色；开启时分别输出直接光、间接光、`emission` 与主命中材质的反射率 `saturate(diffuseColor + F0)`。两种模式均输出原始线性深度与法线，主射线使用固定的像素内采样位置。
-- `emission` 保存相机直接可见的发光表面、面光源与环境。ReSTIR 主表面的直接光由最后的复用阶段写入；MinimalPathTracer 将主表面的光源采样与一次散射后命中光源的贡献归入直接光。更深层路径归入间接光，合并颜色为三路之和。
+- `maxBounces` 控制最多 1–64 次表面散射。ReSTIR 更深层顶点使用初始 RIS 估计直接光，MinimalPathTracer 每个顶点使用一次普通光源采样及 BRDF 续射线。两者均计入间接光，并使用俄罗斯轮盘终止。修改反弹次数后复用渲染图和 Pipeline，ReSTIR 路线会重置时域历史。BLAS 按几何缓存，TLAS 按提交帧更新。
+- ReSTIR 关闭 SVGF 时由单层 RGBA16F 的 `color` 输出合并颜色。开启时，`color` 的两层分别保存直接光和间接光，并通过 `emission` 和 `albedo` 输出自发光及主命中材质的反射率 `saturate(diffuseColor + F0)`。两种模式均输出线性深度和法线。
+- MinimalPathTracer 的 `color` 合并直接光、间接光与相机直接可见的发光。两条路线均使用固定的主射线像素内采样位置。
 
-两个实时 Pass 都使用 [RealtimeScene](../src/render/raytracing/RealtimeScene.cpp) 上传命中记录，并为发光子网格实例创建三角形任务。Compute 生成每个三角形的 80 B 记录，保存世界空间顶点与边、面积、顶点 UV 和材质索引。缓冲开头的 16 B header 保存有效三角形数量。Graph 管理容量增长及 Compute 到光追的同步，描述符按资源版本更新。[RTXDI 的发光网格展开方式](https://github.com/NVIDIA-RTX/RTXDI/blob/main/Doc/Integration.md#mesh-light-processing)
+两个实时 Pass 都使用 [RealtimeScene](../src/render/raytracing/RealtimeScene.cpp) 上传命中记录，并为发光子网格实例创建三角形任务。Compute 生成每个三角形的 80 B 记录，保存世界空间顶点与边、面积、顶点 UV 和材质索引。缓冲开头的 16 B header 保存有效三角形数量。VulkanResources 管理容量增长及 Compute 到光追的同步，描述符在缓冲重分配后更新。[RTXDI 的发光网格展开方式](https://github.com/NVIDIA-RTX/RTXDI/blob/main/Doc/Integration.md#mesh-light-processing)
 
 ReSTIR 可通过 `RayTracingPass` 的 `restir` 参数调节采样。默认生成 32 个光源候选和一个 BRDF 候选，启用时域复用及 3 邻居、30 像素半径的一轮空间复用。历史计数限制为当前初始计数的 20 倍。合并时在当前表面重算目标值，按原论文 Algorithm 6 检查来源表面的支持域与可见性并归一化。各阶段使用独立随机流和明确的缓冲读写顺序。[ReSTIR](ReSTIR.md)
 
 相机运动通过上一帧矩阵重投影，检查对象、法线和深度匹配；场景几何、变换、材质、光源、环境或相关配置变化时重置 reservoir 历史。ReSTIR 的采样历史与 SVGF 的颜色历史各自维护，关闭 SVGF 时仍可复用光源样本。
 
-仅在开启 SVGF 时执行 [SVGFReprojection](../passes/denoise/SVGF/SVGFReprojection.h) 和 [SVGFFilter](../passes/denoise/SVGF/SVGFFilter.h)。直接光与间接光先除以各自像素的 albedo，在解调后的空间中累积颜色、亮度矩并估计方差。有效样本数不超过 `historyLength` 时使用算术平均，超过后使用 `emaAlpha`；首个样本或历史失效时权重为 1。历史不足 4 帧时使用 7×7 空间方差，五级 à-trous 按深度、法线、亮度与方差滤波。第一级回写解调后的颜色历史，最后一级乘回当前像素的 albedo 并添加当前帧 `emission`。除法和乘回统一使用 `max(albedo, 0.01)`，避免黑色通道除零。算法与限制见 [SVGF 文档](SVGF.md)。
+仅在开启 SVGF 时执行 [SVGFReprojection](../passes/denoise/SVGF/SVGFReprojection.h) 和 [SVGFFilter](../passes/denoise/SVGF/SVGFFilter.h)。直接光与间接光先除以各自像素的 albedo，在解调后的空间中累积颜色、亮度矩并估计方差。有效样本数不超过 `historyLength` 时使用算术平均，超过后使用 `Alpha`。首个样本或历史失效时权重为 1。历史不足 4 帧时使用 7×7 空间方差，五级 à-trous 按深度、法线、亮度与方差滤波。第一级回写解调后的颜色历史，最后一级乘回当前像素的 albedo 并添加当前帧 `emission`。除法和乘回统一使用 `max(albedo, 0.01)`，避免黑色通道除零。算法与限制见 [SVGF 文档](SVGF.md)。
 
 ### 离线路径追踪
 
@@ -89,10 +89,10 @@ ReSTIR 可通过 `RayTracingPass` 的 `restir` 参数调节采样。默认生成
 - FrameData 持有逐帧 Scene / Light / Shadow UBO、独立的公共 Set 和绑定版本；共享光源 Buffer handle 归 Renderer，阴影 CPU 数据与 Buffer handle 归 ShadowPass。
 - 光栅与实时光追共用 glTF 材质 SSBO，离线光追使用独立的 PBRT 材质预览与纹理指令缓冲；三者共用纹理和采样器数组。SSBO 由 Graph 持有，上传与读取通过 Barrier 排序。
 - 每个在途槽位有一个持久映射的 staging pool；Fence 完成后重置分配游标，prepare 取得 offset 后写入数据，Graph 执行时复制到 SSBO。
-- Graph 创建的图像和缓冲跨帧共享，通过 `getImage(handle)` 和 `getBuffer(handle)` 访问。
+- VulkanResources 持有跨帧共享的图像和缓冲，Pass 通过 `getImage(handle)` 和 `getBuffer(handle)` 访问。
 - 同一队列上追踪资源最后访问，下一帧首次使用前通过 Barrier 同步。
 - 拾取等待提交完成后立即回读。Renderer 根据 acquire 结果选择交换链 Image 并绑定外部目标，ImageView 缓存由 Swapchain 中的 Image 持有。
-- SVGF 历史资源由 Graph 创建并持有，Pass 保存 handle；两路颜色与亮度矩各自使用双层 Ping-pong，深度 / 法线历史共享，图重建时重置历史。
+- 图管理 SVGF 的深度和法线历史、颜色历史及亮度矩历史。SVGFPass 持有样本数历史及滤波临时纹理。图重建时重置历史。
 - Device、ShaderManager、RenderResourceManager、MaterialTable 通过 RenderContext 聚合；Scene、Light、Shadow 和 Material 的共享 Layout 在初始化时预创建。Device 缓存并持有全部 Pipeline Layout 和光栅 Pipeline，Pass 只保存 Pipeline Layout 句柄；私有 Descriptor Set Layout 仍由各 Pass 持有。布局匹配交给 Vulkan 验证层检查。
 
 ## 代码导航

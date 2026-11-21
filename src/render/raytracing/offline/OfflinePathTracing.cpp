@@ -1,11 +1,12 @@
 #include "render/raytracing/offline/OfflinePathTracing.h"
+#include "render/device/ResourceBarriers.h"
 
 #include "asset/AssetManager.h"
 #include "core/Context.h"
 #include "core/Vertex.h"
 #include "render/FrameData.h"
+#include "render/PreparedScene.h"
 #include "render/RenderContext.h"
-#include "render/RenderData.h"
 #include "render/device/VulkanContext.h"
 #include "render/raytracing/AccelerationStructure.h"
 #include "render/raytracing/RayTracingPipeline.h"
@@ -25,7 +26,7 @@ constexpr auto kParameterStages = vk::ShaderStageFlagBits::eRaygenKHR | vk::Shad
 struct alignas(16) AccumulatedPixel
 {
     glm::vec3 color;
-    uint32_t sampleCount;
+    uint32_t  sampleCount;
 };
 static_assert(sizeof(AccumulatedPixel) == 16);
 
@@ -43,7 +44,7 @@ constexpr std::array kSceneBufferBindings{
     OfflineRayTracingBinding::kPortals,
 };
 
-constexpr std::array kSceneBufferSizes{
+constexpr std::array<vk::DeviceSize, kSceneBufferBindings.size()> kSceneBufferSizes{
     sizeof(pbrt::MaterialInstruction),
     sizeof(pbrt::TextureInstruction),
     sizeof(OfflineLightEmission),
@@ -57,18 +58,21 @@ constexpr std::array kSceneBufferSizes{
     sizeof(glm::vec4),
 };
 
-constexpr auto kSceneBufferUsage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst;
-
 }  // namespace
 
-RenderGraph::ImageHandle OfflinePathTracing::compile(
-    RenderGraph& graph, const PassSetup& setup, std::string_view resolveProgram, uint32_t parameterSize,
+void OfflinePathTracing::compile(
+    const Falcor::RenderContext&                    context,
+    Falcor::uint2                                           frameDims,
+    std::string_view                                resolveProgram,
+    uint32_t                                        parameterSize,
     std::span<const vk::DescriptorSetLayoutBinding> extraBindings
 )
 {
-    CHECK(setup.vulkan.supportsRayTracing(), "selected GPU does not support the ray tracing route");
+    auto& cache = *context.vulkanResources;
+    const auto& vulkan = *context.vulkan;
+    CHECK(vulkan.supportsRayTracing(), "selected GPU does not support the ray tracing route");
 
-    const auto&    device            = setup.vulkan.physicalDeviceHandle();
+    const auto&    device            = vulkan.physicalDeviceHandle();
     const auto     features          = device.getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
     constexpr auto kRequiredFeatures = vk::FormatFeatureFlagBits::eStorageImage |
         vk::FormatFeatureFlagBits::eSampledImage | vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
@@ -77,61 +81,25 @@ RenderGraph::ImageHandle OfflinePathTracing::compile(
         "GPU does not support RGBA16F ray tracing output with storage writes and linear sampling"
     );
 
-    hitData = graph.createBuffer({
-          .size  = sizeof(OfflineHitData),
-          .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
-    });
+    auto& renderDevice = *context.getDevice();
+    constexpr auto kStorage = Falcor::ResourceBindFlags::UnorderedAccess;
+    extent = vk::Extent2D{frameDims.x, frameDims.y};
+    hitBuffer = renderDevice.createBuffer(sizeof(OfflineHitData), kStorage);
+    accumulationBuffer = renderDevice.createBuffer(size_t{extent.width} * extent.height * sizeof(AccumulatedPixel), kStorage);
+    hitData = cache.registerBuffer(hitBuffer);
+    accumulation = cache.registerBuffer(accumulationBuffer);
 
+    accesses.clear();
+    constexpr auto kRead = vulkan_access::storageRead(vk::PipelineStageFlagBits2::eRayTracingShaderKHR);
+    accesses.add(hitData, kRead);
     for (size_t index = 0; index < sceneBuffers.size(); ++index)
-        sceneBuffers[index] = graph.createBuffer({.size = kSceneBufferSizes[index], .usage = kSceneBufferUsage});
-
-    graph.use(
-        hitData,
-        {.stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR, .access = vk::AccessFlagBits2::eShaderStorageRead}
-    );
-    for (const auto buffer : sceneBuffers)
-        graph.use(
-            buffer,
-            {
-                .stages = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
-                .access = vk::AccessFlagBits2::eShaderStorageRead,
-            }
-        );
-
-    renderContext().materialTable->use(graph, vk::PipelineStageFlagBits2::eRayTracingShaderKHR);
-
-    extent   = setup.renderExtent;
-    rayImage          = graph.createImage({.format = kHdrColorFormat, .extent = {extent.width, extent.height, 1}});
-    rayImage          = graph.write(rayImage);
-    graph.use(
-        rayImage,
-        {
-            .stages = vk::PipelineStageFlagBits2::eComputeShader,
-            .access = vk::AccessFlagBits2::eShaderStorageWrite,
-            .layout = vk::ImageLayout::eGeneral,
-        }
-    );
-
-    const vk::DeviceSize accumulationBytes =
-        vk::DeviceSize(extent.width) * extent.height * sizeof(AccumulatedPixel);
-    CHECK(
-        accumulationBytes <= setup.vulkan.properties().limits.maxStorageBufferRange,
-        "offline accumulation buffer exceeds maxStorageBufferRange: {} bytes",
-        accumulationBytes
-    );
-
-    accumulation = graph.createBuffer(
-        {.size  = accumulationBytes,
-         .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst}
-    );
-    accumulation = graph.write(accumulation);
-    graph.use(
-        accumulation,
-        {.stages = vk::PipelineStageFlagBits2::eTransfer | vk::PipelineStageFlagBits2::eRayTracingShaderKHR |
-             vk::PipelineStageFlagBits2::eComputeShader,
-         .access = vk::AccessFlagBits2::eTransferWrite | vk::AccessFlagBits2::eShaderStorageRead |
-             vk::AccessFlagBits2::eShaderStorageWrite}
-    );
+    {
+        sceneBufferResources[index] = renderDevice.createBuffer(kSceneBufferSizes[index], kStorage);
+        sceneBuffers[index] = cache.registerBuffer(sceneBufferResources[index]);
+        accesses.add(sceneBuffers[index], kRead);
+    }
+    accesses.declare(cache);
+    barriers.clear();
 
     if (!pipelineLayout)
     {
@@ -162,8 +130,6 @@ RenderGraph::ImageHandle OfflinePathTracing::compile(
             });
         bindings.insert(bindings.end(), extraBindings.begin(), extraBindings.end());
 
-        auto& ctx = renderContext();
-        auto& renderDevice  = *ctx.device;
         descriptorSetLayout = renderDevice.createDescriptorSetLayout(bindings);
         descriptorSet       = renderDevice.allocateDescriptorSet(descriptorSetLayout);
 
@@ -180,79 +146,59 @@ RenderGraph::ImageHandle OfflinePathTracing::compile(
         };
         pipelineLayout = renderDevice.getOrCreatePipelineLayout(descriptorSetLayouts, std::array{parameterRange});
 
-        const auto shader = ctx.shaderManager->getOrLoad(resolveProgram);
-        resolvePipeline = renderDevice.createComputePipeline(shader, pipelineLayout);
+        const auto shader = context.shaderManager->getOrLoad(resolveProgram);
+        resolvePipeline   = renderDevice.createComputePipeline(shader, pipelineLayout);
     }
 
     hitBufferRevision = 0;
-    tlasRevision = 0;
+    tlasRevision      = 0;
     sceneBufferRevisions.fill(0);
     uploadedSceneRevision = 0;
     resetAccumulation();
-    return rayImage;
+
+    cache.writeDescriptor(*descriptorSet, OfflineRayTracingBinding::kAccumulation, accumulation);
 }
 
 void OfflinePathTracing::bindStorageBuffer(
-    RenderGraph& graph, const VulkanContext& vulkan, RenderGraph::BufferHandle handle, uint32_t binding
+    VulkanResources& cache, const VulkanContext& vulkan, VulkanResources::BufferHandle handle, uint32_t binding
 ) const
 {
-    const auto& buffer = graph.getBuffer(handle);
-    const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.size()};
-    const vk::WriteDescriptorSet write{
-        .dstSet          = *descriptorSet,
-        .dstBinding      = binding,
-        .descriptorCount = 1,
-        .descriptorType  = vk::DescriptorType::eStorageBuffer,
-        .pBufferInfo     = &info,
+    const auto&                    buffer = cache.getBuffer(handle);
+    const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.getSize()};
+    const vk::WriteDescriptorSet   write{
+          .dstSet          = *descriptorSet,
+          .dstBinding      = binding,
+          .descriptorCount = 1,
+          .descriptorType  = vk::DescriptorType::eStorageBuffer,
+          .pBufferInfo     = &info,
     };
     vulkan.deviceHandle().updateDescriptorSets(write, {});
 }
 
-void OfflinePathTracing::bindResources(RenderGraph& graph, const PassSetup& setup)
+void OfflinePathTracing::prepareHits(VulkanResources& cache, const Falcor::RenderContext& execution)
 {
-    bindStorageBuffer(graph, setup.vulkan, accumulation, OfflineRayTracingBinding::kAccumulation);
-    const vk::DescriptorImageInfo info{
-        .imageView = graph.getImage(rayImage).getOrCreateImageView({
-            .viewType = vk::ImageViewType::e2D,
-            .format = graph.imageInfo(rayImage).format,
-            .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        }),
-        .imageLayout = vk::ImageLayout::eGeneral,
-    };
-    const vk::WriteDescriptorSet write{
-        .dstSet          = *descriptorSet,
-        .dstBinding      = OfflineRayTracingBinding::kColor,
-        .descriptorCount = 1,
-        .descriptorType  = vk::DescriptorType::eStorageImage,
-        .pImageInfo      = &info,
-    };
-    setup.vulkan.deviceHandle().updateDescriptorSets(write, {});
-}
-
-void OfflinePathTracing::prepareHits(RenderGraph& graph, const PassFrame& execution)
-{
-    const auto& device    = execution.setup.vulkan.deviceHandle();
-    auto&       resources = *renderContext().resources;
+    const auto& device    = execution.vulkan->deviceHandle();
+    auto&       resources = *execution.resources;
     static_assert(
         sizeof(Vertex) == 48 && offsetof(Vertex, normal) == 12 && offsetof(Vertex, texcoord) == 24 &&
         offsetof(Vertex, tangent) == 32
     );
 
-    const auto& items  = execution.renderData.drawItems;
+    const auto& items  = execution.scene->drawItems;
     const auto  bytes  = std::max<size_t>(items.size(), 1) * sizeof(OfflineHitData);
-    const auto  upload = graph.allocateUpload(hitData, bytes);
+    const auto  upload = cache.allocateUpload(hitData, bytes);
     auto*       hits   = reinterpret_cast<OfflineHitData*>(upload.data.data());
     for (uint32_t index = 0; index < items.size(); ++index)
     {
         const auto& item = items[index];
         const auto& mesh = resources.mesh(item.mesh);
-        const auto& draw = execution.renderData.offlineScene->draws[index];
+        const auto& draw = execution.scene->offlineScene->draws[index];
         const auto& part = mesh.submeshes()[item.submeshIndex];
         std::construct_at(
             hits + index,
             OfflineHitData{
-                .vertexAddress = mesh.vertices().address(device),
-                .indexAddress  = mesh.indices().address(device),
+                .vertexAddress = mesh.vertices().getGpuAddress(),
+                .indexAddress  = mesh.indices().getGpuAddress(),
                 .material      = {part.firstIndex, draw.materialIndex, draw.reverseOrientation, draw.firstAreaLight},
             }
         );
@@ -260,10 +206,10 @@ void OfflinePathTracing::prepareHits(RenderGraph& graph, const PassFrame& execut
     if (items.empty())
         std::construct_at(hits, OfflineHitData{});
 
-    const auto& buffer = graph.getBuffer(hitData);
-    if (hitBufferRevision != graph.bufferRevision(hitData))
+    const auto& buffer = cache.getBuffer(hitData);
+    if (hitBufferRevision != cache.bufferRevision(hitData))
     {
-        const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.size()};
+        const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.getSize()};
         const vk::WriteDescriptorSet   write{
               .dstSet          = *descriptorSet,
               .dstBinding      = OfflineRayTracingBinding::kObjects,
@@ -272,14 +218,14 @@ void OfflinePathTracing::prepareHits(RenderGraph& graph, const PassFrame& execut
               .pBufferInfo     = &info,
         };
         device.updateDescriptorSets(write, {});
-        hitBufferRevision = graph.bufferRevision(hitData);
+        hitBufferRevision = cache.bufferRevision(hitData);
     }
 }
 
-void OfflinePathTracing::updateTlasDescriptor(const PassFrame& execution)
+void OfflinePathTracing::updateTlasDescriptor(const Falcor::RenderContext& execution)
 {
     DCHECK(execution.sceneTlas);
-    const auto& device    = execution.setup.vulkan.deviceHandle();
+    const auto& device    = execution.vulkan->deviceHandle();
     const auto& structure = *execution.sceneTlas;
     if (tlasRevision != structure.revision())
     {
@@ -300,11 +246,46 @@ void OfflinePathTracing::updateTlasDescriptor(const PassFrame& execution)
     }
 }
 
-bool OfflinePathTracing::prepareScene(RenderGraph& graph, const PassFrame& execution)
+bool OfflinePathTracing::prepareScene(
+    VulkanResources& cache, const Falcor::RenderContext& execution, const Falcor::ref<Falcor::Texture>& color
+)
 {
-    prepareHits(graph, execution);
+    if (barriers.empty())
+    {
+        constexpr auto kRayTracing = vk::PipelineStageFlagBits2::eRayTracingShaderKHR;
+        constexpr auto kCompute    = vk::PipelineStageFlagBits2::eComputeShader;
+        constexpr auto kTransfer   = vk::PipelineStageFlagBits2::eTransfer;
+        barriers.add(execution.materialTable->bufferHandle(), vulkan_access::storageRead(kRayTracing));
+        const auto output = cache.registerImage(color);
+        barriers.add(
+            output,
+            VulkanResources::ImageAccess{
+                kCompute,
+                vk::AccessFlagBits2::eShaderStorageWrite,
+                vk::ImageLayout::eGeneral,
+            }
+        );
+        barriers.add(
+            accumulation,
+            VulkanResources::MemoryAccess{
+                kTransfer | kRayTracing | kCompute,
+                vk::AccessFlagBits2::eTransferWrite | vk::AccessFlagBits2::eShaderStorageRead |
+                    vk::AccessFlagBits2::eShaderStorageWrite,
+            }
+        );
+        barriers.declare(cache);
+        cache.writeDescriptor(
+            *descriptorSet,
+            OfflineRayTracingBinding::kColor,
+            output,
+            vk::DescriptorType::eStorageImage
+        );
+    }
 
-    const auto& offline        = *execution.renderData.offlineScene;
+    barriers.transition(cache, *execution.commands);
+    prepareHits(cache, execution);
+
+    const auto& offline        = *execution.scene->offlineScene;
     const bool  offlineChanged = uploadedSceneRevision != offline.revision;
     if (offlineChanged)
     {
@@ -313,20 +294,20 @@ bool OfflinePathTracing::prepareScene(RenderGraph& graph, const PassFrame& execu
             using Value      = typename std::remove_cvref_t<decltype(values)>::value_type;
             const auto bytes = std::max<size_t>(values.size(), 1) * sizeof(Value);
             CHECK(
-                bytes <= execution.setup.vulkan.properties().limits.maxStorageBufferRange,
+                bytes <= execution.vulkan->properties().limits.maxStorageBufferRange,
                 "offline scene buffer {} exceeds maxStorageBufferRange: {} bytes",
                 index,
                 bytes
             );
-            const auto allocation = graph.allocateUpload(sceneBuffers[index], bytes);
+            const auto allocation = cache.allocateUpload(sceneBuffers[index], bytes);
             if (values.empty())
                 std::construct_at(reinterpret_cast<Value*>(allocation.data.data()));
             else
                 std::memcpy(allocation.data.data(), values.data(), values.size() * sizeof(Value));
-            if (sceneBufferRevisions[index] != graph.bufferRevision(sceneBuffers[index]))
+            if (sceneBufferRevisions[index] != cache.bufferRevision(sceneBuffers[index]))
             {
-                const auto&                    buffer = graph.getBuffer(sceneBuffers[index]);
-                const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.size()};
+                const auto&                    buffer = cache.getBuffer(sceneBuffers[index]);
+                const vk::DescriptorBufferInfo info{.buffer = buffer.handle(), .range = buffer.getSize()};
                 const vk::WriteDescriptorSet   write{
                       .dstSet          = *descriptorSet,
                       .dstBinding      = kSceneBufferBindings[index],
@@ -334,8 +315,8 @@ bool OfflinePathTracing::prepareScene(RenderGraph& graph, const PassFrame& execu
                       .descriptorType  = vk::DescriptorType::eStorageBuffer,
                       .pBufferInfo     = &info
                 };
-                execution.setup.vulkan.deviceHandle().updateDescriptorSets(write, {});
-                sceneBufferRevisions[index] = graph.bufferRevision(sceneBuffers[index]);
+                execution.vulkan->deviceHandle().updateDescriptorSets(write, {});
+                sceneBufferRevisions[index] = cache.bufferRevision(sceneBuffers[index]);
             }
         };
 
@@ -353,19 +334,19 @@ bool OfflinePathTracing::prepareScene(RenderGraph& graph, const PassFrame& execu
         uploadedSceneRevision = offline.revision;
     }
 
-    const auto& view          = execution.view;
-    const auto& scene         = execution.renderData;
+    const auto& view          = *execution.view;
+    const auto& scene         = *execution.scene;
     const auto  assetRevision = context().assetManager->contentRevision();
     const bool  cameraChanged = view.uniforms.inverseViewProjection != previousView.uniforms.inverseViewProjection ||
         view.uniforms.cameraPosition != previousView.uniforms.cameraPosition ||
         view.viewport.x != previousView.viewport.x || view.viewport.y != previousView.viewport.y ||
         view.viewport.width != previousView.viewport.width || view.viewport.height != previousView.viewport.height;
-    const bool  sceneChanged = !std::ranges::equal(previousDrawItems, scene.drawItems);
+    const bool sceneChanged = !std::ranges::equal(previousDrawItems, scene.drawItems);
     const bool assetChanged = previousAssetRevision != assetRevision;
 
     if (sceneChanged)
         previousDrawItems.assign(scene.drawItems.begin(), scene.drawItems.end());
-    previousView = view;
+    previousView          = view;
     previousAssetRevision = assetRevision;
     return offlineChanged || sceneChanged || cameraChanged || assetChanged;
 }
@@ -373,28 +354,27 @@ bool OfflinePathTracing::prepareScene(RenderGraph& graph, const PassFrame& execu
 vk::Rect2D OfflinePathTracing::viewportBounds(const RenderView& view) const
 {
     const auto& viewport = view.viewport;
-    const auto firstX = std::clamp(int32_t(std::ceil(viewport.x - 0.5f)), 0, int32_t(extent.width));
-    const auto firstY = std::clamp(int32_t(std::ceil(viewport.y - 0.5f)), 0, int32_t(extent.height));
-    const auto endX = std::clamp(
-        int32_t(std::ceil(viewport.x + viewport.width - 0.5f)), firstX, int32_t(extent.width)
-    );
-    const auto endY = std::clamp(
-        int32_t(std::ceil(viewport.y + viewport.height - 0.5f)), firstY, int32_t(extent.height)
-    );
+    const auto  firstX   = std::clamp(int32_t(std::ceil(viewport.x - 0.5f)), 0, int32_t(extent.width));
+    const auto  firstY   = std::clamp(int32_t(std::ceil(viewport.y - 0.5f)), 0, int32_t(extent.height));
+    const auto endX = std::clamp(int32_t(std::ceil(viewport.x + viewport.width - 0.5f)), firstX, int32_t(extent.width));
+    const auto endY =
+        std::clamp(int32_t(std::ceil(viewport.y + viewport.height - 0.5f)), firstY, int32_t(extent.height));
     return {{firstX, firstY}, {uint32_t(endX - firstX), uint32_t(endY - firstY)}};
 }
 
-OfflinePathParameters OfflinePathTracing::pathParameters(const PassFrame& execution, uint32_t maxBounces) const
+OfflinePathParameters OfflinePathTracing::pathParameters(const Falcor::RenderContext& execution, uint32_t maxBounces) const
 {
-    const auto& viewport = execution.view.viewport;
-    const auto& scene = *execution.renderData.offlineScene;
+    const auto& viewport = execution.view->viewport;
+    const auto& scene    = *execution.scene->offlineScene;
     return {
-        .viewport = {viewport.x, viewport.y, viewport.width, viewport.height},
-        .samples = {completedSamples, maxBounces},
+        .viewport  = {viewport.x, viewport.y, viewport.width, viewport.height},
+        .samples   = {completedSamples, maxBounces},
         .imageSize = {extent.width, extent.height},
-        .lightCounts = {
-            scene.pointLights.size(), scene.spotLights.size(), scene.directionalLights.size(), scene.lightTriangles.size()
-        },
+        .lightCounts =
+            {scene.pointLights.size(),
+             scene.spotLights.size(),
+             scene.directionalLights.size(),
+             scene.lightTriangles.size()},
         .mappedLightCounts = {
             scene.hasEnvironmentLight ? 1u : 0u,
             scene.projectionLights.size(),
@@ -407,29 +387,31 @@ OfflinePathParameters OfflinePathTracing::pathParameters(const PassFrame& execut
 void OfflinePathTracing::resetAccumulation()
 {
     completedSamples = 0;
-    clearPending = true;
+    clearPending     = true;
 }
 
 void OfflinePathTracing::render(
-    RenderGraph& graph,
-    vk::raii::CommandBuffer& commands,
-    const PassFrame& execution,
-    std::span<const std::byte> constants,
-    const RayTracingPipeline* pipeline,
-    vk::Extent2D rayExtent,
-    std::span<const RenderGraph::BufferHandle> extraAccumulations
+    VulkanResources&                               cache,
+    vk::raii::CommandBuffer&                       commands,
+    const Falcor::RenderContext&                           execution,
+    std::span<const std::byte>                     constants,
+    const RayTracingPipeline*                      pipeline,
+    vk::Extent2D                                   rayExtent,
+    std::span<const VulkanResources::BufferHandle> extraAccumulations
 )
 {
+    accesses.transition(cache, commands);
+
     DCHECK(execution.frameIndex == 0);
     CHECK(completedSamples < std::numeric_limits<uint32_t>::max());
     commands.pushConstants<std::byte>(pipelineLayout, kParameterStages, 0, constants);
 
     if (clearPending)
     {
-        const auto clear = [&](RenderGraph::BufferHandle handle)
+        const auto clear = [&](VulkanResources::BufferHandle handle)
         {
-            const auto& buffer = graph.getBuffer(handle);
-            commands.fillBuffer(buffer.handle(), 0, buffer.size(), 0);
+            const auto& buffer = cache.getBuffer(handle);
+            commands.fillBuffer(buffer.handle(), 0, buffer.getSize(), 0);
         };
         clear(accumulation);
         for (const auto buffer : extraAccumulations)
@@ -438,7 +420,8 @@ void OfflinePathTracing::render(
         const vk::MemoryBarrier2 clearBarrier{
             .srcStageMask  = vk::PipelineStageFlagBits2::eTransfer,
             .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
-            .dstStageMask  = vk::PipelineStageFlagBits2::eRayTracingShaderKHR | vk::PipelineStageFlagBits2::eComputeShader,
+            .dstStageMask =
+                vk::PipelineStageFlagBits2::eRayTracingShaderKHR | vk::PipelineStageFlagBits2::eComputeShader,
             .dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
         };
         commands.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &clearBarrier});
@@ -449,11 +432,18 @@ void OfflinePathTracing::render(
     {
         updateTlasDescriptor(execution);
         commands.bindDescriptorSets(
-            vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 0, std::array{execution.data.sceneSetHandle()}, {}
+            vk::PipelineBindPoint::eRayTracingKHR,
+            pipelineLayout,
+            0,
+            std::array{execution.frameData->sceneSetHandle()},
+            {}
         );
         commands.bindDescriptorSets(
-            vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 2,
-            std::array{execution.renderData.materialSetHandle(), *descriptorSet}, {}
+            vk::PipelineBindPoint::eRayTracingKHR,
+            pipelineLayout,
+            2,
+            std::array{execution.scene->materialSetHandle(), *descriptorSet},
+            {}
         );
         pipeline->bind(commands);
         pipeline->dispatch(commands, 0, {rayExtent.width, rayExtent.height, 1});

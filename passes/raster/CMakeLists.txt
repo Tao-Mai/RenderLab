@@ -1,7 +1,7 @@
 add_library(RenderLabForwardPbr OBJECT ForwardPbr.cpp)
 target_include_directories(RenderLabForwardPbr PRIVATE "${RenderLab_SOURCE_DIR}")
 target_link_libraries(RenderLabForwardPbr PRIVATE RenderLabCore)
-target_precompile_headers(RenderLabForwardPbr REUSE_FROM RenderLabCore)
+target_precompile_headers(RenderLabForwardPbr REUSE_FROM RenderLabPluginAbi)
 
 # Forward PBR variants for opaque and transparent draws.
 foreach(enable_clearcoat IN ITEMS 0 1)

@@ -8,14 +8,13 @@ namespace
 {
 constexpr uint32_t kSignalInputCount     = 4;
 constexpr uint32_t kFilterBindingCount   = 6;
-constexpr uint32_t kFinalBindingCount    = 7;
-constexpr uint32_t kFeedbackBindingCount = 8;
-constexpr auto     kStorageWrite         = RenderGraph::ImageAccess{
+constexpr uint32_t kFirstOrLastBindingCount = 7;
+constexpr auto     kStorageWrite         = VulkanResources::ImageAccess{
                 .stages = vk::PipelineStageFlagBits2::eComputeShader,
                 .access = vk::AccessFlagBits2::eShaderStorageWrite,
                 .layout = vk::ImageLayout::eGeneral,
 };
-constexpr auto kSampledRead = RenderGraph::ImageAccess{
+constexpr auto kSampledRead = VulkanResources::ImageAccess{
     .stages = vk::PipelineStageFlagBits2::eComputeShader,
     .access = vk::AccessFlagBits2::eShaderSampledRead,
     .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -37,96 +36,95 @@ enum class FilterVariant
 };
 }  // namespace
 
-SVGFFilter::Output SVGFFilter::compile(
-    RenderGraph&             graph,
-    const PassSetup&         setup,
-    DenoiserInputs   traced,
-    SVGFReprojection::Output lighting,
-    const SVGFReprojection&  reprojection
+void SVGFFilter::compile(
+    const Falcor::RenderContext& context,
+    const DenoiserInputs& traced,
+    const SVGFReprojection::Output& lighting,
+    const std::array<VulkanResources::ImageHandle, kLightingLayerCount>& scratch,
+    VulkanResources::ImageHandle color,
+    const SVGFReprojection& reprojection
 )
 {
     if (filters.empty())
         for (uint32_t iteration = 0; iteration < kSvgfFilterIterations; ++iteration)
-            filters.push_back(std::make_unique<FilterPass>(iteration, reprojection));
-    struct SignalPair
+            filters.emplace_back(iteration, reprojection);
+    const std::array signals{std::array{lighting.direct, lighting.indirect}, scratch};
+    for (uint32_t iteration = 0; iteration < filters.size(); ++iteration)
     {
-        RenderGraph::ImageHandle direct;
-        RenderGraph::ImageHandle indirect;
-    };
-    const auto                extent = graph.imageInfo(lighting.direct).extent;
-    std::array<SignalPair, 2> signals{
-        SignalPair{lighting.direct, lighting.indirect},
-        SignalPair{
-            graph.createImage({.format = vk::Format::eR32G32B32A32Sfloat, .extent = extent}),
-            graph.createImage({.format = vk::Format::eR32G32B32A32Sfloat, .extent = extent}),
-        },
-    };
-    for (uint32_t iteration = 0; iteration < kSvgfFilterIterations; ++iteration)
-    {
-        auto&      pass       = *filters[iteration];
-        const bool first      = iteration == 0;
-        const bool last       = iteration + 1 == kSvgfFilterIterations;
-        const auto readIndex  = iteration % signals.size();
-        const auto writeIndex = (iteration + 1) % signals.size();
-        const auto filtered   = graph.addStage("SVGF filter",
-            pass,
-            setup,
-            FilterInput{
-                  .direct          = signals[readIndex].direct,
-                  .indirect        = signals[readIndex].indirect,
-                  .targetDirect    = last ? RenderGraph::ImageHandle{} : signals[writeIndex].direct,
-                  .targetIndirect  = last ? RenderGraph::ImageHandle{} : signals[writeIndex].indirect,
-                  .depth           = traced.depth,
-                  .normal          = traced.worldNormal,
-                  .emission        = last ? traced.emission : RenderGraph::ImageHandle{},
-                  .albedo          = last ? traced.albedo : RenderGraph::ImageHandle{},
-                  .directHistory   = first ? lighting.directHistory : RenderGraph::ImageHandle{},
-                  .indirectHistory = first ? lighting.indirectHistory : RenderGraph::ImageHandle{},
+        const auto& [direct, indirect] = signals[iteration % signals.size()];
+        const auto& [targetDirect, targetIndirect] = signals[(iteration + 1) % signals.size()];
+        filters[iteration].compile(
+            context,
+            {
+                .direct          = direct,
+                .indirect        = indirect,
+                .targetDirect    = targetDirect,
+                .targetIndirect  = targetIndirect,
+                .color           = color,
+                .depth           = traced.depth,
+                .normal          = traced.worldNormal,
+                .emission        = traced.emission,
+                .albedo          = traced.albedo,
+                .lightingHistory = lighting.lightingHistory,
             }
         );
-        if (last)
-            return {filtered.color};
-        signals[writeIndex] = {filtered.direct, filtered.indirect};
     }
-    std::unreachable();
 }
 
-SVGFFilter::FilterOutput SVGFFilter::FilterPass::compile(RenderGraph& graph, const PassSetup&, FilterInput source)
+void SVGFFilter::execute(VulkanResources& cache, vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame) const
 {
-    input  = source;
-    output = {};
-    extent = graph.imageInfo(input.direct).extent;
-    for (const auto image : {input.direct, input.indirect, input.depth, input.normal})
-        graph.use(image, kSampledRead);
+    for (const auto& filter : filters)
+        filter.execute(cache, commands, frame);
+}
+
+void SVGFFilter::FilterPass::compile(const Falcor::RenderContext& context, const FilterResources& resources)
+{
+    auto& cache = *context.vulkanResources;
+    extent = cache.imageInfo(resources.direct).extent;
+    accesses.clear();
+    for (const auto image : {resources.direct, resources.indirect, resources.depth, resources.normal})
+        accesses.add(image, kSampledRead);
     if (last())
     {
-        graph.use(input.emission, kSampledRead);
-        graph.use(input.albedo, kSampledRead);
-        output.color = graph.write(graph.createImage({.format = kHdrColorFormat, .extent = extent}));
-        graph.use(output.color, kStorageWrite);
+        accesses.add(resources.emission, kSampledRead);
+        accesses.add(resources.albedo, kSampledRead);
+        accesses.add(resources.color, kStorageWrite);
     }
     else
     {
-        output.direct   = graph.write(input.targetDirect);
-        output.indirect = graph.write(input.targetIndirect);
-        graph.use(output.direct, kStorageWrite);
-        graph.use(output.indirect, kStorageWrite);
+        accesses.add(resources.targetDirect, kStorageWrite);
+        accesses.add(resources.targetIndirect, kStorageWrite);
     }
     if (first())
-    {
-        input.directHistory   = graph.write(input.directHistory);
-        input.indirectHistory = graph.write(input.indirectHistory);
-        graph.use(input.directHistory, kStorageWrite);
-        graph.use(input.indirectHistory, kStorageWrite);
-    }
+        accesses.add(resources.lightingHistory, kStorageWrite);
+    accesses.declare(cache);
     if (!*pipeline)
-        createPipeline();
-    return output;
+        createPipeline(context);
+
+    const std::array handles{
+        resources.direct,
+        resources.indirect,
+        resources.depth,
+        resources.normal,
+        last() ? resources.color : resources.targetDirect,
+        last() ? resources.emission : resources.targetIndirect,
+        last() ? resources.albedo : resources.lightingHistory,
+    };
+    const uint32_t bindingCount = first() || last() ? kFirstOrLastBindingCount : kFilterBindingCount;
+    for (uint32_t binding = 0; binding < bindingCount; ++binding)
+    {
+        const auto image   = handles[binding];
+        const bool sampled = binding < kSignalInputCount || (last() && binding >= 5);
+        const auto type    = sampled ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage;
+        const auto view =
+            cache.imageInfo(image).arrayLayers == 1 ? vk::ImageViewType::e2D : vk::ImageViewType::e2DArray;
+        cache.writeDescriptor(*descriptorSet, binding, image, type, view);
+    }
 }
 
-void SVGFFilter::FilterPass::createPipeline()
+void SVGFFilter::FilterPass::createPipeline(const Falcor::RenderContext& context)
 {
-    const uint32_t bindingCount = first() ? kFeedbackBindingCount : last() ? kFinalBindingCount : kFilterBindingCount;
+    const uint32_t bindingCount = first() || last() ? kFirstOrLastBindingCount : kFilterBindingCount;
     std::vector<vk::DescriptorSetLayoutBinding> bindings(bindingCount);
     for (uint32_t binding = 0; binding < bindingCount; ++binding)
     {
@@ -138,8 +136,7 @@ void SVGFFilter::FilterPass::createPipeline()
              .stageFlags      = vk::ShaderStageFlagBits::eCompute,
         };
     }
-    auto& ctx           = renderContext();
-    auto& device        = *ctx.device;
+    auto& device        = *context.getDevice();
     descriptorSetLayout = device.createDescriptorSetLayout(bindings);
     const vk::PushConstantRange range{
         .stageFlags = vk::ShaderStageFlagBits::eCompute,
@@ -147,56 +144,19 @@ void SVGFFilter::FilterPass::createPipeline()
     };
     pipelineLayout = device.getOrCreatePipelineLayout(std::array{&descriptorSetLayout}, std::array{range});
     const auto variant = first() ? FilterVariant::First : last() ? FilterVariant::Final : FilterVariant::Filter;
-    const auto shader = ctx.shaderManager->getOrLoad("svgf_filter", {{"SVGF_STAGE", static_cast<int>(variant)}});
+    const auto shader = context.shaderManager->getOrLoad("svgf_filter", {{"SVGF_STAGE", std::to_string(static_cast<int>(variant))}});
     pipeline = device.createComputePipeline(shader, pipelineLayout);
     descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
 }
 
-void SVGFFilter::FilterPass::bindResources(RenderGraph& graph, const PassSetup& setup) const
+void SVGFFilter::FilterPass::execute(
+    VulkanResources& cache, vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame
+) const
 {
-    const std::array handles{
-        input.direct,
-        input.indirect,
-        input.depth,
-        input.normal,
-        last() ? output.color : output.direct,
-        last() ? input.emission : output.indirect,
-        last() ? input.albedo : input.directHistory,
-        input.indirectHistory
-    };
-    const uint32_t bindingCount = first() ? kFeedbackBindingCount : last() ? kFinalBindingCount : kFilterBindingCount;
-    std::array<vk::DescriptorImageInfo, kFeedbackBindingCount> images;
-    std::array<vk::WriteDescriptorSet, kFeedbackBindingCount>  writes;
-    for (uint32_t binding = 0; binding < bindingCount; ++binding)
-    {
-        const auto  image   = handles[binding];
-        const auto& info    = graph.imageInfo(image);
-        const bool  sampled = binding < kSignalInputCount || (last() && binding >= 5);
-        images[binding]     = {
-                .imageView   = graph.getImage(image).getOrCreateImageView({
-                      .viewType = info.arrayLayers == 1 ? vk::ImageViewType::e2D : vk::ImageViewType::e2DArray,
-                      .format   = info.format,
-                      .subresourceRange =
-                    {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = info.arrayLayers},
-            }),
-                .imageLayout = sampled ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eGeneral,
-        };
-        writes[binding] = {
-            .dstSet          = *descriptorSet,
-            .dstBinding      = binding,
-            .descriptorCount = 1,
-            .descriptorType  = sampled ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage,
-            .pImageInfo      = &images[binding],
-        };
-    }
-    setup.vulkan.deviceHandle().updateDescriptorSets(std::span{writes.data(), bindingCount}, {});
-}
-
-void SVGFFilter::FilterPass::execute(RenderGraph&, vk::raii::CommandBuffer& commands, const PassFrame& frame) const
-{
+    accesses.transition(cache, commands);
     commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
     commands.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelineLayout, 0, *descriptorSet, {});
-    const auto& viewport = frame.view.viewport;
+    const auto& viewport = frame.view->viewport;
     commands.pushConstants<FilterParameters>(
         pipelineLayout,
         vk::ShaderStageFlagBits::eCompute,

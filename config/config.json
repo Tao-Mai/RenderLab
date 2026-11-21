@@ -8,42 +8,20 @@
         "editor": "editor.json",
         "renderer": "renderer.json"
     },
-    "renderGraphs": [
-        {
-            "id": "forward",
-            "label": "Forward",
-            "renderPath": "Forward",
-            "script": "../graphs/forward.py"
+    "renderGraphs": {
+        "Forward": {
+            "Forward": "../graphs/forward.py"
         },
-        {
-            "id": "deferred",
-            "label": "Deferred",
-            "renderPath": "Deferred",
-            "script": "../graphs/deferred.py"
+        "Deferred": {
+            "Deferred": "../graphs/deferred.py"
         },
-        {
-            "id": "realtime",
-            "label": "ReSTIR",
-            "renderPath": "RayTracing",
-            "script": "../graphs/realtime.py"
+        "RayTracing": {
+            "ReSTIR": "../graphs/realtime.py",
+            "MinimalPathTracer": "../graphs/minimal_path_tracer.py"
         },
-        {
-            "id": "minimal_path_tracer",
-            "label": "MinimalPathTracer",
-            "renderPath": "RayTracing",
-            "script": "../graphs/minimal_path_tracer.py"
-        },
-        {
-            "id": "pt",
-            "label": "PT",
-            "renderPath": "OfflinePathTracing",
-            "script": "../graphs/pt.py"
-        },
-        {
-            "id": "bdpt",
-            "label": "BDPT",
-            "renderPath": "OfflinePathTracing",
-            "script": "../graphs/bdpt.py"
+        "OfflinePathTracing": {
+            "PT": "../graphs/pt.py",
+            "BDPT": "../graphs/bdpt.py"
         }
-    ]
+    }
 }

@@ -1,9 +1,17 @@
-from modules.editor import add_editor_output
+from falcor import RenderGraph
+
 from modules.post_process import add_post_process
-from renderlab_graph import RenderGraph
+
+def render_graph_PT(
+    *, hdr: bool = True, postProcess: str = "RenderLab", bloom: bool = True
+) -> RenderGraph:
+    graph = RenderGraph("PT")
+    graph.create_pass("pt", "PathTracer", {"maxBounces": 2})
+    add_post_process(graph, "pt.color", hdr, postProcess, bloom)
+    return graph
 
 
-def build_graph(graph: RenderGraph) -> None:
-    target = graph.input("presentTarget")
-    graph.create_pass("pt", "PathTracer", {"maxBounces": 2}, ui=True)
-    add_editor_output(graph, add_post_process(graph, "pt.rayImage", target))
+if globals().get("__name__", "__main__") == "__main__":
+    PT = render_graph_PT()
+    if "m" in globals():
+        m.addGraph(PT)

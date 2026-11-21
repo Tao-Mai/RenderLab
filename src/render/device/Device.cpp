@@ -1,15 +1,21 @@
 #include "render/device/Device.h"
 
 #include "core/Logger.h"
+#include "core/ScriptBindings.h"
 #include "core/Vertex.h"
+#include "render/RenderContext.h"
 #include "render/RenderConfig.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
+#include "render/resources/Buffer.h"
 #include "render/resources/MaterialData.h"
+#include "render/resources/NativeFormats.h"
 #include "render/resources/ShaderLayout.h"
+#include "render/resources/Texture.h"
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <functional>
 #include <utility>
@@ -55,15 +61,60 @@ void hashCombine(size_t& seed, size_t value)
     constexpr size_t kHashGoldenRatio = 0x9e3779b97f4a7c15ULL;
     seed ^= value + kHashGoldenRatio + (seed << 6) + (seed >> 2);
 }
+
+vk::ImageUsageFlags toVulkanImageUsage(Falcor::ResourceBindFlags flags)
+{
+    vk::ImageUsageFlags usage;
+    if (is_set(flags, Falcor::ResourceBindFlags::ShaderResource))
+        usage |= vk::ImageUsageFlagBits::eSampled;
+    if (is_set(flags, Falcor::ResourceBindFlags::UnorderedAccess))
+        usage |= vk::ImageUsageFlagBits::eStorage;
+    if (is_set(flags, Falcor::ResourceBindFlags::RenderTarget))
+        usage |= vk::ImageUsageFlagBits::eColorAttachment;
+    if (is_set(flags, Falcor::ResourceBindFlags::DepthStencil))
+        usage |= vk::ImageUsageFlagBits::eDepthStencilAttachment;
+    return usage;
+}
+
 }  // namespace
+
+vk::Extent3D ComputePipeline::groupCount(vk::Extent3D threads) const
+{
+    const auto roundUp = [](uint32_t count, uint32_t size) { return count / size + (count % size != 0); };
+    return {
+        roundUp(threads.width, threadGroupSize.width),
+        roundUp(threads.height, threadGroupSize.height),
+        roundUp(threads.depth, threadGroupSize.depth),
+    };
+}
+
+void ComputePipeline::dispatch(vk::raii::CommandBuffer& commands, vk::Extent3D threads) const
+{
+    const auto groups = groupCount(threads);
+    commands.dispatch(groups.width, groups.height, groups.depth);
+}
+
+namespace Falcor
+{
+Device::Device() : mpRenderContext(std::make_unique<RenderContext>(this)) {}
 
 Device::~Device() { DCHECK(!initialized); }
 
-void Device::init(const VulkanContext& vulkan, ShaderManager& targetShaders)
+void Device::wait()
 {
-    DCHECK(!initialized);
-    device  = &vulkan.deviceHandle();
-    shaders = &targetShaders;
+    DCHECK(vulkan);
+    vulkan->waitIdle();
+}
+
+void Device::init(VulkanContext& vulkan, ShaderManager& targetShaders)
+{
+    DCHECK(!initialized && !vulkan.mpDevice);
+    this->vulkan = &vulkan;
+    vulkan.mpDevice = this;
+    device       = &vulkan.deviceHandle();
+    shaders      = &targetShaders;
+    mpRenderContext->vulkan        = &vulkan;
+    mpRenderContext->shaderManager = &targetShaders;
 
     // Global material arrays plus shared/pass sets, with room for graph rebuilds.
     constexpr uint32_t kMaxDescriptorSets             = 128;
@@ -99,20 +150,151 @@ void Device::init(const VulkanContext& vulkan, ShaderManager& targetShaders)
 void Device::shutdown() noexcept
 {
     DCHECK(initialized);
+    *mpRenderContext = RenderContext(this);
     pipelines.clear();
     editorPipelineLayout = nullptr;
     meshPipelineLayout   = nullptr;
     pipelineLayouts.clear();
     editorViewDescriptorSetLayout = {};
     materialDescriptorSetLayout   = {};
-    lightDescriptorSetLayout   = {};
-    shadowDescriptorSetLayout  = {};
+    lightDescriptorSetLayout      = {};
+    shadowDescriptorSetLayout     = {};
     sceneDescriptorSetLayout      = {};
     pipelineCache                 = nullptr;
     descriptorPool                = nullptr;
     shaders                       = nullptr;
     device                        = nullptr;
+    vulkan->mpDevice              = nullptr;
+    vulkan                        = nullptr;
     DEBUG_EXEC(initialized = false);
+}
+
+Falcor::ResourceBindFlags Device::getFormatBindFlags(Falcor::ResourceFormat format) const
+{
+    const auto features =
+        vulkan->physicalDeviceHandle().getFormatProperties(Falcor::getVulkanFormat(format)).optimalTilingFeatures;
+    auto flags = Falcor::ResourceBindFlags::None;
+    if (features & vk::FormatFeatureFlagBits::eSampledImage)
+        flags = flags | Falcor::ResourceBindFlags::ShaderResource;
+    if (features & vk::FormatFeatureFlagBits::eStorageImage)
+        flags = flags | Falcor::ResourceBindFlags::UnorderedAccess;
+    if (features & vk::FormatFeatureFlagBits::eColorAttachment)
+        flags = flags | Falcor::ResourceBindFlags::RenderTarget;
+    if (features & vk::FormatFeatureFlagBits::eDepthStencilAttachment)
+        flags = flags | Falcor::ResourceBindFlags::DepthStencil;
+    return flags;
+}
+
+ref<Buffer> Device::createBuffer(size_t size, ResourceBindFlags bindFlags, MemoryType memoryType, const void* initData)
+{
+    CHECK(!is_set(bindFlags, ResourceBindFlags::Shared), "shared buffers require external memory");
+    const auto limit = vulkan->properties().limits.maxStorageBufferRange;
+    CHECK(
+        !is_set(bindFlags, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess) || size <= limit,
+        "storage buffer requires {} bytes; maxStorageBufferRange is {}",
+        size,
+        limit
+    );
+    return make_ref<Buffer>(ref<Device>(this), size, bindFlags, memoryType, initData);
+}
+
+ref<Texture> Device::createTexture(
+    Resource::Type    type,
+    Falcor::ResourceFormat    format,
+    vk::Extent3D      extent,
+    uint32_t          arraySize,
+    uint32_t          mipLevels,
+    uint32_t          samples,
+    Falcor::ResourceBindFlags bindFlags
+) const
+{
+    CHECK(!is_set(bindFlags, Falcor::ResourceBindFlags::Shared), "shared textures require external memory");
+    const bool     cube      = type == Resource::Type::TextureCube;
+    const auto     imageType = type == Resource::Type::Texture1D ? vk::ImageType::e1D
+            : type == Resource::Type::Texture3D                  ? vk::ImageType::e3D
+                                                                 : vk::ImageType::e2D;
+    constexpr auto kTransfer = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst;
+    return make_ref<Texture>(
+        *vulkan,
+        vk::ImageCreateInfo{
+            .flags         = cube ? vk::ImageCreateFlagBits::eCubeCompatible : vk::ImageCreateFlags{},
+            .imageType     = imageType,
+            .format        = Falcor::getVulkanFormat(format),
+            .extent        = extent,
+            .mipLevels     = mipLevels,
+            .arrayLayers   = cube ? arraySize * 6 : arraySize,
+            .samples       = static_cast<vk::SampleCountFlagBits>(samples),
+            .tiling        = vk::ImageTiling::eOptimal,
+            .usage         = toVulkanImageUsage(bindFlags) | kTransfer,
+            .sharingMode   = vk::SharingMode::eExclusive,
+            .initialLayout = vk::ImageLayout::eUndefined,
+        },
+        bindFlags
+    );
+}
+
+ref<Texture> Device::createTexture1D(
+    uint32_t width, Falcor::ResourceFormat format, uint32_t arraySize, uint32_t mipLevels, Falcor::ResourceBindFlags bindFlags
+) const
+{
+    return createTexture(Resource::Type::Texture1D, format, {width, 1, 1}, arraySize, mipLevels, 1, bindFlags);
+}
+
+ref<Texture> Device::createTexture2D(
+    uint32_t          width,
+    uint32_t          height,
+    Falcor::ResourceFormat    format,
+    uint32_t          arraySize,
+    uint32_t          mipLevels,
+    Falcor::ResourceBindFlags bindFlags
+) const
+{
+    return createTexture(Resource::Type::Texture2D, format, {width, height, 1}, arraySize, mipLevels, 1, bindFlags);
+}
+
+ref<Texture> Device::createTexture2DMS(
+    uint32_t          width,
+    uint32_t          height,
+    Falcor::ResourceFormat    format,
+    uint32_t          sampleCount,
+    uint32_t          arraySize,
+    Falcor::ResourceBindFlags bindFlags
+) const
+{
+    CHECK(sampleCount > 1 && std::has_single_bit(sampleCount) && sampleCount <= 64);
+    return createTexture(
+        Resource::Type::Texture2DMultisample,
+        format,
+        {width, height, 1},
+        arraySize,
+        1,
+        sampleCount,
+        bindFlags
+    );
+}
+
+ref<Texture> Device::createTexture3D(
+    uint32_t          width,
+    uint32_t          height,
+    uint32_t          depth,
+    Falcor::ResourceFormat    format,
+    uint32_t          mipLevels,
+    Falcor::ResourceBindFlags bindFlags
+) const
+{
+    return createTexture(Resource::Type::Texture3D, format, {width, height, depth}, 1, mipLevels, 1, bindFlags);
+}
+
+ref<Texture> Device::createTextureCube(
+    uint32_t          width,
+    uint32_t          height,
+    Falcor::ResourceFormat    format,
+    uint32_t          arraySize,
+    uint32_t          mipLevels,
+    Falcor::ResourceBindFlags bindFlags
+) const
+{
+    return createTexture(Resource::Type::TextureCube, format, {width, height, 1}, arraySize, mipLevels, 1, bindFlags);
 }
 
 DescriptorSetLayout Device::createDescriptorSetLayout(std::span<const vk::DescriptorSetLayoutBinding> bindings) const
@@ -191,39 +373,24 @@ vk::raii::DescriptorSet Device::allocateDescriptorSet(const DescriptorSetLayout&
                          .front());
 }
 
-vk::Extent3D ComputePipeline::groupCount(vk::Extent3D threads) const
-{
-    const auto roundUp = [](uint32_t count, uint32_t size) { return count / size + (count % size != 0); };
-    return {
-        roundUp(threads.width, threadGroupSize.width),
-        roundUp(threads.height, threadGroupSize.height),
-        roundUp(threads.depth, threadGroupSize.depth),
-    };
-}
-
-void ComputePipeline::dispatch(vk::raii::CommandBuffer& commands, vk::Extent3D threads) const
-{
-    const auto groups = groupCount(threads);
-    commands.dispatch(groups.width, groups.height, groups.depth);
-}
-
 ComputePipeline Device::createComputePipeline(ShaderHandle shader, vk::PipelineLayout layout) const
 {
     DCHECK(device && shaders);
     const auto& metadata = shaders->metadata(shader);
     CHECK(metadata.entries.size() == 1, "compute shader '{}' must have one entry point", metadata.binary.string());
-    const auto& entry = metadata.entries.front();
-    const auto threadGroupSize = shaders->layout(shader).threadGroupSize(entry);
+    const auto& entry           = metadata.entries.front();
+    const auto  threadGroupSize = shaders->layout(shader).threadGroupSize(entry);
     return {
-        .handle = vkCheck(device->createComputePipeline(
+        .handle          = vkCheck(device->createComputePipeline(
             nullptr,
             {
-                .stage = {
-                    .stage = vk::ShaderStageFlagBits::eCompute,
-                    .module = shaders->module(shader),
-                    .pName = entry.c_str(),
-                },
-                .layout = layout,
+                         .stage =
+                    {
+                                 .stage  = vk::ShaderStageFlagBits::eCompute,
+                                 .module = shaders->module(shader),
+                                 .pName  = entry.c_str(),
+                    },
+                         .layout = layout,
             }
         )),
         .threadGroupSize = threadGroupSize,
@@ -365,3 +532,73 @@ vk::Pipeline Device::getOrCreatePipeline(const GraphicsPipelineInfo& info)
     pipelines.emplace(key, std::move(pipeline));
     return handle;
 }
+
+FALCOR_SCRIPT_BINDING(Device)
+{
+    using namespace ScriptBindings;
+    FALCOR_SCRIPT_BINDING_DEPENDENCY(Formats)
+
+    static PyMethodDef kMethods[]{
+        {"create_buffer", reinterpret_cast<PyCFunction>(+[](PyObject* object, PyObject* args, PyObject* keywords) -> PyObject*
+        {
+            static const char* const kKeywords[]{"size", "bind_flags", "memory_type", nullptr};
+            PyObject* sizeArg = nullptr;
+            PyObject* bindFlagsArg = nullptr;
+            PyObject* memoryTypeArg = nullptr;
+            if (!PyArg_ParseTupleAndKeywords(args, keywords, "O|OO:create_buffer", const_cast<char**>(kKeywords),
+                                            &sizeArg, &bindFlagsArg, &memoryTypeArg))
+                return nullptr;
+
+            const auto size = fromPython<size_t>(sizeArg);
+            const auto bindFlags = bindFlagsArg ? fromPython<ResourceBindFlags>(bindFlagsArg)
+                                               : std::optional{ResourceBindFlags::None};
+            const auto memoryType = memoryTypeArg ? fromPython<MemoryType>(memoryTypeArg)
+                                                : std::optional{MemoryType::DeviceLocal};
+            if (PyErr_Occurred())
+                return nullptr;
+            if (!size || !bindFlags || !memoryType)
+            {
+                PyErr_SetString(PyExc_TypeError, "create_buffer requires an integer size, ResourceBindFlags and MemoryType");
+                return nullptr;
+            }
+            if (!*size)
+            {
+                PyErr_SetString(PyExc_ValueError, "buffer size must be greater than zero");
+                return nullptr;
+            }
+
+            const auto& device = valueOf<ref<Device>>(object);
+            if (!device->getRenderContext()->vulkan)
+            {
+                PyErr_SetString(PyExc_RuntimeError, "device is not initialized");
+                return nullptr;
+            }
+            return toPython(ref<Resource>(device->createBuffer(*size, *bindFlags, *memoryType))).release();
+        }), METH_VARARGS | METH_KEYWORDS},
+        {"wait", [](PyObject* object, PyObject*) -> PyObject*
+        {
+            const auto& device = valueOf<ref<Device>>(object);
+            if (!device->getRenderContext()->vulkan)
+            {
+                PyErr_SetString(PyExc_RuntimeError, "device is not initialized");
+                return nullptr;
+            }
+            device->wait();
+            Py_RETURN_NONE;
+        }, METH_NOARGS},
+        {},
+    };
+    static PyType_Slot kSlots[]{
+        {Py_tp_dealloc, reinterpret_cast<void*>(destroyPythonValue<ref<Device>>)},
+        {Py_tp_methods, kMethods},
+        {},
+    };
+    static PyType_Spec kType{
+        "falcor.Device", sizeof(PythonValue<ref<Device>>), 0,
+        Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION, kSlots,
+    };
+
+    const auto device = makePythonType<ref<Device>>(m, kType);
+    return device ? PyModule_AddObjectRef(m, "Device", device.get()) : -1;
+}
+}  // namespace Falcor

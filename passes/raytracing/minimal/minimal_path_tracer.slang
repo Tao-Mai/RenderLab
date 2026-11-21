@@ -1,8 +1,9 @@
-#include "raytracing/path_output.slang"
 #include "raytracing/light_sampling.slang"
 
+[[vk::binding(3, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> outputImage;
+
 // One ordinary light sample and one BRDF continuation per scattering event.
-float3 simpleDirectLight(Surface surface, inout uint state)
+float3 evalDirectLight(Surface surface, inout uint state)
 {
     RealtimeLightSample sample = sampleLight(state);
     if (sample.kind == kInvalidLightSample)
@@ -31,12 +32,14 @@ float simpleEmissionWeight(Surface previousSurface, RayDesc ray, PathHit hit, fl
     return brdfPdf / (brdfPdf + lightPdf);
 }
 
-PathResult traceSimplePath(RayDesc ray, inout uint state)
+float3 tracePath(RayDesc ray, inout uint state)
 {
-    PathResult result          = createPathResult();
-    float3     throughput      = float3(1.0);
-    Surface    previousSurface = {};
-    float      previousBrdfPdf = 0.0;
+    float3  directRadiance   = float3(0.0);
+    float3  indirectRadiance = float3(0.0);
+    float3  cameraEmission   = float3(0.0);
+    float3  throughput       = float3(1.0);
+    Surface previousSurface  = {};
+    float   previousBrdfPdf  = 0.0;
 
     // maxBounces counts surface scattering events; the final ray still sees emission and the environment.
     for (uint bounce = 0; bounce <= parameters.maxBounces; ++bounce)
@@ -47,29 +50,24 @@ PathResult traceSimplePath(RayDesc ray, inout uint state)
 
         float3 emission = hitEmission(ray, hit);
         if (bounce == 0)
-            result.emission = emission;
+            cameraEmission = emission;
         else
         {
             float3 contribution =
                 throughput * emission * simpleEmissionWeight(previousSurface, ray, hit, previousBrdfPdf);
             if (bounce == 1)
-                result.directRadiance += contribution;
+                directRadiance += contribution;
             else
-                result.indirectRadiance += contribution;
+                indirectRadiance += contribution;
         }
         if (hit.event != PathEvent::Surface || bounce == parameters.maxBounces)
             break;
 
         Surface surface = hit.surface;
         if (bounce == 0)
-        {
-            result.primaryDepth   = linearViewDepth(surface.position, sceneUniforms.view);
-            result.primaryNormal  = surface.geometricNormal;
-            result.primaryAlbedo  = surface.albedo();
-            result.directRadiance = simpleDirectLight(surface, state);
-        }
+            directRadiance = evalDirectLight(surface, state);
         else
-            result.indirectRadiance += throughput * simpleDirectLight(surface, state);
+            indirectRadiance += throughput * evalDirectLight(surface, state);
 
         BrdfSample sampled = surface.sample(state);
         if (!advancePath(surface, sampled, bounce + 1, throughput, ray, state))
@@ -77,16 +75,16 @@ PathResult traceSimplePath(RayDesc ray, inout uint state)
         previousSurface = surface;
         previousBrdfPdf = sampled.pdf;
     }
-    return result;
+    return directRadiance + indirectRadiance + cameraEmission;
 }
 
 [shader("raygeneration")]
 void raygenMain()
 {
-    uint2      pixel  = DispatchRaysIndex().xy;
-    uint       state  = pathRandomState(pixel, DispatchRaysDimensions().x);
-    PathResult result = createPathResult();
+    uint2  pixel = DispatchRaysIndex().xy;
+    uint   state = pathRandomState(pixel, DispatchRaysDimensions().x);
+    float3 color = float3(0.0);
     if (parameters.containsPixel(pixel))
-        result = traceSimplePath(createPathRay(pixel, float2(0.5)), state);
-    writePathResult(pixel, result);
+        color = tracePath(createPathRay(pixel, float2(0.5)), state);
+    outputImage[pixel] = float4(color, 1.0);
 }

@@ -12,8 +12,7 @@
 [[vk::binding(4, 0)]] [[vk::image_format("rgba32f")]] RWTexture2D<float4> outputDirect;
 [[vk::binding(5, 0)]] [[vk::image_format("rgba32f")]] RWTexture2D<float4> outputIndirect;
 #if SVGF_STAGE == 0
-[[vk::binding(6, 0)]] [[vk::image_format("rgba32f")]] RWTexture2DArray<float4> historyDirect;
-[[vk::binding(7, 0)]] [[vk::image_format("rgba32f")]] RWTexture2DArray<float4> historyIndirect;
+[[vk::binding(6, 0)]] [[vk::image_format("rgba32f")]] RWTexture2DArray<float4> historyLighting;
 #endif
 #endif
 
@@ -114,9 +113,8 @@ void computeMain(uint3 thread : SV_DispatchThreadID)
     outputDirect[pixel] = direct;
     outputIndirect[pixel] = indirect;
 #if SVGF_STAGE == 0
-    uint3 location = uint3(pixel, parameters.historyLayer);
-    historyDirect[location] = direct;
-    historyIndirect[location] = indirect;
+    historyLighting[uint3(pixel, svgfLightingHistoryLayer(parameters.historyLayer, kDirectLightingLayer))] = direct;
+    historyLighting[uint3(pixel, svgfLightingHistoryLayer(parameters.historyLayer, kIndirectLightingLayer))] = indirect;
 #endif
 #endif
 }

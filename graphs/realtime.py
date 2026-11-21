@@ -1,20 +1,26 @@
-from modules.editor import add_editor_output
+from falcor import RenderGraph
+
 from modules.post_process import add_post_process
 from modules.raytracing import add_svgf
-from modules.scene import configure_ibl
-from renderlab_graph import RenderGraph
+
+def render_graph_ReSTIR(
+    *,
+    hdr: bool = True,
+    ibl: bool = True,
+    ambientCoefficient: float = 0.1,
+    svgf: bool = True,
+    postProcess: str = "RenderLab",
+    bloom: bool = True,
+) -> RenderGraph:
+    graph = RenderGraph("ReSTIR")
+
+    graph.create_pass("rayTracing", "RayTracingPass", {"maxBounces": 3, "restir": {"candidateCount": 32}, "splitLighting": svgf})
+    color = add_svgf(graph, "rayTracing") if svgf else "rayTracing.color"
+    add_post_process(graph, color, hdr, postProcess, bloom)
+    return graph
 
 
-def build_graph(graph: RenderGraph) -> None:
-    target = graph.input("presentTarget")
-    lights = graph.input("lightBuffer")
-    configure_ibl(graph)
-
-    graph.create_pass(
-        "rayTracing", "RayTracingPass",
-        properties={"maxBounces": 3, "restir": {"candidateCount": 32}},
-        ui=True,
-    )
-    graph.add_edge(lights, "rayTracing.lights")
-    color = add_svgf(graph, "rayTracing", enabled_by_default=True)
-    add_editor_output(graph, add_post_process(graph, color, target))
+if globals().get("__name__", "__main__") == "__main__":
+    ReSTIR = render_graph_ReSTIR()
+    if "m" in globals():
+        m.addGraph(ReSTIR)

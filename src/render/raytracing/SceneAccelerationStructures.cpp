@@ -2,7 +2,7 @@
 
 #include "core/Logger.h"
 #include "core/Vertex.h"
-#include "render/RenderData.h"
+#include "render/PreparedScene.h"
 #include "render/device/VulkanContext.h"
 #include "render/resources/GpuMesh.h"
 #include "render/resources/RenderResourceManager.h"
@@ -49,7 +49,7 @@ VkTransformMatrixKHR instanceTransform(const glm::mat4& model)
 }
 
 std::vector<VkAccelerationStructureInstanceKHR> makeInstances(
-    const RenderData& renderData, std::span<const vk::DeviceAddress> meshBlasAddresses,
+    const PreparedScene& renderData, std::span<const vk::DeviceAddress> meshBlasAddresses,
     vk::DeviceAddress rectLightBlasAddress
 )
 {
@@ -118,7 +118,7 @@ void makeBuildWritesVisible(vk::raii::CommandBuffer& commands, vk::PipelineStage
 
 const AccelerationStructure& SceneAccelerationStructures::recordBuilds(
     const VulkanContext& vulkan, vk::raii::CommandBuffer& commands, RenderResourceManager& resources,
-    const RenderData& renderData, uint32_t frameIndex
+    const PreparedScene& renderData, uint32_t frameIndex
 )
 {
     DCHECK(frameIndex < frames.size());
@@ -134,10 +134,9 @@ const AccelerationStructure& SceneAccelerationStructures::recordBuilds(
 
 std::vector<vk::DeviceAddress> SceneAccelerationStructures::recordBlasBuilds(
     const VulkanContext& vulkan, vk::raii::CommandBuffer& commands, RenderResourceManager& resources,
-    const RenderData& renderData
+    const PreparedScene& renderData
 )
 {
-    const auto& device = vulkan.deviceHandle();
     std::vector<vk::DeviceAddress> addresses;
     addresses.reserve(renderData.drawItems.size());
 
@@ -157,8 +156,8 @@ std::vector<vk::DeviceAddress> SceneAccelerationStructures::recordBlasBuilds(
         if (created)
         {
             const auto geometry = triangleGeometry(
-                mesh.vertices().address(device), sizeof(Vertex), mesh.vertexCount(),
-                mesh.indices().address(device) + submesh.firstIndex * sizeof(uint32_t)
+                mesh.vertices().getGpuAddress(), sizeof(Vertex), mesh.vertexCount(),
+                mesh.indices().getGpuAddress() + submesh.firstIndex * sizeof(uint32_t)
             );
             const auto triangleCount = submesh.indexCount / 3;
             blas.create(vulkan, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, geometry, triangleCount);
@@ -192,17 +191,17 @@ void SceneAccelerationStructures::recordRectLightBlasBuild(
     constexpr uint32_t kTriangleCount = kIndices.size() / 3;
     constexpr auto kUsage = vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
         vk::BufferUsageFlagBits::eShaderDeviceAddress;
-    constexpr auto kMemory = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
-
-    const auto& physicalDevice = vulkan.physicalDeviceHandle();
-    const auto& device         = vulkan.deviceHandle();
-    rectLightVertices = Buffer(physicalDevice, device, sizeof(kVertices), kUsage, kMemory);
-    rectLightIndices  = Buffer(physicalDevice, device, sizeof(kIndices), kUsage, kMemory);
-    rectLightVertices.upload(kVertices.data(), sizeof(kVertices));
-    rectLightIndices.upload(kIndices.data(), sizeof(kIndices));
+    rectLightVertices = Falcor::Buffer(
+        vulkan, sizeof(kVertices), kUsage, Falcor::MemoryType::Upload, Falcor::ResourceBindFlags::None
+    );
+    rectLightIndices = Falcor::Buffer(
+        vulkan, sizeof(kIndices), kUsage, Falcor::MemoryType::Upload, Falcor::ResourceBindFlags::None
+    );
+    rectLightVertices.setBlob(kVertices.data(), 0, sizeof(kVertices));
+    rectLightIndices.setBlob(kIndices.data(), 0, sizeof(kIndices));
 
     const auto geometry = triangleGeometry(
-        rectLightVertices.address(device), sizeof(float) * 3, kVertexCount, rectLightIndices.address(device)
+        rectLightVertices.getGpuAddress(), sizeof(float) * 3, kVertexCount, rectLightIndices.getGpuAddress()
     );
     rectLightBlas.create(vulkan, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, geometry, kTriangleCount);
     rectLightBlas.build(vulkan, commands, geometry, kTriangleCount);
@@ -213,20 +212,19 @@ void SceneAccelerationStructures::recordTlasBuild(
     std::span<const VkAccelerationStructureInstanceKHR> instances
 )
 {
-    const auto& device = vulkan.deviceHandle();
     const auto  count = static_cast<uint32_t>(instances.size());
     const bool  recreate = !frame.tlas.handle() || frame.instanceCount != count;
     if (recreate)
     {
         frame.tlas.reset();
         frame.instances.reset();
-        frame.instances = Buffer(
-            vulkan.physicalDeviceHandle(),
-            device,
+        frame.instances = Falcor::Buffer(
+            vulkan,
             std::max(count, 1u) * sizeof(VkAccelerationStructureInstanceKHR),
             vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
                 vk::BufferUsageFlagBits::eShaderDeviceAddress,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+            Falcor::MemoryType::Upload,
+            Falcor::ResourceBindFlags::None
         );
     }
 
@@ -235,7 +233,7 @@ void SceneAccelerationStructures::recordTlasBuild(
         .geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR,
         .geometry     = {.instances = {
             .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR,
-            .data  = {.deviceAddress = frame.instances.address(device)},
+            .data  = {.deviceAddress = frame.instances.getGpuAddress()},
         }},
     };
     if (recreate)
@@ -244,7 +242,7 @@ void SceneAccelerationStructures::recordTlasBuild(
         frame.instanceCount = count;
     }
     if (!instances.empty())
-        frame.instances.upload(instances.data(), instances.size_bytes());
+        frame.instances.setBlob(instances.data(), 0, instances.size_bytes());
 
     frame.tlas.build(vulkan, commands, geometry, count);
 }

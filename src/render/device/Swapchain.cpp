@@ -19,7 +19,7 @@ void Swapchain::init(VulkanContext& context, Window& targetWindow)
 void Swapchain::reset() noexcept
 {
     renderFinishedSemaphores.clear();
-    swapChainImages.clear();
+    framebuffers.clear();
     swapChain              = nullptr;
     swapChainMinImageCount = 0;
     window                 = nullptr;
@@ -85,10 +85,6 @@ void Swapchain::createSwapChain()
     std::vector<vk::PresentModeKHR> availablePresentModes =
         vkCheck(vulkan->physicalDeviceHandle().getSurfacePresentModesKHR(vulkan->surfaceHandle()));
     const auto presentMode = chooseSwapPresentMode(availablePresentModes);
-    swapChainImageUsage    = vk::ImageUsageFlagBits::eColorAttachment;
-    if (surfaceCapabilities.supportedUsageFlags & vk::ImageUsageFlagBits::eTransferDst)
-        swapChainImageUsage |= vk::ImageUsageFlagBits::eTransferDst;
-
     vk::SwapchainCreateInfoKHR swapChainCreateInfo{
         .surface          = vulkan->surfaceHandle(),
         .minImageCount    = swapChainMinImageCount,
@@ -96,7 +92,7 @@ void Swapchain::createSwapChain()
         .imageColorSpace  = swapChainSurfaceFormat.colorSpace,
         .imageExtent      = swapChainExtent,
         .imageArrayLayers = 1,
-        .imageUsage       = swapChainImageUsage,
+        .imageUsage       = vk::ImageUsageFlagBits::eColorAttachment,
         .imageSharingMode = vk::SharingMode::eExclusive,
         .preTransform     = surfaceCapabilities.currentTransform,
         .compositeAlpha   = vk::CompositeAlphaFlagBitsKHR::eOpaque,
@@ -106,11 +102,22 @@ void Swapchain::createSwapChain()
 
     swapChain         = vkCheck(vulkan->deviceHandle().createSwapchainKHR(swapChainCreateInfo));
     const auto images = vkCheck(swapChain.getImages());
-    swapChainImages.reserve(images.size());
+    framebuffers.reserve(images.size());
+    const vk::ImageCreateInfo info{
+        .imageType   = vk::ImageType::e2D,
+        .format      = swapChainSurfaceFormat.format,
+        .extent      = {swapChainExtent.width, swapChainExtent.height, 1},
+        .mipLevels   = 1,
+        .arrayLayers = swapChainCreateInfo.imageArrayLayers,
+        .samples     = vk::SampleCountFlagBits::e1,
+        .usage       = swapChainCreateInfo.imageUsage,
+    };
     for (const auto image : images)
-        swapChainImages.emplace_back(vulkan->deviceHandle(), image);
-    renderFinishedSemaphores.reserve(swapChainImages.size());
-    for (size_t index = 0; index < swapChainImages.size(); ++index)
+        framebuffers.emplace_back().attachColorTarget(
+            Falcor::make_ref<Falcor::Texture>(*vulkan, image, info, Falcor::ResourceBindFlags::RenderTarget), 0
+        );
+    renderFinishedSemaphores.reserve(framebuffers.size());
+    for (size_t index = 0; index < framebuffers.size(); ++index)
     {
         renderFinishedSemaphores.push_back(vkCheck(vulkan->deviceHandle().createSemaphore(vk::SemaphoreCreateInfo{})));
     }

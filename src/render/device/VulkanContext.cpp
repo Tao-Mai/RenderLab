@@ -34,17 +34,25 @@ void VulkanContext::init(Window& targetWindow)
 
 void VulkanContext::reset() noexcept
 {
+    DCHECK(!mpDevice);
     queue                     = nullptr;
     device                    = nullptr;
     physicalDevice            = nullptr;
     deviceProperties          = vk::PhysicalDeviceProperties{};
     deviceFeatures            = vk::PhysicalDeviceFeatures{};
     rayTracingSupported       = false;
+    idleRevision              = 0;
     surface                   = nullptr;
     debugMessenger            = nullptr;
     instance                  = nullptr;
     graphicsQueueFamilyIndex_ = ~0u;
     window                    = nullptr;
+}
+
+void VulkanContext::waitIdle() const
+{
+    vkCheck(device.waitIdle());
+    ++idleRevision;
 }
 
 void VulkanContext::createInstance()

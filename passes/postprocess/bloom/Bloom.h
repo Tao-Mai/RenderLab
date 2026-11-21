@@ -1,30 +1,42 @@
 #pragma once
 
+#include "render/device/ResourceBarriers.h"
 #include "render/graph/RenderPass.h"
 
 #include "passes/postprocess/Bloom/BloomSettings.h"
-#include "render/graph/PassSettings.h"
+#include "render/graph/RenderPass.h"
 
 #include "render/device/Device.h"
 #include "render/raster/RasterAttachments.h"
 
-#include <memory>
 #include <vector>
 
-// Owns and connects the filter passes; only those passes enter the graph.
-class Bloom : public ConfigurablePass<BloomSettings, CompositeRenderPass>
+class Bloom : public Falcor::RenderPass
 {
-public:
-    struct Output
-    {
-        RenderGraph::ImageHandle color;
-    };
+    FALCOR_PLUGIN_CLASS(Bloom, "Bloom", "Extracts and filters highlights for bloom.");
 
-    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
-    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
+    Bloom(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties);
+
+    [[nodiscard]] Falcor::Properties getProperties() const override;
+    void setProperties(const Falcor::Properties& properties) override;
+
+    static Falcor::ref<Bloom> create(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties)
+    {
+        return Falcor::make_ref<Bloom>(std::move(device), properties);
+    }
+
+    void renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget) override;
+
+    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData& compileData) override;
+    void                               compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
+    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
 
 private:
-    class FilterPass
+    BloomSettings parameters;
+
+    void prepareFilters(const Falcor::RenderContext& context, const Falcor::RenderData& renderData);
+
+    class Filter
     {
     public:
         enum class Stage : uint32_t
@@ -35,29 +47,27 @@ private:
             Composite
         };
 
-        FilterPass(Stage stage, const BloomSettings& settings) : stage(stage), settings(settings) {}
+        Filter(Stage stage, const BloomSettings& settings) : stage(stage), settings(settings) {}
 
-        Output compile(
-            RenderGraph&             graph,
-            const PassSetup&         setup,
-            RenderGraph::ImageHandle source,
-            RenderGraph::ImageHandle base = {}
+        void compile(
+            const Falcor::RenderContext& context,
+            VulkanResources::ImageHandle source,
+            VulkanResources::ImageHandle base,
+            VulkanResources::ImageHandle target
         );
-        void bindResources(RenderGraph& graph, const PassSetup& setup) const;
-        void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) const;
+        void execute(VulkanResources& cache, vk::raii::CommandBuffer& commandBuffer, vk::Extent2D frameExtent, const ViewportRect& viewport) const;
 
     private:
         Stage                    stage;
         const BloomSettings&     settings;
-        RenderGraph::ImageHandle source;
-        RenderGraph::ImageHandle base;
+        VulkanResources::ImageHandle source;
         RasterAttachments<1>     attachments;
+        ResourceBarriers       accesses;
         DescriptorSetLayout      descriptorSetLayout;
         vk::raii::DescriptorSet  descriptorSet = nullptr;
-        vk::Sampler              sampler;
         vk::Pipeline             pipeline;
         vk::PipelineLayout       pipelineLayout;
     };
 
-    std::vector<std::unique_ptr<FilterPass>> filters;
+    std::vector<Filter> filters;
 };

@@ -1,36 +1,33 @@
+#include "render/device/ResourceBarriers.h"
 #include "passes/raster/SkyboxPass/SkyboxPass.h"
-#include "render/plugins/PluginManager.h"
+
+#include "core/profiling/Profiler.h"
+#include "core/Plugin.h"
 
 #include "core/Context.h"
 #include "render/FrameData.h"
 #include "render/RenderContext.h"
-#include "render/RenderData.h"
+#include "render/PreparedScene.h"
 #include "render/RenderView.h"
 #include "render/device/Device.h"
+#include "render/resources/NativeFormats.h"
 #include "render/resources/ShaderData.h"
 
 #include <array>
 
-RenderPassReflection SkyboxPass::reflect(const PassSetup&) const
+Falcor::RenderPassReflection SkyboxPass::reflect(const CompileData& compileData)
 {
-    RenderPassReflection reflection;
-    reflection.input("color", PortKind::Image);
-    reflection.input("depth", PortKind::Image, false, vk::Format::eD32Sfloat);
-    reflection.output("color", PortKind::Image);
+    Falcor::RenderPassReflection reflection;
+    auto& color = reflection.addInputOutput("color", "Color target").bindFlags(Falcor::ResourceBindFlags::RenderTarget);
+    if (const auto* input = compileData.connectedResources.getField("color"))
+        color.texture2D(input->getWidth(), input->getHeight()).format(input->getFormat());
+    reflection.addInput("depth", "Scene depth").format(Falcor::ResourceFormat::D32Float).bindFlags(Falcor::ResourceBindFlags::DepthStencil);
     return reflection;
 }
 
-void SkyboxPass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+void SkyboxPass::compile(Falcor::RenderContext* context, const CompileData& compileData)
 {
-    const auto colorHandle = ports.image("color");
-    const auto depthHandle = ports.image("depth");
-
-    const auto color      = graph.write(colorHandle);
-    attachments.colors[0] = {color, vk::AttachmentLoadOp::eLoad};
-    attachments.depth     = RasterDepthAttachment{depthHandle};
-    attachments.declare(graph);
-
-    auto&            device = *renderContext().device;
+    auto&            device = *context->getDevice();
     const std::array descriptorSetLayouts{&device.sceneDescriptorSetLayout, &device.lightDescriptorSetLayout};
     const std::array pushConstantRanges{vk::PushConstantRange{
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
@@ -39,7 +36,7 @@ void SkyboxPass::compile(RenderGraph& graph, const PassSetup& setup, PassResourc
     pipelineLayout = device.getOrCreatePipelineLayout(descriptorSetLayouts, pushConstantRanges);
 
     pipeline = device.getOrCreatePipeline({
-        .shader = renderContext().shaderManager->getOrLoad("skybox"),
+        .shader = context->shaderManager->getOrLoad("skybox"),
         .layout = pipelineLayout,
         .state =
             PipelineState{
@@ -47,20 +44,39 @@ void SkyboxPass::compile(RenderGraph& graph, const PassSetup& setup, PassResourc
                 .depthCompare = vk::CompareOp::eLessOrEqual,
                 .depthWrite   = false
             },
-        .colorFormats = {graph.imageInfo(color).format},
+        .colorFormats = {Falcor::getVulkanFormat(compileData.connectedResources.getField("color")->getFormat())},
         .depthFormat  = vk::Format::eD32Sfloat,
     });
-    ports.setOutput("color", color);
+
+    barriers.clear();
 }
 
-void SkyboxPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution)
+void SkyboxPass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
 {
-    if (!execution.renderData.environmentMap)
+    auto&       cache         = *renderCommands->vulkanResources;
+    auto&       commandBuffer = *renderCommands->commands;
+    const auto& execution     = *renderCommands;
+
+    if (barriers.empty())
+    {
+        const auto depthHandle = cache.registerImage(renderData.getTexture("depth"));
+        attachments.depth = RasterDepthAttachment{depthHandle};
+
+        barriers.add(depthHandle, vulkan_access::kDepthRead);
+        barriers.declare(cache);
+    }
+
+    const auto color = cache.registerImage(renderData.getTexture("color"));
+    attachments.colors.front() = {color, vk::AttachmentLoadOp::eLoad};
+    cache.transition(commandBuffer, color, vulkan_access::kColorReadWrite);
+    barriers.transition(cache, commandBuffer);
+
+    if (!execution.scene->environmentMap)
         return;
 
-    const auto viewport = attachments.begin(graph, commandBuffer, execution.view.viewport).toScissor();
+    const auto viewport = attachments.begin(cache, commandBuffer, execution.view->viewport).toScissor();
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array descriptorSets = {execution.data.sceneSetHandle(), execution.data.lightSetHandle()};
+    const std::array descriptorSets = {execution.frameData->sceneSetHandle(), execution.frameData->lightSetHandle()};
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         pipelineLayout,
@@ -87,7 +103,7 @@ void SkyboxPass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuf
     commandBuffer.endRendering();
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
-    registry.registerClass<SkyboxPass>("SkyboxPass");
+    registry.registerClass<Falcor::RenderPass, SkyboxPass>();
 }

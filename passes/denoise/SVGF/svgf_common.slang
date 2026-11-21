@@ -2,6 +2,7 @@
 #define RENDERLAB_SVGF_COMMON_SLANG
 
 #include "math/color.slang"
+#include "render/denoise/DenoiserInputs.h"
 
 // Schied et al., HPG 2017: fixed edge-stopping parameters shared by both lighting signals.
 static const float kSvgfPhiDepth = 1.0;
@@ -12,6 +13,11 @@ static const float kSvgfMinimumDepthTolerance = 0.001;
 static const uint kSvgfMinimumVarianceHistory = 4;
 static const int kSvgfSpatialVarianceRadius = 3;
 static const float kSvgfMinimumAlbedo = 0.01;
+
+uint svgfLightingHistoryLayer(uint frameLayer, uint lightingLayer)
+{
+    return frameLayer * kLightingLayerCount + lightingLayer;
+}
 
 struct SvgfViewport
 {

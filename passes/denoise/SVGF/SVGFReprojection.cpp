@@ -1,4 +1,7 @@
+#include "render/device/ResourceBarriers.h"
 #include "passes/denoise/SVGF/SVGFReprojection.h"
+
+#include "core/Logger.h"
 #include "render/FrameData.h"
 #include "render/RenderView.h"
 
@@ -7,17 +10,9 @@
 
 namespace
 {
-constexpr uint32_t   kInputCount    = 5;
-constexpr uint32_t   kBindingCount  = 13;
-constexpr std::array kHistoryFormats{
-    vk::Format::eR32G32B32A32Sfloat,  // Direct color from the first wavelet iteration.
-    vk::Format::eR32G32B32A32Sfloat,  // Indirect color from the first wavelet iteration.
-    vk::Format::eR32Sfloat,           // Positive view-space depth; zero means no surface.
-    vk::Format::eR16G16B16A16Sfloat,  // World geometric normal.
-    vk::Format::eR32G32B32A32Sfloat,  // Direct luminance moments and sample count.
-    vk::Format::eR32G32B32A32Sfloat,  // Indirect luminance moments and sample count.
-};
-constexpr auto kHistoryAccess = RenderGraph::ImageAccess{
+constexpr uint32_t   kInputCount    = 4;
+constexpr uint32_t   kBindingCount  = 10;
+constexpr auto kHistoryAccess = VulkanResources::ImageAccess{
     .stages = vk::PipelineStageFlagBits2::eComputeShader,
     .access = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
     .layout = vk::ImageLayout::eGeneral,
@@ -32,7 +27,7 @@ struct ReprojectionParameters
     uint32_t  writeLayer;
     uint32_t  historyValid;
     uint32_t  historyLength;
-    float     emaAlpha;
+    float     alpha;
 };
 static_assert(sizeof(ReprojectionParameters) == 128);
 
@@ -41,88 +36,85 @@ glm::vec4 linearDepthRow(const glm::mat4& view)
     // Only -view.z is needed; keep both camera transforms within 128-byte push constants.
     return -glm::vec4{view[0][2], view[1][2], view[2][2], view[3][2]};
 }
-
-vk::ImageView imageView(RenderGraph& graph, RenderGraph::ImageHandle image)
-{
-    const auto& info = graph.imageInfo(image);
-    return graph.getImage(image).getOrCreateImageView({
-        .viewType         = info.arrayLayers == 1 ? vk::ImageViewType::e2D : vk::ImageViewType::e2DArray,
-        .format           = info.format,
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .levelCount = 1,
-            .layerCount = info.arrayLayers,
-        },
-    });
-}
 }  // namespace
 
-SVGFReprojection::Output
-SVGFReprojection::compile(RenderGraph& graph, const PassSetup& setup, DenoiserInputs source)
+SVGFReprojection::Output SVGFReprojection::compile(
+    const Falcor::RenderContext& context,
+    const DenoiserInputs& source,
+    const std::array<VulkanResources::ImageHandle, kHistoryCount>& history,
+    const std::array<VulkanResources::ImageHandle, kLightingLayerCount>& outputs
+)
 {
-    input              = source;
-    extent             = graph.imageInfo(input.direct).extent;
-    const auto& vulkan = setup.vulkan;
+    auto& cache = *context.vulkanResources;
+    const auto& vulkan = *context.vulkan;
+    accesses.clear();
+    historySource      = source.color;
+    extent             = cache.imageInfo(source.color).extent;
     CHECK(vulkan.supportedFeatures().shaderStorageImageExtendedFormats);
-    for (size_t index = 0; index < history.size(); ++index)
+    const auto& [previousGeometry, previousLighting, previousMoments, previousHistoryLength] = history;
+    for (const auto image : history)
     {
+        const auto format = cache.imageInfo(image).format;
         CHECK(
-            vulkan.physicalDeviceHandle().getFormatProperties(kHistoryFormats[index]).optimalTilingFeatures &
+            vulkan.physicalDeviceHandle().getFormatProperties(format).optimalTilingFeatures &
             vk::FormatFeatureFlagBits::eStorageImage
         );
-        history[index] = graph.createImage({
-            .format      = kHistoryFormats[index],
-            .extent      = extent,
-            .arrayLayers = 2,
-        });
-        if (index >= 2)
-            history[index] = graph.write(history[index]);
         auto access = kHistoryAccess;
-        if (index < 2)
+        if (image == previousLighting)
             access.access = vk::AccessFlagBits2::eShaderStorageRead;
-        graph.use(history[index], access);
+        accesses.add(image, access);
     }
     hasHistory = false;
     writeLayer = 0;
 
-    const auto sampled = RenderGraph::ImageAccess{
-        .stages = vk::PipelineStageFlagBits2::eComputeShader,
-        .access = vk::AccessFlagBits2::eShaderSampledRead,
-        .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
+    constexpr auto kSampled = vulkan_access::sampled(vk::PipelineStageFlagBits2::eComputeShader);
+    for (const auto image : {source.color, source.depth, source.worldNormal, source.albedo})
+        accesses.add(image, kSampled);
+    const Output output{
+        .direct          = outputs[kDirectLightingLayer],
+        .indirect        = outputs[kIndirectLightingLayer],
+        .lightingHistory = previousLighting,
     };
-    graph.use(input.direct, sampled);
-    graph.use(input.indirect, sampled);
-    graph.use(input.depth, sampled);
-    graph.use(input.worldNormal, sampled);
-    graph.use(input.albedo, sampled);
-    const auto createOutput = [&](vk::Format format)
-    {
-        const auto image = graph.write(graph.createImage({.format = format, .extent = extent}));
-        graph.use(
-            image,
-            {
-                .stages = vk::PipelineStageFlagBits2::eComputeShader,
-                .access = vk::AccessFlagBits2::eShaderStorageWrite,
-                .layout = vk::ImageLayout::eGeneral,
-            }
-        );
-        return image;
+    constexpr VulkanResources::ImageAccess kStorageWrite{
+        vk::PipelineStageFlagBits2::eComputeShader,
+        vk::AccessFlagBits2::eShaderStorageWrite,
+        vk::ImageLayout::eGeneral
     };
-    output = {
-        .direct          = createOutput(vk::Format::eR32G32B32A32Sfloat),
-        .indirect        = createOutput(vk::Format::eR32G32B32A32Sfloat),
-        .directMoments   = history[4],
-        .indirectMoments = history[5],
-        .directHistory   = history[0],
-        .indirectHistory = history[1],
-    };
+    accesses.add(output.direct, kStorageWrite);
+    accesses.add(output.indirect, kStorageWrite);
+
+    accesses.declare(cache);
+
     if (!*pipeline)
-        createPipeline(vulkan);
+        createPipeline(context);
+
+    const std::array handles{
+        source.color,
+        source.depth,
+        source.worldNormal,
+        source.albedo,
+        previousGeometry,
+        previousLighting,
+        previousMoments,
+        previousHistoryLength,
+        output.direct,
+        output.indirect,
+    };
+    for (uint32_t binding = 0; binding < handles.size(); ++binding)
+    {
+        const auto image   = handles[binding];
+        const bool sampled = binding < kInputCount;
+        const auto type    = sampled ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage;
+        const auto view =
+            cache.imageInfo(image).arrayLayers == 1 ? vk::ImageViewType::e2D : vk::ImageViewType::e2DArray;
+        cache.writeDescriptor(*descriptorSet, binding, image, type, view);
+    }
     return output;
 }
 
-void SVGFReprojection::createPipeline(const VulkanContext& vulkan)
+void SVGFReprojection::createPipeline(const Falcor::RenderContext& context)
 {
+    const auto& vulkan = *context.vulkan;
     CHECK(
         vulkan.physicalDeviceHandle().getQueueFamilyProperties()[vulkan.graphicsQueueFamilyIndex()].queueFlags &
         vk::QueueFlagBits::eCompute
@@ -136,8 +128,7 @@ void SVGFReprojection::createPipeline(const VulkanContext& vulkan)
             .descriptorCount = 1,
             .stageFlags      = vk::ShaderStageFlagBits::eCompute,
         };
-    auto& ctx           = renderContext();
-    auto& device        = *ctx.device;
+    auto& device        = *context.getDevice();
     descriptorSetLayout = device.createDescriptorSetLayout(bindings);
     const vk::PushConstantRange range{
         .stageFlags = vk::ShaderStageFlagBits::eCompute,
@@ -145,56 +136,20 @@ void SVGFReprojection::createPipeline(const VulkanContext& vulkan)
     };
     const std::array layouts{&device.sceneDescriptorSetLayout, &descriptorSetLayout};
     pipelineLayout = device.getOrCreatePipelineLayout(layouts, std::array{range});
-    const auto shader = ctx.shaderManager->getOrLoad("svgf_reprojection");
+    const auto shader = context.shaderManager->getOrLoad("svgf_reprojection");
     pipeline = device.createComputePipeline(shader, pipelineLayout);
     descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
 }
 
-void SVGFReprojection::bindResources(RenderGraph& graph, const PassSetup& setup) const
+void SVGFReprojection::execute(VulkanResources& cache, vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame)
 {
-    const std::array handles{
-        input.direct,
-        input.indirect,
-        input.depth,
-        input.worldNormal,
-        input.albedo,
-        history[0],
-        history[1],
-        history[2],
-        history[3],
-        history[4],
-        history[5],
-        output.direct,
-        output.indirect
-    };
-    std::array<vk::DescriptorImageInfo, kBindingCount> images;
-    std::array<vk::WriteDescriptorSet, kBindingCount>  writes;
-    for (uint32_t binding = 0; binding < handles.size(); ++binding)
-    {
-        images[binding] = {
-            .imageView   = imageView(graph, handles[binding]),
-            .imageLayout = binding < kInputCount ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eGeneral,
-        };
-        writes[binding] = {
-            .dstSet          = *descriptorSet,
-            .dstBinding      = binding,
-            .descriptorCount = 1,
-            .descriptorType =
-                binding < kInputCount ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage,
-            .pImageInfo = &images[binding],
-        };
-    }
-    setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});
-}
-
-void SVGFReprojection::execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame)
-{
-    const auto      historyRevision = graph.imageHistoryRevision(input.direct);
-    const auto&     viewport = frame.view.viewport;
+    accesses.transition(cache, commands);
+    const auto      historyRevision = cache.imageHistoryRevision(historySource);
+    const auto&     viewport = frame.view->viewport;
     const glm::vec4 currentViewport{viewport.x, viewport.y, viewport.width, viewport.height};
-    const auto      currentDepthRow = linearDepthRow(frame.view.uniforms.view);
+    const auto      currentDepthRow = linearDepthRow(frame.view->uniforms.view);
     commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
-    const std::array descriptorSets{frame.data.sceneSetHandle(), *descriptorSet};
+    const std::array descriptorSets{frame.frameData->sceneSetHandle(), *descriptorSet};
     commands.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelineLayout, 0, descriptorSets, {});
     commands.pushConstants<ReprojectionParameters>(
         pipelineLayout,
@@ -208,11 +163,11 @@ void SVGFReprojection::execute(RenderGraph& graph, vk::raii::CommandBuffer& comm
             .writeLayer             = writeLayer,
             .historyValid           = hasHistory && previousHistoryRevision == historyRevision ? 1u : 0u,
             .historyLength          = settings.historyLength,
-            .emaAlpha               = settings.emaAlpha,
+            .alpha                  = settings.alpha,
         }
     );
     pipeline.dispatch(commands, {extent.width, extent.height, 1});
-    previousViewProjection = frame.view.uniforms.viewProjection;
+    previousViewProjection = frame.view->uniforms.viewProjection;
     previousViewport       = currentViewport;
     previousDepthRow       = currentDepthRow;
     previousHistoryRevision = historyRevision;

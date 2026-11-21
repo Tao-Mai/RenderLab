@@ -1,39 +1,48 @@
 #pragma once
 
+#include "render/device/ResourceBarriers.h"
 #include "passes/denoise/SVGF/SvgfSettings.h"
 
 #include "render/device/Device.h"
 #include "render/denoise/DenoiserInputs.h"
 
+#include <array>
+
+namespace Falcor
+{
+class RenderContext;
+}  // namespace Falcor
+
 class SVGFReprojection
 {
+    static constexpr size_t kHistoryCount = 4;
+
 public:
     explicit SVGFReprojection(const SvgfSettings& settings) : settings(settings) {}
 
     struct Output
     {
         // RGBA32F: RGB accumulated albedo-demodulated color, A its estimated luminance variance.
-        RenderGraph::ImageHandle direct;
-        RenderGraph::ImageHandle indirect;
-        // 亮度矩和亮度二阶矩: RG = E[L], E[L^2], B = sample count.
-        RenderGraph::ImageHandle directMoments;
-        RenderGraph::ImageHandle indirectMoments;
+        VulkanResources::ImageHandle direct;
+        VulkanResources::ImageHandle indirect;
         // RGB color history is written by the first wavelet iteration, not by reprojection.
-        RenderGraph::ImageHandle directHistory;
-        RenderGraph::ImageHandle indirectHistory;
+        VulkanResources::ImageHandle lightingHistory;
     };
 
-    Output compile(RenderGraph& graph, const PassSetup& setup, DenoiserInputs input);
-    void   bindResources(RenderGraph& graph, const PassSetup& setup) const;
-    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame);
+    Output compile(
+        const Falcor::RenderContext& context,
+        const DenoiserInputs& source,
+        const std::array<VulkanResources::ImageHandle, kHistoryCount>& history,
+        const std::array<VulkanResources::ImageHandle, kLightingLayerCount>& outputs
+    );
+    void execute(VulkanResources& cache, vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame);
 
     // Layer belonging to the frame most recently executed by this pass.
     [[nodiscard]] uint32_t colorHistoryLayer() const { return writeLayer ^ 1u; }
 
 private:
-    DenoiserInputs                  input;
-    Output                                  output;
-    std::array<RenderGraph::ImageHandle, 6> history;
+    VulkanResources::ImageHandle              historySource;
+    ResourceBarriers                    accesses;
     vk::Extent3D                            extent{};
     DescriptorSetLayout                     descriptorSetLayout;
     vk::PipelineLayout                      pipelineLayout;
@@ -47,5 +56,5 @@ private:
     const SvgfSettings&                    settings;
     uint64_t                                previousHistoryRevision = 0;
 
-    void createPipeline(const VulkanContext& vulkan);
+    void createPipeline(const Falcor::RenderContext& context);
 };

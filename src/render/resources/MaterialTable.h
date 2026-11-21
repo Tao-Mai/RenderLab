@@ -2,15 +2,19 @@
 
 #include "asset/AssetID.h"
 #include "render/RenderConfig.h"
-#include "render/graph/RenderGraph.h"
+#include "render/device/VulkanResources.h"
 #include "render/resources/MaterialData.h"
 
 #include <array>
 #include <optional>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
+namespace Falcor
+{
 class Device;
+}  // namespace Falcor
 class AssetManager;
 class RenderResourceManager;
 class VulkanContext;
@@ -20,7 +24,7 @@ struct MaterialAsset;
 struct GltfMaterial;
 struct TextureBinding;
 
-// Stable asset indices and a graph-owned shared SSBO; descriptor sets remain per frame in flight.
+// Stable asset indices and a shared SSBO; descriptor sets remain per frame in flight.
 class MaterialTable
 {
 public:
@@ -49,9 +53,8 @@ public:
         bool operator==(const MaterialKey&) const = default;
     };
 
-    void     init(RenderResourceManager& resources, const VulkanContext& vulkan, Device& device);
-    void     setup(RenderGraph& graph);
-    void     use(RenderGraph& graph, vk::PipelineStageFlags2 stages) const;
+    void     init(RenderResourceManager& resources, const VulkanContext& vulkan, Falcor::Device& device);
+    void     setup(VulkanResources& cache, const VulkanContext& vulkan);
     uint32_t update(
         const MaterialKey& key, const GltfMaterial& material, RenderResourceManager& resources, AssetManager& assets
     );
@@ -59,6 +62,7 @@ public:
     [[nodiscard]] TextureRef textureReference(const TextureBinding& binding, RenderResourceManager& resources);
     [[nodiscard]] const MaterialInfo& info(uint32_t materialIndex) const { return materialInfos[materialIndex]; }
     [[nodiscard]] uint64_t            revision() const { return materialRevision; }
+    [[nodiscard]] VulkanResources::BufferHandle bufferHandle() const { return materialBuffer; }
     [[nodiscard]] vk::DescriptorSet   descriptorSetHandle(uint32_t frameIndex) const
     {
         return *frames[frameIndex].descriptorSet;
@@ -78,8 +82,9 @@ private:
         uint32_t                samplerCount   = 0;
     };
     std::array<Frame, maxFramesInFlight>                       frames;
-    RenderGraph*                                               graph = nullptr;
-    RenderGraph::BufferHandle                                  materialBuffer;
+    VulkanResources*                                             cache = nullptr;
+    Falcor::ref<Falcor::Buffer>                                                   bufferResource;
+    VulkanResources::BufferHandle                                materialBuffer;
     std::vector<MaterialData>                                  materials;
     uint64_t                                                   materialRevision = 0;
     std::vector<MaterialInfo>                                  materialInfos;

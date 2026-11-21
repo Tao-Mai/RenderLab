@@ -30,21 +30,21 @@ void AccelerationStructure::create(const VulkanContext& vulkan, VkAccelerationSt
     api->vkGetAccelerationStructureBuildSizesKHR(rawDevice,
         VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &info, &primitiveCount, &sizes);
 
-    storage = Buffer(vulkan.physicalDeviceHandle(), device, sizes.accelerationStructureSize,
+    storage = Falcor::Buffer(vulkan, sizes.accelerationStructureSize,
         vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress,
-        vk::MemoryPropertyFlagBits::eDeviceLocal);
+        Falcor::MemoryType::DeviceLocal, Falcor::ResourceBindFlags::AccelerationStructure);
     structure = vkCheck(device.createAccelerationStructureKHR({
-        .buffer = storage.handle(), .size = storage.size(),
+        .buffer = storage.handle(), .size = storage.getSize(),
         .type = static_cast<vk::AccelerationStructureTypeKHR>(type),
     }));
     ++resourceRevision;
     deviceAddress = device.getAccelerationStructureAddressKHR({.accelerationStructure = *structure});
 
     const vk::DeviceSize alignment = limits.minAccelerationStructureScratchOffsetAlignment;
-    scratch = Buffer(vulkan.physicalDeviceHandle(), device, sizes.buildScratchSize + alignment,
+    scratch = Falcor::Buffer(vulkan, sizes.buildScratchSize + alignment,
         vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress,
-        vk::MemoryPropertyFlagBits::eDeviceLocal);
-    scratchAddress = (scratch.address(device) + alignment - 1) & ~(alignment - 1);
+        Falcor::MemoryType::DeviceLocal, Falcor::ResourceBindFlags::UnorderedAccess);
+    scratchAddress = (scratch.getGpuAddress() + alignment - 1) & ~(alignment - 1);
 }
 
 void AccelerationStructure::build(const VulkanContext& vulkan, vk::raii::CommandBuffer& commands,

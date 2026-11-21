@@ -1,11 +1,12 @@
 #pragma once
 
+#include "render/device/ResourceBarriers.h"
 #include "render/graph/RenderPass.h"
 
 #include "render/device/Device.h"
 
 #include "render/resources/ShaderManager.h"
-#include "render/graph/RenderGraph.h"
+#include "render/device/VulkanResources.h"
 
 #include <cstdint>
 #include <vector>
@@ -14,22 +15,35 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class GpuMesh;
+namespace Falcor
+{
 class Device;
-class RenderGraph;
+}  // namespace Falcor
 struct DrawItem;
 
-class EditorPickingPass : public RenderPass
+class EditorPickingPass : public Falcor::RenderPass
 {
-public:
+    FALCOR_PLUGIN_CLASS(EditorPickingPass, "EditorPickingPass", "Renders object IDs for picking.");
 
-    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
-    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
-    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) override;
+    EditorPickingPass(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties) : Falcor::RenderPass(std::move(device))
+    {
+        setProperties(properties);
+    }
+
+    static Falcor::ref<EditorPickingPass> create(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties)
+    {
+        return Falcor::make_ref<EditorPickingPass>(std::move(device), properties);
+    }
+
+    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData& compileData) override;
+    void                               compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
+    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
 
 private:
-    void                     draw(vk::raii::CommandBuffer& commandBuffer, const DrawItem& item) const;
-    RenderGraph::ImageHandle depth;
-    RenderGraph::ImageHandle pickingImage;
+    ResourceBarriers barriers;
+    void                     draw(const Falcor::RenderContext& context, const DrawItem& item) const;
+    VulkanResources::ImageHandle depth;
+    VulkanResources::ImageHandle pickingImage;
     ShaderHandle             shader;
     vk::PipelineLayout       pipelineLayout;
     vk::Pipeline             pipeline;

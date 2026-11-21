@@ -6,6 +6,7 @@
 #include "core/Context.h"
 #include "core/InputManager.h"
 #include "core/Logger.h"
+#include "core/Plugin.h"
 #include "core/Window.h"
 #include "editor/Editor.h"
 #include "editor/EditorCamera.h"
@@ -83,6 +84,7 @@ void Engine::init()
     ctx.assetManager->init(ctx.config->paths().assets);
     ctx.sceneManager->loadDefaultScene();
     ctx.config->setSceneRenderMode(ctx.sceneManager->scene().renderMode);
+    Falcor::PluginManager::instance().loadAllPlugins();
     inputMethod.activateEnglish();
     ctx.renderer->init();
     ctx.editor->init();

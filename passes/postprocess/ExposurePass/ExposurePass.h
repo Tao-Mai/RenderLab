@@ -1,30 +1,40 @@
 #pragma once
 
+#include "render/device/ResourceBarriers.h"
 #include "ExposurePassSettings.h"
 #include "render/graph/RenderPass.h"
 
 #include "asset/Asset.h"
 #include "core/Logger.h"
 #include "render/postprocess/ExposureState.h"
-#include "render/graph/PassSettings.h"
 #include "render/device/Device.h"
-#include "render/graph/RenderGraph.h"
+#include "render/device/VulkanResources.h"
 
-class ExposurePass : public ConfigurablePass<ExposurePassSettings>, public ExposureProvider
+class ExposurePass : public Falcor::RenderPass
 {
-public:
-    [[nodiscard]] const ExposureConfig& exposureDefaults() const override { return parameters; }
+    FALCOR_PLUGIN_CLASS(ExposurePass, kExposurePassType, "Computes exposure from a luminance histogram.");
 
+    ExposurePass(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties);
 
-    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
-    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
-    void   bindResources(RenderGraph& graph, const PassSetup& setup) override;
-    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame) override;
+    [[nodiscard]] Falcor::Properties getProperties() const override;
+    void setProperties(const Falcor::Properties& properties) override;
+
+    static Falcor::ref<ExposurePass> create(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties)
+    {
+        return Falcor::make_ref<ExposurePass>(std::move(device), properties);
+    }
+
+    void renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget) override;
+
+    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData& compileData) override;
+    void                               compile(Falcor::RenderContext* context, const CompileData& compileData) override;
+    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
 
 private:
-    RenderGraph::ImageHandle          source;
-    RenderGraph::BufferHandle         histogram;
-    RenderGraph::BufferHandle                            exposureState;
+    ExposurePassSettings parameters;
+
+    ResourceBarriers barriers;
+    VulkanResources::BufferHandle       histogram;
     DescriptorSetLayout               descriptorSetLayout;
     vk::PipelineLayout                pipelineLayout;
     ComputePipeline                   histogramPipeline;

@@ -87,12 +87,13 @@ void RayTracingPipeline::buildBindingTable(
     const auto hitOffset = alignUp(missOffset + stride * missCount, limits.shaderGroupBaseAlignment);
     CHECK(stride <= limits.maxShaderGroupStride, "shader binding table stride exceeds the device limit");
 
-    bindingTable = Buffer(
-        vulkan.physicalDeviceHandle(), device, hitOffset + stride * hitCount + limits.shaderGroupBaseAlignment,
+    bindingTable = Falcor::Buffer(
+        vulkan, hitOffset + stride * hitCount + limits.shaderGroupBaseAlignment,
         vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+        Falcor::MemoryType::Upload,
+        Falcor::ResourceBindFlags::None
     );
-    const auto address = bindingTable.address(device);
+    const auto address = bindingTable.getGpuAddress();
     const auto base = alignUp(address, limits.shaderGroupBaseAlignment);
     const uint32_t groupCount = raygenCount + missCount + hitCount;
     std::vector<std::byte> handles(vk::DeviceSize(handleSize) * groupCount);
@@ -101,7 +102,7 @@ void RayTracingPipeline::buildBindingTable(
         groupCount, handles.size(), handles.data()
     )));
 
-    std::vector<std::byte> records(bindingTable.size());
+    std::vector<std::byte> records(bindingTable.getSize());
     const auto copyRecords = [&](uint32_t firstGroup, uint32_t count, vk::DeviceSize offset, vk::DeviceSize spacing)
     {
         for (uint32_t index = 0; index < count; ++index)
@@ -111,7 +112,7 @@ void RayTracingPipeline::buildBindingTable(
     copyRecords(0, raygenCount, 0, raygenSpacing);
     copyRecords(raygenCount, missCount, missOffset, stride);
     copyRecords(raygenCount + missCount, hitCount, hitOffset, stride);
-    bindingTable.upload(records.data(), records.size());
+    bindingTable.setBlob(records.data(), 0, records.size());
 
     raygenRegions.reserve(raygenCount);
     for (uint32_t index = 0; index < raygenCount; ++index)

@@ -6,12 +6,19 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class Window;
+namespace Falcor
+{
+class Buffer;
+class Device;
+class Texture;
+}
 
 class VulkanContext
 {
 public:
     void init(Window& window);
     void reset() noexcept;
+    void waitIdle() const;
 
     [[nodiscard]] const vk::raii::Instance&       instanceHandle() const { return instance; }
     [[nodiscard]] const vk::raii::PhysicalDevice& physicalDeviceHandle() const { return physicalDevice; }
@@ -22,8 +29,14 @@ public:
     [[nodiscard]] const vk::PhysicalDeviceProperties& properties() const { return deviceProperties; }
     [[nodiscard]] const vk::PhysicalDeviceFeatures&   supportedFeatures() const { return deviceFeatures; }
     [[nodiscard]] bool                                supportsRayTracing() const { return rayTracingSupported; }
+    [[nodiscard]] uint64_t                            getIdleRevision() const { return idleRevision; }
 
 private:
+    friend class Falcor::Buffer;
+    friend class Falcor::Device;
+    friend class Falcor::Texture;
+
+    Falcor::Device*                 mpDevice = nullptr;
     Window*                          window = nullptr;
     vk::raii::Context                context;
     vk::raii::Instance               instance                  = nullptr;
@@ -33,6 +46,7 @@ private:
     vk::PhysicalDeviceProperties     deviceProperties;
     vk::PhysicalDeviceFeatures       deviceFeatures;
     bool rayTracingSupported = false;
+    mutable uint64_t                 idleRevision              = 0;
     vk::raii::Device                 device                    = nullptr;
     uint32_t                         graphicsQueueFamilyIndex_ = ~0u;
     vk::raii::Queue                  queue                     = nullptr;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/resources/Image.h"
+#include "render/device/Fbo.h"
 
 #include <cstdint>
 #include <vector>
@@ -19,22 +19,20 @@ public:
     [[nodiscard]] vk::Result                present(uint32_t imageIndex) const;
 
     [[nodiscard]] const vk::raii::SwapchainKHR& handle() const { return swapChain; }
-    [[nodiscard]] Image&                        image(uint32_t index) { return swapChainImages[index]; }
+    [[nodiscard]] const Falcor::Fbo&                   getFbo(uint32_t index) const { return framebuffers[index]; }
     [[nodiscard]] vk::Semaphore                 renderFinishedSemaphore(uint32_t index) const;
     [[nodiscard]] vk::SurfaceFormatKHR          surfaceFormat() const { return swapChainSurfaceFormat; }
     [[nodiscard]] vk::Extent2D                  extent() const { return swapChainExtent; }
-    [[nodiscard]] vk::ImageUsageFlags           imageUsage() const { return swapChainImageUsage; }
     [[nodiscard]] uint32_t                      minImageCount() const { return swapChainMinImageCount; }
-    [[nodiscard]] uint32_t imageCount() const { return static_cast<uint32_t>(swapChainImages.size()); }
+    [[nodiscard]] uint32_t imageCount() const { return static_cast<uint32_t>(framebuffers.size()); }
 
 private:
     VulkanContext*                   vulkan    = nullptr;
     Window*                          window    = nullptr;
     vk::raii::SwapchainKHR           swapChain = nullptr;
-    std::vector<Image>               swapChainImages;
+    std::vector<Falcor::Fbo>                  framebuffers;
     vk::SurfaceFormatKHR             swapChainSurfaceFormat;
     vk::Extent2D                     swapChainExtent;
-    vk::ImageUsageFlags              swapChainImageUsage;
     std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
     uint32_t                         swapChainMinImageCount = 0;
 

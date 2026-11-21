@@ -1,19 +1,16 @@
 #include "scene/scene_data.slang"
 #include "svgf_common.slang"
 
-[[vk::binding(0, 1)]] Texture2D<float4> currentDirect;
-[[vk::binding(1, 1)]] Texture2D<float4> currentIndirect;
-[[vk::binding(2, 1)]] Texture2D<float> currentDepth; // Unnormalized positive view-space depth.
-[[vk::binding(3, 1)]] Texture2D<float4> currentNormal;
-[[vk::binding(4, 1)]] Texture2D<float4> currentAlbedo;
-[[vk::binding(5, 1)]] [[vk::image_format("rgba32f")]] RWTexture2DArray<float4> historyDirect;
-[[vk::binding(6, 1)]] [[vk::image_format("rgba32f")]] RWTexture2DArray<float4> historyIndirect;
-[[vk::binding(7, 1)]] [[vk::image_format("r32f")]] RWTexture2DArray<float> historyDepth;
-[[vk::binding(8, 1)]] [[vk::image_format("rgba16f")]] RWTexture2DArray<float4> historyNormal;
-[[vk::binding(9, 1)]] [[vk::image_format("rgba32f")]] RWTexture2DArray<float4> historyDirectMoments;
-[[vk::binding(10, 1)]] [[vk::image_format("rgba32f")]] RWTexture2DArray<float4> historyIndirectMoments;
-[[vk::binding(11, 1)]] [[vk::image_format("rgba32f")]] RWTexture2D<float4> outputDirect;
-[[vk::binding(12, 1)]] [[vk::image_format("rgba32f")]] RWTexture2D<float4> outputIndirect;
+[[vk::binding(0, 1)]] Texture2DArray<float4> currentColor;
+[[vk::binding(1, 1)]] Texture2D<float> currentDepth; // Unnormalized positive view-space depth.
+[[vk::binding(2, 1)]] Texture2D<float4> currentNormal;
+[[vk::binding(3, 1)]] Texture2D<float4> currentAlbedo;
+[[vk::binding(4, 1)]] [[vk::image_format("rgba32f")]] RWTexture2DArray<float4> historyGeometry;
+[[vk::binding(5, 1)]] [[vk::image_format("rgba32f")]] RWTexture2DArray<float4> historyLighting;
+[[vk::binding(6, 1)]] [[vk::image_format("rg32f")]] RWTexture2DArray<float2> historyMoments;
+[[vk::binding(7, 1)]] [[vk::image_format("r32f")]] RWTexture2DArray<float> historyLength;
+[[vk::binding(8, 1)]] [[vk::image_format("rgba32f")]] RWTexture2D<float4> outputDirect;
+[[vk::binding(9, 1)]] [[vk::image_format("rgba32f")]] RWTexture2D<float4> outputIndirect;
 
 struct ReprojectionParameters
 {
@@ -24,7 +21,7 @@ struct ReprojectionParameters
     uint writeLayer;
     uint historyValid;
     uint historyLength;
-    float emaAlpha;
+    float alpha;
 
     property SvgfViewport currentViewport { get { return {viewport.xy, viewport.zw}; } }
     property SvgfViewport historyViewport { get { return {previousViewport.xy, previousViewport.zw}; } }
@@ -39,8 +36,9 @@ struct HistorySample
 {
     float3 direct;
     float3 indirect;
-    float3 directMoments; // E[L], E[L^2], sample count.
-    float3 indirectMoments;
+    float2 directMoments; // E[L], E[L^2].
+    float2 indirectMoments;
+    float sampleCount;
 };
 
 bool gatherHistory(int2 pixel, float projectedDepth, float tolerance, float3 normal,
@@ -51,9 +49,11 @@ bool gatherHistory(int2 pixel, float projectedDepth, float tolerance, float3 nor
         return false;
     }
 
-    int3 location = int3(pixel, parameters.writeLayer ^ 1u);
-    float previousDepth = historyDepth[location];
-    float3 previousNormal = historyNormal[location].xyz;
+    const uint frameLayer = parameters.writeLayer ^ 1u;
+    const int3 location = int3(pixel, frameLayer);
+    const float4 geometry = historyGeometry[location];
+    const float previousDepth = geometry.x;
+    const float3 previousNormal = geometry.yzw;
     if (previousDepth <= 0.0 || dot(normal, previousNormal) < kNormalCosineThreshold)
     {
         return false;
@@ -65,10 +65,13 @@ bool gatherHistory(int2 pixel, float projectedDepth, float tolerance, float3 nor
         return false;
     }
 
-    history.direct += historyDirect[location].rgb * weight;
-    history.indirect += historyIndirect[location].rgb * weight;
-    history.directMoments += historyDirectMoments[location].xyz * weight;
-    history.indirectMoments += historyIndirectMoments[location].xyz * weight;
+    const int3 directLocation = int3(pixel, svgfLightingHistoryLayer(frameLayer, kDirectLightingLayer));
+    const int3 indirectLocation = int3(pixel, svgfLightingHistoryLayer(frameLayer, kIndirectLightingLayer));
+    history.direct += historyLighting[directLocation].rgb * weight;
+    history.indirect += historyLighting[indirectLocation].rgb * weight;
+    history.directMoments += historyMoments[directLocation] * weight;
+    history.indirectMoments += historyMoments[indirectLocation] * weight;
+    history.sampleCount += historyLength[location] * weight;
     return true;
 }
 
@@ -136,18 +139,16 @@ bool reproject(float3 position, float3 normal, out HistorySample history)
     history.indirect /= weightSum;
     history.directMoments /= weightSum;
     history.indirectMoments /= weightSum;
+    history.sampleCount /= weightSum;
     return true;
 }
 
-void accumulate(float3 sample, bool valid, float3 previous, float3 previousMoments,
-    out float3 color, out float3 moments)
+void accumulate(float3 sample, float3 previous, float2 previousMoments, float alpha,
+    out float3 color, out float2 moments)
 {
-    // Use the same weight for RGB, luminance and squared luminance.
-    float count = valid ? previousMoments.z + 1.0 : 1.0;
-    float alpha = valid && count > parameters.historyLength ? parameters.emaAlpha : 1.0 / count;
     float luminance = rec709Luminance(sample);
     color = lerp(previous, sample, alpha);
-    moments = float3(lerp(previousMoments.xy, float2(luminance, luminance * luminance), alpha), count);
+    moments = lerp(previousMoments, float2(luminance, luminance * luminance), alpha);
 }
 
 float2 spatialVariance(int2 pixel, uint2 extent, float depth, float3 normal, float2 centerLuminance)
@@ -170,8 +171,9 @@ float2 spatialVariance(int2 pixel, uint2 extent, float depth, float3 normal, flo
                 normal, currentNormal.Load(int3(neighbor, 0)).xyz);
             weight *= exp(-float(x * x + y * y) / 18.0);
             float3 albedo = svgfAlbedoFactor(currentAlbedo.Load(int3(neighbor, 0)).rgb);
-            float2 luminance = float2(rec709Luminance(currentDirect.Load(int3(neighbor, 0)).rgb / albedo),
-                rec709Luminance(currentIndirect.Load(int3(neighbor, 0)).rgb / albedo));
+            float3 direct = currentColor.Load(int4(neighbor, kDirectLightingLayer, 0)).rgb / albedo;
+            float3 indirect = currentColor.Load(int4(neighbor, kIndirectLightingLayer, 0)).rgb / albedo;
+            float2 luminance = float2(rec709Luminance(direct), rec709Luminance(indirect));
             // Centered moments avoid cancellation when a bright, nearly uniform surface has little noise.
             luminance -= centerLuminance;
             first += weight * luminance;
@@ -202,38 +204,36 @@ void computeMain(uint3 thread : SV_DispatchThreadID)
     float3 normal = currentNormal.Load(int3(pixel, 0)).xyz;
     HistorySample previous = {};
     bool accepted = valid && reproject(position, normal, previous);
+    float count = accepted ? previous.sampleCount + 1.0 : 1.0;
+    float alpha = accepted && count > parameters.historyLength ? parameters.alpha : 1.0 / count;
 
     float3 direct, indirect;
-    float3 directMoments, indirectMoments;
+    float2 directMoments, indirectMoments;
     float3 albedo = svgfAlbedoFactor(currentAlbedo.Load(int3(pixel, 0)).rgb);
-    float3 sampleDirect = currentDirect.Load(int3(pixel, 0)).rgb / albedo;
-    float3 sampleIndirect = currentIndirect.Load(int3(pixel, 0)).rgb / albedo;
-    accumulate(sampleDirect, accepted, previous.direct, previous.directMoments,
+    float3 sampleDirect = currentColor.Load(int4(pixel, kDirectLightingLayer, 0)).rgb / albedo;
+    float3 sampleIndirect = currentColor.Load(int4(pixel, kIndirectLightingLayer, 0)).rgb / albedo;
+    accumulate(sampleDirect, previous.direct, previous.directMoments, alpha,
         direct, directMoments);
-    accumulate(sampleIndirect, accepted, previous.indirect, previous.indirectMoments,
+    accumulate(sampleIndirect, previous.indirect, previous.indirectMoments, alpha,
         indirect, indirectMoments);
 
     float2 variance = max(float2(0.0), float2(directMoments.y - directMoments.x * directMoments.x,
         indirectMoments.y - indirectMoments.x * indirectMoments.x));
-    if (valid && min(directMoments.z, indirectMoments.z) < kSvgfMinimumVarianceHistory)
+    if (valid && count < kSvgfMinimumVarianceHistory)
     {
         float2 spatial = spatialVariance(int2(pixel), uint2(width, height), depth, normal,
             float2(rec709Luminance(sampleDirect), rec709Luminance(sampleIndirect)));
-        if (directMoments.z < kSvgfMinimumVarianceHistory)
-        {
-            variance.x = spatial.x * kSvgfMinimumVarianceHistory / directMoments.z;
-        }
-        if (indirectMoments.z < kSvgfMinimumVarianceHistory)
-        {
-            variance.y = spatial.y * kSvgfMinimumVarianceHistory / indirectMoments.z;
-        }
+        variance = spatial * kSvgfMinimumVarianceHistory / count;
     }
 
     uint3 location = uint3(pixel, parameters.writeLayer);
-    historyDepth[location] = valid ? depth : 0.0;
-    historyNormal[location] = float4(normal, 0.0);
-    historyDirectMoments[location] = float4(directMoments, 0.0);
-    historyIndirectMoments[location] = float4(indirectMoments, 0.0);
+    // Keep the quantization of the RGBA16F normal history.
+    float2 normalXY = unpackHalf2x16ToFloat(packHalf2x16(normal.xy));
+    float normalZ = unpackHalf2x16ToFloat(packHalf2x16(float2(normal.z, 0.0))).x;
+    historyGeometry[location] = float4(valid ? depth : 0.0, normalXY, normalZ);
+    historyLength[location] = count;
+    historyMoments[uint3(pixel, svgfLightingHistoryLayer(parameters.writeLayer, kDirectLightingLayer))] = directMoments;
+    historyMoments[uint3(pixel, svgfLightingHistoryLayer(parameters.writeLayer, kIndirectLightingLayer))] = indirectMoments;
     outputDirect[pixel] = float4(direct, variance.x);
     outputIndirect[pixel] = float4(indirect, variance.y);
 }

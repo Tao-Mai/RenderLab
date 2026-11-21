@@ -46,7 +46,7 @@ void ShaderManager::shutdown() noexcept
     device = nullptr;
 }
 
-ShaderHandle ShaderManager::getOrLoad(std::string_view program, const ShaderDefines& defines)
+ShaderHandle ShaderManager::getOrLoad(std::string_view program, const Falcor::DefineList& defines)
 {
     DCHECK(device);
     const auto key = std::pair{std::string{program}, defines};
@@ -75,11 +75,19 @@ ShaderHandle ShaderManager::getOrLoad(std::string_view program, const ShaderDefi
             }
         }
     CHECK(selected, "shader '{}' has no matching compiled variant", program);
-    const auto     binary = manifestPath.parent_path() / requiredString(*selected, "binary");
-    auto           shader = std::make_unique<GpuShader>(*device, binary.string());
+    const auto& options = requiredField(*selected, "defines");
+    CHECK(options.is_object());
+    Falcor::DefineList selectedDefines;
+    for (const auto& [name, value] : options.items())
+    {
+        CHECK(value.is_string(), "shader define '{}' must be a string", name);
+        selectedDefines.add(name, value.get_ref<const std::string&>());
+    }
+    const auto binary = manifestPath.parent_path() / requiredString(*selected, "binary");
+    auto shader = std::make_unique<GpuShader>(*device, binary.string());
     ShaderMetadata metadata{
         .binary  = binary,
-        .defines = selected->at("defines").get<ShaderDefines>(),
+        .defines = std::move(selectedDefines),
         .entries = selected->at("entries").get<std::vector<std::string>>()
     };
     const ShaderHandle handle{static_cast<uint32_t>(variants.size() + 1)};

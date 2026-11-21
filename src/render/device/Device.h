@@ -1,9 +1,14 @@
 #pragma once
 
 #include "core/Debug.h"
+#include "core/Object.h"
+#include "render/resources/Buffer.h"
+#include "render/resources/Formats.h"
+#include "render/resources/Resource.h"
 #include "render/resources/ShaderManager.h"
 
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <unordered_map>
 #include <vector>
@@ -59,19 +64,71 @@ struct GraphicsPipelineInfo
 struct ComputePipeline
 {
     vk::raii::Pipeline handle = nullptr;
-    vk::Extent3D threadGroupSize;
+    vk::Extent3D       threadGroupSize;
 
     [[nodiscard]] vk::Pipeline operator*() const { return *handle; }
     [[nodiscard]] vk::Extent3D groupCount(vk::Extent3D threads) const;
-    void dispatch(vk::raii::CommandBuffer& commands, vk::Extent3D threads) const;
+    void                       dispatch(vk::raii::CommandBuffer& commands, vk::Extent3D threads) const;
 };
 
-class Device
+namespace Falcor
 {
+class RenderContext;
+
+class FALCOR_API Device : public Object
+{
+    FALCOR_OBJECT(Device)
+
 public:
-    ~Device();
-    void init(const VulkanContext& vulkan, ShaderManager& shaders);
-    void shutdown() noexcept;
+    Device();
+    ~Device() override;
+    void                            init(VulkanContext& vulkan, ShaderManager& shaders);
+    void                            shutdown() noexcept;
+    void                            wait();
+    [[nodiscard]] RenderContext*    getRenderContext() const { return mpRenderContext.get(); }
+    [[nodiscard]] Falcor::ResourceBindFlags getFormatBindFlags(Falcor::ResourceFormat format) const;
+
+    [[nodiscard]] ref<Buffer> createBuffer(
+        size_t size,
+        ResourceBindFlags bindFlags = ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+        MemoryType memoryType = MemoryType::DeviceLocal,
+        const void* initData = nullptr
+    );
+    [[nodiscard]] ref<Texture> createTexture1D(
+        uint32_t width, Falcor::ResourceFormat format, uint32_t arraySize, uint32_t mipLevels, Falcor::ResourceBindFlags bindFlags
+    ) const;
+    [[nodiscard]] ref<Texture> createTexture2D(
+        uint32_t          width,
+        uint32_t          height,
+        Falcor::ResourceFormat    format,
+        uint32_t          arraySize,
+        uint32_t          mipLevels,
+        Falcor::ResourceBindFlags bindFlags
+    ) const;
+    [[nodiscard]] ref<Texture> createTexture2DMS(
+        uint32_t          width,
+        uint32_t          height,
+        Falcor::ResourceFormat    format,
+        uint32_t          sampleCount,
+        uint32_t          arraySize,
+        Falcor::ResourceBindFlags bindFlags
+    ) const;
+    [[nodiscard]] ref<Texture> createTexture3D(
+        uint32_t          width,
+        uint32_t          height,
+        uint32_t          depth,
+        Falcor::ResourceFormat    format,
+        uint32_t          mipLevels,
+        Falcor::ResourceBindFlags bindFlags
+    ) const;
+    [[nodiscard]] ref<Texture> createTextureCube(
+        uint32_t          width,
+        uint32_t          height,
+        Falcor::ResourceFormat    format,
+        uint32_t          arraySize,
+        uint32_t          mipLevels,
+        Falcor::ResourceBindFlags bindFlags
+    ) const;
 
     [[nodiscard]] DescriptorSetLayout
     createDescriptorSetLayout(std::span<const vk::DescriptorSetLayoutBinding> bindings) const;
@@ -80,7 +137,7 @@ public:
     );
     [[nodiscard]] vk::raii::DescriptorSet allocateDescriptorSet(const DescriptorSetLayout& layout) const;
     [[nodiscard]] vk::Pipeline            getOrCreatePipeline(const GraphicsPipelineInfo& info);
-    [[nodiscard]] ComputePipeline        createComputePipeline(ShaderHandle shader, vk::PipelineLayout layout) const;
+    [[nodiscard]] ComputePipeline         createComputePipeline(ShaderHandle shader, vk::PipelineLayout layout) const;
 
     DescriptorSetLayout sceneDescriptorSetLayout;
     DescriptorSetLayout lightDescriptorSetLayout;
@@ -91,6 +148,19 @@ public:
     vk::PipelineLayout  editorPipelineLayout;
 
 private:
+    friend class Buffer;
+    friend class Resource;
+    friend class Texture;
+
+    [[nodiscard]] ref<Texture> createTexture(
+        Resource::Type    type,
+        Falcor::ResourceFormat    format,
+        vk::Extent3D      extent,
+        uint32_t          arraySize,
+        uint32_t          mipLevels,
+        uint32_t          samples,
+        Falcor::ResourceBindFlags bindFlags
+    ) const;
     void createSharedLayouts();
     void createSharedPipelineLayouts();
     void createSharedDescriptorSetLayouts();
@@ -110,7 +180,7 @@ private:
     struct CachedPipelineLayout
     {
         std::vector<vk::raii::DescriptorSetLayout> setLayouts;
-        vk::raii::PipelineLayout handle = nullptr;
+        vk::raii::PipelineLayout                   handle = nullptr;
     };
 
     struct PipelineKey
@@ -130,10 +200,13 @@ private:
     };
 
     DEBUG_ONLY(bool initialized = false;)
-    const vk::raii::Device*                                                                device         = nullptr;
-    ShaderManager*                                                                         shaders        = nullptr;
-    vk::raii::DescriptorPool                                                               descriptorPool = nullptr;
-    vk::raii::PipelineCache                                                                pipelineCache  = nullptr;
-    std::unordered_map<PipelineKey, vk::raii::Pipeline, PipelineKeyHash>                   pipelines;
+    std::unique_ptr<RenderContext> mpRenderContext;
+    VulkanContext*                                                                     vulkan         = nullptr;
+    const vk::raii::Device*                                                            device         = nullptr;
+    ShaderManager*                                                                     shaders        = nullptr;
+    vk::raii::DescriptorPool                                                           descriptorPool = nullptr;
+    vk::raii::PipelineCache                                                            pipelineCache  = nullptr;
+    std::unordered_map<PipelineKey, vk::raii::Pipeline, PipelineKeyHash>               pipelines;
     std::unordered_map<PipelineLayoutKey, CachedPipelineLayout, PipelineLayoutKeyHash> pipelineLayouts;
 };
+}  // namespace Falcor

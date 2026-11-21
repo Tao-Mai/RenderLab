@@ -23,22 +23,15 @@ public:
     void                                                 bind(vk::raii::CommandBuffer& commandBuffer) const;
     [[nodiscard]] uint32_t                               indexCount() const { return indexTotal; }
     [[nodiscard]] const std::vector<MeshAsset::Submesh>& submeshes() const { return parts; }
-    [[nodiscard]] const Buffer&                          vertices() const { return vertexBuffer; }
-    [[nodiscard]] const Buffer&                          indices() const { return indexBuffer; }
+    [[nodiscard]] const Falcor::Buffer&                          vertices() const { return vertexBuffer; }
+    [[nodiscard]] const Falcor::Buffer&                          indices() const { return indexBuffer; }
     [[nodiscard]] uint32_t                               vertexCount() const { return vertexTotal; }
 
 private:
     uint32_t                        indexTotal  = 0;
     uint32_t                        vertexTotal = 0;
     std::vector<MeshAsset::Submesh> parts;
-    Buffer                          vertexBuffer;
-    Buffer                          indexBuffer;
+    Falcor::Buffer                          vertexBuffer;
+    Falcor::Buffer                          indexBuffer;
 
-    static void copyBuffer(
-        const vk::raii::Device&      device,
-        const vk::raii::CommandPool& commandPool,
-        vk::raii::Queue&             queue,
-        const Buffer&                source,
-        const Buffer&                destination
-    );
 };

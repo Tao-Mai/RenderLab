@@ -11,7 +11,7 @@
 
 namespace
 {
-bool drawShadowMapSize(Gui::Widgets& widgets, const char* label, uint32_t& mapSize,
+bool drawShadowMapSize(Falcor::Gui::Widgets& widgets, const char* label, uint32_t& mapSize,
                        const vk::PhysicalDeviceLimits& limits, bool cube)
 {
     constexpr std::array kShadowMapSizes{
@@ -47,7 +47,7 @@ bool drawShadowMapSize(Gui::Widgets& widgets, const char* label, uint32_t& mapSi
     return true;
 }
 
-bool drawCascadeSettings(Gui::Widgets& widgets, ShadowSettings::Cascade& cascade, float nearPlane)
+bool drawCascadeSettings(Falcor::Gui::Widgets& widgets, ShadowSettings::Cascade& cascade, float nearPlane)
 {
     bool edited = widgets.slider("Shadow cascades", cascade.count, 1u, kMaxDirectionalShadowCascades, false);
     const float minimumShadowDistance = nearPlane * 1.01f;
@@ -64,7 +64,7 @@ bool drawCascadeSettings(Gui::Widgets& widgets, ShadowSettings::Cascade& cascade
     return edited;
 }
 
-bool drawSettings(Gui::Widgets& widgets, ShadowSettings& shadow, const ShadowPass&, const PassEditorContext& context)
+bool drawSettings(Falcor::Gui::Widgets& widgets, ShadowSettings& shadow, const ShadowPass&, const PassEditorContext& context)
 {
     const auto& limits = context.vulkan.properties().limits;
     const auto nearPlane = context.camera.nearPlane;
@@ -84,7 +84,13 @@ bool drawSettings(Gui::Widgets& widgets, ShadowSettings& shadow, const ShadowPas
 }
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+void ShadowPass::renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget)
 {
-    registry.registerClass<ShadowPass>("ShadowPass", makePassEditor<ShadowPass, drawSettings>("Shadows"));
+    if (parameters.enabled)
+        drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "Shadows");
+}
+
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+{
+    registry.registerClass<Falcor::RenderPass, ShadowPass>();
 }

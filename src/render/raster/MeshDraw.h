@@ -1,11 +1,9 @@
 #pragma once
 
-#include "core/Context.h"
 #include "core/profiling/Profiler.h"
 #include "render/RenderContext.h"
-#include "render/RenderData.h"
+#include "render/PreparedScene.h"
 #include "render/device/Device.h"
-#include "render/graph/PassInputs.h"
 #include "render/resources/MaterialTable.h"
 #include "render/resources/RenderResourceManager.h"
 
@@ -23,19 +21,19 @@ struct MeshCullPipelines
     }
 };
 
-[[nodiscard]] MeshCullPipelines createMeshCullPipelines(Device& device, GraphicsPipelineInfo info);
-void                            bindMeshGeometry(vk::raii::CommandBuffer& commands, const PassFrame& frame);
+[[nodiscard]] MeshCullPipelines createMeshCullPipelines(Falcor::Device& device, GraphicsPipelineInfo info);
+void                            bindMeshGeometry(vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame);
 
 class MeshDrawRecorder
 {
 public:
-    MeshDrawRecorder(vk::raii::CommandBuffer& commands, const PassFrame& frame) :
+    MeshDrawRecorder(vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame) :
         commands(commands),
-        data(frame.renderData),
-        resources(*renderContext().resources),
-        materials(*renderContext().materialTable),
-        layout(renderContext().device->meshPipelineLayout),
-        profiler(context().profiler)
+        data(*frame.scene),
+        resources(*frame.resources),
+        materials(*frame.materialTable),
+        layout(frame.getDevice()->meshPipelineLayout),
+        profiler(frame.profiler)
     {
     }
 
@@ -68,7 +66,7 @@ private:
     void draw(const DrawItem& item, uint32_t materialIndex, vk::Pipeline pipeline);
 
     vk::raii::CommandBuffer& commands;
-    const RenderData&        data;
+    const PreparedScene&        data;
     RenderResourceManager&   resources;
     const MaterialTable&     materials;
     vk::PipelineLayout       layout;

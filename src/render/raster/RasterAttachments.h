@@ -1,7 +1,8 @@
 #pragma once
 
+#include "core/Logger.h"
 #include "render/ViewportRect.h"
-#include "render/graph/RenderGraph.h"
+#include "render/device/VulkanResources.h"
 
 #include <array>
 #include <cstddef>
@@ -9,20 +10,18 @@
 
 struct RasterColorAttachment
 {
-    RenderGraph::ImageHandle image;
+    VulkanResources::ImageHandle image;
     vk::AttachmentLoadOp     loadOp = vk::AttachmentLoadOp::eClear;
 
-    void                                      declare(RenderGraph& graph) const;
-    [[nodiscard]] vk::RenderingAttachmentInfo renderingInfo(RenderGraph& graph) const;
+    [[nodiscard]] vk::RenderingAttachmentInfo renderingInfo(VulkanResources& cache) const;
 };
 
 struct RasterDepthAttachment
 {
-    RenderGraph::ImageHandle image;
+    VulkanResources::ImageHandle image;
     bool                     readOnly = true;
 
-    void                                      declare(RenderGraph& graph) const;
-    [[nodiscard]] vk::RenderingAttachmentInfo renderingInfo(RenderGraph& graph) const;
+    [[nodiscard]] vk::RenderingAttachmentInfo renderingInfo(VulkanResources& cache) const;
 
 private:
     [[nodiscard]] vk::ImageLayout layout() const
@@ -37,23 +36,16 @@ struct RasterAttachments
     std::array<RasterColorAttachment, ColorCount> colors;
     std::optional<RasterDepthAttachment>          depth;
 
-    void declare(RenderGraph& graph) const
-    {
-        for (const auto& color : colors)
-            color.declare(graph);
-        if (depth)
-            depth->declare(graph);
-    }
-
-    ViewportRect
-    begin(RenderGraph& graph, vk::raii::CommandBuffer& commands, std::optional<ViewportRect> view = std::nullopt) const
+    ViewportRect begin(
+        VulkanResources& cache, vk::raii::CommandBuffer& commands, std::optional<ViewportRect> view = std::nullopt
+    ) const
     {
         DCHECK(ColorCount != 0 || depth);
-        const auto extent = graph.imageExtent(ColorCount != 0 ? colors.front().image : depth->image);
+        const auto extent = cache.imageExtent(ColorCount != 0 ? colors.front().image : depth->image);
         std::array<vk::RenderingAttachmentInfo, ColorCount> colorInfos;
         for (size_t index = 0; index < colors.size(); ++index)
-            colorInfos[index] = colors[index].renderingInfo(graph);
-        const auto depthInfo = depth ? depth->renderingInfo(graph) : vk::RenderingAttachmentInfo{};
+            colorInfos[index] = colors[index].renderingInfo(cache);
+        const auto depthInfo = depth ? depth->renderingInfo(cache) : vk::RenderingAttachmentInfo{};
         commands.beginRendering({
             .renderArea           = {{0, 0}, extent},
             .layerCount           = 1,

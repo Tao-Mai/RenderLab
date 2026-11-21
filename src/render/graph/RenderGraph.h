@@ -1,251 +1,126 @@
 #pragma once
 
-#include "core/Logger.h"
-#include "core/profiling/Profiler.h"
-#include "render/resources/Image.h"
-#include "render/graph/PassInputs.h"
-#include "render/RenderConfig.h"
-#include "render/resources/Buffer.h"
+#include "core/Macros.h"
+#include "core/DirectedGraph.h"
+#include "core/Object.h"
+#include "core/platform/OS.h"
+#include "render/graph/RenderGraphCompiler.h"
+#include "render/graph/RenderGraphExe.h"
+#include "render/resources/Formats.h"
 
-#include <algorithm>
-#include <array>
-#include <cstddef>
-#include <cstdint>
-#include <functional>
+#include <filesystem>
 #include <memory>
-#include <span>
-#include <string>
-#include <string_view>
-#include <type_traits>
-#include <utility>
-#include <vector>
-#include <vulkan/vulkan_raii.hpp>
+#include <unordered_map>
+#include <unordered_set>
 
-class GpuProfiler;
-class VulkanContext;
-
-class RenderGraph
+namespace Falcor
 {
+class Fbo;
+
+class FALCOR_API RenderGraph : public Object
+{
+    FALCOR_OBJECT(RenderGraph)
+
 public:
-    using ResourceHandle                           = int;
-    static constexpr ResourceHandle kInvalidHandle = -1;
+    static const FileDialogFilterVec kFileExtensionFilters;
+    static constexpr uint32_t kInvalidIndex = DirectedGraph::kInvalidID;
 
-    struct ImageHandle
+    RenderGraph(ref<Device> device, const std::string& name);
+    ~RenderGraph() override;
+    [[nodiscard]] static ref<RenderGraph> create(ref<Device> device, const std::string& name = {});
+    [[nodiscard]] static ref<RenderGraph> createFromFile(ref<Device> device, const std::filesystem::path& path);
+    [[nodiscard]] static ref<RenderGraph> createFromString(ref<Device> device, std::string_view script);
+    [[nodiscard]] ref<Device>             getDevice() const { return mpDevice; }
+    void                                  setScene(const ref<Scene>& scene);
+    [[nodiscard]] const ref<Scene>&       getScene() const { return mpScene; }
+    ref<RenderPass> createPass(const std::string& passName, const std::string& passType, const Properties& properties);
+
+    uint32_t                             addPass(const ref<RenderPass>& pass, const std::string& name);
+    void                                 removePass(const std::string& name);
+    void                                 updatePass(const std::string& name, const Properties& properties);
+    [[nodiscard]] const ref<RenderPass>& getPass(const std::string& name) const;
+    [[nodiscard]] uint32_t               getPassIndex(const std::string& name) const;
+    [[nodiscard]] bool doesPassExist(const std::string& name) const { return mNameToIndex.contains(name); }
+
+    uint32_t addEdge(const std::string& source, const std::string& target);
+    void     removeEdge(const std::string& source, const std::string& target);
+    void     removeEdge(uint32_t edgeId);
+
+    void               setInput(const std::string& name, const ref<Resource>& resource);
+    void               markOutput(const std::string& name, TextureChannelFlags mask = TextureChannelFlags::RGB);
+    void               unmarkOutput(const std::string& name);
+    [[nodiscard]] bool isGraphOutput(const std::string& name) const;
+    [[nodiscard]] ref<Resource>                           getOutput(const std::string& name);
+    [[nodiscard]] ref<Resource>                           getOutput(uint32_t index);
+    [[nodiscard]] size_t                                  getOutputCount() const { return mOutputs.size(); }
+    [[nodiscard]] std::string                             getOutputName(size_t index) const;
+    [[nodiscard]] std::unordered_set<TextureChannelFlags> getOutputMasks(size_t index) const;
+    [[nodiscard]] std::vector<std::string>                getAvailableOutputs() const;
+    [[nodiscard]] std::vector<std::string>                getUnmarkedOutputs() const;
+
+    [[nodiscard]] const std::string& getName() const { return mName; }
+    void                             setName(const std::string& value) { mName = value; }
+    [[nodiscard]] Dictionary&        getPassesDictionary() { return mPassesDictionary; }
+
+    void onResize(const Fbo* target);
+    bool compile(RenderContext* context, std::string& log);
+    bool compile(RenderContext* context)
     {
-        ResourceHandle id = kInvalidHandle;
-    };
-    struct BufferHandle
-    {
-        ResourceHandle id = kInvalidHandle;
-    };
-
-    struct ImageCreateInfo
-    {
-        vk::ImageCreateFlags flags;
-        vk::ImageType        imageType = vk::ImageType::e2D;
-        vk::Format           format    = vk::Format::eUndefined;
-        vk::Extent3D         extent{0, 0, 1};
-        uint32_t             mipLevels   = 1;
-        uint32_t             arrayLayers = 1;
-    };
-
-    struct BufferCreateInfo
-    {
-        vk::DeviceSize          size             = 0;
-        vk::BufferUsageFlags    usage;
-        vk::MemoryPropertyFlags memoryProperties = vk::MemoryPropertyFlagBits::eDeviceLocal;
-    };
-
-    struct ImageAccess
-    {
-        vk::PipelineStageFlags2 stages;
-        vk::AccessFlags2        access;
-        vk::ImageLayout         layout = vk::ImageLayout::eUndefined;
-    };
-
-    struct MemoryAccess
-    {
-        vk::PipelineStageFlags2 stages;
-        vk::AccessFlags2        access;
-    };
-
-    void init(VulkanContext& vulkan);
-    void reset() noexcept;
-    void compile(const PassSetup& setup);
-    // Call after the frame fence completes, before global/pass preparation.
-    void beginFrame(uint32_t frameIndex);
-    void prepare(const PassFrame& frame);
-    void releaseResources() noexcept;
-
-    template <class Stage, class... Args>
-    auto addStage(std::string_view name, Stage& stage, const PassSetup& setup, Args&&... args);
-
-    void markOutput(ImageHandle image) { outputResources.push_back(image.id); }
-    void markOutput(BufferHandle buffer) { outputResources.push_back(buffer.id); }
-    void retainStage();
-
-    ImageHandle createImage(ImageCreateInfo info);
-    // Declare the format and extent at setup; bind the actual image before execution.
-    ImageHandle createExternalImage(ImageCreateInfo info);
-    void bindImage(ImageHandle handle, Image& image);
-    BufferHandle createBuffer(BufferCreateInfo info);
-    // Growth discards the old contents; call during preparation before updating descriptors.
-    void ensureBufferCapacity(BufferHandle buffer, vk::DeviceSize size);
-
-    struct BufferUpload
-    {
-        vk::DeviceSize       offset;
-        std::span<std::byte> data;
-    };
-    // Writable staging storage; the matching GPU copy is recorded during execute.
-    [[nodiscard]] BufferUpload
-    allocateUpload(BufferHandle buffer, vk::DeviceSize size, vk::DeviceSize destinationOffset = 0);
-
-    [[nodiscard]] uint64_t bufferRevision(BufferHandle buffer) const;
-
-    ImageHandle write(ImageHandle image);
-    BufferHandle write(BufferHandle buffer);
-
-    void use(ImageHandle image, ImageAccess access);
-    void use(BufferHandle buffer, MemoryAccess access);
-
-    [[nodiscard]] Image&                 getImage(ImageHandle image);
-    [[nodiscard]] Buffer&                getBuffer(BufferHandle buffer);
-    [[nodiscard]] const ImageCreateInfo& imageInfo(ImageHandle image);
-    [[nodiscard]] vk::Extent2D imageExtent(ImageHandle image);
-    [[nodiscard]] bool sharesImage(ImageHandle lhs, ImageHandle rhs) const;
-    [[nodiscard]] vk::ImageUsageFlags imageUsage(ImageHandle image) const;
-    void invalidateImageHistory(ImageHandle image);
-    [[nodiscard]] uint64_t imageHistoryRevision(ImageHandle image) const;
-    [[nodiscard]] vk::PipelineStageFlags2 firstUseStages(ImageHandle image) const;
-
-    void beginGpuProfiling(
-        vk::raii::CommandBuffer& commandBuffer, GpuProfiler& gpuProfiler, Profiler* profiler
-    ) const;
-    void execute(
-        vk::raii::CommandBuffer& commandBuffer,
-        const PassFrame& frame,
-        GpuProfiler&     gpuProfiler,
-        Profiler*        profiler
-    );
-    [[nodiscard]] static bool needsBarrier(const ImageAccess& previous, const ImageAccess& next);
+        std::string log;
+        return compile(context, log);
+    }
+    void execute(RenderContext* context);
+    void update(const ref<RenderGraph>& graph);
+    void renderUI(RenderContext* context, Gui::Widgets& widget);
+    void renderOverlayUI(RenderContext* context);
+    void onSceneUpdates(RenderContext* context, IScene::UpdateFlags updates);
+    bool onMouseEvent(const MouseEvent& event);
+    bool onKeyEvent(const KeyboardEvent& event);
+    void onHotReload(HotReloadFlags reloaded);
 
 private:
-    enum class ResourceType
+    friend class RenderGraphCompiler;
+    friend class RenderGraphExporter;
+    friend class RenderGraphUI;
+
+    struct EdgeData
     {
-        Image,
-        Buffer,
-    };
-    struct PassNode;
-    struct Allocation;
-    struct StagingBlock
-    {
-        Buffer         buffer;
-        std::byte*     mapped = nullptr;
-        vk::DeviceSize used   = 0;
-    };
-    struct BufferCopy
-    {
-        BufferHandle   destination;
-        size_t         blockIndex;
-        vk::BufferCopy region;
-    };
-    struct StagingPool
-    {
-        std::vector<StagingBlock> blocks;
-        size_t                   blockIndex = 0;
-        std::vector<BufferCopy> copies;
-    };
-    struct ResourceUse
-    {
-        ResourceHandle resource;
-        ImageAccess    access;
-    };
-    struct ResourceData
-    {
-        ResourceType                type = ResourceType::Image;
-        ImageCreateInfo             imageInfo;
-        BufferCreateInfo            bufferInfo;
-        vk::ImageUsageFlags         imageUsage;
-        uint64_t                    historyRevision = 0;
-        vk::BufferUsageFlags        bufferUsage;
-        vk::PipelineStageFlags2     firstUseStages;
-        bool                        externalImage = false;
-        std::shared_ptr<Allocation> allocation;
-    };
-    struct Resource
-    {
-        // Root resources own data; written versions refer to the previous handle.
-        std::unique_ptr<ResourceData> data;
-        ResourceHandle                previous = kInvalidHandle;
-        PassNode*                     owner    = nullptr;
+        std::string srcField;
+        std::string dstField;
     };
 
-    struct PassNode
+    struct NodeData
     {
-        std::string                       name;
-        bool                              retained = false;
-        std::vector<ResourceHandle>       dependency;
-        std::vector<ResourceHandle>       writeSrc;
-        std::vector<PassNode*>            prev;
-        std::vector<PassNode*>            next;
-        std::vector<ResourceUse>          uses;
-        std::function<void(RenderGraph&, const PassSetup&)> bindResources;
-        std::function<void(RenderGraph&, const PassFrame&)> prepare;
-        std::function<void(RenderGraph&, vk::raii::CommandBuffer&, const PassFrame&)> execute;
+        std::string     name;
+        ref<RenderPass> pPass;
     };
 
-    VulkanContext*                       deviceContext   = nullptr;
-    std::vector<std::unique_ptr<PassNode>> nodeStorage;
-    std::vector<PassNode*>                nodes;
-    std::vector<PassNode*>                sortedNodes;
-    PassNode*                            setupNode       = nullptr;
-    std::vector<Resource>                resources;
-    std::vector<ResourceHandle>          outputResources;
-    std::array<StagingPool, maxFramesInFlight> stagingPools;
-    uint32_t currentFrameIndex = 0;
+    struct GraphOut
+    {
+        uint32_t                                nodeId = kInvalidIndex;
+        std::string                             field;
+        std::unordered_set<TextureChannelFlags> masks;
+        bool operator==(const GraphOut& other) const { return nodeId == other.nodeId && field == other.field; }
+        bool operator!=(const GraphOut& other) const { return !(*this == other); }
+    };
 
-    void finishStage(PassNode& node, PassNode* previousNode);
+    [[nodiscard]] uint32_t getEdge(const std::string& source, const std::string& target);
+    RenderPass*            getRenderPassAndNamePair(
+                   bool input, const std::string& fullName, std::pair<std::string, std::string>& nameAndField
+               ) const;
+    [[nodiscard]] bool isGraphOutput(const GraphOut& output) const;
 
-    void                compileNodes();
-    void                allocateResources();
-    void recordUploads(vk::raii::CommandBuffer& commandBuffer);
-    ResourceData&       resolveResource(ResourceHandle handle);
-    const ResourceData& resolveResource(ResourceHandle handle) const;
-    void useResource(vk::raii::CommandBuffer& commandBuffer, const ResourceUse& use);
-    void transitionResources(
-        vk::raii::CommandBuffer& commandBuffer, const std::vector<ResourceUse>& uses
-    );
+    ref<Device>                               mpDevice;
+    std::string                               mName;
+    ref<Scene>                                mpScene;
+    std::unique_ptr<DirectedGraph>            mpGraph;
+    std::unordered_map<std::string, uint32_t> mNameToIndex;
+    std::unordered_map<uint32_t, EdgeData>    mEdgeData;
+    std::unordered_map<uint32_t, NodeData>    mNodeData;
+    std::vector<GraphOut>                     mOutputs;
+    Dictionary                                mPassesDictionary;
+    std::unique_ptr<RenderGraphExe>           mpExe;
+    RenderGraphCompiler::Dependencies         mCompilerDeps;
+    bool                                      mRecompile = false;
 };
-
-template <class Stage, class... Args>
-auto RenderGraph::addStage(std::string_view name, Stage& stage, const PassSetup& setup, Args&&... args)
-{
-    auto& node   = *nodeStorage.emplace_back(std::make_unique<PassNode>());
-    node.name    = name;
-    node.execute = [pass = &stage](RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& frame)
-    {
-        pass->execute(graph, commandBuffer, frame);
-    };
-    if constexpr (requires { stage.bindResources(*this, setup); })
-        node.bindResources = [pass = &stage](RenderGraph& graph, const PassSetup& setup)
-        { pass->bindResources(graph, setup); };
-    if constexpr (requires(const PassFrame& frame) { stage.prepare(*this, frame); })
-        node.prepare = [pass = &stage](RenderGraph& graph, const PassFrame& frame)
-        { pass->prepare(graph, frame); };
-    nodes.push_back(&node);
-
-    auto* previousNode = setupNode;
-    setupNode          = &node;
-    if constexpr (std::is_void_v<decltype(stage.compile(*this, setup, std::forward<Args>(args)...))>)
-    {
-        stage.compile(*this, setup, std::forward<Args>(args)...);
-        finishStage(node, previousNode);
-    }
-    else
-    {
-        auto output = stage.compile(*this, setup, std::forward<Args>(args)...);
-        finishStage(node, previousNode);
-        return output;
-    }
-}
+}  // namespace Falcor

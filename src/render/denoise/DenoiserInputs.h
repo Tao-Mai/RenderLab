@@ -1,17 +1,28 @@
-#pragma once
+#ifndef RENDERLAB_DENOISER_INPUTS_H
+#define RENDERLAB_DENOISER_INPUTS_H
 
-#include "core/MetadataAnnotations.h"
+#ifdef __cplusplus
+#include "render/device/VulkanResources.h"
 
-#include "render/graph/RenderGraph.h"
+#define RENDERLAB_LIGHTING_LAYER inline constexpr uint32_t
+#else
+#define RENDERLAB_LIGHTING_LAYER static const uint
+#endif
 
-struct RL_RECORD DenoiserInputs
+RENDERLAB_LIGHTING_LAYER kDirectLightingLayer = 0;
+RENDERLAB_LIGHTING_LAYER kIndirectLightingLayer = 1;
+RENDERLAB_LIGHTING_LAYER kLightingLayerCount = 2;
+
+#undef RENDERLAB_LIGHTING_LAYER
+
+#ifdef __cplusplus
+struct DenoiserInputs
 {
-    RL_FIELD("depth") RenderGraph::ImageHandle depth;
-    RL_FIELD("worldNormal") RenderGraph::ImageHandle worldNormal;
-    RL_FIELD("direct") RenderGraph::ImageHandle direct;
-    RL_FIELD("indirect") RenderGraph::ImageHandle indirect;
-    RL_FIELD("emission") RenderGraph::ImageHandle emission;
-    RL_FIELD("albedo") RenderGraph::ImageHandle albedo;
+    VulkanResources::ImageHandle color;
+    VulkanResources::ImageHandle depth;
+    VulkanResources::ImageHandle worldNormal;
+    VulkanResources::ImageHandle emission;
+    VulkanResources::ImageHandle albedo;
 };
-
-#include RL_METADATA_HEADER("metadata/src/render/denoise/DenoiserInputs.generated.h")
+#endif
+#endif

@@ -3,7 +3,7 @@
 #include "render/FrameData.h"
 #include "render/resources/GpuMesh.h"
 
-MeshCullPipelines createMeshCullPipelines(Device& device, GraphicsPipelineInfo info)
+MeshCullPipelines createMeshCullPipelines(Falcor::Device& device, GraphicsPipelineInfo info)
 {
     info.state.cullMode    = vk::CullModeFlagBits::eBack;
     const auto singleSided = device.getOrCreatePipeline(info);
@@ -11,21 +11,21 @@ MeshCullPipelines createMeshCullPipelines(Device& device, GraphicsPipelineInfo i
     return {singleSided, device.getOrCreatePipeline(info)};
 }
 
-void bindMeshGeometry(vk::raii::CommandBuffer& commands, const PassFrame& frame)
+void bindMeshGeometry(vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame)
 {
-    const auto layout = renderContext().device->meshPipelineLayout;
+    const auto layout = frame.getDevice()->meshPipelineLayout;
     commands.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         layout,
         RenderInterface::kSceneSet,
-        frame.data.sceneSetHandle(),
+        frame.frameData->sceneSetHandle(),
         {}
     );
     commands.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         layout,
         RenderInterface::kMaterialSet,
-        frame.renderData.materialSetHandle(),
+        frame.scene->materialSetHandle(),
         {}
     );
 }

@@ -1,35 +1,56 @@
 #pragma once
 
+#include "render/device/ResourceBarriers.h"
 #include "render/graph/RenderPass.h"
 
 #include "passes/raster/ShadowPass/ShadowSettings.h"
-#include "render/graph/PassSettings.h"
 
 #include "render/device/Device.h"
 
-#include "render/graph/RenderGraph.h"
-#include "render/raster/ShadowResources.h"
+#include "render/device/VulkanResources.h"
 #include "render/resources/ShaderData.h"
 
 #include <span>
 #include <vector>
 
-class ShadowPass : public ConfigurablePass<ShadowSettings>
+class ShadowPass : public Falcor::RenderPass
 {
-public:
-    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
-    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
-    void   prepare(RenderGraph& graph, const PassFrame& frame) override;
-    void   execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) override;
+    FALCOR_PLUGIN_CLASS(ShadowPass, "ShadowPass", "Renders shadow maps for scene lights.");
+
+    ShadowPass(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties);
+
+    [[nodiscard]] Falcor::Properties getProperties() const override;
+    void setProperties(const Falcor::Properties& properties) override;
+
+    static Falcor::ref<ShadowPass> create(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties)
+    {
+        return Falcor::make_ref<ShadowPass>(std::move(device), properties);
+    }
+
+    void renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget) override;
+
+    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData& compileData) override;
+    void                               compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
+    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
 
 private:
+    ShadowSettings parameters;
+
+    void prepareTargets(VulkanResources& cache, const Falcor::RenderContext& frame, const Falcor::RenderData& renderData);
+    void updateShadowData(VulkanResources& cache, const Falcor::RenderContext& frame);
+    void renderShadowMaps(VulkanResources& cache, vk::raii::CommandBuffer& commandBuffer, const Falcor::RenderContext& frame);
+
+    ResourceBarriers      shadowAccesses;
+    ResourceBarriers      barriers;
+    ResourceBarriers      lightingAccesses;
+    bool                  targetsBound = false;
     static constexpr uint32_t kPointFaceCount = 6;
     static constexpr uint32_t kPointViewMask  = 0b111111;
 
     struct ShadowTarget
     {
-        RenderGraph::ImageHandle  image;
-        RenderGraph::BufferHandle buffer;
+        VulkanResources::ImageHandle  image;
+        VulkanResources::BufferHandle buffer;
         vk::Pipeline              pipeline       = nullptr;
         uint32_t                  mapSize        = 0;
         uint32_t                  viewMask       = 0;
@@ -60,9 +81,9 @@ private:
     );
 
     void recordShadow(
-        RenderGraph&             graph,
+        VulkanResources&           cache,
         vk::raii::CommandBuffer& commandBuffer,
-        const PassFrame&         execution,
+        const Falcor::RenderContext&         execution,
         const ShadowTarget&      target,
         uint32_t                 lightIndex,
         uint32_t                 baseArrayLayer,

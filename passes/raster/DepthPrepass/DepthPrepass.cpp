@@ -1,53 +1,64 @@
+#include "render/device/ResourceBarriers.h"
 #include "passes/raster/DepthPrepass/DepthPrepass.h"
-#include "render/plugins/PluginManager.h"
+
+#include "core/Logger.h"
+#include "core/Plugin.h"
 #include "render/RenderView.h"
 #include "render/device/VulkanContext.h"
+#include "render/resources/MaterialTable.h"
 
-RenderPassReflection DepthPrepass::reflect(const PassSetup&) const
+Falcor::RenderPassReflection DepthPrepass::reflect(const CompileData&)
 {
-    RenderPassReflection reflection;
-    reflection.output("depth", PortKind::Image, false, vk::Format::eD32Sfloat);
+    Falcor::RenderPassReflection reflection;
+    reflection.addOutput("depth", "Scene depth").format(Falcor::ResourceFormat::D32Float).bindFlags(Falcor::ResourceBindFlags::DepthStencil);
     return reflection;
 }
 
-void DepthPrepass::compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports)
+void DepthPrepass::compile(Falcor::RenderContext* passContext, const CompileData&)
 {
-    renderContext().materialTable->use(graph, vk::PipelineStageFlagBits2::eFragmentShader);
     CHECK(
-        setup.vulkan.physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures &
+        passContext->vulkan->physicalDeviceHandle().getFormatProperties(vk::Format::eD32Sfloat).optimalTilingFeatures &
         vk::FormatFeatureFlagBits::eDepthStencilAttachment
     );
 
-    const auto extent = setup.renderExtent;
-    const auto depth = graph.write(
-        graph.createImage({.format = vk::Format::eD32Sfloat, .extent = {extent.width, extent.height, 1}})
-    );
-    attachments.depth = RasterDepthAttachment{.image = depth, .readOnly = false};
-    attachments.declare(graph);
-
-    auto& ctx = renderContext();
+    auto& device = *passContext->getDevice();
     pipelines = createMeshCullPipelines(
-        *ctx.device,
+        device,
         {
-            .shader      = ctx.shaderManager->getOrLoad("depth"),
-            .layout      = ctx.device->meshPipelineLayout,
+            .shader      = passContext->shaderManager->getOrLoad("depth"),
+            .layout      = device.meshPipelineLayout,
             .state       = {.vertexLayout = VertexLayoutPreset::PositionUv},
             .depthFormat = vk::Format::eD32Sfloat,
         }
     );
-    ports.setOutput("depth", depth);
+
+    barriers.clear();
 }
 
-void DepthPrepass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution)
+void DepthPrepass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
 {
-    attachments.begin(graph, commandBuffer, execution.view.viewport);
+    auto&       cache         = *renderCommands->vulkanResources;
+    auto&       commandBuffer = *renderCommands->commands;
+    const auto& execution     = *renderCommands;
+    if (barriers.empty())
+    {
+        const auto depth = cache.registerImage(renderData.getTexture("depth"));
+        attachments.depth = RasterDepthAttachment{.image = depth, .readOnly = false};
+        barriers.add(depth, vulkan_access::kDepthWrite);
+        barriers.add(execution.materialTable->bufferHandle(), vulkan_access::storageRead(vk::PipelineStageFlagBits2::eFragmentShader));
+        barriers.declare(cache);
+    }
+
+    barriers.transition(cache, commandBuffer);
+
+    attachments.begin(cache, commandBuffer, execution.view->viewport);
     bindMeshGeometry(commandBuffer, execution);
     MeshDrawRecorder recorder{commandBuffer, execution};
     recorder.drawOpaque([&](const auto& material) { return pipelines.get(material); });
     commandBuffer.endRendering();
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
-    registry.registerClass<DepthPrepass>("DepthPrepass");
+    registry.registerClass<Falcor::RenderPass, DepthPrepass>();
 }

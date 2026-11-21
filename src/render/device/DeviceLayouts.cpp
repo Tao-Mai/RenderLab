@@ -7,6 +7,8 @@
 
 #include <array>
 
+namespace Falcor
+{
 void Device::createSharedLayouts()
 {
     createSharedDescriptorSetLayouts();
@@ -220,3 +222,4 @@ void Device::createSharedPipelineLayouts()
     }};
     editorPipelineLayout = getOrCreatePipelineLayout(editorSets, editorRanges);
 }
+}  // namespace Falcor

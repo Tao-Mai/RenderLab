@@ -1,15 +1,16 @@
+#include "render/device/ResourceBarriers.h"
 #include "passes/postprocess/ExposurePass/ExposurePass.h"
 
 #include "render/RenderContext.h"
-#include "render/RenderData.h"
+#include "render/PreparedScene.h"
 #include "render/RenderView.h"
-#include "render/device/VulkanContext.h"
 
 #include <array>
 #include <glm/vec4.hpp>
 
 namespace
 {
+constexpr char     kHistogram[]            = "histogram";
 constexpr uint32_t kHistogramBinCount      = 256;
 constexpr uint32_t kMeteringStride         = 2;
 constexpr uint32_t kSourceBinding          = 0;
@@ -35,54 +36,46 @@ struct ExposureParameters
 static_assert(sizeof(ExposureParameters) == 64);
 }  // namespace
 
-RenderPassReflection ExposurePass::reflect(const PassSetup&) const
+ExposurePass::ExposurePass(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties) :
+    Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<ExposurePassSettings>(properties))
 {
-    RenderPassReflection reflection;
-    reflection.input("hdrColor", PortKind::Image);
-    reflection.output("state", PortKind::Buffer);
+    parameters.validate();
+}
+
+Falcor::Properties ExposurePass::getProperties() const
+{
+    return Falcor::serializeToProperties(parameters);
+}
+
+void ExposurePass::setProperties(const Falcor::Properties& properties)
+{
+    ExposurePassSettings next;
+    Deserialize(nlohmann::json(properties.toJson()), next);
+    next.validate();
+
+    parameters = std::move(next);
+}
+
+Falcor::RenderPassReflection ExposurePass::reflect(const CompileData&)
+{
+    Falcor::RenderPassReflection reflection;
+    reflection.addInput("hdrColor", "HDR scene color").bindFlags(Falcor::ResourceBindFlags::ShaderResource);
+    reflection.addOutput(kExposureStateOutput, "Exposure state")
+        .rawBuffer(sizeof(ExposureState))
+        .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess)
+        .flags(Falcor::RenderPassReflection::Field::Flags::Persistent);
+    reflection.addInternal(kHistogram, "Luminance histogram")
+        .rawBuffer(kHistogramBinCount * sizeof(uint32_t))
+        .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess);
     return reflection;
 }
 
-void ExposurePass::compile(RenderGraph& graph, const PassSetup&, PassResources& ports)
+void ExposurePass::compile(Falcor::RenderContext* context, const CompileData&)
 {
-    const auto hdrColor = ports.image("hdrColor");
-
-    source        = hdrColor;
-    extent        = graph.imageInfo(source).extent;
     hasHistory    = false;
     previousScene = {};
 
-    graph.use(
-        source,
-        {
-            .stages = vk::PipelineStageFlagBits2::eComputeShader,
-            .access = vk::AccessFlagBits2::eShaderSampledRead,
-            .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        }
-    );
-    histogram = graph.write(graph.createBuffer({
-        .size  = kHistogramBinCount * sizeof(uint32_t),
-        .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
-    }));
-    graph.use(
-        histogram,
-        {
-            .stages = vk::PipelineStageFlagBits2::eTransfer | vk::PipelineStageFlagBits2::eComputeShader,
-            .access = vk::AccessFlagBits2::eTransferWrite | vk::AccessFlagBits2::eShaderStorageRead |
-                vk::AccessFlagBits2::eShaderStorageWrite,
-        }
-    );
-    exposureState = graph.write(graph.createBuffer({.size = sizeof(ExposureState)}));
-    graph.use(
-        exposureState,
-        {
-            .stages = vk::PipelineStageFlagBits2::eComputeShader,
-            .access = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
-        }
-    );
-
-    auto& ctx = renderContext();
-    auto& device = *ctx.device;
+    auto& device = *context->getDevice();
     if (!*histogramPipeline)
     {
         const std::array bindings{
@@ -113,9 +106,9 @@ void ExposurePass::compile(RenderGraph& graph, const PassSetup&, PassResources& 
         }};
         pipelineLayout = device.getOrCreatePipelineLayout(layouts, ranges);
 
-        constexpr int kHistogramStage = 0;
-        constexpr int kResolveStage = 1;
-        auto& shaders = *ctx.shaderManager;
+        constexpr char kHistogramStage[] = "0";
+        constexpr char kResolveStage[] = "1";
+        auto& shaders = *context->shaderManager;
         histogramPipeline = device.createComputePipeline(
             shaders.getOrLoad("exposure", {{"EXPOSURE_STAGE", kHistogramStage}}), pipelineLayout
         );
@@ -125,57 +118,40 @@ void ExposurePass::compile(RenderGraph& graph, const PassSetup&, PassResources& 
     }
 
     descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
-    ports.setOutput("state", exposureState);
+    barriers.clear();
 }
 
-void ExposurePass::bindResources(RenderGraph& graph, const PassSetup& setup)
+void ExposurePass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
 {
-    const vk::DescriptorImageInfo image{
-        .imageView   = graph.getImage(source).getOrCreateImageView({
-              .viewType         = vk::ImageViewType::e2D,
-              .format           = graph.imageInfo(source).format,
-              .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        }),
-        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+    constexpr auto kCompute = vk::PipelineStageFlagBits2::eComputeShader;
+    constexpr VulkanResources::MemoryAccess kStorageReadWrite{
+        kCompute,
+        vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
     };
-    const std::array buffers{
-        vk::DescriptorBufferInfo{
-            .buffer = graph.getBuffer(histogram).handle(),
-            .range  = graph.getBuffer(histogram).size()
-        },
-        vk::DescriptorBufferInfo{.buffer = graph.getBuffer(exposureState).handle(), .range = sizeof(ExposureState)},
-    };
-    const std::array writes{
-        vk::WriteDescriptorSet{
-            .dstSet          = *descriptorSet,
-            .dstBinding      = kSourceBinding,
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .pImageInfo      = &image,
-        },
-        vk::WriteDescriptorSet{
-            .dstSet          = *descriptorSet,
-            .dstBinding      = kHistogramBinding,
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eStorageBuffer,
-            .pBufferInfo     = &buffers[0],
-        },
-        vk::WriteDescriptorSet{
-            .dstSet          = *descriptorSet,
-            .dstBinding      = kStateBinding,
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eStorageBuffer,
-            .pBufferInfo     = &buffers[1],
-        },
-    };
-    setup.vulkan.deviceHandle().updateDescriptorSets(writes, {});
-}
 
-void ExposurePass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commands, const PassFrame& frame)
-{
-    const ExposureConfig&    settings  = frame.renderData.exposure ? *frame.renderData.exposure : parameters;
+    auto&       cache    = *renderCommands->vulkanResources;
+    auto&       commands = *renderCommands->commands;
+    const auto& frame    = *renderCommands;
+    if (barriers.empty())
+    {
+        const auto source = cache.registerImage(renderData.getTexture("hdrColor"));
+        const auto exposureState = cache.registerBuffer(renderData[kExposureStateOutput]->asBuffer());
+        histogram = cache.registerBuffer(renderData[kHistogram]->asBuffer());
+        extent = cache.imageInfo(source).extent;
+        cache.writeDescriptor(*descriptorSet, kSourceBinding, source);
+        cache.writeDescriptor(*descriptorSet, kHistogramBinding, histogram);
+        cache.writeDescriptor(*descriptorSet, kStateBinding, exposureState);
+
+        barriers.add(source, vulkan_access::sampled(kCompute));
+        barriers.add(exposureState, kStorageReadWrite);
+        barriers.declare(cache);
+    }
+
+    barriers.transition(cache, commands);
+
+    const ExposureConfig&    settings  = frame.scene->exposure ? *frame.scene->exposure : parameters;
     const auto&              automatic = settings.automatic;
-    const auto&              viewport  = frame.view.viewport;
+    const auto&              viewport  = frame.view->viewport;
     const bool               enabled   = settings.mode == ExposureMode::Automatic;
     const ExposureParameters parameters{
         .viewport              = {viewport.x, viewport.y, viewport.width, viewport.height},
@@ -189,38 +165,23 @@ void ExposurePass::execute(RenderGraph& graph, vk::raii::CommandBuffer& commands
         .darkAdaptationSpeed   = automatic.darkAdaptationSpeed,
         .lowPercentile         = automatic.lowPercentile,
         .highPercentile        = automatic.highPercentile,
-        .historyValid          = hasHistory && previousScene == frame.renderData.sceneId ? 1u : 0u,
+        .historyValid          = hasHistory && previousScene == frame.scene->sceneId ? 1u : 0u,
     };
     commands.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelineLayout, 0, std::array{*descriptorSet}, {});
     commands.pushConstants<ExposureParameters>(pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, parameters);
 
     if (enabled)
     {
-        const auto buffer = graph.getBuffer(histogram).handle();
-        commands.fillBuffer(buffer, 0, VK_WHOLE_SIZE, 0);
-        vk::BufferMemoryBarrier2 barrier{
-            .srcStageMask        = vk::PipelineStageFlagBits2::eTransfer,
-            .srcAccessMask       = vk::AccessFlagBits2::eTransferWrite,
-            .dstStageMask        = vk::PipelineStageFlagBits2::eComputeShader,
-            .dstAccessMask       = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer              = buffer,
-            .size                = VK_WHOLE_SIZE,
-        };
-        commands.pipelineBarrier2({.bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrier});
+        renderCommands->clearUAV(cache.getBuffer(histogram).getUAV().get(), Falcor::uint4(0));
+        cache.transition(commands, histogram, kStorageReadWrite);
         commands.bindPipeline(vk::PipelineBindPoint::eCompute, *histogramPipeline);
         const auto meteringThreads = [](uint32_t pixels) { return (pixels + kMeteringStride - 1) / kMeteringStride; };
         histogramPipeline.dispatch(commands, {meteringThreads(extent.width), meteringThreads(extent.height), 1});
-
-        barrier.srcStageMask  = vk::PipelineStageFlagBits2::eComputeShader;
-        barrier.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite;
-        barrier.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead;
-        commands.pipelineBarrier2({.bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrier});
     }
 
+    cache.transition(commands, histogram, vulkan_access::storageRead(kCompute));
     commands.bindPipeline(vk::PipelineBindPoint::eCompute, *resolvePipeline);
     commands.dispatch(1, 1, 1);
     hasHistory    = true;
-    previousScene = frame.renderData.sceneId;
+    previousScene = frame.scene->sceneId;
 }

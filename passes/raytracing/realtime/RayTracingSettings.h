@@ -23,8 +23,9 @@ struct RL_RECORD RestirSettings
 
 struct RL_RECORD RayTracingSettings
 {
-    RL_FIELD("maxBounces") uint32_t          maxBounces    = 3;
-    RL_FIELD("restir") RestirSettings    restir;
+    RL_FIELD("maxBounces") uint32_t    maxBounces    = 3;
+    RL_FIELD("restir") RestirSettings restir;
+    RL_FIELD("splitLighting") bool   splitLighting = true;
 
     void validate() const;
 };

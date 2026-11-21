@@ -2,12 +2,14 @@
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "core/Window.h"
+#include "render/device/Device.h"
 #include "render/device/FrameContext.h"
 #include "render/device/VkCheck.h"
 #include "render/device/VulkanContext.h"
 #include "render/resources/Buffer.h"
 #include "render/resources/GpuShader.h"
 #include "render/resources/MaterialData.h"
+#include "render/resources/ShaderManager.h"
 
 #include <array>
 #include <cmath>
@@ -58,13 +60,12 @@ void check(VulkanContext& vulkan, const std::filesystem::path& shaderPath)
     cases[7].dielectricF0                      = 1.0f;
 
     auto&          device  = vulkan.deviceHandle();
-    constexpr auto kMemory = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
-    Buffer
-        input{vulkan.physicalDeviceHandle(), device, sizeof(cases), vk::BufferUsageFlagBits::eStorageBuffer, kMemory};
+    Falcor::Buffer
+        input{vulkan, sizeof(cases), vk::BufferUsageFlagBits::eStorageBuffer, Falcor::MemoryType::Upload, Falcor::ResourceBindFlags::ShaderResource};
     std::array<std::array<glm::vec4, 5>, kCaseCount> values;
-    Buffer
-        output{vulkan.physicalDeviceHandle(), device, sizeof(values), vk::BufferUsageFlagBits::eStorageBuffer, kMemory};
-    input.upload(cases.data(), sizeof(cases));
+    Falcor::Buffer
+        output{vulkan, sizeof(values), vk::BufferUsageFlagBits::eStorageBuffer, Falcor::MemoryType::ReadBack, Falcor::ResourceBindFlags::UnorderedAccess};
+    input.setBlob(cases.data(), 0, sizeof(cases));
 
     const std::array bindings{
         vk::DescriptorSetLayoutBinding{
@@ -96,8 +97,8 @@ void check(VulkanContext& vulkan, const std::filesystem::path& shaderPath)
                                 .pSetLayouts        = &rawLayout,
     }));
     const std::array             bufferInfos{
-        vk::DescriptorBufferInfo{.buffer = output.handle(), .range = output.size()},
-        vk::DescriptorBufferInfo{.buffer = input.handle(), .range = input.size()},
+        vk::DescriptorBufferInfo{.buffer = output.handle(), .range = output.getSize()},
+        vk::DescriptorBufferInfo{.buffer = input.handle(), .range = input.getSize()},
     };
     for (uint32_t index = 0; index < bufferInfos.size(); ++index)
     {
@@ -143,7 +144,7 @@ void check(VulkanContext& vulkan, const std::filesystem::path& shaderPath)
     vkCheck(vulkan.queueHandle()
                 .submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &command}, frame.drawFenceHandle()));
     frame.wait();
-    output.download(values.data(), sizeof(values));
+    output.getBlob(values.data(), 0, sizeof(values));
     frame.reset();
 
     const std::array<glm::vec4, kCaseCount> expectedDiffuse{
@@ -214,7 +215,13 @@ int main(int argc, char** argv)
     window.init();
     VulkanContext vulkan;
     vulkan.init(window);
+    ShaderManager shaders;
+    shaders.init(vulkan.deviceHandle());
+    const auto device = Falcor::make_ref<Falcor::Device>();
+    device->init(vulkan, shaders);
     check(vulkan, shaderPath);
+    device->shutdown();
+    shaders.shutdown();
     vulkan.reset();
     window.shutdown();
     config.setEditorSize(original.width, original.height);

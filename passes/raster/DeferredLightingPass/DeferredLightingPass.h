@@ -1,24 +1,35 @@
 #pragma once
 
+#include "render/device/ResourceBarriers.h"
 #include "render/graph/RenderPass.h"
 
 #include "render/device/Device.h"
 
-#include "render/raster/GBufferResources.h"
 #include "render/raster/RasterAttachments.h"
-#include "render/raster/ShadowResources.h"
+#include "render/raster/RasterLightingSettings.h"
 
-class DeferredLightingPass : public RenderPass
+class DeferredLightingPass : public Falcor::RenderPass
 {
-public:
+    FALCOR_PLUGIN_CLASS(DeferredLightingPass, "DeferredLightingPass", "Shades the G-buffer.");
 
-    [[nodiscard]] RenderPassReflection reflect(const PassSetup& setup) const override;
-    void compile(RenderGraph& graph, const PassSetup& setup, PassResources& ports) override;
-    void bindResources(RenderGraph& graph, const PassSetup& setup) override;
-    void execute(RenderGraph& graph, vk::raii::CommandBuffer& commandBuffer, const PassFrame& execution) override;
+    DeferredLightingPass(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties);
+
+    [[nodiscard]] Falcor::Properties getProperties() const override;
+    void setProperties(const Falcor::Properties& properties) override;
+
+    static Falcor::ref<DeferredLightingPass> create(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties)
+    {
+        return Falcor::make_ref<DeferredLightingPass>(std::move(device), properties);
+    }
+
+    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData& compileData) override;
+    void                               compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
+    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
 
 private:
-    GBufferResources      gBuffer;
+    RasterLightingSettings parameters;
+
+    ResourceBarriers barriers;
     RasterAttachments<1>     attachments;
     DescriptorSetLayout      descriptorSetLayout;
     vk::raii::DescriptorSet  descriptorSet = nullptr;

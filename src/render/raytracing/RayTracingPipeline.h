@@ -30,7 +30,7 @@ public:
 private:
     vk::PipelineLayout pipelineLayout;
     vk::raii::Pipeline pipeline = nullptr;
-    Buffer bindingTable;
+    Falcor::Buffer bindingTable;
     std::vector<vk::StridedDeviceAddressRegionKHR> raygenRegions;
     vk::StridedDeviceAddressRegionKHR missRegion;
     vk::StridedDeviceAddressRegionKHR hitRegion;
