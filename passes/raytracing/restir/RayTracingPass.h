@@ -7,7 +7,6 @@
 #include <slang-rhi/shader-cursor.h>
 #include "render/graph/RenderPass.h"
 #include "render/raytracing/PathTracingShader.h"
-#include "render/resources/ShaderLayout.h"
 
 #include <array>
 
@@ -25,7 +24,7 @@ class RayTracingPass : public RenderPass
         return make_ref<RayTracingPass>(std::move(device), properties);
     }
 
-    void renderUI(RenderContext* context, Gui::Widgets& widget) override;
+    void renderUI(const PassEditorContext& context, Gui::Widgets& widget) override;
 
     [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
     void compile(RenderContext* passContext, const CompileData& compileData) override;
@@ -39,7 +38,7 @@ private:
     bool targetsReady = false;
     struct Program
     {
-        PathTracingProgram rayTracing;
+        rhi::ComPtr<rhi::IRayTracingPipeline> pipeline;
         std::array<rhi::ComPtr<rhi::IShaderObject>, kMaxFramesInFlight> shaderObjects;
     };
     void prepareProgram(
@@ -49,7 +48,7 @@ private:
 
     RestirResources                              reservoirs;
     std::array<Program, static_cast<size_t>(PathEnvironment::Count)> programs;
-    GpuResources::ImageHandle                    historySource;
+    rhi::ComPtr<rhi::IShaderTable>                    shaderTable;
     RestirSettings                               previousRestir;
     uint32_t                                     sampleIndex             = 0;
     uint32_t                                     previousMaxBounces       = 0;

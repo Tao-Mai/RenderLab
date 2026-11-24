@@ -12,7 +12,7 @@ Pass 直接持有 `rhi::IShaderObject`，或通过原生 pass encoder 的 `bindP
 公共场景和材质参数可供多个 program 共享，每个 program 读取自身反射中存在的字段。RHI 在录制时保存参数快照。
 纹理数组使用参数名与元素索引，CPU/GPU 共享常量保留布局校验。
 
-- `FrameData` 提供 sceneUniforms、lightUniforms、shadowUniforms、环境与阴影资源。
+- `RenderView` 提供 `sceneUniforms`。`SceneLighting` 提供灯光缓冲、`lightUniforms` 和环境资源。阴影常量来自本次 `RenderContext`，阴影贴图与变换缓冲来自渲染图。
 - `MaterialTable` 提供 materials、textures 和 samplers。
 - 光追 Pass 提供 scene、objects、emissiveTriangles 或离线材质与光源缓冲。
 - Pass 的 parameters / pushConstants 字段通过具名 ConstantBuffer 写入。

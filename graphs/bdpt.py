@@ -9,9 +9,3 @@ def render_graph_BDPT(
     graph.create_pass("bdpt", "BDPT", {"maxBounces": 6})
     add_post_process(graph, "bdpt.color", hdr, postProcess, bloom)
     return graph
-
-
-if globals().get("__name__", "__main__") == "__main__":
-    BDPT = render_graph_BDPT()
-    if "m" in globals():
-        m.addGraph(BDPT)

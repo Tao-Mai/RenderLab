@@ -5,25 +5,27 @@
 #include "passes/raytracing/bdpt/BdptSettings.h"
 
 #include <slang-rhi.h>
-#include "asset/AssetManager.h"
-#include "core/Context.h"
+#include <slang-rhi/shader-cursor.h>
 #include "editor/PassEditor.h"
-#include "render/PreparedScene.h"
+#include "render/DispatchGroups.h"
+#include "render/GpuScene.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
-#include "render/raytracing/PathAccumulation.h"
+#include "render/device/BufferCapacity.h"
+#include "render/raytracing/PathSceneState.h"
+#include "render/raytracing/PathTracingShader.h"
 #include "render/resources/SceneShading.h"
-#include "render/raytracing/PathPipelineCache.h"
 
-#ifdef RENDERLAB_TEST_PATH_TRACING_STATS
-#include "test/PathTracingStats.h"
-#endif
 
 #include <algorithm>
+#include <array>
 #include <bit>
+#include <chrono>
 #include <cmath>
 #include <format>
+#include <future>
 #include <limits>
+#include <utility>
 
 void BdptSettings::validate() const
 {
@@ -34,24 +36,30 @@ void BdptSettings::validate() const
 
 namespace
 {
-constexpr char     kOutputColor[]      = "color";
-constexpr uint32_t kMinShaderDepth     = 4;
-constexpr uint32_t kTileSize           = 128;
-constexpr uint32_t kMinTileSize        = 8;
-constexpr uint32_t kTileReferenceDepth = 6;
-constexpr float    kMinimumSceneRadius = 0.001f;
-constexpr float    kSceneBoundsPadding = 1.001f;
+constexpr std::array kRaygenEntries{"raygenMain"};
+constexpr char       kOutputColor[]      = "color";
+constexpr uint32_t   kMinShaderDepth     = 4;
+constexpr size_t     kShaderDepthCount   =
+    std::bit_width(std::bit_ceil(kMaxPathBounces)) - std::bit_width(kMinShaderDepth) + 1;
+constexpr uint32_t   kTileSize           = 128;
+constexpr uint32_t   kMinTileSize        = 8;
+constexpr uint32_t   kTileReferenceDepth = 6;
+constexpr float      kMinimumSceneRadius = 0.001f;
+constexpr float      kSceneBoundsPadding = 1.001f;
 
 struct alignas(16) BdptParameters
 {
-    AccumulationParameters path;
+    PathTracingParameters path;
     glm::vec4             sceneSphere;
     glm::vec4             camera;
     glm::uvec2            tileOffset;
-    float                 lightSamples;
+    glm::uvec2            imageSize;
     uint32_t              flags;
+    uint32_t              padding0;
+    uint32_t              padding1;
+    uint32_t              padding2;
 };
-static_assert(sizeof(BdptParameters) == 80);
+static_assert(sizeof(BdptParameters) == 96);
 
 struct LightDistributionEntry
 {
@@ -67,8 +75,7 @@ class BDPT : public RenderPass
     RL_PLUGIN_CLASS(BDPT, "BDPT", "Bidirectional path tracer.");
 
     BDPT(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
-        RenderPass(std::move(device), SceneInputs::RayTracing, 1),
-        parameters(deserializeFromProperties<BdptSettings>(properties))
+        RenderPass(std::move(device), 1), parameters(deserializeFromProperties<BdptSettings>(properties))
     {
         parameters.validate();
     }
@@ -91,14 +98,16 @@ class BDPT : public RenderPass
         return make_ref<BDPT>(std::move(device), properties);
     }
 
-    void renderUI(RenderContext* context, Gui::Widgets& widget) override;
+    void renderUI(const PassEditorContext& context, Gui::Widgets& widget) override;
 
     [[nodiscard]] RenderPassReflection reflect(const CompileData&) override
     {
         RenderPassReflection reflection;
-        reflection.addOutput(kOutputColor, "Path traced radiance")
-            .format(rhi::Format::RGBA16Float)
-            .bindFlags(ResourceBindFlags::UnorderedAccess);
+        reflection.addOutput(kOutputColor, rhi::TextureDesc{
+            .size = {0, 0, 1},
+            .format = rhi::Format::RGBA16Float,
+            .usage = rhi::TextureUsage::UnorderedAccess,
+        });
         return reflection;
     }
 
@@ -111,43 +120,51 @@ class BDPT : public RenderPass
 private:
     BdptSettings parameters;
 
-    PathAccumulation tracer;
-    bool               lightDistributionReady = false;
-    void updateScene(GpuResources& cache, const RenderContext& execution, const RenderData& renderData);
-    rhi::ComPtr<rhi::IBuffer>  splatBuffer;
-    rhi::ComPtr<rhi::IBuffer>  lightDistributionBuffer;
-    GpuResources::BufferHandle splats;
-    GpuResources::BufferHandle lightDistribution;
+    struct PipelineVariant
+    {
+        rhi::ComPtr<rhi::IRayTracingPipeline> pipeline;
+        std::future<rhi::ComPtr<rhi::IRayTracingPipeline>> build;
+    };
+    std::array<std::array<PipelineVariant, kShaderDepthCount>, static_cast<size_t>(PathEnvironment::Count)> pipelines;
+    rhi::ComPtr<rhi::IShaderTable> shaderTable;
+    rhi::IRayTracingPipeline*     pipeline = nullptr;
 
-    const PathTracingProgram* pipeline    = nullptr;
-    PathEnvironment                            shaderEnvironment = PathEnvironment::None;
-    uint32_t                                 shaderDepth = 0;
-    glm::vec4                                sceneSphere{};
-    BdptSettings                             previousSettings;
-    float                                    accumulatedProgress = 0;
-    uint32_t                                 tileIndex           = 0;
-    uint64_t                                 processedPixels     = 0;
+    PathSceneState sceneState;
+    BdptSettings   previousSettings;
+    glm::vec4      sceneSphere{};
+    bool           lightDistributionReady = false;
+
+    rhi::ComPtr<rhi::IBuffer>          lightDistributionBuffer;
+    rhi::ComPtr<rhi::IBuffer>          cameraHistory;
+    rhi::ComPtr<rhi::IBuffer>          lightSplats;
+    rhi::ComPtr<rhi::IComputePipeline> resolvePipeline;
+
+    float    accumulatedProgress = 0;
+    uint32_t sampleIndex         = 0;
+    uint32_t tileIndex           = 0;
+    uint64_t processedPixels     = 0;
+    bool     clearHistory        = true;
 
     void selectPipeline(const RenderContext& context);
     void resetAccumulation();
-    void prepareLightDistribution(GpuResources& cache, const RenderContext& execution);
+    void updateScene(const RenderContext& execution, const SceneShadingData& shading);
+    void resolve(rhi::ICommandEncoder& commands, rhi::ITexture& output, const PixelBounds& bounds) const;
+    void prepareLightDistribution(const RenderContext& execution, const SceneShadingData& scene);
 };
 
-glm::vec4 computeSceneSphere(const RenderContext& execution)
+glm::vec4 computeSceneSphere(const GpuScene& scene, const SceneShadingData& shading)
 {
-    const auto& items = execution.scene->drawItems;
-    const auto& shading = *execution.scene->shading;
+    const auto draws      = scene.drawCalls();
     const auto rectangles = std::span{shading.lightTriangles}.subspan(shading.firstRectTriangle);
-    if (items.empty() && rectangles.empty())
-        return {glm::vec3{execution.view->uniforms.cameraPosition}, kMinimumSceneRadius};
+    if (draws.empty() && rectangles.empty())
+        return {glm::vec3{scene.cameraUniforms().cameraPosition}, kMinimumSceneRadius};
 
     auto minimum = glm::vec3{std::numeric_limits<float>::max()};
     auto maximum = -minimum;
-    for (const auto& item : items)
+    for (const auto& draw : draws)
     {
-        const auto bounds = context().assetManager->get(item.mesh).bounds.transformed(item.model);
-        minimum           = glm::min(minimum, bounds.min);
-        maximum           = glm::max(maximum, bounds.max);
+        minimum           = glm::min(minimum, draw.bounds.min);
+        maximum           = glm::max(maximum, draw.bounds.max);
     }
     for (const auto& triangle : rectangles)
     {
@@ -161,9 +178,8 @@ glm::vec4 computeSceneSphere(const RenderContext& execution)
     return {center, std::max(glm::length(maximum - center) * kSceneBoundsPadding, kMinimumSceneRadius)};
 }
 
-glm::vec4 cameraSampling(const RenderView& view)
+glm::vec4 cameraSampling(const SceneUniforms& uniforms)
 {
-    const auto& uniforms = view.uniforms;
     const auto  forward  = glm::normalize(-glm::vec3{uniforms.view[0][2], uniforms.view[1][2], uniforms.view[2][2]});
     const auto  onImagePlane = [&](glm::vec2 ndc)
     {
@@ -176,78 +192,85 @@ glm::vec4 cameraSampling(const RenderView& view)
 }
 
 
-void BDPT::compile(RenderContext* passContext, const CompileData& compileData)
+void BDPT::compile(RenderContext* context, const CompileData& compileData)
 {
-    auto&      cache  = *passContext->gpuResources;
-    const auto extent = compileData.defaultTexDims;
-    tracer.compile(*passContext, extent, "bdpt_resolve");
+    if (!checkRayTracingSupport(*mpDevice))
+        return;
 
+    const auto extent     = compileData.defaultTexDims;
+    const auto pixelCount = size_t(extent.x) * extent.y;
 
     rhi::BufferDesc desc;
     desc.usage =
         rhi::BufferUsage::ShaderResource | rhi::BufferUsage::UnorderedAccess | rhi::BufferUsage::CopyDestination;
-    desc.size = size_t(extent.x) * extent.y * sizeof(glm::uvec4);
-    rhiCheck(mpDevice->createBuffer(desc, nullptr, splatBuffer.writeRef()));
-    splats    = cache.registerBuffer(splatBuffer);
     desc.size = sizeof(LightDistributionEntry);
     rhiCheck(mpDevice->createBuffer(desc, nullptr, lightDistributionBuffer.writeRef()));
-    lightDistribution = cache.registerBuffer(lightDistributionBuffer);
-    tracer.setLightTracingBuffers(splats, lightDistribution);
+    desc.size = pixelCount * sizeof(BdptBinding::AccumulatedPixel);
+    rhiCheck(mpDevice->createBuffer(desc, nullptr, cameraHistory.writeRef()));
+    desc.size = pixelCount * sizeof(glm::uvec4);
+    rhiCheck(mpDevice->createBuffer(desc, nullptr, lightSplats.writeRef()));
+
+    auto& shaders = *context->shaderManager;
+    rhiCheck(mpDevice->createComputePipeline(
+        {.program = shaders.getOrLoad("bdpt_resolve")}, resolvePipeline.writeRef()
+    ));
+
     lightDistributionReady = false;
-    pipeline = nullptr;
+    pipeline               = nullptr;
     resetAccumulation();
 }
 
 
 void BDPT::selectPipeline(const RenderContext& context)
 {
-    const auto depth = std::bit_ceil(std::max(kMinShaderDepth, parameters.maxBounces));
+    const auto depth       = std::bit_ceil(std::max(kMinShaderDepth, parameters.maxBounces));
+    const auto depthIndex  = static_cast<size_t>(std::bit_width(depth) - std::bit_width(kMinShaderDepth));
     const auto environment = pathEnvironment(*context.scene);
-    if (depth != shaderDepth || environment != shaderEnvironment)
+    auto&      variant     = pipelines[static_cast<size_t>(environment)][depthIndex];
+    if (!variant.pipeline)
     {
-        shaderDepth = depth;
-        shaderEnvironment = environment;
-        pipeline    = nullptr;
+        if (!variant.build.valid())
+        {
+            auto& shaders = *context.shaderManager;
+            auto  defines = pathEnvironmentDefines(environment);
+            defines["BDPT_MAX_DEPTH"] = std::to_string(depth);
+            auto* program = shaders.getOrCompile("bdpt", defines);
+            variant.build = shaders.createRayTracingPipelineAsync(pathTracingPipelineDesc(program));
+        }
+        if (variant.build.wait_for(std::chrono::seconds{0}) == std::future_status::ready)
+        {
+            variant.pipeline = variant.build.get();
+            if (!shaderTable)
+                shaderTable = createPathTracingShaderTable(*mpDevice, variant.pipeline->getProgram(), kRaygenEntries);
+        }
     }
-    if (!pipeline)
-    {
-        auto& shaders = *context.shaderManager;
-        auto defines = pathEnvironmentDefines(environment);
-        defines["BDPT_MAX_DEPTH"] = std::to_string(shaderDepth);
-        pipeline = context.pathPipelines->get(
-            *mpDevice,
-            shaders,
-            shaders.getOrCompile("bdpt", defines),
-            true
-        );
-    }
+    pipeline = variant.pipeline.get();
 }
 
 
 void BDPT::resetAccumulation()
 {
-    tracer.resetAccumulation();
+    sampleIndex         = 0;
     accumulatedProgress = 0;
     tileIndex           = 0;
     processedPixels     = 0;
+    clearHistory        = true;
 }
 
 
-void BDPT::updateScene(
-    GpuResources& cache, const RenderContext& execution, const RenderData& renderData
-)
+void BDPT::updateScene(const RenderContext& execution, const SceneShadingData& shading)
 {
-    const bool sceneChanged = tracer.updateFrame(execution, renderData.getTexture(kOutputColor));
+    const bool sceneChanged = sceneState.update(*execution.scene);
     selectPipeline(execution);
     const bool optionsChanged = parameters != previousSettings;
     if (sceneChanged || optionsChanged)
         resetAccumulation();
 
     if (sceneChanged || !lightDistributionReady)
-        sceneSphere = computeSceneSphere(execution);
+        sceneSphere = computeSceneSphere(*execution.scene, shading);
     if (sceneChanged || !lightDistributionReady || parameters.lightSelection != previousSettings.lightSelection)
     {
-        prepareLightDistribution(cache, execution);
+        prepareLightDistribution(execution, shading);
         lightDistributionReady = true;
     }
 
@@ -257,84 +280,109 @@ void BDPT::updateScene(
 
 void BDPT::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
-    auto&       cache     = *renderCommands->gpuResources;
-    auto&       commands  = *renderCommands->commands;
     const auto& execution = *renderCommands;
+    auto&       scene     = *execution.scene;
+    auto&       commands  = *execution.commands;
+    const auto rayTracing = scene.prepareRayTracing(commands, execution.frameIndex);
+    updateScene(execution, rayTracing.shading());
 
-    updateScene(cache, execution, renderData);
-    cache.recordUploads(commands);
-
-    const auto     bounds         = tracer.viewportBounds(*execution.view);
-    const uint64_t viewportPixels = uint64_t(bounds.extent.width) * bounds.extent.height;
-    const bool     trace          = pipeline && viewportPixels > 0;
-    glm::uvec2     tileOffset{0};
-    Extent2D       batchExtent{};
-    uint32_t       tileCount    = 0;
-    float          lightSamples = accumulatedProgress;
-
-    if (trace)
+    if (clearHistory)
     {
+        commands.clearBuffer(cameraHistory);
+        commands.clearBuffer(lightSplats);
+        clearHistory = false;
+        renderData.invalidateHistory(kOutputColor);
+    }
+
+    const auto     output         = renderData.getTexture(kOutputColor);
+    const auto&    size           = output->getDesc().size;
+    const auto     bounds         = scene.viewport().pixelBounds({size.width, size.height});
+    const uint64_t viewportPixels = uint64_t(bounds.extent.width) * bounds.extent.height;
+
+    if (pipeline && viewportPixels > 0)
+    {
+        CHECK(sampleIndex < std::numeric_limits<uint32_t>::max());
         const auto depthScale = std::bit_ceil((parameters.maxBounces + kTileReferenceDepth - 1) / kTileReferenceDepth);
         const auto tileSize   = std::max(kMinTileSize, kTileSize / depthScale);
         const auto columns    = (bounds.extent.width + tileSize - 1) / tileSize;
         const auto rows       = (bounds.extent.height + tileSize - 1) / tileSize;
-        tileCount             = columns * rows;
 
-        const auto x = tileIndex % columns * tileSize;
-        const auto y = tileIndex / columns * tileSize;
-        tileOffset   = {uint32_t(bounds.offset.x) + x, uint32_t(bounds.offset.y) + y};
-        batchExtent =
-            Extent2D{std::min(tileSize, bounds.extent.width - x), std::min(tileSize, bounds.extent.height - y)};
-        lightSamples = float(tracer.sampleCount()) +
-            float(processedPixels + uint64_t(batchExtent.width) * batchExtent.height) / float(viewportPixels);
-    }
+        const auto       x = tileIndex % columns * tileSize;
+        const auto       y = tileIndex / columns * tileSize;
+        const glm::uvec2 tileOffset{bounds.offset.x + x, bounds.offset.y + y};
+        const Extent2D   tileExtent{
+            std::min(tileSize, bounds.extent.width - x),
+            std::min(tileSize, bounds.extent.height - y),
+        };
 
-    uint32_t flags = 0;
-    if (parameters.lightTracing)
-        flags |= BdptBinding::kLightTracing;
-    if (parameters.misHeuristic == BdptMisHeuristic::Power)
-        flags |= BdptBinding::kPowerHeuristic;
+        uint32_t flags = parameters.lightTracing ? BdptBinding::kLightTracing : 0u;
+        if (parameters.misHeuristic == BdptMisHeuristic::Power)
+            flags |= BdptBinding::kPowerHeuristic;
 
-    const BdptParameters constants{
-        .path         = tracer.pathParameters(execution, parameters.maxBounces),
-        .sceneSphere  = sceneSphere,
-        .camera       = cameraSampling(*execution.view),
-        .tileOffset   = tileOffset,
-        .lightSamples = lightSamples,
-        .flags        = flags,
-    };
-    tracer.render(
-        cache,
-        commands,
-        execution,
-        std::as_bytes(std::span{&constants, 1}),
-        trace ? pipeline : nullptr,
-        batchExtent,
-        std::array{splats}
-    );
+        const BdptParameters constants{
+            .path        = makePathTracingParameters(execution, parameters.maxBounces, sampleIndex),
+            .sceneSphere = sceneSphere,
+            .camera      = cameraSampling(scene.cameraUniforms()),
+            .tileOffset  = tileOffset,
+            .imageSize   = {size.width, size.height},
+            .flags       = flags,
+        };
 
-    if (trace)
-    {
-        accumulatedProgress = lightSamples;
-        processedPixels += uint64_t(batchExtent.width) * batchExtent.height;
-        if (++tileIndex == tileCount)
+        auto* pass = commands.beginRayTracingPass();
+        CHECK(pass);
+        auto* object = pass->bindPipeline(pipeline, shaderTable);
+        CHECK(object);
+        rayTracing.bind(object);
+        const rhi::ShaderCursor root(object);
+        rhiCheck(root["parameters"].getDereferenced().setData(constants));
+        rhiCheck(root["cameraHistory"].setBinding(cameraHistory));
+        rhiCheck(root["splats"].setBinding(lightSplats));
+        rhiCheck(root["lightDistribution"].setBinding(lightDistributionBuffer));
+        pass->dispatchRays(0, tileExtent.width, tileExtent.height, 1);
+        pass->end();
+
+        processedPixels += uint64_t(tileExtent.width) * tileExtent.height;
+        accumulatedProgress = float(sampleIndex) + float(processedPixels) / float(viewportPixels);
+        if (++tileIndex == columns * rows)
         {
-            tracer.finishSample();
+            ++sampleIndex;
             tileIndex       = 0;
             processedPixels = 0;
         }
     }
 
-#ifdef RENDERLAB_TEST_PATH_TRACING_STATS
-    renderData.getDictionary()[path_tracing_test::statsKey(getName())] =
-        path_tracing_test::AccumulationProgress{tracer.sampleCount(), sampleProgress(), preparingPipeline()};
-#endif
+    resolve(commands, *output, bounds);
+
 }
 
 
-void BDPT::prepareLightDistribution(GpuResources& cache, const RenderContext& execution)
+void BDPT::resolve(rhi::ICommandEncoder& commands, rhi::ITexture& output, const PixelBounds& bounds) const
 {
-    const auto&      scene    = *execution.scene->shading;
+    const BdptBinding::ResolveParameters constants{
+        .viewportOffset = {bounds.offset.x, bounds.offset.y},
+        .viewportExtent = {bounds.extent.width, bounds.extent.height},
+        .lightSplatScale = parameters.lightTracing && accumulatedProgress > 0.0f ? 1.0f / accumulatedProgress : 0.0f,
+    };
+
+    auto* pass = commands.beginComputePass();
+    CHECK(pass);
+    auto* object = pass->bindPipeline(resolvePipeline);
+    CHECK(object);
+    const rhi::ShaderCursor root(object);
+    rhiCheck(root["parameters"].getDereferenced().setData(constants));
+    rhiCheck(root["cameraHistory"].setBinding(cameraHistory));
+    rhiCheck(root["splats"].setBinding(lightSplats));
+    rhiCheck(root["outputColor"].setBinding(&output));
+
+    const auto& size   = output.getDesc().size;
+    const auto  groups = dispatchGroups(resolvePipeline, {size.width, size.height, 1});
+    pass->dispatchCompute(groups.width, groups.height, groups.depth);
+    pass->end();
+}
+
+
+void BDPT::prepareLightDistribution(const RenderContext& execution, const SceneShadingData& scene)
+{
     const bool       power    = parameters.lightSelection == BdptLightSelection::Power;
     constexpr double kPi      = 3.14159265358979323846;
     const double     diskArea = kPi * double(sceneSphere.w) * sceneSphere.w;
@@ -371,7 +419,7 @@ void BDPT::prepareLightDistribution(GpuResources& cache, const RenderContext& ex
         );
     if (pathEnvironment(*execution.scene) != PathEnvironment::None)
     {
-        const auto cubeWeight = execution.scene->environmentMap ? 1.0 : 0.0;
+        const auto cubeWeight = execution.scene->environmentMap() ? 1.0 : 0.0;
         append(4.0 * kPi * diskArea * (cubeWeight + intensity(scene.environmentLight.emission)));
     }
 
@@ -381,10 +429,7 @@ void BDPT::prepareLightDistribution(GpuResources& cache, const RenderContext& ex
     CHECK(std::isfinite(sum));
 
     const auto count = weights.size();
-    const auto bytes = std::max<size_t>(count, 1) * sizeof(LightDistributionEntry);
-
-    const auto upload  = cache.allocateUpload(lightDistribution, bytes);
-    auto*      entries = reinterpret_cast<LightDistributionEntry*>(upload.data.data());
+    std::vector<LightDistributionEntry> entries(std::max<size_t>(count, 1));
 
     std::vector<uint32_t> small, large;
     small.reserve(count);
@@ -392,14 +437,7 @@ void BDPT::prepareLightDistribution(GpuResources& cache, const RenderContext& ex
     for (uint32_t index = 0; index < count; ++index)
     {
         const double probability = sum > 0.0 ? weights[index] / sum : 0.0;
-        std::construct_at(
-            entries + index,
-            LightDistributionEntry{
-                .alias       = index,
-                .acceptance  = 1.0f,
-                .probability = static_cast<float>(probability),
-            }
-        );
+        entries[index]           = {.alias = index, .probability = static_cast<float>(probability)};
         weights[index] = probability * count;
         (weights[index] < 1.0 ? small : large).push_back(index);
     }
@@ -417,8 +455,9 @@ void BDPT::prepareLightDistribution(GpuResources& cache, const RenderContext& ex
         (weights[above] < 1.0 ? small : large).push_back(above);
     }
 
-    if (count == 0)
-        std::construct_at(entries);
+    const auto bytes = std::span{entries}.size_bytes();
+    ensureBufferCapacity(*mpDevice, lightDistributionBuffer, bytes);
+    rhiCheck(execution.commands->uploadBufferData(lightDistributionBuffer, 0, bytes, entries.data()));
 }
 
 
@@ -439,9 +478,9 @@ bool drawSettings(Gui::Widgets& widgets, BdptSettings& settings, const BDPT& pas
 }  // namespace
 
 
-void BDPT::renderUI(RenderContext* context, Gui::Widgets& widget)
+void BDPT::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
 {
-    drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "BDPT");
+    drawPassEditor<drawSettings>(widget, *this, parameters, context, "BDPT");
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)

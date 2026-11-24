@@ -1,42 +1,34 @@
 #pragma once
-#include <filesystem>
-#include <map>
 #include <slang-rhi.h>
-#include <string>
 #include <string_view>
 #include "core/Logger.h"
 #include "core/Metadata.h"
-struct ShaderStorageImage
-{
-    std::string name;
-    rhi::Format format;
-};
 class ShaderLayout
 {
 public:
-    explicit ShaderLayout(const std::filesystem::path& reflection);
-    explicit ShaderLayout(slang::ProgramLayout& reflection);
-    [[nodiscard]] ShaderStorageImage storageImage(std::string_view name) const;
+    explicit ShaderLayout(rhi::IShaderProgram& program);
+    [[nodiscard]] rhi::Format storageImageFormat(std::string_view name) const;
     template <class T>
     void validateConstants(std::string_view name) const
     {
-        const auto found = parameters.find(name);
-        CHECK(found != parameters.end(), "shader parameter '{}' is missing", name);
-        const auto& parameter = found->second;
+        auto* type = parameter(name).getTypeLayout();
+        CHECK(type->getKind() == slang::TypeReflection::Kind::ConstantBuffer, "'{}' must be a constant buffer", name);
+        auto* element = type->getElementTypeLayout();
+        const auto size = element->getSize();
         CHECK(
-            parameter.size == sizeof(T),
+            size == sizeof(T),
             "shader parameter '{}' has {} bytes; C++ has {}",
             name,
-            parameter.size,
+            size,
             sizeof(T)
         );
         for (const auto& field : metadata::Layout<T>::kFields)
         {
-            const auto member = parameter.fields.find(field.name);
-            CHECK(member != parameter.fields.end(), "shader field '{}.{}' is missing", name, field.name);
-            const auto& reflected = member->second;
+            const auto index = element->findFieldIndexByName(field.name);
+            CHECK(index >= 0, "shader field '{}.{}' is missing", name, field.name);
+            auto* reflected = element->getFieldByIndex(static_cast<unsigned>(index));
             CHECK(
-                reflected.offset == field.offset && reflected.size == field.size,
+                reflected->getOffset() == field.offset && reflected->getTypeLayout()->getSize() == field.size,
                 "shader field '{}.{}' differs from C++",
                 name,
                 field.name
@@ -45,16 +37,7 @@ public:
     }
 
 private:
-    struct Field
-    {
-        size_t offset = 0;
-        size_t size   = 0;
-    };
-    struct Parameter
-    {
-        size_t                                    size = 0;
-        std::string                               imageFormat;
-        std::map<std::string, Field, std::less<>> fields;
-    };
-    std::map<std::string, Parameter, std::less<>> parameters;
+    [[nodiscard]] slang::VariableLayoutReflection& parameter(std::string_view name) const;
+
+    slang::ProgramLayout* reflection;
 };

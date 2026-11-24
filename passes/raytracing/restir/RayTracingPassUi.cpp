@@ -1,7 +1,7 @@
 #include "passes/raytracing/restir/RayTracingPass.h"
 
 #include "editor/PassEditor.h"
-#include "render/RenderConfig.h"
+#include "render/raytracing/PathTracingParameters.h"
 
 namespace
 {
@@ -36,9 +36,9 @@ bool drawSettings(Gui::Widgets& widgets, RayTracingSettings& rayTracing, const R
 }
 }
 
-void RayTracingPass::renderUI(RenderContext* context, Gui::Widgets& widget)
+void RayTracingPass::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
 {
-    drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "ReSTIR");
+    drawPassEditor<drawSettings>(widget, *this, parameters, context, "ReSTIR");
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)

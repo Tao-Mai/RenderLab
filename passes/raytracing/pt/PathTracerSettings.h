@@ -3,7 +3,7 @@
 #include "core/MetadataAnnotations.h"
 
 #include "core/Logger.h"
-#include "render/RenderConfig.h"
+#include "render/raytracing/PathTracingParameters.h"
 
 #include <cstdint>
 

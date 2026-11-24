@@ -2,9 +2,8 @@
 
 #include "core/Plugin.h"
 
-#include "render/PreparedScene.h"
+#include "render/GpuScene.h"
 #include "render/RenderContext.h"
-#include "render/RenderView.h"
 #include "render/raster/MeshDraw.h"
 #include "render/raster/ShadowResources.h"
 #include "render/resources/MaterialTable.h"
@@ -13,8 +12,7 @@
 #include <glm/geometric.hpp>
 
 TransparentPass::TransparentPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
-    RenderPass(std::move(device), SceneInputs::RasterVisibility),
-    parameters(deserializeFromProperties<TransparentLightingSettings>(properties))
+    RenderPass(std::move(device)), parameters(deserializeFromProperties<TransparentLightingSettings>(properties))
 {
     parameters.validate();
 }
@@ -37,12 +35,17 @@ RenderPassReflection TransparentPass::reflect(const CompileData& compileData)
 {
     RenderPassReflection reflection;
     addShadowInputs(reflection);
-    auto& color = reflection.addInputOutput("color", "Color target").bindFlags(ResourceBindFlags::RenderTarget);
-    if (const auto* input = compileData.connectedResources.getField("color"))
-        color.texture2D(input->getWidth(), input->getHeight()).format(input->getFormat());
-    reflection.addInput("depth", "Scene depth")
-        .format(rhi::Format::D32Float)
-        .bindFlags(ResourceBindFlags::DepthStencil);
+    const auto* input = compileData.connectedResources.getField("color");
+    reflection.addInputOutput("color", rhi::TextureDesc{
+        .size = input ? input->texture().size : rhi::Extent3D{0, 0, 1},
+        .format = input ? input->texture().format : rhi::Format::Undefined,
+        .usage = rhi::TextureUsage::RenderTarget,
+    });
+    reflection.addInput("depth", rhi::TextureDesc{
+        .size = {0, 0, 1},
+        .format = rhi::Format::D32Float,
+        .usage = rhi::TextureUsage::DepthStencil,
+    });
     return reflection;
 }
 
@@ -57,7 +60,7 @@ void TransparentPass::compile(RenderContext* passContext, const CompileData& com
     };
     pipelines.setup(
         *passContext->device,
-        compileData.connectedResources.getField("color")->getFormat(),
+        compileData.connectedResources.getField("color")->texture().format,
         depth,
         true,
         parameters.clearcoat
@@ -68,22 +71,21 @@ void TransparentPass::compile(RenderContext* passContext, const CompileData& com
 void TransparentPass::sortDrawItems(const RenderContext& frame)
 {
     sortedDrawItems.clear();
-    const auto& materials = *frame.materialTable;
-    for (uint32_t itemIndex = 0; itemIndex < frame.scene->drawItems.size(); ++itemIndex)
+    const auto& materials = frame.scene->materials();
+    for (const uint32_t itemIndex : frame.scene->visibleDraws())
     {
-        if (!frame.scene->isVisible(itemIndex))
-            continue;
-        const auto materialIndex = frame.scene->materialIndex(itemIndex);
+        const auto& item = frame.scene->drawCalls()[itemIndex];
+        const auto materialIndex = item.materialIndex;
         if (materials.info(materialIndex).alphaMode == kAlphaModeBlend)
             sortedDrawItems.push_back(itemIndex);
     }
+    const glm::vec3 cameraPosition{frame.scene->cameraUniforms().cameraPosition};
     std::ranges::stable_sort(
         sortedDrawItems,
         std::greater{},
         [&](uint32_t itemIndex)
         {
-            const auto offset =
-                glm::vec3{frame.scene->drawItems[itemIndex].model[3]} - glm::vec3{frame.view->uniforms.cameraPosition};
+            const auto offset = glm::vec3{item.model[3]} - cameraPosition;
             return glm::dot(offset, offset);
         }
     );
@@ -112,12 +114,13 @@ void TransparentPass::execute(RenderContext* renderCommands, const RenderData& r
     auto* pass          = renderCommands->commands->beginRenderPass({&color, 1, &depth});
     CHECK(pass);
     const auto&      size     = target->getDesc().size;
-    const auto       viewport = renderCommands->view->viewport.clamped({size.width, size.height});
+    const auto       viewport = renderCommands->scene->viewport().clamped({size.width, size.height});
     const ShadowBindings shadows{renderData, *renderCommands->resources};
-    MeshDrawRecorder recorder{*pass, viewport.renderState(), *renderCommands, &shadows, parameters.ambientCoefficient};
+    MeshDrawRecorder recorder{*pass, viewport.renderState(), *renderCommands};
     recorder.drawOrdered(
         sortedDrawItems,
-        [&](const auto& material) { return pipelines.get(*renderCommands, material); }
+        [&](const auto& material) -> rhi::IShaderObject&
+        { return pipelines.bind(*pass, *renderCommands, material, shadows, parameters.ambientCoefficient); }
     );
     pass->end();
 }

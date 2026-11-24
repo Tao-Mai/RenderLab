@@ -9,10 +9,9 @@ RenderLab 将场景逻辑、资产数据和 GPU 执行分开：上层描述“�
 ```text
 Engine：场景 / 编辑器 Tick
   → RenderSystem：按 Submesh 提交 DrawItem，提取灯光
-  → Renderer 全局 prepare：光源分组、光栅化主视图剔除
-  → RenderResourceManager：缓存、更新 GPU 资源
-  → 更新相机参数，准备材质与灯光的上传数据
-  → RenderGraph.execute：执行已编译的 Pass，同步并复制 SSBO
+  → GpuScene.update：解析网格，准备材质并录制相机与灯光上传
+  → 获取交换链图像
+  → RenderGraph.execute：执行已编译的 Pass，按需准备光追场景
   → Pass.execute：阴影数据与剔除、透明排序、绘制或计算
   → Submit / Present
 ```
@@ -28,19 +27,20 @@ Engine：场景 / 编辑器 Tick
 | RenderSystem | 读取 CPU MeshAsset，按 Submesh 提交 DrawItem，提取 Transform、材质覆盖和灯光 |
 | AssetManager / AssetDataManager | CPU 资产描述、缓存与二进制读写 |
 | RenderResourceManager | 通过资产 ID 获取并缓存 GPU 网格、纹理和采样器 |
-| Renderer | 渲染路线组装、材质覆盖解析与材质表更新、光栅化主视图剔除与帧提交 |
-| MaterialTable | 将材质描述转换为全局 MaterialData，按同一索引提供 CPU 绘制信息，维护纹理索引与具名材质绑定 |
+| Renderer | 组装渲染路线，安排场景准备、图执行与帧提交 |
+| GpuScene | 解析每个 DrawItem 对应的 GPU 网格，录制场景上传，按需提供主视图可见性与光追场景数据 |
+| MaterialTable | 解析材质覆盖与 glTF、PBRT 材质，管理材质数据和指令表的上传及绑定 |
 | RenderGraph / Pass | RenderGraphCompiler 解析依赖，ResourceCache 登记命名资源，RenderGraphExe 按序调用 Pass 的 execute |
 | Editor | 相机导航、选择、属性编辑和编辑器绘制输入 |
 
-光栅化与光追共用 Submesh 粒度的 DrawItem；Renderer 通过只读 span 引用提交列表，在独立数组中记录对应的材质索引和可见性，各 Pass 按相同的条目序号访问。提交列表在准备和命令录制期间保持有效。
+光栅化与光追共用 Submesh 粒度的 DrawItem。`GpuScene` 保存场景条目和解析好的网格，各 Pass 按相同的条目序号访问网格、材质索引和可见性。
 
 ## 场景与资产
 
 - Actor 持有 Component；SceneManager 根据注册类型创建和恢复对象。
 - 构建期生成字段描述，多态数据使用“类型名 → 数据”。
 - 资产使用类型化 ID 引用，网格几何与纹理像素独立持久化。
-- Renderer 合并材质描述与 override；MaterialTable 统一生成 GPU 数据，按材质 ID 与覆盖对象维护稳定索引，各 FIF 安全更新。
+- MaterialTable 合并材质描述与 override，按材质 ID 与覆盖对象维护稳定索引，并用当前帧的 encoder 录制 GPU 数据上传。
 - 场景保存编辑器相机和环境图，Renderer 配置只保存渲染行为。
 
 详见 [场景模块](Scene.md) 与 [资产模块](Asset.md)。
@@ -56,12 +56,12 @@ Engine：场景 / 编辑器 Tick
 ## 渲染与资源
 
 - Renderer 直接持有 `rhi::IDevice`、Graphics Queue 和 Surface，使用 RHI 接口创建资源、获取和呈现纹理。
-- `FrameContext` 管理命令录制、提交和时间线 Fence；复用槽位前等待完成。`FrameData` 保存逐帧具名 shader 参数。
-- `GpuResources` 保留图像、缓冲的稳定 handle、容量版本和上传数据；上传通过 RHI encoder 录制，资源状态和内存屏障由 RHI 跟踪。
-- Renderer 管理共享灯光和场景资源；ShadowPass 准备阴影数据与可见性，逐面绘制点光源的六个深度层。
-- `RenderContext` 是帧服务数据，包含原生设备、命令 encoder、ShaderManager、GPU 资产缓存、帧数据和 MaterialTable。
+- Renderer 用时间线 Fence 管理帧提交，复用槽位前等待完成。
+- `GpuScene` 和 `MaterialTable` 各自持有场景与材质的 RHI 缓冲。通过 encoder 录制上传，由 RHI 跟踪资源状态。
+- Renderer 在获取交换链图像前调用 `GpuScene::update()`。ShadowPass 用已解析的网格绘制阴影，并为点光源逐面录制六个深度层。
+- `RenderContext` 将 `GpuScene`、命令 encoder 和资源服务传给各个 Pass。
 - Pass 直接使用 RHI render / compute / ray tracing pass encoder，并通过 ShaderCursor 写入原生 shader object。
-- `SceneAccelerationStructures` 缓存和构建原生 BLAS/TLAS。光追 Pass 或离线管线缓存直接创建 RHI 光追管线和 shader table。
+- 光追 Pass 在开启 RHI Pass 前向 `GpuScene` 请求当帧的光追数据。`SceneAccelerationStructures` 根据已解析的网格和实例输入缓存并构建 BLAS/TLAS。
 - Graph Buffer 和历史图像跨帧共享，拾取在提交完成后回读。图重建时等待队列，重新创建该图的资源登记表并重置时域历史。
 
 详见 [RenderGraph](RenderGraph.md) 与 [Shader 参数与管线](RenderLayout.md)。

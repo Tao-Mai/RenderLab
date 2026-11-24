@@ -32,9 +32,3 @@ def render_graph_Deferred(
     color = add_post_process(graph, color, hdr, postProcess, bloom)
     add_picking(graph, depth, color)
     return graph
-
-
-if globals().get("__name__", "__main__") == "__main__":
-    Deferred = render_graph_Deferred()
-    if "m" in globals():
-        m.addGraph(Deferred)

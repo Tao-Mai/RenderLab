@@ -1,2 +1,2 @@
 renderlab_add_plugin(TransparentPass TransparentPass.cpp)
-target_link_libraries(TransparentPass PRIVATE RenderLabForwardPbr)
+target_link_libraries(TransparentPass PRIVATE RenderLabRasterPbr)

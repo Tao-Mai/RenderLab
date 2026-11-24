@@ -2,15 +2,10 @@
 
 #include "core/Context.h"
 #include "core/InputManager.h"
-#include "core/Logger.h"
 #include "core/Window.h"
-#include "render/RenderView.h"
 
 #include <algorithm>
-#include <cmath>
-
 #include <glm/geometric.hpp>
-#include <glm/gtc/matrix_transform.hpp>
 
 void EditorCamera::resetNavigation()
 {
@@ -58,63 +53,23 @@ void EditorCamera::tick(float deltaTime)
     data.fieldOfView =
         std::clamp(data.fieldOfView - static_cast<float>(window.consumeScrollOffset()) * 2.0f, 20.0f, 90.0f);
 
-    glm::vec3 direction{0.0f};
+    const auto camera = data.sceneCamera();
+    glm::vec3  direction{0.0f};
     if (input.get(Command::MoveForward))
-        direction += forward();
+        direction += camera.forward();
     if (input.get(Command::MoveBackward))
-        direction -= forward();
+        direction -= camera.forward();
     if (input.get(Command::MoveRight))
-        direction += right();
+        direction += camera.right();
     if (input.get(Command::MoveLeft))
-        direction -= right();
+        direction -= camera.right();
     if (input.get(Command::MoveUp))
-        direction += up();
+        direction += camera.up();
     if (input.get(Command::MoveDown))
-        direction -= up();
+        direction -= camera.up();
     if (glm::dot(direction, direction) == 0.0f)
         return;
 
     const float speed = data.speed * (input.get(Command::Sprint) ? data.sprintMultiplier : 1.0f);
     data.position += glm::normalize(direction) * speed * std::clamp(deltaTime, 0.0f, 0.1f);
-}
-
-glm::vec3 EditorCamera::forward() const
-{
-    const float yaw   = glm::radians(data.yaw);
-    const float pitch = glm::radians(data.pitch);
-    return glm::normalize(glm::vec3{std::cos(yaw) * std::cos(pitch), std::sin(pitch), std::sin(yaw) * std::cos(pitch)});
-}
-
-glm::vec3 EditorCamera::right() const
-{
-    const float yaw = glm::radians(data.yaw);
-    return {-std::sin(yaw), 0.0f, std::cos(yaw)};
-}
-
-glm::vec3 EditorCamera::up() const { return glm::normalize(glm::cross(right(), forward())); }
-
-glm::mat4 EditorCamera::viewMatrix() const { return glm::lookAt(data.position, data.position + forward(), up()); }
-
-glm::mat4 EditorCamera::projectionMatrix(float aspectRatio) const
-{
-    glm::mat4 projection = glm::perspective(glm::radians(data.fieldOfView), aspectRatio, data.nearPlane, data.farPlane);
-
-    return projection;
-}
-
-RenderView EditorCamera::renderView(ViewportRect viewport) const
-{
-
-    const auto view           = viewMatrix();
-    const auto viewProjection = projectionMatrix(viewport.width / viewport.height) * view;
-    return {
-        .uniforms =
-            {
-                .viewProjection        = viewProjection,
-                .inverseViewProjection = glm::inverse(viewProjection),
-                .cameraPosition        = glm::vec4{worldPosition(), 1.0f},
-                .view                  = view,
-            },
-        .viewport = viewport,
-    };
 }

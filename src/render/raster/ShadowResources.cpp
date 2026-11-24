@@ -8,16 +8,19 @@
 
 void addShadowInputs(RenderPassReflection& reflection)
 {
-    reflection.addInput(kShadowUniformsPort, "Shadow sampling parameters")
-        .rawBuffer(sizeof(ShadowUniforms))
-        .bindFlags(ResourceBindFlags::ShaderResource);
+    reflection.addInput(kShadowUniformsPort, rhi::BufferDesc{
+        .size = sizeof(ShadowUniforms),
+        .usage = rhi::BufferUsage::ShaderResource,
+    });
     for (const auto& ports : kShadowPorts)
     {
-        reflection.addInput(ports.map, "Shadow depth array")
-            .texture2D(0, 0, 1, 1, 0)
-            .format(rhi::Format::D32Float)
-            .bindFlags(ResourceBindFlags::ShaderResource);
-        reflection.addInput(ports.data, "Shadow transforms").rawBuffer(0).bindFlags(ResourceBindFlags::ShaderResource);
+        reflection.addInput(ports.map, rhi::TextureDesc{
+            .size = {0, 0, 1},
+            .arrayLength = 0,
+            .format = rhi::Format::D32Float,
+            .usage = rhi::TextureUsage::ShaderResource,
+        });
+        reflection.addInput(ports.data, rhi::BufferDesc{.usage = rhi::BufferUsage::ShaderResource});
     }
 }
 
@@ -30,9 +33,8 @@ ShadowBindings::ShadowBindings(const RenderData& data, RenderResourceManager& re
     for (size_t index = 0; index < kShadowPorts.size(); ++index)
     {
         const auto& ports = kShadowPorts[index];
-        maps[index]       = data.getTexture(ports.map)->getDefaultView();
-        CHECK(maps[index]);
-        buffers[index] = data.getBuffer(ports.data);
+        maps[index]       = data.getTexture(ports.map);
+        buffers[index]    = data.getBuffer(ports.data);
     }
 }
 

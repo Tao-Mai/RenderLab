@@ -124,13 +124,13 @@ public:
 
     [[nodiscard]] const std::string& renderGraphName() const noexcept { return renderGraph; }
 
-    [[nodiscard]] std::filesystem::path renderGraphScript() const;
+    [[nodiscard]] std::filesystem::path renderGraphScript(std::string_view name) const;
 
     [[nodiscard]] const Settings& getSettings() const { return settings; }
 
     [[nodiscard]] Settings& getSettings() { return settings; }
 
-    [[nodiscard]] nlohmann::json getOptions() const;
+    [[nodiscard]] nlohmann::json getOptions(std::string_view graphName) const;
 
     void setEditorSize(int width, int height);
 

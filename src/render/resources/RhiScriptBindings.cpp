@@ -5,7 +5,6 @@
 #include "core/Logger.h"
 #include "core/ScriptBindings.h"
 #include "render/device/RhiCheck.h"
-#include "render/graph/RenderGraphFlags.h"
 
 namespace ScriptBindings
 {
@@ -206,30 +205,9 @@ RL_SCRIPT_BINDING(RhiInterfaces)
         std::pair{rhi::BufferUsage::IndexBuffer, "IndexBuffer"},
         std::pair{rhi::BufferUsage::ConstantBuffer, "ConstantBuffer"},
     };
-    constexpr std::array kResourceBindFlags{
-        std::pair{ResourceBindFlags::None, "None_"},
-        std::pair{ResourceBindFlags::Vertex, "Vertex"},
-        std::pair{ResourceBindFlags::Index, "Index"},
-        std::pair{ResourceBindFlags::Constant, "Constant"},
-        std::pair{ResourceBindFlags::ShaderResource, "ShaderResource"},
-        std::pair{ResourceBindFlags::UnorderedAccess, "UnorderedAccess"},
-        std::pair{ResourceBindFlags::RenderTarget, "RenderTarget"},
-        std::pair{ResourceBindFlags::DepthStencil, "DepthStencil"},
-        std::pair{ResourceBindFlags::IndirectArg, "IndirectArg"},
-    };
-    constexpr std::array kTextureChannelFlags{
-        std::pair{TextureChannelFlags::None, "None_"},
-        std::pair{TextureChannelFlags::Red, "Red"},
-        std::pair{TextureChannelFlags::Green, "Green"},
-        std::pair{TextureChannelFlags::Blue, "Blue"},
-        std::pair{TextureChannelFlags::Alpha, "Alpha"},
-        std::pair{TextureChannelFlags::RGB, "RGB"},
-        std::pair{TextureChannelFlags::RGBA, "RGBA"},
-    };
     if (bindEnum("IntEnum", "Format", formats) != 0 ||
         bindEnum("IntEnum", "MemoryType", kMemoryTypes) != 0 ||
-        bindEnum("IntFlag", "BufferUsage", kBufferUsages) != 0 ||
-        bindEnum("IntFlag", "ResourceBindFlags", kResourceBindFlags) != 0)
+        bindEnum("IntFlag", "BufferUsage", kBufferUsages) != 0)
         return -1;
-    return bindEnum("IntFlag", "TextureChannelFlags", kTextureChannelFlags);
+    return 0;
 }

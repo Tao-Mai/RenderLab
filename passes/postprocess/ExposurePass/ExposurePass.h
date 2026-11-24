@@ -20,7 +20,7 @@ class ExposurePass : public RenderPass
         return make_ref<ExposurePass>(std::move(device), properties);
     }
 
-    void renderUI(RenderContext* context, Gui::Widgets& widget) override;
+    void renderUI(const PassEditorContext& context, Gui::Widgets& widget) override;
 
     [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
     void compile(RenderContext* context, const CompileData& compileData) override;

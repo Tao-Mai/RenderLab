@@ -12,8 +12,7 @@ class GBufferPass : public RenderPass
 {
     RL_PLUGIN_CLASS(GBufferPass, "GBufferPass", "Rasterizes the scene into G-buffer textures.");
 
-    GBufferPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
-        RenderPass(std::move(device), SceneInputs::RasterVisibility)
+    GBufferPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) : RenderPass(std::move(device))
     {
         setProperties(properties);
     }

@@ -1,11 +1,11 @@
 #include "render/resources/ShaderManager.h"
 
 #include "core/Logger.h"
+#include "core/RuntimeDirectory.h"
 #include "render/device/RhiCheck.h"
-#include "render/resources/CompiledShaderPath.h"
-#include "render/resources/ShaderLayout.h"
 
 #include <algorithm>
+#include <chrono>
 #include <fstream>
 
 #include <nlohmann/json.hpp>
@@ -14,6 +14,12 @@ using json = nlohmann::json;
 
 namespace
 {
+const std::filesystem::path& shaderDirectory()
+{
+    static const auto kDirectory = runtimeDirectory() / "shaders";
+    return kDirectory;
+}
+
 const json& requiredField(const json& value, const std::string& name)
 {
     CHECK(value.is_object(), "shader manifest expected an object");
@@ -43,27 +49,22 @@ std::vector<char> readShaderBytes(const std::filesystem::path& path)
 
 }  // namespace
 
-ShaderManager::ShaderManager()  = default;
-ShaderManager::~ShaderManager() = default;
-
 void ShaderManager::init(rhi::IDevice* targetDevice) { device = targetDevice; }
 
 void ShaderManager::shutdown() noexcept
 {
-    handles.clear();
+    pipelineBuilds.clear();
     variants.clear();
     device = nullptr;
 }
 
-ShaderHandle ShaderManager::getOrLoad(std::string_view program, const ShaderDefines& defines)
+rhi::IShaderProgram* ShaderManager::getOrLoad(std::string_view program, const ShaderDefines& defines)
 {
+    ProgramKey key{std::string{program}, defines};
+    if (const auto found = variants.find(key); found != variants.end())
+        return found->second.shader;
 
-    const ProgramKey key{std::string{program}, defines};
-    if (const auto found = handles.find(key); found != handles.end())
-    {
-        return found->second;
-    }
-    const auto    manifestPath = compiledShaderPath(std::filesystem::path{"shaders"} / (key.first + ".variants.json"));
+    const auto    manifestPath = shaderDirectory() / (key.first + ".variants.json");
     std::ifstream input{manifestPath};
     CHECK(input.is_open(), "missing shader manifest '{}'", manifestPath.string());
     const auto manifest = json::parse(input, nullptr, false);
@@ -84,16 +85,13 @@ ShaderHandle ShaderManager::getOrLoad(std::string_view program, const ShaderDefi
             }
         }
     CHECK(selected, "shader '{}' has no matching compiled variant", program);
-    const auto& options = requiredField(*selected, "defines");
-    CHECK(options.is_object());
-    ShaderDefines selectedDefines;
-    for (const auto& [name, value] : options.items())
-    {
+    const auto& selectedDefines = requiredField(*selected, "defines");
+    CHECK(selectedDefines.is_object());
+    for (const auto& [name, value] : selectedDefines.items())
         CHECK(value.is_string(), "shader define '{}' must be a string", name);
-        selectedDefines.emplace(name, value.get_ref<const std::string&>());
-    }
-    const auto binary = manifestPath.parent_path() / requiredString(*selected, "binary");
 
+    const auto binary      = manifestPath.parent_path() / requiredString(*selected, "binary");
+    const auto entries     = requiredField(*selected, "entries").get<std::vector<std::string>>();
     const auto moduleBytes = readShaderBytes(binary);
     auto session = device->getSlangSession();
     CHECK(session);
@@ -113,21 +111,16 @@ ShaderHandle ShaderManager::getOrLoad(std::string_view program, const ShaderDefi
         binary.string(),
         diagnostics ? static_cast<const char*>(diagnostics->getBufferPointer()) : ""
     );
-    ShaderMetadata metadata{
-        .binary  = binary,
-        .defines = std::move(selectedDefines),
-        .entries = selected->at("entries").get<std::vector<std::string>>()
-    };
-    return registerProgram(key, *module, binary, std::move(metadata));
+    return registerProgram(std::move(key), *module, binary, entries);
 }
 
-ShaderHandle ShaderManager::getOrCompile(std::string_view program, const ShaderDefines& defines)
+rhi::IShaderProgram* ShaderManager::getOrCompile(std::string_view program, const ShaderDefines& defines)
 {
-    const ProgramKey key{std::string{program}, defines};
-    if (const auto found = handles.find(key); found != handles.end())
-        return found->second;
+    ProgramKey key{std::string{program}, defines};
+    if (const auto found = variants.find(key); found != variants.end())
+        return found->second.shader;
 
-    const auto manifestPath = compiledShaderPath(std::filesystem::path{"shaders"} / (key.first + ".source.json"));
+    const auto manifestPath = shaderDirectory() / (key.first + ".source.json");
     std::ifstream input(manifestPath);
     CHECK(input, "missing shader source manifest '{}'", manifestPath.string());
     const auto manifest = json::parse(input, nullptr, false);
@@ -176,21 +169,18 @@ ShaderHandle ShaderManager::getOrCompile(std::string_view program, const ShaderD
         source.string(),
         diagnostics ? static_cast<const char*>(diagnostics->getBufferPointer()) : ""
     );
-    ShaderMetadata metadata{
-        .defines = defines,
-        .entries = requiredField(manifest, "entries").get<std::vector<std::string>>()
-    };
-    return registerProgram(key, *module, source, std::move(metadata));
+    const auto entries = requiredField(manifest, "entries").get<std::vector<std::string>>();
+    return registerProgram(std::move(key), *module, source, entries);
 }
 
-ShaderHandle ShaderManager::registerProgram(
-    const ProgramKey& key, slang::IModule& module, const std::filesystem::path& path, ShaderMetadata metadata
+rhi::IShaderProgram* ShaderManager::registerProgram(
+    ProgramKey key, slang::IModule& module, const std::filesystem::path& path, std::span<const std::string> entries
 )
 {
     rhi::ComPtr<slang::ISession> session{module.getSession()};
     std::vector<rhi::ComPtr<slang::IEntryPoint>> entryPoints;
     std::vector<slang::IComponentType*>          components{&module};
-    for (const auto& entryName : metadata.entries)
+    for (const auto& entryName : entries)
     {
         auto& entry = entryPoints.emplace_back();
         rhiCheck(module.findEntryPointByName(entryName.c_str(), entry.writeRef()));
@@ -217,34 +207,32 @@ ShaderHandle ShaderManager::registerProgram(
     rhi::ComPtr<rhi::IShaderProgram> shader;
     rhiCheck(device->createShaderProgram(programDesc, shader.writeRef()));
 
-    const ShaderHandle handle{static_cast<uint32_t>(variants.size() + 1)};
-    variants.push_back({.session = std::move(session), .shader = std::move(shader), .metadata = std::move(metadata)});
-    handles.emplace(key, handle);
-    return handle;
+    return variants.emplace(std::move(key), Variant{std::move(session), std::move(shader)}).first->second.shader;
 }
 
-rhi::IShaderProgram* ShaderManager::program(ShaderHandle handle) const { return variants[handle.index - 1].shader; }
-
-const ShaderMetadata& ShaderManager::metadata(ShaderHandle handle) const { return variants[handle.index - 1].metadata; }
-
-const ShaderLayout& ShaderManager::layout(ShaderHandle handle)
+std::future<rhi::ComPtr<rhi::IRayTracingPipeline>>
+ShaderManager::createRayTracingPipelineAsync(rhi::RayTracingPipelineDesc desc)
 {
+    std::erase_if(
+        pipelineBuilds,
+        [](const auto& build) { return build.wait_for(std::chrono::seconds{0}) == std::future_status::ready; }
+    );
 
-    auto& variant = variants[handle.index - 1];
-    if (!variant.layout)
-    {
-        if (variant.metadata.binary.empty())
+    // ShaderManager joins the worker at shutdown. The pass can drop the result while the worker runs.
+    std::promise<rhi::ComPtr<rhi::IRayTracingPipeline>> promise;
+    auto result = promise.get_future();
+    pipelineBuilds.push_back(std::async(
+        std::launch::async,
+        [buildDevice = rhi::ComPtr{device}, shader = rhi::ComPtr{desc.program}, desc, promise = std::move(promise)]() mutable
         {
-            auto* reflection = variant.shader->getSlangComponentType()->getLayout();
-            CHECK(reflection);
-            variant.layout = std::make_unique<ShaderLayout>(*reflection);
+            desc.program           = shader;
+            desc.compilationPolicy = rhi::PipelineCompilationPolicy::Immediate;
+            rhi::ComPtr<rhi::IRayTracingPipeline> pipeline;
+            rhiCheck(buildDevice->createRayTracingPipeline(desc, pipeline.writeRef()));
+
+            auto completion = std::move(promise);
+            completion.set_value(std::move(pipeline));
         }
-        else
-        {
-            auto reflection = variant.metadata.binary;
-            reflection.replace_extension(".reflection.json");
-            variant.layout = std::make_unique<ShaderLayout>(reflection);
-        }
-    }
-    return *variant.layout;
+    ));
+    return result;
 }

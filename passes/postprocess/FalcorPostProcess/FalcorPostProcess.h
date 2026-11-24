@@ -1,6 +1,5 @@
 #pragma once
 
-#include "render/device/GpuResources.h"
 #include "render/graph/RenderPass.h"
 
 #include "passes/postprocess/FalcorPostProcess/FalcorPostProcessConfig.h"
@@ -25,7 +24,7 @@ class FalcorPostProcess : public RenderPass
         return make_ref<FalcorPostProcess>(std::move(device), properties);
     }
 
-    void renderUI(RenderContext* context, Gui::Widgets& widget) override;
+    void renderUI(const PassEditorContext& context, Gui::Widgets& widget) override;
 
     [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
     void compile(RenderContext* passContext, const CompileData& compileData) override;
@@ -33,7 +32,6 @@ class FalcorPostProcess : public RenderPass
 
 private:
     FalcorPostProcessConfig parameters;
-    ShaderManager*          shaders = nullptr;
 
     enum class Stage
     {
@@ -53,48 +51,32 @@ private:
         {
         }
 
-        ImageStage(const FalcorPostProcess& owner, Stage stage, ShaderHandle shader) :
+        ImageStage(const FalcorPostProcess& owner, Stage stage, rhi::IShaderProgram* shader) :
             owner(owner), stage(stage), shader(shader)
         {
         }
 
-        void compile(
-            GpuResources&             cache,
-            GpuResources::ImageHandle source,
-            GpuResources::ImageHandle filtered,
-            GpuResources::ImageHandle target
-        );
-        void execute(GpuResources& cache, rhi::ICommandEncoder& commands, GpuResources::ImageHandle colorOutput);
+        void compile(rhi::ITexture* source, rhi::ITexture* filtered, rhi::ITexture* target);
+        void execute(rhi::ICommandEncoder& commands, rhi::ITexture* colorOutput) const;
 
     private:
-        void dispatch(GpuResources& cache, rhi::ICommandEncoder& commands) const;
+        void dispatch(rhi::ICommandEncoder& commands) const;
 
         const FalcorPostProcess&  owner;
         Stage                     stage;
         rhi::IComputePipeline*    compute = nullptr;
-        ShaderHandle              shader;
+        rhi::IShaderProgram*      shader = nullptr;
         uint32_t                  level = 0;
-        GpuResources::ImageHandle storageTarget;
-
-        GpuResources::ImageHandle target;
-
+        rhi::ComPtr<rhi::ITexture>        target;
         rhi::ComPtr<rhi::IShaderObject>   shaderObject;
         rhi::ComPtr<rhi::IRenderPipeline> pipeline;
     };
 
     void initialize(const RenderContext& context);
-    GpuResources::ImageHandle
-    addSimplePostFx(GpuResources& cache, const RenderData& data, GpuResources::ImageHandle source);
-    GpuResources::ImageHandle addToneMapper(
-        ShaderManager& shaders, GpuResources& cache, const RenderData& data, GpuResources::ImageHandle source
-    );
-    GpuResources::ImageHandle addImageStage(
-        GpuResources&             cache,
-        ImageStage                pass,
-        GpuResources::ImageHandle source,
-        GpuResources::ImageHandle filtered,
-        GpuResources::ImageHandle target
-    );
+    rhi::ITexture* addSimplePostFx(const RenderData& data, rhi::ITexture* source);
+    rhi::ITexture* addToneMapper(ShaderManager& shaders, const RenderData& data, rhi::ITexture* source);
+    rhi::ITexture*
+    addImageStage(ImageStage pass, rhi::ITexture* source, rhi::ITexture* filtered, rhi::ITexture* target);
 
     rhi::ComPtr<rhi::IComputePipeline> downsample;
     rhi::ComPtr<rhi::IComputePipeline> upsample;

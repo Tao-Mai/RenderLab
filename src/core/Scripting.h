@@ -3,57 +3,21 @@
 #include "core/Macros.h"
 #include "core/Logger.h"
 #include "core/ScriptBindings.h"
-#include "core/platform/OS.h"
 
 #include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
-#include <vector>
 
 class RENDERLAB_CORE_API Scripting
 {
 public:
-    static const FileDialogFilterVec kFileExtensionFilters;
-
     class Context
     {
     public:
         explicit Context(PyObject* globals);
         Context();
-
-        template <typename T>
-        struct ObjectDesc
-        {
-            ObjectDesc(const std::string& name, const T& object) : name(name), obj(object) {}
-            operator const T&() const { return obj; }
-
-            std::string name;
-            T           obj;
-        };
-
-        template <typename T>
-        [[nodiscard]] std::vector<ObjectDesc<T>> getObjects()
-        {
-            std::vector<ObjectDesc<T>> objects;
-            Py_ssize_t                 position = 0;
-            PyObject*                  key      = nullptr;
-            PyObject*                  object   = nullptr;
-            while (PyDict_Next(mGlobals.get(), &position, &key, &object))
-            {
-                const auto value = ScriptBindings::fromPython<T>(object);
-                CHECK(!PyErr_Occurred(), "{}", pythonError());
-                if (!value)
-                    continue;
-
-                const auto name = ScriptBindings::fromPython<std::string>(key);
-                CHECK(!PyErr_Occurred(), "{}", pythonError());
-                if (name)
-                    objects.emplace_back(*name, *value);
-            }
-            return objects;
-        }
 
         template <typename T>
         void setObject(const std::string& name, T object)

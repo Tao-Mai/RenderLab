@@ -3,20 +3,22 @@
 #include "passes/denoise/SVGF/SvgfSettings.h"
 
 #include <slang-rhi.h>
-#include "render/device/GpuResources.h"
 #include "shaders/raytracing/LightingLayers.h"
 
 #include <array>
+#include <cstdint>
+#include <glm/mat4x4.hpp>
+#include <glm/vec4.hpp>
 
 struct RenderContext;
 
 struct SVGFInputs
 {
-    GpuResources::ImageHandle color;
-    GpuResources::ImageHandle depth;
-    GpuResources::ImageHandle worldNormal;
-    GpuResources::ImageHandle emission;
-    GpuResources::ImageHandle albedo;
+    rhi::ITexture* color;
+    rhi::ITexture* depth;
+    rhi::ITexture* worldNormal;
+    rhi::ITexture* emission;
+    rhi::ITexture* albedo;
 };
 
 class SVGFReprojection
@@ -29,26 +31,24 @@ public:
     struct Output
     {
         // RGBA32F: RGB accumulated albedo-demodulated color, A its estimated luminance variance.
-        GpuResources::ImageHandle direct;
-        GpuResources::ImageHandle indirect;
+        rhi::ITexture* direct;
+        rhi::ITexture* indirect;
         // RGB color history is written by the first wavelet iteration, not by reprojection.
-        GpuResources::ImageHandle lightingHistory;
+        rhi::ITexture* lightingHistory;
     };
 
     Output compile(
-        const RenderContext&                                      context,
-        const SVGFInputs&                                                 source,
-        const std::array<GpuResources::ImageHandle, kHistoryCount>&       history,
-        const std::array<GpuResources::ImageHandle, kLightingLayerCount>& outputs
+        const RenderContext&                                   context,
+        const SVGFInputs&                                      source,
+        const std::array<rhi::ITexture*, kHistoryCount>&       history,
+        const std::array<rhi::ITexture*, kLightingLayerCount>& outputs
     );
-    void execute(GpuResources& cache, rhi::ICommandEncoder& commands, const RenderContext& frame);
+    void execute(const RenderContext& frame, uint64_t historyRevision);
 
     // Layer belonging to the frame most recently executed by this pass.
     [[nodiscard]] uint32_t colorHistoryLayer() const { return writeLayer ^ 1u; }
 
 private:
-    GpuResources::ImageHandle historySource;
-
     rhi::Extent3D                      extent{};
     rhi::ComPtr<rhi::IComputePipeline> pipeline;
     rhi::ComPtr<rhi::IShaderObject>    shaderObject;

@@ -4,9 +4,9 @@
 
 #include <slang-rhi.h>
 #include "asset/BuiltinAssets.h"
+#include "render/GpuScene.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
-#include "render/RenderView.h"
 #include "render/resources/RenderResourceManager.h"
 
 #include <algorithm>
@@ -78,27 +78,31 @@ RenderPassReflection Bloom::reflect(const CompileData& compileData)
     auto extent = compileData.defaultTexDims;
     if (const auto* input = compileData.connectedResources.getField("hdrColor"))
     {
-        extent.x = input->getWidth() ? input->getWidth() : extent.x;
-        extent.y = input->getHeight() ? input->getHeight() : extent.y;
+        extent.x = input->texture().size.width ? input->texture().size.width : extent.x;
+        extent.y = input->texture().size.height ? input->texture().size.height : extent.y;
     }
 
     RenderPassReflection reflection;
-    reflection.addInput("hdrColor", "HDR scene color")
-        .bindFlags(ResourceBindFlags::ShaderResource)
-        .format(rhi::Format::RGBA16Float);
-    reflection.addOutput("color", "Scene color with bloom")
-        .format(rhi::Format::RGBA16Float)
-        .bindFlags(ResourceBindFlags::RenderTarget)
-        .texture2D(extent.x, extent.y);
+    reflection.addInput("hdrColor", rhi::TextureDesc{
+        .size = {0, 0, 1},
+        .format = rhi::Format::RGBA16Float,
+        .usage = rhi::TextureUsage::ShaderResource,
+    });
+    reflection.addOutput("color", rhi::TextureDesc{
+        .size = {extent.x, extent.y, 1},
+        .format = rhi::Format::RGBA16Float,
+        .usage = rhi::TextureUsage::RenderTarget,
+    });
 
     const auto levels   = pyramidLevels(extent, parameters.levels);
     auto       size     = extent;
     const auto addImage = [&](std::string_view stage, uint32_t level)
     {
-        reflection.addInternal(pyramidImageName(stage, level), "Bloom pyramid image")
-            .texture2D(size.x, size.y)
-            .format(rhi::Format::RGBA16Float)
-            .bindFlags(ResourceBindFlags::ShaderResource | ResourceBindFlags::RenderTarget);
+        reflection.addInternal(pyramidImageName(stage, level), rhi::TextureDesc{
+            .size = {size.x, size.y, 1},
+            .format = rhi::Format::RGBA16Float,
+            .usage = rhi::TextureUsage::ShaderResource | rhi::TextureUsage::RenderTarget,
+        });
     };
     for (uint32_t level = 0; level < levels; ++level)
     {
@@ -117,17 +121,16 @@ void Bloom::compile(RenderContext* passContext, const CompileData&) { filters.cl
 
 void Bloom::prepareFilters(const RenderContext& context, const RenderData& renderData)
 {
-    auto&      cache    = *context.gpuResources;
-    const auto hdrColor = cache.registerImage(renderData.getTexture("hdrColor"));
-    const auto color    = cache.registerImage(renderData.getTexture("color"));
-    const auto extent   = cache.imageInfo(hdrColor).size;
+    const auto hdrColor = renderData.getTexture("hdrColor");
+    const auto color    = renderData.getTexture("color");
+    const auto extent   = hdrColor->getDesc().size;
     const auto levels   = pyramidLevels({extent.width, extent.height}, parameters.levels);
     using Stage         = Filter::Stage;
     const auto image    = [&](std::string_view stage, uint32_t level)
-    { return cache.registerImage(renderData.getTexture(pyramidImageName(stage, level))); };
+    { return renderData.getTexture(pyramidImageName(stage, level)); };
 
-    std::array<GpuResources::ImageHandle, kMaxBloomLevels> pyramid;
-    auto                                                   source = hdrColor;
+    std::array<rhi::ITexture*, kMaxBloomLevels> pyramid;
+    auto*                                       source = hdrColor;
     for (uint32_t level = 0; level < levels; ++level)
     {
         const auto horizontal = image(kHorizontal, level);
@@ -152,7 +155,6 @@ void Bloom::prepareFilters(const RenderContext& context, const RenderData& rende
 
 void Bloom::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
-    auto&       cache    = *renderCommands->gpuResources;
     auto&       commands = *renderCommands->commands;
     const auto& frame    = *renderCommands;
     const auto  extent   = renderData.getDefaultTextureDims();
@@ -160,26 +162,23 @@ void Bloom::execute(RenderContext* renderCommands, const RenderData& renderData)
         prepareFilters(frame, renderData);
 
     for (const auto& filter : filters)
-        filter.execute(cache, commands, {extent.x, extent.y}, frame.view->viewport);
+        filter.execute(commands, {extent.x, extent.y}, frame.scene->viewport());
 }
 
 
 void Bloom::Filter::compile(
-    const RenderContext& context,
-    GpuResources::ImageHandle    input,
-    GpuResources::ImageHandle    baseInput,
-    GpuResources::ImageHandle    target
+    const RenderContext& context, rhi::ITexture* input, rhi::ITexture* baseInput, rhi::ITexture* target
 )
 {
-    auto& cache  = *context.gpuResources;
-    source       = input;
+    const auto sourceExtent = input->getDesc().size;
+    sourceTexelSize         = {1.0f / sourceExtent.width, 1.0f / sourceExtent.height};
     this->target = target;
     const auto shader =
         context.shaderManager->getOrLoad("bloom", {{"BLOOM_STAGE", std::to_string(static_cast<int>(stage))}});
     rhi::ColorTargetDesc color;
     color.format = kHdrColorFormat;
     rhi::RenderPipelineDesc desc;
-    desc.program                       = context.shaderManager->program(shader);
+    desc.program                       = shader;
     desc.targets                       = &color;
     desc.targetCount                   = 1;
     desc.depthStencil.depthTestEnable  = false;
@@ -188,18 +187,15 @@ void Bloom::Filter::compile(
     rhiCheck(context.device->createRenderPipeline(desc, pipeline.writeRef()));
     rhiCheck(context.device->createRootShaderObject(desc.program, shaderObject.writeRef()));
     const rhi::ShaderCursor root(shaderObject);
-    rhiCheck(root["sourceColor"].setBinding(cache.getImage(source)->getDefaultView()));
+    rhiCheck(root["sourceColor"].setBinding(input));
     rhiCheck(root["linearSampler"].setBinding(context.resources->sampler(BuiltinAssets::Sampler::linearClamp)));
-    rhiCheck(root["baseColor"].setBinding(cache.getImage(baseInput)->getDefaultView()));
+    rhiCheck(root["baseColor"].setBinding(baseInput));
 }
 
 
-void Bloom::Filter::execute(
-    GpuResources& cache, rhi::ICommandEncoder& commands, Extent2D frameExtent, const ViewportRect& viewport
-) const
+void Bloom::Filter::execute(rhi::ICommandEncoder& commands, Extent2D frameExtent, const ViewportRect& viewport) const
 {
-
-    const auto view = cache.getImage(target)->getDefaultView();
+    const auto view = target->getDefaultView();
     CHECK(view);
     rhi::RenderPassColorAttachment color;
     color.view   = view;
@@ -207,18 +203,15 @@ void Bloom::Filter::execute(
     auto* pass   = commands.beginRenderPass({&color, 1});
     CHECK(pass);
     pass->bindPipeline(pipeline, shaderObject);
-    const auto size = cache.imageExtent(target);
+    const auto size = target->getDesc().size;
     pass->setRenderState(ViewportRect{0, 0, float(size.width), float(size.height)}.renderState());
-
-
-    const auto            sourceExtent = cache.imageInfo(source).size;
     const BloomParameters parameters{
         .viewport =
             {viewport.x / frameExtent.width,
              viewport.y / frameExtent.height,
              (viewport.x + viewport.width) / frameExtent.width,
              (viewport.y + viewport.height) / frameExtent.height},
-        .texelSize    = {1.0f / sourceExtent.width, 1.0f / sourceExtent.height},
+        .texelSize    = sourceTexelSize,
         .filterRadius = settings.filterRadius,
         .intensity    = settings.intensity,
         .scatter      = settings.scatter,

@@ -1,21 +1,16 @@
 #pragma once
+
 #include <slang-rhi.h>
-#include <slang-rhi/shader-cursor.h>
 #include <span>
-#include "render/PreparedScene.h"
+#include "render/GpuScene.h"
 #include "render/RenderContext.h"
 #include "render/resources/MaterialTable.h"
-#include "render/resources/RenderResourceManager.h"
-
-class ShadowBindings;
 
 struct MeshCullPipelines
 {
-    rhi::ComPtr<rhi::IRenderPipeline>   singleSided, doubleSided;
-    [[nodiscard]] rhi::IRenderPipeline* get(const MaterialTable::MaterialInfo& material) const
-    {
-        return material.doubleSided ? doubleSided.get() : singleSided.get();
-    }
+    rhi::ComPtr<rhi::IRenderPipeline> singleSided, doubleSided;
+    [[nodiscard]] rhi::IShaderObject&
+    bind(rhi::IRenderPassEncoder& pass, const MaterialTable::MaterialInfo& material) const;
 };
 [[nodiscard]] rhi::ComPtr<rhi::IInputLayout> createMeshInputLayout(rhi::IDevice& device);
 [[nodiscard]] MeshCullPipelines createMeshCullPipelines(rhi::IDevice& device, rhi::RenderPipelineDesc desc);
@@ -23,48 +18,37 @@ struct MeshCullPipelines
 class MeshDrawRecorder
 {
 public:
-    MeshDrawRecorder(
-        rhi::IRenderPassEncoder& pass,
-        rhi::RenderState state,
-        const RenderContext& frame,
-        const ShadowBindings* shadows = nullptr,
-        float ambientCoefficient = 0.0f
-    ) :
-        pass(pass), state(state), frame(frame), shadows(shadows), ambientCoefficient(ambientCoefficient)
+    MeshDrawRecorder(rhi::IRenderPassEncoder& pass, rhi::RenderState state, const RenderContext& frame) :
+        pass(pass), state(state), frame(frame)
     {
     }
-    template <class SelectPipeline>
-    void drawOpaque(SelectPipeline&& selectPipeline)
+
+    template <class BindPipeline>
+    void drawOpaque(BindPipeline&& bindPipeline)
     {
-        for (uint32_t index = 0; index < frame.scene->drawItems.size(); ++index)
+        for (const uint32_t index : frame.scene->visibleDraws())
         {
-            if (!frame.scene->isVisible(index))
-                continue;
-            const auto  materialIndex = frame.scene->materialIndex(index);
-            const auto& material      = frame.materialTable->info(materialIndex);
+            const auto& item     = frame.scene->drawCalls()[index];
+            const auto& material = frame.scene->materials().info(item.materialIndex);
             if (material.alphaMode != kAlphaModeBlend)
-                draw(frame.scene->drawItems[index], materialIndex, selectPipeline(material));
+                draw(item, bindPipeline(material));
         }
     }
-    template <class SelectPipeline>
-    void drawOrdered(std::span<const uint32_t> drawOrder, SelectPipeline&& selectPipeline)
+
+    template <class BindPipeline>
+    void drawOrdered(std::span<const uint32_t> drawOrder, BindPipeline&& bindPipeline)
     {
         for (const auto index : drawOrder)
         {
-            const auto materialIndex = frame.scene->materialIndex(index);
-            draw(
-                frame.scene->drawItems[index],
-                materialIndex,
-                selectPipeline(frame.materialTable->info(materialIndex))
-            );
+            const auto& item = frame.scene->drawCalls()[index];
+            draw(item, bindPipeline(frame.scene->materials().info(item.materialIndex)));
         }
     }
 
 private:
-    void                         draw(const DrawItem& item, uint32_t materialIndex, rhi::IRenderPipeline* pipeline);
-    rhi::IRenderPassEncoder&     pass;
-    rhi::RenderState             state;
-    const RenderContext& frame;
-    const ShadowBindings*        shadows;
-    float                        ambientCoefficient;
+    void draw(const GpuDraw& item, rhi::IShaderObject& object);
+
+    rhi::IRenderPassEncoder& pass;
+    rhi::RenderState        state;
+    const RenderContext&    frame;
 };

@@ -44,7 +44,6 @@ public:
     [[nodiscard]] bool         sceneClicked(glm::vec2& viewportUv) const;
     [[nodiscard]] bool         wantsInput() const;
     [[nodiscard]] bool         saveRequested() const;
-    [[nodiscard]] float        sceneAspectRatio() const;
     [[nodiscard]] ViewportRect sceneViewportPixels() const { return scenePixels; }
 
 private:

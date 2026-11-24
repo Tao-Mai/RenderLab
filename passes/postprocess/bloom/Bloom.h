@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/device/GpuResources.h"
+#include "render/ViewportRect.h"
 #include "render/graph/RenderPass.h"
 
 #include "passes/postprocess/Bloom/BloomSettings.h"
@@ -24,7 +24,7 @@ class Bloom : public RenderPass
         return make_ref<Bloom>(std::move(device), properties);
     }
 
-    void renderUI(RenderContext* context, Gui::Widgets& widget) override;
+    void renderUI(const PassEditorContext& context, Gui::Widgets& widget) override;
 
     [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
     void compile(RenderContext* passContext, const CompileData& compileData) override;
@@ -48,23 +48,15 @@ private:
 
         Filter(Stage stage, const BloomSettings& settings) : stage(stage), settings(settings) {}
 
-        void compile(
-            const RenderContext& context,
-            GpuResources::ImageHandle    source,
-            GpuResources::ImageHandle    base,
-            GpuResources::ImageHandle    target
-        );
-        void execute(
-            GpuResources& cache, rhi::ICommandEncoder& commandBuffer, Extent2D frameExtent, const ViewportRect& viewport
-        ) const;
+        void compile(const RenderContext& context, rhi::ITexture* source, rhi::ITexture* base, rhi::ITexture* target);
+        void execute(rhi::ICommandEncoder& commands, Extent2D frameExtent, const ViewportRect& viewport) const;
 
     private:
         Stage                     stage;
         const BloomSettings&      settings;
-        GpuResources::ImageHandle source;
+        glm::vec2                 sourceTexelSize;
 
-        GpuResources::ImageHandle target;
-
+        rhi::ComPtr<rhi::ITexture>        target;
         rhi::ComPtr<rhi::IShaderObject>   shaderObject;
         rhi::ComPtr<rhi::IRenderPipeline> pipeline;
     };

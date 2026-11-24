@@ -6,6 +6,10 @@
 
 #include <cstdint>
 #include <glm/vec4.hpp>
+
+inline constexpr uint32_t kMinPathBounces = 1;
+inline constexpr uint32_t kMaxPathBounces = 64;
+
 #define RENDERLAB_PATH_ALIGN alignas(16) RL_SHADER_LAYOUT
 #define RENDERLAB_PATH_FLOAT4 glm::vec4
 #define RENDERLAB_PATH_UINT uint32_t

@@ -85,20 +85,20 @@ void drawPassEditor(
     Gui::Widgets&    widgets,
     const Pass&              pass,
     const Settings&          parameters,
-    const PassEditorContext* context,
+    const PassEditorContext& context,
     std::string_view         label
 )
 {
-    if (!context || !pass_editor::begin(pass, *context, label))
+    if (!pass_editor::begin(pass, context, label))
         return;
 
     auto settings = parameters;
     bool changed;
     if constexpr (Draw != nullptr)
-        changed = Draw(widgets, settings, pass, *context);
+        changed = Draw(widgets, settings, pass, context);
     else
         changed = pass_editor::drawFields(widgets, settings);
 
     if (changed)
-        context->submit(pass, Serialize(settings));
+        context.submit(pass, Serialize(settings));
 }

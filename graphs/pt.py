@@ -7,11 +7,7 @@ def render_graph_PT(
 ) -> RenderGraph:
     graph = RenderGraph("PT")
     graph.create_pass("pt", "PathTracer", {"maxBounces": 2})
-    add_post_process(graph, "pt.color", hdr, postProcess, bloom)
+    graph.create_pass("accumulate", "AccumulatePass")
+    graph.add_edge("pt.samples", "accumulate.input")
+    add_post_process(graph, "accumulate.output", hdr, postProcess, bloom)
     return graph
-
-
-if globals().get("__name__", "__main__") == "__main__":
-    PT = render_graph_PT()
-    if "m" in globals():
-        m.addGraph(PT)

@@ -34,8 +34,8 @@
 #include <slang-rhi/shader-cursor.h>
 #include "render/DispatchGroups.h"
 #include "render/RenderContext.h"
+#include "render/ViewportRect.h"
 #include "render/device/RhiCheck.h"
-#include "render/resources/ShaderLayout.h"
 
 #include <algorithm>
 #include <array>
@@ -122,7 +122,6 @@ static_assert(offsetof(ToneMapperParameters, clampOutput) == 64);
 
 void FalcorPostProcess::initialize(const RenderContext& context)
 {
-    shaders      = context.shaderManager;
     auto& device = *context.device;
 
     const auto create = [&](SimplePostFxVariant variant)
@@ -133,7 +132,7 @@ void FalcorPostProcess::initialize(const RenderContext& context)
         );
         rhi::ComPtr<rhi::IComputePipeline> pipeline;
         rhiCheck(
-            device.createComputePipeline({.program = context.shaderManager->program(shader)}, pipeline.writeRef())
+            device.createComputePipeline({.program = shader}, pipeline.writeRef())
         );
         return pipeline;
     };
@@ -180,33 +179,37 @@ void FalcorPostProcess::setProperties(const Properties& properties)
 RenderPassReflection FalcorPostProcess::reflect(const CompileData& data)
 {
     RenderPassReflection reflection;
-    reflection.addInput("source", "Source color").bindFlags(ResourceBindFlags::ShaderResource);
-    reflection.addOutput("color", "Post-processed output color")
-        .format(data.defaultTexFormat)
-        .bindFlags(ResourceBindFlags::RenderTarget);
+    reflection.addInput("source", rhi::TextureDesc{.size = {0, 0, 1}, .usage = rhi::TextureUsage::ShaderResource});
+    reflection.addOutput("color", rhi::TextureDesc{
+        .size = {0, 0, 1},
+        .format = data.defaultTexFormat,
+        .usage = rhi::TextureUsage::RenderTarget,
+    });
 
     auto extent = data.defaultTexDims;
     if (const auto* input = data.connectedResources.getField("source"))
     {
-        extent.x = input->getWidth() ? input->getWidth() : extent.x;
-        extent.y = input->getHeight() ? input->getHeight() : extent.y;
+        extent.x = input->texture().size.width ? input->texture().size.width : extent.x;
+        extent.y = input->texture().size.height ? input->texture().size.height : extent.y;
     }
 
     constexpr auto kStorageSampled =
-        ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource;
-    constexpr auto kColorSampled = ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource;
+        rhi::TextureUsage::UnorderedAccess | rhi::TextureUsage::ShaderResource;
+    constexpr auto kColorSampled = rhi::TextureUsage::RenderTarget | rhi::TextureUsage::ShaderResource;
     if (parameters.simplePostFx.usesBloom())
     {
         for (uint32_t level = 0; level <= falcorPostProcess::kBloomLevels; ++level)
-            reflection.addInternal(bloomImageName(level), "Bloom pyramid image")
-                .texture2D(std::max(1u, extent.x >> level), std::max(1u, extent.y >> level))
-                .format(rhi::Format::RGBA16Float)
-                .bindFlags(kStorageSampled);
+            reflection.addInternal(bloomImageName(level), rhi::TextureDesc{
+                .size = {std::max(1u, extent.x >> level), std::max(1u, extent.y >> level), 1},
+                .format = rhi::Format::RGBA16Float,
+                .usage = kStorageSampled,
+            });
     }
-    reflection.addInternal(kPostFxColor, "Color after post effects")
-        .texture2D(extent.x, extent.y)
-        .format(rhi::Format::RGBA32Float)
-        .bindFlags(kStorageSampled);
+    reflection.addInternal(kPostFxColor, rhi::TextureDesc{
+        .size = {extent.x, extent.y, 1},
+        .format = rhi::Format::RGBA32Float,
+        .usage = kStorageSampled,
+    });
 
     if (parameters.toneMapper.autoExposure)
     {
@@ -214,15 +217,17 @@ RenderPassReflection FalcorPostProcess::reflect(const CompileData& data)
         const auto height = std::bit_floor(std::max(1u, extent.y));
         const auto levels = static_cast<uint32_t>(std::bit_width(std::max(width, height)));
         for (uint32_t level = 0; level < levels; ++level)
-            reflection.addInternal(luminanceImageName(level), "Luminance pyramid image")
-                .texture2D(std::max(1u, width >> level), std::max(1u, height >> level))
-                .format(rhi::Format::R32Float)
-                .bindFlags(kColorSampled);
+            reflection.addInternal(luminanceImageName(level), rhi::TextureDesc{
+                .size = {std::max(1u, width >> level), std::max(1u, height >> level), 1},
+                .format = rhi::Format::R32Float,
+                .usage = kColorSampled,
+            });
     }
-    reflection.addInternal(kToneMapped, "Tone-mapped color")
-        .texture2D(extent.x, extent.y)
-        .format(rhi::Format::RGBA32Float)
-        .bindFlags(kColorSampled);
+    reflection.addInternal(kToneMapped, rhi::TextureDesc{
+        .size = {extent.x, extent.y, 1},
+        .format = rhi::Format::RGBA32Float,
+        .usage = kColorSampled,
+    });
     return reflection;
 }
 
@@ -246,112 +251,96 @@ void FalcorPostProcess::compile(RenderContext* passContext, const CompileData& c
 
 void FalcorPostProcess::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
-    auto&      cache    = *renderCommands->gpuResources;
     auto&      commands = *renderCommands->commands;
-    const auto target   = cache.registerImage(renderData.getTexture("color"));
+    const auto target   = renderData.getTexture("color");
     if (imageStages.empty())
     {
-        const auto source        = cache.registerImage(renderData.getTexture("source"));
-        const auto effects       = addSimplePostFx(cache, renderData, source);
+        const auto source        = renderData.getTexture("source");
+        const auto effects       = addSimplePostFx(renderData, source);
         auto&      shaders       = *renderCommands->shaderManager;
-        const auto toneMapped    = addToneMapper(shaders, cache, renderData, effects);
+        const auto toneMapped    = addToneMapper(shaders, renderData, effects);
         const auto presentShader = shaders.getOrLoad("falcor_present");
-        addImageStage(cache, {*this, Stage::Present, presentShader}, toneMapped, toneMapped, target);
+        addImageStage({*this, Stage::Present, presentShader}, toneMapped, toneMapped, target);
     }
 
-    for (auto& stage : imageStages)
-        stage.execute(cache, commands, target);
+    for (const auto& stage : imageStages)
+        stage.execute(commands, target);
 }
 
 
-GpuResources::ImageHandle FalcorPostProcess::addSimplePostFx(
-    GpuResources& cache, const RenderData& data, GpuResources::ImageHandle source
-)
+rhi::ITexture* FalcorPostProcess::addSimplePostFx(const RenderData& data, rhi::ITexture* source)
 {
     auto bloomed = source;
     if (parameters.simplePostFx.usesBloom())
     {
-        std::array<GpuResources::ImageHandle, falcorPostProcess::kBloomLevels + 1> pyramid;
+        std::array<rhi::ITexture*, falcorPostProcess::kBloomLevels + 1> pyramid;
         for (uint32_t level = 0; level < pyramid.size(); ++level)
-            pyramid[level] = cache.registerImage(data.getTexture(bloomImageName(level)));
+            pyramid[level] = data.getTexture(bloomImageName(level));
         for (uint32_t level = 0; level < falcorPostProcess::kBloomLevels; ++level)
         {
             const auto input = level == 0 ? source : pyramid[level];
-            addImageStage(cache, {*this, Stage::Downsample, downsample}, input, input, pyramid[level + 1]);
+            addImageStage({*this, Stage::Downsample, downsample}, input, input, pyramid[level + 1]);
         }
         for (uint32_t level = falcorPostProcess::kBloomLevels; level-- > 0;)
-            addImageStage(cache, {*this, Stage::Upsample, upsample, level}, source, pyramid[level + 1], pyramid[level]);
+            addImageStage({*this, Stage::Upsample, upsample, level}, source, pyramid[level + 1], pyramid[level]);
         bloomed = pyramid[0];
     }
 
-    const auto target = cache.registerImage(data.getTexture(kPostFxColor));
-    return addImageStage(cache, {*this, Stage::PostFx, postFx}, source, bloomed, target);
+    return addImageStage({*this, Stage::PostFx, postFx}, source, bloomed, data.getTexture(kPostFxColor));
 }
 
 
-GpuResources::ImageHandle FalcorPostProcess::addToneMapper(
-    ShaderManager& shaders, GpuResources& cache, const RenderData& data, GpuResources::ImageHandle source
-)
+rhi::ITexture* FalcorPostProcess::addToneMapper(ShaderManager& shaders, const RenderData& data, rhi::ITexture* source)
 {
     constexpr char kLuminanceStage[]    = "0";
     constexpr char kLuminanceMipStage[] = "1";
-    const auto     extent               = cache.imageInfo(source).size;
+    const auto     extent               = source->getDesc().size;
     auto           luminance            = source;
     if (parameters.toneMapper.autoExposure)
     {
         const auto shader = shaders.getOrLoad("falcor_luminance", {{"LUMINANCE_STAGE", kLuminanceStage}});
-        const auto target = cache.registerImage(data.getTexture(luminanceImageName(0)));
-        luminance         = addImageStage(cache, {*this, Stage::Luminance, shader}, source, source, target);
+        luminance =
+            addImageStage({*this, Stage::Luminance, shader}, source, source, data.getTexture(luminanceImageName(0)));
 
         // Separate images retain the exact size, R32F quantization and linear filtering of each Falcor mip.
         const auto levels    = static_cast<uint32_t>(std::bit_width(std::max(extent.width, extent.height)));
         const auto mipShader = shaders.getOrLoad("falcor_luminance", {{"LUMINANCE_STAGE", kLuminanceMipStage}});
         for (uint32_t level = 1; level < levels; ++level)
         {
-            const auto mip = cache.registerImage(data.getTexture(luminanceImageName(level)));
-            luminance      = addImageStage(cache, {*this, Stage::Luminance, mipShader}, luminance, luminance, mip);
+            luminance = addImageStage(
+                {*this, Stage::Luminance, mipShader},
+                luminance,
+                luminance,
+                data.getTexture(luminanceImageName(level))
+            );
         }
     }
 
     const auto shader = shaders.getOrLoad("falcor_tonemapping");
-    const auto target = cache.registerImage(data.getTexture(kToneMapped));
-    return addImageStage(cache, {*this, Stage::ToneMapping, shader}, source, luminance, target);
+    return addImageStage({*this, Stage::ToneMapping, shader}, source, luminance, data.getTexture(kToneMapped));
 }
 
 
-GpuResources::ImageHandle FalcorPostProcess::addImageStage(
-    GpuResources&             cache,
-    ImageStage                pass,
-    GpuResources::ImageHandle source,
-    GpuResources::ImageHandle filtered,
-    GpuResources::ImageHandle target
-)
+rhi::ITexture*
+FalcorPostProcess::addImageStage(ImageStage pass, rhi::ITexture* source, rhi::ITexture* filtered, rhi::ITexture* target)
 {
-    imageStages.emplace_back(std::move(pass)).compile(cache, source, filtered, target);
+    imageStages.emplace_back(std::move(pass)).compile(source, filtered, target);
     return target;
 }
 
 
-void FalcorPostProcess::ImageStage::compile(
-    GpuResources&             cache,
-    GpuResources::ImageHandle source,
-    GpuResources::ImageHandle filtered,
-    GpuResources::ImageHandle target
-)
+void FalcorPostProcess::ImageStage::compile(rhi::ITexture* source, rhi::ITexture* filtered, rhi::ITexture* target)
 {
     auto& device = *owner.mpDevice;
     this->target = target;
     rhi::IShaderProgram* program;
     if (compute)
-    {
-        storageTarget = target;
-        program       = compute->getProgram();
-    }
+        program = compute->getProgram();
     else
     {
-        program = owner.shaders->program(shader);
+        program = shader;
         rhi::ColorTargetDesc color;
-        color.format = cache.imageInfo(target).format;
+        color.format = target->getDesc().format;
         rhi::RenderPipelineDesc desc;
         desc.program                       = program;
         desc.targets                       = &color;
@@ -363,17 +352,17 @@ void FalcorPostProcess::ImageStage::compile(
     }
     rhiCheck(device.createRootShaderObject(program, shaderObject.writeRef()));
     const rhi::ShaderCursor root(shaderObject);
-    rhiCheck(root["sourceImage"].setBinding(cache.getImage(source)->getDefaultView()));
+    rhiCheck(root["sourceImage"].setBinding(source));
     if (compute)
     {
         if (stage != Stage::Downsample)
-            rhiCheck(root["bloomedImage"].setBinding(cache.getImage(filtered)->getDefaultView()));
-        rhiCheck(root["destinationImage"].setBinding(cache.getImage(target)->getDefaultView()));
+            rhiCheck(root["bloomedImage"].setBinding(filtered));
+        rhiCheck(root["destinationImage"].setBinding(target));
         rhiCheck(root["linearSampler"].setBinding(owner.borderSampler));
     }
     else if (stage == Stage::ToneMapping)
     {
-        rhiCheck(root["luminanceImage"].setBinding(cache.getImage(filtered)->getDefaultView()));
+        rhiCheck(root["luminanceImage"].setBinding(filtered));
         rhiCheck(root["linearSampler"].setBinding(owner.linearSampler));
         rhiCheck(root["pointSampler"].setBinding(owner.pointSampler));
     }
@@ -384,9 +373,9 @@ void FalcorPostProcess::ImageStage::compile(
 }
 
 
-void FalcorPostProcess::ImageStage::dispatch(GpuResources& cache, rhi::ICommandEncoder& commands) const
+void FalcorPostProcess::ImageStage::dispatch(rhi::ICommandEncoder& commands) const
 {
-    const auto       extent = cache.imageExtent(storageTarget);
+    const auto       extent = target->getDesc().size;
     const glm::uvec2 resolution{extent.width, extent.height};
     const glm::vec2  invRes{1.0f / extent.width, 1.0f / extent.height};
     const auto&      settings = owner.parameters.simplePostFx;
@@ -466,23 +455,16 @@ void FalcorPostProcess::ImageStage::dispatch(GpuResources& cache, rhi::ICommandE
 }
 
 
-void FalcorPostProcess::ImageStage::execute(
-    GpuResources& cache, rhi::ICommandEncoder& commands, GpuResources::ImageHandle colorOutput
-)
+void FalcorPostProcess::ImageStage::execute(rhi::ICommandEncoder& commands, rhi::ITexture* colorOutput) const
 {
-
-
     if (compute)
     {
-        dispatch(cache, commands);
+        dispatch(commands);
         return;
     }
 
-    if (stage == Stage::Present)
-    {
-        target = colorOutput;
-    }
-    const auto view = cache.getImage(target)->getDefaultView();
+    auto*      output = stage == Stage::Present ? colorOutput : target.get();
+    const auto view   = output->getDefaultView();
     CHECK(view);
     rhi::RenderPassColorAttachment color;
     color.view   = view;
@@ -490,7 +472,7 @@ void FalcorPostProcess::ImageStage::execute(
     auto* pass   = commands.beginRenderPass({&color, 1});
     CHECK(pass);
     pass->bindPipeline(pipeline, shaderObject);
-    const auto size = cache.imageExtent(target);
+    const auto size = output->getDesc().size;
     pass->setRenderState(ViewportRect{0, 0, float(size.width), float(size.height)}.renderState());
     if (stage == Stage::ToneMapping)
     {

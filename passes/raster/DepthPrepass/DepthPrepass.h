@@ -10,8 +10,7 @@ class DepthPrepass : public RenderPass
 {
     RL_PLUGIN_CLASS(DepthPrepass, "DepthPrepass", "Writes the main view depth buffer.");
 
-    DepthPrepass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
-        RenderPass(std::move(device), SceneInputs::RasterVisibility)
+    DepthPrepass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) : RenderPass(std::move(device))
     {
         setProperties(properties);
     }

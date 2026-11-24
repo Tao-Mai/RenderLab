@@ -140,9 +140,9 @@ bool drawSettings(Gui::Widgets& widgets, FalcorPostProcessConfig& settings, cons
 }
 }
 
-void FalcorPostProcess::renderUI(RenderContext* context, Gui::Widgets& widget)
+void FalcorPostProcess::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
 {
-    drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "Falcor Post Process");
+    drawPassEditor<drawSettings>(widget, *this, parameters, context, "Falcor Post Process");
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)

@@ -1,17 +1,19 @@
 #pragma once
 
 
-#include "render/DrawItem.h"
-#include "render/resources/PbrtMaterialProgram.h"
 #include "render/resources/SceneLightConstants.h"
 #include "render/resources/ShaderData.h"
 #include "scene/system/SceneLight.h"
 
+#include <cstdint>
 #include <span>
+#include <vector>
 
-class AssetManager;
+class AssetDataManager;
 class MaterialTable;
-class RenderResourceManager;
+struct GpuDraw;
+
+inline constexpr uint32_t kMaxLights = 65536;
 
 struct alignas(16) GpuLightEmission
 {
@@ -62,48 +64,46 @@ struct alignas(16) GpuGoniometricLight
 };
 static_assert(sizeof(GpuGoniometricLight) == 128);
 
-struct ShadingDrawData
-{
-    uint32_t materialIndex      = 0;
-    uint32_t reverseOrientation = 0;
-    uint32_t firstAreaLight     = kInvalidLightIndex;
-};
-
 struct SceneShadingData
 {
-    uint64_t                               revision = 0;
-    std::vector<pbrt::MaterialInstruction> materials;
-    std::vector<pbrt::TextureInstruction>  textures;
-    std::vector<ShadingDrawData>           draws;
-    std::vector<GpuLightEmission>          areaEmissions;
-    std::vector<LightData>                 lights;
-    LightRanges                            lightRanges;
-    std::vector<GpuLightTriangle>          lightTriangles;
-    uint32_t                               firstRectTriangle = 0;
-    GpuEnvironmentLight                    environmentLight{};
-    bool                                   hasEnvironmentLight = false;
-    std::vector<GpuProjectionLight>        projectionLights;
-    std::vector<GpuGoniometricLight>       goniometricLights;
-    std::vector<glm::vec4>                 lightPortals;
-    std::vector<AssetID<PbrtMediumAsset>>  lightMedia;
+    uint64_t                              revision = 0;
+    std::vector<GpuLightEmission>         areaEmissions;
+    std::vector<LightData>                lights;
+    LightRanges                           lightRanges;
+    std::vector<GpuLightTriangle>         lightTriangles;
+    uint32_t                              firstRectTriangle = 0;
+    GpuEnvironmentLight                   environmentLight{};
+    bool                                  hasEnvironmentLight = false;
+    std::vector<GpuProjectionLight>       projectionLights;
+    std::vector<GpuGoniometricLight>      goniometricLights;
+    std::vector<glm::vec4>                lightPortals;
+    std::vector<AssetID<PbrtMediumAsset>> lightMedia;
 };
 
 class SceneShading
 {
 public:
-    const SceneShadingData& prepare(
-        std::span<const DrawItem>   items,
+    void update(
         std::span<const SceneLight> lights,
-        AssetManager&               assets,
-        RenderResourceManager&      resources,
-        MaterialTable&              materialTable,
-        bool                        prepareEmissiveTriangles
+        const AssetDataManager&     assetData,
+        MaterialTable&              materials
     );
+    void buildEmissiveTriangles(
+        std::span<GpuDraw>        draws,
+        const AssetDataManager&   assetData,
+        const MaterialTable&      materials
+    );
+    [[nodiscard]] const SceneShadingData& data() const { return shadingData; }
 
 private:
-    SceneShadingData        data;
-    uint64_t                previousAssetRevision     = ~uint64_t{0};
-    bool                    previousEmissiveTriangles = false;
-    std::vector<DrawItem>   previousItems;
-    std::vector<SceneLight> previousLights;
+    struct MeshEmitter
+    {
+        SceneLight::MeshArea mesh;
+        GpuLightEmission     emission;
+    };
+
+    void prepareLights(std::span<const SceneLight> lights, const AssetDataManager& assetData, MaterialTable& materials);
+
+    SceneShadingData         shadingData;
+    std::vector<MeshEmitter> meshEmitters;
 };

@@ -7,8 +7,7 @@ class EditorPickingPass : public RenderPass
 {
     RL_PLUGIN_CLASS(EditorPickingPass, kEditorPickingPassType, "Renders object IDs for picking.");
 
-    EditorPickingPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
-        RenderPass(std::move(device), SceneInputs::RasterVisibility)
+    EditorPickingPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) : RenderPass(std::move(device))
     {
         setProperties(properties);
     }

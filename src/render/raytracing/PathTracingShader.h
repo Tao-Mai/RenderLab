@@ -1,9 +1,10 @@
 #pragma once
 
-#include "render/PreparedScene.h"
+#include "core/Logger.h"
+#include "render/GpuScene.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
-#include "render/RenderView.h"
+#include "render/device/RhiCheck.h"
 #include "render/raytracing/PathTracingParameters.h"
 #include "render/resources/ShaderManager.h"
 
@@ -11,8 +12,14 @@
 #include <slang-rhi.h>
 #include <span>
 
-inline constexpr std::array kPathTracingMissEntries{"missMain", "visibilityMissMain"};
-inline constexpr std::array kPathTracingHitEntries{"closestHitMain", "lightClosestHitMain"};
+[[nodiscard]] inline bool checkRayTracingSupport(rhi::IDevice& device)
+{
+    if (device.hasFeature(rhi::Feature::RayTracing))
+        return true;
+
+    LOG_ERROR("requires ray tracing");
+    return false;
+}
 
 enum class PathEnvironment : uint32_t
 {
@@ -23,11 +30,11 @@ enum class PathEnvironment : uint32_t
     Count,
 };
 
-inline PathEnvironment pathEnvironment(const PreparedScene& scene)
+inline PathEnvironment pathEnvironment(const GpuScene& scene)
 {
-    if (scene.environmentMap)
-        return scene.shading->hasEnvironmentLight ? PathEnvironment::EqualAreaAndCubemap : PathEnvironment::Cubemap;
-    return scene.shading->hasEnvironmentLight ? PathEnvironment::EqualArea : PathEnvironment::None;
+    if (scene.environmentMap())
+        return scene.hasEnvironmentLight() ? PathEnvironment::EqualAreaAndCubemap : PathEnvironment::Cubemap;
+    return scene.hasEnvironmentLight() ? PathEnvironment::EqualArea : PathEnvironment::None;
 }
 
 inline ShaderDefines pathEnvironmentDefines(PathEnvironment environment)
@@ -44,7 +51,7 @@ inline ShaderDefines pathEnvironmentDefines(PathEnvironment environment)
 [[nodiscard]] inline PathTracingParameters
 makePathTracingParameters(const RenderContext& frame, uint32_t maxBounces, uint32_t sampleIndex)
 {
-    const auto& viewport = frame.view->viewport;
+    const auto& viewport = frame.scene->viewport();
     return {
         .viewport    = {viewport.x, viewport.y, viewport.width, viewport.height},
         .maxBounces  = maxBounces,
@@ -52,34 +59,8 @@ makePathTracingParameters(const RenderContext& frame, uint32_t maxBounces, uint3
     };
 }
 
-struct PathTracingProgram
-{
-    rhi::ComPtr<rhi::IRayTracingPipeline> pipeline;
-    rhi::ComPtr<rhi::IShaderTable>        shaderTable;
+[[nodiscard]] rhi::RayTracingPipelineDesc pathTracingPipelineDesc(rhi::IShaderProgram* program);
 
-    void create(rhi::IDevice& device, rhi::IShaderProgram* program, std::span<const char* const> raygenEntries)
-    {
-        constexpr std::array kHitGroupNames{"hitGroup0", "hitGroup1"};
-        const std::array     groups{
-            rhi::HitGroupDesc{kHitGroupNames[0], kPathTracingHitEntries[0]},
-            rhi::HitGroupDesc{kHitGroupNames[1], kPathTracingHitEntries[1]}
-        };
-        rhi::RayTracingPipelineDesc desc;
-        desc.program           = program;
-        desc.hitGroups         = groups.data();
-        desc.hitGroupCount     = uint32_t(groups.size());
-        desc.maxRecursion      = kRayPipelineRecursionDepth;
-        desc.maxRayPayloadSize = kPathTracingPayloadBytes;
-        rhiCheck(device.createRayTracingPipeline(desc, pipeline.writeRef()));
-
-        rhi::ShaderTableDesc tableDesc;
-        tableDesc.program                     = program;
-        tableDesc.rayGenShaderEntryPointNames = raygenEntries.data();
-        tableDesc.rayGenShaderCount           = uint32_t(raygenEntries.size());
-        tableDesc.missShaderEntryPointNames   = kPathTracingMissEntries.data();
-        tableDesc.missShaderCount             = uint32_t(kPathTracingMissEntries.size());
-        tableDesc.hitGroupNames               = kHitGroupNames.data();
-        tableDesc.hitGroupCount               = uint32_t(kHitGroupNames.size());
-        rhiCheck(device.createShaderTable(tableDesc, shaderTable.writeRef()));
-    }
-};
+[[nodiscard]] rhi::ComPtr<rhi::IShaderTable> createPathTracingShaderTable(
+    rhi::IDevice& device, rhi::IShaderProgram* program, std::span<const char* const> raygenEntries
+);

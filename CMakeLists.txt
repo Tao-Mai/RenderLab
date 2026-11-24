@@ -135,7 +135,6 @@ add_library(RenderLabCore SHARED
     src/core/Settings.cpp
     src/core/Settings.h
     src/core/MetadataAnnotations.h
-    src/core/platform/OS.h
     src/core/Context.cpp
     src/core/Context.h
     src/core/Logger.cpp
@@ -143,7 +142,6 @@ add_library(RenderLabCore SHARED
     src/core/Macros.h
     src/core/Object.cpp
     src/core/Object.h
-    src/core/Dictionary.h
     src/core/Properties.cpp
     src/core/Properties.h
     src/core/DirectedGraph.h
@@ -214,6 +212,8 @@ add_library(RenderLabCore SHARED
     src/core/Vertex.h
     src/scene/system/RenderSystem.cpp
     src/scene/system/RenderSystem.h
+    src/scene/system/SceneCamera.cpp
+    src/scene/system/SceneCamera.h
     src/asset/AssetImporter.h
     src/asset/AssetDataManager.cpp
     src/asset/AssetDataManager.h
@@ -228,18 +228,14 @@ add_library(RenderLabCore SHARED
     src/render/RenderConfig.h
     src/render/DispatchGroups.h
     src/render/RenderContext.h
-    src/render/PreparedScene.cpp
-    src/render/PreparedScene.h
-    src/render/RenderView.h
+    src/render/GpuScene.cpp
+    src/render/GpuScene.h
     src/render/ViewportRect.cpp
     src/render/ViewportRect.h
-    src/render/Visibility.h
+    src/render/device/BufferCapacity.h
     src/render/device/RhiCheck.h
-    src/render/resources/CompiledShaderPath.cpp
     src/render/device/GpuProfiler.cpp
     src/render/device/GpuProfiler.h
-    src/render/device/GpuResources.cpp
-    src/render/device/GpuResources.h
     src/render/resources/TextureUpload.cpp
     src/render/resources/TextureUpload.h
     src/render/resources/RhiScriptBindings.cpp
@@ -250,8 +246,6 @@ add_library(RenderLabCore SHARED
     src/render/resources/MaterialTable.h
     src/render/resources/RenderResourceManager.cpp
     src/render/resources/RenderResourceManager.h
-    src/render/resources/SceneLighting.cpp
-    src/render/resources/SceneLighting.h
     src/render/resources/LightRanges.h
     src/render/resources/ShaderData.h
     src/render/resources/PbrtMaterialProgram.h
@@ -261,7 +255,6 @@ add_library(RenderLabCore SHARED
     src/render/resources/ShaderManager.h
     src/render/graph/RenderGraph.cpp
     src/render/graph/RenderGraph.h
-    src/render/graph/RenderGraphFlags.h
     src/render/graph/RenderGraphExe.cpp
     src/render/graph/RenderGraphExe.h
     src/render/graph/ResourceCache.cpp
@@ -275,40 +268,29 @@ add_library(RenderLabCore SHARED
     src/render/raytracing/SceneAccelerationStructures.cpp
     src/render/raytracing/SceneAccelerationStructures.h
     src/render/raytracing/PathTracingParameters.h
+    src/render/raytracing/PathTracingShader.cpp
     src/render/raytracing/PathTracingShader.h
-    src/render/raytracing/RayScene.cpp
-    src/render/raytracing/RayScene.h
     src/render/raytracing/RectLightGeometry.h
     src/scene/system/SceneLight.h
     src/render/resources/SceneLightConstants.h
     src/render/editor/EditorFrameInput.h
-    src/render/editor/EditorShaderData.h
     src/render/graph/RenderPass.cpp
     src/render/graph/RenderPassReflection.cpp
     src/render/graph/RenderPassReflection.h
     src/render/graph/RenderGraphCompiler.cpp
-    src/render/graph/RenderGraphIR.cpp
-    src/render/graph/RenderGraphIR.h
-    src/render/graph/RenderGraphImportExport.cpp
-    src/render/graph/RenderGraphImportExport.h
-    src/core/GlobalState.cpp
-    src/core/GlobalState.h
+    src/render/graph/RenderGraphScript.cpp
+    src/render/graph/RenderGraphScript.h
     src/core/ScriptBindings.cpp
     src/core/ScriptBindings.h
     src/core/Scripting.cpp
     src/core/Scripting.h
-    src/core/ScriptWriter.h
-    src/render/passes/ResolvePass.cpp
-    src/render/passes/ResolvePass.h
     src/core/Plugin.cpp
     src/core/Plugin.h
     src/core/RuntimeDirectory.cpp
     src/render/resources/SceneShading.cpp
     src/render/resources/SceneShading.h
-    src/render/raytracing/PathAccumulation.cpp
-    src/render/raytracing/PathAccumulation.h
-    src/render/raytracing/PathPipelineCache.cpp
-    src/render/raytracing/PathPipelineCache.h
+    src/render/raytracing/PathSceneState.cpp
+    src/render/raytracing/PathSceneState.h
     src/editor/Gui.cpp
     src/editor/PassEditor.cpp
 )

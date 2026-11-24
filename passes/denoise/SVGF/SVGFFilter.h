@@ -12,28 +12,28 @@ class SVGFFilter
 {
 public:
     void compile(
-        const RenderContext&                                      context,
-        const SVGFInputs&                                                 traced,
-        const SVGFReprojection::Output&                                   lighting,
-        const std::array<GpuResources::ImageHandle, kLightingLayerCount>& scratch,
-        GpuResources::ImageHandle                                         color,
-        const SVGFReprojection&                                           reprojection
+        const RenderContext&                                   context,
+        const SVGFInputs&                                      traced,
+        const SVGFReprojection::Output&                        lighting,
+        const std::array<rhi::ITexture*, kLightingLayerCount>& scratch,
+        rhi::ITexture*                                         color,
+        const SVGFReprojection&                                reprojection
     );
-    void execute(GpuResources& cache, rhi::ICommandEncoder& commands, const RenderContext& frame) const;
+    void execute(const RenderContext& frame) const;
 
 private:
     struct FilterResources
     {
-        GpuResources::ImageHandle direct;
-        GpuResources::ImageHandle indirect;
-        GpuResources::ImageHandle targetDirect;
-        GpuResources::ImageHandle targetIndirect;
-        GpuResources::ImageHandle color;
-        GpuResources::ImageHandle depth;
-        GpuResources::ImageHandle normal;
-        GpuResources::ImageHandle emission;
-        GpuResources::ImageHandle albedo;
-        GpuResources::ImageHandle lightingHistory;
+        rhi::ITexture* direct;
+        rhi::ITexture* indirect;
+        rhi::ITexture* targetDirect;
+        rhi::ITexture* targetIndirect;
+        rhi::ITexture* color;
+        rhi::ITexture* depth;
+        rhi::ITexture* normal;
+        rhi::ITexture* emission;
+        rhi::ITexture* albedo;
+        rhi::ITexture* lightingHistory;
     };
 
     class FilterPass
@@ -45,7 +45,7 @@ private:
         }
 
         void compile(const RenderContext& context, const FilterResources& resources);
-        void execute(GpuResources& cache, rhi::ICommandEncoder& commands, const RenderContext& frame) const;
+        void execute(const RenderContext& frame) const;
 
     private:
         uint32_t                iteration;

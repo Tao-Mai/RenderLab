@@ -3,9 +3,8 @@
 #include <slang-rhi.h>
 #include "core/Logger.h"
 #include "core/Vertex.h"
-#include "render/PreparedScene.h"
+#include "render/GpuScene.h"
 #include "render/resources/GpuMesh.h"
-#include "render/resources/RenderResourceManager.h"
 
 #include <algorithm>
 #include <cmath>
@@ -53,24 +52,22 @@ void setInstanceTransform(rhi::AccelerationStructureInstanceDescGeneric& instanc
             instance.transform[row][column] = model[column][row];
 }
 std::vector<rhi::AccelerationStructureInstanceDescGeneric> makeInstances(
-    const PreparedScene&                              renderData,
+    std::span<const GpuDraw>                          draws,
     std::span<const rhi::AccelerationStructureHandle> meshBlasAddresses,
+    std::span<const LightData>                         rectLights,
+    uint32_t                                           firstRectLightIndex,
     rhi::AccelerationStructureHandle                  rectLightBlasAddress
 )
 {
-    const auto  lights             = renderData.lights();
-    const auto& ranges             = renderData.lightRanges();
-    const auto  sceneInstanceCount = renderData.drawItems.size();
-    CHECK(sceneInstanceCount < kInstanceIndexLimit, "ray tracing instance count exceeds the custom-index limit");
-    CHECK(lights.size() < kInstanceIndexLimit, "ray tracing light index exceeds the custom-index limit");
+    CHECK(draws.size() < kInstanceIndexLimit, "ray tracing instance count exceeds the custom-index limit");
 
     std::vector<rhi::AccelerationStructureInstanceDescGeneric> instances;
-    instances.reserve(sceneInstanceCount + ranges.rectAreaEnd - ranges.pointEnd);
-    for (const auto& item : renderData.drawItems)
+    instances.reserve(draws.size() + rectLights.size());
+    for (const auto& draw : draws)
     {
         const auto                                    index = instances.size();
         rhi::AccelerationStructureInstanceDescGeneric instance{};
-        setInstanceTransform(instance, item.model);
+        setInstanceTransform(instance, draw.model);
         instance.instanceID            = static_cast<uint32_t>(index);
         instance.instanceMask          = kSceneMask;
         instance.flags                 = rhi::AccelerationStructureInstanceFlags::TriangleFacingCullDisable;
@@ -78,20 +75,21 @@ std::vector<rhi::AccelerationStructureInstanceDescGeneric> makeInstances(
         instances.push_back(instance);
     }
 
-    for (uint32_t index = ranges.pointEnd; index < ranges.rectAreaEnd; ++index)
+    for (uint32_t index = 0; index < rectLights.size(); ++index)
     {
-        const auto&     light = lights[index];
+        const auto&     light = rectLights[index];
+        const auto      lightIndex = firstRectLightIndex + index;
         const glm::vec2 size{light.areaSizeCone};
         CHECK(
             std::isfinite(size.x) && std::isfinite(size.y) && size.x > 0 && size.y > 0,
             "rectangular light {} requires finite positive dimensions",
-            index
+            lightIndex
         );
 
         // One-sided emission retains facing culling, unlike scene geometry.
         rhi::AccelerationStructureInstanceDescGeneric instance{};
         setInstanceTransform(instance, rectLightTransform(light));
-        instance.instanceID                          = index;
+        instance.instanceID                          = lightIndex;
         instance.instanceMask                        = kLightMask;
         instance.instanceContributionToHitGroupIndex = kLightHitRecord;
         instance.accelerationStructure               = rectLightBlasAddress;
@@ -103,18 +101,20 @@ std::vector<rhi::AccelerationStructureInstanceDescGeneric> makeInstances(
 }  // namespace
 
 rhi::IAccelerationStructure* SceneAccelerationStructures::recordBuilds(
-    rhi::IDevice&          device,
-    rhi::ICommandEncoder&  commands,
-    RenderResourceManager& resources,
-    const PreparedScene&   renderData,
-    uint32_t               frameIndex
+    rhi::IDevice& device,
+    rhi::ICommandEncoder& commands,
+    std::span<const GpuDraw> draws,
+    std::span<const LightData> rectLights,
+    uint32_t firstRectLightIndex,
+    uint32_t frameIndex
 )
 {
-
-    const auto meshBlasAddresses = recordBlasBuilds(device, commands, resources, renderData);
+    const auto meshBlasAddresses = recordBlasBuilds(device, commands, draws, !rectLights.empty());
     const auto instances         = makeInstances(
-        renderData,
+        draws,
         meshBlasAddresses,
+        rectLights,
+        firstRectLightIndex,
         rectLightBlas ? rectLightBlas->getHandle() : rhi::AccelerationStructureHandle{}
     );
 
@@ -125,29 +125,25 @@ rhi::IAccelerationStructure* SceneAccelerationStructures::recordBuilds(
 }
 
 std::vector<rhi::AccelerationStructureHandle> SceneAccelerationStructures::recordBlasBuilds(
-    rhi::IDevice&          device,
-    rhi::ICommandEncoder&  commands,
-    RenderResourceManager& resources,
-    const PreparedScene&   renderData
+    rhi::IDevice& device, rhi::ICommandEncoder& commands, std::span<const GpuDraw> draws, bool hasRectLights
 )
 {
     std::vector<rhi::AccelerationStructureHandle> addresses;
-    addresses.reserve(renderData.drawItems.size());
+    addresses.reserve(draws.size());
 
     bool builtBlas = false;
-    for (const auto& item : renderData.drawItems)
+    for (const auto& draw : draws)
     {
-        const auto& mesh    = resources.mesh(item.mesh);
-        const auto& submesh = mesh.submeshes()[item.submeshIndex];
+        const auto& mesh = *draw.mesh;
         CHECK(
-            submesh.indexCount % 3 == 0,
-            "mesh '{}' submesh {} has {} indices for ray tracing",
-            item.mesh.value,
-            item.submeshIndex,
-            submesh.indexCount
+            draw.indexCount % 3 == 0,
+            "mesh '{}' has {} indices for ray tracing at index {}",
+            draw.asset->id,
+            draw.indexCount,
+            draw.firstIndex
         );
 
-        const auto [entry, created] = meshBlasCache.try_emplace({&mesh, submesh.firstIndex, submesh.indexCount});
+        const auto [entry, created] = meshBlasCache.try_emplace({&mesh, draw.firstIndex, draw.indexCount});
         auto& blas                  = entry->second;
         if (created)
         {
@@ -156,8 +152,8 @@ std::vector<rhi::AccelerationStructureHandle> SceneAccelerationStructures::recor
                 sizeof(Vertex),
                 mesh.vertexCount(),
                 mesh.indices(),
-                submesh.firstIndex * sizeof(uint32_t),
-                submesh.indexCount
+                draw.firstIndex * sizeof(uint32_t),
+                draw.indexCount
             );
             rhi::AccelerationStructureBuildDesc build;
             build.inputs     = &geometry;
@@ -182,8 +178,7 @@ std::vector<rhi::AccelerationStructureHandle> SceneAccelerationStructures::recor
         addresses.push_back(blas->getHandle());
     }
 
-    const auto& ranges = renderData.lightRanges();
-    if (ranges.rectAreaEnd > ranges.pointEnd && !rectLightBlas)
+    if (hasRectLights && !rectLightBlas)
     {
         recordRectLightBlasBuild(device, commands);
         builtBlas = true;
@@ -276,11 +271,4 @@ void SceneAccelerationStructures::recordTlasBuild(
         frame.instanceCount = count;
     }
     commands.buildAccelerationStructure(build, frame.tlas, nullptr, frame.scratch, 0, nullptr);
-}
-
-void SceneAccelerationStructures::reset() noexcept
-{
-    frames        = {};
-    rectLightBlas.setNull();
-    meshBlasCache.clear();
 }

@@ -55,12 +55,13 @@ std::optional<SceneAsset::ID> drawSceneSelector(const SceneAsset::ID& current, b
     return chosen;
 }
 
-void drawRenderGraphSelector(ConfigManager& config, bool supportsRayTracing)
+void drawRenderGraphSelector(const ConfigManager& config, Renderer& renderer)
 {
-    const auto current        = config.renderGraphName();
+    const auto current = config.renderGraphName();
     if (!ImGui::BeginCombo("Render graph", current.c_str()))
         return;
 
+    const bool supportsRayTracing = renderer.supportsRayTracing();
     for (const auto& [path, scripts] : config.renderGraphs())
     {
         ImGui::BeginDisabled(path == RenderPath::RayTracing && !supportsRayTracing);
@@ -68,7 +69,7 @@ void drawRenderGraphSelector(ConfigManager& config, bool supportsRayTracing)
         {
             const bool selected = name == current;
             if (ImGui::Selectable(name.c_str(), selected) && !selected)
-                config.setRenderGraph(name);
+                renderer.switchGraph(name);
             if (selected)
                 ImGui::SetItemDefaultFocus();
         }
@@ -307,7 +308,7 @@ EditorUI::InspectorResult EditorUI::drawInspector(SceneAsset& scene, AActor* obj
     auto& renderer = *context().renderer;
 
     result.edited |= drawCameraInspector(scene.editorCamera);
-    drawRenderGraphSelector(config, renderer.supportsRayTracing());
+    drawRenderGraphSelector(config, renderer);
     result.edited |= drawEnvironmentInspector(scene, *context().assetManager);
 
     if (const auto* graph = renderer.getActiveGraph(); graph && graph->getName() == config.renderGraphName())
@@ -370,8 +371,6 @@ bool EditorUI::saveRequested() const
     }
     return context().inputManager->get(Command::SaveScene);
 }
-
-float EditorUI::sceneAspectRatio() const { return scenePixels.width / scenePixels.height; }
 
 void EditorUI::resetLayout()
 {

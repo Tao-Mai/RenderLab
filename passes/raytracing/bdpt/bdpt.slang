@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_BDPT_SLANG
 #define RENDERLAB_BDPT_SLANG
 
-#include "raytracing/accumulation/path_common.slang"
+#include "raytracing/path_common.slang"
 #include "bdpt_bsdf.slang"
 #include "bdpt_light.slang"
 
@@ -22,7 +22,7 @@ bool bdptProjectCamera(float3 direction, out float2 pixel)
     {
         return false;
     }
-    pixel = parameters.path.viewportOffset + clipToUv(ndc) * parameters.path.viewportSize;
+    pixel = parameters.path.viewportOffset + clipToUv(ndc) * parameters.path.viewportExtent;
 
     return true;
 }
@@ -411,7 +411,7 @@ float3 bdptConnect(__constref BdptVertex light[kBdptVertexCapacity], __constref 
 void bdptSplat(float2 raster, float3 value)
 {
     uint2 pixel = uint2(floor(raster));
-    uint2 dimensions = parameters.path.imageSize;
+    uint2 dimensions = parameters.imageSize;
     if (any(pixel >= dimensions))
     {
         return;

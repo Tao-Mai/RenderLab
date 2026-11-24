@@ -2,11 +2,6 @@
 
 #include "editor/EditorCameraConfig.h"
 
-#include <glm/mat4x4.hpp>
-
-struct RenderView;
-struct ViewportRect;
-
 class EditorCamera
 {
 public:
@@ -21,15 +16,8 @@ public:
 
     [[nodiscard]] bool                      isNavigationActive() const { return looking; }
     [[nodiscard]] bool                      isFreeMovementActive() const { return freeMovement; }
-    [[nodiscard]] const glm::vec3&          worldPosition() const { return data.position; }
     [[nodiscard]] EditorCameraConfig&       config() { return data; }
     [[nodiscard]] const EditorCameraConfig& config() const { return data; }
-    [[nodiscard]] glm::vec3                 forward() const;
-    [[nodiscard]] glm::vec3                 right() const;
-    [[nodiscard]] glm::vec3                 up() const;
-    [[nodiscard]] glm::mat4                 viewMatrix() const;
-    [[nodiscard]] glm::mat4                 projectionMatrix(float aspectRatio) const;
-    [[nodiscard]] RenderView                renderView(ViewportRect viewport) const;
 
 private:
     EditorCameraConfig& data;

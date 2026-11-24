@@ -3,15 +3,17 @@
 #include <slang-rhi.h>
 #include "core/Logger.h"
 #include "core/Plugin.h"
-#include "render/RenderView.h"
+#include "render/GpuScene.h"
 #include "render/resources/MaterialTable.h"
 
 RenderPassReflection DepthPrepass::reflect(const CompileData&)
 {
     RenderPassReflection reflection;
-    reflection.addOutput("depth", "Scene depth")
-        .format(rhi::Format::D32Float)
-        .bindFlags(ResourceBindFlags::DepthStencil);
+    reflection.addOutput("depth", rhi::TextureDesc{
+        .size = {0, 0, 1},
+        .format = rhi::Format::D32Float,
+        .usage = rhi::TextureUsage::DepthStencil,
+    });
     return reflection;
 }
 
@@ -19,7 +21,7 @@ RenderPassReflection DepthPrepass::reflect(const CompileData&)
 void DepthPrepass::compile(RenderContext* passContext, const CompileData&)
 {
     rhi::RenderPipelineDesc desc;
-    desc.program      = passContext->shaderManager->program(passContext->shaderManager->getOrLoad("depth"));
+    desc.program      = passContext->shaderManager->getOrLoad("depth");
     desc.depthStencil = {.format = rhi::Format::D32Float, .depthTestEnable = true};
     pipelines         = createMeshCullPipelines(*passContext->device, desc);
 }
@@ -36,9 +38,9 @@ void DepthPrepass::execute(RenderContext* renderCommands, const RenderData& rend
     auto* pass        = renderCommands->commands->beginRenderPass({nullptr, 0, &depth});
     CHECK(pass);
     const auto&      size     = target->getDesc().size;
-    const auto       viewport = renderCommands->view->viewport.clamped({size.width, size.height});
+    const auto       viewport = renderCommands->scene->viewport().clamped({size.width, size.height});
     MeshDrawRecorder recorder{*pass, viewport.renderState(), *renderCommands};
-    recorder.drawOpaque([&](const auto& material) { return pipelines.get(material); });
+    recorder.drawOpaque([&](const auto& material) -> rhi::IShaderObject& { return pipelines.bind(*pass, material); });
     pass->end();
 }
 

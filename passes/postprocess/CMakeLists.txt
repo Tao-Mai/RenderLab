@@ -1,3 +1,4 @@
+add_subdirectory(AccumulatePass)
 add_subdirectory(Bloom)
 add_subdirectory(ExposurePass)
 add_subdirectory(FalcorPostProcess)

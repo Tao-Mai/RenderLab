@@ -16,9 +16,9 @@ bool drawSettings(Gui::Widgets& widgets, BloomSettings& bloom, const Bloom&, con
 }
 }
 
-void Bloom::renderUI(RenderContext* context, Gui::Widgets& widget)
+void Bloom::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
 {
-    drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "Bloom");
+    drawPassEditor<drawSettings>(widget, *this, parameters, context, "Bloom");
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)

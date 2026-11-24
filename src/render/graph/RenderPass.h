@@ -1,7 +1,6 @@
 #pragma once
 #include <slang-rhi.h>
 
-#include "core/Dictionary.h"
 #include "core/Macros.h"
 #include "core/Object.h"
 #include "core/Plugin.h"
@@ -11,48 +10,43 @@
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/graph/RenderPassReflection.h"
+#include "render/graph/ResourceCache.h"
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 
 class RenderGraphCompiler;
 class RenderGraphExe;
-class ResourceCache;
-
-enum class SceneInputs : uint32_t
-{
-    None             = 0,
-    RasterVisibility = 1u << 0,
-    RayTracing       = 1u << 1,
-};
-RL_ENUM_CLASS_OPERATORS(SceneInputs);
 
 class RENDERLAB_CORE_API RenderData
 {
 public:
-    [[nodiscard]] const rhi::ComPtr<rhi::IResource>& getResource(std::string_view name) const;
-    [[nodiscard]] rhi::ComPtr<rhi::ITexture>         getTexture(std::string_view name) const;
-    [[nodiscard]] rhi::ComPtr<rhi::IBuffer> getBuffer(std::string_view name) const;
-    void                                    setBuffer(std::string_view name, rhi::IBuffer* buffer) const;
-    [[nodiscard]] Dictionary&               getDictionary() const { return mDictionary; }
-    [[nodiscard]] const glm::uvec2&              getDefaultTextureDims() const { return mDefaultTexDims; }
+    // Resources are owned by the graph.
+    [[nodiscard]] rhi::IResource* getResource(std::string_view name) const;
+    [[nodiscard]] rhi::ITexture*  getTexture(std::string_view name) const;
+    [[nodiscard]] rhi::IBuffer*   getBuffer(std::string_view name) const;
+    void                          setBuffer(std::string_view name, rhi::IBuffer* buffer) const;
 
-protected:
+    [[nodiscard]] uint64_t          getHistoryRevision(std::string_view name) const;
+    void                            invalidateHistory(std::string_view name) const;
+    [[nodiscard]] const glm::uvec2& getDefaultTextureDims() const { return mDefaultTexDims; }
+
+private:
     friend class RenderGraphExe;
-    RenderData(
-        const std::string& passName,
-        ResourceCache&     resources,
-        Dictionary&        dictionary,
-        const glm::uvec2&       defaultTexDims
-    );
+    RenderData(const ResourceCache::Ports& ports, ResourceCache& resources, const glm::uvec2& defaultTexDims) :
+        ports(ports), resources(resources), mDefaultTexDims(defaultTexDims)
+    {
+    }
 
-    const std::string& mName;
-    ResourceCache&     mResources;
-    Dictionary&        mDictionary;
-    glm::uvec2              mDefaultTexDims;
+    const ResourceCache::Ports& ports;
+    ResourceCache& resources;
+    glm::uvec2 mDefaultTexDims;
+
+    [[nodiscard]] std::optional<size_t> findSlot(std::string_view name) const;
 };
 
 class RENDERLAB_CORE_API RenderPass : public Object
@@ -86,7 +80,6 @@ public:
 
     [[nodiscard]] const std::string& getType() const { return getPluginType(); }
     [[nodiscard]] const std::string& getDesc() const { return getPluginInfo().desc; }
-    [[nodiscard]] SceneInputs        getSceneInputs() const { return mSceneInputs; }
     [[nodiscard]] uint32_t           getMaxFramesInFlight() const { return mMaxFramesInFlight; }
 
     [[nodiscard]] virtual RenderPassReflection reflect(const CompileData& compileData) = 0;
@@ -95,16 +88,13 @@ public:
 
     virtual void                     setProperties(const Properties& properties);
     [[nodiscard]] virtual Properties getProperties() const { return {}; }
-    virtual void                     renderUI(RenderContext* context, Gui::Widgets& widget) {}
+    virtual void                     renderUI(const PassEditorContext& context, Gui::Widgets& widget) {}
 
     [[nodiscard]] const std::string& getName() const { return mName; }
 
 protected:
-    explicit RenderPass(
-        rhi::ComPtr<rhi::IDevice> device,
-        SceneInputs              sceneInputs = SceneInputs::None,
-        uint32_t                 maxFramesInFlight = kMaxFramesInFlight
-    ) : mpDevice(std::move(device)), mSceneInputs(sceneInputs), mMaxFramesInFlight(maxFramesInFlight)
+    explicit RenderPass(rhi::ComPtr<rhi::IDevice> device, uint32_t maxFramesInFlight = kMaxFramesInFlight) :
+        mpDevice(std::move(device)), mMaxFramesInFlight(maxFramesInFlight)
     {
     }
     void requestRecompile() { mPassChangedCB(); }
@@ -116,6 +106,5 @@ protected:
     friend class RenderGraph;
 
 private:
-    SceneInputs mSceneInputs;
     uint32_t    mMaxFramesInFlight;
 };

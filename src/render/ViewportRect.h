@@ -22,7 +22,11 @@ struct ViewportRect
     float                          y      = 0.0f;
     float                          width  = 1.0f;
     float                          height = 1.0f;
+
+    bool operator==(const ViewportRect&) const = default;
+
     [[nodiscard]] ViewportRect     clamped(Extent2D extent) const;
+    [[nodiscard]] PixelBounds      pixelBounds(Extent2D extent) const;
     [[nodiscard]] rhi::Viewport    toViewport() const { return {x, y, width, height, 0.0f, 1.0f}; }
     [[nodiscard]] rhi::RenderState renderState() const
     {

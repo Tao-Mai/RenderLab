@@ -4,7 +4,7 @@
 #include "render/graph/RenderPass.h"
 
 #include <slang-rhi/shader-cursor.h>
-#include "passes/raster/ForwardPbr.h"
+#include "passes/raster/RasterPbr.h"
 #include "render/raster/RasterLightingSettings.h"
 
 #include <vector>

@@ -29,9 +29,9 @@ bool drawSettings(
 }
 }  // namespace
 
-void ExposurePass::renderUI(RenderContext* context, Gui::Widgets& widget)
+void ExposurePass::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
 {
-    drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "Exposure");
+    drawPassEditor<drawSettings>(widget, *this, parameters, context, "Exposure");
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)

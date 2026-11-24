@@ -3,8 +3,8 @@
 #include <slang-rhi.h>
 #include <slang-rhi/shader-cursor.h>
 #include "render/DispatchGroups.h"
+#include "render/GpuScene.h"
 #include "render/RenderContext.h"
-#include "render/RenderView.h"
 
 namespace
 {
@@ -26,12 +26,12 @@ enum class FilterVariant
 }  // namespace
 
 void SVGFFilter::compile(
-    const RenderContext&                                      context,
-    const SVGFInputs&                                                 traced,
-    const SVGFReprojection::Output&                                   lighting,
-    const std::array<GpuResources::ImageHandle, kLightingLayerCount>& scratch,
-    GpuResources::ImageHandle                                         color,
-    const SVGFReprojection&                                           reprojection
+    const RenderContext&                                   context,
+    const SVGFInputs&                                      traced,
+    const SVGFReprojection::Output&                        lighting,
+    const std::array<rhi::ITexture*, kLightingLayerCount>& scratch,
+    rhi::ITexture*                                         color,
+    const SVGFReprojection&                                reprojection
 )
 {
     if (filters.empty())
@@ -61,66 +61,36 @@ void SVGFFilter::compile(
 }
 
 
-void SVGFFilter::execute(GpuResources& cache, rhi::ICommandEncoder& commands, const RenderContext& frame) const
+void SVGFFilter::execute(const RenderContext& frame) const
 {
     for (const auto& filter : filters)
-        filter.execute(cache, commands, frame);
+        filter.execute(frame);
 }
 
 
 void SVGFFilter::FilterPass::compile(const RenderContext& context, const FilterResources& resources)
 {
-    auto& cache = *context.gpuResources;
-    extent      = cache.imageInfo(resources.direct).size;
+    extent = resources.direct->getDesc().size;
     if (!pipeline)
         createPipeline(context);
     rhiCheck(context.device->createRootShaderObject(pipeline->getProgram(), shaderObject.writeRef()));
-    rhiCheck(
-        rhi::ShaderCursor(shaderObject)["inputDirect"].setBinding(cache.getImage(resources.direct)->getDefaultView())
-    );
-    rhiCheck(
-        rhi::ShaderCursor(shaderObject)["inputIndirect"].setBinding(
-            cache.getImage(resources.indirect)->getDefaultView()
-        )
-    );
-    rhiCheck(
-        rhi::ShaderCursor(shaderObject)["depthImage"].setBinding(cache.getImage(resources.depth)->getDefaultView())
-    );
-    rhiCheck(
-        rhi::ShaderCursor(shaderObject)["normalImage"].setBinding(cache.getImage(resources.normal)->getDefaultView())
-    );
+    const rhi::ShaderCursor root(shaderObject);
+    rhiCheck(root["inputDirect"].setBinding(resources.direct));
+    rhiCheck(root["inputIndirect"].setBinding(resources.indirect));
+    rhiCheck(root["depthImage"].setBinding(resources.depth));
+    rhiCheck(root["normalImage"].setBinding(resources.normal));
     if (last())
     {
-        rhiCheck(
-            rhi::ShaderCursor(shaderObject)["outputColor"].setBinding(cache.getImage(resources.color)->getDefaultView())
-        );
-        rhiCheck(
-            rhi::ShaderCursor(shaderObject)["emission"].setBinding(cache.getImage(resources.emission)->getDefaultView())
-        );
-        rhiCheck(
-            rhi::ShaderCursor(shaderObject)["albedoImage"].setBinding(
-                cache.getImage(resources.albedo)->getDefaultView()
-            )
-        );
+        rhiCheck(root["outputColor"].setBinding(resources.color));
+        rhiCheck(root["emission"].setBinding(resources.emission));
+        rhiCheck(root["albedoImage"].setBinding(resources.albedo));
     }
     else
     {
-        rhiCheck(
-            rhi::ShaderCursor(shaderObject)["outputDirect"].setBinding(
-                cache.getImage(resources.targetDirect)->getDefaultView()
-            )
-        );
-        rhiCheck(
-            rhi::ShaderCursor(shaderObject)["outputIndirect"].setBinding(
-                cache.getImage(resources.targetIndirect)->getDefaultView()
-            )
-        );
+        rhiCheck(root["outputDirect"].setBinding(resources.targetDirect));
+        rhiCheck(root["outputIndirect"].setBinding(resources.targetIndirect));
         if (first())
-            rhiCheck(
-                rhi::ShaderCursor(shaderObject)["historyLighting"].setBinding(
-                    cache.getImage(resources.lightingHistory)->getDefaultView()
-                )
-            );
+            rhiCheck(root["historyLighting"].setBinding(resources.lightingHistory));
     }
 }
 
@@ -129,21 +99,15 @@ void SVGFFilter::FilterPass::createPipeline(const RenderContext& context)
 {
     const auto variant = first() ? FilterVariant::First : last() ? FilterVariant::Final : FilterVariant::Filter;
     pipeline           = context.device->createComputePipeline(
-        {.program = context.shaderManager->program(
-             context.shaderManager->getOrLoad("svgf_filter", {{"SVGF_STAGE", std::to_string(int(variant))}})
-         )}
+        {.program = context.shaderManager->getOrLoad("svgf_filter", {{"SVGF_STAGE", std::to_string(int(variant))}})}
     );
     CHECK(pipeline);
 }
 
 
-void SVGFFilter::FilterPass::execute(
-    GpuResources& cache, rhi::ICommandEncoder& commands, const RenderContext& frame
-) const
+void SVGFFilter::FilterPass::execute(const RenderContext& frame) const
 {
-
-
-    const auto& viewport = frame.view->viewport;
+    const auto& viewport = frame.scene->viewport();
     {
         const auto uniformValue = FilterParameters{
             .viewport     = {viewport.x, viewport.y, viewport.width, viewport.height},
@@ -154,7 +118,7 @@ void SVGFFilter::FilterPass::execute(
         CHECK(uniformCursor.getTypeLayout()->getSize() <= sizeof(uniformValue));
         rhiCheck(uniformCursor.setData(&uniformValue, uniformCursor.getTypeLayout()->getSize()));
     };
-    auto* pass = commands.beginComputePass();
+    auto* pass = frame.commands->beginComputePass();
     CHECK(pass);
     pass->bindPipeline(pipeline, shaderObject);
     const auto groups = dispatchGroups(pipeline, {extent.width, extent.height, 1});

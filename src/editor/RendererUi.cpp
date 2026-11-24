@@ -1,10 +1,8 @@
 #include "render/Renderer.h"
 
 #include "core/ConfigManager.h"
-#include "core/Context.h"
 #include "editor/Gui.h"
 #include "editor/PassEditor.h"
-#include "render/RenderContext.h"
 
 #include <algorithm>
 #include <array>
@@ -82,8 +80,8 @@ bool drawParameter(Gui::Widgets& widgets, const std::string& name, Properties::j
 
 void drawSettings(
     Gui::Widgets&           widgets,
-    Renderer&                       renderer,
-    const ConfigManager&            config,
+    Renderer&               renderer,
+    std::string_view        graphName,
     const Properties::json& defaults,
     Properties::json&       parameters
 )
@@ -113,7 +111,7 @@ void drawSettings(
 
     if (!options.is_null())
         renderer.addOption(
-            kRenderGraphOptionsPrefix + settings::encodeName(config.renderGraphName()) + ":parameters",
+            kRenderGraphOptionsPrefix + settings::encodeName(graphName) + ":parameters",
             std::move(options)
         );
 }
@@ -122,14 +120,14 @@ void drawSettings(
 void Renderer::renderUI(const PassEditorContext& input)
 {
 
-    const auto&          config = *context().config;
+    const auto&  graphName = mpRenderGraph->getName();
     Gui::Widgets widgets;
-    drawSettings(widgets, *this, config, parameterDefaults, parameters);
+    drawSettings(widgets, *this, graphName, parameterDefaults, parameters);
 
     auto editor   = input;
     editor.submit = [&](const RenderPass& pass, std::optional<nlohmann::json> edited)
     {
-        const auto scope = kRenderGraphOptionsPrefix + settings::encodeName(config.renderGraphName()) +
+        const auto scope = kRenderGraphOptionsPrefix + settings::encodeName(graphName) +
             ":passes:" + settings::encodeName(pass.getType()) + ':' + settings::encodeName(pass.getName());
         if (!edited)
         {
@@ -137,7 +135,7 @@ void Renderer::renderUI(const PassEditorContext& input)
             return;
         }
 
-        const auto     scripted = settings::detail::flattenDictionary(getScriptedPassProperties(pass));
+        const auto     scripted = settings::detail::flattenDictionary(mpRenderGraph->scriptedProperties(pass.getName()));
         auto           changes  = settings::detail::flattenDictionary(*edited);
         nlohmann::json options{{scope, nullptr}};
         for (auto& [name, value] : changes.items())
@@ -145,7 +143,5 @@ void Renderer::renderUI(const PassEditorContext& input)
                 options[scope + ':' + name] = std::move(value);
         addOptions(options);
     };
-    renderContext.passEditor = &editor;
-    mpRenderGraph->renderUI(&renderContext, widgets);
-    renderContext.passEditor = nullptr;
+    mpRenderGraph->renderUI(editor, widgets);
 }

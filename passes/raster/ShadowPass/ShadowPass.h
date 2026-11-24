@@ -6,6 +6,7 @@
 
 #include <slang-rhi.h>
 
+#include "render/raster/ShadowResources.h"
 #include "render/resources/ShaderData.h"
 
 #include <span>
@@ -25,7 +26,7 @@ class ShadowPass : public RenderPass
         return make_ref<ShadowPass>(std::move(device), properties);
     }
 
-    void renderUI(RenderContext* context, Gui::Widgets& widget) override;
+    void renderUI(const PassEditorContext& context, Gui::Widgets& widget) override;
 
     [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
     void compile(RenderContext* passContext, const CompileData& compileData) override;

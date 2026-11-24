@@ -1,50 +1,36 @@
 #include "render/graph/RenderGraphExe.h"
 
 #include "editor/Gui.h"
-#include "render/RenderContext.h"
 
 #include <algorithm>
 
-void RenderGraphExe::insertPass(const std::string& name, const ref<RenderPass>& pass)
+void RenderGraphExe::execute(RenderContext* context)
 {
-    mExecutionList.push_back(Pass{name, pass});
+    for (const auto& entry : passes)
+        entry.pass->execute(context, RenderData{entry.ports, resources, defaultTexDims});
 }
 
-void RenderGraphExe::execute(const Context& context)
+void RenderGraphExe::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
 {
-    auto* renderContext = context.pRenderContext;
-    for (const auto& entry : mExecutionList)
+    for (const auto& entry : passes)
     {
-        const RenderData renderData{
-            entry.name,
-            *mpResourceCache,
-            context.passesDictionary,
-            context.defaultTexDims,
-        };
-        entry.pPass->execute(renderContext, renderData);
-    }
-}
-
-void RenderGraphExe::renderUI(RenderContext* context, Gui::Widgets& widget)
-{
-    for (const auto& pass : mExecutionList)
-    {
-        IDScope idScope(pass.pPass.get());
-        pass.pPass->renderUI(context, widget);
+        IDScope idScope(entry.pass.get());
+        entry.pass->renderUI(context, widget);
     }
 }
 
 rhi::ComPtr<rhi::IResource> RenderGraphExe::getResource(const std::string& name) const
 {
-    return mpResourceCache->getResource(name);
+    return rhi::ComPtr<rhi::IResource>{resources.resource(*resources.findSlot(name))};
 }
 
 bool RenderGraphExe::hasPassType(std::string_view type) const
 {
-    return std::ranges::any_of(mExecutionList, [type](const Pass& pass) { return pass.pPass->getType() == type; });
+    return std::ranges::any_of(passes, [type](const Pass& entry) { return entry.pass->getType() == type; });
 }
 
 void RenderGraphExe::setInput(const std::string& name, rhi::IResource* resource)
 {
-    mpResourceCache->registerExternalResource(name, resource);
+    if (const auto slot = resources.findSlot(name))
+        resources.setResource(*slot, resource);
 }

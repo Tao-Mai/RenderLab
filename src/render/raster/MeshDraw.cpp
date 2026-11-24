@@ -1,8 +1,22 @@
 #include "render/raster/MeshDraw.h"
+
 #include <array>
+#include <slang-rhi/shader-cursor.h>
 #include "core/Vertex.h"
 #include "render/device/RhiCheck.h"
-#include "render/raster/ShadowResources.h"
+#include "render/resources/GpuMesh.h"
+
+namespace
+{
+struct MeshPushConstants
+{
+    glm::mat4 model{1.0f};
+    uint32_t  materialIndex = 0;
+    uint32_t  padding[3]{};
+};
+static_assert(sizeof(MeshPushConstants) == 80);
+static_assert(offsetof(MeshPushConstants, materialIndex) == 64);
+}
 
 rhi::ComPtr<rhi::IInputLayout> createMeshInputLayout(rhi::IDevice& device)
 {
@@ -35,27 +49,30 @@ MeshCullPipelines createMeshCullPipelines(rhi::IDevice& device, rhi::RenderPipel
     rhiCheck(device.createRenderPipeline(desc, pipelines.doubleSided.writeRef()));
     return pipelines;
 }
-void MeshDrawRecorder::draw(const DrawItem& item, uint32_t materialIndex, rhi::IRenderPipeline* pipeline)
+
+rhi::IShaderObject& MeshCullPipelines::bind(
+    rhi::IRenderPassEncoder& pass, const MaterialTable::MaterialInfo& material
+) const
 {
-    auto* object = pass.bindPipeline(pipeline);
+    auto* object = pass.bindPipeline(material.doubleSided ? doubleSided.get() : singleSided.get());
     CHECK(object);
-    const rhi::ShaderCursor root(object);
-    rhiCheck(root["sceneGlobals"].setBinding(frame.scene->globalsBuffer()));
-    if (shadows)
-    {
-        frame.scene->lighting.bindRaster(root, ambientCoefficient, frame.scene->environmentMap);
-        shadows->bind(root);
-    }
-    frame.materialTable->bind(object);
-    const MeshPushConstants constants{.model = item.model, .materialIndex = materialIndex};
+    return *object;
+}
+
+void MeshDrawRecorder::draw(const GpuDraw& item, rhi::IShaderObject& object)
+{
+    const auto& scene = *frame.scene;
+    const rhi::ShaderCursor root(&object);
+    rhiCheck(root["sceneGlobals"].setBinding(scene.globalsBuffer()));
+    scene.materials().bind(*frame.device, object);
+    const MeshPushConstants constants{.model = item.model, .materialIndex = item.materialIndex};
     rhiCheck(root["pushConstants"].getDereferenced().setData(constants));
 
-    const auto& mesh        = frame.resources->mesh(item.mesh);
+    const auto& mesh        = *item.mesh;
     state.vertexBufferCount = 1;
     state.vertexBuffers[0]  = {mesh.vertices(), 0};
     state.indexBuffer       = {mesh.indices(), 0};
     state.indexFormat       = rhi::IndexFormat::Uint32;
     pass.setRenderState(state);
-    const auto& submesh = mesh.submeshes()[item.submeshIndex];
-    pass.drawIndexed({submesh.indexCount, 1, 0, 0, submesh.firstIndex});
+    pass.drawIndexed({item.indexCount, 1, 0, 0, item.firstIndex});
 }

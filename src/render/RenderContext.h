@@ -8,11 +8,7 @@
 #include <vector>
 
 class RenderResourceManager;
-class MaterialTable;
-class PathPipelineCache;
-class GpuResources;
-struct RenderView;
-struct PreparedScene;
+class GpuScene;
 struct EditorFrameInput;
 struct PassEditorContext;
 
@@ -20,15 +16,10 @@ struct RENDERLAB_CORE_API RenderContext
 {
     rhi::IDevice*            device        = nullptr;
     rhi::ICommandEncoder*    commands      = nullptr;
-    GpuResources*            gpuResources  = nullptr;
     ShaderManager*           shaderManager = nullptr;
     RenderResourceManager*   resources     = nullptr;
-    MaterialTable*           materialTable = nullptr;
-    PathPipelineCache*       pathPipelines = nullptr;
-    const RenderView*        view          = nullptr;
-    const PreparedScene*     scene         = nullptr;
+    GpuScene*                scene         = nullptr;
     const EditorFrameInput*  editor        = nullptr;
-    const PassEditorContext* passEditor    = nullptr;
     uint32_t                 frameIndex    = 0;
     float                    deltaSeconds  = 0.0f;
 

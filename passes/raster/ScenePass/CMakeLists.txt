@@ -1,2 +1,2 @@
 renderlab_add_plugin(ScenePass ScenePass.cpp)
-target_link_libraries(ScenePass PRIVATE RenderLabForwardPbr)
+target_link_libraries(ScenePass PRIVATE RenderLabRasterPbr)

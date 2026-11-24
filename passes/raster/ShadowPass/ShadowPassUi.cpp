@@ -91,10 +91,10 @@ bool drawSettings(
 }  // namespace
 
 
-void ShadowPass::renderUI(RenderContext* context, Gui::Widgets& widget)
+void ShadowPass::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
 {
     if (parameters.enabled)
-        drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "Shadows");
+        drawPassEditor<drawSettings>(widget, *this, parameters, context, "Shadows");
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)

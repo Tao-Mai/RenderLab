@@ -4,9 +4,8 @@
 #include "core/Logger.h"
 #include "passes/postprocess/ExposurePass/ExposureState.h"
 #include "render/DispatchGroups.h"
-#include "render/PreparedScene.h"
+#include "render/GpuScene.h"
 #include "render/RenderContext.h"
-#include "render/RenderView.h"
 
 #include <glm/vec4.hpp>
 
@@ -60,13 +59,15 @@ void ExposurePass::setProperties(const Properties& properties)
 RenderPassReflection ExposurePass::reflect(const CompileData&)
 {
     RenderPassReflection reflection;
-    reflection.addInput("hdrColor", "HDR scene color").bindFlags(ResourceBindFlags::ShaderResource);
-    reflection.addOutput(kExposureStateOutput, "Exposure state")
-        .rawBuffer(sizeof(ExposureState))
-        .bindFlags(ResourceBindFlags::UnorderedAccess);
-    reflection.addInternal(kHistogram, "Luminance histogram")
-        .rawBuffer(kHistogramBinCount * sizeof(uint32_t))
-        .bindFlags(ResourceBindFlags::UnorderedAccess);
+    reflection.addInput("hdrColor", rhi::TextureDesc{.size = {0, 0, 1}, .usage = rhi::TextureUsage::ShaderResource});
+    reflection.addOutput(kExposureStateOutput, rhi::BufferDesc{
+        .size = sizeof(ExposureState),
+        .usage = rhi::BufferUsage::UnorderedAccess,
+    });
+    reflection.addInternal(kHistogram, rhi::BufferDesc{
+        .size = kHistogramBinCount * sizeof(uint32_t),
+        .usage = rhi::BufferUsage::UnorderedAccess,
+    });
     return reflection;
 }
 
@@ -76,12 +77,12 @@ void ExposurePass::compile(RenderContext* context, const CompileData&)
     hasHistory        = false;
     histogramPipeline = context->device->createComputePipeline(
         {.program =
-             context->shaderManager->program(context->shaderManager->getOrLoad("exposure", {{"EXPOSURE_STAGE", "0"}}))}
+             context->shaderManager->getOrLoad("exposure", {{"EXPOSURE_STAGE", "0"}})}
     );
     CHECK(histogramPipeline);
     resolvePipeline = context->device->createComputePipeline(
         {.program =
-             context->shaderManager->program(context->shaderManager->getOrLoad("exposure", {{"EXPOSURE_STAGE", "1"}}))}
+             context->shaderManager->getOrLoad("exposure", {{"EXPOSURE_STAGE", "1"}})}
     );
     CHECK(resolvePipeline);
 }
@@ -91,8 +92,8 @@ void ExposurePass::execute(RenderContext* renderCommands, const RenderData& rend
 {
     const auto& frame           = *renderCommands;
     const auto& automatic       = parameters.automatic;
-    const auto& viewport        = frame.view->viewport;
-    const auto  sceneGeneration = frame.scene->sceneGeneration;
+    const auto& viewport        = frame.scene->viewport();
+    const auto               sceneGeneration = frame.scene->sceneGeneration();
     const bool  enabled         = parameters.mode == ExposureMode::Automatic;
     const ExposureParameters uniforms{
         .viewport              = {viewport.x, viewport.y, viewport.width, viewport.height},
@@ -120,7 +121,7 @@ void ExposurePass::execute(RenderContext* renderCommands, const RenderData& rend
         auto* object = pass->bindPipeline(pipeline);
         CHECK(object);
         const rhi::ShaderCursor root(object);
-        rhiCheck(root["hdrColor"].setBinding(renderData.getTexture("hdrColor")->getDefaultView()));
+        rhiCheck(root["hdrColor"].setBinding(renderData.getTexture("hdrColor")));
         rhiCheck(root["histogram"].setBinding(histogram));
         rhiCheck(root["exposureState"].setBinding(renderData.getBuffer(kExposureStateOutput)));
         rhiCheck(root["parameters"].getDereferenced().setData(uniforms));

@@ -4,8 +4,8 @@
 #include "core/Plugin.h"
 
 #include <slang-rhi.h>
+#include "render/GpuScene.h"
 #include "render/RenderContext.h"
-#include "render/RenderView.h"
 #include "render/resources/MaterialTable.h"
 
 namespace
@@ -17,17 +17,20 @@ constexpr std::string_view kGBufferShader = "gbuffer";
 RenderPassReflection GBufferPass::reflect(const CompileData& compileData)
 {
     const auto* input  = compileData.connectedResources.getField("depth");
-    const auto  extent = input ? glm::uvec2{input->getWidth(), input->getHeight()} : glm::uvec2{};
+    const auto  extent = input ? glm::uvec2{input->texture().size.width, input->texture().size.height} : glm::uvec2{};
 
     RenderPassReflection reflection;
-    reflection.addInput("depth", "Scene depth")
-        .format(rhi::Format::D32Float)
-        .bindFlags(ResourceBindFlags::DepthStencil);
+    reflection.addInput("depth", rhi::TextureDesc{
+        .size = {0, 0, 1},
+        .format = rhi::Format::D32Float,
+        .usage = rhi::TextureUsage::DepthStencil,
+    });
     for (size_t index = 0; index < kColorNames.size(); ++index)
-        reflection.addOutput(std::string{kColorNames[index]}, "G-buffer channel")
-            .format(kColorFormats[index])
-            .bindFlags(ResourceBindFlags::RenderTarget)
-            .texture2D(extent.x, extent.y);
+        reflection.addOutput(std::string{kColorNames[index]}, rhi::TextureDesc{
+            .size = {extent.x, extent.y, 1},
+            .format = kColorFormats[index],
+            .usage = rhi::TextureUsage::RenderTarget,
+        });
     return reflection;
 }
 
@@ -38,7 +41,7 @@ void GBufferPass::compile(RenderContext* passContext, const CompileData&)
     for (size_t index = 0; index < colors.size(); ++index)
         colors[index].format = kColorFormats[index];
     rhi::RenderPipelineDesc desc;
-    desc.program      = passContext->shaderManager->program(passContext->shaderManager->getOrLoad(kGBufferShader));
+    desc.program      = passContext->shaderManager->getOrLoad(kGBufferShader);
     desc.targets      = colors.data();
     desc.targetCount  = uint32_t(colors.size());
     desc.depthStencil = {
@@ -72,9 +75,9 @@ void GBufferPass::execute(RenderContext* renderCommands, const RenderData& rende
     auto* pass          = renderCommands->commands->beginRenderPass({colors.data(), uint32_t(colors.size()), &depth});
     CHECK(pass);
     const auto&      size     = target->getDesc().size;
-    const auto       viewport = renderCommands->view->viewport.clamped({size.width, size.height});
+    const auto       viewport = renderCommands->scene->viewport().clamped({size.width, size.height});
     MeshDrawRecorder recorder{*pass, viewport.renderState(), *renderCommands};
-    recorder.drawOpaque([&](const auto& material) { return pipelines.get(material); });
+    recorder.drawOpaque([&](const auto& material) -> rhi::IShaderObject& { return pipelines.bind(*pass, material); });
     pass->end();
 }
 

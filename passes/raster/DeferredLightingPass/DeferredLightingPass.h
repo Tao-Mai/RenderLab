@@ -31,7 +31,7 @@ class DeferredLightingPass : public RenderPass
 private:
     RasterLightingOutputSettings parameters;
 
-    rhi::IRenderPipeline* getPipeline(const RenderContext& context, rhi::Format format);
+    rhi::IRenderPipeline* getPipeline(const RenderContext& context, rhi::Format format, bool hasEnvironment);
 
     std::array<rhi::ComPtr<rhi::IRenderPipeline>, 2> pipelines;
 };

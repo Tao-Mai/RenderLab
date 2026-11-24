@@ -4,16 +4,14 @@
 #include "core/Plugin.h"
 
 #include <slang-rhi.h>
-#include "render/PreparedScene.h"
+#include "render/GpuScene.h"
 #include "render/RenderContext.h"
-#include "render/RenderView.h"
 #include "render/raster/MeshDraw.h"
 #include "render/raster/ShadowResources.h"
 #include "render/resources/MaterialTable.h"
 
 ScenePass::ScenePass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
-    RenderPass(std::move(device), SceneInputs::RasterVisibility),
-    parameters(deserializeFromProperties<RasterLightingOutputSettings>(properties))
+    RenderPass(std::move(device)), parameters(deserializeFromProperties<RasterLightingOutputSettings>(properties))
 {
     parameters.validate();
 }
@@ -38,17 +36,20 @@ void ScenePass::setProperties(const Properties& properties)
 RenderPassReflection ScenePass::reflect(const CompileData& compileData)
 {
     const auto* depth  = compileData.connectedResources.getField("depth");
-    const auto  extent = depth ? glm::uvec2{depth->getWidth(), depth->getHeight()} : glm::uvec2{};
+    const auto  extent = depth ? glm::uvec2{depth->texture().size.width, depth->texture().size.height} : glm::uvec2{};
 
     RenderPassReflection reflection;
     addShadowInputs(reflection);
-    reflection.addInput("depth", "Scene depth")
-        .format(rhi::Format::D32Float)
-        .bindFlags(ResourceBindFlags::DepthStencil);
-    reflection.addOutput("color", "Raster lighting result")
-        .format(parameters.getColorFormat(compileData.defaultTexFormat))
-        .bindFlags(ResourceBindFlags::RenderTarget)
-        .texture2D(extent.x, extent.y);
+    reflection.addInput("depth", rhi::TextureDesc{
+        .size = {0, 0, 1},
+        .format = rhi::Format::D32Float,
+        .usage = rhi::TextureUsage::DepthStencil,
+    });
+    reflection.addOutput("color", rhi::TextureDesc{
+        .size = {extent.x, extent.y, 1},
+        .format = parameters.getColorFormat(compileData.defaultTexFormat),
+        .usage = rhi::TextureUsage::RenderTarget,
+    });
     return reflection;
 }
 
@@ -90,10 +91,13 @@ void ScenePass::execute(RenderContext* renderCommands, const RenderData& renderD
     auto* pass          = renderCommands->commands->beginRenderPass({&color, 1, &depth});
     CHECK(pass);
     const auto&      size     = target->getDesc().size;
-    const auto       viewport = renderCommands->view->viewport.clamped({size.width, size.height});
+    const auto       viewport = renderCommands->scene->viewport().clamped({size.width, size.height});
     const ShadowBindings shadows{renderData, *renderCommands->resources};
-    MeshDrawRecorder recorder{*pass, viewport.renderState(), *renderCommands, &shadows, parameters.ambientCoefficient};
-    recorder.drawOpaque([&](const auto& material) { return pipelines.get(*renderCommands, material); });
+    MeshDrawRecorder recorder{*pass, viewport.renderState(), *renderCommands};
+    recorder.drawOpaque(
+        [&](const auto& material) -> rhi::IShaderObject&
+        { return pipelines.bind(*pass, *renderCommands, material, shadows, parameters.ambientCoefficient); }
+    );
     pass->end();
 }
 

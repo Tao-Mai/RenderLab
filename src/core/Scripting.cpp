@@ -6,7 +6,6 @@
 
 extern "C" PyObject* PyInit_renderlab();
 
-const FileDialogFilterVec           Scripting::kFileExtensionFilters{{"py", "Script Files"}};
 std::unique_ptr<Scripting::Context> Scripting::sDefaultContext;
 
 namespace

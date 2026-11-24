@@ -4,17 +4,14 @@
 #include "core/DirectedGraph.h"
 #include "core/Macros.h"
 #include "core/Object.h"
-#include "core/platform/OS.h"
 #include "render/ViewportRect.h"
 #include "render/graph/RenderGraphCompiler.h"
 #include "render/graph/RenderGraphExe.h"
-#include "render/graph/RenderGraphFlags.h"
 
-#include <filesystem>
 #include <memory>
 #include <string_view>
 #include <unordered_map>
-#include <unordered_set>
+#include <vector>
 
 
 
@@ -23,15 +20,11 @@ class RENDERLAB_CORE_API RenderGraph : public Object
     RL_OBJECT(RenderGraph)
 
 public:
-    static const FileDialogFilterVec kFileExtensionFilters;
     static constexpr uint32_t        kInvalidIndex = DirectedGraph::kInvalidID;
 
     RenderGraph(rhi::ComPtr<rhi::IDevice> device, const std::string& name);
     ~RenderGraph() override;
     [[nodiscard]] static ref<RenderGraph> create(rhi::ComPtr<rhi::IDevice> device, const std::string& name = {});
-    [[nodiscard]] static ref<RenderGraph>
-    createFromFile(rhi::ComPtr<rhi::IDevice> device, const std::filesystem::path& path);
-    [[nodiscard]] static ref<RenderGraph>   createFromString(rhi::ComPtr<rhi::IDevice> device, std::string_view script);
     [[nodiscard]] rhi::ComPtr<rhi::IDevice> getDevice() const { return mpDevice; }
     ref<RenderPass> createPass(const std::string& passName, const std::string& passType, const Properties& properties);
 
@@ -41,13 +34,17 @@ public:
     [[nodiscard]] const ref<RenderPass>& getPass(const std::string& name) const;
     [[nodiscard]] uint32_t               getPassIndex(const std::string& name) const;
     [[nodiscard]] bool doesPassExist(const std::string& name) const { return mNameToIndex.contains(name); }
+    [[nodiscard]] const nlohmann::json& scriptedProperties(const std::string& name) const;
+    void captureScriptedProperties();
+    void applyScriptedProperties(const RenderGraph& source);
+    void applyPassOverrides(const nlohmann::json& overrides);
 
     uint32_t addEdge(const std::string& source, const std::string& target);
     void     removeEdge(const std::string& source, const std::string& target);
     void     removeEdge(uint32_t edgeId);
 
     void               setInput(const std::string& name, rhi::IResource* resource);
-    void               markOutput(const std::string& name, TextureChannelFlags mask = TextureChannelFlags::RGB);
+    void               markOutput(const std::string& name);
     void               unmarkOutput(const std::string& name);
     [[nodiscard]] bool isGraphOutput(const std::string& name) const;
     [[nodiscard]] rhi::ComPtr<rhi::IResource>             getOutput(const std::string& name);
@@ -57,13 +54,11 @@ public:
     [[nodiscard]] rhi::ComPtr<rhi::IBuffer>               getOutputBuffer(const std::string& name);
     [[nodiscard]] size_t                                  getOutputCount() const { return mOutputs.size(); }
     [[nodiscard]] std::string                             getOutputName(size_t index) const;
-    [[nodiscard]] std::unordered_set<TextureChannelFlags> getOutputMasks(size_t index) const;
     [[nodiscard]] std::vector<std::string>                getAvailableOutputs() const;
+    [[nodiscard]] bool                                    hasSameTopology(const RenderGraph& other) const;
 
     [[nodiscard]] const std::string& getName() const { return mName; }
     void                             setName(const std::string& value) { mName = value; }
-    [[nodiscard]] Dictionary&        getPassesDictionary() { return mPassesDictionary; }
-    [[nodiscard]] SceneInputs         getSceneInputs() const { return mpExe->getSceneInputs(); }
     [[nodiscard]] uint32_t            getMaxFramesInFlight() const { return mpExe->getMaxFramesInFlight(); }
     [[nodiscard]] bool               hasActivePass(std::string_view type) const { return mpExe && mpExe->hasPassType(type); }
 
@@ -77,12 +72,10 @@ public:
     }
     // The graph must be compiled before recording it.
     void execute(RenderContext* context);
-    void update(const ref<RenderGraph>& graph);
-    void renderUI(RenderContext* context, Gui::Widgets& widget);
+    void renderUI(const PassEditorContext& context, Gui::Widgets& widget);
 
 private:
     friend class RenderGraphCompiler;
-    friend class RenderGraphExporter;
 
     struct EdgeData
     {
@@ -94,15 +87,15 @@ private:
     {
         std::string     name;
         ref<RenderPass> pPass;
+        nlohmann::json  scripted;
+        nlohmann::json  applied;
     };
 
     struct GraphOut
     {
-        uint32_t                                nodeId = kInvalidIndex;
-        std::string                             field;
-        std::unordered_set<TextureChannelFlags> masks;
-        bool operator==(const GraphOut& other) const { return nodeId == other.nodeId && field == other.field; }
-        bool operator!=(const GraphOut& other) const { return !(*this == other); }
+        uint32_t    nodeId = kInvalidIndex;
+        std::string field;
+        bool operator==(const GraphOut&) const = default;
     };
 
     [[nodiscard]] uint32_t getEdge(const std::string& source, const std::string& target);
@@ -118,7 +111,6 @@ private:
     std::unordered_map<uint32_t, EdgeData>    mEdgeData;
     std::unordered_map<uint32_t, NodeData>    mNodeData;
     std::vector<GraphOut>                     mOutputs;
-    Dictionary                                mPassesDictionary;
     std::unique_ptr<RenderGraphExe>           mpExe;
     RenderGraphCompiler::Dependencies         mCompilerDeps;
     bool                                      mRecompile = false;

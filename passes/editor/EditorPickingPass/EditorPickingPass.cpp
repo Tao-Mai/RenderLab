@@ -3,20 +3,28 @@
 #include <slang-rhi/shader-cursor.h>
 #include "core/Logger.h"
 #include "core/Plugin.h"
-#include "render/PreparedScene.h"
+#include "render/GpuScene.h"
 #include "render/RenderContext.h"
-#include "render/RenderView.h"
 #include "render/device/RhiCheck.h"
-#include "render/editor/EditorShaderData.h"
 #include "render/raster/MeshDraw.h"
 #include "render/resources/GpuMesh.h"
-#include "render/resources/RenderResourceManager.h"
 #include "render/resources/ShaderManager.h"
 
 #include <algorithm>
 
 namespace
 {
+struct EditorPickingPushConstants
+{
+    glm::mat4 model{1.0f};
+    uint32_t  selectionId = 0;
+    uint32_t  padding0    = 0;
+    uint32_t  padding1    = 0;
+    uint32_t  padding2    = 0;
+};
+
+static_assert(sizeof(EditorPickingPushConstants) == 80);
+
 constexpr char        kIdTarget[] = "ids";
 constexpr rhi::Format kIdFormat   = rhi::Format::R32Uint;
 }  // namespace
@@ -24,16 +32,19 @@ constexpr rhi::Format kIdFormat   = rhi::Format::R32Uint;
 RenderPassReflection EditorPickingPass::reflect(const CompileData& compileData)
 {
     const auto* input  = compileData.connectedResources.getField("depth");
-    const auto  extent = input ? glm::uvec2{input->getWidth(), input->getHeight()} : glm::uvec2{};
+    const auto  extent = input ? glm::uvec2{input->texture().size.width, input->texture().size.height} : glm::uvec2{};
 
     RenderPassReflection reflection;
-    reflection.addInput("depth", "Scene depth")
-        .format(rhi::Format::D32Float)
-        .bindFlags(ResourceBindFlags::DepthStencil);
-    reflection.addInternal(kIdTarget, "Object identifiers")
-        .format(kIdFormat)
-        .bindFlags(ResourceBindFlags::RenderTarget)
-        .texture2D(extent.x, extent.y);
+    reflection.addInput("depth", rhi::TextureDesc{
+        .size = {0, 0, 1},
+        .format = rhi::Format::D32Float,
+        .usage = rhi::TextureUsage::DepthStencil,
+    });
+    reflection.addInternal(kIdTarget, rhi::TextureDesc{
+        .size = {extent.x, extent.y, 1},
+        .format = kIdFormat,
+        .usage = rhi::TextureUsage::RenderTarget,
+    });
     return reflection;
 }
 
@@ -45,7 +56,7 @@ void EditorPickingPass::compile(RenderContext* context, const CompileData&)
     rhi::ColorTargetDesc color;
     color.format = kIdFormat;
     rhi::RenderPipelineDesc desc;
-    desc.program                  = context->shaderManager->program(shader);
+    desc.program                  = shader;
     desc.inputLayout              = input;
     desc.targets                  = &color;
     desc.targetCount              = 1;
@@ -78,7 +89,7 @@ void EditorPickingPass::execute(RenderContext* renderCommands, const RenderData&
 
     const auto  target   = renderData.getTexture(kIdTarget);
     const auto& size     = target->getDesc().size;
-    const auto  viewport = execution.view->viewport.clamped({size.width, size.height});
+    const auto  viewport = execution.scene->viewport().clamped({size.width, size.height});
     const auto  pixel    = [](float position, float offset, float length)
     {
         return uint32_t(offset) + std::min(uint32_t(position * length), uint32_t(length) - 1);
@@ -100,24 +111,21 @@ void EditorPickingPass::execute(RenderContext* renderCommands, const RenderData&
     CHECK(pass);
     auto state            = viewport.renderState();
     state.scissorRects[0] = {x, y, x + 1, y + 1};
-    for (uint32_t index = 0; index < execution.scene->drawItems.size(); ++index)
+    for (const uint32_t index : execution.scene->visibleDraws())
     {
-        if (!execution.scene->isVisible(index))
-            continue;
-        const auto& item   = execution.scene->drawItems[index];
+        const auto& item   = execution.scene->drawCalls()[index];
         auto*       object = pass->bindPipeline(pipeline);
         CHECK(object);
         const rhi::ShaderCursor root(object);
-        rhiCheck(root["editorView"].getDereferenced().setData(execution.view->uniforms.viewProjection));
+        rhiCheck(root["editorView"].getDereferenced().setData(execution.scene->cameraUniforms().viewProjection));
         const EditorPickingPushConstants constants{.model = item.model, .selectionId = item.selectionId};
         rhiCheck(root["pushConstants"].getDereferenced().setData(constants));
-        const auto& mesh        = execution.resources->mesh(item.mesh);
-        const auto& submesh     = mesh.submeshes()[item.submeshIndex];
+        const auto& mesh        = *item.mesh;
         state.vertexBufferCount = 1;
         state.vertexBuffers[0]  = {mesh.vertices(), 0};
         state.indexBuffer       = {mesh.indices(), 0};
         pass->setRenderState(state);
-        pass->drawIndexed({submesh.indexCount, 1, 0, 0, submesh.firstIndex});
+        pass->drawIndexed({item.indexCount, 1, 0, 0, item.firstIndex});
     }
     pass->end();
 

@@ -1,12 +1,11 @@
 #include "passes/denoise/SVGF/SVGFReprojection.h"
 
 #include "core/Logger.h"
-#include "render/RenderView.h"
 
 #include <slang-rhi.h>
 #include <slang-rhi/shader-cursor.h>
 #include "render/DispatchGroups.h"
-#include "render/PreparedScene.h"
+#include "render/GpuScene.h"
 #include "render/RenderContext.h"
 
 namespace
@@ -34,15 +33,13 @@ glm::vec4 linearDepthRow(const glm::mat4& view)
 }  // namespace
 
 SVGFReprojection::Output SVGFReprojection::compile(
-    const RenderContext&                                      context,
-    const SVGFInputs&                                                 source,
-    const std::array<GpuResources::ImageHandle, kHistoryCount>&       history,
-    const std::array<GpuResources::ImageHandle, kLightingLayerCount>& outputs
+    const RenderContext&                                   context,
+    const SVGFInputs&                                      source,
+    const std::array<rhi::ITexture*, kHistoryCount>&       history,
+    const std::array<rhi::ITexture*, kLightingLayerCount>& outputs
 )
 {
-    auto& cache   = *context.gpuResources;
-    historySource = source.color;
-    extent        = cache.imageInfo(source.color).size;
+    extent        = source.color->getDesc().size;
     hasHistory    = false;
     writeLayer    = 0;
     if (!pipeline)
@@ -74,10 +71,9 @@ SVGFReprojection::Output SVGFReprojection::compile(
         output.direct,
         output.indirect
     };
+    const rhi::ShaderCursor root(shaderObject);
     for (uint32_t index = 0; index < names.size(); ++index)
-        rhiCheck(
-            rhi::ShaderCursor(shaderObject)[names[index]].setBinding(cache.getImage(images[index])->getDefaultView())
-        );
+        rhiCheck(root[names[index]].setBinding(images[index]));
     return output;
 }
 
@@ -85,22 +81,21 @@ SVGFReprojection::Output SVGFReprojection::compile(
 void SVGFReprojection::createPipeline(const RenderContext& context)
 {
     pipeline = context.device->createComputePipeline(
-        {.program = context.shaderManager->program(context.shaderManager->getOrLoad("svgf_reprojection"))}
+        {.program = context.shaderManager->getOrLoad("svgf_reprojection")}
     );
     CHECK(pipeline);
 }
 
 
-void SVGFReprojection::execute(GpuResources& cache, rhi::ICommandEncoder& commands, const RenderContext& frame)
+void SVGFReprojection::execute(const RenderContext& frame, uint64_t historyRevision)
 {
-
-    const auto      historyRevision = cache.imageHistoryRevision(historySource);
-    const auto      sceneGeneration = frame.scene->sceneGeneration;
+    const auto      sceneGeneration = frame.scene->sceneGeneration();
     const bool      historyValid    = hasHistory && previousHistoryRevision == historyRevision &&
         previousSceneGeneration == sceneGeneration;
-    const auto&     viewport        = frame.view->viewport;
+    const auto&     viewport        = frame.scene->viewport();
+    const auto&     camera          = frame.scene->cameraUniforms();
     const glm::vec4 currentViewport{viewport.x, viewport.y, viewport.width, viewport.height};
-    const auto      currentDepthRow = linearDepthRow(frame.view->uniforms.view);
+    const auto      currentDepthRow = linearDepthRow(camera.view);
 
     const rhi::ShaderCursor root(shaderObject);
     rhiCheck(root["sceneGlobals"].setBinding(frame.scene->globalsBuffer()));
@@ -120,13 +115,13 @@ void SVGFReprojection::execute(GpuResources& cache, rhi::ICommandEncoder& comman
         CHECK(uniformCursor.getTypeLayout()->getSize() <= sizeof(uniformValue));
         rhiCheck(uniformCursor.setData(&uniformValue, uniformCursor.getTypeLayout()->getSize()));
     };
-    auto* pass = commands.beginComputePass();
+    auto* pass = frame.commands->beginComputePass();
     CHECK(pass);
     pass->bindPipeline(pipeline, shaderObject);
     const auto groups = dispatchGroups(pipeline, {extent.width, extent.height, 1});
     pass->dispatchCompute(groups.width, groups.height, groups.depth);
     pass->end();
-    previousViewProjection  = frame.view->uniforms.viewProjection;
+    previousViewProjection  = camera.viewProjection;
     previousViewport        = currentViewport;
     previousDepthRow        = currentDepthRow;
     previousHistoryRevision = historyRevision;

@@ -1,45 +1,49 @@
 #pragma once
-#include <slang-rhi.h>
 
-#include "core/Macros.h"
-#include <glm/vec2.hpp>
+#include <slang-rhi.h>
 #include "render/graph/RenderPassReflection.h"
 
+#include <glm/vec2.hpp>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-
-class RENDERLAB_CORE_API ResourceCache
+class ResourceCache
 {
 public:
+    using ResourceDesc = RenderPassReflection::ResourceDesc;
     using ResourcesMap = std::unordered_map<std::string, rhi::ComPtr<rhi::IResource>>;
+    using Ports = std::vector<std::pair<std::string, size_t>>;
 
     struct DefaultProperties
     {
-        glm::uvec2          dims{0};
+        glm::uvec2 dims{0};
         rhi::Format format = rhi::Format::Undefined;
     };
 
-    void registerExternalResource(const std::string& name, rhi::IResource* resource);
-    void registerField(
-        const std::string& name, const RenderPassReflection::Field& field, const std::string& alias = {}
-    );
-    [[nodiscard]] const rhi::ComPtr<rhi::IResource>& getResource(const std::string& name) const;
-    void                                             setResource(const std::string& name, rhi::IResource* resource);
-    void allocateResources(rhi::IDevice* device, const DefaultProperties& params);
+    void addResource(std::string name, const ResourceDesc& desc, rhi::IResource* resource, bool allocate);
+    void connect(std::string name, const std::string& sourceName, const ResourceDesc& desc);
+    void markOutput(const std::string& name);
+    void allocateResources(rhi::IDevice& device, const DefaultProperties& defaults);
+
+    [[nodiscard]] std::optional<size_t> findSlot(const std::string& name) const;
+    [[nodiscard]] rhi::IResource* resource(size_t slot) const { return slots[slot].resource; }
+    void setResource(size_t slot, rhi::IResource* resource) { slots[slot].resource = resource; }
+    [[nodiscard]] uint64_t historyRevision(size_t slot) const { return slots[slot].historyRevision; }
+    void invalidateHistory(size_t slot) { ++slots[slot].historyRevision; }
 
 private:
-    struct ResourceData
+    struct Slot
     {
-        RenderPassReflection::Field   field;
-        rhi::ComPtr<rhi::IResource>   pResource;
-        bool                          resolveBindFlags = false;
-        std::string                   name;
+        ResourceDesc resourceDesc;
+        rhi::ComPtr<rhi::IResource> resource;
+        std::string name;
+        bool allocate;
+        uint64_t historyRevision = 0;
     };
 
-    std::unordered_map<std::string, uint32_t> mNameToIndex;
-    std::vector<ResourceData>                 mResourceData;
-    ResourcesMap                              mExternalResources;
+    std::unordered_map<std::string, size_t> indices;
+    std::vector<Slot> slots;
 };

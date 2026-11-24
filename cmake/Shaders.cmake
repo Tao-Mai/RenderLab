@@ -53,22 +53,17 @@ function(renderlab_build_shaders)
         get_property(source GLOBAL PROPERTY "renderlab_shader_source_${binary}")
         get_property(arguments GLOBAL PROPERTY "renderlab_shader_arguments_${binary}")
         set(output "${SHADER_BINARY_DIR}/${binary}.slang-module")
-        set(reflection "${SHADER_BINARY_DIR}/${binary}.reflection.json")
         set(depfile "${SHADER_BINARY_DIR}/${binary}.d")
-        add_custom_command(OUTPUT "${output}" "${reflection}"
+        add_custom_command(OUTPUT "${output}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
             COMMAND ${RENDERLAB_SLANGC_EXECUTABLE} "${source}"
                 -I "${SHADER_SOURCE_DIR}" -I "${RenderLab_SOURCE_DIR}" -I "${RenderLab_SOURCE_DIR}/src"
                 ${arguments} -emit-ir -module-name "${binary}" -matrix-layout-column-major
                 -depfile "${depfile}" -o "${output}"
-            COMMAND ${RENDERLAB_SLANGC_EXECUTABLE} "${source}"
-                -I "${SHADER_SOURCE_DIR}" -I "${RenderLab_SOURCE_DIR}" -I "${RenderLab_SOURCE_DIR}/src"
-                ${arguments} -target spirv -profile spirv_1_4 -matrix-layout-column-major
-                -reflection-json "${reflection}" -o "${SHADER_BINARY_DIR}/${binary}.validation.spv"
             DEPENDS "${source}" "${RENDERLAB_SLANGC_EXECUTABLE}"
             DEPFILE "${depfile}"
             COMMENT "Compiling ${binary}" VERBATIM)
-        list(APPEND outputs "${output}" "${reflection}")
+        list(APPEND outputs "${output}")
     endforeach()
 
     get_property(programs GLOBAL PROPERTY renderlab_shader_programs)

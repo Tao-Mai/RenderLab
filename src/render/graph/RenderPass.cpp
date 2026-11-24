@@ -1,46 +1,45 @@
 #include "render/graph/RenderPass.h"
 
 #include "core/Logger.h"
-#include "render/graph/ResourceCache.h"
 
+#include <algorithm>
 #include <utility>
 
-RenderData::RenderData(
-    const std::string& passName,
-    ResourceCache&     resources,
-    Dictionary&        dictionary,
-    const glm::uvec2&       defaultTexDims
-) :
-    mName(passName),
-    mResources(resources),
-    mDictionary(dictionary),
-    mDefaultTexDims(defaultTexDims)
+std::optional<size_t> RenderData::findSlot(std::string_view name) const
 {
+    const auto found = std::ranges::find(ports, name, &ResourceCache::Ports::value_type::first);
+    if (found != ports.end())
+        return found->second;
+    return std::nullopt;
 }
 
-const rhi::ComPtr<rhi::IResource>& RenderData::getResource(std::string_view fieldName) const
+rhi::IResource* RenderData::getResource(std::string_view name) const
 {
-    std::string qualifiedName;
-    qualifiedName.reserve(mName.size() + 1 + fieldName.size());
-    qualifiedName.append(mName).append(".").append(fieldName);
-    return mResources.getResource(qualifiedName);
+    const auto slot = findSlot(name);
+    return slot ? resources.resource(*slot) : nullptr;
 }
 
-rhi::ComPtr<rhi::ITexture> RenderData::getTexture(std::string_view name) const
+rhi::ITexture* RenderData::getTexture(std::string_view name) const
 {
-    const auto& resource = getResource(name);
-    return rhi::ComPtr<rhi::ITexture>(static_cast<rhi::ITexture*>(resource.get()));
+    return static_cast<rhi::ITexture*>(getResource(name));
 }
 
-rhi::ComPtr<rhi::IBuffer> RenderData::getBuffer(std::string_view name) const
+rhi::IBuffer* RenderData::getBuffer(std::string_view name) const
 {
-    return rhi::ComPtr<rhi::IBuffer>(static_cast<rhi::IBuffer*>(getResource(name).get()));
+    return static_cast<rhi::IBuffer*>(getResource(name));
 }
 
 void RenderData::setBuffer(std::string_view name, rhi::IBuffer* buffer) const
 {
-    mResources.setResource(mName + "." + std::string(name), buffer);
+    resources.setResource(*findSlot(name), buffer);
 }
+
+uint64_t RenderData::getHistoryRevision(std::string_view name) const
+{
+    return resources.historyRevision(*findSlot(name));
+}
+
+void RenderData::invalidateHistory(std::string_view name) const { resources.invalidateHistory(*findSlot(name)); }
 
 ref<RenderPass> RenderPass::create(
     std::string_view type, rhi::ComPtr<rhi::IDevice> device, const Properties& properties, PluginManager& plugins

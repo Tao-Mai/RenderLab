@@ -38,9 +38,8 @@ public:
 
     void init(rhi::IDevice& device, AssetManager& assets, AssetDataManager& data);
     void shutdown() noexcept;
-    [[nodiscard]] bool supportsRayTracing() const { return rayTracingSupported; }
 
-    GpuMesh&                     mesh(const MeshAsset::ID& id);
+    [[nodiscard]] const GpuMesh& loadMesh(const MeshAsset::ID& id);
     rhi::ComPtr<rhi::ITexture>   texture(const TextureAsset::ID& id);
     [[nodiscard]] rhi::ISampler* sampler(const SamplerAsset::ID& id);
     [[nodiscard]] const GpuEnvironmentMap& environmentMap(const EnvironmentMapAsset::ID& id);
@@ -49,7 +48,6 @@ private:
     AssetManager*                                                    assets = nullptr;
     AssetDataManager*                                                data   = nullptr;
     rhi::IDevice*                                                    device = nullptr;
-    bool                                                             rayTracingSupported = false;
     std::unordered_map<MeshAsset::ID, std::unique_ptr<GpuMesh>>      meshes;
     std::unordered_map<TextureAsset::ID, rhi::ComPtr<rhi::ITexture>> textures;
     std::unordered_map<SamplerAsset::ID, rhi::ComPtr<rhi::ISampler>> samplers;

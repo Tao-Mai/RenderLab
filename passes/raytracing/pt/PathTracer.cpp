@@ -1,29 +1,29 @@
 #include "PathTracerSettings.h"
 #include "render/graph/RenderPass.h"
 
+#include <slang-rhi/shader-cursor.h>
 #include "editor/PassEditor.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
-#include "render/raytracing/PathAccumulation.h"
-#include "render/raytracing/PathPipelineCache.h"
+#include "render/raytracing/PathSceneState.h"
+#include "render/raytracing/PathTracingShader.h"
 
-#ifdef RENDERLAB_TEST_PATH_TRACING_STATS
-#include "test/PathTracingStats.h"
-#endif
 
+#include <array>
 #include <format>
+#include <limits>
 
 namespace
 {
-constexpr char kOutputColor[] = "color";
+constexpr std::array kRaygenEntries{"raygenMain"};
+constexpr char       kOutputSamples[] = "samples";
 
 class PathTracer : public RenderPass
 {
     RL_PLUGIN_CLASS(PathTracer, "PathTracer", "Reference path tracer.");
 
     PathTracer(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
-        RenderPass(std::move(device), SceneInputs::RayTracing, 1),
-        parameters(deserializeFromProperties<PathTracerSettings>(properties))
+        RenderPass(std::move(device), 1), parameters(deserializeFromProperties<PathTracerSettings>(properties))
     {
         parameters.validate();
     }
@@ -46,73 +46,87 @@ class PathTracer : public RenderPass
         return make_ref<PathTracer>(std::move(device), properties);
     }
 
-    void renderUI(RenderContext* context, Gui::Widgets& widget) override;
+    void renderUI(const PassEditorContext& context, Gui::Widgets& widget) override;
 
     [[nodiscard]] RenderPassReflection reflect(const CompileData&) override
     {
         RenderPassReflection reflection;
-        reflection.addOutput(kOutputColor, "Path traced radiance")
-            .format(rhi::Format::RGBA16Float)
-            .bindFlags(ResourceBindFlags::UnorderedAccess);
+        reflection.addOutput(kOutputSamples, rhi::TextureDesc{
+            .size = {0, 0, 1},
+            .format = rhi::Format::RGBA32Float,
+            .usage = rhi::TextureUsage::UnorderedAccess,
+        });
         return reflection;
     }
 
-    void compile(RenderContext* passContext, const CompileData& compileData) override
+    void compile(RenderContext*, const CompileData&) override
     {
-        tracer.compile(*passContext, compileData.defaultTexDims, "pt_resolve");
-        pipeline = nullptr;
+        if (!checkRayTracingSupport(*mpDevice))
+            return;
+
+        sampleIndex = 0;
     }
 
     void execute(RenderContext* renderCommands, const RenderData& renderData) override
     {
-        auto&       cache     = *renderCommands->gpuResources;
-        auto&       commands  = *renderCommands->commands;
         const auto& execution = *renderCommands;
+        auto&       scene     = *execution.scene;
+        auto&       commands  = *execution.commands;
+        const auto rayTracing = scene.prepareRayTracing(commands, execution.frameIndex);
 
-        const auto environment = pathEnvironment(*execution.scene);
-        if (!pipeline || environment != shaderEnvironment)
+        const auto environment = pathEnvironment(scene);
+        auto&      pipeline    = pipelines[static_cast<size_t>(environment)];
+        if (!pipeline)
         {
-            auto& shaders = *execution.shaderManager;
-            const auto shader = shaders.getOrCompile("pt", pathEnvironmentDefines(environment));
-            pipeline = execution.pathPipelines->get(*mpDevice, shaders, shader, false);
-            shaderEnvironment = environment;
+            auto&      shaders = *execution.shaderManager;
+            auto*      program = shaders.getOrCompile("pt", pathEnvironmentDefines(environment));
+            rhiCheck(mpDevice->createRayTracingPipeline(pathTracingPipelineDesc(program), pipeline.writeRef()));
+            if (!shaderTable)
+                shaderTable = createPathTracingShaderTable(*mpDevice, program, kRaygenEntries);
         }
 
-        const bool sceneChanged   = tracer.updateFrame(execution, renderData.getTexture(kOutputColor));
+        const bool sceneChanged   = sceneState.update(scene);
         const bool optionsChanged = previousMaxBounces != parameters.maxBounces;
         if (sceneChanged || optionsChanged)
-            tracer.resetAccumulation();
+        {
+            sampleIndex = 0;
+            renderData.invalidateHistory(kOutputSamples);
+        }
         previousMaxBounces = parameters.maxBounces;
 
-        const auto constants = tracer.pathParameters(execution, parameters.maxBounces);
-        const auto bounds    = tracer.viewportBounds(*execution.view);
-        const bool hasPixels = bounds.extent.width != 0 && bounds.extent.height != 0;
-        tracer.render(
-            cache,
-            commands,
-            execution,
-            std::as_bytes(std::span{&constants, 1}),
-            hasPixels ? pipeline : nullptr,
-            {constants.imageSize.x, constants.imageSize.y}
-        );
-        if (hasPixels)
-            tracer.finishSample();
+        CHECK(sampleIndex < std::numeric_limits<uint32_t>::max());
+        const auto  output    = renderData.getTexture(kOutputSamples);
+        const auto& size      = output->getDesc().size;
+        const auto  constants = makePathTracingParameters(execution, parameters.maxBounces, sampleIndex);
 
-#ifdef RENDERLAB_TEST_PATH_TRACING_STATS
-        renderData.getDictionary()[path_tracing_test::statsKey(getName())] =
-            path_tracing_test::AccumulationProgress{sampleCount(), float(sampleCount()), false};
-#endif
+        auto* pass = commands.beginRayTracingPass();
+        CHECK(pass);
+        auto* object = pass->bindPipeline(pipeline, shaderTable);
+        CHECK(object);
+        rayTracing.bind(object);
+        const rhi::ShaderCursor root(object);
+        rhiCheck(root["sampleOutput"].setBinding(output));
+        rhiCheck(root["parameters"].getDereferenced().setData(constants));
+        pass->dispatchRays(0, size.width, size.height, 1);
+        pass->end();
+
+        const auto bounds = scene.viewport().pixelBounds({size.width, size.height});
+        if (bounds.extent.width && bounds.extent.height)
+            ++sampleIndex;
+
     }
 
-    [[nodiscard]] uint32_t sampleCount() const { return tracer.sampleCount(); }
+    [[nodiscard]] uint32_t sampleCount() const { return sampleIndex; }
 
 private:
     PathTracerSettings parameters;
 
-    PathAccumulation          tracer;
-    const PathTracingProgram* pipeline = nullptr;
-    PathEnvironment           shaderEnvironment = PathEnvironment::None;
-    uint32_t                  previousMaxBounces = 0;
+    std::array<rhi::ComPtr<rhi::IRayTracingPipeline>, static_cast<size_t>(PathEnvironment::Count)> pipelines;
+    rhi::ComPtr<rhi::IShaderTable> shaderTable;
+
+    PathSceneState sceneState;
+    uint32_t       sampleIndex        = 0;
+    uint32_t       previousMaxBounces = 0;
 };
 
 bool drawSettings(
@@ -127,9 +141,9 @@ bool drawSettings(
 }  // namespace
 
 
-void PathTracer::renderUI(RenderContext* context, Gui::Widgets& widget)
+void PathTracer::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
 {
-    drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "PT");
+    drawPassEditor<drawSettings>(widget, *this, parameters, context, "PT");
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)

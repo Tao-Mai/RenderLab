@@ -1,3 +1,4 @@
 renderlab_add_plugin(DeferredLightingPass DeferredLightingPass.cpp)
+target_link_libraries(DeferredLightingPass PRIVATE RenderLabRasterPbr)
 
 renderlab_runtime_shader(deferred_lighting deferred_lighting.slang)

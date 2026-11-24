@@ -5,18 +5,22 @@ static const uint kMaxMaterialTextures = 1024;
 static const uint kMaxMaterialSamplers = 32;
 struct TextureRef { uint textureIndex; uint samplerIndex; };
 
-Texture2D<float4> textures[kMaxMaterialTextures];
-SamplerState samplers[kMaxMaterialSamplers];
+struct MaterialTextures
+{
+    Texture2D<float4> textures[kMaxMaterialTextures];
+    SamplerState samplers[kMaxMaterialSamplers];
+};
+ParameterBlock<MaterialTextures> materialTextures;
 
 float4 sampleTexture(TextureRef texture, float2 uv)
 {
-    return textures[NonUniformResourceIndex(texture.textureIndex)].Sample(
-        samplers[NonUniformResourceIndex(texture.samplerIndex)], uv);
+    return materialTextures.textures[NonUniformResourceIndex(texture.textureIndex)].Sample(
+        materialTextures.samplers[NonUniformResourceIndex(texture.samplerIndex)], uv);
 }
 
 float4 sampleTextureLevel(TextureRef texture, float2 uv, float level = 0.0)
 {
-    return textures[NonUniformResourceIndex(texture.textureIndex)].SampleLevel(
-        samplers[NonUniformResourceIndex(texture.samplerIndex)], uv, level);
+    return materialTextures.textures[NonUniformResourceIndex(texture.textureIndex)].SampleLevel(
+        materialTextures.samplers[NonUniformResourceIndex(texture.samplerIndex)], uv, level);
 }
 #endif

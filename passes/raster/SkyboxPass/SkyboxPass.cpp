@@ -4,23 +4,36 @@
 
 #include <slang-rhi.h>
 #include <slang-rhi/shader-cursor.h>
-#include "render/PreparedScene.h"
+#include "render/GpuScene.h"
 #include "render/RenderContext.h"
-#include "render/RenderView.h"
 #include "render/resources/RenderResourceManager.h"
 #include "render/resources/ShaderData.h"
 
 #include <array>
 
+namespace
+{
+struct SkyboxPushConstants
+{
+    glm::vec4 viewport{0.0f};
+};
+static_assert(sizeof(SkyboxPushConstants) == 16);
+}
+
 RenderPassReflection SkyboxPass::reflect(const CompileData& compileData)
 {
     RenderPassReflection reflection;
-    auto& color = reflection.addInputOutput("color", "Color target").bindFlags(ResourceBindFlags::RenderTarget);
-    if (const auto* input = compileData.connectedResources.getField("color"))
-        color.texture2D(input->getWidth(), input->getHeight()).format(input->getFormat());
-    reflection.addInput("depth", "Scene depth")
-        .format(rhi::Format::D32Float)
-        .bindFlags(ResourceBindFlags::DepthStencil);
+    const auto* input = compileData.connectedResources.getField("color");
+    reflection.addInputOutput("color", rhi::TextureDesc{
+        .size = input ? input->texture().size : rhi::Extent3D{0, 0, 1},
+        .format = input ? input->texture().format : rhi::Format::Undefined,
+        .usage = rhi::TextureUsage::RenderTarget,
+    });
+    reflection.addInput("depth", rhi::TextureDesc{
+        .size = {0, 0, 1},
+        .format = rhi::Format::D32Float,
+        .usage = rhi::TextureUsage::DepthStencil,
+    });
     return reflection;
 }
 
@@ -28,9 +41,9 @@ RenderPassReflection SkyboxPass::reflect(const CompileData& compileData)
 void SkyboxPass::compile(RenderContext* context, const CompileData& compileData)
 {
     rhi::ColorTargetDesc color;
-    color.format = compileData.connectedResources.getField("color")->getFormat();
+    color.format = compileData.connectedResources.getField("color")->texture().format;
     rhi::RenderPipelineDesc desc;
-    desc.program                       = context->shaderManager->program(context->shaderManager->getOrLoad("skybox"));
+    desc.program                       = context->shaderManager->getOrLoad("skybox");
     desc.targets                       = &color;
     desc.targetCount                   = 1;
     desc.depthStencil.depthTestEnable  = true;
@@ -44,7 +57,7 @@ void SkyboxPass::compile(RenderContext* context, const CompileData& compileData)
 
 void SkyboxPass::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
-    const auto* environment = renderCommands->scene->environmentMap;
+    const auto* environment = renderCommands->scene->environmentMap();
     if (!environment)
         return;
 
@@ -67,7 +80,7 @@ void SkyboxPass::execute(RenderContext* renderCommands, const RenderData& render
     CHECK(object);
     const rhi::ShaderCursor root(object);
     const auto&             size     = target->getDesc().size;
-    const auto              viewport = renderCommands->view->viewport.clamped({size.width, size.height});
+    const auto              viewport = renderCommands->scene->viewport().clamped({size.width, size.height});
     rhiCheck(root["sceneGlobals"].setBinding(renderCommands->scene->globalsBuffer()));
     environment->bindRadiance(root);
     const SkyboxPushConstants constants{{viewport.x, viewport.y, viewport.width, viewport.height}};

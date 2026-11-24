@@ -1,8 +1,9 @@
-#ifndef RENDERLAB_ACCUMULATION_PATH_LAUNCH_SLANG
-#define RENDERLAB_ACCUMULATION_PATH_LAUNCH_SLANG
+#ifndef RENDERLAB_PATH_LAUNCH_SLANG
+#define RENDERLAB_PATH_LAUNCH_SLANG
 
 #include "path_common.slang"
 #include "material/normal_mapping.slang"
+#include "render/raytracing/PathTracingParameters.h"
 #include "raytracing/geometry.slang"
 
 struct CameraPathSample
@@ -11,14 +12,14 @@ struct CameraPathSample
     uint randomState;
 };
 
-CameraPathSample sampleCameraPath(uint2 pixel, uint pixelIndex, PathParameters path)
+CameraPathSample sampleCameraPath(uint2 pixel, uint pixelIndex, PathTracingParameters path)
 {
     uint scrambleState = pixelIndex;
     uint2 scrambleSeeds;
     scrambleSeeds.x = randomUint(scrambleState);
     scrambleSeeds.y = randomUint(scrambleState);
-    float2 pixelSample = sampleSobol2D(path.accumulatedSamples, scrambleSeeds);
-    float2 ndc = uvToClip((float2(pixel) + pixelSample - path.viewportOffset) / path.viewportSize);
+    float2 pixelSample = sampleSobol2D(path.sampleIndex, scrambleSeeds);
+    float2 ndc = uvToClip((float2(pixel) + pixelSample - path.viewportOffset) / path.viewportExtent);
     float4 farPoint = mul(sceneGlobals[0].camera.inverseViewProjection, float4(ndc, 1.0, 1.0));
 
     RayDesc ray;
@@ -27,15 +28,8 @@ CameraPathSample sampleCameraPath(uint2 pixel, uint pixelIndex, PathParameters p
     ray.TMin = kRayEpsilon;
     ray.TMax = kMaxRayDistance;
 
-    uint sampleState = path.accumulatedSamples;
+    uint sampleState = path.sampleIndex;
     return {ray, scrambleSeeds.y ^ randomUint(sampleState)};
-}
-
-void accumulateCameraSample(uint pixelIndex, uint completedSamples, float3 color)
-{
-    if (completedSamples != 0)
-        color += accumulation[pixelIndex].color;
-    accumulation[pixelIndex] = {color, completedSamples + 1};
 }
 
 [shader("miss")]

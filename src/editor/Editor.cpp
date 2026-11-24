@@ -131,14 +131,14 @@ Editor::Frame Editor::buildFrame(const EditorCamera& camera)
     if (pendingObjectActions.renamed)
         dirty = true;
 
-    const glm::mat4 view                 = camera.viewMatrix();
-    const glm::mat4 projection           = camera.projectionMatrix(ui.sceneAspectRatio());
-    const bool      enableGizmoShortcuts = !camera.isNavigationActive();
-    auto*           selectedActor        = context().sceneManager->findActor(selectedId);
-
+    const auto viewport      = ui.sceneViewportPixels();
+    auto*      selectedActor = context().sceneManager->findActor(selectedId);
     if (!camera.isFreeMovementActive() && selectedActor != nullptr)
     {
-        if (ui.drawGizmo(selectedActor->transform(), view, projection, enableGizmoShortcuts))
+        const auto sceneCamera = camera.config().sceneCamera();
+        const auto view        = sceneCamera.viewMatrix();
+        const auto projection  = sceneCamera.projectionMatrix(viewport.width / viewport.height);
+        if (ui.drawGizmo(selectedActor->transform(), view, projection, !camera.isNavigationActive()))
         {
             dirty = true;
         }
@@ -151,7 +151,7 @@ Editor::Frame Editor::buildFrame(const EditorCamera& camera)
     if (!pendingSceneId && ui.saveRequested())
         saveScene();
 
-    Frame frame;
+    Frame frame{.viewport = viewport};
     auto& input    = frame.input;
     input.recordUi = [this](rhi::IRenderPassEncoder& commands, uint32_t frameIndex)
     { backend.render(commands, frameIndex); };
@@ -172,7 +172,6 @@ Editor::Frame Editor::buildFrame(const EditorCamera& camera)
         }
     }
 
-    frame.view = camera.renderView(ui.sceneViewportPixels());
     ui.endFrame();
     return frame;
 }

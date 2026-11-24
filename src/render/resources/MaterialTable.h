@@ -4,7 +4,6 @@
 #include <slang-rhi/shader-cursor.h>
 #include "asset/AssetID.h"
 #include "render/RenderConfig.h"
-#include "render/device/GpuResources.h"
 #include "render/resources/MaterialData.h"
 #include "render/resources/PbrtMaterialProgram.h"
 
@@ -17,14 +16,16 @@
 
 
 class AssetManager;
+class AssetDataManager;
 class RenderResourceManager;
 struct TextureAsset;
 struct SamplerAsset;
 struct MaterialAsset;
 struct GltfMaterial;
 struct TextureBinding;
+struct DrawItem;
 
-// Stable asset indices and a shared SSBO; descriptor sets remain per frame in flight.
+// Stable material and texture indices. Shader objects share immutable texture bindings.
 class MaterialTable
 {
 public:
@@ -37,6 +38,17 @@ public:
         bool     emissive;
     };
 
+    void init(rhi::IDevice& device, RenderResourceManager& resources);
+    [[nodiscard]] std::vector<uint32_t>
+         prepare(std::span<const DrawItem> items, const AssetManager& assets, const AssetDataManager& assetData);
+    void upload(rhi::IDevice& device, rhi::ICommandEncoder& commands);
+    [[nodiscard]] TextureRef          textureReference(const TextureBinding& binding);
+    [[nodiscard]] const MaterialInfo& info(uint32_t materialIndex) const { return materialInfos[materialIndex]; }
+    [[nodiscard]] const MaterialData& data(uint32_t materialIndex) const { return materials[materialIndex]; }
+    [[nodiscard]] std::span<const pbrt::MaterialInstruction> materialInstructions() const { return materialCode; }
+    void bind(rhi::IDevice& device, rhi::IShaderObject& object) const;
+
+private:
     struct OverrideOwner
     {
         uint32_t objectId;
@@ -53,40 +65,25 @@ public:
         bool operator==(const MaterialKey&) const = default;
     };
 
-    void     init(RenderResourceManager& resources);
-    void     setup(GpuResources& cache, rhi::IDevice& device);
-    uint32_t update(
-        const MaterialKey& key, const GltfMaterial& material, RenderResourceManager& resources, AssetManager& assets
-    );
-    uint32_t updatePbrt(const MaterialKey& key, uint32_t programIndex);
-    void     upload();
-    void     uploadPrograms(
-            std::span<const pbrt::MaterialInstruction> programs,
-            std::span<const pbrt::TextureInstruction>  textures,
-            uint64_t                                   revision
-        );
-    [[nodiscard]] TextureRef          textureReference(const TextureBinding& binding, RenderResourceManager& resources);
-    [[nodiscard]] const MaterialInfo& info(uint32_t materialIndex) const { return materialInfos[materialIndex]; }
-    [[nodiscard]] const MaterialData& data(uint32_t materialIndex) const { return materials[materialIndex]; }
-    void                              bind(rhi::IShaderObject* object) const;
-
-private:
     struct MaterialKeyHash
     {
         size_t operator()(const MaterialKey& key) const noexcept;
     };
-    GpuResources*                                                    cache = nullptr;
-    GpuResources::BufferHandle                                       materialBuffer;
-    GpuResources::BufferHandle                                       materialPrograms, texturePrograms;
+    RenderResourceManager*                                           resources = nullptr;
+    rhi::ComPtr<rhi::IBuffer>                                        materialBuffer, materialPrograms, texturePrograms;
     std::optional<uint64_t>                                          uploadedMaterialRevision, uploadedProgramRevision;
     std::vector<MaterialData>                                        materials;
-    uint64_t                                                         materialRevision = 0;
+    std::vector<pbrt::MaterialInstruction>                           materialCode;
+    std::vector<pbrt::TextureInstruction>                            textureCode;
+    uint64_t                                                         materialRevision = 0, programRevision = 0;
     std::vector<MaterialInfo>                                        materialInfos;
     std::unordered_map<MaterialKey, uint32_t, MaterialKeyHash>       materialIndices;
     std::unordered_map<AssetID<TextureAsset>, uint32_t>              textureIndices;
     std::unordered_map<AssetID<SamplerAsset>, uint32_t>              samplerIndices;
     std::array<rhi::ComPtr<rhi::ITextureView>, kMaxMaterialTextures> images;
     std::array<rhi::ComPtr<rhi::ISampler>, kMaxMaterialSamplers>     samplers;
+    mutable std::unordered_map<slang::TypeLayoutReflection*, rhi::ComPtr<rhi::IShaderObject>> textureBindings;
 
+    uint32_t updateGltf(const MaterialKey& key, const GltfMaterial& material, const AssetManager& assets);
     uint32_t store(const MaterialKey& key, const MaterialData& data, MaterialInfo info);
 };

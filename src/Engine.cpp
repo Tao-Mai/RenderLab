@@ -118,18 +118,20 @@ void Engine::mainLoop()
 
         auto& camera = ctx.editor->camera();
         ctx.editor->tick(deltaTime);
+        const auto sceneCamera = camera.config().sceneCamera();
         ctx.inputManager->setNavigation({
-            .forward = camera.forward(),
-            .right   = camera.right(),
-            .up      = camera.up(),
+            .forward = sceneCamera.forward(),
+            .right   = sceneCamera.right(),
+            .up      = sceneCamera.up(),
             .active  = camera.isNavigationActive(),
         });
         ctx.sceneManager->tick(deltaTime);
 
         const auto  editorFrame = ctx.editor->buildFrame(camera);
-        const auto& renderData  = renderSystem.prepare(ctx.sceneManager->scene(), ctx.sceneManager->sceneGeneration());
-        const auto  result      = ctx.renderer->render(editorFrame.view, renderData, editorFrame.input, deltaTime);
-        swapchainNeedsRebuild   = result == RenderFrameResult::SwapchainNeedsRebuild;
+        const auto& renderData =
+            renderSystem.prepare(ctx.sceneManager->scene(), ctx.sceneManager->sceneGeneration(), editorFrame.viewport);
+        const auto result = ctx.renderer->render(renderData, editorFrame.input, deltaTime);
+        swapchainNeedsRebuild = result == RenderFrameResult::SwapchainNeedsRebuild;
     }
 }
 

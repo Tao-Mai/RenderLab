@@ -11,21 +11,21 @@
 #include <vector>
 
 class GpuMesh;
-class RenderResourceManager;
-struct PreparedScene;
+struct GpuDraw;
+struct LightData;
 
 class SceneAccelerationStructures
 {
 public:
     // Mesh uploads and the frame slot's previous submission must be complete.
     [[nodiscard]] rhi::IAccelerationStructure* recordBuilds(
-        rhi::IDevice&          device,
-        rhi::ICommandEncoder&  commands,
-        RenderResourceManager& resources,
-        const PreparedScene&   renderData,
-        uint32_t               frameIndex
+        rhi::IDevice& device,
+        rhi::ICommandEncoder& commands,
+        std::span<const GpuDraw> draws,
+        std::span<const LightData> rectLights,
+        uint32_t firstRectLightIndex,
+        uint32_t frameIndex
     );
-    void reset() noexcept;
 
 private:
     struct Frame
@@ -41,10 +41,7 @@ private:
     std::array<Frame, kMaxFramesInFlight>    frames;
 
     [[nodiscard]] std::vector<rhi::AccelerationStructureHandle> recordBlasBuilds(
-        rhi::IDevice&          device,
-        rhi::ICommandEncoder&  commands,
-        RenderResourceManager& resources,
-        const PreparedScene&   renderData
+        rhi::IDevice& device, rhi::ICommandEncoder& commands, std::span<const GpuDraw> draws, bool hasRectLights
     );
     void recordRectLightBlasBuild(rhi::IDevice& device, rhi::ICommandEncoder& commands);
     void recordTlasBuild(

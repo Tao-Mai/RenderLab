@@ -3,28 +3,39 @@
 #include <slang-rhi.h>
 #include <slang-rhi/shader-cursor.h>
 #include "core/Logger.h"
-#include "render/PreparedScene.h"
+#include "core/math/Bounds.h"
+#include "render/GpuScene.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
-#include "render/RenderView.h"
-#include "render/Visibility.h"
 #include "render/raster/MeshDraw.h"
 #include "render/raster/ShadowResources.h"
-#include "render/resources/GpuMesh.h"
 #include "render/resources/MaterialTable.h"
-#include "render/resources/RenderResourceManager.h"
+#include "render/resources/GpuMesh.h"
 #include "render/resources/ShaderData.h"
 #include "render/resources/ShaderManager.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <numbers>
 
 #include <glm/gtc/matrix_transform.hpp>
 
 namespace
 {
+struct ShadowPushConstants
+{
+    glm::mat4 model{1.0f};
+    uint32_t  lightIdx     = 0;
+    uint32_t  cascadeIndex = 0;
+    uint32_t  faceIndex    = 0;
+    uint32_t  padding2     = 0;
+};
+static_assert(sizeof(ShadowPushConstants) == 80);
+static_assert(offsetof(ShadowPushConstants, lightIdx) == 64);
+static_assert(offsetof(ShadowPushConstants, cascadeIndex) == 68);
+
 constexpr uint32_t kMinimumShadowLayers = 2;
 
 void validateCascade(const ShadowSettings::Cascade& cascade)
@@ -230,6 +241,31 @@ struct ShadowVolume
     uint32_t             mask;
     std::vector<Frustum> frusta;
 };
+
+[[nodiscard]] uint32_t shadowMask(GpuLightType type, uint32_t shadowIndex, uint32_t cascadeIndex = 0)
+{
+    constexpr uint32_t kPointOffset       = 0;
+    constexpr uint32_t kSpotOffset        = kPointOffset + kMaxPointLightShadow;
+    constexpr uint32_t kRectAreaOffset    = kSpotOffset + kMaxSpotLightShadow;
+    constexpr uint32_t kDirectionalOffset = kRectAreaOffset + kMaxRectAreaLightShadow;
+    constexpr uint32_t kMaskBitCount =
+        kDirectionalOffset + kMaxDirectionalLightShadow * kMaxDirectionalShadowCascades;
+    static_assert(kMaskBitCount <= 32);
+
+    switch (type)
+    {
+        case GpuLightType::Point:
+            return 1u << (kPointOffset + shadowIndex);
+        case GpuLightType::Spot:
+            return 1u << (kSpotOffset + shadowIndex);
+        case GpuLightType::RectArea:
+            return 1u << (kRectAreaOffset + shadowIndex);
+        case GpuLightType::Directional:
+            return 1u << (kDirectionalOffset + shadowIndex * kMaxDirectionalShadowCascades + cascadeIndex);
+    }
+
+    return 0;
+}
 }  // namespace
 
 void ShadowSettings::validate() const
@@ -243,8 +279,7 @@ void ShadowSettings::validate() const
 }
 
 ShadowPass::ShadowPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
-    RenderPass(std::move(device), SceneInputs::RasterVisibility),
-    parameters(deserializeFromProperties<ShadowSettings>(properties))
+    RenderPass(std::move(device)), parameters(deserializeFromProperties<ShadowSettings>(properties))
 {
     parameters.validate();
 }
@@ -269,11 +304,12 @@ void ShadowPass::setProperties(const Properties& properties)
 
 RenderPassReflection ShadowPass::reflect(const CompileData&)
 {
-    constexpr auto kDepthSampled = ResourceBindFlags::DepthStencil | ResourceBindFlags::ShaderResource;
+    constexpr auto kDepthSampled = rhi::TextureUsage::DepthStencil | rhi::TextureUsage::ShaderResource;
     RenderPassReflection reflection;
-    reflection.addOutput(kShadowUniformsPort, "Shadow sampling parameters")
-        .rawBuffer(sizeof(ShadowUniforms))
-        .bindFlags(ResourceBindFlags::ShaderResource);
+    reflection.addOutput(kShadowUniformsPort, rhi::BufferDesc{
+        .size = sizeof(ShadowUniforms),
+        .usage = rhi::BufferUsage::ShaderResource,
+    });
 
     const auto addOutputs =
         [&](const ShadowPorts& ports, uint32_t size, uint32_t layers, uint32_t lightCount, uint32_t recordSize)
@@ -281,13 +317,17 @@ RenderPassReflection ShadowPass::reflect(const CompileData&)
         const auto extent = parameters.enabled ? size : 1u;
         // Lighting shaders bind array views, including the single-cascade case.
         const auto arraySize = parameters.enabled ? std::max(layers, kMinimumShadowLayers) : kMinimumShadowLayers;
-        reflection.addOutput(ports.map, "Shadow depth array")
-            .format(rhi::Format::D32Float)
-            .bindFlags(kDepthSampled)
-            .texture2D(extent, extent, 1, 1, arraySize);
-        reflection.addOutput(ports.data, "Shadow transforms")
-            .bindFlags(ResourceBindFlags::ShaderResource)
-            .rawBuffer((parameters.enabled ? lightCount : 1u) * recordSize);
+        reflection.addOutput(ports.map, rhi::TextureDesc{
+            .type = rhi::TextureType::Texture2DArray,
+            .size = {extent, extent, 1},
+            .arrayLength = arraySize,
+            .format = rhi::Format::D32Float,
+            .usage = kDepthSampled,
+        });
+        reflection.addOutput(ports.data, rhi::BufferDesc{
+            .size = (parameters.enabled ? lightCount : 1u) * recordSize,
+            .usage = rhi::BufferUsage::ShaderResource,
+        });
     };
     addOutputs(
         kPointShadowPorts, parameters.pointShadowMapSize, kMaxPointLightShadow * kPointFaceCount,
@@ -331,7 +371,7 @@ void ShadowPass::compile(RenderContext* passContext, const CompileData&)
 
         const auto              input = createMeshInputLayout(device);
         rhi::RenderPipelineDesc desc;
-        desc.program                    = passContext->shaderManager->program(shader);
+        desc.program                    = shader;
         desc.inputLayout                = input;
         desc.depthStencil               = {.format = rhi::Format::D32Float, .depthTestEnable = true};
         desc.rasterizer.depthClipEnable = shadowType != GpuLightType::Directional;
@@ -452,42 +492,41 @@ void ShadowPass::prepareShadowData(
 
 void ShadowPass::updateShadowData(const RenderContext& frame, const RenderData& renderData)
 {
-    prepareShadowData(frame.view->uniforms, frame.scene->lights(), parameters);
+    prepareShadowData(frame.scene->cameraUniforms(), frame.scene->lights(), parameters);
 
     std::vector<ShadowVolume> volumes;
     for (uint32_t index = 0; index < shadowData.pointShadows.size(); ++index)
     {
-        ShadowVolume volume{RenderVisibility::shadowMask(GpuLightType::Point, index), {}};
+        ShadowVolume volume{shadowMask(GpuLightType::Point, index), {}};
         for (const auto& vp : shadowData.pointShadows[index].vp)
             volume.frusta.emplace_back(vp);
         volumes.push_back(std::move(volume));
     }
     for (uint32_t index = 0; index < shadowData.spotShadows.size(); ++index)
-        volumes.push_back(
-            {RenderVisibility::shadowMask(GpuLightType::Spot, index), {Frustum{shadowData.spotShadows[index].vp}}}
-        );
+        volumes.push_back({shadowMask(GpuLightType::Spot, index), {Frustum{shadowData.spotShadows[index].vp}}});
     for (uint32_t index = 0; index < shadowData.rectAreaShadows.size(); ++index)
         volumes.push_back(
-            {RenderVisibility::shadowMask(GpuLightType::RectArea, index),
+            {shadowMask(GpuLightType::RectArea, index),
              {Frustum{shadowData.rectAreaShadows[index].vp}}}
         );
     // Cascades depth-clamp upstream casters; the far plane still bounds relevant geometry.
     for (uint32_t index = 0; index < shadowData.directionalShadows.size(); ++index)
         for (uint32_t cascade = 0; cascade < cascadeCount; ++cascade)
             volumes.push_back(
-                {RenderVisibility::shadowMask(GpuLightType::Directional, index, cascade),
+                {shadowMask(GpuLightType::Directional, index, cascade),
                  {Frustum{shadowData.directionalShadows[index].cascades[cascade].vp, Frustum::NearPlane::Exclude}}}
             );
 
+    const auto draws = frame.scene->drawCalls();
     visibilityMasks.clear();
-    visibilityMasks.reserve(frame.scene->drawBounds.size());
+    visibilityMasks.reserve(draws.size());
 
-    for (const auto& bounds : frame.scene->drawBounds)
+    for (const auto& draw : draws)
     {
         uint32_t mask = 0;
         for (const auto& volume : volumes)
         {
-            if (!std::ranges::any_of(volume.frusta, [&](const Frustum& frustum) { return frustum.intersects(bounds); }))
+            if (!std::ranges::any_of(volume.frusta, [&](const Frustum& frustum) { return frustum.intersects(draw.bounds); }))
                 continue;
 
             mask |= volume.mask;
@@ -600,7 +639,7 @@ void ShadowPass::recordShadow(
 {
     // TODO: Precompute the per-layer attachment views.
     const auto& light      = execution.scene->lights()[lightIndex];
-    const auto  visibility = RenderVisibility::shadowMask(light.type(), light.shadowIdx, cascadeIndex);
+    const auto  visibility = shadowMask(light.type(), light.shadowIdx, cascadeIndex);
     for (uint32_t face = 0; face < target.viewLayerCount; ++face)
     {
         const auto view = image.createView(
@@ -613,26 +652,26 @@ void ShadowPass::recordShadow(
         CHECK(pass);
         const auto& size = image.getDesc().size;
         auto state = ViewportRect{0, 0, float(size.width), float(size.height)}.renderState();
-        for (size_t index = 0; index < execution.scene->drawItems.size(); ++index)
+        const auto draws = execution.scene->drawCalls();
+        for (size_t index = 0; index < draws.size(); ++index)
         {
             if (!(visibilityMasks[index] & visibility))
                 continue;
-            const auto& item   = execution.scene->drawItems[index];
+            const auto& item   = draws[index];
             auto*       object = pass->bindPipeline(target.pipeline);
             CHECK(object);
             const rhi::ShaderCursor root(object);
-            rhiCheck(root["lights"].setBinding(execution.scene->lighting.getLightBuffer()));
+            rhiCheck(root["lights"].setBinding(execution.scene->lightBuffer()));
             rhiCheck(root["shadowData"].setBinding(transforms));
             const ShadowPushConstants
                 constants{.model = item.model, .lightIdx = lightIndex, .cascadeIndex = cascadeIndex, .faceIndex = face};
             rhiCheck(root["pushConstants"].getDereferenced().setData(constants));
-            const auto& mesh        = execution.resources->mesh(item.mesh);
-            const auto& submesh     = mesh.submeshes()[item.submeshIndex];
+            const auto& mesh        = *item.mesh;
             state.vertexBufferCount = 1;
             state.vertexBuffers[0]  = {mesh.vertices(), 0};
             state.indexBuffer       = {mesh.indices(), 0};
             pass->setRenderState(state);
-            pass->drawIndexed({submesh.indexCount, 1, 0, 0, submesh.firstIndex});
+            pass->drawIndexed({item.indexCount, 1, 0, 0, item.firstIndex});
         }
         pass->end();
     }

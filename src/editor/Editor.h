@@ -5,7 +5,7 @@
 #include "editor/EditorBackend.h"
 #include "editor/EditorCamera.h"
 #include "editor/EditorUi.h"
-#include "render/RenderView.h"
+#include "render/ViewportRect.h"
 #include "render/editor/EditorFrameInput.h"
 
 class EditorCamera;
@@ -15,7 +15,7 @@ class Editor
 public:
     struct Frame
     {
-        RenderView       view;
+        ViewportRect     viewport;
         EditorFrameInput input;
     };
 

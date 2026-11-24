@@ -5,9 +5,9 @@
 
 #include <slang-rhi.h>
 #include <slang-rhi/shader-cursor.h>
-#include "render/PreparedScene.h"
+#include "passes/raster/RasterPbr.h"
+#include "render/GpuScene.h"
 #include "render/RenderContext.h"
-#include "render/RenderView.h"
 #include "render/raster/ShadowResources.h"
 #include "render/resources/ShaderData.h"
 
@@ -16,7 +16,14 @@
 
 namespace
 {
+struct DeferredLightingPushConstants
+{
+    glm::vec4 viewport{0.0f};
+};
+static_assert(sizeof(DeferredLightingPushConstants) == 16);
+
 constexpr std::string_view kDeferredLightingShader = "deferred_lighting";
+constexpr bool             kEnableSheen            = true;
 constexpr std::array       kGBufferChannels{
     std::pair{"diffuseOcclusion", "diffuseOcclusion"},
     std::pair{"normalRoughness", "normalRoughness"},
@@ -55,18 +62,22 @@ void DeferredLightingPass::setProperties(const Properties& properties)
 RenderPassReflection DeferredLightingPass::reflect(const CompileData& compileData)
 {
     const auto* depth  = compileData.connectedResources.getField("depth");
-    const auto  extent = depth ? glm::uvec2{depth->getWidth(), depth->getHeight()} : glm::uvec2{};
+    const auto  extent = depth ? glm::uvec2{depth->texture().size.width, depth->texture().size.height} : glm::uvec2{};
 
     RenderPassReflection reflection;
     addShadowInputs(reflection);
     for (const auto& channel : kGBufferChannels)
-        reflection.addInput(channel.first, "G-buffer texture")
-            .texture2D(0, 0, 1, 0, 0)
-            .bindFlags(ResourceBindFlags::ShaderResource);
-    reflection.addOutput("color", "Raster lighting result")
-        .format(parameters.getColorFormat(compileData.defaultTexFormat))
-        .bindFlags(ResourceBindFlags::RenderTarget)
-        .texture2D(extent.x, extent.y);
+        reflection.addInput(channel.first, rhi::TextureDesc{
+            .size = {0, 0, 1},
+            .arrayLength = 0,
+            .mipCount = 0,
+            .usage = rhi::TextureUsage::ShaderResource,
+        });
+    reflection.addOutput("color", rhi::TextureDesc{
+        .size = {extent.x, extent.y, 1},
+        .format = parameters.getColorFormat(compileData.defaultTexFormat),
+        .usage = rhi::TextureUsage::RenderTarget,
+    });
     return reflection;
 }
 
@@ -77,9 +88,9 @@ void DeferredLightingPass::compile(RenderContext* passContext, const CompileData
     pipelines = {};
 }
 
-rhi::IRenderPipeline* DeferredLightingPass::getPipeline(const RenderContext& context, rhi::Format format)
+rhi::IRenderPipeline*
+DeferredLightingPass::getPipeline(const RenderContext& context, rhi::Format format, bool hasEnvironment)
 {
-    const bool hasEnvironment = context.scene->environmentMap != nullptr;
     auto& pipeline = pipelines[hasEnvironment];
     if (pipeline)
         return pipeline;
@@ -87,13 +98,13 @@ rhi::IRenderPipeline* DeferredLightingPass::getPipeline(const RenderContext& con
     const ShaderDefines variant{
         {"HAS_ENV", hasEnvironment ? "1" : "0"},
         {"ENABLE_CLEARCOAT", "0"},
-        {"ENABLE_SHEEN", "1"}
+        {"ENABLE_SHEEN", kEnableSheen ? "1" : "0"}
     };
     rhi::ColorTargetDesc color;
     color.format = format;
     rhi::RenderPipelineDesc desc;
     desc.program =
-        context.shaderManager->program(context.shaderManager->getOrCompile(kDeferredLightingShader, variant));
+        context.shaderManager->getOrCompile(kDeferredLightingShader, variant);
     desc.targets                       = &color;
     desc.targetCount                   = 1;
     desc.depthStencil.depthTestEnable  = false;
@@ -106,9 +117,11 @@ rhi::IRenderPipeline* DeferredLightingPass::getPipeline(const RenderContext& con
 
 void DeferredLightingPass::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
-    const auto target    = renderData.getTexture("color");
-    auto* pipeline       = getPipeline(*renderCommands, target->getDesc().format);
-    const auto colorView = target->getDefaultView();
+    const auto& scene          = *renderCommands->scene;
+    const bool  hasEnvironment = scene.environmentMap() != nullptr;
+    const auto  target         = renderData.getTexture("color");
+    auto*       pipeline       = getPipeline(*renderCommands, target->getDesc().format, hasEnvironment);
+    const auto  colorView      = target->getDefaultView();
     CHECK(colorView);
     rhi::RenderPassColorAttachment color;
     color.view   = colorView;
@@ -119,14 +132,18 @@ void DeferredLightingPass::execute(RenderContext* renderCommands, const RenderDa
     CHECK(object);
     const rhi::ShaderCursor root(object);
     const auto&             size     = target->getDesc().size;
-    const auto              viewport = renderCommands->view->viewport.clamped({size.width, size.height});
-    const auto& scene = *renderCommands->scene;
+    const auto              viewport = scene.viewport().clamped({size.width, size.height});
     rhiCheck(root["sceneGlobals"].setBinding(scene.globalsBuffer()));
-    scene.lighting.bindRaster(root, parameters.ambientCoefficient, scene.environmentMap);
+    rhiCheck(root["lights"].setBinding(scene.lightBuffer()));
+    if (!hasEnvironment)
+        rhiCheck(
+            root["lightingParameters"].getDereferenced()["ambientCoefficient"].setData(parameters.ambientCoefficient)
+        );
+    bindPbrTextures(root, scene, kEnableSheen);
     const ShadowBindings shadows{renderData, *renderCommands->resources};
     shadows.bind(root);
     for (const auto& [name, parameter] : kGBufferChannels)
-        rhiCheck(root[parameter].setBinding(renderData.getTexture(name)->getDefaultView()));
+        rhiCheck(root[parameter].setBinding(renderData.getTexture(name)));
     const DeferredLightingPushConstants constants{{viewport.x, viewport.y, viewport.width, viewport.height}};
     rhiCheck(root["parameters"].getDereferenced().setData(constants));
     pass->setRenderState(viewport.renderState());

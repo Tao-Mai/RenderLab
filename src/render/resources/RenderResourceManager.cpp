@@ -31,7 +31,6 @@ void RenderResourceManager::init(rhi::IDevice& target, AssetManager& targetAsset
     device              = &target;
     assets              = &targetAssets;
     data                = &targetData;
-    rayTracingSupported = target.hasFeature(rhi::Feature::RayTracing);
 }
 void RenderResourceManager::shutdown() noexcept
 {
@@ -42,9 +41,8 @@ void RenderResourceManager::shutdown() noexcept
     device              = nullptr;
     assets              = nullptr;
     data                = nullptr;
-    rayTracingSupported = false;
 }
-GpuMesh& RenderResourceManager::mesh(const MeshAsset::ID& id)
+const GpuMesh& RenderResourceManager::loadMesh(const MeshAsset::ID& id)
 {
     if (const auto found = meshes.find(id); found != meshes.end())
     {
@@ -53,8 +51,7 @@ GpuMesh& RenderResourceManager::mesh(const MeshAsset::ID& id)
 
     const MeshAsset& meshAsset = assets->get<MeshAsset>(id);
     MeshGeometry     geometry  = data->readGeometry(meshAsset);
-    auto             gpu =
-        std::make_unique<GpuMesh>(*device, std::move(geometry), meshAsset.submeshes, rayTracingSupported);
+    auto gpu = std::make_unique<GpuMesh>(*device, geometry, meshAsset.submeshes);
     return *meshes.emplace(id, std::move(gpu)).first->second;
 }
 

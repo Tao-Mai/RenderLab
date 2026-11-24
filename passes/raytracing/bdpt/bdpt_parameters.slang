@@ -2,16 +2,19 @@
 #define RENDERLAB_BDPT_PARAMETERS_SLANG
 
 #include "BdptBindings.h"
-#include "raytracing/accumulation/path_parameters.slang"
+#include "render/raytracing/PathTracingParameters.h"
 
 struct BdptParameters
 {
-    PathParameters path;
+    PathTracingParameters path;
     float4 sceneSphere;
     float4 camera;
     uint2 tileOffset;
-    float lightSamples;
+    uint2 imageSize;
     uint flags;
+    uint padding0;
+    uint padding1;
+    uint padding2;
 
     property float3 sceneCenter { get { return sceneSphere.xyz; } }
     property float sceneRadius { get { return sceneSphere.w; } }

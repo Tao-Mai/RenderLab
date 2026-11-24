@@ -1,5 +1,5 @@
-#ifndef RENDERLAB_ACCUMULATION_PATH_COMMON_SLANG
-#define RENDERLAB_ACCUMULATION_PATH_COMMON_SLANG
+#ifndef RENDERLAB_PATH_COMMON_SLANG
+#define RENDERLAB_PATH_COMMON_SLANG
 
 #include "scene/scene_data.slang"
 #include "material/scattering.slang"
@@ -26,9 +26,6 @@ struct Visibility
 {
     uint visible;
 };
-
-#include "path_parameters.slang"
-RWStructuredBuffer<AccumulatedPixel> accumulation;
 
 bool visible(float3 origin, float3 direction, float distance)
 {

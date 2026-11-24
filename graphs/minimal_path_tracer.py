@@ -13,9 +13,3 @@ def render_graph_MinimalPathTracer(
     graph.create_pass("pathTracer", "MinimalPathTracer", {"maxBounces": 3})
     add_post_process(graph, "pathTracer.color", hdr, postProcess, bloom)
     return graph
-
-
-if globals().get("__name__", "__main__") == "__main__":
-    MinimalPathTracer = render_graph_MinimalPathTracer()
-    if "m" in globals():
-        m.addGraph(MinimalPathTracer)

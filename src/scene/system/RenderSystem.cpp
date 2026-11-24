@@ -60,13 +60,16 @@ SceneLight::Model lightModel(const LightComponent& light, const TransformCompone
 }
 }  // namespace
 
-const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene, uint64_t sceneGeneration)
+const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene, uint64_t sceneGeneration, ViewportRect viewport)
 {
     const auto& assets = *context().assetManager;
     data.drawItems.clear();
     data.lights.clear();
     data.sceneGeneration = sceneGeneration;
+    data.camera          = scene.editorCamera.sceneCamera();
+    data.viewport        = viewport;
     data.environmentMap  = scene.environmentMap;
+
     std::vector<uint32_t> renderDrawBegins;
     for (const auto& actor : scene.actors)
     {

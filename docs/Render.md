@@ -13,9 +13,9 @@ Pass 的 C++、专用 Slang 和构建声明放在一起。光栅化、后处理�
 各 Pass 的 CMake 文件用 `renderlab_shader()` 声明专用 Shader 的程序名、源文件、入口和宏变体。加载时以程序名选用构建目录生成的变体清单，加载同版编译器生成的 Slang IR 模块。
 通用 Slang 可以用 `#include "math/random.slang"`，CPU / GPU 共享头文件可以用 `#include "render/resources/PbrtMaterialProgram.h"`。
 
-场景以 Submesh 粒度的 DrawItem 提交，光栅化直接绘制，光追用同一批条目关联 BLAS、生成 TLAS 实例与命中数据。Renderer 只读引用 DrawItem 列表，材质索引按条目顺序单独保存在数组中。
+场景以 Submesh 粒度的 DrawItem 提交。`GpuScene::update()` 在获取交换链图像前解析网格。光栅化用解析后的网格绘制，光追用同一批网格关联 BLAS 并生成 TLAS 实例与命中数据。
 
-Renderer 持有 [SceneAccelerationStructures](../src/render/raytracing/SceneAccelerationStructures.cpp)。光追路线在执行渲染图前共用网格 BLAS 缓存，按当前帧槽位构建 TLAS，并在同一命令缓冲中完成构建与光追读取的同步。
+`GpuScene` 持有 [SceneAccelerationStructures](../src/render/raytracing/SceneAccelerationStructures.cpp)。光追 Pass 在开启 RHI Pass 前获取本帧的光追数据，其中包含当前帧槽位构建的 TLAS。准备和光追在同一命令缓冲中录制。
 
 ## 渲染路线
 
@@ -57,7 +57,7 @@ Pass 通过反射声明附件的访问方式，执行时直接构造 RHI 附件�
 - ReSTIR 关闭 SVGF 时由单层 RGBA16F 的 `color` 输出合并颜色。开启时，`color` 的两层分别保存直接光和间接光，并通过 `emission` 和 `albedo` 输出自发光及主命中材质的反射率 `saturate(diffuseColor + F0)`。两种模式均输出线性深度和法线。
 - MinimalPathTracer 的 `color` 合并直接光、间接光与相机直接可见的发光。两条路线均使用固定的主射线像素内采样位置。
 
-两个实时 Pass 都使用 [RealtimeScene](../src/render/raytracing/RealtimeScene.cpp) 上传命中记录，并为发光子网格实例创建三角形任务。Compute 生成每个三角形的 80 B 记录，保存世界空间顶点与边、面积、顶点 UV 和材质索引。缓冲开头的 16 B header 保存有效三角形数量。GpuResources 管理容量增长，RHI 跟踪 Compute 到光追的资源同步；绑定在操作录制时取得当前缓冲。[RTXDI 的发光网格展开方式](https://github.com/NVIDIA-RTX/RTXDI/blob/main/Doc/Integration.md#mesh-light-processing)
+两个实时 Pass 共用 [GpuScene](../src/render/GpuScene.cpp) 准备命中记录、发光三角形和 TLAS。`SceneShading` 生成发光三角形数据，`GpuScene` 负责录制上传并提供光追绑定所需的资源。
 
 ReSTIR 可通过 `RayTracingPass` 的 `restir` 参数调节采样。默认生成 32 个光源候选和一个 BRDF 候选，启用时域复用及 3 邻居、30 像素半径的一轮空间复用。历史计数限制为当前初始计数的 20 倍。合并时在当前表面重算目标值，按原论文 Algorithm 6 检查来源表面的支持域与可见性并归一化。各阶段使用独立随机流和明确的缓冲读写顺序。[ReSTIR](ReSTIR.md)
 
@@ -86,7 +86,7 @@ ReSTIR 可通过 `RayTracingPass` 的 `restir` 参数调节采样。默认生成
 曝光状态保存在 GPU 缓冲中，由 ToneMappingPass 直接读取并作用于线性 HDR 结果。两个 Pass 共用 [ExposureState](../shaders/postprocess/exposure_state.slang) 的布局。曝光补偿同时适用于两种模式，曝光调整保留离线光照累计。
 
 - 默认两帧在途，离线光追使用一个槽位；FrameContext 以 RHI Fence 等待槽位完成。
-- FrameData 保存 Scene / Light / Shadow 常量和环境绑定，MaterialTable 管理材质数据及纹理、采样器数组。
+- Pass 绑定当前视图的相机常量、场景的灯光和环境资源，以及 ShadowPass 为本次录制准备的阴影参数。MaterialTable 管理材质数据及纹理、采样器数组。
 - GpuResources 保留图像、缓冲的稳定 handle、容量与历史版本，Pass 通过 getImage / getBuffer 访问。
 - CPU 上传数据由 RHI encoder 复制，原生 staging 分配、资源状态和读写同步由 slang-rhi 管理。
 - Renderer 直接获取和呈现 Surface 返回的原生纹理；拾取在提交完成后回读。

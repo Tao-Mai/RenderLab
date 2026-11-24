@@ -1,20 +1,23 @@
-#include "raytracing/accumulation/path_launch.slang"
-#include "pt_parameters.slang"
+#include "raytracing/path_launch.slang"
+
+struct PtParameters { PathTracingParameters path; };
+ConstantBuffer<PtParameters> parameters;
+[format("rgba32f")] RWTexture2D<float4> sampleOutput;
 
 #include "pt.slang"
 
 [shader("raygeneration")]
 void raygenMain()
 {
-    PathParameters path = parameters.path;
+    PathTracingParameters path = parameters.path;
     uint2 pixel = DispatchRaysIndex().xy;
-    uint pixelIndex = pixel.x + pixel.y * path.imageSize.x;
     if (!path.containsPixel(pixel))
     {
-        accumulation[pixelIndex] = (AccumulatedPixel)0;
+        sampleOutput[pixel] = float4(0.0, 0.0, 0.0, 1.0);
         return;
     }
 
+    uint pixelIndex = pixel.x + pixel.y * DispatchRaysDimensions().x;
     CameraPathSample sample = sampleCameraPath(pixel, pixelIndex, path);
-    accumulateCameraSample(pixelIndex, path.accumulatedSamples, tracePath(sample.ray, sample.randomState));
+    sampleOutput[pixel] = float4(tracePath(sample.ray, sample.randomState), 1.0);
 }

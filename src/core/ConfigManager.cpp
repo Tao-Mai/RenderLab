@@ -63,10 +63,10 @@ const AssetID<SceneAsset>& ConfigManager::initialScene() const noexcept { return
 
 const EditorConfig& ConfigManager::editorConfig() const noexcept { return editor; }
 
-std::filesystem::path ConfigManager::renderGraphScript() const
+std::filesystem::path ConfigManager::renderGraphScript(std::string_view name) const
 {
-    const auto& name = renderGraphName();
-    return resolveAgainst(configDir, data.renderGraphs.at(findRenderPath(name)).at(name));
+    const auto& scripts = data.renderGraphs.at(findRenderPath(name));
+    return resolveAgainst(configDir, scripts.find(name)->second);
 }
 
 RenderPath ConfigManager::findRenderPath(std::string_view graphName) const
@@ -79,9 +79,9 @@ RenderPath ConfigManager::findRenderPath(std::string_view graphName) const
     return found->first;
 }
 
-nlohmann::json ConfigManager::getOptions() const
+nlohmann::json ConfigManager::getOptions(std::string_view graphName) const
 {
-    const auto     prefix  = kRenderGraphOptionsPrefix + settings::encodeName(renderGraphName()) + ':';
+    const auto     prefix  = kRenderGraphOptionsPrefix + settings::encodeName(graphName) + ':';
     const auto     options = nlohmann::json(settings.getOptions());
     nlohmann::json result{{"parameters", nlohmann::json::object()}, {"passes", nlohmann::json::object()}};
     for (const auto& [name, value] : options.items())
@@ -102,7 +102,7 @@ nlohmann::json ConfigManager::getOptions() const
     CHECK(
         result.at("parameters").is_object() && result.at("passes").is_object(),
         "invalid options for graph '{}'",
-        renderGraphName()
+        graphName
     );
     return result;
 }

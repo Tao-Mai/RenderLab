@@ -32,7 +32,7 @@ struct RectAreaShadowData
     float2 worldToUvScale;
 };
 
-// Must match kMaxDirectionalShadowCascades in RenderConfig.h.
+// Must match kMaxDirectionalShadowCascades in ShadowResources.h.
 static const uint kMaxDirectionalShadowCascades = 4;
 
 struct CascadeShadowData

@@ -58,6 +58,9 @@ using PbrtSpectrumInput = std::variant<PbrtConstantSpectrum, PbrtRgbSpectrum, Pb
                                      PbrtBlackbodySpectrum, PbrtNamedSpectrum, PbrtSpectrumFile,
                                      PbrtTextureReference>;
 
+class AssetDataManager;
+[[nodiscard]] glm::vec3 pbrtPreviewRgb(const PbrtSpectrum& spectrum, const AssetDataManager& assetData);
+
 namespace pbrt_import
 {
 [[nodiscard]] PbrtSpectrum readSpectrum(const PbrtParameter& parameter, bool albedo, bool allowFloat);

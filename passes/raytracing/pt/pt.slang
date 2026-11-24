@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_PT_SLANG
 #define RENDERLAB_PT_SLANG
 
-#include "raytracing/accumulation/path_common.slang"
+#include "raytracing/path_common.slang"
 #include "light_sampling.slang"
 
 float balanceHeuristic(float pdf, float otherPdf)

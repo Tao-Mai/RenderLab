@@ -4,7 +4,7 @@
 
 #include <slang-rhi/shader-cursor.h>
 #include "editor/PassEditor.h"
-#include "render/PreparedScene.h"
+#include "render/GpuScene.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/raytracing/PathTracingShader.h"
@@ -26,8 +26,7 @@ class MinimalPathTracer : public RenderPass
     RL_PLUGIN_CLASS(MinimalPathTracer, "MinimalPathTracer", "Minimal path tracer.");
 
     MinimalPathTracer(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
-        RenderPass(std::move(device), SceneInputs::RayTracing),
-        parameters(deserializeFromProperties<MinimalPathTracerSettings>(properties))
+        RenderPass(std::move(device)), parameters(deserializeFromProperties<MinimalPathTracerSettings>(properties))
     {
         parameters.validate();
     }
@@ -50,20 +49,24 @@ class MinimalPathTracer : public RenderPass
         return make_ref<MinimalPathTracer>(std::move(device), properties);
     }
 
-    void renderUI(RenderContext* context, Gui::Widgets& widget) override;
+    void renderUI(const PassEditorContext& context, Gui::Widgets& widget) override;
 
     [[nodiscard]] RenderPassReflection reflect(const CompileData&) override
     {
         RenderPassReflection reflection;
-        reflection.addOutput(kOutputColor, "Path traced radiance")
-            .texture2D()
-            .format(rhi::Format::RGBA16Float)
-            .bindFlags(ResourceBindFlags::UnorderedAccess);
+        reflection.addOutput(kOutputColor, rhi::TextureDesc{
+            .size = {0, 0, 1},
+            .format = rhi::Format::RGBA16Float,
+            .usage = rhi::TextureUsage::UnorderedAccess,
+        });
         return reflection;
     }
 
     void compile(RenderContext*, const CompileData&) override
     {
+        if (!checkRayTracingSupport(*mpDevice))
+            return;
+
         sampleIndex = 0;
     }
 
@@ -71,7 +74,8 @@ class MinimalPathTracer : public RenderPass
     {
         auto&       commands = *renderCommands->commands;
         const auto& frame    = *renderCommands;
-        const auto sceneGeneration = frame.scene->sceneGeneration;
+        const auto rayTracing = frame.scene->prepareRayTracing(commands, frame.frameIndex);
+        const auto sceneGeneration = frame.scene->sceneGeneration();
         if (sceneGeneration != previousSceneGeneration)
         {
             sampleIndex             = 0;
@@ -79,22 +83,24 @@ class MinimalPathTracer : public RenderPass
         }
 
         const auto environment = pathEnvironment(*frame.scene);
-        auto& program = programs[static_cast<size_t>(environment)];
-        if (!program.pipeline)
+        auto&      pipeline    = pipelines[static_cast<size_t>(environment)];
+        if (!pipeline)
         {
             auto& shaderManager = *frame.shaderManager;
-            const auto shader = shaderManager.getOrCompile("minimal_path_tracer", pathEnvironmentDefines(environment));
-            shaderManager.layout(shader).validateConstants<PathTracingParameters>("parameters");
-            program.create(*mpDevice, shaderManager.program(shader), kRaygenEntries);
+            auto* program = shaderManager.getOrCompile("minimal_path_tracer", pathEnvironmentDefines(environment));
+            ShaderLayout(*program).validateConstants<PathTracingParameters>("parameters");
+            rhiCheck(mpDevice->createRayTracingPipeline(pathTracingPipelineDesc(program), pipeline.writeRef()));
+            if (!shaderTable)
+                shaderTable = createPathTracingShaderTable(*mpDevice, program, kRaygenEntries);
         }
 
         auto* pass = commands.beginRayTracingPass();
         CHECK(pass);
-        auto* object = pass->bindPipeline(program.pipeline, program.shaderTable);
+        auto* object = pass->bindPipeline(pipeline, shaderTable);
         CHECK(object);
-        frame.scene->rays.bind(object, frame);
+        rayTracing.bind(object);
         const rhi::ShaderCursor root(object);
-        rhiCheck(root["outputImage"].setBinding(renderData.getTexture(kOutputColor)->getDefaultView()));
+        rhiCheck(root["outputImage"].setBinding(renderData.getTexture(kOutputColor)));
         const auto constants = makePathTracingParameters(frame, parameters.maxBounces, sampleIndex++);
         rhiCheck(root["parameters"].getDereferenced().setData(constants));
         const auto extent = renderData.getDefaultTextureDims();
@@ -105,7 +111,9 @@ class MinimalPathTracer : public RenderPass
 private:
     MinimalPathTracerSettings parameters;
 
-    std::array<PathTracingProgram, static_cast<size_t>(PathEnvironment::Count)> programs;
+    std::array<rhi::ComPtr<rhi::IRayTracingPipeline>, static_cast<size_t>(PathEnvironment::Count)> pipelines;
+    rhi::ComPtr<rhi::IShaderTable> shaderTable;
+
     uint32_t sampleIndex             = 0;
     uint64_t previousSceneGeneration = 0;
 };
@@ -123,9 +131,9 @@ bool drawSettings(
 }
 }  // namespace
 
-void MinimalPathTracer::renderUI(RenderContext* context, Gui::Widgets& widget)
+void MinimalPathTracer::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
 {
-    drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "MinimalPathTracer");
+    drawPassEditor<drawSettings>(widget, *this, parameters, context, "MinimalPathTracer");
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)

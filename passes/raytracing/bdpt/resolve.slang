@@ -1,20 +1,29 @@
-#include "bdpt_parameters.slang"
-#include "raytracing/accumulation/path_resolve.slang"
+#include "BdptBindings.h"
 
+ConstantBuffer<BdptBinding::ResolveParameters> parameters;
+StructuredBuffer<BdptBinding::AccumulatedPixel> cameraHistory;
 StructuredBuffer<uint4> splats;
+[format("rgba16f")] RWTexture2D<float4> outputColor;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void computeMain(uint3 dispatchId : SV_DispatchThreadID)
 {
-    PathParameters path = parameters.path;
+    uint2 size;
+    outputColor.GetDimensions(size.x, size.y);
     uint2 pixel = dispatchId.xy;
-    if (any(pixel >= path.imageSize))
+    if (any(pixel >= size))
         return;
 
-    uint index = pixel.x + pixel.y * path.imageSize.x;
-    float3 color = path.containsPixel(pixel) ? averageCameraSamples(index) : float3(0.0);
-    if (path.containsPixel(pixel) && parameters.lightSamples > 0.0)
-        color += asfloat(splats[index].xyz) / parameters.lightSamples;
-    outputImage[pixel] = float4(color, 1.0);
+    float3 color = float3(0.0);
+    if (all(pixel >= parameters.viewportOffset) && all(pixel - parameters.viewportOffset < parameters.viewportExtent))
+    {
+        uint index = pixel.x + pixel.y * size.x;
+        BdptBinding::AccumulatedPixel history = cameraHistory[index];
+        if (history.sampleCount > 0)
+            color = history.radiance / float(history.sampleCount);
+        if (parameters.lightSplatScale > 0.0)
+            color += asfloat(splats[index].rgb) * parameters.lightSplatScale;
+    }
+    outputColor[pixel] = float4(color, 1.0);
 }
