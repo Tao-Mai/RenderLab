@@ -6,7 +6,6 @@ Texture2D<uint4> vbuffer;
 [format("rgba32f")] RWTexture2D<float4> outputImage;
 static const uint kScatterHitGroup = 0;
 static const uint kVisibilityHitGroup = 1;
-static const uint kMaxScatteringEvents = MAX_BOUNCES + 1u;
 
 // One ordinary light sample and one BRDF continuation per scattering event.
 float3 evalDirectLight(Surface surface, inout SampleGenerator state)
@@ -64,7 +63,8 @@ float3 tracePath(VBufferHit primary, RayDesc ray, inout SampleGenerator state)
     bool    previousDelta    = false;
 
     // The primary surface scatters once before counting indirect bounces.
-    for (uint bounce = 0; bounce <= kMaxScatteringEvents; ++bounce)
+    const uint maxScatteringEvents = parameters.maxBounces + 1u;
+    for (uint bounce = 0; bounce <= maxScatteringEvents; ++bounce)
     {
         if (bounce > 0)
         {
@@ -84,7 +84,7 @@ float3 tracePath(VBufferHit primary, RayDesc ray, inout SampleGenerator state)
             else
                 indirectRadiance += contribution;
         }
-        if (hit.event != PathEvent::Surface || bounce == kMaxScatteringEvents)
+        if (hit.event != PathEvent::Surface || bounce == maxScatteringEvents)
             break;
 
         Surface surface = hit.surface;
@@ -123,10 +123,10 @@ void raygenMain()
     uint2  pixel = DispatchRaysIndex().xy;
     SampleGenerator state = createPathSampleGenerator(pixel, DispatchRaysDimensions().x);
     float3 color = float3(0.0);
-    if (parameters.containsPixel(pixel))
+    if (scene.globals[0].viewport.containsPixel(pixel))
     {
         VBufferHit primary = {vbuffer.Load(int3(pixel, 0))};
-        color = tracePath(primary, createPathRay(pixel, float2(0.5)), state);
+        color = tracePath(primary, createCameraRay(pixel, float2(0.5)), state);
     }
     outputImage[pixel] = float4(color, 1.0);
 }

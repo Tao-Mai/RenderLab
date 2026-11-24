@@ -84,8 +84,8 @@ void Renderer::shutdown() noexcept
     appliedParameters     = {};
     pendingGraphName.reset();
     optionsDirty = false;
-    parameterDefaults = Properties::json::object();
-    parameters        = Properties::json::object();
+    parameterDefaults     = nlohmann::ordered_json::object();
+    parameters            = nlohmann::ordered_json::object();
 }
 
 void Renderer::switchGraph(std::string_view name)
@@ -176,7 +176,7 @@ void Renderer::clearOptions()
 
 void Renderer::applyConfiguration()
 {
-    ref<RenderGraph> previousGraph;
+    std::shared_ptr<RenderGraph> previousGraph;
     if (pendingGraphName || optionsDirty)
     {
         const auto& graphName = pendingGraphName ? *pendingGraphName : mpRenderGraph->getName();

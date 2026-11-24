@@ -8,19 +8,20 @@
 
 class DepthPrepass : public RenderPass
 {
-    RL_PLUGIN_CLASS(DepthPrepass, "DepthPrepass", "Writes the main view depth buffer.");
+    static const RenderPassReflection::Field kPorts[1];
 
-    DepthPrepass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) : RenderPass(std::move(device))
+    RL_PLUGIN_CLASS(DepthPrepass, "DepthPrepass", .desc = "Writes the main view depth buffer.", .ports = kPorts);
+
+    DepthPrepass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties) : RenderPass(std::move(device))
     {
         setProperties(properties);
     }
 
-    static ref<DepthPrepass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
+    static std::shared_ptr<DepthPrepass> create(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties)
     {
-        return make_ref<DepthPrepass>(std::move(device), properties);
+        return std::make_shared<DepthPrepass>(std::move(device), properties);
     }
 
-    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
     void compile(RenderContext* passContext, const CompileData& compileData) override;
     void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 

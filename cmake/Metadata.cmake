@@ -21,7 +21,7 @@ function(renderlab_generate_metadata target sourceDir)
             continue()
         endif()
         file(STRINGS "${input}" marker
-            REGEX "(^|[^A-Za-z0-9_])RL_(RECORD|TYPE|REGISTER_TYPE|ALLOW_UNKNOWN_FIELDS|FIELD|SLIDER|ENUM|FLAGS|ENUM_VALUE|SHADER_LAYOUT)([^A-Za-z0-9_]|$)"
+            REGEX "(^|[^A-Za-z0-9_])RL_(RECORD|TYPE|REGISTER_TYPE|ALLOW_UNKNOWN_FIELDS|FIELD|PASS_SLIDER|PASS_UI|ENUM|FLAGS|ENUM_VALUE|SHADER_LAYOUT)([^A-Za-z0-9_]|$)"
             LIMIT_COUNT 1
         )
         if(NOT marker)

@@ -12,10 +12,6 @@
 #include "scene_hits.slang"
 #include "geometry.slang"
 
-#ifndef HAS_ENV
-#error HAS_ENV must be specified when compiling path tracing
-#endif
-
 static const uint  kRussianRouletteStartBounce = 3;
 
 struct VisibilityPayload
@@ -139,12 +135,6 @@ Surface surfaceAt(uint instanceIndex, uint primitiveIndex, float2 barycentrics, 
 
 ConstantBuffer<PathTracingParameters> parameters;
 
-RayDesc createPathRay(uint2 pixel, float2 pixelSample)
-{
-    float2 local = float2(pixel) + pixelSample - parameters.viewportOffset;
-    return createCameraRay(local / parameters.viewportExtent);
-}
-
 enum class PathEvent : uint
 {
     Miss,
@@ -201,7 +191,9 @@ SampleGenerator createPathSampleGenerator(uint2 pixel, uint width)
 
 float3 hitEmission(RayDesc ray, PathHit hit)
 {
-    return hit.event == PathEvent::Surface ? hit.surface.emissive : environmentRadiance(ray.Direction);
+    if (hit.event == PathEvent::Surface)
+        return hit.surface.emissive;
+    return environmentRadiance(ray.Direction);
 }
 
 [shader("miss")] void missMain(inout PathHit hit) { hit.event = PathEvent::Miss; }

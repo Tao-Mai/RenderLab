@@ -192,15 +192,17 @@ bool GpuScene::updateEnvironment(const SceneRenderData& source, rhi::ICommandEnc
         environmentMapId = source.environmentMap;
         environment = environmentMapId ? &resources->environmentMap(*environmentMapId, commands) : nullptr;
     }
-    if (environmentLight == source.environmentLight)
+    const uint32_t hasCubemap = environment != nullptr;
+    if (environmentLight == source.environmentLight && environmentData.hasCubemap == hasCubemap)
         return mapChanged;
 
     environmentLight = source.environmentLight;
-    environmentData = {};
+    environmentData = {.hasCubemap = hasCubemap};
     if (environmentLight)
     {
         const auto& emission = environmentLight->emission;
         const auto scale = static_cast<float>(emission.scale);
+        environmentData.hasEqualArea = 1;
         environmentData.lightFromWorld = environmentLight->lightFromWorld;
         if (emission.image)
         {
@@ -209,17 +211,27 @@ bool GpuScene::updateEnvironment(const SceneRenderData& source, rhi::ICommandEnc
         }
         else
             environmentData.emission = {pbrtPreviewRgb(emission.spectrum, *assetData) * scale, 0.0f};
-        uploadSceneBuffer(commands, environmentLightBuffer, std::as_bytes(std::span{&environmentData, 1}));
+
+        // Equal-area lights share the ray tracing layout's cubemap binding.
+        if (!environment && !blackEnvironmentView)
+            rhiCheck(resources->texture(BuiltinAssets::Texture::kBlackCube, commands)->getDefaultView(
+                blackEnvironmentView.writeRef()
+            ));
     }
+    if (hasEnvironment())
+        uploadSceneBuffer(commands, environmentLightBuffer, std::as_bytes(std::span{&environmentData, 1}));
     return true;
 }
 
 SceneUpdateFlags GpuScene::updateGlobals(const SceneRenderData& source, rhi::ICommandEncoder& commands)
 {
-    const auto aspect = source.viewport.width / source.viewport.height;
-    const bool cameraChanged = previousCamera != source.camera || aspect != sceneViewport.width / sceneViewport.height;
-    auto updates = source.viewport != sceneViewport ? SceneUpdateFlags::Viewport : SceneUpdateFlags::None;
-    sceneViewport = source.viewport;
+    const auto& viewport = source.viewport;
+    const auto& previousViewport = sceneGlobals.viewport;
+    const auto aspect = viewport.width / viewport.height;
+    const bool viewportChanged = viewport != previousViewport;
+    const bool cameraChanged = previousCamera != source.camera ||
+        (viewportChanged && aspect != previousViewport.width / previousViewport.height);
+    auto updates = viewportChanged ? SceneUpdateFlags::Viewport : SceneUpdateFlags::None;
     if (cameraChanged)
     {
         const auto& camera = source.camera;
@@ -238,10 +250,12 @@ SceneUpdateFlags GpuScene::updateGlobals(const SceneRenderData& source, rhi::ICo
 
     const auto lightCount = static_cast<uint32_t>(analyticLights().size());
     const auto maxLod = environment ? environment->prefilteredMaxLod : 0.0f;
-    if (cameraChanged || lightCount != sceneGlobals.analyticLightCount || maxLod != sceneGlobals.prefilteredMaxLod)
+    if (cameraChanged || viewportChanged || lightCount != sceneGlobals.analyticLightCount ||
+        maxLod != sceneGlobals.prefilteredMaxLod)
     {
         sceneGlobals.analyticLightCount = lightCount;
         sceneGlobals.prefilteredMaxLod = maxLod;
+        sceneGlobals.viewport = viewport;
         rhiCheck(commands.uploadBufferData(globals, 0, sizeof(sceneGlobals), &sceneGlobals));
     }
     return updates;
@@ -343,9 +357,16 @@ void GpuScene::bindRayTracingShaderData(rhi::IShaderObject& object, rhi::IAccele
     const rhi::ShaderCursor root(&object);
     emissive.bind(root["emissiveLights"]);
     if (const auto field = root["environmentLight"]; field.isValid())
+    {
         rhiCheck(field.setBinding(environmentLightBuffer));
-    if (environment)
-        environment->bindRadiance(root);
+        if (environment)
+            environment->bindRadiance(root);
+        else
+        {
+            rhiCheck(root["radianceMap"].setBinding(blackEnvironmentView));
+            rhiCheck(root["radianceSampler"].setBinding(lutSampler));
+        }
+    }
 }
 
 void GpuScene::raytrace(

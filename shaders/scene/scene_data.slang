@@ -8,12 +8,25 @@
 #include "raytracing/scene_hits.slang"
 #endif
 
+struct ViewportRect
+{
+    float2 offset;
+    float2 extent;
+
+    bool containsPixel(uint2 pixel)
+    {
+        float2 local = float2(pixel) + 0.5 - offset;
+        return all(local >= 0.0) && all(local < extent);
+    }
+};
+
 struct SceneGlobals
 {
     SceneUniforms camera;
     uint analyticLightCount;
     float prefilteredMaxLod;
     uint padding0, padding1;
+    ViewportRect viewport;
 };
 
 struct SceneData

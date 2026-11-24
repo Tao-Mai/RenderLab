@@ -28,14 +28,18 @@ public:
     [[nodiscard]] static std::optional<ResourceDesc> describe(rhi::IResource& resource);
     [[nodiscard]] static bool                        sameDescription(const ResourceDesc& a, const ResourceDesc& b);
 
-    void addResource(std::string name, const ResourceDesc& desc);
-    void addInput(std::string name, const ResourceDesc& requirements, rhi::IResource* resource, bool validate);
-    void connect(std::string name, const std::string& sourceName, const ResourceDesc& desc, bool validate);
+    size_t addResource(std::string name, const ResourceDesc& desc);
+    void addInput(std::string name, const ResourceDesc& requirements, rhi::IResource* resource);
+    void connect(std::string name, const std::string& sourceName, const ResourceDesc& desc);
+    void matchTexture(
+        size_t target, size_t source, RenderPassReflection::TextureMatch match, const DefaultProperties& defaults
+    );
+    void applyTextureDefaults(const DefaultProperties& defaults);
     void markOutput(const std::string& name);
-    void allocateResources(rhi::IDevice& device, const DefaultProperties& defaults);
+    void allocateResources(rhi::IDevice& device);
 
     [[nodiscard]] std::optional<size_t> findSlot(const std::string& name) const;
-    [[nodiscard]] ResourceDesc          description(size_t slot, const DefaultProperties& defaults) const;
+    [[nodiscard]] const ResourceDesc&   description(size_t slot) const { return slots[slot].resourceDesc; }
     [[nodiscard]] rhi::IResource*       resource(size_t slot) const { return slots[slot].resource; }
     void                   setInput(size_t slot, rhi::IResource* resource) { slots[slot].resource = resource; }
     [[nodiscard]] uint64_t historyRevision(size_t slot) const { return slots[slot].historyRevision; }

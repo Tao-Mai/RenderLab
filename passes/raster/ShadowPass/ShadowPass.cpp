@@ -3,6 +3,7 @@
 #include <slang-rhi.h>
 #include <slang-rhi/shader-cursor.h>
 #include "core/Logger.h"
+#include "core/Serializer.h"
 #include "core/math/Bounds.h"
 #include "render/GpuScene.h"
 #include "render/RenderConfig.h"
@@ -278,31 +279,23 @@ void ShadowSettings::validate() const
     CHECK(filter == SamplerAsset::Filter::Nearest || filter == SamplerAsset::Filter::Linear);
 }
 
-ShadowPass::ShadowPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
-    RenderPass(std::move(device)), parameters(deserializeFromProperties<ShadowSettings>(properties))
+ShadowPass::ShadowPass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties) :
+    RenderPass(std::move(device)), parameters(DeserializeWithDefaults<ShadowSettings>(properties))
 {
     parameters.validate();
 }
 
-Properties ShadowPass::getProperties() const { return serializeToProperties(parameters); }
-
-void ShadowPass::setProperties(const Properties& properties)
+void ShadowPass::onSettingsUpdated(const ShadowSettings& previous)
 {
-    ShadowSettings next;
-    Deserialize(nlohmann::json(properties.toJson()), next);
-    next.validate();
-
-    const bool recompile = next.enabled != parameters.enabled || next.cascade.count != parameters.cascade.count ||
-        next.cascade.shadowMapSize != parameters.cascade.shadowMapSize ||
-        next.pointShadowMapSize != parameters.pointShadowMapSize ||
-        next.spotShadowMapSize != parameters.spotShadowMapSize ||
-        next.rectAreaShadowMapSize != parameters.rectAreaShadowMapSize;
-    parameters = std::move(next);
-    if (recompile)
+    if (parameters.enabled != previous.enabled || parameters.cascade.count != previous.cascade.count ||
+        parameters.cascade.shadowMapSize != previous.cascade.shadowMapSize ||
+        parameters.pointShadowMapSize != previous.pointShadowMapSize ||
+        parameters.spotShadowMapSize != previous.spotShadowMapSize ||
+        parameters.rectAreaShadowMapSize != previous.rectAreaShadowMapSize)
         requestRecompile();
 }
 
-RenderPassReflection ShadowPass::reflect(const CompileData&)
+RenderPassReflection ShadowPass::reflect(const ResourceCache::DefaultProperties&)
 {
     RenderPassReflection reflection;
     reflection.addOutput(kShadowUniformsPort, rhi::BufferDesc{

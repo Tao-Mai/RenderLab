@@ -2,6 +2,7 @@
 
 #include <slang-rhi/shader-cursor.h>
 #include "core/Logger.h"
+#include "core/Serializer.h"
 #include "passes/postprocess/ExposurePass/ExposureState.h"
 #include "render/DispatchGroups.h"
 #include "render/GpuScene.h"
@@ -35,41 +36,32 @@ struct ExposureParameters
 static_assert(sizeof(ExposureParameters) == 64);
 }  // namespace
 
-ExposurePass::ExposurePass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+ExposurePass::ExposurePass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties) :
     RenderPass(std::move(device)),
-    parameters(deserializeFromProperties<ExposurePassSettings>(properties))
+    parameters(DeserializeWithDefaults<ExposurePassSettings>(properties))
 {
     parameters.validate();
 }
 
-
-Properties ExposurePass::getProperties() const { return serializeToProperties(parameters); }
-
-
-void ExposurePass::setProperties(const Properties& properties)
-{
-    ExposurePassSettings next;
-    Deserialize(nlohmann::json(properties.toJson()), next);
-    next.validate();
-
-    parameters = std::move(next);
-}
-
-
-RenderPassReflection ExposurePass::reflect(const CompileData&)
-{
-    RenderPassReflection reflection;
-    reflection.addInput("hdrColor", rhi::TextureDesc{.size = {0, 0, 1}, .usage = rhi::TextureUsage::ShaderResource});
-    reflection.addOutput(kExposureStateOutput, rhi::BufferDesc{
-        .size = sizeof(ExposureState),
-        .usage = rhi::BufferUsage::UnorderedAccess,
-    });
-    reflection.addInternal(kHistogram, rhi::BufferDesc{
-        .size = kHistogramBinCount * sizeof(uint32_t),
-        .usage = rhi::BufferUsage::UnorderedAccess,
-    });
-    return reflection;
-}
+const RenderPassReflection::Field ExposurePass::kPorts[]{
+    {
+        .name = "hdrColor",
+        .resource = rhi::TextureDesc{.size = {0, 0, 1}, .usage = rhi::TextureUsage::ShaderResource},
+        .visibility = RenderPassReflection::Visibility::Input,
+    },
+    {
+        .name = kExposureStateOutput,
+        .resource = rhi::BufferDesc{.size = sizeof(ExposureState), .usage = rhi::BufferUsage::UnorderedAccess},
+        .visibility = RenderPassReflection::Visibility::Output,
+    },
+    {
+        .name = kHistogram,
+        .resource = rhi::BufferDesc{
+            .size = kHistogramBinCount * sizeof(uint32_t), .usage = rhi::BufferUsage::UnorderedAccess
+        },
+        .visibility = RenderPassReflection::Visibility::Internal,
+    },
+};
 
 
 void ExposurePass::compile(RenderContext* context, const CompileData&)

@@ -1,28 +1,21 @@
 #pragma once
 
 #include "ExposurePassSettings.h"
-#include "render/graph/RenderPass.h"
+#include "render/graph/RenderPassSettings.h"
 
 #include <slang-rhi.h>
 #include <cstdint>
 
 class ExposurePass : public RenderPass
 {
-    RL_PLUGIN_CLASS(ExposurePass, "ExposurePass", "Computes exposure from a luminance histogram.");
+public:
+    ExposurePass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties);
 
-    ExposurePass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
-
-    [[nodiscard]] Properties getProperties() const override;
-    void                             setProperties(const Properties& properties) override;
-
-    static ref<ExposurePass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
+    static std::shared_ptr<ExposurePass> create(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties)
     {
-        return make_ref<ExposurePass>(std::move(device), properties);
+        return std::make_shared<ExposurePass>(std::move(device), properties);
     }
 
-    void renderUI(const PassEditorContext& context, Gui::Widgets& widget) override;
-
-    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
     void compile(RenderContext* context, const CompileData& compileData) override;
     void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
@@ -33,4 +26,18 @@ private:
     rhi::ComPtr<rhi::IComputePipeline> resolvePipeline;
     uint64_t                           previousSceneGeneration = 0;
     bool                               hasHistory = false;
+
+    static bool drawSettings(
+        Gui::Widgets& widgets, ExposurePassSettings& settings, const ExposurePass& pass, const PassEditorContext& context
+    );
+
+    static const RenderPassReflection::Field kPorts[3];
+
+    RL_PLUGIN_CLASS(
+        ExposurePass,
+        "ExposurePass",
+        .desc = "Computes exposure from a luminance histogram.",
+        .ports = kPorts,
+        .settings = pass_settings::bind<&ExposurePass::parameters, &ExposurePass::drawSettings>()
+    );
 };

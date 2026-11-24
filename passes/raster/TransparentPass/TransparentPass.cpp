@@ -1,9 +1,10 @@
 #include "passes/raster/TransparentPass/TransparentPass.h"
 
-#include "core/Plugin.h"
+#include "core/Serializer.h"
 
 #include "render/GpuScene.h"
 #include "render/RenderContext.h"
+#include "render/plugins/Plugin.h"
 #include "render/raster/MeshDraw.h"
 #include "render/raster/ShadowResources.h"
 #include "render/resources/MaterialTable.h"
@@ -11,31 +12,18 @@
 #include <algorithm>
 #include <glm/geometric.hpp>
 
-TransparentPass::TransparentPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
-    RenderPass(std::move(device)), parameters(deserializeFromProperties<TransparentLightingSettings>(properties))
+TransparentPass::TransparentPass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties) :
+    RenderPass(std::move(device)), parameters(DeserializeWithDefaults<TransparentLightingSettings>(properties))
 {
     parameters.validate();
 }
 
-Properties TransparentPass::getProperties() const { return serializeToProperties(parameters); }
-
-void TransparentPass::setProperties(const Properties& properties)
-{
-    TransparentLightingSettings next;
-    Deserialize(nlohmann::json(properties.toJson()), next);
-    next.validate();
-
-    parameters = std::move(next);
-}
-
-RenderPassReflection TransparentPass::reflect(const CompileData& compileData)
+RenderPassReflection TransparentPass::reflect(const ResourceCache::DefaultProperties&)
 {
     RenderPassReflection reflection;
     addShadowInputs(reflection);
-    const auto* input = compileData.connectedResources.getField("color");
     reflection.addInputOutput("color", rhi::TextureDesc{
-        .size = input ? input->texture().size : rhi::Extent3D{0, 0, 1},
-        .format = input ? input->texture().format : rhi::Format::Undefined,
+        .size = {0, 0, 1},
         .usage = rhi::TextureUsage::RenderTarget,
     });
     reflection.addInput("depth", rhi::TextureDesc{
@@ -57,7 +45,7 @@ void TransparentPass::compile(RenderContext*, const CompileData& compileData)
     };
     pipelines.setup(
         *mpDevice,
-        compileData.connectedResources.getField("color")->texture().format,
+        compileData.getTextureDesc("color").format,
         depth,
         true
     );

@@ -1,7 +1,7 @@
 #include "passes/postprocess/ToneMappingPass/ToneMappingPass.h"
 
 #include "core/Logger.h"
-#include "editor/PassEditor.h"
+#include "core/Serializer.h"
 
 #include <slang-rhi.h>
 #include "asset/BuiltinAssets.h"
@@ -26,44 +26,36 @@ static_assert(offsetof(ToneMappingPushConstants, mode) == 0);
 static_assert(offsetof(ToneMappingPushConstants, encodeSrgb) == 4);
 }
 
-ToneMappingPass::ToneMappingPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+ToneMappingPass::ToneMappingPass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties) :
     RenderPass(std::move(device)),
-    parameters(deserializeFromProperties<ToneMappingSettings>(properties))
+    parameters(DeserializeWithDefaults<ToneMappingSettings>(properties))
 {
     parameters.validate();
 }
 
-
-Properties ToneMappingPass::getProperties() const { return serializeToProperties(parameters); }
-
-
-void ToneMappingPass::setProperties(const Properties& properties)
-{
-    ToneMappingSettings next;
-    Deserialize(nlohmann::json(properties.toJson()), next);
-    next.validate();
-
-    parameters = std::move(next);
-}
-
-
-RenderPassReflection ToneMappingPass::reflect(const CompileData& compileData)
-{
-    RenderPassReflection reflection;
-    reflection.addInput("hdrColor", rhi::TextureDesc{.size = {0, 0, 1}, .usage = rhi::TextureUsage::ShaderResource});
-    reflection.addInput("exposure", rhi::BufferDesc{.usage = rhi::BufferUsage::ShaderResource});
-    reflection.addOutput("color", rhi::TextureDesc{
-        .size = {0, 0, 1},
-        .format = compileData.defaultTexFormat,
-        .usage = rhi::TextureUsage::RenderTarget,
-    });
-    return reflection;
-}
+const RenderPassReflection::Field ToneMappingPass::kPorts[]{
+    {
+        .name = "hdrColor",
+        .resource = rhi::TextureDesc{.size = {0, 0, 1}, .usage = rhi::TextureUsage::ShaderResource},
+        .visibility = RenderPassReflection::Visibility::Input,
+    },
+    {
+        .name = "exposure",
+        .resource = rhi::BufferDesc{.usage = rhi::BufferUsage::ShaderResource},
+        .visibility = RenderPassReflection::Visibility::Input,
+    },
+    {
+        .name = "color",
+        .resource = rhi::TextureDesc{.size = {0, 0, 1}, .usage = rhi::TextureUsage::RenderTarget},
+        .visibility = RenderPassReflection::Visibility::Output,
+        .textureMatch = RenderPassReflection::TextureMatch::Format,
+    },
+};
 
 
 void ToneMappingPass::compile(RenderContext* passContext, const CompileData& compileData)
 {
-    const auto format = compileData.defaultTexFormat;
+    const auto format = compileData.getTextureDesc("color").format;
     encodeSrgb        = format != rhi::Format::BGRA8UnormSrgb && format != rhi::Format::RGBA8UnormSrgb;
     rhi::ColorTargetDesc color;
     color.format = format;
@@ -106,11 +98,6 @@ void ToneMappingPass::execute(RenderContext* renderCommands, const RenderData& r
     pass->end();
 }
 
-
-void ToneMappingPass::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
-{
-    drawPassEditor(widget, *this, parameters, context, "Tone mapping");
-}
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {

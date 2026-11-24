@@ -1,11 +1,10 @@
 #include "passes/raster/SkyboxPass/SkyboxPass.h"
 
-#include "core/Plugin.h"
-
 #include <slang-rhi.h>
 #include <slang-rhi/shader-cursor.h>
 #include "render/GpuScene.h"
 #include "render/RenderContext.h"
+#include "render/plugins/Plugin.h"
 #include "render/resources/RenderResourceManager.h"
 #include "render/resources/ShaderData.h"
 
@@ -20,28 +19,28 @@ struct SkyboxPushConstants
 static_assert(sizeof(SkyboxPushConstants) == 16);
 }
 
-RenderPassReflection SkyboxPass::reflect(const CompileData& compileData)
-{
-    RenderPassReflection reflection;
-    const auto* input = compileData.connectedResources.getField("color");
-    reflection.addInputOutput("color", rhi::TextureDesc{
-        .size = input ? input->texture().size : rhi::Extent3D{0, 0, 1},
-        .format = input ? input->texture().format : rhi::Format::Undefined,
-        .usage = rhi::TextureUsage::RenderTarget,
-    });
-    reflection.addInput("depth", rhi::TextureDesc{
-        .size = {0, 0, 1},
-        .format = rhi::Format::D32Float,
-        .usage = rhi::TextureUsage::DepthStencil,
-    });
-    return reflection;
-}
+const RenderPassReflection::Field SkyboxPass::kPorts[]{
+    {
+        .name = "color",
+        .resource = rhi::TextureDesc{.size = {0, 0, 1}, .usage = rhi::TextureUsage::RenderTarget},
+        .visibility = RenderPassReflection::Visibility::Input | RenderPassReflection::Visibility::Output,
+    },
+    {
+        .name = "depth",
+        .resource = rhi::TextureDesc{
+            .size = {0, 0, 1},
+            .format = rhi::Format::D32Float,
+            .usage = rhi::TextureUsage::DepthStencil,
+        },
+        .visibility = RenderPassReflection::Visibility::Input,
+    },
+};
 
 
 void SkyboxPass::compile(RenderContext* context, const CompileData& compileData)
 {
     rhi::ColorTargetDesc color;
-    color.format = compileData.connectedResources.getField("color")->texture().format;
+    color.format = compileData.getTextureDesc("color").format;
     rhi::RenderPipelineDesc desc;
     desc.program =
         context->shaderManager->getProgram("passes/raster/SkyboxPass/skybox.slang", {"vertMain", "fragMain"});

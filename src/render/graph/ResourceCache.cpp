@@ -12,14 +12,12 @@ void mergeResourceDesc(
     const ResourceCache::ResourceDesc& target,
     const std::string&                 sourceName,
     const std::string&                 targetName,
-    bool                               external,
-    bool                               validate
+    bool                               external
 )
 {
     const auto incompatible = [&](const char* property)
     {
-        if (validate)
-            LOG_ERROR("cannot connect '{}' to '{}': incompatible {}", sourceName, targetName, property);
+        LOG_ERROR("cannot connect '{}' to '{}': incompatible {}", sourceName, targetName, property);
     };
     if (source.index() != target.index())
     {
@@ -66,6 +64,13 @@ void mergeResourceDesc(
         incompatible("texture usage");
     else if (!external)
         texture.usage |= input.usage;
+}
+
+void fillTextureDefaults(rhi::TextureDesc& texture, const ResourceCache::DefaultProperties& defaults)
+{
+    texture.size.width  = texture.size.width ? texture.size.width : defaults.dims.x;
+    texture.size.height = texture.size.height ? texture.size.height : defaults.dims.y;
+    texture.format      = texture.format == rhi::Format::Undefined ? defaults.format : texture.format;
 }
 }  // namespace
 
@@ -127,29 +132,49 @@ bool ResourceCache::sameDescription(const ResourceDesc& a, const ResourceDesc& b
         );
 }
 
-void ResourceCache::addResource(std::string name, const ResourceDesc& desc)
+size_t ResourceCache::addResource(std::string name, const ResourceDesc& desc)
 {
-    indices.emplace(name, slots.size());
+    const auto index = slots.size();
+    indices.emplace(name, index);
     slots.push_back({desc, {}, std::move(name)});
+    return index;
 }
 
-void ResourceCache::addInput(
-    std::string name, const ResourceDesc& requirements, rhi::IResource* resource, bool validate
-)
+void ResourceCache::addInput(std::string name, const ResourceDesc& requirements, rhi::IResource* resource)
 {
     auto desc = *describe(*resource);
-    mergeResourceDesc(desc, requirements, name, name, true, validate);
+    mergeResourceDesc(desc, requirements, name, name, true);
     indices.emplace(name, slots.size());
     slots.push_back({desc, rhi::ComPtr<rhi::IResource>{resource}, std::move(name), true});
 }
 
-void ResourceCache::connect(std::string name, const std::string& sourceName, const ResourceDesc& desc, bool validate)
+void ResourceCache::connect(std::string name, const std::string& sourceName, const ResourceDesc& desc)
 {
     const auto index = indices.at(sourceName);
     auto&      slot  = slots[index];
-    mergeResourceDesc(slot.resourceDesc, desc, sourceName, name, slot.external, validate);
+    mergeResourceDesc(slot.resourceDesc, desc, sourceName, name, slot.external);
     if (slot.resourceDesc.index() == desc.index())
         indices.emplace(std::move(name), index);
+}
+
+void ResourceCache::matchTexture(
+    size_t target, size_t source, RenderPassReflection::TextureMatch match, const DefaultProperties& defaults
+)
+{
+    using TextureMatch = RenderPassReflection::TextureMatch;
+
+    auto& slot        = slots[target];
+    auto texture      = std::get<rhi::TextureDesc>(slots[source].resourceDesc);
+    auto requirements = std::get<rhi::TextureDesc>(slot.resourceDesc);
+    fillTextureDefaults(texture, defaults);
+    if (is_set(match, TextureMatch::Extent))
+    {
+        requirements.size.width = texture.size.width;
+        requirements.size.height = texture.size.height;
+    }
+    if (is_set(match, TextureMatch::Format))
+        requirements.format = texture.format;
+    mergeResourceDesc(slot.resourceDesc, requirements, slots[source].name, slot.name, slot.external);
 }
 
 void ResourceCache::markOutput(const std::string& name)
@@ -159,28 +184,21 @@ void ResourceCache::markOutput(const std::string& name)
         texture->usage |= rhi::TextureUsage::ShaderResource;
 }
 
-ResourceCache::ResourceDesc ResourceCache::description(size_t index, const DefaultProperties& defaults) const
+void ResourceCache::applyTextureDefaults(const DefaultProperties& defaults)
 {
-    auto desc = slots[index].resourceDesc;
-    if (auto* texture = std::get_if<rhi::TextureDesc>(&desc))
-    {
-        texture->size.width  = texture->size.width ? texture->size.width : defaults.dims.x;
-        texture->size.height = texture->size.height ? texture->size.height : defaults.dims.y;
-        texture->format      = texture->format == rhi::Format::Undefined ? defaults.format : texture->format;
-    }
-    return desc;
+    for (auto& slot : slots)
+        if (auto* texture = std::get_if<rhi::TextureDesc>(&slot.resourceDesc))
+            fillTextureDefaults(*texture, defaults);
 }
 
-void ResourceCache::allocateResources(rhi::IDevice& device, const DefaultProperties& defaults)
+void ResourceCache::allocateResources(rhi::IDevice& device)
 {
-    for (size_t index = 0; index < slots.size(); ++index)
+    for (auto& slot : slots)
     {
-        auto& slot = slots[index];
         if (slot.external)
             continue;
 
-        auto resourceDesc = description(index, defaults);
-        if (auto* buffer = std::get_if<rhi::BufferDesc>(&resourceDesc))
+        if (const auto* buffer = std::get_if<rhi::BufferDesc>(&slot.resourceDesc))
         {
             auto desc = *buffer;
             CHECK(desc.size, "graph buffer '{}' requires a size", slot.name);
@@ -194,7 +212,7 @@ void ResourceCache::allocateResources(rhi::IDevice& device, const DefaultPropert
             continue;
         }
 
-        auto desc = std::get<rhi::TextureDesc>(resourceDesc);
+        auto desc = std::get<rhi::TextureDesc>(slot.resourceDesc);
         CHECK(
             desc.size.width && desc.size.height && desc.format != rhi::Format::Undefined,
             "invalid graph texture '{}'",

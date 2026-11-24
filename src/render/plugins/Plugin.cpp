@@ -1,4 +1,4 @@
-#include "core/Plugin.h"
+#include "render/plugins/Plugin.h"
 
 #include "core/RuntimeDirectory.h"
 #include <fstream>

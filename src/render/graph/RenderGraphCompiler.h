@@ -27,9 +27,8 @@ private:
     {
         uint32_t                             index;
         std::string                          name;
-        ref<RenderPass>                      pass;
+        std::shared_ptr<RenderPass>          pass;
         RenderPassReflection                 reflection;
-        RenderPass::CompileData              compileData;
         std::unordered_set<std::string_view> usedOutputs;
     };
 
@@ -40,8 +39,8 @@ private:
 
     void preparePasses();
     void resolveResources(ResourceCache& resources);
-    void validateGraph() const;
-    void registerResources(ResourceCache& resources, bool validate) const;
+    void validateGraph(const ResourceCache& resources) const;
+    void registerResources(ResourceCache& resources) const;
 
     const RenderGraph&    graph;
     const Dependencies&   dependencies;

@@ -24,13 +24,13 @@ RenderGraph::~RenderGraph()
     }
 }
 
-ref<RenderGraph> RenderGraph::create(rhi::ComPtr<rhi::IDevice> device, const std::string& name)
+std::shared_ptr<RenderGraph> RenderGraph::create(rhi::ComPtr<rhi::IDevice> device, const std::string& name)
 {
-    return make_ref<RenderGraph>(std::move(device), name);
+    return std::make_shared<RenderGraph>(std::move(device), name);
 }
 
-ref<RenderPass>
-RenderGraph::createPass(const std::string& passName, const std::string& passType, const Properties& properties)
+std::shared_ptr<RenderPass>
+RenderGraph::createPass(const std::string& passName, const std::string& passType, const nlohmann::json& properties)
 {
     auto pass = RenderPass::create(passType, mpDevice, properties);
     addPass(pass, passName);
@@ -56,7 +56,7 @@ uint32_t RenderGraph::getPassIndex(const std::string& name) const
     return found == mNameToIndex.end() ? kInvalidIndex : found->second;
 }
 
-uint32_t RenderGraph::addPass(const ref<RenderPass>& pass, const std::string& name)
+uint32_t RenderGraph::addPass(const std::shared_ptr<RenderPass>& pass, const std::string& name)
 {
     CHECK(pass);
     CHECK(!name.empty(), "invalid render pass instance name '{}'", name);
@@ -64,7 +64,7 @@ uint32_t RenderGraph::addPass(const ref<RenderPass>& pass, const std::string& na
 
     const auto index = mpGraph->addNode();
     mNameToIndex.emplace(name, index);
-    auto properties = nlohmann::json(pass->getProperties().toJson());
+    auto properties = pass->getProperties();
     mNodeData.emplace(index, NodeData{name, pass, properties, std::move(properties)});
     pass->mName          = name;
     pass->mPassChangedCB = [this] { mRecompile = true; };
@@ -94,17 +94,17 @@ void RenderGraph::removePass(const std::string& name)
     mNameToIndex.erase(name);
 }
 
-void RenderGraph::updatePass(const std::string& name, const Properties& properties)
+void RenderGraph::updatePass(const std::string& name, const nlohmann::json& properties)
 {
     const auto index = getPassIndex(name);
     CHECK(index != kInvalidIndex, "unknown render pass '{}'", name);
     auto& node = mNodeData.at(index);
     node.pPass->setProperties(properties);
-    node.scripted = node.pPass->getProperties().toJson();
+    node.scripted = node.pPass->getProperties();
     node.applied = node.scripted;
 }
 
-const ref<RenderPass>& RenderGraph::getPass(const std::string& name) const
+const std::shared_ptr<RenderPass>& RenderGraph::getPass(const std::string& name) const
 {
     const auto index = getPassIndex(name);
     CHECK(index != kInvalidIndex, "unknown render pass '{}'", name);
@@ -120,7 +120,7 @@ void RenderGraph::captureScriptedProperties()
 {
     for (auto& [index, node] : mNodeData)
     {
-        node.scripted = node.pPass->getProperties().toJson();
+        node.scripted = node.pPass->getProperties();
         node.applied = node.scripted;
     }
 }
@@ -149,8 +149,8 @@ void RenderGraph::applyPassOverrides(const nlohmann::json& overrides)
                 values.update(*byName, true);
         if (values == node.applied)
             continue;
-        if (values != nlohmann::json(node.pPass->getProperties().toJson()))
-            node.pPass->setProperties(Properties::json(values));
+        if (values != node.pPass->getProperties())
+            node.pPass->setProperties(values);
         node.applied = std::move(values);
     }
 }
@@ -330,7 +330,7 @@ std::vector<std::string> RenderGraph::getAvailableOutputs() const
         if (!mpGraph->doesNodeExist(node))
             continue;
         const auto& data       = mNodeData.at(node);
-        const auto  reflection = data.pPass->reflect({defaults.dims, defaults.format});
+        const auto  reflection = data.pPass->reflect(defaults);
         for (const auto& field : reflection.fields())
             if (is_set(field.visibility, RenderPassReflection::Visibility::Output))
                 names.push_back(data.name + '.' + field.name);

@@ -90,13 +90,15 @@ public:
     [[nodiscard]] std::span<const GpuDraw>   drawCalls() const { return draws; }
     [[nodiscard]] std::span<const uint32_t> visibleDraws();
     [[nodiscard]] const SceneUniforms&      cameraUniforms() const { return sceneGlobals.camera; }
-    [[nodiscard]] const ViewportRect&       viewport() const { return sceneViewport; }
+    [[nodiscard]] const ViewportRect&       viewport() const { return sceneGlobals.viewport; }
     [[nodiscard]] const GpuEnvironmentMap*  environmentMap() const { return environment; }
-    [[nodiscard]] bool                 hasEnvironmentLight() const { return environmentLight.has_value(); }
+    [[nodiscard]] bool hasEnvironment() const { return environment != nullptr || environmentLight.has_value(); }
     [[nodiscard]] glm::vec3            environmentEmission() const { return glm::vec3{environmentData.emission}; }
     [[nodiscard]] const MaterialTable& materials() const { return materialTable; }
     [[nodiscard]] std::span<const LightData> analyticLights() const { return analytic.data(); }
     [[nodiscard]] const EmissiveLights& emissiveLights() const { return emissive; }
+    [[nodiscard]] bool useAnalyticLights() const { return !analytic.data().empty(); }
+    [[nodiscard]] bool useEmissiveLights() const { return emissive.count() != 0; }
     [[nodiscard]] rhi::ITextureView*         brdfLut() const { return brdfLutView; }
     [[nodiscard]] rhi::ITextureView*         sheenLut() const { return sheenLutView; }
     [[nodiscard]] rhi::ISampler*             lightingLutSampler() const { return lutSampler; }
@@ -131,7 +133,6 @@ private:
     std::vector<uint32_t>       visibleDrawIndices;
     bool                        viewCulled = false;
 
-    ViewportRect                   sceneViewport;
     SceneGlobals                   sceneGlobals;
     EnvironmentLightData           environmentData;
     AnalyticLights                 analytic;
@@ -141,6 +142,7 @@ private:
     rhi::ComPtr<rhi::IBuffer>      globals;
     rhi::ComPtr<rhi::IBuffer>      rayHitBuffer;
     rhi::ComPtr<rhi::IBuffer>      environmentLightBuffer;
+    rhi::ComPtr<rhi::ITextureView> blackEnvironmentView;
     rhi::ComPtr<rhi::ITextureView> brdfLutView, sheenLutView;
     rhi::ISampler*                 lutSampler = nullptr;
     bool                           rayHitsDirty = true;

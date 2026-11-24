@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/graph/RenderPass.h"
+#include "render/graph/RenderPassSettings.h"
 
 #include <slang-rhi.h>
 
@@ -11,27 +11,36 @@
 
 class DeferredLightingPass : public RenderPass
 {
-    RL_PLUGIN_CLASS(DeferredLightingPass, "DeferredLightingPass", "Shades the G-buffer.");
+public:
+    DeferredLightingPass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties);
 
-    DeferredLightingPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
-
-    [[nodiscard]] Properties getProperties() const override;
-    void                             setProperties(const Properties& properties) override;
-
-    static ref<DeferredLightingPass>
-    create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
+    static std::shared_ptr<DeferredLightingPass>
+    create(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties)
     {
-        return make_ref<DeferredLightingPass>(std::move(device), properties);
+        return std::make_shared<DeferredLightingPass>(std::move(device), properties);
     }
 
-    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
+    [[nodiscard]] RenderPassReflection reflect(const ResourceCache::DefaultProperties& defaults) override;
     void compile(RenderContext* passContext, const CompileData& compileData) override;
     void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
 private:
     RasterLightingOutputSettings parameters;
 
+    void onSettingsUpdated(const RasterLightingOutputSettings& previous);
+
     rhi::IRenderPipeline* getPipeline(const RenderContext& context, rhi::Format format, bool hasEnvironment);
 
     std::array<rhi::ComPtr<rhi::IRenderPipeline>, 2> pipelines;
+
+    RL_PLUGIN_CLASS(
+        DeferredLightingPass,
+        "DeferredLightingPass",
+        .desc = "Shades the G-buffer.",
+        .settings = pass_settings::bind<
+            &DeferredLightingPass::parameters,
+            nullptr,
+            &DeferredLightingPass::onSettingsUpdated
+        >()
+    );
 };

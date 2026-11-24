@@ -1,7 +1,7 @@
 #pragma once
 
 #include "render/ViewportRect.h"
-#include "render/graph/RenderPass.h"
+#include "render/graph/RenderPassSettings.h"
 
 #include "passes/postprocess/Bloom/BloomSettings.h"
 
@@ -12,26 +12,21 @@
 
 class Bloom : public RenderPass
 {
-    RL_PLUGIN_CLASS(Bloom, "Bloom", "Extracts and filters highlights for bloom.");
+public:
+    Bloom(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties);
 
-    Bloom(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
-
-    [[nodiscard]] Properties getProperties() const override;
-    void                             setProperties(const Properties& properties) override;
-
-    static ref<Bloom> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
+    static std::shared_ptr<Bloom> create(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties)
     {
-        return make_ref<Bloom>(std::move(device), properties);
+        return std::make_shared<Bloom>(std::move(device), properties);
     }
 
-    void renderUI(const PassEditorContext& context, Gui::Widgets& widget) override;
-
-    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
     void compile(RenderContext* passContext, const CompileData& compileData) override;
     void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
 private:
     BloomSettings parameters;
+
+    void onSettingsUpdated(const BloomSettings& previous);
 
     void prepareFilters(const RenderContext& context, const RenderData& renderData);
 
@@ -65,4 +60,18 @@ private:
     };
 
     std::vector<Filter> filters;
+
+    static bool drawSettings(
+        Gui::Widgets& widgets, BloomSettings& settings, const Bloom& pass, const PassEditorContext& context
+    );
+
+    static const RenderPassReflection::Field kPorts[2];
+
+    RL_PLUGIN_CLASS(
+        Bloom,
+        "Bloom",
+        .desc = "Extracts and filters highlights for bloom.",
+        .ports = kPorts,
+        .settings = pass_settings::bind<&Bloom::parameters, &Bloom::drawSettings, &Bloom::onSettingsUpdated>()
+    );
 };

@@ -37,16 +37,23 @@ struct Field
     constexpr decltype(auto) get(T& object) const { return (object.*Member); }
 };
 
-struct SliderRange
+struct PassSliderRange
 {
     double minimum;
     double maximum;
 };
 
-template <auto Member>
-struct SliderField : Field<Member>
+struct PassFieldUi
 {
-    SliderRange range;
+    const char* label;
+    const char* tooltip;
+    std::optional<PassSliderRange> slider;
+};
+
+template <auto Member>
+struct PassField : Field<Member>
+{
+    PassFieldUi ui;
 };
 
 template <class T>
@@ -67,7 +74,7 @@ struct Property
 {
     const char* name;
     const std::type_info& type;
-    std::optional<SliderRange> range;
+    const PassFieldUi* passUi;
     bool isEnum;
     void* (*address)(void* object);
     nlohmann::json (*read)(const void* object);

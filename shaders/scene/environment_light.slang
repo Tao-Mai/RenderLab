@@ -4,17 +4,23 @@
 #include "material/texture_data.slang"
 #include "math/constant.slang"
 
-#if HAS_ENV_EQUAL_AREA
+#ifndef HAS_ENV
+#error HAS_ENV must be specified when compiling ray tracing environment lighting
+#endif
+
+#if HAS_ENV
 struct EnvironmentLightData
 {
     float4x4 lightFromWorld;
     float4 emissionScale;
     TextureRef image;
-    uint padding0, padding1;
+    uint hasEqualArea, hasCubemap;
 
     property emission : float3 { get { return emissionScale.rgb; } }
 };
 StructuredBuffer<EnvironmentLightData> environmentLight;
+TextureCube<float4> radianceMap;
+SamplerState radianceSampler;
 
 // PBRT's equal-area square projection.
 float2 equalAreaUv(float3 direction)
@@ -31,21 +37,18 @@ float2 equalAreaUv(float3 direction)
 }
 #endif
 
-#if HAS_ENV_CUBEMAP
-TextureCube<float4> radianceMap;
-SamplerState radianceSampler;
-#endif
-
 float3 environmentRadiance(float3 direction)
 {
     float3 radiance = float3(0.0);
-#if HAS_ENV_EQUAL_AREA
+#if HAS_ENV
     EnvironmentLightData light = environmentLight[0];
-    float3 local = mul(light.lightFromWorld, float4(direction, 0.0)).xyz;
-    radiance = light.emission * sampleTextureLevel(light.image, equalAreaUv(local)).rgb;
-#endif
-#if HAS_ENV_CUBEMAP
-    radiance += radianceMap.SampleLevel(radianceSampler, direction, 0.0).rgb;
+    if (light.hasEqualArea != 0u)
+    {
+        float3 local = mul(light.lightFromWorld, float4(direction, 0.0)).xyz;
+        radiance = light.emission * sampleTextureLevel(light.image, equalAreaUv(local)).rgb;
+    }
+    if (light.hasCubemap != 0u)
+        radiance += radianceMap.SampleLevel(radianceSampler, direction, 0.0).rgb;
 #endif
     return radiance;
 }

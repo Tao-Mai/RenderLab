@@ -5,6 +5,7 @@
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
+#include "render/ViewportRect.h"
 #include "render/resources/MaterialData.h"
 
 // Matches SceneUniforms in shaders/scene/scene_uniforms.slang.
@@ -22,6 +23,7 @@ struct alignas(16) SceneGlobals
     uint32_t analyticLightCount = 0;
     float prefilteredMaxLod = 0.0f;
     uint32_t padding[2]{};
+    ViewportRect viewport;
 };
 
 struct alignas(16) EnvironmentLightData
@@ -29,7 +31,8 @@ struct alignas(16) EnvironmentLightData
     glm::mat4 lightFromWorld{1};
     glm::vec4 emission{};
     TextureRef image;
-    uint32_t padding[2]{};
+    uint32_t hasEqualArea = 0;
+    uint32_t hasCubemap = 0;
 };
 
 // GPU discriminator; values match shaders/scene/light_data.slang.
@@ -72,11 +75,16 @@ static_assert(sizeof(SceneUniforms) == 208);
 static_assert(offsetof(SceneUniforms, inverseViewProjection) == 64);
 static_assert(offsetof(SceneUniforms, cameraPosition) == 128);
 static_assert(offsetof(SceneUniforms, view) == 144);
-static_assert(sizeof(SceneGlobals) == 224);
+static_assert(sizeof(ViewportRect) == 16);
+static_assert(offsetof(ViewportRect, width) == 8);
+static_assert(sizeof(SceneGlobals) == 240);
 static_assert(offsetof(SceneGlobals, analyticLightCount) == 208);
 static_assert(offsetof(SceneGlobals, prefilteredMaxLod) == 212);
+static_assert(offsetof(SceneGlobals, viewport) == 224);
 static_assert(sizeof(EnvironmentLightData) == 96);
 static_assert(offsetof(EnvironmentLightData, image) == 80);
+static_assert(offsetof(EnvironmentLightData, hasEqualArea) == 88);
+static_assert(offsetof(EnvironmentLightData, hasCubemap) == 92);
 static_assert(sizeof(LightData) == 96);
 static_assert(offsetof(LightData, color) == 0);
 static_assert(offsetof(LightData, spotFalloffExponent) == 12);

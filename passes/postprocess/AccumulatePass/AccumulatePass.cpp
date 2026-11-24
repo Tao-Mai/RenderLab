@@ -18,19 +18,39 @@ struct alignas(16) AccumulatedPixel
 };
 static_assert(sizeof(AccumulatedPixel) == 16);
 
+const RenderPassReflection::Field kPorts[]{
+    {
+        .name = kInput,
+        .resource = rhi::TextureDesc{.size = {0, 0, 1}, .usage = rhi::TextureUsage::ShaderResource},
+        .visibility = RenderPassReflection::Visibility::Input,
+    },
+    {
+        .name = kOutput,
+        .resource = rhi::TextureDesc{
+            .size = {0, 0, 1},
+            .format = rhi::Format::RGBA16Float,
+            .usage = rhi::TextureUsage::UnorderedAccess,
+        },
+        .visibility = RenderPassReflection::Visibility::Output,
+        .matchInput = kInput,
+        .textureMatch = RenderPassReflection::TextureMatch::Extent,
+    },
+};
+
 class AccumulatePass : public RenderPass
 {
-    RL_PLUGIN_CLASS(AccumulatePass, "AccumulatePass", "Accumulates radiance samples across frames.");
+    RL_PLUGIN_CLASS(
+        AccumulatePass, "AccumulatePass", .desc = "Accumulates radiance samples across frames.", .ports = kPorts
+    );
 
     explicit AccumulatePass(rhi::ComPtr<rhi::IDevice> device) : RenderPass(std::move(device), 1) {}
 
-    static ref<AccumulatePass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
+    static std::shared_ptr<AccumulatePass> create(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties)
     {
         CHECK(properties.empty());
-        return make_ref<AccumulatePass>(std::move(device));
+        return std::make_shared<AccumulatePass>(std::move(device));
     }
 
-    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
     void                               compile(RenderContext* context, const CompileData& compileData) override;
     void                               execute(RenderContext* context, const RenderData& renderData) override;
 
@@ -40,27 +60,12 @@ private:
     std::optional<uint64_t>            previousRevision;
 };
 
-RenderPassReflection AccumulatePass::reflect(const CompileData& compileData)
-{
-    const auto*          input = compileData.connectedResources.getField(kInput);
-    RenderPassReflection reflection;
-    reflection.addInput(kInput, rhi::TextureDesc{.size = {0, 0, 1}, .usage = rhi::TextureUsage::ShaderResource});
-    reflection.addOutput(kOutput, rhi::TextureDesc{
-        .size = {input ? input->texture().size.width : 0, input ? input->texture().size.height : 0, 1},
-        .format = rhi::Format::RGBA16Float,
-        .usage = rhi::TextureUsage::UnorderedAccess,
-    });
-    return reflection;
-}
-
 void AccumulatePass::compile(RenderContext* context, const CompileData& compileData)
 {
-    const auto& input  = *compileData.connectedResources.getField(kInput);
-    const auto  width  = input.texture().size.width ? input.texture().size.width : compileData.defaultTexDims.x;
-    const auto  height = input.texture().size.height ? input.texture().size.height : compileData.defaultTexDims.y;
+    const auto size = compileData.getTextureDesc(kInput).size;
 
     rhi::BufferDesc desc;
-    desc.size = size_t(width) * height * sizeof(AccumulatedPixel);
+    desc.size = size_t(size.width) * size.height * sizeof(AccumulatedPixel);
     desc.usage =
         rhi::BufferUsage::ShaderResource | rhi::BufferUsage::UnorderedAccess | rhi::BufferUsage::CopyDestination;
     rhiCheck(mpDevice->createBuffer(desc, nullptr, history.writeRef()));

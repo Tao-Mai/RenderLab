@@ -158,7 +158,7 @@ Editor::Frame Editor::buildFrame(const EditorCamera& camera)
 
     const auto& config   = *context().config;
     const auto& renderer = *context().renderer;
-    const auto* graph    = renderer.getActiveGraph();
+    const auto& graph    = renderer.getActiveGraph();
     if (config.editorConfig().objectPicking && !camera.isNavigationActive() && graph &&
         graph->getName() == config.renderGraphName())
     {

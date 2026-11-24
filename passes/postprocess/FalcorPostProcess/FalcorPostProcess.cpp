@@ -29,6 +29,7 @@
 #include "passes/postprocess/FalcorPostProcess/FalcorPostProcess.h"
 
 #include "core/Logger.h"
+#include "core/Serializer.h"
 
 #include <slang-rhi.h>
 #include <slang-rhi/shader-cursor.h>
@@ -151,84 +152,33 @@ void FalcorPostProcess::initialize(const RenderContext& context)
 }
 
 
-FalcorPostProcess::FalcorPostProcess(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+FalcorPostProcess::FalcorPostProcess(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties) :
     RenderPass(std::move(device)),
-    parameters(deserializeFromProperties<FalcorPostProcessConfig>(properties))
+    parameters(DeserializeWithDefaults<FalcorPostProcessConfig>(properties))
 {
     parameters.validate();
 }
 
-
-Properties FalcorPostProcess::getProperties() const { return serializeToProperties(parameters); }
-
-
-void FalcorPostProcess::setProperties(const Properties& properties)
+void FalcorPostProcess::onSettingsUpdated(const FalcorPostProcessConfig& previous)
 {
-    FalcorPostProcessConfig next;
-    Deserialize(nlohmann::json(properties.toJson()), next);
-    next.validate();
-
-    const bool recompile = next.toneMapper.autoExposure != parameters.toneMapper.autoExposure ||
-        next.simplePostFx.usesBloom() != parameters.simplePostFx.usesBloom();
-    parameters = std::move(next);
-    if (recompile)
+    if (parameters.toneMapper.autoExposure != previous.toneMapper.autoExposure ||
+        parameters.simplePostFx.usesBloom() != previous.simplePostFx.usesBloom())
         requestRecompile();
 }
 
-
-RenderPassReflection FalcorPostProcess::reflect(const CompileData& data)
-{
-    RenderPassReflection reflection;
-    reflection.addInput("source", rhi::TextureDesc{.size = {0, 0, 1}, .usage = rhi::TextureUsage::ShaderResource});
-    reflection.addOutput("color", rhi::TextureDesc{
-        .size = {0, 0, 1},
-        .format = data.defaultTexFormat,
-        .usage = rhi::TextureUsage::RenderTarget,
-    });
-
-    auto extent = data.defaultTexDims;
-    if (const auto* input = data.connectedResources.getField("source"))
+const RenderPassReflection::Field FalcorPostProcess::kPorts[]{
     {
-        extent.x = input->texture().size.width ? input->texture().size.width : extent.x;
-        extent.y = input->texture().size.height ? input->texture().size.height : extent.y;
-    }
-
-    const auto kStorageSampled = rhi::TextureUsage::UnorderedAccess | rhi::TextureUsage::ShaderResource;
-    const auto kColorSampled   = rhi::TextureUsage::RenderTarget | rhi::TextureUsage::ShaderResource;
-    if (parameters.simplePostFx.usesBloom())
+        .name = "source",
+        .resource = rhi::TextureDesc{.size = {0, 0, 1}, .usage = rhi::TextureUsage::ShaderResource},
+        .visibility = RenderPassReflection::Visibility::Input,
+    },
     {
-        for (uint32_t level = 0; level <= falcorPostProcess::kBloomLevels; ++level)
-            reflection.addInternal(bloomImageName(level), rhi::TextureDesc{
-                .size = {std::max(1u, extent.x >> level), std::max(1u, extent.y >> level), 1},
-                .format = rhi::Format::RGBA16Float,
-                .usage = kStorageSampled,
-            });
-    }
-    reflection.addInternal(kPostFxColor, rhi::TextureDesc{
-        .size = {extent.x, extent.y, 1},
-        .format = rhi::Format::RGBA32Float,
-        .usage = kStorageSampled,
-    });
-
-    if (parameters.toneMapper.autoExposure)
-    {
-        const auto width  = std::bit_floor(std::max(1u, extent.x));
-        const auto height = std::bit_floor(std::max(1u, extent.y));
-        const auto levels = static_cast<uint32_t>(std::bit_width(std::max(width, height)));
-        for (uint32_t level = 0; level < levels; ++level)
-            reflection.addInternal(luminanceImageName(level), rhi::TextureDesc{
-                .size = {std::max(1u, width >> level), std::max(1u, height >> level), 1},
-                .format = rhi::Format::R32Float,
-                .usage = kColorSampled,
-            });
-    }
-    reflection.addInternal(kToneMapped, rhi::TextureDesc{
-        .size = {extent.x, extent.y, 1},
-        .format = rhi::Format::RGBA32Float,
-        .usage = kColorSampled,
-    });
-    return reflection;
-}
+        .name = "color",
+        .resource = rhi::TextureDesc{.size = {0, 0, 1}, .usage = rhi::TextureUsage::RenderTarget},
+        .visibility = RenderPassReflection::Visibility::Output,
+        .textureMatch = RenderPassReflection::TextureMatch::Format,
+    },
+};
 
 
 void FalcorPostProcess::compile(RenderContext* passContext, const CompileData& compileData)
@@ -236,7 +186,8 @@ void FalcorPostProcess::compile(RenderContext* passContext, const CompileData& c
     imageStages.clear();
     if (!downsample)
         initialize(*passContext);
-    const auto targetFormat = compileData.defaultTexFormat;
+
+    const auto targetFormat = compileData.getTextureDesc("color").format;
     const bool srgbAttachment =
         targetFormat == rhi::Format::BGRA8UnormSrgb || targetFormat == rhi::Format::RGBA8UnormSrgb;
     CHECK(
@@ -245,6 +196,42 @@ void FalcorPostProcess::compile(RenderContext* passContext, const CompileData& c
         uint32_t(targetFormat)
     );
     encodeSrgb = !srgbAttachment;
+
+    const auto extent = compileData.getTextureDesc("source").size;
+    const auto kStorageSampled = rhi::TextureUsage::UnorderedAccess | rhi::TextureUsage::ShaderResource;
+    const auto kColorSampled   = rhi::TextureUsage::RenderTarget | rhi::TextureUsage::ShaderResource;
+    if (parameters.simplePostFx.usesBloom())
+    {
+        for (uint32_t level = 0; level <= falcorPostProcess::kBloomLevels; ++level)
+            compileData.addInternalTexture(bloomImageName(level), {
+                .size = {std::max(1u, extent.width >> level), std::max(1u, extent.height >> level), 1},
+                .format = rhi::Format::RGBA16Float,
+                .usage = kStorageSampled,
+            });
+    }
+    compileData.addInternalTexture(kPostFxColor, {
+        .size = {extent.width, extent.height, 1},
+        .format = rhi::Format::RGBA32Float,
+        .usage = kStorageSampled,
+    });
+
+    if (parameters.toneMapper.autoExposure)
+    {
+        const auto width  = std::bit_floor(std::max(1u, extent.width));
+        const auto height = std::bit_floor(std::max(1u, extent.height));
+        const auto levels = static_cast<uint32_t>(std::bit_width(std::max(width, height)));
+        for (uint32_t level = 0; level < levels; ++level)
+            compileData.addInternalTexture(luminanceImageName(level), {
+                .size = {std::max(1u, width >> level), std::max(1u, height >> level), 1},
+                .format = rhi::Format::R32Float,
+                .usage = kColorSampled,
+            });
+    }
+    compileData.addInternalTexture(kToneMapped, {
+        .size = {extent.width, extent.height, 1},
+        .format = rhi::Format::RGBA32Float,
+        .usage = kColorSampled,
+    });
 }
 
 

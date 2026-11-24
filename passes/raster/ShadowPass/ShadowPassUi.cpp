@@ -2,7 +2,6 @@
 
 #include <slang-rhi.h>
 #include "editor/EditorCameraConfig.h"
-#include "editor/PassEditor.h"
 
 #include <array>
 #include <span>
@@ -66,12 +65,15 @@ bool drawCascadeSettings(Gui::Widgets& widgets, ShadowSettings::Cascade& cascade
     edited |= widgets.drag("Directional PCF radius (texels)", cascade.sampleRadius, 0.1f, 0.0f, 32.0f, "%.2f");
     return edited;
 }
+}  // namespace
 
-
-bool drawSettings(
+bool ShadowPass::drawSettings(
     Gui::Widgets& widgets, ShadowSettings& shadow, const ShadowPass&, const PassEditorContext& context
 )
 {
+    if (!shadow.enabled)
+        return false;
+
     const auto& limits    = context.device.getInfo().limits;
     const auto  nearPlane = context.camera.nearPlane;
 
@@ -87,14 +89,6 @@ bool drawSettings(
     edited |= widgets.drag("PCF radius", shadow.sampleRadius, 0.0005f, 0.0f, 1.0f, "%.4f");
     edited |= widgets.drag("Spot PCF radius (texels)", shadow.spotSampleRadius, 0.1f, 0.0f, 32.0f, "%.2f");
     return edited;
-}
-}  // namespace
-
-
-void ShadowPass::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
-{
-    if (parameters.enabled)
-        drawPassEditor<drawSettings>(widget, *this, parameters, context, "Shadows");
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)

@@ -48,6 +48,7 @@ void EmissiveLights::prepare(
         const auto count = draw.indexCount / 3;
         CHECK(draw.indexCount % 3 == 0 && uint64_t(triangleCount) + count <=
             std::numeric_limits<uint32_t>::max() / kEmissiveTriangleStride, "invalid emissive triangle count");
+
         const auto& material = materials.data(draw.materialIndex);
         const auto color = material.emissiveFactor;
         const float sides = (material.emissiveFlags & kEmissiveTwoSided) ? 2.0f : 1.0f;

@@ -3,14 +3,14 @@
 #include <slang-rhi.h>
 
 #include <compare>
-#include <initializer_list>
+#include <functional>
 #include <map>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
-using ShaderDefines = std::map<std::string, std::string>;
+using ShaderDefines = std::map<std::string, std::string, std::less<>>;
 
 class ShaderManager
 {
@@ -20,7 +20,7 @@ public:
 
     [[nodiscard]] rhi::IShaderProgram* getProgram(
         std::string_view                   source,
-        std::initializer_list<const char*> entries,
+        std::vector<std::string>           entries,
         const ShaderDefines&               defines  = {},
         std::span<const std::string_view>  includes = {}
     );

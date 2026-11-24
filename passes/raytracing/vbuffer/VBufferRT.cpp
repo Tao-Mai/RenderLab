@@ -16,37 +16,30 @@ constexpr rhi::HitGroupDesc kHitGroup{"vbufferHitGroup", "closestHitMain", "anyH
 constexpr uint32_t          kPayloadSize     = 4 * sizeof(uint32_t);
 constexpr uint32_t          kInvalidInstance = std::numeric_limits<uint32_t>::max();
 
-struct alignas(16) VBufferParameters
-{
-    glm::vec2 viewportOffset;
-    glm::vec2 viewportExtent;
+const RenderPassReflection::Field kPorts[]{
+    {
+        .name = kVBuffer,
+        .resource = rhi::TextureDesc{
+            .size = {0, 0, 1},
+            .format = rhi::Format::RGBA32Uint,
+            .usage = rhi::TextureUsage::UnorderedAccess,
+        },
+        .visibility = RenderPassReflection::Visibility::Output,
+    },
 };
-static_assert(sizeof(VBufferParameters) == 16);
 
 class VBufferRT : public RenderPass
 {
-    RL_PLUGIN_CLASS(VBufferRT, "VBufferRT", "Traces primary visibility into a packed hit buffer.");
+    RL_PLUGIN_CLASS(
+        VBufferRT, "VBufferRT", .desc = "Traces primary visibility into a packed hit buffer.", .ports = kPorts
+    );
 
     explicit VBufferRT(rhi::ComPtr<rhi::IDevice> device) : RenderPass(std::move(device)) {}
 
-    static ref<VBufferRT> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
+    static std::shared_ptr<VBufferRT> create(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties)
     {
         CHECK(properties.empty());
-        return make_ref<VBufferRT>(std::move(device));
-    }
-
-    [[nodiscard]] RenderPassReflection reflect(const CompileData&) override
-    {
-        RenderPassReflection reflection;
-        reflection.addOutput(
-            kVBuffer,
-            rhi::TextureDesc{
-                .size   = {0, 0, 1},
-                .format = rhi::Format::RGBA32Uint,
-                .usage  = rhi::TextureUsage::UnorderedAccess,
-            }
-        );
-        return reflection;
+        return std::make_shared<VBufferRT>(std::move(device));
     }
 
     void compile(RenderContext* context, const CompileData&) override
@@ -92,9 +85,7 @@ class VBufferRT : public RenderPass
             return;
         }
 
-        auto*                   tlas     = mpScene->prepareRayTracing(commands);
-        const auto&             viewport = mpScene->viewport();
-        const VBufferParameters parameters{{viewport.x, viewport.y}, {viewport.width, viewport.height}};
+        auto* tlas = mpScene->prepareRayTracing(commands);
 
         auto* pass = commands.beginRayTracingPass();
         CHECK(pass);
@@ -103,7 +94,6 @@ class VBufferRT : public RenderPass
         mpScene->bindRayTracingGeometryData(*object, tlas);
         const rhi::ShaderCursor root(object);
         rhiCheck(root[kVBuffer].setBinding(output));
-        rhiCheck(root["parameters"].getDereferenced().setData(parameters));
 
         const auto size = output->getDesc().size;
         pass->dispatchRays(0, size.width, size.height, 1);

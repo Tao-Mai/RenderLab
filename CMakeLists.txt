@@ -122,7 +122,7 @@ find_program(RENDERLAB_SLANGC_EXECUTABLE
 set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 set(SHADER_BINARY_DIR "${RENDERLAB_RUNTIME_DIRECTORY}/shaders")
 include(cmake/Shaders.cmake)
-include(cmake/Plugins.cmake)
+include(src/render/plugins/Plugins.cmake)
 include(cmake/Metadata.cmake)
 target_include_directories(RenderLabBuildOptions INTERFACE "${RENDERLAB_GENERATED_DIRECTORY}")
 
@@ -140,10 +140,6 @@ add_library(RenderLabCore SHARED
     src/core/Logger.cpp
     src/core/Logger.h
     src/core/Macros.h
-    src/core/Object.cpp
-    src/core/Object.h
-    src/core/Properties.cpp
-    src/core/Properties.h
     src/core/DirectedGraph.h
     src/core/DirectedGraphTraversal.h
     src/core/Metadata.cpp
@@ -271,6 +267,7 @@ add_library(RenderLabCore SHARED
     src/render/raytracing/SceneAccelerationStructures.h
     src/render/raytracing/PathTracingParameters.h
     src/render/raytracing/PathTracingShader.cpp
+    src/render/raytracing/RayTracingProgram.cpp
     src/render/raytracing/PathTracingShader.h
     src/scene/system/SceneLight.h
     src/render/resources/SceneLightConstants.h
@@ -286,9 +283,9 @@ add_library(RenderLabCore SHARED
     src/core/ScriptBindings.h
     src/core/Scripting.cpp
     src/core/Scripting.h
-    src/core/Plugin.cpp
-    src/core/Plugin.h
     src/core/RuntimeDirectory.cpp
+    src/render/plugins/Plugin.cpp
+    src/render/plugins/Plugin.h
     src/render/resources/AnalyticLights.cpp
     src/render/resources/AnalyticLights.h
     src/render/resources/EmissiveLights.cpp
@@ -317,7 +314,7 @@ elseif(MSVC)
     )
     target_sources(RenderLabCore PRIVATE "${renderlab_gui_exports}")
 endif()
-set_property(SOURCE src/core/Plugin.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+set_property(SOURCE src/render/plugins/Plugin.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     RENDERLAB_PLUGIN_ABI="${RENDERLAB_PLUGIN_ABI}"
     RENDERLAB_PLUGIN_SUFFIX="${CMAKE_SHARED_LIBRARY_SUFFIX}")
 # Editor code and plugin widgets share one ImGui context.

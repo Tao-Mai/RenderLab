@@ -12,17 +12,17 @@ class GBufferPass : public RenderPass
 {
     RL_PLUGIN_CLASS(GBufferPass, "GBufferPass", "Rasterizes the scene into G-buffer textures.");
 
-    GBufferPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) : RenderPass(std::move(device))
+    GBufferPass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties) : RenderPass(std::move(device))
     {
         setProperties(properties);
     }
 
-    static ref<GBufferPass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
+    static std::shared_ptr<GBufferPass> create(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties)
     {
-        return make_ref<GBufferPass>(std::move(device), properties);
+        return std::make_shared<GBufferPass>(std::move(device), properties);
     }
 
-    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
+    [[nodiscard]] RenderPassReflection reflect(const ResourceCache::DefaultProperties&) override;
     void compile(RenderContext* passContext, const CompileData& compileData) override;
     void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 

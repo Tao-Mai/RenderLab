@@ -1,19 +1,16 @@
 #include "passes/raster/GBufferPass/GBufferPass.h"
 
 #include "core/Logger.h"
-#include "core/Plugin.h"
 
 #include <slang-rhi.h>
 #include "render/GpuScene.h"
 #include "render/RenderContext.h"
+#include "render/plugins/Plugin.h"
 #include "render/resources/MaterialTable.h"
 
 
-RenderPassReflection GBufferPass::reflect(const CompileData& compileData)
+RenderPassReflection GBufferPass::reflect(const ResourceCache::DefaultProperties&)
 {
-    const auto* input  = compileData.connectedResources.getField("depth");
-    const auto  extent = input ? glm::uvec2{input->texture().size.width, input->texture().size.height} : glm::uvec2{};
-
     RenderPassReflection reflection;
     reflection.addInput("depth", rhi::TextureDesc{
         .size = {0, 0, 1},
@@ -21,10 +18,16 @@ RenderPassReflection GBufferPass::reflect(const CompileData& compileData)
         .usage = rhi::TextureUsage::DepthStencil,
     });
     for (size_t index = 0; index < kColorNames.size(); ++index)
-        reflection.addOutput(std::string{kColorNames[index]}, rhi::TextureDesc{
-            .size = {extent.x, extent.y, 1},
-            .format = kColorFormats[index],
-            .usage = rhi::TextureUsage::RenderTarget,
+        reflection.addField({
+            .name = std::string{kColorNames[index]},
+            .resource = rhi::TextureDesc{
+                .size = {0, 0, 1},
+                .format = kColorFormats[index],
+                .usage = rhi::TextureUsage::RenderTarget,
+            },
+            .visibility = RenderPassReflection::Visibility::Output,
+            .matchInput = "depth",
+            .textureMatch = RenderPassReflection::TextureMatch::Extent,
         });
     return reflection;
 }

@@ -2,10 +2,10 @@
 
 #include <slang-rhi/shader-cursor.h>
 #include "core/Logger.h"
-#include "core/Plugin.h"
 #include "render/GpuScene.h"
 #include "render/RenderContext.h"
 #include "render/device/RhiCheck.h"
+#include "render/plugins/Plugin.h"
 #include "render/raster/MeshDraw.h"
 #include "render/resources/GpuMesh.h"
 #include "render/resources/ShaderManager.h"
@@ -29,24 +29,24 @@ constexpr char        kIdTarget[] = "ids";
 constexpr rhi::Format kIdFormat   = rhi::Format::R32Uint;
 }  // namespace
 
-RenderPassReflection EditorPickingPass::reflect(const CompileData& compileData)
-{
-    const auto* input  = compileData.connectedResources.getField("depth");
-    const auto  extent = input ? glm::uvec2{input->texture().size.width, input->texture().size.height} : glm::uvec2{};
-
-    RenderPassReflection reflection;
-    reflection.addInput("depth", rhi::TextureDesc{
-        .size = {0, 0, 1},
-        .format = rhi::Format::D32Float,
-        .usage = rhi::TextureUsage::DepthStencil,
-    });
-    reflection.addInternal(kIdTarget, rhi::TextureDesc{
-        .size = {extent.x, extent.y, 1},
-        .format = kIdFormat,
-        .usage = rhi::TextureUsage::RenderTarget,
-    });
-    return reflection;
-}
+const RenderPassReflection::Field EditorPickingPass::kPorts[]{
+    {
+        .name = "depth",
+        .resource = rhi::TextureDesc{
+            .size = {0, 0, 1},
+            .format = rhi::Format::D32Float,
+            .usage = rhi::TextureUsage::DepthStencil,
+        },
+        .visibility = RenderPassReflection::Visibility::Input,
+    },
+    {
+        .name = kIdTarget,
+        .resource = rhi::TextureDesc{.size = {0, 0, 1}, .format = kIdFormat, .usage = rhi::TextureUsage::RenderTarget},
+        .visibility = RenderPassReflection::Visibility::Internal,
+        .matchInput = "depth",
+        .textureMatch = RenderPassReflection::TextureMatch::Extent,
+    },
+};
 
 
 void EditorPickingPass::compile(RenderContext* context, const CompileData&)

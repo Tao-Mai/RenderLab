@@ -343,6 +343,29 @@ void Deserialize(const json& j, T& value)
     }
 }
 
+template <class T>
+[[nodiscard]] T DeserializeWithDefaults(const json& overrides, T value = {})
+{
+    if (!overrides.empty())
+    {
+        auto data = Serialize(value);
+        data.update(overrides, true);
+        Deserialize(data, value);
+    }
+    return value;
+}
+
+namespace metadata
+{
+template <class T, class Visit>
+void visitChangedFields(const T& before, const T& after, Visit&& visit)
+{
+    for (const auto& field : record(typeid(T)).fields)
+        if (field.read(&before) != field.read(&after))
+            visit(field);
+}
+}
+
 namespace asset_json
 {
 template <class T>

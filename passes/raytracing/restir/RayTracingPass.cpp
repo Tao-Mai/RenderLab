@@ -5,8 +5,10 @@
 
 #include <slang-rhi/shader-cursor.h>
 #include "core/Logger.h"
+#include "core/Serializer.h"
 #include "render/GpuScene.h"
 #include "render/RenderContext.h"
+#include "render/raytracing/PathTracingParameters.h"
 #include "render/raytracing/PathTracingShader.h"
 #include "render/resources/MaterialTable.h"
 #include "render/resources/ShaderLayout.h"
@@ -40,32 +42,21 @@ void RayTracingSettings::validate() const
 }
 
 
-RayTracingPass::RayTracingPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
-    RenderPass(std::move(device)), parameters(deserializeFromProperties<RayTracingSettings>(properties))
+RayTracingPass::RayTracingPass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties) :
+    RenderPass(std::move(device)), parameters(DeserializeWithDefaults<RayTracingSettings>(properties))
 {
     parameters.validate();
 }
 
-
-Properties RayTracingPass::getProperties() const { return serializeToProperties(parameters); }
-
-
-void RayTracingPass::setProperties(const Properties& properties)
+void RayTracingPass::onSettingsUpdated(const RayTracingSettings& previous)
 {
-    RayTracingSettings next;
-    Deserialize(nlohmann::json(properties.toJson()), next);
-    next.validate();
-
-    const bool recompile = next.splitLighting != parameters.splitLighting;
-    parameters           = std::move(next);
-    if (recompile)
+    if (parameters.splitLighting != previous.splitLighting)
         requestRecompile();
 }
 
-
-RenderPassReflection RayTracingPass::reflect(const CompileData& compileData)
+RenderPassReflection RayTracingPass::reflect(const ResourceCache::DefaultProperties& defaults)
 {
-    const auto extent = compileData.defaultTexDims;
+    const auto extent = defaults.dims;
     const rhi::Extent3D size{extent.x, extent.y, 1};
     RenderPassReflection reflection;
     reflection.addOutput("depth", rhi::TextureDesc{
@@ -151,12 +142,12 @@ void RayTracingPass::prepareTargets(const RenderData& renderData)
 
 void RayTracingPass::prepareProgram(
     Program& variant, const RenderContext& context, const RenderData& renderData,
-    PathEnvironment environment
+    bool hasEnvironment
 )
 {
     const bool splitLighting = parameters.splitLighting;
     auto&      shaderManager = *context.shaderManager;
-    auto defines = pathTracingDefines(environment);
+    auto defines = pathTracingDefines(hasEnvironment);
     defines["SVGF"] = splitLighting ? "1" : "0";
     auto* program            = shaderManager.getProgram(
         "passes/raytracing/restir/restir_path_tracer.slang",
@@ -203,13 +194,13 @@ void RayTracingPass::execute(RenderContext* renderCommands, const RenderData& re
     auto*       tlas           = scene.prepareRayTracing(commands);
     scene.prepareEmissiveLights(commands);
     const bool  splitLighting  = parameters.splitLighting;
-    const auto  environment    = pathEnvironment(scene);
+    const bool  hasEnvironment = scene.hasEnvironment();
 
     if (!targetsReady)
         prepareTargets(renderData);
-    auto& variant = programs[static_cast<size_t>(environment)];
+    auto& variant = programs[hasEnvironment];
     if (!variant.pipeline)
-        prepareProgram(variant, frame, renderData, environment);
+        prepareProgram(variant, frame, renderData, hasEnvironment);
 
     const bool optionsChanged = parameters.maxBounces != previousMaxBounces || parameters.restir != previousRestir;
     const bool invalidateHistory = is_set(sceneUpdates, kSceneShadingUpdates) || optionsChanged;
@@ -227,7 +218,10 @@ void RayTracingPass::execute(RenderContext* renderCommands, const RenderData& re
     if (splitLighting && invalidateHistory)
         renderData.invalidateHistory(kOutputColor);
     scene.bindRayTracingShaderData(*object, tlas);
-    const auto constants = makePathTracingParameters(scene, parameters.maxBounces, sampleIndex++);
+    const PathTracingParameters constants{
+        .maxBounces = parameters.maxBounces,
+        .sampleIndex = sampleIndex++,
+    };
     rhiCheck(rhi::ShaderCursor(object)["parameters"].getDereferenced().setData(constants));
     for (uint32_t stage = 0; stage < kRaygenEntries.size(); ++stage)
     {

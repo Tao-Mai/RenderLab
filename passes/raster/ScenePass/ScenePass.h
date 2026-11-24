@@ -1,7 +1,7 @@
 #pragma once
 #include <slang-rhi.h>
 
-#include "render/graph/RenderPass.h"
+#include "render/graph/RenderPassSettings.h"
 
 #include <slang-rhi/shader-cursor.h>
 #include "passes/raster/RasterPbr.h"
@@ -9,25 +9,29 @@
 
 class ScenePass : public RenderPass
 {
-    RL_PLUGIN_CLASS(ScenePass, "ScenePass", "Renders opaque geometry with forward shading.");
+public:
+    ScenePass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties);
 
-    ScenePass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
-
-    [[nodiscard]] Properties getProperties() const override;
-    void                             setProperties(const Properties& properties) override;
-
-    static ref<ScenePass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
+    static std::shared_ptr<ScenePass> create(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties)
     {
-        return make_ref<ScenePass>(std::move(device), properties);
+        return std::make_shared<ScenePass>(std::move(device), properties);
     }
 
-    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
+    [[nodiscard]] RenderPassReflection reflect(const ResourceCache::DefaultProperties& defaults) override;
     void compile(RenderContext* passContext, const CompileData& compileData) override;
     void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
 private:
     RasterLightingOutputSettings parameters;
 
+    void onSettingsUpdated(const RasterLightingOutputSettings& previous);
 
     ForwardPbrPipelines pipelines;
+
+    RL_PLUGIN_CLASS(
+        ScenePass,
+        "ScenePass",
+        .desc = "Renders opaque geometry with forward shading.",
+        .settings = pass_settings::bind<&ScenePass::parameters, nullptr, &ScenePass::onSettingsUpdated>()
+    );
 };

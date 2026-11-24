@@ -2,27 +2,20 @@
 #include <slang-rhi.h>
 
 #include "passes/denoise/SVGF/SVGFFilter.h"
-#include "render/graph/RenderPass.h"
+#include "render/graph/RenderPassSettings.h"
 
 #include <array>
 
 class SVGFPass : public RenderPass
 {
-    RL_PLUGIN_CLASS(SVGFPass, "SVGFPass", "SVGF denoising pass.");
+public:
+    SVGFPass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties);
 
-    SVGFPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
-
-    [[nodiscard]] Properties getProperties() const override;
-    void                             setProperties(const Properties& properties) override;
-
-    static ref<SVGFPass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
+    static std::shared_ptr<SVGFPass> create(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties)
     {
-        return make_ref<SVGFPass>(std::move(device), properties);
+        return std::make_shared<SVGFPass>(std::move(device), properties);
     }
 
-    void renderUI(const PassEditorContext& context, Gui::Widgets& widget) override;
-
-    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
     void compile(RenderContext* passContext, const CompileData& compileData) override;
     void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
@@ -35,4 +28,14 @@ private:
     std::array<rhi::ComPtr<rhi::ITexture>, kLightingLayerCount> scratch;
     rhi::ComPtr<rhi::ITexture>                                  historyLength;
     bool                                                        resourcesBound = false;
+
+    static const RenderPassReflection::Field kPorts[9];
+
+    RL_PLUGIN_CLASS(
+        SVGFPass,
+        "SVGFPass",
+        .desc = "SVGF denoising pass.",
+        .ports = kPorts,
+        .settings = pass_settings::bind<&SVGFPass::parameters>()
+    );
 };

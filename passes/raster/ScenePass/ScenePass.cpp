@@ -1,43 +1,30 @@
 #include "passes/raster/ScenePass/ScenePass.h"
 
 #include "core/Logger.h"
-#include "core/Plugin.h"
+#include "core/Serializer.h"
 
 #include <slang-rhi.h>
 #include "render/GpuScene.h"
 #include "render/RenderContext.h"
+#include "render/plugins/Plugin.h"
 #include "render/raster/MeshDraw.h"
 #include "render/raster/ShadowResources.h"
 #include "render/resources/MaterialTable.h"
 
-ScenePass::ScenePass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
-    RenderPass(std::move(device)), parameters(deserializeFromProperties<RasterLightingOutputSettings>(properties))
+ScenePass::ScenePass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties) :
+    RenderPass(std::move(device)), parameters(DeserializeWithDefaults<RasterLightingOutputSettings>(properties))
 {
     parameters.validate();
 }
 
-
-Properties ScenePass::getProperties() const { return serializeToProperties(parameters); }
-
-
-void ScenePass::setProperties(const Properties& properties)
+void ScenePass::onSettingsUpdated(const RasterLightingOutputSettings& previous)
 {
-    RasterLightingOutputSettings next;
-    Deserialize(nlohmann::json(properties.toJson()), next);
-    next.validate();
-
-    const bool recompile = next.hdr != parameters.hdr;
-    parameters           = std::move(next);
-    if (recompile)
+    if (parameters.hdr != previous.hdr)
         requestRecompile();
 }
 
-
-RenderPassReflection ScenePass::reflect(const CompileData& compileData)
+RenderPassReflection ScenePass::reflect(const ResourceCache::DefaultProperties& defaults)
 {
-    const auto* depth  = compileData.connectedResources.getField("depth");
-    const auto  extent = depth ? glm::uvec2{depth->texture().size.width, depth->texture().size.height} : glm::uvec2{};
-
     RenderPassReflection reflection;
     addShadowInputs(reflection);
     reflection.addInput("depth", rhi::TextureDesc{
@@ -45,10 +32,16 @@ RenderPassReflection ScenePass::reflect(const CompileData& compileData)
         .format = rhi::Format::D32Float,
         .usage = rhi::TextureUsage::DepthStencil,
     });
-    reflection.addOutput("color", rhi::TextureDesc{
-        .size = {extent.x, extent.y, 1},
-        .format = parameters.getColorFormat(compileData.defaultTexFormat),
-        .usage = rhi::TextureUsage::RenderTarget,
+    reflection.addField({
+        .name = "color",
+        .resource = rhi::TextureDesc{
+            .size = {0, 0, 1},
+            .format = parameters.getColorFormat(defaults.format),
+            .usage = rhi::TextureUsage::RenderTarget,
+        },
+        .visibility = RenderPassReflection::Visibility::Output,
+        .matchInput = "depth",
+        .textureMatch = RenderPassReflection::TextureMatch::Extent,
     });
     return reflection;
 }
@@ -65,7 +58,7 @@ void ScenePass::compile(RenderContext*, const CompileData& compileData)
     };
     pipelines.setup(
         *mpDevice,
-        parameters.getColorFormat(compileData.defaultTexFormat),
+        compileData.getTextureDesc("color").format,
         depth,
         false
     );

@@ -311,7 +311,7 @@ EditorUI::InspectorResult EditorUI::drawInspector(SceneAsset& scene, AActor* obj
     drawRenderGraphSelector(config, renderer);
     result.edited |= drawEnvironmentInspector(scene, *context().assetManager);
 
-    if (const auto* graph = renderer.getActiveGraph(); graph && graph->getName() == config.renderGraphName())
+    if (const auto& graph = renderer.getActiveGraph(); graph && graph->getName() == config.renderGraphName())
     {
         if (graph->hasActivePass(kEditorPickingPassType))
         {

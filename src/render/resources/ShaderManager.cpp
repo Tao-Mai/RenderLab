@@ -7,6 +7,7 @@
 #include <array>
 #include <filesystem>
 #include <fstream>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 
@@ -115,12 +116,12 @@ void ShaderManager::shutdown() noexcept
 
 rhi::IShaderProgram* ShaderManager::getProgram(
     std::string_view                   source,
-    std::initializer_list<const char*> entries,
+    std::vector<std::string>           entries,
     const ShaderDefines&               defines,
     std::span<const std::string_view>  includes
 )
 {
-    ProgramKey key{std::string{source}, {entries.begin(), entries.end()}, defines, {includes.begin(), includes.end()}};
+    ProgramKey key{std::string{source}, std::move(entries), defines, {includes.begin(), includes.end()}};
     if (const auto found = variants.find(key); found != variants.end())
         return found->second.shader;
 

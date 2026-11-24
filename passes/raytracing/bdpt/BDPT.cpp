@@ -1,17 +1,18 @@
 #include "passes/raytracing/bdpt/BdptBindings.h"
-#include "render/graph/RenderPass.h"
+#include "render/graph/RenderPassSettings.h"
 
 #include "core/Logger.h"
+#include "core/Serializer.h"
 #include "passes/raytracing/bdpt/BdptSettings.h"
 
 #include <slang-rhi.h>
 #include <slang-rhi/shader-cursor.h>
-#include "editor/PassEditor.h"
 #include "render/DispatchGroups.h"
 #include "render/GpuScene.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/device/BufferCapacity.h"
+#include "render/raytracing/PathTracingParameters.h"
 #include "render/raytracing/PathTracingShader.h"
 #include "render/resources/SceneLightConstants.h"
 
@@ -59,47 +60,32 @@ struct alignas(16) BdptParameters
     uint32_t              padding1;
     uint32_t              padding2;
 };
-static_assert(sizeof(BdptParameters) == 96);
+static_assert(sizeof(BdptParameters) == 80);
+
+const RenderPassReflection::Field kPorts[]{
+    {
+        .name = kOutputColor,
+        .resource = rhi::TextureDesc{
+            .size = {0, 0, 1},
+            .format = rhi::Format::RGBA16Float,
+            .usage = rhi::TextureUsage::UnorderedAccess,
+        },
+        .visibility = RenderPassReflection::Visibility::Output,
+    },
+};
 
 class BDPT : public RenderPass
 {
-    RL_PLUGIN_CLASS(BDPT, "BDPT", "Bidirectional path tracer.");
-
-    BDPT(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
-        RenderPass(std::move(device), 1), parameters(deserializeFromProperties<BdptSettings>(properties))
+public:
+    BDPT(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties) :
+        RenderPass(std::move(device), 1), parameters(DeserializeWithDefaults<BdptSettings>(properties))
     {
         parameters.validate();
     }
 
-    [[nodiscard]] Properties getProperties() const override
+    static std::shared_ptr<BDPT> create(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties)
     {
-        return serializeToProperties(parameters);
-    }
-
-    void setProperties(const Properties& properties) override
-    {
-        BdptSettings next;
-        Deserialize(nlohmann::json(properties.toJson()), next);
-        next.validate();
-        parameters = std::move(next);
-    }
-
-    static ref<BDPT> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
-    {
-        return make_ref<BDPT>(std::move(device), properties);
-    }
-
-    void renderUI(const PassEditorContext& context, Gui::Widgets& widget) override;
-
-    [[nodiscard]] RenderPassReflection reflect(const CompileData&) override
-    {
-        RenderPassReflection reflection;
-        reflection.addOutput(kOutputColor, rhi::TextureDesc{
-            .size = {0, 0, 1},
-            .format = rhi::Format::RGBA16Float,
-            .usage = rhi::TextureUsage::UnorderedAccess,
-        });
-        return reflection;
+        return std::make_shared<BDPT>(std::move(device), properties);
     }
 
     void compile(RenderContext* passContext, const CompileData& compileData) override;
@@ -119,7 +105,7 @@ private:
         rhi::ComPtr<rhi::IShaderTable> shaderTable;
         std::future<rhi::ComPtr<rhi::IRayTracingPipeline>> build;
     };
-    std::array<std::array<PipelineVariant, kShaderDepthCount>, static_cast<size_t>(PathEnvironment::Count)> pipelines;
+    std::array<std::array<PipelineVariant, kShaderDepthCount>, kPathEnvironmentVariantCount> pipelines;
     PipelineVariant* activeProgram = nullptr;
 
     BdptSettings   previousSettings;
@@ -143,6 +129,18 @@ private:
     void updateScene(const RenderContext& execution);
     void resolve(rhi::ICommandEncoder& commands, rhi::ITexture& output, const PixelBounds& bounds) const;
     void prepareLightDistribution(const RenderContext& execution);
+
+    static bool drawSettings(
+        Gui::Widgets& widgets, BdptSettings& settings, const BDPT& pass, const PassEditorContext& context
+    );
+
+    RL_PLUGIN_CLASS(
+        BDPT,
+        "BDPT",
+        .desc = "Bidirectional path tracer.",
+        .ports = kPorts,
+        .settings = pass_settings::bind<&BDPT::parameters, &BDPT::drawSettings>()
+    );
 };
 
 glm::vec4 computeSceneSphere(const GpuScene& scene)
@@ -181,10 +179,8 @@ void BDPT::compile(RenderContext* context, const CompileData& compileData)
     if (!checkRayTracingSupport(*mpDevice))
         return;
 
-    auto extent = compileData.defaultTexDims;
-    if (const auto* target = compileData.connectedResources.getField(kOutputColor))
-        extent = {target->texture().size.width, target->texture().size.height};
-    const auto pixelCount = size_t(extent.x) * extent.y;
+    const auto extent     = compileData.getTextureDesc(kOutputColor).size;
+    const auto pixelCount = size_t(extent.width) * extent.height;
 
     rhi::BufferDesc desc;
     desc.usage =
@@ -216,14 +212,14 @@ void BDPT::selectPipeline(const RenderContext& context)
 {
     const auto depth       = std::bit_ceil(std::max(kMinShaderDepth, parameters.maxBounces));
     const auto depthIndex  = static_cast<size_t>(std::bit_width(depth) - std::bit_width(kMinShaderDepth));
-    const auto environment = pathEnvironment(*mpScene);
-    auto&      variant     = pipelines[static_cast<size_t>(environment)][depthIndex];
+    const bool hasEnvironment = mpScene->hasEnvironment();
+    auto&      variant        = pipelines[hasEnvironment][depthIndex];
     if (!variant.pipeline)
     {
         if (!variant.build.valid())
         {
             auto& shaders = *context.shaderManager;
-            auto  defines = pathTracingDefines(environment);
+            auto  defines = pathTracingDefines(hasEnvironment);
             defines["BDPT_MAX_DEPTH"] = std::to_string(depth);
             auto* program             = shaders.getProgram(
                 "passes/raytracing/bdpt/main.slang",
@@ -332,7 +328,7 @@ void BDPT::execute(RenderContext* renderCommands, const RenderData& renderData)
             flags |= BdptBinding::kPowerHeuristic;
 
         const BdptParameters constants{
-            .path        = makePathTracingParameters(scene, parameters.maxBounces, sampleIndex),
+            .path        = {.maxBounces = parameters.maxBounces, .sampleIndex = sampleIndex},
             .sceneSphere = sceneSphere,
             .camera      = cameraSampling(scene.cameraUniforms()),
             .tileOffset  = tileOffset,
@@ -398,7 +394,7 @@ void BDPT::prepareLightDistribution(const RenderContext& execution)
     const auto& scene = *mpScene;
     const auto& emissive = scene.emissiveLights();
     const auto count = static_cast<uint32_t>(scene.analyticLights().size()) + emissive.count() +
-        uint32_t(pathEnvironment(scene) != PathEnvironment::None);
+        uint32_t(scene.hasEnvironment());
     const auto leaves = std::bit_ceil(std::max(count, 1u));
     ensureBufferCapacity(*mpDevice, lightDistributionBuffer, uint64_t(2) * leaves * sizeof(float));
 
@@ -434,7 +430,7 @@ void BDPT::prepareLightDistribution(const RenderContext& execution)
 }
 
 
-bool drawSettings(Gui::Widgets& widgets, BdptSettings& settings, const BDPT& pass, const PassEditorContext&)
+bool BDPT::drawSettings(Gui::Widgets& widgets, BdptSettings& settings, const BDPT& pass, const PassEditorContext&)
 {
     widgets.text(std::format("Samples per pixel: {:.2f}", pass.sampleProgress()));
     if (pass.preparingPipeline())
@@ -450,11 +446,6 @@ bool drawSettings(Gui::Widgets& widgets, BdptSettings& settings, const BDPT& pas
 }
 }  // namespace
 
-
-void BDPT::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
-{
-    drawPassEditor<drawSettings>(widget, *this, parameters, context, "BDPT");
-}
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {

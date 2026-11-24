@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/graph/RenderPass.h"
+#include "render/graph/RenderPassSettings.h"
 
 #include "passes/raster/ShadowPass/ShadowSettings.h"
 
@@ -14,26 +14,22 @@
 
 class ShadowPass : public RenderPass
 {
-    RL_PLUGIN_CLASS(ShadowPass, "ShadowPass", "Renders shadow maps for scene lights.");
+public:
+    ShadowPass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties);
 
-    ShadowPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
-
-    [[nodiscard]] Properties getProperties() const override;
-    void                             setProperties(const Properties& properties) override;
-
-    static ref<ShadowPass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
+    static std::shared_ptr<ShadowPass> create(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties)
     {
-        return make_ref<ShadowPass>(std::move(device), properties);
+        return std::make_shared<ShadowPass>(std::move(device), properties);
     }
 
-    void renderUI(const PassEditorContext& context, Gui::Widgets& widget) override;
-
-    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
+    [[nodiscard]] RenderPassReflection reflect(const ResourceCache::DefaultProperties&) override;
     void compile(RenderContext* passContext, const CompileData& compileData) override;
     void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
 private:
     ShadowSettings parameters;
+
+    void onSettingsUpdated(const ShadowSettings& previous);
 
     void updateShadowData(const RenderContext& frame, const RenderData& renderData);
     void renderShadowMaps(const RenderContext& frame, const RenderData& renderData);
@@ -74,4 +70,19 @@ private:
         uint32_t                     baseArrayLayer,
         uint32_t                     cascadeIndex = 0
     ) const;
+
+    static bool drawSettings(
+        Gui::Widgets& widgets, ShadowSettings& settings, const ShadowPass& pass, const PassEditorContext& context
+    );
+
+    RL_PLUGIN_CLASS(
+        ShadowPass,
+        "ShadowPass",
+        .desc = "Renders shadow maps for scene lights.",
+        .settings = pass_settings::bind<
+            &ShadowPass::parameters,
+            &ShadowPass::drawSettings,
+            &ShadowPass::onSettingsUpdated
+        >()
+    );
 };

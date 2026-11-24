@@ -13,10 +13,6 @@
 #include <typeinfo>
 #include <utility>
 
-template <typename T>
-class ref;
-class Object;
-
 struct PythonDeleter
 {
     void operator()(PyObject* object) const { Py_DECREF(object); }
@@ -47,13 +43,13 @@ namespace ScriptBindings
         void                    unregisterInstance(const void* instance, PyObject* object);
 
         template <typename T>
-        const Object* getNativeInstance(const T&)
+        const void* getNativeInstance(const T&)
         {
             return nullptr;
         }
 
         template <typename T>
-        const Object* getNativeInstance(const ref<T>& value)
+        const void* getNativeInstance(const std::shared_ptr<T>& value)
         {
             return value.get();
         }

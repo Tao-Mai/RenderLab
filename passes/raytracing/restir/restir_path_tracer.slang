@@ -109,9 +109,9 @@ PathResult tracePath(
     PathResult        result           = createPathResult();
     RestirSurfaceData primarySurface   = {};
     RestirReservoir   primaryReservoir = {};
-    if (parameters.containsPixel(pixel))
+    if (scene.globals[0].viewport.containsPixel(pixel))
     {
-        RayDesc ray = createPathRay(pixel, float2(0.5));
+        RayDesc ray = createCameraRay(pixel, float2(0.5));
         result =
             tracePath(ray, RAY_FLAG_FORCE_OPAQUE, state, primarySurface, primaryReservoir);
     }

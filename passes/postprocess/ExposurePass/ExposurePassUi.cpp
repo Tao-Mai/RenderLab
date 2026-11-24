@@ -1,10 +1,6 @@
 #include "passes/postprocess/ExposurePass/ExposurePass.h"
 
-#include "editor/PassEditor.h"
-
-namespace
-{
-bool drawSettings(
+bool ExposurePass::drawSettings(
     Gui::Widgets& widgets, ExposurePassSettings& exposure, const ExposurePass&, const PassEditorContext&
 )
 {
@@ -26,12 +22,6 @@ bool drawSettings(
 
     edited |= widgets.drag("Exposure compensation (stops)", exposure.exposureCompensation, 0.05f, -10.0f, 10.0f, "%.2f");
     return edited;
-}
-}  // namespace
-
-void ExposurePass::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
-{
-    drawPassEditor<drawSettings>(widget, *this, parameters, context, "Exposure");
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)

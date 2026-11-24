@@ -6,13 +6,13 @@
 #include "core/Context.h"
 #include "core/InputManager.h"
 #include "core/Logger.h"
-#include "core/Plugin.h"
 #include "core/Window.h"
 #include "core/time/Timer.h"
 #include "editor/Editor.h"
 #include "editor/EditorCamera.h"
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
+#include "render/plugins/Plugin.h"
 #include "scene/SceneManager.h"
 
 #include <tuple>

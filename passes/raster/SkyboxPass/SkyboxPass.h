@@ -8,20 +8,21 @@
 
 class SkyboxPass : public RenderPass
 {
-    RL_PLUGIN_CLASS(SkyboxPass, "SkyboxPass", "Renders the environment skybox.");
+    static const RenderPassReflection::Field kPorts[2];
 
-    SkyboxPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+    RL_PLUGIN_CLASS(SkyboxPass, "SkyboxPass", .desc = "Renders the environment skybox.", .ports = kPorts);
+
+    SkyboxPass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties) :
         RenderPass(std::move(device))
     {
         setProperties(properties);
     }
 
-    static ref<SkyboxPass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
+    static std::shared_ptr<SkyboxPass> create(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties)
     {
-        return make_ref<SkyboxPass>(std::move(device), properties);
+        return std::make_shared<SkyboxPass>(std::move(device), properties);
     }
 
-    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
     void compile(RenderContext* passContext, const CompileData& compileData) override;
     void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 

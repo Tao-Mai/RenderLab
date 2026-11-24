@@ -5,19 +5,21 @@
 
 class EditorPickingPass : public RenderPass
 {
-    RL_PLUGIN_CLASS(EditorPickingPass, kEditorPickingPassType, "Renders object IDs for picking.");
+    static const RenderPassReflection::Field kPorts[2];
 
-    EditorPickingPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) : RenderPass(std::move(device))
+    RL_PLUGIN_CLASS(EditorPickingPass, kEditorPickingPassType, .desc = "Renders object IDs for picking.", .ports = kPorts);
+
+    EditorPickingPass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties) :
+        RenderPass(std::move(device))
     {
         setProperties(properties);
     }
 
-    static ref<EditorPickingPass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
+    static std::shared_ptr<EditorPickingPass> create(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties)
     {
-        return make_ref<EditorPickingPass>(std::move(device), properties);
+        return std::make_shared<EditorPickingPass>(std::move(device), properties);
     }
 
-    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
     void compile(RenderContext* passContext, const CompileData& compileData) override;
     void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 

@@ -1,6 +1,6 @@
 #include "render/graph/RenderGraphExe.h"
 
-#include "editor/Gui.h"
+#include "editor/PassEditor.h"
 
 #include <algorithm>
 
@@ -13,10 +13,7 @@ void RenderGraphExe::execute(RenderContext* context, RenderData::Dictionary& dic
 void RenderGraphExe::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
 {
     for (const auto& entry : passes)
-    {
-        IDScope idScope(entry.pass.get());
-        entry.pass->renderUI(context, widget);
-    }
+        pass_editor::draw(*entry.pass, context, widget);
 }
 
 rhi::ComPtr<rhi::IResource> RenderGraphExe::getResource(const std::string& name) const

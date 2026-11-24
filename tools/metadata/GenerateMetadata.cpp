@@ -31,6 +31,7 @@ using llvm::StringRef;
 constexpr auto kRecord = "renderlab.record";
 constexpr auto kRegister = "renderlab.register";
 constexpr auto kField = "renderlab.field";
+constexpr auto kPassUi = "renderlab.passUi";
 constexpr auto kEnum = "renderlab.enum";
 constexpr auto kFlags = "renderlab.flags";
 constexpr auto kEnumValue = "renderlab.enumValue";
@@ -97,20 +98,22 @@ void error(const clang::Decl& declaration, const llvm::Twine& message)
     diagnostics.Report(declaration.getLocation(), id) << message.str();
 }
 
-StringRef keyArgument(const clang::Decl& declaration, const AnnotateAttr& attribute, unsigned index)
+StringRef stringArgument(
+    const clang::Decl& declaration, const AnnotateAttr& attribute, unsigned index, StringRef description = "metadata keys"
+)
 {
     if (index < attribute.args_size())
     {
         const auto* argument = attribute.args_begin()[index]->IgnoreUnlessSpelledInSource();
         if (const auto* literal = llvm::dyn_cast<clang::StringLiteral>(argument))
         {
-            const auto key = literal->getBytes();
-            if (literal->isOrdinary() && !key.empty() && !key.contains('\0'))
-                return key;
+            const auto text = literal->getBytes();
+            if (literal->isOrdinary() && !text.empty() && !text.contains('\0'))
+                return text;
         }
     }
 
-    error(declaration, "metadata keys must be nonempty string literals");
+    error(declaration, description + " must be nonempty string literals");
     return {};
 }
 
@@ -183,26 +186,57 @@ void writeField(llvm::raw_ostream& out, const clang::FieldDecl& field, const Ann
 {
     if (!addressable(field))
         return;
-    if (attribute.args_size() == 1)
+
+    const auto* ui = annotation(field, kPassUi);
+    const bool hasSlider = attribute.args_size() == 3;
+    if (!hasSlider && !ui)
     {
         out << "        Field<&" << owner << "::" << field.getName() << ">{";
         quoted(out, key) << "},\n";
         return;
     }
 
-    const auto minimum = numberArgument(field, *attribute.args_begin()[1]);
-    const auto maximum = numberArgument(field, *attribute.args_begin()[2]);
-    if (!minimum || !maximum)
-        return;
-    if (!std::isfinite(*minimum) || !std::isfinite(*maximum) || *minimum > *maximum)
+    std::optional<double> minimum;
+    std::optional<double> maximum;
+    if (hasSlider)
     {
-        error(field, "slider bounds must be finite and ordered");
+        minimum = numberArgument(field, *attribute.args_begin()[1]);
+        maximum = numberArgument(field, *attribute.args_begin()[2]);
+        if (!minimum || !maximum)
+            return;
+        if (!std::isfinite(*minimum) || !std::isfinite(*maximum) || *minimum > *maximum)
+        {
+            error(field, "slider bounds must be finite and ordered");
+            return;
+        }
+    }
+    if (ui && ui->args_size() > 2)
+    {
+        error(field, "RL_PASS_UI accepts a label and a tooltip");
         return;
     }
 
-    out << "        SliderField<&" << owner << "::" << field.getName() << ">{{";
-    quoted(out, key) << "}, {" << llvm::format("%.17g", *minimum) << ", "
-                     << llvm::format("%.17g", *maximum) << "}},\n";
+    const auto label = ui && ui->args_size() > 0 ? stringArgument(field, *ui, 0, "pass UI labels") : StringRef{};
+    const auto tooltip = ui && ui->args_size() > 1 ? stringArgument(field, *ui, 1, "pass UI tooltips") : StringRef{};
+    const auto writeOptionalText = [&](StringRef text)
+    {
+        if (text.empty())
+            out << "nullptr";
+        else
+            quoted(out, text);
+    };
+
+    out << "        PassField<&" << owner << "::" << field.getName() << ">{{";
+    quoted(out, key) << "}, {";
+    writeOptionalText(label);
+    out << ", ";
+    writeOptionalText(tooltip);
+    out << ", ";
+    if (hasSlider)
+        out << "PassSliderRange{" << llvm::format("%.17g", *minimum) << ", " << llvm::format("%.17g", *maximum) << "}";
+    else
+        out << "std::nullopt";
+    out << "}},\n";
 }
 
 void writeLayout(llvm::raw_ostream& out, const CXXRecordDecl& declaration, StringRef type)
@@ -305,8 +339,8 @@ public:
         out << "template <" << templateParameters << ">\nstruct Schema<" << type << ">\n{\n";
         if (registration)
         {
-            const auto root = keyArgument(*declaration, *registration, 0);
-            const auto key = keyArgument(*declaration, *registration, 1);
+            const auto root = stringArgument(*declaration, *registration, 0);
+            const auto key = stringArgument(*declaration, *registration, 1);
             const auto parent = registryParent(*declaration, root);
             if (!root.empty() && !key.empty() && !parent.empty())
             {
@@ -319,7 +353,7 @@ public:
         }
         else if (record->args_size() != 0)
         {
-            const auto key = keyArgument(*declaration, *record, 0);
+            const auto key = stringArgument(*declaration, *record, 0);
             quoted(out << "    static constexpr auto kTypeId = ", key) << ";\n";
         }
 
@@ -353,7 +387,7 @@ public:
             const auto* attribute = annotation(*field, kField);
             if (!attribute)
                 continue;
-            const auto key = keyArgument(*field, *attribute, 0);
+            const auto key = stringArgument(*field, *attribute, 0);
             if (key.empty())
                 continue;
             if (!keys.insert(key).second)
@@ -368,8 +402,15 @@ public:
 
     bool VisitFieldDecl(clang::FieldDecl* declaration)
     {
-        if (annotation(*declaration, kField) && findHeader(*declaration) && !hasSchema(*declaration->getParent()))
-            error(*declaration, "metadata fields require an annotated record");
+        const auto* field = annotation(*declaration, kField);
+        const auto* ui = annotation(*declaration, kPassUi);
+        if ((field || ui) && findHeader(*declaration))
+        {
+            if (!field)
+                error(*declaration, "RL_PASS_UI requires RL_FIELD or RL_PASS_SLIDER");
+            else if (!hasSchema(*declaration->getParent()))
+                error(*declaration, "metadata fields require an annotated record");
+        }
 
         return true;
     }
@@ -407,7 +448,7 @@ public:
                 error(*enumerator, "metadata enumerators require an explicit name");
                 continue;
             }
-            const auto key = keyArgument(*enumerator, *value, 0);
+            const auto key = stringArgument(*enumerator, *value, 0);
             if (!keys.insert(key).second)
                 error(*enumerator, "duplicate enumerator key " + key);
             quoted(out << "        {" << type << "::" << enumerator->getName() << ", ", key) << "},\n";

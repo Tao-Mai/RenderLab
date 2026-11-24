@@ -12,7 +12,7 @@ enum class RL_ENUM ToneMappingOperator
 
 struct RL_RECORD ToneMappingSettings
 {
-    RL_FIELD("mode") ToneMappingOperator mode = ToneMappingOperator::Neutral;
+    RL_FIELD("mode") RL_PASS_UI() ToneMappingOperator mode = ToneMappingOperator::Neutral;
 
     void validate() const { CHECK(mode == ToneMappingOperator::Neutral || mode == ToneMappingOperator::Reinhard); }
 };

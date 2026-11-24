@@ -11,7 +11,7 @@ void raygenMain()
 {
     PathTracingParameters path = parameters.path;
     uint2 pixel = DispatchRaysIndex().xy;
-    if (!path.containsPixel(pixel))
+    if (!scene.globals[0].viewport.containsPixel(pixel))
     {
         sampleOutput[pixel] = float4(0.0, 0.0, 0.0, 1.0);
         return;

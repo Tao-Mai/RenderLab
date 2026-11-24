@@ -1,13 +1,14 @@
 #include "passes/raster/DeferredLightingPass/DeferredLightingPass.h"
 
 #include "core/Logger.h"
-#include "core/Plugin.h"
+#include "core/Serializer.h"
 
 #include <slang-rhi.h>
 #include <slang-rhi/shader-cursor.h>
 #include "passes/raster/RasterPbr.h"
 #include "render/GpuScene.h"
 #include "render/RenderContext.h"
+#include "render/plugins/Plugin.h"
 #include "render/raster/ShadowResources.h"
 #include "render/resources/ShaderData.h"
 
@@ -34,35 +35,21 @@ constexpr std::array       kGBufferChannels{
 }  // namespace
 
 
-DeferredLightingPass::DeferredLightingPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+DeferredLightingPass::DeferredLightingPass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties) :
     RenderPass(std::move(device)),
-    parameters(deserializeFromProperties<RasterLightingOutputSettings>(properties))
+    parameters(DeserializeWithDefaults<RasterLightingOutputSettings>(properties))
 {
     parameters.validate();
 }
 
-
-Properties DeferredLightingPass::getProperties() const { return serializeToProperties(parameters); }
-
-
-void DeferredLightingPass::setProperties(const Properties& properties)
+void DeferredLightingPass::onSettingsUpdated(const RasterLightingOutputSettings& previous)
 {
-    RasterLightingOutputSettings next;
-    Deserialize(nlohmann::json(properties.toJson()), next);
-    next.validate();
-
-    const bool recompile = next.hdr != parameters.hdr;
-    parameters           = std::move(next);
-    if (recompile)
+    if (parameters.hdr != previous.hdr)
         requestRecompile();
 }
 
-
-RenderPassReflection DeferredLightingPass::reflect(const CompileData& compileData)
+RenderPassReflection DeferredLightingPass::reflect(const ResourceCache::DefaultProperties& defaults)
 {
-    const auto* depth  = compileData.connectedResources.getField("depth");
-    const auto  extent = depth ? glm::uvec2{depth->texture().size.width, depth->texture().size.height} : glm::uvec2{};
-
     RenderPassReflection reflection;
     addShadowInputs(reflection);
     for (const auto& channel : kGBufferChannels)
@@ -72,10 +59,16 @@ RenderPassReflection DeferredLightingPass::reflect(const CompileData& compileDat
             .mipCount = 0,
             .usage = rhi::TextureUsage::ShaderResource,
         });
-    reflection.addOutput("color", rhi::TextureDesc{
-        .size = {extent.x, extent.y, 1},
-        .format = parameters.getColorFormat(compileData.defaultTexFormat),
-        .usage = rhi::TextureUsage::RenderTarget,
+    reflection.addField({
+        .name = "color",
+        .resource = rhi::TextureDesc{
+            .size = {0, 0, 1},
+            .format = parameters.getColorFormat(defaults.format),
+            .usage = rhi::TextureUsage::RenderTarget,
+        },
+        .visibility = RenderPassReflection::Visibility::Output,
+        .matchInput = "depth",
+        .textureMatch = RenderPassReflection::TextureMatch::Extent,
     });
     return reflection;
 }

@@ -15,7 +15,7 @@
 namespace
 {
 template <class T>
-bool drawNumber(Gui::Widgets& widgets, const char* label, Properties::json& value)
+bool drawNumber(Gui::Widgets& widgets, const char* label, nlohmann::ordered_json& value)
 {
     auto next = value.get<T>();
     if (widgets.input(label, next) && std::isfinite(next))
@@ -39,7 +39,7 @@ const char* parameterLabel(const std::string& name)
     return name.c_str();
 }
 
-bool drawParameter(Gui::Widgets& widgets, const std::string& name, Properties::json& value)
+bool drawParameter(Gui::Widgets& widgets, const std::string& name, nlohmann::ordered_json& value)
 {
     const auto* label = parameterLabel(name);
     if (value.is_boolean())
@@ -79,11 +79,11 @@ bool drawParameter(Gui::Widgets& widgets, const std::string& name, Properties::j
 }
 
 void drawSettings(
-    Gui::Widgets&           widgets,
-    Renderer&               renderer,
-    std::string_view        graphName,
-    const Properties::json& defaults,
-    Properties::json&       parameters
+    Gui::Widgets&                 widgets,
+    Renderer&                     renderer,
+    std::string_view              graphName,
+    const nlohmann::ordered_json& defaults,
+    nlohmann::ordered_json&       parameters
 )
 {
     if (defaults.empty())

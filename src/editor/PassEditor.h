@@ -6,7 +6,6 @@
 
 #include <functional>
 #include <optional>
-#include <string_view>
 
 class RenderPass;
 struct EditorCameraConfig;
@@ -20,29 +19,21 @@ struct PassEditorContext
 
 namespace pass_editor
 {
-bool begin(const RenderPass& pass, const PassEditorContext& context, std::string_view label);
+void draw(const RenderPass& pass, const PassEditorContext& context, Gui::Widgets& widgets);
 bool drawFields(Gui::Widgets& widgets, void* settings, const metadata::Record& record);
-}  // namespace pass_editor
 
-template <auto Draw = nullptr, class Pass, class Settings>
-void drawPassEditor(
-    Gui::Widgets&    widgets,
-    const Pass&              pass,
-    const Settings&          parameters,
-    const PassEditorContext& context,
-    std::string_view         label
-)
+template <class Pass, auto Member, auto Draw = nullptr>
+void edit(const RenderPass& pass, const PassEditorContext& context, Gui::Widgets& widgets)
 {
-    if (!pass_editor::begin(pass, context, label))
-        return;
-
-    auto settings = parameters;
+    const auto& typedPass = static_cast<const Pass&>(pass);
+    auto settings = typedPass.*Member;
     bool changed;
     if constexpr (Draw != nullptr)
-        changed = Draw(widgets, settings, pass, context);
+        changed = Draw(widgets, settings, typedPass, context);
     else
-        changed = pass_editor::drawFields(widgets, &settings, metadata::record(typeid(Settings)));
+        changed = drawFields(widgets, &settings, metadata::record(typeid(settings)));
 
     if (changed)
         context.submit(pass, Serialize(settings));
 }
+}  // namespace pass_editor

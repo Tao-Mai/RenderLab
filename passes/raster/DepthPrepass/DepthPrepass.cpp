@@ -2,20 +2,21 @@
 
 #include <slang-rhi.h>
 #include "core/Logger.h"
-#include "core/Plugin.h"
 #include "render/GpuScene.h"
+#include "render/plugins/Plugin.h"
 #include "render/resources/MaterialTable.h"
 
-RenderPassReflection DepthPrepass::reflect(const CompileData&)
-{
-    RenderPassReflection reflection;
-    reflection.addOutput("depth", rhi::TextureDesc{
-        .size = {0, 0, 1},
-        .format = rhi::Format::D32Float,
-        .usage = rhi::TextureUsage::DepthStencil,
-    });
-    return reflection;
-}
+const RenderPassReflection::Field DepthPrepass::kPorts[]{
+    {
+        .name = "depth",
+        .resource = rhi::TextureDesc{
+            .size = {0, 0, 1},
+            .format = rhi::Format::D32Float,
+            .usage = rhi::TextureUsage::DepthStencil,
+        },
+        .visibility = RenderPassReflection::Visibility::Output,
+    },
+};
 
 
 void DepthPrepass::compile(RenderContext* passContext, const CompileData&)

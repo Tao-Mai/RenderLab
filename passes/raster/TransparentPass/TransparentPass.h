@@ -1,7 +1,7 @@
 #pragma once
 #include <slang-rhi.h>
 
-#include "render/graph/RenderPass.h"
+#include "render/graph/RenderPassSettings.h"
 
 #include <slang-rhi/shader-cursor.h>
 #include "passes/raster/RasterPbr.h"
@@ -11,19 +11,15 @@
 
 class TransparentPass : public RenderPass
 {
-    RL_PLUGIN_CLASS(TransparentPass, "TransparentPass", "Renders transparent geometry.");
+public:
+    TransparentPass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties);
 
-    TransparentPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
-
-    [[nodiscard]] Properties getProperties() const override;
-    void                             setProperties(const Properties& properties) override;
-
-    static ref<TransparentPass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
+    static std::shared_ptr<TransparentPass> create(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties)
     {
-        return make_ref<TransparentPass>(std::move(device), properties);
+        return std::make_shared<TransparentPass>(std::move(device), properties);
     }
 
-    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
+    [[nodiscard]] RenderPassReflection reflect(const ResourceCache::DefaultProperties&) override;
     void compile(RenderContext* passContext, const CompileData& compileData) override;
     void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
@@ -34,4 +30,11 @@ private:
     std::vector<uint32_t>        sortedDrawItems;
 
     ForwardPbrPipelines pipelines;
+
+    RL_PLUGIN_CLASS(
+        TransparentPass,
+        "TransparentPass",
+        .desc = "Renders transparent geometry.",
+        .settings = pass_settings::bind<&TransparentPass::parameters>()
+    );
 };

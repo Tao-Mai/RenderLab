@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/graph/RenderPass.h"
+#include "render/graph/RenderPassSettings.h"
 
 #include "passes/postprocess/FalcorPostProcess/FalcorPostProcessConfig.h"
 
@@ -12,26 +12,21 @@
 // Connects Falcor's SimplePostFX and ToneMapper, followed by swapchain presentation.
 class FalcorPostProcess : public RenderPass
 {
-    RL_PLUGIN_CLASS(FalcorPostProcess, "FalcorPostProcess", "Applies Falcor tone mapping and post effects.");
+public:
+    FalcorPostProcess(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties);
 
-    FalcorPostProcess(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
-
-    [[nodiscard]] Properties getProperties() const override;
-    void                             setProperties(const Properties& properties) override;
-
-    static ref<FalcorPostProcess> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
+    static std::shared_ptr<FalcorPostProcess> create(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties)
     {
-        return make_ref<FalcorPostProcess>(std::move(device), properties);
+        return std::make_shared<FalcorPostProcess>(std::move(device), properties);
     }
 
-    void renderUI(const PassEditorContext& context, Gui::Widgets& widget) override;
-
-    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
     void compile(RenderContext* passContext, const CompileData& compileData) override;
     void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
 private:
     FalcorPostProcessConfig parameters;
+
+    void onSettingsUpdated(const FalcorPostProcessConfig& previous);
 
     enum class Stage
     {
@@ -86,4 +81,25 @@ private:
     rhi::ComPtr<rhi::ISampler>         pointSampler  = nullptr;
     bool                               encodeSrgb    = false;
     std::vector<ImageStage>            imageStages;
+
+    static bool drawSettings(
+        Gui::Widgets& widgets,
+        FalcorPostProcessConfig& settings,
+        const FalcorPostProcess& pass,
+        const PassEditorContext& context
+    );
+
+    static const RenderPassReflection::Field kPorts[2];
+
+    RL_PLUGIN_CLASS(
+        FalcorPostProcess,
+        "FalcorPostProcess",
+        .desc = "Applies Falcor tone mapping and post effects.",
+        .ports = kPorts,
+        .settings = pass_settings::bind<
+            &FalcorPostProcess::parameters,
+            &FalcorPostProcess::drawSettings,
+            &FalcorPostProcess::onSettingsUpdated
+        >()
+    );
 };

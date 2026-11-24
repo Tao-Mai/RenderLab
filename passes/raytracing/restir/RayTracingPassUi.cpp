@@ -1,6 +1,5 @@
 #include "passes/raytracing/restir/RayTracingPass.h"
 
-#include "editor/PassEditor.h"
 #include "render/raytracing/PathTracingParameters.h"
 
 namespace
@@ -26,19 +25,16 @@ bool drawRestirSettings(Gui::Widgets& widgets, RestirSettings& restir)
     edited |= widgets.slider("Spatial radius", restir.spatialRadius, 1.0f, kMaxRestirSpatialRadius, "%.1f px", true);
     return edited;
 }
+}  // namespace
 
-bool drawSettings(Gui::Widgets& widgets, RayTracingSettings& rayTracing, const RayTracingPass&, const PassEditorContext&)
+bool RayTracingPass::drawSettings(
+    Gui::Widgets& widgets, RayTracingSettings& rayTracing, const RayTracingPass&, const PassEditorContext&
+)
 {
     bool edited = widgets.slider("Max bounces", rayTracing.maxBounces, kMinPathBounces, kMaxPathBounces);
     widgets.tooltip("Maximum surface scattering events. 1 gives direct lighting plus terminal emission.");
     edited |= drawRestirSettings(widgets, rayTracing.restir);
     return edited;
-}
-}
-
-void RayTracingPass::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
-{
-    drawPassEditor<drawSettings>(widget, *this, parameters, context, "ReSTIR");
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)

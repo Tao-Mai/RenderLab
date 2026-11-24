@@ -3,24 +3,16 @@
 #include "raytracing/camera_ray.slang"
 #include "raytracing/visibility_buffer.slang"
 
-struct VBufferParameters
-{
-    float2 viewportOffset;
-    float2 viewportExtent;
-};
-
-ConstantBuffer<VBufferParameters> parameters;
 [format("rgba32ui")] RWTexture2D<uint4> vbuffer;
 
 [shader("raygeneration")]
 void raygenMain()
 {
     uint2 pixel = DispatchRaysIndex().xy;
-    float2 local = float2(pixel) + 0.5 - parameters.viewportOffset;
     VBufferHit hit = {kInvalidVBufferHit};
-    if (all(local >= 0.0) && all(local < parameters.viewportExtent))
+    if (scene.globals[0].viewport.containsPixel(pixel))
     {
-        RayDesc ray = createCameraRay(local / parameters.viewportExtent);
+        RayDesc ray = createCameraRay(pixel, float2(0.5));
         TraceRay(scene.rtAccel, RAY_FLAG_FORCE_NON_OPAQUE, kSceneMask, 0, 0, 0, ray, hit);
     }
     vbuffer[pixel] = hit.packed;

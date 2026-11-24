@@ -110,9 +110,15 @@ bool drawEnvironmentInspector(SceneAsset& scene, const AssetManager& assets)
         edited = true;
     }
 
-    const char* preview = current ? current->c_str() : "Select environment map...";
+    const char* preview = current ? current->c_str() : "None";
     if (!ImGui::BeginCombo("Environment map", preview))
         return edited;
+
+    if (ImGui::Selectable("None##environmentMapNone", !current) && current)
+    {
+        current.reset();
+        edited = true;
+    }
 
     auto ids = assets.loadedIds<EnvironmentMapAsset>();
     std::ranges::sort(ids, {}, &EnvironmentMapAsset::ID::value);

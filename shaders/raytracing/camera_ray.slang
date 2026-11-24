@@ -1,10 +1,13 @@
 #ifndef RENDERLAB_CAMERA_RAY_SLANG
 #define RENDERLAB_CAMERA_RAY_SLANG
 
+#include "math/constant.slang"
 #include "scene/scene_data.slang"
 
-RayDesc createCameraRay(float2 viewportUv)
+RayDesc createCameraRay(uint2 pixel, float2 pixelSample)
 {
+    const ViewportRect viewport = scene.globals[0].viewport;
+    float2 viewportUv = (float2(pixel) + pixelSample - viewport.offset) / viewport.extent;
     SceneUniforms camera = scene.globals[0].camera;
     float4 farPoint = mul(camera.inverseViewProjection, float4(uvToClip(viewportUv), 1.0, 1.0));
 

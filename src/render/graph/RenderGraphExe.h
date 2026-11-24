@@ -3,6 +3,7 @@
 #include "render/graph/RenderPass.h"
 #include "render/graph/ResourceCache.h"
 
+#include <memory>
 #include <string_view>
 #include <vector>
 
@@ -25,8 +26,8 @@ private:
 
     struct Pass
     {
-        ref<RenderPass> pass;
-        ResourceCache::Ports ports;
+        std::shared_ptr<RenderPass> pass;
+        ResourceCache::Ports        ports;
     };
 
     std::vector<Pass> passes;

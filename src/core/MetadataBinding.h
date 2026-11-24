@@ -7,13 +7,13 @@
 namespace metadata
 {
 template <class T, auto Member>
-constexpr Property bindField(Field<Member> field, std::optional<SliderRange> range = {})
+constexpr Property bindField(const Field<Member>& field, const PassFieldUi* passUi = nullptr)
 {
     using Value = std::remove_cvref_t<decltype(std::declval<T&>().*Member)>;
     return {
         .name = field.name,
         .type = typeid(Value),
-        .range = range,
+        .passUi = passUi,
         .isEnum = std::is_enum_v<Value>,
         .address = [](void* object) -> void* { return std::addressof(static_cast<T*>(object)->*Member); },
         .read = [](const void* object) { return Serialize(static_cast<const T*>(object)->*Member); },
@@ -22,9 +22,9 @@ constexpr Property bindField(Field<Member> field, std::optional<SliderRange> ran
 }
 
 template <class T, auto Member>
-constexpr Property bindField(SliderField<Member> field)
+constexpr Property bindField(const PassField<Member>& field)
 {
-    return bindField<T>(static_cast<Field<Member>>(field), field.range);
+    return bindField<T>(static_cast<const Field<Member>&>(field), &field.ui);
 }
 
 template <class T>

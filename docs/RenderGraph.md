@@ -1,97 +1,67 @@
-# RenderGraph
+# RenderGraph 实现
 
 [渲染模块](Render.md) · [项目架构](Architecture.md)
 
-`Falcor::RenderGraph` 采用 Falcor 的命名 Pass、反射、编译器、执行器和资源缓存结构。C++ Pass 继承 `Falcor::RenderPass`，Python 通过 `falcor.RenderGraph` 组合 Pass。C++ 编译器解析连线、裁剪节点和分配资源，执行器按编译顺序录制 RHI 命令。 [Falcor RenderGraph 源码](https://github.com/NVIDIAGameWorks/Falcor/tree/759aad033ff610fb0d82c74f7e0a508d0096d5f2/Source/Falcor/RenderGraph)
+`RenderGraph` 持有 Pass 实例、依赖 DAG、外部输入和有序的输出标记。编译器把这份图定义转换为 `RenderGraphExe`，执行器持有拓扑排序后的 Pass、输出槽位和本次编译的 `ResourceCache`。`Renderer` 决定何时装载、编译和执行图，并负责帧提交与呈现。
 
-## Pass 插件
+## 脚本加载与图结构
 
-每个 Pass 目录用 `renderlab_add_plugin()` 构建共享库，在自己的 `registerPlugin(PluginRegistry&)` 入口登记类型和可选的编辑器回调。CMake 生成 `plugins/plugins.json`，宿主启动时按清单加载插件并校验 ABI。插件实例持有动态库的生命周期，宿主和插件共用 `RenderLabCore`。
+`Renderer::configureGraph()` 通过 `ConfigManager` 查找图名对应的脚本。`loadRenderGraph()` 在独立的 Python 全局字典中运行脚本，临时把设备放入线程局部的 `activeGraphDevice`，供 `renderlab.RenderGraph` 构造 C++ 对象。加载器定位 `render_graph_<图名>`，从工厂的关键字默认值读取参数定义，按默认值类型校验已声明参数的覆盖值，再调用工厂。它检查返回的图与配置同名且至少有一个输出标记，然后保存各 Pass 的脚本属性快照。 [配置解析](../src/core/ConfigManager.cpp) · [脚本加载与绑定](../src/render/graph/RenderGraphScript.cpp)
 
-## Python 构图
+Python 绑定把 Pass 属性字典转换成 `nlohmann::json`。`RenderPass::create()` 按类型从 `PluginManager` 查找工厂，以设备和 JSON 属性创建实例。应用启动时按 CMake 生成的 `plugins/plugins.json` 加载插件，校验 ABI 后调用 `registerPlugin()`。注册信息包含工厂和 `PluginInfo`，其中的 `ports` 是基类 `reflect()` 默认使用的端口声明。Pass 的共享指针同时持有动态库引用，使实例先于库卸载析构。 [Pass 工厂](../src/render/graph/RenderPass.cpp) · [插件加载](../src/render/plugins/Plugin.cpp) · [插件构建](../src/render/plugins/Plugins.cmake)
 
-`config/config.json` 的 `renderGraphs` 按 `RenderPath` 分组，组内用图名映射相对于配置文件的脚本路径。
-应用按场景模式和设备能力提供图选择。默认入口为 [Forward](../graphs/forward.py)、
-[Deferred](../graphs/deferred.py)、[ReSTIR](../graphs/realtime.py)、[MinimalPathTracer](../graphs/minimal_path_tracer.py)、
-[PT](../graphs/pt.py) 和 [BDPT](../graphs/bdpt.py)。
-四个光追积分器各有自己的插件和图参数，两张离线图用于离线场景。
-`renderer.json` 的 `realtimeGraph` 与 `offlineGraph` 分别记录两种场景模式选择的图名。`CaptureScene` 的图参数也使用这些名称。
+`DirectedGraph` 存储节点 ID、边 ID 及入边和出边。`RenderGraph` 另存实例名到节点 ID 的索引、节点上的 Pass 和属性、边两端的端口名。输出用 `(nodeId, field)` 表示并保留标记顺序，Renderer 将索引 `0` 作为呈现输出。 [图结构](../src/core/DirectedGraph.h) · [RenderGraph](../src/render/graph/RenderGraph.h)
 
-RenderLab 在隔离的 `Falcor::Scripting::Context` 中读取脚本，用 `RenderGraphIR::getFuncName()` 从图名定位并调用 `render_graph_*()` 工厂。工厂用 `create_pass(pass_name, pass_type, dict)`、`add_edge(src, dst)` 和 `mark_output(name)` 构建同名的 `falcor.RenderGraph`。宿主通过 `getActiveGraph()` 获取当前图。通过 `RenderGraph::createFromFile()` 运行脚本时，模块用默认参数构图并通过 `m.addGraph()` 注册。
+| 边 | 存储和编译语义 |
+| --- | --- |
+| 资源边 | 两端均为 `实例.端口`。生产者先于消费者执行，编译时将两端的端口名映射到同一个资源槽位。 |
+| 执行边 | 两端均为 Pass 实例名，端口名为空。源节点先于目标节点执行。 |
 
-资源端口使用 `"实例.端口"`。Renderer 在图执行后读取首个标记的颜色输出，将它绘制到交换链，并在同一次渲染中合成编辑器 UI。光源和材质缓冲由渲染后端通过帧 shader 参数和材质表共享。插件工厂创建 Pass，编译器检查端口方向、类型、格式和必需连线。
+`addEdge()` 在插入前检查端点、自环和输入端口的单一连线约束，再沿目标节点的出边搜索源节点，阻止成环。端口是否存在、方向和资源描述由编译期的反射结果校验。 [连线实现](../src/render/graph/RenderGraph.cpp) · [图遍历](../src/core/DirectedGraphTraversal.h)
 
-`RenderGraphExporter::save()` 将 Pass 参数、连线和输出掩码写入 Python 脚本。`RenderGraphImporter::import()` 按名称调用图工厂，通过 `getObject<ref<RenderGraph>>()` 读取结果。`importAllGraphs()` 通过 `getObjects<ref<RenderGraph>>()` 读取脚本中定义的图。宿主用 `setInput()` 重新绑定外部资源。
+## 依赖编译与资源分配
 
-图工厂通过带默认值的 Python 关键字参数声明可配置项，例如 `render_graph_PT(*, hdr: bool = True, postProcess: str = "RenderLab", bloom: bool = True)`。Renderer 将 `renderer.json` 中该图的覆盖值传给工厂，并将与 `RenderFeature` 同名的参数同步到渲染设置。Editor 面板的 Graph 区从同一组默认值生成控件。HDR 关闭时隐藏后处理选项，Bloom 控件在 HDR 且使用 RenderLab 后处理时显示。隐藏选项的覆盖值会保留。提交修改后重建图。 [RendererUi.cpp](../src/editor/RendererUi.cpp)
+1. **确定活跃 Pass。** `preparePasses()` 要求图至少有一个标记输出，再以所有标记输出的生产者和执行边的两端为根，沿入边做深度优先遍历。编译器对完整 DAG 做拓扑排序后筛出活跃节点。 [RenderGraphCompiler.cpp](../src/render/graph/RenderGraphCompiler.cpp)
+2. **取得端口描述。** 对活跃节点调用 `reflect(defaults)`。每个 `Field` 包含名称、原生 `rhi::TextureDesc` 或 `rhi::BufferDesc`、可见性和可选标记。输入、输出和内部资源由可见性标志表示，原地读写端口同时具有 `Input` 和 `Output`。指定 `TextureMatch` 且 `matchInput` 为空的字段在此时取图的默认尺寸或格式。编译器记录的 `usedOutputs` 包含标记输出和连到活跃消费者的输出。 [RenderPassReflection](../src/render/graph/RenderPassReflection.h)
+3. **登记槽位并校验绑定。** `registerResources()` 按拓扑顺序登记资源。输入从上游槽位建立别名，或登记外部 RHI 对象。原地读写沿用输入槽位。必需的纯输出端口和内部资源各自创建槽位，可选输出在有活跃消费者或被标记为图输出时创建槽位。未绑定的可选输入没有槽位。登记和校验阶段检查端口方向、资源描述冲突、缺失的必需输入、非法的输出标记以及同时绑定边和外部对象的输入。
+4. **解析纹理规格。** 连线合并完成后，编译器对指定 `matchInput` 的字段按执行顺序匹配同一 Pass 输入纹理的宽高或格式。剩余未指定的宽度、高度和格式取自图默认值。随后给图自身创建的输出纹理补上 `ShaderResource` usage。
+5. **编译 Pass 并创建资源。** 编译器为每个 Pass 整理局部端口名与槽位索引，再调用 `compile()`。此时 `CompileData::getTextureDesc()` 已能读取解析后的描述，`addInternalTexture()` 可以追加描述完整的内部纹理。Bloom 在这一阶段根据输入尺寸计算金字塔各层的纹理描述。所有活跃 Pass 编译成功后，`ResourceCache::allocateResources()` 才创建图槽位的 RHI 资源，执行器按输出标记顺序记录对应的槽位索引。 [CompileData](../src/render/graph/RenderPass.cpp) · [Bloom](../passes/postprocess/bloom/Bloom.cpp)
 
-环境图在 Editor 面板的 Environment 区选择，随场景保存。IBL 开关是当前图的参数。
+`ResourceCache` 用哈希表将全名映射到槽位索引。槽位保存资源描述、RHI 资源引用、原始名称、外部资源标记和历史版本。连接时，消费者的描述约束合并到共享槽位。图内资源会补齐未指定的字段，并合并各消费者的 usage。外部槽位以对象的实际描述为准，要求尺寸、格式等明确约束相符，usage 覆盖所有声明的访问。分配时每个非外部槽位通过 `rhi::IDevice` 创建一个 RHI 对象，并补上复制源和复制目标的 usage。 [ResourceCache.h](../src/render/graph/ResourceCache.h) · [ResourceCache.cpp](../src/render/graph/ResourceCache.cpp)
 
-各图调用同一个 [`add_post_process()`](../graphs/modules/post_process.py)
-组装后处理。模块将 Pass 登记到当前图，由 RenderGraph 统一编译。随后 [编辑器输出模块](../graphs/modules/editor.py)
-仅在 Forward 和 Deferred 中使用场景深度做物体拾取。编辑器 UI 叠加在后处理的颜色结果上。
+### 原地读写与执行边
 
-`add_post_process()` 将最终颜色标为首输出，宿主用 `getOutput(0)` 取得呈现资源。
-RenderLab 后处理同时标记 `exposure.state`。编辑器启用相机曝光覆盖时，通过 `getPass()` 和 `getProperties()` 读取该 Pass 当前的曝光设置。
-图编译后，可以用 Python 的 `graph.get_output(name)` 获取已标记的 `RhiTexture` 或 `RhiBuffer`。`RhiTexture.format` 返回 `falcor.Format`。`mark_output(name, mask)` 的掩码使用 `TextureChannelFlags`，省略时使用 `TextureChannelFlags.RGB`。
+```mermaid
+flowchart LR
+    Forward["forward.color"] --> Skybox["skybox.color"] --> Transparent["transparent.color"]
+    Forward -.-> Slot["纹理槽位"]
+    Skybox -.-> Slot
+    Transparent -.-> Slot
+```
 
-`renderer.json` 的 `SceneObjects:enabled` 选项控制编辑器左侧的 Scene Objects 面板，默认关闭。切换时窗口按左栏宽度调整并在当前屏幕居中。编辑器配置中的宽度以收起左栏时的宽度保存。
-场景下拉框位于右侧编辑器顶部。
+实线表示 Forward 图中的资源边，虚线表示端口名到缓存槽位的映射。Skybox 和 Transparent 用 `LoadOp::Load` 将同一纹理加载为颜色附件并写回，后处理消费最终写入端的别名。执行边可以为经过不同别名的读写者补充顺序。 [光栅组图](../graphs/modules/scene.py) · [SkyboxPass](../passes/raster/SkyboxPass/SkyboxPass.cpp) · [TransparentPass](../passes/raster/TransparentPass/TransparentPass.cpp)
 
-## Pass 参数与编辑器
+光栅图的 `picking` 通过资源边接入深度，同时由颜色生产者到 `picking` 的执行边排在颜色之后。执行边使该 Pass 在裁剪时保留，拾取 ID 纹理由 Pass 声明为内部槽位。 [拾取子图](../graphs/modules/editor.py) · [EditorPickingPass](../passes/editor/EditorPickingPass/EditorPickingPass.cpp)
 
-Pass 通过 `getProperties()` 和 `setProperties()` 读写属性。各 Pass 持有自己的参数并负责校验。
-`Properties` 负责与 Python 字典互转。构图、Pass 的 Python 属性接口和 `RenderGraphIR` 导出共用这条转换路径。
-影响反射或管线的属性变更通过 `requestRecompile()` 通知图重新编译。
+### 编译诊断
 
-插件通过 `registerClass<RenderPass, T>()` 注册使用设备和属性构造实例的 `T::create()`。
-编辑器调用 `RenderGraph::renderUI()`，执行器按顺序调用活跃 Pass 的 `renderUI()`。
-Pass 可通过 `drawPassEditor()` 生成布尔、枚举及标注了 `RL_SLIDER` 的数值控件，也可提供绘制函数设置标签、范围和提示。
-ShadowPass 关闭时隐藏自己的控件。
+`RenderGraph::compile(context, log)` 在需要重编译时释放旧执行器，用 `ScopedErrorLog` 收集编译器的 `LOG_ERROR`。各 Pass 的编译诊断带有实例名。此类编译失败返回 `false`，Renderer 用 `CHECK` 报出诊断并终止。资源分配和 RHI 调用中的 `CHECK` 在失败点直接终止。 [图编译入口](../src/render/graph/RenderGraph.cpp) · [日志收集](../src/core/Logger.cpp) · [帧入口](../src/render/Renderer.cpp)
 
-生效顺序为 Pass 默认值、Python `properties`、用户选项。`renderer.json` 的 `options` 使用 Falcor 的冒号分隔名称。
-`renderGraphs:<图名>:parameters:<参数名>` 保存图参数。`renderGraphs:<图名>:passes:<Pass 类型>:<实例名>:<属性名>` 保存实例属性。
-编辑器的 Reset settings 恢复该实例的脚本初值。
-普通修改在下一帧应用，Pass 可以在 `execute()` 中重置受影响的历史。需要改变资源或连线时重建图。
+## 帧执行与历史
 
-## Pass 与资源
+1. `Renderer::render()` 先应用配置，按图的在途帧上限等待时间线 Fence，再创建 Graphics Queue 的命令编码器。编译器把上限取为 `kMaxFramesInFlight` 与所有活跃 Pass 所声明上限的最小值。默认上限为两帧，PT、BDPT 和 AccumulatePass 声明一帧。 [帧提交](../src/render/Renderer.cpp) · [帧上限](../src/render/RenderConfig.h)
+2. `GpuScene::update()` 录制场景上传并返回 `SceneUpdateFlags`。Renderer 将标志交给图，图通知所有 Pass。由于 Renderer 复用同一个 `GpuScene`，场景代次变化时图也会再次调用各 Pass 的 `setScene()`。光追资源由需要它的 Pass 向 `GpuScene` 请求，构建或上传命令录在同一个编码器中。 [场景更新](../src/render/GpuScene.cpp) · [图的场景通知](../src/render/graph/RenderGraph.cpp)
+3. 成功获取交换链图像后，Renderer 重置图共享字典的 `kRenderPassRefreshFlags`，进入 `RenderGraph::execute()`。`RenderGraphExe` 依拓扑顺序把 `RenderContext` 和 `RenderData` 交给各 Pass。`RenderData` 用局部端口名查找槽位，返回图持有的原生纹理或缓冲指针。Pass 绑定实际对象并录制绘制、计算或光追命令，slang-rhi 根据录制的用法跟踪资源状态并处理屏障。 [执行器](../src/render/graph/RenderGraphExe.cpp) · [RenderData](../src/render/graph/RenderPass.cpp) · [RenderContext](../src/render/RenderContext.h)
+4. `Renderer::recordPresentation()` 将索引 `0` 对应的可采样二维纹理绘制到交换链图像，并在同一个 RHI Render Pass 中录制编辑器 UI。命令缓冲提交时推进 Fence 值，随后呈现。拾取 Pass 在录制时复制请求的像素并登记回读回调，Renderer 等本次提交的 Fence 后执行回调。 [呈现与提交](../src/render/Renderer.cpp) · [拾取回读](../passes/editor/EditorPickingPass/EditorPickingPass.cpp)
 
-- `reflect(const CompileData&)` 使用 `addInput()`、`addOutput()`、`addInputOutput()` 和 `addInternal()` 声明命名资源。`Field` 用 `texture2D()`、`textureCube()`、`rawBuffer()`、`rhi::Format` 和 `ResourceBindFlags` 描述资源。反射使用 Pass 参数、图的默认纹理规格和 `CompileData.connectedResources`。
-- `compile(RenderContext*, const CompileData&)` 在图资源分配前依据反射准备 Pass。
-- `execute(RenderContext*, const RenderData&)` 通过 `getTexture()`、`getResource()` 或 `operator[]` 访问已分配的图资源，更新 Pass 数据并录制命令。Pass 通过具名 shader 参数绑定实际图资源。
+图内槽位的 GPU 对象随执行器跨帧保留。`RenderData::invalidateHistory()` 递增槽位的 `historyRevision`，所有端口别名读取同一个版本。`AccumulatePass` 检测到输入版本变化或共享字典的刷新标志后，清空自己持有的累积缓冲并递增输出版本。 [槽位版本](../src/render/graph/ResourceCache.h) · [历史累积](../passes/postprocess/AccumulatePass/AccumulatePass.cpp)
 
-`addInputOutput()` 表示原地读写。例如宿主将交换链图像绑定到 `toneMapping.color`，下游继续使用同一资源。`add_edge()` 接受两个裸 Pass 名时只建立执行顺序。
+## 图替换与重编译
 
-## 图编译
+切换图名或图级参数覆盖发生变化时，Renderer 运行脚本生成候选图。`hasSameTopology()` 比较实例名及其 Pass 类型、边端点集合和有序输出。拓扑相同时，`applyScriptedProperties()` 将候选图的名称与脚本属性快照同步到现有图，沿用原 Pass 实例。拓扑变化时，新图接收 Surface 的尺寸与格式以及 `GpuScene`，Renderer 持有旧图直到队列空闲。 [图切换](../src/render/Renderer.cpp) · [拓扑比较](../src/render/graph/RenderGraph.cpp)
 
-`RenderGraphCompiler` 从标记输出和显式执行依赖找到活跃 Pass，并用同一张依赖图进行拓扑排序。
-原地覆盖时，脚本用执行边声明需要先完成的读者。连续覆盖依次连接上一次写入的输出。
+`RenderGraph::applyPassOverrides()` 按 Pass 类型和实例名将覆盖项递归合并到脚本属性快照，通过 `applied` 跳过重复应用的值。合并结果与 Pass 的当前属性有差异时调用 `setProperties()`。需要重建资源描述或管线的 Pass 可通过 `requestRecompile()` 将图标记为待编译。添加或移除节点、边、输出，以及 Surface 默认尺寸或格式变化也会使编译结果失效。 [属性应用](../src/render/graph/RenderGraph.cpp) · [Pass 回调](../src/render/graph/RenderPass.h)
 
-编译器通过 `ResourceCache::registerField()` 登记活跃端口和资源别名。所有活跃 Pass 的 `compile()` 返回后，`ResourceCache::allocateResources()` 通过 `rhi::IDevice` 分配原生纹理和缓冲。
-`ExposurePass` 的直方图、后处理的图像金字塔和 ReSTIR 的临时缓冲通过 `addInternal()` 声明，由图编译器分配。光追 Pass 通过 `rhi::IDevice::createBuffer()` 创建并持有随场景数据增长的缓冲。
-`RenderGraphExe` 保存执行顺序，Pass 通过 `RenderData` 获取资源。Renderer 为命令记录提供 GpuResources 与原生 `rhi::ICommandEncoder`；Surface 在 RHI 内管理 acquire / present 同步。
+外部输入新增、移除或资源描述变化时同样使图失效。替换为同描述的对象时，如果现有执行结果有效，`RenderGraph::setInput()` 直接更新已编译槽位的 RHI 引用，经过该槽位的下游端口和图输出随之看到新对象。 [外部输入](../src/render/graph/RenderGraph.cpp) · [执行器槽位更新](../src/render/graph/RenderGraphExe.cpp)
 
-## 图执行
-
-Renderer 等待在途槽位的 Fence 并写入全局帧数据，然后调用 `RenderGraph::execute()`。
-光追路线执行前，Renderer 将本帧 TLAS 构建录入命令缓冲，RHI 录制上下文持有指向该加速结构的引用。
-
-Pass 可以用 `ChannelList` 与 `addRenderPassInputs()`、`addRenderPassOutputs()` 声明纹理端口。`getValidResourceDefines()` 为可选端口生成字符串值为 `"0"` 或 `"1"` 的 `DefineList`。Renderer 在执行前初始化共享字典的 `kRenderPassRefreshFlags`，会改变输出的光追选项通过同一个键发布 `RenderOptionsChanged`。
-
-Renderer 先录制宿主准备的数据上传。执行器按拓扑顺序调用 Pass，并在执行时登记计时。每个 Pass 录制绘制、计算或光追操作与局部上传，RHI 跟踪资源状态。
-光栅图将 `picking.pickingImage` 标记为颜色之后的图输出。收到拾取请求时，Renderer 通过 `RenderGraph::getOutputTexture()` 取得对象 ID 纹理，复制点击像素并等待 CPU 回读。呈现资源的状态由 RHI Surface 管理。
-
-`GpuResources` 管理稳定资源 handle、缓冲容量、上传和历史版本。缓冲扩容创建新的原生对象，生产者通过 `RenderData::setBuffer()` 更新图端口；下游端口别名和图输出随之引用新对象。
-每次录制操作从当前资源构建具名 shader 绑定，slang-rhi 根据实际用法生成状态转换和读写屏障。
-
-## 重建边界
-
-切换渲染路线或修改脚本参数时，Renderer 加载脚本生成的新图。属性热改通过 `RenderPass::setProperties()` 生效。资源或管线发生变化时，Pass 调用 `requestRecompile()`，下一帧 Renderer 等待 RHI 队列完成旧图的提交，重新创建 GpuResources 并编译图。登记表的生命周期与一次图编译结果一致，所有 Pass 在编译时重新登记资源。
-Resize 通过 `rhi::ISurface::configure()` 更新呈现尺寸，并通过 `RenderGraph::onResize(Extent2D, rhi::Format)` 更新图的默认纹理规格。
-
-`RenderGraph::update()` 用传入图更新 Pass 集合、连线和输出标记，保留同名 Pass 实例及其属性。
-编译时缺少标记输出或必需输入、以及同一输入同时有连线和外部资源时，`RenderGraph::compile(context, log)` 返回 `false` 并写入诊断。修复图后可以再次编译。
-
-场景管理器持有运行时 `Scene`。更换场景时，`RenderGraph::setScene()` 通知所有 Pass 并触发重编译。环境图变化更新资源绑定，并经 `onSceneUpdates()` 发送 `EnvMapChanged`。普通物体变换、材质参数和灯光数据变化更新帧数据。
-
-相关实现见 [RenderGraph](../src/render/graph/RenderGraph.h)、[RenderGraphCompiler](../src/render/graph/RenderGraphCompiler.cpp)、[RenderGraphExe](../src/render/graph/RenderGraphExe.cpp) 和 [ResourceCache](../src/render/graph/ResourceCache.cpp)。
+`Renderer::applyConfiguration()` 在编译结果失效时等待 Graphics Queue 空闲，然后重新编译并更新在途帧上限，校验首个输出可供呈现采样。图重新编译时创建新的执行器和缓存，重新登记槽位、分配图内资源并初始化槽位的历史版本。场景更新回调触发重编译时，Renderer 在本帧图执行前完成这一步。 [重新编译](../src/render/Renderer.cpp) · [执行结果替换](../src/render/graph/RenderGraph.cpp)

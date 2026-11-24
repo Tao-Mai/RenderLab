@@ -17,7 +17,7 @@ bool restirContainsPixel(int2 pixel, bool previous)
     }
     if (!previous)
     {
-        return parameters.containsPixel(uint2(pixel));
+        return scene.globals[0].viewport.containsPixel(uint2(pixel));
     }
 
     float2 center = float2(pixel) + 0.5;

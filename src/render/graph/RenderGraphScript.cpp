@@ -14,7 +14,32 @@ namespace
 {
 thread_local rhi::ComPtr<rhi::IDevice> activeGraphDevice;
 
-Properties::json resolveParameters(const Properties::json& defaults, const nlohmann::json& overrides)
+template <class Json = nlohmann::json>
+Json jsonFromDict(PyObject* dict)
+{
+    const PythonObject module{PyImport_ImportModule("json")};
+    const PythonObject encoded{module ? PyObject_CallMethod(module.get(), "dumps", "O", dict) : nullptr};
+    const auto* source = encoded ? PyUnicode_AsUTF8(encoded.get()) : nullptr;
+    if (!source)
+        return {};
+
+    auto value = Json::parse(source, nullptr, false);
+    if (!value.is_object())
+    {
+        PyErr_SetString(PyExc_ValueError, "invalid render pass properties");
+        return {};
+    }
+    return value;
+}
+
+PyObject* dictFromJson(const auto& value)
+{
+    const auto encoded = value.dump();
+    const PythonObject module{PyImport_ImportModule("json")};
+    return module ? PyObject_CallMethod(module.get(), "loads", "s", encoded.c_str()) : nullptr;
+}
+
+nlohmann::ordered_json resolveParameters(const nlohmann::ordered_json& defaults, const nlohmann::json& overrides)
 {
     auto parameters = defaults;
     for (auto& [name, value] : parameters.items())
@@ -95,10 +120,10 @@ PyObject* createPass(PyObject* object, PyObject* args, PyObject* keywords)
             &dict
         ))
         return nullptr;
-    const auto properties = dict ? Properties(dict) : Properties();
+    const auto properties = dict ? jsonFromDict(dict) : nlohmann::json::object();
     if (PyErr_Occurred())
         return nullptr;
-    auto pass = valueOf<ref<RenderGraph>>(object)->createPass(name, type, properties);
+    auto pass = valueOf<std::shared_ptr<RenderGraph>>(object)->createPass(name, type, properties);
     return ScriptBindings::toPython(std::move(pass)).release();
 }
 
@@ -117,10 +142,10 @@ PyObject* updatePass(PyObject* object, PyObject* args, PyObject* keywords)
             &dict
         ))
         return nullptr;
-    const Properties properties(dict);
+    const auto properties = jsonFromDict(dict);
     if (PyErr_Occurred())
         return nullptr;
-    valueOf<ref<RenderGraph>>(object)->updatePass(name, properties);
+    valueOf<std::shared_ptr<RenderGraph>>(object)->updatePass(name, properties);
     Py_RETURN_NONE;
 }
 
@@ -138,7 +163,7 @@ PyObject* addEdge(PyObject* object, PyObject* args, PyObject* keywords)
             &target
         ))
         return nullptr;
-    return PyLong_FromUnsignedLong(valueOf<ref<RenderGraph>>(object)->addEdge(source, target));
+    return PyLong_FromUnsignedLong(valueOf<std::shared_ptr<RenderGraph>>(object)->addEdge(source, target));
 }
 
 PyObject* removeEdge(PyObject* object, PyObject* args, PyObject* keywords)
@@ -155,13 +180,13 @@ PyObject* removeEdge(PyObject* object, PyObject* args, PyObject* keywords)
             &target
         ))
         return nullptr;
-    valueOf<ref<RenderGraph>>(object)->removeEdge(source, target);
+    valueOf<std::shared_ptr<RenderGraph>>(object)->removeEdge(source, target);
     Py_RETURN_NONE;
 }
 
 PyObject* getGraphName(PyObject* object, void*)
 {
-    const auto& name = valueOf<ref<RenderGraph>>(object)->getName();
+    const auto& name = valueOf<std::shared_ptr<RenderGraph>>(object)->getName();
     return PyUnicode_FromStringAndSize(name.data(), static_cast<Py_ssize_t>(name.size()));
 }
 
@@ -175,28 +200,34 @@ int setGraphName(PyObject* object, PyObject* value, void*)
     const auto* name = PyUnicode_AsUTF8(value);
     if (!name)
         return -1;
-    valueOf<ref<RenderGraph>>(object)->setName(name);
+    valueOf<std::shared_ptr<RenderGraph>>(object)->setName(name);
     return 0;
 }
 
 template <const std::string& (RenderPass::*getter)() const>
 PyObject* getPassString(PyObject* object, void*)
 {
-    const auto& value = ((*valueOf<ref<RenderPass>>(object)).*getter)();
+    const auto& value = ((*valueOf<std::shared_ptr<RenderPass>>(object)).*getter)();
     return PyUnicode_FromStringAndSize(value.data(), static_cast<Py_ssize_t>(value.size()));
 }
 
 PyObject* getPassProperties(PyObject* object, void*)
 {
-    return valueOf<ref<RenderPass>>(object)->getProperties().toPython();
+    return dictFromJson(valueOf<std::shared_ptr<RenderPass>>(object)->getProperties());
 }
 
 PyObject* setPassProperties(PyObject* object, PyObject* dict)
 {
-    const Properties properties(dict);
+    if (!PyDict_Check(dict))
+    {
+        PyErr_SetString(PyExc_TypeError, "properties must be a dict");
+        return nullptr;
+    }
+
+    const auto properties = jsonFromDict(dict);
     if (PyErr_Occurred())
         return nullptr;
-    valueOf<ref<RenderPass>>(object)->setProperties(properties);
+    valueOf<std::shared_ptr<RenderPass>>(object)->setProperties(properties);
     Py_RETURN_NONE;
 }
 
@@ -216,7 +247,7 @@ RL_SCRIPT_BINDING(RenderGraph)
                 if (!PyArg_ParseTupleAndKeywords(args, keywords, "s", const_cast<char**>(kKeywords), &name))
                     return nullptr;
 
-                auto& graph = *valueOf<ref<RenderGraph>>(object);
+                auto& graph = *valueOf<std::shared_ptr<RenderGraph>>(object);
                 if constexpr (std::is_void_v<decltype(std::invoke(Method, graph, name))>)
                 {
                     std::invoke(Method, graph, name);
@@ -259,7 +290,7 @@ RL_SCRIPT_BINDING(RenderGraph)
     };
     static PyType_Slot kGraphSlots[]{
         {Py_tp_new, reinterpret_cast<void*>(createGraph)},
-        {Py_tp_dealloc, reinterpret_cast<void*>(destroyPythonValue<ref<RenderGraph>>)},
+        {Py_tp_dealloc, reinterpret_cast<void*>(destroyPythonValue<std::shared_ptr<RenderGraph>>)},
         {Py_tp_methods, kGraphMethods},
         {Py_tp_getset, kGraphProperties},
         {Py_mp_subscript,
@@ -267,29 +298,38 @@ RL_SCRIPT_BINDING(RenderGraph)
              +[](PyObject* object, PyObject* key) -> PyObject*
              {
                  const auto* name = PyUnicode_AsUTF8(key);
-                 return name ? ScriptBindings::toPython(valueOf<ref<RenderGraph>>(object)->getPass(name)).release()
-                             : nullptr;
+                 if (!name)
+                     return nullptr;
+
+                 const auto& graph = valueOf<std::shared_ptr<RenderGraph>>(object);
+                 return ScriptBindings::toPython(graph->getPass(name)).release();
              }
          )},
         {},
     };
     static PyType_Slot kPassSlots[]{
-        {Py_tp_dealloc, reinterpret_cast<void*>(destroyPythonValue<ref<RenderPass>>)},
+        {Py_tp_dealloc, reinterpret_cast<void*>(destroyPythonValue<std::shared_ptr<RenderPass>>)},
         {Py_tp_methods, kPassMethods},
         {Py_tp_getset, kPassProperties},
         {},
     };
-    static PyType_Spec
-        kGraphType{"renderlab.RenderGraph", sizeof(PythonValue<ref<RenderGraph>>), 0, Py_TPFLAGS_DEFAULT, kGraphSlots};
+    static PyType_Spec kGraphType{
+        "renderlab.RenderGraph",
+        sizeof(PythonValue<std::shared_ptr<RenderGraph>>),
+        0,
+        Py_TPFLAGS_DEFAULT,
+        kGraphSlots,
+    };
     static PyType_Spec kPassType{
         "renderlab.RenderPass",
-        sizeof(PythonValue<ref<RenderPass>>),
+        sizeof(PythonValue<std::shared_ptr<RenderPass>>),
         0,
         Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION,
         kPassSlots,
     };
-    const auto passType  = ScriptBindings::makePythonType<ref<RenderPass>>(m, kPassType);
-    const auto graphType = passType ? ScriptBindings::makePythonType<ref<RenderGraph>>(m, kGraphType) : nullptr;
+    const auto passType = ScriptBindings::makePythonType<std::shared_ptr<RenderPass>>(m, kPassType);
+    const auto graphType =
+        passType ? ScriptBindings::makePythonType<std::shared_ptr<RenderGraph>>(m, kGraphType) : nullptr;
     if (!graphType || PyModule_AddObjectRef(m, "RenderPass", passType.get()) != 0)
         return -1;
     return PyModule_AddObjectRef(m, "RenderGraph", graphType.get());
@@ -313,18 +353,17 @@ LoadedRenderGraph loadRenderGraph(
     LoadedRenderGraph loaded;
     if (auto* defaults = PyFunction_GetKwDefaults(factory))
     {
-        const Properties properties(defaults);
+        loaded.defaults = jsonFromDict<nlohmann::ordered_json>(defaults);
         CHECK(!PyErr_Occurred(), "failed to read parameters of '{}': {}", graphName, pythonError());
-        loaded.defaults = properties.toJson();
     }
     loaded.parameters = resolveParameters(loaded.defaults, overrides);
 
     const PythonObject arguments{PyTuple_New(0)};
-    const PythonObject keywords{Properties(loaded.parameters).toPython()};
+    const PythonObject keywords{dictFromJson(loaded.parameters)};
     CHECK(arguments && keywords, "{}", pythonError());
     const PythonObject result{PyObject_Call(factory, arguments.get(), keywords.get())};
     CHECK(result, "failed to build graph '{}': {}", graphName, pythonError());
-    const auto graph = ScriptBindings::fromPython<ref<RenderGraph>>(result.get());
+    const auto graph = ScriptBindings::fromPython<std::shared_ptr<RenderGraph>>(result.get());
     CHECK(graph && *graph, "graph function '{}' must return a RenderGraph", functionName);
     CHECK((*graph)->getName() == graphName, "'{}' returned graph '{}' while '{}' was configured",
         functionName, (*graph)->getName(), graphName);

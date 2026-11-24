@@ -3,7 +3,6 @@
 
 #include "core/DirectedGraph.h"
 #include "core/Macros.h"
-#include "core/Object.h"
 #include "render/ViewportRect.h"
 #include "render/graph/RenderGraphCompiler.h"
 #include "render/graph/RenderGraphExe.h"
@@ -15,23 +14,23 @@
 
 
 
-class RENDERLAB_CORE_API RenderGraph : public Object
+class RENDERLAB_CORE_API RenderGraph
 {
-    RL_OBJECT(RenderGraph)
-
 public:
     static constexpr uint32_t        kInvalidIndex = DirectedGraph::kInvalidID;
 
     RenderGraph(rhi::ComPtr<rhi::IDevice> device, const std::string& name);
-    ~RenderGraph() override;
-    [[nodiscard]] static ref<RenderGraph> create(rhi::ComPtr<rhi::IDevice> device, const std::string& name = {});
+    ~RenderGraph();
+    [[nodiscard]] static std::shared_ptr<RenderGraph>
+    create(rhi::ComPtr<rhi::IDevice> device, const std::string& name = {});
     [[nodiscard]] rhi::ComPtr<rhi::IDevice> getDevice() const { return mpDevice; }
-    ref<RenderPass> createPass(const std::string& passName, const std::string& passType, const Properties& properties);
+    std::shared_ptr<RenderPass>
+    createPass(const std::string& passName, const std::string& passType, const nlohmann::json& properties);
 
-    uint32_t                             addPass(const ref<RenderPass>& pass, const std::string& name);
-    void                                 removePass(const std::string& name);
-    void                                 updatePass(const std::string& name, const Properties& properties);
-    [[nodiscard]] const ref<RenderPass>& getPass(const std::string& name) const;
+    uint32_t addPass(const std::shared_ptr<RenderPass>& pass, const std::string& name);
+    void     removePass(const std::string& name);
+    void     updatePass(const std::string& name, const nlohmann::json& properties);
+    [[nodiscard]] const std::shared_ptr<RenderPass>& getPass(const std::string& name) const;
     [[nodiscard]] uint32_t               getPassIndex(const std::string& name) const;
     [[nodiscard]] bool doesPassExist(const std::string& name) const { return mNameToIndex.contains(name); }
     [[nodiscard]] const nlohmann::json& scriptedProperties(const std::string& name) const;
@@ -87,10 +86,10 @@ private:
 
     struct NodeData
     {
-        std::string     name;
-        ref<RenderPass> pPass;
-        nlohmann::json  scripted;
-        nlohmann::json  applied;
+        std::string                 name;
+        std::shared_ptr<RenderPass> pPass;
+        nlohmann::json              scripted;
+        nlohmann::json              applied;
     };
 
     struct GraphOut

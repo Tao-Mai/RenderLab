@@ -1,16 +1,13 @@
 #include "passes/postprocess/FalcorPostProcess/FalcorPostProcess.h"
 
-#include "editor/PassEditor.h"
-
 #include <algorithm>
 #include <cmath>
 #include <glm/matrix.hpp>
 #include <limits>
 
-namespace
-{
-bool drawSettings(Gui::Widgets& widgets, FalcorPostProcessConfig& settings, const FalcorPostProcess&,
-                  const PassEditorContext&)
+bool FalcorPostProcess::drawSettings(
+    Gui::Widgets& widgets, FalcorPostProcessConfig& settings, const FalcorPostProcess&, const PassEditorContext&
+)
 {
     using namespace falcorPostProcess;
     bool  edited     = false;
@@ -137,12 +134,6 @@ bool drawSettings(Gui::Widgets& widgets, FalcorPostProcessConfig& settings, cons
     }
     widgets.popId();
     return edited;
-}
-}
-
-void FalcorPostProcess::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
-{
-    drawPassEditor<drawSettings>(widget, *this, parameters, context, "Falcor Post Process");
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)

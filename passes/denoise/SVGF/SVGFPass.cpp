@@ -1,6 +1,6 @@
 #include "passes/denoise/SVGF/SVGFPass.h"
 
-#include "editor/PassEditor.h"
+#include "core/Serializer.h"
 #include "render/GpuScene.h"
 #include "render/RenderConfig.h"
 
@@ -21,86 +21,94 @@ constexpr char kOutputBufferFilteredImage[]              = "Filtered image";
 
 constexpr uint32_t kHistoryLayers         = 2;
 constexpr uint32_t kLightingHistoryLayers = kHistoryLayers * kLightingLayerCount;
+constexpr rhi::TextureDesc kAuxiliaryInput{
+    .size = {0, 0, 1},
+    .arrayLength = 0,
+    .mipCount = 0,
+    .usage = rhi::TextureUsage::ShaderResource,
+};
 }  // namespace
 
-SVGFPass::SVGFPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
-    RenderPass(std::move(device)), parameters(deserializeFromProperties<SvgfSettings>(properties))
+SVGFPass::SVGFPass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties) :
+    RenderPass(std::move(device)), parameters(DeserializeWithDefaults<SvgfSettings>(properties))
 {
     parameters.validate();
 }
 
-Properties SVGFPass::getProperties() const { return serializeToProperties(parameters); }
-
-void SVGFPass::setProperties(const Properties& properties)
-{
-    SvgfSettings next;
-    Deserialize(nlohmann::json(properties.toJson()), next);
-    next.validate();
-
-    parameters = std::move(next);
-}
-
-RenderPassReflection SVGFPass::reflect(const CompileData& compileData)
-{
-    const auto* input  = compileData.connectedResources.getField(kInputBufferColor);
-    const auto  extent = input ? glm::uvec2{input->texture().size.width, input->texture().size.height} : glm::uvec2{};
-
-    RenderPassReflection reflection;
-    reflection.addInput(kInputBufferColor, rhi::TextureDesc{
-        .type = rhi::TextureType::Texture2DArray,
-        .size = {0, 0, 1},
-        .arrayLength = kLightingLayerCount,
-        .mipCount = 0,
-        .usage = rhi::TextureUsage::ShaderResource,
-    });
-    for (const auto* name : {kInputBufferAlbedo, kInputBufferEmission, kInputBufferWorldNormal, kInputBufferLinearZ})
-        reflection.addInput(name, rhi::TextureDesc{
+const RenderPassReflection::Field SVGFPass::kPorts[]{
+    {
+        .name = kInputBufferColor,
+        .resource = rhi::TextureDesc{
+            .type = rhi::TextureType::Texture2DArray,
             .size = {0, 0, 1},
-            .arrayLength = 0,
+            .arrayLength = kLightingLayerCount,
             .mipCount = 0,
             .usage = rhi::TextureUsage::ShaderResource,
-        });
-
-    reflection.addInternal(kInternalBufferPreviousLinearZAndNormal, rhi::TextureDesc{
-        .type = rhi::TextureType::Texture2DArray,
-        .size = {extent.x, extent.y, 1},
-        .arrayLength = kHistoryLayers,
-        .format = rhi::Format::RGBA32Float,
-        .usage = rhi::TextureUsage::UnorderedAccess,
-    });
-    reflection.addInternal(kInternalBufferPreviousLighting, rhi::TextureDesc{
-        .type = rhi::TextureType::Texture2DArray,
-        .size = {extent.x, extent.y, 1},
-        .arrayLength = kLightingHistoryLayers,
-        .format = rhi::Format::RGBA32Float,
-        .usage = rhi::TextureUsage::UnorderedAccess,
-    });
-    reflection.addInternal(kInternalBufferPreviousMoments, rhi::TextureDesc{
-        .type = rhi::TextureType::Texture2DArray,
-        .size = {extent.x, extent.y, 1},
-        .arrayLength = kLightingHistoryLayers,
-        .format = rhi::Format::RG32Float,
-        .usage = rhi::TextureUsage::UnorderedAccess,
-    });
-
-    reflection.addOutput(kOutputBufferFilteredImage, rhi::TextureDesc{
-        .size = {extent.x, extent.y, 1},
-        .format = rhi::Format::RGBA16Float,
-        .usage = rhi::TextureUsage::UnorderedAccess,
-    });
-    return reflection;
-}
+        },
+        .visibility = RenderPassReflection::Visibility::Input,
+    },
+    {kInputBufferAlbedo, kAuxiliaryInput, RenderPassReflection::Visibility::Input},
+    {kInputBufferEmission, kAuxiliaryInput, RenderPassReflection::Visibility::Input},
+    {kInputBufferWorldNormal, kAuxiliaryInput, RenderPassReflection::Visibility::Input},
+    {kInputBufferLinearZ, kAuxiliaryInput, RenderPassReflection::Visibility::Input},
+    {
+        .name = kInternalBufferPreviousLinearZAndNormal,
+        .resource = rhi::TextureDesc{
+            .type = rhi::TextureType::Texture2DArray,
+            .size = {0, 0, 1},
+            .arrayLength = kHistoryLayers,
+            .format = rhi::Format::RGBA32Float,
+            .usage = rhi::TextureUsage::UnorderedAccess,
+        },
+        .visibility = RenderPassReflection::Visibility::Internal,
+        .matchInput = kInputBufferColor,
+        .textureMatch = RenderPassReflection::TextureMatch::Extent,
+    },
+    {
+        .name = kInternalBufferPreviousLighting,
+        .resource = rhi::TextureDesc{
+            .type = rhi::TextureType::Texture2DArray,
+            .size = {0, 0, 1},
+            .arrayLength = kLightingHistoryLayers,
+            .format = rhi::Format::RGBA32Float,
+            .usage = rhi::TextureUsage::UnorderedAccess,
+        },
+        .visibility = RenderPassReflection::Visibility::Internal,
+        .matchInput = kInputBufferColor,
+        .textureMatch = RenderPassReflection::TextureMatch::Extent,
+    },
+    {
+        .name = kInternalBufferPreviousMoments,
+        .resource = rhi::TextureDesc{
+            .type = rhi::TextureType::Texture2DArray,
+            .size = {0, 0, 1},
+            .arrayLength = kLightingHistoryLayers,
+            .format = rhi::Format::RG32Float,
+            .usage = rhi::TextureUsage::UnorderedAccess,
+        },
+        .visibility = RenderPassReflection::Visibility::Internal,
+        .matchInput = kInputBufferColor,
+        .textureMatch = RenderPassReflection::TextureMatch::Extent,
+    },
+    {
+        .name = kOutputBufferFilteredImage,
+        .resource = rhi::TextureDesc{
+            .size = {0, 0, 1},
+            .format = rhi::Format::RGBA16Float,
+            .usage = rhi::TextureUsage::UnorderedAccess,
+        },
+        .visibility = RenderPassReflection::Visibility::Output,
+        .matchInput = kInputBufferColor,
+        .textureMatch = RenderPassReflection::TextureMatch::Extent,
+    },
+};
 
 void SVGFPass::compile(RenderContext*, const CompileData& compileData)
 {
-    const auto* input = compileData.connectedResources.getField(kInputBufferColor);
-
-    const auto width  = input->texture().size.width ? input->texture().size.width : compileData.defaultTexDims.x;
-    const auto height = input->texture().size.height ? input->texture().size.height : compileData.defaultTexDims.y;
-
+    const auto size = compileData.getTextureDesc(kInputBufferColor).size;
 
     rhi::TextureDesc desc;
-    desc.size   = {width, height, 1};
+    desc.size   = {size.width, size.height, 1};
     desc.format = rhi::Format::RGBA32Float;
     desc.usage  = rhi::TextureUsage::UnorderedAccess | rhi::TextureUsage::ShaderResource;
     for (auto* images : {&reprojected, &scratch})
@@ -158,11 +166,6 @@ void SVGFPass::execute(RenderContext* renderCommands, const RenderData& renderDa
 
     reprojection.execute(*frame.commands, *mpScene, renderData.getHistoryRevision(kInputBufferColor));
     filter.execute(*frame.commands, mpScene->viewport());
-}
-
-void SVGFPass::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
-{
-    drawPassEditor(widget, *this, parameters, context, "SVGF");
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)

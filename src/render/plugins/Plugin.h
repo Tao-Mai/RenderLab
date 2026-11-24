@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/Logger.h"
-#include "core/Object.h"
 
 #include <filesystem>
 #include <map>
@@ -27,20 +26,18 @@ public:
     [[nodiscard]] static PluginManager& instance();
 
     template <class BaseT, class... Args>
-    std::invoke_result_t<typename BaseT::PluginCreate, Args...> createClass(std::string_view type, Args... args) const
+    std::shared_ptr<BaseT> createClass(std::string_view type, Args&&... args) const
     {
-        using Instance = std::invoke_result_t<typename BaseT::PluginCreate, Args...>;
         const auto desc = findClassDesc<BaseT>(type);
         if (!desc)
-            return Instance{nullptr};
+            return {};
 
-        auto object = desc->create(std::forward<Args>(args)...);
-        if constexpr (std::is_base_of_v<Object, BaseT>)
-        {
-            if (object)
-                object->mPluginLibrary = desc->library;
-        }
-        return object;
+        auto instance = desc->create(std::forward<Args>(args)...);
+        if (!instance)
+            return {};
+
+        auto* pointer = instance.get();
+        return {retainLibrary(desc->library, std::move(instance)), pointer};
     }
 
     template <class BaseT>
@@ -169,10 +166,10 @@ public:                                                                    \
     virtual const std::string& getPluginType() const = 0;                   \
     virtual const PluginInfo& getPluginInfo() const = 0;
 
-#define RL_PLUGIN_CLASS(cls, type, info)                                  \
+#define RL_PLUGIN_CLASS(cls, type, ...)                                   \
 public:                                                                       \
     static_assert(std::is_class_v<cls>);                                        \
     static inline const std::string kPluginType{type};                         \
-    static inline const PluginInfo kPluginInfo{info};                          \
+    static inline const PluginInfo kPluginInfo{__VA_ARGS__};                   \
     const std::string& getPluginType() const final { return kPluginType; }       \
     const PluginInfo& getPluginInfo() const final { return kPluginInfo; }

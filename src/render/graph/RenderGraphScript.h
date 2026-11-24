@@ -3,12 +3,13 @@
 #include "render/graph/RenderGraph.h"
 
 #include <filesystem>
+#include <memory>
 
 struct LoadedRenderGraph
 {
-    ref<RenderGraph> graph;
-    Properties::json defaults = Properties::json::object();
-    Properties::json parameters;
+    std::shared_ptr<RenderGraph> graph;
+    nlohmann::ordered_json       defaults = nlohmann::ordered_json::object();
+    nlohmann::ordered_json       parameters;
 };
 
 [[nodiscard]] LoadedRenderGraph loadRenderGraph(

@@ -21,6 +21,7 @@
         "renderGraphs:Forward:passes:ShadowPass:shadow:bias": 0.004399999976158142,
         "renderGraphs:Forward:passes:ShadowPass:shadow:pointShadowMapSize": 512,
         "renderGraphs:Forward:passes:ShadowPass:shadow:rectAreaShadowMapSize": 2048,
+        "renderGraphs:MinimalPathTracer:parameters:hdr": null,
         "renderGraphs:MinimalPathTracer:parameters:postProcess": "Falcor",
         "renderGraphs:MinimalPathTracer:passes:Bloom:bloom:filterRadius": 1.100000023841858,
         "renderGraphs:MinimalPathTracer:passes:Bloom:bloom:intensity": 0.020999999716877937,

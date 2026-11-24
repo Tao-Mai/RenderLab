@@ -1,6 +1,7 @@
 #include "passes/postprocess/Bloom/Bloom.h"
 
 #include "core/Logger.h"
+#include "core/Serializer.h"
 
 #include <slang-rhi.h>
 #include "asset/BuiltinAssets.h"
@@ -21,6 +22,8 @@ namespace
 constexpr std::string_view kHorizontal = "horizontal";
 constexpr std::string_view kVertical   = "vertical";
 constexpr std::string_view kUpsample   = "upsample";
+constexpr char             kHdrColor[] = "hdrColor";
+constexpr char             kOutputColor[] = "color";
 
 struct alignas(16) BloomParameters
 {
@@ -50,58 +53,59 @@ void BloomSettings::validate() const
 }
 
 
-Bloom::Bloom(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
-    RenderPass(std::move(device)), parameters(deserializeFromProperties<BloomSettings>(properties))
+Bloom::Bloom(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties) :
+    RenderPass(std::move(device)), parameters(DeserializeWithDefaults<BloomSettings>(properties))
 {
     parameters.validate();
 }
 
-
-Properties Bloom::getProperties() const { return serializeToProperties(parameters); }
-
-
-void Bloom::setProperties(const Properties& properties)
+void Bloom::onSettingsUpdated(const BloomSettings& previous)
 {
-    BloomSettings next;
-    Deserialize(nlohmann::json(properties.toJson()), next);
-    next.validate();
-
-    const bool recompile = next.levels != parameters.levels;
-    parameters           = std::move(next);
-    if (recompile)
+    if (parameters.levels != previous.levels)
         requestRecompile();
 }
 
-
-RenderPassReflection Bloom::reflect(const CompileData& compileData)
-{
-    auto extent = compileData.defaultTexDims;
-    auto format = kHdrColorFormat;
-    if (const auto* input = compileData.connectedResources.getField("hdrColor"))
+const RenderPassReflection::Field Bloom::kPorts[]{
     {
-        const auto& texture = input->texture();
-        extent.x = texture.size.width ? texture.size.width : extent.x;
-        extent.y = texture.size.height ? texture.size.height : extent.y;
-        if (texture.format != rhi::Format::Undefined)
-            format = texture.format;
+        .name = kHdrColor,
+        .resource = rhi::TextureDesc{.size = {0, 0, 1}, .usage = rhi::TextureUsage::ShaderResource},
+        .visibility = RenderPassReflection::Visibility::Input,
+    },
+    {
+        .name = kOutputColor,
+        .resource = rhi::TextureDesc{.size = {0, 0, 1}, .usage = rhi::TextureUsage::RenderTarget},
+        .visibility = RenderPassReflection::Visibility::Output,
+        .matchInput = kHdrColor,
+        .textureMatch = RenderPassReflection::TextureMatch::Extent | RenderPassReflection::TextureMatch::Format,
+    },
+};
+
+
+void Bloom::compile(RenderContext*, const CompileData& compileData)
+{
+    const auto input = compileData.getTextureDesc(kHdrColor);
+    const auto format = input.format;
+    if (format != rhi::Format::RGBA16Float && format != rhi::Format::RGBA32Float)
+    {
+        LOG_ERROR("Bloom requires RGBA16Float or RGBA32Float for 'hdrColor'");
+        return;
     }
 
-    RenderPassReflection reflection;
-    reflection.addInput("hdrColor", rhi::TextureDesc{
-        .size = {0, 0, 1},
-        .usage = rhi::TextureUsage::ShaderResource,
-    });
-    reflection.addOutput("color", rhi::TextureDesc{
-        .size = {extent.x, extent.y, 1},
-        .format = format,
-        .usage = rhi::TextureUsage::RenderTarget,
-    });
+    rhi::FormatSupport support;
+    rhiCheck(mpDevice->getFormatSupport(format, &support));
+    const auto kRequiredSupport = rhi::FormatSupport::ShaderSample | rhi::FormatSupport::RenderTarget;
+    if ((support & kRequiredSupport) != kRequiredSupport)
+    {
+        LOG_ERROR("Bloom requires linear sampling and render-target support for format {}", int(format));
+        return;
+    }
 
+    const glm::uvec2 extent{input.size.width, input.size.height};
     const auto levels   = pyramidLevels(extent, parameters.levels);
     auto       size     = extent;
     const auto addImage = [&](std::string_view stage, uint32_t level)
     {
-        reflection.addInternal(pyramidImageName(stage, level), rhi::TextureDesc{
+        compileData.addInternalTexture(pyramidImageName(stage, level), {
             .size = {size.x, size.y, 1},
             .format = format,
             .usage = rhi::TextureUsage::ShaderResource | rhi::TextureUsage::RenderTarget,
@@ -115,33 +119,14 @@ RenderPassReflection Bloom::reflect(const CompileData& compileData)
         if (level + 1 < levels)
             addImage(kUpsample, level);
     }
-    return reflection;
-}
-
-
-void Bloom::compile(RenderContext*, const CompileData& compileData)
-{
-    const auto format = compileData.connectedResources.getField("hdrColor")->texture().format;
-    if (format != rhi::Format::RGBA16Float && format != rhi::Format::RGBA32Float)
-    {
-        LOG_ERROR("Bloom requires RGBA16Float or RGBA32Float for 'hdrColor'");
-        return;
-    }
-
-    rhi::FormatSupport support;
-    rhiCheck(mpDevice->getFormatSupport(format, &support));
-    const auto kRequiredSupport = rhi::FormatSupport::ShaderSample | rhi::FormatSupport::RenderTarget;
-    if ((support & kRequiredSupport) != kRequiredSupport)
-        LOG_ERROR("Bloom requires linear sampling and render-target support for format {}", int(format));
-
     filters.clear();
 }
 
 
 void Bloom::prepareFilters(const RenderContext& context, const RenderData& renderData)
 {
-    const auto hdrColor = renderData.getTexture("hdrColor");
-    const auto color    = renderData.getTexture("color");
+    const auto hdrColor = renderData.getTexture(kHdrColor);
+    const auto color    = renderData.getTexture(kOutputColor);
     const auto extent   = hdrColor->getDesc().size;
     const auto levels   = pyramidLevels({extent.width, extent.height}, parameters.levels);
     using Stage         = Filter::Stage;
@@ -176,7 +161,7 @@ void Bloom::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
     auto&       commands = *renderCommands->commands;
     const auto& frame    = *renderCommands;
-    const auto  size     = renderData.getTexture("hdrColor")->getDesc().size;
+    const auto  size     = renderData.getTexture(kHdrColor)->getDesc().size;
     if (filters.empty())
         prepareFilters(frame, renderData);
 

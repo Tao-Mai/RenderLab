@@ -9,6 +9,7 @@
 #include "render/resources/ShaderManager.h"
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -44,7 +45,7 @@ public:
     [[nodiscard]] rhi::IDevice&                getDevice() { return *device; }
     [[nodiscard]] rhi::ISurface*               getSurface() const { return surface; }
     [[nodiscard]] ShaderManager&               getShaderManager() { return shaders; }
-    [[nodiscard]] RenderGraph*         getActiveGraph() const { return mpRenderGraph.get(); }
+    [[nodiscard]] const std::shared_ptr<RenderGraph>& getActiveGraph() const { return mpRenderGraph; }
     [[nodiscard]] bool                       supportsRayTracing() const { return device->hasFeature(rhi::Feature::RayTracing); }
     void                         renderUI(const PassEditorContext& context);
     void                         addOption(std::string_view name, nlohmann::json value);
@@ -62,11 +63,11 @@ private:
     nlohmann::json                                appliedParameters;
     std::optional<std::string>                    pendingGraphName;
     bool                                          optionsDirty = false;
-    Properties::json                      parameterDefaults = Properties::json::object();
-    Properties::json                      parameters        = Properties::json::object();
+    nlohmann::ordered_json                        parameterDefaults = nlohmann::ordered_json::object();
+    nlohmann::ordered_json                        parameters        = nlohmann::ordered_json::object();
     uint64_t                                                      lastSubmittedFrame = 0;
     uint32_t                                                      activeFramesInFlight = kMaxFramesInFlight;
-    ref<RenderGraph>                              mpRenderGraph;
+    std::shared_ptr<RenderGraph>                  mpRenderGraph;
     rhi::ComPtr<rhi::IRenderPipeline>                             blitPipeline = nullptr;
 
     void                  applyConfiguration();

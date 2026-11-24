@@ -3,6 +3,7 @@
 
 #include "path_common.slang"
 #include "material/normal_mapping.slang"
+#include "raytracing/camera_ray.slang"
 #include "render/raytracing/PathTracingParameters.h"
 #include "raytracing/geometry.slang"
 
@@ -19,14 +20,7 @@ CameraPathSample sampleCameraPath(uint2 pixel, uint pixelIndex, PathTracingParam
     scrambleSeeds.x = randomUint(scrambleState);
     scrambleSeeds.y = randomUint(scrambleState);
     float2 pixelSample = sampleSobol2D(path.sampleIndex, scrambleSeeds);
-    float2 ndc = uvToClip((float2(pixel) + pixelSample - path.viewportOffset) / path.viewportExtent);
-    float4 farPoint = mul(scene.globals[0].camera.inverseViewProjection, float4(ndc, 1.0, 1.0));
-
-    RayDesc ray;
-    ray.Origin = scene.globals[0].camera.cameraPosition.xyz;
-    ray.Direction = normalize(farPoint.xyz / farPoint.w - ray.Origin);
-    ray.TMin = kRayEpsilon;
-    ray.TMax = kMaxRayDistance;
+    RayDesc ray = createCameraRay(pixel, pixelSample);
 
     uint sampleState = path.sampleIndex;
     return {ray, scrambleSeeds.y ^ randomUint(sampleState)};

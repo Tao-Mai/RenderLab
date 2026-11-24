@@ -11,22 +11,6 @@
 namespace
 {
 using Visibility = RenderPassReflection::Visibility;
-
-bool sameConnections(const RenderPassReflection& a, const RenderPassReflection& b)
-{
-    if (a.fields().size() != b.fields().size())
-        return false;
-
-    return std::ranges::all_of(
-        a.fields(),
-        [&](const auto& field)
-        {
-            const auto* other = b.getField(field.name);
-            return other && other->visibility == field.visibility &&
-                ResourceCache::sameDescription(field.resource, other->resource);
-        }
-    );
-}
 }  // namespace
 
 std::unique_ptr<RenderGraphExe>
@@ -42,15 +26,25 @@ RenderGraphCompiler::compile(const RenderGraph& graph, RenderContext* context, c
             compiler.resolveResources(executable->resources);
         if (log.empty())
         {
+            executable->passes.reserve(compiler.passes.size());
             for (const auto& data : compiler.passes)
             {
+                ResourceCache::Ports ports;
+                ports.reserve(data.reflection.fields().size());
+                for (const auto& field : data.reflection.fields())
+                    if (const auto slot = executable->resources.findSlot(data.name + '.' + field.name))
+                        ports.emplace_back(field.name, *slot);
+
                 std::string passLog;
                 {
                     const logger::ScopedErrorLog passErrors(passLog);
-                    data.pass->compile(context, data.compileData);
+                    data.pass->compile(context, {data.name, executable->resources, ports});
                 }
                 if (!passLog.empty())
                     LOG_ERROR("{}: {}", data.name, passLog);
+
+                executable->passes.push_back({data.pass, std::move(ports)});
+                executable->maxFramesInFlight = std::min(executable->maxFramesInFlight, data.pass->getMaxFramesInFlight());
             }
         }
     }
@@ -60,21 +54,10 @@ RenderGraphCompiler::compile(const RenderGraph& graph, RenderContext* context, c
         return {};
     }
 
-    executable->resources.allocateResources(*graph.mpDevice, dependencies.defaultResourceProps);
+    executable->resources.allocateResources(*graph.mpDevice);
     executable->outputs.reserve(graph.mOutputs.size());
     for (size_t index = 0; index < graph.mOutputs.size(); ++index)
         executable->outputs.push_back(*executable->resources.findSlot(graph.getOutputName(index)));
-    executable->passes.reserve(compiler.passes.size());
-    for (const auto& data : compiler.passes)
-    {
-        ResourceCache::Ports ports;
-        ports.reserve(data.reflection.fields().size());
-        for (const auto& field : data.reflection.fields())
-            if (const auto slot = executable->resources.findSlot(data.name + '.' + field.name))
-                ports.emplace_back(field.name, *slot);
-        executable->passes.push_back({data.pass, std::move(ports)});
-        executable->maxFramesInFlight = std::min(executable->maxFramesInFlight, data.pass->getMaxFramesInFlight());
-    }
     return executable;
 }
 
@@ -118,8 +101,8 @@ void RenderGraphCompiler::preparePasses()
             continue;
 
         const auto&                          data = graph.mNodeData.at(index);
-        RenderPass::CompileData              compileData{defaults.dims, defaults.format};
-        auto                                 reflection = data.pPass->reflect(compileData);
+        auto                                 reflection = data.pPass->reflect(defaults);
+        reflection.applyGraphTextureProperties({defaults.dims.x, defaults.dims.y, 1}, defaults.format);
         std::unordered_set<std::string_view> usedOutputs;
         const auto&                          node = *graph.mpGraph->getNode(index);
         for (uint32_t outgoing = 0; outgoing < node.getOutgoingEdgeCount(); ++outgoing)
@@ -134,83 +117,47 @@ void RenderGraphCompiler::preparePasses()
                 usedOutputs.insert(output.field);
 
         passes.push_back(
-            {index, data.name, data.pPass, std::move(reflection), std::move(compileData), std::move(usedOutputs)}
+            {index, data.name, data.pPass, std::move(reflection), std::move(usedOutputs)}
         );
     }
 }
 
 void RenderGraphCompiler::resolveResources(ResourceCache& resources)
 {
-    ResourceCache::DefaultProperties defaults;
-    bool                             useDefaults = false;
-    // Let concrete requirements propagate before substituting graph defaults.
-    for (size_t round = 0; round <= 4 * passes.size() + 1; ++round)
+    registerResources(resources);
+    validateGraph(resources);
+    if (logger::ScopedErrorLog::hasErrors())
+        return;
+
+    const auto& defaults = dependencies.defaultResourceProps;
+    // Connections have applied all declared requirements. Match inputs in execution order.
+    for (const auto& data : passes)
     {
-        ResourceCache connections;
-        registerResources(connections, false);
-
-        bool changed = false;
-        for (auto& data : passes)
+        for (const auto& field : data.reflection.fields())
         {
-            RenderPassReflection connected;
-            for (const auto& field : data.reflection.fields())
-            {
-                const bool input = is_set(field.visibility, Visibility::Input);
-                const bool output =
-                    data.usedOutputs.contains(field.name) && is_set(field.visibility, Visibility::Output);
-                if (!input && !output)
-                    continue;
-
-                const auto slot = connections.findSlot(data.name + '.' + field.name);
-                if (!slot)
-                    continue;
-                auto desc = connections.description(*slot, defaults);
-                if (desc.index() != field.resource.index())
-                    continue;
-
-                if (input && output)
-                    connected.addInputOutput(field.name, std::move(desc));
-                else if (input)
-                    connected.addInput(field.name, std::move(desc));
-                else
-                    connected.addOutput(field.name, std::move(desc));
-            }
-
-            if (sameConnections(data.compileData.connectedResources, connected))
+            if (field.matchInput.empty())
                 continue;
 
-            changed                             = true;
-            data.compileData.connectedResources = std::move(connected);
-            data.reflection                     = data.pass->reflect(data.compileData);
+            if (const auto target = resources.findSlot(data.name + '.' + field.name))
+            {
+                const auto source = *resources.findSlot(data.name + '.' + field.matchInput);
+                resources.matchTexture(*target, source, field.textureMatch, defaults);
+            }
         }
-        if (logger::ScopedErrorLog::hasErrors())
-            return;
-        if (changed)
-            continue;
-        if (!useDefaults)
-        {
-            defaults    = dependencies.defaultResourceProps;
-            useDefaults = true;
-            continue;
-        }
-
-        validateGraph();
-        registerResources(resources, true);
-        if (!logger::ScopedErrorLog::hasErrors())
-            for (size_t index = 0; index < graph.mOutputs.size(); ++index)
-                resources.markOutput(graph.getOutputName(index));
-        return;
     }
-    LOG_ERROR("resource descriptions did not converge for render graph '{}'", graph.getName());
+
+    resources.applyTextureDefaults(defaults);
+    for (size_t index = 0; index < graph.mOutputs.size(); ++index)
+        resources.markOutput(graph.getOutputName(index));
 }
 
-void RenderGraphCompiler::validateGraph() const
+void RenderGraphCompiler::validateGraph(const ResourceCache& resources) const
 {
     for (const auto& data : passes)
     {
         for (const auto& field : data.reflection.fields())
             if (is_set(field.visibility, Visibility::Input) && !field.optional &&
-                !data.compileData.connectedResources.getField(field.name))
+                !resources.findSlot(data.name + '.' + field.name))
                 LOG_ERROR("missing graph input '{}.{}'", data.name, field.name);
     }
 
@@ -235,7 +182,7 @@ void RenderGraphCompiler::validateGraph() const
     }
 }
 
-void RenderGraphCompiler::registerResources(ResourceCache& resources, bool validate) const
+void RenderGraphCompiler::registerResources(ResourceCache& resources) const
 {
     for (const auto& data : passes)
     {
@@ -254,18 +201,16 @@ void RenderGraphCompiler::registerResources(ResourceCache& resources, bool valid
             const auto* output     = producer.reflection.getField(connection.srcField);
             const auto  source     = producer.name + '.' + connection.srcField;
             const auto  target     = data.name + '.' + connection.dstField;
-            if (validate)
-            {
-                if (!output || !is_set(output->visibility, Visibility::Output))
-                    LOG_ERROR("unknown output '{}'", source);
-                if (!input || !is_set(input->visibility, Visibility::Input))
-                    LOG_ERROR("unknown input '{}'", target);
-                if (dependencies.externalResources.contains(target))
-                    LOG_ERROR("graph input '{}' has an edge and an external resource", target);
-            }
+            if (!output || !is_set(output->visibility, Visibility::Output))
+                LOG_ERROR("unknown output '{}'", source);
+            if (!input || !is_set(input->visibility, Visibility::Input))
+                LOG_ERROR("unknown input '{}'", target);
+            if (dependencies.externalResources.contains(target))
+                LOG_ERROR("graph input '{}' has an edge and an external resource", target);
+
             if (input && is_set(input->visibility, Visibility::Input) && output &&
                 is_set(output->visibility, Visibility::Output) && resources.findSlot(source))
-                resources.connect(target, source, input->resource, validate);
+                resources.connect(target, source, input->resource);
             connected.insert(connection.dstField);
         }
 
@@ -278,7 +223,7 @@ void RenderGraphCompiler::registerResources(ResourceCache& resources, bool valid
             {
                 const auto external = dependencies.externalResources.find(name);
                 if (external != dependencies.externalResources.end())
-                    resources.addInput(name, field.resource, external->second.get(), validate);
+                    resources.addInput(name, field.resource, external->second.get());
             }
             else if (!field.optional || data.usedOutputs.contains(field.name))
                 resources.addResource(name, field.resource);

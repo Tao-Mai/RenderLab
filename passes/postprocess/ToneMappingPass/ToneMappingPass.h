@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/graph/RenderPass.h"
+#include "render/graph/RenderPassSettings.h"
 
 #include "passes/postprocess/ToneMappingPass/ToneMappingSettings.h"
 
@@ -9,21 +9,14 @@
 
 class ToneMappingPass : public RenderPass
 {
-    RL_PLUGIN_CLASS(ToneMappingPass, "ToneMappingPass", "Applies tone mapping and exposure.");
+public:
+    ToneMappingPass(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties);
 
-    ToneMappingPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
-
-    [[nodiscard]] Properties getProperties() const override;
-    void                             setProperties(const Properties& properties) override;
-
-    static ref<ToneMappingPass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
+    static std::shared_ptr<ToneMappingPass> create(rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties)
     {
-        return make_ref<ToneMappingPass>(std::move(device), properties);
+        return std::make_shared<ToneMappingPass>(std::move(device), properties);
     }
 
-    void renderUI(const PassEditorContext& context, Gui::Widgets& widget) override;
-
-    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
     void compile(RenderContext* passContext, const CompileData& compileData) override;
     void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
@@ -32,4 +25,14 @@ private:
 
     rhi::ComPtr<rhi::IRenderPipeline> pipeline;
     bool                              encodeSrgb = false;
+
+    static const RenderPassReflection::Field kPorts[3];
+
+    RL_PLUGIN_CLASS(
+        ToneMappingPass,
+        "ToneMappingPass",
+        .desc = "Applies tone mapping and exposure.",
+        .ports = kPorts,
+        .settings = pass_settings::bind<&ToneMappingPass::parameters>()
+    );
 };
