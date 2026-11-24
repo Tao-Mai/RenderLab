@@ -22,13 +22,17 @@ class PathTracer : public Falcor::RenderPass
 {
     FALCOR_PLUGIN_CLASS(PathTracer, "PathTracer", "Reference path tracer.");
 
-    PathTracer(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties) :
-        Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<PathTracerSettings>(properties))
+    PathTracer(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
+        Falcor::RenderPass(std::move(device)),
+        parameters(Falcor::deserializeFromProperties<PathTracerSettings>(properties))
     {
         parameters.validate();
     }
 
-    [[nodiscard]] Falcor::Properties getProperties() const override { return Falcor::serializeToProperties(parameters); }
+    [[nodiscard]] Falcor::Properties getProperties() const override
+    {
+        return Falcor::serializeToProperties(parameters);
+    }
 
     void setProperties(const Falcor::Properties& properties) override
     {
@@ -38,7 +42,7 @@ class PathTracer : public Falcor::RenderPass
         parameters = std::move(next);
     }
 
-    static Falcor::ref<PathTracer> create(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties)
+    static Falcor::ref<PathTracer> create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
     {
         return Falcor::make_ref<PathTracer>(std::move(device), properties);
     }
@@ -49,38 +53,41 @@ class PathTracer : public Falcor::RenderPass
     {
         Falcor::RenderPassReflection reflection;
         reflection.addOutput(kOutputColor, "Path traced radiance")
-            .format(Falcor::ResourceFormat::RGBA16Float)
+            .format(rhi::Format::RGBA16Float)
             .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess);
         return reflection;
     }
 
     void compile(Falcor::RenderContext* passContext, const CompileData& compileData) override
     {
-        tracer.compile(*passContext, compileData.defaultTexDims, "pt_resolve", sizeof(OfflinePathParameters));
-        pipeline = passContext->offlinePipelines->get(*passContext->vulkan, tracer.layout(), "shaders/pt.spv", false);
+        tracer.compile(*passContext, compileData.defaultTexDims, "pt_resolve");
+        pipeline =
+            passContext->offlinePipelines
+                ->get(*mpDevice, *passContext->shaderManager, passContext->shaderManager->getOrLoad("pt"), false);
     }
 
     void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override
     {
-        auto&       cache     = *renderCommands->vulkanResources;
+        auto&       cache     = *renderCommands->gpuResources;
         auto&       commands  = *renderCommands->commands;
         const auto& execution = *renderCommands;
 
-        const bool sceneChanged = tracer.prepareScene(cache, execution, renderData.getTexture(kOutputColor));
+        const bool sceneChanged   = tracer.prepareScene(cache, execution, renderData.getTexture(kOutputColor));
         const bool optionsChanged = previousMaxBounces != parameters.maxBounces;
         if (optionsChanged)
         {
-            auto& dictionary = renderData.getDictionary();
-            const auto flags = dictionary.getValue(Falcor::kRenderPassRefreshFlags, Falcor::RenderPassRefreshFlags::None);
+            auto&      dictionary = renderData.getDictionary();
+            const auto flags =
+                dictionary.getValue(Falcor::kRenderPassRefreshFlags, Falcor::RenderPassRefreshFlags::None);
             dictionary[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
-            previousMaxBounces = parameters.maxBounces;
+            previousMaxBounces                          = parameters.maxBounces;
         }
         if (sceneChanged || optionsChanged)
             tracer.resetAccumulation();
 
         cache.recordUploads(commands);
         const auto constants = tracer.pathParameters(execution, parameters.maxBounces);
-        const auto bounds = tracer.viewportBounds(*execution.view);
+        const auto bounds    = tracer.viewportBounds(*execution.view);
         const bool hasPixels = bounds.extent.width != 0 && bounds.extent.height != 0;
         tracer.render(
             cache,
@@ -104,19 +111,22 @@ class PathTracer : public Falcor::RenderPass
 private:
     PathTracerSettings parameters;
 
-    OfflinePathTracing tracer;
-    const RayTracingPipeline* pipeline = nullptr;
-    uint32_t previousMaxBounces = 0;
+    OfflinePathTracing                       tracer;
+    const OfflineTracePipelineCache::Result* pipeline           = nullptr;
+    uint32_t                                 previousMaxBounces = 0;
 };
 
-bool drawSettings(Falcor::Gui::Widgets& widgets, PathTracerSettings& settings, const PathTracer& pass, const PassEditorContext&)
+bool drawSettings(
+    Falcor::Gui::Widgets& widgets, PathTracerSettings& settings, const PathTracer& pass, const PassEditorContext&
+)
 {
     widgets.text(std::format("Samples per pixel: {}", pass.sampleCount()));
     const bool edited = widgets.slider("Max bounces", settings.maxBounces, kMinPathBounces, kMaxPathBounces);
     widgets.tooltip("Maximum surface scattering events. 1 gives direct lighting plus terminal emission.");
     return edited;
 }
-}
+}  // namespace
+
 
 void PathTracer::renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget)
 {

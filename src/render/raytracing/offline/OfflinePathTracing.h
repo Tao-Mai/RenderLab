@@ -1,11 +1,11 @@
 #pragma once
 
+#include <slang-rhi.h>
 #include "core/math/Vector.h"
 #include "render/DrawItem.h"
 #include "render/RenderView.h"
-#include "render/device/Device.h"
-#include "render/device/ResourceBarriers.h"
-#include "render/raytracing/offline/OfflineRayTracingBindings.h"
+
+#include "render/device/GpuResources.h"
 
 #include <array>
 #include <cstddef>
@@ -13,10 +13,10 @@
 #include <string_view>
 #include <vector>
 
-class RayTracingPipeline;
+#include "render/raytracing/offline/OfflineTracePipelineCache.h"
 namespace Falcor
 {
-class RenderContext;
+struct RenderContext;
 }  // namespace Falcor
 
 struct alignas(16) OfflinePathParameters
@@ -32,63 +32,47 @@ static_assert(sizeof(OfflinePathParameters) == 64);
 class OfflinePathTracing
 {
 public:
-    void compile(
-        const Falcor::RenderContext&                    context,
-        Falcor::uint2                                           frameDims,
-        std::string_view                                resolveProgram,
-        uint32_t                                        parameterSize,
-        std::span<const vk::DescriptorSetLayoutBinding> extraBindings = {}
-    );
-    void writeStorageBuffer(VulkanResources& cache, VulkanResources::BufferHandle buffer, uint32_t binding) const
+    void compile(const Falcor::RenderContext& context, Falcor::uint2 frameDims, std::string_view resolveProgram);
+    void setLightTracingBuffers(GpuResources::BufferHandle splats, GpuResources::BufferHandle distribution)
     {
-        cache.writeDescriptor(*descriptorSet, binding, buffer);
+        lightSplats       = splats;
+        lightDistribution = distribution;
     }
-    void bindStorageBuffer(
-        VulkanResources& cache, const VulkanContext& vulkan, VulkanResources::BufferHandle buffer, uint32_t binding
-    ) const;
     [[nodiscard]] bool
-    prepareScene(VulkanResources& cache, const Falcor::RenderContext& execution, const Falcor::ref<Falcor::Texture>& color);
+    prepareScene(GpuResources& cache, const Falcor::RenderContext& execution, const rhi::ComPtr<rhi::ITexture>& color);
 
-    [[nodiscard]] vk::Rect2D            viewportBounds(const RenderView& view) const;
-    [[nodiscard]] OfflinePathParameters pathParameters(const Falcor::RenderContext& execution, uint32_t maxBounces) const;
-    void                                render(
-                                       VulkanResources&                               cache,
-                                       vk::raii::CommandBuffer&                       commands,
-                                       const Falcor::RenderContext&                           execution,
-                                       std::span<const std::byte>                     constants,
-                                       const RayTracingPipeline*                      pipeline,
-                                       vk::Extent2D                                   rayExtent,
-                                       std::span<const VulkanResources::BufferHandle> extraAccumulations = {}
-                                   );
+    [[nodiscard]] PixelBounds viewportBounds(const RenderView& view) const;
+    [[nodiscard]] OfflinePathParameters
+         pathParameters(const Falcor::RenderContext& execution, uint32_t maxBounces) const;
+    void render(
+        GpuResources&                               cache,
+        rhi::ICommandEncoder&                       commands,
+        const Falcor::RenderContext&                execution,
+        std::span<const std::byte>                  constants,
+        const OfflineTracePipelineCache::Result*    pipeline,
+        Extent2D                                    rayExtent,
+        std::span<const GpuResources::BufferHandle> extraAccumulations = {}
+    );
 
-    void                             resetAccumulation();
-    void                             finishSample() { ++completedSamples; }
-    [[nodiscard]] uint32_t           sampleCount() const { return completedSamples; }
-    [[nodiscard]] vk::PipelineLayout layout() const { return pipelineLayout; }
+    void                   resetAccumulation();
+    void                   finishSample() { ++completedSamples; }
+    [[nodiscard]] uint32_t sampleCount() const { return completedSamples; }
 
 private:
-    ResourceBarriers        barriers;
-    ResourceBarriers        accesses;
-    static constexpr size_t kSceneBufferCount =
-        OfflineRayTracingBinding::kPortals - OfflineRayTracingBinding::kMaterials + 1;
+    static constexpr size_t kSceneBufferCount = 11;
 
-    Falcor::ref<Falcor::Buffer>                                                 accumulationBuffer;
-    Falcor::ref<Falcor::Buffer>                                                 hitBuffer;
-    std::array<Falcor::ref<Falcor::Buffer>, kSceneBufferCount>                   sceneBufferResources;
-    VulkanResources::BufferHandle                                accumulation;
-    VulkanResources::BufferHandle                                hitData;
-    std::array<VulkanResources::BufferHandle, kSceneBufferCount> sceneBuffers;
-    std::array<uint64_t, kSceneBufferCount>                      sceneBufferRevisions{};
-    uint64_t                                                     hitBufferRevision     = 0;
-    uint64_t                                                     tlasRevision          = 0;
-    uint64_t                                                     uploadedSceneRevision = 0;
+    rhi::ComPtr<rhi::IBuffer>                                 accumulationBuffer;
+    rhi::ComPtr<rhi::IBuffer>                                 hitBuffer;
+    std::array<rhi::ComPtr<rhi::IBuffer>, kSceneBufferCount>  sceneBufferResources;
+    GpuResources::BufferHandle                                accumulation;
+    GpuResources::BufferHandle                                hitData;
+    std::array<GpuResources::BufferHandle, kSceneBufferCount> sceneBuffers;
+    uint64_t                                                  uploadedSceneRevision = 0;
 
-    DescriptorSetLayout     descriptorSetLayout;
-    DescriptorSetLayout     emptySetLayout;
-    vk::PipelineLayout      pipelineLayout;
-    vk::raii::DescriptorSet descriptorSet = nullptr;
-    ComputePipeline         resolvePipeline;
-    vk::Extent2D            extent;
+    rhi::ComPtr<rhi::ITexture>         output;
+    GpuResources::BufferHandle         lightSplats, lightDistribution;
+    rhi::ComPtr<rhi::IComputePipeline> resolvePipeline;
+    Extent2D                           extent;
 
     uint32_t              completedSamples = 0;
     bool                  clearPending     = true;
@@ -96,6 +80,5 @@ private:
     RenderView            previousView{};
     uint64_t              previousAssetRevision = 0;
 
-    void prepareHits(VulkanResources& cache, const Falcor::RenderContext& execution);
-    void updateTlasDescriptor(const Falcor::RenderContext& execution);
+    void prepareHits(GpuResources& cache, const Falcor::RenderContext& execution);
 };

@@ -8,7 +8,7 @@ extern "C" PyObject* PyInit_falcor();
 
 namespace Falcor
 {
-const FileDialogFilterVec Scripting::kFileExtensionFilters{{"py", "Script Files"}};
+const FileDialogFilterVec           Scripting::kFileExtensionFilters{{"py", "Script Files"}};
 std::unique_ptr<Scripting::Context> Scripting::sDefaultContext;
 
 namespace
@@ -99,10 +99,7 @@ std::string pythonError()
     return result;
 }
 
-Scripting::Context::Context(PyObject* globals) : mGlobals(Py_NewRef(globals), Py_DecRef)
-{
-    DCHECK(PyDict_Check(globals));
-}
+Scripting::Context::Context(PyObject* globals) : mGlobals(Py_NewRef(globals), Py_DecRef) {}
 
 Scripting::Context::Context() :
     mGlobals(

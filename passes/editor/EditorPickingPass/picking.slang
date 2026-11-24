@@ -3,12 +3,10 @@ struct EditorViewUniforms
     float4x4 viewProjection;
 };
 
-[[vk::binding(0, 0)]]
 ConstantBuffer<EditorViewUniforms> editorView;
 
 struct VertexInput
 {
-    [[vk::location(0)]]
     float3 position : POSITION;
 };
 
@@ -26,7 +24,6 @@ struct PushConstants
     uint padding2;
 };
 
-[[vk::push_constant]]
 ConstantBuffer<PushConstants> pushConstants;
 
 [shader("vertex")]

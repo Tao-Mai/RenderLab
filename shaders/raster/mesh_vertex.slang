@@ -5,16 +5,12 @@
 
 struct VertexInput
 {
-    [[vk::location(0)]]
     float3 position : POSITION;
 
-    [[vk::location(1)]]
     float3 normal : NORMAL;
 
-    [[vk::location(2)]]
     float2 uv : TEXCOORD;
 
-    [[vk::location(3)]]
     float4 tangent : TANGENT;
 
     property float3 tangentDirection { get { return tangent.xyz; } }
@@ -30,7 +26,6 @@ struct PushConstants
     uint padding2;
 };
 
-[[vk::push_constant]]
 ConstantBuffer<PushConstants> pushConstants;
 
 // Both passes use the same precise position calculation for the Equal depth test.

@@ -11,7 +11,7 @@ Engine：场景 / 编辑器 Tick
   → RenderSystem：按 Submesh 提交 DrawItem，提取灯光
   → Renderer 全局 prepare：光源分组、光栅化主视图剔除
   → RenderResourceManager：缓存、更新 GPU 资源
-  → 更新相机 UBO，材质与灯光数据写入本帧 staging pool
+  → 更新相机参数，准备材质与灯光的上传数据
   → RenderGraph.execute：执行已编译的 Pass，同步并复制 SSBO
   → Pass.execute：阴影数据与剔除、透明排序、绘制或计算
   → Submit / Present
@@ -29,7 +29,7 @@ Engine：场景 / 编辑器 Tick
 | AssetManager / AssetDataManager | CPU 资产描述、缓存与二进制读写 |
 | RenderResourceManager | 通过资产 ID 获取并缓存 GPU 网格、纹理和采样器 |
 | Renderer | 渲染路线组装、材质覆盖解析与材质表更新、光栅化主视图剔除与帧提交 |
-| MaterialTable | 将材质描述转换为全局 MaterialData，按同一索引提供 CPU 绘制信息，维护纹理索引与材质 Set |
+| MaterialTable | 将材质描述转换为全局 MaterialData，按同一索引提供 CPU 绘制信息，维护纹理索引与具名材质绑定 |
 | RenderGraph / Pass | RenderGraphCompiler 解析依赖，ResourceCache 登记命名资源，RenderGraphExe 按序调用 Pass 的 execute |
 | Editor | 相机导航、选择、属性编辑和编辑器绘制输入 |
 
@@ -55,18 +55,16 @@ Engine：场景 / 编辑器 Tick
 
 ## 渲染与资源
 
-- `VulkanContext` 管理设备与队列，`Swapchain` 管理呈现资源。
-- Renderer 使用 `setInput()` 绑定实际的交换链纹理，acquire 后替换为当前帧的纹理。Renderer 和 Swapchain 管理图像选择与呈现。Pass 从 `CompileData` 取得默认纹理尺寸和格式，并从资源描述查找实际尺寸和格式。
-- `FrameContext` 管理命令与同步；`FrameData` 仅持有逐帧 UBO、公共 Descriptor Set 和绑定版本。
-- Renderer 管理共享光源 Buffer handle；ShadowPass 管理阴影 CPU 数据与阴影 Buffer handle，底层 SSBO 由 Graph 分配和同步。
-- Renderer 持有环境纹理、LUT 引用和阴影 sampler；图编译后将阴影视图交给 FrameData 写入，场景环境图改变时更新环境绑定。
-- `RenderContext` 聚合 Device、Shader、GPU 资产管理器和 MaterialTable；Device 负责对象创建、Descriptor 分配和 Pipeline 缓存，并在初始化时统一创建和持有场景、材质与编辑器的共享 Layout。
-- 光栅化 Pass 决定 Shader、管线状态和附件。渲染核心提供共用的[网格命令录制](../src/render/raster/MeshDraw.h)、[附件声明与绑定](../src/render/raster/RasterAttachments.h)和[阴影资源布局](../src/render/raster/ShadowResources.h)。
-- Graph 默认共享阴影图、深度和颜色中间结果；跨帧访问由同一队列上的 Barrier 同步。
-- 材质、灯光、阴影与光追命中 SSBO 在 setup 申请，跨帧共用；prepare 从各 FIF 的 staging pool 线性分配并写入，execute 录制复制与前后 Barrier。容量增长时等待 GPU 完成后重新分配，并刷新受影响的 Buffer 绑定。
-- Graph Buffer 跨帧共享。拾取在本次提交完成后回读。图重建时重置时域历史。
+- Renderer 直接持有 `rhi::IDevice`、Graphics Queue 和 Surface，使用 RHI 接口创建资源、获取和呈现纹理。
+- `FrameContext` 管理命令录制、提交和时间线 Fence；复用槽位前等待完成。`FrameData` 保存逐帧具名 shader 参数。
+- `GpuResources` 保留图像、缓冲的稳定 handle、容量版本和上传数据；上传通过 RHI encoder 录制，资源状态和内存屏障由 RHI 跟踪。
+- Renderer 管理共享灯光和场景资源；ShadowPass 准备阴影数据与可见性，逐面绘制点光源的六个深度层。
+- `RenderContext` 是帧服务数据，包含原生设备、命令 encoder、ShaderManager、GPU 资产缓存、帧数据和 MaterialTable。
+- Pass 直接使用 RHI render / compute / ray tracing pass encoder，并通过 ShaderCursor 写入原生 shader object。
+- `SceneAccelerationStructures` 缓存和构建原生 BLAS/TLAS。光追 Pass 或离线管线缓存直接创建 RHI 光追管线和 shader table。
+- Graph Buffer 和历史图像跨帧共享，拾取在提交完成后回读。图重建时等待队列，重新创建该图的资源登记表并重置时域历史。
 
-详见 [RenderGraph](RenderGraph.md) 与 [Descriptor / Pipeline Layout](RenderLayout.md)。
+详见 [RenderGraph](RenderGraph.md) 与 [Shader 参数与管线](RenderLayout.md)。
 
 ## 配置与编辑器
 
@@ -74,7 +72,7 @@ Engine：场景 / 编辑器 Tick
 - 路线或图结构变化时重建 Graph；曝光等数值参数通过逐帧数据更新。
 - IBL 决定是否加入 SkyboxPass，场景环境图变化时刷新绑定。
 - UI 修改配置，正常关闭时统一持久化；场景内容只在显式保存时写入。
-- EditorBackend 负责平台 / Vulkan backend；场景树、Inspector、RendererSettings 和导入面板各自处理业务。
+- EditorBackend 负责GLFW 平台接入与 slang-rhi 绘制；场景树、Inspector、RendererSettings 和导入面板各自处理业务。
 - 编辑器独立处理物体拾取与 Gizmo。灯光可通过场景树选中并编辑。
 - UI 在后处理之后叠加到场景输出。
 

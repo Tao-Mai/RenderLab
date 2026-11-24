@@ -53,11 +53,11 @@ struct Visibility
 };
 
 #include "path_parameters.slang"
-[[vk::binding(OfflineRayTracingBinding::kMaterials, 3)]] StructuredBuffer<pbrt::MaterialInstruction> materialInstructions;
-[[vk::binding(OfflineRayTracingBinding::kTextures, 3)]] StructuredBuffer<pbrt::TextureInstruction> textureInstructions;
-[[vk::binding(OfflineRayTracingBinding::kTlas, 3)]] RaytracingAccelerationStructure scene;
-[[vk::binding(OfflineRayTracingBinding::kObjects, 3)]] StructuredBuffer<HitData> objects;
-[[vk::binding(OfflineRayTracingBinding::kAccumulation, 3)]] RWStructuredBuffer<AccumulatedPixel> accumulation;
+StructuredBuffer<pbrt::MaterialInstruction> materialInstructions;
+StructuredBuffer<pbrt::TextureInstruction> textureInstructions;
+RaytracingAccelerationStructure scene;
+StructuredBuffer<HitData> objects;
+RWStructuredBuffer<AccumulatedPixel> accumulation;
 
 bool visible(float3 origin, float3 direction, float distance)
 {

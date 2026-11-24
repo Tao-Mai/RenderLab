@@ -10,8 +10,15 @@
 
 namespace
 {
-bool drawSlider(const char* label, ImGuiDataType type, void* value, const void* minimum, const void* maximum,
-                const char* format = nullptr, bool clampInput = true)
+bool drawSlider(
+    const char*   label,
+    ImGuiDataType type,
+    void*         value,
+    const void*   minimum,
+    const void*   maximum,
+    const char*   format     = nullptr,
+    bool          clampInput = true
+)
 {
     const auto flags = clampInput ? ImGuiSliderFlags_AlwaysClamp : ImGuiSliderFlags_None;
     return ImGui::SliderScalar(label, type, value, minimum, maximum, format, flags);
@@ -20,7 +27,7 @@ bool drawSlider(const char* label, ImGuiDataType type, void* value, const void* 
 template <class Choice>
 bool drawDropdown(const char* label, std::span<const Choice> choices, std::size_t& selected, const char* preview)
 {
-    DCHECK(preview || selected < choices.size());
+
     if (!ImGui::BeginCombo(label, preview ? preview : std::string_view{choices[selected]}.data()))
         return false;
 
@@ -35,10 +42,10 @@ bool drawDropdown(const char* label, std::span<const Choice> choices, std::size_
     ImGui::EndCombo();
 
     const bool changed = next != selected;
-    selected = next;
+    selected           = next;
     return changed;
 }
-}
+}  // namespace
 
 namespace Falcor
 {
@@ -48,22 +55,20 @@ IDScope::~IDScope() { ImGui::PopID(); }
 
 float4 Gui::pickUniqueColor(const std::string& key)
 {
-    constexpr auto kHueSteps = 360;
+    constexpr auto kHueSteps   = 360;
     constexpr auto kSaturation = 0.55f;
     constexpr auto kBrightness = 0.65f;
-    const auto hue = static_cast<float>(std::hash<std::string>{}(key) % kHueSteps) / kHueSteps;
-    float4 color{0.0f, 0.0f, 0.0f, 1.0f};
+    const auto     hue         = static_cast<float>(std::hash<std::string>{}(key) % kHueSteps) / kHueSteps;
+    float4         color{0.0f, 0.0f, 0.0f, 1.0f};
     ImGui::ColorConvertHSVtoRGB(hue, kSaturation, kBrightness, color.x, color.y, color.z);
     return color;
 }
 
-bool Gui::Widgets::checkbox(const char* label, bool& value)
-{
-    return ImGui::Checkbox(label, &value);
-}
+bool Gui::Widgets::checkbox(const char* label, bool& value) { return ImGui::Checkbox(label, &value); }
 
-bool Gui::Widgets::slider(const char* label, float& value, float minimum, float maximum,
-                     const char* format, bool clampInput)
+bool Gui::Widgets::slider(
+    const char* label, float& value, float minimum, float maximum, const char* format, bool clampInput
+)
 {
     return drawSlider(label, ImGuiDataType_Float, &value, &minimum, &maximum, format, clampInput);
 }
@@ -103,15 +108,26 @@ bool Gui::Widgets::drag(const char* label, float& value, float speed, float mini
     return ImGui::DragFloat(label, &value, speed, minimum, maximum, format, ImGuiSliderFlags_AlwaysClamp);
 }
 
-bool Gui::Widgets::dragRange(const char* label, float& low, float& high, float speed,
-                        float minimum, float maximum, const char* format)
+bool Gui::Widgets::dragRange(
+    const char* label, float& low, float& high, float speed, float minimum, float maximum, const char* format
+)
 {
-    return ImGui::DragFloatRange2(label, &low, &high, speed, minimum, maximum, format, format,
-                                  ImGuiSliderFlags_AlwaysClamp);
+    return ImGui::DragFloatRange2(
+        label,
+        &low,
+        &high,
+        speed,
+        minimum,
+        maximum,
+        format,
+        format,
+        ImGuiSliderFlags_AlwaysClamp
+    );
 }
 
-bool Gui::Widgets::dropdown(const char* label, std::span<const char* const> choices, std::size_t& selected,
-                       const char* preview)
+bool Gui::Widgets::dropdown(
+    const char* label, std::span<const char* const> choices, std::size_t& selected, const char* preview
+)
 {
     return drawDropdown(label, choices, selected, preview);
 }
@@ -132,10 +148,7 @@ Gui::Widgets::Group::~Group()
         ImGui::TreePop();
 }
 
-Gui::Widgets::Group Gui::Widgets::group(const char* label, bool defaultOpen)
-{
-    return Group(label, defaultOpen);
-}
+Gui::Widgets::Group Gui::Widgets::group(const char* label, bool defaultOpen) { return Group(label, defaultOpen); }
 
 bool Gui::Widgets::resetHeader(const char* label)
 {
@@ -180,43 +193,22 @@ bool Gui::Widgets::resetHeader(const char* label)
     return reset;
 }
 
-bool Gui::Widgets::button(const char* label)
-{
-    return ImGui::Button(label);
-}
+bool Gui::Widgets::button(const char* label) { return ImGui::Button(label); }
 
-bool Gui::Widgets::colorEdit(const char* label, glm::vec3& color)
-{
-    return ImGui::ColorEdit3(label, &color.x);
-}
+bool Gui::Widgets::colorEdit(const char* label, glm::vec3& color) { return ImGui::ColorEdit3(label, &color.x); }
 
 void Gui::Widgets::colorPreview(const char* label, const glm::vec3& color)
 {
     ImGui::ColorButton(label, ImVec4{color.r, color.g, color.b, 1.0f});
 }
 
-void Gui::Widgets::text(std::string_view text)
-{
-    ImGui::TextUnformatted(text.data(), text.data() + text.size());
-}
+void Gui::Widgets::text(std::string_view text) { ImGui::TextUnformatted(text.data(), text.data() + text.size()); }
 
-void Gui::Widgets::disabledText(const char* text)
-{
-    ImGui::TextDisabled("%s", text);
-}
+void Gui::Widgets::disabledText(const char* text) { ImGui::TextDisabled("%s", text); }
 
-void Gui::Widgets::tooltip(const char* text)
-{
-    ImGui::SetItemTooltip("%s", text);
-}
+void Gui::Widgets::tooltip(const char* text) { ImGui::SetItemTooltip("%s", text); }
 
-void Gui::Widgets::pushId(const char* id)
-{
-    ImGui::PushID(id);
-}
+void Gui::Widgets::pushId(const char* id) { ImGui::PushID(id); }
 
-void Gui::Widgets::popId()
-{
-    ImGui::PopID();
-}
+void Gui::Widgets::popId() { ImGui::PopID(); }
 }  // namespace Falcor

@@ -99,7 +99,7 @@ void drawPerformance(const Profiler* profiler)
             static_cast<unsigned long long>(total.drawCalls),
             static_cast<unsigned long long>(total.triangles)
         );
-        ImGui::TextDisabled("Before multiview amplification; includes editor draws.");
+        ImGui::TextDisabled("Includes shadow faces and editor draws.");
         ImGui::TreePop();
     }
     if (ImGui::TreeNode("Frustum culling"))

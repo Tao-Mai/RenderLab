@@ -10,11 +10,9 @@
 
 namespace BdptBinding
 {
-RENDERLAB_BDPT_CONSTANT kSplats = 15;
-RENDERLAB_BDPT_CONSTANT kLightDistribution = 16;
-RENDERLAB_BDPT_CONSTANT kLightTracing = 1u << 0;
+RENDERLAB_BDPT_CONSTANT kLightTracing   = 1u << 0;
 RENDERLAB_BDPT_CONSTANT kPowerHeuristic = 1u << 1;
-}
+}  // namespace BdptBinding
 
 #undef RENDERLAB_BDPT_CONSTANT
 #endif

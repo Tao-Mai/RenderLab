@@ -8,17 +8,17 @@ namespace Falcor
 {
 namespace
 {
-thread_local ref<Device> spActivePythonRenderGraphDevice;
+    thread_local rhi::ComPtr<rhi::IDevice> spActivePythonRenderGraphDevice;
 }
 
-void setActivePythonRenderGraphDevice(ref<Device> device)
+void setActivePythonRenderGraphDevice(rhi::ComPtr<rhi::IDevice> device)
 {
     spActivePythonRenderGraphDevice = std::move(device);
 }
 
-ref<Device> getActivePythonRenderGraphDevice() { return spActivePythonRenderGraphDevice; }
+rhi::ComPtr<rhi::IDevice> getActivePythonRenderGraphDevice() { return spActivePythonRenderGraphDevice; }
 
-ref<Device> accessActivePythonRenderGraphDevice()
+rhi::ComPtr<rhi::IDevice> accessActivePythonRenderGraphDevice()
 {
     CHECK(spActivePythonRenderGraphDevice, "render graph scripting requires an active device");
     return spActivePythonRenderGraphDevice;

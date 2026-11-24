@@ -1,16 +1,15 @@
-#include "render/device/ResourceBarriers.h"
 #include "passes/raster/TransparentPass/TransparentPass.h"
 
-#include "core/profiling/Profiler.h"
-#include "core/Plugin.h"
 #include "core/Context.h"
+#include "core/Plugin.h"
+#include "core/profiling/Profiler.h"
 #include "render/RendererConfig.h"
 
-#include "render/RenderContext.h"
 #include "render/PreparedScene.h"
+#include "render/RenderContext.h"
 #include "render/RenderView.h"
-#include "render/resources/NativeFormats.h"
 #include "render/raster/MeshDraw.h"
+#include "render/raster/ShadowResources.h"
 #include "render/resources/MaterialTable.h"
 
 #include <algorithm>
@@ -19,26 +18,36 @@
 Falcor::RenderPassReflection TransparentPass::reflect(const CompileData& compileData)
 {
     Falcor::RenderPassReflection reflection;
+    addShadowInputs(reflection);
     auto& color = reflection.addInputOutput("color", "Color target").bindFlags(Falcor::ResourceBindFlags::RenderTarget);
     if (const auto* input = compileData.connectedResources.getField("color"))
         color.texture2D(input->getWidth(), input->getHeight()).format(input->getFormat());
-    reflection.addInput("depth", "Scene depth").format(Falcor::ResourceFormat::D32Float).bindFlags(Falcor::ResourceBindFlags::DepthStencil);
+    reflection.addInput("depth", "Scene depth")
+        .format(rhi::Format::D32Float)
+        .bindFlags(Falcor::ResourceBindFlags::DepthStencil);
     return reflection;
 }
 
+
 void TransparentPass::compile(Falcor::RenderContext* passContext, const CompileData& compileData)
 {
-    const auto& config = *passContext->config;
+    const auto&                 config = *passContext->config;
+    const rhi::DepthStencilDesc depth{
+        .format           = rhi::Format::D32Float,
+        .depthTestEnable  = true,
+        .depthWriteEnable = false,
+        .depthFunc        = rhi::ComparisonFunc::Less
+    };
     pipelines.setup(
-        *passContext->getDevice(),
-        Falcor::getVulkanFormat(compileData.connectedResources.getField("color")->getFormat()),
-        {.depthCompare = vk::CompareOp::eLess, .depthWrite = false, .blend = true},
+        *passContext->device,
+        compileData.connectedResources.getField("color")->getFormat(),
+        depth,
+        true,
         config.feature.ibl,
         config.renderPath != RenderPath::Deferred
     );
-
-    barriers.clear();
 }
+
 
 void TransparentPass::sortDrawItems(const Falcor::RenderContext& frame)
 {
@@ -58,45 +67,44 @@ void TransparentPass::sortDrawItems(const Falcor::RenderContext& frame)
         std::greater{},
         [&](uint32_t itemIndex)
         {
-            const auto offset = glm::vec3{frame.scene->drawItems[itemIndex].model[3]} -
-                glm::vec3{frame.view->uniforms.cameraPosition};
+            const auto offset =
+                glm::vec3{frame.scene->drawItems[itemIndex].model[3]} - glm::vec3{frame.view->uniforms.cameraPosition};
             return glm::dot(offset, offset);
         }
     );
 }
 
+
 void TransparentPass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
 {
-    auto&       cache         = *renderCommands->vulkanResources;
-    auto&       commandBuffer = *renderCommands->commands;
-    const auto& execution     = *renderCommands;
-
-    if (barriers.empty())
-    {
-        const auto depthHandle = cache.registerImage(renderData.getTexture("depth"));
-        attachments.depth = RasterDepthAttachment{depthHandle};
-
-        constexpr auto kFragment = vk::PipelineStageFlagBits2::eFragmentShader;
-        barriers.add(depthHandle, vulkan_access::kDepthRead);
-        barriers.add(execution.frameData->lightBufferHandle(), vulkan_access::storageRead(kFragment));
-        barriers.add(execution.materialTable->bufferHandle(), vulkan_access::storageRead(kFragment));
-        barriers.declare(cache);
-    }
-
-    const auto color = cache.registerImage(renderData.getTexture("color"));
-    attachments.colors.front() = {color, vk::AttachmentLoadOp::eLoad};
-    cache.transition(commandBuffer, color, vulkan_access::kColorReadWrite);
-    barriers.transition(cache, commandBuffer);
-
-    sortDrawItems(execution);
+    sortDrawItems(*renderCommands);
     if (sortedDrawItems.empty())
         return;
 
-    attachments.begin(cache, commandBuffer, execution.view->viewport);
-    bindForwardPbrResources(commandBuffer, execution);
-    MeshDrawRecorder recorder{commandBuffer, execution};
-    recorder.drawOrdered(sortedDrawItems, [&](const auto& material) { return pipelines.get(execution, material); });
-    commandBuffer.endRendering();
+    const auto target    = renderData.getTexture("color");
+    const auto colorView = target->getDefaultView();
+    CHECK(colorView);
+    const auto depthView = renderData.getTexture("depth")->getDefaultView();
+    CHECK(depthView);
+    rhi::RenderPassColorAttachment color;
+    color.view          = colorView;
+    color.loadOp        = rhi::LoadOp::Load;
+    color.clearValue[3] = 1.0f;
+    rhi::RenderPassDepthStencilAttachment depth;
+    depth.view          = depthView;
+    depth.depthLoadOp   = rhi::LoadOp::Load;
+    depth.depthReadOnly = true;
+    auto* pass          = renderCommands->commands->beginRenderPass({&color, 1, &depth});
+    CHECK(pass);
+    const auto&      size     = target->getDesc().size;
+    const auto       viewport = renderCommands->view->viewport.clamped({size.width, size.height});
+    const ShadowBindings shadows{renderData, *renderCommands->frameData, *renderCommands->resources};
+    MeshDrawRecorder recorder{*pass, viewport.renderState(), *renderCommands, &shadows};
+    recorder.drawOrdered(
+        sortedDrawItems,
+        [&](const auto& material) { return pipelines.get(*renderCommands, material); }
+    );
+    pass->end();
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)

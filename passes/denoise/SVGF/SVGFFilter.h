@@ -1,6 +1,6 @@
 #pragma once
+#include <slang-rhi.h>
 
-#include "render/device/ResourceBarriers.h"
 #include "passes/denoise/SVGF/SVGFReprojection.h"
 
 #include <array>
@@ -12,28 +12,28 @@ class SVGFFilter
 {
 public:
     void compile(
-        const Falcor::RenderContext& context,
-        const DenoiserInputs& traced,
-        const SVGFReprojection::Output& lighting,
-        const std::array<VulkanResources::ImageHandle, kLightingLayerCount>& scratch,
-        VulkanResources::ImageHandle color,
-        const SVGFReprojection& reprojection
+        const Falcor::RenderContext&                                      context,
+        const DenoiserInputs&                                             traced,
+        const SVGFReprojection::Output&                                   lighting,
+        const std::array<GpuResources::ImageHandle, kLightingLayerCount>& scratch,
+        GpuResources::ImageHandle                                         color,
+        const SVGFReprojection&                                           reprojection
     );
-    void execute(VulkanResources& cache, vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame) const;
+    void execute(GpuResources& cache, rhi::ICommandEncoder& commands, const Falcor::RenderContext& frame) const;
 
 private:
     struct FilterResources
     {
-        VulkanResources::ImageHandle direct;
-        VulkanResources::ImageHandle indirect;
-        VulkanResources::ImageHandle targetDirect;
-        VulkanResources::ImageHandle targetIndirect;
-        VulkanResources::ImageHandle color;
-        VulkanResources::ImageHandle depth;
-        VulkanResources::ImageHandle normal;
-        VulkanResources::ImageHandle emission;
-        VulkanResources::ImageHandle albedo;
-        VulkanResources::ImageHandle lightingHistory;
+        GpuResources::ImageHandle direct;
+        GpuResources::ImageHandle indirect;
+        GpuResources::ImageHandle targetDirect;
+        GpuResources::ImageHandle targetIndirect;
+        GpuResources::ImageHandle color;
+        GpuResources::ImageHandle depth;
+        GpuResources::ImageHandle normal;
+        GpuResources::ImageHandle emission;
+        GpuResources::ImageHandle albedo;
+        GpuResources::ImageHandle lightingHistory;
     };
 
     class FilterPass
@@ -45,17 +45,15 @@ private:
         }
 
         void compile(const Falcor::RenderContext& context, const FilterResources& resources);
-        void execute(VulkanResources& cache, vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame) const;
+        void execute(GpuResources& cache, rhi::ICommandEncoder& commands, const Falcor::RenderContext& frame) const;
 
     private:
         uint32_t                iteration;
         const SVGFReprojection& reprojection;
-        ResourceBarriers    accesses;
-        vk::Extent3D            extent{};
-        DescriptorSetLayout     descriptorSetLayout;
-        vk::PipelineLayout      pipelineLayout;
-        ComputePipeline         pipeline;
-        vk::raii::DescriptorSet descriptorSet = nullptr;
+
+        rhi::Extent3D                      extent{};
+        rhi::ComPtr<rhi::IComputePipeline> pipeline;
+        rhi::ComPtr<rhi::IShaderObject>    shaderObject;
 
         [[nodiscard]] bool first() const { return iteration == 0; }
         [[nodiscard]] bool last() const { return iteration + 1 == kSvgfFilterIterations; }

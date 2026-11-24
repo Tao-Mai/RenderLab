@@ -16,7 +16,7 @@ BDPT 在相机和光源两端分别生成路径，再连接两条路径的不同
 
 随后 Resolve 归一化两类累计结果，合成为线性 HDR 图像，交给后处理。[resolve.slang](../../passes/raytracing/bdpt/resolve.slang)
 
-路径延长和可见性查询都由 raygen 发起。Closest-hit 返回交点、法线、切线、UV 和物体索引，miss 区分路径逃逸与阴影射线可见。路径深度由循环控制，Vulkan 光追管线的递归深度保持为 1。
+路径延长和可见性查询都由 raygen 发起。Closest-hit 返回交点、法线、切线、UV 和物体索引，miss 区分路径逃逸与阴影射线可见。路径深度由循环控制，RHI 光追管线的递归深度保持为 1。
 
 ## 路径顶点保存什么
 

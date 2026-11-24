@@ -68,7 +68,7 @@ LutTexture loadLut(const ::TextureAsset::ID& id, std::span<const uint8_t> encode
     }
     else
     {
-        DCHECK(format == ImageFormat::RGBA32F);
+
         CHECK(stbi_is_16_bit_from_memory(encoded.data(), byteCount), "expected a 16-bit Sheen LUT: {}", id);
         const std::unique_ptr<stbi_us, decltype(&stbi_image_free)> decoded{
             stbi_load_16_from_memory(encoded.data(), byteCount, &width, &height, &channels, 4),

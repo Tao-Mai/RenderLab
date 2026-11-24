@@ -47,11 +47,11 @@ struct ToneMapperParameters
     uint               clampOutput;
 };
 
-[[vk::push_constant]] ConstantBuffer<ToneMapperParameters> parameters;
-[[vk::binding(0, 0)]] Texture2D<float4>                    sourceImage;
-[[vk::binding(1, 0)]] Texture2D<float4>                    luminanceImage;
-[[vk::binding(2, 0)]] SamplerState                         linearSampler;
-[[vk::binding(3, 0)]] SamplerState                         pointSampler;
+ConstantBuffer<ToneMapperParameters> parameters;
+Texture2D<float4>                    sourceImage;
+Texture2D<float4>                    luminanceImage;
+SamplerState                         linearSampler;
+SamplerState                         pointSampler;
 static const float                                         kExposureKey  = 0.042;
 static const float                                         kLuminanceLod = 16.0;
 

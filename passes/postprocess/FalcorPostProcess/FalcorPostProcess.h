@@ -1,13 +1,12 @@
 #pragma once
 
-#include "render/device/ResourceBarriers.h"
+#include "render/device/GpuResources.h"
 #include "render/graph/RenderPass.h"
 
 #include "passes/postprocess/FalcorPostProcess/FalcorPostProcessConfig.h"
-#include "render/graph/RenderPass.h"
 
-#include "render/device/Device.h"
-#include "render/raster/RasterAttachments.h"
+#include <slang-rhi.h>
+#include <slang-rhi/shader-cursor.h>
 
 #include <vector>
 
@@ -16,12 +15,12 @@ class FalcorPostProcess : public Falcor::RenderPass
 {
     FALCOR_PLUGIN_CLASS(FalcorPostProcess, "FalcorPostProcess", "Applies Falcor tone mapping and post effects.");
 
-    FalcorPostProcess(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties);
+    FalcorPostProcess(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties);
 
     [[nodiscard]] Falcor::Properties getProperties() const override;
-    void setProperties(const Falcor::Properties& properties) override;
+    void                             setProperties(const Falcor::Properties& properties) override;
 
-    static Falcor::ref<FalcorPostProcess> create(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties)
+    static Falcor::ref<FalcorPostProcess> create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
     {
         return Falcor::make_ref<FalcorPostProcess>(std::move(device), properties);
     }
@@ -29,11 +28,12 @@ class FalcorPostProcess : public Falcor::RenderPass
     void renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget) override;
 
     [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData& compileData) override;
-    void                               compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
+    void compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
     void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
 
 private:
     FalcorPostProcessConfig parameters;
+    ShaderManager*          shaders = nullptr;
 
     enum class Stage
     {
@@ -45,73 +45,63 @@ private:
         Present,
     };
 
-    struct Layout
-    {
-        DescriptorSetLayout descriptorSet;
-        vk::PipelineLayout pipeline;
-    };
-
     class ImageStage
     {
     public:
-        ImageStage(const FalcorPostProcess& owner, Stage stage, const ComputePipeline& compute, uint32_t level = 0) :
-            owner(owner), layout(owner.computeLayout), stage(stage), compute(&compute), level(level)
+        ImageStage(const FalcorPostProcess& owner, Stage stage, rhi::IComputePipeline* compute, uint32_t level = 0) :
+            owner(owner), stage(stage), compute(compute), level(level)
         {
         }
 
         ImageStage(const FalcorPostProcess& owner, Stage stage, ShaderHandle shader) :
-            owner(owner), layout(owner.graphicsLayout), stage(stage), shader(shader)
+            owner(owner), stage(stage), shader(shader)
         {
         }
 
         void compile(
-            VulkanResources&             cache,
-            VulkanResources::ImageHandle source,
-            VulkanResources::ImageHandle filtered,
-            VulkanResources::ImageHandle target
+            GpuResources&             cache,
+            GpuResources::ImageHandle source,
+            GpuResources::ImageHandle filtered,
+            GpuResources::ImageHandle target
         );
-        void execute(
-            VulkanResources& cache, vk::raii::CommandBuffer& commands, VulkanResources::ImageHandle colorOutput
-        );
+        void execute(GpuResources& cache, rhi::ICommandEncoder& commands, GpuResources::ImageHandle colorOutput);
 
     private:
-        void dispatch(VulkanResources& cache, vk::raii::CommandBuffer& commands) const;
+        void dispatch(GpuResources& cache, rhi::ICommandEncoder& commands) const;
 
-        const FalcorPostProcess& owner;
-        const Layout&            layout;
-        Stage                    stage;
-        const ComputePipeline*   compute = nullptr;
-        ShaderHandle             shader;
-        uint32_t                 level = 0;
-        VulkanResources::ImageHandle storageTarget;
-        RasterAttachments<1>     attachments;
-        ResourceBarriers       accesses;
-        vk::raii::DescriptorSet  descriptorSet = nullptr;
-        vk::Pipeline             pipeline;
+        const FalcorPostProcess&  owner;
+        Stage                     stage;
+        rhi::IComputePipeline*    compute = nullptr;
+        ShaderHandle              shader;
+        uint32_t                  level = 0;
+        GpuResources::ImageHandle storageTarget;
+
+        GpuResources::ImageHandle target;
+
+        rhi::ComPtr<rhi::IShaderObject>   shaderObject;
+        rhi::ComPtr<rhi::IRenderPipeline> pipeline;
     };
 
     void initialize(const Falcor::RenderContext& context);
-    VulkanResources::ImageHandle
-    addSimplePostFx(VulkanResources& cache, const Falcor::RenderData& data, VulkanResources::ImageHandle source);
-    VulkanResources::ImageHandle addToneMapper(
-        ShaderManager& shaders, VulkanResources& cache, const Falcor::RenderData& data, VulkanResources::ImageHandle source
+    GpuResources::ImageHandle
+    addSimplePostFx(GpuResources& cache, const Falcor::RenderData& data, GpuResources::ImageHandle source);
+    GpuResources::ImageHandle addToneMapper(
+        ShaderManager& shaders, GpuResources& cache, const Falcor::RenderData& data, GpuResources::ImageHandle source
     );
-    VulkanResources::ImageHandle addImageStage(
-        VulkanResources&             cache,
-        ImageStage                 pass,
-        VulkanResources::ImageHandle source,
-        VulkanResources::ImageHandle filtered,
-        VulkanResources::ImageHandle target
+    GpuResources::ImageHandle addImageStage(
+        GpuResources&             cache,
+        ImageStage                pass,
+        GpuResources::ImageHandle source,
+        GpuResources::ImageHandle filtered,
+        GpuResources::ImageHandle target
     );
 
-    Layout computeLayout;
-    Layout graphicsLayout;
-    ComputePipeline downsample;
-    ComputePipeline upsample;
-    ComputePipeline postFx;
-    vk::raii::Sampler borderSampler = nullptr;
-    vk::raii::Sampler linearSampler = nullptr;
-    vk::raii::Sampler pointSampler = nullptr;
-    bool encodeSrgb = false;
-    std::vector<ImageStage> imageStages;
+    rhi::ComPtr<rhi::IComputePipeline> downsample;
+    rhi::ComPtr<rhi::IComputePipeline> upsample;
+    rhi::ComPtr<rhi::IComputePipeline> postFx;
+    rhi::ComPtr<rhi::ISampler>         borderSampler = nullptr;
+    rhi::ComPtr<rhi::ISampler>         linearSampler = nullptr;
+    rhi::ComPtr<rhi::ISampler>         pointSampler  = nullptr;
+    bool                               encodeSrgb    = false;
+    std::vector<ImageStage>            imageStages;
 };

@@ -10,11 +10,11 @@
 #include <algorithm>
 #include <limits>
 
-SceneManager::~SceneManager() { DCHECK(!inited); }
+SceneManager::~SceneManager() {}
 
 void SceneManager::init()
 {
-    DCHECK(!inited);
+
 
     static const bool registered = []
     {
@@ -24,27 +24,15 @@ void SceneManager::init()
     }();
 
     mpScene = Falcor::make_ref<Falcor::Scene>();
-    DEBUG_EXEC(inited = true);
 }
 
-void SceneManager::loadDefaultScene()
-{
-    DCHECK(inited);
-    DCHECK(context().config);
+void SceneManager::loadDefaultScene() { load(context().config->initialScene()); }
 
-    load(context().config->initialScene());
-}
-
-void SceneManager::load(const SceneAsset::ID& id)
-{
-    DCHECK(inited);
-    DCHECK(context().assetManager);
-    load(context().assetManager->get<SceneAsset>(id));
-}
+void SceneManager::load(const SceneAsset::ID& id) { load(context().assetManager->get<SceneAsset>(id)); }
 
 void SceneManager::load(const SceneAsset& scene)
 {
-    DCHECK(inited);
+
 
     // The cache owns a snapshot; the live scene owns its actors and components.
     SceneAsset loaded;
@@ -70,8 +58,8 @@ void SceneManager::load(const SceneAsset& scene)
 
 void SceneManager::save()
 {
-    DCHECK(inited);
-    DCHECK(context().assetManager);
+
+
     SceneAsset snapshot;
     Deserialize(Serialize(scene()), snapshot);
     context().assetManager->save<SceneAsset>(std::move(snapshot));
@@ -79,7 +67,7 @@ void SceneManager::save()
 
 AActor& SceneManager::createActor(std::string_view typeName)
 {
-    DCHECK(inited);
+
     const auto& types = TypeRegistry<AActor>::get().entries;
     const auto  type  = types.find(std::string{typeName});
     CHECK(type != types.end(), "unknown actor type: {}", typeName);
@@ -104,7 +92,7 @@ AActor& SceneManager::createActor(std::string_view typeName)
 
 void SceneManager::deleteActor(uint32_t selectionId)
 {
-    DCHECK(inited);
+
     auto&      actors = scene().actors;
     const auto found =
         std::ranges::find_if(actors, [=](const auto& actor) { return actor->selectionId() == selectionId; });
@@ -114,11 +102,7 @@ void SceneManager::deleteActor(uint32_t selectionId)
     actors.erase(found);
 }
 
-void SceneManager::shutdown() noexcept
-{
-    mpScene.reset();
-    DEBUG_EXEC(inited = false);
-}
+void SceneManager::shutdown() noexcept { mpScene.reset(); }
 
 void SceneManager::tick(float deltaTime)
 {

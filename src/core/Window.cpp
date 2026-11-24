@@ -1,8 +1,8 @@
 #include "core/Window.h"
 
-#include "core/Logger.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
+#include "core/Logger.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -32,19 +32,21 @@ WorkArea windowWorkArea(GLFWwindow* window, int width, int height)
 
     auto* primary = glfwGetPrimaryMonitor();
     CHECK(primary);
-    auto area = monitorWorkArea(primary);
-    int monitorCount = 0;
-    auto* monitors = glfwGetMonitors(&monitorCount);
+    auto    area           = monitorWorkArea(primary);
+    int     monitorCount   = 0;
+    auto*   monitors       = glfwGetMonitors(&monitorCount);
     int64_t largestOverlap = 0;
     for (int index = 0; index < monitorCount; ++index)
     {
         const auto candidate = monitorWorkArea(monitors[index]);
-        const int overlapWidth = std::max(0, std::min(x + width, candidate.x + candidate.width) - std::max(x, candidate.x));
-        const int overlapHeight = std::max(0, std::min(y + height, candidate.y + candidate.height) - std::max(y, candidate.y));
+        const int  overlapWidth =
+            std::max(0, std::min(x + width, candidate.x + candidate.width) - std::max(x, candidate.x));
+        const int overlapHeight =
+            std::max(0, std::min(y + height, candidate.y + candidate.height) - std::max(y, candidate.y));
         const auto overlap = int64_t{overlapWidth} * overlapHeight;
         if (overlap > largestOverlap)
         {
-            area = candidate;
+            area           = candidate;
             largestOverlap = overlap;
         }
     }
@@ -61,12 +63,9 @@ void centerWindow(GLFWwindow* window, const WorkArea& area, int width, int heigh
         area.y + (area.height - height - top - bottom) / 2 + top
     );
 }
-}
+}  // namespace
 
-Window::~Window()
-{
-    DCHECK(!handle && !glfwInitialized);
-}
+Window::~Window() {}
 
 void Window::init()
 {
@@ -75,7 +74,7 @@ void Window::init()
         return;
     }
 
-    DCHECK(context().config);
+
     const EditorConfig& editor = context().config->editorConfig();
 
     CHECK(glfwInit() == GLFW_TRUE, "failed to init GLFW");
@@ -106,20 +105,11 @@ void Window::init()
     glfwSetScrollCallback(handle, &Window::scrollCallback);
 }
 
-void Window::pollEvents() const
-{
-    glfwPollEvents();
-}
+void Window::pollEvents() const { glfwPollEvents(); }
 
-void Window::waitEvents() const
-{
-    glfwWaitEvents();
-}
+void Window::waitEvents() const { glfwWaitEvents(); }
 
-bool Window::shouldClose() const
-{
-    return handle == nullptr || glfwWindowShouldClose(handle);
-}
+bool Window::shouldClose() const { return handle == nullptr || glfwWindowShouldClose(handle); }
 
 void Window::requestClose() const
 {
@@ -129,34 +119,15 @@ void Window::requestClose() const
     }
 }
 
-void Window::setKeyCallback(KeyCallback callback)
-{
-    DCHECK(handle);
-    DCHECK(!callback || !onKey, "key callback is already registered");
+void Window::setKeyCallback(KeyCallback callback) { onKey = std::move(callback); }
 
-    onKey = std::move(callback);
-}
+void Window::setMouseButtonCallback(MouseButtonCallback callback) { onMouseButton = std::move(callback); }
 
-void Window::setMouseButtonCallback(MouseButtonCallback callback)
-{
-    DCHECK(handle);
-    DCHECK(!callback || !onMouseButton,
-        "mouse button callback is already registered");
-
-    onMouseButton = std::move(callback);
-}
-
-void Window::setFocusCallback(FocusCallback callback)
-{
-    DCHECK(handle);
-    DCHECK(!callback || !onFocus, "focus callback is already registered");
-
-    onFocus = std::move(callback);
-}
+void Window::setFocusCallback(FocusCallback callback) { onFocus = std::move(callback); }
 
 std::pair<double, double> Window::cursorPosition() const
 {
-    DCHECK(handle);
+
     double x = 0.0;
     double y = 0.0;
     glfwGetCursorPos(handle, &x, &y);
@@ -179,34 +150,15 @@ void Window::setCursorCaptured(bool captured) const
 double Window::consumeScrollOffset()
 {
     const double value = scrollOffset;
-    scrollOffset = 0.0;
+    scrollOffset       = 0.0;
     return value;
-}
-
-VkSurfaceKHR Window::createVulkanSurface(VkInstance instance) const
-{
-    DCHECK(handle);
-
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
-    CHECK(glfwCreateWindowSurface(instance, handle, nullptr, &surface) == VK_SUCCESS,
-        "failed to create Vulkan surface");
-    return surface;
-}
-
-std::vector<const char *> Window::requiredVulkanExtensions() const
-{
-    uint32_t extensionCount = 0;
-    const char **extensions = glfwGetRequiredInstanceExtensions(&extensionCount);
-    CHECK(extensions != nullptr, "GLFW did not provide Vulkan instance extensions");
-
-    return {extensions, extensions + extensionCount};
 }
 
 std::pair<int, int> Window::size() const
 {
-    DCHECK(handle);
 
-    int width = 0;
+
+    int width  = 0;
     int height = 0;
     glfwGetWindowSize(handle, &width, &height);
     return {width, height};
@@ -214,10 +166,10 @@ std::pair<int, int> Window::size() const
 
 void Window::resizeCentered(int width, int height) const
 {
-    DCHECK(handle && width > 0 && height > 0);
+
 
     const auto [oldWidth, oldHeight] = size();
-    const auto area = windowWorkArea(handle, oldWidth, oldHeight);
+    const auto area                  = windowWorkArea(handle, oldWidth, oldHeight);
     if (glfwGetWindowAttrib(handle, GLFW_MAXIMIZED))
         glfwRestoreWindow(handle);
     glfwSetWindowSize(handle, width, height);
@@ -228,7 +180,7 @@ void Window::resizeCentered(int width, int height) const
 
 std::pair<int, int> Window::framebufferSize() const
 {
-    DCHECK(handle);
+
 
     int width  = 0;
     int height = 0;
@@ -236,10 +188,7 @@ std::pair<int, int> Window::framebufferSize() const
     return {width, height};
 }
 
-GLFWwindow *Window::nativeHandle() const
-{
-    return handle;
-}
+GLFWwindow* Window::nativeHandle() const { return handle; }
 
 void Window::shutdown() noexcept
 {
@@ -249,9 +198,9 @@ void Window::shutdown() noexcept
         handle = nullptr;
     }
 
-    onKey = {};
+    onKey         = {};
     onMouseButton = {};
-    onFocus = {};
+    onFocus       = {};
 
     if (glfwInitialized)
     {
@@ -260,45 +209,45 @@ void Window::shutdown() noexcept
     }
 }
 
-void Window::keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
+void Window::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
-    auto *owner = static_cast<Window *>(glfwGetWindowUserPointer(window));
+    auto* owner = static_cast<Window*>(glfwGetWindowUserPointer(window));
     if (owner != nullptr && owner->onKey)
     {
         owner->onKey(key, scancode, action, mods);
     }
 }
 
-void Window::mouseButtonCallback(GLFWwindow *window, int button, int action, int mods)
+void Window::mouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
 {
-    auto *owner = static_cast<Window *>(glfwGetWindowUserPointer(window));
+    auto* owner = static_cast<Window*>(glfwGetWindowUserPointer(window));
     if (owner != nullptr && owner->onMouseButton)
     {
         owner->onMouseButton(button, action, mods);
     }
 }
 
-void Window::focusCallback(GLFWwindow *window, int focused)
+void Window::focusCallback(GLFWwindow* window, int focused)
 {
-    auto *owner = static_cast<Window *>(glfwGetWindowUserPointer(window));
+    auto* owner = static_cast<Window*>(glfwGetWindowUserPointer(window));
     if (owner != nullptr && owner->onFocus)
     {
         owner->onFocus(focused);
     }
 }
 
-void Window::sizeCallback(GLFWwindow *window, int width, int height)
+void Window::sizeCallback(GLFWwindow* window, int width, int height)
 {
-    DCHECK(glfwGetWindowUserPointer(window));
+
 
     // A minimized window must not persist a zero size.
     if (width > 0 && height > 0)
         context().config->setEditorSize(width, height);
 }
 
-void Window::scrollCallback(GLFWwindow *window, double, double yOffset)
+void Window::scrollCallback(GLFWwindow* window, double, double yOffset)
 {
-    if (auto *owner = static_cast<Window *>(glfwGetWindowUserPointer(window)))
+    if (auto* owner = static_cast<Window*>(glfwGetWindowUserPointer(window)))
     {
         owner->scrollOffset += yOffset;
     }

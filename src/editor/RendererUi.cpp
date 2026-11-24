@@ -47,7 +47,7 @@ bool drawParameter(Falcor::Gui::Widgets& widgets, const std::string& name, Falco
     {
         constexpr auto kModes = []
         {
-            constexpr auto& kEntries = metadata::Enum<PostProcessMode>::kValues;
+            constexpr auto&                          kEntries = metadata::Enum<PostProcessMode>::kValues;
             std::array<const char*, kEntries.size()> names{};
             std::ranges::transform(kEntries, names.begin(), &metadata::EnumValue<PostProcessMode>::name);
             return names;
@@ -79,20 +79,19 @@ bool drawParameter(Falcor::Gui::Widgets& widgets, const std::string& name, Falco
     if (value.is_number_integer())
         return drawNumber<int64_t>(widgets, label, value);
 
-    DCHECK(value.is_number_float());
     return drawNumber<double>(widgets, label, value);
 }
 
 void drawSettings(
-    Falcor::Gui::Widgets& widgets,
-    Renderer& renderer,
-    const ConfigManager& config,
+    Falcor::Gui::Widgets&           widgets,
+    Renderer&                       renderer,
+    const ConfigManager&            config,
     const Falcor::Properties::json& defaults,
-    Falcor::Properties::json& parameters
+    Falcor::Properties::json&       parameters
 )
 {
     const auto& feature = config.rendererConfig().feature;
-    const auto visible = [&](std::string_view name)
+    const auto  visible = [&](std::string_view name)
     {
         if (name == "ambientCoefficient")
             return false;
@@ -106,7 +105,7 @@ void drawSettings(
     if (std::ranges::none_of(entries, [&](const auto& entry) { return visible(entry.key()); }))
         return;
 
-    const bool reset = widgets.resetHeader("Graph");
+    const bool     reset = widgets.resetHeader("Graph");
     nlohmann::json options;
     for (const auto& [name, defaultValue] : entries)
     {
@@ -127,37 +126,40 @@ void drawSettings(
     }
 
     if (!options.is_null())
-        renderer.addOption(kRenderGraphOptionsPrefix + settings::encodeName(config.renderGraphName()) + ":parameters", std::move(options));
+        renderer.addOption(
+            kRenderGraphOptionsPrefix + settings::encodeName(config.renderGraphName()) + ":parameters",
+            std::move(options)
+        );
 }
 }  // namespace
 
 void Renderer::renderUI(const PassEditorContext& input)
 {
-    DCHECK(mpRenderGraph);
-    const auto& config = *context().config;
+
+    const auto&          config = *context().config;
     Falcor::Gui::Widgets widgets;
     drawSettings(widgets, *this, config, parameterDefaults, parameters);
 
-    auto editor = input;
+    auto editor   = input;
     editor.submit = [&](const Falcor::RenderPass& pass, std::optional<nlohmann::json> edited)
     {
-        const auto scope = kRenderGraphOptionsPrefix + settings::encodeName(config.renderGraphName()) + ":passes:" +
-            settings::encodeName(pass.getType()) + ':' + settings::encodeName(pass.getName());
+        const auto scope = kRenderGraphOptionsPrefix + settings::encodeName(config.renderGraphName()) +
+            ":passes:" + settings::encodeName(pass.getType()) + ':' + settings::encodeName(pass.getName());
         if (!edited)
         {
             addOption(scope, nullptr);
             return;
         }
 
-        const auto scripted = settings::detail::flattenDictionary(getScriptedPassProperties(pass));
-        auto changes = settings::detail::flattenDictionary(*edited);
+        const auto     scripted = settings::detail::flattenDictionary(getScriptedPassProperties(pass));
+        auto           changes  = settings::detail::flattenDictionary(*edited);
         nlohmann::json options{{scope, nullptr}};
         for (auto& [name, value] : changes.items())
             if (const auto original = scripted.find(name); original == scripted.end() || *original != value)
                 options[scope + ':' + name] = std::move(value);
         addOptions(options);
     };
-    auto renderCommands = *device->getRenderContext();
+    auto renderCommands       = renderContext;
     renderCommands.passEditor = &editor;
     mpRenderGraph->renderUI(&renderCommands, widgets);
 }

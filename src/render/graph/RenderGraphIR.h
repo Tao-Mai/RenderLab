@@ -29,7 +29,7 @@
 
 #include "core/Macros.h"
 #include "core/Properties.h"
-#include "render/resources/Formats.h"
+#include "render/graph/RenderGraphFlags.h"
 
 #include <string>
 
@@ -38,23 +38,16 @@ namespace Falcor
 class FALCOR_API RenderGraphIR
 {
 public:
-    RenderGraphIR(const std::string& name, bool newGraph = true);
+    explicit RenderGraphIR(const std::string& name);
 
     void createPass(const std::string& passClass, const std::string& passName, const Properties& props = {});
-    void updatePass(const std::string& passName, const Properties& props);
-    void removePass(const std::string& passName);
     void addEdge(const std::string& src, const std::string& dst);
-    void removeEdge(const std::string& src, const std::string& dst);
     void markOutput(const std::string& name, TextureChannelFlags mask = TextureChannelFlags::RGB);
-    void unmarkOutput(const std::string& name);
 
-    [[nodiscard]] std::string getIR() { return mIR + mIndentation + (mIndentation.empty() ? "\n" : "return g\n"); }
+    [[nodiscard]] std::string getIR() const { return mIR + "    return g\n"; }
     [[nodiscard]] static std::string getFuncName(const std::string& graphName);
 
 private:
-    std::string mName;
     std::string mIR;
-    std::string mIndentation;
-    std::string mGraphPrefix;
 };
 }  // namespace Falcor

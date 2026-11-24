@@ -1,4 +1,5 @@
 #pragma once
+#include <slang-rhi.h>
 
 #include "core/Macros.h"
 #include "render/graph/RenderPass.h"
@@ -16,17 +17,16 @@ public:
         RenderContext* pRenderContext;
         Dictionary&    passesDictionary;
         uint2          defaultTexDims;
-        ResourceFormat defaultTexFormat;
     };
 
-    void                        execute(const Context& context);
-    void                        renderUI(RenderContext* context, Gui::Widgets& widget);
-    void                        renderOverlayUI(RenderContext* context);
-    bool                        onMouseEvent(const MouseEvent& event);
-    bool                        onKeyEvent(const KeyboardEvent& event);
-    void                        onHotReload(HotReloadFlags reloaded);
-    [[nodiscard]] ref<Resource> getResource(const std::string& name) const;
-    void                        setInput(const std::string& name, const ref<Resource>& resource);
+    void                                      execute(const Context& context);
+    void                                      renderUI(RenderContext* context, Gui::Widgets& widget);
+    void                                      renderOverlayUI(RenderContext* context);
+    bool                                      onMouseEvent(const MouseEvent& event);
+    bool                                      onKeyEvent(const KeyboardEvent& event);
+    void                                      onHotReload(HotReloadFlags reloaded);
+    [[nodiscard]] rhi::ComPtr<rhi::IResource> getResource(const std::string& name) const;
+    void                                      setInput(const std::string& name, rhi::IResource* resource);
 
 private:
     friend class RenderGraphCompiler;

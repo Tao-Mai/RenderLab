@@ -1,4 +1,5 @@
 #pragma once
+#include <slang-rhi.h>
 
 #include "core/Serializer.h"
 #include "editor/Gui.h"
@@ -15,13 +16,12 @@ namespace Falcor
 {
 class RenderPass;
 }
-class VulkanContext;
 struct EditorCameraConfig;
 
 struct PassEditorContext
 {
-    const VulkanContext&                                                  vulkan;
-    const EditorCameraConfig&                                             camera;
+    rhi::IDevice&                                                                 device;
+    const EditorCameraConfig&                                                     camera;
     std::function<void(const Falcor::RenderPass&, std::optional<nlohmann::json>)> submit;
 };
 
@@ -85,8 +85,11 @@ static bool drawFields(Falcor::Gui::Widgets& widgets, T& settings)
 
 template <auto Draw = nullptr, class Pass, class Settings>
 void drawPassEditor(
-    Falcor::Gui::Widgets& widgets, const Pass& pass, const Settings& parameters, const PassEditorContext* context,
-    std::string_view label
+    Falcor::Gui::Widgets&    widgets,
+    const Pass&              pass,
+    const Settings&          parameters,
+    const PassEditorContext* context,
+    std::string_view         label
 )
 {
     if (!context || !pass_editor::begin(pass, *context, label))

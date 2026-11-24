@@ -33,58 +33,37 @@
 
 namespace Falcor
 {
-RenderGraphIR::RenderGraphIR(const std::string& name, bool newGraph) : mName(name)
+namespace
 {
-    if (newGraph)
-    {
-        mIndentation = "    ";
-        mIR          = "from falcor import *\n\ndef " + getFuncName(mName) + "():\n";
-        mIR += mIndentation + "g = " + ScriptWriter::makeFunc("RenderGraph", mName);
-    }
-    mGraphPrefix = mIndentation + "g.";
+constexpr char kGraphPrefix[] = "    g.";
+}
+
+RenderGraphIR::RenderGraphIR(const std::string& name) :
+    mIR("from falcor import *\n\ndef " + getFuncName(name) + "():\n")
+{
+    mIR += "    g = " + ScriptWriter::makeFunc("RenderGraph", name);
 }
 
 void RenderGraphIR::createPass(const std::string& passClass, const std::string& passName, const Properties& props)
 {
     const PythonObject dict{props.toPython()};
-    mIR += mGraphPrefix + ScriptWriter::makeFunc("create_pass", passName, passClass, dict.get());
-}
-
-void RenderGraphIR::updatePass(const std::string& passName, const Properties& props)
-{
-    const PythonObject dict{props.toPython()};
-    mIR += mGraphPrefix + ScriptWriter::makeFunc("update_pass", passName, dict.get());
-}
-
-void RenderGraphIR::removePass(const std::string& passName)
-{
-    mIR += mGraphPrefix + ScriptWriter::makeFunc("remove_pass", passName);
+    mIR += kGraphPrefix + ScriptWriter::makeFunc("create_pass", passName, passClass, dict.get());
 }
 
 void RenderGraphIR::addEdge(const std::string& src, const std::string& dst)
 {
-    mIR += mGraphPrefix + ScriptWriter::makeFunc("add_edge", src, dst);
-}
-
-void RenderGraphIR::removeEdge(const std::string& src, const std::string& dst)
-{
-    mIR += mGraphPrefix + ScriptWriter::makeFunc("remove_edge", src, dst);
+    mIR += kGraphPrefix + ScriptWriter::makeFunc("add_edge", src, dst);
 }
 
 void RenderGraphIR::markOutput(const std::string& name, TextureChannelFlags mask)
 {
     if (mask == TextureChannelFlags::RGB)
     {
-        mIR += mGraphPrefix + ScriptWriter::makeFunc("mark_output", name);
+        mIR += kGraphPrefix + ScriptWriter::makeFunc("mark_output", name);
         return;
     }
 
-    mIR += mGraphPrefix + ScriptWriter::makeFunc("mark_output", name, mask);
-}
-
-void RenderGraphIR::unmarkOutput(const std::string& name)
-{
-    mIR += mGraphPrefix + ScriptWriter::makeFunc("unmark_output", name);
+    mIR += kGraphPrefix + ScriptWriter::makeFunc("mark_output", name, mask);
 }
 
 std::string RenderGraphIR::getFuncName(const std::string& graphName)

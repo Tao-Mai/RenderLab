@@ -2,12 +2,12 @@
 #include "raster/gbuffer_data.slang"
 
 // Pass set 2; bindings match RenderInterface's G-buffer bindings.
-[[vk::binding(0, 2)]] Texture2D<float4> diffuseOcclusion;
-[[vk::binding(1, 2)]] Texture2D<float4> normalRoughness;
-[[vk::binding(2, 2)]] Texture2D<float4> emissiveSpecularF90;
-[[vk::binding(3, 2)]] Texture2D<float4> specularF0DiffuseFresnel;
-[[vk::binding(4, 2)]] Texture2D<float4> sheenColorRoughness;
-[[vk::binding(5, 2)]] Texture2D<float> sceneDepth;
+Texture2D<float4> diffuseOcclusion;
+Texture2D<float4> normalRoughness;
+Texture2D<float4> emissiveSpecularF90;
+Texture2D<float4> specularF0DiffuseFresnel;
+Texture2D<float4> sheenColorRoughness;
+Texture2D<float> sceneDepth;
 
 struct DeferredLightingParameters
 {
@@ -16,7 +16,7 @@ struct DeferredLightingParameters
     property float2 viewportOffset { get { return viewport.xy; } }
     property float2 viewportExtent { get { return viewport.zw; } }
 };
-[[vk::push_constant]] ConstantBuffer<DeferredLightingParameters> parameters;
+ConstantBuffer<DeferredLightingParameters> parameters;
 
 struct VertexOutput
 {
@@ -40,7 +40,7 @@ float4 fragMain(VertexOutput input) : SV_Target
         return float4(0.0, 0.0, 0.0, 1.0);
     }
 
-    float2 ndc = (input.position.xy - parameters.viewportOffset) / parameters.viewportExtent * 2.0 - 1.0;
+    float2 ndc = uvToClip((input.position.xy - parameters.viewportOffset) / parameters.viewportExtent);
     float4 worldPosition = mul(sceneUniforms.inverseViewProjection, float4(ndc, depth, 1.0));
     GBufferData data = {
         diffuseOcclusion.Load(int3(pixel, 0)),

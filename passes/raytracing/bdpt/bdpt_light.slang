@@ -6,7 +6,6 @@ struct BdptLightDistributionEntry
     uint padding;
 };
 
-[[vk::binding(BdptBinding::kLightDistribution, 3)]]
 StructuredBuffer<BdptLightDistributionEntry> lightDistribution;
 
 float2 bdptRandom2D(inout uint state)

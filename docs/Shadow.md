@@ -9,7 +9,7 @@ Forward / Deferred 共用 ShadowPass 与阴影采样函数，各类光源使用�
 | 光源 | 阴影表示 | 过滤 |
 | --- | --- | --- |
 | 方向光 | 1～4 级正交 CSM | 8 点泊松 PCF、级联混合 |
-| 点光源 | 六面 Cubemap，Multiview 绘制 | 16 点泊松 PCF |
+| 点光源 | 六个深度数组层，逐面绘制 | 16 点泊松 PCF |
 | 聚光灯 | 单次透视投影 | 16 点泊松 PCF |
 | 矩形面光源 | 光源中心透视近似 | 矩形 Blocker Search 与 PCSS |
 
@@ -32,9 +32,9 @@ Forward / Deferred 共用 ShadowPass 与阴影采样函数，各类光源使用�
 ## 配置与资源
 
 - 编辑器可调整分辨率、Bias、采样半径、过滤模式、旋转与级联参数。
-- 阴影开关决定重建图时是否加入 ShadowPass。
+- 阴影开关决定图资源的大小以及 ShadowPass 是否录制阴影绘制。
 - 阴影数据在帧准备阶段计算；只为启用且投射阴影的光源分配索引。
 - 固定预留点 / 矩形 / 聚光阴影各 4 盏、方向光 1 盏；超出容量明确报错。
-- 深度图跨在途帧共享，由 Graph 同步上一帧最后访问与下一帧首次访问。
+- 深度图跨在途帧共享，slang-rhi 跟踪绘制和采样之间的资源同步。
 
 代码：[ShadowPass](../passes/raster/ShadowPass/ShadowPass.cpp)、[采样与比较](../shaders/raster/scene_lighting.slang)、[采样分布](../shaders/math/sampling.slang)。

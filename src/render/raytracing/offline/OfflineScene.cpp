@@ -1,7 +1,7 @@
 #include "render/raytracing/offline/OfflineScene.h"
 
-#include "asset/AssetManager.h"
 #include "asset/AssetDataManager.h"
+#include "asset/AssetManager.h"
 #include "asset/pbrt/PbrtData.h"
 #include "asset/pbrt/PbrtMaterial.h"
 #include "core/Context.h"
@@ -111,9 +111,9 @@ class TextureCompiler
 public:
     TextureCompiler(
         std::vector<pbrt::TextureInstruction>& output,
-        AssetManager&                           assets,
-        RenderResourceManager&                  resources,
-        MaterialTable&                          materialTable
+        AssetManager&                          assets,
+        RenderResourceManager&                 resources,
+        MaterialTable&                         materialTable
     ) :
         output(output), assets(assets), resources(resources), materialTable(materialTable)
     {
@@ -127,7 +127,7 @@ public:
         output.push_back(node(pbrt::TextureOp::Program));
         stackDepth = 0;
         input(source, type);
-        DCHECK(stackDepth == 1);
+
         CHECK(output.size() - begin - 1 < std::numeric_limits<uint32_t>::max());
         output[begin].metadata.y = static_cast<uint32_t>(output.size() - begin - 1);
         return begin;
@@ -135,11 +135,11 @@ public:
 
 private:
     std::vector<pbrt::TextureInstruction>& output;
-    AssetManager&                           assets;
-    RenderResourceManager&                  resources;
-    MaterialTable&                          materialTable;
-    std::unordered_set<std::string>         activeTextures;
-    uint32_t                                stackDepth = 0;
+    AssetManager&                          assets;
+    RenderResourceManager&                 resources;
+    MaterialTable&                         materialTable;
+    std::unordered_set<std::string>        activeTextures;
+    uint32_t                               stackDepth = 0;
 
     static pbrt::TextureInstruction node(pbrt::TextureOp op, const PbrtTextureMapping& mapping = {})
     {
@@ -155,7 +155,7 @@ private:
 
     void emit(const pbrt::TextureInstruction& instruction, uint32_t operands)
     {
-        DCHECK(stackDepth >= operands);
+
         stackDepth = stackDepth - operands + 1;
         CHECK(
             stackDepth <= pbrt::kTextureStackSize,
@@ -198,7 +198,7 @@ private:
             [&]<class T>(const T& model)
             {
                 pbrt::TextureInstruction instruction;
-                uint32_t                  operands = 0;
+                uint32_t                 operands = 0;
                 if constexpr (std::same_as<T, PbrtTextureAsset::Constant>)
                 {
                     pushInput(model.value);
@@ -323,12 +323,12 @@ public:
         append(assets.get(id).as<PbrtMaterial>());
         if (output[begin].model != pbrt::MaterialModel::Diffuse)
         {
-            DCHECK(stackDepth == 0);
+
             output[begin].instructionCount = 0;
         }
         else
         {
-            DCHECK(stackDepth == 1);
+
             output[begin].model = pbrt::MaterialModel::Diffuse;
             CHECK(output.size() - begin - 1 < std::numeric_limits<uint32_t>::max());
             output[begin].instructionCount = static_cast<uint32_t>(output.size() - begin - 1);
@@ -338,7 +338,7 @@ public:
     }
 
 private:
-    std::vector<pbrt::MaterialInstruction>&      output;
+    std::vector<pbrt::MaterialInstruction>&   output;
     AssetManager&                             assets;
     TextureCompiler                           textures;
     std::unordered_map<std::string, uint32_t> materialIndices;
@@ -366,7 +366,7 @@ private:
 
     void emit(const pbrt::MaterialInstruction& material, uint32_t operands = 0)
     {
-        DCHECK(stackDepth >= operands);
+
         stackDepth = stackDepth - operands + 1;
         CHECK(
             stackDepth <= pbrt::kMaterialStackSize,
@@ -569,7 +569,7 @@ void prepareLights(
                 {
                     const auto emissionIndex = static_cast<uint32_t>(data.areaEmissions.size());
                     auto&      draw          = data.draws[model.drawItemIndex];
-                    DCHECK(draw.firstAreaLight == kOfflineInvalidIndex);
+
                     draw.firstAreaLight       = static_cast<uint32_t>(data.lightTriangles.size());
                     const auto& item          = items[model.drawItemIndex];
                     const auto& mesh          = assets.get(item.mesh);
@@ -650,7 +650,7 @@ void prepareLights(
         );
     }
 }
-}
+}  // namespace
 
 const OfflineSceneData& OfflineScene::prepare(
     std::span<const DrawItem>         items,

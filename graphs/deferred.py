@@ -2,7 +2,7 @@ from falcor import RenderGraph
 
 from modules.editor import add_picking
 from modules.post_process import add_post_process
-from modules.scene import add_shadows, complete_raster_scene
+from modules.scene import add_shadows, complete_raster_scene, connect_shadow_resources
 
 def render_graph_Deferred(
     *,
@@ -25,9 +25,9 @@ def render_graph_Deferred(
         "diffuseOcclusion", "normalRoughness", "emissiveSpecularF90", "specularF0DiffuseFresnel", "sheenColorRoughness"
     ):
         graph.add_edge(f"gbuffer.{port}", f"deferred.{port}")
-    graph.add_edge(shadow, "deferred")
+    connect_shadow_resources(graph, shadow, "deferred")
     sceneColor = "deferred.color"
-    color = complete_raster_scene(graph, sceneColor, depth, ibl)
+    color = complete_raster_scene(graph, sceneColor, depth, shadow, ibl)
     color = add_post_process(graph, color, hdr, postProcess, bloom)
     add_picking(graph, depth, color)
     return graph

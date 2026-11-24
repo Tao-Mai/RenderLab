@@ -1,15 +1,15 @@
 #include "realtime_scene_data.slang"
 
-[[vk::binding(0, 0)]] StructuredBuffer<RayTracingHitData> objects;
-[[vk::binding(1, 0)]] StructuredBuffer<EmissiveTriangleTask> tasks;
-[[vk::binding(2, 0)]] RWByteAddressBuffer triangles;
+StructuredBuffer<RayTracingHitData> objects;
+StructuredBuffer<EmissiveTriangleTask> tasks;
+RWByteAddressBuffer triangles;
 
 struct PrepareParameters
 {
     uint triangleCount;
     uint taskCount;
 };
-[[vk::push_constant]] ConstantBuffer<PrepareParameters> parameters;
+ConstantBuffer<PrepareParameters> parameters;
 
 [shader("compute")]
 [numthreads(64, 1, 1)]

@@ -8,30 +8,27 @@
 
 namespace
 {
-constexpr char kInputBufferAlbedo[] = "Albedo";
-constexpr char kInputBufferColor[] = "Color";
-constexpr char kInputBufferEmission[] = "Emission";
-constexpr char kInputBufferWorldNormal[] = "WorldNormal";
-constexpr char kInputBufferLinearZ[] = "LinearZ";
+constexpr char kInputBufferAlbedo[]                      = "Albedo";
+constexpr char kInputBufferColor[]                       = "Color";
+constexpr char kInputBufferEmission[]                    = "Emission";
+constexpr char kInputBufferWorldNormal[]                 = "WorldNormal";
+constexpr char kInputBufferLinearZ[]                     = "LinearZ";
 constexpr char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
-constexpr char kInternalBufferPreviousLighting[] = "Previous Lighting";
-constexpr char kInternalBufferPreviousMoments[] = "Previous Moments";
-constexpr char kOutputBufferFilteredImage[] = "Filtered image";
+constexpr char kInternalBufferPreviousLighting[]         = "Previous Lighting";
+constexpr char kInternalBufferPreviousMoments[]          = "Previous Moments";
+constexpr char kOutputBufferFilteredImage[]              = "Filtered image";
 
-constexpr uint32_t kHistoryLayers = 2;
+constexpr uint32_t kHistoryLayers         = 2;
 constexpr uint32_t kLightingHistoryLayers = kHistoryLayers * kLightingLayerCount;
 }  // namespace
 
-SVGFPass::SVGFPass(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties) :
+SVGFPass::SVGFPass(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
     Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<SvgfSettings>(properties))
 {
     parameters.validate();
 }
 
-Falcor::Properties SVGFPass::getProperties() const
-{
-    return Falcor::serializeToProperties(parameters);
-}
+Falcor::Properties SVGFPass::getProperties() const { return Falcor::serializeToProperties(parameters); }
 
 void SVGFPass::setProperties(const Falcor::Properties& properties)
 {
@@ -44,8 +41,8 @@ void SVGFPass::setProperties(const Falcor::Properties& properties)
 
 Falcor::RenderPassReflection SVGFPass::reflect(const CompileData& compileData)
 {
-    const auto* input = compileData.connectedResources.getField(kInputBufferColor);
-    const auto extent = input ? Falcor::uint2{input->getWidth(), input->getHeight()} : Falcor::uint2{};
+    const auto* input  = compileData.connectedResources.getField(kInputBufferColor);
+    const auto  extent = input ? Falcor::uint2{input->getWidth(), input->getHeight()} : Falcor::uint2{};
 
     Falcor::RenderPassReflection reflection;
     reflection.addInput(kInputBufferColor, "Direct and indirect radiance")
@@ -57,20 +54,20 @@ Falcor::RenderPassReflection SVGFPass::reflect(const CompileData& compileData)
             .bindFlags(Falcor::ResourceBindFlags::ShaderResource);
 
     reflection.addInternal(kInternalBufferPreviousLinearZAndNormal, "Previous Linear Z and Packed Normal")
-        .format(Falcor::ResourceFormat::RGBA32Float)
+        .format(rhi::Format::RGBA32Float)
         .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess)
         .texture2D(extent.x, extent.y, 1, 1, kHistoryLayers);
     reflection.addInternal(kInternalBufferPreviousLighting, "Previous Filtered Lighting")
-        .format(Falcor::ResourceFormat::RGBA32Float)
+        .format(rhi::Format::RGBA32Float)
         .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess)
         .texture2D(extent.x, extent.y, 1, 1, kLightingHistoryLayers);
     reflection.addInternal(kInternalBufferPreviousMoments, "Previous Moments")
-        .format(Falcor::ResourceFormat::RG32Float)
+        .format(rhi::Format::RG32Float)
         .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess)
         .texture2D(extent.x, extent.y, 1, 1, kLightingHistoryLayers);
 
     reflection.addOutput(kOutputBufferFilteredImage, "Denoised radiance")
-        .format(Falcor::ResourceFormat::RGBA16Float)
+        .format(rhi::Format::RGBA16Float)
         .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess)
         .texture2D(extent.x, extent.y);
     return reflection;
@@ -79,24 +76,29 @@ Falcor::RenderPassReflection SVGFPass::reflect(const CompileData& compileData)
 void SVGFPass::compile(Falcor::RenderContext*, const CompileData& compileData)
 {
     const auto* input = compileData.connectedResources.getField(kInputBufferColor);
-    DCHECK(input);
-    const auto width = input->getWidth() ? input->getWidth() : compileData.defaultTexDims.x;
+
+    const auto width  = input->getWidth() ? input->getWidth() : compileData.defaultTexDims.x;
     const auto height = input->getHeight() ? input->getHeight() : compileData.defaultTexDims.y;
 
-    constexpr auto kSignalUsage = Falcor::ResourceBindFlags::UnorderedAccess | Falcor::ResourceBindFlags::ShaderResource;
+
+    rhi::TextureDesc desc;
+    desc.size   = {width, height, 1};
+    desc.format = rhi::Format::RGBA32Float;
+    desc.usage  = rhi::TextureUsage::UnorderedAccess | rhi::TextureUsage::ShaderResource;
     for (auto* images : {&reprojected, &scratch})
         for (auto& image : *images)
-            image = mpDevice->createTexture2D(width, height, Falcor::ResourceFormat::RGBA32Float, 1, 1, kSignalUsage);
-    historyLength = mpDevice->createTexture2D(
-        width, height, Falcor::ResourceFormat::R32Float, kHistoryLayers, 1, Falcor::ResourceBindFlags::UnorderedAccess
-    );
-
+            rhiCheck(mpDevice->createTexture(desc, nullptr, image.writeRef()));
+    desc.type        = rhi::TextureType::Texture2DArray;
+    desc.arrayLength = kHistoryLayers;
+    desc.format      = rhi::Format::R32Float;
+    desc.usage       = rhi::TextureUsage::UnorderedAccess;
+    rhiCheck(mpDevice->createTexture(desc, nullptr, historyLength.writeRef()));
     resourcesBound = false;
 }
 
 void SVGFPass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
 {
-    auto&       cache    = *renderCommands->vulkanResources;
+    auto&       cache    = *renderCommands->gpuResources;
     auto&       commands = *renderCommands->commands;
     const auto& frame    = *renderCommands;
 

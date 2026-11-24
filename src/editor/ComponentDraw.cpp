@@ -28,14 +28,8 @@ bool drawField(const char* label, double& value)
 }
 
 bool drawField(const char* label, std::string& value) { return ImGui::InputText(label, &value); }
-bool drawField(const char* label, glm::vec2& value)
-{
-    return ImGui::DragFloat2(label, glm::value_ptr(value), 0.05f);
-}
-bool drawField(const char* label, glm::vec3& value)
-{
-    return ImGui::DragFloat3(label, glm::value_ptr(value), 0.05f);
-}
+bool drawField(const char* label, glm::vec2& value) { return ImGui::DragFloat2(label, glm::value_ptr(value), 0.05f); }
+bool drawField(const char* label, glm::vec3& value) { return ImGui::DragFloat3(label, glm::value_ptr(value), 0.05f); }
 bool drawField(const char* label, glm::vec4& value) { return ImGui::DragFloat4(label, glm::value_ptr(value), 0.05f); }
 bool drawField(const char* label, glm::quat& value)
 {
@@ -81,8 +75,8 @@ ComponentDrawResult drawFields(TransformComponent& transform)
     {
         constexpr float kMinimumEditableScale = 0.001f;
         for (glm::length_t axis = 0; axis < 3; ++axis)
-            transform.scale[axis] = std::copysign(std::max(std::abs(transform.scale[axis]), kMinimumEditableScale),
-                                                transform.scale[axis]);
+            transform.scale[axis] =
+                std::copysign(std::max(std::abs(transform.scale[axis]), kMinimumEditableScale), transform.scale[axis]);
         result.edited = true;
     }
     return result;
@@ -90,69 +84,90 @@ ComponentDrawResult drawFields(TransformComponent& transform)
 
 namespace
 {
-ComponentDrawResult drawOfflineEmission(PbrtLightEmission& emission)
-{
-    ComponentDrawResult result;
-    std::visit([&]<class Spectrum>(Spectrum& spectrum)
+    ComponentDrawResult drawOfflineEmission(PbrtLightEmission& emission)
     {
-        if constexpr (std::same_as<Spectrum, PbrtRgbSpectrum>)
-        {
-            ImGui::Text("Color space: %s", spectrum.colorSpace.c_str());
-            result.edited |= ImGui::DragScalarN("Spectrum RGB", ImGuiDataType_Double,
-                glm::value_ptr(spectrum.value), 3, 0.01f);
-        }
-        else if constexpr (std::same_as<Spectrum, PbrtConstantSpectrum>)
-            result.edited |= drawField("Spectrum value", spectrum.value);
-        else if constexpr (std::same_as<Spectrum, PbrtBlackbodySpectrum>)
-            result.edited |= drawField("Temperature (K)", spectrum.temperature);
-        else if constexpr (std::same_as<Spectrum, PbrtNamedSpectrum>)
-            ImGui::Text("Spectrum: %s", spectrum.name.c_str());
-        else if constexpr (std::same_as<Spectrum, PbrtSpectrumFile>)
-            ImGui::Text("Spectrum: %s", spectrum.file.path.string().c_str());
-        else
-            ImGui::TextUnformatted("Sampled spectrum");
-    }, emission.spectrum);
-    result.edited |= drawField("Emission scale", emission.scale);
-    if (emission.power)
-        result.edited |= drawField("Power (lm)", *emission.power);
-    if (emission.illuminance)
-        result.edited |= drawField("Illuminance (lux)", *emission.illuminance);
-    if (emission.image)
-        ImGui::Text("Emission image: %s", emission.image->source.path.string().c_str());
-    return result;
-}
-
-ComponentDrawResult drawLightFields(LightComponent& light, float& strength, const char* intensityLabel)
-{
-    if (light.offlineEmission)
-    {
-        auto result = drawOfflineEmission(*light.offlineEmission);
-        result.edited |= drawField("Enabled", light.enabled);
+        ComponentDrawResult result;
+        std::visit(
+            [&]<class Spectrum>(Spectrum& spectrum)
+            {
+                if constexpr (std::same_as<Spectrum, PbrtRgbSpectrum>)
+                {
+                    ImGui::Text("Color space: %s", spectrum.colorSpace.c_str());
+                    result.edited |= ImGui::DragScalarN(
+                        "Spectrum RGB",
+                        ImGuiDataType_Double,
+                        glm::value_ptr(spectrum.value),
+                        3,
+                        0.01f
+                    );
+                }
+                else if constexpr (std::same_as<Spectrum, PbrtConstantSpectrum>)
+                    result.edited |= drawField("Spectrum value", spectrum.value);
+                else if constexpr (std::same_as<Spectrum, PbrtBlackbodySpectrum>)
+                    result.edited |= drawField("Temperature (K)", spectrum.temperature);
+                else if constexpr (std::same_as<Spectrum, PbrtNamedSpectrum>)
+                    ImGui::Text("Spectrum: %s", spectrum.name.c_str());
+                else if constexpr (std::same_as<Spectrum, PbrtSpectrumFile>)
+                    ImGui::Text("Spectrum: %s", spectrum.file.path.string().c_str());
+                else
+                    ImGui::TextUnformatted("Sampled spectrum");
+            },
+            emission.spectrum
+        );
+        result.edited |= drawField("Emission scale", emission.scale);
+        if (emission.power)
+            result.edited |= drawField("Power (lm)", *emission.power);
+        if (emission.illuminance)
+            result.edited |= drawField("Illuminance (lux)", *emission.illuminance);
+        if (emission.image)
+            ImGui::Text("Emission image: %s", emission.image->source.path.string().c_str());
         return result;
     }
-    ComponentDrawResult result;
-    result.edited = ImGui::ColorEdit3("Color", glm::value_ptr(light.color));
-    result.edited = ImGui::DragFloat(intensityLabel, &strength, 1.0f, 0.0f,
-        std::numeric_limits<float>::max(), "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
-    result.edited = drawField("Enabled", light.enabled) || result.edited;
-    result.edited = drawField("Cast Shadow", light.castShadow) || result.edited;
-    return result;
-}
 
-ComponentDrawResult drawLocalLightFields(LocalLightComponent& light)
-{
-    auto result = drawLightFields(light, light.luminousIntensity, "Luminous intensity (cd)");
-    if (!light.offlineEmission)
-        result.edited = ImGui::DragFloat("Range (m)", &light.range, 0.1f, 0.01f, 100000.0f,
-            "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
-    return result;
-}
-}
+    ComponentDrawResult drawLightFields(LightComponent& light, float& strength, const char* intensityLabel)
+    {
+        if (light.offlineEmission)
+        {
+            auto result = drawOfflineEmission(*light.offlineEmission);
+            result.edited |= drawField("Enabled", light.enabled);
+            return result;
+        }
+        ComponentDrawResult result;
+        result.edited = ImGui::ColorEdit3("Color", glm::value_ptr(light.color));
+        result.edited = ImGui::DragFloat(
+                            intensityLabel,
+                            &strength,
+                            1.0f,
+                            0.0f,
+                            std::numeric_limits<float>::max(),
+                            "%.3f",
+                            ImGuiSliderFlags_AlwaysClamp
+                        ) ||
+            result.edited;
+        result.edited = drawField("Enabled", light.enabled) || result.edited;
+        result.edited = drawField("Cast Shadow", light.castShadow) || result.edited;
+        return result;
+    }
 
-ComponentDrawResult drawFields(PointLightComponent& light)
-{
-    return drawLocalLightFields(light);
-}
+    ComponentDrawResult drawLocalLightFields(LocalLightComponent& light)
+    {
+        auto result = drawLightFields(light, light.luminousIntensity, "Luminous intensity (cd)");
+        if (!light.offlineEmission)
+            result.edited = ImGui::DragFloat(
+                                "Range (m)",
+                                &light.range,
+                                0.1f,
+                                0.01f,
+                                100000.0f,
+                                "%.3f",
+                                ImGuiSliderFlags_AlwaysClamp
+                            ) ||
+                result.edited;
+        return result;
+    }
+}  // namespace
+
+ComponentDrawResult drawFields(PointLightComponent& light) { return drawLocalLightFields(light); }
 
 ComponentDrawResult drawFields(DirectionalLightComponent& light)
 {
@@ -161,30 +176,44 @@ ComponentDrawResult drawFields(DirectionalLightComponent& light)
 
 ComponentDrawResult drawFields(RectAreaLightComponent& light)
 {
-    auto result = drawLocalLightFields(light);
-    result.edited = ImGui::DragFloat2("Area Size (m)", glm::value_ptr(light.areaSize), 0.05f,
-        0.01f, 100000.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp) || result.edited;
+    auto result   = drawLocalLightFields(light);
+    result.edited = ImGui::DragFloat2(
+                        "Area Size (m)",
+                        glm::value_ptr(light.areaSize),
+                        0.05f,
+                        0.01f,
+                        100000.0f,
+                        "%.3f",
+                        ImGuiSliderFlags_AlwaysClamp
+                    ) ||
+        result.edited;
     return result;
 }
 
 ComponentDrawResult drawFields(SpotLightComponent& light)
 {
-    auto result = drawLocalLightFields(light);
-    float inner = glm::degrees(std::acos(std::clamp(light.cosInner, -1.0f, 1.0f)));
-    float outer = glm::degrees(std::acos(std::clamp(light.cosOuter, -1.0f, 1.0f)));
-    if (ImGui::DragFloat("Inner Angle", &inner, 0.25f, 0.0f, outer,
-        "%.1f deg", ImGuiSliderFlags_AlwaysClamp))
+    auto  result = drawLocalLightFields(light);
+    float inner  = glm::degrees(std::acos(std::clamp(light.cosInner, -1.0f, 1.0f)));
+    float outer  = glm::degrees(std::acos(std::clamp(light.cosOuter, -1.0f, 1.0f)));
+    if (ImGui::DragFloat("Inner Angle", &inner, 0.25f, 0.0f, outer, "%.1f deg", ImGuiSliderFlags_AlwaysClamp))
     {
         light.cosInner = std::cos(glm::radians(inner));
-        result.edited = true;
+        result.edited  = true;
     }
     constexpr float kMinimumOuterAngle = 0.1f;
-    const float maximumOuterAngle = light.offlineEmission ? 179.0f : 89.0f;
-    if (ImGui::DragFloat("Outer Angle", &outer, 0.25f, std::max(inner, kMinimumOuterAngle), maximumOuterAngle,
-        "%.1f deg", ImGuiSliderFlags_AlwaysClamp))
+    const float     maximumOuterAngle  = light.offlineEmission ? 179.0f : 89.0f;
+    if (ImGui::DragFloat(
+            "Outer Angle",
+            &outer,
+            0.25f,
+            std::max(inner, kMinimumOuterAngle),
+            maximumOuterAngle,
+            "%.1f deg",
+            ImGuiSliderFlags_AlwaysClamp
+        ))
     {
         light.cosOuter = std::cos(glm::radians(outer));
-        result.edited = true;
+        result.edited  = true;
     }
     return result;
 }
@@ -213,188 +242,215 @@ ComponentDrawResult drawFields(ProjectionLightComponent& light)
     return result;
 }
 
-ComponentDrawResult drawFields(GoniometricLightComponent& light)
-{
-    return drawLocalLightFields(light);
-}
+ComponentDrawResult drawFields(GoniometricLightComponent& light) { return drawLocalLightFields(light); }
 
 MaterialOverride materialOverrideDiff(const GltfMaterial& stock, const GltfMaterial& preview)
 {
     MaterialOverride patch;
-    metadata::visitFields(patch, [&](const auto& field, auto& value)
-    {
-        using Field = std::remove_cvref_t<decltype(value)>;
-        if constexpr (IsOptional<Field>)
+    metadata::visitFields(
+        patch,
+        [&](const auto& field, auto& value)
         {
-            if (field.get(preview) != field.get(stock))
-                value = field.get(preview);
+            using Field = std::remove_cvref_t<decltype(value)>;
+            if constexpr (IsOptional<Field>)
+            {
+                if (field.get(preview) != field.get(stock))
+                    value = field.get(preview);
+            }
         }
-    });
+    );
     return patch;
 }
 
 bool hasMaterialOverrides(const MaterialOverride& patch)
 {
     bool hasOverrides = false;
-    metadata::visitFields(patch, [&](const auto&, const auto& value)
-    {
-        using Field = std::remove_cvref_t<decltype(value)>;
-        if constexpr (IsOptional<Field>)
-            hasOverrides |= value.has_value();
-    });
+    metadata::visitFields(
+        patch,
+        [&](const auto&, const auto& value)
+        {
+            using Field = std::remove_cvref_t<decltype(value)>;
+            if constexpr (IsOptional<Field>)
+                hasOverrides |= value.has_value();
+        }
+    );
     return hasOverrides;
 }
 
 namespace
 {
-bool drawMeshSelection(RenderComponent& render, const AssetManager& assets)
-{
-    auto ids = assets.loadedIds<MeshAsset>();
-    ids.insert(ids.end(), {BuiltinAssets::Mesh::cube, BuiltinAssets::Mesh::sphere,
-                          BuiltinAssets::Mesh::plane, BuiltinAssets::Mesh::arrow, BuiltinAssets::Mesh::kCone});
-    std::ranges::sort(ids, {}, &MeshAsset::ID::value);
-    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
-
-    bool edited = false;
-    if (!ImGui::BeginCombo("Mesh", render.meshId.c_str())) return false;
-    for (const auto& id : ids)
+    bool drawMeshSelection(RenderComponent& render, const AssetManager& assets)
     {
-        const bool selected = id == render.meshId;
-        if (ImGui::Selectable(id.c_str(), selected) && !selected)
-        {
-            render.meshId = id;
-            render.materialOverrides.clear();
-            edited = true;
-        }
-        if (selected) ImGui::SetItemDefaultFocus();
-    }
-    ImGui::EndCombo();
-    return edited;
-}
-
-bool drawMaterialFields(GltfMaterial& material)
-{
-    bool edited = false;
-    DCHECK(material.workflow.has_value());
-    const bool sgWorkflow = *material.workflow == MaterialWorkflow::SpecularGlossiness;
-    ImGui::Text("Workflow: %s", sgWorkflow ? "Specular / Glossiness" : "Metallic / Roughness");
-    if (sgWorkflow)
-    {
-        DCHECK(material.specularGlossiness.has_value());
-        auto& sg = *material.specularGlossiness;
-        edited |= ImGui::ColorEdit4("Diffuse", glm::value_ptr(sg.diffuseFactor));
-        edited |= ImGui::ColorEdit3("Specular", glm::value_ptr(sg.specularFactor));
-        edited |= ImGui::DragFloat(
-            "Glossiness",
-            &sg.glossinessFactor,
-            0.01f,
-            0.0f,
-            1.0f,
-            "%.3f",
-            ImGuiSliderFlags_AlwaysClamp
+        auto ids = assets.loadedIds<MeshAsset>();
+        ids.insert(
+            ids.end(),
+            {BuiltinAssets::Mesh::cube,
+             BuiltinAssets::Mesh::sphere,
+             BuiltinAssets::Mesh::plane,
+             BuiltinAssets::Mesh::arrow,
+             BuiltinAssets::Mesh::kCone}
         );
-        ImGui::Text("Diffuse: %s", sg.diffuseTexture ? sg.diffuseTexture->textureID.c_str() : "None");
-        ImGui::Text(
-            "Specular / glossiness: %s",
-            sg.specularGlossinessTexture ? sg.specularGlossinessTexture->textureID.c_str() : "None"
-        );
-    }
-    else
-    {
-        glm::vec4 baseColor = material.baseColorFactor.value_or(glm::vec4{1.0f});
-        if (ImGui::ColorEdit4("Base Color", glm::value_ptr(baseColor)))
-        {
-            material.baseColorFactor = baseColor;
-            edited                   = true;
-        }
-    }
+        std::ranges::sort(ids, {}, &MeshAsset::ID::value);
+        ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
 
-    bool doubleSided = material.doubleSided.value_or(true);
-    if (ImGui::Checkbox("Double Sided", &doubleSided))
-    {
-        material.doubleSided = doubleSided;
-        edited = true;
-    }
-
-    const auto drawFactor = [&](const char* label, std::optional<float>& field, float defaultValue)
-    {
-        float value = field.value_or(defaultValue);
-        if (!ImGui::DragFloat(label, &value, 0.01f, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp))
+        bool edited = false;
+        if (!ImGui::BeginCombo("Mesh", render.meshId.c_str()))
             return false;
-
-        field = value;
-        return true;
-    };
-    if (!sgWorkflow)
-    {
-        edited = drawFactor("Metallic", material.metallic, 0.0f) || edited;
-        edited = drawFactor("Roughness", material.roughness, 1.0f) || edited;
-    }
-    edited = drawFactor("AO", material.ao, 1.0f) || edited;
-
-    constexpr const char* kAlphaModes[] = {"OPAQUE", "MASK", "BLEND"};
-    const std::string alphaMode = material.alphaMode.value_or("OPAQUE");
-    if (ImGui::BeginCombo("Alpha Mode", alphaMode.c_str()))
-    {
-        for (const auto* mode : kAlphaModes)
+        for (const auto& id : ids)
         {
-            const bool selected = alphaMode == mode;
-            if (ImGui::Selectable(mode, selected) && !selected)
+            const bool selected = id == render.meshId;
+            if (ImGui::Selectable(id.c_str(), selected) && !selected)
             {
-                material.alphaMode = mode;
+                render.meshId = id;
+                render.materialOverrides.clear();
                 edited = true;
             }
             if (selected)
                 ImGui::SetItemDefaultFocus();
         }
         ImGui::EndCombo();
+        return edited;
     }
-    if (material.alphaMode.value_or("OPAQUE") == "MASK")
-        edited = drawFactor("Alpha Cutoff", material.alphaCutoff, 0.5f) || edited;
 
-    glm::vec3 emissive = material.emissive.value_or(glm::vec3{0.0f});
-    if (ImGui::ColorEdit3("Emissive", glm::value_ptr(emissive), ImGuiColorEditFlags_Float))
+    bool drawMaterialFields(GltfMaterial& material)
     {
-        material.emissive = emissive;
-        edited = true;
-    }
+        bool edited = false;
 
-    ImGui::BeginDisabled(!material.normalTexture);
-    float normalScale = material.normalScale.value_or(1.0f);
-    if (ImGui::DragFloat("Normal Scale", &normalScale, 0.05f, 0.0f,
-                         std::numeric_limits<float>::max(), "%.3f", ImGuiSliderFlags_AlwaysClamp))
-    {
-        material.normalScale = normalScale;
-        edited               = true;
-    }
-    ImGui::EndDisabled();
+        const bool sgWorkflow = *material.workflow == MaterialWorkflow::SpecularGlossiness;
+        ImGui::Text("Workflow: %s", sgWorkflow ? "Specular / Glossiness" : "Metallic / Roughness");
+        if (sgWorkflow)
+        {
 
-    if (!sgWorkflow)
-    {
-        ImGui::Text("Albedo: %s", material.baseColorTexture ? material.baseColorTexture->textureID.c_str() : "None");
-        ImGui::Text("Metallic: %s", material.metallicTexture ? material.metallicTexture->textureID.c_str() : "None");
-        ImGui::Text("Roughness: %s", material.roughnessTexture ? material.roughnessTexture->textureID.c_str() : "None");
-    }
-    ImGui::Text("Normal: %s", material.normalTexture ? material.normalTexture->textureID.c_str() : "None");
-    ImGui::Text("Emissive: %s", material.emissiveTexture ? material.emissiveTexture->textureID.c_str() : "None");
-    ImGui::Text("AO: %s", material.aoTexture ? material.aoTexture->textureID.c_str() : "None");
+            auto& sg = *material.specularGlossiness;
+            edited |= ImGui::ColorEdit4("Diffuse", glm::value_ptr(sg.diffuseFactor));
+            edited |= ImGui::ColorEdit3("Specular", glm::value_ptr(sg.specularFactor));
+            edited |= ImGui::DragFloat(
+                "Glossiness",
+                &sg.glossinessFactor,
+                0.01f,
+                0.0f,
+                1.0f,
+                "%.3f",
+                ImGuiSliderFlags_AlwaysClamp
+            );
+            ImGui::Text("Diffuse: %s", sg.diffuseTexture ? sg.diffuseTexture->textureID.c_str() : "None");
+            ImGui::Text(
+                "Specular / glossiness: %s",
+                sg.specularGlossinessTexture ? sg.specularGlossinessTexture->textureID.c_str() : "None"
+            );
+        }
+        else
+        {
+            glm::vec4 baseColor = material.baseColorFactor.value_or(glm::vec4{1.0f});
+            if (ImGui::ColorEdit4("Base Color", glm::value_ptr(baseColor)))
+            {
+                material.baseColorFactor = baseColor;
+                edited                   = true;
+            }
+        }
 
-    edited = drawMaterialExtensions(material) || edited;
-    return edited;
-}
-}
+        bool doubleSided = material.doubleSided.value_or(true);
+        if (ImGui::Checkbox("Double Sided", &doubleSided))
+        {
+            material.doubleSided = doubleSided;
+            edited               = true;
+        }
+
+        const auto drawFactor = [&](const char* label, std::optional<float>& field, float defaultValue)
+        {
+            float value = field.value_or(defaultValue);
+            if (!ImGui::DragFloat(label, &value, 0.01f, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp))
+                return false;
+
+            field = value;
+            return true;
+        };
+        if (!sgWorkflow)
+        {
+            edited = drawFactor("Metallic", material.metallic, 0.0f) || edited;
+            edited = drawFactor("Roughness", material.roughness, 1.0f) || edited;
+        }
+        edited = drawFactor("AO", material.ao, 1.0f) || edited;
+
+        constexpr const char* kAlphaModes[] = {"OPAQUE", "MASK", "BLEND"};
+        const std::string     alphaMode     = material.alphaMode.value_or("OPAQUE");
+        if (ImGui::BeginCombo("Alpha Mode", alphaMode.c_str()))
+        {
+            for (const auto* mode : kAlphaModes)
+            {
+                const bool selected = alphaMode == mode;
+                if (ImGui::Selectable(mode, selected) && !selected)
+                {
+                    material.alphaMode = mode;
+                    edited             = true;
+                }
+                if (selected)
+                    ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        if (material.alphaMode.value_or("OPAQUE") == "MASK")
+            edited = drawFactor("Alpha Cutoff", material.alphaCutoff, 0.5f) || edited;
+
+        glm::vec3 emissive = material.emissive.value_or(glm::vec3{0.0f});
+        if (ImGui::ColorEdit3("Emissive", glm::value_ptr(emissive), ImGuiColorEditFlags_Float))
+        {
+            material.emissive = emissive;
+            edited            = true;
+        }
+
+        ImGui::BeginDisabled(!material.normalTexture);
+        float normalScale = material.normalScale.value_or(1.0f);
+        if (ImGui::DragFloat(
+                "Normal Scale",
+                &normalScale,
+                0.05f,
+                0.0f,
+                std::numeric_limits<float>::max(),
+                "%.3f",
+                ImGuiSliderFlags_AlwaysClamp
+            ))
+        {
+            material.normalScale = normalScale;
+            edited               = true;
+        }
+        ImGui::EndDisabled();
+
+        if (!sgWorkflow)
+        {
+            ImGui::Text(
+                "Albedo: %s",
+                material.baseColorTexture ? material.baseColorTexture->textureID.c_str() : "None"
+            );
+            ImGui::Text(
+                "Metallic: %s",
+                material.metallicTexture ? material.metallicTexture->textureID.c_str() : "None"
+            );
+            ImGui::Text(
+                "Roughness: %s",
+                material.roughnessTexture ? material.roughnessTexture->textureID.c_str() : "None"
+            );
+        }
+        ImGui::Text("Normal: %s", material.normalTexture ? material.normalTexture->textureID.c_str() : "None");
+        ImGui::Text("Emissive: %s", material.emissiveTexture ? material.emissiveTexture->textureID.c_str() : "None");
+        ImGui::Text("AO: %s", material.aoTexture ? material.aoTexture->textureID.c_str() : "None");
+
+        edited = drawMaterialExtensions(material) || edited;
+        return edited;
+    }
+}  // namespace
 
 ComponentDrawResult drawFields(RenderComponent& render)
 {
     ComponentDrawResult result;
-    const auto* assets = context().assetManager;
+    const auto*         assets = context().assetManager;
     if (!assets)
     {
         ImGui::TextDisabled("Assets unavailable");
         return result;
     }
 
-    result.edited    = drawMeshSelection(render, *assets);
+    result.edited = drawMeshSelection(render, *assets);
     if (render.offlineSurface)
     {
         auto& surface = *render.offlineSurface;
@@ -403,8 +459,10 @@ ComponentDrawResult drawFields(RenderComponent& render)
             result.edited |= drawField("Alpha", alpha->value);
         else
             ImGui::Text("Alpha texture: %s", std::get<PbrtTextureReference>(surface.alpha).id.c_str());
-        if (surface.insideMedium) ImGui::Text("Inside medium: %s", surface.insideMedium->c_str());
-        if (surface.outsideMedium) ImGui::Text("Outside medium: %s", surface.outsideMedium->c_str());
+        if (surface.insideMedium)
+            ImGui::Text("Inside medium: %s", surface.insideMedium->c_str());
+        if (surface.outsideMedium)
+            ImGui::Text("Outside medium: %s", surface.outsideMedium->c_str());
     }
     const auto* mesh = assets->find<MeshAsset>(render.meshId);
     if (!mesh)
@@ -420,8 +478,8 @@ ComponentDrawResult drawFields(RenderComponent& render)
         if (ImGui::TreeNodeEx("Material", ImGuiTreeNodeFlags_DefaultOpen, "Submesh %zu", index))
         {
             const auto& materialId = mesh->submeshes[index].materialId;
-            const auto* asset = assets->find<MaterialAsset>(materialId);
-            const auto* stock = dynamic_cast<const GltfMaterial*>(asset);
+            const auto* asset      = assets->find<MaterialAsset>(materialId);
+            const auto* stock      = dynamic_cast<const GltfMaterial*>(asset);
             ImGui::Text("Id: %s", materialId.c_str());
             if (stock)
             {
@@ -443,12 +501,17 @@ ComponentDrawResult drawFields(RenderComponent& render)
                 if (drawMaterialFields(preview))
                 {
                     auto patch = materialOverrideDiff(*stock, preview);
-                    if (hasMaterialOverrides(patch)) render.materialOverrides[submeshIndex] = std::move(patch);
-                    else render.materialOverrides.erase(submeshIndex);
+                    if (hasMaterialOverrides(patch))
+                        render.materialOverrides[submeshIndex] = std::move(patch);
+                    else
+                        render.materialOverrides.erase(submeshIndex);
                     result.edited = true;
                 }
             }
-            else ImGui::TextDisabled(asset ? "Offline material editing is not available" : "Material description not loaded");
+            else
+                ImGui::TextDisabled(
+                    asset ? "Offline material editing is not available" : "Material description not loaded"
+                );
 
             ImGui::TreePop();
         }
@@ -456,7 +519,7 @@ ComponentDrawResult drawFields(RenderComponent& render)
     }
     return result;
 }
-}
+}  // namespace component_draw
 
 ComponentDrawResult drawComponent(Component& component)
 {
@@ -468,13 +531,15 @@ ComponentDrawResult drawComponent(Component& component)
     static const auto drawers = []
     {
         std::unordered_map<std::type_index, Drawer> result;
-        metadata::visitRegisteredTypes<Component>([&]<class T>(const char* name)
-        {
-            result.emplace(typeid(T), Drawer{name, [](Component& value)
+        metadata::visitRegisteredTypes<Component>(
+            [&]<class T>(const char* name)
             {
-                return component_draw::drawFields(static_cast<T&>(value));
-            }});
-        });
+                result.emplace(
+                    typeid(T),
+                    Drawer{name, [](Component& value) { return component_draw::drawFields(static_cast<T&>(value)); }}
+                );
+            }
+        );
         return result;
     }();
 
@@ -485,8 +550,8 @@ ComponentDrawResult drawComponent(Component& component)
         return {};
     }
 
-    ComponentDrawResult result;
-    auto* light = dynamic_cast<LightComponent*>(&component);
+    ComponentDrawResult             result;
+    auto*                           light = dynamic_cast<LightComponent*>(&component);
     std::unique_ptr<LightComponent> replacement;
     ImGui::PushID(&component);
     if (ImGui::CollapsingHeader(found->second.name, ImGuiTreeNodeFlags_DefaultOpen))
@@ -495,23 +560,25 @@ ComponentDrawResult drawComponent(Component& component)
         {
             // The registered class name is also the inspector's type label.
             const auto label = [](std::string_view name)
-            {
-                return name.substr(0, name.size() - std::string_view{"LightComponent"}.size());
-            };
+            { return name.substr(0, name.size() - std::string_view{"LightComponent"}.size()); };
             const std::string preview{label(found->second.name)};
             if (ImGui::BeginCombo("Type", preview.c_str()))
             {
-                metadata::visitTypes(RealtimeLightTypes{}, [&]<class T>(const char* name)
-                {
-                    const bool selected = typeid(component) == typeid(T);
-                    const std::string itemLabel{label(name)};
-                    if (ImGui::Selectable(itemLabel.c_str(), selected) && !selected)
+                metadata::visitTypes(
+                    RealtimeLightTypes{},
+                    [&]<class T>(const char* name)
                     {
-                        replacement = std::make_unique<T>();
-                        result.edited = true;
+                        const bool        selected = typeid(component) == typeid(T);
+                        const std::string itemLabel{label(name)};
+                        if (ImGui::Selectable(itemLabel.c_str(), selected) && !selected)
+                        {
+                            replacement   = std::make_unique<T>();
+                            result.edited = true;
+                        }
+                        if (selected)
+                            ImGui::SetItemDefaultFocus();
                     }
-                    if (selected) ImGui::SetItemDefaultFocus();
-                });
+                );
                 ImGui::EndCombo();
             }
         }

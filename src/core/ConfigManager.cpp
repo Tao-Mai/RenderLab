@@ -28,24 +28,21 @@ std::filesystem::path resolveAgainst(const std::filesystem::path& baseDir, std::
 
 ConfigManager::ConfigManager() : sceneRenderMode(SceneRenderMode::Realtime) {}
 
-ConfigManager::~ConfigManager() { DCHECK(!inited); }
+ConfigManager::~ConfigManager() {}
 
 void ConfigManager::init()
 {
-    DCHECK(!inited);
-
     file      = std::filesystem::absolute(RENDERLAB_CONFIG_FILE).lexically_normal();
     configDir = file.parent_path();
     load();
     loadRenderer();
     loadCommands();
     loadEditor();
-    DEBUG_EXEC(inited = true);
 }
 
 void ConfigManager::shutdown() noexcept
 {
-    DCHECK(inited);
+
     asset_json::save(file, data);
     asset_json::save(
         resolvedPaths.renderer,
@@ -53,18 +50,17 @@ void ConfigManager::shutdown() noexcept
     );
     asset_json::save(resolvedPaths.editor, editor);
 
-    data               = {};
-    resolvedPaths      = {};
-    commands           = {};
-    editor             = {};
-    renderer           = {};
+    data          = {};
+    resolvedPaths = {};
+    commands      = {};
+    editor        = {};
+    renderer      = {};
     settings.clearOptions();
-    sceneRenderMode    = SceneRenderMode::Realtime;
+    sceneRenderMode = SceneRenderMode::Realtime;
     realtimeGraph.clear();
     offlineGraph.clear();
     file.clear();
     configDir.clear();
-    DEBUG_EXEC(inited = false);
 }
 
 const CommandConfig& ConfigManager::commandConfig() const noexcept { return commands; }
@@ -88,7 +84,8 @@ std::filesystem::path ConfigManager::renderGraphScript() const
 RenderPath ConfigManager::findRenderPath(std::string_view graphName) const
 {
     const auto found = std::ranges::find_if(
-        data.renderGraphs, [graphName](const auto& group) { return group.second.contains(graphName); }
+        data.renderGraphs,
+        [graphName](const auto& group) { return group.second.contains(graphName); }
     );
     CHECK(found != data.renderGraphs.end(), "unknown render graph '{}'", graphName);
     return found->first;
@@ -96,16 +93,16 @@ RenderPath ConfigManager::findRenderPath(std::string_view graphName) const
 
 nlohmann::json ConfigManager::getOptions() const
 {
-    const auto prefix = kRenderGraphOptionsPrefix + settings::encodeName(renderGraphName()) + ':';
-    const auto options = nlohmann::json(settings.getOptions());
+    const auto     prefix  = kRenderGraphOptionsPrefix + settings::encodeName(renderGraphName()) + ':';
+    const auto     options = nlohmann::json(settings.getOptions());
     nlohmann::json result{{"parameters", nlohmann::json::object()}, {"passes", nlohmann::json::object()}};
     for (const auto& [name, value] : options.items())
     {
         if (!name.starts_with(prefix) || value.is_null())
             continue;
 
-        const auto key = std::string_view{name}.substr(prefix.size());
-        auto* field = &result;
+        const auto key   = std::string_view{name}.substr(prefix.size());
+        auto*      field = &result;
         for (const auto part : key | std::views::split(':'))
         {
             CHECK(field->is_null() || field->is_object(), "conflicting option '{}'", name);
@@ -126,33 +123,32 @@ void ConfigManager::applyGraphParameters(const nlohmann::json& parameters)
 {
     CHECK(parameters.is_object(), "graph parameters must be an object");
     RenderFeature feature;
-    metadata::visitFields(feature, [&](const auto& field, auto& value)
-    {
-        if (const auto found = parameters.find(field.name); found != parameters.end())
-            Deserialize(*found, value);
-    });
+    metadata::visitFields(
+        feature,
+        [&](const auto& field, auto& value)
+        {
+            if (const auto found = parameters.find(field.name); found != parameters.end())
+                Deserialize(*found, value);
+        }
+    );
     CHECK(std::isfinite(feature.ambientCoefficient) && feature.ambientCoefficient >= 0.0f);
     renderer.feature = feature;
 }
 
 void ConfigManager::setEditorSize(int width, int height)
 {
-    DCHECK(inited);
+
     CHECK(width > 0 && height > 0);
 
-    editor.width = width;
+    editor.width  = width;
     editor.height = height;
 }
 
-void ConfigManager::setObjectPicking(bool enabled)
-{
-    DCHECK(inited);
-    editor.objectPicking = enabled;
-}
+void ConfigManager::setObjectPicking(bool enabled) { editor.objectPicking = enabled; }
 
 void ConfigManager::setInitialScene(AssetID<SceneAsset> id)
 {
-    DCHECK(inited);
+
     CHECK(!id.empty());
 
     data.initialScene = std::move(id);
@@ -160,23 +156,23 @@ void ConfigManager::setInitialScene(AssetID<SceneAsset> id)
 
 void ConfigManager::setRenderGraph(std::string_view name)
 {
-    DCHECK(inited);
 
-    const auto path = findRenderPath(name);
+
+    const auto path    = findRenderPath(name);
     const bool offline = sceneRenderMode == SceneRenderMode::Offline;
     CHECK(
         (path == RenderPath::OfflinePathTracing) == offline,
         "render graph '{}' does not match the scene render mode",
         name
     );
-    auto& active = offline ? offlineGraph : realtimeGraph;
-    active = name;
+    auto& active        = offline ? offlineGraph : realtimeGraph;
+    active              = name;
     renderer.renderPath = path;
 }
 
 void ConfigManager::setSceneRenderMode(SceneRenderMode mode)
 {
-    DCHECK(inited);
+
     sceneRenderMode     = mode;
     renderer.renderPath = findRenderPath(renderGraphName());
 }
@@ -200,7 +196,12 @@ void ConfigManager::load()
             const bool added = graphNames.insert(name).second;
             CHECK(added, "duplicate render graph '{}'", name);
             const auto script = resolveAgainst(configDir, scriptPath);
-            CHECK(std::filesystem::is_regular_file(script), "graph '{}' script is not a file: {}", name, script.string());
+            CHECK(
+                std::filesystem::is_regular_file(script),
+                "graph '{}' script is not a file: {}",
+                name,
+                script.string()
+            );
         }
     }
     resolvePaths();
@@ -222,10 +223,10 @@ void ConfigManager::loadCommands()
 
 void ConfigManager::resolvePaths()
 {
-    resolvedPaths.assets      = resolveAgainst(configDir, data.paths.assets);
-    resolvedPaths.commands    = resolveAgainst(configDir, data.paths.commands);
-    resolvedPaths.editor      = resolveAgainst(configDir, data.paths.editor);
-    resolvedPaths.renderer    = resolveAgainst(configDir, data.paths.renderer);
+    resolvedPaths.assets   = resolveAgainst(configDir, data.paths.assets);
+    resolvedPaths.commands = resolveAgainst(configDir, data.paths.commands);
+    resolvedPaths.editor   = resolveAgainst(configDir, data.paths.editor);
+    resolvedPaths.renderer = resolveAgainst(configDir, data.paths.renderer);
     CHECK(
         std::filesystem::is_regular_file(resolvedPaths.commands),
         "commands config is not a file: {}",
@@ -252,17 +253,21 @@ void ConfigManager::loadEditor()
 void ConfigManager::loadRenderer()
 {
     const auto rendererSettings = asset_json::load<RendererSettings>(resolvedPaths.renderer);
-    realtimeGraph = rendererSettings.realtimeGraph;
-    offlineGraph = rendererSettings.offlineGraph;
-    const auto realtimePath = findRenderPath(realtimeGraph);
-    CHECK(realtimePath != RenderPath::OfflinePathTracing, "'{}' cannot be selected as the realtime graph", realtimeGraph);
+    realtimeGraph               = rendererSettings.realtimeGraph;
+    offlineGraph                = rendererSettings.offlineGraph;
+    const auto realtimePath     = findRenderPath(realtimeGraph);
+    CHECK(
+        realtimePath != RenderPath::OfflinePathTracing,
+        "'{}' cannot be selected as the realtime graph",
+        realtimeGraph
+    );
     CHECK(
         findRenderPath(offlineGraph) == RenderPath::OfflinePathTracing,
         "'{}' cannot be selected as the offline graph",
         offlineGraph
     );
     settings.addOptions(rendererSettings.options);
-    const auto options = nlohmann::json(settings.getOptions());
+    const auto                 options = nlohmann::json(settings.getOptions());
     constexpr std::string_view kPrefix = kRenderGraphOptionsPrefix;
     for (const auto& [name, value] : options.items())
     {

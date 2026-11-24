@@ -11,9 +11,20 @@
 #define SHADOW_TYPE_RECT_AREA 2
 #define SHADOW_TYPE_SPOT 3
 
+#if SHADOW_TYPE == SHADOW_TYPE_POINT
+StructuredBuffer<PointShadowData> shadowData;
+#elif SHADOW_TYPE == SHADOW_TYPE_DIRECTIONAL
+StructuredBuffer<DirectionalShadowData> shadowData;
+#elif SHADOW_TYPE == SHADOW_TYPE_RECT_AREA
+StructuredBuffer<RectAreaShadowData> shadowData;
+#elif SHADOW_TYPE == SHADOW_TYPE_SPOT
+StructuredBuffer<SpotShadowData> shadowData;
+#else
+#error Unsupported SHADOW_TYPE
+#endif
+
 struct VertexInput
 {
-    [[vk::location(0)]]
     float3 position : POSITION;
 };
 
@@ -22,11 +33,10 @@ struct PushConstants
     float4x4 model;
     uint lightIdx;
     uint cascadeIndex;
-    uint padding1;
+    uint faceIndex;
     uint padding2;
 };
 
-[[vk::push_constant]]
 ConstantBuffer<PushConstants> pushConstants;
 
 struct VertexOutput
@@ -38,26 +48,18 @@ struct VertexOutput
 };
 
 [shader("vertex")]
-VertexOutput vertMain(VertexInput input
-#if SHADOW_TYPE == SHADOW_TYPE_POINT
-    , uint viewID : SV_ViewID
-#endif
-)
+VertexOutput vertMain(VertexInput input)
 {
     VertexOutput output;
     float4 worldPosition = mul(pushConstants.model, float4(input.position, 1.0));
     const LightData light = lights[pushConstants.lightIdx];
 #if SHADOW_TYPE == SHADOW_TYPE_POINT
-    output.position = mul(pointShadowData[light.shadowIdx].vp[viewID], worldPosition);
+    output.position = mul(shadowData[light.shadowIdx].vp[pushConstants.faceIndex], worldPosition);
     output.worldPosition = worldPosition.xyz;
 #elif SHADOW_TYPE == SHADOW_TYPE_DIRECTIONAL
-    output.position = mul(directionalShadowData[light.shadowIdx].cascades[pushConstants.cascadeIndex].vp, worldPosition);
-#elif SHADOW_TYPE == SHADOW_TYPE_RECT_AREA
-    output.position = mul(rectAreaShadowData[light.shadowIdx].vp, worldPosition);
-#elif SHADOW_TYPE == SHADOW_TYPE_SPOT
-    output.position = mul(spotShadowData[light.shadowIdx].vp, worldPosition);
+    output.position = mul(shadowData[light.shadowIdx].cascades[pushConstants.cascadeIndex].vp, worldPosition);
 #else
-#error Unsupported SHADOW_TYPE
+    output.position = mul(shadowData[light.shadowIdx].vp, worldPosition);
 #endif
     return output;
 }

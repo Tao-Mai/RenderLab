@@ -1,7 +1,5 @@
 #pragma once
 
-#include "core/Debug.h"
-
 #include <cstdlib>
 #include <format>
 #include <string>
@@ -21,7 +19,6 @@
 #undef LOG
 #undef VLOG
 #undef DLOG
-#undef DCHECK
 
 namespace logger
 {
@@ -37,42 +34,27 @@ namespace detail
     void logMessage(google::LogSeverity severity, const char* file, int line, std::string_view message);
 
     template <class... Args>
-    void log(
-        google::LogSeverity         severity,
-        const char*                 file,
-        int                         line,
-        std::format_string<Args...> fmt,
-        Args&&...                   args)
+    void log(google::LogSeverity severity, const char* file, int line, std::format_string<Args...> fmt, Args&&... args)
     {
         logMessage(severity, file, line, std::format(fmt, std::forward<Args>(args)...));
     }
 
     template <class... Args>
-    [[noreturn]] void fatal(
-        const char*                 file,
-        int                         line,
-        std::format_string<Args...> fmt,
-        Args&&...                   args)
+    [[noreturn]] void fatal(const char* file, int line, std::format_string<Args...> fmt, Args&&... args)
     {
-        google::LogMessage(file, line, google::GLOG_FATAL).stream()
-            << std::format(fmt, std::forward<Args>(args)...);
+        google::LogMessage(file, line, google::GLOG_FATAL).stream() << std::format(fmt, std::forward<Args>(args)...);
         std::abort();
     }
 
     template <class... Args>
-    [[noreturn]] void checkFail(
-        const char*                 file,
-        int                         line,
-        const char*                 condition,
-        std::format_string<Args...> fmt = "",
-        Args&&...                   args)
+    [[noreturn]] void
+    checkFail(const char* file, int line, const char* condition, std::format_string<Args...> fmt = "", Args&&... args)
     {
         google::LogMessage(file, line, google::GLOG_FATAL).stream()
-            << "Check failed: (" << condition << ") "
-            << std::format(fmt, std::forward<Args>(args)...);
+            << "Check failed: (" << condition << ") " << std::format(fmt, std::forward<Args>(args)...);
         std::abort();
     }
-}
+}  // namespace detail
 
 class ScopedErrorLog
 {
@@ -80,7 +62,7 @@ public:
     explicit ScopedErrorLog(std::string& log);
     ~ScopedErrorLog();
 
-    ScopedErrorLog(const ScopedErrorLog&) = delete;
+    ScopedErrorLog(const ScopedErrorLog&)            = delete;
     ScopedErrorLog& operator=(const ScopedErrorLog&) = delete;
 
     [[nodiscard]] static bool isActive();
@@ -89,24 +71,19 @@ public:
 private:
     std::string* previous;
 };
-}
+}  // namespace logger
 
-#define LOG_INFO(...) \
-    ::logger::detail::log(google::GLOG_INFO, __FILE__, __LINE__, __VA_ARGS__)
-#define LOG_WARNING(...) \
-    ::logger::detail::log(google::GLOG_WARNING, __FILE__, __LINE__, __VA_ARGS__)
-#define LOG_ERROR(...) \
-    ::logger::detail::log(google::GLOG_ERROR, __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_INFO(...) ::logger::detail::log(google::GLOG_INFO, __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_WARNING(...) ::logger::detail::log(google::GLOG_WARNING, __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_ERROR(...) ::logger::detail::log(google::GLOG_ERROR, __FILE__, __LINE__, __VA_ARGS__)
 #define LOG_FATAL(...) ::logger::detail::fatal(__FILE__, __LINE__, __VA_ARGS__)
 
-#define CHECK(condition, ...)                                            \
-    do                                                                   \
-    {                                                                    \
-        if (!(condition))                                                \
-        {                                                                \
-            ::logger::detail::checkFail(                                 \
-                __FILE__, __LINE__, #condition __VA_OPT__(,) __VA_ARGS__); \
-        }                                                                \
-    } while (0)
-
-#define DCHECK(...) DEBUG_EXEC(CHECK(__VA_ARGS__))
+#define CHECK(condition, ...)                                                                                          \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        if (!(condition))                                                                                              \
+        {                                                                                                              \
+            ::logger::detail::checkFail(__FILE__, __LINE__, #condition __VA_OPT__(, ) __VA_ARGS__);                    \
+        }                                                                                                              \
+    }                                                                                                                  \
+    while (0)

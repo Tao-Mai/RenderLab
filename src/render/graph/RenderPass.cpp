@@ -11,18 +11,16 @@ RenderData::RenderData(
     const std::string& passName,
     ResourceCache&     resources,
     Dictionary&        dictionary,
-    const uint2&       defaultTexDims,
-    ResourceFormat     defaultTexFormat
+    const uint2&       defaultTexDims
 ) :
     mName(passName),
     mResources(resources),
     mDictionary(dictionary),
-    mDefaultTexDims(defaultTexDims),
-    mDefaultTexFormat(defaultTexFormat)
+    mDefaultTexDims(defaultTexDims)
 {
 }
 
-const ref<Resource>& RenderData::getResource(std::string_view fieldName) const
+const rhi::ComPtr<rhi::IResource>& RenderData::getResource(std::string_view fieldName) const
 {
     std::string qualifiedName;
     qualifiedName.reserve(mName.size() + 1 + fieldName.size());
@@ -30,14 +28,25 @@ const ref<Resource>& RenderData::getResource(std::string_view fieldName) const
     return mResources.getResource(qualifiedName);
 }
 
-ref<Texture> RenderData::getTexture(std::string_view name) const
+rhi::ComPtr<rhi::ITexture> RenderData::getTexture(std::string_view name) const
 {
     const auto& resource = getResource(name);
-    return resource ? resource->asTexture() : nullptr;
+    return rhi::ComPtr<rhi::ITexture>(static_cast<rhi::ITexture*>(resource.get()));
 }
 
-ref<RenderPass>
-RenderPass::create(std::string_view type, ref<Device> device, const Properties& properties, PluginManager& plugins)
+rhi::ComPtr<rhi::IBuffer> RenderData::getBuffer(std::string_view name) const
+{
+    return rhi::ComPtr<rhi::IBuffer>(static_cast<rhi::IBuffer*>(getResource(name).get()));
+}
+
+void RenderData::setBuffer(std::string_view name, rhi::IBuffer* buffer) const
+{
+    mResources.setResource(mName + "." + std::string(name), buffer);
+}
+
+ref<RenderPass> RenderPass::create(
+    std::string_view type, rhi::ComPtr<rhi::IDevice> device, const Properties& properties, PluginManager& plugins
+)
 {
     if (!plugins.hasClass<RenderPass>(type))
         plugins.loadPluginByName(type);

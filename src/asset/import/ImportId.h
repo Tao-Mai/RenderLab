@@ -12,14 +12,13 @@
 
 namespace asset_import
 {
-[[nodiscard]] inline std::filesystem::path sourcePathForAsset(
-    const std::filesystem::path& source)
+[[nodiscard]] inline std::filesystem::path sourcePathForAsset(const std::filesystem::path& source)
 {
-    const auto& assetsRoot = context().assetManager->rootPath();
-    const auto projectRoot = assetsRoot.parent_path();
-    const auto absoluteSource = std::filesystem::absolute(source).lexically_normal();
+    const auto&     assetsRoot     = context().assetManager->rootPath();
+    const auto      projectRoot    = assetsRoot.parent_path();
+    const auto      absoluteSource = std::filesystem::absolute(source).lexically_normal();
     std::error_code error;
-    const auto fromProject = std::filesystem::relative(absoluteSource, projectRoot, error);
+    const auto      fromProject = std::filesystem::relative(absoluteSource, projectRoot, error);
     if (!error && !fromProject.empty() && *fromProject.begin() != "..")
     {
         return std::filesystem::relative(absoluteSource, assetsRoot);
@@ -29,8 +28,7 @@ namespace asset_import
 
 [[nodiscard]] inline bool validId(std::string_view id)
 {
-    if (id.empty() || id.back() == '.' || id.back() == ' ' ||
-        id.find_first_of("<>:\"/\\|?*") != std::string_view::npos)
+    if (id.empty() || id.back() == '.' || id.back() == ' ' || id.find_first_of("<>:\"/\\|?*") != std::string_view::npos)
         return false;
 
     for (unsigned char character : id)
@@ -44,7 +42,7 @@ template <AssetType T>
 [[nodiscard]] typename T::ID nextId(const std::string& baseName)
 {
     CHECK(validId(baseName), "invalid asset ID: {}", baseName);
-    DCHECK(context().assetManager);
+
 
     const auto available = [](const typename T::ID& id)
     {

@@ -4,6 +4,6 @@
 #include "raytracing/offline/path_parameters.slang"
 
 struct PtParameters { PathParameters path; };
-[[vk::push_constant]] ConstantBuffer<PtParameters> parameters;
+ConstantBuffer<PtParameters> parameters;
 
 #endif

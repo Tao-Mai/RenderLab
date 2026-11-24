@@ -38,7 +38,7 @@ RenderLab --import-pbrt-scene <source>
 
 ## 离线路径
 
-Renderer 复用网格、图像、采样器和全局图像描述符，OfflineScene 准备材质与纹理数据。散射模型、参数传递和颜色近似见 [材质](pbrt/材质.md)。
+Renderer 复用网格、图像、采样器和全局图像绑定，OfflineScene 准备材质与纹理数据。散射模型、参数传递和颜色近似见 [材质](pbrt/材质.md)。
 
 离线算法在编辑器中选择 PT / BDPT，各自保存反弹配置。PT 默认 2 次散射，point / spot、distant 和 area 分别使用蓄水池，area 与 BRDF 采样执行 MIS；路径未命中时读取环境光。[BDPT](pbrt/BDPT.md) 默认 6 次散射，生成双向子路径并连接，包含光路到相机的 splat 和全路径 MIS。修改算法或采样参数时重新累积。网格实例共享 BLAS，TLAS 保持每帧完整构建。每个样本始终使用 Sobol 序列进行像素内抖动；每帧样本做算术平均，修改相机、几何、材质或光源时重新累积。各类 PBRT 光源已进入按类型划分的离线 GPU 数组，发光几何体按三角形展开，详见 [光源](pbrt/光源.md)。
 

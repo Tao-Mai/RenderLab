@@ -21,6 +21,6 @@ struct BdptParameters
     property bool powerHeuristic { get { return (flags & BdptBinding::kPowerHeuristic) != 0; } }
 };
 
-[[vk::push_constant]] ConstantBuffer<BdptParameters> parameters;
+ConstantBuffer<BdptParameters> parameters;
 
 #endif

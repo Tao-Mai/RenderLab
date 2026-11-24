@@ -1,17 +1,16 @@
-#include "render/device/ResourceBarriers.h"
 #include "passes/raytracing/bdpt/BdptBindings.h"
 #include "render/graph/RenderPass.h"
 
 #include "core/Logger.h"
 #include "passes/raytracing/bdpt/BdptSettings.h"
 
+#include <slang-rhi.h>
 #include "asset/AssetManager.h"
 #include "core/Context.h"
 #include "editor/PassEditor.h"
+#include "render/PreparedScene.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
-#include "render/PreparedScene.h"
-#include "render/device/VulkanContext.h"
 #include "render/graph/RenderPassStandardFlags.h"
 #include "render/raytracing/offline/OfflinePathTracing.h"
 #include "render/raytracing/offline/OfflineScene.h"
@@ -36,46 +35,31 @@ void BdptSettings::validate() const
 
 namespace
 {
-constexpr char kOutputColor[] = "color";
-constexpr uint32_t kMinShaderDepth = 4;
-constexpr uint32_t kTileSize = 128;
-constexpr uint32_t kMinTileSize = 8;
+constexpr char     kOutputColor[]      = "color";
+constexpr uint32_t kMinShaderDepth     = 4;
+constexpr uint32_t kTileSize           = 128;
+constexpr uint32_t kMinTileSize        = 8;
 constexpr uint32_t kTileReferenceDepth = 6;
-constexpr float kMinimumSceneRadius = 0.001f;
-constexpr float kSceneBoundsPadding = 1.001f;
-
-constexpr std::array kExtraBindings{
-    vk::DescriptorSetLayoutBinding{
-        .binding = BdptBinding::kSplats,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .descriptorCount = 1,
-        .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eCompute,
-    },
-    vk::DescriptorSetLayoutBinding{
-        .binding = BdptBinding::kLightDistribution,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .descriptorCount = 1,
-        .stageFlags = vk::ShaderStageFlagBits::eRaygenKHR,
-    },
-};
+constexpr float    kMinimumSceneRadius = 0.001f;
+constexpr float    kSceneBoundsPadding = 1.001f;
 
 struct alignas(16) BdptParameters
 {
     OfflinePathParameters path;
-    glm::vec4 sceneSphere;
-    glm::vec4 camera;
-    glm::uvec2 tileOffset;
-    float lightSamples;
-    uint32_t flags;
+    glm::vec4             sceneSphere;
+    glm::vec4             camera;
+    glm::uvec2            tileOffset;
+    float                 lightSamples;
+    uint32_t              flags;
 };
 static_assert(sizeof(BdptParameters) == 112);
 
 struct LightDistributionEntry
 {
-    uint32_t alias = 0;
-    float acceptance = 1.0f;
-    float probability = 0;
-    uint32_t padding = 0;
+    uint32_t alias       = 0;
+    float    acceptance  = 1.0f;
+    float    probability = 0;
+    uint32_t padding     = 0;
 };
 static_assert(sizeof(LightDistributionEntry) == 16);
 
@@ -83,13 +67,16 @@ class BDPT : public Falcor::RenderPass
 {
     FALCOR_PLUGIN_CLASS(BDPT, "BDPT", "Bidirectional path tracer.");
 
-    BDPT(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties) :
+    BDPT(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
         Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<BdptSettings>(properties))
     {
         parameters.validate();
     }
 
-    [[nodiscard]] Falcor::Properties getProperties() const override { return Falcor::serializeToProperties(parameters); }
+    [[nodiscard]] Falcor::Properties getProperties() const override
+    {
+        return Falcor::serializeToProperties(parameters);
+    }
 
     void setProperties(const Falcor::Properties& properties) override
     {
@@ -99,7 +86,7 @@ class BDPT : public Falcor::RenderPass
         parameters = std::move(next);
     }
 
-    static Falcor::ref<BDPT> create(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties)
+    static Falcor::ref<BDPT> create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
     {
         return Falcor::make_ref<BDPT>(std::move(device), properties);
     }
@@ -110,7 +97,7 @@ class BDPT : public Falcor::RenderPass
     {
         Falcor::RenderPassReflection reflection;
         reflection.addOutput(kOutputColor, "Path traced radiance")
-            .format(Falcor::ResourceFormat::RGBA16Float)
+            .format(rhi::Format::RGBA16Float)
             .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess);
         return reflection;
     }
@@ -119,33 +106,30 @@ class BDPT : public Falcor::RenderPass
     void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
 
     [[nodiscard]] float sampleProgress() const { return accumulatedProgress; }
-    [[nodiscard]] bool preparingPipeline() const { return pipeline == nullptr; }
+    [[nodiscard]] bool  preparingPipeline() const { return pipeline == nullptr; }
 
 private:
     BdptSettings parameters;
 
-    ResourceBarriers barriers;
     OfflinePathTracing tracer;
-    ResourceBarriers        lightAccesses;
-    void updateScene(VulkanResources& cache, const Falcor::RenderContext& execution, const Falcor::RenderData& renderData);
-    Falcor::ref<Falcor::Buffer> splatBuffer;
-    Falcor::ref<Falcor::Buffer> lightDistributionBuffer;
-    VulkanResources::BufferHandle splats;
-    VulkanResources::BufferHandle lightDistribution;
-    uint64_t lightDistributionRevision = 0;
+    bool               lightDistributionReady = false;
+    void updateScene(GpuResources& cache, const Falcor::RenderContext& execution, const Falcor::RenderData& renderData);
+    rhi::ComPtr<rhi::IBuffer>  splatBuffer;
+    rhi::ComPtr<rhi::IBuffer>  lightDistributionBuffer;
+    GpuResources::BufferHandle splats;
+    GpuResources::BufferHandle lightDistribution;
 
-    const RayTracingPipeline* pipeline = nullptr;
-    uint32_t shaderDepth = 0;
-    std::string shaderPath;
-    glm::vec4 sceneSphere{};
-    BdptSettings previousSettings;
-    float accumulatedProgress = 0;
-    uint32_t tileIndex = 0;
-    uint64_t processedPixels = 0;
+    const OfflineTracePipelineCache::Result* pipeline    = nullptr;
+    uint32_t                                 shaderDepth = 0;
+    glm::vec4                                sceneSphere{};
+    BdptSettings                             previousSettings;
+    float                                    accumulatedProgress = 0;
+    uint32_t                                 tileIndex           = 0;
+    uint64_t                                 processedPixels     = 0;
 
     void selectPipeline(const Falcor::RenderContext& context);
     void resetAccumulation();
-    void prepareLightDistribution(VulkanResources& cache, const Falcor::RenderContext& execution);
+    void prepareLightDistribution(GpuResources& cache, const Falcor::RenderContext& execution);
 };
 
 glm::vec4 computeSceneSphere(const Falcor::RenderContext& execution)
@@ -159,8 +143,8 @@ glm::vec4 computeSceneSphere(const Falcor::RenderContext& execution)
     for (const auto& item : items)
     {
         const auto bounds = context().assetManager->get(item.mesh).bounds.transformed(item.model);
-        minimum = glm::min(minimum, bounds.min);
-        maximum = glm::max(maximum, bounds.max);
+        minimum           = glm::min(minimum, bounds.min);
+        maximum           = glm::max(maximum, bounds.max);
     }
     const auto center = (minimum + maximum) * 0.5f;
     return {center, std::max(glm::length(maximum - center) * kSceneBoundsPadding, kMinimumSceneRadius)};
@@ -169,46 +153,40 @@ glm::vec4 computeSceneSphere(const Falcor::RenderContext& execution)
 glm::vec4 cameraSampling(const RenderView& view)
 {
     const auto& uniforms = view.uniforms;
-    const auto forward = glm::normalize(-glm::vec3{uniforms.view[0][2], uniforms.view[1][2], uniforms.view[2][2]});
-    const auto onImagePlane = [&](glm::vec2 ndc)
+    const auto  forward  = glm::normalize(-glm::vec3{uniforms.view[0][2], uniforms.view[1][2], uniforms.view[2][2]});
+    const auto  onImagePlane = [&](glm::vec2 ndc)
     {
         const auto homogeneous = uniforms.inverseViewProjection * glm::vec4{ndc, 1, 1};
-        const auto offset = glm::vec3{homogeneous} / homogeneous.w - glm::vec3{uniforms.cameraPosition};
+        const auto offset      = glm::vec3{homogeneous} / homogeneous.w - glm::vec3{uniforms.cameraPosition};
         return offset / glm::dot(offset, forward);
     };
     const auto corner = onImagePlane({-1, -1});
     return {forward, glm::length(glm::cross(onImagePlane({1, -1}) - corner, onImagePlane({-1, 1}) - corner))};
 }
 
+
 void BDPT::compile(Falcor::RenderContext* passContext, const CompileData& compileData)
 {
-    auto& cache = *passContext->vulkanResources;
+    auto&      cache  = *passContext->gpuResources;
     const auto extent = compileData.defaultTexDims;
-    tracer.compile(*passContext, extent, "bdpt_resolve", sizeof(BdptParameters), kExtraBindings);
+    tracer.compile(*passContext, extent, "bdpt_resolve");
 
-    constexpr auto kStorage = Falcor::ResourceBindFlags::UnorderedAccess;
-    splatBuffer = mpDevice->createBuffer(size_t{extent.x} * extent.y * sizeof(glm::uvec4), kStorage);
-    splats = cache.registerBuffer(splatBuffer);
-    barriers.clear();
-    barriers.add(splats, VulkanResources::MemoryAccess{
-                    vk::PipelineStageFlagBits2::eTransfer | vk::PipelineStageFlagBits2::eRayTracingShaderKHR |
-                        vk::PipelineStageFlagBits2::eComputeShader,
-                    vk::AccessFlagBits2::eTransferWrite | vk::AccessFlagBits2::eShaderStorageRead |
-                        vk::AccessFlagBits2::eShaderStorageWrite,
-                });
-    barriers.declare(cache);
-    lightDistributionBuffer = mpDevice->createBuffer(sizeof(LightDistributionEntry), kStorage);
+
+    rhi::BufferDesc desc;
+    desc.usage =
+        rhi::BufferUsage::ShaderResource | rhi::BufferUsage::UnorderedAccess | rhi::BufferUsage::CopyDestination;
+    desc.size = size_t(extent.x) * extent.y * sizeof(glm::uvec4);
+    rhiCheck(mpDevice->createBuffer(desc, nullptr, splatBuffer.writeRef()));
+    splats    = cache.registerBuffer(splatBuffer);
+    desc.size = sizeof(LightDistributionEntry);
+    rhiCheck(mpDevice->createBuffer(desc, nullptr, lightDistributionBuffer.writeRef()));
     lightDistribution = cache.registerBuffer(lightDistributionBuffer);
-    lightDistributionRevision = 0;
-    lightAccesses.clear();
-    lightAccesses.add(lightDistribution, vulkan_access::storageRead(vk::PipelineStageFlagBits2::eRayTracingShaderKHR));
-    lightAccesses.declare(cache);
-
+    tracer.setLightTracingBuffers(splats, lightDistribution);
+    lightDistributionReady = false;
     selectPipeline(*passContext);
     resetAccumulation();
-
-    tracer.writeStorageBuffer(cache, splats, BdptBinding::kSplats);
 }
+
 
 void BDPT::selectPipeline(const Falcor::RenderContext& context)
 {
@@ -216,74 +194,85 @@ void BDPT::selectPipeline(const Falcor::RenderContext& context)
     if (depth != shaderDepth)
     {
         shaderDepth = depth;
-        shaderPath = std::format("shaders/bdpt.depth{}.spv", depth);
-        pipeline = nullptr;
+        pipeline    = nullptr;
     }
     if (!pipeline)
-        pipeline = context.offlinePipelines->get(*context.vulkan, tracer.layout(), shaderPath, true);
+        pipeline = context.offlinePipelines->get(
+            *mpDevice,
+            *context.shaderManager,
+            context.shaderManager->getOrLoad("bdpt", {{"BDPT_MAX_DEPTH", std::to_string(shaderDepth)}}),
+            true
+        );
 }
+
 
 void BDPT::resetAccumulation()
 {
     tracer.resetAccumulation();
     accumulatedProgress = 0;
-    tileIndex = 0;
-    processedPixels = 0;
+    tileIndex           = 0;
+    processedPixels     = 0;
 }
 
-void BDPT::updateScene(VulkanResources& cache, const Falcor::RenderContext& execution, const Falcor::RenderData& renderData)
+
+void BDPT::updateScene(
+    GpuResources& cache, const Falcor::RenderContext& execution, const Falcor::RenderData& renderData
+)
 {
     const bool sceneChanged = tracer.prepareScene(cache, execution, renderData.getTexture(kOutputColor));
     selectPipeline(execution);
     const bool optionsChanged = parameters != previousSettings;
     if (optionsChanged)
     {
-        auto& dictionary = renderData.getDictionary();
+        auto&      dictionary = renderData.getDictionary();
         const auto flags = dictionary.getValue(Falcor::kRenderPassRefreshFlags, Falcor::RenderPassRefreshFlags::None);
         dictionary[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
     }
     if (sceneChanged || optionsChanged)
         resetAccumulation();
 
-    if (sceneChanged || lightDistributionRevision == 0)
+    if (sceneChanged || !lightDistributionReady)
         sceneSphere = computeSceneSphere(execution);
-    if (sceneChanged || lightDistributionRevision == 0 || parameters.lightSelection != previousSettings.lightSelection)
+    if (sceneChanged || !lightDistributionReady || parameters.lightSelection != previousSettings.lightSelection)
+    {
         prepareLightDistribution(cache, execution);
+        lightDistributionReady = true;
+    }
 
     previousSettings = parameters;
 }
 
+
 void BDPT::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
 {
-    auto&       cache     = *renderCommands->vulkanResources;
+    auto&       cache     = *renderCommands->gpuResources;
     auto&       commands  = *renderCommands->commands;
     const auto& execution = *renderCommands;
 
-    barriers.transition(cache, commands);
     updateScene(cache, execution, renderData);
     cache.recordUploads(commands);
-    lightAccesses.transition(cache, commands);
 
-    const auto bounds = tracer.viewportBounds(*execution.view);
+    const auto     bounds         = tracer.viewportBounds(*execution.view);
     const uint64_t viewportPixels = uint64_t(bounds.extent.width) * bounds.extent.height;
-    const bool trace = pipeline && viewportPixels > 0;
-    glm::uvec2 tileOffset{0};
-    vk::Extent2D batchExtent{};
-    uint32_t tileCount = 0;
-    float lightSamples = accumulatedProgress;
+    const bool     trace          = pipeline && viewportPixels > 0;
+    glm::uvec2     tileOffset{0};
+    Extent2D       batchExtent{};
+    uint32_t       tileCount    = 0;
+    float          lightSamples = accumulatedProgress;
 
     if (trace)
     {
         const auto depthScale = std::bit_ceil((parameters.maxBounces + kTileReferenceDepth - 1) / kTileReferenceDepth);
-        const auto tileSize = std::max(kMinTileSize, kTileSize / depthScale);
-        const auto columns = (bounds.extent.width + tileSize - 1) / tileSize;
-        const auto rows = (bounds.extent.height + tileSize - 1) / tileSize;
-        tileCount = columns * rows;
+        const auto tileSize   = std::max(kMinTileSize, kTileSize / depthScale);
+        const auto columns    = (bounds.extent.width + tileSize - 1) / tileSize;
+        const auto rows       = (bounds.extent.height + tileSize - 1) / tileSize;
+        tileCount             = columns * rows;
 
         const auto x = tileIndex % columns * tileSize;
         const auto y = tileIndex / columns * tileSize;
-        tileOffset = {uint32_t(bounds.offset.x) + x, uint32_t(bounds.offset.y) + y};
-        batchExtent = vk::Extent2D{std::min(tileSize, bounds.extent.width - x), std::min(tileSize, bounds.extent.height - y)};
+        tileOffset   = {uint32_t(bounds.offset.x) + x, uint32_t(bounds.offset.y) + y};
+        batchExtent =
+            Extent2D{std::min(tileSize, bounds.extent.width - x), std::min(tileSize, bounds.extent.height - y)};
         lightSamples = float(tracer.sampleCount()) +
             float(processedPixels + uint64_t(batchExtent.width) * batchExtent.height) / float(viewportPixels);
     }
@@ -295,12 +284,12 @@ void BDPT::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderDa
         flags |= BdptBinding::kPowerHeuristic;
 
     const BdptParameters constants{
-        .path = tracer.pathParameters(execution, parameters.maxBounces),
-        .sceneSphere = sceneSphere,
-        .camera = cameraSampling(*execution.view),
-        .tileOffset = tileOffset,
+        .path         = tracer.pathParameters(execution, parameters.maxBounces),
+        .sceneSphere  = sceneSphere,
+        .camera       = cameraSampling(*execution.view),
+        .tileOffset   = tileOffset,
         .lightSamples = lightSamples,
-        .flags = flags,
+        .flags        = flags,
     };
     tracer.render(
         cache,
@@ -319,7 +308,7 @@ void BDPT::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderDa
         if (++tileIndex == tileCount)
         {
             tracer.finishSample();
-            tileIndex = 0;
+            tileIndex       = 0;
             processedPixels = 0;
         }
     }
@@ -330,7 +319,8 @@ void BDPT::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderDa
 #endif
 }
 
-void BDPT::prepareLightDistribution(VulkanResources& cache, const Falcor::RenderContext& execution)
+
+void BDPT::prepareLightDistribution(GpuResources& cache, const Falcor::RenderContext& execution)
 {
     const auto&      scene    = *execution.scene->offlineScene;
     const bool       power    = parameters.lightSelection == BdptLightSelection::Power;
@@ -369,7 +359,6 @@ void BDPT::prepareLightDistribution(VulkanResources& cache, const Falcor::Render
 
     const auto count = weights.size();
     const auto bytes = std::max<size_t>(count, 1) * sizeof(LightDistributionEntry);
-    CHECK(bytes <= execution.vulkan->properties().limits.maxStorageBufferRange);
 
     const auto upload  = cache.allocateUpload(lightDistribution, bytes);
     auto*      entries = reinterpret_cast<LightDistributionEntry*>(upload.data.data());
@@ -407,13 +396,8 @@ void BDPT::prepareLightDistribution(VulkanResources& cache, const Falcor::Render
 
     if (count == 0)
         std::construct_at(entries);
-
-    if (lightDistributionRevision != cache.bufferRevision(lightDistribution))
-    {
-        tracer.bindStorageBuffer(cache, *execution.vulkan, lightDistribution, BdptBinding::kLightDistribution);
-        lightDistributionRevision = cache.bufferRevision(lightDistribution);
-    }
 }
+
 
 bool drawSettings(Falcor::Gui::Widgets& widgets, BdptSettings& settings, const BDPT& pass, const PassEditorContext&)
 {
@@ -429,7 +413,8 @@ bool drawSettings(Falcor::Gui::Widgets& widgets, BdptSettings& settings, const B
     edited |= widgets.dropdown("MIS heuristic", settings.misHeuristic, {"Balance", "Power (2)"});
     return edited;
 }
-}
+}  // namespace
+
 
 void BDPT::renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget)
 {

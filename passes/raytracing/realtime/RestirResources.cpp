@@ -1,16 +1,15 @@
 #include "passes/raytracing/realtime/RestirResources.h"
-#include "render/device/ResourceBarriers.h"
 
 #include "core/Logger.h"
 
 #include "passes/raytracing/realtime/RayTracingSettings.h"
 #include "passes/raytracing/realtime/RestirFrameParameters.h"
 
+#include <slang-rhi.h>
 #include "render/PreparedScene.h"
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
 #include "render/RendererConfig.h"
-#include "render/device/VulkanContext.h"
 #include "render/raytracing/PathTracingShader.h"
 #include "render/resources/MaterialTable.h"
 #include "render/resources/ShaderLayout.h"
@@ -18,54 +17,27 @@
 #include <bit>
 #include <cstring>
 #include <functional>
+#include <slang-rhi/shader-cursor.h>
 #include <string>
 #include <tuple>
 
-void RestirResources::compile(
-    const ShaderLayout& shader,
-    const std::array<VulkanResources::BufferHandle, kBindingCount>& buffers,
-    ResourceBarriers& accesses
-)
+void RestirResources::compile(const std::array<GpuResources::BufferHandle, kBindingCount>& buffers)
 {
-    constexpr auto kSet    = RenderInterface::kRayTracingPassSet;
-    constexpr auto kStage  = vk::ShaderStageFlagBits::eRaygenKHR;
-    const auto     storage = [&](std::string_view name)
-    { return shader.binding<vk::DescriptorType::eStorageBuffer>(name, kSet).layout(kStage); };
-    bindings = {
-        storage("restirSurfaces"),
-        storage("restirPreviousSurfaces"),
-        storage("restirInitialReservoirs"),
-        storage("restirHistory"),
-        shader.uniformBuffer<RestirFrameParameters>("restirFrame", kSet).layout(kStage),
-    };
-
-    const auto& [surface, previousSurface, initial, history, frame] = buffers;
-    surfaces          = {surface, previousSurface};
-    initialReservoirs = initial;
-    reservoirHistory  = history;
-    parameters        = frame;
-
-    constexpr VulkanResources::MemoryAccess kStorageReadWrite{
-        kRayTracingStages,
-        vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
-    };
-    for (const auto surface : surfaces)
-        accesses.add(surface, kStorageReadWrite);
-    accesses.add(initialReservoirs, kStorageReadWrite);
-    accesses.add(reservoirHistory, kStorageReadWrite);
-    accesses.add(parameters, {kRayTracingStages, vk::AccessFlagBits2::eUniformRead});
-
-    writeLayer = 0;
-    hasHistory = false;
-    frames     = {};
+    const auto& [current, previous, initial, history] = buffers;
+    surfaces                                          = {current, previous};
+    initialReservoirs                                 = initial;
+    reservoirHistory                                  = history;
+    writeLayer                                        = 0;
+    hasHistory                                        = false;
 }
 
+
 void RestirResources::prepare(
-    VulkanResources&      cache,
-    const Falcor::RenderContext&  frame,
-    Falcor::uint2                 extent,
-    const RestirSettings& settings,
-    vk::DescriptorSet     set
+    GpuResources&                cache,
+    const Falcor::RenderContext& frame,
+    Falcor::uint2                extent,
+    const RestirSettings&        settings,
+    rhi::IShaderObject*          object
 )
 {
     const auto&     data     = *frame.scene;
@@ -109,9 +81,8 @@ void RestirResources::prepare(
         .spatialReuse           = settings.spatialReuse ? 1u : 0u,
         .candidateCount         = settings.candidateCount,
     };
-    const auto upload = cache.allocateUpload(parameters, sizeof(frameParameters));
-    std::memcpy(upload.data.data(), &frameParameters, sizeof(frameParameters));
-
+    const rhi::ShaderCursor root(object);
+    rhiCheck(root["restirFrame"].getDereferenced().setData(frameParameters));
     const auto& view         = frame.view->uniforms.view;
     previousViewProjection   = frame.view->uniforms.viewProjection;
     previousViewport         = currentViewport;
@@ -122,41 +93,12 @@ void RestirResources::prepare(
     previousEnvironment      = data.environmentMap;
     previousIbl              = ibl;
 
-    updateDescriptors(cache, frame, set);
+    rhiCheck(root["restirSurfaces"].setBinding(cache.getBuffer(surfaces[writeLayer])));
+    rhiCheck(root["restirPreviousSurfaces"].setBinding(cache.getBuffer(surfaces[writeLayer ^ 1u])));
+    rhiCheck(root["restirInitialReservoirs"].setBinding(cache.getBuffer(initialReservoirs)));
+    rhiCheck(root["restirHistory"].setBinding(cache.getBuffer(reservoirHistory)));
 }
 
-void RestirResources::updateDescriptors(VulkanResources& cache, const Falcor::RenderContext& frame, vk::DescriptorSet set)
-{
-    auto&            current = frames[frame.frameIndex];
-    const std::array handles{
-        surfaces[writeLayer],
-        surfaces[writeLayer ^ 1u],
-        initialReservoirs,
-        reservoirHistory,
-        parameters,
-    };
-    static_assert(std::tuple_size_v<decltype(handles)> == kBindingCount);
-    std::array<vk::DescriptorBufferInfo, kBindingCount> infos;
-    std::array<vk::WriteDescriptorSet, kBindingCount>   writes;
-    uint32_t                                            writeCount = 0;
-    for (uint32_t index = 0; index < handles.size(); ++index)
-    {
-        const auto revision     = cache.bufferRevision(handles[index]);
-        const bool changedLayer = index < surfaces.size() && current.surfaceLayer != writeLayer;
-        if (current.bufferRevisions[index] == revision && !changedLayer)
-            continue;
-
-        const auto& buffer             = cache.getBuffer(handles[index]);
-        infos[index]                   = vk::DescriptorBufferInfo{.buffer = buffer.handle(), .range = buffer.getSize()};
-        auto& write                    = writes[writeCount++];
-        write                          = makeDescriptorWrite(set, bindings[index]);
-        write.pBufferInfo              = &infos[index];
-        current.bufferRevisions[index] = revision;
-    }
-    if (writeCount != 0)
-        frame.vulkan->deviceHandle().updateDescriptorSets(std::span{writes.data(), writeCount}, {});
-    current.surfaceLayer = writeLayer;
-}
 
 void RestirResources::advanceHistory()
 {

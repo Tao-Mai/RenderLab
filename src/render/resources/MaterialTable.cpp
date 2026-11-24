@@ -1,13 +1,12 @@
 #include "render/resources/MaterialTable.h"
 
-#include "render/graph/RenderPass.h"
+#include "render/device/RhiCheck.h"
 
+#include <slang-rhi.h>
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
 #include "asset/GltfMaterial.h"
 #include "core/Logger.h"
-#include "render/device/Device.h"
-#include "render/device/VulkanContext.h"
 #include "render/resources/RenderResourceManager.h"
 #include "render/resources/ShaderData.h"
 
@@ -17,8 +16,7 @@
 
 namespace
 {
-[[nodiscard]] NormalEncoding normalEncoding(
-    const std::optional<TextureBinding>& binding, const AssetManager& assets)
+[[nodiscard]] NormalEncoding normalEncoding(const std::optional<TextureBinding>& binding, const AssetManager& assets)
 {
     if (binding)
     {
@@ -34,66 +32,28 @@ namespace
     }
     return NormalEncoding::Rgb;
 }
-}
+}  // namespace
 
-void MaterialTable::init(RenderResourceManager& resources, const VulkanContext& vulkan, Falcor::Device& device)
+
+void MaterialTable::init(RenderResourceManager& resources)
 {
-    const auto& limits = vulkan.properties().limits;
-    CHECK(
-        limits.maxPerStageDescriptorSampledImages >= kMaxMaterialTextures &&
-            limits.maxPerStageDescriptorSamplers >= kMaxMaterialSamplers,
-        "global materials require {} texture and {} sampler descriptors; GPU limits are {} and {}",
-        kMaxMaterialTextures,
-        kMaxMaterialSamplers,
-        limits.maxPerStageDescriptorSampledImages,
-        limits.maxPerStageDescriptorSamplers
+    static_cast<void>(
+        textureReference({BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat}, resources)
     );
-
-    static_cast<void>(textureReference({BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat}, resources));
     images.fill(images[0]);
     samplers.fill(samplers[0]);
-
-    for (auto& frame : frames)
-    {
-        frame.descriptorSet = device.allocateDescriptorSet(device.materialDescriptorSetLayout);
-
-        const std::array writes{
-            vk::WriteDescriptorSet{
-                .dstSet          = *frame.descriptorSet,
-                .dstBinding      = RenderInterface::kMaterialTexturesBinding,
-                .descriptorCount = kMaxMaterialTextures,
-                .descriptorType  = vk::DescriptorType::eSampledImage,
-                .pImageInfo      = images.data(),
-            },
-            vk::WriteDescriptorSet{
-                .dstSet          = *frame.descriptorSet,
-                .dstBinding      = RenderInterface::kMaterialSamplersBinding,
-                .descriptorCount = kMaxMaterialSamplers,
-                .descriptorType  = vk::DescriptorType::eSampler,
-                .pImageInfo      = samplers.data(),
-            },
-        };
-        vulkan.deviceHandle().updateDescriptorSets(writes, {});
-        frame.textureCount = static_cast<uint32_t>(textureIndices.size());
-        frame.samplerCount = static_cast<uint32_t>(samplerIndices.size());
-    }
 }
 
-void MaterialTable::setup(VulkanResources& resources, const VulkanContext& vulkan)
+void MaterialTable::setup(GpuResources& resources, rhi::IDevice& device)
 {
-    bufferResource = Falcor::make_ref<Falcor::Buffer>(
-        vulkan,
-        sizeof(MaterialData),
-        vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
-        Falcor::MemoryType::DeviceLocal,
-        Falcor::ResourceBindFlags::ShaderResource
-    );
+    rhi::BufferDesc desc;
+    desc.size  = sizeof(MaterialData);
+    desc.usage = rhi::BufferUsage::ShaderResource | rhi::BufferUsage::CopyDestination;
+    rhi::ComPtr<rhi::IBuffer> buffer;
+    rhiCheck(device.createBuffer(desc, nullptr, buffer.writeRef()));
     cache          = &resources;
-    materialBuffer = cache->registerBuffer(bufferResource);
-    for (auto& frame : frames)
-        frame.bufferRevision = 0;
+    materialBuffer = cache->registerBuffer(buffer);
 }
-
 TextureRef MaterialTable::textureReference(const TextureBinding& binding, RenderResourceManager& resources)
 {
     const auto [image, newImage] =
@@ -106,10 +66,7 @@ TextureRef MaterialTable::textureReference(const TextureBinding& binding, Render
             binding.textureID,
             kMaxMaterialTextures
         );
-        images[image->second] = {
-            .imageView   = resources.texture(binding.textureID)->imageView(),
-            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        };
+        images[image->second] = resources.texture(binding.textureID)->getDefaultView();
     }
 
     const auto [sampler, newSampler] =
@@ -122,7 +79,7 @@ TextureRef MaterialTable::textureReference(const TextureBinding& binding, Render
             binding.samplerID,
             kMaxMaterialSamplers
         );
-        samplers[sampler->second] = vk::DescriptorImageInfo{.sampler = resources.sampler(binding.samplerID)};
+        samplers[sampler->second] = resources.sampler(binding.samplerID);
     }
     return {.textureIndex = image->second, .samplerIndex = sampler->second};
 }
@@ -144,6 +101,7 @@ size_t MaterialTable::MaterialKeyHash::operator()(const MaterialKey& key) const 
     }
     return hash;
 }
+
 
 uint32_t MaterialTable::update(
     const MaterialKey& key, const GltfMaterial& material, RenderResourceManager& resources, AssetManager& assets
@@ -169,10 +127,10 @@ uint32_t MaterialTable::update(
     const float emissiveStrength = material.emissiveStrength.value_or(1.0f);
     CHECK(std::isfinite(emissiveStrength) && emissiveStrength >= 0.0f);
 
-    const auto   clearcoat = material.clearcoat.value_or(GltfMaterial::Clearcoat{});
-    const auto   sheen     = material.sheen.value_or(GltfMaterial::Sheen{});
-    const auto   specular  = material.specular.value_or(GltfMaterial::Specular{});
-    const float  ior       = material.ior.value_or(1.5f);
+    const auto  clearcoat = material.clearcoat.value_or(GltfMaterial::Clearcoat{});
+    const auto  sheen     = material.sheen.value_or(GltfMaterial::Sheen{});
+    const auto  specular  = material.specular.value_or(GltfMaterial::Specular{});
+    const float ior       = material.ior.value_or(1.5f);
     CHECK(std::isfinite(ior) && (ior == 0.0f || ior >= 1.0f), "invalid IOR in material '{}'", material.id);
     CHECK(
         std::isfinite(specular.factor) && specular.factor >= 0.0f && specular.factor <= 1.0f,
@@ -263,7 +221,7 @@ uint32_t MaterialTable::update(
     }
 
     data.normalTexture = resolveTexture(material.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear);
-    data.normalEncoding = normalEncoding(material.normalTexture, assets);
+    data.normalEncoding  = normalEncoding(material.normalTexture, assets);
     data.emissiveTexture = resolveTexture(material.emissiveTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb);
     data.occlusionTexture =
         resolveTexture(material.aoTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear);
@@ -298,61 +256,25 @@ uint32_t MaterialTable::update(
     return found->second;
 }
 
-// 更新material descriptor set
-void MaterialTable::upload(const VulkanContext& vulkan, uint32_t frameIndex)
+void MaterialTable::upload()
 {
-    auto&                frame  = frames[frameIndex];
-    const vk::DeviceSize bytes  = std::max<size_t>(materials.size(), 1) * sizeof(MaterialData);
-    const auto           upload = cache->allocateUpload(materialBuffer, bytes);
+    const auto bytes  = std::max<size_t>(materials.size(), 1) * sizeof(MaterialData);
+    const auto upload = cache->allocateUpload(materialBuffer, bytes);
     if (materials.empty())
-    {
-        const MaterialData empty{};
-        std::memcpy(upload.data.data(), &empty, sizeof(empty));
-    }
+        std::memset(upload.data.data(), 0, bytes);
     else
         std::memcpy(upload.data.data(), materials.data(), materials.size() * sizeof(MaterialData));
+}
 
-    const auto&                           buffer        = cache->getBuffer(materialBuffer);
-    const bool                            bufferChanged = frame.bufferRevision != cache->bufferRevision(materialBuffer);
-    const vk::DescriptorBufferInfo        bufferInfo{.buffer = buffer.handle(), .range = buffer.getSize()};
-    std::array<vk::WriteDescriptorSet, 3> writes;
-    uint32_t                              writeCount = 0;
-    if (bufferChanged)
-        writes[writeCount++] = {
-            .dstSet          = *frame.descriptorSet,
-            .dstBinding      = RenderInterface::kMaterialBufferBinding,
-            .descriptorCount = 1,
-            .descriptorType  = vk::DescriptorType::eStorageBuffer,
-            .pBufferInfo     = &bufferInfo,
-        };
-
-    const auto textureCount = static_cast<uint32_t>(textureIndices.size());
-    if (frame.textureCount != textureCount)
-    {
-        writes[writeCount++] = {
-            .dstSet          = *frame.descriptorSet,
-            .dstBinding      = RenderInterface::kMaterialTexturesBinding,
-            .dstArrayElement = frame.textureCount,
-            .descriptorCount = textureCount - frame.textureCount,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .pImageInfo      = images.data() + frame.textureCount,
-        };
-        frame.textureCount = textureCount;
-    }
-    const auto samplerCount = static_cast<uint32_t>(samplerIndices.size());
-    if (frame.samplerCount != samplerCount)
-    {
-        writes[writeCount++] = {
-            .dstSet          = *frame.descriptorSet,
-            .dstBinding      = RenderInterface::kMaterialSamplersBinding,
-            .dstArrayElement = frame.samplerCount,
-            .descriptorCount = samplerCount - frame.samplerCount,
-            .descriptorType  = vk::DescriptorType::eSampler,
-            .pImageInfo      = samplers.data() + frame.samplerCount,
-        };
-        frame.samplerCount = samplerCount;
-    }
-    if (writeCount)
-        vulkan.deviceHandle().updateDescriptorSets(std::span{writes.data(), writeCount}, {});
-    frame.bufferRevision = cache->bufferRevision(materialBuffer);
+void MaterialTable::bind(rhi::IShaderObject* object) const
+{
+    const rhi::ShaderCursor root(object);
+    if (const auto field = root["materials"]; field.isValid())
+        rhiCheck(field.setBinding(cache->getBuffer(materialBuffer)));
+    if (const auto field = root["textures"]; field.isValid())
+        for (uint32_t index = 0; index < images.size(); ++index)
+            rhiCheck(field[index].setBinding(images[index]));
+    if (const auto field = root["samplers"]; field.isValid())
+        for (uint32_t index = 0; index < samplers.size(); ++index)
+            rhiCheck(field[index].setBinding(samplers[index]));
 }

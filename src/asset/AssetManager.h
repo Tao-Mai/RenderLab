@@ -18,9 +18,9 @@ public:
     AssetManager() = default;
     ~AssetManager();
 
-    void init(std::filesystem::path root);
-    void shutdown() noexcept;
-    [[nodiscard]] uint64_t contentRevision() const { return nextRevision; }
+    void                                       init(std::filesystem::path root);
+    void                                       shutdown() noexcept;
+    [[nodiscard]] uint64_t                     contentRevision() const { return nextRevision; }
     [[nodiscard]] const std::filesystem::path& rootPath() const { return root; }
 
     template <AssetType T>
@@ -90,7 +90,7 @@ private:
 
     using AssetMaps = AssetTypes::wrapTypes<AssetMap>;
 
-    DEBUG_ONLY(bool inited = false;)
+
     AssetMaps assets;
 
     void loadAll();

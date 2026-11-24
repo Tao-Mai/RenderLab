@@ -1,27 +1,26 @@
-#include "render/device/ResourceBarriers.h"
 #include "passes/raster/ScenePass/ScenePass.h"
 
 #include "core/Logger.h"
 #include "core/Plugin.h"
 
-#include "render/RenderContext.h"
+#include <slang-rhi.h>
 #include "render/PreparedScene.h"
-#include "render/RendererConfig.h"
+#include "render/RenderContext.h"
 #include "render/RenderView.h"
-#include "render/device/VulkanContext.h"
-#include "render/resources/NativeFormats.h"
+#include "render/RendererConfig.h"
 #include "render/raster/MeshDraw.h"
+#include "render/raster/ShadowResources.h"
 #include "render/resources/MaterialTable.h"
 
-ScenePass::ScenePass(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties) :
-    Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<RasterLightingSettings>(properties))
+ScenePass::ScenePass(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
+    Falcor::RenderPass(std::move(device)),
+    parameters(Falcor::deserializeFromProperties<RasterLightingSettings>(properties))
 {
 }
 
-Falcor::Properties ScenePass::getProperties() const
-{
-    return Falcor::serializeToProperties(parameters);
-}
+
+Falcor::Properties ScenePass::getProperties() const { return Falcor::serializeToProperties(parameters); }
+
 
 void ScenePass::setProperties(const Falcor::Properties& properties)
 {
@@ -29,18 +28,22 @@ void ScenePass::setProperties(const Falcor::Properties& properties)
     Deserialize(nlohmann::json(properties.toJson()), next);
 
     const bool recompile = next.hdr != parameters.hdr;
-    parameters = std::move(next);
+    parameters           = std::move(next);
     if (recompile)
         requestRecompile();
 }
 
+
 Falcor::RenderPassReflection ScenePass::reflect(const CompileData& compileData)
 {
-    const auto* depth = compileData.connectedResources.getField("depth");
-    const auto extent = depth ? Falcor::uint2{depth->getWidth(), depth->getHeight()} : Falcor::uint2{};
+    const auto* depth  = compileData.connectedResources.getField("depth");
+    const auto  extent = depth ? Falcor::uint2{depth->getWidth(), depth->getHeight()} : Falcor::uint2{};
 
     Falcor::RenderPassReflection reflection;
-    reflection.addInput("depth", "Scene depth").format(Falcor::ResourceFormat::D32Float).bindFlags(Falcor::ResourceBindFlags::DepthStencil);
+    addShadowInputs(reflection);
+    reflection.addInput("depth", "Scene depth")
+        .format(rhi::Format::D32Float)
+        .bindFlags(Falcor::ResourceBindFlags::DepthStencil);
     reflection.addOutput("color", "Raster lighting result")
         .format(parameters.getColorFormat(compileData.defaultTexFormat))
         .bindFlags(Falcor::ResourceBindFlags::RenderTarget)
@@ -48,50 +51,51 @@ Falcor::RenderPassReflection ScenePass::reflect(const CompileData& compileData)
     return reflection;
 }
 
+
 void ScenePass::compile(Falcor::RenderContext* passContext, const CompileData& compileData)
 {
     const auto& config = *passContext->config;
-    parameters.validateColorFormat(*passContext->vulkan);
-
+    parameters.validateColorFormat(*passContext->device);
+    const rhi::DepthStencilDesc depth{
+        .format           = rhi::Format::D32Float,
+        .depthTestEnable  = true,
+        .depthWriteEnable = false,
+        .depthFunc        = rhi::ComparisonFunc::Equal
+    };
     pipelines.setup(
-        *passContext->getDevice(),
-        Falcor::getVulkanFormat(parameters.getColorFormat(compileData.defaultTexFormat)),
-        {.depthCompare = vk::CompareOp::eEqual, .depthWrite = false},
+        *passContext->device,
+        parameters.getColorFormat(compileData.defaultTexFormat),
+        depth,
+        false,
         config.feature.ibl,
         config.renderPath != RenderPath::Deferred
     );
-
-    barriers.clear();
 }
+
 
 void ScenePass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
 {
-    auto&       cache         = *renderCommands->vulkanResources;
-    auto&       commandBuffer = *renderCommands->commands;
-    const auto& execution     = *renderCommands;
-
-    if (barriers.empty())
-    {
-        const auto depthHandle = cache.registerImage(renderData.getTexture("depth"));
-        attachments.depth = RasterDepthAttachment{depthHandle};
-
-        constexpr auto kFragment = vk::PipelineStageFlagBits2::eFragmentShader;
-        barriers.add(depthHandle, vulkan_access::kDepthRead);
-        barriers.add(execution.frameData->lightBufferHandle(), vulkan_access::storageRead(kFragment));
-        barriers.add(execution.materialTable->bufferHandle(), vulkan_access::storageRead(kFragment));
-        barriers.declare(cache);
-    }
-
-    barriers.transition(cache, commandBuffer);
-    const auto color = cache.registerImage(renderData.getTexture("color"));
-    attachments.colors.front() = {color, vk::AttachmentLoadOp::eClear};
-    cache.transition(commandBuffer, color, vulkan_access::kColorWrite);
-
-    attachments.begin(cache, commandBuffer, execution.view->viewport);
-    bindForwardPbrResources(commandBuffer, execution);
-    MeshDrawRecorder recorder{commandBuffer, execution};
-    recorder.drawOpaque([&](const auto& material) { return pipelines.get(execution, material); });
-    commandBuffer.endRendering();
+    const auto target    = renderData.getTexture("color");
+    const auto colorView = target->getDefaultView();
+    CHECK(colorView);
+    const auto depthView = renderData.getTexture("depth")->getDefaultView();
+    CHECK(depthView);
+    rhi::RenderPassColorAttachment color;
+    color.view          = colorView;
+    color.loadOp        = rhi::LoadOp::Clear;
+    color.clearValue[3] = 1.0f;
+    rhi::RenderPassDepthStencilAttachment depth;
+    depth.view          = depthView;
+    depth.depthLoadOp   = rhi::LoadOp::Load;
+    depth.depthReadOnly = true;
+    auto* pass          = renderCommands->commands->beginRenderPass({&color, 1, &depth});
+    CHECK(pass);
+    const auto&      size     = target->getDesc().size;
+    const auto       viewport = renderCommands->view->viewport.clamped({size.width, size.height});
+    const ShadowBindings shadows{renderData, *renderCommands->frameData, *renderCommands->resources};
+    MeshDrawRecorder recorder{*pass, viewport.renderState(), *renderCommands, &shadows};
+    recorder.drawOpaque([&](const auto& material) { return pipelines.get(*renderCommands, material); });
+    pass->end();
 }
 
 extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)

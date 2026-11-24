@@ -1,20 +1,20 @@
 #include "render/device/GpuProfiler.h"
 
+#include <slang-rhi.h>
 #include "core/profiling/Profiler.h"
 #include "render/RenderContext.h"
-#include "render/device/VkCheck.h"
-#include "render/device/VulkanContext.h"
+#include "render/device/RhiCheck.h"
 
 #include <algorithm>
 #include <limits>
 
-void GpuProfiler::init(const VulkanContext& vulkan)
+void GpuProfiler::init(rhi::IDevice& target)
 {
-    DCHECK(!device);
-    device = &vulkan.deviceHandle();
-    validBits =
-        vulkan.physicalDeviceHandle().getQueueFamilyProperties()[vulkan.graphicsQueueFamilyIndex()].timestampValidBits;
-    timestampPeriod = vulkan.properties().limits.timestampPeriod;
+
+    device               = &target;
+    const auto frequency = device->getInfo().timestampFrequency;
+    validBits            = frequency ? 64 : 0;
+    timestampPeriod      = frequency ? 1e9 / double(frequency) : 0;
 }
 
 void GpuProfiler::reset()
@@ -33,9 +33,9 @@ void GpuProfiler::discard()
     recordingProfiler = nullptr;
 }
 
-void GpuProfiler::beginFrame(vk::raii::CommandBuffer& commands, Profiler* profiler)
+void GpuProfiler::beginFrame(rhi::ICommandEncoder& commands, Profiler* profiler)
 {
-    DCHECK(device);
+
     discard();
     recordingProfiler = profiler;
     if (!recordingProfiler)
@@ -43,34 +43,37 @@ void GpuProfiler::beginFrame(vk::raii::CommandBuffer& commands, Profiler* profil
 
     frameNumber = profiler->frameNumber();
     if (validBits)
-        writeTimestamp(commands, 0, vk::PipelineStageFlagBits2::eTopOfPipe);
+        writeTimestamp(commands, 0);
 }
 
-void GpuProfiler::writeTimestamp(vk::raii::CommandBuffer& commands, uint32_t query, vk::PipelineStageFlagBits2 stage)
+void GpuProfiler::writeTimestamp(rhi::ICommandEncoder& commands, uint32_t query)
 {
     const auto index = query / kQueriesPerPool;
-    DCHECK(index <= usedPools);
     if (index == usedPools)
     {
         if (index == timestampPools.size())
-            timestampPools.push_back(vkCheck(device->createQueryPool({
-                .queryType  = vk::QueryType::eTimestamp,
-                .queryCount = kQueriesPerPool,
-            })));
-        commands.resetQueryPool(*timestampPools[index], 0, kQueriesPerPool);
+        {
+            rhi::QueryPoolDesc desc;
+            desc.type  = rhi::QueryType::Timestamp;
+            desc.count = kQueriesPerPool;
+            rhi::ComPtr<rhi::IQueryPool> pool;
+            rhiCheck(device->createQueryPool(desc, pool.writeRef()));
+            timestampPools.push_back(pool);
+        }
+        rhiCheck(timestampPools[index]->reset());
         ++usedPools;
     }
-    commands.writeTimestamp2(stage, *timestampPools[index], query % kQueriesPerPool);
+    commands.writeTimestamp(timestampPools[index], query % kQueriesPerPool);
 }
 
-void GpuProfiler::endFrame(vk::raii::CommandBuffer& commands)
+void GpuProfiler::endFrame(rhi::ICommandEncoder& commands)
 {
     if (!recordingProfiler)
         return;
     recordingProfiler = nullptr;
     if (!validBits)
         return;
-    writeTimestamp(commands, 1, vk::PipelineStageFlagBits2::eBottomOfPipe);
+    writeTimestamp(commands, 1);
     pending = true;
 }
 
@@ -84,17 +87,9 @@ void GpuProfiler::collect(Profiler* profiler)
     for (uint32_t index = 0; index < usedPools; ++index)
     {
         const auto queryCount = std::min(count - index * kQueriesPerPool, kQueriesPerPool);
-        auto       result     = timestampPools[index].getResults<uint64_t>(
-            0,
-            queryCount,
-            queryCount * sizeof(uint64_t),
-            sizeof(uint64_t),
-            vk::QueryResultFlagBits::e64
-        );
-        if (result.result == vk::Result::eNotReady)
-            return;
-        vkCheck(result.result);
-        values.insert(values.end(), result.value.begin(), result.value.end());
+        const auto offset     = values.size();
+        values.resize(offset + queryCount);
+        rhiCheck(timestampPools[index]->getResult(0, queryCount, values.data() + offset));
     }
 
     const uint64_t mask    = validBits == 64 ? ~uint64_t{0} : (uint64_t{1} << validBits) - 1;
@@ -110,29 +105,26 @@ void GpuProfiler::collect(Profiler* profiler)
     pending = false;
 }
 
-uint32_t GpuProfiler::beginScope(vk::raii::CommandBuffer& commands, std::string_view name, bool renderPass)
+uint32_t GpuProfiler::beginScope(rhi::ICommandEncoder& commands, std::string_view name, bool renderPass)
 {
     if (!recordingProfiler || !validBits)
         return ~0u;
-    DCHECK(scopes.size() < (std::numeric_limits<uint32_t>::max() - 2) / 2);
+
     const uint32_t index = static_cast<uint32_t>(scopes.size());
     scopes.push_back({std::string{name}, renderPass});
-    const auto stage = renderPass ? vk::PipelineStageFlagBits2::eTopOfPipe : vk::PipelineStageFlagBits2::eAllCommands;
-    writeTimestamp(commands, 2 + 2 * index, stage);
+    writeTimestamp(commands, 2 + 2 * index);
     return index;
 }
 
-void GpuProfiler::endScope(vk::raii::CommandBuffer& commands, uint32_t index)
+void GpuProfiler::endScope(rhi::ICommandEncoder& commands, uint32_t index)
 {
     if (index != ~0u)
     {
-        const auto stage = scopes[index].renderPass ? vk::PipelineStageFlagBits2::eBottomOfPipe
-                                                    : vk::PipelineStageFlagBits2::eAllCommands;
-        writeTimestamp(commands, 3 + 2 * index, stage);
+        writeTimestamp(commands, 3 + 2 * index);
     }
 }
 
-GpuProfileScope::GpuProfileScope(GpuProfiler* targetProfiler, vk::raii::CommandBuffer& target, std::string_view name) :
+GpuProfileScope::GpuProfileScope(GpuProfiler* targetProfiler, rhi::ICommandEncoder& target, std::string_view name) :
     commands(target), profiler(targetProfiler)
 {
     if (profiler)
@@ -154,7 +146,7 @@ ScopedProfilerEvent::ScopedProfilerEvent(RenderContext* context, std::string_vie
         profiler->beginPass(name);
     if (auto* profiler = context->gpuProfiler)
     {
-        DCHECK(context->commands);
+
         gpuScope = profiler->beginScope(*context->commands, name, true);
     }
 }

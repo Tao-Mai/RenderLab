@@ -10,11 +10,11 @@ namespace Falcor::ScriptBindings
 {
 namespace
 {
-    constexpr char kTypeRegistry[] = "RenderLab.ScriptBindings";
-    constexpr char kModuleKey[]    = "RenderLab.ScriptBindings.module";
+    constexpr char kTypeRegistry[]     = "RenderLab.ScriptBindings";
+    constexpr char kModuleKey[]        = "RenderLab.ScriptBindings.module";
     constexpr char kInstanceRegistry[] = "RenderLab.ScriptBindings.instances";
 
-    using Instances = std::unordered_map<const Object*, PyObject*>;
+    using Instances = std::unordered_map<const void*, PyObject*>;
 
     struct DeferredBinding
     {
@@ -55,34 +55,34 @@ namespace
 
     Instances* getRegisteredInstances()
     {
-        auto* state = PyInterpreterState_GetDict(PyInterpreterState_Get());
+        auto* state    = PyInterpreterState_GetDict(PyInterpreterState_Get());
         auto* registry = state ? PyDict_GetItemString(state, kInstanceRegistry) : nullptr;
         return registry ? static_cast<Instances*>(PyCapsule_GetPointer(registry, kInstanceRegistry)) : nullptr;
     }
 }  // namespace
 
-PyObject* detail::findRegisteredInstance(const Object* instance)
+PyObject* detail::findRegisteredInstance(const void* instance)
 {
     const auto* instances = getRegisteredInstances();
-    DCHECK(instances);
+
     const auto found = instances->find(instance);
     return found != instances->end() ? found->second : nullptr;
 }
 
-void detail::registerInstance(const Object* instance, PyObject* object)
+void detail::registerInstance(const void* instance, PyObject* object)
 {
     auto* instances = getRegisteredInstances();
-    DCHECK(instances && !instances->contains(instance));
+
     instances->emplace(instance, object);
 }
 
-void detail::unregisterInstance(const Object* instance, PyObject* object)
+void detail::unregisterInstance(const void* instance, PyObject* object)
 {
     // The interpreter can release its registry before destroying the remaining wrappers.
     if (auto* instances = getRegisteredInstances())
     {
         const auto found = instances->find(instance);
-        DCHECK(found != instances->end() && found->second == object);
+
         instances->erase(found);
     }
 }
@@ -97,11 +97,12 @@ int initModule(PyObject* m)
     }
 
     const PythonObject types{PyDict_New()};
-    auto registeredInstances = std::make_unique<Instances>();
-    const PythonObject instances{PyCapsule_New(registeredInstances.get(), kInstanceRegistry, [](PyObject* capsule)
-    {
-        delete static_cast<Instances*>(PyCapsule_GetPointer(capsule, kInstanceRegistry));
-    })};
+    auto               registeredInstances = std::make_unique<Instances>();
+    const PythonObject instances{PyCapsule_New(
+        registeredInstances.get(),
+        kInstanceRegistry,
+        [](PyObject* capsule) { delete static_cast<Instances*>(PyCapsule_GetPointer(capsule, kInstanceRegistry)); }
+    )};
     if (instances)
         registeredInstances.release();
     if (!types || !instances || PyDict_SetItemString(state, kTypeRegistry, types.get()) != 0 ||
@@ -160,12 +161,11 @@ int resolveDeferredBinding(const std::string& name, PyObject* m)
 
 int registerType(PyObject* type, const std::type_info& nativeType)
 {
-    DCHECK(PyType_Check(type));
+
     const char* name  = reinterpret_cast<PyTypeObject*>(type)->tp_name;
     auto*       state = PyInterpreterState_GetDict(PyInterpreterState_Get());
-    DCHECK(state);
+
     auto* registry = PyDict_GetItemString(state, kTypeRegistry);
-    DCHECK(registry);
 
     if (auto* types = PyDict_GetItemString(registry, nativeType.name()))
         return PyDict_SetItemString(types, name, type);

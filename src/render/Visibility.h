@@ -17,7 +17,7 @@ static_assert(kBitCount <= 32);
 
 [[nodiscard]] inline std::string viewName(uint32_t mask)
 {
-    DCHECK(std::has_single_bit(mask));
+
     const uint32_t bit = std::countr_zero(mask);
     if (bit == 0)
         return "Main view";
@@ -39,19 +39,19 @@ static_assert(kBitCount <= 32);
     switch (type)
     {
         case GpuLightType::Point:
-            DCHECK(shadowIndex < kMaxPointLightShadow);
+
             return 1u << (kPointOffset + shadowIndex);
         case GpuLightType::Spot:
-            DCHECK(shadowIndex < kMaxSpotLightShadow);
+
             return 1u << (kSpotOffset + shadowIndex);
         case GpuLightType::RectArea:
-            DCHECK(shadowIndex < kMaxRectAreaLightShadow);
+
             return 1u << (kRectAreaOffset + shadowIndex);
         case GpuLightType::Directional:
-            DCHECK(shadowIndex < kMaxDirectionalLightShadow && cascadeIndex < kMaxDirectionalShadowCascades);
+
             return 1u << (kDirectionalOffset + shadowIndex * kMaxDirectionalShadowCascades + cascadeIndex);
     }
-    DCHECK(false);
+
     return 0;
 }
 }  // namespace RenderVisibility

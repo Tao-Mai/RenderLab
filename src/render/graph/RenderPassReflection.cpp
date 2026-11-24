@@ -70,7 +70,7 @@ RenderPassReflection::Field& RenderPassReflection::Field::resourceType(
     return *this;
 }
 
-RenderPassReflection::Field& RenderPassReflection::Field::format(ResourceFormat value)
+RenderPassReflection::Field& RenderPassReflection::Field::format(rhi::Format value)
 {
     mFormat = value;
     return *this;
@@ -108,7 +108,6 @@ RenderPassReflection::Field& RenderPassReflection::Field::desc(const std::string
 
 RenderPassReflection::Field& RenderPassReflection::Field::merge(const Field& other)
 {
-    DCHECK(!is_set(mVisibility | other.mVisibility, Visibility::Internal));
 
     const auto reportMismatch = [&](const char* property)
     {
@@ -123,7 +122,7 @@ RenderPassReflection::Field& RenderPassReflection::Field::merge(const Field& oth
         return *this;
     }
 
-    bool compatible = true;
+    bool       compatible = true;
     const auto mergeValue = [&](auto value, auto incoming, const char* property)
     {
         if (incoming == decltype(incoming){})
@@ -200,7 +199,7 @@ RenderPassReflection::Field& RenderPassReflection::addField(const Field& field)
 RenderPassReflection::Field&
 RenderPassReflection::addField(const std::string& name, const std::string& desc, Field::Visibility visibility)
 {
-    DCHECK(!name.empty() && name.find('.') == std::string::npos);
+
     return addField(Field{name, desc, visibility});
 }
 
@@ -238,24 +237,25 @@ std::string to_string(RenderPassReflection::Field::Type type)
     return {};
 }
 
-RenderPassReflection::Field::Type resourceTypeToFieldType(Resource::Type type)
+RenderPassReflection::Field::Type resourceTypeToFieldType(rhi::TextureType type)
 {
     using Type = RenderPassReflection::Field::Type;
     switch (type)
     {
-        case Resource::Type::Texture1D:
+        case rhi::TextureType::Texture1D:
+        case rhi::TextureType::Texture1DArray:
             return Type::Texture1D;
-        case Resource::Type::Texture2D:
-        case Resource::Type::Texture2DMultisample:
+        case rhi::TextureType::Texture2D:
+        case rhi::TextureType::Texture2DArray:
+        case rhi::TextureType::Texture2DMS:
+        case rhi::TextureType::Texture2DMSArray:
             return Type::Texture2D;
-        case Resource::Type::Texture3D:
+        case rhi::TextureType::Texture3D:
             return Type::Texture3D;
-        case Resource::Type::TextureCube:
+        case rhi::TextureType::TextureCube:
+        case rhi::TextureType::TextureCubeArray:
             return Type::TextureCube;
-        case Resource::Type::Buffer:
-            return Type::RawBuffer;
     }
-    CHECK(false);
-    return Type::RawBuffer;
+    std::unreachable();
 }
 }  // namespace Falcor

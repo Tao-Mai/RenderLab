@@ -9,19 +9,19 @@
         "renderer": "renderer.json"
     },
     "renderGraphs": {
-        "Forward": {
-            "Forward": "../graphs/forward.py"
-        },
         "Deferred": {
             "Deferred": "../graphs/deferred.py"
         },
-        "RayTracing": {
-            "ReSTIR": "../graphs/realtime.py",
-            "MinimalPathTracer": "../graphs/minimal_path_tracer.py"
+        "Forward": {
+            "Forward": "../graphs/forward.py"
         },
         "OfflinePathTracing": {
-            "PT": "../graphs/pt.py",
-            "BDPT": "../graphs/bdpt.py"
+            "BDPT": "../graphs/bdpt.py",
+            "PT": "../graphs/pt.py"
+        },
+        "RayTracing": {
+            "MinimalPathTracer": "../graphs/minimal_path_tracer.py",
+            "ReSTIR": "../graphs/realtime.py"
         }
     }
 }

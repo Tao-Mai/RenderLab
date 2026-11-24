@@ -49,16 +49,4 @@ struct DirectionalShadowData
     CascadeShadowData cascades[kMaxDirectionalShadowCascades];
 };
 
-[[vk::binding(0, 3)]] ConstantBuffer<ShadowUniforms> shadowUniforms;
-[[vk::binding(1, 3)]] StructuredBuffer<PointShadowData> pointShadowData;
-[[vk::binding(2, 3)]] StructuredBuffer<SpotShadowData> spotShadowData;
-[[vk::binding(3, 3)]] StructuredBuffer<RectAreaShadowData> rectAreaShadowData;
-[[vk::binding(4, 3)]] StructuredBuffer<DirectionalShadowData> directionalShadowData;
-[[vk::binding(5, 3)]] TextureCubeArray<float> pointShadowMap;
-[[vk::binding(6, 3)]] Texture2DArray<float> spotShadowMap;
-[[vk::binding(7, 3)]] Texture2DArray<float> rectAreaShadowMap;
-[[vk::binding(8, 3)]] Texture2DArray<float> cascadeShadowMap;
-[[vk::binding(9, 3)]] SamplerComparisonState shadowSampler;
-[[vk::binding(10, 3)]] SamplerState shadowLinearSampler;
-
 #endif

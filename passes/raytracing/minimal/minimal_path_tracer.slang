@@ -1,6 +1,6 @@
 #include "raytracing/light_sampling.slang"
 
-[[vk::binding(3, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> outputImage;
+[format("rgba16f")] RWTexture2D<float4> outputImage;
 
 // One ordinary light sample and one BRDF continuation per scattering event.
 float3 evalDirectLight(Surface surface, inout uint state)

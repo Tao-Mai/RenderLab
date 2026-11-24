@@ -1,16 +1,15 @@
 #include "render/graph/RenderGraphCompiler.h"
 
+#include <slang-rhi.h>
 #include "core/DirectedGraphTraversal.h"
 #include "core/Logger.h"
 #include "render/RenderContext.h"
 #include "render/graph/RenderGraph.h"
 #include "render/passes/ResolvePass.h"
-#include "render/resources/Texture.h"
 
 #include <algorithm>
 #include <format>
 #include <iterator>
-#include <limits>
 #include <unordered_set>
 #include <utility>
 
@@ -18,13 +17,13 @@ namespace Falcor
 {
 namespace
 {
-using Field      = RenderPassReflection::Field;
-using Visibility = Field::Visibility;
+    using Field      = RenderPassReflection::Field;
+    using Visibility = Field::Visibility;
 
-bool canAutoResolve(const Field& source, const Field& target)
-{
-    return source.getSampleCount() > 1 && target.getSampleCount() == 1;
-}
+    bool canAutoResolve(const Field& source, const Field& target)
+    {
+        return source.getSampleCount() > 1 && target.getSampleCount() == 1;
+    }
 }  // namespace
 
 RenderGraphCompiler::RenderGraphCompiler(RenderGraph& graph, const Dependencies& dependencies) :
@@ -36,7 +35,7 @@ std::unique_ptr<RenderGraphExe>
 RenderGraphCompiler::compile(RenderGraph& graph, RenderContext* context, const Dependencies& dependencies)
 {
     RenderGraphCompiler compiler(graph, dependencies);
-    auto resourceCache = std::make_unique<ResourceCache>();
+    auto                resourceCache = std::make_unique<ResourceCache>();
     for (const auto& [name, resource] : dependencies.externalResources)
         resourceCache->registerExternalResource(name, resource);
 
@@ -55,7 +54,7 @@ RenderGraphCompiler::compile(RenderGraph& graph, RenderContext* context, const D
                 compiler.validateGraph();
         }
         if (log.empty())
-            compiler.allocateResources(context->getDevice(), resourceCache.get());
+            compiler.allocateResources(context->device, resourceCache.get());
     }
 
     compiler.restoreCompilationChanges();
@@ -186,8 +185,7 @@ void RenderGraphCompiler::validateGraph() const
             if (data.dstField.empty())
                 continue;
 
-            const bool inserted = inputs.insert(data.dstField).second;
-            DCHECK(inserted);
+            inputs.insert(data.dstField);
         }
 
         for (size_t index = 0; index < pass.reflector.getFieldCount(); ++index)
@@ -212,7 +210,7 @@ void RenderGraphCompiler::validateGraph() const
     for (const auto& output : mGraph.mOutputs)
     {
         const auto pass = std::ranges::find(mExecutionList, output.nodeId, &PassData::index);
-        DCHECK(pass != mExecutionList.end());
+
         const auto* field = pass->reflector.getField(output.field);
         if (!field || !is_set(field->getVisibility(), Visibility::Output))
             LOG_ERROR("unknown port '{}.{}'", pass->name, output.field);
@@ -255,7 +253,7 @@ void RenderGraphCompiler::compilePasses(RenderContext* context)
             if (reflector != pass.reflector)
             {
                 pass.reflector = std::move(reflector);
-                changed = true;
+                changed        = true;
             }
         }
         if (logger::ScopedErrorLog::hasErrors() || !changed)
@@ -294,14 +292,14 @@ RenderPass::CompileData RenderGraphCompiler::prepPassCompilationData(const PassD
 
         const auto sourceId = mGraph.mpGraph->getEdge(edgeId)->getSourceNode();
         const auto source   = std::ranges::find(mExecutionList, sourceId, &PassData::index);
-        DCHECK(source != mExecutionList.end());
+
         const auto* output = getField(*source, connection.srcField, Visibility::Output);
         const auto* input  = getField(pass, connection.dstField, Visibility::Input);
         if (!output || !input)
             return data;
 
         auto field = *output;
-        if (field.getType() != Field::Type::RawBuffer && field.getFormat() == ResourceFormat::Unknown)
+        if (field.getType() != Field::Type::RawBuffer && field.getFormat() == rhi::Format::Undefined)
             field.format(properties.format);
         data.connectedResources.addField(
             field.name(input->getName()).desc(input->getDesc()).visibility(input->getVisibility())
@@ -318,42 +316,53 @@ RenderPass::CompileData RenderGraphCompiler::prepPassCompilationData(const PassD
         if (!input)
             return data;
 
-        const bool  isBuffer  = resource->getType() == Resource::Type::Buffer;
+
+        rhi::ComPtr<rhi::IBuffer>  buffer;
+        rhi::ComPtr<rhi::ITexture> texture;
+        const bool                 isBuffer = SLANG_SUCCEEDED(
+            resource->queryInterface(rhi::IBuffer::getTypeGuid(), reinterpret_cast<void**>(buffer.writeRef()))
+        );
         if (isBuffer != (input->getType() == Field::Type::RawBuffer))
         {
             LOG_ERROR("resource kind mismatch at '{}'", name);
             return data;
         }
-
         auto& field = data.connectedResources.addField(*input);
         if (isBuffer)
         {
-            const auto size = resource->getSize();
+            const auto size = buffer->getDesc().size;
             if (!std::in_range<uint32_t>(size))
             {
                 LOG_ERROR("buffer '{}' exceeds the render graph field size", name);
                 return data;
             }
-            field.rawBuffer(static_cast<uint32_t>(size));
+            field.rawBuffer(uint32_t(size));
         }
         else
         {
-            const auto texture = resource->asTexture();
-            if (input->getFormat() != ResourceFormat::Unknown && input->getFormat() != texture->getFormat())
+            CHECK(
+                SLANG_SUCCEEDED(
+                    resource->queryInterface(rhi::ITexture::getTypeGuid(), reinterpret_cast<void**>(texture.writeRef()))
+                ),
+                "resource '{}' must be a texture",
+                name
+            );
+            const auto& desc   = texture->getDesc();
+            const auto  format = desc.format;
+            if (input->getFormat() != rhi::Format::Undefined && input->getFormat() != format)
             {
                 LOG_ERROR("image format mismatch at '{}'", name);
                 return data;
             }
-            field.format(texture->getFormat())
-                .resourceType(
-                    resourceTypeToFieldType(texture->getType()),
-                    texture->getWidth(),
-                    texture->getHeight(),
-                    texture->getDepth(),
-                    texture->getSampleCount(),
-                    texture->getMipCount(),
-                    texture->getArraySize()
-                );
+            field.format(format).resourceType(
+                resourceTypeToFieldType(desc.type),
+                desc.size.width,
+                desc.size.height,
+                desc.size.depth,
+                desc.sampleCount,
+                desc.mipCount,
+                desc.arrayLength
+            );
         }
     }
 
@@ -395,25 +404,23 @@ RenderPass::CompileData RenderGraphCompiler::prepPassCompilationData(const PassD
     return data;
 }
 
-void RenderGraphCompiler::allocateResources(ref<Device> device, ResourceCache* cache)
+void RenderGraphCompiler::allocateResources(rhi::IDevice* device, ResourceCache* cache)
 {
-    for (uint32_t index = 0; index < mExecutionList.size(); ++index)
+    for (const auto& pass : mExecutionList)
     {
-        const auto& pass = mExecutionList[index];
-        const auto& node = *mGraph.mpGraph->getNode(pass.index);
-        const auto registerField = [&](const std::string& name, Field field, const std::string& alias = {})
+        const auto& node          = *mGraph.mpGraph->getNode(pass.index);
+        const auto  registerField = [&](const std::string& name, Field field, const std::string& alias = {})
         {
             const bool graphOutput = mGraph.isGraphOutput({pass.index, field.getName()});
             if (graphOutput && field.getBindFlags() != ResourceBindFlags::None)
                 field.bindFlags(field.getBindFlags() | ResourceBindFlags::ShaderResource);
-            const uint32_t lifetime = graphOutput ? std::numeric_limits<uint32_t>::max() : index;
-            cache->registerField(name, field, lifetime, alias);
+            cache->registerField(name, field, alias);
         };
 
         for (size_t fieldIndex = 0; fieldIndex < pass.reflector.getFieldCount(); ++fieldIndex)
         {
             const auto& field = *pass.reflector.getField(fieldIndex);
-            const auto name  = pass.name + '.' + field.getName();
+            const auto  name  = pass.name + '.' + field.getName();
             if (is_set(field.getVisibility(), Visibility::Input))
             {
                 if (mDependencies.externalResources.contains(name))
@@ -421,7 +428,8 @@ void RenderGraphCompiler::allocateResources(ref<Device> device, ResourceCache* c
                 continue;
             }
 
-            if (is_set(field.getFlags(), Field::Flags::Optional) && !mGraph.isGraphOutput({pass.index, field.getName()}))
+            if (is_set(field.getFlags(), Field::Flags::Optional) &&
+                !mGraph.isGraphOutput({pass.index, field.getName()}))
             {
                 bool connected = false;
                 for (uint32_t outgoing = 0; outgoing < node.getOutgoingEdgeCount(); ++outgoing)
@@ -454,7 +462,7 @@ void RenderGraphCompiler::allocateResources(ref<Device> device, ResourceCache* c
                 return;
         }
     }
-    cache->allocateResources(std::move(device), mDependencies.defaultResourceProps);
+    cache->allocateResources(device, mDependencies.defaultResourceProps);
 }
 
 void RenderGraphCompiler::restoreCompilationChanges()

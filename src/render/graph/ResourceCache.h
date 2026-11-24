@@ -1,4 +1,5 @@
 #pragma once
+#include <slang-rhi.h>
 
 #include "core/Macros.h"
 #include "core/math/Vector.h"
@@ -11,37 +12,31 @@
 
 namespace Falcor
 {
-class Device;
 
 class FALCOR_API ResourceCache
 {
 public:
-    using ResourcesMap = std::unordered_map<std::string, ref<Resource>>;
+    using ResourcesMap = std::unordered_map<std::string, rhi::ComPtr<rhi::IResource>>;
 
     struct DefaultProperties
     {
         uint2          dims{0};
-        ResourceFormat format = ResourceFormat::Unknown;
+        rhi::Format format = rhi::Format::Undefined;
     };
 
-    void registerExternalResource(const std::string& name, const ref<Resource>& resource);
+    void registerExternalResource(const std::string& name, rhi::IResource* resource);
     void registerField(
-        const std::string&                 name,
-        const RenderPassReflection::Field& field,
-        uint32_t                           timePoint,
-        const std::string&                 alias = {}
+        const std::string& name, const RenderPassReflection::Field& field, const std::string& alias = {}
     );
-    [[nodiscard]] const ref<Resource>&               getResource(const std::string& name) const;
-    [[nodiscard]] const RenderPassReflection::Field& getResourceReflection(const std::string& name) const;
-    void allocateResources(ref<Device> device, const DefaultProperties& params);
-    void reset();
+    [[nodiscard]] const rhi::ComPtr<rhi::IResource>& getResource(const std::string& name) const;
+    void                                             setResource(const std::string& name, rhi::IResource* resource);
+    void allocateResources(rhi::IDevice* device, const DefaultProperties& params);
 
 private:
     struct ResourceData
     {
         RenderPassReflection::Field   field;
-        std::pair<uint32_t, uint32_t> lifetime;
-        ref<Resource>                 pResource;
+        rhi::ComPtr<rhi::IResource>   pResource;
         bool                          resolveBindFlags = false;
         std::string                   name;
     };

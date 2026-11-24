@@ -1,16 +1,15 @@
 #include "MinimalPathTracerSettings.h"
-#include "render/device/ResourceBarriers.h"
+
 #include "render/graph/RenderPass.h"
 
+#include <slang-rhi/shader-cursor.h>
 #include "editor/PassEditor.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/graph/RenderPassHelpers.h"
 #include "render/graph/RenderPassStandardFlags.h"
 #include "render/raytracing/PathTracingShader.h"
-#include "render/raytracing/RayTracingPipeline.h"
-#include "render/raytracing/RayTracingStorageImages.h"
-#include "render/raytracing/RealtimeSceneBindings.h"
+#include "render/raytracing/RealtimeScene.h"
 #include "render/resources/MaterialTable.h"
 #include "render/resources/ShaderLayout.h"
 #include "render/resources/ShaderManager.h"
@@ -21,22 +20,26 @@
 
 namespace
 {
-constexpr std::array kRaygenEntries{"raygenMain"};
+constexpr std::array      kRaygenEntries{"raygenMain"};
 const Falcor::ChannelList kOutputChannels{
-    {"color", "outputImage", "Path traced radiance", false, Falcor::ResourceFormat::RGBA16Float},
+    {"color", "outputImage", "Path traced radiance", false, rhi::Format::RGBA16Float},
 };
 
 class MinimalPathTracer : public Falcor::RenderPass
 {
     FALCOR_PLUGIN_CLASS(MinimalPathTracer, "MinimalPathTracer", "Minimal path tracer.");
 
-    MinimalPathTracer(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties) :
-        Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<MinimalPathTracerSettings>(properties))
+    MinimalPathTracer(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
+        Falcor::RenderPass(std::move(device)),
+        parameters(Falcor::deserializeFromProperties<MinimalPathTracerSettings>(properties))
     {
         parameters.validate();
     }
 
-    [[nodiscard]] Falcor::Properties getProperties() const override { return Falcor::serializeToProperties(parameters); }
+    [[nodiscard]] Falcor::Properties getProperties() const override
+    {
+        return Falcor::serializeToProperties(parameters);
+    }
 
     void setProperties(const Falcor::Properties& properties) override
     {
@@ -46,7 +49,7 @@ class MinimalPathTracer : public Falcor::RenderPass
         parameters = std::move(next);
     }
 
-    static Falcor::ref<MinimalPathTracer> create(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties)
+    static Falcor::ref<MinimalPathTracer> create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
     {
         return Falcor::make_ref<MinimalPathTracer>(std::move(device), properties);
     }
@@ -62,56 +65,35 @@ class MinimalPathTracer : public Falcor::RenderPass
 
     void compile(Falcor::RenderContext* passContext, const CompileData&) override
     {
-        auto& cache = *passContext->vulkanResources;
-
-        auto&       shaderManager = *passContext->shaderManager;
-        const auto  shader        = shaderManager.getOrLoad("minimal_path_tracer");
-        const auto& layout        = shaderManager.layout(shader);
-        frameConstants = layout.pushConstants<PathTracingParameters>("parameters", vk::ShaderStageFlagBits::eRaygenKHR);
-
-        const auto geometry = scene.compile(*passContext);
-        traceAccesses.clear();
-        sceneBindings.compile(traceAccesses, layout, geometry);
-        traceAccesses.declare(cache);
-        colorBinding = getRayTracingStorageImageBinding(
-            *passContext->vulkan,
-            layout,
-            kOutputChannels.front().texname,
-            kHdrColorFormat,
-            kPathTracingColorFeatures
-        );
-
-        auto& device = *mpDevice;
+        auto&      shaderManager = *passContext->shaderManager;
+        const auto shader        = shaderManager.getOrLoad("minimal_path_tracer");
+        shaderManager.layout(shader).validateConstants<PathTracingParameters>("parameters");
+        scene.compile(*passContext);
         if (!pipeline)
         {
-            std::vector<vk::DescriptorSetLayoutBinding> bindings;
-            sceneBindings.appendLayoutBindings(bindings);
-            bindings.push_back(colorBinding.layout(vk::ShaderStageFlagBits::eRaygenKHR));
-            descriptorLayout          = device.createDescriptorSetLayout(bindings);
-            const auto pipelineLayout = RealtimeSceneBindings::getPipelineLayout(
-                device,
-                layout,
-                descriptorLayout,
-                std::array{frameConstants.range}
-            );
-            pipeline.emplace(
-                *passContext->vulkan,
-                RayTracingPipeline::Description{
-                    .shader            = shaderManager.module(shader),
-                    .layout            = pipelineLayout,
-                    .raygen            = kRaygenEntries,
-                    .miss              = kPathTracingMissEntries,
-                    .closestHit        = kPathTracingHitEntries,
-                    .maxRecursionDepth = kRayPipelineRecursionDepth,
-                }
-            );
-        }
-        descriptorSets.clear();
-        descriptorSets.reserve(maxFramesInFlight);
-        for (uint32_t index = 0; index < maxFramesInFlight; ++index)
-            descriptorSets.push_back(device.allocateDescriptorSet(descriptorLayout));
 
-        resourcesBound     = false;
+            const std::array groups{
+                rhi::HitGroupDesc{"hitGroup0", "closestHitMain"},
+                rhi::HitGroupDesc{"hitGroup1", "lightClosestHitMain"}
+            };
+            constexpr std::array        kGroupNames{"hitGroup0", "hitGroup1"};
+            rhi::RayTracingPipelineDesc desc;
+            desc.program           = shaderManager.program(shader);
+            desc.hitGroups         = groups.data();
+            desc.hitGroupCount     = uint32_t(groups.size());
+            desc.maxRecursion      = kRayPipelineRecursionDepth;
+            desc.maxRayPayloadSize = kPathTracingPayloadBytes;
+            rhiCheck(mpDevice->createRayTracingPipeline(desc, pipeline.writeRef()));
+            rhi::ShaderTableDesc tableDesc;
+            tableDesc.program                     = desc.program;
+            tableDesc.rayGenShaderEntryPointNames = kRaygenEntries.data();
+            tableDesc.rayGenShaderCount           = uint32_t(kRaygenEntries.size());
+            tableDesc.missShaderEntryPointNames   = kPathTracingMissEntries.data();
+            tableDesc.missShaderCount             = uint32_t(kPathTracingMissEntries.size());
+            tableDesc.hitGroupNames               = kGroupNames.data();
+            tableDesc.hitGroupCount               = uint32_t(kGroupNames.size());
+            rhiCheck(mpDevice->createShaderTable(tableDesc, shaderTable.writeRef()));
+        }
         sampleIndex        = 0;
         previousMaxBounces = parameters.maxBounces;
     }
@@ -120,65 +102,50 @@ class MinimalPathTracer : public Falcor::RenderPass
     {
         if (previousMaxBounces != parameters.maxBounces)
         {
-            auto& dictionary = renderData.getDictionary();
-            const auto flags = dictionary.getValue(Falcor::kRenderPassRefreshFlags, Falcor::RenderPassRefreshFlags::None);
+            auto&      dictionary = renderData.getDictionary();
+            const auto flags =
+                dictionary.getValue(Falcor::kRenderPassRefreshFlags, Falcor::RenderPassRefreshFlags::None);
             dictionary[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
-            previousMaxBounces = parameters.maxBounces;
+            previousMaxBounces                          = parameters.maxBounces;
         }
 
-        auto&       cache    = *renderCommands->vulkanResources;
+        auto&       cache    = *renderCommands->gpuResources;
         auto&       commands = *renderCommands->commands;
         const auto& frame    = *renderCommands;
-        if (!resourcesBound)
-        {
-            const auto     color     = cache.registerImage(renderData.getTexture(kOutputChannels.front().name));
-            constexpr auto kRead     = vulkan_access::storageRead(kRayTracingStages);
-            barriers.clear();
-            barriers.add(frame.frameData->lightBufferHandle(), kRead);
-            barriers.add(frame.materialTable->bufferHandle(), kRead);
-            barriers.add(color, kRayTracingImageWrite);
-            barriers.declare(cache);
-
-            for (const auto& set : descriptorSets)
-                cache.writeDescriptor(*set, colorBinding.index, color, vk::DescriptorType::eStorageImage);
-            resourcesBound = true;
-        }
-
-        barriers.transition(cache, commands);
 
         scene.prepare(cache, frame);
-        sceneBindings.prepare(cache, frame, *descriptorSets[frame.frameIndex]);
         cache.recordUploads(commands);
-        scene.execute(cache, commands, frame);
-        traceAccesses.transition(cache, commands);
-        pipeline->bind(commands);
-        sceneBindings.bind(commands, frame, pipeline->layout(), *descriptorSets[frame.frameIndex]);
+        scene.execute(commands, frame);
 
+        auto* pass = commands.beginRayTracingPass();
+        CHECK(pass);
+        auto* object = pass->bindPipeline(pipeline, shaderTable);
+        CHECK(object);
+        scene.bind(object, cache, frame);
+        const rhi::ShaderCursor root(object);
+        rhiCheck(root["outputImage"].setBinding(renderData.getTexture("color")->getDefaultView()));
         const auto constants = makePathTracingParameters(frame, parameters.maxBounces, sampleIndex++);
-        frameConstants.push(commands, pipeline->layout(), constants);
+        rhiCheck(root["parameters"].getDereferenced().setData(constants));
         const auto extent = renderData.getDefaultTextureDims();
-        pipeline->dispatch(commands, 0, {extent.x, extent.y, 1});
+        pass->dispatchRays(0, extent.x, extent.y, 1);
+        pass->end();
     }
 
 private:
     MinimalPathTracerSettings parameters;
 
-    ResourceBarriers                                 barriers;
-    RealtimeScene                                    scene;
-    RealtimeSceneBindings                            sceneBindings;
-    ResourceBarriers                                 traceAccesses;
-    DescriptorSetLayout                              descriptorLayout;
-    std::optional<RayTracingPipeline>                pipeline;
-    ShaderPushConstants<PathTracingParameters>       frameConstants;
-    std::vector<vk::raii::DescriptorSet>             descriptorSets;
-    ShaderBinding<vk::DescriptorType::eStorageImage> colorBinding;
-    bool                                             resourcesBound = false;
-    uint32_t                                         sampleIndex    = 0;
-    uint32_t                                         previousMaxBounces = 0;
+    RealtimeScene                         scene;
+    rhi::ComPtr<rhi::IRayTracingPipeline> pipeline;
+    rhi::ComPtr<rhi::IShaderTable>        shaderTable;
+    uint32_t                              sampleIndex        = 0;
+    uint32_t                              previousMaxBounces = 0;
 };
 
 bool drawSettings(
-    Falcor::Gui::Widgets& widgets, MinimalPathTracerSettings& settings, const MinimalPathTracer&, const PassEditorContext&
+    Falcor::Gui::Widgets&      widgets,
+    MinimalPathTracerSettings& settings,
+    const MinimalPathTracer&,
+    const PassEditorContext&
 )
 {
     const bool edited = widgets.slider("Max bounces", settings.maxBounces, kMinPathBounces, kMaxPathBounces);

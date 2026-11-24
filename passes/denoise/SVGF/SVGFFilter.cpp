@@ -1,24 +1,13 @@
 #include "passes/denoise/SVGF/SVGFFilter.h"
 
+#include <slang-rhi.h>
+#include <slang-rhi/shader-cursor.h>
+#include "render/DispatchGroups.h"
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
-#include "render/device/VulkanContext.h"
 
 namespace
 {
-constexpr uint32_t kSignalInputCount     = 4;
-constexpr uint32_t kFilterBindingCount   = 6;
-constexpr uint32_t kFirstOrLastBindingCount = 7;
-constexpr auto     kStorageWrite         = VulkanResources::ImageAccess{
-                .stages = vk::PipelineStageFlagBits2::eComputeShader,
-                .access = vk::AccessFlagBits2::eShaderStorageWrite,
-                .layout = vk::ImageLayout::eGeneral,
-};
-constexpr auto kSampledRead = VulkanResources::ImageAccess{
-    .stages = vk::PipelineStageFlagBits2::eComputeShader,
-    .access = vk::AccessFlagBits2::eShaderSampledRead,
-    .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
-};
 
 struct FilterParameters
 {
@@ -30,19 +19,19 @@ static_assert(sizeof(FilterParameters) == 24);
 
 enum class FilterVariant
 {
-    First = 0,
+    First  = 0,
     Filter = 1,
-    Final = 2,
+    Final  = 2,
 };
 }  // namespace
 
 void SVGFFilter::compile(
-    const Falcor::RenderContext& context,
-    const DenoiserInputs& traced,
-    const SVGFReprojection::Output& lighting,
-    const std::array<VulkanResources::ImageHandle, kLightingLayerCount>& scratch,
-    VulkanResources::ImageHandle color,
-    const SVGFReprojection& reprojection
+    const Falcor::RenderContext&                                      context,
+    const DenoiserInputs&                                             traced,
+    const SVGFReprojection::Output&                                   lighting,
+    const std::array<GpuResources::ImageHandle, kLightingLayerCount>& scratch,
+    GpuResources::ImageHandle                                         color,
+    const SVGFReprojection&                                           reprojection
 )
 {
     if (filters.empty())
@@ -51,7 +40,7 @@ void SVGFFilter::compile(
     const std::array signals{std::array{lighting.direct, lighting.indirect}, scratch};
     for (uint32_t iteration = 0; iteration < filters.size(); ++iteration)
     {
-        const auto& [direct, indirect] = signals[iteration % signals.size()];
+        const auto& [direct, indirect]             = signals[iteration % signals.size()];
         const auto& [targetDirect, targetIndirect] = signals[(iteration + 1) % signals.size()];
         filters[iteration].compile(
             context,
@@ -71,101 +60,104 @@ void SVGFFilter::compile(
     }
 }
 
-void SVGFFilter::execute(VulkanResources& cache, vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame) const
+
+void SVGFFilter::execute(GpuResources& cache, rhi::ICommandEncoder& commands, const Falcor::RenderContext& frame) const
 {
     for (const auto& filter : filters)
         filter.execute(cache, commands, frame);
 }
 
+
 void SVGFFilter::FilterPass::compile(const Falcor::RenderContext& context, const FilterResources& resources)
 {
-    auto& cache = *context.vulkanResources;
-    extent = cache.imageInfo(resources.direct).extent;
-    accesses.clear();
-    for (const auto image : {resources.direct, resources.indirect, resources.depth, resources.normal})
-        accesses.add(image, kSampledRead);
+    auto& cache = *context.gpuResources;
+    extent      = cache.imageInfo(resources.direct).size;
+    if (!pipeline)
+        createPipeline(context);
+    rhiCheck(context.device->createRootShaderObject(pipeline->getProgram(), shaderObject.writeRef()));
+    rhiCheck(
+        rhi::ShaderCursor(shaderObject)["inputDirect"].setBinding(cache.getImage(resources.direct)->getDefaultView())
+    );
+    rhiCheck(
+        rhi::ShaderCursor(shaderObject)["inputIndirect"].setBinding(
+            cache.getImage(resources.indirect)->getDefaultView()
+        )
+    );
+    rhiCheck(
+        rhi::ShaderCursor(shaderObject)["depthImage"].setBinding(cache.getImage(resources.depth)->getDefaultView())
+    );
+    rhiCheck(
+        rhi::ShaderCursor(shaderObject)["normalImage"].setBinding(cache.getImage(resources.normal)->getDefaultView())
+    );
     if (last())
     {
-        accesses.add(resources.emission, kSampledRead);
-        accesses.add(resources.albedo, kSampledRead);
-        accesses.add(resources.color, kStorageWrite);
+        rhiCheck(
+            rhi::ShaderCursor(shaderObject)["outputColor"].setBinding(cache.getImage(resources.color)->getDefaultView())
+        );
+        rhiCheck(
+            rhi::ShaderCursor(shaderObject)["emission"].setBinding(cache.getImage(resources.emission)->getDefaultView())
+        );
+        rhiCheck(
+            rhi::ShaderCursor(shaderObject)["albedoImage"].setBinding(
+                cache.getImage(resources.albedo)->getDefaultView()
+            )
+        );
     }
     else
     {
-        accesses.add(resources.targetDirect, kStorageWrite);
-        accesses.add(resources.targetIndirect, kStorageWrite);
-    }
-    if (first())
-        accesses.add(resources.lightingHistory, kStorageWrite);
-    accesses.declare(cache);
-    if (!*pipeline)
-        createPipeline(context);
-
-    const std::array handles{
-        resources.direct,
-        resources.indirect,
-        resources.depth,
-        resources.normal,
-        last() ? resources.color : resources.targetDirect,
-        last() ? resources.emission : resources.targetIndirect,
-        last() ? resources.albedo : resources.lightingHistory,
-    };
-    const uint32_t bindingCount = first() || last() ? kFirstOrLastBindingCount : kFilterBindingCount;
-    for (uint32_t binding = 0; binding < bindingCount; ++binding)
-    {
-        const auto image   = handles[binding];
-        const bool sampled = binding < kSignalInputCount || (last() && binding >= 5);
-        const auto type    = sampled ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage;
-        const auto view =
-            cache.imageInfo(image).arrayLayers == 1 ? vk::ImageViewType::e2D : vk::ImageViewType::e2DArray;
-        cache.writeDescriptor(*descriptorSet, binding, image, type, view);
+        rhiCheck(
+            rhi::ShaderCursor(shaderObject)["outputDirect"].setBinding(
+                cache.getImage(resources.targetDirect)->getDefaultView()
+            )
+        );
+        rhiCheck(
+            rhi::ShaderCursor(shaderObject)["outputIndirect"].setBinding(
+                cache.getImage(resources.targetIndirect)->getDefaultView()
+            )
+        );
+        if (first())
+            rhiCheck(
+                rhi::ShaderCursor(shaderObject)["historyLighting"].setBinding(
+                    cache.getImage(resources.lightingHistory)->getDefaultView()
+                )
+            );
     }
 }
+
 
 void SVGFFilter::FilterPass::createPipeline(const Falcor::RenderContext& context)
 {
-    const uint32_t bindingCount = first() || last() ? kFirstOrLastBindingCount : kFilterBindingCount;
-    std::vector<vk::DescriptorSetLayoutBinding> bindings(bindingCount);
-    for (uint32_t binding = 0; binding < bindingCount; ++binding)
-    {
-        const bool sampled = binding < kSignalInputCount || (last() && binding >= 5);
-        bindings[binding]  = {
-             .binding         = binding,
-             .descriptorType  = sampled ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage,
-             .descriptorCount = 1,
-             .stageFlags      = vk::ShaderStageFlagBits::eCompute,
-        };
-    }
-    auto& device        = *context.getDevice();
-    descriptorSetLayout = device.createDescriptorSetLayout(bindings);
-    const vk::PushConstantRange range{
-        .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        .size       = sizeof(FilterParameters)
-    };
-    pipelineLayout = device.getOrCreatePipelineLayout(std::array{&descriptorSetLayout}, std::array{range});
     const auto variant = first() ? FilterVariant::First : last() ? FilterVariant::Final : FilterVariant::Filter;
-    const auto shader = context.shaderManager->getOrLoad("svgf_filter", {{"SVGF_STAGE", std::to_string(static_cast<int>(variant))}});
-    pipeline = device.createComputePipeline(shader, pipelineLayout);
-    descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
+    pipeline           = context.device->createComputePipeline(
+        {.program = context.shaderManager->program(
+             context.shaderManager->getOrLoad("svgf_filter", {{"SVGF_STAGE", std::to_string(int(variant))}})
+         )}
+    );
+    CHECK(pipeline);
 }
 
+
 void SVGFFilter::FilterPass::execute(
-    VulkanResources& cache, vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame
+    GpuResources& cache, rhi::ICommandEncoder& commands, const Falcor::RenderContext& frame
 ) const
 {
-    accesses.transition(cache, commands);
-    commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
-    commands.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelineLayout, 0, *descriptorSet, {});
+
+
     const auto& viewport = frame.view->viewport;
-    commands.pushConstants<FilterParameters>(
-        pipelineLayout,
-        vk::ShaderStageFlagBits::eCompute,
-        0,
-        FilterParameters{
+    {
+        const auto uniformValue = FilterParameters{
             .viewport     = {viewport.x, viewport.y, viewport.width, viewport.height},
             .stepSize     = 1u << iteration,
             .historyLayer = reprojection.colorHistoryLayer(),
-        }
-    );
-    pipeline.dispatch(commands, {extent.width, extent.height, 1});
+        };
+        const auto uniformCursor = rhi::ShaderCursor(shaderObject)["parameters"].getDereferenced();
+        CHECK(uniformCursor.getTypeLayout()->getSize() <= sizeof(uniformValue));
+        rhiCheck(uniformCursor.setData(&uniformValue, uniformCursor.getTypeLayout()->getSize()));
+    };
+    auto* pass = commands.beginComputePass();
+    CHECK(pass);
+    pass->bindPipeline(pipeline, shaderObject);
+    const auto groups = dispatchGroups(pipeline, {extent.width, extent.height, 1});
+    pass->dispatchCompute(groups.width, groups.height, groups.depth);
+    pass->end();
 }

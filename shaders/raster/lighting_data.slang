@@ -11,7 +11,7 @@ struct LightUniforms
     float2 padding;
 };
 
-[[vk::binding(0, 1)]] ConstantBuffer<LightUniforms> lightUniforms;
-[[vk::binding(1, 1)]] StructuredBuffer<LightData> lights;
+ConstantBuffer<LightUniforms> lightUniforms;
+StructuredBuffer<LightData> lights;
 
 #endif

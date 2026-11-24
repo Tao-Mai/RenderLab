@@ -46,7 +46,7 @@ bool restirReproject(RestirSurfaceData surface, out uint previousIndex)
         return false;
     }
     float  depth     = dot(restirFrame.previousDepthRow, float4(surface.position, 1.0));
-    float2 projected = restirFrame.previousViewportOffset + (ndc.xy * 0.5 + 0.5) * restirFrame.previousViewportExtent;
+    float2 projected = restirFrame.previousViewportOffset + clipToUv(ndc.xy) * restirFrame.previousViewportExtent;
     int2   nearest   = int2(floor(projected));
     float  bestError = kMaxRayDistance;
     bool   found     = false;

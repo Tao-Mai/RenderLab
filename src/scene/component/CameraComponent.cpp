@@ -19,32 +19,34 @@ void CameraComponent::init(AActor* actor)
     CHECK(actor->getComponent<TransformComponent>());
 }
 
+
 void CameraComponent::resetNavigation()
 {
-    if (looking && context().window) context().window->setCursorCaptured(false);
-    looking = false;
-    freeMovement = false;
+    if (looking && context().window)
+        context().window->setCursorCaptured(false);
+    looking        = false;
+    freeMovement   = false;
     previousMouseX = 0.0;
     previousMouseY = 0.0;
 }
+
 
 void CameraComponent::setInputEnabled(bool enabled) { inputEnabled = enabled; }
 
 void CameraComponent::tick(float deltaTime)
 {
-    if (!inputEnabled && !looking && !freeMovement) return;
+    if (!inputEnabled && !looking && !freeMovement)
+        return;
 
-    DCHECK(context().inputManager && context().window,
-        "CameraComponent requires InputManager and Window");
-    auto& window = *context().window;
-    const auto& input = *context().inputManager;
-    auto& camera = *this;
+
+    auto&       window = *context().window;
+    const auto& input  = *context().inputManager;
+    auto&       camera = *this;
 
     if (inputEnabled && input.get(Command::ToggleFreeMovement))
         freeMovement = !freeMovement;
 
-    const bool navigationRequested = freeMovement ||
-        (input.get(Command::Navigate) && (inputEnabled || looking));
+    const bool navigationRequested = freeMovement || (input.get(Command::Navigate) && (inputEnabled || looking));
     if (navigationRequested != looking)
     {
         looking = navigationRequested;
@@ -52,8 +54,8 @@ void CameraComponent::tick(float deltaTime)
         if (looking)
         {
             const auto [x, y] = window.cursorPosition();
-            previousMouseX = x;
-            previousMouseY = y;
+            previousMouseX    = x;
+            previousMouseY    = y;
         }
     }
 
@@ -66,30 +68,26 @@ void CameraComponent::tick(float deltaTime)
     const auto [x, y] = window.cursorPosition();
     camera.yaw += static_cast<float>(x - previousMouseX) * camera.mouseSensitivity;
     camera.pitch -= static_cast<float>(y - previousMouseY) * camera.mouseSensitivity;
-    camera.pitch = std::clamp(camera.pitch, -89.0f, 89.0f);
+    camera.pitch   = std::clamp(camera.pitch, -89.0f, 89.0f);
     previousMouseX = x;
     previousMouseY = y;
 
-    camera.fieldOfView = std::clamp(
-        camera.fieldOfView - static_cast<float>(window.consumeScrollOffset()) * 2.0f,
-        20.0f, 90.0f);
+    camera.fieldOfView =
+        std::clamp(camera.fieldOfView - static_cast<float>(window.consumeScrollOffset()) * 2.0f, 20.0f, 90.0f);
 }
+
 
 bool CameraComponent::isFreeMovementActive() const { return freeMovement; }
 bool CameraComponent::isNavigationActive() const { return looking; }
 
-const glm::vec3& CameraComponent::worldPosition() const
-{
-    return actor().transform().position;
-}
+const glm::vec3& CameraComponent::worldPosition() const { return actor().transform().position; }
 
 glm::vec3 CameraComponent::forward() const
 {
     const auto& camera = *this;
-    const float yaw = glm::radians(camera.yaw);
-    const float pitch = glm::radians(camera.pitch);
-    return glm::normalize(glm::vec3{
-        std::cos(yaw) * std::cos(pitch), std::sin(pitch), std::sin(yaw) * std::cos(pitch)});
+    const float yaw    = glm::radians(camera.yaw);
+    const float pitch  = glm::radians(camera.pitch);
+    return glm::normalize(glm::vec3{std::cos(yaw) * std::cos(pitch), std::sin(pitch), std::sin(yaw) * std::cos(pitch)});
 }
 
 glm::vec3 CameraComponent::right() const
@@ -98,10 +96,7 @@ glm::vec3 CameraComponent::right() const
     return {-std::sin(angle), 0.0f, std::cos(angle)};
 }
 
-glm::vec3 CameraComponent::up() const
-{
-    return glm::normalize(glm::cross(right(), forward()));
-}
+glm::vec3 CameraComponent::up() const { return glm::normalize(glm::cross(right(), forward())); }
 
 glm::mat4 CameraComponent::viewMatrix() const
 {
@@ -111,8 +106,8 @@ glm::mat4 CameraComponent::viewMatrix() const
 glm::mat4 CameraComponent::projectionMatrix(float aspectRatio) const
 {
     const auto& camera = *this;
-    glm::mat4 projection = glm::perspective(
-        glm::radians(camera.fieldOfView), aspectRatio, camera.nearPlane, camera.farPlane);
-    projection[1][1] *= -1.0f;
+    glm::mat4   projection =
+        glm::perspective(glm::radians(camera.fieldOfView), aspectRatio, camera.nearPlane, camera.farPlane);
+
     return projection;
 }

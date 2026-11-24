@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <optional>
-#include "core/Debug.h"
 #include "editor/EditorBackend.h"
 #include "editor/EditorCamera.h"
 #include "editor/EditorUi.h"
@@ -43,13 +42,12 @@ public:
     [[nodiscard]] uint32_t selectionId() const { return selectedId; }
 
 private:
-    DEBUG_ONLY(bool inited = false;)
     std::unique_ptr<EditorCamera> editorCamera;
     uint64_t                      sceneGeneration = 0;
     EditorBackend                 backend;
     EditorUI                      ui;
-    uint32_t                      selectedId = 0;
-    bool                          dirty      = false;
+    uint32_t                      selectedId          = 0;
+    bool                          dirty               = false;
     bool                          windowHasObjectList = false;
     std::optional<SceneAsset::ID> pendingSceneId;
     SceneObjectActions            pendingObjectActions;

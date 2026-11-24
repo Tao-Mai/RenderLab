@@ -8,11 +8,11 @@ struct PresentParameters
     uint encodeSrgb;
 };
 
-[[vk::push_constant]] ConstantBuffer<PresentParameters> parameters;
+ConstantBuffer<PresentParameters> parameters;
 #endif
 
-[[vk::binding(0, 0)]] Texture2D<float4>                 sourceImage;
-[[vk::binding(3, 0)]] SamplerState                      pointSampler;
+Texture2D<float4>                 sourceImage;
+SamplerState                      pointSampler;
 
 [shader("fragment")] float4 fragMain(FullscreenVertexOutput input) : SV_Target
 {

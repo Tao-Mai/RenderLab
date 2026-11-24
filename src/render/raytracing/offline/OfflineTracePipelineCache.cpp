@@ -1,57 +1,55 @@
 #include "render/raytracing/offline/OfflineTracePipelineCache.h"
-
-#include "render/RenderConfig.h"
-#include "render/device/VulkanContext.h"
-#include "render/resources/GpuShader.h"
-
 #include <array>
 #include <chrono>
-
+#include <slang-rhi.h>
+#include "render/RenderConfig.h"
+#include "render/device/RhiCheck.h"
 namespace
 {
-RayTracingPipeline buildPipeline(const VulkanContext& vulkan, vk::PipelineLayout layout, const std::string& shaderPath)
+OfflineTracePipelineCache::Result buildPipeline(rhi::IDevice& device, rhi::IShaderProgram* program)
 {
-    constexpr std::array kRaygenEntries{"raygenMain"};
-    constexpr std::array kMissEntries{"missMain", "visibilityMissMain"};
-    constexpr std::array kHitEntries{"closestHitMain"};
-    const GpuShader shader(vulkan.deviceHandle(), shaderPath);
-    return RayTracingPipeline(vulkan, {
-        .shader = shader.handle(),
-        .layout = layout,
-        .raygen = kRaygenEntries,
-        .miss = kMissEntries,
-        .closestHit = kHitEntries,
-        .maxRecursionDepth = kRayPipelineRecursionDepth,
-    });
+    constexpr std::array        kRaygen{"raygenMain"};
+    constexpr std::array        kMiss{"missMain", "visibilityMissMain"};
+    constexpr std::array        kGroupNames{"hitGroup0"};
+    const rhi::HitGroupDesc     group{"hitGroup0", "closestHitMain"};
+    rhi::RayTracingPipelineDesc desc;
+    desc.program           = program;
+    desc.hitGroups         = &group;
+    desc.hitGroupCount     = 1;
+    desc.maxRecursion      = kRayPipelineRecursionDepth;
+    desc.maxRayPayloadSize = kPathTracingPayloadBytes;
+    OfflineTracePipelineCache::Result result;
+    rhiCheck(device.createRayTracingPipeline(desc, result.pipeline.writeRef()));
+    rhi::ShaderTableDesc table;
+    table.program                     = program;
+    table.rayGenShaderEntryPointNames = kRaygen.data();
+    table.rayGenShaderCount           = uint32_t(kRaygen.size());
+    table.missShaderEntryPointNames   = kMiss.data();
+    table.missShaderCount             = uint32_t(kMiss.size());
+    table.hitGroupNames               = kGroupNames.data();
+    table.hitGroupCount               = uint32_t(kGroupNames.size());
+    rhiCheck(device.createShaderTable(table, result.shaderTable.writeRef()));
+    return result;
 }
-}
+}  // namespace
 
-const RayTracingPipeline* OfflineTracePipelineCache::get(
-    const VulkanContext& vulkan, vk::PipelineLayout layout, std::string_view shader, bool background
-)
+const OfflineTracePipelineCache::Result*
+OfflineTracePipelineCache::get(rhi::IDevice& device, ShaderManager& shaders, ShaderHandle shader, bool background)
 {
-    auto [entry, inserted] = builds.try_emplace(std::pair{layout, std::string{shader}});
-    auto& build = entry->second;
+    auto [entry, inserted] = builds.try_emplace(shader.index);
+    auto& build            = entry->second;
     if (inserted)
     {
+        rhi::ComPtr<rhi::IShaderProgram> program(shaders.program(shader));
         if (background)
-        {
-            build.future = std::async(std::launch::async, [&vulkan, layout, shaderPath = entry->first.second]
-            {
-                return buildPipeline(vulkan, layout, shaderPath);
-            });
-        }
+            build.future =
+                std::async(std::launch::async, [&device, program] { return buildPipeline(device, program); });
         else
-            build.result.emplace(buildPipeline(vulkan, layout, entry->first.second));
+            build.result.emplace(buildPipeline(device, program));
     }
-
     if (build.future.valid() && build.future.wait_for(std::chrono::seconds{0}) == std::future_status::ready)
         build.result.emplace(build.future.get());
     return build.result ? &*build.result : nullptr;
 }
 
-void OfflineTracePipelineCache::clear() noexcept
-{
-    // Join background builds before releasing the device and its cached layouts.
-    builds.clear();
-}
+void OfflineTracePipelineCache::clear() noexcept { builds.clear(); }

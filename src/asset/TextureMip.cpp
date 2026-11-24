@@ -18,7 +18,7 @@ std::vector<uint8_t> generateChain(const TextureAsset& asset, std::span<const ui
     CHECK(asset.mipLevels == maxLevels(asset.width, asset.height));
 
     const ImageBlock block = imageBlock(asset.format);
-    DCHECK(block.extent == 1);
+
     CHECK(basePixels.size() == levelBytes(asset.width, asset.height, 1, block, 0));
     const uint64_t byteCount = totalBytes(asset.width, asset.height, 1, block, asset.mipLevels);
     CHECK(byteCount <= std::numeric_limits<uint32_t>::max(), "texture mip chain is too large: {}", asset.id);

@@ -3,14 +3,14 @@
 #include "restir.slang"
 
 #if SVGF
-[[vk::binding(3, 3)]] [[vk::image_format("rgba16f")]] RWTexture2DArray<float4> outputImage;
-[[vk::binding(7, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> emissionImage;
-[[vk::binding(8, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> albedoImage;
+[format("rgba16f")] RWTexture2DArray<float4> outputImage;
+[format("rgba16f")] RWTexture2D<float4> emissionImage;
+[format("rgba16f")] RWTexture2D<float4> albedoImage;
 #else
-[[vk::binding(3, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> outputImage;
+[format("rgba16f")] RWTexture2D<float4> outputImage;
 #endif
-[[vk::binding(4, 3)]] [[vk::image_format("r32f")]] RWTexture2D<float> depthImage;
-[[vk::binding(5, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> normalImage;
+[format("r32f")] RWTexture2D<float> depthImage;
+[format("rgba16f")] RWTexture2D<float4> normalImage;
 
 struct PathResult
 {

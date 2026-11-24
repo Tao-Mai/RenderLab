@@ -10,63 +10,6 @@
 #include "render/RenderConfig.h"
 #include "render/resources/LightRanges.h"
 
-namespace RenderInterface
-{
-inline constexpr uint32_t kSceneSet    = 0;
-inline constexpr uint32_t kLightSet    = 1;
-inline constexpr uint32_t kMaterialSet = 2;
-inline constexpr uint32_t kShadowSet   = 3;
-inline constexpr uint32_t kRayTracingPassSet = 3;
-inline constexpr uint32_t kDeferredPassSet   = 2;
-
-inline constexpr uint32_t kGBufferDiffuseBinding  = 0;
-inline constexpr uint32_t kGBufferNormalBinding   = 1;
-inline constexpr uint32_t kGBufferEmissiveBinding = 2;
-inline constexpr uint32_t kGBufferSpecularBinding = 3;
-inline constexpr uint32_t kGBufferSheenBinding    = 4;
-inline constexpr uint32_t kGBufferDepthBinding    = 5;
-
-// Scene set: camera data only.
-inline constexpr uint32_t kSceneUniformBinding = 0;
-
-// Light set: general lighting and environment resources.
-inline constexpr uint32_t kLightUniformBinding            = 0;
-inline constexpr uint32_t kLightBufferBinding             = 1;
-inline constexpr uint32_t kIrradianceImageBinding            = 2;
-inline constexpr uint32_t kIrradianceSamplerBinding          = 3;
-inline constexpr uint32_t kPrefilteredSpecularImageBinding   = 4;
-inline constexpr uint32_t kPrefilteredSpecularSamplerBinding = 5;
-inline constexpr uint32_t kBrdfLutImageBinding               = 6;
-inline constexpr uint32_t kBrdfLutSamplerBinding             = 7;
-inline constexpr uint32_t kRadianceImageBinding              = 8;
-inline constexpr uint32_t kRadianceSamplerBinding            = 9;
-inline constexpr uint32_t kSheenLutImageBinding              = 10;
-inline constexpr uint32_t kSheenLutSamplerBinding            = 11;
-
-// Shadow set: raster shadow parameters, transforms and depth maps.
-inline constexpr uint32_t kShadowUniformBinding           = 0;
-inline constexpr uint32_t kPointShadowBufferBinding       = 1;
-inline constexpr uint32_t kSpotShadowBufferBinding        = 2;
-inline constexpr uint32_t kRectAreaShadowBufferBinding    = 3;
-inline constexpr uint32_t kDirectionalShadowBufferBinding = 4;
-inline constexpr uint32_t kPointShadowImageBinding        = 5;
-inline constexpr uint32_t kSpotShadowImageBinding         = 6;
-inline constexpr uint32_t kRectAreaShadowImageBinding     = 7;
-inline constexpr uint32_t kDirectionalShadowImageBinding  = 8;
-inline constexpr uint32_t kShadowComparisonSamplerBinding = 9;
-inline constexpr uint32_t kShadowLinearSamplerBinding     = 10;
-
-// Global material set, shared by rasterization and ray tracing.
-inline constexpr uint32_t kMaterialBufferBinding   = 0;
-inline constexpr uint32_t kMaterialTexturesBinding = 1;
-inline constexpr uint32_t kMaterialSamplersBinding = 2;
-
-// Tone mapping uses its own set 0, not the scene layout.
-inline constexpr uint32_t kToneMappingImageBinding   = 0;
-inline constexpr uint32_t kToneMappingSamplerBinding = 1;
-inline constexpr uint32_t kToneMappingExposureBinding = 2;
-}  // namespace RenderInterface
-
 // Matches SceneUniforms in shaders/scene/scene_uniforms.slang.
 struct alignas(16) SceneUniforms
 {
@@ -79,21 +22,21 @@ struct alignas(16) SceneUniforms
 struct alignas(16) LightUniforms
 {
     LightRanges lightRanges;
-    float ambientCoefficient = 0.1f;
-    float prefilteredMaxLod = 0.0f;
-    glm::vec2 padding{};
+    float       ambientCoefficient = 0.1f;
+    float       prefilteredMaxLod  = 0.0f;
+    glm::vec2   padding{};
 };
 
 struct alignas(16) ShadowUniforms
 {
-    uint32_t cascadeCount = 0;
-    float directionalSampleRadius = 0.0f;
-    float bias = 0.0f;
-    float sampleRadius = 0.0f;
-    float spotSampleRadius = 0.0f;
-    uint32_t pixelRotation = 0;
-    uint32_t enabled = 0;
-    uint32_t padding = 0;
+    uint32_t cascadeCount            = 0;
+    float    directionalSampleRadius = 0.0f;
+    float    bias                    = 0.0f;
+    float    sampleRadius            = 0.0f;
+    float    spotSampleRadius        = 0.0f;
+    uint32_t pixelRotation           = 0;
+    uint32_t enabled                 = 0;
+    uint32_t padding                 = 0;
 };
 
 // GPU discriminator; values match shaders/scene/light_data.slang.
@@ -223,7 +166,7 @@ struct ShadowPushConstants
     glm::mat4 model{1.0f};
     uint32_t  lightIdx     = 0;
     uint32_t  cascadeIndex = 0;
-    uint32_t  padding1     = 0;
+    uint32_t  faceIndex    = 0;
     uint32_t  padding2     = 0;
 };
 
@@ -239,8 +182,8 @@ struct DeferredLightingPushConstants
 
 struct ToneMappingPushConstants
 {
-    uint32_t mode          = 0;
-    uint32_t encodeSrgb    = 0;
+    uint32_t mode       = 0;
+    uint32_t encodeSrgb = 0;
     uint32_t padding[2]{};
 };
 

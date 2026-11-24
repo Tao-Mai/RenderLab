@@ -1,13 +1,15 @@
 #include "asset/AssetManager.h"
+#include <cmath>
 #include "core/Serializer.h"
 #include "metadata/RegisteredTypes.generated.h"
-#include <cmath>
 
 
 namespace
 {
 template <AssetType T>
-void loadAssetDirectory(const std::filesystem::path& directory, std::unordered_map<typename T::ID, std::unique_ptr<T>>& out)
+void loadAssetDirectory(
+    const std::filesystem::path& directory, std::unordered_map<typename T::ID, std::unique_ptr<T>>& out
+)
 {
     if (!std::filesystem::exists(directory))
     {
@@ -29,8 +31,12 @@ void loadAssetDirectory(const std::filesystem::path& directory, std::unordered_m
         CHECK(!asset->id.empty(), "asset has empty id: {}", entry.path().string());
         if constexpr (std::same_as<T, MeshAsset>)
             for (glm::length_t axis = 0; axis < 3; ++axis)
-                CHECK(std::isfinite(asset->bounds.min[axis]) && std::isfinite(asset->bounds.max[axis]) &&
-                    asset->bounds.min[axis] <= asset->bounds.max[axis], "invalid mesh bounds: {}", asset->id);
+                CHECK(
+                    std::isfinite(asset->bounds.min[axis]) && std::isfinite(asset->bounds.max[axis]) &&
+                        asset->bounds.min[axis] <= asset->bounds.max[axis],
+                    "invalid mesh bounds: {}",
+                    asset->id
+                );
 
         const typename T::ID id = asset->id;
         CHECK(out.emplace(id, std::move(asset)).second, "duplicate asset ID: {}", id);
@@ -38,12 +44,12 @@ void loadAssetDirectory(const std::filesystem::path& directory, std::unordered_m
 }
 }  // namespace
 
-AssetManager::~AssetManager() { DCHECK(!inited); }
+AssetManager::~AssetManager() {}
 
 void AssetManager::init(std::filesystem::path assetRoot)
 {
-    DCHECK(!inited);
-    DCHECK(!assetRoot.empty());
+
+
     static const bool kRegistered = []
     {
         metadata::visitRegisteredTypes<MaterialAsset>([]<class T>(const char*) { RegisterType<T, MaterialAsset>(); });
@@ -52,14 +58,9 @@ void AssetManager::init(std::filesystem::path assetRoot)
 
     root = std::move(assetRoot);
     loadAll();
-    DEBUG_EXEC(inited = true);
 }
 
-void AssetManager::shutdown() noexcept
-{
-    clear();
-    DEBUG_EXEC(inited = false);
-}
+void AssetManager::shutdown() noexcept { clear(); }
 
 void AssetManager::loadAll()
 {

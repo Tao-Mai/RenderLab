@@ -21,11 +21,11 @@ static const float kMaxRayDistance             = 3.402823466e+38;
 static const uint kSceneMask = 0x01;
 static const uint kLightMask = 0x02;
 
-[[vk::binding(0, 3)]] RaytracingAccelerationStructure scene;
-[[vk::binding(1, 1)]] StructuredBuffer<LightData>                                    lights;
-[[vk::binding(8, 1)]] TextureCube<float4>                                            radianceMap;
-[[vk::binding(9, 1)]] SamplerState                                                   radianceSampler;
-[[vk::binding(2, 3)]] ByteAddressBuffer                                               emissiveTriangles;
+RaytracingAccelerationStructure scene;
+StructuredBuffer<LightData>                                    lights;
+TextureCube<float4>                                            radianceMap;
+SamplerState                                                   radianceSampler;
+ByteAddressBuffer                                               emissiveTriangles;
 
 EmissiveTriangle loadEmissiveTriangle(uint index)
 {
@@ -159,13 +159,13 @@ Surface surfaceAt(RayTracingHitData hit, uint primitiveIndex, float2 barycentric
     return surface;
 }
 
-[[vk::push_constant]] ConstantBuffer<PathTracingParameters> parameters;
-[[vk::binding(1, 3)]] StructuredBuffer<RayTracingHitData> objects;
+ConstantBuffer<PathTracingParameters> parameters;
+StructuredBuffer<RayTracingHitData> objects;
 
 RayDesc createPathRay(uint2 pixel, float2 pixelSample)
 {
     float2 local    = float2(pixel) + pixelSample - parameters.viewportOffset;
-    float2 ndc      = local / parameters.viewportExtent * 2.0 - 1.0;
+    float2 ndc      = uvToClip(local / parameters.viewportExtent);
     float4 farPoint = mul(sceneUniforms.inverseViewProjection, float4(ndc, 1.0, 1.0));
     float3 toFar    = farPoint.xyz / farPoint.w - sceneUniforms.cameraPosition.xyz;
 

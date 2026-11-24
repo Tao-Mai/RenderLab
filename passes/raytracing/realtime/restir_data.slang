@@ -138,10 +138,10 @@ struct RestirReservoir
 }
 ;
 
-[[vk::binding(9, 3)]] RWStructuredBuffer<RestirSurfaceData> restirSurfaces;
-[[vk::binding(10, 3)]] StructuredBuffer<RestirSurfaceData> restirPreviousSurfaces;
-[[vk::binding(11, 3)]] RWStructuredBuffer<RestirReservoir> restirInitialReservoirs;
-[[vk::binding(12, 3)]] RWStructuredBuffer<RestirReservoir> restirHistory;
-[[vk::binding(13, 3)]] ConstantBuffer<RestirFrameParameters> restirFrame;
+RWStructuredBuffer<RestirSurfaceData> restirSurfaces;
+StructuredBuffer<RestirSurfaceData> restirPreviousSurfaces;
+RWStructuredBuffer<RestirReservoir> restirInitialReservoirs;
+RWStructuredBuffer<RestirReservoir> restirHistory;
+ConstantBuffer<RestirFrameParameters> restirFrame;
 
 #endif

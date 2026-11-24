@@ -1,13 +1,12 @@
 #pragma once
 
-#include "render/device/ResourceBarriers.h"
+#include "render/device/GpuResources.h"
 #include "render/graph/RenderPass.h"
 
 #include "passes/postprocess/Bloom/BloomSettings.h"
-#include "render/graph/RenderPass.h"
 
-#include "render/device/Device.h"
-#include "render/raster/RasterAttachments.h"
+#include <slang-rhi.h>
+#include <slang-rhi/shader-cursor.h>
 
 #include <vector>
 
@@ -15,12 +14,12 @@ class Bloom : public Falcor::RenderPass
 {
     FALCOR_PLUGIN_CLASS(Bloom, "Bloom", "Extracts and filters highlights for bloom.");
 
-    Bloom(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties);
+    Bloom(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties);
 
     [[nodiscard]] Falcor::Properties getProperties() const override;
-    void setProperties(const Falcor::Properties& properties) override;
+    void                             setProperties(const Falcor::Properties& properties) override;
 
-    static Falcor::ref<Bloom> create(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties)
+    static Falcor::ref<Bloom> create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
     {
         return Falcor::make_ref<Bloom>(std::move(device), properties);
     }
@@ -28,7 +27,7 @@ class Bloom : public Falcor::RenderPass
     void renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget) override;
 
     [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData& compileData) override;
-    void                               compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
+    void compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
     void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
 
 private:
@@ -51,22 +50,23 @@ private:
 
         void compile(
             const Falcor::RenderContext& context,
-            VulkanResources::ImageHandle source,
-            VulkanResources::ImageHandle base,
-            VulkanResources::ImageHandle target
+            GpuResources::ImageHandle    source,
+            GpuResources::ImageHandle    base,
+            GpuResources::ImageHandle    target
         );
-        void execute(VulkanResources& cache, vk::raii::CommandBuffer& commandBuffer, vk::Extent2D frameExtent, const ViewportRect& viewport) const;
+        void execute(
+            GpuResources& cache, rhi::ICommandEncoder& commandBuffer, Extent2D frameExtent, const ViewportRect& viewport
+        ) const;
 
     private:
-        Stage                    stage;
-        const BloomSettings&     settings;
-        VulkanResources::ImageHandle source;
-        RasterAttachments<1>     attachments;
-        ResourceBarriers       accesses;
-        DescriptorSetLayout      descriptorSetLayout;
-        vk::raii::DescriptorSet  descriptorSet = nullptr;
-        vk::Pipeline             pipeline;
-        vk::PipelineLayout       pipelineLayout;
+        Stage                     stage;
+        const BloomSettings&      settings;
+        GpuResources::ImageHandle source;
+
+        GpuResources::ImageHandle target;
+
+        rhi::ComPtr<rhi::IShaderObject>   shaderObject;
+        rhi::ComPtr<rhi::IRenderPipeline> pipeline;
     };
 
     std::vector<Filter> filters;

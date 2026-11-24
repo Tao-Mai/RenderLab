@@ -1,8 +1,9 @@
 #pragma once
+#include <slang-rhi.h>
 
-#include "core/Macros.h"
 #include "core/Dictionary.h"
 #include "core/HotReloadFlags.h"
+#include "core/Macros.h"
 #include "core/Object.h"
 #include "core/Plugin.h"
 #include "core/Properties.h"
@@ -30,12 +31,16 @@ class ResourceCache;
 class FALCOR_API RenderData
 {
 public:
-    [[nodiscard]] const ref<Resource>& getResource(std::string_view name) const;
-    [[nodiscard]] ref<Texture>         getTexture(std::string_view name) const;
-    [[nodiscard]] const ref<Resource>& operator[](std::string_view name) const { return getResource(name); }
-    [[nodiscard]] Dictionary&          getDictionary() const { return mDictionary; }
-    [[nodiscard]] const uint2&         getDefaultTextureDims() const { return mDefaultTexDims; }
-    [[nodiscard]] ResourceFormat       getDefaultTextureFormat() const { return mDefaultTexFormat; }
+    [[nodiscard]] const rhi::ComPtr<rhi::IResource>& getResource(std::string_view name) const;
+    [[nodiscard]] rhi::ComPtr<rhi::ITexture>         getTexture(std::string_view name) const;
+    [[nodiscard]] const rhi::ComPtr<rhi::IResource>& operator[](std::string_view name) const
+    {
+        return getResource(name);
+    }
+    [[nodiscard]] rhi::ComPtr<rhi::IBuffer> getBuffer(std::string_view name) const;
+    void                                    setBuffer(std::string_view name, rhi::IBuffer* buffer) const;
+    [[nodiscard]] Dictionary&               getDictionary() const { return mDictionary; }
+    [[nodiscard]] const uint2&              getDefaultTextureDims() const { return mDefaultTexDims; }
 
 protected:
     friend class RenderGraphExe;
@@ -43,15 +48,13 @@ protected:
         const std::string& passName,
         ResourceCache&     resources,
         Dictionary&        dictionary,
-        const uint2&       defaultTexDims,
-        ResourceFormat     defaultTexFormat
+        const uint2&       defaultTexDims
     );
 
     const std::string& mName;
     ResourceCache&     mResources;
     Dictionary&        mDictionary;
     uint2              mDefaultTexDims;
-    ResourceFormat     mDefaultTexFormat;
 };
 
 class FALCOR_API RenderPass : public Object
@@ -59,7 +62,7 @@ class FALCOR_API RenderPass : public Object
     FALCOR_OBJECT(RenderPass)
 
 public:
-    using PluginCreate = std::function<ref<RenderPass>(ref<Device>, const Properties&)>;
+    using PluginCreate = std::function<ref<RenderPass>(rhi::ComPtr<rhi::IDevice>, const Properties&)>;
 
     struct PluginInfo
     {
@@ -71,15 +74,15 @@ public:
     struct CompileData
     {
         uint2                defaultTexDims{0};
-        ResourceFormat       defaultTexFormat = ResourceFormat::Unknown;
+        rhi::Format       defaultTexFormat = rhi::Format::Undefined;
         RenderPassReflection connectedResources;
     };
 
     [[nodiscard]] static ref<RenderPass> create(
-        std::string_view  type,
-        ref<Device>       device,
-        const Properties& properties = {},
-        PluginManager&    plugins    = PluginManager::instance()
+        std::string_view          type,
+        rhi::ComPtr<rhi::IDevice> device,
+        const Properties&         properties = {},
+        PluginManager&            plugins    = PluginManager::instance()
     );
     ~RenderPass() override = default;
 
@@ -95,7 +98,7 @@ public:
     virtual void                     renderUI(Gui::Widgets& widget) {}
     virtual void                     renderUI(RenderContext* context, Gui::Widgets& widget) { renderUI(widget); }
     virtual void                     renderOverlayUI(RenderContext* context) {}
-    virtual void                     setScene(RenderContext* context, const ref<Scene>& scene) {}
+    virtual void                     setScene(const ref<Scene>& scene) {}
     virtual void                     onSceneUpdates(RenderContext* context, IScene::UpdateFlags updates) {}
     virtual bool                     onMouseEvent(const MouseEvent& event) { return false; }
     virtual bool                     onKeyEvent(const KeyboardEvent& event) { return false; }
@@ -104,12 +107,12 @@ public:
     [[nodiscard]] const std::string& getName() const { return mName; }
 
 protected:
-    explicit RenderPass(ref<Device> device) : mpDevice(std::move(device)) {}
+    explicit RenderPass(rhi::ComPtr<rhi::IDevice> device) : mpDevice(std::move(device)) {}
     void requestRecompile() { mPassChangedCB(); }
 
-    ref<Device>           mpDevice;
-    std::string           mName;
-    std::function<void()> mPassChangedCB = [] {};
+    rhi::ComPtr<rhi::IDevice> mpDevice;
+    std::string               mName;
+    std::function<void()>     mPassChangedCB = [] {};
 
     friend class RenderGraph;
 };

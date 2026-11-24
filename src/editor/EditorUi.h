@@ -11,7 +11,6 @@
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>
-#include <vulkan/vulkan.h>
 
 struct GLFWwindow;
 struct TransformComponent;
@@ -22,7 +21,7 @@ public:
     struct InspectorResult
     {
         std::optional<SceneAsset::ID> sceneId;
-        bool edited = false;
+        bool                          edited = false;
     };
 
     EditorUI() = default;
@@ -30,8 +29,8 @@ public:
     EditorUI(const EditorUI&)            = delete;
     EditorUI& operator=(const EditorUI&) = delete;
 
-    void beginFrame(bool showObjectList);
-    [[nodiscard]] int objectListInset(int windowWidth);
+    void               beginFrame(bool showObjectList);
+    [[nodiscard]] int  objectListInset(int windowWidth);
     SceneObjectActions drawHierarchy(SceneAsset& scene, uint32_t& selectedId)
     {
         return hierarchyDockId ? hierarchy.draw(scene, selectedId, hierarchyDockId) : SceneObjectActions{};
@@ -49,14 +48,14 @@ public:
     [[nodiscard]] ViewportRect sceneViewportPixels() const { return scenePixels; }
 
 private:
-    uint32_t         editorDockId          = 0;
-    uint32_t         hierarchyDockId       = 0;
-    float            hierarchyWidth        = 0.0f;
-    float            editorWidth           = 0.0f;
-    float            centerWidth           = 0.0f;
-    int              gizmoOperation        = 0;
-    glm::vec2        scenePosition{0.0f};
-    glm::vec2        sceneSize{1.0f};
-    ViewportRect     scenePixels;
-    SceneHierarchy   hierarchy;
+    uint32_t       editorDockId    = 0;
+    uint32_t       hierarchyDockId = 0;
+    float          hierarchyWidth  = 0.0f;
+    float          editorWidth     = 0.0f;
+    float          centerWidth     = 0.0f;
+    int            gizmoOperation  = 0;
+    glm::vec2      scenePosition{0.0f};
+    glm::vec2      sceneSize{1.0f};
+    ViewportRect   scenePixels;
+    SceneHierarchy hierarchy;
 };

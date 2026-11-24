@@ -1,5 +1,6 @@
 #include "editor/Editor.h"
 
+#include <slang-rhi.h>
 #include "asset/Asset.h"
 #include "core/ConfigManager.h"
 #include "core/Context.h"
@@ -7,8 +8,6 @@
 #include "core/Window.h"
 #include "editor/EditorCamera.h"
 #include "render/Renderer.h"
-#include "render/device/VulkanContext.h"
-#include "render/device/Swapchain.h"
 #include "scene/SceneManager.h"
 #include "scene/component/TransformComponent.h"
 
@@ -23,33 +22,23 @@ namespace
 constexpr std::string_view kSceneObjectsEnabled = "SceneObjects:enabled";
 }
 
-Editor::~Editor() { DCHECK(!inited); }
+Editor::~Editor() = default;
 
 void Editor::init()
 {
-    DCHECK(context().window);
-    DCHECK(context().renderer);
 
     editorCamera    = std::make_unique<EditorCamera>(context().sceneManager->scene().editorCamera);
     sceneGeneration = context().sceneManager->sceneGeneration();
     initBackend();
-    DEBUG_EXEC(inited = true);
 }
 
 void Editor::initBackend()
 {
-    VulkanContext& vulkan    = context().renderer->vulkanContext();
-    Swapchain&     swapchain = context().renderer->swapchainHandle();
     backend.init(
         context().window->nativeHandle(),
-        *vulkan.instanceHandle(),
-        *vulkan.physicalDeviceHandle(),
-        *vulkan.deviceHandle(),
-        vulkan.graphicsQueueFamilyIndex(),
-        *vulkan.queueHandle(),
-        static_cast<VkFormat>(swapchain.surfaceFormat().format),
-        swapchain.minImageCount(),
-        swapchain.imageCount()
+        context().renderer->getDevice(),
+        context().renderer->getShaderManager(),
+        context().renderer->getSurface()->getConfig()->format
     );
 }
 
@@ -57,8 +46,8 @@ void Editor::shutdown() noexcept
 {
     if (windowHasObjectList)
     {
-        auto& config = *context().config;
-        const auto& size = config.editorConfig();
+        auto&       config = *context().config;
+        const auto& size   = config.editorConfig();
         config.setEditorSize(std::max(size.width - ui.objectListInset(size.width), 1), size.height);
         windowHasObjectList = false;
     }
@@ -66,11 +55,10 @@ void Editor::shutdown() noexcept
     editorCamera.reset();
     ui.resetLayout();
     backend.shutdown();
-    selectedId           = 0;
-    dirty                = false;
+    selectedId = 0;
+    dirty      = false;
     pendingSceneId.reset();
     pendingObjectActions = {};
-    DEBUG_EXEC(inited = false);
 }
 
 void Editor::refreshUi()
@@ -82,15 +70,15 @@ void Editor::refreshUi()
 
 bool Editor::resizeWindowForLayout()
 {
-    Context& ctx = context();
+    Context&   ctx            = context();
     const bool showObjectList = ctx.config->getSettings().getOption(kSceneObjectsEnabled, false);
     if (showObjectList == windowHasObjectList)
         return false;
 
-    auto& window = *ctx.window;
+    auto& window               = *ctx.window;
     const auto [width, height] = window.size();
-    const int inset = ui.objectListInset(width);
-    const int nextWidth = std::max(width + (showObjectList ? inset : -inset), 1);
+    const int inset            = ui.objectListInset(width);
+    const int nextWidth        = std::max(width + (showObjectList ? inset : -inset), 1);
     window.resizeCentered(nextWidth, height);
     windowHasObjectList = showObjectList;
     return true;
@@ -99,7 +87,7 @@ bool Editor::resizeWindowForLayout()
 void Editor::saveScene()
 {
     Context& ctx = context();
-    DCHECK(ctx.sceneManager);
+
     ctx.sceneManager->save();
     dirty = false;
 }
@@ -114,8 +102,8 @@ void Editor::applySceneActions()
     if (pendingSceneId)
     {
         scene.load(*pendingSceneId);
-        selectedId           = 0;
-        dirty                = false;
+        selectedId = 0;
+        dirty      = false;
         pendingSceneId.reset();
         pendingObjectActions = {};
         return;
@@ -139,7 +127,7 @@ Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapcha
 {
     backend.beginFrame();
     ui.beginFrame(windowHasObjectList);
-    auto& scene = context().sceneManager->scene();
+    auto& scene          = context().sceneManager->scene();
     pendingObjectActions = ui.drawHierarchy(scene, selectedId);
     if (pendingObjectActions.renamed)
         dirty = true;
@@ -151,28 +139,27 @@ Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapcha
 
     if (!camera.isFreeMovementActive() && selectedActor != nullptr)
     {
-        glm::mat4 gizmoProjection = projection;
-        gizmoProjection[1][1] *= -1.0f;
-        if (ui.drawGizmo(selectedActor->transform(), view, gizmoProjection, enableGizmoShortcuts))
+        if (ui.drawGizmo(selectedActor->transform(), view, projection, enableGizmoShortcuts))
         {
             dirty = true;
         }
     }
 
     EditorUI::InspectorResult inspector = ui.drawInspector(scene, selectedActor, dirty);
-    pendingSceneId = std::move(inspector.sceneId);
+    pendingSceneId                      = std::move(inspector.sceneId);
     if (inspector.edited)
         dirty = true;
     if (!pendingSceneId && ui.saveRequested())
         saveScene();
 
-    Frame      frame;
-    auto&      input = frame.input;
-    input.recordUi = [this](VkCommandBuffer commandBuffer) { backend.render(commandBuffer); };
+    Frame frame;
+    auto& input    = frame.input;
+    input.recordUi = [this](rhi::IRenderPassEncoder& commands, uint32_t frameIndex)
+    { backend.render(commands, frameIndex); };
 
-    const auto& config = *context().config;
+    const auto& config   = *context().config;
     const auto& renderer = *context().renderer;
-    const auto* graph = renderer.getActiveGraph();
+    const auto* graph    = renderer.getActiveGraph();
     if (config.editorConfig().objectPicking && graph && graph->getName() == config.renderGraphName() &&
         renderer.supportsObjectPicking() && !camera.isNavigationActive())
     {

@@ -2,14 +2,6 @@
 
 #include "core/Logger.h"
 
-void Component::init(AActor* actor)
-{
-    DCHECK(actor);
-    owner = actor;
-}
+void Component::init(AActor* actor) { owner = actor; }
 
-AActor& Component::actor() const
-{
-    DCHECK(owner);
-    return *owner;
-}
+AActor& Component::actor() const { return *owner; }

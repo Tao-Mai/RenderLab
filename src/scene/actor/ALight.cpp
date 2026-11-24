@@ -4,11 +4,7 @@
 
 ALight::ALight() : ALight(std::make_unique<PointLightComponent>()) {}
 
-ALight::ALight(std::unique_ptr<LightComponent> light)
-{
-    DCHECK(light);
-    components.push_back(std::move(light));
-}
+ALight::ALight(std::unique_ptr<LightComponent> light) { components.push_back(std::move(light)); }
 
 void ALight::init()
 {

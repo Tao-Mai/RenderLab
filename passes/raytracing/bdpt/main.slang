@@ -1,7 +1,7 @@
 #include "raytracing/offline/path_launch.slang"
 #include "bdpt_parameters.slang"
 
-[[vk::binding(BdptBinding::kSplats, 3)]] RWStructuredBuffer<uint4> splats;
+RWStructuredBuffer<uint4> splats;
 #include "bdpt.slang"
 
 [shader("raygeneration")]

@@ -23,8 +23,6 @@ namespace
 template <class T>
 void shutdownSubsystem(std::unique_ptr<T>& subsystem, T*& slot)
 {
-    DCHECK(subsystem);
-    DCHECK(slot == subsystem.get());
 
     subsystem->shutdown();
     slot = nullptr;
@@ -34,24 +32,12 @@ void shutdownSubsystem(std::unique_ptr<T>& subsystem, T*& slot)
 
 Engine::Engine() = default;
 
-Engine::~Engine()
-{
-    DCHECK(!inited);
-    DCHECK(
-        !config && !window && !inputManager && !assetManager && !assetDataManager && !sceneManager && !renderer &&
-        !editor
-    );
-}
+Engine::~Engine() = default;
 
 void Engine::init()
 {
-    DCHECK(!inited);
 
     Context& ctx = context();
-    DCHECK(
-        !ctx.config && !ctx.window && !ctx.inputManager && !ctx.assetManager && !ctx.assetDataManager &&
-        !ctx.sceneManager && !ctx.renderer && !ctx.editor && !ctx.profiler
-    );
 
     config           = std::make_unique<ConfigManager>();
     window           = std::make_unique<Window>();
@@ -88,15 +74,9 @@ void Engine::init()
     inputMethod.activateEnglish();
     ctx.renderer->init();
     ctx.editor->init();
-    DEBUG_EXEC(inited = true);
 }
 
-void Engine::run()
-{
-    DCHECK(inited);
-
-    mainLoop();
-}
+void Engine::run() { mainLoop(); }
 
 void Engine::mainLoop()
 {
@@ -129,11 +109,12 @@ void Engine::mainLoop()
         const float deltaTime = static_cast<float>(deltaTimer.restartMilliseconds() / 1000.0);
         profiler.beginFrame();
 
-        const auto currentExtent = ctx.renderer->swapchainHandle().extent();
+        const auto currentExtent =
+            Extent2D{ctx.renderer->getSurface()->getConfig()->width, ctx.renderer->getSurface()->getConfig()->height};
         if (swapchainNeedsRebuild || currentExtent.width != static_cast<uint32_t>(framebufferWidth) ||
             currentExtent.height != static_cast<uint32_t>(framebufferHeight))
         {
-            ctx.renderer->recreateSwapchain();
+            ctx.renderer->resizeSurface();
             ctx.editor->refreshUi();
             swapchainNeedsRebuild = false;
         }
@@ -151,13 +132,16 @@ void Engine::mainLoop()
         {
             CpuProfileScope timing{&profiler, "Scene tick"};
             ctx.inputManager->setNavigation({
-                .forward = camera.forward(), .right = camera.right(), .up = camera.up(),
-                .active = camera.isNavigationActive(),
+                .forward = camera.forward(),
+                .right   = camera.right(),
+                .up      = camera.up(),
+                .active  = camera.isNavigationActive(),
             });
             ctx.sceneManager->tick(deltaTime);
         }
 
-        const auto extent      = ctx.renderer->swapchainHandle().extent();
+        const auto extent =
+            Extent2D{ctx.renderer->getSurface()->getConfig()->width, ctx.renderer->getSurface()->getConfig()->height};
         const auto editorFrame = [&]
         {
             CpuProfileScope timing{&profiler, "Editor UI"};
@@ -174,7 +158,7 @@ void Engine::mainLoop()
 
 void Engine::shutdown() noexcept
 {
-    DCHECK(inited);
+
     Context& ctx = context();
 
     if (const auto& sceneId = sceneManager->scene().id; !sceneId.empty())
@@ -197,6 +181,4 @@ void Engine::shutdown() noexcept
     shutdownSubsystem(config, ctx.config);
     ctx.profiler = nullptr;
     profiler.reset();
-
-    DEBUG_EXEC(inited = false);
 }

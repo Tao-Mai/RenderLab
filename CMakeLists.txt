@@ -79,7 +79,18 @@ function(renderlab_copy_runtime_libraries target)
     endif ()
 endfunction()
 
-find_package(Vulkan 1.4 REQUIRED)
+set(SLANG_RHI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SLANG_RHI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SLANG_RHI_INSTALL OFF CACHE BOOL "" FORCE)
+set(SLANG_RHI_ENABLE_CPU OFF CACHE BOOL "" FORCE)
+set(SLANG_RHI_ENABLE_D3D11 OFF CACHE BOOL "" FORCE)
+set(SLANG_RHI_ENABLE_D3D12 OFF CACHE BOOL "" FORCE)
+set(SLANG_RHI_ENABLE_CUDA OFF CACHE BOOL "" FORCE)
+set(SLANG_RHI_ENABLE_OPTIX OFF CACHE BOOL "" FORCE)
+set(SLANG_RHI_ENABLE_WGPU OFF CACHE BOOL "" FORCE)
+set(SLANG_RHI_ENABLE_NVAPI OFF CACHE BOOL "" FORCE)
+set(SLANG_RHI_ENABLE_AGILITY_SDK OFF CACHE BOOL "" FORCE)
+add_subdirectory(external/slang-rhi)
 find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter Development.Embed)
 execute_process(
     COMMAND "${Python3_EXECUTABLE}" -I -X utf8 -c "from pathlib import Path; import sys; print(Path(sys.base_prefix).as_posix())"
@@ -100,9 +111,11 @@ find_package(mikktspace CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
 find_path(TINYGLTF_INCLUDE_DIR NAMES tiny_gltf.h REQUIRED)
 
-find_program(SLANGC_EXECUTABLE
+find_program(RENDERLAB_SLANGC_EXECUTABLE
         NAMES slangc
-        HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin"
+        PATHS "${SLANG_RHI_SLANG_BINARY_DIR}/bin"
+        NO_DEFAULT_PATH
+        NO_CACHE
         REQUIRED
 )
 
@@ -127,7 +140,6 @@ add_library(RenderLabCore SHARED
     src/core/Context.h
     src/core/Logger.cpp
     src/core/Logger.h
-    src/core/Debug.h
     src/core/Macros.h
     src/core/Object.cpp
     src/core/Object.h
@@ -213,15 +225,11 @@ add_library(RenderLabCore SHARED
     src/core/profiling/Profiler.cpp
     src/core/math/Sampler.h
     src/core/math/Vector.h
-    src/render/ComputeContext.cpp
-    src/render/ComputeContext.h
-    src/render/CopyContext.cpp
-    src/render/CopyContext.h
     src/render/DrawItem.h
     src/render/FrameData.cpp
     src/render/FrameData.h
     src/render/RenderConfig.h
-    src/render/RenderContext.cpp
+    src/render/DispatchGroups.h
     src/render/RenderContext.h
     src/render/PreparedScene.h
     src/render/RendererConfig.h
@@ -230,45 +238,19 @@ add_library(RenderLabCore SHARED
     src/render/ViewportRect.cpp
     src/render/ViewportRect.h
     src/render/Visibility.h
-    src/render/device/Device.cpp
-    src/render/device/Device.h
-    src/render/device/DeviceLayouts.cpp
+    src/render/device/RhiCheck.h
+    src/render/resources/CompiledShaderPath.cpp
     src/render/device/FrameContext.cpp
     src/render/device/FrameContext.h
-    src/render/device/Fbo.h
     src/render/device/GpuProfiler.cpp
     src/render/device/GpuProfiler.h
-    src/render/device/ResourceBarriers.cpp
-    src/render/device/ResourceBarriers.h
-    src/render/device/VulkanResources.cpp
-    src/render/device/VulkanResources.h
-    src/render/device/GpuUploadContext.cpp
-    src/render/device/GpuUploadContext.h
-    src/render/device/Memory.h
-    src/render/device/Swapchain.cpp
-    src/render/device/Swapchain.h
-    src/render/device/VkCheck.h
-    src/render/device/VulkanContext.cpp
-    src/render/device/VulkanContext.h
-    src/render/resources/Buffer.cpp
-    src/render/resources/Buffer.h
+    src/render/device/GpuResources.cpp
+    src/render/device/GpuResources.h
+    src/render/resources/TextureUpload.cpp
+    src/render/resources/TextureUpload.h
+    src/render/resources/RhiScriptBindings.cpp
     src/render/resources/GpuMesh.cpp
     src/render/resources/GpuMesh.h
-    src/render/resources/GpuShader.cpp
-    src/render/resources/GpuShader.h
-    src/render/resources/GpuTexture.cpp
-    src/render/resources/GpuTexture.h
-    src/render/resources/Resource.cpp
-    src/render/resources/Resource.h
-    src/render/resources/ResourceViews.cpp
-    src/render/resources/ResourceViews.h
-    src/render/resources/Formats.cpp
-    src/render/resources/Formats.h
-    src/render/resources/NativeFormats.h
-    src/render/resources/NativeHandle.h
-    src/render/resources/NativeHandleTraits.h
-    src/render/resources/Texture.cpp
-    src/render/resources/Texture.h
     src/render/resources/MaterialData.h
     src/render/resources/MaterialTable.cpp
     src/render/resources/MaterialTable.h
@@ -283,32 +265,23 @@ add_library(RenderLabCore SHARED
     src/render/resources/ShaderManager.h
     src/render/graph/RenderGraph.cpp
     src/render/graph/RenderGraph.h
+    src/render/graph/RenderGraphFlags.h
     src/render/graph/RenderGraphExe.cpp
     src/render/graph/RenderGraphExe.h
     src/render/graph/ResourceCache.cpp
     src/render/graph/ResourceCache.h
     src/render/raster/MeshDraw.cpp
     src/render/raster/MeshDraw.h
-    src/render/raster/RasterAttachments.cpp
-    src/render/raster/RasterAttachments.h
     src/render/raster/RasterLightingSettings.cpp
     src/render/raster/RasterLightingSettings.h
     src/render/raster/ShadowResources.cpp
     src/render/raster/ShadowResources.h
-    src/render/raytracing/AccelerationStructure.cpp
-    src/render/raytracing/AccelerationStructure.h
     src/render/raytracing/SceneAccelerationStructures.cpp
     src/render/raytracing/SceneAccelerationStructures.h
     src/render/raytracing/PathTracingParameters.h
     src/render/raytracing/PathTracingShader.h
-    src/render/raytracing/RayTracingPipeline.cpp
-    src/render/raytracing/RayTracingPipeline.h
-    src/render/raytracing/RayTracingStorageImages.cpp
-    src/render/raytracing/RayTracingStorageImages.h
     src/render/raytracing/RealtimeScene.cpp
     src/render/raytracing/RealtimeScene.h
-    src/render/raytracing/RealtimeSceneBindings.cpp
-    src/render/raytracing/RealtimeSceneBindings.h
     src/render/raytracing/offline/OfflineLightData.h
     src/render/raytracing/offline/OfflineShaderTypes.h
     src/render/denoise/DenoiserInputs.h
@@ -325,8 +298,6 @@ add_library(RenderLabCore SHARED
     src/render/graph/RenderGraphIR.h
     src/render/graph/RenderGraphImportExport.cpp
     src/render/graph/RenderGraphImportExport.h
-    src/render/graph/RenderGraphUI.cpp
-    src/render/graph/RenderGraphUI.h
     src/core/GlobalState.cpp
     src/core/GlobalState.h
     src/core/ScriptBindings.cpp
@@ -343,7 +314,6 @@ add_library(RenderLabCore SHARED
     src/render/raytracing/offline/OfflineScene.cpp
     src/render/raytracing/offline/OfflinePathTracing.cpp
     src/render/raytracing/offline/OfflinePathTracing.h
-    src/render/raytracing/offline/OfflineRayTracingBindings.h
     src/render/raytracing/offline/OfflineTracePipelineCache.cpp
     src/render/raytracing/offline/OfflineTracePipelineCache.h
     src/editor/Gui.cpp
@@ -376,7 +346,7 @@ set_property(SOURCE src/core/Plugin.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     RENDERLAB_PLUGIN_SUFFIX="${CMAKE_SHARED_LIBRARY_SUFFIX}")
 # Editor code and plugin widgets share one ImGui context.
 target_link_libraries(RenderLabCore PRIVATE
-    "$<LINK_LIBRARY:WHOLE_ARCHIVE,imgui::imgui,imguizmo::imguizmo>"
+    imgui::imgui "$<LINK_LIBRARY:WHOLE_ARCHIVE,imguizmo::imguizmo>"
     ${CMAKE_DL_LIBS}
     Python3::Python
 )
@@ -396,12 +366,7 @@ set(renderlab_gui_backend_includes
     $<TARGET_PROPERTY:imguizmo::imguizmo,INTERFACE_INCLUDE_DIRECTORIES>
 )
 target_include_directories(RenderLabCore SYSTEM PRIVATE ${renderlab_gui_backend_includes})
-set(renderlab_node_editor_dir "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui_addons")
-set(renderlab_node_editor_source "${renderlab_node_editor_dir}/imguinodegrapheditor/imguinodegrapheditor.cpp")
-set_source_files_properties("${renderlab_node_editor_source}" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
-target_include_directories(RenderLabCore SYSTEM PRIVATE "${renderlab_node_editor_dir}")
 target_sources(RenderLabCore PRIVATE
-    "${renderlab_node_editor_source}"
     src/asset/pbrt/PbrtImport.cpp
     src/asset/pbrt/PbrtData.cpp
     src/asset/pbrt/PbrtMaterial.cpp
@@ -430,10 +395,7 @@ target_include_directories(RenderLabCore PUBLIC
 
 target_compile_definitions(RenderLabCore PUBLIC
         RENDERLAB_CONFIG_FILE="${CMAKE_CURRENT_SOURCE_DIR}/config/config.json"
-        VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
-        VULKAN_HPP_NO_STRUCT_CONSTRUCTORS=1
-        VULKAN_HPP_NO_EXCEPTIONS
-        VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS
+        GLFW_INCLUDE_NONE
         GLM_FORCE_DEPTH_ZERO_TO_ONE
         GLOG_NO_ABBREVIATED_SEVERITIES
 )
@@ -443,7 +405,7 @@ target_link_libraries(RenderLabCore PUBLIC
         mikktspace::mikktspace
         assimp::assimp
         RenderLabBuildOptions
-        Vulkan::Vulkan
+        slang-rhi
         glfw
         glm::glm
         nlohmann_json::nlohmann_json
@@ -472,7 +434,7 @@ set(renderlab_pch_headers
         <glm/glm.hpp>
         <glm/gtc/quaternion.hpp>
         <nlohmann/json.hpp>
-        <vulkan/vulkan_raii.hpp>
+        <slang-rhi.h>
 )
 target_precompile_headers(RenderLabCore PRIVATE ${renderlab_pch_headers})
 add_library(RenderLabPluginAbi OBJECT src/render/plugins/PluginAbi.cpp)
@@ -482,8 +444,14 @@ set_property(SOURCE src/render/plugins/PluginAbi.cpp APPEND PROPERTY COMPILE_DEF
 target_precompile_headers(RenderLabPluginAbi PRIVATE ${renderlab_pch_headers})
 add_subdirectory(passes)
 renderlab_shader(blit shaders/raster/blit.slang blit)
+renderlab_shader(imgui shaders/editor/imgui.slang imgui)
 renderlab_shader(prepare_emissive_triangles shaders/raytracing/prepare_emissive_triangles.slang
     prepare_emissive_triangles ENTRIES computeMain)
+option(BUILD_TESTING "Enable manual validation tools" OFF)
+if(BUILD_TESTING)
+    renderlab_shader(material_workflow_check test/MaterialWorkflowCheck.slang material_workflow_check
+        DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 ENTRIES computeMain)
+endif()
 renderlab_build_shaders()
 renderlab_build_plugins()
 
@@ -522,7 +490,6 @@ add_dependencies(RenderLab RenderLabPassPlugins)
 target_link_libraries(RenderLab PRIVATE RenderLabRuntime)
 target_precompile_headers(RenderLab REUSE_FROM RenderLabPluginAbi)
 
-option(BUILD_TESTING "Enable manual validation tools" OFF)
 renderlab_copy_runtime_libraries(RenderLabCore)
 if (BUILD_TESTING)
     add_subdirectory(test EXCLUDE_FROM_ALL)

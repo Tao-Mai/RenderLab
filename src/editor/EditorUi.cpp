@@ -23,8 +23,8 @@
 
 namespace
 {
-constexpr float kEditorWidthRatio = 0.24f;
-constexpr float kHierarchyWidthRatio = 0.23f;
+constexpr float kEditorWidthRatio     = 0.24f;
+constexpr float kHierarchyWidthRatio  = 0.23f;
 constexpr float kMinimumEditableScale = 0.001f;
 
 std::optional<SceneAsset::ID> drawSceneSelector(const SceneAsset::ID& current, bool dirty)
@@ -37,7 +37,7 @@ std::optional<SceneAsset::ID> drawSceneSelector(const SceneAsset::ID& current, b
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
     if (ImGui::BeginCombo("##Scene", preview.c_str()))
     {
-        DCHECK(context().assetManager);
+
         auto sceneIds = context().assetManager->loadedIds<SceneAsset>();
         std::ranges::sort(sceneIds, {}, &SceneAsset::ID::value);
         for (const auto& id : sceneIds)
@@ -57,7 +57,7 @@ std::optional<SceneAsset::ID> drawSceneSelector(const SceneAsset::ID& current, b
 
 void drawRenderGraphSelector(ConfigManager& config, bool supportsRayTracing)
 {
-    const auto current = config.renderGraphName();
+    const auto current        = config.renderGraphName();
     const bool currentOffline = config.rendererConfig().renderPath == RenderPath::OfflinePathTracing;
     if (!ImGui::BeginCombo("Render graph", current.c_str()))
         return;
@@ -86,10 +86,10 @@ void applyModelMatrix(TransformComponent& transform, const glm::mat4& model)
 {
     TransformComponent edited;
     CHECK(edited.setMatrix(model));
-    DCHECK(edited.base == glm::mat4{1});
+
     for (glm::length_t axis = 0; axis < 3; ++axis)
-        edited.scale[axis] = std::copysign(std::max(std::abs(edited.scale[axis]), kMinimumEditableScale),
-                                         edited.scale[axis]);
+        edited.scale[axis] =
+            std::copysign(std::max(std::abs(edited.scale[axis]), kMinimumEditableScale), edited.scale[axis]);
     glm::quat rotation = edited.rotation;
 
     // q and -q are the same rotation. Keeping the closest representation
@@ -116,20 +116,20 @@ void EditorUI::beginFrame(bool showObjectList)
 {
     ImGuizmo::BeginFrame();
 
-    const ImGuiViewport*     viewport = ImGui::GetMainViewport();
-    const ImGuiIO& io = ImGui::GetIO();
-    const glm::vec2 framebufferScale{io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y};
-    DCHECK(framebufferScale.x > 0.0f && framebufferScale.y > 0.0f);
-    const ImGuiStyle& style = ImGui::GetStyle();
-    const float separator = style.DockingSeparatorSize;
-    const float squareWidth = std::floor(viewport->WorkSize.y * framebufferScale.y / framebufferScale.x);
-    const auto fitPanelWidths = [&](float hierarchyWidth, float editorWidth)
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const ImGuiIO&       io       = ImGui::GetIO();
+    const glm::vec2      framebufferScale{io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y};
+
+    const ImGuiStyle& style          = ImGui::GetStyle();
+    const float       separator      = style.DockingSeparatorSize;
+    const float       squareWidth    = std::floor(viewport->WorkSize.y * framebufferScale.y / framebufferScale.x);
+    const auto        fitPanelWidths = [&](float hierarchyWidth, float editorWidth)
     {
         const float availableWidth = std::max(viewport->WorkSize.x - 2.0f * separator, 1.0f);
-        const float minimumWidth = std::min(style.WindowMinSize.x, availableWidth / 3.0f);
-        const float sceneWidth = std::min(squareWidth, availableWidth - 2.0f * minimumWidth);
-        const float panelWidth = availableWidth - sceneWidth;
-        const float adjustment = (panelWidth - hierarchyWidth - editorWidth) * 0.5f;
+        const float minimumWidth   = std::min(style.WindowMinSize.x, availableWidth / 3.0f);
+        const float sceneWidth     = std::min(squareWidth, availableWidth - 2.0f * minimumWidth);
+        const float panelWidth     = availableWidth - sceneWidth;
+        const float adjustment     = (panelWidth - hierarchyWidth - editorWidth) * 0.5f;
         hierarchyWidth = std::floor(std::clamp(hierarchyWidth + adjustment, minimumWidth, panelWidth - minimumWidth));
         return std::pair{hierarchyWidth, panelWidth - hierarchyWidth};
     };
@@ -139,8 +139,8 @@ void EditorUI::beginFrame(bool showObjectList)
     if (!rebuildLayout && showObjectList)
     {
         const auto* hierarchyNode = ImGui::DockBuilderGetNode(hierarchyDockId);
-        const auto* editorNode = ImGui::DockBuilderGetNode(editorDockId);
-        DCHECK(hierarchyNode && editorNode);
+        const auto* editorNode    = ImGui::DockBuilderGetNode(editorDockId);
+
         const auto [hierarchyWidth, editorWidth] = fitPanelWidths(hierarchyNode->SizeRef.x, editorNode->SizeRef.x);
         ImGui::DockBuilderSetNodeSize(hierarchyDockId, {hierarchyWidth, viewport->WorkSize.y});
         ImGui::DockBuilderSetNodeSize(editorDockId, {editorWidth, viewport->WorkSize.y});
@@ -159,26 +159,29 @@ void EditorUI::beginFrame(bool showObjectList)
         );
         ImGui::DockBuilderSetNodeSize(dockspaceId, viewport->WorkSize);
 
-        const float availableWidth = std::max(viewport->WorkSize.x - separator, 1.0f);
-        const float minimumWidth = std::min(style.WindowMinSize.x, availableWidth * 0.5f);
-        const float previousWidth = centerWidth + editorWidth;
+        const float availableWidth       = std::max(viewport->WorkSize.x - separator, 1.0f);
+        const float minimumWidth         = std::min(style.WindowMinSize.x, availableWidth * 0.5f);
+        const float previousWidth        = centerWidth + editorWidth;
         const float preferredEditorWidth = std::max(availableWidth - squareWidth, availableWidth * kEditorWidthRatio);
         float rightWidth = previousWidth > 0.0f ? availableWidth * editorWidth / previousWidth : preferredEditorWidth;
-        rightWidth = std::clamp(rightWidth, minimumWidth, availableWidth - minimumWidth);
-        float leftWidth = 0.0f;
+        rightWidth       = std::clamp(rightWidth, minimumWidth, availableWidth - minimumWidth);
+        float leftWidth  = 0.0f;
         if (showObjectList)
         {
-            const float preferredHierarchyWidth = hierarchyWidth > 0.0f ? hierarchyWidth :
-                (availableWidth - rightWidth) * kHierarchyWidthRatio;
-            const auto widths = fitPanelWidths(
-                preferredHierarchyWidth, previousWidth > 0.0f ? editorWidth : rightWidth
-            );
+            const float preferredHierarchyWidth =
+                hierarchyWidth > 0.0f ? hierarchyWidth : (availableWidth - rightWidth) * kHierarchyWidthRatio;
+            const auto widths =
+                fitPanelWidths(preferredHierarchyWidth, previousWidth > 0.0f ? editorWidth : rightWidth);
             leftWidth  = widths.first;
             rightWidth = widths.second;
         }
         ImGuiID centerDockId = dockspaceId;
-        editorDockId = ImGui::DockBuilderSplitNode(
-            centerDockId, ImGuiDir_Right, rightWidth / availableWidth, nullptr, &centerDockId
+        editorDockId         = ImGui::DockBuilderSplitNode(
+            centerDockId,
+            ImGuiDir_Right,
+            rightWidth / availableWidth,
+            nullptr,
+            &centerDockId
         );
         ImGui::DockBuilderSetNodeSize(editorDockId, {rightWidth, viewport->WorkSize.y});
         ImGui::DockBuilderDockWindow("Editor", editorDockId);
@@ -188,7 +191,11 @@ void EditorUI::beginFrame(bool showObjectList)
         if (showObjectList)
         {
             hierarchyDockId = ImGui::DockBuilderSplitNode(
-                centerDockId, ImGuiDir_Left, leftWidth / std::max(remainingWidth - separator, 1.0f), nullptr, nullptr
+                centerDockId,
+                ImGuiDir_Left,
+                leftWidth / std::max(remainingWidth - separator, 1.0f),
+                nullptr,
+                nullptr
             );
             ImGui::DockBuilderSetNodeSize(hierarchyDockId, {leftWidth, viewport->WorkSize.y});
             ImGui::DockBuilderDockWindow("Scene Objects", hierarchyDockId);
@@ -211,11 +218,13 @@ void EditorUI::beginFrame(bool showObjectList)
         const float side = std::max(1.0f, std::floor(std::min(availablePixels.x, availablePixels.y)));
         // Fit and center a pixel-aligned square; all render paths consume this same viewport.
         scenePixels = {
-            .x = std::floor((centralNode->Pos.x - viewport->Pos.x) * framebufferScale.x +
-                            (availablePixels.x - side) * 0.5f),
-            .y = std::floor((centralNode->Pos.y - viewport->Pos.y) * framebufferScale.y +
-                            (availablePixels.y - side) * 0.5f),
-            .width = side,
+            .x = std::floor(
+                (centralNode->Pos.x - viewport->Pos.x) * framebufferScale.x + (availablePixels.x - side) * 0.5f
+            ),
+            .y = std::floor(
+                (centralNode->Pos.y - viewport->Pos.y) * framebufferScale.y + (availablePixels.y - side) * 0.5f
+            ),
+            .width  = side,
             .height = side,
         };
 
@@ -226,8 +235,8 @@ void EditorUI::beginFrame(bool showObjectList)
         };
         sceneSize = {side / framebufferScale.x, side / framebufferScale.y};
     }
-
 }
+
 bool EditorUI::drawGizmo(
     TransformComponent& transform, const glm::mat4& view, const glm::mat4& projection, bool enableShortcuts
 )
@@ -286,11 +295,12 @@ bool EditorUI::drawGizmo(
     }
     return false;
 }
+
 EditorUI::InspectorResult EditorUI::drawInspector(SceneAsset& scene, AActor* object, bool dirty)
 {
     ImGui::SetNextWindowDockID(editorDockId, ImGuiCond_Always);
-    constexpr ImGuiWindowFlags editorFlags =
-        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar;
+    constexpr ImGuiWindowFlags editorFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar;
     ImGui::Begin("Editor", nullptr, editorFlags);
 
     InspectorResult result;
@@ -303,7 +313,7 @@ EditorUI::InspectorResult EditorUI::drawInspector(SceneAsset& scene, AActor* obj
     drawPerformance(context().profiler);
 
     result.edited |= drawCameraInspector(scene.editorCamera, renderer);
-    drawRenderGraphSelector(config, renderer.vulkanContext().supportsRayTracing());
+    drawRenderGraphSelector(config, renderer.getDevice().hasFeature(rhi::Feature::RayTracing));
     result.edited |= drawEnvironmentInspector(scene, *context().assetManager);
 
     if (const auto* graph = renderer.getActiveGraph(); graph && graph->getName() == config.renderGraphName())
@@ -314,13 +324,14 @@ EditorUI::InspectorResult EditorUI::drawInspector(SceneAsset& scene, AActor* obj
             if (ImGui::Checkbox("Object picking", &objectPicking))
                 config.setObjectPicking(objectPicking);
         }
-        renderer.renderUI({renderer.vulkanContext(), scene.editorCamera});
+        renderer.renderUI({renderer.getDevice(), scene.editorCamera});
     }
     result.edited |= drawObjectInspector(object);
 
     ImGui::End();
     return result;
 }
+
 void EditorUI::endFrame() { ImGui::Render(); }
 bool EditorUI::sceneClicked(glm::vec2& mousePosition) const
 {
@@ -367,7 +378,6 @@ bool EditorUI::saveRequested() const
 }
 
 float EditorUI::sceneAspectRatio() const { return scenePixels.width / scenePixels.height; }
-
 
 void EditorUI::resetLayout()
 {

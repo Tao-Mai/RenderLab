@@ -1,16 +1,14 @@
-#include "render/device/ResourceBarriers.h"
 #include "passes/postprocess/Bloom/Bloom.h"
 
 #include "core/Logger.h"
 #include "core/profiling/Profiler.h"
 
+#include <slang-rhi.h>
 #include "asset/BuiltinAssets.h"
 #include "core/Context.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
-#include "render/device/Device.h"
-#include "render/device/VulkanContext.h"
 #include "render/resources/RenderResourceManager.h"
 
 #include <algorithm>
@@ -23,12 +21,8 @@
 namespace
 {
 constexpr std::string_view kHorizontal = "horizontal";
-constexpr std::string_view kVertical = "vertical";
-constexpr std::string_view kUpsample = "upsample";
-constexpr uint32_t kSourceImageBinding = 0;
-constexpr uint32_t kSamplerBinding     = 1;
-constexpr uint32_t kBaseImageBinding   = 2;
-constexpr auto     kShaderStages       = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
+constexpr std::string_view kVertical   = "vertical";
+constexpr std::string_view kUpsample   = "upsample";
 
 struct alignas(16) BloomParameters
 {
@@ -46,10 +40,7 @@ uint32_t pyramidLevels(Falcor::uint2 extent, uint32_t limit)
     return std::min(static_cast<uint32_t>(levels), limit);
 }
 
-std::string pyramidImageName(std::string_view stage, uint32_t level)
-{
-    return std::format("{}{}", stage, level);
-}
+std::string pyramidImageName(std::string_view stage, uint32_t level) { return std::format("{}{}", stage, level); }
 }  // namespace
 
 void BloomSettings::validate() const
@@ -60,16 +51,16 @@ void BloomSettings::validate() const
     CHECK(levels > 0 && levels <= kMaxBloomLevels);
 }
 
-Bloom::Bloom(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties) :
+
+Bloom::Bloom(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
     Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<BloomSettings>(properties))
 {
     parameters.validate();
 }
 
-Falcor::Properties Bloom::getProperties() const
-{
-    return Falcor::serializeToProperties(parameters);
-}
+
+Falcor::Properties Bloom::getProperties() const { return Falcor::serializeToProperties(parameters); }
+
 
 void Bloom::setProperties(const Falcor::Properties& properties)
 {
@@ -78,10 +69,11 @@ void Bloom::setProperties(const Falcor::Properties& properties)
     next.validate();
 
     const bool recompile = next.levels != parameters.levels;
-    parameters = std::move(next);
+    parameters           = std::move(next);
     if (recompile)
         requestRecompile();
 }
+
 
 Falcor::RenderPassReflection Bloom::reflect(const CompileData& compileData)
 {
@@ -93,19 +85,21 @@ Falcor::RenderPassReflection Bloom::reflect(const CompileData& compileData)
     }
 
     Falcor::RenderPassReflection reflection;
-    reflection.addInput("hdrColor", "HDR scene color").bindFlags(Falcor::ResourceBindFlags::ShaderResource).format(Falcor::ResourceFormat::RGBA16Float);
+    reflection.addInput("hdrColor", "HDR scene color")
+        .bindFlags(Falcor::ResourceBindFlags::ShaderResource)
+        .format(rhi::Format::RGBA16Float);
     reflection.addOutput("color", "Scene color with bloom")
-        .format(Falcor::ResourceFormat::RGBA16Float)
+        .format(rhi::Format::RGBA16Float)
         .bindFlags(Falcor::ResourceBindFlags::RenderTarget)
         .texture2D(extent.x, extent.y);
 
-    const auto levels = pyramidLevels(extent, parameters.levels);
-    auto size = extent;
+    const auto levels   = pyramidLevels(extent, parameters.levels);
+    auto       size     = extent;
     const auto addImage = [&](std::string_view stage, uint32_t level)
     {
         reflection.addInternal(pyramidImageName(stage, level), "Bloom pyramid image")
             .texture2D(size.x, size.y)
-            .format(Falcor::ResourceFormat::RGBA16Float)
+            .format(rhi::Format::RGBA16Float)
             .bindFlags(Falcor::ResourceBindFlags::ShaderResource | Falcor::ResourceBindFlags::RenderTarget);
     };
     for (uint32_t level = 0; level < levels; ++level)
@@ -119,43 +113,37 @@ Falcor::RenderPassReflection Bloom::reflect(const CompileData& compileData)
     return reflection;
 }
 
-void Bloom::compile(Falcor::RenderContext* passContext, const CompileData&)
-{
-    const auto features =
-        passContext->vulkan->physicalDeviceHandle().getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
-    CHECK(features & vk::FormatFeatureFlagBits::eSampledImageFilterLinear);
-    filters.clear();
-}
+
+void Bloom::compile(Falcor::RenderContext* passContext, const CompileData&) { filters.clear(); }
+
 
 void Bloom::prepareFilters(const Falcor::RenderContext& context, const Falcor::RenderData& renderData)
 {
-    auto& cache = *context.vulkanResources;
+    auto&      cache    = *context.gpuResources;
     const auto hdrColor = cache.registerImage(renderData.getTexture("hdrColor"));
-    const auto color = cache.registerImage(renderData.getTexture("color"));
-    const auto extent = cache.imageInfo(hdrColor).extent;
-    const auto levels = pyramidLevels({extent.width, extent.height}, parameters.levels);
-    using Stage = Filter::Stage;
-    const auto image = [&](std::string_view stage, uint32_t level)
-    {
-        return cache.registerImage(renderData.getTexture(pyramidImageName(stage, level)));
-    };
+    const auto color    = cache.registerImage(renderData.getTexture("color"));
+    const auto extent   = cache.imageInfo(hdrColor).size;
+    const auto levels   = pyramidLevels({extent.width, extent.height}, parameters.levels);
+    using Stage         = Filter::Stage;
+    const auto image    = [&](std::string_view stage, uint32_t level)
+    { return cache.registerImage(renderData.getTexture(pyramidImageName(stage, level))); };
 
-    std::array<VulkanResources::ImageHandle, kMaxBloomLevels> pyramid;
-    auto source = hdrColor;
+    std::array<GpuResources::ImageHandle, kMaxBloomLevels> pyramid;
+    auto                                                   source = hdrColor;
     for (uint32_t level = 0; level < levels; ++level)
     {
         const auto horizontal = image(kHorizontal, level);
-        const auto vertical = image(kVertical, level);
+        const auto vertical   = image(kVertical, level);
         filters.emplace_back(Stage::DownsampleHorizontal, parameters).compile(context, source, source, horizontal);
         filters.emplace_back(Stage::DownsampleVertical, parameters).compile(context, horizontal, horizontal, vertical);
         pyramid[level] = vertical;
-        source = vertical;
+        source         = vertical;
     }
 
     auto blurred = pyramid[levels - 1];
     for (uint32_t level = levels - 1; level > 0; --level)
     {
-        const auto base = pyramid[level - 1];
+        const auto base   = pyramid[level - 1];
         const auto target = image(kUpsample, level - 1);
         filters.emplace_back(Stage::Upsample, parameters).compile(context, blurred, base, target);
         blurred = target;
@@ -163,9 +151,10 @@ void Bloom::prepareFilters(const Falcor::RenderContext& context, const Falcor::R
     filters.emplace_back(Stage::Composite, parameters).compile(context, hdrColor, blurred, color);
 }
 
+
 void Bloom::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
 {
-    auto&       cache    = *renderCommands->vulkanResources;
+    auto&       cache    = *renderCommands->gpuResources;
     auto&       commands = *renderCommands->commands;
     const auto& frame    = *renderCommands;
     const auto  extent   = renderData.getDefaultTextureDims();
@@ -176,73 +165,55 @@ void Bloom::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderD
         filter.execute(cache, commands, {extent.x, extent.y}, frame.view->viewport);
 }
 
+
 void Bloom::Filter::compile(
     const Falcor::RenderContext& context,
-    VulkanResources::ImageHandle input,
-    VulkanResources::ImageHandle baseInput,
-    VulkanResources::ImageHandle target
+    GpuResources::ImageHandle    input,
+    GpuResources::ImageHandle    baseInput,
+    GpuResources::ImageHandle    target
 )
 {
-    auto& cache = *context.vulkanResources;
-    source = input;
-
-    constexpr auto kSampled = vulkan_access::sampled(vk::PipelineStageFlagBits2::eFragmentShader);
-    accesses.add(source, kSampled);
-    accesses.add(baseInput, kSampled);
-    accesses.add(target, vulkan_access::kColorWrite);
-    accesses.declare(cache);
-
-    attachments.colors.front() = {target, vk::AttachmentLoadOp::eDontCare};
-
-    const std::array bindings{
-        vk::DescriptorSetLayoutBinding{
-            .binding         = kSourceImageBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = kShaderStages
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = kSamplerBinding,
-            .descriptorType  = vk::DescriptorType::eSampler,
-            .descriptorCount = 1,
-            .stageFlags      = kShaderStages
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding         = kBaseImageBinding,
-            .descriptorType  = vk::DescriptorType::eSampledImage,
-            .descriptorCount = 1,
-            .stageFlags      = kShaderStages
-        },
-    };
-    auto& device        = *context.getDevice();
-    descriptorSetLayout = device.createDescriptorSetLayout(bindings);
-    const std::array layouts{&descriptorSetLayout};
-    const std::array ranges{vk::PushConstantRange{.stageFlags = kShaderStages, .size = sizeof(BloomParameters)}};
-    pipelineLayout    = device.getOrCreatePipelineLayout(layouts, ranges);
-    const auto shader = context.shaderManager->getOrLoad("bloom", {{"BLOOM_STAGE", std::to_string(static_cast<int>(stage))}});
-    pipeline          = device.getOrCreatePipeline({
-                 .shader       = shader,
-                 .layout       = pipelineLayout,
-                 .state        = {.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
-                 .colorFormats = {kHdrColorFormat},
-    });
-    const auto sampler = context.resources->sampler(BuiltinAssets::Sampler::linearClamp);
-    descriptorSet     = device.allocateDescriptorSet(descriptorSetLayout);
-
-    cache.writeDescriptor(*descriptorSet, kSourceImageBinding, source);
-    cache.writeDescriptor(*descriptorSet, kSamplerBinding, sampler);
-    cache.writeDescriptor(*descriptorSet, kBaseImageBinding, baseInput);
+    auto& cache  = *context.gpuResources;
+    source       = input;
+    this->target = target;
+    const auto shader =
+        context.shaderManager->getOrLoad("bloom", {{"BLOOM_STAGE", std::to_string(static_cast<int>(stage))}});
+    rhi::ColorTargetDesc color;
+    color.format = kHdrColorFormat;
+    rhi::RenderPipelineDesc desc;
+    desc.program                       = context.shaderManager->program(shader);
+    desc.targets                       = &color;
+    desc.targetCount                   = 1;
+    desc.depthStencil.depthTestEnable  = false;
+    desc.depthStencil.depthWriteEnable = false;
+    desc.rasterizer.scissorEnable      = true;
+    rhiCheck(context.device->createRenderPipeline(desc, pipeline.writeRef()));
+    rhiCheck(context.device->createRootShaderObject(desc.program, shaderObject.writeRef()));
+    const rhi::ShaderCursor root(shaderObject);
+    rhiCheck(root["sourceColor"].setBinding(cache.getImage(source)->getDefaultView()));
+    rhiCheck(root["linearSampler"].setBinding(context.resources->sampler(BuiltinAssets::Sampler::linearClamp)));
+    rhiCheck(root["baseColor"].setBinding(cache.getImage(baseInput)->getDefaultView()));
 }
 
-void Bloom::Filter::execute(VulkanResources& cache, vk::raii::CommandBuffer& commands, vk::Extent2D frameExtent, const ViewportRect& viewport) const
-{
-    accesses.transition(cache, commands);
-    attachments.begin(cache, commands);
-    commands.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-    const std::array sets{*descriptorSet};
-    commands.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, sets, {});
 
-    const auto            sourceExtent = cache.imageInfo(source).extent;
+void Bloom::Filter::execute(
+    GpuResources& cache, rhi::ICommandEncoder& commands, Extent2D frameExtent, const ViewportRect& viewport
+) const
+{
+
+    const auto view = cache.getImage(target)->getDefaultView();
+    CHECK(view);
+    rhi::RenderPassColorAttachment color;
+    color.view   = view;
+    color.loadOp = rhi::LoadOp::DontCare;
+    auto* pass   = commands.beginRenderPass({&color, 1});
+    CHECK(pass);
+    pass->bindPipeline(pipeline, shaderObject);
+    const auto size = cache.imageExtent(target);
+    pass->setRenderState(ViewportRect{0, 0, float(size.width), float(size.height)}.renderState());
+
+
+    const auto            sourceExtent = cache.imageInfo(source).size;
     const BloomParameters parameters{
         .viewport =
             {viewport.x / frameExtent.width,
@@ -254,8 +225,13 @@ void Bloom::Filter::execute(VulkanResources& cache, vk::raii::CommandBuffer& com
         .intensity    = settings.intensity,
         .scatter      = settings.scatter,
     };
-    commands.pushConstants<BloomParameters>(pipelineLayout, kShaderStages, 0, parameters);
-    commands.draw(3, 1, 0, 0);
+    {
+        const auto uniformValue  = parameters;
+        const auto uniformCursor = rhi::ShaderCursor(shaderObject)["parameters"].getDereferenced();
+        CHECK(uniformCursor.getTypeLayout()->getSize() <= sizeof(uniformValue));
+        rhiCheck(uniformCursor.setData(&uniformValue, uniformCursor.getTypeLayout()->getSize()));
+    };
+    pass->draw({3});
     recordDraw(context().profiler, 3);
-    commands.endRendering();
+    pass->end();
 }

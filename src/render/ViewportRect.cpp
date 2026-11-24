@@ -4,11 +4,9 @@
 
 #include <algorithm>
 #include <cmath>
-#include <vulkan/vulkan.hpp>
 
-ViewportRect ViewportRect::clamped(vk::Extent2D extent) const
+ViewportRect ViewportRect::clamped(Extent2D extent) const
 {
-    DCHECK(extent.width > 0 && extent.height > 0);
 
     const float targetWidth  = static_cast<float>(extent.width);
     const float targetHeight = static_cast<float>(extent.height);
@@ -19,18 +17,5 @@ ViewportRect ViewportRect::clamped(vk::Extent2D extent) const
         .y      = offsetY,
         .width  = std::floor(std::clamp(width, 1.0f, targetWidth - offsetX)),
         .height = std::floor(std::clamp(height, 1.0f, targetHeight - offsetY)),
-    };
-}
-
-vk::Viewport ViewportRect::toViewport() const
-{
-    return {.x = x, .y = y, .width = width, .height = height, .minDepth = 0.0f, .maxDepth = 1.0f};
-}
-
-vk::Rect2D ViewportRect::toScissor() const
-{
-    return {
-        .offset = {static_cast<int32_t>(x), static_cast<int32_t>(y)},
-        .extent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)},
     };
 }

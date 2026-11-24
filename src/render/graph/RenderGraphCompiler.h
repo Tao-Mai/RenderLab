@@ -1,4 +1,5 @@
 #pragma once
+#include <slang-rhi.h>
 
 #include "core/Macros.h"
 #include "render/graph/RenderPass.h"
@@ -11,7 +12,7 @@
 
 namespace Falcor
 {
-class RenderContext;
+struct RenderContext;
 
 class RenderGraph;
 class RenderGraphExe;
@@ -39,10 +40,10 @@ private:
         RenderPassReflection reflector;
     };
 
-    RenderGraph&          mGraph;
-    ref<Device>           mpDevice;
-    const Dependencies&   mDependencies;
-    std::vector<PassData> mExecutionList;
+    RenderGraph&              mGraph;
+    rhi::ComPtr<rhi::IDevice> mpDevice;
+    const Dependencies&       mDependencies;
+    std::vector<PassData>     mExecutionList;
     struct
     {
         std::vector<std::string>                         generatedPasses;
@@ -52,7 +53,7 @@ private:
     void                    resolveExecutionOrder();
     void                    compilePasses(RenderContext* context);
     bool                    insertAutoPasses();
-    void                    allocateResources(ref<Device> device, ResourceCache* cache);
+    void                    allocateResources(rhi::IDevice* device, ResourceCache* cache);
     void                    validateGraph() const;
     void                    restoreCompilationChanges();
     RenderPass::CompileData prepPassCompilationData(const PassData& passData);

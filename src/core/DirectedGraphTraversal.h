@@ -109,7 +109,7 @@ public:
 
         // Insert all the children
         const DirectedGraph::Node* pNode = mGraph.getNode(curNode);
-        DCHECK(pNode);
+
         bool     reverse   = is_set(mFlags, Flags::Reverse);
         uint32_t edgeCount = reverse ? pNode->getIncomingEdgeCount() : pNode->getOutgoingEdgeCount();
 
@@ -117,7 +117,7 @@ public:
         {
             uint32_t                   e     = reverse ? pNode->getIncomingEdge(i) : pNode->getOutgoingEdge(i);
             const DirectedGraph::Edge* pEdge = mGraph.getEdge(e);
-            DCHECK(pEdge);
+
             uint32_t child = reverse ? pEdge->getSourceNode() : pEdge->getDestNode();
             mNodeList.push(child);
         }
@@ -209,7 +209,7 @@ private:
     {
         mVisited[node]                   = true;
         const DirectedGraph::Node* pNode = mGraph.getNode(node);
-        DCHECK(pNode);
+
         for (uint32_t e = 0; e < pNode->getOutgoingEdgeCount(); e++)
         {
             uint32_t nextNode = mGraph.getEdge(pNode->getOutgoingEdge(e))->getDestNode();
@@ -225,20 +225,20 @@ private:
 
 namespace DirectedGraphPathDetector
 {
-inline bool hasPath(const DirectedGraph& graph, uint32_t from, uint32_t to)
-{
-    DirectedGraphDfsTraversal dfs(graph, from, DirectedGraphDfsTraversal::Flags::IgnoreVisited);
-    uint32_t                  node = dfs.traverse();
-    node                           = dfs.traverse();  // skip the root node
-    while (node != DirectedGraph::kInvalidID)
+    inline bool hasPath(const DirectedGraph& graph, uint32_t from, uint32_t to)
     {
-        if (node == to)
-            return true;
-        node = dfs.traverse();
+        DirectedGraphDfsTraversal dfs(graph, from, DirectedGraphDfsTraversal::Flags::IgnoreVisited);
+        uint32_t                  node = dfs.traverse();
+        node                           = dfs.traverse();  // skip the root node
+        while (node != DirectedGraph::kInvalidID)
+        {
+            if (node == to)
+                return true;
+            node = dfs.traverse();
+        }
+        return false;
     }
-    return false;
-}
 
-inline bool hasCycle(const DirectedGraph& graph, uint32_t root) { return hasPath(graph, root, root); }
+    inline bool hasCycle(const DirectedGraph& graph, uint32_t root) { return hasPath(graph, root, root); }
 };  // namespace DirectedGraphPathDetector
 }  // namespace Falcor

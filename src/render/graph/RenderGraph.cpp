@@ -1,13 +1,12 @@
 #include "render/graph/RenderGraph.h"
 
+#include <slang-rhi.h>
 #include "core/DirectedGraphTraversal.h"
 #include "core/GlobalState.h"
 #include "core/Logger.h"
 #include "core/ScriptBindings.h"
 #include "core/Scripting.h"
 #include "render/RenderContext.h"
-#include "render/device/Device.h"
-#include "render/device/Fbo.h"
 
 #include <algorithm>
 #include <functional>
@@ -20,28 +19,28 @@ const FileDialogFilterVec RenderGraph::kFileExtensionFilters{{"py", "Render Grap
 
 namespace
 {
-auto makePassChangedCB(const ref<RenderPass>& slot, bool& recompile)
-{
-    struct Callback
+    auto makePassChangedCB(const ref<RenderPass>& slot, bool& recompile)
     {
-        const ref<RenderPass>* slot;
-        bool* recompile;
+        struct Callback
+        {
+            const ref<RenderPass>* slot;
+            bool*                  recompile;
 
-        void operator()() const { *recompile = true; }
-    };
-    return Callback{&slot, &recompile};
-}
+            void operator()() const { *recompile = true; }
+        };
+        return Callback{&slot, &recompile};
+    }
 
-void clearPassChangedCB(std::function<void()>& callback, const ref<RenderPass>& slot)
-{
-    using Callback = decltype(makePassChangedCB(slot, std::declval<bool&>()));
-    // update() can attach the same Pass to another graph's node.
-    if (const auto* target = callback.target<Callback>(); target && target->slot == &slot)
-        callback = [] {};
-}
+    void clearPassChangedCB(std::function<void()>& callback, const ref<RenderPass>& slot)
+    {
+        using Callback = decltype(makePassChangedCB(slot, std::declval<bool&>()));
+        // update() can attach the same Pass to another graph's node.
+        if (const auto* target = callback.target<Callback>(); target && target->slot == &slot)
+            callback = [] {};
+    }
 }  // namespace
 
-RenderGraph::RenderGraph(ref<Device> device, const std::string& name) :
+RenderGraph::RenderGraph(rhi::ComPtr<rhi::IDevice> device, const std::string& name) :
     mpDevice(std::move(device)), mName(name), mpGraph(std::make_unique<DirectedGraph>())
 {
 }
@@ -52,33 +51,33 @@ RenderGraph::~RenderGraph()
         clearPassChangedCB(node.pPass->mPassChangedCB, node.pPass);
 }
 
-ref<RenderGraph> RenderGraph::create(ref<Device> device, const std::string& name)
+ref<RenderGraph> RenderGraph::create(rhi::ComPtr<rhi::IDevice> device, const std::string& name)
 {
     return make_ref<RenderGraph>(std::move(device), name);
 }
 
 namespace
 {
-PyMethodDef kAddGraph{
-    "addGraph",
-    [](PyObject* result, PyObject* graph) -> PyObject*
-    {
-        if (!ScriptBindings::isInstance(graph, typeid(ref<RenderGraph>)))
+    PyMethodDef kAddGraph{
+        "addGraph",
+        [](PyObject* result, PyObject* graph) -> PyObject*
         {
-            PyErr_SetString(PyExc_TypeError, "m.addGraph expects a RenderGraph");
-            return nullptr;
-        }
-        if (PyList_SetItem(result, 0, Py_NewRef(graph)) != 0)
-            return nullptr;
-        Py_RETURN_NONE;
-    },
-    METH_O,
-    nullptr,
-};
+            if (!ScriptBindings::isInstance(graph, typeid(ref<RenderGraph>)))
+            {
+                PyErr_SetString(PyExc_TypeError, "m.addGraph expects a RenderGraph");
+                return nullptr;
+            }
+            if (PyList_SetItem(result, 0, Py_NewRef(graph)) != 0)
+                return nullptr;
+            Py_RETURN_NONE;
+        },
+        METH_O,
+        nullptr,
+    };
 
 }  // namespace
 
-ref<RenderGraph> RenderGraph::createFromFile(ref<Device> device, const std::filesystem::path& path)
+ref<RenderGraph> RenderGraph::createFromFile(rhi::ComPtr<rhi::IDevice> device, const std::filesystem::path& path)
 {
     Scripting::Context context;
     const PythonObject result{Py_BuildValue("[O]", Py_None)};
@@ -98,7 +97,7 @@ ref<RenderGraph> RenderGraph::createFromFile(ref<Device> device, const std::file
     return ScriptBindings::fromPython<ref<RenderGraph>>(PyList_GET_ITEM(result.get(), 0)).value_or(ref<RenderGraph>{});
 }
 
-ref<RenderGraph> RenderGraph::createFromString(ref<Device> device, std::string_view script)
+ref<RenderGraph> RenderGraph::createFromString(rhi::ComPtr<rhi::IDevice> device, std::string_view script)
 {
     Scripting::Context context;
     const PythonObject result{Py_BuildValue("[O]", Py_None)};
@@ -125,7 +124,7 @@ void RenderGraph::setScene(const ref<Scene>& scene)
 
     mpScene = scene;
     for (auto& [index, node] : mNodeData)
-        node.pPass->setScene(mpDevice->getRenderContext(), mpScene);
+        node.pPass->setScene(mpScene);
     mRecompile = true;
 }
 
@@ -139,15 +138,15 @@ RenderGraph::createPass(const std::string& passName, const std::string& passType
 
 namespace
 {
-std::pair<std::string, std::string> parseFieldName(const std::string& name)
-{
-    const auto dot = name.rfind('.');
-    if (dot == std::string::npos)
-        return {name, {}};
+    std::pair<std::string, std::string> parseFieldName(const std::string& name)
+    {
+        const auto dot = name.rfind('.');
+        if (dot == std::string::npos)
+            return {name, {}};
 
-    CHECK(dot != 0 && dot + 1 < name.size(), "invalid resource endpoint '{}'", name);
-    return {name.substr(0, dot), name.substr(dot + 1)};
-}
+        CHECK(dot != 0 && dot + 1 < name.size(), "invalid resource endpoint '{}'", name);
+        return {name.substr(0, dot), name.substr(dot + 1)};
+    }
 }  // namespace
 
 RenderPass* RenderGraph::getRenderPassAndNamePair(
@@ -187,11 +186,11 @@ uint32_t RenderGraph::addPass(const ref<RenderPass>& pass, const std::string& na
 
     const auto index = mpGraph->addNode();
     mNameToIndex.emplace(name, index);
-    const auto& node = mNodeData.emplace(index, NodeData{name, pass}).first->second;
-    pass->mName = name;
+    const auto& node     = mNodeData.emplace(index, NodeData{name, pass}).first->second;
+    pass->mName          = name;
     pass->mPassChangedCB = makePassChangedCB(node.pPass, mRecompile);
     if (mpScene)
-        pass->setScene(mpDevice->getRenderContext(), mpScene);
+        pass->setScene(mpScene);
     mRecompile = true;
     return index;
 }
@@ -221,13 +220,13 @@ void RenderGraph::updatePass(const std::string& name, const Properties& properti
     const auto index = getPassIndex(name);
     CHECK(index != kInvalidIndex, "unknown render pass '{}'", name);
     auto& node = mNodeData.at(index);
-    auto pass = RenderPass::create(node.pPass->getType(), mpDevice, properties);
+    auto  pass = RenderPass::create(node.pPass->getType(), mpDevice, properties);
     clearPassChangedCB(node.pPass->mPassChangedCB, node.pPass);
-    const auto previous = std::exchange(node.pPass, pass);
-    pass->mName = name;
+    const auto previous  = std::exchange(node.pPass, pass);
+    pass->mName          = name;
     pass->mPassChangedCB = makePassChangedCB(node.pPass, mRecompile);
     if (mpScene)
-        pass->setScene(mpDevice->getRenderContext(), mpScene);
+        pass->setScene(mpScene);
     mRecompile = true;
 }
 
@@ -308,7 +307,7 @@ void RenderGraph::removeEdge(uint32_t edgeId)
     mRecompile = true;
 }
 
-void RenderGraph::setInput(const std::string& name, const ref<Resource>& resource)
+void RenderGraph::setInput(const std::string& name, rhi::IResource* resource)
 {
     auto&      inputs  = mCompilerDeps.externalResources;
     const auto current = inputs.find(name);
@@ -379,25 +378,25 @@ bool RenderGraph::isGraphOutput(const GraphOut& output) const
     return std::ranges::find(mOutputs, output) != mOutputs.end();
 }
 
-ref<Resource> RenderGraph::getOutput(const std::string& name)
+rhi::ComPtr<rhi::IResource> RenderGraph::getOutput(const std::string& name)
 {
     CHECK(mpExe && !mRecompile, "compile the graph before fetching '{}'", name);
     CHECK(isGraphOutput(name), "'{}' is not a marked graph output", name);
     return mpExe->getResource(name);
 }
 
-ref<Resource> RenderGraph::getOutput(uint32_t index) { return getOutput(getOutputName(index)); }
+rhi::ComPtr<rhi::IResource> RenderGraph::getOutput(uint32_t index) { return getOutput(getOutputName(index)); }
 
 std::string RenderGraph::getOutputName(size_t index) const
 {
-    DCHECK(index < mOutputs.size());
+
     const auto& output = mOutputs[index];
     return mNodeData.at(output.nodeId).name + '.' + output.field;
 }
 
 std::unordered_set<TextureChannelFlags> RenderGraph::getOutputMasks(size_t index) const
 {
-    DCHECK(index < mOutputs.size());
+
     return mOutputs[index].masks;
 }
 
@@ -421,30 +420,18 @@ std::vector<std::string> RenderGraph::getAvailableOutputs() const
     return names;
 }
 
-std::vector<std::string> RenderGraph::getUnmarkedOutputs() const
+void RenderGraph::onResize(Extent2D extent, rhi::Format format)
 {
-    auto names = getAvailableOutputs();
-    std::erase_if(names, [&](const auto& name) { return isGraphOutput(name); });
-    return names;
-}
-
-void RenderGraph::onResize(const Fbo* target)
-{
-    CHECK(target);
-    const auto color = target->getColorTexture(0);
-    CHECK(color);
-    mCompilerDeps.defaultResourceProps = {{target->getWidth(), target->getHeight()}, color->getFormat()};
-    mRecompile = true;
+    mCompilerDeps.defaultResourceProps = {{extent.width, extent.height}, format};
+    mRecompile                         = true;
 }
 
 bool RenderGraph::compile(RenderContext* context, std::string& log)
 {
-    DCHECK(context && context->getDevice() == mpDevice);
+
     log.clear();
     if (!mpExe || mRecompile)
     {
-        if (mpExe && context->vulkan)
-            context->getDevice()->wait();
         mpExe.reset();
 
         const logger::ScopedErrorLog errors(log);
@@ -461,7 +448,7 @@ void RenderGraph::execute(RenderContext* context)
     std::string log;
     CHECK(compile(context, log), "failed to compile render graph '{}': {}", mName, log);
     const auto& properties = mCompilerDeps.defaultResourceProps;
-    mpExe->execute({context, mPassesDictionary, properties.dims, properties.format});
+    mpExe->execute({context, mPassesDictionary, properties.dims});
 }
 
 void RenderGraph::renderUI(RenderContext* context, Gui::Widgets& widget)
@@ -494,7 +481,7 @@ void RenderGraph::onHotReload(HotReloadFlags reloaded)
 
 void RenderGraph::update(const ref<RenderGraph>& source)
 {
-    DCHECK(source.get() != this && source->getDevice() == mpDevice);
+
     std::vector<std::string> removed;
     for (const auto& [passName, index] : mNameToIndex)
         if (!source->doesPassExist(passName))
@@ -538,159 +525,179 @@ void RenderGraph::update(const ref<RenderGraph>& source)
 
 namespace
 {
-using ScriptBindings::PythonValue;
-using ScriptBindings::destroyPythonValue;
-using ScriptBindings::makePythonValue;
-using ScriptBindings::valueOf;
+    using ScriptBindings::destroyPythonValue;
+    using ScriptBindings::makePythonValue;
+    using ScriptBindings::PythonValue;
+    using ScriptBindings::valueOf;
 
-PyObject* createGraph(PyTypeObject* type, PyObject* args, PyObject* keywords)
-{
-    const char*              name = nullptr;
-    static const char* const kKeywords[]{"name", nullptr};
-    if (!PyArg_ParseTupleAndKeywords(args, keywords, "s:RenderGraph", const_cast<char**>(kKeywords), &name))
-        return nullptr;
-    auto device = getActivePythonRenderGraphDevice();
-    if (!device)
+    PyObject* createGraph(PyTypeObject* type, PyObject* args, PyObject* keywords)
     {
-        PyErr_SetString(PyExc_RuntimeError, "RenderGraph requires an active device");
-        return nullptr;
+        const char*              name = nullptr;
+        static const char* const kKeywords[]{"name", nullptr};
+        if (!PyArg_ParseTupleAndKeywords(args, keywords, "s:RenderGraph", const_cast<char**>(kKeywords), &name))
+            return nullptr;
+        auto device = getActivePythonRenderGraphDevice();
+        if (!device)
+        {
+            PyErr_SetString(PyExc_RuntimeError, "RenderGraph requires an active device");
+            return nullptr;
+        }
+        return makePythonValue(type, RenderGraph::create(std::move(device), name));
     }
-    return makePythonValue(type, RenderGraph::create(std::move(device), name));
-}
 
-PyObject* createPass(PyObject* object, PyObject* args, PyObject* keywords)
-{
-    const char*              name = nullptr;
-    const char*              type = nullptr;
-    PyObject*                dict = nullptr;
-    static const char* const kKeywords[]{"pass_name", "pass_type", "dict", nullptr};
-    if (!PyArg_ParseTupleAndKeywords(
-            args,
-            keywords,
-            "ss|O!:create_pass",
-            const_cast<char**>(kKeywords),
-            &name,
-            &type,
-            &PyDict_Type,
-            &dict
-        ))
-        return nullptr;
-    const auto properties = dict ? Properties(dict) : Properties();
-    if (PyErr_Occurred())
-        return nullptr;
-    auto pass = valueOf<ref<RenderGraph>>(object)->createPass(name, type, properties);
-    return ScriptBindings::toPython(std::move(pass)).release();
-}
-
-PyObject* updatePass(PyObject* object, PyObject* args, PyObject* keywords)
-{
-    const char*              name = nullptr;
-    PyObject*                dict = nullptr;
-    static const char* const kKeywords[]{"name", "dict", nullptr};
-    if (!PyArg_ParseTupleAndKeywords(
-            args,
-            keywords,
-            "sO!:update_pass",
-            const_cast<char**>(kKeywords),
-            &name,
-            &PyDict_Type,
-            &dict
-        ))
-        return nullptr;
-    const Properties properties(dict);
-    if (PyErr_Occurred())
-        return nullptr;
-    valueOf<ref<RenderGraph>>(object)->updatePass(name, properties);
-    Py_RETURN_NONE;
-}
-
-PyObject* addEdge(PyObject* object, PyObject* args, PyObject* keywords)
-{
-    const char*              source = nullptr;
-    const char*              target = nullptr;
-    static const char* const kKeywords[]{"src", "dst", nullptr};
-    if (!PyArg_ParseTupleAndKeywords(args, keywords, "ss:add_edge", const_cast<char**>(kKeywords), &source, &target))
-        return nullptr;
-    return PyLong_FromUnsignedLong(valueOf<ref<RenderGraph>>(object)->addEdge(source, target));
-}
-
-PyObject* removeEdge(PyObject* object, PyObject* args, PyObject* keywords)
-{
-    const char*              source = nullptr;
-    const char*              target = nullptr;
-    static const char* const kKeywords[]{"src", "dst", nullptr};
-    if (!PyArg_ParseTupleAndKeywords(args, keywords, "ss:remove_edge", const_cast<char**>(kKeywords), &source, &target))
-        return nullptr;
-    valueOf<ref<RenderGraph>>(object)->removeEdge(source, target);
-    Py_RETURN_NONE;
-}
-
-PyObject* markOutput(PyObject* object, PyObject* args, PyObject* keywords)
-{
-    const char*              name = nullptr;
-    PyObject*                mask = nullptr;
-    static const char* const kKeywords[]{"name", "mask", nullptr};
-    if (!PyArg_ParseTupleAndKeywords(args, keywords, "s|O:mark_output", const_cast<char**>(kKeywords), &name, &mask))
-        return nullptr;
-
-    const auto flags = mask ? ScriptBindings::fromPython<TextureChannelFlags>(mask) : TextureChannelFlags::RGB;
-    if (!flags)
+    PyObject* createPass(PyObject* object, PyObject* args, PyObject* keywords)
     {
-        if (!PyErr_Occurred())
-            PyErr_SetString(PyExc_TypeError, "mark_output mask must be a TextureChannelFlags value");
-        return nullptr;
+        const char*              name = nullptr;
+        const char*              type = nullptr;
+        PyObject*                dict = nullptr;
+        static const char* const kKeywords[]{"pass_name", "pass_type", "dict", nullptr};
+        if (!PyArg_ParseTupleAndKeywords(
+                args,
+                keywords,
+                "ss|O!:create_pass",
+                const_cast<char**>(kKeywords),
+                &name,
+                &type,
+                &PyDict_Type,
+                &dict
+            ))
+            return nullptr;
+        const auto properties = dict ? Properties(dict) : Properties();
+        if (PyErr_Occurred())
+            return nullptr;
+        auto pass = valueOf<ref<RenderGraph>>(object)->createPass(name, type, properties);
+        return ScriptBindings::toPython(std::move(pass)).release();
     }
-    valueOf<ref<RenderGraph>>(object)->markOutput(name, *flags);
-    Py_RETURN_NONE;
-}
 
-PyObject* getGraphName(PyObject* object, void*)
-{
-    const auto& name = valueOf<ref<RenderGraph>>(object)->getName();
-    return PyUnicode_FromStringAndSize(name.data(), static_cast<Py_ssize_t>(name.size()));
-}
-
-int setGraphName(PyObject* object, PyObject* value, void*)
-{
-    if (!value || !PyUnicode_Check(value))
+    PyObject* updatePass(PyObject* object, PyObject* args, PyObject* keywords)
     {
-        PyErr_SetString(PyExc_TypeError, "RenderGraph.name requires a string");
-        return -1;
+        const char*              name = nullptr;
+        PyObject*                dict = nullptr;
+        static const char* const kKeywords[]{"name", "dict", nullptr};
+        if (!PyArg_ParseTupleAndKeywords(
+                args,
+                keywords,
+                "sO!:update_pass",
+                const_cast<char**>(kKeywords),
+                &name,
+                &PyDict_Type,
+                &dict
+            ))
+            return nullptr;
+        const Properties properties(dict);
+        if (PyErr_Occurred())
+            return nullptr;
+        valueOf<ref<RenderGraph>>(object)->updatePass(name, properties);
+        Py_RETURN_NONE;
     }
-    const auto* name = PyUnicode_AsUTF8(value);
-    if (!name)
-        return -1;
-    valueOf<ref<RenderGraph>>(object)->setName(name);
-    return 0;
-}
 
-template <const std::string& (RenderPass::*getter)() const>
-PyObject* getPassString(PyObject* object, void*)
-{
-    const auto& value = ((*valueOf<ref<RenderPass>>(object)).*getter)();
-    return PyUnicode_FromStringAndSize(value.data(), static_cast<Py_ssize_t>(value.size()));
-}
+    PyObject* addEdge(PyObject* object, PyObject* args, PyObject* keywords)
+    {
+        const char*              source = nullptr;
+        const char*              target = nullptr;
+        static const char* const kKeywords[]{"src", "dst", nullptr};
+        if (!PyArg_ParseTupleAndKeywords(
+                args,
+                keywords,
+                "ss:add_edge",
+                const_cast<char**>(kKeywords),
+                &source,
+                &target
+            ))
+            return nullptr;
+        return PyLong_FromUnsignedLong(valueOf<ref<RenderGraph>>(object)->addEdge(source, target));
+    }
 
-PyObject* getPassProperties(PyObject* object, void*)
-{
-    return valueOf<ref<RenderPass>>(object)->getProperties().toPython();
-}
+    PyObject* removeEdge(PyObject* object, PyObject* args, PyObject* keywords)
+    {
+        const char*              source = nullptr;
+        const char*              target = nullptr;
+        static const char* const kKeywords[]{"src", "dst", nullptr};
+        if (!PyArg_ParseTupleAndKeywords(
+                args,
+                keywords,
+                "ss:remove_edge",
+                const_cast<char**>(kKeywords),
+                &source,
+                &target
+            ))
+            return nullptr;
+        valueOf<ref<RenderGraph>>(object)->removeEdge(source, target);
+        Py_RETURN_NONE;
+    }
 
-PyObject* setPassProperties(PyObject* object, PyObject* dict)
-{
-    const Properties properties(dict);
-    if (PyErr_Occurred())
-        return nullptr;
-    valueOf<ref<RenderPass>>(object)->setProperties(properties);
-    Py_RETURN_NONE;
-}
+    PyObject* markOutput(PyObject* object, PyObject* args, PyObject* keywords)
+    {
+        const char*              name = nullptr;
+        PyObject*                mask = nullptr;
+        static const char* const kKeywords[]{"name", "mask", nullptr};
+        if (!PyArg_ParseTupleAndKeywords(
+                args,
+                keywords,
+                "s|O:mark_output",
+                const_cast<char**>(kKeywords),
+                &name,
+                &mask
+            ))
+            return nullptr;
+
+        const auto flags = mask ? ScriptBindings::fromPython<TextureChannelFlags>(mask) : TextureChannelFlags::RGB;
+        if (!flags)
+        {
+            if (!PyErr_Occurred())
+                PyErr_SetString(PyExc_TypeError, "mark_output mask must be a TextureChannelFlags value");
+            return nullptr;
+        }
+        valueOf<ref<RenderGraph>>(object)->markOutput(name, *flags);
+        Py_RETURN_NONE;
+    }
+
+    PyObject* getGraphName(PyObject* object, void*)
+    {
+        const auto& name = valueOf<ref<RenderGraph>>(object)->getName();
+        return PyUnicode_FromStringAndSize(name.data(), static_cast<Py_ssize_t>(name.size()));
+    }
+
+    int setGraphName(PyObject* object, PyObject* value, void*)
+    {
+        if (!value || !PyUnicode_Check(value))
+        {
+            PyErr_SetString(PyExc_TypeError, "RenderGraph.name requires a string");
+            return -1;
+        }
+        const auto* name = PyUnicode_AsUTF8(value);
+        if (!name)
+            return -1;
+        valueOf<ref<RenderGraph>>(object)->setName(name);
+        return 0;
+    }
+
+    template <const std::string& (RenderPass::*getter)() const>
+    PyObject* getPassString(PyObject* object, void*)
+    {
+        const auto& value = ((*valueOf<ref<RenderPass>>(object)).*getter)();
+        return PyUnicode_FromStringAndSize(value.data(), static_cast<Py_ssize_t>(value.size()));
+    }
+
+    PyObject* getPassProperties(PyObject* object, void*)
+    {
+        return valueOf<ref<RenderPass>>(object)->getProperties().toPython();
+    }
+
+    PyObject* setPassProperties(PyObject* object, PyObject* dict)
+    {
+        const Properties properties(dict);
+        if (PyErr_Occurred())
+            return nullptr;
+        valueOf<ref<RenderPass>>(object)->setProperties(properties);
+        Py_RETURN_NONE;
+    }
 
 }  // namespace
 
 FALCOR_SCRIPT_BINDING(RenderGraph)
 {
-    FALCOR_SCRIPT_BINDING_DEPENDENCY(Formats)
-    FALCOR_SCRIPT_BINDING_DEPENDENCY(Resource)
+    FALCOR_SCRIPT_BINDING_DEPENDENCY(RhiInterfaces)
 
     const auto bind = []<auto Method>() -> PyCFunction
     {
@@ -714,7 +721,7 @@ FALCOR_SCRIPT_BINDING(RenderGraph)
         );
     };
     constexpr auto kGetOutput =
-        static_cast<ref<Resource> (RenderGraph::*)(const std::string&)>(&RenderGraph::getOutput);
+        static_cast<rhi::ComPtr<rhi::IResource> (RenderGraph::*)(const std::string&)>(&RenderGraph::getOutput);
 
     static PyMethodDef kGraphMethods[]{
         {"create_pass", reinterpret_cast<PyCFunction>(createPass), METH_VARARGS | METH_KEYWORDS},
@@ -774,10 +781,39 @@ FALCOR_SCRIPT_BINDING(RenderGraph)
         Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION,
         kPassSlots,
     };
-    const auto passType = ScriptBindings::makePythonType<ref<RenderPass>>(m, kPassType);
+    const auto passType  = ScriptBindings::makePythonType<ref<RenderPass>>(m, kPassType);
     const auto graphType = passType ? ScriptBindings::makePythonType<ref<RenderGraph>>(m, kGraphType) : nullptr;
     if (!graphType || PyModule_AddObjectRef(m, "RenderPass", passType.get()) != 0)
         return -1;
     return PyModule_AddObjectRef(m, "RenderGraph", graphType.get());
+}
+}  // namespace Falcor
+
+namespace Falcor
+{
+namespace
+{
+template <class T>
+rhi::ComPtr<T> queryResource(rhi::IResource* resource)
+{
+    rhi::ComPtr<T> typed;
+    if (resource &&
+        SLANG_SUCCEEDED(resource->queryInterface(T::getTypeGuid(), reinterpret_cast<void**>(typed.writeRef()))))
+        return typed;
+    return {};
+}
+}  // namespace
+
+rhi::ComPtr<rhi::ITexture> RenderGraph::getOutputTexture(const std::string& name)
+{
+    return queryResource<rhi::ITexture>(getOutput(name));
+}
+rhi::ComPtr<rhi::ITexture> RenderGraph::getOutputTexture(uint32_t index)
+{
+    return getOutputTexture(getOutputName(index));
+}
+rhi::ComPtr<rhi::IBuffer> RenderGraph::getOutputBuffer(const std::string& name)
+{
+    return queryResource<rhi::IBuffer>(getOutput(name));
 }
 }  // namespace Falcor

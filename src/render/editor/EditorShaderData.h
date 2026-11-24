@@ -3,12 +3,6 @@
 #include <cstdint>
 #include <glm/mat4x4.hpp>
 
-namespace EditorInterface
-{
-inline constexpr uint32_t kViewSet            = 0;
-inline constexpr uint32_t kViewUniformBinding = 0;
-}  // namespace EditorInterface
-
 struct EditorPickingPushConstants
 {
     glm::mat4 model{1.0f};

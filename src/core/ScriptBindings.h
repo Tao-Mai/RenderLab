@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Python.h>
+#include <slang-rhi.h>
 
 #include <functional>
 #include <limits>
@@ -17,7 +18,6 @@ namespace Falcor
 template <typename T>
 class ref;
 class Object;
-class Resource;
 
 struct PythonDeleter
 {
@@ -38,9 +38,15 @@ namespace ScriptBindings
 
     namespace detail
     {
-        [[nodiscard]] PyObject* findRegisteredInstance(const Object* instance);
-        void registerInstance(const Object* instance, PyObject* object);
-        void unregisterInstance(const Object* instance, PyObject* object);
+        template <class T>
+        const void* getNativeInstance(const rhi::ComPtr<T>& value)
+        {
+            return value.get();
+        }
+
+        [[nodiscard]] PyObject* findRegisteredInstance(const void* instance);
+        void                    registerInstance(const void* instance, PyObject* object);
+        void                    unregisterInstance(const void* instance, PyObject* object);
 
         template <typename T>
         const Object* getNativeInstance(const T&)
@@ -88,7 +94,7 @@ namespace ScriptBindings
     template <typename T>
     void destroyPythonValue(PyObject* object)
     {
-        auto* type = Py_TYPE(object);
+        auto* type  = Py_TYPE(object);
         auto* value = reinterpret_cast<PythonValue<T>*>(object)->value;
         if (value)
             if (const auto* instance = detail::getNativeInstance(*value))
@@ -111,7 +117,7 @@ namespace ScriptBindings
         return type;
     }
 
-    [[nodiscard]] PythonObject toPython(ref<Resource> resource);
+    [[nodiscard]] PythonObject toPython(rhi::ComPtr<rhi::IResource> resource);
 
     template <typename T>
     [[nodiscard]] PythonObject toPython(T&& value)

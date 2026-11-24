@@ -1,8 +1,8 @@
 #include "render/resources/ShaderManager.h"
 
 #include "core/Logger.h"
+#include "render/device/RhiCheck.h"
 #include "render/resources/CompiledShaderPath.h"
-#include "render/resources/GpuShader.h"
 #include "render/resources/ShaderLayout.h"
 
 #include <algorithm>
@@ -31,13 +31,10 @@ std::string requiredString(const json& value, const std::string& name)
 
 }  // namespace
 
-ShaderManager::ShaderManager() = default;
-ShaderManager::~ShaderManager() { DCHECK(!device); }
+ShaderManager::ShaderManager()  = default;
+ShaderManager::~ShaderManager() = default;
 
-void ShaderManager::init(const vk::raii::Device& targetDevice)
-{
-    device = &targetDevice;
-}
+void ShaderManager::init(rhi::IDevice* targetDevice) { device = targetDevice; }
 
 void ShaderManager::shutdown() noexcept
 {
@@ -48,13 +45,13 @@ void ShaderManager::shutdown() noexcept
 
 ShaderHandle ShaderManager::getOrLoad(std::string_view program, const Falcor::DefineList& defines)
 {
-    DCHECK(device);
+
     const auto key = std::pair{std::string{program}, defines};
     if (const auto found = handles.find(key); found != handles.end())
     {
         return found->second;
     }
-    const auto manifestPath = compiledShaderPath(std::filesystem::path{"shaders"} / (key.first + ".variants.json"));
+    const auto    manifestPath = compiledShaderPath(std::filesystem::path{"shaders"} / (key.first + ".variants.json"));
     std::ifstream input{manifestPath};
     CHECK(input.is_open(), "missing shader manifest '{}'", manifestPath.string());
     const auto manifest = json::parse(input, nullptr, false);
@@ -84,7 +81,60 @@ ShaderHandle ShaderManager::getOrLoad(std::string_view program, const Falcor::De
         selectedDefines.add(name, value.get_ref<const std::string&>());
     }
     const auto binary = manifestPath.parent_path() / requiredString(*selected, "binary");
-    auto shader = std::make_unique<GpuShader>(*device, binary.string());
+
+    std::ifstream moduleInput(binary, std::ios::binary | std::ios::ate);
+    CHECK(moduleInput, "missing Slang module '{}'", binary.string());
+    const auto byteCount = moduleInput.tellg();
+    CHECK(byteCount > 0, "empty Slang module '{}'", binary.string());
+    std::vector<char> moduleBytes(static_cast<size_t>(byteCount));
+    moduleInput.seekg(0);
+    CHECK(moduleInput.read(moduleBytes.data(), moduleBytes.size()), "failed to read '{}'", binary.string());
+    auto session = device->getSlangSession();
+    CHECK(session);
+    rhi::ComPtr<ISlangBlob> blob;
+    blob.attach(slang_createBlob(moduleBytes.data(), moduleBytes.size()));
+    CHECK(blob);
+    rhi::ComPtr<ISlangBlob> diagnostics;
+    auto                    module = session->loadModuleFromIRBlob(
+        binary.stem().string().c_str(),
+        binary.string().c_str(),
+        blob,
+        diagnostics.writeRef()
+    );
+    CHECK(
+        module,
+        "failed to load '{}': {}",
+        binary.string(),
+        diagnostics ? static_cast<const char*>(diagnostics->getBufferPointer()) : ""
+    );
+    std::vector<rhi::ComPtr<slang::IEntryPoint>> entryPoints;
+    std::vector<slang::IComponentType*>          components{module};
+    for (const auto& entryName : selected->at("entries").get<std::vector<std::string>>())
+    {
+        auto& entry = entryPoints.emplace_back();
+        rhiCheck(module->findEntryPointByName(entryName.c_str(), entry.writeRef()));
+        components.push_back(entry);
+    }
+    rhi::ComPtr<slang::IComponentType> composite;
+    rhiCheck(session->createCompositeComponentType(
+        components.data(),
+        components.size(),
+        composite.writeRef(),
+        diagnostics.writeRef()
+    ));
+    rhi::ComPtr<slang::IComponentType> linked;
+    const auto                         linkResult = composite->link(linked.writeRef(), diagnostics.writeRef());
+    CHECK(
+        SLANG_SUCCEEDED(linkResult),
+        "failed to link '{}': {}",
+        binary.string(),
+        diagnostics ? static_cast<const char*>(diagnostics->getBufferPointer()) : ""
+    );
+    rhi::ShaderProgramDesc programDesc;
+    programDesc.slangGlobalScope = linked;
+    rhi::ComPtr<rhi::IShaderProgram> shader;
+    rhiCheck(device->createShaderProgram(programDesc, shader.writeRef()));
+
     ShaderMetadata metadata{
         .binary  = binary,
         .defines = std::move(selectedDefines),
@@ -96,21 +146,13 @@ ShaderHandle ShaderManager::getOrLoad(std::string_view program, const Falcor::De
     return handle;
 }
 
-vk::ShaderModule ShaderManager::module(ShaderHandle handle) const
-{
-    DCHECK(handle.index > 0 && handle.index <= variants.size(), "invalid ShaderHandle {}", handle.index);
-    return variants[handle.index - 1].shader->handle();
-}
+rhi::IShaderProgram* ShaderManager::program(ShaderHandle handle) const { return variants[handle.index - 1].shader; }
 
-const ShaderMetadata& ShaderManager::metadata(ShaderHandle handle) const
-{
-    DCHECK(handle.index > 0 && handle.index <= variants.size(), "invalid ShaderHandle {}", handle.index);
-    return variants[handle.index - 1].metadata;
-}
+const ShaderMetadata& ShaderManager::metadata(ShaderHandle handle) const { return variants[handle.index - 1].metadata; }
 
 const ShaderLayout& ShaderManager::layout(ShaderHandle handle)
 {
-    DCHECK(handle.index > 0 && handle.index <= variants.size(), "invalid ShaderHandle {}", handle.index);
+
     auto& variant = variants[handle.index - 1];
     if (!variant.layout)
     {

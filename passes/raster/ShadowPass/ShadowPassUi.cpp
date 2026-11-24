@@ -1,8 +1,8 @@
 #include "passes/raster/ShadowPass/ShadowPass.h"
 
+#include <slang-rhi.h>
 #include "editor/EditorCameraConfig.h"
 #include "editor/PassEditor.h"
-#include "render/device/VulkanContext.h"
 
 #include <array>
 #include <span>
@@ -11,8 +11,9 @@
 
 namespace
 {
-bool drawShadowMapSize(Falcor::Gui::Widgets& widgets, const char* label, uint32_t& mapSize,
-                       const vk::PhysicalDeviceLimits& limits, bool cube)
+bool drawShadowMapSize(
+    Falcor::Gui::Widgets& widgets, const char* label, uint32_t& mapSize, const rhi::DeviceLimits& limits, bool cube
+)
 {
     constexpr std::array kShadowMapSizes{
         std::pair{256u, "256"},
@@ -23,18 +24,18 @@ bool drawShadowMapSize(Falcor::Gui::Widgets& widgets, const char* label, uint32_
         std::pair{8192u, "8192"},
     };
     std::array<const char*, kShadowMapSizes.size()> labels;
-    std::array<uint32_t, kShadowMapSizes.size()> sizes;
-    size_t choiceCount = 0;
-    size_t selected = sizes.size();
+    std::array<uint32_t, kShadowMapSizes.size()>    sizes;
+    size_t                                          choiceCount = 0;
+    size_t                                          selected    = sizes.size();
     for (const auto& [size, option] : kShadowMapSizes)
     {
-        if ((cube && size > limits.maxImageDimensionCube) || size > limits.maxImageDimension2D ||
-            size > limits.maxFramebufferWidth || size > limits.maxFramebufferHeight)
+        if ((cube && size > limits.maxTextureDimensionCube) || size > limits.maxTextureDimension2D ||
+            size > limits.maxFramebufferDimensions[0] || size > limits.maxFramebufferDimensions[1])
             continue;
 
         if (mapSize == size)
             selected = choiceCount;
-        sizes[choiceCount] = size;
+        sizes[choiceCount]  = size;
         labels[choiceCount] = option;
         ++choiceCount;
     }
@@ -47,12 +48,14 @@ bool drawShadowMapSize(Falcor::Gui::Widgets& widgets, const char* label, uint32_
     return true;
 }
 
+
 bool drawCascadeSettings(Falcor::Gui::Widgets& widgets, ShadowSettings::Cascade& cascade, float nearPlane)
 {
-    bool edited = widgets.slider("Shadow cascades", cascade.count, 1u, kMaxDirectionalShadowCascades, false);
+    bool        edited = widgets.slider("Shadow cascades", cascade.count, 1u, kMaxDirectionalShadowCascades, false);
     const float minimumShadowDistance = nearPlane * 1.01f;
-    edited |= widgets.drag("Directional shadow distance", cascade.maxDistance, 0.5f, minimumShadowDistance,
-                           100000.0f, "%.2f");
+    edited |=
+        widgets
+            .drag("Directional shadow distance", cascade.maxDistance, 0.5f, minimumShadowDistance, 100000.0f, "%.2f");
 
     edited |= widgets.dropdown("Cascade split strategy", cascade.splitStrategy, {"Practical (uniform/log)", "Uniform"});
     if (cascade.splitStrategy == CascadeSplitStrategy::Practical)
@@ -64,10 +67,13 @@ bool drawCascadeSettings(Falcor::Gui::Widgets& widgets, ShadowSettings::Cascade&
     return edited;
 }
 
-bool drawSettings(Falcor::Gui::Widgets& widgets, ShadowSettings& shadow, const ShadowPass&, const PassEditorContext& context)
+
+bool drawSettings(
+    Falcor::Gui::Widgets& widgets, ShadowSettings& shadow, const ShadowPass&, const PassEditorContext& context
+)
 {
-    const auto& limits = context.vulkan.properties().limits;
-    const auto nearPlane = context.camera.nearPlane;
+    const auto& limits    = context.device.getInfo().limits;
+    const auto  nearPlane = context.camera.nearPlane;
 
     bool edited = widgets.dropdown("Shadow filter", shadow.filter, {"Nearest", "Linear"});
     edited |= drawShadowMapSize(widgets, "Point shadow map size", shadow.pointShadowMapSize, limits, true);
@@ -82,7 +88,8 @@ bool drawSettings(Falcor::Gui::Widgets& widgets, ShadowSettings& shadow, const S
     edited |= widgets.drag("Spot PCF radius (texels)", shadow.spotSampleRadius, 0.1f, 0.0f, 32.0f, "%.2f");
     return edited;
 }
-}
+}  // namespace
+
 
 void ShadowPass::renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget)
 {

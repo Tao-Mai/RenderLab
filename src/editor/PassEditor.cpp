@@ -7,9 +7,9 @@
 
 bool pass_editor::begin(const Falcor::RenderPass& pass, const PassEditorContext& context, std::string_view label)
 {
-    DCHECK(context.submit);
-    const auto& name = pass.getName();
-    const auto title = std::format("{} ({})", label, name);
+
+    const auto& name  = pass.getName();
+    const auto  title = std::format("{} ({})", label, name);
     if (!ImGui::CollapsingHeader(title.c_str()))
         return false;
 

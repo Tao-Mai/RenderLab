@@ -1,29 +1,23 @@
 #pragma once
-
+#include <slang-rhi.h>
 #include "render/device/GpuProfiler.h"
 
-#include <vulkan/vulkan_raii.hpp>
-
-class VulkanContext;
-
-class FrameContext
+// Resources whose lifetime follows one in-flight frame slot.
+struct FrameContext
 {
-public:
-    void init(VulkanContext& vulkan);
-    void reset() noexcept;
-    void wait();
-    void submit(vk::Semaphore renderFinished, vk::PipelineStageFlags2 waitStages) const;
-    [[nodiscard]] const vk::raii::CommandPool& commandPoolHandle() const { return graphicsCommandPool; }
-    [[nodiscard]] vk::raii::CommandBuffer&     commandBufferHandle() { return graphicsCommandBuffer; }
-    [[nodiscard]] vk::Semaphore                imageAvailableSemaphore() const { return *imageAvailable; }
-    [[nodiscard]] vk::Fence                    drawFenceHandle() const { return *drawFence; }
-    [[nodiscard]] GpuProfiler&                 gpuProfiler() { return profiling; }
+    void                              init(rhi::IDevice& device, rhi::ICommandQueue& queue);
+    void                              reset() noexcept;
+    void                              wait();
+    void                              begin();
+    void                              submit();
+    [[nodiscard]] GpuProfiler&        gpuProfiler() { return profiling; }
+    rhi::ComPtr<rhi::ICommandEncoder> commands;
 
 private:
-    VulkanContext*          vulkan                = nullptr;
-    vk::raii::CommandPool   graphicsCommandPool   = nullptr;
-    vk::raii::CommandBuffer graphicsCommandBuffer = nullptr;
-    vk::raii::Semaphore     imageAvailable        = nullptr;
-    vk::raii::Fence         drawFence             = nullptr;
-    GpuProfiler             profiling;
+    rhi::ComPtr<rhi::IDevice>        device;
+    rhi::ComPtr<rhi::ICommandQueue>  queue;
+    rhi::ComPtr<rhi::IFence>         fence;
+    rhi::ComPtr<rhi::ICommandBuffer> submitted;
+    uint64_t                         fenceValue = 0;
+    GpuProfiler                      profiling;
 };

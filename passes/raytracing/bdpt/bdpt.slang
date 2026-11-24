@@ -22,7 +22,7 @@ bool bdptProjectCamera(float3 direction, out float2 pixel)
     {
         return false;
     }
-    pixel = parameters.path.viewportOffset + (ndc * 0.5 + 0.5) * parameters.path.viewportSize;
+    pixel = parameters.path.viewportOffset + clipToUv(ndc) * parameters.path.viewportSize;
 
     return true;
 }

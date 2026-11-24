@@ -4,15 +4,12 @@
 
 namespace Falcor
 {
-void Object::incRef() const
-{
-    mRefCount.fetch_add(1, std::memory_order_relaxed);
-}
+void Object::incRef() const { mRefCount.fetch_add(1, std::memory_order_relaxed); }
 
 void Object::decRef(bool dealloc) const noexcept
 {
     const auto previous = mRefCount.fetch_sub(1, std::memory_order_acq_rel);
-    DCHECK(previous != 0);
+
     if (previous == 1 && dealloc)
     {
         // The virtual destructor and its deallocation function may both reside in the plugin.

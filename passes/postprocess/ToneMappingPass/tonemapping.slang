@@ -9,16 +9,13 @@ struct ToneMappingParameters
     uint2 padding;
 };
 
-[[vk::push_constant]]
 ConstantBuffer<ToneMappingParameters> parameters;
 
-[[vk::binding(0, 0)]]
 Texture2D<float4> hdrColor;
 
-[[vk::binding(1, 0)]]
 SamplerState hdrSampler;
 
-[[vk::binding(2, 0)]] StructuredBuffer<ExposureState> exposureState;
+StructuredBuffer<ExposureState> exposureState;
 
 // Slang adaptation of Khronos PBR Neutral; input and output are linear Rec. 709.
 // Copyright 2024 The Khronos Group Inc. SPDX-License-Identifier: CC-BY-4.0

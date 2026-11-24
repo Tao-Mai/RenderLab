@@ -1,6 +1,5 @@
 #pragma once
 
-#include "render/resources/Resource.h"
 #include "scene/Scene.h"
 
 #include <cstdint>
@@ -24,12 +23,11 @@ public:
     [[nodiscard]] SceneAsset&       scene() noexcept { return mpScene->getAsset(); }
     [[nodiscard]] const SceneAsset& scene() const noexcept { return std::as_const(*mpScene).getAsset(); }
     [[nodiscard]] const Falcor::ref<Falcor::Scene>& getScene() const { return mpScene; }
-    [[nodiscard]] uint64_t          sceneGeneration() const { return generation; }
-    [[nodiscard]] AActor*           findActor(uint32_t selectionId) const noexcept;
+    [[nodiscard]] uint64_t                          sceneGeneration() const { return generation; }
+    [[nodiscard]] AActor*                           findActor(uint32_t selectionId) const noexcept;
 
 private:
-    DEBUG_ONLY(bool inited = false;)
     Falcor::ref<Falcor::Scene> mpScene;
-    uint64_t   generation      = 0;
-    uint32_t   nextSelectionId = 1;
+    uint64_t                   generation      = 0;
+    uint32_t                   nextSelectionId = 1;
 };

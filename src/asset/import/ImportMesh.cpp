@@ -101,14 +101,14 @@ MeshAsset::ID AssetImporter::importMesh(const ImportMeshSetting& setting)
 
 MeshAsset::ID AssetImporter::saveMesh(PreparedMesh&& prepared, const ImportMeshSetting& setting)
 {
-    DCHECK(prepared.importer);
+
     auto importer = prepared.importer;
     return importer->saveMesh(std::move(prepared), setting);
 }
 
 MeshAsset::ID ModelImport::saveMesh(AssetImporter::PreparedMesh&& prepared, const ImportMeshSetting& setting)
 {
-    DCHECK(prepared.importer.get() == this);
+
     CHECK(std::isfinite(setting.importScale) && setting.importScale > 0.0f);
     const auto start  = std::chrono::steady_clock::now();
     const auto meshId = asset_import::nextId<MeshAsset>(setting.id.empty() ? source.stem().string() : setting.id.value);

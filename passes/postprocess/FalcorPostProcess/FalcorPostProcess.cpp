@@ -25,17 +25,18 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
-#include "render/device/ResourceBarriers.h"
-#include "render/resources/NativeFormats.h"
+
 #include "passes/postprocess/FalcorPostProcess/FalcorPostProcess.h"
 
 #include "core/Logger.h"
 #include "core/profiling/Profiler.h"
 
+#include <slang-rhi.h>
+#include <slang-rhi/shader-cursor.h>
 #include "core/Context.h"
+#include "render/DispatchGroups.h"
 #include "render/RenderContext.h"
-#include "render/device/VkCheck.h"
-#include "render/device/VulkanContext.h"
+#include "render/device/RhiCheck.h"
 #include "render/resources/ShaderLayout.h"
 
 #include <algorithm>
@@ -53,12 +54,10 @@
 
 namespace
 {
-constexpr char     kPostFxColor[] = "postFxColor";
-constexpr char     kToneMapped[]  = "toneMapped";
-constexpr auto     kPyramidFormat = vk::Format::eR16G16B16A16Sfloat;
-constexpr auto     kOutputFormat  = vk::Format::eR32G32B32A32Sfloat;
-constexpr auto     kComputeStage  = vk::ShaderStageFlagBits::eCompute;
-constexpr auto     kFragmentStage = vk::ShaderStageFlagBits::eFragment;
+constexpr char kPostFxColor[] = "postFxColor";
+constexpr char kToneMapped[]  = "toneMapped";
+constexpr auto kPyramidFormat = rhi::Format::RGBA16Float;
+constexpr auto kOutputFormat  = rhi::Format::RGBA32Float;
 
 std::string bloomImageName(uint32_t level) { return std::format("bloom{}", level); }
 
@@ -67,8 +66,8 @@ std::string luminanceImageName(uint32_t level) { return std::format("luminance{}
 enum class SimplePostFxVariant
 {
     Downsample = 0,
-    Upsample = 1,
-    Composite = 2,
+    Upsample   = 1,
+    Composite  = 2,
 };
 
 struct alignas(16) DownsampleParameters
@@ -125,98 +124,46 @@ static_assert(offsetof(ToneMapperParameters, clampOutput) == 64);
 
 void FalcorPostProcess::initialize(const Falcor::RenderContext& context)
 {
-    auto&       device       = *context.getDevice();
-    const auto& vulkan       = *context.vulkan;
-    const auto& nativeDevice = vulkan.deviceHandle();
-    const auto  binding      = [](uint32_t index, vk::DescriptorType type, vk::ShaderStageFlags stages)
-    {
-        return vk::DescriptorSetLayoutBinding{
-            .binding         = index,
-            .descriptorType  = type,
-            .descriptorCount = 1,
-            .stageFlags      = stages
-        };
-    };
-    const std::array computeBindings{
-        binding(0, vk::DescriptorType::eSampledImage, kComputeStage),
-        binding(1, vk::DescriptorType::eSampledImage, kComputeStage),
-        binding(2, vk::DescriptorType::eStorageImage, kComputeStage),
-        binding(3, vk::DescriptorType::eSampler, kComputeStage),
-    };
-    const std::array graphicsBindings{
-        binding(0, vk::DescriptorType::eSampledImage, kFragmentStage),
-        binding(1, vk::DescriptorType::eSampledImage, kFragmentStage),
-        binding(2, vk::DescriptorType::eSampler, kFragmentStage),
-        binding(3, vk::DescriptorType::eSampler, kFragmentStage),
-    };
-    computeLayout.descriptorSet  = device.createDescriptorSetLayout(computeBindings);
-    graphicsLayout.descriptorSet = device.createDescriptorSetLayout(graphicsBindings);
-    computeLayout.pipeline = device.getOrCreatePipelineLayout(
-        std::array{&computeLayout.descriptorSet},
-        std::array{vk::PushConstantRange{.stageFlags = kComputeStage, .size = sizeof(PostFxParameters)}}
-    );
-    graphicsLayout.pipeline = device.getOrCreatePipelineLayout(
-        std::array{&graphicsLayout.descriptorSet},
-        std::array{vk::PushConstantRange{.stageFlags = kFragmentStage, .size = sizeof(ToneMapperParameters)}}
-    );
-    const auto createPostFxPipeline = [&](SimplePostFxVariant variant)
-    {
-        const auto shader =
-            context.shaderManager->getOrLoad(
-                "falcor_simple_post_fx", {{"FALCOR_POST_FX_STAGE", std::to_string(static_cast<int>(variant))}}
-            );
-        return device.createComputePipeline(shader, computeLayout.pipeline);
-    };
-    downsample = createPostFxPipeline(SimplePostFxVariant::Downsample);
-    upsample = createPostFxPipeline(SimplePostFxVariant::Upsample);
-    postFx = createPostFxPipeline(SimplePostFxVariant::Composite);
+    shaders      = context.shaderManager;
+    auto& device = *context.device;
 
-    vk::SamplerCreateInfo samplerInfo{
-        .magFilter    = vk::Filter::eLinear,
-        .minFilter    = vk::Filter::eLinear,
-        .mipmapMode   = vk::SamplerMipmapMode::eNearest,
-        .addressModeU = vk::SamplerAddressMode::eClampToBorder,
-        .addressModeV = vk::SamplerAddressMode::eClampToBorder,
-        .addressModeW = vk::SamplerAddressMode::eClampToBorder,
-        .maxLod       = VK_LOD_CLAMP_NONE,
-        .borderColor  = vk::BorderColor::eFloatTransparentBlack,
-    };
-    borderSampler            = vkCheck(nativeDevice.createSampler(samplerInfo));
-    samplerInfo.addressModeU = vk::SamplerAddressMode::eRepeat;
-    samplerInfo.addressModeV = vk::SamplerAddressMode::eRepeat;
-    samplerInfo.addressModeW = vk::SamplerAddressMode::eRepeat;
-    linearSampler            = vkCheck(nativeDevice.createSampler(samplerInfo));
-    samplerInfo.magFilter    = vk::Filter::eNearest;
-    samplerInfo.minFilter    = vk::Filter::eNearest;
-    pointSampler             = vkCheck(nativeDevice.createSampler(samplerInfo));
-
-    for (const auto format : {kPyramidFormat, kOutputFormat, vk::Format::eR32Sfloat})
+    const auto create = [&](SimplePostFxVariant variant)
     {
-        const auto features = vulkan.physicalDeviceHandle().getFormatProperties(format).optimalTilingFeatures;
-        auto       required = vk::FormatFeatureFlagBits::eSampledImageFilterLinear |
-            (format == vk::Format::eR32Sfloat ? vk::FormatFeatureFlagBits::eColorAttachment
-                                              : vk::FormatFeatureFlagBits::eStorageImage);
-        if (format == kOutputFormat)
-            required |= vk::FormatFeatureFlagBits::eColorAttachment;
-        CHECK(
-            (features & required) == required,
-            "Falcor post process requires format {} features {}",
-            vk::to_string(format),
-            vk::to_string(required)
+        const auto shader = context.shaderManager->getOrLoad(
+            "falcor_simple_post_fx",
+            {{"FALCOR_POST_FX_STAGE", std::to_string(int(variant))}}
         );
-    }
+        rhi::ComPtr<rhi::IComputePipeline> pipeline;
+        rhiCheck(
+            device.createComputePipeline({.program = context.shaderManager->program(shader)}, pipeline.writeRef())
+        );
+        return pipeline;
+    };
+    downsample = create(SimplePostFxVariant::Downsample);
+    upsample   = create(SimplePostFxVariant::Upsample);
+    postFx     = create(SimplePostFxVariant::Composite);
+    rhi::SamplerDesc desc;
+    desc.minFilter = desc.magFilter = rhi::TextureFilteringMode::Linear;
+    desc.mipFilter                  = rhi::TextureFilteringMode::Point;
+    desc.addressU = desc.addressV = desc.addressW = rhi::TextureAddressingMode::ClampToBorder;
+    rhiCheck(device.createSampler(desc, borderSampler.writeRef()));
+    desc.addressU = desc.addressV = desc.addressW = rhi::TextureAddressingMode::Wrap;
+    rhiCheck(device.createSampler(desc, linearSampler.writeRef()));
+    desc.minFilter = desc.magFilter = rhi::TextureFilteringMode::Point;
+    rhiCheck(device.createSampler(desc, pointSampler.writeRef()));
 }
 
-FalcorPostProcess::FalcorPostProcess(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties) :
-    Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<FalcorPostProcessConfig>(properties))
+
+FalcorPostProcess::FalcorPostProcess(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
+    Falcor::RenderPass(std::move(device)),
+    parameters(Falcor::deserializeFromProperties<FalcorPostProcessConfig>(properties))
 {
     parameters.validate();
 }
 
-Falcor::Properties FalcorPostProcess::getProperties() const
-{
-    return Falcor::serializeToProperties(parameters);
-}
+
+Falcor::Properties FalcorPostProcess::getProperties() const { return Falcor::serializeToProperties(parameters); }
+
 
 void FalcorPostProcess::setProperties(const Falcor::Properties& properties)
 {
@@ -224,13 +171,13 @@ void FalcorPostProcess::setProperties(const Falcor::Properties& properties)
     Deserialize(nlohmann::json(properties.toJson()), next);
     next.validate();
 
-    const bool recompile =
-        next.toneMapper.autoExposure != parameters.toneMapper.autoExposure ||
+    const bool recompile = next.toneMapper.autoExposure != parameters.toneMapper.autoExposure ||
         next.simplePostFx.usesBloom() != parameters.simplePostFx.usesBloom();
     parameters = std::move(next);
     if (recompile)
         requestRecompile();
 }
+
 
 Falcor::RenderPassReflection FalcorPostProcess::reflect(const CompileData& data)
 {
@@ -247,65 +194,69 @@ Falcor::RenderPassReflection FalcorPostProcess::reflect(const CompileData& data)
         extent.y = input->getHeight() ? input->getHeight() : extent.y;
     }
 
-    constexpr auto kStorageSampled = Falcor::ResourceBindFlags::UnorderedAccess | Falcor::ResourceBindFlags::ShaderResource;
+    constexpr auto kStorageSampled =
+        Falcor::ResourceBindFlags::UnorderedAccess | Falcor::ResourceBindFlags::ShaderResource;
     constexpr auto kColorSampled = Falcor::ResourceBindFlags::RenderTarget | Falcor::ResourceBindFlags::ShaderResource;
     if (parameters.simplePostFx.usesBloom())
     {
         for (uint32_t level = 0; level <= falcorPostProcess::kBloomLevels; ++level)
             reflection.addInternal(bloomImageName(level), "Bloom pyramid image")
                 .texture2D(std::max(1u, extent.x >> level), std::max(1u, extent.y >> level))
-                .format(Falcor::ResourceFormat::RGBA16Float)
+                .format(rhi::Format::RGBA16Float)
                 .bindFlags(kStorageSampled);
     }
     reflection.addInternal(kPostFxColor, "Color after post effects")
         .texture2D(extent.x, extent.y)
-        .format(Falcor::ResourceFormat::RGBA32Float)
+        .format(rhi::Format::RGBA32Float)
         .bindFlags(kStorageSampled);
 
     if (parameters.toneMapper.autoExposure)
     {
-        const auto width = std::bit_floor(std::max(1u, extent.x));
+        const auto width  = std::bit_floor(std::max(1u, extent.x));
         const auto height = std::bit_floor(std::max(1u, extent.y));
         const auto levels = static_cast<uint32_t>(std::bit_width(std::max(width, height)));
         for (uint32_t level = 0; level < levels; ++level)
             reflection.addInternal(luminanceImageName(level), "Luminance pyramid image")
                 .texture2D(std::max(1u, width >> level), std::max(1u, height >> level))
-                .format(Falcor::ResourceFormat::R32Float)
+                .format(rhi::Format::R32Float)
                 .bindFlags(kColorSampled);
     }
     reflection.addInternal(kToneMapped, "Tone-mapped color")
         .texture2D(extent.x, extent.y)
-        .format(Falcor::ResourceFormat::RGBA32Float)
+        .format(rhi::Format::RGBA32Float)
         .bindFlags(kColorSampled);
     return reflection;
 }
 
+
 void FalcorPostProcess::compile(Falcor::RenderContext* passContext, const CompileData& compileData)
 {
     imageStages.clear();
-    if (!computeLayout.descriptorSet)
+    if (!downsample)
         initialize(*passContext);
-    const auto targetFormat   = Falcor::getVulkanFormat(compileData.defaultTexFormat);
-    const bool srgbAttachment = targetFormat == vk::Format::eB8G8R8A8Srgb || targetFormat == vk::Format::eR8G8B8A8Srgb;
+    const auto targetFormat = compileData.defaultTexFormat;
+    const bool srgbAttachment =
+        targetFormat == rhi::Format::BGRA8UnormSrgb || targetFormat == rhi::Format::RGBA8UnormSrgb;
     CHECK(
-        srgbAttachment || targetFormat == vk::Format::eB8G8R8A8Unorm || targetFormat == vk::Format::eR8G8B8A8Unorm,
+        srgbAttachment || targetFormat == rhi::Format::BGRA8Unorm || targetFormat == rhi::Format::RGBA8Unorm,
         "unsupported Falcor presentation format: {}",
-        vk::to_string(targetFormat)
+        uint32_t(targetFormat)
     );
     encodeSrgb = !srgbAttachment;
 }
 
+
 void FalcorPostProcess::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
 {
-    auto&       cache    = *renderCommands->vulkanResources;
-    auto&       commands = *renderCommands->commands;
-    const auto target = cache.registerImage(renderData.getTexture("color"));
+    auto&      cache    = *renderCommands->gpuResources;
+    auto&      commands = *renderCommands->commands;
+    const auto target   = cache.registerImage(renderData.getTexture("color"));
     if (imageStages.empty())
     {
-        const auto source = cache.registerImage(renderData.getTexture("source"));
-        const auto effects = addSimplePostFx(cache, renderData, source);
-        auto& shaders = *renderCommands->shaderManager;
-        const auto toneMapped = addToneMapper(shaders, cache, renderData, effects);
+        const auto source        = cache.registerImage(renderData.getTexture("source"));
+        const auto effects       = addSimplePostFx(cache, renderData, source);
+        auto&      shaders       = *renderCommands->shaderManager;
+        const auto toneMapped    = addToneMapper(shaders, cache, renderData, effects);
         const auto presentShader = shaders.getOrLoad("falcor_present");
         addImageStage(cache, {*this, Stage::Present, presentShader}, toneMapped, toneMapped, target);
     }
@@ -314,14 +265,15 @@ void FalcorPostProcess::execute(Falcor::RenderContext* renderCommands, const Fal
         stage.execute(cache, commands, target);
 }
 
-VulkanResources::ImageHandle FalcorPostProcess::addSimplePostFx(
-    VulkanResources& cache, const Falcor::RenderData& data, VulkanResources::ImageHandle source
+
+GpuResources::ImageHandle FalcorPostProcess::addSimplePostFx(
+    GpuResources& cache, const Falcor::RenderData& data, GpuResources::ImageHandle source
 )
 {
     auto bloomed = source;
     if (parameters.simplePostFx.usesBloom())
     {
-        std::array<VulkanResources::ImageHandle, falcorPostProcess::kBloomLevels + 1> pyramid;
+        std::array<GpuResources::ImageHandle, falcorPostProcess::kBloomLevels + 1> pyramid;
         for (uint32_t level = 0; level < pyramid.size(); ++level)
             pyramid[level] = cache.registerImage(data.getTexture(bloomImageName(level)));
         for (uint32_t level = 0; level < falcorPostProcess::kBloomLevels; ++level)
@@ -338,28 +290,28 @@ VulkanResources::ImageHandle FalcorPostProcess::addSimplePostFx(
     return addImageStage(cache, {*this, Stage::PostFx, postFx}, source, bloomed, target);
 }
 
-VulkanResources::ImageHandle FalcorPostProcess::addToneMapper(
-    ShaderManager& shaders, VulkanResources& cache, const Falcor::RenderData& data, VulkanResources::ImageHandle source
+
+GpuResources::ImageHandle FalcorPostProcess::addToneMapper(
+    ShaderManager& shaders, GpuResources& cache, const Falcor::RenderData& data, GpuResources::ImageHandle source
 )
 {
-    constexpr char kLuminanceStage[] = "0";
+    constexpr char kLuminanceStage[]    = "0";
     constexpr char kLuminanceMipStage[] = "1";
-    const auto    extent             = cache.imageInfo(source).extent;
-    auto luminance = source;
+    const auto     extent               = cache.imageInfo(source).size;
+    auto           luminance            = source;
     if (parameters.toneMapper.autoExposure)
     {
         const auto shader = shaders.getOrLoad("falcor_luminance", {{"FALCOR_LUMINANCE_STAGE", kLuminanceStage}});
         const auto target = cache.registerImage(data.getTexture(luminanceImageName(0)));
-        luminance = addImageStage(cache, {*this, Stage::Luminance, shader}, source, source, target);
+        luminance         = addImageStage(cache, {*this, Stage::Luminance, shader}, source, source, target);
 
         // Separate images retain the exact size, R32F quantization and linear filtering of each Falcor mip.
-        const auto levels = static_cast<uint32_t>(std::bit_width(std::max(extent.width, extent.height)));
-        const auto mipShader =
-            shaders.getOrLoad("falcor_luminance", {{"FALCOR_LUMINANCE_STAGE", kLuminanceMipStage}});
+        const auto levels    = static_cast<uint32_t>(std::bit_width(std::max(extent.width, extent.height)));
+        const auto mipShader = shaders.getOrLoad("falcor_luminance", {{"FALCOR_LUMINANCE_STAGE", kLuminanceMipStage}});
         for (uint32_t level = 1; level < levels; ++level)
         {
             const auto mip = cache.registerImage(data.getTexture(luminanceImageName(level)));
-            luminance = addImageStage(cache, {*this, Stage::Luminance, mipShader}, luminance, luminance, mip);
+            luminance      = addImageStage(cache, {*this, Stage::Luminance, mipShader}, luminance, luminance, mip);
         }
     }
 
@@ -368,75 +320,73 @@ VulkanResources::ImageHandle FalcorPostProcess::addToneMapper(
     return addImageStage(cache, {*this, Stage::ToneMapping, shader}, source, luminance, target);
 }
 
-VulkanResources::ImageHandle FalcorPostProcess::addImageStage(
-    VulkanResources&             cache,
-    ImageStage                 pass,
-    VulkanResources::ImageHandle source,
-    VulkanResources::ImageHandle filtered,
-    VulkanResources::ImageHandle target
+
+GpuResources::ImageHandle FalcorPostProcess::addImageStage(
+    GpuResources&             cache,
+    ImageStage                pass,
+    GpuResources::ImageHandle source,
+    GpuResources::ImageHandle filtered,
+    GpuResources::ImageHandle target
 )
 {
     imageStages.emplace_back(std::move(pass)).compile(cache, source, filtered, target);
     return target;
 }
 
+
 void FalcorPostProcess::ImageStage::compile(
-    VulkanResources&             cache,
-    VulkanResources::ImageHandle source,
-    VulkanResources::ImageHandle filtered,
-    VulkanResources::ImageHandle target
+    GpuResources&             cache,
+    GpuResources::ImageHandle source,
+    GpuResources::ImageHandle filtered,
+    GpuResources::ImageHandle target
 )
 {
-    const auto sampled = VulkanResources::ImageAccess{
-        .stages = compute ? vk::PipelineStageFlagBits2::eComputeShader : vk::PipelineStageFlagBits2::eFragmentShader,
-        .access = vk::AccessFlagBits2::eShaderSampledRead,
-        .layout = vk::ImageLayout::eShaderReadOnlyOptimal,
-    };
-    accesses.add(source, sampled);
-    if (filtered != source)
-        accesses.add(filtered, sampled);
     auto& device = *owner.mpDevice;
+    this->target = target;
+    rhi::IShaderProgram* program;
     if (compute)
     {
         storageTarget = target;
-        accesses.add(
-            target,
-            {
-                .stages = vk::PipelineStageFlagBits2::eComputeShader,
-                .access = vk::AccessFlagBits2::eShaderStorageWrite |
-                    (stage == Stage::Upsample && level > 0 ? vk::AccessFlagBits2::eShaderStorageRead
-                                                           : vk::AccessFlags2{}),
-                .layout = vk::ImageLayout::eGeneral,
-            }
-        );
-        pipeline = **compute;
+        program       = compute->getProgram();
     }
     else
     {
-        attachments.colors.front() = {target, vk::AttachmentLoadOp::eDontCare};
-        if (stage != Stage::Present)
-            accesses.add(target, vulkan_access::kColorWrite);
-        pipeline = device.getOrCreatePipeline({
-            .shader       = shader,
-            .layout       = layout.pipeline,
-            .state        = {.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
-            .colorFormats = {cache.imageInfo(target).format},
-        });
+        program = owner.shaders->program(shader);
+        rhi::ColorTargetDesc color;
+        color.format = cache.imageInfo(target).format;
+        rhi::RenderPipelineDesc desc;
+        desc.program                       = program;
+        desc.targets                       = &color;
+        desc.targetCount                   = 1;
+        desc.depthStencil.depthTestEnable  = false;
+        desc.depthStencil.depthWriteEnable = false;
+        desc.rasterizer.scissorEnable      = true;
+        rhiCheck(device.createRenderPipeline(desc, pipeline.writeRef()));
     }
-    accesses.declare(cache);
-    descriptorSet = device.allocateDescriptorSet(layout.descriptorSet);
-
-    const auto& bindings = layout.descriptorSet.bindings;
-    cache.writeDescriptor(*descriptorSet, bindings[0].binding, source);
-    cache.writeDescriptor(*descriptorSet, bindings[1].binding, filtered);
+    rhiCheck(device.createRootShaderObject(program, shaderObject.writeRef()));
+    const rhi::ShaderCursor root(shaderObject);
+    rhiCheck(root["sourceImage"].setBinding(cache.getImage(source)->getDefaultView()));
     if (compute)
-        cache.writeDescriptor(*descriptorSet, bindings[2].binding, storageTarget, vk::DescriptorType::eStorageImage);
+    {
+        if (stage != Stage::Downsample)
+            rhiCheck(root["bloomedImage"].setBinding(cache.getImage(filtered)->getDefaultView()));
+        rhiCheck(root["destinationImage"].setBinding(cache.getImage(target)->getDefaultView()));
+        rhiCheck(root["linearSampler"].setBinding(owner.borderSampler));
+    }
+    else if (stage == Stage::ToneMapping)
+    {
+        rhiCheck(root["luminanceImage"].setBinding(cache.getImage(filtered)->getDefaultView()));
+        rhiCheck(root["linearSampler"].setBinding(owner.linearSampler));
+        rhiCheck(root["pointSampler"].setBinding(owner.pointSampler));
+    }
+    else if (stage == Stage::Luminance)
+        rhiCheck(root["linearSampler"].setBinding(owner.linearSampler));
     else
-        cache.writeDescriptor(*descriptorSet, bindings[2].binding, *owner.linearSampler);
-    cache.writeDescriptor(*descriptorSet, bindings[3].binding, compute ? *owner.borderSampler : *owner.pointSampler);
+        rhiCheck(root["pointSampler"].setBinding(owner.pointSampler));
 }
 
-void FalcorPostProcess::ImageStage::dispatch(VulkanResources& cache, vk::raii::CommandBuffer& commands) const
+
+void FalcorPostProcess::ImageStage::dispatch(GpuResources& cache, rhi::ICommandEncoder& commands) const
 {
     const auto       extent = cache.imageExtent(storageTarget);
     const glm::uvec2 resolution{extent.width, extent.height};
@@ -445,7 +395,12 @@ void FalcorPostProcess::ImageStage::dispatch(VulkanResources& cache, vk::raii::C
     if (stage == Stage::Downsample)
     {
         const DownsampleParameters parameters{resolution, invRes};
-        commands.pushConstants<DownsampleParameters>(layout.pipeline, kComputeStage, 0, parameters);
+        {
+            const auto uniformValue  = parameters;
+            const auto uniformCursor = rhi::ShaderCursor(shaderObject)["parameters"].getDereferenced();
+            CHECK(uniformCursor.getTypeLayout()->getSize() <= sizeof(uniformValue));
+            rhiCheck(uniformCursor.setData(&uniformValue, uniformCursor.getTypeLayout()->getSize()));
+        };
     }
     else if (stage == Stage::Upsample)
     {
@@ -466,7 +421,12 @@ void FalcorPostProcess::ImageStage::dispatch(VulkanResources& cache, vk::raii::C
             .star        = wantStar ? settings.starAmount : 0.0f,
             .inPlace     = level > 0 ? 1u : 0u,
         };
-        commands.pushConstants<UpsampleParameters>(layout.pipeline, kComputeStage, 0, parameters);
+        {
+            const auto uniformValue  = parameters;
+            const auto uniformCursor = rhi::ShaderCursor(shaderObject)["parameters"].getDereferenced();
+            CHECK(uniformCursor.getTypeLayout()->getSize() <= sizeof(uniformValue));
+            rhiCheck(uniformCursor.setData(&uniformValue, uniformCursor.getTypeLayout()->getSize()));
+        };
     }
     else
     {
@@ -492,19 +452,28 @@ void FalcorPostProcess::ImageStage::dispatch(VulkanResources& cache, vk::raii::C
             .wipe                      = settings.wipe * extent.width,
             .bypass                    = settings.bypass() ? 1u : 0u,
         };
-        commands.pushConstants<PostFxParameters>(layout.pipeline, kComputeStage, 0, parameters);
+        {
+            const auto uniformValue  = parameters;
+            const auto uniformCursor = rhi::ShaderCursor(shaderObject)["parameters"].getDereferenced();
+            CHECK(uniformCursor.getTypeLayout()->getSize() <= sizeof(uniformValue));
+            rhiCheck(uniformCursor.setData(&uniformValue, uniformCursor.getTypeLayout()->getSize()));
+        };
     }
-    compute->dispatch(commands, {extent.width, extent.height, 1});
+    auto* pass = commands.beginComputePass();
+    CHECK(pass);
+    pass->bindPipeline(compute, shaderObject);
+    const auto groups = dispatchGroups(compute, {extent.width, extent.height, 1});
+    pass->dispatchCompute(groups.width, groups.height, groups.depth);
+    pass->end();
 }
 
+
 void FalcorPostProcess::ImageStage::execute(
-    VulkanResources& cache, vk::raii::CommandBuffer& commands, VulkanResources::ImageHandle colorOutput
+    GpuResources& cache, rhi::ICommandEncoder& commands, GpuResources::ImageHandle colorOutput
 )
 {
-    accesses.transition(cache, commands);
-    const auto bindPoint = compute ? vk::PipelineBindPoint::eCompute : vk::PipelineBindPoint::eGraphics;
-    commands.bindPipeline(bindPoint, pipeline);
-    commands.bindDescriptorSets(bindPoint, layout.pipeline, 0, std::array{*descriptorSet}, {});
+
+
     if (compute)
     {
         dispatch(cache, commands);
@@ -513,10 +482,18 @@ void FalcorPostProcess::ImageStage::execute(
 
     if (stage == Stage::Present)
     {
-        attachments.colors.front().image = colorOutput;
-        cache.transition(commands, colorOutput, vulkan_access::kColorWrite);
+        target = colorOutput;
     }
-    attachments.begin(cache, commands);
+    const auto view = cache.getImage(target)->getDefaultView();
+    CHECK(view);
+    rhi::RenderPassColorAttachment color;
+    color.view   = view;
+    color.loadOp = rhi::LoadOp::DontCare;
+    auto* pass   = commands.beginRenderPass({&color, 1});
+    CHECK(pass);
+    pass->bindPipeline(pipeline, shaderObject);
+    const auto size = cache.imageExtent(target);
+    pass->setRenderState(ViewportRect{0, 0, float(size.width), float(size.height)}.renderState());
     if (stage == Stage::ToneMapping)
     {
         const auto&                settings  = owner.parameters.toneMapper;
@@ -529,14 +506,24 @@ void FalcorPostProcess::ImageStage::execute(
             .autoExposure      = settings.autoExposure ? 1u : 0u,
             .clampOutput       = settings.clampOutput ? 1u : 0u,
         };
-        commands.pushConstants<ToneMapperParameters>(layout.pipeline, kFragmentStage, 0, parameters);
+        {
+            const auto uniformValue  = parameters;
+            const auto uniformCursor = rhi::ShaderCursor(shaderObject)["parameters"].getDereferenced();
+            CHECK(uniformCursor.getTypeLayout()->getSize() <= sizeof(uniformValue));
+            rhiCheck(uniformCursor.setData(&uniformValue, uniformCursor.getTypeLayout()->getSize()));
+        };
     }
     else if (stage == Stage::Present)
     {
         const uint32_t encodeSrgb = owner.encodeSrgb ? 1u : 0u;
-        commands.pushConstants<uint32_t>(layout.pipeline, kFragmentStage, 0, encodeSrgb);
+        {
+            const auto uniformValue  = encodeSrgb;
+            const auto uniformCursor = rhi::ShaderCursor(shaderObject)["parameters"].getDereferenced();
+            CHECK(uniformCursor.getTypeLayout()->getSize() <= sizeof(uniformValue));
+            rhiCheck(uniformCursor.setData(&uniformValue, uniformCursor.getTypeLayout()->getSize()));
+        };
     }
-    commands.draw(3, 1, 0, 0);
+    pass->draw({3});
     recordDraw(context().profiler, 3);
-    commands.endRendering();
+    pass->end();
 }

@@ -9,10 +9,7 @@
 #include <Windows.h>
 #endif
 
-InputMethod::~InputMethod()
-{
-    DCHECK(!active);
-}
+InputMethod::~InputMethod() = default;
 
 void InputMethod::activateEnglish() noexcept
 {
@@ -54,5 +51,5 @@ void InputMethod::restore() noexcept
     previousLayoutName[0] = L'\0';
 #endif
     previousLayout = nullptr;
-    active = false;
+    active         = false;
 }

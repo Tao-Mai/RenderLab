@@ -1,135 +1,45 @@
 #include "render/resources/RenderResourceManager.h"
-
+#include <cmath>
+#include <limits>
+#include <slang-rhi.h>
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
-#include "core/Logger.h"
-#include "render/device/VkCheck.h"
-#include "render/device/VulkanContext.h"
-#include "render/resources/GpuMesh.h"
-#include "render/resources/GpuTexture.h"
-
-#include <cmath>
-#include <utility>
-#include <vector>
-
+#include "render/device/RhiCheck.h"
 namespace
 {
-[[nodiscard]] vk::Filter toVulkan(SamplerAsset::Filter filter)
-{
-    switch (filter)
-    {
-        case SamplerAsset::Filter::Nearest:
-            return vk::Filter::eNearest;
-        case SamplerAsset::Filter::Linear:
-            return vk::Filter::eLinear;
-    }
-    LOG_FATAL("invalid sampler filter");
-}
-
-[[nodiscard]] vk::SamplerMipmapMode toVulkan(SamplerAsset::MipmapMode mode)
-{
-    switch (mode)
-    {
-        case SamplerAsset::MipmapMode::Nearest:
-            return vk::SamplerMipmapMode::eNearest;
-        case SamplerAsset::MipmapMode::Linear:
-            return vk::SamplerMipmapMode::eLinear;
-    }
-    LOG_FATAL("invalid sampler mipmap mode");
-}
-
-[[nodiscard]] vk::SamplerAddressMode toVulkan(SamplerAsset::AddressMode mode)
+rhi::TextureAddressingMode addressMode(SamplerAsset::AddressMode mode)
 {
     switch (mode)
     {
         case SamplerAsset::AddressMode::Repeat:
-            return vk::SamplerAddressMode::eRepeat;
+            return rhi::TextureAddressingMode::Wrap;
         case SamplerAsset::AddressMode::MirroredRepeat:
-            return vk::SamplerAddressMode::eMirroredRepeat;
+            return rhi::TextureAddressingMode::MirrorRepeat;
         case SamplerAsset::AddressMode::ClampToEdge:
-            return vk::SamplerAddressMode::eClampToEdge;
+            return rhi::TextureAddressingMode::ClampToEdge;
         case SamplerAsset::AddressMode::ClampToBorder:
-            return vk::SamplerAddressMode::eClampToBorder;
+            return rhi::TextureAddressingMode::ClampToBorder;
     }
     LOG_FATAL("invalid sampler address mode");
 }
-
-[[nodiscard]] vk::CompareOp toVulkan(SamplerAsset::CompareOp op)
-{
-    switch (op)
-    {
-        case SamplerAsset::CompareOp::Never:
-            return vk::CompareOp::eNever;
-        case SamplerAsset::CompareOp::Less:
-            return vk::CompareOp::eLess;
-        case SamplerAsset::CompareOp::Equal:
-            return vk::CompareOp::eEqual;
-        case SamplerAsset::CompareOp::LessOrEqual:
-            return vk::CompareOp::eLessOrEqual;
-        case SamplerAsset::CompareOp::Greater:
-            return vk::CompareOp::eGreater;
-        case SamplerAsset::CompareOp::NotEqual:
-            return vk::CompareOp::eNotEqual;
-        case SamplerAsset::CompareOp::GreaterOrEqual:
-            return vk::CompareOp::eGreaterOrEqual;
-        case SamplerAsset::CompareOp::Always:
-            return vk::CompareOp::eAlways;
-    }
-    LOG_FATAL("invalid sampler compare operation");
-}
-
-[[nodiscard]] vk::BorderColor toVulkan(SamplerAsset::BorderColor color)
-{
-    switch (color)
-    {
-        case SamplerAsset::BorderColor::FloatTransparentBlack:
-            return vk::BorderColor::eFloatTransparentBlack;
-        case SamplerAsset::BorderColor::IntTransparentBlack:
-            return vk::BorderColor::eIntTransparentBlack;
-        case SamplerAsset::BorderColor::FloatOpaqueBlack:
-            return vk::BorderColor::eFloatOpaqueBlack;
-        case SamplerAsset::BorderColor::IntOpaqueBlack:
-            return vk::BorderColor::eIntOpaqueBlack;
-        case SamplerAsset::BorderColor::FloatOpaqueWhite:
-            return vk::BorderColor::eFloatOpaqueWhite;
-        case SamplerAsset::BorderColor::IntOpaqueWhite:
-            return vk::BorderColor::eIntOpaqueWhite;
-    }
-    LOG_FATAL("invalid sampler border color");
-}
 }  // namespace
 
-RenderResourceManager::~RenderResourceManager() { DCHECK(!vulkan); }
-
-GpuUploadContext RenderResourceManager::uploadContext() const
+RenderResourceManager::~RenderResourceManager() = default;
+void RenderResourceManager::init(rhi::IDevice& target, AssetManager& targetAssets, AssetDataManager& targetData)
 {
-    DCHECK(vulkan && *uploadPool);
-    return {*vulkan, uploadPool};
-}
-
-void RenderResourceManager::init(VulkanContext& targetVulkan, AssetManager& targetAssets, AssetDataManager& targetData)
-{
+    device = &target;
     assets = &targetAssets;
     data   = &targetData;
-    vulkan = &targetVulkan;
-    const vk::CommandPoolCreateInfo poolInfo{
-        .flags            = vk::CommandPoolCreateFlagBits::eTransient,
-        .queueFamilyIndex = vulkan->graphicsQueueFamilyIndex(),
-    };
-    uploadPool = vkCheck(vulkan->deviceHandle().createCommandPool(poolInfo));
 }
-
 void RenderResourceManager::shutdown() noexcept
 {
     meshes.clear();
     textures.clear();
     samplers.clear();
-    uploadPool = nullptr;
-    vulkan     = nullptr;
-    assets     = nullptr;
-    data       = nullptr;
+    device = nullptr;
+    assets = nullptr;
+    data   = nullptr;
 }
-
 GpuMesh& RenderResourceManager::mesh(const MeshAsset::ID& id)
 {
     if (const auto found = meshes.find(id); found != meshes.end())
@@ -140,89 +50,64 @@ GpuMesh& RenderResourceManager::mesh(const MeshAsset::ID& id)
     const MeshAsset& meshAsset = assets->get<MeshAsset>(id);
     MeshGeometry     geometry  = data->readGeometry(meshAsset);
     auto             gpu       = std::make_unique<GpuMesh>(
-        uploadContext(),
+        *device,
         std::move(geometry),
         meshAsset.submeshes,
-        vulkan->supportsRayTracing()
+        device->hasFeature(rhi::Feature::RayTracing)
     );
     return *meshes.emplace(id, std::move(gpu)).first->second;
 }
 
-std::shared_ptr<GpuTexture> RenderResourceManager::texture(const TextureAsset::ID& id)
+rhi::ComPtr<rhi::ITexture> RenderResourceManager::texture(const TextureAsset::ID& id)
 {
     if (const auto found = textures.find(id); found != textures.end())
     {
         return found->second;
     }
 
-    const TextureAsset&        asset = assets->get<TextureAsset>(id);
-    CHECK(imageBlock(asset.format).extent == 1 || vulkan->supportedFeatures().textureCompressionBC,
-          "texture '{}' requires Vulkan textureCompressionBC", id);
+    const TextureAsset& asset = assets->get<TextureAsset>(id);
 
     const std::vector<uint8_t> bytes = data->readTexture(asset);
-    auto                       gpu   = std::make_shared<GpuTexture>(uploadContext(), asset, bytes);
+    auto                       gpu   = uploadTexture(*device, asset, bytes);
 
     return textures.emplace(id, std::move(gpu)).first->second;
 }
 
-vk::Sampler RenderResourceManager::sampler(const SamplerAsset::ID& id)
+rhi::ISampler* RenderResourceManager::sampler(const SamplerAsset::ID& id)
 {
     if (const auto found = samplers.find(id); found != samplers.end())
-    {
-        return *found->second;
-    }
-
-    DCHECK(assets && vulkan);
-    const SamplerAsset& asset  = assets->get<SamplerAsset>(id);
-    const auto&         limits = vulkan->properties().limits;
-
+        return found->second;
+    const auto& asset = assets->get<SamplerAsset>(id);
     CHECK(
         std::isfinite(asset.mipLodBias) && std::isfinite(asset.maxAnisotropy) && std::isfinite(asset.minLod) &&
-            (!asset.maxLod || (std::isfinite(*asset.maxLod) && asset.minLod <= *asset.maxLod)) &&
-            std::abs(asset.mipLodBias) <= limits.maxSamplerLodBias,
-        "invalid sampler LOD settings: {}",
+            (!asset.maxLod || (std::isfinite(*asset.maxLod) && asset.minLod <= *asset.maxLod)),
+        "invalid sampler: {}",
         id
     );
-    if (asset.anisotropyEnable)
-    {
-        CHECK(
-            vulkan->supportedFeatures().samplerAnisotropy && asset.maxAnisotropy >= 1.0f &&
-                asset.maxAnisotropy <= limits.maxSamplerAnisotropy,
-            "unsupported sampler anisotropy: {}",
-            id
-        );
-    }
-    if (asset.unnormalizedCoordinates)
-    {
-        using AddressMode = SamplerAsset::AddressMode;
-        CHECK(
-            asset.magFilter == asset.minFilter && asset.mipmapMode == SamplerAsset::MipmapMode::Nearest &&
-                asset.minLod == 0.0f && asset.maxLod.has_value() && *asset.maxLod == 0.0f && !asset.anisotropyEnable &&
-                !asset.compareEnable &&
-                (asset.addressModeU == AddressMode::ClampToEdge || asset.addressModeU == AddressMode::ClampToBorder) &&
-                (asset.addressModeV == AddressMode::ClampToEdge || asset.addressModeV == AddressMode::ClampToBorder),
-            "invalid unnormalized sampler settings: {}",
-            id
-        );
-    }
-
-    const vk::SamplerCreateInfo info{
-        .magFilter               = toVulkan(asset.magFilter),
-        .minFilter               = toVulkan(asset.minFilter),
-        .mipmapMode              = toVulkan(asset.mipmapMode),
-        .addressModeU            = toVulkan(asset.addressModeU),
-        .addressModeV            = toVulkan(asset.addressModeV),
-        .addressModeW            = toVulkan(asset.addressModeW),
-        .mipLodBias              = asset.mipLodBias,
-        .anisotropyEnable        = asset.anisotropyEnable,
-        .maxAnisotropy           = asset.maxAnisotropy,
-        .compareEnable           = asset.compareEnable,
-        .compareOp               = toVulkan(asset.compareOp),
-        .minLod                  = asset.minLod,
-        .maxLod                  = asset.maxLod.value_or(VK_LOD_CLAMP_NONE),
-        .borderColor             = toVulkan(asset.borderColor),
-        .unnormalizedCoordinates = asset.unnormalizedCoordinates,
-    };
-    auto gpu = vkCheck(vulkan->deviceHandle().createSampler(info));
-    return *samplers.emplace(id, std::move(gpu)).first->second;
+    CHECK(!asset.unnormalizedCoordinates, "slang-rhi requires normalized sampler coordinates: {}", id);
+    rhi::SamplerDesc desc;
+    desc.minFilter      = asset.minFilter == SamplerAsset::Filter::Linear ? rhi::TextureFilteringMode::Linear
+                                                                          : rhi::TextureFilteringMode::Point;
+    desc.magFilter      = asset.magFilter == SamplerAsset::Filter::Linear ? rhi::TextureFilteringMode::Linear
+                                                                          : rhi::TextureFilteringMode::Point;
+    desc.mipFilter      = asset.mipmapMode == SamplerAsset::MipmapMode::Linear ? rhi::TextureFilteringMode::Linear
+                                                                               : rhi::TextureFilteringMode::Point;
+    desc.addressU       = addressMode(asset.addressModeU);
+    desc.addressV       = addressMode(asset.addressModeV);
+    desc.addressW       = addressMode(asset.addressModeW);
+    desc.mipLODBias     = asset.mipLodBias;
+    desc.maxAnisotropy  = asset.anisotropyEnable ? uint32_t(asset.maxAnisotropy) : 1;
+    desc.minLOD         = asset.minLod;
+    desc.maxLOD         = asset.maxLod.value_or(std::numeric_limits<float>::max());
+    desc.reductionOp    = asset.compareEnable ? rhi::TextureReductionOp::Comparison : rhi::TextureReductionOp::Average;
+    desc.comparisonFunc = static_cast<rhi::ComparisonFunc>(asset.compareOp);
+    const bool white    = asset.borderColor == SamplerAsset::BorderColor::FloatOpaqueWhite ||
+        asset.borderColor == SamplerAsset::BorderColor::IntOpaqueWhite;
+    const bool opaque = white || asset.borderColor == SamplerAsset::BorderColor::FloatOpaqueBlack ||
+        asset.borderColor == SamplerAsset::BorderColor::IntOpaqueBlack;
+    desc.borderColor[0] = desc.borderColor[1] = desc.borderColor[2] = white ? 1.0f : 0.0f;
+    desc.borderColor[3]                                             = opaque ? 1.0f : 0.0f;
+    rhi::ComPtr<rhi::ISampler> sampler;
+    rhiCheck(device->createSampler(desc, sampler.writeRef()));
+    return samplers.emplace(id, sampler).first->second;
 }

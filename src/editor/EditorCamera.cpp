@@ -23,9 +23,10 @@ void EditorCamera::resetNavigation()
     previousMouseY = 0.0;
 }
 
+
 void EditorCamera::tick(float deltaTime)
 {
-    DCHECK(context().inputManager && context().window);
+
     auto&       window = *context().window;
     const auto& input  = *context().inputManager;
 
@@ -97,13 +98,13 @@ glm::mat4 EditorCamera::viewMatrix() const { return glm::lookAt(data.position, d
 glm::mat4 EditorCamera::projectionMatrix(float aspectRatio) const
 {
     glm::mat4 projection = glm::perspective(glm::radians(data.fieldOfView), aspectRatio, data.nearPlane, data.farPlane);
-    projection[1][1] *= -1.0f;
+
     return projection;
 }
 
 RenderView EditorCamera::renderView(ViewportRect viewport) const
 {
-    DCHECK(viewport.width > 0.0f && viewport.height > 0.0f);
+
     const auto view           = viewMatrix();
     const auto viewProjection = projectionMatrix(viewport.width / viewport.height) * view;
     return {

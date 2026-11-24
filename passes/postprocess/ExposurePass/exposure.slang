@@ -6,9 +6,9 @@ static const float kExposureLogLuminanceMin = -20.0;
 static const float kExposureLogLuminanceRange = 40.0;
 static const float kExposureCalibration = 1.2;
 
-[[vk::binding(0, 0)]] Texture2D<float4> hdrColor;
-[[vk::binding(1, 0)]] RWStructuredBuffer<uint> histogram;
-[[vk::binding(2, 0)]] RWStructuredBuffer<ExposureState> exposureState;
+Texture2D<float4> hdrColor;
+RWStructuredBuffer<uint> histogram;
+RWStructuredBuffer<ExposureState> exposureState;
 
 struct ExposureParameters
 {
@@ -29,7 +29,7 @@ struct ExposureParameters
     property float2 viewportOffset { get { return viewport.xy; } }
     property float2 viewportExtent { get { return viewport.zw; } }
 };
-[[vk::push_constant]] ConstantBuffer<ExposureParameters> parameters;
+ConstantBuffer<ExposureParameters> parameters;
 
 groupshared uint localHistogram[kExposureHistogramBinCount];
 

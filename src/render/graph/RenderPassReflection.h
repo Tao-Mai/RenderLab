@@ -1,8 +1,8 @@
 #pragma once
 
+#include <slang-rhi.h>
 #include "core/Macros.h"
-#include "render/resources/Formats.h"
-#include "render/resources/Resource.h"
+#include "render/graph/RenderGraphFlags.h"
 
 #include <string>
 #include <vector>
@@ -27,7 +27,6 @@ public:
         {
             None       = 0x0,
             Optional   = 0x1,
-            Persistent = 0x2,
         };
 
         enum class Type
@@ -39,7 +38,7 @@ public:
             RawBuffer,
         };
 
-        static constexpr uint32_t kMaxMipLevels = Resource::kMaxPossible;
+        static constexpr uint32_t kMaxMipLevels = ~0u;
 
         Field() = default;
         Field(const std::string& name, const std::string& desc, Visibility visibility);
@@ -66,7 +65,7 @@ public:
             uint32_t arraySize
         );
 
-        Field& format(ResourceFormat format);
+        Field& format(rhi::Format format);
         Field& bindFlags(ResourceBindFlags flags);
         Field& flags(Flags flags);
         Field& visibility(Visibility visibility);
@@ -81,7 +80,7 @@ public:
         [[nodiscard]] uint32_t           getSampleCount() const { return mSampleCount; }
         [[nodiscard]] uint32_t           getArraySize() const { return mArraySize; }
         [[nodiscard]] uint32_t           getMipCount() const { return mMipCount; }
-        [[nodiscard]] ResourceFormat     getFormat() const { return mFormat; }
+        [[nodiscard]] rhi::Format     getFormat() const { return mFormat; }
         [[nodiscard]] ResourceBindFlags  getBindFlags() const { return mBindFlags; }
         [[nodiscard]] Flags              getFlags() const { return mFlags; }
         [[nodiscard]] Type               getType() const { return mType; }
@@ -101,7 +100,7 @@ public:
         uint32_t          mSampleCount = 1;
         uint32_t          mMipCount    = 1;
         uint32_t          mArraySize   = 1;
-        ResourceFormat    mFormat      = ResourceFormat::Unknown;
+        rhi::Format    mFormat      = rhi::Format::Undefined;
         ResourceBindFlags mBindFlags   = ResourceBindFlags::None;
         Flags             mFlags       = Flags::None;
         Visibility        mVisibility  = Visibility::Undefined;
@@ -134,5 +133,5 @@ FALCOR_ENUM_CLASS_OPERATORS(RenderPassReflection::Field::Visibility);
 FALCOR_ENUM_CLASS_OPERATORS(RenderPassReflection::Field::Flags);
 
 [[nodiscard]] std::string                       to_string(RenderPassReflection::Field::Type type);
-[[nodiscard]] RenderPassReflection::Field::Type resourceTypeToFieldType(Resource::Type type);
+[[nodiscard]] RenderPassReflection::Field::Type resourceTypeToFieldType(rhi::TextureType type);
 }  // namespace Falcor

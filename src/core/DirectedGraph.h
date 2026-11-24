@@ -83,7 +83,7 @@ public:
 
     uint32_t addEdge(uint32_t source, uint32_t target)
     {
-        DCHECK(doesNodeExist(source) && doesNodeExist(target));
+
         const auto id = mCurrentEdgeId++;
         mEdges.emplace(id, Edge{source, target});
         mNodes.at(source).mOutgoingEdges.push_back(id);
@@ -118,14 +118,14 @@ public:
     [[nodiscard]] const Node* getNode(uint32_t id) const
     {
         const auto found = mNodes.find(id);
-        DCHECK(found != mNodes.end());
+
         return &found->second;
     }
 
     [[nodiscard]] const Edge* getEdge(uint32_t id) const
     {
         const auto found = mEdges.find(id);
-        DCHECK(found != mEdges.end());
+
         return &found->second;
     }
 

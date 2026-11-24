@@ -1,18 +1,18 @@
 #include "svgf_common.slang"
 
-[[vk::binding(0, 0)]] Texture2D<float4> inputDirect;   // RGB color, A luminance variance.
-[[vk::binding(1, 0)]] Texture2D<float4> inputIndirect;
-[[vk::binding(2, 0)]] Texture2D<float> depthImage;
-[[vk::binding(3, 0)]] Texture2D<float4> normalImage;
+Texture2D<float4> inputDirect;   // RGB color, A luminance variance.
+Texture2D<float4> inputIndirect;
+Texture2D<float> depthImage;
+Texture2D<float4> normalImage;
 #if SVGF_STAGE == 2
-[[vk::binding(4, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> outputColor;
-[[vk::binding(5, 0)]] Texture2D<float4> emission;
-[[vk::binding(6, 0)]] Texture2D<float4> albedoImage;
+[format("rgba16f")] RWTexture2D<float4> outputColor;
+Texture2D<float4> emission;
+Texture2D<float4> albedoImage;
 #else
-[[vk::binding(4, 0)]] [[vk::image_format("rgba32f")]] RWTexture2D<float4> outputDirect;
-[[vk::binding(5, 0)]] [[vk::image_format("rgba32f")]] RWTexture2D<float4> outputIndirect;
+[format("rgba32f")] RWTexture2D<float4> outputDirect;
+[format("rgba32f")] RWTexture2D<float4> outputIndirect;
 #if SVGF_STAGE == 0
-[[vk::binding(6, 0)]] [[vk::image_format("rgba32f")]] RWTexture2DArray<float4> historyLighting;
+[format("rgba32f")] RWTexture2DArray<float4> historyLighting;
 #endif
 #endif
 
@@ -24,7 +24,7 @@ struct FilterParameters
 
     property SvgfViewport currentViewport { get { return {viewport.xy, viewport.zw}; } }
 };
-[[vk::push_constant]] ConstantBuffer<FilterParameters> parameters;
+ConstantBuffer<FilterParameters> parameters;
 
 static const float kWaveletKernel[3] = {3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0};
 static const float kVarianceKernel[2] = {0.5, 0.25};

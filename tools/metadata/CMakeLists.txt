@@ -42,6 +42,8 @@ target_link_libraries(RenderLabMetadata PRIVATE RenderLabBuildOptions)
 if (MSVC)
     # The Windows LLVM development archive uses the static release CRT.
     set_target_properties(RenderLabMetadata PROPERTIES MSVC_RUNTIME_LIBRARY MultiThreaded)
+    # Clang's recursive AST traversal exceeds the default Windows stack in Debug builds.
+    target_link_options(RenderLabMetadata PRIVATE /STACK:16777216)
     target_link_libraries(RenderLabMetadata PRIVATE clangTooling)
 else ()
     target_link_libraries(RenderLabMetadata PRIVATE clang-cpp LLVM)

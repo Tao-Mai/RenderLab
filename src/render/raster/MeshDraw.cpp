@@ -1,58 +1,58 @@
 #include "render/raster/MeshDraw.h"
+#include <array>
+#include "core/Vertex.h"
+#include "render/device/RhiCheck.h"
+#include "render/raster/ShadowResources.h"
 
-#include "render/FrameData.h"
-#include "render/resources/GpuMesh.h"
-
-MeshCullPipelines createMeshCullPipelines(Falcor::Device& device, GraphicsPipelineInfo info)
+rhi::ComPtr<rhi::IInputLayout> createMeshInputLayout(rhi::IDevice& device)
 {
-    info.state.cullMode    = vk::CullModeFlagBits::eBack;
-    const auto singleSided = device.getOrCreatePipeline(info);
-    info.state.cullMode    = vk::CullModeFlagBits::eNone;
-    return {singleSided, device.getOrCreatePipeline(info)};
+    const std::array attributes{
+        rhi::InputElementDesc{"POSITION", 0, rhi::Format::RGB32Float, offsetof(Vertex, position)},
+        rhi::InputElementDesc{"NORMAL", 0, rhi::Format::RGB32Float, offsetof(Vertex, normal)},
+        rhi::InputElementDesc{"TEXCOORD", 0, rhi::Format::RG32Float, offsetof(Vertex, texcoord)},
+        rhi::InputElementDesc{"TANGENT", 0, rhi::Format::RGBA32Float, offsetof(Vertex, tangent)}
+    };
+    const rhi::VertexStreamDesc stream{sizeof(Vertex)};
+    rhi::InputLayoutDesc        desc;
+    desc.inputElements     = attributes.data();
+    desc.inputElementCount = uint32_t(attributes.size());
+    desc.vertexStreams     = &stream;
+    desc.vertexStreamCount = 1;
+    rhi::ComPtr<rhi::IInputLayout> layout;
+    rhiCheck(device.createInputLayout(desc, layout.writeRef()));
+    return layout;
 }
-
-void bindMeshGeometry(vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame)
+MeshCullPipelines createMeshCullPipelines(rhi::IDevice& device, rhi::RenderPipelineDesc desc)
 {
-    const auto layout = frame.getDevice()->meshPipelineLayout;
-    commands.bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics,
-        layout,
-        RenderInterface::kSceneSet,
-        frame.frameData->sceneSetHandle(),
-        {}
-    );
-    commands.bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics,
-        layout,
-        RenderInterface::kMaterialSet,
-        frame.scene->materialSetHandle(),
-        {}
-    );
+    const auto input              = createMeshInputLayout(device);
+    desc.inputLayout              = input;
+    desc.rasterizer.frontFace     = rhi::FrontFaceMode::CounterClockwise;
+    desc.rasterizer.scissorEnable = true;
+    desc.rasterizer.cullMode      = rhi::CullMode::Back;
+    MeshCullPipelines pipelines;
+    rhiCheck(device.createRenderPipeline(desc, pipelines.singleSided.writeRef()));
+    desc.rasterizer.cullMode = rhi::CullMode::None;
+    rhiCheck(device.createRenderPipeline(desc, pipelines.doubleSided.writeRef()));
+    return pipelines;
 }
-
-void MeshDrawRecorder::draw(const DrawItem& item, uint32_t materialIndex, vk::Pipeline pipeline)
+void MeshDrawRecorder::draw(const DrawItem& item, uint32_t materialIndex, rhi::IRenderPipeline* pipeline)
 {
-    if (pipeline != boundPipeline)
-    {
-        commands.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-        boundPipeline = pipeline;
-    }
+    auto* root = pass.bindPipeline(pipeline);
+    CHECK(root);
+    bindFrameData(root, *frame.frameData);
+    if (shadows)
+        shadows->bind(root);
+    frame.materialTable->bind(root);
+    const MeshPushConstants constants{.model = item.model, .materialIndex = materialIndex};
+    rhiCheck(rhi::ShaderCursor(root)["pushConstants"].getDereferenced().setData(constants));
 
-    const auto& mesh = resources.mesh(item.mesh);
-    if (&mesh != boundMesh)
-    {
-        mesh.bind(commands);
-        boundMesh = &mesh;
-    }
-
-    const MeshPushConstants pushConstants{.model = item.model, .materialIndex = materialIndex};
-    commands.pushConstants<MeshPushConstants>(
-        layout,
-        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        0,
-        pushConstants
-    );
+    const auto& mesh        = frame.resources->mesh(item.mesh);
+    state.vertexBufferCount = 1;
+    state.vertexBuffers[0]  = {mesh.vertices(), 0};
+    state.indexBuffer       = {mesh.indices(), 0};
+    state.indexFormat       = rhi::IndexFormat::Uint32;
+    pass.setRenderState(state);
     const auto& submesh = mesh.submeshes()[item.submeshIndex];
-    commands.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, 0, 0);
-    recordDraw(profiler, submesh.indexCount);
+    pass.drawIndexed({submesh.indexCount, 1, 0, 0, submesh.firstIndex});
+    recordDraw(frame.profiler, submesh.indexCount);
 }

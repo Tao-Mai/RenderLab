@@ -24,7 +24,6 @@ void RenderGraphExe::execute(const Context& context)
             *mpResourceCache,
             context.passesDictionary,
             context.defaultTexDims,
-            context.defaultTexFormat,
         };
         entry.pPass->execute(renderContext, renderData);
     }
@@ -61,12 +60,12 @@ void RenderGraphExe::onHotReload(HotReloadFlags reloaded)
         pass.pPass->onHotReload(reloaded);
 }
 
-ref<Resource> RenderGraphExe::getResource(const std::string& name) const
+rhi::ComPtr<rhi::IResource> RenderGraphExe::getResource(const std::string& name) const
 {
     return mpResourceCache->getResource(name);
 }
 
-void RenderGraphExe::setInput(const std::string& name, const ref<Resource>& resource)
+void RenderGraphExe::setInput(const std::string& name, rhi::IResource* resource)
 {
     mpResourceCache->registerExternalResource(name, resource);
 }

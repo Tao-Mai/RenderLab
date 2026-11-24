@@ -1,10 +1,10 @@
-#include "render/device/ResourceBarriers.h"
 #include "render/Renderer.h"
-#include "render/RenderContext.h"
 #include "render/PreparedScene.h"
+#include "render/RenderContext.h"
 #include "render/Visibility.h"
 #include "scene/system/SceneRenderData.h"
 
+#include <slang-rhi/shader-cursor.h>
 #include "asset/ApplyOptionalFields.h"
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
@@ -17,12 +17,13 @@
 #include "core/Window.h"
 #include "core/profiling/Profiler.h"
 #include "render/device/GpuProfiler.h"
-#include "render/device/VkCheck.h"
+#include "render/device/RhiCheck.h"
 #include "render/graph/RenderGraphIR.h"
 #include "render/graph/RenderPassStandardFlags.h"
 #include "render/postprocess/ExposureState.h"
-#include "render/raster/RasterAttachments.h"
-#include "render/resources/Buffer.h"
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+#include <slang-rhi.h>
 #include "render/resources/ShaderLayout.h"
 #include "scene/SceneManager.h"
 
@@ -48,7 +49,11 @@ Falcor::Properties::json resolveParameters(const Falcor::Properties::json& defau
 
         if (value.is_number_float())
         {
-            CHECK(edited->is_number() && std::isfinite(edited->get<double>()), "expected a finite number for '{}'", name);
+            CHECK(
+                edited->is_number() && std::isfinite(edited->get<double>()),
+                "expected a finite number for '{}'",
+                name
+            );
             value = edited->get<double>();
         }
         else if (value.is_number_integer())
@@ -92,43 +97,42 @@ LightRanges groupLights(std::span<const RenderLight> source, std::vector<LightDa
 }
 }  // namespace
 
-Renderer::Renderer() = default;
-Renderer::~Renderer() { DCHECK(!inited); }
+Renderer::Renderer()  = default;
+Renderer::~Renderer() = default;
 
 void Renderer::init()
 {
-    DCHECK(!inited);
+
     rendererConfig = &context().config->rendererConfig();
 
-    DCHECK(context().window);
+    auto&           window = *context().window;
+    rhi::DeviceDesc desc;
+    desc.deviceType                    = rhi::DeviceType::Vulkan;
+    desc.slang.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
+    desc.enableValidation              = true;
+    rhiCheck(rhi::getRHI()->createDevice(desc, device.writeRef()));
+    rhiCheck(device->getQueue(rhi::QueueType::Graphics, queue.writeRef()));
+    shaders.init(device);
+    initSurface();
+    renderContext.device        = device;
+    renderContext.queue         = queue;
+    renderContext.shaderManager = &shaders;
 
-    auto& window = *context().window;
-    vulkan.init(window);
-
-    shaders.init(vulkan.deviceHandle());
-    device->init(vulkan, shaders);
-    swapchain.init(vulkan, window);
-
-    auto& renderCommands = *device->getRenderContext();
+    auto& renderCommands            = renderContext;
     renderCommands.resources        = &resources;
     renderCommands.materialTable    = &materialTable;
     renderCommands.offlinePipelines = &offlinePipelines;
     renderCommands.config           = rendererConfig;
-    renderCommands.frames           = frameStorage;
 
     for (auto& frame : frames)
     {
-        frame.init(vulkan);
+        frame.init(*device, *queue);
     }
 
-    for (auto& data : frameStorage)
-        data.init(vulkan, *device);
-
-    resources.init(vulkan, *context().assetManager, *context().assetDataManager);
+    resources.init(*device, *context().assetManager, *context().assetDataManager);
     initLightingResources();
-    materialTable.init(resources, vulkan, *device);
+    materialTable.init(resources);
 
-    DEBUG_EXEC(inited = true);
     waitIdle();
     applyConfiguration();
 }
@@ -139,7 +143,7 @@ void Renderer::initLightingResources()
     sheenLutTexture    = resources.texture(BuiltinAssets::Texture::kSheenLut);
     const auto sampler = resources.sampler(BuiltinAssets::Sampler::linearClamp);
     for (auto& data : frameStorage)
-        data.writeLutDescriptors(brdfLutTexture->imageView(), sheenLutTexture->imageView(), sampler);
+        data.bindLuts(brdfLutTexture->getDefaultView(), sheenLutTexture->getDefaultView(), sampler);
 
     bindEnvironmentTextures();
 }
@@ -193,53 +197,36 @@ void Renderer::bindEnvironmentTextures()
     radianceTexture            = resources.texture(radianceBinding.textureID);
     irradianceTexture          = resources.texture(irradianceBinding.textureID);
     prefilteredSpecularTexture = resources.texture(prefilteredBinding.textureID);
-    prefilteredMaxLod          = static_cast<float>(prefilteredSpecularTexture->imageInfo().mipLevels - 1);
-    const vk::DescriptorImageInfo irradiance{
-        .sampler     = resources.sampler(irradianceBinding.samplerID),
-        .imageView   = irradianceTexture->imageView(),
-        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-    };
-    const vk::DescriptorImageInfo prefiltered{
-        .sampler     = resources.sampler(prefilteredBinding.samplerID),
-        .imageView   = prefilteredSpecularTexture->imageView(),
-        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-    };
-    const vk::DescriptorImageInfo radiance{
-        .sampler     = resources.sampler(radianceBinding.samplerID),
-        .imageView   = radianceTexture->imageView(),
-        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-    };
+    prefilteredMaxLod          = static_cast<float>(prefilteredSpecularTexture->getDesc().mipCount - 1);
+
     for (auto& data : frameStorage)
-        data.writeEnvironmentDescriptors(irradiance, prefiltered, radiance);
+        data.bindEnvironment(
+            irradianceTexture->getDefaultView(),
+            resources.sampler(irradianceBinding.samplerID),
+            prefilteredSpecularTexture->getDefaultView(),
+            resources.sampler(prefilteredBinding.samplerID),
+            radianceTexture->getDefaultView(),
+            resources.sampler(radianceBinding.samplerID)
+        );
 }
 
-void Renderer::waitIdle()
-{
-    CpuProfileScope timing{context().profiler, "Device idle wait"};
-    if (*vulkan.deviceHandle())
-    {
-        device->wait();
-    }
-}
+void Renderer::waitIdle() { rhiCheck(queue->waitOnHost()); }
 
 void Renderer::shutdown() noexcept
 {
-    DCHECK(inited);
+
     waitIdle();
 
-    exposurePass = {};
+    exposurePass  = {};
     mpRenderGraph = {};
     commandResources.reset();
-    lightResource.reset();
+    lightResource.setNull();
     offlinePipelines.clear();
     sceneAccelerationStructures.reset();
-    pickingOutput = {};
+    pickingOutput   = {};
     pickingReadback = {};
     lightBuffer     = {};
-    blitSets.clear();
-    blitSetLayout = {};
-    blitPipelineLayout = nullptr;
-    blitPipeline = nullptr;
+    blitPipeline    = nullptr;
     renderStorage   = {};
     materialTable   = {};
     offlineScene    = {};
@@ -248,37 +235,41 @@ void Renderer::shutdown() noexcept
         frame.reset();
     }
     for (auto& data : frameStorage)
-        data.reset();
-    radianceTexture.reset();
-    irradianceTexture.reset();
-    prefilteredSpecularTexture.reset();
-    brdfLutTexture.reset();
-    sheenLutTexture.reset();
+        data = {};
+    radianceTexture.setNull();
+    irradianceTexture.setNull();
+    prefilteredSpecularTexture.setNull();
+    brdfLutTexture.setNull();
+    sheenLutTexture.setNull();
     environmentMap.reset();
     prefilteredMaxLod = 0.0f;
     resources.shutdown();
-    swapchain.reset();
-    device->shutdown();
+    surface.setNull();
     shaders.shutdown();
-    vulkan.reset();
+    renderContext = {};
+    queue.setNull();
+    device.setNull();
     frameIndex           = 0;
-    activeFramesInFlight = maxFramesInFlight;
-    appliedParameters = {};
+    activeFramesInFlight = kMaxFramesInFlight;
+    appliedParameters    = {};
     pendingOptions.reset();
     parameterDefaults = Falcor::Properties::json::object();
-    parameters = Falcor::Properties::json::object();
+    parameters        = Falcor::Properties::json::object();
     scriptedPassProperties.clear();
     rendererConfig = nullptr;
-    DEBUG_EXEC(inited = false);
 }
 
 void Renderer::loadScript(const std::filesystem::path& path)
 {
-    auto& configManager = *context().config;
-    const auto& graphName = configManager.renderGraphName();
-    const auto renderPath = configManager.rendererConfig().renderPath;
-    auto options = configManager.getOptions();
-    CHECK(!requiresRayTracing(renderPath) || vulkan.supportsRayTracing(), "graph '{}' requires ray tracing", graphName);
+    auto&       configManager = *context().config;
+    const auto& graphName     = configManager.renderGraphName();
+    const auto  renderPath    = configManager.rendererConfig().renderPath;
+    auto        options       = configManager.getOptions();
+    CHECK(
+        !requiresRayTracing(renderPath) || device->hasFeature(rhi::Feature::RayTracing),
+        "graph '{}' requires ray tracing",
+        graphName
+    );
 
     Falcor::Scripting::Context script;
     script.setObject("__name__", std::string("RenderLab"));
@@ -288,7 +279,7 @@ void Renderer::loadScript(const std::filesystem::path& path)
     Falcor::Scripting::runScriptFromFile(path, script);
 
     const auto functionName = Falcor::RenderGraphIR::getFuncName(graphName);
-    auto* factory = script.getObject<PyObject*>(functionName);
+    auto*      factory      = script.getObject<PyObject*>(functionName);
     CHECK(PyFunction_Check(factory), "graph '{}' must define '{}'", graphName, functionName);
 
     parameterDefaults = Falcor::Properties::json::object();
@@ -309,7 +300,13 @@ void Renderer::loadScript(const std::filesystem::path& path)
     const auto loaded = Falcor::ScriptBindings::fromPython<Falcor::ref<Falcor::RenderGraph>>(graph.get());
     CHECK(loaded && *loaded, "graph function '{}' must return a named RenderGraph", functionName);
     const auto& declared = (*loaded)->getName();
-    CHECK(graphName == declared, "'{}' returned graph '{}' while '{}' was configured", functionName, declared, graphName);
+    CHECK(
+        graphName == declared,
+        "'{}' returned graph '{}' while '{}' was configured",
+        functionName,
+        declared,
+        graphName
+    );
     Falcor::setActivePythonRenderGraphDevice(std::move(previousDevice));
 
     scriptedPassProperties.clear();
@@ -322,83 +319,65 @@ void Renderer::loadScript(const std::filesystem::path& path)
 
 void Renderer::setActiveGraph(const Falcor::ref<Falcor::RenderGraph>& renderGraph)
 {
-    DCHECK(renderGraph);
+
     CHECK(renderGraph->getOutputCount(), "graph '{}' requires a marked color output", renderGraph->getName());
     mpRenderGraph = renderGraph;
-    mpRenderGraph->onResize(&swapchain.getFbo(0));
+    mpRenderGraph->onResize({surface->getConfig()->width, surface->getConfig()->height}, surface->getConfig()->format);
     if (const auto* scenes = context().sceneManager)
         mpRenderGraph->setScene(scenes->getScene());
 }
 
 void Renderer::initFrameResources()
 {
-    const auto& config = *rendererConfig;
-    activeFramesInFlight = config.renderPath == RenderPath::OfflinePathTracing ? 1u : maxFramesInFlight;
+    const auto& config   = *rendererConfig;
+    activeFramesInFlight = config.renderPath == RenderPath::OfflinePathTracing ? 1u : kMaxFramesInFlight;
     frameIndex           = 0;
-
-    lightResource = device->createBuffer(
-        kMaxLights * sizeof(LightData), Falcor::ResourceBindFlags::ShaderResource, Falcor::MemoryType::DeviceLocal
-    );
-
+    rhi::BufferDesc desc;
+    desc.size  = kMaxLights * sizeof(LightData);
+    desc.usage = rhi::BufferUsage::ShaderResource | rhi::BufferUsage::CopyDestination;
+    rhiCheck(device->createBuffer(desc, nullptr, lightResource.writeRef()));
     auto& cache = *commandResources;
     lightBuffer = cache.registerBuffer(lightResource);
-    materialTable.setup(cache, vulkan);
+    materialTable.setup(cache, *device);
     for (auto& data : frameStorage)
-        data.writeLightBufferDescriptor(cache, lightBuffer);
+        data.lights = cache.getBuffer(lightBuffer);
 }
 
 void Renderer::initBlit()
 {
-    const auto shader = shaders.getOrLoad("blit");
-    if (!blitSetLayout)
-    {
-        const auto& layout = shaders.layout(shader);
-        const auto source = layout.binding<vk::DescriptorType::eSampledImage>("sourceImage", 0);
-        const auto sampler = layout.binding<vk::DescriptorType::eSampler>("pointSampler", 0);
-        blitSourceBinding = source.index;
-
-        constexpr auto kFragment = vk::ShaderStageFlagBits::eFragment;
-        const std::array bindings{source.layout(kFragment), sampler.layout(kFragment)};
-        blitSetLayout = device->createDescriptorSetLayout(bindings);
-        const std::array sets{&blitSetLayout};
-        blitPipelineLayout = device->getOrCreatePipelineLayout(sets, {});
-        const auto pointSampler = resources.sampler(BuiltinAssets::Sampler::nearestClamp);
-        blitSets.reserve(maxFramesInFlight);
-        for (uint32_t index = 0; index < maxFramesInFlight; ++index)
-        {
-            auto& set = blitSets.emplace_back(device->allocateDescriptorSet(blitSetLayout));
-            commandResources->writeDescriptor(*set, sampler.index, pointSampler);
-        }
-    }
-
-    blitPipeline = device->getOrCreatePipeline({
-        .shader = shader,
-        .layout = blitPipelineLayout,
-        .state = {.vertexLayout = VertexLayoutPreset::None, .depthTest = false, .depthWrite = false},
-        .colorFormats = {swapchain.surfaceFormat().format},
-    });
+    rhi::ColorTargetDesc color;
+    color.format = surface->getConfig()->format;
+    rhi::RenderPipelineDesc desc;
+    desc.program                       = shaders.program(shaders.getOrLoad("blit"));
+    desc.targets                       = &color;
+    desc.targetCount                   = 1;
+    desc.depthStencil.depthTestEnable  = false;
+    desc.depthStencil.depthWriteEnable = false;
+    desc.rasterizer.scissorEnable      = true;
+    rhiCheck(device->createRenderPipeline(desc, blitPipeline.writeRef()));
 }
 
-void Renderer::endFrame(Falcor::RenderContext& context, VulkanResources::ImageHandle backBuffer)
+void Renderer::endFrame(Falcor::RenderContext& context, rhi::ITexture* backBuffer)
 {
-    auto& cache = *context.vulkanResources;
-    auto& commands = *context.commands;
-    const auto source = cache.registerImage(mpRenderGraph->getOutput(0)->asTexture());
-    constexpr auto kRead = vulkan_access::sampled(vk::PipelineStageFlagBits2::eFragmentShader);
-    cache.declareAccess({source.id, kRead});
-    cache.transition(commands, source, kRead);
-    cache.transition(commands, backBuffer, vulkan_access::kColorReadWrite);
-
-    const auto set = *blitSets[context.frameIndex];
-    cache.writeDescriptor(set, blitSourceBinding, source);
-    const RasterAttachments<1> attachments{{RasterColorAttachment{backBuffer, vk::AttachmentLoadOp::eDontCare}}};
-    attachments.begin(cache, commands);
-    commands.bindPipeline(vk::PipelineBindPoint::eGraphics, blitPipeline);
-    commands.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, blitPipelineLayout, 0, std::array{set}, {});
-    commands.draw(3, 1, 0, 0);
+    const auto source = mpRenderGraph->getOutputTexture(0);
+    const auto target = backBuffer->getDefaultView();
+    CHECK(target);
+    rhi::RenderPassColorAttachment color;
+    color.view   = target;
+    color.loadOp = rhi::LoadOp::DontCare;
+    auto* pass   = context.commands->beginRenderPass({&color, 1});
+    CHECK(pass);
+    auto* object = pass->bindPipeline(blitPipeline);
+    CHECK(object);
+    const rhi::ShaderCursor root(object);
+    rhiCheck(root["sourceImage"].setBinding(source->getDefaultView()));
+    rhiCheck(root["pointSampler"].setBinding(resources.sampler(BuiltinAssets::Sampler::nearestClamp)));
+    const auto& size = backBuffer->getDesc().size;
+    pass->setRenderState(ViewportRect{0, 0, float(size.width), float(size.height)}.renderState());
+    pass->draw({3});
     if (context.editor->recordUi)
-        context.editor->recordUi(*commands);
-    commands.endRendering();
+        context.editor->recordUi(*pass, context.frameIndex);
+    pass->end();
 }
 
 ExposureConfig Renderer::defaultExposure() const
@@ -445,7 +424,7 @@ void Renderer::onOptionsChange()
 void Renderer::applyConfiguration()
 {
     const auto& config = *context().config;
-    const bool reload = !mpRenderGraph || mpRenderGraph->getName() != config.renderGraphName() ||
+    const bool  reload = !mpRenderGraph || mpRenderGraph->getName() != config.renderGraphName() ||
         (pendingOptions && pendingOptions->at("parameters") != appliedParameters);
     std::optional<CpuProfileScope> timing;
     if (reload)
@@ -464,19 +443,16 @@ void Renderer::applyConfiguration()
         pendingOptions.reset();
     }
 
-    const bool resetFrameResources = reload || !commandResources;
-    if (resetFrameResources)
-    {
-        if (rendererConfig->feature.hdr)
-            CHECK(swapchain.surfaceFormat().colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear);
-        commandResources = std::make_unique<VulkanResources>(vulkan);
-        initBlit();
-    }
 
-    auto& cache = *commandResources;
-    auto compileContext = *device->getRenderContext();
-    compileContext.vulkanResources = &cache;
-    const auto idleRevision = vulkan.getIdleRevision();
+    const bool resetFrameResources = !commandResources || mpRenderGraph->needsCompilation();
+    if (!resetFrameResources)
+        return;
+    waitIdle();
+    commandResources = std::make_unique<GpuResources>(*device);
+    initFrameResources();
+    initBlit();
+    auto compileContext         = renderContext;
+    compileContext.gpuResources = commandResources.get();
     std::string log;
     CHECK(
         mpRenderGraph->compile(&compileContext, log),
@@ -484,31 +460,25 @@ void Renderer::applyConfiguration()
         mpRenderGraph->getName(),
         log
     );
-
-    const bool waited = idleRevision != vulkan.getIdleRevision();
-    if (!resetFrameResources && !waited)
-        return;
-
     if (auto* profiler = context().profiler)
         profiler->clearGpu();
     for (auto& frame : frames)
         frame.gpuProfiler().discard();
-
-    const auto color = mpRenderGraph->getOutput(0)->asTexture();
+    const auto color = mpRenderGraph->getOutputTexture(0);
     CHECK(
-        color && color->getType() == Falcor::Resource::Type::Texture2D && color->getArraySize() == 1 &&
-            (color->imageInfo().usage & vk::ImageUsageFlagBits::eSampled),
-        "graph '{}' must mark a shader-readable color texture as its first output",
+        color && color->getDesc().type == rhi::TextureType::Texture2D &&
+            rhi::is_set(color->getDesc().usage, rhi::TextureUsage::ShaderResource),
+        "first output '{}' of graph '{}' must be a shader-readable color texture",
+        mpRenderGraph->getOutputName(0),
         mpRenderGraph->getName()
     );
-
-    exposurePass = {};
+    exposurePass  = {};
     pickingOutput = {};
     for (size_t index = 1; index < mpRenderGraph->getOutputCount(); ++index)
     {
-        const auto name = mpRenderGraph->getOutputName(index);
+        const auto name      = mpRenderGraph->getOutputName(index);
         const auto separator = name.rfind('.');
-        const auto field = std::string_view{name}.substr(separator + 1);
+        const auto field     = std::string_view{name}.substr(separator + 1);
         if (field == kExposureStateOutput)
         {
             const auto& pass = mpRenderGraph->getPass(name.substr(0, separator));
@@ -522,12 +492,11 @@ void Renderer::applyConfiguration()
         if (field != kPickingImageOutput)
             continue;
 
-        const auto resource = mpRenderGraph->getOutput(name);
-        auto texture = resource ? resource->asTexture() : nullptr;
+        auto texture = mpRenderGraph->getOutputTexture(name);
         CHECK(
-            texture && texture->getType() == Falcor::Resource::Type::Texture2D && texture->getArraySize() == 1 &&
-                texture->getSampleCount() == 1 && texture->getFormat() == Falcor::ResourceFormat::R32Uint &&
-                (texture->imageInfo().usage & vk::ImageUsageFlagBits::eTransferSrc),
+            texture && texture->getDesc().type == rhi::TextureType::Texture2D && texture->getDesc().arrayLength == 1 &&
+                texture->getDesc().sampleCount == 1 && texture->getDesc().format == rhi::Format::R32Uint &&
+                rhi::is_set(texture->getDesc().usage, rhi::TextureUsage::CopySource),
             "picking output '{}' must be a single-sample R32Uint texture readable by a transfer",
             name
         );
@@ -536,15 +505,12 @@ void Renderer::applyConfiguration()
     }
     if (pickingOutput && !pickingReadback)
     {
-        pickingReadback = device->createBuffer(
-            sizeof(uint32_t), Falcor::ResourceBindFlags::None, Falcor::MemoryType::ReadBack
-        );
+        rhi::BufferDesc desc;
+        desc.size       = sizeof(uint32_t);
+        desc.memoryType = rhi::MemoryType::ReadBack;
+        desc.usage      = rhi::BufferUsage::CopyDestination;
+        rhiCheck(device->createBuffer(desc, nullptr, pickingReadback.writeRef()));
     }
-
-    if (waited)
-        cache.releaseUnusedResources();
-    if (resetFrameResources)
-        initFrameResources();
 }
 
 void Renderer::applyPassProperties(Falcor::RenderGraph& renderGraph, const nlohmann::json& properties)
@@ -583,28 +549,39 @@ void Renderer::applyPassProperties(Falcor::RenderGraph& renderGraph, const nlohm
     }
 }
 
-void Renderer::recreateSwapchain()
+void Renderer::initSurface()
 {
-    DCHECK(inited);
-    Window& window = *context().window;
-    DEBUG_ONLY(const auto [width, height] = window.framebufferSize();)
-    DCHECK(width > 0 && height > 0);
+    auto& window = *context().window;
+    rhiCheck(device->createSurface(
+        rhi::WindowHandle::fromHwnd(glfwGetWin32Window(window.nativeHandle())),
+        surface.writeRef()
+    ));
+    const auto [width, height] = window.framebufferSize();
+    rhi::SurfaceConfig config;
+    config.width             = uint32_t(width);
+    config.height            = uint32_t(height);
+    config.desiredImageCount = kMaxFramesInFlight + 1;
+    config.format            = surface->getInfo().preferredFormat;
+    config.usage             = rhi::TextureUsage::RenderTarget;
+    rhiCheck(surface->configure(config));
+}
+void Renderer::resizeSurface()
+{
     waitIdle();
     commandResources.reset();
-    swapchain.reset();
-    swapchain.init(vulkan, window);
-
-    mpRenderGraph->onResize(&swapchain.getFbo(0));
+    surface.setNull();
+    initSurface();
+    mpRenderGraph->onResize({surface->getConfig()->width, surface->getConfig()->height}, surface->getConfig()->format);
     applyConfiguration();
 }
 
 const PreparedScene& Renderer::prepare(const RenderView& view, const SceneRenderData& scene, uint32_t targetFrameIndex)
 {
     auto& cache = *commandResources;
-    cache.beginFrame(targetFrameIndex);
+
     const auto& config        = *rendererConfig;
     const bool  rasterization = config.renderPath == RenderPath::Forward || config.renderPath == RenderPath::Deferred;
-    const bool  offline = config.renderPath == RenderPath::OfflinePathTracing;
+    const bool  offline       = config.renderPath == RenderPath::OfflinePathTracing;
     auto&       assets        = *context().assetManager;
     auto*       profiler      = context().profiler;
     auto&       renderData    = renderStorage[targetFrameIndex];
@@ -638,14 +615,14 @@ const PreparedScene& Renderer::prepare(const RenderView& view, const SceneRender
         renderData.offlineScene = nullptr;
         if (offline)
         {
-            renderData.offlineScene = &offlineScene.prepare(scene.drawItems, scene.offlineLights, assets, resources, materialTable);
+            renderData.offlineScene =
+                &offlineScene.prepare(scene.drawItems, scene.offlineLights, assets, resources, materialTable);
             for (uint32_t index = 0; index < renderData.drawItems.size(); ++index)
                 renderData.materialIndices[index] = renderData.offlineScene->draws[index].materialIndex;
         }
 
-        // 如果有新纹理或SSBO需要扩容，则更新material descriptor set
-        materialTable.upload(vulkan, targetFrameIndex);
-        renderData.materialDescriptorSet = materialTable.descriptorSetHandle(targetFrameIndex);
+        // 更新材质上传与具名绑定
+        materialTable.upload();
     }
 
     renderData.lightRanges = groupLights(scene.lights, renderData.lights);
@@ -697,16 +674,16 @@ const PreparedScene& Renderer::prepare(const RenderView& view, const SceneRender
     {
         CpuProfileScope timing{context().profiler, "Frame upload"};
         auto&           data = frameStorage[targetFrameIndex];
-        data.uploadSceneUniforms(view.uniforms);
+        data.sceneUniforms   = view.uniforms;
         if (rasterization)
         {
             const auto&         feature = config.feature;
             const LightUniforms lighting{
-                .lightRanges = renderData.lightRanges,
+                .lightRanges        = renderData.lightRanges,
                 .ambientCoefficient = feature.ambientCoefficient,
-                .prefilteredMaxLod = prefilteredMaxLod,
+                .prefilteredMaxLod  = prefilteredMaxLod,
             };
-            data.uploadLightUniforms(lighting);
+            data.lightUniforms = lighting;
         }
 
         // 上传lightData
@@ -732,48 +709,49 @@ RenderFrameResult Renderer::render(
     auto& frame = currentFrame();
     frame.wait();
 
-    // 从swapchain取image
-    const auto [acquireResult, imageIndex] = swapchain.acquire(frame.imageAvailableSemaphore());
-    if (acquireResult == vk::Result::eErrorOutOfDateKHR)
-        return {.swapchainNeedsRebuild = true};
+    // Texture initialization can submit work to the graphics queue.
+    const bool  environmentChanged = environmentMap != scene.environmentMap;
+    const auto& renderData         = prepare(view, scene, frameIndex);
 
+    rhi::ComPtr<rhi::ITexture> backBuffer;
+    const auto                 acquired = surface->acquireNextImage(backBuffer.writeRef());
+    if (SLANG_FAILED(acquired))
+    {
+        const auto [width, height] = context().window->framebufferSize();
+        const auto* config         = surface->getConfig();
+        if (uint32_t(width) != config->width || uint32_t(height) != config->height)
+            return {.swapchainNeedsRebuild = true};
+        rhiCheck(acquired);
+    }
+    CHECK(backBuffer);
     auto& cache = *commandResources;
-    const auto& backBuffer = swapchain.getFbo(imageIndex).getColorTexture(0);
-    const auto backBufferImage = cache.registerImage(backBuffer);
-    cache.setAcquiredImage(backBufferImage);
-
-    // 全局prepare：更新场景数据
-    const bool environmentChanged = environmentMap != scene.environmentMap;
-    const auto& renderData = prepare(view, scene, frameIndex);
 
     // pass执行
     {
         auto*           profiler = context().profiler;
         CpuProfileScope timing{profiler, "Command recording"};
-        auto&           commandBuffer = frame.commandBufferHandle();
-        vkCheck(commandBuffer.reset());
-        vkCheck(commandBuffer.begin({}));
+        frame.begin();
+        auto& commandBuffer = *frame.commands;
 
         auto& gpuProfiler = frame.gpuProfiler();
         gpuProfiler.beginFrame(commandBuffer, profiler);
-        auto renderCommands = *device->getRenderContext();
-        renderCommands.commands = &commandBuffer;
-        renderCommands.vulkanResources = &cache;
-        renderCommands.frameData = &frameStorage[frameIndex];
-        renderCommands.view = &view;
-        renderCommands.scene = &renderData;
-        renderCommands.editor = &editor;
-        renderCommands.gpuProfiler = &gpuProfiler;
-        renderCommands.profiler = profiler;
-        renderCommands.frameIndex = frameIndex;
+        auto renderCommands         = renderContext;
+        renderCommands.commands     = &commandBuffer;
+        renderCommands.gpuResources = &cache;
+        renderCommands.frameData    = &frameStorage[frameIndex];
+        renderCommands.view         = &view;
+        renderCommands.scene        = &renderData;
+        renderCommands.editor       = &editor;
+        renderCommands.gpuProfiler  = &gpuProfiler;
+        renderCommands.profiler     = profiler;
+        renderCommands.frameIndex   = frameIndex;
         renderCommands.deltaSeconds = deltaSeconds;
         if (requiresRayTracing(rendererConfig->renderPath))
         {
             CpuProfileScope cpuTiming{profiler, "Scene acceleration structures"};
             GpuProfileScope gpuTiming{&gpuProfiler, commandBuffer, "Scene acceleration structures"};
-            renderCommands.sceneTlas = &sceneAccelerationStructures.recordBuilds(
-                vulkan, commandBuffer, resources, renderData, frameIndex
-            );
+            renderCommands.sceneTlas =
+                sceneAccelerationStructures.recordBuilds(*device, commandBuffer, resources, renderData, frameIndex);
         }
         if (environmentChanged)
             mpRenderGraph->onSceneUpdates(&renderCommands, Falcor::IScene::UpdateFlags::EnvMapChanged);
@@ -781,38 +759,29 @@ RenderFrameResult Renderer::render(
         mpRenderGraph->getPassesDictionary()[Falcor::kRenderPassRefreshFlags] =
             environmentChanged ? Falcor::RenderPassRefreshFlags::LightingChanged : Falcor::RenderPassRefreshFlags::None;
         mpRenderGraph->execute(&renderCommands);
-        endFrame(renderCommands, backBufferImage);
-        cache.transition(commandBuffer, {backBufferImage.id, vulkan_access::kPresent});
+        endFrame(renderCommands, backBuffer);
+
         if (pickRequested)
         {
-            const auto image = cache.registerImage(pickingOutput);
-            const auto buffer = cache.registerBuffer(pickingReadback);
-            const vk::BufferImageCopy region{
-                .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
-                .imageOffset = {static_cast<int32_t>(editor.pickX), static_cast<int32_t>(editor.pickY), 0},
-                .imageExtent = {1, 1, 1},
-            };
-            cache.transition(commandBuffer, image, vulkan_access::kTransferSource);
-            cache.transition(commandBuffer, buffer, vulkan_access::kTransferWrite);
-            commandBuffer.copyImageToBuffer(
-                pickingOutput->handle(), vk::ImageLayout::eTransferSrcOptimal, pickingReadback->handle(), region
+
+            commandBuffer.copyTextureToBuffer(
+                pickingReadback.get(),
+                0,
+                sizeof(uint32_t),
+                sizeof(uint32_t),
+                pickingOutput.get(),
+                0,
+                0,
+                {editor.pickX, editor.pickY, 0},
+                {1, 1, 1}
             );
-            cache.transition(commandBuffer, buffer, vulkan_access::kHostRead);
         }
         gpuProfiler.endFrame(commandBuffer);
-        vkCheck(commandBuffer.end());
     }
 
-
-    const auto acquireStages = cache.firstUseStages(backBufferImage);
-    CHECK(acquireStages, "render graph '{}' must access its presentation target", mpRenderGraph->getName());
-    frame.submit(swapchain.renderFinishedSemaphore(imageIndex), acquireStages);
-    const auto presentResult = swapchain.present(imageIndex);
-
-    RenderFrameResult frameResult{
-        .swapchainNeedsRebuild = acquireResult == vk::Result::eSuboptimalKHR ||
-            presentResult == vk::Result::eSuboptimalKHR || presentResult == vk::Result::eErrorOutOfDateKHR,
-    };
+    frame.submit();
+    rhiCheck(surface->present());
+    RenderFrameResult frameResult;
 
     // 直接同步等待，获取点击结果
     if (pickRequested)
@@ -820,7 +789,10 @@ RenderFrameResult Renderer::render(
         CpuProfileScope timing{context().profiler, "Picking wait/readback"};
         frame.wait();
 
-        pickingReadback->getBlob(&frameResult.pickedSelectionId, 0, sizeof(frameResult.pickedSelectionId));
+        rhiCheck(
+            device
+                ->readBuffer(pickingReadback, 0, sizeof(frameResult.pickedSelectionId), &frameResult.pickedSelectionId)
+        );
         frameResult.hasPickResult = true;
     }
 

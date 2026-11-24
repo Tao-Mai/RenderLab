@@ -1,22 +1,17 @@
-#include "render/device/ResourceBarriers.h"
 #include "passes/denoise/SVGF/SVGFReprojection.h"
 
 #include "core/Logger.h"
 #include "render/FrameData.h"
 #include "render/RenderView.h"
 
+#include <slang-rhi.h>
+#include <slang-rhi/shader-cursor.h>
+#include "render/DispatchGroups.h"
 #include "render/RenderContext.h"
-#include "render/device/VulkanContext.h"
 
 namespace
 {
-constexpr uint32_t   kInputCount    = 4;
-constexpr uint32_t   kBindingCount  = 10;
-constexpr auto kHistoryAccess = VulkanResources::ImageAccess{
-    .stages = vk::PipelineStageFlagBits2::eComputeShader,
-    .access = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
-    .layout = vk::ImageLayout::eGeneral,
-};
+constexpr uint32_t kInputCount = 4;
 
 struct ReprojectionParameters
 {
@@ -39,123 +34,75 @@ glm::vec4 linearDepthRow(const glm::mat4& view)
 }  // namespace
 
 SVGFReprojection::Output SVGFReprojection::compile(
-    const Falcor::RenderContext& context,
-    const DenoiserInputs& source,
-    const std::array<VulkanResources::ImageHandle, kHistoryCount>& history,
-    const std::array<VulkanResources::ImageHandle, kLightingLayerCount>& outputs
+    const Falcor::RenderContext&                                      context,
+    const DenoiserInputs&                                             source,
+    const std::array<GpuResources::ImageHandle, kHistoryCount>&       history,
+    const std::array<GpuResources::ImageHandle, kLightingLayerCount>& outputs
 )
 {
-    auto& cache = *context.vulkanResources;
-    const auto& vulkan = *context.vulkan;
-    accesses.clear();
-    historySource      = source.color;
-    extent             = cache.imageInfo(source.color).extent;
-    CHECK(vulkan.supportedFeatures().shaderStorageImageExtendedFormats);
-    const auto& [previousGeometry, previousLighting, previousMoments, previousHistoryLength] = history;
-    for (const auto image : history)
-    {
-        const auto format = cache.imageInfo(image).format;
-        CHECK(
-            vulkan.physicalDeviceHandle().getFormatProperties(format).optimalTilingFeatures &
-            vk::FormatFeatureFlagBits::eStorageImage
-        );
-        auto access = kHistoryAccess;
-        if (image == previousLighting)
-            access.access = vk::AccessFlagBits2::eShaderStorageRead;
-        accesses.add(image, access);
-    }
-    hasHistory = false;
-    writeLayer = 0;
-
-    constexpr auto kSampled = vulkan_access::sampled(vk::PipelineStageFlagBits2::eComputeShader);
-    for (const auto image : {source.color, source.depth, source.worldNormal, source.albedo})
-        accesses.add(image, kSampled);
-    const Output output{
-        .direct          = outputs[kDirectLightingLayer],
-        .indirect        = outputs[kIndirectLightingLayer],
-        .lightingHistory = previousLighting,
-    };
-    constexpr VulkanResources::ImageAccess kStorageWrite{
-        vk::PipelineStageFlagBits2::eComputeShader,
-        vk::AccessFlagBits2::eShaderStorageWrite,
-        vk::ImageLayout::eGeneral
-    };
-    accesses.add(output.direct, kStorageWrite);
-    accesses.add(output.indirect, kStorageWrite);
-
-    accesses.declare(cache);
-
-    if (!*pipeline)
+    auto& cache   = *context.gpuResources;
+    historySource = source.color;
+    extent        = cache.imageInfo(source.color).size;
+    hasHistory    = false;
+    writeLayer    = 0;
+    if (!pipeline)
         createPipeline(context);
-
-    const std::array handles{
+    const auto& [geometry, lighting, moments, length] = history;
+    const Output output{outputs[kDirectLightingLayer], outputs[kIndirectLightingLayer], lighting};
+    rhiCheck(context.device->createRootShaderObject(pipeline->getProgram(), shaderObject.writeRef()));
+    const std::array names{
+        "currentColor",
+        "currentDepth",
+        "currentNormal",
+        "currentAlbedo",
+        "historyGeometry",
+        "historyLighting",
+        "historyMoments",
+        "historyLength",
+        "outputDirect",
+        "outputIndirect"
+    };
+    const std::array images{
         source.color,
         source.depth,
         source.worldNormal,
         source.albedo,
-        previousGeometry,
-        previousLighting,
-        previousMoments,
-        previousHistoryLength,
+        geometry,
+        lighting,
+        moments,
+        length,
         output.direct,
-        output.indirect,
+        output.indirect
     };
-    for (uint32_t binding = 0; binding < handles.size(); ++binding)
-    {
-        const auto image   = handles[binding];
-        const bool sampled = binding < kInputCount;
-        const auto type    = sampled ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage;
-        const auto view =
-            cache.imageInfo(image).arrayLayers == 1 ? vk::ImageViewType::e2D : vk::ImageViewType::e2DArray;
-        cache.writeDescriptor(*descriptorSet, binding, image, type, view);
-    }
+    for (uint32_t index = 0; index < names.size(); ++index)
+        rhiCheck(
+            rhi::ShaderCursor(shaderObject)[names[index]].setBinding(cache.getImage(images[index])->getDefaultView())
+        );
     return output;
 }
 
+
 void SVGFReprojection::createPipeline(const Falcor::RenderContext& context)
 {
-    const auto& vulkan = *context.vulkan;
-    CHECK(
-        vulkan.physicalDeviceHandle().getQueueFamilyProperties()[vulkan.graphicsQueueFamilyIndex()].queueFlags &
-        vk::QueueFlagBits::eCompute
+    pipeline = context.device->createComputePipeline(
+        {.program = context.shaderManager->program(context.shaderManager->getOrLoad("svgf_reprojection"))}
     );
-    std::array<vk::DescriptorSetLayoutBinding, kBindingCount> bindings;
-    for (uint32_t binding = 0; binding < bindings.size(); ++binding)
-        bindings[binding] = {
-            .binding = binding,
-            .descriptorType =
-                binding < kInputCount ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage,
-            .descriptorCount = 1,
-            .stageFlags      = vk::ShaderStageFlagBits::eCompute,
-        };
-    auto& device        = *context.getDevice();
-    descriptorSetLayout = device.createDescriptorSetLayout(bindings);
-    const vk::PushConstantRange range{
-        .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        .size       = sizeof(ReprojectionParameters)
-    };
-    const std::array layouts{&device.sceneDescriptorSetLayout, &descriptorSetLayout};
-    pipelineLayout = device.getOrCreatePipelineLayout(layouts, std::array{range});
-    const auto shader = context.shaderManager->getOrLoad("svgf_reprojection");
-    pipeline = device.createComputePipeline(shader, pipelineLayout);
-    descriptorSet = device.allocateDescriptorSet(descriptorSetLayout);
+    CHECK(pipeline);
 }
 
-void SVGFReprojection::execute(VulkanResources& cache, vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame)
+
+void SVGFReprojection::execute(GpuResources& cache, rhi::ICommandEncoder& commands, const Falcor::RenderContext& frame)
 {
-    accesses.transition(cache, commands);
+
     const auto      historyRevision = cache.imageHistoryRevision(historySource);
-    const auto&     viewport = frame.view->viewport;
+    const auto&     viewport        = frame.view->viewport;
     const glm::vec4 currentViewport{viewport.x, viewport.y, viewport.width, viewport.height};
     const auto      currentDepthRow = linearDepthRow(frame.view->uniforms.view);
-    commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
-    const std::array descriptorSets{frame.frameData->sceneSetHandle(), *descriptorSet};
-    commands.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelineLayout, 0, descriptorSets, {});
-    commands.pushConstants<ReprojectionParameters>(
-        pipelineLayout,
-        vk::ShaderStageFlagBits::eCompute,
-        0,
-        ReprojectionParameters{
+
+    bindFrameData(shaderObject, *frame.frameData);
+
+    {
+        const auto uniformValue = ReprojectionParameters{
             .previousViewProjection = previousViewProjection,
             .previousViewport       = previousViewport,
             .previousDepthRow       = previousDepthRow,
@@ -164,12 +111,20 @@ void SVGFReprojection::execute(VulkanResources& cache, vk::raii::CommandBuffer& 
             .historyValid           = hasHistory && previousHistoryRevision == historyRevision ? 1u : 0u,
             .historyLength          = settings.historyLength,
             .alpha                  = settings.alpha,
-        }
-    );
-    pipeline.dispatch(commands, {extent.width, extent.height, 1});
-    previousViewProjection = frame.view->uniforms.viewProjection;
-    previousViewport       = currentViewport;
-    previousDepthRow       = currentDepthRow;
+        };
+        const auto uniformCursor = rhi::ShaderCursor(shaderObject)["parameters"].getDereferenced();
+        CHECK(uniformCursor.getTypeLayout()->getSize() <= sizeof(uniformValue));
+        rhiCheck(uniformCursor.setData(&uniformValue, uniformCursor.getTypeLayout()->getSize()));
+    };
+    auto* pass = commands.beginComputePass();
+    CHECK(pass);
+    pass->bindPipeline(pipeline, shaderObject);
+    const auto groups = dispatchGroups(pipeline, {extent.width, extent.height, 1});
+    pass->dispatchCompute(groups.width, groups.height, groups.depth);
+    pass->end();
+    previousViewProjection  = frame.view->uniforms.viewProjection;
+    previousViewport        = currentViewport;
+    previousDepthRow        = currentDepthRow;
     previousHistoryRevision = historyRevision;
     writeLayer ^= 1u;
     hasHistory = true;

@@ -1,16 +1,16 @@
 #include "scene/scene_data.slang"
 #include "svgf_common.slang"
 
-[[vk::binding(0, 1)]] Texture2DArray<float4> currentColor;
-[[vk::binding(1, 1)]] Texture2D<float> currentDepth; // Unnormalized positive view-space depth.
-[[vk::binding(2, 1)]] Texture2D<float4> currentNormal;
-[[vk::binding(3, 1)]] Texture2D<float4> currentAlbedo;
-[[vk::binding(4, 1)]] [[vk::image_format("rgba32f")]] RWTexture2DArray<float4> historyGeometry;
-[[vk::binding(5, 1)]] [[vk::image_format("rgba32f")]] RWTexture2DArray<float4> historyLighting;
-[[vk::binding(6, 1)]] [[vk::image_format("rg32f")]] RWTexture2DArray<float2> historyMoments;
-[[vk::binding(7, 1)]] [[vk::image_format("r32f")]] RWTexture2DArray<float> historyLength;
-[[vk::binding(8, 1)]] [[vk::image_format("rgba32f")]] RWTexture2D<float4> outputDirect;
-[[vk::binding(9, 1)]] [[vk::image_format("rgba32f")]] RWTexture2D<float4> outputIndirect;
+Texture2DArray<float4> currentColor;
+Texture2D<float> currentDepth; // Unnormalized positive view-space depth.
+Texture2D<float4> currentNormal;
+Texture2D<float4> currentAlbedo;
+[format("rgba32f")] RWTexture2DArray<float4> historyGeometry;
+[format("rgba32f")] RWTexture2DArray<float4> historyLighting;
+[format("rg32f")] RWTexture2DArray<float2> historyMoments;
+[format("r32f")] RWTexture2DArray<float> historyLength;
+[format("rgba32f")] RWTexture2D<float4> outputDirect;
+[format("rgba32f")] RWTexture2D<float4> outputIndirect;
 
 struct ReprojectionParameters
 {
@@ -26,7 +26,7 @@ struct ReprojectionParameters
     property SvgfViewport currentViewport { get { return {viewport.xy, viewport.zw}; } }
     property SvgfViewport historyViewport { get { return {previousViewport.xy, previousViewport.zw}; } }
 };
-[[vk::push_constant]] ConstantBuffer<ReprojectionParameters> parameters;
+ConstantBuffer<ReprojectionParameters> parameters;
 
 static const float kNormalCosineThreshold = 0.95;
 static const float kMinimumDepthTolerance = 0.001;
@@ -102,7 +102,7 @@ bool reproject(float3 position, float3 normal, out HistorySample history)
     float tolerance = max(kMinimumDepthTolerance, kRelativeDepthTolerance * projectedDepth);
 
     const SvgfViewport viewport = parameters.historyViewport;
-    float2 previousPixel = viewport.offset + (ndc.xy * 0.5 + 0.5) * viewport.extent;
+    float2 previousPixel = viewport.offset + clipToUv(ndc.xy) * viewport.extent;
     int2 base = int2(floor(previousPixel - 0.5));
     float2 fraction = frac(previousPixel - 0.5);
     float weightSum = 0.0;
@@ -199,7 +199,7 @@ void computeMain(uint3 thread : SV_DispatchThreadID)
     float depth = currentDepth.Load(int3(pixel, 0));
     const SvgfViewport viewport = parameters.currentViewport;
     bool valid = depth > 0.0 && svgfContainsPixel(int2(pixel), uint2(width, height), viewport);
-    float2 ndc = (float2(pixel) + 0.5 - viewport.offset) / viewport.extent * 2.0 - 1.0;
+    float2 ndc = uvToClip((float2(pixel) + 0.5 - viewport.offset) / viewport.extent);
     float3 position = valid ? reconstructWorldPositionFromLinearDepth(ndc, depth, sceneUniforms) : float3(0.0);
     float3 normal = currentNormal.Load(int3(pixel, 0)).xyz;
     HistorySample previous = {};

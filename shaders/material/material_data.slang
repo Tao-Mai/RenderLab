@@ -53,7 +53,7 @@ struct MaterialData
     uint2 texturePadding;
 };
 
-[[vk::binding(0, 2)]] StructuredBuffer<MaterialData> materials;
+StructuredBuffer<MaterialData> materials;
 void applyAlphaTest(MaterialData material, float alpha)
 {
     if (material.alphaMode == kAlphaModeMask && alpha < material.alphaCutoff)

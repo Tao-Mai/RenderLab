@@ -67,15 +67,15 @@ struct Parameters
 };
 #endif
 
-[[vk::push_constant]] ConstantBuffer<Parameters> parameters;
-[[vk::binding(0, 0)]] Texture2D<float4>          sourceImage;
-[[vk::binding(1, 0)]] Texture2D<float4>          bloomedImage;
+ConstantBuffer<Parameters> parameters;
+Texture2D<float4>          sourceImage;
+Texture2D<float4>          bloomedImage;
 #if FALCOR_POST_FX_STAGE == 2
-[[vk::binding(2, 0), vk::image_format("rgba32f")]] RWTexture2D<float4> destinationImage;
+RWTexture2D<float4> destinationImage;
 #else
-[[vk::binding(2, 0), vk::image_format("rgba16f")]] RWTexture2D<float4> destinationImage;
+RWTexture2D<float4> destinationImage;
 #endif
-[[vk::binding(3, 0)]] SamplerState linearSampler;
+SamplerState linearSampler;
 
 #if FALCOR_POST_FX_STAGE != 2
 float4 blurFilter2x2(Texture2D<float4> src, const float2 uv, float uscale, float vscale)

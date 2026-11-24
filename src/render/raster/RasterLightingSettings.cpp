@@ -1,20 +1,17 @@
 #include "render/raster/RasterLightingSettings.h"
 
+#include <slang-rhi.h>
 #include "core/Logger.h"
 #include "render/RenderConfig.h"
-#include "render/device/VulkanContext.h"
+#include "render/device/RhiCheck.h"
 
-void RasterLightingSettings::validateColorFormat(const VulkanContext& vulkan) const
+void RasterLightingSettings::validateColorFormat(rhi::IDevice& device) const
 {
     if (!hdr)
         return;
-
-    constexpr auto kRequiredFeatures = vk::FormatFeatureFlagBits::eColorAttachment |
-        vk::FormatFeatureFlagBits::eColorAttachmentBlend | vk::FormatFeatureFlagBits::eSampledImage |
-        vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
-    const auto features = vulkan.physicalDeviceHandle().getFormatProperties(kHdrColorFormat).optimalTilingFeatures;
-    CHECK(
-        (features & kRequiredFeatures) == kRequiredFeatures,
-        "GPU does not support an RGBA16F HDR color attachment with blending and sampling"
-    );
+    rhi::FormatSupport support;
+    rhiCheck(device.getFormatSupport(kHdrColorFormat, &support));
+    const auto kRequired =
+        rhi::FormatSupport::RenderTarget | rhi::FormatSupport::Blendable | rhi::FormatSupport::ShaderSample;
+    CHECK((support & kRequired) == kRequired);
 }

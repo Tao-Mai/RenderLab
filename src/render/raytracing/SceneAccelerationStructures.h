@@ -1,7 +1,7 @@
 #pragma once
 
+#include <slang-rhi.h>
 #include "render/RenderConfig.h"
-#include "render/raytracing/AccelerationStructure.h"
 
 #include <array>
 #include <cstdint>
@@ -12,40 +12,45 @@
 
 class GpuMesh;
 class RenderResourceManager;
-class VulkanContext;
 struct PreparedScene;
 
 class SceneAccelerationStructures
 {
 public:
     // Mesh uploads and the frame slot's previous submission must be complete.
-    [[nodiscard]] const AccelerationStructure& recordBuilds(
-        const VulkanContext& vulkan, vk::raii::CommandBuffer& commands, RenderResourceManager& resources,
-        const PreparedScene& renderData, uint32_t frameIndex
+    [[nodiscard]] rhi::IAccelerationStructure* recordBuilds(
+        rhi::IDevice&          device,
+        rhi::ICommandEncoder&  commands,
+        RenderResourceManager& resources,
+        const PreparedScene&   renderData,
+        uint32_t               frameIndex
     );
     void reset() noexcept;
 
 private:
     struct Frame
     {
-        AccelerationStructure tlas;
-        Falcor::Buffer                instances;
-        uint32_t              instanceCount = 0;
+        rhi::ComPtr<rhi::IAccelerationStructure> tlas;
+        rhi::ComPtr<rhi::IBuffer>                scratch;
+        rhi::ComPtr<rhi::IBuffer>                instances;
+        uint32_t                                 instanceCount = 0;
     };
 
-    std::map<std::tuple<const GpuMesh*, uint32_t, uint32_t>, AccelerationStructure> meshBlasCache;
-    Falcor::Buffer                                                                        rectLightVertices;
-    Falcor::Buffer                                                                        rectLightIndices;
-    AccelerationStructure                                                         rectLightBlas;
-    std::array<Frame, maxFramesInFlight>                                          frames;
+    std::map<std::tuple<const GpuMesh*, uint32_t, uint32_t>, rhi::ComPtr<rhi::IAccelerationStructure>> meshBlasCache;
+    rhi::ComPtr<rhi::IAccelerationStructure> rectLightBlas;
+    std::array<Frame, kMaxFramesInFlight>    frames;
 
-    [[nodiscard]] std::vector<vk::DeviceAddress> recordBlasBuilds(
-        const VulkanContext& vulkan, vk::raii::CommandBuffer& commands, RenderResourceManager& resources,
-        const PreparedScene& renderData
+    [[nodiscard]] std::vector<rhi::AccelerationStructureHandle> recordBlasBuilds(
+        rhi::IDevice&          device,
+        rhi::ICommandEncoder&  commands,
+        RenderResourceManager& resources,
+        const PreparedScene&   renderData
     );
-    void recordRectLightBlasBuild(const VulkanContext& vulkan, vk::raii::CommandBuffer& commands);
+    void recordRectLightBlasBuild(rhi::IDevice& device, rhi::ICommandEncoder& commands);
     void recordTlasBuild(
-        const VulkanContext& vulkan, vk::raii::CommandBuffer& commands, Frame& frame,
-        std::span<const VkAccelerationStructureInstanceKHR> instances
+        rhi::IDevice&                                                  device,
+        rhi::ICommandEncoder&                                          commands,
+        Frame&                                                         frame,
+        std::span<const rhi::AccelerationStructureInstanceDescGeneric> instances
     );
 };

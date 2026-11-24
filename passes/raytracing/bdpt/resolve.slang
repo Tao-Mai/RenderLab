@@ -1,7 +1,7 @@
 #include "bdpt_parameters.slang"
 #include "raytracing/offline/path_resolve.slang"
 
-[[vk::binding(BdptBinding::kSplats, 3)]] StructuredBuffer<uint4> splats;
+StructuredBuffer<uint4> splats;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]

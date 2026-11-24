@@ -1,12 +1,14 @@
 #pragma once
+#include <slang-rhi.h>
 
-#include "core/Macros.h"
 #include "core/DirectedGraph.h"
+#include "core/Macros.h"
 #include "core/Object.h"
 #include "core/platform/OS.h"
+#include "render/ViewportRect.h"
 #include "render/graph/RenderGraphCompiler.h"
 #include "render/graph/RenderGraphExe.h"
-#include "render/resources/Formats.h"
+#include "render/graph/RenderGraphFlags.h"
 
 #include <filesystem>
 #include <memory>
@@ -15,7 +17,7 @@
 
 namespace Falcor
 {
-class Fbo;
+
 
 class FALCOR_API RenderGraph : public Object
 {
@@ -23,16 +25,17 @@ class FALCOR_API RenderGraph : public Object
 
 public:
     static const FileDialogFilterVec kFileExtensionFilters;
-    static constexpr uint32_t kInvalidIndex = DirectedGraph::kInvalidID;
+    static constexpr uint32_t        kInvalidIndex = DirectedGraph::kInvalidID;
 
-    RenderGraph(ref<Device> device, const std::string& name);
+    RenderGraph(rhi::ComPtr<rhi::IDevice> device, const std::string& name);
     ~RenderGraph() override;
-    [[nodiscard]] static ref<RenderGraph> create(ref<Device> device, const std::string& name = {});
-    [[nodiscard]] static ref<RenderGraph> createFromFile(ref<Device> device, const std::filesystem::path& path);
-    [[nodiscard]] static ref<RenderGraph> createFromString(ref<Device> device, std::string_view script);
-    [[nodiscard]] ref<Device>             getDevice() const { return mpDevice; }
-    void                                  setScene(const ref<Scene>& scene);
-    [[nodiscard]] const ref<Scene>&       getScene() const { return mpScene; }
+    [[nodiscard]] static ref<RenderGraph> create(rhi::ComPtr<rhi::IDevice> device, const std::string& name = {});
+    [[nodiscard]] static ref<RenderGraph>
+    createFromFile(rhi::ComPtr<rhi::IDevice> device, const std::filesystem::path& path);
+    [[nodiscard]] static ref<RenderGraph>   createFromString(rhi::ComPtr<rhi::IDevice> device, std::string_view script);
+    [[nodiscard]] rhi::ComPtr<rhi::IDevice> getDevice() const { return mpDevice; }
+    void                                    setScene(const ref<Scene>& scene);
+    [[nodiscard]] const ref<Scene>&         getScene() const { return mpScene; }
     ref<RenderPass> createPass(const std::string& passName, const std::string& passType, const Properties& properties);
 
     uint32_t                             addPass(const ref<RenderPass>& pass, const std::string& name);
@@ -46,25 +49,28 @@ public:
     void     removeEdge(const std::string& source, const std::string& target);
     void     removeEdge(uint32_t edgeId);
 
-    void               setInput(const std::string& name, const ref<Resource>& resource);
+    void               setInput(const std::string& name, rhi::IResource* resource);
     void               markOutput(const std::string& name, TextureChannelFlags mask = TextureChannelFlags::RGB);
     void               unmarkOutput(const std::string& name);
     [[nodiscard]] bool isGraphOutput(const std::string& name) const;
-    [[nodiscard]] ref<Resource>                           getOutput(const std::string& name);
-    [[nodiscard]] ref<Resource>                           getOutput(uint32_t index);
+    [[nodiscard]] rhi::ComPtr<rhi::IResource>             getOutput(const std::string& name);
+    [[nodiscard]] rhi::ComPtr<rhi::IResource>             getOutput(uint32_t index);
+    [[nodiscard]] rhi::ComPtr<rhi::ITexture>              getOutputTexture(const std::string& name);
+    [[nodiscard]] rhi::ComPtr<rhi::ITexture>              getOutputTexture(uint32_t index);
+    [[nodiscard]] rhi::ComPtr<rhi::IBuffer>               getOutputBuffer(const std::string& name);
     [[nodiscard]] size_t                                  getOutputCount() const { return mOutputs.size(); }
     [[nodiscard]] std::string                             getOutputName(size_t index) const;
     [[nodiscard]] std::unordered_set<TextureChannelFlags> getOutputMasks(size_t index) const;
     [[nodiscard]] std::vector<std::string>                getAvailableOutputs() const;
-    [[nodiscard]] std::vector<std::string>                getUnmarkedOutputs() const;
 
     [[nodiscard]] const std::string& getName() const { return mName; }
     void                             setName(const std::string& value) { mName = value; }
     [[nodiscard]] Dictionary&        getPassesDictionary() { return mPassesDictionary; }
 
-    void onResize(const Fbo* target);
-    bool compile(RenderContext* context, std::string& log);
-    bool compile(RenderContext* context)
+    void               onResize(Extent2D extent, rhi::Format format);
+    [[nodiscard]] bool needsCompilation() const { return !mpExe || mRecompile; }
+    bool               compile(RenderContext* context, std::string& log);
+    bool               compile(RenderContext* context)
     {
         std::string log;
         return compile(context, log);
@@ -81,7 +87,6 @@ public:
 private:
     friend class RenderGraphCompiler;
     friend class RenderGraphExporter;
-    friend class RenderGraphUI;
 
     struct EdgeData
     {
@@ -110,7 +115,7 @@ private:
                ) const;
     [[nodiscard]] bool isGraphOutput(const GraphOut& output) const;
 
-    ref<Device>                               mpDevice;
+    rhi::ComPtr<rhi::IDevice>                 mpDevice;
     std::string                               mName;
     ref<Scene>                                mpScene;
     std::unique_ptr<DirectedGraph>            mpGraph;

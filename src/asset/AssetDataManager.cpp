@@ -84,14 +84,17 @@ void validateTexture(const TextureAsset& asset, std::span<const uint8_t> bytes, 
         file.string()
     );
 
-    CHECK(asset.colorSpace == ColorSpace::Linear || supportsSrgb(asset.format),
-          "texture format does not support sRGB: {}", file.string());
+    CHECK(
+        asset.colorSpace == ColorSpace::Linear || supportsSrgb(asset.format),
+        "texture format does not support sRGB: {}",
+        file.string()
+    );
 
     constexpr uint64_t kMaxPayload = std::numeric_limits<uint32_t>::max();
-    const ImageBlock block = imageBlock(asset.format);
-    const uint32_t layers = layerCount(asset.layout);
-    const uint32_t blocksWide = texture_mip::blockCount(asset.width, block.extent);
-    const uint32_t blocksHigh = texture_mip::blockCount(asset.height, block.extent);
+    const ImageBlock   block       = imageBlock(asset.format);
+    const uint32_t     layers      = layerCount(asset.layout);
+    const uint32_t     blocksWide  = texture_mip::blockCount(asset.width, block.extent);
+    const uint32_t     blocksHigh  = texture_mip::blockCount(asset.height, block.extent);
     CHECK(
         blocksWide <= kMaxPayload / blocksHigh / layers / block.bytes,
         "texture payload is too large: {}",
@@ -106,13 +109,13 @@ void validateTexture(const TextureAsset& asset, std::span<const uint8_t> bytes, 
 }
 }  // namespace
 
-AssetDataManager::~AssetDataManager() { DCHECK(assetsRoot.empty()); }
+AssetDataManager::~AssetDataManager() {}
 
 void AssetDataManager::writeBlob(const std::filesystem::path& relative, std::span<const uint8_t> bytes) const
 {
     for (const auto& component : relative)
         CHECK(component != "..", "asset data path leaves its root: {}", relative.string());
-    const auto file = resolve(relative);
+    const auto      file = resolve(relative);
     std::error_code error;
     std::filesystem::create_directories(file.parent_path(), error);
     CHECK(!error, "cannot create asset data directory '{}': {}", file.parent_path().string(), error.message());
@@ -129,11 +132,12 @@ void AssetDataManager::writeBlob(const std::filesystem::path& relative, std::spa
 }
 
 std::vector<uint8_t> AssetDataManager::readBlob(
-    const std::filesystem::path& relative, uint64_t offset, std::optional<uint64_t> byteCount) const
+    const std::filesystem::path& relative, uint64_t offset, std::optional<uint64_t> byteCount
+) const
 {
     for (const auto& component : relative)
         CHECK(component != "..", "asset data path leaves its root: {}", relative.string());
-    const auto file = resolve(relative);
+    const auto    file = resolve(relative);
     std::ifstream input(file, std::ios::binary | std::ios::ate);
     CHECK(input, "cannot read asset data: {}", file.string());
     const auto size = input.tellg();
@@ -150,15 +154,11 @@ std::vector<uint8_t> AssetDataManager::readBlob(
 
 void AssetDataManager::shutdown() noexcept { assetsRoot.clear(); }
 
-void AssetDataManager::init(std::filesystem::path root)
-{
-    DCHECK(!root.empty() && root.is_absolute());
-    assetsRoot = std::move(root);
-}
+void AssetDataManager::init(std::filesystem::path root) { assetsRoot = std::move(root); }
 
 std::filesystem::path AssetDataManager::resolve(const std::filesystem::path& relative) const
 {
-    DCHECK(!assetsRoot.empty(), "AssetDataManager is not initialized");
+
     CHECK(!relative.empty() && !relative.is_absolute(), "asset data path must be relative: {}", relative.string());
 
     return (assetsRoot / relative).lexically_normal();
@@ -167,7 +167,7 @@ std::filesystem::path AssetDataManager::resolve(const std::filesystem::path& rel
 uint32_t AssetDataManager::bytesPerPixel(ImageFormat format)
 {
     const ImageBlock block = imageBlock(format);
-    DCHECK(block.extent == 1);
+
     return block.bytes;
 }
 

@@ -15,10 +15,10 @@ struct BloomParameters
     property float2 viewportUvMin { get { return viewport.xy; } }
     property float2 viewportUvMax { get { return viewport.zw; } }
 };
-[[vk::push_constant]] ConstantBuffer<BloomParameters> parameters;
-[[vk::binding(0, 0)]] Texture2D<float4> sourceColor;
-[[vk::binding(1, 0)]] SamplerState linearSampler;
-[[vk::binding(2, 0)]] Texture2D<float4> baseColor;
+ConstantBuffer<BloomParameters> parameters;
+Texture2D<float4> sourceColor;
+SamplerState linearSampler;
+Texture2D<float4> baseColor;
 
 float3 sampleSource(float2 uv)
 {

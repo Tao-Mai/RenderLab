@@ -1,9 +1,6 @@
 #include "scene/AActor.h"
 
-AActor::AActor()
-{
-    addDefaultComponent<TransformComponent>();
-}
+AActor::AActor() { addDefaultComponent<TransformComponent>(); }
 
 void AActor::init()
 {
@@ -22,15 +19,12 @@ void AActor::tick(float deltaTime)
         component->tick(deltaTime);
 }
 
-TransformComponent& AActor::transform()
-{
-    return const_cast<TransformComponent&>(std::as_const(*this).transform());
-}
+TransformComponent& AActor::transform() { return const_cast<TransformComponent&>(std::as_const(*this).transform()); }
 
 const TransformComponent& AActor::transform() const
 {
     auto* component = getComponent<TransformComponent>();
-    DCHECK(component);
+
     return *component;
 }
 

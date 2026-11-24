@@ -6,33 +6,33 @@ namespace settings
 {
 namespace detail
 {
-namespace
-{
-void flattenDictionary(const nlohmann::json& dict, const std::string& prefix, nlohmann::json& result)
-{
-    if (!dict.is_object())
+    namespace
     {
-        result[prefix] = dict;
-        return;
+        void flattenDictionary(const nlohmann::json& dict, const std::string& prefix, nlohmann::json& result)
+        {
+            if (!dict.is_object())
+            {
+                result[prefix] = dict;
+                return;
+            }
+
+            for (const auto& [name, value] : dict.items())
+                flattenDictionary(value, prefix.empty() ? name : prefix + ':' + name, result);
+        }
+    }  // namespace
+
+    nlohmann::json flattenDictionary(const nlohmann::json& dict)
+    {
+        CHECK(dict.is_object(), "settings options must be an object");
+        auto result = nlohmann::json::object();
+        flattenDictionary(dict, {}, result);
+        return result;
     }
-
-    for (const auto& [name, value] : dict.items())
-        flattenDictionary(value, prefix.empty() ? name : prefix + ':' + name, result);
-}
-}
-
-nlohmann::json flattenDictionary(const nlohmann::json& dict)
-{
-    CHECK(dict.is_object(), "settings options must be an object");
-    auto result = nlohmann::json::object();
-    flattenDictionary(dict, {}, result);
-    return result;
-}
 }  // namespace detail
 
 void Attributes::addDict(nlohmann::json jsonDict)
 {
-    DCHECK(jsonDict.is_object());
+
     for (auto& [name, value] : jsonDict.items())
         mJsonDict[name] = std::move(value);
 }
@@ -40,7 +40,7 @@ void Attributes::addDict(nlohmann::json jsonDict)
 void Attributes::removePrefix(std::string_view prefix)
 {
     auto& values = mJsonDict.get_ref<nlohmann::json::object_t&>();
-    auto it = values.lower_bound(prefix);
+    auto  it     = values.lower_bound(prefix);
     while (it != values.end() && it->first.starts_with(prefix))
         it = values.erase(it);
 }

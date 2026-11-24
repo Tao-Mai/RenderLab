@@ -27,8 +27,8 @@
  **************************************************************************/
 #include "raster/fullscreen.slang"
 
-[[vk::binding(0, 0)]] Texture2D<float4> sourceImage;
-[[vk::binding(2, 0)]] SamplerState      linearSampler;
+Texture2D<float4> sourceImage;
+SamplerState      linearSampler;
 
 [shader("fragment")] float4 fragMain(FullscreenVertexOutput input) : SV_Target
 {

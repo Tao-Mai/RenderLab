@@ -41,15 +41,15 @@ namespace Falcor
 {
 namespace
 {
-void updateGraphStrings(std::string& graphName, std::filesystem::path& path, std::string& funcName)
-{
-    if (graphName.empty())
-        graphName = "renderGraph";
-    if (path.empty())
-        path = graphName + '.' + RenderGraph::kFileExtensionFilters.front().ext;
-    if (funcName.empty())
-        funcName = RenderGraphIR::getFuncName(graphName);
-}
+    void updateGraphStrings(std::string& graphName, std::filesystem::path& path, std::string& funcName)
+    {
+        if (graphName.empty())
+            graphName = "renderGraph";
+        if (path.empty())
+            path = graphName + '.' + RenderGraph::kFileExtensionFilters.front().ext;
+        if (funcName.empty())
+            funcName = RenderGraphIR::getFuncName(graphName);
+    }
 
 }  // namespace
 
@@ -71,7 +71,7 @@ std::vector<ref<RenderGraph>> RenderGraphImporter::importAllGraphs(const std::fi
     Scripting::Context context;
     Scripting::runScriptFromFile(path, context);
 
-    auto objects = context.getObjects<ref<RenderGraph>>();
+    auto                          objects = context.getObjects<ref<RenderGraph>>();
     std::vector<ref<RenderGraph>> graphs;
     graphs.reserve(objects.size());
     for (auto& [name, graph] : objects)
@@ -84,7 +84,7 @@ std::vector<ref<RenderGraph>> RenderGraphImporter::importAllGraphs(const std::fi
 
 std::string RenderGraphExporter::getIR(const ref<RenderGraph>& graph)
 {
-    DCHECK(graph);
+
     RenderGraphIR ir(graph->getName());
     for (uint32_t id = 0; id < graph->mpGraph->getCurrentNodeId(); ++id)
     {
@@ -127,8 +127,8 @@ std::string RenderGraphExporter::getFuncName(const std::string& graphName)
 
 bool RenderGraphExporter::save(const ref<RenderGraph>& graph, std::filesystem::path path)
 {
-    DCHECK(graph);
-    auto graphName = graph->getName();
+
+    auto        graphName = graph->getName();
     std::string funcName;
     updateGraphStrings(graphName, path, funcName);
 

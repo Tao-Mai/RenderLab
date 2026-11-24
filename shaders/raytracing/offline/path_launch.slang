@@ -17,7 +17,7 @@ CameraPathSample sampleCameraPath(uint2 pixel, uint pixelIndex, PathParameters p
     scrambleSeeds.x = randomUint(scrambleState);
     scrambleSeeds.y = randomUint(scrambleState);
     float2 pixelSample = sampleSobol2D(path.accumulatedSamples, scrambleSeeds);
-    float2 ndc = (float2(pixel) + pixelSample - path.viewportOffset) / path.viewportSize * 2.0 - 1.0;
+    float2 ndc = uvToClip((float2(pixel) + pixelSample - path.viewportOffset) / path.viewportSize);
     float4 farPoint = mul(sceneUniforms.inverseViewProjection, float4(ndc, 1.0, 1.0));
 
     RayDesc ray;

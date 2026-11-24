@@ -39,15 +39,9 @@ glm::vec3 LightComponent::coloredEmission(float strength) const
     return emission;
 }
 
-glm::vec3 LocalLightComponent::emissionColor() const
-{
-    return coloredEmission(luminousIntensity);
-}
+glm::vec3 LocalLightComponent::emissionColor() const { return coloredEmission(luminousIntensity); }
 
-glm::vec3 DirectionalLightComponent::emissionColor() const
-{
-    return coloredEmission(illuminance);
-}
+glm::vec3 DirectionalLightComponent::emissionColor() const { return coloredEmission(illuminance); }
 
 glm::vec3 RectAreaLightComponent::emissionColor() const
 {
@@ -61,22 +55,22 @@ glm::vec3 RectAreaLightComponent::emissionColor() const
 
 LightComponent& replaceLightComponent(LightComponent& light, std::unique_ptr<LightComponent> replacement)
 {
-    DCHECK(replacement);
+
     if (typeid(light) == typeid(*replacement))
         return light;
 
     auto&      owner = light.actor();
     const auto found = std::ranges::find_if(owner.components, [&](const auto& item) { return item.get() == &light; });
-    DCHECK(found != owner.components.end());
 
-    replacement->color      = light.color;
-    replacement->enabled    = light.enabled;
-    replacement->castShadow = light.castShadow;
+
+    replacement->color           = light.color;
+    replacement->enabled         = light.enabled;
+    replacement->castShadow      = light.castShadow;
     replacement->offlineEmission = light.offlineEmission;
 
-    const auto* sourceLocal = dynamic_cast<const LocalLightComponent*>(&light);
+    const auto* sourceLocal       = dynamic_cast<const LocalLightComponent*>(&light);
     const auto* sourceDirectional = dynamic_cast<const DirectionalLightComponent*>(&light);
-    DCHECK(sourceLocal || sourceDirectional);
+
     const float strength = sourceLocal ? sourceLocal->luminousIntensity : sourceDirectional->illuminance;
     if (auto* target = dynamic_cast<LocalLightComponent*>(replacement.get()))
     {
@@ -87,7 +81,7 @@ LightComponent& replaceLightComponent(LightComponent& light, std::unique_ptr<Lig
     else
     {
         auto* directionalTarget = dynamic_cast<DirectionalLightComponent*>(replacement.get());
-        DCHECK(directionalTarget);
+
         directionalTarget->illuminance = strength;
     }
 

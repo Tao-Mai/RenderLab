@@ -1,19 +1,18 @@
 #pragma once
+#include <slang-rhi.h>
 
 #include "core/MetadataAnnotations.h"
-#include "render/resources/Formats.h"
-
-class VulkanContext;
+#include "render/RenderConfig.h"
 
 struct RL_RECORD RasterLightingSettings
 {
     RL_FIELD("hdr") bool hdr = true;
 
-    [[nodiscard]] Falcor::ResourceFormat getColorFormat(Falcor::ResourceFormat defaultFormat) const
+    [[nodiscard]] rhi::Format getColorFormat(rhi::Format defaultFormat) const
     {
-        return hdr ? Falcor::ResourceFormat::RGBA16Float : defaultFormat;
+        return hdr ? kHdrColorFormat : defaultFormat;
     }
-    void validateColorFormat(const VulkanContext& vulkan) const;
+    void validateColorFormat(rhi::IDevice& device) const;
 };
 
 #include RL_METADATA_HEADER("metadata/src/render/raster/RasterLightingSettings.generated.h")

@@ -5,8 +5,8 @@ static const uint kMaxMaterialTextures = 1024;
 static const uint kMaxMaterialSamplers = 32;
 struct TextureRef { uint textureIndex; uint samplerIndex; };
 
-[[vk::binding(1, 2)]] Texture2D<float4> textures[kMaxMaterialTextures];
-[[vk::binding(2, 2)]] SamplerState samplers[kMaxMaterialSamplers];
+Texture2D<float4> textures[kMaxMaterialTextures];
+SamplerState samplers[kMaxMaterialSamplers];
 
 float4 sampleTexture(TextureRef texture, float2 uv)
 {

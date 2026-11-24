@@ -1,27 +1,31 @@
 #pragma once
-
-#include "render/device/Device.h"
-#include "render/resources/MaterialTable.h"
-
 #include <array>
-
+#include <slang-rhi.h>
+#include "render/resources/MaterialTable.h"
+#include "render/resources/ShaderManager.h"
 namespace Falcor
 {
-class RenderContext;
-}  // namespace Falcor
-
+struct RenderContext;
+}
 class ForwardPbrPipelines
 {
 public:
-    void setup(const Falcor::Device& device, vk::Format colorFormat, PipelineState state, bool ibl, bool clearcoat);
-    [[nodiscard]] vk::Pipeline get(const Falcor::RenderContext& context, const MaterialTable::MaterialInfo& material);
+    void setup(
+        rhi::IDevice&                device,
+        rhi::Format                  colorFormat,
+        const rhi::DepthStencilDesc& depth,
+        bool                         blend,
+        bool                         ibl,
+        bool                         clearcoat
+    );
+    [[nodiscard]] rhi::IRenderPipeline*
+    get(const Falcor::RenderContext& context, const MaterialTable::MaterialInfo& material);
 
 private:
-    GraphicsPipelineInfo                       pipelineInfo;
-    std::array<ShaderHandle, 4>                shaders;
-    std::array<std::array<vk::Pipeline, 2>, 4> pipelines;
-    bool                                       iblEnabled       = false;
-    bool                                       clearcoatEnabled = false;
+    rhi::ColorTargetDesc                                            color;
+    rhi::DepthStencilDesc                                           depth;
+    rhi::ComPtr<rhi::IInputLayout>                                  input;
+    std::array<std::array<rhi::ComPtr<rhi::IRenderPipeline>, 2>, 4> pipelines;
+    bool                                                            iblEnabled       = false;
+    bool                                                            clearcoatEnabled = false;
 };
-
-void bindForwardPbrResources(vk::raii::CommandBuffer& commands, const Falcor::RenderContext& frame);

@@ -1,6 +1,6 @@
 # RenderLab
 
-RenderLab 是一个以学习和实验为目的的个人渲染器项目，基于 **Vulkan / C++23 / Slang**
+RenderLab 是一个以学习和实验为目的的个人渲染器项目，基于 **slang-rhi / C++23 / Slang**
 ，涵盖实时渲染与离线渲染，目前仍在持续开发和探索中。项目的主要目标是通过亲自实现不同的渲染算法，深入理解其原理和实际执行流程，而非构建生产级渲染引擎。
 
 论文和教材通常着重介绍算法的核心思想，而将其落实到渲染器中，还需要处理数据组织、GPU
@@ -49,12 +49,20 @@ SVGF。关闭时显示当前帧采样，开启时使用 albedo 解调、历史�
 
 当前主要开发环境为 Windows + CLion。
 
+首次检出时初始化依赖：
+
+```sh
+git submodule update --init --recursive
+```
+
+[slang-rhi](https://github.com/shader-slang/slang-rhi) 通过 `external/slang-rhi` 子模块固定版本。
+设备、资源、同步、呈现和光追均使用其公开接口。ImGui 也直接通过 RHI 绘制。
+
 - 支持 C++23 的编译器。Windows 的 MSVC 配合 `x64-windows`，MSYS2 UCRT64 的 GCC 配合 `x64-mingw-dynamic`。
 - Clang / LLVM 开发包用于编译和运行构建期的元数据生成器。
-- CMake 4.2+、Ninja、Vulkan SDK 1.4+、Slang 编译器。
+- CMake 4.2+、Ninja。slang-rhi 自动获取配套的 Slang 编译器及后端依赖，无需单独安装 Vulkan SDK。
 - CPython 3.10+，包含解释器、标准库和用于嵌入的开发库。
-- vcpkg 主要依赖 GLFW、GLM、ImGui（Docking 与 GLFW / Vulkan
-  backend）、ImGuizmo、TinyGLTF、Assimp、TinyEXR、DirectXTex（`directxtex[core]`）、MikkTSpace、nlohmann-json、glog、zlib。
+- vcpkg 主要依赖 GLFW、GLM、ImGui（Docking 与 GLFW backend）、ImGuizmo、TinyGLTF、Assimp、TinyEXR、DirectXTex（`directxtex[core]`）、MikkTSpace、nlohmann-json、glog、zlib。
 
 MSVC 使用 [LLVM 的 Windows MSVC 开发归档](https://github.com/llvm/llvm-project/releases)，将其安装前缀解包到
 `.cache/metadata-sdk-msvc`。生成器链接官方归档所需的静态 zstd。
@@ -73,7 +81,7 @@ pacman -S mingw-w64-ucrt-x86_64-clang mingw-w64-ucrt-x86_64-llvm mingw-w64-ucrt-
 首次构建后，clangd 使用对应构建目录的 `compile_commands.json` 索引生成头文件。
 独立的 MSYS2 SDK 可解包到 `.cache/metadata-sdk`。也可用 `Clang_DIR` 指向与所选编译器匹配且包含 `ClangConfig.cmake` 的 SDK 目录。
 未指定构建类型时默认使用 Release。同一构建目录使用同一套 CMake / Ninja 工具链。
-光追路线需要支持 Vulkan 硬件光追的显卡。
+当前通过 slang-rhi 的 Vulkan 后端运行；光追路线需要后端报告硬件光追支持。
 Windows 构建会复制 Python DLL，运行时从构建所选的 CPython 安装中加载标准库。
 
 主程序与手动验证工具共用 `RenderLabCore` 的预编译头。TinyGLTF 的实现和资产保存的序列化集中在独立源文件中。

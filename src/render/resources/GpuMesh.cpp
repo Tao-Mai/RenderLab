@@ -2,10 +2,10 @@
 
 #include <array>
 #include <utility>
-#include "core/Logger.h"
+#include "render/device/RhiCheck.h"
 
 GpuMesh::GpuMesh(
-    GpuUploadContext upload, MeshGeometry geometry, std::vector<MeshAsset::Submesh> submeshes, bool rayTracing
+    rhi::IDevice& device, MeshGeometry geometry, std::vector<MeshAsset::Submesh> submeshes, bool rayTracing
 ) :
     indexTotal(static_cast<uint32_t>(geometry.indices.size())),
     vertexTotal(static_cast<uint32_t>(geometry.vertices.size())),
@@ -27,52 +27,16 @@ GpuMesh::GpuMesh(
         );
     }
 
-    auto&                      vulkan         = upload.vulkan;
-    const vk::BufferUsageFlags rayUsage       = rayTracing ? vk::BufferUsageFlagBits::eShaderDeviceAddress |
-            vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
-                                                           : vk::BufferUsageFlags{};
 
-    const vk::DeviceSize vertexBytes = sizeof(Vertex) * geometry.vertices.size();
-    Falcor::Buffer               vertexStaging(
-        vulkan,
-        vertexBytes,
-        vk::BufferUsageFlagBits::eTransferSrc,
-        Falcor::MemoryType::Upload,
-        Falcor::ResourceBindFlags::None
-    );
-    vertexStaging.setBlob(geometry.vertices.data(), 0, vertexBytes);
-    vertexBuffer = Falcor::Buffer(
-        vulkan,
-        vertexBytes,
-        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer | rayUsage,
-        Falcor::MemoryType::DeviceLocal,
-        Falcor::ResourceBindFlags::Vertex
-    );
-    upload.copyBuffer(vertexStaging, vertexBuffer, {.size = vertexBytes});
+    const auto      rayUsage = rayTracing
+             ? rhi::BufferUsage::AccelerationStructureBuildInput | rhi::BufferUsage::ShaderResource
+             : rhi::BufferUsage::None;
+    rhi::BufferDesc desc;
+    desc.size  = sizeof(Vertex) * geometry.vertices.size();
+    desc.usage = rhi::BufferUsage::VertexBuffer | rhi::BufferUsage::CopySource | rayUsage;
+    rhiCheck(device.createBuffer(desc, geometry.vertices.data(), vertexBuffer.writeRef()));
 
-    const vk::DeviceSize indexBytes = sizeof(uint32_t) * geometry.indices.size();
-    Falcor::Buffer               indexStaging(
-        vulkan,
-        indexBytes,
-        vk::BufferUsageFlagBits::eTransferSrc,
-        Falcor::MemoryType::Upload,
-        Falcor::ResourceBindFlags::None
-    );
-    indexStaging.setBlob(geometry.indices.data(), 0, indexBytes);
-    indexBuffer = Falcor::Buffer(
-        vulkan,
-        indexBytes,
-        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer | rayUsage,
-        Falcor::MemoryType::DeviceLocal,
-        Falcor::ResourceBindFlags::Index
-    );
-    upload.copyBuffer(indexStaging, indexBuffer, {.size = indexBytes});
-}
-
-void GpuMesh::bind(vk::raii::CommandBuffer& commandBuffer) const
-{
-    const std::array<vk::Buffer, 1>     vertexBuffers{vertexBuffer.handle()};
-    const std::array<vk::DeviceSize, 1> vertexOffsets{0};
-    commandBuffer.bindVertexBuffers(0, vertexBuffers, vertexOffsets);
-    commandBuffer.bindIndexBuffer(indexBuffer.handle(), 0, vk::IndexType::eUint32);
+    desc.size  = sizeof(uint32_t) * geometry.indices.size();
+    desc.usage = rhi::BufferUsage::IndexBuffer | rhi::BufferUsage::CopySource | rayUsage;
+    rhiCheck(device.createBuffer(desc, geometry.indices.data(), indexBuffer.writeRef()));
 }

@@ -2,7 +2,7 @@ from falcor import RenderGraph
 
 from modules.editor import add_picking
 from modules.post_process import add_post_process
-from modules.scene import add_shadows, complete_raster_scene
+from modules.scene import add_shadows, complete_raster_scene, connect_shadow_resources
 
 def render_graph_Forward(
     *,
@@ -19,9 +19,9 @@ def render_graph_Forward(
     depth = "depth.depth"
     graph.create_pass("forward", "ScenePass", {"hdr": hdr})
     graph.add_edge(depth, "forward.depth")
-    graph.add_edge(shadow, "forward")
+    connect_shadow_resources(graph, shadow, "forward")
     sceneColor = "forward.color"
-    color = complete_raster_scene(graph, sceneColor, depth, ibl)
+    color = complete_raster_scene(graph, sceneColor, depth, shadow, ibl)
     color = add_post_process(graph, color, hdr, postProcess, bloom)
     add_picking(graph, depth, color)
     return graph

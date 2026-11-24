@@ -8,35 +8,41 @@
 #include "math/sampling.slang"
 #include "material/surface.slang"
 
+ConstantBuffer<ShadowUniforms> shadowUniforms;
+StructuredBuffer<PointShadowData> pointShadowData;
+StructuredBuffer<SpotShadowData> spotShadowData;
+StructuredBuffer<RectAreaShadowData> rectAreaShadowData;
+StructuredBuffer<DirectionalShadowData> directionalShadowData;
+Texture2DArray<float> pointShadowMap;
+Texture2DArray<float> spotShadowMap;
+Texture2DArray<float> rectAreaShadowMap;
+Texture2DArray<float> cascadeShadowMap;
+SamplerComparisonState shadowSampler;
+SamplerState shadowLinearSampler;
+
 #ifndef ENABLE_IBL
 #error ENABLE_IBL must be specified when compiling scene lighting
 #endif
 
 // Light-set environment images and samplers.
-[[vk::binding(2, 1)]]
 TextureCube<float4> irradianceMap;
 
-[[vk::binding(3, 1)]]
 SamplerState irradianceMapSampler;
 
-[[vk::binding(4, 1)]]
 TextureCube<float4> prefilteredSpecularMap;
 
-[[vk::binding(5, 1)]]
 SamplerState prefilteredSpecularMapSampler;
 
-[[vk::binding(6, 1)]]
 Texture2D<float4> brdfLUT;
 
-[[vk::binding(7, 1)]]
 SamplerState brdfLUTSampler;
 
 #if ENABLE_SHEEN
-[[vk::binding(10, 1)]] Texture2D<float4> sheenLUT;
-[[vk::binding(11, 1)]] SamplerState sheenLUTSampler;
+Texture2D<float4> sheenLUT;
+SamplerState sheenLUTSampler;
 #if ENABLE_IBL
-[[vk::binding(8, 1)]] TextureCube<float4> radianceMap;
-[[vk::binding(9, 1)]] SamplerState radianceSampler;
+TextureCube<float4> radianceMap;
+SamplerState radianceSampler;
 
 // Integrate Charlie against the original radiance, not the GGX-prefiltered environment.
 // Cosine-weighted sampling cancels NdotL / PDF to PI. No extra Fresnel or E normalization.
@@ -75,7 +81,7 @@ float spotShadowVisibility(LightData light, float3 worldPosition, float2 rotatio
         return 1.0;
     }
     float3 projected = clip.xyz / clip.w;
-    float2 uv = projected.xy * 0.5 + 0.5;
+    float2 uv = clipToUv(projected.xy);
     if (any(uv < 0.0) || any(uv > 1.0) || projected.z < 0.0 || projected.z > 1.0)
     {
         return 1.0;
@@ -105,7 +111,7 @@ float sampleDirectionalCascade(LightData light, uint cascadeIndex, float3 worldP
     CascadeShadowData cascade = directionalShadowData[light.shadowIdx].cascades[cascadeIndex];
     float4 clip = mul(cascade.vp, float4(worldPosition, 1.0));
     float3 projected = clip.xyz / clip.w;
-    float2 uv = projected.xy * 0.5 + 0.5;
+    float2 uv = clipToUv(projected.xy);
     if (any(uv < 0.0) || any(uv > 1.0) || projected.z < 0.0 || projected.z > 1.0)
     {
         return 1.0;
@@ -177,6 +183,18 @@ float directionalShadowVisibility(LightData light, float3 worldPosition, float2 
 }
 
 
+
+float3 pointShadowCoordinates(float3 direction, uint shadowIndex)
+{
+float3 magnitude = abs(direction);
+    uint face;
+    if (magnitude.x >= magnitude.y && magnitude.x >= magnitude.z) face = direction.x > 0 ? 0 : 1;
+    else if (magnitude.y >= magnitude.z) face = direction.y > 0 ? 2 : 3;
+    else face = direction.z > 0 ? 4 : 5;
+    float4 projected = mul(pointShadowData[shadowIndex].vp[face], float4(direction, 0.0));
+    return float3(clipToUv(projected.xy / projected.w), shadowIndex * 6 + face);
+}
+
 float pcf(float3 dir, uint shadowIndex, float depth, float2 rotation)
 {
     float3 direction = normalize(dir);
@@ -196,7 +214,7 @@ float pcf(float3 dir, uint shadowIndex, float depth, float2 rotation)
         float3 sampleDirection = normalize(
             direction + rotatedTangent * offset.x + rotatedBitangent * offset.y);
         totalVisibility += pointShadowMap.SampleCmpLevelZero(
-            shadowSampler, float4(sampleDirection, shadowIndex), depth - shadowUniforms.bias);
+            shadowSampler, pointShadowCoordinates(sampleDirection, shadowIndex), depth - shadowUniforms.bias);
     }
 
     return totalVisibility / kPoissonDisk16SampleCount;
@@ -214,7 +232,7 @@ float rectAreaShadowPCSS(LightData light, float3 worldPos, uint2 pixel)
     }
 
     float3 projected = pos.xyz / pos.w;
-    float2 uv = projected.xy * 0.5 + 0.5;
+    float2 uv = clipToUv(projected.xy);
     if (any(uv < 0.0) || any(uv > 1.0) || projected.z < 0.0 || projected.z > 1.0)
     {
         return 1.0;

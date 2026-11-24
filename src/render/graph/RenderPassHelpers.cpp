@@ -27,10 +27,9 @@
  **************************************************************************/
 #include "render/graph/RenderPassHelpers.h"
 
+#include <slang-rhi.h>
 #include "core/Logger.h"
 #include "render/graph/RenderPass.h"
-#include "render/resources/ResourceViews.h"
-#include "render/resources/Texture.h"
 
 namespace Falcor
 {
@@ -38,14 +37,20 @@ uint2 RenderPassHelpers::calculateIOSize(IOSize selection, uint2 fixedSize, uint
 {
     switch (selection)
     {
-        case IOSize::Default: return {};
-        case IOSize::Fixed: return fixedSize;
-        case IOSize::Full: return windowSize;
-        case IOSize::Half: return windowSize / uint2{2};
-        case IOSize::Quarter: return windowSize / uint2{4};
-        case IOSize::Double: return windowSize * uint2{2};
+        case IOSize::Default:
+            return {};
+        case IOSize::Fixed:
+            return fixedSize;
+        case IOSize::Full:
+            return windowSize;
+        case IOSize::Half:
+            return windowSize / uint2{2};
+        case IOSize::Quarter:
+            return windowSize / uint2{4};
+        case IOSize::Double:
+            return windowSize * uint2{2};
     }
-    DCHECK(false);
+
     return {};
 }
 
@@ -65,9 +70,9 @@ void addRenderPassInputs(
     for (const auto& channel : channels)
     {
         auto& field = reflector.addInput(channel.name, channel.desc)
-            .texture2D(dim.x, dim.y)
-            .bindFlags(bindFlags)
-            .format(channel.format);
+                          .texture2D(dim.x, dim.y)
+                          .bindFlags(bindFlags)
+                          .format(channel.format);
         if (channel.optional)
             field.flags(RenderPassReflection::Field::Flags::Optional);
     }
@@ -80,9 +85,9 @@ void addRenderPassOutputs(
     for (const auto& channel : channels)
     {
         auto& field = reflector.addOutput(channel.name, channel.desc)
-            .texture2D(dim.x, dim.y)
-            .bindFlags(bindFlags)
-            .format(channel.format);
+                          .texture2D(dim.x, dim.y)
+                          .bindFlags(bindFlags)
+                          .format(channel.format);
         if (channel.optional)
             field.flags(RenderPassReflection::Field::Flags::Optional);
     }
@@ -95,12 +100,16 @@ void clearRenderPassChannels(RenderContext* context, const ChannelList& channels
         const auto texture = data.getTexture(channel.name);
         if (!texture)
             continue;
-
-        const auto view = texture->getUAV();
-        if (isIntegerFormat(texture->getFormat()))
-            context->clearUAV(view.get(), uint4(0));
+        if (rhi::getFormatInfo(texture->getDesc().format).kind == rhi::FormatKind::Integer)
+        {
+            uint32_t clearValue[4]{};
+            context->commands->clearTextureUint(texture, rhi::kEntireTexture, clearValue);
+        }
         else
-            context->clearUAV(view.get(), float4(0.f));
+        {
+            float clearValue[4]{};
+            context->commands->clearTextureFloat(texture, rhi::kEntireTexture, clearValue);
+        }
     }
 }
 }  // namespace Falcor

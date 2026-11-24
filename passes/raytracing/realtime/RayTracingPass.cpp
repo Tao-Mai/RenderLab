@@ -1,11 +1,11 @@
 #include "passes/raytracing/realtime/RayTracingPass.h"
 #include "passes/raytracing/realtime/RayTracingData.h"
 #include "passes/raytracing/realtime/RestirFrameParameters.h"
-#include "render/device/ResourceBarriers.h"
-#include "render/raytracing/RealtimeSceneData.h"
+
 
 #include "core/profiling/Profiler.h"
 
+#include <slang-rhi/shader-cursor.h>
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "render/RenderContext.h"
@@ -13,7 +13,7 @@
 #include "render/device/GpuProfiler.h"
 #include "render/graph/RenderPassStandardFlags.h"
 #include "render/raytracing/PathTracingShader.h"
-#include "render/raytracing/RayTracingStorageImages.h"
+#include "render/raytracing/RealtimeSceneData.h"
 #include "render/resources/MaterialTable.h"
 #include "render/resources/ShaderLayout.h"
 #include "render/resources/ShaderManager.h"
@@ -27,13 +27,13 @@
 
 namespace
 {
-constexpr char kOutputColor[] = "color";
+constexpr char       kOutputColor[] = "color";
 constexpr std::array kSurfaces{"surface0", "surface1"};
-constexpr char kInitialReservoirs[] = "initialReservoirs";
-constexpr char kHistory[] = "reservoirHistory";
-constexpr char kFrameParameters[] = "frameParameters";
+constexpr char       kInitialReservoirs[] = "initialReservoirs";
+constexpr char       kHistory[]           = "reservoirHistory";
 constexpr std::array kRaygenEntries{"raygenMain", "temporalMain", "spatialMain"};
-}
+}  // namespace
+
 
 void RayTracingSettings::validate() const
 {
@@ -47,16 +47,16 @@ void RayTracingSettings::validate() const
     );
 }
 
-RayTracingPass::RayTracingPass(Falcor::ref<Falcor::Device> device, const Falcor::Properties& properties) :
+
+RayTracingPass::RayTracingPass(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
     Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<RayTracingSettings>(properties))
 {
     parameters.validate();
 }
 
-Falcor::Properties RayTracingPass::getProperties() const
-{
-    return Falcor::serializeToProperties(parameters);
-}
+
+Falcor::Properties RayTracingPass::getProperties() const { return Falcor::serializeToProperties(parameters); }
+
 
 void RayTracingPass::setProperties(const Falcor::Properties& properties)
 {
@@ -65,33 +65,36 @@ void RayTracingPass::setProperties(const Falcor::Properties& properties)
     next.validate();
 
     const bool recompile = next.splitLighting != parameters.splitLighting;
-    parameters = std::move(next);
+    parameters           = std::move(next);
     if (recompile)
         requestRecompile();
 }
 
+
 Falcor::RenderPassReflection RayTracingPass::reflect(const CompileData& compileData)
 {
     Falcor::RenderPassReflection reflection;
-    reflection.addOutput("depth", "Scene depth").format(Falcor::ResourceFormat::R32Float).bindFlags(Falcor::ResourceBindFlags::UnorderedAccess);
+    reflection.addOutput("depth", "Scene depth")
+        .format(rhi::Format::R32Float)
+        .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess);
     reflection.addOutput("worldNormal", "World-space normals")
-        .format(Falcor::ResourceFormat::RGBA16Float)
+        .format(rhi::Format::RGBA16Float)
         .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess);
     reflection.addOutput(kOutputColor, "Path traced radiance")
         .texture2D(0, 0, 1, 1, parameters.splitLighting ? kLightingLayerCount : 1)
-        .format(Falcor::ResourceFormat::RGBA16Float)
+        .format(rhi::Format::RGBA16Float)
         .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess);
     if (parameters.splitLighting)
         for (const auto name : {"emission", "albedo"})
             reflection.addOutput(std::string{name}, "Path tracing signal for denoising")
-                .format(Falcor::ResourceFormat::RGBA16Float)
+                .format(rhi::Format::RGBA16Float)
                 .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess);
     reflection.addOutput("triangleLights", "World-space emissive triangles")
         .rawBuffer(sizeof(EmissiveTriangleHeader) + sizeof(EmissiveTriangle))
         .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess);
 
-    const auto extent = compileData.defaultTexDims;
-    const auto pixels = uint64_t{extent.x} * extent.y;
+    const auto extent       = compileData.defaultTexDims;
+    const auto pixels       = uint64_t{extent.x} * extent.y;
     const auto surfaceBytes = pixels * sizeof(RestirSurfaceData);
     const auto initialBytes = pixels * sizeof(RestirReservoirData);
     CHECK(std::in_range<uint32_t>(surfaceBytes) && std::in_range<uint32_t>(initialBytes * 2));
@@ -103,134 +106,109 @@ Falcor::RenderPassReflection RayTracingPass::reflect(const CompileData& compileD
     reflection.addInternal(kInitialReservoirs, "Initial light reservoirs")
         .rawBuffer(static_cast<uint32_t>(initialBytes))
         .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess);
-    reflection.addInternal(kFrameParameters, "ReSTIR frame parameters")
-        .rawBuffer(sizeof(RestirFrameParameters))
-        .bindFlags(Falcor::ResourceBindFlags::Constant);
+
     reflection.addOutput(kHistory, "Temporal light reservoirs")
         .rawBuffer(static_cast<uint32_t>(initialBytes * 2))
-        .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess)
-        .flags(Falcor::RenderPassReflection::Field::Flags::Persistent);
+        .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess);
     return reflection;
 }
 
+
 void RayTracingPass::compile(Falcor::RenderContext*, const CompileData&)
 {
-    barriers.clear();
-    sampleIndex = 0;
+    targetsReady = false;
+    sampleIndex  = 0;
 }
+
 
 void RayTracingPass::prepareTargets(Falcor::RenderContext& context, const Falcor::RenderData& renderData)
 {
-    auto&      cache  = *context.vulkanResources;
-    const auto image  = [&](std::string_view name) { return cache.registerImage(renderData.getTexture(name)); };
-    const auto buffer = [&](std::string_view name) { return cache.registerBuffer(renderData[name]->asBuffer()); };
-
-    const auto     depth  = image("depth");
-    const auto     normal = image("worldNormal");
-    const auto     color  = image(kOutputColor);
-    constexpr auto kRead  = vulkan_access::storageRead(kRayTracingStages);
-    barriers.add(context.frameData->lightBufferHandle(), kRead);
-    barriers.add(context.materialTable->bufferHandle(), kRead);
-    barriers.add(depth, kRayTracingImageWrite);
-    barriers.add(normal, kRayTracingImageWrite);
-    barriers.add(color, kRayTracingImageWrite);
-
+    auto&       cache         = *context.gpuResources;
+    const auto  image         = [&](std::string_view name) { return cache.registerImage(renderData.getTexture(name)); };
+    const auto  buffer        = [&](std::string_view name) { return cache.registerBuffer(renderData.getBuffer(name)); };
     const bool  splitLighting = parameters.splitLighting;
     auto&       shaderManager = *context.shaderManager;
     const auto  shader        = shaderManager.getOrLoad("raytracing", {{"SVGF", splitLighting ? "1" : "0"}});
     const auto& layout        = shaderManager.layout(shader);
-    frameConstants = layout.pushConstants<PathTracingParameters>("parameters", vk::ShaderStageFlagBits::eRaygenKHR);
 
-    const auto geometry = scene.compile(context, buffer("triangleLights"));
-    traceAccesses.clear();
-    sceneBindings.compile(traceAccesses, layout, geometry);
-    const std::array reservoirBuffers{
-        buffer(kSurfaces[0]),
-        buffer(kSurfaces[1]),
-        buffer(kInitialReservoirs),
-        buffer(kHistory),
-        buffer(kFrameParameters),
-    };
-    reservoirs.compile(layout, reservoirBuffers, traceAccesses);
-    traceAccesses.declare(cache);
-    RayTracingStorageImages images;
-
-    images.add(cache, *context.vulkan, layout, "outputImage", color, kPathTracingColorFeatures);
-    images.add(cache, *context.vulkan, layout, "depthImage", depth);
-    images.add(cache, *context.vulkan, layout, "normalImage", normal);
-    if (splitLighting)
-    {
-        constexpr std::array kSplitOutputs{
-            std::pair{"emission", "emissionImage"},
-            std::pair{"albedo", "albedoImage"},
-        };
-        for (const auto& [port, binding] : kSplitOutputs)
-        {
-            const auto target = image(port);
-            barriers.add(target, kRayTracingImageWrite);
-            images.add(cache, *context.vulkan, layout, binding, target);
-        }
-    }
-    barriers.declare(cache);
-
-    auto& device  = *mpDevice;
+    layout.validateConstants<PathTracingParameters>("parameters");
+    scene.compile(context, buffer("triangleLights"));
+    reservoirs.compile({buffer(kSurfaces[0]), buffer(kSurfaces[1]), buffer(kInitialReservoirs), buffer(kHistory)});
     auto& variant = programs[splitLighting];
     if (!variant.pipeline)
     {
-        std::vector<vk::DescriptorSetLayoutBinding> bindings;
-        sceneBindings.appendLayoutBindings(bindings);
-        images.appendLayoutBindings(bindings);
-        const auto& restirLayout = reservoirs.layoutBindings();
-        bindings.insert(bindings.end(), restirLayout.begin(), restirLayout.end());
-        variant.descriptorLayout  = device.createDescriptorSetLayout(bindings);
-        const auto pipelineLayout = RealtimeSceneBindings::getPipelineLayout(
-            device,
-            layout,
-            variant.descriptorLayout,
-            std::array{frameConstants.range}
-        );
-        variant.pipeline.emplace(
-            *context.vulkan,
-            RayTracingPipeline::Description{
-                .shader            = shaderManager.module(shader),
-                .layout            = pipelineLayout,
-                .raygen            = kRaygenEntries,
-                .miss              = kPathTracingMissEntries,
-                .closestHit        = kPathTracingHitEntries,
-                .maxRecursionDepth = kRayPipelineRecursionDepth,
-            }
-        );
+
+        const std::array groups{
+            rhi::HitGroupDesc{"hitGroup0", "closestHitMain"},
+            rhi::HitGroupDesc{"hitGroup1", "lightClosestHitMain"}
+        };
+        constexpr std::array        kGroupNames{"hitGroup0", "hitGroup1"};
+        rhi::RayTracingPipelineDesc desc;
+        desc.program           = shaderManager.program(shader);
+        desc.hitGroups         = groups.data();
+        desc.hitGroupCount     = uint32_t(groups.size());
+        desc.maxRecursion      = kRayPipelineRecursionDepth;
+        desc.maxRayPayloadSize = kPathTracingPayloadBytes;
+        rhiCheck(mpDevice->createRayTracingPipeline(desc, variant.pipeline.writeRef()));
+        rhi::ShaderTableDesc tableDesc;
+        tableDesc.program                     = desc.program;
+        tableDesc.rayGenShaderEntryPointNames = kRaygenEntries.data();
+        tableDesc.rayGenShaderCount           = uint32_t(kRaygenEntries.size());
+        tableDesc.missShaderEntryPointNames   = kPathTracingMissEntries.data();
+        tableDesc.missShaderCount             = uint32_t(kPathTracingMissEntries.size());
+        tableDesc.hitGroupNames               = kGroupNames.data();
+        tableDesc.hitGroupCount               = uint32_t(kGroupNames.size());
+        rhiCheck(mpDevice->createShaderTable(tableDesc, variant.shaderTable.writeRef()));
     }
-    descriptorSets.clear();
-    descriptorSets.reserve(maxFramesInFlight);
-    for (uint32_t index = 0; index < maxFramesInFlight; ++index)
-        descriptorSets.push_back(device.allocateDescriptorSet(variant.descriptorLayout));
-
-    images.writeDescriptors(cache, descriptorSets);
-
-    historySource      = color;
+    shaderObjectsByFrame.assign(kMaxFramesInFlight, {});
+    for (auto& object : shaderObjectsByFrame)
+    {
+        rhiCheck(mpDevice->createRootShaderObject(shaderManager.program(shader), object.writeRef()));
+        const rhi::ShaderCursor root(object);
+        const auto              bind = [&](const char* parameter, const char* field)
+        {
+            const auto texture = renderData.getTexture(field);
+            CHECK(
+                layout.storageImage(parameter).format == texture->getDesc().format,
+                "storage image format differs for '{}'",
+                parameter
+            );
+            rhiCheck(root[parameter].setBinding(texture->getDefaultView()));
+        };
+        bind("outputImage", "color");
+        bind("depthImage", "depth");
+        bind("normalImage", "worldNormal");
+        if (splitLighting)
+        {
+            bind("emissionImage", "emission");
+            bind("albedoImage", "albedo");
+        }
+    }
+    targetsReady       = true;
+    historySource      = image("color");
     previousMaxBounces = parameters.maxBounces;
     previousRestir     = parameters.restir;
 }
 
+
 void RayTracingPass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
 {
-    auto&       cache         = *renderCommands->vulkanResources;
+    auto&       cache         = *renderCommands->gpuResources;
     auto&       commands      = *renderCommands->commands;
     const auto& frame         = *renderCommands;
     const bool  splitLighting = parameters.splitLighting;
 
-    if (barriers.empty())
+    if (!targetsReady)
         prepareTargets(*renderCommands, renderData);
-    barriers.transition(cache, commands);
 
     {
         CpuProfileScope timing{context().profiler, "RT.Buffer preparation"};
-        scene.prepare(cache, frame);
+        renderData.setBuffer("triangleLights", scene.prepare(cache, frame));
         if (parameters.maxBounces != previousMaxBounces || parameters.restir != previousRestir)
         {
-            auto& dictionary = renderData.getDictionary();
-            const auto flags = dictionary.getValue(Falcor::kRenderPassRefreshFlags, Falcor::RenderPassRefreshFlags::None);
+            auto&      dictionary = renderData.getDictionary();
+            const auto flags =
+                dictionary.getValue(Falcor::kRenderPassRefreshFlags, Falcor::RenderPassRefreshFlags::None);
             dictionary[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
 
             reservoirs.invalidateHistory();
@@ -240,40 +218,37 @@ void RayTracingPass::execute(Falcor::RenderContext* renderCommands, const Falcor
             previousRestir     = parameters.restir;
         }
 
-        const auto set = *descriptorSets[frame.frameIndex];
-        sceneBindings.prepare(cache, frame, set);
-        reservoirs.prepare(cache, frame, renderData.getDefaultTextureDims(), parameters.restir, set);
+        reservoirs.prepare(
+            cache,
+            frame,
+            renderData.getDefaultTextureDims(),
+            parameters.restir,
+            shaderObjectsByFrame[frame.frameIndex]
+        );
     }
 
     cache.recordUploads(commands);
-    scene.execute(cache, commands, frame);
-    traceAccesses.transition(cache, commands);
+    scene.execute(commands, frame);
 
-    const auto& pipeline = *programs[splitLighting].pipeline;
-    pipeline.bind(commands);
-    sceneBindings.bind(commands, frame, pipeline.layout(), *descriptorSets[frame.frameIndex]);
 
+    const auto& program = programs[splitLighting];
+    const auto& object  = shaderObjectsByFrame[frame.frameIndex];
+    scene.bind(object, cache, frame);
     const auto constants = makePathTracingParameters(frame, parameters.maxBounces, sampleIndex++);
-    frameConstants.push(commands, pipeline.layout(), constants);
-
+    rhiCheck(rhi::ShaderCursor(object)["parameters"].getDereferenced().setData(constants));
     const auto           extent = renderData.getDefaultTextureDims();
-    const vk::Extent3D   dispatchExtent{extent.x, extent.y, 1};
     constexpr std::array kStageNames{"RT.Initial RIS and paths", "ReSTIR.Temporal", "ReSTIR.Spatial and shading"};
     static_assert(kStageNames.size() == kRaygenEntries.size());
     for (uint32_t stage = 0; stage < kRaygenEntries.size(); ++stage)
     {
         if (stage != 0)
-        {
-            const vk::MemoryBarrier2 barrier{
-                .srcStageMask  = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
-                .srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
-                .dstStageMask  = vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
-                .dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
-            };
-            commands.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &barrier});
-        }
+            commands.globalBarrier();
         GpuProfileScope timing{frame.gpuProfiler, commands, kStageNames[stage]};
-        pipeline.dispatch(commands, stage, dispatchExtent);
+        auto*           pass = commands.beginRayTracingPass();
+        CHECK(pass);
+        pass->bindPipeline(program.pipeline, program.shaderTable, object);
+        pass->dispatchRays(stage, extent.x, extent.y, 1);
+        pass->end();
     }
     reservoirs.advanceHistory();
 

@@ -26,7 +26,7 @@ void CharacterMoveComponent::init(AActor* actor)
 
 void CharacterMoveComponent::tick(float deltaTime)
 {
-    DCHECK(context().sceneManager && context().inputManager, "movement requires SceneManager and InputManager");
+
     if (const auto* ownCamera = actor().getComponent<CameraComponent>(); ownCamera && !ownCamera->isNavigationActive())
         return;
 

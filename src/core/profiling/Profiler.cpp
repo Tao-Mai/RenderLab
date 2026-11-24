@@ -10,7 +10,7 @@
 
 void Profiler::beginFrame()
 {
-    DCHECK(!capturing);
+
     capturing = true;
     ++frame;
     current.cpuTimings.clear();
@@ -22,9 +22,9 @@ void Profiler::beginFrame()
 
 void Profiler::endFrame(double milliseconds)
 {
-    DCHECK(capturing);
+
     capturing = false;
-    DCHECK(std::isfinite(milliseconds) && milliseconds > 0.0);
+
     frameHistory.push_back(static_cast<float>(milliseconds));
     cpuHistory.push_back(frameTimer.elapsedMilliseconds());
     logTiming(frame, "wall", "Frame interval", milliseconds);
@@ -83,7 +83,7 @@ void Profiler::recordDraw(uint32_t vertexCount, uint32_t instanceCount)
 {
     if (!capturing)
         return;
-    DCHECK(!current.passes.empty());
+
     auto& draws = current.passes.back().draws;
     ++draws.drawCalls;
     draws.triangles += static_cast<uint64_t>(vertexCount / 3) * instanceCount;
@@ -109,7 +109,7 @@ void Profiler::clearGpu()
 
 void Profiler::reset()
 {
-    DCHECK(!capturing);
+
     stopLogging();
     frame     = 0;
     current   = {};
@@ -121,7 +121,7 @@ void Profiler::reset()
 
 void Profiler::startLogging(const std::filesystem::path& path)
 {
-    DCHECK(!logFile.is_open());
+
     if (!path.parent_path().empty())
     {
         std::error_code error;

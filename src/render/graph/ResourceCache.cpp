@@ -1,85 +1,128 @@
 #include "render/graph/ResourceCache.h"
 
+#include <slang-rhi.h>
 #include "core/Logger.h"
-#include "render/device/Device.h"
-#include "render/resources/Buffer.h"
-#include "render/resources/Texture.h"
 
 #include <algorithm>
 #include <bit>
 #include <utility>
+#include "render/device/RhiCheck.h"
 
 namespace Falcor
 {
 namespace
 {
-using Field = RenderPassReflection::Field;
-using Type  = Field::Type;
+    using Field = RenderPassReflection::Field;
+    using Type  = Field::Type;
 
-ref<Resource> createResourceForPass(
-    const ref<Device>&                      device,
-    const ResourceCache::DefaultProperties& params,
-    const Field&                            field,
-    bool                                    resolveBindFlags,
-    const std::string&                      name
-)
-{
-    const auto width = field.getWidth() ? field.getWidth() : params.dims.x;
-    auto       flags = field.getBindFlags();
-    if (field.getType() == Type::RawBuffer)
+
+    rhi::ComPtr<rhi::IResource> createResourceForPass(
+        rhi::IDevice*                           device,
+        const ResourceCache::DefaultProperties& params,
+        const Field&                            field,
+        bool                                    resolveBindFlags,
+        const std::string&                      name
+    )
     {
-        CHECK(width, "buffer '{}' requires a size", name);
+        const auto width = field.getWidth() ? field.getWidth() : params.dims.x;
+        auto       flags = field.getBindFlags();
+        if (field.getType() == Type::RawBuffer)
+        {
+            CHECK(width, "buffer '{}' requires a size", name);
+            if (resolveBindFlags)
+                flags |= ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess;
+            rhi::BufferDesc desc;
+            desc.size  = width;
+            desc.usage = rhi::BufferUsage::CopySource | rhi::BufferUsage::CopyDestination;
+            if (is_set(flags, ResourceBindFlags::ShaderResource))
+                desc.usage |= rhi::BufferUsage::ShaderResource;
+            if (is_set(flags, ResourceBindFlags::UnorderedAccess))
+                desc.usage |= rhi::BufferUsage::UnorderedAccess | rhi::BufferUsage::ShaderResource;
+            if (is_set(flags, ResourceBindFlags::Constant))
+                desc.usage |= rhi::BufferUsage::ConstantBuffer;
+            if (is_set(flags, ResourceBindFlags::Vertex))
+                desc.usage |= rhi::BufferUsage::VertexBuffer;
+            if (is_set(flags, ResourceBindFlags::Index))
+                desc.usage |= rhi::BufferUsage::IndexBuffer;
+            if (is_set(flags, ResourceBindFlags::IndirectArg))
+                desc.usage |= rhi::BufferUsage::IndirectArgument;
+            desc.label = name.c_str();
+            rhi::ComPtr<rhi::IBuffer> buffer;
+            rhiCheck(device->createBuffer(desc, nullptr, buffer.writeRef()));
+            return rhi::ComPtr<rhi::IResource>(buffer.get());
+        }
+
+        const auto height    = field.getType() == Type::Texture1D ? 1u
+               : field.getHeight()                                ? field.getHeight()
+                                                                  : params.dims.y;
+        const auto depth     = std::max(1u, field.getDepth());
+        const auto samples   = std::max(1u, field.getSampleCount());
+        const auto arraySize = std::max(1u, field.getArraySize());
+        const auto mipCount  = field.getMipCount() == Field::kMaxMipLevels
+             ? uint32_t(std::bit_width(std::max({width, height, depth})))
+             : std::max(1u, field.getMipCount());
+        const auto format    = field.getFormat() == rhi::Format::Undefined ? params.format : field.getFormat();
+        CHECK(width && height && format != rhi::Format::Undefined, "invalid texture properties for '{}'", name);
         if (resolveBindFlags)
-            flags = flags | ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess;
-        return device->createBuffer(width, flags, MemoryType::DeviceLocal);
+        {
+            rhi::FormatSupport support;
+            rhiCheck(device->getFormatSupport(format, &support));
+            if (rhi::is_set(support, rhi::FormatSupport::ShaderSample))
+                flags |= ResourceBindFlags::ShaderResource;
+            if (samples == 1 && rhi::is_set(support, rhi::FormatSupport::ShaderUavStore))
+                flags |= ResourceBindFlags::UnorderedAccess;
+            if (is_set(field.getVisibility(), Field::Visibility::Output | Field::Visibility::Internal))
+            {
+                if (rhi::is_set(support, rhi::FormatSupport::RenderTarget))
+                    flags |= ResourceBindFlags::RenderTarget;
+                if (rhi::is_set(support, rhi::FormatSupport::DepthStencil))
+                    flags |= ResourceBindFlags::DepthStencil;
+            }
+        }
+        rhi::TextureDesc desc;
+        switch (field.getType())
+        {
+            case Type::Texture1D:
+                desc.type = arraySize > 1 ? rhi::TextureType::Texture1DArray : rhi::TextureType::Texture1D;
+                break;
+            case Type::Texture2D:
+                desc.type = samples > 1
+                    ? (arraySize > 1 ? rhi::TextureType::Texture2DMSArray : rhi::TextureType::Texture2DMS)
+                    : arraySize > 1 ? rhi::TextureType::Texture2DArray
+                                    : rhi::TextureType::Texture2D;
+                break;
+            case Type::Texture3D:
+                CHECK(arraySize == 1, "3D texture '{}' must have a single layer", name);
+                desc.type = rhi::TextureType::Texture3D;
+                break;
+            case Type::TextureCube:
+                desc.type = arraySize > 1 ? rhi::TextureType::TextureCubeArray : rhi::TextureType::TextureCube;
+                break;
+            case Type::RawBuffer:
+                std::unreachable();
+        }
+        desc.size        = {width, height, depth};
+        desc.format      = format;
+        desc.arrayLength = arraySize;
+        desc.mipCount    = mipCount;
+        desc.sampleCount = samples;
+        desc.usage       = rhi::TextureUsage::CopySource | rhi::TextureUsage::CopyDestination;
+        if (is_set(flags, ResourceBindFlags::ShaderResource))
+            desc.usage |= rhi::TextureUsage::ShaderResource;
+        if (is_set(flags, ResourceBindFlags::UnorderedAccess))
+            desc.usage |= rhi::TextureUsage::UnorderedAccess;
+        if (is_set(flags, ResourceBindFlags::RenderTarget))
+            desc.usage |= rhi::TextureUsage::RenderTarget;
+        if (is_set(flags, ResourceBindFlags::DepthStencil))
+            desc.usage |= rhi::TextureUsage::DepthStencil;
+        desc.label = name.c_str();
+        rhi::ComPtr<rhi::ITexture> texture;
+        rhiCheck(device->createTexture(desc, nullptr, texture.writeRef()));
+        return rhi::ComPtr<rhi::IResource>(texture.get());
     }
-
-    const auto height = field.getType() == Type::Texture1D ? 1u : field.getHeight() ? field.getHeight() : params.dims.y;
-    const auto depth  = std::max(1u, field.getDepth());
-    const auto samples   = std::max(1u, field.getSampleCount());
-    const auto arraySize = std::max(1u, field.getArraySize());
-    const auto mipCount  = field.getMipCount() == Field::kMaxMipLevels
-         ? static_cast<uint32_t>(std::bit_width(std::max({width, height, depth})))
-         : std::max(1u, field.getMipCount());
-    const auto format    = field.getFormat() == ResourceFormat::Unknown ? params.format : field.getFormat();
-    CHECK(width && height && format != ResourceFormat::Unknown, "invalid texture properties for '{}'", name);
-    if (resolveBindFlags)
-    {
-        auto mask = ResourceBindFlags::ShaderResource;
-        if (samples == 1)
-            mask = mask | ResourceBindFlags::UnorderedAccess;
-        if (is_set(field.getVisibility(), Field::Visibility::Output | Field::Visibility::Internal))
-            mask = mask | ResourceBindFlags::RenderTarget | ResourceBindFlags::DepthStencil;
-        flags = flags | (mask & device->getFormatBindFlags(format));
-    }
-
-    switch (field.getType())
-    {
-        case Type::Texture1D:
-            return device->createTexture1D(width, format, arraySize, mipCount, flags);
-        case Type::Texture2D:
-            if (samples > 1)
-                return device->createTexture2DMS(width, height, format, samples, arraySize, flags);
-            return device->createTexture2D(width, height, format, arraySize, mipCount, flags);
-        case Type::Texture3D:
-            CHECK(arraySize == 1, "3D texture '{}' must have a single layer", name);
-            return device->createTexture3D(width, height, depth, format, mipCount, flags);
-        case Type::TextureCube:
-            return device->createTextureCube(width, height, format, arraySize, mipCount, flags);
-        case Type::RawBuffer:
-            break;
-    }
-    LOG_FATAL("unknown resource type for '{}'", name);
-}
 }  // namespace
 
-void ResourceCache::reset()
-{
-    mNameToIndex.clear();
-    mResourceData.clear();
-}
-
-void ResourceCache::registerExternalResource(const std::string& name, const ref<Resource>& resource)
+void ResourceCache::registerExternalResource(const std::string& name, rhi::IResource* resource)
 {
     if (const auto found = mNameToIndex.find(name); found != mNameToIndex.end())
         mResourceData[found->second].pResource = resource;
@@ -90,16 +133,14 @@ void ResourceCache::registerExternalResource(const std::string& name, const ref<
         mExternalResources.insert_or_assign(name, resource);
 }
 
-void ResourceCache::registerField(
-    const std::string& name, const Field& field, uint32_t timePoint, const std::string& alias
-)
+void ResourceCache::registerField(const std::string& name, const Field& field, const std::string& alias)
 {
-    DCHECK(!mNameToIndex.contains(name));
+
     CHECK(field.isValid(), "invalid field '{}'", name);
     if (!alias.empty())
     {
         const auto found = mNameToIndex.find(alias);
-        DCHECK(found != mNameToIndex.end());
+
         const auto index = found->second;
         auto&      data  = mResourceData[index];
         data.field.merge(field);
@@ -110,23 +151,21 @@ void ResourceCache::registerField(
         }
 
         data.resolveBindFlags |= field.getBindFlags() == ResourceBindFlags::None;
-        data.lifetime.first  = std::min(timePoint, data.lifetime.first);
-        data.lifetime.second = std::max(timePoint, data.lifetime.second);
         mNameToIndex.emplace(name, index);
         return;
     }
 
     mNameToIndex.emplace(name, static_cast<uint32_t>(mResourceData.size()));
     const auto external = mExternalResources.find(name);
-    const auto resource = external != mExternalResources.end() ? external->second : ref<Resource>{};
+    const auto resource = external != mExternalResources.end() ? external->second : rhi::ComPtr<rhi::IResource>{};
     mResourceData.push_back(
-        {field, {timePoint, timePoint}, resource, field.getBindFlags() == ResourceBindFlags::None, name}
+        {field, resource, field.getBindFlags() == ResourceBindFlags::None, name}
     );
 }
 
-const ref<Resource>& ResourceCache::getResource(const std::string& name) const
+const rhi::ComPtr<rhi::IResource>& ResourceCache::getResource(const std::string& name) const
 {
-    static const ref<Resource> kNullResource;
+    static const rhi::ComPtr<rhi::IResource> kNullResource;
     if (const auto external = mExternalResources.find(name); external != mExternalResources.end())
         return external->second;
 
@@ -134,19 +173,20 @@ const ref<Resource>& ResourceCache::getResource(const std::string& name) const
     return found == mNameToIndex.end() ? kNullResource : mResourceData[found->second].pResource;
 }
 
-const Field& ResourceCache::getResourceReflection(const std::string& name) const
+void ResourceCache::setResource(const std::string& name, rhi::IResource* resource)
 {
-    return mResourceData[mNameToIndex.at(name)].field;
+    mResourceData[mNameToIndex.at(name)].pResource = resource;
+    if (const auto external = mExternalResources.find(name); external != mExternalResources.end())
+        external->second = resource;
 }
 
-void ResourceCache::allocateResources(ref<Device> device, const DefaultProperties& params)
+void ResourceCache::allocateResources(rhi::IDevice* device, const DefaultProperties& params)
 {
     for (auto& data : mResourceData)
     {
         if (!data.pResource)
         {
             data.pResource = createResourceForPass(device, params, data.field, data.resolveBindFlags, data.name);
-            data.pResource->setName(data.name);
         }
     }
 }

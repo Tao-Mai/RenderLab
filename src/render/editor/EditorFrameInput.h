@@ -1,16 +1,16 @@
 #pragma once
 
+#include <slang-rhi.h>
 #include <cstdint>
 #include <functional>
 
-#include <vulkan/vulkan.h>
 
 inline constexpr char kPickingImageOutput[] = "pickingImage";
 
 struct EditorFrameInput
 {
-    bool     requestPick = false;
-    uint32_t pickX       = 0;
-    uint32_t pickY       = 0;
-    std::function<void(VkCommandBuffer)> recordUi;
+    bool                                                    requestPick = false;
+    uint32_t                                                pickX       = 0;
+    uint32_t                                                pickY       = 0;
+    std::function<void(rhi::IRenderPassEncoder&, uint32_t)> recordUi;
 };

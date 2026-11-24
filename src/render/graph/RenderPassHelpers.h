@@ -31,14 +31,15 @@
 #include "core/MetadataAnnotations.h"
 #include "core/math/Vector.h"
 #include "core/program/DefineList.h"
-#include "render/resources/Formats.h"
+#include "render/graph/RenderGraphFlags.h"
 
+#include <slang-rhi.h>
 #include <string>
 #include <vector>
 
 namespace Falcor
 {
-class RenderContext;
+struct RenderContext;
 
 class RenderData;
 class RenderPassReflection;
@@ -48,11 +49,11 @@ struct FALCOR_API RenderPassHelpers
     enum class RL_ENUM IOSize : uint32_t
     {
         Default RL_ENUM_VALUE("Default"),
-        Fixed RL_ENUM_VALUE("Fixed"),
-        Full RL_ENUM_VALUE("Full"),
-        Half RL_ENUM_VALUE("Half"),
+        Fixed   RL_ENUM_VALUE("Fixed"),
+        Full    RL_ENUM_VALUE("Full"),
+        Half    RL_ENUM_VALUE("Half"),
         Quarter RL_ENUM_VALUE("Quarter"),
-        Double RL_ENUM_VALUE("Double"),
+        Double  RL_ENUM_VALUE("Double"),
     };
 
     static uint2 calculateIOSize(IOSize selection, uint2 fixedSize, uint2 windowSize);
@@ -60,11 +61,11 @@ struct FALCOR_API RenderPassHelpers
 
 struct ChannelDesc
 {
-    std::string name;
-    std::string texname;
-    std::string desc;
-    bool optional = false;
-    ResourceFormat format = ResourceFormat::Unknown;
+    std::string    name;
+    std::string    texname;
+    std::string    desc;
+    bool           optional = false;
+    rhi::Format    format   = rhi::Format::Undefined;
 };
 
 using ChannelList = std::vector<ChannelDesc>;
@@ -75,15 +76,15 @@ DefineList getValidResourceDefines(
 
 void addRenderPassInputs(
     RenderPassReflection& reflector,
-    const ChannelList& channels,
-    ResourceBindFlags bindFlags = ResourceBindFlags::ShaderResource,
-    uint2 dim = {}
+    const ChannelList&    channels,
+    ResourceBindFlags     bindFlags = ResourceBindFlags::ShaderResource,
+    uint2                 dim       = {}
 );
 void addRenderPassOutputs(
     RenderPassReflection& reflector,
-    const ChannelList& channels,
-    ResourceBindFlags bindFlags = ResourceBindFlags::UnorderedAccess,
-    uint2 dim = {}
+    const ChannelList&    channels,
+    ResourceBindFlags     bindFlags = ResourceBindFlags::UnorderedAccess,
+    uint2                 dim       = {}
 );
 void clearRenderPassChannels(RenderContext* context, const ChannelList& channels, const RenderData& renderData);
 }  // namespace Falcor

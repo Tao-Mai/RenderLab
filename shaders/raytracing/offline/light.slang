@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_OFFLINE_LIGHT_SLANG
 #define RENDERLAB_OFFLINE_LIGHT_SLANG
 
-#include "render/raytracing/offline/OfflineRayTracingBindings.h"
+
 #include "material/texture_data.slang"
 #include "math/constant.slang"
 #include "render/raytracing/offline/OfflineShaderTypes.h"
@@ -121,15 +121,15 @@ struct GoniometricLight
     LightEmission emission;
 };
 
-[[vk::binding(OfflineRayTracingBinding::kAreaEmissions, 3)]] StructuredBuffer<LightEmission> areaEmissions;
-[[vk::binding(OfflineRayTracingBinding::kPoints, 3)]] StructuredBuffer<PointLight> pointLights;
-[[vk::binding(OfflineRayTracingBinding::kSpots, 3)]] StructuredBuffer<SpotLight> spotLights;
-[[vk::binding(OfflineRayTracingBinding::kDirectionals, 3)]] StructuredBuffer<DirectionalLight> directionalLights;
-[[vk::binding(OfflineRayTracingBinding::kTriangles, 3)]] StructuredBuffer<LightTriangle> lightTriangles;
-[[vk::binding(OfflineRayTracingBinding::kEnvironments, 3)]] StructuredBuffer<EnvironmentLight> environmentLight;
-[[vk::binding(OfflineRayTracingBinding::kProjections, 3)]] StructuredBuffer<ProjectionLight> projectionLights;
-[[vk::binding(OfflineRayTracingBinding::kGoniometrics, 3)]] StructuredBuffer<GoniometricLight> goniometricLights;
-[[vk::binding(OfflineRayTracingBinding::kPortals, 3)]] StructuredBuffer<float4> lightPortals;
+StructuredBuffer<LightEmission> areaEmissions;
+StructuredBuffer<PointLight> pointLights;
+StructuredBuffer<SpotLight> spotLights;
+StructuredBuffer<DirectionalLight> directionalLights;
+StructuredBuffer<LightTriangle> lightTriangles;
+StructuredBuffer<EnvironmentLight> environmentLight;
+StructuredBuffer<ProjectionLight> projectionLights;
+StructuredBuffer<GoniometricLight> goniometricLights;
+StructuredBuffer<float4> lightPortals;
 
 // PBRT-v4's equal-area square projection, with an exact atan instead of its polynomial approximation.
 float2 equalAreaUv(float3 direction)

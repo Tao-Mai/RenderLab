@@ -1,13 +1,12 @@
 #pragma once
 
+#include <slang-rhi.h>
 #include "core/Macros.h"
-#include "core/Object.h"
 
 namespace Falcor
 {
-class Device;
 
-FALCOR_API void                      setActivePythonRenderGraphDevice(ref<Device> device);
-[[nodiscard]] FALCOR_API ref<Device> getActivePythonRenderGraphDevice();
-[[nodiscard]] FALCOR_API ref<Device> accessActivePythonRenderGraphDevice();
+FALCOR_API void          setActivePythonRenderGraphDevice(rhi::ComPtr<rhi::IDevice> device);
+[[nodiscard]] FALCOR_API rhi::ComPtr<rhi::IDevice> getActivePythonRenderGraphDevice();
+[[nodiscard]] FALCOR_API rhi::ComPtr<rhi::IDevice> accessActivePythonRenderGraphDevice();
 }  // namespace Falcor

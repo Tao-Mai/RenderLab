@@ -17,19 +17,14 @@ scripts/
 assets/*
 resource/*
 .cursor
-test/*
-!test/MaterialWorkflowCheck.cpp
-!test/MaterialWorkflowCheck.slang
-!test/SvgfToggleCheck.cpp
-!test/FalcorPostProcessCheck.cpp
-!test/FalcorPostProcessSourceCheck.py
-!test/PassSettingsCheck.cpp
-!test/PathTracingStats.h
-!test/RendererOptions.h
+/test/
 
 # Personal TODO / note documents stay local.
 *[Tt][Oo][Dd][Oo]*.[Mm][Dd]
 *[Nn][Oo][Tt][Ee]*.[Mm][Dd]
+
+# Local agent instructions
+AGENTS.md
 
 # Python
 __pycache__/
@@ -39,3 +34,5 @@ __pycache__/
 # Windows Explorer
 Thumbs.db
 [Dd]esktop.ini
+
+external/
