@@ -122,8 +122,7 @@ void Editor::applySceneActions()
     dirty                = true;
 }
 
-Editor::Frame
-Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapchainWidth, uint32_t swapchainHeight)
+Editor::Frame Editor::buildFrame(const EditorCamera& camera)
 {
     backend.beginFrame();
     ui.beginFrame(windowHasObjectList);
@@ -160,40 +159,22 @@ Editor::buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapcha
     const auto& config   = *context().config;
     const auto& renderer = *context().renderer;
     const auto* graph    = renderer.getActiveGraph();
-    if (config.editorConfig().objectPicking && graph && graph->getName() == config.renderGraphName() &&
-        renderer.supportsObjectPicking() && !camera.isNavigationActive())
+    if (config.editorConfig().objectPicking && !camera.isNavigationActive() && graph &&
+        graph->getName() == config.renderGraphName())
     {
-        glm::vec2 clickNdc;
-        if (ui.sceneClicked(clickNdc))
+        glm::vec2 viewportUv;
+        if (ui.sceneClicked(viewportUv) && graph->hasActivePass(kEditorPickingPassType))
         {
-            const ViewportRect viewport    = ui.sceneViewportPixels();
-            const float        normalizedX = std::clamp(clickNdc.x * 0.5f + 0.5f, 0.0f, 1.0f);
-            const float        normalizedY = std::clamp(clickNdc.y * 0.5f + 0.5f, 0.0f, 1.0f);
-            input.pickX                    = std::min(
-                static_cast<uint32_t>(std::max(viewport.x + normalizedX * viewport.width, 0.0f)),
-                swapchainWidth - 1
-            );
-            input.pickY = std::min(
-                static_cast<uint32_t>(std::max(viewport.y + normalizedY * viewport.height, 0.0f)),
-                swapchainHeight - 1
-            );
-            input.requestPick = true;
+            input.pick = EditorPickRequest{
+                .viewportUv = viewportUv,
+                .complete   = [this](uint32_t selectionId) { selectedId = selectionId; },
+            };
         }
     }
 
     frame.view = camera.renderView(ui.sceneViewportPixels());
     ui.endFrame();
     return frame;
-}
-
-void Editor::applyPickResult(const RenderFrameResult& result)
-{
-    if (!result.hasPickResult)
-    {
-        return;
-    }
-
-    selectedId = result.pickedSelectionId;
 }
 
 bool Editor::wantsInput() const { return ui.wantsInput(); }

@@ -2,45 +2,43 @@
 #include <slang-rhi.h>
 
 #include "core/Dictionary.h"
-#include "core/HotReloadFlags.h"
 #include "core/Macros.h"
 #include "core/Object.h"
 #include "core/Plugin.h"
 #include "core/Properties.h"
-#include "core/math/Vector.h"
+#include <glm/vec2.hpp>
 #include "editor/Gui.h"
+#include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/graph/RenderPassReflection.h"
-#include "scene/IScene.h"
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <string_view>
 #include <utility>
 
-namespace Falcor
-{
-class Scene;
-struct KeyboardEvent;
-struct MouseEvent;
-
 class RenderGraphCompiler;
 class RenderGraphExe;
 class ResourceCache;
 
-class FALCOR_API RenderData
+enum class SceneInputs : uint32_t
+{
+    None             = 0,
+    RasterVisibility = 1u << 0,
+    RayTracing       = 1u << 1,
+};
+RL_ENUM_CLASS_OPERATORS(SceneInputs);
+
+class RENDERLAB_CORE_API RenderData
 {
 public:
     [[nodiscard]] const rhi::ComPtr<rhi::IResource>& getResource(std::string_view name) const;
     [[nodiscard]] rhi::ComPtr<rhi::ITexture>         getTexture(std::string_view name) const;
-    [[nodiscard]] const rhi::ComPtr<rhi::IResource>& operator[](std::string_view name) const
-    {
-        return getResource(name);
-    }
     [[nodiscard]] rhi::ComPtr<rhi::IBuffer> getBuffer(std::string_view name) const;
     void                                    setBuffer(std::string_view name, rhi::IBuffer* buffer) const;
     [[nodiscard]] Dictionary&               getDictionary() const { return mDictionary; }
-    [[nodiscard]] const uint2&              getDefaultTextureDims() const { return mDefaultTexDims; }
+    [[nodiscard]] const glm::uvec2&              getDefaultTextureDims() const { return mDefaultTexDims; }
 
 protected:
     friend class RenderGraphExe;
@@ -48,18 +46,18 @@ protected:
         const std::string& passName,
         ResourceCache&     resources,
         Dictionary&        dictionary,
-        const uint2&       defaultTexDims
+        const glm::uvec2&       defaultTexDims
     );
 
     const std::string& mName;
     ResourceCache&     mResources;
     Dictionary&        mDictionary;
-    uint2              mDefaultTexDims;
+    glm::uvec2              mDefaultTexDims;
 };
 
-class FALCOR_API RenderPass : public Object
+class RENDERLAB_CORE_API RenderPass : public Object
 {
-    FALCOR_OBJECT(RenderPass)
+    RL_OBJECT(RenderPass)
 
 public:
     using PluginCreate = std::function<ref<RenderPass>(rhi::ComPtr<rhi::IDevice>, const Properties&)>;
@@ -69,11 +67,11 @@ public:
         std::string desc;
     };
 
-    FALCOR_PLUGIN_BASE_CLASS(RenderPass);
+    RL_PLUGIN_BASE_CLASS(RenderPass);
 
     struct CompileData
     {
-        uint2                defaultTexDims{0};
+        glm::uvec2                defaultTexDims{0};
         rhi::Format       defaultTexFormat = rhi::Format::Undefined;
         RenderPassReflection connectedResources;
     };
@@ -88,6 +86,8 @@ public:
 
     [[nodiscard]] const std::string& getType() const { return getPluginType(); }
     [[nodiscard]] const std::string& getDesc() const { return getPluginInfo().desc; }
+    [[nodiscard]] SceneInputs        getSceneInputs() const { return mSceneInputs; }
+    [[nodiscard]] uint32_t           getMaxFramesInFlight() const { return mMaxFramesInFlight; }
 
     [[nodiscard]] virtual RenderPassReflection reflect(const CompileData& compileData) = 0;
     virtual void                               compile(RenderContext* context, const CompileData& compileData) {}
@@ -95,19 +95,18 @@ public:
 
     virtual void                     setProperties(const Properties& properties);
     [[nodiscard]] virtual Properties getProperties() const { return {}; }
-    virtual void                     renderUI(Gui::Widgets& widget) {}
-    virtual void                     renderUI(RenderContext* context, Gui::Widgets& widget) { renderUI(widget); }
-    virtual void                     renderOverlayUI(RenderContext* context) {}
-    virtual void                     setScene(const ref<Scene>& scene) {}
-    virtual void                     onSceneUpdates(RenderContext* context, IScene::UpdateFlags updates) {}
-    virtual bool                     onMouseEvent(const MouseEvent& event) { return false; }
-    virtual bool                     onKeyEvent(const KeyboardEvent& event) { return false; }
-    virtual void                     onHotReload(HotReloadFlags reloaded) {}
+    virtual void                     renderUI(RenderContext* context, Gui::Widgets& widget) {}
 
     [[nodiscard]] const std::string& getName() const { return mName; }
 
 protected:
-    explicit RenderPass(rhi::ComPtr<rhi::IDevice> device) : mpDevice(std::move(device)) {}
+    explicit RenderPass(
+        rhi::ComPtr<rhi::IDevice> device,
+        SceneInputs              sceneInputs = SceneInputs::None,
+        uint32_t                 maxFramesInFlight = kMaxFramesInFlight
+    ) : mpDevice(std::move(device)), mSceneInputs(sceneInputs), mMaxFramesInFlight(maxFramesInFlight)
+    {
+    }
     void requestRecompile() { mPassChangedCB(); }
 
     rhi::ComPtr<rhi::IDevice> mpDevice;
@@ -115,5 +114,8 @@ protected:
     std::function<void()>     mPassChangedCB = [] {};
 
     friend class RenderGraph;
+
+private:
+    SceneInputs mSceneInputs;
+    uint32_t    mMaxFramesInFlight;
 };
-}  // namespace Falcor

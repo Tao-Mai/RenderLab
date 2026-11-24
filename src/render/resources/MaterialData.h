@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <glm/vec4.hpp>
@@ -18,6 +17,12 @@ enum class NormalEncoding : uint32_t
     RgSnorm,
 };
 
+enum class MaterialKind : uint32_t
+{
+    Gltf,
+    Pbrt,
+};
+
 struct TextureRef
 {
     uint32_t textureIndex = 0;
@@ -26,7 +31,7 @@ struct TextureRef
     bool operator==(const TextureRef&) const = default;
 };
 
-// glTF material SSBO used by rasterization and realtime ray tracing.
+// Shared material table entry. PBRT entries reference a texture and material program.
 struct alignas(16) MaterialData
 {
     bool operator==(const MaterialData&) const = default;
@@ -66,7 +71,8 @@ struct alignas(16) MaterialData
     TextureRef              clearcoatNormalTexture;
     TextureRef              specularColorTexture;
     TextureRef              specularTexture;
-    std::array<uint32_t, 2> texturePadding{};
+    MaterialKind            kind = MaterialKind::Gltf;
+    uint32_t                programIndex = 0;
 };
 
 static_assert(sizeof(TextureRef) == 8);
@@ -80,4 +86,5 @@ static_assert(offsetof(MaterialData, dielectricF0) == 112);
 static_assert(offsetof(MaterialData, normalEncoding) == 120);
 static_assert(offsetof(MaterialData, colorTexture) == 128);
 static_assert(offsetof(MaterialData, specularTexture) == 224);
-static_assert(offsetof(MaterialData, texturePadding) == 232);
+static_assert(offsetof(MaterialData, kind) == 232);
+static_assert(offsetof(MaterialData, programIndex) == 236);

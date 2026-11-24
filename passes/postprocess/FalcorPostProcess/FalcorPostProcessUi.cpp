@@ -9,7 +9,7 @@
 
 namespace
 {
-bool drawSettings(Falcor::Gui::Widgets& widgets, FalcorPostProcessConfig& settings, const FalcorPostProcess&,
+bool drawSettings(Gui::Widgets& widgets, FalcorPostProcessConfig& settings, const FalcorPostProcess&,
                   const PassEditorContext&)
 {
     using namespace falcorPostProcess;
@@ -140,12 +140,12 @@ bool drawSettings(Falcor::Gui::Widgets& widgets, FalcorPostProcessConfig& settin
 }
 }
 
-void FalcorPostProcess::renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget)
+void FalcorPostProcess::renderUI(RenderContext* context, Gui::Widgets& widget)
 {
     drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "Falcor Post Process");
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<Falcor::RenderPass, FalcorPostProcess>();
+    registry.registerClass<RenderPass, FalcorPostProcess>();
 }

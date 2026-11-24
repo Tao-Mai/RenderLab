@@ -12,16 +12,15 @@
 
 #include <filesystem>
 #include <memory>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 
-namespace Falcor
-{
 
 
-class FALCOR_API RenderGraph : public Object
+class RENDERLAB_CORE_API RenderGraph : public Object
 {
-    FALCOR_OBJECT(RenderGraph)
+    RL_OBJECT(RenderGraph)
 
 public:
     static const FileDialogFilterVec kFileExtensionFilters;
@@ -34,8 +33,6 @@ public:
     createFromFile(rhi::ComPtr<rhi::IDevice> device, const std::filesystem::path& path);
     [[nodiscard]] static ref<RenderGraph>   createFromString(rhi::ComPtr<rhi::IDevice> device, std::string_view script);
     [[nodiscard]] rhi::ComPtr<rhi::IDevice> getDevice() const { return mpDevice; }
-    void                                    setScene(const ref<Scene>& scene);
-    [[nodiscard]] const ref<Scene>&         getScene() const { return mpScene; }
     ref<RenderPass> createPass(const std::string& passName, const std::string& passType, const Properties& properties);
 
     uint32_t                             addPass(const ref<RenderPass>& pass, const std::string& name);
@@ -66,6 +63,9 @@ public:
     [[nodiscard]] const std::string& getName() const { return mName; }
     void                             setName(const std::string& value) { mName = value; }
     [[nodiscard]] Dictionary&        getPassesDictionary() { return mPassesDictionary; }
+    [[nodiscard]] SceneInputs         getSceneInputs() const { return mpExe->getSceneInputs(); }
+    [[nodiscard]] uint32_t            getMaxFramesInFlight() const { return mpExe->getMaxFramesInFlight(); }
+    [[nodiscard]] bool               hasActivePass(std::string_view type) const { return mpExe && mpExe->hasPassType(type); }
 
     void               onResize(Extent2D extent, rhi::Format format);
     [[nodiscard]] bool needsCompilation() const { return !mpExe || mRecompile; }
@@ -75,14 +75,10 @@ public:
         std::string log;
         return compile(context, log);
     }
+    // The graph must be compiled before recording it.
     void execute(RenderContext* context);
     void update(const ref<RenderGraph>& graph);
     void renderUI(RenderContext* context, Gui::Widgets& widget);
-    void renderOverlayUI(RenderContext* context);
-    void onSceneUpdates(RenderContext* context, IScene::UpdateFlags updates);
-    bool onMouseEvent(const MouseEvent& event);
-    bool onKeyEvent(const KeyboardEvent& event);
-    void onHotReload(HotReloadFlags reloaded);
 
 private:
     friend class RenderGraphCompiler;
@@ -117,7 +113,6 @@ private:
 
     rhi::ComPtr<rhi::IDevice>                 mpDevice;
     std::string                               mName;
-    ref<Scene>                                mpScene;
     std::unique_ptr<DirectedGraph>            mpGraph;
     std::unordered_map<std::string, uint32_t> mNameToIndex;
     std::unordered_map<uint32_t, EdgeData>    mEdgeData;
@@ -128,4 +123,3 @@ private:
     RenderGraphCompiler::Dependencies         mCompilerDeps;
     bool                                      mRecompile = false;
 };
-}  // namespace Falcor

@@ -6,24 +6,24 @@
 
 #include <slang-rhi/shader-cursor.h>
 
-class SkyboxPass : public Falcor::RenderPass
+class SkyboxPass : public RenderPass
 {
-    FALCOR_PLUGIN_CLASS(SkyboxPass, "SkyboxPass", "Renders the environment skybox.");
+    RL_PLUGIN_CLASS(SkyboxPass, "SkyboxPass", "Renders the environment skybox.");
 
-    SkyboxPass(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
-        Falcor::RenderPass(std::move(device))
+    SkyboxPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+        RenderPass(std::move(device))
     {
         setProperties(properties);
     }
 
-    static Falcor::ref<SkyboxPass> create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
+    static ref<SkyboxPass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
     {
-        return Falcor::make_ref<SkyboxPass>(std::move(device), properties);
+        return make_ref<SkyboxPass>(std::move(device), properties);
     }
 
-    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData& compileData) override;
-    void compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
-    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
+    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
+    void compile(RenderContext* passContext, const CompileData& compileData) override;
+    void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
 private:
     rhi::ComPtr<rhi::IRenderPipeline> pipeline;

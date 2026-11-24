@@ -1,9 +1,6 @@
 #include "passes/raster/TransparentPass/TransparentPass.h"
 
-#include "core/Context.h"
 #include "core/Plugin.h"
-#include "core/profiling/Profiler.h"
-#include "render/RendererConfig.h"
 
 #include "render/PreparedScene.h"
 #include "render/RenderContext.h"
@@ -15,23 +12,43 @@
 #include <algorithm>
 #include <glm/geometric.hpp>
 
-Falcor::RenderPassReflection TransparentPass::reflect(const CompileData& compileData)
+TransparentPass::TransparentPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+    RenderPass(std::move(device), SceneInputs::RasterVisibility),
+    parameters(deserializeFromProperties<TransparentLightingSettings>(properties))
 {
-    Falcor::RenderPassReflection reflection;
+    parameters.validate();
+}
+
+Properties TransparentPass::getProperties() const { return serializeToProperties(parameters); }
+
+void TransparentPass::setProperties(const Properties& properties)
+{
+    TransparentLightingSettings next;
+    Deserialize(nlohmann::json(properties.toJson()), next);
+    next.validate();
+
+    const bool recompile = next.clearcoat != parameters.clearcoat;
+    parameters           = std::move(next);
+    if (recompile)
+        requestRecompile();
+}
+
+RenderPassReflection TransparentPass::reflect(const CompileData& compileData)
+{
+    RenderPassReflection reflection;
     addShadowInputs(reflection);
-    auto& color = reflection.addInputOutput("color", "Color target").bindFlags(Falcor::ResourceBindFlags::RenderTarget);
+    auto& color = reflection.addInputOutput("color", "Color target").bindFlags(ResourceBindFlags::RenderTarget);
     if (const auto* input = compileData.connectedResources.getField("color"))
         color.texture2D(input->getWidth(), input->getHeight()).format(input->getFormat());
     reflection.addInput("depth", "Scene depth")
         .format(rhi::Format::D32Float)
-        .bindFlags(Falcor::ResourceBindFlags::DepthStencil);
+        .bindFlags(ResourceBindFlags::DepthStencil);
     return reflection;
 }
 
 
-void TransparentPass::compile(Falcor::RenderContext* passContext, const CompileData& compileData)
+void TransparentPass::compile(RenderContext* passContext, const CompileData& compileData)
 {
-    const auto&                 config = *passContext->config;
     const rhi::DepthStencilDesc depth{
         .format           = rhi::Format::D32Float,
         .depthTestEnable  = true,
@@ -43,22 +60,20 @@ void TransparentPass::compile(Falcor::RenderContext* passContext, const CompileD
         compileData.connectedResources.getField("color")->getFormat(),
         depth,
         true,
-        config.feature.ibl,
-        config.renderPath != RenderPath::Deferred
+        parameters.clearcoat
     );
 }
 
 
-void TransparentPass::sortDrawItems(const Falcor::RenderContext& frame)
+void TransparentPass::sortDrawItems(const RenderContext& frame)
 {
-    CpuProfileScope timing{context().profiler, "Transparent sorting"};
     sortedDrawItems.clear();
     const auto& materials = *frame.materialTable;
     for (uint32_t itemIndex = 0; itemIndex < frame.scene->drawItems.size(); ++itemIndex)
     {
         if (!frame.scene->isVisible(itemIndex))
             continue;
-        const auto materialIndex = frame.scene->materialIndices[itemIndex];
+        const auto materialIndex = frame.scene->materialIndex(itemIndex);
         if (materials.info(materialIndex).alphaMode == kAlphaModeBlend)
             sortedDrawItems.push_back(itemIndex);
     }
@@ -75,7 +90,7 @@ void TransparentPass::sortDrawItems(const Falcor::RenderContext& frame)
 }
 
 
-void TransparentPass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
+void TransparentPass::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
     sortDrawItems(*renderCommands);
     if (sortedDrawItems.empty())
@@ -98,8 +113,8 @@ void TransparentPass::execute(Falcor::RenderContext* renderCommands, const Falco
     CHECK(pass);
     const auto&      size     = target->getDesc().size;
     const auto       viewport = renderCommands->view->viewport.clamped({size.width, size.height});
-    const ShadowBindings shadows{renderData, *renderCommands->frameData, *renderCommands->resources};
-    MeshDrawRecorder recorder{*pass, viewport.renderState(), *renderCommands, &shadows};
+    const ShadowBindings shadows{renderData, *renderCommands->resources};
+    MeshDrawRecorder recorder{*pass, viewport.renderState(), *renderCommands, &shadows, parameters.ambientCoefficient};
     recorder.drawOrdered(
         sortedDrawItems,
         [&](const auto& material) { return pipelines.get(*renderCommands, material); }
@@ -107,7 +122,7 @@ void TransparentPass::execute(Falcor::RenderContext* renderCommands, const Falco
     pass->end();
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<Falcor::RenderPass, TransparentPass>();
+    registry.registerClass<RenderPass, TransparentPass>();
 }

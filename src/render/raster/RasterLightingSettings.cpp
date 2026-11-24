@@ -5,7 +5,14 @@
 #include "render/RenderConfig.h"
 #include "render/device/RhiCheck.h"
 
-void RasterLightingSettings::validateColorFormat(rhi::IDevice& device) const
+#include <cmath>
+
+void RasterLightingSettings::validate() const
+{
+    CHECK(std::isfinite(ambientCoefficient) && ambientCoefficient >= 0.0f);
+}
+
+void RasterLightingOutputSettings::validateColorFormat(rhi::IDevice& device) const
 {
     if (!hdr)
         return;

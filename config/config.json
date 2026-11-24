@@ -15,13 +15,11 @@
         "Forward": {
             "Forward": "../graphs/forward.py"
         },
-        "OfflinePathTracing": {
-            "BDPT": "../graphs/bdpt.py",
-            "PT": "../graphs/pt.py"
-        },
         "RayTracing": {
+            "BDPT": "../graphs/bdpt.py",
             "MinimalPathTracer": "../graphs/minimal_path_tracer.py",
-            "ReSTIR": "../graphs/realtime.py"
+            "PT": "../graphs/pt.py",
+            "ReSTIR": "../graphs/restir.py"
         }
     }
 }

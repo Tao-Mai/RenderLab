@@ -2,7 +2,7 @@
 #include <slang-rhi.h>
 
 #include "core/Macros.h"
-#include "core/math/Vector.h"
+#include <glm/vec2.hpp>
 #include "render/graph/RenderPassReflection.h"
 
 #include <string>
@@ -10,17 +10,15 @@
 #include <utility>
 #include <vector>
 
-namespace Falcor
-{
 
-class FALCOR_API ResourceCache
+class RENDERLAB_CORE_API ResourceCache
 {
 public:
     using ResourcesMap = std::unordered_map<std::string, rhi::ComPtr<rhi::IResource>>;
 
     struct DefaultProperties
     {
-        uint2          dims{0};
+        glm::uvec2          dims{0};
         rhi::Format format = rhi::Format::Undefined;
     };
 
@@ -45,4 +43,3 @@ private:
     std::vector<ResourceData>                 mResourceData;
     ResourcesMap                              mExternalResources;
 };
-}  // namespace Falcor

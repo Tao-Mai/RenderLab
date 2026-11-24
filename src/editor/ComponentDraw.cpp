@@ -84,7 +84,7 @@ ComponentDrawResult drawFields(TransformComponent& transform)
 
 namespace
 {
-    ComponentDrawResult drawOfflineEmission(PbrtLightEmission& emission)
+    ComponentDrawResult drawPbrtEmission(PbrtLightEmission& emission)
     {
         ComponentDrawResult result;
         std::visit(
@@ -126,9 +126,9 @@ namespace
 
     ComponentDrawResult drawLightFields(LightComponent& light, float& strength, const char* intensityLabel)
     {
-        if (light.offlineEmission)
+        if (light.pbrtEmission)
         {
-            auto result = drawOfflineEmission(*light.offlineEmission);
+            auto result = drawPbrtEmission(*light.pbrtEmission);
             result.edited |= drawField("Enabled", light.enabled);
             return result;
         }
@@ -152,7 +152,7 @@ namespace
     ComponentDrawResult drawLocalLightFields(LocalLightComponent& light)
     {
         auto result = drawLightFields(light, light.luminousIntensity, "Luminous intensity (cd)");
-        if (!light.offlineEmission)
+        if (!light.pbrtEmission)
             result.edited = ImGui::DragFloat(
                                 "Range (m)",
                                 &light.range,
@@ -201,7 +201,7 @@ ComponentDrawResult drawFields(SpotLightComponent& light)
         result.edited  = true;
     }
     constexpr float kMinimumOuterAngle = 0.1f;
-    const float     maximumOuterAngle  = light.offlineEmission ? 179.0f : 89.0f;
+    const float     maximumOuterAngle  = light.pbrtEmission ? 179.0f : 89.0f;
     if (ImGui::DragFloat(
             "Outer Angle",
             &outer,
@@ -221,7 +221,7 @@ ComponentDrawResult drawFields(SpotLightComponent& light)
 ComponentDrawResult drawFields(MeshAreaLightComponent& light)
 {
     ImGui::Text("Render component: %u, submesh: %u", light.renderComponentIndex, light.submeshIndex);
-    auto result = drawOfflineEmission(light.emission);
+    auto result = drawPbrtEmission(light.emission);
     result.edited |= drawField("Two sided", light.twoSided);
     result.edited |= drawField("Enabled", light.enabled);
     return result;
@@ -229,7 +229,7 @@ ComponentDrawResult drawFields(MeshAreaLightComponent& light)
 
 ComponentDrawResult drawFields(EnvironmentLightComponent& light)
 {
-    auto result = drawOfflineEmission(light.emission);
+    auto result = drawPbrtEmission(light.emission);
     ImGui::Text("Portal vertices: %zu", light.portal.size());
     result.edited |= drawField("Enabled", light.enabled);
     return result;
@@ -451,9 +451,9 @@ ComponentDrawResult drawFields(RenderComponent& render)
     }
 
     result.edited = drawMeshSelection(render, *assets);
-    if (render.offlineSurface)
+    if (render.pbrtSurface)
     {
-        auto& surface = *render.offlineSurface;
+        auto& surface = *render.pbrtSurface;
         result.edited |= drawField("Reverse orientation", surface.reverseOrientation);
         if (auto* alpha = std::get_if<PbrtFloatConstant>(&surface.alpha))
             result.edited |= drawField("Alpha", alpha->value);
@@ -510,7 +510,7 @@ ComponentDrawResult drawFields(RenderComponent& render)
             }
             else
                 ImGui::TextDisabled(
-                    asset ? "Offline material editing is not available" : "Material description not loaded"
+                    asset ? "PBRT material editing is not available" : "Material description not loaded"
                 );
 
             ImGui::TreePop();
@@ -556,7 +556,7 @@ ComponentDrawResult drawComponent(Component& component)
     ImGui::PushID(&component);
     if (ImGui::CollapsingHeader(found->second.name, ImGuiTreeNodeFlags_DefaultOpen))
     {
-        if (light && !light->offlineEmission)
+        if (light && !light->pbrtEmission)
         {
             // The registered class name is also the inspector's type label.
             const auto label = [](std::string_view name)
@@ -565,7 +565,7 @@ ComponentDrawResult drawComponent(Component& component)
             if (ImGui::BeginCombo("Type", preview.c_str()))
             {
                 metadata::visitTypes(
-                    RealtimeLightTypes{},
+                    EditableLightTypes{},
                     [&]<class T>(const char* name)
                     {
                         const bool        selected = typeid(component) == typeid(T);

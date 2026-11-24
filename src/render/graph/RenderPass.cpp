@@ -5,13 +5,11 @@
 
 #include <utility>
 
-namespace Falcor
-{
 RenderData::RenderData(
     const std::string& passName,
     ResourceCache&     resources,
     Dictionary&        dictionary,
-    const uint2&       defaultTexDims
+    const glm::uvec2&       defaultTexDims
 ) :
     mName(passName),
     mResources(resources),
@@ -60,4 +58,3 @@ void RenderPass::setProperties(const Properties& values)
 {
     CHECK(values.empty(), "pass has no configurable properties");
 }
-}  // namespace Falcor

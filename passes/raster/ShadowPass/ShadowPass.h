@@ -11,31 +11,31 @@
 #include <span>
 #include <vector>
 
-class ShadowPass : public Falcor::RenderPass
+class ShadowPass : public RenderPass
 {
-    FALCOR_PLUGIN_CLASS(ShadowPass, "ShadowPass", "Renders shadow maps for scene lights.");
+    RL_PLUGIN_CLASS(ShadowPass, "ShadowPass", "Renders shadow maps for scene lights.");
 
-    ShadowPass(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties);
+    ShadowPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
 
-    [[nodiscard]] Falcor::Properties getProperties() const override;
-    void                             setProperties(const Falcor::Properties& properties) override;
+    [[nodiscard]] Properties getProperties() const override;
+    void                             setProperties(const Properties& properties) override;
 
-    static Falcor::ref<ShadowPass> create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
+    static ref<ShadowPass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
     {
-        return Falcor::make_ref<ShadowPass>(std::move(device), properties);
+        return make_ref<ShadowPass>(std::move(device), properties);
     }
 
-    void renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget) override;
+    void renderUI(RenderContext* context, Gui::Widgets& widget) override;
 
-    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData& compileData) override;
-    void compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
-    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
+    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
+    void compile(RenderContext* passContext, const CompileData& compileData) override;
+    void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
 private:
     ShadowSettings parameters;
 
-    void updateShadowData(const Falcor::RenderContext& frame, const Falcor::RenderData& renderData);
-    void renderShadowMaps(const Falcor::RenderContext& frame, const Falcor::RenderData& renderData);
+    void updateShadowData(const RenderContext& frame, const RenderData& renderData);
+    void renderShadowMaps(const RenderContext& frame, const RenderData& renderData);
 
     static constexpr uint32_t kPointFaceCount = 6;
 
@@ -65,7 +65,7 @@ private:
     prepareShadowData(const SceneUniforms& view, std::span<const LightData> frameLights, const ShadowSettings& shadows);
 
     void recordShadow(
-        const Falcor::RenderContext& execution,
+        const RenderContext& execution,
         const ShadowTarget&          target,
         rhi::ITexture&               image,
         rhi::IBuffer*               transforms,

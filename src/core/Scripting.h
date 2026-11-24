@@ -12,9 +12,7 @@
 #include <utility>
 #include <vector>
 
-namespace Falcor
-{
-class FALCOR_API Scripting
+class RENDERLAB_CORE_API Scripting
 {
 public:
     static const FileDialogFilterVec kFileExtensionFilters;
@@ -105,4 +103,3 @@ public:
 private:
     static std::unique_ptr<Context> sDefaultContext;
 };
-}  // namespace Falcor

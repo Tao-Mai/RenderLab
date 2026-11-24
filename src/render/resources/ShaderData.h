@@ -19,24 +19,12 @@ struct alignas(16) SceneUniforms
     glm::mat4 view{1.0f};
 };
 
-struct alignas(16) LightUniforms
+struct alignas(16) SceneGlobals
 {
+    SceneUniforms camera;
     LightRanges lightRanges;
-    float       ambientCoefficient = 0.1f;
-    float       prefilteredMaxLod  = 0.0f;
-    glm::vec2   padding{};
-};
-
-struct alignas(16) ShadowUniforms
-{
-    uint32_t cascadeCount            = 0;
-    float    directionalSampleRadius = 0.0f;
-    float    bias                    = 0.0f;
-    float    sampleRadius            = 0.0f;
-    float    spotSampleRadius        = 0.0f;
-    uint32_t pixelRotation           = 0;
-    uint32_t enabled                 = 0;
-    uint32_t padding                 = 0;
+    float prefilteredMaxLod = 0.0f;
+    float padding[3]{};
 };
 
 // GPU discriminator; values match shaders/scene/light_data.slang.
@@ -54,7 +42,7 @@ struct alignas(16) LightData
     bool operator==(const LightData&) const = default;
     // Photometric-scaled RGB: Point/Spot intensity, Directional irradiance, RectArea radiance.
     glm::vec3    color{0.0f};
-    float        padding3 = 0.0f;
+    float        spotFalloffExponent = 2.0f;
     glm::vec4    positionRange{0.0f, 0.0f, 0.0f, 1.0f};
     glm::vec4    direction{0.0f, -1.0f, 0.0f, 0.0f};
     glm::vec4    areaSizeCone{1.0f, 1.0f, 0.9396926f, 0.8660254f};
@@ -117,23 +105,12 @@ static_assert(sizeof(SceneUniforms) == 208);
 static_assert(offsetof(SceneUniforms, inverseViewProjection) == 64);
 static_assert(offsetof(SceneUniforms, cameraPosition) == 128);
 static_assert(offsetof(SceneUniforms, view) == 144);
-static_assert(sizeof(LightUniforms) == 32);
-static_assert(offsetof(LightUniforms, lightRanges) == 0);
-static_assert(offsetof(LightUniforms, ambientCoefficient) == 16);
-static_assert(offsetof(LightUniforms, prefilteredMaxLod) == 20);
-static_assert(offsetof(LightUniforms, padding) == 24);
-static_assert(sizeof(ShadowUniforms) == 32);
-static_assert(offsetof(ShadowUniforms, cascadeCount) == 0);
-static_assert(offsetof(ShadowUniforms, directionalSampleRadius) == 4);
-static_assert(offsetof(ShadowUniforms, bias) == 8);
-static_assert(offsetof(ShadowUniforms, sampleRadius) == 12);
-static_assert(offsetof(ShadowUniforms, spotSampleRadius) == 16);
-static_assert(offsetof(ShadowUniforms, pixelRotation) == 20);
-static_assert(offsetof(ShadowUniforms, enabled) == 24);
-static_assert(offsetof(ShadowUniforms, padding) == 28);
+static_assert(sizeof(SceneGlobals) == 240);
+static_assert(offsetof(SceneGlobals, lightRanges) == 208);
+static_assert(offsetof(SceneGlobals, prefilteredMaxLod) == 224);
 static_assert(sizeof(LightData) == 96);
 static_assert(offsetof(LightData, color) == 0);
-static_assert(offsetof(LightData, padding3) == 12);
+static_assert(offsetof(LightData, spotFalloffExponent) == 12);
 static_assert(offsetof(LightData, positionRange) == 16);
 static_assert(offsetof(LightData, direction) == 32);
 static_assert(offsetof(LightData, areaSizeCone) == 48);

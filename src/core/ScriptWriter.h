@@ -6,8 +6,6 @@
 #include <filesystem>
 #include <string>
 
-namespace Falcor
-{
 class ScriptWriter
 {
 public:
@@ -70,4 +68,3 @@ inline std::string ScriptWriter::getArgString(const VariableName& value)
 {
     return value.name;
 }
-}  // namespace Falcor

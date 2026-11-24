@@ -1,45 +1,44 @@
 #pragma once
 #include <slang-rhi.h>
 #include "core/Macros.h"
-#include "core/math/Vector.h"
-#include "render/FrameData.h"
 #include "render/device/RhiCheck.h"
 #include "render/resources/ShaderManager.h"
-class ShaderManager;
+
+#include <functional>
+#include <vector>
+
 class RenderResourceManager;
 class MaterialTable;
-class OfflineTracePipelineCache;
+class PathPipelineCache;
 class GpuResources;
-class GpuProfiler;
-class Profiler;
 struct RenderView;
 struct PreparedScene;
 struct EditorFrameInput;
-struct RendererConfig;
 struct PassEditorContext;
 
-namespace Falcor
+struct RENDERLAB_CORE_API RenderContext
 {
-struct FALCOR_API RenderContext
-{
-    rhi::IDevice*                device           = nullptr;
-    rhi::ICommandQueue*          queue            = nullptr;
-    rhi::ICommandEncoder*        commands         = nullptr;
-    GpuResources*                gpuResources     = nullptr;
-    ShaderManager*               shaderManager    = nullptr;
-    RenderResourceManager*       resources        = nullptr;
-    MaterialTable*               materialTable    = nullptr;
-    OfflineTracePipelineCache*   offlinePipelines = nullptr;
-    const RendererConfig*        config           = nullptr;
-    FrameData*                   frameData    = nullptr;
-    const RenderView*            view         = nullptr;
-    const PreparedScene*         scene        = nullptr;
-    const EditorFrameInput*      editor       = nullptr;
-    const PassEditorContext*     passEditor   = nullptr;
-    rhi::IAccelerationStructure* sceneTlas    = nullptr;
-    GpuProfiler*                 gpuProfiler  = nullptr;
-    Profiler*                    profiler     = nullptr;
-    uint32_t                     frameIndex   = 0;
-    float                        deltaSeconds = 0.0f;
+    rhi::IDevice*            device        = nullptr;
+    rhi::ICommandEncoder*    commands      = nullptr;
+    GpuResources*            gpuResources  = nullptr;
+    ShaderManager*           shaderManager = nullptr;
+    RenderResourceManager*   resources     = nullptr;
+    MaterialTable*           materialTable = nullptr;
+    PathPipelineCache*       pathPipelines = nullptr;
+    const RenderView*        view          = nullptr;
+    const PreparedScene*     scene         = nullptr;
+    const EditorFrameInput*  editor        = nullptr;
+    const PassEditorContext* passEditor    = nullptr;
+    uint32_t                 frameIndex    = 0;
+    float                    deltaSeconds  = 0.0f;
+
+    // Passes register callbacks here while recording. The submitter runs them after the fence.
+    std::vector<std::function<void()>> onGpuComplete;
+
+    void notifyGpuComplete()
+    {
+        for (const auto& complete : onGpuComplete)
+            complete();
+        onGpuComplete.clear();
+    }
 };
-}  // namespace Falcor

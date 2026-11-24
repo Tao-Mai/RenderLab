@@ -1,26 +1,31 @@
 #include "render/raster/ShadowResources.h"
+
+#include <slang-rhi/shader-cursor.h>
 #include "asset/BuiltinAssets.h"
-#include "render/FrameData.h"
 #include "render/device/RhiCheck.h"
 #include "render/graph/RenderPass.h"
 #include "render/resources/RenderResourceManager.h"
 
-void addShadowInputs(Falcor::RenderPassReflection& reflection)
+void addShadowInputs(RenderPassReflection& reflection)
 {
+    reflection.addInput(kShadowUniformsPort, "Shadow sampling parameters")
+        .rawBuffer(sizeof(ShadowUniforms))
+        .bindFlags(ResourceBindFlags::ShaderResource);
     for (const auto& ports : kShadowPorts)
     {
         reflection.addInput(ports.map, "Shadow depth array")
             .texture2D(0, 0, 1, 1, 0)
             .format(rhi::Format::D32Float)
-            .bindFlags(Falcor::ResourceBindFlags::ShaderResource);
-        reflection.addInput(ports.data, "Shadow transforms")
-            .rawBuffer(0)
-            .bindFlags(Falcor::ResourceBindFlags::ShaderResource);
+            .bindFlags(ResourceBindFlags::ShaderResource);
+        reflection.addInput(ports.data, "Shadow transforms").rawBuffer(0).bindFlags(ResourceBindFlags::ShaderResource);
     }
 }
 
-ShadowBindings::ShadowBindings(const Falcor::RenderData& data, const FrameData& frame, RenderResourceManager& resources) :
-    frame(frame), linearSampler(resources.sampler(BuiltinAssets::Sampler::linearClamp))
+ShadowBindings::ShadowBindings(const RenderData& data, RenderResourceManager& resources) :
+    uniforms(data.getBuffer(kShadowUniformsPort)),
+    compareNearest(resources.sampler(BuiltinAssets::Sampler::kShadowNearest)),
+    compareLinear(resources.sampler(BuiltinAssets::Sampler::kShadowLinear)),
+    linearSampler(resources.sampler(BuiltinAssets::Sampler::linearClamp))
 {
     for (size_t index = 0; index < kShadowPorts.size(); ++index)
     {
@@ -31,11 +36,11 @@ ShadowBindings::ShadowBindings(const Falcor::RenderData& data, const FrameData& 
     }
 }
 
-void ShadowBindings::bind(rhi::IShaderObject* object) const
+void ShadowBindings::bind(const rhi::ShaderCursor& root) const
 {
-    const rhi::ShaderCursor root(object);
-    rhiCheck(root["shadowUniforms"].getDereferenced().setData(frame.shadowUniforms));
-    rhiCheck(root["shadowSampler"].setBinding(frame.shadowSampler));
+    rhiCheck(root[kShadowUniformsPort].setBinding(uniforms));
+    rhiCheck(root["shadowNearestComparisonSampler"].setBinding(compareNearest));
+    rhiCheck(root["shadowLinearComparisonSampler"].setBinding(compareLinear));
     rhiCheck(root["shadowLinearSampler"].setBinding(linearSampler));
     for (size_t index = 0; index < kShadowPorts.size(); ++index)
     {

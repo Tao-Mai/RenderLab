@@ -4,9 +4,8 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <slang-rhi.h>
+#include <slang-rhi/shader-cursor.h>
 #include <string>
-#include "core/Context.h"
-#include "core/profiling/Profiler.h"
 #include "render/RenderContext.h"
 #include "render/device/RhiCheck.h"
 #ifndef WIN32_LEAN_AND_MEAN
@@ -205,7 +204,6 @@ void EditorBackend::render(rhi::IRenderPassEncoder& pass, uint32_t frameIndex)
                 )
             );
             pass.drawIndexed({draw.ElemCount, 1, vertexOffset + draw.VtxOffset, 0, indexOffset + draw.IdxOffset});
-            recordDraw(context().profiler, draw.ElemCount);
         }
         vertexOffset += list->VtxBuffer.Size;
         indexOffset += list->IdxBuffer.Size;

@@ -12,25 +12,22 @@
 #include <type_traits>
 #include <utility>
 
-namespace Falcor
-{
 class RenderPass;
-}
 struct EditorCameraConfig;
 
 struct PassEditorContext
 {
     rhi::IDevice&                                                                 device;
     const EditorCameraConfig&                                                     camera;
-    std::function<void(const Falcor::RenderPass&, std::optional<nlohmann::json>)> submit;
+    std::function<void(const RenderPass&, std::optional<nlohmann::json>)> submit;
 };
 
 namespace pass_editor
 {
-bool begin(const Falcor::RenderPass& pass, const PassEditorContext& context, std::string_view label);
+bool begin(const RenderPass& pass, const PassEditorContext& context, std::string_view label);
 
 template <class Field, class T>
-static bool drawField(Falcor::Gui::Widgets& widgets, const Field& field, T& value)
+static bool drawField(Gui::Widgets& widgets, const Field& field, T& value)
 {
     if constexpr (std::is_same_v<T, bool>)
         return widgets.checkbox(field.name, value);
@@ -72,7 +69,7 @@ static bool drawField(Falcor::Gui::Widgets& widgets, const Field& field, T& valu
     }
 }
 template <class T>
-static bool drawFields(Falcor::Gui::Widgets& widgets, T& settings)
+static bool drawFields(Gui::Widgets& widgets, T& settings)
 {
     bool changed = false;
     metadata::visitFields(
@@ -85,7 +82,7 @@ static bool drawFields(Falcor::Gui::Widgets& widgets, T& settings)
 
 template <auto Draw = nullptr, class Pass, class Settings>
 void drawPassEditor(
-    Falcor::Gui::Widgets&    widgets,
+    Gui::Widgets&    widgets,
     const Pass&              pass,
     const Settings&          parameters,
     const PassEditorContext* context,

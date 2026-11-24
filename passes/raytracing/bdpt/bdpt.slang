@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_BDPT_SLANG
 #define RENDERLAB_BDPT_SLANG
 
-#include "raytracing/offline/path_common.slang"
+#include "raytracing/accumulation/path_common.slang"
 #include "bdpt_bsdf.slang"
 #include "bdpt_light.slang"
 
@@ -15,8 +15,8 @@ bool bdptProjectCamera(float3 direction, out float2 pixel)
         return false;
     }
 
-    float4 clip = mul(sceneUniforms.viewProjection,
-        float4(sceneUniforms.cameraPosition.xyz + direction, 1.0));
+    float4 clip = mul(sceneGlobals[0].camera.viewProjection,
+        float4(sceneGlobals[0].camera.cameraPosition.xyz + direction, 1.0));
     float2 ndc = clip.xy / clip.w;
     if (any(ndc < -1.0) || any(ndc >= 1.0))
     {
@@ -44,7 +44,7 @@ BdptVertex bdptCameraVertex()
 {
     BdptVertex camera = {};
     camera.type = BdptVertexType::Camera;
-    camera.position = sceneUniforms.cameraPosition.xyz;
+    camera.position = sceneGlobals[0].camera.cameraPosition.xyz;
     camera.normal = parameters.cameraForward;
     camera.beta = float3(1.0);
 
@@ -80,14 +80,15 @@ uint bdptRandomWalk(__ref BdptVertex path[kBdptVertexCapacity], RayDesc ray, flo
     for (uint index = 1; index < maxVertices; ++index)
     {
         Hit hit = {};
-        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, kSceneMask, 0, 0, 0, ray, hit);
+        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+            kSceneMask | kLightMask, 0, 0, 0, ray, hit);
 
         BdptVertex vertex = {};
         vertex.beta = beta;
         vertex.wo = -ray.Direction;
         if (hit.hit == 0)
         {
-            if (mode == pbrt::TransportMode::Radiance && parameters.path.hasEnvironmentLight)
+            if (mode == pbrt::TransportMode::Radiance && HAS_ENV != 0)
             {
                 vertex.type = BdptVertexType::Light;
                 vertex.light = {BdptLightType::Environment, 0};
@@ -100,26 +101,33 @@ uint bdptRandomWalk(__ref BdptVertex path[kBdptVertexCapacity], RayDesc ray, flo
             break;
         }
 
-        HitData object = objects[hit.objectIndex];
-        vertex.type = BdptVertexType::Surface;
+        if (index == 1 && mode == pbrt::TransportMode::Importance &&
+            (path[0].light.type == BdptLightType::Point || path[0].light.type == BdptLightType::Spot))
+        {
+            float3 offset = hit.position - path[0].position;
+            if (!withinLightRange(bdptPunctualLight(path[0].light), dot(offset, offset)))
+                break;
+        }
+
+        vertex.type = hit.emitterOnly != 0 ? BdptVertexType::Light : BdptVertexType::Surface;
         vertex.position = hit.position;
         vertex.normal = hit.normal;
         vertex.geometricNormal = hit.geometricNormal;
         vertex.tangent = hit.tangent;
         vertex.uv = hit.uv;
 
-        vertex.material = pbrt::evaluateMaterial(materialInstructions, textureInstructions, object.materialIndex,
-            hit.uv, hit.position, hit.normal,
-            hit.primitiveIndex);
-        if (object.firstAreaLight != kOfflineInvalidIndex)
+        if (hit.emitterOnly == 0)
+            vertex.material = evaluateScattering(
+                materials[hit.materialIndex], hit.uv, hit.position, hit.normal, hit.primitiveIndex);
+        if (hit.areaLightIndex != kInvalidLightIndex)
         {
-            vertex.light = {BdptLightType::Area, object.firstAreaLight + hit.primitiveIndex};
+            vertex.light = {BdptLightType::Area, hit.areaLightIndex};
         }
 
         vertex.pdfFwd = bdptConvertDensity(path[index - 1], pdfFwd, vertex);
         path[index] = vertex;
         ++count;
-        if (count == maxVertices)
+        if (hit.emitterOnly != 0 || count == maxVertices)
         {
             break;
         }
@@ -315,7 +323,7 @@ float3 bdptConnect(__constref BdptVertex light[kBdptVertexCapacity], __constref 
     {
         if (pt.isLight())
         {
-            float3 emission = pt.isInfinite() ? environmentEmission(true, pt.wo)
+            float3 emission = pt.isInfinite() ? environmentRadiance(pt.wo)
                 : areaEmission(pt.light.index, pt.uv, pt.wo);
             contribution = pt.beta * emission;
         }

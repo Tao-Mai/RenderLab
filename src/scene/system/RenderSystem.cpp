@@ -6,7 +6,6 @@
 #include "asset/AssetManager.h"
 #include "asset/SceneAsset.h"
 #include "core/Context.h"
-#include "core/profiling/Profiler.h"
 
 #include "core/Logger.h"
 #include "scene/component/EnvironmentLightComponent.h"
@@ -24,63 +23,76 @@
 
 namespace
 {
-OfflineLightData::Model offlineLightModel(const LightComponent& light, const glm::mat4& worldFromLight)
+SceneLight::Model lightModel(const LightComponent& light, const TransformComponent& transform)
 {
-    const glm::vec3 position{worldFromLight[3]};
+    const auto position  = transform.position;
+    const auto direction = light.pbrtEmission ? glm::normalize(-glm::vec3{transform.matrix()[2]})
+                                              : glm::normalize(transform.rotation * glm::vec3{0, 0, -1});
     if (const auto* spot = dynamic_cast<const SpotLightComponent*>(&light))
-        return OfflineLightData::Spot{
-            position,
-            glm::normalize(-glm::vec3{worldFromLight[2]}),
-            spot->cosInner,
-            spot->cosOuter
+        return SceneLight::Spot{
+            .position        = position,
+            .direction       = direction,
+            .cosInner        = spot->cosInner,
+            .cosOuter        = spot->cosOuter,
+            .range           = light.pbrtEmission ? 0.0f : spot->range,
+            .falloffExponent = light.pbrtEmission ? 4.0f : 2.0f,
+            .right           = glm::normalize(transform.rotation * glm::vec3{1, 0, 0}),
         };
-    if (dynamic_cast<const PointLightComponent*>(&light))
-        return OfflineLightData::Point{position};
+    if (const auto* point = dynamic_cast<const PointLightComponent*>(&light))
+        return SceneLight::Point{position, light.pbrtEmission ? 0.0f : point->range};
     if (dynamic_cast<const DirectionalLightComponent*>(&light))
-        return OfflineLightData::Directional{glm::normalize(-glm::vec3{worldFromLight[2]})};
+        return SceneLight::Directional{direction};
+    if (const auto* rectangle = dynamic_cast<const RectAreaLightComponent*>(&light))
+        return SceneLight::Rectangle{
+            .position  = position,
+            .direction = direction,
+            .right     = glm::normalize(transform.rotation * glm::vec3{1, 0, 0}),
+            .size      = rectangle->areaSize,
+            .range     = rectangle->range,
+        };
     if (const auto* projection = dynamic_cast<const ProjectionLightComponent*>(&light))
-        return OfflineLightData::Projection{position, glm::inverse(worldFromLight), projection->fieldOfView};
+        return SceneLight::Projection{position, glm::inverse(transform.matrix()), projection->fieldOfView};
     if (dynamic_cast<const GoniometricLightComponent*>(&light))
-        return OfflineLightData::Goniometric{position, glm::inverse(worldFromLight)};
+        return SceneLight::Goniometric{position, glm::inverse(transform.matrix())};
 
-    CHECK(false, "unsupported offline light component on '{}'", light.actor().name);
+    CHECK(false, "unsupported light component on '{}'", light.actor().name);
     std::unreachable();
 }
 }  // namespace
 
-const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
+const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene, uint64_t sceneGeneration)
 {
-    CpuProfileScope timing{context().profiler, "RenderSystem"};
-    const auto&     assets = *context().assetManager;
+    const auto& assets = *context().assetManager;
     data.drawItems.clear();
     data.lights.clear();
-    data.offlineLights.clear();
-    data.sceneId        = scene.id;
-    data.environmentMap = scene.environmentMap;
-    data.exposure       = scene.editorCamera.exposure;
+    data.sceneGeneration = sceneGeneration;
+    data.environmentMap  = scene.environmentMap;
+    std::vector<uint32_t> renderDrawBegins;
     for (const auto& actor : scene.actors)
     {
         const auto* transform = actor->getComponent<TransformComponent>();
 
-        uint32_t              instanceIndex = 0;
-        std::vector<uint32_t> renderDrawBegins;
-        const auto            renders = actor->getComponents<RenderComponent>();
-        for (const auto* render : renders)
+        uint32_t instanceIndex = 0;
+        renderDrawBegins.clear();
+        for (const auto& component : actor->components)
         {
-            if (scene.renderMode == SceneRenderMode::Offline)
-                renderDrawBegins.push_back(static_cast<uint32_t>(data.drawItems.size()));
+            const auto* render = dynamic_cast<const RenderComponent*>(component.get());
+            if (!render)
+                continue;
+
+            renderDrawBegins.push_back(static_cast<uint32_t>(data.drawItems.size()));
             const auto& mesh  = assets.get<MeshAsset>(render->meshId);
             const auto  model = transform->matrix();
             for (uint32_t submeshIndex = 0; submeshIndex < mesh.submeshes.size(); ++submeshIndex)
             {
                 DrawItem item{
-                    .mesh           = render->meshId,
-                    .submeshIndex   = submeshIndex,
-                    .materialId     = mesh.submeshes[submeshIndex].materialId,
-                    .offlineSurface = render->offlineSurface,
-                    .model          = model,
-                    .selectionId    = actor->selectionId(),
-                    .instanceIndex  = instanceIndex,
+                    .mesh          = render->meshId,
+                    .submeshIndex  = submeshIndex,
+                    .materialId    = mesh.submeshes[submeshIndex].materialId,
+                    .pbrtSurface   = render->pbrtSurface,
+                    .model         = model,
+                    .selectionId   = actor->selectionId(),
+                    .instanceIndex = instanceIndex,
                 };
                 if (const auto override = render->materialOverrides.find(static_cast<int>(submeshIndex));
                     override != render->materialOverrides.end())
@@ -90,92 +102,42 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene)
             ++instanceIndex;
         }
 
-        if (scene.renderMode == SceneRenderMode::Offline)
+        for (const auto& component : actor->components)
         {
-            for (const auto* light : actor->getComponents<MeshAreaLightComponent>())
+            if (const auto* light = dynamic_cast<const LightComponent*>(component.get()); light && light->enabled)
             {
-                if (!light->enabled)
-                    continue;
+                PbrtLightEmission emission;
+                if (light->pbrtEmission)
+                    emission = *light->pbrtEmission;
+                else
+                    emission.spectrum = PbrtRgbSpectrum{glm::dvec3{light->emissionColor()}, "srgb"};
 
-
-                const auto drawItemIndex = renderDrawBegins[light->renderComponentIndex] + light->submeshIndex;
-                data.offlineLights.push_back({
-                    .emission = light->emission,
-                    .model    = OfflineLightData::MeshArea{
-                        drawItemIndex,
-                        light->twoSided,
-                        data.drawItems[drawItemIndex].offlineSurface->reverseOrientation
-                    },
+                data.lights.push_back({
+                    .emission   = std::move(emission),
+                    .model      = lightModel(*light, *transform),
+                    .castShadow = light->castShadow,
                 });
             }
-            for (const auto* light : actor->getComponents<EnvironmentLightComponent>())
-                if (light->enabled)
-                    data.offlineLights.push_back({
-                        .emission = light->emission,
-                        .model    = OfflineLightData::Environment{glm::inverse(transform->matrix()), light->portal},
-                    });
-        }
-    }
-
-    for (const auto& actor : scene.actors)
-    {
-        const auto* light = actor->getComponent<LightComponent>();
-        if (!light)
-            continue;
-
-        const auto* transform = actor->getComponent<TransformComponent>();
-
-
-        if (scene.renderMode == SceneRenderMode::Offline)
-        {
-            if (light->enabled)
+            else if (const auto* area = dynamic_cast<const MeshAreaLightComponent*>(component.get());
+                     area && area->enabled)
             {
-                CHECK(light->offlineEmission, "offline light emission is missing on '{}'", actor->name);
-                data.offlineLights.push_back({
-                    .emission = *light->offlineEmission,
-                    .model    = offlineLightModel(*light, transform->matrix()),
+                const auto  drawItemIndex = renderDrawBegins[area->renderComponentIndex] + area->submeshIndex;
+                const auto& surface       = data.drawItems[drawItemIndex].pbrtSurface;
+                data.lights.push_back({
+                    .emission = area->emission,
+                    .model =
+                        SceneLight::MeshArea{drawItemIndex, area->twoSided, surface && surface->reverseOrientation},
                 });
             }
-            continue;
+            else if (const auto* env = dynamic_cast<const EnvironmentLightComponent*>(component.get());
+                     env && env->enabled)
+            {
+                data.lights.push_back({
+                    .emission = env->emission,
+                    .model    = SceneLight::Environment{glm::inverse(transform->matrix()), env->portal},
+                });
+            }
         }
-
-        const glm::vec3 direction = glm::normalize(transform->rotation * glm::vec3{0.0f, 0.0f, -1.0f});
-        GpuLightType    lightType;
-        if (dynamic_cast<const PointLightComponent*>(light))
-            lightType = GpuLightType::Point;
-        else if (dynamic_cast<const DirectionalLightComponent*>(light))
-            lightType = GpuLightType::Directional;
-        else if (dynamic_cast<const RectAreaLightComponent*>(light))
-            lightType = GpuLightType::RectArea;
-        else if (dynamic_cast<const SpotLightComponent*>(light))
-            lightType = GpuLightType::Spot;
-        else
-        {
-            CHECK(false, "light component has no GPU representation");
-            continue;
-        }
-
-        LightData lightData{
-            .color         = light->emissionColor(),
-            .positionRange = {transform->position, 0.0f},
-            .direction     = {direction, 0.0f},
-            .lightType     = lightType,
-            .shadowEnabled = light->castShadow ? 1u : 0u,
-            .areaRightData = {glm::normalize(transform->rotation * glm::vec3{1.0f, 0.0f, 0.0f}), 0.0f},
-        };
-        if (const auto* local = dynamic_cast<const LocalLightComponent*>(light))
-            lightData.positionRange.w = local->range;
-        if (const auto* area = dynamic_cast<const RectAreaLightComponent*>(light))
-        {
-            lightData.areaSizeCone.x = area->areaSize.x;
-            lightData.areaSizeCone.y = area->areaSize.y;
-        }
-        if (const auto* spot = dynamic_cast<const SpotLightComponent*>(light))
-        {
-            lightData.areaSizeCone.z = spot->cosInner;
-            lightData.areaSizeCone.w = spot->cosOuter;
-        }
-        data.lights.push_back({.data = lightData, .enabled = light->enabled});
     }
 
     return data;

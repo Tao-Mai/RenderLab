@@ -162,7 +162,7 @@ add_library(RenderLabCore SHARED
     src/scene/component/CameraComponent.h
     src/scene/component/LightComponent.h
     src/scene/component/LightComponent.cpp
-    src/scene/component/OfflineLightComponents.cpp
+    src/scene/component/AreaLightComponents.cpp
     src/scene/component/RenderComponent.h
     src/scene/component/RenderComponent.cpp
     src/scene/component/TransformComponent.cpp
@@ -224,24 +224,18 @@ add_library(RenderLabCore SHARED
     src/core/time/Timer.cpp
     src/core/profiling/Profiler.cpp
     src/core/math/Sampler.h
-    src/core/math/Vector.h
     src/render/DrawItem.h
-    src/render/FrameData.cpp
-    src/render/FrameData.h
     src/render/RenderConfig.h
     src/render/DispatchGroups.h
     src/render/RenderContext.h
+    src/render/PreparedScene.cpp
     src/render/PreparedScene.h
-    src/render/RendererConfig.h
-    src/render/ExposureConfig.h
     src/render/RenderView.h
     src/render/ViewportRect.cpp
     src/render/ViewportRect.h
     src/render/Visibility.h
     src/render/device/RhiCheck.h
     src/render/resources/CompiledShaderPath.cpp
-    src/render/device/FrameContext.cpp
-    src/render/device/FrameContext.h
     src/render/device/GpuProfiler.cpp
     src/render/device/GpuProfiler.h
     src/render/device/GpuResources.cpp
@@ -256,6 +250,8 @@ add_library(RenderLabCore SHARED
     src/render/resources/MaterialTable.h
     src/render/resources/RenderResourceManager.cpp
     src/render/resources/RenderResourceManager.h
+    src/render/resources/SceneLighting.cpp
+    src/render/resources/SceneLighting.h
     src/render/resources/LightRanges.h
     src/render/resources/ShaderData.h
     src/render/resources/PbrtMaterialProgram.h
@@ -280,17 +276,14 @@ add_library(RenderLabCore SHARED
     src/render/raytracing/SceneAccelerationStructures.h
     src/render/raytracing/PathTracingParameters.h
     src/render/raytracing/PathTracingShader.h
-    src/render/raytracing/RealtimeScene.cpp
-    src/render/raytracing/RealtimeScene.h
-    src/render/raytracing/offline/OfflineLightData.h
-    src/render/raytracing/offline/OfflineShaderTypes.h
-    src/render/denoise/DenoiserInputs.h
+    src/render/raytracing/RayScene.cpp
+    src/render/raytracing/RayScene.h
+    src/render/raytracing/RectLightGeometry.h
+    src/scene/system/SceneLight.h
+    src/render/resources/SceneLightConstants.h
     src/render/editor/EditorFrameInput.h
     src/render/editor/EditorShaderData.h
     src/render/graph/RenderPass.cpp
-    src/render/graph/RenderPassHelpers.cpp
-    src/render/graph/RenderPassHelpers.h
-    src/render/graph/RenderPassStandardFlags.h
     src/render/graph/RenderPassReflection.cpp
     src/render/graph/RenderPassReflection.h
     src/render/graph/RenderGraphCompiler.cpp
@@ -309,18 +302,17 @@ add_library(RenderLabCore SHARED
     src/render/passes/ResolvePass.h
     src/core/Plugin.cpp
     src/core/Plugin.h
-    src/core/program/DefineList.h
     src/core/RuntimeDirectory.cpp
-    src/render/raytracing/offline/OfflineScene.cpp
-    src/render/raytracing/offline/OfflinePathTracing.cpp
-    src/render/raytracing/offline/OfflinePathTracing.h
-    src/render/raytracing/offline/OfflineTracePipelineCache.cpp
-    src/render/raytracing/offline/OfflineTracePipelineCache.h
+    src/render/resources/SceneShading.cpp
+    src/render/resources/SceneShading.h
+    src/render/raytracing/PathAccumulation.cpp
+    src/render/raytracing/PathAccumulation.h
+    src/render/raytracing/PathPipelineCache.cpp
+    src/render/raytracing/PathPipelineCache.h
     src/editor/Gui.cpp
     src/editor/PassEditor.cpp
-    src/editor/ExposureUi.cpp
 )
-set_target_properties(RenderLabCore PROPERTIES PREFIX "" DEFINE_SYMBOL FALCOR_DLL)
+set_target_properties(RenderLabCore PROPERTIES PREFIX "" DEFINE_SYMBOL RENDERLAB_CORE_EXPORTS)
 if(MINGW)
     target_link_options(RenderLabCore PRIVATE "LINKER:--export-all-symbols")
 elseif(MSVC)
@@ -445,8 +437,6 @@ target_precompile_headers(RenderLabPluginAbi PRIVATE ${renderlab_pch_headers})
 add_subdirectory(passes)
 renderlab_shader(blit shaders/raster/blit.slang blit)
 renderlab_shader(imgui shaders/editor/imgui.slang imgui)
-renderlab_shader(prepare_emissive_triangles shaders/raytracing/prepare_emissive_triangles.slang
-    prepare_emissive_triangles ENTRIES computeMain)
 option(BUILD_TESTING "Enable manual validation tools" OFF)
 if(BUILD_TESTING)
     renderlab_shader(material_workflow_check test/MaterialWorkflowCheck.slang material_workflow_check

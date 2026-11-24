@@ -2,7 +2,7 @@
 #define RENDERLAB_BDPT_PARAMETERS_SLANG
 
 #include "BdptBindings.h"
-#include "raytracing/offline/path_parameters.slang"
+#include "raytracing/accumulation/path_parameters.slang"
 
 struct BdptParameters
 {

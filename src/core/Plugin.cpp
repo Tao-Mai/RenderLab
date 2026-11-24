@@ -13,8 +13,6 @@
 #include <dlfcn.h>
 #endif
 
-namespace Falcor
-{
 namespace
 {
 std::filesystem::path absolutePluginPath(const std::filesystem::path& path)
@@ -134,4 +132,3 @@ std::shared_ptr<void> PluginManager::retainLibrary(const Library& library, std::
     };
     return std::make_shared<Owner>(library, std::move(object));
 }
-}  // namespace Falcor

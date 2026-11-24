@@ -19,7 +19,7 @@ struct RL_TYPE("LightComponent") LightComponent : Component
     RL_FIELD("color") glm::vec3 color{1.0f};
     RL_FIELD("enabled") bool enabled = true;
     RL_FIELD("castShadow") bool castShadow = false;
-    RL_FIELD("offlineEmission") std::optional<PbrtLightEmission> offlineEmission;
+    RL_FIELD("pbrtEmission") std::optional<PbrtLightEmission> pbrtEmission;
 
 protected:
     [[nodiscard]] glm::vec3 coloredEmission(float strength) const;

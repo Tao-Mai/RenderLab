@@ -33,9 +33,7 @@
 
 #include <string>
 
-namespace Falcor
-{
-class FALCOR_API RenderGraphIR
+class RENDERLAB_CORE_API RenderGraphIR
 {
 public:
     explicit RenderGraphIR(const std::string& name);
@@ -50,4 +48,3 @@ public:
 private:
     std::string mIR;
 };
-}  // namespace Falcor

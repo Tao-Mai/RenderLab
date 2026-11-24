@@ -6,17 +6,17 @@
 #include "render/RenderView.h"
 #include "render/resources/MaterialTable.h"
 
-Falcor::RenderPassReflection DepthPrepass::reflect(const CompileData&)
+RenderPassReflection DepthPrepass::reflect(const CompileData&)
 {
-    Falcor::RenderPassReflection reflection;
+    RenderPassReflection reflection;
     reflection.addOutput("depth", "Scene depth")
         .format(rhi::Format::D32Float)
-        .bindFlags(Falcor::ResourceBindFlags::DepthStencil);
+        .bindFlags(ResourceBindFlags::DepthStencil);
     return reflection;
 }
 
 
-void DepthPrepass::compile(Falcor::RenderContext* passContext, const CompileData&)
+void DepthPrepass::compile(RenderContext* passContext, const CompileData&)
 {
     rhi::RenderPipelineDesc desc;
     desc.program      = passContext->shaderManager->program(passContext->shaderManager->getOrLoad("depth"));
@@ -25,7 +25,7 @@ void DepthPrepass::compile(Falcor::RenderContext* passContext, const CompileData
 }
 
 
-void DepthPrepass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
+void DepthPrepass::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
     const auto target = renderData.getTexture("depth");
     const auto view   = target->getDefaultView();
@@ -42,7 +42,7 @@ void DepthPrepass::execute(Falcor::RenderContext* renderCommands, const Falcor::
     pass->end();
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<Falcor::RenderPass, DepthPrepass>();
+    registry.registerClass<RenderPass, DepthPrepass>();
 }

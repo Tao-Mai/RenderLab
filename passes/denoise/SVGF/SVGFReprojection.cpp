@@ -1,12 +1,12 @@
 #include "passes/denoise/SVGF/SVGFReprojection.h"
 
 #include "core/Logger.h"
-#include "render/FrameData.h"
 #include "render/RenderView.h"
 
 #include <slang-rhi.h>
 #include <slang-rhi/shader-cursor.h>
 #include "render/DispatchGroups.h"
+#include "render/PreparedScene.h"
 #include "render/RenderContext.h"
 
 namespace
@@ -34,8 +34,8 @@ glm::vec4 linearDepthRow(const glm::mat4& view)
 }  // namespace
 
 SVGFReprojection::Output SVGFReprojection::compile(
-    const Falcor::RenderContext&                                      context,
-    const DenoiserInputs&                                             source,
+    const RenderContext&                                      context,
+    const SVGFInputs&                                                 source,
     const std::array<GpuResources::ImageHandle, kHistoryCount>&       history,
     const std::array<GpuResources::ImageHandle, kLightingLayerCount>& outputs
 )
@@ -82,7 +82,7 @@ SVGFReprojection::Output SVGFReprojection::compile(
 }
 
 
-void SVGFReprojection::createPipeline(const Falcor::RenderContext& context)
+void SVGFReprojection::createPipeline(const RenderContext& context)
 {
     pipeline = context.device->createComputePipeline(
         {.program = context.shaderManager->program(context.shaderManager->getOrLoad("svgf_reprojection"))}
@@ -91,15 +91,19 @@ void SVGFReprojection::createPipeline(const Falcor::RenderContext& context)
 }
 
 
-void SVGFReprojection::execute(GpuResources& cache, rhi::ICommandEncoder& commands, const Falcor::RenderContext& frame)
+void SVGFReprojection::execute(GpuResources& cache, rhi::ICommandEncoder& commands, const RenderContext& frame)
 {
 
     const auto      historyRevision = cache.imageHistoryRevision(historySource);
+    const auto      sceneGeneration = frame.scene->sceneGeneration;
+    const bool      historyValid    = hasHistory && previousHistoryRevision == historyRevision &&
+        previousSceneGeneration == sceneGeneration;
     const auto&     viewport        = frame.view->viewport;
     const glm::vec4 currentViewport{viewport.x, viewport.y, viewport.width, viewport.height};
     const auto      currentDepthRow = linearDepthRow(frame.view->uniforms.view);
 
-    bindFrameData(shaderObject, *frame.frameData);
+    const rhi::ShaderCursor root(shaderObject);
+    rhiCheck(root["sceneGlobals"].setBinding(frame.scene->globalsBuffer()));
 
     {
         const auto uniformValue = ReprojectionParameters{
@@ -108,11 +112,11 @@ void SVGFReprojection::execute(GpuResources& cache, rhi::ICommandEncoder& comman
             .previousDepthRow       = previousDepthRow,
             .viewport               = currentViewport,
             .writeLayer             = writeLayer,
-            .historyValid           = hasHistory && previousHistoryRevision == historyRevision ? 1u : 0u,
+            .historyValid           = historyValid ? 1u : 0u,
             .historyLength          = settings.historyLength,
             .alpha                  = settings.alpha,
         };
-        const auto uniformCursor = rhi::ShaderCursor(shaderObject)["parameters"].getDereferenced();
+        const auto uniformCursor = root["parameters"].getDereferenced();
         CHECK(uniformCursor.getTypeLayout()->getSize() <= sizeof(uniformValue));
         rhiCheck(uniformCursor.setData(&uniformValue, uniformCursor.getTypeLayout()->getSize()));
     };
@@ -126,6 +130,7 @@ void SVGFReprojection::execute(GpuResources& cache, rhi::ICommandEncoder& comman
     previousViewport        = currentViewport;
     previousDepthRow        = currentDepthRow;
     previousHistoryRevision = historyRevision;
+    previousSceneGeneration = sceneGeneration;
     writeLayer ^= 1u;
     hasHistory = true;
 }

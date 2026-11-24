@@ -30,8 +30,6 @@
 #include <string>
 #include <vector>
 
-namespace Falcor
-{
 struct FileDialogFilter
 {
     FileDialogFilter(const std::string& extension, const std::string& description = {}) :
@@ -44,4 +42,3 @@ struct FileDialogFilter
 };
 
 using FileDialogFilterVec = std::vector<FileDialogFilter>;
-}  // namespace Falcor

@@ -13,8 +13,6 @@
 #include <unordered_set>
 #include <utility>
 
-namespace Falcor
-{
 namespace
 {
     using Field      = RenderPassReflection::Field;
@@ -46,6 +44,8 @@ RenderGraphCompiler::compile(RenderGraph& graph, RenderContext* context, const D
         if (log.empty())
             compiler.validateGraph();
         if (log.empty())
+            compiler.validateDeviceFeatures();
+        if (log.empty())
             compiler.compilePasses(context);
         if (log.empty() && compiler.insertAutoPasses())
         {
@@ -64,11 +64,15 @@ RenderGraphCompiler::compile(RenderGraph& graph, RenderContext* context, const D
         return {};
     }
 
-    auto executable             = std::make_unique<RenderGraphExe>();
+    auto executable = std::make_unique<RenderGraphExe>();
     executable->mpResourceCache = std::move(resourceCache);
+    executable->mSceneInputs    = compiler.mSceneInputs;
     executable->mExecutionList.reserve(compiler.mExecutionList.size());
     for (const auto& pass : compiler.mExecutionList)
+    {
         executable->insertPass(pass.name, pass.pPass);
+        executable->mMaxFramesInFlight = std::min(executable->mMaxFramesInFlight, pass.pPass->getMaxFramesInFlight());
+    }
     return executable;
 }
 
@@ -102,11 +106,13 @@ void RenderGraphCompiler::resolveExecutionOrder()
     const RenderPass::CompileData defaults{properties.dims, properties.format};
     mExecutionList.clear();
     mExecutionList.reserve(participatingPasses.size());
+    mSceneInputs = SceneInputs::None;
     for (const auto index : DirectedGraphTopologicalSort::sort(*mGraph.mpGraph))
     {
         if (participatingPasses.contains(index))
         {
             const auto& node = mGraph.mNodeData.at(index);
+            mSceneInputs |= node.pPass->getSceneInputs();
             mExecutionList.push_back({index, node.pPass, node.name, node.pPass->reflect(defaults)});
         }
     }
@@ -215,6 +221,12 @@ void RenderGraphCompiler::validateGraph() const
         if (!field || !is_set(field->getVisibility(), Visibility::Output))
             LOG_ERROR("unknown port '{}.{}'", pass->name, output.field);
     }
+}
+
+void RenderGraphCompiler::validateDeviceFeatures() const
+{
+    if (is_set(mSceneInputs, SceneInputs::RayTracing) && !mpDevice->hasFeature(rhi::Feature::RayTracing))
+        LOG_ERROR("render graph '{}' requires ray tracing", mGraph.getName());
 }
 
 void RenderGraphCompiler::compilePasses(RenderContext* context)
@@ -474,4 +486,3 @@ void RenderGraphCompiler::restoreCompilationChanges()
     mCompilationChanges.generatedPasses.clear();
     mCompilationChanges.removedEdges.clear();
 }
-}  // namespace Falcor

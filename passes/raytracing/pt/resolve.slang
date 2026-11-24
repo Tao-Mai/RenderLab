@@ -1,5 +1,5 @@
 #include "pt_parameters.slang"
-#include "raytracing/offline/path_resolve.slang"
+#include "raytracing/accumulation/path_resolve.slang"
 
 [shader("compute")]
 [numthreads(8, 8, 1)]

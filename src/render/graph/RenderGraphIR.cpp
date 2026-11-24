@@ -31,15 +31,13 @@
 
 #include <algorithm>
 
-namespace Falcor
-{
 namespace
 {
 constexpr char kGraphPrefix[] = "    g.";
 }
 
 RenderGraphIR::RenderGraphIR(const std::string& name) :
-    mIR("from falcor import *\n\ndef " + getFuncName(name) + "():\n")
+    mIR("from renderlab import RenderGraph, TextureChannelFlags\n\ndef " + getFuncName(name) + "() -> RenderGraph:\n")
 {
     mIR += "    g = " + ScriptWriter::makeFunc("RenderGraph", name);
 }
@@ -72,4 +70,3 @@ std::string RenderGraphIR::getFuncName(const std::string& graphName)
     std::ranges::replace_if(name, [](char c) { return c == ' ' || c == '/' || c == '\\'; }, '_');
     return name;
 }
-}  // namespace Falcor

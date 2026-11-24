@@ -1,6 +1,5 @@
 #include "editor/EditorUi.h"
 #include "editor/PassEditor.h"
-#include "editor/PerformancePanel.h"
 
 #include <imgui.h>
 
@@ -19,6 +18,7 @@
 #include "core/Logger.h"
 #include "editor/Inspector.h"
 #include "render/Renderer.h"
+#include "render/editor/EditorFrameInput.h"
 #include "scene/component/TransformComponent.h"
 
 namespace
@@ -58,17 +58,12 @@ std::optional<SceneAsset::ID> drawSceneSelector(const SceneAsset::ID& current, b
 void drawRenderGraphSelector(ConfigManager& config, bool supportsRayTracing)
 {
     const auto current        = config.renderGraphName();
-    const bool currentOffline = config.rendererConfig().renderPath == RenderPath::OfflinePathTracing;
     if (!ImGui::BeginCombo("Render graph", current.c_str()))
         return;
 
     for (const auto& [path, scripts] : config.renderGraphs())
     {
-        const bool offline = path == RenderPath::OfflinePathTracing;
-        if (offline != currentOffline)
-            continue;
-
-        ImGui::BeginDisabled(requiresRayTracing(path) && !supportsRayTracing);
+        ImGui::BeginDisabled(path == RenderPath::RayTracing && !supportsRayTracing);
         for (const auto& [name, script] : scripts)
         {
             const bool selected = name == current;
@@ -310,15 +305,14 @@ EditorUI::InspectorResult EditorUI::drawInspector(SceneAsset& scene, AActor* obj
 
     auto& config   = *context().config;
     auto& renderer = *context().renderer;
-    drawPerformance(context().profiler);
 
-    result.edited |= drawCameraInspector(scene.editorCamera, renderer);
-    drawRenderGraphSelector(config, renderer.getDevice().hasFeature(rhi::Feature::RayTracing));
+    result.edited |= drawCameraInspector(scene.editorCamera);
+    drawRenderGraphSelector(config, renderer.supportsRayTracing());
     result.edited |= drawEnvironmentInspector(scene, *context().assetManager);
 
     if (const auto* graph = renderer.getActiveGraph(); graph && graph->getName() == config.renderGraphName())
     {
-        if (renderer.supportsObjectPicking())
+        if (graph->hasActivePass(kEditorPickingPassType))
         {
             bool objectPicking = config.editorConfig().objectPicking;
             if (ImGui::Checkbox("Object picking", &objectPicking))
@@ -333,22 +327,22 @@ EditorUI::InspectorResult EditorUI::drawInspector(SceneAsset& scene, AActor* obj
 }
 
 void EditorUI::endFrame() { ImGui::Render(); }
-bool EditorUI::sceneClicked(glm::vec2& mousePosition) const
+bool EditorUI::sceneClicked(glm::vec2& viewportUv) const
 {
     const ImVec2 mouse  = ImGui::GetMousePos();
     const bool   inside = mouse.x >= scenePosition.x && mouse.y >= scenePosition.y &&
         mouse.x < scenePosition.x + sceneSize.x && mouse.y < scenePosition.y + sceneSize.y;
-    if (!inside ||
+    if (!inside || !context().inputManager->get(Command::SelectObject) ||
         ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) ||
-        ImGui::IsAnyItemActive() || !context().inputManager->get(Command::SelectObject) ||
+        ImGui::IsAnyItemActive() ||
         ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) || ImGuizmo::IsOver() ||
         ImGuizmo::IsUsing())
     {
         return false;
     }
-    mousePosition = {
-        ((mouse.x - scenePosition.x) / sceneSize.x) * 2.0f - 1.0f,
-        ((mouse.y - scenePosition.y) / sceneSize.y) * 2.0f - 1.0f,
+    viewportUv = {
+        (mouse.x - scenePosition.x) / sceneSize.x,
+        (mouse.y - scenePosition.y) / sceneSize.y,
     };
     return true;
 }

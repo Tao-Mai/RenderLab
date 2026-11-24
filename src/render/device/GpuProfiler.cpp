@@ -2,7 +2,6 @@
 
 #include <slang-rhi.h>
 #include "core/profiling/Profiler.h"
-#include "render/RenderContext.h"
 #include "render/device/RhiCheck.h"
 
 #include <algorithm>
@@ -137,23 +136,18 @@ GpuProfileScope::~GpuProfileScope()
         profiler->endScope(commands, scope);
 }
 
-namespace Falcor
+ScopedProfilerEvent::ScopedProfilerEvent(
+    Profiler* profiler, GpuProfiler* gpuProfiler, rhi::ICommandEncoder& commands, std::string_view name
+) : commands(commands), gpuProfiler(gpuProfiler), cpuTiming(profiler, name)
 {
-ScopedProfilerEvent::ScopedProfilerEvent(RenderContext* context, std::string_view name) :
-    mpRenderContext(context), cpuTiming(context->profiler, name)
-{
-    if (auto* profiler = context->profiler)
+    if (profiler)
         profiler->beginPass(name);
-    if (auto* profiler = context->gpuProfiler)
-    {
-
-        gpuScope = profiler->beginScope(*context->commands, name, true);
-    }
+    if (gpuProfiler)
+        gpuScope = gpuProfiler->beginScope(commands, name, true);
 }
 
 ScopedProfilerEvent::~ScopedProfilerEvent()
 {
     if (gpuScope != ~0u)
-        mpRenderContext->gpuProfiler->endScope(*mpRenderContext->commands, gpuScope);
+        gpuProfiler->endScope(commands, gpuScope);
 }
-}  // namespace Falcor

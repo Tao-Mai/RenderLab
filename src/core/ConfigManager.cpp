@@ -5,7 +5,6 @@
 #include "core/Serializer.h"
 
 #include <algorithm>
-#include <cmath>
 #include <ranges>
 #include <unordered_set>
 #include <utility>
@@ -26,8 +25,6 @@ std::filesystem::path resolveAgainst(const std::filesystem::path& baseDir, std::
 }
 }  // namespace
 
-ConfigManager::ConfigManager() : sceneRenderMode(SceneRenderMode::Realtime) {}
-
 ConfigManager::~ConfigManager() {}
 
 void ConfigManager::init()
@@ -46,7 +43,7 @@ void ConfigManager::shutdown() noexcept
     asset_json::save(file, data);
     asset_json::save(
         resolvedPaths.renderer,
-        RendererSettings{realtimeGraph, offlineGraph, nlohmann::json(settings.getOptions())}
+        RendererSettings{renderGraph, nlohmann::json(settings.getOptions())}
     );
     asset_json::save(resolvedPaths.editor, editor);
 
@@ -54,11 +51,8 @@ void ConfigManager::shutdown() noexcept
     resolvedPaths = {};
     commands      = {};
     editor        = {};
-    renderer      = {};
     settings.clearOptions();
-    sceneRenderMode = SceneRenderMode::Realtime;
-    realtimeGraph.clear();
-    offlineGraph.clear();
+    renderGraph.clear();
     file.clear();
     configDir.clear();
 }
@@ -67,18 +61,12 @@ const CommandConfig& ConfigManager::commandConfig() const noexcept { return comm
 
 const AssetID<SceneAsset>& ConfigManager::initialScene() const noexcept { return data.initialScene; }
 
-const RendererConfig& ConfigManager::rendererConfig() const noexcept { return renderer; }
-
 const EditorConfig& ConfigManager::editorConfig() const noexcept { return editor; }
-
-const std::string& ConfigManager::renderGraphName() const noexcept
-{
-    return sceneRenderMode == SceneRenderMode::Offline ? offlineGraph : realtimeGraph;
-}
 
 std::filesystem::path ConfigManager::renderGraphScript() const
 {
-    return resolveAgainst(configDir, data.renderGraphs.at(renderer.renderPath).at(renderGraphName()));
+    const auto& name = renderGraphName();
+    return resolveAgainst(configDir, data.renderGraphs.at(findRenderPath(name)).at(name));
 }
 
 RenderPath ConfigManager::findRenderPath(std::string_view graphName) const
@@ -119,22 +107,6 @@ nlohmann::json ConfigManager::getOptions() const
     return result;
 }
 
-void ConfigManager::applyGraphParameters(const nlohmann::json& parameters)
-{
-    CHECK(parameters.is_object(), "graph parameters must be an object");
-    RenderFeature feature;
-    metadata::visitFields(
-        feature,
-        [&](const auto& field, auto& value)
-        {
-            if (const auto found = parameters.find(field.name); found != parameters.end())
-                Deserialize(*found, value);
-        }
-    );
-    CHECK(std::isfinite(feature.ambientCoefficient) && feature.ambientCoefficient >= 0.0f);
-    renderer.feature = feature;
-}
-
 void ConfigManager::setEditorSize(int width, int height)
 {
 
@@ -156,25 +128,8 @@ void ConfigManager::setInitialScene(AssetID<SceneAsset> id)
 
 void ConfigManager::setRenderGraph(std::string_view name)
 {
-
-
-    const auto path    = findRenderPath(name);
-    const bool offline = sceneRenderMode == SceneRenderMode::Offline;
-    CHECK(
-        (path == RenderPath::OfflinePathTracing) == offline,
-        "render graph '{}' does not match the scene render mode",
-        name
-    );
-    auto& active        = offline ? offlineGraph : realtimeGraph;
-    active              = name;
-    renderer.renderPath = path;
-}
-
-void ConfigManager::setSceneRenderMode(SceneRenderMode mode)
-{
-
-    sceneRenderMode     = mode;
-    renderer.renderPath = findRenderPath(renderGraphName());
+    (void)findRenderPath(name);
+    renderGraph = name;
 }
 
 void ConfigManager::load()
@@ -253,19 +208,7 @@ void ConfigManager::loadEditor()
 void ConfigManager::loadRenderer()
 {
     const auto rendererSettings = asset_json::load<RendererSettings>(resolvedPaths.renderer);
-    realtimeGraph               = rendererSettings.realtimeGraph;
-    offlineGraph                = rendererSettings.offlineGraph;
-    const auto realtimePath     = findRenderPath(realtimeGraph);
-    CHECK(
-        realtimePath != RenderPath::OfflinePathTracing,
-        "'{}' cannot be selected as the realtime graph",
-        realtimeGraph
-    );
-    CHECK(
-        findRenderPath(offlineGraph) == RenderPath::OfflinePathTracing,
-        "'{}' cannot be selected as the offline graph",
-        offlineGraph
-    );
+    setRenderGraph(rendererSettings.renderGraph);
     settings.addOptions(rendererSettings.options);
     const auto                 options = nlohmann::json(settings.getOptions());
     constexpr std::string_view kPrefix = kRenderGraphOptionsPrefix;
@@ -277,5 +220,4 @@ void ConfigManager::loadRenderer()
         const auto key = std::string_view{name}.substr(kPrefix.size());
         (void)findRenderPath(settings::decodeName(key.substr(0, key.find(':'))));
     }
-    renderer.renderPath = realtimePath;
 }

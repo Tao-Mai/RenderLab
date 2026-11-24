@@ -4,8 +4,6 @@
 
 #include <algorithm>
 
-namespace Falcor
-{
 RenderPassReflection::Field::Field(const std::string& name, const std::string& desc, Visibility visibility) :
     mName(name), mDesc(desc), mVisibility(visibility)
 {
@@ -258,4 +256,3 @@ RenderPassReflection::Field::Type resourceTypeToFieldType(rhi::TextureType type)
     }
     std::unreachable();
 }
-}  // namespace Falcor

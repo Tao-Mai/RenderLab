@@ -9,21 +9,16 @@
 
 #include <algorithm>
 #include <limits>
-
-SceneManager::~SceneManager() {}
+#include <utility>
 
 void SceneManager::init()
 {
-
-
     static const bool registered = []
     {
         metadata::visitRegisteredTypes<Component>([]<class T>(const char*) { RegisterType<T, Component>(); });
         metadata::visitRegisteredTypes<AActor>([]<class T>(const char*) { RegisterType<T, AActor>(); });
         return true;
     }();
-
-    mpScene = Falcor::make_ref<Falcor::Scene>();
 }
 
 void SceneManager::loadDefaultScene() { load(context().config->initialScene()); }
@@ -38,11 +33,6 @@ void SceneManager::load(const SceneAsset& scene)
     SceneAsset loaded;
     Deserialize(Serialize(scene), loaded);
     CHECK(!loaded.environmentMap || !loaded.environmentMap->empty());
-    CHECK(
-        !loaded.editorCamera.exposure || loaded.editorCamera.exposure->isValid(),
-        "invalid camera exposure in scene '{}'",
-        loaded.id
-    );
     for (const auto& actor : loaded.actors)
     {
         CHECK(actor);
@@ -52,7 +42,7 @@ void SceneManager::load(const SceneAsset& scene)
         actor->id = nextSelectionId++;
     }
 
-    mpScene = Falcor::make_ref<Falcor::Scene>(std::move(loaded));
+    activeScene = std::move(loaded);
     ++generation;
 }
 
@@ -102,7 +92,7 @@ void SceneManager::deleteActor(uint32_t selectionId)
     actors.erase(found);
 }
 
-void SceneManager::shutdown() noexcept { mpScene.reset(); }
+void SceneManager::shutdown() noexcept { activeScene = {}; }
 
 void SceneManager::tick(float deltaTime)
 {

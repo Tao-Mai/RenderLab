@@ -1,4 +1,4 @@
-from falcor import RenderGraph
+from renderlab import RenderGraph
 
 from modules.editor import add_picking
 from modules.post_process import add_post_process
@@ -7,7 +7,6 @@ from modules.scene import add_shadows, complete_raster_scene, connect_shadow_res
 def render_graph_Deferred(
     *,
     hdr: bool = True,
-    ibl: bool = True,
     ambientCoefficient: float = 0.1,
     shadows: bool = True,
     postProcess: str = "RenderLab",
@@ -19,7 +18,9 @@ def render_graph_Deferred(
     depth = "depth.depth"
     graph.create_pass("gbuffer", "GBufferPass")
     graph.add_edge(depth, "gbuffer.depth")
-    graph.create_pass("deferred", "DeferredLightingPass", {"hdr": hdr})
+    graph.create_pass(
+        "deferred", "DeferredLightingPass", {"hdr": hdr, "ambientCoefficient": ambientCoefficient}
+    )
     graph.add_edge(depth, "deferred.depth")
     for port in (
         "diffuseOcclusion", "normalRoughness", "emissiveSpecularF90", "specularF0DiffuseFresnel", "sheenColorRoughness"
@@ -27,7 +28,7 @@ def render_graph_Deferred(
         graph.add_edge(f"gbuffer.{port}", f"deferred.{port}")
     connect_shadow_resources(graph, shadow, "deferred")
     sceneColor = "deferred.color"
-    color = complete_raster_scene(graph, sceneColor, depth, shadow, ibl)
+    color = complete_raster_scene(graph, sceneColor, depth, shadow, ambientCoefficient, clearcoat=False)
     color = add_post_process(graph, color, hdr, postProcess, bloom)
     add_picking(graph, depth, color)
     return graph

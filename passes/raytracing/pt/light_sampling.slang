@@ -1,7 +1,7 @@
-#ifndef RENDERLAB_OFFLINE_LIGHT_SAMPLING_SLANG
-#define RENDERLAB_OFFLINE_LIGHT_SAMPLING_SLANG
+#ifndef RENDERLAB_PT_LIGHT_SAMPLING_SLANG
+#define RENDERLAB_PT_LIGHT_SAMPLING_SLANG
 
-#include "raytracing/offline/light.slang"
+#include "scene/light_emitters.slang"
 #include "math/random.slang"
 
 float lightWeight(float3 value)
@@ -18,54 +18,27 @@ struct DeltaLightSample
 };
 
 // Point and spot lights share one weighted reservoir. Their emission is intensity I.
-DeltaLightSample sampleLocalLight(uint pointCount, uint spotCount, float3 origin, inout uint state)
+DeltaLightSample sampleLocalLight(LightRanges ranges, float3 origin, inout uint state)
 {
     DeltaLightSample selected = {};
     float selectedWeight = 0.0;
     float weightSum = 0.0;
+    uint pointCount = ranges.pointEnd - ranges.directionalEnd;
+    uint spotCount = ranges.spotEnd - ranges.rectAreaEnd;
     for (uint candidate = 0; candidate < pointCount + spotCount; ++candidate)
     {
-        float3 position;
-        LightEmission emission;
-        if (candidate < pointCount)
-        {
-            PointLight light = pointLights[candidate];
-            position = light.position;
-            emission = light.emission;
-        }
-        else
-        {
-            SpotLight light = spotLights[candidate - pointCount];
-            position = light.position;
-            emission = light.emission;
-        }
-
-        float3 offset = position - origin;
+        uint index = candidate < pointCount ? ranges.directionalEnd + candidate
+            : ranges.rectAreaEnd + candidate - pointCount;
+        LightData light = lights[index];
+        float3 offset = light.position - origin;
         float distanceSquared = dot(offset, offset);
-        if (distanceSquared == 0.0)
-        {
+        if (distanceSquared == 0.0 || !withinLightRange(light, distanceSquared))
             continue;
-        }
 
         float distance = sqrt(distanceSquared);
         float3 direction = offset / distance;
-        float attenuation = 1.0;
-        if (candidate >= pointCount)
-        {
-            SpotLight light = spotLights[candidate - pointCount];
-            float cosine = dot(light.direction, -direction);
-            if (light.cosInner <= light.cosOuter)
-            {
-                attenuation = cosine >= light.cosOuter ? 1.0 : 0.0;
-            }
-            else
-            {
-                float falloff = saturate((cosine - light.cosOuter) / (light.cosInner - light.cosOuter));
-                attenuation = falloff * falloff * falloff * falloff;
-            }
-        }
-
-        float3 incident = emissionRgb(emission, float2(0.0)) * (attenuation / distanceSquared);
+        float attenuation = light.type == LightType::Spot ? spotAngularAttenuation(light, -direction) : 1.0;
+        float3 incident = light.color * (attenuation / distanceSquared);
         float weight = lightWeight(incident);
         if (weight <= 0.0)
         {
@@ -95,8 +68,8 @@ DeltaLightSample sampleDistantLight(uint lightCount, inout uint state)
     float weightSum = 0.0;
     for (uint index = 0; index < lightCount; ++index)
     {
-        DirectionalLight light = directionalLights[index];
-        float3 incident = emissionRgb(light.emission, float2(0.0));
+        LightData light = lights[index];
+        float3 incident = light.color;
         float weight = lightWeight(incident);
         if (weight <= 0.0)
         {
@@ -105,7 +78,7 @@ DeltaLightSample sampleDistantLight(uint lightCount, inout uint state)
         weightSum += weight;
         if (randomFloat(state) < weight / weightSum)
         {
-            selected.direction = -light.direction;
+            selected.direction = -light.direction.xyz;
             selected.incidentIrradiance = incident;
             selected.distance = kMaxRayDistance;
             selectedWeight = weight;
@@ -121,8 +94,8 @@ DeltaLightSample sampleDistantLight(uint lightCount, inout uint state)
 
 float areaSelectionWeight(uint lightIndex, float3 origin)
 {
-    LightTriangle triangle = lightTriangles[lightIndex];
-    float3 center = (triangle.p0 + triangle.p1.xyz + triangle.p2.xyz) / 3.0;
+    LightTriangle triangle = loadTriangleLight(lightIndex);
+    float3 center = (triangle.p0 + triangle.vertex1 + triangle.vertex2) / 3.0;
     float3 offset = origin - center;
     float distanceSquared = dot(offset, offset);
     if (distanceSquared == 0.0 || triangle.area == 0.0)
@@ -134,8 +107,7 @@ float areaSelectionWeight(uint lightIndex, float3 origin)
     float projectedCosine = triangle.twoSided != 0 ? abs(cosine) : max(0.0, cosine);
     LightEmission emission = areaEmissions[triangle.emissionIndex];
     // A texture can be bright away from its centroid. Keep support over the whole triangle.
-    float intensity = emission.hasImage
-        ? emission.scale : lightWeight(emission.rgb * emission.scale);
+    float intensity = lightWeight(averageEmission(emission));
 
     return triangle.area * projectedCosine * intensity / distanceSquared;
 }
@@ -175,7 +147,7 @@ AreaLightSample sampleAreaLight(uint lightCount, float3 origin, inout uint state
 
 float areaPdf(uint lightIndex, float3 origin, float3 target)
 {
-    LightTriangle triangle = lightTriangles[lightIndex];
+    LightTriangle triangle = loadTriangleLight(lightIndex);
     float3 offset = target - origin;
     float distanceSquared = dot(offset, offset);
     if (triangle.area == 0.0 || distanceSquared == 0.0)

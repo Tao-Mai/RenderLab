@@ -5,7 +5,7 @@
 #include "asset/pbrt/PbrtSpectrum.h"
 #include "asset/pbrt/PbrtImageReference.h"
 
-// Photometric normalization is resolved when the offline spectrum is evaluated.
+// PBRT emission parameters, including spectral and image sources.
 struct RL_RECORD PbrtLightEmission
 {
     RL_FIELD("spectrum") PbrtSpectrum spectrum = PbrtRgbSpectrum{glm::dvec3{1.0}, "srgb"};

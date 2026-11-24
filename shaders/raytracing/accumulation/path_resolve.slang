@@ -1,0 +1,16 @@
+#ifndef RENDERLAB_ACCUMULATION_PATH_RESOLVE_SLANG
+#define RENDERLAB_ACCUMULATION_PATH_RESOLVE_SLANG
+
+#include "path_parameters.slang"
+
+
+StructuredBuffer<AccumulatedPixel> accumulation;
+[format("rgba16f")] RWTexture2D<float4> outputImage;
+
+float3 averageCameraSamples(uint index)
+{
+    AccumulatedPixel history = accumulation[index];
+    return history.sampleCount > 0 ? history.color / float(history.sampleCount) : float3(0.0);
+}
+
+#endif

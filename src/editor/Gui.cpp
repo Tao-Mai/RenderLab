@@ -47,19 +47,17 @@ bool drawDropdown(const char* label, std::span<const Choice> choices, std::size_
 }
 }  // namespace
 
-namespace Falcor
-{
 IDScope::IDScope(const void* id) { ImGui::PushID(id); }
 
 IDScope::~IDScope() { ImGui::PopID(); }
 
-float4 Gui::pickUniqueColor(const std::string& key)
+glm::vec4 Gui::pickUniqueColor(const std::string& key)
 {
     constexpr auto kHueSteps   = 360;
     constexpr auto kSaturation = 0.55f;
     constexpr auto kBrightness = 0.65f;
     const auto     hue         = static_cast<float>(std::hash<std::string>{}(key) % kHueSteps) / kHueSteps;
-    float4         color{0.0f, 0.0f, 0.0f, 1.0f};
+    glm::vec4         color{0.0f, 0.0f, 0.0f, 1.0f};
     ImGui::ColorConvertHSVtoRGB(hue, kSaturation, kBrightness, color.x, color.y, color.z);
     return color;
 }
@@ -211,4 +209,3 @@ void Gui::Widgets::tooltip(const char* text) { ImGui::SetItemTooltip("%s", text)
 void Gui::Widgets::pushId(const char* id) { ImGui::PushID(id); }
 
 void Gui::Widgets::popId() { ImGui::PopID(); }
-}  // namespace Falcor

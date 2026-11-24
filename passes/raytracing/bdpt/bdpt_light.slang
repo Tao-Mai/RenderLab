@@ -36,28 +36,29 @@ float3 bdptUniformSphere(float2 u)
 
 uint bdptLightCount()
 {
-    return parameters.path.pointLightCount + parameters.path.spotLightCount + parameters.path.directionalLightCount
-        + parameters.path.triangleLightCount + (parameters.path.hasEnvironmentLight ? 1u : 0u);
+    LightRanges ranges = sceneGlobals[0].lightRanges;
+    return ranges.pointEnd + ranges.spotCount + triangleLightCount() + uint(HAS_ENV);
 }
 
 BdptLightReference bdptLightAt(uint index)
 {
-    if (index < parameters.path.pointLightCount)
+    LightRanges ranges = sceneGlobals[0].lightRanges;
+    if (index < ranges.pointCount)
     {
         return {BdptLightType::Point, index};
     }
-    index -= parameters.path.pointLightCount;
-    if (index < parameters.path.spotLightCount)
+    index -= ranges.pointCount;
+    if (index < ranges.spotCount)
     {
         return {BdptLightType::Spot, index};
     }
-    index -= parameters.path.spotLightCount;
-    if (index < parameters.path.directionalLightCount)
+    index -= ranges.spotCount;
+    if (index < ranges.directionalEnd)
     {
         return {BdptLightType::Directional, index};
     }
-    index -= parameters.path.directionalLightCount;
-    if (index < parameters.path.triangleLightCount)
+    index -= ranges.directionalEnd;
+    if (index < triangleLightCount())
     {
         return {BdptLightType::Area, index};
     }
@@ -67,21 +68,22 @@ BdptLightReference bdptLightAt(uint index)
 
 uint bdptLightIndex(BdptLightReference light)
 {
+    LightRanges ranges = sceneGlobals[0].lightRanges;
     if (light.type == BdptLightType::Point)
     {
         return light.index;
     }
     if (light.type == BdptLightType::Spot)
     {
-        return parameters.path.pointLightCount + light.index;
+        return ranges.pointCount + light.index;
     }
     if (light.type == BdptLightType::Directional)
     {
-        return parameters.path.pointLightCount + parameters.path.spotLightCount + light.index;
+        return ranges.pointCount + ranges.spotCount + light.index;
     }
     if (light.type == BdptLightType::Area)
     {
-        return parameters.path.pointLightCount + parameters.path.spotLightCount + parameters.path.directionalLightCount + light.index;
+        return ranges.pointEnd + ranges.spotCount + light.index;
     }
 
     return bdptLightCount() - 1;
@@ -119,28 +121,17 @@ bool bdptDeltaLight(BdptLightReference light)
         light.type == BdptLightType::Directional;
 }
 
-float bdptSpotFalloff(SpotLight light, float3 direction)
+LightData bdptPunctualLight(BdptLightReference light)
 {
-    float cosine = dot(light.direction, direction);
-    if (cosine < light.cosOuter)
-    {
-        return 0.0;
-    }
-    if (cosine >= light.cosInner)
-    {
-        return 1.0;
-    }
-
-    float transition = (cosine - light.cosOuter) / (light.cosInner - light.cosOuter);
-
-    return transition * transition * transition * transition;
+    LightRanges ranges = sceneGlobals[0].lightRanges;
+    return lights[(light.type == BdptLightType::Point ? ranges.directionalEnd : ranges.rectAreaEnd) + light.index];
 }
 
 float bdptEmissionDirectionPdf(BdptVertex vertex, float3 direction)
 {
     if (vertex.light.type == BdptLightType::Area)
     {
-        LightTriangle triangle = lightTriangles[vertex.light.index];
+        LightTriangle triangle = loadTriangleLight(vertex.light.index);
         float cosine = dot(triangle.geometricNormal, direction);
         if (triangle.twoSided != 0)
         {
@@ -155,9 +146,9 @@ float bdptEmissionDirectionPdf(BdptVertex vertex, float3 direction)
     }
     if (vertex.light.type == BdptLightType::Spot)
     {
-        SpotLight light = spotLights[vertex.light.index];
+        LightData light = bdptPunctualLight(vertex.light);
 
-        return dot(light.direction, direction) >= light.cosOuter
+        return dot(light.direction.xyz, direction) >= light.cosOuter
             ? 1.0 / (2.0 * PI * (1.0 - light.cosOuter)) : 0.0;
     }
 
@@ -173,7 +164,7 @@ float bdptLightOriginPdf(BdptVertex vertex)
     }
     if (vertex.light.type == BdptLightType::Area)
     {
-        float area = lightTriangles[vertex.light.index].area;
+        float area = loadTriangleLight(vertex.light.index).area;
 
         return area > 0.0 ? probability / area : 0.0;
     }
@@ -193,7 +184,9 @@ float bdptLightPdf(BdptVertex light, BdptVertex next)
     {
         float3 offset = next.position - light.position;
         float distanceSquared = dot(offset, offset);
-        if (distanceSquared == 0.0)
+        if (distanceSquared == 0.0 ||
+            ((light.light.type == BdptLightType::Point || light.light.type == BdptLightType::Spot) &&
+             !withinLightRange(bdptPunctualLight(light.light), distanceSquared)))
         {
             return 0.0;
         }
@@ -224,30 +217,22 @@ bool bdptSampleLi(BdptVertex reference, inout uint state, out BdptVertex sampled
     float3 direction;
     if (sampled.light.type == BdptLightType::Point || sampled.light.type == BdptLightType::Spot)
     {
-        sampled.position = sampled.light.type == BdptLightType::Point
-            ? pointLights[sampled.light.index].position : spotLights[sampled.light.index].position;
+        LightData light = bdptPunctualLight(sampled.light);
+        sampled.position = light.position;
         float3 offset = sampled.position - reference.position;
         float distanceSquared = dot(offset, offset);
-        if (distanceSquared == 0.0)
+        if (distanceSquared == 0.0 || !withinLightRange(light, distanceSquared))
         {
             return false;
         }
         direction = offset * rsqrt(distanceSquared);
-        if (sampled.light.type == BdptLightType::Point)
-        {
-            radiance = emissionRgb(pointLights[sampled.light.index].emission, float2(0.0));
-        }
-        else
-        {
-            SpotLight light = spotLights[sampled.light.index];
-            radiance = emissionRgb(light.emission, float2(0.0)) * bdptSpotFalloff(light, -direction);
-        }
-        radiance /= distanceSquared;
+        float attenuation = light.type == LightType::Spot ? spotAngularAttenuation(light, -direction) : 1.0;
+        radiance = light.color * (attenuation / distanceSquared);
     }
     else if (sampled.light.type == BdptLightType::Area)
     {
         sampled.position = sampleTriangle(sampled.light.index, bdptRandom2D(state), sampled.uv);
-        LightTriangle triangle = lightTriangles[sampled.light.index];
+        LightTriangle triangle = loadTriangleLight(sampled.light.index);
         sampled.normal = sampled.geometricNormal = triangle.geometricNormal;
         float3 offset = sampled.position - reference.position;
         float distanceSquared = dot(offset, offset);
@@ -268,14 +253,15 @@ bool bdptSampleLi(BdptVertex reference, inout uint state, out BdptVertex sampled
     {
         if (sampled.light.type == BdptLightType::Directional)
         {
-            direction = -directionalLights[sampled.light.index].direction;
-            radiance = emissionRgb(directionalLights[sampled.light.index].emission, float2(0.0));
+            LightData light = lights[sampled.light.index];
+            direction = -light.direction.xyz;
+            radiance = light.color;
         }
         else
         {
             direction = bdptUniformSphere(bdptRandom2D(state));
             pdf = 1.0 / (4.0 * PI);
-            radiance = environmentEmission(true, direction);
+            radiance = environmentRadiance(direction);
         }
 
         sampled.wo = direction;
@@ -310,7 +296,7 @@ bool bdptSampleLe(inout uint state, out BdptVertex endpoint, out RayDesc ray,
     float cosine = 1.0;
     if (endpoint.light.type == BdptLightType::Area)
     {
-        LightTriangle triangle = lightTriangles[endpoint.light.index];
+        LightTriangle triangle = loadTriangleLight(endpoint.light.index);
         if (triangle.area == 0.0)
         {
             return false;
@@ -336,36 +322,37 @@ bool bdptSampleLe(inout uint state, out BdptVertex endpoint, out RayDesc ray,
     }
     else if (endpoint.light.type == BdptLightType::Point)
     {
-        PointLight light = pointLights[endpoint.light.index];
+        LightData light = bdptPunctualLight(endpoint.light);
         endpoint.position = light.position;
         ray.Direction = bdptUniformSphere(directionSample);
         directionPdf = 1.0 / (4.0 * PI);
-        radiance = emissionRgb(light.emission, float2(0.0));
+        radiance = light.color;
     }
     else if (endpoint.light.type == BdptLightType::Spot)
     {
-        SpotLight light = spotLights[endpoint.light.index];
+        LightData light = bdptPunctualLight(endpoint.light);
         endpoint.position = light.position;
         float z = lerp(1.0, light.cosOuter, directionSample.x);
         float radius = sqrt(max(0.0, 1.0 - z * z));
         float phi = 2.0 * PI * directionSample.y;
-        ray.Direction = bdptFrameDirection(light.direction, float3(radius * cos(phi), radius * sin(phi), z));
+        ray.Direction = bdptFrameDirection(light.direction.xyz, float3(radius * cos(phi), radius * sin(phi), z));
         directionPdf = 1.0 / (2.0 * PI * (1.0 - light.cosOuter));
-        radiance = emissionRgb(light.emission, float2(0.0)) * bdptSpotFalloff(light, ray.Direction);
+        radiance = light.color * spotAngularAttenuation(light, ray.Direction);
     }
     else
     {
         if (endpoint.light.type == BdptLightType::Directional)
         {
-            ray.Direction = directionalLights[endpoint.light.index].direction;
+            LightData light = lights[endpoint.light.index];
+            ray.Direction = light.direction.xyz;
             directionPdf = 1.0;
-            radiance = emissionRgb(directionalLights[endpoint.light.index].emission, float2(0.0));
+            radiance = light.color;
         }
         else
         {
             ray.Direction = bdptUniformSphere(directionSample);
             directionPdf = 1.0 / (4.0 * PI);
-            radiance = environmentEmission(true, -ray.Direction);
+            radiance = environmentRadiance(-ray.Direction);
         }
 
         endpoint.wo = -ray.Direction;

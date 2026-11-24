@@ -14,25 +14,25 @@ constexpr std::string_view kGBufferShader = "gbuffer";
 }
 
 
-Falcor::RenderPassReflection GBufferPass::reflect(const CompileData& compileData)
+RenderPassReflection GBufferPass::reflect(const CompileData& compileData)
 {
     const auto* input  = compileData.connectedResources.getField("depth");
-    const auto  extent = input ? Falcor::uint2{input->getWidth(), input->getHeight()} : Falcor::uint2{};
+    const auto  extent = input ? glm::uvec2{input->getWidth(), input->getHeight()} : glm::uvec2{};
 
-    Falcor::RenderPassReflection reflection;
+    RenderPassReflection reflection;
     reflection.addInput("depth", "Scene depth")
         .format(rhi::Format::D32Float)
-        .bindFlags(Falcor::ResourceBindFlags::DepthStencil);
+        .bindFlags(ResourceBindFlags::DepthStencil);
     for (size_t index = 0; index < kColorNames.size(); ++index)
         reflection.addOutput(std::string{kColorNames[index]}, "G-buffer channel")
             .format(kColorFormats[index])
-            .bindFlags(Falcor::ResourceBindFlags::RenderTarget)
+            .bindFlags(ResourceBindFlags::RenderTarget)
             .texture2D(extent.x, extent.y);
     return reflection;
 }
 
 
-void GBufferPass::compile(Falcor::RenderContext* passContext, const CompileData&)
+void GBufferPass::compile(RenderContext* passContext, const CompileData&)
 {
     std::array<rhi::ColorTargetDesc, kColorFormats.size()> colors;
     for (size_t index = 0; index < colors.size(); ++index)
@@ -51,7 +51,7 @@ void GBufferPass::compile(Falcor::RenderContext* passContext, const CompileData&
 }
 
 
-void GBufferPass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
+void GBufferPass::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
     std::array<rhi::RenderPassColorAttachment, kColorFormats.size()> colors;
     std::array<rhi::ComPtr<rhi::ITextureView>, kColorFormats.size()> views;
@@ -78,7 +78,7 @@ void GBufferPass::execute(Falcor::RenderContext* renderCommands, const Falcor::R
     pass->end();
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<Falcor::RenderPass, GBufferPass>();
+    registry.registerClass<RenderPass, GBufferPass>();
 }

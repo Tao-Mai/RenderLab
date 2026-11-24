@@ -3,15 +3,6 @@
 
 #include "scene/light_data.slang"
 
-struct LightUniforms
-{
-    LightRanges lightRanges;
-    float ambientCoefficient;
-    float prefilteredMaxLod;
-    float2 padding;
-};
-
-ConstantBuffer<LightUniforms> lightUniforms;
 StructuredBuffer<LightData> lights;
 
 #endif

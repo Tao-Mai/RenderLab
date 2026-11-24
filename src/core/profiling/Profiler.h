@@ -105,24 +105,26 @@ private:
     Timer            timer;
 };
 
-namespace Falcor
+namespace rhi
 {
-class RenderContext;
+class ICommandEncoder;
+}
 
-class FALCOR_API ScopedProfilerEvent
+class GpuProfiler;
+
+class RENDERLAB_CORE_API ScopedProfilerEvent
 {
 public:
-    ScopedProfilerEvent(RenderContext* context, std::string_view name);
+    ScopedProfilerEvent(
+        Profiler* profiler, GpuProfiler* gpuProfiler, rhi::ICommandEncoder& commands, std::string_view name
+    );
     ~ScopedProfilerEvent();
     ScopedProfilerEvent(const ScopedProfilerEvent&)            = delete;
     ScopedProfilerEvent& operator=(const ScopedProfilerEvent&) = delete;
 
 private:
-    RenderContext*  mpRenderContext;
-    CpuProfileScope cpuTiming;
-    uint32_t        gpuScope = ~0u;
+    rhi::ICommandEncoder& commands;
+    GpuProfiler*          gpuProfiler;
+    CpuProfileScope       cpuTiming;
+    uint32_t              gpuScope = ~0u;
 };
-}  // namespace Falcor
-
-#define FALCOR_PROFILE(context, name) \
-    ::Falcor::ScopedProfilerEvent FALCOR_CONCAT_STRINGS(_profileEvent, __LINE__)(context, name)

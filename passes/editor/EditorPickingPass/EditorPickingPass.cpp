@@ -1,47 +1,49 @@
 #include "passes/editor/EditorPickingPass/EditorPickingPass.h"
 
-#include "core/Plugin.h"
-#include "core/profiling/Profiler.h"
-#include "render/Visibility.h"
-#include "render/raster/MeshDraw.h"
-
-#include <slang-rhi.h>
+#include <slang-rhi/shader-cursor.h>
 #include "core/Logger.h"
-#include "render/FrameData.h"
+#include "core/Plugin.h"
 #include "render/PreparedScene.h"
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
-#include "render/device/GpuResources.h"
-#include "render/editor/EditorFrameInput.h"
+#include "render/device/RhiCheck.h"
 #include "render/editor/EditorShaderData.h"
+#include "render/raster/MeshDraw.h"
 #include "render/resources/GpuMesh.h"
 #include "render/resources/RenderResourceManager.h"
+#include "render/resources/ShaderManager.h"
 
-#include <array>
+#include <algorithm>
 
-Falcor::RenderPassReflection EditorPickingPass::reflect(const CompileData& compileData)
+namespace
+{
+constexpr char        kIdTarget[] = "ids";
+constexpr rhi::Format kIdFormat   = rhi::Format::R32Uint;
+}  // namespace
+
+RenderPassReflection EditorPickingPass::reflect(const CompileData& compileData)
 {
     const auto* input  = compileData.connectedResources.getField("depth");
-    const auto  extent = input ? Falcor::uint2{input->getWidth(), input->getHeight()} : Falcor::uint2{};
+    const auto  extent = input ? glm::uvec2{input->getWidth(), input->getHeight()} : glm::uvec2{};
 
-    Falcor::RenderPassReflection reflection;
+    RenderPassReflection reflection;
     reflection.addInput("depth", "Scene depth")
         .format(rhi::Format::D32Float)
-        .bindFlags(Falcor::ResourceBindFlags::DepthStencil);
-    reflection.addOutput(kPickingImageOutput, "Object identifiers")
-        .format(rhi::Format::R32Uint)
-        .bindFlags(Falcor::ResourceBindFlags::RenderTarget)
+        .bindFlags(ResourceBindFlags::DepthStencil);
+    reflection.addInternal(kIdTarget, "Object identifiers")
+        .format(kIdFormat)
+        .bindFlags(ResourceBindFlags::RenderTarget)
         .texture2D(extent.x, extent.y);
     return reflection;
 }
 
 
-void EditorPickingPass::compile(Falcor::RenderContext* context, const CompileData&)
+void EditorPickingPass::compile(RenderContext* context, const CompileData&)
 {
-    shader                     = context->shaderManager->getOrLoad("editor_picking");
-    const auto           input = createMeshInputLayout(*context->device);
+    const auto shader = context->shaderManager->getOrLoad("editor_picking");
+    const auto input  = createMeshInputLayout(*context->device);
     rhi::ColorTargetDesc color;
-    color.format = rhi::Format::R32Uint;
+    color.format = kIdFormat;
     rhi::RenderPipelineDesc desc;
     desc.program                  = context->shaderManager->program(shader);
     desc.inputLayout              = input;
@@ -55,16 +57,35 @@ void EditorPickingPass::compile(Falcor::RenderContext* context, const CompileDat
                     .depthFunc        = rhi::ComparisonFunc::LessEqual
     };
     rhiCheck(context->device->createRenderPipeline(desc, pipeline.writeRef()));
+
+    if (!readback)
+    {
+        rhi::BufferDesc readbackDesc;
+        readbackDesc.size       = sizeof(uint32_t);
+        readbackDesc.usage      = rhi::BufferUsage::CopyDestination | rhi::BufferUsage::CopySource;
+        readbackDesc.memoryType = rhi::MemoryType::ReadBack;
+        rhiCheck(context->device->createBuffer(readbackDesc, nullptr, readback.writeRef()));
+    }
 }
 
 
-void EditorPickingPass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
+void EditorPickingPass::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
-    const auto& execution = *renderCommands;
-    const auto& editor    = *execution.editor;
-    if (!editor.requestPick)
+    auto&       execution = *renderCommands;
+    const auto& request   = execution.editor->pick;
+    if (!request)
         return;
-    const auto target    = renderData.getTexture(kPickingImageOutput);
+
+    const auto  target   = renderData.getTexture(kIdTarget);
+    const auto& size     = target->getDesc().size;
+    const auto  viewport = execution.view->viewport.clamped({size.width, size.height});
+    const auto  pixel    = [](float position, float offset, float length)
+    {
+        return uint32_t(offset) + std::min(uint32_t(position * length), uint32_t(length) - 1);
+    };
+    const auto x = pixel(request->viewportUv.x, viewport.x, viewport.width);
+    const auto y = pixel(request->viewportUv.y, viewport.y, viewport.height);
+
     const auto colorView = target->getDefaultView();
     CHECK(colorView);
     const auto depthView = renderData.getTexture("depth")->getDefaultView();
@@ -77,10 +98,8 @@ void EditorPickingPass::execute(Falcor::RenderContext* renderCommands, const Fal
     depth.depthReadOnly = true;
     auto* pass          = execution.commands->beginRenderPass({&color, 1, &depth});
     CHECK(pass);
-    const auto& size      = target->getDesc().size;
-    const auto  viewport  = execution.view->viewport.clamped({size.width, size.height});
-    auto        state     = viewport.renderState();
-    state.scissorRects[0] = {editor.pickX, editor.pickY, editor.pickX + 1, editor.pickY + 1};
+    auto state            = viewport.renderState();
+    state.scissorRects[0] = {x, y, x + 1, y + 1};
     for (uint32_t index = 0; index < execution.scene->drawItems.size(); ++index)
     {
         if (!execution.scene->isVisible(index))
@@ -88,9 +107,10 @@ void EditorPickingPass::execute(Falcor::RenderContext* renderCommands, const Fal
         const auto& item   = execution.scene->drawItems[index];
         auto*       object = pass->bindPipeline(pipeline);
         CHECK(object);
-        bindFrameData(object, *execution.frameData);
+        const rhi::ShaderCursor root(object);
+        rhiCheck(root["editorView"].getDereferenced().setData(execution.view->uniforms.viewProjection));
         const EditorPickingPushConstants constants{.model = item.model, .selectionId = item.selectionId};
-        rhiCheck(rhi::ShaderCursor(object)["pushConstants"].getDereferenced().setData(constants));
+        rhiCheck(root["pushConstants"].getDereferenced().setData(constants));
         const auto& mesh        = execution.resources->mesh(item.mesh);
         const auto& submesh     = mesh.submeshes()[item.submeshIndex];
         state.vertexBufferCount = 1;
@@ -98,12 +118,21 @@ void EditorPickingPass::execute(Falcor::RenderContext* renderCommands, const Fal
         state.indexBuffer       = {mesh.indices(), 0};
         pass->setRenderState(state);
         pass->drawIndexed({submesh.indexCount, 1, 0, 0, submesh.firstIndex});
-        recordDraw(execution.profiler, submesh.indexCount);
     }
     pass->end();
+
+    execution.commands->copyTextureToBuffer(
+        readback, 0, sizeof(uint32_t), sizeof(uint32_t), target, 0, 0, {x, y, 0}, {1, 1, 1}
+    );
+    execution.onGpuComplete.emplace_back([device = mpDevice, buffer = readback, complete = request->complete]
+    {
+        uint32_t selectionId;
+        rhiCheck(device->readBuffer(buffer, 0, sizeof(selectionId), &selectionId));
+        complete(selectionId);
+    });
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<Falcor::RenderPass, EditorPickingPass>();
+    registry.registerClass<RenderPass, EditorPickingPass>();
 }

@@ -2,7 +2,7 @@
 #define RENDERLAB_SVGF_COMMON_SLANG
 
 #include "math/color.slang"
-#include "render/denoise/DenoiserInputs.h"
+#include "raytracing/LightingLayers.h"
 
 // Schied et al., HPG 2017: fixed edge-stopping parameters shared by both lighting signals.
 static const float kSvgfPhiDepth = 1.0;

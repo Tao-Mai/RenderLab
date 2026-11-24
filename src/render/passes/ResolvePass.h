@@ -4,11 +4,9 @@
 #include "core/Macros.h"
 #include "render/graph/RenderPass.h"
 
-namespace Falcor
+class RENDERLAB_CORE_API ResolvePass : public RenderPass
 {
-class FALCOR_API ResolvePass : public RenderPass
-{
-    FALCOR_PLUGIN_CLASS(ResolvePass, "ResolvePass", "Resolve a multi-sampled texture.");
+    RL_PLUGIN_CLASS(ResolvePass, "ResolvePass", "Resolve a multi-sampled texture.");
 
     static ref<ResolvePass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties = {})
     {
@@ -23,4 +21,3 @@ class FALCOR_API ResolvePass : public RenderPass
 private:
     rhi::Format mFormat = rhi::Format::Undefined;
 };
-}  // namespace Falcor

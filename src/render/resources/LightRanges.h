@@ -18,6 +18,9 @@ struct LightRanges
 
 #ifdef __cplusplus
     bool operator==(const LightRanges&) const = default;
+#else
+    property uint pointCount { get { return pointEnd - directionalEnd; } }
+    property uint spotCount { get { return spotEnd - rectAreaEnd; } }
 #endif
 };
 

@@ -1,11 +1,9 @@
 #include "passes/postprocess/Bloom/Bloom.h"
 
 #include "core/Logger.h"
-#include "core/profiling/Profiler.h"
 
 #include <slang-rhi.h>
 #include "asset/BuiltinAssets.h"
-#include "core/Context.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
@@ -34,7 +32,7 @@ struct alignas(16) BloomParameters
 };
 static_assert(sizeof(BloomParameters) == 48);
 
-uint32_t pyramidLevels(Falcor::uint2 extent, uint32_t limit)
+uint32_t pyramidLevels(glm::uvec2 extent, uint32_t limit)
 {
     const auto levels = std::bit_width(std::max({2u, extent.x, extent.y})) - 1;
     return std::min(static_cast<uint32_t>(levels), limit);
@@ -52,17 +50,17 @@ void BloomSettings::validate() const
 }
 
 
-Bloom::Bloom(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
-    Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<BloomSettings>(properties))
+Bloom::Bloom(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+    RenderPass(std::move(device)), parameters(deserializeFromProperties<BloomSettings>(properties))
 {
     parameters.validate();
 }
 
 
-Falcor::Properties Bloom::getProperties() const { return Falcor::serializeToProperties(parameters); }
+Properties Bloom::getProperties() const { return serializeToProperties(parameters); }
 
 
-void Bloom::setProperties(const Falcor::Properties& properties)
+void Bloom::setProperties(const Properties& properties)
 {
     BloomSettings next;
     Deserialize(nlohmann::json(properties.toJson()), next);
@@ -75,7 +73,7 @@ void Bloom::setProperties(const Falcor::Properties& properties)
 }
 
 
-Falcor::RenderPassReflection Bloom::reflect(const CompileData& compileData)
+RenderPassReflection Bloom::reflect(const CompileData& compileData)
 {
     auto extent = compileData.defaultTexDims;
     if (const auto* input = compileData.connectedResources.getField("hdrColor"))
@@ -84,13 +82,13 @@ Falcor::RenderPassReflection Bloom::reflect(const CompileData& compileData)
         extent.y = input->getHeight() ? input->getHeight() : extent.y;
     }
 
-    Falcor::RenderPassReflection reflection;
+    RenderPassReflection reflection;
     reflection.addInput("hdrColor", "HDR scene color")
-        .bindFlags(Falcor::ResourceBindFlags::ShaderResource)
+        .bindFlags(ResourceBindFlags::ShaderResource)
         .format(rhi::Format::RGBA16Float);
     reflection.addOutput("color", "Scene color with bloom")
         .format(rhi::Format::RGBA16Float)
-        .bindFlags(Falcor::ResourceBindFlags::RenderTarget)
+        .bindFlags(ResourceBindFlags::RenderTarget)
         .texture2D(extent.x, extent.y);
 
     const auto levels   = pyramidLevels(extent, parameters.levels);
@@ -100,7 +98,7 @@ Falcor::RenderPassReflection Bloom::reflect(const CompileData& compileData)
         reflection.addInternal(pyramidImageName(stage, level), "Bloom pyramid image")
             .texture2D(size.x, size.y)
             .format(rhi::Format::RGBA16Float)
-            .bindFlags(Falcor::ResourceBindFlags::ShaderResource | Falcor::ResourceBindFlags::RenderTarget);
+            .bindFlags(ResourceBindFlags::ShaderResource | ResourceBindFlags::RenderTarget);
     };
     for (uint32_t level = 0; level < levels; ++level)
     {
@@ -114,10 +112,10 @@ Falcor::RenderPassReflection Bloom::reflect(const CompileData& compileData)
 }
 
 
-void Bloom::compile(Falcor::RenderContext* passContext, const CompileData&) { filters.clear(); }
+void Bloom::compile(RenderContext* passContext, const CompileData&) { filters.clear(); }
 
 
-void Bloom::prepareFilters(const Falcor::RenderContext& context, const Falcor::RenderData& renderData)
+void Bloom::prepareFilters(const RenderContext& context, const RenderData& renderData)
 {
     auto&      cache    = *context.gpuResources;
     const auto hdrColor = cache.registerImage(renderData.getTexture("hdrColor"));
@@ -152,7 +150,7 @@ void Bloom::prepareFilters(const Falcor::RenderContext& context, const Falcor::R
 }
 
 
-void Bloom::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
+void Bloom::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
     auto&       cache    = *renderCommands->gpuResources;
     auto&       commands = *renderCommands->commands;
@@ -167,7 +165,7 @@ void Bloom::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderD
 
 
 void Bloom::Filter::compile(
-    const Falcor::RenderContext& context,
+    const RenderContext& context,
     GpuResources::ImageHandle    input,
     GpuResources::ImageHandle    baseInput,
     GpuResources::ImageHandle    target
@@ -232,6 +230,5 @@ void Bloom::Filter::execute(
         rhiCheck(uniformCursor.setData(&uniformValue, uniformCursor.getTypeLayout()->getSize()));
     };
     pass->draw({3});
-    recordDraw(context().profiler, 3);
     pass->end();
 }

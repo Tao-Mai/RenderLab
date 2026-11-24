@@ -35,6 +35,17 @@ function(renderlab_shader program source binary)
         "{\"defines\":${options},\"binary\":\"${binary}.slang-module\",\"entries\":${entries}}")
 endfunction()
 
+function(renderlab_runtime_shader program source)
+    cmake_parse_arguments(S "" "" "ENTRIES" ${ARGN})
+    cmake_path(ABSOLUTE_PATH source BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" NORMALIZE)
+    if(NOT S_ENTRIES)
+        set(S_ENTRIES vertMain fragMain)
+    endif()
+    list(JOIN S_ENTRIES "\",\"" entries)
+    file(GENERATE OUTPUT "${SHADER_BINARY_DIR}/${program}.source.json" CONTENT
+        "{\"source\":\"${source}\",\"searchPaths\":[\"${SHADER_SOURCE_DIR}\",\"${RenderLab_SOURCE_DIR}\",\"${RenderLab_SOURCE_DIR}/src\"],\"entries\":[\"${entries}\"]}\n")
+endfunction()
+
 function(renderlab_build_shaders)
     # Output rules and their consuming target must belong to the same CMake directory.
     get_property(binaries GLOBAL PROPERTY renderlab_shader_binaries)

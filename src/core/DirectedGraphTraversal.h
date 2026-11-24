@@ -35,8 +35,6 @@
 #include <string>
 #include <vector>
 
-namespace Falcor
-{
 class DirectedGraphTraversal
 {
 public:
@@ -70,7 +68,7 @@ protected:
     }
 };
 
-FALCOR_ENUM_CLASS_OPERATORS(DirectedGraphTraversal::Flags);
+RL_ENUM_CLASS_OPERATORS(DirectedGraphTraversal::Flags);
 
 template <typename Args>
 class DirectedGraphTraversalTemplate : public DirectedGraphTraversal
@@ -241,4 +239,3 @@ namespace DirectedGraphPathDetector
 
     inline bool hasCycle(const DirectedGraph& graph, uint32_t root) { return hasPath(graph, root, root); }
 };  // namespace DirectedGraphPathDetector
-}  // namespace Falcor

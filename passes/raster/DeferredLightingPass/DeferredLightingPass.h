@@ -7,27 +7,31 @@
 #include <slang-rhi/shader-cursor.h>
 #include "render/raster/RasterLightingSettings.h"
 
-class DeferredLightingPass : public Falcor::RenderPass
+#include <array>
+
+class DeferredLightingPass : public RenderPass
 {
-    FALCOR_PLUGIN_CLASS(DeferredLightingPass, "DeferredLightingPass", "Shades the G-buffer.");
+    RL_PLUGIN_CLASS(DeferredLightingPass, "DeferredLightingPass", "Shades the G-buffer.");
 
-    DeferredLightingPass(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties);
+    DeferredLightingPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
 
-    [[nodiscard]] Falcor::Properties getProperties() const override;
-    void                             setProperties(const Falcor::Properties& properties) override;
+    [[nodiscard]] Properties getProperties() const override;
+    void                             setProperties(const Properties& properties) override;
 
-    static Falcor::ref<DeferredLightingPass>
-    create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
+    static ref<DeferredLightingPass>
+    create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
     {
-        return Falcor::make_ref<DeferredLightingPass>(std::move(device), properties);
+        return make_ref<DeferredLightingPass>(std::move(device), properties);
     }
 
-    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData& compileData) override;
-    void compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
-    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
+    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
+    void compile(RenderContext* passContext, const CompileData& compileData) override;
+    void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
 private:
-    RasterLightingSettings parameters;
+    RasterLightingOutputSettings parameters;
 
-    rhi::ComPtr<rhi::IRenderPipeline> pipeline;
+    rhi::IRenderPipeline* getPipeline(const RenderContext& context, rhi::Format format);
+
+    std::array<rhi::ComPtr<rhi::IRenderPipeline>, 2> pipelines;
 };

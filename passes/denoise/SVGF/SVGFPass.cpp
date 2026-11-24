@@ -22,15 +22,15 @@ constexpr uint32_t kHistoryLayers         = 2;
 constexpr uint32_t kLightingHistoryLayers = kHistoryLayers * kLightingLayerCount;
 }  // namespace
 
-SVGFPass::SVGFPass(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
-    Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<SvgfSettings>(properties))
+SVGFPass::SVGFPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+    RenderPass(std::move(device)), parameters(deserializeFromProperties<SvgfSettings>(properties))
 {
     parameters.validate();
 }
 
-Falcor::Properties SVGFPass::getProperties() const { return Falcor::serializeToProperties(parameters); }
+Properties SVGFPass::getProperties() const { return serializeToProperties(parameters); }
 
-void SVGFPass::setProperties(const Falcor::Properties& properties)
+void SVGFPass::setProperties(const Properties& properties)
 {
     SvgfSettings next;
     Deserialize(nlohmann::json(properties.toJson()), next);
@@ -39,41 +39,41 @@ void SVGFPass::setProperties(const Falcor::Properties& properties)
     parameters = std::move(next);
 }
 
-Falcor::RenderPassReflection SVGFPass::reflect(const CompileData& compileData)
+RenderPassReflection SVGFPass::reflect(const CompileData& compileData)
 {
     const auto* input  = compileData.connectedResources.getField(kInputBufferColor);
-    const auto  extent = input ? Falcor::uint2{input->getWidth(), input->getHeight()} : Falcor::uint2{};
+    const auto  extent = input ? glm::uvec2{input->getWidth(), input->getHeight()} : glm::uvec2{};
 
-    Falcor::RenderPassReflection reflection;
+    RenderPassReflection reflection;
     reflection.addInput(kInputBufferColor, "Direct and indirect radiance")
         .texture2D(0, 0, 1, 0, kLightingLayerCount)
-        .bindFlags(Falcor::ResourceBindFlags::ShaderResource);
+        .bindFlags(ResourceBindFlags::ShaderResource);
     for (const auto* name : {kInputBufferAlbedo, kInputBufferEmission, kInputBufferWorldNormal, kInputBufferLinearZ})
         reflection.addInput(name, "Denoiser input texture")
             .texture2D(0, 0, 1, 0, 0)
-            .bindFlags(Falcor::ResourceBindFlags::ShaderResource);
+            .bindFlags(ResourceBindFlags::ShaderResource);
 
     reflection.addInternal(kInternalBufferPreviousLinearZAndNormal, "Previous Linear Z and Packed Normal")
         .format(rhi::Format::RGBA32Float)
-        .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess)
+        .bindFlags(ResourceBindFlags::UnorderedAccess)
         .texture2D(extent.x, extent.y, 1, 1, kHistoryLayers);
     reflection.addInternal(kInternalBufferPreviousLighting, "Previous Filtered Lighting")
         .format(rhi::Format::RGBA32Float)
-        .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess)
+        .bindFlags(ResourceBindFlags::UnorderedAccess)
         .texture2D(extent.x, extent.y, 1, 1, kLightingHistoryLayers);
     reflection.addInternal(kInternalBufferPreviousMoments, "Previous Moments")
         .format(rhi::Format::RG32Float)
-        .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess)
+        .bindFlags(ResourceBindFlags::UnorderedAccess)
         .texture2D(extent.x, extent.y, 1, 1, kLightingHistoryLayers);
 
     reflection.addOutput(kOutputBufferFilteredImage, "Denoised radiance")
         .format(rhi::Format::RGBA16Float)
-        .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess)
+        .bindFlags(ResourceBindFlags::UnorderedAccess)
         .texture2D(extent.x, extent.y);
     return reflection;
 }
 
-void SVGFPass::compile(Falcor::RenderContext*, const CompileData& compileData)
+void SVGFPass::compile(RenderContext*, const CompileData& compileData)
 {
     const auto* input = compileData.connectedResources.getField(kInputBufferColor);
 
@@ -96,7 +96,7 @@ void SVGFPass::compile(Falcor::RenderContext*, const CompileData& compileData)
     resourcesBound = false;
 }
 
-void SVGFPass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
+void SVGFPass::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
     auto&       cache    = *renderCommands->gpuResources;
     auto&       commands = *renderCommands->commands;
@@ -105,7 +105,7 @@ void SVGFPass::execute(Falcor::RenderContext* renderCommands, const Falcor::Rend
     if (!resourcesBound)
     {
         const auto image = [&](std::string_view name) { return cache.registerImage(renderData.getTexture(name)); };
-        const DenoiserInputs traced{
+        const SVGFInputs traced{
             .color       = image(kInputBufferColor),
             .depth       = image(kInputBufferLinearZ),
             .worldNormal = image(kInputBufferWorldNormal),
@@ -136,12 +136,12 @@ void SVGFPass::execute(Falcor::RenderContext* renderCommands, const Falcor::Rend
     filter.execute(cache, commands, frame);
 }
 
-void SVGFPass::renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget)
+void SVGFPass::renderUI(RenderContext* context, Gui::Widgets& widget)
 {
     drawPassEditor(widget, *this, parameters, context->passEditor, "SVGF");
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<Falcor::RenderPass, SVGFPass>();
+    registry.registerClass<RenderPass, SVGFPass>();
 }

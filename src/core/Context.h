@@ -8,7 +8,6 @@ class InputManager;
 class Renderer;
 class SceneManager;
 class Window;
-class Profiler;
 
 struct Context
 {
@@ -20,7 +19,6 @@ struct Context
     SceneManager*             sceneManager        = nullptr;
     Renderer*                 renderer            = nullptr;
     Editor*                   editor              = nullptr;
-    Profiler*                 profiler            = nullptr;
 };
 
 [[nodiscard]] Context& context();

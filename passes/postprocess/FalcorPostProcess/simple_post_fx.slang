@@ -29,13 +29,13 @@
 #include "math/color.slang"
 
 // The effect kernels and their numerical quirks are preserved from Falcor SimplePostFX.
-#if FALCOR_POST_FX_STAGE == 0
+#if POST_FX_STAGE == 0
 struct Parameters
 {
     uint2  resolution;
     float2 invRes;
 };
-#elif FALCOR_POST_FX_STAGE == 1
+#elif POST_FX_STAGE == 1
 struct Parameters
 {
     uint2  resolution;
@@ -70,14 +70,14 @@ struct Parameters
 ConstantBuffer<Parameters> parameters;
 Texture2D<float4>          sourceImage;
 Texture2D<float4>          bloomedImage;
-#if FALCOR_POST_FX_STAGE == 2
+#if POST_FX_STAGE == 2
 RWTexture2D<float4> destinationImage;
 #else
 RWTexture2D<float4> destinationImage;
 #endif
 SamplerState linearSampler;
 
-#if FALCOR_POST_FX_STAGE != 2
+#if POST_FX_STAGE != 2
 float4 blurFilter2x2(Texture2D<float4> src, const float2 uv, float uscale, float vscale)
 {
     // 2x2 bilinear-tap kernel, effective footprint 4x4, with offsets chosen to sample from the binomial 1 3 3 1
@@ -157,7 +157,7 @@ float4 blurFilter5x5(Texture2D<float4> src, const float2 uv, const float uscale,
 
 #endif
 
-#if FALCOR_POST_FX_STAGE == 0
+#if POST_FX_STAGE == 0
 [shader("compute")][numthreads(16, 16, 1)] void computeMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
     if (any(dispatchThreadId.xy >= parameters.resolution))
@@ -167,7 +167,7 @@ float4 blurFilter5x5(Texture2D<float4> src, const float2 uv, const float uscale,
     destinationImage[pixelPos] = blurFilter5x5(sourceImage, uv, parameters.invRes.x * 0.5f, parameters.invRes.y * 0.5f);
 }
 
-#elif FALCOR_POST_FX_STAGE == 1
+#elif POST_FX_STAGE == 1
 [shader("compute")][numthreads(16, 16, 1)] void computeMain(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
     if (any(dispatchThreadId.xy >= parameters.resolution))

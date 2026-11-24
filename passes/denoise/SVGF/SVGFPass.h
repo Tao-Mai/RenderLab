@@ -6,25 +6,25 @@
 
 #include <array>
 
-class SVGFPass : public Falcor::RenderPass
+class SVGFPass : public RenderPass
 {
-    FALCOR_PLUGIN_CLASS(SVGFPass, "SVGFPass", "SVGF denoising pass.");
+    RL_PLUGIN_CLASS(SVGFPass, "SVGFPass", "SVGF denoising pass.");
 
-    SVGFPass(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties);
+    SVGFPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
 
-    [[nodiscard]] Falcor::Properties getProperties() const override;
-    void                             setProperties(const Falcor::Properties& properties) override;
+    [[nodiscard]] Properties getProperties() const override;
+    void                             setProperties(const Properties& properties) override;
 
-    static Falcor::ref<SVGFPass> create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
+    static ref<SVGFPass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
     {
-        return Falcor::make_ref<SVGFPass>(std::move(device), properties);
+        return make_ref<SVGFPass>(std::move(device), properties);
     }
 
-    void renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget) override;
+    void renderUI(RenderContext* context, Gui::Widgets& widget) override;
 
-    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData& compileData) override;
-    void compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
-    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
+    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
+    void compile(RenderContext* passContext, const CompileData& compileData) override;
+    void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
 private:
     SvgfSettings parameters;

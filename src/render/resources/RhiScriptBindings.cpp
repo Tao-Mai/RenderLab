@@ -7,7 +7,7 @@
 #include "render/device/RhiCheck.h"
 #include "render/graph/RenderGraphFlags.h"
 
-namespace Falcor::ScriptBindings
+namespace ScriptBindings
 {
 PythonObject toPython(rhi::ComPtr<rhi::IResource> resource)
 {
@@ -17,14 +17,12 @@ PythonObject toPython(rhi::ComPtr<rhi::IResource> resource)
     const auto                isBuffer = SLANG_SUCCEEDED(
         resource->queryInterface(rhi::IBuffer::getTypeGuid(), reinterpret_cast<void**>(buffer.writeRef()))
     );
-    auto* type = getType(typeid(rhi::ComPtr<rhi::IResource>), isBuffer ? "falcor.RhiBuffer" : "falcor.RhiTexture");
+    auto* type = getType(typeid(rhi::ComPtr<rhi::IResource>), isBuffer ? "renderlab.RhiBuffer" : "renderlab.RhiTexture");
     return PythonObject{type ? makePythonValue(type, std::move(resource)) : nullptr};
 }
-}  // namespace Falcor::ScriptBindings
+}  // namespace ScriptBindings
 
-namespace Falcor
-{
-FALCOR_SCRIPT_BINDING(RhiInterfaces)
+RL_SCRIPT_BINDING(RhiInterfaces)
 {
     using namespace ScriptBindings;
     static PyMethodDef kDeviceMethods[]{
@@ -85,7 +83,7 @@ FALCOR_SCRIPT_BINDING(RhiInterfaces)
         {}
     };
     static PyType_Spec kDeviceType{
-        "falcor.RhiDevice",
+        "renderlab.RhiDevice",
         sizeof(PythonValue<rhi::ComPtr<rhi::IDevice>>),
         0,
         Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION,
@@ -100,7 +98,7 @@ FALCOR_SCRIPT_BINDING(RhiInterfaces)
         {}
     };
     static PyType_Spec kResourceType{
-        "falcor.RhiResource",
+        "renderlab.RhiResource",
         sizeof(PythonValue<rhi::ComPtr<rhi::IResource>>),
         0,
         Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION | Py_TPFLAGS_BASETYPE,
@@ -131,7 +129,7 @@ FALCOR_SCRIPT_BINDING(RhiInterfaces)
     };
     static PyType_Slot kBufferSlots[]{{Py_tp_getset, kBufferProperties}, {}};
     static PyType_Spec
-        kBufferType{"falcor.RhiBuffer", 0, 0, Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION, kBufferSlots};
+        kBufferType{"renderlab.RhiBuffer", 0, 0, Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION, kBufferSlots};
     const auto buffer = makePythonType<rhi::ComPtr<rhi::IResource>>(m, kBufferType, resource.get());
     if (!buffer || PyModule_AddObjectRef(m, "RhiBuffer", buffer.get()) != 0)
         return -1;
@@ -160,7 +158,7 @@ FALCOR_SCRIPT_BINDING(RhiInterfaces)
     };
     static PyType_Slot kTextureSlots[]{{Py_tp_getset, kTextureProperties}, {}};
     static PyType_Spec
-        kTextureType{"falcor.RhiTexture", 0, 0, Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION, kTextureSlots};
+        kTextureType{"renderlab.RhiTexture", 0, 0, Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION, kTextureSlots};
     const auto texture = makePythonType<rhi::ComPtr<rhi::IResource>>(m, kTextureType, resource.get());
     if (!texture || PyModule_AddObjectRef(m, "RhiTexture", texture.get()) != 0)
         return -1;
@@ -235,4 +233,3 @@ FALCOR_SCRIPT_BINDING(RhiInterfaces)
         return -1;
     return bindEnum("IntFlag", "TextureChannelFlags", kTextureChannelFlags);
 }
-}  // namespace Falcor

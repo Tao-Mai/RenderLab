@@ -6,12 +6,10 @@
 #include "asset/SceneAsset.h"
 #include "editor/ComponentDraw.h"
 #include "editor/EditorCameraConfig.h"
-#include "editor/ExposureUi.h"
 #include "editor/Gui.h"
-#include "render/Renderer.h"
 #include "scene/AActor.h"
 
-bool drawCameraInspector(EditorCameraConfig& camera, const Renderer& renderer)
+bool drawCameraInspector(EditorCameraConfig& camera)
 {
     bool edited = false;
     if (ImGui::CollapsingHeader("Editor camera"))
@@ -74,29 +72,6 @@ bool drawCameraInspector(EditorCameraConfig& camera, const Renderer& renderer)
             ImGuiSliderFlags_AlwaysClamp
         );
 
-        ImGui::SeparatorText("Exposure");
-        ImGui::PushID("CameraExposure");
-        bool overrideExposure = camera.exposure.has_value();
-        if (ImGui::Checkbox("Override global exposure", &overrideExposure))
-        {
-            if (overrideExposure)
-            {
-                camera.exposure = renderer.defaultExposure();
-            }
-            else
-            {
-                camera.exposure.reset();
-            }
-            edited = true;
-        }
-
-        if (camera.exposure)
-        {
-            Falcor::Gui::Widgets widgets;
-            edited |= drawExposureSettings(widgets, *camera.exposure);
-        }
-        ImGui::PopID();
-
         ImGui::SeparatorText("Navigation");
         edited |= ImGui::DragFloat(
             "Camera sensitivity",
@@ -126,7 +101,7 @@ bool drawCameraInspector(EditorCameraConfig& camera, const Renderer& renderer)
 
 bool drawEnvironmentInspector(SceneAsset& scene, const AssetManager& assets)
 {
-    Falcor::Gui::Widgets widgets;
+    Gui::Widgets widgets;
     auto& current = scene.environmentMap;
     bool edited = false;
     if (widgets.resetHeader("Environment") && current)

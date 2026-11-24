@@ -1,4 +1,4 @@
-from falcor import RenderGraph
+from renderlab import RenderGraph
 
 
 def add_post_process(
@@ -8,6 +8,9 @@ def add_post_process(
     postProcess: str,
     bloom: bool,
 ) -> str:
+    if postProcess not in ("RenderLab", "Falcor"):
+        raise ValueError(f"Unknown post-process pipeline: {postProcess}")
+
     if not hdr:
         graph.mark_output(sceneColor)
         return sceneColor
@@ -32,5 +35,4 @@ def add_post_process(
     graph.add_edge(exposure, "toneMapping.exposure")
     color = "toneMapping.color"
     graph.mark_output(color)
-    graph.mark_output(exposure)
     return color

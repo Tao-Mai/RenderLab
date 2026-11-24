@@ -34,10 +34,10 @@ VertexOutput vertMain(uint vertexId : SV_VertexID)
 float4 fragMain(VertexOutput input) : SV_Target
 {
     const float2 ndc = uvToClip((input.position.xy - pushConstants.viewportOffset) / pushConstants.viewportExtent);
-    const float4 world = mul(sceneUniforms.inverseViewProjection,
+    const float4 world = mul(sceneGlobals[0].camera.inverseViewProjection,
         float4(ndc, 1.0, 1.0));
     const float3 direction = normalize(
-        world.xyz / world.w - sceneUniforms.cameraPosition.xyz);
+        world.xyz / world.w - sceneGlobals[0].camera.cameraPosition.xyz);
 
     return float4(radianceMap.SampleLevel(radianceSampler, direction, 0.0).rgb, 1.0);
 }

@@ -37,8 +37,6 @@
 #include <fstream>
 #include <utility>
 
-namespace Falcor
-{
 namespace
 {
     void updateGraphStrings(std::string& graphName, std::filesystem::path& path, std::string& funcName)
@@ -143,4 +141,3 @@ bool RenderGraphExporter::save(const ref<RenderGraph>& graph, std::filesystem::p
     CHECK(file, "failed to write render graph '{}'", path.string());
     return true;
 }
-}  // namespace Falcor

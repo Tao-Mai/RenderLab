@@ -35,8 +35,6 @@
 #include <unordered_set>
 #include <vector>
 
-namespace Falcor
-{
 class DirectedGraph
 {
 public:
@@ -135,4 +133,3 @@ private:
     uint32_t                           mCurrentNodeId = 0;
     uint32_t                           mCurrentEdgeId = 0;
 };
-}  // namespace Falcor

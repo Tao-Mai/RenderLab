@@ -2,7 +2,6 @@
 #include <slang-rhi.h>
 #include <slang-rhi/shader-cursor.h>
 #include <span>
-#include "core/profiling/Profiler.h"
 #include "render/PreparedScene.h"
 #include "render/RenderContext.h"
 #include "render/resources/MaterialTable.h"
@@ -27,10 +26,11 @@ public:
     MeshDrawRecorder(
         rhi::IRenderPassEncoder& pass,
         rhi::RenderState state,
-        const Falcor::RenderContext& frame,
-        const ShadowBindings* shadows = nullptr
+        const RenderContext& frame,
+        const ShadowBindings* shadows = nullptr,
+        float ambientCoefficient = 0.0f
     ) :
-        pass(pass), state(state), frame(frame), shadows(shadows)
+        pass(pass), state(state), frame(frame), shadows(shadows), ambientCoefficient(ambientCoefficient)
     {
     }
     template <class SelectPipeline>
@@ -40,7 +40,7 @@ public:
         {
             if (!frame.scene->isVisible(index))
                 continue;
-            const auto  materialIndex = frame.scene->materialIndices[index];
+            const auto  materialIndex = frame.scene->materialIndex(index);
             const auto& material      = frame.materialTable->info(materialIndex);
             if (material.alphaMode != kAlphaModeBlend)
                 draw(frame.scene->drawItems[index], materialIndex, selectPipeline(material));
@@ -51,7 +51,7 @@ public:
     {
         for (const auto index : drawOrder)
         {
-            const auto materialIndex = frame.scene->materialIndices[index];
+            const auto materialIndex = frame.scene->materialIndex(index);
             draw(
                 frame.scene->drawItems[index],
                 materialIndex,
@@ -64,6 +64,7 @@ private:
     void                         draw(const DrawItem& item, uint32_t materialIndex, rhi::IRenderPipeline* pipeline);
     rhi::IRenderPassEncoder&     pass;
     rhi::RenderState             state;
-    const Falcor::RenderContext& frame;
+    const RenderContext& frame;
     const ShadowBindings*        shadows;
+    float                        ambientCoefficient;
 };

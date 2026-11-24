@@ -3,10 +3,7 @@
 #include <slang-rhi.h>
 #include "core/Macros.h"
 
-namespace Falcor
-{
 
-FALCOR_API void          setActivePythonRenderGraphDevice(rhi::ComPtr<rhi::IDevice> device);
-[[nodiscard]] FALCOR_API rhi::ComPtr<rhi::IDevice> getActivePythonRenderGraphDevice();
-[[nodiscard]] FALCOR_API rhi::ComPtr<rhi::IDevice> accessActivePythonRenderGraphDevice();
-}  // namespace Falcor
+RENDERLAB_CORE_API void          setActivePythonRenderGraphDevice(rhi::ComPtr<rhi::IDevice> device);
+[[nodiscard]] RENDERLAB_CORE_API rhi::ComPtr<rhi::IDevice> getActivePythonRenderGraphDevice();
+[[nodiscard]] RENDERLAB_CORE_API rhi::ComPtr<rhi::IDevice> accessActivePythonRenderGraphDevice();

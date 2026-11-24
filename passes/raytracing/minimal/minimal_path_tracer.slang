@@ -5,11 +5,14 @@
 // One ordinary light sample and one BRDF continuation per scattering event.
 float3 evalDirectLight(Surface surface, inout uint state)
 {
-    RealtimeLightSample sample = sampleLight(state);
+    if (surface.scattering.isDelta())
+        return float3(0.0);
+
+    PathLightSample sample = sampleLight(state);
     if (sample.kind == kInvalidLightSample)
         return float3(0.0);
 
-    RealtimeLightEvaluation evaluated = evaluateLightSample(surface, sample);
+    PathLightEvaluation evaluated = evaluateLightSample(surface, sample);
     if (evaluated.target <= 0.0 || !surface.isVisible(evaluated.direction, evaluated.distance))
         return float3(0.0);
 
@@ -23,11 +26,11 @@ float3 evalDirectLight(Surface surface, inout uint state)
 
 float simpleEmissionWeight(Surface previousSurface, RayDesc ray, PathHit hit, float brdfPdf)
 {
-    RealtimeLightSample sample = lightSampleAtHit(ray, hit);
+    PathLightSample sample = lightSampleAtHit(ray, hit);
     if (sample.kind == kInvalidLightSample)
         return 1.0;
 
-    RealtimeLightEvaluation evaluated = evaluateLightSample(previousSurface, sample);
+    PathLightEvaluation evaluated = evaluateLightSample(previousSurface, sample);
     float                   lightPdf  = lightSelectionPdf(sample) * evaluated.conditionalPdf;
     return brdfPdf / (brdfPdf + lightPdf);
 }
@@ -40,6 +43,7 @@ float3 tracePath(RayDesc ray, inout uint state)
     float3  throughput       = float3(1.0);
     Surface previousSurface  = {};
     float   previousBrdfPdf  = 0.0;
+    bool    previousDelta    = false;
 
     // maxBounces counts surface scattering events; the final ray still sees emission and the environment.
     for (uint bounce = 0; bounce <= parameters.maxBounces; ++bounce)
@@ -53,8 +57,8 @@ float3 tracePath(RayDesc ray, inout uint state)
             cameraEmission = emission;
         else
         {
-            float3 contribution =
-                throughput * emission * simpleEmissionWeight(previousSurface, ray, hit, previousBrdfPdf);
+            float weight = previousDelta ? 1.0 : simpleEmissionWeight(previousSurface, ray, hit, previousBrdfPdf);
+            float3 contribution = throughput * emission * weight;
             if (bounce == 1)
                 directRadiance += contribution;
             else
@@ -69,11 +73,12 @@ float3 tracePath(RayDesc ray, inout uint state)
         else
             indirectRadiance += throughput * evalDirectLight(surface, state);
 
-        BrdfSample sampled = surface.sample(state);
+        pbrt::BsdfSample sampled = surface.sample(state);
         if (!advancePath(surface, sampled, bounce + 1, throughput, ray, state))
             break;
         previousSurface = surface;
         previousBrdfPdf = sampled.pdf;
+        previousDelta = sampled.delta != 0;
     }
     return directRadiance + indirectRadiance + cameraEmission;
 }

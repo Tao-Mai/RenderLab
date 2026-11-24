@@ -10,30 +10,30 @@
 
 #include <vector>
 
-class Bloom : public Falcor::RenderPass
+class Bloom : public RenderPass
 {
-    FALCOR_PLUGIN_CLASS(Bloom, "Bloom", "Extracts and filters highlights for bloom.");
+    RL_PLUGIN_CLASS(Bloom, "Bloom", "Extracts and filters highlights for bloom.");
 
-    Bloom(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties);
+    Bloom(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
 
-    [[nodiscard]] Falcor::Properties getProperties() const override;
-    void                             setProperties(const Falcor::Properties& properties) override;
+    [[nodiscard]] Properties getProperties() const override;
+    void                             setProperties(const Properties& properties) override;
 
-    static Falcor::ref<Bloom> create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
+    static ref<Bloom> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
     {
-        return Falcor::make_ref<Bloom>(std::move(device), properties);
+        return make_ref<Bloom>(std::move(device), properties);
     }
 
-    void renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget) override;
+    void renderUI(RenderContext* context, Gui::Widgets& widget) override;
 
-    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData& compileData) override;
-    void compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
-    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
+    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
+    void compile(RenderContext* passContext, const CompileData& compileData) override;
+    void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
 private:
     BloomSettings parameters;
 
-    void prepareFilters(const Falcor::RenderContext& context, const Falcor::RenderData& renderData);
+    void prepareFilters(const RenderContext& context, const RenderData& renderData);
 
     class Filter
     {
@@ -49,7 +49,7 @@ private:
         Filter(Stage stage, const BloomSettings& settings) : stage(stage), settings(settings) {}
 
         void compile(
-            const Falcor::RenderContext& context,
+            const RenderContext& context,
             GpuResources::ImageHandle    source,
             GpuResources::ImageHandle    base,
             GpuResources::ImageHandle    target

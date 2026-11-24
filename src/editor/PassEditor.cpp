@@ -5,7 +5,7 @@
 #include <format>
 #include <imgui.h>
 
-bool pass_editor::begin(const Falcor::RenderPass& pass, const PassEditorContext& context, std::string_view label)
+bool pass_editor::begin(const RenderPass& pass, const PassEditorContext& context, std::string_view label)
 {
 
     const auto& name  = pass.getName();

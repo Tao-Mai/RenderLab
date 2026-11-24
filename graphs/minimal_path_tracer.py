@@ -1,12 +1,10 @@
-from falcor import RenderGraph
+from renderlab import RenderGraph
 
 from modules.post_process import add_post_process
 
 def render_graph_MinimalPathTracer(
     *,
     hdr: bool = True,
-    ibl: bool = True,
-    ambientCoefficient: float = 0.1,
     postProcess: str = "RenderLab",
     bloom: bool = True,
 ) -> RenderGraph:

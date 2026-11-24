@@ -5,27 +5,25 @@
 #include "render/graph/RenderPass.h"
 #include "render/graph/ResourceCache.h"
 
+#include <string_view>
 #include <vector>
 
-namespace Falcor
-{
-class FALCOR_API RenderGraphExe
+class RENDERLAB_CORE_API RenderGraphExe
 {
 public:
     struct Context
     {
         RenderContext* pRenderContext;
         Dictionary&    passesDictionary;
-        uint2          defaultTexDims;
+        glm::uvec2          defaultTexDims;
     };
 
     void                                      execute(const Context& context);
     void                                      renderUI(RenderContext* context, Gui::Widgets& widget);
-    void                                      renderOverlayUI(RenderContext* context);
-    bool                                      onMouseEvent(const MouseEvent& event);
-    bool                                      onKeyEvent(const KeyboardEvent& event);
-    void                                      onHotReload(HotReloadFlags reloaded);
     [[nodiscard]] rhi::ComPtr<rhi::IResource> getResource(const std::string& name) const;
+    [[nodiscard]] SceneInputs                getSceneInputs() const { return mSceneInputs; }
+    [[nodiscard]] uint32_t                   getMaxFramesInFlight() const { return mMaxFramesInFlight; }
+    [[nodiscard]] bool                       hasPassType(std::string_view type) const;
     void                                      setInput(const std::string& name, rhi::IResource* resource);
 
 private:
@@ -44,5 +42,6 @@ private:
 
     std::vector<Pass>              mExecutionList;
     std::unique_ptr<ResourceCache> mpResourceCache;
+    SceneInputs                    mSceneInputs = SceneInputs::None;
+    uint32_t                       mMaxFramesInFlight = kMaxFramesInFlight;
 };
-}  // namespace Falcor

@@ -29,6 +29,18 @@ std::string requiredString(const json& value, const std::string& name)
     return string.get<std::string>();
 }
 
+std::vector<char> readShaderBytes(const std::filesystem::path& path)
+{
+    std::ifstream input(path, std::ios::binary | std::ios::ate);
+    CHECK(input, "missing Slang file '{}'", path.string());
+    const auto byteCount = input.tellg();
+    CHECK(byteCount > 0, "empty Slang file '{}'", path.string());
+    std::vector<char> bytes(static_cast<size_t>(byteCount));
+    input.seekg(0);
+    CHECK(input.read(bytes.data(), bytes.size()), "failed to read '{}'", path.string());
+    return bytes;
+}
+
 }  // namespace
 
 ShaderManager::ShaderManager()  = default;
@@ -43,10 +55,10 @@ void ShaderManager::shutdown() noexcept
     device = nullptr;
 }
 
-ShaderHandle ShaderManager::getOrLoad(std::string_view program, const Falcor::DefineList& defines)
+ShaderHandle ShaderManager::getOrLoad(std::string_view program, const ShaderDefines& defines)
 {
 
-    const auto key = std::pair{std::string{program}, defines};
+    const ProgramKey key{std::string{program}, defines};
     if (const auto found = handles.find(key); found != handles.end())
     {
         return found->second;
@@ -74,21 +86,15 @@ ShaderHandle ShaderManager::getOrLoad(std::string_view program, const Falcor::De
     CHECK(selected, "shader '{}' has no matching compiled variant", program);
     const auto& options = requiredField(*selected, "defines");
     CHECK(options.is_object());
-    Falcor::DefineList selectedDefines;
+    ShaderDefines selectedDefines;
     for (const auto& [name, value] : options.items())
     {
         CHECK(value.is_string(), "shader define '{}' must be a string", name);
-        selectedDefines.add(name, value.get_ref<const std::string&>());
+        selectedDefines.emplace(name, value.get_ref<const std::string&>());
     }
     const auto binary = manifestPath.parent_path() / requiredString(*selected, "binary");
 
-    std::ifstream moduleInput(binary, std::ios::binary | std::ios::ate);
-    CHECK(moduleInput, "missing Slang module '{}'", binary.string());
-    const auto byteCount = moduleInput.tellg();
-    CHECK(byteCount > 0, "empty Slang module '{}'", binary.string());
-    std::vector<char> moduleBytes(static_cast<size_t>(byteCount));
-    moduleInput.seekg(0);
-    CHECK(moduleInput.read(moduleBytes.data(), moduleBytes.size()), "failed to read '{}'", binary.string());
+    const auto moduleBytes = readShaderBytes(binary);
     auto session = device->getSlangSession();
     CHECK(session);
     rhi::ComPtr<ISlangBlob> blob;
@@ -107,14 +113,90 @@ ShaderHandle ShaderManager::getOrLoad(std::string_view program, const Falcor::De
         binary.string(),
         diagnostics ? static_cast<const char*>(diagnostics->getBufferPointer()) : ""
     );
+    ShaderMetadata metadata{
+        .binary  = binary,
+        .defines = std::move(selectedDefines),
+        .entries = selected->at("entries").get<std::vector<std::string>>()
+    };
+    return registerProgram(key, *module, binary, std::move(metadata));
+}
+
+ShaderHandle ShaderManager::getOrCompile(std::string_view program, const ShaderDefines& defines)
+{
+    const ProgramKey key{std::string{program}, defines};
+    if (const auto found = handles.find(key); found != handles.end())
+        return found->second;
+
+    const auto manifestPath = compiledShaderPath(std::filesystem::path{"shaders"} / (key.first + ".source.json"));
+    std::ifstream input(manifestPath);
+    CHECK(input, "missing shader source manifest '{}'", manifestPath.string());
+    const auto manifest = json::parse(input, nullptr, false);
+    const std::filesystem::path source = requiredString(manifest, "source");
+    const auto paths = requiredField(manifest, "searchPaths").get<std::vector<std::string>>();
+    std::vector<const char*> searchPaths;
+    searchPaths.reserve(paths.size());
+    for (const auto& path : paths)
+        searchPaths.push_back(path.c_str());
+
+    std::vector<slang::PreprocessorMacroDesc> macros;
+    macros.reserve(defines.size());
+    for (const auto& [name, value] : defines)
+        macros.push_back({name.c_str(), value.c_str()});
+
+    const auto deviceSession = device->getSlangSession();
+    CHECK(deviceSession);
+    auto* globalSession = deviceSession->getGlobalSession();
+    slang::TargetDesc target;
+    target.format = SLANG_SPIRV;
+    target.profile = globalSession->findProfile("spirv_1_4");
+    target.forceGLSLScalarBufferLayout = true;
+
+    slang::SessionDesc desc;
+    desc.targets = &target;
+    desc.targetCount = 1;
+    desc.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
+    desc.searchPaths = searchPaths.data();
+    desc.searchPathCount = searchPaths.size();
+    desc.preprocessorMacros = macros.data();
+    desc.preprocessorMacroCount = macros.size();
+    rhi::ComPtr<slang::ISession> session;
+    rhiCheck(globalSession->createSession(desc, session.writeRef()));
+
+    const auto bytes = readShaderBytes(source);
+    rhi::ComPtr<ISlangBlob> blob;
+    blob.attach(slang_createBlob(bytes.data(), bytes.size()));
+    CHECK(blob);
+    rhi::ComPtr<ISlangBlob> diagnostics;
+    auto* module = session->loadModuleFromSource(
+        source.stem().string().c_str(), source.string().c_str(), blob, diagnostics.writeRef()
+    );
+    CHECK(
+        module,
+        "failed to compile '{}': {}",
+        source.string(),
+        diagnostics ? static_cast<const char*>(diagnostics->getBufferPointer()) : ""
+    );
+    ShaderMetadata metadata{
+        .defines = defines,
+        .entries = requiredField(manifest, "entries").get<std::vector<std::string>>()
+    };
+    return registerProgram(key, *module, source, std::move(metadata));
+}
+
+ShaderHandle ShaderManager::registerProgram(
+    const ProgramKey& key, slang::IModule& module, const std::filesystem::path& path, ShaderMetadata metadata
+)
+{
+    rhi::ComPtr<slang::ISession> session{module.getSession()};
     std::vector<rhi::ComPtr<slang::IEntryPoint>> entryPoints;
-    std::vector<slang::IComponentType*>          components{module};
-    for (const auto& entryName : selected->at("entries").get<std::vector<std::string>>())
+    std::vector<slang::IComponentType*>          components{&module};
+    for (const auto& entryName : metadata.entries)
     {
         auto& entry = entryPoints.emplace_back();
-        rhiCheck(module->findEntryPointByName(entryName.c_str(), entry.writeRef()));
+        rhiCheck(module.findEntryPointByName(entryName.c_str(), entry.writeRef()));
         components.push_back(entry);
     }
+    rhi::ComPtr<ISlangBlob> diagnostics;
     rhi::ComPtr<slang::IComponentType> composite;
     rhiCheck(session->createCompositeComponentType(
         components.data(),
@@ -127,7 +209,7 @@ ShaderHandle ShaderManager::getOrLoad(std::string_view program, const Falcor::De
     CHECK(
         SLANG_SUCCEEDED(linkResult),
         "failed to link '{}': {}",
-        binary.string(),
+        path.string(),
         diagnostics ? static_cast<const char*>(diagnostics->getBufferPointer()) : ""
     );
     rhi::ShaderProgramDesc programDesc;
@@ -135,13 +217,8 @@ ShaderHandle ShaderManager::getOrLoad(std::string_view program, const Falcor::De
     rhi::ComPtr<rhi::IShaderProgram> shader;
     rhiCheck(device->createShaderProgram(programDesc, shader.writeRef()));
 
-    ShaderMetadata metadata{
-        .binary  = binary,
-        .defines = std::move(selectedDefines),
-        .entries = selected->at("entries").get<std::vector<std::string>>()
-    };
     const ShaderHandle handle{static_cast<uint32_t>(variants.size() + 1)};
-    variants.push_back({.shader = std::move(shader), .metadata = std::move(metadata)});
+    variants.push_back({.session = std::move(session), .shader = std::move(shader), .metadata = std::move(metadata)});
     handles.emplace(key, handle);
     return handle;
 }
@@ -156,9 +233,18 @@ const ShaderLayout& ShaderManager::layout(ShaderHandle handle)
     auto& variant = variants[handle.index - 1];
     if (!variant.layout)
     {
-        auto reflection = variant.metadata.binary;
-        reflection.replace_extension(".reflection.json");
-        variant.layout = std::make_unique<ShaderLayout>(reflection);
+        if (variant.metadata.binary.empty())
+        {
+            auto* reflection = variant.shader->getSlangComponentType()->getLayout();
+            CHECK(reflection);
+            variant.layout = std::make_unique<ShaderLayout>(*reflection);
+        }
+        else
+        {
+            auto reflection = variant.metadata.binary;
+            reflection.replace_extension(".reflection.json");
+            variant.layout = std::make_unique<ShaderLayout>(reflection);
+        }
     }
     return *variant.layout;
 }

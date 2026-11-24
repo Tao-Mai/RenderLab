@@ -168,7 +168,7 @@ namespace
             );
             std::unreachable();
         }
-        component->offlineEmission = std::move(emission);
+        component->pbrtEmission = std::move(emission);
         auto actor                 = std::make_unique<ALight>(std::move(component));
         setTransform(*actor, matrix, entity.location);
         return actor;
@@ -188,8 +188,8 @@ void populateScene(SceneAsset& scene, const PbrtSceneAsset& source, ImageImporte
         actor->name   = "shape" + std::to_string(scene.actors.size());
         auto& render  = *actor->getComponent<RenderComponent>();
         render.meshId = *shape.mesh;
-        render.offlineSurface.emplace();
-        auto&           surface = *render.offlineSurface;
+        render.pbrtSurface.emplace();
+        auto&           surface = *render.pbrtSurface;
         ParameterReader reader(shape.entity);
         surface.alpha              = reader.floatInput("alpha", 1.0);
         surface.reverseOrientation = shape.reverseOrientation;

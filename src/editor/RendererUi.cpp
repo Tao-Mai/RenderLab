@@ -17,7 +17,7 @@
 namespace
 {
 template <class T>
-bool drawNumber(Falcor::Gui::Widgets& widgets, const char* label, Falcor::Properties::json& value)
+bool drawNumber(Gui::Widgets& widgets, const char* label, Properties::json& value)
 {
     auto next = value.get<T>();
     if (widgets.input(label, next) && std::isfinite(next))
@@ -30,8 +30,8 @@ const char* parameterLabel(const std::string& name)
 {
     if (name == "hdr")
         return "Enable HDR";
-    if (name == "ibl")
-        return "IBL";
+    if (name == "postProcess")
+        return "Post process";
     if (name == "shadows")
         return "Enable shadows";
     if (name == "svgf")
@@ -41,26 +41,8 @@ const char* parameterLabel(const std::string& name)
     return name.c_str();
 }
 
-bool drawParameter(Falcor::Gui::Widgets& widgets, const std::string& name, Falcor::Properties::json& value)
+bool drawParameter(Gui::Widgets& widgets, const std::string& name, Properties::json& value)
 {
-    if (name == "postProcess")
-    {
-        constexpr auto kModes = []
-        {
-            constexpr auto&                          kEntries = metadata::Enum<PostProcessMode>::kValues;
-            std::array<const char*, kEntries.size()> names{};
-            std::ranges::transform(kEntries, names.begin(), &metadata::EnumValue<PostProcessMode>::name);
-            return names;
-        }();
-        const auto& current = value.get_ref<const std::string&>();
-        auto selected = static_cast<size_t>(std::ranges::find(kModes, std::string_view{current}) - kModes.begin());
-        if (!widgets.dropdown("Post process", kModes, selected))
-            return false;
-
-        value = kModes[selected];
-        return true;
-    }
-
     const auto* label = parameterLabel(name);
     if (value.is_boolean())
     {
@@ -73,7 +55,23 @@ bool drawParameter(Falcor::Gui::Widgets& widgets, const std::string& name, Falco
     }
     if (value.is_string())
     {
-        ImGui::InputText(label, &value.get_ref<std::string&>());
+        auto& current = value.get_ref<std::string&>();
+        if (name == "postProcess")
+        {
+            constexpr std::array kModes{"RenderLab", "Falcor"};
+            const auto mode = std::ranges::find(kModes, std::string_view{current});
+            if (mode != kModes.end())
+            {
+                auto selected = static_cast<size_t>(mode - kModes.begin());
+                if (!widgets.dropdown(label, kModes, selected))
+                    return false;
+
+                current = kModes[selected];
+                return true;
+            }
+        }
+
+        ImGui::InputText(label, &current);
         return ImGui::IsItemDeactivatedAfterEdit();
     }
     if (value.is_number_integer())
@@ -83,33 +81,21 @@ bool drawParameter(Falcor::Gui::Widgets& widgets, const std::string& name, Falco
 }
 
 void drawSettings(
-    Falcor::Gui::Widgets&           widgets,
+    Gui::Widgets&           widgets,
     Renderer&                       renderer,
     const ConfigManager&            config,
-    const Falcor::Properties::json& defaults,
-    Falcor::Properties::json&       parameters
+    const Properties::json& defaults,
+    Properties::json&       parameters
 )
 {
-    const auto& feature = config.rendererConfig().feature;
-    const auto  visible = [&](std::string_view name)
-    {
-        if (name == "ambientCoefficient")
-            return false;
-        if (name == "postProcess")
-            return feature.hdr;
-        if (name == "bloom")
-            return feature.hdr && feature.postProcess == PostProcessMode::RenderLab;
-        return true;
-    };
-    const auto entries = defaults.items();
-    if (std::ranges::none_of(entries, [&](const auto& entry) { return visible(entry.key()); }))
+    if (defaults.empty())
         return;
 
     const bool     reset = widgets.resetHeader("Graph");
     nlohmann::json options;
-    for (const auto& [name, defaultValue] : entries)
+    for (const auto& [name, defaultValue] : defaults.items())
     {
-        if (!visible(name))
+        if (name == "ambientCoefficient")
             continue;
 
         auto& value = parameters.at(name);
@@ -137,11 +123,11 @@ void Renderer::renderUI(const PassEditorContext& input)
 {
 
     const auto&          config = *context().config;
-    Falcor::Gui::Widgets widgets;
+    Gui::Widgets widgets;
     drawSettings(widgets, *this, config, parameterDefaults, parameters);
 
     auto editor   = input;
-    editor.submit = [&](const Falcor::RenderPass& pass, std::optional<nlohmann::json> edited)
+    editor.submit = [&](const RenderPass& pass, std::optional<nlohmann::json> edited)
     {
         const auto scope = kRenderGraphOptionsPrefix + settings::encodeName(config.renderGraphName()) +
             ":passes:" + settings::encodeName(pass.getType()) + ':' + settings::encodeName(pass.getName());
@@ -159,7 +145,7 @@ void Renderer::renderUI(const PassEditorContext& input)
                 options[scope + ':' + name] = std::move(value);
         addOptions(options);
     };
-    auto renderCommands       = renderContext;
-    renderCommands.passEditor = &editor;
-    mpRenderGraph->renderUI(&renderCommands, widgets);
+    renderContext.passEditor = &editor;
+    mpRenderGraph->renderUI(&renderContext, widgets);
+    renderContext.passEditor = nullptr;
 }

@@ -3,25 +3,7 @@ target_include_directories(RenderLabForwardPbr PRIVATE "${RenderLab_SOURCE_DIR}"
 target_link_libraries(RenderLabForwardPbr PRIVATE RenderLabCore)
 target_precompile_headers(RenderLabForwardPbr REUSE_FROM RenderLabPluginAbi)
 
-# Forward PBR variants for opaque and transparent draws.
-foreach(enable_clearcoat IN ITEMS 0 1)
-    foreach(enable_sheen IN ITEMS 0 1)
-        foreach(enable_ibl IN ITEMS 1 0)
-            set(binary forward)
-            if(enable_clearcoat)
-                string(APPEND binary ".clearcoat")
-            endif()
-            if(enable_sheen)
-                string(APPEND binary ".sheen")
-            endif()
-            if(NOT enable_ibl)
-                string(APPEND binary ".no_ibl")
-            endif()
-            renderlab_shader(forward "${SHADER_SOURCE_DIR}/raster/forward.slang" "${binary}"
-                DEFINES ENABLE_IBL=${enable_ibl} ENABLE_CLEARCOAT=${enable_clearcoat} ENABLE_SHEEN=${enable_sheen})
-        endforeach()
-    endforeach()
-endforeach()
+renderlab_runtime_shader(forward "${SHADER_SOURCE_DIR}/raster/forward.slang")
 
 add_subdirectory(DeferredLightingPass)
 add_subdirectory(DepthPrepass)

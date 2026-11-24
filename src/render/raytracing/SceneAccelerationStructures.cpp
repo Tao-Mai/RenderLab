@@ -12,6 +12,7 @@
 #include <cstring>
 #include <glm/geometric.hpp>
 #include "render/device/RhiCheck.h"
+#include "render/raytracing/RectLightGeometry.h"
 
 namespace
 {
@@ -57,8 +58,8 @@ std::vector<rhi::AccelerationStructureInstanceDescGeneric> makeInstances(
     rhi::AccelerationStructureHandle                  rectLightBlasAddress
 )
 {
-    const auto& lights             = renderData.lights;
-    const auto& ranges             = renderData.lightRanges;
+    const auto  lights             = renderData.lights();
+    const auto& ranges             = renderData.lightRanges();
     const auto  sceneInstanceCount = renderData.drawItems.size();
     CHECK(sceneInstanceCount < kInstanceIndexLimit, "ray tracing instance count exceeds the custom-index limit");
     CHECK(lights.size() < kInstanceIndexLimit, "ray tracing light index exceeds the custom-index limit");
@@ -87,18 +88,9 @@ std::vector<rhi::AccelerationStructureInstanceDescGeneric> makeInstances(
             index
         );
 
-        const glm::vec3 right = light.areaRight();
-        const glm::vec3 direction{light.direction};
-        const glm::vec3 up = glm::cross(right, direction);
-        const glm::mat4 model{
-            glm::vec4{right * size.x, 0},
-            glm::vec4{up * size.y, 0},
-            glm::vec4{-direction, 0},
-            glm::vec4{light.position(), 1},
-        };
         // One-sided emission retains facing culling, unlike scene geometry.
         rhi::AccelerationStructureInstanceDescGeneric instance{};
-        setInstanceTransform(instance, model);
+        setInstanceTransform(instance, rectLightTransform(light));
         instance.instanceID                          = index;
         instance.instanceMask                        = kLightMask;
         instance.instanceContributionToHitGroupIndex = kLightHitRecord;
@@ -190,7 +182,7 @@ std::vector<rhi::AccelerationStructureHandle> SceneAccelerationStructures::recor
         addresses.push_back(blas->getHandle());
     }
 
-    const auto& ranges = renderData.lightRanges;
+    const auto& ranges = renderData.lightRanges();
     if (ranges.rectAreaEnd > ranges.pointEnd && !rectLightBlas)
     {
         recordRectLightBlasBuild(device, commands);
@@ -204,19 +196,19 @@ std::vector<rhi::AccelerationStructureHandle> SceneAccelerationStructures::recor
 
 void SceneAccelerationStructures::recordRectLightBlasBuild(rhi::IDevice& device, rhi::ICommandEncoder& commands)
 {
-    constexpr std::array<float, 12>
-        kVertices{-0.5f, -0.5f, 0.0f, 0.5f, -0.5f, 0.0f, 0.5f, 0.5f, 0.0f, -0.5f, 0.5f, 0.0f};
-    constexpr std::array<uint32_t, 6> kIndices{0, 2, 1, 0, 3, 2};
     rhi::ComPtr<rhi::IBuffer> vertices;
     rhi::ComPtr<rhi::IBuffer> indices;
     rhi::BufferDesc          desc;
-    desc.size  = sizeof(kVertices);
-    desc.usage = rhi::BufferUsage::AccelerationStructureBuildInput;
-    rhiCheck(device.createBuffer(desc, kVertices.data(), vertices.writeRef()));
-    desc.size = sizeof(kIndices);
-    rhiCheck(device.createBuffer(desc, kIndices.data(), indices.writeRef()));
-    const auto geometry =
-        triangleGeometry(vertices, sizeof(float) * 3, 4, indices, 0, uint32_t(kIndices.size()));
+    desc.size  = sizeof(kRectLightVertices);
+    desc.usage = rhi::BufferUsage::AccelerationStructureBuildInput | rhi::BufferUsage::CopyDestination;
+    rhiCheck(device.createBuffer(desc, nullptr, vertices.writeRef()));
+    desc.size = sizeof(kRectLightIndices);
+    rhiCheck(device.createBuffer(desc, nullptr, indices.writeRef()));
+    rhiCheck(commands.uploadBufferData(vertices, 0, sizeof(kRectLightVertices), kRectLightVertices.data()));
+    rhiCheck(commands.uploadBufferData(indices, 0, sizeof(kRectLightIndices), kRectLightIndices.data()));
+    const auto geometry = triangleGeometry(
+        vertices, sizeof(glm::vec3), uint32_t(kRectLightVertices.size()), indices, 0, uint32_t(kRectLightIndices.size())
+    );
 
     rhi::AccelerationStructureBuildDesc build;
     build.inputs     = &geometry;

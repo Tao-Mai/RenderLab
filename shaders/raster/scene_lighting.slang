@@ -8,7 +8,7 @@
 #include "math/sampling.slang"
 #include "material/surface.slang"
 
-ConstantBuffer<ShadowUniforms> shadowUniforms;
+StructuredBuffer<ShadowUniforms> shadowUniforms;
 StructuredBuffer<PointShadowData> pointShadowData;
 StructuredBuffer<SpotShadowData> spotShadowData;
 StructuredBuffer<RectAreaShadowData> rectAreaShadowData;
@@ -17,13 +17,24 @@ Texture2DArray<float> pointShadowMap;
 Texture2DArray<float> spotShadowMap;
 Texture2DArray<float> rectAreaShadowMap;
 Texture2DArray<float> cascadeShadowMap;
-SamplerComparisonState shadowSampler;
+SamplerComparisonState shadowNearestComparisonSampler;
+SamplerComparisonState shadowLinearComparisonSampler;
 SamplerState shadowLinearSampler;
 
-#ifndef ENABLE_IBL
-#error ENABLE_IBL must be specified when compiling scene lighting
+#ifndef HAS_ENV
+#error HAS_ENV must be specified when compiling scene lighting
 #endif
 
+#if !HAS_ENV
+struct RasterLightingParameters
+{
+    float ambientCoefficient;
+};
+
+ConstantBuffer<RasterLightingParameters> lightingParameters;
+#endif
+
+#if HAS_ENV
 // Light-set environment images and samplers.
 TextureCube<float4> irradianceMap;
 
@@ -36,11 +47,12 @@ SamplerState prefilteredSpecularMapSampler;
 Texture2D<float4> brdfLUT;
 
 SamplerState brdfLUTSampler;
+#endif
 
 #if ENABLE_SHEEN
 Texture2D<float4> sheenLUT;
 SamplerState sheenLUTSampler;
-#if ENABLE_IBL
+#if HAS_ENV
 TextureCube<float4> radianceMap;
 SamplerState radianceSampler;
 
@@ -73,7 +85,15 @@ float3 evaluateSheenIbl(Surface surface, float3 V)
 #endif
 #endif
 
-float spotShadowVisibility(LightData light, float3 worldPosition, float2 rotation)
+float compareShadow(Texture2DArray<float> shadowMap, float3 coordinates, float depth, uint linearFilter)
+{
+    if (linearFilter != 0)
+        return shadowMap.SampleCmpLevelZero(shadowLinearComparisonSampler, coordinates, depth);
+
+    return shadowMap.SampleCmpLevelZero(shadowNearestComparisonSampler, coordinates, depth);
+}
+
+float spotShadowVisibility(LightData light, float3 worldPosition, float2 rotation, ShadowUniforms shadows)
 {
     float4 clip = mul(spotShadowData[light.shadowIdx].vp, float4(worldPosition, 1.0));
     if (clip.w <= 0.0)
@@ -91,8 +111,8 @@ float spotShadowVisibility(LightData light, float3 worldPosition, float2 rotatio
     uint height;
     uint layers;
     spotShadowMap.GetDimensions(width, height, layers);
-    float2 radiusUv = shadowUniforms.spotSampleRadius / float2(width, height);
-    float depth = projected.z - shadowUniforms.bias;
+    float2 radiusUv = shadows.spotSampleRadius / float2(width, height);
+    float depth = projected.z - shadows.bias;
     float visibility = 0.0;
     [unroll]
     for (uint sampleIndex = 0; sampleIndex < kPoissonDisk16SampleCount; ++sampleIndex)
@@ -100,13 +120,14 @@ float spotShadowVisibility(LightData light, float3 worldPosition, float2 rotatio
         float2 offset = kPoissonDisk16[sampleIndex];
         offset = float2(offset.x * rotation.x - offset.y * rotation.y,
                         offset.x * rotation.y + offset.y * rotation.x);
-        visibility += spotShadowMap.SampleCmpLevelZero(
-            shadowSampler, float3(uv + offset * radiusUv, light.shadowIdx), depth);
+        visibility += compareShadow(
+            spotShadowMap, float3(uv + offset * radiusUv, light.shadowIdx), depth, shadows.linearFilter);
     }
     return visibility / kPoissonDisk16SampleCount;
 }
 
-float sampleDirectionalCascade(LightData light, uint cascadeIndex, float3 worldPosition, float2 rotation)
+float sampleDirectionalCascade(
+    LightData light, uint cascadeIndex, float3 worldPosition, float2 rotation, ShadowUniforms shadows)
 {
     CascadeShadowData cascade = directionalShadowData[light.shadowIdx].cascades[cascadeIndex];
     float4 clip = mul(cascade.vp, float4(worldPosition, 1.0));
@@ -117,18 +138,18 @@ float sampleDirectionalCascade(LightData light, uint cascadeIndex, float3 worldP
         return 1.0;
     }
 
-    uint layer = light.shadowIdx * shadowUniforms.cascadeCount + cascadeIndex;
-    float depth = projected.z - shadowUniforms.bias;
-    if (shadowUniforms.directionalSampleRadius <= 0.0)
+    uint layer = light.shadowIdx * shadows.cascadeCount + cascadeIndex;
+    float depth = projected.z - shadows.bias;
+    if (shadows.directionalSampleRadius <= 0.0)
     {
-        return cascadeShadowMap.SampleCmpLevelZero(shadowSampler, float3(uv, layer), depth);
+        return compareShadow(cascadeShadowMap, float3(uv, layer), depth, shadows.linearFilter);
     }
 
     uint width;
     uint height;
     uint layers;
     cascadeShadowMap.GetDimensions(width, height, layers);
-    float2 radiusUv = shadowUniforms.directionalSampleRadius / float2(width, height);
+    float2 radiusUv = shadows.directionalSampleRadius / float2(width, height);
     float visibility = 0.0;
     [unroll]
     for (uint sampleIndex = 0; sampleIndex < kPoissonDisk8SampleCount; ++sampleIndex)
@@ -144,22 +165,22 @@ float sampleDirectionalCascade(LightData light, uint cascadeIndex, float3 worldP
         }
         else
         {
-            visibility += cascadeShadowMap.SampleCmpLevelZero(shadowSampler, float3(sampleUv, layer), depth);
+            visibility += compareShadow(cascadeShadowMap, float3(sampleUv, layer), depth, shadows.linearFilter);
         }
     }
     return visibility / kPoissonDisk8SampleCount;
 }
 
-float directionalShadowVisibility(LightData light, float3 worldPosition, float2 rotation)
+float directionalShadowVisibility(LightData light, float3 worldPosition, float2 rotation, ShadowUniforms shadows)
 {
-    float viewDepth = -mul(sceneUniforms.view, float4(worldPosition, 1.0)).z;
+    float viewDepth = -mul(sceneGlobals[0].camera.view, float4(worldPosition, 1.0)).z;
     if (viewDepth <= 0.0)
     {
         return 1.0;
     }
 
     [loop]
-    for (uint cascadeIndex = 0; cascadeIndex < shadowUniforms.cascadeCount; ++cascadeIndex)
+    for (uint cascadeIndex = 0; cascadeIndex < shadows.cascadeCount; ++cascadeIndex)
     {
         CascadeShadowData cascade = directionalShadowData[light.shadowIdx].cascades[cascadeIndex];
         if (viewDepth > cascade.depthUpperBound)
@@ -167,12 +188,12 @@ float directionalShadowVisibility(LightData light, float3 worldPosition, float2 
             continue;
         }
 
-        float visibility = sampleDirectionalCascade(light, cascadeIndex, worldPosition, rotation);
+        float visibility = sampleDirectionalCascade(light, cascadeIndex, worldPosition, rotation, shadows);
         float blendWidth = cascade.depthUpperBound - cascade.blendStartDepth;
-        if (cascadeIndex + 1 < shadowUniforms.cascadeCount && blendWidth > 0.0 &&
+        if (cascadeIndex + 1 < shadows.cascadeCount && blendWidth > 0.0 &&
             viewDepth > cascade.blendStartDepth)
         {
-            float nextVisibility = sampleDirectionalCascade(light, cascadeIndex + 1, worldPosition, rotation);
+            float nextVisibility = sampleDirectionalCascade(light, cascadeIndex + 1, worldPosition, rotation, shadows);
             float blend = saturate((viewDepth - cascade.blendStartDepth) / blendWidth);
             return lerp(visibility, nextVisibility, blend);
         }
@@ -195,7 +216,7 @@ float3 magnitude = abs(direction);
     return float3(clipToUv(projected.xy / projected.w), shadowIndex * 6 + face);
 }
 
-float pcf(float3 dir, uint shadowIndex, float depth, float2 rotation)
+float pcf(float3 dir, uint shadowIndex, float depth, float2 rotation, ShadowUniforms shadows)
 {
     float3 direction = normalize(dir);
     float3 referenceAxis = abs(direction.z) < 0.999
@@ -210,18 +231,18 @@ float pcf(float3 dir, uint shadowIndex, float depth, float2 rotation)
     [unroll]
     for (uint sampleIndex = 0; sampleIndex < kPoissonDisk16SampleCount; ++sampleIndex)
     {
-        float2 offset = kPoissonDisk16[sampleIndex] * shadowUniforms.sampleRadius;
+        float2 offset = kPoissonDisk16[sampleIndex] * shadows.sampleRadius;
         float3 sampleDirection = normalize(
             direction + rotatedTangent * offset.x + rotatedBitangent * offset.y);
-        totalVisibility += pointShadowMap.SampleCmpLevelZero(
-            shadowSampler, pointShadowCoordinates(sampleDirection, shadowIndex), depth - shadowUniforms.bias);
+        totalVisibility += compareShadow(pointShadowMap, pointShadowCoordinates(sampleDirection, shadowIndex),
+            depth - shadows.bias, shadows.linearFilter);
     }
 
     return totalVisibility / kPoissonDisk16SampleCount;
 }
 
 
-float rectAreaShadowPCSS(LightData light, float3 worldPos, uint2 pixel)
+float rectAreaShadowPCSS(LightData light, float3 worldPos, uint2 pixel, ShadowUniforms shadows)
 {
     uint shadowIndex = light.shadowIdx;
     RectAreaShadowData shadow = rectAreaShadowData[shadowIndex];
@@ -240,7 +261,7 @@ float rectAreaShadowPCSS(LightData light, float3 worldPos, uint2 pixel)
 
     // clip.w is the positive, linear depth along the light's viewing direction.
     float receiverLinearDepth = pos.w;
-    float receiverDepth = max(projected.z - shadowUniforms.bias, 0.0);
+    float receiverDepth = max(projected.z - shadows.bias, 0.0);
     float2 lightHalfSize = light.areaSize * 0.5;
 
     // The blocker depth is unknown: project the search footprint onto the near plane.
@@ -252,7 +273,7 @@ float rectAreaShadowPCSS(LightData light, float3 worldPos, uint2 pixel)
     [unroll]
     for (uint sampleIndex = 0; sampleIndex < kRectangle16SampleCount; ++sampleIndex)
     {
-        float2 offset = rectangleSample16(sampleIndex, pixel, (shadowUniforms.pixelRotation != 0));
+        float2 offset = rectangleSample16(sampleIndex, pixel, (shadows.pixelRotation != 0));
         float2 sampleUv = uv + offset * searchRadiusUv;
         if (any(sampleUv < 0.0) || any(sampleUv > 1.0))
         {
@@ -285,7 +306,7 @@ float rectAreaShadowPCSS(LightData light, float3 worldPos, uint2 pixel)
     [unroll]
     for (uint sampleIndex = 0; sampleIndex < kRectangle16SampleCount; ++sampleIndex)
     {
-        float2 offset = rectangleSample16(sampleIndex, pixel, (shadowUniforms.pixelRotation != 0));
+        float2 offset = rectangleSample16(sampleIndex, pixel, (shadows.pixelRotation != 0));
         float2 sampleUv = uv + offset * filterRadiusUv;
         if (any(sampleUv < 0.0) || any(sampleUv > 1.0))
         {
@@ -293,8 +314,8 @@ float rectAreaShadowPCSS(LightData light, float3 worldPos, uint2 pixel)
             continue;
         }
 
-        totalVisibility += rectAreaShadowMap.SampleCmpLevelZero(
-            shadowSampler, float3(sampleUv, shadowIndex), receiverDepth);
+        totalVisibility += compareShadow(
+            rectAreaShadowMap, float3(sampleUv, shadowIndex), receiverDepth, shadows.linearFilter);
     }
     return totalVisibility / kRectangle16SampleCount;
 }
@@ -335,7 +356,7 @@ float3 evaluateDirectContribution(
 
 float3 evaluateLighting(Surface surface, uint2 pixel)
 {
-    float3 V = normalize(sceneUniforms.cameraPosition.xyz - surface.worldPosition);
+    float3 V = normalize(sceneGlobals[0].camera.cameraPosition.xyz - surface.worldPosition);
     float NdotV = saturate(dot(surface.normal, V));
 #if ENABLE_SHEEN
     float sheenStrength = max(surface.sheenColor.x, max(surface.sheenColor.y, surface.sheenColor.z));
@@ -349,10 +370,11 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
     float clearcoatWeight = surface.clearcoatFactor * fresnelSchlick(float3(kClearcoatF0), clearcoatNdotV).x;
 #endif
 
-    float2 shadowRotation = (shadowUniforms.pixelRotation != 0)
+    ShadowUniforms shadows = shadowUniforms[0];
+    float2 shadowRotation = (shadows.pixelRotation != 0)
         ? pixelSampleRotation(pixel)
         : float2(1.0, 0.0);
-    LightRanges ranges = lightUniforms.lightRanges;
+    LightRanges ranges = sceneGlobals[0].lightRanges;
     float3 direct = float3(0.0);
     for (uint index = 0; index < ranges.directionalEnd; ++index)
     {
@@ -360,9 +382,9 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
 
         float3 lightDirection = -light.direction.xyz;
         float visibility = 1.0;
-        if (light.castShadow && shadowUniforms.enabled != 0)
+        if (light.castShadow && shadows.enabled != 0)
         {
-            visibility = directionalShadowVisibility(light, surface.worldPosition, shadowRotation);
+            visibility = directionalShadowVisibility(light, surface.worldPosition, shadowRotation, shadows);
         }
         direct += evaluateDirectContribution(surface, V, lightDirection, light.color, visibility);
     }
@@ -372,7 +394,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
         LightData light = lights[index];
 
         float distanceToLight = length(light.position - surface.worldPosition);
-        if (distanceToLight <= 0.0 || distanceToLight > light.range)
+        if (distanceToLight <= 0.0 || !withinLightRange(light, distanceToLight * distanceToLight))
         {
             continue;
         }
@@ -380,9 +402,9 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
         float3 lightDirection = (light.position - surface.worldPosition) / distanceToLight;
         float3 incidentIrradiance = light.color / (distanceToLight * distanceToLight);
         float visibility = 1.0;
-        if (light.castShadow && shadowUniforms.enabled != 0)
+        if (light.castShadow && shadows.enabled != 0)
         {
-            visibility = pcf(-lightDirection, light.shadowIdx, distanceToLight / light.range, shadowRotation);
+            visibility = pcf(-lightDirection, light.shadowIdx, distanceToLight / light.range, shadowRotation, shadows);
         }
         direct += evaluateDirectContribution(surface, V, lightDirection, incidentIrradiance, visibility);
     }
@@ -404,9 +426,9 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
         float solidAngle = projectedArea / (distanceToLight * distanceToLight);
         float3 incidentIrradiance = light.color * solidAngle;
         float visibility = 1.0;
-        if (light.castShadow && shadowUniforms.enabled != 0)
+        if (light.castShadow && shadows.enabled != 0)
         {
-            visibility = rectAreaShadowPCSS(light, surface.worldPosition, pixel);
+            visibility = rectAreaShadowPCSS(light, surface.worldPosition, pixel, shadows);
         }
         direct += evaluateDirectContribution(surface, V, lightDirection, incidentIrradiance, visibility);
     }
@@ -416,7 +438,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
         LightData light = lights[index];
 
         float distanceToLight = length(light.position - surface.worldPosition);
-        if (distanceToLight <= 0.0 || distanceToLight > light.range)
+        if (distanceToLight <= 0.0 || !withinLightRange(light, distanceToLight * distanceToLight))
         {
             continue;
         }
@@ -430,21 +452,21 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
 
         float3 incidentIrradiance = light.color * attenuation / (distanceToLight * distanceToLight);
         float visibility = 1.0;
-        if (light.castShadow && shadowUniforms.enabled != 0)
+        if (light.castShadow && shadows.enabled != 0)
         {
-            visibility = spotShadowVisibility(light, surface.worldPosition, shadowRotation);
+            visibility = spotShadowVisibility(light, surface.worldPosition, shadowRotation, shadows);
         }
         direct += evaluateDirectContribution(surface, V, lightDirection, incidentIrradiance, visibility);
     }
 
     float3 ambient = float3(0.0);
-#if ENABLE_IBL
+#if HAS_ENV
     // 环境光照
     float3 R = reflect(-V, surface.normal);
 
     // 镜面反射环境光照 Split Sum Approximation
     float3 environmentTerm = prefilteredSpecularMap.SampleLevel(
-        prefilteredSpecularMapSampler, R, surface.brdf.roughness * lightUniforms.prefilteredMaxLod).rgb;
+        prefilteredSpecularMapSampler, R, surface.brdf.roughness * sceneGlobals[0].prefilteredMaxLod).rgb;
     float2 scaleBias = brdfLUT.Sample(brdfLUTSampler, float2(NdotV, surface.brdf.roughness)).rg;
     float3 brdfTerm = scaleBias.x * surface.brdf.specularF0 + scaleBias.y * surface.brdf.specularF90;
     float3 ambientSpecular = environmentTerm * brdfTerm;
@@ -454,22 +476,22 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
 
     ambient = ambientDiffuse + ambientSpecular;
 #else
-    ambient = lightUniforms.ambientCoefficient * surface.brdf.albedo();
+    ambient = lightingParameters.ambientCoefficient * surface.brdf.albedo();
 #endif
 #if ENABLE_SHEEN
     ambient *= sheenAmbientScale;
-#if ENABLE_IBL
+#if HAS_ENV
     ambient += evaluateSheenIbl(surface, V);
 #endif
 #endif
 #if ENABLE_CLEARCOAT
     ambient *= 1.0 - clearcoatWeight;
-#if ENABLE_IBL
+#if HAS_ENV
     float3 clearcoatReflection = reflect(-V, clearcoatNormal);
     float3 clearcoatEnvironment = prefilteredSpecularMap.SampleLevel(
         prefilteredSpecularMapSampler,
         clearcoatReflection,
-        clearcoatRoughness * lightUniforms.prefilteredMaxLod).rgb;
+        clearcoatRoughness * sceneGlobals[0].prefilteredMaxLod).rgb;
     float2 clearcoatScaleBias = brdfLUT.Sample(brdfLUTSampler, float2(clearcoatNdotV, clearcoatRoughness)).rg;
     // The layer weight already includes Fresnel. Use the LUT's unit-Fresnel
     // response (scale + bias), avoiding a second Fresnel multiplication.

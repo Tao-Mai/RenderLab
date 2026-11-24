@@ -7,25 +7,26 @@
 #include "render/PreparedScene.h"
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
-#include "render/RendererConfig.h"
 #include "render/raster/MeshDraw.h"
 #include "render/raster/ShadowResources.h"
 #include "render/resources/MaterialTable.h"
 
-ScenePass::ScenePass(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
-    Falcor::RenderPass(std::move(device)),
-    parameters(Falcor::deserializeFromProperties<RasterLightingSettings>(properties))
+ScenePass::ScenePass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+    RenderPass(std::move(device), SceneInputs::RasterVisibility),
+    parameters(deserializeFromProperties<RasterLightingOutputSettings>(properties))
 {
+    parameters.validate();
 }
 
 
-Falcor::Properties ScenePass::getProperties() const { return Falcor::serializeToProperties(parameters); }
+Properties ScenePass::getProperties() const { return serializeToProperties(parameters); }
 
 
-void ScenePass::setProperties(const Falcor::Properties& properties)
+void ScenePass::setProperties(const Properties& properties)
 {
-    RasterLightingSettings next;
+    RasterLightingOutputSettings next;
     Deserialize(nlohmann::json(properties.toJson()), next);
+    next.validate();
 
     const bool recompile = next.hdr != parameters.hdr;
     parameters           = std::move(next);
@@ -34,27 +35,26 @@ void ScenePass::setProperties(const Falcor::Properties& properties)
 }
 
 
-Falcor::RenderPassReflection ScenePass::reflect(const CompileData& compileData)
+RenderPassReflection ScenePass::reflect(const CompileData& compileData)
 {
     const auto* depth  = compileData.connectedResources.getField("depth");
-    const auto  extent = depth ? Falcor::uint2{depth->getWidth(), depth->getHeight()} : Falcor::uint2{};
+    const auto  extent = depth ? glm::uvec2{depth->getWidth(), depth->getHeight()} : glm::uvec2{};
 
-    Falcor::RenderPassReflection reflection;
+    RenderPassReflection reflection;
     addShadowInputs(reflection);
     reflection.addInput("depth", "Scene depth")
         .format(rhi::Format::D32Float)
-        .bindFlags(Falcor::ResourceBindFlags::DepthStencil);
+        .bindFlags(ResourceBindFlags::DepthStencil);
     reflection.addOutput("color", "Raster lighting result")
         .format(parameters.getColorFormat(compileData.defaultTexFormat))
-        .bindFlags(Falcor::ResourceBindFlags::RenderTarget)
+        .bindFlags(ResourceBindFlags::RenderTarget)
         .texture2D(extent.x, extent.y);
     return reflection;
 }
 
 
-void ScenePass::compile(Falcor::RenderContext* passContext, const CompileData& compileData)
+void ScenePass::compile(RenderContext* passContext, const CompileData& compileData)
 {
-    const auto& config = *passContext->config;
     parameters.validateColorFormat(*passContext->device);
     const rhi::DepthStencilDesc depth{
         .format           = rhi::Format::D32Float,
@@ -67,13 +67,12 @@ void ScenePass::compile(Falcor::RenderContext* passContext, const CompileData& c
         parameters.getColorFormat(compileData.defaultTexFormat),
         depth,
         false,
-        config.feature.ibl,
-        config.renderPath != RenderPath::Deferred
+        true
     );
 }
 
 
-void ScenePass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
+void ScenePass::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
     const auto target    = renderData.getTexture("color");
     const auto colorView = target->getDefaultView();
@@ -92,13 +91,13 @@ void ScenePass::execute(Falcor::RenderContext* renderCommands, const Falcor::Ren
     CHECK(pass);
     const auto&      size     = target->getDesc().size;
     const auto       viewport = renderCommands->view->viewport.clamped({size.width, size.height});
-    const ShadowBindings shadows{renderData, *renderCommands->frameData, *renderCommands->resources};
-    MeshDrawRecorder recorder{*pass, viewport.renderState(), *renderCommands, &shadows};
+    const ShadowBindings shadows{renderData, *renderCommands->resources};
+    MeshDrawRecorder recorder{*pass, viewport.renderState(), *renderCommands, &shadows, parameters.ambientCoefficient};
     recorder.drawOpaque([&](const auto& material) { return pipelines.get(*renderCommands, material); });
     pass->end();
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<Falcor::RenderPass, ScenePass>();
+    registry.registerClass<RenderPass, ScenePass>();
 }

@@ -12,17 +12,15 @@
 
 struct _object;
 
-namespace Falcor
-{
 class Properties;
 
-namespace detail
+namespace properties_detail
 {
 class DummyArchive;
 
 template <typename T>
 inline constexpr bool has_serialize_v = requires(T& value, DummyArchive& archive) { value.serialize(archive); };
-}  // namespace detail
+}  // namespace properties_detail
 
 template <typename T>
 [[nodiscard]] Properties serializeToProperties(const T& value);
@@ -30,7 +28,7 @@ template <typename T>
 template <typename T>
 [[nodiscard]] T deserializeFromProperties(const Properties& properties);
 
-class FALCOR_API Properties
+class RENDERLAB_CORE_API Properties
 {
 public:
     using json = nlohmann::ordered_json;
@@ -56,7 +54,7 @@ public:
     template <typename T>
     void set(std::string_view name, const T& value)
     {
-        if constexpr (detail::has_serialize_v<T>)
+        if constexpr (properties_detail::has_serialize_v<T>)
             setInternal(name, serializeToProperties(value));
         else
             setInternal(name, value);
@@ -67,7 +65,7 @@ public:
     template <typename T>
     [[nodiscard]] bool getTo(std::string_view name, T& value) const
     {
-        if constexpr (detail::has_serialize_v<T>)
+        if constexpr (properties_detail::has_serialize_v<T>)
         {
             Properties properties;
             if (!getInternal(name, properties))
@@ -217,7 +215,7 @@ public:
     template <typename T>
     [[nodiscard]] static Properties write(const T& value)
     {
-        if constexpr (detail::has_serialize_v<T>)
+        if constexpr (properties_detail::has_serialize_v<T>)
         {
             PropertiesWriter writer;
             const_cast<T&>(value).serialize(writer);
@@ -242,7 +240,7 @@ public:
     [[nodiscard]] static T read(const Properties& properties)
     {
         T value{};
-        if constexpr (detail::has_serialize_v<T>)
+        if constexpr (properties_detail::has_serialize_v<T>)
         {
             PropertiesReader reader(properties);
             value.serialize(reader);
@@ -272,4 +270,3 @@ template <typename T>
 {
     return PropertiesReader::read<T>(properties);
 }
-}  // namespace Falcor

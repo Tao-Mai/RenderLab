@@ -7,26 +7,26 @@
 #include "passes/raster/ForwardPbr.h"
 #include "render/raster/RasterLightingSettings.h"
 
-class ScenePass : public Falcor::RenderPass
+class ScenePass : public RenderPass
 {
-    FALCOR_PLUGIN_CLASS(ScenePass, "ScenePass", "Renders opaque geometry with forward shading.");
+    RL_PLUGIN_CLASS(ScenePass, "ScenePass", "Renders opaque geometry with forward shading.");
 
-    ScenePass(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties);
+    ScenePass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
 
-    [[nodiscard]] Falcor::Properties getProperties() const override;
-    void                             setProperties(const Falcor::Properties& properties) override;
+    [[nodiscard]] Properties getProperties() const override;
+    void                             setProperties(const Properties& properties) override;
 
-    static Falcor::ref<ScenePass> create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
+    static ref<ScenePass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
     {
-        return Falcor::make_ref<ScenePass>(std::move(device), properties);
+        return make_ref<ScenePass>(std::move(device), properties);
     }
 
-    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData& compileData) override;
-    void compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
-    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
+    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
+    void compile(RenderContext* passContext, const CompileData& compileData) override;
+    void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
 private:
-    RasterLightingSettings parameters;
+    RasterLightingOutputSettings parameters;
 
 
     ForwardPbrPipelines pipelines;

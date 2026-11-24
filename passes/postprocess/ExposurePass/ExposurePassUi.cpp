@@ -1,27 +1,40 @@
 #include "passes/postprocess/ExposurePass/ExposurePass.h"
 
-#include "editor/EditorCameraConfig.h"
-#include "editor/ExposureUi.h"
 #include "editor/PassEditor.h"
 
 namespace
 {
-bool drawSettings(Falcor::Gui::Widgets& widgets, ExposurePassSettings& settings, const ExposurePass&,
-                  const PassEditorContext& context)
+bool drawSettings(
+    Gui::Widgets& widgets, ExposurePassSettings& exposure, const ExposurePass&, const PassEditorContext&
+)
 {
-    const bool edited = drawExposureSettings(widgets, settings);
-    if (context.camera.exposure)
-        widgets.disabledText("Exposure overridden by Editor camera");
+    bool edited = widgets.dropdown("Exposure mode", exposure.mode, {"Manual", "Automatic"});
+    if (exposure.mode == ExposureMode::Manual)
+    {
+        edited |= widgets.drag("EV100", exposure.ev100, 0.05f, -10.0f, 30.0f, "%.2f");
+        widgets.tooltip("Higher EV100 darkens the image; +1 halves linear brightness.");
+    }
+    else
+    {
+        auto& automatic = exposure.automatic;
+        edited |= widgets.dragRange("EV100 range", automatic.minEv100, automatic.maxEv100, 0.05f, -16.0f, 24.0f, "%.2f");
+        edited |= widgets.drag("Adapt to bright", automatic.brightAdaptationSpeed, 0.05f, 0.01f, 20.0f, "%.2f /s");
+        edited |= widgets.drag("Adapt to dark", automatic.darkAdaptationSpeed, 0.05f, 0.01f, 20.0f, "%.2f /s");
+        edited |= widgets.slider("Low percentile", automatic.lowPercentile, 0.0f, automatic.highPercentile - 0.001f);
+        edited |= widgets.slider("High percentile", automatic.highPercentile, automatic.lowPercentile + 0.001f, 1.0f);
+    }
+
+    edited |= widgets.drag("Exposure compensation (stops)", exposure.exposureCompensation, 0.05f, -10.0f, 10.0f, "%.2f");
     return edited;
 }
-}
+}  // namespace
 
-void ExposurePass::renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget)
+void ExposurePass::renderUI(RenderContext* context, Gui::Widgets& widget)
 {
     drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "Exposure");
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<Falcor::RenderPass, ExposurePass>();
+    registry.registerClass<RenderPass, ExposurePass>();
 }

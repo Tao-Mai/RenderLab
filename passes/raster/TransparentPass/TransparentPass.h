@@ -5,32 +5,33 @@
 
 #include <slang-rhi/shader-cursor.h>
 #include "passes/raster/ForwardPbr.h"
+#include "render/raster/RasterLightingSettings.h"
 
 #include <vector>
 
-class TransparentPass : public Falcor::RenderPass
+class TransparentPass : public RenderPass
 {
-    FALCOR_PLUGIN_CLASS(TransparentPass, "TransparentPass", "Renders transparent geometry.");
+    RL_PLUGIN_CLASS(TransparentPass, "TransparentPass", "Renders transparent geometry.");
 
-    TransparentPass(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
-        Falcor::RenderPass(std::move(device))
+    TransparentPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
+
+    [[nodiscard]] Properties getProperties() const override;
+    void                             setProperties(const Properties& properties) override;
+
+    static ref<TransparentPass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
     {
-        setProperties(properties);
+        return make_ref<TransparentPass>(std::move(device), properties);
     }
 
-    static Falcor::ref<TransparentPass> create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
-    {
-        return Falcor::make_ref<TransparentPass>(std::move(device), properties);
-    }
-
-    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData& compileData) override;
-    void compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
-    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
+    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
+    void compile(RenderContext* passContext, const CompileData& compileData) override;
+    void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
 private:
-    void sortDrawItems(const Falcor::RenderContext& frame);
+    void sortDrawItems(const RenderContext& frame);
 
-    std::vector<uint32_t> sortedDrawItems;
+    TransparentLightingSettings parameters;
+    std::vector<uint32_t>        sortedDrawItems;
 
     ForwardPbrPipelines pipelines;
 };

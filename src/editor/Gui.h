@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/Macros.h"
-#include "core/math/Vector.h"
+#include <glm/vec4.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -12,9 +12,7 @@
 #include <string_view>
 #include <type_traits>
 
-namespace Falcor
-{
-class FALCOR_API IDScope
+class RENDERLAB_CORE_API IDScope
 {
 public:
     explicit IDScope(const void* id);
@@ -23,11 +21,11 @@ public:
     IDScope& operator=(const IDScope&) = delete;
 };
 
-class FALCOR_API Gui
+class RENDERLAB_CORE_API Gui
 {
 public:
     class Widgets;
-    static float4 pickUniqueColor(const std::string& key);
+    static glm::vec4 pickUniqueColor(const std::string& key);
 };
 
 class Gui::Widgets
@@ -90,4 +88,3 @@ public:
     void pushId(const char* id);
     void popId();
 };
-}  // namespace Falcor

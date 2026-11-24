@@ -3,14 +3,21 @@
 #include "passes/denoise/SVGF/SvgfSettings.h"
 
 #include <slang-rhi.h>
-#include "render/denoise/DenoiserInputs.h"
+#include "render/device/GpuResources.h"
+#include "shaders/raytracing/LightingLayers.h"
 
 #include <array>
 
-namespace Falcor
-{
 struct RenderContext;
-}  // namespace Falcor
+
+struct SVGFInputs
+{
+    GpuResources::ImageHandle color;
+    GpuResources::ImageHandle depth;
+    GpuResources::ImageHandle worldNormal;
+    GpuResources::ImageHandle emission;
+    GpuResources::ImageHandle albedo;
+};
 
 class SVGFReprojection
 {
@@ -29,12 +36,12 @@ public:
     };
 
     Output compile(
-        const Falcor::RenderContext&                                      context,
-        const DenoiserInputs&                                             source,
+        const RenderContext&                                      context,
+        const SVGFInputs&                                                 source,
         const std::array<GpuResources::ImageHandle, kHistoryCount>&       history,
         const std::array<GpuResources::ImageHandle, kLightingLayerCount>& outputs
     );
-    void execute(GpuResources& cache, rhi::ICommandEncoder& commands, const Falcor::RenderContext& frame);
+    void execute(GpuResources& cache, rhi::ICommandEncoder& commands, const RenderContext& frame);
 
     // Layer belonging to the frame most recently executed by this pass.
     [[nodiscard]] uint32_t colorHistoryLayer() const { return writeLayer ^ 1u; }
@@ -52,6 +59,7 @@ private:
     bool                               hasHistory = false;
     const SvgfSettings&                settings;
     uint64_t                           previousHistoryRevision = 0;
+    uint64_t                           previousSceneGeneration  = 0;
 
-    void createPipeline(const Falcor::RenderContext& context);
+    void createPipeline(const RenderContext& context);
 };

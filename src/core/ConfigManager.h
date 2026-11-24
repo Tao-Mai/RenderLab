@@ -10,7 +10,6 @@
 
 #include "core/Settings.h"
 
-#include "render/RendererConfig.h"
 
 
 #include <cstdint>
@@ -30,10 +29,16 @@
 
 struct SceneAsset;
 
-enum class SceneRenderMode;
 
 
 inline constexpr char kRenderGraphOptionsPrefix[] = "renderGraphs:";
+
+enum class RL_ENUM RenderPath
+{
+    Forward RL_ENUM_VALUE("Forward"),
+    Deferred RL_ENUM_VALUE("Deferred"),
+    RayTracing RL_ENUM_VALUE("RayTracing"),
+};
 
 
 struct RL_RECORD AppPaths
@@ -88,9 +93,7 @@ struct RL_RECORD RendererSettings
 
 {
 
-    RL_FIELD("realtimeGraph") std::string realtimeGraph;
-
-    RL_FIELD("offlineGraph") std::string offlineGraph;
+    RL_FIELD("renderGraph") std::string renderGraph;
 
     RL_FIELD("options") nlohmann::json options;
 };
@@ -101,8 +104,6 @@ class ConfigManager
 {
 
 public:
-    ConfigManager();
-
     ~ConfigManager();
 
 
@@ -117,13 +118,11 @@ public:
 
     [[nodiscard]] const AssetID<SceneAsset>& initialScene() const noexcept;
 
-    [[nodiscard]] const RendererConfig& rendererConfig() const noexcept;
-
     [[nodiscard]] const EditorConfig& editorConfig() const noexcept;
 
     [[nodiscard]] const auto& renderGraphs() const { return data.renderGraphs; }
 
-    [[nodiscard]] const std::string& renderGraphName() const noexcept;
+    [[nodiscard]] const std::string& renderGraphName() const noexcept { return renderGraph; }
 
     [[nodiscard]] std::filesystem::path renderGraphScript() const;
 
@@ -133,8 +132,6 @@ public:
 
     [[nodiscard]] nlohmann::json getOptions() const;
 
-    void applyGraphParameters(const nlohmann::json& parameters);
-
     void setEditorSize(int width, int height);
 
     void setObjectPicking(bool enabled);
@@ -142,8 +139,6 @@ public:
     void setInitialScene(AssetID<SceneAsset> id);
 
     void setRenderGraph(std::string_view name);
-
-    void setSceneRenderMode(SceneRenderMode mode);
 
 
 private:
@@ -159,15 +154,9 @@ private:
 
     EditorConfig editor;
 
-    RendererConfig renderer;
-
     Settings settings;
 
-    SceneRenderMode sceneRenderMode;
-
-    std::string realtimeGraph;
-
-    std::string offlineGraph;
+    std::string renderGraph;
 
 
     void load();

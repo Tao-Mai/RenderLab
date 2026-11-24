@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_PT_SLANG
 #define RENDERLAB_PT_SLANG
 
-#include "raytracing/offline/path_common.slang"
+#include "raytracing/accumulation/path_common.slang"
 #include "light_sampling.slang"
 
 float balanceHeuristic(float pdf, float otherPdf)
@@ -13,7 +13,7 @@ struct Surface
 {
     float3 origin;
     float3 geometricNormal;
-    pbrt::Bsdf scattering;
+    SurfaceBsdf scattering;
 
     float3 evaluateLight(float3 direction, float3 incident)
     {
@@ -71,7 +71,7 @@ struct Surface
     }
 };
 
-Surface makeSurface(Hit hit, pbrt::Material material, float3 wo)
+Surface makeSurface(Hit hit, ScatteringMaterial material, float3 wo)
 {
     Surface surface;
     bool frontFace = dot(hit.geometricNormal, wo) >= 0.0;
@@ -91,7 +91,7 @@ Surface makeSurface(Hit hit, pbrt::Material material, float3 wo)
         normal = -normal;
     }
 
-    surface.scattering = pbrt::makeBsdf(material, normal, hit.tangent, wo, frontFace);
+    surface.scattering = {material, normal, hit.tangent, wo, frontFace};
 
     return surface;
 }
@@ -107,22 +107,21 @@ float3 tracePath(RayDesc ray, inout uint state)
     for (uint bounce = 0; bounce <= parameters.path.maxBounces; ++bounce)
     {
         Hit hit = {};
-        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, kSceneMask, 0, 0, 0, ray, hit);
+        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+            kSceneMask | kLightMask, 0, 0, 0, ray, hit);
 
         // 未命中，直接返回环境光
         if (hit.hit == 0)
         {
-            radiance += throughput * environmentEmission(parameters.path.hasEnvironmentLight, ray.Direction);
+            radiance += throughput * environmentRadiance(ray.Direction);
             break;
         }
 
-        HitData object = objects[hit.objectIndex];
-
         // 命中发光几何体，如果直接命中那权重为1，如果间接命中则根据上个表面对该面的选择概率来计算权重
         // 发光几何体本身也可以有材质，所以继续往下追踪
-        if (object.firstAreaLight != kOfflineInvalidIndex)
+        if (hit.areaLightIndex != kInvalidLightIndex)
         {
-            uint lightIndex = object.firstAreaLight + hit.primitiveIndex;
+            uint lightIndex = hit.areaLightIndex;
             float weight = 1.0;
             if (bounce != 0 && previousDelta == 0)
             {
@@ -134,14 +133,13 @@ float3 tracePath(RayDesc ray, inout uint state)
             radiance += throughput * areaEmission(lightIndex, hit.uv, -ray.Direction) * weight;
         }
 
-        if (bounce == parameters.path.maxBounces)
+        if (hit.emitterOnly != 0 || bounce == parameters.path.maxBounces)
         {
             break;
         }
 
-        pbrt::Material material = pbrt::evaluateMaterial(materialInstructions, textureInstructions, object.materialIndex,
-            hit.uv, hit.position, hit.normal,
-            hit.primitiveIndex);
+        ScatteringMaterial material = evaluateScattering(
+            materials[hit.materialIndex], hit.uv, hit.position, hit.normal, hit.primitiveIndex);
         if (!material.hasScattering())
         {
             break;
@@ -152,10 +150,10 @@ float3 tracePath(RayDesc ray, inout uint state)
         // Delta events have no continuous density for light sampling.
         if (!material.isDelta())
         {
-            DeltaLightSample local = sampleLocalLight(parameters.path.pointLightCount, parameters.path.spotLightCount,
-                surface.origin, state);
-            DeltaLightSample distant = sampleDistantLight(parameters.path.directionalLightCount, state);
-            AreaLightSample area = sampleAreaLight(parameters.path.triangleLightCount, surface.origin, state);
+            LightRanges ranges = sceneGlobals[0].lightRanges;
+            DeltaLightSample local = sampleLocalLight(ranges, surface.origin, state);
+            DeltaLightSample distant = sampleDistantLight(ranges.directionalEnd, state);
+            AreaLightSample area = sampleAreaLight(triangleLightCount(), surface.origin, state);
             float2 areaSample;
             areaSample.x = randomFloat(state);
             areaSample.y = randomFloat(state);

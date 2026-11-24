@@ -1,4 +1,4 @@
-#include "raytracing/offline/path_launch.slang"
+#include "raytracing/accumulation/path_launch.slang"
 #include "pt_parameters.slang"
 
 #include "pt.slang"

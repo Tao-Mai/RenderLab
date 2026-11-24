@@ -11,7 +11,7 @@ struct SceneAsset;
 class RenderSystem
 {
 public:
-    [[nodiscard]] const SceneRenderData& prepare(const SceneAsset& scene);
+    [[nodiscard]] const SceneRenderData& prepare(const SceneAsset& scene, uint64_t sceneGeneration);
     void                                 reset() noexcept;
 
 private:

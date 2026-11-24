@@ -37,14 +37,18 @@ MeshCullPipelines createMeshCullPipelines(rhi::IDevice& device, rhi::RenderPipel
 }
 void MeshDrawRecorder::draw(const DrawItem& item, uint32_t materialIndex, rhi::IRenderPipeline* pipeline)
 {
-    auto* root = pass.bindPipeline(pipeline);
-    CHECK(root);
-    bindFrameData(root, *frame.frameData);
+    auto* object = pass.bindPipeline(pipeline);
+    CHECK(object);
+    const rhi::ShaderCursor root(object);
+    rhiCheck(root["sceneGlobals"].setBinding(frame.scene->globalsBuffer()));
     if (shadows)
+    {
+        frame.scene->lighting.bindRaster(root, ambientCoefficient, frame.scene->environmentMap);
         shadows->bind(root);
-    frame.materialTable->bind(root);
+    }
+    frame.materialTable->bind(object);
     const MeshPushConstants constants{.model = item.model, .materialIndex = materialIndex};
-    rhiCheck(rhi::ShaderCursor(root)["pushConstants"].getDereferenced().setData(constants));
+    rhiCheck(root["pushConstants"].getDereferenced().setData(constants));
 
     const auto& mesh        = frame.resources->mesh(item.mesh);
     state.vertexBufferCount = 1;
@@ -54,5 +58,4 @@ void MeshDrawRecorder::draw(const DrawItem& item, uint32_t materialIndex, rhi::I
     pass.setRenderState(state);
     const auto& submesh = mesh.submeshes()[item.submeshIndex];
     pass.drawIndexed({submesh.indexCount, 1, 0, 0, submesh.firstIndex});
-    recordDraw(frame.profiler, submesh.indexCount);
 }

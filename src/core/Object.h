@@ -36,11 +36,9 @@
 #include <type_traits>
 #include <utility>
 
-namespace Falcor
-{
 class PluginManager;
 
-class FALCOR_API Object
+class RENDERLAB_CORE_API Object
 {
 public:
     /// Default constructor.
@@ -66,7 +64,7 @@ public:
     virtual ~Object() = default;
 
     /// Return the name of the class.
-    /// Note: This reports the actual class name if FALCOR_OBJECT() is used.
+    /// Note: This reports the actual class name if RL_OBJECT() is used.
     virtual const char* getClassName() const { return "Object"; }
 
     /// Return the current reference count.
@@ -86,7 +84,7 @@ private:
 };
 
 /// Macro to declare the object class name.
-#define FALCOR_OBJECT(class_)                 \
+#define RL_OBJECT(class_)                 \
 public:                                       \
     const char* getClassName() const override \
     {                                         \
@@ -372,4 +370,3 @@ private:
     ref<T> mStrongRef;
     T* mWeakRef = nullptr;
 };
-}  // namespace Falcor

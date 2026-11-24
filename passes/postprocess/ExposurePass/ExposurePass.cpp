@@ -1,19 +1,21 @@
 #include "passes/postprocess/ExposurePass/ExposurePass.h"
 
 #include <slang-rhi/shader-cursor.h>
+#include "core/Logger.h"
+#include "passes/postprocess/ExposurePass/ExposureState.h"
 #include "render/DispatchGroups.h"
 #include "render/PreparedScene.h"
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
 
-#include <array>
 #include <glm/vec4.hpp>
 
 namespace
 {
-constexpr char     kHistogram[]       = "histogram";
-constexpr uint32_t kHistogramBinCount = 256;
-constexpr uint32_t kMeteringStride    = 2;
+constexpr char     kExposureStateOutput[] = "state";
+constexpr char     kHistogram[]           = "histogram";
+constexpr uint32_t kHistogramBinCount     = 256;
+constexpr uint32_t kMeteringStride        = 2;
 
 struct ExposureParameters
 {
@@ -34,18 +36,18 @@ struct ExposureParameters
 static_assert(sizeof(ExposureParameters) == 64);
 }  // namespace
 
-ExposurePass::ExposurePass(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
-    Falcor::RenderPass(std::move(device)),
-    parameters(Falcor::deserializeFromProperties<ExposurePassSettings>(properties))
+ExposurePass::ExposurePass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+    RenderPass(std::move(device)),
+    parameters(deserializeFromProperties<ExposurePassSettings>(properties))
 {
     parameters.validate();
 }
 
 
-Falcor::Properties ExposurePass::getProperties() const { return Falcor::serializeToProperties(parameters); }
+Properties ExposurePass::getProperties() const { return serializeToProperties(parameters); }
 
 
-void ExposurePass::setProperties(const Falcor::Properties& properties)
+void ExposurePass::setProperties(const Properties& properties)
 {
     ExposurePassSettings next;
     Deserialize(nlohmann::json(properties.toJson()), next);
@@ -55,24 +57,23 @@ void ExposurePass::setProperties(const Falcor::Properties& properties)
 }
 
 
-Falcor::RenderPassReflection ExposurePass::reflect(const CompileData&)
+RenderPassReflection ExposurePass::reflect(const CompileData&)
 {
-    Falcor::RenderPassReflection reflection;
-    reflection.addInput("hdrColor", "HDR scene color").bindFlags(Falcor::ResourceBindFlags::ShaderResource);
+    RenderPassReflection reflection;
+    reflection.addInput("hdrColor", "HDR scene color").bindFlags(ResourceBindFlags::ShaderResource);
     reflection.addOutput(kExposureStateOutput, "Exposure state")
         .rawBuffer(sizeof(ExposureState))
-        .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess);
+        .bindFlags(ResourceBindFlags::UnorderedAccess);
     reflection.addInternal(kHistogram, "Luminance histogram")
         .rawBuffer(kHistogramBinCount * sizeof(uint32_t))
-        .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess);
+        .bindFlags(ResourceBindFlags::UnorderedAccess);
     return reflection;
 }
 
 
-void ExposurePass::compile(Falcor::RenderContext* context, const CompileData&)
+void ExposurePass::compile(RenderContext* context, const CompileData&)
 {
     hasHistory        = false;
-    previousScene     = {};
     histogramPipeline = context->device->createComputePipeline(
         {.program =
              context->shaderManager->program(context->shaderManager->getOrLoad("exposure", {{"EXPOSURE_STAGE", "0"}}))}
@@ -86,18 +87,18 @@ void ExposurePass::compile(Falcor::RenderContext* context, const CompileData&)
 }
 
 
-void ExposurePass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
+void ExposurePass::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
-    const auto&              frame     = *renderCommands;
-    const ExposureConfig&    settings  = frame.scene->exposure ? *frame.scene->exposure : parameters;
-    const auto&              automatic = settings.automatic;
-    const auto&              viewport  = frame.view->viewport;
-    const bool               enabled   = settings.mode == ExposureMode::Automatic;
-    const ExposureParameters parameters{
+    const auto& frame           = *renderCommands;
+    const auto& automatic       = parameters.automatic;
+    const auto& viewport        = frame.view->viewport;
+    const auto  sceneGeneration = frame.scene->sceneGeneration;
+    const bool  enabled         = parameters.mode == ExposureMode::Automatic;
+    const ExposureParameters uniforms{
         .viewport              = {viewport.x, viewport.y, viewport.width, viewport.height},
         .deltaSeconds          = frame.deltaSeconds,
-        .manualEv100           = settings.ev100,
-        .exposureCompensation  = settings.exposureCompensation,
+        .manualEv100           = parameters.ev100,
+        .exposureCompensation  = parameters.exposureCompensation,
         .automatic             = enabled ? 1u : 0u,
         .minEv100              = automatic.minEv100,
         .maxEv100              = automatic.maxEv100,
@@ -105,7 +106,7 @@ void ExposurePass::execute(Falcor::RenderContext* renderCommands, const Falcor::
         .darkAdaptationSpeed   = automatic.darkAdaptationSpeed,
         .lowPercentile         = automatic.lowPercentile,
         .highPercentile        = automatic.highPercentile,
-        .historyValid          = hasHistory && previousScene == frame.scene->sceneId ? 1u : 0u,
+        .historyValid          = hasHistory && previousSceneGeneration == sceneGeneration ? 1u : 0u,
     };
 
 
@@ -122,7 +123,7 @@ void ExposurePass::execute(Falcor::RenderContext* renderCommands, const Falcor::
         rhiCheck(root["hdrColor"].setBinding(renderData.getTexture("hdrColor")->getDefaultView()));
         rhiCheck(root["histogram"].setBinding(histogram));
         rhiCheck(root["exposureState"].setBinding(renderData.getBuffer(kExposureStateOutput)));
-        rhiCheck(root["parameters"].getDereferenced().setData(parameters));
+        rhiCheck(root["parameters"].getDereferenced().setData(uniforms));
         pass->dispatchCompute(groups.width, groups.height, groups.depth);
         pass->end();
     };
@@ -136,6 +137,6 @@ void ExposurePass::execute(Falcor::RenderContext* renderCommands, const Falcor::
         );
     }
     dispatch(resolvePipeline, {1, 1, 1});
-    hasHistory    = true;
-    previousScene = frame.scene->sceneId;
+    hasHistory              = true;
+    previousSceneGeneration = sceneGeneration;
 }

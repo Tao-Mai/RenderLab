@@ -8,8 +8,6 @@
 #include <utility>
 #include "render/device/RhiCheck.h"
 
-namespace Falcor
-{
 namespace
 {
     using Field = RenderPassReflection::Field;
@@ -190,4 +188,3 @@ void ResourceCache::allocateResources(rhi::IDevice* device, const DefaultPropert
         }
     }
 }
-}  // namespace Falcor

@@ -37,7 +37,7 @@ struct BdptVertex
     float pdfFwd;
     float pdfRev;
 
-    pbrt::Material material;
+    ScatteringMaterial material;
 
     uint delta;
     BdptVertexType type;
@@ -97,14 +97,14 @@ float bdptConvertDensity(BdptVertex from, float pdf, BdptVertex to)
 
 struct BdptBsdf
 {
-    pbrt::Bsdf scattering;
+    SurfaceBsdf scattering;
     float3 geometricNormal;
 
     property normal : float3 {
         get { return scattering.normal; }
     }
 
-    bool connectible() { return !scattering.material.isDelta(); }
+    bool connectible() { return scattering.material.hasScattering() && !scattering.material.isDelta(); }
 
     float shadingNormalCorrection(float3 wi, pbrt::TransportMode mode)
     {
@@ -179,7 +179,8 @@ BdptBsdf bdptBsdf(BdptVertex vertex, float3 wo)
     float3 geometricNormal = frontFace ? vertex.geometricNormal : -vertex.geometricNormal;
     float3 normal = dot(vertex.normal, geometricNormal) >= 0.0 ? vertex.normal : -vertex.normal;
 
-    return {pbrt::makeBsdf(vertex.material, normal, vertex.tangent, wo, frontFace), geometricNormal};
+    SurfaceBsdf scattering = {vertex.material, normal, vertex.tangent, wo, frontFace};
+    return {scattering, geometricNormal};
 }
 
 float3 bdptOffset(BdptVertex vertex, float3 direction)

@@ -34,9 +34,7 @@ public:
     void                shutdown() noexcept;
     void                applySceneActions();
 
-    [[nodiscard]] Frame
-         buildFrame(const EditorCamera& camera, float deltaTime, uint32_t swapchainWidth, uint32_t swapchainHeight);
-    void applyPickResult(const RenderFrameResult& result);
+    [[nodiscard]] Frame buildFrame(const EditorCamera& camera);
 
     [[nodiscard]] bool     wantsInput() const;
     [[nodiscard]] uint32_t selectionId() const { return selectedId; }

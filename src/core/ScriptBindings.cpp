@@ -6,7 +6,7 @@
 #include <list>
 #include <unordered_map>
 
-namespace Falcor::ScriptBindings
+namespace ScriptBindings
 {
 namespace
 {
@@ -229,13 +229,13 @@ std::string repr(PyObject* value, PyTypeObject* type)
     CHECK(typeName, "{}", pythonError());
     return *typeName + '(' + repr(value) + ')';
 }
-}  // namespace Falcor::ScriptBindings
+}  // namespace ScriptBindings
 
-extern "C" PyObject* PyInit_falcor()
+extern "C" PyObject* PyInit_renderlab()
 {
-    static PyModuleDef   kModule{PyModuleDef_HEAD_INIT, "falcor", nullptr, -1};
-    Falcor::PythonObject module{PyModule_Create(&kModule)};
-    if (!module || Falcor::ScriptBindings::initModule(module.get()) != 0)
+    static PyModuleDef   kModule{PyModuleDef_HEAD_INIT, "renderlab", nullptr, -1};
+    PythonObject module{PyModule_Create(&kModule)};
+    if (!module || ScriptBindings::initModule(module.get()) != 0)
         return nullptr;
     return module.release();
 }

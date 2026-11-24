@@ -41,7 +41,7 @@ public:
     void                          endFrame();
     void                          resetLayout();
 
-    [[nodiscard]] bool         sceneClicked(glm::vec2& mousePosition) const;
+    [[nodiscard]] bool         sceneClicked(glm::vec2& viewportUv) const;
     [[nodiscard]] bool         wantsInput() const;
     [[nodiscard]] bool         saveRequested() const;
     [[nodiscard]] float        sceneAspectRatio() const;

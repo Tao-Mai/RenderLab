@@ -13,8 +13,6 @@
 #include <typeinfo>
 #include <utility>
 
-namespace Falcor
-{
 template <typename T>
 class ref;
 class Object;
@@ -233,9 +231,8 @@ namespace ScriptBindings
     }
 
 }  // namespace ScriptBindings
-}  // namespace Falcor
 
-#define FALCOR_SCRIPT_BINDING(name)                                                                                    \
+#define RL_SCRIPT_BINDING(name)                                                                                    \
     static int ScriptBinding##name(PyObject* m);                                                                       \
     namespace                                                                                                          \
     {                                                                                                                  \
@@ -243,12 +240,12 @@ namespace ScriptBindings
         {                                                                                                              \
             ScriptBindingRegisterer##name()                                                                            \
             {                                                                                                          \
-                ::Falcor::ScriptBindings::registerDeferredBinding(#name, ScriptBinding##name);                         \
+                ::ScriptBindings::registerDeferredBinding(#name, ScriptBinding##name);                         \
             }                                                                                                          \
         } gScriptBinding##name;                                                                                        \
     }                                                                                                                  \
     static int ScriptBinding##name(PyObject* m)
 
-#define FALCOR_SCRIPT_BINDING_DEPENDENCY(name)                                                                         \
-    if (::Falcor::ScriptBindings::resolveDeferredBinding(#name, m) != 0)                                               \
+#define RL_SCRIPT_BINDING_DEPENDENCY(name)                                                                         \
+    if (::ScriptBindings::resolveDeferredBinding(#name, m) != 0)                                               \
         return -1;

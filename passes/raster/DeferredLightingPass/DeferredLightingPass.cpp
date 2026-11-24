@@ -2,14 +2,12 @@
 
 #include "core/Logger.h"
 #include "core/Plugin.h"
-#include "core/profiling/Profiler.h"
 
 #include <slang-rhi.h>
-#include "core/Context.h"
-#include "render/FrameData.h"
+#include <slang-rhi/shader-cursor.h>
+#include "render/PreparedScene.h"
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
-#include "render/RendererConfig.h"
 #include "render/raster/ShadowResources.h"
 #include "render/resources/ShaderData.h"
 
@@ -30,20 +28,22 @@ constexpr std::array       kGBufferChannels{
 }  // namespace
 
 
-DeferredLightingPass::DeferredLightingPass(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
-    Falcor::RenderPass(std::move(device)),
-    parameters(Falcor::deserializeFromProperties<RasterLightingSettings>(properties))
+DeferredLightingPass::DeferredLightingPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+    RenderPass(std::move(device)),
+    parameters(deserializeFromProperties<RasterLightingOutputSettings>(properties))
 {
+    parameters.validate();
 }
 
 
-Falcor::Properties DeferredLightingPass::getProperties() const { return Falcor::serializeToProperties(parameters); }
+Properties DeferredLightingPass::getProperties() const { return serializeToProperties(parameters); }
 
 
-void DeferredLightingPass::setProperties(const Falcor::Properties& properties)
+void DeferredLightingPass::setProperties(const Properties& properties)
 {
-    RasterLightingSettings next;
+    RasterLightingOutputSettings next;
     Deserialize(nlohmann::json(properties.toJson()), next);
+    next.validate();
 
     const bool recompile = next.hdr != parameters.hdr;
     parameters           = std::move(next);
@@ -52,50 +52,62 @@ void DeferredLightingPass::setProperties(const Falcor::Properties& properties)
 }
 
 
-Falcor::RenderPassReflection DeferredLightingPass::reflect(const CompileData& compileData)
+RenderPassReflection DeferredLightingPass::reflect(const CompileData& compileData)
 {
     const auto* depth  = compileData.connectedResources.getField("depth");
-    const auto  extent = depth ? Falcor::uint2{depth->getWidth(), depth->getHeight()} : Falcor::uint2{};
+    const auto  extent = depth ? glm::uvec2{depth->getWidth(), depth->getHeight()} : glm::uvec2{};
 
-    Falcor::RenderPassReflection reflection;
+    RenderPassReflection reflection;
     addShadowInputs(reflection);
     for (const auto& channel : kGBufferChannels)
         reflection.addInput(channel.first, "G-buffer texture")
             .texture2D(0, 0, 1, 0, 0)
-            .bindFlags(Falcor::ResourceBindFlags::ShaderResource);
+            .bindFlags(ResourceBindFlags::ShaderResource);
     reflection.addOutput("color", "Raster lighting result")
         .format(parameters.getColorFormat(compileData.defaultTexFormat))
-        .bindFlags(Falcor::ResourceBindFlags::RenderTarget)
+        .bindFlags(ResourceBindFlags::RenderTarget)
         .texture2D(extent.x, extent.y);
     return reflection;
 }
 
 
-void DeferredLightingPass::compile(Falcor::RenderContext* passContext, const CompileData& compileData)
+void DeferredLightingPass::compile(RenderContext* passContext, const CompileData&)
 {
     parameters.validateColorFormat(*passContext->device);
-    const Falcor::DefineList variant{
-        {"ENABLE_IBL", passContext->config->feature.ibl ? "1" : "0"},
+    pipelines = {};
+}
+
+rhi::IRenderPipeline* DeferredLightingPass::getPipeline(const RenderContext& context, rhi::Format format)
+{
+    const bool hasEnvironment = context.scene->environmentMap != nullptr;
+    auto& pipeline = pipelines[hasEnvironment];
+    if (pipeline)
+        return pipeline;
+
+    const ShaderDefines variant{
+        {"HAS_ENV", hasEnvironment ? "1" : "0"},
         {"ENABLE_CLEARCOAT", "0"},
         {"ENABLE_SHEEN", "1"}
     };
     rhi::ColorTargetDesc color;
-    color.format = parameters.getColorFormat(compileData.defaultTexFormat);
+    color.format = format;
     rhi::RenderPipelineDesc desc;
     desc.program =
-        passContext->shaderManager->program(passContext->shaderManager->getOrLoad(kDeferredLightingShader, variant));
+        context.shaderManager->program(context.shaderManager->getOrCompile(kDeferredLightingShader, variant));
     desc.targets                       = &color;
     desc.targetCount                   = 1;
     desc.depthStencil.depthTestEnable  = false;
     desc.depthStencil.depthWriteEnable = false;
     desc.rasterizer.scissorEnable      = true;
-    rhiCheck(passContext->device->createRenderPipeline(desc, pipeline.writeRef()));
+    rhiCheck(context.device->createRenderPipeline(desc, pipeline.writeRef()));
+    return pipeline;
 }
 
 
-void DeferredLightingPass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
+void DeferredLightingPass::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
     const auto target    = renderData.getTexture("color");
+    auto* pipeline       = getPipeline(*renderCommands, target->getDesc().format);
     const auto colorView = target->getDefaultView();
     CHECK(colorView);
     rhi::RenderPassColorAttachment color;
@@ -108,20 +120,21 @@ void DeferredLightingPass::execute(Falcor::RenderContext* renderCommands, const 
     const rhi::ShaderCursor root(object);
     const auto&             size     = target->getDesc().size;
     const auto              viewport = renderCommands->view->viewport.clamped({size.width, size.height});
-    bindFrameData(object, *renderCommands->frameData);
-    const ShadowBindings shadows{renderData, *renderCommands->frameData, *renderCommands->resources};
-    shadows.bind(object);
+    const auto& scene = *renderCommands->scene;
+    rhiCheck(root["sceneGlobals"].setBinding(scene.globalsBuffer()));
+    scene.lighting.bindRaster(root, parameters.ambientCoefficient, scene.environmentMap);
+    const ShadowBindings shadows{renderData, *renderCommands->resources};
+    shadows.bind(root);
     for (const auto& [name, parameter] : kGBufferChannels)
         rhiCheck(root[parameter].setBinding(renderData.getTexture(name)->getDefaultView()));
     const DeferredLightingPushConstants constants{{viewport.x, viewport.y, viewport.width, viewport.height}};
     rhiCheck(root["parameters"].getDereferenced().setData(constants));
     pass->setRenderState(viewport.renderState());
     pass->draw({3});
-    recordDraw(renderCommands->profiler, 3);
     pass->end();
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<Falcor::RenderPass, DeferredLightingPass>();
+    registry.registerClass<RenderPass, DeferredLightingPass>();
 }

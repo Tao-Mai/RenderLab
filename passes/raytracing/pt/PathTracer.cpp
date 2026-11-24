@@ -4,9 +4,8 @@
 #include "editor/PassEditor.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
-#include "render/graph/RenderPassStandardFlags.h"
-#include "render/raytracing/offline/OfflinePathTracing.h"
-#include "render/raytracing/offline/OfflineTracePipelineCache.h"
+#include "render/raytracing/PathAccumulation.h"
+#include "render/raytracing/PathPipelineCache.h"
 
 #ifdef RENDERLAB_TEST_PATH_TRACING_STATS
 #include "test/PathTracingStats.h"
@@ -18,23 +17,23 @@ namespace
 {
 constexpr char kOutputColor[] = "color";
 
-class PathTracer : public Falcor::RenderPass
+class PathTracer : public RenderPass
 {
-    FALCOR_PLUGIN_CLASS(PathTracer, "PathTracer", "Reference path tracer.");
+    RL_PLUGIN_CLASS(PathTracer, "PathTracer", "Reference path tracer.");
 
-    PathTracer(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
-        Falcor::RenderPass(std::move(device)),
-        parameters(Falcor::deserializeFromProperties<PathTracerSettings>(properties))
+    PathTracer(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+        RenderPass(std::move(device), SceneInputs::RayTracing, 1),
+        parameters(deserializeFromProperties<PathTracerSettings>(properties))
     {
         parameters.validate();
     }
 
-    [[nodiscard]] Falcor::Properties getProperties() const override
+    [[nodiscard]] Properties getProperties() const override
     {
-        return Falcor::serializeToProperties(parameters);
+        return serializeToProperties(parameters);
     }
 
-    void setProperties(const Falcor::Properties& properties) override
+    void setProperties(const Properties& properties) override
     {
         PathTracerSettings next;
         Deserialize(nlohmann::json(properties.toJson()), next);
@@ -42,50 +41,49 @@ class PathTracer : public Falcor::RenderPass
         parameters = std::move(next);
     }
 
-    static Falcor::ref<PathTracer> create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
+    static ref<PathTracer> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
     {
-        return Falcor::make_ref<PathTracer>(std::move(device), properties);
+        return make_ref<PathTracer>(std::move(device), properties);
     }
 
-    void renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget) override;
+    void renderUI(RenderContext* context, Gui::Widgets& widget) override;
 
-    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData&) override
+    [[nodiscard]] RenderPassReflection reflect(const CompileData&) override
     {
-        Falcor::RenderPassReflection reflection;
+        RenderPassReflection reflection;
         reflection.addOutput(kOutputColor, "Path traced radiance")
             .format(rhi::Format::RGBA16Float)
-            .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess);
+            .bindFlags(ResourceBindFlags::UnorderedAccess);
         return reflection;
     }
 
-    void compile(Falcor::RenderContext* passContext, const CompileData& compileData) override
+    void compile(RenderContext* passContext, const CompileData& compileData) override
     {
         tracer.compile(*passContext, compileData.defaultTexDims, "pt_resolve");
-        pipeline =
-            passContext->offlinePipelines
-                ->get(*mpDevice, *passContext->shaderManager, passContext->shaderManager->getOrLoad("pt"), false);
+        pipeline = nullptr;
     }
 
-    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override
+    void execute(RenderContext* renderCommands, const RenderData& renderData) override
     {
         auto&       cache     = *renderCommands->gpuResources;
         auto&       commands  = *renderCommands->commands;
         const auto& execution = *renderCommands;
 
-        const bool sceneChanged   = tracer.prepareScene(cache, execution, renderData.getTexture(kOutputColor));
-        const bool optionsChanged = previousMaxBounces != parameters.maxBounces;
-        if (optionsChanged)
+        const auto environment = pathEnvironment(*execution.scene);
+        if (!pipeline || environment != shaderEnvironment)
         {
-            auto&      dictionary = renderData.getDictionary();
-            const auto flags =
-                dictionary.getValue(Falcor::kRenderPassRefreshFlags, Falcor::RenderPassRefreshFlags::None);
-            dictionary[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
-            previousMaxBounces                          = parameters.maxBounces;
+            auto& shaders = *execution.shaderManager;
+            const auto shader = shaders.getOrCompile("pt", pathEnvironmentDefines(environment));
+            pipeline = execution.pathPipelines->get(*mpDevice, shaders, shader, false);
+            shaderEnvironment = environment;
         }
+
+        const bool sceneChanged   = tracer.updateFrame(execution, renderData.getTexture(kOutputColor));
+        const bool optionsChanged = previousMaxBounces != parameters.maxBounces;
         if (sceneChanged || optionsChanged)
             tracer.resetAccumulation();
+        previousMaxBounces = parameters.maxBounces;
 
-        cache.recordUploads(commands);
         const auto constants = tracer.pathParameters(execution, parameters.maxBounces);
         const auto bounds    = tracer.viewportBounds(*execution.view);
         const bool hasPixels = bounds.extent.width != 0 && bounds.extent.height != 0;
@@ -102,7 +100,7 @@ class PathTracer : public Falcor::RenderPass
 
 #ifdef RENDERLAB_TEST_PATH_TRACING_STATS
         renderData.getDictionary()[path_tracing_test::statsKey(getName())] =
-            path_tracing_test::OfflineProgress{sampleCount(), float(sampleCount()), false};
+            path_tracing_test::AccumulationProgress{sampleCount(), float(sampleCount()), false};
 #endif
     }
 
@@ -111,13 +109,14 @@ class PathTracer : public Falcor::RenderPass
 private:
     PathTracerSettings parameters;
 
-    OfflinePathTracing                       tracer;
-    const OfflineTracePipelineCache::Result* pipeline           = nullptr;
-    uint32_t                                 previousMaxBounces = 0;
+    PathAccumulation          tracer;
+    const PathTracingProgram* pipeline = nullptr;
+    PathEnvironment           shaderEnvironment = PathEnvironment::None;
+    uint32_t                  previousMaxBounces = 0;
 };
 
 bool drawSettings(
-    Falcor::Gui::Widgets& widgets, PathTracerSettings& settings, const PathTracer& pass, const PassEditorContext&
+    Gui::Widgets& widgets, PathTracerSettings& settings, const PathTracer& pass, const PassEditorContext&
 )
 {
     widgets.text(std::format("Samples per pixel: {}", pass.sampleCount()));
@@ -128,12 +127,12 @@ bool drawSettings(
 }  // namespace
 
 
-void PathTracer::renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget)
+void PathTracer::renderUI(RenderContext* context, Gui::Widgets& widget)
 {
     drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "PT");
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<Falcor::RenderPass, PathTracer>();
+    registry.registerClass<RenderPass, PathTracer>();
 }

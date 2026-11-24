@@ -6,9 +6,11 @@
 #include "render/RenderConfig.h"
 #include "render/device/GpuResources.h"
 #include "render/resources/MaterialData.h"
+#include "render/resources/PbrtMaterialProgram.h"
 
 #include <array>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -56,12 +58,17 @@ public:
     uint32_t update(
         const MaterialKey& key, const GltfMaterial& material, RenderResourceManager& resources, AssetManager& assets
     );
-    void                              upload();
+    uint32_t updatePbrt(const MaterialKey& key, uint32_t programIndex);
+    void     upload();
+    void     uploadPrograms(
+            std::span<const pbrt::MaterialInstruction> programs,
+            std::span<const pbrt::TextureInstruction>  textures,
+            uint64_t                                   revision
+        );
     [[nodiscard]] TextureRef          textureReference(const TextureBinding& binding, RenderResourceManager& resources);
     [[nodiscard]] const MaterialInfo& info(uint32_t materialIndex) const { return materialInfos[materialIndex]; }
-    [[nodiscard]] uint64_t            revision() const { return materialRevision; }
-    [[nodiscard]] GpuResources::BufferHandle bufferHandle() const { return materialBuffer; }
-    void                                     bind(rhi::IShaderObject* object) const;
+    [[nodiscard]] const MaterialData& data(uint32_t materialIndex) const { return materials[materialIndex]; }
+    void                              bind(rhi::IShaderObject* object) const;
 
 private:
     struct MaterialKeyHash
@@ -70,6 +77,8 @@ private:
     };
     GpuResources*                                                    cache = nullptr;
     GpuResources::BufferHandle                                       materialBuffer;
+    GpuResources::BufferHandle                                       materialPrograms, texturePrograms;
+    std::optional<uint64_t>                                          uploadedMaterialRevision, uploadedProgramRevision;
     std::vector<MaterialData>                                        materials;
     uint64_t                                                         materialRevision = 0;
     std::vector<MaterialInfo>                                        materialInfos;
@@ -78,4 +87,6 @@ private:
     std::unordered_map<AssetID<SamplerAsset>, uint32_t>              samplerIndices;
     std::array<rhi::ComPtr<rhi::ITextureView>, kMaxMaterialTextures> images;
     std::array<rhi::ComPtr<rhi::ISampler>, kMaxMaterialSamplers>     samplers;
+
+    uint32_t store(const MaterialKey& key, const MaterialData& data, MaterialInfo info);
 };

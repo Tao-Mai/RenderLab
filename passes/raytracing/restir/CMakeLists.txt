@@ -1,0 +1,4 @@
+renderlab_add_plugin(RayTracingPass RayTracingPass.cpp RayTracingPassUi.cpp RestirResources.cpp)
+
+renderlab_runtime_shader(raytracing restir_path_tracer.slang
+    ENTRIES raygenMain temporalMain spatialMain missMain visibilityMissMain closestHitMain lightClosestHitMain)

@@ -8,7 +8,7 @@
 
 #include <memory>
 
-using RealtimeLightTypes =
+using EditableLightTypes =
     metadata::TypeList<PointLightComponent, DirectionalLightComponent, RectAreaLightComponent, SpotLightComponent>;
 
 LightComponent& replaceLightComponent(LightComponent& light, std::unique_ptr<LightComponent> replacement);

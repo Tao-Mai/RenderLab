@@ -10,7 +10,7 @@ struct ShadowUniforms
     float spotSampleRadius;
     uint pixelRotation;
     uint enabled;
-    uint padding;
+    uint linearFilter;
 };
 
 struct PointShadowData

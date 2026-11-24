@@ -4,8 +4,6 @@
 
 #include <utility>
 
-namespace Falcor
-{
 namespace
 {
     thread_local rhi::ComPtr<rhi::IDevice> spActivePythonRenderGraphDevice;
@@ -23,4 +21,3 @@ rhi::ComPtr<rhi::IDevice> accessActivePythonRenderGraphDevice()
     CHECK(spActivePythonRenderGraphDevice, "render graph scripting requires an active device");
     return spActivePythonRenderGraphDevice;
 }
-}  // namespace Falcor

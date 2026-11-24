@@ -13,19 +13,12 @@
 
 struct PbrtMediumAsset;
 
-enum class RL_ENUM SceneRenderMode
-{
-    Realtime RL_ENUM_VALUE("Realtime"),
-    Offline RL_ENUM_VALUE("Offline"),
-};
-
 struct RL_RECORD SceneAsset : Asset
 {
     using ID                              = AssetID<SceneAsset>;
     static constexpr std::string_view dir = "Scene";
 
     RL_FIELD("id") ID                                   id;
-    RL_FIELD("renderMode") SceneRenderMode                      renderMode = SceneRenderMode::Realtime;
     RL_FIELD("cameraMedium") std::optional<AssetID<PbrtMediumAsset>> cameraMedium;
     RL_FIELD("actors") std::vector<std::unique_ptr<AActor>> actors;
     RL_FIELD("editorCamera") EditorCameraConfig                   editorCamera;

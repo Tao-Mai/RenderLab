@@ -12,14 +12,14 @@ class SVGFFilter
 {
 public:
     void compile(
-        const Falcor::RenderContext&                                      context,
-        const DenoiserInputs&                                             traced,
+        const RenderContext&                                      context,
+        const SVGFInputs&                                                 traced,
         const SVGFReprojection::Output&                                   lighting,
         const std::array<GpuResources::ImageHandle, kLightingLayerCount>& scratch,
         GpuResources::ImageHandle                                         color,
         const SVGFReprojection&                                           reprojection
     );
-    void execute(GpuResources& cache, rhi::ICommandEncoder& commands, const Falcor::RenderContext& frame) const;
+    void execute(GpuResources& cache, rhi::ICommandEncoder& commands, const RenderContext& frame) const;
 
 private:
     struct FilterResources
@@ -44,8 +44,8 @@ private:
         {
         }
 
-        void compile(const Falcor::RenderContext& context, const FilterResources& resources);
-        void execute(GpuResources& cache, rhi::ICommandEncoder& commands, const Falcor::RenderContext& frame) const;
+        void compile(const RenderContext& context, const FilterResources& resources);
+        void execute(GpuResources& cache, rhi::ICommandEncoder& commands, const RenderContext& frame) const;
 
     private:
         uint32_t                iteration;
@@ -57,7 +57,7 @@ private:
 
         [[nodiscard]] bool first() const { return iteration == 0; }
         [[nodiscard]] bool last() const { return iteration + 1 == kSvgfFilterIterations; }
-        void               createPipeline(const Falcor::RenderContext& context);
+        void               createPipeline(const RenderContext& context);
     };
 
     std::vector<FilterPass> filters;

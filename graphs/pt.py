@@ -1,4 +1,4 @@
-from falcor import RenderGraph
+from renderlab import RenderGraph
 
 from modules.post_process import add_post_process
 

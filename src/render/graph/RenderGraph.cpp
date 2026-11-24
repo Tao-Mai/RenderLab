@@ -13,8 +13,6 @@
 #include <type_traits>
 #include <utility>
 
-namespace Falcor
-{
 const FileDialogFilterVec RenderGraph::kFileExtensionFilters{{"py", "Render Graph Files"}};
 
 namespace
@@ -117,17 +115,6 @@ ref<RenderGraph> RenderGraph::createFromString(rhi::ComPtr<rhi::IDevice> device,
     return ScriptBindings::fromPython<ref<RenderGraph>>(PyList_GET_ITEM(result.get(), 0)).value_or(ref<RenderGraph>{});
 }
 
-void RenderGraph::setScene(const ref<Scene>& scene)
-{
-    if (mpScene == scene)
-        return;
-
-    mpScene = scene;
-    for (auto& [index, node] : mNodeData)
-        node.pPass->setScene(mpScene);
-    mRecompile = true;
-}
-
 ref<RenderPass>
 RenderGraph::createPass(const std::string& passName, const std::string& passType, const Properties& properties)
 {
@@ -189,8 +176,6 @@ uint32_t RenderGraph::addPass(const ref<RenderPass>& pass, const std::string& na
     const auto& node     = mNodeData.emplace(index, NodeData{name, pass}).first->second;
     pass->mName          = name;
     pass->mPassChangedCB = makePassChangedCB(node.pPass, mRecompile);
-    if (mpScene)
-        pass->setScene(mpScene);
     mRecompile = true;
     return index;
 }
@@ -225,8 +210,6 @@ void RenderGraph::updatePass(const std::string& name, const Properties& properti
     const auto previous  = std::exchange(node.pPass, pass);
     pass->mName          = name;
     pass->mPassChangedCB = makePassChangedCB(node.pPass, mRecompile);
-    if (mpScene)
-        pass->setScene(mpScene);
     mRecompile = true;
 }
 
@@ -445,8 +428,6 @@ bool RenderGraph::compile(RenderContext* context, std::string& log)
 
 void RenderGraph::execute(RenderContext* context)
 {
-    std::string log;
-    CHECK(compile(context, log), "failed to compile render graph '{}': {}", mName, log);
     const auto& properties = mCompilerDeps.defaultResourceProps;
     mpExe->execute({context, mPassesDictionary, properties.dims});
 }
@@ -455,28 +436,6 @@ void RenderGraph::renderUI(RenderContext* context, Gui::Widgets& widget)
 {
     if (mpExe)
         mpExe->renderUI(context, widget);
-}
-
-void RenderGraph::renderOverlayUI(RenderContext* context)
-{
-    if (mpExe)
-        mpExe->renderOverlayUI(context);
-}
-
-void RenderGraph::onSceneUpdates(RenderContext* context, IScene::UpdateFlags updates)
-{
-    for (const auto& [index, node] : mNodeData)
-        node.pPass->onSceneUpdates(context, updates);
-}
-
-bool RenderGraph::onMouseEvent(const MouseEvent& event) { return mpExe && mpExe->onMouseEvent(event); }
-
-bool RenderGraph::onKeyEvent(const KeyboardEvent& event) { return mpExe && mpExe->onKeyEvent(event); }
-
-void RenderGraph::onHotReload(HotReloadFlags reloaded)
-{
-    if (mpExe)
-        mpExe->onHotReload(reloaded);
 }
 
 void RenderGraph::update(const ref<RenderGraph>& source)
@@ -695,9 +654,9 @@ namespace
 
 }  // namespace
 
-FALCOR_SCRIPT_BINDING(RenderGraph)
+RL_SCRIPT_BINDING(RenderGraph)
 {
-    FALCOR_SCRIPT_BINDING_DEPENDENCY(RhiInterfaces)
+    RL_SCRIPT_BINDING_DEPENDENCY(RhiInterfaces)
 
     const auto bind = []<auto Method>() -> PyCFunction
     {
@@ -773,9 +732,9 @@ FALCOR_SCRIPT_BINDING(RenderGraph)
         {},
     };
     static PyType_Spec
-        kGraphType{"falcor.RenderGraph", sizeof(PythonValue<ref<RenderGraph>>), 0, Py_TPFLAGS_DEFAULT, kGraphSlots};
+        kGraphType{"renderlab.RenderGraph", sizeof(PythonValue<ref<RenderGraph>>), 0, Py_TPFLAGS_DEFAULT, kGraphSlots};
     static PyType_Spec kPassType{
-        "falcor.RenderPass",
+        "renderlab.RenderPass",
         sizeof(PythonValue<ref<RenderPass>>),
         0,
         Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION,
@@ -787,10 +746,7 @@ FALCOR_SCRIPT_BINDING(RenderGraph)
         return -1;
     return PyModule_AddObjectRef(m, "RenderGraph", graphType.get());
 }
-}  // namespace Falcor
 
-namespace Falcor
-{
 namespace
 {
 template <class T>
@@ -816,4 +772,3 @@ rhi::ComPtr<rhi::IBuffer> RenderGraph::getOutputBuffer(const std::string& name)
 {
     return queryResource<rhi::IBuffer>(getOutput(name));
 }
-}  // namespace Falcor

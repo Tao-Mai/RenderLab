@@ -2,6 +2,7 @@
 #include <cmath>
 #include <limits>
 #include <slang-rhi.h>
+#include <slang-rhi/shader-cursor.h>
 #include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "render/device/RhiCheck.h"
@@ -27,18 +28,21 @@ rhi::TextureAddressingMode addressMode(SamplerAsset::AddressMode mode)
 RenderResourceManager::~RenderResourceManager() = default;
 void RenderResourceManager::init(rhi::IDevice& target, AssetManager& targetAssets, AssetDataManager& targetData)
 {
-    device = &target;
-    assets = &targetAssets;
-    data   = &targetData;
+    device              = &target;
+    assets              = &targetAssets;
+    data                = &targetData;
+    rayTracingSupported = target.hasFeature(rhi::Feature::RayTracing);
 }
 void RenderResourceManager::shutdown() noexcept
 {
+    environmentMaps.clear();
     meshes.clear();
     textures.clear();
     samplers.clear();
-    device = nullptr;
-    assets = nullptr;
-    data   = nullptr;
+    device              = nullptr;
+    assets              = nullptr;
+    data                = nullptr;
+    rayTracingSupported = false;
 }
 GpuMesh& RenderResourceManager::mesh(const MeshAsset::ID& id)
 {
@@ -49,12 +53,8 @@ GpuMesh& RenderResourceManager::mesh(const MeshAsset::ID& id)
 
     const MeshAsset& meshAsset = assets->get<MeshAsset>(id);
     MeshGeometry     geometry  = data->readGeometry(meshAsset);
-    auto             gpu       = std::make_unique<GpuMesh>(
-        *device,
-        std::move(geometry),
-        meshAsset.submeshes,
-        device->hasFeature(rhi::Feature::RayTracing)
-    );
+    auto             gpu =
+        std::make_unique<GpuMesh>(*device, std::move(geometry), meshAsset.submeshes, rayTracingSupported);
     return *meshes.emplace(id, std::move(gpu)).first->second;
 }
 
@@ -71,6 +71,52 @@ rhi::ComPtr<rhi::ITexture> RenderResourceManager::texture(const TextureAsset::ID
     auto                       gpu   = uploadTexture(*device, asset, bytes);
 
     return textures.emplace(id, std::move(gpu)).first->second;
+}
+
+const GpuEnvironmentMap& RenderResourceManager::environmentMap(const EnvironmentMapAsset::ID& id)
+{
+    if (const auto found = environmentMaps.find(id); found != environmentMaps.end())
+        return found->second;
+
+    const auto& environment = assets->get<EnvironmentMapAsset>(id);
+    CHECK(
+        !environment.irradiance.textureID.empty() && !environment.irradiance.samplerID.empty() &&
+            !environment.prefilteredSpecular.textureID.empty() && !environment.prefilteredSpecular.samplerID.empty(),
+        "environment '{}' requires irradiance and prefiltered specular textures",
+        id
+    );
+    const auto& radiance    = assets->get<TextureAsset>(environment.radiance.textureID);
+    const auto& irradiance  = assets->get<TextureAsset>(environment.irradiance.textureID);
+    const auto& prefiltered = assets->get<TextureAsset>(environment.prefilteredSpecular.textureID);
+    CHECK(
+        radiance.layout == ImageLayout::Cubemap && radiance.colorSpace == ColorSpace::Linear,
+        "environment '{}' requires a linear radiance cubemap",
+        id
+    );
+    CHECK(
+        irradiance.layout == ImageLayout::Cubemap && irradiance.colorSpace == ColorSpace::Linear &&
+            prefiltered.layout == ImageLayout::Cubemap && prefiltered.colorSpace == ColorSpace::Linear &&
+            prefiltered.mipLevels > 0,
+        "environment '{}' requires linear irradiance and prefiltered cubemaps",
+        id
+    );
+
+    GpuEnvironmentMap result;
+    const auto prefilteredTexture = texture(environment.prefilteredSpecular.textureID);
+    rhiCheck(texture(environment.radiance.textureID)->getDefaultView(result.radiance.writeRef()));
+    rhiCheck(texture(environment.irradiance.textureID)->getDefaultView(result.irradiance.writeRef()));
+    rhiCheck(prefilteredTexture->getDefaultView(result.prefilteredSpecular.writeRef()));
+    result.radianceSampler    = sampler(environment.radiance.samplerID);
+    result.irradianceSampler  = sampler(environment.irradiance.samplerID);
+    result.prefilteredSampler = sampler(environment.prefilteredSpecular.samplerID);
+    result.prefilteredMaxLod  = static_cast<float>(prefilteredTexture->getDesc().mipCount - 1);
+    return environmentMaps.emplace(id, std::move(result)).first->second;
+}
+
+void GpuEnvironmentMap::bindRadiance(const rhi::ShaderCursor& root) const
+{
+    rhiCheck(root["radianceMap"].setBinding(radiance));
+    rhiCheck(root["radianceSampler"].setBinding(radianceSampler));
 }
 
 rhi::ISampler* RenderResourceManager::sampler(const SamplerAsset::ID& id)

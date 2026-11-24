@@ -1,11 +1,9 @@
 #include "render/Renderer.h"
 #include "render/PreparedScene.h"
 #include "render/RenderContext.h"
-#include "render/Visibility.h"
 #include "scene/system/SceneRenderData.h"
 
 #include <slang-rhi/shader-cursor.h>
-#include "asset/ApplyOptionalFields.h"
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
 #include "core/ConfigManager.h"
@@ -13,31 +11,26 @@
 #include "core/GlobalState.h"
 #include "core/Logger.h"
 #include "core/Scripting.h"
-#include "core/Serializer.h"
 #include "core/Window.h"
-#include "core/profiling/Profiler.h"
-#include "render/device/GpuProfiler.h"
 #include "render/device/RhiCheck.h"
 #include "render/graph/RenderGraphIR.h"
-#include "render/graph/RenderPassStandardFlags.h"
-#include "render/postprocess/ExposureState.h"
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 #include <slang-rhi.h>
 #include "render/resources/ShaderLayout.h"
-#include "scene/SceneManager.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
-#include <cstring>
-#include <glm/geometric.hpp>
 #include <limits>
 #include <span>
 #include <utility>
 
 namespace
 {
-Falcor::Properties::json resolveParameters(const Falcor::Properties::json& defaults, const nlohmann::json& overrides)
+constexpr std::array kRequiredDeviceFeatures{rhi::Feature::Surface, rhi::Feature::Rasterization};
+
+Properties::json resolveParameters(const Properties::json& defaults, const nlohmann::json& overrides)
 {
     auto parameters = defaults;
     for (auto& [name, value] : parameters.items())
@@ -75,26 +68,6 @@ Falcor::Properties::json resolveParameters(const Falcor::Properties::json& defau
     return parameters;
 }
 
-LightRanges groupLights(std::span<const RenderLight> source, std::vector<LightData>& grouped)
-{
-    grouped.clear();
-    grouped.reserve(source.size());
-    const auto append = [&](GpuLightType type)
-    {
-        for (const auto& light : source)
-            if (light.enabled && light.data.type() == type)
-                grouped.push_back(light.data);
-        return static_cast<uint32_t>(grouped.size());
-    };
-
-    LightRanges ranges;
-    ranges.directionalEnd = append(GpuLightType::Directional);
-    ranges.pointEnd       = append(GpuLightType::Point);
-    ranges.rectAreaEnd    = append(GpuLightType::RectArea);
-    ranges.spotEnd        = append(GpuLightType::Spot);
-    CHECK(grouped.size() <= kMaxLights, "scene has {} enabled lights; maximum is {}", grouped.size(), kMaxLights);
-    return ranges;
-}
 }  // namespace
 
 Renderer::Renderer()  = default;
@@ -102,202 +75,103 @@ Renderer::~Renderer() = default;
 
 void Renderer::init()
 {
-
-    rendererConfig = &context().config->rendererConfig();
-
-    auto&           window = *context().window;
     rhi::DeviceDesc desc;
     desc.deviceType                    = rhi::DeviceType::Vulkan;
+    desc.requiredFeatures              = kRequiredDeviceFeatures.data();
+    desc.requiredFeatureCount          = static_cast<uint32_t>(kRequiredDeviceFeatures.size());
     desc.slang.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
     desc.enableValidation              = true;
     rhiCheck(rhi::getRHI()->createDevice(desc, device.writeRef()));
     rhiCheck(device->getQueue(rhi::QueueType::Graphics, queue.writeRef()));
+    rhiCheck(device->createFence({}, frameFence.writeRef()));
     shaders.init(device);
     initSurface();
-    renderContext.device        = device;
-    renderContext.queue         = queue;
-    renderContext.shaderManager = &shaders;
-
-    auto& renderCommands            = renderContext;
-    renderCommands.resources        = &resources;
-    renderCommands.materialTable    = &materialTable;
-    renderCommands.offlinePipelines = &offlinePipelines;
-    renderCommands.config           = rendererConfig;
-
-    for (auto& frame : frames)
-    {
-        frame.init(*device, *queue);
-    }
 
     resources.init(*device, *context().assetManager, *context().assetDataManager);
-    initLightingResources();
+    preparedScene.init(*device, resources);
     materialTable.init(resources);
+    renderContext = {
+        .device           = device.get(),
+        .shaderManager    = &shaders,
+        .resources        = &resources,
+        .materialTable    = &materialTable,
+        .pathPipelines = &pathPipelines,
+        .scene            = &preparedScene,
+    };
 
     waitIdle();
     applyConfiguration();
 }
 
-void Renderer::initLightingResources()
-{
-    brdfLutTexture     = resources.texture(BuiltinAssets::Texture::kBrdfLut);
-    sheenLutTexture    = resources.texture(BuiltinAssets::Texture::kSheenLut);
-    const auto sampler = resources.sampler(BuiltinAssets::Sampler::linearClamp);
-    for (auto& data : frameStorage)
-        data.bindLuts(brdfLutTexture->getDefaultView(), sheenLutTexture->getDefaultView(), sampler);
-
-    bindEnvironmentTextures();
-}
-
-void Renderer::updateEnvironmentBindings(const std::optional<EnvironmentMapAsset::ID>& id)
-{
-    if (environmentMap == id)
-        return;
-
-    waitIdle();
-    environmentMap = id;
-    bindEnvironmentTextures();
-}
-
-void Renderer::bindEnvironmentTextures()
-{
-    TextureBinding irradianceBinding{BuiltinAssets::Texture::kBlackCube, BuiltinAssets::Sampler::linearClamp};
-    TextureBinding prefilteredBinding = irradianceBinding;
-    TextureBinding radianceBinding    = irradianceBinding;
-    if (environmentMap)
-    {
-        const auto& assets      = *context().assetManager;
-        const auto& environment = assets.get<EnvironmentMapAsset>(*environmentMap);
-        CHECK(
-            !environment.irradiance.textureID.empty() && !environment.irradiance.samplerID.empty() &&
-                !environment.prefilteredSpecular.textureID.empty() &&
-                !environment.prefilteredSpecular.samplerID.empty(),
-            "environment '{}' requires irradiance and prefiltered specular textures",
-            environment.id
-        );
-        radianceBinding      = environment.radiance;
-        irradianceBinding    = environment.irradiance;
-        prefilteredBinding   = environment.prefilteredSpecular;
-        const auto& radiance = assets.get<TextureAsset>(radianceBinding.textureID);
-        CHECK(
-            radiance.layout == ImageLayout::Cubemap && radiance.colorSpace == ColorSpace::Linear,
-            "environment '{}' requires a linear radiance cubemap",
-            environment.id
-        );
-        const auto& irradiance  = assets.get<TextureAsset>(irradianceBinding.textureID);
-        const auto& prefiltered = assets.get<TextureAsset>(prefilteredBinding.textureID);
-        CHECK(
-            irradiance.layout == ImageLayout::Cubemap && irradiance.colorSpace == ColorSpace::Linear &&
-                prefiltered.layout == ImageLayout::Cubemap && prefiltered.colorSpace == ColorSpace::Linear &&
-                prefiltered.mipLevels > 0,
-            "environment '{}' requires linear irradiance and prefiltered cubemaps",
-            environment.id
-        );
-    }
-
-    radianceTexture            = resources.texture(radianceBinding.textureID);
-    irradianceTexture          = resources.texture(irradianceBinding.textureID);
-    prefilteredSpecularTexture = resources.texture(prefilteredBinding.textureID);
-    prefilteredMaxLod          = static_cast<float>(prefilteredSpecularTexture->getDesc().mipCount - 1);
-
-    for (auto& data : frameStorage)
-        data.bindEnvironment(
-            irradianceTexture->getDefaultView(),
-            resources.sampler(irradianceBinding.samplerID),
-            prefilteredSpecularTexture->getDefaultView(),
-            resources.sampler(prefilteredBinding.samplerID),
-            radianceTexture->getDefaultView(),
-            resources.sampler(radianceBinding.samplerID)
-        );
-}
-
 void Renderer::waitIdle() { rhiCheck(queue->waitOnHost()); }
+
+void Renderer::waitForFrame(uint64_t value)
+{
+    auto* fence = frameFence.get();
+    rhiCheck(device->waitForFences(1, &fence, &value, true, rhi::kTimeoutInfinite));
+}
 
 void Renderer::shutdown() noexcept
 {
 
     waitIdle();
 
-    exposurePass  = {};
     mpRenderGraph = {};
+    renderContext = {};
     commandResources.reset();
-    lightResource.setNull();
-    offlinePipelines.clear();
+    pathPipelines.clear();
     sceneAccelerationStructures.reset();
-    pickingOutput   = {};
-    pickingReadback = {};
-    lightBuffer     = {};
-    blitPipeline    = nullptr;
-    renderStorage   = {};
-    materialTable   = {};
-    offlineScene    = {};
-    for (FrameContext& frame : frames)
-    {
-        frame.reset();
-    }
-    for (auto& data : frameStorage)
-        data = {};
-    radianceTexture.setNull();
-    irradianceTexture.setNull();
-    prefilteredSpecularTexture.setNull();
-    brdfLutTexture.setNull();
-    sheenLutTexture.setNull();
-    environmentMap.reset();
-    prefilteredMaxLod = 0.0f;
+    blitPipeline  = nullptr;
+    preparedScene = {};
+    materialTable = {};
+    shading  = {};
     resources.shutdown();
     surface.setNull();
     shaders.shutdown();
-    renderContext = {};
+    frameFence.setNull();
     queue.setNull();
     device.setNull();
-    frameIndex           = 0;
-    activeFramesInFlight = kMaxFramesInFlight;
-    appliedParameters    = {};
+    lastSubmittedFrame    = 0;
+    activeFramesInFlight  = kMaxFramesInFlight;
+    appliedParameters     = {};
     pendingOptions.reset();
-    parameterDefaults = Falcor::Properties::json::object();
-    parameters        = Falcor::Properties::json::object();
+    parameterDefaults = Properties::json::object();
+    parameters        = Properties::json::object();
     scriptedPassProperties.clear();
-    rendererConfig = nullptr;
 }
 
 void Renderer::loadScript(const std::filesystem::path& path)
 {
     auto&       configManager = *context().config;
     const auto& graphName     = configManager.renderGraphName();
-    const auto  renderPath    = configManager.rendererConfig().renderPath;
     auto        options       = configManager.getOptions();
-    CHECK(
-        !requiresRayTracing(renderPath) || device->hasFeature(rhi::Feature::RayTracing),
-        "graph '{}' requires ray tracing",
-        graphName
-    );
 
-    Falcor::Scripting::Context script;
+    Scripting::Context script;
     script.setObject("__name__", std::string("RenderLab"));
 
-    auto previousDevice = Falcor::getActivePythonRenderGraphDevice();
-    Falcor::setActivePythonRenderGraphDevice(device);
-    Falcor::Scripting::runScriptFromFile(path, script);
+    auto previousDevice = getActivePythonRenderGraphDevice();
+    setActivePythonRenderGraphDevice(device);
+    Scripting::runScriptFromFile(path, script);
 
-    const auto functionName = Falcor::RenderGraphIR::getFuncName(graphName);
+    const auto functionName = RenderGraphIR::getFuncName(graphName);
     auto*      factory      = script.getObject<PyObject*>(functionName);
     CHECK(PyFunction_Check(factory), "graph '{}' must define '{}'", graphName, functionName);
 
-    parameterDefaults = Falcor::Properties::json::object();
+    parameterDefaults = Properties::json::object();
     if (auto* defaults = PyFunction_GetKwDefaults(factory))
     {
-        const Falcor::Properties properties(defaults);
-        CHECK(!PyErr_Occurred(), "failed to read parameters of '{}': {}", graphName, Falcor::pythonError());
+        const Properties properties(defaults);
+        CHECK(!PyErr_Occurred(), "failed to read parameters of '{}': {}", graphName, pythonError());
         parameterDefaults = properties.toJson();
     }
     parameters = resolveParameters(parameterDefaults, options.at("parameters"));
-    configManager.applyGraphParameters(nlohmann::json(parameters));
 
-    const Falcor::PythonObject arguments{PyTuple_New(0)};
-    const Falcor::PythonObject keywords{Falcor::Properties(parameters).toPython()};
-    CHECK(arguments && keywords, "{}", Falcor::pythonError());
-    const Falcor::PythonObject graph{PyObject_Call(factory, arguments.get(), keywords.get())};
-    CHECK(graph, "failed to build graph '{}': {}", graphName, Falcor::pythonError());
-    const auto loaded = Falcor::ScriptBindings::fromPython<Falcor::ref<Falcor::RenderGraph>>(graph.get());
+    const PythonObject arguments{PyTuple_New(0)};
+    const PythonObject keywords{Properties(parameters).toPython()};
+    CHECK(arguments && keywords, "{}", pythonError());
+    const PythonObject graph{PyObject_Call(factory, arguments.get(), keywords.get())};
+    CHECK(graph, "failed to build graph '{}': {}", graphName, pythonError());
+    const auto loaded = ScriptBindings::fromPython<ref<RenderGraph>>(graph.get());
     CHECK(loaded && *loaded, "graph function '{}' must return a named RenderGraph", functionName);
     const auto& declared = (*loaded)->getName();
     CHECK(
@@ -307,7 +181,7 @@ void Renderer::loadScript(const std::filesystem::path& path)
         declared,
         graphName
     );
-    Falcor::setActivePythonRenderGraphDevice(std::move(previousDevice));
+    setActivePythonRenderGraphDevice(std::move(previousDevice));
 
     scriptedPassProperties.clear();
     applyPassProperties(**loaded, options.at("passes"));
@@ -317,30 +191,12 @@ void Renderer::loadScript(const std::filesystem::path& path)
     pendingOptions.reset();
 }
 
-void Renderer::setActiveGraph(const Falcor::ref<Falcor::RenderGraph>& renderGraph)
+void Renderer::setActiveGraph(const ref<RenderGraph>& renderGraph)
 {
 
     CHECK(renderGraph->getOutputCount(), "graph '{}' requires a marked color output", renderGraph->getName());
     mpRenderGraph = renderGraph;
     mpRenderGraph->onResize({surface->getConfig()->width, surface->getConfig()->height}, surface->getConfig()->format);
-    if (const auto* scenes = context().sceneManager)
-        mpRenderGraph->setScene(scenes->getScene());
-}
-
-void Renderer::initFrameResources()
-{
-    const auto& config   = *rendererConfig;
-    activeFramesInFlight = config.renderPath == RenderPath::OfflinePathTracing ? 1u : kMaxFramesInFlight;
-    frameIndex           = 0;
-    rhi::BufferDesc desc;
-    desc.size  = kMaxLights * sizeof(LightData);
-    desc.usage = rhi::BufferUsage::ShaderResource | rhi::BufferUsage::CopyDestination;
-    rhiCheck(device->createBuffer(desc, nullptr, lightResource.writeRef()));
-    auto& cache = *commandResources;
-    lightBuffer = cache.registerBuffer(lightResource);
-    materialTable.setup(cache, *device);
-    for (auto& data : frameStorage)
-        data.lights = cache.getBuffer(lightBuffer);
 }
 
 void Renderer::initBlit()
@@ -357,38 +213,32 @@ void Renderer::initBlit()
     rhiCheck(device->createRenderPipeline(desc, blitPipeline.writeRef()));
 }
 
-void Renderer::endFrame(Falcor::RenderContext& context, rhi::ITexture* backBuffer)
+void Renderer::recordPresentation(
+    rhi::ICommandEncoder& commands, rhi::ITexture& backBuffer, const EditorFrameInput& editor
+)
 {
     const auto source = mpRenderGraph->getOutputTexture(0);
-    const auto target = backBuffer->getDefaultView();
+    const auto target = backBuffer.getDefaultView();
     CHECK(target);
     rhi::RenderPassColorAttachment color;
     color.view   = target;
     color.loadOp = rhi::LoadOp::DontCare;
-    auto* pass   = context.commands->beginRenderPass({&color, 1});
+    auto* pass   = commands.beginRenderPass({&color, 1});
     CHECK(pass);
     auto* object = pass->bindPipeline(blitPipeline);
     CHECK(object);
     const rhi::ShaderCursor root(object);
     rhiCheck(root["sourceImage"].setBinding(source->getDefaultView()));
     rhiCheck(root["pointSampler"].setBinding(resources.sampler(BuiltinAssets::Sampler::nearestClamp)));
-    const auto& size = backBuffer->getDesc().size;
+    const auto& size = backBuffer.getDesc().size;
     pass->setRenderState(ViewportRect{0, 0, float(size.width), float(size.height)}.renderState());
     pass->draw({3});
-    if (context.editor->recordUi)
-        context.editor->recordUi(*pass, context.frameIndex);
+    if (editor.recordUi)
+        editor.recordUi(*pass, renderContext.frameIndex);
     pass->end();
 }
 
-ExposureConfig Renderer::defaultExposure() const
-{
-    ExposureConfig settings;
-    if (exposurePass)
-        Deserialize(nlohmann::json(exposurePass->getProperties().toJson()), settings);
-    return settings;
-}
-
-const nlohmann::json& Renderer::getScriptedPassProperties(const Falcor::RenderPass& pass)
+const nlohmann::json& Renderer::getScriptedPassProperties(const RenderPass& pass)
 {
     const auto [entry, inserted] = scriptedPassProperties.try_emplace({pass.getType(), pass.getName()});
     if (inserted)
@@ -426,16 +276,12 @@ void Renderer::applyConfiguration()
     const auto& config = *context().config;
     const bool  reload = !mpRenderGraph || mpRenderGraph->getName() != config.renderGraphName() ||
         (pendingOptions && pendingOptions->at("parameters") != appliedParameters);
-    std::optional<CpuProfileScope> timing;
     if (reload)
     {
-        timing.emplace(context().profiler, "Graph rebuild");
         if (commandResources)
             waitIdle();
         loadScript(config.renderGraphScript());
     }
-    else if (const auto* scenes = context().sceneManager)
-        mpRenderGraph->setScene(scenes->getScene());
 
     if (pendingOptions)
     {
@@ -449,21 +295,23 @@ void Renderer::applyConfiguration()
         return;
     waitIdle();
     commandResources = std::make_unique<GpuResources>(*device);
-    initFrameResources();
+    renderContext.gpuResources   = commandResources.get();
+    renderContext.frameIndex     = 0;
+    preparedScene.tlas           = nullptr;
+
+    materialTable.setup(*commandResources, *device);
     initBlit();
-    auto compileContext         = renderContext;
-    compileContext.gpuResources = commandResources.get();
     std::string log;
     CHECK(
-        mpRenderGraph->compile(&compileContext, log),
+        mpRenderGraph->compile(&renderContext, log),
         "failed to compile render graph '{}': {}",
         mpRenderGraph->getName(),
         log
     );
-    if (auto* profiler = context().profiler)
-        profiler->clearGpu();
-    for (auto& frame : frames)
-        frame.gpuProfiler().discard();
+    activeFramesInFlight = mpRenderGraph->getMaxFramesInFlight();
+    if (is_set(mpRenderGraph->getSceneInputs(), SceneInputs::RayTracing))
+        preparedScene.rays.setup(*commandResources, *device);
+
     const auto color = mpRenderGraph->getOutputTexture(0);
     CHECK(
         color && color->getDesc().type == rhi::TextureType::Texture2D &&
@@ -472,48 +320,9 @@ void Renderer::applyConfiguration()
         mpRenderGraph->getOutputName(0),
         mpRenderGraph->getName()
     );
-    exposurePass  = {};
-    pickingOutput = {};
-    for (size_t index = 1; index < mpRenderGraph->getOutputCount(); ++index)
-    {
-        const auto name      = mpRenderGraph->getOutputName(index);
-        const auto separator = name.rfind('.');
-        const auto field     = std::string_view{name}.substr(separator + 1);
-        if (field == kExposureStateOutput)
-        {
-            const auto& pass = mpRenderGraph->getPass(name.substr(0, separator));
-            if (pass->getType() == kExposurePassType)
-            {
-                CHECK(!exposurePass, "a render graph can only mark one exposure state");
-                exposurePass = pass;
-            }
-            continue;
-        }
-        if (field != kPickingImageOutput)
-            continue;
-
-        auto texture = mpRenderGraph->getOutputTexture(name);
-        CHECK(
-            texture && texture->getDesc().type == rhi::TextureType::Texture2D && texture->getDesc().arrayLength == 1 &&
-                texture->getDesc().sampleCount == 1 && texture->getDesc().format == rhi::Format::R32Uint &&
-                rhi::is_set(texture->getDesc().usage, rhi::TextureUsage::CopySource),
-            "picking output '{}' must be a single-sample R32Uint texture readable by a transfer",
-            name
-        );
-        CHECK(!pickingOutput, "a render graph can only mark one picking image");
-        pickingOutput = std::move(texture);
-    }
-    if (pickingOutput && !pickingReadback)
-    {
-        rhi::BufferDesc desc;
-        desc.size       = sizeof(uint32_t);
-        desc.memoryType = rhi::MemoryType::ReadBack;
-        desc.usage      = rhi::BufferUsage::CopyDestination;
-        rhiCheck(device->createBuffer(desc, nullptr, pickingReadback.writeRef()));
-    }
 }
 
-void Renderer::applyPassProperties(Falcor::RenderGraph& renderGraph, const nlohmann::json& properties)
+void Renderer::applyPassProperties(RenderGraph& renderGraph, const nlohmann::json& properties)
 {
     for (const auto& [type, instances] : properties.items())
     {
@@ -545,7 +354,7 @@ void Renderer::applyPassProperties(Falcor::RenderGraph& renderGraph, const nlohm
             if (const auto byName = byType->find(name); byName != byType->end())
                 values.update(*byName, true);
         if (values != nlohmann::json(pass.getProperties().toJson()))
-            pass.setProperties(Falcor::Properties::json(std::move(values)));
+            pass.setProperties(Properties::json(std::move(values)));
     }
 }
 
@@ -568,6 +377,7 @@ void Renderer::initSurface()
 void Renderer::resizeSurface()
 {
     waitIdle();
+    renderContext.gpuResources = nullptr;
     commandResources.reset();
     surface.setNull();
     initSurface();
@@ -575,126 +385,17 @@ void Renderer::resizeSurface()
     applyConfiguration();
 }
 
-const PreparedScene& Renderer::prepare(const RenderView& view, const SceneRenderData& scene, uint32_t targetFrameIndex)
+const PreparedScene& Renderer::loadSceneAssets(const SceneRenderData& scene, SceneInputs sceneInputs)
 {
-    auto& cache = *commandResources;
+    auto& assets = *context().assetManager;
 
-    const auto& config        = *rendererConfig;
-    const bool  rasterization = config.renderPath == RenderPath::Forward || config.renderPath == RenderPath::Deferred;
-    const bool  offline       = config.renderPath == RenderPath::OfflinePathTracing;
-    auto&       assets        = *context().assetManager;
-    auto*       profiler      = context().profiler;
-    auto&       renderData    = renderStorage[targetFrameIndex];
-    renderData.sceneId        = scene.sceneId;
-    renderData.drawItems      = std::span{scene.drawItems};
-    renderData.environmentMap = scene.environmentMap;
-    renderData.exposure       = scene.exposure;
-    renderData.materialIndices.resize(renderData.drawItems.size());
-    {
-        CpuProfileScope timing{profiler, "Render resources"};
-        for (uint32_t itemIndex = 0; itemIndex < renderData.drawItems.size(); ++itemIndex)
-        {
-            const auto& item = renderData.drawItems[itemIndex];
-            // mesh数据读进GPU
-            resources.mesh(item.mesh);
-            if (offline)
-                continue;
-
-            // 记录material在SSBO的idx
-            auto                       material = assets.get<MaterialAsset>(item.materialId).as<GltfMaterial>();
-            MaterialTable::MaterialKey materialKey{.assetId = item.materialId};
-            if (item.materialOverride)
-            {
-                applyOptionalFields(material, *item.materialOverride);
-                materialKey.overrideOwner = {item.selectionId, item.instanceIndex, item.submeshIndex};
-            }
-
-            renderData.materialIndices[itemIndex] = materialTable.update(materialKey, material, resources, assets);
-        }
-
-        renderData.offlineScene = nullptr;
-        if (offline)
-        {
-            renderData.offlineScene =
-                &offlineScene.prepare(scene.drawItems, scene.offlineLights, assets, resources, materialTable);
-            for (uint32_t index = 0; index < renderData.drawItems.size(); ++index)
-                renderData.materialIndices[index] = renderData.offlineScene->draws[index].materialIndex;
-        }
-
-        // 更新材质上传与具名绑定
-        materialTable.upload();
-    }
-
-    renderData.lightRanges = groupLights(scene.lights, renderData.lights);
-
-    // 写入shadowIdx
-    GpuLightType lightType   = GpuLightType::Point;
-    uint32_t     shadowIndex = 0;
-    for (auto& light : renderData.lights)
-    {
-        if (light.type() != lightType)
-        {
-            lightType   = light.type();
-            shadowIndex = 0;
-        }
-        light.shadowIdx = light.castShadow() ? shadowIndex++ : ~0u;
-    }
-
-    renderData.drawBounds.clear();
-    renderData.visibilityMasks.clear();
-
-    if (profiler)
-        profiler->recordCulling(static_cast<uint32_t>(renderData.drawItems.size()), {});
-
-    // 光栅化视锥剔除
-    if (rasterization)
-    {
-        CpuProfileScope timing{profiler, "Main view preparation"};
-        const Frustum   mainFrustum{view.uniforms.viewProjection};
-
-        renderData.drawBounds.reserve(renderData.drawItems.size());
-        renderData.visibilityMasks.reserve(renderData.drawItems.size());
-        uint32_t mainVisible = 0;
-        for (const auto& item : renderData.drawItems)
-        {
-            const auto& meshAsset   = assets.get<MeshAsset>(item.mesh);
-            const auto  worldBounds = meshAsset.bounds.transformed(item.model);
-            const bool  visible     = mainFrustum.intersects(worldBounds);
-            renderData.drawBounds.push_back(worldBounds);
-            renderData.visibilityMasks.push_back(visible ? RenderVisibility::kMainView : 0);
-            if (visible)
-                ++mainVisible;
-        }
-        if (profiler)
-            profiler->recordCulling(static_cast<uint32_t>(renderData.drawItems.size()), {{"Main view", mainVisible}});
-    }
-
-    updateEnvironmentBindings(renderData.environmentMap);
-
-    {
-        CpuProfileScope timing{context().profiler, "Frame upload"};
-        auto&           data = frameStorage[targetFrameIndex];
-        data.sceneUniforms   = view.uniforms;
-        if (rasterization)
-        {
-            const auto&         feature = config.feature;
-            const LightUniforms lighting{
-                .lightRanges        = renderData.lightRanges,
-                .ambientCoefficient = feature.ambientCoefficient,
-                .prefilteredMaxLod  = prefilteredMaxLod,
-            };
-            data.lightUniforms = lighting;
-        }
-
-        // 上传lightData
-        if (!renderData.lights.empty())
-        {
-            const auto bytes  = renderData.lights.size() * sizeof(LightData);
-            const auto upload = cache.allocateUpload(lightBuffer, bytes);
-            std::memcpy(upload.data.data(), renderData.lights.data(), bytes);
-        }
-    }
-    return renderData;
+    preparedScene.sceneGeneration = scene.sceneGeneration;
+    preparedScene.drawItems       = std::span{scene.drawItems};
+    preparedScene.shading         = &shading.prepare(
+        scene.drawItems, scene.lights, assets, resources, materialTable, is_set(sceneInputs, SceneInputs::RayTracing)
+    );
+    preparedScene.environmentMap = scene.environmentMap ? &resources.environmentMap(*scene.environmentMap) : nullptr;
+    return preparedScene;
 }
 
 RenderFrameResult Renderer::render(
@@ -703,99 +404,64 @@ RenderFrameResult Renderer::render(
 {
     // 获取最新渲染配置
     applyConfiguration();
-    const bool pickRequested = editor.requestPick && supportsObjectPicking();
 
-    // wait fence
-    auto& frame = currentFrame();
-    frame.wait();
+    const uint64_t submissionValue = lastSubmittedFrame + 1;
+    if (submissionValue > activeFramesInFlight)
+        waitForFrame(submissionValue - activeFramesInFlight);
 
     // Texture initialization can submit work to the graphics queue.
-    const bool  environmentChanged = environmentMap != scene.environmentMap;
-    const auto& renderData         = prepare(view, scene, frameIndex);
+    const auto sceneInputs = mpRenderGraph->getSceneInputs();
+    loadSceneAssets(scene, sceneInputs);
 
     rhi::ComPtr<rhi::ITexture> backBuffer;
     const auto                 acquired = surface->acquireNextImage(backBuffer.writeRef());
+
     if (SLANG_FAILED(acquired))
     {
         const auto [width, height] = context().window->framebufferSize();
         const auto* config         = surface->getConfig();
         if (uint32_t(width) != config->width || uint32_t(height) != config->height)
-            return {.swapchainNeedsRebuild = true};
+            return RenderFrameResult::SwapchainNeedsRebuild;
         rhiCheck(acquired);
     }
     CHECK(backBuffer);
-    auto& cache = *commandResources;
 
-    // pass执行
-    {
-        auto*           profiler = context().profiler;
-        CpuProfileScope timing{profiler, "Command recording"};
-        frame.begin();
-        auto& commandBuffer = *frame.commands;
+    rhi::ComPtr<rhi::ICommandEncoder> commands;
+    rhiCheck(queue->createCommandEncoder(commands.writeRef()));
 
-        auto& gpuProfiler = frame.gpuProfiler();
-        gpuProfiler.beginFrame(commandBuffer, profiler);
-        auto renderCommands         = renderContext;
-        renderCommands.commands     = &commandBuffer;
-        renderCommands.gpuResources = &cache;
-        renderCommands.frameData    = &frameStorage[frameIndex];
-        renderCommands.view         = &view;
-        renderCommands.scene        = &renderData;
-        renderCommands.editor       = &editor;
-        renderCommands.gpuProfiler  = &gpuProfiler;
-        renderCommands.profiler     = profiler;
-        renderCommands.frameIndex   = frameIndex;
-        renderCommands.deltaSeconds = deltaSeconds;
-        if (requiresRayTracing(rendererConfig->renderPath))
-        {
-            CpuProfileScope cpuTiming{profiler, "Scene acceleration structures"};
-            GpuProfileScope gpuTiming{&gpuProfiler, commandBuffer, "Scene acceleration structures"};
-            renderCommands.sceneTlas =
-                sceneAccelerationStructures.recordBuilds(*device, commandBuffer, resources, renderData, frameIndex);
-        }
-        if (environmentChanged)
-            mpRenderGraph->onSceneUpdates(&renderCommands, Falcor::IScene::UpdateFlags::EnvMapChanged);
-        cache.recordUploads(commandBuffer);
-        mpRenderGraph->getPassesDictionary()[Falcor::kRenderPassRefreshFlags] =
-            environmentChanged ? Falcor::RenderPassRefreshFlags::LightingChanged : Falcor::RenderPassRefreshFlags::None;
-        mpRenderGraph->execute(&renderCommands);
-        endFrame(renderCommands, backBuffer);
+    renderContext.commands     = commands.get();
+    renderContext.view         = &view;
+    renderContext.editor       = &editor;
+    renderContext.deltaSeconds = deltaSeconds;
+    preparedScene.prepare(renderContext, sceneInputs, *context().assetManager, sceneAccelerationStructures);
+    mpRenderGraph->execute(&renderContext);
+    renderContext.commands = nullptr;
+    renderContext.view     = nullptr;
+    renderContext.editor   = nullptr;
 
-        if (pickRequested)
-        {
+    recordPresentation(*commands, *backBuffer, editor);
 
-            commandBuffer.copyTextureToBuffer(
-                pickingReadback.get(),
-                0,
-                sizeof(uint32_t),
-                sizeof(uint32_t),
-                pickingOutput.get(),
-                0,
-                0,
-                {editor.pickX, editor.pickY, 0},
-                {1, 1, 1}
-            );
-        }
-        gpuProfiler.endFrame(commandBuffer);
-    }
+    rhi::ComPtr<rhi::ICommandBuffer> commandBuffer;
+    rhiCheck(commands->finish(commandBuffer.writeRef()));
+    auto* buffer = commandBuffer.get();
+    auto* fence  = frameFence.get();
 
-    frame.submit();
+    rhiCheck(queue->submit(
+        {.commandBuffers    = &buffer,
+         .commandBufferCount = 1,
+         .signalFences       = &fence,
+         .signalFenceValues  = &submissionValue,
+         .signalFenceCount   = 1}
+    ));
+    lastSubmittedFrame = submissionValue;
     rhiCheck(surface->present());
-    RenderFrameResult frameResult;
 
-    // 直接同步等待，获取点击结果
-    if (pickRequested)
+    if (!renderContext.onGpuComplete.empty())
     {
-        CpuProfileScope timing{context().profiler, "Picking wait/readback"};
-        frame.wait();
-
-        rhiCheck(
-            device
-                ->readBuffer(pickingReadback, 0, sizeof(frameResult.pickedSelectionId), &frameResult.pickedSelectionId)
-        );
-        frameResult.hasPickResult = true;
+        waitForFrame(submissionValue);
+        renderContext.notifyGpuComplete();
     }
 
-    frameIndex = (frameIndex + 1) % activeFramesInFlight;
-    return frameResult;
+    renderContext.frameIndex = (renderContext.frameIndex + 1) % activeFramesInFlight;
+    return RenderFrameResult::Presented;
 }

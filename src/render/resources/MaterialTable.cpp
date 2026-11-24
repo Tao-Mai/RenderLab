@@ -46,13 +46,22 @@ void MaterialTable::init(RenderResourceManager& resources)
 
 void MaterialTable::setup(GpuResources& resources, rhi::IDevice& device)
 {
-    rhi::BufferDesc desc;
-    desc.size  = sizeof(MaterialData);
-    desc.usage = rhi::BufferUsage::ShaderResource | rhi::BufferUsage::CopyDestination;
-    rhi::ComPtr<rhi::IBuffer> buffer;
-    rhiCheck(device.createBuffer(desc, nullptr, buffer.writeRef()));
-    cache          = &resources;
-    materialBuffer = cache->registerBuffer(buffer);
+    const auto createBuffer = [&](size_t size)
+    {
+        rhi::ComPtr<rhi::IBuffer> buffer;
+        rhiCheck(device.createBuffer(
+            {.size = size, .usage = rhi::BufferUsage::ShaderResource | rhi::BufferUsage::CopyDestination},
+            nullptr,
+            buffer.writeRef()
+        ));
+        return resources.registerBuffer(buffer);
+    };
+    cache            = &resources;
+    materialBuffer   = createBuffer(sizeof(MaterialData));
+    materialPrograms = createBuffer(sizeof(pbrt::MaterialInstruction));
+    texturePrograms  = createBuffer(sizeof(pbrt::TextureInstruction));
+    uploadedMaterialRevision.reset();
+    uploadedProgramRevision.reset();
 }
 TextureRef MaterialTable::textureReference(const TextureBinding& binding, RenderResourceManager& resources)
 {
@@ -235,35 +244,80 @@ uint32_t MaterialTable::update(
         resolveTexture(clearcoat.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear);
     data.clearcoatNormalEncoding = normalEncoding(clearcoat.normalTexture, assets);
 
-    const auto [found, added] = materialIndices.try_emplace(key, static_cast<uint32_t>(materials.size()));
-    if (added)
-    {
-        materials.emplace_back();
-        materialInfos.emplace_back();
-    }
-    if (added || materials[found->second] != data)
-    {
-        ++materialRevision;
-        materials[found->second] = data;
-    }
-    materialInfos[found->second] = {
+    return store(key, data, {
         .alphaMode   = data.alphaMode,
         .doubleSided = data.doubleSided != 0,
         .clearcoat   = material.clearcoat.has_value(),
         .sheen       = material.sheen.has_value(),
         .emissive    = glm::any(glm::greaterThan(glm::vec3{data.emissiveFactor}, glm::vec3{0.0f})),
-    };
+    });
+}
+
+uint32_t MaterialTable::updatePbrt(const MaterialKey& key, uint32_t programIndex)
+{
+    return store(
+        key,
+        {.doubleSided = 1, .kind = MaterialKind::Pbrt, .programIndex = programIndex},
+        {.alphaMode = kAlphaModeOpaque, .doubleSided = true}
+    );
+}
+
+uint32_t MaterialTable::store(const MaterialKey& key, const MaterialData& data, MaterialInfo info)
+{
+    const auto [found, added] = materialIndices.try_emplace(key, static_cast<uint32_t>(materials.size()));
+    if (added)
+    {
+        materials.push_back(data);
+        materialInfos.push_back(info);
+        ++materialRevision;
+    }
+    else
+    {
+        if (materials[found->second] != data)
+        {
+            materials[found->second] = data;
+            ++materialRevision;
+        }
+        materialInfos[found->second] = info;
+    }
     return found->second;
 }
 
 void MaterialTable::upload()
 {
+    if (uploadedMaterialRevision == materialRevision)
+        return;
+
     const auto bytes  = std::max<size_t>(materials.size(), 1) * sizeof(MaterialData);
     const auto upload = cache->allocateUpload(materialBuffer, bytes);
     if (materials.empty())
         std::memset(upload.data.data(), 0, bytes);
     else
         std::memcpy(upload.data.data(), materials.data(), materials.size() * sizeof(MaterialData));
+    uploadedMaterialRevision = materialRevision;
+}
+
+void MaterialTable::uploadPrograms(
+    std::span<const pbrt::MaterialInstruction> programs,
+    std::span<const pbrt::TextureInstruction> textures,
+    uint64_t revision
+)
+{
+    if (uploadedProgramRevision == revision)
+        return;
+
+    const auto upload = [&](GpuResources::BufferHandle handle, const auto values)
+    {
+        using Value = typename decltype(values)::value_type;
+        const auto allocation = cache->allocateUpload(handle, std::max<size_t>(values.size(), 1) * sizeof(Value));
+        if (values.empty())
+            std::memset(allocation.data.data(), 0, sizeof(Value));
+        else
+            std::memcpy(allocation.data.data(), values.data(), values.size_bytes());
+    };
+    upload(materialPrograms, programs);
+    upload(texturePrograms, textures);
+    uploadedProgramRevision = revision;
 }
 
 void MaterialTable::bind(rhi::IShaderObject* object) const
@@ -271,6 +325,10 @@ void MaterialTable::bind(rhi::IShaderObject* object) const
     const rhi::ShaderCursor root(object);
     if (const auto field = root["materials"]; field.isValid())
         rhiCheck(field.setBinding(cache->getBuffer(materialBuffer)));
+    if (const auto field = root["materialInstructions"]; field.isValid())
+        rhiCheck(field.setBinding(cache->getBuffer(materialPrograms)));
+    if (const auto field = root["textureInstructions"]; field.isValid())
+        rhiCheck(field.setBinding(cache->getBuffer(texturePrograms)));
     if (const auto field = root["textures"]; field.isValid())
         for (uint32_t index = 0; index < images.size(); ++index)
             rhiCheck(field[index].setBinding(images[index]));

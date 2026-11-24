@@ -16,7 +16,7 @@ struct RL_REGISTER_TYPE(Component, "RenderComponent") RenderComponent : Componen
 
     RL_FIELD("meshId") MeshAsset::ID meshId;
     RL_FIELD("materialOverrides") std::unordered_map<int, MaterialOverride> materialOverrides;
-    RL_FIELD("offlineSurface") std::optional<PbrtSurface> offlineSurface;
+    RL_FIELD("pbrtSurface") std::optional<PbrtSurface> pbrtSurface;
 };
 
 #include RL_METADATA_HEADER("metadata/src/scene/component/RenderComponent.generated.h")

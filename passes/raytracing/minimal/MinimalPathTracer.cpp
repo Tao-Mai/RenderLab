@@ -4,12 +4,10 @@
 
 #include <slang-rhi/shader-cursor.h>
 #include "editor/PassEditor.h"
+#include "render/PreparedScene.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
-#include "render/graph/RenderPassHelpers.h"
-#include "render/graph/RenderPassStandardFlags.h"
 #include "render/raytracing/PathTracingShader.h"
-#include "render/raytracing/RealtimeScene.h"
 #include "render/resources/MaterialTable.h"
 #include "render/resources/ShaderLayout.h"
 #include "render/resources/ShaderManager.h"
@@ -20,28 +18,26 @@
 
 namespace
 {
-constexpr std::array      kRaygenEntries{"raygenMain"};
-const Falcor::ChannelList kOutputChannels{
-    {"color", "outputImage", "Path traced radiance", false, rhi::Format::RGBA16Float},
-};
+constexpr std::array kRaygenEntries{"raygenMain"};
+constexpr char       kOutputColor[] = "color";
 
-class MinimalPathTracer : public Falcor::RenderPass
+class MinimalPathTracer : public RenderPass
 {
-    FALCOR_PLUGIN_CLASS(MinimalPathTracer, "MinimalPathTracer", "Minimal path tracer.");
+    RL_PLUGIN_CLASS(MinimalPathTracer, "MinimalPathTracer", "Minimal path tracer.");
 
-    MinimalPathTracer(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
-        Falcor::RenderPass(std::move(device)),
-        parameters(Falcor::deserializeFromProperties<MinimalPathTracerSettings>(properties))
+    MinimalPathTracer(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+        RenderPass(std::move(device), SceneInputs::RayTracing),
+        parameters(deserializeFromProperties<MinimalPathTracerSettings>(properties))
     {
         parameters.validate();
     }
 
-    [[nodiscard]] Falcor::Properties getProperties() const override
+    [[nodiscard]] Properties getProperties() const override
     {
-        return Falcor::serializeToProperties(parameters);
+        return serializeToProperties(parameters);
     }
 
-    void setProperties(const Falcor::Properties& properties) override
+    void setProperties(const Properties& properties) override
     {
         MinimalPathTracerSettings next;
         Deserialize(nlohmann::json(properties.toJson()), next);
@@ -49,81 +45,56 @@ class MinimalPathTracer : public Falcor::RenderPass
         parameters = std::move(next);
     }
 
-    static Falcor::ref<MinimalPathTracer> create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
+    static ref<MinimalPathTracer> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
     {
-        return Falcor::make_ref<MinimalPathTracer>(std::move(device), properties);
+        return make_ref<MinimalPathTracer>(std::move(device), properties);
     }
 
-    void renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget) override;
+    void renderUI(RenderContext* context, Gui::Widgets& widget) override;
 
-    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData&) override
+    [[nodiscard]] RenderPassReflection reflect(const CompileData&) override
     {
-        Falcor::RenderPassReflection reflection;
-        Falcor::addRenderPassOutputs(reflection, kOutputChannels);
+        RenderPassReflection reflection;
+        reflection.addOutput(kOutputColor, "Path traced radiance")
+            .texture2D()
+            .format(rhi::Format::RGBA16Float)
+            .bindFlags(ResourceBindFlags::UnorderedAccess);
         return reflection;
     }
 
-    void compile(Falcor::RenderContext* passContext, const CompileData&) override
+    void compile(RenderContext*, const CompileData&) override
     {
-        auto&      shaderManager = *passContext->shaderManager;
-        const auto shader        = shaderManager.getOrLoad("minimal_path_tracer");
-        shaderManager.layout(shader).validateConstants<PathTracingParameters>("parameters");
-        scene.compile(*passContext);
-        if (!pipeline)
-        {
-
-            const std::array groups{
-                rhi::HitGroupDesc{"hitGroup0", "closestHitMain"},
-                rhi::HitGroupDesc{"hitGroup1", "lightClosestHitMain"}
-            };
-            constexpr std::array        kGroupNames{"hitGroup0", "hitGroup1"};
-            rhi::RayTracingPipelineDesc desc;
-            desc.program           = shaderManager.program(shader);
-            desc.hitGroups         = groups.data();
-            desc.hitGroupCount     = uint32_t(groups.size());
-            desc.maxRecursion      = kRayPipelineRecursionDepth;
-            desc.maxRayPayloadSize = kPathTracingPayloadBytes;
-            rhiCheck(mpDevice->createRayTracingPipeline(desc, pipeline.writeRef()));
-            rhi::ShaderTableDesc tableDesc;
-            tableDesc.program                     = desc.program;
-            tableDesc.rayGenShaderEntryPointNames = kRaygenEntries.data();
-            tableDesc.rayGenShaderCount           = uint32_t(kRaygenEntries.size());
-            tableDesc.missShaderEntryPointNames   = kPathTracingMissEntries.data();
-            tableDesc.missShaderCount             = uint32_t(kPathTracingMissEntries.size());
-            tableDesc.hitGroupNames               = kGroupNames.data();
-            tableDesc.hitGroupCount               = uint32_t(kGroupNames.size());
-            rhiCheck(mpDevice->createShaderTable(tableDesc, shaderTable.writeRef()));
-        }
-        sampleIndex        = 0;
-        previousMaxBounces = parameters.maxBounces;
+        sampleIndex = 0;
     }
 
-    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override
+    void execute(RenderContext* renderCommands, const RenderData& renderData) override
     {
-        if (previousMaxBounces != parameters.maxBounces)
-        {
-            auto&      dictionary = renderData.getDictionary();
-            const auto flags =
-                dictionary.getValue(Falcor::kRenderPassRefreshFlags, Falcor::RenderPassRefreshFlags::None);
-            dictionary[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
-            previousMaxBounces                          = parameters.maxBounces;
-        }
-
-        auto&       cache    = *renderCommands->gpuResources;
         auto&       commands = *renderCommands->commands;
         const auto& frame    = *renderCommands;
+        const auto sceneGeneration = frame.scene->sceneGeneration;
+        if (sceneGeneration != previousSceneGeneration)
+        {
+            sampleIndex             = 0;
+            previousSceneGeneration = sceneGeneration;
+        }
 
-        scene.prepare(cache, frame);
-        cache.recordUploads(commands);
-        scene.execute(commands, frame);
+        const auto environment = pathEnvironment(*frame.scene);
+        auto& program = programs[static_cast<size_t>(environment)];
+        if (!program.pipeline)
+        {
+            auto& shaderManager = *frame.shaderManager;
+            const auto shader = shaderManager.getOrCompile("minimal_path_tracer", pathEnvironmentDefines(environment));
+            shaderManager.layout(shader).validateConstants<PathTracingParameters>("parameters");
+            program.create(*mpDevice, shaderManager.program(shader), kRaygenEntries);
+        }
 
         auto* pass = commands.beginRayTracingPass();
         CHECK(pass);
-        auto* object = pass->bindPipeline(pipeline, shaderTable);
+        auto* object = pass->bindPipeline(program.pipeline, program.shaderTable);
         CHECK(object);
-        scene.bind(object, cache, frame);
+        frame.scene->rays.bind(object, frame);
         const rhi::ShaderCursor root(object);
-        rhiCheck(root["outputImage"].setBinding(renderData.getTexture("color")->getDefaultView()));
+        rhiCheck(root["outputImage"].setBinding(renderData.getTexture(kOutputColor)->getDefaultView()));
         const auto constants = makePathTracingParameters(frame, parameters.maxBounces, sampleIndex++);
         rhiCheck(root["parameters"].getDereferenced().setData(constants));
         const auto extent = renderData.getDefaultTextureDims();
@@ -134,15 +105,13 @@ class MinimalPathTracer : public Falcor::RenderPass
 private:
     MinimalPathTracerSettings parameters;
 
-    RealtimeScene                         scene;
-    rhi::ComPtr<rhi::IRayTracingPipeline> pipeline;
-    rhi::ComPtr<rhi::IShaderTable>        shaderTable;
-    uint32_t                              sampleIndex        = 0;
-    uint32_t                              previousMaxBounces = 0;
+    std::array<PathTracingProgram, static_cast<size_t>(PathEnvironment::Count)> programs;
+    uint32_t sampleIndex             = 0;
+    uint64_t previousSceneGeneration = 0;
 };
 
 bool drawSettings(
-    Falcor::Gui::Widgets&      widgets,
+    Gui::Widgets&      widgets,
     MinimalPathTracerSettings& settings,
     const MinimalPathTracer&,
     const PassEditorContext&
@@ -154,12 +123,12 @@ bool drawSettings(
 }
 }  // namespace
 
-void MinimalPathTracer::renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget)
+void MinimalPathTracer::renderUI(RenderContext* context, Gui::Widgets& widget)
 {
     drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "MinimalPathTracer");
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<Falcor::RenderPass, MinimalPathTracer>();
+    registry.registerClass<RenderPass, MinimalPathTracer>();
 }

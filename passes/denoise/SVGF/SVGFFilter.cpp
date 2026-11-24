@@ -26,8 +26,8 @@ enum class FilterVariant
 }  // namespace
 
 void SVGFFilter::compile(
-    const Falcor::RenderContext&                                      context,
-    const DenoiserInputs&                                             traced,
+    const RenderContext&                                      context,
+    const SVGFInputs&                                                 traced,
     const SVGFReprojection::Output&                                   lighting,
     const std::array<GpuResources::ImageHandle, kLightingLayerCount>& scratch,
     GpuResources::ImageHandle                                         color,
@@ -61,14 +61,14 @@ void SVGFFilter::compile(
 }
 
 
-void SVGFFilter::execute(GpuResources& cache, rhi::ICommandEncoder& commands, const Falcor::RenderContext& frame) const
+void SVGFFilter::execute(GpuResources& cache, rhi::ICommandEncoder& commands, const RenderContext& frame) const
 {
     for (const auto& filter : filters)
         filter.execute(cache, commands, frame);
 }
 
 
-void SVGFFilter::FilterPass::compile(const Falcor::RenderContext& context, const FilterResources& resources)
+void SVGFFilter::FilterPass::compile(const RenderContext& context, const FilterResources& resources)
 {
     auto& cache = *context.gpuResources;
     extent      = cache.imageInfo(resources.direct).size;
@@ -125,7 +125,7 @@ void SVGFFilter::FilterPass::compile(const Falcor::RenderContext& context, const
 }
 
 
-void SVGFFilter::FilterPass::createPipeline(const Falcor::RenderContext& context)
+void SVGFFilter::FilterPass::createPipeline(const RenderContext& context)
 {
     const auto variant = first() ? FilterVariant::First : last() ? FilterVariant::Final : FilterVariant::Filter;
     pipeline           = context.device->createComputePipeline(
@@ -138,7 +138,7 @@ void SVGFFilter::FilterPass::createPipeline(const Falcor::RenderContext& context
 
 
 void SVGFFilter::FilterPass::execute(
-    GpuResources& cache, rhi::ICommandEncoder& commands, const Falcor::RenderContext& frame
+    GpuResources& cache, rhi::ICommandEncoder& commands, const RenderContext& frame
 ) const
 {
 

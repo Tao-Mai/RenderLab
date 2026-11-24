@@ -34,11 +34,9 @@
 #include <string>
 #include <vector>
 
-namespace Falcor
-{
 class RenderGraph;
 
-class FALCOR_API RenderGraphImporter
+class RENDERLAB_CORE_API RenderGraphImporter
 {
 public:
     [[nodiscard]] static ref<RenderGraph>
@@ -46,11 +44,10 @@ public:
     [[nodiscard]] static std::vector<ref<RenderGraph>> importAllGraphs(const std::filesystem::path& path);
 };
 
-class FALCOR_API RenderGraphExporter
+class RENDERLAB_CORE_API RenderGraphExporter
 {
 public:
     [[nodiscard]] static std::string getIR(const ref<RenderGraph>& graph);
     [[nodiscard]] static std::string getFuncName(const std::string& graphName);
     [[nodiscard]] static bool        save(const ref<RenderGraph>& graph, std::filesystem::path path = {});
 };
-}  // namespace Falcor

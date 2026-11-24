@@ -16,7 +16,7 @@ struct LightData
     // Photometric-scaled RGB: Point/Spot intensity, Directional irradiance at perpendicular incidence,
     // RectArea radiance. Already includes the light's RGB tint and scalar strength.
     float3 color;
-    float padding3;
+    float spotFalloffExponent;
     float4 positionRange;
     float4 direction;
     float4 areaSizeCone;
@@ -62,7 +62,12 @@ float spotAngularAttenuation(LightData light, float3 lightToSurfaceDirection)
         return cosine >= light.cosOuter ? 1.0 : 0.0;
     }
     float attenuation = saturate((cosine - light.cosOuter) / (light.cosInner - light.cosOuter));
-    return attenuation * attenuation;
+    return pow(attenuation, light.spotFalloffExponent);
+}
+
+bool withinLightRange(LightData light, float distanceSquared)
+{
+    return light.range <= 0.0 || distanceSquared <= light.range * light.range;
 }
 
 #endif

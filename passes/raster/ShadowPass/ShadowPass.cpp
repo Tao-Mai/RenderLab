@@ -1,17 +1,12 @@
 #include "passes/raster/ShadowPass/ShadowPass.h"
 
-#include "core/profiling/Profiler.h"
-
 #include <slang-rhi.h>
-#include "asset/BuiltinAssets.h"
-#include "core/Context.h"
+#include <slang-rhi/shader-cursor.h>
 #include "core/Logger.h"
-#include "render/FrameData.h"
 #include "render/PreparedScene.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
-#include "render/RendererConfig.h"
 #include "render/Visibility.h"
 #include "render/raster/MeshDraw.h"
 #include "render/raster/ShadowResources.h"
@@ -234,7 +229,6 @@ struct ShadowVolume
 {
     uint32_t             mask;
     std::vector<Frustum> frusta;
-    uint32_t             visibleDrawItems = 0;
 };
 }  // namespace
 
@@ -248,15 +242,16 @@ void ShadowSettings::validate() const
     CHECK(filter == SamplerAsset::Filter::Nearest || filter == SamplerAsset::Filter::Linear);
 }
 
-ShadowPass::ShadowPass(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
-    Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<ShadowSettings>(properties))
+ShadowPass::ShadowPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+    RenderPass(std::move(device), SceneInputs::RasterVisibility),
+    parameters(deserializeFromProperties<ShadowSettings>(properties))
 {
     parameters.validate();
 }
 
-Falcor::Properties ShadowPass::getProperties() const { return Falcor::serializeToProperties(parameters); }
+Properties ShadowPass::getProperties() const { return serializeToProperties(parameters); }
 
-void ShadowPass::setProperties(const Falcor::Properties& properties)
+void ShadowPass::setProperties(const Properties& properties)
 {
     ShadowSettings next;
     Deserialize(nlohmann::json(properties.toJson()), next);
@@ -272,10 +267,14 @@ void ShadowPass::setProperties(const Falcor::Properties& properties)
         requestRecompile();
 }
 
-Falcor::RenderPassReflection ShadowPass::reflect(const CompileData&)
+RenderPassReflection ShadowPass::reflect(const CompileData&)
 {
-    constexpr auto kDepthSampled = Falcor::ResourceBindFlags::DepthStencil | Falcor::ResourceBindFlags::ShaderResource;
-    Falcor::RenderPassReflection reflection;
+    constexpr auto kDepthSampled = ResourceBindFlags::DepthStencil | ResourceBindFlags::ShaderResource;
+    RenderPassReflection reflection;
+    reflection.addOutput(kShadowUniformsPort, "Shadow sampling parameters")
+        .rawBuffer(sizeof(ShadowUniforms))
+        .bindFlags(ResourceBindFlags::ShaderResource);
+
     const auto addOutputs =
         [&](const ShadowPorts& ports, uint32_t size, uint32_t layers, uint32_t lightCount, uint32_t recordSize)
     {
@@ -287,7 +286,7 @@ Falcor::RenderPassReflection ShadowPass::reflect(const CompileData&)
             .bindFlags(kDepthSampled)
             .texture2D(extent, extent, 1, 1, arraySize);
         reflection.addOutput(ports.data, "Shadow transforms")
-            .bindFlags(Falcor::ResourceBindFlags::ShaderResource)
+            .bindFlags(ResourceBindFlags::ShaderResource)
             .rawBuffer((parameters.enabled ? lightCount : 1u) * recordSize);
     };
     addOutputs(
@@ -308,7 +307,7 @@ Falcor::RenderPassReflection ShadowPass::reflect(const CompileData&)
     return reflection;
 }
 
-void ShadowPass::compile(Falcor::RenderContext* passContext, const CompileData&)
+void ShadowPass::compile(RenderContext* passContext, const CompileData&)
 {
     if (!parameters.enabled)
         return;
@@ -451,19 +450,9 @@ void ShadowPass::prepareShadowData(
     }
 }
 
-void ShadowPass::updateShadowData(const Falcor::RenderContext& frame, const Falcor::RenderData& renderData)
+void ShadowPass::updateShadowData(const RenderContext& frame, const RenderData& renderData)
 {
-    frame.frameData->shadowUniforms = {
-        .cascadeCount            = parameters.cascade.count,
-        .directionalSampleRadius = parameters.cascade.sampleRadius,
-        .bias                    = parameters.bias,
-        .sampleRadius            = parameters.sampleRadius,
-        .spotSampleRadius        = parameters.spotSampleRadius,
-        .pixelRotation           = parameters.pixelRotation ? 1u : 0u,
-        .enabled                 = 1u,
-    };
-    CpuProfileScope timing{context().profiler, "Shadow preparation"};
-    prepareShadowData(frame.view->uniforms, frame.scene->lights, parameters);
+    prepareShadowData(frame.view->uniforms, frame.scene->lights(), parameters);
 
     std::vector<ShadowVolume> volumes;
     for (uint32_t index = 0; index < shadowData.pointShadows.size(); ++index)
@@ -496,23 +485,14 @@ void ShadowPass::updateShadowData(const Falcor::RenderContext& frame, const Falc
     for (const auto& bounds : frame.scene->drawBounds)
     {
         uint32_t mask = 0;
-        for (auto& volume : volumes)
+        for (const auto& volume : volumes)
         {
             if (!std::ranges::any_of(volume.frusta, [&](const Frustum& frustum) { return frustum.intersects(bounds); }))
                 continue;
 
             mask |= volume.mask;
-            ++volume.visibleDrawItems;
         }
         visibilityMasks.push_back(mask);
-    }
-
-    if (auto* profiler = context().profiler)
-    {
-        std::vector<ViewCullingStatistics> views;
-        for (const auto& volume : volumes)
-            views.push_back({RenderVisibility::viewName(volume.mask), volume.visibleDrawItems});
-        profiler->recordCulling(static_cast<uint32_t>(frame.scene->drawBounds.size()), std::move(views));
     }
 
     const auto upload = [&](const ShadowPorts& ports, const auto& values)
@@ -528,28 +508,33 @@ void ShadowPass::updateShadowData(const Falcor::RenderContext& frame, const Falc
     upload(kDirectionalShadowPorts, shadowData.directionalShadows);
 }
 
-void ShadowPass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
+void ShadowPass::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
     const auto& frame = *renderCommands;
-    const auto& samplerId = parameters.filter == SamplerAsset::Filter::Linear ? BuiltinAssets::Sampler::kShadowLinear
-                                                                             : BuiltinAssets::Sampler::kShadowNearest;
-    frame.frameData->shadowSampler = frame.resources->sampler(samplerId);
+    const ShadowUniforms uniforms{
+        .cascadeCount            = parameters.cascade.count,
+        .directionalSampleRadius = parameters.cascade.sampleRadius,
+        .bias                    = parameters.bias,
+        .sampleRadius            = parameters.sampleRadius,
+        .spotSampleRadius        = parameters.spotSampleRadius,
+        .pixelRotation           = uint32_t(parameters.enabled && parameters.pixelRotation),
+        .enabled                 = uint32_t(parameters.enabled),
+        .linearFilter            = uint32_t(parameters.filter == SamplerAsset::Filter::Linear),
+    };
+    rhiCheck(frame.commands->uploadBufferData(renderData.getBuffer(kShadowUniformsPort), 0, sizeof(uniforms), &uniforms));
     if (!parameters.enabled)
-    {
-        frame.frameData->shadowUniforms = {};
         return;
-    }
 
     updateShadowData(frame, renderData);
     renderShadowMaps(frame, renderData);
 }
 
 void ShadowPass::renderShadowMaps(
-    const Falcor::RenderContext& execution, const Falcor::RenderData& renderData
+    const RenderContext& execution, const RenderData& renderData
 )
 {
-    const auto& lights = execution.scene->lights;
-    const auto& ranges = execution.scene->lightRanges;
+    const auto  lights = execution.scene->lights();
+    const auto& ranges = execution.scene->lightRanges();
     const auto attachments = [&](const ShadowPorts& ports)
     { return std::pair{renderData.getTexture(ports.map), renderData.getBuffer(ports.data)}; };
 
@@ -604,7 +589,7 @@ void ShadowPass::renderShadowMaps(
 }
 
 void ShadowPass::recordShadow(
-    const Falcor::RenderContext& execution,
+    const RenderContext& execution,
     const ShadowTarget&          target,
     rhi::ITexture&               image,
     rhi::IBuffer*               transforms,
@@ -614,7 +599,7 @@ void ShadowPass::recordShadow(
 ) const
 {
     // TODO: Precompute the per-layer attachment views.
-    const auto& light      = execution.scene->lights[lightIndex];
+    const auto& light      = execution.scene->lights()[lightIndex];
     const auto  visibility = RenderVisibility::shadowMask(light.type(), light.shadowIdx, cascadeIndex);
     for (uint32_t face = 0; face < target.viewLayerCount; ++face)
     {
@@ -636,7 +621,7 @@ void ShadowPass::recordShadow(
             auto*       object = pass->bindPipeline(target.pipeline);
             CHECK(object);
             const rhi::ShaderCursor root(object);
-            rhiCheck(root["lights"].setBinding(execution.frameData->lights));
+            rhiCheck(root["lights"].setBinding(execution.scene->lighting.getLightBuffer()));
             rhiCheck(root["shadowData"].setBinding(transforms));
             const ShadowPushConstants
                 constants{.model = item.model, .lightIdx = lightIndex, .cascadeIndex = cascadeIndex, .faceIndex = face};
@@ -648,7 +633,6 @@ void ShadowPass::recordShadow(
             state.indexBuffer       = {mesh.indices(), 0};
             pass->setRenderState(state);
             pass->drawIndexed({submesh.indexCount, 1, 0, 0, submesh.firstIndex});
-            recordDraw(execution.profiler, submesh.indexCount);
         }
         pass->end();
     }

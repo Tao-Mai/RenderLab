@@ -1,8 +1,6 @@
 #ifndef RENDERLAB_PATH_TRACING_PARAMETERS_H
 #define RENDERLAB_PATH_TRACING_PARAMETERS_H
 
-#include "render/resources/LightRanges.h"
-
 #ifdef __cplusplus
 #include "core/MetadataAnnotations.h"
 
@@ -20,10 +18,10 @@
 struct RENDERLAB_PATH_ALIGN PathTracingParameters
 {
     RENDERLAB_PATH_FLOAT4 viewport;
-    LightRanges lightRanges;
     RENDERLAB_PATH_UINT maxBounces;
     RENDERLAB_PATH_UINT sampleIndex;
-    RENDERLAB_PATH_UINT iblEnabled;
+    RENDERLAB_PATH_UINT padding0;
+    RENDERLAB_PATH_UINT padding1;
 
 #ifndef __cplusplus
     property float2 viewportOffset

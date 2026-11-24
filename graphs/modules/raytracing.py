@@ -1,4 +1,4 @@
-from falcor import RenderGraph
+from renderlab import RenderGraph
 
 
 def add_svgf(graph: RenderGraph, trace: str) -> str:

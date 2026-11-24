@@ -7,7 +7,6 @@ void ForwardPbrPipelines::setup(
     rhi::Format                  colorFormat,
     const rhi::DepthStencilDesc& depthState,
     bool                         blend,
-    bool                         ibl,
     bool                         clearcoat
 )
 {
@@ -18,21 +17,21 @@ void ForwardPbrPipelines::setup(
     color.alpha       = {rhi::BlendFactor::One, rhi::BlendFactor::InvSrcAlpha, rhi::BlendOp::Add};
     depth             = depthState;
     input             = createMeshInputLayout(device);
-    iblEnabled        = ibl;
     clearcoatEnabled  = clearcoat;
     pipelines         = {};
 }
 rhi::IRenderPipeline*
-ForwardPbrPipelines::get(const Falcor::RenderContext& context, const MaterialTable::MaterialInfo& material)
+ForwardPbrPipelines::get(const RenderContext& context, const MaterialTable::MaterialInfo& material)
 {
-    const bool clearcoat = material.clearcoat && clearcoatEnabled;
-    const auto variant   = 2 * size_t(clearcoat) + size_t(material.sheen);
-    auto&      pipeline  = pipelines[variant][material.doubleSided];
+    const bool hasEnvironment = context.scene->environmentMap != nullptr;
+    const bool clearcoat      = material.clearcoat && clearcoatEnabled;
+    const auto variant        = 2 * size_t(clearcoat) + size_t(material.sheen);
+    auto& pipeline            = pipelines[hasEnvironment][variant][material.doubleSided];
     if (!pipeline)
     {
-        const auto shader = context.shaderManager->getOrLoad(
+        const auto shader = context.shaderManager->getOrCompile(
             "forward",
-            {{"ENABLE_IBL", iblEnabled ? "1" : "0"},
+            {{"HAS_ENV", hasEnvironment ? "1" : "0"},
              {"ENABLE_CLEARCOAT", clearcoat ? "1" : "0"},
              {"ENABLE_SHEEN", material.sheen ? "1" : "0"}}
         );

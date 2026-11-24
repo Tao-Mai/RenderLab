@@ -4,10 +4,8 @@
 
 #include <cstdlib>
 
-extern "C" PyObject* PyInit_falcor();
+extern "C" PyObject* PyInit_renderlab();
 
-namespace Falcor
-{
 const FileDialogFilterVec           Scripting::kFileExtensionFilters{{"py", "Script Files"}};
 std::unique_ptr<Scripting::Context> Scripting::sDefaultContext;
 
@@ -50,7 +48,7 @@ namespace
     };
 
     template <typename Run>
-    Scripting::RunResult runScript(Run run, bool captureOutput)
+    Scripting::RunResult runWithCapturedOutput(Run run, bool captureOutput)
     {
         if (!captureOutput)
         {
@@ -123,7 +121,7 @@ void Scripting::start()
     if (isRunning())
         return;
 
-    CHECK(PyImport_AppendInittab("falcor", PyInit_falcor) == 0);
+    CHECK(PyImport_AppendInittab("renderlab", PyInit_renderlab) == 0);
     PyConfig config;
     PyConfig_InitIsolatedConfig(&config);
     config.write_bytecode = 0;
@@ -137,7 +135,7 @@ void Scripting::start()
     static const int kRegistered = std::atexit(shutdown);
     CHECK(kRegistered == 0);
     sDefaultContext = std::make_unique<Context>();
-    runScript("from falcor import *");
+    runScript("from renderlab import *");
 }
 
 void Scripting::shutdown()
@@ -170,7 +168,7 @@ Scripting::Context Scripting::getCurrentContext()
 Scripting::RunResult Scripting::runScript(std::string_view script, Context& context, bool captureOutput)
 {
     const std::string source{script};
-    return Falcor::runScript(
+    return runWithCapturedOutput(
         [&]
         {
             auto*              globals = context.mGlobals.get();
@@ -202,7 +200,7 @@ Scripting::runScriptFromFile(const std::filesystem::path& path, Context& context
     context.setObject("__file__", filename.get());
 
     CHECK(PyList_Insert(searchPath.get(), 0, directory.get()) == 0, "{}", pythonError());
-    auto output = Falcor::runScript(
+    auto output = runWithCapturedOutput(
         [&]
         {
             const PythonObject code{
@@ -234,7 +232,7 @@ std::string Scripting::interpretScript(const std::string& script, Context& conte
     };
     CHECK(interpreter, "{}", pythonError());
 
-    auto output = Falcor::runScript(
+    auto output = runWithCapturedOutput(
         [&]
         {
             const auto source = ScriptBindings::toPython(script);
@@ -247,4 +245,3 @@ std::string Scripting::interpretScript(const std::string& script, Context& conte
     output.out += output.err;
     return std::move(output.out);
 }
-}  // namespace Falcor

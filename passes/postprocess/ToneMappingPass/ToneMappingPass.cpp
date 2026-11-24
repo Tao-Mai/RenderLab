@@ -1,12 +1,10 @@
 #include "passes/postprocess/ToneMappingPass/ToneMappingPass.h"
 
 #include "core/Logger.h"
-#include "core/profiling/Profiler.h"
 #include "editor/PassEditor.h"
 
 #include <slang-rhi.h>
 #include "asset/BuiltinAssets.h"
-#include "core/Context.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/RenderView.h"
@@ -15,18 +13,18 @@
 
 #include <array>
 
-ToneMappingPass::ToneMappingPass(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
-    Falcor::RenderPass(std::move(device)),
-    parameters(Falcor::deserializeFromProperties<ToneMappingSettings>(properties))
+ToneMappingPass::ToneMappingPass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+    RenderPass(std::move(device)),
+    parameters(deserializeFromProperties<ToneMappingSettings>(properties))
 {
     parameters.validate();
 }
 
 
-Falcor::Properties ToneMappingPass::getProperties() const { return Falcor::serializeToProperties(parameters); }
+Properties ToneMappingPass::getProperties() const { return serializeToProperties(parameters); }
 
 
-void ToneMappingPass::setProperties(const Falcor::Properties& properties)
+void ToneMappingPass::setProperties(const Properties& properties)
 {
     ToneMappingSettings next;
     Deserialize(nlohmann::json(properties.toJson()), next);
@@ -36,19 +34,19 @@ void ToneMappingPass::setProperties(const Falcor::Properties& properties)
 }
 
 
-Falcor::RenderPassReflection ToneMappingPass::reflect(const CompileData& compileData)
+RenderPassReflection ToneMappingPass::reflect(const CompileData& compileData)
 {
-    Falcor::RenderPassReflection reflection;
-    reflection.addInput("hdrColor", "HDR scene color").bindFlags(Falcor::ResourceBindFlags::ShaderResource);
-    reflection.addInput("exposure", "Exposure state").rawBuffer(0).bindFlags(Falcor::ResourceBindFlags::ShaderResource);
+    RenderPassReflection reflection;
+    reflection.addInput("hdrColor", "HDR scene color").bindFlags(ResourceBindFlags::ShaderResource);
+    reflection.addInput("exposure", "Exposure state").rawBuffer(0).bindFlags(ResourceBindFlags::ShaderResource);
     reflection.addOutput("color", "Tone-mapped color")
         .format(compileData.defaultTexFormat)
-        .bindFlags(Falcor::ResourceBindFlags::RenderTarget);
+        .bindFlags(ResourceBindFlags::RenderTarget);
     return reflection;
 }
 
 
-void ToneMappingPass::compile(Falcor::RenderContext* passContext, const CompileData& compileData)
+void ToneMappingPass::compile(RenderContext* passContext, const CompileData& compileData)
 {
     const auto format = compileData.defaultTexFormat;
     encodeSrgb        = format != rhi::Format::BGRA8UnormSrgb && format != rhi::Format::RGBA8UnormSrgb;
@@ -65,7 +63,7 @@ void ToneMappingPass::compile(Falcor::RenderContext* passContext, const CompileD
 }
 
 
-void ToneMappingPass::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
+void ToneMappingPass::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
     const auto target    = renderData.getTexture("color");
     const auto colorView = target->getDefaultView();
@@ -87,17 +85,16 @@ void ToneMappingPass::execute(Falcor::RenderContext* renderCommands, const Falco
     rhiCheck(root["parameters"].getDereferenced().setData(constants));
     pass->setRenderState(viewport.renderState());
     pass->draw({3});
-    recordDraw(renderCommands->profiler, 3);
     pass->end();
 }
 
 
-void ToneMappingPass::renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget)
+void ToneMappingPass::renderUI(RenderContext* context, Gui::Widgets& widget)
 {
     drawPassEditor(widget, *this, parameters, context->passEditor, "Tone mapping");
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<Falcor::RenderPass, ToneMappingPass>();
+    registry.registerClass<RenderPass, ToneMappingPass>();
 }

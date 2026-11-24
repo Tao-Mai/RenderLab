@@ -41,7 +41,7 @@ float4 fragMain(VertexOutput input) : SV_Target
     }
 
     float2 ndc = uvToClip((input.position.xy - parameters.viewportOffset) / parameters.viewportExtent);
-    float4 worldPosition = mul(sceneUniforms.inverseViewProjection, float4(ndc, depth, 1.0));
+    float4 worldPosition = mul(sceneGlobals[0].camera.inverseViewProjection, float4(ndc, depth, 1.0));
     GBufferData data = {
         diffuseOcclusion.Load(int3(pixel, 0)),
         normalRoughness.Load(int3(pixel, 0)),

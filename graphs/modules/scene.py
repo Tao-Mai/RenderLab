@@ -1,4 +1,4 @@
-from falcor import RenderGraph
+from renderlab import RenderGraph
 
 
 def add_shadows(graph: RenderGraph, enabled: bool) -> str:
@@ -9,6 +9,7 @@ def add_shadows(graph: RenderGraph, enabled: bool) -> str:
 
 def connect_shadow_resources(graph: RenderGraph, shadow: str, consumer: str) -> None:
     for field in (
+        "shadowUniforms",
         "pointShadowMap", "pointShadowData",
         "spotShadowMap", "spotShadowData",
         "rectAreaShadowMap", "rectAreaShadowData",
@@ -22,15 +23,17 @@ def complete_raster_scene(
     color: str,
     depth: str,
     shadow: str,
-    ibl: bool,
+    ambientCoefficient: float,
+    *,
+    clearcoat: bool,
 ) -> str:
-    if ibl:
-        graph.create_pass("skybox", "SkyboxPass")
-        graph.add_edge(color, "skybox.color")
-        graph.add_edge(depth, "skybox.depth")
-        color = "skybox.color"
-    graph.create_pass("transparent", "TransparentPass")
-    graph.add_edge(color, "transparent.color")
+    graph.create_pass("skybox", "SkyboxPass")
+    graph.add_edge(color, "skybox.color")
+    graph.add_edge(depth, "skybox.depth")
+    graph.create_pass(
+        "transparent", "TransparentPass", {"ambientCoefficient": ambientCoefficient, "clearcoat": clearcoat}
+    )
+    graph.add_edge("skybox.color", "transparent.color")
     graph.add_edge(depth, "transparent.depth")
     connect_shadow_resources(graph, shadow, "transparent")
     return "transparent.color"

@@ -3,14 +3,19 @@
 #include <slang-rhi.h>
 #include <cstdint>
 #include <functional>
+#include <glm/vec2.hpp>
+#include <optional>
 
+inline constexpr char kEditorPickingPassType[] = "EditorPickingPass";
 
-inline constexpr char kPickingImageOutput[] = "pickingImage";
+struct EditorPickRequest
+{
+    glm::vec2                    viewportUv;
+    std::function<void(uint32_t)> complete;
+};
 
 struct EditorFrameInput
 {
-    bool                                                    requestPick = false;
-    uint32_t                                                pickX       = 0;
-    uint32_t                                                pickY       = 0;
+    std::optional<EditorPickRequest>                      pick;
     std::function<void(rhi::IRenderPassEncoder&, uint32_t)> recordUi;
 };

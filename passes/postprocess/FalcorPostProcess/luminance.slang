@@ -33,7 +33,7 @@ SamplerState      linearSampler;
 [shader("fragment")] float4 fragMain(FullscreenVertexOutput input) : SV_Target
 {
     float4 color = sourceImage.Sample(linearSampler, input.uv);
-#if FALCOR_LUMINANCE_STAGE == 0
+#if LUMINANCE_STAGE == 0
     float logLuminance = log2(max(0.0001, dot(color.rgb, float3(0.299, 0.587, 0.114))));
     return float4(logLuminance, 0, 0, 1);
 #else

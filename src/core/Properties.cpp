@@ -3,8 +3,6 @@
 #include "core/Logger.h"
 #include "core/Scripting.h"
 
-namespace Falcor
-{
 Properties::Properties() : Properties(json::object()) {}
 
 Properties::Properties(const json& value) : Properties(json(value)) {}
@@ -126,4 +124,3 @@ Properties::ConstIterator Properties::end() const
 {
     return ConstIterator(std::make_unique<ConstIterator::Impl>(ConstIterator::Impl{*this, mJson->cend()}));
 }
-}  // namespace Falcor

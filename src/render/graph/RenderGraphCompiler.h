@@ -10,14 +10,12 @@
 #include <utility>
 #include <vector>
 
-namespace Falcor
-{
 struct RenderContext;
 
 class RenderGraph;
 class RenderGraphExe;
 
-class FALCOR_API RenderGraphCompiler
+class RENDERLAB_CORE_API RenderGraphCompiler
 {
 public:
     struct Dependencies
@@ -44,6 +42,7 @@ private:
     rhi::ComPtr<rhi::IDevice> mpDevice;
     const Dependencies&       mDependencies;
     std::vector<PassData>     mExecutionList;
+    SceneInputs              mSceneInputs = SceneInputs::None;
     struct
     {
         std::vector<std::string>                         generatedPasses;
@@ -55,7 +54,7 @@ private:
     bool                    insertAutoPasses();
     void                    allocateResources(rhi::IDevice* device, ResourceCache* cache);
     void                    validateGraph() const;
+    void                    validateDeviceFeatures() const;
     void                    restoreCompilationChanges();
     RenderPass::CompileData prepPassCompilationData(const PassData& passData);
 };
-}  // namespace Falcor

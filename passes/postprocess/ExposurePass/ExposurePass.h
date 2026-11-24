@@ -4,38 +4,33 @@
 #include "render/graph/RenderPass.h"
 
 #include <slang-rhi.h>
-#include "asset/Asset.h"
-#include "core/Logger.h"
-#include "render/device/GpuResources.h"
-#include "render/postprocess/ExposureState.h"
+#include <cstdint>
 
-class ExposurePass : public Falcor::RenderPass
+class ExposurePass : public RenderPass
 {
-    FALCOR_PLUGIN_CLASS(ExposurePass, kExposurePassType, "Computes exposure from a luminance histogram.");
+    RL_PLUGIN_CLASS(ExposurePass, "ExposurePass", "Computes exposure from a luminance histogram.");
 
-    ExposurePass(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties);
+    ExposurePass(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
 
-    [[nodiscard]] Falcor::Properties getProperties() const override;
-    void                             setProperties(const Falcor::Properties& properties) override;
+    [[nodiscard]] Properties getProperties() const override;
+    void                             setProperties(const Properties& properties) override;
 
-    static Falcor::ref<ExposurePass> create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
+    static ref<ExposurePass> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
     {
-        return Falcor::make_ref<ExposurePass>(std::move(device), properties);
+        return make_ref<ExposurePass>(std::move(device), properties);
     }
 
-    void renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget) override;
+    void renderUI(RenderContext* context, Gui::Widgets& widget) override;
 
-    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData& compileData) override;
-    void compile(Falcor::RenderContext* context, const CompileData& compileData) override;
-    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
+    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
+    void compile(RenderContext* context, const CompileData& compileData) override;
+    void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
 private:
     ExposurePassSettings parameters;
 
-    GpuResources::BufferHandle         histogram;
     rhi::ComPtr<rhi::IComputePipeline> histogramPipeline;
     rhi::ComPtr<rhi::IComputePipeline> resolvePipeline;
-    rhi::Extent3D                      extent;
-    AssetID<struct SceneAsset>         previousScene;
+    uint64_t                           previousSceneGeneration = 0;
     bool                               hasHistory = false;
 };

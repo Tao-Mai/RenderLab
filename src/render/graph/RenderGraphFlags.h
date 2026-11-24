@@ -30,8 +30,6 @@
 #include <cstdint>
 #include "core/Macros.h"
 
-namespace Falcor
-{
 enum class TextureChannelFlags : uint32_t
 {
     None  = 0x0,
@@ -42,7 +40,7 @@ enum class TextureChannelFlags : uint32_t
     RGB   = 0x7,
     RGBA  = 0xf,
 };
-FALCOR_ENUM_CLASS_OPERATORS(TextureChannelFlags);
+RL_ENUM_CLASS_OPERATORS(TextureChannelFlags);
 
 enum class ResourceBindFlags : uint32_t
 {
@@ -56,5 +54,4 @@ enum class ResourceBindFlags : uint32_t
     DepthStencil    = 0x80,
     IndirectArg     = 0x100,
 };
-FALCOR_ENUM_CLASS_OPERATORS(ResourceBindFlags);
-}  // namespace Falcor
+RL_ENUM_CLASS_OPERATORS(ResourceBindFlags);

@@ -9,7 +9,12 @@ static const uint kAlphaModeBlend = 2;
 static const uint kMaterialWorkflowMetallicRoughness = 0;
 static const uint kMaterialWorkflowSpecularGlossiness = 1;
 
-// glTF material SSBO used by rasterization and realtime ray tracing.
+enum class MaterialKind : uint
+{
+    Gltf,
+    Pbrt,
+};
+
 struct MaterialData
 {
     float4 colorFactor;
@@ -50,7 +55,8 @@ struct MaterialData
     TextureRef clearcoatNormalTexture;
     TextureRef specularColorTexture;
     TextureRef specularTexture;
-    uint2 texturePadding;
+    MaterialKind kind;
+    uint programIndex;
 };
 
 StructuredBuffer<MaterialData> materials;

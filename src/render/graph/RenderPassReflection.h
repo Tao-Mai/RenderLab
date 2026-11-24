@@ -7,12 +7,10 @@
 #include <string>
 #include <vector>
 
-namespace Falcor
-{
-class FALCOR_API RenderPassReflection
+class RENDERLAB_CORE_API RenderPassReflection
 {
 public:
-    class FALCOR_API Field
+    class RENDERLAB_CORE_API Field
     {
     public:
         enum class Visibility
@@ -129,9 +127,8 @@ private:
     std::vector<Field> mFields;
 };
 
-FALCOR_ENUM_CLASS_OPERATORS(RenderPassReflection::Field::Visibility);
-FALCOR_ENUM_CLASS_OPERATORS(RenderPassReflection::Field::Flags);
+RL_ENUM_CLASS_OPERATORS(RenderPassReflection::Field::Visibility);
+RL_ENUM_CLASS_OPERATORS(RenderPassReflection::Field::Flags);
 
 [[nodiscard]] std::string                       to_string(RenderPassReflection::Field::Type type);
 [[nodiscard]] RenderPassReflection::Field::Type resourceTypeToFieldType(rhi::TextureType type);
-}  // namespace Falcor

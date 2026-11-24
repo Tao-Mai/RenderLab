@@ -30,39 +30,30 @@
 #include <utility>
 
 #if defined(_WIN32)
-#define FALCOR_API_EXPORT __declspec(dllexport)
-#define FALCOR_API_IMPORT __declspec(dllimport)
+#define RENDERLAB_CORE_API_EXPORT __declspec(dllexport)
+#define RENDERLAB_CORE_API_IMPORT __declspec(dllimport)
 #else
-#define FALCOR_API_EXPORT __attribute__((visibility("default")))
-#define FALCOR_API_IMPORT
+#define RENDERLAB_CORE_API_EXPORT __attribute__((visibility("default")))
+#define RENDERLAB_CORE_API_IMPORT
 #endif
 
-#ifdef FALCOR_DLL
-#define FALCOR_API FALCOR_API_EXPORT
+#ifdef RENDERLAB_CORE_EXPORTS
+#define RENDERLAB_CORE_API RENDERLAB_CORE_API_EXPORT
 #else
-#define FALCOR_API FALCOR_API_IMPORT
+#define RENDERLAB_CORE_API RENDERLAB_CORE_API_IMPORT
 #endif
 
-#define FALCOR_CONCAT_STRINGS_(a, b) a##b
-#define FALCOR_CONCAT_STRINGS(a, b) FALCOR_CONCAT_STRINGS_(a, b)
-
-#define FALCOR_ENUM_CLASS_OPERATORS(Enum)                                                   \
-    constexpr Enum operator&(Enum left, Enum right)                                         \
-    {                                                                                       \
-        return static_cast<Enum>(std::to_underlying(left) & std::to_underlying(right));     \
-    }                                                                                       \
-    constexpr Enum operator|(Enum left, Enum right)                                         \
-    {                                                                                       \
-        return static_cast<Enum>(std::to_underlying(left) | std::to_underlying(right));     \
-    }                                                                                       \
-    constexpr Enum& operator|=(Enum& left, Enum right) { return left = left | right; }      \
-    constexpr Enum& operator&=(Enum& left, Enum right) { return left = left & right; }      \
-    constexpr Enum operator~(Enum value)                                                    \
-    {                                                                                       \
-        return static_cast<Enum>(~std::to_underlying(value));                               \
-    }                                                                                       \
-    constexpr bool is_set(Enum value, Enum mask) { return (value & mask) != Enum{}; }       \
-    constexpr void flip_bit(Enum& value, Enum mask)                                         \
-    {                                                                                       \
-        value = is_set(value, mask) ? (value & ~mask) : (value | mask);                     \
-    }
+#define RL_ENUM_CLASS_OPERATORS(Enum)                                                                                  \
+    constexpr Enum operator&(Enum left, Enum right)                                                                    \
+    {                                                                                                                  \
+        return static_cast<Enum>(std::to_underlying(left) & std::to_underlying(right));                                \
+    }                                                                                                                  \
+    constexpr Enum operator|(Enum left, Enum right)                                                                    \
+    {                                                                                                                  \
+        return static_cast<Enum>(std::to_underlying(left) | std::to_underlying(right));                                \
+    }                                                                                                                  \
+    constexpr Enum& operator|=(Enum& left, Enum right) { return left = left | right; }                                 \
+    constexpr Enum& operator&=(Enum& left, Enum right) { return left = left & right; }                                 \
+    constexpr Enum  operator~(Enum value) { return static_cast<Enum>(~std::to_underlying(value)); }                    \
+    constexpr bool  is_set(Enum value, Enum mask) { return (value & mask) != Enum{}; }                                 \
+    constexpr void  flip_bit(Enum& value, Enum mask) { value = is_set(value, mask) ? (value & ~mask) : (value | mask); }

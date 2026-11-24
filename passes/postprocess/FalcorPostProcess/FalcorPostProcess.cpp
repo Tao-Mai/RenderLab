@@ -29,11 +29,9 @@
 #include "passes/postprocess/FalcorPostProcess/FalcorPostProcess.h"
 
 #include "core/Logger.h"
-#include "core/profiling/Profiler.h"
 
 #include <slang-rhi.h>
 #include <slang-rhi/shader-cursor.h>
-#include "core/Context.h"
 #include "render/DispatchGroups.h"
 #include "render/RenderContext.h"
 #include "render/device/RhiCheck.h"
@@ -122,7 +120,7 @@ static_assert(offsetof(ToneMapperParameters, whiteScale) == 48);
 static_assert(offsetof(ToneMapperParameters, clampOutput) == 64);
 }  // namespace
 
-void FalcorPostProcess::initialize(const Falcor::RenderContext& context)
+void FalcorPostProcess::initialize(const RenderContext& context)
 {
     shaders      = context.shaderManager;
     auto& device = *context.device;
@@ -131,7 +129,7 @@ void FalcorPostProcess::initialize(const Falcor::RenderContext& context)
     {
         const auto shader = context.shaderManager->getOrLoad(
             "falcor_simple_post_fx",
-            {{"FALCOR_POST_FX_STAGE", std::to_string(int(variant))}}
+            {{"POST_FX_STAGE", std::to_string(int(variant))}}
         );
         rhi::ComPtr<rhi::IComputePipeline> pipeline;
         rhiCheck(
@@ -154,18 +152,18 @@ void FalcorPostProcess::initialize(const Falcor::RenderContext& context)
 }
 
 
-FalcorPostProcess::FalcorPostProcess(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
-    Falcor::RenderPass(std::move(device)),
-    parameters(Falcor::deserializeFromProperties<FalcorPostProcessConfig>(properties))
+FalcorPostProcess::FalcorPostProcess(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+    RenderPass(std::move(device)),
+    parameters(deserializeFromProperties<FalcorPostProcessConfig>(properties))
 {
     parameters.validate();
 }
 
 
-Falcor::Properties FalcorPostProcess::getProperties() const { return Falcor::serializeToProperties(parameters); }
+Properties FalcorPostProcess::getProperties() const { return serializeToProperties(parameters); }
 
 
-void FalcorPostProcess::setProperties(const Falcor::Properties& properties)
+void FalcorPostProcess::setProperties(const Properties& properties)
 {
     FalcorPostProcessConfig next;
     Deserialize(nlohmann::json(properties.toJson()), next);
@@ -179,13 +177,13 @@ void FalcorPostProcess::setProperties(const Falcor::Properties& properties)
 }
 
 
-Falcor::RenderPassReflection FalcorPostProcess::reflect(const CompileData& data)
+RenderPassReflection FalcorPostProcess::reflect(const CompileData& data)
 {
-    Falcor::RenderPassReflection reflection;
-    reflection.addInput("source", "Source color").bindFlags(Falcor::ResourceBindFlags::ShaderResource);
+    RenderPassReflection reflection;
+    reflection.addInput("source", "Source color").bindFlags(ResourceBindFlags::ShaderResource);
     reflection.addOutput("color", "Post-processed output color")
         .format(data.defaultTexFormat)
-        .bindFlags(Falcor::ResourceBindFlags::RenderTarget);
+        .bindFlags(ResourceBindFlags::RenderTarget);
 
     auto extent = data.defaultTexDims;
     if (const auto* input = data.connectedResources.getField("source"))
@@ -195,8 +193,8 @@ Falcor::RenderPassReflection FalcorPostProcess::reflect(const CompileData& data)
     }
 
     constexpr auto kStorageSampled =
-        Falcor::ResourceBindFlags::UnorderedAccess | Falcor::ResourceBindFlags::ShaderResource;
-    constexpr auto kColorSampled = Falcor::ResourceBindFlags::RenderTarget | Falcor::ResourceBindFlags::ShaderResource;
+        ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource;
+    constexpr auto kColorSampled = ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource;
     if (parameters.simplePostFx.usesBloom())
     {
         for (uint32_t level = 0; level <= falcorPostProcess::kBloomLevels; ++level)
@@ -229,7 +227,7 @@ Falcor::RenderPassReflection FalcorPostProcess::reflect(const CompileData& data)
 }
 
 
-void FalcorPostProcess::compile(Falcor::RenderContext* passContext, const CompileData& compileData)
+void FalcorPostProcess::compile(RenderContext* passContext, const CompileData& compileData)
 {
     imageStages.clear();
     if (!downsample)
@@ -246,7 +244,7 @@ void FalcorPostProcess::compile(Falcor::RenderContext* passContext, const Compil
 }
 
 
-void FalcorPostProcess::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
+void FalcorPostProcess::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
     auto&      cache    = *renderCommands->gpuResources;
     auto&      commands = *renderCommands->commands;
@@ -267,7 +265,7 @@ void FalcorPostProcess::execute(Falcor::RenderContext* renderCommands, const Fal
 
 
 GpuResources::ImageHandle FalcorPostProcess::addSimplePostFx(
-    GpuResources& cache, const Falcor::RenderData& data, GpuResources::ImageHandle source
+    GpuResources& cache, const RenderData& data, GpuResources::ImageHandle source
 )
 {
     auto bloomed = source;
@@ -292,7 +290,7 @@ GpuResources::ImageHandle FalcorPostProcess::addSimplePostFx(
 
 
 GpuResources::ImageHandle FalcorPostProcess::addToneMapper(
-    ShaderManager& shaders, GpuResources& cache, const Falcor::RenderData& data, GpuResources::ImageHandle source
+    ShaderManager& shaders, GpuResources& cache, const RenderData& data, GpuResources::ImageHandle source
 )
 {
     constexpr char kLuminanceStage[]    = "0";
@@ -301,13 +299,13 @@ GpuResources::ImageHandle FalcorPostProcess::addToneMapper(
     auto           luminance            = source;
     if (parameters.toneMapper.autoExposure)
     {
-        const auto shader = shaders.getOrLoad("falcor_luminance", {{"FALCOR_LUMINANCE_STAGE", kLuminanceStage}});
+        const auto shader = shaders.getOrLoad("falcor_luminance", {{"LUMINANCE_STAGE", kLuminanceStage}});
         const auto target = cache.registerImage(data.getTexture(luminanceImageName(0)));
         luminance         = addImageStage(cache, {*this, Stage::Luminance, shader}, source, source, target);
 
         // Separate images retain the exact size, R32F quantization and linear filtering of each Falcor mip.
         const auto levels    = static_cast<uint32_t>(std::bit_width(std::max(extent.width, extent.height)));
-        const auto mipShader = shaders.getOrLoad("falcor_luminance", {{"FALCOR_LUMINANCE_STAGE", kLuminanceMipStage}});
+        const auto mipShader = shaders.getOrLoad("falcor_luminance", {{"LUMINANCE_STAGE", kLuminanceMipStage}});
         for (uint32_t level = 1; level < levels; ++level)
         {
             const auto mip = cache.registerImage(data.getTexture(luminanceImageName(level)));
@@ -524,6 +522,5 @@ void FalcorPostProcess::ImageStage::execute(
         };
     }
     pass->draw({3});
-    recordDraw(context().profiler, 3);
     pass->end();
 }

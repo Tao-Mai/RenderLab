@@ -7,8 +7,6 @@
 #include <unordered_map>
 #include <utility>
 
-namespace Falcor
-{
 class Dictionary
 {
 public:
@@ -72,4 +70,3 @@ public:
 private:
     Container mContainer;
 };
-}  // namespace Falcor

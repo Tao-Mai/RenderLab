@@ -566,7 +566,6 @@ PbrtSceneAsset::ID AssetImporter::importPbrtScene(const ImportPbrtSceneSetting& 
     );
     SceneAsset scene;
     scene.id           = asset_import::nextId<SceneAsset>(id.value);
-    scene.renderMode   = SceneRenderMode::Offline;
     scene.editorCamera = importCamera(result.scene);
     result.scene.scene = scene.id;
 
@@ -576,6 +575,6 @@ PbrtSceneAsset::ID AssetImporter::importPbrtScene(const ImportPbrtSceneSetting& 
     session.save();
     const auto sceneId = scene.id;
     context().assetManager->save(std::move(scene));
-    LOG_INFO("Imported PBRT scene '{}' as offline scene '{}'", id, sceneId);
+    LOG_INFO("Imported PBRT scene '{}' as '{}'", id, sceneId);
     return id;
 }

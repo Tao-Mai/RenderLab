@@ -2,7 +2,7 @@
 #define RENDERLAB_MESH_SURFACE_SLANG
 
 #include "raster/mesh_vertex.slang"
-#include "material/material_evaluation.slang"
+#include "material/scattering.slang"
 #include "material/surface.slang"
 #include "material/normal_mapping.slang"
 
@@ -39,8 +39,19 @@ Surface sampleSurface(VertexOutput input, bool isFrontFace)
 {
     MaterialData material = materials[pushConstants.materialIndex];
     float3 geometricNormal = normalize(input.worldNormal);
-    Surface surface;
+    Surface surface = {};
     surface.worldPosition = input.worldPosition;
+    if (material.kind == MaterialKind::Pbrt)
+    {
+        surface.normal = isFrontFace ? geometricNormal : -geometricNormal;
+        surface.brdf = evaluateScattering(material, input.uv, input.worldPosition, surface.normal, 0).rasterBrdf();
+        surface.opacity = 1.0;
+        surface.occlusion = 1.0;
+#if ENABLE_CLEARCOAT
+        surface.clearcoatNormal = surface.normal;
+#endif
+        return surface;
+    }
     surface.normal = applyNormalMap(geometricNormal, input.worldTangent,
         sampleTexture(material.normalTexture, input.uv).xyz, material.normalScale, material.normalEncoding);
     surface.normal = isFrontFace ? surface.normal : -surface.normal;

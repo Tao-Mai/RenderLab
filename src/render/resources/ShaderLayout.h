@@ -15,6 +15,7 @@ class ShaderLayout
 {
 public:
     explicit ShaderLayout(const std::filesystem::path& reflection);
+    explicit ShaderLayout(slang::ProgramLayout& reflection);
     [[nodiscard]] ShaderStorageImage storageImage(std::string_view name) const;
     template <class T>
     void validateConstants(std::string_view name) const

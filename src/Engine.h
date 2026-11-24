@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/Context.h"
-#include "core/profiling/Profiler.h"
 #include "platform/InputMethod.h"
 #include "scene/system/RenderSystem.h"
 
@@ -23,7 +22,6 @@ public:
 private:
     InputMethod                       inputMethod;
     RenderSystem                      renderSystem;
-    Profiler                          profiler;
     std::unique_ptr<ConfigManager>    config;
     std::unique_ptr<Window>           window;
     std::unique_ptr<InputManager>     inputManager;

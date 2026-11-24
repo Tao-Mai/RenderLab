@@ -8,13 +8,13 @@
 #include "core/Logger.h"
 #include "core/Plugin.h"
 #include "core/Window.h"
+#include "core/time/Timer.h"
 #include "editor/Editor.h"
 #include "editor/EditorCamera.h"
 #include "render/RenderContext.h"
 #include "render/Renderer.h"
 #include "scene/SceneManager.h"
 
-#include <cstdlib>
 #include <tuple>
 #include <utility>
 
@@ -57,20 +57,16 @@ void Engine::init()
         .sceneManager     = sceneManager.get(),
         .renderer         = renderer.get(),
         .editor           = editor.get(),
-        .profiler         = &profiler,
     };
 
     ctx.config->init();
-    if (const char* profileLog = std::getenv("RENDERLAB_PROFILE_LOG"))
-        profiler.startLogging(profileLog);
     ctx.assetDataManager->init(ctx.config->paths().assets);
     ctx.window->init();
     ctx.inputManager->init();
     ctx.sceneManager->init();
     ctx.assetManager->init(ctx.config->paths().assets);
     ctx.sceneManager->loadDefaultScene();
-    ctx.config->setSceneRenderMode(ctx.sceneManager->scene().renderMode);
-    Falcor::PluginManager::instance().loadAllPlugins();
+    PluginManager::instance().loadAllPlugins();
     inputMethod.activateEnglish();
     ctx.renderer->init();
     ctx.editor->init();
@@ -107,7 +103,6 @@ void Engine::mainLoop()
         }
 
         const float deltaTime = static_cast<float>(deltaTimer.restartMilliseconds() / 1000.0);
-        profiler.beginFrame();
 
         const auto currentExtent =
             Extent2D{ctx.renderer->getSurface()->getConfig()->width, ctx.renderer->getSurface()->getConfig()->height};
@@ -119,40 +114,22 @@ void Engine::mainLoop()
             swapchainNeedsRebuild = false;
         }
 
-        {
-            CpuProfileScope timing{&profiler, "Scene actions"};
-            ctx.editor->applySceneActions();
-            ctx.config->setSceneRenderMode(ctx.sceneManager->scene().renderMode);
-        }
+        ctx.editor->applySceneActions();
+
         auto& camera = ctx.editor->camera();
-        {
-            CpuProfileScope timing{&profiler, "Editor tick"};
-            ctx.editor->tick(deltaTime);
-        }
-        {
-            CpuProfileScope timing{&profiler, "Scene tick"};
-            ctx.inputManager->setNavigation({
-                .forward = camera.forward(),
-                .right   = camera.right(),
-                .up      = camera.up(),
-                .active  = camera.isNavigationActive(),
-            });
-            ctx.sceneManager->tick(deltaTime);
-        }
+        ctx.editor->tick(deltaTime);
+        ctx.inputManager->setNavigation({
+            .forward = camera.forward(),
+            .right   = camera.right(),
+            .up      = camera.up(),
+            .active  = camera.isNavigationActive(),
+        });
+        ctx.sceneManager->tick(deltaTime);
 
-        const auto extent =
-            Extent2D{ctx.renderer->getSurface()->getConfig()->width, ctx.renderer->getSurface()->getConfig()->height};
-        const auto editorFrame = [&]
-        {
-            CpuProfileScope timing{&profiler, "Editor UI"};
-            return ctx.editor->buildFrame(camera, deltaTime, extent.width, extent.height);
-        }();
-
-        const auto& renderData   = renderSystem.prepare(ctx.sceneManager->scene());
-        const auto  editorResult = ctx.renderer->render(editorFrame.view, renderData, editorFrame.input, deltaTime);
-        swapchainNeedsRebuild    = editorResult.swapchainNeedsRebuild;
-        ctx.editor->applyPickResult(editorResult);
-        profiler.endFrame(deltaTime * 1000.0);
+        const auto  editorFrame = ctx.editor->buildFrame(camera);
+        const auto& renderData  = renderSystem.prepare(ctx.sceneManager->scene(), ctx.sceneManager->sceneGeneration());
+        const auto  result      = ctx.renderer->render(editorFrame.view, renderData, editorFrame.input, deltaTime);
+        swapchainNeedsRebuild   = result == RenderFrameResult::SwapchainNeedsRebuild;
     }
 }
 
@@ -179,6 +156,4 @@ void Engine::shutdown() noexcept
 
     shutdownSubsystem(window, ctx.window);
     shutdownSubsystem(config, ctx.config);
-    ctx.profiler = nullptr;
-    profiler.reset();
 }

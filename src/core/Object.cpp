@@ -2,8 +2,6 @@
 
 #include "core/Logger.h"
 
-namespace Falcor
-{
 void Object::incRef() const { mRefCount.fetch_add(1, std::memory_order_relaxed); }
 
 void Object::decRef(bool dealloc) const noexcept
@@ -17,4 +15,3 @@ void Object::decRef(bool dealloc) const noexcept
         delete this;
     }
 }
-}  // namespace Falcor

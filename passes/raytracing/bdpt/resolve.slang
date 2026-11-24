@@ -1,5 +1,5 @@
 #include "bdpt_parameters.slang"
-#include "raytracing/offline/path_resolve.slang"
+#include "raytracing/accumulation/path_resolve.slang"
 
 StructuredBuffer<uint4> splats;
 

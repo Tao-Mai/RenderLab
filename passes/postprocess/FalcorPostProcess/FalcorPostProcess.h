@@ -11,25 +11,25 @@
 #include <vector>
 
 // Connects Falcor's SimplePostFX and ToneMapper, followed by swapchain presentation.
-class FalcorPostProcess : public Falcor::RenderPass
+class FalcorPostProcess : public RenderPass
 {
-    FALCOR_PLUGIN_CLASS(FalcorPostProcess, "FalcorPostProcess", "Applies Falcor tone mapping and post effects.");
+    RL_PLUGIN_CLASS(FalcorPostProcess, "FalcorPostProcess", "Applies Falcor tone mapping and post effects.");
 
-    FalcorPostProcess(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties);
+    FalcorPostProcess(rhi::ComPtr<rhi::IDevice> device, const Properties& properties);
 
-    [[nodiscard]] Falcor::Properties getProperties() const override;
-    void                             setProperties(const Falcor::Properties& properties) override;
+    [[nodiscard]] Properties getProperties() const override;
+    void                             setProperties(const Properties& properties) override;
 
-    static Falcor::ref<FalcorPostProcess> create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
+    static ref<FalcorPostProcess> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
     {
-        return Falcor::make_ref<FalcorPostProcess>(std::move(device), properties);
+        return make_ref<FalcorPostProcess>(std::move(device), properties);
     }
 
-    void renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget) override;
+    void renderUI(RenderContext* context, Gui::Widgets& widget) override;
 
-    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData& compileData) override;
-    void compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
-    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
+    [[nodiscard]] RenderPassReflection reflect(const CompileData& compileData) override;
+    void compile(RenderContext* passContext, const CompileData& compileData) override;
+    void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
 private:
     FalcorPostProcessConfig parameters;
@@ -82,11 +82,11 @@ private:
         rhi::ComPtr<rhi::IRenderPipeline> pipeline;
     };
 
-    void initialize(const Falcor::RenderContext& context);
+    void initialize(const RenderContext& context);
     GpuResources::ImageHandle
-    addSimplePostFx(GpuResources& cache, const Falcor::RenderData& data, GpuResources::ImageHandle source);
+    addSimplePostFx(GpuResources& cache, const RenderData& data, GpuResources::ImageHandle source);
     GpuResources::ImageHandle addToneMapper(
-        ShaderManager& shaders, GpuResources& cache, const Falcor::RenderData& data, GpuResources::ImageHandle source
+        ShaderManager& shaders, GpuResources& cache, const RenderData& data, GpuResources::ImageHandle source
     );
     GpuResources::ImageHandle addImageStage(
         GpuResources&             cache,

@@ -19,8 +19,6 @@
 #define RENDERLAB_PLUGIN_EXPORT __attribute__((visibility("default")))
 #endif
 
-namespace Falcor
-{
 class PluginRegistry;
 
 class PluginManager
@@ -158,9 +156,8 @@ private:
 
     friend class PluginManager;
 };
-}  // namespace Falcor
 
-#define FALCOR_PLUGIN_BASE_CLASS(cls)                                      \
+#define RL_PLUGIN_BASE_CLASS(cls)                                      \
 public:                                                                    \
     static_assert(std::is_class_v<cls>);                                    \
     static_assert(std::is_class_v<cls::PluginInfo>);                        \
@@ -172,7 +169,7 @@ public:                                                                    \
     virtual const std::string& getPluginType() const = 0;                   \
     virtual const PluginInfo& getPluginInfo() const = 0;
 
-#define FALCOR_PLUGIN_CLASS(cls, type, info)                                  \
+#define RL_PLUGIN_CLASS(cls, type, info)                                  \
 public:                                                                       \
     static_assert(std::is_class_v<cls>);                                        \
     static inline const std::string kPluginType{type};                         \

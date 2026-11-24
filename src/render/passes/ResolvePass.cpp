@@ -4,8 +4,6 @@
 
 #include <utility>
 
-namespace Falcor
-{
 namespace
 {
     const std::string kSrc = "src";
@@ -46,4 +44,3 @@ void ResolvePass::execute(RenderContext* context, const RenderData& renderData)
         pass->end();
     }
 }
-}  // namespace Falcor

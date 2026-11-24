@@ -11,10 +11,9 @@
 #include "render/PreparedScene.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
-#include "render/graph/RenderPassStandardFlags.h"
-#include "render/raytracing/offline/OfflinePathTracing.h"
-#include "render/raytracing/offline/OfflineScene.h"
-#include "render/raytracing/offline/OfflineTracePipelineCache.h"
+#include "render/raytracing/PathAccumulation.h"
+#include "render/resources/SceneShading.h"
+#include "render/raytracing/PathPipelineCache.h"
 
 #ifdef RENDERLAB_TEST_PATH_TRACING_STATS
 #include "test/PathTracingStats.h"
@@ -45,14 +44,14 @@ constexpr float    kSceneBoundsPadding = 1.001f;
 
 struct alignas(16) BdptParameters
 {
-    OfflinePathParameters path;
+    AccumulationParameters path;
     glm::vec4             sceneSphere;
     glm::vec4             camera;
     glm::uvec2            tileOffset;
     float                 lightSamples;
     uint32_t              flags;
 };
-static_assert(sizeof(BdptParameters) == 112);
+static_assert(sizeof(BdptParameters) == 80);
 
 struct LightDistributionEntry
 {
@@ -63,22 +62,23 @@ struct LightDistributionEntry
 };
 static_assert(sizeof(LightDistributionEntry) == 16);
 
-class BDPT : public Falcor::RenderPass
+class BDPT : public RenderPass
 {
-    FALCOR_PLUGIN_CLASS(BDPT, "BDPT", "Bidirectional path tracer.");
+    RL_PLUGIN_CLASS(BDPT, "BDPT", "Bidirectional path tracer.");
 
-    BDPT(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties) :
-        Falcor::RenderPass(std::move(device)), parameters(Falcor::deserializeFromProperties<BdptSettings>(properties))
+    BDPT(rhi::ComPtr<rhi::IDevice> device, const Properties& properties) :
+        RenderPass(std::move(device), SceneInputs::RayTracing, 1),
+        parameters(deserializeFromProperties<BdptSettings>(properties))
     {
         parameters.validate();
     }
 
-    [[nodiscard]] Falcor::Properties getProperties() const override
+    [[nodiscard]] Properties getProperties() const override
     {
-        return Falcor::serializeToProperties(parameters);
+        return serializeToProperties(parameters);
     }
 
-    void setProperties(const Falcor::Properties& properties) override
+    void setProperties(const Properties& properties) override
     {
         BdptSettings next;
         Deserialize(nlohmann::json(properties.toJson()), next);
@@ -86,24 +86,24 @@ class BDPT : public Falcor::RenderPass
         parameters = std::move(next);
     }
 
-    static Falcor::ref<BDPT> create(rhi::ComPtr<rhi::IDevice> device, const Falcor::Properties& properties)
+    static ref<BDPT> create(rhi::ComPtr<rhi::IDevice> device, const Properties& properties)
     {
-        return Falcor::make_ref<BDPT>(std::move(device), properties);
+        return make_ref<BDPT>(std::move(device), properties);
     }
 
-    void renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget) override;
+    void renderUI(RenderContext* context, Gui::Widgets& widget) override;
 
-    [[nodiscard]] Falcor::RenderPassReflection reflect(const CompileData&) override
+    [[nodiscard]] RenderPassReflection reflect(const CompileData&) override
     {
-        Falcor::RenderPassReflection reflection;
+        RenderPassReflection reflection;
         reflection.addOutput(kOutputColor, "Path traced radiance")
             .format(rhi::Format::RGBA16Float)
-            .bindFlags(Falcor::ResourceBindFlags::UnorderedAccess);
+            .bindFlags(ResourceBindFlags::UnorderedAccess);
         return reflection;
     }
 
-    void compile(Falcor::RenderContext* passContext, const CompileData& compileData) override;
-    void execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData) override;
+    void compile(RenderContext* passContext, const CompileData& compileData) override;
+    void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
     [[nodiscard]] float sampleProgress() const { return accumulatedProgress; }
     [[nodiscard]] bool  preparingPipeline() const { return pipeline == nullptr; }
@@ -111,15 +111,16 @@ class BDPT : public Falcor::RenderPass
 private:
     BdptSettings parameters;
 
-    OfflinePathTracing tracer;
+    PathAccumulation tracer;
     bool               lightDistributionReady = false;
-    void updateScene(GpuResources& cache, const Falcor::RenderContext& execution, const Falcor::RenderData& renderData);
+    void updateScene(GpuResources& cache, const RenderContext& execution, const RenderData& renderData);
     rhi::ComPtr<rhi::IBuffer>  splatBuffer;
     rhi::ComPtr<rhi::IBuffer>  lightDistributionBuffer;
     GpuResources::BufferHandle splats;
     GpuResources::BufferHandle lightDistribution;
 
-    const OfflineTracePipelineCache::Result* pipeline    = nullptr;
+    const PathTracingProgram* pipeline    = nullptr;
+    PathEnvironment                            shaderEnvironment = PathEnvironment::None;
     uint32_t                                 shaderDepth = 0;
     glm::vec4                                sceneSphere{};
     BdptSettings                             previousSettings;
@@ -127,15 +128,17 @@ private:
     uint32_t                                 tileIndex           = 0;
     uint64_t                                 processedPixels     = 0;
 
-    void selectPipeline(const Falcor::RenderContext& context);
+    void selectPipeline(const RenderContext& context);
     void resetAccumulation();
-    void prepareLightDistribution(GpuResources& cache, const Falcor::RenderContext& execution);
+    void prepareLightDistribution(GpuResources& cache, const RenderContext& execution);
 };
 
-glm::vec4 computeSceneSphere(const Falcor::RenderContext& execution)
+glm::vec4 computeSceneSphere(const RenderContext& execution)
 {
     const auto& items = execution.scene->drawItems;
-    if (items.empty())
+    const auto& shading = *execution.scene->shading;
+    const auto rectangles = std::span{shading.lightTriangles}.subspan(shading.firstRectTriangle);
+    if (items.empty() && rectangles.empty())
         return {glm::vec3{execution.view->uniforms.cameraPosition}, kMinimumSceneRadius};
 
     auto minimum = glm::vec3{std::numeric_limits<float>::max()};
@@ -145,6 +148,14 @@ glm::vec4 computeSceneSphere(const Falcor::RenderContext& execution)
         const auto bounds = context().assetManager->get(item.mesh).bounds.transformed(item.model);
         minimum           = glm::min(minimum, bounds.min);
         maximum           = glm::max(maximum, bounds.max);
+    }
+    for (const auto& triangle : rectangles)
+    {
+        for (const auto vertex : {glm::vec3{triangle.p0Area}, glm::vec3{triangle.p1}, glm::vec3{triangle.p2}})
+        {
+            minimum = glm::min(minimum, vertex);
+            maximum = glm::max(maximum, vertex);
+        }
     }
     const auto center = (minimum + maximum) * 0.5f;
     return {center, std::max(glm::length(maximum - center) * kSceneBoundsPadding, kMinimumSceneRadius)};
@@ -165,7 +176,7 @@ glm::vec4 cameraSampling(const RenderView& view)
 }
 
 
-void BDPT::compile(Falcor::RenderContext* passContext, const CompileData& compileData)
+void BDPT::compile(RenderContext* passContext, const CompileData& compileData)
 {
     auto&      cache  = *passContext->gpuResources;
     const auto extent = compileData.defaultTexDims;
@@ -183,26 +194,33 @@ void BDPT::compile(Falcor::RenderContext* passContext, const CompileData& compil
     lightDistribution = cache.registerBuffer(lightDistributionBuffer);
     tracer.setLightTracingBuffers(splats, lightDistribution);
     lightDistributionReady = false;
-    selectPipeline(*passContext);
+    pipeline = nullptr;
     resetAccumulation();
 }
 
 
-void BDPT::selectPipeline(const Falcor::RenderContext& context)
+void BDPT::selectPipeline(const RenderContext& context)
 {
     const auto depth = std::bit_ceil(std::max(kMinShaderDepth, parameters.maxBounces));
-    if (depth != shaderDepth)
+    const auto environment = pathEnvironment(*context.scene);
+    if (depth != shaderDepth || environment != shaderEnvironment)
     {
         shaderDepth = depth;
+        shaderEnvironment = environment;
         pipeline    = nullptr;
     }
     if (!pipeline)
-        pipeline = context.offlinePipelines->get(
+    {
+        auto& shaders = *context.shaderManager;
+        auto defines = pathEnvironmentDefines(environment);
+        defines["BDPT_MAX_DEPTH"] = std::to_string(shaderDepth);
+        pipeline = context.pathPipelines->get(
             *mpDevice,
-            *context.shaderManager,
-            context.shaderManager->getOrLoad("bdpt", {{"BDPT_MAX_DEPTH", std::to_string(shaderDepth)}}),
+            shaders,
+            shaders.getOrCompile("bdpt", defines),
             true
         );
+    }
 }
 
 
@@ -216,18 +234,12 @@ void BDPT::resetAccumulation()
 
 
 void BDPT::updateScene(
-    GpuResources& cache, const Falcor::RenderContext& execution, const Falcor::RenderData& renderData
+    GpuResources& cache, const RenderContext& execution, const RenderData& renderData
 )
 {
-    const bool sceneChanged = tracer.prepareScene(cache, execution, renderData.getTexture(kOutputColor));
+    const bool sceneChanged = tracer.updateFrame(execution, renderData.getTexture(kOutputColor));
     selectPipeline(execution);
     const bool optionsChanged = parameters != previousSettings;
-    if (optionsChanged)
-    {
-        auto&      dictionary = renderData.getDictionary();
-        const auto flags = dictionary.getValue(Falcor::kRenderPassRefreshFlags, Falcor::RenderPassRefreshFlags::None);
-        dictionary[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
-    }
     if (sceneChanged || optionsChanged)
         resetAccumulation();
 
@@ -243,7 +255,7 @@ void BDPT::updateScene(
 }
 
 
-void BDPT::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderData& renderData)
+void BDPT::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
     auto&       cache     = *renderCommands->gpuResources;
     auto&       commands  = *renderCommands->commands;
@@ -315,21 +327,21 @@ void BDPT::execute(Falcor::RenderContext* renderCommands, const Falcor::RenderDa
 
 #ifdef RENDERLAB_TEST_PATH_TRACING_STATS
     renderData.getDictionary()[path_tracing_test::statsKey(getName())] =
-        path_tracing_test::OfflineProgress{tracer.sampleCount(), sampleProgress(), preparingPipeline()};
+        path_tracing_test::AccumulationProgress{tracer.sampleCount(), sampleProgress(), preparingPipeline()};
 #endif
 }
 
 
-void BDPT::prepareLightDistribution(GpuResources& cache, const Falcor::RenderContext& execution)
+void BDPT::prepareLightDistribution(GpuResources& cache, const RenderContext& execution)
 {
-    const auto&      scene    = *execution.scene->offlineScene;
+    const auto&      scene    = *execution.scene->shading;
     const bool       power    = parameters.lightSelection == BdptLightSelection::Power;
     constexpr double kPi      = 3.14159265358979323846;
     const double     diskArea = kPi * double(sceneSphere.w) * sceneSphere.w;
 
-    const auto intensity = [](const OfflineLightEmission& emission)
+    const auto intensity = [](const GpuLightEmission& emission)
     {
-        const double value = (emission.resources.w & kOfflineLightHasImage) != 0
+        const double value = (emission.resources.w & (kLightHasImage | kLightMultiplyColor)) == kLightHasImage
             ? 1.0
             : std::max({emission.colorScale.r, emission.colorScale.g, emission.colorScale.b});
         return std::max(0.0, value * emission.colorScale.w);
@@ -337,20 +349,31 @@ void BDPT::prepareLightDistribution(GpuResources& cache, const Falcor::RenderCon
 
     std::vector<double> weights;
     const auto          append = [&](double weight) { weights.push_back(power ? weight : 1.0); };
-    for (const auto& light : scene.pointLights)
-        append(4.0 * kPi * intensity(light.emission));
-    for (const auto& light : scene.spotLights)
+    const auto maxChannel = [](glm::vec3 color) { return std::max({color.r, color.g, color.b}); };
+    const auto& ranges = scene.lightRanges;
+    for (uint32_t index = ranges.directionalEnd; index < ranges.pointEnd; ++index)
+        append(4.0 * kPi * maxChannel(scene.lights[index].color));
+    for (uint32_t index = ranges.rectAreaEnd; index < ranges.spotEnd; ++index)
+    {
+        const auto& light = scene.lights[index];
+        const auto cosInner = light.areaSizeCone.z;
+        const auto cosOuter = light.areaSizeCone.w;
         append(
-            2.0 * kPi * ((1.0 - light.cosInner) + (light.cosInner - light.cosOuter) / 5.0) * intensity(light.emission)
+            2.0 * kPi * ((1.0 - cosInner) + (cosInner - cosOuter) / (light.spotFalloffExponent + 1.0)) *
+            maxChannel(light.color)
         );
-    for (const auto& light : scene.directionalLights)
-        append(diskArea * intensity(light.emission));
+    }
+    for (uint32_t index = 0; index < ranges.directionalEnd; ++index)
+        append(diskArea * maxChannel(scene.lights[index].color));
     for (const auto& light : scene.lightTriangles)
         append(
             light.p0Area.w * kPi * (light.twoSided ? 2.0 : 1.0) * intensity(scene.areaEmissions[light.emissionIndex])
         );
-    if (scene.hasEnvironmentLight)
-        append(4.0 * kPi * diskArea * intensity(scene.environmentLight.emission));
+    if (pathEnvironment(*execution.scene) != PathEnvironment::None)
+    {
+        const auto cubeWeight = execution.scene->environmentMap ? 1.0 : 0.0;
+        append(4.0 * kPi * diskArea * (cubeWeight + intensity(scene.environmentLight.emission)));
+    }
 
     double sum = 0;
     for (const auto weight : weights)
@@ -399,7 +422,7 @@ void BDPT::prepareLightDistribution(GpuResources& cache, const Falcor::RenderCon
 }
 
 
-bool drawSettings(Falcor::Gui::Widgets& widgets, BdptSettings& settings, const BDPT& pass, const PassEditorContext&)
+bool drawSettings(Gui::Widgets& widgets, BdptSettings& settings, const BDPT& pass, const PassEditorContext&)
 {
     widgets.text(std::format("Samples per pixel: {:.2f}", pass.sampleProgress()));
     if (pass.preparingPipeline())
@@ -416,12 +439,12 @@ bool drawSettings(Falcor::Gui::Widgets& widgets, BdptSettings& settings, const B
 }  // namespace
 
 
-void BDPT::renderUI(Falcor::RenderContext* context, Falcor::Gui::Widgets& widget)
+void BDPT::renderUI(RenderContext* context, Gui::Widgets& widget)
 {
     drawPassEditor<drawSettings>(widget, *this, parameters, context->passEditor, "BDPT");
 }
 
-extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
+extern "C" RENDERLAB_PLUGIN_EXPORT void registerPlugin(PluginRegistry& registry)
 {
-    registry.registerClass<Falcor::RenderPass, BDPT>();
+    registry.registerClass<RenderPass, BDPT>();
 }

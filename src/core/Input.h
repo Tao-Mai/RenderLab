@@ -1,9 +1,6 @@
 #pragma once
 
 #include "core/MetadataAnnotations.h"
-#include "core/math/Vector.h"
-
-#include <cstdint>
 
 enum class RL_ENUM Key : int
 {
@@ -180,52 +177,6 @@ constexpr Modifier& operator|=(Modifier& left, Modifier right)
 {
     return left = left | right;
 }
-
-enum class MouseButton
-{
-    Left,
-    Middle,
-    Right,
-};
-
-namespace Falcor
-{
-struct MouseEvent
-{
-    enum class Type
-    {
-        ButtonDown,
-        ButtonUp,
-        Move,
-        Wheel,
-    };
-
-    Type type;
-    float2 pos;
-    float2 screenPos;
-    float2 wheelDelta;
-    Modifier mods = Modifier::None;
-    MouseButton button = MouseButton::Left;
-};
-
-struct KeyboardEvent
-{
-    enum class Type
-    {
-        KeyPressed,
-        KeyReleased,
-        KeyRepeated,
-        Input,
-    };
-
-    Type type;
-    Key key = Key::Unknown;
-    Modifier mods = Modifier::None;
-    uint32_t codepoint = 0;
-
-    [[nodiscard]] bool hasModifier(Modifier mod) const { return (mods & mod) != Modifier::None; }
-};
-}  // namespace Falcor
 
 // Commands are shared by all consumers; get() does not consume them.
 enum class RL_ENUM Command

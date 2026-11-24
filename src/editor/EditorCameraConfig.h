@@ -2,10 +2,7 @@
 
 #include "core/MetadataAnnotations.h"
 
-#include "render/ExposureConfig.h"
-
 #include <glm/vec3.hpp>
-#include <optional>
 
 struct RL_RECORD EditorCameraConfig
 {
@@ -20,8 +17,6 @@ struct RL_RECORD EditorCameraConfig
     RL_FIELD("mouseSensitivity") float     mouseSensitivity = 0.12f;
     RL_FIELD("speed") float     speed            = 3.0f;
     RL_FIELD("sprintMultiplier") float     sprintMultiplier = 3.0f;
-
-    RL_FIELD("exposure") std::optional<ExposureConfig> exposure;
 };
 
 #include RL_METADATA_HEADER("metadata/src/editor/EditorCameraConfig.generated.h")
