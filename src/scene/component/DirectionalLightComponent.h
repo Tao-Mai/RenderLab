@@ -10,5 +10,3 @@ struct RL_REGISTER_TYPE(Component, "DirectionalLightComponent") DirectionalLight
 
     RL_FIELD("illuminance") float illuminance = 8.0f; // lux at perpendicular incidence.
 };
-
-#include RL_METADATA_HEADER("metadata/src/scene/component/DirectionalLightComponent.generated.h")

@@ -13,11 +13,24 @@ uint randomUint(inout uint state)
     return (word >> 22u) ^ word;
 }
 
-// Use the upper 24 bits so float rounding cannot produce 1.0.
-float randomFloat(inout uint state)
+float randomUintToFloat(uint sample)
 {
+    // Use the upper 24 bits so float rounding cannot produce 1.0.
     static const float kUint24ToFloat = 1.0f / 16777216.0f;
-    return float(randomUint(state) >> 8u) * kUint24ToFloat;
+    return float(sample >> 8u) * kUint24ToFloat;
 }
+
+float randomFloat(inout uint state) { return randomUintToFloat(randomUint(state)); }
+
+#if defined(SAMPLE_GENERATOR_TYPE)
+#if SAMPLE_GENERATOR_TYPE != 1
+#error Unsupported sample generator type
+#endif
+#include "math/uniform_sample_generator.slang"
+typedef UniformSampleGenerator SampleGenerator;
+float randomFloat(inout UniformSampleGenerator generator) { return randomUintToFloat(randomUint(generator)); }
+#else
+typedef uint SampleGenerator;
+#endif
 
 #endif

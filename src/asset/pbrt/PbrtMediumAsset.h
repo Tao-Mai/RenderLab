@@ -104,5 +104,3 @@ namespace pbrt_import
 [[nodiscard]] PbrtMediumAsset convertMedium(PbrtMediumAsset::ID id, const std::string& name,
     const PbrtEntity& entity, const glm::dmat4& worldFromMedium);
 }
-
-#include RL_METADATA_HEADER("metadata/src/asset/pbrt/PbrtMediumAsset.generated.h")

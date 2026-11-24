@@ -1,24 +1,20 @@
 #pragma once
 #include <slang-rhi.h>
-#include "core/Macros.h"
 #include "render/device/RhiCheck.h"
 #include "render/resources/ShaderManager.h"
 
+#include <cstdint>
 #include <functional>
 #include <vector>
 
 class RenderResourceManager;
-class GpuScene;
 struct EditorFrameInput;
-struct PassEditorContext;
 
-struct RENDERLAB_CORE_API RenderContext
+struct RenderContext
 {
-    rhi::IDevice*            device        = nullptr;
     rhi::ICommandEncoder*    commands      = nullptr;
     ShaderManager*           shaderManager = nullptr;
     RenderResourceManager*   resources     = nullptr;
-    GpuScene*                scene         = nullptr;
     const EditorFrameInput*  editor        = nullptr;
     uint32_t                 frameIndex    = 0;
     float                    deltaSeconds  = 0.0f;

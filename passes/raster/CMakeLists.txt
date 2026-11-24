@@ -3,8 +3,6 @@ target_include_directories(RenderLabRasterPbr PRIVATE "${RenderLab_SOURCE_DIR}")
 target_link_libraries(RenderLabRasterPbr PRIVATE RenderLabCore)
 target_precompile_headers(RenderLabRasterPbr REUSE_FROM RenderLabPluginAbi)
 
-renderlab_runtime_shader(forward "${SHADER_SOURCE_DIR}/raster/forward.slang")
-
 add_subdirectory(DeferredLightingPass)
 add_subdirectory(DepthPrepass)
 add_subdirectory(GBufferPass)

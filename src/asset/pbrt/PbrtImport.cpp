@@ -313,6 +313,30 @@ public:
                     images
                 )
             );
+        for (size_t index = 0; index < result.scene.shapes.size(); ++index)
+        {
+            auto& shape = result.scene.shapes[index];
+            if (!shape.areaLight)
+                continue;
+
+            const auto& entity = result.scene.areaLights[*shape.areaLight];
+            CHECK(entity.type == "diffuse", "unsupported PBRT area light '{}' at {}:{}",
+                entity.type, entity.location.file.string(), entity.location.line);
+            auto emissive = materials[*result.shapeMaterialIndices[index]];
+            auto& mesh = meshes[index].asset;
+            emissive.id = asset_import::nextId<MaterialAsset>(mesh.id.value + "_emissive");
+            auto emission = pbrt_import::lightEmission(entity, images);
+            if (shape.outsideMedium)
+                emission.medium = result.scene.media[*shape.outsideMedium];
+            emissive.emission = PbrtMaterial::Emission{
+                .light = std::move(emission),
+                .twoSided = scalarParameter<PbrtBoolValues>(entity, "twosided", "bool", false) != 0,
+            };
+            shape.material = emissive.id;
+            mesh.submeshes.front().materialId = emissive.id;
+            result.scene.materials.push_back(emissive.id);
+            materials.push_back(std::move(emissive));
+        }
         const auto engineFromRender = kEngineFromPbrtWorld * glm::inverse(result.scene.renderFromWorld);
         for (size_t index = 0; index < result.media.size(); ++index)
             media.push_back(

@@ -50,8 +50,9 @@ Engine：场景 / 编辑器 Tick
 在 C++ 类型声明上使用 `RL_RECORD`，在持久化字段上用 `RL_FIELD("key")` 固定 JSON 键。
 `RL_REGISTER_TYPE(Base, "id")` 声明多态子类型，`RL_TYPE("id")` 可为 `std::variant` 分支指定标签。
 枚举通过 `RL_ENUM` 或 `RL_FLAGS` 生成名称表，序列化键由 `RL_ENUM_VALUE` 提供。
-在类型定义之后引入对应的 `RL_METADATA_HEADER`。CMake 自动发现 `src/` 和各 Pass 自己的目录中使用该指令的 `.h` 文件。
-生成器按目标扫描 Clang AST，输出标准 C++ 字段描述和注册代码。依赖文件记录扫描时包含的头文件，生成结果按构建配置保存在构建目录下。
+CMake 在 `src/` 和各 Pass 自己的目录中自动发现包含元数据标记的头文件。Clang 按构建目标扫描 AST，将字段描述和注册代码写入一个固定路径的 `*.generated.cpp`，由 CMake 加入目标编译。
+模块加载时，生成代码注册字段、枚举和布局描述。序列化和属性访问使用这些描述，多态类型在首次访问注册表时统一注册。依赖文件记录扫描时包含的头文件，生成结果按构建配置保存在构建目录下，生成器只在内容变化时重写文件。
+Core 额外生成一份内部 `.schema.inc`，供组件 Inspector 与材质覆盖中需要成员实际类型的代码使用。带标记的业务头文件只依赖 `MetadataAnnotations.h`。
 
 ## 渲染与资源
 

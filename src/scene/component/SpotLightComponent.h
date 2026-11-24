@@ -11,5 +11,3 @@ struct RL_REGISTER_TYPE(Component, "SpotLightComponent") SpotLightComponent : Lo
     RL_FIELD("cosInner") float cosInner = 0.9396926f;
     RL_FIELD("cosOuter") float cosOuter = 0.8660254f;
 };
-
-#include RL_METADATA_HEADER("metadata/src/scene/component/SpotLightComponent.generated.h")

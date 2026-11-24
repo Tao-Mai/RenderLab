@@ -187,5 +187,3 @@ struct RL_RECORD PbrtOption
 
     bool operator==(const PbrtOption&) const = default;
 };
-
-#include RL_METADATA_HEADER("metadata/src/asset/pbrt/PbrtTypes.generated.h")

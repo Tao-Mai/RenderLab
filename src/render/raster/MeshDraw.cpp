@@ -61,10 +61,9 @@ rhi::IShaderObject& MeshCullPipelines::bind(
 
 void MeshDrawRecorder::draw(const GpuDraw& item, rhi::IShaderObject& object)
 {
-    const auto& scene = *frame.scene;
     const rhi::ShaderCursor root(&object);
-    rhiCheck(root["sceneGlobals"].setBinding(scene.globalsBuffer()));
-    scene.materials().bind(*frame.device, object);
+    scene.bindShaderData(object);
+    scene.materials().bind(object);
     const MeshPushConstants constants{.model = item.model, .materialIndex = item.materialIndex};
     rhiCheck(root["pushConstants"].getDereferenced().setData(constants));
 

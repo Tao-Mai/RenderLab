@@ -26,5 +26,3 @@ struct RL_RECORD TransparentLightingSettings : RasterLightingSettings
 {
     RL_FIELD("clearcoat") bool clearcoat = true;
 };
-
-#include RL_METADATA_HEADER("metadata/src/render/raster/RasterLightingSettings.generated.h")

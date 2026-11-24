@@ -2,9 +2,14 @@
 
 #include <array>
 #include <cstddef>
+#include <optional>
+#include <span>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
+#include <typeinfo>
+
+#include <nlohmann/json_fwd.hpp>
 
 namespace metadata
 {
@@ -22,18 +27,6 @@ struct Layout;
 
 template <class... Types>
 struct TypeList {};
-
-template <class... Types, class Visit>
-constexpr void visitTypes(TypeList<Types...>, Visit&& visit)
-{
-    (visit.template operator()<Types>(Schema<Types>::kTypeId), ...);
-}
-
-template <class Base, class Visit>
-constexpr void visitRegisteredTypes(Visit&& visit)
-{
-    visitTypes(typename RegisteredTypes<Base>::Types{}, visit);
-}
 
 template <auto Member>
 struct Field
@@ -69,6 +62,86 @@ struct LayoutField
     std::size_t offset;
     std::size_t size;
 };
+
+struct Property
+{
+    const char* name;
+    const std::type_info& type;
+    std::optional<SliderRange> range;
+    bool isEnum;
+    void* (*address)(void* object);
+    nlohmann::json (*read)(const void* object);
+    void (*write)(void* object, const nlohmann::json& value);
+};
+
+struct Record
+{
+    const char* id;
+    bool allowUnknownFields;
+    std::span<const Property> fields;
+};
+
+struct EnumInfo
+{
+    bool flags;
+    std::span<const char* const> names;
+    const void* values;
+    std::size_t (*index)(const void* value);
+    void (*select)(void* value, std::size_t index);
+};
+
+template <class T>
+struct Entry
+{
+    const std::type_info& type;
+    T data;
+};
+
+struct Module
+{
+    std::span<const Entry<Record>> records;
+    std::span<const Entry<EnumInfo>> enums;
+    std::span<const Entry<std::span<const LayoutField>>> layouts;
+};
+
+// The generated module owns the descriptors and the functions they point to.
+class ModuleRegistration
+{
+public:
+    explicit ModuleRegistration(Module module);
+    ~ModuleRegistration();
+
+    ModuleRegistration(const ModuleRegistration&) = delete;
+    ModuleRegistration& operator=(const ModuleRegistration&) = delete;
+
+private:
+    Module module;
+};
+
+[[nodiscard]] const Record& record(const std::type_info& type);
+[[nodiscard]] const EnumInfo& enumInfo(const std::type_info& type);
+[[nodiscard]] std::span<const LayoutField> layoutFields(const std::type_info& type);
+
+template <class T>
+[[nodiscard]] std::span<const EnumValue<T>> enumValues(const EnumInfo& info)
+{
+    return {static_cast<const EnumValue<T>*>(info.values), info.names.size()};
+}
+
+template <class... Types, class Visit>
+void visitTypes(TypeList<Types...>, Visit&& visit)
+{
+    (visit.template operator()<Types>(record(typeid(Types)).id), ...);
+}
+
+template <class Base, class Visit>
+constexpr void visitRegisteredTypes(Visit&& visit)
+{
+    [&]<class... Types>(TypeList<Types...>)
+    {
+        (visit.template operator()<Types>(Schema<Types>::kTypeId), ...);
+    }(typename RegisteredTypes<Base>::Types{});
+}
 
 template <class T>
 concept FlagEnum = std::is_enum_v<T> && Enum<T>::kFlags;

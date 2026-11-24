@@ -5,10 +5,10 @@
 
 #include "math/constant.slang"
 #include "material/normal_mapping.slang"
-#include "material/scattering.slang"
 #include "math/random.slang"
-#include "scene/scene_data.slang"
-#include "scene/light_emitters.slang"
+#include "raytracing/camera_ray.slang"
+#include "scene/emissive_lights.slang"
+#include "scene/environment_light.slang"
 #include "scene_hits.slang"
 #include "geometry.slang"
 
@@ -51,12 +51,13 @@ struct Surface
         return bsdf().evaluate(direction) * saturate(dot(normal, direction)) * incidentLight;
     }
 
-    pbrt::BsdfSample sample(inout uint state)
+    pbrt::BsdfSample sample(inout SampleGenerator state)
     {
         return bsdf().sample(state);
     }
 
-    bool isVisible(float3 direction, float distance)
+    bool isVisible(float3 direction, float distance, uint hitGroup = 0,
+        uint rayFlags = RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES)
     {
         if (distance <= 2.0 * kRayEpsilon)
         {
@@ -71,11 +72,10 @@ struct Surface
 
         VisibilityPayload payload = {0};
         TraceRay(
-            scene,
-            RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH |
-                RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
-            kSceneMask | kLightMask,
-            0,
+            scene.rtAccel,
+            rayFlags | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
+            kSceneMask,
+            hitGroup,
             0,
             kVisibilityMissIndex,
             ray,
@@ -85,26 +85,21 @@ struct Surface
     }
 };
 
-Surface surfaceAt(HitData hit, uint primitiveIndex, float2 barycentrics)
+Surface surfaceAt(uint instanceIndex, uint primitiveIndex, float2 barycentrics, float3 rayDirection)
 {
-    uint*            indices       = (uint*)hit.indexAddress;
-    uint             first         = hit.firstIndex + primitiveIndex * 3;
-    VertexAttributes v0            = loadVertexAttributes(hit.vertexAddress, indices[first]);
-    VertexAttributes v1            = loadVertexAttributes(hit.vertexAddress, indices[first + 1]);
-    VertexAttributes v2            = loadVertexAttributes(hit.vertexAddress, indices[first + 2]);
-    float3           weights       = float3(1.0 - barycentrics.x - barycentrics.y, barycentrics);
-    float2           uv            = v0.uv * weights.x + v1.uv * weights.y + v2.uv * weights.z;
-    float3           objectNormal  = v0.normal * weights.x + v1.normal * weights.y + v2.normal * weights.z;
-    float4           objectTangent = v0.tangent * weights.x + v1.tangent * weights.y + v2.tangent * weights.z;
-    MaterialData     material      = materials[hit.materialIndex];
+    HitData hit = scene.objects[instanceIndex];
+    TriangleVertices triangle = loadTriangleVertices(hit.vertexAddress, hit.indexAddress, hit.firstIndex + primitiveIndex * 3);
+    VertexAttributes vertex = triangle.interpolate(barycentrics);
+    MaterialData material = materials[hit.materialIndex];
 
     // Row-vector multiplication applies the inverse transpose, including nonuniform scale.
-    float3   worldNormal  = normalize(mul(objectNormal, (float3x3)WorldToObject3x4()));
-    float3x3 model        = (float3x3)ObjectToWorld3x4();
+    float3   worldNormal  = normalize(mul(vertex.normal, (float3x3)hit.worldToObject));
+    float3x3 model        = (float3x3)hit.objectToWorld;
     float    handedness   = determinant(model) < 0.0 ? -1.0 : 1.0;
-    float4   worldTangent = float4(mul(model, objectTangent.xyz), sign(objectTangent.w) * handedness);
-    float3   geometricNormal =
-        normalize(cross(mul(model, v1.position - v0.position), mul(model, v2.position - v0.position)));
+    float4   worldTangent = float4(mul(model, vertex.tangent.xyz), sign(vertex.tangent.w) * handedness);
+    float3 edge1 = mul(model, triangle.v1.position - triangle.v0.position);
+    float3 edge2 = mul(model, triangle.v2.position - triangle.v0.position);
+    float3 geometricNormal = normalize(cross(edge1, edge2));
     if (dot(geometricNormal, worldNormal) < 0.0)
     {
         geometricNormal = -geometricNormal;
@@ -116,12 +111,12 @@ Surface surfaceAt(HitData hit, uint primitiveIndex, float2 barycentrics)
     }
 
     Surface surface;
-    surface.position      = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
-    surface.viewDirection = -normalize(WorldRayDirection());
+    surface.position      = mul(hit.objectToWorld, float4(vertex.position, 1.0)).xyz;
+    surface.viewDirection = -normalize(rayDirection);
     surface.normal        = worldNormal;
     if (material.kind == MaterialKind::Gltf)
         surface.normal = applyNormalMap(worldNormal, worldTangent,
-            sampleTextureLevel(material.normalTexture, uv).xyz, material.normalScale, material.normalEncoding);
+            sampleTextureLevel(material.normalTexture, vertex.uv).xyz, material.normalScale, material.normalEncoding);
     surface.tangent = worldTangent.xyz;
     surface.frontFace = dot(geometricNormal, surface.viewDirection) >= 0.0;
     float facing = surface.frontFace ? 1.0 : -1.0;
@@ -132,15 +127,13 @@ Surface surfaceAt(HitData hit, uint primitiveIndex, float2 barycentrics)
         surface.normal = surface.geometricNormal;
     }
 
-    surface.scattering = evaluateScattering(material, uv, surface.position, worldNormal, primitiveIndex);
+    surface.scattering = evaluateScattering(material, vertex.uv, surface.position, worldNormal, primitiveIndex);
     surface.materialIndex         = hit.materialIndex;
-    surface.objectIndex           = InstanceID();
-    surface.emissiveTriangleIndex = hit.firstAreaLight == kInvalidLightIndex
-        ? kInvalidLightIndex
-        : hit.firstAreaLight + primitiveIndex;
+    surface.objectIndex           = instanceIndex;
+    surface.emissiveTriangleIndex = emissiveLights.triangleIndex(surface.objectIndex, primitiveIndex);
     surface.emissive = surface.emissiveTriangleIndex == kInvalidLightIndex
         ? float3(0.0)
-        : areaEmission(surface.emissiveTriangleIndex, uv, surface.viewDirection);
+        : emissiveRadiance(surface.emissiveTriangleIndex, vertex.uv, surface.viewDirection);
     return surface;
 }
 
@@ -148,31 +141,20 @@ ConstantBuffer<PathTracingParameters> parameters;
 
 RayDesc createPathRay(uint2 pixel, float2 pixelSample)
 {
-    float2 local    = float2(pixel) + pixelSample - parameters.viewportOffset;
-    float2 ndc      = uvToClip(local / parameters.viewportExtent);
-    float4 farPoint = mul(sceneGlobals[0].camera.inverseViewProjection, float4(ndc, 1.0, 1.0));
-    float3 toFar    = farPoint.xyz / farPoint.w - sceneGlobals[0].camera.cameraPosition.xyz;
-
-    RayDesc ray;
-    ray.Origin    = sceneGlobals[0].camera.cameraPosition.xyz;
-    ray.Direction = normalize(toFar);
-    ray.TMin      = kRayEpsilon;
-    ray.TMax      = kMaxRayDistance;
-    return ray;
+    float2 local = float2(pixel) + pixelSample - parameters.viewportOffset;
+    return createCameraRay(local / parameters.viewportExtent);
 }
 
 enum class PathEvent : uint
 {
     Miss,
     Surface,
-    Emitter,
 };
 
 // Hit shaders only return a result. All path and visibility rays originate in RayGen.
 struct PathHit
 {
     PathEvent event;
-    uint      lightIndex;
     Surface   surface;
     float2    barycentrics;
 };
@@ -183,7 +165,7 @@ bool advancePath(
     uint          scatteringCount,
     inout float3  throughput,
     inout RayDesc ray,
-    inout uint    state
+    inout SampleGenerator state
 )
 {
     const float side = dot(surface.geometricNormal, sampled.direction);
@@ -206,21 +188,20 @@ bool advancePath(
     return true;
 }
 
-uint pathRandomState(uint2 pixel, uint width)
+SampleGenerator createPathSampleGenerator(uint2 pixel, uint width)
 {
+    uint pixelIndex = pixel.x + pixel.y * width;
+#if defined(SAMPLE_GENERATOR_TYPE)
+    return createUniformSampleGenerator(pixelIndex, parameters.sampleIndex);
+#else
     static const uint kSampleSeedMultiplier = 0x9e3779b9u;
-    return (pixel.x + pixel.y * width) ^ (parameters.sampleIndex * kSampleSeedMultiplier);
+    return pixelIndex ^ (parameters.sampleIndex * kSampleSeedMultiplier);
+#endif
 }
 
 float3 hitEmission(RayDesc ray, PathHit hit)
 {
-    if (hit.event == PathEvent::Surface)
-        return hit.surface.emissive;
-    if (hit.event == PathEvent::Miss)
-        return environmentRadiance(ray.Direction);
-    LightTriangle triangle = loadTriangleLight(hit.lightIndex);
-    float2 uv = triangleUv(triangle, float3(1.0 - hit.barycentrics.x - hit.barycentrics.y, hit.barycentrics));
-    return areaEmission(hit.lightIndex, uv, -ray.Direction);
+    return hit.event == PathEvent::Surface ? hit.surface.emissive : environmentRadiance(ray.Direction);
 }
 
 [shader("miss")] void missMain(inout PathHit hit) { hit.event = PathEvent::Miss; }
@@ -233,16 +214,8 @@ float3 hitEmission(RayDesc ray, PathHit hit)
 [shader("closesthit")] void closestHitMain(inout PathHit payload, BuiltInTriangleIntersectionAttributes attributes)
 {
     payload.event         = PathEvent::Surface;
-    HitData hit = objects[InstanceID()];
-    payload.surface       = surfaceAt(hit, PrimitiveIndex(), attributes.barycentrics);
+    payload.surface       = surfaceAt(InstanceID(), PrimitiveIndex(), attributes.barycentrics, WorldRayDirection());
     payload.barycentrics  = attributes.barycentrics;
-}
-
-    [shader("closesthit")] void lightClosestHitMain(inout PathHit hit, BuiltInTriangleIntersectionAttributes attributes)
-{
-    hit.event      = PathEvent::Emitter;
-    hit.lightIndex = rectTriangleIndex(InstanceID(), PrimitiveIndex());
-    hit.barycentrics = attributes.barycentrics;
 }
 
 #endif

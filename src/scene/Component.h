@@ -16,5 +16,3 @@ public:
 private:
     AActor* owner = nullptr;
 };
-
-#include RL_METADATA_HEADER("metadata/src/scene/Component.generated.h")

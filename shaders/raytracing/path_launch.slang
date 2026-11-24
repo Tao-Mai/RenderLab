@@ -20,10 +20,10 @@ CameraPathSample sampleCameraPath(uint2 pixel, uint pixelIndex, PathTracingParam
     scrambleSeeds.y = randomUint(scrambleState);
     float2 pixelSample = sampleSobol2D(path.sampleIndex, scrambleSeeds);
     float2 ndc = uvToClip((float2(pixel) + pixelSample - path.viewportOffset) / path.viewportExtent);
-    float4 farPoint = mul(sceneGlobals[0].camera.inverseViewProjection, float4(ndc, 1.0, 1.0));
+    float4 farPoint = mul(scene.globals[0].camera.inverseViewProjection, float4(ndc, 1.0, 1.0));
 
     RayDesc ray;
-    ray.Origin = sceneGlobals[0].camera.cameraPosition.xyz;
+    ray.Origin = scene.globals[0].camera.cameraPosition.xyz;
     ray.Direction = normalize(farPoint.xyz / farPoint.w - ray.Origin);
     ray.TMin = kRayEpsilon;
     ray.TMax = kMaxRayDistance;
@@ -41,7 +41,7 @@ void visibilityMissMain(inout Visibility visibility) { visibility.visible = 1; }
 [shader("closesthit")]
 void closestHitMain(inout Hit hit, BuiltInTriangleIntersectionAttributes attributes)
 {
-    HitData object = objects[InstanceID()];
+    HitData object = scene.objects[InstanceID()];
 
     // 取三角形顶点数据并插值
     uint* indices = (uint*)object.indexAddress;
@@ -56,11 +56,9 @@ void closestHitMain(inout Hit hit, BuiltInTriangleIntersectionAttributes attribu
 
     // 记录数据
     hit.hit = 1;
-    hit.emitterOnly = 0;
     hit.materialIndex = object.materialIndex;
     hit.primitiveIndex = PrimitiveIndex();
-    hit.areaLightIndex = object.firstAreaLight == kInvalidLightIndex
-        ? kInvalidLightIndex : object.firstAreaLight + hit.primitiveIndex;
+    hit.emissiveTriangleIndex = emissiveLights.triangleIndex(InstanceID(), hit.primitiveIndex);
     hit.position = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
     hit.uv = v0.uv * weights.x + v1.uv * weights.y + v2.uv * weights.z;
     hit.normal = normalize(mul(objectNormal, (float3x3)WorldToObject3x4()));
@@ -81,20 +79,6 @@ void closestHitMain(inout Hit hit, BuiltInTriangleIntersectionAttributes attribu
         hit.normal = applyNormalMap(hit.normal, worldTangent,
             sampleTextureLevel(material.normalTexture, hit.uv).xyz, material.normalScale, material.normalEncoding);
     }
-}
-
-[shader("closesthit")]
-void lightClosestHitMain(inout Hit hit, BuiltInTriangleIntersectionAttributes attributes)
-{
-    hit.hit = 1;
-    hit.emitterOnly = 1;
-    hit.areaLightIndex = rectTriangleIndex(InstanceID(), PrimitiveIndex());
-    LightTriangle triangle = loadTriangleLight(hit.areaLightIndex);
-    hit.position = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
-    hit.normal = triangle.geometricNormal;
-    hit.geometricNormal = triangle.geometricNormal;
-    float2 bary = attributes.barycentrics;
-    hit.uv = triangleUv(triangle, float3(1.0 - bary.x - bary.y, bary));
 }
 
 #endif

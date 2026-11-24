@@ -1,9 +1,15 @@
+#include "raytracing/alpha_test.slang"
 #include "raytracing/light_sampling.slang"
+#include "raytracing/visibility_buffer.slang"
 
-[format("rgba16f")] RWTexture2D<float4> outputImage;
+Texture2D<uint4> vbuffer;
+[format("rgba32f")] RWTexture2D<float4> outputImage;
+static const uint kScatterHitGroup = 0;
+static const uint kVisibilityHitGroup = 1;
+static const uint kMaxScatteringEvents = MAX_BOUNCES + 1u;
 
 // One ordinary light sample and one BRDF continuation per scattering event.
-float3 evalDirectLight(Surface surface, inout uint state)
+float3 evalDirectLight(Surface surface, inout SampleGenerator state)
 {
     if (surface.scattering.isDelta())
         return float3(0.0);
@@ -12,13 +18,14 @@ float3 evalDirectLight(Surface surface, inout uint state)
     if (sample.kind == kInvalidLightSample)
         return float3(0.0);
 
-    PathLightEvaluation evaluated = evaluateLightSample(surface, sample);
-    if (evaluated.target <= 0.0 || !surface.isVisible(evaluated.direction, evaluated.distance))
+    PathLightEvaluation evaluated = evaluateLightSample(surface, sample, true);
+    if (evaluated.target <= 0.0 ||
+        !surface.isVisible(evaluated.direction, evaluated.distance, kVisibilityHitGroup, RAY_FLAG_FORCE_NON_OPAQUE))
         return float3(0.0);
 
     float selectionPdf = lightSelectionPdf(sample);
     float lightPdf     = selectionPdf * evaluated.conditionalPdf;
-    float brdfPdf     = evaluated.delta != 0 ? 0.0 : surface.pdf(evaluated.direction);
+    float brdfPdf     = sample.kind == kAnalyticLightSample ? 0.0 : surface.pdf(evaluated.direction);
     // Balance MIS also weights the BRDF ray when it reaches an emitter or the environment.
     float weight = lightPdf / (lightPdf + brdfPdf);
     return evaluated.contribution * (weight / selectionPdf);
@@ -35,8 +42,19 @@ float simpleEmissionWeight(Surface previousSurface, RayDesc ray, PathHit hit, fl
     return brdfPdf / (brdfPdf + lightPdf);
 }
 
-float3 tracePath(RayDesc ray, inout uint state)
+float3 tracePath(VBufferHit primary, RayDesc ray, inout SampleGenerator state)
 {
+    if (!primary.isValid())
+        return environmentRadiance(ray.Direction);
+
+    for (uint dimension = 0; dimension < parameters.prngDimension; ++dimension)
+        randomUint(state);
+
+    PathHit hit = {};
+    hit.event = PathEvent::Surface;
+    hit.barycentrics = primary.barycentrics;
+    hit.surface = surfaceAt(primary.instanceIndex, primary.primitiveIndex, primary.barycentrics, ray.Direction);
+
     float3  directRadiance   = float3(0.0);
     float3  indirectRadiance = float3(0.0);
     float3  cameraEmission   = float3(0.0);
@@ -45,12 +63,14 @@ float3 tracePath(RayDesc ray, inout uint state)
     float   previousBrdfPdf  = 0.0;
     bool    previousDelta    = false;
 
-    // maxBounces counts surface scattering events; the final ray still sees emission and the environment.
-    for (uint bounce = 0; bounce <= parameters.maxBounces; ++bounce)
+    // The primary surface scatters once before counting indirect bounces.
+    for (uint bounce = 0; bounce <= kMaxScatteringEvents; ++bounce)
     {
-        PathHit hit = {};
-        uint flags  = bounce == 0 ? RAY_FLAG_FORCE_OPAQUE : RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES;
-        TraceRay(scene, flags, kSceneMask | kLightMask, 0, 0, 0, ray, hit);
+        if (bounce > 0)
+        {
+            hit = {};
+            TraceRay(scene.rtAccel, RAY_FLAG_FORCE_NON_OPAQUE, kSceneMask, kScatterHitGroup, 0, 0, ray, hit);
+        }
 
         float3 emission = hitEmission(ray, hit);
         if (bounce == 0)
@@ -64,7 +84,7 @@ float3 tracePath(RayDesc ray, inout uint state)
             else
                 indirectRadiance += contribution;
         }
-        if (hit.event != PathEvent::Surface || bounce == parameters.maxBounces)
+        if (hit.event != PathEvent::Surface || bounce == kMaxScatteringEvents)
             break;
 
         Surface surface = hit.surface;
@@ -83,13 +103,30 @@ float3 tracePath(RayDesc ray, inout uint state)
     return directRadiance + indirectRadiance + cameraEmission;
 }
 
+[shader("anyhit")]
+void scatterAnyHitMain(inout PathHit hit, BuiltInTriangleIntersectionAttributes attributes)
+{
+    if (isMaskedTriangle(InstanceID(), PrimitiveIndex(), attributes.barycentrics))
+        IgnoreHit();
+}
+
+[shader("anyhit")]
+void visibilityAnyHitMain(inout VisibilityPayload payload, BuiltInTriangleIntersectionAttributes attributes)
+{
+    if (isMaskedTriangle(InstanceID(), PrimitiveIndex(), attributes.barycentrics))
+        IgnoreHit();
+}
+
 [shader("raygeneration")]
 void raygenMain()
 {
     uint2  pixel = DispatchRaysIndex().xy;
-    uint   state = pathRandomState(pixel, DispatchRaysDimensions().x);
+    SampleGenerator state = createPathSampleGenerator(pixel, DispatchRaysDimensions().x);
     float3 color = float3(0.0);
     if (parameters.containsPixel(pixel))
-        color = tracePath(createPathRay(pixel, float2(0.5)), state);
+    {
+        VBufferHit primary = {vbuffer.Load(int3(pixel, 0))};
+        color = tracePath(primary, createPathRay(pixel, float2(0.5)), state);
+    }
     outputImage[pixel] = float4(color, 1.0);
 }

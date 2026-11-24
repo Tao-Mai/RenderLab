@@ -12,5 +12,3 @@ struct RL_REGISTER_TYPE(Component, "CharacterMoveComponent") CharacterMoveCompon
     RL_FIELD("speed") float speed = 3.0f;
     RL_FIELD("sprintMultiplier") float sprintMultiplier = 3.0f;
 };
-
-#include RL_METADATA_HEADER("metadata/src/scene/component/CharacterMoveComponent.generated.h")

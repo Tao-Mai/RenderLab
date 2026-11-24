@@ -2,6 +2,7 @@
 #define RENDERLAB_MATERIAL_DATA_SLANG
 
 #include "material/texture_data.slang"
+#include "render/resources/SceneLightConstants.h"
 
 static const uint kAlphaModeOpaque = 0;
 static const uint kAlphaModeMask = 1;
@@ -35,7 +36,14 @@ struct MaterialData
     float clearcoatFactor;
     float clearcoatRoughnessFactor;
     float clearcoatNormalScale;
-    float clearcoatPadding;
+    uint emissiveFlags;
+    property emissionTwoSided : bool { get { return (emissiveFlags & kEmissiveTwoSided) != 0; } }
+    float2 emissionUv(float2 uv)
+    {
+        if ((emissiveFlags & kEmissiveFlipUv) != 0)
+            uv.y = 1.0 - uv.y;
+        return uv;
+    }
     float3 specularColorFactor;
     float specularFactor;
     float dielectricF0;

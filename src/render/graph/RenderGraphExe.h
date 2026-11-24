@@ -9,7 +9,7 @@
 class RenderGraphExe
 {
 public:
-    void execute(RenderContext* context);
+    void execute(RenderContext* context, RenderData::Dictionary& dictionary, glm::uvec2 defaultTexDims);
     void renderUI(const PassEditorContext& context, Gui::Widgets& widget);
     [[nodiscard]] rhi::ComPtr<rhi::IResource> getResource(const std::string& name) const;
     [[nodiscard]] rhi::ComPtr<rhi::IResource> getOutput(size_t index) const
@@ -32,6 +32,5 @@ private:
     std::vector<Pass> passes;
     std::vector<size_t> outputs;
     ResourceCache resources;
-    glm::uvec2 defaultTexDims{0};
     uint32_t maxFramesInFlight = kMaxFramesInFlight;
 };

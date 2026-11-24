@@ -40,5 +40,3 @@ struct RL_RECORD PbrtSceneAsset : Asset
 
     bool operator==(const PbrtSceneAsset&) const = default;
 };
-
-#include RL_METADATA_HEADER("metadata/src/asset/pbrt/PbrtSceneAsset.generated.h")

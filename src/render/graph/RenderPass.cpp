@@ -29,11 +29,6 @@ rhi::IBuffer* RenderData::getBuffer(std::string_view name) const
     return static_cast<rhi::IBuffer*>(getResource(name));
 }
 
-void RenderData::setBuffer(std::string_view name, rhi::IBuffer* buffer) const
-{
-    resources.setResource(*findSlot(name), buffer);
-}
-
 uint64_t RenderData::getHistoryRevision(std::string_view name) const
 {
     return resources.historyRevision(*findSlot(name));

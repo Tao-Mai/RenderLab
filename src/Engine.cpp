@@ -63,7 +63,6 @@ void Engine::init()
     ctx.assetDataManager->init(ctx.config->paths().assets);
     ctx.window->init();
     ctx.inputManager->init();
-    ctx.sceneManager->init();
     ctx.assetManager->init(ctx.config->paths().assets);
     ctx.sceneManager->loadDefaultScene();
     PluginManager::instance().loadAllPlugins();

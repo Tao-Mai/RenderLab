@@ -1,8 +1,10 @@
 #pragma once
 
 #include "asset/pbrt/PbrtLight.h"
+#include <glm/mat4x4.hpp>
+#include <vector>
 
-struct SceneLight
+struct SceneAnalyticLight
 {
     struct Point
     {
@@ -35,19 +37,6 @@ struct SceneLight
         float     range                              = 0.0f;
         bool      operator==(const Rectangle&) const = default;
     };
-    struct MeshArea
-    {
-        uint32_t drawItemIndex;
-        bool     twoSided;
-        bool     reverseOrientation;
-        bool     operator==(const MeshArea&) const = default;
-    };
-    struct Environment
-    {
-        glm::mat4              lightFromWorld{1};
-        std::vector<glm::vec3> portal;
-        bool                   operator==(const Environment&) const = default;
-    };
     struct Projection
     {
         glm::vec3 position{};
@@ -62,11 +51,19 @@ struct SceneLight
         bool      operator==(const Goniometric&) const = default;
     };
 
-    using Model = std::variant<Point, Spot, Directional, Rectangle, MeshArea, Environment, Projection, Goniometric>;
+    using Model = std::variant<Point, Spot, Directional, Rectangle, Projection, Goniometric>;
 
     PbrtLightEmission emission;
     Model             model      = Point{};
     bool              castShadow = false;
 
-    bool operator==(const SceneLight&) const = default;
+    bool operator==(const SceneAnalyticLight&) const = default;
+};
+
+struct SceneEnvironmentLight
+{
+    glm::mat4              lightFromWorld{1};
+    std::vector<glm::vec3> portal;
+    PbrtLightEmission      emission;
+    bool operator==(const SceneEnvironmentLight&) const = default;
 };

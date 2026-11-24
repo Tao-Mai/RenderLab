@@ -51,7 +51,7 @@ struct alignas(16) MaterialData
     float                   clearcoatFactor          = 0.0f;
     float                   clearcoatRoughnessFactor = 0.0f;
     float                   clearcoatNormalScale     = 1.0f;
-    float                   clearcoatPadding         = 0.0f;
+    uint32_t                emissiveFlags = 0;
     glm::vec3               specularColorFactor{1.0f};
     float                   specularFactor   = 1.0f;
     float                   dielectricF0     = 0.04f;
@@ -81,6 +81,7 @@ static_assert(offsetof(MaterialData, roughness) == 16);
 static_assert(offsetof(MaterialData, emissiveFactor) == 48);
 static_assert(offsetof(MaterialData, sheenColorFactor) == 64);
 static_assert(offsetof(MaterialData, clearcoatFactor) == 80);
+static_assert(offsetof(MaterialData, emissiveFlags) == 92);
 static_assert(offsetof(MaterialData, specularColorFactor) == 96);
 static_assert(offsetof(MaterialData, dielectricF0) == 112);
 static_assert(offsetof(MaterialData, normalEncoding) == 120);

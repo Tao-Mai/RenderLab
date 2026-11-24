@@ -5,7 +5,7 @@ foreach(stage IN ITEMS 0 1 2)
     if(NOT stage EQUAL 0)
         string(APPEND binary ".${stage}")
     endif()
-    renderlab_shader(falcor_simple_post_fx simple_post_fx.slang "${binary}"
+    renderlab_shader(simple_post_fx.slang "${binary}"
         ENTRIES computeMain DEFINES POST_FX_STAGE=${stage})
 endforeach()
 foreach(stage IN ITEMS 0 1)
@@ -13,8 +13,8 @@ foreach(stage IN ITEMS 0 1)
     if(NOT stage EQUAL 0)
         string(APPEND binary ".${stage}")
     endif()
-    renderlab_shader(falcor_luminance luminance.slang "${binary}"
+    renderlab_shader(luminance.slang "${binary}"
         DEFINES LUMINANCE_STAGE=${stage})
 endforeach()
-renderlab_shader(falcor_tonemapping tonemapping.slang falcor_tonemapping)
-renderlab_shader(falcor_present "${SHADER_SOURCE_DIR}/raster/blit.slang" falcor_present DEFINES BLIT_SRGB_CONTROL=1)
+renderlab_shader(tonemapping.slang falcor_tonemapping)
+renderlab_shader("${SHADER_SOURCE_DIR}/raster/blit.slang" falcor_present DEFINES BLIT_SRGB_CONTROL=1)

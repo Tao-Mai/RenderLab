@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -21,30 +22,42 @@
 
 class RenderGraphCompiler;
 class RenderGraphExe;
+class GpuScene;
+enum class SceneUpdateFlags : uint32_t;
+struct PassEditorContext;
 
 class RENDERLAB_CORE_API RenderData
 {
 public:
+    using Dictionary = std::map<std::string, uint32_t, std::less<>>;
+
+    [[nodiscard]] Dictionary& getDictionary() const { return dictionary; }
+    [[nodiscard]] glm::uvec2 getDefaultTextureDims() const { return defaultTexDims; }
+
     // Resources are owned by the graph.
     [[nodiscard]] rhi::IResource* getResource(std::string_view name) const;
     [[nodiscard]] rhi::ITexture*  getTexture(std::string_view name) const;
     [[nodiscard]] rhi::IBuffer*   getBuffer(std::string_view name) const;
-    void                          setBuffer(std::string_view name, rhi::IBuffer* buffer) const;
 
     [[nodiscard]] uint64_t          getHistoryRevision(std::string_view name) const;
     void                            invalidateHistory(std::string_view name) const;
-    [[nodiscard]] const glm::uvec2& getDefaultTextureDims() const { return mDefaultTexDims; }
 
 private:
     friend class RenderGraphExe;
-    RenderData(const ResourceCache::Ports& ports, ResourceCache& resources, const glm::uvec2& defaultTexDims) :
-        ports(ports), resources(resources), mDefaultTexDims(defaultTexDims)
+    RenderData(
+        const ResourceCache::Ports& ports,
+        ResourceCache& resources,
+        Dictionary& dictionary,
+        glm::uvec2 defaultTexDims
+    ) :
+        ports(ports), resources(resources), dictionary(dictionary), defaultTexDims(defaultTexDims)
     {
     }
 
     const ResourceCache::Ports& ports;
     ResourceCache& resources;
-    glm::uvec2 mDefaultTexDims;
+    Dictionary& dictionary;
+    glm::uvec2 defaultTexDims;
 
     [[nodiscard]] std::optional<size_t> findSlot(std::string_view name) const;
 };
@@ -85,6 +98,8 @@ public:
     [[nodiscard]] virtual RenderPassReflection reflect(const CompileData& compileData) = 0;
     virtual void                               compile(RenderContext* context, const CompileData& compileData) {}
     virtual void                               execute(RenderContext* context, const RenderData& renderData) = 0;
+    virtual void                               setScene(GpuScene* scene) { mpScene = scene; }
+    virtual void                               onSceneUpdates(RenderContext* context, SceneUpdateFlags updates) {}
 
     virtual void                     setProperties(const Properties& properties);
     [[nodiscard]] virtual Properties getProperties() const { return {}; }
@@ -100,6 +115,7 @@ protected:
     void requestRecompile() { mPassChangedCB(); }
 
     rhi::ComPtr<rhi::IDevice> mpDevice;
+    GpuScene*                mpScene = nullptr;
     std::string               mName;
     std::function<void()>     mPassChangedCB = [] {};
 

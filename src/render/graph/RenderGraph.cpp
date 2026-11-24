@@ -3,6 +3,7 @@
 #include <slang-rhi.h>
 #include "core/DirectedGraphTraversal.h"
 #include "core/Logger.h"
+#include "render/GpuScene.h"
 #include "render/RenderContext.h"
 
 #include <algorithm>
@@ -17,7 +18,10 @@ RenderGraph::RenderGraph(rhi::ComPtr<rhi::IDevice> device, const std::string& na
 RenderGraph::~RenderGraph()
 {
     for (const auto& [index, node] : mNodeData)
+    {
         node.pPass->mPassChangedCB = [] {};
+        node.pPass->setScene(nullptr);
+    }
 }
 
 ref<RenderGraph> RenderGraph::create(rhi::ComPtr<rhi::IDevice> device, const std::string& name)
@@ -46,29 +50,6 @@ namespace
     }
 }  // namespace
 
-RenderPass* RenderGraph::getRenderPassAndNamePair(
-    bool input, const std::string& fullName, std::pair<std::string, std::string>& nameAndField
-) const
-{
-    nameAndField              = parseFieldName(fullName);
-    const auto& [name, field] = nameAndField;
-    auto* pass                = getPass(name).get();
-    if (!field.empty())
-    {
-        using Visibility       = RenderPassReflection::Visibility;
-        const auto& defaults   = mCompilerDeps.defaultResourceProps;
-        const auto  reflection = pass->reflect({defaults.dims, defaults.format});
-        const auto* port       = reflection.getField(field);
-        CHECK(
-            port && is_set(port->visibility, input ? Visibility::Input : Visibility::Output),
-            "unknown {} port '{}'",
-            input ? "input" : "output",
-            fullName
-        );
-    }
-    return pass;
-}
-
 uint32_t RenderGraph::getPassIndex(const std::string& name) const
 {
     const auto found = mNameToIndex.find(name);
@@ -87,6 +68,7 @@ uint32_t RenderGraph::addPass(const ref<RenderPass>& pass, const std::string& na
     mNodeData.emplace(index, NodeData{name, pass, properties, std::move(properties)});
     pass->mName          = name;
     pass->mPassChangedCB = [this] { mRecompile = true; };
+    pass->setScene(mpScene);
     mRecompile = true;
     return index;
 }
@@ -107,6 +89,7 @@ void RenderGraph::removePass(const std::string& name)
     );
     const auto& node = mNodeData.at(index);
     node.pPass->mPassChangedCB = [] {};
+    node.pPass->setScene(nullptr);
     mNodeData.erase(index);
     mNameToIndex.erase(name);
 }
@@ -116,14 +99,9 @@ void RenderGraph::updatePass(const std::string& name, const Properties& properti
     const auto index = getPassIndex(name);
     CHECK(index != kInvalidIndex, "unknown render pass '{}'", name);
     auto& node = mNodeData.at(index);
-    auto  pass = RenderPass::create(node.pPass->getType(), mpDevice, properties);
-    node.pPass->mPassChangedCB = [] {};
-    node.pPass = pass;
-    node.scripted = pass->getProperties().toJson();
+    node.pPass->setProperties(properties);
+    node.scripted = node.pPass->getProperties().toJson();
     node.applied = node.scripted;
-    pass->mName          = name;
-    pass->mPassChangedCB = [this] { mRecompile = true; };
-    mRecompile = true;
 }
 
 const ref<RenderPass>& RenderGraph::getPass(const std::string& name) const
@@ -200,15 +178,15 @@ uint32_t RenderGraph::getEdge(const std::string& source, const std::string& targ
 
 uint32_t RenderGraph::addEdge(const std::string& source, const std::string& target)
 {
-    std::pair<std::string, std::string> src;
-    std::pair<std::string, std::string> dst;
-    getRenderPassAndNamePair(false, source, src);
-    getRenderPassAndNamePair(true, target, dst);
-    auto& [srcPass, srcField] = src;
-    auto& [dstPass, dstField] = dst;
-    const auto sourceId       = getPassIndex(srcPass);
-    const auto targetId       = getPassIndex(dstPass);
+    auto [srcPass, srcField] = parseFieldName(source);
+    auto [dstPass, dstField] = parseFieldName(target);
+    const auto sourceId = getPassIndex(srcPass);
+    const auto targetId = getPassIndex(dstPass);
+    CHECK(sourceId != kInvalidIndex, "unknown render pass '{}'", srcPass);
+    CHECK(targetId != kInvalidIndex, "unknown render pass '{}'", dstPass);
     CHECK(sourceId != targetId && (srcField.empty() == dstField.empty()), "invalid edge '{}' -> '{}'", source, target);
+    if (const auto existing = getEdge(source, target); existing != kInvalidIndex)
+        return existing;
     if (!dstField.empty())
     {
         const auto& node = *mpGraph->getNode(targetId);
@@ -249,24 +227,32 @@ void RenderGraph::removeEdge(uint32_t edgeId)
 
 void RenderGraph::setInput(const std::string& name, rhi::IResource* resource)
 {
-    auto&      inputs  = mCompilerDeps.externalResources;
+    auto& inputs = mCompilerDeps.externalResources;
     const auto current = inputs.find(name);
     if (!resource)
     {
         CHECK(current != inputs.end(), "input '{}' is not registered", name);
         inputs.erase(current);
+        mRecompile = true;
+        return;
     }
-    else
+
+    const auto desc = ResourceCache::describe(*resource);
+    CHECK(desc, "unsupported resource for graph input '{}'", name);
+    if (current == inputs.end())
     {
-        if (current == inputs.end())
-        {
-            std::pair<std::string, std::string> input;
-            getRenderPassAndNamePair(true, name, input);
-            CHECK(!input.second.empty(), "invalid input '{}'", name);
-        }
-        inputs.insert_or_assign(name, resource);
+        const auto [pass, field] = parseFieldName(name);
+        CHECK(doesPassExist(pass) && !field.empty(), "invalid input '{}'", name);
+        inputs.emplace(name, resource);
+        mRecompile = true;
+        return;
     }
-    if (mpExe)
+
+    if (current->second.get() == resource)
+        return;
+    mRecompile |= !ResourceCache::sameDescription(*ResourceCache::describe(*current->second), *desc);
+    current->second = resource;
+    if (!needsCompilation())
         mpExe->setInput(name, resource);
 }
 
@@ -279,10 +265,10 @@ void RenderGraph::markOutput(const std::string& name)
         return;
     }
 
-    std::pair<std::string, std::string> endpoint;
-    getRenderPassAndNamePair(false, name, endpoint);
-    CHECK(!endpoint.second.empty(), "invalid render graph output '{}'", name);
-    GraphOut   output{getPassIndex(endpoint.first), std::move(endpoint.second)};
+    auto [pass, field] = parseFieldName(name);
+    const auto node = getPassIndex(pass);
+    CHECK(node != kInvalidIndex && !field.empty(), "invalid render graph output '{}'", name);
+    GraphOut   output{node, std::move(field)};
     const auto found = std::ranges::find(mOutputs, output);
     if (found == mOutputs.end())
     {
@@ -397,8 +383,12 @@ bool RenderGraph::hasSameTopology(const RenderGraph& other) const
 
 void RenderGraph::onResize(Extent2D extent, rhi::Format format)
 {
-    mCompilerDeps.defaultResourceProps = {{extent.width, extent.height}, format};
-    mRecompile                         = true;
+    const ResourceCache::DefaultProperties defaults{{extent.width, extent.height}, format};
+    if (defaults != mCompilerDeps.defaultResourceProps)
+    {
+        mCompilerDeps.defaultResourceProps = defaults;
+        mRecompile = true;
+    }
 }
 
 bool RenderGraph::compile(RenderContext* context, std::string& log)
@@ -420,7 +410,36 @@ bool RenderGraph::compile(RenderContext* context, std::string& log)
 
 void RenderGraph::execute(RenderContext* context)
 {
-    mpExe->execute(context);
+    if (needsCompilation())
+    {
+        std::string log;
+        CHECK(compile(context, log), "failed to compile render graph '{}': {}", mName, log);
+    }
+    mpExe->execute(context, mPassesDictionary, mCompilerDeps.defaultResourceProps.dims);
+}
+
+void RenderGraph::setScene(GpuScene* scene)
+{
+    if (mpScene == scene)
+        return;
+
+    mpScene = scene;
+    for (const auto& [index, node] : mNodeData)
+        node.pPass->setScene(scene);
+}
+
+void RenderGraph::onSceneUpdates(RenderContext* context, SceneUpdateFlags updates)
+{
+    if (updates == SceneUpdateFlags::None)
+        return;
+
+    // The renderer reuses its GpuScene across scene replacements.
+    if (is_set(updates, SceneUpdateFlags::Scene))
+        for (const auto& [index, node] : mNodeData)
+            node.pPass->setScene(mpScene);
+
+    for (const auto& [index, node] : mNodeData)
+        node.pPass->onSceneUpdates(context, updates);
 }
 
 void RenderGraph::renderUI(const PassEditorContext& context, Gui::Widgets& widget)

@@ -4,6 +4,7 @@
 #include "render/graph/ResourceCache.h"
 
 #include <memory>
+#include <unordered_set>
 #include <vector>
 
 class RenderGraph;
@@ -15,7 +16,7 @@ public:
     struct Dependencies
     {
         ResourceCache::DefaultProperties defaultResourceProps;
-        ResourceCache::ResourcesMap externalResources;
+        ResourceCache::ResourcesMap      externalResources;
     };
 
     [[nodiscard]] static std::unique_ptr<RenderGraphExe>
@@ -24,11 +25,12 @@ public:
 private:
     struct PassData
     {
-        uint32_t index;
-        std::string name;
-        ref<RenderPass> pass;
-        RenderPassReflection reflection;
-        RenderPass::CompileData compileData;
+        uint32_t                             index;
+        std::string                          name;
+        ref<RenderPass>                      pass;
+        RenderPassReflection                 reflection;
+        RenderPass::CompileData              compileData;
+        std::unordered_set<std::string_view> usedOutputs;
     };
 
     RenderGraphCompiler(const RenderGraph& graph, const Dependencies& dependencies) :
@@ -37,10 +39,11 @@ private:
     }
 
     void preparePasses();
+    void resolveResources(ResourceCache& resources);
     void validateGraph() const;
-    void registerResources(ResourceCache& resources) const;
+    void registerResources(ResourceCache& resources, bool validate) const;
 
-    const RenderGraph& graph;
-    const Dependencies& dependencies;
+    const RenderGraph&    graph;
+    const Dependencies&   dependencies;
     std::vector<PassData> passes;
 };

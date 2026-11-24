@@ -22,7 +22,6 @@ struct DeferredLightingPushConstants
 };
 static_assert(sizeof(DeferredLightingPushConstants) == 16);
 
-constexpr std::string_view kDeferredLightingShader = "deferred_lighting";
 constexpr bool             kEnableSheen            = true;
 constexpr std::array       kGBufferChannels{
     std::pair{"diffuseOcclusion", "diffuseOcclusion"},
@@ -82,9 +81,9 @@ RenderPassReflection DeferredLightingPass::reflect(const CompileData& compileDat
 }
 
 
-void DeferredLightingPass::compile(RenderContext* passContext, const CompileData&)
+void DeferredLightingPass::compile(RenderContext*, const CompileData&)
 {
-    parameters.validateColorFormat(*passContext->device);
+    parameters.validateColorFormat(*mpDevice);
     pipelines = {};
 }
 
@@ -103,21 +102,24 @@ DeferredLightingPass::getPipeline(const RenderContext& context, rhi::Format form
     rhi::ColorTargetDesc color;
     color.format = format;
     rhi::RenderPipelineDesc desc;
-    desc.program =
-        context.shaderManager->getOrCompile(kDeferredLightingShader, variant);
+    desc.program = context.shaderManager->getProgram(
+        "passes/raster/DeferredLightingPass/deferred_lighting.slang",
+        {"vertMain", "fragMain"},
+        variant
+    );
     desc.targets                       = &color;
     desc.targetCount                   = 1;
     desc.depthStencil.depthTestEnable  = false;
     desc.depthStencil.depthWriteEnable = false;
     desc.rasterizer.scissorEnable      = true;
-    rhiCheck(context.device->createRenderPipeline(desc, pipeline.writeRef()));
+    rhiCheck(mpDevice->createRenderPipeline(desc, pipeline.writeRef()));
     return pipeline;
 }
 
 
 void DeferredLightingPass::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
-    const auto& scene          = *renderCommands->scene;
+    const auto& scene          = *mpScene;
     const bool  hasEnvironment = scene.environmentMap() != nullptr;
     const auto  target         = renderData.getTexture("color");
     auto*       pipeline       = getPipeline(*renderCommands, target->getDesc().format, hasEnvironment);
@@ -133,8 +135,7 @@ void DeferredLightingPass::execute(RenderContext* renderCommands, const RenderDa
     const rhi::ShaderCursor root(object);
     const auto&             size     = target->getDesc().size;
     const auto              viewport = scene.viewport().clamped({size.width, size.height});
-    rhiCheck(root["sceneGlobals"].setBinding(scene.globalsBuffer()));
-    rhiCheck(root["lights"].setBinding(scene.lightBuffer()));
+    scene.bindShaderData(*object);
     if (!hasEnvironment)
         rhiCheck(
             root["lightingParameters"].getDereferenced()["ambientCoefficient"].setData(parameters.ambientCoefficient)

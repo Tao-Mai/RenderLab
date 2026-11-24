@@ -8,7 +8,6 @@
 class SceneManager
 {
 public:
-    void                  init();
     void                  loadDefaultScene();
     void                  load(const SceneAsset::ID& id);
     void                  load(const SceneAsset& scene);

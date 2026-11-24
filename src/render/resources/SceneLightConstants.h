@@ -9,13 +9,10 @@
 #endif
 
 RENDERLAB_SCENE_LIGHT_CONSTANT kInvalidLightIndex       = 0xffffffffu;
-RENDERLAB_SCENE_LIGHT_CONSTANT kLightHasImage           = 1u << 0;
-RENDERLAB_SCENE_LIGHT_CONSTANT kLightHasPower           = 1u << 1;
-RENDERLAB_SCENE_LIGHT_CONSTANT kLightHasIlluminance     = 1u << 2;
-RENDERLAB_SCENE_LIGHT_CONSTANT kLightFlipUv             = 1u << 3;
-RENDERLAB_SCENE_LIGHT_CONSTANT kLightMultiplyColor      = 1u << 4;
-RENDERLAB_SCENE_LIGHT_CONSTANT kLightTriangleHeaderSize = 16;
-RENDERLAB_SCENE_LIGHT_CONSTANT kLightTriangleStride     = 96;
+RENDERLAB_SCENE_LIGHT_CONSTANT kEmissiveTwoSided        = 1u << 0;
+RENDERLAB_SCENE_LIGHT_CONSTANT kEmissiveFlipUv           = 1u << 1;
+RENDERLAB_SCENE_LIGHT_CONSTANT kEmissiveTriangleStride  = 96;
+RENDERLAB_SCENE_LIGHT_CONSTANT kLightDispatchRowWidth   = 32768;
 
 #undef RENDERLAB_SCENE_LIGHT_CONSTANT
 #endif

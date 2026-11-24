@@ -1,7 +1,6 @@
 #include "asset/AssetManager.h"
 #include <cmath>
 #include "core/Serializer.h"
-#include "metadata/RegisteredTypes.generated.h"
 
 
 namespace
@@ -48,14 +47,6 @@ AssetManager::~AssetManager() {}
 
 void AssetManager::init(std::filesystem::path assetRoot)
 {
-
-
-    static const bool kRegistered = []
-    {
-        metadata::visitRegisteredTypes<MaterialAsset>([]<class T>(const char*) { RegisterType<T, MaterialAsset>(); });
-        return true;
-    }();
-
     root = std::move(assetRoot);
     loadAll();
 }
@@ -70,6 +61,6 @@ void AssetManager::loadAll()
 
 void AssetManager::clear()
 {
-    std::apply([](auto&... maps) { (maps.clear(), ...); }, revisions);
+    revisions = {};
     std::apply([](auto&... maps) { (maps.clear(), ...); }, assets);
 }

@@ -1,8 +1,6 @@
 #ifndef RENDERLAB_LIGHT_DATA_SLANG
 #define RENDERLAB_LIGHT_DATA_SLANG
 
-#include "render/resources/LightRanges.h"
-
 enum class LightType : uint {
     Point = 0,
     Directional = 1,
@@ -52,6 +50,18 @@ struct LightData
         get { return areaRightData.xyz; }
     }
 };
+
+float rectLightArea(LightData light)
+{
+    return light.areaSize.x * light.areaSize.y;
+}
+
+float3 sampleRectLightPosition(LightData light, float2 uv)
+{
+    float2 offset = (uv - 0.5) * light.areaSize;
+    float3 up = cross(light.areaRight, light.direction.xyz);
+    return light.position + offset.x * light.areaRight + offset.y * up;
+}
 
 float spotAngularAttenuation(LightData light, float3 lightToSurfaceDirection)
 {

@@ -55,7 +55,6 @@ private:
     rhi::ComPtr<rhi::ISurface>                    surface;
     rhi::ComPtr<rhi::ICommandQueue>               queue;
     rhi::ComPtr<rhi::IFence>                      frameFence;
-    RenderContext                         renderContext;
     ShaderManager                                 shaders;
     rhi::ComPtr<rhi::IDevice>                     device;
     RenderResourceManager                         resources;
@@ -74,7 +73,7 @@ private:
     void                  configureGraph(const std::string& graphName, const nlohmann::json& parameterOverrides);
     void                  initBlit();
     void                  recordPresentation(
-        rhi::ICommandEncoder& commands, rhi::ITexture& backBuffer, const EditorFrameInput& editor
+        rhi::ICommandEncoder& commands, rhi::ITexture& backBuffer, const EditorFrameInput& editor, uint32_t frameIndex
     );
     void                  initSurface();
     void                  waitForFrame(uint64_t value);

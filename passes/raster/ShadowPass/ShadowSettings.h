@@ -36,5 +36,3 @@ struct RL_RECORD ShadowSettings
 
     void validate() const;
 };
-
-#include RL_METADATA_HEADER("metadata/passes/raster/ShadowPass/ShadowSettings.generated.h")

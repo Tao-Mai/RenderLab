@@ -9,7 +9,6 @@
 #include "scene/component/EnvironmentLightComponent.h"
 #include "scene/component/GoniometricLightComponent.h"
 #include "scene/component/LightTypes.h"
-#include "scene/component/MeshAreaLightComponent.h"
 #include "scene/component/ProjectionLightComponent.h"
 #include "scene/component/RenderComponent.h"
 
@@ -199,21 +198,6 @@ void populateScene(SceneAsset& scene, const PbrtSceneAsset& source, ImageImporte
             surface.outsideMedium = source.media[*shape.outsideMedium];
         surface.faceIndices = shape.faceIndices;
         setTransform(*actor, engineFromRender * instance * shape.renderFromObject.start, shape.entity.location);
-        if (shape.areaLight)
-        {
-            const auto& entity = source.areaLights[*shape.areaLight];
-            CHECK(
-                entity.type == "diffuse",
-                "unsupported PBRT area light '{}' at {}:{}",
-                entity.type,
-                entity.location.file.string(),
-                entity.location.line
-            );
-            auto& light           = actor->addDefaultComponent<MeshAreaLightComponent>();
-            light.emission        = lightEmission(entity, images);
-            light.emission.medium = surface.outsideMedium;
-            light.twoSided        = scalarParameter<PbrtBoolValues>(entity, "twosided", "bool", false) != 0;
-        }
         scene.actors.push_back(std::move(actor));
     };
 

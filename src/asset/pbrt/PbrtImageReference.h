@@ -11,5 +11,3 @@ struct RL_RECORD PbrtImageReference
     RL_FIELD("image") TextureBinding image;
     bool operator==(const PbrtImageReference&) const = default;
 };
-
-#include RL_METADATA_HEADER("metadata/src/asset/pbrt/PbrtImageReference.generated.h")

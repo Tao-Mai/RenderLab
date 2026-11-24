@@ -22,7 +22,7 @@ public:
             size,
             sizeof(T)
         );
-        for (const auto& field : metadata::Layout<T>::kFields)
+        for (const auto& field : metadata::layoutFields(typeid(T)))
         {
             const auto index = element->findFieldIndexByName(field.name);
             CHECK(index >= 0, "shader field '{}.{}' is missing", name, field.name);

@@ -7,8 +7,7 @@
 
 #include <slang-rhi.h>
 #include "render/GpuScene.h"
-#include "render/RenderContext.h"
-#include "render/raytracing/PathTracingShader.h"
+#include "render/device/RhiCheck.h"
 
 #include <slang-rhi/shader-cursor.h>
 #include <string>
@@ -26,19 +25,12 @@ void RestirResources::compile(const std::array<rhi::IBuffer*, kBindingCount>& bu
 }
 
 
-bool RestirResources::prepare(
-    const RenderContext& frame,
-    glm::uvec2                extent,
-    const RestirSettings&        settings,
-    rhi::IShaderObject*          object
+void RestirResources::prepare(
+    const GpuScene& scene, glm::uvec2 extent, const RestirSettings& settings, rhi::IShaderObject* object
 )
 {
-    const auto&     data     = *frame.scene;
-    const auto&     viewport = data.viewport();
+    const auto&     viewport = scene.viewport();
     const glm::vec4 currentViewport{viewport.x, viewport.y, viewport.width, viewport.height};
-    const bool                  sameEnvironment = data.environmentMap() == previousEnvironment;
-    const bool                  sameShading     = data.shadingRevision() == previousShadingRevision;
-    const bool historyValid = hasHistory && sameShading && sameEnvironment;
     const RestirFrameParameters frameParameters{
         .previousViewProjection = previousViewProjection,
         .previousViewport       = previousViewport,
@@ -46,7 +38,7 @@ bool RestirResources::prepare(
         .width                  = extent.x,
         .height                 = extent.y,
         .writeLayer             = writeLayer,
-        .historyValid           = historyValid ? 1u : 0u,
+        .historyValid           = hasHistory ? 1u : 0u,
         .maxHistoryLength       = settings.maxHistoryLength,
         .spatialSampleCount     = settings.spatialSampleCount,
         .spatialRadius          = settings.spatialRadius,
@@ -56,19 +48,16 @@ bool RestirResources::prepare(
     };
     const rhi::ShaderCursor root(object);
     rhiCheck(root["restirFrame"].getDereferenced().setData(frameParameters));
-    const auto& camera        = data.cameraUniforms();
+    const auto& camera        = scene.cameraUniforms();
     const auto& view          = camera.view;
     previousViewProjection    = camera.viewProjection;
     previousViewport          = currentViewport;
     previousDepthRow          = -glm::vec4{view[0][2], view[1][2], view[2][2], view[3][2]};
-    previousShadingRevision   = data.shadingRevision();
-    previousEnvironment       = data.environmentMap();
 
     rhiCheck(root["restirSurfaces"].setBinding(surfaces[writeLayer]));
     rhiCheck(root["restirPreviousSurfaces"].setBinding(surfaces[writeLayer ^ 1u]));
     rhiCheck(root["restirInitialReservoirs"].setBinding(initialReservoirs));
     rhiCheck(root["restirHistory"].setBinding(reservoirHistory));
-    return hasHistory && !historyValid;
 }
 
 

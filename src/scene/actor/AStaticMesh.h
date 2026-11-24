@@ -10,5 +10,3 @@ public:
     AStaticMesh();
     void init() override;
 };
-
-#include RL_METADATA_HEADER("metadata/src/scene/actor/AStaticMesh.generated.h")

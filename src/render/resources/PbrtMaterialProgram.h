@@ -45,6 +45,8 @@ enum class MaterialModel : RENDERLAB_PBRT_UINT
 #ifdef __cplusplus
 struct alignas(16) TextureInstruction
 {
+    bool operator==(const TextureInstruction&) const = default;
+
     glm::uvec4 metadata{};  // Operation, scalar output / program length, texture, sampler.
     glm::vec4  value{};
     glm::vec4  uvScaleOffset{1, 1, 0, 0};
@@ -57,6 +59,8 @@ static_assert(sizeof(TextureInstruction) == 160);
 
 struct alignas(16) MaterialInstruction
 {
+    bool operator==(const MaterialInstruction&) const = default;
+
     MaterialModel model            = MaterialModel::Diffuse;
     uint32_t      firstTexture     = 0;
     uint32_t      secondTexture    = 0;

@@ -3,6 +3,5 @@
 
 #include "scene/light_data.slang"
 
-StructuredBuffer<LightData> lights;
 
 #endif

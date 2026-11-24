@@ -10,6 +10,8 @@
 #include "core/Window.h"
 #include "render/device/RhiCheck.h"
 #include "render/graph/RenderGraphScript.h"
+#include "render/graph/RenderPassStandardFlags.h"
+#include "render/raytracing/PathTracingShader.h"
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 #include <slang-rhi.h>
@@ -47,14 +49,7 @@ void Renderer::init()
     auto& assets = *context().assetManager;
     auto& assetData = *context().assetDataManager;
     resources.init(*device, assets, assetData);
-    gpuScene.init(*device, assets, assetData, resources);
-    renderContext = {
-        .device        = device.get(),
-        .shaderManager = &shaders,
-        .resources     = &resources,
-        .scene         = &gpuScene,
-    };
-
+    gpuScene.init(*device, assets, assetData, resources, shaders);
     if (!pendingGraphName)
         pendingGraphName = context().config->renderGraphName();
     waitIdle();
@@ -75,7 +70,7 @@ void Renderer::shutdown() noexcept
     waitIdle();
 
     mpRenderGraph = {};
-    renderContext = {};
+    waitForPathTracingPipelineBuilds();
     blitPipeline  = nullptr;
     gpuScene      = {};
     resources.shutdown();
@@ -115,6 +110,7 @@ void Renderer::configureGraph(const std::string& graphName, const nlohmann::json
 
     const auto& surfaceConfig = *surface->getConfig();
     candidate.onResize({surfaceConfig.width, surfaceConfig.height}, surfaceConfig.format);
+    candidate.setScene(&gpuScene);
     mpRenderGraph = std::move(loaded.graph);
 }
 
@@ -123,7 +119,7 @@ void Renderer::initBlit()
     rhi::ColorTargetDesc color;
     color.format = surface->getConfig()->format;
     rhi::RenderPipelineDesc desc;
-    desc.program                       = shaders.getOrLoad("blit");
+    desc.program                       = shaders.getProgram("shaders/raster/blit.slang", {"vertMain", "fragMain"});
     desc.targets                       = &color;
     desc.targetCount                   = 1;
     desc.depthStencil.depthTestEnable  = false;
@@ -133,7 +129,7 @@ void Renderer::initBlit()
 }
 
 void Renderer::recordPresentation(
-    rhi::ICommandEncoder& commands, rhi::ITexture& backBuffer, const EditorFrameInput& editor
+    rhi::ICommandEncoder& commands, rhi::ITexture& backBuffer, const EditorFrameInput& editor, uint32_t frameIndex
 )
 {
     const auto source = mpRenderGraph->getOutputTexture(0);
@@ -156,7 +152,7 @@ void Renderer::recordPresentation(
     pass->draw({3});
 
     if (editor.recordUi)
-        editor.recordUi(*pass, renderContext.frameIndex);
+        editor.recordUi(*pass, frameIndex);
     pass->end();
 }
 
@@ -203,11 +199,11 @@ void Renderer::applyConfiguration()
         return;
     waitIdle();
     previousGraph.reset();
-    renderContext.frameIndex = 0;
 
+    RenderContext compileContext{.shaderManager = &shaders, .resources = &resources};
     std::string log;
     CHECK(
-        mpRenderGraph->compile(&renderContext, log),
+        mpRenderGraph->compile(&compileContext, log),
         "failed to compile render graph '{}': {}",
         mpRenderGraph->getName(),
         log
@@ -263,8 +259,22 @@ RenderFrameResult Renderer::render(const SceneRenderData& scene, const EditorFra
     rhi::ComPtr<rhi::ICommandEncoder> commands;
     rhiCheck(queue->createCommandEncoder(commands.writeRef()));
 
-    // Asset initialization can submit to the graphics queue. Acquire the image after it is complete.
-    gpuScene.update(scene, *commands);
+    const auto updates = gpuScene.update(scene, *commands);
+
+    RenderContext frame{
+        .commands      = commands.get(),
+        .shaderManager = &shaders,
+        .resources     = &resources,
+        .editor        = &editor,
+        .frameIndex    = static_cast<uint32_t>(lastSubmittedFrame % activeFramesInFlight),
+        .deltaSeconds  = deltaSeconds,
+    };
+    mpRenderGraph->onSceneUpdates(&frame, updates);
+    if (mpRenderGraph->needsCompilation())
+    {
+        applyConfiguration();
+        frame.frameIndex = static_cast<uint32_t>(lastSubmittedFrame % activeFramesInFlight);
+    }
 
     rhi::ComPtr<rhi::ITexture> backBuffer;
     const auto                 acquired      = surface->acquireNextImage(backBuffer.writeRef());
@@ -273,15 +283,9 @@ RenderFrameResult Renderer::render(const SceneRenderData& scene, const EditorFra
     if (imageAcquired)
     {
         CHECK(backBuffer);
-
-        renderContext.commands     = commands.get();
-        renderContext.editor       = &editor;
-        renderContext.deltaSeconds = deltaSeconds;
-        mpRenderGraph->execute(&renderContext);
-        renderContext.commands = nullptr;
-        renderContext.editor   = nullptr;
-
-        recordPresentation(*commands, *backBuffer, editor);
+        mpRenderGraph->getPassesDictionary()[kRenderPassRefreshFlags] = std::to_underlying(RenderPassRefreshFlags::None);
+        mpRenderGraph->execute(&frame);
+        recordPresentation(*commands, *backBuffer, editor, frame.frameIndex);
     }
     else
     {
@@ -309,13 +313,12 @@ RenderFrameResult Renderer::render(const SceneRenderData& scene, const EditorFra
     if (imageAcquired)
     {
         rhiCheck(surface->present());
-        if (!renderContext.onGpuComplete.empty())
+        if (!frame.onGpuComplete.empty())
         {
             waitForFrame(submissionValue);
-            renderContext.notifyGpuComplete();
+            frame.notifyGpuComplete();
         }
     }
 
-    renderContext.frameIndex = (renderContext.frameIndex + 1) % activeFramesInFlight;
     return imageAcquired ? RenderFrameResult::Presented : RenderFrameResult::SwapchainNeedsRebuild;
 }

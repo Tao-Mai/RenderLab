@@ -1,3 +1,1 @@
 renderlab_add_plugin(PathTracer PathTracer.cpp)
-
-renderlab_runtime_shader(pt main.slang ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain)

@@ -8,18 +8,21 @@
 
 inline constexpr uint32_t kSvgfFilterIterations = 5;
 
+struct ViewportRect;
+
 class SVGFFilter
 {
 public:
     void compile(
-        const RenderContext&                                   context,
+        rhi::IDevice&                                          device,
+        ShaderManager&                                         shaders,
         const SVGFInputs&                                      traced,
         const SVGFReprojection::Output&                        lighting,
         const std::array<rhi::ITexture*, kLightingLayerCount>& scratch,
         rhi::ITexture*                                         color,
         const SVGFReprojection&                                reprojection
     );
-    void execute(const RenderContext& frame) const;
+    void execute(rhi::ICommandEncoder& commands, const ViewportRect& viewport) const;
 
 private:
     struct FilterResources
@@ -44,8 +47,8 @@ private:
         {
         }
 
-        void compile(const RenderContext& context, const FilterResources& resources);
-        void execute(const RenderContext& frame) const;
+        void compile(rhi::IDevice& device, ShaderManager& shaders, const FilterResources& resources);
+        void execute(rhi::ICommandEncoder& commands, const ViewportRect& viewport) const;
 
     private:
         uint32_t                iteration;
@@ -57,7 +60,7 @@ private:
 
         [[nodiscard]] bool first() const { return iteration == 0; }
         [[nodiscard]] bool last() const { return iteration + 1 == kSvgfFilterIterations; }
-        void               createPipeline(const RenderContext& context);
+        void               createPipeline(rhi::IDevice& device, ShaderManager& shaders);
     };
 
     std::vector<FilterPass> filters;

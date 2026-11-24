@@ -64,5 +64,3 @@ struct RL_RECORD MeshAsset : Asset
     RL_FIELD("bounds") Aabb                                 bounds;
     RL_FIELD("submeshes") std::vector<Submesh>                 submeshes;
 };
-
-#include RL_METADATA_HEADER("metadata/src/asset/MeshAsset.generated.h")

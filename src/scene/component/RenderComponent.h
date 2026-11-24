@@ -18,5 +18,3 @@ struct RL_REGISTER_TYPE(Component, "RenderComponent") RenderComponent : Componen
     RL_FIELD("materialOverrides") std::unordered_map<int, MaterialOverride> materialOverrides;
     RL_FIELD("pbrtSurface") std::optional<PbrtSurface> pbrtSurface;
 };
-
-#include RL_METADATA_HEADER("metadata/src/scene/component/RenderComponent.generated.h")

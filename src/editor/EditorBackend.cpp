@@ -89,7 +89,7 @@ void EditorBackend::init(GLFWwindow* window, rhi::IDevice& target, ShaderManager
     color.color       = {rhi::BlendFactor::SrcAlpha, rhi::BlendFactor::InvSrcAlpha, rhi::BlendOp::Add};
     color.alpha       = {rhi::BlendFactor::One, rhi::BlendFactor::InvSrcAlpha, rhi::BlendOp::Add};
     rhi::RenderPipelineDesc desc;
-    desc.program                       = shaders.getOrLoad("imgui");
+    desc.program                       = shaders.getProgram("shaders/editor/imgui.slang", {"vertMain", "fragMain"});
     desc.inputLayout                   = input;
     desc.targets                       = &color;
     desc.targetCount                   = 1;

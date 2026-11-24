@@ -4,6 +4,7 @@
 #include <imgui_stdlib.h>
 #include "asset/SceneAsset.h"
 #include "core/Logger.h"
+#include "core/Metadata.h"
 #include "core/TypeRegistry.h"
 namespace
 {
@@ -54,10 +55,10 @@ SceneObjectActions SceneHierarchy::draw(SceneAsset& scene, uint32_t& selectedId,
             types.push_back(&entry);
         std::ranges::sort(types, {}, [](const auto* type) { return std::string_view{type->id}; });
 
-        constexpr auto kActorId = metadata::Schema<AActor>::kTypeId;
-        if (ImGui::TreeNodeEx(kActorId, ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth))
+        const auto* actorId = metadata::record(typeid(AActor)).id;
+        if (ImGui::TreeNodeEx(actorId, ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth))
         {
-            drawActorTypeTree(kActorId, types, result.createType);
+            drawActorTypeTree(actorId, types, result.createType);
             ImGui::TreePop();
         }
         if (result.createType)

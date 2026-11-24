@@ -13,5 +13,3 @@ struct RL_TYPE("LocalLightComponent") LocalLightComponent : LightComponent
     RL_FIELD("luminousIntensity") float luminousIntensity = 8.0f; // cd.
     RL_FIELD("range") float range = 10.0f;
 };
-
-#include RL_METADATA_HEADER("metadata/src/scene/component/LocalLightComponent.generated.h")

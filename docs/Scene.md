@@ -17,7 +17,7 @@
 
 ## 反射与持久化
 
-SceneManager 初始化时注册生成目录中由 `RL_REGISTER_TYPE` 收集的类型。Engine 进入 Run 时，SceneManager 读取配置中的默认场景 ID 并加载。
+Clang 生成代码根据 `RL_REGISTER_TYPE` 填充多态类型注册表。Engine 进入 Run 时，SceneManager 读取配置中的默认场景 ID 并加载。
 
 - Actor / Component 通过 `RL_FIELD` 标记持久化字段，生成的描述包含基类字段。
 - 多态指针使用注册类型名，保存为 `{"TypeName": {...}}`，空指针为 null。

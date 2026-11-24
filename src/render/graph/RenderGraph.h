@@ -61,8 +61,11 @@ public:
     void                             setName(const std::string& value) { mName = value; }
     [[nodiscard]] uint32_t            getMaxFramesInFlight() const { return mpExe->getMaxFramesInFlight(); }
     [[nodiscard]] bool               hasActivePass(std::string_view type) const { return mpExe && mpExe->hasPassType(type); }
+    [[nodiscard]] RenderData::Dictionary& getPassesDictionary() { return mPassesDictionary; }
 
     void               onResize(Extent2D extent, rhi::Format format);
+    void               setScene(GpuScene* scene);
+    void               onSceneUpdates(RenderContext* context, SceneUpdateFlags updates);
     [[nodiscard]] bool needsCompilation() const { return !mpExe || mRecompile; }
     bool               compile(RenderContext* context, std::string& log);
     bool               compile(RenderContext* context)
@@ -70,7 +73,6 @@ public:
         std::string log;
         return compile(context, log);
     }
-    // The graph must be compiled before recording it.
     void execute(RenderContext* context);
     void renderUI(const PassEditorContext& context, Gui::Widgets& widget);
 
@@ -99,9 +101,6 @@ private:
     };
 
     [[nodiscard]] uint32_t getEdge(const std::string& source, const std::string& target);
-    RenderPass*            getRenderPassAndNamePair(
-                   bool input, const std::string& fullName, std::pair<std::string, std::string>& nameAndField
-               ) const;
     [[nodiscard]] bool isGraphOutput(const GraphOut& output) const;
 
     rhi::ComPtr<rhi::IDevice>                 mpDevice;
@@ -111,7 +110,9 @@ private:
     std::unordered_map<uint32_t, EdgeData>    mEdgeData;
     std::unordered_map<uint32_t, NodeData>    mNodeData;
     std::vector<GraphOut>                     mOutputs;
+    RenderData::Dictionary                   mPassesDictionary;
     std::unique_ptr<RenderGraphExe>           mpExe;
     RenderGraphCompiler::Dependencies         mCompilerDeps;
+    GpuScene*                                 mpScene = nullptr;
     bool                                      mRecompile = false;
 };

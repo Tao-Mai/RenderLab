@@ -23,5 +23,3 @@ namespace pbrt_import
 class ImageImporter;
 [[nodiscard]] PbrtLightEmission lightEmission(const PbrtEntity& entity, ImageImporter& images);
 }
-
-#include RL_METADATA_HEADER("metadata/src/asset/pbrt/PbrtLight.generated.h")

@@ -48,7 +48,8 @@ namespace
 }  // namespace
 
 rhi::ComPtr<rhi::ITexture>
-uploadTexture(rhi::IDevice& device, const TextureAsset& asset, std::span<const uint8_t> bytes)
+uploadTexture(rhi::IDevice& device, rhi::ICommandEncoder& commands, const TextureAsset& asset,
+    std::span<const uint8_t> bytes)
 {
     const uint32_t layers = asset.layout == ImageLayout::Cubemap ? 6 : 1;
     const bool     expand = asset.format == ImageFormat::RGB8 ||
@@ -86,6 +87,8 @@ uploadTexture(rhi::IDevice& device, const TextureAsset& asset, std::span<const u
     desc.format   = textureFormat(uploadFormat, asset.colorSpace);
     desc.usage    = rhi::TextureUsage::ShaderResource | rhi::TextureUsage::CopyDestination;
     rhi::ComPtr<rhi::ITexture> image;
-    rhiCheck(device.createTexture(desc, subresources.data(), image.writeRef()));
+    rhiCheck(device.createTexture(desc, nullptr, image.writeRef()));
+    rhiCheck(commands.uploadTextureData(image, {0, layers, 0, desc.mipCount}, {0, 0, 0},
+        rhi::Extent3D::kWholeTexture, subresources.data(), static_cast<uint32_t>(subresources.size())));
     return image;
 }

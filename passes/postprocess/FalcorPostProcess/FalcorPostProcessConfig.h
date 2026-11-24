@@ -87,5 +87,3 @@ struct RL_RECORD FalcorPostProcessConfig
 
     void validate() const;
 };
-
-#include RL_METADATA_HEADER("metadata/passes/postprocess/FalcorPostProcess/FalcorPostProcessConfig.generated.h")

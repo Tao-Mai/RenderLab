@@ -48,7 +48,10 @@ private:
 
         Filter(Stage stage, const BloomSettings& settings) : stage(stage), settings(settings) {}
 
-        void compile(const RenderContext& context, rhi::ITexture* source, rhi::ITexture* base, rhi::ITexture* target);
+        void compile(
+            rhi::IDevice& device, const RenderContext& context,
+            rhi::ITexture* source, rhi::ITexture* base, rhi::ITexture* target
+        );
         void execute(rhi::ICommandEncoder& commands, Extent2D frameExtent, const ViewportRect& viewport) const;
 
     private:

@@ -2,7 +2,7 @@
 
 #include <slang-rhi/shader-cursor.h>
 #include "render/GpuScene.h"
-#include "render/RenderContext.h"
+#include "render/resources/ShaderManager.h"
 #include "render/device/RhiCheck.h"
 #include "render/raster/MeshDraw.h"
 #include "render/raster/ShadowResources.h"
@@ -31,37 +31,38 @@ void bindPbrTextures(const rhi::ShaderCursor& root, const GpuScene& scene, bool 
 }
 
 void ForwardPbrPipelines::setup(
-    rhi::IDevice& device, rhi::Format colorFormat, const rhi::DepthStencilDesc& depthState, bool blend, bool clearcoat
+    rhi::IDevice& targetDevice, rhi::Format colorFormat, const rhi::DepthStencilDesc& depthState, bool blend
 )
 {
+    device            = &targetDevice;
     color             = {};
     color.format      = colorFormat;
     color.enableBlend = blend;
     color.color       = {rhi::BlendFactor::SrcAlpha, rhi::BlendFactor::InvSrcAlpha, rhi::BlendOp::Add};
     color.alpha       = {rhi::BlendFactor::One, rhi::BlendFactor::InvSrcAlpha, rhi::BlendOp::Add};
     depth             = depthState;
-    input             = createMeshInputLayout(device);
-    clearcoatEnabled  = clearcoat;
+    input             = createMeshInputLayout(targetDevice);
     pipelines         = {};
 }
 
 rhi::IShaderObject& ForwardPbrPipelines::bind(
     rhi::IRenderPassEncoder&           pass,
-    const RenderContext&               context,
+    ShaderManager&                     shaders,
+    const GpuScene&                    scene,
     const MaterialTable::MaterialInfo& material,
     const ShadowBindings&              shadows,
-    float                              ambientCoefficient
+    float                              ambientCoefficient,
+    bool                               enableClearcoat
 )
 {
-    const auto& scene          = *context.scene;
     const bool  hasEnvironment = scene.environmentMap() != nullptr;
-    const bool  clearcoat      = material.clearcoat && clearcoatEnabled;
+    const bool  clearcoat      = material.clearcoat && enableClearcoat;
     const auto  variant        = 2 * size_t(clearcoat) + size_t(material.sheen);
     auto&       pipeline       = pipelines[hasEnvironment][variant][material.doubleSided];
     if (!pipeline)
     {
-        const auto shader = context.shaderManager->getOrCompile(
-            "forward",
+        const auto shader = shaders.getProgram(
+            "shaders/raster/forward.slang", {"vertMain", "fragMain"},
             {{"HAS_ENV", hasEnvironment ? "1" : "0"},
              {"ENABLE_CLEARCOAT", clearcoat ? "1" : "0"},
              {"ENABLE_SHEEN", material.sheen ? "1" : "0"}}
@@ -75,13 +76,12 @@ rhi::IShaderObject& ForwardPbrPipelines::bind(
         desc.rasterizer.cullMode      = material.doubleSided ? rhi::CullMode::None : rhi::CullMode::Back;
         desc.rasterizer.frontFace     = rhi::FrontFaceMode::CounterClockwise;
         desc.rasterizer.scissorEnable = true;
-        rhiCheck(context.device->createRenderPipeline(desc, pipeline.writeRef()));
+        rhiCheck(device->createRenderPipeline(desc, pipeline.writeRef()));
     }
 
     auto* object = pass.bindPipeline(pipeline);
     CHECK(object);
     const rhi::ShaderCursor root(object);
-    rhiCheck(root["lights"].setBinding(scene.lightBuffer()));
     if (!hasEnvironment)
         rhiCheck(root["lightingParameters"].getDereferenced()["ambientCoefficient"].setData(ambientCoefficient));
     bindPbrTextures(root, scene, material.sheen);

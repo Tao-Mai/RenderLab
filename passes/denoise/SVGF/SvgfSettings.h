@@ -20,5 +20,3 @@ struct RL_RECORD SvgfSettings
         CHECK(std::isfinite(alpha) && alpha >= 0.0f && alpha <= 1.0f);
     }
 };
-
-#include RL_METADATA_HEADER("metadata/passes/denoise/SVGF/SvgfSettings.generated.h")

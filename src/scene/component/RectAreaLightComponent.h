@@ -10,5 +10,3 @@ struct RL_REGISTER_TYPE(Component, "RectAreaLightComponent") RectAreaLightCompon
 
     RL_FIELD("areaSize") glm::vec2 areaSize{1.0f};
 };
-
-#include RL_METADATA_HEADER("metadata/src/scene/component/RectAreaLightComponent.generated.h")

@@ -3,7 +3,6 @@
 #include <slang-rhi.h>
 #include <span>
 #include "render/GpuScene.h"
-#include "render/RenderContext.h"
 #include "render/resources/MaterialTable.h"
 
 struct MeshCullPipelines
@@ -18,18 +17,18 @@ struct MeshCullPipelines
 class MeshDrawRecorder
 {
 public:
-    MeshDrawRecorder(rhi::IRenderPassEncoder& pass, rhi::RenderState state, const RenderContext& frame) :
-        pass(pass), state(state), frame(frame)
+    MeshDrawRecorder(rhi::IRenderPassEncoder& pass, rhi::RenderState state, GpuScene& scene) :
+        pass(pass), state(state), scene(scene)
     {
     }
 
     template <class BindPipeline>
     void drawOpaque(BindPipeline&& bindPipeline)
     {
-        for (const uint32_t index : frame.scene->visibleDraws())
+        for (const uint32_t index : scene.visibleDraws())
         {
-            const auto& item     = frame.scene->drawCalls()[index];
-            const auto& material = frame.scene->materials().info(item.materialIndex);
+            const auto& item     = scene.drawCalls()[index];
+            const auto& material = scene.materials().info(item.materialIndex);
             if (material.alphaMode != kAlphaModeBlend)
                 draw(item, bindPipeline(material));
         }
@@ -40,8 +39,8 @@ public:
     {
         for (const auto index : drawOrder)
         {
-            const auto& item = frame.scene->drawCalls()[index];
-            draw(item, bindPipeline(frame.scene->materials().info(item.materialIndex)));
+            const auto& item = scene.drawCalls()[index];
+            draw(item, bindPipeline(scene.materials().info(item.materialIndex)));
         }
     }
 
@@ -50,5 +49,5 @@ private:
 
     rhi::IRenderPassEncoder& pass;
     rhi::RenderState        state;
-    const RenderContext&    frame;
+    GpuScene&               scene;
 };

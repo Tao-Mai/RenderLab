@@ -15,5 +15,3 @@ struct RL_REGISTER_TYPE(Component, "EnvironmentLightComponent") EnvironmentLight
     RL_FIELD("portal") std::vector<glm::vec3> portal;
     RL_FIELD("enabled") bool enabled = true;
 };
-
-#include RL_METADATA_HEADER("metadata/src/scene/component/EnvironmentLightComponent.generated.h")

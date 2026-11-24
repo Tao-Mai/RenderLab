@@ -21,9 +21,13 @@ RenderPassReflection DepthPrepass::reflect(const CompileData&)
 void DepthPrepass::compile(RenderContext* passContext, const CompileData&)
 {
     rhi::RenderPipelineDesc desc;
-    desc.program      = passContext->shaderManager->getOrLoad("depth");
+    desc.program = passContext->shaderManager->getProgram(
+        "passes/raster/DepthPrepass/depth.slang",
+        {"vertMain", "fragMain"},
+        {{"ENABLE_CLEARCOAT", "0"}, {"ENABLE_SHEEN", "0"}}
+    );
     desc.depthStencil = {.format = rhi::Format::D32Float, .depthTestEnable = true};
-    pipelines         = createMeshCullPipelines(*passContext->device, desc);
+    pipelines         = createMeshCullPipelines(*mpDevice, desc);
 }
 
 
@@ -38,8 +42,8 @@ void DepthPrepass::execute(RenderContext* renderCommands, const RenderData& rend
     auto* pass        = renderCommands->commands->beginRenderPass({nullptr, 0, &depth});
     CHECK(pass);
     const auto&      size     = target->getDesc().size;
-    const auto       viewport = renderCommands->scene->viewport().clamped({size.width, size.height});
-    MeshDrawRecorder recorder{*pass, viewport.renderState(), *renderCommands};
+    const auto       viewport = mpScene->viewport().clamped({size.width, size.height});
+    MeshDrawRecorder recorder{*pass, viewport.renderState(), *mpScene};
     recorder.drawOpaque([&](const auto& material) -> rhi::IShaderObject& { return pipelines.bind(*pass, material); });
     pass->end();
 }

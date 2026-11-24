@@ -4,22 +4,24 @@ add_subdirectory(tools/metadata)
 set(RENDERLAB_GENERATED_DIRECTORY "${RenderLab_BINARY_DIR}/generated/$<CONFIG>")
 
 function(renderlab_generate_metadata target sourceDir)
-    cmake_parse_arguments(PARSE_ARGV 2 metadata "" "REGISTRY" "")
-    file(GLOB_RECURSE candidates CONFIGURE_DEPENDS "${sourceDir}/*.h")
-    # Adding or removing the marker can change the output list without changing the glob.
+    cmake_parse_arguments(PARSE_ARGV 2 metadata "SCHEMA" "" "")
+    file(GLOB_RECURSE candidates CONFIGURE_DEPENDS "${sourceDir}/*.h" "${sourceDir}/*.hpp")
+    # Changes to annotations in existing headers can change the scan inputs.
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${candidates})
 
-    set(metadata_dir "${RENDERLAB_GENERATED_DIRECTORY}/metadata")
+    set(output "${RENDERLAB_GENERATED_DIRECTORY}/metadata/${target}.generated.cpp")
     set(scan "${RENDERLAB_GENERATED_DIRECTORY}/scan/${target}.cpp")
     set(stamp "${RENDERLAB_GENERATED_DIRECTORY}/scan/${target}.stamp")
     set(depfile "${RENDERLAB_GENERATED_DIRECTORY}/scan/${target}.d")
     set(inputs)
     set(headers)
-    set(outputs)
     set(scan_source "")
     foreach(input IN LISTS candidates)
+        if(input STREQUAL "${RenderLab_SOURCE_DIR}/src/core/MetadataAnnotations.h")
+            continue()
+        endif()
         file(STRINGS "${input}" marker
-            REGEX "^[ \t]*#[ \t]*include[ \t]+RL_METADATA_HEADER[ \t]*\\("
+            REGEX "(^|[^A-Za-z0-9_])RL_(RECORD|TYPE|REGISTER_TYPE|ALLOW_UNKNOWN_FIELDS|FIELD|SLIDER|ENUM|FLAGS|ENUM_VALUE|SHADER_LAYOUT)([^A-Za-z0-9_]|$)"
             LIMIT_COUNT 1
         )
         if(NOT marker)
@@ -27,21 +29,19 @@ function(renderlab_generate_metadata target sourceDir)
         endif()
 
         cmake_path(RELATIVE_PATH input BASE_DIRECTORY "${RenderLab_SOURCE_DIR}" OUTPUT_VARIABLE relative)
-        string(REGEX REPLACE "\\.h$" ".generated.h" generated "${relative}")
         list(APPEND inputs "${input}")
         list(APPEND headers "${relative}")
-        list(APPEND outputs "${metadata_dir}/${generated}")
         string(APPEND scan_source "#include \"${relative}\"\n")
     endforeach()
     if(NOT inputs)
         return()
     endif()
 
-    set(registry "-")
-    if(metadata_REGISTRY)
-        set(registry "${metadata_REGISTRY}")
-        string(REGEX REPLACE "\\.h$" ".cpp" registry_source "${registry}")
-        list(APPEND outputs "${metadata_dir}/${registry}" "${metadata_dir}/${registry_source}")
+    set(byproducts "${output}")
+    set(schema "-")
+    if(metadata_SCHEMA)
+        set(schema "${RENDERLAB_GENERATED_DIRECTORY}/metadata/${target}.schema.inc")
+        list(APPEND byproducts "${schema}")
     endif()
     file(GENERATE OUTPUT "${scan}" CONTENT "${scan_source}")
 
@@ -49,9 +49,9 @@ function(renderlab_generate_metadata target sourceDir)
     set(definitions "$<TARGET_PROPERTY:${target},COMPILE_DEFINITIONS>")
     add_custom_command(
         OUTPUT "${stamp}"
-        BYPRODUCTS ${outputs}
+        BYPRODUCTS ${byproducts}
         COMMAND ${renderlab_metadata_environment} "$<TARGET_FILE:RenderLabMetadata>"
-            "${RENDERLAB_METADATA_CLANG}" "${scan}" "${RenderLab_SOURCE_DIR}" "${metadata_dir}" "${registry}"
+            "${RENDERLAB_METADATA_CLANG}" "${scan}" "${RenderLab_SOURCE_DIR}" "${output}" "${schema}"
             ${headers} --
             --driver-mode=g++ -std=c++23 -fsyntax-only -fno-exceptions -DRENDERLAB_METADATA_SCAN
             "$<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:-DNDEBUG>"
@@ -69,5 +69,5 @@ function(renderlab_generate_metadata target sourceDir)
     )
     add_custom_target(${target}Metadata DEPENDS "${stamp}")
     add_dependencies(${target} ${target}Metadata)
-    target_sources(${target} PRIVATE ${inputs} ${outputs})
+    target_sources(${target} PRIVATE "${output}")
 endfunction()

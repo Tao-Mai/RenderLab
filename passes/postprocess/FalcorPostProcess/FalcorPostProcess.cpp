@@ -122,12 +122,12 @@ static_assert(offsetof(ToneMapperParameters, clampOutput) == 64);
 
 void FalcorPostProcess::initialize(const RenderContext& context)
 {
-    auto& device = *context.device;
+    auto& device = *mpDevice;
 
     const auto create = [&](SimplePostFxVariant variant)
     {
-        const auto shader = context.shaderManager->getOrLoad(
-            "falcor_simple_post_fx",
+        const auto shader = context.shaderManager->getProgram(
+            "passes/postprocess/FalcorPostProcess/simple_post_fx.slang", {"computeMain"},
             {{"POST_FX_STAGE", std::to_string(int(variant))}}
         );
         rhi::ComPtr<rhi::IComputePipeline> pipeline;
@@ -193,9 +193,8 @@ RenderPassReflection FalcorPostProcess::reflect(const CompileData& data)
         extent.y = input->texture().size.height ? input->texture().size.height : extent.y;
     }
 
-    constexpr auto kStorageSampled =
-        rhi::TextureUsage::UnorderedAccess | rhi::TextureUsage::ShaderResource;
-    constexpr auto kColorSampled = rhi::TextureUsage::RenderTarget | rhi::TextureUsage::ShaderResource;
+    const auto kStorageSampled = rhi::TextureUsage::UnorderedAccess | rhi::TextureUsage::ShaderResource;
+    const auto kColorSampled   = rhi::TextureUsage::RenderTarget | rhi::TextureUsage::ShaderResource;
     if (parameters.simplePostFx.usesBloom())
     {
         for (uint32_t level = 0; level <= falcorPostProcess::kBloomLevels; ++level)
@@ -259,7 +258,8 @@ void FalcorPostProcess::execute(RenderContext* renderCommands, const RenderData&
         const auto effects       = addSimplePostFx(renderData, source);
         auto&      shaders       = *renderCommands->shaderManager;
         const auto toneMapped    = addToneMapper(shaders, renderData, effects);
-        const auto presentShader = shaders.getOrLoad("falcor_present");
+        const auto presentShader =
+            shaders.getProgram("shaders/raster/blit.slang", {"vertMain", "fragMain"}, {{"BLIT_SRGB_CONTROL", "1"}});
         addImageStage({*this, Stage::Present, presentShader}, toneMapped, toneMapped, target);
     }
 
@@ -298,13 +298,21 @@ rhi::ITexture* FalcorPostProcess::addToneMapper(ShaderManager& shaders, const Re
     auto           luminance            = source;
     if (parameters.toneMapper.autoExposure)
     {
-        const auto shader = shaders.getOrLoad("falcor_luminance", {{"LUMINANCE_STAGE", kLuminanceStage}});
+        const auto shader = shaders.getProgram(
+            "passes/postprocess/FalcorPostProcess/luminance.slang",
+            {"vertMain", "fragMain"},
+            {{"LUMINANCE_STAGE", kLuminanceStage}}
+        );
         luminance =
             addImageStage({*this, Stage::Luminance, shader}, source, source, data.getTexture(luminanceImageName(0)));
 
         // Separate images retain the exact size, R32F quantization and linear filtering of each Falcor mip.
         const auto levels    = static_cast<uint32_t>(std::bit_width(std::max(extent.width, extent.height)));
-        const auto mipShader = shaders.getOrLoad("falcor_luminance", {{"LUMINANCE_STAGE", kLuminanceMipStage}});
+        const auto mipShader = shaders.getProgram(
+            "passes/postprocess/FalcorPostProcess/luminance.slang",
+            {"vertMain", "fragMain"},
+            {{"LUMINANCE_STAGE", kLuminanceMipStage}}
+        );
         for (uint32_t level = 1; level < levels; ++level)
         {
             luminance = addImageStage(
@@ -316,7 +324,8 @@ rhi::ITexture* FalcorPostProcess::addToneMapper(ShaderManager& shaders, const Re
         }
     }
 
-    const auto shader = shaders.getOrLoad("falcor_tonemapping");
+    const auto shader =
+        shaders.getProgram("passes/postprocess/FalcorPostProcess/tonemapping.slang", {"vertMain", "fragMain"});
     return addImageStage({*this, Stage::ToneMapping, shader}, source, luminance, data.getTexture(kToneMapped));
 }
 

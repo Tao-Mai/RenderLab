@@ -1,3 +1,3 @@
 renderlab_add_plugin(EditorPickingPass EditorPickingPass.cpp)
 
-renderlab_shader(editor_picking picking.slang editor_picking)
+renderlab_shader(picking.slang editor_picking)

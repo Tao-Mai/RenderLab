@@ -6,9 +6,8 @@
 #include "asset/TextureAsset.h"
 
 #include "render/resources/GpuMesh.h"
-#include "render/resources/TextureUpload.h"
 
-#include <memory>
+#include <map>
 #include <unordered_map>
 
 #include <slang-rhi.h>
@@ -39,16 +38,18 @@ public:
     void init(rhi::IDevice& device, AssetManager& assets, AssetDataManager& data);
     void shutdown() noexcept;
 
-    [[nodiscard]] const GpuMesh& loadMesh(const MeshAsset::ID& id);
-    rhi::ComPtr<rhi::ITexture>   texture(const TextureAsset::ID& id);
+    [[nodiscard]] const GpuMesh& loadMesh(const MeshAsset::ID& id, rhi::ICommandEncoder& commands);
+    rhi::ComPtr<rhi::ITexture>   texture(const TextureAsset::ID& id, rhi::ICommandEncoder& commands);
     [[nodiscard]] rhi::ISampler* sampler(const SamplerAsset::ID& id);
-    [[nodiscard]] const GpuEnvironmentMap& environmentMap(const EnvironmentMapAsset::ID& id);
+    [[nodiscard]] const GpuEnvironmentMap& environmentMap(const EnvironmentMapAsset::ID& id,
+        rhi::ICommandEncoder& commands);
 
 private:
     AssetManager*                                                    assets = nullptr;
     AssetDataManager*                                                data   = nullptr;
     rhi::IDevice*                                                    device = nullptr;
-    std::unordered_map<MeshAsset::ID, std::unique_ptr<GpuMesh>>      meshes;
+    // In-flight ray dispatches use device addresses from the mesh version they recorded.
+    std::unordered_map<MeshAsset::ID, std::map<uint64_t, GpuMesh>>    meshes;
     std::unordered_map<TextureAsset::ID, rhi::ComPtr<rhi::ITexture>> textures;
     std::unordered_map<SamplerAsset::ID, rhi::ComPtr<rhi::ISampler>> samplers;
     std::unordered_map<EnvironmentMapAsset::ID, GpuEnvironmentMap> environmentMaps;

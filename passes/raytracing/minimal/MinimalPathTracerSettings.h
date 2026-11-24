@@ -3,15 +3,14 @@
 #include "core/MetadataAnnotations.h"
 
 #include "core/Logger.h"
-#include "render/raytracing/PathTracingParameters.h"
 
 #include <cstdint>
 
 struct RL_RECORD MinimalPathTracerSettings
 {
-    RL_FIELD("maxBounces") uint32_t maxBounces = 3;
+    static constexpr uint32_t kMaxIndirectBounces = 1u << 16;
 
-    void validate() const { CHECK(maxBounces >= kMinPathBounces && maxBounces <= kMaxPathBounces); }
+    RL_FIELD("maxBounces") uint32_t maxBounces = 6;
+
+    void validate() const { CHECK(maxBounces <= kMaxIndirectBounces); }
 };
-
-#include RL_METADATA_HEADER("metadata/passes/raytracing/minimal/MinimalPathTracerSettings.generated.h")

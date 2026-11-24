@@ -171,6 +171,3 @@ private:
 
     [[nodiscard]] RenderPath findRenderPath(std::string_view graphName) const;
 };
-
-
-#include RL_METADATA_HEADER("metadata/src/core/ConfigManager.generated.h")

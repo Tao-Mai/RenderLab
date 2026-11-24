@@ -38,5 +38,3 @@ private:
     double previousMouseX = 0.0;
     double previousMouseY = 0.0;
 };
-
-#include RL_METADATA_HEADER("metadata/src/scene/component/CameraComponent.generated.h")

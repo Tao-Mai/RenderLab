@@ -31,5 +31,3 @@ struct RL_RECORD EditorCameraConfig
         };
     }
 };
-
-#include RL_METADATA_HEADER("metadata/src/editor/EditorCameraConfig.generated.h")

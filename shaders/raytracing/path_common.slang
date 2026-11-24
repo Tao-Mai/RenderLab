@@ -3,7 +3,8 @@
 
 #include "scene/scene_data.slang"
 #include "material/scattering.slang"
-#include "scene/light_emitters.slang"
+#include "scene/emissive_lights.slang"
+#include "scene/environment_light.slang"
 #include "raytracing/scene_hits.slang"
 #include "math/low_discrepancy.slang"
 #include "math/random.slang"
@@ -11,9 +12,8 @@
 struct Hit
 {
     uint hit;               // 是否命中
-    uint emitterOnly;
     uint materialIndex;
-    uint areaLightIndex;
+    uint emissiveTriangleIndex;
     uint primitiveIndex;    // 命中物体的三角形索引，用内置函数得到
     float2 uv;              // 命中物体的纹理坐标
     float3 position;        // 命中物体的世界空间位置
@@ -40,9 +40,9 @@ bool visible(float3 origin, float3 direction, float distance)
     ray.TMin = 0.0;
     ray.TMax = distance - kRayEpsilon;
     Visibility visibility = {};
-    TraceRay(scene, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES |
+    TraceRay(scene.rtAccel, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES |
         RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
-        kSceneMask | kLightMask, 0, 0, kVisibilityMissIndex, ray, visibility);
+        kSceneMask, 0, 0, kVisibilityMissIndex, ray, visibility);
 
     return visibility.visible != 0;
 }

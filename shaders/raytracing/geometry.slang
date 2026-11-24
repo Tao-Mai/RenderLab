@@ -23,4 +23,30 @@ VertexAttributes loadVertexAttributes(uint64_t vertexAddress, uint index)
     };
 }
 
+struct TriangleVertices
+{
+    VertexAttributes v0, v1, v2;
+
+    VertexAttributes interpolate(float2 barycentrics)
+    {
+        float3 weights = float3(1.0 - barycentrics.x - barycentrics.y, barycentrics);
+        return {
+            v0.position * weights.x + v1.position * weights.y + v2.position * weights.z,
+            v0.normal * weights.x + v1.normal * weights.y + v2.normal * weights.z,
+            v0.uv * weights.x + v1.uv * weights.y + v2.uv * weights.z,
+            v0.tangent * weights.x + v1.tangent * weights.y + v2.tangent * weights.z,
+        };
+    }
+};
+
+TriangleVertices loadTriangleVertices(uint64_t vertexAddress, uint64_t indexAddress, uint firstIndex)
+{
+    uint* indices = (uint*)indexAddress + firstIndex;
+    return {
+        loadVertexAttributes(vertexAddress, indices[0]),
+        loadVertexAttributes(vertexAddress, indices[1]),
+        loadVertexAttributes(vertexAddress, indices[2]),
+    };
+}
+
 #endif

@@ -25,5 +25,3 @@ struct RL_RECORD TextureAsset : Asset
     RL_FIELD("path") std::optional<std::filesystem::path> path;
     RL_FIELD("binary") std::optional<std::filesystem::path> binary;
 };
-
-#include RL_METADATA_HEADER("metadata/src/asset/TextureAsset.generated.h")

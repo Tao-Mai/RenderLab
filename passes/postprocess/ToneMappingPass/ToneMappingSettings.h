@@ -16,5 +16,3 @@ struct RL_RECORD ToneMappingSettings
 
     void validate() const { CHECK(mode == ToneMappingOperator::Neutral || mode == ToneMappingOperator::Reinhard); }
 };
-
-#include RL_METADATA_HEADER("metadata/passes/postprocess/ToneMappingPass/ToneMappingSettings.generated.h")

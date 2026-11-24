@@ -4,6 +4,7 @@
 #include "render/DispatchGroups.h"
 #include "render/device/RhiCheck.h"
 #include "render/graph/RenderPass.h"
+#include "render/graph/RenderPassStandardFlags.h"
 
 namespace
 {
@@ -62,11 +63,11 @@ void AccumulatePass::compile(RenderContext* context, const CompileData& compileD
     desc.size = size_t(width) * height * sizeof(AccumulatedPixel);
     desc.usage =
         rhi::BufferUsage::ShaderResource | rhi::BufferUsage::UnorderedAccess | rhi::BufferUsage::CopyDestination;
-    rhiCheck(context->device->createBuffer(desc, nullptr, history.writeRef()));
+    rhiCheck(mpDevice->createBuffer(desc, nullptr, history.writeRef()));
 
     auto& shaders = *context->shaderManager;
-    rhiCheck(context->device->createComputePipeline(
-        {.program = shaders.getOrLoad("accumulate")},
+    rhiCheck(mpDevice->createComputePipeline(
+        {.program = shaders.getProgram("passes/postprocess/AccumulatePass/accumulate.slang", {"computeMain"})},
         pipeline.writeRef()
     ));
     previousRevision.reset();
@@ -74,9 +75,13 @@ void AccumulatePass::compile(RenderContext* context, const CompileData& compileD
 
 void AccumulatePass::execute(RenderContext* context, const RenderData& renderData)
 {
-    auto&      commands = *context->commands;
+    auto& commands = *context->commands;
+
+    const auto& dictionary = renderData.getDictionary();
+    const auto refresh = dictionary.find(kRenderPassRefreshFlags);
+    const bool refreshRequested = refresh != dictionary.end() && refresh->second != 0;
     const auto revision = renderData.getHistoryRevision(kInput);
-    if (previousRevision != revision)
+    if (refreshRequested || previousRevision != revision)
     {
         commands.clearBuffer(history);
         previousRevision = revision;

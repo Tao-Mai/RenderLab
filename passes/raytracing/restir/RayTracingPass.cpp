@@ -65,20 +65,22 @@ void RayTracingPass::setProperties(const Properties& properties)
 
 RenderPassReflection RayTracingPass::reflect(const CompileData& compileData)
 {
+    const auto extent = compileData.defaultTexDims;
+    const rhi::Extent3D size{extent.x, extent.y, 1};
     RenderPassReflection reflection;
     reflection.addOutput("depth", rhi::TextureDesc{
-        .size = {0, 0, 1},
+        .size = size,
         .format = rhi::Format::R32Float,
         .usage = rhi::TextureUsage::UnorderedAccess,
     });
     reflection.addOutput("worldNormal", rhi::TextureDesc{
-        .size = {0, 0, 1},
+        .size = size,
         .format = rhi::Format::RGBA16Float,
         .usage = rhi::TextureUsage::UnorderedAccess,
     });
     reflection.addOutput(kOutputColor, rhi::TextureDesc{
         .type = parameters.splitLighting ? rhi::TextureType::Texture2DArray : rhi::TextureType::Texture2D,
-        .size = {0, 0, 1},
+        .size = size,
         .arrayLength = parameters.splitLighting ? kLightingLayerCount : 1,
         .format = rhi::Format::RGBA16Float,
         .usage = rhi::TextureUsage::UnorderedAccess,
@@ -86,16 +88,11 @@ RenderPassReflection RayTracingPass::reflect(const CompileData& compileData)
     if (parameters.splitLighting)
         for (const auto name : {"emission", "albedo"})
             reflection.addOutput(std::string{name}, rhi::TextureDesc{
-                .size = {0, 0, 1},
+                .size = size,
                 .format = rhi::Format::RGBA16Float,
                 .usage = rhi::TextureUsage::UnorderedAccess,
             });
-    reflection.addOutput("triangleLights", rhi::BufferDesc{
-        .size = kLightTriangleHeaderSize + kLightTriangleStride,
-        .usage = rhi::BufferUsage::ShaderResource,
-    });
 
-    const auto extent       = compileData.defaultTexDims;
     const auto pixels       = uint64_t{extent.x} * extent.y;
     const auto surfaceBytes = pixels * sizeof(RestirSurfaceData);
     const auto initialBytes = pixels * sizeof(RestirReservoirData);
@@ -128,13 +125,18 @@ void RayTracingPass::compile(RenderContext*, const CompileData&)
     sampleIndex  = 0;
     reservoirs   = {};
 
-    // Rebuild the table with the pipelines whose records it refers to.
-    shaderTable.setNull();
-    programs     = {};
+    programs = {};
 }
 
 
-void RayTracingPass::prepareTargets(RenderContext& context, const RenderData& renderData)
+void RayTracingPass::setScene(GpuScene* scene)
+{
+    RenderPass::setScene(scene);
+    sceneUpdates |= SceneUpdateFlags::Scene;
+}
+
+
+void RayTracingPass::prepareTargets(const RenderData& renderData)
 {
     reservoirs.compile({
         renderData.getBuffer(kSurfaces[0]),
@@ -145,7 +147,6 @@ void RayTracingPass::prepareTargets(RenderContext& context, const RenderData& re
     targetsReady             = true;
     previousMaxBounces       = parameters.maxBounces;
     previousRestir           = parameters.restir;
-    previousSceneGeneration  = context.scene->sceneGeneration();
 }
 
 void RayTracingPass::prepareProgram(
@@ -155,14 +156,18 @@ void RayTracingPass::prepareProgram(
 {
     const bool splitLighting = parameters.splitLighting;
     auto&      shaderManager = *context.shaderManager;
-    auto defines = pathEnvironmentDefines(environment);
+    auto defines = pathTracingDefines(environment);
     defines["SVGF"] = splitLighting ? "1" : "0";
-    auto* program = shaderManager.getOrCompile("raytracing", defines);
+    auto* program            = shaderManager.getProgram(
+        "passes/raytracing/restir/restir_path_tracer.slang",
+        {"raygenMain", "temporalMain", "spatialMain", "missMain", "visibilityMissMain", "closestHitMain"},
+        defines,
+        mpScene->materials().rayTracingShaderIncludes()
+    );
     const ShaderLayout layout(*program);
     layout.validateConstants<PathTracingParameters>("parameters");
     rhiCheck(mpDevice->createRayTracingPipeline(pathTracingPipelineDesc(program), variant.pipeline.writeRef()));
-    if (!shaderTable)
-        shaderTable = createPathTracingShaderTable(*mpDevice, program, kRaygenEntries);
+    variant.shaderTable = createPathTracingShaderTable(*mpDevice, program, kRaygenEntries);
 
     for (auto& object : variant.shaderObjects)
     {
@@ -194,45 +199,44 @@ void RayTracingPass::execute(RenderContext* renderCommands, const RenderData& re
 {
     auto&       commands       = *renderCommands->commands;
     const auto& frame          = *renderCommands;
-    const auto rayTracing = frame.scene->prepareRayTracing(commands, frame.frameIndex);
+    auto&       scene          = *mpScene;
+    auto*       tlas           = scene.prepareRayTracing(commands);
+    scene.prepareEmissiveLights(commands);
     const bool  splitLighting  = parameters.splitLighting;
-    const auto  environment    = pathEnvironment(*frame.scene);
+    const auto  environment    = pathEnvironment(scene);
 
     if (!targetsReady)
-        prepareTargets(*renderCommands, renderData);
+        prepareTargets(renderData);
     auto& variant = programs[static_cast<size_t>(environment)];
     if (!variant.pipeline)
         prepareProgram(variant, frame, renderData, environment);
 
-    renderData.setBuffer("triangleLights", rayTracing.triangleLightBuffer());
-    const auto sceneGeneration = frame.scene->sceneGeneration();
-    const bool sceneChanged    = sceneGeneration != previousSceneGeneration;
-    const bool optionsChanged  = parameters.maxBounces != previousMaxBounces || parameters.restir != previousRestir;
-    if (sceneChanged)
+    const bool optionsChanged = parameters.maxBounces != previousMaxBounces || parameters.restir != previousRestir;
+    const bool invalidateHistory = is_set(sceneUpdates, kSceneShadingUpdates) || optionsChanged;
+    if (is_set(sceneUpdates, SceneUpdateFlags::Scene))
         sampleIndex = 0;
-    if (sceneChanged || optionsChanged)
+    if (invalidateHistory)
         reservoirs.invalidateHistory();
     previousMaxBounces       = parameters.maxBounces;
     previousRestir           = parameters.restir;
-    previousSceneGeneration = sceneGeneration;
+    sceneUpdates             = SceneUpdateFlags::None;
 
     const auto& object = variant.shaderObjects[frame.frameIndex];
-    const bool  historyInvalidated =
-        reservoirs.prepare(frame, renderData.getDefaultTextureDims(), parameters.restir, object);
-    if (splitLighting && (optionsChanged || historyInvalidated))
+    const auto size = renderData.getTexture(kOutputColor)->getDesc().size;
+    reservoirs.prepare(scene, {size.width, size.height}, parameters.restir, object);
+    if (splitLighting && invalidateHistory)
         renderData.invalidateHistory(kOutputColor);
-    rayTracing.bind(object);
-    const auto constants = makePathTracingParameters(frame, parameters.maxBounces, sampleIndex++);
+    scene.bindRayTracingShaderData(*object, tlas);
+    const auto constants = makePathTracingParameters(scene, parameters.maxBounces, sampleIndex++);
     rhiCheck(rhi::ShaderCursor(object)["parameters"].getDereferenced().setData(constants));
-    const auto extent = renderData.getDefaultTextureDims();
     for (uint32_t stage = 0; stage < kRaygenEntries.size(); ++stage)
     {
         if (stage != 0)
             commands.globalBarrier();
         auto* pass = commands.beginRayTracingPass();
         CHECK(pass);
-        pass->bindPipeline(variant.pipeline, shaderTable, object);
-        pass->dispatchRays(stage, extent.x, extent.y, 1);
+        pass->bindPipeline(variant.pipeline, variant.shaderTable, object);
+        pass->dispatchRays(stage, size.width, size.height, 1);
         pass->end();
     }
     reservoirs.advanceHistory();

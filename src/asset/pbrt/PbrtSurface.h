@@ -15,5 +15,3 @@ struct RL_RECORD PbrtSurface
     RL_FIELD("faceIndices") std::optional<std::variant<PbrtIntegerValues, PbrtArrayReference>> faceIndices;
     bool operator==(const PbrtSurface&) const = default;
 };
-
-#include RL_METADATA_HEADER("metadata/src/asset/pbrt/PbrtSurface.generated.h")

@@ -3,16 +3,27 @@
 #include "core/Logger.h"
 #include "render/device/RhiCheck.h"
 
+#include <tuple>
+
 namespace
 {
 void mergeResourceDesc(
-    ResourceCache::ResourceDesc& source, const ResourceCache::ResourceDesc& target,
-    const std::string& sourceName, const std::string& targetName
+    ResourceCache::ResourceDesc&       source,
+    const ResourceCache::ResourceDesc& target,
+    const std::string&                 sourceName,
+    const std::string&                 targetName,
+    bool                               external,
+    bool                               validate
 )
 {
+    const auto incompatible = [&](const char* property)
+    {
+        if (validate)
+            LOG_ERROR("cannot connect '{}' to '{}': incompatible {}", sourceName, targetName, property);
+    };
     if (source.index() != target.index())
     {
-        LOG_ERROR("cannot connect '{}' to '{}': incompatible resource types", sourceName, targetName);
+        incompatible("resource types");
         return;
     }
 
@@ -20,8 +31,8 @@ void mergeResourceDesc(
     {
         if (requirement == T{})
             return;
-        if (value != T{} && value != requirement)
-            LOG_ERROR("cannot connect '{}' to '{}': incompatible {}", sourceName, targetName, property);
+        if (value != requirement && (external || value != T{}))
+            incompatible(property);
         else
             value = requirement;
     };
@@ -32,53 +43,144 @@ void mergeResourceDesc(
         merge(buffer->size, input.size, "buffer size");
         merge(buffer->elementSize, input.elementSize, "element size");
         merge(buffer->format, input.format, "buffer format");
-        buffer->usage |= input.usage;
+        if (external && (buffer->usage & input.usage) != input.usage)
+            incompatible("buffer usage");
+        else if (!external)
+            buffer->usage |= input.usage;
         return;
     }
 
-    auto& texture = std::get<rhi::TextureDesc>(source);
-    const auto& input = std::get<rhi::TextureDesc>(target);
-    if (rhi::getTextureDimension(texture.type) != rhi::getTextureDimension(input.type))
-        LOG_ERROR("cannot connect '{}' to '{}': incompatible texture dimensions", sourceName, targetName);
+    auto&       texture = std::get<rhi::TextureDesc>(source);
+    const auto& input   = std::get<rhi::TextureDesc>(target);
+    if (texture.type != input.type)
+        incompatible("texture types");
     merge(texture.size.width, input.size.width, "width");
     merge(texture.size.height, input.size.height, "height");
     merge(texture.size.depth, input.size.depth, "depth");
     merge(texture.format, input.format, "texture format");
     merge(texture.sampleCount, input.sampleCount, "sample count");
+    merge(texture.sampleQuality, input.sampleQuality, "sample quality");
     merge(texture.mipCount, input.mipCount, "mip count");
     merge(texture.arrayLength, input.arrayLength, "array length");
-    texture.usage |= input.usage;
+    if (external && (texture.usage & input.usage) != input.usage)
+        incompatible("texture usage");
+    else if (!external)
+        texture.usage |= input.usage;
 }
 }  // namespace
 
-void ResourceCache::addResource(std::string name, const ResourceDesc& desc, rhi::IResource* resource, bool allocate)
+std::optional<ResourceCache::ResourceDesc> ResourceCache::describe(rhi::IResource& resource)
 {
-    indices.emplace(name, slots.size());
-    slots.push_back({desc, rhi::ComPtr<rhi::IResource>{resource}, std::move(name), allocate});
+    rhi::ComPtr<rhi::IBuffer> buffer;
+    if (SLANG_SUCCEEDED(
+            resource.queryInterface(rhi::IBuffer::getTypeGuid(), reinterpret_cast<void**>(buffer.writeRef()))
+        ))
+        return buffer->getDesc();
+
+    rhi::ComPtr<rhi::ITexture> texture;
+    if (SLANG_SUCCEEDED(
+            resource.queryInterface(rhi::ITexture::getTypeGuid(), reinterpret_cast<void**>(texture.writeRef()))
+        ))
+        return texture->getDesc();
+    return std::nullopt;
 }
 
-void ResourceCache::connect(std::string name, const std::string& sourceName, const ResourceDesc& desc)
+bool ResourceCache::sameDescription(const ResourceDesc& a, const ResourceDesc& b)
+{
+    if (a.index() != b.index())
+        return false;
+
+    if (const auto* lhs = std::get_if<rhi::BufferDesc>(&a))
+    {
+        const auto& rhs = std::get<rhi::BufferDesc>(b);
+        return std::tie(lhs->size, lhs->elementSize, lhs->format, lhs->usage, lhs->memoryType) ==
+            std::tie(rhs.size, rhs.elementSize, rhs.format, rhs.usage, rhs.memoryType);
+    }
+
+    const auto& lhs = std::get<rhi::TextureDesc>(a);
+    const auto& rhs = std::get<rhi::TextureDesc>(b);
+    return std::tie(
+               lhs.type,
+               lhs.size.width,
+               lhs.size.height,
+               lhs.size.depth,
+               lhs.arrayLength,
+               lhs.mipCount,
+               lhs.sampleCount,
+               lhs.sampleQuality,
+               lhs.format,
+               lhs.usage,
+               lhs.memoryType
+           ) ==
+        std::tie(
+               rhs.type,
+               rhs.size.width,
+               rhs.size.height,
+               rhs.size.depth,
+               rhs.arrayLength,
+               rhs.mipCount,
+               rhs.sampleCount,
+               rhs.sampleQuality,
+               rhs.format,
+               rhs.usage,
+               rhs.memoryType
+        );
+}
+
+void ResourceCache::addResource(std::string name, const ResourceDesc& desc)
+{
+    indices.emplace(name, slots.size());
+    slots.push_back({desc, {}, std::move(name)});
+}
+
+void ResourceCache::addInput(
+    std::string name, const ResourceDesc& requirements, rhi::IResource* resource, bool validate
+)
+{
+    auto desc = *describe(*resource);
+    mergeResourceDesc(desc, requirements, name, name, true, validate);
+    indices.emplace(name, slots.size());
+    slots.push_back({desc, rhi::ComPtr<rhi::IResource>{resource}, std::move(name), true});
+}
+
+void ResourceCache::connect(std::string name, const std::string& sourceName, const ResourceDesc& desc, bool validate)
 {
     const auto index = indices.at(sourceName);
-    mergeResourceDesc(slots[index].resourceDesc, desc, sourceName, name);
-    indices.emplace(std::move(name), index);
+    auto&      slot  = slots[index];
+    mergeResourceDesc(slot.resourceDesc, desc, sourceName, name, slot.external, validate);
+    if (slot.resourceDesc.index() == desc.index())
+        indices.emplace(std::move(name), index);
 }
 
 void ResourceCache::markOutput(const std::string& name)
 {
-    auto& desc = slots[indices.at(name)].resourceDesc;
-    if (auto* texture = std::get_if<rhi::TextureDesc>(&desc))
+    auto& slot = slots[indices.at(name)];
+    if (auto* texture = std::get_if<rhi::TextureDesc>(&slot.resourceDesc); texture && !slot.external)
         texture->usage |= rhi::TextureUsage::ShaderResource;
+}
+
+ResourceCache::ResourceDesc ResourceCache::description(size_t index, const DefaultProperties& defaults) const
+{
+    auto desc = slots[index].resourceDesc;
+    if (auto* texture = std::get_if<rhi::TextureDesc>(&desc))
+    {
+        texture->size.width  = texture->size.width ? texture->size.width : defaults.dims.x;
+        texture->size.height = texture->size.height ? texture->size.height : defaults.dims.y;
+        texture->format      = texture->format == rhi::Format::Undefined ? defaults.format : texture->format;
+    }
+    return desc;
 }
 
 void ResourceCache::allocateResources(rhi::IDevice& device, const DefaultProperties& defaults)
 {
-    for (auto& slot : slots)
+    for (size_t index = 0; index < slots.size(); ++index)
     {
-        if (!slot.allocate)
+        auto& slot = slots[index];
+        if (slot.external)
             continue;
 
-        if (auto* buffer = std::get_if<rhi::BufferDesc>(&slot.resourceDesc))
+        auto resourceDesc = description(index, defaults);
+        if (auto* buffer = std::get_if<rhi::BufferDesc>(&resourceDesc))
         {
             auto desc = *buffer;
             CHECK(desc.size, "graph buffer '{}' requires a size", slot.name);
@@ -92,12 +194,12 @@ void ResourceCache::allocateResources(rhi::IDevice& device, const DefaultPropert
             continue;
         }
 
-        auto desc = std::get<rhi::TextureDesc>(slot.resourceDesc);
-        desc.size.width = desc.size.width ? desc.size.width : defaults.dims.x;
-        desc.size.height = desc.size.height ? desc.size.height : defaults.dims.y;
-        desc.format = desc.format == rhi::Format::Undefined ? defaults.format : desc.format;
-        CHECK(desc.size.width && desc.size.height && desc.format != rhi::Format::Undefined,
-            "invalid graph texture '{}'", slot.name);
+        auto desc = std::get<rhi::TextureDesc>(resourceDesc);
+        CHECK(
+            desc.size.width && desc.size.height && desc.format != rhi::Format::Undefined,
+            "invalid graph texture '{}'",
+            slot.name
+        );
         desc.label = slot.name.c_str();
         desc.usage |= rhi::TextureUsage::CopySource | rhi::TextureUsage::CopyDestination;
         rhi::ComPtr<rhi::ITexture> resource;

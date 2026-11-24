@@ -15,5 +15,3 @@ struct RL_RECORD BloomSettings
 
     void validate() const;
 };
-
-#include RL_METADATA_HEADER("metadata/passes/postprocess/Bloom/BloomSettings.generated.h")

@@ -78,7 +78,7 @@ pacman -S mingw-w64-ucrt-x86_64-clang mingw-w64-ucrt-x86_64-llvm mingw-w64-ucrt-
 ```
 
 在 CLion 中选择编译器和对应的 vcpkg triplet，构建 `RenderLab`。CMake 会在编译消费者之前生成元数据并编译 Shader。
-首次构建后，clangd 使用对应构建目录的 `compile_commands.json` 索引生成头文件。
+首次构建后，clangd 使用对应构建目录的 `compile_commands.json` 索引生成的元数据源文件。
 独立的 MSYS2 SDK 可解包到 `.cache/metadata-sdk`。也可用 `Clang_DIR` 指向与所选编译器匹配且包含 `ClangConfig.cmake` 的 SDK 目录。
 未指定构建类型时默认使用 Release。同一构建目录使用同一套 CMake / Ninja 工具链。
 当前通过 slang-rhi 的 Vulkan 后端运行；光追路线需要后端报告硬件光追支持。

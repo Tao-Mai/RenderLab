@@ -29,5 +29,3 @@ struct RL_RECORD SceneAsset : Asset
         RL_FIELD("up") glm::vec3 up{0.0f, 1.0f, 0.0f};
     } environment RL_FIELD("environment");
 };
-
-#include RL_METADATA_HEADER("metadata/src/asset/SceneAsset.generated.h")

@@ -8,5 +8,3 @@ struct RL_REGISTER_TYPE(Component, "ProjectionLightComponent") ProjectionLightCo
 {
     RL_FIELD("fieldOfView") float fieldOfView = 90.0f;
 };
-
-#include RL_METADATA_HEADER("metadata/src/scene/component/ProjectionLightComponent.generated.h")

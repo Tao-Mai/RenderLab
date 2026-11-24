@@ -51,8 +51,9 @@ RenderPassReflection EditorPickingPass::reflect(const CompileData& compileData)
 
 void EditorPickingPass::compile(RenderContext* context, const CompileData&)
 {
-    const auto shader = context->shaderManager->getOrLoad("editor_picking");
-    const auto input  = createMeshInputLayout(*context->device);
+    const auto shader =
+        context->shaderManager->getProgram("passes/editor/EditorPickingPass/picking.slang", {"vertMain", "fragMain"});
+    const auto input  = createMeshInputLayout(*mpDevice);
     rhi::ColorTargetDesc color;
     color.format = kIdFormat;
     rhi::RenderPipelineDesc desc;
@@ -67,7 +68,7 @@ void EditorPickingPass::compile(RenderContext* context, const CompileData&)
                     .depthWriteEnable = false,
                     .depthFunc        = rhi::ComparisonFunc::LessEqual
     };
-    rhiCheck(context->device->createRenderPipeline(desc, pipeline.writeRef()));
+    rhiCheck(mpDevice->createRenderPipeline(desc, pipeline.writeRef()));
 
     if (!readback)
     {
@@ -75,7 +76,7 @@ void EditorPickingPass::compile(RenderContext* context, const CompileData&)
         readbackDesc.size       = sizeof(uint32_t);
         readbackDesc.usage      = rhi::BufferUsage::CopyDestination | rhi::BufferUsage::CopySource;
         readbackDesc.memoryType = rhi::MemoryType::ReadBack;
-        rhiCheck(context->device->createBuffer(readbackDesc, nullptr, readback.writeRef()));
+        rhiCheck(mpDevice->createBuffer(readbackDesc, nullptr, readback.writeRef()));
     }
 }
 
@@ -89,7 +90,7 @@ void EditorPickingPass::execute(RenderContext* renderCommands, const RenderData&
 
     const auto  target   = renderData.getTexture(kIdTarget);
     const auto& size     = target->getDesc().size;
-    const auto  viewport = execution.scene->viewport().clamped({size.width, size.height});
+    const auto  viewport = mpScene->viewport().clamped({size.width, size.height});
     const auto  pixel    = [](float position, float offset, float length)
     {
         return uint32_t(offset) + std::min(uint32_t(position * length), uint32_t(length) - 1);
@@ -111,13 +112,13 @@ void EditorPickingPass::execute(RenderContext* renderCommands, const RenderData&
     CHECK(pass);
     auto state            = viewport.renderState();
     state.scissorRects[0] = {x, y, x + 1, y + 1};
-    for (const uint32_t index : execution.scene->visibleDraws())
+    for (const uint32_t index : mpScene->visibleDraws())
     {
-        const auto& item   = execution.scene->drawCalls()[index];
+        const auto& item   = mpScene->drawCalls()[index];
         auto*       object = pass->bindPipeline(pipeline);
         CHECK(object);
         const rhi::ShaderCursor root(object);
-        rhiCheck(root["editorView"].getDereferenced().setData(execution.scene->cameraUniforms().viewProjection));
+        rhiCheck(root["editorView"].getDereferenced().setData(mpScene->cameraUniforms().viewProjection));
         const EditorPickingPushConstants constants{.model = item.model, .selectionId = item.selectionId};
         rhiCheck(root["pushConstants"].getDereferenced().setData(constants));
         const auto& mesh        = *item.mesh;

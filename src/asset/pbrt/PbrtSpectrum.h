@@ -65,5 +65,3 @@ namespace pbrt_import
 {
 [[nodiscard]] PbrtSpectrum readSpectrum(const PbrtParameter& parameter, bool albedo, bool allowFloat);
 }
-
-#include RL_METADATA_HEADER("metadata/src/asset/pbrt/PbrtSpectrum.generated.h")

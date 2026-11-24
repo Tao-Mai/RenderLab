@@ -13,5 +13,3 @@ struct RL_RECORD TextureBinding
 
     bool operator==(const TextureBinding&) const = default;
 };
-
-#include RL_METADATA_HEADER("metadata/src/asset/TextureBinding.generated.h")

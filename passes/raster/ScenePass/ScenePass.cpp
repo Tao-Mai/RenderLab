@@ -54,9 +54,9 @@ RenderPassReflection ScenePass::reflect(const CompileData& compileData)
 }
 
 
-void ScenePass::compile(RenderContext* passContext, const CompileData& compileData)
+void ScenePass::compile(RenderContext*, const CompileData& compileData)
 {
-    parameters.validateColorFormat(*passContext->device);
+    parameters.validateColorFormat(*mpDevice);
     const rhi::DepthStencilDesc depth{
         .format           = rhi::Format::D32Float,
         .depthTestEnable  = true,
@@ -64,11 +64,10 @@ void ScenePass::compile(RenderContext* passContext, const CompileData& compileDa
         .depthFunc        = rhi::ComparisonFunc::Equal
     };
     pipelines.setup(
-        *passContext->device,
+        *mpDevice,
         parameters.getColorFormat(compileData.defaultTexFormat),
         depth,
-        false,
-        true
+        false
     );
 }
 
@@ -91,12 +90,15 @@ void ScenePass::execute(RenderContext* renderCommands, const RenderData& renderD
     auto* pass          = renderCommands->commands->beginRenderPass({&color, 1, &depth});
     CHECK(pass);
     const auto&      size     = target->getDesc().size;
-    const auto       viewport = renderCommands->scene->viewport().clamped({size.width, size.height});
+    const auto       viewport = mpScene->viewport().clamped({size.width, size.height});
     const ShadowBindings shadows{renderData, *renderCommands->resources};
-    MeshDrawRecorder recorder{*pass, viewport.renderState(), *renderCommands};
+    MeshDrawRecorder recorder{*pass, viewport.renderState(), *mpScene};
     recorder.drawOpaque(
         [&](const auto& material) -> rhi::IShaderObject&
-        { return pipelines.bind(*pass, *renderCommands, material, shadows, parameters.ambientCoefficient); }
+        {
+            return pipelines.bind(*pass, *renderCommands->shaderManager, *mpScene, material, shadows,
+                parameters.ambientCoefficient, true);
+        }
     );
     pass->end();
 }

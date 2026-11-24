@@ -15,5 +15,3 @@ public:
     [[nodiscard]] CameraComponent& camera();
     [[nodiscard]] const CameraComponent& camera() const;
 };
-
-#include RL_METADATA_HEADER("metadata/src/scene/actor/AFreeFlyCamera.generated.h")

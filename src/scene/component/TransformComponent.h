@@ -24,5 +24,3 @@ struct RL_REGISTER_TYPE(Component, "TransformComponent") TransformComponent : Co
     [[nodiscard]] glm::mat4 trsMatrix() const;
     [[nodiscard]] glm::mat4 matrix() const;
 };
-
-#include RL_METADATA_HEADER("metadata/src/scene/component/TransformComponent.generated.h")

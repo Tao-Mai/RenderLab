@@ -22,22 +22,18 @@ struct Surface
         return scattering.evaluate(direction) * cosine * incident;
     }
 
-    float3 deltaRadiance(DeltaLightSample selected)
+    float3 analyticRadiance(AnalyticReservoir reservoir)
     {
-        if (selected.probability == 0.0 || dot(scattering.normal, selected.direction) <= 0.0 ||
-            dot(geometricNormal, selected.direction) <= 0.0)
-        {
+        AnalyticLightSample selected = reservoir.sample;
+        if (reservoir.probability == 0.0 ||
+            dot(scattering.normal, selected.direction) <= 0.0 || dot(geometricNormal, selected.direction) <= 0.0 ||
+            !visible(origin, selected.direction, selected.distance))
             return float3(0.0);
-        }
-        if (!visible(origin, selected.direction, selected.distance))
-        {
-            return float3(0.0);
-        }
 
-        return evaluateLight(selected.direction, selected.incidentIrradiance) / selected.probability;
+        return evaluateLight(selected.direction, selected.radiance) / (reservoir.probability * selected.pdf);
     }
 
-    float3 areaRadiance(AreaLightSample selected, float2 sampleValue)
+    float3 meshRadiance(EmissiveLightSample selected, float2 sampleValue)
     {
         if (selected.probability == 0.0)
         {
@@ -45,7 +41,7 @@ struct Surface
         }
 
         float2 uv;
-        float3 target = sampleTriangle(selected.index, sampleValue, uv);
+        float3 target = sampleEmissiveTriangle(selected.index, sampleValue, uv);
         float3 offset = target - origin;
         float distance = length(offset);
         if (distance <= kRayEpsilon)
@@ -54,7 +50,7 @@ struct Surface
         }
 
         float3 direction = offset / distance;
-        float lightPdf = selected.probability * areaPdf(selected.index, origin, target);
+        float lightPdf = selected.probability * emissivePdf(selected.index, origin, target);
         if (lightPdf == 0.0 || dot(scattering.normal, direction) <= 0.0 || dot(geometricNormal, direction) <= 0.0)
         {
             return float3(0.0);
@@ -65,7 +61,7 @@ struct Surface
         }
 
         float weight = balanceHeuristic(lightPdf, scattering.pdf(direction));
-        float3 emission = areaEmission(selected.index, uv, -direction);
+        float3 emission = emissiveRadiance(selected.index, uv, -direction);
 
         return evaluateLight(direction, emission) * (weight / lightPdf);
     }
@@ -107,8 +103,8 @@ float3 tracePath(RayDesc ray, inout uint state)
     for (uint bounce = 0; bounce <= parameters.path.maxBounces; ++bounce)
     {
         Hit hit = {};
-        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
-            kSceneMask | kLightMask, 0, 0, 0, ray, hit);
+        TraceRay(scene.rtAccel, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+            kSceneMask, 0, 0, 0, ray, hit);
 
         // 未命中，直接返回环境光
         if (hit.hit == 0)
@@ -119,21 +115,21 @@ float3 tracePath(RayDesc ray, inout uint state)
 
         // 命中发光几何体，如果直接命中那权重为1，如果间接命中则根据上个表面对该面的选择概率来计算权重
         // 发光几何体本身也可以有材质，所以继续往下追踪
-        if (hit.areaLightIndex != kInvalidLightIndex)
+        if (hit.emissiveTriangleIndex != kInvalidLightIndex)
         {
-            uint lightIndex = hit.areaLightIndex;
+            uint lightIndex = hit.emissiveTriangleIndex;
             float weight = 1.0;
             if (bounce != 0 && previousDelta == 0)
             {
                 float probability = previousAreaWeightSum > 0.0
-                    ? areaSelectionWeight(lightIndex, ray.Origin) / previousAreaWeightSum : 0.0;
-                float lightPdf = probability * areaPdf(lightIndex, ray.Origin, hit.position);
+                    ? emissiveSelectionWeight(lightIndex, ray.Origin) / previousAreaWeightSum : 0.0;
+                float lightPdf = probability * emissivePdf(lightIndex, ray.Origin, hit.position);
                 weight = balanceHeuristic(previousBrdfPdf, lightPdf);
             }
-            radiance += throughput * areaEmission(lightIndex, hit.uv, -ray.Direction) * weight;
+            radiance += throughput * emissiveRadiance(lightIndex, hit.uv, -ray.Direction) * weight;
         }
 
-        if (hit.emitterOnly != 0 || bounce == parameters.path.maxBounces)
+        if (bounce == parameters.path.maxBounces)
         {
             break;
         }
@@ -150,15 +146,14 @@ float3 tracePath(RayDesc ray, inout uint state)
         // Delta events have no continuous density for light sampling.
         if (!material.isDelta())
         {
-            LightRanges ranges = sceneGlobals[0].lightRanges;
-            DeltaLightSample local = sampleLocalLight(ranges, surface.origin, state);
-            DeltaLightSample distant = sampleDistantLight(ranges.directionalEnd, state);
-            AreaLightSample area = sampleAreaLight(triangleLightCount(), surface.origin, state);
+            AnalyticReservoir local, distant;
+            sampleAnalyticLights(surface.origin, state, local, distant);
+            EmissiveLightSample area = sampleEmissiveLight(surface.origin, state);
             float2 areaSample;
             areaSample.x = randomFloat(state);
             areaSample.y = randomFloat(state);
-            radiance += throughput * (surface.deltaRadiance(local) + surface.deltaRadiance(distant) +
-                surface.areaRadiance(area, areaSample));
+            radiance += throughput * (
+                surface.analyticRadiance(local) + surface.analyticRadiance(distant) + surface.meshRadiance(area, areaSample));
             areaWeightSum = area.weightSum;
         }
 

@@ -18,5 +18,6 @@ struct SceneRenderData
     ViewportRect                           viewport;
     std::optional<EnvironmentMapAsset::ID> environmentMap;
     std::vector<DrawItem>                  drawItems;
-    std::vector<SceneLight>                lights;
+    std::vector<SceneAnalyticLight>        analyticLights;
+    std::optional<SceneEnvironmentLight>  environmentLight;
 };

@@ -145,5 +145,3 @@ struct RL_REGISTER_TYPE(MaterialAsset, "GltfMaterial") GltfMaterial : MaterialAs
 };
 
 using MaterialOverride = GltfMaterial;
-
-#include RL_METADATA_HEADER("metadata/src/asset/GltfMaterial.generated.h")

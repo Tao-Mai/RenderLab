@@ -206,5 +206,3 @@ struct RL_RECORD CommandBinding
     RL_FIELD("modifiers") Modifier modifiers;
     RL_FIELD("action") Action action;
 };
-
-#include RL_METADATA_HEADER("metadata/src/core/Input.generated.h")

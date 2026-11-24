@@ -46,7 +46,6 @@ void writePathResult(uint2 pixel, PathResult result)
 
 PathResult tracePath(
     RayDesc               ray,
-    uint                  primaryMask,
     uint                  primaryFlags,
     inout uint            state,
     out RestirSurfaceData primarySurface,
@@ -62,9 +61,8 @@ PathResult tracePath(
     for (uint bounce = 0; bounce <= parameters.maxBounces; ++bounce)
     {
         PathHit hit   = {};
-        uint    mask  = bounce == 0 ? primaryMask : kSceneMask | kLightMask;
         uint    flags = bounce == 0 ? primaryFlags : RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES;
-        TraceRay(scene, flags, mask, 0, 0, 0, ray, hit);
+        TraceRay(scene.rtAccel, flags, kSceneMask, 0, 0, 0, ray, hit);
 
         if (bounce == 0)
             result.emission = hitEmission(ray, hit);
@@ -82,7 +80,7 @@ PathResult tracePath(
         Surface surface = hit.surface;
         if (bounce == 0)
         {
-            result.primaryDepth  = linearViewDepth(surface.position, sceneGlobals[0].camera.view);
+            result.primaryDepth  = linearViewDepth(surface.position, scene.globals[0].camera.view);
             result.primaryNormal = surface.geometricNormal;
             result.primaryAlbedo = surface.albedo();
             primarySurface       = restirPackSurface(surface, result.primaryDepth);
@@ -107,7 +105,7 @@ PathResult tracePath(
 [shader("raygeneration")] void raygenMain()
 {
     uint2             pixel            = DispatchRaysIndex().xy;
-    uint              state            = pathRandomState(pixel, DispatchRaysDimensions().x);
+    SampleGenerator   state            = createPathSampleGenerator(pixel, DispatchRaysDimensions().x);
     PathResult        result           = createPathResult();
     RestirSurfaceData primarySurface   = {};
     RestirReservoir   primaryReservoir = {};
@@ -115,7 +113,7 @@ PathResult tracePath(
     {
         RayDesc ray = createPathRay(pixel, float2(0.5));
         result =
-            tracePath(ray, kSceneMask | kLightMask, RAY_FLAG_FORCE_OPAQUE, state, primarySurface, primaryReservoir);
+            tracePath(ray, RAY_FLAG_FORCE_OPAQUE, state, primarySurface, primaryReservoir);
     }
     uint index                     = pixel.y * restirFrame.width + pixel.x;
     restirSurfaces[index]          = primarySurface;

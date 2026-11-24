@@ -1,4 +1,4 @@
-#include "raster/lighting_data.slang"
+#include "scene/scene_data.slang"
 #include "raster/shadow_data.slang"
 
 #ifndef SHADOW_TYPE
@@ -52,7 +52,7 @@ VertexOutput vertMain(VertexInput input)
 {
     VertexOutput output;
     float4 worldPosition = mul(pushConstants.model, float4(input.position, 1.0));
-    const LightData light = lights[pushConstants.lightIdx];
+    const LightData light = scene.analyticLights[pushConstants.lightIdx];
 #if SHADOW_TYPE == SHADOW_TYPE_POINT
     output.position = mul(shadowData[light.shadowIdx].vp[pushConstants.faceIndex], worldPosition);
     output.worldPosition = worldPosition.xyz;
@@ -69,7 +69,7 @@ float fragMain(VertexOutput input) : SV_Depth
 {
 #if SHADOW_TYPE == SHADOW_TYPE_POINT
     // Depth 0..1 stores radial distance divided by the point light range.
-    const LightData light = lights[pushConstants.lightIdx];
+    const LightData light = scene.analyticLights[pushConstants.lightIdx];
     return saturate(distance(input.worldPosition, light.position) / light.range);
 #else
     // Rasterized depth uses the same VP as scene shadow lookup.

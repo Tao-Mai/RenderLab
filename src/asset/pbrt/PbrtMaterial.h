@@ -5,6 +5,7 @@
 #include "asset/MaterialAsset.h"
 #include "asset/pbrt/PbrtSpectrum.h"
 #include "asset/pbrt/PbrtImageReference.h"
+#include "asset/pbrt/PbrtLight.h"
 
 struct RL_REGISTER_TYPE(MaterialAsset, "PbrtMaterial") PbrtMaterial : MaterialAsset
 {
@@ -171,12 +172,20 @@ struct RL_REGISTER_TYPE(MaterialAsset, "PbrtMaterial") PbrtMaterial : MaterialAs
     using Model = std::variant<Diffuse, Dielectric, ThinDielectric, Conductor, CoatedDiffuse,
                                CoatedConductor, DiffuseTransmission, Subsurface, Hair, Measured, Mix, Interface>;
 
+    struct RL_RECORD Emission
+    {
+        RL_FIELD("light") PbrtLightEmission light;
+        RL_FIELD("twoSided") bool twoSided = false;
+        bool operator==(const Emission&) const = default;
+    };
+
     RL_FIELD("name") std::string name;
     RL_FIELD("colorSpace") std::string colorSpace = "srgb";
     RL_FIELD("location") PbrtSourceLocation location;
     RL_FIELD("model") Model model = Diffuse{};
     RL_FIELD("displacement") std::optional<PbrtFloatInput> displacement;
     RL_FIELD("normalMap") std::optional<PbrtImageReference> normalMap;
+    RL_FIELD("emission") std::optional<Emission> emission;
 
     bool operator==(const PbrtMaterial&) const = default;
 };
@@ -187,5 +196,3 @@ class ImageImporter;
 [[nodiscard]] PbrtMaterial convertMaterial(MaterialAsset::ID id, const std::string& name,
     const PbrtEntity& entity, ImageImporter& images);
 }
-
-#include RL_METADATA_HEADER("metadata/src/asset/pbrt/PbrtMaterial.generated.h")

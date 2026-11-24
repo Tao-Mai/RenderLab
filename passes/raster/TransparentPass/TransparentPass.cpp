@@ -25,10 +25,7 @@ void TransparentPass::setProperties(const Properties& properties)
     Deserialize(nlohmann::json(properties.toJson()), next);
     next.validate();
 
-    const bool recompile = next.clearcoat != parameters.clearcoat;
-    parameters           = std::move(next);
-    if (recompile)
-        requestRecompile();
+    parameters = std::move(next);
 }
 
 RenderPassReflection TransparentPass::reflect(const CompileData& compileData)
@@ -50,7 +47,7 @@ RenderPassReflection TransparentPass::reflect(const CompileData& compileData)
 }
 
 
-void TransparentPass::compile(RenderContext* passContext, const CompileData& compileData)
+void TransparentPass::compile(RenderContext*, const CompileData& compileData)
 {
     const rhi::DepthStencilDesc depth{
         .format           = rhi::Format::D32Float,
@@ -59,33 +56,33 @@ void TransparentPass::compile(RenderContext* passContext, const CompileData& com
         .depthFunc        = rhi::ComparisonFunc::Less
     };
     pipelines.setup(
-        *passContext->device,
+        *mpDevice,
         compileData.connectedResources.getField("color")->texture().format,
         depth,
-        true,
-        parameters.clearcoat
+        true
     );
 }
 
 
-void TransparentPass::sortDrawItems(const RenderContext& frame)
+void TransparentPass::sortDrawItems()
 {
     sortedDrawItems.clear();
-    const auto& materials = frame.scene->materials();
-    for (const uint32_t itemIndex : frame.scene->visibleDraws())
+    const auto& materials = mpScene->materials();
+    const auto draws = mpScene->drawCalls();
+    for (const uint32_t itemIndex : mpScene->visibleDraws())
     {
-        const auto& item = frame.scene->drawCalls()[itemIndex];
+        const auto& item = draws[itemIndex];
         const auto materialIndex = item.materialIndex;
         if (materials.info(materialIndex).alphaMode == kAlphaModeBlend)
             sortedDrawItems.push_back(itemIndex);
     }
-    const glm::vec3 cameraPosition{frame.scene->cameraUniforms().cameraPosition};
+    const glm::vec3 cameraPosition{mpScene->cameraUniforms().cameraPosition};
     std::ranges::stable_sort(
         sortedDrawItems,
         std::greater{},
         [&](uint32_t itemIndex)
         {
-            const auto offset = glm::vec3{item.model[3]} - cameraPosition;
+            const auto offset = glm::vec3{draws[itemIndex].model[3]} - cameraPosition;
             return glm::dot(offset, offset);
         }
     );
@@ -94,7 +91,7 @@ void TransparentPass::sortDrawItems(const RenderContext& frame)
 
 void TransparentPass::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
-    sortDrawItems(*renderCommands);
+    sortDrawItems();
     if (sortedDrawItems.empty())
         return;
 
@@ -114,13 +111,16 @@ void TransparentPass::execute(RenderContext* renderCommands, const RenderData& r
     auto* pass          = renderCommands->commands->beginRenderPass({&color, 1, &depth});
     CHECK(pass);
     const auto&      size     = target->getDesc().size;
-    const auto       viewport = renderCommands->scene->viewport().clamped({size.width, size.height});
+    const auto       viewport = mpScene->viewport().clamped({size.width, size.height});
     const ShadowBindings shadows{renderData, *renderCommands->resources};
-    MeshDrawRecorder recorder{*pass, viewport.renderState(), *renderCommands};
+    MeshDrawRecorder recorder{*pass, viewport.renderState(), *mpScene};
     recorder.drawOrdered(
         sortedDrawItems,
         [&](const auto& material) -> rhi::IShaderObject&
-        { return pipelines.bind(*pass, *renderCommands, material, shadows, parameters.ambientCoefficient); }
+        {
+            return pipelines.bind(*pass, *renderCommands->shaderManager, *mpScene, material, shadows,
+                parameters.ambientCoefficient, parameters.clearcoat);
+        }
     );
     pass->end();
 }

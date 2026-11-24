@@ -6,7 +6,7 @@
 
 class GpuScene;
 class ShadowBindings;
-struct RenderContext;
+class ShaderManager;
 
 namespace rhi
 {
@@ -20,21 +20,23 @@ class ForwardPbrPipelines
 {
 public:
     void setup(
-        rhi::IDevice& device, rhi::Format colorFormat, const rhi::DepthStencilDesc& depth, bool blend, bool clearcoat
+        rhi::IDevice& device, rhi::Format colorFormat, const rhi::DepthStencilDesc& depth, bool blend
     );
     [[nodiscard]] rhi::IShaderObject& bind(
         rhi::IRenderPassEncoder&           pass,
-        const RenderContext&               context,
+        ShaderManager&                     shaders,
+        const GpuScene&                    scene,
         const MaterialTable::MaterialInfo& material,
         const ShadowBindings&              shadows,
-        float                              ambientCoefficient
+        float                              ambientCoefficient,
+        bool                               enableClearcoat
     );
 
 private:
+    rhi::IDevice*                 device = nullptr;
     rhi::ColorTargetDesc           color;
     rhi::DepthStencilDesc          depth;
     rhi::ComPtr<rhi::IInputLayout> input;
     using CullPipelines = std::array<rhi::ComPtr<rhi::IRenderPipeline>, 2>;
     std::array<std::array<CullPipelines, 4>, 2> pipelines;
-    bool                                        clearcoatEnabled = false;
 };

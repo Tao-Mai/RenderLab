@@ -70,5 +70,3 @@ struct RL_RECORD SamplerAsset : Asset
     RL_FIELD("borderColor") BorderColor          borderColor             = BorderColor::FloatTransparentBlack;
     RL_FIELD("unnormalizedCoordinates") bool                 unnormalizedCoordinates = false;
 };
-
-#include RL_METADATA_HEADER("metadata/src/asset/SamplerAsset.generated.h")

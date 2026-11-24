@@ -24,5 +24,3 @@ struct RL_TYPE("LightComponent") LightComponent : Component
 protected:
     [[nodiscard]] glm::vec3 coloredEmission(float strength) const;
 };
-
-#include RL_METADATA_HEADER("metadata/src/scene/component/LightComponent.generated.h")

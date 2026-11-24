@@ -15,6 +15,7 @@ void addShadowInputs(RenderPassReflection& reflection)
     for (const auto& ports : kShadowPorts)
     {
         reflection.addInput(ports.map, rhi::TextureDesc{
+            .type = rhi::TextureType::Texture2DArray,
             .size = {0, 0, 1},
             .arrayLength = 0,
             .format = rhi::Format::D32Float,

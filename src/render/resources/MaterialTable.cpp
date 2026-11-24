@@ -11,6 +11,7 @@
 #include "core/Logger.h"
 #include "render/DrawItem.h"
 #include "render/resources/RenderResourceManager.h"
+#include "render/resources/SceneLightConstants.h"
 #include "render/resources/ShaderData.h"
 
 #include <algorithm>
@@ -480,17 +481,17 @@ private:
 }  // namespace
 
 
-void MaterialTable::init(rhi::IDevice& device, RenderResourceManager& targetResources)
+void MaterialTable::init(rhi::IDevice& targetDevice, RenderResourceManager& targetResources)
 {
+    device = &targetDevice;
     resources = &targetResources;
     static_cast<void>(textureReference({BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat}));
-    images.fill(images[0]);
     samplers.fill(samplers[0]);
 
     const auto createBuffer = [&](size_t size)
     {
         rhi::ComPtr<rhi::IBuffer> buffer;
-        rhiCheck(device.createBuffer(
+        rhiCheck(device->createBuffer(
             {.size = size, .usage = rhi::BufferUsage::ShaderResource | rhi::BufferUsage::CopyDestination},
             nullptr,
             buffer.writeRef()
@@ -515,7 +516,7 @@ TextureRef MaterialTable::textureReference(const TextureBinding& binding)
             binding.textureID,
             kMaxMaterialTextures
         );
-        images[image->second] = resources->texture(binding.textureID)->getDefaultView();
+        pendingImages.push_back(binding.textureID);
     }
 
     const auto [sampler, newSampler] =
@@ -530,7 +531,7 @@ TextureRef MaterialTable::textureReference(const TextureBinding& binding)
         );
         samplers[sampler->second] = resources->sampler(binding.samplerID);
     }
-    if (newImage || newSampler)
+    if (newSampler)
         textureBindings.clear();
 
     return {.textureIndex = image->second, .samplerIndex = sampler->second};
@@ -558,8 +559,8 @@ size_t MaterialTable::MaterialKeyHash::operator()(const MaterialKey& key) const 
 std::vector<uint32_t>
 MaterialTable::prepare(std::span<const DrawItem> items, const AssetManager& assets, const AssetDataManager& assetData)
 {
-    materialCode.clear();
-    textureCode.clear();
+    const auto previousMaterialCode = std::exchange(materialCode, {});
+    const auto previousTextureCode = std::exchange(textureCode, {});
     MaterialCompiler compiler(materialCode, textureCode, assets, assetData, *this);
 
     std::vector<uint32_t> indices;
@@ -584,16 +585,32 @@ MaterialTable::prepare(std::span<const DrawItem> items, const AssetManager& asse
         else
         {
             CHECK(!item.materialOverride, "glTF material override on PBRT material '{}'", item.materialId);
-            const auto programIndex = compiler.compile(item.materialId);
-            indices.push_back(store(
-                key,
-                {.doubleSided = 1, .kind = MaterialKind::Pbrt, .programIndex = programIndex},
-                {.alphaMode = kAlphaModeOpaque, .doubleSided = true}
-            ));
+            MaterialData data{.doubleSided = 1, .kind = MaterialKind::Pbrt, .programIndex = compiler.compile(item.materialId)};
+            if (const auto& emission = source.as<PbrtMaterial>().emission)
+            {
+                const auto& light = emission->light;
+                const auto scale = static_cast<float>(light.scale);
+                if (light.image)
+                {
+                    data.emissiveFactor = {glm::vec3{scale}, 0.0f};
+                    data.emissiveTexture = textureReference(light.image->image);
+                    data.emissiveFlags |= kEmissiveFlipUv;
+                }
+                else
+                    data.emissiveFactor = {pbrtPreviewRgb(light.spectrum, assetData) * scale, 0.0f};
+                if (emission->twoSided)
+                    data.emissiveFlags |= kEmissiveTwoSided;
+            }
+            indices.push_back(store(key, data, {
+                .alphaMode = kAlphaModeOpaque,
+                .doubleSided = true,
+                .emissive = glm::any(glm::greaterThan(glm::vec3{data.emissiveFactor}, glm::vec3{0.0f})),
+            }));
         }
     }
 
-    ++programRevision;
+    if (previousMaterialCode != materialCode || previousTextureCode != textureCode)
+        ++programRevision;
     return indices;
 }
 
@@ -715,6 +732,8 @@ uint32_t MaterialTable::updateGltf(const MaterialKey& key, const GltfMaterial& m
     data.normalTexture = resolveTexture(material.normalTexture, BuiltinAssets::Texture::flatNormal, ColorSpace::Linear);
     data.normalEncoding  = normalEncoding(material.normalTexture, assets);
     data.emissiveTexture = resolveTexture(material.emissiveTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb);
+    if (data.doubleSided)
+        data.emissiveFlags = kEmissiveTwoSided;
     data.occlusionTexture =
         resolveTexture(material.aoTexture, BuiltinAssets::Texture::kWhiteLinear, ColorSpace::Linear);
     data.sheenColorTexture = resolveTexture(sheen.colorTexture, BuiltinAssets::Texture::white, ColorSpace::Srgb);
@@ -744,44 +763,73 @@ uint32_t MaterialTable::store(const MaterialKey& key, const MaterialData& data, 
         materials.push_back(data);
         materialInfos.push_back(info);
         ++materialRevision;
+        if (info.emissive)
+            ++emissiveRevision;
     }
     else
     {
-        if (materials[found->second] != data)
+        auto& previous = materials[found->second];
+        auto& previousInfo = materialInfos[found->second];
+        if (previousInfo.emissive != info.emissive ||
+            (info.emissive && (previous.emissiveFactor != data.emissiveFactor ||
+                previous.emissiveTexture != data.emissiveTexture || previous.emissiveFlags != data.emissiveFlags)))
         {
-            materials[found->second] = data;
+            ++emissiveRevision;
+        }
+        if (previous != data)
+        {
+            previous = data;
             ++materialRevision;
         }
-        materialInfos[found->second] = info;
+        previousInfo = info;
     }
     return found->second;
 }
 
-void MaterialTable::upload(rhi::IDevice& device, rhi::ICommandEncoder& commands)
+bool MaterialTable::upload(rhi::ICommandEncoder& commands)
 {
+    const bool imagesChanged = !pendingImages.empty();
+    if (imagesChanged)
+    {
+        for (const auto& id : pendingImages)
+        {
+            const auto index = textureIndices.at(id);
+            auto view = resources->texture(id, commands)->getDefaultView();
+            if (index == 0)
+                images.fill(view);
+            else
+                images[index] = std::move(view);
+        }
+        pendingImages.clear();
+        textureBindings.clear();
+    }
+
     const auto uploadTable = [&](rhi::ComPtr<rhi::IBuffer>& buffer, const auto values)
     {
         using Value = typename decltype(values)::value_type;
         const std::array<std::byte, sizeof(Value)> empty{};
         const auto bytes = values.empty() ? std::span<const std::byte>{empty} : std::as_bytes(values);
-        ensureBufferCapacity(device, buffer, bytes.size());
+        ensureBufferCapacity(*device, buffer, bytes.size());
         rhiCheck(commands.uploadBufferData(buffer, 0, bytes.size(), bytes.data()));
     };
 
-    if (uploadedMaterialRevision != materialRevision)
+    const bool materialsChanged = uploadedMaterialRevision != materialRevision;
+    if (materialsChanged)
     {
         uploadTable(materialBuffer, std::span{materials});
         uploadedMaterialRevision = materialRevision;
     }
-    if (uploadedProgramRevision != programRevision)
+    const bool programsChanged = uploadedProgramRevision != programRevision;
+    if (programsChanged)
     {
         uploadTable(materialPrograms, std::span{materialCode});
         uploadTable(texturePrograms, std::span{textureCode});
         uploadedProgramRevision = programRevision;
     }
+    return materialsChanged || programsChanged || imagesChanged;
 }
 
-void MaterialTable::bind(rhi::IDevice& device, rhi::IShaderObject& object) const
+void MaterialTable::bind(rhi::IShaderObject& object) const
 {
     const rhi::ShaderCursor root(&object);
     rhiCheck(root["materials"].setBinding(materialBuffer));
@@ -794,7 +842,7 @@ void MaterialTable::bind(rhi::IDevice& device, rhi::IShaderObject& object) const
     auto& binding = textureBindings[layout];
     if (!binding)
     {
-        rhiCheck(device.createShaderObjectFromTypeLayout(object.getSlangComponentType(), layout, binding.writeRef()));
+        rhiCheck(device->createShaderObjectFromTypeLayout(object.getSlangComponentType(), layout, binding.writeRef()));
         const rhi::ShaderCursor table(binding);
         for (uint32_t index = 0; index < images.size(); ++index)
             rhiCheck(table["textures"][index].setBinding(images[index]));

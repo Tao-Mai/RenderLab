@@ -3,8 +3,9 @@
 #include <slang-rhi.h>
 #include <slang-rhi/shader-cursor.h>
 #include "render/DispatchGroups.h"
-#include "render/GpuScene.h"
-#include "render/RenderContext.h"
+#include "render/ViewportRect.h"
+#include "render/device/RhiCheck.h"
+#include "render/resources/ShaderManager.h"
 
 namespace
 {
@@ -26,7 +27,8 @@ enum class FilterVariant
 }  // namespace
 
 void SVGFFilter::compile(
-    const RenderContext&                                   context,
+    rhi::IDevice&                                          device,
+    ShaderManager&                                         shaders,
     const SVGFInputs&                                      traced,
     const SVGFReprojection::Output&                        lighting,
     const std::array<rhi::ITexture*, kLightingLayerCount>& scratch,
@@ -43,7 +45,8 @@ void SVGFFilter::compile(
         const auto& [direct, indirect]             = signals[iteration % signals.size()];
         const auto& [targetDirect, targetIndirect] = signals[(iteration + 1) % signals.size()];
         filters[iteration].compile(
-            context,
+            device,
+            shaders,
             {
                 .direct          = direct,
                 .indirect        = indirect,
@@ -61,19 +64,19 @@ void SVGFFilter::compile(
 }
 
 
-void SVGFFilter::execute(const RenderContext& frame) const
+void SVGFFilter::execute(rhi::ICommandEncoder& commands, const ViewportRect& viewport) const
 {
     for (const auto& filter : filters)
-        filter.execute(frame);
+        filter.execute(commands, viewport);
 }
 
 
-void SVGFFilter::FilterPass::compile(const RenderContext& context, const FilterResources& resources)
+void SVGFFilter::FilterPass::compile(rhi::IDevice& device, ShaderManager& shaders, const FilterResources& resources)
 {
     extent = resources.direct->getDesc().size;
     if (!pipeline)
-        createPipeline(context);
-    rhiCheck(context.device->createRootShaderObject(pipeline->getProgram(), shaderObject.writeRef()));
+        createPipeline(device, shaders);
+    rhiCheck(device.createRootShaderObject(pipeline->getProgram(), shaderObject.writeRef()));
     const rhi::ShaderCursor root(shaderObject);
     rhiCheck(root["inputDirect"].setBinding(resources.direct));
     rhiCheck(root["inputIndirect"].setBinding(resources.indirect));
@@ -95,19 +98,22 @@ void SVGFFilter::FilterPass::compile(const RenderContext& context, const FilterR
 }
 
 
-void SVGFFilter::FilterPass::createPipeline(const RenderContext& context)
+void SVGFFilter::FilterPass::createPipeline(rhi::IDevice& device, ShaderManager& shaders)
 {
     const auto variant = first() ? FilterVariant::First : last() ? FilterVariant::Final : FilterVariant::Filter;
-    pipeline           = context.device->createComputePipeline(
-        {.program = context.shaderManager->getOrLoad("svgf_filter", {{"SVGF_STAGE", std::to_string(int(variant))}})}
+    pipeline           = device.createComputePipeline(
+        {.program = shaders.getProgram(
+             "passes/denoise/SVGF/svgf_filter.slang",
+             {"computeMain"},
+             {{"SVGF_STAGE", std::to_string(int(variant))}}
+         )}
     );
     CHECK(pipeline);
 }
 
 
-void SVGFFilter::FilterPass::execute(const RenderContext& frame) const
+void SVGFFilter::FilterPass::execute(rhi::ICommandEncoder& commands, const ViewportRect& viewport) const
 {
-    const auto& viewport = frame.scene->viewport();
     {
         const auto uniformValue = FilterParameters{
             .viewport     = {viewport.x, viewport.y, viewport.width, viewport.height},
@@ -118,7 +124,7 @@ void SVGFFilter::FilterPass::execute(const RenderContext& frame) const
         CHECK(uniformCursor.getTypeLayout()->getSize() <= sizeof(uniformValue));
         rhiCheck(uniformCursor.setData(&uniformValue, uniformCursor.getTypeLayout()->getSize()));
     };
-    auto* pass = frame.commands->beginComputePass();
+    auto* pass = commands.beginComputePass();
     CHECK(pass);
     pass->bindPipeline(pipeline, shaderObject);
     const auto groups = dispatchGroups(pipeline, {extent.width, extent.height, 1});

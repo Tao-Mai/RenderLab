@@ -10,7 +10,8 @@
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
 
-struct RenderContext;
+class ShaderManager;
+class GpuScene;
 
 struct SVGFInputs
 {
@@ -38,12 +39,13 @@ public:
     };
 
     Output compile(
-        const RenderContext&                                   context,
+        rhi::IDevice&                                          device,
+        ShaderManager&                                         shaders,
         const SVGFInputs&                                      source,
         const std::array<rhi::ITexture*, kHistoryCount>&       history,
         const std::array<rhi::ITexture*, kLightingLayerCount>& outputs
     );
-    void execute(const RenderContext& frame, uint64_t historyRevision);
+    void execute(rhi::ICommandEncoder& commands, const GpuScene& scene, uint64_t historyRevision);
 
     // Layer belonging to the frame most recently executed by this pass.
     [[nodiscard]] uint32_t colorHistoryLayer() const { return writeLayer ^ 1u; }
@@ -61,5 +63,5 @@ private:
     uint64_t                           previousHistoryRevision = 0;
     uint64_t                           previousSceneGeneration  = 0;
 
-    void createPipeline(const RenderContext& context);
+    void createPipeline(rhi::IDevice& device, ShaderManager& shaders);
 };

@@ -11,7 +11,8 @@
 class GpuMesh
 {
 public:
-    GpuMesh(rhi::IDevice& device, const MeshGeometry& geometry, std::span<const MeshAsset::Submesh> submeshes);
+    GpuMesh(rhi::IDevice& device, rhi::ICommandEncoder& commands, const MeshGeometry& geometry,
+        std::span<const MeshAsset::Submesh> submeshes);
 
     GpuMesh(const GpuMesh&)                = delete;
     GpuMesh& operator=(const GpuMesh&)     = delete;

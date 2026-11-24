@@ -146,7 +146,10 @@ add_library(RenderLabCore SHARED
     src/core/Properties.h
     src/core/DirectedGraph.h
     src/core/DirectedGraphTraversal.h
+    src/core/Metadata.cpp
     src/core/Metadata.h
+    src/core/MetadataBinding.h
+    src/asset/ApplyOptionalFields.cpp
     src/core/TypeRegistry.h
     src/core/TypeTraits.h
     src/core/Serializer.h
@@ -160,7 +163,7 @@ add_library(RenderLabCore SHARED
     src/scene/component/CameraComponent.h
     src/scene/component/LightComponent.h
     src/scene/component/LightComponent.cpp
-    src/scene/component/AreaLightComponents.cpp
+    src/scene/component/EnvironmentLightComponent.cpp
     src/scene/component/RenderComponent.h
     src/scene/component/RenderComponent.cpp
     src/scene/component/TransformComponent.cpp
@@ -246,7 +249,6 @@ add_library(RenderLabCore SHARED
     src/render/resources/MaterialTable.h
     src/render/resources/RenderResourceManager.cpp
     src/render/resources/RenderResourceManager.h
-    src/render/resources/LightRanges.h
     src/render/resources/ShaderData.h
     src/render/resources/PbrtMaterialProgram.h
     src/render/resources/ShaderLayout.cpp
@@ -270,13 +272,13 @@ add_library(RenderLabCore SHARED
     src/render/raytracing/PathTracingParameters.h
     src/render/raytracing/PathTracingShader.cpp
     src/render/raytracing/PathTracingShader.h
-    src/render/raytracing/RectLightGeometry.h
     src/scene/system/SceneLight.h
     src/render/resources/SceneLightConstants.h
     src/render/editor/EditorFrameInput.h
     src/render/graph/RenderPass.cpp
     src/render/graph/RenderPassReflection.cpp
     src/render/graph/RenderPassReflection.h
+    src/render/graph/RenderPassStandardFlags.h
     src/render/graph/RenderGraphCompiler.cpp
     src/render/graph/RenderGraphScript.cpp
     src/render/graph/RenderGraphScript.h
@@ -287,10 +289,10 @@ add_library(RenderLabCore SHARED
     src/core/Plugin.cpp
     src/core/Plugin.h
     src/core/RuntimeDirectory.cpp
-    src/render/resources/SceneShading.cpp
-    src/render/resources/SceneShading.h
-    src/render/raytracing/PathSceneState.cpp
-    src/render/raytracing/PathSceneState.h
+    src/render/resources/AnalyticLights.cpp
+    src/render/resources/AnalyticLights.h
+    src/render/resources/EmissiveLights.cpp
+    src/render/resources/EmissiveLights.h
     src/editor/Gui.cpp
     src/editor/PassEditor.cpp
 )
@@ -387,10 +389,7 @@ target_link_libraries(RenderLabCore PUBLIC
         unofficial::tinyexr::tinyexr
 )
 
-renderlab_generate_metadata(RenderLabCore src REGISTRY RegisteredTypes.generated.h)
-add_dependencies(RenderLabDds RenderLabCoreMetadata)
-target_include_directories(RenderLabPbrtFrontend PRIVATE "${RENDERLAB_GENERATED_DIRECTORY}")
-add_dependencies(RenderLabPbrtFrontend RenderLabCoreMetadata)
+renderlab_generate_metadata(RenderLabCore src SCHEMA)
 
 # Use the same dependency headers with separate DLL export and import definitions.
 set(renderlab_pch_headers
@@ -417,11 +416,12 @@ set_property(SOURCE src/render/plugins/PluginAbi.cpp APPEND PROPERTY COMPILE_DEF
     RENDERLAB_PLUGIN_ABI="${RENDERLAB_PLUGIN_ABI}")
 target_precompile_headers(RenderLabPluginAbi PRIVATE ${renderlab_pch_headers})
 add_subdirectory(passes)
-renderlab_shader(blit shaders/raster/blit.slang blit)
-renderlab_shader(imgui shaders/editor/imgui.slang imgui)
+renderlab_shader(shaders/raster/blit.slang blit)
+renderlab_shader(shaders/scene/build_emissive_lights.slang build_emissive_lights ENTRIES main)
+renderlab_shader(shaders/editor/imgui.slang imgui)
 option(BUILD_TESTING "Enable manual validation tools" OFF)
 if(BUILD_TESTING)
-    renderlab_shader(material_workflow_check test/MaterialWorkflowCheck.slang material_workflow_check
+    renderlab_shader(test/MaterialWorkflowCheck.slang material_workflow_check
         DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 ENTRIES computeMain)
 endif()
 renderlab_build_shaders()
@@ -452,6 +452,7 @@ add_library(RenderLabRuntime STATIC
     src/render/Renderer.h
 )
 target_link_libraries(RenderLabRuntime PUBLIC RenderLabCore PRIVATE Python3::Python)
+add_dependencies(RenderLabRuntime RenderLabCoreMetadata)
 target_include_directories(RenderLabRuntime SYSTEM PRIVATE ${renderlab_gui_backend_includes})
 set_property(SOURCE src/core/Scripting.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     RENDERLAB_PYTHON_HOME=L"${RENDERLAB_PYTHON_HOME}")

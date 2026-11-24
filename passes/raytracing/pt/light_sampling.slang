@@ -1,135 +1,85 @@
 #ifndef RENDERLAB_PT_LIGHT_SAMPLING_SLANG
 #define RENDERLAB_PT_LIGHT_SAMPLING_SLANG
 
-#include "scene/light_emitters.slang"
-#include "math/random.slang"
+#include "raytracing/analytic_light_sampling.slang"
+#include "scene/emissive_lights.slang"
 
-float lightWeight(float3 value)
+struct AnalyticReservoir
 {
-    return max(0.0, max(value.x, max(value.y, value.z)));
-}
+    AnalyticLightSample sample;
+    float weight;
+    float weightSum;
 
-struct DeltaLightSample
-{
-    float3 direction;
-    float3 incidentIrradiance;
-    float distance;
-    float probability;
+    property probability : float { get { return weightSum > 0.0 ? weight / weightSum : 0.0; } }
+
+    [mutating] void consider(AnalyticLightSample candidate, inout uint state)
+    {
+        float3 incident = candidate.radiance / candidate.pdf;
+        float candidateWeight = max(incident.x, max(incident.y, incident.z));
+        if (candidateWeight <= 0.0)
+            return;
+        weightSum += candidateWeight;
+        if (randomFloat(state) < candidateWeight / weightSum)
+        {
+            sample = candidate;
+            weight = candidateWeight;
+        }
+    }
 };
 
-// Point and spot lights share one weighted reservoir. Their emission is intensity I.
-DeltaLightSample sampleLocalLight(LightRanges ranges, float3 origin, inout uint state)
+void sampleAnalyticLights(float3 origin, inout uint state, out AnalyticReservoir local, out AnalyticReservoir distant)
 {
-    DeltaLightSample selected = {};
-    float selectedWeight = 0.0;
-    float weightSum = 0.0;
-    uint pointCount = ranges.pointEnd - ranges.directionalEnd;
-    uint spotCount = ranges.spotEnd - ranges.rectAreaEnd;
-    for (uint candidate = 0; candidate < pointCount + spotCount; ++candidate)
+    local = {};
+    distant = {};
+    for (uint index = 0; index < scene.globals[0].analyticLightCount; ++index)
     {
-        uint index = candidate < pointCount ? ranges.directionalEnd + candidate
-            : ranges.rectAreaEnd + candidate - pointCount;
-        LightData light = lights[index];
-        float3 offset = light.position - origin;
-        float distanceSquared = dot(offset, offset);
-        if (distanceSquared == 0.0 || !withinLightRange(light, distanceSquared))
-            continue;
-
-        float distance = sqrt(distanceSquared);
-        float3 direction = offset / distance;
-        float attenuation = light.type == LightType::Spot ? spotAngularAttenuation(light, -direction) : 1.0;
-        float3 incident = light.color * (attenuation / distanceSquared);
-        float weight = lightWeight(incident);
-        if (weight <= 0.0)
+        LightData light = scene.analyticLights[index];
+        float2 uv = float2(0.0);
+        if (light.type == LightType::RectArea)
         {
+            uv.x = randomFloat(state);
+            uv.y = randomFloat(state);
+        }
+        AnalyticLightSample candidate;
+        if (!sampleAnalyticLight(light, origin, uv, candidate))
             continue;
-        }
-        weightSum += weight;
-        if (randomFloat(state) < weight / weightSum)
-        {
-            selected.direction = direction;
-            selected.incidentIrradiance = incident;
-            selected.distance = distance;
-            selectedWeight = weight;
-        }
+        if (light.type == LightType::Directional)
+            distant.consider(candidate, state);
+        else
+            local.consider(candidate, state);
     }
-    if (selectedWeight > 0.0)
-    {
-        selected.probability = selectedWeight / weightSum;
-    }
-
-    return selected;
 }
 
-DeltaLightSample sampleDistantLight(uint lightCount, inout uint state)
+float emissiveSelectionWeight(uint lightIndex, float3 origin)
 {
-    DeltaLightSample selected = {};
-    float selectedWeight = 0.0;
-    float weightSum = 0.0;
-    for (uint index = 0; index < lightCount; ++index)
-    {
-        LightData light = lights[index];
-        float3 incident = light.color;
-        float weight = lightWeight(incident);
-        if (weight <= 0.0)
-        {
-            continue;
-        }
-        weightSum += weight;
-        if (randomFloat(state) < weight / weightSum)
-        {
-            selected.direction = -light.direction.xyz;
-            selected.incidentIrradiance = incident;
-            selected.distance = kMaxRayDistance;
-            selectedWeight = weight;
-        }
-    }
-    if (selectedWeight > 0.0)
-    {
-        selected.probability = selectedWeight / weightSum;
-    }
-
-    return selected;
-}
-
-float areaSelectionWeight(uint lightIndex, float3 origin)
-{
-    LightTriangle triangle = loadTriangleLight(lightIndex);
+    EmissiveTriangle triangle = emissiveLights.triangles[lightIndex];
     float3 center = (triangle.p0 + triangle.vertex1 + triangle.vertex2) / 3.0;
     float3 offset = origin - center;
     float distanceSquared = dot(offset, offset);
-    if (distanceSquared == 0.0 || triangle.area == 0.0)
-    {
+    if (distanceSquared == 0.0 || triangle.power == 0.0)
         return 0.0;
-    }
 
     float cosine = dot(triangle.geometricNormal, offset * rsqrt(distanceSquared));
-    float projectedCosine = triangle.twoSided != 0 ? abs(cosine) : max(0.0, cosine);
-    LightEmission emission = areaEmissions[triangle.emissionIndex];
-    // A texture can be bright away from its centroid. Keep support over the whole triangle.
-    float intensity = lightWeight(averageEmission(emission));
-
-    return triangle.area * projectedCosine * intensity / distanceSquared;
+    float projectedCosine = emissiveTwoSided(triangle) ? abs(cosine) : max(0.0, cosine);
+    return triangle.power * projectedCosine / distanceSquared;
 }
 
-struct AreaLightSample
+struct EmissiveLightSample
 {
     uint index;
     float probability;
     float weightSum;
 };
 
-AreaLightSample sampleAreaLight(uint lightCount, float3 origin, inout uint state)
+EmissiveLightSample sampleEmissiveLight(float3 origin, inout uint state)
 {
-    AreaLightSample selected = {};
+    EmissiveLightSample selected = {};
     float selectedWeight = 0.0;
-    for (uint index = 0; index < lightCount; ++index)
+    for (uint index = 0; index < emissiveLights.triangleCount; ++index)
     {
-        float weight = areaSelectionWeight(index, origin);
+        float weight = emissiveSelectionWeight(index, origin);
         if (weight <= 0.0)
-        {
             continue;
-        }
         selected.weightSum += weight;
         if (randomFloat(state) < weight / selected.weightSum)
         {
@@ -138,31 +88,21 @@ AreaLightSample sampleAreaLight(uint lightCount, float3 origin, inout uint state
         }
     }
     if (selectedWeight > 0.0)
-    {
         selected.probability = selectedWeight / selected.weightSum;
-    }
-
     return selected;
 }
 
-float areaPdf(uint lightIndex, float3 origin, float3 target)
+float emissivePdf(uint lightIndex, float3 origin, float3 target)
 {
-    LightTriangle triangle = loadTriangleLight(lightIndex);
+    EmissiveTriangle triangle = emissiveLights.triangles[lightIndex];
     float3 offset = target - origin;
     float distanceSquared = dot(offset, offset);
     if (triangle.area == 0.0 || distanceSquared == 0.0)
-    {
         return 0.0;
-    }
 
     float cosine = dot(triangle.geometricNormal, -offset * rsqrt(distanceSquared));
-    float projectedCosine = triangle.twoSided != 0 ? abs(cosine) : max(0.0, cosine);
-    if (projectedCosine == 0.0)
-    {
-        return 0.0;
-    }
-
-    return distanceSquared / (triangle.area * projectedCosine);
+    float projectedCosine = emissiveTwoSided(triangle) ? abs(cosine) : max(0.0, cosine);
+    return projectedCosine > 0.0 ? distanceSquared / (triangle.area * projectedCosine) : 0.0;
 }
 
 #endif

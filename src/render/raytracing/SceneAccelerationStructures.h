@@ -1,53 +1,42 @@
 #pragma once
 
 #include <slang-rhi.h>
-#include "render/RenderConfig.h"
-
-#include <array>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <span>
 #include <tuple>
 #include <vector>
 
 class GpuMesh;
 struct GpuDraw;
-struct LightData;
 
 class SceneAccelerationStructures
 {
 public:
-    // Mesh uploads and the frame slot's previous submission must be complete.
-    [[nodiscard]] rhi::IAccelerationStructure* recordBuilds(
+    static constexpr uint32_t kTriangleAttributeSize = 2 * sizeof(float);
+
+    void invalidate() { ++revision; }
+
+    // Record on the scene's graphics queue. Reuse the TLAS until its geometry changes.
+    [[nodiscard]] rhi::IAccelerationStructure* getOrBuild(
         rhi::IDevice& device,
         rhi::ICommandEncoder& commands,
-        std::span<const GpuDraw> draws,
-        std::span<const LightData> rectLights,
-        uint32_t firstRectLightIndex,
-        uint32_t frameIndex
+        std::span<const GpuDraw> draws
     );
 
 private:
-    struct Frame
-    {
-        rhi::ComPtr<rhi::IAccelerationStructure> tlas;
-        rhi::ComPtr<rhi::IBuffer>                scratch;
-        rhi::ComPtr<rhi::IBuffer>                instances;
-        uint32_t                                 instanceCount = 0;
-    };
-
     std::map<std::tuple<const GpuMesh*, uint32_t, uint32_t>, rhi::ComPtr<rhi::IAccelerationStructure>> meshBlasCache;
-    rhi::ComPtr<rhi::IAccelerationStructure> rectLightBlas;
-    std::array<Frame, kMaxFramesInFlight>    frames;
+    rhi::ComPtr<rhi::IAccelerationStructure> tlas;
+    uint64_t                                 revision = 0;
+    std::optional<uint64_t>                   builtRevision;
 
     [[nodiscard]] std::vector<rhi::AccelerationStructureHandle> recordBlasBuilds(
-        rhi::IDevice& device, rhi::ICommandEncoder& commands, std::span<const GpuDraw> draws, bool hasRectLights
+        rhi::IDevice& device, rhi::ICommandEncoder& commands, std::span<const GpuDraw> draws
     );
-    void recordRectLightBlasBuild(rhi::IDevice& device, rhi::ICommandEncoder& commands);
-    void recordTlasBuild(
+    [[nodiscard]] rhi::ComPtr<rhi::IAccelerationStructure> recordTlasBuild(
         rhi::IDevice&                                                  device,
         rhi::ICommandEncoder&                                          commands,
-        Frame&                                                         frame,
         std::span<const rhi::AccelerationStructureInstanceDescGeneric> instances
     );
 };

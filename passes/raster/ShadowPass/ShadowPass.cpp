@@ -304,7 +304,6 @@ void ShadowPass::setProperties(const Properties& properties)
 
 RenderPassReflection ShadowPass::reflect(const CompileData&)
 {
-    constexpr auto kDepthSampled = rhi::TextureUsage::DepthStencil | rhi::TextureUsage::ShaderResource;
     RenderPassReflection reflection;
     reflection.addOutput(kShadowUniformsPort, rhi::BufferDesc{
         .size = sizeof(ShadowUniforms),
@@ -322,7 +321,7 @@ RenderPassReflection ShadowPass::reflect(const CompileData&)
             .size = {extent, extent, 1},
             .arrayLength = arraySize,
             .format = rhi::Format::D32Float,
-            .usage = kDepthSampled,
+            .usage = rhi::TextureUsage::DepthStencil | rhi::TextureUsage::ShaderResource,
         });
         reflection.addOutput(ports.data, rhi::BufferDesc{
             .size = (parameters.enabled ? lightCount : 1u) * recordSize,
@@ -356,7 +355,7 @@ void ShadowPass::compile(RenderContext* passContext, const CompileData&)
     cascadeCount             = shadow.cascade.count;
 
     CHECK(cascadeCount > 0 && cascadeCount <= kMaxDirectionalShadowCascades);
-    auto&       device = *passContext->device;
+    auto&       device = *mpDevice;
     const auto& limits = device.getInfo().limits;
     CHECK(
         shadow.cascade.shadowMapSize <= limits.maxTextureDimension2D &&
@@ -364,8 +363,8 @@ void ShadowPass::compile(RenderContext* passContext, const CompileData&)
     );
     const auto createTarget = [&](GpuLightType shadowType, uint32_t viewLayerCount = 1)
     {
-        const auto shader = passContext->shaderManager->getOrLoad(
-            "shadow",
+        const auto shader = passContext->shaderManager->getProgram(
+            "passes/raster/ShadowPass/shadow.slang", {"vertMain", "fragMain"},
             {{"SHADOW_TYPE", std::to_string(static_cast<int>(shadowType))}}
         );
 
@@ -492,7 +491,7 @@ void ShadowPass::prepareShadowData(
 
 void ShadowPass::updateShadowData(const RenderContext& frame, const RenderData& renderData)
 {
-    prepareShadowData(frame.scene->cameraUniforms(), frame.scene->lights(), parameters);
+    prepareShadowData(mpScene->cameraUniforms(), mpScene->analyticLights(), parameters);
 
     std::vector<ShadowVolume> volumes;
     for (uint32_t index = 0; index < shadowData.pointShadows.size(); ++index)
@@ -517,7 +516,7 @@ void ShadowPass::updateShadowData(const RenderContext& frame, const RenderData& 
                  {Frustum{shadowData.directionalShadows[index].cascades[cascade].vp, Frustum::NearPlane::Exclude}}}
             );
 
-    const auto draws = frame.scene->drawCalls();
+    const auto draws = mpScene->drawCalls();
     visibilityMasks.clear();
     visibilityMasks.reserve(draws.size());
 
@@ -572,58 +571,39 @@ void ShadowPass::renderShadowMaps(
     const RenderContext& execution, const RenderData& renderData
 )
 {
-    const auto  lights = execution.scene->lights();
-    const auto& ranges = execution.scene->lightRanges();
+    const auto lights = mpScene->analyticLights();
     const auto attachments = [&](const ShadowPorts& ports)
     { return std::pair{renderData.getTexture(ports.map), renderData.getBuffer(ports.data)}; };
 
     const auto [cascadeMap, cascadeTransforms] = attachments(kDirectionalShadowPorts);
-    for (uint32_t index = 0; index < ranges.directionalEnd; ++index)
-    {
-        const auto& light = lights[index];
-        if (!light.castShadow())
-            continue;
-
-        for (uint32_t cascadeIndex = 0; cascadeIndex < cascadeCount; ++cascadeIndex)
-            recordShadow(
-                execution,
-                directional,
-                *cascadeMap,
-                cascadeTransforms,
-                index,
-                light.shadowIdx * cascadeCount + cascadeIndex,
-                cascadeIndex
-            );
-    }
-
     const auto [pointMap, pointTransforms] = attachments(kPointShadowPorts);
-    for (uint32_t index = ranges.directionalEnd; index < ranges.pointEnd; ++index)
-    {
-        const auto& light = lights[index];
-        if (!light.castShadow())
-            continue;
-
-        recordShadow(execution, point, *pointMap, pointTransforms, index, light.shadowIdx * kPointFaceCount);
-    }
-
     const auto [rectAreaMap, rectAreaTransforms] = attachments(kRectAreaShadowPorts);
-    for (uint32_t index = ranges.pointEnd; index < ranges.rectAreaEnd; ++index)
-    {
-        const auto& light = lights[index];
-        if (!light.castShadow())
-            continue;
-
-        recordShadow(execution, rectArea, *rectAreaMap, rectAreaTransforms, index, light.shadowIdx);
-    }
-
     const auto [spotMap, spotTransforms] = attachments(kSpotShadowPorts);
-    for (uint32_t index = ranges.rectAreaEnd; index < ranges.spotEnd; ++index)
+    for (uint32_t index = 0; index < lights.size(); ++index)
     {
         const auto& light = lights[index];
         if (!light.castShadow())
             continue;
 
-        recordShadow(execution, spot, *spotMap, spotTransforms, index, light.shadowIdx);
+        switch (light.type())
+        {
+        case GpuLightType::Directional:
+            for (uint32_t cascadeIndex = 0; cascadeIndex < cascadeCount; ++cascadeIndex)
+                recordShadow(
+                    execution, directional, *cascadeMap, cascadeTransforms,
+                    index, light.shadowIdx * cascadeCount + cascadeIndex, cascadeIndex
+                );
+            break;
+        case GpuLightType::Point:
+            recordShadow(execution, point, *pointMap, pointTransforms, index, light.shadowIdx * kPointFaceCount);
+            break;
+        case GpuLightType::RectArea:
+            recordShadow(execution, rectArea, *rectAreaMap, rectAreaTransforms, index, light.shadowIdx);
+            break;
+        case GpuLightType::Spot:
+            recordShadow(execution, spot, *spotMap, spotTransforms, index, light.shadowIdx);
+            break;
+        }
     }
 }
 
@@ -638,7 +618,7 @@ void ShadowPass::recordShadow(
 ) const
 {
     // TODO: Precompute the per-layer attachment views.
-    const auto& light      = execution.scene->lights()[lightIndex];
+    const auto& light      = mpScene->analyticLights()[lightIndex];
     const auto  visibility = shadowMask(light.type(), light.shadowIdx, cascadeIndex);
     for (uint32_t face = 0; face < target.viewLayerCount; ++face)
     {
@@ -652,7 +632,7 @@ void ShadowPass::recordShadow(
         CHECK(pass);
         const auto& size = image.getDesc().size;
         auto state = ViewportRect{0, 0, float(size.width), float(size.height)}.renderState();
-        const auto draws = execution.scene->drawCalls();
+        const auto draws = mpScene->drawCalls();
         for (size_t index = 0; index < draws.size(); ++index)
         {
             if (!(visibilityMasks[index] & visibility))
@@ -661,7 +641,7 @@ void ShadowPass::recordShadow(
             auto*       object = pass->bindPipeline(target.pipeline);
             CHECK(object);
             const rhi::ShaderCursor root(object);
-            rhiCheck(root["lights"].setBinding(execution.scene->lightBuffer()));
+            mpScene->bindShaderData(*object);
             rhiCheck(root["shadowData"].setBinding(transforms));
             const ShadowPushConstants
                 constants{.model = item.model, .lightIdx = lightIndex, .cascadeIndex = cascadeIndex, .faceIndex = face};

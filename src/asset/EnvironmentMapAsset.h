@@ -15,5 +15,3 @@ struct RL_RECORD EnvironmentMapAsset : Asset
     RL_FIELD("irradiance") TextureBinding irradiance;
     RL_FIELD("prefilteredSpecular") TextureBinding prefilteredSpecular;
 };
-
-#include RL_METADATA_HEADER("metadata/src/asset/EnvironmentMapAsset.generated.h")

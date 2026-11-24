@@ -1,4 +1,5 @@
 #include "render/resources/RenderResourceManager.h"
+#include "render/resources/TextureUpload.h"
 #include <cmath>
 #include <limits>
 #include <slang-rhi.h>
@@ -42,20 +43,19 @@ void RenderResourceManager::shutdown() noexcept
     assets              = nullptr;
     data                = nullptr;
 }
-const GpuMesh& RenderResourceManager::loadMesh(const MeshAsset::ID& id)
+const GpuMesh& RenderResourceManager::loadMesh(const MeshAsset::ID& id, rhi::ICommandEncoder& commands)
 {
-    if (const auto found = meshes.find(id); found != meshes.end())
-    {
-        return *found->second;
-    }
+    auto& versions = meshes[id];
+    const auto revision = assets->revision(id);
+    if (const auto found = versions.find(revision); found != versions.end())
+        return found->second;
 
-    const MeshAsset& meshAsset = assets->get<MeshAsset>(id);
-    MeshGeometry     geometry  = data->readGeometry(meshAsset);
-    auto gpu = std::make_unique<GpuMesh>(*device, geometry, meshAsset.submeshes);
-    return *meshes.emplace(id, std::move(gpu)).first->second;
+    const auto& meshAsset = assets->get(id);
+    const auto geometry = data->readGeometry(meshAsset);
+    return versions.try_emplace(revision, *device, commands, geometry, meshAsset.submeshes).first->second;
 }
 
-rhi::ComPtr<rhi::ITexture> RenderResourceManager::texture(const TextureAsset::ID& id)
+rhi::ComPtr<rhi::ITexture> RenderResourceManager::texture(const TextureAsset::ID& id, rhi::ICommandEncoder& commands)
 {
     if (const auto found = textures.find(id); found != textures.end())
     {
@@ -65,12 +65,14 @@ rhi::ComPtr<rhi::ITexture> RenderResourceManager::texture(const TextureAsset::ID
     const TextureAsset& asset = assets->get<TextureAsset>(id);
 
     const std::vector<uint8_t> bytes = data->readTexture(asset);
-    auto                       gpu   = uploadTexture(*device, asset, bytes);
+    auto                       gpu   = uploadTexture(*device, commands, asset, bytes);
 
     return textures.emplace(id, std::move(gpu)).first->second;
 }
 
-const GpuEnvironmentMap& RenderResourceManager::environmentMap(const EnvironmentMapAsset::ID& id)
+const GpuEnvironmentMap& RenderResourceManager::environmentMap(
+    const EnvironmentMapAsset::ID& id, rhi::ICommandEncoder& commands
+)
 {
     if (const auto found = environmentMaps.find(id); found != environmentMaps.end())
         return found->second;
@@ -99,9 +101,9 @@ const GpuEnvironmentMap& RenderResourceManager::environmentMap(const Environment
     );
 
     GpuEnvironmentMap result;
-    const auto prefilteredTexture = texture(environment.prefilteredSpecular.textureID);
-    rhiCheck(texture(environment.radiance.textureID)->getDefaultView(result.radiance.writeRef()));
-    rhiCheck(texture(environment.irradiance.textureID)->getDefaultView(result.irradiance.writeRef()));
+    const auto prefilteredTexture = texture(environment.prefilteredSpecular.textureID, commands);
+    rhiCheck(texture(environment.radiance.textureID, commands)->getDefaultView(result.radiance.writeRef()));
+    rhiCheck(texture(environment.irradiance.textureID, commands)->getDefaultView(result.irradiance.writeRef()));
     rhiCheck(prefilteredTexture->getDefaultView(result.prefilteredSpecular.writeRef()));
     result.radianceSampler    = sampler(environment.radiance.samplerID);
     result.irradianceSampler  = sampler(environment.irradiance.samplerID);

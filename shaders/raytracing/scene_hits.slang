@@ -4,7 +4,6 @@
 static const float kMaxRayDistance = 3.402823466e+38;
 static const float kRayEpsilon = 0.001;
 static const uint kSceneMask = 0x01;
-static const uint kLightMask = 0x02;
 static const uint kVisibilityMissIndex = 1;
 
 struct HitData
@@ -14,10 +13,9 @@ struct HitData
     uint firstIndex;
     uint materialIndex;
     uint reverseOrientation;
-    uint firstAreaLight;
+    uint padding;
+    float4x4 objectToWorld;
+    float4x4 worldToObject;
 };
-
-RaytracingAccelerationStructure scene;
-StructuredBuffer<HitData> objects;
 
 #endif

@@ -5,21 +5,10 @@
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "core/Serializer.h"
-#include "metadata/RegisteredTypes.generated.h"
 
 #include <algorithm>
 #include <limits>
 #include <utility>
-
-void SceneManager::init()
-{
-    static const bool registered = []
-    {
-        metadata::visitRegisteredTypes<Component>([]<class T>(const char*) { RegisterType<T, Component>(); });
-        metadata::visitRegisteredTypes<AActor>([]<class T>(const char*) { RegisterType<T, AActor>(); });
-        return true;
-    }();
-}
 
 void SceneManager::loadDefaultScene() { load(context().config->initialScene()); }
 

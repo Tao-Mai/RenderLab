@@ -235,7 +235,7 @@ struct Bsdf
         return sampleReflection(directionSample);
     }
 
-    BsdfSample sample(inout uint state)
+    BsdfSample sample(inout SampleGenerator state)
     {
         if (material.model == MaterialModel::SmoothDielectric)
         {

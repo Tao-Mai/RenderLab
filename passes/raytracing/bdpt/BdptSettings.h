@@ -26,5 +26,3 @@ struct RL_RECORD BdptSettings
     bool operator==(const BdptSettings&) const = default;
     void validate() const;
 };
-
-#include RL_METADATA_HEADER("metadata/passes/raytracing/bdpt/BdptSettings.generated.h")

@@ -162,5 +162,3 @@ struct RL_RECORD PbrtTextureAsset : Asset
 
     bool operator==(const PbrtTextureAsset&) const = default;
 };
-
-#include RL_METADATA_HEADER("metadata/src/asset/pbrt/PbrtTextureAsset.generated.h")

@@ -40,5 +40,3 @@ enum class RL_ENUM Source
     File RL_ENUM_VALUE("File"),
     Builtin RL_ENUM_VALUE("Builtin")
 };
-
-#include RL_METADATA_HEADER("metadata/src/asset/Asset.generated.h")

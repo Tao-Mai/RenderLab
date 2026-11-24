@@ -8,11 +8,6 @@
 #include "render/RenderContext.h"
 #include "render/resources/MaterialTable.h"
 
-namespace
-{
-constexpr std::string_view kGBufferShader = "gbuffer";
-}
-
 
 RenderPassReflection GBufferPass::reflect(const CompileData& compileData)
 {
@@ -41,7 +36,11 @@ void GBufferPass::compile(RenderContext* passContext, const CompileData&)
     for (size_t index = 0; index < colors.size(); ++index)
         colors[index].format = kColorFormats[index];
     rhi::RenderPipelineDesc desc;
-    desc.program      = passContext->shaderManager->getOrLoad(kGBufferShader);
+    desc.program = passContext->shaderManager->getProgram(
+        "passes/raster/GBufferPass/gbuffer.slang",
+        {"vertMain", "fragMain"},
+        {{"ENABLE_CLEARCOAT", "0"}, {"ENABLE_SHEEN", "1"}}
+    );
     desc.targets      = colors.data();
     desc.targetCount  = uint32_t(colors.size());
     desc.depthStencil = {
@@ -50,7 +49,7 @@ void GBufferPass::compile(RenderContext* passContext, const CompileData&)
         .depthWriteEnable = false,
         .depthFunc        = rhi::ComparisonFunc::Equal
     };
-    pipelines = createMeshCullPipelines(*passContext->device, desc);
+    pipelines = createMeshCullPipelines(*mpDevice, desc);
 }
 
 
@@ -75,8 +74,8 @@ void GBufferPass::execute(RenderContext* renderCommands, const RenderData& rende
     auto* pass          = renderCommands->commands->beginRenderPass({colors.data(), uint32_t(colors.size()), &depth});
     CHECK(pass);
     const auto&      size     = target->getDesc().size;
-    const auto       viewport = renderCommands->scene->viewport().clamped({size.width, size.height});
-    MeshDrawRecorder recorder{*pass, viewport.renderState(), *renderCommands};
+    const auto       viewport = mpScene->viewport().clamped({size.width, size.height});
+    MeshDrawRecorder recorder{*pass, viewport.renderState(), *mpScene};
     recorder.drawOpaque([&](const auto& material) -> rhi::IShaderObject& { return pipelines.bind(*pass, material); });
     pass->end();
 }

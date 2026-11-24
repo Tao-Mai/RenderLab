@@ -20,8 +20,13 @@ public:
 
     void                                       init(std::filesystem::path root);
     void                                       shutdown() noexcept;
-    [[nodiscard]] uint64_t                     contentRevision() const { return nextRevision; }
     [[nodiscard]] const std::filesystem::path& rootPath() const { return root; }
+
+    template <AssetType T>
+    [[nodiscard]] uint64_t contentRevision() const
+    {
+        return std::get<AssetRevisions<T>>(revisions).latest;
+    }
 
     template <AssetType T>
     [[nodiscard]] const T& get(const AssetID<T>& id) const
@@ -73,15 +78,19 @@ public:
     template <AssetType T>
     [[nodiscard]] uint64_t revision(const AssetID<T>& id) const
     {
-        const auto& map   = std::get<RevisionMap<T>>(revisions);
+        const auto& map   = std::get<AssetRevisions<T>>(revisions).byId;
         const auto  found = map.find(id);
         return found == map.end() ? 0 : found->second;
     }
 
 private:
     template <AssetType T>
-    using RevisionMap = std::unordered_map<typename T::ID, uint64_t>;
-    AssetTypes::wrapTypes<RevisionMap> revisions;
+    struct AssetRevisions
+    {
+        std::unordered_map<typename T::ID, uint64_t> byId;
+        uint64_t latest = 0;
+    };
+    AssetTypes::wrapTypes<AssetRevisions> revisions;
     uint64_t                           nextRevision = 0;
     std::filesystem::path              root;
 

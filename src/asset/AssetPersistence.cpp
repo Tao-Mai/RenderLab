@@ -18,7 +18,9 @@ typename T::ID AssetManager::saveAsset(std::unique_ptr<T> asset)
     }
 
     assetMap<T>().insert_or_assign(id, std::move(asset));
-    std::get<RevisionMap<T>>(revisions)[id] = ++nextRevision;
+    auto& revisionsForType = std::get<AssetRevisions<T>>(revisions);
+    revisionsForType.latest = ++nextRevision;
+    revisionsForType.byId[id] = revisionsForType.latest;
     return id;
 }
 

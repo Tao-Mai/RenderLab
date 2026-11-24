@@ -6,7 +6,8 @@
 #include <slang-rhi/shader-cursor.h>
 #include "render/DispatchGroups.h"
 #include "render/GpuScene.h"
-#include "render/RenderContext.h"
+#include "render/device/RhiCheck.h"
+#include "render/resources/ShaderManager.h"
 
 namespace
 {
@@ -33,7 +34,8 @@ glm::vec4 linearDepthRow(const glm::mat4& view)
 }  // namespace
 
 SVGFReprojection::Output SVGFReprojection::compile(
-    const RenderContext&                                   context,
+    rhi::IDevice&                                          device,
+    ShaderManager&                                         shaders,
     const SVGFInputs&                                      source,
     const std::array<rhi::ITexture*, kHistoryCount>&       history,
     const std::array<rhi::ITexture*, kLightingLayerCount>& outputs
@@ -43,10 +45,10 @@ SVGFReprojection::Output SVGFReprojection::compile(
     hasHistory    = false;
     writeLayer    = 0;
     if (!pipeline)
-        createPipeline(context);
+        createPipeline(device, shaders);
     const auto& [geometry, lighting, moments, length] = history;
     const Output output{outputs[kDirectLightingLayer], outputs[kIndirectLightingLayer], lighting};
-    rhiCheck(context.device->createRootShaderObject(pipeline->getProgram(), shaderObject.writeRef()));
+    rhiCheck(device.createRootShaderObject(pipeline->getProgram(), shaderObject.writeRef()));
     const std::array names{
         "currentColor",
         "currentDepth",
@@ -78,27 +80,27 @@ SVGFReprojection::Output SVGFReprojection::compile(
 }
 
 
-void SVGFReprojection::createPipeline(const RenderContext& context)
+void SVGFReprojection::createPipeline(rhi::IDevice& device, ShaderManager& shaders)
 {
-    pipeline = context.device->createComputePipeline(
-        {.program = context.shaderManager->getOrLoad("svgf_reprojection")}
+    pipeline = device.createComputePipeline(
+        {.program = shaders.getProgram("passes/denoise/SVGF/svgf_reprojection.slang", {"computeMain"})}
     );
     CHECK(pipeline);
 }
 
 
-void SVGFReprojection::execute(const RenderContext& frame, uint64_t historyRevision)
+void SVGFReprojection::execute(rhi::ICommandEncoder& commands, const GpuScene& scene, uint64_t historyRevision)
 {
-    const auto      sceneGeneration = frame.scene->sceneGeneration();
+    const auto      sceneGeneration = scene.sceneGeneration();
     const bool      historyValid    = hasHistory && previousHistoryRevision == historyRevision &&
         previousSceneGeneration == sceneGeneration;
-    const auto&     viewport        = frame.scene->viewport();
-    const auto&     camera          = frame.scene->cameraUniforms();
+    const auto&     viewport        = scene.viewport();
+    const auto&     camera          = scene.cameraUniforms();
     const glm::vec4 currentViewport{viewport.x, viewport.y, viewport.width, viewport.height};
     const auto      currentDepthRow = linearDepthRow(camera.view);
 
     const rhi::ShaderCursor root(shaderObject);
-    rhiCheck(root["sceneGlobals"].setBinding(frame.scene->globalsBuffer()));
+    scene.bindShaderData(*shaderObject);
 
     {
         const auto uniformValue = ReprojectionParameters{
@@ -115,7 +117,7 @@ void SVGFReprojection::execute(const RenderContext& frame, uint64_t historyRevis
         CHECK(uniformCursor.getTypeLayout()->getSize() <= sizeof(uniformValue));
         rhiCheck(uniformCursor.setData(&uniformValue, uniformCursor.getTypeLayout()->getSize()));
     };
-    auto* pass = frame.commands->beginComputePass();
+    auto* pass = commands.beginComputePass();
     CHECK(pass);
     pass->bindPipeline(pipeline, shaderObject);
     const auto groups = dispatchGroups(pipeline, {extent.width, extent.height, 1});

@@ -11,7 +11,8 @@ enum class BdptLightType
     Point,
     Spot,
     Directional,
-    Area,
+    Rectangle,
+    Emissive,
     Environment,
 };
 
@@ -51,12 +52,13 @@ struct BdptVertex
 
     bool isOnSurface()
     {
-        return type == BdptVertexType::Surface || light.type == BdptLightType::Area;
+        return type == BdptVertexType::Surface || light.type == BdptLightType::Emissive ||
+            light.type == BdptLightType::Rectangle;
     }
 
     bool isLight()
     {
-        return type == BdptVertexType::Light || light.type == BdptLightType::Area;
+        return type == BdptVertexType::Light || light.type == BdptLightType::Emissive;
     }
 };
 

@@ -46,5 +46,3 @@ struct formatter<AssetID<T>, char> : formatter<string_view, char>
     }
 };
 }
-
-#include RL_METADATA_HEADER("metadata/src/asset/AssetID.generated.h")

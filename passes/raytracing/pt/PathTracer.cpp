@@ -5,7 +5,6 @@
 #include "editor/PassEditor.h"
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
-#include "render/raytracing/PathSceneState.h"
 #include "render/raytracing/PathTracingShader.h"
 
 
@@ -67,43 +66,55 @@ class PathTracer : public RenderPass
         sampleIndex = 0;
     }
 
+    void setScene(GpuScene* scene) override
+    {
+        RenderPass::setScene(scene);
+        sceneChanged = true;
+    }
+
+    void onSceneUpdates(RenderContext*, SceneUpdateFlags) override { sceneChanged = true; }
+
     void execute(RenderContext* renderCommands, const RenderData& renderData) override
     {
         const auto& execution = *renderCommands;
-        auto&       scene     = *execution.scene;
+        auto&       scene     = *mpScene;
         auto&       commands  = *execution.commands;
-        const auto rayTracing = scene.prepareRayTracing(commands, execution.frameIndex);
+        auto*       tlas      = scene.prepareRayTracing(commands);
+        scene.prepareEmissiveLights(commands);
 
         const auto environment = pathEnvironment(scene);
-        auto&      pipeline    = pipelines[static_cast<size_t>(environment)];
+        auto& [pipeline, shaderTable] = programs[static_cast<size_t>(environment)];
         if (!pipeline)
         {
             auto&      shaders = *execution.shaderManager;
-            auto*      program = shaders.getOrCompile("pt", pathEnvironmentDefines(environment));
+            auto*      program = shaders.getProgram(
+                "passes/raytracing/pt/main.slang",
+                {"raygenMain", "missMain", "visibilityMissMain", "closestHitMain"},
+                pathTracingDefines(environment)
+            );
             rhiCheck(mpDevice->createRayTracingPipeline(pathTracingPipelineDesc(program), pipeline.writeRef()));
-            if (!shaderTable)
-                shaderTable = createPathTracingShaderTable(*mpDevice, program, kRaygenEntries);
+            shaderTable = createPathTracingShaderTable(*mpDevice, program, kRaygenEntries);
         }
 
-        const bool sceneChanged   = sceneState.update(scene);
         const bool optionsChanged = previousMaxBounces != parameters.maxBounces;
         if (sceneChanged || optionsChanged)
         {
             sampleIndex = 0;
             renderData.invalidateHistory(kOutputSamples);
         }
+        sceneChanged = false;
         previousMaxBounces = parameters.maxBounces;
 
         CHECK(sampleIndex < std::numeric_limits<uint32_t>::max());
         const auto  output    = renderData.getTexture(kOutputSamples);
         const auto& size      = output->getDesc().size;
-        const auto  constants = makePathTracingParameters(execution, parameters.maxBounces, sampleIndex);
+        const auto  constants = makePathTracingParameters(scene, parameters.maxBounces, sampleIndex);
 
         auto* pass = commands.beginRayTracingPass();
         CHECK(pass);
         auto* object = pass->bindPipeline(pipeline, shaderTable);
         CHECK(object);
-        rayTracing.bind(object);
+        scene.bindRayTracingShaderData(*object, tlas);
         const rhi::ShaderCursor root(object);
         rhiCheck(root["sampleOutput"].setBinding(output));
         rhiCheck(root["parameters"].getDereferenced().setData(constants));
@@ -121,10 +132,14 @@ class PathTracer : public RenderPass
 private:
     PathTracerSettings parameters;
 
-    std::array<rhi::ComPtr<rhi::IRayTracingPipeline>, static_cast<size_t>(PathEnvironment::Count)> pipelines;
-    rhi::ComPtr<rhi::IShaderTable> shaderTable;
+    struct Program
+    {
+        rhi::ComPtr<rhi::IRayTracingPipeline> pipeline;
+        rhi::ComPtr<rhi::IShaderTable> shaderTable;
+    };
+    std::array<Program, static_cast<size_t>(PathEnvironment::Count)> programs;
 
-    PathSceneState sceneState;
+    bool           sceneChanged       = true;
     uint32_t       sampleIndex        = 0;
     uint32_t       previousMaxBounces = 0;
 };

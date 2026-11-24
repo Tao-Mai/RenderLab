@@ -27,26 +27,26 @@
 using json = nlohmann::json;
 
 template <class T>
-T DeserializeEnum(const json& j)
+T DeserializeEnum(const json& j, std::span<const metadata::EnumValue<T>> values)
 {
     CHECK(j.is_string(), "expected an enum name");
     const std::string name = j.get<std::string>();
 
-    for (const auto& entry : metadata::Enum<T>::kValues)
+    for (const auto& entry : values)
         if (name == entry.name)
             return entry.value;
 
     CHECK(false, "unknown enumerator '{}'", name);
 }
 
-template <metadata::FlagEnum T>
-json Serialize(const T& value)
+template <class T>
+json SerializeFlags(T value, std::span<const metadata::EnumValue<T>> values)
 {
     json result    = json::array();
     using Bits     = std::make_unsigned_t<std::underlying_type_t<T>>;
     Bits remaining = static_cast<Bits>(std::to_underlying(value));
 
-    for (const auto& entry : metadata::Enum<T>::kValues)
+    for (const auto& entry : values)
     {
         const Bits bit = static_cast<Bits>(std::to_underlying(entry.value));
         if (std::has_single_bit(bit) && (remaining & bit) != 0)
@@ -91,7 +91,7 @@ json Serialize(const T& value)
     {
         return std::visit(
             []<class Alternative>(const Alternative& data)
-            { return json{{metadata::Schema<Alternative>::kTypeId, Serialize(data)}}; },
+            { return json{{metadata::record(typeid(Alternative)).id, Serialize(data)}}; },
             value
         );
     }
@@ -143,7 +143,12 @@ json Serialize(const T& value)
     }
     else if constexpr (std::is_enum_v<U>)
     {
-        for (const auto& entry : metadata::Enum<U>::kValues)
+        const auto& info = metadata::enumInfo(typeid(U));
+        const auto values = metadata::enumValues<U>(info);
+        if (info.flags)
+            return SerializeFlags(value, values);
+
+        for (const auto& entry : values)
             if (value == entry.value)
                 return entry.name;
 
@@ -152,17 +157,15 @@ json Serialize(const T& value)
     else
     {
         json result = json::object();
-        metadata::visitFields(
-            value,
-            [&](const auto& field, const auto& member) { result[field.name] = Serialize(member); }
-        );
+        for (const auto& field : metadata::record(typeid(U)).fields)
+            result[field.name] = field.read(&value);
 
         return result;
     }
 }
 
-template <metadata::FlagEnum T>
-void Deserialize(const json& j, T& value)
+template <class T>
+void DeserializeFlags(const json& j, T& value, std::span<const metadata::EnumValue<T>> values)
 {
     CHECK(j.is_array(), "expected a flag array");
     const auto& array = j.get_ref<const json::array_t&>();
@@ -170,7 +173,7 @@ void Deserialize(const json& j, T& value)
     Bits result       = 0;
     for (const auto& name : array)
     {
-        const Bits bit = static_cast<Bits>(std::to_underlying(DeserializeEnum<T>(name)));
+        const Bits bit = static_cast<Bits>(std::to_underlying(DeserializeEnum(name, values)));
         CHECK(std::has_single_bit(bit), "expected a single named flag");
 
         result |= bit;
@@ -234,7 +237,7 @@ void Deserialize(const json& j, T& value)
         {
             const auto read = [&]<class Alternative>
             {
-                if (entry.key() != metadata::Schema<Alternative>::kTypeId)
+                if (entry.key() != metadata::record(typeid(Alternative)).id)
                     return false;
 
                 Alternative data{};
@@ -314,67 +317,30 @@ void Deserialize(const json& j, T& value)
     }
     else if constexpr (std::is_enum_v<U>)
     {
-        value = DeserializeEnum<U>(j);
+        const auto& info = metadata::enumInfo(typeid(U));
+        const auto values = metadata::enumValues<U>(info);
+        if (info.flags)
+            DeserializeFlags(j, value, values);
+        else
+            value = DeserializeEnum(j, values);
     }
     else
     {
         CHECK(j.is_object(), "expected an object");
-        metadata::visitFields(
-            value,
-            [&](const auto& field, auto& member)
-            {
-                const auto item = j.find(field.name);
-                CHECK(item != j.end(), "missing field '{}'", field.name);
-                Deserialize(*item, member);
-            }
-        );
-
-        if constexpr (!metadata::Schema<U>::kAllowUnknownFields)
+        const auto& record = metadata::record(typeid(U));
+        for (const auto& field : record.fields)
         {
-            constexpr auto kFieldCount = std::tuple_size_v<decltype(metadata::Schema<U>::kFields)>;
-            CHECK(j.size() == kFieldCount, "unexpected object fields, expected {}, got {}", kFieldCount, j.size());
+            const auto item = j.find(field.name);
+            CHECK(item != j.end(), "missing field '{}'", field.name);
+            field.write(&value, *item);
         }
+
+        if (!record.allowUnknownFields)
+            CHECK(
+                j.size() == record.fields.size(), "unexpected object fields, expected {}, got {}",
+                record.fields.size(), j.size()
+            );
     }
-}
-
-template <class T, class Base>
-void RegisterType()
-{
-    static_assert(std::derived_from<T, Base>);
-    static_assert(std::has_virtual_destructor_v<Base>);
-    static_assert(!std::is_abstract_v<T>);
-
-    auto&          registry       = TypeRegistry<Base>::get();
-    constexpr auto kId            = metadata::Schema<T>::kTypeId;
-    using Parent                  = typename metadata::Schema<T>::Parent;
-    const std::string_view parent = []() -> std::string_view
-    {
-        if constexpr (std::is_void_v<Parent>)
-            return {};
-        else
-            return metadata::Schema<Parent>::kTypeId;
-    }();
-
-
-    const auto entry =
-        registry.entries
-            .emplace(
-                kId,
-                typename TypeRegistry<Base>::Entry{
-                    .id          = kId,
-                    .parent      = parent,
-                    .create      = []() -> std::unique_ptr<Base> { return std::make_unique<T>(); },
-                    .serialize   = [](const Base& value) { return Serialize(static_cast<const T&>(value)); },
-                    .deserialize = [](const json& data) -> std::unique_ptr<Base>
-                    {
-                        auto result = std::make_unique<T>();
-                        Deserialize(data, *result);
-                        return result;
-                    },
-                }
-            )
-            .first;
-    registry.nativeTypes.emplace(typeid(T), &entry->second);
 }
 
 namespace asset_json

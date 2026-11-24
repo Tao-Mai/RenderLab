@@ -5,7 +5,6 @@
 #include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
-#include "scene/SceneManager.h"
 
 #include <algorithm>
 #include <charconv>
@@ -160,13 +159,11 @@ int main(int argc, char** argv)
         ConfigManager    config;
         AssetManager     assets;
         AssetDataManager assetData;
-        SceneManager     scenes;
         context().config           = &config;
         context().assetManager     = &assets;
         context().assetDataManager = &assetData;
         config.init();
         assetData.init(config.paths().assets);
-        scenes.init();
         context().assetManager->init(config.paths().assets);
         std::filesystem::path source{argv[2]};
         CHECK(!source.empty(), "asset source path is empty");
@@ -178,7 +175,6 @@ int main(int argc, char** argv)
         LOG_INFO("imported asset ID: {}", importedId);
         context().assetManager->shutdown();
         assetData.shutdown();
-        scenes.shutdown();
         config.shutdown();
         context().assetManager     = nullptr;
         context().assetDataManager = nullptr;

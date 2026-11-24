@@ -2,8 +2,8 @@
 
 #include <slang-rhi.h>
 
-#include <filesystem>
-#include <future>
+#include <compare>
+#include <initializer_list>
 #include <map>
 #include <span>
 #include <string>
@@ -18,15 +18,23 @@ public:
     void init(rhi::IDevice* device);
     void shutdown() noexcept;
 
-    [[nodiscard]] rhi::IShaderProgram* getOrLoad(std::string_view program, const ShaderDefines& defines = {});
-    [[nodiscard]] rhi::IShaderProgram* getOrCompile(std::string_view program, const ShaderDefines& defines);
-
-    // The worker retains the program. Other referenced descriptor data has static storage.
-    [[nodiscard]] std::future<rhi::ComPtr<rhi::IRayTracingPipeline>>
-    createRayTracingPipelineAsync(rhi::RayTracingPipelineDesc desc);
+    [[nodiscard]] rhi::IShaderProgram* getProgram(
+        std::string_view                   source,
+        std::initializer_list<const char*> entries,
+        const ShaderDefines&               defines  = {},
+        std::span<const std::string_view>  includes = {}
+    );
 
 private:
-    using ProgramKey = std::pair<std::string, ShaderDefines>;
+    struct ProgramKey
+    {
+        std::string              source;
+        std::vector<std::string> entries;
+        ShaderDefines            defines;
+        std::vector<std::string> includes;
+
+        auto operator<=>(const ProgramKey&) const = default;
+    };
 
     struct Variant
     {
@@ -34,11 +42,6 @@ private:
         rhi::ComPtr<rhi::IShaderProgram> shader;
     };
 
-    rhi::IShaderProgram* registerProgram(
-        ProgramKey key, slang::IModule& module, const std::filesystem::path& path, std::span<const std::string> entries
-    );
-
-    rhi::IDevice*                  device = nullptr;
-    std::map<ProgramKey, Variant>  variants;
-    std::vector<std::future<void>> pipelineBuilds;
+    rhi::IDevice*                 device = nullptr;
+    std::map<ProgramKey, Variant> variants;
 };

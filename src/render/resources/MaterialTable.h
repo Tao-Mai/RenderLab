@@ -41,12 +41,18 @@ public:
     void init(rhi::IDevice& device, RenderResourceManager& resources);
     [[nodiscard]] std::vector<uint32_t>
          prepare(std::span<const DrawItem> items, const AssetManager& assets, const AssetDataManager& assetData);
-    void upload(rhi::IDevice& device, rhi::ICommandEncoder& commands);
+    [[nodiscard]] bool upload(rhi::ICommandEncoder& commands);
     [[nodiscard]] TextureRef          textureReference(const TextureBinding& binding);
     [[nodiscard]] const MaterialInfo& info(uint32_t materialIndex) const { return materialInfos[materialIndex]; }
     [[nodiscard]] const MaterialData& data(uint32_t materialIndex) const { return materials[materialIndex]; }
     [[nodiscard]] std::span<const pbrt::MaterialInstruction> materialInstructions() const { return materialCode; }
-    void bind(rhi::IDevice& device, rhi::IShaderObject& object) const;
+    [[nodiscard]] uint64_t emissionRevision() const { return emissiveRevision; }
+    [[nodiscard]] std::span<const std::string_view> rayTracingShaderIncludes() const
+    {
+        static constexpr std::string_view kIncludes[]{"material/scattering.slang"};
+        return kIncludes;
+    }
+    void bind(rhi::IShaderObject& object) const;
 
 private:
     struct OverrideOwner
@@ -69,6 +75,7 @@ private:
     {
         size_t operator()(const MaterialKey& key) const noexcept;
     };
+    rhi::IDevice*                                                    device = nullptr;
     RenderResourceManager*                                           resources = nullptr;
     rhi::ComPtr<rhi::IBuffer>                                        materialBuffer, materialPrograms, texturePrograms;
     std::optional<uint64_t>                                          uploadedMaterialRevision, uploadedProgramRevision;
@@ -76,9 +83,11 @@ private:
     std::vector<pbrt::MaterialInstruction>                           materialCode;
     std::vector<pbrt::TextureInstruction>                            textureCode;
     uint64_t                                                         materialRevision = 0, programRevision = 0;
+    uint64_t                                                         emissiveRevision = 0;
     std::vector<MaterialInfo>                                        materialInfos;
     std::unordered_map<MaterialKey, uint32_t, MaterialKeyHash>       materialIndices;
     std::unordered_map<AssetID<TextureAsset>, uint32_t>              textureIndices;
+    std::vector<AssetID<TextureAsset>>                              pendingImages;
     std::unordered_map<AssetID<SamplerAsset>, uint32_t>              samplerIndices;
     std::array<rhi::ComPtr<rhi::ITextureView>, kMaxMaterialTextures> images;
     std::array<rhi::ComPtr<rhi::ISampler>, kMaxMaterialSamplers>     samplers;

@@ -57,7 +57,4 @@ struct RENDERLAB_RESTIR_FRAME_ALIGN RestirFrameParameters
 #undef RENDERLAB_RESTIR_FRAME_VEC4
 #undef RENDERLAB_RESTIR_FRAME_UINT
 
-#ifdef __cplusplus
-#include RL_METADATA_HEADER("metadata/passes/raytracing/restir/RestirFrameParameters.generated.h")
-#endif
 #endif

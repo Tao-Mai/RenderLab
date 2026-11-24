@@ -76,21 +76,24 @@ void Bloom::setProperties(const Properties& properties)
 RenderPassReflection Bloom::reflect(const CompileData& compileData)
 {
     auto extent = compileData.defaultTexDims;
+    auto format = kHdrColorFormat;
     if (const auto* input = compileData.connectedResources.getField("hdrColor"))
     {
-        extent.x = input->texture().size.width ? input->texture().size.width : extent.x;
-        extent.y = input->texture().size.height ? input->texture().size.height : extent.y;
+        const auto& texture = input->texture();
+        extent.x = texture.size.width ? texture.size.width : extent.x;
+        extent.y = texture.size.height ? texture.size.height : extent.y;
+        if (texture.format != rhi::Format::Undefined)
+            format = texture.format;
     }
 
     RenderPassReflection reflection;
     reflection.addInput("hdrColor", rhi::TextureDesc{
         .size = {0, 0, 1},
-        .format = rhi::Format::RGBA16Float,
         .usage = rhi::TextureUsage::ShaderResource,
     });
     reflection.addOutput("color", rhi::TextureDesc{
         .size = {extent.x, extent.y, 1},
-        .format = rhi::Format::RGBA16Float,
+        .format = format,
         .usage = rhi::TextureUsage::RenderTarget,
     });
 
@@ -100,7 +103,7 @@ RenderPassReflection Bloom::reflect(const CompileData& compileData)
     {
         reflection.addInternal(pyramidImageName(stage, level), rhi::TextureDesc{
             .size = {size.x, size.y, 1},
-            .format = rhi::Format::RGBA16Float,
+            .format = format,
             .usage = rhi::TextureUsage::ShaderResource | rhi::TextureUsage::RenderTarget,
         });
     };
@@ -116,7 +119,23 @@ RenderPassReflection Bloom::reflect(const CompileData& compileData)
 }
 
 
-void Bloom::compile(RenderContext* passContext, const CompileData&) { filters.clear(); }
+void Bloom::compile(RenderContext*, const CompileData& compileData)
+{
+    const auto format = compileData.connectedResources.getField("hdrColor")->texture().format;
+    if (format != rhi::Format::RGBA16Float && format != rhi::Format::RGBA32Float)
+    {
+        LOG_ERROR("Bloom requires RGBA16Float or RGBA32Float for 'hdrColor'");
+        return;
+    }
+
+    rhi::FormatSupport support;
+    rhiCheck(mpDevice->getFormatSupport(format, &support));
+    const auto kRequiredSupport = rhi::FormatSupport::ShaderSample | rhi::FormatSupport::RenderTarget;
+    if ((support & kRequiredSupport) != kRequiredSupport)
+        LOG_ERROR("Bloom requires linear sampling and render-target support for format {}", int(format));
+
+    filters.clear();
+}
 
 
 void Bloom::prepareFilters(const RenderContext& context, const RenderData& renderData)
@@ -135,8 +154,8 @@ void Bloom::prepareFilters(const RenderContext& context, const RenderData& rende
     {
         const auto horizontal = image(kHorizontal, level);
         const auto vertical   = image(kVertical, level);
-        filters.emplace_back(Stage::DownsampleHorizontal, parameters).compile(context, source, source, horizontal);
-        filters.emplace_back(Stage::DownsampleVertical, parameters).compile(context, horizontal, horizontal, vertical);
+        filters.emplace_back(Stage::DownsampleHorizontal, parameters).compile(*mpDevice, context, source, source, horizontal);
+        filters.emplace_back(Stage::DownsampleVertical, parameters).compile(*mpDevice, context, horizontal, horizontal, vertical);
         pyramid[level] = vertical;
         source         = vertical;
     }
@@ -146,10 +165,10 @@ void Bloom::prepareFilters(const RenderContext& context, const RenderData& rende
     {
         const auto base   = pyramid[level - 1];
         const auto target = image(kUpsample, level - 1);
-        filters.emplace_back(Stage::Upsample, parameters).compile(context, blurred, base, target);
+        filters.emplace_back(Stage::Upsample, parameters).compile(*mpDevice, context, blurred, base, target);
         blurred = target;
     }
-    filters.emplace_back(Stage::Composite, parameters).compile(context, hdrColor, blurred, color);
+    filters.emplace_back(Stage::Composite, parameters).compile(*mpDevice, context, hdrColor, blurred, color);
 }
 
 
@@ -157,26 +176,30 @@ void Bloom::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
     auto&       commands = *renderCommands->commands;
     const auto& frame    = *renderCommands;
-    const auto  extent   = renderData.getDefaultTextureDims();
+    const auto  size     = renderData.getTexture("hdrColor")->getDesc().size;
     if (filters.empty())
         prepareFilters(frame, renderData);
 
     for (const auto& filter : filters)
-        filter.execute(commands, {extent.x, extent.y}, frame.scene->viewport());
+        filter.execute(commands, {size.width, size.height}, mpScene->viewport());
 }
 
 
 void Bloom::Filter::compile(
-    const RenderContext& context, rhi::ITexture* input, rhi::ITexture* baseInput, rhi::ITexture* target
+    rhi::IDevice& device, const RenderContext& context,
+    rhi::ITexture* input, rhi::ITexture* baseInput, rhi::ITexture* target
 )
 {
     const auto sourceExtent = input->getDesc().size;
     sourceTexelSize         = {1.0f / sourceExtent.width, 1.0f / sourceExtent.height};
     this->target = target;
-    const auto shader =
-        context.shaderManager->getOrLoad("bloom", {{"BLOOM_STAGE", std::to_string(static_cast<int>(stage))}});
+    const auto shader       = context.shaderManager->getProgram(
+        "passes/postprocess/bloom/bloom.slang",
+        {"vertMain", "fragMain"},
+        {{"BLOOM_STAGE", std::to_string(static_cast<int>(stage))}}
+    );
     rhi::ColorTargetDesc color;
-    color.format = kHdrColorFormat;
+    color.format = target->getDesc().format;
     rhi::RenderPipelineDesc desc;
     desc.program                       = shader;
     desc.targets                       = &color;
@@ -184,8 +207,8 @@ void Bloom::Filter::compile(
     desc.depthStencil.depthTestEnable  = false;
     desc.depthStencil.depthWriteEnable = false;
     desc.rasterizer.scissorEnable      = true;
-    rhiCheck(context.device->createRenderPipeline(desc, pipeline.writeRef()));
-    rhiCheck(context.device->createRootShaderObject(desc.program, shaderObject.writeRef()));
+    rhiCheck(device.createRenderPipeline(desc, pipeline.writeRef()));
+    rhiCheck(device.createRootShaderObject(desc.program, shaderObject.writeRef()));
     const rhi::ShaderCursor root(shaderObject);
     rhiCheck(root["sourceColor"].setBinding(input));
     rhiCheck(root["linearSampler"].setBinding(context.resources->sampler(BuiltinAssets::Sampler::linearClamp)));

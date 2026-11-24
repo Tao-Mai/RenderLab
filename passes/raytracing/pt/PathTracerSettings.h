@@ -13,5 +13,3 @@ struct RL_RECORD PathTracerSettings
 
     void validate() const { CHECK(maxBounces >= kMinPathBounces && maxBounces <= kMaxPathBounces); }
 };
-
-#include RL_METADATA_HEADER("metadata/passes/raytracing/pt/PathTracerSettings.generated.h")

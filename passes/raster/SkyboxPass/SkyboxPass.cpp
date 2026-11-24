@@ -43,7 +43,8 @@ void SkyboxPass::compile(RenderContext* context, const CompileData& compileData)
     rhi::ColorTargetDesc color;
     color.format = compileData.connectedResources.getField("color")->texture().format;
     rhi::RenderPipelineDesc desc;
-    desc.program                       = context->shaderManager->getOrLoad("skybox");
+    desc.program =
+        context->shaderManager->getProgram("passes/raster/SkyboxPass/skybox.slang", {"vertMain", "fragMain"});
     desc.targets                       = &color;
     desc.targetCount                   = 1;
     desc.depthStencil.depthTestEnable  = true;
@@ -51,13 +52,13 @@ void SkyboxPass::compile(RenderContext* context, const CompileData& compileData)
     desc.rasterizer.scissorEnable      = true;
     desc.depthStencil.format           = rhi::Format::D32Float;
     desc.depthStencil.depthFunc        = rhi::ComparisonFunc::LessEqual;
-    rhiCheck(context->device->createRenderPipeline(desc, pipeline.writeRef()));
+    rhiCheck(mpDevice->createRenderPipeline(desc, pipeline.writeRef()));
 }
 
 
 void SkyboxPass::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
-    const auto* environment = renderCommands->scene->environmentMap();
+    const auto* environment = mpScene->environmentMap();
     if (!environment)
         return;
 
@@ -80,8 +81,8 @@ void SkyboxPass::execute(RenderContext* renderCommands, const RenderData& render
     CHECK(object);
     const rhi::ShaderCursor root(object);
     const auto&             size     = target->getDesc().size;
-    const auto              viewport = renderCommands->scene->viewport().clamped({size.width, size.height});
-    rhiCheck(root["sceneGlobals"].setBinding(renderCommands->scene->globalsBuffer()));
+    const auto              viewport = mpScene->viewport().clamped({size.width, size.height});
+    mpScene->bindShaderData(*object);
     environment->bindRadiance(root);
     const SkyboxPushConstants constants{{viewport.x, viewport.y, viewport.width, viewport.height}};
     rhiCheck(root["pushConstants"].getDereferenced().setData(constants));

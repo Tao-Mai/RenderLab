@@ -4,10 +4,10 @@
 
 #include <algorithm>
 
-void RenderGraphExe::execute(RenderContext* context)
+void RenderGraphExe::execute(RenderContext* context, RenderData::Dictionary& dictionary, glm::uvec2 defaultTexDims)
 {
     for (const auto& entry : passes)
-        entry.pass->execute(context, RenderData{entry.ports, resources, defaultTexDims});
+        entry.pass->execute(context, RenderData{entry.ports, resources, dictionary, defaultTexDims});
 }
 
 void RenderGraphExe::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
@@ -32,5 +32,5 @@ bool RenderGraphExe::hasPassType(std::string_view type) const
 void RenderGraphExe::setInput(const std::string& name, rhi::IResource* resource)
 {
     if (const auto slot = resources.findSlot(name))
-        resources.setResource(*slot, resource);
+        resources.setInput(*slot, resource);
 }

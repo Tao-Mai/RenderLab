@@ -28,7 +28,7 @@ class TransparentPass : public RenderPass
     void execute(RenderContext* renderCommands, const RenderData& renderData) override;
 
 private:
-    void sortDrawItems(const RenderContext& frame);
+    void sortDrawItems();
 
     TransparentLightingSettings parameters;
     std::vector<uint32_t>        sortedDrawItems;

@@ -12,7 +12,6 @@
 #define RL_FLAGS [[clang::annotate("renderlab.flags")]]
 #define RL_ENUM_VALUE(key) [[clang::annotate("renderlab.enumValue", key)]]
 #define RL_SHADER_LAYOUT [[clang::annotate("renderlab.shaderLayout")]]
-#define RL_METADATA_HEADER(path) "core/MetadataAnnotations.h"
 #else
 #define RL_RECORD
 #define RL_TYPE(key)
@@ -24,5 +23,4 @@
 #define RL_FLAGS
 #define RL_ENUM_VALUE(key)
 #define RL_SHADER_LAYOUT
-#define RL_METADATA_HEADER(path) path
 #endif

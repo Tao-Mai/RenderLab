@@ -3,12 +3,12 @@
 #include "core/Logger.h"
 #include "render/GpuScene.h"
 #include "render/RenderConfig.h"
-#include "render/RenderContext.h"
 #include "render/device/RhiCheck.h"
 #include "render/raytracing/PathTracingParameters.h"
 #include "render/resources/ShaderManager.h"
 
 #include <array>
+#include <future>
 #include <slang-rhi.h>
 #include <span>
 
@@ -37,9 +37,12 @@ inline PathEnvironment pathEnvironment(const GpuScene& scene)
     return scene.hasEnvironmentLight() ? PathEnvironment::EqualArea : PathEnvironment::None;
 }
 
-inline ShaderDefines pathEnvironmentDefines(PathEnvironment environment)
+inline ShaderDefines pathTracingDefines(PathEnvironment environment)
 {
     return {
+        {"SCENE_RAY_TRACING", "1"},
+        {"ENABLE_CLEARCOAT", "0"},
+        {"ENABLE_SHEEN", "0"},
         {"HAS_ENV", environment != PathEnvironment::None ? "1" : "0"},
         {"HAS_ENV_EQUAL_AREA",
          environment == PathEnvironment::EqualArea || environment == PathEnvironment::EqualAreaAndCubemap ? "1" : "0"},
@@ -49,9 +52,9 @@ inline ShaderDefines pathEnvironmentDefines(PathEnvironment environment)
 }
 
 [[nodiscard]] inline PathTracingParameters
-makePathTracingParameters(const RenderContext& frame, uint32_t maxBounces, uint32_t sampleIndex)
+makePathTracingParameters(const GpuScene& scene, uint32_t maxBounces, uint32_t sampleIndex)
 {
-    const auto& viewport = frame.scene->viewport();
+    const auto& viewport = scene.viewport();
     return {
         .viewport    = {viewport.x, viewport.y, viewport.width, viewport.height},
         .maxBounces  = maxBounces,
@@ -60,6 +63,11 @@ makePathTracingParameters(const RenderContext& frame, uint32_t maxBounces, uint3
 }
 
 [[nodiscard]] rhi::RayTracingPipelineDesc pathTracingPipelineDesc(rhi::IShaderProgram* program);
+
+[[nodiscard]] std::future<rhi::ComPtr<rhi::IRayTracingPipeline>>
+buildPathTracingPipelineAsync(rhi::IDevice& device, rhi::IShaderProgram* program);
+
+void waitForPathTracingPipelineBuilds() noexcept;
 
 [[nodiscard]] rhi::ComPtr<rhi::IShaderTable> createPathTracingShaderTable(
     rhi::IDevice& device, rhi::IShaderProgram* program, std::span<const char* const> raygenEntries

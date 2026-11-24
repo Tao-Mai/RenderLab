@@ -68,13 +68,16 @@ void ToneMappingPass::compile(RenderContext* passContext, const CompileData& com
     rhi::ColorTargetDesc color;
     color.format = format;
     rhi::RenderPipelineDesc desc;
-    desc.program     = passContext->shaderManager->getOrLoad("tonemapping");
+    desc.program = passContext->shaderManager->getProgram(
+        "passes/postprocess/ToneMappingPass/tonemapping.slang",
+        {"vertMain", "fragMain"}
+    );
     desc.targets     = &color;
     desc.targetCount = 1;
     desc.depthStencil.depthTestEnable  = false;
     desc.depthStencil.depthWriteEnable = false;
     desc.rasterizer.scissorEnable      = true;
-    rhiCheck(passContext->device->createRenderPipeline(desc, pipeline.writeRef()));
+    rhiCheck(mpDevice->createRenderPipeline(desc, pipeline.writeRef()));
 }
 
 
@@ -92,7 +95,7 @@ void ToneMappingPass::execute(RenderContext* renderCommands, const RenderData& r
     CHECK(object);
     const rhi::ShaderCursor root(object);
     const auto&             size     = target->getDesc().size;
-    const auto              viewport = renderCommands->scene->viewport().clamped({size.width, size.height});
+    const auto              viewport = mpScene->viewport().clamped({size.width, size.height});
     rhiCheck(root["hdrColor"].setBinding(renderData.getTexture("hdrColor")));
     rhiCheck(root["hdrSampler"].setBinding(renderCommands->resources->sampler(BuiltinAssets::Sampler::linearClamp)));
     rhiCheck(root["exposureState"].setBinding(renderData.getBuffer("exposure")));

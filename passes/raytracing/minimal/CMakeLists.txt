@@ -1,4 +1,1 @@
 renderlab_add_plugin(MinimalPathTracer MinimalPathTracer.cpp)
-
-renderlab_runtime_shader(minimal_path_tracer minimal_path_tracer.slang
-    ENTRIES raygenMain missMain visibilityMissMain closestHitMain lightClosestHitMain)

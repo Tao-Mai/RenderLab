@@ -46,5 +46,3 @@ struct RL_RECORD ExposurePassSettings
         );
     }
 };
-
-#include RL_METADATA_HEADER("metadata/passes/postprocess/ExposurePass/ExposurePassSettings.generated.h")

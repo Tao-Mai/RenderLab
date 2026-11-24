@@ -1,20 +1,31 @@
-#include "math/screen.slang"
 #ifndef RENDERLAB_SCENE_DATA_SLANG
 #define RENDERLAB_SCENE_DATA_SLANG
 
+#include "math/screen.slang"
+#include "scene/light_data.slang"
 #include "scene/scene_uniforms.slang"
-#include "render/resources/LightRanges.h"
+#ifdef SCENE_RAY_TRACING
+#include "raytracing/scene_hits.slang"
+#endif
 
 struct SceneGlobals
 {
     SceneUniforms camera;
-    LightRanges lightRanges;
+    uint analyticLightCount;
     float prefilteredMaxLod;
-    float padding0;
-    float padding1;
-    float padding2;
+    uint padding0, padding1;
 };
 
-StructuredBuffer<SceneGlobals> sceneGlobals;
+struct SceneData
+{
+    StructuredBuffer<SceneGlobals> globals;
+    StructuredBuffer<LightData> analyticLights;
+#ifdef SCENE_RAY_TRACING
+    RaytracingAccelerationStructure rtAccel;
+    StructuredBuffer<HitData> objects;
+#endif
+};
+
+ParameterBlock<SceneData> scene;
 
 #endif

@@ -11,50 +11,35 @@
 namespace
 {
 using Visibility = RenderPassReflection::Visibility;
-using Field = RenderPassReflection::Field;
-using ResourceDesc = RenderPassReflection::ResourceDesc;
 
-ResourceDesc inputResourceDesc(const Field& field, rhi::IResource& resource)
+bool sameConnections(const RenderPassReflection& a, const RenderPassReflection& b)
 {
-    if (std::holds_alternative<rhi::BufferDesc>(field.resource))
-    {
-        rhi::ComPtr<rhi::IBuffer> buffer;
-        if (SLANG_SUCCEEDED(resource.queryInterface(rhi::IBuffer::getTypeGuid(),
-                reinterpret_cast<void**>(buffer.writeRef()))))
-            return buffer->getDesc();
-    }
-    else
-    {
-        rhi::ComPtr<rhi::ITexture> texture;
-        if (SLANG_SUCCEEDED(resource.queryInterface(rhi::ITexture::getTypeGuid(),
-                reinterpret_cast<void**>(texture.writeRef()))))
-        {
-            const auto& desc = texture->getDesc();
-            const auto format = field.texture().format;
-            if (format != rhi::Format::Undefined && format != desc.format)
-                LOG_ERROR("incompatible external texture format for '{}'", field.name);
-            return desc;
-        }
-    }
+    if (a.fields().size() != b.fields().size())
+        return false;
 
-    LOG_ERROR("incompatible external resource for '{}'", field.name);
-    return field.resource;
+    return std::ranges::all_of(
+        a.fields(),
+        [&](const auto& field)
+        {
+            const auto* other = b.getField(field.name);
+            return other && other->visibility == field.visibility &&
+                ResourceCache::sameDescription(field.resource, other->resource);
+        }
+    );
 }
-}
+}  // namespace
 
 std::unique_ptr<RenderGraphExe>
 RenderGraphCompiler::compile(const RenderGraph& graph, RenderContext* context, const Dependencies& dependencies)
 {
     RenderGraphCompiler compiler(graph, dependencies);
-    auto executable = std::make_unique<RenderGraphExe>();
-    std::string log;
+    auto                executable = std::make_unique<RenderGraphExe>();
+    std::string         log;
     {
         const logger::ScopedErrorLog errors(log);
         compiler.preparePasses();
         if (log.empty())
-            compiler.validateGraph();
-        if (log.empty())
-            compiler.registerResources(executable->resources);
+            compiler.resolveResources(executable->resources);
         if (log.empty())
         {
             for (const auto& data : compiler.passes)
@@ -75,8 +60,7 @@ RenderGraphCompiler::compile(const RenderGraph& graph, RenderContext* context, c
         return {};
     }
 
-    executable->resources.allocateResources(*context->device, dependencies.defaultResourceProps);
-    executable->defaultTexDims = dependencies.defaultResourceProps.dims;
+    executable->resources.allocateResources(*graph.mpDevice, dependencies.defaultResourceProps);
     executable->outputs.reserve(graph.mOutputs.size());
     for (size_t index = 0; index < graph.mOutputs.size(); ++index)
         executable->outputs.push_back(*executable->resources.findSlot(graph.getOutputName(index)));
@@ -96,6 +80,12 @@ RenderGraphCompiler::compile(const RenderGraph& graph, RenderContext* context, c
 
 void RenderGraphCompiler::preparePasses()
 {
+    if (graph.mOutputs.empty())
+    {
+        LOG_ERROR("render graph '{}' has no marked outputs", graph.getName());
+        return;
+    }
+
     std::unordered_set<uint32_t> roots;
     for (const auto& output : graph.mOutputs)
         roots.insert(output.nodeId);
@@ -127,107 +117,156 @@ void RenderGraphCompiler::preparePasses()
         if (!participating.contains(index))
             continue;
 
-        const auto& data = graph.mNodeData.at(index);
-        const auto& node = *graph.mpGraph->getNode(index);
-        RenderPass::CompileData compileData{defaults.dims, defaults.format};
-        const auto declarations = data.pPass->reflect(compileData);
-
-        for (uint32_t incoming = 0; incoming < node.getIncomingEdgeCount(); ++incoming)
+        const auto&                          data = graph.mNodeData.at(index);
+        RenderPass::CompileData              compileData{defaults.dims, defaults.format};
+        auto                                 reflection = data.pPass->reflect(compileData);
+        std::unordered_set<std::string_view> usedOutputs;
+        const auto&                          node = *graph.mpGraph->getNode(index);
+        for (uint32_t outgoing = 0; outgoing < node.getOutgoingEdgeCount(); ++outgoing)
         {
-            const auto edgeId = node.getIncomingEdge(incoming);
+            const auto  edgeId     = node.getOutgoingEdge(outgoing);
             const auto& connection = graph.mEdgeData.at(edgeId);
-            if (connection.dstField.empty())
-                continue;
-
-            const auto producerId = graph.mpGraph->getEdge(edgeId)->getSourceNode();
-            const auto& producer = *std::ranges::find(passes, producerId, &PassData::index);
-            const auto* output = producer.reflection.getField(connection.srcField);
-            const auto* input = declarations.getField(connection.dstField);
-            if (!output || !is_set(output->visibility, Visibility::Output))
-            {
-                LOG_ERROR("unknown output '{}.{}'", producer.name, connection.srcField);
-                continue;
-            }
-            if (!input || !is_set(input->visibility, Visibility::Input) || input->resource.index() != output->resource.index())
-            {
-                LOG_ERROR("incompatible input '{}.{}'", data.name, connection.dstField);
-                continue;
-            }
-
-            auto desc = output->resource;
-            if (auto* texture = std::get_if<rhi::TextureDesc>(&desc); texture && texture->format == rhi::Format::Undefined)
-                texture->format = defaults.format;
-            compileData.connectedResources.addInput(input->name, std::move(desc));
+            if (!connection.srcField.empty() && participating.contains(graph.mpGraph->getEdge(edgeId)->getDestNode()))
+                usedOutputs.insert(connection.srcField);
         }
+        for (const auto& output : graph.mOutputs)
+            if (output.nodeId == index)
+                usedOutputs.insert(output.field);
 
-        for (const auto& field : declarations.fields())
+        passes.push_back(
+            {index, data.name, data.pPass, std::move(reflection), std::move(compileData), std::move(usedOutputs)}
+        );
+    }
+}
+
+void RenderGraphCompiler::resolveResources(ResourceCache& resources)
+{
+    ResourceCache::DefaultProperties defaults;
+    bool                             useDefaults = false;
+    // Let concrete requirements propagate before substituting graph defaults.
+    for (size_t round = 0; round <= 4 * passes.size() + 1; ++round)
+    {
+        ResourceCache connections;
+        registerResources(connections, false);
+
+        bool changed = false;
+        for (auto& data : passes)
         {
-            if (!is_set(field.visibility, Visibility::Input))
-                continue;
-            const auto name = data.name + '.' + field.name;
-            const auto external = dependencies.externalResources.find(name);
-            if (external == dependencies.externalResources.end())
-                continue;
-            if (compileData.connectedResources.getField(field.name))
-                LOG_ERROR("graph input '{}' has an edge and an external resource", name);
-            else
-                compileData.connectedResources.addInput(field.name, inputResourceDesc(field, *external->second));
-        }
+            RenderPassReflection connected;
+            for (const auto& field : data.reflection.fields())
+            {
+                const bool input = is_set(field.visibility, Visibility::Input);
+                const bool output =
+                    data.usedOutputs.contains(field.name) && is_set(field.visibility, Visibility::Output);
+                if (!input && !output)
+                    continue;
 
+                const auto slot = connections.findSlot(data.name + '.' + field.name);
+                if (!slot)
+                    continue;
+                auto desc = connections.description(*slot, defaults);
+                if (desc.index() != field.resource.index())
+                    continue;
+
+                if (input && output)
+                    connected.addInputOutput(field.name, std::move(desc));
+                else if (input)
+                    connected.addInput(field.name, std::move(desc));
+                else
+                    connected.addOutput(field.name, std::move(desc));
+            }
+
+            if (sameConnections(data.compileData.connectedResources, connected))
+                continue;
+
+            changed                             = true;
+            data.compileData.connectedResources = std::move(connected);
+            data.reflection                     = data.pass->reflect(data.compileData);
+        }
         if (logger::ScopedErrorLog::hasErrors())
             return;
-        auto reflection = data.pPass->reflect(compileData);
-        passes.push_back({index, data.name, data.pPass, std::move(reflection), std::move(compileData)});
+        if (changed)
+            continue;
+        if (!useDefaults)
+        {
+            defaults    = dependencies.defaultResourceProps;
+            useDefaults = true;
+            continue;
+        }
+
+        validateGraph();
+        registerResources(resources, true);
+        if (!logger::ScopedErrorLog::hasErrors())
+            for (size_t index = 0; index < graph.mOutputs.size(); ++index)
+                resources.markOutput(graph.getOutputName(index));
+        return;
     }
+    LOG_ERROR("resource descriptions did not converge for render graph '{}'", graph.getName());
 }
 
 void RenderGraphCompiler::validateGraph() const
 {
-    if (graph.mOutputs.empty())
-        LOG_ERROR("render graph '{}' has no marked outputs", graph.getName());
-
     for (const auto& data : passes)
     {
         for (const auto& field : data.reflection.fields())
             if (is_set(field.visibility, Visibility::Input) && !field.optional &&
                 !data.compileData.connectedResources.getField(field.name))
                 LOG_ERROR("missing graph input '{}.{}'", data.name, field.name);
-        for (const auto& connected : data.compileData.connectedResources.fields())
-        {
-            const auto* field = data.reflection.getField(connected.name);
-            if (!field || !is_set(field->visibility, Visibility::Input) ||
-                field->resource.index() != connected.resource.index())
-                LOG_ERROR("incompatible input '{}.{}'", data.name, connected.name);
-        }
     }
 
     for (const auto& output : graph.mOutputs)
     {
-        const auto& data = *std::ranges::find(passes, output.nodeId, &PassData::index);
+        const auto& data  = *std::ranges::find(passes, output.nodeId, &PassData::index);
         const auto* field = data.reflection.getField(output.field);
         if (!field || !is_set(field->visibility, Visibility::Output))
             LOG_ERROR("unknown output '{}.{}'", data.name, output.field);
     }
+
+    for (const auto& [name, resource] : dependencies.externalResources)
+    {
+        const auto dot  = name.rfind('.');
+        const auto id   = graph.getPassIndex(name.substr(0, dot));
+        const auto pass = std::ranges::find(passes, id, &PassData::index);
+        if (pass == passes.end())
+            continue;
+        const auto* field = pass->reflection.getField(std::string_view(name).substr(dot + 1));
+        if (!field || !is_set(field->visibility, Visibility::Input))
+            LOG_ERROR("unknown input '{}'", name);
+    }
 }
 
-void RenderGraphCompiler::registerResources(ResourceCache& resources) const
+void RenderGraphCompiler::registerResources(ResourceCache& resources, bool validate) const
 {
     for (const auto& data : passes)
     {
-        const auto& node = *graph.mpGraph->getNode(data.index);
+        const auto&                          node = *graph.mpGraph->getNode(data.index);
         std::unordered_set<std::string_view> connected;
         for (uint32_t incoming = 0; incoming < node.getIncomingEdgeCount(); ++incoming)
         {
-            const auto edgeId = node.getIncomingEdge(incoming);
+            const auto  edgeId     = node.getIncomingEdge(incoming);
             const auto& connection = graph.mEdgeData.at(edgeId);
             if (connection.dstField.empty())
                 continue;
 
-            const auto producerId = graph.mpGraph->getEdge(edgeId)->getSourceNode();
-            const auto& producer = graph.mNodeData.at(producerId);
-            const auto& input = *data.reflection.getField(connection.dstField);
-            resources.connect(data.name + '.' + input.name, producer.name + '.' + connection.srcField, input.resource);
-            connected.insert(input.name);
+            const auto* input      = data.reflection.getField(connection.dstField);
+            const auto  producerId = graph.mpGraph->getEdge(edgeId)->getSourceNode();
+            const auto& producer   = *std::ranges::find(passes, producerId, &PassData::index);
+            const auto* output     = producer.reflection.getField(connection.srcField);
+            const auto  source     = producer.name + '.' + connection.srcField;
+            const auto  target     = data.name + '.' + connection.dstField;
+            if (validate)
+            {
+                if (!output || !is_set(output->visibility, Visibility::Output))
+                    LOG_ERROR("unknown output '{}'", source);
+                if (!input || !is_set(input->visibility, Visibility::Input))
+                    LOG_ERROR("unknown input '{}'", target);
+                if (dependencies.externalResources.contains(target))
+                    LOG_ERROR("graph input '{}' has an edge and an external resource", target);
+            }
+            if (input && is_set(input->visibility, Visibility::Input) && output &&
+                is_set(output->visibility, Visibility::Output) && resources.findSlot(source))
+                resources.connect(target, source, input->resource, validate);
+            connected.insert(connection.dstField);
         }
 
         for (const auto& field : data.reflection.fields())
@@ -238,24 +277,11 @@ void RenderGraphCompiler::registerResources(ResourceCache& resources) const
             if (is_set(field.visibility, Visibility::Input))
             {
                 const auto external = dependencies.externalResources.find(name);
-                auto* resource = external != dependencies.externalResources.end() ? external->second.get() : nullptr;
-                resources.addResource(name, field.resource, resource, false);
+                if (external != dependencies.externalResources.end())
+                    resources.addInput(name, field.resource, external->second.get(), validate);
             }
-            else
-            {
-                if (field.optional && !graph.isGraphOutput({data.index, field.name}))
-                {
-                    bool used = false;
-                    for (uint32_t outgoing = 0; outgoing < node.getOutgoingEdgeCount(); ++outgoing)
-                        used |= graph.mEdgeData.at(node.getOutgoingEdge(outgoing)).srcField == field.name;
-                    if (!used)
-                        continue;
-                }
-                resources.addResource(name, field.resource, nullptr, true);
-            }
+            else if (!field.optional || data.usedOutputs.contains(field.name))
+                resources.addResource(name, field.resource);
         }
     }
-
-    for (size_t index = 0; index < graph.mOutputs.size(); ++index)
-        resources.markOutput(graph.getOutputName(index));
 }

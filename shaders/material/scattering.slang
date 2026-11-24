@@ -165,7 +165,7 @@ struct SurfaceBsdf
         return pbrtBsdf().sample(branchSample, directionSample, mode);
     }
 
-    pbrt::BsdfSample sample(inout uint state)
+    pbrt::BsdfSample sample(inout SampleGenerator state)
     {
         if (material.model != ScatteringModel::Gltf)
             return pbrtBsdf().sample(state);

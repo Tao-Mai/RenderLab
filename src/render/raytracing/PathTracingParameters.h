@@ -24,7 +24,7 @@ struct RENDERLAB_PATH_ALIGN PathTracingParameters
     RENDERLAB_PATH_FLOAT4 viewport;
     RENDERLAB_PATH_UINT maxBounces;
     RENDERLAB_PATH_UINT sampleIndex;
-    RENDERLAB_PATH_UINT padding0;
+    RENDERLAB_PATH_UINT prngDimension;
     RENDERLAB_PATH_UINT padding1;
 
 #ifndef __cplusplus
@@ -49,7 +49,4 @@ struct RENDERLAB_PATH_ALIGN PathTracingParameters
 #undef RENDERLAB_PATH_FLOAT4
 #undef RENDERLAB_PATH_UINT
 
-#ifdef __cplusplus
-#include RL_METADATA_HEADER("metadata/src/render/raytracing/PathTracingParameters.generated.h")
-#endif
 #endif

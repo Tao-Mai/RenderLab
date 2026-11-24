@@ -29,5 +29,3 @@ struct RL_RECORD RayTracingSettings
 
     void validate() const;
 };
-
-#include RL_METADATA_HEADER("metadata/passes/raytracing/restir/RayTracingSettings.generated.h")

@@ -15,8 +15,8 @@ bool bdptProjectCamera(float3 direction, out float2 pixel)
         return false;
     }
 
-    float4 clip = mul(sceneGlobals[0].camera.viewProjection,
-        float4(sceneGlobals[0].camera.cameraPosition.xyz + direction, 1.0));
+    float4 clip = mul(scene.globals[0].camera.viewProjection,
+        float4(scene.globals[0].camera.cameraPosition.xyz + direction, 1.0));
     float2 ndc = clip.xy / clip.w;
     if (any(ndc < -1.0) || any(ndc >= 1.0))
     {
@@ -44,7 +44,7 @@ BdptVertex bdptCameraVertex()
 {
     BdptVertex camera = {};
     camera.type = BdptVertexType::Camera;
-    camera.position = sceneGlobals[0].camera.cameraPosition.xyz;
+    camera.position = scene.globals[0].camera.cameraPosition.xyz;
     camera.normal = parameters.cameraForward;
     camera.beta = float3(1.0);
 
@@ -80,8 +80,8 @@ uint bdptRandomWalk(__ref BdptVertex path[kBdptVertexCapacity], RayDesc ray, flo
     for (uint index = 1; index < maxVertices; ++index)
     {
         Hit hit = {};
-        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
-            kSceneMask | kLightMask, 0, 0, 0, ray, hit);
+        TraceRay(scene.rtAccel, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+            kSceneMask, 0, 0, 0, ray, hit);
 
         BdptVertex vertex = {};
         vertex.beta = beta;
@@ -105,29 +105,28 @@ uint bdptRandomWalk(__ref BdptVertex path[kBdptVertexCapacity], RayDesc ray, flo
             (path[0].light.type == BdptLightType::Point || path[0].light.type == BdptLightType::Spot))
         {
             float3 offset = hit.position - path[0].position;
-            if (!withinLightRange(bdptPunctualLight(path[0].light), dot(offset, offset)))
+            if (!withinLightRange(bdptAnalyticLight(path[0].light), dot(offset, offset)))
                 break;
         }
 
-        vertex.type = hit.emitterOnly != 0 ? BdptVertexType::Light : BdptVertexType::Surface;
+        vertex.type = BdptVertexType::Surface;
         vertex.position = hit.position;
         vertex.normal = hit.normal;
         vertex.geometricNormal = hit.geometricNormal;
         vertex.tangent = hit.tangent;
         vertex.uv = hit.uv;
 
-        if (hit.emitterOnly == 0)
-            vertex.material = evaluateScattering(
-                materials[hit.materialIndex], hit.uv, hit.position, hit.normal, hit.primitiveIndex);
-        if (hit.areaLightIndex != kInvalidLightIndex)
+        vertex.material = evaluateScattering(
+            materials[hit.materialIndex], hit.uv, hit.position, hit.normal, hit.primitiveIndex);
+        if (hit.emissiveTriangleIndex != kInvalidLightIndex)
         {
-            vertex.light = {BdptLightType::Area, hit.areaLightIndex};
+            vertex.light = {BdptLightType::Emissive, hit.emissiveTriangleIndex};
         }
 
         vertex.pdfFwd = bdptConvertDensity(path[index - 1], pdfFwd, vertex);
         path[index] = vertex;
         ++count;
-        if (hit.emitterOnly != 0 || count == maxVertices)
+        if (count == maxVertices)
         {
             break;
         }
@@ -281,7 +280,7 @@ float bdptMisWeight(__constref BdptVertex light[kBdptVertexCapacity], __constref
         float reversePdf = index == int(s) - 1 ? qsRev
             : (index == int(s) - 2 ? qsMinusRev : vertex.pdfRev);
         ratioLog += bdptLogRatio(reversePdf, vertex.pdfFwd);
-        bool previousDelta = index > 0 ? light[index - 1].delta != 0 : bdptDeltaLight(vertex.light);
+        bool previousDelta = index > 0 ? light[index - 1].delta != 0 : !bdptLightHittable(vertex.light);
         bool delta = index == int(s) - 1 ? false : vertex.delta != 0;
         if (!delta && !previousDelta)
         {
@@ -324,7 +323,7 @@ float3 bdptConnect(__constref BdptVertex light[kBdptVertexCapacity], __constref 
         if (pt.isLight())
         {
             float3 emission = pt.isInfinite() ? environmentRadiance(pt.wo)
-                : areaEmission(pt.light.index, pt.uv, pt.wo);
+                : emissiveRadiance(pt.light.index, pt.uv, pt.wo);
             contribution = pt.beta * emission;
         }
     }

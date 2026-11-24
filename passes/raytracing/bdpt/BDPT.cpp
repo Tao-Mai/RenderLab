@@ -12,9 +12,8 @@
 #include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/device/BufferCapacity.h"
-#include "render/raytracing/PathSceneState.h"
 #include "render/raytracing/PathTracingShader.h"
-#include "render/resources/SceneShading.h"
+#include "render/resources/SceneLightConstants.h"
 
 
 #include <algorithm>
@@ -25,6 +24,7 @@
 #include <format>
 #include <future>
 #include <limits>
+#include <numbers>
 #include <utility>
 
 void BdptSettings::validate() const
@@ -60,15 +60,6 @@ struct alignas(16) BdptParameters
     uint32_t              padding2;
 };
 static_assert(sizeof(BdptParameters) == 96);
-
-struct LightDistributionEntry
-{
-    uint32_t alias       = 0;
-    float    acceptance  = 1.0f;
-    float    probability = 0;
-    uint32_t padding     = 0;
-};
-static_assert(sizeof(LightDistributionEntry) == 16);
 
 class BDPT : public RenderPass
 {
@@ -113,9 +104,11 @@ class BDPT : public RenderPass
 
     void compile(RenderContext* passContext, const CompileData& compileData) override;
     void execute(RenderContext* renderCommands, const RenderData& renderData) override;
+    void setScene(GpuScene* scene) override;
+    void onSceneUpdates(RenderContext*, SceneUpdateFlags updates) override;
 
     [[nodiscard]] float sampleProgress() const { return accumulatedProgress; }
-    [[nodiscard]] bool  preparingPipeline() const { return pipeline == nullptr; }
+    [[nodiscard]] bool  preparingPipeline() const { return !activeProgram || !activeProgram->pipeline; }
 
 private:
     BdptSettings parameters;
@@ -123,21 +116,21 @@ private:
     struct PipelineVariant
     {
         rhi::ComPtr<rhi::IRayTracingPipeline> pipeline;
+        rhi::ComPtr<rhi::IShaderTable> shaderTable;
         std::future<rhi::ComPtr<rhi::IRayTracingPipeline>> build;
     };
     std::array<std::array<PipelineVariant, kShaderDepthCount>, static_cast<size_t>(PathEnvironment::Count)> pipelines;
-    rhi::ComPtr<rhi::IShaderTable> shaderTable;
-    rhi::IRayTracingPipeline*     pipeline = nullptr;
+    PipelineVariant* activeProgram = nullptr;
 
-    PathSceneState sceneState;
     BdptSettings   previousSettings;
     glm::vec4      sceneSphere{};
-    bool           lightDistributionReady = false;
+    bool           lightDistributionDirty = true;
 
     rhi::ComPtr<rhi::IBuffer>          lightDistributionBuffer;
     rhi::ComPtr<rhi::IBuffer>          cameraHistory;
     rhi::ComPtr<rhi::IBuffer>          lightSplats;
     rhi::ComPtr<rhi::IComputePipeline> resolvePipeline;
+    rhi::ComPtr<rhi::IComputePipeline> lightDistributionPipeline;
 
     float    accumulatedProgress = 0;
     uint32_t sampleIndex         = 0;
@@ -147,16 +140,15 @@ private:
 
     void selectPipeline(const RenderContext& context);
     void resetAccumulation();
-    void updateScene(const RenderContext& execution, const SceneShadingData& shading);
+    void updateScene(const RenderContext& execution);
     void resolve(rhi::ICommandEncoder& commands, rhi::ITexture& output, const PixelBounds& bounds) const;
-    void prepareLightDistribution(const RenderContext& execution, const SceneShadingData& scene);
+    void prepareLightDistribution(const RenderContext& execution);
 };
 
-glm::vec4 computeSceneSphere(const GpuScene& scene, const SceneShadingData& shading)
+glm::vec4 computeSceneSphere(const GpuScene& scene)
 {
-    const auto draws      = scene.drawCalls();
-    const auto rectangles = std::span{shading.lightTriangles}.subspan(shading.firstRectTriangle);
-    if (draws.empty() && rectangles.empty())
+    const auto draws = scene.drawCalls();
+    if (draws.empty())
         return {glm::vec3{scene.cameraUniforms().cameraPosition}, kMinimumSceneRadius};
 
     auto minimum = glm::vec3{std::numeric_limits<float>::max()};
@@ -165,14 +157,6 @@ glm::vec4 computeSceneSphere(const GpuScene& scene, const SceneShadingData& shad
     {
         minimum           = glm::min(minimum, draw.bounds.min);
         maximum           = glm::max(maximum, draw.bounds.max);
-    }
-    for (const auto& triangle : rectangles)
-    {
-        for (const auto vertex : {glm::vec3{triangle.p0Area}, glm::vec3{triangle.p1}, glm::vec3{triangle.p2}})
-        {
-            minimum = glm::min(minimum, vertex);
-            maximum = glm::max(maximum, vertex);
-        }
     }
     const auto center = (minimum + maximum) * 0.5f;
     return {center, std::max(glm::length(maximum - center) * kSceneBoundsPadding, kMinimumSceneRadius)};
@@ -197,13 +181,15 @@ void BDPT::compile(RenderContext* context, const CompileData& compileData)
     if (!checkRayTracingSupport(*mpDevice))
         return;
 
-    const auto extent     = compileData.defaultTexDims;
+    auto extent = compileData.defaultTexDims;
+    if (const auto* target = compileData.connectedResources.getField(kOutputColor))
+        extent = {target->texture().size.width, target->texture().size.height};
     const auto pixelCount = size_t(extent.x) * extent.y;
 
     rhi::BufferDesc desc;
     desc.usage =
         rhi::BufferUsage::ShaderResource | rhi::BufferUsage::UnorderedAccess | rhi::BufferUsage::CopyDestination;
-    desc.size = sizeof(LightDistributionEntry);
+    desc.size = 2 * sizeof(float);
     rhiCheck(mpDevice->createBuffer(desc, nullptr, lightDistributionBuffer.writeRef()));
     desc.size = pixelCount * sizeof(BdptBinding::AccumulatedPixel);
     rhiCheck(mpDevice->createBuffer(desc, nullptr, cameraHistory.writeRef()));
@@ -212,11 +198,16 @@ void BDPT::compile(RenderContext* context, const CompileData& compileData)
 
     auto& shaders = *context->shaderManager;
     rhiCheck(mpDevice->createComputePipeline(
-        {.program = shaders.getOrLoad("bdpt_resolve")}, resolvePipeline.writeRef()
+        {.program = shaders.getProgram("passes/raytracing/bdpt/resolve.slang", {"computeMain"})},
+        resolvePipeline.writeRef()
+    ));
+    rhiCheck(mpDevice->createComputePipeline(
+        {.program = shaders.getProgram("passes/raytracing/bdpt/light_distribution.slang", {"computeMain"})},
+        lightDistributionPipeline.writeRef()
     ));
 
-    lightDistributionReady = false;
-    pipeline               = nullptr;
+    lightDistributionDirty = true;
+    activeProgram          = nullptr;
     resetAccumulation();
 }
 
@@ -225,26 +216,30 @@ void BDPT::selectPipeline(const RenderContext& context)
 {
     const auto depth       = std::bit_ceil(std::max(kMinShaderDepth, parameters.maxBounces));
     const auto depthIndex  = static_cast<size_t>(std::bit_width(depth) - std::bit_width(kMinShaderDepth));
-    const auto environment = pathEnvironment(*context.scene);
+    const auto environment = pathEnvironment(*mpScene);
     auto&      variant     = pipelines[static_cast<size_t>(environment)][depthIndex];
     if (!variant.pipeline)
     {
         if (!variant.build.valid())
         {
             auto& shaders = *context.shaderManager;
-            auto  defines = pathEnvironmentDefines(environment);
+            auto  defines = pathTracingDefines(environment);
             defines["BDPT_MAX_DEPTH"] = std::to_string(depth);
-            auto* program = shaders.getOrCompile("bdpt", defines);
-            variant.build = shaders.createRayTracingPipelineAsync(pathTracingPipelineDesc(program));
+            auto* program             = shaders.getProgram(
+                "passes/raytracing/bdpt/main.slang",
+                {"raygenMain", "missMain", "visibilityMissMain", "closestHitMain"},
+                defines
+            );
+            variant.build = buildPathTracingPipelineAsync(*mpDevice, program);
         }
         if (variant.build.wait_for(std::chrono::seconds{0}) == std::future_status::ready)
         {
             variant.pipeline = variant.build.get();
-            if (!shaderTable)
-                shaderTable = createPathTracingShaderTable(*mpDevice, variant.pipeline->getProgram(), kRaygenEntries);
+            variant.shaderTable =
+                createPathTracingShaderTable(*mpDevice, variant.pipeline->getProgram(), kRaygenEntries);
         }
     }
-    pipeline = variant.pipeline.get();
+    activeProgram = &variant;
 }
 
 
@@ -258,20 +253,36 @@ void BDPT::resetAccumulation()
 }
 
 
-void BDPT::updateScene(const RenderContext& execution, const SceneShadingData& shading)
+void BDPT::setScene(GpuScene* scene)
 {
-    const bool sceneChanged = sceneState.update(*execution.scene);
+    RenderPass::setScene(scene);
+    resetAccumulation();
+    lightDistributionDirty = true;
+}
+
+
+void BDPT::onSceneUpdates(RenderContext*, SceneUpdateFlags updates)
+{
+    resetAccumulation();
+    lightDistributionDirty |= is_set(updates, kSceneShadingUpdates);
+    if (!lightDistributionDirty && mpScene->drawCalls().empty() && is_set(updates, SceneUpdateFlags::Camera))
+        sceneSphere = computeSceneSphere(*mpScene);
+}
+
+
+void BDPT::updateScene(const RenderContext& execution)
+{
     selectPipeline(execution);
     const bool optionsChanged = parameters != previousSettings;
-    if (sceneChanged || optionsChanged)
+    if (optionsChanged)
         resetAccumulation();
 
-    if (sceneChanged || !lightDistributionReady)
-        sceneSphere = computeSceneSphere(*execution.scene, shading);
-    if (sceneChanged || !lightDistributionReady || parameters.lightSelection != previousSettings.lightSelection)
+    if (lightDistributionDirty)
+        sceneSphere = computeSceneSphere(*mpScene);
+    if (lightDistributionDirty || parameters.lightSelection != previousSettings.lightSelection)
     {
-        prepareLightDistribution(execution, shading);
-        lightDistributionReady = true;
+        prepareLightDistribution(execution);
+        lightDistributionDirty = false;
     }
 
     previousSettings = parameters;
@@ -281,10 +292,11 @@ void BDPT::updateScene(const RenderContext& execution, const SceneShadingData& s
 void BDPT::execute(RenderContext* renderCommands, const RenderData& renderData)
 {
     const auto& execution = *renderCommands;
-    auto&       scene     = *execution.scene;
+    auto&       scene     = *mpScene;
     auto&       commands  = *execution.commands;
-    const auto rayTracing = scene.prepareRayTracing(commands, execution.frameIndex);
-    updateScene(execution, rayTracing.shading());
+    auto*       tlas      = scene.prepareRayTracing(commands);
+    scene.prepareEmissiveLights(commands);
+    updateScene(execution);
 
     if (clearHistory)
     {
@@ -299,7 +311,7 @@ void BDPT::execute(RenderContext* renderCommands, const RenderData& renderData)
     const auto     bounds         = scene.viewport().pixelBounds({size.width, size.height});
     const uint64_t viewportPixels = uint64_t(bounds.extent.width) * bounds.extent.height;
 
-    if (pipeline && viewportPixels > 0)
+    if (activeProgram->pipeline && viewportPixels > 0)
     {
         CHECK(sampleIndex < std::numeric_limits<uint32_t>::max());
         const auto depthScale = std::bit_ceil((parameters.maxBounces + kTileReferenceDepth - 1) / kTileReferenceDepth);
@@ -320,7 +332,7 @@ void BDPT::execute(RenderContext* renderCommands, const RenderData& renderData)
             flags |= BdptBinding::kPowerHeuristic;
 
         const BdptParameters constants{
-            .path        = makePathTracingParameters(execution, parameters.maxBounces, sampleIndex),
+            .path        = makePathTracingParameters(scene, parameters.maxBounces, sampleIndex),
             .sceneSphere = sceneSphere,
             .camera      = cameraSampling(scene.cameraUniforms()),
             .tileOffset  = tileOffset,
@@ -330,9 +342,9 @@ void BDPT::execute(RenderContext* renderCommands, const RenderData& renderData)
 
         auto* pass = commands.beginRayTracingPass();
         CHECK(pass);
-        auto* object = pass->bindPipeline(pipeline, shaderTable);
+        auto* object = pass->bindPipeline(activeProgram->pipeline, activeProgram->shaderTable);
         CHECK(object);
-        rayTracing.bind(object);
+        scene.bindRayTracingShaderData(*object, tlas);
         const rhi::ShaderCursor root(object);
         rhiCheck(root["parameters"].getDereferenced().setData(constants));
         rhiCheck(root["cameraHistory"].setBinding(cameraHistory));
@@ -381,83 +393,44 @@ void BDPT::resolve(rhi::ICommandEncoder& commands, rhi::ITexture& output, const 
 }
 
 
-void BDPT::prepareLightDistribution(const RenderContext& execution, const SceneShadingData& scene)
+void BDPT::prepareLightDistribution(const RenderContext& execution)
 {
-    const bool       power    = parameters.lightSelection == BdptLightSelection::Power;
-    constexpr double kPi      = 3.14159265358979323846;
-    const double     diskArea = kPi * double(sceneSphere.w) * sceneSphere.w;
+    const auto& scene = *mpScene;
+    const auto& emissive = scene.emissiveLights();
+    const auto count = static_cast<uint32_t>(scene.analyticLights().size()) + emissive.count() +
+        uint32_t(pathEnvironment(scene) != PathEnvironment::None);
+    const auto leaves = std::bit_ceil(std::max(count, 1u));
+    ensureBufferCapacity(*mpDevice, lightDistributionBuffer, uint64_t(2) * leaves * sizeof(float));
 
-    const auto intensity = [](const GpuLightEmission& emission)
+    const float diskArea = std::numbers::pi_v<float> * sceneSphere.w * sceneSphere.w;
+    const auto environment = scene.environmentEmission();
+    const float intensity = (scene.environmentMap() ? 1.0f : 0.0f) +
+        std::max({environment.r, environment.g, environment.b, 0.0f});
+    struct BuildParameters
     {
-        const double value = (emission.resources.w & (kLightHasImage | kLightMultiplyColor)) == kLightHasImage
-            ? 1.0
-            : std::max({emission.colorScale.r, emission.colorScale.g, emission.colorScale.b});
-        return std::max(0.0, value * emission.colorScale.w);
-    };
-
-    std::vector<double> weights;
-    const auto          append = [&](double weight) { weights.push_back(power ? weight : 1.0); };
-    const auto maxChannel = [](glm::vec3 color) { return std::max({color.r, color.g, color.b}); };
-    const auto& ranges = scene.lightRanges;
-    for (uint32_t index = ranges.directionalEnd; index < ranges.pointEnd; ++index)
-        append(4.0 * kPi * maxChannel(scene.lights[index].color));
-    for (uint32_t index = ranges.rectAreaEnd; index < ranges.spotEnd; ++index)
+        uint32_t firstNode, lightCount, writeLeaves, powerWeighted;
+        float diskArea, environmentPower;
+        uint32_t padding[2]{};
+    } build{leaves, count, 1u, uint32_t(parameters.lightSelection == BdptLightSelection::Power),
+        diskArea, 4.0f * std::numbers::pi_v<float> * diskArea * intensity};
+    auto& commands = *execution.commands;
+    for (; build.firstNode != 0; build.firstNode >>= 1, build.writeLeaves = 0)
     {
-        const auto& light = scene.lights[index];
-        const auto cosInner = light.areaSizeCone.z;
-        const auto cosOuter = light.areaSizeCone.w;
-        append(
-            2.0 * kPi * ((1.0 - cosInner) + (cosInner - cosOuter) / (light.spotFalloffExponent + 1.0)) *
-            maxChannel(light.color)
-        );
+        auto* pass = commands.beginComputePass();
+        CHECK(pass);
+        auto* object = pass->bindPipeline(lightDistributionPipeline);
+        const rhi::ShaderCursor root(object);
+        rhiCheck(root["parameters"].getDereferenced().setData(build));
+        scene.bindShaderData(*object);
+        rhiCheck(root["lightDistribution"].setBinding(lightDistributionBuffer));
+        emissive.bind(root["emissiveLights"]);
+        const auto groups = dispatchGroups(lightDistributionPipeline,
+            {std::min(build.firstNode, kLightDispatchRowWidth),
+             (build.firstNode + kLightDispatchRowWidth - 1) / kLightDispatchRowWidth, 1});
+        pass->dispatchCompute(groups.width, groups.height, groups.depth);
+        pass->end();
+        commands.globalBarrier();
     }
-    for (uint32_t index = 0; index < ranges.directionalEnd; ++index)
-        append(diskArea * maxChannel(scene.lights[index].color));
-    for (const auto& light : scene.lightTriangles)
-        append(
-            light.p0Area.w * kPi * (light.twoSided ? 2.0 : 1.0) * intensity(scene.areaEmissions[light.emissionIndex])
-        );
-    if (pathEnvironment(*execution.scene) != PathEnvironment::None)
-    {
-        const auto cubeWeight = execution.scene->environmentMap() ? 1.0 : 0.0;
-        append(4.0 * kPi * diskArea * (cubeWeight + intensity(scene.environmentLight.emission)));
-    }
-
-    double sum = 0;
-    for (const auto weight : weights)
-        sum += weight;
-    CHECK(std::isfinite(sum));
-
-    const auto count = weights.size();
-    std::vector<LightDistributionEntry> entries(std::max<size_t>(count, 1));
-
-    std::vector<uint32_t> small, large;
-    small.reserve(count);
-    large.reserve(count);
-    for (uint32_t index = 0; index < count; ++index)
-    {
-        const double probability = sum > 0.0 ? weights[index] / sum : 0.0;
-        entries[index]           = {.alias = index, .probability = static_cast<float>(probability)};
-        weights[index] = probability * count;
-        (weights[index] < 1.0 ? small : large).push_back(index);
-    }
-
-    while (!small.empty() && !large.empty())
-    {
-        const auto below = small.back();
-        small.pop_back();
-        const auto above = large.back();
-        large.pop_back();
-
-        entries[below].acceptance = static_cast<float>(weights[below]);
-        entries[below].alias      = above;
-        weights[above] += weights[below] - 1.0;
-        (weights[above] < 1.0 ? small : large).push_back(above);
-    }
-
-    const auto bytes = std::span{entries}.size_bytes();
-    ensureBufferCapacity(*mpDevice, lightDistributionBuffer, bytes);
-    rhiCheck(execution.commands->uploadBufferData(lightDistributionBuffer, 0, bytes, entries.data()));
 }
 
 

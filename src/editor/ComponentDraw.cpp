@@ -4,7 +4,7 @@
 #include "asset/ApplyOptionalFields.h"
 #include "asset/AssetManager.h"
 #include "core/Context.h"
-#include "metadata/RegisteredTypes.generated.h"
+#include "metadata/RenderLabCore.schema.inc"
 #include "scene/component/LightTypes.h"
 
 #include <algorithm>
@@ -215,15 +215,6 @@ ComponentDrawResult drawFields(SpotLightComponent& light)
         light.cosOuter = std::cos(glm::radians(outer));
         result.edited  = true;
     }
-    return result;
-}
-
-ComponentDrawResult drawFields(MeshAreaLightComponent& light)
-{
-    ImGui::Text("Render component: %u, submesh: %u", light.renderComponentIndex, light.submeshIndex);
-    auto result = drawPbrtEmission(light.emission);
-    result.edited |= drawField("Two sided", light.twoSided);
-    result.edited |= drawField("Enabled", light.enabled);
     return result;
 }
 

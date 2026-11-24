@@ -200,7 +200,7 @@ void computeMain(uint3 thread : SV_DispatchThreadID)
     const SvgfViewport viewport = parameters.currentViewport;
     bool valid = depth > 0.0 && svgfContainsPixel(int2(pixel), uint2(width, height), viewport);
     float2 ndc = uvToClip((float2(pixel) + 0.5 - viewport.offset) / viewport.extent);
-    float3 position = valid ? reconstructWorldPositionFromLinearDepth(ndc, depth, sceneGlobals[0].camera) : float3(0.0);
+    float3 position = valid ? reconstructWorldPositionFromLinearDepth(ndc, depth, scene.globals[0].camera) : float3(0.0);
     float3 normal = currentNormal.Load(int3(pixel, 0)).xyz;
     HistorySample previous = {};
     bool accepted = valid && reproject(position, normal, previous);

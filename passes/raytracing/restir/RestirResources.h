@@ -8,8 +8,7 @@
 #include <glm/vec4.hpp>
 
 struct RestirSettings;
-struct GpuEnvironmentMap;
-struct RenderContext;
+class GpuScene;
 
 class RestirResources
 {
@@ -17,12 +16,7 @@ class RestirResources
 
 public:
     void               compile(const std::array<rhi::IBuffer*, kBindingCount>& buffers);
-    [[nodiscard]] bool prepare(
-        const RenderContext& frame,
-        glm::uvec2                extent,
-        const RestirSettings&        settings,
-        rhi::IShaderObject*          object
-    );
+    void prepare(const GpuScene& scene, glm::uvec2 extent, const RestirSettings& settings, rhi::IShaderObject* object);
     void invalidateHistory() { hasHistory = false; }
     void advanceHistory();
 
@@ -35,6 +29,4 @@ private:
     glm::mat4                                 previousViewProjection{1.0f};
     glm::vec4                                 previousViewport{};
     glm::vec4                                 previousDepthRow{};
-    uint64_t                                  previousShadingRevision = 0;
-    const GpuEnvironmentMap*                  previousEnvironment = nullptr;
 };

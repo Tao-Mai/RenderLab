@@ -3,7 +3,8 @@
 #include "render/device/RhiCheck.h"
 
 GpuMesh::GpuMesh(
-    rhi::IDevice& device, const MeshGeometry& geometry, std::span<const MeshAsset::Submesh> submeshes
+    rhi::IDevice& device, rhi::ICommandEncoder& commands, const MeshGeometry& geometry,
+    std::span<const MeshAsset::Submesh> submeshes
 ) : vertexTotal(static_cast<uint32_t>(geometry.vertices.size()))
 {
     CHECK(
@@ -27,12 +28,15 @@ GpuMesh::GpuMesh(
     const auto      rayUsage = device.hasFeature(rhi::Feature::RayTracing)
              ? rhi::BufferUsage::AccelerationStructureBuildInput | rhi::BufferUsage::ShaderResource
              : rhi::BufferUsage::None;
+    const auto usage = rhi::BufferUsage::CopySource | rhi::BufferUsage::CopyDestination | rayUsage;
     rhi::BufferDesc desc;
     desc.size  = sizeof(Vertex) * geometry.vertices.size();
-    desc.usage = rhi::BufferUsage::VertexBuffer | rhi::BufferUsage::CopySource | rayUsage;
-    rhiCheck(device.createBuffer(desc, geometry.vertices.data(), vertexBuffer.writeRef()));
+    desc.usage = rhi::BufferUsage::VertexBuffer | usage;
+    rhiCheck(device.createBuffer(desc, nullptr, vertexBuffer.writeRef()));
+    rhiCheck(commands.uploadBufferData(vertexBuffer, 0, desc.size, geometry.vertices.data()));
 
     desc.size  = sizeof(uint32_t) * geometry.indices.size();
-    desc.usage = rhi::BufferUsage::IndexBuffer | rhi::BufferUsage::CopySource | rayUsage;
-    rhiCheck(device.createBuffer(desc, geometry.indices.data(), indexBuffer.writeRef()));
+    desc.usage = rhi::BufferUsage::IndexBuffer | usage;
+    rhiCheck(device.createBuffer(desc, nullptr, indexBuffer.writeRef()));
+    rhiCheck(commands.uploadBufferData(indexBuffer, 0, desc.size, geometry.indices.data()));
 }

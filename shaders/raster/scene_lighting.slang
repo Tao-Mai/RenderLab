@@ -173,7 +173,7 @@ float sampleDirectionalCascade(
 
 float directionalShadowVisibility(LightData light, float3 worldPosition, float2 rotation, ShadowUniforms shadows)
 {
-    float viewDepth = -mul(sceneGlobals[0].camera.view, float4(worldPosition, 1.0)).z;
+    float viewDepth = -mul(scene.globals[0].camera.view, float4(worldPosition, 1.0)).z;
     if (viewDepth <= 0.0)
     {
         return 1.0;
@@ -356,7 +356,7 @@ float3 evaluateDirectContribution(
 
 float3 evaluateLighting(Surface surface, uint2 pixel)
 {
-    float3 V = normalize(sceneGlobals[0].camera.cameraPosition.xyz - surface.worldPosition);
+    float3 V = normalize(scene.globals[0].camera.cameraPosition.xyz - surface.worldPosition);
     float NdotV = saturate(dot(surface.normal, V));
 #if ENABLE_SHEEN
     float sheenStrength = max(surface.sheenColor.x, max(surface.sheenColor.y, surface.sheenColor.z));
@@ -374,87 +374,52 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
     float2 shadowRotation = (shadows.pixelRotation != 0)
         ? pixelSampleRotation(pixel)
         : float2(1.0, 0.0);
-    LightRanges ranges = sceneGlobals[0].lightRanges;
     float3 direct = float3(0.0);
-    for (uint index = 0; index < ranges.directionalEnd; ++index)
+    for (uint index = 0; index < scene.globals[0].analyticLightCount; ++index)
     {
-        LightData light = lights[index];
-
-        float3 lightDirection = -light.direction.xyz;
+        LightData light = scene.analyticLights[index];
+        bool castShadow = light.castShadow && shadows.enabled != 0;
         float visibility = 1.0;
-        if (light.castShadow && shadows.enabled != 0)
+        if (light.type == LightType::Directional)
         {
-            visibility = directionalShadowVisibility(light, surface.worldPosition, shadowRotation, shadows);
-        }
-        direct += evaluateDirectContribution(surface, V, lightDirection, light.color, visibility);
-    }
-
-    for (uint index = ranges.directionalEnd; index < ranges.pointEnd; ++index)
-    {
-        LightData light = lights[index];
-
-        float distanceToLight = length(light.position - surface.worldPosition);
-        if (distanceToLight <= 0.0 || !withinLightRange(light, distanceToLight * distanceToLight))
-        {
+            if (castShadow)
+                visibility = directionalShadowVisibility(light, surface.worldPosition, shadowRotation, shadows);
+            direct += evaluateDirectContribution(surface, V, -light.direction.xyz, light.color, visibility);
             continue;
         }
 
-        float3 lightDirection = (light.position - surface.worldPosition) / distanceToLight;
-        float3 incidentIrradiance = light.color / (distanceToLight * distanceToLight);
-        float visibility = 1.0;
-        if (light.castShadow && shadows.enabled != 0)
-        {
-            visibility = pcf(-lightDirection, light.shadowIdx, distanceToLight / light.range, shadowRotation, shadows);
-        }
-        direct += evaluateDirectContribution(surface, V, lightDirection, incidentIrradiance, visibility);
-    }
-
-    for (uint index = ranges.pointEnd; index < ranges.rectAreaEnd; ++index)
-    {
-        LightData light = lights[index];
-
-        float distanceToLight = length(light.position - surface.worldPosition);
-        if (distanceToLight <= 0.0)
-        {
+        float3 offset = light.position - surface.worldPosition;
+        float distanceToLight = length(offset);
+        float distanceSquared = distanceToLight * distanceToLight;
+        if (distanceToLight <= 0.0 || (light.type != LightType::RectArea && !withinLightRange(light, distanceSquared)))
             continue;
-        }
 
-        // Center-direction approximation; finite-area specular integration is not included.
-        float3 lightDirection = (light.position - surface.worldPosition) / distanceToLight;
-        float projectedArea = light.areaSize.x * light.areaSize.y
-            * saturate(dot(-lightDirection, light.direction.xyz));
-        float solidAngle = projectedArea / (distanceToLight * distanceToLight);
-        float3 incidentIrradiance = light.color * solidAngle;
-        float visibility = 1.0;
-        if (light.castShadow && shadows.enabled != 0)
+        float3 lightDirection = offset / distanceToLight;
+        float3 incidentIrradiance;
+        if (light.type == LightType::RectArea)
         {
-            visibility = rectAreaShadowPCSS(light, surface.worldPosition, pixel, shadows);
+            // Center-direction approximation; finite-area specular integration is not included.
+            float projectedArea = light.areaSize.x * light.areaSize.y
+                * saturate(dot(-lightDirection, light.direction.xyz));
+            incidentIrradiance = light.color * (projectedArea / distanceSquared);
+            if (castShadow)
+                visibility = rectAreaShadowPCSS(light, surface.worldPosition, pixel, shadows);
         }
-        direct += evaluateDirectContribution(surface, V, lightDirection, incidentIrradiance, visibility);
-    }
-
-    for (uint index = ranges.rectAreaEnd; index < ranges.spotEnd; ++index)
-    {
-        LightData light = lights[index];
-
-        float distanceToLight = length(light.position - surface.worldPosition);
-        if (distanceToLight <= 0.0 || !withinLightRange(light, distanceToLight * distanceToLight))
+        else if (light.type == LightType::Spot)
         {
-            continue;
+            float attenuation = spotAngularAttenuation(light, -lightDirection);
+            if (attenuation <= 0.0)
+                continue;
+
+            incidentIrradiance = light.color * attenuation / distanceSquared;
+            if (castShadow)
+                visibility = spotShadowVisibility(light, surface.worldPosition, shadowRotation, shadows);
         }
-
-        float3 lightDirection = (light.position - surface.worldPosition) / distanceToLight;
-        float attenuation = spotAngularAttenuation(light, -lightDirection);
-        if (attenuation <= 0.0)
+        else
         {
-            continue;
-        }
-
-        float3 incidentIrradiance = light.color * attenuation / (distanceToLight * distanceToLight);
-        float visibility = 1.0;
-        if (light.castShadow && shadows.enabled != 0)
-        {
-            visibility = spotShadowVisibility(light, surface.worldPosition, shadowRotation, shadows);
+            incidentIrradiance = light.color / distanceSquared;
+            if (castShadow)
+                visibility = pcf(-lightDirection, light.shadowIdx, distanceToLight / light.range, shadowRotation, shadows);
         }
         direct += evaluateDirectContribution(surface, V, lightDirection, incidentIrradiance, visibility);
     }
@@ -466,7 +431,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
 
     // 镜面反射环境光照 Split Sum Approximation
     float3 environmentTerm = prefilteredSpecularMap.SampleLevel(
-        prefilteredSpecularMapSampler, R, surface.brdf.roughness * sceneGlobals[0].prefilteredMaxLod).rgb;
+        prefilteredSpecularMapSampler, R, surface.brdf.roughness * scene.globals[0].prefilteredMaxLod).rgb;
     float2 scaleBias = brdfLUT.Sample(brdfLUTSampler, float2(NdotV, surface.brdf.roughness)).rg;
     float3 brdfTerm = scaleBias.x * surface.brdf.specularF0 + scaleBias.y * surface.brdf.specularF90;
     float3 ambientSpecular = environmentTerm * brdfTerm;
@@ -491,7 +456,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
     float3 clearcoatEnvironment = prefilteredSpecularMap.SampleLevel(
         prefilteredSpecularMapSampler,
         clearcoatReflection,
-        clearcoatRoughness * sceneGlobals[0].prefilteredMaxLod).rgb;
+        clearcoatRoughness * scene.globals[0].prefilteredMaxLod).rgb;
     float2 clearcoatScaleBias = brdfLUT.Sample(brdfLUTSampler, float2(clearcoatNdotV, clearcoatRoughness)).rg;
     // The layer weight already includes Fresnel. Use the LUT's unit-Fresnel
     // response (scale + bias), avoiding a second Fresnel multiplication.

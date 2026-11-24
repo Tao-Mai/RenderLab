@@ -4,21 +4,15 @@
 #include "core/Logger.h"
 #include "core/Vertex.h"
 #include "render/GpuScene.h"
+#include "render/device/RhiCheck.h"
 #include "render/resources/GpuMesh.h"
 
-#include <algorithm>
-#include <cmath>
 #include <cstring>
-#include <glm/geometric.hpp>
-#include "render/device/RhiCheck.h"
-#include "render/raytracing/RectLightGeometry.h"
 
 namespace
 {
-// Match the instance masks and hit-group order in both ray tracing shaders.
+// Match the scene mask in the ray tracing shaders.
 constexpr uint32_t kSceneMask          = 0x01;
-constexpr uint32_t kLightMask          = 0x02;
-constexpr uint32_t kLightHitRecord     = 1;
 constexpr uint32_t kInstanceIndexLimit = 1u << 24;
 
 rhi::AccelerationStructureBuildInput triangleGeometry(
@@ -51,18 +45,16 @@ void setInstanceTransform(rhi::AccelerationStructureInstanceDescGeneric& instanc
         for (uint32_t column = 0; column < 4; ++column)
             instance.transform[row][column] = model[column][row];
 }
+
 std::vector<rhi::AccelerationStructureInstanceDescGeneric> makeInstances(
     std::span<const GpuDraw>                          draws,
-    std::span<const rhi::AccelerationStructureHandle> meshBlasAddresses,
-    std::span<const LightData>                         rectLights,
-    uint32_t                                           firstRectLightIndex,
-    rhi::AccelerationStructureHandle                  rectLightBlasAddress
+    std::span<const rhi::AccelerationStructureHandle> meshBlasAddresses
 )
 {
     CHECK(draws.size() < kInstanceIndexLimit, "ray tracing instance count exceeds the custom-index limit");
 
     std::vector<rhi::AccelerationStructureInstanceDescGeneric> instances;
-    instances.reserve(draws.size() + rectLights.size());
+    instances.reserve(draws.size());
     for (const auto& draw : draws)
     {
         const auto                                    index = instances.size();
@@ -70,62 +62,38 @@ std::vector<rhi::AccelerationStructureInstanceDescGeneric> makeInstances(
         setInstanceTransform(instance, draw.model);
         instance.instanceID            = static_cast<uint32_t>(index);
         instance.instanceMask          = kSceneMask;
+        instance.instanceContributionToHitGroupIndex = 0;
         instance.flags                 = rhi::AccelerationStructureInstanceFlags::TriangleFacingCullDisable;
         instance.accelerationStructure = meshBlasAddresses[index];
         instances.push_back(instance);
     }
 
-    for (uint32_t index = 0; index < rectLights.size(); ++index)
-    {
-        const auto&     light = rectLights[index];
-        const auto      lightIndex = firstRectLightIndex + index;
-        const glm::vec2 size{light.areaSizeCone};
-        CHECK(
-            std::isfinite(size.x) && std::isfinite(size.y) && size.x > 0 && size.y > 0,
-            "rectangular light {} requires finite positive dimensions",
-            lightIndex
-        );
-
-        // One-sided emission retains facing culling, unlike scene geometry.
-        rhi::AccelerationStructureInstanceDescGeneric instance{};
-        setInstanceTransform(instance, rectLightTransform(light));
-        instance.instanceID                          = lightIndex;
-        instance.instanceMask                        = kLightMask;
-        instance.instanceContributionToHitGroupIndex = kLightHitRecord;
-        instance.accelerationStructure               = rectLightBlasAddress;
-        instances.push_back(instance);
-    }
     return instances;
 }
 
 }  // namespace
 
-rhi::IAccelerationStructure* SceneAccelerationStructures::recordBuilds(
+rhi::IAccelerationStructure* SceneAccelerationStructures::getOrBuild(
     rhi::IDevice& device,
     rhi::ICommandEncoder& commands,
-    std::span<const GpuDraw> draws,
-    std::span<const LightData> rectLights,
-    uint32_t firstRectLightIndex,
-    uint32_t frameIndex
+    std::span<const GpuDraw> draws
 )
 {
-    const auto meshBlasAddresses = recordBlasBuilds(device, commands, draws, !rectLights.empty());
-    const auto instances         = makeInstances(
-        draws,
-        meshBlasAddresses,
-        rectLights,
-        firstRectLightIndex,
-        rectLightBlas ? rectLightBlas->getHandle() : rhi::AccelerationStructureHandle{}
-    );
+    if (builtRevision == revision)
+        return tlas;
 
-    auto& frame = frames[frameIndex];
-    recordTlasBuild(device, commands, frame, instances);
+    const auto meshBlasAddresses = recordBlasBuilds(device, commands, draws);
+    const auto instances = makeInstances(draws, meshBlasAddresses);
+
+    // A submitted command buffer retains its TLAS. Build a new one without modifying the old one.
+    tlas = recordTlasBuild(device, commands, instances);
     commands.globalBarrier();
-    return frame.tlas;
+    builtRevision = revision;
+    return tlas;
 }
 
 std::vector<rhi::AccelerationStructureHandle> SceneAccelerationStructures::recordBlasBuilds(
-    rhi::IDevice& device, rhi::ICommandEncoder& commands, std::span<const GpuDraw> draws, bool hasRectLights
+    rhi::IDevice& device, rhi::ICommandEncoder& commands, std::span<const GpuDraw> draws
 )
 {
     std::vector<rhi::AccelerationStructureHandle> addresses;
@@ -135,18 +103,18 @@ std::vector<rhi::AccelerationStructureHandle> SceneAccelerationStructures::recor
     for (const auto& draw : draws)
     {
         const auto& mesh = *draw.mesh;
-        CHECK(
-            draw.indexCount % 3 == 0,
-            "mesh '{}' has {} indices for ray tracing at index {}",
-            draw.asset->id,
-            draw.indexCount,
-            draw.firstIndex
-        );
-
         const auto [entry, created] = meshBlasCache.try_emplace({&mesh, draw.firstIndex, draw.indexCount});
         auto& blas                  = entry->second;
         if (created)
         {
+            CHECK(
+                draw.indexCount % 3 == 0,
+                "mesh '{}' has {} indices for ray tracing at index {}",
+                draw.asset->id,
+                draw.indexCount,
+                draw.firstIndex
+            );
+
             const auto geometry = triangleGeometry(
                 mesh.vertices(),
                 sizeof(Vertex),
@@ -178,97 +146,58 @@ std::vector<rhi::AccelerationStructureHandle> SceneAccelerationStructures::recor
         addresses.push_back(blas->getHandle());
     }
 
-    if (hasRectLights && !rectLightBlas)
-    {
-        recordRectLightBlasBuild(device, commands);
-        builtBlas = true;
-    }
     if (builtBlas)
         commands.globalBarrier();
 
     return addresses;
 }
 
-void SceneAccelerationStructures::recordRectLightBlasBuild(rhi::IDevice& device, rhi::ICommandEncoder& commands)
+rhi::ComPtr<rhi::IAccelerationStructure> SceneAccelerationStructures::recordTlasBuild(
+    rhi::IDevice&                                                  device,
+    rhi::ICommandEncoder&                                          commands,
+    std::span<const rhi::AccelerationStructureInstanceDescGeneric> instances
+)
 {
-    rhi::ComPtr<rhi::IBuffer> vertices;
-    rhi::ComPtr<rhi::IBuffer> indices;
-    rhi::BufferDesc          desc;
-    desc.size  = sizeof(kRectLightVertices);
-    desc.usage = rhi::BufferUsage::AccelerationStructureBuildInput | rhi::BufferUsage::CopyDestination;
-    rhiCheck(device.createBuffer(desc, nullptr, vertices.writeRef()));
-    desc.size = sizeof(kRectLightIndices);
-    rhiCheck(device.createBuffer(desc, nullptr, indices.writeRef()));
-    rhiCheck(commands.uploadBufferData(vertices, 0, sizeof(kRectLightVertices), kRectLightVertices.data()));
-    rhiCheck(commands.uploadBufferData(indices, 0, sizeof(kRectLightIndices), kRectLightIndices.data()));
-    const auto geometry = triangleGeometry(
-        vertices, sizeof(glm::vec3), uint32_t(kRectLightVertices.size()), indices, 0, uint32_t(kRectLightIndices.size())
-    );
+    // RHI requires at least one instance. A zero reference is an inactive instance for an empty scene.
+    const rhi::AccelerationStructureInstanceDescGeneric inactive{};
+    if (instances.empty())
+        instances = {&inactive, 1};
 
+    rhi::ComPtr<rhi::IBuffer> instanceBuffer;
+    rhi::BufferDesc instanceDesc;
+    instanceDesc.size       = instances.size_bytes();
+    instanceDesc.memoryType = rhi::MemoryType::Upload;
+    instanceDesc.usage      = rhi::BufferUsage::AccelerationStructureBuildInput;
+    rhiCheck(device.createBuffer(instanceDesc, nullptr, instanceBuffer.writeRef()));
+
+    void* data;
+    rhiCheck(device.mapBuffer(instanceBuffer, rhi::CpuAccessMode::Write, &data));
+    std::memcpy(data, instances.data(), instances.size_bytes());
+    rhiCheck(device.unmapBuffer(instanceBuffer));
+
+    rhi::AccelerationStructureBuildInput geometry{};
+    geometry.type      = rhi::AccelerationStructureBuildInputType::Instances;
+    geometry.instances = {
+        instanceBuffer, sizeof(rhi::AccelerationStructureInstanceDescGeneric), uint32_t(instances.size())
+    };
     rhi::AccelerationStructureBuildDesc build;
     build.inputs     = &geometry;
     build.inputCount = 1;
     build.flags      = rhi::AccelerationStructureBuildFlags::PreferFastTrace;
+
     rhi::AccelerationStructureSizes sizes;
     rhiCheck(device.getAccelerationStructureSizes(build, &sizes));
-    rhi::AccelerationStructureDesc asDesc;
-    asDesc.kind = rhi::AccelerationStructureKind::BottomLevel;
-    asDesc.size = sizes.accelerationStructureSize;
-    rhiCheck(device.createAccelerationStructure(asDesc, rectLightBlas.writeRef()));
+    rhi::AccelerationStructureDesc tlasDesc;
+    tlasDesc.kind = rhi::AccelerationStructureKind::TopLevel;
+    tlasDesc.size = sizes.accelerationStructureSize;
+    rhi::ComPtr<rhi::IAccelerationStructure> result;
+    rhiCheck(device.createAccelerationStructure(tlasDesc, result.writeRef()));
 
     rhi::ComPtr<rhi::IBuffer> scratch;
     rhi::BufferDesc scratchDesc;
     scratchDesc.size  = sizes.scratchSize;
     scratchDesc.usage = rhi::BufferUsage::UnorderedAccess;
     rhiCheck(device.createBuffer(scratchDesc, nullptr, scratch.writeRef()));
-    commands.buildAccelerationStructure(build, rectLightBlas, nullptr, scratch, 0, nullptr);
-}
-
-void SceneAccelerationStructures::recordTlasBuild(
-    rhi::IDevice&                                                  device,
-    rhi::ICommandEncoder&                                          commands,
-    Frame&                                                         frame,
-    std::span<const rhi::AccelerationStructureInstanceDescGeneric> instances
-)
-{
-    // RHI requires at least one instance. A zero reference is an inactive instance for an empty scene.
-    const auto count    = uint32_t(std::max<size_t>(instances.size(), 1));
-    const bool recreate = !frame.tlas || frame.instanceCount != count;
-    if (recreate)
-    {
-        rhi::BufferDesc desc;
-        desc.size       = count * sizeof(rhi::AccelerationStructureInstanceDescGeneric);
-        desc.memoryType = rhi::MemoryType::Upload;
-        desc.usage      = rhi::BufferUsage::AccelerationStructureBuildInput;
-        rhiCheck(device.createBuffer(desc, nullptr, frame.instances.writeRef()));
-    }
-    void* data;
-    rhiCheck(device.mapBuffer(frame.instances, rhi::CpuAccessMode::Write, &data));
-    if (instances.empty())
-        std::memset(data, 0, sizeof(rhi::AccelerationStructureInstanceDescGeneric));
-    else
-        std::memcpy(data, instances.data(), instances.size_bytes());
-    rhiCheck(device.unmapBuffer(frame.instances));
-    rhi::AccelerationStructureBuildInput geometry{};
-    geometry.type      = rhi::AccelerationStructureBuildInputType::Instances;
-    geometry.instances = {frame.instances, sizeof(rhi::AccelerationStructureInstanceDescGeneric), count};
-    rhi::AccelerationStructureBuildDesc build;
-    build.inputs     = &geometry;
-    build.inputCount = 1;
-    build.flags      = rhi::AccelerationStructureBuildFlags::PreferFastTrace;
-    if (recreate)
-    {
-        rhi::AccelerationStructureSizes sizes;
-        rhiCheck(device.getAccelerationStructureSizes(build, &sizes));
-        rhi::AccelerationStructureDesc desc;
-        desc.kind = rhi::AccelerationStructureKind::TopLevel;
-        desc.size = sizes.accelerationStructureSize;
-        rhiCheck(device.createAccelerationStructure(desc, frame.tlas.writeRef()));
-        rhi::BufferDesc scratch;
-        scratch.size  = sizes.scratchSize;
-        scratch.usage = rhi::BufferUsage::UnorderedAccess;
-        rhiCheck(device.createBuffer(scratch, nullptr, frame.scratch.writeRef()));
-        frame.instanceCount = count;
-    }
-    commands.buildAccelerationStructure(build, frame.tlas, nullptr, frame.scratch, 0, nullptr);
+    commands.buildAccelerationStructure(build, result, nullptr, scratch, 0, nullptr);
+    return result;
 }

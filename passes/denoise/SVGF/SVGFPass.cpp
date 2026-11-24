@@ -1,6 +1,7 @@
 #include "passes/denoise/SVGF/SVGFPass.h"
 
 #include "editor/PassEditor.h"
+#include "render/GpuScene.h"
 #include "render/RenderConfig.h"
 
 #include <array>
@@ -136,14 +137,16 @@ void SVGFPass::execute(RenderContext* renderCommands, const RenderData& renderDa
             reprojected[kDirectLightingLayer].get(),
             reprojected[kIndirectLightingLayer].get(),
         };
-        const auto lighting = reprojection.compile(frame, traced, history, reprojectedImages);
+        auto& shaders = *frame.shaderManager;
+        const auto lighting = reprojection.compile(*mpDevice, shaders, traced, history, reprojectedImages);
 
         const std::array scratchImages{
             scratch[kDirectLightingLayer].get(),
             scratch[kIndirectLightingLayer].get(),
         };
         filter.compile(
-            frame,
+            *mpDevice,
+            shaders,
             traced,
             lighting,
             scratchImages,
@@ -153,8 +156,8 @@ void SVGFPass::execute(RenderContext* renderCommands, const RenderData& renderDa
         resourcesBound = true;
     }
 
-    reprojection.execute(frame, renderData.getHistoryRevision(kInputBufferColor));
-    filter.execute(frame);
+    reprojection.execute(*frame.commands, *mpScene, renderData.getHistoryRevision(kInputBufferColor));
+    filter.execute(*frame.commands, mpScene->viewport());
 }
 
 void SVGFPass::renderUI(const PassEditorContext& context, Gui::Widgets& widget)

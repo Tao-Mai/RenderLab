@@ -34,5 +34,3 @@ private:
     std::array<glm::vec4, 6> planes;
     size_t                   planeCount;
 };
-
-#include RL_METADATA_HEADER("metadata/src/core/math/Bounds.generated.h")

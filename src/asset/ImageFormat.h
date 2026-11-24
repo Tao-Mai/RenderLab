@@ -103,5 +103,3 @@ enum class RL_ENUM ImageLayout
     Image2D RL_ENUM_VALUE("Image2D"),
     Cubemap RL_ENUM_VALUE("Cubemap"),
 };
-
-#include RL_METADATA_HEADER("metadata/src/asset/ImageFormat.generated.h")

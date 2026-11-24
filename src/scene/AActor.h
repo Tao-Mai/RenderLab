@@ -93,5 +93,3 @@ private:
     friend class SceneManager;
     uint32_t id = 0;
 };
-
-#include RL_METADATA_HEADER("metadata/src/scene/AActor.generated.h")

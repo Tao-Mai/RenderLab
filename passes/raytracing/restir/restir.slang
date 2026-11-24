@@ -39,7 +39,7 @@ Surface restirUnpackSurface(RestirSurfaceData data)
 float restirMixturePdf(Surface surface, PathLightSample sample, PathLightEvaluation evaluated)
 {
     float brdfPdf = 0.0;
-    if (evaluated.delta == 0 && evaluated.conditionalPdf > 0.0 &&
+    if (sample.kind != kAnalyticLightSample && evaluated.conditionalPdf > 0.0 &&
         dot(surface.geometricNormal, evaluated.direction) > 0.0)
     {
         brdfPdf =
@@ -67,9 +67,9 @@ PathLightSample restirSampleBrdf(Surface surface, inout uint state)
     ray.TMax      = kMaxRayDistance;
     PathHit hit   = {};
     TraceRay(
-        scene,
+        scene.rtAccel,
         RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
-        kSceneMask | kLightMask,
+        kSceneMask,
         0,
         0,
         0,

@@ -23,5 +23,3 @@ struct RL_TYPE("MaterialAsset") MaterialAsset : Asset
         return *material;
     }
 };
-
-#include RL_METADATA_HEADER("metadata/src/asset/MaterialAsset.generated.h")

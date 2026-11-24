@@ -12,5 +12,3 @@ public:
     explicit ALight(std::unique_ptr<LightComponent> light);
     void init() override;
 };
-
-#include RL_METADATA_HEADER("metadata/src/scene/actor/ALight.generated.h")

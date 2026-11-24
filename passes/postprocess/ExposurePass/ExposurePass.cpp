@@ -75,14 +75,20 @@ RenderPassReflection ExposurePass::reflect(const CompileData&)
 void ExposurePass::compile(RenderContext* context, const CompileData&)
 {
     hasHistory        = false;
-    histogramPipeline = context->device->createComputePipeline(
-        {.program =
-             context->shaderManager->getOrLoad("exposure", {{"EXPOSURE_STAGE", "0"}})}
+    histogramPipeline = mpDevice->createComputePipeline(
+        {.program = context->shaderManager->getProgram(
+             "passes/postprocess/ExposurePass/exposure.slang",
+             {"computeMain"},
+             {{"EXPOSURE_STAGE", "0"}}
+         )}
     );
     CHECK(histogramPipeline);
-    resolvePipeline = context->device->createComputePipeline(
-        {.program =
-             context->shaderManager->getOrLoad("exposure", {{"EXPOSURE_STAGE", "1"}})}
+    resolvePipeline = mpDevice->createComputePipeline(
+        {.program = context->shaderManager->getProgram(
+             "passes/postprocess/ExposurePass/exposure.slang",
+             {"computeMain"},
+             {{"EXPOSURE_STAGE", "1"}}
+         )}
     );
     CHECK(resolvePipeline);
 }
@@ -92,8 +98,8 @@ void ExposurePass::execute(RenderContext* renderCommands, const RenderData& rend
 {
     const auto& frame           = *renderCommands;
     const auto& automatic       = parameters.automatic;
-    const auto& viewport        = frame.scene->viewport();
-    const auto               sceneGeneration = frame.scene->sceneGeneration();
+    const auto& viewport        = mpScene->viewport();
+    const auto               sceneGeneration = mpScene->sceneGeneration();
     const bool  enabled         = parameters.mode == ExposureMode::Automatic;
     const ExposureParameters uniforms{
         .viewport              = {viewport.x, viewport.y, viewport.width, viewport.height},
