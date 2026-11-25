@@ -1,7 +1,6 @@
 #pragma once
 
 #include <slang-rhi.h>
-#include "core/Macros.h"
 
 #include <cstdint>
 #include <span>
@@ -10,7 +9,7 @@
 #include <variant>
 #include <vector>
 
-class RENDERLAB_CORE_API RenderPassReflection
+class RenderPassReflection
 {
 public:
     using ResourceDesc = std::variant<rhi::TextureDesc, rhi::BufferDesc>;
@@ -59,5 +58,5 @@ private:
     std::vector<Field> ports;
 };
 
-RL_ENUM_CLASS_OPERATORS(RenderPassReflection::Visibility);
-RL_ENUM_CLASS_OPERATORS(RenderPassReflection::TextureMatch);
+SLANG_RHI_ENUM_CLASS_OPERATORS(RenderPassReflection::Visibility);
+SLANG_RHI_ENUM_CLASS_OPERATORS(RenderPassReflection::TextureMatch);

@@ -1,6 +1,5 @@
 #include "asset/import/EnvironmentMapUtils.h"
 
-#include "asset/AssetDataManager.h"
 #include "asset/TextureMip.h"
 #include "core/Logger.h"
 
@@ -105,131 +104,6 @@ namespace asset_import::environment_map
 
 // 输入：六面连续的线性 RGBA float Cubemap 和单位方向；每面 side x side、行优先。
 // 输出：按 +X、-X、+Y、-Y、+Z、-Z 面顺序查找并双线性采样得到的 RGBA 像素。
-[[nodiscard]] static std::array<float, 4> sampleCubemapLevel(
-    const float* pixels, uint32_t side, const glm::vec3& direction)
-{
-    const float ax = std::abs(direction.x);
-    const float ay = std::abs(direction.y);
-    const float az = std::abs(direction.z);
-
-    uint32_t face;
-    float    u;
-    float    v;
-    if (ax >= ay && ax >= az)
-    {
-        face = direction.x >= 0.0f ? 0 : 1;
-        u    = (direction.x >= 0.0f ? -direction.z : direction.z) / ax;
-        v    = -direction.y / ax;
-    }
-    else if (ay >= az)
-    {
-        face = direction.y >= 0.0f ? 2 : 3;
-        u    = direction.x / ay;
-        v    = (direction.y >= 0.0f ? direction.z : -direction.z) / ay;
-    }
-    else
-    {
-        face = direction.z >= 0.0f ? 4 : 5;
-        u    = (direction.z >= 0.0f ? direction.x : -direction.x) / az;
-        v    = -direction.y / az;
-    }
-
-    const float    maxPixel = static_cast<float>(side - 1);
-    const float    px       = std::clamp((u + 1.0f) * 0.5f * side - 0.5f, 0.0f, maxPixel);
-    const float    py       = std::clamp((v + 1.0f) * 0.5f * side - 0.5f, 0.0f, maxPixel);
-    const uint32_t x0       = static_cast<uint32_t>(px);
-    const uint32_t y0       = static_cast<uint32_t>(py);
-    const uint32_t x1       = std::min(x0 + 1, side - 1);
-    const uint32_t y1       = std::min(y0 + 1, side - 1);
-
-    const float* upperLeft = pixels +
-        ((static_cast<size_t>(face) * side + y0) * side + x0) * 4;
-    const float* upperRight = pixels +
-        ((static_cast<size_t>(face) * side + y0) * side + x1) * 4;
-    const float* lowerLeft = pixels +
-        ((static_cast<size_t>(face) * side + y1) * side + x0) * 4;
-    const float* lowerRight = pixels +
-        ((static_cast<size_t>(face) * side + y1) * side + x1) * 4;
-
-    std::array<float, 4> rgba{};
-    for (size_t channel = 0; channel < rgba.size(); ++channel)
-    {
-        const float upper = std::lerp(upperLeft[channel], upperRight[channel], px - x0);
-        const float lower = std::lerp(lowerLeft[channel], lowerRight[channel], px - x0);
-        rgba[channel]     = std::lerp(upper, lower, py - y0);
-    }
-
-    return rgba;
-}
-
-// 输入：radiancePixels 是完整线性 RGBA float mip 链，按 mip、六面、行优先像素排列。
-// 输出：各 mip 的起始指针；同时验证描述与缓冲区大小一致。
-[[nodiscard]] LinearCubemapView linearCubemapView(
-    const TextureAsset& radiance, std::span<const float> radiancePixels)
-{
-    CHECK(radiance.layout == ImageLayout::Cubemap &&
-          radiance.width > 0 && radiance.width == radiance.height &&
-          radiance.mipLevels > 0 &&
-          radiance.mipLevels <= texture_mip::maxLevels(radiance.width, radiance.height),
-          "invalid radiance cubemap dimensions or mip count: {}",
-          radiance.id);
-
-    constexpr ImageBlock kBlock = imageBlock(ImageFormat::RGBA32F);
-    const uint64_t expectedBytes = texture_mip::totalBytes(
-        radiance.width, radiance.height, 6, kBlock, radiance.mipLevels);
-    CHECK(radiancePixels.size() == expectedBytes / sizeof(float),
-          "invalid radiance cubemap mip pixels: {}",
-          radiance.id);
-
-    LinearCubemapView view{
-        .side = radiance.width,
-        .mipLevels = radiance.mipLevels,
-    };
-    for (uint32_t mip = 0; mip < view.mipLevels; ++mip)
-    {
-        const size_t offset = static_cast<size_t>(texture_mip::offset(
-            view.side, view.side, 6, kBlock, mip) / sizeof(float));
-        view.levels[mip] = radiancePixels.data() + offset;
-    }
-    return view;
-}
-
-// 输入：sampleSolidAngle 是单个积分样本覆盖的球面立体角；side 是 radiance 基础面尺寸。
-// 输出：相对平均 Cubemap 像素立体角 4π/(6*side²) 的 log4 比值，限制到有效 mip 范围。
-[[nodiscard]] float mipLevelForSolidAngle(
-    float sampleSolidAngle, uint32_t side, uint32_t mipLevels)
-{
-    const float texelSolidAngle = 4.0f * std::numbers::pi_v<float> /
-        (6.0f * static_cast<float>(side) * static_cast<float>(side));
-    const float lod = 0.5f * std::log2(sampleSolidAngle / texelSolidAngle);
-    return std::clamp(lod, 0.0f, static_cast<float>(mipLevels - 1));
-}
-
-// 输入：完整的线性 radiance mip 链、方向与连续 LOD。
-// 输出：先在各相邻 mip 的单面内双线性采样，再沿 mip 轴线性插值得到 RGBA。
-[[nodiscard]] std::array<float, 4> sampleRadiance(
-    const LinearCubemapView& cubemap, const glm::vec3& direction, float lod)
-{
-    const float clamped = std::clamp(lod, 0.0f, static_cast<float>(cubemap.mipLevels - 1));
-    const uint32_t lowerMip = static_cast<uint32_t>(clamped);
-    const uint32_t upperMip = std::min(lowerMip + 1, cubemap.mipLevels - 1);
-    std::array<float, 4> rgba = sampleCubemapLevel(
-        cubemap.levels[lowerMip], texture_mip::extent(cubemap.side, lowerMip), direction);
-    if (lowerMip != upperMip)
-    {
-        const auto upper = sampleCubemapLevel(
-            cubemap.levels[upperMip], texture_mip::extent(cubemap.side, upperMip), direction);
-        const float weight = clamped - static_cast<float>(lowerMip);
-        for (size_t channel = 0; channel < rgba.size(); ++channel)
-        {
-            rgba[channel] = std::lerp(rgba[channel], upper[channel], weight);
-        }
-    }
-    return rgba;
-}
-
-// 输入：loadImage 得到的 ImageFormat。输出：Cubemap 的四通道存储格式；
-// RGB8 扩展为 RGBA8，其余支持的 RGBA 格式保持原来的每通道位宽。
 [[nodiscard]] ImageFormat environmentFormat(ImageFormat format)
 {
     switch (format)
@@ -262,7 +136,7 @@ namespace asset_import::environment_map
         : std::pow((encoded + 0.055f) / 1.055f, 2.4f);
 }
 
-// 输入：rgba 是线性 RGBA 浮点像素；output 指向至少 bytesPerPixel(format) 字节。
+// 输入：rgba 是线性 RGBA 浮点像素，output 指向至少 imageBlock(format).bytes 字节。
 // 输出：在 output 原位写入交错的 RGBA8、RGBA16F 或 RGBA32F；8 位 RGB 按
 // colorSpace 编码，Alpha 保持线性；16F 为四个连续的 IEEE 754 binary16，32F 为四个连续的
 // 32 位 float，通道顺序均为 R、G、B、A，字节序使用运行平台的本机字节序。
@@ -305,7 +179,7 @@ void writePixel(uint8_t*    output, const std::array<float, 4>& rgba,
     std::span<const uint8_t> pixels, uint32_t   width, uint32_t height,
     ImageFormat              format, ColorSpace colorSpace)
 {
-    const size_t       channels   = AssetDataManager::bytesPerPixel(format);
+    const size_t       channels   = imageBlock(format).bytes;
     const size_t       pixelCount = static_cast<size_t>(width) * height;
     std::vector<float> linearPixels(pixelCount * 4);
     for (size_t pixel = 0; pixel < pixelCount; ++pixel)

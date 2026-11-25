@@ -7,7 +7,7 @@
 #include <slang-rhi/shader-cursor.h>
 #include <string>
 #include "render/RenderContext.h"
-#include "render/device/RhiCheck.h"
+#include "render/RhiUtils.h"
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -89,7 +89,7 @@ void EditorBackend::init(GLFWwindow* window, rhi::IDevice& target, ShaderManager
     color.color       = {rhi::BlendFactor::SrcAlpha, rhi::BlendFactor::InvSrcAlpha, rhi::BlendOp::Add};
     color.alpha       = {rhi::BlendFactor::One, rhi::BlendFactor::InvSrcAlpha, rhi::BlendOp::Add};
     rhi::RenderPipelineDesc desc;
-    desc.program                       = shaders.getProgram("shaders/editor/imgui.slang", {"vertMain", "fragMain"});
+    desc.program                       = shaders.getProgram("render/editor/imgui.slang", {"vertMain", "fragMain"});
     desc.inputLayout                   = input;
     desc.targets                       = &color;
     desc.targetCount                   = 1;
@@ -105,6 +105,7 @@ void EditorBackend::beginFrame()
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 }
+    
 void EditorBackend::render(rhi::IRenderPassEncoder& pass, uint32_t frameIndex)
 {
     const auto* data   = ImGui::GetDrawData();

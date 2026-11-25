@@ -1,21 +1,19 @@
 #pragma once
 
+#include "core/Config.h"
+
 class AssetManager;
-class AssetDataManager;
-class ConfigManager;
 class Editor;
-class InputManager;
 class Renderer;
 class SceneManager;
 class Window;
 
 struct Context
 {
-    ConfigManager*            config              = nullptr;
+    Config config;
+
     Window*                   window              = nullptr;
-    InputManager*             inputManager        = nullptr;
     AssetManager*            assetManager        = nullptr;
-    AssetDataManager*         assetDataManager    = nullptr;
     SceneManager*             sceneManager        = nullptr;
     Renderer*                 renderer            = nullptr;
     Editor*                   editor              = nullptr;

@@ -1,21 +1,18 @@
 #pragma once
 #include <slang-rhi.h>
 
-#include "core/Macros.h"
 #include <glm/vec2.hpp>
 #include "editor/Gui.h"
-#include "render/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/graph/RenderPassReflection.h"
 #include "render/graph/ResourceCache.h"
-#include "render/plugins/Plugin.h"
 
 #include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
-#include <nlohmann/json.hpp>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -25,8 +22,9 @@ class RenderGraphExe;
 class GpuScene;
 enum class SceneUpdateFlags : uint32_t;
 struct PassEditorContext;
+struct RenderPassOptions;
 
-class RENDERLAB_CORE_API RenderData
+class RenderData
 {
 public:
     using Dictionary = std::map<std::string, uint32_t, std::less<>>;
@@ -62,26 +60,21 @@ private:
     [[nodiscard]] std::optional<size_t> findSlot(std::string_view name) const;
 };
 
-class RENDERLAB_CORE_API RenderPass
+class RenderPass
 {
 public:
-    using PluginCreate = std::function<std::shared_ptr<RenderPass>(rhi::ComPtr<rhi::IDevice>, const nlohmann::json&)>;
-
     struct SettingsBinding
     {
-        nlohmann::json (*get)(const RenderPass&) = nullptr;
-        void (*set)(RenderPass&, const nlohmann::json&) = nullptr;
-        void (*drawEditor)(const RenderPass&, const PassEditorContext&, Gui::Widgets&) = nullptr;
+        void (*apply)(RenderPass&, const RenderPassOptions&) = nullptr;
+        void (*drawEditor)(const RenderPass&, const PassEditorContext&, Gui::Widgets&, RenderPassOptions&, bool) = nullptr;
     };
 
-    struct PluginInfo
+    struct Description
     {
-        std::string desc;
+        std::string_view type;
         std::span<const RenderPassReflection::Field> ports{};
         SettingsBinding settings{};
     };
-
-    RL_PLUGIN_BASE_CLASS(RenderPass);
 
     struct CompileData
     {
@@ -93,16 +86,10 @@ public:
         void addInternalTexture(std::string name, const rhi::TextureDesc& desc) const;
     };
 
-    [[nodiscard]] static std::shared_ptr<RenderPass> create(
-        std::string_view          type,
-        rhi::ComPtr<rhi::IDevice> device,
-        const nlohmann::json&      properties = nlohmann::json::object(),
-        PluginManager&            plugins    = PluginManager::instance()
-    );
     virtual ~RenderPass() = default;
 
-    [[nodiscard]] const std::string& getType() const { return getPluginType(); }
-    [[nodiscard]] const std::string& getDesc() const { return getPluginInfo().desc; }
+    [[nodiscard]] std::string_view getType() const { return description.type; }
+    [[nodiscard]] const SettingsBinding& getSettingsBinding() const { return description.settings; }
     [[nodiscard]] uint32_t           getMaxFramesInFlight() const { return mMaxFramesInFlight; }
 
     [[nodiscard]] virtual RenderPassReflection reflect(const ResourceCache::DefaultProperties& defaults);
@@ -111,14 +98,15 @@ public:
     virtual void                               setScene(GpuScene* scene) { mpScene = scene; }
     virtual void                               onSceneUpdates(RenderContext* context, SceneUpdateFlags updates) {}
 
-    void                         setProperties(const nlohmann::json& properties);
-    [[nodiscard]] nlohmann::json getProperties() const;
-
     [[nodiscard]] const std::string& getName() const { return mName; }
 
 protected:
-    explicit RenderPass(rhi::ComPtr<rhi::IDevice> device, uint32_t maxFramesInFlight = kMaxFramesInFlight) :
-        mpDevice(std::move(device)), mMaxFramesInFlight(maxFramesInFlight)
+    RenderPass(
+        rhi::ComPtr<rhi::IDevice> device,
+        Description description,
+        uint32_t maxFramesInFlight = kMaxFramesInFlight
+    ) :
+        mpDevice(std::move(device)), description(description), mMaxFramesInFlight(maxFramesInFlight)
     {
     }
     void requestRecompile() { mPassChangedCB(); }
@@ -131,5 +119,6 @@ protected:
     friend class RenderGraph;
 
 private:
-    uint32_t    mMaxFramesInFlight;
+    Description description;
+    uint32_t mMaxFramesInFlight;
 };

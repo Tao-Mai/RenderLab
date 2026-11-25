@@ -1,59 +1,59 @@
 #pragma once
 
-#include "core/Serializer.h"
+#include "editor/Gui.h"
 #include "editor/PassEditor.h"
 #include "render/graph/RenderPass.h"
+#include "render/graph/RenderPassOptions.h"
 
 #include <type_traits>
 #include <utility>
 
 namespace pass_settings
 {
-enum class Update
-{
-    Replace,
-    Patch,
-};
-
-// OnUpdate names a change flag or a callback that receives the previous settings.
-template <auto Member, auto Draw = nullptr, auto OnUpdate = nullptr, Update Mode = Update::Replace>
+template <auto Member, auto Option, auto Draw, auto OnUpdate = nullptr>
 constexpr RenderPass::SettingsBinding bind()
 {
     return []<class Pass, class Settings>(Settings Pass::*) -> RenderPass::SettingsBinding
     {
         return {
-            .get = [](const RenderPass& pass) { return Serialize(static_cast<const Pass&>(pass).*Member); },
-            .set = [](RenderPass& pass, const nlohmann::json& properties)
+            .apply = [](RenderPass& pass, const RenderPassOptions& options)
             {
-                auto& typedPass = static_cast<Pass&>(pass);
-                auto& current = typedPass.*Member;
+                auto& typed = static_cast<Pass&>(pass);
+                auto& current = typed.*Member;
+                const auto& next = options.*Option;
+                if (current == next)
+                    return;
 
-                Settings next;
-                if constexpr (Mode == Update::Patch)
-                    next = DeserializeWithDefaults(properties, current);
-                else
-                    Deserialize(properties, next);
                 next.validate();
-
                 if constexpr (std::is_member_function_pointer_v<decltype(OnUpdate)>)
                 {
-                    const auto previous = std::exchange(current, std::move(next));
-                    (typedPass.*OnUpdate)(previous);
+                    const auto previous = std::exchange(current, next);
+                    (typed.*OnUpdate)(previous);
                 }
                 else
                 {
+                    current = next;
                     if constexpr (OnUpdate != nullptr)
-                    {
-                        bool& changed = typedPass.*OnUpdate;
-                        if (!changed)
-                            metadata::visitChangedFields(
-                                current, next, [&changed](const metadata::Property&) { changed = true; }
-                            );
-                    }
-                    current = std::move(next);
+                        typed.*OnUpdate = true;
                 }
             },
-            .drawEditor = pass_editor::edit<Pass, Member, Draw>,
+            .drawEditor = [](
+                const RenderPass& pass, const PassEditorContext& context, Gui::Widgets& widgets,
+                RenderPassOptions& options, bool reset
+            )
+            {
+                auto& current = options.*Option;
+                if (reset)
+                {
+                    current = {};
+
+                    return;
+                }
+
+                auto edited = current;
+                if (Draw(widgets, edited, static_cast<const Pass&>(pass), context))
+                    current = std::move(edited);
+            },
         };
     }(Member);
 }

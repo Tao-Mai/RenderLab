@@ -1,11 +1,10 @@
 #include "render/resources/AnalyticLights.h"
 
-#include "asset/pbrt/PbrtSpectrum.h"
-#include "render/device/BufferCapacity.h"
+#include "render/RhiUtils.h"
 
-#include <array>
 #include <cmath>
-#include <concepts>
+#include <glm/geometric.hpp>
+#include <utility>
 
 namespace
 {
@@ -22,56 +21,52 @@ void AnalyticLights::init(rhi::IDevice& device)
 }
 
 bool AnalyticLights::update(
-    const std::vector<SceneAnalyticLight>& next, const AssetDataManager& assets,
+    const std::vector<AnalyticLight>& next,
     rhi::IDevice& device, rhi::ICommandEncoder& commands
 )
 {
     if (source == next)
         return false;
 
-    std::array<uint32_t, static_cast<size_t>(GpuLightType::Spot) + 1> shadowCounts{};
     lights.clear();
     for (const auto& light : next)
     {
-        const auto append = [&](LightData data)
+        if (!light.enabled)
+            continue;
+
+        LightData data;
+        switch (light.type)
         {
-            data.color = pbrtPreviewRgb(light.emission.spectrum, assets) * static_cast<float>(light.emission.scale);
-            data.shadowEnabled = light.castShadow ? 1u : 0u;
-            if (light.castShadow)
-                data.shadowIdx = shadowCounts[static_cast<size_t>(data.type())]++;
-            lights.push_back(data);
-        };
-        std::visit([&]<class T>(const T& model)
+            case AnalyticLightType::Point: data.lightType = GpuLightType::Point; break;
+            case AnalyticLightType::Spot: data.lightType = GpuLightType::Spot; break;
+            case AnalyticLightType::Directional: data.lightType = GpuLightType::Directional; break;
+            case AnalyticLightType::Rectangle: data.lightType = GpuLightType::RectArea; break;
+            default: std::unreachable();
+        }
+
+        data.positionRange = {light.transform.position, light.range};
+        const auto direction = light.transform.rotation * glm::vec3{0, 0, -1};
+        data.direction = {glm::normalize(direction), 0.0f};
+        data.areaRightData = {glm::normalize(light.transform.rotation * glm::vec3{1, 0, 0}), 0.0f};
+        data.areaSizeCone = {light.areaSize, light.cosInner, light.cosOuter};
+
+        float intensity = light.intensity;
+        CHECK(std::isfinite(intensity) && intensity >= 0.0f, "invalid intensity for light '{}'", light.name);
+        
+        if (light.type == AnalyticLightType::Rectangle)
         {
-            if constexpr (std::same_as<T, SceneAnalyticLight::Point>)
-                append({.positionRange = {model.position, model.range}, .lightType = GpuLightType::Point});
-            else if constexpr (std::same_as<T, SceneAnalyticLight::Directional>)
-                append({.direction = {model.direction, 0}, .lightType = GpuLightType::Directional});
-            else if constexpr (std::same_as<T, SceneAnalyticLight::Spot>)
-                append({
-                    .spotFalloffExponent = model.falloffExponent,
-                    .positionRange = {model.position, model.range},
-                    .direction = {model.direction, 0},
-                    .areaSizeCone = {0, 0, model.cosInner, model.cosOuter},
-                    .lightType = GpuLightType::Spot,
-                    .areaRightData = {model.right, 0},
-                });
-            else if constexpr (std::same_as<T, SceneAnalyticLight::Rectangle>)
-            {
-                CHECK(std::isfinite(model.size.x) && std::isfinite(model.size.y) && model.size.x > 0 && model.size.y > 0,
-                    "rectangular light requires finite positive dimensions");
-                append({
-                    .positionRange = {model.position, model.range},
-                    .direction = {model.direction, 0},
-                    .areaSizeCone = {model.size, 0, 0},
-                    .lightType = GpuLightType::RectArea,
-                    .areaRightData = {model.right, 0},
-                });
-            }
-        }, light.model);
+            const float area = light.areaSize.x * light.areaSize.y;
+            CHECK(std::isfinite(area) && light.areaSize.x > 0.0f && light.areaSize.y > 0.0f);
+            intensity /= area;
+        }
+        
+        data.color = light.color * intensity;
+
+        lights.push_back(data);
     }
 
     CHECK(lights.size() <= kMaxAnalyticLights, "scene has {} analytic lights; maximum is {}", lights.size(), kMaxAnalyticLights);
+    
     if (!lights.empty())
     {
         const auto bytes = lights.size() * sizeof(LightData);

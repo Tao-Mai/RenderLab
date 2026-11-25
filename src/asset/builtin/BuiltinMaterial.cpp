@@ -15,13 +15,13 @@ namespace
 }
 }
 
-const ::MaterialAsset* BuiltinAssets::materialAsset(const ::MaterialAsset::ID& id)
+const ::GltfMaterial* BuiltinAssets::materialAsset(const ::GltfMaterial::ID& id)
 {
     static const ::GltfMaterial assets[] = {
         makeWhiteMaterial(),
     };
 
-    for (const ::MaterialAsset& asset : assets)
+    for (const ::GltfMaterial& asset : assets)
     {
         if (asset.id == id)
         {

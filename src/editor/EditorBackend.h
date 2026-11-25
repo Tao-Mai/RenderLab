@@ -1,7 +1,7 @@
 #pragma once
 #include <array>
 #include <slang-rhi.h>
-#include "render/RenderConfig.h"
+#include "render/RenderContext.h"
 struct GLFWwindow;
 class ShaderManager;
 class EditorBackend

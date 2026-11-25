@@ -1,25 +1,95 @@
 {
+    "assets": "../assets",
     "initialScene": {
-        "value": "sibenik"
+        "value": "cornell_box"
     },
-    "paths": {
-        "assets": "../assets",
-        "commands": "commands.json",
-        "editor": "editor.json",
-        "renderer": "renderer.json"
+    "editor": {
+        "width": 1592,
+        "height": 1085,
+        "title": "RenderLab",
+        "showSceneObjects": false
     },
-    "renderGraphs": {
-        "Deferred": {
-            "Deferred": "../graphs/deferred.py"
+    "renderer": {
+        "parameters": {
+            "hdr": true,
+            "postProcess": "Falcor",
+            "bloom": true
         },
-        "Forward": {
-            "Forward": "../graphs/forward.py"
-        },
-        "RayTracing": {
-            "BDPT": "../graphs/bdpt.py",
-            "MinimalPathTracer": "../graphs/minimal_path_tracer.py",
-            "PT": "../graphs/pt.py",
-            "ReSTIR": "../graphs/restir.py"
+        "passes": {
+            "pathTracer": {
+                "maxBounces": 5
+            },
+            "exposure": {
+                "mode": "Manual",
+                "ev100": -0.2630344033241272,
+                "exposureCompensation": 0.0,
+                "automatic": {
+                    "minEv100": -6.0,
+                    "maxEv100": 20.0,
+                    "brightAdaptationSpeed": 3.0,
+                    "darkAdaptationSpeed": 1.0,
+                    "lowPercentile": 0.019999999552965164,
+                    "highPercentile": 0.9800000190734863
+                }
+            },
+            "bloom": {
+                "intensity": 0.020999999716877937,
+                "scatter": 0.699999988079071,
+                "filterRadius": 1.100000023841858,
+                "levels": 5
+            },
+            "toneMapping": {
+                "mode": "Neutral"
+            },
+            "falcor": {
+                "toneMapper": {
+                    "exposureCompensation": 0.0,
+                    "autoExposure": false,
+                    "filmSpeed": 100.0,
+                    "fNumber": 1.0,
+                    "shutter": 1.0,
+                    "exposureMode": "AperturePriority",
+                    "whiteBalance": false,
+                    "whitePoint": 6500.0,
+                    "mode": "Aces",
+                    "clampOutput": true,
+                    "whiteMaxLuminance": 1.0,
+                    "whiteScale": 11.199999809265137
+                },
+                "simplePostFx": {
+                    "enabled": true,
+                    "wipe": 0.0,
+                    "bloomAmount": 0.0,
+                    "starAmount": 0.0,
+                    "starAngle": 0.10000000149011612,
+                    "vignetteAmount": 0.0,
+                    "chromaticAberrationAmount": 0.0,
+                    "barrelDistortAmount": 0.0,
+                    "saturationCurve": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "colorOffset": [
+                        0.5,
+                        0.5,
+                        0.5
+                    ],
+                    "colorScale": [
+                        0.5,
+                        0.5,
+                        0.5
+                    ],
+                    "colorPower": [
+                        0.5,
+                        0.5,
+                        0.5
+                    ],
+                    "colorOffsetScalar": 0.0,
+                    "colorScaleScalar": 0.0,
+                    "colorPowerScalar": 0.0
+                }
+            }
         }
     }
 }

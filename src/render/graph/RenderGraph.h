@@ -1,12 +1,11 @@
 #pragma once
 #include <slang-rhi.h>
 
-#include "core/DirectedGraph.h"
-#include "core/Macros.h"
-#include "render/ViewportRect.h"
+#include "core/ds/DirectedGraph.h"
 #include "render/graph/RenderGraphCompiler.h"
 #include "render/graph/RenderGraphExe.h"
 
+#include <glm/vec2.hpp>
 #include <memory>
 #include <string_view>
 #include <unordered_map>
@@ -14,29 +13,19 @@
 
 
 
-class RENDERLAB_CORE_API RenderGraph
+class RenderGraph
 {
 public:
     static constexpr uint32_t        kInvalidIndex = DirectedGraph::kInvalidID;
 
     RenderGraph(rhi::ComPtr<rhi::IDevice> device, const std::string& name);
     ~RenderGraph();
-    [[nodiscard]] static std::shared_ptr<RenderGraph>
-    create(rhi::ComPtr<rhi::IDevice> device, const std::string& name = {});
-    [[nodiscard]] rhi::ComPtr<rhi::IDevice> getDevice() const { return mpDevice; }
-    std::shared_ptr<RenderPass>
-    createPass(const std::string& passName, const std::string& passType, const nlohmann::json& properties);
-
     uint32_t addPass(const std::shared_ptr<RenderPass>& pass, const std::string& name);
     void     removePass(const std::string& name);
-    void     updatePass(const std::string& name, const nlohmann::json& properties);
     [[nodiscard]] const std::shared_ptr<RenderPass>& getPass(const std::string& name) const;
     [[nodiscard]] uint32_t               getPassIndex(const std::string& name) const;
     [[nodiscard]] bool doesPassExist(const std::string& name) const { return mNameToIndex.contains(name); }
-    [[nodiscard]] const nlohmann::json& scriptedProperties(const std::string& name) const;
-    void captureScriptedProperties();
-    void applyScriptedProperties(const RenderGraph& source);
-    void applyPassOverrides(const nlohmann::json& overrides);
+    void applyPassSettings(const RenderPassOptions& options);
 
     uint32_t addEdge(const std::string& source, const std::string& target);
     void     removeEdge(const std::string& source, const std::string& target);
@@ -57,23 +46,16 @@ public:
     [[nodiscard]] bool                                    hasSameTopology(const RenderGraph& other) const;
 
     [[nodiscard]] const std::string& getName() const { return mName; }
-    void                             setName(const std::string& value) { mName = value; }
     [[nodiscard]] uint32_t            getMaxFramesInFlight() const { return mpExe->getMaxFramesInFlight(); }
-    [[nodiscard]] bool               hasActivePass(std::string_view type) const { return mpExe && mpExe->hasPassType(type); }
     [[nodiscard]] RenderData::Dictionary& getPassesDictionary() { return mPassesDictionary; }
 
-    void               onResize(Extent2D extent, rhi::Format format);
+    void               onResize(glm::uvec2 extent, rhi::Format format);
     void               setScene(GpuScene* scene);
     void               onSceneUpdates(RenderContext* context, SceneUpdateFlags updates);
     [[nodiscard]] bool needsCompilation() const { return !mpExe || mRecompile; }
-    bool               compile(RenderContext* context, std::string& log);
-    bool               compile(RenderContext* context)
-    {
-        std::string log;
-        return compile(context, log);
-    }
+    void compile(RenderContext* context);
     void execute(RenderContext* context);
-    void renderUI(const PassEditorContext& context, Gui::Widgets& widget);
+    void renderUI(const PassEditorContext& context, Gui::Widgets& widgets, RenderPassOptions& options);
 
 private:
     friend class RenderGraphCompiler;
@@ -88,8 +70,6 @@ private:
     {
         std::string                 name;
         std::shared_ptr<RenderPass> pPass;
-        nlohmann::json              scripted;
-        nlohmann::json              applied;
     };
 
     struct GraphOut

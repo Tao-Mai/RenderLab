@@ -1,42 +1,34 @@
 #include "editor/EditorUi.h"
+
+#include "asset/AssetManager.h"
+#include "core/Context.h"
 #include "editor/PassEditor.h"
+#include "render/Renderer.h"
 
-#include <imgui.h>
-
-// ImGuizmo requires ImGui types to be declared before its header.
-#include <ImGuizmo.h>
 #include <algorithm>
 #include <cmath>
-#include <glm/gtc/quaternion.hpp>
-#include <glm/gtc/type_ptr.hpp>
+#include <glm/common.hpp>
+#include <glm/vec2.hpp>
+#include <imgui.h>
 #include <imgui_internal.h>
 #include <utility>
-#include "asset/AssetManager.h"
-#include "core/ConfigManager.h"
-#include "core/Context.h"
-#include "core/InputManager.h"
-#include "core/Logger.h"
-#include "editor/Inspector.h"
-#include "render/Renderer.h"
-#include "render/editor/EditorFrameInput.h"
-#include "scene/component/TransformComponent.h"
 
 namespace
 {
 constexpr float kEditorWidthRatio     = 0.24f;
 constexpr float kHierarchyWidthRatio  = 0.23f;
-constexpr float kMinimumEditableScale = 0.001f;
 
-std::optional<SceneAsset::ID> drawSceneSelector(const SceneAsset::ID& current, bool dirty)
+constexpr double kFpsUpdateIntervalSeconds = 0.5;
+
+std::optional<Scene::ID> drawSceneSelector(const Scene::ID& current)
 {
-    std::optional<SceneAsset::ID> chosen;
-    const std::string preview = dirty ? current.value + "*" : current.value;
+    std::optional<Scene::ID> chosen;
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-    if (ImGui::BeginCombo("##Scene", preview.c_str()))
+    if (ImGui::BeginCombo("##Scene", current.c_str()))
     {
 
-        auto sceneIds = context().assetManager->loadedIds<SceneAsset>();
-        std::ranges::sort(sceneIds, {}, &SceneAsset::ID::value);
+        auto sceneIds = context().assetManager->loadedIds<Scene>();
+        std::ranges::sort(sceneIds, {}, &Scene::ID::value);
         for (const auto& id : sceneIds)
         {
             const bool selected = id == current;
@@ -47,53 +39,8 @@ std::optional<SceneAsset::ID> drawSceneSelector(const SceneAsset::ID& current, b
         }
         ImGui::EndCombo();
     }
-    ImGui::SetItemTooltip("Switch scenes and discard unsaved scene changes");
+
     return chosen;
-}
-
-void drawRenderGraphSelector(const ConfigManager& config, Renderer& renderer)
-{
-    const auto current = config.renderGraphName();
-    if (!ImGui::BeginCombo("Render graph", current.c_str()))
-        return;
-
-    const bool supportsRayTracing = renderer.supportsRayTracing();
-    for (const auto& [path, scripts] : config.renderGraphs())
-    {
-        ImGui::BeginDisabled(path == RenderPath::RayTracing && !supportsRayTracing);
-        for (const auto& [name, script] : scripts)
-        {
-            const bool selected = name == current;
-            if (ImGui::Selectable(name.c_str(), selected) && !selected)
-                renderer.switchGraph(name);
-            if (selected)
-                ImGui::SetItemDefaultFocus();
-        }
-        ImGui::EndDisabled();
-    }
-    ImGui::EndCombo();
-}
-
-void applyModelMatrix(TransformComponent& transform, const glm::mat4& model)
-{
-    TransformComponent edited;
-    CHECK(edited.setMatrix(model));
-
-    for (glm::length_t axis = 0; axis < 3; ++axis)
-        edited.scale[axis] =
-            std::copysign(std::max(std::abs(edited.scale[axis]), kMinimumEditableScale), edited.scale[axis]);
-    glm::quat rotation = edited.rotation;
-
-    // q and -q are the same rotation. Keeping the closest representation
-    // prevents the editor value from flipping sign during a gizmo drag.
-    if (glm::dot(rotation, transform.rotation) < 0.0f)
-    {
-        rotation = -rotation;
-    }
-
-    transform.position = edited.position;
-    transform.rotation = rotation;
-    transform.scale    = edited.scale;
 }
 }  // namespace
 
@@ -106,10 +53,18 @@ int EditorUI::objectListInset(int windowWidth)
 
 void EditorUI::beginFrame(bool showObjectList)
 {
-    ImGuizmo::BeginFrame();
+    const ImGuiIO& io = ImGui::GetIO();
+
+    fpsElapsedSeconds += io.DeltaTime;
+    ++fpsFrameCount;
+    if (fpsElapsedSeconds >= kFpsUpdateIntervalSeconds)
+    {
+        displayedFps = static_cast<float>(fpsFrameCount / fpsElapsedSeconds);
+        fpsElapsedSeconds = 0.0;
+        fpsFrameCount = 0;
+    }
 
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    const ImGuiIO&       io       = ImGui::GetIO();
     const glm::vec2      framebufferScale{io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y};
 
     const ImGuiStyle& style          = ImGui::GetStyle();
@@ -192,7 +147,6 @@ void EditorUI::beginFrame(bool showObjectList)
             ImGui::DockBuilderSetNodeSize(hierarchyDockId, {leftWidth, viewport->WorkSize.y});
             ImGui::DockBuilderDockWindow("Scene Objects", hierarchyDockId);
         }
-        hierarchy.reset();
         ImGui::DockBuilderFinish(dockspaceId);
     }
 
@@ -207,143 +161,60 @@ void EditorUI::beginFrame(bool showObjectList)
             std::max(centralNode->Size.x, 1.0f) * framebufferScale.x,
             std::max(centralNode->Size.y, 1.0f) * framebufferScale.y,
         };
-        const float side = std::max(1.0f, std::floor(std::min(availablePixels.x, availablePixels.y)));
+
         // Fit and center the scene texture in a pixel-aligned square.
-        scenePixels = {
-            .x = std::floor(
-                (centralNode->Pos.x - viewport->Pos.x) * framebufferScale.x + (availablePixels.x - side) * 0.5f
-            ),
-            .y = std::floor(
-                (centralNode->Pos.y - viewport->Pos.y) * framebufferScale.y + (availablePixels.y - side) * 0.5f
-            ),
-            .width  = side,
-            .height = side,
+        const float side = std::max(1.0f, std::floor(std::min(availablePixels.x, availablePixels.y)));
+        const glm::vec2 offset{
+            centralNode->Pos.x - viewport->Pos.x,
+            centralNode->Pos.y - viewport->Pos.y,
         };
-
-        // ImGui, picking and ImGuizmo use screen coordinates, including framebuffer scaling.
-        scenePosition = {
-            viewport->Pos.x + scenePixels.x / framebufferScale.x,
-            viewport->Pos.y + scenePixels.y / framebufferScale.y,
-        };
-        sceneSize = {side / framebufferScale.x, side / framebufferScale.y};
+        const auto origin = glm::floor(offset * framebufferScale + (availablePixels - side) * 0.5f);
+        scenePixels = {origin.x, origin.y, side, side};
     }
 }
 
-bool EditorUI::drawGizmo(
-    TransformComponent& transform, const glm::mat4& view, const glm::mat4& projection, bool enableShortcuts
-)
+void EditorUI::drawSceneList(const Scene& scene) const
 {
-    if (ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
-        return false;
+    if (!hierarchyDockId)
+        return;
 
-    const ImGuiIO& io = ImGui::GetIO();
-    if (enableShortcuts && !io.WantTextInput && !ImGui::IsAnyItemActive())
+    ImGui::SetNextWindowDockID(hierarchyDockId, ImGuiCond_Always);
+    constexpr ImGuiWindowFlags kWindowFlags =
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
+    if (ImGui::Begin("Scene Objects", nullptr, kWindowFlags))
     {
-        if (context().inputManager->get(Command::GizmoTranslate))
-        {
-            gizmoOperation = 0;
-        }
-        else if (context().inputManager->get(Command::GizmoRotate))
-        {
-            gizmoOperation = 1;
-        }
-        else if (context().inputManager->get(Command::GizmoScale))
-        {
-            gizmoOperation = 2;
-        }
+        ImGui::SeparatorText("Objects");
+        for (const auto& object : scene.objects)
+            ImGui::TextUnformatted(object.name.c_str());
+
+        ImGui::SeparatorText("Lights");
+        for (const auto& light : scene.analyticLights)
+            ImGui::TextUnformatted(light.name.c_str());
     }
-
-    ImGuizmo::SetOrthographic(false);
-    ImGuizmo::AllowAxisFlip(false);
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
-    ImGuizmo::SetDrawlist(drawList);
-    ImGuizmo::SetRect(scenePosition.x, scenePosition.y, sceneSize.x, sceneSize.y);
-
-    glm::mat4                     model        = transform.trsMatrix();
-    constexpr ImGuizmo::OPERATION operations[] = {
-        ImGuizmo::TRANSLATE,
-        ImGuizmo::ROTATE,
-        ImGuizmo::SCALE,
-    };
-    const ImGuizmo::OPERATION operation = operations[std::clamp(gizmoOperation, 0, 2)];
-    drawList->PushClipRect(
-        {scenePosition.x, scenePosition.y},
-        {scenePosition.x + sceneSize.x, scenePosition.y + sceneSize.y},
-        true
-    );
-    ImGuizmo::Manipulate(
-        glm::value_ptr(view),
-        glm::value_ptr(projection),
-        operation,
-        ImGuizmo::LOCAL,
-        glm::value_ptr(model)
-    );
-    drawList->PopClipRect();
-
-    if (ImGuizmo::IsUsing())
-    {
-        applyModelMatrix(transform, model);
-        return true;
-    }
-    return false;
+    ImGui::End();
 }
 
-EditorUI::InspectorResult EditorUI::drawInspector(SceneAsset& scene, AActor* object, bool dirty)
+std::optional<Scene::ID> EditorUI::drawControls(const Scene& scene)
 {
     ImGui::SetNextWindowDockID(editorDockId, ImGuiCond_Always);
     constexpr ImGuiWindowFlags kEditorFlags =
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
     ImGui::Begin("Editor", nullptr, kEditorFlags);
-    ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+    ImGui::Text("FPS: %.1f", displayedFps);
 
-    InspectorResult result;
-    result.sceneId = drawSceneSelector(scene.id, dirty);
-    if (result.sceneId)
-        hierarchy.reset();
+    auto sceneId = drawSceneSelector(scene.id);
+    auto& settings = context().config.editor;
+    ImGui::Checkbox("Scene objects", &settings.showSceneObjects);
 
-    auto& config   = *context().config;
     auto& renderer = *context().renderer;
-
-    result.edited |= drawCameraInspector(scene.editorCamera);
-    drawRenderGraphSelector(config, renderer);
-    result.edited |= drawEnvironmentInspector(scene, *context().assetManager);
-
-    if (const auto& graph = renderer.getActiveGraph(); graph && graph->getName() == config.renderGraphName())
-    {
-        if (graph->hasActivePass(kEditorPickingPassType))
-        {
-            bool objectPicking = config.editorConfig().objectPicking;
-            if (ImGui::Checkbox("Object picking", &objectPicking))
-                config.setObjectPicking(objectPicking);
-        }
-        renderer.renderUI({renderer.getDevice(), scene.editorCamera});
-    }
-    result.edited |= drawObjectInspector(object);
+    renderer.renderUI({renderer.getDevice(), scene.camera});
 
     ImGui::End();
-    return result;
+
+    return sceneId;
 }
 
 void EditorUI::endFrame() { ImGui::Render(); }
-bool EditorUI::sceneClicked(glm::vec2& viewportUv) const
-{
-    const ImVec2 mouse  = ImGui::GetMousePos();
-    const bool   inside = mouse.x >= scenePosition.x && mouse.y >= scenePosition.y &&
-        mouse.x < scenePosition.x + sceneSize.x && mouse.y < scenePosition.y + sceneSize.y;
-    if (!inside || !context().inputManager->get(Command::SelectObject) ||
-        ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) ||
-        ImGui::IsAnyItemActive() ||
-        ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) || ImGuizmo::IsOver() ||
-        ImGuizmo::IsUsing())
-    {
-        return false;
-    }
-    viewportUv = {
-        (mouse.x - scenePosition.x) / sceneSize.x,
-        (mouse.y - scenePosition.y) / sceneSize.y,
-    };
-    return true;
-}
 
 bool EditorUI::wantsInput() const
 {
@@ -355,23 +226,8 @@ bool EditorUI::wantsInput() const
     return io.WantCaptureMouse || io.WantCaptureKeyboard;
 }
 
-bool EditorUI::saveRequested() const
-{
-    if (!ImGui::GetCurrentContext())
-    {
-        return false;
-    }
-    const ImGuiIO& io = ImGui::GetIO();
-    if (io.WantTextInput)
-    {
-        return false;
-    }
-    return context().inputManager->get(Command::SaveScene);
-}
-
 void EditorUI::resetLayout()
 {
     editorDockId    = 0;
     hierarchyDockId = 0;
-    hierarchy.reset();
 }

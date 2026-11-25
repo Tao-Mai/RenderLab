@@ -2,13 +2,9 @@
 
 #include <slang-rhi/shader-cursor.h>
 #include "asset/AssetManager.h"
-#include "asset/BuiltinAssets.h"
-#include "asset/pbrt/PbrtSpectrum.h"
 #include "core/Vertex.h"
-#include "render/device/BufferCapacity.h"
-#include "render/device/RhiCheck.h"
+#include "render/RhiUtils.h"
 #include "render/resources/RenderResourceManager.h"
-#include "scene/system/SceneRenderData.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -19,7 +15,8 @@ namespace
 struct alignas(16) RayHitData
 {
     uint64_t vertexAddress, indexAddress;
-    uint32_t firstIndex, materialIndex, reverseOrientation, padding;
+    uint32_t firstIndex, materialIndex;
+    uint32_t padding[2]{};
     glm::mat4 objectToWorld, worldToObject;
 };
 static_assert(offsetof(RayHitData, objectToWorld) == 32 && offsetof(RayHitData, worldToObject) == 96);
@@ -29,202 +26,138 @@ static_assert(sizeof(RayHitData) == 160);
 void GpuScene::init(
     rhi::IDevice&           targetDevice,
     const AssetManager&     targetAssets,
-    const AssetDataManager& targetAssetData,
     RenderResourceManager&  targetResources,
     ShaderManager&          targetShaders
 )
 {
     device    = &targetDevice;
     assets    = &targetAssets;
-    assetData = &targetAssetData;
     resources = &targetResources;
     shaders   = &targetShaders;
 
     materialTable.init(*device, *resources);
     analytic.init(*device);
-    lutSampler = resources->sampler(BuiltinAssets::Sampler::linearClamp);
 }
 
-SceneUpdateFlags GpuScene::update(const SceneRenderData& source, Extent2D extent, rhi::ICommandEncoder& commands)
+SceneUpdateFlags GpuScene::update(
+    const Scene& source, uint64_t sceneGeneration, glm::uvec2 extent, rhi::ICommandEncoder& commands
+)
 {
-    auto updates = generation != source.sceneGeneration ? SceneUpdateFlags::Scene : SceneUpdateFlags::None;
-    generation = source.sceneGeneration;
+    auto updates = generation != sceneGeneration ? SceneUpdateFlags::Scene : SceneUpdateFlags::None;
+    generation = sceneGeneration;
 
-    if (!brdfLutView)
-    {
-        rhiCheck(resources->texture(BuiltinAssets::Texture::kBrdfLut, commands)->getDefaultView(brdfLutView.writeRef()));
-        rhiCheck(resources->texture(BuiltinAssets::Texture::kSheenLut, commands)->getDefaultView(sheenLutView.writeRef()));
-    }
-
-    const auto meshRevision = assets->contentRevision<MeshAsset>();
-    const auto materialRevision = std::max({
-        assets->contentRevision<MaterialAsset>(),
-        assets->contentRevision<PbrtTextureAsset>(),
-        assets->contentRevision<TextureAsset>(),
-        assets->contentRevision<SamplerAsset>(),
-    });
-    const bool itemsChanged = previousItems != source.drawItems;
-    const bool materialsNeedUpdate = materialAssetRevision != materialRevision ||
-        (itemsChanged && !std::ranges::equal(previousItems, source.drawItems, [](const DrawItem& a, const DrawItem& b)
-        {
-            return a.materialId == b.materialId && a.materialOverride == b.materialOverride &&
-                (!a.materialOverride || (a.selectionId == b.selectionId && a.instanceIndex == b.instanceIndex &&
-                    a.submeshIndex == b.submeshIndex));
-        }));
-
-    if (itemsChanged || meshAssetRevision != meshRevision)
-    {
-        if (updateDraws(source.drawItems, meshRevision, commands))
-            updates |= SceneUpdateFlags::Geometry;
-        meshAssetRevision = meshRevision;
-    }
-
-    if (materialsNeedUpdate)
-    {
-        if (updateMaterials(source.drawItems))
-            updates |= SceneUpdateFlags::Materials;
-        materialAssetRevision = materialRevision;
-    }
-    if (itemsChanged)
-        previousItems = source.drawItems;
-
-    if (analytic.update(source.analyticLights, *assetData, *device, commands))
+    updates |= updateObjects(source.objects, commands);
+    
+    if (analytic.update(source.analyticLights, *device, commands))
         updates |= SceneUpdateFlags::AnalyticLights;
+    
     if (updateEnvironment(source, commands))
         updates |= SceneUpdateFlags::Environment;
+    
     if (materialTable.upload(commands))
         updates |= SceneUpdateFlags::Materials;
 
-    return updates | updateGlobals(source, extent);
+    return updates | updateGlobals(source.camera, extent);
 }
 
-bool GpuScene::updateDraws(std::span<const DrawItem> items, uint64_t meshRevision, rhi::ICommandEncoder& commands)
+SceneUpdateFlags GpuScene::updateObjects(std::span<const Object> objects, rhi::ICommandEncoder& commands)
 {
-    const bool assetsChanged = meshAssetRevision != meshRevision;
-    bool geometryChanged = items.size() != draws.size();
-    bool orientationChanged = false;
-    rayHitsDirty |= geometryChanged;
-    if (geometryChanged)
-        emissive.invalidate();
+    const auto meshRevision = assets->contentRevision<MeshAsset>();
+    const auto materialRevision = std::max({
+        assets->contentRevision<GltfMaterial>(),
+        assets->contentRevision<TextureAsset>(),
+        assets->contentRevision<SamplerAsset>(),
+    });
+    const bool objectMeshesChanged = !std::ranges::equal(objects, previousObjects, {}, &Object::meshId, &Object::meshId);
+    const bool objectInstancesChanged = objectMeshesChanged ||
+        !std::ranges::equal(objects, previousObjects, {}, &Object::transform, &Object::transform);
+    const bool resolveMaterials = meshAssetRevision != meshRevision || materialAssetRevision != materialRevision ||
+        objectMeshesChanged;
+    if (!objectInstancesChanged && !resolveMaterials)
+        return SceneUpdateFlags::None;
 
-    draws.resize(items.size());
-    for (size_t index = 0; index < items.size(); ++index)
-    {
-        const auto& item = items[index];
-        const auto* previous = index < previousItems.size() ? &previousItems[index] : nullptr;
-        auto& draw = draws[index];
-        const bool meshChanged = !previous || previous->mesh != item.mesh || previous->submeshIndex != item.submeshIndex ||
-            (assetsChanged && assets->revision(item.mesh) > meshAssetRevision);
-        if (meshChanged)
-        {
-            const auto& asset = assets->get(item.mesh);
-            const auto& submesh = asset.submeshes[item.submeshIndex];
-            draw.mesh = &resources->loadMesh(item.mesh, commands);
-            draw.asset = &asset;
-            draw.firstIndex = submesh.firstIndex;
-            draw.indexCount = submesh.indexCount;
-        }
-
-        const bool placementChanged = meshChanged || previous->model != item.model;
-        if (placementChanged)
-        {
-            draw.model = item.model;
-            draw.bounds = draw.asset->bounds.transformed(item.model);
-        }
-
-        const bool wasMirrored = draw.mirroredPbrtSurface;
-        const bool reverse = item.pbrtSurface && item.pbrtSurface->reverseOrientation;
-        if (placementChanged || previous->pbrtSurface.has_value() != item.pbrtSurface.has_value())
-            draw.mirroredPbrtSurface = item.pbrtSurface && glm::determinant(glm::mat3{item.model}) < 0.0f;
-        const bool reverseChanged = draw.reverseOrientation != reverse;
-        const bool drawOrientationChanged = reverseChanged || wasMirrored != draw.mirroredPbrtSurface;
-        draw.reverseOrientation = reverse;
-        draw.selectionId = item.selectionId;
-
-        geometryChanged |= placementChanged;
-        orientationChanged |= drawOrientationChanged;
-        rayHitsDirty |= placementChanged || reverseChanged;
-        if (previous && (placementChanged || drawOrientationChanged) && materialTable.info(draw.materialIndex).emissive)
-            emissive.invalidate();
-    }
-
-    if (geometryChanged)
-    {
-        viewCulled = false;
-        acceleration.invalidate();
-    }
-    return geometryChanged || orientationChanged;
-}
-
-bool GpuScene::updateMaterials(std::span<const DrawItem> items)
-{
     const auto previousEmissionRevision = materialTable.emissionRevision();
-    const auto indices = materialTable.prepare(items, *assets, *assetData);
-    if (materialTable.emissionRevision() != previousEmissionRevision)
-        emissive.invalidate();
-    bool bindingsChanged = false;
-    for (size_t index = 0; index < draws.size(); ++index)
+    const auto previousDrawCount = draws.size();
+    size_t drawIndex = 0;
+    bool geometryChanged = false;
+    bool materialBindingsChanged = false;
+    for (const auto& object : objects)
     {
-        auto& draw = draws[index];
-        if (index < previousItems.size() && draw.materialIndex == indices[index])
+        const auto& asset = assets->get(object.meshId);
+        if (asset.submeshes.empty())
             continue;
 
-        if ((index < previousItems.size() && materialTable.info(draw.materialIndex).emissive) ||
-            materialTable.info(indices[index]).emissive)
-            emissive.invalidate();
-        draw.materialIndex = indices[index];
-        bindingsChanged = true;
+        const auto& mesh = resources->loadMesh(object.meshId, commands);
+        const auto model = object.transform.matrix();
+        for (const auto& submesh : asset.submeshes)
+        {
+            const bool added = drawIndex >= previousDrawCount;
+            auto& draw = added ? draws.emplace_back() : draws[drawIndex];
+            const auto materialIndex = resolveMaterials
+                ? materialTable.resolve(submesh.materialId, *assets)
+                : draw.materialIndex;
+
+            const bool placementChanged = added || draw.mesh != &mesh || draw.firstIndex != submesh.firstIndex ||
+                draw.indexCount != submesh.indexCount || draw.model != model;
+            const bool bindingChanged = added || draw.materialIndex != materialIndex;
+            if ((placementChanged || bindingChanged) &&
+                ((!added && materialTable.info(draw.materialIndex).emissive) || materialTable.info(materialIndex).emissive))
+                emissive.invalidate();
+
+            geometryChanged |= placementChanged;
+            materialBindingsChanged |= bindingChanged;
+            draw = {
+                .mesh          = &mesh,
+                .asset         = &asset,
+                .model         = model,
+                .firstIndex    = submesh.firstIndex,
+                .indexCount    = submesh.indexCount,
+                .materialIndex = materialIndex,
+            };
+            ++drawIndex;
+        }
     }
-    rayHitsDirty |= bindingsChanged;
-    return bindingsChanged;
+
+    if (drawIndex < previousDrawCount)
+        draws.resize(drawIndex);
+    if (drawIndex != previousDrawCount || materialTable.emissionRevision() != previousEmissionRevision)
+        emissive.invalidate();
+
+    geometryChanged |= drawIndex != previousDrawCount;
+    rayHitsDirty |= geometryChanged || materialBindingsChanged;
+    if (geometryChanged)
+        acceleration.invalidate();
+
+    if (objectInstancesChanged)
+        previousObjects.assign(objects.begin(), objects.end());
+    meshAssetRevision = meshRevision;
+    materialAssetRevision = materialRevision;
+
+    auto updates = SceneUpdateFlags::None;
+    if (geometryChanged)
+        updates |= SceneUpdateFlags::Geometry;
+    if (materialBindingsChanged)
+        updates |= SceneUpdateFlags::Materials;
+
+    return updates;
 }
 
-bool GpuScene::updateEnvironment(const SceneRenderData& source, rhi::ICommandEncoder& commands)
+bool GpuScene::updateEnvironment(const Scene& source, rhi::ICommandEncoder& commands)
 {
-    const bool mapChanged = environmentMapId != source.environmentMap;
-    if (mapChanged)
-    {
-        environmentMapId = source.environmentMap;
-        environment = environmentMapId ? &resources->environmentMap(*environmentMapId, commands) : nullptr;
-    }
-    const uint32_t hasCubemap = environment != nullptr;
-    if (environmentLight == source.environmentLight && environmentData.hasCubemap == hasCubemap)
-        return mapChanged;
+    if (environmentMapId == source.environmentMap)
+        return false;
 
-    environmentLight = source.environmentLight;
-    environmentData = {.hasCubemap = hasCubemap};
-    if (environmentLight)
-    {
-        const auto& emission = environmentLight->emission;
-        const auto scale = static_cast<float>(emission.scale);
-        environmentData.hasEqualArea = 1;
-        environmentData.lightFromWorld = environmentLight->lightFromWorld;
-        if (emission.image)
-        {
-            environmentData.image = materialTable.textureReference(emission.image->image);
-            environmentData.emission = {glm::vec3{scale}, 0.0f};
-        }
-        else
-            environmentData.emission = {pbrtPreviewRgb(emission.spectrum, *assetData) * scale, 0.0f};
-
-        // Equal-area lights share the ray tracing layout's cubemap binding.
-        if (!environment && !blackEnvironmentView)
-            rhiCheck(resources->texture(BuiltinAssets::Texture::kBlackCube, commands)->getDefaultView(
-                blackEnvironmentView.writeRef()
-            ));
-    }
-    if (hasEnvironment())
-        uploadSceneBuffer(commands, environmentLightBuffer, std::as_bytes(std::span{&environmentData, 1}));
+    environmentMapId = source.environmentMap;
+    environment = environmentMapId ? &resources->environmentMap(*environmentMapId, commands) : nullptr;
     return true;
 }
 
-SceneUpdateFlags GpuScene::updateGlobals(const SceneRenderData& source, Extent2D extent)
+SceneUpdateFlags GpuScene::updateGlobals(const Camera& camera, glm::uvec2 extent)
 {
-    const auto aspect = float(extent.width) / float(extent.height);
-    const bool cameraChanged = previousCamera != source.camera || cameraAspect != aspect;
+    const auto aspect = float(extent.x) / float(extent.y);
+    const bool cameraChanged = previousCamera != camera || cameraAspect != aspect;
     if (cameraChanged)
     {
-        const auto& camera = source.camera;
         const auto view = camera.viewMatrix();
         const auto viewProjection = camera.projectionMatrix(aspect) * view;
         sceneGlobals.camera = {
@@ -235,27 +168,10 @@ SceneUpdateFlags GpuScene::updateGlobals(const SceneRenderData& source, Extent2D
         };
         previousCamera = camera;
         cameraAspect   = aspect;
-        viewCulled = false;
     }
 
-    sceneGlobals.analyticLightCount = static_cast<uint32_t>(analyticLights().size());
-    sceneGlobals.prefilteredMaxLod  = environment ? environment->prefilteredMaxLod : 0.0f;
+    sceneGlobals.analyticLightCount = static_cast<uint32_t>(analytic.data().size());
     return cameraChanged ? SceneUpdateFlags::Camera : SceneUpdateFlags::None;
-}
-
-std::span<const uint32_t> GpuScene::visibleDraws()
-{
-    if (!viewCulled)
-    {
-        const Frustum frustum{cameraUniforms().viewProjection};
-        visibleDrawIndices.clear();
-        visibleDrawIndices.reserve(draws.size());
-        for (uint32_t index = 0; index < draws.size(); ++index)
-            if (frustum.intersects(draws[index].bounds))
-                visibleDrawIndices.push_back(index);
-        viewCulled = true;
-    }
-    return visibleDrawIndices;
 }
 
 rhi::IAccelerationStructure* GpuScene::prepareRayTracing(rhi::ICommandEncoder& commands)
@@ -294,11 +210,8 @@ void GpuScene::uploadSceneBuffer(
 
 void GpuScene::uploadRayHits(rhi::ICommandEncoder& commands)
 {
-    static_assert(
-        sizeof(Vertex) == 48 && offsetof(Vertex, normal) == 12 && offsetof(Vertex, texcoord) == 24 &&
-        offsetof(Vertex, tangent) == 32
-    );
     std::vector<RayHitData> hits(std::max<size_t>(draws.size(), 1));
+    
     for (uint32_t index = 0; index < draws.size(); ++index)
     {
         const auto& draw = draws[index];
@@ -309,11 +222,11 @@ void GpuScene::uploadRayHits(rhi::ICommandEncoder& commands)
             .indexAddress       = mesh.indices()->getDeviceAddress(),
             .firstIndex         = draw.firstIndex,
             .materialIndex      = draw.materialIndex,
-            .reverseOrientation = draw.reverseOrientation ? 1u : 0u,
             .objectToWorld      = draw.model,
             .worldToObject      = glm::inverse(draw.model),
         };
     }
+    
     uploadSceneBuffer(commands, rayHitBuffer, std::as_bytes(std::span{hits}));
 }
 
@@ -338,17 +251,8 @@ void GpuScene::bindRayTracingShaderData(rhi::IShaderObject& object, rhi::IAccele
     bindRayTracingGeometryData(object, tlas);
     const rhi::ShaderCursor root(&object);
     emissive.bind(root["emissiveLights"]);
-    if (const auto field = root["environmentLight"]; field.isValid())
-    {
-        rhiCheck(field.setBinding(environmentLightBuffer));
-        if (environment)
-            environment->bindRadiance(root);
-        else
-        {
-            rhiCheck(root["radianceMap"].setBinding(blackEnvironmentView));
-            rhiCheck(root["radianceSampler"].setBinding(lutSampler));
-        }
-    }
+    if (environment)
+        environment->bindRadiance(root);
 }
 
 void GpuScene::raytrace(

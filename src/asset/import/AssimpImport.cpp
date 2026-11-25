@@ -1,6 +1,5 @@
 #include "asset/import/AssimpImport.h"
 
-#include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
 #include "asset/TextureMip.h"
@@ -211,7 +210,7 @@ struct MaterialImport
         if (!embedded)
             asset.path = asset_import::sourcePathForAsset(file);
         pixels        = texture_mip::generateChain(asset, pixels);
-        asset.binary  = context().assetDataManager->writeTexture(asset, pixels);
+        asset.binary  = context().assetManager->writeTexture(asset, pixels);
         const auto id = context().assetManager->save(std::move(asset));
         textures.emplace(key, id);
         return id;
@@ -390,14 +389,14 @@ AssetImporter::PreparedMesh AssimpImport::readMesh(std::optional<uint32_t> meshI
     return result;
 }
 
-std::vector<MaterialAsset::ID> AssimpImport::importMaterials()
+std::vector<GltfMaterial::ID> AssimpImport::importMaterials()
 {
-    std::vector<MaterialAsset::ID> ids{BuiltinAssets::Material::white};
+    std::vector<GltfMaterial::ID> ids{BuiltinAssets::Material::white};
     MaterialImport                 build{*scene, source};
     for (uint32_t index = 0; index < scene->mNumMaterials; ++index)
     {
         auto material = build.material(*scene->mMaterials[index]);
-        material.id   = asset_import::nextId<MaterialAsset>(source.stem().string());
+        material.id   = asset_import::nextId<GltfMaterial>(source.stem().string());
         ids.push_back(context().assetManager->save(std::move(material)));
     }
     return ids;

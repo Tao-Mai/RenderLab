@@ -5,10 +5,7 @@
 #include "asset/import/ModelImport.h"
 #include "core/Context.h"
 #include "core/math/Bounds.h"
-#include "scene/actor/AStaticMesh.h"
-#include "scene/actor/ALight.h"
-#include "scene/component/LightTypes.h"
-#include "scene/component/RenderComponent.h"
+#include "scene/Scene.h"
 
 #include <algorithm>
 #include <cmath>
@@ -26,7 +23,7 @@ struct ImportedMesh
     Aabb                         bounds;
 };
 
-void fitCamera(EditorCameraConfig& camera, const Aabb& bounds)
+void fitCamera(Camera& camera, const Aabb& bounds)
 {
     const glm::vec3 center   = (bounds.min + bounds.max) * 0.5f;
     const float     radius   = std::max(glm::length(bounds.max - bounds.min) * 0.5f, kMinimumSceneRadius);
@@ -39,7 +36,7 @@ void fitCamera(EditorCameraConfig& camera, const Aabb& bounds)
     camera.speed             = radius * 0.2f;
 }
 
-void importCamera(EditorCameraConfig& camera, const ModelImport::Camera& source)
+void importCamera(Camera& camera, const ModelImport::Camera& source)
 {
     CHECK(std::isfinite(source.fieldOfView) && source.fieldOfView > 0 && source.fieldOfView < 180);
     CHECK(std::isfinite(source.nearPlane) && source.nearPlane > 0);
@@ -55,35 +52,24 @@ void importCamera(EditorCameraConfig& camera, const ModelImport::Camera& source)
     CHECK(camera.farPlane > camera.nearPlane);
 }
 
-std::unique_ptr<ALight> importLight(const ModelImport::Node& node)
+AnalyticLight importLight(const ModelImport::Node& node)
 {
-    const auto&                     source = *node.light;
-    std::unique_ptr<LightComponent> component;
-    if (source.type == ModelImport::Light::Type::Directional)
+    const auto& source = *node.light;
+    AnalyticLight light;
+    light.name = node.name.empty() ? "Light" + std::to_string(node.index) : node.name;
+    light.color = source.color;
+    light.intensity = source.intensity;
+    light.range = source.range;
+    switch (source.type)
     {
-        auto light         = std::make_unique<DirectionalLightComponent>();
-        light->illuminance = source.intensity;
-        component          = std::move(light);
+        case ModelImport::Light::Type::Point: light.type = AnalyticLightType::Point; break;
+        case ModelImport::Light::Type::Spot:
+            light.type = AnalyticLightType::Spot;
+            light.cosInner = source.cosInner;
+            light.cosOuter = source.cosOuter;
+            break;
+        case ModelImport::Light::Type::Directional: light.type = AnalyticLightType::Directional; break;
     }
-    else
-    {
-        std::unique_ptr<LocalLightComponent> light;
-        if (source.type == ModelImport::Light::Type::Spot)
-        {
-            auto spot      = std::make_unique<SpotLightComponent>();
-            spot->cosInner = source.cosInner;
-            spot->cosOuter = source.cosOuter;
-            light          = std::move(spot);
-        }
-        else
-        {
-            light = std::make_unique<PointLightComponent>();
-        }
-        light->luminousIntensity = source.intensity;
-        light->range             = source.range;
-        component                = std::move(light);
-    }
-    component->color = source.color;
 
     // Light ranges and intensity ignore node scale; its transformed -Z axis supplies the direction.
     CHECK(
@@ -94,21 +80,19 @@ std::unique_ptr<ALight> importLight(const ModelImport::Node& node)
     );
     const glm::vec3 forward     = glm::normalize(-glm::vec3{node.world[2]});
     const glm::vec3 up          = glm::normalize(glm::cross(glm::vec3{node.world[0]}, forward));
-    auto            actor       = std::make_unique<ALight>(std::move(component));
-    actor->name                 = node.name.empty() ? "ALight" + std::to_string(node.index) : node.name;
-    actor->transform().position = glm::vec3{node.world[3]};
-    actor->transform().rotation = glm::quatLookAtRH(forward, up);
-    return actor;
+    light.transform.position = glm::vec3{node.world[3]};
+    light.transform.rotation = glm::quatLookAtRH(forward, up);
+    return light;
 }
 }  // namespace
 
-AssetID<SceneAsset> AssetImporter::importScene(const ImportSceneSetting& setting)
+AssetID<Scene> AssetImporter::importScene(const ImportSceneSetting& setting)
 {
     CHECK(std::isfinite(setting.importScale) && setting.importScale > 0.0f);
     auto        importer = ModelImport::open(setting.source);
     const auto& source   = importer->sourcePath();
-    SceneAsset  scene;
-    scene.id = asset_import::nextId<SceneAsset>(setting.id.empty() ? source.stem().string() : setting.id.value);
+    Scene  scene;
+    scene.id = asset_import::nextId<Scene>(setting.id.empty() ? source.stem().string() : setting.id.value);
 
     std::unordered_map<uint32_t, ImportedMesh> meshes;
     std::optional<Aabb>                        sceneBounds;
@@ -121,7 +105,7 @@ AssetID<SceneAsset> AssetImporter::importScene(const ImportSceneSetting& setting
                 camera = node.camera;
 
             if (node.light)
-                scene.actors.push_back(importLight(node));
+                scene.analyticLights.push_back(importLight(node));
 
             for (uint32_t meshIndex : node.meshes)
             {
@@ -136,18 +120,18 @@ AssetID<SceneAsset> AssetImporter::importScene(const ImportSceneSetting& setting
                     );
                 }
 
-                auto actor  = std::make_unique<AStaticMesh>();
-                actor->name = node.name.empty() ? "AStaticMesh" + std::to_string(node.index) : node.name;
+                Object object;
+                object.name = node.name.empty() ? "Object" + std::to_string(node.index) : node.name;
                 if (node.meshes.size() > 1)
-                    actor->name += "_" + std::to_string(meshIndex);
+                    object.name += "_" + std::to_string(meshIndex);
                 CHECK(
-                    actor->transform().setMatrix(node.world),
+                    object.transform.setMatrix(node.world),
                     "invalid model node {} transform: {}",
                     node.index,
                     source.string()
                 );
-                actor->getComponent<RenderComponent>()->meshId = *mesh.id;
-                scene.actors.push_back(std::move(actor));
+                object.meshId = *mesh.id;
+                scene.objects.push_back(std::move(object));
 
                 const auto worldBounds = mesh.bounds.transformed(node.world);
                 for (glm::length_t axis = 0; axis < 3; ++axis)
@@ -174,14 +158,15 @@ AssetID<SceneAsset> AssetImporter::importScene(const ImportSceneSetting& setting
 
     CHECK(sceneBounds, "scene has no static mesh instances: {}", source.string());
     const auto& bounds = *sceneBounds;
-    fitCamera(scene.editorCamera, bounds);
+    fitCamera(scene.camera, bounds);
     if (camera)
-        importCamera(scene.editorCamera, *camera);
+        importCamera(scene.camera, *camera);
 
     LOG_INFO(
-        "Imported scene '{}': {} actors, bounds [{}, {}, {}] - [{}, {}, {}]",
+        "Imported scene '{}': {} objects, {} lights, bounds [{}, {}, {}] - [{}, {}, {}]",
         scene.id,
-        scene.actors.size(),
+        scene.objects.size(),
+        scene.analyticLights.size(),
         bounds.min.x,
         bounds.min.y,
         bounds.min.z,
@@ -189,5 +174,5 @@ AssetID<SceneAsset> AssetImporter::importScene(const ImportSceneSetting& setting
         bounds.max.y,
         bounds.max.z
     );
-    return context().assetManager->save<SceneAsset>(std::move(scene));
+    return context().assetManager->save<Scene>(std::move(scene));
 }

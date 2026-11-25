@@ -1,7 +1,7 @@
 #include "render/graph/ResourceCache.h"
 
 #include "core/Logger.h"
-#include "render/device/RhiCheck.h"
+#include "render/RhiUtils.h"
 
 #include <tuple>
 
@@ -15,24 +15,19 @@ void mergeResourceDesc(
     bool                               external
 )
 {
-    const auto incompatible = [&](const char* property)
+    const auto requireCompatible = [&](bool compatible, const char* property)
     {
-        LOG_ERROR("cannot connect '{}' to '{}': incompatible {}", sourceName, targetName, property);
+        CHECK(compatible, "cannot connect '{}' to '{}': incompatible {}", sourceName, targetName, property);
     };
-    if (source.index() != target.index())
-    {
-        incompatible("resource types");
-        return;
-    }
+    requireCompatible(source.index() == target.index(), "resource types");
 
     const auto merge = [&]<class T>(T& value, T requirement, const char* property)
     {
         if (requirement == T{})
             return;
-        if (value != requirement && (external || value != T{}))
-            incompatible(property);
-        else
-            value = requirement;
+
+        requireCompatible(value == requirement || (!external && value == T{}), property);
+        value = requirement;
     };
 
     if (auto* buffer = std::get_if<rhi::BufferDesc>(&source))
@@ -41,17 +36,17 @@ void mergeResourceDesc(
         merge(buffer->size, input.size, "buffer size");
         merge(buffer->elementSize, input.elementSize, "element size");
         merge(buffer->format, input.format, "buffer format");
-        if (external && (buffer->usage & input.usage) != input.usage)
-            incompatible("buffer usage");
-        else if (!external)
+        if (external)
+            requireCompatible((buffer->usage & input.usage) == input.usage, "buffer usage");
+        else
             buffer->usage |= input.usage;
+
         return;
     }
 
     auto&       texture = std::get<rhi::TextureDesc>(source);
     const auto& input   = std::get<rhi::TextureDesc>(target);
-    if (texture.type != input.type)
-        incompatible("texture types");
+    requireCompatible(texture.type == input.type, "texture types");
     merge(texture.size.width, input.size.width, "width");
     merge(texture.size.height, input.size.height, "height");
     merge(texture.size.depth, input.size.depth, "depth");
@@ -60,9 +55,9 @@ void mergeResourceDesc(
     merge(texture.sampleQuality, input.sampleQuality, "sample quality");
     merge(texture.mipCount, input.mipCount, "mip count");
     merge(texture.arrayLength, input.arrayLength, "array length");
-    if (external && (texture.usage & input.usage) != input.usage)
-        incompatible("texture usage");
-    else if (!external)
+    if (external)
+        requireCompatible((texture.usage & input.usage) == input.usage, "texture usage");
+    else
         texture.usage |= input.usage;
 }
 
@@ -153,8 +148,7 @@ void ResourceCache::connect(std::string name, const std::string& sourceName, con
     const auto index = indices.at(sourceName);
     auto&      slot  = slots[index];
     mergeResourceDesc(slot.resourceDesc, desc, sourceName, name, slot.external);
-    if (slot.resourceDesc.index() == desc.index())
-        indices.emplace(std::move(name), index);
+    indices.emplace(std::move(name), index);
 }
 
 void ResourceCache::matchTexture(

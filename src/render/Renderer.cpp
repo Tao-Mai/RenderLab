@@ -4,28 +4,42 @@
 #include <slang-rhi/shader-cursor.h>
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
-#include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 #include "core/Window.h"
-#include "render/device/RhiCheck.h"
-#include "render/graph/RenderGraphScript.h"
+#include "render/RhiUtils.h"
 #include "render/graph/RenderPassStandardFlags.h"
-#include "render/raytracing/PathTracingShader.h"
+#include <GLFW/glfw3.h>
+
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 #include <slang-rhi.h>
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <glm/vec2.hpp>
 #include <limits>
 #include <utility>
 
 namespace
 {
 constexpr std::array kRequiredDeviceFeatures{
-    rhi::Feature::Surface, rhi::Feature::Rasterization, rhi::Feature::ParameterBlock
+    rhi::Feature::Surface, rhi::Feature::Rasterization, rhi::Feature::ParameterBlock, rhi::Feature::RayTracing
 };
+
+rhi::Viewport clampViewport(rhi::Viewport viewport, const rhi::SurfaceConfig& surface)
+{
+    const float width  = float(surface.width);
+    const float height = float(surface.height);
+
+    viewport.originX = std::floor(std::clamp(viewport.originX, 0.0f, width - 1.0f));
+    viewport.originY = std::floor(std::clamp(viewport.originY, 0.0f, height - 1.0f));
+    viewport.extentX = std::floor(std::clamp(viewport.extentX, 1.0f, width - viewport.originX));
+    viewport.extentY = std::floor(std::clamp(viewport.extentY, 1.0f, height - viewport.originY));
+
+    return viewport;
+}
 
 }  // namespace
 
@@ -47,12 +61,9 @@ void Renderer::init()
     shaders.init(device);
     initSurface();
 
-    auto& assets = *context().assetManager;
-    auto& assetData = *context().assetDataManager;
-    resources.init(*device, assets, assetData);
-    gpuScene.init(*device, assets, assetData, resources, shaders);
-    if (!pendingGraphName)
-        pendingGraphName = context().config->renderGraphName();
+    const auto& assets = *context().assetManager;
+    resources.init(*device, assets);
+    gpuScene.init(*device, assets, resources, shaders);
     waitIdle();
     applyConfiguration();
 }
@@ -71,7 +82,6 @@ void Renderer::shutdown() noexcept
     waitIdle();
 
     mpRenderGraph = {};
-    waitForPathTracingPipelineBuilds();
     blitPipeline  = nullptr;
     gpuScene      = {};
     resources.shutdown();
@@ -82,35 +92,8 @@ void Renderer::shutdown() noexcept
     device.setNull();
     lastSubmittedFrame    = 0;
     activeFramesInFlight  = kMaxFramesInFlight;
-    appliedParameters     = {};
-    pendingGraphName.reset();
-    optionsDirty = false;
-    parameterDefaults     = nlohmann::ordered_json::object();
-    parameters            = nlohmann::ordered_json::object();
-}
-
-void Renderer::switchGraph(std::string_view name)
-{
-    auto& config = *context().config;
-    config.setRenderGraph(name);
-    pendingGraphName = config.renderGraphName();
-}
-
-void Renderer::configureGraph(const std::string& graphName, const nlohmann::json& parameterOverrides)
-{
-    auto loaded = loadRenderGraph(*device, context().config->renderGraphScript(graphName), graphName, parameterOverrides);
-    parameterDefaults = std::move(loaded.defaults);
-    parameters = std::move(loaded.parameters);
-
-    auto& candidate = *loaded.graph;
-    if (mpRenderGraph && mpRenderGraph->hasSameTopology(candidate))
-    {
-        mpRenderGraph->applyScriptedProperties(candidate);
-        return;
-    }
-
-    candidate.setScene(&gpuScene);
-    mpRenderGraph = std::move(loaded.graph);
+    appliedGraphSettings = {};
+    appliedPasses = {};
 }
 
 void Renderer::initBlit()
@@ -118,7 +101,7 @@ void Renderer::initBlit()
     rhi::ColorTargetDesc color;
     color.format = surface->getConfig()->format;
     rhi::RenderPipelineDesc desc;
-    desc.program                       = shaders.getProgram("shaders/raster/blit.slang", {"vertMain", "fragMain"});
+    desc.program                       = shaders.getProgram("render/impl/postprocess/blit.slang", {"vertMain", "fragMain"});
     desc.targets                       = &color;
     desc.targetCount                   = 1;
     desc.depthStencil.depthTestEnable  = false;
@@ -128,8 +111,8 @@ void Renderer::initBlit()
 }
 
 void Renderer::recordPresentation(
-    rhi::ICommandEncoder& commands, rhi::ITexture& backBuffer, const ViewportRect& viewport,
-    const EditorFrameInput& editor, uint32_t frameIndex
+    rhi::ICommandEncoder& commands, rhi::ITexture& backBuffer, const rhi::Viewport& viewport,
+    const std::function<void(rhi::IRenderPassEncoder&, uint32_t)>& recordUi, uint32_t frameIndex
 )
 {
     const auto source = mpRenderGraph->getOutputTexture(0);
@@ -148,51 +131,34 @@ void Renderer::recordPresentation(
     const rhi::ShaderCursor root(object);
     rhiCheck(root["sourceImage"].setBinding(source));
     rhiCheck(root["pointSampler"].setBinding(resources.sampler(BuiltinAssets::Sampler::nearestClamp)));
-    pass->setRenderState(viewport.renderState());
+    pass->setRenderState(viewportState(viewport));
     pass->draw({3});
 
-    if (editor.recordUi)
-        editor.recordUi(*pass, frameIndex);
+    if (recordUi)
+        recordUi(*pass, frameIndex);
     pass->end();
-}
-
-void Renderer::addOption(std::string_view name, nlohmann::json value)
-{
-    context().config->getSettings().addOption(name, value);
-    optionsDirty = true;
-}
-
-void Renderer::addOptions(const nlohmann::json& options)
-{
-    context().config->getSettings().addOptions(options);
-    optionsDirty = true;
-}
-
-void Renderer::clearOptions()
-{
-    context().config->getSettings().clearOptions();
-    optionsDirty = true;
 }
 
 std::shared_ptr<RenderGraph> Renderer::applyConfiguration()
 {
+    const auto& settings = context().config.renderer;
     std::shared_ptr<RenderGraph> previousGraph;
-    if (pendingGraphName || optionsDirty)
+    if (!mpRenderGraph || settings.parameters != appliedGraphSettings)
     {
-        const auto& graphName = pendingGraphName ? *pendingGraphName : mpRenderGraph->getName();
-        auto        options   = context().config->getOptions(graphName);
-        auto& parameterOverrides = options.at("parameters");
-        if (pendingGraphName || parameterOverrides != appliedParameters)
+        auto candidate = buildMinimalPathTracerGraph(device, settings.parameters);
+        if (!mpRenderGraph || !mpRenderGraph->hasSameTopology(*candidate))
         {
-            // Keep a replaced graph alive until its queued work finishes.
-            previousGraph = mpRenderGraph;
-            configureGraph(graphName, parameterOverrides);
-            appliedParameters = std::move(parameterOverrides);
+            candidate->setScene(&gpuScene);
+            // Keep the old graph alive until compileGraph() waits for the queue.
+            previousGraph = std::exchange(mpRenderGraph, std::move(candidate));
         }
-        mpRenderGraph->applyPassOverrides(options.at("passes"));
+        appliedGraphSettings = settings.parameters;
+    }
 
-        pendingGraphName.reset();
-        optionsDirty = false;
+    if (previousGraph || settings.passes != appliedPasses)
+    {
+        mpRenderGraph->applyPassSettings(settings.passes);
+        appliedPasses = settings.passes;
     }
 
     return previousGraph;
@@ -205,13 +171,7 @@ void Renderer::compileGraph()
     waitIdle();
 
     RenderContext compileContext{.shaderManager = &shaders, .resources = &resources};
-    std::string log;
-    CHECK(
-        mpRenderGraph->compile(&compileContext, log),
-        "failed to compile render graph '{}': {}",
-        mpRenderGraph->getName(),
-        log
-    );
+    mpRenderGraph->compile(&compileContext);
     activeFramesInFlight = mpRenderGraph->getMaxFramesInFlight();
 
     const auto color = mpRenderGraph->getOutputTexture(0);
@@ -226,11 +186,12 @@ void Renderer::compileGraph()
 
 void Renderer::initSurface()
 {
-    auto& window = *context().window;
+    const auto& window = *context().window;
     rhiCheck(device->createSurface(
         rhi::WindowHandle::fromHwnd(glfwGetWin32Window(window.nativeHandle())),
         surface.writeRef()
     ));
+
     const auto [width, height] = window.framebufferSize();
     rhi::SurfaceConfig config;
     config.width             = uint32_t(width);
@@ -250,12 +211,13 @@ void Renderer::resizeSurface()
 }
 
 RenderFrameResult Renderer::render(
-    const SceneRenderData& scene, const ViewportRect& displayViewport, const EditorFrameInput& editor, float deltaSeconds
+    const Scene& scene, uint64_t sceneGeneration, const rhi::Viewport& displayViewport,
+    const std::function<void(rhi::IRenderPassEncoder&, uint32_t)>& recordUi, float deltaSeconds
 )
 {
-    const auto& surfaceConfig = *surface->getConfig();
-    const auto viewport = displayViewport.clamped({surfaceConfig.width, surfaceConfig.height});
-    const Extent2D renderExtent{uint32_t(viewport.width), uint32_t(viewport.height)};
+    const auto&      surfaceConfig = *surface->getConfig();
+    const auto       viewport      = clampViewport(displayViewport, surfaceConfig);
+    const glm::uvec2 renderExtent{uint32_t(viewport.extentX), uint32_t(viewport.extentY)};
 
     {
         const auto previousGraph = applyConfiguration();
@@ -270,13 +232,12 @@ RenderFrameResult Renderer::render(
     rhi::ComPtr<rhi::ICommandEncoder> commands;
     rhiCheck(queue->createCommandEncoder(commands.writeRef()));
 
-    const auto updates = gpuScene.update(scene, renderExtent, *commands);
+    const auto updates = gpuScene.update(scene, sceneGeneration, renderExtent, *commands);
 
     RenderContext frame{
         .commands      = commands.get(),
         .shaderManager = &shaders,
         .resources     = &resources,
-        .editor        = &editor,
         .frameIndex    = static_cast<uint32_t>(lastSubmittedFrame % activeFramesInFlight),
         .deltaSeconds  = deltaSeconds,
     };
@@ -296,7 +257,7 @@ RenderFrameResult Renderer::render(
         CHECK(backBuffer);
         mpRenderGraph->getPassesDictionary()[kRenderPassRefreshFlags] = std::to_underlying(RenderPassRefreshFlags::None);
         mpRenderGraph->execute(&frame);
-        recordPresentation(*commands, *backBuffer, viewport, editor, frame.frameIndex);
+        recordPresentation(*commands, *backBuffer, viewport, recordUi, frame.frameIndex);
     }
     else
     {
@@ -322,14 +283,7 @@ RenderFrameResult Renderer::render(
     lastSubmittedFrame = submissionValue;
 
     if (imageAcquired)
-    {
         rhiCheck(surface->present());
-        if (!frame.onGpuComplete.empty())
-        {
-            waitForFrame(submissionValue);
-            frame.notifyGpuComplete();
-        }
-    }
 
     return imageAcquired ? RenderFrameResult::Presented : RenderFrameResult::SwapchainNeedsRebuild;
 }

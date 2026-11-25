@@ -18,7 +18,6 @@
 
 #include <tinyexr.h>
 
-AssetImporter::LoadedImage readPbrtPfm(const std::filesystem::path& path);
 
 namespace
 {
@@ -61,7 +60,6 @@ AssetImporter::LoadedImage AssetImporter::loadImage(const std::filesystem::path&
                                return static_cast<char>(std::tolower(value));
                            });
     const std::string filename = source.string();
-    if (extension == ".pfm") return readPbrtPfm(source);
 
     if (extension == ".exr")
     {
@@ -252,7 +250,6 @@ ColorSpace AssetImporter::defaultColorSpace(LoadedImage::FileFormat format)
     {
         case LoadedImage::FileFormat::Exr:
         case LoadedImage::FileFormat::Hdr:
-        case LoadedImage::FileFormat::Pfm:
             return ColorSpace::Linear;
         case LoadedImage::FileFormat::JPEG:
         case LoadedImage::FileFormat::Integer16:

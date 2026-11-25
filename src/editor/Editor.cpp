@@ -1,35 +1,56 @@
 #include "editor/Editor.h"
 
-#include <slang-rhi.h>
-#include "asset/Asset.h"
-#include "core/ConfigManager.h"
 #include "core/Context.h"
-#include "core/Logger.h"
 #include "core/Window.h"
-#include "editor/EditorCamera.h"
 #include "render/Renderer.h"
 #include "scene/SceneManager.h"
-#include "scene/component/TransformComponent.h"
 
 #include <algorithm>
-#include <string_view>
-#include <utility>
+#include <GLFW/glfw3.h>
 
-#include <glm/glm.hpp>
-
-namespace
-{
-constexpr std::string_view kSceneObjectsEnabled = "SceneObjects:enabled";
-}
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#endif
 
 Editor::~Editor() = default;
 
 void Editor::init()
 {
+    editorCamera = std::make_unique<EditorCamera>(context().sceneManager->scene().camera);
 
-    editorCamera    = std::make_unique<EditorCamera>(context().sceneManager->scene().editorCamera);
-    sceneGeneration = context().sceneManager->sceneGeneration();
+    auto* handle = context().window->nativeHandle();
+    glfwSetKeyCallback(handle, [](GLFWwindow*, int key, int, int action, int modifiers)
+    {
+        if (action != GLFW_PRESS || modifiers != 0)
+            return;
+
+        if (key == GLFW_KEY_ESCAPE)
+            context().window->requestClose();
+        else if (key == GLFW_KEY_V)
+            context().editor->camera().requestFreeMovementToggle();
+    });
+    glfwSetScrollCallback(handle, [](GLFWwindow*, double, double yOffset)
+    {
+        context().editor->camera().addScrollOffset(yOffset);
+    });
+
     initBackend();
+
+#ifdef _WIN32
+    constexpr wchar_t kEnglishKeyboardLayout[] = L"00000409";
+    static_assert(kKeyboardLayoutNameLength == KL_NAMELENGTH);
+    if (GetKeyboardLayoutNameW(previousKeyboardLayoutName))
+    {
+        previousKeyboardLayout = GetKeyboardLayout(0);
+        keyboardLayoutChanged = LoadKeyboardLayoutW(kEnglishKeyboardLayout, KLF_ACTIVATE) != nullptr;
+    }
+#endif
 }
 
 void Editor::initBackend()
@@ -46,19 +67,31 @@ void Editor::shutdown() noexcept
 {
     if (windowHasObjectList)
     {
-        auto&       config = *context().config;
-        const auto& size   = config.editorConfig();
-        config.setEditorSize(std::max(size.width - ui.objectListInset(size.width), 1), size.height);
+        auto& settings = context().config.editor;
+        settings.width = std::max(settings.width - ui.objectListInset(settings.width), 1);
         windowHasObjectList = false;
     }
     editorCamera->resetNavigation();
-    editorCamera.reset();
     ui.resetLayout();
     backend.shutdown();
-    selectedId = 0;
-    dirty      = false;
+
+    auto* handle = context().window->nativeHandle();
+    glfwSetKeyCallback(handle, nullptr);
+    glfwSetScrollCallback(handle, nullptr);
+    editorCamera.reset();
     pendingSceneId.reset();
-    pendingObjectActions = {};
+
+#ifdef _WIN32
+    if (keyboardLayoutChanged)
+    {
+        // Restore the system input language while the editor window is still open.
+        LoadKeyboardLayoutW(previousKeyboardLayoutName, KLF_ACTIVATE);
+        if (previousKeyboardLayout)
+            ActivateKeyboardLayout(static_cast<HKL>(previousKeyboardLayout), 0);
+        keyboardLayoutChanged = false;
+    }
+    previousKeyboardLayout = nullptr;
+#endif
 }
 
 void Editor::refreshUi()
@@ -71,123 +104,52 @@ void Editor::refreshUi()
 bool Editor::resizeWindowForLayout()
 {
     Context&   ctx            = context();
-    const bool showObjectList = ctx.config->getSettings().getOption(kSceneObjectsEnabled, false);
+    const bool showObjectList = ctx.config.editor.showSceneObjects;
     if (showObjectList == windowHasObjectList)
         return false;
 
-    auto& window               = *ctx.window;
+    const auto& window = *ctx.window;
     const auto [width, height] = window.size();
-    const int inset            = ui.objectListInset(width);
-    const int nextWidth        = std::max(width + (showObjectList ? inset : -inset), 1);
+    const int inset = ui.objectListInset(width);
+    const int nextWidth = std::max(width + (showObjectList ? inset : -inset), 1);
+
     window.resizeCentered(nextWidth, height);
     windowHasObjectList = showObjectList;
+
     return true;
 }
 
-void Editor::saveScene()
+void Editor::applySceneSwitch()
 {
-    Context& ctx = context();
-
-    ctx.sceneManager->save();
-    dirty = false;
-}
-
-void Editor::applySceneActions()
-{
-    if (!pendingSceneId && !pendingObjectActions.createType && !pendingObjectActions.deleteId)
+    if (!pendingSceneId)
         return;
 
-    auto& scene = *context().sceneManager;
-
-    if (pendingSceneId)
-    {
-        scene.load(*pendingSceneId);
-        selectedId = 0;
-        dirty      = false;
-        pendingSceneId.reset();
-        pendingObjectActions = {};
-        return;
-    }
-
-    if (pendingObjectActions.deleteId)
-    {
-        scene.deleteActor(pendingObjectActions.deleteId);
-        if (selectedId == pendingObjectActions.deleteId)
-            selectedId = 0;
-    }
-    if (pendingObjectActions.createType)
-        selectedId = scene.createActor(*pendingObjectActions.createType).selectionId();
-
-    pendingObjectActions = {};
-    dirty                = true;
+    context().sceneManager->load(*pendingSceneId);
+    editorCamera->resetNavigation();
+    pendingSceneId.reset();
 }
 
-Editor::Frame Editor::buildFrame(const EditorCamera& camera)
+Editor::Frame Editor::buildFrame()
 {
     backend.beginFrame();
     ui.beginFrame(windowHasObjectList);
-    auto& scene          = context().sceneManager->scene();
-    pendingObjectActions = ui.drawHierarchy(scene, selectedId);
-    if (pendingObjectActions.renamed)
-        dirty = true;
 
-    const auto viewport      = ui.sceneViewportPixels();
-    auto*      selectedActor = context().sceneManager->findActor(selectedId);
-    if (!camera.isFreeMovementActive() && selectedActor != nullptr)
-    {
-        const auto sceneCamera = camera.config().sceneCamera();
-        const auto view        = sceneCamera.viewMatrix();
-        const auto projection  = sceneCamera.projectionMatrix(viewport.width / viewport.height);
-        if (ui.drawGizmo(selectedActor->transform(), view, projection, !camera.isNavigationActive()))
-        {
-            dirty = true;
-        }
-    }
-
-    EditorUI::InspectorResult inspector = ui.drawInspector(scene, selectedActor, dirty);
-    pendingSceneId                      = std::move(inspector.sceneId);
-    if (inspector.edited)
-        dirty = true;
-    if (!pendingSceneId && ui.saveRequested())
-        saveScene();
-
-    Frame frame{.viewport = viewport};
-    auto& input    = frame.input;
-    input.recordUi = [this](rhi::IRenderPassEncoder& commands, uint32_t frameIndex)
-    { backend.render(commands, frameIndex); };
-
-    const auto& config   = *context().config;
-    const auto& renderer = *context().renderer;
-    const auto& graph    = renderer.getActiveGraph();
-    if (config.editorConfig().objectPicking && !camera.isNavigationActive() && graph &&
-        graph->getName() == config.renderGraphName())
-    {
-        glm::vec2 viewportUv;
-        if (ui.sceneClicked(viewportUv) && graph->hasActivePass(kEditorPickingPassType))
-        {
-            input.pick = EditorPickRequest{
-                .viewportUv = viewportUv,
-                .complete   = [this](uint32_t selectionId) { selectedId = selectionId; },
-            };
-        }
-    }
-
+    const auto& scene = context().sceneManager->scene();
+    ui.drawSceneList(scene);
+    pendingSceneId = ui.drawControls(scene);
     ui.endFrame();
-    return frame;
-}
 
-bool Editor::wantsInput() const { return ui.wantsInput(); }
+    return {
+        .viewport = ui.sceneViewportPixels(),
+        .recordUi = [this](rhi::IRenderPassEncoder& commands, uint32_t frameIndex)
+        {
+            backend.render(commands, frameIndex);
+        },
+    };
+}
 
 void Editor::tick(float deltaTime)
 {
-    const auto generation = context().sceneManager->sceneGeneration();
-    if (generation != sceneGeneration)
-    {
-        editorCamera->resetNavigation();
-        selectedId      = 0;
-        dirty           = false;
-        sceneGeneration = generation;
-    }
-    editorCamera->setInputEnabled(editorCamera->isNavigationActive() || !wantsInput());
+    editorCamera->setInputEnabled(editorCamera->isNavigationActive() || !ui.wantsInput());
     editorCamera->tick(deltaTime);
 }

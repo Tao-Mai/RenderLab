@@ -1,31 +1,42 @@
 #pragma once
+
 #include <slang-rhi.h>
-#include "render/device/RhiCheck.h"
+#include "render/RhiUtils.h"
 #include "render/resources/ShaderManager.h"
 
 #include <cstdint>
-#include <functional>
-#include <vector>
+
+inline constexpr uint32_t kMaxFramesInFlight = 2;
 
 class RenderResourceManager;
-struct EditorFrameInput;
 
 struct RenderContext
 {
-    rhi::ICommandEncoder*    commands      = nullptr;
-    ShaderManager*           shaderManager = nullptr;
-    RenderResourceManager*   resources     = nullptr;
-    const EditorFrameInput*  editor        = nullptr;
-    uint32_t                 frameIndex    = 0;
-    float                    deltaSeconds  = 0.0f;
-
-    // Passes register callbacks here while recording. The submitter runs them after the fence.
-    std::vector<std::function<void()>> onGpuComplete;
-
-    void notifyGpuComplete()
-    {
-        for (const auto& complete : onGpuComplete)
-            complete();
-        onGpuComplete.clear();
-    }
+    rhi::ICommandEncoder*  commands      = nullptr;
+    ShaderManager*         shaderManager = nullptr;
+    RenderResourceManager* resources     = nullptr;
+    uint32_t               frameIndex    = 0;
+    float                  deltaSeconds  = 0.0f;
 };
+
+[[nodiscard]] inline rhi::RenderState viewportState(rhi::Viewport viewport)
+{
+    const rhi::ScissorRect scissor{
+        uint32_t(viewport.originX),
+        uint32_t(viewport.originY),
+        uint32_t(viewport.originX + viewport.extentX),
+        uint32_t(viewport.originY + viewport.extentY),
+    };
+
+    return {
+        .viewports        = {viewport},
+        .viewportCount    = 1,
+        .scissorRects     = {scissor},
+        .scissorRectCount = 1,
+    };
+}
+
+[[nodiscard]] inline rhi::RenderState fullscreenState(rhi::Extent3D size)
+{
+    return viewportState(rhi::Viewport::fromSize(float(size.width), float(size.height)));
+}

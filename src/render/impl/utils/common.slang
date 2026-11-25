@@ -1,0 +1,6 @@
+#ifndef RENDERLAB_UTILS_COMMON
+#define RENDERLAB_UTILS_COMMON
+
+
+
+#endif

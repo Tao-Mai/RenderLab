@@ -1,15 +1,13 @@
 #pragma once
 
-#include "core/MetadataAnnotations.h"
-
 #include "asset/Asset.h"
 struct TextureAsset;
 struct SamplerAsset;
 
-struct RL_RECORD TextureBinding
+struct TextureBinding
 {
-    RL_FIELD("textureID") AssetID<TextureAsset> textureID;
-    RL_FIELD("samplerID") AssetID<SamplerAsset> samplerID;
+    AssetID<TextureAsset> textureID;
+    AssetID<SamplerAsset> samplerID;
 
     bool operator==(const TextureBinding&) const = default;
 };

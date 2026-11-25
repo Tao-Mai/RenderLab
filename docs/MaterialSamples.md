@@ -1,6 +1,6 @@
 # 材质示例资产
 
-[材质展示](MaterialGallery.md) · [资产说明](../assets/README.md)
+[材质展示](MaterialGallery.md) · [资产说明](Asset.md)
 
 示例来自 [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets)，用于导入验证和材质对比。源文件与各模型许可保存在本地 `resource/material_samples/<模型名>/`。
 
@@ -8,8 +8,6 @@
 
 | 扩展 | 模型 / Mesh ID | 当前着色 |
 | --- | --- | --- |
-| Clearcoat | [ClearCoatTest](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/ClearCoatTest) | Forward |
-| Sheen | [SheenTestGrid](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/SheenTestGrid) | Forward / Deferred |
 | Anisotropy | [AnisotropyBarnLamp](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/AnisotropyBarnLamp) | 仅数据 |
 | Transmission | [TransmissionRoughnessTest](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/TransmissionRoughnessTest) | 仅数据 |
 | Volume | [AttenuationTest](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/AttenuationTest) | 仅数据 |
@@ -17,11 +15,11 @@
 | Specular | [SpecularTest](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/SpecularTest) | 前向 / 延迟 / 实时光追 |
 | Iridescence | [IridescenceLamp](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/IridescenceLamp) | 仅数据 |
 | Dispersion | [DispersionTest](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/DispersionTest) | 仅数据 |
-| Emissive Strength | [EmissiveStrengthTest](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/EmissiveStrengthTest) | 光栅 / 实时光追 / 离线 |
+| Emissive Strength | [EmissiveStrengthTest](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/EmissiveStrengthTest) | MinimalPathTracer |
 | Unlit | [UnlitTest](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/UnlitTest) | 仅数据 |
 | Diffuse Transmission | [DiffuseTransmissionTeacup](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/DiffuseTransmissionTeacup) | 仅数据 |
 
-“仅数据”表示参数与纹理引用支持导入、持久化和编辑，画面使用基础 PBR 着色。
+“仅数据”表示参数与纹理引用保存在导入的材质资产中，画面使用基础 PBR 着色。
 
 ## 导入约定
 

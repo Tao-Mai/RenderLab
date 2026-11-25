@@ -1,101 +1,21 @@
 #include "scene/SceneManager.h"
 
 #include "asset/AssetManager.h"
-#include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
-#include "core/Serializer.h"
 
-#include <algorithm>
-#include <limits>
-#include <utility>
+void SceneManager::loadDefaultScene() { load(context().config.initialScene); }
 
-void SceneManager::loadDefaultScene() { load(context().config->initialScene()); }
+void SceneManager::load(const Scene::ID& id) { load(context().assetManager->get(id)); }
 
-void SceneManager::load(const SceneAsset::ID& id) { load(context().assetManager->get<SceneAsset>(id)); }
-
-void SceneManager::load(const SceneAsset& scene)
+void SceneManager::load(const Scene& scene)
 {
+    CHECK(!scene.environmentMap || !scene.environmentMap->empty());
+    for (const auto& object : scene.objects)
+        CHECK(!object.meshId.empty(), "object '{}' requires a mesh", object.name);
 
-
-    // The cache owns a snapshot; the live scene owns its actors and components.
-    SceneAsset loaded;
-    Deserialize(Serialize(scene), loaded);
-    CHECK(!loaded.environmentMap || !loaded.environmentMap->empty());
-    for (const auto& actor : loaded.actors)
-    {
-        CHECK(actor);
-        actor->init();
-
-        CHECK(nextSelectionId != std::numeric_limits<uint32_t>::max(), "scene selection IDs exhausted");
-        actor->id = nextSelectionId++;
-    }
-
-    activeScene = std::move(loaded);
+    activeScene = scene;
     ++generation;
 }
 
-void SceneManager::save()
-{
-
-
-    SceneAsset snapshot;
-    Deserialize(Serialize(scene()), snapshot);
-    context().assetManager->save<SceneAsset>(std::move(snapshot));
-}
-
-AActor& SceneManager::createActor(std::string_view typeName)
-{
-
-    const auto& types = TypeRegistry<AActor>::get().entries;
-    const auto  type  = types.find(std::string{typeName});
-    CHECK(type != types.end(), "unknown actor type: {}", typeName);
-
-    auto&    actors = scene().actors;
-    auto     actor  = type->second.create();
-    uint64_t index  = 1;
-    do
-    {
-        actor->name = std::string{typeName} + std::to_string(index++);
-    }
-    while (std::ranges::any_of(actors, [&](const auto& existing) { return existing->name == actor->name; }));
-
-    actor->init();
-    CHECK(nextSelectionId != std::numeric_limits<uint32_t>::max(), "scene selection IDs exhausted");
-    actor->id    = nextSelectionId++;
-    auto& result = *actor;
-    actors.push_back(std::move(actor));
-
-    return result;
-}
-
-void SceneManager::deleteActor(uint32_t selectionId)
-{
-
-    auto&      actors = scene().actors;
-    const auto found =
-        std::ranges::find_if(actors, [=](const auto& actor) { return actor->selectionId() == selectionId; });
-    if (found == actors.end())
-        return;
-
-    actors.erase(found);
-}
-
 void SceneManager::shutdown() noexcept { activeScene = {}; }
-
-void SceneManager::tick(float deltaTime)
-{
-    for (const auto& actor : scene().actors)
-        actor->tick(deltaTime);
-}
-
-AActor* SceneManager::findActor(uint32_t selectionId) const noexcept
-{
-    if (selectionId == 0)
-        return nullptr;
-    for (const auto& actor : scene().actors)
-        if (actor->selectionId() == selectionId)
-            return actor.get();
-
-    return nullptr;
-}

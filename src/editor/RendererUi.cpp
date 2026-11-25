@@ -1,147 +1,19 @@
 #include "render/Renderer.h"
 
-#include "core/ConfigManager.h"
+#include "core/Context.h"
 #include "editor/Gui.h"
 #include "editor/PassEditor.h"
 
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <imgui.h>
-#include <imgui_stdlib.h>
-#include <optional>
-#include <utility>
-
-namespace
-{
-template <class T>
-bool drawNumber(Gui::Widgets& widgets, const char* label, nlohmann::ordered_json& value)
-{
-    auto next = value.get<T>();
-    if (widgets.input(label, next) && std::isfinite(next))
-        value = next;
-
-    return ImGui::IsItemDeactivatedAfterEdit();
-}
-
-const char* parameterLabel(const std::string& name)
-{
-    if (name == "hdr")
-        return "Enable HDR";
-    if (name == "postProcess")
-        return "Post process";
-    if (name == "shadows")
-        return "Enable shadows";
-    if (name == "svgf")
-        return "Enable SVGF";
-    if (name == "bloom")
-        return "Enable bloom";
-    return name.c_str();
-}
-
-bool drawParameter(Gui::Widgets& widgets, const std::string& name, nlohmann::ordered_json& value)
-{
-    const auto* label = parameterLabel(name);
-    if (value.is_boolean())
-    {
-        auto next = value.get<bool>();
-        if (!widgets.checkbox(label, next))
-            return false;
-
-        value = next;
-        return true;
-    }
-    if (value.is_string())
-    {
-        auto& current = value.get_ref<std::string&>();
-        if (name == "postProcess")
-        {
-            constexpr std::array kModes{"RenderLab", "Falcor"};
-            const auto mode = std::ranges::find(kModes, std::string_view{current});
-            if (mode != kModes.end())
-            {
-                auto selected = static_cast<size_t>(mode - kModes.begin());
-                if (!widgets.dropdown(label, kModes, selected))
-                    return false;
-
-                current = kModes[selected];
-                return true;
-            }
-        }
-
-        ImGui::InputText(label, &current);
-        return ImGui::IsItemDeactivatedAfterEdit();
-    }
-    if (value.is_number_integer())
-        return drawNumber<int64_t>(widgets, label, value);
-
-    return drawNumber<double>(widgets, label, value);
-}
-
-void drawSettings(
-    Gui::Widgets&                 widgets,
-    Renderer&                     renderer,
-    std::string_view              graphName,
-    const nlohmann::ordered_json& defaults,
-    nlohmann::ordered_json&       parameters
-)
-{
-    if (defaults.empty())
-        return;
-
-    const bool     reset = widgets.resetHeader("Graph");
-    nlohmann::json options;
-    for (const auto& [name, defaultValue] : defaults.items())
-    {
-        if (name == "ambientCoefficient")
-            continue;
-
-        auto& value = parameters.at(name);
-        if (reset)
-            value = defaultValue;
-
-        widgets.pushId(name.c_str());
-        const bool edited = drawParameter(widgets, name, value);
-        widgets.popId();
-        if (!edited && !reset)
-            continue;
-
-        options[settings::encodeName(name)] = value == defaultValue ? nlohmann::json{} : nlohmann::json(value);
-    }
-
-    if (!options.is_null())
-        renderer.addOption(
-            kRenderGraphOptionsPrefix + settings::encodeName(graphName) + ":parameters",
-            std::move(options)
-        );
-}
-}  // namespace
-
 void Renderer::renderUI(const PassEditorContext& input)
 {
-
-    const auto&  graphName = mpRenderGraph->getName();
+    auto& settings = context().config.renderer;
     Gui::Widgets widgets;
-    drawSettings(widgets, *this, graphName, parameterDefaults, parameters);
+    if (widgets.resetHeader("Graph"))
+        settings.parameters = {};
 
-    auto editor   = input;
-    editor.submit = [&](const RenderPass& pass, std::optional<nlohmann::json> edited)
-    {
-        const auto scope = kRenderGraphOptionsPrefix + settings::encodeName(graphName) +
-            ":passes:" + settings::encodeName(pass.getType()) + ':' + settings::encodeName(pass.getName());
-        if (!edited)
-        {
-            addOption(scope, nullptr);
-            return;
-        }
+    widgets.checkbox("Enable HDR", settings.parameters.hdr);
+    widgets.dropdown("Post process", settings.parameters.postProcess, {"RenderLab", "Falcor"});
+    widgets.checkbox("Enable bloom", settings.parameters.bloom);
 
-        const auto     scripted = settings::detail::flattenDictionary(mpRenderGraph->scriptedProperties(pass.getName()));
-        auto           changes  = settings::detail::flattenDictionary(*edited);
-        nlohmann::json options{{scope, nullptr}};
-        for (auto& [name, value] : changes.items())
-            if (const auto original = scripted.find(name); original == scripted.end() || *original != value)
-                options[scope + ':' + name] = std::move(value);
-        addOptions(options);
-    };
-    mpRenderGraph->renderUI(editor, widgets);
+    mpRenderGraph->renderUI(input, widgets, settings.passes);
 }

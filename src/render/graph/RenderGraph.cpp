@@ -1,7 +1,7 @@
 #include "render/graph/RenderGraph.h"
 
 #include <slang-rhi.h>
-#include "core/DirectedGraphTraversal.h"
+#include "core/ds/DirectedGraphTraversal.h"
 #include "core/Logger.h"
 #include "render/GpuScene.h"
 #include "render/RenderContext.h"
@@ -22,19 +22,6 @@ RenderGraph::~RenderGraph()
         node.pPass->mPassChangedCB = [] {};
         node.pPass->setScene(nullptr);
     }
-}
-
-std::shared_ptr<RenderGraph> RenderGraph::create(rhi::ComPtr<rhi::IDevice> device, const std::string& name)
-{
-    return std::make_shared<RenderGraph>(std::move(device), name);
-}
-
-std::shared_ptr<RenderPass>
-RenderGraph::createPass(const std::string& passName, const std::string& passType, const nlohmann::json& properties)
-{
-    auto pass = RenderPass::create(passType, mpDevice, properties);
-    addPass(pass, passName);
-    return pass;
 }
 
 namespace
@@ -64,8 +51,7 @@ uint32_t RenderGraph::addPass(const std::shared_ptr<RenderPass>& pass, const std
 
     const auto index = mpGraph->addNode();
     mNameToIndex.emplace(name, index);
-    auto properties = pass->getProperties();
-    mNodeData.emplace(index, NodeData{name, pass, properties, std::move(properties)});
+    mNodeData.emplace(index, NodeData{name, pass});
     pass->mName          = name;
     pass->mPassChangedCB = [this] { mRecompile = true; };
     pass->setScene(mpScene);
@@ -94,16 +80,6 @@ void RenderGraph::removePass(const std::string& name)
     mNameToIndex.erase(name);
 }
 
-void RenderGraph::updatePass(const std::string& name, const nlohmann::json& properties)
-{
-    const auto index = getPassIndex(name);
-    CHECK(index != kInvalidIndex, "unknown render pass '{}'", name);
-    auto& node = mNodeData.at(index);
-    node.pPass->setProperties(properties);
-    node.scripted = node.pPass->getProperties();
-    node.applied = node.scripted;
-}
-
 const std::shared_ptr<RenderPass>& RenderGraph::getPass(const std::string& name) const
 {
     const auto index = getPassIndex(name);
@@ -111,48 +87,11 @@ const std::shared_ptr<RenderPass>& RenderGraph::getPass(const std::string& name)
     return mNodeData.at(index).pPass;
 }
 
-const nlohmann::json& RenderGraph::scriptedProperties(const std::string& name) const
+void RenderGraph::applyPassSettings(const RenderPassOptions& options)
 {
-    return mNodeData.at(getPassIndex(name)).scripted;
-}
-
-void RenderGraph::captureScriptedProperties()
-{
-    for (auto& [index, node] : mNodeData)
-    {
-        node.scripted = node.pPass->getProperties();
-        node.applied = node.scripted;
-    }
-}
-
-void RenderGraph::applyScriptedProperties(const RenderGraph& source)
-{
-    mName = source.mName;
-    for (auto& [index, node] : mNodeData)
-        node.scripted = source.scriptedProperties(node.name);
-}
-
-void RenderGraph::applyPassOverrides(const nlohmann::json& overrides)
-{
-    for (const auto& [type, instances] : overrides.items())
-    {
-        CHECK(instances.is_object(), "options for pass type '{}' must be an object", type);
-        for (const auto& [name, values] : instances.items())
-            CHECK(values.is_object(), "options for pass '{}' must be an object", name);
-    }
-
-    for (auto& [index, node] : mNodeData)
-    {
-        auto values = node.scripted;
-        if (const auto byType = overrides.find(node.pPass->getType()); byType != overrides.end())
-            if (const auto byName = byType->find(node.name); byName != byType->end())
-                values.update(*byName, true);
-        if (values == node.applied)
-            continue;
-        if (values != node.pPass->getProperties())
-            node.pPass->setProperties(values);
-        node.applied = std::move(values);
-    }
+    for (const auto& [index, node] : mNodeData)
+        if (const auto apply = node.pPass->getSettingsBinding().apply)
+            apply(*node.pPass, options);
 }
 
 uint32_t RenderGraph::getEdge(const std::string& source, const std::string& target)
@@ -381,9 +320,9 @@ bool RenderGraph::hasSameTopology(const RenderGraph& other) const
     return edgeEndpoints(*this) == edgeEndpoints(other);
 }
 
-void RenderGraph::onResize(Extent2D extent, rhi::Format format)
+void RenderGraph::onResize(glm::uvec2 extent, rhi::Format format)
 {
-    const ResourceCache::DefaultProperties defaults{{extent.width, extent.height}, format};
+    const ResourceCache::DefaultProperties defaults{extent, format};
     if (defaults != mCompilerDeps.defaultResourceProps)
     {
         mCompilerDeps.defaultResourceProps = defaults;
@@ -391,30 +330,19 @@ void RenderGraph::onResize(Extent2D extent, rhi::Format format)
     }
 }
 
-bool RenderGraph::compile(RenderContext* context, std::string& log)
+void RenderGraph::compile(RenderContext* context)
 {
+    if (!needsCompilation())
+        return;
 
-    log.clear();
-    if (!mpExe || mRecompile)
-    {
-        mpExe.reset();
-
-        const logger::ScopedErrorLog errors(log);
-        mpExe = RenderGraphCompiler::compile(*this, context, mCompilerDeps);
-        if (!mpExe)
-            return false;
-        mRecompile = false;
-    }
-    return true;
+    mpExe.reset();
+    mpExe = RenderGraphCompiler::compile(*this, context, mCompilerDeps);
+    mRecompile = false;
 }
 
 void RenderGraph::execute(RenderContext* context)
 {
-    if (needsCompilation())
-    {
-        std::string log;
-        CHECK(compile(context, log), "failed to compile render graph '{}': {}", mName, log);
-    }
+    compile(context);
     mpExe->execute(context, mPassesDictionary, mCompilerDeps.defaultResourceProps.dims);
 }
 
@@ -442,10 +370,10 @@ void RenderGraph::onSceneUpdates(RenderContext* context, SceneUpdateFlags update
         node.pPass->onSceneUpdates(context, updates);
 }
 
-void RenderGraph::renderUI(const PassEditorContext& context, Gui::Widgets& widget)
+void RenderGraph::renderUI(const PassEditorContext& context, Gui::Widgets& widgets, RenderPassOptions& options)
 {
     if (mpExe)
-        mpExe->renderUI(context, widget);
+        mpExe->renderUI(context, widgets, options);
 }
 
 namespace

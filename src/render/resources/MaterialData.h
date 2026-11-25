@@ -17,12 +17,6 @@ enum class NormalEncoding : uint32_t
     RgSnorm,
 };
 
-enum class MaterialKind : uint32_t
-{
-    Gltf,
-    Pbrt,
-};
-
 struct TextureRef
 {
     uint32_t textureIndex = 0;
@@ -31,61 +25,38 @@ struct TextureRef
     bool operator==(const TextureRef&) const = default;
 };
 
-// Shared material table entry. PBRT entries reference a texture and material program.
+// Keep the field order and stride in sync with the Slang material table.
 struct alignas(16) MaterialData
 {
     bool operator==(const MaterialData&) const = default;
 
-    glm::vec4               colorFactor{1.0f};
-    float                   roughness         = 1.0f;
-    float                   metallic          = 1.0f;
-    float                   alphaCutoff       = 0.5f;
-    uint32_t                alphaMode         = kAlphaModeOpaque;
-    float                   normalScale       = 1.0f;
-    float                   occlusionStrength = 1.0f;
-    uint32_t                doubleSided       = 0;
-    uint32_t                workflow          = 0;
-    glm::vec4               emissiveFactor{0.0f};
-    glm::vec3               sheenColorFactor{0.0f};
-    float                   sheenRoughnessFactor     = 0.0f;
-    float                   clearcoatFactor          = 0.0f;
-    float                   clearcoatRoughnessFactor = 0.0f;
-    float                   clearcoatNormalScale     = 1.0f;
-    uint32_t                emissiveFlags = 0;
-    glm::vec3               specularColorFactor{1.0f};
-    float                   specularFactor   = 1.0f;
-    float                   dielectricF0     = 0.04f;
-    float                   glossinessFactor = 1.0f;
-    NormalEncoding          normalEncoding = NormalEncoding::Rgb;
-    NormalEncoding          clearcoatNormalEncoding = NormalEncoding::Rgb;
-    TextureRef              colorTexture;
-    TextureRef              normalTexture;
-    TextureRef              metallicTexture;
-    TextureRef              roughnessTexture;
-    TextureRef              emissiveTexture;
-    TextureRef              occlusionTexture;
-    TextureRef              sheenColorTexture;
-    TextureRef              sheenRoughnessTexture;
-    TextureRef              clearcoatTexture;
-    TextureRef              clearcoatRoughnessTexture;
-    TextureRef              clearcoatNormalTexture;
-    TextureRef              specularColorTexture;
-    TextureRef              specularTexture;
-    MaterialKind            kind = MaterialKind::Gltf;
-    uint32_t                programIndex = 0;
+    glm::vec4      colorFactor{1.0f};
+    glm::vec4      emissiveFactor{0.0f};
+    glm::vec3      specularColorFactor{1.0f};
+    float          specularFactor   = 1.0f;
+    float          roughness        = 1.0f;
+    float          metallic         = 1.0f;
+    float          alphaCutoff      = 0.5f;
+    uint32_t       alphaMode        = kAlphaModeOpaque;
+    float          normalScale      = 1.0f;
+    uint32_t       emissiveFlags    = 0;
+    uint32_t       workflow         = 0;
+    float          dielectricF0     = 0.04f;
+    float          glossinessFactor = 1.0f;
+    NormalEncoding normalEncoding   = NormalEncoding::Rgb;
+    TextureRef     colorTexture;
+    TextureRef     normalTexture;
+    TextureRef     metallicTexture;
+    TextureRef     roughnessTexture;
+    TextureRef     emissiveTexture;
+    TextureRef     specularColorTexture;
+    TextureRef     specularTexture;
 };
 
 static_assert(sizeof(TextureRef) == 8);
-static_assert(sizeof(MaterialData) == 240);
-static_assert(offsetof(MaterialData, roughness) == 16);
-static_assert(offsetof(MaterialData, emissiveFactor) == 48);
-static_assert(offsetof(MaterialData, sheenColorFactor) == 64);
-static_assert(offsetof(MaterialData, clearcoatFactor) == 80);
-static_assert(offsetof(MaterialData, emissiveFlags) == 92);
-static_assert(offsetof(MaterialData, specularColorFactor) == 96);
-static_assert(offsetof(MaterialData, dielectricF0) == 112);
-static_assert(offsetof(MaterialData, normalEncoding) == 120);
-static_assert(offsetof(MaterialData, colorTexture) == 128);
-static_assert(offsetof(MaterialData, specularTexture) == 224);
-static_assert(offsetof(MaterialData, kind) == 232);
-static_assert(offsetof(MaterialData, programIndex) == 236);
+static_assert(sizeof(MaterialData) == 144);
+static_assert(offsetof(MaterialData, emissiveFactor) == 16);
+static_assert(offsetof(MaterialData, roughness) == 48);
+static_assert(offsetof(MaterialData, normalEncoding) == 84);
+static_assert(offsetof(MaterialData, colorTexture) == 88);
+static_assert(offsetof(MaterialData, specularTexture) == 136);

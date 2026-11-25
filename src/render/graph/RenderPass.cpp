@@ -1,7 +1,6 @@
 #include "render/graph/RenderPass.h"
 
 #include "core/Logger.h"
-
 #include <algorithm>
 #include <utility>
 
@@ -48,33 +47,7 @@ void RenderPass::CompileData::addInternalTexture(std::string name, const rhi::Te
     ports.emplace_back(std::move(name), slot);
 }
 
-std::shared_ptr<RenderPass> RenderPass::create(
-    std::string_view type, rhi::ComPtr<rhi::IDevice> device, const nlohmann::json& properties, PluginManager& plugins
-)
-{
-    if (!plugins.hasClass<RenderPass>(type))
-        plugins.loadPluginByName(type);
-
-    auto pass = plugins.createClass<RenderPass>(type, std::move(device), properties);
-    CHECK(pass, "cannot create render pass '{}'", type);
-    return pass;
-}
-
 RenderPassReflection RenderPass::reflect(const ResourceCache::DefaultProperties&)
 {
-    return RenderPassReflection(getPluginInfo().ports);
-}
-
-nlohmann::json RenderPass::getProperties() const
-{
-    const auto get = getPluginInfo().settings.get;
-    return get ? get(*this) : nlohmann::json::object();
-}
-
-void RenderPass::setProperties(const nlohmann::json& properties)
-{
-    if (const auto set = getPluginInfo().settings.set)
-        set(*this, properties);
-    else
-        CHECK(properties.empty(), "pass has no configurable properties");
+    return RenderPassReflection(description.ports);
 }

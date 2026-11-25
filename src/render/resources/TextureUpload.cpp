@@ -3,7 +3,7 @@
 #include <vector>
 #include "asset/TextureAsset.h"
 #include "asset/TextureMip.h"
-#include "render/device/RhiCheck.h"
+#include "render/RhiUtils.h"
 namespace
 {
 [[nodiscard]] rhi::Format textureFormat(ImageFormat format, ColorSpace colorSpace)

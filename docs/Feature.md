@@ -2,64 +2,37 @@
 
 [项目首页](../README.md) · [项目架构](Architecture.md)
 
-## 渲染路线
+## 渲染
 
-- 前向渲染：深度预通道、不透明 / Alpha Mask、天空盒、透明物体排序绘制。
-- 延迟渲染：G-buffer、全屏光照；透明物体仍走前向。
-- 实时光追：基本 PBR、多次反弹、ReSTIR DI 与可选 SVGF。
-- 离线路径追踪：独立 Shader、单帧在途、渐进式采样与平均输出。
+- [MinimalPathTracer](MinimalPathTracer.md) 生成 HDR 场景颜色，由渲染图选择后处理。
 
 ## 材质
 
 - Metallic-Roughness 与 Specular-Glossiness 工作流：统一漫反射、GGX、Smith、Schlick Fresnel；支持 Specular 与 IOR。
-- Base Color、Metallic、Roughness、Normal、AO、Emissive 贴图。
+- Base Color、Metallic、Roughness、Normal、Emissive 贴图。
 - MikkTSpace 切线空间法线映射、可调 Normal Scale。
-- 自发光强度、Alpha Mask / Blend、双面材质。
-- Clearcoat：独立颜色层之上的涂层反射、粗糙度与法线；前向路线支持。
-- Sheen：Charlie BRDF、方向反照率能量缩放、环境光积分；前向 / 延迟支持。
-- 材质覆盖、参数编辑、缺失纹理的统一 fallback。
+- 自发光强度、Alpha Mask、双面发光。
+- 缺失纹理的统一 fallback。
 
-各向异性、Transmission、Volume、Iridescence、Dispersion、Unlit、Diffuse Transmission 支持描述、导入与编辑，画面使用基础 PBR 着色。详见 [材质展示](MaterialGallery.md)。
+Clearcoat、Sheen、各向异性、Transmission、Volume、Iridescence、Dispersion、Unlit、Diffuse Transmission 支持资产描述与导入。详见 [材质展示](MaterialGallery.md)。
 
 ## 光照与环境
 
-- 方向光、点光源、矩形面光源、聚光灯；按类型分组上传。
-- 启用的光源上传供照明使用。可见的发光面由场景几何和实时光追的矩形光源命中提供。
+- 方向光、点光源、矩形面光源、聚光灯；按实例上传。
+- 启用的光源上传供照明使用。可见发光面来自发光几何。
 - 局部光源使用发光强度，方向光使用照度；矩形面积改变时保持整体法向发光强度。
-- HDR / EXR 环境图导入、Cubemap 转换、漫反射辐照度与 GGX 预过滤。
-- IBL 开启时采样环境图并绘制天空盒，关闭时使用可调环境系数。
-- 环境图保存在场景中，BRDF / Sheen LUT 为内置资产。
+- HDR / EXR 环境图导入、Cubemap 转换和辐亮度采样。
 
-## 阴影
+## 光追采样
 
-- 点光源：Cubemap 阴影、16 点泊松 PCF。
-- 聚光灯：透视阴影、16 点泊松 PCF。
-- 矩形面光源：中心透视近似、矩形 Blocker Search 与 PCSS。
-- 方向光：1～4 级稳定 CSM、均匀 / Practical 划分、级联混合、8 点 PCF。
-- CSM 稳定化：包围球、Texel Snapping、Depth Clamp、匹配的五平面遮挡物剔除。
-- 可调阴影分辨率、Bias、采样半径、Nearest / Linear 与逐像素旋转。
-
-详见 [阴影概览](Shadow.md) 与 [CSM](Csm.md)。
-
-## 光追采样与累积
-
-- 漫反射 / GGX 混合 PDF、GGX VNDF 方向采样。
-- ReSTIR 可接入 SVGF。[MinimalPathTracer](MinimalPathTracer.md) 输出合并的 HDR 颜色。
-- ReSTIR 主命中使用原版 [ReSTIR DI](ReSTIR.md)：完整光源样本初始 RIS、时域复用、一轮空间复用、来源支持域与可见性归一化。
-- 点光、聚光、方向光、矩形、实例展开的发光三角形和启用的环境共同采样；初始光源与 BRDF 候选通过 balance MIS 进入 reservoir。
-- 可调候选数、时域 / 空间复用、历史计数上限、邻居数量和半径。更深层路径使用初始 RIS 估计光照。
-- 光追路线使用可见性射线和俄罗斯轮盘终止。各积分器采用 RayGen 路径循环，管线递归深度为 1。`maxBounces` 控制 1–64 次表面散射，修改后重置相关时域历史或离线累积。
-- 启用 SVGF 后，重投影用 albedo 解调两路光照，随后累积颜色与亮度矩，估计时域及 7×7 空间方差，再执行五级 à-trous 滤波。第一级回写解调后的颜色历史，最后一级乘回 albedo 后添加当帧 `emission`。样本数不超过 `historyLength` 时使用算术平均，超过后使用 `Alpha`。首次或历史失效时权重为 1。
-- 历史资源：颜色均值 / 样本数、深度、法线、亮度一阶 / 二阶矩。
-- 离线：Owen 扰乱 Sobol 像素内采样、FP32 总和缓冲、按样本数平均。
-- 离线场景、相机、材质或光源变化时重新累积。
-
-SVGF 按静态场景重建位置，支持相机运动；光追着色使用基础 PBR。
+- 每像素每帧追踪一条相机路径。每次散射进行一次普通光源采样和一次 BSDF 采样。
+- 几何遮挡通过可见性射线查询。环境光和发光三角形与 BRDF 采样进行多重重要性采样。
+- 使用俄罗斯轮盘终止长路径。渲染图输出包含直接光、间接光和相机直接看到的发光。
 
 ## 后处理
 
-- RGBA16F HDR 颜色缓冲。
-- 手动 EV100 / 亮度直方图自动曝光、明暗适应和曝光补偿，支持场景相机覆盖全局配置。
+- RGBA32F 路径追踪输出。
+- 手动 EV100 / 亮度直方图自动曝光、明暗适应和曝光补偿。
 - 可切换 Tone Mapping。
 - [Falcor 后处理](PostProcess.md)：独立可选的 ToneMapper 与 SimplePostFX，含白平衡、星芒、镜头效果和调色。
 - Scattering Bloom：分离式高斯降采样、逐级散射混合，可调强度、Scatter、高斯半径与层数。
@@ -70,18 +43,15 @@ SVGF 按静态场景重建位置，支持相机运动；光追着色使用基础
 - 类型化资产 ID：Mesh、Material、Texture、Shader、Scene、EnvironmentMap、Sampler。
 - glTF / GLB 使用 TinyGLTF，其余模型格式使用 Assimp。
 - 网格导入与完整场景导入：节点变换、共享网格、子网格材质、相机。
-- 导入预览、缩放、ID 编辑与自动查重。
+- 命令行导入、缩放、ID 与自动查重。
 - 普通贴图完整 Mipmap、Linear / sRGB 区分、HDR / EXR。
-- 内置立方体、球体、平面、箭头、基础纹理、Sampler 与 LUT。
-- 网格局部 AABB；Renderer 进行主视图与各类阴影视图剔除。
-- Actor / Component 场景、同类型多组件、构建期生成的序列化元数据。
-- JSON 场景保存、场景切换丢弃未保存修改、关闭时记录默认场景选择。
+- 内置立方体、球体、平面、箭头、基础纹理与 Sampler。
+- JSON 场景加载、场景切换以及关闭时记录当前场景。
+- Scene 直接存储 Object、AnalyticLight 和 Camera。
 
 ## 编辑器与性能观察
 
+- 只读列表显示场景的对象和光源。
 - ImGui Dock 布局：场景树、正方形视口、属性与渲染设置。
-- Forward 和 Deferred 可通过 `Object picking` 开关启用视口 GPU ID 拾取，默认关闭。编辑器支持 Transform Gizmo、原地重命名、新建和删除对象。
-- 独立编辑器相机：右键导航、自由飞行模式、速度与投影设置。
-- 光源参数与材质覆盖编辑。
+- 预览相机支持右键导航和自由飞行模式。
 - 窗口尺寸与渲染配置关闭时持久化，各渲染分组可恢复默认值。
-- CPU Scope、GPU Pass 时间戳、Draw / 三角形计数、剔除统计。

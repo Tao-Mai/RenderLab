@@ -13,7 +13,6 @@
 #include <slang-rhi.h>
 
 class AssetManager;
-class AssetDataManager;
 namespace rhi
 {
 struct ShaderCursor;
@@ -21,11 +20,8 @@ struct ShaderCursor;
 
 struct GpuEnvironmentMap
 {
-    rhi::ComPtr<rhi::ITextureView> radiance, irradiance, prefilteredSpecular;
+    rhi::ComPtr<rhi::ITextureView> radiance;
     rhi::ISampler*                 radianceSampler    = nullptr;
-    rhi::ISampler*                 irradianceSampler  = nullptr;
-    rhi::ISampler*                 prefilteredSampler = nullptr;
-    float                          prefilteredMaxLod  = 0.0f;
 
     void bindRadiance(const rhi::ShaderCursor& root) const;
 };
@@ -35,7 +31,7 @@ class RenderResourceManager
 public:
     ~RenderResourceManager();
 
-    void init(rhi::IDevice& device, AssetManager& assets, AssetDataManager& data);
+    void init(rhi::IDevice& device, const AssetManager& assets);
     void shutdown() noexcept;
 
     [[nodiscard]] const GpuMesh& loadMesh(const MeshAsset::ID& id, rhi::ICommandEncoder& commands);
@@ -45,8 +41,7 @@ public:
         rhi::ICommandEncoder& commands);
 
 private:
-    AssetManager*                                                    assets = nullptr;
-    AssetDataManager*                                                data   = nullptr;
+    const AssetManager*                                              assets = nullptr;
     rhi::IDevice*                                                    device = nullptr;
     // In-flight ray dispatches use device addresses from the mesh version they recorded.
     std::unordered_map<MeshAsset::ID, std::map<uint64_t, GpuMesh>>    meshes;

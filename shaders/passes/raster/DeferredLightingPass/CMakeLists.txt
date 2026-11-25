@@ -1,2 +1,0 @@
-renderlab_add_plugin(DeferredLightingPass DeferredLightingPass.cpp)
-target_link_libraries(DeferredLightingPass PRIVATE RenderLabRasterPbr)

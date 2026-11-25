@@ -1,1 +1,0 @@
-renderlab_add_plugin(MinimalPathTracer MinimalPathTracer.cpp)

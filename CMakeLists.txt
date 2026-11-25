@@ -41,11 +41,11 @@ if (WIN32)
 endif ()
 
 if (MSVC)
-    set(renderlab_cxx_options /EHs-c- /utf-8 /Zc:preprocessor)
-    set(renderlab_cxx_definitions _HAS_EXCEPTIONS=0 NOMINMAX)
+    set(renderlab_cxx_options /EHsc /utf-8 /Zc:preprocessor)
+    set(renderlab_cxx_definitions NOMINMAX)
 else ()
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
-    set(renderlab_cxx_options -fno-exceptions)
+    set(renderlab_cxx_options -fexceptions)
 endif ()
 
 add_library(RenderLabBuildOptions INTERFACE)
@@ -58,12 +58,6 @@ target_compile_definitions(RenderLabBuildOptions INTERFACE
 get_filename_component(RENDERLAB_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
 
 function(renderlab_copy_runtime_libraries target)
-    if (WIN32)
-        add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "$<TARGET_FILE:Python3::Python>" "$<TARGET_FILE_DIR:${target}>"
-            VERBATIM)
-    endif ()
     if (MINGW)
         foreach (runtime libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll)
             set(runtime_path "${RENDERLAB_COMPILER_BIN_DIR}/${runtime}")
@@ -91,18 +85,9 @@ set(SLANG_RHI_ENABLE_WGPU OFF CACHE BOOL "" FORCE)
 set(SLANG_RHI_ENABLE_NVAPI OFF CACHE BOOL "" FORCE)
 set(SLANG_RHI_ENABLE_AGILITY_SDK OFF CACHE BOOL "" FORCE)
 add_subdirectory(external/slang-rhi)
-find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter Development.Embed)
-execute_process(
-    COMMAND "${Python3_EXECUTABLE}" -I -X utf8 -c "from pathlib import Path; import sys; print(Path(sys.base_prefix).as_posix())"
-    OUTPUT_VARIABLE RENDERLAB_PYTHON_HOME
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ENCODING UTF-8
-    COMMAND_ERROR_IS_FATAL ANY
-)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
-find_package(imguizmo CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(glog CONFIG REQUIRED)
 find_package(tinyexr CONFIG REQUIRED)
@@ -111,68 +96,32 @@ find_package(mikktspace CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
 find_path(TINYGLTF_INCLUDE_DIR NAMES tiny_gltf.h REQUIRED)
 
-set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
+set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/render")
 set(SHADER_BINARY_DIR "${RENDERLAB_RUNTIME_DIRECTORY}/shaders")
 include(cmake/Shaders.cmake)
-include(src/render/plugins/Plugins.cmake)
-include(cmake/Metadata.cmake)
-target_include_directories(RenderLabBuildOptions INTERFACE "${RENDERLAB_GENERATED_DIRECTORY}")
 
 find_package(ZLIB REQUIRED)
-add_subdirectory(src/asset/pbrt)
 
-add_library(RenderLabCore SHARED
-    src/core/ConfigManager.cpp
-    src/core/ConfigManager.h
-    src/core/Settings.cpp
-    src/core/Settings.h
-    src/core/MetadataAnnotations.h
+include(FetchContent)
+set(REFLECTCPP_BUILD_SHARED OFF)
+FetchContent_Declare(reflectcpp
+    URL https://codeload.github.com/getml/reflect-cpp/tar.gz/refs/tags/v0.27.1
+    URL_HASH SHA256=c50b221080687b42f852b58e651441d8130107ece17312218e5d31ce081206ea
+)
+FetchContent_MakeAvailable(reflectcpp)
+
+add_library(RenderLabCore STATIC
+    src/core/Config.h
     src/core/Context.cpp
     src/core/Context.h
-    src/core/Logger.cpp
     src/core/Logger.h
-    src/core/Macros.h
-    src/core/DirectedGraph.h
-    src/core/DirectedGraphTraversal.h
-    src/core/Metadata.cpp
-    src/core/Metadata.h
-    src/core/MetadataBinding.h
-    src/asset/ApplyOptionalFields.cpp
-    src/core/TypeRegistry.h
-    src/core/TypeTraits.h
-    src/core/Serializer.h
-    src/core/Window.cpp
-    src/core/Window.h
-    src/core/Input.h
-    src/core/InputManager.h
-    src/core/InputManager.cpp
-    src/scene/Component.h
-    src/scene/Component.cpp
-    src/scene/component/CameraComponent.h
-    src/scene/component/LightComponent.h
-    src/scene/component/LightComponent.cpp
-    src/scene/component/EnvironmentLightComponent.cpp
-    src/scene/component/RenderComponent.h
-    src/scene/component/RenderComponent.cpp
-    src/scene/component/TransformComponent.cpp
-    src/scene/component/TransformComponent.h
-    src/scene/component/FreeFlyMoveComponent.h
-    src/scene/component/CharacterMoveComponent.h
+    src/core/ds/DirectedGraph.h
+    src/core/ds/DirectedGraphTraversal.h
+    src/core/Json.h
+    src/scene/Camera.cpp
     src/scene/SceneManager.cpp
-    src/scene/SceneManager.h
-    src/scene/AActor.cpp
-    src/scene/AActor.h
-    src/scene/actor/AFreeFlyCamera.cpp
-    src/scene/actor/AFreeFlyCamera.h
-    src/scene/actor/ALight.cpp
-    src/scene/actor/ALight.h
-    src/scene/actor/AStaticMesh.cpp
-    src/scene/actor/AStaticMesh.h
-    src/scene/component/FreeFlyMoveComponent.cpp
-    src/scene/component/CharacterMoveComponent.cpp
-    src/scene/component/CameraComponent.cpp
+    src/scene/Transform.cpp
     src/asset/AssetManager.cpp
-    src/asset/AssetPersistence.cpp
     src/asset/Asset.h
     src/asset/AssetID.h
     src/asset/ImageFormat.h
@@ -186,7 +135,6 @@ add_library(RenderLabCore SHARED
     src/asset/MeshGeometry.h
     src/asset/MeshGeometry.cpp
     src/asset/BuiltinAssets.h
-    src/asset/builtin/BuiltinMesh.cpp
     src/asset/builtin/BuiltinMaterial.cpp
     src/asset/builtin/BuiltinTexture.cpp
     src/asset/builtin/BuiltinSampler.cpp
@@ -201,35 +149,19 @@ add_library(RenderLabCore SHARED
     src/asset/import/GltfMaterialExtensions.h
     src/asset/import/GltfMaterialExtensions.cpp
     src/core/Vertex.h
-    src/scene/system/RenderSystem.cpp
-    src/scene/system/RenderSystem.h
-    src/scene/system/SceneCamera.cpp
-    src/scene/system/SceneCamera.h
     src/asset/AssetImporter.h
-    src/asset/AssetDataManager.cpp
-    src/asset/AssetDataManager.h
     src/asset/TextureMip.h
     src/asset/TextureMip.cpp
-    src/core/math/Sampler.cpp
     src/core/math/Bounds.cpp
-    src/core/time/Timer.cpp
-    src/core/profiling/Profiler.cpp
-    src/core/math/Sampler.h
-    src/render/DrawItem.h
-    src/render/RenderConfig.h
+    src/core/utils/NonCopyable.h
+    src/core/utils/Timer.cpp
     src/render/DispatchGroups.h
     src/render/RenderContext.h
+    src/render/RhiUtils.h
     src/render/GpuScene.cpp
     src/render/GpuScene.h
-    src/render/ViewportRect.cpp
-    src/render/ViewportRect.h
-    src/render/device/BufferCapacity.h
-    src/render/device/RhiCheck.h
-    src/render/device/GpuProfiler.cpp
-    src/render/device/GpuProfiler.h
     src/render/resources/TextureUpload.cpp
     src/render/resources/TextureUpload.h
-    src/render/resources/RhiScriptBindings.cpp
     src/render/resources/GpuMesh.cpp
     src/render/resources/GpuMesh.h
     src/render/resources/MaterialData.h
@@ -238,46 +170,39 @@ add_library(RenderLabCore SHARED
     src/render/resources/RenderResourceManager.cpp
     src/render/resources/RenderResourceManager.h
     src/render/resources/ShaderData.h
-    src/render/resources/PbrtMaterialProgram.h
     src/render/resources/ShaderLayout.cpp
     src/render/resources/ShaderLayout.h
     src/render/resources/ShaderManager.cpp
     src/render/resources/ShaderManager.h
+    src/render/resources/RayTracingProgram.cpp
+    src/render/resources/RayTracingProgram.h
+    src/render/resources/RayType.h
+    src/render/resources/SceneAccelerationStructures.cpp
+    src/render/resources/SceneAccelerationStructures.h
     src/render/graph/RenderGraph.cpp
     src/render/graph/RenderGraph.h
     src/render/graph/RenderGraphExe.cpp
     src/render/graph/RenderGraphExe.h
     src/render/graph/ResourceCache.cpp
     src/render/graph/ResourceCache.h
-    src/render/raster/MeshDraw.cpp
-    src/render/raster/MeshDraw.h
-    src/render/raster/RasterLightingSettings.cpp
-    src/render/raster/RasterLightingSettings.h
-    src/render/raster/ShadowResources.cpp
-    src/render/raster/ShadowResources.h
-    src/render/raytracing/SceneAccelerationStructures.cpp
-    src/render/raytracing/SceneAccelerationStructures.h
-    src/render/raytracing/PathTracingParameters.h
-    src/render/raytracing/PathTracingShader.cpp
-    src/render/raytracing/RayTracingProgram.cpp
-    src/render/raytracing/PathTracingShader.h
-    src/scene/system/SceneLight.h
+    src/render/impl/graphs/minimal/MinimalPathTracerGraph.cpp
+    src/render/impl/graphs/minimal/MinimalPathTracerGraph.h
+    src/render/impl/passes/MinimalPathTracer.cpp
+    src/render/impl/postprocess/bloom/Bloom.cpp
+    src/render/impl/postprocess/bloom/BloomUi.cpp
+    src/render/impl/postprocess/ExposurePass/ExposurePass.cpp
+    src/render/impl/postprocess/ExposurePass/ExposurePassUi.cpp
+    src/render/impl/postprocess/FalcorPostProcess/FalcorPostProcess.cpp
+    src/render/impl/postprocess/FalcorPostProcess/FalcorPostProcessConfig.cpp
+    src/render/impl/postprocess/FalcorPostProcess/FalcorPostProcessUi.cpp
+    src/render/impl/postprocess/ToneMappingPass/ToneMappingPass.cpp
     src/render/resources/SceneLightConstants.h
-    src/render/editor/EditorFrameInput.h
     src/render/graph/RenderPass.cpp
     src/render/graph/RenderPassReflection.cpp
     src/render/graph/RenderPassReflection.h
+    src/render/graph/RenderPassOptions.h
     src/render/graph/RenderPassStandardFlags.h
     src/render/graph/RenderGraphCompiler.cpp
-    src/render/graph/RenderGraphScript.cpp
-    src/render/graph/RenderGraphScript.h
-    src/core/ScriptBindings.cpp
-    src/core/ScriptBindings.h
-    src/core/Scripting.cpp
-    src/core/Scripting.h
-    src/core/RuntimeDirectory.cpp
-    src/render/plugins/Plugin.cpp
-    src/render/plugins/Plugin.h
     src/render/resources/AnalyticLights.cpp
     src/render/resources/AnalyticLights.h
     src/render/resources/EmissiveLights.cpp
@@ -285,73 +210,16 @@ add_library(RenderLabCore SHARED
     src/editor/Gui.cpp
     src/editor/PassEditor.cpp
 )
-set_target_properties(RenderLabCore PROPERTIES PREFIX "" DEFINE_SYMBOL RENDERLAB_CORE_EXPORTS)
-if(MINGW)
-    target_link_options(RenderLabCore PRIVATE "LINKER:--export-all-symbols")
-elseif(MSVC)
-    set_target_properties(RenderLabCore PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
-    # Auto-export scans object files. Include the functions from the GUI archives as well.
-    set(renderlab_gui_exports "${RENDERLAB_GENERATED_DIRECTORY}/gui-exports.def")
-    add_custom_command(
-        OUTPUT "${renderlab_gui_exports}"
-        COMMAND "${CMAKE_COMMAND}"
-            "-Dnm=${RENDERLAB_LLVM_NM}"
-            "-Dimgui=$<TARGET_FILE:imgui::imgui>"
-            "-Dimguizmo=$<TARGET_FILE:imguizmo::imguizmo>"
-            "-Doutput=${renderlab_gui_exports}"
-            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GuiExports.cmake"
-        DEPENDS "$<TARGET_FILE:imgui::imgui>" "$<TARGET_FILE:imguizmo::imguizmo>"
-            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GuiExports.cmake"
-        VERBATIM
-    )
-    target_sources(RenderLabCore PRIVATE "${renderlab_gui_exports}")
-endif()
-set_property(SOURCE src/render/plugins/Plugin.cpp APPEND PROPERTY COMPILE_DEFINITIONS
-    RENDERLAB_PLUGIN_ABI="${RENDERLAB_PLUGIN_ABI}"
-    RENDERLAB_PLUGIN_SUFFIX="${CMAKE_SHARED_LIBRARY_SUFFIX}")
-# Editor code and plugin widgets share one ImGui context.
-target_link_libraries(RenderLabCore PRIVATE
-    imgui::imgui "$<LINK_LIBRARY:WHOLE_ARCHIVE,imguizmo::imguizmo>"
-    ${CMAKE_DL_LIBS}
-    Python3::Python
-)
-foreach(texture IN ITEMS lut_ggx lut_sheen_E)
-    set(input "${CMAKE_CURRENT_SOURCE_DIR}/src/asset/builtin/data/${texture}.png")
-    set(output "${RENDERLAB_GENERATED_DIRECTORY}/builtin/${texture}.inc")
-    set(embed_script "${CMAKE_CURRENT_SOURCE_DIR}/tools/EmbedBinary.py")
-    add_custom_command(OUTPUT "${output}"
-        COMMAND "${Python3_EXECUTABLE}" "${embed_script}" "${input}" "${output}"
-        DEPENDS "${input}" "${embed_script}"
-        VERBATIM
-    )
-    target_sources(RenderLabCore PRIVATE "${output}")
-endforeach()
+target_link_libraries(RenderLabCore PRIVATE imgui::imgui)
 set(renderlab_gui_backend_includes
     $<TARGET_PROPERTY:imgui::imgui,INTERFACE_INCLUDE_DIRECTORIES>
-    $<TARGET_PROPERTY:imguizmo::imguizmo,INTERFACE_INCLUDE_DIRECTORIES>
 )
 target_include_directories(RenderLabCore SYSTEM PRIVATE ${renderlab_gui_backend_includes})
-target_sources(RenderLabCore PRIVATE
-    src/asset/pbrt/PbrtImport.cpp
-    src/asset/pbrt/PbrtData.cpp
-    src/asset/pbrt/PbrtMaterial.cpp
-    src/asset/pbrt/PbrtSpectrum.cpp
-    src/asset/pbrt/PbrtLight.cpp
-    src/asset/pbrt/PbrtImage.cpp
-    src/asset/pbrt/PbrtTexture.cpp
-    src/asset/pbrt/PbrtMedium.cpp
-    src/asset/pbrt/PbrtSceneConversion.cpp
-    src/asset/pbrt/PbrtMesh.cpp
-    src/asset/builtin/PrimitiveMesh.cpp
-    src/asset/pbrt/upstream/PlyReader.cpp
-    src/asset/pbrt/upstream/PfmReader.cpp
-    src/asset/pbrt/upstream/rply/rply.cpp
-)
 add_library(RenderLabDds OBJECT src/asset/import/ImportDds.cpp)
 target_include_directories(RenderLabDds PRIVATE src)
 target_compile_definitions(RenderLabDds PRIVATE GLM_FORCE_DEPTH_ZERO_TO_ONE GLOG_NO_ABBREVIATED_SEVERITIES)
 target_link_libraries(RenderLabDds PRIVATE RenderLabBuildOptions glm::glm glog::glog Microsoft::DirectXTex)
-target_link_libraries(RenderLabCore PRIVATE ZLIB::ZLIB RenderLabDds)
+target_link_libraries(RenderLabCore PRIVATE ZLIB::ZLIB RenderLabDds nlohmann_json::nlohmann_json)
 
 target_include_directories(RenderLabCore PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -360,27 +228,24 @@ target_include_directories(RenderLabCore PUBLIC
 
 target_compile_definitions(RenderLabCore PUBLIC
         RENDERLAB_CONFIG_FILE="${CMAKE_CURRENT_SOURCE_DIR}/config/config.json"
+        RENDERLAB_SHADER_DIRECTORY="${SHADER_BINARY_DIR}"
         GLFW_INCLUDE_NONE
         GLM_FORCE_DEPTH_ZERO_TO_ONE
         GLOG_NO_ABBREVIATED_SEVERITIES
 )
 
 target_link_libraries(RenderLabCore PUBLIC
-        RenderLabPbrtFrontend
         mikktspace::mikktspace
         assimp::assimp
         RenderLabBuildOptions
+        reflectcpp::reflectcpp
         slang-rhi
         glfw
         glm::glm
-        nlohmann_json::nlohmann_json
         glog::glog
         unofficial::tinyexr::tinyexr
 )
 
-renderlab_generate_metadata(RenderLabCore src SCHEMA)
-
-# Use the same dependency headers with separate DLL export and import definitions.
 set(renderlab_pch_headers
         <algorithm>
         <array>
@@ -395,55 +260,36 @@ set(renderlab_pch_headers
         <vector>
         <glm/glm.hpp>
         <glm/gtc/quaternion.hpp>
-        <nlohmann/json.hpp>
         <slang-rhi.h>
 )
 target_precompile_headers(RenderLabCore PRIVATE ${renderlab_pch_headers})
-add_library(RenderLabPluginAbi OBJECT src/render/plugins/PluginAbi.cpp)
-target_link_libraries(RenderLabPluginAbi PRIVATE RenderLabCore)
-set_property(SOURCE src/render/plugins/PluginAbi.cpp APPEND PROPERTY COMPILE_DEFINITIONS
-    RENDERLAB_PLUGIN_ABI="${RENDERLAB_PLUGIN_ABI}")
-target_precompile_headers(RenderLabPluginAbi PRIVATE ${renderlab_pch_headers})
-add_subdirectory(shaders/passes passes)
 option(BUILD_TESTING "Enable manual validation tools" OFF)
 renderlab_build_shaders()
-renderlab_build_plugins()
+add_dependencies(RenderLabCore RenderLabShaders)
 
 add_library(RenderLabRuntime STATIC
-    src/editor/Inspector.cpp
+    src/core/Window.cpp
+    src/core/Window.h
     src/editor/EditorBackend.cpp
-    src/editor/SceneHierarchy.cpp
     src/editor/RendererUi.cpp
     src/Engine.cpp
     src/Engine.h
     src/editor/Editor.cpp
     src/editor/EditorCamera.cpp
     src/editor/EditorCamera.h
-    src/editor/EditorCameraConfig.h
     src/editor/Editor.h
-    src/editor/ComponentDraw.cpp
-    src/editor/ComponentDraw.h
-    src/editor/MaterialExtensionsDraw.cpp
-    src/editor/MaterialExtensionsDraw.h
     src/editor/EditorUi.cpp
     src/editor/EditorUi.h
-    src/platform/InputMethod.cpp
-    src/platform/InputMethod.h
-    src/editor/PerformancePanel.cpp
     src/render/Renderer.cpp
     src/render/Renderer.h
 )
-target_link_libraries(RenderLabRuntime PUBLIC RenderLabCore PRIVATE Python3::Python)
-add_dependencies(RenderLabRuntime RenderLabCoreMetadata)
+target_link_libraries(RenderLabRuntime PUBLIC RenderLabCore)
 target_include_directories(RenderLabRuntime SYSTEM PRIVATE ${renderlab_gui_backend_includes})
-set_property(SOURCE src/core/Scripting.cpp APPEND PROPERTY COMPILE_DEFINITIONS
-    RENDERLAB_PYTHON_HOME=L"${RENDERLAB_PYTHON_HOME}")
-target_precompile_headers(RenderLabRuntime REUSE_FROM RenderLabPluginAbi)
+target_precompile_headers(RenderLabRuntime REUSE_FROM RenderLabCore)
 
 add_executable(RenderLab src/Main.cpp)
-add_dependencies(RenderLab RenderLabPassPlugins)
 target_link_libraries(RenderLab PRIVATE RenderLabRuntime)
-target_precompile_headers(RenderLab REUSE_FROM RenderLabPluginAbi)
+target_precompile_headers(RenderLab REUSE_FROM RenderLabCore)
 
 renderlab_copy_runtime_libraries(RenderLabCore)
 if (BUILD_TESTING)

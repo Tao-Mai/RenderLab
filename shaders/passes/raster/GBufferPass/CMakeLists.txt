@@ -1,1 +1,0 @@
-renderlab_add_plugin(GBufferPass GBufferPass.cpp)

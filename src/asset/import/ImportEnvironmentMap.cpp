@@ -1,7 +1,6 @@
 #include "asset/AssetImporter.h"
 
 #include "asset/AssetManager.h"
-#include "asset/AssetDataManager.h"
 #include "asset/BuiltinAssets.h"
 #include "asset/import/EnvironmentMapUtils.h"
 #include "asset/import/ImportId.h"
@@ -15,14 +14,9 @@
 #include <cstdint>
 #include <limits>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <vector>
 
-// 执行流程：loadImage 解码源文件 -> environmentProjection 验证经纬图或竖排 Cube ->
-// environmentCubemap 生成 radiance 六面图 -> buildMipmapChain 生成 radiance mip 链 ->
-// irradianceCubemap 做余弦加权半球积分 ->
-// prefilterSpecularMap 生成 GGX 预滤波 mip 链 -> 保存纹理及 EnvironmentMapAsset。
 namespace
 {
 using asset_import::environment_map::decode8BitPixels;
@@ -37,59 +31,12 @@ using asset_import::environment_map::writePixel;
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 }
 
-[[nodiscard]] uint64_t estimatedPrefilterSamples(
-    uint32_t side, uint32_t mipLevels, uint32_t firstSamples, uint32_t maxSamples)
-{
-    uint64_t total = 0;
-    uint32_t samples = firstSamples;
-    for (uint32_t mip = 1; mip < mipLevels; ++mip)
-    {
-        const uint64_t mipSide = texture_mip::extent(side, mip);
-        total += 6 * mipSide * mipSide * samples;
-        samples = static_cast<uint32_t>(std::min<uint64_t>(
-            static_cast<uint64_t>(samples) * 2, maxSamples));
-    }
-    return total;
-}
-
-void validateSetting(const ImportEnvironmentMapSetting& setting)
-{
-    const auto& source = setting.source;
-    CHECK(!source.empty(), "environment map source path is empty");
-    CHECK(setting.irradianceSize > 0,
-          "irradiance map size must be positive: {}", source.string());
-    CHECK(setting.irradianceSampleCount > 0,
-          "irradiance sample count must be positive: {}", source.string());
-    CHECK(setting.prefilteredSpecularSampleCount > 0,
-          "prefilter sample count must be positive: {}", source.string());
-    CHECK(setting.prefilteredSpecularMaxSampleCount >=
-          setting.prefilteredSpecularSampleCount,
-          "prefilter sample cap must be at least the initial sample count: {}",
-          source.string());
-
-    constexpr uint64_t pixelBytes = 4 * sizeof(float);
-    constexpr uint64_t maxPayload = std::numeric_limits<uint32_t>::max();
-    CHECK(setting.irradianceSize <=
-          maxPayload / setting.irradianceSize / 6 / pixelBytes,
-          "irradiance map is too large: {}", source.string());
-}
-
-[[nodiscard]] std::filesystem::path sourceWithSuffix(
-    const std::filesystem::path& source, std::string_view suffix)
-{
-    return suffix.empty()
-        ? source
-        : source.parent_path() /
-            (source.stem().string() + std::string{suffix} + source.extension().string());
-}
-
 [[nodiscard]] TextureAsset cubemapAsset(
-    const std::filesystem::path& source, std::string_view suffix,
+    const std::filesystem::path& source,
     ImageFormat format, ColorSpace colorSpace, uint32_t side, uint32_t mipLevels)
 {
-    const std::filesystem::path name = sourceWithSuffix(source, suffix);
     return {
-        .id = TextureAsset::ID{name.stem().string()},
+        .id = TextureAsset::ID{source.stem().string()},
         .source = Source::File,
         .format = format,
         .colorSpace = colorSpace,
@@ -140,13 +87,13 @@ AssetImporter::LoadedImage::Projection AssetImporter::environmentProjection(
 // source 用于报错。8 位输入依 colorSpace 转为线性值后采样。
 // 输出：线性 RGBA float 和待保存的字节数据，共用 +X、-X、+Y、-Y、+Z、-Z 面顺序。
 // 每面 side x side、行优先、每像素 RGBA 交错；线性数据按 4 个 float 寻址，
-// 字节数据按 bytesPerPixel(format) 寻址，均没有行间距或面间距。
+// 字节数据按像素大小寻址，均没有行间距或面间距。
 // RGBA8 字节按 colorSpace 编码，浮点格式的字节保持线性值。
 AssetImporter::CubemapPixels AssetImporter::environmentCubemap(
     const LoadedImage& image, LoadedImage::Projection projection, uint32_t                     side,
     ImageFormat        format, ColorSpace             colorSpace, const std::filesystem::path& source)
 {
-    const size_t   bytesPerPixel = AssetDataManager::bytesPerPixel(format);
+    const size_t   bytesPerPixel = imageBlock(format).bytes;
     const uint64_t byteCount     = static_cast<uint64_t>(side) * side * 6 * bytesPerPixel;
     CHECK(byteCount <= std::numeric_limits<uint32_t>::max(),
           "imported cubemap is too large: {}",
@@ -208,17 +155,10 @@ AssetImporter::CubemapPixels AssetImporter::environmentCubemap(
     return cubemap;
 }
 
-// 输入：setting.source 是 EXR、HDR 或支持的 8 位图像文件路径；setting 还可指定源图与 radiance
-// 的色彩空间、irradiance 的面尺寸、两种积分的采样数及 GGX 采样上限。
-// 省略色彩空间时 EXR 和 HDR 为 Linear、
-// 8 位图像为 Srgb。loadImage 返回行优先源图。
-// 输出：待写入的纹理描述与字节缓冲区。函数选定投影和面尺寸，将六面像素按
-// environmentCubemap 所述布局写入 radiance 并生成完整 mip 链；再从 radiance 计算线性
-// irradiance 纹理，并生成带完整 mip 链的 GGX 预滤波纹理。此阶段只计算，不写资产管理器。
 std::optional<AssetImporter::PreparedEnvironmentMap> AssetImporter::prepareEnvironmentMap(
     const ImportEnvironmentMapSetting& setting, std::stop_token stop)
 {
-    validateSetting(setting);
+    CHECK(!setting.source.empty(), "environment map source path is empty");
     if (stop.stop_requested())
     {
         return std::nullopt;
@@ -226,13 +166,6 @@ std::optional<AssetImporter::PreparedEnvironmentMap> AssetImporter::prepareEnvir
 
     const std::filesystem::path& source = setting.source;
     const auto importStart = std::chrono::steady_clock::now();
-    LOG_INFO("Import environment '{}' started: irradiance {}x{}x6, {} samples; "
-             "prefilter {} to {} samples per pixel",
-             source.string(), setting.irradianceSize, setting.irradianceSize,
-             setting.irradianceSampleCount,
-             setting.prefilteredSpecularSampleCount,
-             setting.prefilteredSpecularMaxSampleCount);
-
     LOG_INFO("Decoding environment source '{}', this may take time for large EXR files",
              source.string());
     const LoadedImage             image      = loadImage(source);
@@ -251,7 +184,7 @@ std::optional<AssetImporter::PreparedEnvironmentMap> AssetImporter::prepareEnvir
              image.width, image.height, side, side, elapsedSeconds(importStart));
 
     TextureAsset radiance = cubemapAsset(
-        source, "", environmentFormat(image.format), resolvedColorSpace,
+        source, environmentFormat(image.format), resolvedColorSpace,
         side, texture_mip::maxLevels(side, side));
     CHECK(radiance.format == ImageFormat::RGBA8 ||
           radiance.colorSpace == ColorSpace::Linear,
@@ -282,60 +215,10 @@ std::optional<AssetImporter::PreparedEnvironmentMap> AssetImporter::prepareEnvir
     LOG_INFO("Radiance mip chain ready, elapsed {:.1f}s",
              elapsedSeconds(importStart));
 
-    TextureAsset irradiance = cubemapAsset(
-        source, "_irradiance", ImageFormat::RGBA32F, ColorSpace::Linear,
-        setting.irradianceSize, 1);
-    TextureAsset prefiltered = cubemapAsset(
-        source, "_prefiltered_specular", ImageFormat::RGBA32F, ColorSpace::Linear,
-        side, radiance.mipLevels);
-
-    LOG_INFO("Baking irradiance cubemap");
-    std::vector<uint8_t> irradianceBytes =
-        irradianceCubemap(radiance,
-                          radiancePixels.linear,
-                          setting.irradianceSize,
-                          setting.irradianceSampleCount,
-                          stop);
-    if (stop.stop_requested())
-    {
-        return std::nullopt;
-    }
-
-    LOG_INFO("Irradiance cubemap ready, elapsed {:.1f}s",
-             elapsedSeconds(importStart));
-
-    const uint64_t estimatedSamples = estimatedPrefilterSamples(
-        side, radiance.mipLevels,
-        setting.prefilteredSpecularSampleCount,
-        setting.prefilteredSpecularMaxSampleCount);
-    LOG_INFO("Baking prefiltered specular cubemap: approximately {} candidate samples "
-             "across {} mips", estimatedSamples, prefiltered.mipLevels);
-    if (estimatedSamples > 100'000'000)
-    {
-        LOG_WARNING("Prefilter bake is large; it may take substantial CPU time");
-    }
-    std::vector<uint8_t> prefilteredBytes = prefilterSpecularMap(
-        radiance,
-        radiancePixels.linear,
-        setting.prefilteredSpecularSampleCount,
-        setting.prefilteredSpecularMaxSampleCount,
-        stop);
-    if (stop.stop_requested())
-    {
-        return std::nullopt;
-    }
-
-    LOG_INFO("Prefiltered specular cubemap ready, elapsed {:.1f}s",
-             elapsedSeconds(importStart));
-
     return PreparedEnvironmentMap{
         .source = source,
         .radiance = std::move(radiance),
-        .irradiance = std::move(irradiance),
-        .prefiltered = std::move(prefiltered),
         .radianceBytes = std::move(radiancePixels.encoded),
-        .irradianceBytes = std::move(irradianceBytes),
-        .prefilteredBytes = std::move(prefilteredBytes),
     };
 }
 
@@ -343,30 +226,10 @@ EnvironmentMapAsset::ID AssetImporter::saveEnvironmentMap(PreparedEnvironmentMap
 {
     const std::filesystem::path& source = prepared.source;
     prepared.radiance.id = asset_import::nextId<TextureAsset>(source.stem().string());
-    prepared.irradiance.id = asset_import::nextId<TextureAsset>(
-        sourceWithSuffix(source, "_irradiance").stem().string());
-    prepared.prefiltered.id = asset_import::nextId<TextureAsset>(
-        sourceWithSuffix(source, "_prefiltered_specular").stem().string());
-
-    LOG_INFO("Writing environment textures: radiance {} bytes, irradiance {} bytes, "
-             "prefiltered {} bytes",
-             prepared.radianceBytes.size(), prepared.irradianceBytes.size(),
-             prepared.prefilteredBytes.size());
-    const TextureAsset::ID radianceId =
-        saveTexture(std::move(prepared.radiance), source, prepared.radianceBytes);
-    const TextureAsset::ID irradianceId =
-        saveTexture(std::move(prepared.irradiance), source, prepared.irradianceBytes);
-    const TextureAsset::ID prefilteredId =
-        saveTexture(std::move(prepared.prefiltered), source, prepared.prefilteredBytes);
-
-    EnvironmentMapAsset environment{};
-    environment.id       = asset_import::nextId<EnvironmentMapAsset>(source.stem().string());
-    environment.radiance = TextureBinding{
-        radianceId, BuiltinAssets::Sampler::linearClamp};
-    environment.irradiance = TextureBinding{
-        irradianceId, BuiltinAssets::Sampler::linearClamp};
-    environment.prefilteredSpecular = TextureBinding{
-        prefilteredId, BuiltinAssets::Sampler::linearClamp};
+    const auto radianceId = saveTexture(std::move(prepared.radiance), source, prepared.radianceBytes);
+    EnvironmentMapAsset environment;
+    environment.id = asset_import::nextId<EnvironmentMapAsset>(source.stem().string());
+    environment.radiance = {radianceId, BuiltinAssets::Sampler::linearClamp};
 
     const EnvironmentMapAsset::ID id =
         context().assetManager->save<EnvironmentMapAsset>(std::move(environment));

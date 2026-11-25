@@ -1,5 +1,6 @@
 #pragma once
 
+#include "render/RenderContext.h"
 #include "render/graph/RenderPass.h"
 #include "render/graph/ResourceCache.h"
 
@@ -11,14 +12,13 @@ class RenderGraphExe
 {
 public:
     void execute(RenderContext* context, RenderData::Dictionary& dictionary, glm::uvec2 defaultTexDims);
-    void renderUI(const PassEditorContext& context, Gui::Widgets& widget);
+    void renderUI(const PassEditorContext& context, Gui::Widgets& widgets, RenderPassOptions& options);
     [[nodiscard]] rhi::ComPtr<rhi::IResource> getResource(const std::string& name) const;
     [[nodiscard]] rhi::ComPtr<rhi::IResource> getOutput(size_t index) const
     {
         return rhi::ComPtr<rhi::IResource>{resources.resource(outputs[index])};
     }
     [[nodiscard]] uint32_t getMaxFramesInFlight() const { return maxFramesInFlight; }
-    [[nodiscard]] bool hasPassType(std::string_view type) const;
     void setInput(const std::string& name, rhi::IResource* resource);
 
 private:

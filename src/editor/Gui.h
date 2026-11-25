@@ -1,6 +1,7 @@
 #pragma once
 
-#include "core/Macros.h"
+#include "core/utils/NonCopyable.h"
+
 #include <glm/vec4.hpp>
 
 #include <cstddef>
@@ -12,16 +13,14 @@
 #include <string_view>
 #include <type_traits>
 
-class RENDERLAB_CORE_API IDScope
+class IDScope : private NonCopyable
 {
 public:
     explicit IDScope(const void* id);
     ~IDScope();
-    IDScope(const IDScope&) = delete;
-    IDScope& operator=(const IDScope&) = delete;
 };
 
-class RENDERLAB_CORE_API Gui
+class Gui
 {
 public:
     class Widgets;
@@ -31,11 +30,9 @@ public:
 class Gui::Widgets
 {
 public:
-    class Group
+    class Group : private NonCopyable
     {
     public:
-        Group(const Group&) = delete;
-        Group& operator=(const Group&) = delete;
         ~Group();
 
         explicit operator bool() const { return open; }

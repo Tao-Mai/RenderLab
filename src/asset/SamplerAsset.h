@@ -1,72 +1,84 @@
 #pragma once
 
-#include "core/MetadataAnnotations.h"
-
 #include <optional>
 #include "asset/Asset.h"
 
-struct RL_RECORD SamplerAsset : Asset
+struct SamplerAsset
 {
     using ID                              = AssetID<SamplerAsset>;
     static constexpr std::string_view dir = "Sampler";
 
-    enum class RL_ENUM Filter
+    enum class Filter
     {
-        Nearest RL_ENUM_VALUE("Nearest"),
-        Linear RL_ENUM_VALUE("Linear")
+        Nearest,
+        Linear
     };
 
-    enum class RL_ENUM MipmapMode
+    enum class MipmapMode
     {
-        Nearest RL_ENUM_VALUE("Nearest"),
-        Linear RL_ENUM_VALUE("Linear")
+        Nearest,
+        Linear
     };
 
-    enum class RL_ENUM AddressMode
+    enum class AddressMode
     {
-        Repeat RL_ENUM_VALUE("Repeat"),
-        MirroredRepeat RL_ENUM_VALUE("MirroredRepeat"),
-        ClampToEdge RL_ENUM_VALUE("ClampToEdge"),
-        ClampToBorder RL_ENUM_VALUE("ClampToBorder")
+        Repeat,
+        MirroredRepeat,
+        ClampToEdge,
+        ClampToBorder
     };
 
-    enum class RL_ENUM CompareOp
+    enum class CompareOp
     {
-        Never RL_ENUM_VALUE("Never"),
-        Less RL_ENUM_VALUE("Less"),
-        Equal RL_ENUM_VALUE("Equal"),
-        LessOrEqual RL_ENUM_VALUE("LessOrEqual"),
-        Greater RL_ENUM_VALUE("Greater"),
-        NotEqual RL_ENUM_VALUE("NotEqual"),
-        GreaterOrEqual RL_ENUM_VALUE("GreaterOrEqual"),
-        Always RL_ENUM_VALUE("Always")
+        Never,
+        Less,
+        Equal,
+        LessOrEqual,
+        Greater,
+        NotEqual,
+        GreaterOrEqual,
+        Always
     };
 
-    enum class RL_ENUM BorderColor
+    enum class BorderColor
     {
-        FloatTransparentBlack RL_ENUM_VALUE("FloatTransparentBlack"),
-        IntTransparentBlack RL_ENUM_VALUE("IntTransparentBlack"),
-        FloatOpaqueBlack RL_ENUM_VALUE("FloatOpaqueBlack"),
-        IntOpaqueBlack RL_ENUM_VALUE("IntOpaqueBlack"),
-        FloatOpaqueWhite RL_ENUM_VALUE("FloatOpaqueWhite"),
-        IntOpaqueWhite RL_ENUM_VALUE("IntOpaqueWhite")
+        FloatTransparentBlack,
+        IntTransparentBlack,
+        FloatOpaqueBlack,
+        IntOpaqueBlack,
+        FloatOpaqueWhite,
+        IntOpaqueWhite
     };
 
-    RL_FIELD("id") ID          id;
-    RL_FIELD("magFilter") Filter      magFilter        = Filter::Linear;
-    RL_FIELD("minFilter") Filter      minFilter        = Filter::Linear;
-    RL_FIELD("mipmapMode") MipmapMode  mipmapMode       = MipmapMode::Linear;
-    RL_FIELD("addressModeU") AddressMode addressModeU     = AddressMode::Repeat;
-    RL_FIELD("addressModeV") AddressMode addressModeV     = AddressMode::Repeat;
-    RL_FIELD("addressModeW") AddressMode addressModeW     = AddressMode::Repeat;
-    RL_FIELD("mipLodBias") float       mipLodBias       = 0.0f;
-    RL_FIELD("anisotropyEnable") bool        anisotropyEnable = false;
-    RL_FIELD("maxAnisotropy") float       maxAnisotropy    = 1.0f;
-    RL_FIELD("compareEnable") bool        compareEnable    = false;
-    RL_FIELD("compareOp") CompareOp   compareOp        = CompareOp::Always;
-    RL_FIELD("minLod") float       minLod           = 0.0f;
+    ID          id;
+
+    Filter      magFilter        = Filter::Linear;
+
+    Filter      minFilter        = Filter::Linear;
+
+    MipmapMode  mipmapMode       = MipmapMode::Linear;
+
+    AddressMode addressModeU     = AddressMode::Repeat;
+
+    AddressMode addressModeV     = AddressMode::Repeat;
+
+    AddressMode addressModeW     = AddressMode::Repeat;
+
+    float       mipLodBias       = 0.0f;
+
+    bool        anisotropyEnable = false;
+
+    float       maxAnisotropy    = 1.0f;
+
+    bool        compareEnable    = false;
+
+    CompareOp   compareOp        = CompareOp::Always;
+
+    float       minLod           = 0.0f;
     // 不指定表示不限制最大 LOD；0.0 表示仅使用基础 mip。
-    RL_FIELD("maxLod") std::optional<float> maxLod;
-    RL_FIELD("borderColor") BorderColor          borderColor             = BorderColor::FloatTransparentBlack;
-    RL_FIELD("unnormalizedCoordinates") bool                 unnormalizedCoordinates = false;
+    std::optional<float> maxLod;
+
+    BorderColor          borderColor             = BorderColor::FloatTransparentBlack;
+
+    bool                 unnormalizedCoordinates = false;
 };

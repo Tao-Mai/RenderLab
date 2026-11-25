@@ -1,6 +1,5 @@
 #include "asset/AssetImporter.h"
 
-#include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "asset/import/AssimpImport.h"
 #include "asset/import/GltfImport.h"
@@ -120,12 +119,11 @@ MeshAsset::ID ModelImport::saveMesh(AssetImporter::PreparedMesh&& prepared, cons
 
     MeshAsset mesh;
     mesh.id          = meshId;
-    mesh.source      = Source::File;
     mesh.path        = asset_import::sourcePathForAsset(source);
     mesh.meshIndex   = prepared.meshIndex;
     mesh.importScale = setting.importScale;
     mesh.bounds      = calculateBounds(prepared.geometry);
-    mesh.geometry    = context().assetDataManager->writeGeometry(meshId, prepared.geometry);
+    mesh.geometry    = context().assetManager->writeGeometry(meshId, prepared.geometry);
     mesh.submeshes.reserve(prepared.submeshes.size());
     for (const auto& submesh : prepared.submeshes)
     {

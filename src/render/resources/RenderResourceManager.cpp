@@ -4,9 +4,8 @@
 #include <limits>
 #include <slang-rhi.h>
 #include <slang-rhi/shader-cursor.h>
-#include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
-#include "render/device/RhiCheck.h"
+#include "render/RhiUtils.h"
 namespace
 {
 rhi::TextureAddressingMode addressMode(SamplerAsset::AddressMode mode)
@@ -27,22 +26,22 @@ rhi::TextureAddressingMode addressMode(SamplerAsset::AddressMode mode)
 }  // namespace
 
 RenderResourceManager::~RenderResourceManager() = default;
-void RenderResourceManager::init(rhi::IDevice& target, AssetManager& targetAssets, AssetDataManager& targetData)
+void RenderResourceManager::init(rhi::IDevice& target, const AssetManager& targetAssets)
 {
-    device              = &target;
-    assets              = &targetAssets;
-    data                = &targetData;
+    device = &target;
+    assets = &targetAssets;
 }
+
 void RenderResourceManager::shutdown() noexcept
 {
     environmentMaps.clear();
     meshes.clear();
     textures.clear();
     samplers.clear();
-    device              = nullptr;
-    assets              = nullptr;
-    data                = nullptr;
+    device = nullptr;
+    assets = nullptr;
 }
+
 const GpuMesh& RenderResourceManager::loadMesh(const MeshAsset::ID& id, rhi::ICommandEncoder& commands)
 {
     auto& versions = meshes[id];
@@ -51,7 +50,8 @@ const GpuMesh& RenderResourceManager::loadMesh(const MeshAsset::ID& id, rhi::ICo
         return found->second;
 
     const auto& meshAsset = assets->get(id);
-    const auto geometry = data->readGeometry(meshAsset);
+    const auto geometry = assets->readGeometry(meshAsset);
+
     return versions.try_emplace(revision, *device, commands, geometry, meshAsset.submeshes).first->second;
 }
 
@@ -64,7 +64,7 @@ rhi::ComPtr<rhi::ITexture> RenderResourceManager::texture(const TextureAsset::ID
 
     const TextureAsset& asset = assets->get<TextureAsset>(id);
 
-    const std::vector<uint8_t> bytes = data->readTexture(asset);
+    const std::vector<uint8_t> bytes = assets->readTexture(asset);
     auto                       gpu   = uploadTexture(*device, commands, asset, bytes);
 
     return textures.emplace(id, std::move(gpu)).first->second;
@@ -78,37 +78,16 @@ const GpuEnvironmentMap& RenderResourceManager::environmentMap(
         return found->second;
 
     const auto& environment = assets->get<EnvironmentMapAsset>(id);
-    CHECK(
-        !environment.irradiance.textureID.empty() && !environment.irradiance.samplerID.empty() &&
-            !environment.prefilteredSpecular.textureID.empty() && !environment.prefilteredSpecular.samplerID.empty(),
-        "environment '{}' requires irradiance and prefiltered specular textures",
-        id
-    );
-    const auto& radiance    = assets->get<TextureAsset>(environment.radiance.textureID);
-    const auto& irradiance  = assets->get<TextureAsset>(environment.irradiance.textureID);
-    const auto& prefiltered = assets->get<TextureAsset>(environment.prefilteredSpecular.textureID);
-    CHECK(
-        radiance.layout == ImageLayout::Cubemap && radiance.colorSpace == ColorSpace::Linear,
-        "environment '{}' requires a linear radiance cubemap",
-        id
-    );
-    CHECK(
-        irradiance.layout == ImageLayout::Cubemap && irradiance.colorSpace == ColorSpace::Linear &&
-            prefiltered.layout == ImageLayout::Cubemap && prefiltered.colorSpace == ColorSpace::Linear &&
-            prefiltered.mipLevels > 0,
-        "environment '{}' requires linear irradiance and prefiltered cubemaps",
-        id
-    );
+    CHECK(!environment.radiance.textureID.empty() && !environment.radiance.samplerID.empty(),
+          "environment '{}' requires a radiance texture and sampler", id);
+    
+    const auto& radiance = assets->get(environment.radiance.textureID);
+    CHECK(radiance.layout == ImageLayout::Cubemap,
+          "environment '{}' requires a radiance cubemap", id);
 
     GpuEnvironmentMap result;
-    const auto prefilteredTexture = texture(environment.prefilteredSpecular.textureID, commands);
     rhiCheck(texture(environment.radiance.textureID, commands)->getDefaultView(result.radiance.writeRef()));
-    rhiCheck(texture(environment.irradiance.textureID, commands)->getDefaultView(result.irradiance.writeRef()));
-    rhiCheck(prefilteredTexture->getDefaultView(result.prefilteredSpecular.writeRef()));
-    result.radianceSampler    = sampler(environment.radiance.samplerID);
-    result.irradianceSampler  = sampler(environment.irradiance.samplerID);
-    result.prefilteredSampler = sampler(environment.prefilteredSpecular.samplerID);
-    result.prefilteredMaxLod  = static_cast<float>(prefilteredTexture->getDesc().mipCount - 1);
+    result.radianceSampler = sampler(environment.radiance.samplerID);
     return environmentMaps.emplace(id, std::move(result)).first->second;
 }
 
@@ -122,7 +101,9 @@ rhi::ISampler* RenderResourceManager::sampler(const SamplerAsset::ID& id)
 {
     if (const auto found = samplers.find(id); found != samplers.end())
         return found->second;
+    
     const auto& asset = assets->get<SamplerAsset>(id);
+    
     CHECK(
         std::isfinite(asset.mipLodBias) && std::isfinite(asset.maxAnisotropy) && std::isfinite(asset.minLod) &&
             (!asset.maxLod || (std::isfinite(*asset.maxLod) && asset.minLod <= *asset.maxLod)),
@@ -130,6 +111,7 @@ rhi::ISampler* RenderResourceManager::sampler(const SamplerAsset::ID& id)
         id
     );
     CHECK(!asset.unnormalizedCoordinates, "slang-rhi requires normalized sampler coordinates: {}", id);
+    
     rhi::SamplerDesc desc;
     desc.minFilter      = asset.minFilter == SamplerAsset::Filter::Linear ? rhi::TextureFilteringMode::Linear
                                                                           : rhi::TextureFilteringMode::Point;

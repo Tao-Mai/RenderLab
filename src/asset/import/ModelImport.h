@@ -1,7 +1,7 @@
 #pragma once
 
 #include "asset/AssetImporter.h"
-#include "asset/MaterialAsset.h"
+#include "asset/GltfMaterial.h"
 
 #include <functional>
 #include <glm/mat4x4.hpp>
@@ -59,12 +59,12 @@ protected:
     explicit ModelImport(const std::filesystem::path& path);
     [[nodiscard]] virtual AssetImporter::PreparedMesh readMesh(std::optional<uint32_t> meshIndex) const = 0;
     // Slot zero is the default material; source material i is stored at i + 1.
-    [[nodiscard]] virtual std::vector<MaterialAsset::ID> importMaterials() = 0;
+    [[nodiscard]] virtual std::vector<GltfMaterial::ID> importMaterials() = 0;
 
     std::filesystem::path source;
 
 private:
-    std::vector<MaterialAsset::ID> materialIds;
+    std::vector<GltfMaterial::ID> materialIds;
 };
 
 namespace asset_import

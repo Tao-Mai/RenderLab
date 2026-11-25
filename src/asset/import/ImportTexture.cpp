@@ -1,6 +1,5 @@
 #include "asset/AssetImporter.h"
 
-#include "asset/AssetDataManager.h"
 #include "asset/AssetManager.h"
 #include "asset/TextureAsset.h"
 #include "asset/TextureMip.h"
@@ -34,7 +33,7 @@ AssetImporter::saveTexture(TextureAsset asset, const std::filesystem::path& sour
         asset.mipLevels,
         bytes.size()
     );
-    asset.binary              = context().assetDataManager->writeTexture(asset, bytes);
+    asset.binary              = context().assetManager->writeTexture(asset, bytes);
     const TextureAsset::ID id = context().assetManager->save<TextureAsset>(std::move(asset));
     LOG_INFO("Texture '{}' saved", id.value);
     return id;
@@ -99,7 +98,7 @@ TextureAsset::ID AssetImporter::importTexture(const ImportTextureSetting& settin
     {
         const auto&    rgba       = std::get<std::vector<float>>(image.pixels);
         const uint64_t pixelCount = static_cast<uint64_t>(image.width) * image.height;
-        const uint64_t byteCount  = pixelCount * AssetDataManager::bytesPerPixel(image.format);
+        const uint64_t byteCount  = pixelCount * imageBlock(image.format).bytes;
         CHECK(byteCount <= std::numeric_limits<uint32_t>::max(), "imported image is too large: {}", source.string());
         bytes.resize(static_cast<size_t>(byteCount));
         if (image.format == ImageFormat::RGBA16F)

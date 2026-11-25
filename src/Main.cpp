@@ -1,8 +1,6 @@
 #include "Engine.h"
-#include "asset/AssetDataManager.h"
 #include "asset/AssetImporter.h"
 #include "asset/AssetManager.h"
-#include "core/ConfigManager.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 
@@ -23,7 +21,7 @@
 namespace
 {
 constexpr std::string_view kImportUsage =
-    "usage: RenderLab --import-texture|--import-environmentmap|--import-mesh|--import-scene|--import-pbrt-scene "
+    "usage: RenderLab --import-texture|--import-environmentmap|--import-mesh|--import-scene "
     "<source> [--option value ...]";
 
 class ImportOptions
@@ -85,7 +83,7 @@ std::optional<ColorSpace> takeColorSpace(ImportOptions& options)
 }
 
 std::string importAsset(
-    std::string_view command, const std::filesystem::path& source, ImportOptions& options, AssetManager& assets
+    std::string_view command, const std::filesystem::path& source, ImportOptions& options
 )
 {
     if (command == "--import-texture")
@@ -97,13 +95,6 @@ std::string importAsset(
     if (command == "--import-environmentmap")
     {
         ImportEnvironmentMapSetting setting{.source = source, .colorSpace = takeColorSpace(options)};
-        setting.irradianceSize = options.takeNumber<uint32_t>("--irradiance-size").value_or(setting.irradianceSize);
-        setting.irradianceSampleCount =
-            options.takeNumber<uint32_t>("--irradiance-samples").value_or(setting.irradianceSampleCount);
-        setting.prefilteredSpecularSampleCount =
-            options.takeNumber<uint32_t>("--prefilter-samples").value_or(setting.prefilteredSpecularSampleCount);
-        setting.prefilteredSpecularMaxSampleCount =
-            options.takeNumber<uint32_t>("--prefilter-max-samples").value_or(setting.prefilteredSpecularMaxSampleCount);
         options.checkEmpty();
         return AssetImporter::importEnvironmentMap(setting).value;
     }
@@ -136,14 +127,6 @@ std::string importAsset(
         setting.importScale = *targetSide / longestSide;
         return AssetImporter::saveMesh(std::move(prepared), setting).value;
     }
-    if (command == "--import-pbrt-scene")
-    {
-        const std::string id{options.take("--id").value_or("")};
-        options.checkEmpty();
-        const auto description = AssetImporter::importPbrtScene({.source = source, .id = id});
-        return assets.get(description).scene.value;
-    }
-
     LOG_FATAL("unknown import command '{}'. {}", command, kImportUsage);
 }
 }  // namespace
@@ -156,29 +139,24 @@ int main(int argc, char** argv)
         CHECK(argc >= 3 && (argc - 3) % 2 == 0, "{}", kImportUsage);
         ImportOptions options{std::span<char* const>{argv + 3, static_cast<size_t>(argc - 3)}};
 
-        ConfigManager    config;
-        AssetManager     assets;
-        AssetDataManager assetData;
-        context().config           = &config;
-        context().assetManager     = &assets;
-        context().assetDataManager = &assetData;
-        config.init();
-        assetData.init(config.paths().assets);
-        context().assetManager->init(config.paths().assets);
+        AssetManager assets;
+        context().assetManager = &assets;
+
+        Engine::loadConfig();
+        const auto assetRoot = Engine::assetRoot();
+        assets.init(assetRoot);
+
         std::filesystem::path source{argv[2]};
         CHECK(!source.empty(), "asset source path is empty");
         if (source.is_relative())
         {
-            source = config.paths().assets.parent_path() / source;
+            source = assetRoot.parent_path() / source;
         }
-        const auto importedId = importAsset(argv[1], source, options, assets);
+        const auto importedId = importAsset(argv[1], source, options);
         LOG_INFO("imported asset ID: {}", importedId);
-        context().assetManager->shutdown();
-        assetData.shutdown();
-        config.shutdown();
-        context().assetManager     = nullptr;
-        context().assetDataManager = nullptr;
-        context().config           = nullptr;
+        assets.shutdown();
+        context().assetManager = nullptr;
+
         return 0;
     }
     Engine engine;

@@ -33,7 +33,7 @@ constexpr float kMinimumTangentLengthSquared = 1e-12f;
 
 struct GltfBuild
 {
-    std::vector<MaterialAsset::ID>                              materialIds;
+    std::vector<GltfMaterial::ID>                              materialIds;
     std::map<std::pair<std::string, ColorSpace>, TextureAsset::ID> textureCache;
 };
 
@@ -102,7 +102,7 @@ void registerMaterials(
 {
     GltfMaterial defaultMaterial;
     defaultMaterial.workflow         = MaterialWorkflow::MetallicRoughness;
-    defaultMaterial.id               = asset_import::nextId<MaterialAsset>(meshSource.stem().string());
+    defaultMaterial.id               = asset_import::nextId<GltfMaterial>(meshSource.stem().string());
     defaultMaterial.baseColorTexture = TextureBinding{
         BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat};
     build.materialIds.push_back(
@@ -112,12 +112,12 @@ void registerMaterials(
     {
         const tinygltf::Material& source = model.materials[index];
         GltfMaterial              material;
-        material.id = asset_import::nextId<MaterialAsset>(meshSource.stem().string());
+        material.id = asset_import::nextId<GltfMaterial>(meshSource.stem().string());
 
         material.workflow = source.extensions.contains("KHR_materials_pbrSpecularGlossiness")
             ? MaterialWorkflow::SpecularGlossiness
             : MaterialWorkflow::MetallicRoughness;
-        if (*material.workflow == MaterialWorkflow::MetallicRoughness)
+        if (material.workflow == MaterialWorkflow::MetallicRoughness)
         {
             const auto& pbr = source.pbrMetallicRoughness;
             if (pbr.baseColorFactor.size() == 4)
@@ -560,7 +560,7 @@ AssetImporter::PreparedMesh GltfImport::readMesh(std::optional<uint32_t> meshInd
     return build;
 }
 
-std::vector<MaterialAsset::ID> GltfImport::importMaterials()
+std::vector<GltfMaterial::ID> GltfImport::importMaterials()
 {
     GltfBuild build;
     registerMaterials(build, *model, source.parent_path(), source);

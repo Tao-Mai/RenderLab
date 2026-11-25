@@ -1,8 +1,8 @@
 #include "render/resources/ShaderManager.h"
 
 #include "core/Logger.h"
-#include "core/RuntimeDirectory.h"
-#include "render/device/RhiCheck.h"
+#include "core/Json.h"
+#include "render/RhiUtils.h"
 
 #include <algorithm>
 #include <array>
@@ -17,25 +17,13 @@
 #include <set>
 #include <utility>
 
-#include <nlohmann/json.hpp>
-
-using json = nlohmann::json;
-
 namespace
 {
 namespace fs = std::filesystem;
 
-const fs::path& shaderDirectory()
-{
-    static const auto kDirectory = runtimeDirectory() / "shaders";
-    return kDirectory;
-}
-
-const fs::path& cacheDirectory()
-{
-    static const auto kDirectory = shaderDirectory() / "cache";
-    return kDirectory;
-}
+const fs::path kShaderDirectory{RENDERLAB_SHADER_DIRECTORY};
+const fs::path kShaderSourceDirectory = kShaderDirectory / "source";
+const fs::path kShaderCacheDirectory = kShaderDirectory / "cache";
 
 std::optional<std::string> readFile(const fs::path& file)
 {
@@ -117,7 +105,7 @@ std::string bytecodeKey(ISlangBlob& key)
 
 fs::path bytecodeFile(std::string_view key)
 {
-    return cacheDirectory() / "bytecode" / (std::string{key} + ".bin");
+    return kShaderCacheDirectory / "bytecode" / (std::string{key} + ".bin");
 }
 
 class ShaderBytecodeCache final : public rhi::IPersistentCache
@@ -202,34 +190,23 @@ ShaderBytecodeCache& bytecodeCache()
     return *kCache.get();
 }
 
-std::vector<std::string> cachedBytecodeKeys(const json& header)
+std::vector<std::string> cachedBytecodeKeys(std::span<const std::string> keys)
 {
-    const auto keys = header.find("bytecode");
-    if (keys == header.end() || !keys->is_array())
-        return {};
-
     std::vector<std::string> result;
-    for (const auto& key : *keys)
-    {
-        if (!key.is_string())
-            continue;
-        const auto& name = key.get_ref<const std::string&>();
+    for (const auto& name : keys)
         if (!name.empty() && std::ranges::all_of(name, [](char digit)
             { return (digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f'); }))
             result.push_back(name);
-    }
+
     return result;
 }
 
 rhi::ComPtr<slang::ISession> createSourceSession(slang::IGlobalSession& globalSession, const ShaderDefines& defines)
 {
-    const auto source         = shaderDirectory() / "source";
-    const auto shaderIncludes = (source / "shaders").string();
-    const auto sharedHeaders  = (source / "src").string();
-    const auto root           = source.string();
-    const auto runtime        = runtimeDirectory().string();
-    // Slang records the generated module source relative to the runtime directory.
-    std::array searchPaths{shaderIncludes.c_str(), root.c_str(), sharedHeaders.c_str(), runtime.c_str()};
+    const auto source = kShaderSourceDirectory.string();
+    const auto output = kShaderDirectory.parent_path().string();
+    // Slang records the generated module source relative to the build output directory.
+    const std::array searchPaths{source.c_str(), output.c_str()};
 
     std::vector<slang::PreprocessorMacroDesc> macros;
     macros.reserve(defines.size());
@@ -273,16 +250,14 @@ rhi::IShaderProgram* ShaderManager::getProgram(
 )
 {
     ProgramKey key{std::string{source}, std::move(entries), defines, {includes.begin(), includes.end()}};
-    const json identity{
-        {"source", key.source}, {"entries", key.entries}, {"defines", key.defines}, {"includes", key.includes},
-    };
-    const auto cacheName = std::format("{}-{:016x}", fs::path(key.source).stem().string(), hashIdentity(identity.dump()));
-    const auto cacheFile = cacheDirectory() / "modules" / (cacheName + ".bin");
-    const auto sourceFile = shaderDirectory() / "source" / key.source;
+    const auto keyJson = asset_json::write(key, "shader program key");
+    const auto cacheName = std::format("{}-{:016x}", fs::path(key.source).stem().string(), hashIdentity(keyJson));
+    const auto cacheFile = kShaderCacheDirectory / "modules" / (cacheName + ".bin");
+    const auto sourceFile = kShaderSourceDirectory / key.source;
     auto compileFile = sourceFile;
     if (!key.includes.empty())
     {
-        compileFile = cacheDirectory() / "modules" / (cacheName + ".slang");
+        compileFile = kShaderCacheDirectory / "modules" / (cacheName + ".slang");
         std::string input;
         for (const auto& include : key.includes)
             input.append("#include \"").append(include).append("\"\n");
@@ -306,7 +281,7 @@ rhi::IShaderProgram* ShaderManager::getProgram(
     }
 
     const auto cached = readFile(cacheFile);
-    json header;
+    std::optional<CacheHeader> header;
     rhi::ComPtr<ISlangBlob> moduleBlob;
     rhi::ComPtr<ISlangBlob> diagnostics;
     slang::IModule* module = nullptr;
@@ -315,16 +290,16 @@ rhi::IShaderProgram* ShaderManager::getProgram(
         const auto split = cached->find('\n');
         if (split != std::string::npos && split + 1 < cached->size())
         {
-            header = json::parse(std::string_view(*cached).substr(0, split), nullptr, false);
-            const auto name = header.find("module");
-            if (header.contains("program") && header["program"] == identity && name != header.end() &&
-                name->is_string() && sourceExists)
+            if (auto decoded = asset_json::read<CacheHeader>(std::string_view(*cached).substr(0, split)); decoded)
+                header.emplace(std::move(*decoded));
+
+            if (header && header->program == key && sourceExists)
             {
                 const auto bytes = std::string_view(*cached).substr(split + 1);
                 moduleBlob.attach(slang_createBlob(bytes.data(), bytes.size()));
                 if (session->isBinaryModuleUpToDate(filename.c_str(), moduleBlob))
                     module = session->loadModuleFromIRBlob(
-                        name->get_ref<const std::string&>().c_str(), filename.c_str(), moduleBlob, diagnostics.writeRef()
+                        header->module.c_str(), filename.c_str(), moduleBlob, diagnostics.writeRef()
                     );
             }
         }
@@ -335,7 +310,8 @@ rhi::IShaderProgram* ShaderManager::getProgram(
     {
         if (cached)
         {
-            bytecodeCache().retire(cachedBytecodeKeys(header));
+            if (header)
+                bytecodeCache().retire(cachedBytecodeKeys(header->bytecode));
             removeCacheFile(cacheFile);
         }
         diagnostics.setNull();
@@ -393,7 +369,7 @@ rhi::IShaderProgram* ShaderManager::getProgram(
     if (compiledFromSource)
     {
         rhiCheck(module->serialize(moduleBlob.writeRef()));
-        std::string contents = json{{"program", identity}, {"module", module->getName()}, {"bytecode", entryKeys}}.dump();
+        auto contents = asset_json::write(CacheHeader{key, module->getName(), entryKeys}, "shader cache header");
         contents.push_back('\n');
         contents.append(blobBytes(*moduleBlob.get()));
         CHECK(writeFile(cacheFile, contents), "failed to write shader cache '{}'", cacheFile.string());

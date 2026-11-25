@@ -1,60 +1,37 @@
 #pragma once
 
-#include "asset/SceneAsset.h"
-#include "editor/SceneHierarchy.h"
-#include "render/ViewportRect.h"
+#include "core/utils/NonCopyable.h"
+#include "scene/Scene.h"
 
 #include <cstdint>
 #include <optional>
-#include <string>
-#include <utility>
+#include <slang-rhi.h>
 
-#include <glm/mat4x4.hpp>
-#include <glm/vec2.hpp>
-
-struct GLFWwindow;
-struct TransformComponent;
-
-class EditorUI
+class EditorUI : private NonCopyable
 {
 public:
-    struct InspectorResult
-    {
-        std::optional<SceneAsset::ID> sceneId;
-        bool                          edited = false;
-    };
-
     EditorUI() = default;
+    EditorUI(EditorUI&&) = delete;
 
-    EditorUI(const EditorUI&)            = delete;
-    EditorUI& operator=(const EditorUI&) = delete;
+    void beginFrame(bool showObjectList);
+    [[nodiscard]] int objectListInset(int windowWidth);
+    void drawSceneList(const Scene& scene) const;
+    [[nodiscard]] std::optional<Scene::ID> drawControls(const Scene& scene);
+    void endFrame();
+    void resetLayout();
 
-    void               beginFrame(bool showObjectList);
-    [[nodiscard]] int  objectListInset(int windowWidth);
-    SceneObjectActions drawHierarchy(SceneAsset& scene, uint32_t& selectedId)
-    {
-        return hierarchyDockId ? hierarchy.draw(scene, selectedId, hierarchyDockId) : SceneObjectActions{};
-    }
-    [[nodiscard]] bool
-    drawGizmo(TransformComponent& transform, const glm::mat4& view, const glm::mat4& projection, bool enableShortcuts);
-    [[nodiscard]] InspectorResult drawInspector(SceneAsset& scene, AActor* object, bool dirty);
-    void                          endFrame();
-    void                          resetLayout();
-
-    [[nodiscard]] bool         sceneClicked(glm::vec2& viewportUv) const;
-    [[nodiscard]] bool         wantsInput() const;
-    [[nodiscard]] bool         saveRequested() const;
-    [[nodiscard]] ViewportRect sceneViewportPixels() const { return scenePixels; }
+    [[nodiscard]] bool wantsInput() const;
+    [[nodiscard]] rhi::Viewport sceneViewportPixels() const { return scenePixels; }
 
 private:
-    uint32_t       editorDockId    = 0;
-    uint32_t       hierarchyDockId = 0;
-    float          hierarchyWidth  = 0.0f;
-    float          editorWidth     = 0.0f;
-    float          centerWidth     = 0.0f;
-    int            gizmoOperation  = 0;
-    glm::vec2      scenePosition{0.0f};
-    glm::vec2      sceneSize{1.0f};
-    ViewportRect   scenePixels;
-    SceneHierarchy hierarchy;
+    uint32_t      editorDockId    = 0;
+    uint32_t      hierarchyDockId = 0;
+    float         hierarchyWidth  = 0.0f;
+    float         editorWidth     = 0.0f;
+    float         centerWidth     = 0.0f;
+    rhi::Viewport scenePixels     = rhi::Viewport::fromSize(1.0f, 1.0f);
+
+    double   fpsElapsedSeconds = 0.0;
+    uint32_t fpsFrameCount      = 0;
+    float    displayedFps       = 0.0f;
 };

@@ -17,7 +17,7 @@ Pass 直接持有 `rhi::IShaderObject`，或通过原生 pass encoder 的 `bindP
 - 光追 Pass 提供 scene、objects、emissiveTriangles 或离线材质与光源缓冲。
 - Pass 的 parameters / pushConstants 字段通过具名 ConstantBuffer 写入。
 
-Pass 直接持有 RHI 光栅、计算或光追管线；前向材质变体和离线光追管线由相应业务缓存管理。原生管线描述包含 ShaderProgram、顶点输入、附件格式与渲染状态。
+Pass 直接持有 RHI 管线。MinimalPathTracer 按场景光源变体创建光追管线。原生管线描述包含 ShaderProgram、顶点输入、附件格式与渲染状态。
 原生 descriptor 分配、shader table、资源状态转换及后端内存分配由 slang-rhi 管理。
 
 ## 坐标约定

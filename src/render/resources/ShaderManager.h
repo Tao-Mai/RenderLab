@@ -5,6 +5,7 @@
 #include <compare>
 #include <functional>
 #include <map>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -30,12 +31,24 @@ public:
 private:
     struct ProgramKey
     {
-        std::string              source;
+        std::string source;
+
         std::vector<std::string> entries;
-        ShaderDefines            defines;
+
+        ShaderDefines defines;
+
         std::vector<std::string> includes;
 
         auto operator<=>(const ProgramKey&) const = default;
+    };
+
+    struct CacheHeader
+    {
+        ProgramKey program;
+
+        std::string module;
+
+        std::vector<std::string> bytecode;
     };
 
     struct Variant

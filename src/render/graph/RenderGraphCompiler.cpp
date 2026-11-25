@@ -1,6 +1,6 @@
 #include "render/graph/RenderGraphCompiler.h"
 
-#include "core/DirectedGraphTraversal.h"
+#include "core/ds/DirectedGraphTraversal.h"
 #include "core/Logger.h"
 #include "render/RenderContext.h"
 #include "render/graph/RenderGraph.h"
@@ -18,56 +18,35 @@ RenderGraphCompiler::compile(const RenderGraph& graph, RenderContext* context, c
 {
     RenderGraphCompiler compiler(graph, dependencies);
     auto                executable = std::make_unique<RenderGraphExe>();
-    std::string         log;
-    {
-        const logger::ScopedErrorLog errors(log);
-        compiler.preparePasses();
-        if (log.empty())
-            compiler.resolveResources(executable->resources);
-        if (log.empty())
-        {
-            executable->passes.reserve(compiler.passes.size());
-            for (const auto& data : compiler.passes)
-            {
-                ResourceCache::Ports ports;
-                ports.reserve(data.reflection.fields().size());
-                for (const auto& field : data.reflection.fields())
-                    if (const auto slot = executable->resources.findSlot(data.name + '.' + field.name))
-                        ports.emplace_back(field.name, *slot);
 
-                std::string passLog;
-                {
-                    const logger::ScopedErrorLog passErrors(passLog);
-                    data.pass->compile(context, {data.name, executable->resources, ports});
-                }
-                if (!passLog.empty())
-                    LOG_ERROR("{}: {}", data.name, passLog);
+    compiler.preparePasses();
+    compiler.resolveResources(executable->resources);
 
-                executable->passes.push_back({data.pass, std::move(ports)});
-                executable->maxFramesInFlight = std::min(executable->maxFramesInFlight, data.pass->getMaxFramesInFlight());
-            }
-        }
-    }
-    if (!log.empty())
+    executable->passes.reserve(compiler.passes.size());
+    for (const auto& data : compiler.passes)
     {
-        LOG_ERROR("{}", log);
-        return {};
+        ResourceCache::Ports ports;
+        ports.reserve(data.reflection.fields().size());
+        for (const auto& field : data.reflection.fields())
+            if (const auto slot = executable->resources.findSlot(data.name + '.' + field.name))
+                ports.emplace_back(field.name, *slot);
+
+        data.pass->compile(context, {data.name, executable->resources, ports});
+        executable->passes.push_back({data.pass, std::move(ports)});
+        executable->maxFramesInFlight = std::min(executable->maxFramesInFlight, data.pass->getMaxFramesInFlight());
     }
 
     executable->resources.allocateResources(*graph.mpDevice);
     executable->outputs.reserve(graph.mOutputs.size());
     for (size_t index = 0; index < graph.mOutputs.size(); ++index)
         executable->outputs.push_back(*executable->resources.findSlot(graph.getOutputName(index)));
+
     return executable;
 }
 
 void RenderGraphCompiler::preparePasses()
 {
-    if (graph.mOutputs.empty())
-    {
-        LOG_ERROR("render graph '{}' has no marked outputs", graph.getName());
-        return;
-    }
+    CHECK(!graph.mOutputs.empty(), "render graph '{}' has no marked outputs", graph.getName());
 
     std::unordered_set<uint32_t> roots;
     for (const auto& output : graph.mOutputs)
@@ -126,8 +105,6 @@ void RenderGraphCompiler::resolveResources(ResourceCache& resources)
 {
     registerResources(resources);
     validateGraph(resources);
-    if (logger::ScopedErrorLog::hasErrors())
-        return;
 
     const auto& defaults = dependencies.defaultResourceProps;
     // Connections have applied all declared requirements. Match inputs in execution order.
@@ -156,17 +133,15 @@ void RenderGraphCompiler::validateGraph(const ResourceCache& resources) const
     for (const auto& data : passes)
     {
         for (const auto& field : data.reflection.fields())
-            if (is_set(field.visibility, Visibility::Input) && !field.optional &&
-                !resources.findSlot(data.name + '.' + field.name))
-                LOG_ERROR("missing graph input '{}.{}'", data.name, field.name);
+            if (is_set(field.visibility, Visibility::Input) && !field.optional)
+                CHECK(resources.findSlot(data.name + '.' + field.name), "missing graph input '{}.{}'", data.name, field.name);
     }
 
     for (const auto& output : graph.mOutputs)
     {
         const auto& data  = *std::ranges::find(passes, output.nodeId, &PassData::index);
         const auto* field = data.reflection.getField(output.field);
-        if (!field || !is_set(field->visibility, Visibility::Output))
-            LOG_ERROR("unknown output '{}.{}'", data.name, output.field);
+        CHECK(field && is_set(field->visibility, Visibility::Output), "unknown output '{}.{}'", data.name, output.field);
     }
 
     for (const auto& [name, resource] : dependencies.externalResources)
@@ -177,8 +152,7 @@ void RenderGraphCompiler::validateGraph(const ResourceCache& resources) const
         if (pass == passes.end())
             continue;
         const auto* field = pass->reflection.getField(std::string_view(name).substr(dot + 1));
-        if (!field || !is_set(field->visibility, Visibility::Input))
-            LOG_ERROR("unknown input '{}'", name);
+        CHECK(field && is_set(field->visibility, Visibility::Input), "unknown input '{}'", name);
     }
 }
 
@@ -201,15 +175,15 @@ void RenderGraphCompiler::registerResources(ResourceCache& resources) const
             const auto* output     = producer.reflection.getField(connection.srcField);
             const auto  source     = producer.name + '.' + connection.srcField;
             const auto  target     = data.name + '.' + connection.dstField;
-            if (!output || !is_set(output->visibility, Visibility::Output))
-                LOG_ERROR("unknown output '{}'", source);
-            if (!input || !is_set(input->visibility, Visibility::Input))
-                LOG_ERROR("unknown input '{}'", target);
-            if (dependencies.externalResources.contains(target))
-                LOG_ERROR("graph input '{}' has an edge and an external resource", target);
+            CHECK(output && is_set(output->visibility, Visibility::Output), "unknown output '{}'", source);
+            CHECK(input && is_set(input->visibility, Visibility::Input), "unknown input '{}'", target);
+            CHECK(
+                !dependencies.externalResources.contains(target),
+                "graph input '{}' has an edge and an external resource",
+                target
+            );
 
-            if (input && is_set(input->visibility, Visibility::Input) && output &&
-                is_set(output->visibility, Visibility::Output) && resources.findSlot(source))
+            if (resources.findSlot(source))
                 resources.connect(target, source, input->resource);
             connected.insert(connection.dstField);
         }

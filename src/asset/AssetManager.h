@@ -2,10 +2,12 @@
 
 #include "asset/AssetTypes.h"
 #include "asset/BuiltinAssets.h"
+#include "asset/MeshGeometry.h"
 #include "core/Logger.h"
 
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
@@ -18,9 +20,16 @@ public:
     AssetManager() = default;
     ~AssetManager();
 
-    void                                       init(std::filesystem::path root);
-    void                                       shutdown() noexcept;
+    void init(std::filesystem::path root);
+    void shutdown() noexcept;
+
     [[nodiscard]] const std::filesystem::path& rootPath() const { return root; }
+
+    [[nodiscard]] MeshGeometry readGeometry(const MeshAsset& asset) const;
+    [[nodiscard]] std::filesystem::path writeGeometry(const MeshAsset::ID& id, const MeshGeometry& mesh) const;
+
+    [[nodiscard]] std::vector<uint8_t> readTexture(const TextureAsset& asset) const;
+    [[nodiscard]] std::filesystem::path writeTexture(const TextureAsset& asset, std::span<const uint8_t> bytes) const;
 
     template <AssetType T>
     [[nodiscard]] uint64_t contentRevision() const
@@ -53,14 +62,10 @@ public:
         return nullptr;
     }
 
-    template <std::derived_from<Asset> T>
+    template <AssetType T>
     typename T::ID save(T asset)
     {
-        using Base = typename T::ID::AssetClass;
-        static_assert(AssetType<Base> && std::derived_from<T, Base>);
-        static_assert(!std::is_polymorphic_v<Base> || !std::same_as<T, Base>, "save a concrete derived asset");
-
-        return saveAsset<Base>(std::make_unique<T>(std::move(asset)));
+        return saveAsset<T>(std::make_unique<T>(std::move(asset)));
     }
 
     template <AssetType T>
@@ -104,6 +109,7 @@ private:
 
     void loadAll();
     void clear();
+    [[nodiscard]] std::filesystem::path binaryPath(const std::filesystem::path& relative) const;
 
     template <AssetType T>
     typename T::ID saveAsset(std::unique_ptr<T> asset);

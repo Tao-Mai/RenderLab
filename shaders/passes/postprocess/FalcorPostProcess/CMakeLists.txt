@@ -1,1 +1,0 @@
-renderlab_add_plugin(FalcorPostProcess FalcorPostProcess.cpp FalcorPostProcessConfig.cpp FalcorPostProcessUi.cpp)

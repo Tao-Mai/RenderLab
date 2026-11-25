@@ -1,7 +1,5 @@
 #pragma once
 
-#include "core/MetadataAnnotations.h"
-
 #include <cstddef>
 #include <format>
 #include <functional>
@@ -10,11 +8,11 @@
 #include <utility>
 
 template <class T>
-struct RL_RECORD AssetID
+struct AssetID
 {
     using AssetClass = T;
 
-    RL_FIELD("value") std::string value;
+    std::string value;
 
     AssetID() = default;
     AssetID(std::string text) : value(std::move(text)) {}

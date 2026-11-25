@@ -1,1 +1,0 @@
-renderlab_add_plugin(RayTracingPass RayTracingPass.cpp RayTracingPassUi.cpp RestirResources.cpp)

@@ -1,5 +1,0 @@
-add_subdirectory(raster)
-add_subdirectory(postprocess)
-add_subdirectory(editor)
-add_subdirectory(denoise)
-add_subdirectory(raytracing)

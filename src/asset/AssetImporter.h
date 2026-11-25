@@ -4,7 +4,6 @@
 #include "asset/MeshAsset.h"
 #include "asset/MeshGeometry.h"
 #include "asset/TextureAsset.h"
-#include "asset/pbrt/PbrtSceneAsset.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -17,7 +16,7 @@
 #include <vector>
 
 class ModelImport;
-struct SceneAsset;
+struct Scene;
 
 struct ImportTextureSetting
 {
@@ -35,7 +34,7 @@ struct ImportMeshSetting
 struct ImportSceneSetting
 {
     std::filesystem::path source;
-    AssetID<SceneAsset>   id;
+    AssetID<Scene>   id;
     float                 importScale = 1.0f;
 };
 
@@ -44,20 +43,6 @@ struct ImportEnvironmentMapSetting
     std::filesystem::path source;
     // 源图与 radiance 的色彩空间；未指定时按文件格式推断。
     std::optional<ColorSpace> colorSpace;
-    // Irradiance Cubemap 每个面的宽高；输出始终是线性 RGBA32F。
-    uint32_t irradianceSize = 32;
-    // 每个输出方向的余弦加权半球采样数。
-    uint32_t irradianceSampleCount = 2048;
-    // GGX 预滤波 mip 1 每个输出方向的半程向量采样数；之后每级翻倍。
-    uint32_t prefilteredSpecularSampleCount = 512;
-    // 每个输出方向的 GGX 采样数上限，不能小于首级采样数。
-    uint32_t prefilteredSpecularMaxSampleCount = 65536;
-};
-
-struct ImportPbrtSceneSetting
-{
-    std::filesystem::path source;
-    PbrtSceneAsset::ID id;
 };
 
 class AssetImporter
@@ -85,11 +70,7 @@ public:
     {
         std::filesystem::path source;
         TextureAsset          radiance;
-        TextureAsset          irradiance;
-        TextureAsset          prefiltered;
-        std::vector<uint8_t>  radianceBytes;
-        std::vector<uint8_t>  irradianceBytes;
-        std::vector<uint8_t>  prefilteredBytes;
+        std::vector<uint8_t> radianceBytes;
     };
 
     static TextureAsset::ID importTexture(const ImportTextureSetting& setting);
@@ -103,8 +84,7 @@ public:
     [[nodiscard]] static PreparedMesh
     prepareMesh(const std::filesystem::path& source, std::optional<uint32_t> meshIndex = std::nullopt);
     static MeshAsset::ID       saveMesh(PreparedMesh&& prepared, const ImportMeshSetting& setting);
-    static AssetID<SceneAsset> importScene(const ImportSceneSetting& setting);
-    static PbrtSceneAsset::ID importPbrtScene(const ImportPbrtSceneSetting& setting);
+    static AssetID<Scene> importScene(const ImportSceneSetting& setting);
 
     struct LoadedImage
     {
@@ -120,7 +100,6 @@ public:
             Hdr,
             JPEG,  // Other 8-bit formats decoded by stb use the same color-space default.
             Integer16,
-            Pfm,
         };
 
         ImageFormat                                            format;
@@ -155,20 +134,6 @@ private:
         const std::filesystem::path& source
     );
     static void buildMipmapChain(CubemapPixels& cubemap, const TextureAsset& radiance, std::stop_token stop = {});
-    [[nodiscard]] static std::vector<uint8_t> irradianceCubemap(
-        const TextureAsset&    radiance,
-        std::span<const float> radiancePixels,
-        uint32_t               side,
-        uint32_t               sampleCount,
-        std::stop_token        stop = {}
-    );
-    [[nodiscard]] static std::vector<uint8_t> prefilterSpecularMap(
-        const TextureAsset&    radiance,
-        std::span<const float> radiancePixels,
-        uint32_t               sampleCount,
-        uint32_t               maxSampleCount,
-        std::stop_token        stop = {}
-    );
     [[nodiscard]] static TextureAsset::ID
     saveTexture(TextureAsset asset, const std::filesystem::path& source, std::span<const uint8_t> bytes);
 };

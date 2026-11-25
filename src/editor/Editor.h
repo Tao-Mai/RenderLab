@@ -1,55 +1,52 @@
 #pragma once
 
-#include <memory>
-#include <optional>
+#include "core/utils/NonCopyable.h"
 #include "editor/EditorBackend.h"
 #include "editor/EditorCamera.h"
 #include "editor/EditorUi.h"
-#include "render/ViewportRect.h"
-#include "render/editor/EditorFrameInput.h"
 
-class EditorCamera;
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <slang-rhi.h>
 
-class Editor
+class Editor : private NonCopyable
 {
 public:
     struct Frame
     {
-        ViewportRect     viewport;
-        EditorFrameInput input;
+        rhi::Viewport viewport;
+        std::function<void(rhi::IRenderPassEncoder&, uint32_t)> recordUi;
     };
 
     Editor() = default;
     ~Editor();
 
-    Editor(const Editor&)            = delete;
-    Editor& operator=(const Editor&) = delete;
+    void init();
+    void refreshUi();
+    [[nodiscard]] bool resizeWindowForLayout();
+    void tick(float deltaTime);
+    EditorCamera& camera() { return *editorCamera; }
+    void shutdown() noexcept;
+    void applySceneSwitch();
 
-    void                init();
-    void                refreshUi();
-    [[nodiscard]] bool  resizeWindowForLayout();
-    void                tick(float deltaTime);
-    EditorCamera&       camera() { return *editorCamera; }
-    const EditorCamera& camera() const { return *editorCamera; }
-    void                shutdown() noexcept;
-    void                applySceneActions();
-
-    [[nodiscard]] Frame buildFrame(const EditorCamera& camera);
-
-    [[nodiscard]] bool     wantsInput() const;
-    [[nodiscard]] uint32_t selectionId() const { return selectedId; }
+    [[nodiscard]] Frame buildFrame();
 
 private:
     std::unique_ptr<EditorCamera> editorCamera;
-    uint64_t                      sceneGeneration = 0;
-    EditorBackend                 backend;
-    EditorUI                      ui;
-    uint32_t                      selectedId          = 0;
-    bool                          dirty               = false;
-    bool                          windowHasObjectList = false;
-    std::optional<SceneAsset::ID> pendingSceneId;
-    SceneObjectActions            pendingObjectActions;
+    EditorBackend backend;
+    EditorUI ui;
+    bool windowHasObjectList = false;
+    std::optional<Scene::ID> pendingSceneId;
 
-    void saveScene();
+#ifdef _WIN32
+    static constexpr int kKeyboardLayoutNameLength = 9;
+
+    wchar_t previousKeyboardLayoutName[kKeyboardLayoutNameLength]{};
+    void* previousKeyboardLayout = nullptr;
+    bool keyboardLayoutChanged = false;
+#endif
+
     void initBackend();
 };

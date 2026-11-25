@@ -1,21 +1,13 @@
 #pragma once
 
-#include "core/MetadataAnnotations.h"
-
 #include "asset/AssetID.h"
 
 #include <concepts>
 #include <string_view>
 #include <tuple>
 
-
-struct Asset
-{
-    bool operator==(const Asset&) const = default;
-};
-
 template <class T>
-concept AssetType = std::derived_from<T, Asset> && requires(T& value) {
+concept AssetType = requires(T& value) {
     typename T::ID;
     requires std::same_as<typename T::ID, AssetID<T>>;
     { value.id } -> std::same_as<AssetID<T>&>;
@@ -35,8 +27,8 @@ struct AssetTypeList
     using wrapTypes = std::tuple<Wrapper<Assets>...>;
 };
 
-enum class RL_ENUM Source
+enum class Source
 {
-    File RL_ENUM_VALUE("File"),
-    Builtin RL_ENUM_VALUE("Builtin")
+    File,
+    Builtin
 };

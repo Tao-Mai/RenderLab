@@ -1,29 +1,32 @@
 #pragma once
 
-#include "editor/EditorCameraConfig.h"
+#include "core/utils/NonCopyable.h"
+#include "scene/Camera.h"
 
-class EditorCamera
+class EditorCamera : private NonCopyable
 {
 public:
-    explicit EditorCamera(EditorCameraConfig& config) : data(config) {}
+    explicit EditorCamera(Camera& config) : data(config) {}
 
-    EditorCamera(const EditorCamera&)            = delete;
-    EditorCamera& operator=(const EditorCamera&) = delete;
+    EditorCamera(EditorCamera&&) = delete;
 
     void tick(float deltaTime);
     void resetNavigation();
+    void requestFreeMovementToggle() { freeMovementToggleRequested = true; }
+    void addScrollOffset(double offset) { scrollOffset += offset; }
     void setInputEnabled(bool enabled) { inputEnabled = enabled; }
 
     [[nodiscard]] bool                      isNavigationActive() const { return looking; }
-    [[nodiscard]] bool                      isFreeMovementActive() const { return freeMovement; }
-    [[nodiscard]] EditorCameraConfig&       config() { return data; }
-    [[nodiscard]] const EditorCameraConfig& config() const { return data; }
 
 private:
-    EditorCameraConfig& data;
+    void setLooking(bool enabled);
+
+    Camera& data;
     bool                inputEnabled   = true;
     bool                looking        = false;
     bool                freeMovement   = false;
+    bool                freeMovementToggleRequested = false;
+    double              scrollOffset = 0.0;
     double              previousMouseX = 0.0;
     double              previousMouseY = 0.0;
 };
