@@ -42,15 +42,10 @@ void GpuScene::init(
 
     materialTable.init(*device, *resources);
     analytic.init(*device);
-    rhiCheck(device->createBuffer(
-        {.size = sizeof(SceneGlobals), .usage = rhi::BufferUsage::ShaderResource | rhi::BufferUsage::CopyDestination},
-        nullptr,
-        globals.writeRef()
-    ));
     lutSampler = resources->sampler(BuiltinAssets::Sampler::linearClamp);
 }
 
-SceneUpdateFlags GpuScene::update(const SceneRenderData& source, rhi::ICommandEncoder& commands)
+SceneUpdateFlags GpuScene::update(const SceneRenderData& source, Extent2D extent, rhi::ICommandEncoder& commands)
 {
     auto updates = generation != source.sceneGeneration ? SceneUpdateFlags::Scene : SceneUpdateFlags::None;
     generation = source.sceneGeneration;
@@ -100,7 +95,7 @@ SceneUpdateFlags GpuScene::update(const SceneRenderData& source, rhi::ICommandEn
     if (materialTable.upload(commands))
         updates |= SceneUpdateFlags::Materials;
 
-    return updates | updateGlobals(source, commands);
+    return updates | updateGlobals(source, extent);
 }
 
 bool GpuScene::updateDraws(std::span<const DrawItem> items, uint64_t meshRevision, rhi::ICommandEncoder& commands)
@@ -223,15 +218,10 @@ bool GpuScene::updateEnvironment(const SceneRenderData& source, rhi::ICommandEnc
     return true;
 }
 
-SceneUpdateFlags GpuScene::updateGlobals(const SceneRenderData& source, rhi::ICommandEncoder& commands)
+SceneUpdateFlags GpuScene::updateGlobals(const SceneRenderData& source, Extent2D extent)
 {
-    const auto& viewport = source.viewport;
-    const auto& previousViewport = sceneGlobals.viewport;
-    const auto aspect = viewport.width / viewport.height;
-    const bool viewportChanged = viewport != previousViewport;
-    const bool cameraChanged = previousCamera != source.camera ||
-        (viewportChanged && aspect != previousViewport.width / previousViewport.height);
-    auto updates = viewportChanged ? SceneUpdateFlags::Viewport : SceneUpdateFlags::None;
+    const auto aspect = float(extent.width) / float(extent.height);
+    const bool cameraChanged = previousCamera != source.camera || cameraAspect != aspect;
     if (cameraChanged)
     {
         const auto& camera = source.camera;
@@ -244,21 +234,13 @@ SceneUpdateFlags GpuScene::updateGlobals(const SceneRenderData& source, rhi::ICo
             .view                  = view,
         };
         previousCamera = camera;
+        cameraAspect   = aspect;
         viewCulled = false;
-        updates |= SceneUpdateFlags::Camera;
     }
 
-    const auto lightCount = static_cast<uint32_t>(analyticLights().size());
-    const auto maxLod = environment ? environment->prefilteredMaxLod : 0.0f;
-    if (cameraChanged || viewportChanged || lightCount != sceneGlobals.analyticLightCount ||
-        maxLod != sceneGlobals.prefilteredMaxLod)
-    {
-        sceneGlobals.analyticLightCount = lightCount;
-        sceneGlobals.prefilteredMaxLod = maxLod;
-        sceneGlobals.viewport = viewport;
-        rhiCheck(commands.uploadBufferData(globals, 0, sizeof(sceneGlobals), &sceneGlobals));
-    }
-    return updates;
+    sceneGlobals.analyticLightCount = static_cast<uint32_t>(analyticLights().size());
+    sceneGlobals.prefilteredMaxLod  = environment ? environment->prefilteredMaxLod : 0.0f;
+    return cameraChanged ? SceneUpdateFlags::Camera : SceneUpdateFlags::None;
 }
 
 std::span<const uint32_t> GpuScene::visibleDraws()
@@ -338,7 +320,7 @@ void GpuScene::uploadRayHits(rhi::ICommandEncoder& commands)
 void GpuScene::bindShaderData(rhi::IShaderObject& object) const
 {
     const auto scene = rhi::ShaderCursor(&object)["scene"].getDereferenced();
-    rhiCheck(scene["globals"].setBinding(globals));
+    rhiCheck(scene.setData(sceneGlobals));
     rhiCheck(scene["analyticLights"].setBinding(analytic.buffer()));
 }
 

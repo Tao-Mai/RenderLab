@@ -20,7 +20,7 @@ struct RENDERLAB_PATH_ALIGN PathTracingParameters
 {
     RENDERLAB_PATH_UINT maxBounces;
     RENDERLAB_PATH_UINT sampleIndex;
-    RENDERLAB_PATH_UINT prngDimension;
+    RENDERLAB_PATH_UINT padding0;
     RENDERLAB_PATH_UINT padding1;
 };
 

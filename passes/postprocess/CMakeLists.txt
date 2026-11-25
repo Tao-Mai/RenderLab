@@ -1,5 +1,0 @@
-add_subdirectory(AccumulatePass)
-add_subdirectory(Bloom)
-add_subdirectory(ExposurePass)
-add_subdirectory(FalcorPostProcess)
-add_subdirectory(ToneMappingPass)

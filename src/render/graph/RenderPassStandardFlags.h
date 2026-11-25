@@ -2,8 +2,7 @@
 
 #include <cstdint>
 
-inline constexpr char kRenderPassRefreshFlags[]  = "_refreshFlags";
-inline constexpr char kRenderPassPrngDimension[] = "_prngDimension";
+inline constexpr char kRenderPassRefreshFlags[] = "_refreshFlags";
 
 enum class RenderPassRefreshFlags : uint32_t
 {

@@ -59,7 +59,7 @@ SceneAnalyticLight::Model lightModel(const LightComponent& light, const Transfor
 }
 }  // namespace
 
-const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene, uint64_t sceneGeneration, ViewportRect viewport)
+const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene, uint64_t sceneGeneration)
 {
     const auto& assets = *context().assetManager;
     data.drawItems.clear();
@@ -67,7 +67,6 @@ const SceneRenderData& RenderSystem::prepare(const SceneAsset& scene, uint64_t s
     data.environmentLight.reset();
     data.sceneGeneration = sceneGeneration;
     data.camera          = scene.editorCamera.sceneCamera();
-    data.viewport        = viewport;
     data.environmentMap  = scene.environmentMap;
 
     for (const auto& actor : scene.actors)

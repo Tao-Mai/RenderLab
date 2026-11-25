@@ -173,7 +173,7 @@ float sampleDirectionalCascade(
 
 float directionalShadowVisibility(LightData light, float3 worldPosition, float2 rotation, ShadowUniforms shadows)
 {
-    float viewDepth = -mul(scene.globals[0].camera.view, float4(worldPosition, 1.0)).z;
+    float viewDepth = -mul(scene.camera.view, float4(worldPosition, 1.0)).z;
     if (viewDepth <= 0.0)
     {
         return 1.0;
@@ -356,7 +356,7 @@ float3 evaluateDirectContribution(
 
 float3 evaluateLighting(Surface surface, uint2 pixel)
 {
-    float3 V = normalize(scene.globals[0].camera.cameraPosition.xyz - surface.worldPosition);
+    float3 V = normalize(scene.camera.cameraPosition.xyz - surface.worldPosition);
     float NdotV = saturate(dot(surface.normal, V));
 #if ENABLE_SHEEN
     float sheenStrength = max(surface.sheenColor.x, max(surface.sheenColor.y, surface.sheenColor.z));
@@ -375,7 +375,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
         ? pixelSampleRotation(pixel)
         : float2(1.0, 0.0);
     float3 direct = float3(0.0);
-    for (uint index = 0; index < scene.globals[0].analyticLightCount; ++index)
+    for (uint index = 0; index < scene.analyticLightCount; ++index)
     {
         LightData light = scene.analyticLights[index];
         bool castShadow = light.castShadow && shadows.enabled != 0;
@@ -431,7 +431,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
 
     // 镜面反射环境光照 Split Sum Approximation
     float3 environmentTerm = prefilteredSpecularMap.SampleLevel(
-        prefilteredSpecularMapSampler, R, surface.brdf.roughness * scene.globals[0].prefilteredMaxLod).rgb;
+        prefilteredSpecularMapSampler, R, surface.brdf.roughness * scene.prefilteredMaxLod).rgb;
     float2 scaleBias = brdfLUT.Sample(brdfLUTSampler, float2(NdotV, surface.brdf.roughness)).rg;
     float3 brdfTerm = scaleBias.x * surface.brdf.specularF0 + scaleBias.y * surface.brdf.specularF90;
     float3 ambientSpecular = environmentTerm * brdfTerm;
@@ -456,7 +456,7 @@ float3 evaluateLighting(Surface surface, uint2 pixel)
     float3 clearcoatEnvironment = prefilteredSpecularMap.SampleLevel(
         prefilteredSpecularMapSampler,
         clearcoatReflection,
-        clearcoatRoughness * scene.globals[0].prefilteredMaxLod).rgb;
+        clearcoatRoughness * scene.prefilteredMaxLod).rgb;
     float2 clearcoatScaleBias = brdfLUT.Sample(brdfLUTSampler, float2(clearcoatNdotV, clearcoatRoughness)).rg;
     // The layer weight already includes Fresnel. Use the LUT's unit-Fresnel
     // response (scale + bias), avoiding a second Fresnel multiplication.

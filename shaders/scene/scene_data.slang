@@ -8,30 +8,14 @@
 #include "raytracing/scene_hits.slang"
 #endif
 
-struct ViewportRect
+struct SceneData
 {
-    float2 offset;
-    float2 extent;
-
-    bool containsPixel(uint2 pixel)
-    {
-        float2 local = float2(pixel) + 0.5 - offset;
-        return all(local >= 0.0) && all(local < extent);
-    }
-};
-
-struct SceneGlobals
-{
+    // These uniform fields match SceneGlobals in ShaderData.h.
     SceneUniforms camera;
     uint analyticLightCount;
     float prefilteredMaxLod;
     uint padding0, padding1;
-    ViewportRect viewport;
-};
 
-struct SceneData
-{
-    StructuredBuffer<SceneGlobals> globals;
     StructuredBuffer<LightData> analyticLights;
 #ifdef SCENE_RAY_TRACING
     RaytracingAccelerationStructure rtAccel;

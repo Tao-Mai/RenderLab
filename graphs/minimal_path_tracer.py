@@ -10,8 +10,6 @@ def render_graph_MinimalPathTracer(
 ) -> RenderGraph:
     graph = RenderGraph("MinimalPathTracer")
 
-    graph.create_pass("visibility", "VBufferRT")
     graph.create_pass("pathTracer", "MinimalPathTracer")
-    graph.add_edge("visibility.vbuffer", "pathTracer.vbuffer")
     add_post_process(graph, "pathTracer.color", hdr, postProcess, bloom)
     return graph

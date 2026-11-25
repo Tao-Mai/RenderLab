@@ -13,14 +13,15 @@ struct CameraPathSample
     uint randomState;
 };
 
-CameraPathSample sampleCameraPath(uint2 pixel, uint pixelIndex, PathTracingParameters path)
+CameraPathSample sampleCameraPath(uint2 pixel, uint2 frameDim, PathTracingParameters path)
 {
+    uint pixelIndex = pixel.x + pixel.y * frameDim.x;
     uint scrambleState = pixelIndex;
     uint2 scrambleSeeds;
     scrambleSeeds.x = randomUint(scrambleState);
     scrambleSeeds.y = randomUint(scrambleState);
     float2 pixelSample = sampleSobol2D(path.sampleIndex, scrambleSeeds);
-    RayDesc ray = createCameraRay(pixel, pixelSample);
+    RayDesc ray = createCameraRay(pixel, frameDim, pixelSample);
 
     uint sampleState = path.sampleIndex;
     return {ray, scrambleSeeds.y ^ randomUint(sampleState)};

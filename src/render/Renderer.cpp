@@ -39,6 +39,7 @@ void Renderer::init()
     desc.requiredFeatures              = kRequiredDeviceFeatures.data();
     desc.requiredFeatureCount          = static_cast<uint32_t>(kRequiredDeviceFeatures.size());
     desc.slang.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
+    desc.persistentShaderCache         = ShaderManager::persistentCache();
     desc.enableValidation              = true;
     rhiCheck(rhi::getRHI()->createDevice(desc, device.writeRef()));
     rhiCheck(device->getQueue(rhi::QueueType::Graphics, queue.writeRef()));
@@ -108,8 +109,6 @@ void Renderer::configureGraph(const std::string& graphName, const nlohmann::json
         return;
     }
 
-    const auto& surfaceConfig = *surface->getConfig();
-    candidate.onResize({surfaceConfig.width, surfaceConfig.height}, surfaceConfig.format);
     candidate.setScene(&gpuScene);
     mpRenderGraph = std::move(loaded.graph);
 }
@@ -129,16 +128,18 @@ void Renderer::initBlit()
 }
 
 void Renderer::recordPresentation(
-    rhi::ICommandEncoder& commands, rhi::ITexture& backBuffer, const EditorFrameInput& editor, uint32_t frameIndex
+    rhi::ICommandEncoder& commands, rhi::ITexture& backBuffer, const ViewportRect& viewport,
+    const EditorFrameInput& editor, uint32_t frameIndex
 )
 {
     const auto source = mpRenderGraph->getOutputTexture(0);
     const auto target = backBuffer.getDefaultView();
     CHECK(target);
     rhi::RenderPassColorAttachment color;
-    color.view   = target;
-    color.loadOp = rhi::LoadOp::DontCare;
-    auto* pass   = commands.beginRenderPass({&color, 1});
+    color.view          = target;
+    color.loadOp        = rhi::LoadOp::Clear;
+    color.clearValue[3] = 1.0f;
+    auto* pass          = commands.beginRenderPass({&color, 1});
     CHECK(pass);
 
     auto* object = pass->bindPipeline(blitPipeline);
@@ -147,8 +148,7 @@ void Renderer::recordPresentation(
     const rhi::ShaderCursor root(object);
     rhiCheck(root["sourceImage"].setBinding(source));
     rhiCheck(root["pointSampler"].setBinding(resources.sampler(BuiltinAssets::Sampler::nearestClamp)));
-    const auto& size = backBuffer.getDesc().size;
-    pass->setRenderState(ViewportRect{0, 0, float(size.width), float(size.height)}.renderState());
+    pass->setRenderState(viewport.renderState());
     pass->draw({3});
 
     if (editor.recordUi)
@@ -174,7 +174,7 @@ void Renderer::clearOptions()
     optionsDirty = true;
 }
 
-void Renderer::applyConfiguration()
+std::shared_ptr<RenderGraph> Renderer::applyConfiguration()
 {
     std::shared_ptr<RenderGraph> previousGraph;
     if (pendingGraphName || optionsDirty)
@@ -195,10 +195,14 @@ void Renderer::applyConfiguration()
         optionsDirty = false;
     }
 
+    return previousGraph;
+}
+
+void Renderer::compileGraph()
+{
     if (!mpRenderGraph->needsCompilation())
         return;
     waitIdle();
-    previousGraph.reset();
 
     RenderContext compileContext{.shaderManager = &shaders, .resources = &resources};
     std::string log;
@@ -243,14 +247,21 @@ void Renderer::resizeSurface()
     waitIdle();
     surface.setNull();
     initSurface();
-    mpRenderGraph->onResize({surface->getConfig()->width, surface->getConfig()->height}, surface->getConfig()->format);
-    applyConfiguration();
 }
 
-RenderFrameResult Renderer::render(const SceneRenderData& scene, const EditorFrameInput& editor, float deltaSeconds)
+RenderFrameResult Renderer::render(
+    const SceneRenderData& scene, const ViewportRect& displayViewport, const EditorFrameInput& editor, float deltaSeconds
+)
 {
-    // 获取最新渲染配置
-    applyConfiguration();
+    const auto& surfaceConfig = *surface->getConfig();
+    const auto viewport = displayViewport.clamped({surfaceConfig.width, surfaceConfig.height});
+    const Extent2D renderExtent{uint32_t(viewport.width), uint32_t(viewport.height)};
+
+    {
+        const auto previousGraph = applyConfiguration();
+        mpRenderGraph->onResize(renderExtent, surfaceConfig.format);
+        compileGraph();
+    }
 
     const uint64_t submissionValue = lastSubmittedFrame + 1;
     if (submissionValue > activeFramesInFlight)
@@ -259,7 +270,7 @@ RenderFrameResult Renderer::render(const SceneRenderData& scene, const EditorFra
     rhi::ComPtr<rhi::ICommandEncoder> commands;
     rhiCheck(queue->createCommandEncoder(commands.writeRef()));
 
-    const auto updates = gpuScene.update(scene, *commands);
+    const auto updates = gpuScene.update(scene, renderExtent, *commands);
 
     RenderContext frame{
         .commands      = commands.get(),
@@ -272,7 +283,7 @@ RenderFrameResult Renderer::render(const SceneRenderData& scene, const EditorFra
     mpRenderGraph->onSceneUpdates(&frame, updates);
     if (mpRenderGraph->needsCompilation())
     {
-        applyConfiguration();
+        compileGraph();
         frame.frameIndex = static_cast<uint32_t>(lastSubmittedFrame % activeFramesInFlight);
     }
 
@@ -285,7 +296,7 @@ RenderFrameResult Renderer::render(const SceneRenderData& scene, const EditorFra
         CHECK(backBuffer);
         mpRenderGraph->getPassesDictionary()[kRenderPassRefreshFlags] = std::to_underlying(RenderPassRefreshFlags::None);
         mpRenderGraph->execute(&frame);
-        recordPresentation(*commands, *backBuffer, editor, frame.frameIndex);
+        recordPresentation(*commands, *backBuffer, viewport, editor, frame.frameIndex);
     }
     else
     {

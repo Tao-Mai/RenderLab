@@ -196,9 +196,11 @@ float3 hitEmission(RayDesc ray, PathHit hit)
     return environmentRadiance(ray.Direction);
 }
 
-[shader("miss")] void missMain(inout PathHit hit) { hit.event = PathEvent::Miss; }
+[shader("miss")] 
+void missMain(inout PathHit hit) { hit.event = PathEvent::Miss; }
 
-    [shader("miss")] void visibilityMissMain(inout VisibilityPayload payload)
+[shader("miss")] 
+void visibilityMissMain(inout VisibilityPayload payload)
 {
     payload.visible = 1;
 }

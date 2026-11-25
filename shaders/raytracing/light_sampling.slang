@@ -25,7 +25,7 @@ uint analyticLightCount()
 #if defined(USE_ANALYTIC_LIGHTS) && !USE_ANALYTIC_LIGHTS
     return 0;
 #else
-    return scene.globals[0].analyticLightCount;
+    return scene.analyticLightCount;
 #endif
 }
 
@@ -55,6 +55,7 @@ PathLightSample sampleLight(inout SampleGenerator state)
 {
     PathLightSample result = {};
     uint                groups = lightGroupCount();
+    
     if (groups == 0)
     {
         return result;
@@ -115,8 +116,9 @@ struct PathLightEvaluation
 PathLightEvaluation evaluateLightSample(Surface surface, PathLightSample sample, bool testEmissiveAlpha = false)
 {
     PathLightEvaluation result        = {};
-    float3                  origin        = surface.rayOrigin();
-    float3                  emission      = float3(0.0);
+    
+    float3  origin   = surface.rayOrigin();
+    float3  emission = float3(0.0);
 
     if (sample.kind == kEmissiveLightSample)
     {

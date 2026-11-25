@@ -30,9 +30,6 @@ constexpr float kMinimumEditableScale = 0.001f;
 std::optional<SceneAsset::ID> drawSceneSelector(const SceneAsset::ID& current, bool dirty)
 {
     std::optional<SceneAsset::ID> chosen;
-    if (!ImGui::BeginMenuBar())
-        return chosen;
-
     const std::string preview = dirty ? current.value + "*" : current.value;
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
     if (ImGui::BeginCombo("##Scene", preview.c_str()))
@@ -51,7 +48,6 @@ std::optional<SceneAsset::ID> drawSceneSelector(const SceneAsset::ID& current, b
         ImGui::EndCombo();
     }
     ImGui::SetItemTooltip("Switch scenes and discard unsaved scene changes");
-    ImGui::EndMenuBar();
     return chosen;
 }
 
@@ -212,7 +208,7 @@ void EditorUI::beginFrame(bool showObjectList)
             std::max(centralNode->Size.y, 1.0f) * framebufferScale.y,
         };
         const float side = std::max(1.0f, std::floor(std::min(availablePixels.x, availablePixels.y)));
-        // Fit and center a pixel-aligned square; all render paths consume this same viewport.
+        // Fit and center the scene texture in a pixel-aligned square.
         scenePixels = {
             .x = std::floor(
                 (centralNode->Pos.x - viewport->Pos.x) * framebufferScale.x + (availablePixels.x - side) * 0.5f
@@ -295,9 +291,10 @@ bool EditorUI::drawGizmo(
 EditorUI::InspectorResult EditorUI::drawInspector(SceneAsset& scene, AActor* object, bool dirty)
 {
     ImGui::SetNextWindowDockID(editorDockId, ImGuiCond_Always);
-    constexpr ImGuiWindowFlags editorFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar;
-    ImGui::Begin("Editor", nullptr, editorFlags);
+    constexpr ImGuiWindowFlags kEditorFlags =
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
+    ImGui::Begin("Editor", nullptr, kEditorFlags);
+    ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
 
     InspectorResult result;
     result.sceneId = drawSceneSelector(scene.id, dirty);

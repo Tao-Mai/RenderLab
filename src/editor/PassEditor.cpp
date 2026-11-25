@@ -50,11 +50,14 @@ bool drawField(Gui::Widgets& widgets, const metadata::Property& field, void* set
 
 void pass_editor::draw(const RenderPass& pass, const PassEditorContext& context, Gui::Widgets& widgets)
 {
+    const auto& settings = pass.getPluginInfo().settings;
+    if (!settings.get && !settings.drawEditor)
+        return;
+
     const IDScope id(&pass);
     if (!ImGui::CollapsingHeader(pass.getName().c_str()))
         return;
 
-    const auto& settings = pass.getPluginInfo().settings;
     if (settings.get)
     {
         const bool reset = ImGui::SmallButton("Reset settings");

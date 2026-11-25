@@ -127,9 +127,8 @@ void Engine::mainLoop()
         ctx.sceneManager->tick(deltaTime);
 
         const auto  editorFrame = ctx.editor->buildFrame(camera);
-        const auto& renderData =
-            renderSystem.prepare(ctx.sceneManager->scene(), ctx.sceneManager->sceneGeneration(), editorFrame.viewport);
-        const auto result = ctx.renderer->render(renderData, editorFrame.input, deltaTime);
+        const auto& renderData = renderSystem.prepare(ctx.sceneManager->scene(), ctx.sceneManager->sceneGeneration());
+        const auto result = ctx.renderer->render(renderData, editorFrame.viewport, editorFrame.input, deltaTime);
         swapchainNeedsRebuild = result == RenderFrameResult::SwapchainNeedsRebuild;
     }
 }

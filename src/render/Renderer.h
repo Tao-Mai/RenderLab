@@ -35,7 +35,10 @@ public:
 
     void init();
     void resizeSurface();
-    RenderFrameResult render(const SceneRenderData& scene, const EditorFrameInput& editor, float deltaSeconds);
+    RenderFrameResult render(
+        const SceneRenderData& scene, const ViewportRect& displayViewport, const EditorFrameInput& editor,
+        float deltaSeconds
+    );
     void waitIdle();
     void shutdown() noexcept;
 
@@ -70,11 +73,13 @@ private:
     std::shared_ptr<RenderGraph>                  mpRenderGraph;
     rhi::ComPtr<rhi::IRenderPipeline>                             blitPipeline = nullptr;
 
-    void                  applyConfiguration();
+    std::shared_ptr<RenderGraph> applyConfiguration();
+    void                  compileGraph();
     void                  configureGraph(const std::string& graphName, const nlohmann::json& parameterOverrides);
     void                  initBlit();
     void                  recordPresentation(
-        rhi::ICommandEncoder& commands, rhi::ITexture& backBuffer, const EditorFrameInput& editor, uint32_t frameIndex
+        rhi::ICommandEncoder& commands, rhi::ITexture& backBuffer, const ViewportRect& viewport,
+        const EditorFrameInput& editor, uint32_t frameIndex
     );
     void                  initSurface();
     void                  waitForFrame(uint64_t value);

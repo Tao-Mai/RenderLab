@@ -1,0 +1,1 @@
+renderlab_add_plugin(AccumulatePass AccumulatePass.cpp)

@@ -111,14 +111,6 @@ find_package(mikktspace CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
 find_path(TINYGLTF_INCLUDE_DIR NAMES tiny_gltf.h REQUIRED)
 
-find_program(RENDERLAB_SLANGC_EXECUTABLE
-        NAMES slangc
-        PATHS "${SLANG_RHI_SLANG_BINARY_DIR}/bin"
-        NO_DEFAULT_PATH
-        NO_CACHE
-        REQUIRED
-)
-
 set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 set(SHADER_BINARY_DIR "${RENDERLAB_RUNTIME_DIRECTORY}/shaders")
 include(cmake/Shaders.cmake)
@@ -412,15 +404,8 @@ target_link_libraries(RenderLabPluginAbi PRIVATE RenderLabCore)
 set_property(SOURCE src/render/plugins/PluginAbi.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     RENDERLAB_PLUGIN_ABI="${RENDERLAB_PLUGIN_ABI}")
 target_precompile_headers(RenderLabPluginAbi PRIVATE ${renderlab_pch_headers})
-add_subdirectory(passes)
-renderlab_shader(shaders/raster/blit.slang blit)
-renderlab_shader(shaders/scene/build_emissive_lights.slang build_emissive_lights ENTRIES main)
-renderlab_shader(shaders/editor/imgui.slang imgui)
+add_subdirectory(shaders/passes passes)
 option(BUILD_TESTING "Enable manual validation tools" OFF)
-if(BUILD_TESTING)
-    renderlab_shader(test/MaterialWorkflowCheck.slang material_workflow_check
-        DEFINES ENABLE_CLEARCOAT=0 ENABLE_SHEEN=0 ENTRIES computeMain)
-endif()
 renderlab_build_shaders()
 renderlab_build_plugins()
 

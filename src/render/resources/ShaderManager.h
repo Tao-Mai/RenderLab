@@ -15,6 +15,8 @@ using ShaderDefines = std::map<std::string, std::string, std::less<>>;
 class ShaderManager
 {
 public:
+    [[nodiscard]] static rhi::IPersistentCache* persistentCache();
+
     void init(rhi::IDevice* device);
     void shutdown() noexcept;
 
@@ -40,8 +42,9 @@ private:
     {
         rhi::ComPtr<slang::ISession>     session;
         rhi::ComPtr<rhi::IShaderProgram> shader;
+        rhi::ComPtr<ISlangBlob>          module;
     };
 
-    rhi::IDevice*                 device = nullptr;
-    std::map<ProgramKey, Variant> variants;
+    rhi::IDevice*                              device = nullptr;
+    std::map<ProgramKey, std::vector<Variant>> variants;
 };
