@@ -41,7 +41,7 @@
 - BC5 法线贴图保存 X、Y 两个分量，材质求值从这两个分量重建正半球的 Z。
 - 环境图导入生成辐照度与 GGX 预过滤结果，可异步准备并取消。
 
-资产 JSON 通过 reflect-cpp 按 C++ 字段名读写。场景的 `environmentMap` 可以省略。其他资产的持久化字段均须存在，空的 `std::optional` 保存为 `null`。 [JSON 读写](../src/core/Json.h)
+资产 JSON 通过 reflect-cpp 按 C++ 字段名读写。场景的 `environmentMap` 和 `defaultLayer` 可以省略。其他资产的持久化字段均须存在，空的 `std::optional` 保存为 `null`。 [JSON 读写](../src/core/Json.h)
 
 ## 内置资源
 

@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_PBR_BRDF_SLANG
 #define RENDERLAB_PBR_BRDF_SLANG
 
-#include "render/impl/material/brdf.slang"
+#include "material/brdf.slang"
 
 struct BrdfSample
 {

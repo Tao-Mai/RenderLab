@@ -1,7 +1,7 @@
-#include "render/impl/postprocess/fullscreen.slang"
+#include "postprocess/fullscreen.slang"
 
 #ifdef BLIT_SRGB_CONTROL
-#include "render/impl/math/color.slang"
+#include "math/color.slang"
 
 struct PresentParameters
 {

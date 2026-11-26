@@ -91,7 +91,7 @@ void EmissiveLights::prepare(
     rhiCheck(commands.uploadBufferData(meshBuffer, 0, meshes.size() * sizeof(EmissiveMesh), meshes.data()));
     if (!buildPipeline)
         rhiCheck(device.createComputePipeline(
-            {.program = shaders.getProgram("render/impl/scene/build_emissive_lights.slang", {"main"})},
+            {.program = shaders.getProgram("scene/build_emissive_lights.slang", {"main"})},
             buildPipeline.writeRef()
         ));
 

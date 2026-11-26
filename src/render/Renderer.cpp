@@ -9,6 +9,8 @@
 #include "core/Window.h"
 #include "render/RhiUtils.h"
 #include "render/graph/RenderPassStandardFlags.h"
+#include "render/impl/graphs/minimal/MinimalPathTracerGraph.h"
+#include "render/impl/graphs/restir/RestirPathTracerGraph.h"
 #include <GLFW/glfw3.h>
 
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -24,6 +26,8 @@
 
 namespace
 {
+constexpr std::array kGraphBuilders{buildMinimalPathTracerGraph, buildRestirPathTracerGraph};
+
 constexpr std::array kRequiredDeviceFeatures{
     rhi::Feature::Surface, rhi::Feature::Rasterization, rhi::Feature::ParameterBlock, rhi::Feature::RayTracing
 };
@@ -92,6 +96,7 @@ void Renderer::shutdown() noexcept
     device.setNull();
     lastSubmittedFrame    = 0;
     activeFramesInFlight  = kMaxFramesInFlight;
+    appliedGraphType = RenderGraphType::Minimal;
     appliedGraphSettings = {};
     appliedPasses = {};
 }
@@ -101,7 +106,7 @@ void Renderer::initBlit()
     rhi::ColorTargetDesc color;
     color.format = surface->getConfig()->format;
     rhi::RenderPipelineDesc desc;
-    desc.program                       = shaders.getProgram("render/impl/postprocess/blit.slang", {"vertMain", "fragMain"});
+    desc.program                       = shaders.getProgram("postprocess/blit.slang", {"vertMain", "fragMain"});
     desc.targets                       = &color;
     desc.targetCount                   = 1;
     desc.depthStencil.depthTestEnable  = false;
@@ -142,16 +147,18 @@ void Renderer::recordPresentation(
 std::shared_ptr<RenderGraph> Renderer::applyConfiguration()
 {
     const auto& settings = context().config.renderer;
+    const bool graphChanged = settings.graph != appliedGraphType;
     std::shared_ptr<RenderGraph> previousGraph;
-    if (!mpRenderGraph || settings.parameters != appliedGraphSettings)
+    if (!mpRenderGraph || graphChanged || settings.parameters != appliedGraphSettings)
     {
-        auto candidate = buildMinimalPathTracerGraph(device, settings.parameters);
-        if (!mpRenderGraph || !mpRenderGraph->hasSameTopology(*candidate))
+        auto candidate = kGraphBuilders[std::to_underlying(settings.graph)](device, settings.parameters);
+        if (!mpRenderGraph || graphChanged || !mpRenderGraph->hasSameTopology(*candidate))
         {
             candidate->setScene(&gpuScene);
             // Keep the old graph alive until compileGraph() waits for the queue.
             previousGraph = std::exchange(mpRenderGraph, std::move(candidate));
         }
+        appliedGraphType = settings.graph;
         appliedGraphSettings = settings.parameters;
     }
 
@@ -241,7 +248,9 @@ RenderFrameResult Renderer::render(
         .frameIndex    = static_cast<uint32_t>(lastSubmittedFrame % activeFramesInFlight),
         .deltaSeconds  = deltaSeconds,
     };
+    
     mpRenderGraph->onSceneUpdates(&frame, updates);
+    
     if (mpRenderGraph->needsCompilation())
     {
         compileGraph();

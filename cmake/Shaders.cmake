@@ -9,7 +9,7 @@ function(renderlab_build_shaders)
     endif()
     foreach(source IN LISTS sources)
         set(input "${RenderLab_SOURCE_DIR}/${source}")
-        string(REGEX REPLACE "^src/" "" runtime_source "${source}")
+        string(REGEX REPLACE "^src/(render/impl/)?" "" runtime_source "${source}")
         set(output "${SHADER_BINARY_DIR}/source/${runtime_source}")
         cmake_path(GET output PARENT_PATH directory)
         add_custom_command(OUTPUT "${output}"

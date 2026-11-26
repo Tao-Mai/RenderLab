@@ -120,6 +120,7 @@ add_library(RenderLabCore STATIC
     src/core/Json.h
     src/scene/Camera.cpp
     src/scene/SceneManager.cpp
+    src/scene/SceneLayer.h
     src/scene/Transform.cpp
     src/asset/AssetManager.cpp
     src/asset/Asset.h
@@ -187,7 +188,13 @@ add_library(RenderLabCore STATIC
     src/render/graph/ResourceCache.h
     src/render/impl/graphs/minimal/MinimalPathTracerGraph.cpp
     src/render/impl/graphs/minimal/MinimalPathTracerGraph.h
-    src/render/impl/passes/MinimalPathTracer.cpp
+    src/render/impl/graphs/restir/RestirPathTracerGraph.cpp
+    src/render/impl/graphs/restir/RestirPathTracerGraph.h
+    src/render/impl/passes/accumulate/AccumulatePass.cpp
+    src/render/impl/passes/debug/DebugPass.cpp
+    src/render/impl/passes/minimal/MinimalPathTracer.cpp
+    src/render/impl/passes/restir/RestirPathTracer.cpp
+    src/render/impl/passes/vbuffer/VBufferPass.cpp
     src/render/impl/postprocess/bloom/Bloom.cpp
     src/render/impl/postprocess/bloom/BloomUi.cpp
     src/render/impl/postprocess/ExposurePass/ExposurePass.cpp

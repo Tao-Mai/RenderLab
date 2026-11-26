@@ -106,6 +106,8 @@ void loadAssetDirectory(
                     "invalid mesh bounds: {}",
                     asset->id
                 );
+        if constexpr (std::same_as<T, SceneLayer>)
+            CHECK(!asset->baseScene.empty() && !asset->name.empty(), "invalid scene layer: {}", entry.path().string());
 
         const typename T::ID id = asset->id;
         CHECK(out.emplace(id, std::move(asset)).second, "duplicate asset ID: {}", id);
@@ -158,6 +160,7 @@ template TextureAsset::ID        AssetManager::saveAsset(std::unique_ptr<Texture
 template MeshAsset::ID           AssetManager::saveAsset(std::unique_ptr<MeshAsset>);
 template GltfMaterial::ID        AssetManager::saveAsset(std::unique_ptr<GltfMaterial>);
 template Scene::ID               AssetManager::saveAsset(std::unique_ptr<Scene>);
+template SceneLayer::ID          AssetManager::saveAsset(std::unique_ptr<SceneLayer>);
 template EnvironmentMapAsset::ID AssetManager::saveAsset(std::unique_ptr<EnvironmentMapAsset>);
 template SamplerAsset::ID        AssetManager::saveAsset(std::unique_ptr<SamplerAsset>);
 

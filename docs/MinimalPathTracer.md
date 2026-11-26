@@ -2,9 +2,11 @@
 
 MinimalPathTracer 是场景渲染入口。编辑器中的 Max bounces 控制弹射上限。内置渲染图把 HDR 颜色接入后处理。 [组图实现](../src/render/impl/graphs/minimal/MinimalPathTracerGraph.cpp)
 
+Graph 面板中的 **Enable accumulation** 默认开启。它在后处理前对线性颜色逐帧取平均。相机、场景、渲染尺寸或路径追踪设置变化时，从下一帧重新累积。关闭后直接使用当前帧的路径追踪结果。 [累积实现](../src/render/impl/passes/accumulate/AccumulatePass.cpp)
+
 ## 积分流程
 
-MinimalPathTracer 每像素每帧生成一条主射线，并在 RayGen 中循环完成多次弹射：
+VBufferPass 每像素追踪一条主射线，保存首个通过 alpha test 的实例、图元和重心坐标。MinimalPathTracer 从 `vbuffer` 重建首撞，并在 RayGen 中循环完成后续弹射：
 
 1. 读取命中几何、材质与法线贴图，记录相机直接可见的自发光、矩形光源或环境。
 2. 每个散射顶点普通采样一次光源，追踪可见性射线；支持点光、聚光、方向光、矩形光源、发光三角形及启用的环境。
@@ -24,10 +26,12 @@ MinimalPathTracer 每像素每帧生成一条主射线，并在 RayGen 中循环
 | --- | --- |
 | [path_tracing.slang](../src/render/impl/raytracing/path_tracing.slang) | Surface、材质求值、相机射线、命中 / Miss、BRDF 采样、路径续射线和俄罗斯轮盘 |
 | [light_sampling.slang](../src/render/impl/raytracing/light_sampling.slang) | 光源选择、解析光源 / 发光三角形 / 环境的求值、光源 PDF 和命中光源样本还原 |
-| [minimal_path_tracer.slang](../src/render/impl/passes/minimal_path_tracer.slang) | MinimalPathTracer 的路径积分和颜色输出 |
+| [minimal_path_tracer.slang](../src/render/impl/passes/minimal/minimal_path_tracer.slang) | MinimalPathTracer 的路径积分和颜色输出 |
 
 
-`color` 是这个 Pass 唯一的图端口，格式为 RGBA16F。它合并直接光、间接光和相机直接可见的自发光。光源和材质通过渲染后端的共享 shader 参数访问。
+MinimalPathTracer 读取 `vbuffer`，输出 RGBA32F `color`。它合并直接光、间接光和相机直接可见的自发光。光源和材质通过渲染后端的共享 shader 参数访问。
+
+编辑器 **debug → Show analytic lights** 开启灯光标记。DebugPass 从 VBuffer 重建标记像素的几何深度，挡在墙后的标记会被遮挡。整张图输出 `debug.color`。 [DebugPass](../src/render/impl/passes/debug/DebugPass.cpp)
 
 ## 验证
 

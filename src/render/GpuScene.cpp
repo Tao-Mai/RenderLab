@@ -230,20 +230,19 @@ void GpuScene::uploadRayHits(rhi::ICommandEncoder& commands)
     uploadSceneBuffer(commands, rayHitBuffer, std::as_bytes(std::span{hits}));
 }
 
-void GpuScene::bindShaderData(rhi::IShaderObject& object) const
+void GpuScene::bindSceneData(rhi::IShaderObject& object, rhi::IAccelerationStructure* tlas) const
 {
     const auto scene = rhi::ShaderCursor(&object)["scene"].getDereferenced();
     rhiCheck(scene.setData(sceneGlobals));
     rhiCheck(scene["analyticLights"].setBinding(analytic.buffer()));
+    rhiCheck(scene["rtAccel"].setBinding(tlas));
+    rhiCheck(scene["objects"].setBinding(rayHitBuffer));
 }
 
 void GpuScene::bindRayTracingGeometryData(rhi::IShaderObject& object, rhi::IAccelerationStructure* tlas) const
 {
-    bindShaderData(object);
+    bindSceneData(object, tlas);
     materialTable.bind(object);
-    const auto scene = rhi::ShaderCursor(&object)["scene"].getDereferenced();
-    rhiCheck(scene["rtAccel"].setBinding(tlas));
-    rhiCheck(scene["objects"].setBinding(rayHitBuffer));
 }
 
 void GpuScene::bindRayTracingShaderData(rhi::IShaderObject& object, rhi::IAccelerationStructure* tlas) const

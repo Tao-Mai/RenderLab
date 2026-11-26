@@ -2,8 +2,10 @@
 
 #include "asset/AssetManager.h"
 #include "core/Context.h"
+#include "editor/Gui.h"
 #include "editor/PassEditor.h"
 #include "render/Renderer.h"
+#include "scene/SceneManager.h"
 
 #include <algorithm>
 #include <cmath>
@@ -11,7 +13,9 @@
 #include <glm/vec2.hpp>
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 namespace
 {
@@ -41,6 +45,37 @@ std::optional<Scene::ID> drawSceneSelector(const Scene::ID& current)
     }
 
     return chosen;
+}
+
+void drawSceneLayers(const Scene& scene)
+{
+    const auto& assets = *context().assetManager;
+    std::vector<const SceneLayer*> layers;
+    for (const auto& id : assets.loadedIds<SceneLayer>())
+    {
+        const auto& layer = assets.get(id);
+        if (layer.baseScene == scene.id)
+            layers.push_back(&layer);
+    }
+    if (layers.empty())
+        return;
+
+    std::ranges::sort(layers, {}, [](const SceneLayer* layer)
+    {
+        return std::pair{layer->analyticLights.size(), std::string_view{layer->name}};
+    });
+
+    auto& sceneManager = *context().sceneManager;
+    ImGui::SeparatorText("Scene layer");
+    if (!scene.defaultLayer && ImGui::RadioButton("No layer", sceneManager.layerId().empty()))
+        sceneManager.setLayer({});
+
+    for (const auto* layer : layers)
+    {
+        const IDScope id(layer);
+        if (ImGui::RadioButton(layer->name.c_str(), sceneManager.layerId() == layer->id))
+            sceneManager.setLayer(layer->id);
+    }
 }
 }  // namespace
 
@@ -203,6 +238,7 @@ std::optional<Scene::ID> EditorUI::drawControls(const Scene& scene)
     ImGui::Text("FPS: %.1f", displayedFps);
 
     auto sceneId = drawSceneSelector(scene.id);
+    drawSceneLayers(scene);
     auto& settings = context().config.editor;
     ImGui::Checkbox("Scene objects", &settings.showSceneObjects);
 

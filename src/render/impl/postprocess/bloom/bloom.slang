@@ -1,4 +1,4 @@
-#include "render/impl/postprocess/fullscreen.slang"
+#include "postprocess/fullscreen.slang"
 
 #ifndef BLOOM_STAGE
 #error BLOOM_STAGE must be specified

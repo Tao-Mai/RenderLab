@@ -73,7 +73,7 @@ void ExposurePass::compile(RenderContext* context, const CompileData&)
     hasHistory        = false;
     histogramPipeline = mpDevice->createComputePipeline(
         {.program = context->shaderManager->getProgram(
-             "render/impl/postprocess/ExposurePass/exposure.slang",
+             "postprocess/ExposurePass/exposure.slang",
              {"computeMain"},
              {{"EXPOSURE_STAGE", "0"}}
          )}
@@ -81,7 +81,7 @@ void ExposurePass::compile(RenderContext* context, const CompileData&)
     CHECK(histogramPipeline);
     resolvePipeline = mpDevice->createComputePipeline(
         {.program = context->shaderManager->getProgram(
-             "render/impl/postprocess/ExposurePass/exposure.slang",
+             "postprocess/ExposurePass/exposure.slang",
              {"computeMain"},
              {{"EXPOSURE_STAGE", "1"}}
          )}

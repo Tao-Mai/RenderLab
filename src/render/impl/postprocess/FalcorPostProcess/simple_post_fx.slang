@@ -26,7 +26,7 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 
-#include "render/impl/math/color.slang"
+#include "math/color.slang"
 
 // The effect kernels and their numerical quirks are preserved from Falcor SimplePostFX.
 #if POST_FX_STAGE == 0

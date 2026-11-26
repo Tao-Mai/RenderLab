@@ -127,7 +127,7 @@ void FalcorPostProcess::initialize(const RenderContext& context)
     const auto create = [&](SimplePostFxVariant variant)
     {
         const auto shader = context.shaderManager->getProgram(
-            "render/impl/postprocess/FalcorPostProcess/simple_post_fx.slang", {"computeMain"},
+            "postprocess/FalcorPostProcess/simple_post_fx.slang", {"computeMain"},
             {{"POST_FX_STAGE", std::to_string(int(variant))}}
         );
         rhi::ComPtr<rhi::IComputePipeline> pipeline;
@@ -255,7 +255,7 @@ void FalcorPostProcess::execute(RenderContext* renderCommands, const RenderData&
         auto&      shaders       = *renderCommands->shaderManager;
         const auto toneMapped    = addToneMapper(shaders, renderData, effects);
         const auto presentShader =
-            shaders.getProgram("render/impl/postprocess/blit.slang", {"vertMain", "fragMain"}, {{"BLIT_SRGB_CONTROL", "1"}});
+            shaders.getProgram("postprocess/blit.slang", {"vertMain", "fragMain"}, {{"BLIT_SRGB_CONTROL", "1"}});
         addImageStage({*this, Stage::Present, presentShader}, toneMapped, toneMapped, target);
     }
 
@@ -295,7 +295,7 @@ rhi::ITexture* FalcorPostProcess::addToneMapper(ShaderManager& shaders, const Re
     if (parameters.toneMapper.autoExposure)
     {
         const auto shader = shaders.getProgram(
-            "render/impl/postprocess/FalcorPostProcess/luminance.slang",
+            "postprocess/FalcorPostProcess/luminance.slang",
             {"vertMain", "fragMain"},
             {{"LUMINANCE_STAGE", kLuminanceStage}}
         );
@@ -305,7 +305,7 @@ rhi::ITexture* FalcorPostProcess::addToneMapper(ShaderManager& shaders, const Re
         // Separate images retain the exact size, R32F quantization and linear filtering of each Falcor mip.
         const auto levels    = static_cast<uint32_t>(std::bit_width(std::max(extent.width, extent.height)));
         const auto mipShader = shaders.getProgram(
-            "render/impl/postprocess/FalcorPostProcess/luminance.slang",
+            "postprocess/FalcorPostProcess/luminance.slang",
             {"vertMain", "fragMain"},
             {{"LUMINANCE_STAGE", kLuminanceMipStage}}
         );
@@ -321,7 +321,7 @@ rhi::ITexture* FalcorPostProcess::addToneMapper(ShaderManager& shaders, const Re
     }
 
     const auto shader =
-        shaders.getProgram("render/impl/postprocess/FalcorPostProcess/tonemapping.slang", {"vertMain", "fragMain"});
+        shaders.getProgram("postprocess/FalcorPostProcess/tonemapping.slang", {"vertMain", "fragMain"});
     return addImageStage({*this, Stage::ToneMapping, shader}, source, luminance, data.getTexture(kToneMapped));
 }
 

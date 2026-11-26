@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_BRDF_SLANG
 #define RENDERLAB_BRDF_SLANG
 
-#include "render/impl/math/constant.slang"
+#include "math/constant.slang"
 
 // Keep the analytical-light GGX lobe finite at zero perceptual roughness (FP32).
 static const float kMinDirectRoughness = 0.045;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "render/graph/RenderPass.h"
-#include "render/impl/passes/MinimalPathTracerSettings.h"
+#include "render/impl/passes/minimal/MinimalPathTracerSettings.h"
 #include "render/resources/RayTracingProgram.h"
 
 #include <optional>

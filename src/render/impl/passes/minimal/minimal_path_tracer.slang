@@ -1,5 +1,6 @@
-#include "render/impl/raytracing/alpha_test.slang"
-#include "render/impl/raytracing/light_sampling.slang"
+#include "raytracing/alpha_test.slang"
+#include "raytracing/light_sampling.slang"
+#include "raytracing/visibility_buffer.slang"
 
 struct PathTracingUniforms
 {
@@ -9,6 +10,7 @@ struct PathTracingUniforms
 
 ConstantBuffer<PathTracingUniforms> uniforms;
 
+Texture2D<uint4> vbuffer;
 [format("rgba32f")] RWTexture2D<float4> outputImage;
 
 // One ordinary light sample and one BRDF continuation per scattering event.
@@ -42,7 +44,7 @@ float simpleEmissionWeight(Surface previousSurface, RayDesc ray, PathHit hit, fl
     return brdfPdf / (brdfPdf + lightPdf);
 }
 
-float3 tracePath(RayDesc ray, inout SampleGenerator state)
+float3 tracePath(RayDesc ray, PathHit hit, inout SampleGenerator state)
 {
     float3  radiance         = float3(0.0);
     float3  throughput       = float3(1.0);
@@ -53,25 +55,17 @@ float3 tracePath(RayDesc ray, inout SampleGenerator state)
     
     for (uint bounce = 0; bounce <= maxBounces; ++bounce)
     {
-        PathHit hit = {};
-        traceSceneRay(ray, RayType::Scatter, RAY_FLAG_FORCE_NON_OPAQUE, hit);
-
-        if (hit.event != PathEvent::Surface) {
-             return environmentRadiance(ray.Direction);
+        const float emissionWeight = bounce == 0 ? 1.0
+            : simpleEmissionWeight(previousSurface, ray, hit, previousBrdfPdf);
+        
+        if (hit.event == PathEvent::Miss)
+        {
+            radiance += throughput * environmentRadiance(ray.Direction) * emissionWeight;
+            break;
         }
 
         Surface surface = hit.surface;
-        float3 emission = surface.emissive;
-        
-        if (bounce == 0) 
-        {
-            radiance += emission; 
-        }
-        else
-        {
-            float weight = simpleEmissionWeight(previousSurface, ray, hit, previousBrdfPdf);
-            radiance += throughput * emission * weight;
-        }
+        radiance += throughput * surface.emissive * emissionWeight;
 
         // 停止反弹，那接收完emission就可以结束，不再eval表面
         if (bounce == maxBounces)
@@ -104,7 +98,10 @@ float3 tracePath(RayDesc ray, inout SampleGenerator state)
 
         previousSurface = surface;
         previousBrdfPdf = sampled.pdf;
+
+        traceSceneRay(ray, RayType::Scatter, RAY_FLAG_FORCE_NON_OPAQUE, hit);
     }
+
     return radiance;
 }
 
@@ -128,7 +125,16 @@ void raygenMain()
     uint2 pixel = DispatchRaysIndex().xy;
     uint2 frameDim = DispatchRaysDimensions().xy;
     SampleGenerator state = createPathSampleGenerator(pixel, frameDim.x, uniforms.sampleIndex);
-    float3 color = tracePath(createCameraRay(pixel, frameDim, float2(0.5)), state);
+    RayDesc ray = createCameraRay(pixel, frameDim, float2(0.5));
+    VBufferHit primary = {vbuffer.Load(int3(pixel, 0))};
 
-    outputImage[pixel] = float4(color, 1.0);
+    PathHit hit = {};
+    if (primary.isValid())
+    {
+        hit.event = PathEvent::Surface;
+        hit.barycentrics = primary.barycentrics;
+        hit.surface = surfaceAt(primary.instanceIndex, primary.primitiveIndex, hit.barycentrics, ray.Direction);
+    }
+
+    outputImage[pixel] = float4(tracePath(ray, hit, state), 1.0);
 }

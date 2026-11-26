@@ -185,7 +185,7 @@ void Bloom::Filter::compile(
     sourceTexelSize         = {1.0f / sourceExtent.width, 1.0f / sourceExtent.height};
     this->target = target;
     const auto shader       = context.shaderManager->getProgram(
-        "render/impl/postprocess/bloom/bloom.slang",
+        "postprocess/bloom/bloom.slang",
         {"vertMain", "fragMain"},
         {{"BLOOM_STAGE", std::to_string(static_cast<int>(stage))}}
     );

@@ -17,6 +17,7 @@ public:
         uint32_t    maxRayPayloadSize;
         uint32_t    maxAttributeSizeInBytes;
         void (*validateLayout)(rhi::IShaderProgram&);
+        bool        useVisibilityRays = true;
     };
 
     struct Version

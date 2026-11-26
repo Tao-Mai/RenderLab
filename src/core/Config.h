@@ -8,6 +8,12 @@
 
 struct Scene;
 
+enum class RenderGraphType
+{
+    Minimal,
+    Restir,
+};
+
 enum class PostProcessPipeline
 {
     RenderLab,
@@ -16,6 +22,8 @@ enum class PostProcessPipeline
 
 struct RenderGraphSettings
 {
+    bool accumulate = true;
+
     bool hdr = true;
 
     PostProcessPipeline postProcess = PostProcessPipeline::RenderLab;
@@ -40,6 +48,8 @@ struct Config
 
     struct Renderer
     {
+        RenderGraphType graph;
+
         RenderGraphSettings parameters;
         RenderPassOptions passes;
     };

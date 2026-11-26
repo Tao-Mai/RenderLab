@@ -1,13 +1,13 @@
 #ifndef RENDERLAB_PATH_TRACING_SLANG
 #define RENDERLAB_PATH_TRACING_SLANG
 
-#include "render/impl/math/constant.slang"
-#include "render/impl/material/material_evaluation.slang"
-#include "render/impl/material/normal_mapping.slang"
-#include "render/impl/math/random.slang"
-#include "render/impl/raytracing/camera_ray.slang"
-#include "render/impl/scene/emissive_lights.slang"
-#include "render/impl/scene/environment_light.slang"
+#include "math/constant.slang"
+#include "material/material_evaluation.slang"
+#include "material/normal_mapping.slang"
+#include "math/random.slang"
+#include "raytracing/camera_ray.slang"
+#include "scene/emissive_lights.slang"
+#include "scene/environment_light.slang"
 #include "scene_hits.slang"
 #include "geometry.slang"
 

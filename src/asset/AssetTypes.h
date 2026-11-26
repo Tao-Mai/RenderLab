@@ -5,7 +5,8 @@
 #include "asset/MeshAsset.h"
 #include "asset/SamplerAsset.h"
 #include "scene/Scene.h"
+#include "scene/SceneLayer.h"
 #include "asset/TextureAsset.h"
 
 using AssetTypes =
-    AssetTypeList<TextureAsset, MeshAsset, GltfMaterial, Scene, EnvironmentMapAsset, SamplerAsset>;
+    AssetTypeList<TextureAsset, MeshAsset, GltfMaterial, Scene, SceneLayer, EnvironmentMapAsset, SamplerAsset>;

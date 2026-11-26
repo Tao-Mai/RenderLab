@@ -6,7 +6,7 @@
 
 ## 组图与图结构
 
-`buildMinimalPathTracerGraph()` 创建路径追踪 Pass，按 HDR、后处理和 Bloom 设置连接端口，并标记呈现输出。Pass 将资源端口和设置绑定传给基类，`reflect()` 根据端口描述生成反射。 [组图实现](../src/render/impl/graphs/minimal/MinimalPathTracerGraph.cpp) · [Pass 实现](../src/render/graph/RenderPass.cpp)
+`buildMinimalPathTracerGraph()` 和 `buildRestirPathTracerGraph()` 分别创建 Minimal 与 ReSTIR 构图，按累积、HDR、后处理和 Bloom 设置连接端口，并标记呈现输出。右侧 Graph 设置前的 `Render graph` 下拉框选择当前构图，选择保存在 `renderer.graph`，随配置在正常退出时写入，下次启动恢复。Pass 将资源端口和设置绑定传给基类，`reflect()` 根据端口描述生成反射。 [Minimal 构图](../src/render/impl/graphs/minimal/MinimalPathTracerGraph.cpp) · [ReSTIR 构图](../src/render/impl/graphs/restir/RestirPathTracerGraph.cpp) · [Pass 实现](../src/render/graph/RenderPass.cpp)
 
 `DirectedGraph` 存储节点 ID、边 ID 及入边和出边。`RenderGraph` 另存实例名到节点 ID 的索引、节点上的 Pass 和属性、边两端的端口名。输出用 `(nodeId, field)` 表示并保留标记顺序，Renderer 将索引 `0` 作为呈现输出。 [图结构](../src/core/ds/DirectedGraph.h) · [RenderGraph](../src/render/graph/RenderGraph.h)
 
@@ -52,7 +52,7 @@ flowchart LR
 
 ## 图替换与重编译
 
-图级设置变化时，Renderer 创建候选图。`hasSameTopology()` 比较实例名及其 Pass 类型、边端点集合和有序输出。拓扑相同时沿用原 Pass 实例。拓扑变化时，新图接收 Surface 的尺寸与格式以及 `GpuScene`，Renderer 持有旧图直到队列空闲。 [图替换](../src/render/Renderer.cpp) · [拓扑比较](../src/render/graph/RenderGraph.cpp)
+构图选择或图级设置变化时，Renderer 创建候选图。`hasSameTopology()` 比较实例名及其 Pass 类型、边端点集合和有序输出。构图选择未变且拓扑相同时沿用原 Pass 实例。切换构图或拓扑变化时，新图接收 Surface 的尺寸与格式以及 `GpuScene`，Renderer 持有旧图直到队列空闲。 [图替换](../src/render/Renderer.cpp) · [拓扑比较](../src/render/graph/RenderGraph.cpp)
 
 `RenderGraph::applyPassSettings()` 将配置中的类型化设置应用到各 Pass。设置变化时调用 Pass 的更新回调，Pass 可通过 `requestRecompile()` 让图重新编译。添加或移除节点、边、输出，以及 Surface 默认尺寸或格式变化也会使编译结果失效。 [设置应用](../src/render/graph/RenderGraph.cpp) · [Pass 设置](../src/render/graph/RenderPassSettings.h)
 

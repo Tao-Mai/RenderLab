@@ -25,7 +25,7 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
-#include "render/impl/postprocess/fullscreen.slang"
+#include "postprocess/fullscreen.slang"
 
 Texture2D<float4> sourceImage;
 SamplerState      linearSampler;

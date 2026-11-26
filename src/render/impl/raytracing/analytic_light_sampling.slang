@@ -1,10 +1,10 @@
 #ifndef RENDERLAB_ANALYTIC_LIGHT_SAMPLING_SLANG
 #define RENDERLAB_ANALYTIC_LIGHT_SAMPLING_SLANG
 
-#include "render/impl/scene/light_data.slang"
-#include "render/impl/math/constant.slang"
-#include "render/impl/math/random.slang"
-#include "render/impl/raytracing/scene_hits.slang"
+#include "scene/light_data.slang"
+#include "math/constant.slang"
+#include "math/random.slang"
+#include "raytracing/scene_hits.slang"
 
 uint uniformLightIndex(uint count, inout SampleGenerator state)
 {

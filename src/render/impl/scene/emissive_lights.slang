@@ -1,8 +1,8 @@
 #ifndef RENDERLAB_EMISSIVE_LIGHTS_SLANG
 #define RENDERLAB_EMISSIVE_LIGHTS_SLANG
 
-#include "render/impl/scene/emissive_light_data.slang"
-#include "render/impl/material/material_data.slang"
+#include "scene/emissive_light_data.slang"
+#include "material/material_data.slang"
 
 ParameterBlock<EmissiveLights> emissiveLights;
 

@@ -1,10 +1,10 @@
 #pragma once
 
 #include <slang-rhi.h>
+#include "core/Config.h"
 #include "core/utils/NonCopyable.h"
 #include "render/GpuScene.h"
 #include "render/RenderContext.h"
-#include "render/impl/graphs/minimal/MinimalPathTracerGraph.h"
 #include "render/graph/RenderGraph.h"
 #include "render/resources/RenderResourceManager.h"
 #include "render/resources/ShaderManager.h"
@@ -52,6 +52,7 @@ private:
     rhi::ComPtr<rhi::IDevice>                     device;
     RenderResourceManager                         resources;
     GpuScene                                                      gpuScene;
+    RenderGraphType                               appliedGraphType = RenderGraphType::Minimal;
     RenderGraphSettings                           appliedGraphSettings;
     RenderPassOptions                             appliedPasses;
     uint64_t                                                      lastSubmittedFrame = 0;

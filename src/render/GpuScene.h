@@ -60,7 +60,7 @@ public:
         const Scene& source, uint64_t sceneGeneration, glm::uvec2 extent, rhi::ICommandEncoder& commands
     );
 
-    void bindShaderData(rhi::IShaderObject& object) const;
+    void bindSceneData(rhi::IShaderObject& object, rhi::IAccelerationStructure* tlas) const;
     // Record before opening a ray tracing pass.
     [[nodiscard]] rhi::IAccelerationStructure* prepareRayTracing(rhi::ICommandEncoder& commands);
     void prepareEmissiveLights(rhi::ICommandEncoder& commands);
@@ -75,6 +75,7 @@ public:
     );
 
     [[nodiscard]] uint64_t                  sceneGeneration() const { return generation; }
+    [[nodiscard]] uint32_t analyticLightCount() const { return sceneGlobals.analyticLightCount; }
     [[nodiscard]] bool hasEnvironment() const { return environment != nullptr; }
     [[nodiscard]] bool useAnalyticLights() const { return !analytic.data().empty(); }
     [[nodiscard]] bool useEmissiveLights() const { return emissive.count() != 0; }

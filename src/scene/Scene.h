@@ -9,6 +9,8 @@
 #include <optional>
 #include <vector>
 
+struct SceneLayer;
+
 struct Scene
 {
     using ID                              = AssetID<Scene>;
@@ -16,7 +18,10 @@ struct Scene
 
     ID id;
     Camera camera;
+    std::optional<EnvironmentMapAsset::ID> environmentMap;
+
     std::vector<Object> objects;
     std::vector<AnalyticLight> analyticLights;
-    std::optional<EnvironmentMapAsset::ID> environmentMap;
+
+    std::optional<AssetID<SceneLayer>> defaultLayer;
 };

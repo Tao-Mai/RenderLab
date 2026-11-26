@@ -1,4 +1,4 @@
-#include "render/impl/passes/MinimalPathTracer.h"
+#include "render/impl/passes/restir/RestirPathTracer.h"
 
 #include "render/graph/RenderPassSettings.h"
 
@@ -13,7 +13,8 @@
 
 namespace
 {
-constexpr char       kShaderFile[]           = "render/impl/passes/minimal_path_tracer.slang";
+constexpr char       kShaderFile[]           = "passes/restir/restir.slang";
+constexpr char       kVBuffer[]              = "vbuffer";
 constexpr char       kOutputColor[]          = "color";
 constexpr char       kOutputImage[]          = "outputImage";
 constexpr auto       kOutputFormat           = rhi::Format::RGBA32Float;
@@ -22,6 +23,11 @@ constexpr uint32_t   kMaxRayRecursion        = 1;
 constexpr uint32_t   kUniformSampleGenerator = 1;
 
 const RenderPassReflection::Field kPorts[]{
+    {
+        .name = kVBuffer,
+        .resource = rhi::TextureDesc{.size = {0, 0, 1}, .usage = rhi::TextureUsage::ShaderResource},
+        .visibility = RenderPassReflection::Visibility::Input,
+    },
     {
         .name = kOutputColor,
         .resource = rhi::TextureDesc{.format = kOutputFormat, .usage = rhi::TextureUsage::UnorderedAccess},
@@ -41,10 +47,10 @@ void validateShaderLayout(rhi::IShaderProgram& program)
 }
 }  // namespace
 
-bool MinimalPathTracer::drawSettings(
+bool RestirPathTracer::drawSettings(
     Gui::Widgets& widgets,
-    MinimalPathTracerSettings& editedSettings,
-    const MinimalPathTracer&,
+    RestirPathTracerSettings& editedSettings,
+    const RestirPathTracer&,
     const PassEditorContext&
 )
 {
@@ -56,15 +62,15 @@ bool MinimalPathTracer::drawSettings(
     return changed;
 }
 
-MinimalPathTracer::MinimalPathTracer(rhi::ComPtr<rhi::IDevice> device) :
+RestirPathTracer::RestirPathTracer(rhi::ComPtr<rhi::IDevice> device) :
     RenderPass(
         std::move(device),
         {
             .type = kType,
             .ports = kPorts,
             .settings = pass_settings::bind<
-                &MinimalPathTracer::settings, &RenderPassOptions::pathTracer,
-                &MinimalPathTracer::drawSettings, &MinimalPathTracer::optionsChanged
+                &RestirPathTracer::settings, &RenderPassOptions::restir,
+                &RestirPathTracer::drawSettings, &RestirPathTracer::optionsChanged
             >(),
         }
     ),
@@ -73,15 +79,15 @@ MinimalPathTracer::MinimalPathTracer(rhi::ComPtr<rhi::IDevice> device) :
     settings.validate();
 }
 
-void MinimalPathTracer::compile(RenderContext*, const CompileData&)
+void RestirPathTracer::compile(RenderContext*, const CompileData&)
 {
     rhi::FormatSupport support;
     rhiCheck(mpDevice->getFormatSupport(kOutputFormat, &support));
     CHECK(rhi::is_set(support, rhi::FormatSupport::ShaderUavStore),
-          "MinimalPathTracer requires RGBA32Float storage writes");
+          "RestirPathTracer requires RGBA32Float storage writes");
 }
 
-void MinimalPathTracer::setScene(GpuScene* scene)
+void RestirPathTracer::setScene(GpuScene* scene)
 {
     tracer.reset();
     sampleIndex = 0;
@@ -104,7 +110,7 @@ void MinimalPathTracer::setScene(GpuScene* scene)
     tracer.emplace(*mpDevice, std::move(desc), std::move(defines));
 }
 
-void MinimalPathTracer::execute(RenderContext* context, const RenderData& renderData)
+void RestirPathTracer::execute(RenderContext* context, const RenderData& renderData)
 {
     auto& dictionary = renderData.getDictionary();
     if (optionsChanged)
@@ -135,6 +141,7 @@ void MinimalPathTracer::execute(RenderContext* context, const RenderData& render
     const auto uniforms = root["uniforms"].getDereferenced();
     rhiCheck(uniforms["maxBounces"].setData(settings.maxBounces));
     rhiCheck(uniforms["sampleIndex"].setData(sampleIndex));
+    rhiCheck(root[kVBuffer].setBinding(renderData.getTexture(kVBuffer)));
     rhiCheck(root[kOutputImage].setBinding(renderData.getTexture(kOutputColor)));
 
     const auto dims = renderData.getDefaultTextureDims();

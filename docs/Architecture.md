@@ -44,7 +44,7 @@ Engine：载入当前场景并更新预览相机
 
 ### 反射与 JSON
 
-reflect-cpp 直接获取聚合结构体的字段与枚举名称。路径追踪的常量缓冲在 Slang 中声明，C++ 通过 `ShaderCursor` 按字段上传设置与采样序号。 [路径追踪](../src/render/impl/passes/MinimalPathTracer.cpp)
+reflect-cpp 直接获取聚合结构体的字段与枚举名称。路径追踪的常量缓冲在 Slang 中声明，C++ 通过 `ShaderCursor` 按字段上传设置与采样序号。 [路径追踪](../src/render/impl/passes/minimal/MinimalPathTracer.cpp)
 
 配置、资产和 Shader 缓存通过头文件里的通用模板调用 `rfl::json`。持久化结构只包含需要保存的数据，JSON 异常由模板捕获。 [JSON 读写](../src/core/Json.h)
 

@@ -10,7 +10,8 @@
 namespace
 {
 constexpr std::array kRayGenEntries{"raygenMain"};
-constexpr auto       kRayTypeCount = std::to_underlying(RayType::Count);
+constexpr uint32_t   kRayTypeCount = std::to_underlying(RayType::Count);
+constexpr uint32_t   kPrimaryRayTypeCount = std::to_underlying(RayType::Scatter) + 1;
 
 constexpr auto kDefaultShaderTable = []
 {
@@ -36,14 +37,15 @@ constexpr auto kDefaultShaderTable = []
     return table;
 }();
 
-const auto kShaderEntries = []
+std::vector<std::string> shaderEntries(uint32_t rayTypeCount)
 {
     std::vector<std::string> entries{kRayGenEntries.front()};
-    for (const char* miss : kDefaultShaderTable.missEntries)
-        entries.emplace_back(miss);
+    for (uint32_t index = 0; index < rayTypeCount; ++index)
+        entries.emplace_back(kDefaultShaderTable.missEntries[index]);
 
-    for (const auto& group : kDefaultShaderTable.hitGroups)
+    for (uint32_t index = 0; index < rayTypeCount; ++index)
     {
+        const auto& group = kDefaultShaderTable.hitGroups[index];
         if (group.closestHitEntryPoint)
             entries.emplace_back(group.closestHitEntryPoint);
 
@@ -51,7 +53,7 @@ const auto kShaderEntries = []
     }
 
     return entries;
-}();
+}
 }  // namespace
 
 RayTracingProgram::RayTracingProgram(rhi::IDevice& device, Desc desc, ShaderDefines defines) :
@@ -76,12 +78,13 @@ const RayTracingProgram::Version& RayTracingProgram::getActiveVersion(ShaderMana
 {
     if (linkRequired)
     {
-        auto* program = shaders.getProgram(desc.source, kShaderEntries, defines);
+        const uint32_t rayTypeCount = desc.useVisibilityRays ? kRayTypeCount : kPrimaryRayTypeCount;
+        auto* program = shaders.getProgram(desc.source, shaderEntries(rayTypeCount), defines);
         desc.validateLayout(*program);
 
         const rhi::RayTracingPipelineDesc pipelineDesc{
             .program                 = program,
-            .hitGroupCount           = uint32_t(kDefaultShaderTable.hitGroups.size()),
+            .hitGroupCount           = rayTypeCount,
             .hitGroups               = kDefaultShaderTable.hitGroups.data(),
             .maxRecursion            = desc.maxRecursion,
             .maxRayPayloadSize       = desc.maxRayPayloadSize,
@@ -90,9 +93,9 @@ const RayTracingProgram::Version& RayTracingProgram::getActiveVersion(ShaderMana
         const rhi::ShaderTableDesc shaderTableDesc{
             .rayGenShaderCount           = uint32_t(kRayGenEntries.size()),
             .rayGenShaderEntryPointNames = kRayGenEntries.data(),
-            .missShaderCount             = uint32_t(kDefaultShaderTable.missEntries.size()),
+            .missShaderCount             = rayTypeCount,
             .missShaderEntryPointNames   = kDefaultShaderTable.missEntries.data(),
-            .hitGroupCount               = uint32_t(kDefaultShaderTable.hitGroupNames.size()),
+            .hitGroupCount               = rayTypeCount,
             .hitGroupNames               = kDefaultShaderTable.hitGroupNames.data(),
             .program                     = program,
         };

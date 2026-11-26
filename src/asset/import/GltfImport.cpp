@@ -185,7 +185,7 @@ void registerMaterials(
 const unsigned char* accessorData(
     const tinygltf::Model&    model,
     const tinygltf::Accessor& accessor,
-    size_t&                   stride)
+    size_t                    index)
 {
     CHECK(accessor.bufferView >= 0 && !accessor.sparse.isSparse,
           "sparse or missing glTF accessor is not supported");
@@ -194,10 +194,10 @@ const unsigned char* accessorData(
     const auto& buffer     = model.buffers.at(view.buffer);
     const int   byteStride = accessor.ByteStride(view);
     CHECK(byteStride > 0, "invalid glTF accessor stride");
-    stride = static_cast<size_t>(byteStride);
 
-    const size_t offset = view.byteOffset + accessor.byteOffset;
+    const size_t offset = view.byteOffset + accessor.byteOffset + index * static_cast<size_t>(byteStride);
     CHECK(offset < buffer.data.size(), "glTF accessor points outside its buffer");
+
     return buffer.data.data() + offset;
 }
 
@@ -216,8 +216,8 @@ glm::vec3 readVec3(
     CHECK(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT &&
           accessor.type == TINYGLTF_TYPE_VEC3,
           "glTF VEC3 attribute must use float components");
-    size_t               stride = 0;
-    const unsigned char* data   = accessorData(model, accessor, stride) + index * stride;
+    const auto* data = accessorData(model, accessor, index);
+
     return {readFloat(data), readFloat(data + 4), readFloat(data + 8)};
 }
 
@@ -227,8 +227,8 @@ glm::vec4 readVec4(
     CHECK(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT &&
           accessor.type == TINYGLTF_TYPE_VEC4,
           "glTF VEC4 attribute must use float components");
-    size_t stride = 0;
-    const unsigned char* data = accessorData(model, accessor, stride) + index * stride;
+    const auto* data = accessorData(model, accessor, index);
+
     return {readFloat(data), readFloat(data + 4), readFloat(data + 8), readFloat(data + 12)};
 }
 
@@ -240,8 +240,8 @@ glm::vec2 readVec2(
     CHECK(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT &&
           accessor.type == TINYGLTF_TYPE_VEC2,
           "glTF VEC2 attribute must use float components");
-    size_t               stride = 0;
-    const unsigned char* data   = accessorData(model, accessor, stride) + index * stride;
+    const auto* data = accessorData(model, accessor, index);
+
     return {readFloat(data), readFloat(data + 4)};
 }
 
@@ -252,8 +252,7 @@ uint32_t readIndex(
 {
     CHECK(accessor.type == TINYGLTF_TYPE_SCALAR, "glTF index accessor must be scalar");
 
-    size_t               stride = 0;
-    const unsigned char* data   = accessorData(model, accessor, stride) + index * stride;
+    const auto* data = accessorData(model, accessor, index);
     switch (accessor.componentType)
     {
         case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:

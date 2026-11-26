@@ -1,6 +1,6 @@
-#include "render/impl/math/color.slang"
-#include "render/impl/postprocess/exposure_state.slang"
-#include "render/impl/postprocess/fullscreen.slang"
+#include "math/color.slang"
+#include "postprocess/exposure_state.slang"
+#include "postprocess/fullscreen.slang"
 
 struct ToneMappingParameters
 {

@@ -2,9 +2,9 @@
 #define RENDERLAB_PATH_LAUNCH_SLANG
 
 #include "path_common.slang"
-#include "render/impl/material/normal_mapping.slang"
-#include "render/impl/raytracing/camera_ray.slang"
-#include "render/impl/raytracing/geometry.slang"
+#include "material/normal_mapping.slang"
+#include "raytracing/camera_ray.slang"
+#include "raytracing/geometry.slang"
 
 struct CameraPathSample
 {

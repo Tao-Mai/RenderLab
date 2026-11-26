@@ -1,11 +1,14 @@
 #include "render/impl/graphs/minimal/MinimalPathTracerGraph.h"
 
 #include "render/graph/RenderGraph.h"
+#include "render/impl/passes/accumulate/AccumulatePass.h"
+#include "render/impl/passes/debug/DebugPass.h"
+#include "render/impl/passes/minimal/MinimalPathTracer.h"
+#include "render/impl/passes/vbuffer/VBufferPass.h"
 #include "render/impl/postprocess/ExposurePass/ExposurePass.h"
 #include "render/impl/postprocess/FalcorPostProcess/FalcorPostProcess.h"
 #include "render/impl/postprocess/ToneMappingPass/ToneMappingPass.h"
 #include "render/impl/postprocess/bloom/Bloom.h"
-#include "render/impl/passes/MinimalPathTracer.h"
 
 #include <string>
 
@@ -13,38 +16,50 @@ std::shared_ptr<RenderGraph> buildMinimalPathTracerGraph(
     rhi::ComPtr<rhi::IDevice> device, const RenderGraphSettings& settings
 )
 {
-    const std::string kPathTracerColor = "pathTracer.color";
     auto graph = std::make_shared<RenderGraph>(device, std::string{MinimalPathTracer::kType});
+    graph->addPass(std::make_shared<VBufferPass>(device), "vbuffer");
     graph->addPass(std::make_shared<MinimalPathTracer>(device), "pathTracer");
+    graph->addEdge("vbuffer.hit", "pathTracer.vbuffer");
 
-    if (!settings.hdr)
+    std::string color = "pathTracer.color";
+    if (settings.accumulate)
     {
-        graph->markOutput(kPathTracerColor);
-        return graph;
+        graph->addPass(std::make_shared<AccumulatePass>(device), "accumulate");
+        graph->addEdge(color, "accumulate.source");
+        color = "accumulate.color";
     }
 
-    if (settings.postProcess == PostProcessPipeline::Falcor)
+    if (settings.hdr)
     {
-        graph->addPass(std::make_shared<FalcorPostProcess>(device), "falcor");
-        graph->addEdge(kPathTracerColor, "falcor.source");
-        graph->markOutput("falcor.color");
-        return graph;
+        if (settings.postProcess == PostProcessPipeline::Falcor)
+        {
+            graph->addPass(std::make_shared<FalcorPostProcess>(device), "falcor");
+            graph->addEdge(color, "falcor.source");
+            color = "falcor.color";
+        }
+        else
+        {
+            graph->addPass(std::make_shared<ExposurePass>(device), "exposure");
+            graph->addEdge(color, "exposure.hdrColor");
+
+            if (settings.bloom)
+            {
+                graph->addPass(std::make_shared<Bloom>(device), "bloom");
+                graph->addEdge(color, "bloom.hdrColor");
+                color = "bloom.color";
+            }
+
+            graph->addPass(std::make_shared<ToneMappingPass>(device), "toneMapping");
+            graph->addEdge(color, "toneMapping.hdrColor");
+            graph->addEdge("exposure.state", "toneMapping.exposure");
+            color = "toneMapping.color";
+        }
     }
 
-    graph->addPass(std::make_shared<ExposurePass>(device), "exposure");
-    graph->addEdge(kPathTracerColor, "exposure.hdrColor");
+    graph->addPass(std::make_shared<DebugPass>(device), "debug");
+    graph->addEdge(color, "debug.source");
+    graph->addEdge("vbuffer.hit", "debug.vbuffer");
+    graph->markOutput("debug.color");
 
-    auto color = kPathTracerColor;
-    if (settings.bloom)
-    {
-        graph->addPass(std::make_shared<Bloom>(device), "bloom");
-        graph->addEdge(kPathTracerColor, "bloom.hdrColor");
-        color = "bloom.color";
-    }
-
-    graph->addPass(std::make_shared<ToneMappingPass>(device), "toneMapping");
-    graph->addEdge(color, "toneMapping.hdrColor");
-    graph->addEdge("exposure.state", "toneMapping.exposure");
-    graph->markOutput("toneMapping.color");
     return graph;
 }

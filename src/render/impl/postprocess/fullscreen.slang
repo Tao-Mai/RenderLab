@@ -1,4 +1,4 @@
-#include "render/impl/math/screen.slang"
+#include "math/screen.slang"
 #ifndef RENDERLAB_FULLSCREEN_SLANG
 #define RENDERLAB_FULLSCREEN_SLANG
 

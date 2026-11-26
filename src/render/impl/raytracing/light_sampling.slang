@@ -1,10 +1,10 @@
 #ifndef RENDERLAB_LIGHT_SAMPLING_SLANG
 #define RENDERLAB_LIGHT_SAMPLING_SLANG
 
-#include "render/impl/math/color.slang"
+#include "math/color.slang"
 #include "path_tracing.slang"
 #include "analytic_light_sampling.slang"
-#include "render/impl/raytracing/alpha_test.slang"
+#include "raytracing/alpha_test.slang"
 
 static const uint kInvalidLightSample     = 0;
 static const uint kAnalyticLightSample    = 1;

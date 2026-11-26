@@ -1,9 +1,9 @@
 #ifndef RENDERLAB_RAY_TRACING_ALPHA_TEST_SLANG
 #define RENDERLAB_RAY_TRACING_ALPHA_TEST_SLANG
 
-#include "render/impl/material/material_data.slang"
-#include "render/impl/raytracing/geometry.slang"
-#include "render/impl/scene/scene_data.slang"
+#include "material/material_data.slang"
+#include "raytracing/geometry.slang"
+#include "scene/scene_data.slang"
 
 bool failsAlphaCutoff(MaterialData material, float2 uv)
 {

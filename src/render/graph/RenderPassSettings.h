@@ -24,7 +24,8 @@ constexpr RenderPass::SettingsBinding bind()
                 if (current == next)
                     return;
 
-                next.validate();
+                if constexpr (requires { next.validate(); })
+                    next.validate();
                 if constexpr (std::is_member_function_pointer_v<decltype(OnUpdate)>)
                 {
                     const auto previous = std::exchange(current, next);

@@ -1,12 +1,12 @@
 #ifndef RENDERLAB_PATH_COMMON_SLANG
 #define RENDERLAB_PATH_COMMON_SLANG
 
-#include "render/impl/scene/scene_data.slang"
-#include "render/impl/scene/emissive_lights.slang"
-#include "render/impl/scene/environment_light.slang"
-#include "render/impl/raytracing/scene_hits.slang"
-#include "render/impl/math/low_discrepancy.slang"
-#include "render/impl/math/random.slang"
+#include "scene/scene_data.slang"
+#include "scene/emissive_lights.slang"
+#include "scene/environment_light.slang"
+#include "raytracing/scene_hits.slang"
+#include "math/low_discrepancy.slang"
+#include "math/random.slang"
 
 struct Hit
 {

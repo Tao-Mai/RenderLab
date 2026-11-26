@@ -26,7 +26,7 @@ float randomFloat(inout uint state) { return randomUintToFloat(randomUint(state)
 #if SAMPLE_GENERATOR_TYPE != 1
 #error Unsupported sample generator type
 #endif
-#include "render/impl/math/uniform_sample_generator.slang"
+#include "math/uniform_sample_generator.slang"
 typedef UniformSampleGenerator SampleGenerator;
 float randomFloat(inout UniformSampleGenerator generator) { return randomUintToFloat(randomUint(generator)); }
 #else

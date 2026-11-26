@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_SAMPLING_SLANG
 #define RENDERLAB_SAMPLING_SLANG
 
-#include "render/impl/math/constant.slang"
+#include "math/constant.slang"
 
 static const uint kPoissonDisk8SampleCount = 8;
 // Independent 8-point disk distribution; retain the larger tables for other effects.

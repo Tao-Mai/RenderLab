@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_ENVIRONMENT_LIGHT_SLANG
 #define RENDERLAB_ENVIRONMENT_LIGHT_SLANG
 
-#include "render/impl/math/constant.slang"
+#include "math/constant.slang"
 
 #ifndef HAS_ENV
 #error HAS_ENV must be specified when compiling ray tracing environment lighting

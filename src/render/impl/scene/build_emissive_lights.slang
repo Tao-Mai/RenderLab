@@ -1,6 +1,6 @@
-#include "render/impl/scene/emissive_light_data.slang"
-#include "render/impl/raytracing/geometry.slang"
-#include "render/impl/math/constant.slang"
+#include "scene/emissive_light_data.slang"
+#include "raytracing/geometry.slang"
+#include "math/constant.slang"
 
 struct EmissiveMesh
 {

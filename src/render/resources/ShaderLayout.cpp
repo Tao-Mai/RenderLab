@@ -26,6 +26,7 @@ rhi::Format ShaderLayout::storageImageFormat(std::string_view name) const
         case SLANG_IMAGE_FORMAT_rg16f: return rhi::Format::RG16Float;
         case SLANG_IMAGE_FORMAT_rgba16f: return rhi::Format::RGBA16Float;
         case SLANG_IMAGE_FORMAT_rgba32f: return rhi::Format::RGBA32Float;
+        case SLANG_IMAGE_FORMAT_rgba32ui: return rhi::Format::RGBA32Uint;
         case SLANG_IMAGE_FORMAT_rgba8: return rhi::Format::RGBA8Unorm;
         default: LOG_FATAL("unsupported storage image format {} for '{}'", int(format), name);
     }

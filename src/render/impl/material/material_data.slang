@@ -1,7 +1,7 @@
 #ifndef RENDERLAB_MATERIAL_DATA_SLANG
 #define RENDERLAB_MATERIAL_DATA_SLANG
 
-#include "render/impl/material/texture_data.slang"
+#include "material/texture_data.slang"
 #include "render/resources/SceneLightConstants.h"
 
 static const uint kAlphaModeOpaque = 0;

@@ -10,13 +10,18 @@
         "showSceneObjects": false
     },
     "renderer": {
+        "graph": "Minimal",
         "parameters": {
+            "accumulate": false,
             "hdr": true,
             "postProcess": "Falcor",
             "bloom": true
         },
         "passes": {
             "pathTracer": {
+                "maxBounces": 1
+            },
+            "restir": {
                 "maxBounces": 5
             },
             "exposure": {
@@ -89,7 +94,8 @@
                     "colorScaleScalar": 0.0,
                     "colorPowerScalar": 0.0
                 }
-            }
+            },
+            "showAnalyticLights": false
         }
     }
 }

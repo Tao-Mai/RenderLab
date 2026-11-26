@@ -75,7 +75,7 @@ void ToneMappingPass::compile(RenderContext* passContext, const CompileData& com
     color.format = format;
     rhi::RenderPipelineDesc desc;
     desc.program = passContext->shaderManager->getProgram(
-        "render/impl/postprocess/ToneMappingPass/tonemapping.slang",
+        "postprocess/ToneMappingPass/tonemapping.slang",
         {"vertMain", "fragMain"}
     );
     desc.targets     = &color;

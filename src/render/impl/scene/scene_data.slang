@@ -1,10 +1,10 @@
 #ifndef RENDERLAB_SCENE_DATA_SLANG
 #define RENDERLAB_SCENE_DATA_SLANG
 
-#include "render/impl/math/screen.slang"
-#include "render/impl/raytracing/scene_hits.slang"
-#include "render/impl/scene/light_data.slang"
-#include "render/impl/scene/scene_uniforms.slang"
+#include "math/screen.slang"
+#include "raytracing/scene_hits.slang"
+#include "scene/light_data.slang"
+#include "scene/scene_uniforms.slang"
 #include "render/resources/RayType.h"
 
 struct SceneData

@@ -1,5 +1,5 @@
-#include "render/impl/math/color.slang"
-#include "render/impl/postprocess/exposure_state.slang"
+#include "math/color.slang"
+#include "postprocess/exposure_state.slang"
 
 static const uint kExposureHistogramBinCount = 256;
 static const float kExposureLogLuminanceMin = -20.0;

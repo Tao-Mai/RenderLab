@@ -1,8 +1,8 @@
 #ifndef RENDERLAB_MATERIAL_EVALUATION_SLANG
 #define RENDERLAB_MATERIAL_EVALUATION_SLANG
 
-#include "render/impl/material/material_data.slang"
-#include "render/impl/material/pbr_brdf.slang"
+#include "material/material_data.slang"
+#include "material/pbr_brdf.slang"
 
 struct EvaluatedPbrMaterial
 {
