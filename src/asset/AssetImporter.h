@@ -4,6 +4,7 @@
 #include "asset/MeshAsset.h"
 #include "asset/MeshGeometry.h"
 #include "asset/TextureAsset.h"
+#include "scene/Scene.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -16,7 +17,6 @@
 #include <vector>
 
 class ModelImport;
-struct Scene;
 
 struct ImportTextureSetting
 {
@@ -36,6 +36,7 @@ struct ImportSceneSetting
     std::filesystem::path source;
     AssetID<Scene>   id;
     float                 importScale = 1.0f;
+    Scene::Kind           kind = Scene::Kind::Environment;
 };
 
 struct ImportEnvironmentMapSetting

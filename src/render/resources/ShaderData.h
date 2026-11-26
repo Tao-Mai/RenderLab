@@ -11,8 +11,15 @@
 struct alignas(16) SceneUniforms
 {
     glm::mat4 viewProjection{1.0f};
-    glm::mat4 inverseViewProjection{1.0f};
     glm::vec4 cameraPosition{0.0f, 0.0f, 0.0f, 1.0f};
+
+    glm::vec3 cameraU{1.0f, 0.0f, 0.0f};
+    float     padding0 = 0.0f;
+    glm::vec3 cameraV{0.0f, 1.0f, 0.0f};
+    float     padding1 = 0.0f;
+    glm::vec3 cameraW{0.0f, 0.0f, -1.0f};
+    float     padding2 = 0.0f;
+
     glm::mat4 view{1.0f};
 };
 
@@ -51,12 +58,14 @@ struct alignas(16) LightData
     bool operator==(const LightData&) const = default;
 };
 
-static_assert(sizeof(SceneUniforms) == 208);
-static_assert(offsetof(SceneUniforms, inverseViewProjection) == 64);
-static_assert(offsetof(SceneUniforms, cameraPosition) == 128);
-static_assert(offsetof(SceneUniforms, view) == 144);
-static_assert(sizeof(SceneGlobals) == 224);
-static_assert(offsetof(SceneGlobals, analyticLightCount) == 208);
+static_assert(sizeof(SceneUniforms) == 192);
+static_assert(offsetof(SceneUniforms, cameraPosition) == 64);
+static_assert(offsetof(SceneUniforms, cameraU) == 80);
+static_assert(offsetof(SceneUniforms, cameraV) == 96);
+static_assert(offsetof(SceneUniforms, cameraW) == 112);
+static_assert(offsetof(SceneUniforms, view) == 128);
+static_assert(sizeof(SceneGlobals) == 208);
+static_assert(offsetof(SceneGlobals, analyticLightCount) == 192);
 static_assert(sizeof(LightData) == 80);
 static_assert(offsetof(LightData, posW) == 0);
 static_assert(offsetof(LightData, lightType) == 12);

@@ -30,11 +30,13 @@
 Texture2D<float4> sourceImage;
 SamplerState      linearSampler;
 
+static const float kMinLuminance = 1e-8;
+
 [shader("fragment")] float4 fragMain(FullscreenVertexOutput input) : SV_Target
 {
     float4 color = sourceImage.Sample(linearSampler, input.uv);
 #if LUMINANCE_STAGE == 0
-    float logLuminance = log2(max(0.0001, dot(color.rgb, float3(0.299, 0.587, 0.114))));
+    float logLuminance = log2(max(kMinLuminance, dot(color.rgb, float3(0.299, 0.587, 0.114))));
     return float4(logLuminance, 0, 0, 1);
 #else
     // Falcor Texture::generateMips() uses a linear-filtered blit for each level.

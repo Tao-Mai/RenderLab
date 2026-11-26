@@ -26,7 +26,7 @@ struct EmissiveUniformSampler : IEmissiveLightSampler
 
         float3 direction = offset / sqrt(distanceSquared);
         float cosine = dot(triangle.geometricNormal, -direction);
-        cosine = emissiveTwoSided(triangle) ? abs(cosine) : max(0.0, cosine);
+        cosine = max(0.0, cosine);
         if (cosine <= 0.0)
             return 0.0;
 
@@ -51,7 +51,7 @@ struct EmissiveUniformSampler : IEmissiveLightSampler
             return false;
 
         EmissiveTriangle triangle = emissiveLights.triangles[result.triangleIndex];
-        MaterialData material = materials[triangle.materialIndex];
+        StandardMaterialData material = materials[triangle.materialIndex];
         if (material.alphaMode == kAlphaModeMask && failsAlphaCutoff(material, uv))
             return false;
 

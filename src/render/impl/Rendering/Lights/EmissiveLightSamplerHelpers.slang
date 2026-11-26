@@ -2,21 +2,16 @@
 #define RENDERLAB_EMISSIVE_LIGHT_SAMPLER_HELPERS_SLANG
 
 #include "Scene/Lights/LightCollection.slang"
-#include "material/material_data.slang"
-
-bool emissiveTwoSided(EmissiveTriangle triangle)
-{
-    return materials[triangle.materialIndex].emissionTwoSided;
-}
+#include "Scene/Material/StandardMaterialData.slang"
 
 float3 emissiveRadiance(uint triangleIndex, float2 uv, float3 outgoing)
 {
     EmissiveTriangle triangle = emissiveLights.triangles[triangleIndex];
-    MaterialData material = materials[triangle.materialIndex];
+    StandardMaterialData material = materials[triangle.materialIndex];
     if (triangle.area == 0.0 ||
-        (!material.emissionTwoSided && dot(triangle.geometricNormal, outgoing) <= 0.0))
+        dot(triangle.geometricNormal, outgoing) <= 0.0)
         return float3(0.0);
-    return material.emission * sampleTextureLevel(material.emissiveTexture, uv).rgb;
+    return evalMaterialEmission(material, uv);
 }
 
 float3 sampleEmissiveTriangle(uint triangleIndex, float2 sampleValue, out float2 uv)

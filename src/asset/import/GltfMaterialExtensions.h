@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset/GltfMaterial.h"
+#include "asset/StandardMaterial.h"
 #include "asset/TextureAsset.h"
 
 #include <filesystem>
@@ -14,7 +14,7 @@ struct Material;
 using GltfTextureLoader = std::function<std::optional<TextureBinding>(int, ColorSpace)>;
 
 void importMaterialExtensions(
-    GltfMaterial&            material,
+    StandardMaterial&            material,
     const tinygltf::Material&    source,
     const std::filesystem::path& sourcePath,
     const GltfTextureLoader&     loadTexture

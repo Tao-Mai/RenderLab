@@ -2,7 +2,7 @@
 #define RENDERLAB_PATH_TRACING_SLANG
 
 #include "math/constant.slang"
-#include "material/material_evaluation.slang"
+#include "Rendering/Materials/StandardMaterial.slang"
 #include "material/normal_mapping.slang"
 #include "Utils/Sampling/SampleGenerator.slang"
 #include "raytracing/camera_ray.slang"
@@ -21,30 +21,44 @@ struct Surface
 {
     float3  position;
     float3  geometricNormal; // 网格的normal
-    float3  normal;          // 法线贴图后的normal
     float3  viewDirection;  // World-space direction toward the previous ray vertex (wo).
-    PbrBrdf brdf;
+    StandardMaterialInstance material;
     float3  emissive;
     uint    emissiveTriangleIndex;
     uint    materialIndex;
 
     float3 rayOrigin() { return position + geometricNormal * kRayEpsilon; }
-    float pdf(float3 direction) { return brdf.pdf(normal, viewDirection, direction); }
+    float3 rayOrigin(float3 direction)
+    {
+        return position + geometricNormal * (dot(geometricNormal, direction) >= 0.0 ? kRayEpsilon : -kRayEpsilon);
+    }
+
+    bool validHemisphere(float3 direction)
+    {
+        return dot(material.frame.normal, viewDirection) >= kMinCosTheta &&
+            ((dot(material.frame.normal, direction) >= 0.0) == (dot(geometricNormal, direction) >= 0.0));
+    }
+
+    float pdf(float3 direction)
+    {
+        return validHemisphere(direction) ? material.evalPdf(viewDirection, direction) : 0.0;
+    }
 
     float3 evaluateLight(float3 direction, float3 incidentLight)
     {
-        if (dot(geometricNormal, direction) <= 0.0)
+        if (!validHemisphere(direction))
         {
             return float3(0.0);
         }
-        return brdf.evaluate(normal, viewDirection, direction) * saturate(dot(normal, direction)) * incidentLight;
+        return material.eval(viewDirection, direction) * incidentLight;
     }
 
-    BrdfSample sample(inout SampleGenerator state)
+    BSDFSample sample(inout SampleGenerator state)
     {
-        float3 random = sampleNext3D(state);
+        BSDFSample result = material.sample(viewDirection, state);
+        result.valid = result.valid && validHemisphere(result.direction);
 
-        return brdf.sample(normal, viewDirection, random);
+        return result;
     }
 
     bool isVisible(float3 direction, float distance)
@@ -55,7 +69,7 @@ struct Surface
         }
 
         RayDesc ray;
-        ray.Origin    = rayOrigin();
+        ray.Origin    = rayOrigin(direction);
         ray.Direction = direction;
         ray.TMin      = kRayEpsilon;
         ray.TMax      = distance - kRayEpsilon;
@@ -74,7 +88,7 @@ Surface surfaceAt(uint instanceIndex, uint primitiveIndex, float2 barycentrics, 
     HitData hit = scene.objects[instanceIndex];
     TriangleVertices triangle = loadTriangleVertices(hit.vertexAddress, hit.indexAddress, hit.firstIndex + primitiveIndex * 3);
     VertexAttributes vertex = triangle.interpolate(barycentrics);
-    MaterialData material = materials[hit.materialIndex];
+    StandardMaterialData material = materials[hit.materialIndex];
 
     // Row-vector multiplication applies the inverse transpose, including nonuniform scale.
     float3   worldNormal  = normalize(mul(vertex.normal, (float3x3)hit.worldToObject));
@@ -92,22 +106,27 @@ Surface surfaceAt(uint instanceIndex, uint primitiveIndex, float2 barycentrics, 
     Surface surface;
     surface.position      = mul(hit.objectToWorld, float4(vertex.position, 1.0)).xyz;
     surface.viewDirection = -normalize(rayDirection);
-    surface.normal        = applyNormalMap(worldNormal, worldTangent,
-        sampleTextureLevel(material.normalTexture, vertex.uv).xyz, material.normalScale, material.normalEncoding);
-    float facing = dot(geometricNormal, surface.viewDirection) >= 0.0 ? 1.0 : -1.0;
-    surface.geometricNormal = geometricNormal * facing;
-    surface.normal *= facing;
-    if (dot(surface.normal, surface.viewDirection) <= 0.0)
-    {
-        surface.normal = surface.geometricNormal;
-    }
+    float3 shadingNormal = applyNormalMap(worldNormal, worldTangent,
+        sampleMaterialTexture(material.normalTexture, vertex.uv, float4(0.5, 0.5, 1.0, 1.0)).xyz, material.normalScale, material.normalEncoding);
+    bool frontFacing = dot(geometricNormal, surface.viewDirection) >= 0.0;
+    surface.geometricNormal = frontFacing ? geometricNormal : -geometricNormal;
+    if (!frontFacing && material.doubleSided != 0)
+        shadingNormal = -shadingNormal;
 
-    surface.brdf = evaluatePbrMaterial(material, vertex.uv).brdf;
+    // Match Falcor's grazing-angle shading-normal adjustment without flipping single-sided backfaces.
+    float signNormal = dot(shadingNormal, surface.geometricNormal) >= 0.0 ? 1.0 : -1.0;
+    float3 orientedNormal = signNormal * shadingNormal;
+    static const float kCosThetaThreshold = 0.1;
+    float cosine = dot(surface.viewDirection, orientedNormal);
+    if (cosine <= kCosThetaThreshold)
+        shadingNormal = normalize(signNormal * lerp(surface.geometricNormal, orientedNormal, saturate(cosine / kCosThetaThreshold)));
+
+    StandardMaterial standardMaterial = {material};
+    surface.material = standardMaterial.setupMaterialInstance(vertex.uv, shadingNormal, frontFacing);
     surface.materialIndex         = hit.materialIndex;
     surface.emissiveTriangleIndex = emissiveLights.triangleIndex(instanceIndex, primitiveIndex);
-    surface.emissive = surface.emissiveTriangleIndex == kInvalidLightIndex
-        ? float3(0.0)
-        : emissiveRadiance(surface.emissiveTriangleIndex, vertex.uv, surface.viewDirection);
+    surface.emissive = surface.material.emission;
+
     return surface;
 }
 

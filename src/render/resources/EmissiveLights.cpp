@@ -50,8 +50,9 @@ void EmissiveLights::prepare(
         const auto count = draw.indexCount / 3;
 
         const auto& material = materials.data(draw.materialIndex);
-        const auto  color    = material.emissiveFactor;
-        const float sides    = (material.emissiveFlags & kEmissiveTwoSided) ? 2.0f : 1.0f;
+        const auto  color = (material.emissiveTexture.textureIndex == kInvalidMaterialTexture ? material.emissiveColor
+                                                                                              : glm::vec3{1.0f}) *
+            material.emissiveFactor;
         offsets[index]       = triangleCount;
         meshes.push_back({
             .vertexAddress  = draw.mesh->vertices()->getDeviceAddress(),
@@ -60,7 +61,7 @@ void EmissiveLights::prepare(
             .firstIndex     = draw.firstIndex,
             .materialIndex  = draw.materialIndex,
             .triangleOffset = triangleCount,
-            .emissionWeight = sides * std::max({color.r, color.g, color.b}),
+            .emissionWeight = std::max({color.r, color.g, color.b}),
         });
         triangleCount += count;
     }

@@ -31,10 +31,14 @@ std::optional<Scene::ID> drawSceneSelector(const Scene::ID& current)
     if (ImGui::BeginCombo("##Scene", current.c_str()))
     {
 
-        auto sceneIds = context().assetManager->loadedIds<Scene>();
+        const auto& assets = *context().assetManager;
+        auto sceneIds = assets.loadedIds<Scene>();
         std::ranges::sort(sceneIds, {}, &Scene::ID::value);
         for (const auto& id : sceneIds)
         {
+            if (assets.get(id).kind != Scene::Kind::Environment)
+                continue;
+
             const bool selected = id == current;
             if (ImGui::Selectable(id.c_str(), selected) && !selected)
                 chosen = id;

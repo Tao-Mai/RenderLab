@@ -10,12 +10,13 @@ VBufferPass 每像素追踪一条主射线，保存首个通过 alpha test 的�
 
 1. 读取命中几何、材质与法线贴图，记录相机直接可见的自发光、矩形光源或环境。
 2. 每个散射顶点普通采样一次光源，追踪可见性射线；支持点光、聚光、方向光、矩形光源、发光三角形及启用的环境。
-3. 根据基础 PBR 的漫反射 / GGX 完整混合 PDF 采样一次 BRDF，并用其权重更新路径吞吐量。
-4. 光源采样和 BRDF 命中光源采用 balance MIS，避免对同一直接光贡献重复计数。
+3. 按 StandardMaterial 的漫反射、漫透射、GGX 与 delta 瓣采样一次 BSDF，并用选中瓣权重更新路径吞吐量；同时返回连续混合 PDF。
+4. 光源采样和 BSDF 命中光源采用 balance MIS，delta 事件命中发光时权重为 1。
 5. 第 3 次散射起使用俄罗斯轮盘，最多支持 64 次表面散射。最后一次续射线仍评估命中的发光和环境。
 
 `Max bounces = 1` 表示一次表面散射及其直接光，增大数值后加入更深层间接光。
 主射线使用固定的像素中心，后续光源和 BRDF 随机数随像素与帧样本变化。
+相机方向按 Falcor 的 `cameraU`、`cameraV`、`cameraW` 基向量生成，避免大坐标、较小近裁剪面下反投影视线的精度丢失。相机平移只改变射线原点。
 所有追踪都发生在 RayGen，ClosestHit 只返回命中信息，光追管线递归深度维持 1。
 散射和可见性射线分别使用槽位 0 和 1。C++ 的 Shader Table 和 Slang 的追踪入口共享 `RayType` 索引。 [射线类型](../src/render/resources/RayType.h)
 
@@ -29,7 +30,7 @@ VBufferPass 每像素追踪一条主射线，保存首个通过 alpha test 的�
 | [LightHelpers.slang](../src/render/impl/Rendering/Lights/LightHelpers.slang) | 单个解析光源的入射辐射、方向、距离和条件 PDF |
 | [SampleGeneratorInterface.slang](../src/render/impl/Utils/Sampling/SampleGeneratorInterface.slang) · [UniformSampleGenerator.slang](../src/render/impl/Utils/Sampling/UniformSampleGenerator.slang) | `ISampleGenerator`、取样辅助函数与当前的均匀随机数生成器 |
 | [EmissiveLightSamplerInterface.slang](../src/render/impl/Rendering/Lights/EmissiveLightSamplerInterface.slang) · [EmissiveUniformSampler.slang](../src/render/impl/Rendering/Lights/EmissiveUniformSampler.slang) | 发光网格采样接口与均匀三角形采样策略，提供采样、三角形选择概率和命中点 PDF |
-| [EmissiveLightSamplerHelpers.slang](../src/render/impl/Rendering/Lights/EmissiveLightSamplerHelpers.slang) | 发光三角形的辐射求值、单双面判断和三角形位置采样辅助函数 |
+| [EmissiveLightSamplerHelpers.slang](../src/render/impl/Rendering/Lights/EmissiveLightSamplerHelpers.slang) | 发光三角形的正面辐射求值和三角形位置采样辅助函数 |
 | [EnvMapSampler.slang](../src/render/impl/Rendering/Lights/EnvMapSampler.slang) | 环境光的方向采样、辐射求值与方向 PDF；当前使用球面均匀采样 |
 | [path_tracer_lighting.slang](../src/render/impl/passes/shared/path_tracer_lighting.slang) | Pass 共用的自由辅助函数，完成光源类别选择、直接光估计和发光命中 MIS 权重计算 |
 | [minimal_path_tracer.slang](../src/render/impl/passes/minimal/minimal_path_tracer.slang) | MinimalPathTracer 的路径积分和颜色输出 |

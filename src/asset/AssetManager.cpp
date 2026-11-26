@@ -98,6 +98,8 @@ void loadAssetDirectory(
         }
         auto asset = std::make_unique<T>(asset_json::load<T>(entry.path()));
         CHECK(!asset->id.empty(), "asset has empty id: {}", entry.path().string());
+        if constexpr (std::same_as<T, StandardMaterial>)
+            asset->validate();
         if constexpr (std::same_as<T, MeshAsset>)
             for (glm::length_t axis = 0; axis < 3; ++axis)
                 CHECK(
@@ -144,6 +146,9 @@ void AssetManager::clear()
 template <AssetType T>
 typename T::ID AssetManager::saveAsset(std::unique_ptr<T> asset)
 {
+    if constexpr (std::same_as<T, StandardMaterial>)
+        asset->validate();
+
     const typename T::ID id = asset->id;
     const auto file = root / T::dir / (id.value + ".json");
     asset_json::save(file, *asset);
@@ -158,7 +163,7 @@ typename T::ID AssetManager::saveAsset(std::unique_ptr<T> asset)
 
 template TextureAsset::ID        AssetManager::saveAsset(std::unique_ptr<TextureAsset>);
 template MeshAsset::ID           AssetManager::saveAsset(std::unique_ptr<MeshAsset>);
-template GltfMaterial::ID        AssetManager::saveAsset(std::unique_ptr<GltfMaterial>);
+template StandardMaterial::ID    AssetManager::saveAsset(std::unique_ptr<StandardMaterial>);
 template Scene::ID               AssetManager::saveAsset(std::unique_ptr<Scene>);
 template SceneLayer::ID          AssetManager::saveAsset(std::unique_ptr<SceneLayer>);
 template EnvironmentMapAsset::ID AssetManager::saveAsset(std::unique_ptr<EnvironmentMapAsset>);

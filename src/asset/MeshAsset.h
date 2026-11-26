@@ -6,7 +6,7 @@
 #include <vector>
 #include "asset/Asset.h"
 #include "core/math/Bounds.h"
-struct GltfMaterial;
+struct StandardMaterial;
 
 struct MeshAsset
 {
@@ -19,7 +19,7 @@ struct MeshAsset
 
         uint32_t               indexCount = 0;
 
-        AssetID<GltfMaterial> materialId;
+        AssetID<StandardMaterial> materialId;
     };
 
     ID                                   id;

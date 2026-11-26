@@ -1,5 +1,6 @@
 #include "asset/import/GltfMaterialExtensions.h"
 
+#include "asset/import/MaterialTexture.h"
 #include "core/Logger.h"
 
 #include <cmath>
@@ -85,7 +86,7 @@ struct ExtensionReader
 }  // namespace
 
 void importMaterialExtensions(
-    GltfMaterial&            material,
+    StandardMaterial&            material,
     const tinygltf::Material&    source,
     const std::filesystem::path& sourcePath,
     const GltfTextureLoader&     loadTexture
@@ -101,6 +102,15 @@ void importMaterialExtensions(
     };
 
     read(
+        "KHR_materials_ior",
+        [&](const ExtensionReader& reader)
+        {
+            const float ior = reader.number("ior", 1.5f);
+            CHECK(ior == 0.0f || ior >= 1.0f);
+            material.indexOfRefraction = ior == 0.0f ? kMaxValue : ior;
+        }
+    );
+    read(
         "KHR_materials_pbrSpecularGlossiness",
         [&](const ExtensionReader& reader)
         {
@@ -110,7 +120,8 @@ void importMaterialExtensions(
                 "SG cannot be combined with Specular or IOR in '{}'",
                 sourcePath.string()
             );
-            auto& layer = material.specularGlossiness.emplace();
+            material.shadingModel = ShadingModel::SpecGloss;
+            material.baseColor    = glm::vec4{1.0f};
             if (reader.value.Has("diffuseFactor"))
             {
                 const auto& factor = reader.value.Get("diffuseFactor");
@@ -122,136 +133,100 @@ void importMaterialExtensions(
                 for (int channel = 0; channel < 4; ++channel)
                 {
                     CHECK(factor.Get(channel).IsNumber(), "invalid SG diffuseFactor in '{}'", sourcePath.string());
-                    layer.diffuseFactor[channel] = static_cast<float>(factor.Get(channel).GetNumberAsDouble());
-                    CHECK(
-                        std::isfinite(layer.diffuseFactor[channel]) && layer.diffuseFactor[channel] >= 0.0f &&
-                            layer.diffuseFactor[channel] <= 1.0f,
-                        "invalid SG diffuseFactor in '{}'",
-                        sourcePath.string()
-                    );
+                    material.baseColor[channel] = static_cast<float>(factor.Get(channel).GetNumberAsDouble());
                 }
             }
-
-            layer.specularFactor            = reader.color("specularFactor", layer.specularFactor);
-            layer.glossinessFactor          = reader.number("glossinessFactor", layer.glossinessFactor, 0.0f, 1.0f);
-            layer.diffuseTexture            = reader.texture("diffuseTexture", ColorSpace::Srgb);
-            layer.specularGlossinessTexture = reader.texture("specularGlossinessTexture", ColorSpace::Srgb);
-        }
-    );
-
-    read(
-        "KHR_materials_clearcoat",
-        [&](const ExtensionReader& reader)
-        {
-            auto& layer            = material.clearcoat.emplace();
-            layer.factor           = reader.number("clearcoatFactor", layer.factor, 0.0f, 1.0f);
-            layer.roughnessFactor  = reader.number("clearcoatRoughnessFactor", layer.roughnessFactor, 0.0f, 1.0f);
-            layer.texture          = reader.texture("clearcoatTexture");
-            layer.roughnessTexture = reader.texture("clearcoatRoughnessTexture");
-            layer.normalTexture    = reader.texture("clearcoatNormalTexture");
-            if (reader.value.Has("clearcoatNormalTexture"))
-            {
-                const ExtensionReader normal{reader.value.Get("clearcoatNormalTexture"), sourcePath, loadTexture};
-                layer.normalScale = normal.number("scale", layer.normalScale);
-            }
-        }
-    );
-    read(
-        "KHR_materials_sheen",
-        [&](const ExtensionReader& reader)
-        {
-            auto& layer            = material.sheen.emplace();
-            layer.colorFactor      = reader.color("sheenColorFactor", layer.colorFactor);
-            layer.roughnessFactor  = reader.number("sheenRoughnessFactor", layer.roughnessFactor, 0.0f, 1.0f);
-            layer.colorTexture     = reader.texture("sheenColorTexture", ColorSpace::Srgb);
-            layer.roughnessTexture = reader.texture("sheenRoughnessTexture");
-        }
-    );
-    read(
-        "KHR_materials_anisotropy",
-        [&](const ExtensionReader& reader)
-        {
-            auto& layer    = material.anisotropy.emplace();
-            layer.strength = reader.number("anisotropyStrength", layer.strength, 0.0f, 1.0f);
-            layer.rotation = reader.number("anisotropyRotation", layer.rotation, -kMaxValue);
-            layer.texture  = reader.texture("anisotropyTexture");
-        }
-    );
-    read(
-        "KHR_materials_transmission",
-        [&](const ExtensionReader& reader)
-        {
-            auto& layer   = material.transmission.emplace();
-            layer.factor  = reader.number("transmissionFactor", layer.factor, 0.0f, 1.0f);
-            layer.texture = reader.texture("transmissionTexture");
-        }
-    );
-    read(
-        "KHR_materials_volume",
-        [&](const ExtensionReader& reader)
-        {
-            auto& volume            = material.volume.emplace();
-            volume.thicknessFactor  = reader.number("thicknessFactor", volume.thicknessFactor);
-            volume.thicknessTexture = reader.texture("thicknessTexture");
-            volume.attenuationColor = reader.color("attenuationColor", volume.attenuationColor);
-            if (reader.value.Has("attenuationDistance"))
-            {
-                volume.attenuationDistance = reader.number("attenuationDistance", 0.0f);
-                CHECK(*volume.attenuationDistance > 0.0f);
-            }
-        }
-    );
-    read(
-        "KHR_materials_ior",
-        [&](const ExtensionReader& reader)
-        {
-            material.ior = reader.number("ior", 1.5f);
-            CHECK(*material.ior == 0.0f || *material.ior >= 1.0f);
+            material.specularParams = glm::vec4{
+                reader.color("specularFactor", glm::vec3{1.0f}),
+                reader.number("glossinessFactor", 1.0f, 0.0f, 1.0f)
+            };
+            material.validate();
+            material.baseColorTexture = asset_import::bakeMaterialTexture(
+                reader.texture("diffuseTexture", ColorSpace::Srgb),
+                material.baseColor
+            );
+            material.specularTexture = asset_import::bakeMaterialTexture(
+                reader.texture("specularGlossinessTexture", ColorSpace::Srgb),
+                material.specularParams
+            );
         }
     );
     read(
         "KHR_materials_specular",
         [&](const ExtensionReader& reader)
         {
-            auto& layer        = material.specular.emplace();
-            layer.factor       = reader.number("specularFactor", layer.factor, 0.0f, 1.0f);
-            layer.colorFactor  = reader.color("specularColorFactor", layer.colorFactor, kMaxValue);
-            layer.texture      = reader.texture("specularTexture");
-            layer.colorTexture = reader.texture("specularColorTexture", ColorSpace::Srgb);
+            asset_import::convertToSpecGloss(
+                material,
+                reader.number("specularFactor", 1.0f, 0.0f, 1.0f),
+                reader.color("specularColorFactor", glm::vec3{1.0f}, kMaxValue),
+                reader.texture("specularTexture"),
+                reader.texture("specularColorTexture", ColorSpace::Srgb)
+            );
         }
     );
     read(
-        "KHR_materials_iridescence",
+        "KHR_materials_transmission",
         [&](const ExtensionReader& reader)
         {
-            auto& layer            = material.iridescence.emplace();
-            layer.factor           = reader.number("iridescenceFactor", layer.factor, 0.0f, 1.0f);
-            layer.ior              = reader.number("iridescenceIor", layer.ior, 1.0f);
-            layer.thicknessMinimum = reader.number("iridescenceThicknessMinimum", layer.thicknessMinimum);
-            layer.thicknessMaximum = reader.number("iridescenceThicknessMaximum", layer.thicknessMaximum);
-            CHECK(layer.thicknessMaximum >= layer.thicknessMinimum);
-            layer.texture          = reader.texture("iridescenceTexture");
-            layer.thicknessTexture = reader.texture("iridescenceThicknessTexture");
+            material.specularTransmission = reader.number("transmissionFactor", 0.0f, 0.0f, 1.0f);
+            // StandardMaterial has one transmission color slot and uniform lobe blend weights.
+            const auto& pbr              = source.pbrMetallicRoughness;
+            material.transmissionColor   = {pbr.baseColorFactor[0], pbr.baseColorFactor[1], pbr.baseColorFactor[2]};
+            material.transmissionTexture = pbr.baseColorTexture.index < 0
+                ? std::nullopt
+                : loadTexture(pbr.baseColorTexture.index, ColorSpace::Srgb);
+            material.transmissionTexture = asset_import::bakeMaterialTexture(
+                material.transmissionTexture,
+                glm::vec4{material.transmissionColor, 1.0f}
+            );
+            if (reader.value.Has("transmissionTexture"))
+                LOG_WARNING(
+                    "StandardMaterial uses uniform transmission; ignoring transmission mask in '{}'",
+                    sourcePath.string()
+                );
         }
     );
-    read(
-        "KHR_materials_dispersion",
-        [&](const ExtensionReader& reader) { material.dispersion = reader.number("dispersion", 0.0f); }
-    );
-    read(
-        "KHR_materials_emissive_strength",
-        [&](const ExtensionReader& reader) { material.emissiveStrength = reader.number("emissiveStrength", 1.0f); }
-    );
-    read("KHR_materials_unlit", [&](const ExtensionReader&) { material.unlit = true; });
     read(
         "KHR_materials_diffuse_transmission",
         [&](const ExtensionReader& reader)
         {
-            auto& layer        = material.diffuseTransmission.emplace();
-            layer.factor       = reader.number("diffuseTransmissionFactor", layer.factor, 0.0f, 1.0f);
-            layer.colorFactor  = reader.color("diffuseTransmissionColorFactor", layer.colorFactor);
-            layer.texture      = reader.texture("diffuseTransmissionTexture");
-            layer.colorTexture = reader.texture("diffuseTransmissionColorTexture", ColorSpace::Srgb);
+            material.diffuseTransmission = reader.number("diffuseTransmissionFactor", 0.0f, 0.0f, 1.0f);
+            material.transmissionColor   = reader.color("diffuseTransmissionColorFactor", glm::vec3{1.0f});
+            material.transmissionTexture = asset_import::bakeMaterialTexture(
+                reader.texture("diffuseTransmissionColorTexture", ColorSpace::Srgb),
+                glm::vec4{material.transmissionColor, 1.0f}
+            );
+            if (reader.value.Has("diffuseTransmissionTexture"))
+                LOG_WARNING(
+                    "StandardMaterial uses uniform diffuse transmission; ignoring transmission mask in '{}'",
+                    sourcePath.string()
+                );
         }
     );
+    read(
+        "KHR_materials_volume",
+        [&](const ExtensionReader& reader)
+        {
+            material.thinSurface = reader.number("thicknessFactor", 0.0f) == 0.0f;
+            if (reader.value.Has("attenuationDistance") || reader.value.Has("attenuationColor") ||
+                reader.value.Has("thicknessTexture"))
+                LOG_WARNING(
+                    "StandardMaterial surface import does not model glTF volume attenuation or thickness textures: {}",
+                    sourcePath.string()
+                );
+        }
+    );
+    read(
+        "KHR_materials_emissive_strength",
+        [&](const ExtensionReader& reader) { material.emissiveFactor = reader.number("emissiveStrength", 1.0f); }
+    );
+    for (const char* name :
+         {"KHR_materials_clearcoat",
+          "KHR_materials_sheen",
+          "KHR_materials_anisotropy",
+          "KHR_materials_iridescence",
+          "KHR_materials_dispersion",
+          "KHR_materials_unlit"})
+        if (source.extensions.contains(name))
+            LOG_WARNING("StandardMaterial does not support material extension '{}' in '{}'", name, sourcePath.string());
 }

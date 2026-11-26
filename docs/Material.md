@@ -1,41 +1,44 @@
-# 材质工作流
+# StandardMaterial
 
-MinimalPathTracer 使用材质缓冲、纹理数组和 glTF BRDF。资产保存来源参数，Shader 在采样后将 Metallic/Roughness（MR）和 Specular/Glossiness（SG）转换为统一反射参数。
+材质资产、GPU 材质表和 Shader 统一使用 Falcor StandardMaterial 的表面模型。实现对应 `StandardMaterial.slang`、`StandardMaterialInstance.slang` 和 `BSDFs/StandardBSDF.slang`，采用参考代码默认的 Frostbite diffuse、相关 Smith GGX 和球冠 VNDF 采样。
 
-## 资产与采样
+## 资产与纹理槽
 
-`GltfMaterial.workflow` 是必填字段。MR 使用 Base Color、Metallic、Roughness，并支持 Specular 和 IOR 扩展。SG 使用 `specularGlossiness` 中的 diffuse、specular、glossiness 系数及贴图。
+[StandardMaterial](../src/asset/StandardMaterial.h) 保存在 `assets/Material/`，子网格通过 `StandardMaterial::ID` 引用。所有持久化字段必须存在；未绑定的纹理槽写为 `null`。旧材质结构不再参与读取。
 
-glTF 导入器读取 `KHR_materials_pbrSpecularGlossiness` 时直接保存 SG 参数。SG 扩展中的颜色覆盖来源文件的 MR 参数。现有 Bistro 资产采用 MR + Specular/IOR，也进入同一套 BRDF。
-
-[材质求值](../src/render/impl/material/material_evaluation.slang)使用显式 LOD 采样纹理。SG 贴图的 RGB 按 sRGB 解码，Alpha 作为线性 glossiness，一次采样得到两者。MR 的 Metallic / Roughness 使用同一纹理和采样器时共用采样结果。
-
-## 统一 BRDF
-
-[PbrBrdf](../src/render/impl/material/pbr_brdf.slang)只保存数值，负责求值、方向采样与 PDF。
-
-| 参数 | 含义 |
+| 字段 | 含义 |
 | --- | --- |
-| diffuseColor | 法线入射时已完成镜面能量分配的漫反射颜色 |
-| specularF0 | 法线入射镜面反射率，RGB |
-| specularF90 | 掠射角镜面反射率 |
-| roughness | 感知粗糙度，GGX 使用其平方 |
-| diffuseFresnelWeight | 漫反射随角度变化的衰减权重 |
+| shadingModel | `MetalRough` 或 `SpecGloss` |
+| baseColor | MR 底色或 SG 漫反射颜色，Alpha 为不透明度 |
+| specularParams | MR：G 为感知粗糙度、B 为金属度；SG：RGB 为镜面颜色、A 为光泽度 |
+| indexOfRefraction | 材质折射率，默认 1.5 |
+| transmissionColor | 透射颜色 |
+| diffuseTransmission / specularTransmission | 漫透射与镜面透射的混合权重 |
+| thinSurface | 薄表面直接使用透射颜色；厚表面每次交点使用其平方根 |
+| emissiveColor / emissiveFactor | 发光颜色与独立强度；仅正面发光 |
+| doubleSided | 是否镜像背面的着色法线；透射材质自动启用双面求值 |
+| alphaMode / alphaCutoff | `Opaque` 或 `Mask` 与遮罩阈值 |
+| normalScale | 法线贴图的切线空间 XY 缩放 |
 
-MR 先计算非金属层 `Fd0 = min(Fior × specularColor, 1) × specularWeight`。`Fior = ((ior−1)/(ior+1))²`，默认 IOR 为 1.5；IOR 为 0 时按无限 IOR 计算 `Fior = 1`。Specular 颜色来自 RGB，强度来自 Alpha。颜色限制在乘强度之前完成。
+五个纹理槽为 `baseColorTexture`、`specularTexture`、`emissiveTexture`、`normalTexture`、`transmissionTexture`。与 Falcor 一样，绑定的纹理替代对应常量，发光纹理的结果仍乘 `emissiveFactor`。Shader 以显式 LOD 采样，BC5 法线贴图重建 Z。CPU/GPU 共用的参数编码通过 Slang property 具名访问。
 
-设 MR 颜色为 C、金属度为 m、`d = max(Fd0)`；SG 采样后的颜色、镜面反射率及光泽度为 D、S、g：
+[材质表](../src/render/resources/MaterialTable.cpp)只上传已校验的 StandardMaterial 数据并分配纹理、采样器索引。[GPU 布局](../src/render/resources/StandardMaterialData.h)与[Shader 布局](../src/render/impl/Scene/Material/StandardMaterialData.slang)保持一致。
 
-| 参数 | MR | SG |
-| --- | --- | --- |
-| diffuseColor | `C × (1−m) × (1−d)` | `D × (1−max(S))` |
-| specularF0 | `lerp(Fd0, C, m)` | S |
-| specularF90 | `lerp(specularWeight, 1, m)` | 1 |
-| roughness | MR 粗糙度采样结果 | `1−g` |
-| diffuseFresnelWeight | `(specularWeight−d)/(1−d)`，d=1 时为 0 | 0 |
+## 表面求值与散射
 
-BRDF 使用 `t = (1−abs(V·H))⁵`：漫反射为 `diffuseColor × (1−diffuseFresnelWeight×t) / π`，镜面反射为 `lerp(F0,F90,t) × GGX分布 × Smith可见性`。光追采样根据相同的漫反射和镜面权重选择瓣，返回完整混合 PDF，并补偿选择概率。低于表面的 GGX 样本作为零贡献。
+[StandardMaterial](../src/render/impl/Rendering/Materials/StandardMaterial.slang)采样纹理并构造实例。MR 使用 `diffuse = baseColor × (1−metallic)`、`specular = lerp(F0, baseColor, metallic)`，其中 `F0 = ((ior−1)/(ior+1))²`。SG 直接使用 diffuse、specular 和 `roughness = 1−glossiness`，金属度按 Falcor 的 `getMetallic()` 估计。两种模型都不预先扣除旧 glTF BRDF 的 Fresnel 能量。
 
-## 材质存储
+[StandardBSDF](../src/render/impl/Rendering/Materials/BSDFs/StandardBSDF.slang)包含漫反射、漫透射、GGX 反射、GGX 透射及理想反射、理想透射六个瓣。`alpha = roughness²`；当 `alpha < 0.0064`，镜面瓣切换为 delta。粗糙度为零时不会钳制成有限宽高光。
 
-子网格通过 `GltfMaterial::ID` 引用材质。资产管理器保存和加载材质字段，材质表按资产 ID 上传 GPU 数据。 [材质资产](../src/asset/GltfMaterial.h) · [材质表](../src/render/resources/MaterialTable.cpp)
+`eval()` 包含出射方向的余弦。采样遵循 Falcor 的瓣权重与选中瓣吞吐量，另返回完整连续混合 PDF；delta 事件通过显式标记继续传播，并以权重 1 处理发光命中 MIS。透射采用精确介电 Fresnel、Snell 折射、全反射和辐射传输的 eta² 权重。当前交界面外侧折射率为 1，不维护嵌套介质栈，也不积分体散射或体吸收。
+
+[StandardMaterialInstance](../src/render/impl/Rendering/Materials/StandardMaterialInstance.slang)负责世界空间与局部着色坐标变换。Surface 检查几何侧与着色侧的一致性，并将透射射线起点偏移到表面另一侧。Minimal 和 ReSTIR 共用这套材质求值。
+
+## 导入
+
+- glTF MR 直接导入；`KHR_materials_pbrSpecularGlossiness` 直接写入 SG 参数，覆盖来源文件的 MR 参数。
+- glTF 的颜色、金属度、粗糙度、SG 与发光乘法系数在导入时烘焙进纹理；没有纹理时使用常量。源颜色纹理先按 sRGB 解码，Alpha 保持线性，生成结果采用线性 RGBA16F 并重新生成 Mipmap。单位系数复用原纹理，包括 DDS 压缩纹理。
+- `KHR_materials_specular` 转换为 SG 的漫反射、镜面反射和光泽度纹理。参与合成的纹理须使用同一采样器。
+- IOR、发光强度、常量镜面透射和常量漫透射映射到 StandardMaterial。Volume 的厚度决定薄表面标志。
+- Assimp 按 Falcor 的来源格式约定导入：FBX 等默认使用 MR，Specular 贴图按线性 RGB 打包参数读取；OBJ 使用 SG，将 Phong 指数转换为光泽度。纹理直接替代常量，不烘焙 FBX/OBJ 颜色系数。外部 DDS 保留 BC 压缩块与 Mipmap。材质名中的 `.DoubleSided` 标记、Alpha 遮罩、折射率及不透明度对应的镜面透射同步导入。
+- glTF `BLEND` 按 alpha test 导入并给出日志。透射混合遮罩、体吸收、厚度贴图以及 Clearcoat、Sheen、Anisotropy、Iridescence、Dispersion、Unlit 不在当前 StandardMaterial 表面实现中，导入时明确记录限制，不保存无着色用途的扩展字段。

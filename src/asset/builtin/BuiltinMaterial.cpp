@@ -2,26 +2,23 @@
 
 namespace
 {
-[[nodiscard]] GltfMaterial makeWhiteMaterial()
+[[nodiscard]] StandardMaterial makeWhiteMaterial()
 {
-    ::GltfMaterial asset{};
+    ::StandardMaterial asset{};
     asset.id               = BuiltinAssets::Material::white;
-    asset.workflow         = MaterialWorkflow::MetallicRoughness;
-    asset.metallic         = 0.0f;
-    asset.roughness        = 0.4f;
-    asset.baseColorTexture = TextureBinding{
-        BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat};
+    asset.specularParams   = {0.0f, 0.4f, 0.0f, 1.0f};
+
     return asset;
 }
 }
 
-const ::GltfMaterial* BuiltinAssets::materialAsset(const ::GltfMaterial::ID& id)
+const ::StandardMaterial* BuiltinAssets::materialAsset(const ::StandardMaterial::ID& id)
 {
-    static const ::GltfMaterial assets[] = {
+    static const ::StandardMaterial assets[] = {
         makeWhiteMaterial(),
     };
 
-    for (const ::GltfMaterial& asset : assets)
+    for (const ::StandardMaterial& asset : assets)
     {
         if (asset.id == id)
         {

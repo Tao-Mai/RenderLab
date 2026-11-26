@@ -1,20 +1,20 @@
 #ifndef RENDERLAB_RAY_TRACING_ALPHA_TEST_SLANG
 #define RENDERLAB_RAY_TRACING_ALPHA_TEST_SLANG
 
-#include "material/material_data.slang"
+#include "Scene/Material/StandardMaterialData.slang"
 #include "raytracing/geometry.slang"
 #include "Scene/Scene.slang"
 
-bool failsAlphaCutoff(MaterialData material, float2 uv)
+bool failsAlphaCutoff(StandardMaterialData material, float2 uv)
 {
-    float alpha = sampleTextureLevel(material.colorTexture, uv).a * material.opacityFactor;
+    float alpha = sampleMaterialTexture(material.baseColorTexture, uv, material.baseColor).a;
     return alpha < material.alphaCutoff;
 }
 
 bool isMaskedTriangle(uint instanceIndex, uint primitiveIndex, float2 barycentrics)
 {
     HitData instance = scene.objects[instanceIndex];
-    MaterialData material = materials[instance.materialIndex];
+    StandardMaterialData material = materials[instance.materialIndex];
     if (material.alphaMode != kAlphaModeMask)
         return false;
 

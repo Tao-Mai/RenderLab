@@ -7,6 +7,7 @@
 #include "render/resources/RenderResourceManager.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <glm/matrix.hpp>
 
@@ -43,8 +44,19 @@ SceneUpdateFlags GpuScene::update(
     const Scene& source, uint64_t sceneGeneration, glm::uvec2 extent, rhi::ICommandEncoder& commands
 )
 {
-    auto updates = generation != sceneGeneration ? SceneUpdateFlags::Scene : SceneUpdateFlags::None;
-    generation = sceneGeneration;
+    auto updates = SceneUpdateFlags::None;
+    if (generation != sceneGeneration)
+    {
+        generation = sceneGeneration;
+        materialTable.reset();
+        draws.clear();
+        previousObjects.clear();
+        materialAssetRevision.reset();
+        acceleration.invalidate();
+        emissive.invalidate();
+        rayHitsDirty = true;
+        updates = SceneUpdateFlags::Scene | SceneUpdateFlags::Geometry | SceneUpdateFlags::Materials;
+    }
 
     updates |= updateObjects(source.objects, commands);
     
@@ -63,8 +75,8 @@ SceneUpdateFlags GpuScene::update(
 SceneUpdateFlags GpuScene::updateObjects(std::span<const Object> objects, rhi::ICommandEncoder& commands)
 {
     const auto meshRevision = assets->contentRevision<MeshAsset>();
-    const auto materialRevision = std::max({
-        assets->contentRevision<GltfMaterial>(),
+    const auto materialRevision       = std::max({
+        assets->contentRevision<StandardMaterial>(),
         assets->contentRevision<TextureAsset>(),
         assets->contentRevision<SamplerAsset>(),
     });
@@ -160,10 +172,13 @@ SceneUpdateFlags GpuScene::updateGlobals(const Camera& camera, glm::uvec2 extent
     {
         const auto view = camera.viewMatrix();
         const auto viewProjection = camera.projectionMatrix(aspect) * view;
+        const float halfHeight = std::tan(glm::radians(camera.fieldOfView) * 0.5f);
         sceneGlobals.camera = {
             .viewProjection        = viewProjection,
-            .inverseViewProjection = glm::inverse(viewProjection),
             .cameraPosition        = glm::vec4{camera.position, 1.0f},
+            .cameraU               = camera.right() * (halfHeight * aspect),
+            .cameraV               = camera.up() * halfHeight,
+            .cameraW               = camera.forward(),
             .view                  = view,
         };
         previousCamera = camera;

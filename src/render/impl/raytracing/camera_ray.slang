@@ -8,13 +8,14 @@ RayDesc createCameraRay(uint2 pixel, uint2 frameDim, float2 pixelSample)
 {
     float2 uv = (float2(pixel) + pixelSample) / float2(frameDim);
     SceneUniforms camera = scene.camera;
-    float4 farPoint = mul(camera.inverseViewProjection, float4(uvToClip(uv), 1.0, 1.0));
+    float2 ndc = uvToClip(uv);
 
     RayDesc ray;
     ray.Origin = camera.cameraPosition.xyz;
-    ray.Direction = normalize(farPoint.xyz / farPoint.w - ray.Origin);
+    ray.Direction = normalize(ndc.x * camera.cameraU + ndc.y * camera.cameraV + camera.cameraW);
     ray.TMin = kRayEpsilon;
     ray.TMax = kMaxRayDistance;
+
     return ray;
 }
 

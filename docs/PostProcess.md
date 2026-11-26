@@ -18,7 +18,7 @@
 | 镜头效果 | 暗角、径向色差、桶形畸变 |
 | 调色 | 阴影/中间调/高光饱和度二次曲线，以及颜色、亮度两组 Offset / Power / Scale |
 | 对比控制 | Enable、Wipe，保留源图像与 Alpha 的原始行为 |
-| 自动曝光 | 对输入重采样至各边向下取整的二次幂尺寸；计算 `log2(max(0.0001, luminance))`，逐级线性降采样，曝光 Key 为 0.042 |
+| 自动曝光 | 对输入重采样至各边向下取整的二次幂尺寸；计算 `log2(max(1e-8, luminance))`，逐级线性降采样，曝光 Key 为 0.042 |
 | 手动曝光 | ISO、光圈、倒数快门、EV，光圈优先/快门优先，曝光补偿 |
 | 白平衡 | Rec.709 ↔ XYZ ↔ CAT02 LMS，原始色温近似与矩阵系数 |
 | 色调映射 | Linear、Reinhard、Reinhard Modified、Heji Hable ALU、Hable UC2、ACES，原始白点参数与 Clamp 开关 |
@@ -50,6 +50,7 @@ SimplePostFX 启用但各镜头效果强度为 0。切换到 Falcor 不会带入
   最终屏幕格式由交换链决定，无法用 8 位屏幕目标呈现超出显示范围的数值。
 - 自动曝光的 mip 各级用独立图资源表达，保留相同尺寸、R32F 精度和逐级线性采样；最后一级仍为 1×1。
   原输入经过 SimplePostFX 的 RGBA32F 输出，因此使用 Falcor 对应的 R32F 亮度路径。
+- 自动曝光的亮度下限从 Falcor 的 `1e-4` 降为 `1e-8`，保留低亮度夜景中的亮度差异。当前应用配置已启用自动曝光，参数结构仍保留 Falcor 的手动曝光默认值。
 - RHI 资源绑定、全屏入口与调度接入本项目。屏幕输出对 sRGB 附件使用硬件编码，对 UNORM 附件显式编码，
   避免重复 Gamma。不同图形后端、GPU 和编译器的浮点与纹理过滤结果不保证逐位一致。
 - 不包含 TAA、DLSS、NRD、OptiX 等独立的抗锯齿、超分和降噪模块；本次移植范围是 ToneMapper 与 SimplePostFX。

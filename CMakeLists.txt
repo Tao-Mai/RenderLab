@@ -124,6 +124,8 @@ add_library(RenderLabCore STATIC
     src/scene/Transform.cpp
     src/asset/AssetManager.cpp
     src/asset/Asset.h
+    src/asset/StandardMaterial.cpp
+    src/asset/StandardMaterial.h
     src/asset/AssetID.h
     src/asset/ImageFormat.h
     src/asset/import/ImportImage.cpp
@@ -165,7 +167,7 @@ add_library(RenderLabCore STATIC
     src/render/resources/TextureUpload.h
     src/render/resources/GpuMesh.cpp
     src/render/resources/GpuMesh.h
-    src/render/resources/MaterialData.h
+    src/render/resources/StandardMaterialData.h
     src/render/resources/MaterialTable.cpp
     src/render/resources/MaterialTable.h
     src/render/resources/RenderResourceManager.cpp
@@ -222,11 +224,15 @@ set(renderlab_gui_backend_includes
     $<TARGET_PROPERTY:imgui::imgui,INTERFACE_INCLUDE_DIRECTORIES>
 )
 target_include_directories(RenderLabCore SYSTEM PRIVATE ${renderlab_gui_backend_includes})
-add_library(RenderLabDds OBJECT src/asset/import/ImportDds.cpp)
-target_include_directories(RenderLabDds PRIVATE src)
-target_compile_definitions(RenderLabDds PRIVATE GLM_FORCE_DEPTH_ZERO_TO_ONE GLOG_NO_ABBREVIATED_SEVERITIES)
-target_link_libraries(RenderLabDds PRIVATE RenderLabBuildOptions glm::glm glog::glog Microsoft::DirectXTex)
-target_link_libraries(RenderLabCore PRIVATE ZLIB::ZLIB RenderLabDds nlohmann_json::nlohmann_json)
+add_library(RenderLabTextureImport OBJECT
+    src/asset/import/ImportDds.cpp
+    src/asset/import/MaterialTexture.cpp
+    src/asset/import/MaterialTexture.h
+)
+target_include_directories(RenderLabTextureImport PRIVATE src)
+target_compile_definitions(RenderLabTextureImport PRIVATE GLM_FORCE_DEPTH_ZERO_TO_ONE GLOG_NO_ABBREVIATED_SEVERITIES)
+target_link_libraries(RenderLabTextureImport PRIVATE RenderLabBuildOptions glm::glm glog::glog Microsoft::DirectXTex)
+target_link_libraries(RenderLabCore PRIVATE ZLIB::ZLIB RenderLabTextureImport nlohmann_json::nlohmann_json)
 
 target_include_directories(RenderLabCore PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/src"

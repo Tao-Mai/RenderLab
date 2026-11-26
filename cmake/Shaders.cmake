@@ -4,9 +4,6 @@ function(renderlab_build_shaders)
     list(APPEND sources
         src/render/resources/RayType.h
         src/render/resources/SceneLightConstants.h)
-    if(BUILD_TESTING)
-        list(APPEND sources test/MaterialWorkflowCheck.slang)
-    endif()
     foreach(source IN LISTS sources)
         set(input "${RenderLab_SOURCE_DIR}/${source}")
         string(REGEX REPLACE "^src/(render/impl/)?" "" runtime_source "${source}")

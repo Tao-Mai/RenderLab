@@ -106,6 +106,9 @@ std::string importAsset(
         {
             ImportSceneSetting setting{.source = source, .id = id};
             setting.importScale = scale.value_or(setting.importScale);
+            const auto kind = options.take("--kind").value_or("environment");
+            CHECK(kind == "environment" || kind == "model-preview", "invalid scene kind '{}'", kind);
+            setting.kind = kind == "environment" ? Scene::Kind::Environment : Scene::Kind::ModelPreview;
             options.checkEmpty();
             return AssetImporter::importScene(setting).value;
         }

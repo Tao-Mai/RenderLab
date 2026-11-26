@@ -1,6 +1,6 @@
 # 资产模块
 
-[项目首页](../README.md) · [场景说明](Scene.md)
+[项目首页](../README.md) · [场景说明](Scene.md) · [ORCA 资产](Orca.md)
 
 资产模块是底层 CPU 数据工具：负责描述、导入、持久化与缓存。
 
@@ -9,7 +9,7 @@
 | 类型                        | 内容                                                               |
 |-----------------------------|--------------------------------------------------------------------|
 | MeshAsset                   | 几何二进制引用、Submesh 材质、局部 AABB、导入来源与比例            |
-| GltfMaterial                | PBR 参数、贴图与 glTF 材质扩展 |
+| StandardMaterial            | MR / SG 参数、表面透射、发光与标准纹理槽 |
 | TextureAsset / SamplerAsset | 像素、Mipmap、色彩空间与采样参数                                   |
 | Scene                  | 网格对象、解析光源、相机和环境图                              |
 | EnvironmentMapAsset         | Radiance Cubemap 纹理引用                     |
@@ -35,6 +35,7 @@
 - 统一 `importMesh` / `importScene`，按格式选择 TinyGLTF 或 Assimp。
 - 网格准备阶段读取几何并计算包围盒，保存阶段将导入比例烘焙进几何。运行时 Transform 表示实例变换。
 - 场景导入展开节点世界变换、复用共享网格、保留材质并生成编辑器相机。
+- FBX 通过 Assimp 按 Falcor 默认的 MR 贴图约定导入，OBJ 使用 SG；外部纹理共用图像 / DDS 导入流程。保留节点实例、相机和方向光 / 点光 / 聚光灯的局部变换，不将模型预先合并为单个网格。零面积三角形在读取入口剔除，不创建空网格实例。FBX 静态导入使用源相机视场和初始节点姿态。
 - glTF 场景保留 `KHR_lights_punctual` 的方向光、点光源和聚光灯。点光源与聚光灯统一导入为 `Point`，`openingAngle` 取外锥半角，`penumbraAngle` 取外锥与内锥半角之差；全向点光源使用 π 和 0。角度单位为弧度。节点缩放影响灯的位置，光强保持源值；点光源采用逆平方衰减，不进行距离截断。
 - 缺失切线时生成 MikkTSpace 切线；普通图像生成完整 Mipmap。
 - DirectXTex 读取单张二维 BC1–BC7 DDS。纹理资产保存源压缩块和全部 Mipmap，slang-rhi 按块上传，采样时由 GPU 解码。单独导入时默认采用 DDS 标记的色彩空间，glTF 通过 `MSFT_texture_dds` 选择外部 DDS，并按材质槽位选择线性或 sRGB 采样。

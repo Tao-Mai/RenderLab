@@ -5,12 +5,11 @@
 #include <slang-rhi.h>
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
-#include "asset/GltfMaterial.h"
+#include "asset/StandardMaterial.h"
 #include "core/Logger.h"
 #include "render/resources/RenderResourceManager.h"
 #include "render/resources/SceneLightConstants.h"
 
-#include <cmath>
 #include <cstddef>
 #include <span>
 #include <utility>
@@ -41,11 +40,29 @@ void MaterialTable::init(rhi::IDevice& targetDevice, RenderResourceManager& targ
 {
     device = &targetDevice;
     resources = &targetResources;
+    reset();
+}
+
+void MaterialTable::reset()
+{
+    materials.clear();
+    materialInfos.clear();
+    materialIndices.clear();
+    textureIndices.clear();
+    pendingImages.clear();
+    samplerIndices.clear();
+    images = {};
+    textureBindings.clear();
+    ++materialRevision;
+    ++emissiveRevision;
+
     static_cast<void>(textureReference({BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat}));
     samplers.fill(samplers[0]);
 
+    // Earlier submissions retain their material buffer and immutable texture bindings.
     rhiCheck(device->createBuffer(
-        {.size = sizeof(MaterialData), .usage = rhi::BufferUsage::ShaderResource | rhi::BufferUsage::CopyDestination},
+        {.size  = sizeof(StandardMaterialData),
+         .usage = rhi::BufferUsage::ShaderResource | rhi::BufferUsage::CopyDestination},
         nullptr,
         materialBuffer.writeRef()
     ));
@@ -85,116 +102,47 @@ TextureRef MaterialTable::textureReference(const TextureBinding& binding)
     return {.textureIndex = image->second, .samplerIndex = sampler->second};
 }
 
-uint32_t MaterialTable::resolve(const AssetID<GltfMaterial>& id, const AssetManager& assets)
+uint32_t MaterialTable::resolve(const AssetID<StandardMaterial>& id, const AssetManager& assets)
 {
     const auto& material = assets.get(id);
-    const bool sgWorkflow = material.workflow == MaterialWorkflow::SpecularGlossiness;
-    CHECK(!sgWorkflow || material.specularGlossiness.has_value(), "SG parameters missing: {}", material.id);
-
-    const auto alphaMode = material.alphaMode.value_or("OPAQUE");
-    CHECK(
-        alphaMode == "OPAQUE" || alphaMode == "MASK" || alphaMode == "BLEND",
-        "material '{}' has an unknown alpha mode '{}'",
-        material.id,
-        alphaMode
-    );
-    const float emissiveStrength = material.emissiveStrength.value_or(1.0f);
-    CHECK(std::isfinite(emissiveStrength) && emissiveStrength >= 0.0f);
-
-    const auto  specular  = material.specular.value_or(GltfMaterial::Specular{});
-    const float ior       = material.ior.value_or(1.5f);
-    CHECK(std::isfinite(ior) && (ior == 0.0f || ior >= 1.0f), "invalid IOR in material '{}'", material.id);
-    CHECK(
-        std::isfinite(specular.factor) && specular.factor >= 0.0f && specular.factor <= 1.0f,
-        "invalid specular factor in material '{}'",
-        material.id
-    );
-    for (glm::length_t channel = 0; channel < 3; ++channel)
-    {
-        CHECK(
-            std::isfinite(specular.colorFactor[channel]) && specular.colorFactor[channel] >= 0.0f,
-            "invalid specular color in material '{}'",
-            material.id
-        );
-    }
-    const float iorRatio = ior == 0.0f ? 1.0f : (ior - 1.0f) / (ior + 1.0f);
-
-    MaterialData data{
-        .colorFactor         = material.baseColorFactor.value_or(glm::vec4{1.0f}),
-        .emissiveFactor      = glm::vec4(material.emissive.value_or(glm::vec3{0.0f}) * emissiveStrength, 0.0f),
-        .specularColorFactor = specular.colorFactor,
-        .specularFactor      = specular.factor,
-        .roughness           = material.roughness.value_or(1.0f),
-        .metallic            = material.metallic.value_or(1.0f),
-        .alphaCutoff         = material.alphaCutoff.value_or(0.5f),
-        .alphaMode           = alphaMode == "MASK" ? kAlphaModeMask
-                             : alphaMode == "BLEND" ? kAlphaModeBlend
-                                                   : kAlphaModeOpaque,
-        .normalScale         = material.normalScale.value_or(1.0f),
-        .workflow            = static_cast<uint32_t>(material.workflow),
-        .dielectricF0        = iorRatio * iorRatio,
+    StandardMaterialData data{
+        .baseColor            = material.baseColor,
+        .specularParams       = material.specularParams,
+        .emissiveColor        = material.emissiveColor,
+        .emissiveFactor       = material.emissiveFactor,
+        .transmissionColor    = material.transmissionColor,
+        .diffuseTransmission  = material.diffuseTransmission,
+        .specularTransmission = material.specularTransmission,
+        .indexOfRefraction    = material.indexOfRefraction,
+        .normalScale          = material.normalScale,
+        .alphaCutoff          = material.alphaCutoff,
+        .shadingModel         = static_cast<uint32_t>(material.shadingModel),
+        .alphaMode            = static_cast<uint32_t>(material.alphaMode),
+        .doubleSided =
+            material.doubleSided || material.diffuseTransmission > 0.0f || material.specularTransmission > 0.0f,
+        .thinSurface    = material.thinSurface,
+        .normalEncoding = normalEncoding(material.normalTexture, assets),
     };
+    const auto resolveTexture = [&](const std::optional<TextureBinding>& source)
+    { return source ? textureReference(*source) : TextureRef{}; };
+    data.baseColorTexture    = resolveTexture(material.baseColorTexture);
+    data.specularTexture     = resolveTexture(material.specularTexture);
+    data.emissiveTexture     = resolveTexture(material.emissiveTexture);
+    data.normalTexture       = resolveTexture(material.normalTexture);
+    data.transmissionTexture = resolveTexture(material.transmissionTexture);
 
-    const auto resolveTexture = [&](const std::optional<TextureBinding>& source, const TextureAsset::ID& fallback)
-    {
-        const auto binding = source.value_or(TextureBinding{fallback, BuiltinAssets::Sampler::linearRepeat});
-        return textureReference(binding);
-    };
-
-    if (sgWorkflow)
-    {
-        const auto& sg = *material.specularGlossiness;
-        CHECK(
-            std::isfinite(sg.glossinessFactor) && sg.glossinessFactor >= 0.0f && sg.glossinessFactor <= 1.0f,
-            "invalid glossiness in material '{}'",
-            material.id
-        );
-        for (glm::length_t channel = 0; channel < 4; ++channel)
+    return store(
+        id,
+        data,
         {
-            CHECK(
-                std::isfinite(sg.diffuseFactor[channel]) && sg.diffuseFactor[channel] >= 0.0f &&
-                    sg.diffuseFactor[channel] <= 1.0f,
-                "invalid SG diffuse color in material '{}'",
-                material.id
-            );
+            .emissive = material.emissiveFactor > 0.0f &&
+                (material.emissiveTexture.has_value() ||
+                 glm::any(glm::greaterThan(material.emissiveColor, glm::vec3{0.0f}))),
         }
-        for (glm::length_t channel = 0; channel < 3; ++channel)
-        {
-            CHECK(
-                std::isfinite(sg.specularFactor[channel]) && sg.specularFactor[channel] >= 0.0f &&
-                    sg.specularFactor[channel] <= 1.0f,
-                "invalid SG specular color in material '{}'",
-                material.id
-            );
-        }
-
-        data.colorFactor          = sg.diffuseFactor;
-        data.specularColorFactor  = sg.specularFactor;
-        data.glossinessFactor     = sg.glossinessFactor;
-        data.colorTexture         = resolveTexture(sg.diffuseTexture, BuiltinAssets::Texture::white);
-        data.specularColorTexture = resolveTexture(sg.specularGlossinessTexture, BuiltinAssets::Texture::white);
-    }
-    else
-    {
-        data.colorTexture         = resolveTexture(material.baseColorTexture, BuiltinAssets::Texture::white);
-        data.metallicTexture      = resolveTexture(material.metallicTexture, BuiltinAssets::Texture::kWhiteLinear);
-        data.roughnessTexture     = resolveTexture(material.roughnessTexture, BuiltinAssets::Texture::kWhiteLinear);
-        data.specularColorTexture = resolveTexture(specular.colorTexture, BuiltinAssets::Texture::white);
-        data.specularTexture      = resolveTexture(specular.texture, BuiltinAssets::Texture::kWhiteLinear);
-    }
-
-    data.normalTexture = resolveTexture(material.normalTexture, BuiltinAssets::Texture::flatNormal);
-    data.normalEncoding  = normalEncoding(material.normalTexture, assets);
-    data.emissiveTexture = resolveTexture(material.emissiveTexture, BuiltinAssets::Texture::white);
-    if (material.doubleSided.value_or(true))
-        data.emissiveFlags = kEmissiveTwoSided;
-
-    return store(id, data, {
-        .emissive    = glm::any(glm::greaterThan(glm::vec3{data.emissiveFactor}, glm::vec3{0.0f})),
-    });
+    );
 }
 
-uint32_t MaterialTable::store(const AssetID<GltfMaterial>& id, const MaterialData& data, MaterialInfo info)
+uint32_t MaterialTable::store(const AssetID<StandardMaterial>& id, const StandardMaterialData& data, MaterialInfo info)
 {
     const auto [found, added] = materialIndices.try_emplace(id, static_cast<uint32_t>(materials.size()));
     if (added)
@@ -210,8 +158,9 @@ uint32_t MaterialTable::store(const AssetID<GltfMaterial>& id, const MaterialDat
         auto& previous = materials[found->second];
         auto& previousInfo = materialInfos[found->second];
         if (previousInfo.emissive != info.emissive ||
-            (info.emissive && (previous.emissiveFactor != data.emissiveFactor ||
-                previous.emissiveTexture != data.emissiveTexture || previous.emissiveFlags != data.emissiveFlags)))
+            (info.emissive &&
+             (previous.emissiveColor != data.emissiveColor || previous.emissiveFactor != data.emissiveFactor ||
+              previous.emissiveTexture != data.emissiveTexture)))
         {
             ++emissiveRevision;
         }
@@ -246,7 +195,7 @@ bool MaterialTable::upload(rhi::ICommandEncoder& commands)
     const bool materialsChanged = uploadedMaterialRevision != materialRevision;
     if (materialsChanged)
     {
-        const std::array<std::byte, sizeof(MaterialData)> empty{};
+        const std::array<std::byte, sizeof(StandardMaterialData)> empty{};
         const auto bytes = materials.empty() ? std::span<const std::byte>{empty} : std::as_bytes(std::span{materials});
         ensureBufferCapacity(*device, materialBuffer, bytes.size());
         rhiCheck(commands.uploadBufferData(materialBuffer, 0, bytes.size(), bytes.data()));

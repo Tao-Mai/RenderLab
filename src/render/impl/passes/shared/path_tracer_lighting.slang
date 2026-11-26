@@ -88,6 +88,9 @@ float evalEmissionMisWeight<EmissiveSampler : IEmissiveLightSampler>(
     EnvMapSampler envMapSampler, EmissiveSampler emissiveSampler, Surface previousSurface,
     RayDesc ray, PathHit hit, float brdfPdf)
 {
+    if (brdfPdf == 0.0)
+        return 1.0;
+
     float lightPdf;
     if (hit.event == PathEvent::Surface)
     {

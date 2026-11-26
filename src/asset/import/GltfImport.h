@@ -19,7 +19,7 @@ public:
 
 private:
     [[nodiscard]] AssetImporter::PreparedMesh    readMesh(std::optional<uint32_t> meshIndex) const override;
-    [[nodiscard]] std::vector<GltfMaterial::ID> importMaterials() override;
+    [[nodiscard]] std::vector<StandardMaterial::ID> importMaterials() override;
     void visitGltfNodes(const std::function<void(uint32_t, const glm::mat4&)>& visitor, float importScale = 1.0f) const;
 
     std::unique_ptr<tinygltf::Model> model;

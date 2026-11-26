@@ -3,6 +3,7 @@
 
 static const uint kMaxMaterialTextures = 1024;
 static const uint kMaxMaterialSamplers = 32;
+static const uint kInvalidMaterialTexture = 0xffffffff;
 struct TextureRef { uint textureIndex; uint samplerIndex; };
 
 struct MaterialTextures

@@ -13,10 +13,10 @@
 | 第 3 行 | Specular | Iridescence * | Dispersion * | Emissive Strength |
 | 第 4 行 | Unlit * | Diffuse Transmission * | Alpha Blend | Alpha Mask |
 
-Clearcoat、Sheen 和带 * 的扩展可从模型导入并保存到材质资产。
+所有材质使用 StandardMaterial。Transmission、IOR、Specular、Emissive Strength 和常量 Diffuse Transmission 参与着色；Volume 仅决定薄 / 厚表面标志。Clearcoat、Sheen、Anisotropy、Iridescence、Dispersion 和 Unlit 导入时提示不支持，不再保存这些扩展字段。
 
 - 基础 PBR、法线映射和自发光参与着色。
-- MR / SG 的统一参数、Specular 与 IOR 处理见[材质工作流](Material.md)。
+- StandardMaterial 的 MR / SG 参数、Specular 与 IOR 处理见[材质工作流](Material.md)。
 
 ## 如何比较
 

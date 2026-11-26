@@ -13,10 +13,17 @@ struct SceneLayer;
 
 struct Scene
 {
+    enum class Kind
+    {
+        Environment,
+        ModelPreview,
+    };
+
     using ID                              = AssetID<Scene>;
     static constexpr std::string_view dir = "Scene";
 
     ID id;
+    Kind kind = Kind::Environment;
     Camera camera;
     std::optional<EnvironmentMapAsset::ID> environmentMap;
 

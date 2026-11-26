@@ -49,10 +49,9 @@ float3 tracePath(RayDesc ray, PathHit hit, inout SampleGenerator state)
         // NEE 
         radiance += throughput * evalDirectLighting(envMapSampler, emissiveSampler, surface, state);
         
-        BrdfSample sampled = surface.sample(state);
+        BSDFSample sampled = surface.sample(state);
 
-        if (sampled.pdf <= 0.0 || dot(surface.geometricNormal, sampled.direction) <= 0.0 ||
-            !any(sampled.weight > 0.0))
+        if (!sampled.valid || !any(sampled.weight > 0.0))
             break;
     
         throughput *= sampled.weight;
@@ -66,13 +65,13 @@ float3 tracePath(RayDesc ray, PathHit hit, inout SampleGenerator state)
             throughput /= survival;
         }
         
-        ray.Origin    = surface.rayOrigin();
+        ray.Origin    = surface.rayOrigin(sampled.direction);
         ray.Direction = sampled.direction;
         ray.TMin      = kRayEpsilon;
         ray.TMax      = kMaxRayDistance;
 
         previousSurface = surface;
-        previousBrdfPdf = sampled.pdf;
+        previousBrdfPdf = sampled.isDelta ? 0.0 : sampled.pdf;
 
         traceSceneRay(ray, RayType::Scatter, RAY_FLAG_FORCE_NON_OPAQUE, hit);
     }

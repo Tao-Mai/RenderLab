@@ -68,15 +68,16 @@ AnalyticLight importLight(const ModelImport::Node& node)
     }
 
     // Light intensity ignores node scale; its transformed -Z axis supplies the direction.
+    const glm::mat4 world = node.world * source.localTransform;
     CHECK(
-        glm::length(glm::vec3{node.world[2]}) > 0.0f &&
-            glm::length(glm::cross(glm::vec3{node.world[0]}, glm::vec3{node.world[2]})) > 0.0f,
+        glm::length(glm::vec3{world[2]}) > 0.0f &&
+            glm::length(glm::cross(glm::vec3{world[0]}, glm::vec3{world[2]})) > 0.0f,
         "degenerate light transform on node {}",
         node.index
     );
-    const glm::vec3 forward     = glm::normalize(-glm::vec3{node.world[2]});
-    const glm::vec3 up          = glm::normalize(glm::cross(glm::vec3{node.world[0]}, forward));
-    light.transform.position = glm::vec3{node.world[3]};
+    const glm::vec3 forward     = glm::normalize(-glm::vec3{world[2]});
+    const glm::vec3 up          = glm::normalize(glm::cross(glm::vec3{world[0]}, forward));
+    light.transform.position = glm::vec3{world[3]};
     light.transform.rotation = glm::quatLookAtRH(forward, up);
     return light;
 }
@@ -89,6 +90,7 @@ AssetID<Scene> AssetImporter::importScene(const ImportSceneSetting& setting)
     const auto& source   = importer->sourcePath();
     Scene  scene;
     scene.id = asset_import::nextId<Scene>(setting.id.empty() ? source.stem().string() : setting.id.value);
+    scene.kind = setting.kind;
 
     std::unordered_map<uint32_t, ImportedMesh> meshes;
     std::optional<Aabb>                        sceneBounds;

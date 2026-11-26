@@ -1,7 +1,7 @@
 #pragma once
 
-#include "asset/GltfMaterial.h"
 #include "asset/SamplerAsset.h"
+#include "asset/StandardMaterial.h"
 #include "asset/TextureAsset.h"
 
 #include <cstdint>
@@ -14,7 +14,7 @@ class BuiltinAssets
 public:
     struct Material
     {
-        static inline const ::GltfMaterial::ID white = "white";
+        static inline const ::StandardMaterial::ID white = "white";
     };
 
     struct Texture
@@ -46,7 +46,7 @@ private:
     template <AssetType T>
     [[nodiscard]] static const T* findAsset(const typename T::ID& id)
     {
-        if constexpr (std::is_same_v<T, ::GltfMaterial>)
+        if constexpr (std::is_same_v<T, ::StandardMaterial>)
         {
             return materialAsset(id);
         }
@@ -64,7 +64,7 @@ private:
         }
     }
 
-    [[nodiscard]] static const ::GltfMaterial* materialAsset(const ::GltfMaterial::ID& id);
+    [[nodiscard]] static const ::StandardMaterial* materialAsset(const ::StandardMaterial::ID& id);
     [[nodiscard]] static const ::TextureAsset*  textureAsset(const ::TextureAsset::ID& id);
     [[nodiscard]] static const ::SamplerAsset*  samplerAsset(const ::SamplerAsset::ID& id);
 

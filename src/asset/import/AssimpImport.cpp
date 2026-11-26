@@ -14,16 +14,17 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <limits>
 #include <map>
-#include <tuple>
 
 namespace
 {
-constexpr unsigned kImportFlags = aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_GenNormals |
-    aiProcess_SortByPType | aiProcess_FlipUVs | aiProcess_TransformUVCoords | aiProcess_ValidateDataStructure;
+constexpr unsigned kImportFlags = aiProcess_Triangulate | aiProcess_FindInvalidData | aiProcess_SortByPType |
+    aiProcess_FlipUVs | aiProcess_TransformUVCoords | aiProcess_ValidateDataStructure;
 
 glm::vec3 toGlm(const aiVector3D& vector) { return {vector.x, vector.y, vector.z}; }
 
@@ -49,6 +50,40 @@ glm::mat4 toGlm(const aiMatrix4x4& matrix)
     };
 }
 
+void removeDegenerateTriangles(aiMesh& mesh, const std::filesystem::path& source)
+{
+    if (!(mesh.mPrimitiveTypes & aiPrimitiveType_TRIANGLE))
+        return;
+
+    const auto* end = std::remove_if(
+        mesh.mFaces,
+        mesh.mFaces + mesh.mNumFaces,
+        [&](const aiFace& face)
+        {
+            CHECK(face.mNumIndices == 3);
+            for (uint32_t corner = 0; corner < 3; ++corner)
+                CHECK(face.mIndices[corner] < mesh.mNumVertices);
+            const auto  a           = toGlm(mesh.mVertices[face.mIndices[0]]);
+            const auto  b           = toGlm(mesh.mVertices[face.mIndices[1]]);
+            const auto  c           = toGlm(mesh.mVertices[face.mIndices[2]]);
+            const auto  normal      = glm::cross(b - a, c - a);
+            const float areaSquared = glm::dot(normal, normal);
+            CHECK(std::isfinite(areaSquared), "invalid triangle in mesh '{}': {}", mesh.mName.C_Str(), source.string());
+
+            return areaSquared == 0.0f;
+        }
+    );
+    const auto faceCount = static_cast<uint32_t>(end - mesh.mFaces);
+    if (faceCount != mesh.mNumFaces)
+        LOG_WARNING(
+            "Removed {} zero-area triangles from mesh '{}': {}",
+            mesh.mNumFaces - faceCount,
+            mesh.mName.C_Str(),
+            source.string()
+        );
+    mesh.mNumFaces = faceCount;
+}
+
 void appendMesh(AssetImporter::PreparedMesh& build, const aiMesh& mesh, const glm::mat4& transform)
 {
     if (!(mesh.mPrimitiveTypes & aiPrimitiveType_TRIANGLE))
@@ -61,32 +96,10 @@ void appendMesh(AssetImporter::PreparedMesh& build, const aiMesh& mesh, const gl
     const auto            firstIndex      = static_cast<uint32_t>(build.geometry.indices.size());
     constexpr auto        kUnmappedVertex = std::numeric_limits<uint32_t>::max();
     std::vector<uint32_t> vertices(mesh.mNumVertices, kUnmappedVertex);
-    uint32_t              degenerateFaces = 0;
 
     for (uint32_t faceIndex = 0; faceIndex < mesh.mNumFaces; ++faceIndex)
     {
         const auto& face = mesh.mFaces[faceIndex];
-        CHECK(face.mNumIndices == 3);
-        for (uint32_t corner = 0; corner < 3; ++corner)
-            CHECK(face.mIndices[corner] < mesh.mNumVertices);
-        const auto  a           = toGlm(mesh.mVertices[face.mIndices[0]]);
-        const auto  b           = toGlm(mesh.mVertices[face.mIndices[1]]);
-        const auto  c           = toGlm(mesh.mVertices[face.mIndices[2]]);
-        const auto  faceNormal  = glm::cross(b - a, c - a);
-        const float areaSquared = glm::dot(faceNormal, faceNormal);
-        CHECK(
-            std::isfinite(areaSquared),
-            "invalid triangle in mesh '{}': {}",
-            mesh.mName.C_Str(),
-            build.source.string()
-        );
-        // Discard zero-area faces, not small valid triangles. Their generated normals can contain NaNs.
-        if (areaSquared == 0.0f)
-        {
-            ++degenerateFaces;
-            continue;
-        }
-
         for (uint32_t corner = 0; corner < 3; ++corner)
         {
             const auto sourceIndex = face.mIndices[corner];
@@ -116,16 +129,7 @@ void appendMesh(AssetImporter::PreparedMesh& build, const aiMesh& mesh, const gl
             build.geometry.indices.push_back(destination);
         }
     }
-    if (degenerateFaces != 0)
-        LOG_WARNING(
-            "Removed {} zero-area triangles from mesh '{}': {}",
-            degenerateFaces,
-            mesh.mName.C_Str(),
-            build.source.string()
-        );
     const auto indexCount = static_cast<uint32_t>(build.geometry.indices.size()) - firstIndex;
-    if (indexCount == 0)
-        return;
     generateTangents(build.geometry, firstIndex, indexCount);
     asset_import::transformVertices(build.geometry, firstVertex, transform);
     if (glm::determinant(glm::mat3{transform}) < 0)
@@ -136,24 +140,33 @@ void appendMesh(AssetImporter::PreparedMesh& build, const aiMesh& mesh, const gl
 
 struct MaterialImport
 {
-    const aiScene&                                                        scene;
-    const std::filesystem::path&                                          source;
-    std::map<std::tuple<std::string, ColorSpace, bool>, TextureAsset::ID> textures;
-    std::map<std::array<aiTextureMapMode, 3>, SamplerAsset::ID>           samplers;
+    const aiScene&                                                 scene;
+    const std::filesystem::path&                                   source;
+    ShadingModel                                                   shadingModel;
+    std::map<std::pair<std::string, ColorSpace>, TextureAsset::ID> textures;
+    std::map<std::array<aiTextureMapMode, 3>, SamplerAsset::ID>    samplers;
 
-    TextureAsset::ID importTexture(const aiString& reference, ColorSpace colorSpace, bool scalar)
+    TextureAsset::ID importTexture(const aiString& reference, ColorSpace colorSpace)
     {
         auto path = std::string{reference.C_Str()};
         std::ranges::replace(path, '\\', '/');
         const auto* embedded = scene.GetEmbeddedTexture(reference.C_Str());
         const auto  file     = (source.parent_path() / path).lexically_normal();
-        const auto  key      = std::tuple{embedded ? path : file.string(), colorSpace, scalar};
+        const auto  key      = std::pair{embedded ? path : file.string(), colorSpace};
         if (const auto found = textures.find(key); found != textures.end())
             return found->second;
 
+        if (!embedded)
+        {
+            const auto id = AssetImporter::importTexture({.source = file, .colorSpace = colorSpace});
+            textures.emplace(key, id);
+
+            return id;
+        }
+
         int                  width = 0, height = 0, channels = 0;
         std::vector<uint8_t> pixels;
-        if (embedded && embedded->mHeight != 0)
+        if (embedded->mHeight != 0)
         {
             CHECK(
                 embedded->mWidth > 0 &&
@@ -170,17 +183,16 @@ struct MaterialImport
         }
         else
         {
-            CHECK(!embedded || embedded->mWidth <= std::numeric_limits<int>::max());
+            CHECK(embedded->mWidth <= std::numeric_limits<int>::max());
             std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> decoded(
-                embedded ? stbi_load_from_memory(
-                               reinterpret_cast<const stbi_uc*>(embedded->pcData),
-                               static_cast<int>(embedded->mWidth),
-                               &width,
-                               &height,
-                               &channels,
-                               4
-                           )
-                         : stbi_load(file.string().c_str(), &width, &height, &channels, 4),
+                stbi_load_from_memory(
+                    reinterpret_cast<const stbi_uc*>(embedded->pcData),
+                    static_cast<int>(embedded->mWidth),
+                    &width,
+                    &height,
+                    &channels,
+                    4
+                ),
                 stbi_image_free
             );
             CHECK(
@@ -193,31 +205,22 @@ struct MaterialImport
             CHECK(uint64_t{static_cast<uint32_t>(width)} * height <= std::numeric_limits<int>::max() / 4);
             pixels.assign(decoded.get(), decoded.get() + static_cast<size_t>(width) * height * 4);
         }
-        // Assimp scalar maps use R. Replicate it to the channels expected by the existing PBR shaders.
-        if (scalar)
-            for (size_t offset = 0; offset < pixels.size(); offset += 4)
-                pixels[offset + 1] = pixels[offset + 2] = pixels[offset];
-
         TextureAsset asset;
-        asset.id =
-            asset_import::nextId<TextureAsset>(embedded ? source.stem().string() + "_texture" : file.stem().string());
+        asset.id         = asset_import::nextId<TextureAsset>(source.stem().string() + "_texture");
         asset.format     = ImageFormat::RGBA8;
         asset.colorSpace = colorSpace;
         asset.layout     = ImageLayout::Image2D;
         asset.width      = static_cast<uint32_t>(width);
         asset.height     = static_cast<uint32_t>(height);
         asset.mipLevels  = texture_mip::maxLevels(asset.width, asset.height);
-        if (!embedded)
-            asset.path = asset_import::sourcePathForAsset(file);
-        pixels        = texture_mip::generateChain(asset, pixels);
-        asset.binary  = context().assetManager->writeTexture(asset, pixels);
-        const auto id = context().assetManager->save(std::move(asset));
+        pixels           = texture_mip::generateChain(asset, pixels);
+        asset.binary     = context().assetManager->writeTexture(asset, pixels);
+        const auto id    = context().assetManager->save(std::move(asset));
         textures.emplace(key, id);
         return id;
     }
 
-    std::optional<TextureBinding>
-    texture(const aiMaterial& material, aiTextureType type, ColorSpace colorSpace, bool scalar = false)
+    std::optional<TextureBinding> texture(const aiMaterial& material, aiTextureType type, ColorSpace colorSpace)
     {
         if (material.GetTextureCount(type) == 0)
             return std::nullopt;
@@ -264,51 +267,71 @@ struct MaterialImport
             }
             sampler = found->second;
         }
-        return TextureBinding{importTexture(path, colorSpace, scalar), sampler};
+        return TextureBinding{importTexture(path, colorSpace), sampler};
     }
 
-    GltfMaterial material(const aiMaterial& sourceMaterial)
+    StandardMaterial material(const aiMaterial& sourceMaterial)
     {
-        GltfMaterial result;
-        result.workflow = MaterialWorkflow::MetallicRoughness;
-        aiColor4D        baseColor{1, 1, 1, 1};
-        if (sourceMaterial.Get(AI_MATKEY_BASE_COLOR, baseColor) != AI_SUCCESS)
-            sourceMaterial.Get(AI_MATKEY_COLOR_DIFFUSE, baseColor);
-        float opacity = 1;
+        StandardMaterial result;
+        result.shadingModel = shadingModel;
+        aiColor3D diffuse{1.0f, 1.0f, 1.0f};
+        sourceMaterial.Get(AI_MATKEY_COLOR_DIFFUSE, diffuse);
+        float opacity = 1.0f;
         sourceMaterial.Get(AI_MATKEY_OPACITY, opacity);
-        result.baseColorFactor = glm::vec4{baseColor.r, baseColor.g, baseColor.b, baseColor.a * opacity};
-        result.alphaMode       = result.baseColorFactor->a < 1 ? "BLEND" : "OPAQUE";
-        int doubleSided        = 0;
+        result.baseColor            = {diffuse.r, diffuse.g, diffuse.b, opacity};
+        result.specularTransmission = 1.0f - opacity;
+        sourceMaterial.Get(AI_MATKEY_REFRACTI, result.indexOfRefraction);
+
+        // Falcor's default (including FBX) reads Specular RGB as packed MR parameters.
+        // Only OBJ uses specular color and converts the Phong exponent to glossiness.
+        aiColor3D specular{0.0f, 0.0f, 0.0f};
+        sourceMaterial.Get(AI_MATKEY_COLOR_SPECULAR, specular);
+        result.specularParams = {specular.r, specular.g, specular.b, 1.0f};
+        if (shadingModel == ShadingModel::SpecGloss)
+        {
+            float shininess = 0.0f;
+            sourceMaterial.Get(AI_MATKEY_SHININESS, shininess);
+            CHECK(std::isfinite(shininess) && shininess >= 0.0f, "invalid Phong exponent in '{}'", source.string());
+            result.specularParams.a = 1.0f - std::clamp(std::sqrt(2.0f / (shininess + 2.0f)), 0.0f, 1.0f);
+        }
+        result.baseColorTexture = texture(sourceMaterial, aiTextureType_DIFFUSE, ColorSpace::Srgb);
+        result.specularTexture  = texture(
+            sourceMaterial,
+            aiTextureType_SPECULAR,
+            shadingModel == ShadingModel::MetalRough ? ColorSpace::Linear : ColorSpace::Srgb
+        );
+        result.normalTexture = texture(sourceMaterial, aiTextureType_NORMALS, ColorSpace::Linear);
+        if (shadingModel == ShadingModel::SpecGloss)
+        {
+            if (const auto bump = texture(sourceMaterial, aiTextureType_HEIGHT, ColorSpace::Linear))
+                result.normalTexture = bump;
+            if (const auto displacement = texture(sourceMaterial, aiTextureType_DISPLACEMENT, ColorSpace::Linear))
+                result.normalTexture = displacement;
+        }
+
+        aiColor3D emissive{0.0f, 0.0f, 0.0f};
+        sourceMaterial.Get(AI_MATKEY_COLOR_EMISSIVE, emissive);
+        result.emissiveColor = {emissive.r, emissive.g, emissive.b};
+        sourceMaterial.Get(AI_MATKEY_EMISSIVE_INTENSITY, result.emissiveFactor);
+        result.emissiveTexture = texture(sourceMaterial, aiTextureType_EMISSIVE, ColorSpace::Srgb);
+        result.alphaMode =
+            result.baseColorTexture || opacity < result.alphaCutoff ? AlphaMode::Mask : AlphaMode::Opaque;
+
+        int doubleSided = 0;
         sourceMaterial.Get(AI_MATKEY_TWOSIDED, doubleSided);
         result.doubleSided = doubleSided != 0;
-        auto baseTexture   = texture(sourceMaterial, aiTextureType_BASE_COLOR, ColorSpace::Srgb);
-        if (!baseTexture)
-            baseTexture = texture(sourceMaterial, aiTextureType_DIFFUSE, ColorSpace::Srgb);
-        result.baseColorTexture =
-            baseTexture.value_or(TextureBinding{BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat});
-        result.normalTexture    = texture(sourceMaterial, aiTextureType_NORMALS, ColorSpace::Linear);
-        result.metallicTexture  = texture(sourceMaterial, aiTextureType_METALNESS, ColorSpace::Linear, true);
-        result.roughnessTexture = texture(sourceMaterial, aiTextureType_DIFFUSE_ROUGHNESS, ColorSpace::Linear, true);
-        result.aoTexture        = texture(sourceMaterial, aiTextureType_AMBIENT_OCCLUSION, ColorSpace::Linear, true);
-        result.emissiveTexture  = texture(sourceMaterial, aiTextureType_EMISSIVE, ColorSpace::Srgb);
-
-        float metallic = result.metallicTexture ? 1 : 0;
-        sourceMaterial.Get(AI_MATKEY_METALLIC_FACTOR, metallic);
-        float roughness = 1;
-        if (sourceMaterial.Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness) != AI_SUCCESS && !result.roughnessTexture)
+        aiString materialName;
+        sourceMaterial.Get(AI_MATKEY_NAME, materialName);
+        std::string name{materialName.C_Str()};
+        std::ranges::transform(name, name.begin(), [](unsigned char character) { return std::tolower(character); });
+        for (auto start = name.find('.'); start != std::string::npos;)
         {
-            float shininess = 0;
-            if (sourceMaterial.Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS)
-                roughness = std::sqrt(2.0f / (std::max(shininess, 0.0f) + 2.0f));
+            const auto next = name.find('.', start + 1);
+            if (name.substr(start + 1, next - start - 1) == "doublesided")
+                result.doubleSided = true;
+            start = next;
         }
-        result.metallic  = std::clamp(metallic, 0.0f, 1.0f);
-        result.roughness = std::clamp(roughness, 0.0f, 1.0f);
-        aiColor3D emissive{0, 0, 0};
-        sourceMaterial.Get(AI_MATKEY_COLOR_EMISSIVE, emissive);
-        result.emissive = glm::vec3{emissive.r, emissive.g, emissive.b};
-        float strength  = 1;
-        sourceMaterial.Get(AI_MATKEY_EMISSIVE_INTENSITY, strength);
-        result.emissiveStrength = strength;
+
         return result;
     }
 };
@@ -320,6 +343,13 @@ AssimpImport::AssimpImport(const std::filesystem::path& path) :
     importer->SetPropertyInteger(AI_CONFIG_PP_SBP_REMOVE, aiPrimitiveType_POINT | aiPrimitiveType_LINE);
     scene = importer->ReadFile(source.string(), kImportFlags);
     CHECK(scene && scene->mRootNode, "Assimp cannot load '{}': {}", source.string(), importer->GetErrorString());
+    for (uint32_t index = 0; index < scene->mNumMeshes; ++index)
+        removeDegenerateTriangles(*scene->mMeshes[index], source);
+
+    // Generate missing normals after invalid-data removal and zero-area face filtering.
+    scene = importer->ApplyPostProcessing(aiProcess_GenNormals | aiProcess_JoinIdenticalVertices);
+    CHECK(scene, "Assimp cannot generate normals for '{}': {}", source.string(), importer->GetErrorString());
+
     LOG_INFO("Assimp parsed '{}': {} meshes, {} materials", source.string(), scene->mNumMeshes, scene->mNumMaterials);
 }
 
@@ -343,7 +373,8 @@ void AssimpImport::visitNodes(const std::function<void(const Node&)>& visitor, f
         {
             const auto meshIndex = node.mMeshes[index];
             CHECK(meshIndex < scene->mNumMeshes);
-            if (scene->mMeshes[meshIndex]->mPrimitiveTypes & aiPrimitiveType_TRIANGLE)
+            if ((scene->mMeshes[meshIndex]->mPrimitiveTypes & aiPrimitiveType_TRIANGLE) &&
+                scene->mMeshes[meshIndex]->mNumFaces > 0)
                 imported.meshes.push_back(meshIndex);
         }
         for (uint32_t index = 0; index < scene->mNumCameras; ++index)
@@ -360,6 +391,68 @@ void AssimpImport::visitNodes(const std::function<void(const Node&)>& visitor, f
                    .nearPlane   = camera.mClipPlaneNear * importScale,
                    .farPlane    = camera.mClipPlaneFar * importScale,
             };
+            break;
+        }
+        for (uint32_t index = 0; index < scene->mNumLights; ++index)
+        {
+            const auto& light = *scene->mLights[index];
+            if (light.mName != node.mName)
+                continue;
+            if (light.mType != aiLightSource_DIRECTIONAL && light.mType != aiLightSource_POINT &&
+                light.mType != aiLightSource_SPOT)
+            {
+                LOG_WARNING(
+                    "Unsupported Assimp light '{}' of type {} in '{}'",
+                    light.mName.C_Str(),
+                    static_cast<int>(light.mType),
+                    source.string()
+                );
+                continue;
+            }
+
+            // Assimp point lights may omit their direction and up vector, as in Falcor's importer.
+            CHECK(
+                light.mType != aiLightSource_DIRECTIONAL || light.mDirection.SquareLength() > 0.0f,
+                "invalid directional light '{}' in '{}'",
+                light.mName.C_Str(),
+                source.string()
+            );
+            const auto direction =
+                light.mDirection.SquareLength() == 0.0f ? glm::vec3{0, 0, -1} : glm::normalize(toGlm(light.mDirection));
+            const auto up    = light.mUp.SquareLength() == 0.0f ? glm::vec3{0, 1, 0} : glm::normalize(toGlm(light.mUp));
+            const auto right = glm::cross(direction, up);
+            CHECK(glm::dot(right, right) > 0.0f, "invalid light frame in '{}'", source.string());
+            const glm::vec3 color{light.mColorDiffuse.r, light.mColorDiffuse.g, light.mColorDiffuse.b};
+            const auto      position = toGlm(light.mPosition);
+            for (glm::length_t channel = 0; channel < 3; ++channel)
+                CHECK(
+                    std::isfinite(color[channel]) && color[channel] >= 0.0f && std::isfinite(position[channel]),
+                    "invalid light '{}' in '{}'",
+                    light.mName.C_Str(),
+                    source.string()
+                );
+            const float intensity = std::max({color.r, color.g, color.b});
+            CHECK(std::isfinite(intensity) && intensity >= 0.0f, "invalid light intensity in '{}'", source.string());
+            const bool spot = light.mType == aiLightSource_SPOT;
+            if (spot)
+                CHECK(
+                    std::isfinite(light.mAngleInnerCone) && std::isfinite(light.mAngleOuterCone) &&
+                        light.mAngleInnerCone >= 0.0f && light.mAngleInnerCone <= light.mAngleOuterCone &&
+                        light.mAngleOuterCone <= glm::half_pi<float>(),
+                    "invalid spot cone in '{}'",
+                    source.string()
+                );
+
+            imported.light = Light{
+                .type = light.mType == aiLightSource_DIRECTIONAL ? Light::Type::Directional : Light::Type::Point,
+                .localTransform =
+                    glm::mat4{glm::vec4{right, 0}, glm::vec4{up, 0}, glm::vec4{-direction, 0}, glm::vec4{position, 1}},
+                .color         = intensity > 0.0f ? color / intensity : color,
+                .intensity     = intensity,
+                .openingAngle  = spot ? light.mAngleOuterCone : glm::pi<float>(),
+                .penumbraAngle = spot ? light.mAngleOuterCone - light.mAngleInnerCone : 0.0f,
+            };
+
             break;
         }
         visitor(imported);
@@ -389,14 +482,20 @@ AssetImporter::PreparedMesh AssimpImport::readMesh(std::optional<uint32_t> meshI
     return result;
 }
 
-std::vector<GltfMaterial::ID> AssimpImport::importMaterials()
+std::vector<StandardMaterial::ID> AssimpImport::importMaterials()
 {
-    std::vector<GltfMaterial::ID> ids{BuiltinAssets::Material::white};
-    MaterialImport                 build{*scene, source};
+    std::vector<StandardMaterial::ID> ids{BuiltinAssets::Material::white};
+    std::string                       extension = source.extension().string();
+    std::ranges::transform(
+        extension,
+        extension.begin(),
+        [](unsigned char character) { return std::tolower(character); }
+    );
+    MaterialImport build{*scene, source, extension == ".obj" ? ShadingModel::SpecGloss : ShadingModel::MetalRough};
     for (uint32_t index = 0; index < scene->mNumMaterials; ++index)
     {
         auto material = build.material(*scene->mMaterials[index]);
-        material.id   = asset_import::nextId<GltfMaterial>(source.stem().string());
+        material.id   = asset_import::nextId<StandardMaterial>(source.stem().string());
         ids.push_back(context().assetManager->save(std::move(material)));
     }
     return ids;

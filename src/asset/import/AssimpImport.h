@@ -19,7 +19,7 @@ public:
 
 private:
     [[nodiscard]] AssetImporter::PreparedMesh    readMesh(std::optional<uint32_t> meshIndex) const override;
-    [[nodiscard]] std::vector<GltfMaterial::ID> importMaterials() override;
+    [[nodiscard]] std::vector<StandardMaterial::ID> importMaterials() override;
 
     std::unique_ptr<Assimp::Importer> importer;
     const aiScene*                    scene = nullptr;

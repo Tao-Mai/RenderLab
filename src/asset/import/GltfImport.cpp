@@ -5,9 +5,10 @@
 #include "asset/AssetManager.h"
 #include "asset/BuiltinAssets.h"
 #include "asset/MeshGeometry.h"
-#include "asset/import/ImportId.h"
 #include "asset/import/GltfImport.h"
 #include "asset/import/GltfMaterialExtensions.h"
+#include "asset/import/ImportId.h"
+#include "asset/import/MaterialTexture.h"
 #include "core/Context.h"
 #include "core/Logger.h"
 
@@ -34,7 +35,7 @@ constexpr float kMinimumTangentLengthSquared = 1e-12f;
 
 struct GltfBuild
 {
-    std::vector<GltfMaterial::ID>                              materialIds;
+    std::vector<StandardMaterial::ID>                              materialIds;
     std::map<std::pair<std::string, ColorSpace>, TextureAsset::ID> textureCache;
 };
 
@@ -101,85 +102,80 @@ void registerMaterials(
     const std::filesystem::path& modelDirectory,
     const std::filesystem::path& meshSource)
 {
-    GltfMaterial defaultMaterial;
-    defaultMaterial.workflow         = MaterialWorkflow::MetallicRoughness;
-    defaultMaterial.id               = asset_import::nextId<GltfMaterial>(meshSource.stem().string());
-    defaultMaterial.baseColorTexture = TextureBinding{
-        BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat};
-    build.materialIds.push_back(
-        context().assetManager->save(std::move(defaultMaterial)));
+    StandardMaterial defaultMaterial;
+    defaultMaterial.id             = asset_import::nextId<StandardMaterial>(meshSource.stem().string());
+    defaultMaterial.specularParams = {0.0f, 1.0f, 1.0f, 1.0f};
+    defaultMaterial.thinSurface    = true;
+    build.materialIds.push_back(context().assetManager->save(std::move(defaultMaterial)));
 
-    for (size_t index = 0; index < model.materials.size(); ++index)
+    for (const auto& source : model.materials)
     {
-        const tinygltf::Material& source = model.materials[index];
-        GltfMaterial              material;
-        material.id = asset_import::nextId<GltfMaterial>(meshSource.stem().string());
-
-        material.workflow = source.extensions.contains("KHR_materials_pbrSpecularGlossiness")
-            ? MaterialWorkflow::SpecularGlossiness
-            : MaterialWorkflow::MetallicRoughness;
-        if (material.workflow == MaterialWorkflow::MetallicRoughness)
+        StandardMaterial material;
+        material.id        = asset_import::nextId<StandardMaterial>(meshSource.stem().string());
+        const auto texture = [&](const auto& info, ColorSpace colorSpace)
         {
-            const auto& pbr = source.pbrMetallicRoughness;
-            if (pbr.baseColorFactor.size() == 4)
-            {
-                material.baseColorFactor = {
-                    static_cast<float>(pbr.baseColorFactor[0]),
-                    static_cast<float>(pbr.baseColorFactor[1]),
-                    static_cast<float>(pbr.baseColorFactor[2]),
-                    static_cast<float>(pbr.baseColorFactor[3]),
-                };
-            }
-            material.metallic  = static_cast<float>(pbr.metallicFactor);
-            material.roughness = static_cast<float>(pbr.roughnessFactor);
-
-            material.baseColorTexture = TextureBinding{
-                textureIdFor(build, model, pbr.baseColorTexture.index, modelDirectory, ColorSpace::Srgb)
-                    .value_or(BuiltinAssets::Texture::white),
-                BuiltinAssets::Sampler::linearRepeat
-            };
             CHECK(
-                pbr.metallicRoughnessTexture.index < 0 || pbr.metallicRoughnessTexture.texCoord == 0,
-                "metallic-roughness textures require TEXCOORD_0: {}",
+                info.index < 0 || info.texCoord == 0,
+                "material textures require TEXCOORD_0: {}",
                 meshSource.string()
             );
-            material.metallicTexture = bindTexture(
-                textureIdFor(build, model, pbr.metallicRoughnessTexture.index, modelDirectory, ColorSpace::Linear)
+            CHECK(
+                !info.extensions.contains("KHR_texture_transform"),
+                "material texture transforms are unsupported: {}",
+                meshSource.string()
             );
-            material.roughnessTexture = material.metallicTexture;
-        }
+            const auto binding = bindTexture(textureIdFor(build, model, info.index, modelDirectory, colorSpace));
+            CHECK(info.index < 0 || binding, "invalid material texture {} in '{}'", info.index, meshSource.string());
 
-        if (source.emissiveFactor.size() == 3)
+            return binding;
+        };
+        if (!source.extensions.contains("KHR_materials_pbrSpecularGlossiness"))
         {
-            material.emissive = {
-                static_cast<float>(source.emissiveFactor[0]),
-                static_cast<float>(source.emissiveFactor[1]),
-                static_cast<float>(source.emissiveFactor[2]),
-            };
+            const auto& pbr = source.pbrMetallicRoughness;
+            CHECK(pbr.baseColorFactor.size() == 4, "invalid base color in '{}'", meshSource.string());
+            material.baseColor =
+                {pbr.baseColorFactor[0], pbr.baseColorFactor[1], pbr.baseColorFactor[2], pbr.baseColorFactor[3]};
+            material.specularParams =
+                {0.0f, static_cast<float>(pbr.roughnessFactor), static_cast<float>(pbr.metallicFactor), 1.0f};
+            material.baseColorTexture =
+                asset_import::bakeMaterialTexture(texture(pbr.baseColorTexture, ColorSpace::Srgb), material.baseColor);
+            const auto specularTexture = texture(pbr.metallicRoughnessTexture, ColorSpace::Linear);
+            material.specularTexture   = asset_import::packMetalRoughTextures(
+                specularTexture,
+                specularTexture,
+                material.specularParams.b,
+                material.specularParams.g
+            );
         }
-        material.ao               = static_cast<float>(source.occlusionTexture.strength);
-        material.normalScale      = static_cast<float>(source.normalTexture.scale);
-        material.normalTexture = bindTexture(textureIdFor(
-            build, model, source.normalTexture.index,
-            modelDirectory, ColorSpace::Linear));
-        material.aoTexture = bindTexture(textureIdFor(
-            build, model, source.occlusionTexture.index,
-            modelDirectory, ColorSpace::Linear));
-        material.emissiveTexture = bindTexture(textureIdFor(
-            build, model, source.emissiveTexture.index,
-            modelDirectory, ColorSpace::Srgb));
-        material.alphaMode   = source.alphaMode;
+        CHECK(source.emissiveFactor.size() == 3, "invalid emissive color in '{}'", meshSource.string());
+        material.emissiveColor   = {source.emissiveFactor[0], source.emissiveFactor[1], source.emissiveFactor[2]};
+        material.emissiveTexture = asset_import::bakeMaterialTexture(
+            texture(source.emissiveTexture, ColorSpace::Srgb),
+            glm::vec4{material.emissiveColor, 1.0f}
+        );
+        material.normalScale   = static_cast<float>(source.normalTexture.scale);
+        material.normalTexture = texture(source.normalTexture, ColorSpace::Linear);
+        CHECK(
+            source.alphaMode == "OPAQUE" || source.alphaMode == "MASK" || source.alphaMode == "BLEND",
+            "unknown alpha mode '{}' in '{}'",
+            source.alphaMode,
+            meshSource.string()
+        );
+        material.alphaMode   = source.alphaMode == "OPAQUE" ? AlphaMode::Opaque : AlphaMode::Mask;
         material.alphaCutoff = static_cast<float>(source.alphaCutoff);
         material.doubleSided = source.doubleSided;
+        material.thinSurface = true;
+        if (source.alphaMode == "BLEND")
+            LOG_WARNING("StandardMaterial imports BLEND as alpha testing: {}", meshSource.string());
 
         importMaterialExtensions(material, source, meshSource, [&](int textureIndex, ColorSpace colorSpace)
         {
             CHECK(textureIndex >= 0 && textureIndex < static_cast<int>(model.textures.size()),
                   "invalid material texture index {} in '{}'", textureIndex, meshSource.string());
+
             return bindTexture(textureIdFor(build, model, textureIndex, modelDirectory, colorSpace));
         });
-        build.materialIds.push_back(
-            context().assetManager->save(std::move(material)));
+        build.materialIds.push_back(context().assetManager->save(std::move(material)));
     }
 }
 
@@ -560,7 +556,7 @@ AssetImporter::PreparedMesh GltfImport::readMesh(std::optional<uint32_t> meshInd
     return build;
 }
 
-std::vector<GltfMaterial::ID> GltfImport::importMaterials()
+std::vector<StandardMaterial::ID> GltfImport::importMaterials()
 {
     GltfBuild build;
     registerMaterials(build, *model, source.parent_path(), source);
@@ -634,6 +630,7 @@ void GltfImport::visitNodes(const std::function<void(const Node&)>& visitor, flo
 
             imported.light = Light{
                 .type = light.type == "directional" ? Light::Type::Directional : Light::Type::Point,
+                .localTransform = glm::mat4{1.0f},
                 .color = color,
                 .intensity = static_cast<float>(light.intensity),
                 .openingAngle = light.type == "spot" ? static_cast<float>(light.spot.outerConeAngle) : glm::pi<float>(),

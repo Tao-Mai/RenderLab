@@ -37,7 +37,7 @@ Engine：载入当前场景并更新预览相机
 - Scene 直接持有 Object、AnalyticLight 和 Camera。
 - reflect-cpp 从聚合类型获取字段描述，多态数据使用“类型名 → 数据”。
 - 资产使用类型化 ID 引用，网格几何与纹理像素独立持久化。
-- MaterialTable 按材质资产 ID 维护稳定索引，并用当前帧的 encoder 录制 GPU 数据上传。
+- MaterialTable 按材质资产 ID 维护当前场景内的稳定索引，并用当前帧的 encoder 录制 GPU 数据上传。切换场景时重建材质表和关联的绘制、发光面数据，旧场景的纹理不再占用当前场景的索引容量；已提交的命令保留其缓冲区和不可变纹理绑定。
 - 场景保存相机和环境图。Context 持有应用配置，Engine 启停时读写资源路径、初始场景、编辑器和渲染设置。 [配置结构](../src/core/Config.h)
 
 详见 [场景模块](Scene.md) 与 [资产模块](Asset.md)。

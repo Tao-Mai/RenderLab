@@ -61,11 +61,11 @@ void closestHitMain(inout Hit hit, BuiltInTriangleIntersectionAttributes attribu
     hit.tangent = mul(model, objectTangent.xyz);
     float3 objectGeometricNormal = cross(v1.position - v0.position, v2.position - v0.position);
     hit.geometricNormal = normalize(mul(objectGeometricNormal, (float3x3)WorldToObject3x4()));
-    MaterialData material = materials[hit.materialIndex];
+    StandardMaterialData material = materials[hit.materialIndex];
     float handedness = determinant(model) < 0.0 ? -1.0 : 1.0;
     float4 worldTangent = float4(hit.tangent, sign(objectTangent.w) * handedness);
     hit.normal = applyNormalMap(hit.normal, worldTangent,
-        sampleTextureLevel(material.normalTexture, hit.uv).xyz, material.normalScale, material.normalEncoding);
+        sampleMaterialTexture(material.normalTexture, hit.uv, float4(0.5, 0.5, 1.0, 1.0)).xyz, material.normalScale, material.normalEncoding);
 }
 
 #endif
