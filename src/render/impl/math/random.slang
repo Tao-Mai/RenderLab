@@ -1,6 +1,8 @@
 #ifndef RENDERLAB_RANDOM_SLANG
 #define RENDERLAB_RANDOM_SLANG
 
+#include "Utils/Sampling/SampleGeneratorInterface.slang"
+
 // PCG RXS-M-XS: advance the state, then permute it into a random uint.
 uint randomUint(inout uint state)
 {
@@ -10,27 +12,21 @@ uint randomUint(inout uint state)
 
     state = state * kStateMultiplier + kStateIncrement;
     uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * kOutputMultiplier;
+
     return (word >> 22u) ^ word;
 }
 
-float randomUintToFloat(uint sample)
+uint randomIndex<S : ISampleGenerator>(uint count, inout S generator)
 {
-    // Use the upper 24 bits so float rounding cannot produce 1.0.
-    static const float kUint24ToFloat = 1.0f / 16777216.0f;
-    return float(sample >> 8u) * kUint24ToFloat;
+    uint threshold = (0u - count) % count;
+    uint value;
+    do
+    {
+        value = generator.next();
+    }
+    while (value < threshold);
+
+    return value % count;
 }
-
-float randomFloat(inout uint state) { return randomUintToFloat(randomUint(state)); }
-
-#if defined(SAMPLE_GENERATOR_TYPE)
-#if SAMPLE_GENERATOR_TYPE != 1
-#error Unsupported sample generator type
-#endif
-#include "math/uniform_sample_generator.slang"
-typedef UniformSampleGenerator SampleGenerator;
-float randomFloat(inout UniformSampleGenerator generator) { return randomUintToFloat(randomUint(generator)); }
-#else
-typedef uint SampleGenerator;
-#endif
 
 #endif

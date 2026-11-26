@@ -1,7 +1,5 @@
 #include "render/impl/passes/restir/RestirPathTracer.h"
 
-#include "render/graph/RenderPassSettings.h"
-
 #include <slang-rhi/shader-cursor.h>
 #include "render/GpuScene.h"
 #include "render/RenderContext.h"
@@ -17,10 +15,21 @@ constexpr char       kShaderFile[]           = "passes/restir/restir.slang";
 constexpr char       kVBuffer[]              = "vbuffer";
 constexpr char       kOutputColor[]          = "color";
 constexpr char       kOutputImage[]          = "outputImage";
+constexpr char       kReservoirHistory[]     = "reservoirHistory";
 constexpr auto       kOutputFormat           = rhi::Format::RGBA32Float;
 constexpr uint32_t   kMaxRayPayloadSize      = 256;
 constexpr uint32_t   kMaxRayRecursion        = 1;
 constexpr uint32_t   kUniformSampleGenerator = 1;
+
+struct ReservoirHistory
+{
+    int32_t selectedLightIndex;
+    glm::vec3 selectedContribution;
+    float selectedTarget;
+    float weightSum;
+    uint32_t sampleCount;
+};
+static_assert(sizeof(ReservoirHistory) == 28);
 
 const RenderPassReflection::Field kPorts[]{
     {
@@ -47,36 +56,21 @@ void validateShaderLayout(rhi::IShaderProgram& program)
 }
 }  // namespace
 
-bool RestirPathTracer::drawSettings(
-    Gui::Widgets& widgets,
-    RestirPathTracerSettings& editedSettings,
-    const RestirPathTracer&,
-    const PassEditorContext&
-)
+RestirPathTracer::RestirPathTracer(rhi::ComPtr<rhi::IDevice> device) :
+    RenderPass(std::move(device), {.type = kType, .ports = kPorts})
 {
-    constexpr uint32_t kMaxBouncesInEditor = 20;
-
-    const bool changed = widgets.slider("Max bounces", editedSettings.maxBounces, 0u, kMaxBouncesInEditor);
-    widgets.tooltip("Maximum indirect bounces. 0 gives direct illumination only.");
-
-    return changed;
 }
 
-RestirPathTracer::RestirPathTracer(rhi::ComPtr<rhi::IDevice> device) :
-    RenderPass(
-        std::move(device),
-        {
-            .type = kType,
-            .ports = kPorts,
-            .settings = pass_settings::bind<
-                &RestirPathTracer::settings, &RenderPassOptions::restir,
-                &RestirPathTracer::drawSettings, &RestirPathTracer::optionsChanged
-            >(),
-        }
-    ),
-    settings{}
+RenderPassReflection RestirPathTracer::reflect(const ResourceCache::DefaultProperties& defaults)
 {
-    settings.validate();
+    auto reflection = RenderPass::reflect(defaults);
+    reflection.addInternal(kReservoirHistory, rhi::BufferDesc{
+        .size = size_t(defaults.dims.x) * defaults.dims.y * sizeof(ReservoirHistory),
+        .elementSize = sizeof(ReservoirHistory),
+        .usage = rhi::BufferUsage::UnorderedAccess,
+    });
+
+    return reflection;
 }
 
 void RestirPathTracer::compile(RenderContext*, const CompileData&)
@@ -85,12 +79,13 @@ void RestirPathTracer::compile(RenderContext*, const CompileData&)
     rhiCheck(mpDevice->getFormatSupport(kOutputFormat, &support));
     CHECK(rhi::is_set(support, rhi::FormatSupport::ShaderUavStore),
           "RestirPathTracer requires RGBA32Float storage writes");
+    sampleSeed = 0;
 }
 
 void RestirPathTracer::setScene(GpuScene* scene)
 {
     tracer.reset();
-    sampleIndex = 0;
+    sampleSeed = 0;
     mpScene     = scene;
     if (!mpScene)
         return;
@@ -110,14 +105,14 @@ void RestirPathTracer::setScene(GpuScene* scene)
     tracer.emplace(*mpDevice, std::move(desc), std::move(defines));
 }
 
+void RestirPathTracer::onSceneUpdates(RenderContext*, SceneUpdateFlags) { sampleSeed = 0; }
+
 void RestirPathTracer::execute(RenderContext* context, const RenderData& renderData)
 {
     auto& dictionary = renderData.getDictionary();
-    if (optionsChanged)
-    {
-        dictionary[kRenderPassRefreshFlags] |= std::to_underlying(RenderPassRefreshFlags::RenderOptionsChanged);
-        optionsChanged = false;
-    }
+    const auto refresh = dictionary.find(kRenderPassRefreshFlags);
+    if (refresh != dictionary.end() && refresh->second != std::to_underlying(RenderPassRefreshFlags::None))
+        sampleSeed = 0;
 
     auto& commands = *context->commands;
 
@@ -139,12 +134,12 @@ void RestirPathTracer::execute(RenderContext* context, const RenderData& renderD
     const rhi::ShaderCursor root(version.shaderObject);
 
     const auto uniforms = root["uniforms"].getDereferenced();
-    rhiCheck(uniforms["maxBounces"].setData(settings.maxBounces));
-    rhiCheck(uniforms["sampleIndex"].setData(sampleIndex));
+    rhiCheck(uniforms["sampleSeed"].setData(sampleSeed));
     rhiCheck(root[kVBuffer].setBinding(renderData.getTexture(kVBuffer)));
     rhiCheck(root[kOutputImage].setBinding(renderData.getTexture(kOutputColor)));
+    rhiCheck(root[kReservoirHistory].setBinding(renderData.getBuffer(kReservoirHistory)));
 
     const auto dims = renderData.getDefaultTextureDims();
     scene.raytrace(commands, *version.pipeline, *version.shaderTable, *version.shaderObject, {dims.x, dims.y, 1});
-    ++sampleIndex;
+    ++sampleSeed;
 }

@@ -3,7 +3,7 @@
 
 #include "material/material_data.slang"
 #include "raytracing/geometry.slang"
-#include "scene/scene_data.slang"
+#include "Scene/Scene.slang"
 
 bool failsAlphaCutoff(MaterialData material, float2 uv)
 {

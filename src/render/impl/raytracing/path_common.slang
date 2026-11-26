@@ -1,9 +1,9 @@
 #ifndef RENDERLAB_PATH_COMMON_SLANG
 #define RENDERLAB_PATH_COMMON_SLANG
 
-#include "scene/scene_data.slang"
-#include "scene/emissive_lights.slang"
-#include "scene/environment_light.slang"
+#include "Scene/Scene.slang"
+#include "Scene/Lights/LightCollection.slang"
+#include "Scene/Lights/EnvMap.slang"
 #include "raytracing/scene_hits.slang"
 #include "math/low_discrepancy.slang"
 #include "math/random.slang"

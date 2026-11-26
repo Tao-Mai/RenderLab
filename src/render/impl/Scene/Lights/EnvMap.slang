@@ -1,5 +1,5 @@
-#ifndef RENDERLAB_ENVIRONMENT_LIGHT_SLANG
-#define RENDERLAB_ENVIRONMENT_LIGHT_SLANG
+#ifndef RENDERLAB_ENV_MAP_SLANG
+#define RENDERLAB_ENV_MAP_SLANG
 
 #include "math/constant.slang"
 
@@ -19,14 +19,6 @@ float3 environmentRadiance(float3 direction)
 #else
     return float3(0.0);
 #endif
-}
-
-float3 sampleEnvironmentDirection(float2 uv)
-{
-    float elevation = 1.0 - 2.0 * uv.x;
-    float radius = sqrt(max(0.0, 1.0 - elevation * elevation));
-    float angle = 2.0 * PI * uv.y;
-    return float3(radius * cos(angle), elevation, radius * sin(angle));
 }
 
 #endif

@@ -1,5 +1,5 @@
-#ifndef RENDERLAB_SCENE_UNIFORMS_SLANG
-#define RENDERLAB_SCENE_UNIFORMS_SLANG
+#ifndef RENDERLAB_CAMERA_DATA_SLANG
+#define RENDERLAB_CAMERA_DATA_SLANG
 
 // Must match SceneUniforms in ShaderData.h; column-major storage.
 struct SceneUniforms

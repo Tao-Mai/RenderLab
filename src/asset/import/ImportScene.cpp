@@ -59,19 +59,15 @@ AnalyticLight importLight(const ModelImport::Node& node)
     light.name = node.name.empty() ? "Light" + std::to_string(node.index) : node.name;
     light.color = source.color;
     light.intensity = source.intensity;
-    light.range = source.range;
+    light.openingAngle = source.openingAngle;
+    light.penumbraAngle = source.penumbraAngle;
     switch (source.type)
     {
         case ModelImport::Light::Type::Point: light.type = AnalyticLightType::Point; break;
-        case ModelImport::Light::Type::Spot:
-            light.type = AnalyticLightType::Spot;
-            light.cosInner = source.cosInner;
-            light.cosOuter = source.cosOuter;
-            break;
         case ModelImport::Light::Type::Directional: light.type = AnalyticLightType::Directional; break;
     }
 
-    // Light ranges and intensity ignore node scale; its transformed -Z axis supplies the direction.
+    // Light intensity ignores node scale; its transformed -Z axis supplies the direction.
     CHECK(
         glm::length(glm::vec3{node.world[2]}) > 0.0f &&
             glm::length(glm::cross(glm::vec3{node.world[0]}, glm::vec3{node.world[2]})) > 0.0f,

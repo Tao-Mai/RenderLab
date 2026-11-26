@@ -20,6 +20,8 @@ public:
     [[nodiscard]] uint64_t sceneGeneration() const { return generation; }
 
 private:
+    void applyLayer(SceneLayer::ID id);
+
     Scene activeScene;
     SceneLayer::ID activeLayer;
 

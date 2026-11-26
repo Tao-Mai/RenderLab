@@ -1,10 +1,10 @@
-#ifndef RENDERLAB_SCENE_DATA_SLANG
-#define RENDERLAB_SCENE_DATA_SLANG
+#ifndef RENDERLAB_SCENE_SLANG
+#define RENDERLAB_SCENE_SLANG
 
 #include "math/screen.slang"
 #include "raytracing/scene_hits.slang"
-#include "scene/light_data.slang"
-#include "scene/scene_uniforms.slang"
+#include "Scene/Lights/LightData.slang"
+#include "Scene/Camera/CameraData.slang"
 #include "render/resources/RayType.h"
 
 struct SceneData
@@ -18,6 +18,8 @@ struct SceneData
 
     RaytracingAccelerationStructure rtAccel;
     StructuredBuffer<HitData> objects;
+
+    uint getLightCount() { return analyticLightCount; }
 };
 
 ParameterBlock<SceneData> scene;

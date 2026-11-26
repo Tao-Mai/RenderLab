@@ -25,11 +25,27 @@ VBufferPass 每像素追踪一条主射线，保存首个通过 alpha test 的�
 | 位置 | 职责 |
 | --- | --- |
 | [path_tracing.slang](../src/render/impl/raytracing/path_tracing.slang) | Surface、材质求值、相机射线、命中 / Miss、BRDF 采样、路径续射线和俄罗斯轮盘 |
-| [light_sampling.slang](../src/render/impl/raytracing/light_sampling.slang) | 光源选择、解析光源 / 发光三角形 / 环境的求值、光源 PDF 和命中光源样本还原 |
+| [Scene.slang](../src/render/impl/Scene/Scene.slang) · [LightCollection.slang](../src/render/impl/Scene/Lights/LightCollection.slang) | 公共场景光源数据与 `scene.getLightCount()`、`emissiveLights.getTriangleCount()` 数量查询 |
+| [LightHelpers.slang](../src/render/impl/Rendering/Lights/LightHelpers.slang) | 单个解析光源的入射辐射、方向、距离和条件 PDF |
+| [SampleGeneratorInterface.slang](../src/render/impl/Utils/Sampling/SampleGeneratorInterface.slang) · [UniformSampleGenerator.slang](../src/render/impl/Utils/Sampling/UniformSampleGenerator.slang) | `ISampleGenerator`、取样辅助函数与当前的均匀随机数生成器 |
+| [EmissiveLightSamplerInterface.slang](../src/render/impl/Rendering/Lights/EmissiveLightSamplerInterface.slang) · [EmissiveUniformSampler.slang](../src/render/impl/Rendering/Lights/EmissiveUniformSampler.slang) | 发光网格采样接口与均匀三角形采样策略，提供采样、三角形选择概率和命中点 PDF |
+| [EmissiveLightSamplerHelpers.slang](../src/render/impl/Rendering/Lights/EmissiveLightSamplerHelpers.slang) | 发光三角形的辐射求值、单双面判断和三角形位置采样辅助函数 |
+| [EnvMapSampler.slang](../src/render/impl/Rendering/Lights/EnvMapSampler.slang) | 环境光的方向采样、辐射求值与方向 PDF；当前使用球面均匀采样 |
+| [path_tracer_lighting.slang](../src/render/impl/passes/shared/path_tracer_lighting.slang) | Pass 共用的自由辅助函数，完成光源类别选择、直接光估计和发光命中 MIS 权重计算 |
 | [minimal_path_tracer.slang](../src/render/impl/passes/minimal/minimal_path_tracer.slang) | MinimalPathTracer 的路径积分和颜色输出 |
 
 
 MinimalPathTracer 读取 `vbuffer`，输出 RGBA32F `color`。它合并直接光、间接光和相机直接可见的自发光。光源和材质通过渲染后端的共享 shader 参数访问。
+
+公共光源接口按 [Falcor](https://github.com/NVIDIAGameWorks/Falcor/tree/master/Source/Falcor/Rendering/Lights) 的职责边界拆分：解析光源使用独立辅助函数，环境光由 `EnvMapSampler` 提供 `sample`、`eval` 和 `evalPdf`，发光网格策略实现 `IEmissiveLightSampler`。三个接口都不依赖 `Surface`，返回的辐射尚未除以 PDF。类别选择和 MIS 属于 Pass 内部的积分策略；Minimal 和 ReSTIR 在调用 `passes/shared` 的自由辅助函数时显式传入环境光和发光网格采样器，当前发光网格策略为 `EmissiveUniformSampler`。
+
+解析光源的统一入口为 `sampleLight<S : ISampleGenerator>(origin, light, inout generator, out sample)`。调用方传入光源数据和随机数生成器，入口按当前支持的类型分发到 `samplePointLight`、`sampleDirectionalLight` 或 `sampleRectAreaLight`：点光源和方向光不取随机数，矩形面光源在入口内通过 `sampleNext2D` 生成采样位置。
+
+`ISampleGenerator` 只约定 `[mutating] uint next()`；`sampleNext1D/2D/3D` 将随机整数转换成 `[0, 1)` 中的样本。目前只有 `UniformSampleGenerator` 实现该接口，保留 SplitMix64 初始化和 xoshiro128** 随机序列。`Utils/Sampling/SampleGenerator.slang` 根据 `SAMPLE_GENERATOR_TYPE` 为 Pass 提供 `SampleGenerator` 类型。公共解析光源和发光网格采样接口通过 `S : ISampleGenerator` 接收生成器，不依赖该具体类型。
+
+数量通过场景和光源集合对象的成员方法查询，分别返回解析光源数和发光三角形数，不读取 Pass 的采样开关。`USE_ANALYTIC_LIGHTS`、`USE_EMISSIVE_LIGHTS` 以及参与采样的类别数量由 `passes/shared` 中的积分策略处理。
+
+公共模块使用与 Falcor 对应的目录和文件名：场景入口为 `Scene/Scene.slang`，相机数据位于 `Scene/Camera/`，光源数据与三角形更新 shader 位于 `Scene/Lights/`，光源采样接口、策略和辅助函数位于 `Rendering/Lights/`，随机数生成器位于 `Utils/Sampling/`。
 
 编辑器 **debug → Show analytic lights** 开启灯光标记。DebugPass 从 VBuffer 重建标记像素的几何深度，挡在墙后的标记会被遮挡。整张图输出 `debug.color`。 [DebugPass](../src/render/impl/passes/debug/DebugPass.cpp)
 

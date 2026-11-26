@@ -1,5 +1,5 @@
-#ifndef RENDERLAB_EMISSIVE_LIGHT_DATA_SLANG
-#define RENDERLAB_EMISSIVE_LIGHT_DATA_SLANG
+#ifndef RENDERLAB_LIGHT_COLLECTION_SHARED_SLANG
+#define RENDERLAB_LIGHT_COLLECTION_SHARED_SLANG
 
 #include "render/resources/SceneLightConstants.h"
 
@@ -21,21 +21,6 @@ struct EmissiveTriangle
     property geometricNormal : float3 { get { return normal.xyz; } }
     property uv0 : float2 { get { return uv01.xy; } }
     property uv1 : float2 { get { return uv01.zw; } }
-};
-
-struct EmissiveLights
-{
-    uint triangleCount;
-    StructuredBuffer<uint> instanceOffsets;
-    StructuredBuffer<EmissiveTriangle> triangles;
-
-    uint triangleIndex(uint instanceIndex, uint primitiveIndex)
-    {
-        if (triangleCount == 0)
-            return kInvalidLightIndex;
-        uint offset = instanceOffsets[instanceIndex];
-        return offset == kInvalidLightIndex ? kInvalidLightIndex : offset + primitiveIndex;
-    }
 };
 
 #endif

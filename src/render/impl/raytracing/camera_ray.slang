@@ -2,7 +2,7 @@
 #define RENDERLAB_CAMERA_RAY_SLANG
 
 #include "math/constant.slang"
-#include "scene/scene_data.slang"
+#include "Scene/Scene.slang"
 
 RayDesc createCameraRay(uint2 pixel, uint2 frameDim, float2 pixelSample)
 {

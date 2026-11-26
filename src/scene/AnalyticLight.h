@@ -4,12 +4,12 @@
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
+#include <glm/gtc/constants.hpp>
 #include <string>
 
 enum class AnalyticLightType
 {
     Point,
-    Spot,
     Directional,
     Rectangle,
 };
@@ -26,11 +26,11 @@ struct AnalyticLight
 
     glm::vec3 color { 1.0f };
     float intensity = 8.0f;
-    float range = 10.0f;
-    
+
+    float openingAngle = glm::pi<float>();  // Cone half-angle in radians; pi covers the full sphere.
+    float penumbraAngle = 0.0f;             // Angular width of the transition inside the cone edge.
+
     glm::vec2 areaSize { 1.0f };
-    float cosInner = 0.9396926f;
-    float cosOuter = 0.8660254f;
 
     bool operator==(const AnalyticLight&) const = default;
 };

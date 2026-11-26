@@ -22,13 +22,27 @@ void SceneManager::load(const Scene& scene)
     baseObjectCount = scene.objects.size();
     baseLightCount = scene.analyticLights.size();
 
-    if (activeScene.defaultLayer)
-        setLayer(*activeScene.defaultLayer);
+    const auto& selections = context().config.editor.sceneLayerSelections;
+    if (const auto selected = selections.find(activeScene.id.value); selected != selections.end())
+        applyLayer(selected->second);
+    else if (activeScene.defaultLayer)
+        applyLayer(*activeScene.defaultLayer);
 
     ++generation;
 }
 
 void SceneManager::setLayer(SceneLayer::ID id)
+{
+    applyLayer(std::move(id));
+
+    auto& selections = context().config.editor.sceneLayerSelections;
+    if (activeLayer.empty())
+        selections.erase(activeScene.id.value);
+    else
+        selections.insert_or_assign(activeScene.id.value, activeLayer);
+}
+
+void SceneManager::applyLayer(SceneLayer::ID id)
 {
     if (activeLayer == id)
         return;

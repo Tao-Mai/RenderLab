@@ -4,10 +4,9 @@
 #include "math/constant.slang"
 #include "material/material_evaluation.slang"
 #include "material/normal_mapping.slang"
-#include "math/random.slang"
+#include "Utils/Sampling/SampleGenerator.slang"
 #include "raytracing/camera_ray.slang"
-#include "scene/emissive_lights.slang"
-#include "scene/environment_light.slang"
+#include "Rendering/Lights/EmissiveLightSamplerHelpers.slang"
 #include "scene_hits.slang"
 #include "geometry.slang"
 
@@ -21,8 +20,8 @@ struct VisibilityPayload
 struct Surface
 {
     float3  position;
-    float3  geometricNormal;
-    float3  normal;
+    float3  geometricNormal; // 网格的normal
+    float3  normal;          // 法线贴图后的normal
     float3  viewDirection;  // World-space direction toward the previous ray vertex (wo).
     PbrBrdf brdf;
     float3  emissive;
@@ -43,10 +42,8 @@ struct Surface
 
     BrdfSample sample(inout SampleGenerator state)
     {
-        float3 random;
-        random.x = randomFloat(state);
-        random.y = randomFloat(state);
-        random.z = randomFloat(state);
+        float3 random = sampleNext3D(state);
+
         return brdf.sample(normal, viewDirection, random);
     }
 
@@ -125,21 +122,14 @@ struct PathHit
 {
     PathEvent event;
     Surface   surface;
-    float2    barycentrics;
 };
 
 
-SampleGenerator createPathSampleGenerator(uint2 pixel, uint width, uint sampleIndex)
+SampleGenerator createPathSampleGenerator(uint2 pixel, uint width, uint sampleSeed)
 {
     uint pixelIndex = pixel.x + pixel.y * width;
 
-#if defined(SAMPLE_GENERATOR_TYPE)
-    return createUniformSampleGenerator(pixelIndex, sampleIndex);
-#else
-    static const uint kSampleSeedMultiplier = 0x9e3779b9u;
-
-    return pixelIndex ^ (sampleIndex * kSampleSeedMultiplier);
-#endif
+    return SampleGenerator(pixelIndex, sampleSeed);
 }
 
 [shader("miss")] 
@@ -155,7 +145,6 @@ void visibilityMissMain(inout VisibilityPayload payload)
 {
     payload.event         = PathEvent::Surface;
     payload.surface       = surfaceAt(InstanceID(), PrimitiveIndex(), attributes.barycentrics, WorldRayDirection());
-    payload.barycentrics  = attributes.barycentrics;
 }
 
 #endif

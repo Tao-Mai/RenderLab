@@ -24,6 +24,7 @@
 #include <vector>
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/mat4x4.hpp>
 
@@ -612,9 +613,6 @@ void GltfImport::visitNodes(const std::function<void(const Node&)>& visitor, flo
             CHECK(std::isfinite(light.intensity) && light.intensity >= 0.0 &&
                       light.intensity <= std::numeric_limits<float>::max(),
                   "invalid glTF light intensity on node {}: {}", nodeIndex, source.string());
-            CHECK(std::isfinite(light.range) && light.range >= 0.0 &&
-                      light.range * importScale <= std::numeric_limits<float>::max(),
-                  "invalid glTF light range on node {}: {}", nodeIndex, source.string());
             CHECK(light.color.empty() || light.color.size() == 3,
                   "invalid glTF light color on node {}: {}", nodeIndex, source.string());
 
@@ -635,14 +633,12 @@ void GltfImport::visitNodes(const std::function<void(const Node&)>& visitor, flo
             }
 
             imported.light = Light{
-                .type = light.type == "directional" ? Light::Type::Directional :
-                    light.type == "point" ? Light::Type::Point : Light::Type::Spot,
+                .type = light.type == "directional" ? Light::Type::Directional : Light::Type::Point,
                 .color = color,
                 .intensity = static_cast<float>(light.intensity),
-                .range = light.range > 0.0 ? static_cast<float>(light.range * importScale) :
-                    std::numeric_limits<float>::max(),
-                .cosInner = static_cast<float>(std::cos(light.spot.innerConeAngle)),
-                .cosOuter = static_cast<float>(std::cos(light.spot.outerConeAngle)),
+                .openingAngle = light.type == "spot" ? static_cast<float>(light.spot.outerConeAngle) : glm::pi<float>(),
+                .penumbraAngle = light.type == "spot" ?
+                    static_cast<float>(light.spot.outerConeAngle - light.spot.innerConeAngle) : 0.0f,
             };
         }
 

@@ -38,17 +38,24 @@ bool AnalyticLights::update(
         switch (light.type)
         {
             case AnalyticLightType::Point: data.lightType = GpuLightType::Point; break;
-            case AnalyticLightType::Spot: data.lightType = GpuLightType::Spot; break;
             case AnalyticLightType::Directional: data.lightType = GpuLightType::Directional; break;
             case AnalyticLightType::Rectangle: data.lightType = GpuLightType::RectArea; break;
             default: std::unreachable();
         }
 
-        data.positionRange = {light.transform.position, light.range};
+        CHECK(std::isfinite(light.openingAngle) && light.openingAngle >= 0.0f &&
+                  light.openingAngle <= glm::pi<float>(), "invalid opening angle for light '{}'", light.name);
+        CHECK(std::isfinite(light.penumbraAngle) && light.penumbraAngle >= 0.0f &&
+                  light.penumbraAngle <= light.openingAngle, "invalid penumbra angle for light '{}'", light.name);
+
+        data.posW = light.transform.position;
         const auto direction = light.transform.rotation * glm::vec3{0, 0, -1};
-        data.direction = {glm::normalize(direction), 0.0f};
-        data.areaRightData = {glm::normalize(light.transform.rotation * glm::vec3{1, 0, 0}), 0.0f};
-        data.areaSizeCone = {light.areaSize, light.cosInner, light.cosOuter};
+        data.dirW = glm::normalize(direction);
+        data.openingAngle = light.openingAngle;
+        data.cosOpeningAngle = std::cos(light.openingAngle);
+        data.penumbraAngle = light.penumbraAngle;
+        data.areaRight = glm::normalize(light.transform.rotation * glm::vec3{1, 0, 0});
+        data.areaSize = light.areaSize;
 
         float intensity = light.intensity;
         CHECK(std::isfinite(intensity) && intensity >= 0.0f, "invalid intensity for light '{}'", light.name);
@@ -60,7 +67,7 @@ bool AnalyticLights::update(
             intensity /= area;
         }
         
-        data.color = light.color * intensity;
+        data.intensity = light.color * intensity;
 
         lights.push_back(data);
     }

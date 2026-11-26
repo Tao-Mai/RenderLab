@@ -1,10 +1,8 @@
-#ifndef RENDERLAB_EMISSIVE_LIGHTS_SLANG
-#define RENDERLAB_EMISSIVE_LIGHTS_SLANG
+#ifndef RENDERLAB_EMISSIVE_LIGHT_SAMPLER_HELPERS_SLANG
+#define RENDERLAB_EMISSIVE_LIGHT_SAMPLER_HELPERS_SLANG
 
-#include "scene/emissive_light_data.slang"
+#include "Scene/Lights/LightCollection.slang"
 #include "material/material_data.slang"
-
-ParameterBlock<EmissiveLights> emissiveLights;
 
 bool emissiveTwoSided(EmissiveTriangle triangle)
 {

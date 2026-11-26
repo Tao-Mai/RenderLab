@@ -1,4 +1,4 @@
-#include "scene/emissive_light_data.slang"
+#include "Scene/Lights/LightCollectionShared.slang"
 #include "raytracing/geometry.slang"
 #include "math/constant.slang"
 

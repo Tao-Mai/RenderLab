@@ -1,16 +1,21 @@
 {
     "assets": "../assets",
     "initialScene": {
-        "value": "cornell_box"
+        "value": "sponza"
     },
     "editor": {
         "width": 1592,
         "height": 1085,
         "title": "RenderLab",
-        "showSceneObjects": false
+        "showSceneObjects": false,
+        "sceneLayerSelections": {
+            "sponza": {
+                "value": "sponza_500"
+            }
+        }
     },
     "renderer": {
-        "graph": "Minimal",
+        "graph": "Restir",
         "parameters": {
             "accumulate": false,
             "hdr": true,
@@ -20,9 +25,6 @@
         "passes": {
             "pathTracer": {
                 "maxBounces": 1
-            },
-            "restir": {
-                "maxBounces": 5
             },
             "exposure": {
                 "mode": "Manual",

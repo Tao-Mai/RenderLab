@@ -26,15 +26,13 @@ public:
         {
             Directional,
             Point,
-            Spot,
         };
 
         Type      type;
         glm::vec3 color;
         float     intensity;
-        float     range;
-        float     cosInner;
-        float     cosOuter;
+        float     openingAngle;
+        float     penumbraAngle;
     };
 
     struct Node

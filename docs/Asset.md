@@ -35,7 +35,7 @@
 - 统一 `importMesh` / `importScene`，按格式选择 TinyGLTF 或 Assimp。
 - 网格准备阶段读取几何并计算包围盒，保存阶段将导入比例烘焙进几何。运行时 Transform 表示实例变换。
 - 场景导入展开节点世界变换、复用共享网格、保留材质并生成编辑器相机。
-- glTF 场景保留 `KHR_lights_punctual` 的方向光、点光源和 Spot，导入颜色、照度 / 光强、范围及锥角。节点缩放影响灯的位置，导入比例同时缩放有限范围，光强保持源值。
+- glTF 场景保留 `KHR_lights_punctual` 的方向光、点光源和聚光灯。点光源与聚光灯统一导入为 `Point`，`openingAngle` 取外锥半角，`penumbraAngle` 取外锥与内锥半角之差；全向点光源使用 π 和 0。角度单位为弧度。节点缩放影响灯的位置，光强保持源值；点光源采用逆平方衰减，不进行距离截断。
 - 缺失切线时生成 MikkTSpace 切线；普通图像生成完整 Mipmap。
 - DirectXTex 读取单张二维 BC1–BC7 DDS。纹理资产保存源压缩块和全部 Mipmap，slang-rhi 按块上传，采样时由 GPU 解码。单独导入时默认采用 DDS 标记的色彩空间，glTF 通过 `MSFT_texture_dds` 选择外部 DDS，并按材质槽位选择线性或 sRGB 采样。
 - BC5 法线贴图保存 X、Y 两个分量，材质求值从这两个分量重建正半球的 Z。

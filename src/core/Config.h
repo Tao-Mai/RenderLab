@@ -4,9 +4,11 @@
 #include "render/graph/RenderPassOptions.h"
 
 #include <filesystem>
+#include <map>
 #include <string>
 
 struct Scene;
+struct SceneLayer;
 
 enum class RenderGraphType
 {
@@ -44,6 +46,8 @@ struct Config
         std::string title;
 
         bool showSceneObjects = false;
+
+        std::map<std::string, AssetID<SceneLayer>> sceneLayerSelections;
     };
 
     struct Renderer
