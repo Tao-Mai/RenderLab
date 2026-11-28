@@ -28,7 +28,7 @@
 #ifndef RENDERLAB_ISOTROPIC_GGX_SLANG
 #define RENDERLAB_ISOTROPIC_GGX_SLANG
 
-#include "math/constant.slang"
+#include "Utils/Math/MathConstants.slangh"
 
 static const float kMinCosTheta = 1e-6;
 static const float kMinGGXAlpha = 0.0064;
@@ -38,7 +38,7 @@ float evalNdfGGX(float alpha, float cosTheta)
     float alphaSquared = alpha * alpha;
     float denominator = (cosTheta * alphaSquared - cosTheta) * cosTheta + 1.0;
 
-    return alphaSquared / (denominator * denominator * PI);
+    return alphaSquared / (denominator * denominator * M_PI);
 }
 
 float evalLambdaGGX(float alphaSquared, float cosTheta)
@@ -65,7 +65,7 @@ float evalPdfGGX_VNDF(float alpha, float3 wi, float3 halfVector)
 float3 sampleGGX_VNDF(float alpha, float3 wi, float2 sampleValue)
 {
     float3 stretchedView = normalize(float3(alpha * wi.xy, wi.z));
-    float phi = 2.0 * PI * sampleValue.x;
+    float phi = M_2PI * sampleValue.x;
     float z = fma(1.0 - sampleValue.y, 1.0 + stretchedView.z, -stretchedView.z);
     float radius = sqrt(saturate(1.0 - z * z));
     float3 halfVector = float3(radius * cos(phi), radius * sin(phi), z) + stretchedView;

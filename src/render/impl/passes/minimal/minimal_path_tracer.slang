@@ -1,7 +1,5 @@
-#include "raytracing/alpha_test.slang"
-#include "passes/shared/path_tracer_lighting.slang"
 #include "Rendering/Lights/EmissiveUniformSampler.slang"
-#include "raytracing/visibility_buffer.slang"
+#include "passes/shared/path_tracer_lighting.slang"
 
 struct PathTracingUniforms
 {
@@ -11,49 +9,57 @@ struct PathTracingUniforms
 
 ConstantBuffer<PathTracingUniforms> uniforms;
 
-Texture2D<uint4> vbuffer;
+Texture2D<PackedHitInfo> vbuffer;
 [format("rgba32f")] RWTexture2D<float4> outputImage;
 
-float3 tracePath(RayDesc ray, PathHit hit, inout SampleGenerator state)
+float3 tracePath(RayDesc ray, HitInfo hit, inout SampleGenerator state)
 {
     EnvMapSampler envMapSampler = {};
     EmissiveUniformSampler emissiveSampler = {};
 
-    float3  radiance         = float3(0.0);
-    float3  throughput       = float3(1.0);
-    Surface previousSurface  = {};
-    float   previousBrdfPdf  = 0.0;
+    float3      radiance        = float3(0.0);
+    float3      throughput      = float3(1.0);
+    ShadingData previousSd      = {};
+    float3      previousNormal  = float3(0.0);
+    bool        previousUpper   = true;
+    float       previousBrdfPdf = 0.0;
 
     const uint maxBounces = uniforms.maxBounces;
-    
+
     for (uint bounce = 0; bounce <= maxBounces; ++bounce)
     {
-        const float emissionWeight = bounce == 0 ? 1.0
-            : evalEmissionMisWeight(
-                envMapSampler, emissiveSampler, previousSurface, ray, hit, previousBrdfPdf);
-        
-        if (hit.event == PathEvent::Miss)
+        if (!hit.isValid())
         {
+            const float emissionWeight = bounce == 0 ? 1.0
+                : evalEmissionMisWeight(
+                    envMapSampler, emissiveSampler, previousSd, previousNormal, previousUpper,
+                    ray, hit, ShadingData(), previousBrdfPdf);
             radiance += throughput * envMapSampler.eval(ray.Direction) * emissionWeight;
 
             break;
         }
 
-        Surface surface = hit.surface;
-        radiance += throughput * surface.emissive * emissionWeight;
+        const ShadingData sd = loadShadingData(hit, ray.Origin, ray.Direction);
+        const StandardMaterialInstance mi = gScene.materials.getMaterialInstance(sd);
+        const BSDFProperties props = mi.getProperties(sd);
+
+        const float emissionWeight = bounce == 0 ? 1.0
+            : evalEmissionMisWeight(
+                envMapSampler, emissiveSampler, previousSd, previousNormal, previousUpper,
+                ray, hit, sd, previousBrdfPdf);
+        radiance += throughput * props.emission * emissionWeight;
 
         // 停止反弹，那接收完emission就可以结束，不再eval表面
         if (bounce == maxBounces)
             break;
 
-        // NEE 
-        radiance += throughput * evalDirectLighting(envMapSampler, emissiveSampler, surface, state);
-        
-        BSDFSample sampled = surface.sample(state);
+        // NEE
+        radiance += throughput * evalDirectLighting(envMapSampler, emissiveSampler, sd, mi, state);
 
-        if (!sampled.valid || !any(sampled.weight > 0.0))
+        BSDFSample sampled;
+        if (!mi.sample(sd, state, sampled) || !any(sampled.weight > 0.0))
             break;
-    
+
         throughput *= sampled.weight;
 
         // 轮盘
@@ -64,32 +70,34 @@ float3 tracePath(RayDesc ray, PathHit hit, inout SampleGenerator state)
                 break;
             throughput /= survival;
         }
-        
-        ray.Origin    = surface.rayOrigin(sampled.direction);
-        ray.Direction = sampled.direction;
-        ray.TMin      = kRayEpsilon;
-        ray.TMax      = kMaxRayDistance;
 
-        previousSurface = surface;
-        previousBrdfPdf = sampled.isDelta ? 0.0 : sampled.pdf;
+        ray.Origin    = sd.computeRayOrigin(!sampled.isLobe(LobeType::Transmission));
+        ray.Direction = sampled.wo;
+        ray.TMin      = 0.0;
+        ray.TMax      = FLT_MAX;
 
-        traceSceneRay(ray, RayType::Scatter, RAY_FLAG_FORCE_NON_OPAQUE, hit);
+        previousSd      = sd;
+        previousNormal  = props.guideNormal;
+        previousUpper   = !props.isTransmissive;
+        previousBrdfPdf = sampled.isLobe(LobeType::Delta) ? 0.0 : sampled.pdf;
+
+        hit = traceScatterRay(ray);
     }
 
     return radiance;
 }
 
 [shader("anyhit")]
-void scatterAnyHitMain(inout PathHit hit, BuiltInTriangleIntersectionAttributes attributes)
+void scatterAnyHitMain(inout ScatterRayPayload payload, BuiltInTriangleIntersectionAttributes attributes)
 {
-    if (isMaskedTriangle(InstanceID(), PrimitiveIndex(), attributes.barycentrics))
+    if (alphaTest(getGeometryInstanceID(), PrimitiveIndex(), attributes))
         IgnoreHit();
 }
 
 [shader("anyhit")]
-void visibilityAnyHitMain(inout VisibilityPayload payload, BuiltInTriangleIntersectionAttributes attributes)
+void visibilityAnyHitMain(inout ShadowRayData payload, BuiltInTriangleIntersectionAttributes attributes)
 {
-    if (isMaskedTriangle(InstanceID(), PrimitiveIndex(), attributes.barycentrics))
+    if (alphaTest(getGeometryInstanceID(), PrimitiveIndex(), attributes))
         IgnoreHit();
 }
 
@@ -99,15 +107,8 @@ void raygenMain()
     uint2 pixel = DispatchRaysIndex().xy;
     uint2 frameDim = DispatchRaysDimensions().xy;
     SampleGenerator state = createPathSampleGenerator(pixel, frameDim.x, uniforms.sampleIndex);
-    RayDesc ray = createCameraRay(pixel, frameDim, float2(0.5));
-    VBufferHit primary = {vbuffer.Load(int3(pixel, 0))};
-
-    PathHit hit = {};
-    if (primary.isValid())
-    {
-        hit.event = PathEvent::Surface;
-        hit.surface = surfaceAt(primary.instanceIndex, primary.primitiveIndex, primary.barycentrics, ray.Direction);
-    }
+    RayDesc ray = gScene.camera.computeRayPinhole(pixel, frameDim);
+    HitInfo hit = HitInfo(vbuffer.Load(int3(pixel, 0)));
 
     outputImage[pixel] = float4(tracePath(ray, hit, state), 1.0);
 }

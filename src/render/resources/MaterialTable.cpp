@@ -52,14 +52,14 @@ void MaterialTable::reset()
     pendingImages.clear();
     samplerIndices.clear();
     images = {};
-    textureBindings.clear();
+    materialBindings.clear();
     ++materialRevision;
     ++emissiveRevision;
 
     static_cast<void>(textureReference({BuiltinAssets::Texture::white, BuiltinAssets::Sampler::linearRepeat}));
     samplers.fill(samplers[0]);
 
-    // Earlier submissions retain their material buffer and immutable texture bindings.
+    // Earlier submissions retain their material buffer and immutable parameter-block bindings.
     rhiCheck(device->createBuffer(
         {.size  = sizeof(StandardMaterialData),
          .usage = rhi::BufferUsage::ShaderResource | rhi::BufferUsage::CopyDestination},
@@ -97,7 +97,7 @@ TextureRef MaterialTable::textureReference(const TextureBinding& binding)
         samplers[sampler->second] = resources->sampler(binding.samplerID);
     }
     if (newSampler)
-        textureBindings.clear();
+        materialBindings.clear();
 
     return {.textureIndex = image->second, .samplerIndex = sampler->second};
 }
@@ -189,7 +189,7 @@ bool MaterialTable::upload(rhi::ICommandEncoder& commands)
                 images[index] = std::move(view);
         }
         pendingImages.clear();
-        textureBindings.clear();
+        materialBindings.clear();
     }
 
     const bool materialsChanged = uploadedMaterialRevision != materialRevision;
@@ -197,29 +197,33 @@ bool MaterialTable::upload(rhi::ICommandEncoder& commands)
     {
         const std::array<std::byte, sizeof(StandardMaterialData)> empty{};
         const auto bytes = materials.empty() ? std::span<const std::byte>{empty} : std::as_bytes(std::span{materials});
+        auto* previousBuffer = materialBuffer.get();
         ensureBufferCapacity(*device, materialBuffer, bytes.size());
+        if (materialBuffer.get() != previousBuffer)
+            materialBindings.clear();
         rhiCheck(commands.uploadBufferData(materialBuffer, 0, bytes.size(), bytes.data()));
         uploadedMaterialRevision = materialRevision;
     }
+
     return materialsChanged || imagesChanged;
 }
 
-void MaterialTable::bind(rhi::IShaderObject& object) const
+void MaterialTable::bind(rhi::IShaderObject& rootObject, const rhi::ShaderCursor& cursor) const
 {
-    const rhi::ShaderCursor root(&object);
-    rhiCheck(root["materials"].setBinding(materialBuffer));
-    const auto textures = root["materialTextures"];
-    auto* layout = textures.getTypeLayout()->getElementTypeLayout();
-    auto& binding = textureBindings[layout];
+    auto* layout = cursor.getTypeLayout()->getElementTypeLayout();
+    auto& binding = materialBindings[layout];
     if (!binding)
     {
-        rhiCheck(device->createShaderObjectFromTypeLayout(object.getSlangComponentType(), layout, binding.writeRef()));
+        rhiCheck(
+            device->createShaderObjectFromTypeLayout(rootObject.getSlangComponentType(), layout, binding.writeRef())
+        );
         const rhi::ShaderCursor table(binding);
+        rhiCheck(table["materialData"].setBinding(materialBuffer));
         for (uint32_t index = 0; index < images.size(); ++index)
-            rhiCheck(table["textures"][index].setBinding(images[index]));
+            rhiCheck(table["materialTextures"][index].setBinding(images[index]));
         for (uint32_t index = 0; index < samplers.size(); ++index)
-            rhiCheck(table["samplers"][index].setBinding(samplers[index]));
+            rhiCheck(table["materialSamplers"][index].setBinding(samplers[index]));
         rhiCheck(binding->finalize());
     }
-    rhiCheck(textures.setObject(binding));
+    rhiCheck(cursor.setObject(binding));
 }

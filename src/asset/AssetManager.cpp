@@ -13,12 +13,12 @@
 
 namespace
 {
-constexpr char kGeometryDirectory[] = "binary/geometry";
-constexpr char kTextureDirectory[] = "binary/texture";
-constexpr uint32_t kGeometryMagic = 0x4853454du;
-constexpr uint32_t kGeometryVersion = 2;
-constexpr uint32_t kTextureMagic = 0x58455452u;  // RTEX
-constexpr uint32_t kTextureVersion = 2;
+constexpr char     kGeometryDirectory[] = "binary/geometry";
+constexpr char     kTextureDirectory[]  = "binary/texture";
+constexpr uint32_t kGeometryMagic       = 0x4853454du;
+constexpr uint32_t kGeometryVersion     = 2;
+constexpr uint32_t kTextureMagic        = 0x58455452u;  // RTEX
+constexpr uint32_t kTextureVersion      = 2;
 
 struct GeometryHeader
 {
@@ -50,14 +50,14 @@ static_assert(std::is_trivially_copyable_v<Vertex> && sizeof(Vertex) == 12 * siz
 TextureHeader textureHeader(const TextureAsset& asset, uint32_t payloadBytes)
 {
     return {
-        .magic = kTextureMagic,
-        .version = kTextureVersion,
-        .layout = static_cast<uint32_t>(asset.layout),
-        .format = static_cast<uint32_t>(asset.format),
-        .width = asset.width,
-        .height = asset.height,
-        .mipLevels = asset.mipLevels,
-        .layerCount = asset.layout == ImageLayout::Cubemap ? 6u : 1u,
+        .magic        = kTextureMagic,
+        .version      = kTextureVersion,
+        .layout       = static_cast<uint32_t>(asset.layout),
+        .format       = static_cast<uint32_t>(asset.format),
+        .width        = asset.width,
+        .height       = asset.height,
+        .mipLevels    = asset.mipLevels,
+        .layerCount   = asset.layout == ImageLayout::Cubemap ? 6u : 1u,
         .payloadBytes = payloadBytes,
     };
 }
@@ -81,39 +81,21 @@ void writeBinary(const std::filesystem::path& file, std::initializer_list<std::s
 }
 
 template <AssetType T>
-void loadAssetDirectory(
-    const std::filesystem::path& directory, std::unordered_map<typename T::ID, std::unique_ptr<T>>& out
-)
+void validateAsset(const T& asset, const std::filesystem::path& file)
 {
-    if (!std::filesystem::exists(directory))
-    {
-        return;
-    }
-
-    for (const auto& entry : std::filesystem::directory_iterator(directory))
-    {
-        if (!entry.is_regular_file() || entry.path().extension() != ".json")
-        {
-            continue;
-        }
-        auto asset = std::make_unique<T>(asset_json::load<T>(entry.path()));
-        CHECK(!asset->id.empty(), "asset has empty id: {}", entry.path().string());
-        if constexpr (std::same_as<T, StandardMaterial>)
-            asset->validate();
-        if constexpr (std::same_as<T, MeshAsset>)
-            for (glm::length_t axis = 0; axis < 3; ++axis)
-                CHECK(
-                    std::isfinite(asset->bounds.min[axis]) && std::isfinite(asset->bounds.max[axis]) &&
-                        asset->bounds.min[axis] <= asset->bounds.max[axis],
-                    "invalid mesh bounds: {}",
-                    asset->id
-                );
-        if constexpr (std::same_as<T, SceneLayer>)
-            CHECK(!asset->baseScene.empty() && !asset->name.empty(), "invalid scene layer: {}", entry.path().string());
-
-        const typename T::ID id = asset->id;
-        CHECK(out.emplace(id, std::move(asset)).second, "duplicate asset ID: {}", id);
-    }
+    CHECK(!asset.id.empty(), "asset has empty id: {}", file.string());
+    if constexpr (std::same_as<T, StandardMaterial>)
+        asset.validate();
+    if constexpr (std::same_as<T, MeshAsset>)
+        for (glm::length_t axis = 0; axis < 3; ++axis)
+            CHECK(
+                std::isfinite(asset.bounds.min[axis]) && std::isfinite(asset.bounds.max[axis]) &&
+                    asset.bounds.min[axis] <= asset.bounds.max[axis],
+                "invalid mesh bounds: {}",
+                asset.id
+            );
+    if constexpr (std::same_as<T, SceneLayer>)
+        CHECK(!asset.baseScene.empty() && !asset.name.empty(), "invalid scene layer: {}", file.string());
 }
 }  // namespace
 
@@ -122,7 +104,7 @@ AssetManager::~AssetManager() {}
 void AssetManager::init(std::filesystem::path assetRoot)
 {
     root = std::move(assetRoot);
-    loadAll();
+    clear();
 }
 
 void AssetManager::shutdown() noexcept
@@ -131,16 +113,66 @@ void AssetManager::shutdown() noexcept
     root.clear();
 }
 
-void AssetManager::loadAll()
-{
-    clear();
-    AssetTypes::forEach([&]<AssetType T> { loadAssetDirectory<T>(root / T::dir, assetMap<T>()); });
-}
-
 void AssetManager::clear()
 {
     revisions = {};
     std::apply([](auto&... maps) { (maps.clear(), ...); }, assets);
+    std::apply([](auto&... caches) { (caches.reset(), ...); }, cachedIds);
+}
+
+template <AssetType T>
+bool AssetManager::assetFileExists(const AssetID<T>& id) const
+{
+    const auto file = root / T::dir / (id.value + ".json");
+    std::error_code error;
+    const bool exists = std::filesystem::is_regular_file(file, error);
+    CHECK(!error, "cannot check asset '{}': {}", file.string(), error.message());
+
+    return exists;
+}
+
+template <AssetType T>
+const T* AssetManager::loadAsset(const AssetID<T>& id) const
+{
+    const auto file = root / T::dir / (id.value + ".json");
+    std::error_code error;
+    const bool exists = std::filesystem::is_regular_file(file, error);
+    CHECK(!error, "cannot check asset '{}': {}", file.string(), error.message());
+    if (!exists)
+        return nullptr;
+
+    auto asset = std::make_unique<T>(asset_json::load<T>(file));
+    validateAsset(*asset, file);
+    CHECK(asset->id == id, "asset ID '{}' does not match filename '{}'", asset->id, file.string());
+
+    const auto [it, inserted] = assetMap<T>().emplace(id, std::move(asset));
+
+    return it->second.get();
+}
+
+template <AssetType T>
+std::span<const typename T::ID> AssetManager::ids() const
+{
+    auto& cache = idCache<T>();
+    if (!cache)
+    {
+        std::vector<typename T::ID> found;
+        const auto directory = root / T::dir;
+        std::error_code error;
+        if (std::filesystem::exists(directory, error))
+        {
+            CHECK(!error, "cannot inspect asset directory '{}': {}", directory.string(), error.message());
+            for (const auto& entry : std::filesystem::directory_iterator(directory))
+            {
+                if (!entry.is_regular_file() || entry.path().extension() != ".json")
+                    continue;
+                found.emplace_back(entry.path().stem().string());
+            }
+        }
+        cache.emplace(std::move(found));
+    }
+
+    return *cache;
 }
 
 template <AssetType T>
@@ -153,7 +185,16 @@ typename T::ID AssetManager::saveAsset(std::unique_ptr<T> asset)
     const auto file = root / T::dir / (id.value + ".json");
     asset_json::save(file, *asset);
 
-    assetMap<T>().insert_or_assign(id, std::move(asset));
+    const auto [it, inserted] = assetMap<T>().insert_or_assign(id, std::move(asset));
+    if (inserted)
+    {
+        if (auto& cache = idCache<T>(); cache)
+        {
+            if (std::ranges::find(*cache, id) == cache->end())
+                cache->push_back(id);
+        }
+    }
+
     auto& revisionsForType = std::get<AssetRevisions<T>>(revisions);
     revisionsForType.latest = ++nextRevision;
     revisionsForType.byId[id] = revisionsForType.latest;
@@ -161,13 +202,21 @@ typename T::ID AssetManager::saveAsset(std::unique_ptr<T> asset)
     return id;
 }
 
-template TextureAsset::ID        AssetManager::saveAsset(std::unique_ptr<TextureAsset>);
-template MeshAsset::ID           AssetManager::saveAsset(std::unique_ptr<MeshAsset>);
-template StandardMaterial::ID    AssetManager::saveAsset(std::unique_ptr<StandardMaterial>);
-template Scene::ID               AssetManager::saveAsset(std::unique_ptr<Scene>);
-template SceneLayer::ID          AssetManager::saveAsset(std::unique_ptr<SceneLayer>);
-template EnvironmentMapAsset::ID AssetManager::saveAsset(std::unique_ptr<EnvironmentMapAsset>);
-template SamplerAsset::ID        AssetManager::saveAsset(std::unique_ptr<SamplerAsset>);
+#define RENDERLAB_INSTANTIATE_ASSET_MANAGER(Type) \
+    template bool AssetManager::assetFileExists<Type>(const AssetID<Type>&) const; \
+    template const Type* AssetManager::loadAsset<Type>(const AssetID<Type>&) const; \
+    template std::span<const Type::ID> AssetManager::ids<Type>() const; \
+    template Type::ID AssetManager::saveAsset<Type>(std::unique_ptr<Type>)
+
+RENDERLAB_INSTANTIATE_ASSET_MANAGER(TextureAsset);
+RENDERLAB_INSTANTIATE_ASSET_MANAGER(MeshAsset);
+RENDERLAB_INSTANTIATE_ASSET_MANAGER(StandardMaterial);
+RENDERLAB_INSTANTIATE_ASSET_MANAGER(Scene);
+RENDERLAB_INSTANTIATE_ASSET_MANAGER(SceneLayer);
+RENDERLAB_INSTANTIATE_ASSET_MANAGER(EnvironmentMapAsset);
+RENDERLAB_INSTANTIATE_ASSET_MANAGER(SamplerAsset);
+
+#undef RENDERLAB_INSTANTIATE_ASSET_MANAGER
 
 std::filesystem::path AssetManager::binaryPath(const std::filesystem::path& relative) const
 {
@@ -178,21 +227,27 @@ std::filesystem::path AssetManager::binaryPath(const std::filesystem::path& rela
 
 std::filesystem::path AssetManager::writeGeometry(const MeshAsset::ID& id, const MeshGeometry& mesh) const
 {
-    CHECK(std::in_range<uint32_t>(mesh.vertices.size()) && std::in_range<uint32_t>(mesh.indices.size()),
-          "mesh geometry exceeds the binary format limits: {}", id);
+    CHECK(
+        std::in_range<uint32_t>(mesh.vertices.size()) && std::in_range<uint32_t>(mesh.indices.size()),
+        "mesh geometry exceeds the binary format limits: {}",
+        id
+    );
 
     const auto relative = std::filesystem::path{kGeometryDirectory} / (id.value + ".bin");
     const GeometryHeader header{
-        .magic = kGeometryMagic,
-        .version = kGeometryVersion,
+        .magic       = kGeometryMagic,
+        .version     = kGeometryVersion,
         .vertexCount = static_cast<uint32_t>(mesh.vertices.size()),
-        .indexCount = static_cast<uint32_t>(mesh.indices.size()),
+        .indexCount  = static_cast<uint32_t>(mesh.indices.size()),
     };
-    writeBinary(root / relative, {
-        std::as_bytes(std::span{&header, 1}),
-        std::as_bytes(std::span{mesh.vertices}),
-        std::as_bytes(std::span{mesh.indices}),
-    });
+    writeBinary(
+        root / relative,
+        {
+            std::as_bytes(std::span{&header, 1}),
+            std::as_bytes(std::span{mesh.vertices}),
+            std::as_bytes(std::span{mesh.indices}),
+        }
+    );
 
     return relative;
 }

@@ -41,11 +41,7 @@ private:
     std::optional<Scene::ID> pendingSceneId;
 
 #ifdef _WIN32
-    static constexpr int kKeyboardLayoutNameLength = 9;
-
-    wchar_t previousKeyboardLayoutName[kKeyboardLayoutNameLength]{};
-    void* previousKeyboardLayout = nullptr;
-    bool keyboardLayoutChanged = false;
+    void* previousImeContext = nullptr;
 #endif
 
     void initBackend();

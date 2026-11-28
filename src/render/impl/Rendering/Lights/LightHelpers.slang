@@ -2,94 +2,105 @@
 #define RENDERLAB_LIGHT_HELPERS_SLANG
 
 #include "Scene/Lights/LightData.slang"
+#include "Utils/Math/MathConstants.slangh"
 #include "Utils/Sampling/SampleGeneratorInterface.slang"
-#include "raytracing/scene_hits.slang"
 
-static const float kMinLightDistanceSquared = 1e-9f;
+static const float kMinLightDistSqr  = 1e-9f;
+static const float kMaxLightDistance = FLT_MAX;
 
 struct AnalyticLightSample
 {
-    float3 position;
-    float3 direction;  // 着色点指向光源
-    float3 radiance;  // Unshadowed incident radiance, before division by the PDF.
-    float  distance;
-    float  pdf;       // 立体角测度下的灯内采样条件概率，delta light为0
+    float3 posW;      // Sampled point on the light source in world space (for local lights only).
+    float3 normalW;   // Normal of the sampled point on the light source in world space (normalized).
+    float3 dir;       // Direction from the shading point to the sampled point on the light in world space (normalized).
+    float  distance;  // Distance from the shading point to sampled point on the light.
+    float3 Li;        // Incident radiance at the shading point (unshadowed). Note: Already divided by the pdf.
+    float  pdf;       // Probability density function with respect to solid angle at the shading point.
 };
 
-bool samplePointLight(float3 origin, LightData light, out AnalyticLightSample result)
+bool finalizeAreaLightSample(const float3 shadingPosW, const LightData light, inout AnalyticLightSample ls)
 {
-    result = {};
-    result.position = light.posW;
+    float3 toLight = ls.posW - shadingPosW;
+    float distSqr = max(dot(toLight, toLight), kMinLightDistSqr);
+    ls.distance = sqrt(distSqr);
+    ls.dir = toLight / ls.distance;
 
-    float3 offset = result.position - origin;
-    float distanceSquared = max(dot(offset, offset), kMinLightDistanceSquared);
-    result.distance = sqrt(distanceSquared);
-    result.direction = offset / result.distance;
-
-    float cosine = -dot(result.direction, light.dirW);
-    float falloff = 1.0f;
-    if (cosine < light.cosOpeningAngle)
-    {
-        falloff = 0.0f;
-    }
-    else if (light.penumbraAngle > 0.0f)
-    {
-        float deltaAngle = light.openingAngle - acos(clamp(cosine, -1.0f, 1.0f));
-        falloff = smoothstep(0.0f, light.penumbraAngle, deltaAngle);
-    }
-
-    result.radiance = light.intensity * (falloff / distanceSquared);
-    result.pdf = 0.0f;
-
-    return true;
-}
-
-bool sampleDirectionalLight(float3 origin, LightData light, out AnalyticLightSample result)
-{
-    result = {};
-    result.direction = -normalize(light.dirW);
-    result.radiance = light.intensity;
-    result.distance = kMaxRayDistance;
-    result.pdf = 0.0;
-
-    return true;
-}
-
-bool sampleRectAreaLight(float3 origin, LightData light, float2 uv, out AnalyticLightSample result)
-{
-    result = {};
-
-    result.position = sampleRectLightPosition(light, uv);
-    float3 offset = result.position - origin;
-    float distanceSquared = dot(offset, offset);
-    if (distanceSquared == 0.0)
+    // Area lights are single-sided, so radiance is zero when seen from the back-facing side.
+    float cosTheta = dot(ls.normalW, -ls.dir);
+    if (cosTheta <= 0.f)
         return false;
 
-    result.distance = sqrt(distanceSquared);
-    result.direction = offset / result.distance;
-    float projectedArea = rectLightArea(light) * dot(light.dirW, -result.direction);
-    if (projectedArea <= 0.0)
-        return false;
-
-    result.pdf = distanceSquared / projectedArea;
-    result.radiance = light.intensity;
+    ls.Li = light.intensity * (light.surfaceArea * cosTheta / distSqr);
+    ls.pdf = distSqr / (cosTheta * light.surfaceArea);
 
     return true;
 }
 
-bool sampleLight<S : ISampleGenerator>(float3 origin, LightData light, inout S generator,
-    out AnalyticLightSample result)
+bool sampleRectAreaLight(const float3 shadingPosW, const LightData light, const float2 u, out AnalyticLightSample ls)
 {
-    switch (light.type)
+    ls = {};
+    float3 pos = float3(u.x * 2.f - 1.f, u.y * 2.f - 1.f, 0.f);
+    ls.posW = mul(light.transMat, float4(pos, 1.f)).xyz;
+    ls.normalW = normalize(mul(light.transMatIT, float4(0.f, 0.f, 1.f, 0.f)).xyz);
+
+    return finalizeAreaLightSample(shadingPosW, light, ls);
+}
+
+bool sampleDirectionalLight(const float3 shadingPosW, const LightData light, out AnalyticLightSample ls)
+{
+    ls = {};
+    ls.posW = float3(0.f, 0.f, 0.f);
+    ls.normalW = light.dirW;
+    ls.distance = kMaxLightDistance;
+    ls.dir = -light.dirW;
+    ls.Li = light.intensity;
+    ls.pdf = 0.f;
+
+    return true;
+}
+
+bool samplePointLight(const float3 shadingPosW, const LightData light, out AnalyticLightSample ls)
+{
+    ls = {};
+    ls.posW = light.posW;
+    ls.normalW = light.dirW;
+
+    float3 toLight = ls.posW - shadingPosW;
+    float distSqr = max(dot(toLight, toLight), kMinLightDistSqr);
+    ls.distance = sqrt(distSqr);
+    ls.dir = toLight / ls.distance;
+
+    float cosTheta = -dot(ls.dir, light.dirW);
+    float falloff = 1.f;
+    if (cosTheta < light.cosOpeningAngle)
+    {
+        falloff = 0.f;
+    }
+    else if (light.penumbraAngle > 0.f)
+    {
+        float deltaAngle = light.openingAngle - acos(clamp(cosTheta, -1.f, 1.f));
+        falloff = smoothstep(0.f, light.penumbraAngle, deltaAngle);
+    }
+
+    ls.Li = light.intensity * (falloff / distSqr);
+    ls.pdf = 0.f;
+
+    return true;
+}
+
+bool sampleLight<S : ISampleGenerator>(
+    const float3 shadingPosW, const LightData light, inout S sg, out AnalyticLightSample ls)
+{
+    switch (LightType(light.type))
     {
     case LightType::Point:
-        return samplePointLight(origin, light, result);
+        return samplePointLight(shadingPosW, light, ls);
     case LightType::Directional:
-        return sampleDirectionalLight(origin, light, result);
-    case LightType::RectArea:
-        return sampleRectAreaLight(origin, light, sampleNext2D(generator), result);
+        return sampleDirectionalLight(shadingPosW, light, ls);
+    case LightType::Rect:
+        return sampleRectAreaLight(shadingPosW, light, sampleNext2D(sg), ls);
     default:
-        result = {};
+        ls = {};
 
         return false;
     }

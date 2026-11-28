@@ -1,4 +1,4 @@
-#include "math/color.slang"
+#include "Utils/Color/ColorHelpers.slang"
 #include "postprocess/exposure_state.slang"
 
 static const uint kExposureHistogramBinCount = 256;
@@ -26,10 +26,10 @@ void computeMain(uint3 thread : SV_DispatchThreadID, uint groupIndex : SV_GroupI
     hdrColor.GetDimensions(width, height);
     if (all(pixel < uint2(width, height)))
     {
-        float luminance = rec709Luminance(max(hdrColor.Load(int3(pixel, 0)).rgb, float3(0.0)));
-        if (luminance > 0.0 && isfinite(luminance))
+        float luma = luminance(max(hdrColor.Load(int3(pixel, 0)).rgb, float3(0.0)));
+        if (luma > 0.0 && isfinite(luma))
         {
-            float normalized = saturate((log2(luminance) - kExposureLogLuminanceMin) / kExposureLogLuminanceRange);
+            float normalized = saturate((log2(luma) - kExposureLogLuminanceMin) / kExposureLogLuminanceRange);
             uint bin = min(uint(normalized * kExposureHistogramBinCount), kExposureHistogramBinCount - 1);
             InterlockedAdd(localHistogram[bin], 1);
         }

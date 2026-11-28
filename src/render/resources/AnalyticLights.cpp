@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <glm/geometric.hpp>
+#include <glm/matrix.hpp>
 #include <utility>
 
 namespace
@@ -37,9 +38,9 @@ bool AnalyticLights::update(
         LightData data;
         switch (light.type)
         {
-            case AnalyticLightType::Point: data.lightType = GpuLightType::Point; break;
-            case AnalyticLightType::Directional: data.lightType = GpuLightType::Directional; break;
-            case AnalyticLightType::Rectangle: data.lightType = GpuLightType::RectArea; break;
+            case AnalyticLightType::Point: data.type = LightType::Point; break;
+            case AnalyticLightType::Directional: data.type = LightType::Directional; break;
+            case AnalyticLightType::Rectangle: data.type = LightType::Rect; break;
             default: std::unreachable();
         }
 
@@ -54,19 +55,28 @@ bool AnalyticLights::update(
         data.openingAngle = light.openingAngle;
         data.cosOpeningAngle = std::cos(light.openingAngle);
         data.penumbraAngle = light.penumbraAngle;
-        data.areaRight = glm::normalize(light.transform.rotation * glm::vec3{1, 0, 0});
-        data.areaSize = light.areaSize;
 
         float intensity = light.intensity;
         CHECK(std::isfinite(intensity) && intensity >= 0.0f, "invalid intensity for light '{}'", light.name);
-        
+
         if (light.type == AnalyticLightType::Rectangle)
         {
             const float area = light.areaSize.x * light.areaSize.y;
             CHECK(std::isfinite(area) && light.areaSize.x > 0.0f && light.areaSize.y > 0.0f);
+
+            const glm::vec3 right = glm::normalize(light.transform.rotation * glm::vec3{1, 0, 0});
+            const glm::vec3 up = glm::cross(right, data.dirW);
+            data.surfaceArea = area;
+            data.transMat = glm::mat4{
+                glm::vec4{right * (0.5f * light.areaSize.x), 0.0f},
+                glm::vec4{up * (0.5f * light.areaSize.y), 0.0f},
+                glm::vec4{data.dirW, 0.0f},
+                glm::vec4{data.posW, 1.0f},
+            };
+            data.transMatIT = glm::transpose(glm::inverse(data.transMat));
             intensity /= area;
         }
-        
+
         data.intensity = light.color * intensity;
 
         lights.push_back(data);

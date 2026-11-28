@@ -9,6 +9,8 @@
 #include <GLFW/glfw3.h>
 
 #ifdef _WIN32
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -16,6 +18,7 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
+#include <imm.h>
 #endif
 
 Editor::~Editor() = default;
@@ -43,13 +46,8 @@ void Editor::init()
     initBackend();
 
 #ifdef _WIN32
-    constexpr wchar_t kEnglishKeyboardLayout[] = L"00000409";
-    static_assert(kKeyboardLayoutNameLength == KL_NAMELENGTH);
-    if (GetKeyboardLayoutNameW(previousKeyboardLayoutName))
-    {
-        previousKeyboardLayout = GetKeyboardLayout(0);
-        keyboardLayoutChanged = LoadKeyboardLayoutW(kEnglishKeyboardLayout, KLF_ACTIVATE) != nullptr;
-    }
+    if (HWND hwnd = glfwGetWin32Window(handle))
+        previousImeContext = ImmAssociateContext(hwnd, nullptr);
 #endif
 }
 
@@ -82,15 +80,12 @@ void Editor::shutdown() noexcept
     pendingSceneId.reset();
 
 #ifdef _WIN32
-    if (keyboardLayoutChanged)
+    if (previousImeContext)
     {
-        // Restore the system input language while the editor window is still open.
-        LoadKeyboardLayoutW(previousKeyboardLayoutName, KLF_ACTIVATE);
-        if (previousKeyboardLayout)
-            ActivateKeyboardLayout(static_cast<HKL>(previousKeyboardLayout), 0);
-        keyboardLayoutChanged = false;
+        if (HWND hwnd = glfwGetWin32Window(handle))
+            ImmAssociateContext(hwnd, static_cast<HIMC>(previousImeContext));
+        previousImeContext = nullptr;
     }
-    previousKeyboardLayout = nullptr;
 #endif
 }
 

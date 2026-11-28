@@ -5,7 +5,8 @@
 GpuMesh::GpuMesh(
     rhi::IDevice& device, rhi::ICommandEncoder& commands, const MeshGeometry& geometry,
     std::span<const MeshAsset::Submesh> submeshes
-) : vertexTotal(static_cast<uint32_t>(geometry.vertices.size()))
+) : vertexTotal(static_cast<uint32_t>(geometry.vertices.size())),
+    indexTotal(static_cast<uint32_t>(geometry.indices.size()))
 {
     const auto kBufferUsage = 
         rhi::BufferUsage::CopySource | 

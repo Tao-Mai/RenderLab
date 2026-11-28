@@ -21,9 +21,9 @@ struct ShaderCursor;
 struct GpuEnvironmentMap
 {
     rhi::ComPtr<rhi::ITextureView> radiance;
-    rhi::ISampler*                 radianceSampler    = nullptr;
+    rhi::ISampler*                 radianceSampler = nullptr;
 
-    void bindRadiance(const rhi::ShaderCursor& root) const;
+    void bind(const rhi::ShaderCursor& cursor) const;
 };
 
 class RenderResourceManager

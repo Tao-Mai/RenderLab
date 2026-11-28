@@ -1,7 +1,7 @@
 #include "postprocess/fullscreen.slang"
 
 #ifdef BLIT_SRGB_CONTROL
-#include "math/color.slang"
+#include "Utils/Color/ColorHelpers.slang"
 
 struct PresentParameters
 {
@@ -19,7 +19,7 @@ SamplerState                      pointSampler;
     float4 color = sourceImage.Sample(pointSampler, input.uv);
 #ifdef BLIT_SRGB_CONTROL
     if (parameters.encodeSrgb != 0)
-        color.rgb = float3(linearToSrgb(color.r), linearToSrgb(color.g), linearToSrgb(color.b));
+        color.rgb = linearToSRGB(color.rgb);
 #endif
     return color;
 }

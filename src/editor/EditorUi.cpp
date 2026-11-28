@@ -32,7 +32,8 @@ std::optional<Scene::ID> drawSceneSelector(const Scene::ID& current)
     {
 
         const auto& assets = *context().assetManager;
-        auto sceneIds = assets.loadedIds<Scene>();
+        const auto rawSceneIds = assets.ids<Scene>();
+        std::vector<Scene::ID> sceneIds(rawSceneIds.begin(), rawSceneIds.end());
         std::ranges::sort(sceneIds, {}, &Scene::ID::value);
         for (const auto& id : sceneIds)
         {
@@ -55,7 +56,7 @@ void drawSceneLayers(const Scene& scene)
 {
     const auto& assets = *context().assetManager;
     std::vector<const SceneLayer*> layers;
-    for (const auto& id : assets.loadedIds<SceneLayer>())
+    for (const auto& id : assets.ids<SceneLayer>())
     {
         const auto& layer = assets.get(id);
         if (layer.baseScene == scene.id)

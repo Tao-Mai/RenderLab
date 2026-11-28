@@ -297,6 +297,9 @@ add_library(RenderLabRuntime STATIC
     src/render/Renderer.h
 )
 target_link_libraries(RenderLabRuntime PUBLIC RenderLabCore)
+if (WIN32)
+    target_link_libraries(RenderLabRuntime PRIVATE imm32)
+endif ()
 target_include_directories(RenderLabRuntime SYSTEM PRIVATE ${renderlab_gui_backend_includes})
 target_precompile_headers(RenderLabRuntime REUSE_FROM RenderLabCore)
 

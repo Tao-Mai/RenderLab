@@ -29,39 +29,82 @@
 #define RENDERLAB_STANDARD_MATERIAL_INSTANCE_SLANG
 
 #include "Rendering/Materials/BSDFs/StandardBSDF.slang"
-#include "Scene/ShadingFrame.slang"
+#include "Rendering/Materials/IMaterialInstance.slang"
 
-struct StandardMaterialInstance
+struct StandardMaterialInstance : IMaterialInstance
 {
-    StandardBSDFData data;
-    ShadingFrame frame;
-    float3 emission;
-    bool thinSurface;
+    ShadingFrame     sf;           // Shading frame in world space.
+    StandardBSDFData data;         // BSDF parameters.
+    float3           emission;     // Radiance emitted in the incident direction (wi).
+    bool             thinSurface;
 
-    float3 eval(float3 viewDirection, float3 direction)
+    __init(const ShadingFrame sf, const StandardBSDFData data, const float3 emission, const bool thinSurface)
     {
-        float3 wi = frame.toLocal(viewDirection);
-        StandardBSDF bsdf = StandardBSDF(wi, data, thinSurface);
-
-        return bsdf.eval(wi, frame.toLocal(direction));
+        this.sf = sf;
+        this.data = data;
+        this.emission = emission;
+        this.thinSurface = thinSurface;
     }
 
-    float evalPdf(float3 viewDirection, float3 direction)
+    float3 eval<S : ISampleGenerator>(const ShadingData sd, const float3 wo, inout S sg)
     {
-        float3 wi = frame.toLocal(viewDirection);
-        StandardBSDF bsdf = StandardBSDF(wi, data, thinSurface);
+        float3 wiLocal = sf.toLocal(sd.V);
+        float3 woLocal = sf.toLocal(wo);
+        if (!isValidHemisphereReflectionOrTransmission(sd, sf, wiLocal, woLocal, wo))
+            return float3(0.f);
 
-        return bsdf.evalPdf(wi, frame.toLocal(direction));
+        StandardBSDF bsdf = StandardBSDF(wiLocal, data, thinSurface);
+
+        return bsdf.eval(wiLocal, woLocal);
     }
 
-    BSDFSample sample<S : ISampleGenerator>(float3 viewDirection, inout S generator)
+    bool sample<S : ISampleGenerator>(const ShadingData sd, inout S sg, out BSDFSample result)
     {
-        float3 wi = frame.toLocal(viewDirection);
-        StandardBSDF bsdf = StandardBSDF(wi, data, thinSurface);
-        BSDFSample result = bsdf.sample(wi, generator);
-        result.direction = frame.fromLocal(result.direction);
+        result = {};
+        float3 wiLocal = sf.toLocal(sd.V);
+        float3 woLocal = {};
 
-        return result;
+        StandardBSDF bsdf = StandardBSDF(wiLocal, data, thinSurface);
+        if (!bsdf.sample(wiLocal, woLocal, result.pdf, result.weight, result.lobeType, sg))
+            return false;
+
+        result.wo = sf.fromLocal(woLocal);
+        if (!isValidHemisphereReflectionOrTransmission(sd, sf, wiLocal, woLocal, result.wo))
+            return false;
+
+        return true;
+    }
+
+    float evalPdf(const ShadingData sd, const float3 wo)
+    {
+        float3 wiLocal = sf.toLocal(sd.V);
+        float3 woLocal = sf.toLocal(wo);
+        if (!isValidHemisphereReflectionOrTransmission(sd, sf, wiLocal, woLocal, wo))
+            return 0.f;
+
+        StandardBSDF bsdf = StandardBSDF(wiLocal, data, thinSurface);
+
+        return bsdf.evalPdf(wiLocal, woLocal);
+    }
+
+    BSDFProperties getProperties(const ShadingData sd)
+    {
+        BSDFProperties p = {};
+        p.guideNormal = sf.N;
+        p.emission = emission;
+
+        float alpha = data.roughness * data.roughness;
+        p.roughness = alpha < kMinGGXAlpha ? 0.f : data.roughness;
+
+        if (data.diffuseTransmission > 0.f || data.specularTransmission > 0.f)
+            p.flags |= uint(BSDFProperties::Flags::IsTransmissive);
+
+        return p;
+    }
+
+    uint getLobeTypes(const ShadingData sd)
+    {
+        return StandardBSDF::getLobeTypes(data);
     }
 };
 

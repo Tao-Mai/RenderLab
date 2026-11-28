@@ -1,6 +1,7 @@
 function(renderlab_build_shaders)
     file(GLOB_RECURSE sources CONFIGURE_DEPENDS RELATIVE "${RenderLab_SOURCE_DIR}"
-        "${SHADER_SOURCE_DIR}/*.slang")
+        "${SHADER_SOURCE_DIR}/*.slang"
+        "${SHADER_SOURCE_DIR}/*.slangh")
     list(APPEND sources
         src/render/resources/RayType.h
         src/render/resources/SceneLightConstants.h)

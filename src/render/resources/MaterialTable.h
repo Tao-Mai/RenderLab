@@ -34,7 +34,7 @@ public:
     [[nodiscard]] const MaterialInfo& info(uint32_t materialIndex) const { return materialInfos[materialIndex]; }
     [[nodiscard]] const StandardMaterialData& data(uint32_t materialIndex) const { return materials[materialIndex]; }
     [[nodiscard]] uint64_t emissionRevision() const { return emissiveRevision; }
-    void bind(rhi::IShaderObject& object) const;
+    void bind(rhi::IShaderObject& rootObject, const rhi::ShaderCursor& cursor) const;
 
 private:
     rhi::IDevice*                        device = nullptr;
@@ -52,7 +52,7 @@ private:
     std::unordered_map<AssetID<SamplerAsset>, uint32_t>     samplerIndices;
     std::array<rhi::ComPtr<rhi::ITextureView>, kMaxMaterialTextures> images;
     std::array<rhi::ComPtr<rhi::ISampler>, kMaxMaterialSamplers>     samplers;
-    mutable std::unordered_map<slang::TypeLayoutReflection*, rhi::ComPtr<rhi::IShaderObject>> textureBindings;
+    mutable std::unordered_map<slang::TypeLayoutReflection*, rhi::ComPtr<rhi::IShaderObject>> materialBindings;
 
     [[nodiscard]] TextureRef textureReference(const TextureBinding& binding);
     uint32_t store(const AssetID<StandardMaterial>& id, const StandardMaterialData& data, MaterialInfo info);

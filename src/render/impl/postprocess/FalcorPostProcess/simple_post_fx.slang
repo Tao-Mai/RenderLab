@@ -26,7 +26,7 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 
-#include "math/color.slang"
+#include "Utils/Color/ColorHelpers.slang"
 
 // The effect kernels and their numerical quirks are preserved from Falcor SimplePostFX.
 #if POST_FX_STAGE == 0
@@ -242,7 +242,7 @@ float4 blurFilter5x5(Texture2D<float4> src, const float2 uv, const float uscale,
     float vignette = max(0.f, 1.f - radiusSquared * parameters.vignetteAmount);
     col *= vignette;
 
-    float luma = rec709Luminance(col);
+    float luma = luminance(col);
     // squashedLuma is used to partition the luminance range into a shadow-mid-bright, which we then fit a quadratic
     // curve thru the desired saturation
     float squashedLuma = saturate(luma / (luma + 0.5f));

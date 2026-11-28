@@ -1,31 +1,38 @@
 #ifndef RENDERLAB_STANDARD_MATERIAL_DATA_SLANG
 #define RENDERLAB_STANDARD_MATERIAL_DATA_SLANG
 
-#include "material/texture_data.slang"
-
-static const uint kAlphaModeOpaque = 0;
-static const uint kAlphaModeMask = 1;
+static const uint kMaxMaterialTextures    = 1024;
+static const uint kMaxMaterialSamplers    = 32;
+static const uint kInvalidMaterialTexture = 0xffffffff;
+static const uint kAlphaModeOpaque        = 0;
+static const uint kAlphaModeMask          = 1;
 static const uint kShadingModelMetalRough = 0;
-static const uint kShadingModelSpecGloss = 1;
+static const uint kShadingModelSpecGloss  = 1;
+
+struct TextureRef
+{
+    uint textureIndex;
+    uint samplerIndex;
+};
 
 struct StandardMaterialData
 {
-    float4 baseColor;
-    float4 specularParams;
-    float3 emissiveColor;
-    float emissiveFactor;
-    float3 transmissionColor;
-    float diffuseTransmission;
-    float specularTransmission;
-    float indexOfRefraction;
-    float normalScale;
-    float alphaCutoff;
-    uint shadingModel;
-    uint alphaMode;
-    uint doubleSided;
-    uint thinSurface;
-    uint normalEncoding;
-    uint padding;
+    float4     baseColor;
+    float4     specularParams;
+    float3     emissiveColor;
+    float      emissiveFactor;
+    float3     transmissionColor;
+    float      diffuseTransmission;
+    float      specularTransmission;
+    float      indexOfRefraction;
+    float      normalScale;
+    float      alphaCutoff;
+    uint       shadingModel;
+    uint       alphaMode;
+    uint       doubleSided;
+    uint       thinSurface;
+    uint       normalEncoding;
+    uint       padding;
     TextureRef baseColorTexture;
     TextureRef specularTexture;
     TextureRef emissiveTexture;
@@ -39,18 +46,5 @@ struct StandardMaterialData
     property float3 specularColor { get { return specularParams.rgb; } }
     property float glossiness { get { return specularParams.a; } }
 };
-
-StructuredBuffer<StandardMaterialData> materials;
-
-float4 sampleMaterialTexture(TextureRef texture, float2 uv, float4 uniformValue)
-{
-    return texture.textureIndex == kInvalidMaterialTexture ? uniformValue : sampleTextureLevel(texture, uv);
-}
-
-float3 evalMaterialEmission(StandardMaterialData material, float2 uv)
-{
-    return sampleMaterialTexture(material.emissiveTexture, uv, float4(material.emissiveColor, 1.0)).rgb
-        * material.emissiveFactor;
-}
 
 #endif

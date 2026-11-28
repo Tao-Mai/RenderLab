@@ -18,7 +18,7 @@ constexpr char       kVBuffer[]              = "vbuffer";
 constexpr char       kOutputColor[]          = "color";
 constexpr char       kOutputImage[]          = "outputImage";
 constexpr auto       kOutputFormat           = rhi::Format::RGBA32Float;
-constexpr uint32_t   kMaxRayPayloadSize      = 256;
+constexpr uint32_t   kMaxRayPayloadSize      = 4 * sizeof(uint32_t);
 constexpr uint32_t   kMaxRayRecursion        = 1;
 constexpr uint32_t   kUniformSampleGenerator = 1;
 

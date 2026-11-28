@@ -1,37 +1,39 @@
 #ifndef RENDERLAB_ENV_MAP_SAMPLER_SLANG
 #define RENDERLAB_ENV_MAP_SAMPLER_SLANG
 
-#include "Scene/Lights/EnvMap.slang"
+#include "Scene/Scene.slang"
+#include "Utils/Math/MathConstants.slangh"
 
 struct EnvMapSample
 {
-    float3 direction;
-    float3 radiance;
-    float  pdf;  // Solid-angle PDF for the sampled direction.
+    float3 dir;  // Sampled direction towards the light in world space.
+    float  pdf;  // Probability density function for the sampled direction with respect to solid angle.
+    float3 Le;   // Emitted radiance.
 };
 
 struct EnvMapSampler
 {
-    float3 eval(float3 direction)
+    float3 eval(float3 dir, float lod = 0.f)
     {
-        return environmentRadiance(direction);
+        return gScene.envMap.eval(dir, lod);
     }
 
-    float evalPdf(float3 direction)
+    bool sample(const float2 rnd, out EnvMapSample result, float lod = 0.f)
     {
-        return 1.0 / (4.0 * PI);
-    }
+        float cosTheta = 1.0f - 2.0f * rnd.x;
+        float sinTheta = sqrt(max(0.0f, 1.0f - cosTheta * cosTheta));
+        float phi = M_2PI * rnd.y;
 
-    bool sample(float2 sampleValue, out EnvMapSample result)
-    {
-        float elevation = 1.0 - 2.0 * sampleValue.x;
-        float radius = sqrt(max(0.0, 1.0 - elevation * elevation));
-        float angle = 2.0 * PI * sampleValue.y;
-        result.direction = float3(radius * cos(angle), elevation, radius * sin(angle));
-        result.radiance = eval(result.direction);
-        result.pdf = evalPdf(result.direction);
+        result.dir = float3(sinTheta * cos(phi), cosTheta, sinTheta * sin(phi));
+        result.pdf = evalPdf(result.dir);
+        result.Le = eval(result.dir, lod);
 
         return true;
+    }
+
+    float evalPdf(float3 dir)
+    {
+        return M_1_4PI;
     }
 };
 

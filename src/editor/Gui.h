@@ -8,10 +8,12 @@
 #include <cstdint>
 #include <glm/vec3.hpp>
 #include <initializer_list>
+#include <map>
 #include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <vector>
 
 class IDScope : private NonCopyable
 {
@@ -30,6 +32,8 @@ public:
 class Gui::Widgets
 {
 public:
+    explicit Widgets(std::map<std::string, bool>& expandedStates) : expandedStates(expandedStates) {}
+
     class Group : private NonCopyable
     {
     public:
@@ -38,9 +42,11 @@ public:
         explicit operator bool() const { return open; }
 
     private:
-        Group(const char* label, bool defaultOpen);
+        Group(Widgets& widgets, const char* label, bool defaultOpen, bool collapsingHeader);
 
+        Widgets& widgets;
         bool open;
+        bool collapsingHeader;
         friend class Widgets;
     };
 
@@ -75,6 +81,7 @@ public:
     }
 
     [[nodiscard]] Group group(const char* label, bool defaultOpen = false);
+    [[nodiscard]] Group section(const char* label, bool defaultOpen = false);
     bool resetHeader(const char* label);
     bool button(const char* label);
     bool colorEdit(const char* label, glm::vec3& color);
@@ -84,4 +91,10 @@ public:
     void tooltip(const char* text);
     void pushId(const char* id);
     void popId();
+
+private:
+    [[nodiscard]] std::string stateKey(const char* label) const;
+
+    std::map<std::string, bool>& expandedStates;
+    std::vector<std::string> idPath;
 };

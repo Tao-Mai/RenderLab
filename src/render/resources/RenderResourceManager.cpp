@@ -91,10 +91,10 @@ const GpuEnvironmentMap& RenderResourceManager::environmentMap(
     return environmentMaps.emplace(id, std::move(result)).first->second;
 }
 
-void GpuEnvironmentMap::bindRadiance(const rhi::ShaderCursor& root) const
+void GpuEnvironmentMap::bind(const rhi::ShaderCursor& cursor) const
 {
-    rhiCheck(root["radianceMap"].setBinding(radiance));
-    rhiCheck(root["radianceSampler"].setBinding(radianceSampler));
+    rhiCheck(cursor["envMap"].setBinding(radiance));
+    rhiCheck(cursor["envSampler"].setBinding(radianceSampler));
 }
 
 rhi::ISampler* RenderResourceManager::sampler(const SamplerAsset::ID& id)

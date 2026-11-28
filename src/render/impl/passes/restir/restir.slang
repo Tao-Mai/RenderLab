@@ -1,10 +1,8 @@
-#include "raytracing/alpha_test.slang"
 #include "Rendering/Lights/EmissiveUniformSampler.slang"
-#include "raytracing/visibility_buffer.slang"
-#include "raytracing/path_tracing.slang"
+#include "passes/shared/path_tracing.slang"
 #include "Rendering/Lights/LightHelpers.slang"
 #include "Rendering/Lights/EnvMapSampler.slang"
-#include "math/color.slang"
+#include "Utils/Color/ColorHelpers.slang"
 
 struct PathTracingUniforms
 {
@@ -14,7 +12,7 @@ struct PathTracingUniforms
 struct ReservoirHistory
 {
     int selectedLightIndex;
-    float3 selectedContribution;
+    float3 selectedRadiance = float3(0.0);
     float selectedTarget;
     float weightSum;
     uint sampleCount;
@@ -25,105 +23,112 @@ static const uint kCandidateCount = 5;
 ConstantBuffer<PathTracingUniforms> uniforms;
 RWStructuredBuffer<ReservoirHistory> reservoirHistory;
 
-Texture2D<uint4> vbuffer;
+Texture2D<PackedHitInfo> vbuffer;
 
+[format("rgba32f")]
+RWTexture2D<float4> outputImage;
 
-[format("rgba32f")] RWTexture2D<float4> outputImage;
+void sampleAnalyticLight(out uint lightIndex, out float pdf, inout SampleGenerator state)
+{
+    uint lightCount = gScene.getLightCount();
+    lightIndex = min(uint(sampleNext1D(state) * lightCount), lightCount - 1u);
+    pdf = 1.0f / float(lightCount);
+}
 
+enum LightGroup
+{
+    Emissive,
+    Analytic
+};
 
-float3 evalDL(Surface surface, inout SampleGenerator state) {
-    uint lightCount = scene.getLightCount();
-    if (lightCount == 0)
-        return float3(0.0);
+LightGroup sampleLightGroup(inout SampleGenerator state) {}
 
+float3 evalDL<MaterialInstance : IMaterialInstance>(
+    const ShadingData sd, const MaterialInstance mi, inout SampleGenerator state)
+{
     // TODO 选灯pdf感觉可以用分层采样
-    int selectedLightIndex = -1;
-    float3 selectedContribution = 0.0;
-    float selectedTarget = 1.0;
-    
-    float reservoir = 0.0;
-    uint sampleCount = 0;
 
     uint2 pixel = DispatchRaysIndex().xy;
     uint historyIndex = pixel.x + pixel.y * DispatchRaysDimensions().x;
-    
+
+    ReservoirHistory history = {};
     if (uniforms.sampleSeed > 0)
     {
         ReservoirHistory history = reservoirHistory[historyIndex];
-        selectedLightIndex = history.selectedLightIndex;
-        selectedContribution = history.selectedContribution;
-        selectedTarget = history.selectedTarget;
-        reservoir = history.weightSum;
-        sampleCount = history.sampleCount;
     }
 
-    for (uint i = 0; i < kCandidateCount; i++) {
-        uint lightIndex = min(uint(sampleNext1D(state) * lightCount), lightCount - 1u);
-        float proposalPdf = 1.0f / float(lightCount);
+    const BSDFProperties props = mi.getProperties(sd);
+    const bool upperHemisphere = !props.isTransmissive;
 
-        AnalyticLightSample result;
+    EmissiveUniformSampler emissive_sampler = {};
 
-        if (!sampleLight(surface.rayOrigin(), scene.analyticLights[lightIndex], state, result)) {
+    for (uint i = 0; i < kCandidateCount; i++)
+    {
+        TriangleLightSample tls = {};
+
+        if (!emissive_sampler.sampleLight(sd.posW, props.guideNormal, upperHemisphere, state, tls))
+        {
             continue;
         }
 
-        // Delta lights only divide by the discrete light selection probability.
-     //   float conditionalPdf = result.pdf == 0.0 ? 1.0 : result.pdf;
-
-        // L F G / proposal pdf
-        float3 contribution = surface.evaluateLight(result.direction, result.radiance);
-
-        if (!any(contribution > 0.0) || !surface.isVisible(result.direction, result.distance)) {
-             continue;
+        float3 radiance = mi.eval(sd, tls.dir, state) * tls.Le;
+        float3 shadowOrigin = computeRayOrigin(sd.posW, dot(sd.faceN, tls.dir) >= 0.f ? sd.faceN : -sd.faceN);
+        if (!any(radiance > 0.0) || !traceShadowRay(shadowOrigin, tls.dir, tls.distance))
+        {
+            continue;
         }
 
-        float target = rec709Luminance(contribution);
-        float wi = target / proposalPdf;
-        reservoir += wi;
+        float target = luminance(radiance);
 
-        if (sampleNext1D(state) * reservoir < wi) {
-            selectedLightIndex = lightIndex;
-            selectedContribution = contribution;
-            selectedTarget = target;
+        float w = 1.0 * target / tls.pdf;
+
+        history.weightSum += w;
+
+        if (sampleNext1D(state) * history.weightSum < w)
+        {
+            history.selectedLightIndex = tls.triangleIndex;
+            history.selectedRadiance = radiance;
+            history.selectedTarget = target;
         }
     }
 
-    sampleCount += kCandidateCount;
-    reservoirHistory[historyIndex] = {
-        selectedLightIndex, selectedContribution, selectedTarget, reservoir, sampleCount};
+    history.sampleCount += kCandidateCount;
+    reservoirHistory[historyIndex] = history;
 
-    return selectedContribution * reservoir / float(sampleCount) / selectedTarget;
+    return history.selectedRadiance / history.selectedTarget * history.weightSum / float(history.sampleCount);
 }
 
-float3 tracePath(RayDesc ray, PathHit hit, inout SampleGenerator state)
+float3 tracePath(RayDesc ray, HitInfo hit, inout SampleGenerator state)
 {
-    float3  radiance         = float3(0.0);
+    float3 radiance = float3(0.0);
 
     EnvMapSampler envMapSampler = {};
 
-    if (hit.event != PathEvent::Surface) {
-         return envMapSampler.eval(ray.Direction);
+    if (!hit.isValid())
+    {
+        return envMapSampler.eval(ray.Direction);
     }
 
-    Surface surface = hit.surface;
-    radiance += surface.emissive; 
+    const ShadingData sd = loadShadingData(hit, ray.Origin, ray.Direction);
+    const StandardMaterialInstance mi = gScene.materials.getMaterialInstance(sd);
+    radiance += mi.getProperties(sd).emission;
 
-    radiance += evalDL(surface, state);
-    
+    radiance += evalDL(sd, mi, state);
+
     return radiance;
 }
 
 [shader("anyhit")]
-void scatterAnyHitMain(inout PathHit hit, BuiltInTriangleIntersectionAttributes attributes)
+void scatterAnyHitMain(inout ScatterRayPayload payload, BuiltInTriangleIntersectionAttributes attributes)
 {
-    if (isMaskedTriangle(InstanceID(), PrimitiveIndex(), attributes.barycentrics))
+    if (alphaTest(getGeometryInstanceID(), PrimitiveIndex(), attributes))
         IgnoreHit();
 }
 
 [shader("anyhit")]
-void visibilityAnyHitMain(inout VisibilityPayload payload, BuiltInTriangleIntersectionAttributes attributes)
+void visibilityAnyHitMain(inout ShadowRayData payload, BuiltInTriangleIntersectionAttributes attributes)
 {
-    if (isMaskedTriangle(InstanceID(), PrimitiveIndex(), attributes.barycentrics))
+    if (alphaTest(getGeometryInstanceID(), PrimitiveIndex(), attributes))
         IgnoreHit();
 }
 
@@ -133,15 +138,8 @@ void raygenMain()
     uint2 pixel = DispatchRaysIndex().xy;
     uint2 frameDim = DispatchRaysDimensions().xy;
     SampleGenerator state = createPathSampleGenerator(pixel, frameDim.x, uniforms.sampleSeed);
-    RayDesc ray = createCameraRay(pixel, frameDim, float2(0.5));
-    VBufferHit primary = {vbuffer.Load(int3(pixel, 0))};
-
-    PathHit hit = {};
-    if (primary.isValid())
-    {
-        hit.event = PathEvent::Surface;
-        hit.surface = surfaceAt(primary.instanceIndex, primary.primitiveIndex, primary.barycentrics, ray.Direction);
-    }
+    RayDesc ray = gScene.camera.computeRayPinhole(pixel, frameDim);
+    HitInfo hit = HitInfo(vbuffer.Load(int3(pixel, 0)));
 
     outputImage[pixel] = float4(tracePath(ray, hit, state), 1.0);
 }

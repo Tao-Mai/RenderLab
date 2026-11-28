@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 #include <tuple>
 #include <type_traits>
@@ -41,25 +42,36 @@ public:
     [[nodiscard]] const T& get(const AssetID<T>& id) const
     {
         const T* found = find<T>(id);
-        CHECK(found != nullptr, "asset not loaded: {}", id);
+        CHECK(found != nullptr, "asset not found: {}", id);
+
         return *found;
     }
 
     template <AssetType T>
     [[nodiscard]] const T* find(const AssetID<T>& id) const
     {
+        if (id.empty())
+            return nullptr;
+
         const auto& table = assetMap<T>();
         if (const auto found = table.find(id); found != table.end())
-        {
             return found->second.get();
-        }
 
         if (const T* builtin = BuiltinAssets::findAsset<T>(id))
-        {
             return builtin;
-        }
 
-        return nullptr;
+        return loadAsset<T>(id);
+    }
+
+    template <AssetType T>
+    [[nodiscard]] bool exists(const AssetID<T>& id) const
+    {
+        if (id.empty())
+            return false;
+        if (assetMap<T>().contains(id) || BuiltinAssets::findAsset<T>(id) != nullptr)
+            return true;
+
+        return assetFileExists<T>(id);
     }
 
     template <AssetType T>
@@ -69,22 +81,14 @@ public:
     }
 
     template <AssetType T>
-    [[nodiscard]] std::vector<typename T::ID> loadedIds() const
-    {
-        std::vector<typename T::ID> ids;
-        ids.reserve(assetMap<T>().size());
-        for (const auto& [id, asset] : assetMap<T>())
-        {
-            ids.push_back(id);
-        }
-        return ids;
-    }
+    [[nodiscard]] std::span<const typename T::ID> ids() const;
 
     template <AssetType T>
     [[nodiscard]] uint64_t revision(const AssetID<T>& id) const
     {
         const auto& map   = std::get<AssetRevisions<T>>(revisions).byId;
         const auto  found = map.find(id);
+
         return found == map.end() ? 0 : found->second;
     }
 
@@ -95,34 +99,40 @@ private:
         std::unordered_map<typename T::ID, uint64_t> byId;
         uint64_t latest = 0;
     };
-    AssetTypes::wrapTypes<AssetRevisions> revisions;
-    uint64_t                           nextRevision = 0;
-    std::filesystem::path              root;
 
     template <AssetType T>
     using AssetMap = std::unordered_map<typename T::ID, std::unique_ptr<T>>;
 
-    using AssetMaps = AssetTypes::wrapTypes<AssetMap>;
+    template <AssetType T>
+    using AssetIdCache = std::optional<std::vector<typename T::ID>>;
 
+    AssetTypes::wrapTypes<AssetRevisions>       revisions;
+    uint64_t                                    nextRevision = 0;
+    std::filesystem::path                       root;
+    mutable AssetTypes::wrapTypes<AssetMap>     assets;
+    mutable AssetTypes::wrapTypes<AssetIdCache> cachedIds;
 
-    AssetMaps assets;
-
-    void loadAll();
     void clear();
     [[nodiscard]] std::filesystem::path binaryPath(const std::filesystem::path& relative) const;
+
+    template <AssetType T>
+    [[nodiscard]] bool assetFileExists(const AssetID<T>& id) const;
+
+    template <AssetType T>
+    [[nodiscard]] const T* loadAsset(const AssetID<T>& id) const;
 
     template <AssetType T>
     typename T::ID saveAsset(std::unique_ptr<T> asset);
 
     template <AssetType T>
-    [[nodiscard]] AssetMap<T>& assetMap()
+    [[nodiscard]] AssetMap<T>& assetMap() const
     {
         return std::get<AssetMap<T>>(assets);
     }
 
     template <AssetType T>
-    [[nodiscard]] const AssetMap<T>& assetMap() const
+    [[nodiscard]] AssetIdCache<T>& idCache() const
     {
-        return std::get<AssetMap<T>>(assets);
+        return std::get<AssetIdCache<T>>(cachedIds);
     }
 };

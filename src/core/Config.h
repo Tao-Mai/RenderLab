@@ -48,6 +48,8 @@ struct Config
         bool showSceneObjects = false;
 
         std::map<std::string, AssetID<SceneLayer>> sceneLayerSelections;
+
+        std::map<std::string, bool> uiExpanded;
     };
 
     struct Renderer

@@ -1,32 +1,42 @@
-#include "raytracing/alpha_test.slang"
-#include "raytracing/camera_ray.slang"
-#include "raytracing/visibility_buffer.slang"
+#include "Scene/Raytracing.slang"
 
-[format("rgba32ui")] RWTexture2D<uint4> hitImage;
+[format("rgba32ui")] RWTexture2D<PackedHitInfo> hitImage;
+
+struct VBufferPayload
+{
+    PackedHitInfo packedHit;
+};
 
 [shader("raygeneration")]
 void raygenMain()
 {
     const uint2 pixel = DispatchRaysIndex().xy;
-    const RayDesc ray = createCameraRay(pixel, DispatchRaysDimensions().xy, float2(0.5));
-    VBufferHit hit = {kVBufferMiss};
-    traceSceneRay(ray, RayType::Scatter, RAY_FLAG_FORCE_NON_OPAQUE, hit);
+    const RayDesc ray = gScene.camera.computeRayPinhole(pixel, DispatchRaysDimensions().xy);
+    VBufferPayload payload = { makeInvalidHit().pack() };
+    traceSceneRay(ray, RayType::Scatter, RAY_FLAG_FORCE_NON_OPAQUE, payload);
 
-    hitImage[pixel] = hit.packed;
+    hitImage[pixel] = payload.packedHit;
 }
 
 [shader("closesthit")]
-void closestHitMain(inout VBufferHit hit, BuiltInTriangleIntersectionAttributes attributes)
+void closestHitMain(inout VBufferPayload payload, BuiltInTriangleIntersectionAttributes attributes)
 {
-    hit.packed = uint4(InstanceID(), PrimitiveIndex(), asuint(attributes.barycentrics));
+    TriangleHit triangleHit;
+    triangleHit.instanceID = getGeometryInstanceID();
+    triangleHit.primitiveIndex = PrimitiveIndex();
+    triangleHit.barycentrics = attributes.barycentrics;
+    payload.packedHit = HitInfo(triangleHit).pack();
 }
 
 [shader("anyhit")]
-void scatterAnyHitMain(inout VBufferHit hit, BuiltInTriangleIntersectionAttributes attributes)
+void scatterAnyHitMain(inout VBufferPayload payload, BuiltInTriangleIntersectionAttributes attributes)
 {
-    if (isMaskedTriangle(InstanceID(), PrimitiveIndex(), attributes.barycentrics))
+    if (alphaTest(getGeometryInstanceID(), PrimitiveIndex(), attributes))
         IgnoreHit();
 }
 
 [shader("miss")]
-void missMain(inout VBufferHit hit) { hit.packed = kVBufferMiss; }
+void missMain(inout VBufferPayload payload)
+{
+    payload.packedHit = makeInvalidHit().pack();
+}

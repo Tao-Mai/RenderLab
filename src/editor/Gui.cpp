@@ -135,18 +135,59 @@ bool Gui::Widgets::dropdown(const char* label, std::span<const std::string> choi
     return drawDropdown(label, choices, selected, nullptr);
 }
 
-Gui::Widgets::Group::Group(const char* label, bool defaultOpen) :
-    open(ImGui::TreeNodeEx(label, defaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None))
+std::string Gui::Widgets::stateKey(const char* label) const
 {
+    std::string key;
+    for (const auto& segment : idPath)
+    {
+        key.append(segment);
+        key.push_back('/');
+    }
+    key.append(label);
+
+    return key;
+}
+
+Gui::Widgets::Group::Group(Widgets& owner, const char* label, bool defaultOpen, bool isCollapsingHeader) :
+    widgets(owner), open(false), collapsingHeader(isCollapsingHeader)
+{
+    const std::string key = widgets.stateKey(label);
+    const auto found = widgets.expandedStates.find(key);
+    const bool initialOpen = found != widgets.expandedStates.end() ? found->second : defaultOpen;
+    const ImGuiTreeNodeFlags flags = initialOpen ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None;
+
+    open = collapsingHeader ? ImGui::CollapsingHeader(label, flags) : ImGui::TreeNodeEx(label, flags);
+    widgets.expandedStates[key] = open;
+
+    if (open)
+    {
+        widgets.idPath.emplace_back(label);
+        if (collapsingHeader)
+            ImGui::PushID(label);
+    }
 }
 
 Gui::Widgets::Group::~Group()
 {
-    if (open)
+    if (!open)
+        return;
+
+    if (collapsingHeader)
+        ImGui::PopID();
+    else
         ImGui::TreePop();
+    widgets.idPath.pop_back();
 }
 
-Gui::Widgets::Group Gui::Widgets::group(const char* label, bool defaultOpen) { return Group(label, defaultOpen); }
+Gui::Widgets::Group Gui::Widgets::group(const char* label, bool defaultOpen)
+{
+    return Group(*this, label, defaultOpen, false);
+}
+
+Gui::Widgets::Group Gui::Widgets::section(const char* label, bool defaultOpen)
+{
+    return Group(*this, label, defaultOpen, true);
+}
 
 bool Gui::Widgets::resetHeader(const char* label)
 {
@@ -206,6 +247,14 @@ void Gui::Widgets::disabledText(const char* text) { ImGui::TextDisabled("%s", te
 
 void Gui::Widgets::tooltip(const char* text) { ImGui::SetItemTooltip("%s", text); }
 
-void Gui::Widgets::pushId(const char* id) { ImGui::PushID(id); }
+void Gui::Widgets::pushId(const char* id)
+{
+    ImGui::PushID(id);
+    idPath.emplace_back(id);
+}
 
-void Gui::Widgets::popId() { ImGui::PopID(); }
+void Gui::Widgets::popId()
+{
+    ImGui::PopID();
+    idPath.pop_back();
+}

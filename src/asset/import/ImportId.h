@@ -46,14 +46,7 @@ template <AssetType T>
 
     const auto available = [](const typename T::ID& id)
     {
-        if (context().assetManager->find<T>(id))
-            return false;
-
-        const auto      file = context().assetManager->rootPath() / T::dir / (id.value + ".json");
-        std::error_code error;
-        const bool      exists = std::filesystem::exists(file, error);
-        CHECK(!error, "cannot check asset ID '{}': {}", id.value, error.message());
-        return !exists;
+        return !context().assetManager->exists<T>(id);
     };
 
     const typename T::ID baseId{baseName};

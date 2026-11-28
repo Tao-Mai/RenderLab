@@ -3,65 +3,51 @@
 
 #include "Rendering/Lights/EmissiveLightSamplerInterface.slang"
 #include "Rendering/Lights/EmissiveLightSamplerHelpers.slang"
-#include "math/random.slang"
-#include "raytracing/alpha_test.slang"
 
 struct EmissiveUniformSampler : IEmissiveLightSampler
 {
-    float evalTriangleSelectionPdf(uint triangleIndex)
+    bool sampleLight<S : ISampleGenerator>(
+        const float3 posW, const float3 normalW, const bool upperHemisphere, inout S sg, out TriangleLightSample ls)
     {
-        return 1.0 / float(emissiveLights.getTriangleCount());
-    }
-
-    float evalPdf(float3 origin, TriangleLightHit hit)
-    {
-        EmissiveTriangle triangle = emissiveLights.triangles[hit.triangleIndex];
-        if (triangle.area <= 0.0)
-            return 0.0;
-
-        float3 offset = hit.position - origin;
-        float distanceSquared = dot(offset, offset);
-        if (distanceSquared == 0.0)
-            return 0.0;
-
-        float3 direction = offset / sqrt(distanceSquared);
-        float cosine = dot(triangle.geometricNormal, -direction);
-        cosine = max(0.0, cosine);
-        if (cosine <= 0.0)
-            return 0.0;
-
-        return evalTriangleSelectionPdf(hit.triangleIndex) * distanceSquared / (triangle.area * cosine);
-    }
-
-    bool sampleLight<S : ISampleGenerator>(float3 origin, inout S generator, out TriangleLightSample result)
-    {
-        result = {};
-        const uint lightCount = emissiveLights.getTriangleCount();
-        if (lightCount == 0)
+        ls = {};
+        const uint triangleCount = gScene.lightCollection.getTriangleCount();
+        if (triangleCount == 0)
             return false;
 
-        result.triangleIndex = randomIndex(lightCount, generator);
-        float2 sampleValue = sampleNext2D(generator);
+        const float uLight = sampleNext1D(sg);
+        const uint triangleIndex = min(uint(uLight * triangleCount), triangleCount - 1u);
+        const float triangleSelectionPdf = 1.f / float(triangleCount);
+        const float2 u = sampleNext2D(sg);
 
-        float2 uv;
-        result.position = sampleEmissiveTriangle(result.triangleIndex, sampleValue, uv);
-        const TriangleLightHit hit = {result.triangleIndex, result.position};
-        result.pdf = evalPdf(origin, hit);
-        if (result.pdf <= 0.0)
+        if (!sampleTriangle(posW, triangleIndex, u, ls))
             return false;
 
-        EmissiveTriangle triangle = emissiveLights.triangles[result.triangleIndex];
-        StandardMaterialData material = materials[triangle.materialIndex];
-        if (material.alphaMode == kAlphaModeMask && failsAlphaCutoff(material, uv))
-            return false;
-
-        float3 offset = result.position - origin;
-        result.distance = length(offset);
-        result.direction = offset / result.distance;
-        result.normal = triangle.geometricNormal;
-        result.radiance = emissiveRadiance(result.triangleIndex, uv, -result.direction);
+        ls.pdf *= triangleSelectionPdf;
 
         return true;
+    }
+
+    float evalTriangleSelectionPdf(
+        const float3 posW, const float3 normalW, const bool upperHemisphere, const uint triangleIndex)
+    {
+        if (triangleIndex == LightCollection::kInvalidIndex)
+            return 0.f;
+
+        const uint triangleCount = gScene.lightCollection.getTriangleCount();
+
+        return triangleCount > 0 ? 1.f / float(triangleCount) : 0.f;
+    }
+
+    float evalPdf(
+        const float3 posW, const float3 normalW, const bool upperHemisphere, const TriangleLightHit hit)
+    {
+        if (hit.triangleIndex == LightCollection::kInvalidIndex)
+            return 0.f;
+
+        const float triangleSelectionPdf = evalTriangleSelectionPdf(posW, normalW, upperHemisphere, hit.triangleIndex);
+        const float trianglePdf = evalTrianglePdf(posW, hit);
+
+        return triangleSelectionPdf * trianglePdf;
     }
 };
 

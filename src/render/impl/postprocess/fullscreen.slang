@@ -1,4 +1,3 @@
-#include "math/screen.slang"
 #ifndef RENDERLAB_FULLSCREEN_SLANG
 #define RENDERLAB_FULLSCREEN_SLANG
 
@@ -12,7 +11,9 @@ struct FullscreenVertexOutput
 FullscreenVertexOutput vertMain(uint vertexId : SV_VertexID)
 {
     float2 corner = float2((vertexId << 1) & 2, vertexId & 2);
-    return {float4(uvToClip(corner), 0.0, 1.0), corner};
+    float2 clip = float2(2.0, -2.0) * corner + float2(-1.0, 1.0);
+
+    return { float4(clip, 0.0, 1.0), corner };
 }
 
 #endif

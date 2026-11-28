@@ -10,7 +10,6 @@
 
 RENDERLAB_SCENE_LIGHT_CONSTANT kInvalidLightIndex       = 0xffffffffu;
 RENDERLAB_SCENE_LIGHT_CONSTANT kEmissiveTriangleStride  = 96;
-RENDERLAB_SCENE_LIGHT_CONSTANT kLightDispatchRowWidth   = 32768;
 
 #undef RENDERLAB_SCENE_LIGHT_CONSTANT
 #endif

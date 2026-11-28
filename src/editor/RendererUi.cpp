@@ -6,8 +6,9 @@
 
 void Renderer::renderUI(const PassEditorContext& input)
 {
-    auto& settings = context().config.renderer;
-    Gui::Widgets widgets;
+    auto& ctx = context();
+    auto& settings = ctx.config.renderer;
+    Gui::Widgets widgets(ctx.config.editor.uiExpanded);
     widgets.dropdown("Render graph", settings.graph, {"Minimal", "ReSTIR"});
 
     if (widgets.resetHeader("Graph"))

@@ -5,26 +5,32 @@
 
 struct TriangleLightSample
 {
-    uint   triangleIndex;
-    float3 position;
-    float3 normal;
-    float3 direction;
-    float  distance;
-    float3 radiance;  // Emitted radiance, before division by the PDF.
-    float  pdf;       // Solid-angle PDF including triangle selection.
+    uint   triangleIndex;  // Index of the sampled triangle.
+    float3 posW;           // Sampled point on the light source in world space.
+    float3 normalW;        // Normal of the sampled point on the light source in world space.
+    float3 dir;            // Normalized direction from the shading point to the sampled point in world space.
+    float  distance;       // Distance from the shading point to the sampled point.
+    float3 Le;             // Emitted radiance. Zero if back-facing or sample is invalid.
+    float  pdf;            // Probability density with respect to solid angle from the shading point.
 };
 
 struct TriangleLightHit
 {
-    uint   triangleIndex;
-    float3 position;
+    uint   triangleIndex;  // Index of the triangle.
+    float3 posW;           // Sampled point on the triangle in world space.
+    float3 normalW;        // Face normal of the triangle in world space, flipped for back-facing hits.
 };
 
 interface IEmissiveLightSampler
 {
-    bool sampleLight<S : ISampleGenerator>(float3 origin, inout S generator, out TriangleLightSample result);
-    float evalTriangleSelectionPdf(uint triangleIndex);
-    float evalPdf(float3 origin, TriangleLightHit hit);
+    bool sampleLight<S : ISampleGenerator>(
+        const float3 posW, const float3 normalW, const bool upperHemisphere, inout S sg, out TriangleLightSample ls);
+
+    float evalTriangleSelectionPdf(
+        const float3 posW, const float3 normalW, const bool upperHemisphere, const uint triangleIndex);
+
+    float evalPdf(
+        const float3 posW, const float3 normalW, const bool upperHemisphere, const TriangleLightHit hit);
 };
 
 #endif

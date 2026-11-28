@@ -21,9 +21,11 @@ public:
     [[nodiscard]] rhi::IBuffer*   vertices() const { return vertexBuffer; }
     [[nodiscard]] rhi::IBuffer*   indices() const { return indexBuffer; }
     [[nodiscard]] uint32_t        vertexCount() const { return vertexTotal; }
+    [[nodiscard]] uint32_t        indexCount() const { return indexTotal; }
 
 private:
     uint32_t                        vertexTotal = 0;
+    uint32_t                        indexTotal = 0;
     rhi::ComPtr<rhi::IBuffer>       vertexBuffer;
     rhi::ComPtr<rhi::IBuffer>       indexBuffer;
 };

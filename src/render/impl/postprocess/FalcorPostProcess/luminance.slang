@@ -30,7 +30,7 @@
 Texture2D<float4> sourceImage;
 SamplerState      linearSampler;
 
-static const float kMinLuminance = 1e-8;
+static const float kMinLuminance = 0.0001;
 
 [shader("fragment")] float4 fragMain(FullscreenVertexOutput input) : SV_Target
 {

@@ -1,9 +1,7 @@
-#include "raytracing/geometry.slang"
-#include "raytracing/visibility_buffer.slang"
 #include "Scene/Scene.slang"
-#include "math/constant.slang"
+#include "Utils/Math/MathConstants.slangh"
 
-Texture2D<uint4> vbuffer;
+Texture2D<PackedHitInfo> vbuffer;
 
 static const float kPointRadius = 5.0;
 static const float kArrowRadius = 9.0;
@@ -26,25 +24,26 @@ struct MarkerVertex
 [shader("vertex")]
 MarkerVertex vertMain(uint vertexIndex : SV_VertexID, uint lightIndex : SV_InstanceID)
 {
-    const LightData light = scene.analyticLights[lightIndex];
+    const LightData light = gScene.getLight(lightIndex);
+    const LightType type = LightType(light.type);
     const float2 corner = kQuadVertices[vertexIndex];
 
     MarkerVertex vertex;
     vertex.markerPosition = corner;
-    vertex.lightType = uint(light.type);
-    vertex.isOmnidirectional = light.type == LightType::Point && light.openingAngle == PI;
+    vertex.lightType = light.type;
+    vertex.isOmnidirectional = type == LightType::Point && light.openingAngle == M_PI;
     const float peak = max(light.intensity.r, max(light.intensity.g, light.intensity.b));
     vertex.color = peak > 0.0 ? light.intensity / peak : float3(1.0);
     vertex.arrowDirection = float2(0.0, 1.0);
 
-    if (light.type == LightType::RectArea)
+    if (type == LightType::Rect)
     {
-        const float3 worldPosition = sampleRectLightPosition(light, corner * 0.5 + 0.5);
-        vertex.position = mul(scene.camera.viewProjection, float4(worldPosition, 1.0));
+        const float3 worldPosition = mul(light.transMat, float4(corner, 0.0, 1.0)).xyz;
+        vertex.position = mul(gScene.camera.getViewProj(), float4(worldPosition, 1.0));
     }
     else
     {
-        vertex.position = mul(scene.camera.viewProjection, float4(light.posW, 1.0));
+        vertex.position = mul(gScene.camera.getViewProj(), float4(light.posW, 1.0));
 
         uint2 extent;
         vbuffer.GetDimensions(extent.x, extent.y);
@@ -53,7 +52,7 @@ MarkerVertex vertMain(uint vertexIndex : SV_VertexID, uint lightIndex : SV_Insta
 
         if (!vertex.isOmnidirectional)
         {
-            const float3 viewDirection = mul((float3x3)scene.camera.view, light.dirW);
+            const float3 viewDirection = mul((float3x3)gScene.camera.data.viewMat, light.dirW);
             if (dot(viewDirection.xy, viewDirection.xy) > 0.000001)
                 vertex.arrowDirection = normalize(viewDirection.xy);
         }
@@ -62,13 +61,10 @@ MarkerVertex vertMain(uint vertexIndex : SV_VertexID, uint lightIndex : SV_Insta
     return vertex;
 }
 
-float hitDepth(VBufferHit hit)
+float hitDepth(const HitInfo hit)
 {
-    const HitData object = scene.objects[hit.instanceIndex];
-    const uint firstIndex = object.firstIndex + hit.primitiveIndex * 3;
-    TriangleVertices triangle = loadTriangleVertices(object.vertexAddress, object.indexAddress, firstIndex);
-    const float3 position = triangle.interpolate(hit.barycentrics).position;
-    const float4 clip = mul(scene.camera.viewProjection, mul(object.objectToWorld, float4(position, 1.0)));
+    const VertexData v = gScene.getVertexData(hit.getTriangleHit());
+    const float4 clip = mul(gScene.camera.getViewProj(), float4(v.posW, 1.0));
 
     return clip.z / clip.w;
 }
@@ -85,7 +81,7 @@ float4 fragMain(MarkerVertex vertex) : SV_Target
         if (radiusSquared > 0.64)
             color *= 0.2;
     }
-    else if (LightType(vertex.lightType) == LightType::RectArea)
+    else if (LightType(vertex.lightType) == LightType::Rect)
     {
         if (max(abs(vertex.markerPosition.x), abs(vertex.markerPosition.y)) < 0.86)
             discard;
@@ -101,7 +97,7 @@ float4 fragMain(MarkerVertex vertex) : SV_Target
             discard;
     }
 
-    VBufferHit hit = {vbuffer.Load(int3(int2(vertex.position.xy), 0))};
+    const HitInfo hit = HitInfo(vbuffer.Load(int3(int2(vertex.position.xy), 0)));
     if (hit.isValid())
     {
         if (vertex.position.z > hitDepth(hit) + kDepthBias)

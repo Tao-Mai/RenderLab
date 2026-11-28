@@ -30,28 +30,21 @@
 
 #include "Rendering/Materials/Fresnel.slang"
 #include "Rendering/Materials/IsotropicGGX.slang"
+#include "Rendering/Materials/LobeType.slang"
+#include "Utils/Color/ColorHelpers.slang"
+#include "Utils/Math/MathConstants.slangh"
 #include "Utils/Sampling/SampleGeneratorInterface.slang"
-#include "math/color.slang"
-
-struct BSDFSample
-{
-    float3 direction;
-    float3 weight; // Selected lobe's f * abs(NdotL), divided by its sampling probability.
-    float pdf;     // Complete continuous mixture PDF; zero for delta events.
-    bool valid;
-    bool isDelta;
-};
 
 struct StandardBSDFData
 {
     float3 diffuse;
     float3 specular;
-    float roughness;
-    float metallic;
-    float eta;
+    float  roughness;
+    float  metallic;
+    float  eta;
     float3 transmission;
-    float diffuseTransmission;
-    float specularTransmission;
+    float  diffuseTransmission;
+    float  specularTransmission;
 };
 
 // All directions are local, with wi pointing toward the previous path vertex and N = +Z.
@@ -59,10 +52,10 @@ struct StandardBSDFData
 struct StandardBSDF
 {
     StandardBSDFData data;
-    float3 transmissionAlbedo;
-    float alpha;
-    float transmissionAlpha;
-    float4 probabilities;
+    float3           transmissionAlbedo;
+    float            alpha;
+    float            transmissionAlpha;
+    float4           probabilities;
 
     property float pDiffuseReflection { get { return probabilities.x; } }
     property float pDiffuseTransmission { get { return probabilities.y; } }
@@ -78,13 +71,42 @@ struct StandardBSDF
         transmissionAlpha = data.eta == 1.0 ? 0.0 : alpha;
 
         float opaque = 1.0 - data.specularTransmission;
-        float diffuseWeight = rec709Luminance(data.diffuse) * (1.0 - data.metallic) * opaque;
-        float specularWeight = rec709Luminance(evalFresnelSchlick(data.specular, 1.0, wi.z)) * opaque;
-        probabilities = float4(diffuseWeight * (1.0 - data.diffuseTransmission),
-            diffuseWeight * data.diffuseTransmission, specularWeight, data.specularTransmission);
+        float diffuseWeight = luminance(data.diffuse) * (1.0 - data.metallic) * opaque;
+        float specularWeight = luminance(evalFresnelSchlick(data.specular, 1.0, wi.z)) * opaque;
+        probabilities = float4(
+            diffuseWeight * (1.0 - data.diffuseTransmission),
+            diffuseWeight * data.diffuseTransmission,
+            specularWeight,
+            data.specularTransmission
+        );
         float total = dot(probabilities, float4(1.0));
         if (total > 0.0)
             probabilities /= total;
+    }
+
+    static uint getLobeTypes(const StandardBSDFData data)
+    {
+        const float alpha = data.roughness * data.roughness;
+        const bool isDelta = alpha < kMinGGXAlpha;
+        const bool isTransmissionDelta = data.eta == 1.0 || isDelta;
+
+        uint lobeTypes = 0;
+        if (data.specularTransmission < 1.0)
+        {
+            if (data.diffuseTransmission < 1.0)
+                lobeTypes |= uint(LobeType::DiffuseReflection);
+            if (data.diffuseTransmission > 0.0)
+                lobeTypes |= uint(LobeType::DiffuseTransmission);
+            lobeTypes |= uint(isDelta ? LobeType::DeltaReflection : LobeType::SpecularReflection);
+        }
+        if (data.specularTransmission > 0.0)
+        {
+            lobeTypes |= uint(isTransmissionDelta
+                ? (LobeType::DeltaReflection | LobeType::DeltaTransmission)
+                : (LobeType::SpecularReflection | LobeType::SpecularTransmission));
+        }
+
+        return lobeTypes;
     }
 
     float3 evalDiffuseReflection(float3 wi, float3 wo)
@@ -100,7 +122,7 @@ struct StandardBSDF
         float woScatter = 1.0 + (fd90 - 1.0) * pow(max(1.0 - wo.z, 0.0), 5.0);
         float energyFactor = lerp(1.0, 1.0 / 1.51, data.roughness);
 
-        return data.diffuse * wiScatter * woScatter * energyFactor * INV_PI * wo.z;
+        return data.diffuse * wiScatter * woScatter * energyFactor * M_1_PI * wo.z;
     }
 
     float3 evalSpecularReflection(float3 wi, float3 wo)
@@ -148,7 +170,7 @@ struct StandardBSDF
         if (pDiffuseReflection > 0.0)
             result += opaque * (1.0 - data.diffuseTransmission) * evalDiffuseReflection(wi, wo);
         if (pDiffuseTransmission > 0.0 && wo.z < 0.0)
-            result += opaque * data.diffuseTransmission * transmissionAlbedo * INV_PI * -wo.z;
+            result += opaque * data.diffuseTransmission * transmissionAlbedo * M_1_PI * -wo.z;
         if (pSpecularReflection > 0.0)
             result += opaque * evalSpecularReflection(wi, wo);
         if (pSpecularTransmission > 0.0)
@@ -188,7 +210,7 @@ struct StandardBSDF
         float denominator = woDotH + data.eta * wiDotH;
         float denominatorSquared = denominator * denominator;
 
-        return (denominatorSquared > 0.0 ? pdf * abs(woDotH) / denominatorSquared : 3.402823466e38)
+        return (denominatorSquared > 0.0 ? pdf * abs(woDotH) / denominatorSquared : FLT_MAX)
             * (1.0 - fresnel);
     }
 
@@ -197,7 +219,7 @@ struct StandardBSDF
         if (min(wi.z, abs(wo.z)) < kMinCosTheta)
             return 0.0;
 
-        float pdf = (wo.z > 0.0 ? pDiffuseReflection : pDiffuseTransmission) * abs(wo.z) * INV_PI;
+        float pdf = (wo.z > 0.0 ? pDiffuseReflection : pDiffuseTransmission) * abs(wo.z) * M_1_PI;
         if (pSpecularReflection > 0.0)
             pdf += pSpecularReflection * reflectionPdf(wi, wo);
         if (pSpecularTransmission > 0.0)
@@ -206,80 +228,92 @@ struct StandardBSDF
         return pdf;
     }
 
-    BSDFSample sample<S : ISampleGenerator>(float3 wi, inout S generator)
+    bool sample<S : ISampleGenerator>(
+        float3 wi, out float3 wo, out float pdf, out float3 weight, out uint lobeType, inout S sg)
     {
-        BSDFSample result = {};
+        wo = float3(0.0);
+        pdf = 0.0;
+        weight = float3(0.0);
+        lobeType = 0;
         if (wi.z < kMinCosTheta)
-            return result;
+            return false;
 
-        float select = sampleNext1D(generator);
+        float select = sampleNext1D(sg);
         float opaque = 1.0 - data.specularTransmission;
+        bool isDelta = false;
         if (select < pDiffuseReflection + pDiffuseTransmission)
         {
-            float2 u = sampleNext2D(generator) * 2.0 - 1.0;
+            float2 u = sampleNext2D(sg) * 2.0 - 1.0;
             float radius = 0.0;
             float phi = 0.0;
             if (any(u != 0.0))
             {
                 bool horizontal = abs(u.x) > abs(u.y);
                 radius = horizontal ? u.x : u.y;
-                phi = horizontal ? (PI * 0.25 * u.y / u.x) : (PI * 0.5 - PI * 0.25 * u.x / u.y);
+                phi = horizontal ? (M_PI_4 * u.y / u.x) : (M_PI_2 - M_PI_4 * u.x / u.y);
             }
-            float3 wo = float3(radius * cos(phi), radius * sin(phi), sqrt(max(0.0, 1.0 - radius * radius)));
+            wo = float3(radius * cos(phi), radius * sin(phi), sqrt(max(0.0, 1.0 - radius * radius)));
             bool reflection = select < pDiffuseReflection;
             wo.z *= reflection ? 1.0 : -1.0;
             if (abs(wo.z) < kMinCosTheta)
-                return result;
+                return false;
 
-            result.direction = wo;
-            result.weight = reflection
-                ? evalDiffuseReflection(wi, wo) / (wo.z * INV_PI) * opaque * (1.0 - data.diffuseTransmission) / pDiffuseReflection
+            weight = reflection
+                ? evalDiffuseReflection(wi, wo) / (wo.z * M_1_PI) * opaque * (1.0 - data.diffuseTransmission) / pDiffuseReflection
                 : transmissionAlbedo * opaque * data.diffuseTransmission / pDiffuseTransmission;
+            lobeType = uint(reflection ? LobeType::DiffuseReflection : LobeType::DiffuseTransmission);
         }
         else if (select < pDiffuseReflection + pDiffuseTransmission + pSpecularReflection)
         {
-            result.isDelta = alpha == 0.0;
-            float3 halfVector = result.isDelta ? float3(0.0, 0.0, 1.0)
-                : sampleGGX_VNDF(alpha, wi, sampleNext2D(generator));
+            isDelta = alpha == 0.0;
+            float3 halfVector = isDelta ? float3(0.0, 0.0, 1.0)
+                : sampleGGX_VNDF(alpha, wi, sampleNext2D(sg));
             float wiDotH = dot(wi, halfVector);
-            result.direction = 2.0 * wiDotH * halfVector - wi;
-            if (result.direction.z < kMinCosTheta)
-                return result;
+            wo = 2.0 * wiDotH * halfVector - wi;
+            if (wo.z < kMinCosTheta)
+                return false;
 
-            float maskingWeight = result.isDelta ? 1.0
-                : evalMaskingSmithGGXCorrelated(alpha, wi.z, result.direction.z)
+            float maskingWeight = isDelta ? 1.0
+                : evalMaskingSmithGGXCorrelated(alpha, wi.z, wo.z)
                     * (1.0 + evalLambdaGGX(alpha * alpha, wi.z));
-            result.weight = evalFresnelSchlick(data.specular, 1.0, wiDotH) * maskingWeight * opaque / pSpecularReflection;
+            weight = evalFresnelSchlick(data.specular, 1.0, wiDotH) * maskingWeight * opaque / pSpecularReflection;
+            lobeType = uint(isDelta ? LobeType::DeltaReflection : LobeType::SpecularReflection);
         }
         else if (pSpecularTransmission > 0.0)
         {
-            float lobeSample = sampleNext1D(generator);
-            result.isDelta = transmissionAlpha == 0.0;
-            float3 halfVector = result.isDelta ? float3(0.0, 0.0, 1.0)
-                : sampleGGX_VNDF(transmissionAlpha, wi, sampleNext2D(generator));
+            float lobeSample = sampleNext1D(sg);
+            isDelta = transmissionAlpha == 0.0;
+            float3 halfVector = isDelta ? float3(0.0, 0.0, 1.0)
+                : sampleGGX_VNDF(transmissionAlpha, wi, sampleNext2D(sg));
             float wiDotH = dot(wi, halfVector);
             float cosThetaT;
             float fresnel = evalFresnelDielectric(data.eta, wiDotH, cosThetaT);
             bool reflection = lobeSample < fresnel;
-            result.direction = reflection ? 2.0 * wiDotH * halfVector - wi
+            wo = reflection ? 2.0 * wiDotH * halfVector - wi
                 : (data.eta * wiDotH - cosThetaT) * halfVector - data.eta * wi;
-            if (abs(result.direction.z) < kMinCosTheta || ((result.direction.z > 0.0) != reflection))
-                return result;
+            if (abs(wo.z) < kMinCosTheta || ((wo.z > 0.0) != reflection))
+                return false;
 
-            float maskingWeight = result.isDelta ? 1.0
-                : evalMaskingSmithGGXCorrelated(transmissionAlpha, wi.z, abs(result.direction.z))
+            float maskingWeight = isDelta ? 1.0
+                : evalMaskingSmithGGXCorrelated(transmissionAlpha, wi.z, abs(wo.z))
                     * (1.0 + evalLambdaGGX(transmissionAlpha * transmissionAlpha, wi.z));
-            result.weight = maskingWeight * data.specularTransmission / pSpecularTransmission;
+            weight = maskingWeight * data.specularTransmission / pSpecularTransmission;
             if (!reflection)
-                result.weight *= transmissionAlbedo * data.eta * data.eta;
+                weight *= transmissionAlbedo * data.eta * data.eta;
+
+            if (reflection)
+                lobeType = uint(isDelta ? LobeType::DeltaReflection : LobeType::SpecularReflection);
+            else
+                lobeType = uint(isDelta ? LobeType::DeltaTransmission : LobeType::SpecularTransmission);
         }
         else
-            return result;
+        {
+            return false;
+        }
 
-        result.valid = true;
-        result.pdf = result.isDelta ? 0.0 : evalPdf(wi, result.direction);
+        pdf = isDelta ? 0.0 : evalPdf(wi, wo);
 
-        return result;
+        return true;
     }
 };
 

@@ -3,7 +3,6 @@
 #include "render/GpuScene.h"
 #include "render/resources/ShaderLayout.h"
 
-#include <limits>
 #include <slang-rhi/shader-cursor.h>
 #include <utility>
 
@@ -14,7 +13,6 @@ constexpr char kHitImage[] = "hitImage";
 constexpr auto kHitFormat = rhi::Format::RGBA32Uint;
 constexpr uint32_t kHitPayloadSize = 4 * sizeof(uint32_t);
 constexpr uint32_t kMaxRayRecursion = 1;
-constexpr uint32_t kInvalidInstance = std::numeric_limits<uint32_t>::max();
 
 const RenderPassReflection::Field kPorts[]{
     {
@@ -55,7 +53,7 @@ void VBufferPass::execute(RenderContext* context, const RenderData& renderData)
     auto* output = renderData.getTexture(kHit);
     if (!mpScene)
     {
-        uint32_t miss[4]{kInvalidInstance, 0, 0, 0};
+        uint32_t miss[4]{0, 0, 0, 0};
         commands.clearTextureUint(output, rhi::kEntireTexture, miss);
 
         return;
@@ -63,7 +61,7 @@ void VBufferPass::execute(RenderContext* context, const RenderData& renderData)
 
     const auto& version = program.getActiveVersion(*context->shaderManager);
     auto* tlas = mpScene->prepareRayTracing(commands);
-    mpScene->bindRayTracingGeometryData(*version.shaderObject, tlas);
+    mpScene->bindSceneData(*version.shaderObject, tlas);
     rhiCheck(rhi::ShaderCursor(version.shaderObject)[kHitImage].setBinding(output));
 
     const auto extent = output->getDesc().size;

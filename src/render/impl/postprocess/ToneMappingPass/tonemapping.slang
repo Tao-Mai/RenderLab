@@ -1,4 +1,4 @@
-#include "math/color.slang"
+#include "Utils/Color/ColorHelpers.slang"
 #include "postprocess/exposure_state.slang"
 #include "postprocess/fullscreen.slang"
 
@@ -54,7 +54,7 @@ float4 fragMain(FullscreenVertexOutput input) : SV_Target
     // sRGB attachments encode automatically; UNORM swapchains need explicit encoding.
     if (parameters.encodeSrgb != 0)
     {
-        color = float3(linearToSrgb(color.r), linearToSrgb(color.g), linearToSrgb(color.b));
+        color = linearToSRGB(color);
     }
 
     return float4(color, 1.0);

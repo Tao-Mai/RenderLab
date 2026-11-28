@@ -12,8 +12,8 @@ void pass_editor::draw(
     if (!draw)
         return;
 
-    const IDScope id(&pass);
-    if (!ImGui::CollapsingHeader(pass.getName().c_str()))
+    const auto section = widgets.section(pass.getName().c_str());
+    if (!section)
         return;
 
     const bool reset = ImGui::SmallButton("Reset settings");

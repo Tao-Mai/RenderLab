@@ -1,45 +1,29 @@
 #ifndef RENDERLAB_LIGHT_DATA_SLANG
 #define RENDERLAB_LIGHT_DATA_SLANG
 
-enum class LightType : uint {
-    Point = 0,
-    Directional = 1,
-    RectArea = 2,
+enum class LightType : uint
+{
+    Point       = 0,  // Point light source, can be a spot light if its opening angle is < pi.
+    Directional = 1,  // Directional light source.
+    Rect        = 2,  // Quad shaped area light source.
 };
 
-// Must match LightData in ShaderData.h. std430 array stride = 80 bytes; only enabled lights are uploaded.
+// Must match LightData in ShaderData.h. std430 array stride = 192 bytes; only enabled lights are uploaded.
 struct LightData
 {
-    float3 posW;
-    uint lightType;
-    float3 dirW;
-    float openingAngle;
+    float3   posW;             // World-space position of the center of a light source.
+    uint     type;             // Type of the light source (LightType).
+    float3   dirW;             // World-space orientation of the light source (normalized).
+    float    openingAngle;     // Spot light opening half-angle in radians (pi for full sphere).
+    float3   intensity;        // Point radiant intensity, directional irradiance, or area-light radiance.
+    float    cosOpeningAngle;  // cos(openingAngle).
+    float    penumbraAngle;    // Spot light penumbra half-angle in radians.
+    float    surfaceArea;      // Surface area of the analytic area light.
+    float2   _pad0;
 
-    // Colored point intensity, directional irradiance, or area-light radiance.
-    float3 intensity;
-    float cosOpeningAngle;
-    float2 areaSize;
-    float penumbraAngle;
-    float padding0;
-    float3 areaRight;
-    float padding1;
-
-    property type : LightType {
-        get { return LightType(lightType); }
-    }
+    // Extra parameters for analytic area lights.
+    float4x4 transMat;         // Transformation matrix from local [-1, 1]^2 to world space.
+    float4x4 transMatIT;       // Inverse-transpose of transformation matrix.
 };
-
-float rectLightArea(LightData light)
-{
-    return light.areaSize.x * light.areaSize.y;
-}
-
-float3 sampleRectLightPosition(LightData light, float2 uv)
-{
-    float2 offset = (uv - 0.5) * light.areaSize;
-    float3 up = cross(light.areaRight, light.dirW);
-
-    return light.posW + offset.x * light.areaRight + offset.y * up;
-}
 
 #endif

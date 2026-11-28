@@ -1,7 +1,7 @@
 {
     "assets": "../assets",
     "initialScene": {
-        "value": "orca_emerald_square_dusk"
+        "value": "sponza"
     },
     "editor": {
         "width": 1592,
@@ -12,19 +12,23 @@
             "sponza": {
                 "value": "sponza_500"
             }
+        },
+        "uiExpanded": {
+            "debug": false,
+            "pathTracer": true
         }
     },
     "renderer": {
         "graph": "Minimal",
         "parameters": {
             "accumulate": true,
-            "hdr": true,
+            "hdr": false,
             "postProcess": "Falcor",
             "bloom": true
         },
         "passes": {
             "pathTracer": {
-                "maxBounces": 2
+                "maxBounces": 1
             },
             "exposure": {
                 "mode": "Manual",
@@ -51,7 +55,7 @@
             "falcor": {
                 "toneMapper": {
                     "exposureCompensation": 0.0,
-                    "autoExposure": true,
+                    "autoExposure": false,
                     "filmSpeed": 100.0,
                     "fNumber": 1.0,
                     "shutter": 1.0,

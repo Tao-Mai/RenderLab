@@ -28,58 +28,59 @@
 #ifndef RENDERLAB_STANDARD_MATERIAL_SLANG
 #define RENDERLAB_STANDARD_MATERIAL_SLANG
 
-#include "Scene/Material/StandardMaterialData.slang"
 #include "Rendering/Materials/StandardMaterialInstance.slang"
-
-float getMetallic(float3 diffuse, float3 specular)
-{
-    float diffuseLuminance = rec709Luminance(diffuse);
-    float specularLuminance = rec709Luminance(specular);
-    if (specularLuminance == 0.0)
-        return 0.0;
-
-    float b = specularLuminance + diffuseLuminance - 0.08;
-    float c = 0.04 - specularLuminance;
-
-    return (sqrt(b * b - 0.16 * c) - b) * 12.5;
-}
+#include "Scene/Material/MaterialSystem.slang"
+#include "Scene/Material/ShadingUtils.slang"
+#include "Scene/Material/StandardMaterialData.slang"
 
 struct StandardMaterial
 {
     StandardMaterialData data;
 
-    StandardMaterialInstance setupMaterialInstance(float2 uv, float3 normal, bool frontFacing)
+    StandardMaterialInstance setupMaterialInstance(const MaterialSystem ms, const ShadingData sd)
     {
-        StandardMaterialInstance result = {};
-        result.frame = ShadingFrame(normal);
-        result.thinSurface = data.thinSurface != 0;
-        result.data.eta = frontFacing ? 1.0 / data.indexOfRefraction : data.indexOfRefraction;
-        result.data.diffuseTransmission = data.diffuseTransmission;
-        result.data.specularTransmission = data.specularTransmission;
-        if (data.diffuseTransmission > 0.0 || data.specularTransmission > 0.0)
-            result.data.transmission = sampleMaterialTexture(data.transmissionTexture, uv, float4(data.transmissionColor, 0.0)).rgb;
+        StandardBSDFData d = {};
+        d.eta = sd.frontFacing ? (sd.IoR / data.indexOfRefraction) : (data.indexOfRefraction / sd.IoR);
+        d.diffuseTransmission = data.diffuseTransmission;
+        d.specularTransmission = data.specularTransmission;
+        if (d.diffuseTransmission > 0.f || d.specularTransmission > 0.f)
+            d.transmission = ms.sampleTexture(data.transmissionTexture, sd.uv, float4(data.transmissionColor, 0.f)).rgb;
 
-        float fresnelRatio = (data.indexOfRefraction - 1.0) / (data.indexOfRefraction + 1.0);
-        float3 baseColor = sampleMaterialTexture(data.baseColorTexture, uv, data.baseColor).rgb;
+        float f = (data.indexOfRefraction - 1.f) / (data.indexOfRefraction + 1.f);
+        float F0 = f * f;
+
+        const float3 baseColor = ms.sampleTexture(data.baseColorTexture, sd.uv, data.baseColor).rgb;
         StandardMaterialData sampled = data;
-        sampled.specularParams = sampleMaterialTexture(data.specularTexture, uv, data.specularParams);
+        sampled.specularParams = ms.sampleTexture(data.specularTexture, sd.uv, data.specularParams);
         if (data.shadingModel == kShadingModelMetalRough)
         {
-            result.data.diffuse = lerp(baseColor, float3(0.0), sampled.metallic);
-            result.data.specular = lerp(float3(fresnelRatio * fresnelRatio), baseColor, sampled.metallic);
-            result.data.roughness = sampled.roughness;
-            result.data.metallic = sampled.metallic;
+            d.diffuse = lerp(baseColor, float3(0.f), sampled.metallic);
+            d.specular = lerp(float3(F0), baseColor, sampled.metallic);
+            d.roughness = sampled.roughness;
+            d.metallic = sampled.metallic;
         }
         else
         {
-            result.data.diffuse = baseColor;
-            result.data.specular = sampled.specularColor;
-            result.data.roughness = 1.0 - sampled.glossiness;
-            result.data.metallic = getMetallic(result.data.diffuse, result.data.specular);
+            d.diffuse = baseColor;
+            d.specular = sampled.specularColor;
+            d.roughness = 1.f - sampled.glossiness;
+            d.metallic = getMetallic(d.diffuse, d.specular);
         }
-        result.emission = frontFacing ? evalMaterialEmission(data, uv) : float3(0.0);
 
-        return result;
+        ShadingFrame sf = sd.frame;
+        if (data.normalTexture.textureIndex != kInvalidMaterialTexture)
+        {
+            const float3 encodedNormal = ms.sampleTexture(data.normalTexture, sd.uv, float4(0.5f, 0.5f, 1.f, 1.f)).xyz;
+            sf = computeShadingFrameFromNormalMap(sd, encodedNormal, data.normalScale, data.normalEncoding);
+        }
+        flipShadingNormal(sd, data.doubleSided != 0, sf);
+        adjustShadingNormal(sd, sf);
+
+        const float3 emission = sd.frontFacing
+            ? ms.sampleTexture(data.emissiveTexture, sd.uv, float4(data.emissiveColor, 1.f)).rgb * data.emissiveFactor
+            : float3(0.f);
+
+        return StandardMaterialInstance(sf, d, emission, data.thinSurface != 0);
     }
 };
 
